@@ -1,0 +1,19 @@
+{
+  "id": "chat-sdk-discord",
+  "kind": "chat-sdk",
+  "provider": "discord",
+  "mode": "generic-webhook",
+  "webhook": {
+    "path": "chat-sdk/discord",
+    "signingSecretEnv": "RIELA_CHAT_SDK_DISCORD_WEBHOOK_SECRET",
+    "bearerTokenEnv": "RIELA_CHAT_SDK_DISCORD_BEARER_TOKEN",
+    "rateLimit": {
+      "windowMs": 60000,
+      "maxRequests": 60
+    }
+  },
+  "send": {
+    "endpointUrlEnv": "RIELA_CHAT_SDK_DISCORD_SEND_URL",
+    "tokenEnv": "RIELA_CHAT_SDK_DISCORD_SEND_TOKEN"
+  }
+}

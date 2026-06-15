@@ -1,0 +1,12 @@
+{
+  "id": "step8-impl-plan-completion-check",
+  "description": "Check that accepted issue-resolution implementation plans are not left completed under impl-plans/active before commit generation.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "promptTemplateFile": "prompts/step8-impl-plan-completion-check.md",
+  "variables": {},
+  "output": {
+    "description": "Return JSON with active/completed implementation-plan checks, any archive moves performed, README/index updates, and whether another docs-refresh pass is needed."
+  },
+  "effort": "high"
+}

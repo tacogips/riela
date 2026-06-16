@@ -39,7 +39,7 @@ without project or user scope installation:
 Run it from the JSON file:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run \
+riela workflow run \
   --workflow-json-file ./examples/temporary-workflow/temp-workflow.json \
   --dry-run \
   --output json \
@@ -62,19 +62,19 @@ Minimal runnable reference for a manager-less workflow:
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate worker-only-single-step --workflow-definition-dir ./examples
+riela workflow validate worker-only-single-step --workflow-definition-dir ./examples
 ```
 
 Inspect it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow inspect worker-only-single-step --workflow-definition-dir ./examples --output json
+riela workflow inspect worker-only-single-step --workflow-definition-dir ./examples --output json
 ```
 
 Run it with the bundled deterministic scenario:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run worker-only-single-step \
+riela workflow run worker-only-single-step \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/worker-only-single-step/mock-scenario.json \
   --output json
@@ -117,7 +117,7 @@ supervised lifecycle control is deterministic and in-process; this workflow id i
 the supervisor identity, not a child `riela` process manager:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate riela-default-workflow-supervisor --workflow-definition-dir ./examples
+riela workflow validate riela-default-workflow-supervisor --workflow-definition-dir ./examples
 ```
 
 ### `dispatcher-llm-resolver-stub`
@@ -142,13 +142,13 @@ Minimal worker-only workflow showing the built-in node add-on catalog:
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate chat-reply-webhook --workflow-definition-dir ./examples
+riela workflow validate chat-reply-webhook --workflow-definition-dir ./examples
 ```
 
 Inspect it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow inspect chat-reply-webhook --workflow-definition-dir ./examples --output json
+riela workflow inspect chat-reply-webhook --workflow-definition-dir ./examples --output json
 ```
 
 See `examples/event-sources/README.md` for a local webhook event and reply
@@ -167,13 +167,13 @@ Discord chat workflow using the generic Chat SDK event boundary:
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate discord-codex-chat --workflow-definition-dir ./examples
+riela workflow validate discord-codex-chat --workflow-definition-dir ./examples
 ```
 
 Run it through the deterministic Discord event fixture:
 
 ```bash
-bun run packages/riela/src/bin.ts events emit chat-sdk-discord \
+riela events emit chat-sdk-discord \
   --workflow-definition-dir ./examples \
   --event-root ./examples/event-sources/.riela-events \
   --artifact-root ./tmp/event-source-demo/workflow-artifacts \
@@ -198,13 +198,13 @@ descriptors:
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate chat-event-attachment-judgement --workflow-definition-dir ./examples
+riela workflow validate chat-event-attachment-judgement --workflow-definition-dir ./examples
 ```
 
 Run it through the deterministic attachment fixture:
 
 ```bash
-bun run packages/riela/src/bin.ts events emit chat-sdk-slack \
+riela events emit chat-sdk-slack \
   --workflow-definition-dir ./examples \
   --event-root ./examples/event-sources/.riela-events \
   --artifact-root ./tmp/event-source-demo/workflow-artifacts \
@@ -231,13 +231,13 @@ Discord chat workflow for three named bot personas in one channel:
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate discord-agent-trio-chat --workflow-definition-dir ./examples
+riela workflow validate discord-agent-trio-chat --workflow-definition-dir ./examples
 ```
 
 Run the bundled deterministic handoff scenario:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run discord-agent-trio-chat \
+riela workflow run discord-agent-trio-chat \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/discord-agent-trio-chat/mock-scenario.json \
   --input '{"request":"Yui, give your opinion and ask Mika too"}'
@@ -264,13 +264,13 @@ ingestion:
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate telegram-agent-trio-chat --workflow-definition-dir ./examples
+riela workflow validate telegram-agent-trio-chat --workflow-definition-dir ./examples
 ```
 
 Run the bundled deterministic handoff scenario:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run telegram-agent-trio-chat \
+riela workflow run telegram-agent-trio-chat \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/telegram-agent-trio-chat/mock-scenario.json \
   --input '{"request":"Yui, give your opinion and ask Mika too"}'
@@ -292,13 +292,13 @@ Minimal Telegram trio chat workflow using the SDK-backed worker add-ons:
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate telegram-sdk-trio-chat --workflow-definition-dir ./examples
+riela workflow validate telegram-sdk-trio-chat --workflow-definition-dir ./examples
 ```
 
 Run the bundled deterministic Rina scenario:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run telegram-sdk-trio-chat \
+riela workflow run telegram-sdk-trio-chat \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/telegram-sdk-trio-chat/mock-scenario.json \
   --input '{"request":"Rina, explain the SDK trio setup"}'
@@ -319,13 +319,13 @@ Scheduled Telegram reply companion for the Telegram trio chat:
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate telegram-agent-trio-time-signal --workflow-definition-dir ./examples
+riela workflow validate telegram-agent-trio-time-signal --workflow-definition-dir ./examples
 ```
 
 Run the deterministic event fixture with stubbed or live Telegram credentials:
 
 ```bash
-bun run packages/riela/src/bin.ts events emit telegram-time-signal-cron \
+riela events emit telegram-time-signal-cron \
   --workflow-definition-dir ./examples \
   --event-root ./examples/event-sources/.riela-events \
   --event-file ./examples/event-sources/payloads/telegram-time-signal-cron.json \
@@ -377,13 +377,13 @@ export RIELA_TELEGRAM_CHAT_ID=<telegram-chat-id>
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate x-follower-ai-business-digest --workflow-definition-dir ./examples
+riela workflow validate x-follower-ai-business-digest --workflow-definition-dir ./examples
 ```
 
 Run the deterministic cron fixture:
 
 ```bash
-bun run packages/riela/src/bin.ts events emit x-follower-ai-business-hourly-cron \
+riela events emit x-follower-ai-business-hourly-cron \
   --workflow-definition-dir ./examples \
   --event-root ./examples/event-sources/.riela-events \
   --artifact-root ./.riela-artifact/x-follower-ai-business-digest \
@@ -410,13 +410,13 @@ the Discord and Telegram examples:
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate matrix-agent-trio-chat --workflow-definition-dir ./examples
+riela workflow validate matrix-agent-trio-chat --workflow-definition-dir ./examples
 ```
 
 Run the bundled deterministic handoff scenario:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run matrix-agent-trio-chat \
+riela workflow run matrix-agent-trio-chat \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/matrix-agent-trio-chat/mock-scenario.json \
   --input '{"request":"Yui, give your opinion and ask Mika too"}'
@@ -436,14 +436,14 @@ Discord Gateway persona workflow using riela-owned Gateway ingestion:
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate discord-persona-chat --workflow-definition-dir ./examples
+riela workflow validate discord-persona-chat --workflow-definition-dir ./examples
 ```
 
 Run it through the deterministic Discord Gateway fixture without contacting
 Discord:
 
 ```bash
-bun run packages/riela/src/bin.ts events emit discord-gateway-personas \
+riela events emit discord-gateway-personas \
   --workflow-definition-dir ./examples \
   --event-root ./examples/event-sources/.riela-events \
   --artifact-root ./tmp/event-source-demo/workflow-artifacts \
@@ -466,7 +466,7 @@ through a real Matrix receive/send path:
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate matrix-chat-reply --workflow-definition-dir ./examples
+riela workflow validate matrix-chat-reply --workflow-definition-dir ./examples
 ```
 
 Run the local Matrix verification:
@@ -487,8 +487,8 @@ Chat-triggered supervisor collaboration reference:
 Validate the workflow and event binding:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate chat-supervisor-collaboration --workflow-definition-dir ./examples
-bun run packages/riela/src/bin.ts events validate \
+riela workflow validate chat-supervisor-collaboration --workflow-definition-dir ./examples
+riela events validate \
   --workflow-definition-dir ./examples \
   --event-root ./examples/chat-supervisor-collaboration/.riela-events
 ```
@@ -496,7 +496,7 @@ bun run packages/riela/src/bin.ts events validate \
 Run the deterministic workflow scenario:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run chat-supervisor-collaboration \
+riela workflow run chat-supervisor-collaboration \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/chat-supervisor-collaboration/mock-scenario.json \
   --output json
@@ -524,19 +524,19 @@ step-addressed authored shape:
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate workflow-call-simple --workflow-definition-dir ./examples
+riela workflow validate workflow-call-simple --workflow-definition-dir ./examples
 ```
 
 Inspect it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow inspect workflow-call-simple --workflow-definition-dir ./examples --output json
+riela workflow inspect workflow-call-simple --workflow-definition-dir ./examples --output json
 ```
 
 Run it with the bundled deterministic scenario:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run workflow-call-simple \
+riela workflow run workflow-call-simple \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/workflow-call-simple/mock-scenario.json \
   --output json
@@ -555,19 +555,19 @@ Worker-only callee bundle used by `workflow-call-simple`:
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate workflow-call-review-target --workflow-definition-dir ./examples
+riela workflow validate workflow-call-review-target --workflow-definition-dir ./examples
 ```
 
 Inspect it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow inspect workflow-call-review-target --workflow-definition-dir ./examples --output json
+riela workflow inspect workflow-call-review-target --workflow-definition-dir ./examples --output json
 ```
 
 Run it standalone with the bundled deterministic scenario:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run workflow-call-review-target \
+riela workflow run workflow-call-review-target \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/workflow-call-review-target/mock-scenario.json \
   --output json
@@ -591,13 +591,13 @@ Real development workflow sample adapted from the project-local workflow catalog
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate design-and-implement-review-loop --workflow-definition-dir ./examples
+riela workflow validate design-and-implement-review-loop --workflow-definition-dir ./examples
 ```
 
 Run the full deterministic scenario:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run design-and-implement-review-loop \
+riela workflow run design-and-implement-review-loop \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/design-and-implement-review-loop/mock-scenario.json \
   --output json
@@ -622,7 +622,7 @@ Worker-only companion workflow used by the bounded fanout path in
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate design-and-implement-review-loop-feature-plan --workflow-definition-dir ./examples
+riela workflow validate design-and-implement-review-loop-feature-plan --workflow-definition-dir ./examples
 ```
 
 ### `recent-change-quality-loop`
@@ -640,13 +640,13 @@ Real development workflow sample for reviewing recent repository changes:
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate recent-change-quality-loop --workflow-definition-dir ./examples
+riela workflow validate recent-change-quality-loop --workflow-definition-dir ./examples
 ```
 
 Run it with the bundled deterministic scenario:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run recent-change-quality-loop \
+riela workflow run recent-change-quality-loop \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/recent-change-quality-loop/mock-scenario.json \
   --output json
@@ -671,19 +671,19 @@ the structural sub-workflow compatibility reference.
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate subworkflow-chained-simple --workflow-definition-dir ./examples
+riela workflow validate subworkflow-chained-simple --workflow-definition-dir ./examples
 ```
 
 Inspect it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow inspect subworkflow-chained-simple --workflow-definition-dir ./examples --output json
+riela workflow inspect subworkflow-chained-simple --workflow-definition-dir ./examples --output json
 ```
 
 Run it with the bundled deterministic scenario:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run subworkflow-chained-simple \
+riela workflow run subworkflow-chained-simple \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/subworkflow-chained-simple/mock-scenario.json \
   --output json
@@ -707,19 +707,19 @@ Recommended mixed-backend reference:
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate claude-riela-codex-coding --workflow-definition-dir ./examples
+riela workflow validate claude-riela-codex-coding --workflow-definition-dir ./examples
 ```
 
 Inspect it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow inspect claude-riela-codex-coding --workflow-definition-dir ./examples --output json
+riela workflow inspect claude-riela-codex-coding --workflow-definition-dir ./examples --output json
 ```
 
 Run it with the bundled deterministic scenario:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run claude-riela-codex-coding \
+riela workflow run claude-riela-codex-coding \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/claude-riela-codex-coding/mock-scenario.json \
   --output json
@@ -752,19 +752,19 @@ Execution notes:
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate node-combinations-showcase --workflow-definition-dir ./examples
+riela workflow validate node-combinations-showcase --workflow-definition-dir ./examples
 ```
 
 Inspect it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow inspect node-combinations-showcase --workflow-definition-dir ./examples --output json
+riela workflow inspect node-combinations-showcase --workflow-definition-dir ./examples --output json
 ```
 
 Run it with the bundled deterministic scenario:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run node-combinations-showcase \
+riela workflow run node-combinations-showcase \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/node-combinations-showcase/mock-scenario.json \
   --output json
@@ -785,7 +785,7 @@ Minimal scheduled continuation workflow:
 Run it with the bundled deterministic scenario:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run scheduled-sleep \
+riela workflow run scheduled-sleep \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/scheduled-sleep/mock-scenario.json \
   --output json
@@ -826,19 +826,19 @@ Execution notes:
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate first-four-arithmetic-pipeline --workflow-definition-dir ./examples
+riela workflow validate first-four-arithmetic-pipeline --workflow-definition-dir ./examples
 ```
 
 Inspect it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow inspect first-four-arithmetic-pipeline --workflow-definition-dir ./examples --output json
+riela workflow inspect first-four-arithmetic-pipeline --workflow-definition-dir ./examples --output json
 ```
 
 Run it with the bundled deterministic scenario:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run first-four-arithmetic-pipeline \
+riela workflow run first-four-arithmetic-pipeline \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/first-four-arithmetic-pipeline/mock-scenario.json \
   --output json
@@ -858,19 +858,19 @@ Reference workflow for the case where a regular task node also uses
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate claude-riela-claude-worker --workflow-definition-dir ./examples
+riela workflow validate claude-riela-claude-worker --workflow-definition-dir ./examples
 ```
 
 Inspect it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow inspect claude-riela-claude-worker --workflow-definition-dir ./examples --output json
+riela workflow inspect claude-riela-claude-worker --workflow-definition-dir ./examples --output json
 ```
 
 Run it with the bundled deterministic scenario:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run claude-riela-claude-worker \
+riela workflow run claude-riela-claude-worker \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/claude-riela-claude-worker/mock-scenario.json \
   --output json
@@ -897,19 +897,19 @@ Reference workflow for the case where one worker node should run twice:
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate same-node-session-echo --workflow-definition-dir ./examples
+riela workflow validate same-node-session-echo --workflow-definition-dir ./examples
 ```
 
 Inspect it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow inspect same-node-session-echo --workflow-definition-dir ./examples --output json
+riela workflow inspect same-node-session-echo --workflow-definition-dir ./examples --output json
 ```
 
 Run it with the bundled deterministic scenario:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run same-node-session-echo \
+riela workflow run same-node-session-echo \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/same-node-session-echo/mock-scenario.json \
   --output json
@@ -939,13 +939,13 @@ canonical debate example and replaces the older hard-coded topic variant:
 Validate it:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate codex-codex-topic-debate --workflow-definition-dir ./examples
+riela workflow validate codex-codex-topic-debate --workflow-definition-dir ./examples
 ```
 
 Run it with live backend execution:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run codex-codex-topic-debate \
+riela workflow run codex-codex-topic-debate \
   --workflow-definition-dir ./examples \
   --variables '{"humanInput":{"request":"Debate immigration policy. The affirmative side should argue for more open immigration with managed legal pathways, and the negative side should argue for stricter border and asylum controls."}}' \
   --output json

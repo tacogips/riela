@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Bun's test runner does not load vitest config; keep `vitest.config.ts` in sync when adding test-only env or aliases.
 watch_mode="false"
 declare -a passthrough_args=()
 
@@ -14,13 +13,26 @@ for arg in "$@"; do
   passthrough_args+=("$arg")
 done
 
-mapfile -t test_files < <(
-  rg --files scripts packages -g '*.test.ts' -g '*.test.tsx' | sort
-)
+declare -a search_roots=()
+for root in scripts packages; do
+  if [[ -d "$root" ]]; then
+    search_roots+=("$root")
+  fi
+done
+
+if [[ "${#search_roots[@]}" -eq 0 ]]; then
+  echo "No Bun test roots remain after TypeScript source deletion; skipping."
+  exit 0
+fi
+
+declare -a test_files=()
+while IFS= read -r test_file; do
+  test_files+=("$test_file")
+done < <(rg --files "${search_roots[@]}" -g '*.test.ts' -g '*.test.tsx' | sort)
 
 if [[ "${#test_files[@]}" -eq 0 ]]; then
-  echo "error: no Bun test files were found under scripts/ or packages/" >&2
-  exit 1
+  echo "No Bun TypeScript tests remain after TypeScript source deletion; skipping."
+  exit 0
 fi
 
 declare -a command=("bun" "test")

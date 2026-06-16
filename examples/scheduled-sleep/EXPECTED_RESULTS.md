@@ -8,7 +8,7 @@ scenario. Ignore `sessionId`, timestamps, and artifact paths.
 Command:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate scheduled-sleep --workflow-definition-dir ./examples
+riela workflow validate scheduled-sleep --workflow-definition-dir ./examples
 ```
 
 Expected result: the workflow is valid.
@@ -18,7 +18,7 @@ Expected result: the workflow is valid.
 Command:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run scheduled-sleep \
+riela workflow run scheduled-sleep \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/scheduled-sleep/mock-scenario.json \
   --output json

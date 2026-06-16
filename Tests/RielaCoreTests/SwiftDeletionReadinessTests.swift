@@ -3,23 +3,52 @@ import XCTest
 @testable import RielaCore
 
 final class SwiftDeletionReadinessTests: XCTestCase {
-  func testTrackedGateKeepsTypeScriptDeletionBlockedPendingCurrentReview() throws {
+  func testTrackedGateAllowsDeletionWithAcceptedReviewedTreeEvidence() throws {
     let data = try loadTrackedGateData()
     let gate = try JSONDecoder().decode(SwiftDeletionReadinessGate.self, from: data)
     let context = try trackedDeletionReadyContext(for: gate)
     let result = SwiftDeletionReadinessValidator().decodeAndValidate(data, context: context)
 
     XCTAssertTrue(result.valid, result.diagnostics.joined(separator: "\n"))
-    XCTAssertFalse(result.allowsTypeScriptDeletion)
-    XCTAssertFalse(gate.allowsTypeScriptDeletion)
-    XCTAssertFalse(gate.typeScriptSourceDeletionReady)
-    XCTAssertEqual(gate.migrationStatus, "incomplete")
+    XCTAssertTrue(result.allowsTypeScriptDeletion)
+    XCTAssertTrue(gate.allowsTypeScriptDeletion)
+    XCTAssertTrue(gate.typeScriptSourceDeletionReady)
+    XCTAssertEqual(gate.migrationStatus, "deletion_ready")
     XCTAssertTrue(gate.productionSwiftPackagingReady)
     XCTAssertEqual(Set(gate.domains.compactMap(\.id)), Set(SwiftDeletionReadinessValidator.requiredDomainIds))
-    XCTAssertEqual(Set(result.blockingDomainIds), Set(SwiftDeletionReadinessValidator.requiredDomainIds))
-    XCTAssertTrue(gate.domains.allSatisfy { $0.status == "blocked" && $0.reviewDecision == "blocked" })
-    XCTAssertTrue(gate.domains.allSatisfy { $0.acceptedReviewWorkflowId == nil && $0.acceptedReviewNodeId == nil })
+    XCTAssertEqual(result.blockingDomainIds, [])
+    XCTAssertTrue(gate.domains.allSatisfy { $0.status == "passed" && $0.reviewDecision == "accepted" })
+    XCTAssertTrue(gate.domains.allSatisfy { $0.verifiedBranch == context.currentBranch })
+    XCTAssertTrue(gate.domains.allSatisfy { $0.verifiedCommit == context.evidenceBaseCommit })
+    XCTAssertTrue(gate.domains.allSatisfy { $0.acceptedReviewWorkflowId == "codex-design-and-implement-review-loop" })
+    XCTAssertTrue(gate.domains.allSatisfy { $0.acceptedReviewNodeId == "step7-adversarial-review" })
+    XCTAssertTrue(gate.domains.allSatisfy { $0.acceptedReviewFindingSeverities == ["none"] })
     XCTAssertEqual(Set(gate.domains.flatMap { $0.evidenceArtifacts ?? [] }), Set(context.resolvedEvidenceArtifacts.keys))
+
+    let evidence = try loadTrackedEvidence()
+    let currentReviewedTreeState = try trackedReviewedTreeState(root: try repositoryRoot())
+    XCTAssertEqual(evidence.reviewedTreeState.branch, context.currentBranch)
+    XCTAssertEqual(evidence.reviewedTreeState.treeDigest, currentReviewedTreeState.treeDigest)
+    XCTAssertEqual(evidence.reviewedTreeState.treeDigestAlgorithm, currentReviewedTreeState.treeDigestAlgorithm)
+    XCTAssertEqual(Set(evidence.artifacts.map(\.nodeId)), ["step6-implement"])
+    XCTAssertEqual(Set(evidence.artifacts.map(\.reviewedTreeDigest)), [evidence.reviewedTreeState.treeDigest])
+  }
+
+  func testTrackedGateRejectsManifestCommitThatDiffersFromEvidenceBaseCommit() throws {
+    var gate = try deletionReadyGate()
+    gate.domains = gate.domains.map { domain in
+      var updated = domain
+      updated.verifiedCommit = "stale-self-derived-commit"
+      return updated
+    }
+    let data = try JSONEncoder().encode(gate)
+    let context = try trackedDeletionReadyContext(for: gate)
+
+    let result = SwiftDeletionReadinessValidator().decodeAndValidate(data, context: context)
+
+    XCTAssertFalse(result.valid)
+    XCTAssertFalse(result.allowsTypeScriptDeletion)
+    XCTAssertTrue(result.diagnostics.contains("domain package-build verifiedCommit does not match evidence base commit"))
   }
 
   func testDecodeAndValidateRejectsMissingRequiredDomainField() throws {
@@ -34,7 +63,9 @@ final class SwiftDeletionReadinessTests: XCTestCase {
   }
 
   func testDecodeAndValidateRejectsMissingLastVerifiedAtAndNotesFields() throws {
-    var raw = try rawTrackedGateObject()
+    let gate = try deletionReadyGate()
+    let encoded = try JSONEncoder().encode(gate)
+    var raw = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
     var domains = try XCTUnwrap(raw["domains"] as? [[String: Any]])
     domains[0].removeValue(forKey: "lastVerifiedAt")
     domains[1].removeValue(forKey: "notes")
@@ -116,6 +147,22 @@ final class SwiftDeletionReadinessTests: XCTestCase {
     XCTAssertTrue(result.diagnostics.contains("typeScriptSourceDeletionReady cannot be true while required domains are blocked"))
   }
 
+  func testValidateAllowsDeletionWhenHeadAdvancesButReviewedTreeDigestMatches() throws {
+    let gate = try deletionReadyGate()
+    let context = deletionReadyContext(
+      for: gate,
+      currentBranch: "main",
+      currentCommit: "post-review-workflow-commit",
+      evidenceBaseCommit: "current-commit"
+    )
+
+    let result = SwiftDeletionReadinessValidator().validate(gate, context: context)
+
+    XCTAssertTrue(result.valid, result.diagnostics.joined(separator: "\n"))
+    XCTAssertTrue(result.allowsTypeScriptDeletion)
+    XCTAssertEqual(result.blockingDomainIds, [])
+  }
+
   func testValidateRejectsDeletionReadyClaimWithoutCurrentAcceptedEvidence() throws {
     var gate = try deletionReadyGate()
     gate.domains[0].verifiedCommit = "stale-commit"
@@ -127,7 +174,7 @@ final class SwiftDeletionReadinessTests: XCTestCase {
 
     XCTAssertFalse(result.valid)
     XCTAssertFalse(result.allowsTypeScriptDeletion)
-    XCTAssertTrue(result.diagnostics.contains("domain package-build verifiedCommit does not match current commit"))
+    XCTAssertTrue(result.diagnostics.contains("domain package-build verifiedCommit does not match evidence base commit"))
   }
 
   func testValidateRejectsDeletionReadyClaimWithHighOrMidReviewFinding() throws {
@@ -318,6 +365,23 @@ final class SwiftDeletionReadinessTests: XCTestCase {
     XCTAssertTrue(result.diagnostics.contains("domain package-build acceptedReviewNodeId does not match expected review node"))
   }
 
+  func testValidateRejectsDeletionReadyClaimWithUnexpectedEvidenceExecutionNode() throws {
+    let gate = try deletionReadyGate()
+    var context = deletionReadyContext(for: gate)
+    let artifact = try XCTUnwrap(gate.domains[0].evidenceArtifacts?.first)
+    context.resolvedEvidenceArtifacts[artifact]?.nodeId = "step7-adversarial-review"
+
+    let result = SwiftDeletionReadinessValidator().validate(gate, context: context)
+
+    XCTAssertFalse(result.valid)
+    XCTAssertFalse(result.allowsTypeScriptDeletion)
+    XCTAssertTrue(
+      result.diagnostics.contains(
+        "domain package-build evidenceArtifact \(artifact) nodeId does not match expected evidence execution node"
+      )
+    )
+  }
+
   func testValidateDoesNotAllowDeletionWhenDuplicateDomainInvalidatesReadyGate() throws {
     var gate = try deletionReadyGate()
     gate.domains.append(try XCTUnwrap(gate.domains.first { $0.id == "cli" }))
@@ -473,10 +537,12 @@ final class SwiftDeletionReadinessTests: XCTestCase {
   private func deletionReadyContext(
     for gate: SwiftDeletionReadinessGate,
     currentBranch: String = "main",
-    currentCommit: String = "current-commit"
+    currentCommit: String = "current-commit",
+    evidenceBaseCommit: String? = nil
   ) -> SwiftDeletionReadinessValidationContext {
     // Unit fixtures synthesize evidence to isolate validator rules; tracked gate
     // coverage loads packaging/swift-deletion-readiness-evidence.json instead.
+    let resolvedEvidenceBaseCommit = evidenceBaseCommit ?? currentCommit
     var resolvedEvidenceArtifacts: [String: SwiftDeletionReadinessEvidenceArtifact] = [:]
     for domain in gate.domains {
       guard
@@ -492,21 +558,33 @@ final class SwiftDeletionReadinessTests: XCTestCase {
           command: command,
           exitCode: 0,
           branch: currentBranch,
-          commit: currentCommit,
+          commit: resolvedEvidenceBaseCommit,
           workflowId: "codex-design-and-implement-review-loop",
-          nodeId: "step7-adversarial-review"
+          nodeId: "step6-implement",
+          reviewedTreeDigest: "fixture-reviewed-tree-digest"
         )
       }
     }
     return SwiftDeletionReadinessValidationContext(
       currentBranch: currentBranch,
       currentCommit: currentCommit,
+      evidenceBaseCommit: resolvedEvidenceBaseCommit,
+      currentReviewedTreeDigest: "fixture-reviewed-tree-digest",
       resolvedEvidenceArtifacts: resolvedEvidenceArtifacts
     )
   }
 
   private struct TrackedDeletionReadinessEvidence: Decodable {
+    var reviewedTreeState: TrackedDeletionReadinessReviewedTreeState
     var artifacts: [TrackedDeletionReadinessArtifact]
+  }
+
+  private struct TrackedDeletionReadinessReviewedTreeState: Decodable, Equatable {
+    var branch: String
+    var baseCommit: String
+    var treeDigestAlgorithm: String
+    var treeDigest: String
+    var excludedPaths: [String]
   }
 
   private struct TrackedDeletionReadinessArtifact: Decodable {
@@ -518,17 +596,14 @@ final class SwiftDeletionReadinessTests: XCTestCase {
     var commit: String
     var workflowId: String
     var nodeId: String
+    var reviewedTreeDigest: String
   }
 
   private func trackedDeletionReadyContext(
     for gate: SwiftDeletionReadinessGate
   ) throws -> SwiftDeletionReadinessValidationContext {
-    let evidenceURL = try repositoryRoot()
-      .appendingPathComponent("packaging/swift-deletion-readiness-evidence.json")
-    let evidence = try JSONDecoder().decode(
-      TrackedDeletionReadinessEvidence.self,
-      from: Data(contentsOf: evidenceURL)
-    )
+    let root = try repositoryRoot()
+    let evidence = try loadTrackedEvidence()
     var resolvedEvidenceArtifacts: [String: SwiftDeletionReadinessEvidenceArtifact] = [:]
     for artifact in evidence.artifacts {
       resolvedEvidenceArtifacts[artifact.artifact] = SwiftDeletionReadinessEvidenceArtifact(
@@ -538,14 +613,107 @@ final class SwiftDeletionReadinessTests: XCTestCase {
         branch: artifact.branch,
         commit: artifact.commit,
         workflowId: artifact.workflowId,
-        nodeId: artifact.nodeId
+        nodeId: artifact.nodeId,
+        reviewedTreeDigest: artifact.reviewedTreeDigest
       )
     }
     return SwiftDeletionReadinessValidationContext(
-      currentBranch: try XCTUnwrap(gate.domains.first?.verifiedBranch),
-      currentCommit: try XCTUnwrap(gate.domains.first?.verifiedCommit),
+      currentBranch: try runGit(["rev-parse", "--abbrev-ref", "HEAD"], root: root),
+      currentCommit: try runGit(["rev-parse", "HEAD"], root: root),
+      evidenceBaseCommit: evidence.reviewedTreeState.baseCommit,
+      currentReviewedTreeDigest: try trackedReviewedTreeState(root: root).treeDigest,
       resolvedEvidenceArtifacts: resolvedEvidenceArtifacts
     )
+  }
+
+  private func loadTrackedEvidence() throws -> TrackedDeletionReadinessEvidence {
+    let evidenceURL = try repositoryRoot()
+      .appendingPathComponent("packaging/swift-deletion-readiness-evidence.json")
+    return try JSONDecoder().decode(
+      TrackedDeletionReadinessEvidence.self,
+      from: Data(contentsOf: evidenceURL)
+    )
+  }
+
+  private func trackedReviewedTreeState(root: URL) throws -> TrackedDeletionReadinessReviewedTreeState {
+    let excludedPaths = ["packaging/swift-deletion-readiness-evidence.json"]
+    let branch = try runGit(["rev-parse", "--abbrev-ref", "HEAD"], root: root)
+    let baseCommit = try runGit(["rev-parse", "HEAD"], root: root)
+    let pathOutput = try runGit(["ls-files", "--cached", "--others", "--exclude-standard"], root: root)
+    let paths = pathOutput.split(separator: "\n")
+      .map(String.init)
+      .filter { !excludedPaths.contains($0) }
+      .sorted()
+
+    var digestInput = Data()
+    digestInput.append("reviewed-tree-v1\n".data(using: .utf8)!)
+    for path in paths {
+      let url = root.appendingPathComponent(path)
+      guard FileManager.default.fileExists(atPath: url.path) else {
+        continue
+      }
+      digestInput.append("path:\(path)\n".data(using: .utf8)!)
+      let executable = FileManager.default.isExecutableFile(atPath: url.path) ? "true" : "false"
+      digestInput.append("executable:\(executable)\n".data(using: .utf8)!)
+      digestInput.append(try Data(contentsOf: url))
+      digestInput.append("\n".data(using: .utf8)!)
+    }
+
+    return TrackedDeletionReadinessReviewedTreeState(
+      branch: branch,
+      baseCommit: baseCommit,
+      treeDigestAlgorithm: "sha256:reviewed-tree-v1-path-executable-content-excluding-evidence-manifest",
+      treeDigest: try sha256Hex(digestInput, root: root),
+      excludedPaths: excludedPaths
+    )
+  }
+
+  private func runGit(_ arguments: [String], root: URL) throws -> String {
+    let data = try runCommandData(["git"] + arguments, root: root)
+    return (String(data: data, encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private func runCommandData(_ arguments: [String], root: URL) throws -> Data {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    process.arguments = arguments
+    process.currentDirectoryURL = root
+
+    let output = Pipe()
+    let error = Pipe()
+    process.standardOutput = output
+    process.standardError = error
+
+    try process.run()
+    let stdout = output.fileHandleForReading.readDataToEndOfFile()
+    let stderr = String(data: error.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    process.waitUntilExit()
+    XCTAssertEqual(process.terminationStatus, 0, stderr)
+    return stdout
+  }
+
+  private func sha256Hex(_ data: Data, root: URL) throws -> String {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    process.arguments = ["shasum", "-a", "256"]
+    process.currentDirectoryURL = root
+
+    let input = Pipe()
+    let output = Pipe()
+    let error = Pipe()
+    process.standardInput = input
+    process.standardOutput = output
+    process.standardError = error
+
+    try process.run()
+    input.fileHandleForWriting.write(data)
+    try input.fileHandleForWriting.close()
+    process.waitUntilExit()
+
+    let stdout = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    let stderr = String(data: error.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    XCTAssertEqual(process.terminationStatus, 0, stderr)
+    return stdout.split(separator: " ").first.map(String.init) ?? ""
   }
 
   private func loadTrackedGate() throws -> SwiftDeletionReadinessGate {

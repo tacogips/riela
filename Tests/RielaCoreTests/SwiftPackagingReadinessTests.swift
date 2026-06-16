@@ -98,7 +98,7 @@ final class SwiftPackagingReadinessTests: XCTestCase {
       ]
     )
     XCTAssertTrue(manifest.allowsProductionCutover)
-    XCTAssertEqual(manifest.typeScriptDeletionReadiness?.ready, false)
+    XCTAssertEqual(manifest.typeScriptDeletionReadiness?.ready, true)
     XCTAssertEqual(
       manifest.typeScriptDeletionReadiness?.gatePath,
       "packaging/swift-deletion-readiness.json"

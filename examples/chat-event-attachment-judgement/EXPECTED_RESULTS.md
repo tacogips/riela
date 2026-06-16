@@ -8,7 +8,7 @@ Ignore `sessionId`, timestamps, and artifact paths.
 Command:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate chat-event-attachment-judgement --workflow-definition-dir ./examples
+riela workflow validate chat-event-attachment-judgement --workflow-definition-dir ./examples
 ```
 
 Expected result: the workflow is valid.
@@ -18,7 +18,7 @@ Expected result: the workflow is valid.
 Command:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow inspect chat-event-attachment-judgement --workflow-definition-dir ./examples --output json
+riela workflow inspect chat-event-attachment-judgement --workflow-definition-dir ./examples --output json
 ```
 
 Expected stable inspection facts:
@@ -49,7 +49,7 @@ should classify `archive-unknown` as `manual-review-required` with confidence
 Command:
 
 ```bash
-bun run packages/riela/src/bin.ts events emit chat-sdk-slack \
+riela events emit chat-sdk-slack \
   --workflow-definition-dir ./examples \
   --event-root ./examples/event-sources/.riela-events \
   --artifact-root ./tmp/event-source-demo/workflow-artifacts \
@@ -65,7 +65,7 @@ non-manual-review judgement objects in `mock-scenario.json`.
 Unsupported/manual-review command:
 
 ```bash
-bun run packages/riela/src/bin.ts events emit chat-sdk-slack \
+riela events emit chat-sdk-slack \
   --workflow-definition-dir ./examples \
   --event-root ./examples/event-sources/.riela-events \
   --artifact-root ./tmp/event-source-demo/workflow-artifacts \

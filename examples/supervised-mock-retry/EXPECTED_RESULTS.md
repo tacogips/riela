@@ -7,7 +7,7 @@ Deterministic checks for the bundled mock scenario. Ignore `sessionId`, timestam
 Command:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate supervised-mock-retry --workflow-definition-dir ./examples
+riela workflow validate supervised-mock-retry --workflow-definition-dir ./examples
 ```
 
 Expected: workflow validates as a step-addressed bundle.
@@ -17,7 +17,7 @@ Expected: workflow validates as a step-addressed bundle.
 Command:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run supervised-mock-retry \
+riela workflow run supervised-mock-retry \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/supervised-mock-retry/mock-scenario.json \
   --output json
@@ -30,7 +30,7 @@ Expected: the run ends in a failed state (the first mock entry throws).
 Command:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run supervised-mock-retry \
+riela workflow run supervised-mock-retry \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/supervised-mock-retry/mock-scenario.json \
   --auto-improve \

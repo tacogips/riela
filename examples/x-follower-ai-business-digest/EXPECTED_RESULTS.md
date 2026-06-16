@@ -12,6 +12,6 @@
 Validation commands:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate x-follower-ai-business-digest --workflow-definition-dir ./examples
-bun run packages/riela/src/bin.ts events validate --workflow-definition-dir ./examples --event-root ./examples/event-sources/.riela-events
+riela workflow validate x-follower-ai-business-digest --workflow-definition-dir ./examples
+riela events validate --workflow-definition-dir ./examples --event-root ./examples/event-sources/.riela-events
 ```

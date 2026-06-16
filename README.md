@@ -34,22 +34,23 @@ supervision policy when `--auto-improve` is set.
 ## TypeScript Deletion Gate
 
 `packaging/swift-deletion-readiness.json` is the deletion gate for the remaining
-TypeScript handoff. The current accepted workflow scope is
-`codex-design-and-implement-review-loop` for "Riela full Swift parity TASK-003
-through TASK-008"; ordinary review and adversarial review accepted the latest
-implementation with no high or mid findings at `step7-review` and
-`step7-adversarial-review`.
-
-The checked-in gate still keeps `migrationStatus=incomplete`,
-`allowsTypeScriptDeletion=false`, and `typeScriptSourceDeletionReady=false`
-until accepted review metadata is recorded for all required domains. Actual
-TypeScript source removal remains a separate reviewed implementation step.
-The active plan `impl-plans/active/swift-cli-runtime-parity-gap-closure.md`
-therefore stays active as deletion-gate follow-through, while unrelated
-completed implementation plans are archived under `impl-plans/completed/` and
-listed in `impl-plans/README.md`. The current index records
-`native-command-bash-script-dispatch` and
-`workflow-registry-run-temp-checkout` as completed on 2026-06-16.
+TypeScript handoff. The current implementation removed or ported the remaining
+TypeScript-family source files for "Complete Riela TypeScript deletion
+readiness after accepted Swift parity workflow". The gate now records
+`migrationStatus=deletion_ready`, `allowsTypeScriptDeletion=true`, and
+`typeScriptSourceDeletionReady=true` using reviewed-tree evidence bound to the
+base commit and stable reviewed-file tree digest in
+`packaging/swift-deletion-readiness-evidence.json`.
+Ordinary review (`step7-review`) and adversarial review
+(`step7-adversarial-review`) accepted the high-risk deletion-readiness run with
+no high or mid findings; all 13 required domains record
+`reviewDecision=accepted` and
+`acceptedReviewNodeId=step7-adversarial-review`.
+`official/cursor-sdk` remains a distinct unavailable backend and is not aliased
+to `cursor-cli-agent`.
+The completion plan is archived at
+`impl-plans/completed/typescript-deletion-readiness-completion.md`; the active
+Swift parity follow-through plan is no longer a deletion gate blocker.
 
 The evidence manifest
 `packaging/swift-deletion-readiness-evidence.json` records the command results
@@ -57,8 +58,11 @@ referenced by the gate. Representative accepted verification commands include:
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk swift test
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk swift test --filter SourceDeletionReadinessTests
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk swift test --filter 'WorkflowCommandTests/testURLSessionWorkflowRunAutoImproveIsOptInOverRemotePayload|WorkflowCommandTests/testWorkflowRunEndpointUsesRielaAuthEnvironmentWithLegacyFallback|WorkflowCommandTests/testURLSessionWorkflowRunUsesSchemaAccurateRemotePayloadAndPausedStatus|CommandParsingTests/testParsesRemoteRunOptions'
 jq -r '[.migrationStatus,.allowsTypeScriptDeletion,.typeScriptSourceDeletionReady,([.domains[].acceptedReviewNodeId]|map(select(.!=null))|length),([.domains[].reviewDecision]|unique|join(","))] | @tsv' packaging/swift-deletion-readiness.json
+rg --files | rg '\.(ts|tsx|mts|cts|mjs)$'
+{ printf 'reviewed-tree-v1\n'; git ls-files --cached --others --exclude-standard | grep -v '^packaging/swift-deletion-readiness-evidence\.json$' | sort | while IFS= read -r path; do [ -e "$path" ] || continue; printf 'path:%s\n' "$path"; if [ -x "$path" ]; then printf 'executable:true\n'; else printf 'executable:false\n'; fi; cat "$path"; printf '\n'; done; } | shasum -a 256
 ```
 
 ## Build

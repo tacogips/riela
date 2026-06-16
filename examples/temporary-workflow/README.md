@@ -22,7 +22,7 @@ Use `--dry-run` when you want to verify loading, validation, source metadata, an
 payload logging without calling an agent backend:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run \
+riela workflow run \
   --workflow-json-file ./examples/temporary-workflow/temp-workflow.json \
   --dry-run \
   --output json \
@@ -42,7 +42,7 @@ temporary_workflow_json="$(
   bun -e 'const fs = require("node:fs"); process.stdout.write(fs.readFileSync("examples/temporary-workflow/temp-workflow.json", "utf8"));'
 )"
 
-bun run packages/riela/src/bin.ts workflow run \
+riela workflow run \
   --workflow-json "$temporary_workflow_json" \
   --dry-run \
   --output json \

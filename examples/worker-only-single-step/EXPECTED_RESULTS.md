@@ -8,7 +8,7 @@ Ignore `sessionId`, timestamps, and artifact paths.
 Command:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate worker-only-single-step --workflow-definition-dir ./examples
+riela workflow validate worker-only-single-step --workflow-definition-dir ./examples
 ```
 
 Expected result: the workflow is valid.
@@ -18,7 +18,7 @@ Expected result: the workflow is valid.
 Command:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow inspect worker-only-single-step --workflow-definition-dir ./examples --output json
+riela workflow inspect worker-only-single-step --workflow-definition-dir ./examples --output json
 ```
 
 Expected stable inspection facts:
@@ -32,7 +32,7 @@ Expected stable inspection facts:
 Command:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run worker-only-single-step \
+riela workflow run worker-only-single-step \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/worker-only-single-step/mock-scenario.json \
   --output json

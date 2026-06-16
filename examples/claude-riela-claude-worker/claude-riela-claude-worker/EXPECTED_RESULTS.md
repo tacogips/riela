@@ -8,7 +8,7 @@ Ignore `sessionId`, timestamps, and artifact paths.
 Command:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate claude-riela-claude-worker --workflow-definition-dir ./examples
+riela workflow validate claude-riela-claude-worker --workflow-definition-dir ./examples
 ```
 
 Expected result: the workflow is valid.
@@ -18,7 +18,7 @@ Expected result: the workflow is valid.
 Command:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run claude-riela-claude-worker \
+riela workflow run claude-riela-claude-worker \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/claude-riela-claude-worker/mock-scenario.json \
   --output json

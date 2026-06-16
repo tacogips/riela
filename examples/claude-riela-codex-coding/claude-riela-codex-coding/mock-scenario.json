@@ -58,8 +58,8 @@
         "Provide a deterministic mock scenario"
       ],
       "verificationCommands": [
-        "bun run packages/riela/src/bin.ts workflow validate claude-riela-codex-coding --workflow-definition-dir ./examples",
-        "bun run packages/riela/src/bin.ts workflow inspect claude-riela-codex-coding --workflow-definition-dir ./examples --output json"
+        "riela workflow validate claude-riela-codex-coding --workflow-definition-dir ./examples",
+        "riela workflow inspect claude-riela-codex-coding --workflow-definition-dir ./examples --output json"
       ]
     }
   },

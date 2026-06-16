@@ -16,6 +16,11 @@ ALICE_PASSWORD="${RIELA_MATRIX_SAMPLE_ALICE_PASSWORD:-riela-alice-password}"
 BOT_PASSWORD="${RIELA_MATRIX_SAMPLE_BOT_PASSWORD:-riela-bot-password}"
 BOT_USER_ID="@riela:localhost"
 ALICE_USER_ID="@alice:localhost"
+if [[ -n "${RIELA_BIN:-}" ]]; then
+  RIELA_CLI=("${RIELA_BIN}")
+else
+  RIELA_CLI=(swift run --package-path "${REPO_ROOT}" riela)
+fi
 
 case "${RUN_ROOT}" in
   "${REPO_ROOT}"/*)
@@ -287,7 +292,7 @@ mkdir -p \
   "${ARTIFACT_ROOT}"
 write_event_configuration
 
-bun run "${REPO_ROOT}/packages/riela/src/bin.ts" events validate \
+"${RIELA_CLI[@]}" events validate \
   --workflow-definition-dir "${REPO_ROOT}/examples" \
   --event-root "${EVENT_ROOT}" \
   --output json \
@@ -297,7 +302,7 @@ LISTENER_LOG="${RUN_ROOT}/events-serve.log"
 : > "${LISTENER_LOG}"
 RIELA_MATRIX_HOMESERVER_URL="${HOMESERVER_URL}" \
 RIELA_MATRIX_ACCESS_TOKEN="${BOT_TOKEN}" \
-  bun run "${REPO_ROOT}/packages/riela/src/bin.ts" events serve \
+  "${RIELA_CLI[@]}" events serve \
     --workflow-definition-dir "${REPO_ROOT}/examples" \
     --event-root "${EVENT_ROOT}" \
     --artifact-root "${ARTIFACT_ROOT}" \
@@ -345,13 +350,13 @@ if [[ -z "${REPLY_EVENT_ID}" ]]; then
   exit 1
 fi
 
-bun run "${REPO_ROOT}/packages/riela/src/bin.ts" events list \
+"${RIELA_CLI[@]}" events list \
   --artifact-root "${ARTIFACT_ROOT}" \
   --source local-matrix \
   --output json \
   > "${RUN_ROOT}/event-receipts.json"
 
-bun run "${REPO_ROOT}/packages/riela/src/bin.ts" events replies \
+"${RIELA_CLI[@]}" events replies \
   --artifact-root "${ARTIFACT_ROOT}" \
   --status sent \
   --output json \

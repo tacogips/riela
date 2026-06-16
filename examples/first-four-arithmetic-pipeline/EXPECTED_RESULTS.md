@@ -8,7 +8,7 @@ Ignore `sessionId`, timestamps, and artifact paths.
 Command:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate first-four-arithmetic-pipeline --workflow-definition-dir ./examples
+riela workflow validate first-four-arithmetic-pipeline --workflow-definition-dir ./examples
 ```
 
 Expected result: the workflow is valid.
@@ -18,7 +18,7 @@ Expected result: the workflow is valid.
 Command:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow inspect first-four-arithmetic-pipeline --workflow-definition-dir ./examples --output json
+riela workflow inspect first-four-arithmetic-pipeline --workflow-definition-dir ./examples --output json
 ```
 
 Expected stable inspection facts:
@@ -33,7 +33,7 @@ Expected stable inspection facts:
 Command:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run first-four-arithmetic-pipeline \
+riela workflow run first-four-arithmetic-pipeline \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/first-four-arithmetic-pipeline/mock-scenario.json \
   --output json

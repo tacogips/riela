@@ -43,9 +43,9 @@
   "previewFormulaUrlBase": "file://$PWD/dist/homebrew",
   "allowsProductionCutover": true,
   "typeScriptDeletionReadiness": {
-    "ready": false,
+    "ready": true,
     "gatePath": "packaging/swift-deletion-readiness.json",
-    "note": "Production Swift Homebrew cutover does not authorize TypeScript/Bun source deletion."
+    "note": "TypeScript source deletion is authorized by packaging/swift-deletion-readiness.json reviewed-tree evidence; production Swift Homebrew cutover remains separate."
   },
   "forbiddenTask009SideEffects": [
     "publish GitHub release assets",

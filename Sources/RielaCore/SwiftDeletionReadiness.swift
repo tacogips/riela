@@ -77,21 +77,30 @@ public struct SwiftDeletionReadinessDomain: Codable, Equatable, Sendable {
 public struct SwiftDeletionReadinessValidationContext: Equatable, Sendable {
   public var currentBranch: String
   public var currentCommit: String
+  public var evidenceBaseCommit: String
+  public var currentReviewedTreeDigest: String?
   public var expectedAcceptedReviewWorkflowId: String
   public var expectedAcceptedReviewNodeId: String
+  public var expectedEvidenceNodeIds: Set<String>
   public var resolvedEvidenceArtifacts: [String: SwiftDeletionReadinessEvidenceArtifact]
 
   public init(
     currentBranch: String,
     currentCommit: String,
+    evidenceBaseCommit: String? = nil,
+    currentReviewedTreeDigest: String? = nil,
     expectedAcceptedReviewWorkflowId: String = "codex-design-and-implement-review-loop",
     expectedAcceptedReviewNodeId: String = "step7-adversarial-review",
+    expectedEvidenceNodeIds: Set<String> = ["step6-implement", "step6-test-integrity-check"],
     resolvedEvidenceArtifacts: [String: SwiftDeletionReadinessEvidenceArtifact] = [:]
   ) {
     self.currentBranch = currentBranch
     self.currentCommit = currentCommit
+    self.evidenceBaseCommit = evidenceBaseCommit ?? currentCommit
+    self.currentReviewedTreeDigest = currentReviewedTreeDigest
     self.expectedAcceptedReviewWorkflowId = expectedAcceptedReviewWorkflowId
     self.expectedAcceptedReviewNodeId = expectedAcceptedReviewNodeId
+    self.expectedEvidenceNodeIds = expectedEvidenceNodeIds
     self.resolvedEvidenceArtifacts = resolvedEvidenceArtifacts
   }
 }
@@ -104,6 +113,7 @@ public struct SwiftDeletionReadinessEvidenceArtifact: Codable, Equatable, Sendab
   public var commit: String
   public var workflowId: String
   public var nodeId: String
+  public var reviewedTreeDigest: String?
 
   public init(
     domainId: String,
@@ -112,7 +122,8 @@ public struct SwiftDeletionReadinessEvidenceArtifact: Codable, Equatable, Sendab
     branch: String,
     commit: String,
     workflowId: String,
-    nodeId: String
+    nodeId: String,
+    reviewedTreeDigest: String? = nil
   ) {
     self.domainId = domainId
     self.command = command
@@ -121,6 +132,7 @@ public struct SwiftDeletionReadinessEvidenceArtifact: Codable, Equatable, Sendab
     self.commit = commit
     self.workflowId = workflowId
     self.nodeId = nodeId
+    self.reviewedTreeDigest = reviewedTreeDigest
   }
 }
 
@@ -390,8 +402,8 @@ public struct SwiftDeletionReadinessValidator: Sendable {
     }
     if domain.verifiedCommit?.isEmpty != false {
       diagnostics.append("domain \(domainId) missing verifiedCommit")
-    } else if let context, domain.verifiedCommit != context.currentCommit {
-      diagnostics.append("domain \(domainId) verifiedCommit does not match current commit")
+    } else if let context, domain.verifiedCommit != context.evidenceBaseCommit {
+      diagnostics.append("domain \(domainId) verifiedCommit does not match evidence base commit")
     }
     if domain.lastVerifiedAt?.isEmpty != false {
       diagnostics.append("domain \(domainId) missing lastVerifiedAt")
@@ -486,7 +498,7 @@ public struct SwiftDeletionReadinessValidator: Sendable {
     ) else {
       return true
     }
-    guard domain.verifiedBranch == context.currentBranch, domain.verifiedCommit == context.currentCommit else {
+    guard domain.verifiedBranch == context.currentBranch, domain.verifiedCommit == context.evidenceBaseCommit else {
       return true
     }
     guard domain.acceptedReviewWorkflowId == context.expectedAcceptedReviewWorkflowId else {
@@ -662,14 +674,18 @@ public struct SwiftDeletionReadinessValidator: Sendable {
       if evidence.branch != context.currentBranch {
         diagnostics.append("domain \(domainId) evidenceArtifact \(artifactRef) branch does not match current branch")
       }
-      if evidence.commit != context.currentCommit {
-        diagnostics.append("domain \(domainId) evidenceArtifact \(artifactRef) commit does not match current commit")
+      if evidence.commit != context.evidenceBaseCommit {
+        diagnostics.append("domain \(domainId) evidenceArtifact \(artifactRef) commit does not match evidence base commit")
+      }
+      if let currentReviewedTreeDigest = context.currentReviewedTreeDigest,
+         evidence.reviewedTreeDigest != currentReviewedTreeDigest {
+        diagnostics.append("domain \(domainId) evidenceArtifact \(artifactRef) reviewedTreeDigest does not match current reviewed tree")
       }
       if evidence.workflowId != context.expectedAcceptedReviewWorkflowId {
         diagnostics.append("domain \(domainId) evidenceArtifact \(artifactRef) workflowId does not match expected review workflow")
       }
-      if evidence.nodeId != context.expectedAcceptedReviewNodeId {
-        diagnostics.append("domain \(domainId) evidenceArtifact \(artifactRef) nodeId does not match expected review node")
+      if !context.expectedEvidenceNodeIds.contains(evidence.nodeId) {
+        diagnostics.append("domain \(domainId) evidenceArtifact \(artifactRef) nodeId does not match expected evidence execution node")
       }
       let coveredCommands = Set(
         artifactRefs.compactMap { artifactRef -> String? in
@@ -725,8 +741,9 @@ public struct SwiftDeletionReadinessValidator: Sendable {
     evidence.exitCode == 0
       && evidence.domainId == domainId
       && evidence.branch == context.currentBranch
-      && evidence.commit == context.currentCommit
+      && evidence.commit == context.evidenceBaseCommit
       && evidence.workflowId == context.expectedAcceptedReviewWorkflowId
-      && evidence.nodeId == context.expectedAcceptedReviewNodeId
+      && context.expectedEvidenceNodeIds.contains(evidence.nodeId)
+      && (context.currentReviewedTreeDigest == nil || evidence.reviewedTreeDigest == context.currentReviewedTreeDigest)
   }
 }

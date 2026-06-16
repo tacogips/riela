@@ -31,7 +31,7 @@ and the mock provider selects the next sequence entry (see `EXPECTED_RESULTS.md`
 in that directory).
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run supervised-mock-retry \
+riela workflow run supervised-mock-retry \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/supervised-mock-retry/mock-scenario.json \
   --auto-improve \

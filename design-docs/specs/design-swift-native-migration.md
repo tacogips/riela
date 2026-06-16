@@ -48,7 +48,11 @@ The migration must keep the Swift package additive until parity gates pass. The 
 
 Step 1 intake selected a single-path workflow because this migration is dependency-coupled across core models, adapter contracts, agent targets, package behavior, and CLI/runtime parity. It also marked the change high risk and requiring adversarial review because it touches runtime migration, external command execution, package behavior, and release cutover.
 
-Step 1 intake established `<local-reference-path>` as the local `codex-agent` reference root for this workflow pass. The default `../../codex-agent` root remains unavailable from this repository path. The current TypeScript adapters, pinned package dependencies, and the Step 1 Codex reference files are the authoritative references:
+Step 1 intake established `/Users/taco/gits/tacogips/rielflow` as the
+reference repository root for this workflow pass. The default `../../codex-agent`
+root is not the active reference for this deletion-readiness run. The current
+TypeScript adapters, pinned package dependencies, and the Step 1 Codex reference
+files are the authoritative references:
 
 - `packages/riela-adapters/src/codex.ts` and `packages/riela-adapters/src/readiness.ts` define current `codex-agent` adapter execution, auth/readiness probes, output normalization, and failure mapping.
 - `packages/riela-adapters/src/claude.ts` and `packages/riela-adapters/src/readiness.ts` define current `claude-code-agent` execution, auth/readiness probes, session handling, and failure mapping.
@@ -57,8 +61,20 @@ Step 1 intake established `<local-reference-path>` as the local `codex-agent` re
 - `packages/riela-core/src/render.ts`, `packages/riela-core/src/prompt-template-context.ts`, `packages/riela-core/src/prompt-template-file.ts`, `packages/riela-core/src/node-template-fields.ts`, `packages/riela/src/workflow/load.ts`, and `packages/riela/src/workflow/prompt-composition.ts` define current prompt rendering, prompt variable roots, template-file safety, asset loading, and composed prompt behavior.
 - `packages/riela/src/workflow/adapter.ts`, `packages/riela/src/workflow/output-attempt-runner.ts`, and `packages/riela/src/workflow/engine/step-result-finalization.ts` define current JSON candidate extraction, output-contract retry/finalization, and runtime-owned publication behavior.
 - `packages/riela-adapters/package.json` pins repository-owned references for `codex-agent`, `claude-code-agent`, and `cursor-cli-agent`; Swift target behavior should be mapped from those package contracts, not copied blindly.
-- `<local-reference-path>` is a behavioral reference for keeping auth status and active model-probe results separate.
-- `<local-reference-path>` is a structural reference for preflight acceptance criteria and verification framing.
+- `/Users/taco/gits/tacogips/rielflow/packages/rielflow/src/workflow/adapters/codex.test.ts`
+  is the `codex-agent` behavioral reference for command construction,
+  authentication failure handling, output normalization, and redaction.
+- `/Users/taco/gits/tacogips/rielflow/packages/rielflow/src/workflow/adapters/claude.test.ts`
+  is the `claude-code-agent` behavioral reference for command construction,
+  readiness/auth behavior, session handling, and redaction.
+- `/Users/taco/gits/tacogips/rielflow/packages/rielflow/src/workflow/adapters/cursor.test.ts`
+  is the `cursor-cli-agent` behavioral reference for Cursor CLI command
+  construction, model/mode behavior, stream handling, auth classification, and
+  redaction.
+- `/Users/taco/gits/tacogips/rielflow/packages/rielflow/src/workflow/runtime-readiness-agent-probes.ts`
+  is the shared `codex-agent` and `cursor-cli-agent` structural reference for
+  tool summaries, auth status separation, model-probe results, and runtime
+  readiness verification framing.
 
 Swift target mapping:
 
@@ -144,8 +160,16 @@ This slice closes accepted adversarial-review gaps for GitHub issue #63 only whe
 Reference inputs:
 
 - GitHub issue #63: `cursor-cli-goal` auth preflight probes unresolved `gpt-5.5`, auth failures are reported as model failures, and user-scope session resume can miss the extended `codex-goal` base workflow.
-- Step 1 Codex reference root is `<local-reference-path>`; use `src/sdk/model-availability.ts` only as a behavioral reference for separated auth/model probe results and `impl-plans/completed/model-auth-availability-preflight.md` only as a reference for preflight acceptance framing.
-- The inspected local Cursor CLI agent reference is `<local-reference-path>`, specifically `src/cursor/process-runner.ts`, `src/cursor/model-availability.ts`, and `src/sdk/agent-runner.ts`. It shows Cursor's own generic effort suffix handling and explicit unknown local auth status.
+- The historical Step 1 Codex reference root for this slice was unavailable in
+  the checkout; the current deletion-readiness pass uses the concrete
+  `/Users/taco/gits/tacogips/rielflow` reference files listed in Reference
+  Mapping instead of placeholder local-reference paths.
+- The historical Cursor CLI agent reference for this slice was reference-only.
+  Current Cursor CLI planning uses
+  `/Users/taco/gits/tacogips/rielflow/packages/rielflow/src/workflow/adapters/cursor.test.ts`
+  and
+  `/Users/taco/gits/tacogips/rielflow/packages/rielflow/src/workflow/runtime-readiness-agent-probes.ts`
+  for Cursor command, model, auth, and readiness behavior.
 - Riela parity sources are `packages/riela-adapters/src/cursor.ts`, `packages/riela/src/workflow/adapters/cursor.test.ts`, `packages/riela/src/workflow/adapter.ts`, `Sources/CursorCLIAgent/`, `Sources/RielaCore/AdapterContracts.swift`, `scripts/verify-and-update-v017-parity.sh`, `impl-plans/PROGRESS.json`, and `packaging/homebrew/swift-cutover-gates.json`.
 
 Issue-to-design mapping:
@@ -908,15 +932,89 @@ result artifact references, parseable ISO-8601 `lastVerifiedAt`, matching branch
 and commit evidence, accepted review workflow/node ids, and explicit
 non-blocking accepted-review severity evidence. Durable evidence artifacts must
 resolve to successful command-result metadata bound to the domain id, listed
-command, branch, commit, workflow id, and review node id. Unknown, blank,
-blocking, stale, unresolved, source-only, or placeholder evidence keeps TypeScript
-deletion blocked.
+command, branch, commit, workflow id, and the command execution node id. Review
+acceptance remains separate in `acceptedReviewWorkflowId`,
+`acceptedReviewNodeId`, and `acceptedReviewFindingSeverities`. Unknown, blank,
+blocking, stale, unresolved, source-only, placeholder, or review-node-spoofed
+command evidence keeps TypeScript deletion blocked.
 
-The local `codex-agent` checkout is reference-only for this deletion-readiness
-loop. Until dedicated Swift references are accepted, `CodexAgent`,
-`ClaudeCodeAgent`, and `CursorCLIAgent` parity is measured against the current
-Riela TypeScript adapters and pinned package contracts, with
-`external-reference:codex-agent` used only for structural comparison evidence.
+The `/Users/taco/gits/tacogips/rielflow` checkout is reference-only for this
+deletion-readiness loop. Until dedicated Swift references are accepted,
+`CodexAgent`, `ClaudeCodeAgent`, and `CursorCLIAgent` parity is measured against
+the current Riela TypeScript adapters, pinned package contracts, and the
+concrete reference files listed in Reference Mapping. Reference paths are used
+only for behavioral comparison and verification framing, not for copied source.
+
+### Deletion-Readiness Completion Pass
+
+The continuation after commits `3f19b642303d14299bfe47f5bee371abcd2a2f4e` and
+`1858103` is a gate-completion and source-removal pass, not another parity
+narrowing pass. The design source of truth remains
+`packaging/swift-deletion-readiness.json`; implementation may only move it from
+blocked to deletion-ready when every required domain is current, accepted, and
+resolved by `packaging/swift-deletion-readiness-evidence.json`.
+
+For this pass, each required domain must transition together:
+
+- `status=passed` and `reviewDecision=accepted`
+- `verifiedBranch` and `verifiedCommit` matching the branch and commit being
+  reviewed, not stale evidence from an earlier parity commit
+- `acceptedReviewWorkflowId=codex-design-and-implement-review-loop`
+- `acceptedReviewNodeId=step7-adversarial-review`
+- `acceptedReviewFindingSeverities` containing only non-blocking values such as
+  `none`, `info`, `informational`, or `low`
+- evidence artifacts that resolve to successful command-result metadata for the
+  same domain id, command, branch, commit, workflow id, and command execution
+  node id
+
+The top-level gate may then set `migrationStatus=deletion_ready`,
+`allowsTypeScriptDeletion=true`, and `typeScriptSourceDeletionReady=true`.
+Those three fields must not disagree with each other or with the domain
+evidence. Production Swift packaging readiness remains separate and cannot
+authorize TypeScript deletion by itself.
+
+Remaining TypeScript-family files are deletion-readiness scope and must be
+handled explicitly:
+
+- `scripts/check-source-filenames.ts` and
+  `scripts/check-source-filenames.test.ts` should be removed after their root
+  `src/` and forbidden `part-<digits>.ts(x)` policy is covered by Swift tests,
+  shell checks, or another non-TypeScript verification path.
+- `scripts/sync-package-declarations.ts` should be deleted if the TypeScript
+  declaration package surface is no longer shipped; if any declaration archive
+  remains part of release output, replace the sync behavior with committed
+  Swift or shell tooling before deletion.
+- `scripts/audit-chat-redaction-literals.ts` should be replaced by Swift or
+  shell redaction-literal verification before deletion, because chat gateway
+  redaction evidence remains a release and security regression guard.
+- `scripts/_compute-digest-temp.mjs` is scratch-style tooling and must not stay
+  under `scripts/`; move any still-needed ad-hoc digest work under `tmp/` or
+  replace it with reusable committed tooling.
+- `examples/telegram-agent-trio-time-signal/scripts/prepare-time-signal.ts`
+  must be ported to a native executable, shell script, or static fixture before
+  TypeScript deletion is accepted; examples are part of the user-facing source
+  surface and cannot be left as the only TypeScript runtime consumer.
+
+`cursor-cli-agent` remains mapped only to the local Cursor CLI adapter.
+`official/cursor-sdk` stays isolated behind adapter-dispatch behavior and is not
+made deletion-ready by `cursor-cli-agent` evidence. If the official Cursor SDK
+backend is still intentionally unavailable, the deletion-readiness record must
+keep that as an explicit adapter decision rather than silently aliasing or
+dropping the backend.
+
+Deletion-readiness implementation planning must carry forward these required
+verification commands, with the Xcode Swift toolchain and SDK environment used
+by the current repository:
+
+- `jq empty packaging/swift-deletion-readiness.json packaging/swift-deletion-readiness-evidence.json packaging/homebrew/swift-cutover-gates.json`
+- `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build`
+- `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test`
+- `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter SwiftDeletionReadinessTests`
+- `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter WorkflowCommandTests`
+- `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter CodexAgent`
+- `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter Claude`
+- `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter CursorCLIAgent`
+- `git diff --check`
 
 ## Verification Gates
 

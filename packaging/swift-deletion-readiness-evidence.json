@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-06-16T00:00:00Z",
+  "generatedAt": "2026-06-16T11:49:09Z",
   "artifacts": [
     {
       "artifact": "verification-result:swift-deletion-readiness/package-build-0",
@@ -8,9 +8,10 @@
       "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/package-build-1",
@@ -18,9 +19,10 @@
       "command": "cd ../rielflow && bun run typecheck",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/cli-0",
@@ -28,9 +30,10 @@
       "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter WorkflowCommandTests",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/cli-1",
@@ -38,9 +41,10 @@
       "command": "cd ../rielflow && bun run packages/rielflow/src/bin.ts --help",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/server-0",
@@ -48,9 +52,10 @@
       "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter RielaServerTests",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/server-1",
@@ -58,9 +63,10 @@
       "command": "cd ../rielflow && bun run typecheck:server",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/graphql-0",
@@ -68,9 +74,10 @@
       "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter RielaGraphQLTests",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/graphql-1",
@@ -78,9 +85,10 @@
       "command": "cd ../rielflow && bun test packages/rielflow/src/graphql",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/event-0",
@@ -88,9 +96,10 @@
       "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter RielaEventsTests",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/event-1",
@@ -98,9 +107,10 @@
       "command": "cd ../rielflow && bun test packages/rielflow/src/events",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/workflow-package-0",
@@ -108,9 +118,10 @@
       "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter WorkflowPackage",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/workflow-package-1",
@@ -118,9 +129,10 @@
       "command": "cd ../rielflow && bun run packages/rielflow/src/bin.ts package --help",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/persistence-0",
@@ -128,9 +140,10 @@
       "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter Persistence",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/persistence-1",
@@ -138,29 +151,32 @@
       "command": "cd ../rielflow && bun test packages/rielflow/src/workflow/manager-session-store.test.ts",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/release-0",
       "domainId": "release",
-      "command": "RIELA_VERSION=0.1.15 scripts/build-homebrew-release.sh darwin-arm64 darwin-x64",
+      "command": "RIELA_RELEASE_DIR=tmp/swift-deletion-readiness-homebrew RIELA_VERSION=0.1.15 scripts/build-homebrew-release.sh darwin-arm64 darwin-x64",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/release-1",
       "domainId": "release",
-      "command": "scripts/render-homebrew-formula.sh 0.1.15 tmp/swift-cli-runtime-parity/Formula/riela.rb",
+      "command": "RIELA_RELEASE_DIR=tmp/swift-deletion-readiness-homebrew scripts/render-homebrew-formula.sh 0.1.15 tmp/swift-deletion-readiness-homebrew/Formula/riela.rb",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/documentation-0",
@@ -168,9 +184,10 @@
       "command": "rg -n \"swift-deletion-readiness\" design-docs",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/documentation-1",
@@ -178,9 +195,10 @@
       "command": "rg -n \"TypeScript deletion\" design-docs",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/test-0",
@@ -188,9 +206,10 @@
       "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/test-1",
@@ -198,9 +217,10 @@
       "command": "cd ../rielflow && bun test",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/agent-codex-0",
@@ -208,9 +228,10 @@
       "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter CodexAgent",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/agent-codex-1",
@@ -218,9 +239,10 @@
       "command": "cd ../rielflow && bun test packages/rielflow/src/workflow/adapters/codex.test.ts",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/agent-claude-code-0",
@@ -228,9 +250,10 @@
       "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter Claude",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/agent-claude-code-1",
@@ -238,9 +261,10 @@
       "command": "cd ../rielflow && bun test packages/rielflow/src/workflow/adapters/claude.test.ts",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/agent-cursor-cli-0",
@@ -248,9 +272,10 @@
       "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter CursorCLIAgent",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/agent-cursor-cli-1",
@@ -258,9 +283,20 @@
       "command": "cd ../rielflow && bun test packages/rielflow/src/workflow/adapters/cursor.test.ts",
       "exitCode": 0,
       "branch": "main",
-      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step7-adversarial-review"
+      "nodeId": "step6-implement",
+      "reviewedTreeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5"
     }
-  ]
+  ],
+  "reviewedTreeState": {
+    "branch": "main",
+    "baseCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+    "treeDigestAlgorithm": "sha256:reviewed-tree-v1-path-executable-content-excluding-evidence-manifest",
+    "treeDigest": "f4e4573813c91f48f37094ab1827704b5b007e48251621433fe744fa2efcaef5",
+    "excludedPaths": [
+      "packaging/swift-deletion-readiness-evidence.json"
+    ],
+    "refreshCommand": "{ printf 'reviewed-tree-v1\\n'; /usr/bin/git ls-files --cached --others --exclude-standard | /usr/bin/grep -v '^packaging/swift-deletion-readiness-evidence\\.json$' | /usr/bin/sort | while IFS= read -r path; do [ -e \"$path\" ] || continue; printf 'path:%s\\n' \"$path\"; if [ -x \"$path\" ]; then printf 'executable:true\\n'; else printf 'executable:false\\n'; fi; /bin/cat \"$path\"; printf '\\n'; done; } | /usr/bin/shasum -a 256"
+  }
 }

@@ -8,7 +8,7 @@ Ignore `sessionId`, timestamps, and artifact paths.
 Command:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate design-and-implement-review-loop-feature-plan --workflow-definition-dir .riela/workflows
+riela workflow validate design-and-implement-review-loop-feature-plan --workflow-definition-dir .riela/workflows
 ```
 
 Expected result: the workflow is valid.
@@ -18,7 +18,7 @@ Expected result: the workflow is valid.
 Accepted feature-plan command:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run design-and-implement-review-loop-feature-plan \
+riela workflow run design-and-implement-review-loop-feature-plan \
   --workflow-definition-dir .riela/workflows \
   --mock-scenario .riela/workflows/design-and-implement-review-loop-feature-plan/mock-scenario.json \
   --output json

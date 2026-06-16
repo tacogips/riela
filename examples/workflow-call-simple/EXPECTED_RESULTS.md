@@ -8,7 +8,7 @@ Ignore `sessionId`, timestamps, and artifact paths.
 Command:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow validate workflow-call-simple --workflow-definition-dir ./examples
+riela workflow validate workflow-call-simple --workflow-definition-dir ./examples
 ```
 
 Expected result: the workflow is valid.
@@ -18,7 +18,7 @@ Expected result: the workflow is valid.
 Command:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow inspect workflow-call-simple --workflow-definition-dir ./examples --output json
+riela workflow inspect workflow-call-simple --workflow-definition-dir ./examples --output json
 ```
 
 Expected stable inspection facts:
@@ -35,7 +35,7 @@ Expected stable inspection facts:
 Command:
 
 ```bash
-bun run packages/riela/src/bin.ts workflow run workflow-call-simple \
+riela workflow run workflow-call-simple \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/workflow-call-simple/mock-scenario.json \
   --output json

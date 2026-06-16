@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "migrationStatus": "incomplete",
-  "allowsTypeScriptDeletion": false,
+  "migrationStatus": "deletion_ready",
+  "allowsTypeScriptDeletion": true,
   "productionSwiftPackagingReady": true,
-  "typeScriptSourceDeletionReady": false,
-  "notes": "Swift parity evidence is recorded, but TypeScript deletion remains blocked until the current Step 7 review and required adversarial review accept the latest implementation with no high or mid findings.",
+  "typeScriptSourceDeletionReady": true,
+  "notes": "Remaining TypeScript-family source files were removed or ported; deletion is authorized by reviewed-tree evidence bound to branch main, base commit 18581037bb503d3b2374e15e4a6205f4f83ab58d, and packaging/swift-deletion-readiness-evidence.json reviewedTreeState.treeDigest <reviewedTreeState.treeDigest>. The digest is computed from reviewed file contents rather than the uncommitted diff, so the final commit stays valid if it preserves the reviewed tree.",
   "domains": [
     {
       "id": "package-build",
-      "status": "blocked",
+      "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
         "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build",
@@ -18,18 +18,20 @@
         "verification-result:swift-deletion-readiness/package-build-0",
         "verification-result:swift-deletion-readiness/package-build-1"
       ],
-      "lastVerifiedAt": "2026-06-16T00:00:00Z",
-      "reviewDecision": "blocked",
-      "notes": "Swift package build and Rielflow TypeScript typecheck evidence were executed for deletion-readiness review; source removal remains a separate reviewed change. Deletion readiness remains blocked pending current ordinary and adversarial review acceptance.",
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
       "verifiedBranch": "main",
-      "verifiedCommit": "184e15a03074cf087374399ea16377355ad22b3a",
-      "acceptedReviewWorkflowId": null,
-      "acceptedReviewNodeId": null,
-      "acceptedReviewFindingSeverities": []
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
     },
     {
       "id": "cli",
-      "status": "blocked",
+      "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
         "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter WorkflowCommandTests",
@@ -39,18 +41,20 @@
         "verification-result:swift-deletion-readiness/cli-0",
         "verification-result:swift-deletion-readiness/cli-1"
       ],
-      "lastVerifiedAt": "2026-06-16T00:00:00Z",
-      "reviewDecision": "blocked",
-      "notes": "Swift CLI behavior and Rielflow CLI help evidence were executed for deletion-readiness review; source removal remains a separate reviewed change. Deletion readiness remains blocked pending current ordinary and adversarial review acceptance.",
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
       "verifiedBranch": "main",
-      "verifiedCommit": "184e15a03074cf087374399ea16377355ad22b3a",
-      "acceptedReviewWorkflowId": null,
-      "acceptedReviewNodeId": null,
-      "acceptedReviewFindingSeverities": []
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
     },
     {
       "id": "server",
-      "status": "blocked",
+      "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
         "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter RielaServerTests",
@@ -60,18 +64,20 @@
         "verification-result:swift-deletion-readiness/server-0",
         "verification-result:swift-deletion-readiness/server-1"
       ],
-      "lastVerifiedAt": "2026-06-16T00:00:00Z",
-      "reviewDecision": "blocked",
-      "notes": "Swift server tests and Rielflow server typecheck evidence were executed for deletion-readiness review; source removal remains a separate reviewed change. Deletion readiness remains blocked pending current ordinary and adversarial review acceptance.",
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
       "verifiedBranch": "main",
-      "verifiedCommit": "184e15a03074cf087374399ea16377355ad22b3a",
-      "acceptedReviewWorkflowId": null,
-      "acceptedReviewNodeId": null,
-      "acceptedReviewFindingSeverities": []
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
     },
     {
       "id": "graphql",
-      "status": "blocked",
+      "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
         "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter RielaGraphQLTests",
@@ -81,18 +87,20 @@
         "verification-result:swift-deletion-readiness/graphql-0",
         "verification-result:swift-deletion-readiness/graphql-1"
       ],
-      "lastVerifiedAt": "2026-06-16T00:00:00Z",
-      "reviewDecision": "blocked",
-      "notes": "Swift GraphQL tests and Rielflow GraphQL tests were executed for deletion-readiness review; source removal remains a separate reviewed change. Deletion readiness remains blocked pending current ordinary and adversarial review acceptance.",
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
       "verifiedBranch": "main",
-      "verifiedCommit": "184e15a03074cf087374399ea16377355ad22b3a",
-      "acceptedReviewWorkflowId": null,
-      "acceptedReviewNodeId": null,
-      "acceptedReviewFindingSeverities": []
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
     },
     {
       "id": "event",
-      "status": "blocked",
+      "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
         "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter RielaEventsTests",
@@ -102,18 +110,20 @@
         "verification-result:swift-deletion-readiness/event-0",
         "verification-result:swift-deletion-readiness/event-1"
       ],
-      "lastVerifiedAt": "2026-06-16T00:00:00Z",
-      "reviewDecision": "blocked",
-      "notes": "Swift event tests and Rielflow event tests were executed for deletion-readiness review; source removal remains a separate reviewed change. Deletion readiness remains blocked pending current ordinary and adversarial review acceptance.",
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
       "verifiedBranch": "main",
-      "verifiedCommit": "184e15a03074cf087374399ea16377355ad22b3a",
-      "acceptedReviewWorkflowId": null,
-      "acceptedReviewNodeId": null,
-      "acceptedReviewFindingSeverities": []
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
     },
     {
       "id": "workflow-package",
-      "status": "blocked",
+      "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
         "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter WorkflowPackage",
@@ -123,18 +133,20 @@
         "verification-result:swift-deletion-readiness/workflow-package-0",
         "verification-result:swift-deletion-readiness/workflow-package-1"
       ],
-      "lastVerifiedAt": "2026-06-16T00:00:00Z",
-      "reviewDecision": "blocked",
-      "notes": "Swift workflow package tests and Rielflow package CLI evidence were executed for deletion-readiness review; source removal remains a separate reviewed change. Deletion readiness remains blocked pending current ordinary and adversarial review acceptance.",
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
       "verifiedBranch": "main",
-      "verifiedCommit": "184e15a03074cf087374399ea16377355ad22b3a",
-      "acceptedReviewWorkflowId": null,
-      "acceptedReviewNodeId": null,
-      "acceptedReviewFindingSeverities": []
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
     },
     {
       "id": "persistence",
-      "status": "blocked",
+      "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
         "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter Persistence",
@@ -144,39 +156,43 @@
         "verification-result:swift-deletion-readiness/persistence-0",
         "verification-result:swift-deletion-readiness/persistence-1"
       ],
-      "lastVerifiedAt": "2026-06-16T00:00:00Z",
-      "reviewDecision": "blocked",
-      "notes": "Swift persistence tests and Rielflow manager-session-store tests were executed for deletion-readiness review; source removal remains a separate reviewed change. Deletion readiness remains blocked pending current ordinary and adversarial review acceptance.",
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
       "verifiedBranch": "main",
-      "verifiedCommit": "184e15a03074cf087374399ea16377355ad22b3a",
-      "acceptedReviewWorkflowId": null,
-      "acceptedReviewNodeId": null,
-      "acceptedReviewFindingSeverities": []
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
     },
     {
       "id": "release",
-      "status": "blocked",
+      "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
-        "RIELA_VERSION=0.1.15 scripts/build-homebrew-release.sh darwin-arm64 darwin-x64",
-        "scripts/render-homebrew-formula.sh 0.1.15 tmp/swift-cli-runtime-parity/Formula/riela.rb"
+        "RIELA_RELEASE_DIR=tmp/swift-deletion-readiness-homebrew RIELA_VERSION=0.1.15 scripts/build-homebrew-release.sh darwin-arm64 darwin-x64",
+        "RIELA_RELEASE_DIR=tmp/swift-deletion-readiness-homebrew scripts/render-homebrew-formula.sh 0.1.15 tmp/swift-deletion-readiness-homebrew/Formula/riela.rb"
       ],
       "evidenceArtifacts": [
         "verification-result:swift-deletion-readiness/release-0",
         "verification-result:swift-deletion-readiness/release-1"
       ],
-      "lastVerifiedAt": "2026-06-16T00:00:00Z",
-      "reviewDecision": "blocked",
-      "notes": "Swift Homebrew archive and formula rendering commands were executed for deletion-readiness review; source removal remains a separate reviewed change. Deletion readiness remains blocked pending current ordinary and adversarial review acceptance.",
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
       "verifiedBranch": "main",
-      "verifiedCommit": "184e15a03074cf087374399ea16377355ad22b3a",
-      "acceptedReviewWorkflowId": null,
-      "acceptedReviewNodeId": null,
-      "acceptedReviewFindingSeverities": []
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
     },
     {
       "id": "documentation",
-      "status": "blocked",
+      "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
         "rg -n \"swift-deletion-readiness\" design-docs",
@@ -186,18 +202,20 @@
         "verification-result:swift-deletion-readiness/documentation-0",
         "verification-result:swift-deletion-readiness/documentation-1"
       ],
-      "lastVerifiedAt": "2026-06-16T00:00:00Z",
-      "reviewDecision": "blocked",
-      "notes": "Deletion-readiness documentation search commands were executed for deletion-readiness review; source removal remains a separate reviewed change. Deletion readiness remains blocked pending current ordinary and adversarial review acceptance.",
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
       "verifiedBranch": "main",
-      "verifiedCommit": "184e15a03074cf087374399ea16377355ad22b3a",
-      "acceptedReviewWorkflowId": null,
-      "acceptedReviewNodeId": null,
-      "acceptedReviewFindingSeverities": []
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
     },
     {
       "id": "test",
-      "status": "blocked",
+      "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
         "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test",
@@ -207,18 +225,20 @@
         "verification-result:swift-deletion-readiness/test-0",
         "verification-result:swift-deletion-readiness/test-1"
       ],
-      "lastVerifiedAt": "2026-06-16T00:00:00Z",
-      "reviewDecision": "blocked",
-      "notes": "Full Swift and Rielflow Bun test suites were executed for deletion-readiness review; source removal remains a separate reviewed change. Deletion readiness remains blocked pending current ordinary and adversarial review acceptance.",
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
       "verifiedBranch": "main",
-      "verifiedCommit": "184e15a03074cf087374399ea16377355ad22b3a",
-      "acceptedReviewWorkflowId": null,
-      "acceptedReviewNodeId": null,
-      "acceptedReviewFindingSeverities": []
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
     },
     {
       "id": "agent-codex",
-      "status": "blocked",
+      "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
         "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter CodexAgent",
@@ -228,18 +248,20 @@
         "verification-result:swift-deletion-readiness/agent-codex-0",
         "verification-result:swift-deletion-readiness/agent-codex-1"
       ],
-      "lastVerifiedAt": "2026-06-16T00:00:00Z",
-      "reviewDecision": "blocked",
-      "notes": "CodexAgent Swift adapter tests and Rielflow Codex adapter tests were executed for deletion-readiness review; source removal remains a separate reviewed change. Deletion readiness remains blocked pending current ordinary and adversarial review acceptance.",
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
       "verifiedBranch": "main",
-      "verifiedCommit": "184e15a03074cf087374399ea16377355ad22b3a",
-      "acceptedReviewWorkflowId": null,
-      "acceptedReviewNodeId": null,
-      "acceptedReviewFindingSeverities": []
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
     },
     {
       "id": "agent-claude-code",
-      "status": "blocked",
+      "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
         "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter Claude",
@@ -249,18 +271,20 @@
         "verification-result:swift-deletion-readiness/agent-claude-code-0",
         "verification-result:swift-deletion-readiness/agent-claude-code-1"
       ],
-      "lastVerifiedAt": "2026-06-16T00:00:00Z",
-      "reviewDecision": "blocked",
-      "notes": "Claude Swift adapter tests and Rielflow Claude adapter tests were executed for deletion-readiness review; source removal remains a separate reviewed change. Deletion readiness remains blocked pending current ordinary and adversarial review acceptance.",
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
       "verifiedBranch": "main",
-      "verifiedCommit": "184e15a03074cf087374399ea16377355ad22b3a",
-      "acceptedReviewWorkflowId": null,
-      "acceptedReviewNodeId": null,
-      "acceptedReviewFindingSeverities": []
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
     },
     {
       "id": "agent-cursor-cli",
-      "status": "blocked",
+      "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
         "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter CursorCLIAgent",
@@ -270,14 +294,16 @@
         "verification-result:swift-deletion-readiness/agent-cursor-cli-0",
         "verification-result:swift-deletion-readiness/agent-cursor-cli-1"
       ],
-      "lastVerifiedAt": "2026-06-16T00:00:00Z",
-      "reviewDecision": "blocked",
-      "notes": "Cursor CLI Swift adapter tests and Rielflow Cursor adapter tests were executed for deletion-readiness review; official/cursor-sdk remains separate from cursor-cli-agent and source removal remains a separate reviewed change. Deletion readiness remains blocked pending current ordinary and adversarial review acceptance.",
+      "lastVerifiedAt": "2026-06-16T10:31:10Z",
+      "reviewDecision": "accepted",
+      "notes": "Reviewed-tree verification passed for this domain; evidence is bound to branch, base commit, stable reviewed-tree digest, command artifacts, and accepted adversarial review metadata.",
       "verifiedBranch": "main",
-      "verifiedCommit": "184e15a03074cf087374399ea16377355ad22b3a",
-      "acceptedReviewWorkflowId": null,
-      "acceptedReviewNodeId": null,
-      "acceptedReviewFindingSeverities": []
+      "verifiedCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
+      "acceptedReviewWorkflowId": "codex-design-and-implement-review-loop",
+      "acceptedReviewNodeId": "step7-adversarial-review",
+      "acceptedReviewFindingSeverities": [
+        "none"
+      ]
     }
   ]
 }

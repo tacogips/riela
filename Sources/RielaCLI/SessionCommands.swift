@@ -84,6 +84,158 @@ public struct SessionCommandFailureResult: Codable, Equatable, Sendable {
   public var exitCode: Int32
 }
 
+public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
+  public var sessionId: String
+  public var workflowName: String
+  public var status: WorkflowSessionStatus
+  public var currentStepId: String?
+  public var executionCount: Int
+  public var executions: [WorkflowStepExecution]
+  public var health: String?
+
+  public init(
+    sessionId: String,
+    workflowName: String,
+    status: WorkflowSessionStatus,
+    currentStepId: String?,
+    executionCount: Int,
+    executions: [WorkflowStepExecution],
+    health: String? = nil
+  ) {
+    self.sessionId = sessionId
+    self.workflowName = workflowName
+    self.status = status
+    self.currentStepId = currentStepId
+    self.executionCount = executionCount
+    self.executions = executions
+    self.health = health
+  }
+}
+
+public struct SessionInspectionCommand: Sendable {
+  public init() {}
+
+  public func run(_ options: CLICommandOptions) -> CLICommandResult {
+    guard let sessionId = options.target, !sessionId.isEmpty else {
+      return CLICommandResult(exitCode: .usage, stderr: "scope, command, and target are required")
+    }
+    do {
+      let parsed = try parseSessionInspectionOptions(options.arguments)
+      let snapshot = try loadRuntimeSnapshot(sessionId: sessionId, parsed: parsed)
+      return try render(snapshot: snapshot, command: options.command ?? "status", output: options.output)
+    } catch let error as CLIUsageError {
+      return CLICommandResult(exitCode: .usage, stderr: error.message)
+    } catch {
+      if options.output == .json {
+        let payload = SessionCommandFailureResult(sessionId: sessionId, error: "\(error)", exitCode: CLIExitCode.failure.rawValue)
+        return CLICommandResult(exitCode: .failure, stdout: (try? jsonString(payload)) ?? "")
+      }
+      return CLICommandResult(exitCode: .failure, stderr: "\(error)")
+    }
+  }
+
+  private struct ParsedOptions {
+    var scope: WorkflowScope
+    var workingDirectory: String
+    var sessionStore: String?
+  }
+
+  private func parseSessionInspectionOptions(_ arguments: [String]) throws -> ParsedOptions {
+    var scope = WorkflowScope.auto
+    var workingDirectory = FileManager.default.currentDirectoryPath
+    var sessionStore: String?
+    var index = 0
+    while index < arguments.count {
+      let token = arguments[index]
+      switch token {
+      case "--scope":
+        guard index + 1 < arguments.count, let value = WorkflowScope(rawValue: arguments[index + 1]), value != .direct else {
+          throw CLIUsageError("invalid --scope value; expected auto, project, or user")
+        }
+        scope = value
+        index += 2
+      case "--working-dir", "--working-directory":
+        guard index + 1 < arguments.count else {
+          throw CLIUsageError("\(token) requires a value")
+        }
+        workingDirectory = arguments[index + 1]
+        index += 2
+      case "--session-store":
+        guard index + 1 < arguments.count else {
+          throw CLIUsageError("--session-store requires a value")
+        }
+        sessionStore = arguments[index + 1]
+        index += 2
+      case "--output":
+        index += 2
+      default:
+        if token.hasPrefix("--output=") {
+          index += 1
+        } else {
+          throw CLIUsageError("unsupported session \(token) option")
+        }
+      }
+    }
+    return ParsedOptions(scope: scope, workingDirectory: workingDirectory, sessionStore: sessionStore)
+  }
+
+  private func loadRuntimeSnapshot(sessionId: String, parsed: ParsedOptions) throws -> WorkflowRuntimePersistenceSnapshot {
+    let storeRoot = CLIWorkflowSessionStore.resolveRootDirectory(
+      sessionStore: parsed.sessionStore,
+      scope: parsed.scope,
+      workingDirectory: parsed.workingDirectory
+    )
+    let store = FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot))
+    do {
+      return try store.load(sessionId: sessionId)
+    } catch WorkflowRuntimePersistenceStoreError.notFound {
+      let loaded = try CLIWorkflowSessionResolution.loadPersistedSession(
+        sessionId: sessionId,
+        sessionStore: parsed.sessionStore,
+        scope: parsed.scope,
+        workingDirectory: parsed.workingDirectory
+      )
+      let repaired = WorkflowRuntimePersistenceProjector.snapshot(session: loaded.record.session)
+      try FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: loaded.storeRoot)).save(repaired)
+      return repaired
+    }
+  }
+
+  private func render(snapshot: WorkflowRuntimePersistenceSnapshot, command: String, output: WorkflowOutputFormat) throws -> CLICommandResult {
+    let health = command == "health" ? (snapshot.session.status == .failed ? "failed" : "ok") : nil
+    let result = SessionInspectionCommandResult(
+      sessionId: snapshot.session.sessionId,
+      workflowName: snapshot.session.workflowId,
+      status: snapshot.session.status,
+      currentStepId: snapshot.session.currentStepId,
+      executionCount: snapshot.session.executions.count,
+      executions: command == "status" || command == "export" || command == "step-runs" ? snapshot.session.executions : [],
+      health: health
+    )
+    switch output {
+    case .json:
+      return CLICommandResult(exitCode: .success, stdout: try jsonString(result))
+    case .text, .table:
+      var lines = [
+        "sessionId: \(result.sessionId)",
+        "workflow: \(result.workflowName)",
+        "status: \(result.status.rawValue)",
+        "currentStepId: \(result.currentStepId ?? "-")",
+        "executionCount: \(result.executionCount)",
+      ]
+      if let health {
+        lines.append("health: \(health)")
+      }
+      if command == "logs" {
+        lines.append(contentsOf: snapshot.session.executions.compactMap { execution in
+          execution.failureReason.map { "\(execution.executionId)\t\(execution.stepId)\t\($0)" }
+        })
+      }
+      return CLICommandResult(exitCode: .success, stdout: lines.joined(separator: "\n") + "\n")
+    }
+  }
+}
+
 public struct SessionRerunCommand: Sendable {
   public var resolver: any WorkflowBundleResolving
   public var jsonLoader: JSONReferenceLoader
@@ -124,8 +276,9 @@ public struct SessionRerunCommand: Sendable {
         mockScenarioPath: options.mockScenarioPath ?? persisted.mockScenarioPath,
         workingDirectory: options.workingDirectory
       )
+      let persistenceStore = FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot))
       let runtimeStore = InMemoryWorkflowRuntimeStore()
-      await runtimeStore.seedSession(persisted.session)
+      try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: storeRoot)
       let runner = DeterministicWorkflowRunner(store: runtimeStore, adapter: adapter, stdioNodeExecutor: LocalWorkflowStdioNodeExecutor())
       let result = try await runner.run(
         DeterministicWorkflowRunRequest(
@@ -142,6 +295,10 @@ public struct SessionRerunCommand: Sendable {
           resolution: resolution,
           mockScenarioPath: options.mockScenarioPath ?? persisted.mockScenarioPath
         )
+      )
+      let workflowMessages = try await runtimeStore.listMessages(for: result.session.sessionId, toStepId: nil)
+      try persistenceStore.save(
+        WorkflowRuntimePersistenceProjector.snapshot(session: result.session, workflowMessages: workflowMessages)
       )
       return renderRerunSuccess(options: options, result: result)
     } catch let error as CLIWorkflowSessionStoreError {
@@ -166,7 +323,7 @@ public struct SessionRerunCommand: Sendable {
       )
       let stdout = (try? jsonString(payload)) ?? ""
       return CLICommandResult(exitCode: exitCode, stdout: stdout + (stdout.hasSuffix("\n") ? "" : "\n"))
-    case .text:
+    case .text, .table:
       return CLICommandResult(
         exitCode: exitCode,
         stdout: """
@@ -236,8 +393,9 @@ public struct SessionResumeCommand: Sendable {
         mockScenarioPath: options.mockScenarioPath ?? persisted.mockScenarioPath,
         workingDirectory: options.workingDirectory
       )
+      let persistenceStore = FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot))
       let runtimeStore = InMemoryWorkflowRuntimeStore()
-      await runtimeStore.seedSession(persisted.session)
+      try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: storeRoot)
       let runner = DeterministicWorkflowRunner(store: runtimeStore, adapter: adapter, stdioNodeExecutor: LocalWorkflowStdioNodeExecutor())
       let result = try await runner.run(
         DeterministicWorkflowRunRequest(
@@ -253,6 +411,10 @@ public struct SessionResumeCommand: Sendable {
           resolution: resolution,
           mockScenarioPath: options.mockScenarioPath ?? persisted.mockScenarioPath
         )
+      )
+      let workflowMessages = try await runtimeStore.listMessages(for: result.session.sessionId, toStepId: nil)
+      try persistenceStore.save(
+        WorkflowRuntimePersistenceProjector.snapshot(session: result.session, workflowMessages: workflowMessages)
       )
       return renderResumeSuccess(options: options, result: result)
     } catch let error as CLIWorkflowSessionStoreError {
@@ -275,7 +437,7 @@ public struct SessionResumeCommand: Sendable {
       )
       let stdout = (try? jsonString(payload)) ?? ""
       return CLICommandResult(exitCode: exitCode, stdout: stdout + (stdout.hasSuffix("\n") ? "" : "\n"))
-    case .text:
+    case .text, .table:
       return CLICommandResult(
         exitCode: exitCode,
         stdout: """
@@ -309,4 +471,15 @@ private func makeSessionNodeAdapter(mockScenarioPath: String?, workingDirectory:
     ).path),
     fallback: fallback
   )
+}
+
+private func loadExistingWorkflowMessages(
+  sessionId: String,
+  persistenceStore: FileWorkflowRuntimePersistenceStore
+) throws -> [WorkflowMessageRecord] {
+  do {
+    return try persistenceStore.load(sessionId: sessionId).workflowMessages
+  } catch WorkflowRuntimePersistenceStoreError.notFound(_) {
+    return []
+  }
 }

@@ -164,7 +164,7 @@ public struct SwiftDeletionReadinessValidator: Sendable {
   private static let allowedReviewDecisions = Set(["accepted", "blocked", "not_reviewed"])
   private static let requiredEvidenceCommandGroupsByDomain: [String: [[String]]] = [
     "package-build": [["swift", "build"], ["bun", "typecheck"]],
-    "cli": [["swift", "test", "WorkflowCommand"], ["bun", "packages/riela/src/bin.ts"]],
+    "cli": [["swift", "test", "WorkflowCommand"], ["bun", "packages/rielflow/src/bin.ts"]],
     "server": [["swift", "test", "RielaServer"], ["bun", "typecheck:server"]],
     "graphql": [["swift", "test", "GraphQL"], ["bun", "graphql"]],
     "event": [["swift", "test", "Event"], ["bun", "event"]],
@@ -174,7 +174,7 @@ public struct SwiftDeletionReadinessValidator: Sendable {
     "documentation": [["rg", "swift-deletion-readiness"], ["rg", "typescript", "deletion"]],
     "test": [["swift", "test"], ["bun", "test"]],
     "agent-codex": [["swift", "test", "CodexAgent"], ["bun", "codex"]],
-    "agent-claude-code": [["swift", "test", "ClaudeCodeAgent"], ["bun", "claude"]],
+    "agent-claude-code": [["swift", "test", "Claude"], ["bun", "claude"]],
     "agent-cursor-cli": [["swift", "test", "CursorCLIAgent"], ["bun", "cursor"]],
   ]
   private static let requiredDomainFields = [
@@ -590,10 +590,45 @@ public struct SwiftDeletionReadinessValidator: Sendable {
   }
 
   private func commandMatches(_ command: String, requiredFragments: [String]) -> Bool {
-    let normalized = command.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    let normalized = executableCommandPortion(command).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     return requiredFragments.allSatisfy { fragment in
       normalized.contains(fragment.lowercased())
     }
+  }
+
+  private func executableCommandPortion(_ command: String) -> String {
+    var result = ""
+    var inSingleQuote = false
+    var inDoubleQuote = false
+    var escaped = false
+
+    for character in command {
+      if escaped {
+        result.append(character)
+        escaped = false
+        continue
+      }
+      if character == "\\" && !inSingleQuote {
+        result.append(character)
+        escaped = true
+        continue
+      }
+      if character == "'" && !inDoubleQuote {
+        inSingleQuote.toggle()
+        result.append(character)
+        continue
+      }
+      if character == "\"" && !inSingleQuote {
+        inDoubleQuote.toggle()
+        result.append(character)
+        continue
+      }
+      if character == "#" && !inSingleQuote && !inDoubleQuote {
+        break
+      }
+      result.append(character)
+    }
+    return result
   }
 
   private func isDurableEvidenceArtifact(_ artifact: String) -> Bool {

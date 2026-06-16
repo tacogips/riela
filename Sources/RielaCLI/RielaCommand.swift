@@ -12,6 +12,7 @@ public enum CLIExitCode: Int32, Codable, Equatable, Sendable {
 public enum WorkflowOutputFormat: String, Codable, Sendable {
   case text
   case json
+  case table
 }
 
 public enum WorkflowScope: String, Codable, Sendable {
@@ -26,11 +27,20 @@ public enum RielaCommand: Equatable, Sendable {
   case version
   case workflow(WorkflowCommand)
   case session(SessionCommand)
+  case package(PackageCommand)
+  case scoped(ScopedCommand)
 }
 
 public enum SessionCommand: Equatable, Sendable {
   case rerun(SessionRerunOptions)
   case resume(SessionResumeOptions)
+  case progress(CLICommandOptions)
+  case health(CLICommandOptions)
+  case status(CLICommandOptions)
+  case continueSession(CLICommandOptions)
+  case stepRuns(CLICommandOptions)
+  case export(CLICommandOptions)
+  case logs(CLICommandOptions)
 }
 
 public enum WorkflowCommand: Equatable, Sendable {
@@ -38,6 +48,98 @@ public enum WorkflowCommand: Equatable, Sendable {
   case inspect(WorkflowInspectOptions)
   case usage(WorkflowInspectOptions)
   case run(WorkflowRunOptions)
+  case list(CLICommandOptions)
+  case status(CLICommandOptions)
+  case manifestValidate(WorkflowManifestValidateOptions)
+  case checkout(CLICommandOptions)
+  case create(CLICommandOptions)
+  case selfImprove(CLICommandOptions)
+  case package(PackageCommand)
+}
+
+public struct WorkflowManifestValidateOptions: Equatable, Sendable {
+  public var manifestPath: String
+  public var output: WorkflowOutputFormat
+  public var executable: Bool
+  public var workingDirectory: String
+
+  public init(
+    manifestPath: String,
+    output: WorkflowOutputFormat = .text,
+    executable: Bool = false,
+    workingDirectory: String = FileManager.default.currentDirectoryPath
+  ) {
+    self.manifestPath = manifestPath
+    self.output = output
+    self.executable = executable
+    self.workingDirectory = workingDirectory
+  }
+}
+
+public enum PackageCommandKind: String, Codable, Sendable {
+  case search
+  case list
+  case status
+  case install
+  case update
+  case remove
+  case checkout
+  case run
+  case tempRun = "temp-run"
+  case publish
+  case registry
+}
+
+public struct PackageCommand: Equatable, Sendable {
+  public var kind: PackageCommandKind
+  public var options: CLICommandOptions
+
+  public init(kind: PackageCommandKind, options: CLICommandOptions) {
+    self.kind = kind
+    self.options = options
+  }
+}
+
+public enum ScopedCommandKind: String, Codable, Sendable {
+  case graphql
+  case gql
+  case hook
+  case events
+  case serve
+  case callStep = "call-step"
+  case workflowCall = "workflow-call"
+}
+
+public struct ScopedCommand: Equatable, Sendable {
+  public var kind: ScopedCommandKind
+  public var options: CLICommandOptions
+
+  public init(kind: ScopedCommandKind, options: CLICommandOptions) {
+    self.kind = kind
+    self.options = options
+  }
+}
+
+public struct CLICommandOptions: Equatable, Sendable {
+  public var scope: String
+  public var command: String?
+  public var target: String?
+  public var arguments: [String]
+  public var output: WorkflowOutputFormat
+
+  public init(
+    scope: String,
+    command: String? = nil,
+    target: String? = nil,
+    arguments: [String] = [],
+    output: WorkflowOutputFormat = .text
+  ) {
+    self.scope = scope
+    self.command = command
+    self.target = target
+    self.arguments = arguments
+    self.output = output
+  }
 }
 
 public struct WorkflowResolutionOptions: Codable, Equatable, Sendable {
@@ -115,6 +217,12 @@ public struct WorkflowRunOptions: Equatable, Sendable {
   public var artifactRoot: String?
   public var sessionStore: String?
   public var workingDirectory: String
+  public var endpoint: String?
+  public var authToken: String?
+  public var authTokenEnv: String?
+  public var fromRegistry: Bool
+  public var autoImprove: Bool
+  public var autoImprovePolicy: WorkflowAutoImprovePolicy
 
   public init(
     target: String,
@@ -130,7 +238,13 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     timeoutMs: Int? = nil,
     artifactRoot: String? = nil,
     sessionStore: String? = nil,
-    workingDirectory: String = FileManager.default.currentDirectoryPath
+    workingDirectory: String = FileManager.default.currentDirectoryPath,
+    endpoint: String? = nil,
+    authToken: String? = nil,
+    authTokenEnv: String? = nil,
+    fromRegistry: Bool = false,
+    autoImprove: Bool = false,
+    autoImprovePolicy: WorkflowAutoImprovePolicy = WorkflowAutoImprovePolicy()
   ) {
     self.target = target
     self.resolution = resolution
@@ -146,6 +260,37 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     self.artifactRoot = artifactRoot
     self.sessionStore = sessionStore
     self.workingDirectory = workingDirectory
+    self.endpoint = endpoint
+    self.authToken = authToken
+    self.authTokenEnv = authTokenEnv
+    self.fromRegistry = fromRegistry
+    self.autoImprove = autoImprove
+    self.autoImprovePolicy = autoImprovePolicy
+  }
+}
+
+public struct WorkflowAutoImprovePolicy: Codable, Equatable, Sendable {
+  public var maxSupervisedAttempts: Int
+  public var maxWorkflowPatches: Int
+  public var monitorIntervalMs: Int
+  public var stallTimeoutMs: Int
+  public var workflowMutationMode: String
+  public var nestedSuperviser: Bool
+
+  public init(
+    maxSupervisedAttempts: Int = 3,
+    maxWorkflowPatches: Int = 2,
+    monitorIntervalMs: Int = 1_000,
+    stallTimeoutMs: Int = 30_000,
+    workflowMutationMode: String = "execution-copy",
+    nestedSuperviser: Bool = false
+  ) {
+    self.maxSupervisedAttempts = maxSupervisedAttempts
+    self.maxWorkflowPatches = maxWorkflowPatches
+    self.monitorIntervalMs = monitorIntervalMs
+    self.stallTimeoutMs = stallTimeoutMs
+    self.workflowMutationMode = workflowMutationMode
+    self.nestedSuperviser = nestedSuperviser
   }
 }
 
@@ -171,16 +316,55 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     if arguments.isEmpty || arguments == ["--version"] || arguments == ["version"] {
       return .version
     }
+    if let scopedKind = ScopedCommandKind(rawValue: arguments[0]) {
+      return .scoped(try parseScoped(kind: scopedKind, arguments: Array(arguments.dropFirst())))
+    }
+    if arguments.first == "package" {
+      return .package(try parsePackage(scope: "package", arguments: Array(arguments.dropFirst())))
+    }
     if arguments.first == "session" {
       return try parseSession(Array(arguments.dropFirst()))
     }
     guard arguments.first == "workflow" else {
-      throw CLIUsageError("expected 'workflow' or 'session' command")
+      throw CLIUsageError("expected 'workflow', 'package', 'session', 'graphql', 'gql', 'hook', 'events', 'serve', or 'call-step' command")
     }
+    guard arguments.count >= 2 else {
+      throw CLIUsageError("workflow command requires a subcommand and workflow name")
+    }
+    if arguments[1] == "package" {
+      return .workflow(.package(try parsePackage(scope: "workflow package", arguments: Array(arguments.dropFirst(2)))))
+    }
+    if arguments[1] == "manifest" {
+      return .workflow(.manifestValidate(try parseWorkflowManifest(Array(arguments.dropFirst(2)))))
+    }
+    if arguments[1] == "list" {
+      let remaining = Array(arguments.dropFirst(2))
+      let target = remaining.first?.hasPrefix("--") == false ? remaining.first : nil
+      let optionTokens = target == nil ? remaining : Array(remaining.dropFirst())
+      return .workflow(.list(try parseGeneric(
+        scope: "workflow",
+        command: "list",
+        target: target,
+        arguments: optionTokens,
+        allowTableOutput: true
+      )))
+    }
+    if arguments[1] == "status" {
+      let remaining = Array(arguments.dropFirst(2))
+      let target = remaining.first?.hasPrefix("--") == false ? remaining.first : nil
+      let optionTokens = target == nil ? remaining : Array(remaining.dropFirst())
+      return .workflow(.status(try parseGeneric(
+        scope: "workflow",
+        command: "status",
+        target: target,
+        arguments: optionTokens,
+        allowTableOutput: true
+      )))
+    }
+    let subcommand = arguments[1]
     guard arguments.count >= 3 else {
       throw CLIUsageError("workflow command requires a subcommand and workflow name")
     }
-    let subcommand = arguments[1]
     let target = arguments[2]
     guard !target.hasPrefix("--") else {
       throw CLIUsageError("workflow \(subcommand) requires a workflow name")
@@ -195,6 +379,12 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       return .workflow(.usage(try parseInspect(target: target, tokens: optionTokens)))
     case "run":
       return .workflow(.run(try parseRun(target: target, tokens: optionTokens)))
+    case "checkout":
+      return .workflow(.checkout(try parseGeneric(scope: "workflow", command: subcommand, target: target, arguments: optionTokens)))
+    case "create":
+      return .workflow(.create(try parseGeneric(scope: "workflow", command: subcommand, target: target, arguments: optionTokens)))
+    case "self-improve":
+      return .workflow(.selfImprove(try parseGeneric(scope: "workflow", command: subcommand, target: target, arguments: optionTokens)))
     default:
       throw CLIUsageError("unsupported workflow subcommand '\(subcommand)'")
     }
@@ -204,17 +394,17 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     guard let subcommand = arguments.first else {
       throw CLIUsageError("session command requires a subcommand")
     }
-    let optionTokens = Array(arguments.dropFirst(subcommand == "rerun" ? 3 : 2))
-    let parsed = try ParsedWorkflowOptions(optionTokens, allowRunOptions: true)
-    if parsed.endpoint != nil || parsed.fromRegistry {
-      throw CLIUsageError("Swift TASK-007 supports local session commands only")
-    }
-    let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
     switch subcommand {
     case "rerun":
       guard arguments.count >= 3, !arguments[1].hasPrefix("--"), !arguments[2].hasPrefix("--") else {
         throw CLIUsageError("usage: riela session rerun <session-id> <step-id> [options]")
       }
+      let optionTokens = Array(arguments.dropFirst(3))
+      let parsed = try ParsedWorkflowOptions(optionTokens, allowRunOptions: true)
+      if parsed.endpoint != nil || parsed.fromRegistry {
+        throw CLIUsageError("Swift TASK-007 supports local session commands only")
+      }
+      let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
       return .session(.rerun(SessionRerunOptions(
         sessionId: arguments[1],
         stepId: arguments[2],
@@ -230,6 +420,12 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       guard arguments.count >= 2, !arguments[1].hasPrefix("--") else {
         throw CLIUsageError("usage: riela session resume <session-id> [options]")
       }
+      let optionTokens = Array(arguments.dropFirst(2))
+      let parsed = try ParsedWorkflowOptions(optionTokens, allowRunOptions: true)
+      if parsed.endpoint != nil || parsed.fromRegistry {
+        throw CLIUsageError("Swift TASK-007 supports local session commands only")
+      }
+      let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
       return .session(.resume(SessionResumeOptions(
         sessionId: arguments[1],
         output: parsed.output,
@@ -239,9 +435,154 @@ public struct RielaArgumentParser: CLIArgumentParsing {
         mockScenarioPath: parsed.mockScenarioPath,
         sessionStore: parsed.sessionStore
       )))
+    case "progress":
+      return .session(.progress(try parseSessionGeneric(subcommand: subcommand, arguments: arguments)))
+    case "health":
+      return .session(.health(try parseSessionGeneric(subcommand: subcommand, arguments: arguments)))
+    case "status":
+      return .session(.status(try parseSessionGeneric(subcommand: subcommand, arguments: arguments)))
+    case "continue":
+      return .session(.continueSession(try parseSessionGeneric(subcommand: subcommand, arguments: arguments)))
+    case "step-runs":
+      return .session(.stepRuns(try parseSessionGeneric(subcommand: subcommand, arguments: arguments)))
+    case "export":
+      return .session(.export(try parseSessionGeneric(subcommand: subcommand, arguments: arguments)))
+    case "logs":
+      return .session(.logs(try parseSessionGeneric(subcommand: subcommand, arguments: arguments)))
     default:
       throw CLIUsageError("unsupported session subcommand '\(subcommand)'")
     }
+  }
+
+  private func parseSessionGeneric(subcommand: String, arguments: [String]) throws -> CLICommandOptions {
+    let target = arguments.count >= 2 && !arguments[1].hasPrefix("--") ? arguments[1] : nil
+    let optionStart = target == nil ? 1 : 2
+    if target == nil {
+      throw CLIUsageError("session \(subcommand) requires a session id")
+    }
+    return try parseGeneric(
+      scope: "session",
+      command: subcommand,
+      target: target,
+      arguments: Array(arguments.dropFirst(optionStart))
+    )
+  }
+
+  private func parseWorkflowManifest(_ arguments: [String]) throws -> WorkflowManifestValidateOptions {
+    guard arguments.first == "validate" else {
+      throw CLIUsageError("unsupported workflow manifest subcommand '\(arguments.first ?? "")'")
+    }
+    var manifestPath: String?
+    var optionTokens: [String] = []
+    var index = 1
+    while index < arguments.count {
+      let token = arguments[index]
+      if token.hasPrefix("--") {
+        if token == "--workflow-manifest" {
+          guard index + 1 < arguments.count, !arguments[index + 1].hasPrefix("--") else {
+            throw CLIUsageError("--workflow-manifest requires a value")
+          }
+          manifestPath = arguments[index + 1]
+          index += 2
+          continue
+        }
+        optionTokens.append(token)
+        if Set(["--output", "--working-dir", "--working-directory"]).contains(token) {
+          guard index + 1 < arguments.count, !arguments[index + 1].hasPrefix("--") else {
+            throw CLIUsageError("\(token) requires a value")
+          }
+          optionTokens.append(arguments[index + 1])
+          index += 2
+        } else {
+          index += 1
+        }
+        continue
+      }
+      guard manifestPath == nil else {
+        throw CLIUsageError("workflow manifest validate accepts at most one manifest path")
+      }
+      manifestPath = token
+      index += 1
+    }
+    if manifestPath == nil {
+      let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
+      manifestPath = environment["RIEL_WORKFLOW_MANIFEST"].flatMap { $0.isEmpty ? nil : $0 }
+        ?? environment["RIELA_WORKFLOW_MANIFEST"].flatMap { $0.isEmpty ? nil : $0 }
+    }
+    guard let manifestPath, !manifestPath.isEmpty else {
+      throw CLIUsageError("workflow manifest validate requires a manifest path, --workflow-manifest, RIEL_WORKFLOW_MANIFEST, or RIELA_WORKFLOW_MANIFEST")
+    }
+    let parsed = try ParsedWorkflowOptions(optionTokens)
+    return WorkflowManifestValidateOptions(
+      manifestPath: manifestPath,
+      output: parsed.output,
+      executable: parsed.executable,
+      workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
+    )
+  }
+
+  private func parsePackage(scope: String, arguments: [String]) throws -> PackageCommand {
+    guard let subcommand = arguments.first else {
+      throw CLIUsageError("\(scope) command requires a subcommand")
+    }
+    guard let kind = PackageCommandKind(rawValue: subcommand) else {
+      throw CLIUsageError("unsupported \(scope) subcommand '\(subcommand)'")
+    }
+    let target = arguments.count >= 2 && !arguments[1].hasPrefix("--") ? arguments[1] : nil
+    let optionStart = target == nil ? 1 : 2
+    let options = try parseGeneric(
+      scope: scope,
+      command: subcommand,
+      target: target,
+      arguments: Array(arguments.dropFirst(optionStart)),
+      allowTableOutput: kind == .search || kind == .list
+    )
+    return PackageCommand(kind: kind, options: options)
+  }
+
+  private func parseScoped(kind: ScopedCommandKind, arguments: [String]) throws -> ScopedCommand {
+    if kind == .callStep || kind == .workflowCall {
+      guard arguments.count >= 3,
+        !arguments[0].hasPrefix("--"),
+        !arguments[1].hasPrefix("--"),
+        !arguments[2].hasPrefix("--")
+      else {
+        throw CLIUsageError("\(kind.rawValue) requires <workflow-id> <workflow-run-id> <step-id>")
+      }
+      return ScopedCommand(
+        kind: kind,
+        options: try parseGeneric(
+          scope: kind.rawValue,
+          command: arguments[0],
+          target: arguments[1],
+          arguments: Array(arguments.dropFirst(2))
+        )
+      )
+    }
+    let command = arguments.first?.hasPrefix("--") == false ? arguments.first : nil
+    let targetIndex = command == nil ? 0 : 1
+    let target = arguments.count > targetIndex && !arguments[targetIndex].hasPrefix("--") ? arguments[targetIndex] : nil
+    let optionStart = target == nil ? targetIndex : targetIndex + 1
+    return ScopedCommand(
+      kind: kind,
+      options: try parseGeneric(
+        scope: kind.rawValue,
+        command: command,
+        target: target,
+        arguments: Array(arguments.dropFirst(optionStart))
+      )
+    )
+  }
+
+  private func parseGeneric(
+    scope: String,
+    command: String?,
+    target: String? = nil,
+    arguments: [String],
+    allowTableOutput: Bool = false
+  ) throws -> CLICommandOptions {
+    let output = try parseOutputOnly(arguments, allowTableOutput: allowTableOutput)
+    return CLICommandOptions(scope: scope, command: command, target: target, arguments: arguments, output: output)
   }
 
   private func parseValidate(target: String, tokens: [String]) throws -> WorkflowValidateOptions {
@@ -283,10 +624,9 @@ public struct RielaArgumentParser: CLIArgumentParsing {
 
   private func parseRun(target: String, tokens: [String]) throws -> WorkflowRunOptions {
     let parsed = try ParsedWorkflowOptions(tokens, allowRunOptions: true)
-    if parsed.endpoint != nil || parsed.fromRegistry {
-      throw CLIUsageError("Swift TASK-007 supports deterministic local workflow run only")
+    if !parsed.fromRegistry {
+      try rejectUnsafeScopedRunTarget(target, parsed: parsed)
     }
-    try rejectUnsafeScopedRunTarget(target, parsed: parsed)
     let resolution = WorkflowResolutionOptions(
       workflowName: target,
       scope: parsed.scope,
@@ -307,7 +647,13 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       timeoutMs: parsed.timeoutMs,
       artifactRoot: parsed.artifactRoot,
       sessionStore: parsed.sessionStore,
-      workingDirectory: resolution.workingDirectory
+      workingDirectory: resolution.workingDirectory,
+      endpoint: parsed.endpoint,
+      authToken: parsed.authToken,
+      authTokenEnv: parsed.authTokenEnv,
+      fromRegistry: parsed.fromRegistry,
+      autoImprove: parsed.autoImprove,
+      autoImprovePolicy: parsed.autoImprovePolicy
     )
   }
 
@@ -359,10 +705,18 @@ private struct ParsedWorkflowOptions {
   var sessionStore: String?
   var workingDirectory: String?
   var endpoint: String?
+  var authToken: String?
+  var authTokenEnv: String?
   var fromRegistry = false
   var nestedSuperviser = false
+  var autoImprove = false
+  var maxSupervisedAttempts = 3
+  var maxWorkflowPatches = 2
+  var monitorIntervalMs = 1_000
+  var stallTimeoutMs = 30_000
+  var workflowMutationMode = "execution-copy"
 
-  init(_ tokens: [String], allowRunOptions: Bool = false) throws {
+  init(_ tokens: [String], allowRunOptions: Bool = false, allowTableOutput: Bool = false) throws {
     var index = 0
     while index < tokens.count {
       let token = tokens[index]
@@ -388,7 +742,10 @@ private struct ParsedWorkflowOptions {
       case "--output":
         let raw = try readValue()
         guard let value = WorkflowOutputFormat(rawValue: raw) else {
-          throw CLIUsageError("invalid --output value '\(raw)'; expected text or json")
+          throw CLIUsageError("invalid --output value '\(raw)'; expected text, json, or table")
+        }
+        if value == .table && !allowTableOutput {
+          throw CLIUsageError("`--output table` is only supported for workflow list, workflow status, package search, and package list")
         }
         output = value
       case "--executable":
@@ -428,16 +785,96 @@ private struct ParsedWorkflowOptions {
         workingDirectory = try readValue()
       case "--endpoint":
         endpoint = try readValue()
+      case "--auth-token":
+        try requireRunOption(token, allowRunOptions: allowRunOptions)
+        authToken = try readValue()
+      case "--auth-token-env":
+        try requireRunOption(token, allowRunOptions: allowRunOptions)
+        authTokenEnv = try readValue()
       case "--from-registry":
         fromRegistry = true
       case "--nested-superviser", "--nested-supervisor":
         nestedSuperviser = true
+      case "--auto-improve":
+        try requireRunOption(token, allowRunOptions: allowRunOptions)
+        autoImprove = true
+      case "--no-auto-improve":
+        try requireRunOption(token, allowRunOptions: allowRunOptions)
+        autoImprove = false
+        maxWorkflowPatches = 0
+      case "--max-supervised-attempts":
+        try requireRunOption(token, allowRunOptions: allowRunOptions)
+        maxSupervisedAttempts = try positiveInt(token, readValue())
+      case "--max-workflow-patches":
+        try requireRunOption(token, allowRunOptions: allowRunOptions)
+        maxWorkflowPatches = try nonNegativeInt(token, readValue())
+      case "--monitor-interval-ms":
+        try requireRunOption(token, allowRunOptions: allowRunOptions)
+        monitorIntervalMs = try positiveInt(token, readValue())
+      case "--stall-timeout-ms":
+        try requireRunOption(token, allowRunOptions: allowRunOptions)
+        stallTimeoutMs = try positiveInt(token, readValue())
+      case "--workflow-mutation-mode":
+        try requireRunOption(token, allowRunOptions: allowRunOptions)
+        let mode = try readValue()
+        guard mode == "execution-copy" || mode == "in-place" || mode == "disabled" else {
+          throw CLIUsageError("invalid --workflow-mutation-mode value '\(mode)'; expected execution-copy, in-place, or disabled")
+        }
+        workflowMutationMode = mode
       default:
         throw CLIUsageError("unknown option '\(token)'")
       }
       index += 1
     }
+    if stallTimeoutMs < monitorIntervalMs {
+      throw CLIUsageError("invalid --auto-improve policy: stallTimeoutMs must be greater than or equal to monitorIntervalMs")
+    }
   }
+
+  var autoImprovePolicy: WorkflowAutoImprovePolicy {
+    WorkflowAutoImprovePolicy(
+      maxSupervisedAttempts: maxSupervisedAttempts,
+      maxWorkflowPatches: maxWorkflowPatches,
+      monitorIntervalMs: monitorIntervalMs,
+      stallTimeoutMs: stallTimeoutMs,
+      workflowMutationMode: workflowMutationMode,
+      nestedSuperviser: nestedSuperviser
+    )
+  }
+}
+
+private func parseOutputOnly(_ tokens: [String], allowTableOutput: Bool) throws -> WorkflowOutputFormat {
+  var output = WorkflowOutputFormat.text
+  var index = 0
+  while index < tokens.count {
+    let token = tokens[index]
+    if token == "--output" {
+      guard index + 1 < tokens.count, !tokens[index + 1].hasPrefix("--") else {
+        throw CLIUsageError("--output requires a value")
+      }
+      guard let value = WorkflowOutputFormat(rawValue: tokens[index + 1]) else {
+        throw CLIUsageError("invalid --output value '\(tokens[index + 1])'; expected text, json, or table")
+      }
+      if value == .table && !allowTableOutput {
+        throw CLIUsageError("`--output table` is only supported for workflow list, workflow status, package search, and package list")
+      }
+      output = value
+      index += 2
+      continue
+    }
+    if token.hasPrefix("--output=") {
+      let raw = String(token.dropFirst("--output=".count))
+      guard let value = WorkflowOutputFormat(rawValue: raw) else {
+        throw CLIUsageError("invalid --output value '\(raw)'; expected text, json, or table")
+      }
+      if value == .table && !allowTableOutput {
+        throw CLIUsageError("`--output table` is only supported for workflow list, workflow status, package search, and package list")
+      }
+      output = value
+    }
+    index += 1
+  }
+  return output
 }
 
 private func requireRunOption(_ token: String, allowRunOptions: Bool) throws {
@@ -449,6 +886,13 @@ private func requireRunOption(_ token: String, allowRunOptions: Bool) throws {
 private func positiveInt(_ token: String, _ raw: String) throws -> Int {
   guard let value = Int(raw), value > 0 else {
     throw CLIUsageError("\(token) requires a positive integer")
+  }
+  return value
+}
+
+private func nonNegativeInt(_ token: String, _ raw: String) throws -> Int {
+  guard let value = Int(raw), value >= 0 else {
+    throw CLIUsageError("\(token) must be a non-negative integer")
   }
   return value
 }

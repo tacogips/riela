@@ -3,20 +3,23 @@ import XCTest
 @testable import RielaCore
 
 final class SwiftDeletionReadinessTests: XCTestCase {
-  func testTrackedGateKeepsTypeScriptDeletionBlocked() throws {
+  func testTrackedGateKeepsTypeScriptDeletionBlockedPendingCurrentReview() throws {
     let data = try loadTrackedGateData()
     let gate = try JSONDecoder().decode(SwiftDeletionReadinessGate.self, from: data)
-    let result = SwiftDeletionReadinessValidator().decodeAndValidate(data)
+    let context = try trackedDeletionReadyContext(for: gate)
+    let result = SwiftDeletionReadinessValidator().decodeAndValidate(data, context: context)
 
     XCTAssertTrue(result.valid, result.diagnostics.joined(separator: "\n"))
     XCTAssertFalse(result.allowsTypeScriptDeletion)
     XCTAssertFalse(gate.allowsTypeScriptDeletion)
     XCTAssertFalse(gate.typeScriptSourceDeletionReady)
+    XCTAssertEqual(gate.migrationStatus, "incomplete")
     XCTAssertTrue(gate.productionSwiftPackagingReady)
     XCTAssertEqual(Set(gate.domains.compactMap(\.id)), Set(SwiftDeletionReadinessValidator.requiredDomainIds))
-    XCTAssertTrue(result.blockingDomainIds.contains("agent-codex"))
-    XCTAssertTrue(result.blockingDomainIds.contains("agent-claude-code"))
-    XCTAssertTrue(result.blockingDomainIds.contains("agent-cursor-cli"))
+    XCTAssertEqual(Set(result.blockingDomainIds), Set(SwiftDeletionReadinessValidator.requiredDomainIds))
+    XCTAssertTrue(gate.domains.allSatisfy { $0.status == "blocked" && $0.reviewDecision == "blocked" })
+    XCTAssertTrue(gate.domains.allSatisfy { $0.acceptedReviewWorkflowId == nil && $0.acceptedReviewNodeId == nil })
+    XCTAssertEqual(Set(gate.domains.flatMap { $0.evidenceArtifacts ?? [] }), Set(context.resolvedEvidenceArtifacts.keys))
   }
 
   func testDecodeAndValidateRejectsMissingRequiredDomainField() throws {
@@ -57,6 +60,25 @@ final class SwiftDeletionReadinessTests: XCTestCase {
     XCTAssertTrue(result.diagnostics.contains("domain cli missing evidenceArtifacts"))
   }
 
+  func testValidateIgnoresShellCommentFragmentsWhenMatchingRequiredCommands() throws {
+    var gate = try deletionReadyGate()
+    guard let cliIndex = gate.domains.firstIndex(where: { $0.id == "cli" }) else {
+      return XCTFail("expected cli domain")
+    }
+    gate.domains[cliIndex].evidenceCommands = [
+      "swift test --filter WorkflowCommandTests",
+      "bun run packages/riela/src/bin.ts --help # packages/rielflow/src/bin.ts",
+    ]
+
+    let result = SwiftDeletionReadinessValidator().validate(
+      gate,
+      context: deletionReadyContext(for: gate)
+    )
+
+    XCTAssertFalse(result.valid)
+    XCTAssertTrue(result.diagnostics.contains("domain cli missing required evidence command matching bun + packages/rielflow/src/bin.ts"))
+  }
+
   func testValidateRejectsMissingAgentDomain() throws {
     var gate = try loadTrackedGate()
     gate.domains.removeAll { $0.id == "agent-cursor-cli" }
@@ -79,11 +101,14 @@ final class SwiftDeletionReadinessTests: XCTestCase {
   }
 
   func testValidateRejectsUnsafeDeletionReadyAggregate() throws {
-    var gate = try loadTrackedGate()
-    gate.allowsTypeScriptDeletion = true
-    gate.typeScriptSourceDeletionReady = true
+    var gate = try deletionReadyGate()
+    gate.domains[0].status = "blocked"
+    gate.domains[0].reviewDecision = "blocked"
 
-    let result = SwiftDeletionReadinessValidator().validate(gate)
+    let result = SwiftDeletionReadinessValidator().validate(
+      gate,
+      context: deletionReadyContext(for: gate)
+    )
 
     XCTAssertFalse(result.valid)
     XCTAssertFalse(result.allowsTypeScriptDeletion)
@@ -411,7 +436,7 @@ final class SwiftDeletionReadinessTests: XCTestCase {
     case "package-build":
       return ["swift build", "bun run typecheck"]
     case "cli":
-      return ["swift test --filter WorkflowCommandTests", "bun run packages/riela/src/bin.ts --help"]
+      return ["swift test --filter WorkflowCommandTests", "bun run packages/rielflow/src/bin.ts --help"]
     case "server":
       return ["swift test --filter RielaServerTests", "bun run typecheck:server"]
     case "graphql":
@@ -419,7 +444,7 @@ final class SwiftDeletionReadinessTests: XCTestCase {
     case "event":
       return ["swift test --filter RielaEventsTests", "bun test packages/riela/src/events"]
     case "workflow-package":
-      return ["swift test --filter WorkflowPackage", "bun run packages/riela/src/bin.ts package --help"]
+      return ["swift test --filter WorkflowPackage", "bun run packages/rielflow/src/bin.ts package --help"]
     case "persistence":
       return ["swift test --filter Persistence", "bun test packages/riela/src/workflow/manager-session-store.test.ts"]
     case "release":
@@ -437,7 +462,7 @@ final class SwiftDeletionReadinessTests: XCTestCase {
     case "agent-codex":
       return ["swift test --filter CodexAgent", "bun test packages/riela-adapters/src/codex"]
     case "agent-claude-code":
-      return ["swift test --filter ClaudeCodeAgent", "bun test packages/riela-adapters/src/claude"]
+      return ["swift test --filter Claude", "bun test packages/riela-adapters/src/claude"]
     case "agent-cursor-cli":
       return ["swift test --filter CursorCLIAgent", "bun test packages/riela-adapters/src/cursor"]
     default:
@@ -445,7 +470,13 @@ final class SwiftDeletionReadinessTests: XCTestCase {
     }
   }
 
-  private func deletionReadyContext(for gate: SwiftDeletionReadinessGate) -> SwiftDeletionReadinessValidationContext {
+  private func deletionReadyContext(
+    for gate: SwiftDeletionReadinessGate,
+    currentBranch: String = "main",
+    currentCommit: String = "current-commit"
+  ) -> SwiftDeletionReadinessValidationContext {
+    // Unit fixtures synthesize evidence to isolate validator rules; tracked gate
+    // coverage loads packaging/swift-deletion-readiness-evidence.json instead.
     var resolvedEvidenceArtifacts: [String: SwiftDeletionReadinessEvidenceArtifact] = [:]
     for domain in gate.domains {
       guard
@@ -460,16 +491,59 @@ final class SwiftDeletionReadinessTests: XCTestCase {
           domainId: domainId,
           command: command,
           exitCode: 0,
-          branch: "main",
-          commit: "current-commit",
+          branch: currentBranch,
+          commit: currentCommit,
           workflowId: "codex-design-and-implement-review-loop",
           nodeId: "step7-adversarial-review"
         )
       }
     }
     return SwiftDeletionReadinessValidationContext(
-      currentBranch: "main",
-      currentCommit: "current-commit",
+      currentBranch: currentBranch,
+      currentCommit: currentCommit,
+      resolvedEvidenceArtifacts: resolvedEvidenceArtifacts
+    )
+  }
+
+  private struct TrackedDeletionReadinessEvidence: Decodable {
+    var artifacts: [TrackedDeletionReadinessArtifact]
+  }
+
+  private struct TrackedDeletionReadinessArtifact: Decodable {
+    var artifact: String
+    var domainId: String
+    var command: String
+    var exitCode: Int
+    var branch: String
+    var commit: String
+    var workflowId: String
+    var nodeId: String
+  }
+
+  private func trackedDeletionReadyContext(
+    for gate: SwiftDeletionReadinessGate
+  ) throws -> SwiftDeletionReadinessValidationContext {
+    let evidenceURL = try repositoryRoot()
+      .appendingPathComponent("packaging/swift-deletion-readiness-evidence.json")
+    let evidence = try JSONDecoder().decode(
+      TrackedDeletionReadinessEvidence.self,
+      from: Data(contentsOf: evidenceURL)
+    )
+    var resolvedEvidenceArtifacts: [String: SwiftDeletionReadinessEvidenceArtifact] = [:]
+    for artifact in evidence.artifacts {
+      resolvedEvidenceArtifacts[artifact.artifact] = SwiftDeletionReadinessEvidenceArtifact(
+        domainId: artifact.domainId,
+        command: artifact.command,
+        exitCode: artifact.exitCode,
+        branch: artifact.branch,
+        commit: artifact.commit,
+        workflowId: artifact.workflowId,
+        nodeId: artifact.nodeId
+      )
+    }
+    return SwiftDeletionReadinessValidationContext(
+      currentBranch: try XCTUnwrap(gate.domains.first?.verifiedBranch),
+      currentCommit: try XCTUnwrap(gate.domains.first?.verifiedCommit),
       resolvedEvidenceArtifacts: resolvedEvidenceArtifacts
     )
   }

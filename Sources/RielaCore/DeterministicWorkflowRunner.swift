@@ -54,13 +54,15 @@ public struct WorkflowRunResult: Codable, Equatable, Sendable {
   public var status: WorkflowSessionStatus
   public var nodeExecutions: Int
   public var transitions: Int
+  public var supervision: JSONObject?
 
   public init(
     workflowId: String,
     session: WorkflowSession,
     rootOutput: JSONObject?,
     exitCode: Int32,
-    transitions: Int
+    transitions: Int,
+    supervision: JSONObject? = nil
   ) {
     self.workflowId = workflowId
     self.session = session
@@ -69,6 +71,7 @@ public struct WorkflowRunResult: Codable, Equatable, Sendable {
     self.status = session.status
     self.nodeExecutions = session.executions.count
     self.transitions = transitions
+    self.supervision = supervision
   }
 }
 
@@ -765,16 +768,23 @@ public struct DeterministicLocalNodeAdapter: NodeAdapter {
   public init() {}
 
   public func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
-    AdapterExecutionOutput(
+    var payload: JSONObject = [
+      "nodeId": .string(input.node.id),
+      "provider": .string("deterministic-local"),
+      "status": .string("completed"),
+    ]
+    if let resumedFromNodeExecId = input.mergedVariables["resumedFromNodeExecId"] {
+      payload["resumedFromNodeExecId"] = resumedFromNodeExecId
+    }
+    if input.mergedVariables["resumedFromNodeExecId"] != nil {
+      payload["promptText"] = .string(input.promptText)
+    }
+    return AdapterExecutionOutput(
       provider: "deterministic-local",
       model: input.node.model,
       promptText: input.promptText,
       completionPassed: true,
-      payload: [
-        "nodeId": .string(input.node.id),
-        "provider": .string("deterministic-local"),
-        "status": .string("completed"),
-      ]
+      payload: payload
     )
   }
 }

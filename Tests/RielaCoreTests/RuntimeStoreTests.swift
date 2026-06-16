@@ -2,6 +2,45 @@ import XCTest
 @testable import RielaCore
 
 final class RuntimeStoreTests: XCTestCase {
+  func testRuntimePersistenceSnapshotProjectsSessionMessagesAndRootOutput() async throws {
+    let store = InMemoryWorkflowRuntimeStore(clock: FixedWorkflowRuntimeClock(Date(timeIntervalSince1970: 100)))
+    let session = try await store.createSession(WorkflowSessionCreateInput(workflowId: "wf", entryStepId: "start"))
+    let execution = try await store.recordStepExecution(
+      WorkflowStepExecutionRecordInput(sessionId: session.sessionId, stepId: "start", nodeId: "node-start", attempt: 1)
+    )
+    let updated = try await store.updateStepExecution(
+      WorkflowStepExecutionUpdateInput(
+        sessionId: session.sessionId,
+        executionId: execution.executionId,
+        status: .completed,
+        acceptedOutput: WorkflowAcceptedOutputMetadata(
+          payload: ["status": .string("ok")],
+          when: [:],
+          isRootOutput: true,
+          acceptedAt: Date(timeIntervalSince1970: 100)
+        )
+      )
+    )
+    _ = updated
+    let message = try await store.appendWorkflowMessage(
+      WorkflowMessageAppendInput(
+        workflowExecutionId: session.sessionId,
+        fromStepId: "start",
+        toStepId: "next",
+        sourceStepExecutionId: execution.executionId,
+        payload: ["status": .string("ok")]
+      )
+    )
+    let loadedSession = try await store.loadSession(id: session.sessionId)
+    let persisted = try XCTUnwrap(loadedSession)
+    let snapshot = WorkflowRuntimePersistenceProjector.snapshot(session: persisted, workflowMessages: [message])
+
+    XCTAssertEqual(snapshot.session.sessionId, session.sessionId)
+    XCTAssertEqual(snapshot.workflowMessages.map(\.communicationId), ["comm-000001"])
+    XCTAssertEqual(snapshot.rootOutput?["status"], .string("ok"))
+    XCTAssertEqual(snapshot.diagnostics, [])
+  }
+
   func testInMemoryStoreUsesDeterministicIdsTimestampsAndCreatedOrder() async throws {
     let date = Date(timeIntervalSince1970: 100)
     let store = InMemoryWorkflowRuntimeStore(clock: FixedWorkflowRuntimeClock(date))

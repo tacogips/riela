@@ -1,7 +1,155 @@
+import Foundation
 import RielaAdapters
 import RielaCore
 import XCTest
 @testable import RielaCLI
+
+private actor RecordingWorkflowGraphQLRunTransport: WorkflowGraphQLRunTransporting {
+  private(set) var endpoint: String?
+  private(set) var request: WorkflowRemoteRunRequest?
+  var result = WorkflowRemoteRunResult(
+    sessionId: "remote-session-1",
+    status: "completed",
+    workflowName: "remote-workflow",
+    workflowId: "remote-workflow",
+    nodeExecutions: 2,
+    transitions: 1,
+    exitCode: 0
+  )
+
+  func executeWorkflow(endpoint: String, request: WorkflowRemoteRunRequest) async throws -> WorkflowRemoteRunResult {
+    self.endpoint = endpoint
+    self.request = request
+    return result
+  }
+
+  func recordedEndpoint() -> String? {
+    endpoint
+  }
+
+  func recordedRequest() -> WorkflowRemoteRunRequest? {
+    request
+  }
+}
+
+private final class RecordingGraphQLURLProtocol: URLProtocol {
+  private static let lock = NSLock()
+  private nonisolated(unsafe) static var responseQueue: [Data] = []
+  private nonisolated(unsafe) static var recordedBodies: [[String: Any]] = []
+  private nonisolated(unsafe) static var recordedHeaders: [[String: String]] = []
+
+  static func reset(responses: [String]) {
+    lock.withLock {
+      responseQueue = responses.map { Data($0.utf8) }
+      recordedBodies = []
+      recordedHeaders = []
+    }
+  }
+
+  static func bodies() -> [[String: Any]] {
+    lock.withLock { recordedBodies }
+  }
+
+  static func headers() -> [[String: String]] {
+    lock.withLock { recordedHeaders }
+  }
+
+  override class func canInit(with request: URLRequest) -> Bool {
+    request.url?.host == "riela.test"
+  }
+
+  override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+    request
+  }
+
+  override func startLoading() {
+    let body = request.httpBody ?? Self.data(from: request.httpBodyStream)
+    let decoded = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
+    let responseBody: Data = Self.lock.withLock {
+      Self.recordedBodies.append(decoded)
+      Self.recordedHeaders.append(request.allHTTPHeaderFields ?? [:])
+      return Self.responseQueue.isEmpty ? Data(#"{"data":{}}"#.utf8) : Self.responseQueue.removeFirst()
+    }
+    let response = HTTPURLResponse(
+      url: request.url!,
+      statusCode: 200,
+      httpVersion: "HTTP/1.1",
+      headerFields: ["Content-Type": "application/json"]
+    )!
+    client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+    client?.urlProtocol(self, didLoad: responseBody)
+    client?.urlProtocolDidFinishLoading(self)
+  }
+
+  override func stopLoading() {}
+
+  private static func data(from stream: InputStream?) -> Data {
+    guard let stream else {
+      return Data()
+    }
+    stream.open()
+    defer { stream.close() }
+    var data = Data()
+    var buffer = [UInt8](repeating: 0, count: 4096)
+    while stream.hasBytesAvailable {
+      let count = stream.read(&buffer, maxLength: buffer.count)
+      if count <= 0 {
+        break
+      }
+      data.append(buffer, count: count)
+    }
+    return data
+  }
+}
+
+private func environmentValue(_ name: String) -> String? {
+  getenv(name).map { String(cString: $0) }
+}
+
+private func setEnvironmentValue(_ name: String, _ value: String?) {
+  if let value {
+    setenv(name, value, 1)
+  } else {
+    unsetenv(name)
+  }
+}
+
+private func remoteGraphQLRunResponses(executionId: String = "remote-exec-1", status: String = "paused") -> [String] {
+  [
+    """
+    {
+      "data": {
+        "executeWorkflow": {
+          "workflowExecutionId": "\(executionId)",
+          "sessionId": "remote-session-1",
+          "status": "\(status)",
+          "exitCode": 0
+        }
+      }
+    }
+    """,
+    """
+    {
+      "data": {
+        "workflowExecution": {
+          "session": {
+            "sessionId": "remote-session-1",
+            "workflowName": "remote-workflow",
+            "workflowId": "remote-workflow-id",
+            "transitions": [
+              { "when": "always" }
+            ]
+          },
+          "nodeExecutions": [
+            { "nodeExecId": "node-exec-1" },
+            { "nodeExecId": "node-exec-2" }
+          ]
+        }
+      }
+    }
+    """,
+  ]
+}
 
 final class WorkflowCommandTests: XCTestCase {
   func testTopLevelHelpReturnsSuccessfulSmokeOutput() async {
@@ -179,22 +327,30 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertEqual(run.nodeExecutions, 1)
   }
 
-  func testRunRejectsUnsupportedArtifactRootAndConcurrencyOptions() async throws {
+  func testRunHonorsArtifactRootAndForwardsMaxConcurrency() async throws {
     let root = repositoryRoot()
-    let unsupportedOptions = [
-      ["--artifact-root", "\(root)/.tmp-artifacts"],
-      ["--max-concurrency", "2"],
-    ]
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-run-artifact-root-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    let artifactRoot = tempDir.appendingPathComponent("artifacts", isDirectory: true)
 
-    for option in unsupportedOptions {
-      let result = await RielaCLIApplication().run([
-        "workflow", "run", "worker-only-single-step",
-        "--workflow-definition-dir", "\(root)/examples",
-      ] + option)
+    let result = await RielaCLIApplication().run([
+      "workflow", "run", "worker-only-single-step",
+      "--workflow-definition-dir", "\(root)/examples",
+      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+      "--artifact-root", artifactRoot.path,
+      "--max-concurrency", "2",
+      "--output", "json",
+    ])
 
-      XCTAssertEqual(result.exitCode, .usage, "expected usage rejection for \(option)")
-      XCTAssertTrue(result.stderr.contains("not supported by the Swift TASK-007"))
-    }
+    XCTAssertEqual(result.exitCode, .success, result.stderr)
+    let run = try decodeJSON(WorkflowRunResult.self, from: result.stdout)
+    XCTAssertEqual(run.status, .completed)
+    let artifactSnapshot = artifactRoot
+      .appendingPathComponent(run.session.sessionId, isDirectory: true)
+      .appendingPathComponent("runtime-snapshot.json")
+    XCTAssertTrue(FileManager.default.fileExists(atPath: artifactSnapshot.path))
   }
 
   func testSessionRerunUsesPersistedSessionStore() async throws {
@@ -229,6 +385,22 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertEqual(payload.rerunFromStepId, "main-worker")
     XCTAssertNotEqual(payload.sessionId, first.session.sessionId)
     XCTAssertEqual(payload.status, .completed)
+    let secondRerun = await app.run([
+      "session", "rerun", first.session.sessionId, "main-worker",
+      "--workflow-definition-dir", "\(root)/examples",
+      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+      "--session-store", sessionStore,
+      "--output", "json",
+    ])
+    XCTAssertEqual(secondRerun.exitCode, .success, secondRerun.stderr)
+    let secondPayload = try decodeJSON(SessionRerunCommandResult.self, from: secondRerun.stdout)
+    XCTAssertNotEqual(secondPayload.sessionId, payload.sessionId)
+    for sessionId in [payload.sessionId, secondPayload.sessionId] {
+      XCTAssertTrue(FileManager.default.fileExists(atPath: URL(fileURLWithPath: sessionStore, isDirectory: true)
+        .appendingPathComponent("runtime-records", isDirectory: true)
+        .appendingPathComponent(sessionId, isDirectory: true)
+        .appendingPathComponent("runtime-snapshot.json").path))
+    }
   }
 
   func testSessionRerunRejectsNestedSuperviserFlag() async throws {
@@ -320,20 +492,193 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertFalse(failure.error.isEmpty)
   }
 
-  func testParserRunJSONFailureReturnsParseableEnvelopeForUnsupportedEndpoint() async throws {
-    let result = await RielaCLIApplication().run([
+  func testWorkflowRunUsesGraphQLEndpointTransport() async throws {
+    let previousToken = environmentValue("RIELA_REMOTE_AUTH_TOKEN")
+    setEnvironmentValue("RIELA_REMOTE_AUTH_TOKEN", "env-token-1")
+    defer { setEnvironmentValue("RIELA_REMOTE_AUTH_TOKEN", previousToken) }
+
+    let transport = RecordingWorkflowGraphQLRunTransport()
+    let app = RielaCLIApplication(runCommand: WorkflowRunCommand(graphQLTransport: transport))
+    let result = await app.run([
+      "workflow", "run", "worker-only-single-step",
+      "--endpoint", "http://localhost:4000/graphql",
+      "--auth-token-env", "RIELA_REMOTE_AUTH_TOKEN",
+      "--variables", #"{"request":"remote"}"#,
+      "--max-concurrency", "3",
+      "--output", "json",
+    ])
+
+    XCTAssertEqual(result.exitCode, .success, result.stderr)
+    XCTAssertTrue(result.stderr.isEmpty)
+    let remote = try decodeJSON(WorkflowRemoteRunResult.self, from: result.stdout)
+    XCTAssertEqual(remote.sessionId, "remote-session-1")
+    let recordedEndpoint = await transport.recordedEndpoint()
+    XCTAssertEqual(recordedEndpoint, "http://localhost:4000/graphql")
+    let recordedRequest = await transport.recordedRequest()
+    let request = try XCTUnwrap(recordedRequest)
+    XCTAssertEqual(request.workflowName, "worker-only-single-step")
+    XCTAssertEqual(request.runtimeVariables["request"], .string("remote"))
+    XCTAssertEqual(request.maxConcurrency, 3)
+    XCTAssertEqual(request.authToken, "env-token-1")
+    XCTAssertEqual(request.authTokenEnv, "RIELA_REMOTE_AUTH_TOKEN")
+  }
+
+  func testWorkflowRunEndpointUsesRielaAuthEnvironmentWithLegacyFallback() async throws {
+    let previousRielaToken = environmentValue("RIELA_MANAGER_AUTH_TOKEN")
+    let previousLegacyToken = environmentValue("RIEL_MANAGER_AUTH_TOKEN")
+    let previousRielaSession = environmentValue("RIELA_MANAGER_SESSION_ID")
+    let previousLegacySession = environmentValue("RIEL_MANAGER_SESSION_ID")
+    defer {
+      setEnvironmentValue("RIELA_MANAGER_AUTH_TOKEN", previousRielaToken)
+      setEnvironmentValue("RIEL_MANAGER_AUTH_TOKEN", previousLegacyToken)
+      setEnvironmentValue("RIELA_MANAGER_SESSION_ID", previousRielaSession)
+      setEnvironmentValue("RIEL_MANAGER_SESSION_ID", previousLegacySession)
+    }
+
+    setEnvironmentValue("RIELA_MANAGER_AUTH_TOKEN", "riela-token")
+    setEnvironmentValue("RIEL_MANAGER_AUTH_TOKEN", "legacy-token")
+    setEnvironmentValue("RIELA_MANAGER_SESSION_ID", "riela-session")
+    setEnvironmentValue("RIEL_MANAGER_SESSION_ID", "legacy-session")
+
+    let primaryTransport = RecordingWorkflowGraphQLRunTransport()
+    let primaryApp = RielaCLIApplication(runCommand: WorkflowRunCommand(graphQLTransport: primaryTransport))
+    let primaryResult = await primaryApp.run([
       "workflow", "run", "worker-only-single-step",
       "--endpoint", "http://localhost:4000/graphql",
       "--output", "json",
     ])
 
-    XCTAssertEqual(result.exitCode, .usage)
-    XCTAssertTrue(result.stderr.isEmpty)
-    let failure = try decodeJSON(WorkflowRunFailureResult.self, from: result.stdout)
-    XCTAssertEqual(failure.target, "worker-only-single-step")
-    XCTAssertEqual(failure.status, .failed)
-    XCTAssertEqual(failure.exitCode, CLIExitCode.usage.rawValue)
-    XCTAssertTrue(failure.error.contains("deterministic local workflow run only"))
+    XCTAssertEqual(primaryResult.exitCode, .success, primaryResult.stderr)
+    let recordedPrimaryRequest = await primaryTransport.recordedRequest()
+    let primaryRequest = try XCTUnwrap(recordedPrimaryRequest)
+    XCTAssertEqual(primaryRequest.authToken, "riela-token")
+    XCTAssertEqual(primaryRequest.authTokenEnv, "RIELA_MANAGER_AUTH_TOKEN")
+    XCTAssertEqual(primaryRequest.managerSessionId, "riela-session")
+
+    setEnvironmentValue("RIELA_MANAGER_AUTH_TOKEN", nil)
+    setEnvironmentValue("RIELA_MANAGER_SESSION_ID", nil)
+
+    let legacyTransport = RecordingWorkflowGraphQLRunTransport()
+    let legacyApp = RielaCLIApplication(runCommand: WorkflowRunCommand(graphQLTransport: legacyTransport))
+    let legacyResult = await legacyApp.run([
+      "workflow", "run", "worker-only-single-step",
+      "--endpoint", "http://localhost:4000/graphql",
+      "--output", "json",
+    ])
+
+    XCTAssertEqual(legacyResult.exitCode, .success, legacyResult.stderr)
+    let recordedLegacyRequest = await legacyTransport.recordedRequest()
+    let legacyRequest = try XCTUnwrap(recordedLegacyRequest)
+    XCTAssertEqual(legacyRequest.authToken, "legacy-token")
+    XCTAssertEqual(legacyRequest.authTokenEnv, "RIELA_MANAGER_AUTH_TOKEN")
+    XCTAssertEqual(legacyRequest.managerSessionId, "legacy-session")
+  }
+
+  func testURLSessionWorkflowRunUsesSchemaAccurateRemotePayloadAndPausedStatus() async throws {
+    let previousRielaManagerSession = environmentValue("RIELA_MANAGER_SESSION_ID")
+    let previousLegacyManagerSession = environmentValue("RIEL_MANAGER_SESSION_ID")
+    setEnvironmentValue("RIELA_MANAGER_SESSION_ID", "manager-session-1")
+    setEnvironmentValue("RIEL_MANAGER_SESSION_ID", "legacy-manager-session")
+    defer {
+      setEnvironmentValue("RIELA_MANAGER_SESSION_ID", previousRielaManagerSession)
+      setEnvironmentValue("RIEL_MANAGER_SESSION_ID", previousLegacyManagerSession)
+    }
+
+    RecordingGraphQLURLProtocol.reset(responses: remoteGraphQLRunResponses())
+    URLProtocol.registerClass(RecordingGraphQLURLProtocol.self)
+    defer { URLProtocol.unregisterClass(RecordingGraphQLURLProtocol.self) }
+
+    let result = await RielaCLIApplication().run([
+      "workflow", "run", "worker-only-single-step",
+      "--endpoint", "http://riela.test/graphql",
+      "--auth-token", "explicit-token",
+      "--variables", #"{"request":"remote"}"#,
+      "--max-concurrency", "3",
+      "--timeout-ms", "100",
+      "--output", "json",
+    ])
+
+    XCTAssertEqual(result.exitCode, .success, result.stderr)
+    let remote = try decodeJSON(WorkflowRemoteRunResult.self, from: result.stdout)
+    XCTAssertEqual(remote.sessionId, "remote-session-1")
+    XCTAssertEqual(remote.status, "paused")
+    XCTAssertEqual(remote.workflowName, "remote-workflow")
+    XCTAssertEqual(remote.workflowId, "remote-workflow-id")
+    XCTAssertEqual(remote.nodeExecutions, 2)
+    XCTAssertEqual(remote.transitions, 1)
+
+    let bodies = RecordingGraphQLURLProtocol.bodies()
+    XCTAssertEqual(bodies.count, 2)
+    let headers = RecordingGraphQLURLProtocol.headers()
+    XCTAssertEqual(headers.count, 2)
+    for header in headers {
+      XCTAssertEqual(header["Authorization"], "Bearer explicit-token")
+      XCTAssertEqual(header["X-Riela-Manager-Session-Id"], "manager-session-1")
+    }
+    let executeBody = try XCTUnwrap(bodies.first)
+    let executeQuery = try XCTUnwrap(executeBody["query"] as? String)
+    XCTAssertTrue(executeQuery.contains("executeWorkflow(input: $input)"))
+    XCTAssertFalse(executeQuery.contains("workflowName"))
+    XCTAssertFalse(executeQuery.contains("workflowId"))
+    XCTAssertFalse(executeQuery.contains("nodeExecutions"))
+    XCTAssertFalse(executeQuery.contains("transitions"))
+    let variables = try XCTUnwrap(executeBody["variables"] as? [String: Any])
+    let input = try XCTUnwrap(variables["input"] as? [String: Any])
+    XCTAssertEqual(input["workflowName"] as? String, "worker-only-single-step")
+    XCTAssertNil(input["autoImprove"])
+    XCTAssertNil(input["autoImprovePolicy"])
+    XCTAssertNil(input["timeoutMs"])
+    XCTAssertNil(input["authToken"])
+    XCTAssertNil(input["authTokenEnv"])
+    XCTAssertNil(input["managerSessionId"])
+    XCTAssertEqual((input["maxConcurrency"] as? NSNumber)?.intValue, 3)
+
+    let summaryBody = try XCTUnwrap(bodies.last)
+    let summaryQuery = try XCTUnwrap(summaryBody["query"] as? String)
+    XCTAssertTrue(summaryQuery.contains("workflowExecution(workflowExecutionId: $workflowExecutionId)"))
+    let summaryVariables = try XCTUnwrap(summaryBody["variables"] as? [String: Any])
+    XCTAssertEqual(summaryVariables["workflowExecutionId"] as? String, "remote-exec-1")
+  }
+
+  func testURLSessionWorkflowRunAutoImproveIsOptInOverRemotePayload() async throws {
+    URLProtocol.registerClass(RecordingGraphQLURLProtocol.self)
+    defer { URLProtocol.unregisterClass(RecordingGraphQLURLProtocol.self) }
+
+    RecordingGraphQLURLProtocol.reset(responses: remoteGraphQLRunResponses(executionId: "remote-exec-disabled"))
+    let disabled = await RielaCLIApplication().run([
+      "workflow", "run", "worker-only-single-step",
+      "--endpoint", "http://riela.test/graphql",
+      "--no-auto-improve",
+      "--output", "json",
+    ])
+
+    XCTAssertEqual(disabled.exitCode, .success, disabled.stderr)
+    let disabledBodies = RecordingGraphQLURLProtocol.bodies()
+    let disabledExecuteBody = try XCTUnwrap(disabledBodies.first)
+    let disabledVariables = try XCTUnwrap(disabledExecuteBody["variables"] as? [String: Any])
+    let disabledInput = try XCTUnwrap(disabledVariables["input"] as? [String: Any])
+    XCTAssertNil(disabledInput["autoImprove"])
+    XCTAssertNil(disabledInput["nestedSuperviser"])
+
+    RecordingGraphQLURLProtocol.reset(responses: remoteGraphQLRunResponses(executionId: "remote-exec-enabled"))
+    let enabled = await RielaCLIApplication().run([
+      "workflow", "run", "worker-only-single-step",
+      "--endpoint", "http://riela.test/graphql",
+      "--auto-improve",
+      "--max-supervised-attempts", "4",
+      "--nested-supervisor",
+      "--output", "json",
+    ])
+
+    XCTAssertEqual(enabled.exitCode, .success, enabled.stderr)
+    let enabledBodies = RecordingGraphQLURLProtocol.bodies()
+    let enabledExecuteBody = try XCTUnwrap(enabledBodies.first)
+    let enabledVariables = try XCTUnwrap(enabledExecuteBody["variables"] as? [String: Any])
+    let enabledInput = try XCTUnwrap(enabledVariables["input"] as? [String: Any])
+    let enabledAutoImprove = try XCTUnwrap(enabledInput["autoImprove"] as? [String: Any])
+    XCTAssertEqual((enabledAutoImprove["enabled"] as? NSNumber)?.boolValue, true)
+    XCTAssertEqual((enabledAutoImprove["maxSupervisedAttempts"] as? NSNumber)?.intValue, 4)
+    XCTAssertEqual((enabledInput["nestedSuperviser"] as? NSNumber)?.boolValue, true)
   }
 
   func testParserValidateJSONFailureReturnsParseableEnvelopeForUnknownOption() async throws {
@@ -709,6 +1054,1322 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertFalse(failure.error.isEmpty)
   }
 
+  func testWorkflowCatalogAndManifestCommandsReturnBehaviorOutput() async throws {
+    let root = repositoryRoot()
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-catalog-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    let workflowsRoot = tempDir.appendingPathComponent(".riela/workflows", isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowsRoot, withIntermediateDirectories: true)
+    try FileManager.default.copyItem(
+      at: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step"),
+      to: workflowsRoot.appendingPathComponent("demo")
+    )
+
+    let app = RielaCLIApplication()
+    let list = await app.run([
+      "workflow", "list",
+      "--scope", "project",
+      "--working-dir", tempDir.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(list.exitCode, .success)
+    XCTAssertTrue(list.stderr.isEmpty)
+    let listed = try decodeJSON(WorkflowCatalogResult.self, from: list.stdout)
+    XCTAssertEqual(listed.workflows.map(\.workflowName), ["demo"])
+    XCTAssertEqual(listed.workflows.first?.scope, .project)
+    XCTAssertEqual(listed.workflows.first?.valid, true)
+
+    let status = await app.run([
+      "workflow", "status", "demo",
+      "--scope", "project",
+      "--working-dir", tempDir.path,
+      "--output", "table",
+    ])
+    XCTAssertEqual(status.exitCode, .success)
+    XCTAssertTrue(status.stderr.isEmpty)
+    XCTAssertTrue(status.stdout.contains("WORKFLOW\tSCOPE\tSTATUS\tDIRECTORY"))
+    XCTAssertTrue(status.stdout.contains("demo\tproject\tvalid"))
+
+    let manifestURL = tempDir.appendingPathComponent("riela-package.json")
+    try """
+    {
+      "name": "workflow-package",
+      "version": "1.0.0",
+      "description": "Workflow package",
+      "tags": ["sample"],
+      "registry": "default",
+      "checksum": "abc123",
+      "checksumAlgorithm": "md5",
+      "workflowDirectory": "missing-workflow"
+    }
+    """.write(to: manifestURL, atomically: true, encoding: .utf8)
+    let manifest = await app.run([
+      "workflow", "manifest", "validate", manifestURL.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(manifest.exitCode, .usage)
+    XCTAssertTrue(manifest.stderr.isEmpty)
+    let manifestResult = try decodeJSON(WorkflowManifestValidationCommandResult.self, from: manifest.stdout)
+    XCTAssertFalse(manifestResult.valid)
+    XCTAssertTrue(manifestResult.issues.contains { $0.path == "workflowDirectory" || $0.message.contains("workflow.json not found") })
+
+    let envManifest = await app.run([
+      "workflow", "manifest", "validate",
+      "--output", "json",
+    ], environment: ["RIEL_WORKFLOW_MANIFEST": manifestURL.path])
+    XCTAssertEqual(envManifest.exitCode, .usage)
+    XCTAssertTrue(envManifest.stderr.isEmpty)
+    let envManifestResult = try decodeJSON(WorkflowManifestValidationCommandResult.self, from: envManifest.stdout)
+    XCTAssertEqual(envManifestResult.manifestPath, manifestURL.path)
+  }
+
+  func testSessionInspectionCommandsReturnPersistedSessionBehavior() async throws {
+    let root = repositoryRoot()
+    let sessionStore = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-sessions-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: sessionStore) }
+
+    let run = await RielaCLIApplication().run([
+      "workflow", "run", "worker-only-single-step",
+      "--workflow-definition-dir", "\(root)/examples",
+      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+      "--session-store", sessionStore.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(run.exitCode, .success)
+    let runResult = try decodeJSON(WorkflowRunResult.self, from: run.stdout)
+    let runtimeRoot = sessionStore
+      .appendingPathComponent("runtime-records", isDirectory: true)
+      .appendingPathComponent(runResult.session.sessionId, isDirectory: true)
+    try FileManager.default.removeItem(at: runtimeRoot)
+
+    for command in ["status", "progress", "health", "step-runs", "export", "logs"] {
+      let result = await RielaCLIApplication().run([
+        "session", command, runResult.session.sessionId,
+        "--session-store", sessionStore.path,
+        "--output", "json",
+      ])
+      XCTAssertEqual(result.exitCode, .success, command)
+      XCTAssertTrue(result.stderr.isEmpty, command)
+      let inspection = try decodeJSON(SessionInspectionCommandResult.self, from: result.stdout)
+      XCTAssertEqual(inspection.sessionId, runResult.session.sessionId, command)
+      XCTAssertEqual(inspection.workflowName, "worker-only-single-step", command)
+      XCTAssertEqual(inspection.status, .completed, command)
+      XCTAssertEqual(inspection.executionCount, 1, command)
+      if command == "health" {
+        XCTAssertEqual(inspection.health, "ok")
+      }
+      if command == "status" || command == "step-runs" || command == "export" {
+        XCTAssertEqual(inspection.executions.first?.stepId, "main-worker", command)
+      }
+    }
+    XCTAssertTrue(FileManager.default.fileExists(atPath: runtimeRoot.appendingPathComponent("runtime-snapshot.json").path))
+  }
+
+  func testPackageRegistryReadOnlyCommandsDoNotInitializeRegistryConfig() async throws {
+    let root = repositoryRoot()
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-registry-readonly-\(UUID().uuidString)", isDirectory: true)
+    let packageSource = tempDir.appendingPathComponent("package-source", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    try FileManager.default.createDirectory(at: packageSource, withIntermediateDirectories: true)
+    try FileManager.default.copyItem(
+      at: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step/workflow.json"),
+      to: packageSource.appendingPathComponent("workflow.json")
+    )
+    try FileManager.default.copyItem(
+      at: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step/nodes"),
+      to: packageSource.appendingPathComponent("nodes")
+    )
+    try FileManager.default.copyItem(
+      at: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step/prompts"),
+      to: packageSource.appendingPathComponent("prompts")
+    )
+    let registryConfig = tempDir
+      .appendingPathComponent(".riela/workflow-packages", isDirectory: true)
+      .appendingPathComponent("registries.json")
+
+    let app = RielaCLIApplication()
+    let registryList = await app.run([
+      "package", "registry", "list",
+      "--working-dir", tempDir.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(registryList.exitCode, .success, registryList.stderr)
+    let listedRegistry = try decodeJSON(WorkflowPackageRegistryConfig.self, from: registryList.stdout)
+    XCTAssertEqual(listedRegistry.defaultRegistryId, "local")
+    XCTAssertEqual(listedRegistry.registries, [])
+    XCTAssertFalse(FileManager.default.fileExists(atPath: registryConfig.path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: registryConfig.deletingLastPathComponent().path))
+
+    let publishDryRun = await app.run([
+      "package", "publish", packageSource.path,
+      "--package-name", "dry-run-package",
+      "--dry-run",
+      "--working-dir", tempDir.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(publishDryRun.exitCode, .success, publishDryRun.stderr)
+    let published = try decodeJSON(WorkflowPackageCommandResult.self, from: publishDryRun.stdout)
+    XCTAssertEqual(published.dryRun, true)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: registryConfig.path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: registryConfig.deletingLastPathComponent().path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent(".riela/package-registry").path))
+  }
+
+  func testWorkflowRunFromRegistryRejectsEscapingWorkflowDirectory() async throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-registry-run-escape-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    let packageDirectory = tempDir
+      .appendingPathComponent(".riela/packages/escape-package", isDirectory: true)
+    try FileManager.default.createDirectory(at: packageDirectory, withIntermediateDirectories: true)
+    let app = RielaCLIApplication()
+
+    for workflowDirectory in ["/tmp/outside-workflow", "../outside-workflow"] {
+      try """
+      {
+        "name": "escape-package",
+        "version": "1.0.0",
+        "description": "Escape package",
+        "tags": ["demo"],
+        "registry": "local",
+        "checksum": "cccccccccccccccccccccccccccccccc",
+        "checksumAlgorithm": "md5",
+        "workflowDirectory": "\(workflowDirectory)"
+      }
+      """.write(to: packageDirectory.appendingPathComponent("riela-package.json"), atomically: true, encoding: .utf8)
+
+      let result = await app.run([
+        "workflow", "run", "escape-package",
+        "--from-registry",
+        "--working-dir", tempDir.path,
+        "--output", "json",
+      ])
+      XCTAssertEqual(result.exitCode, .usage, workflowDirectory)
+      XCTAssertTrue(result.stderr.isEmpty)
+      let failure = try decodeJSON(WorkflowRunFailureResult.self, from: result.stdout)
+      XCTAssertTrue(failure.error.contains("workflowDirectory: path must be package-relative"), failure.error)
+    }
+  }
+
+  func testWorkflowCreateCheckoutPackageSessionContinueAndScopedParityCommands() async throws {
+    let root = repositoryRoot()
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-parity-\(UUID().uuidString)", isDirectory: true)
+    let packageSource = tempDir.appendingPathComponent("package-source", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    try FileManager.default.createDirectory(at: packageSource, withIntermediateDirectories: true)
+
+    let app = RielaCLIApplication()
+    let create = await app.run([
+      "workflow", "create", "created-flow",
+      "--working-dir", tempDir.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(create.exitCode, .success, create.stderr)
+    let created = try decodeJSON(WorkflowCreateCommandResult.self, from: create.stdout)
+    XCTAssertEqual(created.workflowName, "created-flow")
+    XCTAssertTrue(FileManager.default.fileExists(atPath: "\(created.workflowDirectory)/workflow.json"))
+    let checkoutCache = tempDir
+      .appendingPathComponent(".riela/workflow-checkout-sources/github-example-workflows-main-copied-flow", isDirectory: true)
+      .appendingPathComponent("copied-flow", isDirectory: true)
+    try FileManager.default.createDirectory(at: checkoutCache.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try FileManager.default.copyItem(at: URL(fileURLWithPath: created.workflowDirectory), to: checkoutCache)
+
+    let checkout = await app.run([
+      "workflow", "checkout", "https://github.com/example/workflows/tree/main/copied-flow",
+      "--working-dir", tempDir.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(checkout.exitCode, .success, checkout.stderr)
+    let checkedOut = try decodeJSON(WorkflowCheckoutCommandResult.self, from: checkout.stdout)
+    XCTAssertEqual(checkedOut.workflowName, "copied-flow")
+    XCTAssertTrue(FileManager.default.fileExists(atPath: "\(checkedOut.destinationDirectory)/workflow.json"))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent(".riela/workflow-checkouts/copied-flow.json").path))
+
+    try FileManager.default.copyItem(
+      at: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step/workflow.json"),
+      to: packageSource.appendingPathComponent("workflow.json")
+    )
+    try FileManager.default.copyItem(
+      at: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step/nodes"),
+      to: packageSource.appendingPathComponent("nodes")
+    )
+    try FileManager.default.copyItem(
+      at: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step/prompts"),
+      to: packageSource.appendingPathComponent("prompts")
+    )
+    try """
+    {
+      "name": "demo-package",
+      "version": "1.0.0",
+      "description": "Demo package",
+      "tags": ["demo"],
+      "registry": "local",
+      "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "checksumAlgorithm": "md5",
+      "workflowDirectory": "."
+    }
+    """.write(to: packageSource.appendingPathComponent("riela-package.json"), atomically: true, encoding: .utf8)
+
+    let install = await app.run([
+      "package", "install", "demo-package",
+      "--source", packageSource.path,
+      "--working-dir", tempDir.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(install.exitCode, .success, install.stderr)
+    let installed = try decodeJSON(WorkflowPackageCommandResult.self, from: install.stdout)
+    XCTAssertEqual(installed.destinationDirectory, tempDir.appendingPathComponent(".riela/packages/demo-package").path)
+
+    let list = await app.run([
+      "workflow", "package", "list",
+      "--working-dir", tempDir.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(list.exitCode, .success, list.stderr)
+    let listed = try decodeJSON(WorkflowPackageCommandResult.self, from: list.stdout)
+    XCTAssertEqual(listed.packages.map(\.name), ["demo-package"])
+    XCTAssertEqual(listed.packages.first?.valid, true)
+
+    let registryAdd = await app.run([
+      "package", "registry", "add", "local",
+      "--registry-url", "https://github.com/example/registry",
+      "--registry-local-path", tempDir.appendingPathComponent("local-registry").path,
+      "--branch", "main",
+      "--working-dir", tempDir.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(registryAdd.exitCode, .success, registryAdd.stderr)
+    let addedRegistry = try decodeJSON(WorkflowPackageRegistryConfig.self, from: registryAdd.stdout)
+    XCTAssertEqual(addedRegistry.defaultRegistryId, "local")
+    XCTAssertEqual(addedRegistry.registries.first?.id, "local")
+
+    let registryList = await app.run([
+      "workflow", "package", "registry", "list",
+      "--working-dir", tempDir.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(registryList.exitCode, .success, registryList.stderr)
+    let listedRegistry = try decodeJSON(WorkflowPackageRegistryConfig.self, from: registryList.stdout)
+    XCTAssertEqual(listedRegistry.registries.map(\.url), ["https://github.com/example/registry"])
+
+    let publish = await app.run([
+      "workflow", "package", "publish", packageSource.path,
+      "--package-name", "demo-package",
+      "--dry-run",
+      "--working-dir", tempDir.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(publish.exitCode, .success, publish.stderr)
+    let published = try decodeJSON(WorkflowPackageCommandResult.self, from: publish.stdout)
+    XCTAssertEqual(published.dryRun, true)
+
+    let publishWrite = await app.run([
+      "workflow", "package", "publish", packageSource.path,
+      "--package-id", "demo-package",
+      "--registry", "local",
+      "--registry-local-path", tempDir.appendingPathComponent("local-registry").path,
+      "--working-dir", tempDir.path,
+      "--yes",
+      "--output", "json",
+    ])
+    XCTAssertEqual(publishWrite.exitCode, .success, publishWrite.stderr)
+    let publishWriteResult = try decodeJSON(WorkflowPackageCommandResult.self, from: publishWrite.stdout)
+    XCTAssertEqual(publishWriteResult.dryRun, false)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: try XCTUnwrap(publishWriteResult.destinationDirectory)))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent(".riela/package-cache/demo-package.json").path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent(".riela/package-locks/demo-package.json").path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent(".riela/skills/demo-package/SKILL.md").path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent(".riela/package-native-addons/demo-package.json").path))
+
+    let explicitRegistryRoot = tempDir.appendingPathComponent("explicit-url-registry", isDirectory: true)
+    let explicitRegistryPublish = await app.run([
+      "package", "publish", packageSource.path,
+      "--package-name", "demo-package-url",
+      "--registry", "https://github.com/acme/packages",
+      "--registry-local-path", explicitRegistryRoot.path,
+      "--branch", "release",
+      "--working-dir", tempDir.path,
+      "--yes",
+      "--output", "json",
+    ])
+    XCTAssertEqual(explicitRegistryPublish.exitCode, .success, explicitRegistryPublish.stderr)
+    let explicitRegistryResult = try decodeJSON(WorkflowPackageCommandResult.self, from: explicitRegistryPublish.stdout)
+    let explicitRegistryRecordPath = try XCTUnwrap(explicitRegistryResult.destinationDirectory)
+    let explicitRegistryRecord = try decodeJSON(JSONObject.self, from: String(contentsOfFile: explicitRegistryRecordPath))
+    XCTAssertEqual(explicitRegistryRecord["registry"]?.stringValue, "github-acme-packages")
+    XCTAssertEqual(explicitRegistryRecord["registryUrl"]?.stringValue, "https://github.com/acme/packages")
+    XCTAssertEqual(explicitRegistryRecord["registryRef"]?.stringValue, "release")
+    XCTAssertTrue(FileManager.default.fileExists(atPath: explicitRegistryRoot.appendingPathComponent("registry/demo-package-url.json").path))
+
+    let registryURLPrecedencePublish = await app.run([
+      "package", "publish", packageSource.path,
+      "--package-name", "demo-package-url-precedence",
+      "--registry", "local",
+      "--registry-url", "https://github.com/override/packages",
+      "--working-dir", tempDir.path,
+      "--yes",
+      "--output", "json",
+    ])
+    XCTAssertEqual(registryURLPrecedencePublish.exitCode, .success, registryURLPrecedencePublish.stderr)
+    let registryURLPrecedenceResult = try decodeJSON(WorkflowPackageCommandResult.self, from: registryURLPrecedencePublish.stdout)
+    let registryURLPrecedenceRecord = try decodeJSON(JSONObject.self, from: String(contentsOfFile: try XCTUnwrap(registryURLPrecedenceResult.destinationDirectory)))
+    XCTAssertEqual(registryURLPrecedenceRecord["registry"]?.stringValue, "local")
+    XCTAssertEqual(registryURLPrecedenceRecord["registryUrl"]?.stringValue, "https://github.com/override/packages")
+
+    for command in ["run", "temp-run"] {
+      let dryRun = await app.run([
+        "package", command, "demo-package",
+        "--dry-run",
+        "--working-dir", tempDir.path,
+        "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+        "--output", "json",
+      ])
+      XCTAssertEqual(dryRun.exitCode, .success, "\(command): \(dryRun.stderr) \(dryRun.stdout)")
+      let dryRunResult = try decodeJSON(WorkflowPackageCommandResult.self, from: dryRun.stdout)
+      XCTAssertEqual(dryRunResult.dryRun, true)
+      XCTAssertNil(dryRunResult.runSessionId)
+      XCTAssertFalse(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent(".riela/sessions/runtime-records").path))
+    }
+
+    let scopedPackageSource = tempDir.appendingPathComponent("scoped-package-source", isDirectory: true)
+    try FileManager.default.copyItem(at: packageSource, to: scopedPackageSource)
+    try """
+    {
+      "name": "@scope/scoped-flow",
+      "version": "1.0.0",
+      "description": "Scoped demo package",
+      "tags": ["demo"],
+      "registry": "local",
+      "checksum": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "checksumAlgorithm": "md5",
+      "workflowDirectory": "."
+    }
+    """.write(to: scopedPackageSource.appendingPathComponent("riela-package.json"), atomically: true, encoding: .utf8)
+    let scopedInstall = await app.run([
+      "package", "install", "@scope/scoped-flow",
+      "--source", scopedPackageSource.path,
+      "--working-dir", tempDir.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(scopedInstall.exitCode, .success, scopedInstall.stderr)
+
+    let scopedRegistryRun = await app.run([
+      "workflow", "run", "@scope/scoped-flow",
+      "--from-registry",
+      "--working-dir", tempDir.path,
+      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+      "--output", "json",
+    ])
+    XCTAssertEqual(scopedRegistryRun.exitCode, .success, scopedRegistryRun.stderr)
+    let scopedRegistryRunResult = try decodeJSON(WorkflowRunResult.self, from: scopedRegistryRun.stdout)
+    XCTAssertEqual(scopedRegistryRunResult.workflowId, "worker-only-single-step")
+    XCTAssertEqual(scopedRegistryRunResult.status, .completed)
+
+    let registryRun = await app.run([
+      "workflow", "run", "demo-package",
+      "--from-registry",
+      "--working-dir", tempDir.path,
+      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+      "--output", "json",
+    ])
+    XCTAssertEqual(registryRun.exitCode, .success, registryRun.stderr)
+    let registryRunResult = try decodeJSON(WorkflowRunResult.self, from: registryRun.stdout)
+    XCTAssertEqual(registryRunResult.workflowId, "worker-only-single-step")
+    XCTAssertEqual(registryRunResult.status, .completed)
+    let registryRunSessionId = registryRunResult.session.sessionId
+
+    let registryResume = await app.run([
+      "session", "resume", registryRunSessionId,
+      "--working-dir", tempDir.path,
+      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+      "--output", "json",
+    ])
+    XCTAssertEqual(registryResume.exitCode, .success, registryResume.stderr)
+    let registryResumeResult = try decodeJSON(SessionResumeCommandResult.self, from: registryResume.stdout)
+    XCTAssertEqual(registryResumeResult.sessionId, registryRunSessionId)
+
+    let registryContinue = await app.run([
+      "session", "continue", registryRunSessionId,
+      "--working-dir", tempDir.path,
+      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+      "--output", "json",
+    ])
+    XCTAssertEqual(registryContinue.exitCode, .success, registryContinue.stderr)
+    let registryContinueResult = try decodeJSON(SessionResumeCommandResult.self, from: registryContinue.stdout)
+    XCTAssertEqual(registryContinueResult.sessionId, registryRunSessionId)
+
+    let registryRerun = await app.run([
+      "session", "rerun", registryRunSessionId, "main-worker",
+      "--working-dir", tempDir.path,
+      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+      "--output", "json",
+    ])
+    XCTAssertEqual(registryRerun.exitCode, .success, registryRerun.stderr)
+    let registryRerunResult = try decodeJSON(SessionRerunCommandResult.self, from: registryRerun.stdout)
+    XCTAssertEqual(registryRerunResult.sourceSessionId, registryRunSessionId)
+    XCTAssertEqual(registryRerunResult.rerunFromStepId, "main-worker")
+
+    let packageRun = await app.run([
+      "package", "temp-run", "demo-package",
+      "--working-dir", tempDir.path,
+      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+      "--output", "json",
+    ])
+    XCTAssertEqual(packageRun.exitCode, .success, packageRun.stderr)
+    let packageRunResult = try decodeJSON(WorkflowPackageCommandResult.self, from: packageRun.stdout)
+    let packageRunSessionId = try XCTUnwrap(packageRunResult.runSessionId)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir
+      .appendingPathComponent(".riela/sessions/runtime-records", isDirectory: true)
+      .appendingPathComponent(packageRunSessionId, isDirectory: true)
+      .appendingPathComponent("runtime-snapshot.json").path))
+    let secondPackageRun = await app.run([
+      "package", "temp-run", "demo-package",
+      "--working-dir", tempDir.path,
+      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+      "--output", "json",
+    ])
+    XCTAssertEqual(secondPackageRun.exitCode, .success, secondPackageRun.stderr)
+    let secondPackageRunResult = try decodeJSON(WorkflowPackageCommandResult.self, from: secondPackageRun.stdout)
+    let secondPackageRunSessionId = try XCTUnwrap(secondPackageRunResult.runSessionId)
+    XCTAssertNotEqual(secondPackageRunSessionId, packageRunSessionId)
+    for sessionId in [packageRunSessionId, secondPackageRunSessionId] {
+      XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir
+        .appendingPathComponent(".riela/sessions/runtime-records", isDirectory: true)
+        .appendingPathComponent(sessionId, isDirectory: true)
+        .appendingPathComponent("runtime-snapshot.json").path))
+    }
+    let packageRunStatus = await app.run([
+      "session", "status", packageRunSessionId,
+      "--working-dir", tempDir.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(packageRunStatus.exitCode, .success, packageRunStatus.stderr)
+    let packageInspection = try decodeJSON(SessionInspectionCommandResult.self, from: packageRunStatus.stdout)
+    XCTAssertEqual(packageInspection.status, .completed)
+
+    let selfImprove = await app.run([
+      "workflow", "self-improve", "created-flow",
+      "--working-dir", tempDir.path,
+      "--yes",
+      "--output", "json",
+    ])
+    XCTAssertEqual(selfImprove.exitCode, .success, selfImprove.stderr)
+    let selfImproveResult = try decodeJSON(WorkflowSelfImproveCommandResult.self, from: selfImprove.stdout)
+    XCTAssertEqual(selfImproveResult.workflowName, "created-flow")
+    XCTAssertEqual(selfImproveResult.dryRun, false)
+    XCTAssertEqual(selfImproveResult.mutated, true)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: "\(created.workflowDirectory)/.riela-self-improve-patch.json"))
+    XCTAssertTrue(try String(contentsOfFile: "\(created.workflowDirectory)/workflow.json").contains("self-improve-reviewed"))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: try XCTUnwrap(selfImproveResult.backupDirectory)))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: try XCTUnwrap(selfImproveResult.reportPath)))
+
+    let autoImprove = await app.run([
+      "workflow", "run", "supervised-mock-retry",
+      "--workflow-definition-dir", "\(root)/examples",
+      "--mock-scenario", "\(root)/examples/supervised-mock-retry/mock-scenario.json",
+      "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
+      "--auto-improve",
+      "--max-supervised-attempts", "3",
+      "--monitor-interval-ms", "1000",
+      "--stall-timeout-ms", "2000",
+      "--workflow-mutation-mode", "execution-copy",
+      "--output", "json",
+    ])
+    XCTAssertEqual(autoImprove.exitCode, .success, autoImprove.stderr)
+    let autoImproveResult = try decodeJSON(WorkflowRunResult.self, from: autoImprove.stdout)
+    XCTAssertEqual(autoImproveResult.status, .completed)
+    XCTAssertEqual(autoImproveResult.rootOutput?["status"], .string("ready"))
+    let supervision = try XCTUnwrap(autoImproveResult.supervision)
+    XCTAssertEqual(supervision["status"], .string("succeeded"))
+    XCTAssertEqual(supervision["attempts"], .number(2))
+    guard case let .object(policy)? = supervision["policy"] else {
+      return XCTFail("expected supervision policy")
+    }
+    XCTAssertEqual(policy["maxSupervisedAttempts"], .number(3))
+    XCTAssertEqual(policy["monitorIntervalMs"], .number(1000))
+    XCTAssertEqual(policy["stallTimeoutMs"], .number(2000))
+    XCTAssertEqual(policy["workflowMutationMode"], .string("execution-copy"))
+    guard case let .array(incidents)? = supervision["incidents"] else {
+      return XCTFail("expected supervision incidents")
+    }
+    XCTAssertEqual(incidents.count, 1)
+    guard case let .object(incident)? = incidents.first else {
+      return XCTFail("expected failure incident object")
+    }
+    XCTAssertEqual(incident["category"], .string("failure"))
+    XCTAssertEqual(incident["stepId"], .string("main-worker"))
+    guard case let .array(remediations)? = supervision["remediations"] else {
+      return XCTFail("expected supervision remediations")
+    }
+    XCTAssertEqual(remediations.count, 1)
+    guard case let .object(remediation)? = remediations.first else {
+      return XCTFail("expected rerun remediation object")
+    }
+    XCTAssertEqual(remediation["action"], .string("rerun-workflow"))
+    XCTAssertEqual(remediation["managerControl"], .string("session rerun"))
+    XCTAssertEqual(remediation["targetSessionId"], .string(autoImproveResult.session.sessionId))
+    XCTAssertNotEqual(remediation["sourceSessionId"], remediation["targetSessionId"])
+    let supervisionRecord = tempDir
+      .appendingPathComponent("sessions/runtime-records", isDirectory: true)
+      .appendingPathComponent(autoImproveResult.session.sessionId, isDirectory: true)
+      .appendingPathComponent("supervision-record.json")
+    XCTAssertTrue(FileManager.default.fileExists(atPath: supervisionRecord.path))
+    let persistedSupervision = try decodeJSON(
+      JSONObject.self,
+      from: String(contentsOf: supervisionRecord, encoding: .utf8)
+    )
+    XCTAssertEqual(persistedSupervision["status"], .string("succeeded"))
+    XCTAssertEqual(persistedSupervision["targetSessionId"], .string(autoImproveResult.session.sessionId))
+    XCTAssertEqual(persistedSupervision["attempts"], .number(2))
+
+    let run = await app.run([
+      "workflow", "run", "worker-only-single-step",
+      "--workflow-definition-dir", "\(root)/examples",
+      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+      "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(run.exitCode, .success, run.stderr)
+    let runResult = try decodeJSON(WorkflowRunResult.self, from: run.stdout)
+    let runtimeRecordRoot = tempDir
+      .appendingPathComponent("sessions/runtime-records", isDirectory: true)
+      .appendingPathComponent(runResult.session.sessionId, isDirectory: true)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: runtimeRecordRoot.appendingPathComponent("supervision-record.json").path))
+    let secondRun = await app.run([
+      "workflow", "run", "worker-only-single-step",
+      "--workflow-definition-dir", "\(root)/examples",
+      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+      "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(secondRun.exitCode, .success, secondRun.stderr)
+    let secondRunResult = try decodeJSON(WorkflowRunResult.self, from: secondRun.stdout)
+    XCTAssertNotEqual(secondRunResult.session.sessionId, runResult.session.sessionId)
+    for sessionId in [runResult.session.sessionId, secondRunResult.session.sessionId] {
+      XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir
+        .appendingPathComponent("sessions/runtime-records", isDirectory: true)
+        .appendingPathComponent(sessionId, isDirectory: true)
+        .appendingPathComponent("runtime-snapshot.json").path))
+    }
+    let transitionWorkflowRoot = tempDir.appendingPathComponent("transition-workflows", isDirectory: true)
+    let transitionWorkflow = try writeTwoStepWorkflow(at: transitionWorkflowRoot, workflowName: "two-step")
+    let transitionSessionStore = tempDir.appendingPathComponent("transition-sessions", isDirectory: true)
+    let transitionRun = await app.run([
+      "workflow", "run", "two-step",
+      "--workflow-definition-dir", transitionWorkflowRoot.path,
+      "--mock-scenario", transitionWorkflow.scenarioPath,
+      "--session-store", transitionSessionStore.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(transitionRun.exitCode, .success, transitionRun.stderr)
+    let transitionRunResult = try decodeJSON(WorkflowRunResult.self, from: transitionRun.stdout)
+    let secondTransitionRun = await app.run([
+      "workflow", "run", "two-step",
+      "--workflow-definition-dir", transitionWorkflowRoot.path,
+      "--mock-scenario", transitionWorkflow.scenarioPath,
+      "--session-store", transitionSessionStore.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(secondTransitionRun.exitCode, .success, secondTransitionRun.stderr)
+    let secondTransitionRunResult = try decodeJSON(WorkflowRunResult.self, from: secondTransitionRun.stdout)
+    let transitionPersistence = FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: transitionSessionStore.path))
+    let transitionCommunicationIds = try transitionPersistence
+      .load(sessionId: transitionRunResult.session.sessionId)
+      .workflowMessages
+      .map(\.communicationId)
+    let secondTransitionCommunicationIds = try transitionPersistence
+      .load(sessionId: secondTransitionRunResult.session.sessionId)
+      .workflowMessages
+      .map(\.communicationId)
+    XCTAssertEqual(transitionCommunicationIds, ["comm-000001"])
+    XCTAssertEqual(secondTransitionCommunicationIds, ["comm-000002"])
+    for communicationId in transitionCommunicationIds + secondTransitionCommunicationIds {
+      for command in ["retry-communication", "replay-communication"] {
+        let graphResult = await app.run([
+          "graphql", command, communicationId,
+          "--session-store", transitionSessionStore.path,
+          "--output", "json",
+        ])
+        XCTAssertEqual(graphResult.exitCode, .success, "\(command) \(communicationId): \(graphResult.stderr) \(graphResult.stdout)")
+      }
+    }
+    let preexistingResumeMessage = WorkflowMessageRecord(
+      communicationId: "comm-000001",
+      workflowExecutionId: runResult.session.sessionId,
+      fromStepId: nil,
+      toStepId: "main-worker",
+      routingScope: .workflow,
+      deliveryKind: .direct,
+      sourceStepExecutionId: "resume-source-exec",
+      payload: ["mode": .string("preserve-on-resume")],
+      lifecycleStatus: .delivered,
+      createdOrder: 1,
+      createdAt: Date(timeIntervalSince1970: 0)
+    )
+    try FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: tempDir.appendingPathComponent("sessions", isDirectory: true).path)).save(
+      WorkflowRuntimePersistenceProjector.snapshot(session: runResult.session, workflowMessages: [preexistingResumeMessage])
+    )
+    let continued = await app.run([
+      "session", "continue", runResult.session.sessionId,
+      "--workflow-definition-dir", "\(root)/examples",
+      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+      "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(continued.exitCode, .success, continued.stderr)
+    let continueResult = try decodeJSON(SessionResumeCommandResult.self, from: continued.stdout)
+    XCTAssertEqual(continueResult.sessionId, runResult.session.sessionId)
+    let continuedSnapshot = try FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: tempDir.appendingPathComponent("sessions", isDirectory: true).path))
+      .load(sessionId: runResult.session.sessionId)
+    XCTAssertTrue(continuedSnapshot.workflowMessages.contains { $0.communicationId == "comm-000001" && $0.payload["mode"] == .string("preserve-on-resume") })
+    let runtimeSnapshotURL = runtimeRecordRoot.appendingPathComponent("runtime-snapshot.json")
+    try "not-json".write(to: runtimeSnapshotURL, atomically: true, encoding: .utf8)
+    let corruptContinue = await app.run([
+      "session", "continue", runResult.session.sessionId,
+      "--workflow-definition-dir", "\(root)/examples",
+      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+      "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(corruptContinue.exitCode, .failure)
+    XCTAssertEqual(try String(contentsOf: runtimeSnapshotURL, encoding: .utf8), "not-json")
+    let corruptRerun = await app.run([
+      "session", "rerun", runResult.session.sessionId, "main-worker",
+      "--workflow-definition-dir", "\(root)/examples",
+      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+      "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(corruptRerun.exitCode, .failure)
+    XCTAssertEqual(try String(contentsOf: runtimeSnapshotURL, encoding: .utf8), "not-json")
+    try FileManager.default.removeItem(at: runtimeRecordRoot)
+
+    let eventConfig = tempDir.appendingPathComponent("events.json")
+    try """
+    {
+      "sources": [{"id":"web-a","kind":"webhook","path":"/events/web","signingSecretEnv":"WEBHOOK_SECRET"}],
+      "bindings": [{"id":"bind-a","sourceId":"web-a","workflowName":"worker-only-single-step","inputMapping":{"mode":"event-input"}}]
+    }
+    """.write(to: eventConfig, atomically: true, encoding: .utf8)
+
+    let eventEnvelope = tempDir.appendingPathComponent("event-envelope.json")
+    try """
+    {
+      "sourceId": "web-a",
+      "eventId": "event-1",
+      "provider": "webhook",
+      "eventType": "event-input",
+      "input": {"mode": "event-input"}
+    }
+    """.write(to: eventEnvelope, atomically: true, encoding: .utf8)
+
+    for command in [
+      ["events", "validate", eventConfig.path],
+      ["events", "list", eventConfig.path],
+      ["events", "emit", eventConfig.path, "--variables", eventEnvelope.path],
+      ["hook", "codex"],
+      ["graphql", "schema"],
+      ["graphql", "session", runResult.session.sessionId, "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path],
+      ["serve", "status"],
+      ["serve", "graphql"],
+    ] {
+      let result = await app.run(command + ["--output", "json"])
+      XCTAssertEqual(result.exitCode, .success, command.joined(separator: " "))
+      let scoped = try decodeJSON(ScopedParityCommandResult.self, from: result.stdout)
+      XCTAssertEqual(scoped.status, "ok")
+    }
+
+    let eventRoot = tempDir.appendingPathComponent("event-root", isDirectory: true)
+    let eventEmit = await app.run([
+      "events", "emit", "web-a",
+      "--event-root", eventRoot.path,
+      "--event-file", eventEnvelope.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(eventEmit.exitCode, .success, eventEmit.stderr)
+    let eventEmitResult = try decodeJSON(ScopedParityCommandResult.self, from: eventEmit.stdout)
+    XCTAssertEqual(eventEmitResult.status, "ok")
+    let eventReceiptId = try XCTUnwrap(eventEmitResult.records.first { $0.hasPrefix("receipt=") }?.dropFirst("receipt=".count).description)
+    let eventReceiptURL = eventRoot.appendingPathComponent("receipts/\(eventReceiptId).json")
+    XCTAssertTrue(FileManager.default.fileExists(atPath: eventReceiptURL.path))
+
+    let duplicateEventEnvelope = tempDir.appendingPathComponent("event-envelope-duplicate.json")
+    try """
+    {
+      "sourceId": "web-a",
+      "eventId": "event-1",
+      "provider": "webhook",
+      "eventType": "event-input",
+      "input": {"mode": "duplicate-input"}
+    }
+    """.write(to: duplicateEventEnvelope, atomically: true, encoding: .utf8)
+    let duplicateEventEmit = await app.run([
+      "events", "emit", "web-a",
+      "--event-root", eventRoot.path,
+      "--event-file", duplicateEventEnvelope.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(duplicateEventEmit.exitCode, .success, duplicateEventEmit.stderr)
+    let duplicateEventEmitResult = try decodeJSON(ScopedParityCommandResult.self, from: duplicateEventEmit.stdout)
+    XCTAssertEqual(duplicateEventEmitResult.status, "duplicate")
+    XCTAssertTrue(duplicateEventEmitResult.records.contains { $0.contains("duplicate=true") })
+    let originalReceiptText = try String(contentsOf: eventReceiptURL, encoding: .utf8)
+    XCTAssertTrue(originalReceiptText.contains("event-input"))
+    XCTAssertFalse(originalReceiptText.contains("duplicate-input"))
+
+    let eventList = await app.run([
+      "events", "list", "web-a",
+      "--event-root", eventRoot.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(eventList.exitCode, .success, eventList.stderr)
+    let eventListResult = try decodeJSON(ScopedParityCommandResult.self, from: eventList.stdout)
+    XCTAssertTrue(eventListResult.records.contains { $0.contains(eventReceiptId) })
+
+    let eventReplay = await app.run([
+      "events", "replay", eventReceiptId,
+      "--event-root", eventRoot.path,
+      "--reason", "test",
+      "--output", "json",
+    ])
+    XCTAssertEqual(eventReplay.exitCode, .success, eventReplay.stderr)
+    let eventReplayResult = try decodeJSON(ScopedParityCommandResult.self, from: eventReplay.stdout)
+    XCTAssertEqual(eventReplayResult.status, "ok")
+    let eventReplayReceiptId = try XCTUnwrap(eventReplayResult.records.first { $0.hasPrefix("receipt=") }?.dropFirst("receipt=".count).description)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: eventRoot.appendingPathComponent("receipts/\(eventReplayReceiptId).json").path))
+
+    let slashEventEnvelope = tempDir.appendingPathComponent("event-envelope-slash.json")
+    try """
+    {
+      "sourceId": "web-a",
+      "eventId": "a/b",
+      "provider": "webhook",
+      "eventType": "event-input",
+      "input": {"mode": "slash"}
+    }
+    """.write(to: slashEventEnvelope, atomically: true, encoding: .utf8)
+    let colonEventEnvelope = tempDir.appendingPathComponent("event-envelope-colon.json")
+    try """
+    {
+      "sourceId": "web-a",
+      "eventId": "a:b",
+      "provider": "webhook",
+      "eventType": "event-input",
+      "input": {"mode": "colon"}
+    }
+    """.write(to: colonEventEnvelope, atomically: true, encoding: .utf8)
+    let slashEmit = await app.run([
+      "events", "emit", "web-a",
+      "--event-root", eventRoot.path,
+      "--event-file", slashEventEnvelope.path,
+      "--output", "json",
+    ])
+    let colonEmit = await app.run([
+      "events", "emit", "web-a",
+      "--event-root", eventRoot.path,
+      "--event-file", colonEventEnvelope.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(slashEmit.exitCode, .success, slashEmit.stderr)
+    XCTAssertEqual(colonEmit.exitCode, .success, colonEmit.stderr)
+    let slashEmitResult = try decodeJSON(ScopedParityCommandResult.self, from: slashEmit.stdout)
+    let colonEmitResult = try decodeJSON(ScopedParityCommandResult.self, from: colonEmit.stdout)
+    XCTAssertEqual(slashEmitResult.status, "ok")
+    XCTAssertEqual(colonEmitResult.status, "ok")
+    let slashReceiptId = try XCTUnwrap(slashEmitResult.records.first { $0.hasPrefix("receipt=") }?.dropFirst("receipt=".count).description)
+    let colonReceiptId = try XCTUnwrap(colonEmitResult.records.first { $0.hasPrefix("receipt=") }?.dropFirst("receipt=".count).description)
+    XCTAssertNotEqual(slashReceiptId, colonReceiptId)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: eventRoot.appendingPathComponent("receipts/\(slashReceiptId).json").path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: eventRoot.appendingPathComponent("receipts/\(colonReceiptId).json").path))
+
+    let eventServe = await app.run([
+      "events", "serve",
+      "--event-root", eventRoot.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(eventServe.exitCode, .success, eventServe.stderr)
+    let eventServeResult = try decodeJSON(ScopedParityCommandResult.self, from: eventServe.stdout)
+    XCTAssertEqual(eventServeResult.status, "ok")
+    XCTAssertTrue(FileManager.default.fileExists(atPath: eventRoot.appendingPathComponent("serve-record.json").path))
+
+    try FileManager.default.createDirectory(at: eventRoot.appendingPathComponent("replies", isDirectory: true), withIntermediateDirectories: true)
+    try #"{"idempotencyKey":"reply-1","sourceId":"web-a","status":"queued","workflowExecutionId":"run-1"}"#
+      .write(to: eventRoot.appendingPathComponent("replies/reply-1.json"), atomically: true, encoding: .utf8)
+    let eventReplies = await app.run([
+      "events", "replies", "run-1",
+      "--event-root", eventRoot.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(eventReplies.exitCode, .success, eventReplies.stderr)
+    let eventRepliesResult = try decodeJSON(ScopedParityCommandResult.self, from: eventReplies.stdout)
+    XCTAssertTrue(eventRepliesResult.records.contains { $0.contains("reply-1") })
+
+    try FileManager.default.createDirectory(at: eventRoot.appendingPathComponent("schedules", isDirectory: true), withIntermediateDirectories: true)
+    try #"{"scheduleId":"schedule-1","sourceId":"web-a","status":"active","workflowName":"worker-only-single-step","kind":"cron","timezone":"UTC","nextDueAt":"2026-06-16T00:00:00Z"}"#
+      .write(to: eventRoot.appendingPathComponent("schedules/schedule-1.json"), atomically: true, encoding: .utf8)
+    for command in [
+      ["events", "schedules", "list"],
+      ["events", "schedules", "inspect", "schedule-1"],
+      ["events", "schedules", "cancel", "schedule-1", "--reason", "test"],
+    ] {
+      let result = await app.run(command + [
+        "--event-root", eventRoot.path,
+        "--output", "json",
+      ])
+      XCTAssertEqual(result.exitCode, .success, command.joined(separator: " "))
+      let scoped = try decodeJSON(ScopedParityCommandResult.self, from: result.stdout)
+      XCTAssertEqual(scoped.status, "ok")
+      XCTAssertTrue(scoped.records.contains { $0.contains("schedule-1") })
+    }
+
+    let managerSession = await app.run([
+      "graphql", "manager-session", runResult.session.sessionId,
+      "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(managerSession.exitCode, .success, managerSession.stderr)
+    let managerSessionResult = try decodeJSON(ScopedParityCommandResult.self, from: managerSession.stdout)
+    XCTAssertEqual(managerSessionResult.status, "ok")
+    XCTAssertTrue(managerSessionResult.records.first?.contains(runResult.session.sessionId) == true)
+
+    let missingManagerMessage = await app.run([
+      "graphql", "send-manager-message", runResult.session.sessionId,
+      "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
+      "--output", "json",
+    ])
+    XCTAssertNotEqual(missingManagerMessage.exitCode, .success)
+    XCTAssertTrue(missingManagerMessage.stdout.contains("requires --message-json or --message-file"))
+
+    let managerMessage = await app.run([
+      "graphql", "send-manager-message", runResult.session.sessionId,
+      "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
+      "--message-json", #"{"kind":"retry","target":"main-worker","reason":"test-manager-control"}"#,
+      "--output", "json",
+    ])
+    XCTAssertEqual(managerMessage.exitCode, .success, managerMessage.stderr)
+    let managerMessageResult = try decodeJSON(ScopedParityCommandResult.self, from: managerMessage.stdout)
+    XCTAssertEqual(managerMessageResult.status, "ok")
+    let managerCommunicationId = "graphql-manager-\(runResult.session.sessionId)-1"
+    XCTAssertTrue(managerMessageResult.records.first?.contains(managerCommunicationId) == true)
+    let managerSnapshotText = try String(contentsOf: runtimeRecordRoot.appendingPathComponent("runtime-snapshot.json"), encoding: .utf8)
+    XCTAssertTrue(managerSnapshotText.contains(managerCommunicationId))
+    XCTAssertTrue(managerSnapshotText.contains(#""kind" : "retry""#))
+    XCTAssertTrue(managerSnapshotText.contains(#""target" : "main-worker""#))
+    XCTAssertTrue(managerSnapshotText.contains(#""reason" : "test-manager-control""#))
+    XCTAssertFalse(managerSnapshotText.contains(#""managerMessage""#))
+
+    var secondSession = runResult.session
+    secondSession.sessionId = "worker-only-single-step-session-200"
+    try CLIWorkflowSessionStore(rootDirectory: tempDir.appendingPathComponent("sessions", isDirectory: true).path).save(PersistedCLIWorkflowSession(
+      workflowName: "worker-only-single-step",
+      session: secondSession,
+      resolution: WorkflowResolutionOptions(workflowName: "worker-only-single-step", scope: .direct, workflowDefinitionDir: "\(root)/examples", workingDirectory: tempDir.path),
+      mockScenarioPath: "\(root)/examples/worker-only-single-step/mock-scenario.json"
+    ))
+    try FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: tempDir.appendingPathComponent("sessions", isDirectory: true).path)).save(
+      WorkflowRuntimePersistenceProjector.snapshot(session: secondSession)
+    )
+    let secondManagerMessage = await app.run([
+      "graphql", "send-manager-message", secondSession.sessionId,
+      "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
+      "--message-json", #"{"kind":"retry","target":"main-worker","reason":"second-manager-control"}"#,
+      "--output", "json",
+    ])
+    XCTAssertEqual(secondManagerMessage.exitCode, .success, secondManagerMessage.stderr)
+    let secondManagerMessageResult = try decodeJSON(ScopedParityCommandResult.self, from: secondManagerMessage.stdout)
+    let secondManagerCommunicationId = "graphql-manager-\(secondSession.sessionId)-1"
+    XCTAssertTrue(secondManagerMessageResult.records.first?.contains(secondManagerCommunicationId) == true)
+    XCTAssertNotEqual(managerCommunicationId, secondManagerCommunicationId)
+
+    for command in [
+      ["graphql", "replay-communication", managerCommunicationId],
+      ["graphql", "retry-communication", managerCommunicationId],
+      ["graphql", "retry-communication-delivery", managerCommunicationId],
+    ] {
+      let result = await app.run(command + [
+        "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
+        "--output", "json",
+      ])
+      XCTAssertEqual(result.exitCode, .success, command.joined(separator: " "))
+      let scoped = try decodeJSON(ScopedParityCommandResult.self, from: result.stdout)
+      XCTAssertEqual(scoped.status, "ok")
+      XCTAssertTrue(scoped.records.first?.contains(managerCommunicationId) == true)
+    }
+    let secondRetry = await app.run([
+      "graphql", "retry-communication", secondManagerCommunicationId,
+      "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(secondRetry.exitCode, .success, secondRetry.stderr)
+    let secondRetryResult = try decodeJSON(ScopedParityCommandResult.self, from: secondRetry.stdout)
+    XCTAssertTrue(secondRetryResult.records.first?.contains(secondManagerCommunicationId) == true)
+
+    let corruptRuntimeSnapshot = tempDir
+      .appendingPathComponent("sessions", isDirectory: true)
+      .appendingPathComponent("runtime-records", isDirectory: true)
+      .appendingPathComponent("corrupt-session", isDirectory: true)
+      .appendingPathComponent("runtime-snapshot.json")
+    try FileManager.default.createDirectory(at: corruptRuntimeSnapshot.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try "not-json".write(to: corruptRuntimeSnapshot, atomically: true, encoding: .utf8)
+    let corruptLookup = await app.run([
+      "graphql", "retry-communication", managerCommunicationId,
+      "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(corruptLookup.exitCode, .failure)
+    XCTAssertTrue(corruptLookup.stdout.contains("dataCorrupted") || corruptLookup.stdout.contains("not in the correct format"))
+
+    let callRoot = tempDir.appendingPathComponent("call-step-root", isDirectory: true)
+    let callWorkflow = callRoot.appendingPathComponent("call-flow", isDirectory: true)
+    try FileManager.default.createDirectory(at: callWorkflow.appendingPathComponent("nodes", isDirectory: true), withIntermediateDirectories: true)
+    try """
+    {
+      "workflowId": "call-flow",
+      "defaults": { "maxLoopIterations": 3, "nodeTimeoutMs": 120000 },
+      "entryStepId": "step-a",
+      "nodes": [
+        { "id": "node-a", "nodeFile": "nodes/node-a.json" },
+        { "id": "node-b", "nodeFile": "nodes/node-b.json" }
+      ],
+      "steps": [
+        { "id": "step-a", "nodeId": "node-a", "role": "worker", "transitions": [{ "toStepId": "step-b" }] },
+        { "id": "step-b", "nodeId": "node-b", "role": "worker" }
+      ]
+    }
+    """.write(to: callWorkflow.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+    try #"{"id":"node-a","executionBackend":"codex-agent","model":"gpt-5-nano","variables":{}}"#
+      .write(to: callWorkflow.appendingPathComponent("nodes/node-a.json"), atomically: true, encoding: .utf8)
+    try #"{"id":"node-b","executionBackend":"codex-agent","model":"gpt-5-nano","variables":{},"promptVariants":{"direct":{"promptTemplate":"direct variant"}}}"#
+      .write(to: callWorkflow.appendingPathComponent("nodes/node-b.json"), atomically: true, encoding: .utf8)
+    let callScenario = tempDir.appendingPathComponent("call-step-scenario.json")
+    try #"{"step-b":{"provider":"scenario-mock","model":"gpt-5-nano","payload":{"status":"called-step-b"}}}"#
+      .write(to: callScenario, atomically: true, encoding: .utf8)
+    let callSessionStore = tempDir.appendingPathComponent("call-step-sessions", isDirectory: true)
+    let callSession = WorkflowSession(
+      workflowId: "call-flow",
+      sessionId: "call-flow-run-1",
+      status: .running,
+      entryStepId: "step-a",
+      currentStepId: "step-b",
+      createdAt: Date(timeIntervalSince1970: 0),
+      updatedAt: Date(timeIntervalSince1970: 0)
+    )
+    try CLIWorkflowSessionStore(rootDirectory: callSessionStore.path).save(PersistedCLIWorkflowSession(
+      workflowName: "call-flow",
+      session: callSession,
+      resolution: WorkflowResolutionOptions(workflowName: "call-flow", scope: .direct, workflowDefinitionDir: callRoot.path, workingDirectory: tempDir.path),
+      mockScenarioPath: callScenario.path
+    ))
+    let preexistingCallMessage = WorkflowMessageRecord(
+      communicationId: "comm-000001",
+      workflowExecutionId: callSession.sessionId,
+      fromStepId: nil,
+      toStepId: "step-b",
+      routingScope: .workflow,
+      deliveryKind: .direct,
+      sourceStepExecutionId: "preexisting-call-exec",
+      payload: ["mode": .string("preexisting-call-message")],
+      lifecycleStatus: .delivered,
+      createdOrder: 1,
+      createdAt: Date(timeIntervalSince1970: 0)
+    )
+    try FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: callSessionStore.path)).save(
+      WorkflowRuntimePersistenceProjector.snapshot(session: callSession, workflowMessages: [preexistingCallMessage])
+    )
+    let callSnapshotURL = callSessionStore
+      .appendingPathComponent("runtime-records", isDirectory: true)
+      .appendingPathComponent(callSession.sessionId, isDirectory: true)
+      .appendingPathComponent("runtime-snapshot.json")
+    try "not-json".write(to: callSnapshotURL, atomically: true, encoding: .utf8)
+    let corruptCall = await app.run([
+      "call-step", "call-flow", "call-flow-run-1", "step-b",
+      "--workflow-definition-dir", callRoot.path,
+      "--session-store", callSessionStore.path,
+      "--message-json", #"{"mode":"direct"}"#,
+      "--output", "json",
+    ])
+    XCTAssertEqual(corruptCall.exitCode, .failure)
+    XCTAssertEqual(try String(contentsOf: callSnapshotURL, encoding: .utf8), "not-json")
+    try FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: callSessionStore.path)).save(
+      WorkflowRuntimePersistenceProjector.snapshot(session: callSession, workflowMessages: [preexistingCallMessage])
+    )
+    let called = await app.run([
+      "call-step", "call-flow", "call-flow-run-1", "step-b",
+      "--workflow-definition-dir", callRoot.path,
+      "--session-store", callSessionStore.path,
+      "--message-json", #"{"mode":"direct"}"#,
+      "--prompt-variant", "direct",
+      "--resume-step-exec", "previous-exec-1",
+      "--output", "json",
+    ])
+    XCTAssertEqual(called.exitCode, .success, called.stderr)
+    let calledResult = try decodeJSON(WorkflowRunResult.self, from: called.stdout)
+    XCTAssertEqual(calledResult.session.sessionId, "call-flow-run-1")
+    XCTAssertEqual(calledResult.session.executions.map(\.stepId), ["step-b"])
+    XCTAssertEqual(calledResult.rootOutput?["resumedFromNodeExecId"], .string("previous-exec-1"))
+    XCTAssertEqual(calledResult.rootOutput?["promptText"], .string("direct variant"))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir
+      .appendingPathComponent("call-step-sessions/runtime-records", isDirectory: true)
+      .appendingPathComponent(calledResult.session.sessionId, isDirectory: true)
+      .appendingPathComponent("runtime-snapshot.json").path))
+    let calledSnapshotText = try String(contentsOf: tempDir
+      .appendingPathComponent("call-step-sessions/runtime-records", isDirectory: true)
+      .appendingPathComponent(calledResult.session.sessionId, isDirectory: true)
+      .appendingPathComponent("runtime-snapshot.json"))
+    XCTAssertTrue(calledSnapshotText.contains("directCallPromptVariant"))
+    XCTAssertTrue(calledSnapshotText.contains("previous-exec-1"))
+    let calledSnapshot = try FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: callSessionStore.path))
+      .load(sessionId: calledResult.session.sessionId)
+    let calledCommunicationIds = calledSnapshot.workflowMessages.map(\.communicationId)
+    XCTAssertEqual(Set(calledCommunicationIds).count, calledCommunicationIds.count)
+    XCTAssertTrue(calledCommunicationIds.contains("comm-000001"))
+    XCTAssertTrue(calledCommunicationIds.contains("comm-000002"))
+
+    let workflowCallSessionStore = tempDir.appendingPathComponent("workflow-call-sessions", isDirectory: true)
+    try CLIWorkflowSessionStore(rootDirectory: workflowCallSessionStore.path).save(PersistedCLIWorkflowSession(
+      workflowName: "call-flow",
+      session: WorkflowSession(
+        workflowId: "call-flow",
+        sessionId: "call-flow-run-2",
+        status: .running,
+        entryStepId: "step-a",
+        currentStepId: "step-b",
+        createdAt: Date(timeIntervalSince1970: 0),
+        updatedAt: Date(timeIntervalSince1970: 0)
+      ),
+      resolution: WorkflowResolutionOptions(workflowName: "call-flow", scope: .direct, workflowDefinitionDir: callRoot.path, workingDirectory: tempDir.path),
+      mockScenarioPath: callScenario.path
+    ))
+    let workflowCalled = await app.run([
+      "workflow-call", "call-flow", "call-flow-run-2", "step-b",
+      "--workflow-definition-dir", callRoot.path,
+      "--mock-scenario", callScenario.path,
+      "--session-store", workflowCallSessionStore.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(workflowCalled.exitCode, .success, workflowCalled.stderr)
+    let workflowCalledResult = try decodeJSON(WorkflowRunResult.self, from: workflowCalled.stdout)
+    XCTAssertEqual(workflowCalledResult.session.sessionId, "call-flow-run-2")
+    XCTAssertEqual(workflowCalledResult.session.executions.map(\.stepId), ["step-b"])
+    XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir
+      .appendingPathComponent("workflow-call-sessions/runtime-records", isDirectory: true)
+      .appendingPathComponent(workflowCalledResult.session.sessionId, isDirectory: true)
+      .appendingPathComponent("runtime-snapshot.json").path))
+  }
+
+  func testScopedPackageIdsInstallListRunPublishUpdateAndRemove() async throws {
+    let root = repositoryRoot()
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-scoped-package-\(UUID().uuidString)", isDirectory: true)
+    let packageSource = tempDir.appendingPathComponent("package-source", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    try FileManager.default.createDirectory(at: packageSource, withIntermediateDirectories: true)
+    try FileManager.default.copyItem(
+      at: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step/workflow.json"),
+      to: packageSource.appendingPathComponent("workflow.json")
+    )
+    try FileManager.default.copyItem(
+      at: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step/nodes"),
+      to: packageSource.appendingPathComponent("nodes")
+    )
+    try FileManager.default.copyItem(
+      at: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step/prompts"),
+      to: packageSource.appendingPathComponent("prompts")
+    )
+    try """
+    {
+      "name": "@scope/scoped-flow",
+      "version": "1.0.0",
+      "description": "Scoped package",
+      "tags": ["scoped"],
+      "registry": "local",
+      "checksum": "cccccccccccccccccccccccccccccccc",
+      "checksumAlgorithm": "md5",
+      "workflowDirectory": "."
+    }
+    """.write(to: packageSource.appendingPathComponent("riela-package.json"), atomically: true, encoding: .utf8)
+
+    let app = RielaCLIApplication()
+    let install = await app.run([
+      "package", "install", "@scope/scoped-flow",
+      "--source", packageSource.path,
+      "--working-dir", tempDir.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(install.exitCode, .success, install.stderr)
+    let installed = try decodeJSON(WorkflowPackageCommandResult.self, from: install.stdout)
+    let installedDirectory = tempDir.appendingPathComponent(".riela/packages/@scope/scoped-flow", isDirectory: true)
+    XCTAssertEqual(installed.destinationDirectory, installedDirectory.path)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: installedDirectory.appendingPathComponent("riela-package.json").path))
+
+    let list = await app.run([
+      "package", "list",
+      "--working-dir", tempDir.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(list.exitCode, .success, list.stderr)
+    let listed = try decodeJSON(WorkflowPackageCommandResult.self, from: list.stdout)
+    XCTAssertEqual(listed.packages.map(\.name), ["@scope/scoped-flow"])
+    XCTAssertEqual(listed.packages.first?.valid, true)
+
+    for command in ["run", "temp-run"] {
+      let result = await app.run([
+        "package", command, "@scope/scoped-flow",
+        "--working-dir", tempDir.path,
+        "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+        "--output", "json",
+      ])
+      XCTAssertEqual(result.exitCode, .success, "\(command): \(result.stderr) \(result.stdout)")
+      let run = try decodeJSON(WorkflowPackageCommandResult.self, from: result.stdout)
+      XCTAssertEqual(run.target, "@scope/scoped-flow")
+      XCTAssertNotNil(run.runSessionId)
+    }
+
+    let update = await app.run([
+      "package", "update", "@scope/scoped-flow",
+      "--working-dir", tempDir.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(update.exitCode, .success, update.stderr)
+    let updated = try decodeJSON(WorkflowPackageCommandResult.self, from: update.stdout)
+    XCTAssertEqual(updated.packages.map(\.name), ["@scope/scoped-flow"])
+
+    let publish = await app.run([
+      "package", "publish", packageSource.path,
+      "--package-name", "@scope/scoped-flow",
+      "--working-dir", tempDir.path,
+      "--yes",
+      "--output", "json",
+    ])
+    XCTAssertEqual(publish.exitCode, .success, publish.stderr)
+    let published = try decodeJSON(WorkflowPackageCommandResult.self, from: publish.stdout)
+    XCTAssertEqual(published.packages.first?.name, "@scope/scoped-flow")
+    let encodedKey = "%40scope%2Fscoped-flow"
+    XCTAssertEqual(published.destinationDirectory, tempDir.appendingPathComponent(".riela/package-registry/\(encodedKey).json").path)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent(".riela/package-cache/\(encodedKey).json").path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent(".riela/package-locks/\(encodedKey).json").path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent(".riela/package-native-addons/\(encodedKey).json").path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent(".riela/skills/\(encodedKey)/SKILL.md").path))
+
+    let remove = await app.run([
+      "package", "remove", "@scope/scoped-flow",
+      "--working-dir", tempDir.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(remove.exitCode, .success, remove.stderr)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: installedDirectory.path))
+  }
+
+  func testPackageRemoveAndEventRecordCommandsRejectTraversalIdentifiers() async throws {
+    let root = repositoryRoot()
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-traversal-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let app = RielaCLIApplication()
+    let escapedPackageTarget = tempDir.appendingPathComponent(".riela/some-directory", isDirectory: true)
+    try FileManager.default.createDirectory(at: escapedPackageTarget, withIntermediateDirectories: true)
+    let packageRemove = await app.run([
+      "package", "remove", "../some-directory",
+      "--working-dir", tempDir.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(packageRemove.exitCode, .failure)
+    XCTAssertTrue(packageRemove.stdout.contains("invalid package name"))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: escapedPackageTarget.path))
+
+    let escapedPackage = tempDir.appendingPathComponent(".riela/escape", isDirectory: true)
+    try FileManager.default.createDirectory(at: escapedPackage, withIntermediateDirectories: true)
+    try FileManager.default.copyItem(
+      at: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step/workflow.json"),
+      to: escapedPackage.appendingPathComponent("workflow.json")
+    )
+    try FileManager.default.copyItem(
+      at: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step/nodes"),
+      to: escapedPackage.appendingPathComponent("nodes")
+    )
+    try FileManager.default.copyItem(
+      at: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step/prompts"),
+      to: escapedPackage.appendingPathComponent("prompts")
+    )
+    try """
+    {
+      "name": "escape",
+      "version": "1.0.0",
+      "description": "Escaped package",
+      "tags": ["test"],
+      "registry": "local",
+      "checksum": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "checksumAlgorithm": "md5",
+      "workflowDirectory": "."
+    }
+    """.write(to: escapedPackage.appendingPathComponent("riela-package.json"), atomically: true, encoding: .utf8)
+
+    let packageTempRun = await app.run([
+      "package", "temp-run", "../escape",
+      "--working-dir", tempDir.path,
+      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+      "--output", "json",
+    ])
+    XCTAssertEqual(packageTempRun.exitCode, .failure)
+    XCTAssertTrue(packageTempRun.stdout.contains("invalid package name"))
+
+    let packagePublish = await app.run([
+      "package", "publish", escapedPackage.path,
+      "--package-name", "../escape",
+      "--working-dir", tempDir.path,
+      "--yes",
+      "--output", "json",
+    ])
+    XCTAssertEqual(packagePublish.exitCode, .failure)
+    XCTAssertTrue(packagePublish.stdout.contains("invalid package name"))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent(".riela/package-registry/escape.json").path))
+
+    let eventRoot = tempDir.appendingPathComponent("event-root", isDirectory: true)
+    try FileManager.default.createDirectory(at: eventRoot.appendingPathComponent("receipts", isDirectory: true), withIntermediateDirectories: true)
+    let replayTraversal = await app.run([
+      "events", "replay", "../outside",
+      "--event-root", eventRoot.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(replayTraversal.exitCode, .failure)
+    XCTAssertTrue(replayTraversal.stdout.contains("invalid event receipt id"))
+
+    try FileManager.default.createDirectory(at: eventRoot.appendingPathComponent("schedules", isDirectory: true), withIntermediateDirectories: true)
+    try """
+    {
+      "scheduleId": "../escape",
+      "sourceId": "web-a",
+      "status": "active",
+      "workflowName": "worker-only-single-step",
+      "kind": "cron",
+      "timezone": "UTC",
+      "nextDueAt": "2026-06-16T00:00:00Z"
+    }
+    """.write(to: eventRoot.appendingPathComponent("schedules/schedule-1.json"), atomically: true, encoding: .utf8)
+    let scheduleTraversal = await app.run([
+      "events", "schedules", "inspect", "../escape",
+      "--event-root", eventRoot.path,
+      "--output", "json",
+    ])
+    XCTAssertEqual(scheduleTraversal.exitCode, .failure)
+    XCTAssertTrue(scheduleTraversal.stdout.contains("invalid event schedule id"))
+
+    let scheduleCancel = await app.run([
+      "events", "schedules", "cancel", "schedule-1",
+      "--event-root", eventRoot.path,
+      "--reason", "test",
+      "--output", "json",
+    ])
+    XCTAssertEqual(scheduleCancel.exitCode, .failure)
+    XCTAssertTrue(scheduleCancel.stdout.contains("invalid event schedule id"))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: eventRoot.appendingPathComponent("escape.json").path))
+  }
+
   func testInspectJSONFailureReturnsParseableEnvelopeForMissingWorkflow() async throws {
     let result = await RielaCLIApplication().run([
       "workflow", "inspect", "definitely-missing-workflow",
@@ -995,6 +2656,38 @@ final class WorkflowCommandTests: XCTestCase {
       url.deleteLastPathComponent()
     }
     return FileManager.default.currentDirectoryPath
+  }
+
+  private func writeTwoStepWorkflow(at root: URL, workflowName: String) throws -> (workflowDirectory: URL, scenarioPath: String) {
+    let workflowDirectory = root.appendingPathComponent(workflowName, isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowDirectory.appendingPathComponent("nodes", isDirectory: true), withIntermediateDirectories: true)
+    try """
+    {
+      "workflowId": "\(workflowName)",
+      "defaults": { "maxLoopIterations": 3, "nodeTimeoutMs": 120000 },
+      "entryStepId": "step-a",
+      "nodes": [
+        { "id": "node-a", "nodeFile": "nodes/node-a.json" },
+        { "id": "node-b", "nodeFile": "nodes/node-b.json" }
+      ],
+      "steps": [
+        { "id": "step-a", "nodeId": "node-a", "role": "worker", "transitions": [{ "toStepId": "step-b" }] },
+        { "id": "step-b", "nodeId": "node-b", "role": "worker" }
+      ]
+    }
+    """.write(to: workflowDirectory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+    try #"{"id":"node-a","executionBackend":"codex-agent","model":"gpt-5-nano","variables":{}}"#
+      .write(to: workflowDirectory.appendingPathComponent("nodes/node-a.json"), atomically: true, encoding: .utf8)
+    try #"{"id":"node-b","executionBackend":"codex-agent","model":"gpt-5-nano","variables":{}}"#
+      .write(to: workflowDirectory.appendingPathComponent("nodes/node-b.json"), atomically: true, encoding: .utf8)
+    let scenarioURL = root.appendingPathComponent("\(workflowName)-scenario.json")
+    try """
+    {
+      "step-a": {"provider":"scenario-mock","model":"gpt-5-nano","when":{"always":true},"payload":{"status":"first"}},
+      "step-b": {"provider":"scenario-mock","model":"gpt-5-nano","when":{"always":true},"payload":{"status":"second"}}
+    }
+    """.write(to: scenarioURL, atomically: true, encoding: .utf8)
+    return (workflowDirectory, scenarioURL.path)
   }
 
   private struct IsolatedUserScopeWorkflowLayout {

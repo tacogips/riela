@@ -1,0 +1,266 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-06-16T00:00:00Z",
+  "artifacts": [
+    {
+      "artifact": "verification-result:swift-deletion-readiness/package-build-0",
+      "domainId": "package-build",
+      "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/package-build-1",
+      "domainId": "package-build",
+      "command": "cd ../rielflow && bun run typecheck",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/cli-0",
+      "domainId": "cli",
+      "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter WorkflowCommandTests",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/cli-1",
+      "domainId": "cli",
+      "command": "cd ../rielflow && bun run packages/rielflow/src/bin.ts --help",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/server-0",
+      "domainId": "server",
+      "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter RielaServerTests",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/server-1",
+      "domainId": "server",
+      "command": "cd ../rielflow && bun run typecheck:server",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/graphql-0",
+      "domainId": "graphql",
+      "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter RielaGraphQLTests",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/graphql-1",
+      "domainId": "graphql",
+      "command": "cd ../rielflow && bun test packages/rielflow/src/graphql",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/event-0",
+      "domainId": "event",
+      "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter RielaEventsTests",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/event-1",
+      "domainId": "event",
+      "command": "cd ../rielflow && bun test packages/rielflow/src/events",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/workflow-package-0",
+      "domainId": "workflow-package",
+      "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter WorkflowPackage",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/workflow-package-1",
+      "domainId": "workflow-package",
+      "command": "cd ../rielflow && bun run packages/rielflow/src/bin.ts package --help",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/persistence-0",
+      "domainId": "persistence",
+      "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter Persistence",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/persistence-1",
+      "domainId": "persistence",
+      "command": "cd ../rielflow && bun test packages/rielflow/src/workflow/manager-session-store.test.ts",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/release-0",
+      "domainId": "release",
+      "command": "RIELA_VERSION=0.1.15 scripts/build-homebrew-release.sh darwin-arm64 darwin-x64",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/release-1",
+      "domainId": "release",
+      "command": "scripts/render-homebrew-formula.sh 0.1.15 tmp/swift-cli-runtime-parity/Formula/riela.rb",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/documentation-0",
+      "domainId": "documentation",
+      "command": "rg -n \"swift-deletion-readiness\" design-docs",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/documentation-1",
+      "domainId": "documentation",
+      "command": "rg -n \"TypeScript deletion\" design-docs",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/test-0",
+      "domainId": "test",
+      "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/test-1",
+      "domainId": "test",
+      "command": "cd ../rielflow && bun test",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/agent-codex-0",
+      "domainId": "agent-codex",
+      "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter CodexAgent",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/agent-codex-1",
+      "domainId": "agent-codex",
+      "command": "cd ../rielflow && bun test packages/rielflow/src/workflow/adapters/codex.test.ts",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/agent-claude-code-0",
+      "domainId": "agent-claude-code",
+      "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter Claude",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/agent-claude-code-1",
+      "domainId": "agent-claude-code",
+      "command": "cd ../rielflow && bun test packages/rielflow/src/workflow/adapters/claude.test.ts",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/agent-cursor-cli-0",
+      "domainId": "agent-cursor-cli",
+      "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter CursorCLIAgent",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    },
+    {
+      "artifact": "verification-result:swift-deletion-readiness/agent-cursor-cli-1",
+      "domainId": "agent-cursor-cli",
+      "command": "cd ../rielflow && bun test packages/rielflow/src/workflow/adapters/cursor.test.ts",
+      "exitCode": 0,
+      "branch": "main",
+      "commit": "184e15a03074cf087374399ea16377355ad22b3a",
+      "workflowId": "codex-design-and-implement-review-loop",
+      "nodeId": "step7-adversarial-review"
+    }
+  ]
+}

@@ -86,6 +86,19 @@ public struct CLIWorkflowSessionStore: Sendable {
     return try decoder.decode(PersistedCLIWorkflowSession.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
   }
 
+  public func loadAll() throws -> [PersistedCLIWorkflowSession] {
+    guard FileManager.default.fileExists(atPath: rootDirectory) else {
+      return []
+    }
+    let root = URL(fileURLWithPath: rootDirectory, isDirectory: true)
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    return try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+      .filter { $0.pathExtension == "json" }
+      .map { try decoder.decode(PersistedCLIWorkflowSession.self, from: Data(contentsOf: $0)) }
+      .sorted { $0.session.sessionId < $1.session.sessionId }
+  }
+
   private func sessionFilePath(_ sessionId: String) -> String {
     URL(fileURLWithPath: rootDirectory).appendingPathComponent("\(sessionId).json").path
   }
@@ -95,5 +108,31 @@ public struct CLIWorkflowSessionStore: Sendable {
       return false
     }
     return sessionId.range(of: #"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"#, options: .regularExpression) != nil
+  }
+}
+
+func canonicalRuntimeStoreRoot(sessionStoreRoot: String) -> String {
+  URL(fileURLWithPath: sessionStoreRoot, isDirectory: true)
+    .appendingPathComponent("runtime-records", isDirectory: true)
+    .path
+}
+
+func seedRuntimeStoreFromPersistedCLIState(
+  _ runtimeStore: InMemoryWorkflowRuntimeStore,
+  sessionStoreRoot: String
+) async throws {
+  let sessionStore = CLIWorkflowSessionStore(rootDirectory: sessionStoreRoot)
+  let persistenceStore = FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStoreRoot))
+  for existing in try sessionStore.loadAll() {
+    await runtimeStore.seedSession(existing.session)
+    do {
+      let snapshot = try persistenceStore.load(sessionId: existing.session.sessionId)
+      await runtimeStore.seedWorkflowMessages(snapshot.workflowMessages)
+    } catch let error as WorkflowRuntimePersistenceStoreError {
+      if case .notFound = error {
+        continue
+      }
+      throw error
+    }
   }
 }

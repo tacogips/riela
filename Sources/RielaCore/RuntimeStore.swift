@@ -29,10 +29,12 @@ public protocol WorkflowRuntimeIDGenerating: Sendable {
   func nextStepExecutionId(stepId: String, attempt: Int) throws -> String
   func nextCommunicationId() throws -> String
   func noteExistingSessionId(_ sessionId: String, workflowId: String)
+  func noteExistingCommunicationId(_ communicationId: String)
 }
 
 extension WorkflowRuntimeIDGenerating {
   public func noteExistingSessionId(_ sessionId: String, workflowId: String) {}
+  public func noteExistingCommunicationId(_ communicationId: String) {}
 }
 
 public final class MonotonicWorkflowRuntimeIDGenerator: WorkflowRuntimeIDGenerating, @unchecked Sendable {
@@ -76,6 +78,20 @@ public final class MonotonicWorkflowRuntimeIDGenerator: WorkflowRuntimeIDGenerat
       return
     }
     sessionCounter = max(sessionCounter, parsed)
+  }
+
+  public func noteExistingCommunicationId(_ communicationId: String) {
+    lock.lock()
+    defer { lock.unlock() }
+    let prefix = "comm-"
+    guard communicationId.hasPrefix(prefix) else {
+      return
+    }
+    let suffix = communicationId.dropFirst(prefix.count)
+    guard let parsed = Int(suffix) else {
+      return
+    }
+    communicationCounter = max(communicationCounter, parsed)
   }
 }
 
@@ -287,6 +303,24 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     if messagesBySession[session.sessionId] == nil {
       messagesBySession[session.sessionId] = []
     }
+  }
+
+  public func seedWorkflowMessages(_ messages: [WorkflowMessageRecord]) {
+    for message in messages {
+      idGenerator.noteExistingCommunicationId(message.communicationId)
+      createdOrder = max(createdOrder, message.createdOrder)
+      messagesBySession[message.workflowExecutionId, default: []].append(message)
+    }
+    for sessionId in Array(messagesBySession.keys) {
+      messagesBySession[sessionId]?.sort { $0.createdOrder < $1.createdOrder }
+    }
+  }
+
+  public func latestSession(workflowId: String) -> WorkflowSession? {
+    sessions.values
+      .filter { $0.workflowId == workflowId }
+      .sorted { $0.createdAt < $1.createdAt }
+      .last
   }
 
   public func createSession(_ input: WorkflowSessionCreateInput) async throws -> WorkflowSession {

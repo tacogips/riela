@@ -234,6 +234,20 @@ private final class SignalRecorder: @unchecked Sendable {
 }
 
 final class AgentAdapterTests: XCTestCase {
+  func testAdapterDeletionReadinessKeepsOfficialCursorSDKSeparateFromCursorCLI() throws {
+    let codex = try XCTUnwrap(AdapterDeletionReadiness.domain(for: .codexAgent))
+    let claude = try XCTUnwrap(AdapterDeletionReadiness.domain(for: .claudeCodeAgent))
+    let cursorCLI = try XCTUnwrap(AdapterDeletionReadiness.domain(for: .cursorCliAgent))
+    let cursorSDK = try XCTUnwrap(AdapterDeletionReadiness.domain(for: .officialCursorSDK))
+
+    XCTAssertEqual(codex.status, .implemented)
+    XCTAssertEqual(claude.status, .implemented)
+    XCTAssertEqual(cursorCLI.status, .implemented)
+    XCTAssertEqual(cursorSDK.status, .deletionBlocked)
+    XCTAssertTrue(cursorSDK.notes.contains("not aliased to cursor-cli-agent"))
+    XCTAssertNotEqual(cursorCLI.backend, cursorSDK.backend)
+  }
+
   func testCodexAgentProducesProviderOutput() async throws {
     let adapter = CodexAgentAdapter(runner: CapturingRunner(output: "done"))
     let output = try await adapter.execute(input(backend: .codexAgent), context: AdapterExecutionContext())

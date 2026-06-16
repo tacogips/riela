@@ -2,6 +2,7 @@ import Foundation
 import RielaAdapters
 import RielaAddons
 import RielaCore
+import RielaGraphQL
 
 public struct CLICommandResult: Equatable, Sendable {
   public var exitCode: CLIExitCode
@@ -154,6 +155,524 @@ public struct WorkflowRunFailureResult: Codable, Equatable, Sendable {
   }
 }
 
+public struct WorkflowRemoteRunRequest: Codable, Equatable, Sendable {
+  public var workflowName: String
+  public var runtimeVariables: JSONObject
+  public var nodePatch: JSONObject?
+  public var autoImprove: Bool
+  public var autoImprovePolicy: WorkflowAutoImprovePolicy
+  public var maxSteps: Int?
+  public var maxConcurrency: Int?
+  public var maxLoopIterations: Int?
+  public var defaultTimeoutMs: Int?
+  public var timeoutMs: Int?
+  public var authToken: String?
+  public var authTokenEnv: String?
+  public var managerSessionId: String?
+
+  public init(
+    workflowName: String,
+    runtimeVariables: JSONObject = [:],
+    nodePatch: JSONObject? = nil,
+    autoImprove: Bool = false,
+    autoImprovePolicy: WorkflowAutoImprovePolicy = WorkflowAutoImprovePolicy(),
+    maxSteps: Int? = nil,
+    maxConcurrency: Int? = nil,
+    maxLoopIterations: Int? = nil,
+    defaultTimeoutMs: Int? = nil,
+    timeoutMs: Int? = nil,
+    authToken: String? = nil,
+    authTokenEnv: String? = nil,
+    managerSessionId: String? = nil
+  ) {
+    self.workflowName = workflowName
+    self.runtimeVariables = runtimeVariables
+    self.nodePatch = nodePatch
+    self.autoImprove = autoImprove
+    self.autoImprovePolicy = autoImprovePolicy
+    self.maxSteps = maxSteps
+    self.maxConcurrency = maxConcurrency
+    self.maxLoopIterations = maxLoopIterations
+    self.defaultTimeoutMs = defaultTimeoutMs
+    self.timeoutMs = timeoutMs
+    self.authToken = authToken
+    self.authTokenEnv = authTokenEnv
+    self.managerSessionId = managerSessionId
+  }
+}
+
+public struct WorkflowRemoteRunResult: Codable, Equatable, Sendable {
+  public var sessionId: String
+  public var status: String
+  public var workflowName: String
+  public var workflowId: String
+  public var nodeExecutions: Int
+  public var transitions: Int
+  public var exitCode: Int32
+
+  public init(
+    sessionId: String,
+    status: String,
+    workflowName: String,
+    workflowId: String,
+    nodeExecutions: Int,
+    transitions: Int,
+    exitCode: Int32
+  ) {
+    self.sessionId = sessionId
+    self.status = status
+    self.workflowName = workflowName
+    self.workflowId = workflowId
+    self.nodeExecutions = nodeExecutions
+    self.transitions = transitions
+    self.exitCode = exitCode
+  }
+}
+
+public protocol WorkflowGraphQLRunTransporting: Sendable {
+  func executeWorkflow(endpoint: String, request: WorkflowRemoteRunRequest) async throws -> WorkflowRemoteRunResult
+}
+
+public struct URLSessionWorkflowGraphQLRunTransport: WorkflowGraphQLRunTransporting {
+  public init() {}
+
+  public func executeWorkflow(endpoint: String, request: WorkflowRemoteRunRequest) async throws -> WorkflowRemoteRunResult {
+    guard let url = URL(string: endpoint), url.scheme == "http" || url.scheme == "https" else {
+      throw CLIUsageError("invalid --endpoint value '\(endpoint)'; expected http or https URL")
+    }
+    var urlRequest = URLRequest(url: url)
+    urlRequest.httpMethod = "POST"
+    urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    if let authToken = nonEmptyString(request.authToken) {
+      urlRequest.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+    }
+    if let managerSessionId = nonEmptyString(request.managerSessionId) {
+      urlRequest.setValue(managerSessionId, forHTTPHeaderField: "X-Riela-Manager-Session-Id")
+    }
+    let input = remoteRunInputObject(request)
+    let graphQLRequest = GraphQLRequest(
+      query: """
+      mutation ExecuteWorkflow($input: ExecuteWorkflowInput!) {
+        executeWorkflow(input: $input) {
+          workflowExecutionId
+          sessionId
+          status
+          exitCode
+        }
+      }
+      """,
+      variables: ["input": .object(input)]
+    )
+    let executeData = try await executeGraphQL(urlRequest: urlRequest, request: graphQLRequest)
+    let execution = try remoteExecutionPayload(from: executeData, field: "executeWorkflow")
+    let summaryRequest = GraphQLRequest(
+      query: """
+      query WorkflowExecutionSummary($workflowExecutionId: String!) {
+        workflowExecution(workflowExecutionId: $workflowExecutionId) {
+          session {
+            sessionId
+            workflowName
+            workflowId
+            transitions {
+              when
+            }
+          }
+          nodeExecutions {
+            nodeExecId
+          }
+        }
+      }
+      """,
+      variables: ["workflowExecutionId": .string(execution.workflowExecutionId)]
+    )
+    let summaryData = try await executeGraphQL(urlRequest: urlRequest, request: summaryRequest)
+    let summary = try remoteWorkflowRunSummary(from: summaryData)
+    return WorkflowRemoteRunResult(
+      sessionId: execution.sessionId,
+      status: execution.status,
+      workflowName: summary.workflowName,
+      workflowId: summary.workflowId,
+      nodeExecutions: summary.nodeExecutions,
+      transitions: summary.transitions,
+      exitCode: execution.exitCode
+    )
+  }
+
+  private func executeGraphQL(urlRequest: URLRequest, request: GraphQLRequest) async throws -> JSONObject {
+    var postRequest = urlRequest
+    postRequest.httpBody = try JSONEncoder().encode(request)
+    let (data, response) = try await URLSession.shared.data(for: postRequest)
+    if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+      throw CLIUsageError("remote run failed with HTTP \(http.statusCode)")
+    }
+    let envelope = try JSONDecoder().decode(JSONValue.self, from: data)
+    guard case let .object(root) = envelope else {
+      throw CLIUsageError("remote run returned non-object GraphQL response")
+    }
+    if case let .array(errors)? = root["errors"], !errors.isEmpty {
+      throw CLIUsageError("remote run returned GraphQL errors")
+    }
+    guard
+      case let .object(dataObject)? = root["data"],
+      !dataObject.isEmpty
+    else {
+      throw CLIUsageError("remote run response missing data payload")
+    }
+    return dataObject
+  }
+}
+
+private func remoteRunInputObject(_ request: WorkflowRemoteRunRequest) -> JSONObject {
+  var input: JSONObject = [
+    "workflowName": .string(request.workflowName),
+    "runtimeVariables": .object(request.runtimeVariables),
+  ]
+  if request.autoImprove {
+    input["autoImprove"] = .object(remoteAutoImprovePolicyInput(request.autoImprovePolicy))
+  }
+  if let nodePatch = request.nodePatch {
+    input["nodePatch"] = .object(nodePatch)
+  }
+  if let maxSteps = request.maxSteps {
+    input["maxSteps"] = .number(Double(maxSteps))
+  }
+  if let maxConcurrency = request.maxConcurrency {
+    input["maxConcurrency"] = .number(Double(maxConcurrency))
+  }
+  if let maxLoopIterations = request.maxLoopIterations {
+    input["maxLoopIterations"] = .number(Double(maxLoopIterations))
+  }
+  if let defaultTimeoutMs = request.defaultTimeoutMs {
+    input["defaultTimeoutMs"] = .number(Double(defaultTimeoutMs))
+  }
+  if request.autoImprove && request.autoImprovePolicy.nestedSuperviser {
+    input["nestedSuperviser"] = .bool(true)
+  }
+  return input
+}
+
+private func nonEmptyString(_ value: String?) -> String? {
+  guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+    return nil
+  }
+  return value
+}
+
+private func remoteAutoImprovePolicyInput(_ policy: WorkflowAutoImprovePolicy) -> JSONObject {
+  var input: JSONObject = [
+    "enabled": .bool(true),
+    "maxSupervisedAttempts": .number(Double(policy.maxSupervisedAttempts)),
+    "maxWorkflowPatches": .number(Double(policy.maxWorkflowPatches)),
+    "monitorIntervalMs": .number(Double(policy.monitorIntervalMs)),
+    "stallTimeoutMs": .number(Double(policy.stallTimeoutMs)),
+  ]
+  if policy.workflowMutationMode == "execution-copy" || policy.workflowMutationMode == "in-place" {
+    input["workflowMutationMode"] = .string(policy.workflowMutationMode)
+  }
+  return input
+}
+
+private struct RemoteExecutionPayload {
+  var workflowExecutionId: String
+  var sessionId: String
+  var status: String
+  var exitCode: Int32
+}
+
+private struct RemoteWorkflowRunSummary {
+  var workflowName: String
+  var workflowId: String
+  var nodeExecutions: Int
+  var transitions: Int
+}
+
+private func remoteExecutionPayload(from data: JSONObject, field: String) throws -> RemoteExecutionPayload {
+  guard case let .object(payload)? = data[field] else {
+    throw CLIUsageError("remote run response missing \(field) payload")
+  }
+  let workflowExecutionId = try requiredString(payload["workflowExecutionId"], field: "\(field).workflowExecutionId")
+  let sessionId = try requiredString(payload["sessionId"], field: "\(field).sessionId")
+  let status = try requiredString(payload["status"], field: "\(field).status")
+  let exitCode = try Int32(requiredInt(payload["exitCode"], field: "\(field).exitCode"))
+  return RemoteExecutionPayload(
+    workflowExecutionId: workflowExecutionId,
+    sessionId: sessionId,
+    status: status,
+    exitCode: exitCode
+  )
+}
+
+private func remoteWorkflowRunSummary(from data: JSONObject) throws -> RemoteWorkflowRunSummary {
+  guard
+    case let .object(workflowExecution)? = data["workflowExecution"],
+    case let .object(session)? = workflowExecution["session"]
+  else {
+    throw CLIUsageError("remote run response missing workflowExecution summary")
+  }
+  return try RemoteWorkflowRunSummary(
+    workflowName: requiredString(session["workflowName"], field: "workflowExecution.session.workflowName"),
+    workflowId: requiredString(session["workflowId"], field: "workflowExecution.session.workflowId"),
+    nodeExecutions: requiredArrayCount(workflowExecution["nodeExecutions"], field: "workflowExecution.nodeExecutions"),
+    transitions: requiredArrayCount(session["transitions"], field: "workflowExecution.session.transitions")
+  )
+}
+
+private func requiredString(_ value: JSONValue?, field: String) throws -> String {
+  guard case let .string(string)? = value, !string.isEmpty else {
+    throw CLIUsageError("\(field) is missing or not a string")
+  }
+  return string
+}
+
+private func requiredInt(_ value: JSONValue?, field: String) throws -> Int {
+  guard case let .number(number)? = value else {
+    throw CLIUsageError("\(field) is missing or not a number")
+  }
+  return Int(number)
+}
+
+private func requiredArrayCount(_ value: JSONValue?, field: String) throws -> Int {
+  guard case let .array(array)? = value else {
+    throw CLIUsageError("\(field) is missing or not an array")
+  }
+  return array.count
+}
+
+public struct WorkflowManifestValidationCommandResult: Codable, Equatable, Sendable {
+  public var manifestPath: String
+  public var valid: Bool
+  public var issues: [WorkflowPackageValidationIssue]
+  public var executablePreflight: Bool
+}
+
+public struct WorkflowCatalogEntry: Codable, Equatable, Sendable {
+  public var workflowName: String
+  public var scope: WorkflowScope
+  public var workflowDirectory: String
+  public var valid: Bool
+  public var diagnostics: [WorkflowValidationDiagnostic]
+}
+
+public struct WorkflowCatalogResult: Codable, Equatable, Sendable {
+  public var workflows: [WorkflowCatalogEntry]
+}
+
+public struct WorkflowManifestValidateCommand: Sendable {
+  public var loader: any WorkflowPackageManifestLoading
+
+  public init(loader: any WorkflowPackageManifestLoading = FileWorkflowPackageManifestLoader()) {
+    self.loader = loader
+  }
+
+  public func run(_ options: WorkflowManifestValidateOptions) async -> CLICommandResult {
+    do {
+      let workingDirectory = URL(fileURLWithPath: options.workingDirectory, isDirectory: true)
+      let manifestURL = absoluteURL(options.manifestPath, relativeTo: workingDirectory)
+      let manifest = try await loader.loadManifest(from: manifestURL)
+      let issues = await loader.validate(manifest, packageRoot: manifestURL.deletingLastPathComponent())
+      let result = WorkflowManifestValidationCommandResult(
+        manifestPath: manifestURL.path,
+        valid: issues.isEmpty,
+        issues: issues,
+        executablePreflight: options.executable
+      )
+      return CLICommandResult(
+        exitCode: result.valid ? .success : .usage,
+        stdout: try render(result, output: options.output)
+      )
+    } catch {
+      if options.output == .json {
+        let result = WorkflowManifestValidationCommandResult(
+          manifestPath: options.manifestPath,
+          valid: false,
+          issues: [
+            WorkflowPackageValidationIssue(
+              code: "INVALID_MANIFEST",
+              path: options.manifestPath,
+              message: "\(error)"
+            )
+          ],
+          executablePreflight: options.executable
+        )
+        return CLICommandResult(exitCode: .failure, stdout: (try? jsonString(result)) ?? "")
+      }
+      return CLICommandResult(exitCode: .failure, stderr: "workflow manifest validation failed: \(error)")
+    }
+  }
+
+  private func render(_ result: WorkflowManifestValidationCommandResult, output: WorkflowOutputFormat) throws -> String {
+    switch output {
+    case .json:
+      return try jsonString(result)
+    case .text, .table:
+      var lines = [
+        result.valid ? "valid: \(result.manifestPath)" : "invalid: \(result.manifestPath)",
+      ]
+      lines.append(contentsOf: result.issues.map { "\($0.code): \($0.path): \($0.message)" })
+      return lines.joined(separator: "\n") + "\n"
+    }
+  }
+}
+
+public struct WorkflowCatalogCommand: Sendable {
+  public init() {}
+
+  public func list(_ options: CLICommandOptions) -> CLICommandResult {
+    do {
+      let entries = try catalogEntries(options: options)
+      return CLICommandResult(exitCode: .success, stdout: try render(WorkflowCatalogResult(workflows: entries), output: options.output))
+    } catch let error as CLIUsageError {
+      return CLICommandResult(exitCode: .usage, stderr: error.message)
+    } catch {
+      return CLICommandResult(exitCode: .failure, stderr: "\(error)")
+    }
+  }
+
+  public func status(_ options: CLICommandOptions) -> CLICommandResult {
+    guard let target = options.target, !target.isEmpty else {
+      return CLICommandResult(exitCode: .usage, stderr: "workflow name is required for workflow status")
+    }
+    do {
+      let parsed = try catalogParseOptions(options)
+      let resolution = WorkflowResolutionOptions(
+        workflowName: target,
+        scope: parsed.scope,
+        workflowDefinitionDir: nil,
+        workingDirectory: parsed.workingDirectory
+      )
+      let bundle = try FileSystemWorkflowBundleResolver().resolve(resolution)
+      let diagnostics = bundle.diagnostics + DefaultWorkflowValidator().validate(bundle.workflow)
+      let entry = WorkflowCatalogEntry(
+        workflowName: target,
+        scope: bundle.sourceScope,
+        workflowDirectory: bundle.workflowDirectory,
+        valid: !diagnostics.contains { $0.severity == .error },
+        diagnostics: diagnostics
+      )
+      return CLICommandResult(
+        exitCode: entry.valid ? .success : .failure,
+        stdout: try render(WorkflowCatalogResult(workflows: [entry]), output: options.output)
+      )
+    } catch let error as CLIUsageError {
+      return CLICommandResult(exitCode: .usage, stderr: error.message)
+    } catch {
+      return CLICommandResult(exitCode: .failure, stderr: "\(error)")
+    }
+  }
+
+  private struct ParsedCatalogOptions {
+    var scope: WorkflowScope
+    var workingDirectory: String
+  }
+
+  private func catalogEntries(options: CLICommandOptions) throws -> [WorkflowCatalogEntry] {
+    let parsed = try catalogParseOptions(options)
+    let roots = workflowRoots(scope: parsed.scope, workingDirectory: parsed.workingDirectory)
+    var entries: [WorkflowCatalogEntry] = []
+    for (scope, root) in roots {
+      let names = try workflowNames(in: root)
+      for name in names {
+        let resolution = WorkflowResolutionOptions(workflowName: name, scope: scope, workingDirectory: parsed.workingDirectory)
+        do {
+          let bundle = try FileSystemWorkflowBundleResolver().resolve(resolution)
+          let diagnostics = bundle.diagnostics + DefaultWorkflowValidator().validate(bundle.workflow)
+          entries.append(WorkflowCatalogEntry(
+            workflowName: name,
+            scope: bundle.sourceScope,
+            workflowDirectory: bundle.workflowDirectory,
+            valid: !diagnostics.contains { $0.severity == .error },
+            diagnostics: diagnostics
+          ))
+        } catch {
+          entries.append(WorkflowCatalogEntry(
+            workflowName: name,
+            scope: scope,
+            workflowDirectory: root.appendingPathComponent(name).path,
+            valid: false,
+            diagnostics: [
+              WorkflowValidationDiagnostic(severity: .error, path: "workflow.json", message: "\(error)")
+            ]
+          ))
+        }
+      }
+    }
+    return entries.sorted { left, right in
+      left.scope.rawValue == right.scope.rawValue ? left.workflowName < right.workflowName : left.scope.rawValue < right.scope.rawValue
+    }
+  }
+
+  private func render(_ result: WorkflowCatalogResult, output: WorkflowOutputFormat) throws -> String {
+    switch output {
+    case .json:
+      return try jsonString(result)
+    case .text:
+      return result.workflows.map { "\($0.workflowName)\t\($0.scope.rawValue)\t\($0.valid ? "valid" : "invalid")\t\($0.workflowDirectory)" }.joined(separator: "\n") + (result.workflows.isEmpty ? "" : "\n")
+    case .table:
+      let header = "WORKFLOW\tSCOPE\tSTATUS\tDIRECTORY"
+      let rows = result.workflows.map { "\($0.workflowName)\t\($0.scope.rawValue)\t\($0.valid ? "valid" : "invalid")\t\($0.workflowDirectory)" }
+      return ([header] + rows).joined(separator: "\n") + "\n"
+    }
+  }
+
+  private func catalogParseOptions(_ options: CLICommandOptions) throws -> ParsedCatalogOptions {
+    var scope = WorkflowScope.auto
+    var workingDirectory = FileManager.default.currentDirectoryPath
+    var index = 0
+    while index < options.arguments.count {
+      let token = options.arguments[index]
+      switch token {
+      case "--scope":
+        guard index + 1 < options.arguments.count, let value = WorkflowScope(rawValue: options.arguments[index + 1]), value != .direct else {
+          throw CLIUsageError("invalid --scope value; expected auto, project, or user")
+        }
+        scope = value
+        index += 2
+      case "--working-dir", "--working-directory":
+        guard index + 1 < options.arguments.count else {
+          throw CLIUsageError("\(token) requires a value")
+        }
+        workingDirectory = options.arguments[index + 1]
+        index += 2
+      case "--output":
+        index += 2
+      default:
+        if token.hasPrefix("--output=") {
+          index += 1
+        } else {
+          throw CLIUsageError("unsupported workflow catalog option '\(token)'")
+        }
+      }
+    }
+    return ParsedCatalogOptions(scope: scope, workingDirectory: workingDirectory)
+  }
+
+  private func workflowRoots(scope: WorkflowScope, workingDirectory: String) -> [(WorkflowScope, URL)] {
+    let project = URL(fileURLWithPath: workingDirectory).appendingPathComponent(".riela/workflows", isDirectory: true)
+    let user = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory()).appendingPathComponent(".riela/workflows", isDirectory: true)
+    switch scope {
+    case .project:
+      return [(.project, project)]
+    case .user:
+      return [(.user, user)]
+    case .auto, .direct:
+      return [(.project, project), (.user, user)]
+    }
+  }
+
+  private func workflowNames(in root: URL) throws -> [String] {
+    guard FileManager.default.fileExists(atPath: root.path) else {
+      return []
+    }
+    let contents = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey])
+    return contents.compactMap { url in
+      guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
+        return nil
+      }
+      return url.lastPathComponent
+    }
+  }
+}
+
 public struct WorkflowValidateCommand: Sendable {
   public var resolver: any WorkflowBundleResolving
   public var patchApplier: any WorkflowNodePatchApplying
@@ -227,7 +746,7 @@ public struct WorkflowValidateCommand: Sendable {
     switch output {
     case .json:
       return try jsonString(result)
-    case .text:
+    case .text, .table:
       var lines = [
         result.valid ? "valid: \(result.workflowId)" : "invalid: \(result.workflowId)",
         "source: \(result.sourceScope.rawValue) \(result.workflowDirectory)",
@@ -559,20 +1078,26 @@ public struct WorkflowRunCommand: Sendable {
   public var resolver: any WorkflowBundleResolving
   public var patchApplier: any WorkflowNodePatchApplying
   public var jsonLoader: JSONReferenceLoader
+  public var graphQLTransport: any WorkflowGraphQLRunTransporting
 
   public init(
     resolver: any WorkflowBundleResolving = FileSystemWorkflowBundleResolver(),
     patchApplier: any WorkflowNodePatchApplying = DefaultWorkflowNodePatchApplier(),
-    jsonLoader: JSONReferenceLoader = JSONReferenceLoader()
+    jsonLoader: JSONReferenceLoader = JSONReferenceLoader(),
+    graphQLTransport: any WorkflowGraphQLRunTransporting = URLSessionWorkflowGraphQLRunTransport()
   ) {
     self.resolver = resolver
     self.patchApplier = patchApplier
     self.jsonLoader = jsonLoader
+    self.graphQLTransport = graphQLTransport
   }
 
   public func run(_ options: WorkflowRunOptions) async -> CLICommandResult {
     do {
       try rejectUnsupportedRunOptions(options)
+      if let endpoint = options.endpoint {
+        return try await runRemote(endpoint: endpoint, options: options)
+      }
       let resolution = options.resolution ?? WorkflowResolutionOptions(
         workflowName: options.target,
         workingDirectory: options.workingDirectory
@@ -588,48 +1113,130 @@ public struct WorkflowRunCommand: Sendable {
       let fallback = DeterministicLocalNodeAdapter()
       let adapter: any NodeAdapter
       if let scenarioPath = options.mockScenarioPath {
-        adapter = try ScenarioNodeAdapter(
-          scenario: WorkflowMockScenarioLoader().loadScenario(at: absoluteURL(
+        let scenario = try WorkflowMockScenarioLoader().loadScenario(at: absoluteURL(
             scenarioPath,
             relativeTo: URL(fileURLWithPath: options.workingDirectory)
-          ).path),
-          fallback: fallback
-        )
+          ).path)
+        adapter = options.autoImprove
+          ? SupervisedScenarioNodeAdapter(scenario: scenario, fallback: fallback)
+          : ScenarioNodeAdapter(scenario: scenario, fallback: fallback)
       } else {
         adapter = fallback
       }
+      let persistedResolution = CLIWorkflowSessionResolution.resolutionForPersistence(
+        resolution: resolution,
+        resolvedSourceScope: bundle.sourceScope
+      )
+      let storeRoot = CLIWorkflowSessionStore.resolveRootDirectory(
+        sessionStore: options.sessionStore,
+        scope: persistedResolution.scope,
+        workingDirectory: options.workingDirectory
+      )
+      let runtimeStore = InMemoryWorkflowRuntimeStore()
+      try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: storeRoot)
       let runner = DeterministicWorkflowRunner(
+        store: runtimeStore,
         adapter: adapter,
         stdioNodeExecutor: LocalWorkflowStdioNodeExecutor()
       )
-      let result = try await runner.run(
-        DeterministicWorkflowRunRequest(
+      let initialRequest = DeterministicWorkflowRunRequest(
+        workflow: bundle.workflow,
+        nodePayloads: bundle.nodePayloads,
+        variables: variables,
+        maxSteps: options.maxSteps,
+        maxConcurrency: options.maxConcurrency,
+        maxLoopIterations: options.maxLoopIterations,
+        defaultTimeoutMs: options.defaultTimeoutMs,
+        timeoutMs: options.timeoutMs
+      )
+      let result: WorkflowRunResult
+      do {
+        result = try await runner.run(initialRequest)
+      } catch {
+        guard options.autoImprove, let failedSession = await runtimeStore.latestSession(workflowId: bundle.workflow.workflowId) else {
+          throw error
+        }
+        result = WorkflowRunResult(
+          workflowId: bundle.workflow.workflowId,
+          session: failedSession,
+          rootOutput: nil,
+          exitCode: 1,
+          transitions: 0
+        )
+      }
+      var finalResult = result
+      if options.autoImprove {
+        finalResult = try await runAutoImproveIfNeeded(
+          initialResult: finalResult,
+          runner: runner,
           workflow: bundle.workflow,
           nodePayloads: bundle.nodePayloads,
           variables: variables,
-          maxSteps: options.maxSteps,
-          maxConcurrency: options.maxConcurrency,
-          maxLoopIterations: options.maxLoopIterations,
-          defaultTimeoutMs: options.defaultTimeoutMs,
-          timeoutMs: options.timeoutMs
+          options: options
         )
+      }
+      let workflowMessages = try await runtimeStore.listMessages(for: finalResult.session.sessionId, toStepId: nil)
+      let persistedIdentity = persistenceIdentity(
+        requestedResolution: resolution,
+        bundle: bundle,
+        fromRegistry: options.fromRegistry
       )
       try persistSessionRecord(
-        workflowName: resolution.workflowName,
-        resolution: resolution,
+        workflowName: persistedIdentity.workflowName,
+        resolution: persistedIdentity.resolution,
         resolvedSourceScope: bundle.sourceScope,
-        result: result,
+        result: finalResult,
+        workflowMessages: workflowMessages,
         options: options
       )
       return CLICommandResult(
-        exitCode: CLIExitCode(rawValue: result.exitCode) ?? .failure,
-        stdout: try renderRunResult(result, output: options.output)
+        exitCode: CLIExitCode(rawValue: finalResult.exitCode) ?? .failure,
+        stdout: try renderRunResult(finalResult, output: options.output)
       )
     } catch let error as CLIUsageError {
       return renderRunFailure(options: options, exitCode: .usage, error: error.message)
     } catch {
       return renderRunFailure(options: options, exitCode: .failure, error: "\(error)")
     }
+  }
+
+  private func runRemote(endpoint: String, options: WorkflowRunOptions) async throws -> CLICommandResult {
+    if options.fromRegistry {
+      throw CLIUsageError("workflow run --from-registry is local-only and cannot be combined with --endpoint")
+    }
+    if options.mockScenarioPath != nil {
+      throw CLIUsageError("--mock-scenario cannot be combined with --endpoint")
+    }
+    let variables = try parseVariables(options.variables, workingDirectory: options.workingDirectory)
+    let nodePatch = try options.nodePatch.map { try jsonLoader.object(from: $0, workingDirectory: options.workingDirectory) }
+    let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
+    let configuredAuthTokenEnv = nonEmptyString(options.authTokenEnv)
+    let authTokenEnv = configuredAuthTokenEnv ?? "RIELA_MANAGER_AUTH_TOKEN"
+    let authToken = nonEmptyString(options.authToken)
+      ?? nonEmptyString(environment[authTokenEnv])
+      ?? (configuredAuthTokenEnv == nil ? nonEmptyString(environment["RIEL_MANAGER_AUTH_TOKEN"]) : nil)
+    let managerSessionId = nonEmptyString(environment["RIELA_MANAGER_SESSION_ID"])
+      ?? nonEmptyString(environment["RIEL_MANAGER_SESSION_ID"])
+    let request = WorkflowRemoteRunRequest(
+      workflowName: options.target,
+      runtimeVariables: variables,
+      nodePatch: nodePatch,
+      autoImprove: options.autoImprove,
+      autoImprovePolicy: options.autoImprovePolicy,
+      maxSteps: options.maxSteps,
+      maxConcurrency: options.maxConcurrency,
+      maxLoopIterations: options.maxLoopIterations,
+      defaultTimeoutMs: options.defaultTimeoutMs,
+      timeoutMs: options.timeoutMs,
+      authToken: authToken,
+      authTokenEnv: authTokenEnv,
+      managerSessionId: managerSessionId
+    )
+    let result = try await graphQLTransport.executeWorkflow(endpoint: endpoint, request: request)
+    return CLICommandResult(
+      exitCode: CLIExitCode(rawValue: result.exitCode) ?? .failure,
+      stdout: try renderRemoteRunResult(result, output: options.output)
+    )
   }
 
   private func parseVariables(_ reference: String?, workingDirectory: String) throws -> JSONObject {
@@ -640,11 +1247,8 @@ public struct WorkflowRunCommand: Sendable {
   }
 
   private func rejectUnsupportedRunOptions(_ options: WorkflowRunOptions) throws {
-    if options.artifactRoot != nil {
-      throw CLIUsageError("--artifact-root is not supported by the Swift TASK-007 in-memory runner")
-    }
-    if options.maxConcurrency != nil {
-      throw CLIUsageError("--max-concurrency is not supported by the Swift TASK-007 sequential runner")
+    if options.fromRegistry && isTemporaryWorkflowRunTarget(options.target, workingDirectory: options.workingDirectory) {
+      throw CLIUsageError("temporary workflow JSON cannot be combined with --from-registry")
     }
   }
 
@@ -653,6 +1257,7 @@ public struct WorkflowRunCommand: Sendable {
     resolution: WorkflowResolutionOptions,
     resolvedSourceScope: WorkflowScope,
     result: WorkflowRunResult,
+    workflowMessages: [WorkflowMessageRecord],
     options: WorkflowRunOptions
   ) throws {
     let persistedResolution = CLIWorkflowSessionResolution.resolutionForPersistence(
@@ -672,13 +1277,213 @@ public struct WorkflowRunCommand: Sendable {
         mockScenarioPath: options.mockScenarioPath
       )
     )
+    let snapshot = WorkflowRuntimePersistenceProjector.snapshot(session: result.session, workflowMessages: workflowMessages)
+    try FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot)).save(snapshot)
+    if let artifactRoot = options.artifactRoot {
+      let artifactURL = absoluteURL(artifactRoot, relativeTo: URL(fileURLWithPath: options.workingDirectory, isDirectory: true))
+      try FileWorkflowRuntimePersistenceStore(rootDirectory: artifactURL.path).save(snapshot)
+    }
+    if options.autoImprove, let supervision = result.supervision {
+      try persistSupervisionRecord(
+        sessionId: result.session.sessionId,
+        storeRoot: storeRoot,
+        workflowName: workflowName,
+        supervision: supervision
+      )
+    }
+  }
+
+  private func persistenceIdentity(
+    requestedResolution: WorkflowResolutionOptions,
+    bundle: ResolvedWorkflowBundle,
+    fromRegistry: Bool
+  ) -> (workflowName: String, resolution: WorkflowResolutionOptions) {
+    guard fromRegistry else {
+      return (requestedResolution.workflowName, requestedResolution)
+    }
+    return (
+      bundle.workflow.workflowId,
+      WorkflowResolutionOptions(
+        workflowName: bundle.workflow.workflowId,
+        scope: bundle.sourceScope,
+        workflowDefinitionDir: bundle.workflowDirectory,
+        workingDirectory: requestedResolution.workingDirectory
+      )
+    )
+  }
+
+  private func persistSupervisionRecord(
+    sessionId: String,
+    storeRoot: String,
+    workflowName: String,
+    supervision: JSONObject
+  ) throws {
+    let directory = URL(fileURLWithPath: canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot), isDirectory: true)
+      .appendingPathComponent(sessionId, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    var record = supervision
+    record["sessionId"] = .string(sessionId)
+    record["workflowName"] = .string(workflowName)
+    try jsonString(record).write(to: directory.appendingPathComponent("supervision-record.json"), atomically: true, encoding: .utf8)
+  }
+
+  private func runAutoImproveIfNeeded(
+    initialResult: WorkflowRunResult,
+    runner: DeterministicWorkflowRunner,
+    workflow: WorkflowDefinition,
+    nodePayloads: [String: AgentNodePayload],
+    variables: JSONObject,
+    options: WorkflowRunOptions
+  ) async throws -> WorkflowRunResult {
+    var current = initialResult
+    var incidents: [JSONValue] = []
+    var remediations: [JSONValue] = []
+    var supervisedAttempts = 1
+
+    while current.status == .failed && supervisedAttempts < options.autoImprovePolicy.maxSupervisedAttempts {
+      let failedExecution = current.session.executions.last { $0.status == .failed }
+      let targetStepId = failedExecution?.stepId ?? workflow.entryStepId
+      let incidentId = "incident-\(supervisedAttempts)"
+      incidents.append(.object([
+        "incidentId": .string(incidentId),
+        "category": .string("failure"),
+        "sessionId": .string(current.session.sessionId),
+        "stepId": .string(targetStepId),
+        "executionId": .string(failedExecution?.executionId ?? ""),
+        "message": .string(failedExecution?.failureReason ?? "workflow failed"),
+      ]))
+
+      let sourceSessionId = current.session.sessionId
+      supervisedAttempts += 1
+      let rerun = try await runner.run(
+        DeterministicWorkflowRunRequest(
+          workflow: workflow,
+          nodePayloads: nodePayloads,
+          variables: variables,
+          maxSteps: options.maxSteps,
+          maxConcurrency: options.maxConcurrency,
+          maxLoopIterations: options.maxLoopIterations,
+          defaultTimeoutMs: options.defaultTimeoutMs,
+          timeoutMs: options.timeoutMs,
+          rerunFromSessionId: sourceSessionId,
+          rerunFromStepId: targetStepId
+        )
+      )
+      remediations.append(.object([
+        "remediationId": .string("remediation-\(supervisedAttempts - 1)"),
+        "incidentId": .string(incidentId),
+        "action": .string("rerun-workflow"),
+        "managerControl": .string("session rerun"),
+        "sourceSessionId": .string(sourceSessionId),
+        "targetSessionId": .string(rerun.session.sessionId),
+        "targetStepId": .string(targetStepId),
+      ]))
+      current = rerun
+    }
+
+    current.supervision = supervisionRecord(
+      status: current.status == .completed ? "succeeded" : "failed",
+      policy: options.autoImprovePolicy,
+      targetSessionId: current.session.sessionId,
+      attempts: supervisedAttempts,
+      incidents: incidents,
+      remediations: remediations
+    )
+    return current
+  }
+
+  private func supervisionRecord(
+    status: String,
+    policy: WorkflowAutoImprovePolicy,
+    targetSessionId: String,
+    attempts: Int,
+    incidents: [JSONValue],
+    remediations: [JSONValue]
+  ) -> JSONObject {
+    [
+      "supervisionRunId": .string("supervision-\(targetSessionId)"),
+      "targetSessionId": .string(targetSessionId),
+      "mode": .string("auto-improve"),
+      "status": .string(status),
+      "attempts": .number(Double(attempts)),
+      "policy": .object([
+        "maxSupervisedAttempts": .number(Double(policy.maxSupervisedAttempts)),
+        "maxWorkflowPatches": .number(Double(policy.maxWorkflowPatches)),
+        "monitorIntervalMs": .number(Double(policy.monitorIntervalMs)),
+        "stallTimeoutMs": .number(Double(policy.stallTimeoutMs)),
+        "workflowMutationMode": .string(policy.workflowMutationMode),
+        "nestedSuperviser": .bool(policy.nestedSuperviser),
+      ]),
+      "incidents": .array(incidents),
+      "remediations": .array(remediations),
+      "managerControl": .object([
+        "transport": .string("local-runtime"),
+        "targetedRerun": .bool(!remediations.isEmpty),
+        "command": .string("session rerun"),
+      ]),
+    ]
   }
 
   private func resolveRunBundle(options: WorkflowRunOptions, resolution: WorkflowResolutionOptions) throws -> ResolvedWorkflowBundle {
     if let temporary = try loadTemporaryWorkflowIfPresent(options.target, workingDirectory: options.workingDirectory) {
       return temporary
     }
+    if options.fromRegistry {
+      return try resolveRegistryRunBundle(options: options)
+    }
     return try resolver.resolve(resolution)
+  }
+
+  private func resolveRegistryRunBundle(options: WorkflowRunOptions) throws -> ResolvedWorkflowBundle {
+    guard WorkflowPackageManifestValidator.isSafePackageName(options.target) else {
+      throw CLIUsageError("invalid package name '\(options.target)'")
+    }
+    let workingDirectory = URL(fileURLWithPath: options.workingDirectory, isDirectory: true)
+    let roots: [(scope: WorkflowScope, root: URL)]
+    switch options.resolution?.scope ?? .auto {
+    case .project:
+      roots = [(.project, workflowRunPackageRoot(scope: .project, workingDirectory: workingDirectory))]
+    case .user:
+      roots = [(.user, workflowRunPackageRoot(scope: .user, workingDirectory: workingDirectory))]
+    case .auto, .direct:
+      roots = [
+        (.project, workflowRunPackageRoot(scope: .project, workingDirectory: workingDirectory)),
+        (.user, workflowRunPackageRoot(scope: .user, workingDirectory: workingDirectory)),
+      ]
+    }
+    var errors: [String] = []
+    for (scope, root) in roots {
+      let packageDirectory = root.appendingPathComponent(options.target, isDirectory: true).standardizedFileURL
+      let manifestURL = packageDirectory.appendingPathComponent("riela-package.json")
+      guard FileManager.default.fileExists(atPath: manifestURL.path) else {
+        errors.append("\(manifestURL.path) not found")
+        continue
+      }
+      let manifest = try JSONDecoder().decode(WorkflowPackageManifest.self, from: Data(contentsOf: manifestURL))
+      let issues = WorkflowPackageManifestValidator.validate(manifest)
+        + WorkflowPackageManifestValidator.validateWorkflowBundle(manifest, packageRoot: packageDirectory)
+      guard issues.isEmpty else {
+        throw CLIUsageError("package source validation failed: \(issues.map { "\($0.path): \($0.message)" }.joined(separator: "; "))")
+      }
+      guard let normalizedWorkflowDirectory = WorkflowPackageManifestValidator.normalizePackageRelativePath(manifest.workflowDirectory ?? ".") else {
+        throw CLIUsageError("package workflowDirectory must be package-relative")
+      }
+      let workflowDirectory = packageDirectory
+        .appendingPathComponent(normalizedWorkflowDirectory, isDirectory: true)
+        .standardizedFileURL
+      guard workflowRunPath(workflowDirectory.resolvingSymlinksInPath(), isContainedIn: packageDirectory.resolvingSymlinksInPath()) else {
+        throw CLIUsageError("package workflowDirectory escapes package root: \(manifest.workflowDirectory ?? ".")")
+      }
+      var bundle = try resolver.resolve(WorkflowResolutionOptions(
+        workflowName: workflowDirectory.lastPathComponent,
+        scope: .direct,
+        workflowDefinitionDir: workflowDirectory.path,
+        workingDirectory: options.workingDirectory
+      ))
+      bundle.sourceScope = scope
+      return bundle
+    }
+    throw WorkflowResolutionError.notFound(options.target, errors)
   }
 
   private func loadTemporaryWorkflowIfPresent(_ target: String, workingDirectory: String) throws -> ResolvedWorkflowBundle? {
@@ -744,8 +1549,17 @@ public struct WorkflowRunCommand: Sendable {
     switch output {
     case .json:
       return try jsonString(result)
-    case .text:
+    case .text, .table:
       return "status: \(result.session.status.rawValue)\nworkflowId: \(result.workflowId)\nnodeExecutions: \(result.session.executions.count)\n"
+    }
+  }
+
+  private func renderRemoteRunResult(_ result: WorkflowRemoteRunResult, output: WorkflowOutputFormat) throws -> String {
+    switch output {
+    case .json:
+      return try jsonString(result)
+    case .text, .table:
+      return "run session: \(result.sessionId)\nstatus: \(result.status)\nnodeExecutions: \(result.nodeExecutions)\n"
     }
   }
 
@@ -764,28 +1578,72 @@ private struct TemporaryWorkflowPayload: Codable {
   var nodePayloads: [String: AgentNodePayload]
 }
 
+private func isTemporaryWorkflowRunTarget(_ target: String, workingDirectory: String) -> Bool {
+  if target.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") {
+    return true
+  }
+  let url = absoluteURL(target, relativeTo: URL(fileURLWithPath: workingDirectory, isDirectory: true))
+  return FileManager.default.fileExists(atPath: url.path) && url.pathExtension == "json"
+}
+
+private func workflowRunPackageRoot(scope: WorkflowScope, workingDirectory: URL) -> URL {
+  switch scope {
+  case .user:
+    return URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory()).appendingPathComponent(".riela/packages", isDirectory: true)
+  case .auto, .project, .direct:
+    return workingDirectory.appendingPathComponent(".riela/packages", isDirectory: true)
+  }
+}
+
+private func workflowRunPath(_ child: URL, isContainedIn parent: URL) -> Bool {
+  let parentPath = parent.standardizedFileURL.path
+  let childPath = child.standardizedFileURL.path
+  return childPath == parentPath || childPath.hasPrefix(parentPath + "/")
+}
+
 public struct RielaCLIApplication: Sendable {
   public var parser: any CLIArgumentParsing
   public var validateCommand: WorkflowValidateCommand
   public var inspectCommand: WorkflowInspectCommand
   public var runCommand: WorkflowRunCommand
+  public var manifestValidateCommand: WorkflowManifestValidateCommand
+  public var workflowCatalogCommand: WorkflowCatalogCommand
   public var sessionRerunCommand: SessionRerunCommand
   public var sessionResumeCommand: SessionResumeCommand
+  public var sessionInspectionCommand: SessionInspectionCommand
+  public var workflowScaffoldCommand: WorkflowScaffoldCommand
+  public var packageCommandRunner: WorkflowPackageCommandRunner
+  public var sessionContinueCommand: SessionContinueCommand
+  public var scopedCommandRunner: ScopedParityCommandRunner
 
   public init(
     parser: any CLIArgumentParsing = RielaArgumentParser(),
     validateCommand: WorkflowValidateCommand = WorkflowValidateCommand(),
     inspectCommand: WorkflowInspectCommand = WorkflowInspectCommand(),
     runCommand: WorkflowRunCommand = WorkflowRunCommand(),
+    manifestValidateCommand: WorkflowManifestValidateCommand = WorkflowManifestValidateCommand(),
+    workflowCatalogCommand: WorkflowCatalogCommand = WorkflowCatalogCommand(),
     sessionRerunCommand: SessionRerunCommand = SessionRerunCommand(),
-    sessionResumeCommand: SessionResumeCommand = SessionResumeCommand()
+    sessionResumeCommand: SessionResumeCommand = SessionResumeCommand(),
+    sessionInspectionCommand: SessionInspectionCommand = SessionInspectionCommand(),
+    workflowScaffoldCommand: WorkflowScaffoldCommand = WorkflowScaffoldCommand(),
+    packageCommandRunner: WorkflowPackageCommandRunner = WorkflowPackageCommandRunner(),
+    sessionContinueCommand: SessionContinueCommand = SessionContinueCommand(),
+    scopedCommandRunner: ScopedParityCommandRunner = ScopedParityCommandRunner()
   ) {
     self.parser = parser
     self.validateCommand = validateCommand
     self.inspectCommand = inspectCommand
     self.runCommand = runCommand
+    self.manifestValidateCommand = manifestValidateCommand
+    self.workflowCatalogCommand = workflowCatalogCommand
     self.sessionRerunCommand = sessionRerunCommand
     self.sessionResumeCommand = sessionResumeCommand
+    self.sessionInspectionCommand = sessionInspectionCommand
+    self.workflowScaffoldCommand = workflowScaffoldCommand
+    self.packageCommandRunner = packageCommandRunner
+    self.sessionContinueCommand = sessionContinueCommand
+    self.scopedCommandRunner = scopedCommandRunner
   }
 
   public func run(_ arguments: [String]) async -> CLICommandResult {
@@ -816,10 +1674,42 @@ public struct RielaCLIApplication: Sendable {
         return inspectCommand.run(options)
       case let .workflow(.run(options)):
         return await runCommand.run(options)
+      case let .workflow(.list(options)):
+        return workflowCatalogCommand.list(options)
+      case let .workflow(.status(options)):
+        return workflowCatalogCommand.status(options)
+      case let .workflow(.manifestValidate(options)):
+        return await manifestValidateCommand.run(options)
+      case let .workflow(.checkout(options)):
+        return workflowScaffoldCommand.checkout(options)
+      case let .workflow(.create(options)):
+        return workflowScaffoldCommand.create(options)
+      case let .workflow(.selfImprove(options)):
+        return workflowScaffoldCommand.selfImprove(options)
+      case let .workflow(.package(command)):
+        return await packageCommandRunner.run(command)
       case let .session(.rerun(options)):
         return await sessionRerunCommand.run(options)
       case let .session(.resume(options)):
         return await sessionResumeCommand.run(options)
+      case let .session(.progress(options)):
+        return sessionInspectionCommand.run(options)
+      case let .session(.health(options)):
+        return sessionInspectionCommand.run(options)
+      case let .session(.status(options)):
+        return sessionInspectionCommand.run(options)
+      case let .session(.continueSession(options)):
+        return await sessionContinueCommand.run(options)
+      case let .session(.stepRuns(options)):
+        return sessionInspectionCommand.run(options)
+      case let .session(.export(options)):
+        return sessionInspectionCommand.run(options)
+      case let .session(.logs(options)):
+        return sessionInspectionCommand.run(options)
+      case let .package(command):
+        return await packageCommandRunner.run(command)
+      case let .scoped(command):
+        return await scopedCommandRunner.run(command)
       }
     } catch let error as CLIUsageError {
       return renderParserFailure(arguments: arguments, error: error)
@@ -886,6 +1776,54 @@ public struct RielaCLIApplication: Sendable {
     }
     return arguments[2]
   }
+
+}
+
+public struct CLIUnsupportedCommandResult: Codable, Equatable, Sendable {
+  public var scope: String
+  public var command: String?
+  public var target: String?
+  public var exitCode: Int32
+  public var error: String
+
+  public init(scope: String, command: String?, target: String?, exitCode: Int32, error: String) {
+    self.scope = scope
+    self.command = command
+    self.target = target
+    self.exitCode = exitCode
+    self.error = error
+  }
+}
+
+private actor SupervisedScenarioNodeAdapter: NodeAdapter {
+  private let scenario: WorkflowMockScenario
+  private let fallback: any NodeAdapter
+  private var callCounts: [String: Int] = [:]
+
+  init(scenario: WorkflowMockScenario, fallback: any NodeAdapter = DeterministicLocalNodeAdapter()) {
+    self.scenario = scenario
+    self.fallback = fallback
+  }
+
+  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    guard let sequence = scenario.responses[input.node.id] else {
+      return try await fallback.execute(input, context: context)
+    }
+    let nextIndex = (callCounts[input.node.id] ?? 0) + 1
+    callCounts[input.node.id] = nextIndex
+    let response = sequence.isEmpty ? MockNodeResponse() : sequence[min(nextIndex - 1, sequence.count - 1)]
+    if response.fail == true {
+      throw AdapterExecutionError(.providerError, "scenario forced failure for node '\(input.node.id)'")
+    }
+    return AdapterExecutionOutput(
+      provider: response.provider ?? "scenario-mock",
+      model: response.model ?? input.node.model,
+      promptText: response.promptText ?? input.promptText,
+      completionPassed: response.completionPassed ?? true,
+      when: response.when ?? ["always": true],
+      payload: response.payload ?? [:]
+    )
+  }
 }
 
 public let rielaCLIHelpText = """
@@ -896,9 +1834,16 @@ Usage:
   riela workflow validate <workflow> [--scope project|user|auto] [--output json]
   riela workflow inspect <workflow> [--scope project|user|auto] [--output json]
   riela workflow usage <workflow> [--scope project|user|auto] [--output json]
-  riela workflow run <workflow> --mock-scenario <path> [--output json]
+  riela workflow list|status [--output text|json|table]
+  riela workflow manifest validate <manifest-path> [--output json]
+  riela workflow checkout|create|self-improve <workflow> [options]
+  riela workflow package <search|list|status|install|update|remove|checkout|publish> [options]
+  riela workflow run <workflow> --mock-scenario <path> [--auto-improve] [--output json]
+  riela package <search|list|status|install|update|remove|checkout|publish> [options]
   riela session rerun <session-id> <step-id> [--scope project|user|auto] [--output json]
   riela session resume <session-id> [--scope project|user|auto] [--output json]
+  riela session progress|health|status|continue|step-runs|export|logs [session-id] [options]
+  riela graphql|gql|hook|events|serve|call-step|workflow-call [command] [target] [options]
 
 The Swift CLI is the production Homebrew runtime. Linux Homebrew archives remain unsupported until a reviewed Swift Linux build contract exists.
 

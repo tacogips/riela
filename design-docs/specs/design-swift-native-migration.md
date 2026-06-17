@@ -1016,6 +1016,99 @@ by the current repository:
 - `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter CursorCLIAgent`
 - `git diff --check`
 
+## CodexAgent Blocking Adversarial Fix Design
+
+This issue-resolution pass addresses only the high and medium adversarial
+findings from `workflow-call:codex-agent-swift-migration-adversarial-fix`.
+The scope is deliberately narrower than full Swift deletion readiness: fix the
+CodexAgent GraphQL execution, production process/session execution, and auth
+token compatibility gaps that would otherwise make the Swift migration review
+misleading. Low residual review items remain risks unless they are directly
+required by one of these fixes.
+
+Reference mapping:
+
+- Step 1 established `/Users/taco/gits/tacogips/codex-agent` as the active
+  local Codex reference root for this child workflow. The default
+  `../../codex-agent` root is unavailable from the Riela checkout.
+- `src/graphql/index.test.ts`, `src/cli/graphql.test.ts`, and
+  `src/graphql/command-handlers.ts` define the command execution contract for
+  `version.get`, session list/show/search/searchTranscript/run/resume/fork/watch,
+  group create/list/show/add/remove/pause/resume/delete/run, queue
+  create/add/show/list/pause/resume/delete/update/remove/move/mode/run,
+  bookmark add/list/get/delete/search, token create/list/revoke/rotate, and
+  files list/patches/find/rebuild.
+- `src/process/manager.ts`, `src/process/manager.test.ts`,
+  `src/sdk/agent-runner.test.ts`, and `src/sdk/session-runner.test.ts` define
+  process and session parity: real `codex` subprocess spawning by default,
+  explicit argv arrays, cwd and environment forwarding, JSONL stdout streaming,
+  stderr draining, completion exit codes, resume and fork behavior, process
+  list/get/kill/writeInput/killAll/prune lifecycle controls, and injected
+  fakes for tests.
+- `src/auth/token-manager.ts`, `src/auth/token-manager.test.ts`,
+  `src/auth/types.ts`, and GraphQL token handlers define auth parity:
+  persistent `tokens.json`, raw `id.secret` token creation and verification,
+  SHA-256 secret hashes, timing-safe verification, metadata without exposing
+  secrets, permission normalization, wildcard permission matching, expiry,
+  revocation, rotation, and atomic save behavior.
+- `src/queue/repository.test.ts`, `src/group/repository.test.ts`,
+  `src/bookmark/manager.test.ts`, `src/file-changes/*.test.ts`,
+  `src/session/*.test.ts`, `src/rollout/*.test.ts`,
+  `src/markdown/parser.test.ts`, and `src/sdk/usage-stats.test.ts` remain the
+  coverage backstop for the unblocked feature categories named by the parent
+  adversarial review.
+
+Behavior decisions:
+
+- `Sources/CodexAgent/CodexOperations.swift` must not return generic
+  `{"accepted": true}` placeholders for supported GraphQL commands. Supported
+  command names execute against the same Swift operational stores, session
+  index, file-change index, token manager, and process/session runners used by
+  CLI compatibility surfaces; invalid inputs fail before persistence.
+- GraphQL command shorthand must preserve the legacy query/mutation/subscription
+  normalization. Mutating commands are mutations, `session.watch` is the only
+  subscription, explicit GraphQL documents stay unchanged, `--param` values and
+  variable files become object variables, and non-object variables are rejected.
+- `session.run`, `session.resume`, and `session.fork` are execution boundaries,
+  not argv-preview helpers. Production defaults use the real process/session
+  runner; tests may inject fake executables or runners to prove argv, cwd,
+  environment, stdout JSONL, stderr, exit-code, kill, and stdin behavior without
+  requiring a live Codex install.
+- `CodexProcessManager` defaults to Foundation `Process` execution. The runner
+  remains injectable, but the no-op executor is test-only and must not be the
+  production default. Process records reflect actual process identifiers where
+  available, terminal exit status, killed state, input writes, and pruned
+  completed records.
+- `CodexTokenManager` stores legacy-compatible records in `tokens.json` under
+  the configured CodexAgent config directory. Public token values use
+  `id.secret`; list operations return metadata only; verify accepts only raw
+  tokens, checks revocation and expiry, validates requested permissions, and
+  avoids leaking secrets through GraphQL or test-visible diagnostics.
+- Cursor-specific behavior remains isolated behind `CursorCLIAgent` and
+  official SDK behavior remains under `RielaAdapters`; this CodexAgent fix must
+  not add Cursor CLI, official Cursor SDK, workflow publication, communication
+  id, or runtime message behavior to the CodexAgent module.
+
+Validation and rollout constraints:
+
+- The 30-file legacy CodexAgent test matrix in
+  `Tests/CodexAgentTests/CodexAgentCompatibilityTests.swift` remains explicit
+  and must map every referenced legacy test file to at least one Swift parity
+  assertion.
+- New or updated tests must cover the three blocking findings directly:
+  GraphQL command execution for operational stores and sessions, default
+  process manager execution through a fake executable, and persistent raw-token
+  compatibility.
+- Focused verification must include:
+  `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk swift test --filter CodexAgentTests`
+  and
+  `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk swift test --filter AgentAdapterTests`.
+  Full `swift test` should run when feasible and any blocker must be reported
+  explicitly.
+- Scratch evidence, wrapper scripts, logs, or temporary JSON for this pass must
+  live under repository-root `tmp/`; do not commit scratch artifacts, do not
+  stage changes, and do not push from this workflow node.
+
 ## Verification Gates
 
 Each migrated package needs:

@@ -19,6 +19,7 @@ let package = Package(
     .library(name: "ClaudeCodeAgent", targets: ["ClaudeCodeAgent"]),
     .library(name: "CursorCLIAgent", targets: ["CursorCLIAgent"]),
     .executable(name: "codex-agent", targets: ["CodexAgentCLI"]),
+    .executable(name: "claude-code-agent", targets: ["ClaudeCodeAgentCLI"]),
     .executable(name: "riela", targets: ["RielaCLI"])
   ],
   targets: [
@@ -31,6 +32,7 @@ let package = Package(
     .target(name: "CodexAgent", dependencies: ["RielaCore", "RielaAdapters"]),
     .executableTarget(name: "CodexAgentCLI", dependencies: ["CodexAgent"]),
     .target(name: "ClaudeCodeAgent", dependencies: ["RielaCore", "RielaAdapters"]),
+    .executableTarget(name: "ClaudeCodeAgentCLI", dependencies: ["ClaudeCodeAgent"]),
     .target(name: "CursorCLIAgent", dependencies: ["RielaCore", "RielaAdapters"]),
     .target(
       name: "RielaAdapters",
@@ -66,6 +68,10 @@ let package = Package(
     .testTarget(
       name: "CodexAgentTests",
       dependencies: ["RielaCore", "CodexAgent"]
+    ),
+    .testTarget(
+      name: "ClaudeCodeAgentTests",
+      dependencies: ["RielaCore", "ClaudeCodeAgent"]
     )
   ],
   swiftLanguageModes: [.v6]

@@ -1,6 +1,6 @@
 # CodexAgent Swift Migration Adversarial Fix Implementation Plan
 
-**Status**: Ready for implementation
+**Status**: Completed
 **Design Reference**: `design-docs/specs/design-swift-native-migration.md:1019`
 **Workflow Mode**: issue-resolution
 **Issue Reference**: `workflow-call:codex-agent-swift-migration-adversarial-fix`
@@ -19,14 +19,14 @@ categories named by the parent review.
 
 - `design-docs/specs/design-swift-native-migration.md:1019`
 - Step 3 review decision: `accepted-design-review`
-- Active Codex reference root: `/Users/taco/gits/tacogips/codex-agent`
+- Active Codex reference root: `../codex-agent`
 
 ## Codex Reference Mapping
 
-- GraphQL execution: `/Users/taco/gits/tacogips/codex-agent/src/graphql/index.test.ts`, `/Users/taco/gits/tacogips/codex-agent/src/cli/graphql.test.ts`, `/Users/taco/gits/tacogips/codex-agent/src/graphql/command-handlers.ts`
-- Process/session execution: `/Users/taco/gits/tacogips/codex-agent/src/process/manager.ts`, `/Users/taco/gits/tacogips/codex-agent/src/process/manager.test.ts`, `/Users/taco/gits/tacogips/codex-agent/src/sdk/agent-runner.test.ts`, `/Users/taco/gits/tacogips/codex-agent/src/sdk/session-runner.test.ts`
-- Auth tokens: `/Users/taco/gits/tacogips/codex-agent/src/auth/token-manager.ts`, `/Users/taco/gits/tacogips/codex-agent/src/auth/token-manager.test.ts`, `/Users/taco/gits/tacogips/codex-agent/src/auth/types.ts`
-- Coverage backstop: `/Users/taco/gits/tacogips/codex-agent/src/queue/repository.test.ts`, `/Users/taco/gits/tacogips/codex-agent/src/group/repository.test.ts`, `/Users/taco/gits/tacogips/codex-agent/src/bookmark/manager.test.ts`, `/Users/taco/gits/tacogips/codex-agent/src/file-changes/*.test.ts`, `/Users/taco/gits/tacogips/codex-agent/src/session/*.test.ts`, `/Users/taco/gits/tacogips/codex-agent/src/rollout/*.test.ts`, `/Users/taco/gits/tacogips/codex-agent/src/markdown/parser.test.ts`, `/Users/taco/gits/tacogips/codex-agent/src/sdk/usage-stats.test.ts`
+- GraphQL execution: `../codex-agent/src/graphql/index.test.ts`, `../codex-agent/src/cli/graphql.test.ts`, `../codex-agent/src/graphql/command-handlers.ts`
+- Process/session execution: `../codex-agent/src/process/manager.ts`, `../codex-agent/src/process/manager.test.ts`, `../codex-agent/src/sdk/agent-runner.test.ts`, `../codex-agent/src/sdk/session-runner.test.ts`
+- Auth tokens: `../codex-agent/src/auth/token-manager.ts`, `../codex-agent/src/auth/token-manager.test.ts`, `../codex-agent/src/auth/types.ts`
+- Coverage backstop: `../codex-agent/src/queue/repository.test.ts`, `../codex-agent/src/group/repository.test.ts`, `../codex-agent/src/bookmark/manager.test.ts`, `../codex-agent/src/file-changes/*.test.ts`, `../codex-agent/src/session/*.test.ts`, `../codex-agent/src/rollout/*.test.ts`, `../codex-agent/src/markdown/parser.test.ts`, `../codex-agent/src/sdk/usage-stats.test.ts`
 
 ## Tasks
 
@@ -218,6 +218,22 @@ resume, and fork; TASK-004 for token command behavior.
   auth work in token-store code and auth-specific tests.
 - TASK-002 is not parallelizable with TASK-003 or TASK-004 once GraphQL begins
   wiring `session.run`, `session.resume`, `session.fork`, or token commands.
+
+## Completion Log
+
+- 2026-06-17: Implemented real Swift GraphQL dispatch for session, queue,
+  group, bookmark, token, and file-change commands; added a Swift CLI command
+  executor that routes parsed legacy commands into the same dispatch path.
+- 2026-06-17: Replaced the default `CodexProcessManager` no-op executor with a
+  Foundation `Process` execution path while preserving injected executors for
+  deterministic tests.
+- 2026-06-17: Added persistent `tokens.json` raw-token support with `id.secret`
+  creation, metadata-only listing, verification, revocation, rotation, expiry
+  checks, and GraphQL token handlers.
+- 2026-06-17: Added focused Swift parity tests for operational GraphQL/CLI
+  commands, token persistence, file-change command extraction, usage stats,
+  default readiness probes, and default process execution with a fake
+  executable.
 - TASK-005 and TASK-006 are join tasks and are not parallelizable.
 
 ## Verification

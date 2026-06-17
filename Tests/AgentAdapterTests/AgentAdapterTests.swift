@@ -346,6 +346,177 @@ final class AgentAdapterTests: XCTestCase {
     XCTAssertEqual(run.configuration.arguments.filter { $0 == "--model" }.count, 1)
   }
 
+  func testCodexProcessCommandBuilderMatchesReferenceExecCompatibilityArgs() {
+    let args = CodexProcessCommandBuilder.buildExecArguments(
+      prompt: "test prompt",
+      options: CodexProcessOptions(
+        model: "gpt-5.5",
+        sandbox: "workspace-write",
+        approvalMode: "on-failure",
+        fullAuto: true,
+        configOverrides: [#"model_reasoning_effort="high""#],
+        additionalArguments: ["--skip-git-repo-check"]
+      ),
+      terminatePromptWithDoubleDash: false
+    )
+
+    XCTAssertEqual(
+      args,
+      [
+        "exec",
+        "--json",
+        "--model",
+        "gpt-5.5",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--sandbox",
+        "workspace-write",
+        "-c",
+        #"model_reasoning_effort="high""#,
+        "--skip-git-repo-check",
+        "test prompt",
+      ]
+    )
+  }
+
+  func testCodexProcessCommandBuilderBuildsResumeCompatibilityArgs() {
+    let args = CodexProcessCommandBuilder.buildResumeArguments(
+      sessionId: "session-1",
+      prompt: "resume prompt",
+      options: CodexProcessOptions(
+        model: "gpt-5.5",
+        sandbox: "workspace-write",
+        fullAuto: true,
+        images: ["./one.png"],
+        configOverrides: [#"model_reasoning_effort="high""#],
+        additionalArguments: ["--skip-git-repo-check"]
+      )
+    )
+
+    XCTAssertEqual(
+      args,
+      [
+        "exec",
+        "--sandbox",
+        "workspace-write",
+        "resume",
+        "--json",
+        "--model",
+        "gpt-5.5",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "-c",
+        #"model_reasoning_effort="high""#,
+        "--skip-git-repo-check",
+        "--image",
+        "./one.png",
+        "--",
+        "session-1",
+        "resume prompt",
+      ]
+    )
+  }
+
+  func testCodexProcessCommandBuilderBuildsForkArgsAndEnvironmentOverlay() {
+    let args = CodexProcessCommandBuilder.buildForkArguments(
+      sessionId: "session-1",
+      nthMessage: 3,
+      options: CodexProcessOptions(
+        model: "gpt-5.5",
+        sandbox: "read-only",
+        approvalMode: "always",
+        fullAuto: true,
+        configOverrides: [#"model_reasoning_effort="medium""#],
+        additionalArguments: ["--skip-git-repo-check"]
+      )
+    )
+    let environment = CodexProcessCommandBuilder.buildEnvironment(
+      base: ["PATH": "/bin", "CODEX_AGENT_TEST_ENV": "old"],
+      options: CodexProcessOptions(environmentVariables: ["CODEX_AGENT_TEST_ENV": "typed-env-value"])
+    )
+
+    XCTAssertEqual(
+      args,
+      [
+        "fork",
+        "session-1",
+        "--nth-message",
+        "3",
+        "--model",
+        "gpt-5.5",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--sandbox",
+        "read-only",
+        "-c",
+        #"model_reasoning_effort="medium""#,
+        "--skip-git-repo-check",
+      ]
+    )
+    XCTAssertFalse(args.contains("--ask-for-approval"))
+    XCTAssertEqual(environment["PATH"], "/bin")
+    XCTAssertEqual(environment["CODEX_AGENT_TEST_ENV"], "typed-env-value")
+  }
+
+  func testCodexAgentEventNormalizerPortsSdkNormalizedEvents() {
+    var normalizer = CodexAgentEventNormalizer()
+
+    let started = normalizer.normalize(
+      [
+        "type": .string("session_meta"),
+        "payload": .object(["meta": .object(["id": .string("codex-session-1")])])
+      ],
+      includeSessionStarted: true
+    )
+    XCTAssertEqual(started, [
+      CodexAgentNormalizedEvent(type: "session.started", sessionId: "codex-session-1", payload: ["resumed": .bool(false)])
+    ])
+
+    let messageEvents = normalizer.normalize(
+      [
+        "type": .string("response_item"),
+        "payload": .object([
+          "type": .string("message"),
+          "role": .string("assistant"),
+          "content": .array([
+            .object(["type": .string("output_text"), "text": .string("hello")])
+          ])
+        ])
+      ],
+      fallbackSessionId: "codex-session-1"
+    )
+    XCTAssertEqual(messageEvents.map(\.type), ["assistant.delta", "assistant.snapshot"])
+    XCTAssertEqual(messageEvents.last?.payload["content"], .string("hello"))
+
+    let toolCall = normalizer.normalize(
+      [
+        "type": .string("response_item"),
+        "payload": .object([
+          "type": .string("function_call"),
+          "name": .string("read_file"),
+          "call_id": .string("call-1"),
+          "arguments": .string(#"{"path":"README.md"}"#)
+        ])
+      ],
+      fallbackSessionId: "codex-session-1"
+    )
+    XCTAssertEqual(toolCall.first?.type, "tool.call")
+    XCTAssertEqual(toolCall.first?.payload["name"], .string("read_file"))
+    XCTAssertEqual(toolCall.first?.payload["input"], .object(["path": .string("README.md")]))
+
+    let toolResult = normalizer.normalize(
+      [
+        "type": .string("response_item"),
+        "payload": .object([
+          "type": .string("function_call_output"),
+          "call_id": .string("call-1"),
+          "output": .object(["status": .string("ok")])
+        ])
+      ],
+      fallbackSessionId: "codex-session-1"
+    )
+    XCTAssertEqual(toolResult.first?.type, "tool.result")
+    XCTAssertEqual(toolResult.first?.payload["name"], .string("read_file"))
+    XCTAssertEqual(toolResult.first?.payload["isError"], .bool(false))
+  }
+
   func testClaudeCommandBuilderOwnsPrintModeArgvAndAttachmentPrompt() async throws {
     let runner = RecordingRunner(output: "done")
     let adapter = ClaudeCodeAgentAdapter(
@@ -1339,6 +1510,89 @@ final class AgentAdapterTests: XCTestCase {
     return try XCTUnwrap(missingProcessId, "Expected child pid file at \(pidFile.path)")
   }
 
+  func testCodexDefaultReadinessOperationsProbeToolsAuthAndModels() async throws {
+    let codex = try createTestExecutable(
+      name: "fake-codex-ok.sh",
+      body: """
+      if [ "${CODEX_AGENT_TEST_ENV:-}" != "ready" ]; then
+        echo "missing env" 1>&2
+        exit 13
+      fi
+      case "$1:${2:-}" in
+        "--version:")
+          printf 'codex %s\\n' "${CODEX_AGENT_TEST_VERSION:-missing}"
+          ;;
+        "login:status")
+          printf 'Logged in using ChatGPT\\n'
+          ;;
+        "exec:--skip-git-repo-check")
+          if [ "${3:-}" = "--ephemeral" ] && [ "${4:-}" = "--model" ] && [ "${5:-}" = "gpt-5.4" ]; then
+            printf 'OK\\n'
+          else
+            echo "missing model probe args: $*" 1>&2
+            exit 8
+          fi
+          ;;
+        *)
+          echo "unexpected args: $*" 1>&2
+          exit 1
+          ;;
+      esac
+      """
+    )
+    let git = try createTestExecutable(
+      name: "fake-git-ok.sh",
+      body: "printf 'git version 2.50.1\\n'"
+    )
+    let operations = CodexAgentDefaultReadinessOperations(codexBinary: codex.path, gitBinary: git.path)
+    let options = AgentBackendProbeOptions(environment: ["CODEX_AGENT_TEST_ENV": "ready", "CODEX_AGENT_TEST_VERSION": "from-env"])
+
+    let versions = await operations.getToolVersions(options: options)
+    XCTAssertEqual(versions.codex, AgentBackendToolInfo(name: "codex", command: codex.path, version: "codex from-env", status: .available))
+    XCTAssertEqual(versions.git, AgentBackendToolInfo(name: "git", command: git.path, version: "git version 2.50.1", status: .available))
+    let loginStatus = await operations.getLoginStatus(options: options)
+    XCTAssertEqual(loginStatus, CodexBackendLoginStatus(ok: true, status: "Logged in using ChatGPT", exitCode: 0))
+    let availability = await operations.checkModelAvailability(model: "gpt-5.4", options: options)
+    XCTAssertEqual(
+      availability,
+      CodexBackendModelAvailability(
+        ok: true,
+        model: "gpt-5.4",
+        auth: CodexBackendLoginStatus(ok: true, status: "Logged in using ChatGPT", exitCode: 0),
+        probe: CodexBackendModelProbe(ok: true, model: "gpt-5.4", output: "OK", exitCode: 0)
+      )
+    )
+
+    let failingCodex = try createTestExecutable(
+      name: "fake-codex-fail.sh",
+      body: """
+      case "$1:${2:-}" in
+        "--version:")
+          printf 'codex 1.0.0\\n'
+          ;;
+        "login:status")
+          printf 'Not logged in\\n'
+          ;;
+        "exec:--skip-git-repo-check")
+          echo 'Reading additional input from stdin...' 1>&2
+          echo 'ERROR: {"type":"error","status":400,"error":{"message":"The gpt-5 model is not supported for this account."}}' 1>&2
+          exit 11
+          ;;
+        *)
+          echo "unexpected args: $*" 1>&2
+          exit 1
+          ;;
+      esac
+      """
+    )
+    let failingOperations = CodexAgentDefaultReadinessOperations(codexBinary: failingCodex.path, gitBinary: git.path)
+    let login = await failingOperations.getLoginStatus()
+    XCTAssertEqual(login, CodexBackendLoginStatus(ok: false, status: "Not logged in", error: "Not logged in", exitCode: 0))
+    let unavailable = await failingOperations.checkModelAvailability(model: "gpt-5")
+    XCTAssertFalse(unavailable.ok)
+    XCTAssertTrue(unavailable.probe.error?.contains("The gpt-5 model is not supported for this account.") == true)
+  }
+
   func testReadinessSummariesAndValidationMirrorRuntimeAgentProbeCategories() {
     let codexRequirement = CodexAgentReadiness.runtimeRequirement(
       candidate: AgentBackendRequirementCandidate(backend: .codexAgent, models: ["gpt-5-nano"], sourceStepIds: ["worker"]),
@@ -1420,6 +1674,20 @@ final class AgentAdapterTests: XCTestCase {
       operations: MockCursorReadinessOperations()
     )
     XCTAssertEqual(cursorModel.status, .valid)
+  }
+
+  private func createTestExecutable(name: String, body: String) throws -> URL {
+    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+      .appendingPathComponent("tmp/agent-adapter-tests", isDirectory: true)
+      .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    addTeardownBlock {
+      try? FileManager.default.removeItem(at: root)
+    }
+    let url = root.appendingPathComponent(name)
+    try "#!/bin/sh\nset -eu\n\(body)\n".write(to: url, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+    return url
   }
 
   private func input(

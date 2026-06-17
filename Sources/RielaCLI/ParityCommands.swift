@@ -621,19 +621,11 @@ public struct WorkflowPackageCommandRunner: Sendable {
       return try renderPackage(packageResult, output: command.options.output)
     }
     let variables = try parsed.variables.map { try JSONReferenceLoader().object(from: $0, workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath) } ?? [:]
-    let adapter: any NodeAdapter
-    if let scenarioPath = parsed.mockScenarioPath {
-      adapter = try ScenarioNodeAdapter(
-        scenario: WorkflowMockScenarioLoader().loadScenario(at: absoluteURL(
-          scenarioPath,
-          relativeTo: URL(fileURLWithPath: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath)
-        ).path),
-        fallback: DeterministicLocalNodeAdapter()
-      )
-    } else {
-      adapter = DeterministicLocalNodeAdapter()
-    }
     let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
+    let adapter = try makeScenarioBackedNodeAdapter(
+      scenarioPath: parsed.mockScenarioPath,
+      workingDirectory: workingDirectory
+    )
     let storeRoot = CLIWorkflowSessionStore.resolveRootDirectory(
       sessionStore: parsed.sessionStore,
       scope: parsed.scope,

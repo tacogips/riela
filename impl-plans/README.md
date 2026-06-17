@@ -26,7 +26,6 @@ impl-plans/
 
 | Plan | Status | Design Reference |
 | ---- | ------ | ---------------- |
-| `active/codex-agent-swift-migration-adversarial-fix` | Ready for implementation | `design-swift-native-migration#codexagent-blocking-adversarial-fix-design` |
 | `active/package-checkout-content-digest-metadata` | In Progress | `architecture#workflow-checkout-boundary` |
 | `active/swift-cli-runtime-parity-gap-closure` | Active; Swift parity follow-through | `design-swift-cli-runtime-parity-gap-closure` |
 | `active/workflow-package-checkout-search` | In Progress | `design-workflow-package-checkout-search`, `design-workflow-package-integrity`, `command` |
@@ -38,6 +37,7 @@ impl-plans/
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `codex-agent-swift-migration-adversarial-fix` | 2026-06-17 | `design-swift-native-migration#codexagent-blocking-adversarial-fix-design` |
 | `typescript-deletion-readiness-completion` | 2026-06-16 | `design-swift-native-migration#deletion-readiness-completion-pass` |
 | `boundary-addon-source-tree-loading` | 2026-06-16 | `design-workflow-json#built-in-add-on-package-boundary` |
 | `chat-event-attachment-judgement` | 2026-06-16 | `design-chat-sdk-event-sources#attachment-judgement-workflow-extension` |

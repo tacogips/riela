@@ -327,6 +327,62 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertEqual(run.nodeExecutions, 1)
   }
 
+  func testWorkflowRunDispatchesCodexAgentBackendToProductionAdapter() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-codex-dispatch-\(UUID().uuidString)", isDirectory: true)
+    let workflowDirectory = root.appendingPathComponent("codex-dispatch", isDirectory: true)
+    let nodesDirectory = workflowDirectory.appendingPathComponent("nodes", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: nodesDirectory, withIntermediateDirectories: true)
+    try """
+    {
+      "workflowId": "codex-dispatch",
+      "defaults": { "maxLoopIterations": 3, "nodeTimeoutMs": 120000 },
+      "entryStepId": "worker",
+      "nodes": [{ "id": "worker", "nodeFile": "nodes/worker.json" }],
+      "steps": [{ "id": "worker", "nodeId": "worker", "role": "worker" }]
+    }
+    """.write(to: workflowDirectory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+    try """
+    {
+      "id": "worker",
+      "executionBackend": "codex-agent",
+      "model": "gpt-5-nano",
+      "promptTemplate": "dispatch through codex",
+      "variables": {}
+    }
+    """.write(to: nodesDirectory.appendingPathComponent("worker.json"), atomically: true, encoding: .utf8)
+
+    let marker = root.appendingPathComponent("fake-codex-called.txt")
+    let fakeCodex = try createExecutable(
+      directory: root,
+      name: "fake-codex.sh",
+      body: """
+      if [ "$1" = "login" ] && [ "$2" = "status" ]; then
+        exit 0
+      fi
+      printf '%s\\n' "$*" >> '\(marker.path)'
+      printf '{"type":"assistant.snapshot","content":"fake codex reached"}\\n'
+      exit 0
+      """
+    )
+    let previousCodexExecutable = environmentValue("RIELA_CODEX_AGENT_EXECUTABLE")
+    setEnvironmentValue("RIELA_CODEX_AGENT_EXECUTABLE", fakeCodex.path)
+    defer { setEnvironmentValue("RIELA_CODEX_AGENT_EXECUTABLE", previousCodexExecutable) }
+
+    let result = await RielaCLIApplication().run([
+      "workflow", "run", "codex-dispatch",
+      "--workflow-definition-dir", root.path,
+      "--output", "json",
+    ])
+
+    XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
+    let run = try decodeJSON(WorkflowRunResult.self, from: result.stdout)
+    XCTAssertEqual(run.status, .completed)
+    XCTAssertEqual(run.session.executions.first?.adapterOutput?.provider, "codex-agent")
+    XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("exec --json"), true)
+  }
+
   func testRunHonorsArtifactRootAndForwardsMaxConcurrency() async throws {
     let root = repositoryRoot()
     let tempDir = FileManager.default.temporaryDirectory
@@ -2717,5 +2773,15 @@ final class WorkflowCommandTests: XCTestCase {
     }
     try FileManager.default.copyItem(at: sourceWorkflow, to: userWorkflows)
     return IsolatedUserScopeWorkflowLayout(base: base, homeRoot: homeRoot, projectRoot: projectRoot)
+  }
+
+  private func createExecutable(directory: URL, name: String, body: String) throws -> URL {
+    let url = directory.appendingPathComponent(name)
+    try """
+    #!/bin/sh
+    \(body)
+    """.write(to: url, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+    return url
   }
 }

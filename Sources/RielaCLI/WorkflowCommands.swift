@@ -1110,19 +1110,11 @@ public struct WorkflowRunCommand: Sendable {
         )
       }
       let variables = try parseVariables(options.variables, workingDirectory: options.workingDirectory)
-      let fallback = DeterministicLocalNodeAdapter()
-      let adapter: any NodeAdapter
-      if let scenarioPath = options.mockScenarioPath {
-        let scenario = try WorkflowMockScenarioLoader().loadScenario(at: absoluteURL(
-            scenarioPath,
-            relativeTo: URL(fileURLWithPath: options.workingDirectory)
-          ).path)
-        adapter = options.autoImprove
-          ? SupervisedScenarioNodeAdapter(scenario: scenario, fallback: fallback)
-          : ScenarioNodeAdapter(scenario: scenario, fallback: fallback)
-      } else {
-        adapter = fallback
-      }
+      let adapter = try makeScenarioBackedNodeAdapter(
+        scenarioPath: options.mockScenarioPath,
+        workingDirectory: options.workingDirectory,
+        autoImprove: options.autoImprove
+      )
       let persistedResolution = CLIWorkflowSessionResolution.resolutionForPersistence(
         resolution: resolution,
         resolvedSourceScope: bundle.sourceScope
@@ -1795,7 +1787,7 @@ public struct CLIUnsupportedCommandResult: Codable, Equatable, Sendable {
   }
 }
 
-private actor SupervisedScenarioNodeAdapter: NodeAdapter {
+actor SupervisedScenarioNodeAdapter: NodeAdapter {
   private let scenario: WorkflowMockScenario
   private let fallback: any NodeAdapter
   private var callCounts: [String: Int] = [:]

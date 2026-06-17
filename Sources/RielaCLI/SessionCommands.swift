@@ -460,16 +460,9 @@ public struct SessionResumeCommand: Sendable {
 }
 
 private func makeSessionNodeAdapter(mockScenarioPath: String?, workingDirectory: String) throws -> any NodeAdapter {
-  let fallback = DeterministicLocalNodeAdapter()
-  guard let mockScenarioPath else {
-    return fallback
-  }
-  return try ScenarioNodeAdapter(
-    scenario: WorkflowMockScenarioLoader().loadScenario(at: absoluteURL(
-      mockScenarioPath,
-      relativeTo: URL(fileURLWithPath: workingDirectory)
-    ).path),
-    fallback: fallback
+  try makeScenarioBackedNodeAdapter(
+    scenarioPath: mockScenarioPath,
+    workingDirectory: workingDirectory
   )
 }
 

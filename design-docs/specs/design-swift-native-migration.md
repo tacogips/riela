@@ -1109,6 +1109,130 @@ Validation and rollout constraints:
   live under repository-root `tmp/`; do not commit scratch artifacts, do not
   stage changes, and do not push from this workflow node.
 
+## Cursor CLI Agent Standalone Compatibility Review Design
+
+This issue-resolution pass reviews the completed Swift migration of the legacy
+Cursor `cursor-agent` / `cursor-cli-agent` standalone surface into Riela. The
+review is bounded to Cursor compatibility behavior in `Sources/CursorCLIAgent`,
+`Sources/CursorCLIAgentCLI`, `Package.swift`,
+`Tests/CursorCLIAgentTests/CursorCLIAgentCompatibilityTests.swift`, the active
+implementation plan, and deletion-readiness evidence. It must not move
+Cursor-specific behavior into `RielaCore`, `RielaAdapters`, CodexAgent,
+ClaudeCodeAgent, GraphQL manager control, event sources, server code, or the
+`official/cursor-sdk` adapter boundary.
+
+Reference mapping:
+
+- Step 1 supplied the review subject rather than a GitHub issue. The active
+  issue reference is
+  `impl-plans/active/cursor-cli-agent-swift-migration.md`.
+- The default `../../codex-agent` root is unavailable from this checkout. The
+  local references used for this pass are `../cursor-agent` for legacy Cursor
+  behavior and `../codex-agent` only for the shared standalone compatibility
+  pattern that the Cursor facade mirrors without inheriting Codex-specific
+  behavior.
+- `../cursor-agent/src/config/paths.ts` defines the Cursor storage roots and
+  environment overrides: `CURSOR_CLI_AGENT_DATA_DIR`,
+  `CURSOR_CLI_AGENT_CONFIG_DIR`, `CURSOR_CLI_AGENT_CURSOR_HOME`, default
+  `~/.local/share/cursor-cli-agent`, default `~/.config/cursor-cli-agent`, and
+  default `~/.cursor`.
+- `../cursor-agent/src/auth/token-manager.ts` and
+  `../cursor-agent/src/persistence/token-store.ts` define token compatibility:
+  `tokens.json`, raw `<uuid>.<base64url-secret>` tokens, SHA-256 hex
+  `tokenHash`, metadata-only listing, expiry, revocation, rotation, and
+  timing-safe verification.
+- `../cursor-agent/src/cursor/process-runner.ts` defines Cursor process parity:
+  `cursor-agent --print --output-format stream-json`, optional `--model`,
+  `--mode`, sandbox/trust/yolo/worktree/image flags, prompt after `--`, resume
+  with `--resume`, and explicit environment forwarding.
+- `../cursor-agent/src/persistence/session-index.ts` defines transcript
+  discovery and session identity: Cursor projects under
+  `.cursor/projects/<workspace-slug>/agent-transcripts`, recursive JSONL
+  transcript import, local session id / Cursor chat id / record id resolution,
+  workspace filtering, and SQLite-backed session lookup.
+- `../cursor-agent/src/compat/commands.ts`,
+  `../cursor-agent/src/compat/dispatcher.ts`, and
+  `../cursor-agent/src/compat/permissions.ts` define the compatibility command,
+  GraphQL, and permission surface for session, group, queue, bookmark, files,
+  activity, skill, token, server, daemon, usage, markdown, repo, model, and
+  version commands.
+- `../cursor-agent/src/cursor/activity-signals.ts`,
+  `../cursor-agent/src/persistence/activity-store.ts`, rollout/session readers,
+  queue/group/bookmark stores, markdown parsing, usage, and tool-version files
+  remain supporting references for the test matrix categories listed in
+  `Tests/CursorCLIAgentTests/CursorCLIAgentCompatibilityTests.swift`.
+
+Issue-to-design mapping:
+
+- Executable product parity maps to `Package.swift` declaring the
+  `cursor-cli-agent` executable product and `Sources/CursorCLIAgentCLI` acting
+  as a thin entry point into the Cursor compatibility facade.
+- Standalone facade parity maps to `CursorCLIAgent` owning the CLI application,
+  GraphQL executor, command dispatcher, storage types, process/session helpers,
+  polling, rollout watching, usage, readiness, and SDK utilities.
+- Process argv parity maps to Cursor-owned builders producing the legacy
+  headless `cursor-agent` argument shape, sanitizing conflicting user-supplied
+  print/input/output-format flags, preserving resume/fork forms where supported,
+  and keeping prompt text after `--`.
+- Token parity maps to `tokens.json` under the Cursor config root with raw
+  `uuid.secret` values returned only at creation/rotation time and persisted
+  `tokenHash` values only in storage.
+- Storage parity maps to distinct config, data, and Cursor home roots, with env
+  overrides taking precedence and legacy per-file queue/group/bookmark/activity
+  records still readable and writable when encountered.
+- Transcript discovery maps to rollout JSONL, Cursor SQLite state, and legacy
+  `.cursor/projects/<workspace-slug>/agent-transcripts` import paths, including
+  workspace slug fallbacks when transcript rows do not carry `cwd`.
+- GraphQL/CLI coverage maps to deterministic command families for `auth`,
+  `activity`, `session`, `group`, `queue`, `bookmark`, `token`, `files`,
+  `model`, `skill`, `daemon`, `server`, `usage`, `markdown`, `repo`, `version`,
+  and `graphql`; unsupported live-execution commands must fail explicitly
+  rather than return placeholder success.
+- Permission coverage maps to token-authenticated GraphQL contexts enforcing
+  Cursor permissions such as `session:read`, `session:create`,
+  `session:cancel`, `group:*`, `queue:*`, `bookmark:*`, `files:*`, and
+  `server:read`; token-management commands remain local-operator commands.
+- Test parity maps to the explicit Cursor legacy test-category matrix and
+  focused assertions for argv shape, process runner injection, token format,
+  storage roots, GraphQL aliases/params/errors, auth status, permission
+  boundaries, session discovery, queue execution, activity hooks, polling, and
+  config readers.
+
+Behavior decisions:
+
+- `cursor-cli-agent` is a Cursor product and must keep the provider/backend
+  string `cursor-cli-agent`. It must not expose `codex-agent` names, Codex
+  argv, Codex auth roots, or Claude/Codex process/session behavior through the
+  Cursor facade.
+- The executable entry point should remain intentionally thin. Argument parsing,
+  output formatting, storage, GraphQL dispatch, and activity hook handling are
+  owned by `CursorCLIAgent`.
+- Cursor local stores are compatibility stores, not workflow runtime stores.
+  They may serve CLI/GraphQL facade commands, but they must not publish
+  workflow messages, allocate workflow communication ids, or decide final
+  candidate output paths.
+- Cursor session execution and queue execution are explicit process boundaries.
+  Production behavior may run `cursor-agent`; tests must use injected fake
+  executables or runners and synthetic local files rather than live Cursor
+  credentials, network access, or installed Cursor tooling.
+- Unsupported or unproven Cursor operations must return explicit unsupported or
+  degraded diagnostics. Do not silently alias them to CodexAgent behavior and do
+  not treat `official/cursor-sdk` as satisfied by standalone `cursor-cli-agent`
+  evidence.
+
+Validation and rollout constraints:
+
+- Focused verification for this review is:
+  `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter CursorCLIAgentTests`.
+- Broader verification before migration acceptance remains:
+  `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test`
+  and `git diff --check`.
+- `packaging/swift-deletion-readiness-evidence.json` may record Cursor-focused
+  evidence, but it must not claim full TypeScript deletion readiness or
+  `official/cursor-sdk` readiness from this standalone Cursor pass alone.
+- Scratch artifacts for review evidence or ad-hoc command logs must stay under
+  repository-root `tmp/` and must not be staged.
+
 ## Verification Gates
 
 Each migrated package needs:

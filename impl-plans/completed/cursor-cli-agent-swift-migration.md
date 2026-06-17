@@ -1,6 +1,6 @@
 # Cursor CLI Agent Swift Migration Review Plan
 
-Status: active
+Status: completed
 Workflow: `codex-design-and-implement-review-loop`
 Mode: issue-resolution
 
@@ -8,7 +8,7 @@ Mode: issue-resolution
 
 - Review subject: completed Swift migration of legacy `cursor-agent` /
   `cursor-cli-agent` functionality into Riela.
-- Primary plan path: `impl-plans/active/cursor-cli-agent-swift-migration.md`
+- Primary plan path: `impl-plans/completed/cursor-cli-agent-swift-migration.md`
 - Target paths:
   - `Package.swift`
   - `Sources/CursorCLIAgent`
@@ -51,7 +51,7 @@ manager control, events, server code, or the `official/cursor-sdk` boundary.
 
 ## Task Breakdown
 
-- [ ] T1 Package and entry-point review
+- [x] T1 Package and entry-point review
   - Deliverables: verify `Package.swift` declares library `CursorCLIAgent`,
     executable product `cursor-cli-agent`, executable target
     `CursorCLIAgentCLI`, test target `CursorCLIAgentTests`, and Riela CLI
@@ -60,7 +60,7 @@ manager control, events, server code, or the `official/cursor-sdk` boundary.
   - Completion: executable entry point is thin and delegates argument handling to
     `CursorCLIAgent`.
 
-- [ ] T2 Cursor facade isolation review
+- [x] T2 Cursor facade isolation review
   - Deliverables: verify Cursor compatibility code lives under
     `Sources/CursorCLIAgent` and `Sources/CursorCLIAgentCLI`; verify no Cursor
     mode, store, CLI command, transcript, or permission behavior was moved into
@@ -71,7 +71,7 @@ manager control, events, server code, or the `official/cursor-sdk` boundary.
   - Completion: any shared dependency is provider-neutral; Cursor-specific
     behavior remains target-local.
 
-- [ ] T3 Process argv and runner compatibility review
+- [x] T3 Process argv and runner compatibility review
   - Deliverables: verify `cursor-agent` invocation shape, stream JSON output,
     optional model/mode/worktree/image/trust/yolo/system prompt arguments,
     conflicting flag sanitization, prompt-after-`--`, resume shape, injected
@@ -82,7 +82,7 @@ manager control, events, server code, or the `official/cursor-sdk` boundary.
   - Completion: process execution is explicit, argv-array based, deterministic in
     tests, and does not inherit Codex or Claude command construction.
 
-- [ ] T4 Storage, token, and permission compatibility review
+- [x] T4 Storage, token, and permission compatibility review
   - Deliverables: verify config/data/Cursor-home root defaults and environment
     overrides; verify `tokens.json` stores only SHA-256 hex `tokenHash` and
     metadata; verify raw `uuid.secret` token creation/rotation output,
@@ -95,7 +95,7 @@ manager control, events, server code, or the `official/cursor-sdk` boundary.
     not publish workflow messages, allocate communications, or decide candidate
     output paths.
 
-- [ ] T5 Operational store, GraphQL, and CLI command coverage review
+- [x] T5 Operational store, GraphQL, and CLI command coverage review
   - Deliverables: verify deterministic coverage for `auth`, `activity`,
     `session`, `group`, `queue`, `bookmark`, `token`, `files`, `model`, `skill`,
     `daemon`, `server`, `usage`, `markdown`, `repo`, `version`, and `graphql`;
@@ -109,7 +109,7 @@ manager control, events, server code, or the `official/cursor-sdk` boundary.
   - Completion: command aliases, GraphQL parameter forms, errors, and permission
     checks match the legacy compatibility facade where scoped by the design.
 
-- [ ] T6 Transcript discovery and session compatibility review
+- [x] T6 Transcript discovery and session compatibility review
   - Deliverables: verify rollout JSONL import, Cursor SQLite state lookup,
     legacy `.cursor/projects/<workspace-slug>/agent-transcripts` discovery,
     workspace slug fallback when `cwd` is missing, message/history/search/grep
@@ -122,7 +122,7 @@ manager control, events, server code, or the `official/cursor-sdk` boundary.
   - Completion: transcript discovery is Cursor-specific and deterministic with
     synthetic fixtures.
 
-- [ ] T7 Test and evidence review
+- [x] T7 Test and evidence review
   - Deliverables: verify `Tests/CursorCLIAgentTests` covers the legacy category
     matrix, argv, process runner injection, token format, roots, GraphQL aliases,
     auth status, permission boundaries, session discovery, queue behavior,
@@ -135,7 +135,7 @@ manager control, events, server code, or the `official/cursor-sdk` boundary.
   - Completion: evidence does not claim full TypeScript deletion readiness or
     `official/cursor-sdk` readiness from this standalone Cursor review alone.
 
-- [ ] T8 Verification, review gate, and closeout
+- [x] T8 Verification, review gate, and closeout
   - Deliverables: run focused and broad verification where feasible; record any
     blockers explicitly; run adversarial implementation review because Step 1
     classified the change as high risk; fix any high or mid findings before
@@ -167,7 +167,7 @@ The implementation review may be split only across disjoint write scopes:
 
 ## Verification Plan
 
-- `git diff --check -- Package.swift Sources/CursorCLIAgent Sources/CursorCLIAgentCLI Tests/CursorCLIAgentTests packaging/swift-deletion-readiness-evidence.json impl-plans/active/cursor-cli-agent-swift-migration.md`
+- `git diff --check -- Package.swift Sources/CursorCLIAgent Sources/CursorCLIAgentCLI Tests/CursorCLIAgentTests packaging/swift-deletion-readiness-evidence.json impl-plans/completed/cursor-cli-agent-swift-migration.md`
 - `rg -n "codex-agent|claude-code-agent|Codex|Claude" Sources/CursorCLIAgent Sources/CursorCLIAgentCLI Tests/CursorCLIAgentTests`
 - `rg -n "CURSOR_CLI_AGENT_DATA_DIR|CURSOR_CLI_AGENT_CONFIG_DIR|CURSOR_CLI_AGENT_CURSOR_HOME|tokens.json|tokenHash|--output-format|stream-json|--resume" Sources/CursorCLIAgent Tests/CursorCLIAgentTests`
 - `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build`
@@ -202,6 +202,16 @@ The implementation review may be split only across disjoint write scopes:
 - Full Swift tests pass or any blocker is explicitly documented.
 - No high or mid review findings remain.
 
+## Verification Results
+
+- `swift test --filter CursorCLIAgentTests`: passed, 19 tests.
+- `swift test --filter SwiftDeletionReadinessTests`: passed, 29 tests.
+- `swift test`: passed, 405 tests.
+- Follow-up adversarial implementation review found high/mid issues in
+  `session.create`/`session.resume`/`session.cancel`/`session.pause` and
+  `group:run` token handling; those issues were implemented and covered by
+  focused CursorCLIAgent tests before closeout.
+
 ## Addressed Feedback
 
 - Step 3 design review accepted the design with no findings, so no high or mid
@@ -209,6 +219,8 @@ The implementation review may be split only across disjoint write scopes:
 - This plan replaces the initial checklist with task-level deliverables,
   dependencies, parallelization limits, verification commands, completion
   criteria, and Codex/Cursor reference traceability.
+- Rielflow adversarial review feedback on session lifecycle implementation and
+  `group:run` permission boundaries has been addressed in Swift code and tests.
 
 ## Risks
 

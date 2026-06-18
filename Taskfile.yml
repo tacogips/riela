@@ -14,10 +14,20 @@ tasks:
     cmds:
       - scripts/build-homebrew-release.sh {{.CLI_ARGS}}
 
+  build:homebrew-cask:
+    desc: Build signed and notarized Homebrew Cask pkg artifacts, or pass targets after --
+    cmds:
+      - scripts/build-homebrew-cask-release.sh {{.CLI_ARGS}}
+
   homebrew:formula:
     desc: Render Formula/riela.rb from dist/homebrew checksums (pass the version after --)
     cmds:
       - scripts/render-homebrew-formula.sh {{.CLI_ARGS}}
+
+  homebrew:cask:
+    desc: Render Casks/riela.rb from dist/homebrew-cask checksums (pass the version after --)
+    cmds:
+      - scripts/render-homebrew-cask.sh {{.CLI_ARGS}}
 
   homebrew:tap-formula:
     desc: Render riela into the sibling tacogips/homebrew-tap repository (pass version after --)
@@ -29,3 +39,19 @@ tasks:
           exit 2
         fi
         scripts/render-homebrew-formula.sh "{{.CLI_ARGS}}" ../homebrew-tap/Formula/riela.rb
+
+  homebrew:tap-cask:
+    desc: Render riela cask into the sibling tacogips/homebrew-tap repository (pass version after --)
+    cmds:
+      - |
+        set -euo pipefail
+        if [ -z "{{.CLI_ARGS}}" ]; then
+          echo "usage: task homebrew:tap-cask -- <version>" >&2
+          exit 2
+        fi
+        scripts/render-homebrew-cask.sh "{{.CLI_ARGS}}" ../homebrew-tap/Casks/riela.rb
+
+  release:homebrew-cask-local:
+    desc: Build, notarize, upload, and render the sibling tap cask for a v<version> tag
+    cmds:
+      - scripts/release-homebrew-cask-local.sh {{.CLI_ARGS}}

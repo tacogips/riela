@@ -35,6 +35,28 @@ existing Riela-authored data. Remote auto-improve input is opt-in:
 `workflow run --endpoint ...` omits `autoImprove` by default and only sends the
 supervision policy when `--auto-improve` is set.
 
+## Install
+
+Install the Homebrew formula:
+
+```bash
+brew tap tacogips/tap
+brew install riela
+```
+
+Install the signed and notarized macOS Cask archive:
+
+```bash
+brew tap tacogips/tap
+brew install --cask riela
+```
+
+The Cask release is built locally from Apple Developer ID credentials and
+publishes signed, notarized, and stapled `.dmg` assets to the GitHub release before rendering
+`Casks/riela.rb` in `tacogips/homebrew-tap`. See
+`packaging/homebrew/README.md` for the signing, notarization, and tap update
+workflow.
+
 ## TypeScript Deletion Gate
 
 `packaging/swift-deletion-readiness.json` is the deletion gate for the remaining

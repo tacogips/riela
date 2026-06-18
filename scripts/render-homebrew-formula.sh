@@ -22,6 +22,7 @@ Example:
 
 This renderer expects Swift macOS production archives. Linux archives are
 unsupported until a reviewed Swift Linux build contract exists.
+Swift Homebrew archives are currently macOS-only.
 EOF
 }
 

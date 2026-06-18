@@ -79,6 +79,49 @@ final class SwiftPackagingReadinessTests: XCTestCase {
     )
   }
 
+  func testCaskArchivePlanUsesSignedDmgNamesAndHomebrewPrefixes() {
+    let arm64 = makeSwiftHomebrewCaskArchivePlan(
+      version: "0.1.15",
+      target: .darwinArm64
+    )
+    let x64 = makeSwiftHomebrewCaskArchivePlan(
+      version: "0.1.15",
+      target: .darwinX64
+    )
+
+    XCTAssertEqual(arm64.executableProduct, "riela")
+    XCTAssertEqual(arm64.releaseDirectory, "dist/homebrew-cask")
+    XCTAssertEqual(arm64.target.triple, "arm64-apple-macosx")
+    XCTAssertEqual(x64.target.triple, "x86_64-apple-macosx")
+    XCTAssertEqual(arm64.installPrefix, "/opt/homebrew")
+    XCTAssertEqual(x64.installPrefix, "/usr/local")
+    XCTAssertEqual(
+      arm64.stagedBinaryPath,
+      "dist/homebrew-cask/work/riela-0.1.15-darwin-arm64/riela"
+    )
+    XCTAssertEqual(
+      x64.stagedBinaryPath,
+      "dist/homebrew-cask/work/riela-0.1.15-darwin-x64/riela"
+    )
+    XCTAssertEqual(
+      arm64.dmgPath,
+      "dist/homebrew-cask/riela-0.1.15-darwin-arm64.dmg"
+    )
+    XCTAssertEqual(
+      arm64.checksumPath,
+      "dist/homebrew-cask/riela-0.1.15-darwin-arm64.dmg.sha256"
+    )
+    XCTAssertTrue(arm64.requiresAppleCredentials)
+    XCTAssertFalse(arm64.publishSideEffects)
+  }
+
+  func testSupportedCaskTargetsAreMacOSOnly() {
+    XCTAssertEqual(
+      SwiftHomebrewCaskTarget.allCases.map(\.rawValue),
+      ["darwin-arm64", "darwin-x64"]
+    )
+  }
+
   func testCutoverGateManifestRecordsProductionCutover() throws {
     let rootURL = try repositoryRoot()
     let manifestURL = rootURL.appendingPathComponent("packaging/homebrew/swift-cutover-gates.json")
@@ -204,6 +247,60 @@ final class SwiftPackagingReadinessTests: XCTestCase {
     XCTAssertFalse(script.contains("sha256sum \"$file\""))
   }
 
+  func testCaskBuilderRequiresAppleCredentialsAndNotarizesDmg() throws {
+    let rootURL = try repositoryRoot()
+    let scriptURL = rootURL.appendingPathComponent("scripts/build-homebrew-cask-release.sh")
+    let script = try String(contentsOf: scriptURL, encoding: .utf8)
+
+    XCTAssertTrue(script.contains("--dry-run"))
+    XCTAssertTrue(script.contains("APPLE_SIGNING_IDENTITY"))
+    XCTAssertTrue(script.contains("APPLE_ID"))
+    XCTAssertTrue(script.contains("APPLE_PASSWORD"))
+    XCTAssertTrue(script.contains("APPLE_TEAM_ID"))
+    XCTAssertTrue(script.contains("codesign --force --options runtime --timestamp"))
+    XCTAssertTrue(script.contains("hdiutil create"))
+    XCTAssertTrue(script.contains("notarytool\" submit"))
+    XCTAssertTrue(script.contains("stapler\" staple"))
+    XCTAssertTrue(script.contains("stapler\" validate"))
+    XCTAssertTrue(script.contains("spctl --assess --type open"))
+    XCTAssertFalse(script.contains("APPLE_INSTALLER_SIGNING_IDENTITY"))
+    XCTAssertFalse(script.contains("productbuild"))
+    XCTAssertFalse(script.contains("pkgbuild"))
+    XCTAssertFalse(script.contains("gh release"))
+    XCTAssertFalse(script.contains("git push"))
+    XCTAssertFalse(script.contains("brew tap"))
+  }
+
+  func testCaskBuilderDryRunRejectsUnsafeInputs() throws {
+    let rootURL = try repositoryRoot()
+    let result = try runCaskBuilder(
+      rootURL: rootURL,
+      environment: ["RIELA_VERSION": "x/../../../escape"],
+      arguments: ["--dry-run", "darwin-arm64"]
+    )
+
+    XCTAssertNotEqual(result.exitCode, 0)
+    XCTAssertTrue(result.stderr.contains("unsafe Swift cask version"))
+    XCTAssertFalse(result.stdout.contains("riela-x/../../../escape"))
+  }
+
+  func testCaskRendererUsesBinaryDmgCaskAndMacOSChecksums() throws {
+    let rootURL = try repositoryRoot()
+    let scriptURL = rootURL.appendingPathComponent("scripts/render-homebrew-cask.sh")
+    let script = try String(contentsOf: scriptURL, encoding: .utf8)
+
+    XCTAssertTrue(script.contains("darwin-arm64"))
+    XCTAssertTrue(script.contains("darwin-x64"))
+    XCTAssertTrue(script.contains("Casks/riela.rb"))
+    XCTAssertTrue(script.contains("cask \"riela\" do"))
+    XCTAssertTrue(script.contains("arch arm: \"darwin-arm64\", intel: \"darwin-x64\""))
+    XCTAssertTrue(script.contains("sha256 arm:"))
+    XCTAssertTrue(script.contains("riela-#{version}-#{arch}.dmg"))
+    XCTAssertTrue(script.contains("binary \"riela\""))
+    XCTAssertFalse(script.contains("uninstall pkgutil"))
+    XCTAssertFalse(script.contains("riela-$version-linux"))
+  }
+
   func testFormulaRendererRequiresOnlyMacOSChecksumsAndFailsLinuxClosed() throws {
     let rootURL = try repositoryRoot()
     let scriptURL = rootURL.appendingPathComponent("scripts/render-homebrew-formula.sh")
@@ -289,6 +386,32 @@ final class SwiftPackagingReadinessTests: XCTestCase {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/bin/bash")
     process.arguments = [rootURL.appendingPathComponent("scripts/build-homebrew-release.sh").path] + arguments
+    process.currentDirectoryURL = rootURL
+    process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
+
+    let stdout = Pipe()
+    let stderr = Pipe()
+    process.standardOutput = stdout
+    process.standardError = stderr
+
+    try process.run()
+    process.waitUntilExit()
+
+    return ScriptResult(
+      exitCode: process.terminationStatus,
+      stdout: String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "",
+      stderr: String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    )
+  }
+
+  private func runCaskBuilder(
+    rootURL: URL,
+    environment: [String: String],
+    arguments: [String]
+  ) throws -> ScriptResult {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/bin/bash")
+    process.arguments = [rootURL.appendingPathComponent("scripts/build-homebrew-cask-release.sh").path] + arguments
     process.currentDirectoryURL = rootURL
     process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
 

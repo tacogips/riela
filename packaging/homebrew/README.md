@@ -78,6 +78,99 @@ brew tap tacogips/tap
 brew install riela
 ```
 
+## Homebrew Cask Signed Archive Releases
+
+The Cask path publishes signed, notarized, and stapled macOS DMG archives for
+users who want a Gatekeeper-trusted install path:
+
+```bash
+brew tap tacogips/tap
+brew install --cask riela
+```
+
+This path is separate from the formula tarballs above. The Cask artifacts are
+`.dmg` files generated under `dist/homebrew-cask/`:
+
+```text
+riela-<version>-darwin-arm64.dmg
+riela-<version>-darwin-x64.dmg
+```
+
+Each DMG contains the signed `riela` executable. Homebrew Cask mounts the DMG
+and links the binary into the native Homebrew prefix for the target architecture:
+
+```text
+darwin-arm64 -> /opt/homebrew/bin/riela
+darwin-x64   -> /usr/local/bin/riela
+```
+
+Required local Apple inputs:
+
+```text
+APPLE_SIGNING_IDENTITY
+APPLE_ID
+APPLE_PASSWORD
+APPLE_TEAM_ID
+```
+
+`APPLE_SIGNING_IDENTITY` must be a valid Developer ID Application certificate
+in the local keychain. `APPLE_PASSWORD` is an Apple app-specific password. Keep
+all values in the local keychain and password manager; do not commit or print
+credential values.
+
+Check secret presence without exposing values:
+
+```bash
+kinko exec --env APPLE_SIGNING_IDENTITY,APPLE_ID,APPLE_PASSWORD,APPLE_TEAM_ID -- bash -lc '
+for key in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+  if [ -n "${!key:-}" ]; then echo "$key=present"; else echo "$key=missing"; fi
+done
+'
+```
+
+Check signing certificates:
+
+```bash
+security find-identity -v -p codesigning
+```
+
+Build signed, notarized, and stapled DMGs locally:
+
+```bash
+kinko exec --env APPLE_SIGNING_IDENTITY,APPLE_ID,APPLE_PASSWORD,APPLE_TEAM_ID -- \
+  task build:homebrew-cask -- darwin-arm64 darwin-x64
+```
+
+For a tagged release, build, notarize, upload the `.dmg` assets, and render the
+sibling tap cask with:
+
+```bash
+kinko exec --env APPLE_SIGNING_IDENTITY,APPLE_ID,APPLE_PASSWORD,APPLE_TEAM_ID -- \
+  task release:homebrew-cask-local -- v<version>
+```
+
+The release wrapper verifies that the local tag exists, the tag is pushed to
+`origin`, and `VERSION` matches the tag. It uploads the archives to the GitHub
+release and renders `../homebrew-tap/Casks/riela.rb`. Review, commit, and push
+the tap change from the tap repository.
+
+To render only the cask after archives and checksum sidecars already exist:
+
+```bash
+scripts/render-homebrew-cask.sh <version> ../homebrew-tap/Casks/riela.rb
+```
+
+The Cask renderer reads:
+
+```text
+dist/homebrew-cask/riela-<version>-darwin-arm64.dmg.sha256
+dist/homebrew-cask/riela-<version>-darwin-x64.dmg.sha256
+```
+
+The Cask DMG builder has no release upload, tap mutation, or git push side
+effects. The wrapper performs upload and tap rendering, but still leaves tap
+commit/push as an explicit operator action.
+
 Smoke-test a local formula before upload by rendering into a temporary tap that
 uses the local archive directory as its URL base:
 

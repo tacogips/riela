@@ -140,3 +140,89 @@ public func makeSwiftHomebrewProductionArchivePlan(
     publishSideEffects: false
   )
 }
+
+public enum SwiftHomebrewCaskTarget: String, CaseIterable, Codable, Equatable, Sendable {
+  case darwinArm64 = "darwin-arm64"
+  case darwinX64 = "darwin-x64"
+
+  public var triple: String {
+    switch self {
+    case .darwinArm64:
+      "arm64-apple-macosx"
+    case .darwinX64:
+      "x86_64-apple-macosx"
+    }
+  }
+
+  public var installPrefix: String {
+    switch self {
+    case .darwinArm64:
+      "/opt/homebrew"
+    case .darwinX64:
+      "/usr/local"
+    }
+  }
+}
+
+public struct SwiftHomebrewCaskArchivePlan: Codable, Equatable, Sendable {
+  public var version: String
+  public var target: SwiftHomebrewCaskTarget
+  public var executableProduct: String
+  public var releaseDirectory: String
+  public var stagedBinaryPath: String
+  public var archiveRootPath: String
+  public var dmgPath: String
+  public var checksumPath: String
+  public var installPrefix: String
+  public var requiresAppleCredentials: Bool
+  public var publishSideEffects: Bool
+
+  public init(
+    version: String,
+    target: SwiftHomebrewCaskTarget,
+    executableProduct: String,
+    releaseDirectory: String,
+    stagedBinaryPath: String,
+    archiveRootPath: String,
+    dmgPath: String,
+    checksumPath: String,
+    installPrefix: String,
+    requiresAppleCredentials: Bool,
+    publishSideEffects: Bool
+  ) {
+    self.version = version
+    self.target = target
+    self.executableProduct = executableProduct
+    self.releaseDirectory = releaseDirectory
+    self.stagedBinaryPath = stagedBinaryPath
+    self.archiveRootPath = archiveRootPath
+    self.dmgPath = dmgPath
+    self.checksumPath = checksumPath
+    self.installPrefix = installPrefix
+    self.requiresAppleCredentials = requiresAppleCredentials
+    self.publishSideEffects = publishSideEffects
+  }
+}
+
+public func makeSwiftHomebrewCaskArchivePlan(
+  version: String,
+  target: SwiftHomebrewCaskTarget,
+  releaseDirectory: String = "dist/homebrew-cask"
+) -> SwiftHomebrewCaskArchivePlan {
+  let archiveName = "riela-\(version)-\(target.rawValue)"
+  let workDirectory = "\(releaseDirectory)/work/\(archiveName)"
+  let dmgPath = "\(releaseDirectory)/\(archiveName).dmg"
+  return SwiftHomebrewCaskArchivePlan(
+    version: version,
+    target: target,
+    executableProduct: "riela",
+    releaseDirectory: releaseDirectory,
+    stagedBinaryPath: "\(workDirectory)/riela",
+    archiveRootPath: workDirectory,
+    dmgPath: dmgPath,
+    checksumPath: "\(dmgPath).sha256",
+    installPrefix: target.installPrefix,
+    requiresAppleCredentials: true,
+    publishSideEffects: false
+  )
+}

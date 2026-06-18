@@ -2,6 +2,15 @@ import Foundation
 import XCTest
 
 final class SourceDeletionReadinessTests: XCTestCase {
+  private static let ignoredRepositoryPathPrefixes = [
+    ".git/",
+    ".build/",
+    ".direnv/",
+    ".riela/",
+    "dist/",
+    "tmp/"
+  ]
+
   private var temporaryDirectories: [URL] = []
 
   override func tearDownWithError() throws {
@@ -302,11 +311,7 @@ final class SourceDeletionReadinessTests: XCTestCase {
     let root = try repositoryRoot()
     return try collectFiles(root: root, relativePath: ".")
       .filter { file in
-        !file.hasPrefix(".git/")
-          && !file.hasPrefix(".build/")
-          && !file.hasPrefix(".direnv/")
-          && !file.hasPrefix("dist/")
-          && !file.hasPrefix("tmp/")
+        !Self.ignoredRepositoryPathPrefixes.contains { file.hasPrefix($0) }
       }
       .sorted()
   }

@@ -1,16 +1,15 @@
 import Foundation
+import RielaAdapters
 
 public enum ClaudeCodeSessionSQLiteIndex {
+  private static let sessionSQLiteSeparator = "|||riela-claudeCode-sqlite|||"
+
   public static func statePath(claudeCodeHome: String? = nil) -> String {
     URL(fileURLWithPath: claudeCodeHome ?? resolveClaudeCodeHome(), isDirectory: true).appendingPathComponent("state").path
   }
 
   public static func openClaudeCodeDb(claudeCodeHome: String? = nil) -> String? {
-    let path = statePath(claudeCodeHome: claudeCodeHome)
-    guard FileManager.default.fileExists(atPath: path), sqliteQuery(dbPath: path, sql: "SELECT name FROM sqlite_master WHERE type='table' AND name='threads' LIMIT 1;")?.contains("threads") == true else {
-      return nil
-    }
-    return path
+    AgentSessionSQLiteSupport.openThreadsDatabase(at: statePath(claudeCodeHome: claudeCodeHome))
   }
 
   public static func listSessionsSqlite(claudeCodeHome: String? = nil, options: ClaudeCodeSessionListOptions = ClaudeCodeSessionListOptions()) -> ClaudeCodeSessionListResult? {
@@ -49,34 +48,25 @@ public enum ClaudeCodeSessionSQLiteIndex {
   }
 
   private static func selectRows(dbPath: String) -> [[String: String]] {
-    let columns = [
-      "id", "rollout_path", "created_at", "updated_at", "source", "model_provider", "cwd",
-      "cli_version", "title", "first_user_message", "archived_at", "git_sha", "git_branch",
-      "git_origin_url"
-    ]
-    let separator = "|||riela-claudeCode-sqlite|||"
-    let sql = "SELECT \(columns.map { "ifnull(\($0),'')" }.joined(separator: " || '\(separator)' || ")) FROM threads;"
-    guard let output = sqliteQuery(dbPath: dbPath, sql: sql) else {
-      return []
-    }
-    return output.split(separator: "\n", omittingEmptySubsequences: true).map { line in
-      let values = String(line).components(separatedBy: separator)
-      return Dictionary(uniqueKeysWithValues: zip(columns, values))
-    }
+    AgentSessionSQLiteSupport.selectThreadRows(dbPath: dbPath, separator: sessionSQLiteSeparator)
   }
 
   private static func rowToSession(_ row: [String: String]) -> ClaudeCodeSession? {
     guard
-      let id = nonEmpty(row["id"]),
-      let rolloutPath = nonEmpty(row["rollout_path"]),
-      let createdAt = nonEmpty(row["created_at"]).flatMap(sqliteDate),
-      let updatedAt = nonEmpty(row["updated_at"]).flatMap(sqliteDate),
-      let cwd = nonEmpty(row["cwd"])
+      let id = AgentSessionSQLiteSupport.nonEmpty(row["id"]),
+      let rolloutPath = AgentSessionSQLiteSupport.nonEmpty(row["rollout_path"]),
+      let createdAt = AgentSessionSQLiteSupport.nonEmpty(row["created_at"]).flatMap(AgentSessionSQLiteSupport.sqliteDate),
+      let updatedAt = AgentSessionSQLiteSupport.nonEmpty(row["updated_at"]).flatMap(AgentSessionSQLiteSupport.sqliteDate),
+      let cwd = AgentSessionSQLiteSupport.nonEmpty(row["cwd"])
     else {
       return nil
     }
-    let git = [row["git_sha"], row["git_branch"], row["git_origin_url"]].contains { nonEmpty($0) != nil }
-      ? ClaudeCodeSessionGit(sha: nonEmpty(row["git_sha"]), branch: nonEmpty(row["git_branch"]), originURL: nonEmpty(row["git_origin_url"]))
+    let git = [row["git_sha"], row["git_branch"], row["git_origin_url"]].contains { AgentSessionSQLiteSupport.nonEmpty($0) != nil }
+      ? ClaudeCodeSessionGit(
+        sha: AgentSessionSQLiteSupport.nonEmpty(row["git_sha"]),
+        branch: AgentSessionSQLiteSupport.nonEmpty(row["git_branch"]),
+        originURL: AgentSessionSQLiteSupport.nonEmpty(row["git_origin_url"])
+      )
       : nil
     return ClaudeCodeSession(
       id: id,
@@ -84,45 +74,13 @@ public enum ClaudeCodeSessionSQLiteIndex {
       createdAt: createdAt,
       updatedAt: updatedAt,
       source: ClaudeCodeSessionSource(rawValue: row["source"] ?? "") ?? .unknown,
-      modelProvider: nonEmpty(row["model_provider"]),
+      modelProvider: AgentSessionSQLiteSupport.nonEmpty(row["model_provider"]),
       cwd: cwd,
-      cliVersion: nonEmpty(row["cli_version"]) ?? "unknown",
-      title: nonEmpty(row["title"]) ?? nonEmpty(row["first_user_message"]) ?? id,
-      firstUserMessage: nonEmpty(row["first_user_message"]),
-      archivedAt: nonEmpty(row["archived_at"]).flatMap(sqliteDate),
+      cliVersion: AgentSessionSQLiteSupport.nonEmpty(row["cli_version"]) ?? "unknown",
+      title: AgentSessionSQLiteSupport.nonEmpty(row["title"]) ?? AgentSessionSQLiteSupport.nonEmpty(row["first_user_message"]) ?? id,
+      firstUserMessage: AgentSessionSQLiteSupport.nonEmpty(row["first_user_message"]),
+      archivedAt: AgentSessionSQLiteSupport.nonEmpty(row["archived_at"]).flatMap(AgentSessionSQLiteSupport.sqliteDate),
       git: git
     )
   }
-}
-
-private func sqliteQuery(dbPath: String, sql: String) -> String? {
-  let process = Process()
-  let output = Pipe()
-  process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
-  process.arguments = ["-readonly", dbPath, sql]
-  process.standardOutput = output
-  process.standardError = Pipe()
-  do {
-    try process.run()
-    process.waitUntilExit()
-  } catch {
-    return nil
-  }
-  guard process.terminationStatus == 0 else {
-    return nil
-  }
-  return String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)
-}
-
-private func nonEmpty(_ value: String?) -> String? {
-  guard let value, !value.isEmpty else {
-    return nil
-  }
-  return value
-}
-
-private func sqliteDate(_ text: String) -> Date? {
-  let fractional = ISO8601DateFormatter()
-  fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-  return fractional.date(from: text) ?? ISO8601DateFormatter().date(from: text)
 }

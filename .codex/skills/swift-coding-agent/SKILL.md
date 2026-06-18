@@ -97,6 +97,7 @@ Use Swift idioms:
 - Avoid force unwraps, implicitly unwrapped optionals, global mutable state, hidden singletons, and broad catch-all error swallowing.
 - Prefer dependency injection for clocks, file systems, network clients, persistence, and external processes when tests need determinism.
 - Extract repeated or semantically important literals into named constants or typed domains near their owner before adding more call sites. Prefer meaningful owners such as `WorkflowPackage.manifestFileName`, `NodeRuntime.pathEnvironmentName`, or `MockScenario.providerName` over catch-all containers like `Constants`. Prioritize environment variable names, executable names, CLI flags, file names, JSON keys, provider/status strings, shell probe patterns, and magic numbers used in assertions. Keep one-off user-facing prose inline when naming it would add indirection without reuse or policy value.
+- When filtering paths or commands by repeated prefixes, define a semantically named collection such as `ignoredRepositoryPathPrefixes` or `supportedCommandPrefixes` and use `contains(where:)`/`first(where:)`. Avoid long chains of `&& !value.hasPrefix(...)`, `|| value.hasPrefix(...)`, or sprawling `case` blocks when a data-driven table communicates the policy better and makes future additions local.
 - Keep names explicit at API boundaries and concise inside local scopes.
 
 For maintainability reviews, include a quick pass for enum candidates:

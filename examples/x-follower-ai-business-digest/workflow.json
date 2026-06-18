@@ -79,6 +79,10 @@
           "onMissingTarget": "fail"
         }
       }
+    },
+    {
+      "id": "no-digest-output",
+      "nodeFile": "nodes/node-no-digest-output.json"
     }
   ],
   "steps": [
@@ -138,6 +142,10 @@
       "role": "worker",
       "transitions": [
         {
+          "toStepId": "no-digest-output",
+          "label": "!should_send_telegram"
+        },
+        {
           "toStepId": "send-telegram-digest",
           "label": "should_send_telegram"
         }
@@ -146,6 +154,11 @@
     {
       "id": "send-telegram-digest",
       "nodeId": "send-telegram-digest",
+      "role": "worker"
+    },
+    {
+      "id": "no-digest-output",
+      "nodeId": "no-digest-output",
       "role": "worker"
     }
   ]

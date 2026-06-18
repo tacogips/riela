@@ -2,4 +2,4 @@
 set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-python3 "$script_dir/../../shared/scripts/x_digest.py" read-state
+python3 "$script_dir/../../shared/scripts/x_digest.py" no-digest-output

@@ -10,8 +10,8 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum ExampleCatalog {
     static let directoryName = "examples"
-    static let expectedMockScenarioCount = 20
-    static let expectedNodeMockScenarioCount = 3
+    static let expectedMockScenarioCount = 22
+    static let expectedNodeMockScenarioCount = 0
   }
 
   private enum WorkflowPackage {
@@ -20,7 +20,6 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum MockScenario {
     static let fileName = "mock-scenario.json"
-    static let providerName = "scenario-mock"
   }
 
   private enum WorkflowIds {
@@ -30,9 +29,6 @@ final class RielaExampleParityTests: XCTestCase {
   }
 
   private enum NodeRuntime {
-    static let executableName = "node"
-    static let pathEnvironmentName = "PATH"
-    static let pathSeparator: Character = ":"
     static let scriptsDirectoryName = "scripts"
     static let shellScriptExtension = "sh"
     static let nodeInvocationNeedles = ["\nnode ", "\nexec node "]
@@ -75,29 +71,20 @@ final class RielaExampleParityTests: XCTestCase {
     let root = repositoryRoot()
     let examplesRoot = root.appendingPathComponent(ExampleCatalog.directoryName, isDirectory: true)
     let app = RielaCLIApplication()
-    let nodeAvailable = isExecutableOnPATH(NodeRuntime.executableName)
     let mockScenarioExamples = rielaExampleWorkflowNames().filter {
-      hasScenarioMock(examplesRoot: examplesRoot, workflowName: $0)
+      hasMockScenario(examplesRoot: examplesRoot, workflowName: $0)
     }
     let nodeRuntimeMockScenarioExamples = mockScenarioExamples.filter {
       workflowUsesNodeRuntime(examplesRoot: examplesRoot, workflowName: $0)
     }
-    let runnableExamples = nodeAvailable
-      ? mockScenarioExamples
-      : mockScenarioExamples.filter { !nodeRuntimeMockScenarioExamples.contains($0) }
 
     XCTAssertEqual(mockScenarioExamples.count, ExampleCatalog.expectedMockScenarioCount)
     XCTAssertEqual(
       nodeRuntimeMockScenarioExamples.count,
       ExampleCatalog.expectedNodeMockScenarioCount
     )
-    XCTAssertEqual(
-      runnableExamples.count,
-      ExampleCatalog.expectedMockScenarioCount
-        - (nodeAvailable ? 0 : ExampleCatalog.expectedNodeMockScenarioCount)
-    )
 
-    for workflowName in runnableExamples {
+    for workflowName in mockScenarioExamples {
       let scenario = examplesRoot
         .appendingPathComponent(workflowName, isDirectory: true)
         .appendingPathComponent(MockScenario.fileName)
@@ -181,24 +168,11 @@ final class RielaExampleParityTests: XCTestCase {
     }.sorted()
   }
 
-  private func isExecutableOnPATH(_ executableName: String) -> Bool {
-    let path = ProcessInfo.processInfo.environment[NodeRuntime.pathEnvironmentName] ?? ""
-    return path.split(separator: NodeRuntime.pathSeparator).contains { directory in
-      let candidate = URL(fileURLWithPath: String(directory), isDirectory: true)
-        .appendingPathComponent(executableName)
-      return FileManager.default.isExecutableFile(atPath: candidate.path)
-    }
-  }
-
-  private func hasScenarioMock(examplesRoot: URL, workflowName: String) -> Bool {
+  private func hasMockScenario(examplesRoot: URL, workflowName: String) -> Bool {
     let scenario = examplesRoot
       .appendingPathComponent(workflowName, isDirectory: true)
       .appendingPathComponent(MockScenario.fileName)
-    guard FileManager.default.fileExists(atPath: scenario.path) else {
-      return false
-    }
-    let text = (try? String(contentsOf: scenario, encoding: .utf8)) ?? ""
-    return text.contains(MockScenario.providerName)
+    return FileManager.default.fileExists(atPath: scenario.path)
   }
 
   private func workflowUsesNodeRuntime(examplesRoot: URL, workflowName: String) -> Bool {

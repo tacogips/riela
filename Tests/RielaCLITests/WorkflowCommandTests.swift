@@ -2044,6 +2044,27 @@ extension WorkflowCommandTests {
     let eventReceiptURL = eventRoot.appendingPathComponent("receipts/\(eventReceiptId).json")
     XCTAssertTrue(FileManager.default.fileExists(atPath: eventReceiptURL.path))
 
+    let readOnlyEventEnvelope = tempDir.appendingPathComponent("event-envelope-read-only.json")
+    try """
+    {
+      "sourceId": "web-a",
+      "eventId": "event-read-only",
+      "provider": "webhook",
+      "eventType": "event-input",
+      "input": {"mode": "read-only-input"}
+    }
+    """.write(to: readOnlyEventEnvelope, atomically: true, encoding: .utf8)
+    let readOnlyEventEmit = await app.run([
+      "events", "emit", "web-a",
+      "--event-root", eventRoot.path,
+      "--event-file", readOnlyEventEnvelope.path,
+      "--read-only",
+      "--output", "json"
+    ])
+    XCTAssertEqual(readOnlyEventEmit.exitCode, .success, readOnlyEventEmit.stderr)
+    let readOnlyEventEmitResult = try decodeJSON(ScopedParityCommandResult.self, from: readOnlyEventEmit.stdout)
+    XCTAssertEqual(readOnlyEventEmitResult.status, "ok")
+
     let duplicateEventEnvelope = tempDir.appendingPathComponent("event-envelope-duplicate.json")
     try """
     {
@@ -2142,6 +2163,44 @@ extension WorkflowCommandTests {
     let eventServeResult = try decodeJSON(ScopedParityCommandResult.self, from: eventServe.stdout)
     XCTAssertEqual(eventServeResult.status, "ok")
     XCTAssertTrue(FileManager.default.fileExists(atPath: eventRoot.appendingPathComponent("serve-record.json").path))
+
+    let liveEventRoot = tempDir.appendingPathComponent("live-event-root", isDirectory: true)
+    try FileManager.default.createDirectory(at: liveEventRoot.appendingPathComponent("sources", isDirectory: true), withIntermediateDirectories: true)
+    try """
+    {
+      "id": "telegram-live",
+      "kind": "telegram-gateway",
+      "provider": "telegram",
+      "tokenEnv": "RIELA_TELEGRAM_BOT_TOKEN"
+    }
+    """.write(
+      to: liveEventRoot.appendingPathComponent("sources/telegram-live.json"),
+      atomically: true,
+      encoding: .utf8
+    )
+    let liveEventServe = await app.run([
+      "events", "serve",
+      "--event-root", liveEventRoot.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(liveEventServe.exitCode, .success, liveEventServe.stderr)
+    let liveEventServeResult = try decodeJSON(ScopedParityCommandResult.self, from: liveEventServe.stdout)
+    XCTAssertEqual(liveEventServeResult.status, "failed")
+    XCTAssertTrue(liveEventServeResult.records.contains("status=unavailable"))
+    XCTAssertTrue(liveEventServeResult.records.contains("unsupportedLiveSources=telegram-live:telegram-gateway"))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: liveEventRoot.appendingPathComponent("serve-record.json").path))
+
+    let dryRunLiveEventServe = await app.run([
+      "events", "serve",
+      "--event-root", liveEventRoot.path,
+      "--dry-run",
+      "--output", "json"
+    ])
+    XCTAssertEqual(dryRunLiveEventServe.exitCode, .success, dryRunLiveEventServe.stderr)
+    let dryRunLiveEventServeResult = try decodeJSON(ScopedParityCommandResult.self, from: dryRunLiveEventServe.stdout)
+    XCTAssertEqual(dryRunLiveEventServeResult.status, "ok")
+    XCTAssertTrue(dryRunLiveEventServeResult.records.contains("status=dry-run"))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: liveEventRoot.appendingPathComponent("serve-record.json").path))
 
     try FileManager.default.createDirectory(at: eventRoot.appendingPathComponent("replies", isDirectory: true), withIntermediateDirectories: true)
     try #"{"idempotencyKey":"reply-1","sourceId":"web-a","status":"queued","workflowExecutionId":"run-1"}"#

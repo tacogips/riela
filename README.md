@@ -1,5 +1,9 @@
 # Riela
 
+<p align="center">
+  <img src="img/riela.png" alt="Riela" width="720">
+</p>
+
 Riela is the Swift-native command line runtime.
 
 The public executable is `riela`. The Swift module names still use

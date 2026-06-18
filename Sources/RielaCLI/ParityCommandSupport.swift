@@ -27,6 +27,7 @@ struct ParsedParityOptions: Sendable {
   var timeoutMs: Int?
   var eventRoot: String?
   var eventFile: String?
+  var readOnly = false
   var status: String?
   var limit: Int?
   var reason: String?
@@ -133,6 +134,8 @@ struct ParsedParityOptions: Sendable {
       eventRoot = try value()
     case "--event-file", "--file":
       eventFile = try value()
+    case "--read-only":
+      readOnly = true
     case "--status":
       status = try value()
     case "--limit":

@@ -482,6 +482,22 @@ fileprivate extension ScopedParityCommandRunner {
 }
 
 fileprivate extension ScopedParityCommandRunner {
+  private enum EventRootLayout {
+    static let configFileName = "events.json"
+    static let sourcesDirectoryName = "sources"
+    static let bindingsDirectoryName = "bindings"
+    static let serveRecordFileName = "serve-record.json"
+  }
+
+  private enum EventServeMode {
+    static let deterministicLocal = "deterministic-local"
+  }
+
+  private enum EventServeStatus {
+    static let ready = "ready"
+    static let unavailable = "unavailable"
+  }
+
   private struct EventConfig: Codable {
     var sources: [EventSourceContract]
     var bindings: [EventBindingContract]
@@ -625,14 +641,7 @@ fileprivate extension ScopedParityCommandRunner {
       try saveEventReceipt(replay, eventRoot: root)
       return ScopedParityCommandResult(scope: "events", command: action, target: receiptId, status: "ok", records: ["replayedFrom=\(original.receiptId)", "receipt=\(replay.receiptId)", "status=\(replay.status)"])
     case "serve":
-      try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-      let serveRecord = root.appendingPathComponent("serve-record.json")
-      try jsonString([
-        "eventRoot": .string(root.path),
-        "status": .string("ready"),
-        "mode": .string("deterministic-local")
-      ] as JSONObject).write(to: serveRecord, atomically: true, encoding: .utf8)
-      return ScopedParityCommandResult(scope: "events", command: action, target: options.target, status: "ok", records: ["eventRoot=\(root.path)", "serveRecord=\(serveRecord.path)", "status=ready"])
+      return try eventServeResult(root: root, action: action, target: options.target, parsed: parsed)
     case "replies":
       let replies = try listEventReplies(eventRoot: root)
         .filter { reply in
@@ -713,6 +722,40 @@ fileprivate extension ScopedParityCommandRunner {
     await DeterministicEventDryRunTrigger().dryRun(EventDryRunRequest(sources: config.sources, bindings: config.bindings, envelope: envelope))
   }
 
+  private func eventServeResult(root: URL, action: String, target: String?, parsed: ParsedParityOptions) throws -> ScopedParityCommandResult {
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let config = try loadEventConfigIfPresent(eventRoot: root)
+    if let config, !config.sources.isEmpty, !parsed.dryRun {
+      let unsupportedSources = config.sources.map { "\($0.id):\($0.kind.rawValue)" }.joined(separator: ",")
+      return ScopedParityCommandResult(
+        scope: "events",
+        command: action,
+        target: target,
+        status: "failed",
+        records: [
+          "eventRoot=\(root.path)",
+          "mode=\(EventServeMode.deterministicLocal)",
+          "status=\(EventServeStatus.unavailable)",
+          "unsupportedLiveSources=\(unsupportedSources)"
+        ]
+      )
+    }
+    let serveRecord = root.appendingPathComponent(EventRootLayout.serveRecordFileName)
+    let serveStatus = parsed.dryRun ? "dry-run" : EventServeStatus.ready
+    try jsonString([
+      "eventRoot": .string(root.path),
+      "status": .string(serveStatus),
+      "mode": .string(EventServeMode.deterministicLocal)
+    ] as JSONObject).write(to: serveRecord, atomically: true, encoding: .utf8)
+    return ScopedParityCommandResult(
+      scope: "events",
+      command: action,
+      target: target,
+      status: "ok",
+      records: ["eventRoot=\(root.path)", "serveRecord=\(serveRecord.path)", "status=\(serveStatus)"]
+    )
+  }
+
   private func legacyEventResult(options: CLICommandOptions, parsed: ParsedParityOptions) async throws -> ScopedParityCommandResult {
     let action = options.command ?? "validate"
     guard let target = options.target else {
@@ -780,11 +823,33 @@ fileprivate extension ScopedParityCommandRunner {
   }
 
   private func loadEventConfigIfPresent(eventRoot: URL) throws -> EventConfig? {
-    let configURL = eventRoot.appendingPathComponent("events.json")
-    guard FileManager.default.fileExists(atPath: configURL.path) else {
+    let configURL = eventRoot.appendingPathComponent(EventRootLayout.configFileName)
+    if FileManager.default.fileExists(atPath: configURL.path) {
+      return try JSONDecoder().decode(EventConfig.self, from: Data(contentsOf: configURL))
+    }
+
+    let sources = try decodeEventDirectory(
+      eventRoot.appendingPathComponent(EventRootLayout.sourcesDirectoryName, isDirectory: true),
+      as: EventSourceContract.self
+    )
+    let bindings = try decodeEventDirectory(
+      eventRoot.appendingPathComponent(EventRootLayout.bindingsDirectoryName, isDirectory: true),
+      as: EventBindingContract.self
+    )
+    guard !sources.isEmpty || !bindings.isEmpty else {
       return nil
     }
-    return try JSONDecoder().decode(EventConfig.self, from: Data(contentsOf: configURL))
+    return EventConfig(sources: sources, bindings: bindings)
+  }
+
+  private func decodeEventDirectory<T: Decodable>(_ directory: URL, as type: T.Type) throws -> [T] {
+    guard FileManager.default.fileExists(atPath: directory.path) else {
+      return []
+    }
+    return try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+      .filter { $0.pathExtension == "json" }
+      .sorted { $0.lastPathComponent < $1.lastPathComponent }
+      .map { try JSONDecoder().decode(type, from: Data(contentsOf: $0)) }
   }
 
   private func saveEventReceipt(_ receipt: PersistedEventReceipt, eventRoot: URL) throws {

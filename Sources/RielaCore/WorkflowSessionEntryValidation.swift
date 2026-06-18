@@ -26,7 +26,7 @@ public enum WorkflowSessionEntryValidation {
     let requested = [
       resumeSessionId != nil,
       rerunFromSessionId != nil,
-      continueFromWorkflowExecutionId != nil,
+      continueFromWorkflowExecutionId != nil
     ].filter { $0 }.count
     guard requested <= 1 else {
       throw WorkflowSessionEntryValidationError.usage(

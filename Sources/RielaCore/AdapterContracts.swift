@@ -196,7 +196,7 @@ public func reconcileCompletionReviewRouting(
   let expected = expectedGoalCompletionRouting(from: payload)
   let expectedWhen: [String: Bool] = [
     "needs_replan": expected.needsReplan,
-    "needs_work": expected.needsWork,
+    "needs_work": expected.needsWork
   ]
   if when == expectedWhen {
     return CompletionReviewRoutingReconciliation(when: when, reconciled: false)

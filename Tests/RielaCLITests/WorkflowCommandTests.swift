@@ -1,3 +1,5 @@
+// This worker owns only this legacy integration test file; splitting it would cross the assigned file boundary.
+// swiftlint:disable file_length
 import Foundation
 import RielaAdapters
 import RielaCore
@@ -54,11 +56,11 @@ private final class RecordingGraphQLURLProtocol: URLProtocol {
     lock.withLock { recordedHeaders }
   }
 
-  override class func canInit(with request: URLRequest) -> Bool {
+  override static func canInit(with request: URLRequest) -> Bool {
     request.url?.host == "riela.test"
   }
 
-  override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+  override static func canonicalRequest(for request: URLRequest) -> URLRequest {
     request
   }
 
@@ -147,7 +149,7 @@ private func remoteGraphQLRunResponses(executionId: String = "remote-exec-1", st
         }
       }
     }
-    """,
+    """
   ]
 }
 
@@ -170,7 +172,7 @@ final class WorkflowCommandTests: XCTestCase {
     let validate = await app.run([
       "workflow", "validate", "worker-only-single-step",
       "--workflow-definition-dir", "\(root)/examples",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(validate.exitCode, .success)
     XCTAssertTrue(validate.stderr.isEmpty)
@@ -183,7 +185,7 @@ final class WorkflowCommandTests: XCTestCase {
       "workflow", "inspect", "worker-only-single-step",
       "--workflow-definition-dir", "\(root)/examples",
       "--output", "json",
-      "--structure",
+      "--structure"
     ])
     XCTAssertEqual(inspect.exitCode, .success)
     let summary = try decodeJSON(WorkflowInspectionSummary.self, from: inspect.stdout)
@@ -196,7 +198,7 @@ final class WorkflowCommandTests: XCTestCase {
       "workflow", "run", "worker-only-single-step",
       "--workflow-definition-dir", "\(root)/examples",
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(run.exitCode, .success)
     let result = try decodeJSON(WorkflowRunResult.self, from: run.stdout)
@@ -212,7 +214,7 @@ final class WorkflowCommandTests: XCTestCase {
     let result = await RielaCLIApplication().run([
       "workflow", "usage", "matrix-chat-reply",
       "--workflow-definition-dir", "\(root)/examples",
-      "--output", "json",
+      "--output", "json"
     ])
 
     XCTAssertEqual(result.exitCode, .success)
@@ -232,20 +234,22 @@ final class WorkflowCommandTests: XCTestCase {
       "--workflow-definition-dir", "\(root)/examples",
       "--node-patch", #"{"main-worker":{"model":"gpt-5-mini","effort":"low"}}"#,
       "--executable",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(result.exitCode, .success)
     let after = try String(contentsOfFile: nodePath, encoding: .utf8)
     XCTAssertEqual(after, before)
   }
+}
 
+extension WorkflowCommandTests {
   func testInspectReportsCallableInputAndOutputContracts() async throws {
     let root = repositoryRoot()
     let result = await RielaCLIApplication().run([
       "workflow", "inspect", "codex-design-and-implement-review-loop",
       "--scope", "project",
       "--working-dir", root,
-      "--output", "json",
+      "--output", "json"
     ])
 
     XCTAssertEqual(result.exitCode, .success)
@@ -255,11 +259,20 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertEqual(summary.callable.role, .manager)
     XCTAssertEqual(
       summary.callable.input?.description,
-      "Provide either issue reference details for full issue resolution or Codex-reference planning details for a design-plan-only run. Preferred fields are executionMode, issueUrl, issueNumber, issueRepository, issueTitle, issueBody, targetFeatureArea, requestedBehavior, codexAgentReferences, referenceRepositoryRoot, and referenceRepositoryUrl."
+      """
+      Provide either issue reference details for full issue resolution or Codex-reference planning details for a \
+      design-plan-only run. Preferred fields are executionMode, issueUrl, issueNumber, issueRepository, issueTitle, \
+      issueBody, targetFeatureArea, requestedBehavior, codexAgentReferences, referenceRepositoryRoot, and \
+      referenceRepositoryUrl.
+      """
     )
     XCTAssertEqual(
       summary.callable.output?.description,
-      "Return either the final accepted issue-resolution summary or the accepted design-and-implementation-plan handoff, including any required documentation refresh, the final commit-message, and commit/push status, depending on the requested workflow mode."
+      """
+      Return either the final accepted issue-resolution summary or the accepted design-and-implementation-plan handoff, \
+      including any required documentation refresh, the final commit-message, and commit/push status, depending on the \
+      requested workflow mode.
+      """
     )
   }
 
@@ -317,7 +330,7 @@ final class WorkflowCommandTests: XCTestCase {
     let result = await app.run([
       "workflow", "run", "\(root)/examples/temporary-workflow/temp-workflow.json",
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
-      "--output", "json",
+      "--output", "json"
     ])
 
     XCTAssertEqual(result.exitCode, .success)
@@ -373,7 +386,7 @@ final class WorkflowCommandTests: XCTestCase {
     let result = await RielaCLIApplication().run([
       "workflow", "run", "codex-dispatch",
       "--workflow-definition-dir", root.path,
-      "--output", "json",
+      "--output", "json"
     ])
 
     XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
@@ -397,7 +410,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
       "--artifact-root", artifactRoot.path,
       "--max-concurrency", "2",
-      "--output", "json",
+      "--output", "json"
     ])
 
     XCTAssertEqual(result.exitCode, .success, result.stderr)
@@ -423,7 +436,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--workflow-definition-dir", "\(root)/examples",
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
       "--session-store", sessionStore,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(firstRun.exitCode, .success, firstRun.stderr)
     let first = try decodeJSON(WorkflowRunResult.self, from: firstRun.stdout)
@@ -433,7 +446,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--workflow-definition-dir", "\(root)/examples",
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
       "--session-store", sessionStore,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(rerun.exitCode, .success, rerun.stderr)
     let payload = try decodeJSON(SessionRerunCommandResult.self, from: rerun.stdout)
@@ -446,7 +459,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--workflow-definition-dir", "\(root)/examples",
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
       "--session-store", sessionStore,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(secondRerun.exitCode, .success, secondRerun.stderr)
     let secondPayload = try decodeJSON(SessionRerunCommandResult.self, from: secondRerun.stdout)
@@ -461,7 +474,7 @@ final class WorkflowCommandTests: XCTestCase {
 
   func testSessionRerunRejectsNestedSuperviserFlag() async throws {
     let result = await RielaCLIApplication().run([
-      "session", "rerun", "sess-1", "step-1", "--nested-superviser",
+      "session", "rerun", "sess-1", "step-1", "--nested-superviser"
     ])
     XCTAssertEqual(result.exitCode, .usage)
     XCTAssertTrue(result.stderr.contains("not supported for session rerun"))
@@ -484,7 +497,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--scope", "user",
       "--working-dir", layout.projectRoot.path,
       "--mock-scenario", mockScenario,
-      "--output", "json",
+      "--output", "json"
     ], environment: environment)
     XCTAssertEqual(firstRun.exitCode, .success, firstRun.stderr)
     let first = try decodeJSON(WorkflowRunResult.self, from: firstRun.stdout)
@@ -493,7 +506,7 @@ final class WorkflowCommandTests: XCTestCase {
       "session", "rerun", first.session.sessionId, "main-worker",
       "--working-dir", layout.projectRoot.path,
       "--mock-scenario", mockScenario,
-      "--output", "json",
+      "--output", "json"
     ], environment: environment)
     XCTAssertEqual(rerun.exitCode, .success, rerun.stderr)
     let rerunPayload = try decodeJSON(SessionRerunCommandResult.self, from: rerun.stdout)
@@ -504,7 +517,7 @@ final class WorkflowCommandTests: XCTestCase {
       "session", "resume", rerunPayload.sessionId,
       "--working-dir", layout.projectRoot.path,
       "--mock-scenario", mockScenario,
-      "--output", "json",
+      "--output", "json"
     ], environment: environment)
     XCTAssertEqual(resume.exitCode, .success, resume.stderr)
     let resumePayload = try decodeJSON(SessionResumeCommandResult.self, from: resume.stdout)
@@ -517,14 +530,14 @@ final class WorkflowCommandTests: XCTestCase {
 
     let validate = await app.run([
       "workflow", "validate", "worker-only-single-step",
-      "--endpoint", "http://localhost:4000/graphql",
+      "--endpoint", "http://localhost:4000/graphql"
     ])
     XCTAssertEqual(validate.exitCode, .usage)
     XCTAssertEqual(validate.stderr, "Swift TASK-007 supports local workflow validate only")
 
     let inspect = await app.run([
       "workflow", "inspect", "worker-only-single-step",
-      "--from-registry",
+      "--from-registry"
     ])
     XCTAssertEqual(inspect.exitCode, .usage)
     XCTAssertEqual(inspect.stderr, "Swift TASK-007 supports local workflow inspect only")
@@ -536,7 +549,7 @@ final class WorkflowCommandTests: XCTestCase {
       "workflow", "run", "worker-only-single-step",
       "--workflow-definition-dir", "\(root)/examples",
       "--variables", #"{"unterminated": true"#,
-      "--output", "json",
+      "--output", "json"
     ])
 
     XCTAssertEqual(result.exitCode, .failure)
@@ -561,7 +574,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--auth-token-env", "RIELA_REMOTE_AUTH_TOKEN",
       "--variables", #"{"request":"remote"}"#,
       "--max-concurrency", "3",
-      "--output", "json",
+      "--output", "json"
     ])
 
     XCTAssertEqual(result.exitCode, .success, result.stderr)
@@ -601,7 +614,7 @@ final class WorkflowCommandTests: XCTestCase {
     let primaryResult = await primaryApp.run([
       "workflow", "run", "worker-only-single-step",
       "--endpoint", "http://localhost:4000/graphql",
-      "--output", "json",
+      "--output", "json"
     ])
 
     XCTAssertEqual(primaryResult.exitCode, .success, primaryResult.stderr)
@@ -619,7 +632,7 @@ final class WorkflowCommandTests: XCTestCase {
     let legacyResult = await legacyApp.run([
       "workflow", "run", "worker-only-single-step",
       "--endpoint", "http://localhost:4000/graphql",
-      "--output", "json",
+      "--output", "json"
     ])
 
     XCTAssertEqual(legacyResult.exitCode, .success, legacyResult.stderr)
@@ -651,7 +664,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--variables", #"{"request":"remote"}"#,
       "--max-concurrency", "3",
       "--timeout-ms", "100",
-      "--output", "json",
+      "--output", "json"
     ])
 
     XCTAssertEqual(result.exitCode, .success, result.stderr)
@@ -705,7 +718,7 @@ final class WorkflowCommandTests: XCTestCase {
       "workflow", "run", "worker-only-single-step",
       "--endpoint", "http://riela.test/graphql",
       "--no-auto-improve",
-      "--output", "json",
+      "--output", "json"
     ])
 
     XCTAssertEqual(disabled.exitCode, .success, disabled.stderr)
@@ -723,7 +736,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--auto-improve",
       "--max-supervised-attempts", "4",
       "--nested-supervisor",
-      "--output", "json",
+      "--output", "json"
     ])
 
     XCTAssertEqual(enabled.exitCode, .success, enabled.stderr)
@@ -741,7 +754,7 @@ final class WorkflowCommandTests: XCTestCase {
     let result = await RielaCLIApplication().run([
       "workflow", "validate", "worker-only-single-step",
       "--unknown",
-      "--output", "json",
+      "--output", "json"
     ])
 
     XCTAssertEqual(result.exitCode, .usage)
@@ -757,7 +770,7 @@ final class WorkflowCommandTests: XCTestCase {
     let result = await RielaCLIApplication().run([
       "workflow", "inspect", "worker-only-single-step",
       "--workflow-definition-dir",
-      "--output", "json",
+      "--output", "json"
     ])
 
     XCTAssertEqual(result.exitCode, .usage)
@@ -772,7 +785,7 @@ final class WorkflowCommandTests: XCTestCase {
     let validate = await RielaCLIApplication().run([
       "workflow", "validate", "../../examples/worker-only-single-step",
       "--scope", "project",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(validate.exitCode, .usage)
     XCTAssertTrue(validate.stderr.isEmpty)
@@ -784,7 +797,7 @@ final class WorkflowCommandTests: XCTestCase {
     let inspect = await RielaCLIApplication().run([
       "workflow", "inspect", "nested/workflow",
       "--scope", "project",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(inspect.exitCode, .usage)
     XCTAssertTrue(inspect.stderr.isEmpty)
@@ -796,7 +809,7 @@ final class WorkflowCommandTests: XCTestCase {
     let run = await RielaCLIApplication().run([
       "workflow", "run", "../worker-only-single-step",
       "--scope", "project",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(run.exitCode, .usage)
     XCTAssertTrue(run.stderr.isEmpty)
@@ -824,7 +837,7 @@ final class WorkflowCommandTests: XCTestCase {
       "workflow", "validate", "escape",
       "--scope", "project",
       "--working-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(validate.exitCode, .failure)
     XCTAssertTrue(validate.stderr.isEmpty)
@@ -837,7 +850,7 @@ final class WorkflowCommandTests: XCTestCase {
       "workflow", "inspect", "escape",
       "--scope", "project",
       "--working-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(inspect.exitCode, .failure)
     XCTAssertTrue(inspect.stderr.isEmpty)
@@ -849,7 +862,7 @@ final class WorkflowCommandTests: XCTestCase {
       "workflow", "run", "escape",
       "--scope", "project",
       "--working-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(run.exitCode, .failure)
     XCTAssertTrue(run.stderr.isEmpty)
@@ -924,7 +937,7 @@ final class WorkflowCommandTests: XCTestCase {
       "workflow", "validate", "addon-demo",
       "--workflow-definition-dir", tempDir.path,
       "--executable",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(validate.exitCode, .failure)
     XCTAssertTrue(validate.stderr.isEmpty)
@@ -938,7 +951,7 @@ final class WorkflowCommandTests: XCTestCase {
     let run = await RielaCLIApplication().run([
       "workflow", "run", "addon-demo",
       "--workflow-definition-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(run.exitCode, .failure)
     XCTAssertTrue(run.stderr.isEmpty)
@@ -1004,7 +1017,7 @@ final class WorkflowCommandTests: XCTestCase {
     let validate = await app.run([
       "workflow", "validate", "native-demo",
       "--workflow-definition-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(validate.exitCode, .success)
     let validation = try decodeJSON(WorkflowValidationCommandResult.self, from: validate.stdout)
@@ -1014,7 +1027,7 @@ final class WorkflowCommandTests: XCTestCase {
     let inspect = await app.run([
       "workflow", "inspect", "native-demo",
       "--workflow-definition-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(inspect.exitCode, .success)
     let summary = try decodeJSON(WorkflowInspectionSummary.self, from: inspect.stdout)
@@ -1037,7 +1050,7 @@ final class WorkflowCommandTests: XCTestCase {
       "workflow", "validate", "native-demo",
       "--workflow-definition-dir", tempDir.path,
       "--executable",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(executable.exitCode, .failure)
     let executableValidation = try decodeJSON(WorkflowValidationCommandResult.self, from: executable.stdout)
@@ -1048,7 +1061,7 @@ final class WorkflowCommandTests: XCTestCase {
   func testValidateJSONFailureReturnsParseableEnvelopeForMissingWorkflow() async throws {
     let result = await RielaCLIApplication().run([
       "workflow", "validate", "definitely-missing-workflow",
-      "--output", "json",
+      "--output", "json"
     ])
 
     XCTAssertEqual(result.exitCode, .failure)
@@ -1079,7 +1092,7 @@ final class WorkflowCommandTests: XCTestCase {
     let result = await RielaCLIApplication().run([
       "workflow", "validate", "broken",
       "--workflow-definition-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
 
     XCTAssertEqual(result.exitCode, .failure)
@@ -1099,7 +1112,7 @@ final class WorkflowCommandTests: XCTestCase {
       "workflow", "validate", "worker-only-single-step",
       "--workflow-definition-dir", "\(root)/examples",
       "--node-patch", #"{"unterminated": true"#,
-      "--output", "json",
+      "--output", "json"
     ])
 
     XCTAssertEqual(result.exitCode, .failure)
@@ -1127,7 +1140,7 @@ final class WorkflowCommandTests: XCTestCase {
       "workflow", "list",
       "--scope", "project",
       "--working-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(list.exitCode, .success)
     XCTAssertTrue(list.stderr.isEmpty)
@@ -1140,7 +1153,7 @@ final class WorkflowCommandTests: XCTestCase {
       "workflow", "status", "demo",
       "--scope", "project",
       "--working-dir", tempDir.path,
-      "--output", "table",
+      "--output", "table"
     ])
     XCTAssertEqual(status.exitCode, .success)
     XCTAssertTrue(status.stderr.isEmpty)
@@ -1162,7 +1175,7 @@ final class WorkflowCommandTests: XCTestCase {
     """.write(to: manifestURL, atomically: true, encoding: .utf8)
     let manifest = await app.run([
       "workflow", "manifest", "validate", manifestURL.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(manifest.exitCode, .usage)
     XCTAssertTrue(manifest.stderr.isEmpty)
@@ -1172,7 +1185,7 @@ final class WorkflowCommandTests: XCTestCase {
 
     let envManifest = await app.run([
       "workflow", "manifest", "validate",
-      "--output", "json",
+      "--output", "json"
     ], environment: ["RIEL_WORKFLOW_MANIFEST": manifestURL.path])
     XCTAssertEqual(envManifest.exitCode, .usage)
     XCTAssertTrue(envManifest.stderr.isEmpty)
@@ -1191,7 +1204,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--workflow-definition-dir", "\(root)/examples",
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
       "--session-store", sessionStore.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(run.exitCode, .success)
     let runResult = try decodeJSON(WorkflowRunResult.self, from: run.stdout)
@@ -1204,7 +1217,7 @@ final class WorkflowCommandTests: XCTestCase {
       let result = await RielaCLIApplication().run([
         "session", command, runResult.session.sessionId,
         "--session-store", sessionStore.path,
-        "--output", "json",
+        "--output", "json"
       ])
       XCTAssertEqual(result.exitCode, .success, command)
       XCTAssertTrue(result.stderr.isEmpty, command)
@@ -1250,7 +1263,7 @@ final class WorkflowCommandTests: XCTestCase {
     let registryList = await app.run([
       "package", "registry", "list",
       "--working-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(registryList.exitCode, .success, registryList.stderr)
     let listedRegistry = try decodeJSON(WorkflowPackageRegistryConfig.self, from: registryList.stdout)
@@ -1266,7 +1279,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--package-name", "dry-run-package",
       "--dry-run",
       "--working-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(publishDryRun.exitCode, .success, publishDryRun.stderr)
     let published = try decodeJSON(WorkflowPackageCommandResult.self, from: publishDryRun.stdout)
@@ -1303,7 +1316,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--package-name", "default-registry-package",
       "--working-dir", tempDir.path,
       "--yes",
-      "--output", "json",
+      "--output", "json"
     ])
 
     XCTAssertEqual(publish.exitCode, .success, publish.stderr)
@@ -1474,7 +1487,7 @@ final class WorkflowCommandTests: XCTestCase {
         "workflow", "run", "escape-package",
         "--from-registry",
         "--working-dir", tempDir.path,
-        "--output", "json",
+        "--output", "json"
       ])
       XCTAssertEqual(result.exitCode, .usage, workflowDirectory)
       XCTAssertTrue(result.stderr.isEmpty)
@@ -1483,6 +1496,8 @@ final class WorkflowCommandTests: XCTestCase {
     }
   }
 
+  // This parity test intentionally exercises a command sequence with shared state; splitting it would weaken the scenario.
+  // swiftlint:disable:next function_body_length
   func testWorkflowCreateCheckoutPackageSessionContinueAndScopedParityCommands() async throws {
     let root = repositoryRoot()
     let tempDir = FileManager.default.temporaryDirectory
@@ -1495,7 +1510,7 @@ final class WorkflowCommandTests: XCTestCase {
     let create = await app.run([
       "workflow", "create", "created-flow",
       "--working-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(create.exitCode, .success, create.stderr)
     let created = try decodeJSON(WorkflowCreateCommandResult.self, from: create.stdout)
@@ -1510,7 +1525,7 @@ final class WorkflowCommandTests: XCTestCase {
     let checkout = await app.run([
       "workflow", "checkout", "https://github.com/example/workflows/tree/main/copied-flow",
       "--working-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(checkout.exitCode, .success, checkout.stderr)
     let checkedOut = try decodeJSON(WorkflowCheckoutCommandResult.self, from: checkout.stdout)
@@ -1547,7 +1562,7 @@ final class WorkflowCommandTests: XCTestCase {
       "package", "install", "demo-package",
       "--source", packageSource.path,
       "--working-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(install.exitCode, .success, install.stderr)
     let installed = try decodeJSON(WorkflowPackageCommandResult.self, from: install.stdout)
@@ -1556,7 +1571,7 @@ final class WorkflowCommandTests: XCTestCase {
     let list = await app.run([
       "workflow", "package", "list",
       "--working-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(list.exitCode, .success, list.stderr)
     let listed = try decodeJSON(WorkflowPackageCommandResult.self, from: list.stdout)
@@ -1569,7 +1584,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--registry-local-path", tempDir.appendingPathComponent("local-registry").path,
       "--branch", "main",
       "--working-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(registryAdd.exitCode, .success, registryAdd.stderr)
     let addedRegistry = try decodeJSON(WorkflowPackageRegistryConfig.self, from: registryAdd.stdout)
@@ -1579,13 +1594,13 @@ final class WorkflowCommandTests: XCTestCase {
     let registryList = await app.run([
       "workflow", "package", "registry", "list",
       "--working-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(registryList.exitCode, .success, registryList.stderr)
     let listedRegistry = try decodeJSON(WorkflowPackageRegistryConfig.self, from: registryList.stdout)
     XCTAssertEqual(listedRegistry.registries.map(\.url), [
       "https://github.com/example/registry",
-      "https://github.com/tacogips/riela-packages",
+      "https://github.com/tacogips/riela-packages"
     ])
 
     let publish = await app.run([
@@ -1593,7 +1608,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--package-name", "demo-package",
       "--dry-run",
       "--working-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(publish.exitCode, .success, publish.stderr)
     let published = try decodeJSON(WorkflowPackageCommandResult.self, from: publish.stdout)
@@ -1606,7 +1621,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--registry-local-path", tempDir.appendingPathComponent("local-registry").path,
       "--working-dir", tempDir.path,
       "--yes",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(publishWrite.exitCode, .success, publishWrite.stderr)
     let publishWriteResult = try decodeJSON(WorkflowPackageCommandResult.self, from: publishWrite.stdout)
@@ -1626,7 +1641,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--branch", "release",
       "--working-dir", tempDir.path,
       "--yes",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(explicitRegistryPublish.exitCode, .success, explicitRegistryPublish.stderr)
     let explicitRegistryResult = try decodeJSON(WorkflowPackageCommandResult.self, from: explicitRegistryPublish.stdout)
@@ -1644,7 +1659,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--registry-url", "https://github.com/override/packages",
       "--working-dir", tempDir.path,
       "--yes",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(registryURLPrecedencePublish.exitCode, .success, registryURLPrecedencePublish.stderr)
     let registryURLPrecedenceResult = try decodeJSON(WorkflowPackageCommandResult.self, from: registryURLPrecedencePublish.stdout)
@@ -1658,7 +1673,7 @@ final class WorkflowCommandTests: XCTestCase {
         "--dry-run",
         "--working-dir", tempDir.path,
         "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
-        "--output", "json",
+        "--output", "json"
       ])
       XCTAssertEqual(dryRun.exitCode, .success, "\(command): \(dryRun.stderr) \(dryRun.stdout)")
       let dryRunResult = try decodeJSON(WorkflowPackageCommandResult.self, from: dryRun.stdout)
@@ -1685,7 +1700,7 @@ final class WorkflowCommandTests: XCTestCase {
       "package", "install", "@scope/scoped-flow",
       "--source", scopedPackageSource.path,
       "--working-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(scopedInstall.exitCode, .success, scopedInstall.stderr)
 
@@ -1694,7 +1709,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--from-registry",
       "--working-dir", tempDir.path,
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(scopedRegistryRun.exitCode, .success, scopedRegistryRun.stderr)
     let scopedRegistryRunResult = try decodeJSON(WorkflowRunResult.self, from: scopedRegistryRun.stdout)
@@ -1706,7 +1721,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--from-registry",
       "--working-dir", tempDir.path,
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(registryRun.exitCode, .success, registryRun.stderr)
     let registryRunResult = try decodeJSON(WorkflowRunResult.self, from: registryRun.stdout)
@@ -1718,7 +1733,7 @@ final class WorkflowCommandTests: XCTestCase {
       "session", "resume", registryRunSessionId,
       "--working-dir", tempDir.path,
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(registryResume.exitCode, .success, registryResume.stderr)
     let registryResumeResult = try decodeJSON(SessionResumeCommandResult.self, from: registryResume.stdout)
@@ -1728,7 +1743,7 @@ final class WorkflowCommandTests: XCTestCase {
       "session", "continue", registryRunSessionId,
       "--working-dir", tempDir.path,
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(registryContinue.exitCode, .success, registryContinue.stderr)
     let registryContinueResult = try decodeJSON(SessionResumeCommandResult.self, from: registryContinue.stdout)
@@ -1738,7 +1753,7 @@ final class WorkflowCommandTests: XCTestCase {
       "session", "rerun", registryRunSessionId, "main-worker",
       "--working-dir", tempDir.path,
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(registryRerun.exitCode, .success, registryRerun.stderr)
     let registryRerunResult = try decodeJSON(SessionRerunCommandResult.self, from: registryRerun.stdout)
@@ -1749,7 +1764,7 @@ final class WorkflowCommandTests: XCTestCase {
       "package", "temp-run", "demo-package",
       "--working-dir", tempDir.path,
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(packageRun.exitCode, .success, packageRun.stderr)
     let packageRunResult = try decodeJSON(WorkflowPackageCommandResult.self, from: packageRun.stdout)
@@ -1762,7 +1777,7 @@ final class WorkflowCommandTests: XCTestCase {
       "package", "temp-run", "demo-package",
       "--working-dir", tempDir.path,
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(secondPackageRun.exitCode, .success, secondPackageRun.stderr)
     let secondPackageRunResult = try decodeJSON(WorkflowPackageCommandResult.self, from: secondPackageRun.stdout)
@@ -1777,7 +1792,7 @@ final class WorkflowCommandTests: XCTestCase {
     let packageRunStatus = await app.run([
       "session", "status", packageRunSessionId,
       "--working-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(packageRunStatus.exitCode, .success, packageRunStatus.stderr)
     let packageInspection = try decodeJSON(SessionInspectionCommandResult.self, from: packageRunStatus.stdout)
@@ -1787,7 +1802,7 @@ final class WorkflowCommandTests: XCTestCase {
       "workflow", "self-improve", "created-flow",
       "--working-dir", tempDir.path,
       "--yes",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(selfImprove.exitCode, .success, selfImprove.stderr)
     let selfImproveResult = try decodeJSON(WorkflowSelfImproveCommandResult.self, from: selfImprove.stdout)
@@ -1809,7 +1824,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--monitor-interval-ms", "1000",
       "--stall-timeout-ms", "2000",
       "--workflow-mutation-mode", "execution-copy",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(autoImprove.exitCode, .success, autoImprove.stderr)
     let autoImproveResult = try decodeJSON(WorkflowRunResult.self, from: autoImprove.stdout)
@@ -1863,7 +1878,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--workflow-definition-dir", "\(root)/examples",
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
       "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(run.exitCode, .success, run.stderr)
     let runResult = try decodeJSON(WorkflowRunResult.self, from: run.stdout)
@@ -1876,7 +1891,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--workflow-definition-dir", "\(root)/examples",
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
       "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(secondRun.exitCode, .success, secondRun.stderr)
     let secondRunResult = try decodeJSON(WorkflowRunResult.self, from: secondRun.stdout)
@@ -1895,7 +1910,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--workflow-definition-dir", transitionWorkflowRoot.path,
       "--mock-scenario", transitionWorkflow.scenarioPath,
       "--session-store", transitionSessionStore.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(transitionRun.exitCode, .success, transitionRun.stderr)
     let transitionRunResult = try decodeJSON(WorkflowRunResult.self, from: transitionRun.stdout)
@@ -1904,7 +1919,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--workflow-definition-dir", transitionWorkflowRoot.path,
       "--mock-scenario", transitionWorkflow.scenarioPath,
       "--session-store", transitionSessionStore.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(secondTransitionRun.exitCode, .success, secondTransitionRun.stderr)
     let secondTransitionRunResult = try decodeJSON(WorkflowRunResult.self, from: secondTransitionRun.stdout)
@@ -1924,7 +1939,7 @@ final class WorkflowCommandTests: XCTestCase {
         let graphResult = await app.run([
           "graphql", command, communicationId,
           "--session-store", transitionSessionStore.path,
-          "--output", "json",
+          "--output", "json"
         ])
         XCTAssertEqual(graphResult.exitCode, .success, "\(command) \(communicationId): \(graphResult.stderr) \(graphResult.stdout)")
       }
@@ -1950,7 +1965,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--workflow-definition-dir", "\(root)/examples",
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
       "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(continued.exitCode, .success, continued.stderr)
     let continueResult = try decodeJSON(SessionResumeCommandResult.self, from: continued.stdout)
@@ -1965,7 +1980,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--workflow-definition-dir", "\(root)/examples",
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
       "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(corruptContinue.exitCode, .failure)
     XCTAssertEqual(try String(contentsOf: runtimeSnapshotURL, encoding: .utf8), "not-json")
@@ -1974,7 +1989,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--workflow-definition-dir", "\(root)/examples",
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
       "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(corruptRerun.exitCode, .failure)
     XCTAssertEqual(try String(contentsOf: runtimeSnapshotURL, encoding: .utf8), "not-json")
@@ -2007,7 +2022,7 @@ final class WorkflowCommandTests: XCTestCase {
       ["graphql", "schema"],
       ["graphql", "session", runResult.session.sessionId, "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path],
       ["serve", "status"],
-      ["serve", "graphql"],
+      ["serve", "graphql"]
     ] {
       let result = await app.run(command + ["--output", "json"])
       XCTAssertEqual(result.exitCode, .success, command.joined(separator: " "))
@@ -2020,7 +2035,7 @@ final class WorkflowCommandTests: XCTestCase {
       "events", "emit", "web-a",
       "--event-root", eventRoot.path,
       "--event-file", eventEnvelope.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(eventEmit.exitCode, .success, eventEmit.stderr)
     let eventEmitResult = try decodeJSON(ScopedParityCommandResult.self, from: eventEmit.stdout)
@@ -2043,7 +2058,7 @@ final class WorkflowCommandTests: XCTestCase {
       "events", "emit", "web-a",
       "--event-root", eventRoot.path,
       "--event-file", duplicateEventEnvelope.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(duplicateEventEmit.exitCode, .success, duplicateEventEmit.stderr)
     let duplicateEventEmitResult = try decodeJSON(ScopedParityCommandResult.self, from: duplicateEventEmit.stdout)
@@ -2056,7 +2071,7 @@ final class WorkflowCommandTests: XCTestCase {
     let eventList = await app.run([
       "events", "list", "web-a",
       "--event-root", eventRoot.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(eventList.exitCode, .success, eventList.stderr)
     let eventListResult = try decodeJSON(ScopedParityCommandResult.self, from: eventList.stdout)
@@ -2066,7 +2081,7 @@ final class WorkflowCommandTests: XCTestCase {
       "events", "replay", eventReceiptId,
       "--event-root", eventRoot.path,
       "--reason", "test",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(eventReplay.exitCode, .success, eventReplay.stderr)
     let eventReplayResult = try decodeJSON(ScopedParityCommandResult.self, from: eventReplay.stdout)
@@ -2098,13 +2113,13 @@ final class WorkflowCommandTests: XCTestCase {
       "events", "emit", "web-a",
       "--event-root", eventRoot.path,
       "--event-file", slashEventEnvelope.path,
-      "--output", "json",
+      "--output", "json"
     ])
     let colonEmit = await app.run([
       "events", "emit", "web-a",
       "--event-root", eventRoot.path,
       "--event-file", colonEventEnvelope.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(slashEmit.exitCode, .success, slashEmit.stderr)
     XCTAssertEqual(colonEmit.exitCode, .success, colonEmit.stderr)
@@ -2121,7 +2136,7 @@ final class WorkflowCommandTests: XCTestCase {
     let eventServe = await app.run([
       "events", "serve",
       "--event-root", eventRoot.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(eventServe.exitCode, .success, eventServe.stderr)
     let eventServeResult = try decodeJSON(ScopedParityCommandResult.self, from: eventServe.stdout)
@@ -2134,7 +2149,7 @@ final class WorkflowCommandTests: XCTestCase {
     let eventReplies = await app.run([
       "events", "replies", "run-1",
       "--event-root", eventRoot.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(eventReplies.exitCode, .success, eventReplies.stderr)
     let eventRepliesResult = try decodeJSON(ScopedParityCommandResult.self, from: eventReplies.stdout)
@@ -2146,11 +2161,11 @@ final class WorkflowCommandTests: XCTestCase {
     for command in [
       ["events", "schedules", "list"],
       ["events", "schedules", "inspect", "schedule-1"],
-      ["events", "schedules", "cancel", "schedule-1", "--reason", "test"],
+      ["events", "schedules", "cancel", "schedule-1", "--reason", "test"]
     ] {
       let result = await app.run(command + [
         "--event-root", eventRoot.path,
-        "--output", "json",
+        "--output", "json"
       ])
       XCTAssertEqual(result.exitCode, .success, command.joined(separator: " "))
       let scoped = try decodeJSON(ScopedParityCommandResult.self, from: result.stdout)
@@ -2161,7 +2176,7 @@ final class WorkflowCommandTests: XCTestCase {
     let managerSession = await app.run([
       "graphql", "manager-session", runResult.session.sessionId,
       "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(managerSession.exitCode, .success, managerSession.stderr)
     let managerSessionResult = try decodeJSON(ScopedParityCommandResult.self, from: managerSession.stdout)
@@ -2171,7 +2186,7 @@ final class WorkflowCommandTests: XCTestCase {
     let missingManagerMessage = await app.run([
       "graphql", "send-manager-message", runResult.session.sessionId,
       "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertNotEqual(missingManagerMessage.exitCode, .success)
     XCTAssertTrue(missingManagerMessage.stdout.contains("requires --message-json or --message-file"))
@@ -2180,7 +2195,7 @@ final class WorkflowCommandTests: XCTestCase {
       "graphql", "send-manager-message", runResult.session.sessionId,
       "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
       "--message-json", #"{"kind":"retry","target":"main-worker","reason":"test-manager-control"}"#,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(managerMessage.exitCode, .success, managerMessage.stderr)
     let managerMessageResult = try decodeJSON(ScopedParityCommandResult.self, from: managerMessage.stdout)
@@ -2209,7 +2224,7 @@ final class WorkflowCommandTests: XCTestCase {
       "graphql", "send-manager-message", secondSession.sessionId,
       "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
       "--message-json", #"{"kind":"retry","target":"main-worker","reason":"second-manager-control"}"#,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(secondManagerMessage.exitCode, .success, secondManagerMessage.stderr)
     let secondManagerMessageResult = try decodeJSON(ScopedParityCommandResult.self, from: secondManagerMessage.stdout)
@@ -2220,11 +2235,11 @@ final class WorkflowCommandTests: XCTestCase {
     for command in [
       ["graphql", "replay-communication", managerCommunicationId],
       ["graphql", "retry-communication", managerCommunicationId],
-      ["graphql", "retry-communication-delivery", managerCommunicationId],
+      ["graphql", "retry-communication-delivery", managerCommunicationId]
     ] {
       let result = await app.run(command + [
         "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
-        "--output", "json",
+        "--output", "json"
       ])
       XCTAssertEqual(result.exitCode, .success, command.joined(separator: " "))
       let scoped = try decodeJSON(ScopedParityCommandResult.self, from: result.stdout)
@@ -2234,7 +2249,7 @@ final class WorkflowCommandTests: XCTestCase {
     let secondRetry = await app.run([
       "graphql", "retry-communication", secondManagerCommunicationId,
       "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(secondRetry.exitCode, .success, secondRetry.stderr)
     let secondRetryResult = try decodeJSON(ScopedParityCommandResult.self, from: secondRetry.stdout)
@@ -2250,7 +2265,7 @@ final class WorkflowCommandTests: XCTestCase {
     let corruptLookup = await app.run([
       "graphql", "retry-communication", managerCommunicationId,
       "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(corruptLookup.exitCode, .failure)
     XCTAssertTrue(corruptLookup.stdout.contains("dataCorrupted") || corruptLookup.stdout.contains("not in the correct format"))
@@ -2322,7 +2337,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--workflow-definition-dir", callRoot.path,
       "--session-store", callSessionStore.path,
       "--message-json", #"{"mode":"direct"}"#,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(corruptCall.exitCode, .failure)
     XCTAssertEqual(try String(contentsOf: callSnapshotURL, encoding: .utf8), "not-json")
@@ -2336,7 +2351,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--message-json", #"{"mode":"direct"}"#,
       "--prompt-variant", "direct",
       "--resume-step-exec", "previous-exec-1",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(called.exitCode, .success, called.stderr)
     let calledResult = try decodeJSON(WorkflowRunResult.self, from: called.stdout)
@@ -2381,7 +2396,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--workflow-definition-dir", callRoot.path,
       "--mock-scenario", callScenario.path,
       "--session-store", workflowCallSessionStore.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(workflowCalled.exitCode, .success, workflowCalled.stderr)
     let workflowCalledResult = try decodeJSON(WorkflowRunResult.self, from: workflowCalled.stdout)
@@ -2430,7 +2445,7 @@ final class WorkflowCommandTests: XCTestCase {
       "package", "install", "@scope/scoped-flow",
       "--source", packageSource.path,
       "--working-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(install.exitCode, .success, install.stderr)
     let installed = try decodeJSON(WorkflowPackageCommandResult.self, from: install.stdout)
@@ -2441,7 +2456,7 @@ final class WorkflowCommandTests: XCTestCase {
     let list = await app.run([
       "package", "list",
       "--working-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(list.exitCode, .success, list.stderr)
     let listed = try decodeJSON(WorkflowPackageCommandResult.self, from: list.stdout)
@@ -2453,7 +2468,7 @@ final class WorkflowCommandTests: XCTestCase {
         "package", command, "@scope/scoped-flow",
         "--working-dir", tempDir.path,
         "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
-        "--output", "json",
+        "--output", "json"
       ])
       XCTAssertEqual(result.exitCode, .success, "\(command): \(result.stderr) \(result.stdout)")
       let run = try decodeJSON(WorkflowPackageCommandResult.self, from: result.stdout)
@@ -2464,7 +2479,7 @@ final class WorkflowCommandTests: XCTestCase {
     let update = await app.run([
       "package", "update", "@scope/scoped-flow",
       "--working-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(update.exitCode, .success, update.stderr)
     let updated = try decodeJSON(WorkflowPackageCommandResult.self, from: update.stdout)
@@ -2475,7 +2490,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--package-name", "@scope/scoped-flow",
       "--working-dir", tempDir.path,
       "--yes",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(publish.exitCode, .success, publish.stderr)
     let published = try decodeJSON(WorkflowPackageCommandResult.self, from: publish.stdout)
@@ -2490,7 +2505,7 @@ final class WorkflowCommandTests: XCTestCase {
     let remove = await app.run([
       "package", "remove", "@scope/scoped-flow",
       "--working-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(remove.exitCode, .success, remove.stderr)
     XCTAssertFalse(FileManager.default.fileExists(atPath: installedDirectory.path))
@@ -2508,7 +2523,7 @@ final class WorkflowCommandTests: XCTestCase {
     let packageRemove = await app.run([
       "package", "remove", "../some-directory",
       "--working-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(packageRemove.exitCode, .failure)
     XCTAssertTrue(packageRemove.stdout.contains("invalid package name"))
@@ -2545,7 +2560,7 @@ final class WorkflowCommandTests: XCTestCase {
       "package", "temp-run", "../escape",
       "--working-dir", tempDir.path,
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(packageTempRun.exitCode, .failure)
     XCTAssertTrue(packageTempRun.stdout.contains("invalid package name"))
@@ -2555,7 +2570,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--package-name", "../escape",
       "--working-dir", tempDir.path,
       "--yes",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(packagePublish.exitCode, .failure)
     XCTAssertTrue(packagePublish.stdout.contains("invalid package name"))
@@ -2566,7 +2581,7 @@ final class WorkflowCommandTests: XCTestCase {
     let replayTraversal = await app.run([
       "events", "replay", "../outside",
       "--event-root", eventRoot.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(replayTraversal.exitCode, .failure)
     XCTAssertTrue(replayTraversal.stdout.contains("invalid event receipt id"))
@@ -2586,7 +2601,7 @@ final class WorkflowCommandTests: XCTestCase {
     let scheduleTraversal = await app.run([
       "events", "schedules", "inspect", "../escape",
       "--event-root", eventRoot.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(scheduleTraversal.exitCode, .failure)
     XCTAssertTrue(scheduleTraversal.stdout.contains("invalid event schedule id"))
@@ -2595,7 +2610,7 @@ final class WorkflowCommandTests: XCTestCase {
       "events", "schedules", "cancel", "schedule-1",
       "--event-root", eventRoot.path,
       "--reason", "test",
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(scheduleCancel.exitCode, .failure)
     XCTAssertTrue(scheduleCancel.stdout.contains("invalid event schedule id"))
@@ -2605,7 +2620,7 @@ final class WorkflowCommandTests: XCTestCase {
   func testInspectJSONFailureReturnsParseableEnvelopeForMissingWorkflow() async throws {
     let result = await RielaCLIApplication().run([
       "workflow", "inspect", "definitely-missing-workflow",
-      "--output", "json",
+      "--output", "json"
     ])
 
     XCTAssertEqual(result.exitCode, .failure)
@@ -2635,7 +2650,7 @@ final class WorkflowCommandTests: XCTestCase {
     let result = await RielaCLIApplication().run([
       "workflow", "inspect", "broken",
       "--workflow-definition-dir", tempDir.path,
-      "--output", "json",
+      "--output", "json"
     ])
 
     XCTAssertEqual(result.exitCode, .failure)
@@ -2653,8 +2668,8 @@ final class WorkflowCommandTests: XCTestCase {
     let scenario = WorkflowMockScenario(responses: [
       "step": [
         MockNodeResponse(payload: ["other": .string("invalid")]),
-        MockNodeResponse(payload: ["status": .string("valid")]),
-      ],
+        MockNodeResponse(payload: ["status": .string("valid")])
+      ]
     ])
     let runner = DeterministicWorkflowRunner(
       store: store,
@@ -2666,15 +2681,15 @@ final class WorkflowCommandTests: XCTestCase {
       entryStepId: "step",
       nodeRegistry: [
         WorkflowNodeRegistryRef(id: "node", nodeFile: "nodes/node.json"),
-        WorkflowNodeRegistryRef(id: "next-node", nodeFile: "nodes/next-node.json"),
+        WorkflowNodeRegistryRef(id: "next-node", nodeFile: "nodes/next-node.json")
       ],
       steps: [
         WorkflowStepRef(id: "step", nodeId: "node", transitions: [WorkflowStepTransition(toStepId: "next")]),
-        WorkflowStepRef(id: "next", nodeId: "next-node"),
+        WorkflowStepRef(id: "next", nodeId: "next-node")
       ],
       nodes: [
         WorkflowNodeRef(id: "step", nodeFile: "nodes/node.json"),
-        WorkflowNodeRef(id: "next", nodeFile: "nodes/next-node.json"),
+        WorkflowNodeRef(id: "next", nodeFile: "nodes/next-node.json")
       ]
     )
     let result = try await runner.run(DeterministicWorkflowRunRequest(
@@ -2687,12 +2702,12 @@ final class WorkflowCommandTests: XCTestCase {
           output: NodeOutputContract(
             jsonSchema: [
               "type": .string("object"),
-              "required": .array([.string("status")]),
+              "required": .array([.string("status")])
             ],
             maxValidationAttempts: 2
           )
         ),
-        "next-node": AgentNodePayload(id: "next-node", executionBackend: .codexAgent, model: "gpt-5-nano"),
+        "next-node": AgentNodePayload(id: "next-node", executionBackend: .codexAgent, model: "gpt-5-nano")
       ]
     ))
 
@@ -2713,8 +2728,8 @@ final class WorkflowCommandTests: XCTestCase {
       "step": [
         MockNodeResponse(when: ["loop": true], payload: ["status": .string("first")]),
         MockNodeResponse(fail: true),
-        MockNodeResponse(when: ["loop": false, "done": true], payload: ["status": .string("second")]),
-      ],
+        MockNodeResponse(when: ["loop": false, "done": true], payload: ["status": .string("second")])
+      ]
     ])
     let runner = DeterministicWorkflowRunner(
       store: store,
@@ -2726,18 +2741,18 @@ final class WorkflowCommandTests: XCTestCase {
       entryStepId: "step",
       nodeRegistry: [
         WorkflowNodeRegistryRef(id: "node", nodeFile: "nodes/node.json"),
-        WorkflowNodeRegistryRef(id: "final-node", nodeFile: "nodes/final-node.json"),
+        WorkflowNodeRegistryRef(id: "final-node", nodeFile: "nodes/final-node.json")
       ],
       steps: [
         WorkflowStepRef(id: "step", nodeId: "node", transitions: [
           WorkflowStepTransition(toStepId: "step", label: "loop"),
-          WorkflowStepTransition(toStepId: "final", label: "done"),
+          WorkflowStepTransition(toStepId: "final", label: "done")
         ]),
-        WorkflowStepRef(id: "final", nodeId: "final-node"),
+        WorkflowStepRef(id: "final", nodeId: "final-node")
       ],
       nodes: [
         WorkflowNodeRef(id: "step", nodeFile: "nodes/node.json"),
-        WorkflowNodeRef(id: "final", nodeFile: "nodes/final-node.json"),
+        WorkflowNodeRef(id: "final", nodeFile: "nodes/final-node.json")
       ]
     )
     let result = try await runner.run(DeterministicWorkflowRunRequest(
@@ -2750,12 +2765,12 @@ final class WorkflowCommandTests: XCTestCase {
           output: NodeOutputContract(
             jsonSchema: [
               "type": .string("object"),
-              "required": .array([.string("status")]),
+              "required": .array([.string("status")])
             ],
             maxValidationAttempts: 2
           )
         ),
-        "final-node": AgentNodePayload(id: "final-node", executionBackend: .codexAgent, model: "gpt-5-nano"),
+        "final-node": AgentNodePayload(id: "final-node", executionBackend: .codexAgent, model: "gpt-5-nano")
       ],
       maxSteps: 3
     ))
@@ -2824,7 +2839,7 @@ final class WorkflowCommandTests: XCTestCase {
     let result = await RielaCLIApplication().run([
       "workflow", "run", workflowJSON,
       "--mock-scenario", scenarioURL.path,
-      "--output", "json",
+      "--output", "json"
     ])
 
     XCTAssertEqual(result.exitCode, .success)
@@ -2839,7 +2854,7 @@ final class WorkflowCommandTests: XCTestCase {
       "workflow", "validate", workflowName,
       "--scope", "project",
       "--working-dir", workingDirectory.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(validate.exitCode, .failure)
     XCTAssertTrue(validate.stderr.isEmpty)
@@ -2852,7 +2867,7 @@ final class WorkflowCommandTests: XCTestCase {
       "workflow", "inspect", workflowName,
       "--scope", "project",
       "--working-dir", workingDirectory.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(inspect.exitCode, .failure)
     XCTAssertTrue(inspect.stderr.isEmpty)
@@ -2864,7 +2879,7 @@ final class WorkflowCommandTests: XCTestCase {
       "workflow", "run", workflowName,
       "--scope", "project",
       "--working-dir", workingDirectory.path,
-      "--output", "json",
+      "--output", "json"
     ])
     XCTAssertEqual(run.exitCode, .failure)
     XCTAssertTrue(run.stderr.isEmpty)

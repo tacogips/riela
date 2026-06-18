@@ -286,7 +286,12 @@ public enum ClaudeCodeSessionIndex {
     try searchSessionTranscriptDetailed(session: session, query: query, options: options).matched
   }
 
-  public static func searchSessionTranscriptDetailed(session: ClaudeCodeSession, query: String, options: ClaudeCodeSessionTranscriptSearchOptions = ClaudeCodeSessionTranscriptSearchOptions(), stopAtFirstMatch: Bool = false) throws -> ClaudeCodeTranscriptSearchResult {
+  public static func searchSessionTranscriptDetailed(
+    session: ClaudeCodeSession,
+    query: String,
+    options: ClaudeCodeSessionTranscriptSearchOptions = ClaudeCodeSessionTranscriptSearchOptions(),
+    stopAtFirstMatch: Bool = false
+  ) throws -> ClaudeCodeTranscriptSearchResult {
     guard !query.isEmpty else {
       throw ClaudeCodeSessionSearchError.emptyQuery
     }
@@ -298,10 +303,25 @@ public enum ClaudeCodeSessionIndex {
     var scannedEvents = 0
     for message in messages {
       if let timeoutMs = options.timeoutMs, Date().timeIntervalSince(startedAt) * 1000 >= Double(timeoutMs) {
-        return ClaudeCodeTranscriptSearchResult(matched: matchCount > 0, matchCount: matchCount, scannedBytes: scannedBytes, scannedEvents: scannedEvents, truncated: true, timedOut: true, durationMs: Date().timeIntervalSince(startedAt) * 1000)
+        return ClaudeCodeTranscriptSearchResult(
+          matched: matchCount > 0,
+          matchCount: matchCount,
+          scannedBytes: scannedBytes,
+          scannedEvents: scannedEvents,
+          truncated: true,
+          timedOut: true,
+          durationMs: Date().timeIntervalSince(startedAt) * 1000
+        )
       }
       if let maxEvents = options.maxEvents, scannedEvents >= maxEvents {
-        return ClaudeCodeTranscriptSearchResult(matched: matchCount > 0, matchCount: matchCount, scannedBytes: scannedBytes, scannedEvents: scannedEvents, truncated: true, durationMs: Date().timeIntervalSince(startedAt) * 1000)
+        return ClaudeCodeTranscriptSearchResult(
+          matched: matchCount > 0,
+          matchCount: matchCount,
+          scannedBytes: scannedBytes,
+          scannedEvents: scannedEvents,
+          truncated: true,
+          durationMs: Date().timeIntervalSince(startedAt) * 1000
+        )
       }
       scannedEvents += 1
       if options.role != "both", message.role != options.role {
@@ -317,7 +337,14 @@ public enum ClaudeCodeSessionIndex {
       if let maxBytes = options.maxBytes {
         let remainingBytes = maxBytes - scannedBytes
         guard remainingBytes > 0 else {
-          return ClaudeCodeTranscriptSearchResult(matched: matchCount > 0, matchCount: matchCount, scannedBytes: scannedBytes, scannedEvents: scannedEvents, truncated: true, durationMs: Date().timeIntervalSince(startedAt) * 1000)
+          return ClaudeCodeTranscriptSearchResult(
+            matched: matchCount > 0,
+            matchCount: matchCount,
+            scannedBytes: scannedBytes,
+            scannedEvents: scannedEvents,
+            truncated: true,
+            durationMs: Date().timeIntervalSince(startedAt) * 1000
+          )
         }
         if textBytes > remainingBytes {
           searchableText = utf8Prefix(text, maxBytes: remainingBytes)
@@ -338,22 +365,56 @@ public enum ClaudeCodeSessionIndex {
       if count > 0 {
         matchCount += count
         if stopAtFirstMatch {
-          return ClaudeCodeTranscriptSearchResult(matched: true, matchCount: matchCount, scannedBytes: scannedBytes, scannedEvents: scannedEvents, truncated: truncatedByBytes, durationMs: Date().timeIntervalSince(startedAt) * 1000)
+          return ClaudeCodeTranscriptSearchResult(
+            matched: true,
+            matchCount: matchCount,
+            scannedBytes: scannedBytes,
+            scannedEvents: scannedEvents,
+            truncated: truncatedByBytes,
+            durationMs: Date().timeIntervalSince(startedAt) * 1000
+          )
         }
       }
       if truncatedByBytes {
-        return ClaudeCodeTranscriptSearchResult(matched: matchCount > 0, matchCount: matchCount, scannedBytes: scannedBytes, scannedEvents: scannedEvents, truncated: true, durationMs: Date().timeIntervalSince(startedAt) * 1000)
+        return ClaudeCodeTranscriptSearchResult(
+          matched: matchCount > 0,
+          matchCount: matchCount,
+          scannedBytes: scannedBytes,
+          scannedEvents: scannedEvents,
+          truncated: true,
+          durationMs: Date().timeIntervalSince(startedAt) * 1000
+        )
       }
     }
-    return ClaudeCodeTranscriptSearchResult(matched: matchCount > 0, matchCount: matchCount, scannedBytes: scannedBytes, scannedEvents: scannedEvents, truncated: false, durationMs: Date().timeIntervalSince(startedAt) * 1000)
+    return ClaudeCodeTranscriptSearchResult(
+      matched: matchCount > 0,
+      matchCount: matchCount,
+      scannedBytes: scannedBytes,
+      scannedEvents: scannedEvents,
+      truncated: false,
+      durationMs: Date().timeIntervalSince(startedAt) * 1000
+    )
   }
 
-  public static func searchSessions(query: String, options: ClaudeCodeSessionListOptions = ClaudeCodeSessionListOptions(), searchOptions: ClaudeCodeSessionTranscriptSearchOptions = ClaudeCodeSessionTranscriptSearchOptions()) throws -> ClaudeCodeSessionsSearchResult {
+  public static func searchSessions(
+    query: String,
+    options: ClaudeCodeSessionListOptions = ClaudeCodeSessionListOptions(),
+    searchOptions: ClaudeCodeSessionTranscriptSearchOptions = ClaudeCodeSessionTranscriptSearchOptions()
+  ) throws -> ClaudeCodeSessionsSearchResult {
     guard !query.isEmpty else {
       throw ClaudeCodeSessionSearchError.emptyQuery
     }
     let startedAt = Date()
-    let allCandidates = listSessions(options: ClaudeCodeSessionListOptions(claudeCodeHome: options.claudeCodeHome, source: options.source, cwd: options.cwd, branch: options.branch, limit: Int.max, offset: 0, sortBy: options.sortBy, sortOrder: options.sortOrder)).sessions
+    let allCandidates = listSessions(options: ClaudeCodeSessionListOptions(
+      claudeCodeHome: options.claudeCodeHome,
+      source: options.source,
+      cwd: options.cwd,
+      branch: options.branch,
+      limit: Int.max,
+      offset: 0,
+      sortBy: options.sortBy,
+      sortOrder: options.sortOrder
+    )).sessions
     let maxSessions = max(0, searchOptions.maxSessions ?? allCandidates.count)
     let candidates = Array(allCandidates.prefix(maxSessions))
     var matches: [String] = []
@@ -405,7 +466,18 @@ public enum ClaudeCodeSessionIndex {
     let requestedLimit = max(0, searchOptions.limit)
     let start = min(requestedOffset, matches.count)
     let end = min(start + requestedLimit, matches.count)
-    return ClaudeCodeSessionsSearchResult(sessionIds: Array(matches[start..<end]), total: total, offset: searchOptions.offset, limit: searchOptions.limit, scannedSessions: scannedSessions, scannedBytes: scannedBytes, scannedEvents: scannedEvents, truncated: truncated, timedOut: timedOut, durationMs: Date().timeIntervalSince(startedAt) * 1000)
+    return ClaudeCodeSessionsSearchResult(
+      sessionIds: Array(matches[start..<end]),
+      total: total,
+      offset: searchOptions.offset,
+      limit: searchOptions.limit,
+      scannedSessions: scannedSessions,
+      scannedBytes: scannedBytes,
+      scannedEvents: scannedEvents,
+      truncated: truncated,
+      timedOut: timedOut,
+      durationMs: Date().timeIntervalSince(startedAt) * 1000
+    )
   }
 
   private static func countMatches(text: String, query: String, caseSensitive: Bool) -> Int {

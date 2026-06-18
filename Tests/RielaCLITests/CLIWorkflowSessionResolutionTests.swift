@@ -83,7 +83,7 @@ final class CLIWorkflowSessionResolutionTests: XCTestCase {
   }
 
   func testLoadPersistedSessionFindsUserScopeStoreWhenCallerScopeAuto() throws {
-    let base = makeTempDir()
+    let base = try makeTempDir()
     let projectRoot = base.appendingPathComponent("project", isDirectory: true)
     let userRoot = base.appendingPathComponent("home", isDirectory: true)
     let userSessions = userRoot.appendingPathComponent(".riela/sessions", isDirectory: true)
@@ -121,7 +121,7 @@ final class CLIWorkflowSessionResolutionTests: XCTestCase {
   }
 
   func testLoadPersistedSessionPrefersProjectStoreWhenBothExist() throws {
-    let base = makeTempDir()
+    let base = try makeTempDir()
     let projectRoot = base.appendingPathComponent("project", isDirectory: true)
     let userRoot = base.appendingPathComponent("home", isDirectory: true)
     let projectSessions = projectRoot.appendingPathComponent(".riela/sessions", isDirectory: true)
@@ -180,10 +180,10 @@ final class CLIWorkflowSessionResolutionTests: XCTestCase {
     super.tearDown()
   }
 
-  private func makeTempDir() -> URL {
+  private func makeTempDir() throws -> URL {
     let url = FileManager.default.temporaryDirectory
       .appendingPathComponent("riela-cli-session-resolution-\(UUID().uuidString)", isDirectory: true)
-    try! FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     tempRoots.append(url)
     return url
   }

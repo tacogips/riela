@@ -259,7 +259,7 @@ extension NativeBundleAddonResolver: WorkflowAddonResolving {
     var payload: JSONObject = [
       "workflowId": .string(input.workflowId),
       "stepId": .string(input.stepId),
-      "nodeId": .string(input.nodeId),
+      "nodeId": .string(input.nodeId)
     ]
     if let config = input.addon.config {
       payload["config"] = .object(config)
@@ -450,7 +450,7 @@ private func projectAttachment(
     "id": .string(attachment.id),
     "mediaType": .string(attachment.mediaType),
     "sizeBytes": .number(Double(attachment.sizeBytes)),
-    "sha256": .string(attachment.sha256),
+    "sha256": .string(attachment.sha256)
   ]
   if let filename = attachment.filename, !filename.isEmpty {
     object["filename"] = .string(filename)

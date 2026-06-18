@@ -277,7 +277,7 @@ private func normalizeRolloutLine(_ object: JSONObject) -> CursorCLIRolloutLine?
           "cwd": .string(stringValue(object["cwd"]) ?? ""),
           "originator": .string("cursorCLI"),
           "cli_version": .string(stringValue(object["version"]) ?? stringValue(object["cliVersion"]) ?? "unknown"),
-          "source": .string("cli"),
+          "source": .string("cli")
         ])
       ])
     )
@@ -291,7 +291,7 @@ private func normalizeRolloutLine(_ object: JSONObject) -> CursorCLIRolloutLine?
       type: "event_msg",
       payload: .object(compactObject([
         "type": .string(payloadType),
-        "message": message.map(JSONValue.string),
+        "message": message.map(JSONValue.string)
       ]))
     )
   }
@@ -309,7 +309,7 @@ private func normalizeRolloutLine(_ object: JSONObject) -> CursorCLIRolloutLine?
           "cwd": .string(""),
           "originator": .string("cursorCLI"),
           "cli_version": .string("unknown"),
-          "source": .string("exec"),
+          "source": .string("exec")
         ])
       ])
     )
@@ -396,9 +396,25 @@ private func toSessionMessage(_ line: CursorCLIRolloutLine) -> CursorCLISessionM
     case "AgentMessage":
       return CursorCLISessionMessage(timestamp: line.timestamp, category: .otherMessage, role: "assistant", text: stringValue(payload["message"]), sourceType: line.type, sourceTag: line.provenance?.sourceTag, line: line)
     case "AgentReasoning":
-      return CursorCLISessionMessage(timestamp: line.timestamp, category: .otherMessage, role: "assistant", text: stringValue(payload["text"]) ?? stringValue(payload["message"]) ?? stringValue(payload["reasoning"]), sourceType: line.type, sourceTag: line.provenance?.sourceTag, line: line)
+      return CursorCLISessionMessage(
+        timestamp: line.timestamp,
+        category: .otherMessage,
+        role: "assistant",
+        text: stringValue(payload["text"]) ?? stringValue(payload["message"]) ?? stringValue(payload["reasoning"]),
+        sourceType: line.type,
+        sourceTag: line.provenance?.sourceTag,
+        line: line
+      )
     case "TurnComplete":
-      return CursorCLISessionMessage(timestamp: line.timestamp, category: .otherMessage, role: "assistant", text: stringValue(payload["last_agent_message"]) ?? stringValue(payload["lastAgentMessage"]), sourceType: line.type, sourceTag: line.provenance?.sourceTag, line: line)
+      return CursorCLISessionMessage(
+        timestamp: line.timestamp,
+        category: .otherMessage,
+        role: "assistant",
+        text: stringValue(payload["last_agent_message"]) ?? stringValue(payload["lastAgentMessage"]),
+        sourceType: line.type,
+        sourceTag: line.provenance?.sourceTag,
+        line: line
+      )
     case "ExecCommandEnd":
       let text = stringValue(payload["aggregated_output"]) ?? stringArray(payload["command"])?.joined(separator: " ")
       return CursorCLISessionMessage(timestamp: line.timestamp, category: .toolUserResponse, role: "user", text: text, sourceType: line.type, sourceTag: "local_shell", line: line)
@@ -409,13 +425,45 @@ private func toSessionMessage(_ line: CursorCLIRolloutLine) -> CursorCLISessionM
   if line.type == "response_item" {
     switch stringValue(payload["type"]) {
     case "message":
-      return CursorCLISessionMessage(timestamp: line.timestamp, category: .otherMessage, role: stringValue(payload["role"]) ?? "unknown", text: outputText(from: payload["content"]), sourceType: line.type, sourceTag: line.provenance?.sourceTag, line: line)
+      return CursorCLISessionMessage(
+        timestamp: line.timestamp,
+        category: .otherMessage,
+        role: stringValue(payload["role"]) ?? "unknown",
+        text: outputText(from: payload["content"]),
+        sourceType: line.type,
+        sourceTag: line.provenance?.sourceTag,
+        line: line
+      )
     case "function_call":
-      return CursorCLISessionMessage(timestamp: line.timestamp, category: .assistantToolResponse, role: "assistant", text: stringValue(payload["arguments"]), sourceType: line.type, sourceTag: stringValue(payload["name"]), line: line)
+      return CursorCLISessionMessage(
+        timestamp: line.timestamp,
+        category: .assistantToolResponse,
+        role: "assistant",
+        text: stringValue(payload["arguments"]),
+        sourceType: line.type,
+        sourceTag: stringValue(payload["name"]),
+        line: line
+      )
     case "function_call_output":
-      return CursorCLISessionMessage(timestamp: line.timestamp, category: .toolUserResponse, role: "user", text: stringValue(payload["output"]) ?? jsonString(payload["output"]), sourceType: line.type, sourceTag: "function_call_output", line: line)
+      return CursorCLISessionMessage(
+        timestamp: line.timestamp,
+        category: .toolUserResponse,
+        role: "user",
+        text: stringValue(payload["output"]) ?? jsonString(payload["output"]),
+        sourceType: line.type,
+        sourceTag: "function_call_output",
+        line: line
+      )
     case "reasoning":
-      return CursorCLISessionMessage(timestamp: line.timestamp, category: .otherMessage, role: "assistant", text: outputText(from: payload["summary"]) ?? outputText(from: payload["content"]) ?? stringValue(payload["text"]), sourceType: line.type, sourceTag: line.provenance?.sourceTag, line: line)
+      return CursorCLISessionMessage(
+        timestamp: line.timestamp,
+        category: .otherMessage,
+        role: "assistant",
+        text: outputText(from: payload["summary"]) ?? outputText(from: payload["content"]) ?? stringValue(payload["text"]),
+        sourceType: line.type,
+        sourceTag: line.provenance?.sourceTag,
+        line: line
+      )
     default:
       return nil
     }

@@ -113,7 +113,7 @@ public enum CursorCLIAgentReadiness {
       availability.auth.detail,
       availability.modelReachability.error,
       availability.modelReachability.output,
-      availability.binary.error,
+      availability.binary.error
     ]
       .compactMap { $0 }
       .joined(separator: "\n")
@@ -132,9 +132,13 @@ public enum CursorCLIAgentReadiness {
       )
     }
     if availability.modelReachability.status != .available {
+      let reachabilityDetail = compactAgentReadinessMessage(
+        availability.modelReachability.error ?? availability.modelReachability.output,
+        fallback: "model check failed"
+      )
       return AgentBackendValidationResult(
         status: .invalid,
-        message: "cursor-cli-agent model '\(availability.model)' is not reachable: \(compactAgentReadinessMessage(availability.modelReachability.error ?? availability.modelReachability.output, fallback: "model check failed"))",
+        message: "cursor-cli-agent model '\(availability.model)' is not reachable: \(reachabilityDetail)",
         candidate: candidate
       )
     }

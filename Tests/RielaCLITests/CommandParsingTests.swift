@@ -16,7 +16,7 @@ final class CommandParsingTests: XCTestCase {
       "--scope", "project",
       "--output", "json",
       "--executable",
-      "--node-patch", #"{"worker":{"model":"gpt-5"}}"#,
+      "--node-patch", #"{"worker":{"model":"gpt-5"}}"#
     ])
     XCTAssertEqual(
       validate,
@@ -45,7 +45,7 @@ final class CommandParsingTests: XCTestCase {
     let usage = try parser.parse([
       "workflow", "usage", "demo",
       "--workflow-definition-dir", "./examples",
-      "--output", "json",
+      "--output", "json"
     ])
     if case let .workflow(.usage(options)) = usage {
       XCTAssertEqual(options.workflowName, "demo")
@@ -60,7 +60,7 @@ final class CommandParsingTests: XCTestCase {
       "--variables", #"{"topic":"swift"}"#,
       "--mock-scenario", "./scenario.json",
       "--max-steps", "2",
-      "--output", "json",
+      "--output", "json"
     ])
     if case let .workflow(.run(options)) = run {
       XCTAssertEqual(options.variables, #"{"topic":"swift"}"#)
@@ -80,7 +80,7 @@ final class CommandParsingTests: XCTestCase {
       "--monitor-interval-ms", "1000",
       "--stall-timeout-ms", "2000",
       "--workflow-mutation-mode", "execution-copy",
-      "--nested-supervisor",
+      "--nested-supervisor"
     ])
     if case let .workflow(.run(options)) = supervisedRun {
       XCTAssertTrue(options.autoImprove)
@@ -100,7 +100,7 @@ final class CommandParsingTests: XCTestCase {
       "workflow", "run", "demo",
       "--auto-improve",
       "--monitor-interval-ms", "5000",
-      "--stall-timeout-ms", "4999",
+      "--stall-timeout-ms", "4999"
     ])) { error in
       XCTAssertEqual(
         (error as? CLIUsageError)?.message,
@@ -115,7 +115,7 @@ final class CommandParsingTests: XCTestCase {
       "--auth-token", "explicit-token",
       "--auth-token-env", "RIELA_REMOTE_TOKEN",
       "--from-registry",
-      "--max-concurrency", "4",
+      "--max-concurrency", "4"
     ])
 
     if case let .workflow(.run(options)) = command {
@@ -132,13 +132,13 @@ final class CommandParsingTests: XCTestCase {
 
   func testRejectsEndpointAndRegistryFlagsForValidateAndInspect() {
     XCTAssertThrowsError(try RielaArgumentParser().parse([
-      "workflow", "validate", "demo", "--endpoint", "http://localhost:4000/graphql",
+      "workflow", "validate", "demo", "--endpoint", "http://localhost:4000/graphql"
     ])) { error in
       XCTAssertEqual((error as? CLIUsageError)?.message, "Swift TASK-007 supports local workflow validate only")
     }
 
     XCTAssertThrowsError(try RielaArgumentParser().parse([
-      "workflow", "inspect", "demo", "--from-registry",
+      "workflow", "inspect", "demo", "--from-registry"
     ])) { error in
       XCTAssertEqual((error as? CLIUsageError)?.message, "Swift TASK-007 supports local workflow inspect only")
     }
@@ -168,7 +168,7 @@ final class CommandParsingTests: XCTestCase {
     )
 
     if case let .workflow(.manifestValidate(options)) = try parser.parse([
-      "workflow", "manifest", "validate", "riela-package.json", "--output", "json",
+      "workflow", "manifest", "validate", "riela-package.json", "--output", "json"
     ]) {
       XCTAssertEqual(options.manifestPath, "riela-package.json")
       XCTAssertEqual(options.output, .json)
@@ -248,7 +248,7 @@ final class CommandParsingTests: XCTestCase {
 
   func testRejectsTableOutputWhereTypeScriptRejectsIt() {
     XCTAssertThrowsError(try RielaArgumentParser().parse([
-      "workflow", "run", "demo", "--output", "table",
+      "workflow", "run", "demo", "--output", "table"
     ])) { error in
       XCTAssertEqual(
         (error as? CLIUsageError)?.message,

@@ -23,7 +23,7 @@ func makeProductionNodeAdapter() -> any NodeAdapter {
           CursorCLIAgentAdapter(
             executableName: environmentValue("RIELA_CURSOR_CLI_AGENT_EXECUTABLE") ?? "cursor-agent"
           )
-        },
+        }
       ]
     )
   )
@@ -107,7 +107,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
           "target": .string("yui"),
           "target_yui": .bool(true),
           "target_mika": .bool(false),
-          "target_rina": .bool(false),
+          "target_rina": .bool(false)
         ]
       )
     }
@@ -119,7 +119,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       payload: [
         "status": .string("ok"),
         "addon": .string(input.addon.name),
-        "stepId": .string(input.stepId),
+        "stepId": .string(input.stepId)
       ]
     )
   }

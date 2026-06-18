@@ -422,14 +422,14 @@ private func makeURLRequest(for request: OfficialSDKRequest) throws -> URLReques
     endpoint = officialSDKEndpoint(baseURL: request.baseURL, defaultBaseURL: "https://api.openai.com/v1", pathComponents: ["responses"])
     body = [
       "model": .string(openAIRequest.model),
-      "input": .string(openAIRequest.input),
+      "input": .string(openAIRequest.input)
     ]
     if let instructions = openAIRequest.instructions {
       body["instructions"] = .string(instructions)
     }
     headers = [
       "Authorization": "Bearer \(request.apiKey)",
-      "Content-Type": "application/json",
+      "Content-Type": "application/json"
     ]
   case let .anthropicMessages(anthropicRequest):
     endpoint = officialSDKEndpoint(baseURL: request.baseURL, defaultBaseURL: "https://api.anthropic.com", pathComponents: ["v1", "messages"])
@@ -439,9 +439,9 @@ private func makeURLRequest(for request: OfficialSDKRequest) throws -> URLReques
       "messages": .array(anthropicRequest.messages.map { message in
         .object([
           "role": .string(message.role),
-          "content": .string(message.content),
+          "content": .string(message.content)
         ])
-      }),
+      })
     ]
     if let system = anthropicRequest.system {
       body["system"] = .string(system)
@@ -449,7 +449,7 @@ private func makeURLRequest(for request: OfficialSDKRequest) throws -> URLReques
     headers = [
       "x-api-key": request.apiKey,
       "anthropic-version": "2023-06-01",
-      "Content-Type": "application/json",
+      "Content-Type": "application/json"
     ]
   }
 
@@ -470,8 +470,7 @@ private func officialSDKEndpoint(baseURL: URL?, defaultBaseURL: String, pathComp
   }
   let missingPathComponents: ArraySlice<String>
   if pathComponents.count > 1,
-     existingPathComponents.suffix(pathComponents.count - 1) == pathComponents.dropLast()
-  {
+     existingPathComponents.suffix(pathComponents.count - 1) == pathComponents.dropLast() {
     missingPathComponents = pathComponents.suffix(1)
   } else {
     missingPathComponents = pathComponents[...]

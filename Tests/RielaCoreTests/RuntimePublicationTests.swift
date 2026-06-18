@@ -493,7 +493,7 @@ final class RuntimePublicationTests: XCTestCase {
 
   private func writeCandidate(_ payload: JSONObject, to url: URL) throws {
     let encoded = try JSONEncoder().encode(JSONValue.object(payload))
-    let payloadText = String(decoding: encoded, as: UTF8.self)
+    let payloadText = try XCTUnwrap(String(data: encoded, encoding: .utf8))
     try Data(#"{"completionPassed":true,"when":{},"payload":\#(payloadText)}"#.utf8).write(to: url)
   }
 

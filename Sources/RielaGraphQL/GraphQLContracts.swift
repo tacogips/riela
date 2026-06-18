@@ -365,10 +365,32 @@ public enum GraphQLContractProjector {
   type ControlPlaneResult { accepted: Boolean!, status: String!, diagnostics: [String!]! }
   type ManagerIntentSummary { kind: String!, targetId: String, reason: String }
   type ManagerSessionView { session: JSON!, messages: JSON! }
-  type SendManagerMessagePayload { accepted: Boolean!, managerMessageId: String!, parsedIntent: [ManagerIntentSummary!]!, createdCommunicationIds: [String!]!, queuedNodeIds: [String!]!, rejectionReason: String, workflowId: String!, workflowExecutionId: String!, managerSessionId: String! }
+  type SendManagerMessagePayload {
+    accepted: Boolean!
+    managerMessageId: String!
+    parsedIntent: [ManagerIntentSummary!]!
+    createdCommunicationIds: [String!]!
+    queuedNodeIds: [String!]!
+    rejectionReason: String
+    workflowId: String!
+    workflowExecutionId: String!
+    managerSessionId: String!
+  }
   type ReplayCommunicationPayload { sourceCommunicationId: String!, workflowExecutionId: String!, replayedCommunicationId: String!, status: String! }
   type RetryCommunicationDeliveryPayload { communicationId: String!, activeDeliveryAttemptId: String!, status: String! }
-  type WorkflowSession { workflowId: String!, sessionId: String!, status: String!, currentStepId: String, stepExecutions: [StepExecution!]!, communications: [Communication!]!, hookEvents: [HookEvent!]!, eventReceipts: [EventReceipt!]!, replyDispatches: [ReplyDispatch!]!, logs: [LogEntry!]!, llmSessionMessages: [LLMSessionMessage!]! }
+  type WorkflowSession {
+    workflowId: String!
+    sessionId: String!
+    status: String!
+    currentStepId: String
+    stepExecutions: [StepExecution!]!
+    communications: [Communication!]!
+    hookEvents: [HookEvent!]!
+    eventReceipts: [EventReceipt!]!
+    replyDispatches: [ReplyDispatch!]!
+    logs: [LogEntry!]!
+    llmSessionMessages: [LLMSessionMessage!]!
+  }
   type StepExecution { executionId: String!, stepId: String!, nodeId: String!, attempt: Int!, backend: String, status: String!, failureReason: String }
   type Communication { communicationId: String!, fromStepId: String, toStepId: String, lifecycleStatus: String!, deliveryKind: String!, createdOrder: Int! }
   type HookEvent { vendor: String!, eventName: String!, agentSessionId: String!, payloadHash: String }
@@ -381,7 +403,12 @@ public enum GraphQLContractProjector {
   input ReplayCommunicationInput { workflowId: String!, workflowExecutionId: String!, communicationId: String!, reason: String, idempotencyKey: String, managerSessionId: String }
   input RetryCommunicationDeliveryInput { workflowId: String!, workflowExecutionId: String!, communicationId: String!, reason: String, idempotencyKey: String, managerSessionId: String }
   type Query { workflowSession(workflowId: String!, sessionId: String!): WorkflowSession managerSession(managerSessionId: String): ManagerSessionView }
-  type Mutation { continueSession(input: ContinueSessionInput!): ControlPlaneResult! sendManagerMessage(input: SendManagerMessageInput!): SendManagerMessagePayload! replayCommunication(input: ReplayCommunicationInput!): ReplayCommunicationPayload! retryCommunicationDelivery(input: RetryCommunicationDeliveryInput!): RetryCommunicationDeliveryPayload! }
+  type Mutation {
+    continueSession(input: ContinueSessionInput!): ControlPlaneResult!
+    sendManagerMessage(input: SendManagerMessageInput!): SendManagerMessagePayload!
+    replayCommunication(input: ReplayCommunicationInput!): ReplayCommunicationPayload!
+    retryCommunicationDelivery(input: RetryCommunicationDeliveryInput!): RetryCommunicationDeliveryPayload!
+  }
   """
 
   public static func project(

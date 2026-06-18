@@ -52,7 +52,7 @@ final class RielaExampleParityTests: XCTestCase {
         "--workflow-definition-dir", examplesRoot.path,
         "--mock-scenario", scenario.path,
         "--max-steps", "200",
-        "--output", "json",
+        "--output", "json"
       ]
       if workflowName == "supervised-mock-retry" {
         arguments.append("--auto-improve")
@@ -99,7 +99,7 @@ final class RielaExampleParityTests: XCTestCase {
       "worker-only-single-step",
       "workflow-call-review-target",
       "workflow-call-simple",
-      "x-follower-ai-business-digest",
+      "x-follower-ai-business-digest"
     ]
   }
 

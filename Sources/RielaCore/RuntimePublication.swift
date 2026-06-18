@@ -71,6 +71,7 @@ public struct WorkflowPublicationResult: Equatable, Sendable {
 public enum WorkflowPublicationError: Error, Equatable, Sendable {
   case noCandidateOutput
   case candidatePathRequiresReservation
+  // swiftlint:disable:next identifier_name
   case candidatePathReservationRequiresCandidatePath
   case ambiguousCandidateSources([String])
   case unsupportedTransition(String)

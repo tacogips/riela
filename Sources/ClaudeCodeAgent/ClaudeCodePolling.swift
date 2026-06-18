@@ -338,7 +338,7 @@ public struct ClaudeCodeActivityStore: Sendable {
       var object: [String: Any] = [
         "status": entry.status.rawValue,
         "updatedAt": entry.updatedAt,
-        "lastUpdated": entry.updatedAt,
+        "lastUpdated": entry.updatedAt
       ]
       if let projectPath = entry.projectPath {
         object["projectPath"] = projectPath

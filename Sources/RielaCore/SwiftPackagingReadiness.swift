@@ -43,6 +43,8 @@ public struct SwiftHomebrewReadinessArchivePlan: Codable, Equatable, Sendable {
   }
 }
 
+// Existing public API name is intentionally descriptive.
+// swiftlint:disable:next identifier_name
 public let swiftHomebrewReadinessReleaseBinPathCommand: [String] = [
   "env",
   "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer",
@@ -53,7 +55,7 @@ public let swiftHomebrewReadinessReleaseBinPathCommand: [String] = [
   "release",
   "--product",
   "riela",
-  "--show-bin-path",
+  "--show-bin-path"
 ]
 
 public func makeSwiftHomebrewReadinessArchivePlan(

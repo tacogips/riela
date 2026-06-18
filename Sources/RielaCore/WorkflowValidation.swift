@@ -268,7 +268,7 @@ private func validateTypedFanout(
   }
 }
 
-private let rejectedStepAddressedTopLevelFieldMessages: [String: String] = [
+private let rejectedTopLevelFieldMessages: [String: String] = [
   "managerRuntimeId": "is not part of the step-addressed workflow schema",
   "managerNodeId": "is not part of the step-addressed workflow schema",
   "entryNodeId": "is not part of the step-addressed workflow schema",
@@ -283,7 +283,7 @@ private let rejectedStepAddressedTopLevelFieldMessages: [String: String] = [
 private func validateRawAuthoredWorkflow(_ raw: [String: Any]) -> [WorkflowValidationDiagnostic] {
   var diagnostics: [WorkflowValidationDiagnostic] = []
 
-  for (field, message) in rejectedStepAddressedTopLevelFieldMessages where raw[field] != nil {
+  for (field, message) in rejectedTopLevelFieldMessages where raw[field] != nil {
     diagnostics.append(error("workflow.\(field)", message))
   }
 

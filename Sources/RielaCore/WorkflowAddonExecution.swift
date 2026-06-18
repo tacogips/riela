@@ -153,8 +153,7 @@ public struct InlineWorkflowAddonAttachmentProjector: WorkflowAddonAttachmentPro
 
   private func project(_ descriptor: WorkflowAddonAttachmentDescriptor, field: String) throws -> WorkflowAddonAttachmentValue {
     if descriptor.localPath != nil || descriptor.path != nil || descriptor.pathBase != nil
-      || descriptor.contentRef != nil || descriptor.url != nil
-    {
+      || descriptor.contentRef != nil || descriptor.url != nil {
       throw WorkflowAddonAttachmentProjectionError.metadataOnly(field)
     }
     guard !descriptor.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {

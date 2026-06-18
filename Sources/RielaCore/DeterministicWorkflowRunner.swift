@@ -703,7 +703,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
 
     let systemPromptText = [
       workflow.prompts?.workerSystemPromptTemplate,
-      payload.systemPromptTemplate,
+      payload.systemPromptTemplate
     ]
       .compactMap { template in
         template.map {
@@ -771,7 +771,7 @@ public struct DeterministicLocalNodeAdapter: NodeAdapter {
     var payload: JSONObject = [
       "nodeId": .string(input.node.id),
       "provider": .string("deterministic-local"),
-      "status": .string("completed"),
+      "status": .string("completed")
     ]
     if let resumedFromNodeExecId = input.mergedVariables["resumedFromNodeExecId"] {
       payload["resumedFromNodeExecId"] = resumedFromNodeExecId

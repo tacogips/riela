@@ -277,7 +277,7 @@ private func normalizeRolloutLine(_ object: JSONObject) -> CodexRolloutLine? {
           "cwd": .string(""),
           "originator": .string("codex"),
           "cli_version": .string("unknown"),
-          "source": .string("exec"),
+          "source": .string("exec")
         ])
       ])
     )
@@ -354,9 +354,27 @@ private func toSessionMessage(_ line: CodexRolloutLine) -> CodexSessionMessage? 
     case "AgentMessage":
       return CodexSessionMessage(timestamp: line.timestamp, category: .otherMessage, role: "assistant", text: stringValue(payload["message"]), sourceType: line.type, sourceTag: line.provenance?.sourceTag, line: line)
     case "AgentReasoning":
-      return CodexSessionMessage(timestamp: line.timestamp, category: .otherMessage, role: "assistant", text: stringValue(payload["text"]) ?? stringValue(payload["message"]) ?? stringValue(payload["reasoning"]), sourceType: line.type, sourceTag: line.provenance?.sourceTag, line: line)
+      return CodexSessionMessage(
+        timestamp: line.timestamp,
+        category: .otherMessage,
+        role: "assistant",
+        text: stringValue(payload["text"])
+          ?? stringValue(payload["message"])
+          ?? stringValue(payload["reasoning"]),
+        sourceType: line.type,
+        sourceTag: line.provenance?.sourceTag,
+        line: line
+      )
     case "TurnComplete":
-      return CodexSessionMessage(timestamp: line.timestamp, category: .otherMessage, role: "assistant", text: stringValue(payload["last_agent_message"]) ?? stringValue(payload["lastAgentMessage"]), sourceType: line.type, sourceTag: line.provenance?.sourceTag, line: line)
+      return CodexSessionMessage(
+        timestamp: line.timestamp,
+        category: .otherMessage,
+        role: "assistant",
+        text: stringValue(payload["last_agent_message"]) ?? stringValue(payload["lastAgentMessage"]),
+        sourceType: line.type,
+        sourceTag: line.provenance?.sourceTag,
+        line: line
+      )
     case "ExecCommandEnd":
       let text = stringValue(payload["aggregated_output"]) ?? stringArray(payload["command"])?.joined(separator: " ")
       return CodexSessionMessage(timestamp: line.timestamp, category: .toolUserResponse, role: "user", text: text, sourceType: line.type, sourceTag: "local_shell", line: line)
@@ -367,13 +385,47 @@ private func toSessionMessage(_ line: CodexRolloutLine) -> CodexSessionMessage? 
   if line.type == "response_item" {
     switch stringValue(payload["type"]) {
     case "message":
-      return CodexSessionMessage(timestamp: line.timestamp, category: .otherMessage, role: stringValue(payload["role"]) ?? "unknown", text: outputText(from: payload["content"]), sourceType: line.type, sourceTag: line.provenance?.sourceTag, line: line)
+      return CodexSessionMessage(
+        timestamp: line.timestamp,
+        category: .otherMessage,
+        role: stringValue(payload["role"]) ?? "unknown",
+        text: outputText(from: payload["content"]),
+        sourceType: line.type,
+        sourceTag: line.provenance?.sourceTag,
+        line: line
+      )
     case "function_call":
-      return CodexSessionMessage(timestamp: line.timestamp, category: .assistantToolResponse, role: "assistant", text: stringValue(payload["arguments"]), sourceType: line.type, sourceTag: stringValue(payload["name"]), line: line)
+      return CodexSessionMessage(
+        timestamp: line.timestamp,
+        category: .assistantToolResponse,
+        role: "assistant",
+        text: stringValue(payload["arguments"]),
+        sourceType: line.type,
+        sourceTag: stringValue(payload["name"]),
+        line: line
+      )
     case "function_call_output":
-      return CodexSessionMessage(timestamp: line.timestamp, category: .toolUserResponse, role: "user", text: stringValue(payload["output"]) ?? jsonString(payload["output"]), sourceType: line.type, sourceTag: "function_call_output", line: line)
+      return CodexSessionMessage(
+        timestamp: line.timestamp,
+        category: .toolUserResponse,
+        role: "user",
+        text: stringValue(payload["output"]) ?? jsonString(payload["output"]),
+        sourceType: line.type,
+        sourceTag: "function_call_output",
+        line: line
+      )
     case "reasoning":
-      return CodexSessionMessage(timestamp: line.timestamp, category: .otherMessage, role: "assistant", text: outputText(from: payload["summary"]) ?? outputText(from: payload["content"]) ?? stringValue(payload["text"]), sourceType: line.type, sourceTag: line.provenance?.sourceTag, line: line)
+      return CodexSessionMessage(
+        timestamp: line.timestamp,
+        category: .otherMessage,
+        role: "assistant",
+        text: outputText(from: payload["summary"])
+          ?? outputText(from: payload["content"])
+          ?? stringValue(payload["text"]),
+        sourceType: line.type,
+        sourceTag: line.provenance?.sourceTag,
+        line: line
+      )
     default:
       return nil
     }

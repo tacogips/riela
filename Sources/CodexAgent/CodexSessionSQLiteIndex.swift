@@ -52,7 +52,7 @@ public enum CodexSessionSQLiteIndex {
     let columns = [
       "id", "rollout_path", "created_at", "updated_at", "source", "model_provider", "cwd",
       "cli_version", "title", "first_user_message", "archived_at", "git_sha", "git_branch",
-      "git_origin_url",
+      "git_origin_url"
     ]
     let separator = "|||riela-codex-sqlite|||"
     let sql = "SELECT \(columns.map { "ifnull(\($0),'')" }.joined(separator: " || '\(separator)' || ")) FROM threads;"

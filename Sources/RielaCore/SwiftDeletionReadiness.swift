@@ -169,7 +169,7 @@ public struct SwiftDeletionReadinessValidator: Sendable {
     "test",
     "agent-codex",
     "agent-claude-code",
-    "agent-cursor-cli",
+    "agent-cursor-cli"
   ]
 
   private static let allowedStatuses = Set(["passed", "blocked", "stale", "unknown"])
@@ -187,7 +187,7 @@ public struct SwiftDeletionReadinessValidator: Sendable {
     "test": [["swift", "test"]],
     "agent-codex": [["swift", "test", "CodexAgent"]],
     "agent-claude-code": [["swift", "test", "Claude"]],
-    "agent-cursor-cli": [["swift", "test", "CursorCLIAgent"]],
+    "agent-cursor-cli": [["swift", "test", "CursorCLIAgent"]]
   ]
   private static let requiredDomainFields = [
     "id",
@@ -202,7 +202,7 @@ public struct SwiftDeletionReadinessValidator: Sendable {
     "acceptedReviewWorkflowId",
     "acceptedReviewNodeId",
     "acceptedReviewFindingSeverities",
-    "notes",
+    "notes"
   ]
   private static let requiredTopLevelFields = [
     "schemaVersion",
@@ -210,7 +210,7 @@ public struct SwiftDeletionReadinessValidator: Sendable {
     "allowsTypeScriptDeletion",
     "productionSwiftPackagingReady",
     "typeScriptSourceDeletionReady",
-    "domains",
+    "domains"
   ]
 
   public init() {}

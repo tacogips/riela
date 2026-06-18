@@ -451,14 +451,14 @@ private final class ManagedCodexProcess: @unchecked Sendable {
     }
     outputGroup.wait()
     return CodexProcessExecution(
-      stdout: String(decoding: outputBuffers.stdout(), as: UTF8.self),
-      stderr: String(decoding: outputBuffers.stderr(), as: UTF8.self),
+      stdout: processOutputString(from: outputBuffers.stdout()),
+      stderr: processOutputString(from: outputBuffers.stderr()),
       exitCode: process?.terminationStatus ?? 127
     )
   }
 }
 
-fileprivate final class ProcessOutputBuffers: @unchecked Sendable {
+private final class ProcessOutputBuffers: @unchecked Sendable {
   private let condition = NSCondition()
   private var stdoutData = Data()
   private var stderrData = Data()
@@ -469,7 +469,7 @@ fileprivate final class ProcessOutputBuffers: @unchecked Sendable {
   func appendStdout(_ data: Data) {
     condition.lock()
     stdoutData.append(data)
-    stdoutPartial += String(decoding: data, as: UTF8.self)
+    stdoutPartial += processOutputString(from: data)
     drainCompleteStdoutLines()
     condition.broadcast()
     condition.unlock()
@@ -668,7 +668,7 @@ public enum CodexAgentSDK {
     var payload: JSONObject = [
       "timestamp": .string(line.timestamp),
       "type": .string(line.type),
-      "payload": line.payload,
+      "payload": line.payload
     ]
     if let object = line.payloadObject {
       payload.merge(object) { current, _ in current }
@@ -720,7 +720,7 @@ public final class CodexProcessRunningSession: CodexRunningSession, @unchecked S
     return [
       "sessionId": sessionId,
       "processId": processRecord.id,
-      "status": closed ? "completed" : "running",
+      "status": closed ? "completed" : "running"
     ]
   }
 
@@ -1094,6 +1094,12 @@ private func jsonString(_ value: JSONValue) -> String {
   guard let data = try? encoder.encode(value) else {
     return "\(value)"
   }
+  return String(data: data, encoding: .utf8) ?? ""
+}
+
+private func processOutputString(from data: Data) -> String {
+  // Preserve subprocess output with replacement characters instead of dropping invalid chunks.
+  // swiftlint:disable:next optional_data_string_conversion
   return String(decoding: data, as: UTF8.self)
 }
 

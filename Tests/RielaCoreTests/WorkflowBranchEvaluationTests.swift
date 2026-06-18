@@ -22,7 +22,7 @@ final class WorkflowBranchEvaluationTests: XCTestCase {
     XCTAssertTrue(evaluator.evaluate(label: "!(planning_only || needs_design_revision || needs_revision)", when: [
       "planning_only": false,
       "needs_design_revision": false,
-      "needs_revision": false,
+      "needs_revision": false
     ]))
   }
 }

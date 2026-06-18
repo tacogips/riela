@@ -66,7 +66,7 @@ public actor DispatchingNodeAdapter: NodeAdapter {
       },
       .officialAnthropicSDK: {
         AnthropicSDKAdapter(configuration: configuration.anthropicSDK)
-      },
+      }
     ]
   }
 }

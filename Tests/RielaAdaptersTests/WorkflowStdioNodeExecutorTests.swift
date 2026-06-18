@@ -36,7 +36,7 @@ final class WorkflowStdioNodeExecutorTests: XCTestCase {
             "RIELA_MAILBOX_DIR": "/tmp/legacy",
             "RIELA_WORKFLOW_INPUT": "legacy-input",
             "RIELA_WORKFLOW_OUTPUT": "legacy-output",
-            "KEEP": "1",
+            "KEEP": "1"
           ]
         )
       )),
@@ -79,7 +79,7 @@ final class WorkflowStdioNodeExecutorTests: XCTestCase {
         "--state",
         ".riela-data/x-follower-ai-business-digest/mock-state.json",
         "--status",
-        "ready",
+        "ready"
       ])
       XCTAssertEqual(configuration.environment["STATE_FILE"], ".riela-data/x-follower-ai-business-digest/mock-state.json")
       XCTAssertEqual(configuration.environment["UPSTREAM"], "ready")
@@ -99,7 +99,7 @@ final class WorkflowStdioNodeExecutorTests: XCTestCase {
             arguments: ["--state", "{{workflowInput.stateFile}}", "--status", "{{input.upstream}}"],
             environment: [
               "STATE_FILE": "{{workflowInput.stateFile}}",
-              "UPSTREAM": "{{upstream}}",
+              "UPSTREAM": "{{upstream}}"
             ]
           )
         ),
@@ -179,7 +179,7 @@ final class WorkflowStdioNodeExecutorTests: XCTestCase {
             "RIELA_MAILBOX_DIR": "/tmp/legacy",
             "RIELA_WORKFLOW_INPUT": "legacy-input",
             "RIELA_WORKFLOW_OUTPUT": "legacy-output",
-            "APP_ENV": "test",
+            "APP_ENV": "test"
           ]
         )
       )),

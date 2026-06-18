@@ -142,7 +142,7 @@ final class NativeBundleAddonContractsTests: XCTestCase {
     let opener = FakeDynamicLibraryOpener(symbols: [
       NativeBundlePluginSymbolNames.descriptor: symbolPointer(nativeBundleDescriptorSymbol as NativeBundleDescriptorSymbol),
       NativeBundlePluginSymbolNames.execute: symbolPointer(nativeBundleExecuteSymbol as NativeBundleExecuteSymbol),
-      NativeBundlePluginSymbolNames.free: symbolPointer(nativeBundleFreeSymbol as NativeBundleFreeSymbol),
+      NativeBundlePluginSymbolNames.free: symbolPointer(nativeBundleFreeSymbol as NativeBundleFreeSymbol)
     ])
     let snapshotValidator = FakeInstallSnapshotValidator()
     let verifier = FakeCodeSignatureVerifier()
@@ -172,7 +172,7 @@ final class NativeBundleAddonContractsTests: XCTestCase {
     )
     let opener = FakeDynamicLibraryOpener(symbols: [
       NativeBundlePluginSymbolNames.descriptor: symbolPointer(nativeBundleDescriptorSymbol as NativeBundleDescriptorSymbol),
-      NativeBundlePluginSymbolNames.execute: symbolPointer(nativeBundleExecuteSymbol as NativeBundleExecuteSymbol),
+      NativeBundlePluginSymbolNames.execute: symbolPointer(nativeBundleExecuteSymbol as NativeBundleExecuteSymbol)
     ])
     let snapshotValidator = FakeInstallSnapshotValidator()
     let verifier = FakeCodeSignatureVerifier()
@@ -513,7 +513,7 @@ private func allocatedBytes(_ bytes: [UInt8]) -> UnsafeMutablePointer<CChar> {
 
 private func jsonString<T: Encodable>(_ value: T) throws -> String {
   let data = try JSONEncoder().encode(value)
-  return String(decoding: data, as: UTF8.self)
+  return try XCTUnwrap(String(data: data, encoding: .utf8))
 }
 
 private func symbolPointer<T>(_ symbol: T) -> UnsafeMutableRawPointer {

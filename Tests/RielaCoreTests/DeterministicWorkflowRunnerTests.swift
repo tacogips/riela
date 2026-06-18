@@ -40,7 +40,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       output: NodeOutputContract(
         jsonSchema: [
           "type": .string("object"),
-          "required": .array([.string("status")]),
+          "required": .array([.string("status")])
         ]
       )
     )
@@ -80,7 +80,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       nodeRegistry: [
         WorkflowNodeRegistryRef(id: "node", nodeFile: "nodes/node.json"),
         WorkflowNodeRegistryRef(id: "left-node", nodeFile: "nodes/left-node.json"),
-        WorkflowNodeRegistryRef(id: "right-node", nodeFile: "nodes/right-node.json"),
+        WorkflowNodeRegistryRef(id: "right-node", nodeFile: "nodes/right-node.json")
       ],
       steps: [
         WorkflowStepRef(
@@ -88,16 +88,16 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
           nodeId: "node",
           transitions: [
             WorkflowStepTransition(toStepId: "left"),
-            WorkflowStepTransition(toStepId: "right"),
+            WorkflowStepTransition(toStepId: "right")
           ]
         ),
         WorkflowStepRef(id: "left", nodeId: "left-node"),
-        WorkflowStepRef(id: "right", nodeId: "right-node"),
+        WorkflowStepRef(id: "right", nodeId: "right-node")
       ],
       nodes: [
         WorkflowNodeRef(id: "step", nodeFile: "nodes/node.json"),
         WorkflowNodeRef(id: "left", nodeFile: "nodes/left-node.json"),
-        WorkflowNodeRef(id: "right", nodeFile: "nodes/right-node.json"),
+        WorkflowNodeRef(id: "right", nodeFile: "nodes/right-node.json")
       ]
     )
     let runner = DeterministicWorkflowRunner(store: store, adapter: StaticAdapter(output: output()))
@@ -107,7 +107,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       nodePayloads: [
         "node": payload(),
         "left-node": payload(),
-        "right-node": payload(),
+        "right-node": payload()
       ]
     )))
 
@@ -130,7 +130,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       nodeRegistry: [
         WorkflowNodeRegistryRef(id: "node", nodeFile: "nodes/node.json"),
         WorkflowNodeRegistryRef(id: "left-node", nodeFile: "nodes/left-node.json"),
-        WorkflowNodeRegistryRef(id: "right-node", nodeFile: "nodes/right-node.json"),
+        WorkflowNodeRegistryRef(id: "right-node", nodeFile: "nodes/right-node.json")
       ],
       steps: [
         WorkflowStepRef(
@@ -138,16 +138,16 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
           nodeId: "node",
           transitions: [
             WorkflowStepTransition(toStepId: "left", label: "left"),
-            WorkflowStepTransition(toStepId: "right", label: "right"),
+            WorkflowStepTransition(toStepId: "right", label: "right")
           ]
         ),
         WorkflowStepRef(id: "left", nodeId: "left-node"),
-        WorkflowStepRef(id: "right", nodeId: "right-node"),
+        WorkflowStepRef(id: "right", nodeId: "right-node")
       ],
       nodes: [
         WorkflowNodeRef(id: "step", nodeFile: "nodes/node.json"),
         WorkflowNodeRef(id: "left", nodeFile: "nodes/left-node.json"),
-        WorkflowNodeRef(id: "right", nodeFile: "nodes/right-node.json"),
+        WorkflowNodeRef(id: "right", nodeFile: "nodes/right-node.json")
       ]
     )
     let runner = DeterministicWorkflowRunner(
@@ -160,7 +160,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
         when: ["left": false, "right": false],
         payload: [
           "when": .object(["left": .bool(true), "right": .bool(true)]),
-          "payload": .object(["status": .string("ok")]),
+          "payload": .object(["status": .string("ok")])
         ]
       ))
     )
@@ -170,7 +170,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       nodePayloads: [
         "node": payload(),
         "left-node": payload(),
-        "right-node": payload(),
+        "right-node": payload()
       ]
     )))
 
@@ -193,7 +193,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       entryStepId: "step",
       nodeRegistry: [
         WorkflowNodeRegistryRef(id: "node", nodeFile: "nodes/node.json"),
-        WorkflowNodeRegistryRef(id: "next-node", nodeFile: "nodes/next-node.json"),
+        WorkflowNodeRegistryRef(id: "next-node", nodeFile: "nodes/next-node.json")
       ],
       steps: [
         WorkflowStepRef(
@@ -201,11 +201,11 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
           nodeId: "node",
           transitions: [WorkflowStepTransition(toStepId: "next", label: "!(needs_revision)")]
         ),
-        WorkflowStepRef(id: "next", nodeId: "next-node"),
+        WorkflowStepRef(id: "next", nodeId: "next-node")
       ],
       nodes: [
         WorkflowNodeRef(id: "step", nodeFile: "nodes/node.json"),
-        WorkflowNodeRef(id: "next", nodeFile: "nodes/next-node.json"),
+        WorkflowNodeRef(id: "next", nodeFile: "nodes/next-node.json")
       ]
     )
     let runner = DeterministicWorkflowRunner(
@@ -217,7 +217,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       workflow: workflow,
       nodePayloads: [
         "node": payload(),
-        "next-node": payload(),
+        "next-node": payload()
       ]
     ))
 
@@ -238,7 +238,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       nodeRegistry: [
         WorkflowNodeRegistryRef(id: "node", nodeFile: "nodes/node.json"),
         WorkflowNodeRegistryRef(id: "left-node", nodeFile: "nodes/left-node.json"),
-        WorkflowNodeRegistryRef(id: "right-node", nodeFile: "nodes/right-node.json"),
+        WorkflowNodeRegistryRef(id: "right-node", nodeFile: "nodes/right-node.json")
       ],
       steps: [
         WorkflowStepRef(
@@ -246,16 +246,16 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
           nodeId: "node",
           transitions: [
             WorkflowStepTransition(toStepId: "left", label: "!(left)"),
-            WorkflowStepTransition(toStepId: "right", label: "!(right)"),
+            WorkflowStepTransition(toStepId: "right", label: "!(right)")
           ]
         ),
         WorkflowStepRef(id: "left", nodeId: "left-node"),
-        WorkflowStepRef(id: "right", nodeId: "right-node"),
+        WorkflowStepRef(id: "right", nodeId: "right-node")
       ],
       nodes: [
         WorkflowNodeRef(id: "step", nodeFile: "nodes/node.json"),
         WorkflowNodeRef(id: "left", nodeFile: "nodes/left-node.json"),
-        WorkflowNodeRef(id: "right", nodeFile: "nodes/right-node.json"),
+        WorkflowNodeRef(id: "right", nodeFile: "nodes/right-node.json")
       ]
     )
     let runner = DeterministicWorkflowRunner(
@@ -268,7 +268,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       nodePayloads: [
         "node": payload(),
         "left-node": payload(),
-        "right-node": payload(),
+        "right-node": payload()
       ]
     )))
 
@@ -576,7 +576,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       nodeRegistry: [
         WorkflowNodeRegistryRef(id: "node", nodeFile: "nodes/node.json"),
         WorkflowNodeRegistryRef(id: "left-node", nodeFile: "nodes/left-node.json"),
-        WorkflowNodeRegistryRef(id: "right-node", nodeFile: "nodes/right-node.json"),
+        WorkflowNodeRegistryRef(id: "right-node", nodeFile: "nodes/right-node.json")
       ],
       steps: [
         WorkflowStepRef(
@@ -584,16 +584,16 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
           nodeId: "node",
           transitions: [
             WorkflowStepTransition(toStepId: "left"),
-            WorkflowStepTransition(toStepId: "right"),
+            WorkflowStepTransition(toStepId: "right")
           ]
         ),
         WorkflowStepRef(id: "left", nodeId: "left-node"),
-        WorkflowStepRef(id: "right", nodeId: "right-node"),
+        WorkflowStepRef(id: "right", nodeId: "right-node")
       ],
       nodes: [
         WorkflowNodeRef(id: "step", nodeFile: "nodes/node.json"),
         WorkflowNodeRef(id: "left", nodeFile: "nodes/left-node.json"),
-        WorkflowNodeRef(id: "right", nodeFile: "nodes/right-node.json"),
+        WorkflowNodeRef(id: "right", nodeFile: "nodes/right-node.json")
       ]
     )
     let runner = DeterministicWorkflowRunner(
@@ -621,7 +621,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       store: store,
       adapter: StepCapturingAdapter(outputsByStep: [
         "step-a": output(payload: ["status": .string("first")]),
-        "step-b": output(payload: ["status": .string("second")]),
+        "step-b": output(payload: ["status": .string("second")])
       ])
     )
 
@@ -706,15 +706,15 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       entryStepId: "step-a",
       nodeRegistry: [
         WorkflowNodeRegistryRef(id: "node-a", nodeFile: "nodes/a.json"),
-        WorkflowNodeRegistryRef(id: "node-b", nodeFile: "nodes/b.json"),
+        WorkflowNodeRegistryRef(id: "node-b", nodeFile: "nodes/b.json")
       ],
       steps: [
         WorkflowStepRef(id: "step-a", nodeId: "node-a", transitions: [WorkflowStepTransition(toStepId: "step-b")]),
-        WorkflowStepRef(id: "step-b", nodeId: "node-b"),
+        WorkflowStepRef(id: "step-b", nodeId: "node-b")
       ],
       nodes: [
         WorkflowNodeRef(id: "step-a", nodeFile: "nodes/a.json"),
-        WorkflowNodeRef(id: "step-b", nodeFile: "nodes/b.json"),
+        WorkflowNodeRef(id: "step-b", nodeFile: "nodes/b.json")
       ]
     )
   }

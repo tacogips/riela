@@ -11,7 +11,7 @@ final class WorkflowModelTests: XCTestCase {
   }
 
   func testWorkflowDecodesStepAddressedShape() throws {
-    let data = """
+    let data = Data("""
       {
         "workflowId": "sample",
         "description": "Sample workflow",
@@ -20,7 +20,7 @@ final class WorkflowModelTests: XCTestCase {
         "nodes": [{ "id": "main", "nodeFile": "nodes/main.json" }],
         "steps": [{ "id": "main", "nodeId": "main", "role": "worker" }]
       }
-      """.data(using: .utf8)!
+      """.utf8)
 
     let workflow = try JSONDecoder().decode(AuthoredWorkflowJSON.self, from: data)
 
@@ -56,14 +56,14 @@ final class WorkflowModelTests: XCTestCase {
   }
 
   func testCommandExecutionDecodesRielaScriptPathShape() throws {
-    let data = """
+    let data = Data("""
       {
         "scriptPath": "scripts/mock-command.sh",
         "argvTemplate": ["--lane", "command"],
         "envTemplate": { "SHOWCASE_LANE": "command" },
         "workingDirectory": "scripts"
       }
-      """.data(using: .utf8)!
+      """.utf8)
 
     let command = try JSONDecoder().decode(WorkflowCommandExecution.self, from: data)
 
@@ -74,7 +74,7 @@ final class WorkflowModelTests: XCTestCase {
   }
 
   func testContainerExecutionDecodesRielaBuildShape() throws {
-    let data = """
+    let data = Data("""
       {
         "build": {
           "contextPath": "containers/mock-worker",
@@ -85,7 +85,7 @@ final class WorkflowModelTests: XCTestCase {
         "envTemplate": { "SHOWCASE_LANE": "container" },
         "workingDirectory": "/workspace"
       }
-      """.data(using: .utf8)!
+      """.utf8)
 
     let container = try JSONDecoder().decode(WorkflowContainerExecution.self, from: data)
 
@@ -96,7 +96,7 @@ final class WorkflowModelTests: XCTestCase {
   }
 
   func testWorkflowValidationRejectsRemovedTopLevelEdgesAndBrokenStepReference() throws {
-    let data = """
+    let data = Data("""
       {
         "workflowId": "broken",
         "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 3 },
@@ -105,7 +105,7 @@ final class WorkflowModelTests: XCTestCase {
         "steps": [{ "id": "main-step", "nodeId": "missing-node", "role": "worker" }],
         "edges": [{ "from": "main-step", "to": "other-step" }]
       }
-      """.data(using: .utf8)!
+      """.utf8)
 
     let diagnostics = validateAuthoredWorkflowData(data).diagnostics
 
@@ -127,7 +127,7 @@ final class WorkflowModelTests: XCTestCase {
   }
 
   func testWorkflowValidationRejectsUnsafeWorkflowRelativeFilePaths() throws {
-    let data = """
+    let data = Data("""
       {
         "workflowId": "unsafe-paths",
         "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 3 },
@@ -146,7 +146,7 @@ final class WorkflowModelTests: XCTestCase {
           { "id": "bad-step-file", "nodeId": "safe-node", "stepFile": "../manager-step.json" }
         ]
       }
-      """.data(using: .utf8)!
+      """.utf8)
 
     let diagnostics = validateAuthoredWorkflowData(data).diagnostics
 

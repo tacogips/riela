@@ -374,8 +374,7 @@ private func resolveSessionId(fallback: String, chunk: JSONObject) -> String {
     let payload = objectValue(chunk["payload"]),
     let meta = objectValue(payload["meta"]),
     let id = stringValue(meta["id"]),
-    !id.isEmpty
-  {
+    !id.isEmpty {
     return id
   }
   if let sessionId = stringValue(chunk["sessionId"]), !sessionId.isEmpty {

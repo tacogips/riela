@@ -190,7 +190,7 @@ private struct MockCursorReadinessOperations: CursorCLIAgentReadinessOperations 
     CursorBackendToolVersions(
       packageVersion: "0.1.0",
       tools: [
-        AgentBackendToolInfo(name: "cursor-agent", command: "cursor-agent", version: "0.45.0", status: .available),
+        AgentBackendToolInfo(name: "cursor-agent", command: "cursor-agent", version: "0.45.0", status: .available)
       ]
     )
   }
@@ -300,9 +300,9 @@ final class AgentAdapterTests: XCTestCase {
               .object([
                 "mediaType": .string("image/png"),
                 "source": .object(["downloadPath": .string("/tmp/source.png")])
-              ]),
+              ])
             ])
-          ]),
+          ])
         ]
       ),
       context: AdapterExecutionContext(deadline: deadline)
@@ -321,7 +321,7 @@ final class AgentAdapterTests: XCTestCase {
         "codex-dev", "exec", "--json", "--model", "model", "-c", #"model_reasoning_effort="high""#,
         "--sandbox", "workspace-write", "--dangerously-bypass-approvals-and-sandbox", "--image",
         "/tmp/screenshot.png", "--image", "/tmp/duplicate.png", "--image", "/tmp/nested.png",
-        "--image", "/tmp/source.png", "--image", "/tmp/argument.png", "--", "system\n\nhello",
+        "--image", "/tmp/source.png", "--image", "/tmp/argument.png", "--", "system\n\nhello"
       ]
     )
     XCTAssertEqual(run.configuration.environment["RIELA_AGENT_BACKEND"], "codex-agent")
@@ -373,7 +373,7 @@ final class AgentAdapterTests: XCTestCase {
         "-c",
         #"model_reasoning_effort="high""#,
         "--skip-git-repo-check",
-        "test prompt",
+        "test prompt"
       ]
     )
   }
@@ -410,7 +410,7 @@ final class AgentAdapterTests: XCTestCase {
         "./one.png",
         "--",
         "session-1",
-        "resume prompt",
+        "resume prompt"
       ]
     )
   }
@@ -447,7 +447,7 @@ final class AgentAdapterTests: XCTestCase {
         "read-only",
         "-c",
         #"model_reasoning_effort="medium""#,
-        "--skip-git-repo-check",
+        "--skip-git-repo-check"
       ]
     )
     XCTAssertFalse(args.contains("--ask-for-approval"))
@@ -534,7 +534,7 @@ final class AgentAdapterTests: XCTestCase {
         systemPromptText: "system",
         variables: [
           "attachmentPaths": .array([.string("/tmp/b/note.txt")]),
-          "claudeAdditionalArgs": .array([.string("--allowedTools"), .string("Read")]),
+          "claudeAdditionalArgs": .array([.string("--allowedTools"), .string("Read")])
         ],
         arguments: [
           "imagePaths": .array([.string("/tmp/a/image.png")])
@@ -560,7 +560,7 @@ final class AgentAdapterTests: XCTestCase {
       [
         "claude-dev", "-p", "--output-format", "text", "--model", "model", "--effort", "medium",
         "--permission-mode", "plan", "--add-dir", "/tmp/a", "--add-dir", "/tmp/b", "--add-dir",
-        "/tmp/c", "--verbose", "--allowedTools", "Read",
+        "/tmp/c", "--verbose", "--allowedTools", "Read"
       ]
     )
     XCTAssertEqual(run.configuration.environment["RIELA_AGENT_BACKEND"], "claude-code-agent")
@@ -612,7 +612,7 @@ final class AgentAdapterTests: XCTestCase {
       runs.prefix(2).map(\.configuration.arguments),
       [
         ["cursor-dev", "--version"],
-        ["cursor-dev", "--print", "--output-format", "text", "--model", "model", "--", "Reply with exactly OK."],
+        ["cursor-dev", "--print", "--output-format", "text", "--model", "model", "--", "Reply with exactly OK."]
       ]
     )
     XCTAssertEqual(runs.first?.configuration.environment["RIELA_AGENT_BACKEND"], "cursor-cli-agent")
@@ -623,7 +623,7 @@ final class AgentAdapterTests: XCTestCase {
       [
         "cursor-dev", "--print", "--output-format", "stream-json", "--model", "model", "--mode",
         "ask", "--image", "/tmp/screenshot.png", "--force", "--workspace", "/tmp/work", "--",
-        "system\n\nhello",
+        "system\n\nhello"
       ]
     )
     XCTAssertEqual(run.configuration.environment["RIELA_AGENT_BACKEND"], "cursor-cli-agent")
@@ -739,9 +739,9 @@ final class AgentAdapterTests: XCTestCase {
               .object([
                 "mimetype": .string("image/webp"),
                 "source": .object(["imagePath": .string("/tmp/source.webp")])
-              ]),
+              ])
             ])
-          ]),
+          ])
         ]
       )
     )
@@ -852,7 +852,7 @@ final class AgentAdapterTests: XCTestCase {
   func testCodexDefaultAuthPreflightMapsLoginFailureToPolicyBlockedBeforeCommand() async throws {
     let runner = SequencedRunner([
       LocalAgentProcessResult(stdout: "", stderr: "not logged in", terminationStatus: 1),
-      LocalAgentProcessResult(stdout: "should not run", stderr: "", terminationStatus: 0),
+      LocalAgentProcessResult(stdout: "should not run", stderr: "", terminationStatus: 0)
     ])
     let adapter = CodexAgentAdapter(runner: runner, environment: ["CODEX_HOME": "/tmp/codex-home"])
 
@@ -871,7 +871,7 @@ final class AgentAdapterTests: XCTestCase {
 
   func testClaudeDefaultPreflightMapsUnavailableCliAndAuthToPolicyBlockedBeforeCommand() async throws {
     let unavailableCliRunner = SequencedRunner([
-      LocalAgentProcessResult(stdout: "", stderr: "claude: command not found", terminationStatus: 127),
+      LocalAgentProcessResult(stdout: "", stderr: "claude: command not found", terminationStatus: 127)
     ])
     let unavailableCliAdapter = ClaudeCodeAgentAdapter(runner: unavailableCliRunner)
 
@@ -885,7 +885,7 @@ final class AgentAdapterTests: XCTestCase {
 
     let authFailureRunner = SequencedRunner([
       LocalAgentProcessResult(stdout: "2.1.86", stderr: "", terminationStatus: 0),
-      LocalAgentProcessResult(stdout: #"{"loggedIn":false}"#, stderr: "", terminationStatus: 0),
+      LocalAgentProcessResult(stdout: #"{"loggedIn":false}"#, stderr: "", terminationStatus: 0)
     ])
     let authFailureAdapter = ClaudeCodeAgentAdapter(runner: authFailureRunner, environment: ["CLAUDE_CONFIG_DIR": "/tmp/claude-home"])
 
@@ -904,7 +904,7 @@ final class AgentAdapterTests: XCTestCase {
 
   func testCursorDefaultPreflightMapsUnavailableCliAuthAndModelToPolicyBlockedBeforeCommand() async throws {
     let unavailableCliRunner = SequencedRunner([
-      LocalAgentProcessResult(stdout: "", stderr: "cursor-agent: command not found", terminationStatus: 127),
+      LocalAgentProcessResult(stdout: "", stderr: "cursor-agent: command not found", terminationStatus: 127)
     ])
     let unavailableCliAdapter = CursorCLIAgentAdapter(runner: unavailableCliRunner)
 
@@ -918,7 +918,7 @@ final class AgentAdapterTests: XCTestCase {
 
     let authFailureRunner = SequencedRunner([
       LocalAgentProcessResult(stdout: "0.45.0", stderr: "", terminationStatus: 0),
-      LocalAgentProcessResult(stdout: "", stderr: "login expired", terminationStatus: 1),
+      LocalAgentProcessResult(stdout: "", stderr: "login expired", terminationStatus: 1)
     ])
     let authFailureAdapter = CursorCLIAgentAdapter(runner: authFailureRunner)
 
@@ -932,7 +932,7 @@ final class AgentAdapterTests: XCTestCase {
 
     let modelFailureRunner = SequencedRunner([
       LocalAgentProcessResult(stdout: "0.45.0", stderr: "", terminationStatus: 0),
-      LocalAgentProcessResult(stdout: "", stderr: "model is not enabled", terminationStatus: 1),
+      LocalAgentProcessResult(stdout: "", stderr: "model is not enabled", terminationStatus: 1)
     ])
     let modelFailureAdapter = CursorCLIAgentAdapter(runner: modelFailureRunner, environment: ["CURSOR_CONFIG_DIR": "/tmp/cursor-home"])
 
@@ -949,16 +949,18 @@ final class AgentAdapterTests: XCTestCase {
       runs.map(\.configuration.arguments),
       [
         ["cursor-agent", "--version"],
-        ["cursor-agent", "--print", "--output-format", "text", "--model", "model", "--", "Reply with exactly OK."],
+        ["cursor-agent", "--print", "--output-format", "text", "--model", "model", "--", "Reply with exactly OK."]
       ]
     )
     XCTAssertEqual(runs.map { $0.configuration.environment["CURSOR_CONFIG_DIR"] }, ["/tmp/cursor-home", "/tmp/cursor-home"])
   }
+}
 
+extension AgentAdapterTests {
   func testCursorDefaultPreflightUsesResolvedGpt55ModelInProbeAndDiagnostics() async throws {
     let modelFailureRunner = SequencedRunner([
       LocalAgentProcessResult(stdout: "0.45.0", stderr: "", terminationStatus: 0),
-      LocalAgentProcessResult(stdout: "", stderr: "model is not enabled", terminationStatus: 1),
+      LocalAgentProcessResult(stdout: "", stderr: "model is not enabled", terminationStatus: 1)
     ])
     let modelFailureAdapter = CursorCLIAgentAdapter(runner: modelFailureRunner)
 
@@ -979,7 +981,7 @@ final class AgentAdapterTests: XCTestCase {
       runs.map(\.configuration.arguments),
       [
         ["cursor-agent", "--version"],
-        ["cursor-agent", "--print", "--output-format", "text", "--model", "gpt-5.5-high", "--", "Reply with exactly OK."],
+        ["cursor-agent", "--print", "--output-format", "text", "--model", "gpt-5.5-high", "--", "Reply with exactly OK."]
       ]
     )
   }
@@ -1043,7 +1045,7 @@ final class AgentAdapterTests: XCTestCase {
 
     let claudeAuthRunner = OutcomeRunner([
       .result(LocalAgentProcessResult(stdout: "2.1.86", stderr: "", terminationStatus: 0)),
-      .error(timeout),
+      .error(timeout)
     ])
     do {
       _ = try await ClaudeCodeAgentAdapter(runner: claudeAuthRunner).execute(
@@ -1072,7 +1074,7 @@ final class AgentAdapterTests: XCTestCase {
 
     let cursorModelRunner = OutcomeRunner([
       .result(LocalAgentProcessResult(stdout: "0.45.0", stderr: "", terminationStatus: 0)),
-      .error(timeout),
+      .error(timeout)
     ])
     do {
       _ = try await CursorCLIAgentAdapter(runner: cursorModelRunner).execute(
@@ -1191,7 +1193,7 @@ final class AgentAdapterTests: XCTestCase {
     let bearerToken = "abcdefghijklmnopqrstuvwxyz" + "123456"
     let stderr = [
       "OPENAI_API_KEY=\(openAIKey) ANTHROPIC_API_KEY=\(anthropicKey) CURSOR_API_KEY=\(cursorKey)",
-      "Authorization: Bearer \(bearerToken)",
+      "Authorization: Bearer \(bearerToken)"
     ].joined(separator: "\n")
     let adapter = CodexAgentAdapter(runner: CapturingRunner(output: "", error: stderr, status: 1), authPreflight: false)
 
@@ -1311,7 +1313,7 @@ final class AgentAdapterTests: XCTestCase {
           "-c",
           "if : <&$1 2>/dev/null; then echo inherited; else echo closed; fi",
           "riela-fd-test",
-          String(descriptor),
+          String(descriptor)
         ]
       ),
       stdin: "",
@@ -1500,8 +1502,7 @@ final class AgentAdapterTests: XCTestCase {
     let deadline = Date(timeIntervalSinceNow: 2)
     while Date() < deadline {
       if let pidText = try? String(contentsOf: pidFile).trimmingCharacters(in: .whitespacesAndNewlines),
-         let processId = pid_t(pidText)
-      {
+         let processId = pid_t(pidText) {
         return processId
       }
       usleep(50_000)
@@ -1718,4 +1719,5 @@ final class AgentAdapterTests: XCTestCase {
       mergedVariables: mergedVariables
     )
   }
-}
+// File splitting would be the normal file_length fix, but this worker may edit only this owned file.
+} // swiftlint:disable:this file_length

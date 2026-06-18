@@ -241,9 +241,13 @@ public enum CodexAgentReadiness {
       return agentUnknownResult(candidate, "codex-agent account readiness could not be verified because no model is authored")
     }
     guard availability.ok else {
+      let detail = compactAgentReadinessMessage(
+        availability.probe.error ?? availability.auth.error ?? availability.probe.output,
+        fallback: "model check failed"
+      )
       return AgentBackendValidationResult(
         status: .invalid,
-        message: "codex-agent account is not usable for model '\(availability.model)': \(compactAgentReadinessMessage(availability.probe.error ?? availability.auth.error ?? availability.probe.output, fallback: "model check failed"))",
+        message: "codex-agent account is not usable for model '\(availability.model)': \(detail)",
         candidate: candidate
       )
     }
@@ -259,9 +263,13 @@ public enum CodexAgentReadiness {
     availability: CodexBackendModelAvailability
   ) -> AgentBackendValidationResult {
     guard availability.ok else {
+      let detail = compactAgentReadinessMessage(
+        availability.probe.error ?? availability.auth.error ?? availability.probe.output,
+        fallback: "model check failed"
+      )
       return AgentBackendValidationResult(
         status: .invalid,
-        message: "codex-agent model '\(availability.model)' is not reachable: \(compactAgentReadinessMessage(availability.probe.error ?? availability.auth.error ?? availability.probe.output, fallback: "model check failed"))",
+        message: "codex-agent model '\(availability.model)' is not reachable: \(detail)",
         candidate: candidate
       )
     }

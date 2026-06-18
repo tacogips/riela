@@ -1,3 +1,6 @@
+// swiftlint:disable file_length
+// CLI workflow commands aggregate parser-facing result models and command runners in one production entrypoint.
+// Splitting it requires target-boundary edits outside this worker group's owned file, so the file_length rule is not actionable here.
 import Foundation
 import RielaAdapters
 import RielaAddons
@@ -325,7 +328,7 @@ public struct URLSessionWorkflowGraphQLRunTransport: WorkflowGraphQLRunTransport
 private func remoteRunInputObject(_ request: WorkflowRemoteRunRequest) -> JSONObject {
   var input: JSONObject = [
     "workflowName": .string(request.workflowName),
-    "runtimeVariables": .object(request.runtimeVariables),
+    "runtimeVariables": .object(request.runtimeVariables)
   ]
   if request.autoImprove {
     input["autoImprove"] = .object(remoteAutoImprovePolicyInput(request.autoImprovePolicy))
@@ -364,7 +367,7 @@ private func remoteAutoImprovePolicyInput(_ policy: WorkflowAutoImprovePolicy) -
     "maxSupervisedAttempts": .number(Double(policy.maxSupervisedAttempts)),
     "maxWorkflowPatches": .number(Double(policy.maxWorkflowPatches)),
     "monitorIntervalMs": .number(Double(policy.monitorIntervalMs)),
-    "stallTimeoutMs": .number(Double(policy.stallTimeoutMs)),
+    "stallTimeoutMs": .number(Double(policy.stallTimeoutMs))
   ]
   if policy.workflowMutationMode.isForwardedToRemoteExecution {
     input["workflowMutationMode"] = .string(policy.workflowMutationMode.rawValue)
@@ -506,7 +509,7 @@ public struct WorkflowManifestValidateCommand: Sendable {
       return try jsonString(result)
     case .text, .table:
       var lines = [
-        result.valid ? "valid: \(result.manifestPath)" : "invalid: \(result.manifestPath)",
+        result.valid ? "valid: \(result.manifestPath)" : "invalid: \(result.manifestPath)"
       ]
       lines.append(contentsOf: result.issues.map { "\($0.code): \($0.path): \($0.message)" })
       return lines.joined(separator: "\n") + "\n"
@@ -749,7 +752,7 @@ public struct WorkflowValidateCommand: Sendable {
     case .text, .table:
       var lines = [
         result.valid ? "valid: \(result.workflowId)" : "invalid: \(result.workflowId)",
-        "source: \(result.sourceScope.rawValue) \(result.workflowDirectory)",
+        "source: \(result.sourceScope.rawValue) \(result.workflowDirectory)"
       ]
       lines.append(contentsOf: result.diagnostics.map { "\($0.severity.rawValue): \($0.path): \($0.message)" })
       lines.append(contentsOf: result.nodeValidationResults.map { "\($0.valid ? "ok" : "error"): \($0.nodeId): \($0.message)" })
@@ -1018,7 +1021,7 @@ public struct WorkflowInspectCommand: Sendable {
       "entryStepId: \(summary.entryStepId)",
       "steps: \(summary.stepIds.joined(separator: ", "))",
       "nodes: \(summary.nodeRegistryIds.joined(separator: ", "))",
-      "counts: steps=\(summary.counts.steps) nodes=\(summary.counts.nodes) crossWorkflowDispatches=\(summary.counts.crossWorkflowDispatches)",
+      "counts: steps=\(summary.counts.steps) nodes=\(summary.counts.nodes) crossWorkflowDispatches=\(summary.counts.crossWorkflowDispatches)"
     ]
     if let manager = summary.managerStepId {
       lines.append("managerStepId: \(manager)")
@@ -1347,7 +1350,7 @@ public struct WorkflowRunCommand: Sendable {
         "sessionId": .string(current.session.sessionId),
         "stepId": .string(targetStepId),
         "executionId": .string(failedExecution?.executionId ?? ""),
-        "message": .string(failedExecution?.failureReason ?? "workflow failed"),
+        "message": .string(failedExecution?.failureReason ?? "workflow failed")
       ]))
 
       let sourceSessionId = current.session.sessionId
@@ -1373,7 +1376,7 @@ public struct WorkflowRunCommand: Sendable {
         "managerControl": .string("session rerun"),
         "sourceSessionId": .string(sourceSessionId),
         "targetSessionId": .string(rerun.session.sessionId),
-        "targetStepId": .string(targetStepId),
+        "targetStepId": .string(targetStepId)
       ]))
       current = rerun
     }
@@ -1409,15 +1412,15 @@ public struct WorkflowRunCommand: Sendable {
         "monitorIntervalMs": .number(Double(policy.monitorIntervalMs)),
         "stallTimeoutMs": .number(Double(policy.stallTimeoutMs)),
         "workflowMutationMode": .string(policy.workflowMutationMode.rawValue),
-        "nestedSuperviser": .bool(policy.nestedSuperviser),
+        "nestedSuperviser": .bool(policy.nestedSuperviser)
       ]),
       "incidents": .array(incidents),
       "remediations": .array(remediations),
       "managerControl": .object([
         "transport": .string("local-runtime"),
         "targetedRerun": .bool(!remediations.isEmpty),
-        "command": .string("session rerun"),
-      ]),
+        "command": .string("session rerun")
+      ])
     ]
   }
 
@@ -1445,7 +1448,7 @@ public struct WorkflowRunCommand: Sendable {
     case .auto, .direct:
       roots = [
         (.project, workflowRunPackageRoot(scope: .project, workingDirectory: workingDirectory)),
-        (.user, workflowRunPackageRoot(scope: .user, workingDirectory: workingDirectory)),
+        (.user, workflowRunPackageRoot(scope: .user, workingDirectory: workingDirectory))
       ]
     }
     var errors: [String] = []
@@ -1850,5 +1853,9 @@ func jsonString<T: Encodable>(_ value: T) throws -> String {
   let encoder = JSONEncoder()
   encoder.outputFormatting = [.sortedKeys]
   encoder.dateEncodingStrategy = .iso8601
-  return String(decoding: try encoder.encode(value), as: UTF8.self) + "\n"
+  let data = try encoder.encode(value)
+  guard let json = String(data: data, encoding: .utf8) else {
+    throw CLIUsageError("failed to encode JSON as UTF-8")
+  }
+  return json + "\n"
 }

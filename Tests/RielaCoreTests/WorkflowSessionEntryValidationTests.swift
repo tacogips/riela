@@ -97,15 +97,15 @@ final class WorkflowSessionEntryValidationTests: XCTestCase {
       entryStepId: "step-a",
       nodeRegistry: [
         WorkflowNodeRegistryRef(id: "node-a", nodeFile: "nodes/a.json"),
-        WorkflowNodeRegistryRef(id: "node-b", nodeFile: "nodes/b.json"),
+        WorkflowNodeRegistryRef(id: "node-b", nodeFile: "nodes/b.json")
       ],
       steps: [
         WorkflowStepRef(id: "step-a", nodeId: "node-a", transitions: [WorkflowStepTransition(toStepId: "step-b")]),
-        WorkflowStepRef(id: "step-b", nodeId: "node-b"),
+        WorkflowStepRef(id: "step-b", nodeId: "node-b")
       ],
       nodes: [
         WorkflowNodeRef(id: "step-a", nodeFile: "nodes/a.json"),
-        WorkflowNodeRef(id: "step-b", nodeFile: "nodes/b.json"),
+        WorkflowNodeRef(id: "step-b", nodeFile: "nodes/b.json")
       ]
     )
   }

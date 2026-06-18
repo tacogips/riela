@@ -103,7 +103,7 @@ final class OfficialSDKAdapterTests: XCTestCase {
               .object([
                 "content": .array([
                   .object(["type": .string("output_text"), "text": .string(#"{"completionPassed":false,"when":{"needs_revision":true},"payload":{"status":"review"}}"#)]),
-                  .object(["type": .string("ignored"), "text": .string("no")]),
+                  .object(["type": .string("ignored"), "text": .string("no")])
                 ])
               ])
             ])
@@ -137,7 +137,7 @@ final class OfficialSDKAdapterTests: XCTestCase {
             "content": .array([
               .object(["type": .string("text"), "text": .string("first")]),
               .object(["type": .string("tool_use"), "text": .string("ignored")]),
-              .object(["type": .string("text"), "text": .string("second")]),
+              .object(["type": .string("text"), "text": .string("second")])
             ])
           ])
         )
@@ -174,7 +174,7 @@ final class OfficialSDKAdapterTests: XCTestCase {
     let secret = openAITestKey()
     let executor = RecordingOfficialSDKExecutor(outcomes: [
       .failure(AdapterExecutionError(.providerError, "Authorization: Bearer \(secret)")),
-      .success(OfficialSDKResponse(body: .object(["output_text": .string("ok")]))),
+      .success(OfficialSDKResponse(body: .object(["output_text": .string("ok")])))
     ])
     let adapter = OpenAiSDKAdapter(
       configuration: OfficialSDKAdapterConfiguration(
@@ -258,7 +258,7 @@ final class OfficialSDKAdapterTests: XCTestCase {
 
   func testDefaultOpenAIHTTPExecutorBuildsResponsesRequestWithoutInjectedRequestExecutor() async throws {
     let transport = RecordingOfficialSDKHTTPTransport(responses: [
-      httpResponse(["output_text": .string("default openai")])
+      try httpResponse(["output_text": .string("default openai")])
     ])
     let adapter = OpenAiSDKAdapter(
       configuration: OfficialSDKAdapterConfiguration(
@@ -285,7 +285,7 @@ final class OfficialSDKAdapterTests: XCTestCase {
 
   func testDefaultAnthropicHTTPExecutorBuildsMessagesRequestWithoutInjectedRequestExecutor() async throws {
     let transport = RecordingOfficialSDKHTTPTransport(responses: [
-      httpResponse(["content": .array([.object(["type": .string("text"), "text": .string("default anthropic")])])])
+      try httpResponse(["content": .array([.object(["type": .string("text"), "text": .string("default anthropic")])])])
     ])
     let adapter = AnthropicSDKAdapter(
       configuration: AnthropicSDKAdapterConfiguration(
@@ -318,7 +318,7 @@ final class OfficialSDKAdapterTests: XCTestCase {
   func testDefaultHTTPExecutorNormalizesProviderHTTPFailures() async throws {
     let secret = openAITestKey()
     let transport = RecordingOfficialSDKHTTPTransport(responses: [
-      httpResponse(["error": .string("OPENAI_API_KEY=\(secret)")], statusCode: 401)
+      try httpResponse(["error": .string("OPENAI_API_KEY=\(secret)")], statusCode: 401)
     ])
     let adapter = OpenAiSDKAdapter(
       configuration: OfficialSDKAdapterConfiguration(
@@ -342,7 +342,7 @@ final class OfficialSDKAdapterTests: XCTestCase {
   func testDefaultHTTPExecutorRedactsConfiguredAPIKeyValueFromProviderFailures() async throws {
     let secret = "prod-secret-value"
     let transport = RecordingOfficialSDKHTTPTransport(responses: [
-      httpResponse(["error": .string("proxy echoed \(secret)")], statusCode: 502)
+      try httpResponse(["error": .string("proxy echoed \(secret)")], statusCode: 502)
     ])
     let adapter = OpenAiSDKAdapter(
       configuration: OfficialSDKAdapterConfiguration(
@@ -366,7 +366,7 @@ final class OfficialSDKAdapterTests: XCTestCase {
   func testURLSessionOfficialSDKRequestExecutorRedactsDirectHTTPFailures() async throws {
     let secret = "direct-secret-value"
     let transport = RecordingOfficialSDKHTTPTransport(responses: [
-      httpResponse(["error": .string("direct echo \(secret)")], statusCode: 500)
+      try httpResponse(["error": .string("direct echo \(secret)")], statusCode: 500)
     ])
     let executor = URLSessionOfficialSDKRequestExecutor(transport: transport)
 
@@ -468,10 +468,10 @@ final class OfficialSDKAdapterTests: XCTestCase {
 
   func testDispatchingNodeAdapterDefaultOfficialFactoriesUseHTTPExecutors() async throws {
     let openAITransport = RecordingOfficialSDKHTTPTransport(responses: [
-      httpResponse(["output_text": .string("openai default")])
+      try httpResponse(["output_text": .string("openai default")])
     ])
     let anthropicTransport = RecordingOfficialSDKHTTPTransport(responses: [
-      httpResponse(["content": .array([.object(["type": .string("text"), "text": .string("anthropic default")])])])
+      try httpResponse(["content": .array([.object(["type": .string("text"), "text": .string("anthropic default")])])])
     ])
     let adapter = DispatchingNodeAdapter(
       configuration: DispatchingNodeAdapterConfiguration(
@@ -533,8 +533,8 @@ final class OfficialSDKAdapterTests: XCTestCase {
     ["anthropic", "test", "123456"].joined(separator: "-")
   }
 
-  private func httpResponse(_ object: JSONObject, statusCode: Int = 200) -> OfficialSDKHTTPResponse {
-    let body = try! JSONEncoder().encode(JSONValue.object(object))
+  private func httpResponse(_ object: JSONObject, statusCode: Int = 200) throws -> OfficialSDKHTTPResponse {
+    let body = try JSONEncoder().encode(JSONValue.object(object))
     return OfficialSDKHTTPResponse(statusCode: statusCode, body: body)
   }
 

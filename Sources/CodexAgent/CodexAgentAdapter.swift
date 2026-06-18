@@ -232,7 +232,7 @@ private func outputText(from value: JSONValue?) -> String? {
         return nil
       }
       let type = stringValue(object["type"])
-      if (type == "output_text" || type == "text"), let text = stringValue(object["text"]) {
+      if type == "output_text" || type == "text", let text = stringValue(object["text"]) {
         return text
       }
       return outputText(from: object["content"])

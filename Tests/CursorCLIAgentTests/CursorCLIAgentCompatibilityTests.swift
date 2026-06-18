@@ -68,7 +68,7 @@ final class CursorCLIAgentCompatibilityTests: XCTestCase {
       "src/server/routes/events.test.ts",
       "src/server/server.test.ts",
       "src/server/sse.test.ts",
-      "src/usage/manager.test.ts",
+      "src/usage/manager.test.ts"
     ]
     func coverageCategory(for path: String) -> String {
       if path.hasPrefix("src/activity/") { return "activity" }
@@ -153,7 +153,7 @@ final class CursorCLIAgentCompatibilityTests: XCTestCase {
       }),
       ("usage", {
         XCTAssertTrue(CursorCLICLICompatibility.usage().contains("usage"))
-      }),
+      })
     ]
 
     let coverage = Dictionary(uniqueKeysWithValues: legacyTests.map { ($0, coverageCategory(for: $0)) })
@@ -351,8 +351,8 @@ final class CursorCLIAgentCompatibilityTests: XCTestCase {
         "projectPath": .string("/tmp/project"),
         "prompt": .string("ship"),
         "status": .string("pending"),
-        "dependsOn": .array([.string("s1")]),
-      ]),
+        "dependsOn": .array([.string("s1")])
+      ])
     ], context: context)
     XCTAssertEqual(jsonObject(fullSessionAdd.data)?["ok"], .bool(true))
     let groupWithSessionObject = try XCTUnwrap(try CursorCLIGroupPersistence.findGroup(groupId, configDir: config.path))
@@ -389,11 +389,13 @@ final class CursorCLIAgentCompatibilityTests: XCTestCase {
 
     let limitedToken = try CursorCLITokenPersistence.createRawToken(name: "limited", permissions: ["bookmark:*"], configDir: config.path)
     let tokenManagementError = "Token management commands are not available in token-authenticated GraphQL contexts"
-    XCTAssertEqual(CursorCLIGraphQLCommandExecutor.execute(command: "token.list", context: CursorCLIAgentCompatibilityContext(configDir: config.path, authToken: limitedToken)).errors, [tokenManagementError])
-    XCTAssertEqual(CursorCLIGraphQLCommandExecutor.execute(command: "token.create", variables: ["name": .string("blocked")], context: CursorCLIAgentCompatibilityContext(configDir: config.path, authToken: limitedToken)).errors, [tokenManagementError])
-    XCTAssertEqual(CursorCLIGraphQLCommandExecutor.execute(command: "token.revoke", variables: ["id": .string("any")], context: CursorCLIAgentCompatibilityContext(configDir: config.path, authToken: "not-a-token")).errors, [tokenManagementError])
+    let limitedContext = CursorCLIAgentCompatibilityContext(configDir: config.path, authToken: limitedToken)
+    let invalidTokenContext = CursorCLIAgentCompatibilityContext(configDir: config.path, authToken: "not-a-token")
+    XCTAssertEqual(executeCursorGraphQL("token.list", context: limitedContext).errors, [tokenManagementError])
+    XCTAssertEqual(executeCursorGraphQL("token.create", variables: ["name": .string("blocked")], context: limitedContext).errors, [tokenManagementError])
+    XCTAssertEqual(executeCursorGraphQL("token.revoke", variables: ["id": .string("any")], context: invalidTokenContext).errors, [tokenManagementError])
     XCTAssertEqual(CursorCLIAgentCLIApplication.run(arguments: ["token", "create", "--name", "local-ok"], context: context).exitCode, 0)
-    let permissionModeCheck = CursorCLIGraphQLCommandExecutor.execute(command: "model.check", variables: ["model": .string("gpt-5.5"), "approvalMode": .string("allow_all"), "executableName": .string("/usr/bin/true")], context: context)
+    let permissionModeCheck = executeCursorGraphQL("model.check", variables: ["model": .string("gpt-5.5"), "approvalMode": .string("allow_all"), "executableName": .string("/usr/bin/true")], context: context)
     XCTAssertEqual(permissionModeCheck.errors, [])
     XCTAssertEqual(jsonObject(CursorCLIGraphQLCommandExecutor.execute(command: "server.status", context: context).data)?["agent"], .string("cursor-cli-agent"))
     XCTAssertEqual(jsonObject(CursorCLIGraphQLCommandExecutor.execute(command: "daemon.status", context: context).data)?["status"], .string("unsupported"))
@@ -401,7 +403,9 @@ final class CursorCLIAgentCompatibilityTests: XCTestCase {
     XCTAssertEqual(jsonArray(CursorCLIGraphQLCommandExecutor.execute(command: "markdown.tasks", variables: ["markdown": .string("- [x] migrate")], context: context).data)?.count, 1)
     XCTAssertNotNil(CursorCLIGraphQLCommandExecutor.execute(command: "repo.summary", variables: ["projectPath": .string("/tmp/project")], context: context).data)
   }
+}
 
+extension CursorCLIAgentCompatibilityTests {
   func testAuthCliGraphQLPermissionsActivityAndSessionCompatibilityCommands() throws {
     let config = try makeTemporaryDirectory()
     let home = try makeTemporaryDirectory()
@@ -423,7 +427,8 @@ final class CursorCLIAgentCompatibilityTests: XCTestCase {
     XCTAssertEqual(verify.exitCode, 0)
     XCTAssertTrue(verify.stdout.contains(#""requested":"gpt-5.5"#))
 
-    let missingAuth = CursorCLIAgentCLIApplication.run(arguments: ["auth", "status"], context: CursorCLIAgentCompatibilityContext(cursorCLIHome: config.appendingPathComponent("missing-home").path, configDir: config.path))
+    let missingHome = config.appendingPathComponent("missing-home").path
+    let missingAuth = CursorCLIAgentCLIApplication.run(arguments: ["auth", "status"], context: CursorCLIAgentCompatibilityContext(cursorCLIHome: missingHome, configDir: config.path))
     XCTAssertEqual(missingAuth.exitCode, 0)
     let accountOnlyHome = try makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: accountOnlyHome) }
@@ -438,19 +443,17 @@ final class CursorCLIAgentCompatibilityTests: XCTestCase {
     XCTAssertEqual(denied.errors, ["Missing permission: session:read"])
 
     let sessionToken = try CursorCLITokenPersistence.createRawToken(name: "session", permissions: ["session:read"], configDir: config.path)
-    let authorized = CursorCLIGraphQLCommandExecutor.execute(command: "session.list", context: CursorCLIAgentCompatibilityContext(cursorCLIHome: home.path, configDir: config.path, authToken: sessionToken))
+    let sessionReadContext = CursorCLIAgentCompatibilityContext(cursorCLIHome: home.path, configDir: config.path, authToken: sessionToken)
+    let authorized = executeCursorGraphQL("session.list", context: sessionReadContext)
     XCTAssertEqual(authorized.errors, [])
     XCTAssertNotNil(jsonArray(authorized.data))
     for command in ["session.create", "session.pause", "session.resume"] {
       XCTAssertEqual(
-        CursorCLIGraphQLCommandExecutor.execute(command: command, context: CursorCLIAgentCompatibilityContext(cursorCLIHome: home.path, configDir: config.path, authToken: sessionToken)).errors,
+        executeCursorGraphQL(command, context: sessionReadContext).errors,
         ["Missing permission: session:create"]
       )
     }
-    XCTAssertEqual(
-      CursorCLIGraphQLCommandExecutor.execute(command: "session.cancel", context: CursorCLIAgentCompatibilityContext(cursorCLIHome: home.path, configDir: config.path, authToken: sessionToken)).errors,
-      ["Missing permission: session:cancel"]
-    )
+    XCTAssertEqual(executeCursorGraphQL("session.cancel", context: sessionReadContext).errors, ["Missing permission: session:cancel"])
     let sessionCreateToken = try CursorCLITokenPersistence.createRawToken(name: "session-create", permissions: ["session:create"], configDir: config.path)
     let sessionCreateAuthContext = CursorCLIAgentCompatibilityContext(cursorCLIHome: home.path, configDir: config.path, authToken: sessionCreateToken)
     let authorizedCreate = CursorCLIGraphQLCommandExecutor.execute(
@@ -463,9 +466,9 @@ final class CursorCLIAgentCompatibilityTests: XCTestCase {
 
     let store = CursorCLIActivityStore(dataDir: config.path)
     try store.save([CursorCLIStoredActivityEntry(sessionId: "session-auth", status: .working, updatedAt: "2026-06-17T00:00:00Z")])
-    let activityList = CursorCLIGraphQLCommandExecutor.execute(command: "activity.list", context: CursorCLIAgentCompatibilityContext(cursorCLIHome: home.path, configDir: config.path, authToken: sessionToken))
+    let activityList = executeCursorGraphQL("activity.list", context: sessionReadContext)
     XCTAssertEqual(jsonArray(jsonObject(activityList.data)?["entries"])?.count, 1)
-    let activityGet = CursorCLIGraphQLCommandExecutor.execute(command: "activity.get", variables: ["sessionId": .string("session-auth")], context: CursorCLIAgentCompatibilityContext(cursorCLIHome: home.path, configDir: config.path, authToken: sessionToken))
+    let activityGet = executeCursorGraphQL("activity.get", variables: ["sessionId": .string("session-auth")], context: sessionReadContext)
     XCTAssertEqual(jsonObject(activityGet.data)?["status"], .string("working"))
 
     try writeCursorRollout(home: home, sessionId: "session-auth")
@@ -473,30 +476,40 @@ final class CursorCLIAgentCompatibilityTests: XCTestCase {
     try writeCursorSQLiteState(home: home, sessionId: "sqlite-session")
     try writeLegacyCursorProjectSession(home: home, projectPath: "/tmp/legacy-project", sessionId: "88487b4c-f3f6-4a49-b59b-d1d4a098425f")
     try writeLegacyCursorProjectSessionWithoutCwd(home: home, encodedProjectPath: "my-project", sessionId: "relative-legacy-session")
-    let sessionGet = CursorCLIGraphQLCommandExecutor.execute(command: "session.get", variables: ["id": .string("session-auth")], context: CursorCLIAgentCompatibilityContext(cursorCLIHome: home.path, configDir: config.path, authToken: sessionToken))
+    let sessionGet = executeCursorGraphQL("session.get", variables: ["id": .string("session-auth")], context: sessionReadContext)
     XCTAssertEqual(jsonObject(sessionGet.data)?["id"], .string("session-auth"))
-    let projectSessions = CursorCLIGraphQLCommandExecutor.execute(command: "session.list", variables: ["projectPath": .string("/tmp/project")], context: CursorCLIAgentCompatibilityContext(cursorCLIHome: home.path, configDir: config.path, authToken: sessionToken))
+    let projectSessions = executeCursorGraphQL("session.list", variables: ["projectPath": .string("/tmp/project")], context: sessionReadContext)
     XCTAssertEqual(jsonArray(projectSessions.data)?.map { jsonObject($0)?["id"] }, [.string("session-auth")])
-    let sqliteSessions = CursorCLIGraphQLCommandExecutor.execute(command: "session.list", variables: ["projectPath": .string("/tmp/sqlite-project")], context: CursorCLIAgentCompatibilityContext(cursorCLIHome: home.path, configDir: config.path, authToken: sessionToken))
+    let sqliteSessions = executeCursorGraphQL("session.list", variables: ["projectPath": .string("/tmp/sqlite-project")], context: sessionReadContext)
     XCTAssertEqual(jsonArray(sqliteSessions.data)?.map { jsonObject($0)?["id"] }, [.string("sqlite-session")])
-    let legacyProjectSessions = CursorCLIGraphQLCommandExecutor.execute(command: "session.list", variables: ["projectPath": .string("/tmp/legacy-project")], context: CursorCLIAgentCompatibilityContext(cursorCLIHome: home.path, configDir: config.path, authToken: sessionToken))
+    let legacyProjectSessions = executeCursorGraphQL("session.list", variables: ["projectPath": .string("/tmp/legacy-project")], context: sessionReadContext)
     XCTAssertEqual(jsonArray(legacyProjectSessions.data)?.map { jsonObject($0)?["id"] }, [.string("88487b4c-f3f6-4a49-b59b-d1d4a098425f")])
-    let relativeLegacyProjectSessions = CursorCLIGraphQLCommandExecutor.execute(command: "session.list", variables: ["projectPath": .string("my/project")], context: CursorCLIAgentCompatibilityContext(cursorCLIHome: home.path, configDir: config.path, authToken: sessionToken))
+    let relativeLegacyProjectSessions = executeCursorGraphQL("session.list", variables: ["projectPath": .string("my/project")], context: sessionReadContext)
     XCTAssertEqual(jsonArray(relativeLegacyProjectSessions.data)?.map { jsonObject($0)?["id"] }, [.string("relative-legacy-session")])
-    let legacyMessages = CursorCLIGraphQLCommandExecutor.execute(command: "session.messages", variables: ["id": .string("88487b4c-f3f6-4a49-b59b-d1d4a098425f")], context: CursorCLIAgentCompatibilityContext(cursorCLIHome: home.path, configDir: config.path, authToken: sessionToken))
+    let legacyMessages = executeCursorGraphQL(
+      "session.messages",
+      variables: ["id": .string("88487b4c-f3f6-4a49-b59b-d1d4a098425f")],
+      context: sessionReadContext
+    )
     let legacyUserPayload = jsonArray(jsonObject(legacyMessages.data)?["messages"])?
       .compactMap { jsonObject(jsonObject($0)?["payload"]) }
       .first { $0["type"] == .string("UserMessage") }
     XCTAssertEqual(legacyUserPayload?["message"], .string("hello legacy"))
-    let messages = CursorCLIGraphQLCommandExecutor.execute(command: "session.messages", variables: ["id": .string("session-auth")], context: CursorCLIAgentCompatibilityContext(cursorCLIHome: home.path, configDir: config.path, authToken: sessionToken))
+    let messages = executeCursorGraphQL("session.messages", variables: ["id": .string("session-auth")], context: sessionReadContext)
     XCTAssertEqual(jsonArray(jsonObject(messages.data)?["messages"])?.count, 2)
-    let typedSessions = CursorCLIGraphQLCommandExecutor.execute(command: #"query { sessions { nodes { id messageCount } total } }"#, context: CursorCLIAgentCompatibilityContext(cursorCLIHome: home.path, configDir: config.path, authToken: sessionToken))
+    let typedSessions = executeCursorGraphQL(#"query { sessions { nodes { id messageCount } total } }"#, context: sessionReadContext)
     XCTAssertEqual(jsonObject(jsonObject(typedSessions.data)?["sessions"])?.keys.contains("nodes"), true)
-    let typedSessionHistory = CursorCLIGraphQLCommandExecutor.execute(command: #"query { session(id: "session-auth") { id history(limit: 1) { total events { type } } } }"#, context: CursorCLIAgentCompatibilityContext(cursorCLIHome: home.path, configDir: config.path, authToken: sessionToken))
+    let typedSessionHistory = executeCursorGraphQL(
+      #"query { session(id: "session-auth") { id history(limit: 1) { total events { type } } } }"#,
+      context: sessionReadContext
+    )
     XCTAssertEqual(jsonObject(jsonObject(typedSessionHistory.data)?["session"])?.keys.contains("history"), true)
-    let typedSessionGrep = CursorCLIGraphQLCommandExecutor.execute(command: #"query { session(id: "session-auth") { grep(query: "hello", maxMatches: 5) { matched matchCount } } }"#, context: CursorCLIAgentCompatibilityContext(cursorCLIHome: home.path, configDir: config.path, authToken: sessionToken))
+    let typedSessionGrep = executeCursorGraphQL(
+      #"query { session(id: "session-auth") { grep(query: "hello", maxMatches: 5) { matched matchCount } } }"#,
+      context: sessionReadContext
+    )
     XCTAssertEqual(jsonObject(jsonObject(typedSessionGrep.data)?["session"])?.keys.contains("grep"), true)
-    let typedSearch = CursorCLIGraphQLCommandExecutor.execute(command: #"query { searchSessions(query: "hello") { sessionIds total scannedSessions } }"#, context: CursorCLIAgentCompatibilityContext(cursorCLIHome: home.path, configDir: config.path, authToken: sessionToken))
+    let typedSearch = executeCursorGraphQL(#"query { searchSessions(query: "hello") { sessionIds total scannedSessions } }"#, context: sessionReadContext)
     XCTAssertEqual(jsonObject(jsonObject(typedSearch.data)?["searchSessions"])?.keys.contains("sessionIds"), true)
 
     let sessionResume = CursorCLIGraphQLCommandExecutor.execute(
@@ -547,6 +560,7 @@ final class CursorCLIAgentCompatibilityTests: XCTestCase {
     let readToken = try CursorCLITokenPersistence.createRawToken(name: "reader", permissions: ["session:read"], configDir: config.path)
     let runToken = try CursorCLITokenPersistence.createRawToken(name: "runner", permissions: ["group:run"], configDir: config.path)
     let groupToken = try CursorCLITokenPersistence.createRawToken(name: "group", permissions: ["group:*"], configDir: config.path)
+    let groupAuthContext = CursorCLIAgentCompatibilityContext(configDir: config.path, authToken: groupToken)
 
     XCTAssertEqual(
       CursorCLIGraphQLCommandExecutor.execute(command: "group.list", context: CursorCLIAgentCompatibilityContext(configDir: config.path, authToken: readToken)).errors,
@@ -557,7 +571,7 @@ final class CursorCLIAgentCompatibilityTests: XCTestCase {
       ["Missing permission: group:*"]
     )
     XCTAssertEqual(
-      jsonObject(CursorCLIGraphQLCommandExecutor.execute(command: "group.addSession", variables: ["id": .string(groupId), "sessionId": .string("s1")], context: CursorCLIAgentCompatibilityContext(configDir: config.path, authToken: groupToken)).data)?["ok"],
+      jsonObject(executeCursorGraphQL("group.addSession", variables: ["id": .string(groupId), "sessionId": .string("s1")], context: groupAuthContext).data)?["ok"],
       .bool(true)
     )
     let groupRun = CursorCLIGraphQLCommandExecutor.execute(
@@ -603,7 +617,8 @@ final class CursorCLIAgentCompatibilityTests: XCTestCase {
     let context = CursorCLIAgentCompatibilityContext(configDir: config.path)
 
     let groupId = try XCTUnwrap(jsonString(jsonObject(CursorCLIGraphQLCommandExecutor.execute(command: "group.create", variables: ["name": .string("g")], context: context).data)?["id"]))
-    let queueId = try XCTUnwrap(jsonString(jsonObject(CursorCLIGraphQLCommandExecutor.execute(command: "queue.create", variables: ["name": .string("q"), "projectPath": .string("/tmp/project")], context: context).data)?["id"]))
+    let queueCreateForForms = executeCursorGraphQL("queue.create", variables: ["name": .string("q"), "projectPath": .string("/tmp/project")], context: context)
+    let queueId = try XCTUnwrap(jsonString(jsonObject(queueCreateForForms.data)?["id"]))
     let rootFormat = CursorCLIAgentCLIApplication.run(arguments: ["--format", "json", "version"], context: context)
     XCTAssertEqual(rootFormat.exitCode, 0)
     XCTAssertTrue(rootFormat.stdout.contains("version"))
@@ -657,9 +672,10 @@ final class CursorCLIAgentCompatibilityTests: XCTestCase {
     let bookmarkId = try XCTUnwrap(jsonString(jsonObject(bookmark.data)?["id"]))
     let inferredSessionBookmark = CursorCLIGraphQLCommandExecutor.execute(command: "bookmark.add", variables: ["sessionId": .string("session-a"), "name": .string("Session inferred")], context: context)
     XCTAssertEqual(jsonObject(inferredSessionBookmark.data)?["type"], .string("session"))
-    let inferredMessageBookmark = CursorCLIGraphQLCommandExecutor.execute(command: "bookmark.add", variables: ["sessionId": .string("session-a"), "messageId": .string("message-a"), "name": .string("Message inferred")], context: context)
+    let inferredMessageBookmark = executeCursorGraphQL("bookmark.add", variables: ["sessionId": .string("session-a"), "messageId": .string("message-a"), "name": .string("Message inferred")], context: context)
     XCTAssertEqual(jsonObject(inferredMessageBookmark.data)?["type"], .string("message"))
-    let inferredRangeBookmark = CursorCLIGraphQLCommandExecutor.execute(command: "bookmark.add", variables: ["sessionId": .string("session-a"), "fromMessageId": .string("m1"), "toMessageId": .string("m2"), "name": .string("Range inferred")], context: context)
+    let rangeBookmarkVariables: JSONObject = ["sessionId": .string("session-a"), "fromMessageId": .string("m1"), "toMessageId": .string("m2"), "name": .string("Range inferred")]
+    let inferredRangeBookmark = executeCursorGraphQL("bookmark.add", variables: rangeBookmarkVariables, context: context)
     XCTAssertEqual(jsonObject(inferredRangeBookmark.data)?["type"], .string("range"))
     XCTAssertEqual(CursorCLIAgentCLIApplication.run(arguments: ["bookmark", "add", "--session", "session-a", "--name", "Tagged", "--tags", "a,b"], context: context).exitCode, 0)
     XCTAssertEqual(jsonArray(CursorCLIGraphQLCommandExecutor.execute(command: "bookmark.list", variables: ["tag": .string("b")], context: context).data)?.count, 1)
@@ -759,7 +775,7 @@ esac
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
 
     let context = CursorCLIAgentCompatibilityContext(configDir: config.path)
-    let queueId = try XCTUnwrap(jsonString(jsonObject(CursorCLIGraphQLCommandExecutor.execute(command: "queue.create", variables: ["name": .string("run"), "projectPath": .string(config.path)], context: context).data)?["id"]))
+    let queueId = try XCTUnwrap(jsonString(jsonObject(executeCursorGraphQL("queue.create", variables: ["name": .string("run"), "projectPath": .string(config.path)], context: context).data)?["id"]))
     XCTAssertEqual(CursorCLIAgentCLIApplication.run(arguments: ["queue", "command", "add", queueId, "prompt=first", "--session-mode", "new"], context: context).exitCode, 0)
     XCTAssertEqual(CursorCLIAgentCLIApplication.run(arguments: ["queue", "command", "add", queueId, "prompt=second", "--session-mode", "continue"], context: context).exitCode, 0)
     let run = CursorCLIGraphQLCommandExecutor.execute(command: "queue.run", variables: ["id": .string(queueId), "executableName": .string(script.path)], context: context)
@@ -771,7 +787,7 @@ esac
     let args = try String(contentsOf: argsLog, encoding: .utf8)
     XCTAssertTrue(args.contains("--resume session-legacy"))
 
-    let failingQueueId = try XCTUnwrap(jsonString(jsonObject(CursorCLIGraphQLCommandExecutor.execute(command: "queue.create", variables: ["name": .string("fail"), "projectPath": .string(config.path)], context: context).data)?["id"]))
+    let failingQueueId = try XCTUnwrap(jsonString(jsonObject(executeCursorGraphQL("queue.create", variables: ["name": .string("fail"), "projectPath": .string(config.path)], context: context).data)?["id"]))
     XCTAssertEqual(CursorCLIAgentCLIApplication.run(arguments: ["queue", "command", "add", failingQueueId, "prompt=fail command"], context: context).exitCode, 0)
     XCTAssertEqual(CursorCLIAgentCLIApplication.run(arguments: ["queue", "command", "add", failingQueueId, "prompt=never"], context: context).exitCode, 0)
     let failedRun = CursorCLIGraphQLCommandExecutor.execute(command: "queue.run", variables: ["id": .string(failingQueueId), "executableName": .string(script.path)], context: context)
@@ -883,7 +899,7 @@ esac
 
     try store.save([
       CursorCLIStoredActivityEntry(sessionId: "stale-default", status: .idle, updatedAt: formatter.string(from: Date().addingTimeInterval(-48 * 60 * 60))),
-      CursorCLIStoredActivityEntry(sessionId: "fresh-default", status: .working, updatedAt: formatter.string(from: Date())),
+      CursorCLIStoredActivityEntry(sessionId: "fresh-default", status: .working, updatedAt: formatter.string(from: Date()))
     ])
     let defaultCleanup = CursorCLIGraphQLCommandExecutor.execute(command: "activity.cleanup", context: CursorCLIAgentCompatibilityContext(configDir: dataDir.path))
     XCTAssertEqual(defaultCleanup.errors, [])
@@ -891,7 +907,7 @@ esac
 
     try store.save([
       CursorCLIStoredActivityEntry(sessionId: "stale-hour", status: .idle, updatedAt: formatter.string(from: Date().addingTimeInterval(-2 * 60 * 60))),
-      CursorCLIStoredActivityEntry(sessionId: "fresh-hour", status: .working, updatedAt: formatter.string(from: Date())),
+      CursorCLIStoredActivityEntry(sessionId: "fresh-hour", status: .working, updatedAt: formatter.string(from: Date()))
     ])
     let hourlyCleanup = CursorCLIGraphQLCommandExecutor.execute(command: "activity.cleanup", variables: ["olderThan": .string("1")], context: CursorCLIAgentCompatibilityContext(configDir: dataDir.path))
     XCTAssertEqual(hourlyCleanup.errors, [])
@@ -899,9 +915,9 @@ esac
 
     try store.save([
       CursorCLIStoredActivityEntry(sessionId: "stale-fractional", status: .idle, updatedAt: "2020-01-01T00:00:00.000Z"),
-      CursorCLIStoredActivityEntry(sessionId: "fresh-fractional", status: .working, updatedAt: "2999-01-01T00:00:00.000Z"),
+      CursorCLIStoredActivityEntry(sessionId: "fresh-fractional", status: .working, updatedAt: "2999-01-01T00:00:00.000Z")
     ])
-    let fractionalCleanup = CursorCLIGraphQLCommandExecutor.execute(command: "activity.cleanup", variables: ["olderThan": .string("2026-01-01T00:00:00.000Z")], context: CursorCLIAgentCompatibilityContext(configDir: dataDir.path))
+    let fractionalCleanup = executeCursorGraphQL("activity.cleanup", variables: ["olderThan": .string("2026-01-01T00:00:00.000Z")], context: CursorCLIAgentCompatibilityContext(configDir: dataDir.path))
     XCTAssertEqual(fractionalCleanup.errors, [])
     XCTAssertEqual(jsonArray(jsonObject(fractionalCleanup.data)?["entries"])?.map { jsonObject($0)?["sessionId"] }, [.string("fresh-fractional")])
   }
@@ -979,7 +995,7 @@ esac
     let store = CursorCLIActivityStore(dataDir: dataDir.path)
     try store.save([
       CursorCLIStoredActivityEntry(sessionId: "old", status: .idle, updatedAt: "2020-01-01T00:00:00Z"),
-      CursorCLIStoredActivityEntry(sessionId: "new", status: .working, updatedAt: "2026-06-17T00:00:00Z"),
+      CursorCLIStoredActivityEntry(sessionId: "new", status: .working, updatedAt: "2026-06-17T00:00:00Z")
     ])
     let retained = try store.cleanup(olderThan: try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-01-01T00:00:00Z")))
     XCTAssertEqual(retained.map(\.sessionId), ["new"])
@@ -989,7 +1005,8 @@ esac
     let cursorDir = home.appendingPathComponent(".cursor", isDirectory: true)
     try FileManager.default.createDirectory(at: cursorDir, withIntermediateDirectories: true)
     let config = cursorDir.appendingPathComponent("account.json")
-    try #"{"oauthAccount":{"accountUuid":"acct","emailAddress":"user@example.test","displayName":"User","organizationUuid":"org","organizationName":"Org","organizationBillingType":"pro","organizationRole":"admin"}}"#.write(to: config, atomically: true, encoding: .utf8)
+    try #"{"oauthAccount":{"accountUuid":"acct","emailAddress":"user@example.test","displayName":"User","organizationUuid":"org","organizationName":"Org","organizationBillingType":"pro","organizationRole":"admin"}}"#
+      .write(to: config, atomically: true, encoding: .utf8)
     XCTAssertEqual(try CursorCLIConfigReader.account(environment: ["HOME": home.path])?.organizationName, "Org")
   }
 
@@ -1011,8 +1028,9 @@ private func writeCursorRollout(home: URL, sessionId: String, cwd: String = "/tm
   try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
   let rollout = day.appendingPathComponent("rollout-2026-06-17T00-00-00-\(sessionId).jsonl")
   let lines = [
-    #"{"timestamp":"2026-06-17T00:00:00.000Z","type":"session_meta","payload":{"meta":{"id":"\#(sessionId)","timestamp":"2026-06-17T00:00:00.000Z","cwd":"\#(cwd)","cli_version":"0.1.0","source":"cli","model_provider":"anthropic"}}}"#,
-    #"{"timestamp":"2026-06-17T00:00:01.000Z","type":"event_msg","payload":{"type":"UserMessage","message":"hello"}}"#,
+    #"{"timestamp":"2026-06-17T00:00:00.000Z","type":"session_meta","payload":{"meta":{"id":"\#(sessionId)","# +
+      #""timestamp":"2026-06-17T00:00:00.000Z","cwd":"\#(cwd)","cli_version":"0.1.0","source":"cli","model_provider":"anthropic"}}}"#,
+    #"{"timestamp":"2026-06-17T00:00:01.000Z","type":"event_msg","payload":{"type":"UserMessage","message":"hello"}}"#
   ]
   try lines.joined(separator: "\n").write(to: rollout, atomically: true, encoding: .utf8)
 }
@@ -1021,8 +1039,9 @@ private func writeCursorSQLiteState(home: URL, sessionId: String) throws {
   let state = home.appendingPathComponent("state")
   let rollout = home.appendingPathComponent("sqlite-\(sessionId).jsonl")
   try [
-    #"{"timestamp":"2026-06-17T00:02:00.000Z","type":"session_meta","payload":{"meta":{"id":"\#(sessionId)","timestamp":"2026-06-17T00:02:00.000Z","cwd":"/tmp/sqlite-project","cli_version":"1.0.0","source":"cli","model_provider":"anthropic"}}}"#,
-    #"{"timestamp":"2026-06-17T00:02:01.000Z","type":"event_msg","payload":{"type":"UserMessage","message":"sqlite hello"}}"#,
+    #"{"timestamp":"2026-06-17T00:02:00.000Z","type":"session_meta","payload":{"meta":{"id":"\#(sessionId)","# +
+      #""timestamp":"2026-06-17T00:02:00.000Z","cwd":"/tmp/sqlite-project","cli_version":"1.0.0","source":"cli","model_provider":"anthropic"}}}"#,
+    #"{"timestamp":"2026-06-17T00:02:01.000Z","type":"event_msg","payload":{"type":"UserMessage","message":"sqlite hello"}}"#
   ].joined(separator: "\n").write(to: rollout, atomically: true, encoding: .utf8)
   let sql = """
   CREATE TABLE threads (
@@ -1092,7 +1111,8 @@ private func writeLegacyCursorProjectSession(home: URL, projectPath: String, ses
   let lines = [
     #"{"type":"summary","timestamp":"2026-06-17T00:00:00.000Z","sessionId":"\#(sessionId)","cwd":"\#(projectPath)","version":"1.0.0","summary":"Legacy title"}"#,
     #"{"type":"user","timestamp":"2026-06-17T00:00:01.000Z","sessionId":"\#(sessionId)","cwd":"\#(projectPath)","message":{"role":"user","content":"hello legacy"}}"#,
-    #"{"type":"assistant","timestamp":"2026-06-17T00:00:02.000Z","sessionId":"\#(sessionId)","cwd":"\#(projectPath)","message":{"role":"assistant","content":[{"type":"text","text":"legacy response"}]}}"#,
+    #"{"type":"assistant","timestamp":"2026-06-17T00:00:02.000Z","sessionId":"\#(sessionId)","cwd":"\#(projectPath)","# +
+      #""message":{"role":"assistant","content":[{"type":"text","text":"legacy response"}]}}"#
   ]
   try lines.joined(separator: "\n").write(to: session, atomically: true, encoding: .utf8)
 }
@@ -1102,7 +1122,7 @@ private func writeLegacyCursorProjectSessionWithoutCwd(home: URL, encodedProject
   try FileManager.default.createDirectory(at: projectDir, withIntermediateDirectories: true)
   let session = projectDir.appendingPathComponent("\(sessionId).jsonl")
   let lines = [
-    #"{"type":"user","timestamp":"2026-06-17T00:00:01.000Z","sessionId":"\#(sessionId)","message":{"role":"user","content":"relative legacy"}}"#,
+    #"{"type":"user","timestamp":"2026-06-17T00:00:01.000Z","sessionId":"\#(sessionId)","message":{"role":"user","content":"relative legacy"}}"#
   ]
   try lines.joined(separator: "\n").write(to: session, atomically: true, encoding: .utf8)
 }
@@ -1126,6 +1146,10 @@ private func jsonString(_ value: JSONValue?) -> String? {
     return nil
   }
   return string
+}
+
+private func executeCursorGraphQL(_ command: String, variables: JSONObject = [:], context: CursorCLIAgentCompatibilityContext = CursorCLIAgentCompatibilityContext()) -> CursorCLIGraphQLCommandExecutor.Result {
+  CursorCLIGraphQLCommandExecutor.execute(command: command, variables: variables, context: context)
 }
 
 private func tokenFileContainsLegacyTimestamp(_ text: String, key: String) -> Bool {

@@ -221,7 +221,7 @@ public struct SessionInspectionCommand: Sendable {
         "workflow: \(result.workflowName)",
         "status: \(result.status.rawValue)",
         "currentStepId: \(result.currentStepId ?? "-")",
-        "executionCount: \(result.executionCount)",
+        "executionCount: \(result.executionCount)"
       ]
       if let health {
         lines.append("health: \(health)")

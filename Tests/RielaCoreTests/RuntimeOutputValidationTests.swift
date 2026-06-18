@@ -153,10 +153,31 @@ final class RuntimeOutputValidationTests: XCTestCase {
     )
     let nonObjectContract = WorkflowOutputContract(schema: ["type": .string("array")], requiredObject: true)
 
-    XCTAssertEqual(try validator.validate(RuntimeOutputCandidate(source: .inlineCandidate, payload: ["fallback": .bool(true)]), contract: anyOfContract).status, .accepted)
-    XCTAssertEqual(try validator.validate(RuntimeOutputCandidate(source: .inlineCandidate, payload: ["a": .bool(true), "b": .bool(true)]), contract: oneOfContract).reason, "output contract $ must satisfy exactly one oneOf branch")
-    XCTAssertEqual(try validator.validate(RuntimeOutputCandidate(source: .inlineCandidate, payload: ["a": .bool(true)]), contract: allOfContract).reason, "output contract $.b required property is missing")
-    XCTAssertEqual(try validator.validate(RuntimeOutputCandidate(source: .inlineCandidate, payload: [:]), contract: nonObjectContract).reason, "output contract $schema must allow object because node output payloads are always top-level JSON objects")
+    XCTAssertEqual(
+      try validator.validate(
+        RuntimeOutputCandidate(source: .inlineCandidate, payload: ["fallback": .bool(true)]),
+        contract: anyOfContract
+      ).status,
+      .accepted
+    )
+    XCTAssertEqual(
+      try validator.validate(
+        RuntimeOutputCandidate(source: .inlineCandidate, payload: ["a": .bool(true), "b": .bool(true)]),
+        contract: oneOfContract
+      ).reason,
+      "output contract $ must satisfy exactly one oneOf branch"
+    )
+    XCTAssertEqual(
+      try validator.validate(
+        RuntimeOutputCandidate(source: .inlineCandidate, payload: ["a": .bool(true)]),
+        contract: allOfContract
+      ).reason,
+      "output contract $.b required property is missing"
+    )
+    XCTAssertEqual(
+      try validator.validate(RuntimeOutputCandidate(source: .inlineCandidate, payload: [:]), contract: nonObjectContract).reason,
+      "output contract $schema must allow object because node output payloads are always top-level JSON objects"
+    )
   }
 
   func testValidatorRejectsMalformedSchemaDefinitionsBeforePayloadValidation() throws {

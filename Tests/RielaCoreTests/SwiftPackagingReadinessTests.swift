@@ -94,7 +94,7 @@ final class SwiftPackagingReadinessTests: XCTestCase {
       manifest.swiftArchiveNames,
       [
         "riela-swift-<version>-darwin-arm64.tar.gz",
-        "riela-swift-<version>-darwin-x64.tar.gz",
+        "riela-swift-<version>-darwin-x64.tar.gz"
       ]
     )
     XCTAssertTrue(manifest.allowsProductionCutover)
@@ -159,7 +159,7 @@ final class SwiftPackagingReadinessTests: XCTestCase {
       rootURL: rootURL,
       environment: [
         "RIELA_VERSION": "0.0.0-task008",
-        "RIELA_SWIFT_RELEASE_DIR": "../escape",
+        "RIELA_SWIFT_RELEASE_DIR": "../escape"
       ],
       arguments: ["--dry-run", "darwin-arm64"]
     )
@@ -217,7 +217,6 @@ final class SwiftPackagingReadinessTests: XCTestCase {
     XCTAssertTrue(script.contains("Swift-native workflow runtime"))
     XCTAssertTrue(script.contains("Swift Homebrew archives are currently macOS-only"))
   }
-
 
   private struct SwiftCutoverGateManifest: Decodable {
     var productionRuntime: String
@@ -277,8 +276,8 @@ final class SwiftPackagingReadinessTests: XCTestCase {
 
     return ScriptResult(
       exitCode: process.terminationStatus,
-      stdout: String(decoding: stdout.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self),
-      stderr: String(decoding: stderr.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+      stdout: String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "",
+      stderr: String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
     )
   }
 
@@ -303,8 +302,8 @@ final class SwiftPackagingReadinessTests: XCTestCase {
 
     return ScriptResult(
       exitCode: process.terminationStatus,
-      stdout: String(decoding: stdout.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self),
-      stderr: String(decoding: stderr.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+      stdout: String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "",
+      stderr: String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
     )
   }
 

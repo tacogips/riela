@@ -20,7 +20,18 @@ public struct CodexQueuePrompt: Equatable, Codable, Sendable {
   public var completedAt: String?
   public var updatedAt: String?
 
-  public init(id: String, prompt: String, status: CodexQueuePromptStatus = .pending, mode: CodexQueueCommandMode? = nil, imagePaths: [String] = [], resultExitCode: Int? = nil, createdAt: String? = nil, startedAt: String? = nil, completedAt: String? = nil, updatedAt: String? = nil) {
+  public init(
+    id: String,
+    prompt: String,
+    status: CodexQueuePromptStatus = .pending,
+    mode: CodexQueueCommandMode? = nil,
+    imagePaths: [String] = [],
+    resultExitCode: Int? = nil,
+    createdAt: String? = nil,
+    startedAt: String? = nil,
+    completedAt: String? = nil,
+    updatedAt: String? = nil
+  ) {
     self.id = id
     self.prompt = prompt
     self.status = status
@@ -133,13 +144,28 @@ public struct CodexQueueRepository: Equatable, Sendable {
     guard let index = queues.firstIndex(where: { $0.id == queueId }) else {
       return nil
     }
-    let item = CodexQueuePrompt(id: UUID().uuidString, prompt: prompt, status: .pending, mode: .auto, imagePaths: imagePaths, createdAt: ISO8601DateFormatter().string(from: Date()))
+    let item = CodexQueuePrompt(
+      id: UUID().uuidString,
+      prompt: prompt,
+      status: .pending,
+      mode: .auto,
+      imagePaths: imagePaths,
+      createdAt: ISO8601DateFormatter().string(from: Date())
+    )
     queues[index].prompts.append(item)
     return item
   }
 
-  public mutating func updatePrompt(queueId: String, promptId: String, status: CodexQueuePromptStatus, resultExitCode: Int? = nil) -> Bool {
-    guard let queueIndex = queues.firstIndex(where: { $0.id == queueId }), let promptIndex = queues[queueIndex].prompts.firstIndex(where: { $0.id == promptId }) else {
+  public mutating func updatePrompt(
+    queueId: String,
+    promptId: String,
+    status: CodexQueuePromptStatus,
+    resultExitCode: Int? = nil
+  ) -> Bool {
+    guard
+      let queueIndex = queues.firstIndex(where: { $0.id == queueId }),
+      let promptIndex = queues[queueIndex].prompts.firstIndex(where: { $0.id == promptId })
+    else {
       return false
     }
     queues[queueIndex].prompts[promptIndex].status = status
@@ -147,8 +173,18 @@ public struct CodexQueueRepository: Equatable, Sendable {
     return true
   }
 
-  public mutating func updatePrompt(queueId: String, promptId: String, prompt: String? = nil, status: CodexQueuePromptStatus? = nil, mode: CodexQueueCommandMode? = nil, resultExitCode: Int? = nil) -> Bool {
-    guard let queueIndex = queues.firstIndex(where: { $0.id == queueId }), let promptIndex = queues[queueIndex].prompts.firstIndex(where: { $0.id == promptId }) else {
+  public mutating func updatePrompt(
+    queueId: String,
+    promptId: String,
+    prompt: String? = nil,
+    status: CodexQueuePromptStatus? = nil,
+    mode: CodexQueueCommandMode? = nil,
+    resultExitCode: Int? = nil
+  ) -> Bool {
+    guard
+      let queueIndex = queues.firstIndex(where: { $0.id == queueId }),
+      let promptIndex = queues[queueIndex].prompts.firstIndex(where: { $0.id == promptId })
+    else {
       return false
     }
     if let prompt {
@@ -168,7 +204,10 @@ public struct CodexQueueRepository: Equatable, Sendable {
   }
 
   public mutating func movePrompt(queueId: String, promptId: String, toIndex: Int) -> Bool {
-    guard let queueIndex = queues.firstIndex(where: { $0.id == queueId }), let promptIndex = queues[queueIndex].prompts.firstIndex(where: { $0.id == promptId }) else {
+    guard
+      let queueIndex = queues.firstIndex(where: { $0.id == queueId }),
+      let promptIndex = queues[queueIndex].prompts.firstIndex(where: { $0.id == promptId })
+    else {
       return false
     }
     guard queues[queueIndex].prompts.indices.contains(toIndex) else {
@@ -180,7 +219,11 @@ public struct CodexQueueRepository: Equatable, Sendable {
   }
 
   public mutating func movePrompt(queueId: String, from: Int, to: Int) -> Bool {
-    guard let queueIndex = queues.firstIndex(where: { $0.id == queueId }), queues[queueIndex].prompts.indices.contains(from), queues[queueIndex].prompts.indices.contains(to) else {
+    guard
+      let queueIndex = queues.firstIndex(where: { $0.id == queueId }),
+      queues[queueIndex].prompts.indices.contains(from),
+      queues[queueIndex].prompts.indices.contains(to)
+    else {
       return false
     }
     let item = queues[queueIndex].prompts.remove(at: from)
@@ -197,7 +240,10 @@ public struct CodexQueueRepository: Equatable, Sendable {
   }
 
   public mutating func removePrompt(queueId: String, promptId: String) -> Bool {
-    guard let queueIndex = queues.firstIndex(where: { $0.id == queueId }), let promptIndex = queues[queueIndex].prompts.firstIndex(where: { $0.id == promptId }) else {
+    guard
+      let queueIndex = queues.firstIndex(where: { $0.id == queueId }),
+      let promptIndex = queues[queueIndex].prompts.firstIndex(where: { $0.id == promptId })
+    else {
       return false
     }
     queues[queueIndex].prompts.remove(at: promptIndex)
@@ -237,7 +283,11 @@ public struct CodexQueueRepository: Equatable, Sendable {
   }
 
   @discardableResult
-  public mutating func runQueue(id: String, afterPrompt: (([CodexQueue]) throws -> Void)? = nil, runner: (CodexQueuePrompt) throws -> Int) rethrows -> [CodexQueuePrompt] {
+  public mutating func runQueue(
+    id: String,
+    afterPrompt: (([CodexQueue]) throws -> Void)? = nil,
+    runner: (CodexQueuePrompt) throws -> Int
+  ) rethrows -> [CodexQueuePrompt] {
     guard let queueIndex = queues.firstIndex(where: { $0.id == id }), !queues[queueIndex].paused else {
       return []
     }
@@ -552,7 +602,22 @@ public struct CodexBookmark: Equatable, Codable, Sendable {
   public var createdAt: String?
   public var updatedAt: String?
 
-  public init(id: String, type: CodexBookmarkType, sessionId: String, messageId: String? = nil, text: String? = nil, name: String? = nil, description: String? = nil, tags: [String] = [], startLine: Int? = nil, endLine: Int? = nil, fromMessageId: String? = nil, toMessageId: String? = nil, createdAt: String? = nil, updatedAt: String? = nil) {
+  public init(
+    id: String,
+    type: CodexBookmarkType,
+    sessionId: String,
+    messageId: String? = nil,
+    text: String? = nil,
+    name: String? = nil,
+    description: String? = nil,
+    tags: [String] = [],
+    startLine: Int? = nil,
+    endLine: Int? = nil,
+    fromMessageId: String? = nil,
+    toMessageId: String? = nil,
+    createdAt: String? = nil,
+    updatedAt: String? = nil
+  ) {
     let now = codexOperationalNow()
     self.id = id
     self.type = type
@@ -586,7 +651,19 @@ public struct CodexBookmarkManager: Equatable, Sendable {
 
   public init() {}
 
-  public mutating func create(type: CodexBookmarkType, sessionId: String, messageId: String? = nil, text: String? = nil, name: String? = nil, description: String? = nil, tags: [String] = [], startLine: Int? = nil, endLine: Int? = nil, fromMessageId: String? = nil, toMessageId: String? = nil) throws -> CodexBookmark {
+  public mutating func create(
+    type: CodexBookmarkType,
+    sessionId: String,
+    messageId: String? = nil,
+    text: String? = nil,
+    name: String? = nil,
+    description: String? = nil,
+    tags: [String] = [],
+    startLine: Int? = nil,
+    endLine: Int? = nil,
+    fromMessageId: String? = nil,
+    toMessageId: String? = nil
+  ) throws -> CodexBookmark {
     let requiredName = name?.trimmingCharacters(in: .whitespacesAndNewlines)
     guard let requiredName, !requiredName.isEmpty else {
       throw CodexOperationalError.invalidBookmark
@@ -617,7 +694,22 @@ public struct CodexBookmarkManager: Equatable, Sendable {
       return normalized
     }
     let now = codexOperationalNow()
-    let bookmark = CodexBookmark(id: UUID().uuidString, type: type, sessionId: sessionId, messageId: messageId, text: text, name: requiredName, description: description, tags: normalizedTags, startLine: startLine, endLine: endLine, fromMessageId: fromMessageId, toMessageId: toMessageId, createdAt: now, updatedAt: now)
+    let bookmark = CodexBookmark(
+      id: UUID().uuidString,
+      type: type,
+      sessionId: sessionId,
+      messageId: messageId,
+      text: text,
+      name: requiredName,
+      description: description,
+      tags: normalizedTags,
+      startLine: startLine,
+      endLine: endLine,
+      fromMessageId: fromMessageId,
+      toMessageId: toMessageId,
+      createdAt: now,
+      updatedAt: now
+    )
     bookmarks.append(bookmark)
     return bookmark
   }
@@ -716,11 +808,31 @@ public enum CodexBookmarkPersistence {
     try CodexJSONStore<CodexBookmarksConfig>(url: url(configDir: configDir)).save(config)
   }
 
-  public static func addBookmark(type: CodexBookmarkType, sessionId: String, messageId: String? = nil, name: String? = nil, description: String? = nil, tags: [String] = [], fromMessageId: String? = nil, toMessageId: String? = nil, configDir: String) throws -> CodexBookmark {
+  public static func addBookmark(
+    type: CodexBookmarkType,
+    sessionId: String,
+    messageId: String? = nil,
+    name: String? = nil,
+    description: String? = nil,
+    tags: [String] = [],
+    fromMessageId: String? = nil,
+    toMessageId: String? = nil,
+    configDir: String
+  ) throws -> CodexBookmark {
     var config = try load(configDir: configDir)
     var manager = CodexBookmarkManager()
     manager.replaceBookmarks(config.bookmarks)
-    let bookmark = try manager.create(type: type, sessionId: sessionId, messageId: messageId, text: description, name: name, description: description, tags: tags, fromMessageId: fromMessageId, toMessageId: toMessageId)
+    let bookmark = try manager.create(
+      type: type,
+      sessionId: sessionId,
+      messageId: messageId,
+      text: description,
+      name: name,
+      description: description,
+      tags: tags,
+      fromMessageId: fromMessageId,
+      toMessageId: toMessageId
+    )
     config.bookmarks = manager.list()
     try save(config, configDir: configDir)
     return bookmark

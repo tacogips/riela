@@ -231,6 +231,7 @@ public struct WorkflowPackageNodeAddon: Codable, Equatable, Sendable {
   }
 }
 
+// swiftlint:disable:next type_name
 public struct WorkflowPackageManifestAddonDependencyLock: Codable, Equatable, Sendable {
   public var name: String
   public var version: String
@@ -672,117 +673,12 @@ public enum WorkflowPackageManifestValidator {
 
   public static func validate(_ manifest: WorkflowPackageManifest) -> [WorkflowPackageValidationIssue] {
     var issues: [WorkflowPackageValidationIssue] = []
-    if !isSafePackageName(manifest.name) {
-      issues.append(.init(code: "INVALID_MANIFEST", path: "name", message: "package manifest name is invalid"))
-    }
-    requireNonEmpty(manifest.version, path: "version", into: &issues)
-    requireNonEmpty(manifest.description, path: "description", into: &issues)
-    requireNonEmpty(manifest.registry, path: "registry", into: &issues)
-    requireNonEmpty(manifest.checksum, path: "checksum", into: &issues)
-    validateTags(manifest.tags, fieldPresent: manifest.tagsFieldPresent, path: "tags", into: &issues)
-    if manifest.checksumAlgorithm != "md5" {
-      issues.append(.init(code: "INVALID_MANIFEST", path: "checksumAlgorithm", message: "checksumAlgorithm must be md5"))
-    }
-    if let workflow = manifest.workflow {
-      validateTags(workflow.tags, fieldPresent: workflow.tagsFieldPresent, path: "workflow.tags", into: &issues)
-    }
-    validatePath(manifest.workflowDirectory, path: "workflowDirectory", into: &issues)
-    validatePath(manifest.skillDirectory, path: "skillDirectory", into: &issues)
-    for (index, skill) in manifest.skills.enumerated() {
-      if skill.name.isEmpty {
-        issues.append(.init(code: "INVALID_MANIFEST", path: "skills[\(index)].name", message: "skill name is required"))
-      }
-      validatePath(skill.sourcePath, path: "skills[\(index)].sourcePath", into: &issues)
-    }
-    for (index, dependency) in manifest.dependencies.enumerated() {
-      if !isSafePackageName(dependency.packageId) || dependency.packageId == manifest.name {
-        issues.append(.init(code: "INVALID_MANIFEST", path: "dependencies[\(index)].packageId", message: "dependency packageId is invalid"))
-      }
-      if dependency.kind == .nodeAddon, dependency.addons.isEmpty {
-        issues.append(.init(code: "INVALID_MANIFEST", path: "dependencies[\(index)].addons", message: "node-addon dependency requires add-on locks"))
-      }
-      for (lockIndex, lock) in dependency.addons.enumerated() {
-        if let contentDigest = lock.contentDigest, !isSha256Digest(contentDigest) {
-          issues.append(.init(code: "INVALID_MANIFEST", path: "dependencies[\(index)].addons[\(lockIndex)].contentDigest", message: "contentDigest must be sha256:<64 lowercase hex>"))
-        }
-        if lock.executionKind == .nativeBundle, lock.contentDigest == nil {
-          issues.append(.init(code: "INVALID_MANIFEST", path: "dependencies[\(index)].addons[\(lockIndex)].contentDigest", message: "native-bundle dependency locks require a contentDigest"))
-        }
-        if lock.executionKind == .nativeBundle {
-          if lock.abiVersion != 1 {
-            issues.append(.init(code: "INVALID_MANIFEST", path: "dependencies[\(index)].addons[\(lockIndex)].abiVersion", message: "native-bundle dependency locks require abiVersion 1"))
-          }
-          if let bundleIdentifier = lock.bundleIdentifier, isSafeBundleIdentifier(bundleIdentifier) {
-          } else {
-            issues.append(.init(code: "INVALID_MANIFEST", path: "dependencies[\(index)].addons[\(lockIndex)].bundleIdentifier", message: "native-bundle dependency locks require a safe reverse-DNS bundleIdentifier"))
-          }
-          if let dependencyClosureDigest = lock.dependencyClosureDigest, !isSha256Digest(dependencyClosureDigest) {
-            issues.append(.init(code: "INVALID_MANIFEST", path: "dependencies[\(index)].addons[\(lockIndex)].dependencyClosureDigest", message: "dependencyClosureDigest must be sha256:<64 lowercase hex>"))
-          }
-          if let codeSignatureRequirementDigest = lock.codeSignatureRequirementDigest, !isSha256Digest(codeSignatureRequirementDigest) {
-            issues.append(.init(code: "INVALID_MANIFEST", path: "dependencies[\(index)].addons[\(lockIndex)].codeSignatureRequirementDigest", message: "codeSignatureRequirementDigest must be sha256:<64 lowercase hex>"))
-          }
-          if let sourceScope = lock.sourceScope, sourceScope.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            issues.append(.init(code: "INVALID_MANIFEST", path: "dependencies[\(index)].addons[\(lockIndex)].sourceScope", message: "sourceScope must be non-empty when present"))
-          }
-        }
-        for (capabilityName, grant) in lock.capabilityGrant {
-          if !addonCapabilityNames.contains(capabilityName) {
-            issues.append(.init(code: "INVALID_MANIFEST", path: "dependencies[\(index)].addons[\(lockIndex)].capabilityGrant", message: "capabilityGrant contains unknown capability"))
-          }
-          if lock.executionKind == .nativeBundle, isNativeBundleForbiddenCapability(capabilityName) {
-            issues.append(.init(
-              code: "INVALID_MANIFEST",
-              path: "dependencies[\(index)].addons[\(lockIndex)].capabilityGrant.\(capabilityName)",
-              message: "native-bundle add-ons must use attachment.read instead of generic filesystem grants"
-            ))
-          }
-          validateCapabilityScope(grant.scope, path: "dependencies[\(index)].addons[\(lockIndex)].capabilityGrant.\(capabilityName).scope", into: &issues)
-        }
-      }
-    }
-    for (index, addon) in manifest.nodeAddons.enumerated() {
-      if addon.name.isEmpty || addon.version.isEmpty {
-        issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)]", message: "add-on name and version are required"))
-      }
-      validateAddonArtifactPath(addon.sourcePath, path: "addons[\(index)].sourcePath", into: &issues)
-      if let contentDigest = addon.contentDigest, !isSha256Digest(contentDigest) {
-        issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].contentDigest", message: "contentDigest must be sha256:<64 lowercase hex>"))
-      }
-      if let execution = addon.execution {
-        validateAddonExecution(execution, addonIndex: index, into: &issues)
-        if execution.kind == .nativeBundle, manifest.kind != .nodeAddon {
-          issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].execution.kind", message: "native-bundle execution is only allowed in node-addon packages"))
-        }
-        if execution.kind != .declarative {
-          if addon.capabilities.isEmpty {
-            issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].capabilities", message: "capabilities are required for executable add-ons"))
-          }
-          if addon.contentDigest == nil {
-            issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].contentDigest", message: "contentDigest is required for executable add-ons"))
-          }
-        }
-      }
-      if addon.capabilities.contains(where: { $0.name.isEmpty }) {
-        issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].capabilities", message: "capability names must be non-empty"))
-      }
-      validateCapabilities(addon.capabilities, path: "addons[\(index)].capabilities", nativeBundle: addon.execution?.kind == .nativeBundle, into: &issues)
-    }
-    if manifest.kind == .nodeAddon {
-      if manifest.workflow != nil || manifest.workflowDirectory != nil {
-        issues.append(.init(code: "INVALID_MANIFEST", path: "workflow", message: "node-addon package manifest must not include workflow metadata"))
-      }
-      if manifest.nodeAddons.isEmpty {
-        issues.append(.init(code: "INVALID_MANIFEST", path: "addons", message: "node-addon package manifest requires add-ons"))
-      }
-    }
-    var seenAddons = Set<String>()
-    for (index, addon) in manifest.nodeAddons.enumerated() {
-      let key = "\(addon.name)\u{0}\(addon.version)"
-      if !seenAddons.insert(key).inserted {
-        issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)]", message: "duplicate add-on name and version"))
-      }
-    }
+    validateManifestMetadata(manifest, into: &issues)
+    validateSkills(manifest.skills, into: &issues)
+    validateDependencies(manifest.dependencies, packageName: manifest.name, into: &issues)
+    validateNodeAddons(manifest.nodeAddons, packageKind: manifest.kind, into: &issues)
+    validateNodeAddonPackageShape(manifest, into: &issues)
+    validateDuplicateNodeAddons(manifest.nodeAddons, into: &issues)
     return issues
   }
 
@@ -814,6 +710,183 @@ public enum WorkflowPackageManifestValidator {
   private static func requireNonEmpty(_ value: String?, path: String, into issues: inout [WorkflowPackageValidationIssue]) {
     if value?.isEmpty != false {
       issues.append(.init(code: "INVALID_MANIFEST", path: path, message: "\(path) is required"))
+    }
+  }
+
+  private static func validateManifestMetadata(_ manifest: WorkflowPackageManifest, into issues: inout [WorkflowPackageValidationIssue]) {
+    if !isSafePackageName(manifest.name) {
+      issues.append(.init(code: "INVALID_MANIFEST", path: "name", message: "package manifest name is invalid"))
+    }
+    requireNonEmpty(manifest.version, path: "version", into: &issues)
+    requireNonEmpty(manifest.description, path: "description", into: &issues)
+    requireNonEmpty(manifest.registry, path: "registry", into: &issues)
+    requireNonEmpty(manifest.checksum, path: "checksum", into: &issues)
+    validateTags(manifest.tags, fieldPresent: manifest.tagsFieldPresent, path: "tags", into: &issues)
+    if manifest.checksumAlgorithm != "md5" {
+      issues.append(.init(code: "INVALID_MANIFEST", path: "checksumAlgorithm", message: "checksumAlgorithm must be md5"))
+    }
+    if let workflow = manifest.workflow {
+      validateTags(workflow.tags, fieldPresent: workflow.tagsFieldPresent, path: "workflow.tags", into: &issues)
+    }
+    validatePath(manifest.workflowDirectory, path: "workflowDirectory", into: &issues)
+    validatePath(manifest.skillDirectory, path: "skillDirectory", into: &issues)
+  }
+
+  private static func validateSkills(_ skills: [WorkflowPackageSkill], into issues: inout [WorkflowPackageValidationIssue]) {
+    for (index, skill) in skills.enumerated() {
+      if skill.name.isEmpty {
+        issues.append(.init(code: "INVALID_MANIFEST", path: "skills[\(index)].name", message: "skill name is required"))
+      }
+      validatePath(skill.sourcePath, path: "skills[\(index)].sourcePath", into: &issues)
+    }
+  }
+
+  private static func validateDependencies(
+    _ dependencies: [WorkflowPackageDependency],
+    packageName: String,
+    into issues: inout [WorkflowPackageValidationIssue]
+  ) {
+    for (index, dependency) in dependencies.enumerated() {
+      if !isSafePackageName(dependency.packageId) || dependency.packageId == packageName {
+        issues.append(.init(code: "INVALID_MANIFEST", path: "dependencies[\(index)].packageId", message: "dependency packageId is invalid"))
+      }
+      if dependency.kind == .nodeAddon, dependency.addons.isEmpty {
+        issues.append(.init(code: "INVALID_MANIFEST", path: "dependencies[\(index)].addons", message: "node-addon dependency requires add-on locks"))
+      }
+      for (lockIndex, lock) in dependency.addons.enumerated() {
+        validateDependencyAddonLock(lock, dependencyIndex: index, lockIndex: lockIndex, into: &issues)
+      }
+    }
+  }
+
+  private static func validateDependencyAddonLock(
+    _ lock: WorkflowPackageManifestAddonDependencyLock,
+    dependencyIndex index: Int,
+    lockIndex: Int,
+    into issues: inout [WorkflowPackageValidationIssue]
+  ) {
+    if let contentDigest = lock.contentDigest, !isSha256Digest(contentDigest) {
+      issues.append(.init(code: "INVALID_MANIFEST", path: "dependencies[\(index)].addons[\(lockIndex)].contentDigest", message: "contentDigest must be sha256:<64 lowercase hex>"))
+    }
+    if lock.executionKind == .nativeBundle, lock.contentDigest == nil {
+      issues.append(.init(code: "INVALID_MANIFEST", path: "dependencies[\(index)].addons[\(lockIndex)].contentDigest", message: "native-bundle dependency locks require a contentDigest"))
+    }
+    if lock.executionKind == .nativeBundle {
+      validateNativeBundleDependencyLock(lock, dependencyIndex: index, lockIndex: lockIndex, into: &issues)
+    }
+    for (capabilityName, grant) in lock.capabilityGrant {
+      validateDependencyCapabilityGrant(capabilityName: capabilityName, grant: grant, lock: lock, dependencyIndex: index, lockIndex: lockIndex, into: &issues)
+    }
+  }
+
+  private static func validateNativeBundleDependencyLock(
+    _ lock: WorkflowPackageManifestAddonDependencyLock,
+    dependencyIndex index: Int,
+    lockIndex: Int,
+    into issues: inout [WorkflowPackageValidationIssue]
+  ) {
+    if lock.abiVersion != 1 {
+      issues.append(.init(code: "INVALID_MANIFEST", path: "dependencies[\(index)].addons[\(lockIndex)].abiVersion", message: "native-bundle dependency locks require abiVersion 1"))
+    }
+    if let bundleIdentifier = lock.bundleIdentifier, isSafeBundleIdentifier(bundleIdentifier) {
+    } else {
+      issues.append(.init(code: "INVALID_MANIFEST", path: "dependencies[\(index)].addons[\(lockIndex)].bundleIdentifier", message: "native-bundle dependency locks require a safe reverse-DNS bundleIdentifier"))
+    }
+    if let dependencyClosureDigest = lock.dependencyClosureDigest, !isSha256Digest(dependencyClosureDigest) {
+      issues.append(.init(code: "INVALID_MANIFEST", path: "dependencies[\(index)].addons[\(lockIndex)].dependencyClosureDigest", message: "dependencyClosureDigest must be sha256:<64 lowercase hex>"))
+    }
+    if let codeSignatureRequirementDigest = lock.codeSignatureRequirementDigest, !isSha256Digest(codeSignatureRequirementDigest) {
+      issues.append(.init(code: "INVALID_MANIFEST", path: "dependencies[\(index)].addons[\(lockIndex)].codeSignatureRequirementDigest", message: "codeSignatureRequirementDigest must be sha256:<64 lowercase hex>"))
+    }
+    if let sourceScope = lock.sourceScope, sourceScope.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      issues.append(.init(code: "INVALID_MANIFEST", path: "dependencies[\(index)].addons[\(lockIndex)].sourceScope", message: "sourceScope must be non-empty when present"))
+    }
+  }
+
+  private static func validateDependencyCapabilityGrant(
+    capabilityName: String,
+    grant: WorkflowPackageAddonCapabilityGrant,
+    lock: WorkflowPackageManifestAddonDependencyLock,
+    dependencyIndex index: Int,
+    lockIndex: Int,
+    into issues: inout [WorkflowPackageValidationIssue]
+  ) {
+    if !addonCapabilityNames.contains(capabilityName) {
+      issues.append(.init(code: "INVALID_MANIFEST", path: "dependencies[\(index)].addons[\(lockIndex)].capabilityGrant", message: "capabilityGrant contains unknown capability"))
+    }
+    if lock.executionKind == .nativeBundle, isNativeBundleForbiddenCapability(capabilityName) {
+      issues.append(.init(
+        code: "INVALID_MANIFEST",
+        path: "dependencies[\(index)].addons[\(lockIndex)].capabilityGrant.\(capabilityName)",
+        message: "native-bundle add-ons must use attachment.read instead of generic filesystem grants"
+      ))
+    }
+    validateCapabilityScope(grant.scope, path: "dependencies[\(index)].addons[\(lockIndex)].capabilityGrant.\(capabilityName).scope", into: &issues)
+  }
+
+  private static func validateNodeAddons(
+    _ nodeAddons: [WorkflowPackageNodeAddon],
+    packageKind: WorkflowPackageKind,
+    into issues: inout [WorkflowPackageValidationIssue]
+  ) {
+    for (index, addon) in nodeAddons.enumerated() {
+      if addon.name.isEmpty || addon.version.isEmpty {
+        issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)]", message: "add-on name and version are required"))
+      }
+      validateAddonArtifactPath(addon.sourcePath, path: "addons[\(index)].sourcePath", into: &issues)
+      if let contentDigest = addon.contentDigest, !isSha256Digest(contentDigest) {
+        issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].contentDigest", message: "contentDigest must be sha256:<64 lowercase hex>"))
+      }
+      if let execution = addon.execution {
+        validateNodeAddonExecutionRequirements(execution, addon: addon, addonIndex: index, packageKind: packageKind, into: &issues)
+      }
+      if addon.capabilities.contains(where: { $0.name.isEmpty }) {
+        issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].capabilities", message: "capability names must be non-empty"))
+      }
+      validateCapabilities(addon.capabilities, path: "addons[\(index)].capabilities", nativeBundle: addon.execution?.kind == .nativeBundle, into: &issues)
+    }
+  }
+
+  private static func validateNodeAddonExecutionRequirements(
+    _ execution: WorkflowPackageAddonExecutionDescriptor,
+    addon: WorkflowPackageNodeAddon,
+    addonIndex index: Int,
+    packageKind: WorkflowPackageKind,
+    into issues: inout [WorkflowPackageValidationIssue]
+  ) {
+    validateAddonExecution(execution, addonIndex: index, into: &issues)
+    if execution.kind == .nativeBundle, packageKind != .nodeAddon {
+      issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].execution.kind", message: "native-bundle execution is only allowed in node-addon packages"))
+    }
+    if execution.kind != .declarative {
+      if addon.capabilities.isEmpty {
+        issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].capabilities", message: "capabilities are required for executable add-ons"))
+      }
+      if addon.contentDigest == nil {
+        issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].contentDigest", message: "contentDigest is required for executable add-ons"))
+      }
+    }
+  }
+
+  private static func validateNodeAddonPackageShape(_ manifest: WorkflowPackageManifest, into issues: inout [WorkflowPackageValidationIssue]) {
+    guard manifest.kind == .nodeAddon else {
+      return
+    }
+    if manifest.workflow != nil || manifest.workflowDirectory != nil {
+      issues.append(.init(code: "INVALID_MANIFEST", path: "workflow", message: "node-addon package manifest must not include workflow metadata"))
+    }
+    if manifest.nodeAddons.isEmpty {
+      issues.append(.init(code: "INVALID_MANIFEST", path: "addons", message: "node-addon package manifest requires add-ons"))
+    }
+  }
+
+  private static func validateDuplicateNodeAddons(_ nodeAddons: [WorkflowPackageNodeAddon], into issues: inout [WorkflowPackageValidationIssue]) {
+    var seenAddons = Set<String>()
+    for (index, addon) in nodeAddons.enumerated() {
+      let key = "\(addon.name)\u{0}\(addon.version)"
+      if !seenAddons.insert(key).inserted {
+        issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)]", message: "duplicate add-on name and version"))
+      }
     }
   }
 
@@ -925,8 +998,7 @@ public enum WorkflowPackageManifestValidator {
         issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].execution.bundleIdentifier", message: "native-bundle execution requires a safe reverse-DNS bundleIdentifier"))
       }
       if let codeSignatureRequirement = execution.codeSignatureRequirement,
-        codeSignatureRequirement.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      {
+        codeSignatureRequirement.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].execution.codeSignatureRequirement", message: "codeSignatureRequirement must be non-empty when present"))
       }
     }

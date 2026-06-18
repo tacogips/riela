@@ -171,6 +171,7 @@ public protocol NativeBundleInstallSnapshotValidating: Sendable {
   func validateSnapshot(for registration: NativeBundleAddonRegistration) throws
 }
 
+// swiftlint:disable:next type_name - Public API name describes the native-bundle snapshot validator role.
 public struct NativeBundleStaticInstallSnapshotValidator: NativeBundleInstallSnapshotValidating {
   public init() {}
 
@@ -212,6 +213,7 @@ public protocol NativeBundleCodeSignatureVerifying: Sendable {
   func verifyBundle(at url: URL, requirement: NativeBundleCodeSignatureRequirement?) throws
 }
 
+// swiftlint:disable:next type_name - Public API name describes the native-bundle code-signature verifier role.
 public struct NativeBundleSecurityCodeSignatureVerifier: NativeBundleCodeSignatureVerifying {
   public init() {}
 
@@ -282,6 +284,7 @@ public protocol NativeBundleDynamicLibraryOpening: Sendable {
   func openLibrary(at url: URL) throws -> any NativeBundleDynamicLibrarySymbolResolving
 }
 
+// swiftlint:disable:next type_name - Public API name describes dynamic-library symbol resolution.
 public protocol NativeBundleDynamicLibrarySymbolResolving: Sendable {
   func symbol(named name: String) -> UnsafeMutableRawPointer?
 }

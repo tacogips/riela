@@ -288,11 +288,20 @@ public enum CodexSessionIndex {
     return nil
   }
 
-  public static func searchSessionTranscript(session: CodexSession, query: String, options: CodexSessionTranscriptSearchOptions = CodexSessionTranscriptSearchOptions()) throws -> Bool {
+  public static func searchSessionTranscript(
+    session: CodexSession,
+    query: String,
+    options: CodexSessionTranscriptSearchOptions = CodexSessionTranscriptSearchOptions()
+  ) throws -> Bool {
     try searchSessionTranscriptDetailed(session: session, query: query, options: options).matched
   }
 
-  public static func searchSessionTranscriptDetailed(session: CodexSession, query: String, options: CodexSessionTranscriptSearchOptions = CodexSessionTranscriptSearchOptions(), stopAtFirstMatch: Bool = false) throws -> CodexTranscriptSearchResult {
+  public static func searchSessionTranscriptDetailed(
+    session: CodexSession,
+    query: String,
+    options: CodexSessionTranscriptSearchOptions = CodexSessionTranscriptSearchOptions(),
+    stopAtFirstMatch: Bool = false
+  ) throws -> CodexTranscriptSearchResult {
     guard !query.isEmpty else {
       throw CodexSessionSearchError.emptyQuery
     }
@@ -304,10 +313,25 @@ public enum CodexSessionIndex {
     var scannedEvents = 0
     for message in messages {
       if let timeoutMs = options.timeoutMs, Date().timeIntervalSince(startedAt) * 1000 >= Double(timeoutMs) {
-        return CodexTranscriptSearchResult(matched: matchCount > 0, matchCount: matchCount, scannedBytes: scannedBytes, scannedEvents: scannedEvents, truncated: true, timedOut: true, durationMs: Date().timeIntervalSince(startedAt) * 1000)
+        return CodexTranscriptSearchResult(
+          matched: matchCount > 0,
+          matchCount: matchCount,
+          scannedBytes: scannedBytes,
+          scannedEvents: scannedEvents,
+          truncated: true,
+          timedOut: true,
+          durationMs: Date().timeIntervalSince(startedAt) * 1000
+        )
       }
       if let maxEvents = options.maxEvents, scannedEvents >= maxEvents {
-        return CodexTranscriptSearchResult(matched: matchCount > 0, matchCount: matchCount, scannedBytes: scannedBytes, scannedEvents: scannedEvents, truncated: true, durationMs: Date().timeIntervalSince(startedAt) * 1000)
+        return CodexTranscriptSearchResult(
+          matched: matchCount > 0,
+          matchCount: matchCount,
+          scannedBytes: scannedBytes,
+          scannedEvents: scannedEvents,
+          truncated: true,
+          durationMs: Date().timeIntervalSince(startedAt) * 1000
+        )
       }
       scannedEvents += 1
       if options.role != "both", message.role != options.role {
@@ -323,7 +347,14 @@ public enum CodexSessionIndex {
       if let maxBytes = options.maxBytes {
         let remainingBytes = maxBytes - scannedBytes
         guard remainingBytes > 0 else {
-          return CodexTranscriptSearchResult(matched: matchCount > 0, matchCount: matchCount, scannedBytes: scannedBytes, scannedEvents: scannedEvents, truncated: true, durationMs: Date().timeIntervalSince(startedAt) * 1000)
+          return CodexTranscriptSearchResult(
+            matched: matchCount > 0,
+            matchCount: matchCount,
+            scannedBytes: scannedBytes,
+            scannedEvents: scannedEvents,
+            truncated: true,
+            durationMs: Date().timeIntervalSince(startedAt) * 1000
+          )
         }
         if textBytes > remainingBytes {
           searchableText = utf8Prefix(text, maxBytes: remainingBytes)
@@ -344,22 +375,58 @@ public enum CodexSessionIndex {
       if count > 0 {
         matchCount += count
         if stopAtFirstMatch {
-          return CodexTranscriptSearchResult(matched: true, matchCount: matchCount, scannedBytes: scannedBytes, scannedEvents: scannedEvents, truncated: truncatedByBytes, durationMs: Date().timeIntervalSince(startedAt) * 1000)
+          return CodexTranscriptSearchResult(
+            matched: true,
+            matchCount: matchCount,
+            scannedBytes: scannedBytes,
+            scannedEvents: scannedEvents,
+            truncated: truncatedByBytes,
+            durationMs: Date().timeIntervalSince(startedAt) * 1000
+          )
         }
       }
       if truncatedByBytes {
-        return CodexTranscriptSearchResult(matched: matchCount > 0, matchCount: matchCount, scannedBytes: scannedBytes, scannedEvents: scannedEvents, truncated: true, durationMs: Date().timeIntervalSince(startedAt) * 1000)
+        return CodexTranscriptSearchResult(
+          matched: matchCount > 0,
+          matchCount: matchCount,
+          scannedBytes: scannedBytes,
+          scannedEvents: scannedEvents,
+          truncated: true,
+          durationMs: Date().timeIntervalSince(startedAt) * 1000
+        )
       }
     }
-    return CodexTranscriptSearchResult(matched: matchCount > 0, matchCount: matchCount, scannedBytes: scannedBytes, scannedEvents: scannedEvents, truncated: false, durationMs: Date().timeIntervalSince(startedAt) * 1000)
+    return CodexTranscriptSearchResult(
+      matched: matchCount > 0,
+      matchCount: matchCount,
+      scannedBytes: scannedBytes,
+      scannedEvents: scannedEvents,
+      truncated: false,
+      durationMs: Date().timeIntervalSince(startedAt) * 1000
+    )
   }
 
-  public static func searchSessions(query: String, options: CodexSessionListOptions = CodexSessionListOptions(), searchOptions: CodexSessionTranscriptSearchOptions = CodexSessionTranscriptSearchOptions()) throws -> CodexSessionsSearchResult {
+  public static func searchSessions(
+    query: String,
+    options: CodexSessionListOptions = CodexSessionListOptions(),
+    searchOptions: CodexSessionTranscriptSearchOptions = CodexSessionTranscriptSearchOptions()
+  ) throws -> CodexSessionsSearchResult {
     guard !query.isEmpty else {
       throw CodexSessionSearchError.emptyQuery
     }
     let startedAt = Date()
-    let allCandidates = listSessions(options: CodexSessionListOptions(codexHome: options.codexHome, source: options.source, cwd: options.cwd, branch: options.branch, limit: Int.max, offset: 0, sortBy: options.sortBy, sortOrder: options.sortOrder)).sessions
+    let allCandidates = listSessions(
+      options: CodexSessionListOptions(
+        codexHome: options.codexHome,
+        source: options.source,
+        cwd: options.cwd,
+        branch: options.branch,
+        limit: Int.max,
+        offset: 0,
+        sortBy: options.sortBy,
+        sortOrder: options.sortOrder
+      )
+    ).sessions
     let maxSessions = max(0, searchOptions.maxSessions ?? allCandidates.count)
     let candidates = Array(allCandidates.prefix(maxSessions))
     var matches: [String] = []
@@ -390,7 +457,12 @@ public enum CodexSessionIndex {
       if let maxEvents = searchOptions.maxEvents {
         sessionOptions.maxEvents = max(0, maxEvents - scannedEvents)
       }
-      let result = try searchSessionTranscriptDetailed(session: session, query: query, options: sessionOptions, stopAtFirstMatch: true)
+      let result = try searchSessionTranscriptDetailed(
+        session: session,
+        query: query,
+        options: sessionOptions,
+        stopAtFirstMatch: true
+      )
       scannedBytes += result.scannedBytes
       scannedEvents += result.scannedEvents
       if result.matched {
@@ -411,7 +483,18 @@ public enum CodexSessionIndex {
     let requestedLimit = max(0, searchOptions.limit)
     let start = min(requestedOffset, matches.count)
     let end = min(start + requestedLimit, matches.count)
-    return CodexSessionsSearchResult(sessionIds: Array(matches[start..<end]), total: total, offset: searchOptions.offset, limit: searchOptions.limit, scannedSessions: scannedSessions, scannedBytes: scannedBytes, scannedEvents: scannedEvents, truncated: truncated, timedOut: timedOut, durationMs: Date().timeIntervalSince(startedAt) * 1000)
+    return CodexSessionsSearchResult(
+      sessionIds: Array(matches[start..<end]),
+      total: total,
+      offset: searchOptions.offset,
+      limit: searchOptions.limit,
+      scannedSessions: scannedSessions,
+      scannedBytes: scannedBytes,
+      scannedEvents: scannedEvents,
+      truncated: truncated,
+      timedOut: timedOut,
+      durationMs: Date().timeIntervalSince(startedAt) * 1000
+    )
   }
 
   private static func countMatches(text: String, query: String, caseSensitive: Bool) -> Int {

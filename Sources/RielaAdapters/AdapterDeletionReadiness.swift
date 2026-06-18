@@ -68,7 +68,7 @@ public enum AdapterDeletionReadiness {
         "swift test --filter OfficialSDKAdapterTests/testDispatchingNodeAdapterRegistersOfficialSDKBackendsAndDefersCursorSDK"
       ],
       notes: "official/cursor-sdk is intentionally not aliased to cursor-cli-agent; TypeScript deletion stays blocked until a reviewed Swift adapter or explicit removal decision exists."
-    ),
+    )
   ]
 
   public static func domain(for backend: NodeExecutionBackend) -> AdapterParityDomain? {

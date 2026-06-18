@@ -67,7 +67,7 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       let named = directRoot.appendingPathComponent(options.workflowName)
       return [
         CandidateDirectory(directory: named.standardizedFileURL, rootDirectory: directRoot, scope: .direct),
-        CandidateDirectory(directory: directRoot, rootDirectory: directRoot, scope: .direct),
+        CandidateDirectory(directory: directRoot, rootDirectory: directRoot, scope: .direct)
       ]
     }
     guard isSafeScopedWorkflowName(options.workflowName) else {
@@ -89,12 +89,12 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     case .auto:
       return [
         CandidateDirectory(directory: project.appendingPathComponent(options.workflowName).standardizedFileURL, rootDirectory: project, scope: .project),
-        CandidateDirectory(directory: user.appendingPathComponent(options.workflowName).standardizedFileURL, rootDirectory: user, scope: .user),
+        CandidateDirectory(directory: user.appendingPathComponent(options.workflowName).standardizedFileURL, rootDirectory: user, scope: .user)
       ]
     case .direct:
       return [
         CandidateDirectory(directory: project.appendingPathComponent(options.workflowName).standardizedFileURL, rootDirectory: project, scope: .project),
-        CandidateDirectory(directory: user.appendingPathComponent(options.workflowName).standardizedFileURL, rootDirectory: user, scope: .user),
+        CandidateDirectory(directory: user.appendingPathComponent(options.workflowName).standardizedFileURL, rootDirectory: user, scope: .user)
       ]
     }
   }

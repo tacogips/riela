@@ -4,7 +4,7 @@ enum CursorCLIAgentEffortResolution {
   static let composerModelPrefix = "composer-"
 
   private static let cursorEffortTokens: Set<String> = [
-    "none", "low", "medium", "high", "xhigh", "max",
+    "none", "low", "medium", "high", "xhigh", "max"
   ]
   private static let extraHighEffortModelPrefixes = ["gpt-5.5"]
 

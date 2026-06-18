@@ -97,7 +97,7 @@ final class SwiftDeletionReadinessTests: XCTestCase {
       return XCTFail("expected cli domain")
     }
     gate.domains[cliIndex].evidenceCommands = [
-      "swift test --filter OtherTests # WorkflowCommandTests",
+      "swift test --filter OtherTests # WorkflowCommandTests"
     ]
 
     let result = SwiftDeletionReadinessValidator().validate(
@@ -228,7 +228,7 @@ final class SwiftDeletionReadinessTests: XCTestCase {
       ("critical", "domain package-build accepted review includes blocking finding severity critical"),
       ("blocker", "domain package-build accepted review includes blocking finding severity blocker"),
       ("unknown", "domain package-build accepted review includes unknown finding severity unknown"),
-      ("", "domain package-build accepted review includes blank finding severity"),
+      ("", "domain package-build accepted review includes blank finding severity")
     ]
 
     for (severity, expectedDiagnostic) in cases {
@@ -417,7 +417,7 @@ final class SwiftDeletionReadinessTests: XCTestCase {
     var gate = try deletionReadyGate()
     gate.domains[0].evidenceCommands = [
       "swift build",
-      "swift test --filter RielaServerTests",
+      "swift test --filter RielaServerTests"
     ]
     gate.domains[0].evidenceArtifacts = ["verification-result:swift-deletion-readiness/package-build-0"]
     let context = deletionReadyContext(for: gate)
@@ -513,12 +513,12 @@ final class SwiftDeletionReadinessTests: XCTestCase {
     case "release":
       return [
         "scripts/build-homebrew-release.sh --dry-run darwin-arm64",
-        "scripts/render-homebrew-formula.sh 0.0.0 Formula/riela.rb",
+        "scripts/render-homebrew-formula.sh 0.0.0 Formula/riela.rb"
       ]
     case "documentation":
       return [
         "rg -n \"swift-deletion-readiness\" design-docs",
-        "rg -n \"TypeScript deletion\" design-docs",
+        "rg -n \"TypeScript deletion\" design-docs"
       ]
     case "test":
       return ["swift test"]
@@ -574,11 +574,11 @@ final class SwiftDeletionReadinessTests: XCTestCase {
   }
 
   private struct TrackedDeletionReadinessEvidence: Decodable {
-    var reviewedTreeState: TrackedDeletionReadinessReviewedTreeState
+    var reviewedTreeState: TrackedReviewedTreeState
     var artifacts: [TrackedDeletionReadinessArtifact]
   }
 
-  private struct TrackedDeletionReadinessReviewedTreeState: Decodable, Equatable {
+  private struct TrackedReviewedTreeState: Decodable, Equatable {
     var branch: String
     var baseCommit: String
     var treeDigestAlgorithm: String
@@ -634,7 +634,7 @@ final class SwiftDeletionReadinessTests: XCTestCase {
     )
   }
 
-  private func trackedReviewedTreeState(root: URL) throws -> TrackedDeletionReadinessReviewedTreeState {
+  private func trackedReviewedTreeState(root: URL) throws -> TrackedReviewedTreeState {
     let excludedPaths = ["packaging/swift-deletion-readiness-evidence.json"]
     let branch = try runGit(["rev-parse", "--abbrev-ref", "HEAD"], root: root)
     let baseCommit = try runGit(["rev-parse", "HEAD"], root: root)
@@ -645,20 +645,20 @@ final class SwiftDeletionReadinessTests: XCTestCase {
       .sorted()
 
     var digestInput = Data()
-    digestInput.append("reviewed-tree-v1\n".data(using: .utf8)!)
+    digestInput.append(Data("reviewed-tree-v1\n".utf8))
     for path in paths {
       let url = root.appendingPathComponent(path)
       guard FileManager.default.fileExists(atPath: url.path) else {
         continue
       }
-      digestInput.append("path:\(path)\n".data(using: .utf8)!)
+      digestInput.append(Data("path:\(path)\n".utf8))
       let executable = FileManager.default.isExecutableFile(atPath: url.path) ? "true" : "false"
-      digestInput.append("executable:\(executable)\n".data(using: .utf8)!)
+      digestInput.append(Data("executable:\(executable)\n".utf8))
       digestInput.append(try Data(contentsOf: url))
-      digestInput.append("\n".data(using: .utf8)!)
+      digestInput.append(Data("\n".utf8))
     }
 
-    return TrackedDeletionReadinessReviewedTreeState(
+    return TrackedReviewedTreeState(
       branch: branch,
       baseCommit: baseCommit,
       treeDigestAlgorithm: "sha256:reviewed-tree-v1-path-executable-content-excluding-evidence-manifest",

@@ -451,14 +451,16 @@ private final class ManagedClaudeCodeProcess: @unchecked Sendable {
     }
     outputGroup.wait()
     return ClaudeCodeProcessExecution(
+      // swiftlint:disable:next optional_data_string_conversion - Process output may contain invalid UTF-8; preserve replacement decoding.
       stdout: String(decoding: outputBuffers.stdout(), as: UTF8.self),
+      // swiftlint:disable:next optional_data_string_conversion - Process output may contain invalid UTF-8; preserve replacement decoding.
       stderr: String(decoding: outputBuffers.stderr(), as: UTF8.self),
       exitCode: process?.terminationStatus ?? 127
     )
   }
 }
 
-fileprivate final class ProcessOutputBuffers: @unchecked Sendable {
+private final class ProcessOutputBuffers: @unchecked Sendable {
   private let condition = NSCondition()
   private var stdoutData = Data()
   private var stderrData = Data()
@@ -469,6 +471,7 @@ fileprivate final class ProcessOutputBuffers: @unchecked Sendable {
   func appendStdout(_ data: Data) {
     condition.lock()
     stdoutData.append(data)
+    // swiftlint:disable:next optional_data_string_conversion - Pipe reads may split or contain invalid UTF-8; preserve replacement decoding.
     stdoutPartial += String(decoding: data, as: UTF8.self)
     drainCompleteStdoutLines()
     condition.broadcast()
@@ -668,7 +671,7 @@ public enum ClaudeCodeAgentSDK {
     var payload: JSONObject = [
       "timestamp": .string(line.timestamp),
       "type": .string(line.type),
-      "payload": line.payload,
+      "payload": line.payload
     ]
     if let object = line.payloadObject {
       payload.merge(object) { current, _ in current }
@@ -720,7 +723,7 @@ public final class ClaudeCodeProcessRunningSession: ClaudeCodeRunningSession, @u
     return [
       "sessionId": sessionId,
       "processId": processRecord.id,
-      "status": closed ? "completed" : "running",
+      "status": closed ? "completed" : "running"
     ]
   }
 
@@ -1094,7 +1097,7 @@ private func jsonString(_ value: JSONValue) -> String {
   guard let data = try? encoder.encode(value) else {
     return "\(value)"
   }
-  return String(decoding: data, as: UTF8.self)
+  return String(data: data, encoding: .utf8) ?? "\(value)"
 }
 
 private func stringValue(_ value: JSONValue?) -> String? {

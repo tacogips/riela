@@ -148,7 +148,7 @@ private func renderJSONString(_ value: String) -> String {
   guard let data = try? encoder.encode(value) else {
     return "\"\""
   }
-  return String(decoding: data, as: UTF8.self)
+  return String(data: data, encoding: .utf8) ?? "\"\""
 }
 
 extension JSONValue {

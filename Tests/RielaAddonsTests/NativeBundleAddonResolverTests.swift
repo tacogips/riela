@@ -37,7 +37,7 @@ final class NativeBundleAddonResolverTests: XCTestCase {
     XCTAssertFalse(envelope.options.allowDispatchIntents)
 
     let encoded = try JSONEncoder().encode(envelope)
-    let encodedString = String(decoding: encoded, as: UTF8.self)
+    let encodedString = try XCTUnwrap(String(data: encoded, encoding: .utf8))
     XCTAssertFalse(encodedString.contains("variables"))
     XCTAssertFalse(encodedString.contains("must-not-cross-abi"))
   }
@@ -145,7 +145,7 @@ final class NativeBundleAddonResolverTests: XCTestCase {
     XCTAssertFalse(envelope.options.allowDispatchIntents)
 
     let encoded = try JSONEncoder().encode(envelope)
-    let encodedString = String(decoding: encoded, as: UTF8.self)
+    let encodedString = try XCTUnwrap(String(data: encoded, encoding: .utf8))
     XCTAssertFalse(encodedString.contains("variables"))
     XCTAssertFalse(encodedString.contains("must-not-cross-abi"))
   }
@@ -258,7 +258,7 @@ final class NativeBundleAddonResolverTests: XCTestCase {
     let result = await resolver.resolve(request(
       nodePayload: [
         "inputs": .object(["attachmentId": .string("att_123")]),
-        "localPath": .string("/tmp/should-not-be-forwarded-as-attachment"),
+        "localPath": .string("/tmp/should-not-be-forwarded-as-attachment")
       ],
       attachments: ["attachmentId": attachment]
     ))
@@ -493,7 +493,7 @@ private actor EnvelopeRecorder {
 
 private struct FakeNativeBundleLoader: NativeBundlePluginLoading {
   var handle: FakeNativeBundleHandle
-  var recorder: LoadRecorder? = nil
+  var recorder: LoadRecorder?
 
   func loadPlugin(for registration: NativeBundleAddonRegistration) async throws -> any NativeBundlePluginHandle {
     await recorder?.record(registration)

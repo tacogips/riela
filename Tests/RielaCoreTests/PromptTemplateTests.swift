@@ -14,7 +14,7 @@ final class PromptTemplateTests: XCTestCase {
         "array": .array([.string("a"), .number(2)]),
         "object": .object(["b": .bool(true), "a": .string("x")]),
         "nullValue": .null,
-        "escaped": .string(#"value with \"quoted\" braces {inside}"#),
+        "escaped": .string(#"value with \"quoted\" braces {inside}"#)
       ]
     )
 
@@ -44,7 +44,7 @@ final class PromptTemplateTests: XCTestCase {
         "threshold": .number(1.0e-6),
         "negativeThreshold": .number(-1.0e-6),
         "small": .number(1.0e-7),
-        "zero": .number(0),
+        "zero": .number(0)
       ]
     )
 
@@ -61,9 +61,9 @@ final class PromptTemplateTests: XCTestCase {
         "object": .object([
           "threshold": .number(1.0e-6),
           "total": .number(1.0e20),
-          "url": .string("https://example.test/a/b"),
+          "url": .string("https://example.test/a/b")
         ]),
-        "array": .array([.number(1.0e20), .number(1.0e-6), .string("https://example.test/a/b")]),
+        "array": .array([.number(1.0e20), .number(1.0e-6), .string("https://example.test/a/b")])
       ]
     )
 
@@ -120,7 +120,7 @@ final class PromptTemplateTests: XCTestCase {
       "workflow.json",
       "nodes/node-worker.json",
       "prompts/missing.md",
-      "prompts/unreadable.md",
+      "prompts/unreadable.md"
     ]
 
     for invalidPath in invalidPaths {

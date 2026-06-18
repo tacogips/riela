@@ -4,201 +4,14 @@ import XCTest
 @testable import ClaudeCodeAgent
 @testable import RielaCore
 
+private typealias LegacyCoverageProbe = (category: String, probe: () throws -> Void)
+
 final class ClaudeCodeAgentCompatibilityTests: XCTestCase {
   func testLegacyClaudeCodeAgentUnitTestSurfaceHasSwiftCoverage() throws {
-    let legacyTests: Set<String> = [
-      "src/auth/duration.test.ts",
-      "src/auth/token-manager.test.ts",
-      "src/cli/commands/activity/cleanup.test.ts",
-      "src/cli/commands/activity/list.test.ts",
-      "src/cli/commands/activity/status.test.ts",
-      "src/cli/commands/auth/status.test.ts",
-      "src/cli/commands/auth/verify.test.ts",
-      "src/cli/commands/bookmark.test.ts",
-      "src/cli/commands/edge-cases.test.ts",
-      "src/cli/commands/error-handling.test.ts",
-      "src/cli/commands/group.test.ts",
-      "src/cli/commands/queue.test.ts",
-      "src/cli/commands/session.test.ts",
-      "src/cli/commands/version.test.ts",
-      "src/cli/graphql.test.ts",
-      "src/cli/main.test.ts",
-      "src/cli/output.test.ts",
-      "src/container.test.ts",
-      "src/errors.test.ts",
-      "src/graphql/index.test.ts",
-      "src/lib.test.ts",
-      "src/package-metadata.test.ts",
-      "src/polling/event-parser.test.ts",
-      "src/polling/group-monitor.test.ts",
-      "src/polling/monitor.test.ts",
-      "src/polling/output.test.ts",
-      "src/polling/parser.test.ts",
-      "src/polling/state-manager.test.ts",
-      "src/polling/watcher.test.ts",
-      "src/repository/file/base-repository.test.ts",
-      "src/repository/file/bookmark-repository.test.ts",
-      "src/repository/file/group-repository.test.ts",
-      "src/repository/file/queue-repository.test.ts",
-      "src/repository/in-memory/bookmark-repository.test.ts",
-      "src/repository/in-memory/group-repository.test.ts",
-      "src/repository/in-memory/queue-repository.test.ts",
-      "src/repository/in-memory/session-repository.test.ts",
-      "src/result.test.ts",
-      "src/sdk/__fixtures__/mock-receiver.test.ts",
-      "src/sdk/__fixtures__/mock-session.test.ts",
-      "src/sdk/__fixtures__/mock-transport.test.ts",
-      "src/sdk/__tests__/exports.test.ts",
-      "src/sdk/__tests__/tool-call.integration.test.ts",
-      "src/sdk/activity/__tests__/integration.test.ts",
-      "src/sdk/activity/hook-types.test.ts",
-      "src/sdk/activity/manager.test.ts",
-      "src/sdk/activity/store.test.ts",
-      "src/sdk/activity/transcript-analyzer.test.ts",
-      "src/sdk/agent.test.ts",
-      "src/sdk/bookmarks/manager.test.ts",
-      "src/sdk/bookmarks/search.test.ts",
-      "src/sdk/client.test.ts",
-      "src/sdk/control-protocol.test.ts",
-      "src/sdk/credentials/__tests__/integration.test.ts",
-      "src/sdk/credentials/__tests__/manager.test.ts",
-      "src/sdk/credentials/__tests__/reader.test.ts",
-      "src/sdk/credentials/__tests__/validation.test.ts",
-      "src/sdk/credentials/__tests__/writer.test.ts",
-      "src/sdk/environment.test.ts",
-      "src/sdk/errors.test.ts",
-      "src/sdk/events/emitter.test.ts",
-      "src/sdk/file-changes/extractor.test.ts",
-      "src/sdk/file-changes/index-manager.test.ts",
-      "src/sdk/file-changes/service.test.ts",
-      "src/sdk/group/config-generator.test.ts",
-      "src/sdk/group/dependency-graph.test.ts",
-      "src/sdk/group/events.test.ts",
-      "src/sdk/group/manager.test.ts",
-      "src/sdk/group/progress.test.ts",
-      "src/sdk/group/runner.test.ts",
-      "src/sdk/group/session-processor.test.ts",
-      "src/sdk/group/types.test.ts",
-      "src/sdk/jsonl-parser.test.ts",
-      "src/sdk/markdown-parser/detectors.test.ts",
-      "src/sdk/markdown-parser/parser.test.ts",
-      "src/sdk/mock-session-runner.test.ts",
-      "src/sdk/queue/manager.test.ts",
-      "src/sdk/queue/recovery.test.ts",
-      "src/sdk/queue/runner.test.ts",
-      "src/sdk/readiness.test.ts",
-      "src/sdk/receiver.test.ts",
-      "src/sdk/session-reader.test.ts",
-      "src/sdk/session-state.test.ts",
-      "src/sdk/tool-registry.test.ts",
-      "src/sdk/tool-versions.test.ts",
-      "src/sdk/transport/subprocess.test.ts",
-      "src/sdk/types/mcp.test.ts",
-      "src/sdk/types/protocol.test.ts",
-      "src/sdk/types/state.test.ts",
-      "src/sdk/types/tool.test.ts",
-      "src/services/atomic-writer.test.ts",
-      "src/services/file-lock.test.ts",
-      "src/test/fixtures/fixtures.test.ts",
-      "src/test/helpers.test.ts",
-      "src/test/mocks/clock.test.ts",
-      "src/test/mocks/filesystem.test.ts",
-      "src/test/mocks/lock.test.ts",
-      "src/test/mocks/process-manager.test.ts",
-      "src/test/utils/concurrency.test.ts",
-      "src/types/activity.test.ts",
-      "src/types/types.test.ts",
-    ]
-    func coverageCategory(for path: String) -> String {
-      if path.hasPrefix("src/auth/") { return "auth" }
-      if path.hasPrefix("src/cli/") { return "cli" }
-      if path.hasPrefix("src/polling/") { return "polling" }
-      if path.hasPrefix("src/repository/") { return "repository" }
-      if path.hasPrefix("src/sdk/activity/") { return "sdk-activity" }
-      if path.hasPrefix("src/sdk/bookmarks/") { return "sdk-bookmarks" }
-      if path.hasPrefix("src/sdk/credentials/") { return "sdk-credentials" }
-      if path.hasPrefix("src/sdk/file-changes/") { return "sdk-file-changes" }
-      if path.hasPrefix("src/sdk/group/") { return "sdk-group" }
-      if path.hasPrefix("src/sdk/markdown-parser/") { return "sdk-markdown-parser" }
-      if path.hasPrefix("src/sdk/queue/") { return "sdk-queue" }
-      if path.hasPrefix("src/sdk/types/") { return "sdk-types" }
-      if path.hasPrefix("src/sdk/") { return "sdk" }
-      if path.hasPrefix("src/services/") { return "services" }
-      if path.hasPrefix("src/test/") { return "test-support" }
-      if path.hasPrefix("src/types/") { return "types" }
-      if path == "src/graphql/index.test.ts" { return "graphql" }
-      if ["src/container.test.ts", "src/errors.test.ts", "src/lib.test.ts", "src/package-metadata.test.ts", "src/result.test.ts"].contains(path) { return "container-and-core" }
-      return "unmapped"
-    }
-    let probes: [(category: String, probe: () throws -> Void)] = [
-      ("auth", {
-        XCTAssertEqual(try ClaudeCodeDurationParser.seconds("1d"), 86_400)
-        XCTAssertTrue(try ClaudeCodeTokenPersistence.createRawToken(name: "probe", permissions: ["session:read"], configDir: makeTemporaryDirectory().path).hasPrefix("cca_"))
-      }),
-      ("cli", {
-        XCTAssertEqual(ClaudeCodeAgentCLIApplication.run(arguments: ["version", "includeGit=false"]).exitCode, 0)
-      }),
-      ("container-and-core", {
-        XCTAssertEqual(ClaudeCodeProcessCommandBuilder.buildExecArguments(prompt: "probe").first, "-p")
-      }),
-      ("graphql", {
-        XCTAssertEqual(try ClaudeCodeGraphQLCommandExecutor.parseParams(["limit=2"])["limit"], .number(2))
-      }),
-      ("polling", {
-        var parser = ClaudeCodeJsonlStreamParser()
-        XCTAssertEqual(parser.feed(#"{"type":"assistant","content":"ok"}"# + "\n").first?.type, "assistant")
-      }),
-      ("repository", {
-        var repository = ClaudeCodeQueueRepository()
-        XCTAssertEqual(repository.createQueue(name: "probe").name, "probe")
-      }),
-      ("sdk", {
-        let manager = ClaudeCodeProcessManager(executableName: "claude-probe") { _, _, _ in ClaudeCodeProcessExecution(exitCode: 0) }
-        XCTAssertEqual(manager.spawnExec(prompt: "probe").result.exitCode, 0)
-      }),
-      ("sdk-activity", {
-        XCTAssertEqual(ClaudeCodeActivityAnalyzer.status(hookEventName: "PermissionRequest"), .waitingUserResponse)
-      }),
-      ("sdk-bookmarks", {
-        var manager = ClaudeCodeBookmarkManager()
-        _ = try manager.create(type: .session, sessionId: "probe", name: "Probe")
-        XCTAssertEqual(manager.search(text: "probe").count, 1)
-      }),
-      ("sdk-credentials", {
-        XCTAssertTrue(ClaudeCodeConfigReader.defaultConfigPath(environment: ["HOME": "/tmp/home"]).hasSuffix("/.claude.json"))
-      }),
-      ("sdk-file-changes", {
-        let index = ClaudeCodeFileChangeIndex(changes: [ClaudeCodeFileChange(path: "Sources/A.swift", operation: .modified, source: .shell)])
-        XCTAssertEqual(index.find("Sources/A.swift")?.operation, .modified)
-      }),
-      ("sdk-group", {
-        var groups = ClaudeCodeGroupRepository()
-        XCTAssertEqual(groups.createGroup(name: "g").name, "g")
-      }),
-      ("sdk-markdown-parser", {
-        XCTAssertEqual(ClaudeCodeMarkdown.parseTasks("# Work\n- [x] done").first?.text, "done")
-      }),
-      ("sdk-queue", {
-        var queues = ClaudeCodeQueueRepository()
-        let queue = queues.createQueue(name: "q")
-        XCTAssertNotNil(queues.addPrompt(queueId: queue.id, prompt: "p"))
-      }),
-      ("sdk-types", {
-        XCTAssertEqual(ClaudeCodeActivityStatusValue.working.rawValue, "working")
-      }),
-      ("services", {
-        let store = ClaudeCodeJSONStore<ClaudeCodeQueuesConfig>(url: try makeTemporaryDirectory().appendingPathComponent("queues.json"))
-        try store.save(ClaudeCodeQueuesConfig())
-      }),
-      ("test-support", {
-        XCTAssertFalse(try makeTemporaryDirectory().path.isEmpty)
-      }),
-      ("types", {
-        XCTAssertEqual(ClaudeCodeActivityStatusValue.waitingUserResponse.rawValue, "waiting_user_response")
-      }),
-    ]
+    let legacyTests = legacyClaudeCodeAgentUnitTests()
+    let probes = legacySwiftCoverageProbes()
 
-    let coverage = Dictionary(uniqueKeysWithValues: legacyTests.map { ($0, coverageCategory(for: $0)) })
+    let coverage = Dictionary(uniqueKeysWithValues: legacyTests.map { ($0, legacyCoverageCategory(for: $0)) })
     let probeCategories = Set(probes.map(\.category))
     XCTAssertEqual(legacyTests.count, 101)
     XCTAssertEqual(coverage.count, legacyTests.count)
@@ -334,11 +147,11 @@ final class ClaudeCodeAgentCompatibilityTests: XCTestCase {
     let config = try makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: config) }
     let context = ClaudeCodeAgentCompatibilityContext(configDir: config.path)
-    let created = ClaudeCodeGraphQLCommandExecutor.execute(command: "queue.create", variables: ["name": .string("graphql"), "projectPath": .string("/tmp/project")], context: context)
+    let created = executeGraphQL(command: "queue.create", variables: ["name": .string("graphql"), "projectPath": .string("/tmp/project")], context: context)
     let queueId = try XCTUnwrap(jsonString(jsonObject(created.data)?["id"]))
-    let added = ClaudeCodeGraphQLCommandExecutor.execute(command: "queue.addCommand", variables: ["id": .string(queueId), "prompt": .string("run")], context: context)
+    let added = executeGraphQL(command: "queue.addCommand", variables: ["id": .string(queueId), "prompt": .string("run")], context: context)
     XCTAssertNotNil(jsonObject(added.data)?["id"])
-    let listed = ClaudeCodeGraphQLCommandExecutor.execute(command: "queue.list", variables: [:], context: context)
+    let listed = executeGraphQL(command: "queue.list", variables: [:], context: context)
     XCTAssertEqual(jsonArray(listed.data)?.count, 1)
   }
 
@@ -353,8 +166,8 @@ final class ClaudeCodeAgentCompatibilityTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: config) }
     let context = ClaudeCodeAgentCompatibilityContext(configDir: config.path)
 
-    XCTAssertEqual(ClaudeCodeGraphQLCommandExecutor.execute(command: "queue.nope", context: context).errors, ["Unknown command: queue.nope"])
-    XCTAssertEqual(ClaudeCodeGraphQLCommandExecutor.execute(command: "subscription { command(name: \"queue.list\") }", context: context).errors, ["Unsupported subscription command: queue.list"])
+    XCTAssertEqual(executeGraphQL(command: "queue.nope", context: context).errors, ["Unknown command: queue.nope"])
+    XCTAssertEqual(executeGraphQL(command: "subscription { command(name: \"queue.list\") }", context: context).errors, ["Unsupported subscription command: queue.list"])
 
     let params = try ClaudeCodeGraphQLCommandExecutor.parseParams(["limit=2", "active=true", #"payload={"a":1}"#])
     XCTAssertEqual(params["limit"], .number(2))
@@ -365,70 +178,88 @@ final class ClaudeCodeAgentCompatibilityTests: XCTestCase {
     try #"{"name":"from-file","projectPath":"/tmp/project"}"#.write(to: variablesPath, atomically: true, encoding: .utf8)
     let loaded = try ClaudeCodeGraphQLCommandExecutor.loadVariables("@\(variablesPath.path)")
     XCTAssertEqual(loaded["name"], .string("from-file"))
-    let arbitraryParamsVariable = ClaudeCodeGraphQLCommandExecutor.execute(
+    let arbitraryParamsVariable = executeGraphQL(
       command: #"query ($p: JSON) { command(name: "queue.create", params: $p) }"#,
       variables: ["p": .object(["name": .string("from-p"), "projectPath": .string("/tmp/p")])],
       context: context
     )
     XCTAssertNotNil(jsonObject(arbitraryParamsVariable.data)?["id"])
 
-    let groupCreate = ClaudeCodeGraphQLCommandExecutor.execute(command: "group.create", variables: ["name": .string("g")], context: context)
+    let groupCreate = executeGraphQL(command: "group.create", variables: ["name": .string("g")], context: context)
     let groupId = try XCTUnwrap(jsonString(jsonObject(groupCreate.data)?["id"]))
-    let groupAdd = ClaudeCodeGraphQLCommandExecutor.execute(command: "group.addSession", variables: ["id": .string(groupId), "sessionId": .string("s1")], context: context)
+    let groupAdd = executeGraphQL(command: "group.addSession", variables: ["id": .string(groupId), "sessionId": .string("s1")], context: context)
     XCTAssertEqual(jsonObject(groupAdd.data)?["ok"], .bool(true))
-    let fullSessionAdd = ClaudeCodeGraphQLCommandExecutor.execute(command: "group.addSession", variables: [
+    let fullSessionAdd = executeGraphQL(command: "group.addSession", variables: [
       "id": .string(groupId),
       "session": .object([
         "id": .string("s2"),
         "projectPath": .string("/tmp/project"),
         "prompt": .string("ship"),
         "status": .string("pending"),
-        "dependsOn": .array([.string("s1")]),
-      ]),
+        "dependsOn": .array([.string("s1")])
+      ])
     ], context: context)
     XCTAssertEqual(jsonObject(fullSessionAdd.data)?["ok"], .bool(true))
     let groupWithSessionObject = try XCTUnwrap(try ClaudeCodeGroupPersistence.findGroup(groupId, configDir: config.path))
     XCTAssertEqual(groupWithSessionObject.sessions.first { $0.id == "s2" }?.projectPath, "/tmp/project")
-    let groupPause = ClaudeCodeGraphQLCommandExecutor.execute(command: "group.pause", variables: ["id": .string(groupId)], context: context)
+    let groupPause = executeGraphQL(command: "group.pause", variables: ["id": .string(groupId)], context: context)
     XCTAssertEqual(jsonObject(groupPause.data)?["success"], .bool(true))
     XCTAssertEqual(jsonObject(groupPause.data)?["id"], .string(groupId))
-    let groupResume = ClaudeCodeGraphQLCommandExecutor.execute(command: "group.resume", variables: ["id": .string(groupId)], context: context)
+    let groupResume = executeGraphQL(command: "group.resume", variables: ["id": .string(groupId)], context: context)
     XCTAssertEqual(jsonObject(groupResume.data)?["success"], .bool(true))
-    let deletableGroupId = try XCTUnwrap(jsonString(jsonObject(ClaudeCodeGraphQLCommandExecutor.execute(command: "group.create", variables: ["name": .string("delete-me")], context: context).data)?["id"]))
-    let groupDelete = ClaudeCodeGraphQLCommandExecutor.execute(command: "group.delete", variables: ["id": .string(deletableGroupId)], context: context)
+    let deletableGroupId = try XCTUnwrap(jsonString(jsonObject(executeGraphQL(command: "group.create", variables: ["name": .string("delete-me")], context: context).data)?["id"]))
+    let groupDelete = executeGraphQL(command: "group.delete", variables: ["id": .string(deletableGroupId)], context: context)
     XCTAssertEqual(jsonObject(groupDelete.data)?["success"], .bool(true))
     XCTAssertEqual(jsonObject(groupDelete.data)?["id"], .string(deletableGroupId))
 
-    let bookmark = ClaudeCodeGraphQLCommandExecutor.execute(
+    let bookmark = executeGraphQL(
       command: "bookmark.add",
       variables: ["type": .string("message"), "sessionId": .string("s1"), "messageId": .string("m1"), "name": .string("Needle")],
       context: context
     )
     XCTAssertNotNil(jsonObject(bookmark.data)?["id"])
-    let bookmarkSearch = ClaudeCodeGraphQLCommandExecutor.execute(command: "bookmark.search", variables: ["query": .string("Needle")], context: context)
+    let bookmarkSearch = executeGraphQL(command: "bookmark.search", variables: ["query": .string("Needle")], context: context)
     XCTAssertEqual(jsonArray(bookmarkSearch.data)?.count, 1)
     let bookmarkId = try XCTUnwrap(jsonString(jsonObject(bookmark.data)?["id"]))
-    let bookmarkDelete = ClaudeCodeGraphQLCommandExecutor.execute(command: "bookmark.delete", variables: ["id": .string(bookmarkId)], context: context)
+    let bookmarkDelete = executeGraphQL(command: "bookmark.delete", variables: ["id": .string(bookmarkId)], context: context)
     XCTAssertEqual(jsonObject(bookmarkDelete.data)?["deleted"], .bool(true))
 
-    let token = ClaudeCodeGraphQLCommandExecutor.execute(command: "token.create", variables: ["name": .string("bot"), "permissions": .array([.string("session:read")])], context: context)
+    let token = executeGraphQL(command: "token.create", variables: ["name": .string("bot"), "permissions": .array([.string("session:read")])], context: context)
     let rawToken = try XCTUnwrap(jsonString(token.data))
     XCTAssertTrue(rawToken.hasPrefix("cca_"))
 
-    let groupToken = ClaudeCodeGraphQLCommandExecutor.execute(command: "token.create", variables: ["name": .string("group-bot"), "permissions": .array([.string("group:run")])], context: context)
+    let groupToken = executeGraphQL(command: "token.create", variables: ["name": .string("group-bot"), "permissions": .array([.string("group:run")])], context: context)
     let groupRawToken = try XCTUnwrap(jsonString(groupToken.data))
     XCTAssertNotNil(try ClaudeCodeTokenPersistence.verify(rawToken: groupRawToken, permission: "group:run", configDir: config.path))
 
     let limitedToken = try ClaudeCodeTokenPersistence.createRawToken(name: "limited", permissions: ["bookmark:*"], configDir: config.path)
+    let limitedContext = ClaudeCodeAgentCompatibilityContext(configDir: config.path, authToken: limitedToken)
+    let invalidTokenContext = ClaudeCodeAgentCompatibilityContext(configDir: config.path, authToken: "not-a-token")
     let tokenManagementError = "Token management commands are not available in token-authenticated GraphQL contexts"
-    XCTAssertEqual(ClaudeCodeGraphQLCommandExecutor.execute(command: "token.list", context: ClaudeCodeAgentCompatibilityContext(configDir: config.path, authToken: limitedToken)).errors, [tokenManagementError])
-    XCTAssertEqual(ClaudeCodeGraphQLCommandExecutor.execute(command: "token.create", variables: ["name": .string("blocked")], context: ClaudeCodeAgentCompatibilityContext(configDir: config.path, authToken: limitedToken)).errors, [tokenManagementError])
-    XCTAssertEqual(ClaudeCodeGraphQLCommandExecutor.execute(command: "token.revoke", variables: ["id": .string("any")], context: ClaudeCodeAgentCompatibilityContext(configDir: config.path, authToken: "not-a-token")).errors, [tokenManagementError])
+    XCTAssertEqual(executeGraphQL(command: "token.list", context: limitedContext).errors, [tokenManagementError])
+    XCTAssertEqual(
+      executeGraphQL(command: "token.create", variables: ["name": .string("blocked")], context: limitedContext).errors,
+      [tokenManagementError]
+    )
+    XCTAssertEqual(
+      executeGraphQL(command: "token.revoke", variables: ["id": .string("any")], context: invalidTokenContext).errors,
+      [tokenManagementError]
+    )
     XCTAssertEqual(ClaudeCodeAgentCLIApplication.run(arguments: ["token", "create", "--name", "local-ok"], context: context).exitCode, 0)
-    let permissionModeCheck = ClaudeCodeGraphQLCommandExecutor.execute(command: "model.check", variables: ["model": .string("claude-sonnet-4"), "approvalMode": .string("allow_all"), "executableName": .string("/usr/bin/true")], context: context)
+    let permissionModeCheck = executeGraphQL(
+      command: "model.check",
+      variables: [
+        "model": .string("claude-sonnet-4"),
+        "approvalMode": .string("allow_all"),
+        "executableName": .string("/usr/bin/true")
+      ],
+      context: context
+    )
     XCTAssertEqual(permissionModeCheck.errors, [])
   }
+}
 
+extension ClaudeCodeAgentCompatibilityTests {
   func testAuthCliGraphQLPermissionsActivityAndSessionCompatibilityCommands() throws {
     let config = try makeTemporaryDirectory()
     let home = try makeTemporaryDirectory()
@@ -450,7 +281,9 @@ final class ClaudeCodeAgentCompatibilityTests: XCTestCase {
     XCTAssertEqual(verify.exitCode, 0)
     XCTAssertTrue(verify.stdout.contains(#""requested":"claude-sonnet-4"#))
 
-    let missingAuth = ClaudeCodeAgentCLIApplication.run(arguments: ["auth", "status"], context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: config.appendingPathComponent("missing-home").path, configDir: config.path))
+    let missingHome = config.appendingPathComponent("missing-home").path
+    let missingAuthContext = ClaudeCodeAgentCompatibilityContext(claudeCodeHome: missingHome, configDir: config.path)
+    let missingAuth = ClaudeCodeAgentCLIApplication.run(arguments: ["auth", "status"], context: missingAuthContext)
     XCTAssertEqual(missingAuth.exitCode, 1)
     let accountOnlyHome = try makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: accountOnlyHome) }
@@ -461,22 +294,22 @@ final class ClaudeCodeAgentCompatibilityTests: XCTestCase {
     XCTAssertEqual(ClaudeCodeAgentCLIApplication.run(arguments: ["auth", "status"], context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: accountOnlyHome.path, configDir: config.path)).exitCode, 1)
 
     let bookmarkOnlyToken = try ClaudeCodeTokenPersistence.createRawToken(name: "bookmark", permissions: ["bookmark:*"], configDir: config.path)
-    let denied = ClaudeCodeGraphQLCommandExecutor.execute(command: "session.list", context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: bookmarkOnlyToken))
+    let denied = executeGraphQL(command: "session.list", context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: bookmarkOnlyToken))
     XCTAssertEqual(denied.errors, ["Missing permission: session:read"])
 
     let sessionToken = try ClaudeCodeTokenPersistence.createRawToken(name: "session", permissions: ["session:read"], configDir: config.path)
-    let authorized = ClaudeCodeGraphQLCommandExecutor.execute(command: "session.list", context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: sessionToken))
+    let authorized = executeGraphQL(command: "session.list", context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: sessionToken))
     XCTAssertEqual(authorized.errors, [])
     XCTAssertNotNil(jsonArray(authorized.data))
     for command in ["session.create", "session.cancel", "session.pause", "session.resume"] {
       XCTAssertEqual(
-        ClaudeCodeGraphQLCommandExecutor.execute(command: command, context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: sessionToken)).errors,
+        executeGraphQL(command: command, context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: sessionToken)).errors,
         ["Missing permission: session:create"]
       )
     }
     let sessionCreateToken = try ClaudeCodeTokenPersistence.createRawToken(name: "session-create", permissions: ["session:create"], configDir: config.path)
     let sessionCreateAuthContext = ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: sessionCreateToken)
-    let authorizedCreate = ClaudeCodeGraphQLCommandExecutor.execute(
+    let authorizedCreate = executeGraphQL(
       command: "session.create",
       variables: ["prompt": .string("hello"), "executableName": .string("/usr/bin/true")],
       context: sessionCreateAuthContext
@@ -484,11 +317,20 @@ final class ClaudeCodeAgentCompatibilityTests: XCTestCase {
     XCTAssertEqual(authorizedCreate.errors, [])
     XCTAssertEqual(jsonObject(authorizedCreate.data)?["exitCode"], .number(0))
 
+    let sessionAuthContext = ClaudeCodeAgentCompatibilityContext(
+      claudeCodeHome: home.path,
+      configDir: config.path,
+      authToken: sessionToken
+    )
     let store = ClaudeCodeActivityStore(dataDir: config.path)
     try store.save([ClaudeCodeStoredActivityEntry(sessionId: "session-auth", status: .working, updatedAt: "2026-06-17T00:00:00Z")])
-    let activityList = ClaudeCodeGraphQLCommandExecutor.execute(command: "activity.list", context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: sessionToken))
+    let activityList = executeGraphQL(command: "activity.list", context: sessionAuthContext)
     XCTAssertEqual(jsonArray(jsonObject(activityList.data)?["entries"])?.count, 1)
-    let activityGet = ClaudeCodeGraphQLCommandExecutor.execute(command: "activity.get", variables: ["sessionId": .string("session-auth")], context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: sessionToken))
+    let activityGet = executeGraphQL(
+      command: "activity.get",
+      variables: ["sessionId": .string("session-auth")],
+      context: sessionAuthContext
+    )
     XCTAssertEqual(jsonObject(activityGet.data)?["status"], .string("working"))
 
     try writeClaudeRollout(home: home, sessionId: "session-auth")
@@ -496,33 +338,73 @@ final class ClaudeCodeAgentCompatibilityTests: XCTestCase {
     try writeClaudeSQLiteState(home: home, sessionId: "sqlite-session")
     try writeLegacyClaudeProjectSession(home: home, projectPath: "/tmp/legacy-project", sessionId: "88487b4c-f3f6-4a49-b59b-d1d4a098425f")
     try writeLegacyClaudeProjectSessionWithoutCwd(home: home, encodedProjectPath: "my-project", sessionId: "relative-legacy-session")
-    let sessionGet = ClaudeCodeGraphQLCommandExecutor.execute(command: "session.get", variables: ["id": .string("session-auth")], context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: sessionToken))
+    let sessionGet = executeGraphQL(
+      command: "session.get",
+      variables: ["id": .string("session-auth")],
+      context: sessionAuthContext
+    )
     XCTAssertEqual(jsonObject(sessionGet.data)?["id"], .string("session-auth"))
-    let projectSessions = ClaudeCodeGraphQLCommandExecutor.execute(command: "session.list", variables: ["projectPath": .string("/tmp/project")], context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: sessionToken))
+    let projectSessions = executeGraphQL(
+      command: "session.list",
+      variables: ["projectPath": .string("/tmp/project")],
+      context: sessionAuthContext
+    )
     XCTAssertEqual(jsonArray(projectSessions.data)?.map { jsonObject($0)?["id"] }, [.string("session-auth")])
-    let sqliteSessions = ClaudeCodeGraphQLCommandExecutor.execute(command: "session.list", variables: ["projectPath": .string("/tmp/sqlite-project")], context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: sessionToken))
+    let sqliteSessions = executeGraphQL(
+      command: "session.list",
+      variables: ["projectPath": .string("/tmp/sqlite-project")],
+      context: sessionAuthContext
+    )
     XCTAssertEqual(jsonArray(sqliteSessions.data)?.map { jsonObject($0)?["id"] }, [.string("sqlite-session")])
-    let legacyProjectSessions = ClaudeCodeGraphQLCommandExecutor.execute(command: "session.list", variables: ["projectPath": .string("/tmp/legacy-project")], context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: sessionToken))
+    let legacyProjectSessions = executeGraphQL(
+      command: "session.list",
+      variables: ["projectPath": .string("/tmp/legacy-project")],
+      context: sessionAuthContext
+    )
     XCTAssertEqual(jsonArray(legacyProjectSessions.data)?.map { jsonObject($0)?["id"] }, [.string("88487b4c-f3f6-4a49-b59b-d1d4a098425f")])
-    let relativeLegacyProjectSessions = ClaudeCodeGraphQLCommandExecutor.execute(command: "session.list", variables: ["projectPath": .string("my/project")], context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: sessionToken))
+    let relativeLegacyProjectSessions = executeGraphQL(
+      command: "session.list",
+      variables: ["projectPath": .string("my/project")],
+      context: sessionAuthContext
+    )
     XCTAssertEqual(jsonArray(relativeLegacyProjectSessions.data)?.map { jsonObject($0)?["id"] }, [.string("relative-legacy-session")])
-    let legacyMessages = ClaudeCodeGraphQLCommandExecutor.execute(command: "session.messages", variables: ["id": .string("88487b4c-f3f6-4a49-b59b-d1d4a098425f")], context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: sessionToken))
+    let legacyMessages = executeGraphQL(
+      command: "session.messages",
+      variables: ["id": .string("88487b4c-f3f6-4a49-b59b-d1d4a098425f")],
+      context: sessionAuthContext
+    )
     let legacyUserPayload = jsonArray(jsonObject(legacyMessages.data)?["messages"])?
       .compactMap { jsonObject(jsonObject($0)?["payload"]) }
       .first { $0["type"] == .string("UserMessage") }
     XCTAssertEqual(legacyUserPayload?["message"], .string("hello legacy"))
-    let messages = ClaudeCodeGraphQLCommandExecutor.execute(command: "session.messages", variables: ["id": .string("session-auth")], context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: sessionToken))
+    let messages = executeGraphQL(
+      command: "session.messages",
+      variables: ["id": .string("session-auth")],
+      context: sessionAuthContext
+    )
     XCTAssertEqual(jsonArray(jsonObject(messages.data)?["messages"])?.count, 2)
-    let typedSessions = ClaudeCodeGraphQLCommandExecutor.execute(command: #"query { sessions { nodes { id messageCount } total } }"#, context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: sessionToken))
+    let typedSessions = executeGraphQL(
+      command: #"query { sessions { nodes { id messageCount } total } }"#,
+      context: sessionAuthContext
+    )
     XCTAssertEqual(jsonObject(jsonObject(typedSessions.data)?["sessions"])?.keys.contains("nodes"), true)
-    let typedSessionHistory = ClaudeCodeGraphQLCommandExecutor.execute(command: #"query { session(id: "session-auth") { id history(limit: 1) { total events { type } } } }"#, context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: sessionToken))
+    let typedSessionHistory = executeGraphQL(
+      command: #"query { session(id: "session-auth") { id history(limit: 1) { total events { type } } } }"#,
+      context: sessionAuthContext
+    )
     XCTAssertEqual(jsonObject(jsonObject(typedSessionHistory.data)?["session"])?.keys.contains("history"), true)
-    let typedSessionGrep = ClaudeCodeGraphQLCommandExecutor.execute(command: #"query { session(id: "session-auth") { grep(query: "hello", maxMatches: 5) { matched matchCount } } }"#, context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: sessionToken))
+    let typedSessionGrep = executeGraphQL(
+      command: #"query { session(id: "session-auth") { grep(query: "hello", maxMatches: 5) { matched matchCount } } }"#,
+      context: sessionAuthContext
+    )
     XCTAssertEqual(jsonObject(jsonObject(typedSessionGrep.data)?["session"])?.keys.contains("grep"), true)
-    let typedSearch = ClaudeCodeGraphQLCommandExecutor.execute(command: #"query { searchSessions(query: "hello") { sessionIds total scannedSessions } }"#, context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: sessionToken))
+    let typedSearch = executeGraphQL(
+      command: #"query { searchSessions(query: "hello") { sessionIds total scannedSessions } }"#,
+      context: sessionAuthContext
+    )
     XCTAssertEqual(jsonObject(jsonObject(typedSearch.data)?["searchSessions"])?.keys.contains("sessionIds"), true)
 
-    let sessionResume = ClaudeCodeGraphQLCommandExecutor.execute(
+    let sessionResume = executeGraphQL(
       command: "session.resume",
       variables: ["id": .string("session-auth"), "prompt": .string("continue"), "executableName": .string("/usr/bin/true")],
       context: sessionCreateAuthContext
@@ -532,10 +414,10 @@ final class ClaudeCodeAgentCompatibilityTests: XCTestCase {
     let resumeArguments = jsonArray(jsonObject(sessionResume.data)?["arguments"])?.compactMap(jsonString)
     XCTAssertEqual(resumeArguments?.contains("--resume"), true)
     XCTAssertEqual(resumeArguments?.contains("session-auth"), true)
-    let sessionCancel = ClaudeCodeGraphQLCommandExecutor.execute(command: "session.cancel", variables: ["id": .string("missing-process")], context: context)
+    let sessionCancel = executeGraphQL(command: "session.cancel", variables: ["id": .string("missing-process")], context: context)
     XCTAssertEqual(sessionCancel.errors, [])
     XCTAssertEqual(jsonObject(sessionCancel.data)?["status"], .string("not_found"))
-    let sessionPause = ClaudeCodeGraphQLCommandExecutor.execute(command: "session.pause", variables: ["id": .string("missing-process")], context: context)
+    let sessionPause = executeGraphQL(command: "session.pause", variables: ["id": .string("missing-process")], context: context)
     XCTAssertEqual(sessionPause.errors, [])
     XCTAssertEqual(jsonObject(sessionPause.data)?["degraded"], .bool(true))
   }
@@ -545,36 +427,42 @@ final class ClaudeCodeAgentCompatibilityTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: config) }
     let context = ClaudeCodeAgentCompatibilityContext(configDir: config.path)
 
-    let groupCreate = ClaudeCodeGraphQLCommandExecutor.execute(command: "group.create", variables: ["name": .string("g")], context: context)
+    let groupCreate = executeGraphQL(command: "group.create", variables: ["name": .string("g")], context: context)
     let groupId = try XCTUnwrap(jsonString(jsonObject(groupCreate.data)?["id"]))
-    let queueCreate = ClaudeCodeGraphQLCommandExecutor.execute(command: "queue.create", variables: ["name": .string("q"), "projectPath": .string("/tmp/project")], context: context)
+    let queueCreate = executeGraphQL(command: "queue.create", variables: ["name": .string("q"), "projectPath": .string("/tmp/project")], context: context)
     let queueId = try XCTUnwrap(jsonString(jsonObject(queueCreate.data)?["id"]))
-    _ = ClaudeCodeGraphQLCommandExecutor.execute(command: "queue.create", variables: ["name": .string("other"), "projectPath": .string("/tmp/other")], context: context)
-    XCTAssertNotNil(jsonObject(ClaudeCodeGraphQLCommandExecutor.execute(command: "queue.create", variables: ["projectPath": .string("/tmp/project-only")], context: context).data)?["id"])
+    _ = executeGraphQL(command: "queue.create", variables: ["name": .string("other"), "projectPath": .string("/tmp/other")], context: context)
+    XCTAssertNotNil(jsonObject(executeGraphQL(command: "queue.create", variables: ["projectPath": .string("/tmp/project-only")], context: context).data)?["id"])
     XCTAssertEqual(
-      ClaudeCodeGraphQLCommandExecutor.execute(command: "queue.create", variables: ["name": .string("missing-project")], context: context).errors,
+      executeGraphQL(command: "queue.create", variables: ["name": .string("missing-project")], context: context).errors,
       ["missingVariable(\"projectPath\")"]
     )
 
-    XCTAssertEqual(jsonObject(ClaudeCodeGraphQLCommandExecutor.execute(command: "group.get", variables: ["id": .string(groupId)], context: context).data)?["id"], .string(groupId))
-    XCTAssertEqual(jsonObject(ClaudeCodeGraphQLCommandExecutor.execute(command: "queue.get", variables: ["id": .string(queueId)], context: context).data)?["id"], .string(queueId))
-    XCTAssertEqual(jsonArray(ClaudeCodeGraphQLCommandExecutor.execute(command: "queue.list", variables: ["projectPath": .string("/tmp/project")], context: context).data)?.count, 1)
-    XCTAssertEqual(jsonArray(ClaudeCodeGraphQLCommandExecutor.execute(command: "queue.list", variables: ["status": .string("pending")], context: context).data)?.count, 3)
+    XCTAssertEqual(jsonObject(executeGraphQL(command: "group.get", variables: ["id": .string(groupId)], context: context).data)?["id"], .string(groupId))
+    XCTAssertEqual(jsonObject(executeGraphQL(command: "queue.get", variables: ["id": .string(queueId)], context: context).data)?["id"], .string(queueId))
+    XCTAssertEqual(jsonArray(executeGraphQL(command: "queue.list", variables: ["projectPath": .string("/tmp/project")], context: context).data)?.count, 1)
+    XCTAssertEqual(jsonArray(executeGraphQL(command: "queue.list", variables: ["status": .string("pending")], context: context).data)?.count, 3)
 
     let readToken = try ClaudeCodeTokenPersistence.createRawToken(name: "reader", permissions: ["session:read"], configDir: config.path)
     let runToken = try ClaudeCodeTokenPersistence.createRawToken(name: "runner", permissions: ["group:run"], configDir: config.path)
     let createToken = try ClaudeCodeTokenPersistence.createRawToken(name: "creator", permissions: ["group:create"], configDir: config.path)
 
     XCTAssertEqual(
-      ClaudeCodeGraphQLCommandExecutor.execute(command: "group.list", context: ClaudeCodeAgentCompatibilityContext(configDir: config.path, authToken: readToken)).errors,
+      executeGraphQL(command: "group.list", context: ClaudeCodeAgentCompatibilityContext(configDir: config.path, authToken: readToken)).errors,
       []
     )
     XCTAssertEqual(
-      ClaudeCodeGraphQLCommandExecutor.execute(command: "group.delete", variables: ["id": .string(groupId)], context: ClaudeCodeAgentCompatibilityContext(configDir: config.path, authToken: runToken)).errors,
+      executeGraphQL(command: "group.delete", variables: ["id": .string(groupId)], context: ClaudeCodeAgentCompatibilityContext(configDir: config.path, authToken: runToken)).errors,
       ["Missing permission: group:create"]
     )
     XCTAssertEqual(
-      jsonObject(ClaudeCodeGraphQLCommandExecutor.execute(command: "group.addSession", variables: ["id": .string(groupId), "sessionId": .string("s1")], context: ClaudeCodeAgentCompatibilityContext(configDir: config.path, authToken: createToken)).data)?["ok"],
+      jsonObject(
+        executeGraphQL(
+          command: "group.addSession",
+          variables: ["id": .string(groupId), "sessionId": .string("s1")],
+          context: ClaudeCodeAgentCompatibilityContext(configDir: config.path, authToken: createToken)
+        ).data
+      )?["ok"],
       .bool(true)
     )
   }
@@ -591,7 +479,7 @@ final class ClaudeCodeAgentCompatibilityTests: XCTestCase {
     try encoder.encode(legacyGroup).write(to: legacyGroupURL)
 
     let context = ClaudeCodeAgentCompatibilityContext(configDir: config.path)
-    XCTAssertEqual(jsonObject(ClaudeCodeGraphQLCommandExecutor.execute(command: "group.get", variables: ["id": .string("legacy-group")], context: context).data)?["name"], .string("Legacy Group"))
+    XCTAssertEqual(jsonObject(executeGraphQL(command: "group.get", variables: ["id": .string("legacy-group")], context: context).data)?["name"], .string("Legacy Group"))
     XCTAssertEqual(ClaudeCodeAgentCLIApplication.run(arguments: ["group", "add", "legacy-group", "s2"], context: context).exitCode, 0)
     let savedGroup = try JSONDecoder().decode(ClaudeCodeGroup.self, from: Data(contentsOf: legacyGroupURL))
     XCTAssertEqual(savedGroup.sessionIds, ["s1", "s2"])
@@ -601,8 +489,8 @@ final class ClaudeCodeAgentCompatibilityTests: XCTestCase {
     try FileManager.default.createDirectory(at: legacyBookmarkURL.deletingLastPathComponent(), withIntermediateDirectories: true)
     try encoder.encode(legacyBookmark).write(to: legacyBookmarkURL)
 
-    XCTAssertEqual(jsonArray(ClaudeCodeGraphQLCommandExecutor.execute(command: "bookmark.list", variables: ["tag": .string("legacy")], context: context).data)?.count, 1)
-    XCTAssertEqual(jsonArray(ClaudeCodeGraphQLCommandExecutor.execute(command: "bookmark.search", variables: ["query": .string("needle")], context: context).data)?.count, 1)
+    XCTAssertEqual(jsonArray(executeGraphQL(command: "bookmark.list", variables: ["tag": .string("legacy")], context: context).data)?.count, 1)
+    XCTAssertEqual(jsonArray(executeGraphQL(command: "bookmark.search", variables: ["query": .string("needle")], context: context).data)?.count, 1)
     XCTAssertEqual(ClaudeCodeAgentCLIApplication.run(arguments: ["bookmark", "delete", "legacy-bookmark"], context: context).exitCode, 0)
     XCTAssertFalse(FileManager.default.fileExists(atPath: legacyBookmarkURL.path))
   }
@@ -612,8 +500,8 @@ final class ClaudeCodeAgentCompatibilityTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: config) }
     let context = ClaudeCodeAgentCompatibilityContext(configDir: config.path)
 
-    let groupId = try XCTUnwrap(jsonString(jsonObject(ClaudeCodeGraphQLCommandExecutor.execute(command: "group.create", variables: ["name": .string("g")], context: context).data)?["id"]))
-    let queueId = try XCTUnwrap(jsonString(jsonObject(ClaudeCodeGraphQLCommandExecutor.execute(command: "queue.create", variables: ["name": .string("q"), "projectPath": .string("/tmp/project")], context: context).data)?["id"]))
+    let groupId = try XCTUnwrap(jsonString(jsonObject(executeGraphQL(command: "group.create", variables: ["name": .string("g")], context: context).data)?["id"]))
+    let queueId = try XCTUnwrap(jsonString(jsonObject(executeGraphQL(command: "queue.create", variables: ["name": .string("q"), "projectPath": .string("/tmp/project")], context: context).data)?["id"]))
     let rootFormat = ClaudeCodeAgentCLIApplication.run(arguments: ["--format", "json", "version"], context: context)
     XCTAssertEqual(rootFormat.exitCode, 0)
     XCTAssertTrue(rootFormat.stdout.contains("version"))
@@ -645,8 +533,8 @@ final class ClaudeCodeAgentCompatibilityTests: XCTestCase {
     XCTAssertEqual(ClaudeCodeAgentCLIApplication.run(arguments: ["queue", "command", "edit", queueId, "0", "--prompt", "edited"], context: context).exitCode, 0)
     XCTAssertEqual(ClaudeCodeAgentCLIApplication.run(arguments: ["queue", "command", "move", queueId, "from=0", "to=1"], context: context).exitCode, 0)
     XCTAssertEqual(ClaudeCodeAgentCLIApplication.run(arguments: ["queue", "command", "remove", queueId, "0"], context: context).exitCode, 0)
-    XCTAssertEqual(ClaudeCodeGraphQLCommandExecutor.execute(command: "queue.addCommand", variables: ["id": .string(queueId), "prompt": .string("shape")], context: context).errors, [])
-    let removeCommandShape = ClaudeCodeGraphQLCommandExecutor.execute(command: "queue.removeCommand", variables: ["id": .string(queueId), "index": .number(1)], context: context)
+    XCTAssertEqual(executeGraphQL(command: "queue.addCommand", variables: ["id": .string(queueId), "prompt": .string("shape")], context: context).errors, [])
+    let removeCommandShape = executeGraphQL(command: "queue.removeCommand", variables: ["id": .string(queueId), "index": .number(1)], context: context)
     XCTAssertEqual(jsonObject(removeCommandShape.data)?["success"], .bool(true))
     XCTAssertEqual(ClaudeCodeAgentCLIApplication.run(arguments: ["queue", "stop", queueId], context: context).exitCode, 0)
     queue = try XCTUnwrap(ClaudeCodeQueuePersistence.findQueue(queueId, configDir: config.path))
@@ -654,31 +542,40 @@ final class ClaudeCodeAgentCompatibilityTests: XCTestCase {
     XCTAssertEqual(queue.status, .stopped)
     XCTAssertEqual(queue.prompts.map(\.prompt), ["edited"])
     XCTAssertEqual(queue.prompts.map(\.status), [.skipped])
-    XCTAssertFalse(ClaudeCodeGraphQLCommandExecutor.execute(command: "queue.resume", variables: ["id": .string(queueId)], context: context).errors.isEmpty)
-    XCTAssertEqual(jsonArray(ClaudeCodeGraphQLCommandExecutor.execute(command: "queue.list", variables: ["status": .string("stopped")], context: context).data)?.map { jsonObject($0)?["id"] }, [.string(queueId)])
+    XCTAssertFalse(executeGraphQL(command: "queue.resume", variables: ["id": .string(queueId)], context: context).errors.isEmpty)
+    XCTAssertEqual(jsonArray(executeGraphQL(command: "queue.list", variables: ["status": .string("stopped")], context: context).data)?.map { jsonObject($0)?["id"] }, [.string(queueId)])
     XCTAssertEqual(ClaudeCodeAgentCLIApplication.run(arguments: ["queue", "create", "slug", "--project", "/tmp/named-project", "--name", "Human Name"], context: context).exitCode, 0)
     XCTAssertEqual(try ClaudeCodeQueuePersistence.listQueues(configDir: config.path).first { $0.projectPath == "/tmp/named-project" }?.name, "Human Name")
 
-    let bookmark = ClaudeCodeGraphQLCommandExecutor.execute(
+    let bookmark = executeGraphQL(
       command: "bookmark.add",
       variables: ["type": .string("session"), "sessionId": .string("session-a"), "name": .string("Needle"), "description": .string("content text")],
       context: context
     )
     let bookmarkId = try XCTUnwrap(jsonString(jsonObject(bookmark.data)?["id"]))
-    let inferredSessionBookmark = ClaudeCodeGraphQLCommandExecutor.execute(command: "bookmark.add", variables: ["sessionId": .string("session-a"), "name": .string("Session inferred")], context: context)
+    let inferredSessionBookmark = executeGraphQL(command: "bookmark.add", variables: ["sessionId": .string("session-a"), "name": .string("Session inferred")], context: context)
     XCTAssertEqual(jsonObject(inferredSessionBookmark.data)?["type"], .string("session"))
-    let inferredMessageBookmark = ClaudeCodeGraphQLCommandExecutor.execute(command: "bookmark.add", variables: ["sessionId": .string("session-a"), "messageId": .string("message-a"), "name": .string("Message inferred")], context: context)
+    let inferredMessageBookmark = executeGraphQL(command: "bookmark.add", variables: ["sessionId": .string("session-a"), "messageId": .string("message-a"), "name": .string("Message inferred")], context: context)
     XCTAssertEqual(jsonObject(inferredMessageBookmark.data)?["type"], .string("message"))
-    let inferredRangeBookmark = ClaudeCodeGraphQLCommandExecutor.execute(command: "bookmark.add", variables: ["sessionId": .string("session-a"), "fromMessageId": .string("m1"), "toMessageId": .string("m2"), "name": .string("Range inferred")], context: context)
+    let inferredRangeBookmark = executeGraphQL(
+      command: "bookmark.add",
+      variables: [
+        "sessionId": .string("session-a"),
+        "fromMessageId": .string("m1"),
+        "toMessageId": .string("m2"),
+        "name": .string("Range inferred")
+      ],
+      context: context
+    )
     XCTAssertEqual(jsonObject(inferredRangeBookmark.data)?["type"], .string("range"))
     XCTAssertEqual(ClaudeCodeAgentCLIApplication.run(arguments: ["bookmark", "add", "--session", "session-a", "--name", "Tagged", "--tags", "a,b"], context: context).exitCode, 0)
-    XCTAssertEqual(jsonArray(ClaudeCodeGraphQLCommandExecutor.execute(command: "bookmark.list", variables: ["tag": .string("b")], context: context).data)?.count, 1)
+    XCTAssertEqual(jsonArray(executeGraphQL(command: "bookmark.list", variables: ["tag": .string("b")], context: context).data)?.count, 1)
     XCTAssertEqual(ClaudeCodeAgentCLIApplication.run(arguments: ["bookmark", "show", bookmarkId], context: context).exitCode, 0)
-    XCTAssertEqual(jsonArray(ClaudeCodeGraphQLCommandExecutor.execute(command: "bookmark.search", variables: ["q": .string("Needle")], context: context).data)?.count, 1)
-    XCTAssertEqual(jsonObject(ClaudeCodeGraphQLCommandExecutor.execute(command: "bookmark.content", variables: ["id": .string(bookmarkId)], context: context).data)?["content"], .string("content text"))
-    let bookmarkDeleteShape = ClaudeCodeGraphQLCommandExecutor.execute(command: "bookmark.delete", variables: ["id": .string(bookmarkId)], context: context)
+    XCTAssertEqual(jsonArray(executeGraphQL(command: "bookmark.search", variables: ["q": .string("Needle")], context: context).data)?.count, 1)
+    XCTAssertEqual(jsonObject(executeGraphQL(command: "bookmark.content", variables: ["id": .string(bookmarkId)], context: context).data)?["content"], .string("content text"))
+    let bookmarkDeleteShape = executeGraphQL(command: "bookmark.delete", variables: ["id": .string(bookmarkId)], context: context)
     XCTAssertEqual(jsonObject(bookmarkDeleteShape.data)?["deleted"], .bool(true))
-    let queueDeleteShape = ClaudeCodeGraphQLCommandExecutor.execute(command: "queue.delete", variables: ["id": .string(queueId)], context: context)
+    let queueDeleteShape = executeGraphQL(command: "queue.delete", variables: ["id": .string(queueId)], context: context)
     XCTAssertEqual(jsonObject(queueDeleteShape.data)?["deleted"], .bool(true))
   }
 
@@ -769,10 +666,10 @@ esac
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
 
     let context = ClaudeCodeAgentCompatibilityContext(configDir: config.path)
-    let queueId = try XCTUnwrap(jsonString(jsonObject(ClaudeCodeGraphQLCommandExecutor.execute(command: "queue.create", variables: ["name": .string("run"), "projectPath": .string(config.path)], context: context).data)?["id"]))
+    let queueId = try XCTUnwrap(jsonString(jsonObject(executeGraphQL(command: "queue.create", variables: ["name": .string("run"), "projectPath": .string(config.path)], context: context).data)?["id"]))
     XCTAssertEqual(ClaudeCodeAgentCLIApplication.run(arguments: ["queue", "command", "add", queueId, "prompt=first", "--session-mode", "new"], context: context).exitCode, 0)
     XCTAssertEqual(ClaudeCodeAgentCLIApplication.run(arguments: ["queue", "command", "add", queueId, "prompt=second", "--session-mode", "continue"], context: context).exitCode, 0)
-    let run = ClaudeCodeGraphQLCommandExecutor.execute(command: "queue.run", variables: ["id": .string(queueId), "executableName": .string(script.path)], context: context)
+    let run = executeGraphQL(command: "queue.run", variables: ["id": .string(queueId), "executableName": .string(script.path)], context: context)
     XCTAssertEqual(run.errors, [])
     var queue = try XCTUnwrap(ClaudeCodeQueuePersistence.findQueue(queueId, configDir: config.path))
     XCTAssertEqual(queue.status, .completed)
@@ -781,10 +678,10 @@ esac
     let args = try String(contentsOf: argsLog, encoding: .utf8)
     XCTAssertTrue(args.contains("--resume session-legacy"))
 
-    let failingQueueId = try XCTUnwrap(jsonString(jsonObject(ClaudeCodeGraphQLCommandExecutor.execute(command: "queue.create", variables: ["name": .string("fail"), "projectPath": .string(config.path)], context: context).data)?["id"]))
+    let failingQueueId = try XCTUnwrap(jsonString(jsonObject(executeGraphQL(command: "queue.create", variables: ["name": .string("fail"), "projectPath": .string(config.path)], context: context).data)?["id"]))
     XCTAssertEqual(ClaudeCodeAgentCLIApplication.run(arguments: ["queue", "command", "add", failingQueueId, "prompt=fail command"], context: context).exitCode, 0)
     XCTAssertEqual(ClaudeCodeAgentCLIApplication.run(arguments: ["queue", "command", "add", failingQueueId, "prompt=never"], context: context).exitCode, 0)
-    let failedRun = ClaudeCodeGraphQLCommandExecutor.execute(command: "queue.run", variables: ["id": .string(failingQueueId), "executableName": .string(script.path)], context: context)
+    let failedRun = executeGraphQL(command: "queue.run", variables: ["id": .string(failingQueueId), "executableName": .string(script.path)], context: context)
     XCTAssertEqual(failedRun.errors, [])
     queue = try XCTUnwrap(ClaudeCodeQueuePersistence.findQueue(failingQueueId, configDir: config.path))
     XCTAssertEqual(queue.status, .failed)
@@ -818,19 +715,19 @@ esac
     }
     """.write(to: dataDir.appendingPathComponent("activity.json"), atomically: true, encoding: .utf8)
 
-    let listed = ClaudeCodeGraphQLCommandExecutor.execute(command: "activity.list")
+    let listed = executeGraphQL(command: "activity.list")
     XCTAssertEqual(jsonArray(jsonObject(listed.data)?["entries"])?.count, 1)
-    let entry = ClaudeCodeGraphQLCommandExecutor.execute(command: "activity.get", variables: ["sessionId": .string("legacy-activity")])
+    let entry = executeGraphQL(command: "activity.get", variables: ["sessionId": .string("legacy-activity")])
     XCTAssertEqual(jsonObject(entry.data)?["status"], .string("working"))
     let updated = ClaudeCodeAgentCLIApplication.run(arguments: ["activity", "update", "new-activity", "--status", "idle", "--updated-at", "2026-06-17T01:00:00Z", "--project", "/tmp/new-project"])
     XCTAssertEqual(updated.exitCode, 0)
-    let updatedActivity = jsonObject(ClaudeCodeGraphQLCommandExecutor.execute(command: "activity.get", variables: ["sessionId": .string("new-activity")]).data)
+    let updatedActivity = jsonObject(executeGraphQL(command: "activity.get", variables: ["sessionId": .string("new-activity")]).data)
     XCTAssertEqual(updatedActivity?["status"], .string("idle"))
     XCTAssertEqual(updatedActivity?["projectPath"], .string("/tmp/new-project"))
     XCTAssertEqual(updatedActivity?["lastUpdated"], .string("2026-06-17T01:00:00Z"))
     let cleaned = ClaudeCodeAgentCLIApplication.run(arguments: ["activity", "cleanup", "--older-than", "2026-06-17T00:30:00Z"])
     XCTAssertEqual(cleaned.exitCode, 0)
-    XCTAssertEqual(jsonArray(jsonObject(ClaudeCodeGraphQLCommandExecutor.execute(command: "activity.list").data)?["entries"])?.map { jsonObject($0)?["sessionId"] }, [.string("new-activity")])
+    XCTAssertEqual(jsonArray(jsonObject(executeGraphQL(command: "activity.list").data)?["entries"])?.map { jsonObject($0)?["sessionId"] }, [.string("new-activity")])
     let activityFile = try String(contentsOf: dataDir.appendingPathComponent("activity.json"), encoding: .utf8)
     XCTAssertTrue(activityFile.contains(#""version" : "1.0""#))
     XCTAssertTrue(activityFile.contains(#""sessions" : {"#))
@@ -893,25 +790,25 @@ esac
 
     try store.save([
       ClaudeCodeStoredActivityEntry(sessionId: "stale-default", status: .idle, updatedAt: formatter.string(from: Date().addingTimeInterval(-48 * 60 * 60))),
-      ClaudeCodeStoredActivityEntry(sessionId: "fresh-default", status: .working, updatedAt: formatter.string(from: Date())),
+      ClaudeCodeStoredActivityEntry(sessionId: "fresh-default", status: .working, updatedAt: formatter.string(from: Date()))
     ])
-    let defaultCleanup = ClaudeCodeGraphQLCommandExecutor.execute(command: "activity.cleanup", context: ClaudeCodeAgentCompatibilityContext(configDir: dataDir.path))
+    let defaultCleanup = executeGraphQL(command: "activity.cleanup", context: ClaudeCodeAgentCompatibilityContext(configDir: dataDir.path))
     XCTAssertEqual(defaultCleanup.errors, [])
     XCTAssertEqual(jsonArray(jsonObject(defaultCleanup.data)?["entries"])?.map { jsonObject($0)?["sessionId"] }, [.string("fresh-default")])
 
     try store.save([
       ClaudeCodeStoredActivityEntry(sessionId: "stale-hour", status: .idle, updatedAt: formatter.string(from: Date().addingTimeInterval(-2 * 60 * 60))),
-      ClaudeCodeStoredActivityEntry(sessionId: "fresh-hour", status: .working, updatedAt: formatter.string(from: Date())),
+      ClaudeCodeStoredActivityEntry(sessionId: "fresh-hour", status: .working, updatedAt: formatter.string(from: Date()))
     ])
-    let hourlyCleanup = ClaudeCodeGraphQLCommandExecutor.execute(command: "activity.cleanup", variables: ["olderThan": .string("1")], context: ClaudeCodeAgentCompatibilityContext(configDir: dataDir.path))
+    let hourlyCleanup = executeGraphQL(command: "activity.cleanup", variables: ["olderThan": .string("1")], context: ClaudeCodeAgentCompatibilityContext(configDir: dataDir.path))
     XCTAssertEqual(hourlyCleanup.errors, [])
     XCTAssertEqual(jsonArray(jsonObject(hourlyCleanup.data)?["entries"])?.map { jsonObject($0)?["sessionId"] }, [.string("fresh-hour")])
 
     try store.save([
       ClaudeCodeStoredActivityEntry(sessionId: "stale-fractional", status: .idle, updatedAt: "2020-01-01T00:00:00.000Z"),
-      ClaudeCodeStoredActivityEntry(sessionId: "fresh-fractional", status: .working, updatedAt: "2999-01-01T00:00:00.000Z"),
+      ClaudeCodeStoredActivityEntry(sessionId: "fresh-fractional", status: .working, updatedAt: "2999-01-01T00:00:00.000Z")
     ])
-    let fractionalCleanup = ClaudeCodeGraphQLCommandExecutor.execute(command: "activity.cleanup", variables: ["olderThan": .string("2026-01-01T00:00:00.000Z")], context: ClaudeCodeAgentCompatibilityContext(configDir: dataDir.path))
+    let fractionalCleanup = executeGraphQL(command: "activity.cleanup", variables: ["olderThan": .string("2026-01-01T00:00:00.000Z")], context: ClaudeCodeAgentCompatibilityContext(configDir: dataDir.path))
     XCTAssertEqual(fractionalCleanup.errors, [])
     XCTAssertEqual(jsonArray(jsonObject(fractionalCleanup.data)?["entries"])?.map { jsonObject($0)?["sessionId"] }, [.string("fresh-fractional")])
   }
@@ -989,7 +886,7 @@ esac
     let store = ClaudeCodeActivityStore(dataDir: dataDir.path)
     try store.save([
       ClaudeCodeStoredActivityEntry(sessionId: "old", status: .idle, updatedAt: "2020-01-01T00:00:00Z"),
-      ClaudeCodeStoredActivityEntry(sessionId: "new", status: .working, updatedAt: "2026-06-17T00:00:00Z"),
+      ClaudeCodeStoredActivityEntry(sessionId: "new", status: .working, updatedAt: "2026-06-17T00:00:00Z")
     ])
     let retained = try store.cleanup(olderThan: try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-01-01T00:00:00Z")))
     XCTAssertEqual(retained.map(\.sessionId), ["new"])
@@ -997,7 +894,19 @@ esac
     let home = try makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: home) }
     let config = home.appendingPathComponent(".claude.json")
-    try #"{"oauthAccount":{"accountUuid":"acct","emailAddress":"user@example.test","displayName":"User","organizationUuid":"org","organizationName":"Org","organizationBillingType":"pro","organizationRole":"admin"}}"#.write(to: config, atomically: true, encoding: .utf8)
+    try """
+    {
+      "oauthAccount": {
+        "accountUuid": "acct",
+        "emailAddress": "user@example.test",
+        "displayName": "User",
+        "organizationUuid": "org",
+        "organizationName": "Org",
+        "organizationBillingType": "pro",
+        "organizationRole": "admin"
+      }
+    }
+    """.write(to: config, atomically: true, encoding: .utf8)
     XCTAssertEqual(try ClaudeCodeConfigReader.account(environment: ["HOME": home.path])?.organizationName, "Org")
   }
 
@@ -1006,6 +915,119 @@ esac
     XCTAssertEqual(result.exitCode, 0)
     XCTAssertTrue(result.stdout.contains("version"))
   }
+}
+
+private func executeGraphQL(command: String, variables: JSONObject = [:], context: ClaudeCodeAgentCompatibilityContext = ClaudeCodeAgentCompatibilityContext()) -> ClaudeCodeGraphQLCommandExecutor.Result {
+  ClaudeCodeGraphQLCommandExecutor.execute(command: command, variables: variables, context: context)
+}
+
+private func legacyClaudeCodeAgentUnitTests() -> Set<String> {
+  [
+    "src/auth/duration.test.ts", "src/auth/token-manager.test.ts", "src/cli/commands/activity/cleanup.test.ts", "src/cli/commands/activity/list.test.ts", "src/cli/commands/activity/status.test.ts",
+    "src/cli/commands/auth/status.test.ts", "src/cli/commands/auth/verify.test.ts", "src/cli/commands/bookmark.test.ts", "src/cli/commands/edge-cases.test.ts", "src/cli/commands/error-handling.test.ts",
+    "src/cli/commands/group.test.ts", "src/cli/commands/queue.test.ts", "src/cli/commands/session.test.ts", "src/cli/commands/version.test.ts", "src/cli/graphql.test.ts", "src/cli/main.test.ts",
+    "src/cli/output.test.ts", "src/container.test.ts", "src/errors.test.ts", "src/graphql/index.test.ts", "src/lib.test.ts", "src/package-metadata.test.ts", "src/polling/event-parser.test.ts",
+    "src/polling/group-monitor.test.ts", "src/polling/monitor.test.ts", "src/polling/output.test.ts", "src/polling/parser.test.ts", "src/polling/state-manager.test.ts", "src/polling/watcher.test.ts",
+    "src/repository/file/base-repository.test.ts", "src/repository/file/bookmark-repository.test.ts", "src/repository/file/group-repository.test.ts", "src/repository/file/queue-repository.test.ts",
+    "src/repository/in-memory/bookmark-repository.test.ts", "src/repository/in-memory/group-repository.test.ts", "src/repository/in-memory/queue-repository.test.ts",
+    "src/repository/in-memory/session-repository.test.ts", "src/result.test.ts", "src/sdk/__fixtures__/mock-receiver.test.ts", "src/sdk/__fixtures__/mock-session.test.ts",
+    "src/sdk/__fixtures__/mock-transport.test.ts", "src/sdk/__tests__/exports.test.ts", "src/sdk/__tests__/tool-call.integration.test.ts", "src/sdk/activity/__tests__/integration.test.ts",
+    "src/sdk/activity/hook-types.test.ts", "src/sdk/activity/manager.test.ts", "src/sdk/activity/store.test.ts", "src/sdk/activity/transcript-analyzer.test.ts", "src/sdk/agent.test.ts",
+    "src/sdk/bookmarks/manager.test.ts", "src/sdk/bookmarks/search.test.ts", "src/sdk/client.test.ts", "src/sdk/control-protocol.test.ts", "src/sdk/credentials/__tests__/integration.test.ts",
+    "src/sdk/credentials/__tests__/manager.test.ts", "src/sdk/credentials/__tests__/reader.test.ts", "src/sdk/credentials/__tests__/validation.test.ts", "src/sdk/credentials/__tests__/writer.test.ts",
+    "src/sdk/environment.test.ts", "src/sdk/errors.test.ts", "src/sdk/events/emitter.test.ts", "src/sdk/file-changes/extractor.test.ts", "src/sdk/file-changes/index-manager.test.ts",
+    "src/sdk/file-changes/service.test.ts", "src/sdk/group/config-generator.test.ts", "src/sdk/group/dependency-graph.test.ts", "src/sdk/group/events.test.ts", "src/sdk/group/manager.test.ts",
+    "src/sdk/group/progress.test.ts", "src/sdk/group/runner.test.ts", "src/sdk/group/session-processor.test.ts", "src/sdk/group/types.test.ts", "src/sdk/jsonl-parser.test.ts",
+    "src/sdk/markdown-parser/detectors.test.ts", "src/sdk/markdown-parser/parser.test.ts", "src/sdk/mock-session-runner.test.ts", "src/sdk/queue/manager.test.ts", "src/sdk/queue/recovery.test.ts",
+    "src/sdk/queue/runner.test.ts", "src/sdk/readiness.test.ts", "src/sdk/receiver.test.ts", "src/sdk/session-reader.test.ts", "src/sdk/session-state.test.ts", "src/sdk/tool-registry.test.ts",
+    "src/sdk/tool-versions.test.ts", "src/sdk/transport/subprocess.test.ts", "src/sdk/types/mcp.test.ts", "src/sdk/types/protocol.test.ts", "src/sdk/types/state.test.ts", "src/sdk/types/tool.test.ts",
+    "src/services/atomic-writer.test.ts", "src/services/file-lock.test.ts", "src/test/fixtures/fixtures.test.ts", "src/test/helpers.test.ts", "src/test/mocks/clock.test.ts", "src/test/mocks/filesystem.test.ts",
+    "src/test/mocks/lock.test.ts", "src/test/mocks/process-manager.test.ts", "src/test/utils/concurrency.test.ts", "src/types/activity.test.ts", "src/types/types.test.ts"
+  ]
+}
+
+private func legacyCoverageCategory(for path: String) -> String {
+  let prefixMappings = [
+    ("src/auth/", "auth"), ("src/cli/", "cli"), ("src/polling/", "polling"),
+    ("src/repository/", "repository"), ("src/sdk/activity/", "sdk-activity"),
+    ("src/sdk/bookmarks/", "sdk-bookmarks"), ("src/sdk/credentials/", "sdk-credentials"),
+    ("src/sdk/file-changes/", "sdk-file-changes"), ("src/sdk/group/", "sdk-group"),
+    ("src/sdk/markdown-parser/", "sdk-markdown-parser"), ("src/sdk/queue/", "sdk-queue"),
+    ("src/sdk/types/", "sdk-types"), ("src/sdk/", "sdk"), ("src/services/", "services"), ("src/test/", "test-support"), ("src/types/", "types")
+  ]
+  if let mapping = prefixMappings.first(where: { path.hasPrefix($0.0) }) {
+    return mapping.1
+  }
+  if path == "src/graphql/index.test.ts" { return "graphql" }
+  let coreTests = ["src/container.test.ts", "src/errors.test.ts", "src/lib.test.ts"]
+  if (coreTests + ["src/package-metadata.test.ts", "src/result.test.ts"]).contains(path) {
+    return "container-and-core"
+  }
+  return "unmapped"
+}
+
+private func legacySwiftCoverageProbes() -> [LegacyCoverageProbe] {
+  [
+    ("auth", {
+      XCTAssertEqual(try ClaudeCodeDurationParser.seconds("1d"), 86_400)
+      let raw = try ClaudeCodeTokenPersistence.createRawToken(
+        name: "probe",
+        permissions: ["session:read"],
+        configDir: makeTemporaryDirectory().path
+      )
+      XCTAssertTrue(raw.hasPrefix("cca_"))
+    }),
+    ("cli", { XCTAssertEqual(ClaudeCodeAgentCLIApplication.run(arguments: ["version", "includeGit=false"]).exitCode, 0) }),
+    ("container-and-core", { XCTAssertEqual(ClaudeCodeProcessCommandBuilder.buildExecArguments(prompt: "probe").first, "-p") }),
+    ("graphql", { XCTAssertEqual(try ClaudeCodeGraphQLCommandExecutor.parseParams(["limit=2"])["limit"], .number(2)) }),
+    ("polling", {
+      var parser = ClaudeCodeJsonlStreamParser()
+      XCTAssertEqual(parser.feed(#"{"type":"assistant","content":"ok"}"# + "\n").first?.type, "assistant")
+    }),
+    ("repository", {
+      var repository = ClaudeCodeQueueRepository()
+      XCTAssertEqual(repository.createQueue(name: "probe").name, "probe")
+    }),
+    ("sdk", {
+      let manager = ClaudeCodeProcessManager(executableName: "claude-probe") { _, _, _ in
+        ClaudeCodeProcessExecution(exitCode: 0)
+      }
+      XCTAssertEqual(manager.spawnExec(prompt: "probe").result.exitCode, 0)
+    }),
+    ("sdk-activity", { XCTAssertEqual(ClaudeCodeActivityAnalyzer.status(hookEventName: "PermissionRequest"), .waitingUserResponse) }),
+    ("sdk-bookmarks", {
+      var manager = ClaudeCodeBookmarkManager()
+      _ = try manager.create(type: .session, sessionId: "probe", name: "Probe")
+      XCTAssertEqual(manager.search(text: "probe").count, 1)
+    }),
+    ("sdk-credentials", {
+      let configPath = ClaudeCodeConfigReader.defaultConfigPath(environment: ["HOME": "/tmp/home"])
+      XCTAssertTrue(configPath.hasSuffix("/.claude.json"))
+    }),
+    ("sdk-file-changes", {
+      let change = ClaudeCodeFileChange(path: "Sources/A.swift", operation: .modified, source: .shell)
+      let index = ClaudeCodeFileChangeIndex(changes: [change])
+      XCTAssertEqual(index.find("Sources/A.swift")?.operation, .modified)
+    }),
+    ("sdk-group", {
+      var groups = ClaudeCodeGroupRepository()
+      XCTAssertEqual(groups.createGroup(name: "g").name, "g")
+    }),
+    ("sdk-markdown-parser", { XCTAssertEqual(ClaudeCodeMarkdown.parseTasks("# Work\n- [x] done").first?.text, "done") }),
+    ("sdk-queue", {
+      var queues = ClaudeCodeQueueRepository()
+      let queue = queues.createQueue(name: "q")
+      XCTAssertNotNil(queues.addPrompt(queueId: queue.id, prompt: "p"))
+    }),
+    ("sdk-types", { XCTAssertEqual(ClaudeCodeActivityStatusValue.working.rawValue, "working") }),
+    ("services", {
+      let url = try makeTemporaryDirectory().appendingPathComponent("queues.json")
+      let store = ClaudeCodeJSONStore<ClaudeCodeQueuesConfig>(url: url)
+      try store.save(ClaudeCodeQueuesConfig())
+    }),
+    ("test-support", { XCTAssertFalse(try makeTemporaryDirectory().path.isEmpty) }),
+    ("types", { XCTAssertEqual(ClaudeCodeActivityStatusValue.waitingUserResponse.rawValue, "waiting_user_response") })
+  ]
 }
 
 private func makeTemporaryDirectory() throws -> URL {
@@ -1019,8 +1041,10 @@ private func writeClaudeRollout(home: URL, sessionId: String, cwd: String = "/tm
   try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
   let rollout = day.appendingPathComponent("rollout-2026-06-17T00-00-00-\(sessionId).jsonl")
   let lines = [
-    #"{"timestamp":"2026-06-17T00:00:00.000Z","type":"session_meta","payload":{"meta":{"id":"\#(sessionId)","timestamp":"2026-06-17T00:00:00.000Z","cwd":"\#(cwd)","cli_version":"0.1.0","source":"cli","model_provider":"anthropic"}}}"#,
-    #"{"timestamp":"2026-06-17T00:00:01.000Z","type":"event_msg","payload":{"type":"UserMessage","message":"hello"}}"#,
+    #"{"timestamp":"2026-06-17T00:00:00.000Z","type":"session_meta","# +
+      #""payload":{"meta":{"id":"\#(sessionId)","timestamp":"2026-06-17T00:00:00.000Z","# +
+      #""cwd":"\#(cwd)","cli_version":"0.1.0","source":"cli","model_provider":"anthropic"}}}"#,
+    #"{"timestamp":"2026-06-17T00:00:01.000Z","type":"event_msg","payload":{"type":"UserMessage","message":"hello"}}"#
   ]
   try lines.joined(separator: "\n").write(to: rollout, atomically: true, encoding: .utf8)
 }
@@ -1029,8 +1053,10 @@ private func writeClaudeSQLiteState(home: URL, sessionId: String) throws {
   let state = home.appendingPathComponent("state")
   let rollout = home.appendingPathComponent("sqlite-\(sessionId).jsonl")
   try [
-    #"{"timestamp":"2026-06-17T00:02:00.000Z","type":"session_meta","payload":{"meta":{"id":"\#(sessionId)","timestamp":"2026-06-17T00:02:00.000Z","cwd":"/tmp/sqlite-project","cli_version":"1.0.0","source":"cli","model_provider":"anthropic"}}}"#,
-    #"{"timestamp":"2026-06-17T00:02:01.000Z","type":"event_msg","payload":{"type":"UserMessage","message":"sqlite hello"}}"#,
+    #"{"timestamp":"2026-06-17T00:02:00.000Z","type":"session_meta","# +
+      #""payload":{"meta":{"id":"\#(sessionId)","timestamp":"2026-06-17T00:02:00.000Z","# +
+      #""cwd":"/tmp/sqlite-project","cli_version":"1.0.0","source":"cli","model_provider":"anthropic"}}}"#,
+    #"{"timestamp":"2026-06-17T00:02:01.000Z","type":"event_msg","payload":{"type":"UserMessage","message":"sqlite hello"}}"#
   ].joined(separator: "\n").write(to: rollout, atomically: true, encoding: .utf8)
   let sql = """
   CREATE TABLE threads (
@@ -1100,7 +1126,7 @@ private func writeLegacyClaudeProjectSession(home: URL, projectPath: String, ses
   let lines = [
     #"{"type":"summary","timestamp":"2026-06-17T00:00:00.000Z","sessionId":"\#(sessionId)","cwd":"\#(projectPath)","version":"1.0.0","summary":"Legacy title"}"#,
     #"{"type":"user","timestamp":"2026-06-17T00:00:01.000Z","sessionId":"\#(sessionId)","cwd":"\#(projectPath)","message":{"role":"user","content":"hello legacy"}}"#,
-    #"{"type":"assistant","timestamp":"2026-06-17T00:00:02.000Z","sessionId":"\#(sessionId)","cwd":"\#(projectPath)","message":{"role":"assistant","content":[{"type":"text","text":"legacy response"}]}}"#,
+    #"{"type":"assistant","timestamp":"2026-06-17T00:00:02.000Z","sessionId":"\#(sessionId)","cwd":"\#(projectPath)","message":{"role":"assistant","content":[{"type":"text","text":"legacy response"}]}}"#
   ]
   try lines.joined(separator: "\n").write(to: session, atomically: true, encoding: .utf8)
 }
@@ -1110,7 +1136,7 @@ private func writeLegacyClaudeProjectSessionWithoutCwd(home: URL, encodedProject
   try FileManager.default.createDirectory(at: projectDir, withIntermediateDirectories: true)
   let session = projectDir.appendingPathComponent("\(sessionId).jsonl")
   let lines = [
-    #"{"type":"user","timestamp":"2026-06-17T00:00:01.000Z","sessionId":"\#(sessionId)","message":{"role":"user","content":"relative legacy"}}"#,
+    #"{"type":"user","timestamp":"2026-06-17T00:00:01.000Z","sessionId":"\#(sessionId)","message":{"role":"user","content":"relative legacy"}}"#
   ]
   try lines.joined(separator: "\n").write(to: session, atomically: true, encoding: .utf8)
 }

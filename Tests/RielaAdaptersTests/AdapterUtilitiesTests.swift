@@ -57,8 +57,8 @@ final class AdapterUtilitiesTests: XCTestCase {
         "payload": .object([
           "accepted": .bool(false),
           "goalAchieved": .bool(false),
-          "decision": .string("needs_work"),
-        ]),
+          "decision": .string("needs_work")
+        ])
       ],
       source: "goal-review"
     )
@@ -90,7 +90,7 @@ final class AdapterUtilitiesTests: XCTestCase {
         [
           "completionPassed": .string("false"),
           "when": .object(["accepted": .bool(true)]),
-          "payload": .object([:]),
+          "payload": .object([:])
         ],
         source: "adapterOutput"
       )

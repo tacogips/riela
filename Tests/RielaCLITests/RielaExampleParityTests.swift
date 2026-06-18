@@ -4,9 +4,54 @@ import XCTest
 @testable import RielaCLI
 
 final class RielaExampleParityTests: XCTestCase {
+  private enum RepositoryPackage {
+    static let manifestFileName = "Package.swift"
+  }
+
+  private enum ExampleCatalog {
+    static let directoryName = "examples"
+    static let expectedMockScenarioCount = 20
+    static let expectedNodeMockScenarioCount = 3
+  }
+
+  private enum WorkflowPackage {
+    static let manifestFileName = "workflow.json"
+  }
+
+  private enum MockScenario {
+    static let fileName = "mock-scenario.json"
+    static let providerName = "scenario-mock"
+  }
+
+  private enum WorkflowIds {
+    static let defaultSuperviserWorkflowName = "default-superviser"
+    static let defaultSuperviserWorkflowId = "riela-default-superviser"
+    static let supervisedMockRetryWorkflowName = "supervised-mock-retry"
+  }
+
+  private enum NodeRuntime {
+    static let executableName = "node"
+    static let pathEnvironmentName = "PATH"
+    static let pathSeparator: Character = ":"
+    static let scriptsDirectoryName = "scripts"
+    static let shellScriptExtension = "sh"
+    static let nodeInvocationNeedles = ["\nnode ", "\nexec node "]
+  }
+
+  private enum WorkflowRunCLI {
+    static let workflowRunArgumentsPrefix = ["workflow", "run"]
+    static let workflowDefinitionDirFlag = "--workflow-definition-dir"
+    static let mockScenarioFlag = "--mock-scenario"
+    static let maxStepsFlag = "--max-steps"
+    static let mockRunMaxSteps = "200"
+    static let outputFlag = "--output"
+    static let jsonOutputFormat = "json"
+    static let autoImproveFlag = "--auto-improve"
+  }
+
   func testAllRielaExampleWorkflowsArePortedAndValidateInSwift() throws {
     let root = repositoryRoot()
-    let examplesRoot = root.appendingPathComponent("examples", isDirectory: true)
+    let examplesRoot = root.appendingPathComponent(ExampleCatalog.directoryName, isDirectory: true)
     let expectedWorkflowNames = rielaExampleWorkflowNames()
     let actualWorkflowNames = try discoverWorkflowNames(examplesRoot: examplesRoot)
 
@@ -28,38 +73,43 @@ final class RielaExampleParityTests: XCTestCase {
 
   func testMockScenarioExamplesRunThroughSwiftCLI() async throws {
     let root = repositoryRoot()
-    let examplesRoot = root.appendingPathComponent("examples", isDirectory: true)
+    let examplesRoot = root.appendingPathComponent(ExampleCatalog.directoryName, isDirectory: true)
     let app = RielaCLIApplication()
-    let nodeAvailable = isExecutableOnPATH("node")
-    let runnableExamples = rielaExampleWorkflowNames().filter { workflowName in
-      let scenario = examplesRoot
-        .appendingPathComponent(workflowName, isDirectory: true)
-        .appendingPathComponent("mock-scenario.json")
-      guard FileManager.default.fileExists(atPath: scenario.path) else {
-        return false
-      }
-      let text = (try? String(contentsOf: scenario, encoding: .utf8)) ?? ""
-      if !text.contains("scenario-mock") {
-        return false
-      }
-      return nodeAvailable || !workflowUsesNodeRuntime(examplesRoot: examplesRoot, workflowName: workflowName)
+    let nodeAvailable = isExecutableOnPATH(NodeRuntime.executableName)
+    let mockScenarioExamples = rielaExampleWorkflowNames().filter {
+      hasScenarioMock(examplesRoot: examplesRoot, workflowName: $0)
     }
+    let nodeRuntimeMockScenarioExamples = mockScenarioExamples.filter {
+      workflowUsesNodeRuntime(examplesRoot: examplesRoot, workflowName: $0)
+    }
+    let runnableExamples = nodeAvailable
+      ? mockScenarioExamples
+      : mockScenarioExamples.filter { !nodeRuntimeMockScenarioExamples.contains($0) }
 
-    XCTAssertEqual(runnableExamples.count, nodeAvailable ? 20 : 17)
+    XCTAssertEqual(mockScenarioExamples.count, ExampleCatalog.expectedMockScenarioCount)
+    XCTAssertEqual(
+      nodeRuntimeMockScenarioExamples.count,
+      ExampleCatalog.expectedNodeMockScenarioCount
+    )
+    XCTAssertEqual(
+      runnableExamples.count,
+      ExampleCatalog.expectedMockScenarioCount
+        - (nodeAvailable ? 0 : ExampleCatalog.expectedNodeMockScenarioCount)
+    )
 
     for workflowName in runnableExamples {
       let scenario = examplesRoot
         .appendingPathComponent(workflowName, isDirectory: true)
-        .appendingPathComponent("mock-scenario.json")
-      var arguments = [
-        "workflow", "run", workflowName,
-        "--workflow-definition-dir", examplesRoot.path,
-        "--mock-scenario", scenario.path,
-        "--max-steps", "200",
-        "--output", "json"
+        .appendingPathComponent(MockScenario.fileName)
+      var arguments = WorkflowRunCLI.workflowRunArgumentsPrefix + [
+        workflowName,
+        WorkflowRunCLI.workflowDefinitionDirFlag, examplesRoot.path,
+        WorkflowRunCLI.mockScenarioFlag, scenario.path,
+        WorkflowRunCLI.maxStepsFlag, WorkflowRunCLI.mockRunMaxSteps,
+        WorkflowRunCLI.outputFlag, WorkflowRunCLI.jsonOutputFormat
       ]
-      if workflowName == "supervised-mock-retry" {
-        arguments.append("--auto-improve")
+      if workflowName == WorkflowIds.supervisedMockRetryWorkflowName {
+        arguments.append(WorkflowRunCLI.autoImproveFlag)
       }
       let result = await app.run(arguments)
 
@@ -108,7 +158,9 @@ final class RielaExampleParityTests: XCTestCase {
   }
 
   private func expectedWorkflowId(for workflowName: String) -> String {
-    workflowName == "default-superviser" ? "riela-default-superviser" : workflowName
+    workflowName == WorkflowIds.defaultSuperviserWorkflowName
+      ? WorkflowIds.defaultSuperviserWorkflowId
+      : workflowName
   }
 
   private func discoverWorkflowNames(examplesRoot: URL) throws -> [String] {
@@ -121,7 +173,7 @@ final class RielaExampleParityTests: XCTestCase {
       guard try url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else {
         return nil
       }
-      let workflowPath = url.appendingPathComponent("workflow.json").path
+      let workflowPath = url.appendingPathComponent(WorkflowPackage.manifestFileName).path
       guard FileManager.default.fileExists(atPath: workflowPath) else {
         return nil
       }
@@ -130,18 +182,29 @@ final class RielaExampleParityTests: XCTestCase {
   }
 
   private func isExecutableOnPATH(_ executableName: String) -> Bool {
-    let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
-    return path.split(separator: ":").contains { directory in
+    let path = ProcessInfo.processInfo.environment[NodeRuntime.pathEnvironmentName] ?? ""
+    return path.split(separator: NodeRuntime.pathSeparator).contains { directory in
       let candidate = URL(fileURLWithPath: String(directory), isDirectory: true)
         .appendingPathComponent(executableName)
       return FileManager.default.isExecutableFile(atPath: candidate.path)
     }
   }
 
+  private func hasScenarioMock(examplesRoot: URL, workflowName: String) -> Bool {
+    let scenario = examplesRoot
+      .appendingPathComponent(workflowName, isDirectory: true)
+      .appendingPathComponent(MockScenario.fileName)
+    guard FileManager.default.fileExists(atPath: scenario.path) else {
+      return false
+    }
+    let text = (try? String(contentsOf: scenario, encoding: .utf8)) ?? ""
+    return text.contains(MockScenario.providerName)
+  }
+
   private func workflowUsesNodeRuntime(examplesRoot: URL, workflowName: String) -> Bool {
     let scriptsRoot = examplesRoot
       .appendingPathComponent(workflowName, isDirectory: true)
-      .appendingPathComponent("scripts", isDirectory: true)
+      .appendingPathComponent(NodeRuntime.scriptsDirectoryName, isDirectory: true)
     guard
       let scripts = try? FileManager.default.contentsOfDirectory(
         at: scriptsRoot,
@@ -153,19 +216,19 @@ final class RielaExampleParityTests: XCTestCase {
     }
     return scripts.contains { script in
       guard
-        script.pathExtension == "sh",
+        script.pathExtension == NodeRuntime.shellScriptExtension,
         let text = try? String(contentsOf: script, encoding: .utf8)
       else {
         return false
       }
-      return text.contains("\nnode ") || text.contains("\nexec node ")
+      return NodeRuntime.nodeInvocationNeedles.contains { text.contains($0) }
     }
   }
 
   private func repositoryRoot() -> URL {
     var url = URL(fileURLWithPath: #filePath)
     while url.pathComponents.count > 1 {
-      if FileManager.default.fileExists(atPath: url.appendingPathComponent("Package.swift").path) {
+      if FileManager.default.fileExists(atPath: url.appendingPathComponent(RepositoryPackage.manifestFileName).path) {
         return url
       }
       url.deleteLastPathComponent()

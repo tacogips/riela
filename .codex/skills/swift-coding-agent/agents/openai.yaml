@@ -1,0 +1,4 @@
+interface:
+  display_name: "Swift Coding Agent"
+  short_description: "Maintainable Swift coding workflow"
+  default_prompt: "Use $swift-coding-agent to implement or refactor Swift code with SwiftLint and maintainable file organization."

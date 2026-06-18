@@ -83,10 +83,6 @@ class Riela < Formula
     end
   end
 
-  on_linux do
-    odie "riela Swift Homebrew archives are currently macOS-only; Linux requires a reviewed Swift Linux build contract"
-  end
-
   def install
     bin.install "bin/riela"
   end

@@ -968,23 +968,41 @@ public struct WorkflowPackageCommandRunner: Sendable {
 
   private func packageSummaries(options: CLICommandOptions, parsed: ParsedParityOptions) async throws -> [WorkflowPackageSummary] {
     let workingDirectory = URL(fileURLWithPath: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath, isDirectory: true)
-    let roots = packageRoots(parsed: parsed, workingDirectory: workingDirectory)
+    let roots = try packageSummaryRoots(parsed: parsed, workingDirectory: workingDirectory)
     let loader = FileWorkflowPackageManifestLoader()
     var summaries: [WorkflowPackageSummary] = []
     for root in roots where FileManager.default.fileExists(atPath: root.path) {
       for manifestURL in try packageManifestURLs(in: root) {
         let url = manifestURL.deletingLastPathComponent()
-        let manifest = try await loader.loadManifest(from: manifestURL)
-        let issues = await loader.validate(manifest, packageRoot: url)
-        summaries.append(WorkflowPackageSummary(
-          name: manifest.name,
-          version: manifest.version,
-          kind: manifest.kind,
-          packageDirectory: url.path,
-          workflowDirectory: manifest.workflowDirectory,
-          valid: issues.isEmpty,
-          issues: issues
-        ))
+        do {
+          let manifest = try await loader.loadManifest(from: manifestURL)
+          let issues = await loader.validate(manifest, packageRoot: url)
+          summaries.append(WorkflowPackageSummary(
+            name: manifest.name,
+            version: manifest.version,
+            kind: manifest.kind,
+            packageDirectory: url.path,
+            workflowDirectory: manifest.workflowDirectory,
+            valid: issues.isEmpty,
+            issues: issues
+          ))
+        } catch {
+          summaries.append(WorkflowPackageSummary(
+            name: inferredPackageName(from: url),
+            version: nil,
+            kind: .workflow,
+            packageDirectory: url.path,
+            workflowDirectory: nil,
+            valid: false,
+            issues: [
+              WorkflowPackageValidationIssue(
+                code: "INVALID_MANIFEST",
+                path: "riela-package.json",
+                message: "\(error)"
+              )
+            ]
+          ))
+        }
       }
     }
     return summaries.sorted { $0.name == $1.name ? $0.packageDirectory < $1.packageDirectory : $0.name < $1.name }
@@ -1009,11 +1027,15 @@ public struct WorkflowPackageCommandRunner: Sendable {
     guard WorkflowPackageManifestValidator.isSafePackageName(target) else {
       throw CLIUsageError("invalid package name '\(target)'")
     }
-    guard let source = parsed.source else {
-      throw CLIUsageError("package install requires --source <package-dir> for deterministic Swift local install")
-    }
     let workingDirectory = URL(fileURLWithPath: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath, isDirectory: true)
-    let sourceURL = absoluteURL(source, relativeTo: workingDirectory)
+    let sourceURL: URL
+    if let source = parsed.source {
+      sourceURL = absoluteURL(source, relativeTo: workingDirectory)
+    } else if let registrySource = try await registryPackageSource(named: target, parsed: parsed, workingDirectory: workingDirectory) {
+      sourceURL = registrySource
+    } else {
+      throw CLIUsageError("package install requires --source <package-dir> or a registry local path containing \(target)")
+    }
     guard FileManager.default.fileExists(atPath: sourceURL.appendingPathComponent("riela-package.json").path) else {
       throw CLIUsageError("package source must contain riela-package.json: \(sourceURL.path)")
     }
@@ -1036,6 +1058,120 @@ public struct WorkflowPackageCommandRunner: Sendable {
     try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
     try FileManager.default.copyItem(at: sourceURL, to: destination)
     return destination
+  }
+
+  private func registryPackageSource(
+    named target: String,
+    parsed: ParsedParityOptions,
+    workingDirectory: URL
+  ) async throws -> URL? {
+    let loader = FileWorkflowPackageManifestLoader()
+    for registry in try selectedPackageRegistries(parsed: parsed, workingDirectory: workingDirectory) {
+      guard let localPath = registry.localPath else {
+        continue
+      }
+      let registryRoot = absoluteURL(localPath, relativeTo: workingDirectory)
+      let packagesRoot = registryRoot.appendingPathComponent("packages", isDirectory: true)
+      guard FileManager.default.fileExists(atPath: packagesRoot.path) else {
+        continue
+      }
+      for manifestURL in try packageManifestURLs(in: packagesRoot) {
+        let packageDirectory = manifestURL.deletingLastPathComponent()
+        do {
+          let manifest = try await loader.loadManifest(from: manifestURL)
+          if manifest.name == target {
+            return packageDirectory
+          }
+        } catch {
+          if inferredPackageName(from: packageDirectory) == target {
+            throw CLIUsageError("package source validation failed: riela-package.json: \(error)")
+          }
+        }
+      }
+    }
+    return nil
+  }
+
+  private func selectedPackageRegistries(
+    parsed: ParsedParityOptions,
+    workingDirectory: URL
+  ) throws -> [WorkflowPackageRegistryEntry] {
+    let config = try loadRegistryConfig(parsed: parsed)
+    let selector = parsed.registry
+    let selectorIsURL = selector.map(isSupportedRegistryURL) ?? false
+    let explicitURL = parsed.registryURL ?? (selectorIsURL ? selector : nil)
+    if let explicitURL {
+      guard isSupportedRegistryURL(explicitURL) else {
+        throw CLIUsageError("registry URL must be https://github.com/<owner>/<repo>")
+      }
+      let registered = config.registries.first { entry in
+        entry.url == explicitURL || entry.id == selector
+      }
+      return [
+        WorkflowPackageRegistryEntry(
+          id: registered?.id ?? directRegistryId(for: explicitURL),
+          url: explicitURL,
+          defaultBranch: parsed.branch ?? registered?.defaultBranch ?? "main",
+          localPath: parsed.localPath ?? registered?.localPath,
+          registeredAt: registered?.registeredAt ?? defaultWorkflowPackageRegistryTimestamp,
+          updatedAt: defaultWorkflowPackageRegistryTimestamp
+        )
+      ]
+    }
+    if let selector {
+      guard let registered = config.registries.first(where: { $0.id == selector }) else {
+        throw CLIUsageError("package registry not found: \(selector)")
+      }
+      var resolved = registered
+      if let branch = parsed.branch {
+        resolved.defaultBranch = branch
+      }
+      if let localPath = parsed.localPath {
+        resolved.localPath = localPath
+      }
+      return [resolved]
+    }
+    if let localPath = parsed.localPath {
+      return [
+        WorkflowPackageRegistryEntry(
+          id: defaultWorkflowPackageRegistryId,
+          url: defaultWorkflowPackageRegistryURL,
+          defaultBranch: parsed.branch ?? defaultWorkflowPackageRegistryBranch,
+          localPath: localPath,
+          registeredAt: defaultWorkflowPackageRegistryTimestamp,
+          updatedAt: defaultWorkflowPackageRegistryTimestamp
+        )
+      ]
+    }
+    return config.registries
+  }
+
+  private func packageSummaryRoots(parsed: ParsedParityOptions, workingDirectory: URL) throws -> [URL] {
+    let registryRoots = try selectedPackageRegistries(parsed: parsed, workingDirectory: workingDirectory)
+      .compactMap(\.localPath)
+      .map { absoluteURL($0, relativeTo: workingDirectory).appendingPathComponent("packages", isDirectory: true) }
+    return uniquePackageRoots(packageRoots(parsed: parsed, workingDirectory: workingDirectory) + registryRoots)
+  }
+
+  private func uniquePackageRoots(_ urls: [URL]) -> [URL] {
+    var seen = Set<String>()
+    var result: [URL] = []
+    for url in urls {
+      let path = url.standardizedFileURL.path
+      if seen.insert(path).inserted {
+        result.append(url)
+      }
+    }
+    return result
+  }
+
+  private func inferredPackageName(from packageDirectory: URL) -> String {
+    let name = packageDirectory.lastPathComponent
+    let scope = packageDirectory.deletingLastPathComponent().lastPathComponent
+    if scope.hasPrefix("@") {
+      return "\(scope)/\(name)"
+    }
+    return name
   }
 
   private func removePackage(target: String?, parsed: ParsedParityOptions) throws -> URL {

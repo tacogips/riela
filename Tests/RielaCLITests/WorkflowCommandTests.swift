@@ -1315,6 +1315,138 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertTrue(FileManager.default.fileExists(atPath: "\(tempDir.path)-packages/registry/default-registry-package.json"))
   }
 
+  func testPackageCommandsUseRielaFixtureRegistryLocalPath() async throws {
+    let root = repositoryRoot()
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-fixture-registry-\(UUID().uuidString)", isDirectory: true)
+    let fixtureRegistry = tempDir.appendingPathComponent("riela-fixture", isDirectory: true)
+    let fixturePackage = fixtureRegistry
+      .appendingPathComponent("packages/fixture-clean-workflow", isDirectory: true)
+    let fixtureWorkflow = fixturePackage
+      .appendingPathComponent("workflows/fixture-clean-workflow", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    try FileManager.default.createDirectory(at: fixtureWorkflow.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try FileManager.default.copyItem(
+      at: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step"),
+      to: fixtureWorkflow
+    )
+    try """
+    {
+      "name": "fixture-clean-workflow",
+      "version": "1.0.0",
+      "description": "Safe fixture package used to verify successful package search and checkout.",
+      "tags": ["fixture"],
+      "workflow": {
+        "description": "Safe fixture package used to verify successful package search and checkout.",
+        "tags": ["fixture"],
+        "backends": ["codex-agent"]
+      },
+      "registry": "fixture",
+      "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "checksumAlgorithm": "md5",
+      "workflowDirectory": "workflows/fixture-clean-workflow",
+      "repository": "https://github.com/tacogips/riela-fixture"
+    }
+    """.write(to: fixturePackage.appendingPathComponent("riela-package.json"), atomically: true, encoding: .utf8)
+    let invalidFixturePackage = fixtureRegistry
+      .appendingPathComponent("packages/fixture-invalid-metadata-workflow", isDirectory: true)
+    try FileManager.default.createDirectory(at: invalidFixturePackage, withIntermediateDirectories: true)
+    try """
+    {
+      "name": "fixture-invalid-metadata-workflow",
+      "version": "1.0.0",
+      "description": "Invalid fixture package used to verify registry search resilience.",
+      "tags": ["fixture"],
+      "workflow": {
+        "title": 1,
+        "description": "Invalid structured workflow metadata.",
+        "tags": ["fixture"]
+      },
+      "registry": "fixture",
+      "checksum": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "checksumAlgorithm": "md5",
+      "workflowDirectory": "workflows/fixture-invalid-metadata-workflow",
+      "repository": "https://github.com/tacogips/riela-fixture"
+    }
+    """.write(
+      to: invalidFixturePackage.appendingPathComponent("riela-package.json"),
+      atomically: true,
+      encoding: .utf8
+    )
+
+    let app = RielaCLIApplication()
+    let directSearch = await app.run([
+      "package", "search", "fixture-clean",
+      "--registry-url", "https://github.com/tacogips/riela-fixture",
+      "--registry-local-path", fixtureRegistry.path,
+      "--working-dir", tempDir.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(directSearch.exitCode, .success, directSearch.stderr)
+    let directSearchResult = try decodeJSON(WorkflowPackageCommandResult.self, from: directSearch.stdout)
+    XCTAssertEqual(directSearchResult.packages.map(\.name), ["fixture-clean-workflow"])
+    XCTAssertTrue(
+      try XCTUnwrap(directSearchResult.packages.first?.packageDirectory)
+        .hasSuffix("/riela-fixture/packages/fixture-clean-workflow")
+    )
+    XCTAssertEqual(directSearchResult.packages.first?.valid, true)
+
+    let invalidSearch = await app.run([
+      "package", "search", "fixture-invalid",
+      "--registry-url", "https://github.com/tacogips/riela-fixture",
+      "--registry-local-path", fixtureRegistry.path,
+      "--working-dir", tempDir.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(invalidSearch.exitCode, .success, invalidSearch.stderr)
+    let invalidSearchResult = try decodeJSON(WorkflowPackageCommandResult.self, from: invalidSearch.stdout)
+    XCTAssertEqual(invalidSearchResult.packages.map(\.name), ["fixture-invalid-metadata-workflow"])
+    XCTAssertEqual(invalidSearchResult.packages.first?.valid, false)
+    XCTAssertEqual(invalidSearchResult.packages.first?.issues.first?.path, "riela-package.json")
+
+    let registryAdd = await app.run([
+      "package", "registry", "add", "fixture",
+      "--registry-url", "https://github.com/tacogips/riela-fixture",
+      "--registry-local-path", fixtureRegistry.path,
+      "--working-dir", tempDir.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(registryAdd.exitCode, .success, registryAdd.stderr)
+
+    let registeredSearch = await app.run([
+      "package", "search", "fixture-clean",
+      "--registry", "fixture",
+      "--working-dir", tempDir.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(registeredSearch.exitCode, .success, registeredSearch.stderr)
+    let registeredSearchResult = try decodeJSON(WorkflowPackageCommandResult.self, from: registeredSearch.stdout)
+    XCTAssertEqual(registeredSearchResult.packages.map(\.name), ["fixture-clean-workflow"])
+
+    let install = await app.run([
+      "package", "install", "fixture-clean-workflow",
+      "--registry", "fixture",
+      "--working-dir", tempDir.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(install.exitCode, .success, install.stderr)
+    let installed = try decodeJSON(WorkflowPackageCommandResult.self, from: install.stdout)
+    let installedPackage = tempDir.appendingPathComponent(".riela/packages/fixture-clean-workflow", isDirectory: true)
+    XCTAssertEqual(installed.destinationDirectory, installedPackage.path)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: installedPackage.appendingPathComponent("riela-package.json").path))
+
+    let packageRun = await app.run([
+      "package", "temp-run", "fixture-clean-workflow",
+      "--working-dir", tempDir.path,
+      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+      "--output", "json"
+    ])
+    XCTAssertEqual(packageRun.exitCode, .success, packageRun.stderr)
+    let packageRunResult = try decodeJSON(WorkflowPackageCommandResult.self, from: packageRun.stdout)
+    XCTAssertEqual(packageRunResult.target, "fixture-clean-workflow")
+    XCTAssertNotNil(packageRunResult.runSessionId)
+  }
+
   func testWorkflowRunFromRegistryRejectsEscapingWorkflowDirectory() async throws {
     let tempDir = FileManager.default.temporaryDirectory
       .appendingPathComponent("riela-registry-run-escape-\(UUID().uuidString)", isDirectory: true)

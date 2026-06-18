@@ -30,6 +30,7 @@ final class RielaExampleParityTests: XCTestCase {
     let root = repositoryRoot()
     let examplesRoot = root.appendingPathComponent("examples", isDirectory: true)
     let app = RielaCLIApplication()
+    let nodeAvailable = isExecutableOnPATH("node")
     let runnableExamples = rielaExampleWorkflowNames().filter { workflowName in
       let scenario = examplesRoot
         .appendingPathComponent(workflowName, isDirectory: true)
@@ -38,10 +39,13 @@ final class RielaExampleParityTests: XCTestCase {
         return false
       }
       let text = (try? String(contentsOf: scenario, encoding: .utf8)) ?? ""
-      return text.contains("scenario-mock")
+      if !text.contains("scenario-mock") {
+        return false
+      }
+      return nodeAvailable || !workflowUsesNodeRuntime(examplesRoot: examplesRoot, workflowName: workflowName)
     }
 
-    XCTAssertEqual(runnableExamples.count, 20)
+    XCTAssertEqual(runnableExamples.count, nodeAvailable ? 20 : 17)
 
     for workflowName in runnableExamples {
       let scenario = examplesRoot
@@ -123,6 +127,39 @@ final class RielaExampleParityTests: XCTestCase {
       }
       return url.lastPathComponent
     }.sorted()
+  }
+
+  private func isExecutableOnPATH(_ executableName: String) -> Bool {
+    let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
+    return path.split(separator: ":").contains { directory in
+      let candidate = URL(fileURLWithPath: String(directory), isDirectory: true)
+        .appendingPathComponent(executableName)
+      return FileManager.default.isExecutableFile(atPath: candidate.path)
+    }
+  }
+
+  private func workflowUsesNodeRuntime(examplesRoot: URL, workflowName: String) -> Bool {
+    let scriptsRoot = examplesRoot
+      .appendingPathComponent(workflowName, isDirectory: true)
+      .appendingPathComponent("scripts", isDirectory: true)
+    guard
+      let scripts = try? FileManager.default.contentsOfDirectory(
+        at: scriptsRoot,
+        includingPropertiesForKeys: [.isRegularFileKey],
+        options: [.skipsHiddenFiles]
+      )
+    else {
+      return false
+    }
+    return scripts.contains { script in
+      guard
+        script.pathExtension == "sh",
+        let text = try? String(contentsOf: script, encoding: .utf8)
+      else {
+        return false
+      }
+      return text.contains("\nnode ") || text.contains("\nexec node ")
+    }
   }
 
   private func repositoryRoot() -> URL {

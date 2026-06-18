@@ -23,31 +23,32 @@
         pkgs = import nixpkgs { inherit system; };
         pkgs-unstable = import nixpkgs-unstable { inherit system; };
         lib = pkgs.lib;
-        runtimePackages = with pkgs; [
-          # Bun runtime for legacy verification scripts kept outside the Swift product.
-          pkgs-unstable.bun
+        runtimePackages =
+          with pkgs;
+          [
+            # Bun runtime for legacy verification scripts kept outside the Swift product.
+            pkgs-unstable.bun
 
-          # Real Node.js runtime for repository tooling
-          nodejs_22
+            # TypeScript tooling for legacy verification scripts kept outside the Swift product.
+            pkgs-unstable.typescript
+            pkgs-unstable.typescript-language-server
 
-          # TypeScript tooling for legacy verification scripts kept outside the Swift product.
-          pkgs-unstable.typescript
-          pkgs-unstable.typescript-language-server
+            # Rust-based JS/TS linter used by repository lint tasks.
+            pkgs-unstable.biome
 
-          # Rust-based JS/TS linter used by repository lint tasks.
-          pkgs-unstable.biome
+            # Development tools
+            fd
+            gnused
+            gh
+            go-task
+            swiftlint
 
-          # Development tools
-          fd
-          gnused
-          gh
-          go-task
+          ]
+          ++ lib.optionals pkgs.stdenv.isLinux [
+            podman
+            podman-compose
 
-        ] ++ lib.optionals pkgs.stdenv.isLinux [
-          podman
-          podman-compose
-
-        ];
+          ];
 
         devOnlyPackages = with pkgs; [
           gitleaks
@@ -93,8 +94,8 @@
             echo "Task version: $(task --version 2>/dev/null || echo 'not available')"
             echo "Gitleaks version: $(gitleaks version 2>/dev/null || echo 'not available')"
             ${lib.optionalString pkgs.stdenv.isLinux ''
-            echo "Podman version: $(podman --version 2>/dev/null || echo 'not available')"
-            echo "Podman Compose version: $(podman-compose --version 2>/dev/null || echo 'not available')"
+              echo "Podman version: $(podman --version 2>/dev/null || echo 'not available')"
+              echo "Podman Compose version: $(podman-compose --version 2>/dev/null || echo 'not available')"
             ''}
           '';
         };

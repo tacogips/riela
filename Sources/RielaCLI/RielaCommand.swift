@@ -269,12 +269,31 @@ public struct WorkflowRunOptions: Equatable, Sendable {
   }
 }
 
+public enum WorkflowMutationMode: String, Codable, CaseIterable, Sendable {
+  case executionCopy = "execution-copy"
+  case inPlace = "in-place"
+  case disabled
+
+  public var isForwardedToRemoteExecution: Bool {
+    switch self {
+    case .executionCopy, .inPlace:
+      true
+    case .disabled:
+      false
+    }
+  }
+
+  static var acceptedValuesDescription: String {
+    Self.allCases.map(\.rawValue).joined(separator: ", ")
+  }
+}
+
 public struct WorkflowAutoImprovePolicy: Codable, Equatable, Sendable {
   public var maxSupervisedAttempts: Int
   public var maxWorkflowPatches: Int
   public var monitorIntervalMs: Int
   public var stallTimeoutMs: Int
-  public var workflowMutationMode: String
+  public var workflowMutationMode: WorkflowMutationMode
   public var nestedSuperviser: Bool
 
   public init(
@@ -282,7 +301,7 @@ public struct WorkflowAutoImprovePolicy: Codable, Equatable, Sendable {
     maxWorkflowPatches: Int = 2,
     monitorIntervalMs: Int = 1_000,
     stallTimeoutMs: Int = 30_000,
-    workflowMutationMode: String = "execution-copy",
+    workflowMutationMode: WorkflowMutationMode = .executionCopy,
     nestedSuperviser: Bool = false
   ) {
     self.maxSupervisedAttempts = maxSupervisedAttempts
@@ -714,7 +733,7 @@ private struct ParsedWorkflowOptions {
   var maxWorkflowPatches = 2
   var monitorIntervalMs = 1_000
   var stallTimeoutMs = 30_000
-  var workflowMutationMode = "execution-copy"
+  var workflowMutationMode = WorkflowMutationMode.executionCopy
 
   init(_ tokens: [String], allowRunOptions: Bool = false, allowTableOutput: Bool = false) throws {
     var index = 0
@@ -816,9 +835,9 @@ private struct ParsedWorkflowOptions {
         stallTimeoutMs = try positiveInt(token, readValue())
       case "--workflow-mutation-mode":
         try requireRunOption(token, allowRunOptions: allowRunOptions)
-        let mode = try readValue()
-        guard mode == "execution-copy" || mode == "in-place" || mode == "disabled" else {
-          throw CLIUsageError("invalid --workflow-mutation-mode value '\(mode)'; expected execution-copy, in-place, or disabled")
+        let rawMode = try readValue()
+        guard let mode = WorkflowMutationMode(rawValue: rawMode) else {
+          throw CLIUsageError("invalid --workflow-mutation-mode value '\(rawMode)'; expected \(WorkflowMutationMode.acceptedValuesDescription)")
         }
         workflowMutationMode = mode
       default:

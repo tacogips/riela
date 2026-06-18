@@ -97,8 +97,7 @@ final class SwiftDeletionReadinessTests: XCTestCase {
       return XCTFail("expected cli domain")
     }
     gate.domains[cliIndex].evidenceCommands = [
-      "swift test --filter WorkflowCommandTests",
-      "bun run packages/riela/src/bin.ts --help # packages/rielflow/src/bin.ts",
+      "swift test --filter OtherTests # WorkflowCommandTests",
     ]
 
     let result = SwiftDeletionReadinessValidator().validate(
@@ -107,7 +106,7 @@ final class SwiftDeletionReadinessTests: XCTestCase {
     )
 
     XCTAssertFalse(result.valid)
-    XCTAssertTrue(result.diagnostics.contains("domain cli missing required evidence command matching bun + packages/rielflow/src/bin.ts"))
+    XCTAssertTrue(result.diagnostics.contains("domain cli missing required evidence command matching swift + test + WorkflowCommand"))
   }
 
   func testValidateRejectsMissingAgentDomain() throws {
@@ -418,7 +417,7 @@ final class SwiftDeletionReadinessTests: XCTestCase {
     var gate = try deletionReadyGate()
     gate.domains[0].evidenceCommands = [
       "swift build",
-      "bun run typecheck:server",
+      "swift test --filter RielaServerTests",
     ]
     gate.domains[0].evidenceArtifacts = ["verification-result:swift-deletion-readiness/package-build-0"]
     let context = deletionReadyContext(for: gate)
@@ -429,7 +428,7 @@ final class SwiftDeletionReadinessTests: XCTestCase {
     XCTAssertFalse(result.allowsTypeScriptDeletion)
     XCTAssertTrue(
       result.diagnostics.contains(
-        "domain package-build evidenceCommand bun run typecheck:server has no resolved successful evidenceArtifact"
+        "domain package-build evidenceCommand swift test --filter RielaServerTests has no resolved successful evidenceArtifact"
       )
     )
   }
@@ -498,19 +497,19 @@ final class SwiftDeletionReadinessTests: XCTestCase {
   private func deletionReadyEvidenceCommands(for domainId: String) -> [String] {
     switch domainId {
     case "package-build":
-      return ["swift build", "bun run typecheck"]
+      return ["swift build"]
     case "cli":
-      return ["swift test --filter WorkflowCommandTests", "bun run packages/rielflow/src/bin.ts --help"]
+      return ["swift test --filter WorkflowCommandTests"]
     case "server":
-      return ["swift test --filter RielaServerTests", "bun run typecheck:server"]
+      return ["swift test --filter RielaServerTests"]
     case "graphql":
-      return ["swift test --filter RielaGraphQLTests", "bun test packages/riela/src/graphql"]
+      return ["swift test --filter RielaGraphQLTests"]
     case "event":
-      return ["swift test --filter RielaEventsTests", "bun test packages/riela/src/events"]
+      return ["swift test --filter RielaEventsTests"]
     case "workflow-package":
-      return ["swift test --filter WorkflowPackage", "bun run packages/rielflow/src/bin.ts package --help"]
+      return ["swift test --filter WorkflowPackage"]
     case "persistence":
-      return ["swift test --filter Persistence", "bun test packages/riela/src/workflow/manager-session-store.test.ts"]
+      return ["swift test --filter Persistence"]
     case "release":
       return [
         "scripts/build-homebrew-release.sh --dry-run darwin-arm64",
@@ -522,15 +521,15 @@ final class SwiftDeletionReadinessTests: XCTestCase {
         "rg -n \"TypeScript deletion\" design-docs",
       ]
     case "test":
-      return ["swift test", "bun test"]
+      return ["swift test"]
     case "agent-codex":
-      return ["swift test --filter CodexAgent", "bun test packages/riela-adapters/src/codex"]
+      return ["swift test --filter CodexAgent"]
     case "agent-claude-code":
-      return ["swift test --filter Claude", "bun test packages/riela-adapters/src/claude"]
+      return ["swift test --filter Claude"]
     case "agent-cursor-cli":
-      return ["swift test --filter CursorCLIAgent", "bun test packages/riela-adapters/src/cursor"]
+      return ["swift test --filter CursorCLIAgent"]
     default:
-      return ["swift test", "bun test"]
+      return ["swift test"]
     }
   }
 

@@ -6,77 +6,166 @@ import XCTest
 
 final class CursorCLIAgentCompatibilityTests: XCTestCase {
   func testLegacyCursorCLIAgentUnitTestSurfaceHasSwiftCoverage() throws {
-    let coverage: [(category: String, legacyTests: [String], probe: () throws -> Void)] = [
-      ("auth", ["duration.test.ts", "token-manager.test.ts"], {
+    let legacyTests: Set<String> = [
+      "src/activity/manager.test.ts",
+      "src/auth/token-manager.test.ts",
+      "src/bookmarks/manager.test.ts",
+      "src/cli/cli.test.ts",
+      "src/cli/graphql.test.ts",
+      "src/cli/tool-registry-cli.test.ts",
+      "src/cli/usage-persistence-chain.test.ts",
+      "src/compat/commands.test.ts",
+      "src/compat/dispatcher.test.ts",
+      "src/compat/permissions.test.ts",
+      "src/config/paths.test.ts",
+      "src/cursor/activity-signals.test.ts",
+      "src/cursor/ai-tracking-reader.test.ts",
+      "src/cursor/attachment-capability.test.ts",
+      "src/cursor/auth-env.test.ts",
+      "src/cursor/auth-keepalive.test.ts",
+      "src/cursor/model-availability.test.ts",
+      "src/cursor/normalize-message.test.ts",
+      "src/cursor/process-runner.test.ts",
+      "src/cursor/prompt-attachments.test.ts",
+      "src/cursor/replay-prompt.test.ts",
+      "src/cursor/session-replay-slice.test.ts",
+      "src/cursor/skill-catalog.test.ts",
+      "src/cursor/stream-normalizer.test.ts",
+      "src/cursor/tool-versions.test.ts",
+      "src/cursor/transcript-bookmark-lookup.test.ts",
+      "src/cursor/transcript-reader.test.ts",
+      "src/cursor/transcript-search.test.ts",
+      "src/cursor/transcript-tail.test.ts",
+      "src/cursor/usage-events.test.ts",
+      "src/daemon/manager.test.ts",
+      "src/daemon/process.test.ts",
+      "src/file-intelligence/manager.test.ts",
+      "src/graphql/index.test.ts",
+      "src/group/progress.test.ts",
+      "src/markdown/parser.test.ts",
+      "src/markdown/transcript-tasks.test.ts",
+      "src/persistence/activity-store.test.ts",
+      "src/persistence/bookmarks-store.test.ts",
+      "src/persistence/daemon-metadata-store.test.ts",
+      "src/persistence/file-intelligence-index.test.ts",
+      "src/persistence/groups-store.test.ts",
+      "src/persistence/queues-store.test.ts",
+      "src/persistence/repository-analytics-index.test.ts",
+      "src/persistence/session-index.test.ts",
+      "src/persistence/session-replay-forks-store.test.ts",
+      "src/persistence/token-store.test.ts",
+      "src/persistence/usage-event-store.test.ts",
+      "src/queue/progress.test.ts",
+      "src/sdk/agent-runner.test.ts",
+      "src/sdk/index.test.ts",
+      "src/sdk/testing.test.ts",
+      "src/sdk/tool-registry.test.ts",
+      "src/server/app-server-compat.test.ts",
+      "src/server/event-broker.test.ts",
+      "src/server/event-streams.test.ts",
+      "src/server/graphql-route.test.ts",
+      "src/server/resource-routes-decode.test.ts",
+      "src/server/routes/events.test.ts",
+      "src/server/server.test.ts",
+      "src/server/sse.test.ts",
+      "src/usage/manager.test.ts",
+    ]
+    func coverageCategory(for path: String) -> String {
+      if path.hasPrefix("src/activity/") { return "activity" }
+      if path.hasPrefix("src/auth/") { return "auth" }
+      if path.hasPrefix("src/bookmarks/") { return "bookmarks" }
+      if path.hasPrefix("src/cli/") { return "cli" }
+      if path.hasPrefix("src/compat/") { return "compat" }
+      if path.hasPrefix("src/config/") { return "config" }
+      if path.hasPrefix("src/cursor/") { return "cursor" }
+      if path.hasPrefix("src/daemon/") { return "daemon" }
+      if path.hasPrefix("src/file-intelligence/") { return "file-intelligence" }
+      if path.hasPrefix("src/group/") { return "group" }
+      if path.hasPrefix("src/markdown/") { return "markdown" }
+      if path.hasPrefix("src/persistence/") { return "persistence" }
+      if path.hasPrefix("src/queue/") { return "queue" }
+      if path.hasPrefix("src/sdk/") { return "sdk" }
+      if path.hasPrefix("src/server/") { return "server" }
+      if path.hasPrefix("src/usage/") { return "usage" }
+      if path == "src/graphql/index.test.ts" { return "graphql" }
+      return "unmapped"
+    }
+    let probes: [(category: String, probe: () throws -> Void)] = [
+      ("activity", {
+        XCTAssertEqual(CursorCLIActivityAnalyzer.status(hookEventName: "PermissionRequest"), .waitingUserResponse)
+      }),
+      ("auth", {
         XCTAssertEqual(try CursorCLIDurationParser.seconds("1d"), 86_400)
         XCTAssertEqual(try CursorCLITokenPersistence.createRawToken(name: "probe", permissions: ["session:read"], configDir: makeTemporaryDirectory().path).split(separator: ".").count, 2)
       }),
-      ("cli", ["activity/*.test.ts", "auth/*.test.ts", "bookmark.test.ts", "edge-cases.test.ts", "error-handling.test.ts", "graphql.test.ts", "group.test.ts", "main.test.ts", "output.test.ts", "queue.test.ts", "session.test.ts", "version.test.ts"], {
-        XCTAssertEqual(CursorCLIAgentCLIApplication.run(arguments: ["version", "includeGit=false"]).exitCode, 0)
-      }),
-      ("container-and-core", ["container.test.ts", "errors.test.ts", "lib.test.ts", "package-metadata.test.ts", "result.test.ts"], {
-        XCTAssertEqual(CursorCLIProcessCommandBuilder.buildExecArguments(prompt: "probe").first, "--print")
-      }),
-      ("graphql", ["index.test.ts"], {
-        XCTAssertEqual(try CursorCLIGraphQLCommandExecutor.parseParams(["limit=2"])["limit"], .number(2))
-      }),
-      ("polling", ["event-parser.test.ts", "group-monitor.test.ts", "monitor.test.ts", "output.test.ts", "parser.test.ts", "state-manager.test.ts", "watcher.test.ts"], {
-        var parser = CursorCLIJsonlStreamParser()
-        XCTAssertEqual(parser.feed(#"{"type":"assistant","content":"ok"}"# + "\n").first?.type, "assistant")
-      }),
-      ("repository", ["file/*.test.ts", "in-memory/*.test.ts"], {
-        var repository = CursorCLIQueueRepository()
-        XCTAssertEqual(repository.createQueue(name: "probe").name, "probe")
-      }),
-      ("sdk", ["agent.test.ts", "client.test.ts", "control-protocol.test.ts", "environment.test.ts", "errors.test.ts", "exports.test.ts", "jsonl-parser.test.ts", "mock-session-runner.test.ts", "readiness.test.ts", "receiver.test.ts", "session-reader.test.ts", "session-state.test.ts", "tool-registry.test.ts", "tool-versions.test.ts", "tool-call.integration.test.ts"], {
-        let manager = CursorCLIProcessManager(executableName: "cursor-probe") { _, _, _ in CursorCLIProcessExecution(exitCode: 0) }
-        XCTAssertEqual(manager.spawnExec(prompt: "probe").result.exitCode, 0)
-      }),
-      ("sdk-activity", ["hook-types.test.ts", "integration.test.ts", "manager.test.ts", "store.test.ts", "transcript-analyzer.test.ts"], {
-        XCTAssertEqual(CursorCLIActivityAnalyzer.status(hookEventName: "PermissionRequest"), .waitingUserResponse)
-      }),
-      ("sdk-bookmarks", ["manager.test.ts", "search.test.ts"], {
+      ("bookmarks", {
         var manager = CursorCLIBookmarkManager()
         _ = try manager.create(type: .session, sessionId: "probe", name: "Probe")
         XCTAssertEqual(manager.search(text: "probe").count, 1)
       }),
-      ("sdk-credentials", ["integration.test.ts", "manager.test.ts", "reader.test.ts", "validation.test.ts", "writer.test.ts"], {
+      ("cli", {
+        XCTAssertEqual(CursorCLIAgentCLIApplication.run(arguments: ["version", "includeGit=false"]).exitCode, 0)
+      }),
+      ("compat", {
+        XCTAssertEqual(CursorCLIProcessCommandBuilder.buildExecArguments(prompt: "probe").first, "--print")
+      }),
+      ("config", {
         XCTAssertTrue(CursorCLISessionIndex.resolveCursorCLIHome(environment: ["HOME": "/tmp/home"]).hasSuffix("/.cursor"))
       }),
-      ("sdk-file-changes", ["extractor.test.ts", "index-manager.test.ts", "service.test.ts"], {
+      ("cursor", {
+        var parser = CursorCLIJsonlStreamParser()
+        XCTAssertEqual(parser.feed(#"{"type":"assistant","content":"ok"}"# + "\n").first?.type, "assistant")
+      }),
+      ("daemon", {
+        let manager = CursorCLIProcessManager(executableName: "cursor-probe") { _, _, _ in CursorCLIProcessExecution(exitCode: 0) }
+        XCTAssertEqual(manager.spawnExec(prompt: "probe").result.exitCode, 0)
+      }),
+      ("file-intelligence", {
         let index = CursorCLIFileChangeIndex(changes: [CursorCLIFileChange(path: "Sources/A.swift", operation: .modified, source: .shell)])
         XCTAssertEqual(index.find("Sources/A.swift")?.operation, .modified)
       }),
-      ("sdk-group", ["config-generator.test.ts", "dependency-graph.test.ts", "events.test.ts", "manager.test.ts", "progress.test.ts", "runner.test.ts", "session-processor.test.ts", "types.test.ts"], {
+      ("graphql", {
+        XCTAssertEqual(try CursorCLIGraphQLCommandExecutor.parseParams(["limit=2"])["limit"], .number(2))
+      }),
+      ("group", {
         var groups = CursorCLIGroupRepository()
         XCTAssertEqual(groups.createGroup(name: "g").name, "g")
       }),
-      ("sdk-markdown-parser", ["detectors.test.ts", "parser.test.ts"], {
+      ("markdown", {
         XCTAssertEqual(CursorCLIMarkdown.parseTasks("# Work\n- [x] done").first?.text, "done")
       }),
-      ("sdk-queue", ["manager.test.ts", "recovery.test.ts", "runner.test.ts"], {
+      ("persistence", {
+        let store = CursorCLIJSONStore<CursorCLIQueuesConfig>(url: try makeTemporaryDirectory().appendingPathComponent("queues.json"))
+        try store.save(CursorCLIQueuesConfig())
+      }),
+      ("queue", {
         var queues = CursorCLIQueueRepository()
         let queue = queues.createQueue(name: "q")
         XCTAssertNotNil(queues.addPrompt(queueId: queue.id, prompt: "p"))
       }),
-      ("services", ["atomic-writer.test.ts", "file-lock.test.ts"], {
-        let store = CursorCLIJSONStore<CursorCLIQueuesConfig>(url: try makeTemporaryDirectory().appendingPathComponent("queues.json"))
-        try store.save(CursorCLIQueuesConfig())
+      ("sdk", {
+        var registry = CursorCLIToolRegistry()
+        registry.register(name: "read_file", definition: ["description": .string("Read a file")])
+        XCTAssertEqual(registry.listNames(), ["read_file"])
       }),
-      ("test-support", ["fixtures.test.ts", "helpers.test.ts", "mocks/*.test.ts", "utils/concurrency.test.ts"], {
-        XCTAssertFalse(try makeTemporaryDirectory().path.isEmpty)
+      ("server", {
+        XCTAssertTrue(CursorCLICLICompatibility.usage().contains("server"))
       }),
-      ("types", ["activity.test.ts", "types.test.ts"], {
-        XCTAssertEqual(CursorCLIActivityStatusValue.waitingUserResponse.rawValue, "waiting_user_response")
+      ("usage", {
+        XCTAssertTrue(CursorCLICLICompatibility.usage().contains("usage"))
       }),
     ]
 
-    XCTAssertEqual(coverage.count, 17)
-    XCTAssertTrue(coverage.allSatisfy { !$0.legacyTests.isEmpty })
-    XCTAssertTrue(coverage.first { $0.category == "sdk" }?.legacyTests.contains("control-protocol.test.ts") == true)
-    XCTAssertTrue(coverage.first { $0.category == "sdk-credentials" }?.legacyTests.contains("reader.test.ts") == true)
-    XCTAssertTrue(coverage.first { $0.category == "polling" }?.legacyTests.contains("parser.test.ts") == true)
-    try coverage.forEach { try $0.probe() }
+    let coverage = Dictionary(uniqueKeysWithValues: legacyTests.map { ($0, coverageCategory(for: $0)) })
+    let probeCategories = Set(probes.map(\.category))
+    XCTAssertEqual(legacyTests.count, 62)
+    XCTAssertEqual(coverage.count, legacyTests.count)
+    XCTAssertFalse(coverage.values.contains("unmapped"))
+    XCTAssertTrue(Set(coverage.values).isSubset(of: probeCategories))
+    XCTAssertEqual(coverage["src/cursor/stream-normalizer.test.ts"], "cursor")
+    XCTAssertEqual(coverage["src/server/event-streams.test.ts"], "server")
+    XCTAssertEqual(coverage["src/persistence/session-replay-forks-store.test.ts"], "persistence")
+    try probes.forEach { try $0.probe() }
   }
 
   func testCursorProcessBuilderMatchesLegacyCliShape() {

@@ -11,12 +11,10 @@
       "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
-        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build",
-        "cd ../rielflow && bun run typecheck"
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build"
       ],
       "evidenceArtifacts": [
-        "verification-result:swift-deletion-readiness/package-build-0",
-        "verification-result:swift-deletion-readiness/package-build-1"
+        "verification-result:swift-deletion-readiness/package-build-0"
       ],
       "lastVerifiedAt": "2026-06-16T10:31:10Z",
       "reviewDecision": "accepted",
@@ -34,12 +32,10 @@
       "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
-        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter WorkflowCommandTests",
-        "cd ../rielflow && bun run packages/rielflow/src/bin.ts --help"
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter WorkflowCommandTests"
       ],
       "evidenceArtifacts": [
-        "verification-result:swift-deletion-readiness/cli-0",
-        "verification-result:swift-deletion-readiness/cli-1"
+        "verification-result:swift-deletion-readiness/cli-0"
       ],
       "lastVerifiedAt": "2026-06-16T10:31:10Z",
       "reviewDecision": "accepted",
@@ -57,12 +53,10 @@
       "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
-        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter RielaServerTests",
-        "cd ../rielflow && bun run typecheck:server"
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter RielaServerTests"
       ],
       "evidenceArtifacts": [
-        "verification-result:swift-deletion-readiness/server-0",
-        "verification-result:swift-deletion-readiness/server-1"
+        "verification-result:swift-deletion-readiness/server-0"
       ],
       "lastVerifiedAt": "2026-06-16T10:31:10Z",
       "reviewDecision": "accepted",
@@ -80,12 +74,10 @@
       "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
-        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter RielaGraphQLTests",
-        "cd ../rielflow && bun test packages/rielflow/src/graphql"
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter RielaGraphQLTests"
       ],
       "evidenceArtifacts": [
-        "verification-result:swift-deletion-readiness/graphql-0",
-        "verification-result:swift-deletion-readiness/graphql-1"
+        "verification-result:swift-deletion-readiness/graphql-0"
       ],
       "lastVerifiedAt": "2026-06-16T10:31:10Z",
       "reviewDecision": "accepted",
@@ -103,12 +95,10 @@
       "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
-        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter RielaEventsTests",
-        "cd ../rielflow && bun test packages/rielflow/src/events"
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter RielaEventsTests"
       ],
       "evidenceArtifacts": [
-        "verification-result:swift-deletion-readiness/event-0",
-        "verification-result:swift-deletion-readiness/event-1"
+        "verification-result:swift-deletion-readiness/event-0"
       ],
       "lastVerifiedAt": "2026-06-16T10:31:10Z",
       "reviewDecision": "accepted",
@@ -126,12 +116,10 @@
       "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
-        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter WorkflowPackage",
-        "cd ../rielflow && bun run packages/rielflow/src/bin.ts package --help"
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter WorkflowPackage"
       ],
       "evidenceArtifacts": [
-        "verification-result:swift-deletion-readiness/workflow-package-0",
-        "verification-result:swift-deletion-readiness/workflow-package-1"
+        "verification-result:swift-deletion-readiness/workflow-package-0"
       ],
       "lastVerifiedAt": "2026-06-16T10:31:10Z",
       "reviewDecision": "accepted",
@@ -149,12 +137,10 @@
       "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
-        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter Persistence",
-        "cd ../rielflow && bun test packages/rielflow/src/workflow/manager-session-store.test.ts"
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter Persistence"
       ],
       "evidenceArtifacts": [
-        "verification-result:swift-deletion-readiness/persistence-0",
-        "verification-result:swift-deletion-readiness/persistence-1"
+        "verification-result:swift-deletion-readiness/persistence-0"
       ],
       "lastVerifiedAt": "2026-06-16T10:31:10Z",
       "reviewDecision": "accepted",
@@ -218,12 +204,10 @@
       "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
-        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test",
-        "cd ../rielflow && bun test"
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test"
       ],
       "evidenceArtifacts": [
-        "verification-result:swift-deletion-readiness/test-0",
-        "verification-result:swift-deletion-readiness/test-1"
+        "verification-result:swift-deletion-readiness/test-0"
       ],
       "lastVerifiedAt": "2026-06-16T10:31:10Z",
       "reviewDecision": "accepted",
@@ -241,12 +225,10 @@
       "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
-        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter CodexAgent",
-        "cd ../rielflow && bun test packages/rielflow/src/workflow/adapters/codex.test.ts"
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter CodexAgent"
       ],
       "evidenceArtifacts": [
-        "verification-result:swift-deletion-readiness/agent-codex-0",
-        "verification-result:swift-deletion-readiness/agent-codex-1"
+        "verification-result:swift-deletion-readiness/agent-codex-0"
       ],
       "lastVerifiedAt": "2026-06-16T10:31:10Z",
       "reviewDecision": "accepted",
@@ -264,12 +246,10 @@
       "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
-        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter Claude",
-        "cd ../rielflow && bun test packages/rielflow/src/workflow/adapters/claude.test.ts"
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter Claude"
       ],
       "evidenceArtifacts": [
-        "verification-result:swift-deletion-readiness/agent-claude-code-0",
-        "verification-result:swift-deletion-readiness/agent-claude-code-1"
+        "verification-result:swift-deletion-readiness/agent-claude-code-0"
       ],
       "lastVerifiedAt": "2026-06-16T10:31:10Z",
       "reviewDecision": "accepted",
@@ -287,12 +267,10 @@
       "status": "passed",
       "requiredBeforeTypeScriptDeletion": true,
       "evidenceCommands": [
-        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter CursorCLIAgent",
-        "cd ../rielflow && bun test packages/rielflow/src/workflow/adapters/cursor.test.ts"
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter CursorCLIAgent"
       ],
       "evidenceArtifacts": [
-        "verification-result:swift-deletion-readiness/agent-cursor-cli-0",
-        "verification-result:swift-deletion-readiness/agent-cursor-cli-1"
+        "verification-result:swift-deletion-readiness/agent-cursor-cli-0"
       ],
       "lastVerifiedAt": "2026-06-16T10:31:10Z",
       "reviewDecision": "accepted",

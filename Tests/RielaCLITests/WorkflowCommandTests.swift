@@ -1254,8 +1254,10 @@ final class WorkflowCommandTests: XCTestCase {
     ])
     XCTAssertEqual(registryList.exitCode, .success, registryList.stderr)
     let listedRegistry = try decodeJSON(WorkflowPackageRegistryConfig.self, from: registryList.stdout)
-    XCTAssertEqual(listedRegistry.defaultRegistryId, "local")
-    XCTAssertEqual(listedRegistry.registries, [])
+    XCTAssertEqual(listedRegistry.defaultRegistryId, "default")
+    XCTAssertEqual(listedRegistry.registries.map(\.id), ["default"])
+    XCTAssertEqual(listedRegistry.registries.map(\.url), ["https://github.com/tacogips/riela-packages"])
+    XCTAssertEqual(listedRegistry.registries.first?.localPath, "\(tempDir.path)-packages")
     XCTAssertFalse(FileManager.default.fileExists(atPath: registryConfig.path))
     XCTAssertFalse(FileManager.default.fileExists(atPath: registryConfig.deletingLastPathComponent().path))
 
@@ -1272,6 +1274,45 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: registryConfig.path))
     XCTAssertFalse(FileManager.default.fileExists(atPath: registryConfig.deletingLastPathComponent().path))
     XCTAssertFalse(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent(".riela/package-registry").path))
+  }
+
+  func testDefaultPackageRegistryUsesRielaPackagesWithoutPersistedConfig() async throws {
+    let root = repositoryRoot()
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-default-registry-\(UUID().uuidString)", isDirectory: true)
+    let packageSource = tempDir.appendingPathComponent("package-source", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    defer { try? FileManager.default.removeItem(atPath: "\(tempDir.path)-packages") }
+    try FileManager.default.createDirectory(at: packageSource, withIntermediateDirectories: true)
+    try FileManager.default.copyItem(
+      at: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step/workflow.json"),
+      to: packageSource.appendingPathComponent("workflow.json")
+    )
+    try FileManager.default.copyItem(
+      at: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step/nodes"),
+      to: packageSource.appendingPathComponent("nodes")
+    )
+    try FileManager.default.copyItem(
+      at: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step/prompts"),
+      to: packageSource.appendingPathComponent("prompts")
+    )
+
+    let app = RielaCLIApplication()
+    let publish = await app.run([
+      "package", "publish", packageSource.path,
+      "--package-name", "default-registry-package",
+      "--working-dir", tempDir.path,
+      "--yes",
+      "--output", "json",
+    ])
+
+    XCTAssertEqual(publish.exitCode, .success, publish.stderr)
+    let publishResult = try decodeJSON(WorkflowPackageCommandResult.self, from: publish.stdout)
+    let registryRecord = try decodeJSON(JSONObject.self, from: String(contentsOfFile: try XCTUnwrap(publishResult.destinationDirectory)))
+    XCTAssertEqual(registryRecord["registry"]?.stringValue, "default")
+    XCTAssertEqual(registryRecord["registryUrl"]?.stringValue, "https://github.com/tacogips/riela-packages")
+    XCTAssertEqual(registryRecord["registryRef"]?.stringValue, "main")
+    XCTAssertTrue(FileManager.default.fileExists(atPath: "\(tempDir.path)-packages/registry/default-registry-package.json"))
   }
 
   func testWorkflowRunFromRegistryRejectsEscapingWorkflowDirectory() async throws {
@@ -1400,8 +1441,8 @@ final class WorkflowCommandTests: XCTestCase {
     ])
     XCTAssertEqual(registryAdd.exitCode, .success, registryAdd.stderr)
     let addedRegistry = try decodeJSON(WorkflowPackageRegistryConfig.self, from: registryAdd.stdout)
-    XCTAssertEqual(addedRegistry.defaultRegistryId, "local")
-    XCTAssertEqual(addedRegistry.registries.first?.id, "local")
+    XCTAssertEqual(addedRegistry.defaultRegistryId, "default")
+    XCTAssertEqual(addedRegistry.registries.map(\.id), ["local", "default"])
 
     let registryList = await app.run([
       "workflow", "package", "registry", "list",
@@ -1410,7 +1451,10 @@ final class WorkflowCommandTests: XCTestCase {
     ])
     XCTAssertEqual(registryList.exitCode, .success, registryList.stderr)
     let listedRegistry = try decodeJSON(WorkflowPackageRegistryConfig.self, from: registryList.stdout)
-    XCTAssertEqual(listedRegistry.registries.map(\.url), ["https://github.com/example/registry"])
+    XCTAssertEqual(listedRegistry.registries.map(\.url), [
+      "https://github.com/example/registry",
+      "https://github.com/tacogips/riela-packages",
+    ])
 
     let publish = await app.run([
       "workflow", "package", "publish", packageSource.path,

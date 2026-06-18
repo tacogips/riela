@@ -1155,8 +1155,29 @@ public enum ClaudeCodeGraphQLCommandExecutor {
         let options = try processOptions(from: effectiveVariables, claudeCodeHome: claudeCodeHome)
         let result = manager.spawnExec(prompt: prompt, options: options)
         return Result(data: .object(sessionExecutionJSON(process: result.process, result: result.result)))
-      case "session.create", "session.cancel", "session.pause", "session.resume":
-        return Result(errors: ["\(commandName) is not implemented in this runtime"])
+      case "session.create":
+        let prompt = try requiredNonBlankString(effectiveVariables, "prompt")
+        let manager = ClaudeCodeProcessManager(executableName: executableName(from: effectiveVariables))
+        let options = try processOptions(from: effectiveVariables, claudeCodeHome: claudeCodeHome)
+        let result = manager.spawnExec(prompt: prompt, options: options)
+        return Result(data: .object(sessionExecutionJSON(process: result.process, result: result.result)))
+      case "session.resume":
+        let id = try requiredString(effectiveVariables, "id")
+        let manager = ClaudeCodeProcessManager(executableName: executableName(from: effectiveVariables))
+        let options = try processOptions(from: effectiveVariables, claudeCodeHome: claudeCodeHome)
+        let result = manager.spawnResume(sessionId: id, prompt: stringValue(effectiveVariables["prompt"]), options: options)
+        return Result(data: .object(sessionExecutionJSON(process: result.process, result: result.result)))
+      case "session.cancel", "session.pause":
+        let id = try requiredString(effectiveVariables, "id")
+        let manager = ClaudeCodeProcessManager(executableName: executableName(from: effectiveVariables))
+        let killed = manager.kill(id: id)
+        return Result(data: .object([
+          "id": .string(id),
+          "success": .bool(killed),
+          "ok": .bool(killed),
+          "status": .string(killed ? "cancelled" : "not_found"),
+          "degraded": .bool(!killed),
+        ]))
       case "session.fork":
         let id = try requiredString(effectiveVariables, "id")
         let manager = ClaudeCodeProcessManager(executableName: executableName(from: effectiveVariables))

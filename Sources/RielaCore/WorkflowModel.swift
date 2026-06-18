@@ -423,13 +423,43 @@ public struct WorkflowCommandExecution: Codable, Equatable, Sendable {
     case workingDirectory
   }
 
-  public init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    self.executable = try container.decode(String.self, forKey: .executable)
-    self.arguments = try container.decodeIfPresent([String].self, forKey: .arguments) ?? []
-    self.environment = try container.decodeIfPresent([String: String].self, forKey: .environment) ?? [:]
-    self.workingDirectory = try container.decodeIfPresent(String.self, forKey: .workingDirectory)
+  enum RielaCommandCodingKeys: String, CodingKey {
+    case executable
+    case scriptPath
+    case arguments
+    case argvTemplate
+    case environment
+    case envTemplate
+    case workingDirectory
   }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: RielaCommandCodingKeys.self)
+    let workingDirectory = try container.decodeIfPresent(String.self, forKey: .workingDirectory)
+    let executable = try container.decodeIfPresent(String.self, forKey: .executable)
+    self.executable = try executable ?? normalizedScriptExecutable(
+      container.decode(String.self, forKey: .scriptPath),
+      workingDirectory: workingDirectory
+    )
+    self.arguments = try container.decodeIfPresent([String].self, forKey: .arguments)
+      ?? container.decodeIfPresent([String].self, forKey: .argvTemplate)
+      ?? []
+    self.environment = try container.decodeIfPresent([String: String].self, forKey: .environment)
+      ?? container.decodeIfPresent([String: String].self, forKey: .envTemplate)
+      ?? [:]
+    self.workingDirectory = workingDirectory
+  }
+}
+
+private func normalizedScriptExecutable(_ scriptPath: String, workingDirectory: String?) -> String {
+  guard
+    let workingDirectory,
+    !workingDirectory.isEmpty,
+    scriptPath.hasPrefix(workingDirectory + "/")
+  else {
+    return scriptPath
+  }
+  return "./" + String(scriptPath.dropFirst(workingDirectory.count + 1))
 }
 
 public struct WorkflowContainerExecution: Codable, Equatable, Sendable {
@@ -465,13 +495,39 @@ public struct WorkflowContainerExecution: Codable, Equatable, Sendable {
     case workingDirectory
   }
 
+  enum RielaContainerCodingKeys: String, CodingKey {
+    case image
+    case build
+    case runnerKind
+    case runnerPath
+    case command
+    case entrypoint
+    case argsTemplate
+    case environment
+    case envTemplate
+    case workingDirectory
+  }
+
+  enum RielaContainerBuildCodingKeys: String, CodingKey {
+    case contextPath
+    case containerfilePath
+  }
+
   public init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    self.image = try container.decode(String.self, forKey: .image)
+    let container = try decoder.container(keyedBy: RielaContainerCodingKeys.self)
+    let build = try? container.nestedContainer(keyedBy: RielaContainerBuildCodingKeys.self, forKey: .build)
+    self.image = try container.decodeIfPresent(String.self, forKey: .image)
+      ?? build?.decodeIfPresent(String.self, forKey: .contextPath)
+      ?? build?.decodeIfPresent(String.self, forKey: .containerfilePath)
+      ?? "local-build"
     self.runnerKind = try container.decodeIfPresent(String.self, forKey: .runnerKind)
     self.runnerPath = try container.decodeIfPresent(String.self, forKey: .runnerPath)
-    self.command = try container.decodeIfPresent([String].self, forKey: .command) ?? []
-    self.environment = try container.decodeIfPresent([String: String].self, forKey: .environment) ?? [:]
+    self.command = try container.decodeIfPresent([String].self, forKey: .command)
+      ?? ((container.decodeIfPresent([String].self, forKey: .entrypoint) ?? [])
+        + (container.decodeIfPresent([String].self, forKey: .argsTemplate) ?? []))
+    self.environment = try container.decodeIfPresent([String: String].self, forKey: .environment)
+      ?? container.decodeIfPresent([String: String].self, forKey: .envTemplate)
+      ?? [:]
     self.workingDirectory = try container.decodeIfPresent(String.self, forKey: .workingDirectory)
   }
 }

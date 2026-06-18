@@ -8,7 +8,7 @@ Ignore `sessionId`, timestamps, and artifact paths.
 Command:
 
 ```bash
-riela workflow validate claude-riela-codex-coding --workflow-definition-dir ./examples
+swift run riela workflow validate claude-riela-codex-coding --workflow-definition-dir ./examples
 ```
 
 Expected result: the workflow is valid.
@@ -18,7 +18,7 @@ Expected result: the workflow is valid.
 Command:
 
 ```bash
-riela workflow run claude-riela-codex-coding \
+swift run riela workflow run claude-riela-codex-coding \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/claude-riela-codex-coding/mock-scenario.json \
   --output json

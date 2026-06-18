@@ -58,8 +58,8 @@
         "Provide a deterministic mock scenario"
       ],
       "verificationCommands": [
-        "riela workflow validate claude-riela-codex-coding --workflow-definition-dir ./examples",
-        "riela workflow inspect claude-riela-codex-coding --workflow-definition-dir ./examples --output json"
+        "swift run riela workflow validate claude-riela-codex-coding --workflow-definition-dir ./examples",
+        "swift run riela workflow inspect claude-riela-codex-coding --workflow-definition-dir ./examples --output json"
       ]
     }
   },

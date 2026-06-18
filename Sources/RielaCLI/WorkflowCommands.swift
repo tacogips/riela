@@ -366,8 +366,8 @@ private func remoteAutoImprovePolicyInput(_ policy: WorkflowAutoImprovePolicy) -
     "monitorIntervalMs": .number(Double(policy.monitorIntervalMs)),
     "stallTimeoutMs": .number(Double(policy.stallTimeoutMs)),
   ]
-  if policy.workflowMutationMode == "execution-copy" || policy.workflowMutationMode == "in-place" {
-    input["workflowMutationMode"] = .string(policy.workflowMutationMode)
+  if policy.workflowMutationMode.isForwardedToRemoteExecution {
+    input["workflowMutationMode"] = .string(policy.workflowMutationMode.rawValue)
   }
   return input
 }
@@ -1115,6 +1115,10 @@ public struct WorkflowRunCommand: Sendable {
         workingDirectory: options.workingDirectory,
         autoImprove: options.autoImprove
       )
+      let stdioNodeExecutor = try makeScenarioBackedStdioNodeExecutor(
+        scenarioPath: options.mockScenarioPath,
+        workingDirectory: options.workingDirectory
+      )
       let persistedResolution = CLIWorkflowSessionResolution.resolutionForPersistence(
         resolution: resolution,
         resolvedSourceScope: bundle.sourceScope
@@ -1129,7 +1133,8 @@ public struct WorkflowRunCommand: Sendable {
       let runner = DeterministicWorkflowRunner(
         store: runtimeStore,
         adapter: adapter,
-        stdioNodeExecutor: LocalWorkflowStdioNodeExecutor()
+        addonResolver: BuiltinWorkflowAddonResolver(),
+        stdioNodeExecutor: stdioNodeExecutor
       )
       let initialRequest = DeterministicWorkflowRunRequest(
         workflow: bundle.workflow,
@@ -1403,7 +1408,7 @@ public struct WorkflowRunCommand: Sendable {
         "maxWorkflowPatches": .number(Double(policy.maxWorkflowPatches)),
         "monitorIntervalMs": .number(Double(policy.monitorIntervalMs)),
         "stallTimeoutMs": .number(Double(policy.stallTimeoutMs)),
-        "workflowMutationMode": .string(policy.workflowMutationMode),
+        "workflowMutationMode": .string(policy.workflowMutationMode.rawValue),
         "nestedSuperviser": .bool(policy.nestedSuperviser),
       ]),
       "incidents": .array(incidents),

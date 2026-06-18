@@ -42,10 +42,12 @@ final class EventDryRunTests: XCTestCase {
 
     XCTAssertEqual(webhook.routePath, "/events/web")
     XCTAssertEqual(webhook.secretEnv, "WEBHOOK_SECRET")
-    XCTAssertEqual(s3.eventReceiverMode, "webhook-bridge")
+    XCTAssertEqual(webhook.provider, .web)
+    XCTAssertEqual(s3.provider, .custom("aws-s3"))
+    XCTAssertEqual(s3.eventReceiverMode, .webhookBridge)
     XCTAssertEqual(s3.eventReceiverPath, "/events/s3")
     XCTAssertEqual(s3.secretEnv, "S3_WEBHOOK_SECRET")
-    XCTAssertEqual(s3.objectAccessMode, "metadata-only")
+    XCTAssertEqual(s3.objectAccessMode, .metadataOnly)
 
     guard case let .object(encodedWebhook) = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(webhook)),
       case let .object(encodedS3) = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(s3)),
@@ -55,8 +57,10 @@ final class EventDryRunTests: XCTestCase {
       return XCTFail("expected encoded TypeScript event source shapes")
     }
     XCTAssertEqual(encodedWebhook["path"], .string("/events/web"))
+    XCTAssertEqual(encodedWebhook["provider"], .string("web"))
     XCTAssertEqual(encodedWebhook["signingSecretEnv"], .string("WEBHOOK_SECRET"))
     XCTAssertNil(encodedWebhook["routePath"])
+    XCTAssertEqual(encodedS3["provider"], .string("aws-s3"))
     XCTAssertEqual(encodedEventReceiver["mode"], .string("webhook-bridge"))
     XCTAssertEqual(encodedEventReceiver["path"], .string("/events/s3"))
     XCTAssertEqual(encodedEventReceiver["signingSecretEnv"], .string("S3_WEBHOOK_SECRET"))
@@ -78,6 +82,7 @@ final class EventDryRunTests: XCTestCase {
     """#.utf8))
 
     XCTAssertEqual(source.routePath, "slack/events")
+    XCTAssertEqual(source.provider, .slack)
     XCTAssertEqual(source.secretEnv, "SLACK_SIGNING_SECRET")
     XCTAssertEqual(source.chatWebhookBearerTokenEnv, "SLACK_BOT_TOKEN")
 
@@ -87,9 +92,137 @@ final class EventDryRunTests: XCTestCase {
       return XCTFail("expected encoded chat-sdk webhook shape")
     }
     XCTAssertNil(encoded["path"])
+    XCTAssertEqual(encoded["provider"], .string("slack"))
     XCTAssertEqual(webhook["path"], .string("slack/events"))
     XCTAssertEqual(webhook["signingSecretEnv"], .string("SLACK_SIGNING_SECRET"))
     XCTAssertEqual(webhook["bearerTokenEnv"], .string("SLACK_BOT_TOKEN"))
+  }
+
+  func testExternalProviderOpenEnumRoundTripsUnknownValues() throws {
+    let envelope = try JSONDecoder().decode(ExternalEventEnvelope.self, from: Data(#"""
+    {
+      "sourceId": "custom-source",
+      "eventId": "evt-custom",
+      "provider": "custom-provider",
+      "eventType": "message",
+      "receivedAt": "1970-01-01T00:00:01Z",
+      "input": {},
+      "artifacts": []
+    }
+    """#.utf8))
+    let replyDispatch = ReplyDispatch(sourceId: "custom-source", provider: "custom-provider", payload: [:])
+
+    XCTAssertEqual(envelope.provider, .custom("custom-provider"))
+    XCTAssertEqual(replyDispatch.provider, .custom("custom-provider"))
+
+    guard case let .object(encodedEnvelope) = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(envelope)),
+      case let .object(encodedReply) = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(replyDispatch))
+    else {
+      return XCTFail("expected encoded provider objects")
+    }
+    XCTAssertEqual(encodedEnvelope["provider"], .string("custom-provider"))
+    XCTAssertEqual(encodedEnvelope["eventType"], .string("message"))
+    XCTAssertEqual(encodedEnvelope["receivedAt"], .string("1970-01-01T00:00:01Z"))
+    XCTAssertEqual(encodedReply["provider"], .string("custom-provider"))
+  }
+
+  func testExternalEnvelopeRejectsNonCanonicalReceivedAtFormat() {
+    XCTAssertThrowsError(try JSONDecoder().decode(ExternalEventEnvelope.self, from: Data(#"""
+    {
+      "sourceId": "custom-source",
+      "eventId": "evt-custom",
+      "provider": "web",
+      "eventType": "message",
+      "receivedAt": 1,
+      "input": {},
+      "artifacts": []
+    }
+    """#.utf8)))
+  }
+
+  func testDryRunRejectsUnsupportedEnvelopeEventType() async {
+    let source = EventSourceContract(id: "web-a", kind: .webhook, provider: "web", routePath: "/hook")
+    let binding = EventBindingContract(
+      id: "bind-a",
+      sourceId: "web-a",
+      workflowName: "workflow-a",
+      inputMapping: .init(mode: .eventInput)
+    )
+    let envelope = ExternalEventEnvelope(
+      sourceId: "web-a",
+      eventId: "evt-1",
+      provider: "web",
+      eventType: "custom.event",
+      receivedAt: Date(timeIntervalSince1970: 1),
+      input: [:]
+    )
+
+    let result = await DeterministicEventDryRunTrigger().dryRun(.init(sources: [source], bindings: [binding], envelope: envelope))
+
+    XCTAssertFalse(result.accepted)
+    XCTAssertTrue(result.diagnostics.contains {
+      $0.code == "INVALID_EVENT_ENVELOPE"
+        && $0.path == "envelope.eventType"
+        && $0.message == "event type must be one of message, chat.message, event-input"
+    })
+  }
+
+  func testEventSourceKindOpenEnumRoundTripsUnknownValues() throws {
+    let source = try JSONDecoder().decode(EventSourceContract.self, from: Data(#"""
+    {
+      "id": "future-source",
+      "kind": "future-source-kind",
+      "provider": "future-provider"
+    }
+    """#.utf8))
+
+    XCTAssertEqual(source.kind, .custom("future-source-kind"))
+    XCTAssertEqual(source.provider, .custom("future-provider"))
+    XCTAssertEqual(EventContractValidator.validate(sources: [source], bindings: []), [])
+
+    guard case let .object(encoded) = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(source)) else {
+      return XCTFail("expected encoded future source")
+    }
+    XCTAssertEqual(encoded["kind"], .string("future-source-kind"))
+    XCTAssertEqual(encoded["provider"], .string("future-provider"))
+  }
+
+  func testS3ModeOpenEnumsRoundTripUnknownValuesAndRemainUnsupported() throws {
+    let source = try JSONDecoder().decode(EventSourceContract.self, from: Data(#"""
+    {
+      "id": "s3-custom",
+      "kind": "s3-repository",
+      "provider": "aws-s3",
+      "bucket": "release-artifacts",
+      "eventReceiver": {
+        "mode": "queue-bridge",
+        "path": "/events/s3",
+        "signingSecretEnv": "S3_WEBHOOK_SECRET"
+      },
+      "objectAccess": {"mode": "full-object"}
+    }
+    """#.utf8))
+
+    XCTAssertEqual(source.eventReceiverMode, .custom("queue-bridge"))
+    XCTAssertEqual(source.objectAccessMode, .custom("full-object"))
+
+    let diagnostics = EventContractValidator.validate(sources: [source], bindings: [])
+    XCTAssertTrue(diagnostics.contains {
+      $0.code == "INVALID_EVENT_SOURCE" && $0.path == "sources[0].eventReceiver.mode"
+        && $0.message == "queue-bridge receiver mode is not supported"
+    })
+    XCTAssertTrue(diagnostics.contains {
+      $0.code == "INVALID_EVENT_SOURCE" && $0.path == "sources[0].objectAccess.mode"
+    })
+
+    guard case let .object(encoded) = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(source)),
+      case let .object(eventReceiver)? = encoded["eventReceiver"],
+      case let .object(objectAccess)? = encoded["objectAccess"]
+    else {
+      return XCTFail("expected encoded S3 custom modes")
+    }
+    XCTAssertEqual(eventReceiver["mode"], .string("queue-bridge"))
+    XCTAssertEqual(objectAccess["mode"], .string("full-object"))
   }
 
   func testValidationCoversRouteConflictsSecretsAndUnknownBindings() {
@@ -577,8 +710,28 @@ final class EventDryRunTests: XCTestCase {
   }
 
   func testBindingDecodeRequiresWorkflowNameExceptSupervisorModesAndTypedInputMapping() throws {
-    let direct = try JSONDecoder().decode(EventBindingContract.self, from: Data(#"{"id":"bind-a","sourceId":"web-a","workflowName":"workflow-a","inputMapping":{"mode":"event-input"},"outputDestinations":["chat"]}"#.utf8))
-    let supervisor = try JSONDecoder().decode(EventBindingContract.self, from: Data(#"{"id":"bind-b","sourceId":"web-a","execution":{"mode":"supervisor-dispatch"},"inputMapping":{"mode":"template","template":{"text":"{{ event.input.text }}"}}}"#.utf8))
+    let directJSON = """
+    {
+      "id": "bind-a",
+      "sourceId": "web-a",
+      "workflowName": "workflow-a",
+      "inputMapping": { "mode": "event-input" },
+      "outputDestinations": ["chat"]
+    }
+    """
+    let supervisorJSON = """
+    {
+      "id": "bind-b",
+      "sourceId": "web-a",
+      "execution": { "mode": "supervisor-dispatch" },
+      "inputMapping": {
+        "mode": "template",
+        "template": { "text": "{{ event.input.text }}" }
+      }
+    }
+    """
+    let direct = try JSONDecoder().decode(EventBindingContract.self, from: Data(directJSON.utf8))
+    let supervisor = try JSONDecoder().decode(EventBindingContract.self, from: Data(supervisorJSON.utf8))
 
     XCTAssertEqual(direct.workflowName, "workflow-a")
     XCTAssertEqual(direct.outputDestinations, ["chat"])
@@ -658,7 +811,7 @@ final class EventDryRunTests: XCTestCase {
       sourceId: "chat-a",
       eventId: "evt-1",
       provider: "web",
-      eventType: "message",
+      eventType: "chat.message",
       receivedAt: Date(timeIntervalSince1970: 1),
       input: ["text": .string("hello")]
     )
@@ -697,7 +850,7 @@ final class EventDryRunTests: XCTestCase {
       sourceId: "chat-a",
       eventId: "evt-1",
       provider: "web",
-      eventType: "message",
+      eventType: "chat.message",
       receivedAt: Date(timeIntervalSince1970: 1),
       input: ["text": .string("hello")]
     )

@@ -6,77 +6,208 @@ import XCTest
 
 final class ClaudeCodeAgentCompatibilityTests: XCTestCase {
   func testLegacyClaudeCodeAgentUnitTestSurfaceHasSwiftCoverage() throws {
-    let coverage: [(category: String, legacyTests: [String], probe: () throws -> Void)] = [
-      ("auth", ["duration.test.ts", "token-manager.test.ts"], {
+    let legacyTests: Set<String> = [
+      "src/auth/duration.test.ts",
+      "src/auth/token-manager.test.ts",
+      "src/cli/commands/activity/cleanup.test.ts",
+      "src/cli/commands/activity/list.test.ts",
+      "src/cli/commands/activity/status.test.ts",
+      "src/cli/commands/auth/status.test.ts",
+      "src/cli/commands/auth/verify.test.ts",
+      "src/cli/commands/bookmark.test.ts",
+      "src/cli/commands/edge-cases.test.ts",
+      "src/cli/commands/error-handling.test.ts",
+      "src/cli/commands/group.test.ts",
+      "src/cli/commands/queue.test.ts",
+      "src/cli/commands/session.test.ts",
+      "src/cli/commands/version.test.ts",
+      "src/cli/graphql.test.ts",
+      "src/cli/main.test.ts",
+      "src/cli/output.test.ts",
+      "src/container.test.ts",
+      "src/errors.test.ts",
+      "src/graphql/index.test.ts",
+      "src/lib.test.ts",
+      "src/package-metadata.test.ts",
+      "src/polling/event-parser.test.ts",
+      "src/polling/group-monitor.test.ts",
+      "src/polling/monitor.test.ts",
+      "src/polling/output.test.ts",
+      "src/polling/parser.test.ts",
+      "src/polling/state-manager.test.ts",
+      "src/polling/watcher.test.ts",
+      "src/repository/file/base-repository.test.ts",
+      "src/repository/file/bookmark-repository.test.ts",
+      "src/repository/file/group-repository.test.ts",
+      "src/repository/file/queue-repository.test.ts",
+      "src/repository/in-memory/bookmark-repository.test.ts",
+      "src/repository/in-memory/group-repository.test.ts",
+      "src/repository/in-memory/queue-repository.test.ts",
+      "src/repository/in-memory/session-repository.test.ts",
+      "src/result.test.ts",
+      "src/sdk/__fixtures__/mock-receiver.test.ts",
+      "src/sdk/__fixtures__/mock-session.test.ts",
+      "src/sdk/__fixtures__/mock-transport.test.ts",
+      "src/sdk/__tests__/exports.test.ts",
+      "src/sdk/__tests__/tool-call.integration.test.ts",
+      "src/sdk/activity/__tests__/integration.test.ts",
+      "src/sdk/activity/hook-types.test.ts",
+      "src/sdk/activity/manager.test.ts",
+      "src/sdk/activity/store.test.ts",
+      "src/sdk/activity/transcript-analyzer.test.ts",
+      "src/sdk/agent.test.ts",
+      "src/sdk/bookmarks/manager.test.ts",
+      "src/sdk/bookmarks/search.test.ts",
+      "src/sdk/client.test.ts",
+      "src/sdk/control-protocol.test.ts",
+      "src/sdk/credentials/__tests__/integration.test.ts",
+      "src/sdk/credentials/__tests__/manager.test.ts",
+      "src/sdk/credentials/__tests__/reader.test.ts",
+      "src/sdk/credentials/__tests__/validation.test.ts",
+      "src/sdk/credentials/__tests__/writer.test.ts",
+      "src/sdk/environment.test.ts",
+      "src/sdk/errors.test.ts",
+      "src/sdk/events/emitter.test.ts",
+      "src/sdk/file-changes/extractor.test.ts",
+      "src/sdk/file-changes/index-manager.test.ts",
+      "src/sdk/file-changes/service.test.ts",
+      "src/sdk/group/config-generator.test.ts",
+      "src/sdk/group/dependency-graph.test.ts",
+      "src/sdk/group/events.test.ts",
+      "src/sdk/group/manager.test.ts",
+      "src/sdk/group/progress.test.ts",
+      "src/sdk/group/runner.test.ts",
+      "src/sdk/group/session-processor.test.ts",
+      "src/sdk/group/types.test.ts",
+      "src/sdk/jsonl-parser.test.ts",
+      "src/sdk/markdown-parser/detectors.test.ts",
+      "src/sdk/markdown-parser/parser.test.ts",
+      "src/sdk/mock-session-runner.test.ts",
+      "src/sdk/queue/manager.test.ts",
+      "src/sdk/queue/recovery.test.ts",
+      "src/sdk/queue/runner.test.ts",
+      "src/sdk/readiness.test.ts",
+      "src/sdk/receiver.test.ts",
+      "src/sdk/session-reader.test.ts",
+      "src/sdk/session-state.test.ts",
+      "src/sdk/tool-registry.test.ts",
+      "src/sdk/tool-versions.test.ts",
+      "src/sdk/transport/subprocess.test.ts",
+      "src/sdk/types/mcp.test.ts",
+      "src/sdk/types/protocol.test.ts",
+      "src/sdk/types/state.test.ts",
+      "src/sdk/types/tool.test.ts",
+      "src/services/atomic-writer.test.ts",
+      "src/services/file-lock.test.ts",
+      "src/test/fixtures/fixtures.test.ts",
+      "src/test/helpers.test.ts",
+      "src/test/mocks/clock.test.ts",
+      "src/test/mocks/filesystem.test.ts",
+      "src/test/mocks/lock.test.ts",
+      "src/test/mocks/process-manager.test.ts",
+      "src/test/utils/concurrency.test.ts",
+      "src/types/activity.test.ts",
+      "src/types/types.test.ts",
+    ]
+    func coverageCategory(for path: String) -> String {
+      if path.hasPrefix("src/auth/") { return "auth" }
+      if path.hasPrefix("src/cli/") { return "cli" }
+      if path.hasPrefix("src/polling/") { return "polling" }
+      if path.hasPrefix("src/repository/") { return "repository" }
+      if path.hasPrefix("src/sdk/activity/") { return "sdk-activity" }
+      if path.hasPrefix("src/sdk/bookmarks/") { return "sdk-bookmarks" }
+      if path.hasPrefix("src/sdk/credentials/") { return "sdk-credentials" }
+      if path.hasPrefix("src/sdk/file-changes/") { return "sdk-file-changes" }
+      if path.hasPrefix("src/sdk/group/") { return "sdk-group" }
+      if path.hasPrefix("src/sdk/markdown-parser/") { return "sdk-markdown-parser" }
+      if path.hasPrefix("src/sdk/queue/") { return "sdk-queue" }
+      if path.hasPrefix("src/sdk/types/") { return "sdk-types" }
+      if path.hasPrefix("src/sdk/") { return "sdk" }
+      if path.hasPrefix("src/services/") { return "services" }
+      if path.hasPrefix("src/test/") { return "test-support" }
+      if path.hasPrefix("src/types/") { return "types" }
+      if path == "src/graphql/index.test.ts" { return "graphql" }
+      if ["src/container.test.ts", "src/errors.test.ts", "src/lib.test.ts", "src/package-metadata.test.ts", "src/result.test.ts"].contains(path) { return "container-and-core" }
+      return "unmapped"
+    }
+    let probes: [(category: String, probe: () throws -> Void)] = [
+      ("auth", {
         XCTAssertEqual(try ClaudeCodeDurationParser.seconds("1d"), 86_400)
         XCTAssertTrue(try ClaudeCodeTokenPersistence.createRawToken(name: "probe", permissions: ["session:read"], configDir: makeTemporaryDirectory().path).hasPrefix("cca_"))
       }),
-      ("cli", ["activity/*.test.ts", "auth/*.test.ts", "bookmark.test.ts", "edge-cases.test.ts", "error-handling.test.ts", "graphql.test.ts", "group.test.ts", "main.test.ts", "output.test.ts", "queue.test.ts", "session.test.ts", "version.test.ts"], {
+      ("cli", {
         XCTAssertEqual(ClaudeCodeAgentCLIApplication.run(arguments: ["version", "includeGit=false"]).exitCode, 0)
       }),
-      ("container-and-core", ["container.test.ts", "errors.test.ts", "lib.test.ts", "package-metadata.test.ts", "result.test.ts"], {
+      ("container-and-core", {
         XCTAssertEqual(ClaudeCodeProcessCommandBuilder.buildExecArguments(prompt: "probe").first, "-p")
       }),
-      ("graphql", ["index.test.ts"], {
+      ("graphql", {
         XCTAssertEqual(try ClaudeCodeGraphQLCommandExecutor.parseParams(["limit=2"])["limit"], .number(2))
       }),
-      ("polling", ["event-parser.test.ts", "group-monitor.test.ts", "monitor.test.ts", "output.test.ts", "parser.test.ts", "state-manager.test.ts", "watcher.test.ts"], {
+      ("polling", {
         var parser = ClaudeCodeJsonlStreamParser()
         XCTAssertEqual(parser.feed(#"{"type":"assistant","content":"ok"}"# + "\n").first?.type, "assistant")
       }),
-      ("repository", ["file/*.test.ts", "in-memory/*.test.ts"], {
+      ("repository", {
         var repository = ClaudeCodeQueueRepository()
         XCTAssertEqual(repository.createQueue(name: "probe").name, "probe")
       }),
-      ("sdk", ["agent.test.ts", "client.test.ts", "control-protocol.test.ts", "environment.test.ts", "errors.test.ts", "exports.test.ts", "jsonl-parser.test.ts", "mock-session-runner.test.ts", "readiness.test.ts", "receiver.test.ts", "session-reader.test.ts", "session-state.test.ts", "tool-registry.test.ts", "tool-versions.test.ts", "tool-call.integration.test.ts"], {
+      ("sdk", {
         let manager = ClaudeCodeProcessManager(executableName: "claude-probe") { _, _, _ in ClaudeCodeProcessExecution(exitCode: 0) }
         XCTAssertEqual(manager.spawnExec(prompt: "probe").result.exitCode, 0)
       }),
-      ("sdk-activity", ["hook-types.test.ts", "integration.test.ts", "manager.test.ts", "store.test.ts", "transcript-analyzer.test.ts"], {
+      ("sdk-activity", {
         XCTAssertEqual(ClaudeCodeActivityAnalyzer.status(hookEventName: "PermissionRequest"), .waitingUserResponse)
       }),
-      ("sdk-bookmarks", ["manager.test.ts", "search.test.ts"], {
+      ("sdk-bookmarks", {
         var manager = ClaudeCodeBookmarkManager()
         _ = try manager.create(type: .session, sessionId: "probe", name: "Probe")
         XCTAssertEqual(manager.search(text: "probe").count, 1)
       }),
-      ("sdk-credentials", ["integration.test.ts", "manager.test.ts", "reader.test.ts", "validation.test.ts", "writer.test.ts"], {
+      ("sdk-credentials", {
         XCTAssertTrue(ClaudeCodeConfigReader.defaultConfigPath(environment: ["HOME": "/tmp/home"]).hasSuffix("/.claude.json"))
       }),
-      ("sdk-file-changes", ["extractor.test.ts", "index-manager.test.ts", "service.test.ts"], {
+      ("sdk-file-changes", {
         let index = ClaudeCodeFileChangeIndex(changes: [ClaudeCodeFileChange(path: "Sources/A.swift", operation: .modified, source: .shell)])
         XCTAssertEqual(index.find("Sources/A.swift")?.operation, .modified)
       }),
-      ("sdk-group", ["config-generator.test.ts", "dependency-graph.test.ts", "events.test.ts", "manager.test.ts", "progress.test.ts", "runner.test.ts", "session-processor.test.ts", "types.test.ts"], {
+      ("sdk-group", {
         var groups = ClaudeCodeGroupRepository()
         XCTAssertEqual(groups.createGroup(name: "g").name, "g")
       }),
-      ("sdk-markdown-parser", ["detectors.test.ts", "parser.test.ts"], {
+      ("sdk-markdown-parser", {
         XCTAssertEqual(ClaudeCodeMarkdown.parseTasks("# Work\n- [x] done").first?.text, "done")
       }),
-      ("sdk-queue", ["manager.test.ts", "recovery.test.ts", "runner.test.ts"], {
+      ("sdk-queue", {
         var queues = ClaudeCodeQueueRepository()
         let queue = queues.createQueue(name: "q")
         XCTAssertNotNil(queues.addPrompt(queueId: queue.id, prompt: "p"))
       }),
-      ("services", ["atomic-writer.test.ts", "file-lock.test.ts"], {
+      ("sdk-types", {
+        XCTAssertEqual(ClaudeCodeActivityStatusValue.working.rawValue, "working")
+      }),
+      ("services", {
         let store = ClaudeCodeJSONStore<ClaudeCodeQueuesConfig>(url: try makeTemporaryDirectory().appendingPathComponent("queues.json"))
         try store.save(ClaudeCodeQueuesConfig())
       }),
-      ("test-support", ["fixtures.test.ts", "helpers.test.ts", "mocks/*.test.ts", "utils/concurrency.test.ts"], {
+      ("test-support", {
         XCTAssertFalse(try makeTemporaryDirectory().path.isEmpty)
       }),
-      ("types", ["activity.test.ts", "types.test.ts"], {
+      ("types", {
         XCTAssertEqual(ClaudeCodeActivityStatusValue.waitingUserResponse.rawValue, "waiting_user_response")
       }),
     ]
 
-    XCTAssertEqual(coverage.count, 17)
-    XCTAssertTrue(coverage.allSatisfy { !$0.legacyTests.isEmpty })
-    XCTAssertTrue(coverage.first { $0.category == "sdk" }?.legacyTests.contains("control-protocol.test.ts") == true)
-    XCTAssertTrue(coverage.first { $0.category == "sdk-credentials" }?.legacyTests.contains("reader.test.ts") == true)
-    XCTAssertTrue(coverage.first { $0.category == "polling" }?.legacyTests.contains("parser.test.ts") == true)
-    try coverage.forEach { try $0.probe() }
+    let coverage = Dictionary(uniqueKeysWithValues: legacyTests.map { ($0, coverageCategory(for: $0)) })
+    let probeCategories = Set(probes.map(\.category))
+    XCTAssertEqual(legacyTests.count, 101)
+    XCTAssertEqual(coverage.count, legacyTests.count)
+    XCTAssertFalse(coverage.values.contains("unmapped"))
+    XCTAssertTrue(Set(coverage.values).isSubset(of: probeCategories))
+    XCTAssertEqual(coverage["src/sdk/control-protocol.test.ts"], "sdk")
+    XCTAssertEqual(coverage["src/sdk/credentials/__tests__/reader.test.ts"], "sdk-credentials")
+    XCTAssertEqual(coverage["src/polling/parser.test.ts"], "polling")
+    try probes.forEach { try $0.probe() }
   }
 
   func testClaudeProcessBuilderMatchesLegacyCliShape() {
@@ -344,10 +475,14 @@ final class ClaudeCodeAgentCompatibilityTests: XCTestCase {
       )
     }
     let sessionCreateToken = try ClaudeCodeTokenPersistence.createRawToken(name: "session-create", permissions: ["session:create"], configDir: config.path)
-    XCTAssertEqual(
-      ClaudeCodeGraphQLCommandExecutor.execute(command: "session.create", context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: sessionCreateToken)).errors,
-      ["session.create is not implemented in this runtime"]
+    let sessionCreateAuthContext = ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: sessionCreateToken)
+    let authorizedCreate = ClaudeCodeGraphQLCommandExecutor.execute(
+      command: "session.create",
+      variables: ["prompt": .string("hello"), "executableName": .string("/usr/bin/true")],
+      context: sessionCreateAuthContext
     )
+    XCTAssertEqual(authorizedCreate.errors, [])
+    XCTAssertEqual(jsonObject(authorizedCreate.data)?["exitCode"], .number(0))
 
     let store = ClaudeCodeActivityStore(dataDir: config.path)
     try store.save([ClaudeCodeStoredActivityEntry(sessionId: "session-auth", status: .working, updatedAt: "2026-06-17T00:00:00Z")])
@@ -387,11 +522,22 @@ final class ClaudeCodeAgentCompatibilityTests: XCTestCase {
     let typedSearch = ClaudeCodeGraphQLCommandExecutor.execute(command: #"query { searchSessions(query: "hello") { sessionIds total scannedSessions } }"#, context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: sessionToken))
     XCTAssertEqual(jsonObject(jsonObject(typedSearch.data)?["searchSessions"])?.keys.contains("sessionIds"), true)
 
-    let sessionResume = ClaudeCodeGraphQLCommandExecutor.execute(command: "session.resume", variables: ["id": .string("session-auth")], context: ClaudeCodeAgentCompatibilityContext(claudeCodeHome: home.path, configDir: config.path, authToken: sessionCreateToken))
-    XCTAssertEqual(sessionResume.errors, ["session.resume is not implemented in this runtime"])
-    XCTAssertEqual(ClaudeCodeGraphQLCommandExecutor.execute(command: "session.create", context: context).errors, ["session.create is not implemented in this runtime"])
-    XCTAssertEqual(ClaudeCodeGraphQLCommandExecutor.execute(command: "session.cancel", context: context).errors, ["session.cancel is not implemented in this runtime"])
-    XCTAssertEqual(ClaudeCodeGraphQLCommandExecutor.execute(command: "session.pause", context: context).errors, ["session.pause is not implemented in this runtime"])
+    let sessionResume = ClaudeCodeGraphQLCommandExecutor.execute(
+      command: "session.resume",
+      variables: ["id": .string("session-auth"), "prompt": .string("continue"), "executableName": .string("/usr/bin/true")],
+      context: sessionCreateAuthContext
+    )
+    XCTAssertEqual(sessionResume.errors, [])
+    XCTAssertEqual(jsonObject(sessionResume.data)?["exitCode"], .number(0))
+    let resumeArguments = jsonArray(jsonObject(sessionResume.data)?["arguments"])?.compactMap(jsonString)
+    XCTAssertEqual(resumeArguments?.contains("--resume"), true)
+    XCTAssertEqual(resumeArguments?.contains("session-auth"), true)
+    let sessionCancel = ClaudeCodeGraphQLCommandExecutor.execute(command: "session.cancel", variables: ["id": .string("missing-process")], context: context)
+    XCTAssertEqual(sessionCancel.errors, [])
+    XCTAssertEqual(jsonObject(sessionCancel.data)?["status"], .string("not_found"))
+    let sessionPause = ClaudeCodeGraphQLCommandExecutor.execute(command: "session.pause", variables: ["id": .string("missing-process")], context: context)
+    XCTAssertEqual(sessionPause.errors, [])
+    XCTAssertEqual(jsonObject(sessionPause.data)?["degraded"], .bool(true))
   }
 
   func testLegacyGroupQueueGetAliasesAndGroupPermissionBoundaries() throws {

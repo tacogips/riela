@@ -1,16 +1,305 @@
 import Foundation
 import RielaCore
 
-public enum EventSourceKind: String, Codable, CaseIterable, Sendable {
+public enum EventSourceKind: RawRepresentable, Codable, Equatable, Sendable {
+  public typealias RawValue = String
+
   case cron
   case webhook
-  case chatSdk = "chat-sdk"
-  case discordGateway = "discord-gateway"
-  case fileChange = "file-change"
-  case telegramGateway = "telegram-gateway"
+  case chatSdk
+  case discordGateway
+  case fileChange
+  case telegramGateway
   case matrix
-  case s3Repository = "s3-repository"
-  case sequentialList = "sequential-list"
+  case s3Repository
+  case sequentialList
+  case custom(String)
+
+  public init(rawValue: String) {
+    switch rawValue {
+    case "cron":
+      self = .cron
+    case "webhook":
+      self = .webhook
+    case "chat-sdk":
+      self = .chatSdk
+    case "discord-gateway":
+      self = .discordGateway
+    case "file-change":
+      self = .fileChange
+    case "telegram-gateway":
+      self = .telegramGateway
+    case "matrix":
+      self = .matrix
+    case "s3-repository":
+      self = .s3Repository
+    case "sequential-list":
+      self = .sequentialList
+    default:
+      self = .custom(rawValue)
+    }
+  }
+
+  public var rawValue: String {
+    switch self {
+    case .cron:
+      "cron"
+    case .webhook:
+      "webhook"
+    case .chatSdk:
+      "chat-sdk"
+    case .discordGateway:
+      "discord-gateway"
+    case .fileChange:
+      "file-change"
+    case .telegramGateway:
+      "telegram-gateway"
+    case .matrix:
+      "matrix"
+    case .s3Repository:
+      "s3-repository"
+    case .sequentialList:
+      "sequential-list"
+    case .custom(let value):
+      value
+    }
+  }
+
+  public init(from decoder: Decoder) throws {
+    self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+public enum EventProvider: RawRepresentable, Codable, Equatable, Sendable {
+  public typealias RawValue = String
+
+  case slack
+  case teams
+  case gchat
+  case discord
+  case telegram
+  case github
+  case linear
+  case whatsapp
+  case messenger
+  case web
+  case custom(String)
+
+  public init(rawValue: String) {
+    switch rawValue {
+    case "slack":
+      self = .slack
+    case "teams":
+      self = .teams
+    case "gchat":
+      self = .gchat
+    case "discord":
+      self = .discord
+    case "telegram":
+      self = .telegram
+    case "github":
+      self = .github
+    case "linear":
+      self = .linear
+    case "whatsapp":
+      self = .whatsapp
+    case "messenger":
+      self = .messenger
+    case "web":
+      self = .web
+    default:
+      self = .custom(rawValue)
+    }
+  }
+
+  public var rawValue: String {
+    switch self {
+    case .slack:
+      "slack"
+    case .teams:
+      "teams"
+    case .gchat:
+      "gchat"
+    case .discord:
+      "discord"
+    case .telegram:
+      "telegram"
+    case .github:
+      "github"
+    case .linear:
+      "linear"
+    case .whatsapp:
+      "whatsapp"
+    case .messenger:
+      "messenger"
+    case .web:
+      "web"
+    case .custom(let value):
+      value
+    }
+  }
+
+  public init(from decoder: Decoder) throws {
+    self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+extension EventProvider {
+  public static let supportedChatSDKProviders: [EventProvider] = [
+    .slack,
+    .teams,
+    .gchat,
+    .discord,
+    .telegram,
+    .github,
+    .linear,
+    .whatsapp,
+    .messenger,
+    .web
+  ]
+
+  public var isSupportedChatSDKProvider: Bool {
+    Self.supportedChatSDKProviders.contains(self)
+  }
+}
+
+public enum EventType: RawRepresentable, Codable, Equatable, Sendable {
+  public typealias RawValue = String
+
+  case message
+  case chatMessage
+  case eventInput
+  case custom(String)
+
+  public init(rawValue: String) {
+    switch rawValue {
+    case "message":
+      self = .message
+    case "chat.message":
+      self = .chatMessage
+    case "event-input":
+      self = .eventInput
+    default:
+      self = .custom(rawValue)
+    }
+  }
+
+  public var rawValue: String {
+    switch self {
+    case .message:
+      "message"
+    case .chatMessage:
+      "chat.message"
+    case .eventInput:
+      "event-input"
+    case .custom(let value):
+      value
+    }
+  }
+
+  public init(from decoder: Decoder) throws {
+    self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+extension EventType {
+  public static let supportedRielaEventTypes: [EventType] = [
+    .message,
+    .chatMessage,
+    .eventInput
+  ]
+
+  public var isSupportedRielaEventType: Bool {
+    Self.supportedRielaEventTypes.contains(self)
+  }
+}
+
+public enum EventReceiverMode: RawRepresentable, Codable, Equatable, Sendable {
+  public typealias RawValue = String
+
+  case webhookBridge
+  case polling
+  case custom(String)
+
+  public init(rawValue: String) {
+    switch rawValue {
+    case "webhook-bridge":
+      self = .webhookBridge
+    case "polling":
+      self = .polling
+    default:
+      self = .custom(rawValue)
+    }
+  }
+
+  public var rawValue: String {
+    switch self {
+    case .webhookBridge:
+      "webhook-bridge"
+    case .polling:
+      "polling"
+    case .custom(let value):
+      value
+    }
+  }
+
+  public init(from decoder: Decoder) throws {
+    self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+public enum EventObjectAccessMode: RawRepresentable, Codable, Equatable, Sendable {
+  public typealias RawValue = String
+
+  case metadataOnly
+  case custom(String)
+
+  public init(rawValue: String) {
+    switch rawValue {
+    case "metadata-only":
+      self = .metadataOnly
+    default:
+      self = .custom(rawValue)
+    }
+  }
+
+  public var rawValue: String {
+    switch self {
+    case .metadataOnly:
+      "metadata-only"
+    case .custom(let value):
+      value
+    }
+  }
+
+  public init(from decoder: Decoder) throws {
+    self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
 }
 
 public struct EventArtifactReference: Codable, Equatable, Sendable {
@@ -26,14 +315,14 @@ public struct EventArtifactReference: Codable, Equatable, Sendable {
 public struct EventSourceContract: Codable, Equatable, Sendable {
   public var id: String
   public var kind: EventSourceKind
-  public var provider: String?
+  public var provider: EventProvider?
   public var enabled: Bool
   public var routePath: String?
   public var secretEnv: String?
   public var bucket: String?
-  public var eventReceiverMode: String?
+  public var eventReceiverMode: EventReceiverMode?
   public var eventReceiverPath: String?
-  public var objectAccessMode: String?
+  public var objectAccessMode: EventObjectAccessMode?
   public var rootPrefix: String?
   public var chatWebhookBearerTokenEnv: String?
   fileprivate var hasChatWebhook: Bool
@@ -90,14 +379,14 @@ public struct EventSourceContract: Codable, Equatable, Sendable {
   ) {
     self.id = id
     self.kind = kind
-    self.provider = provider
+    self.provider = provider.map(EventProvider.init(rawValue:))
     self.enabled = enabled
     self.routePath = routePath
     self.secretEnv = secretEnv
     self.bucket = bucket
-    self.eventReceiverMode = eventReceiverMode
+    self.eventReceiverMode = eventReceiverMode.map(EventReceiverMode.init(rawValue:))
     self.eventReceiverPath = eventReceiverPath
-    self.objectAccessMode = objectAccessMode
+    self.objectAccessMode = objectAccessMode.map(EventObjectAccessMode.init(rawValue:))
     self.rootPrefix = rootPrefix
     self.chatWebhookBearerTokenEnv = chatWebhookBearerTokenEnv
     self.hasChatWebhook = kind == .chatSdk && (routePath != nil || secretEnv != nil || chatWebhookBearerTokenEnv != nil)
@@ -108,7 +397,7 @@ public struct EventSourceContract: Codable, Equatable, Sendable {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     self.id = try container.decode(String.self, forKey: .id)
     self.kind = try container.decode(EventSourceKind.self, forKey: .kind)
-    self.provider = try container.decodeIfPresent(String.self, forKey: .provider)
+    self.provider = try container.decodeIfPresent(EventProvider.self, forKey: .provider)
     self.enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
     self.routePath = try container.decodeIfPresent(String.self, forKey: .path)
       ?? container.decodeIfPresent(String.self, forKey: .routePath)
@@ -128,19 +417,19 @@ public struct EventSourceContract: Codable, Equatable, Sendable {
     if container.contains(.eventReceiver) {
       self.hasEventReceiver = true
       let eventReceiver = try container.nestedContainer(keyedBy: EventReceiverCodingKeys.self, forKey: .eventReceiver)
-      self.eventReceiverMode = try eventReceiver.decodeIfPresent(String.self, forKey: .mode)
+      self.eventReceiverMode = try eventReceiver.decodeIfPresent(EventReceiverMode.self, forKey: .mode)
       self.eventReceiverPath = try eventReceiver.decodeIfPresent(String.self, forKey: .path)
       self.secretEnv = try eventReceiver.decodeIfPresent(String.self, forKey: .signingSecretEnv) ?? self.secretEnv
     } else {
       self.hasEventReceiver = false
-      self.eventReceiverMode = try container.decodeIfPresent(String.self, forKey: .eventReceiverMode)
+      self.eventReceiverMode = try container.decodeIfPresent(EventReceiverMode.self, forKey: .eventReceiverMode)
       self.eventReceiverPath = try container.decodeIfPresent(String.self, forKey: .eventReceiverPath)
     }
     if container.contains(.objectAccess) {
       let objectAccess = try container.nestedContainer(keyedBy: ObjectAccessCodingKeys.self, forKey: .objectAccess)
-      self.objectAccessMode = try objectAccess.decodeIfPresent(String.self, forKey: .mode)
+      self.objectAccessMode = try objectAccess.decodeIfPresent(EventObjectAccessMode.self, forKey: .mode)
     } else {
-      self.objectAccessMode = try container.decodeIfPresent(String.self, forKey: .objectAccessMode)
+      self.objectAccessMode = try container.decodeIfPresent(EventObjectAccessMode.self, forKey: .objectAccessMode)
     }
     self.rootPrefix = try container.decodeIfPresent(String.self, forKey: .rootPrefix)
   }
@@ -161,11 +450,11 @@ public struct EventSourceContract: Codable, Equatable, Sendable {
       try container.encodeIfPresent(bucket, forKey: .bucket)
       try container.encodeIfPresent(rootPrefix, forKey: .rootPrefix)
       var eventReceiver = container.nestedContainer(keyedBy: EventReceiverCodingKeys.self, forKey: .eventReceiver)
-      try eventReceiver.encode(eventReceiverMode ?? "webhook-bridge", forKey: .mode)
+      try eventReceiver.encode(eventReceiverMode ?? .webhookBridge, forKey: .mode)
       try eventReceiver.encodeIfPresent(eventReceiverPath, forKey: .path)
       try eventReceiver.encodeIfPresent(secretEnv, forKey: .signingSecretEnv)
       var objectAccess = container.nestedContainer(keyedBy: ObjectAccessCodingKeys.self, forKey: .objectAccess)
-      try objectAccess.encode(objectAccessMode ?? "metadata-only", forKey: .mode)
+      try objectAccess.encode(objectAccessMode ?? .metadataOnly, forKey: .mode)
     case .chatSdk:
       if routePath != nil || secretEnv != nil || chatWebhookBearerTokenEnv != nil {
         var webhook = container.nestedContainer(keyedBy: ChatWebhookCodingKeys.self, forKey: .webhook)
@@ -183,12 +472,12 @@ public struct EventSourceContract: Codable, Equatable, Sendable {
 }
 
 public struct EventBindingMatchRule: Codable, Equatable, Sendable {
-  public var eventType: String?
+  public var eventType: EventType?
   public var conversationId: String?
   public var pathPrefix: String?
 
   public init(eventType: String? = nil, conversationId: String? = nil, pathPrefix: String? = nil) {
-    self.eventType = eventType
+    self.eventType = eventType.map(EventType.init(rawValue:))
     self.conversationId = conversationId
     self.pathPrefix = pathPrefix
   }
@@ -319,7 +608,7 @@ public struct EventBindingContract: Codable, Equatable, Sendable {
   public var id: String
   public var enabled: Bool
   public var sourceId: String
-  public var eventType: String?
+  public var eventType: EventType?
   public var match: EventBindingMatchRule?
   public var workflowName: String?
   public var inputMapping: EventInputMapping
@@ -355,7 +644,7 @@ public struct EventBindingContract: Codable, Equatable, Sendable {
     self.id = id
     self.enabled = enabled
     self.sourceId = sourceId
-    self.eventType = eventType
+    self.eventType = eventType.map(EventType.init(rawValue:))
     self.match = match
     self.workflowName = workflowName
     self.inputMapping = inputMapping
@@ -369,7 +658,7 @@ public struct EventBindingContract: Codable, Equatable, Sendable {
     self.id = try container.decode(String.self, forKey: .id)
     self.enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
     self.sourceId = try container.decode(String.self, forKey: .sourceId)
-    self.eventType = try container.decodeIfPresent(String.self, forKey: .eventType)
+    self.eventType = try container.decodeIfPresent(EventType.self, forKey: .eventType)
     self.match = try container.decodeIfPresent(EventBindingMatchRule.self, forKey: .match)
     self.workflowName = try container.decodeIfPresent(String.self, forKey: .workflowName)
     self.inputMapping = try container.decode(EventInputMapping.self, forKey: .inputMapping)
@@ -382,8 +671,8 @@ public struct EventBindingContract: Codable, Equatable, Sendable {
 public struct ExternalEventEnvelope: Codable, Equatable, Sendable {
   public var sourceId: String
   public var eventId: String
-  public var provider: String
-  public var eventType: String
+  public var provider: EventProvider
+  public var eventType: EventType
   public var receivedAt: Date
   public var dedupeKey: String?
   public var actor: JSONObject?
@@ -405,8 +694,8 @@ public struct ExternalEventEnvelope: Codable, Equatable, Sendable {
   ) {
     self.sourceId = sourceId
     self.eventId = eventId
-    self.provider = provider
-    self.eventType = eventType
+    self.provider = EventProvider(rawValue: provider)
+    self.eventType = EventType(rawValue: eventType)
     self.receivedAt = receivedAt
     self.dedupeKey = dedupeKey
     self.actor = actor
@@ -414,6 +703,61 @@ public struct ExternalEventEnvelope: Codable, Equatable, Sendable {
     self.input = input
     self.artifacts = artifacts
   }
+
+  private enum CodingKeys: String, CodingKey {
+    case sourceId
+    case eventId
+    case provider
+    case eventType
+    case receivedAt
+    case dedupeKey
+    case actor
+    case conversation
+    case input
+    case artifacts
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.sourceId = try container.decode(String.self, forKey: .sourceId)
+    self.eventId = try container.decode(String.self, forKey: .eventId)
+    self.provider = try container.decode(EventProvider.self, forKey: .provider)
+    self.eventType = try container.decode(EventType.self, forKey: .eventType)
+    let receivedAtString = try container.decode(String.self, forKey: .receivedAt)
+    guard let receivedAt = eventISO8601DateFormatter().date(from: receivedAtString) else {
+      throw DecodingError.dataCorruptedError(
+        forKey: .receivedAt,
+        in: container,
+        debugDescription: "receivedAt must be an ISO8601 string"
+      )
+    }
+    self.receivedAt = receivedAt
+    self.dedupeKey = try container.decodeIfPresent(String.self, forKey: .dedupeKey)
+    self.actor = try container.decodeIfPresent(JSONObject.self, forKey: .actor)
+    self.conversation = try container.decodeIfPresent(JSONObject.self, forKey: .conversation)
+    self.input = try container.decode(JSONObject.self, forKey: .input)
+    self.artifacts = try container.decodeIfPresent([EventArtifactReference].self, forKey: .artifacts) ?? []
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(sourceId, forKey: .sourceId)
+    try container.encode(eventId, forKey: .eventId)
+    try container.encode(provider, forKey: .provider)
+    try container.encode(eventType, forKey: .eventType)
+    try container.encode(eventISO8601DateFormatter().string(from: receivedAt), forKey: .receivedAt)
+    try container.encodeIfPresent(dedupeKey, forKey: .dedupeKey)
+    try container.encodeIfPresent(actor, forKey: .actor)
+    try container.encodeIfPresent(conversation, forKey: .conversation)
+    try container.encode(input, forKey: .input)
+    try container.encode(artifacts, forKey: .artifacts)
+  }
+}
+
+private func eventISO8601DateFormatter() -> ISO8601DateFormatter {
+  let formatter = ISO8601DateFormatter()
+  formatter.formatOptions = [.withInternetDateTime]
+  return formatter
 }
 
 public struct EventValidationDiagnostic: Codable, Equatable, Sendable {
@@ -444,13 +788,13 @@ public struct EventReceipt: Codable, Equatable, Sendable {
 
 public struct ReplyDispatch: Codable, Equatable, Sendable {
   public var sourceId: String
-  public var provider: String
+  public var provider: EventProvider
   public var conversationId: String?
   public var payload: JSONObject
 
   public init(sourceId: String, provider: String, conversationId: String? = nil, payload: JSONObject) {
     self.sourceId = sourceId
-    self.provider = provider
+    self.provider = EventProvider(rawValue: provider)
     self.conversationId = conversationId
     self.payload = payload
   }
@@ -476,7 +820,7 @@ public enum EventContractValidator {
           diagnostics.append(.init(
             code: "INVALID_EVENT_SOURCE",
             path: "sources[\(index)].provider",
-            message: "chat-sdk provider must be one of \(supportedChatSDKProviders.joined(separator: ", "))"
+            message: "chat-sdk provider must be one of \(supportedChatSDKProviderNames)"
           ))
         }
         if !source.hasChatWebhook {
@@ -511,10 +855,14 @@ public enum EventContractValidator {
         if !source.hasEventReceiver {
           diagnostics.append(.init(code: "INVALID_EVENT_SOURCE", path: "sources[\(index)].eventReceiver", message: "event receiver is required"))
         }
-        if source.eventReceiverMode == "polling" {
-          diagnostics.append(.init(code: "INVALID_EVENT_SOURCE", path: "sources[\(index)].eventReceiver.mode", message: "polling receiver mode is not supported"))
+        if let eventReceiverMode = source.eventReceiverMode, eventReceiverMode != .webhookBridge {
+          diagnostics.append(.init(
+            code: "INVALID_EVENT_SOURCE",
+            path: "sources[\(index)].eventReceiver.mode",
+            message: "\(eventReceiverMode.rawValue) receiver mode is not supported"
+          ))
         }
-        if source.objectAccessMode != "metadata-only" {
+        if source.objectAccessMode != .metadataOnly {
           diagnostics.append(.init(code: "INVALID_EVENT_SOURCE", path: "sources[\(index)].objectAccess.mode", message: "object access must explicitly be metadata-only"))
         }
         if let eventReceiverPath = source.eventReceiverPath, !isValidHTTPPath(eventReceiverPath) {
@@ -543,32 +891,70 @@ public enum EventContractValidator {
           diagnostics.append(.init(code: "INVALID_EVENT_OUTPUT_DESTINATION", path: "bindings[\(index)].outputDestinations", message: "outputDestinations must be a non-empty string array when set"))
         }
       }
+      validateKnownBindingEventTypes(binding, index: index, diagnostics: &diagnostics)
       validateChatSDKBindingCapabilities(binding, source: sourcesById[binding.sourceId], index: index, diagnostics: &diagnostics)
       validateMailboxBridge(binding, index: index, diagnostics: &diagnostics)
     }
     return diagnostics
   }
 
-  private static let supportedChatSDKProviders = [
-    "slack",
-    "teams",
-    "gchat",
-    "discord",
-    "telegram",
-    "github",
-    "linear",
-    "whatsapp",
-    "messenger",
-    "web"
-  ]
+  public static func validate(envelope: ExternalEventEnvelope, sources: [EventSourceContract]) -> [EventValidationDiagnostic] {
+    guard let source = sources.first(where: { $0.id == envelope.sourceId }) else {
+      return [.init(code: "UNKNOWN_EVENT_SOURCE", path: "envelope.sourceId", message: "event envelope references an unknown source")]
+    }
+    guard envelope.eventType.isSupportedRielaEventType else {
+      return [.init(
+        code: "INVALID_EVENT_ENVELOPE",
+        path: "envelope.eventType",
+        message: "event type must be one of \(supportedRielaEventTypeNames)"
+      )]
+    }
+    if source.kind == .chatSdk, !supportedChatSDKEventTypes.contains(envelope.eventType) {
+      return [.init(
+        code: "INVALID_EVENT_ENVELOPE",
+        path: "envelope.eventType",
+        message: "chat-sdk provider '\(source.provider?.rawValue ?? "")' does not support event type '\(envelope.eventType.rawValue)'"
+      )]
+    }
+    return []
+  }
 
-  private static let supportedChatSDKEventTypes = ["chat.message"]
+  private static let supportedChatSDKProviderNames = EventProvider.supportedChatSDKProviders
+    .map(\.rawValue)
+    .joined(separator: ", ")
 
-  private static func isSupportedChatSDKProvider(_ provider: String?) -> Bool {
+  private static let supportedRielaEventTypeNames = EventType.supportedRielaEventTypes
+    .map(\.rawValue)
+    .joined(separator: ", ")
+
+  private static let supportedChatSDKEventTypes: [EventType] = [.chatMessage]
+
+  private static func isSupportedChatSDKProvider(_ provider: EventProvider?) -> Bool {
     guard let provider else {
       return false
     }
-    return supportedChatSDKProviders.contains(provider)
+    return provider.isSupportedChatSDKProvider
+  }
+
+  private static func validateKnownBindingEventTypes(
+    _ binding: EventBindingContract,
+    index: Int,
+    diagnostics: inout [EventValidationDiagnostic]
+  ) {
+    let eventTypeChecks = [
+      (binding.eventType, "bindings[\(index)].eventType"),
+      (binding.match?.eventType, "bindings[\(index)].match.eventType")
+    ]
+    for (eventType, path) in eventTypeChecks {
+      guard let eventType, !eventType.isSupportedRielaEventType else {
+        continue
+      }
+      diagnostics.append(.init(
+        code: "INVALID_EVENT_BINDING",
+        path: path,
+        message: "event type must be one of \(supportedRielaEventTypeNames)"
+      ))
+    }
   }
 
   private static func validateChatSDKBindingCapabilities(
@@ -593,7 +979,7 @@ public enum EventContractValidator {
       diagnostics.append(.init(
         code: "INVALID_EVENT_BINDING",
         path: path,
-        message: "chat-sdk provider '\(source?.provider ?? "")' does not support event type '\(eventType)'"
+        message: "chat-sdk provider '\(source?.provider?.rawValue ?? "")' does not support event type '\(eventType.rawValue)'"
       ))
     }
   }

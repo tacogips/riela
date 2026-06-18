@@ -322,6 +322,9 @@ public enum CursorCLICLICommandExecutor {
           "organizationName": .string(account.organizationName),
         ])
       }
+      if action == "status" {
+        return Result(data: .object(payload))
+      }
       guard loggedIn else {
         return Result(data: .object(payload), errors: ["cursor-cli-agent authentication is unavailable: credentials are missing or expired"])
       }

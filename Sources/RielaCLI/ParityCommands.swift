@@ -66,6 +66,11 @@ public struct WorkflowPackageRegistryEntry: Codable, Equatable, Sendable {
   public var updatedAt: String
 }
 
+private let defaultWorkflowPackageRegistryId = "default"
+private let defaultWorkflowPackageRegistryURL = "https://github.com/tacogips/riela-packages"
+private let defaultWorkflowPackageRegistryBranch = "main"
+private let defaultWorkflowPackageRegistryTimestamp = "2026-06-18T00:00:00Z"
+
 public struct ScopedParityCommandResult: Codable, Equatable, Sendable {
   public var scope: String
   public var command: String?
@@ -853,9 +858,9 @@ public struct WorkflowPackageCommandRunner: Sendable {
       )
     }
     return PublishRegistryResolution(
-      id: config.defaultRegistryId,
-      url: "local",
-      branch: parsed.branch ?? "main",
+      id: defaultWorkflowPackageRegistryId,
+      url: defaultWorkflowPackageRegistryURL,
+      branch: parsed.branch ?? defaultWorkflowPackageRegistryBranch,
       localPath: parsed.localPath
     )
   }
@@ -863,14 +868,62 @@ public struct WorkflowPackageCommandRunner: Sendable {
   private func loadRegistryConfig(parsed: ParsedParityOptions) throws -> WorkflowPackageRegistryConfig {
     let url = registryConfigURL(parsed: parsed)
     guard FileManager.default.fileExists(atPath: url.path) else {
-      return defaultRegistryConfig()
+      return defaultRegistryConfig(parsed: parsed)
     }
     let data = try Data(contentsOf: url)
-    return try JSONDecoder().decode(WorkflowPackageRegistryConfig.self, from: data)
+    return withImplicitDefaultRegistry(try JSONDecoder().decode(WorkflowPackageRegistryConfig.self, from: data), parsed: parsed)
   }
 
-  private func defaultRegistryConfig() -> WorkflowPackageRegistryConfig {
-    WorkflowPackageRegistryConfig(defaultRegistryId: "local", registries: [])
+  private func defaultRegistryConfig(parsed: ParsedParityOptions) -> WorkflowPackageRegistryConfig {
+    WorkflowPackageRegistryConfig(
+      defaultRegistryId: defaultWorkflowPackageRegistryId,
+      registries: [defaultRegistryEntry(parsed: parsed)]
+    )
+  }
+
+  private func withImplicitDefaultRegistry(
+    _ config: WorkflowPackageRegistryConfig,
+    parsed: ParsedParityOptions
+  ) -> WorkflowPackageRegistryConfig {
+    var resolved = config
+    let defaultEntry = defaultRegistryEntry(parsed: parsed)
+    if let index = resolved.registries.firstIndex(where: { registry in
+      registry.id == defaultWorkflowPackageRegistryId || registry.url == defaultWorkflowPackageRegistryURL
+    }) {
+      var configured = resolved.registries[index]
+      if configured.id != defaultWorkflowPackageRegistryId {
+        configured.id = defaultWorkflowPackageRegistryId
+      }
+      if configured.defaultBranch.isEmpty {
+        configured.defaultBranch = defaultWorkflowPackageRegistryBranch
+      }
+      if configured.localPath == nil {
+        configured.localPath = defaultEntry.localPath
+      }
+      resolved.registries[index] = configured
+    } else {
+      resolved.registries.append(defaultEntry)
+    }
+    if resolved.defaultRegistryId.isEmpty
+      || !resolved.registries.contains(where: { $0.id == resolved.defaultRegistryId }) {
+      resolved.defaultRegistryId = defaultWorkflowPackageRegistryId
+    }
+    return resolved
+  }
+
+  private func defaultRegistryEntry(parsed: ParsedParityOptions) -> WorkflowPackageRegistryEntry {
+    let workingDirectory = URL(
+      fileURLWithPath: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath,
+      isDirectory: true
+    )
+    return WorkflowPackageRegistryEntry(
+      id: defaultWorkflowPackageRegistryId,
+      url: defaultWorkflowPackageRegistryURL,
+      defaultBranch: defaultWorkflowPackageRegistryBranch,
+      localPath: "\(workingDirectory.standardizedFileURL.path)-packages",
+      registeredAt: defaultWorkflowPackageRegistryTimestamp,
+      updatedAt: defaultWorkflowPackageRegistryTimestamp
+    )
   }
 
   private func saveRegistryConfig(_ config: WorkflowPackageRegistryConfig, parsed: ParsedParityOptions) throws {
@@ -1878,7 +1931,7 @@ public struct ScopedParityCommandRunner: Sendable {
     return ExternalEventEnvelope(
       sourceId: source?.id ?? "source",
       eventId: "\(action)-dry-run",
-      provider: source?.provider ?? "riela",
+      provider: source?.provider?.rawValue ?? "riela",
       eventType: action,
       receivedAt: Date(timeIntervalSince1970: 0),
       dedupeKey: action == "replay" ? "replay-dry-run" : nil,
@@ -1898,7 +1951,7 @@ public struct ScopedParityCommandRunner: Sendable {
           eventId: object["eventId"]?.stringValue ?? "event-dry-run",
           provider: object["provider"]?.stringValue ?? "riela",
           eventType: object["eventType"]?.stringValue ?? "event-input",
-          receivedAt: Date(timeIntervalSince1970: jsonNumberValue(object["receivedAt"]) ?? 0),
+          receivedAt: try eventEnvelopeReceivedAt(from: object["receivedAt"]),
           dedupeKey: object["dedupeKey"]?.stringValue,
           input: jsonObjectValue(object["input"]) ?? [:]
         )
@@ -1910,10 +1963,25 @@ public struct ScopedParityCommandRunner: Sendable {
       eventId: object["eventId"]?.stringValue ?? "event-dry-run",
       provider: object["provider"]?.stringValue ?? "riela",
       eventType: object["eventType"]?.stringValue ?? "event-input",
-      receivedAt: Date(timeIntervalSince1970: jsonNumberValue(object["receivedAt"]) ?? 0),
+      receivedAt: try eventEnvelopeReceivedAt(from: object["receivedAt"]),
       dedupeKey: object["dedupeKey"]?.stringValue,
       input: jsonObjectValue(object["input"]) ?? [:]
     )
+  }
+
+  private func eventEnvelopeReceivedAt(from value: JSONValue?) throws -> Date {
+    guard let value else {
+      return Date(timeIntervalSince1970: 0)
+    }
+    guard case let .string(timestamp) = value else {
+      throw CLIUsageError("event envelope receivedAt must be an ISO8601 string")
+    }
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    guard let date = formatter.date(from: timestamp) else {
+      throw CLIUsageError("event envelope receivedAt must be an ISO8601 string")
+    }
+    return date
   }
 
   private func jsonObjectValue(_ value: JSONValue?) -> JSONObject? {

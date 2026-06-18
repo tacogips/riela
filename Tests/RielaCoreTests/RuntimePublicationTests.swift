@@ -420,10 +420,31 @@ final class RuntimePublicationTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: reservation.stagingDirectory.path))
   }
 
+  func testCrossWorkflowTransitionWithResumeStepPublishesResumeMessage() async throws {
+    let store = InMemoryWorkflowRuntimeStore(clock: FixedWorkflowRuntimeClock(Date(timeIntervalSince1970: 300)))
+    let session = try await store.createSession(WorkflowSessionCreateInput(workflowId: "wf", entryStepId: "start"))
+    let publisher = InMemoryWorkflowOutputPublisher(store: store)
+
+    _ = try await publisher.publishAcceptedOutput(
+      WorkflowPublicationRequest(
+        sessionId: session.sessionId,
+        stepId: "start",
+        nodeId: "node-start",
+        attempt: 1,
+        inlineCandidate: ["answer": .string("ok")],
+        transitions: [WorkflowStepTransition(toStepId: "child-start", toWorkflowId: "child-workflow", resumeStepId: "resume")]
+      )
+    )
+
+    let listedMessages = try await store.listMessages(for: session.sessionId, toStepId: nil)
+    XCTAssertEqual(listedMessages.map(\.toStepId), ["resume"])
+    XCTAssertEqual(listedMessages.first?.payload, ["answer": .string("ok")])
+  }
+
   func testUnsupportedTransitionShapesFailBeforeAcceptedOutputAndMessages() async throws {
     let unsupportedTransitions: [(WorkflowStepTransition, String)] = [
       (
-        WorkflowStepTransition(toStepId: "child-start", toWorkflowId: "child-workflow", resumeStepId: "resume"),
+        WorkflowStepTransition(toStepId: "child-start", toWorkflowId: "child-workflow"),
         "cross-workflow transitions are not supported by the Swift TASK-005 in-memory publisher"
       ),
       (

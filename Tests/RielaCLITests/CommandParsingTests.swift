@@ -88,7 +88,7 @@ final class CommandParsingTests: XCTestCase {
       XCTAssertEqual(options.autoImprovePolicy.maxWorkflowPatches, 1)
       XCTAssertEqual(options.autoImprovePolicy.monitorIntervalMs, 1000)
       XCTAssertEqual(options.autoImprovePolicy.stallTimeoutMs, 2000)
-      XCTAssertEqual(options.autoImprovePolicy.workflowMutationMode, "execution-copy")
+      XCTAssertEqual(options.autoImprovePolicy.workflowMutationMode, .executionCopy)
       XCTAssertTrue(options.autoImprovePolicy.nestedSuperviser)
     } else {
       XCTFail("expected supervised run command")
@@ -144,7 +144,7 @@ final class CommandParsingTests: XCTestCase {
     }
   }
 
-  func testParsesDeclaredRielflowCommandSurfaceForDeletionGate() throws {
+  func testParsesDeclaredRielaCommandSurfaceForDeletionGate() throws {
     let parser = RielaArgumentParser()
 
     XCTAssertEqual(

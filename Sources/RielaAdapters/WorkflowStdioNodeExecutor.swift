@@ -35,11 +35,15 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
       guard let command = input.node.command else {
         throw AdapterExecutionError(.providerError, "command node '\(input.nodeId)' is missing command execution metadata")
       }
-      let invocation = processInvocation(executable: command.executable, arguments: command.arguments)
+      let templateVariables = templateVariables(for: input)
+      let invocation = processInvocation(
+        executable: renderPromptTemplate(command.executable, variables: templateVariables),
+        arguments: command.arguments.map { renderPromptTemplate($0, variables: templateVariables) }
+      )
       return LocalAgentProcessConfiguration(
         executableURL: invocation.executableURL,
         arguments: invocation.arguments,
-        environment: environment(base: command.environment, input: input),
+        environment: environment(base: renderedEnvironment(command.environment, variables: templateVariables), input: input),
         unsetEnvironmentKeys: strippedEnvironmentKeys,
         workingDirectoryURL: workingDirectoryURL(command.workingDirectory ?? input.node.workingDirectory)
       )
@@ -47,15 +51,16 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
       guard let container = input.node.container else {
         throw AdapterExecutionError(.providerError, "container node '\(input.nodeId)' is missing container execution metadata")
       }
+      let templateVariables = templateVariables(for: input)
       let runnerPath = container.runnerPath ?? container.runnerKind ?? "docker"
       let invocation = processInvocation(
-        executable: runnerPath,
-        arguments: containerArguments(container)
+        executable: renderPromptTemplate(runnerPath, variables: templateVariables),
+        arguments: containerArguments(container, variables: templateVariables)
       )
       return LocalAgentProcessConfiguration(
         executableURL: invocation.executableURL,
         arguments: invocation.arguments,
-        environment: environment(base: container.environment, input: input),
+        environment: environment(base: renderedEnvironment(container.environment, variables: templateVariables), input: input),
         unsetEnvironmentKeys: strippedEnvironmentKeys,
         workingDirectoryURL: workingDirectoryURL(container.workingDirectory ?? input.node.workingDirectory)
       )
@@ -77,14 +82,28 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
     return environment
   }
 
-  private func containerArguments(_ container: WorkflowContainerExecution) -> [String] {
+  private func containerArguments(_ container: WorkflowContainerExecution, variables: JSONObject) -> [String] {
     var arguments = ["run", "--rm", "-i"]
     for key in container.environment.keys.sorted() where !strippedEnvironmentKeys.contains(key) {
       arguments += ["-e", key]
     }
     arguments.append(container.image)
-    arguments.append(contentsOf: container.command)
+    arguments.append(contentsOf: container.command.map { renderPromptTemplate($0, variables: variables) })
     return arguments
+  }
+
+  private func templateVariables(for input: WorkflowStdioNodeExecutionInput) -> JSONObject {
+    var variables = input.variables
+    variables["workflowInput"] = .object(input.variables)
+    variables["input"] = .object(input.resolvedInputPayload)
+    for (key, value) in input.resolvedInputPayload {
+      variables[key] = value
+    }
+    return variables
+  }
+
+  private func renderedEnvironment(_ environment: [String: String], variables: JSONObject) -> [String: String] {
+    environment.mapValues { renderPromptTemplate($0, variables: variables) }
   }
 
   private func invocationInputJSONL(for input: WorkflowStdioNodeExecutionInput) throws -> String {

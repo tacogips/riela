@@ -72,6 +72,10 @@ public struct DeterministicEventDryRunTrigger: EventDryRunTriggering {
     guard diagnostics.isEmpty else {
       return .init(accepted: false, diagnostics: diagnostics)
     }
+    let envelopeDiagnostics = EventContractValidator.validate(envelope: request.envelope, sources: request.sources)
+    guard envelopeDiagnostics.isEmpty else {
+      return .init(accepted: false, diagnostics: envelopeDiagnostics)
+    }
     let enabledSourceIds = Set(request.sources.filter(\.enabled).map(\.id))
     let triggers = request.bindings
       .filter { binding in
@@ -222,9 +226,9 @@ private func eventRoot(_ envelope: ExternalEventEnvelope) -> JSONValue {
   var object: JSONObject = [
     "sourceId": .string(envelope.sourceId),
     "eventId": .string(envelope.eventId),
-    "provider": .string(envelope.provider),
-    "eventType": .string(envelope.eventType),
-    "receivedAt": .number(envelope.receivedAt.timeIntervalSince1970),
+    "provider": .string(envelope.provider.rawValue),
+    "eventType": .string(envelope.eventType.rawValue),
+    "receivedAt": .string(eventISO8601String(from: envelope.receivedAt)),
     "input": .object(envelope.input),
     "artifacts": .array(envelope.artifacts.map { .object(["root": .string($0.root), "path": .string($0.path)]) })
   ]
@@ -240,6 +244,12 @@ private func eventRoot(_ envelope: ExternalEventEnvelope) -> JSONValue {
   return .object(object)
 }
 
+private func eventISO8601String(from date: Date) -> String {
+  let formatter = ISO8601DateFormatter()
+  formatter.formatOptions = [.withInternetDateTime]
+  return formatter.string(from: date)
+}
+
 private func sourceRoot(_ source: EventSourceContract) -> JSONValue {
   var object: JSONObject = [
     "id": .string(source.id),
@@ -247,7 +257,7 @@ private func sourceRoot(_ source: EventSourceContract) -> JSONValue {
     "enabled": .bool(source.enabled)
   ]
   if let provider = source.provider {
-    object["provider"] = .string(provider)
+    object["provider"] = .string(provider.rawValue)
   }
   if let routePath = source.routePath {
     object["routePath"] = .string(routePath)
@@ -259,7 +269,7 @@ private func sourceRoot(_ source: EventSourceContract) -> JSONValue {
     object["eventReceiverPath"] = .string(eventReceiverPath)
   }
   if let objectAccessMode = source.objectAccessMode {
-    object["objectAccessMode"] = .string(objectAccessMode)
+    object["objectAccessMode"] = .string(objectAccessMode.rawValue)
   }
   if let rootPrefix = source.rootPrefix {
     object["rootPrefix"] = .string(rootPrefix)

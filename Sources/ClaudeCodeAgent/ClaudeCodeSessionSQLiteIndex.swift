@@ -54,7 +54,7 @@ public enum ClaudeCodeSessionSQLiteIndex {
       "cli_version", "title", "first_user_message", "archived_at", "git_sha", "git_branch",
       "git_origin_url",
     ]
-    let separator = "|||rielflow-claudeCode-sqlite|||"
+    let separator = "|||riela-claudeCode-sqlite|||"
     let sql = "SELECT \(columns.map { "ifnull(\($0),'')" }.joined(separator: " || '\(separator)' || ")) FROM threads;"
     guard let output = sqliteQuery(dbPath: dbPath, sql: sql) else {
       return []

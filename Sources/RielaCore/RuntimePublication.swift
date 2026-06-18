@@ -253,7 +253,7 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
         WorkflowMessageAppendInput(
           workflowExecutionId: request.sessionId,
           fromStepId: request.stepId,
-          toStepId: transition.toStepId,
+          toStepId: transition.resumeStepId ?? transition.toStepId,
           routingScope: .workflow,
           deliveryKind: .direct,
           sourceStepExecutionId: completedExecution.executionId,
@@ -362,10 +362,10 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
 
   private func unsupportedTransitionReason(in transitions: [WorkflowStepTransition]) -> String? {
     for transition in transitions {
-      if transition.toWorkflowId != nil {
+      if transition.toWorkflowId != nil && transition.resumeStepId == nil {
         return "cross-workflow transitions are not supported by the Swift TASK-005 in-memory publisher"
       }
-      if transition.resumeStepId != nil {
+      if transition.toWorkflowId == nil && transition.resumeStepId != nil {
         return "resume-step transitions are not supported by the Swift TASK-005 in-memory publisher"
       }
       if transition.fanout != nil {

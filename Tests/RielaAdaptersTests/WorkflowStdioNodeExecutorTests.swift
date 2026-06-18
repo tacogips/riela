@@ -72,6 +72,45 @@ final class WorkflowStdioNodeExecutorTests: XCTestCase {
     XCTAssertNil(result.payload)
   }
 
+  func testCommandNodeRendersRielaArgumentAndEnvironmentTemplates() async throws {
+    let runner = RecordingStdioNodeProcessRunner { configuration, _ in
+      XCTAssertEqual(configuration.arguments, [
+        "node",
+        "--state",
+        ".riela-data/x-follower-ai-business-digest/mock-state.json",
+        "--status",
+        "ready",
+      ])
+      XCTAssertEqual(configuration.environment["STATE_FILE"], ".riela-data/x-follower-ai-business-digest/mock-state.json")
+      XCTAssertEqual(configuration.environment["UPSTREAM"], "ready")
+      return #"{"status":"ok"}"# + "\n"
+    }
+    let executor = LocalWorkflowStdioNodeExecutor(runner: runner)
+
+    let result = try await executor.execute(
+      input(
+        kind: .command,
+        node: AgentNodePayload(
+          id: "node",
+          nodeType: .command,
+          model: "",
+          command: WorkflowCommandExecution(
+            executable: "node",
+            arguments: ["--state", "{{workflowInput.stateFile}}", "--status", "{{input.upstream}}"],
+            environment: [
+              "STATE_FILE": "{{workflowInput.stateFile}}",
+              "UPSTREAM": "{{upstream}}",
+            ]
+          )
+        ),
+        variables: ["target": .string("prod"), "stateFile": .string(".riela-data/x-follower-ai-business-digest/mock-state.json")]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    XCTAssertEqual(result.payload, ["status": .string("ok")])
+  }
+
   func testInvalidStdoutJSONLFailsBeforePublication() async throws {
     let runner = RecordingStdioNodeProcessRunner { _, _ in
       "{not-json\n"
@@ -158,7 +197,11 @@ final class WorkflowStdioNodeExecutorTests: XCTestCase {
     XCTAssertFalse(configuration.arguments.contains("RIELA_WORKFLOW_OUTPUT"))
   }
 
-  private func input(kind: WorkflowStdioNodeExecutionKind, node: AgentNodePayload) -> WorkflowStdioNodeExecutionInput {
+  private func input(
+    kind: WorkflowStdioNodeExecutionKind,
+    node: AgentNodePayload,
+    variables: JSONObject = ["target": .string("prod")]
+  ) -> WorkflowStdioNodeExecutionInput {
     WorkflowStdioNodeExecutionInput(
       workflowId: "workflow",
       sessionId: "session",
@@ -167,7 +210,7 @@ final class WorkflowStdioNodeExecutorTests: XCTestCase {
       executionIndex: 1,
       kind: kind,
       node: node,
-      variables: ["target": .string("prod")],
+      variables: variables,
       resolvedInputPayload: ["upstream": .string("ready")]
     )
   }

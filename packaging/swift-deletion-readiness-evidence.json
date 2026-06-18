@@ -11,18 +11,7 @@
       "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
       "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
-    },
-    {
-      "artifact": "verification-result:swift-deletion-readiness/package-build-1",
-      "domainId": "package-build",
-      "command": "cd ../rielflow && bun run typecheck",
-      "exitCode": 0,
-      "branch": "main",
-      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
-      "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
+      "reviewedTreeDigest": "8bec825cbffcd68dafdfd016523ccdcf01cb9ac0bfec7ede3bbdee487b9757de"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/cli-0",
@@ -33,18 +22,7 @@
       "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
       "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
-    },
-    {
-      "artifact": "verification-result:swift-deletion-readiness/cli-1",
-      "domainId": "cli",
-      "command": "cd ../rielflow && bun run packages/rielflow/src/bin.ts --help",
-      "exitCode": 0,
-      "branch": "main",
-      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
-      "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
+      "reviewedTreeDigest": "8bec825cbffcd68dafdfd016523ccdcf01cb9ac0bfec7ede3bbdee487b9757de"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/server-0",
@@ -55,18 +33,7 @@
       "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
       "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
-    },
-    {
-      "artifact": "verification-result:swift-deletion-readiness/server-1",
-      "domainId": "server",
-      "command": "cd ../rielflow && bun run typecheck:server",
-      "exitCode": 0,
-      "branch": "main",
-      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
-      "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
+      "reviewedTreeDigest": "8bec825cbffcd68dafdfd016523ccdcf01cb9ac0bfec7ede3bbdee487b9757de"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/graphql-0",
@@ -77,18 +44,7 @@
       "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
       "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
-    },
-    {
-      "artifact": "verification-result:swift-deletion-readiness/graphql-1",
-      "domainId": "graphql",
-      "command": "cd ../rielflow && bun test packages/rielflow/src/graphql",
-      "exitCode": 0,
-      "branch": "main",
-      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
-      "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
+      "reviewedTreeDigest": "8bec825cbffcd68dafdfd016523ccdcf01cb9ac0bfec7ede3bbdee487b9757de"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/event-0",
@@ -99,18 +55,7 @@
       "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
       "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
-    },
-    {
-      "artifact": "verification-result:swift-deletion-readiness/event-1",
-      "domainId": "event",
-      "command": "cd ../rielflow && bun test packages/rielflow/src/events",
-      "exitCode": 0,
-      "branch": "main",
-      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
-      "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
+      "reviewedTreeDigest": "8bec825cbffcd68dafdfd016523ccdcf01cb9ac0bfec7ede3bbdee487b9757de"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/workflow-package-0",
@@ -121,18 +66,7 @@
       "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
       "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
-    },
-    {
-      "artifact": "verification-result:swift-deletion-readiness/workflow-package-1",
-      "domainId": "workflow-package",
-      "command": "cd ../rielflow && bun run packages/rielflow/src/bin.ts package --help",
-      "exitCode": 0,
-      "branch": "main",
-      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
-      "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
+      "reviewedTreeDigest": "8bec825cbffcd68dafdfd016523ccdcf01cb9ac0bfec7ede3bbdee487b9757de"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/persistence-0",
@@ -143,18 +77,7 @@
       "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
       "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
-    },
-    {
-      "artifact": "verification-result:swift-deletion-readiness/persistence-1",
-      "domainId": "persistence",
-      "command": "cd ../rielflow && bun test packages/rielflow/src/workflow/manager-session-store.test.ts",
-      "exitCode": 0,
-      "branch": "main",
-      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
-      "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
+      "reviewedTreeDigest": "8bec825cbffcd68dafdfd016523ccdcf01cb9ac0bfec7ede3bbdee487b9757de"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/release-0",
@@ -165,7 +88,7 @@
       "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
       "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
+      "reviewedTreeDigest": "8bec825cbffcd68dafdfd016523ccdcf01cb9ac0bfec7ede3bbdee487b9757de"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/release-1",
@@ -176,7 +99,7 @@
       "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
       "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
+      "reviewedTreeDigest": "8bec825cbffcd68dafdfd016523ccdcf01cb9ac0bfec7ede3bbdee487b9757de"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/documentation-0",
@@ -187,7 +110,7 @@
       "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
       "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
+      "reviewedTreeDigest": "8bec825cbffcd68dafdfd016523ccdcf01cb9ac0bfec7ede3bbdee487b9757de"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/documentation-1",
@@ -198,7 +121,7 @@
       "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
       "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
+      "reviewedTreeDigest": "8bec825cbffcd68dafdfd016523ccdcf01cb9ac0bfec7ede3bbdee487b9757de"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/test-0",
@@ -209,18 +132,7 @@
       "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
       "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
-    },
-    {
-      "artifact": "verification-result:swift-deletion-readiness/test-1",
-      "domainId": "test",
-      "command": "cd ../rielflow && bun test",
-      "exitCode": 0,
-      "branch": "main",
-      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
-      "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
+      "reviewedTreeDigest": "8bec825cbffcd68dafdfd016523ccdcf01cb9ac0bfec7ede3bbdee487b9757de"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/agent-codex-0",
@@ -231,18 +143,7 @@
       "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
       "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
-    },
-    {
-      "artifact": "verification-result:swift-deletion-readiness/agent-codex-1",
-      "domainId": "agent-codex",
-      "command": "cd ../rielflow && bun test packages/rielflow/src/workflow/adapters/codex.test.ts",
-      "exitCode": 0,
-      "branch": "main",
-      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
-      "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
+      "reviewedTreeDigest": "8bec825cbffcd68dafdfd016523ccdcf01cb9ac0bfec7ede3bbdee487b9757de"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/agent-claude-code-0",
@@ -253,18 +154,7 @@
       "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
       "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
-    },
-    {
-      "artifact": "verification-result:swift-deletion-readiness/agent-claude-code-1",
-      "domainId": "agent-claude-code",
-      "command": "cd ../rielflow && bun test packages/rielflow/src/workflow/adapters/claude.test.ts",
-      "exitCode": 0,
-      "branch": "main",
-      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
-      "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
+      "reviewedTreeDigest": "8bec825cbffcd68dafdfd016523ccdcf01cb9ac0bfec7ede3bbdee487b9757de"
     },
     {
       "artifact": "verification-result:swift-deletion-readiness/agent-cursor-cli-0",
@@ -275,25 +165,14 @@
       "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
       "workflowId": "codex-design-and-implement-review-loop",
       "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
-    },
-    {
-      "artifact": "verification-result:swift-deletion-readiness/agent-cursor-cli-1",
-      "domainId": "agent-cursor-cli",
-      "command": "cd ../rielflow && bun test packages/rielflow/src/workflow/adapters/cursor.test.ts",
-      "exitCode": 0,
-      "branch": "main",
-      "commit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
-      "workflowId": "codex-design-and-implement-review-loop",
-      "nodeId": "step6-implement",
-      "reviewedTreeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9"
+      "reviewedTreeDigest": "8bec825cbffcd68dafdfd016523ccdcf01cb9ac0bfec7ede3bbdee487b9757de"
     }
   ],
   "reviewedTreeState": {
     "branch": "main",
     "baseCommit": "18581037bb503d3b2374e15e4a6205f4f83ab58d",
     "treeDigestAlgorithm": "sha256:reviewed-tree-v1-path-executable-content-excluding-evidence-manifest",
-    "treeDigest": "7f710273fefe36e29b7b20f934b84ff71dd3d7cf509b454511d976b43324a6b9",
+    "treeDigest": "8bec825cbffcd68dafdfd016523ccdcf01cb9ac0bfec7ede3bbdee487b9757de",
     "excludedPaths": [
       "packaging/swift-deletion-readiness-evidence.json"
     ],

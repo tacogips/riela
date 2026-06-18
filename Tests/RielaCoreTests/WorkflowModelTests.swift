@@ -55,6 +55,46 @@ final class WorkflowModelTests: XCTestCase {
     XCTAssertEqual(gitPushNode.addon?.name, "riela/git-push")
   }
 
+  func testCommandExecutionDecodesRielaScriptPathShape() throws {
+    let data = """
+      {
+        "scriptPath": "scripts/mock-command.sh",
+        "argvTemplate": ["--lane", "command"],
+        "envTemplate": { "SHOWCASE_LANE": "command" },
+        "workingDirectory": "scripts"
+      }
+      """.data(using: .utf8)!
+
+    let command = try JSONDecoder().decode(WorkflowCommandExecution.self, from: data)
+
+    XCTAssertEqual(command.executable, "./mock-command.sh")
+    XCTAssertEqual(command.arguments, ["--lane", "command"])
+    XCTAssertEqual(command.environment, ["SHOWCASE_LANE": "command"])
+    XCTAssertEqual(command.workingDirectory, "scripts")
+  }
+
+  func testContainerExecutionDecodesRielaBuildShape() throws {
+    let data = """
+      {
+        "build": {
+          "contextPath": "containers/mock-worker",
+          "containerfilePath": "containers/mock-worker/Containerfile"
+        },
+        "entrypoint": ["/bin/sh", "-lc"],
+        "argsTemplate": ["printf ok"],
+        "envTemplate": { "SHOWCASE_LANE": "container" },
+        "workingDirectory": "/workspace"
+      }
+      """.data(using: .utf8)!
+
+    let container = try JSONDecoder().decode(WorkflowContainerExecution.self, from: data)
+
+    XCTAssertEqual(container.image, "containers/mock-worker")
+    XCTAssertEqual(container.command, ["/bin/sh", "-lc", "printf ok"])
+    XCTAssertEqual(container.environment, ["SHOWCASE_LANE": "container"])
+    XCTAssertEqual(container.workingDirectory, "/workspace")
+  }
+
   func testWorkflowValidationRejectsRemovedTopLevelEdgesAndBrokenStepReference() throws {
     let data = """
       {

@@ -175,19 +175,19 @@ public struct SwiftDeletionReadinessValidator: Sendable {
   private static let allowedStatuses = Set(["passed", "blocked", "stale", "unknown"])
   private static let allowedReviewDecisions = Set(["accepted", "blocked", "not_reviewed"])
   private static let requiredEvidenceCommandGroupsByDomain: [String: [[String]]] = [
-    "package-build": [["swift", "build"], ["bun", "typecheck"]],
-    "cli": [["swift", "test", "WorkflowCommand"], ["bun", "packages/rielflow/src/bin.ts"]],
-    "server": [["swift", "test", "RielaServer"], ["bun", "typecheck:server"]],
-    "graphql": [["swift", "test", "GraphQL"], ["bun", "graphql"]],
-    "event": [["swift", "test", "Event"], ["bun", "event"]],
-    "workflow-package": [["swift", "test", "WorkflowPackage"], ["bun", "package"]],
-    "persistence": [["swift", "test", "Persistence"], ["bun", "manager-session-store"]],
+    "package-build": [["swift", "build"]],
+    "cli": [["swift", "test", "WorkflowCommand"]],
+    "server": [["swift", "test", "RielaServer"]],
+    "graphql": [["swift", "test", "GraphQL"]],
+    "event": [["swift", "test", "Event"]],
+    "workflow-package": [["swift", "test", "WorkflowPackage"]],
+    "persistence": [["swift", "test", "Persistence"]],
     "release": [["build-homebrew-release.sh"], ["render-homebrew-formula.sh"]],
     "documentation": [["rg", "swift-deletion-readiness"], ["rg", "typescript", "deletion"]],
-    "test": [["swift", "test"], ["bun", "test"]],
-    "agent-codex": [["swift", "test", "CodexAgent"], ["bun", "codex"]],
-    "agent-claude-code": [["swift", "test", "Claude"], ["bun", "claude"]],
-    "agent-cursor-cli": [["swift", "test", "CursorCLIAgent"], ["bun", "cursor"]],
+    "test": [["swift", "test"]],
+    "agent-codex": [["swift", "test", "CodexAgent"]],
+    "agent-claude-code": [["swift", "test", "Claude"]],
+    "agent-cursor-cli": [["swift", "test", "CursorCLIAgent"]],
   ]
   private static let requiredDomainFields = [
     "id",

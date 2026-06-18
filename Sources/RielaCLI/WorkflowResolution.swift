@@ -137,7 +137,7 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       } catch let error as PromptTemplateAssetLoadingError {
         throw WorkflowResolutionError.invalidWorkflow([error.diagnostic])
       }
-      nodePayloads[registryNode.id] = hydratedPayload
+      nodePayloads[registryNode.id] = absolutizedStdioPaths(in: hydratedPayload, workflowDirectory: directory)
     }
     let packageManifest = try loadPackageManifestIfPresent(at: directory)
     return ResolvedWorkflowBundle(
@@ -148,6 +148,29 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       diagnostics: validation.diagnostics,
       packageManifest: packageManifest
     )
+  }
+
+  private func absolutizedStdioPaths(in payload: AgentNodePayload, workflowDirectory: URL) -> AgentNodePayload {
+    var payload = payload
+    if var command = payload.command {
+      command.executable = absoluteCommandPath(command.executable, relativeTo: workflowDirectory)
+      if let workingDirectory = command.workingDirectory {
+        command.workingDirectory = absoluteCommandPath(workingDirectory, relativeTo: workflowDirectory)
+      }
+      payload.command = command
+    }
+    if var container = payload.container, let workingDirectory = container.workingDirectory {
+      container.workingDirectory = absoluteCommandPath(workingDirectory, relativeTo: workflowDirectory)
+      payload.container = container
+    }
+    return payload
+  }
+
+  private func absoluteCommandPath(_ path: String, relativeTo workflowDirectory: URL) -> String {
+    guard !path.hasPrefix("/") && !path.hasPrefix("./") else {
+      return path
+    }
+    return workflowDirectory.appendingPathComponent(path).path
   }
 
   private func loadPackageManifestIfPresent(at directory: URL) throws -> WorkflowPackageManifest? {

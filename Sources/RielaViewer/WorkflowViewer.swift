@@ -110,6 +110,7 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
   public var workflow: WorkflowDefinition
   public var workflowDirectory: String
   public var sessionStoreRoot: String
+  public var sessionStoreCandidates: [String]
   public var selectedSessionId: String?
   public var sessions: [WorkflowViewerSessionSummary]
   public var nodes: [WorkflowViewerNode]
@@ -119,6 +120,7 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
     workflow: WorkflowDefinition,
     workflowDirectory: String,
     sessionStoreRoot: String,
+    sessionStoreCandidates: [String] = [],
     selectedSessionId: String?,
     sessions: [WorkflowViewerSessionSummary],
     nodes: [WorkflowViewerNode],
@@ -127,10 +129,34 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
     self.workflow = workflow
     self.workflowDirectory = workflowDirectory
     self.sessionStoreRoot = sessionStoreRoot
+    self.sessionStoreCandidates = sessionStoreCandidates
     self.selectedSessionId = selectedSessionId
     self.sessions = sessions
     self.nodes = nodes
     self.diagnostics = diagnostics
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case workflow
+    case workflowDirectory
+    case sessionStoreRoot
+    case sessionStoreCandidates
+    case selectedSessionId
+    case sessions
+    case nodes
+    case diagnostics
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    workflow = try container.decode(WorkflowDefinition.self, forKey: .workflow)
+    workflowDirectory = try container.decode(String.self, forKey: .workflowDirectory)
+    sessionStoreRoot = try container.decode(String.self, forKey: .sessionStoreRoot)
+    sessionStoreCandidates = try container.decodeIfPresent([String].self, forKey: .sessionStoreCandidates) ?? []
+    selectedSessionId = try container.decodeIfPresent(String.self, forKey: .selectedSessionId)
+    sessions = try container.decode([WorkflowViewerSessionSummary].self, forKey: .sessions)
+    nodes = try container.decode([WorkflowViewerNode].self, forKey: .nodes)
+    diagnostics = try container.decodeIfPresent([String].self, forKey: .diagnostics) ?? []
   }
 }
 
@@ -177,22 +203,29 @@ public struct WorkflowViewerLoader: Sendable {
     guard let workflow = validation.workflow else {
       throw WorkflowViewerLoadError.invalidWorkflow(validation.diagnostics.map { "\($0.path): \($0.message)" })
     }
-    let sessionStoreRoot = request.sessionStoreRoot ?? defaultSessionStoreRoot(workflowDirectory: workflowDirectory)
-    let snapshots = try loadSnapshots(sessionStoreRoot: sessionStoreRoot)
+    let sessionStoreResolution = try resolveSessionStore(
+      explicitRoot: request.sessionStoreRoot,
+      workflowDirectory: workflowDirectory,
+      workflowId: workflow.workflowId
+    )
+    let sessionStoreRoot = sessionStoreResolution.root
+    let snapshots = sessionStoreResolution.snapshots
       .filter { $0.session.workflowId == workflow.workflowId }
       .sorted { $0.session.updatedAt > $1.session.updatedAt }
     let selectedSnapshot = request.selectedSessionId.flatMap { selectedSessionId in
       snapshots.first { $0.session.sessionId == selectedSessionId }
     } ?? snapshots.first
     let summaries = snapshots.map(summary)
+    let diagnostics = sessionStoreResolution.diagnostics + (selectedSnapshot?.diagnostics ?? [])
     return WorkflowViewerState(
       workflow: workflow,
       workflowDirectory: workflowDirectory,
       sessionStoreRoot: sessionStoreRoot,
+      sessionStoreCandidates: sessionStoreResolution.candidates,
       selectedSessionId: selectedSnapshot?.session.sessionId,
       sessions: summaries,
       nodes: buildTree(workflow: workflow, selectedSession: selectedSnapshot?.session),
-      diagnostics: selectedSnapshot?.diagnostics ?? []
+      diagnostics: diagnostics
     )
   }
 
@@ -267,6 +300,54 @@ public struct WorkflowViewerLoader: Sendable {
       .filter { $0.pathExtension == "json" }
       .map { try decoder.decode(PersistedViewerSessionRecord.self, from: Data(contentsOf: $0)) }
       .map { WorkflowRuntimePersistenceSnapshot(session: $0.session) }
+  }
+
+  private func resolveSessionStore(
+    explicitRoot: String?,
+    workflowDirectory: String,
+    workflowId: String
+  ) throws -> WorkflowViewerSessionStoreResolution {
+    if let explicitRoot {
+      let root = URL(fileURLWithPath: explicitRoot, isDirectory: true).standardizedFileURL.path
+      return WorkflowViewerSessionStoreResolution(
+        root: root,
+        candidates: [root],
+        snapshots: try loadSnapshots(sessionStoreRoot: root),
+        diagnostics: []
+      )
+    }
+
+    let candidates = sessionStoreCandidates(workflowDirectory: workflowDirectory)
+    var firstSnapshots: [WorkflowRuntimePersistenceSnapshot]?
+    var diagnostics: [String] = []
+    for candidate in candidates {
+      let snapshots: [WorkflowRuntimePersistenceSnapshot]
+      do {
+        snapshots = try loadSnapshots(sessionStoreRoot: candidate)
+      } catch {
+        diagnostics.append("Skipped unreadable session store '\(candidate)': \(error)")
+        continue
+      }
+      if firstSnapshots == nil {
+        firstSnapshots = snapshots
+      }
+      if snapshots.contains(where: { $0.session.workflowId == workflowId }) {
+        return WorkflowViewerSessionStoreResolution(
+          root: candidate,
+          candidates: candidates,
+          snapshots: snapshots,
+          diagnostics: diagnostics
+        )
+      }
+    }
+
+    let fallbackRoot = candidates.first ?? defaultSessionStoreRoot(workflowDirectory: workflowDirectory)
+    return WorkflowViewerSessionStoreResolution(
+      root: fallbackRoot,
+      candidates: candidates,
+      snapshots: firstSnapshots ?? [],
+      diagnostics: diagnostics + ["No persisted sessions found for workflow '\(workflowId)' in searched session stores."]
+    )
   }
 
   private func buildTree(workflow: WorkflowDefinition, selectedSession: WorkflowSession?) -> [WorkflowViewerNode] {
@@ -374,6 +455,30 @@ public struct WorkflowViewerLoader: Sendable {
       .path
   }
 
+  private func sessionStoreCandidates(workflowDirectory: String) -> [String] {
+    var candidates: [String] = []
+    var seen: Set<String> = []
+    var current = URL(fileURLWithPath: workflowDirectory, isDirectory: true)
+      .standardizedFileURL
+      .deletingLastPathComponent()
+
+    while true {
+      let candidate = current
+        .appendingPathComponent(".riela/sessions", isDirectory: true)
+        .standardizedFileURL
+        .path
+      if seen.insert(candidate).inserted {
+        candidates.append(candidate)
+      }
+      let parent = current.deletingLastPathComponent()
+      if parent.path == current.path {
+        break
+      }
+      current = parent
+    }
+    return candidates
+  }
+
   private func runtimeStoreRoot(sessionStoreRoot: String) -> String {
     URL(fileURLWithPath: sessionStoreRoot, isDirectory: true)
       .appendingPathComponent("runtime-records", isDirectory: true)
@@ -390,4 +495,11 @@ public struct WorkflowViewerLoader: Sendable {
 
 private struct PersistedViewerSessionRecord: Codable {
   var session: WorkflowSession
+}
+
+private struct WorkflowViewerSessionStoreResolution {
+  var root: String
+  var candidates: [String]
+  var snapshots: [WorkflowRuntimePersistenceSnapshot]
+  var diagnostics: [String]
 }

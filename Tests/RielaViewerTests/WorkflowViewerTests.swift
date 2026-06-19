@@ -200,4 +200,175 @@ final class WorkflowViewerTests: XCTestCase {
     XCTAssertEqual(state.nodes.first?.state, .active)
     XCTAssertEqual(state.nodes.first?.children.first?.state, .idle)
   }
+
+  func testViewerDiscoversAncestorSessionStoreWhenRequestDoesNotPinRoot() throws {
+    let temp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+      .appendingPathComponent("riela-viewer-discovery-\(UUID().uuidString)", isDirectory: true)
+    let workflowDirectory = temp.appendingPathComponent("examples/demo", isDirectory: true)
+    let projectSessionStoreRoot = temp.appendingPathComponent(".riela/sessions", isDirectory: true)
+    let nearerButEmptyRoot = temp.appendingPathComponent("examples/.riela/sessions", isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: projectSessionStoreRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: nearerButEmptyRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temp) }
+
+    let workflow = WorkflowDefinition(
+      workflowId: "viewer-discovery",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 1_000, maxLoopIterations: 3),
+      entryStepId: "first",
+      nodeRegistry: [WorkflowNodeRegistryRef(id: "first")],
+      steps: [WorkflowStepRef(id: "first", nodeId: "first")],
+      nodes: [WorkflowNodeRef(id: "first", nodeFile: "nodes/first.json")]
+    )
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try encoder.encode(workflow).write(to: workflowDirectory.appendingPathComponent("workflow.json"))
+
+    let now = Date(timeIntervalSince1970: 3)
+    try FileWorkflowRuntimePersistenceStore(
+      rootDirectory: projectSessionStoreRoot.appendingPathComponent("runtime-records", isDirectory: true).path
+    ).save(WorkflowRuntimePersistenceSnapshot(session: WorkflowSession(
+      workflowId: "viewer-discovery",
+      sessionId: "discovered",
+      status: .running,
+      entryStepId: "first",
+      currentStepId: "first",
+      createdAt: now,
+      updatedAt: now,
+      executions: [WorkflowStepExecution(
+        executionId: "exec-discovered",
+        stepId: "first",
+        nodeId: "first",
+        attempt: 1,
+        status: .running,
+        createdAt: now,
+        updatedAt: now
+      )]
+    )))
+
+    let state = try WorkflowViewerLoader().load(WorkflowViewerLoadRequest(workflowDirectory: workflowDirectory.path))
+
+    XCTAssertEqual(state.sessionStoreRoot, projectSessionStoreRoot.path)
+    XCTAssertTrue(state.sessionStoreCandidates.contains(nearerButEmptyRoot.path))
+    XCTAssertEqual(state.selectedSessionId, "discovered")
+    XCTAssertEqual(state.sessions.map(\.sessionId), ["discovered"])
+    XCTAssertEqual(state.nodes.first?.state, .active)
+  }
+
+  func testViewerSkipsUnreadableImplicitSessionStoreAndKeepsSearchingAncestors() throws {
+    let temp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+      .appendingPathComponent("riela-viewer-corrupt-discovery-\(UUID().uuidString)", isDirectory: true)
+    let workflowDirectory = temp.appendingPathComponent("examples/demo", isDirectory: true)
+    let projectSessionStoreRoot = temp.appendingPathComponent(".riela/sessions", isDirectory: true)
+    let corruptRuntimeRoot = temp.appendingPathComponent("examples/.riela/sessions/runtime-records", isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: projectSessionStoreRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+      at: corruptRuntimeRoot.appendingPathComponent("bad-session", isDirectory: true),
+      withIntermediateDirectories: true
+    )
+    try Data("{".utf8).write(to: corruptRuntimeRoot
+      .appendingPathComponent("bad-session", isDirectory: true)
+      .appendingPathComponent("runtime-snapshot.json"))
+    defer { try? FileManager.default.removeItem(at: temp) }
+
+    let workflow = WorkflowDefinition(
+      workflowId: "viewer-corrupt-discovery",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 1_000, maxLoopIterations: 3),
+      entryStepId: "first",
+      nodeRegistry: [WorkflowNodeRegistryRef(id: "first")],
+      steps: [WorkflowStepRef(id: "first", nodeId: "first")],
+      nodes: [WorkflowNodeRef(id: "first", nodeFile: "nodes/first.json")]
+    )
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try encoder.encode(workflow).write(to: workflowDirectory.appendingPathComponent("workflow.json"))
+
+    let now = Date(timeIntervalSince1970: 4)
+    try FileWorkflowRuntimePersistenceStore(
+      rootDirectory: projectSessionStoreRoot.appendingPathComponent("runtime-records", isDirectory: true).path
+    ).save(WorkflowRuntimePersistenceSnapshot(session: WorkflowSession(
+      workflowId: "viewer-corrupt-discovery",
+      sessionId: "discovered-after-corrupt",
+      status: .running,
+      entryStepId: "first",
+      currentStepId: "first",
+      createdAt: now,
+      updatedAt: now,
+      executions: [WorkflowStepExecution(
+        executionId: "exec-discovered",
+        stepId: "first",
+        nodeId: "first",
+        attempt: 1,
+        status: .running,
+        createdAt: now,
+        updatedAt: now
+      )]
+    )))
+
+    let state = try WorkflowViewerLoader().load(WorkflowViewerLoadRequest(workflowDirectory: workflowDirectory.path))
+
+    XCTAssertEqual(state.sessionStoreRoot, projectSessionStoreRoot.path)
+    XCTAssertEqual(state.selectedSessionId, "discovered-after-corrupt")
+    XCTAssertTrue(state.diagnostics.contains { $0.contains("Skipped unreadable session store") })
+  }
+
+  func testViewerReportsSearchedSessionStoresWhenNoSessionsExist() throws {
+    let temp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+      .appendingPathComponent("riela-viewer-empty-\(UUID().uuidString)", isDirectory: true)
+    let workflowDirectory = temp.appendingPathComponent("examples/demo", isDirectory: true)
+    let nearerRoot = temp.appendingPathComponent("examples/.riela/sessions", isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temp) }
+
+    let workflow = WorkflowDefinition(
+      workflowId: "viewer-empty",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 1_000, maxLoopIterations: 3),
+      entryStepId: "first",
+      nodeRegistry: [WorkflowNodeRegistryRef(id: "first")],
+      steps: [WorkflowStepRef(id: "first", nodeId: "first")],
+      nodes: [WorkflowNodeRef(id: "first", nodeFile: "nodes/first.json")]
+    )
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try encoder.encode(workflow).write(to: workflowDirectory.appendingPathComponent("workflow.json"))
+
+    let state = try WorkflowViewerLoader().load(WorkflowViewerLoadRequest(workflowDirectory: workflowDirectory.path))
+
+    XCTAssertEqual(state.sessionStoreRoot, nearerRoot.path)
+    XCTAssertTrue(state.sessions.isEmpty)
+    XCTAssertTrue(state.sessionStoreCandidates.contains(nearerRoot.path))
+    XCTAssertEqual(state.diagnostics, ["No persisted sessions found for workflow 'viewer-empty' in searched session stores."])
+  }
+
+  func testViewerStateDecodesLegacyPayloadWithoutSessionStoreCandidates() throws {
+    let workflow = WorkflowDefinition(
+      workflowId: "viewer-legacy-state",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 1_000, maxLoopIterations: 3),
+      entryStepId: "first",
+      nodeRegistry: [WorkflowNodeRegistryRef(id: "first")],
+      steps: [WorkflowStepRef(id: "first", nodeId: "first")],
+      nodes: [WorkflowNodeRef(id: "first", nodeFile: "nodes/first.json")]
+    )
+    let state = WorkflowViewerState(
+      workflow: workflow,
+      workflowDirectory: "/workflow",
+      sessionStoreRoot: "/sessions",
+      sessionStoreCandidates: ["/sessions"],
+      selectedSessionId: nil,
+      sessions: [],
+      nodes: [WorkflowViewerNode(id: "first", nodeId: "first", title: "first", state: .idle)]
+    )
+
+    let data = try JSONEncoder().encode(state)
+    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    object.removeValue(forKey: "sessionStoreCandidates")
+    let legacyData = try JSONSerialization.data(withJSONObject: object)
+
+    let decoded = try JSONDecoder().decode(WorkflowViewerState.self, from: legacyData)
+
+    XCTAssertEqual(decoded.workflow.workflowId, "viewer-legacy-state")
+    XCTAssertEqual(decoded.sessionStoreCandidates, [])
+    XCTAssertEqual(decoded.diagnostics, [])
+  }
 }

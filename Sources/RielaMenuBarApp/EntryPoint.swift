@@ -11,6 +11,7 @@ final class RielaMenuBarApp: NSObject, NSApplicationDelegate {
   private let controller = WorkflowServingController()
   private var selectedWorkflow: WorkflowServeSelection?
   private var selectedWorkingDirectory = FileManager.default.currentDirectoryPath
+  private var selectedSessionStoreRoot: String?
   private var status = "Stopped"
   private var viewerWindowController: WorkflowViewerWindowController?
 
@@ -69,6 +70,7 @@ final class RielaMenuBarApp: NSObject, NSApplicationDelegate {
     }
     selectedWorkflow = .directDirectory(url.path, identifier: url.lastPathComponent)
     selectedWorkingDirectory = url.deletingLastPathComponent().path
+    selectedSessionStoreRoot = nil
     status = "Selected"
     rebuildMenu()
   }
@@ -130,13 +132,10 @@ final class RielaMenuBarApp: NSObject, NSApplicationDelegate {
       selectWorkflow()
       return
     }
-    let sessionStoreRoot = URL(fileURLWithPath: selectedWorkingDirectory, isDirectory: true)
-      .appendingPathComponent(".riela/sessions", isDirectory: true)
-      .path
     if viewerWindowController == nil {
       viewerWindowController = WorkflowViewerWindowController()
     }
-    viewerWindowController?.show(workflowDirectory: path, sessionStoreRoot: sessionStoreRoot)
+    viewerWindowController?.show(workflowDirectory: path, sessionStoreRoot: selectedSessionStoreRoot)
   }
 
   private func openInitialViewerIfRequested() {
@@ -149,6 +148,10 @@ final class RielaMenuBarApp: NSObject, NSApplicationDelegate {
     let path = arguments[optionIndex + 1]
     selectedWorkflow = .directDirectory(path, identifier: URL(fileURLWithPath: path, isDirectory: true).lastPathComponent)
     selectedWorkingDirectory = URL(fileURLWithPath: path, isDirectory: true).deletingLastPathComponent().path
+    if let sessionStoreOptionIndex = arguments.firstIndex(of: "--session-store-root"),
+      arguments.indices.contains(sessionStoreOptionIndex + 1) {
+      selectedSessionStoreRoot = arguments[sessionStoreOptionIndex + 1]
+    }
     status = "Selected"
     rebuildMenu()
     openViewer()
@@ -184,6 +187,9 @@ private final class WorkflowViewerWindowController: NSWindowController, NSOutlin
   private let sessionPopup = NSPopUpButton()
   private let statusLabel = NSTextField(labelWithString: "No workflow loaded")
   private let detailTextView = NSTextView()
+  private let detailFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+  private let detailTextColor = NSColor(calibratedWhite: 0.92, alpha: 1)
+  private let detailBackgroundColor = NSColor(calibratedWhite: 0.08, alpha: 1)
   private var workflowDirectory: String?
   private var sessionStoreRoot: String?
   private var state: WorkflowViewerState?
@@ -205,7 +211,10 @@ private final class WorkflowViewerWindowController: NSWindowController, NSOutlin
     nil
   }
 
-  func show(workflowDirectory: String, sessionStoreRoot: String) {
+  func show(workflowDirectory: String, sessionStoreRoot: String?) {
+    if self.workflowDirectory != workflowDirectory {
+      selectedNodeId = nil
+    }
     self.workflowDirectory = workflowDirectory
     self.sessionStoreRoot = sessionStoreRoot
     refresh()
@@ -234,6 +243,7 @@ private final class WorkflowViewerWindowController: NSWindowController, NSOutlin
     outlineScroll.hasVerticalScroller = true
     outlineScroll.hasHorizontalScroller = true
     outlineScroll.translatesAutoresizingMaskIntoConstraints = false
+    outlineScroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
 
     let rightStack = NSStackView()
     rightStack.orientation = .vertical
@@ -249,6 +259,7 @@ private final class WorkflowViewerWindowController: NSWindowController, NSOutlin
     let refreshButton = NSButton(title: "Refresh", target: self, action: #selector(refreshButtonPressed))
     sessionPopup.target = self
     sessionPopup.action = #selector(sessionSelectionChanged)
+    sessionPopup.widthAnchor.constraint(equalToConstant: 360).isActive = true
     toolbar.addArrangedSubview(NSTextField(labelWithString: "Session"))
     toolbar.addArrangedSubview(sessionPopup)
     toolbar.addArrangedSubview(refreshButton)
@@ -256,11 +267,24 @@ private final class WorkflowViewerWindowController: NSWindowController, NSOutlin
     statusLabel.lineBreakMode = .byTruncatingTail
     detailTextView.isEditable = false
     detailTextView.isRichText = false
-    detailTextView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+    detailTextView.font = detailFont
+    detailTextView.textColor = detailTextColor
+    detailTextView.backgroundColor = detailBackgroundColor
+    detailTextView.drawsBackground = true
+    detailTextView.textContainerInset = NSSize(width: 10, height: 10)
+    detailTextView.isVerticallyResizable = true
+    detailTextView.isHorizontallyResizable = true
+    detailTextView.autoresizingMask = [.width]
+    detailTextView.textContainer?.widthTracksTextView = true
+    detailTextView.textContainer?.containerSize = NSSize(
+      width: detailScrollContentWidthFallback,
+      height: CGFloat.greatestFiniteMagnitude
+    )
     let detailScroll = NSScrollView()
     detailScroll.documentView = detailTextView
     detailScroll.hasVerticalScroller = true
     detailScroll.hasHorizontalScroller = true
+    detailScroll.borderType = .bezelBorder
     detailScroll.translatesAutoresizingMaskIntoConstraints = false
 
     rightStack.addArrangedSubview(toolbar)
@@ -272,6 +296,7 @@ private final class WorkflowViewerWindowController: NSWindowController, NSOutlin
     splitView.addArrangedSubview(outlineScroll)
     splitView.addArrangedSubview(rightStack)
     window.contentView = splitView
+    splitView.setPosition(360, ofDividerAt: 0)
   }
 
   @objc private func refreshButtonPressed() {
@@ -279,14 +304,16 @@ private final class WorkflowViewerWindowController: NSWindowController, NSOutlin
   }
 
   @objc private func sessionSelectionChanged() {
-    guard let workflowDirectory, let sessionStoreRoot, let state, sessionPopup.indexOfSelectedItem >= 0 else {
+    guard let workflowDirectory, let state, sessionPopup.indexOfSelectedItem >= 0,
+      sessionPopup.indexOfSelectedItem < state.sessions.count
+    else {
       return
     }
     let selected = state.sessions[sessionPopup.indexOfSelectedItem]
     do {
       self.state = try loader.load(WorkflowViewerLoadRequest(
         workflowDirectory: workflowDirectory,
-        sessionStoreRoot: sessionStoreRoot,
+        sessionStoreRoot: state.sessionStoreRoot,
         selectedSessionId: selected.sessionId
       ))
       outlineView.reloadData()
@@ -298,31 +325,40 @@ private final class WorkflowViewerWindowController: NSWindowController, NSOutlin
   }
 
   private func refresh() {
-    guard let workflowDirectory, let sessionStoreRoot else {
+    guard let workflowDirectory else {
       return
     }
     do {
-      let loaded = try loader.load(WorkflowViewerLoadRequest(workflowDirectory: workflowDirectory, sessionStoreRoot: sessionStoreRoot))
+      let previouslySelectedSessionId = state?.selectedSessionId
+      let loaded = try loader.load(WorkflowViewerLoadRequest(
+        workflowDirectory: workflowDirectory,
+        sessionStoreRoot: sessionStoreRoot,
+        selectedSessionId: previouslySelectedSessionId
+      ))
       state = loaded
       selectedNodeId = selectedNodeId ?? loaded.workflow.entryStepId
       sessionPopup.removeAllItems()
-      sessionPopup.addItems(withTitles: loaded.sessions.map { sessionTitle($0) })
-      if !loaded.sessions.isEmpty {
+      if loaded.sessions.isEmpty {
+        sessionPopup.addItem(withTitle: "No sessions")
+        sessionPopup.isEnabled = false
+      } else {
+        sessionPopup.addItems(withTitles: loaded.sessions.map { sessionTitle($0) })
         sessionPopup.selectItem(at: 0)
+        sessionPopup.isEnabled = true
       }
       outlineView.reloadData()
       expandAll()
       updateDetails()
     } catch {
       statusLabel.stringValue = "Failed to load viewer: \(error)"
-      detailTextView.string = "\(error)"
+      setDetailText("\(error)")
     }
   }
 
   private func updateDetails() {
     guard let state else {
       statusLabel.stringValue = "No workflow loaded"
-      detailTextView.string = ""
+      setDetailText("")
       return
     }
     let session = selectedSession(in: state)
@@ -332,7 +368,7 @@ private final class WorkflowViewerWindowController: NSWindowController, NSOutlin
       session.map { "Selected: \($0.sessionId) (\($0.status.rawValue))" }
     ].compactMap { $0 }.joined(separator: " | ")
     guard let selectedNodeId else {
-      detailTextView.string = workflowOverview(state: state)
+      setDetailText(workflowOverview(state: state))
       return
     }
     var lines: [String] = []
@@ -347,6 +383,18 @@ private final class WorkflowViewerWindowController: NSWindowController, NSOutlin
     lines.append("")
     lines.append("Workflow")
     lines.append(workflowOverview(state: state))
+    if state.sessions.isEmpty {
+      lines.append("")
+      lines.append("Sessions")
+      lines.append("No persisted sessions found for this workflow.")
+      lines.append("Searched:")
+      lines.append(contentsOf: state.sessionStoreCandidates.map { "- \($0)" })
+    }
+    if !state.diagnostics.isEmpty {
+      lines.append("")
+      lines.append("Diagnostics")
+      lines.append(contentsOf: state.diagnostics.map { "- \($0)" })
+    }
     if let session {
       do {
         let messages = try loader.nodeMessages(
@@ -365,7 +413,22 @@ private final class WorkflowViewerWindowController: NSWindowController, NSOutlin
         lines.append("Messages failed to load: \(error)")
       }
     }
-    detailTextView.string = lines.joined(separator: "\n")
+    setDetailText(lines.joined(separator: "\n"))
+  }
+
+  private func setDetailText(_ text: String) {
+    detailTextView.textStorage?.setAttributedString(NSAttributedString(
+      string: text,
+      attributes: [
+        .font: detailFont,
+        .foregroundColor: detailTextColor,
+        .backgroundColor: detailBackgroundColor
+      ]
+    ))
+  }
+
+  private var detailScrollContentWidthFallback: CGFloat {
+    520
   }
 
   private func selectedSession(in state: WorkflowViewerState) -> WorkflowViewerSessionSummary? {
@@ -468,13 +531,13 @@ private final class WorkflowViewerWindowController: NSWindowController, NSOutlin
   private func stateMarker(_ state: WorkflowViewerNodeRuntimeState) -> String {
     switch state {
     case .active:
-      "RUN"
+      "[Running]"
     case .completed:
-      "OK"
+      "[Completed]"
     case .failed:
-      "FAIL"
+      "[Failed]"
     case .idle:
-      "--"
+      "[Idle]"
     }
   }
 

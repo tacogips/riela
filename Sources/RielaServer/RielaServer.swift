@@ -1,6 +1,6 @@
 import RielaGraphQL
 
-public struct RielaServerConfiguration: Equatable, Sendable {
+public struct RielaServerConfiguration: Codable, Equatable, Sendable {
   public var host: String
   public var port: Int
 

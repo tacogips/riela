@@ -1,0 +1,39 @@
+{
+  "workflowId": "gemini-sdk-worker",
+  "description": "Ask Gemini through the built-in Gemini SDK worker add-on.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 180000
+  },
+  "entryStepId": "ask-gemini",
+  "nodes": [
+    {
+      "id": "ask-gemini",
+      "addon": {
+        "name": "riela/gemini-sdk-worker",
+        "version": "1",
+        "config": {
+          "model": "gemini-2.0-flash-lite",
+          "systemPromptTemplate": "Return one concise sentence.",
+          "promptTemplate": "Answer this workflow request: {{request}}"
+        },
+        "env": {
+          "GEMINI_API_KEY": {
+            "fromEnv": "GEMINI_API_KEY",
+            "required": true
+          }
+        },
+        "inputs": {
+          "request": "Explain what Riela workflow add-ons are."
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "ask-gemini",
+      "nodeId": "ask-gemini",
+      "role": "worker"
+    }
+  ]
+}

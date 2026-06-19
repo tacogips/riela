@@ -64,6 +64,7 @@ public struct OfficialSDKRequest: Equatable, Sendable {
 public enum OfficialSDKRequestBody: Equatable, Sendable {
   case openAIResponses(OpenAIResponsesRequest)
   case anthropicMessages(AnthropicMessagesRequest)
+  case geminiGenerateContent(GeminiGenerateContentRequest)
 }
 
 public struct OpenAIResponsesRequest: Equatable, Sendable {
@@ -99,6 +100,35 @@ public struct AnthropicMessage: Equatable, Sendable {
   public init(role: String, content: String) {
     self.role = role
     self.content = content
+  }
+}
+
+public struct GeminiGenerateContentRequest: Equatable, Sendable {
+  public var model: String
+  public var input: String
+  public var system: String?
+  public var inlineDataParts: [GeminiInlineDataPart]
+
+  public init(
+    model: String,
+    input: String,
+    system: String? = nil,
+    inlineDataParts: [GeminiInlineDataPart] = []
+  ) {
+    self.model = model
+    self.input = input
+    self.system = system
+    self.inlineDataParts = inlineDataParts
+  }
+}
+
+public struct GeminiInlineDataPart: Equatable, Sendable {
+  public var mimeType: String
+  public var dataBase64: String
+
+  public init(mimeType: String, dataBase64: String) {
+    self.mimeType = mimeType
+    self.dataBase64 = dataBase64
   }
 }
 
@@ -232,6 +262,45 @@ public struct AnthropicSDKAdapter: NodeAdapter {
   }
 }
 
+public struct GeminiSDKAdapter: NodeAdapter {
+  public static let provider = "official-gemini-sdk"
+  private static let defaultApiKeyEnvs = ["GOOGLE_API_KEY", "GEMINI_API_KEY"]
+
+  public var configuration: OfficialSDKAdapterConfiguration
+
+  public init(configuration: OfficialSDKAdapterConfiguration = OfficialSDKAdapterConfiguration()) {
+    self.configuration = configuration
+  }
+
+  public func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    let request = try makeOfficialSDKRequest(
+      provider: Self.provider,
+      configuration: configuration,
+      defaultApiKeyEnvs: Self.defaultApiKeyEnvs,
+      missingApiKeyMessage: "missing Gemini API key",
+      body: .geminiGenerateContent(
+        GeminiGenerateContentRequest(
+          model: input.node.model,
+          input: input.promptText,
+          system: input.systemPromptText,
+          inlineDataParts: try geminiInlineDataParts(from: input)
+        )
+      )
+    )
+
+    return try await executeOfficialSDKRequest(
+      adapterInput: input,
+      context: context,
+      configuration: configuration,
+      request: request,
+      responseLabel: "official Gemini SDK response",
+      timeoutMessage: "official Gemini SDK request aborted",
+      fallbackFailureMessage: "unknown Gemini SDK failure",
+      extractText: extractGeminiText
+    )
+  }
+}
+
 private func makeOfficialSDKRequest(
   provider: String,
   configuration: OfficialSDKAdapterConfiguration,
@@ -239,9 +308,25 @@ private func makeOfficialSDKRequest(
   missingApiKeyMessage: String,
   body: OfficialSDKRequestBody
 ) throws -> OfficialSDKRequest {
+  try makeOfficialSDKRequest(
+    provider: provider,
+    configuration: configuration,
+    defaultApiKeyEnvs: [defaultApiKeyEnv],
+    missingApiKeyMessage: missingApiKeyMessage,
+    body: body
+  )
+}
+
+private func makeOfficialSDKRequest(
+  provider: String,
+  configuration: OfficialSDKAdapterConfiguration,
+  defaultApiKeyEnvs: [String],
+  missingApiKeyMessage: String,
+  body: OfficialSDKRequestBody
+) throws -> OfficialSDKRequest {
   let environment = configuration.environment ?? ProcessInfo.processInfo.environment
-  let envName = configuration.apiKeyEnv ?? defaultApiKeyEnv
-  guard let apiKey = environment[envName], !apiKey.isEmpty else {
+  let envNames = configuration.apiKeyEnv.map { [$0] } ?? defaultApiKeyEnvs
+  guard let apiKey = envNames.compactMap({ environment[$0] }).first(where: { !$0.isEmpty }) else {
     throw AdapterExecutionError(.policyBlocked, missingApiKeyMessage)
   }
 
@@ -451,6 +536,37 @@ private func makeURLRequest(for request: OfficialSDKRequest) throws -> URLReques
       "anthropic-version": "2023-06-01",
       "Content-Type": "application/json"
     ]
+  case let .geminiGenerateContent(geminiRequest):
+    endpoint = geminiGenerateContentEndpoint(baseURL: request.baseURL, model: geminiRequest.model)
+    let parts = geminiRequest.inlineDataParts.map { part in
+      JSONValue.object([
+        "inline_data": .object([
+          "mime_type": .string(part.mimeType),
+          "data": .string(part.dataBase64)
+        ])
+      ])
+    } + [
+      .object(["text": .string(geminiRequest.input)])
+    ]
+    body = [
+      "contents": .array([
+        .object([
+          "role": .string("user"),
+          "parts": .array(parts)
+        ])
+      ])
+    ]
+    if let system = geminiRequest.system {
+      body["systemInstruction"] = .object([
+        "parts": .array([
+          .object(["text": .string(system)])
+        ])
+      ])
+    }
+    headers = [
+      "x-goog-api-key": request.apiKey,
+      "Content-Type": "application/json"
+    ]
   }
 
   var urlRequest = URLRequest(url: endpoint)
@@ -460,6 +576,17 @@ private func makeURLRequest(for request: OfficialSDKRequest) throws -> URLReques
   }
   urlRequest.httpBody = try JSONEncoder().encode(JSONValue.object(body))
   return urlRequest
+}
+
+private func geminiGenerateContentEndpoint(baseURL: URL?, model: String) -> URL {
+  let base = officialSDKEndpoint(
+    baseURL: baseURL,
+    defaultBaseURL: "https://generativelanguage.googleapis.com",
+    pathComponents: ["v1beta"]
+  )
+  let normalizedModel = model.hasPrefix("models/") ? String(model.dropFirst("models/".count)) : model
+  let baseString = base.absoluteString.hasSuffix("/") ? String(base.absoluteString.dropLast()) : base.absoluteString
+  return URL(string: "\(baseString)/models/\(normalizedModel):generateContent")!
 }
 
 private func officialSDKEndpoint(baseURL: URL?, defaultBaseURL: String, pathComponents: [String]) -> URL {
@@ -529,6 +656,63 @@ private func extractAnthropicText(_ response: JSONValue) -> String {
   }
 
   return segments.joined(separator: "\n")
+}
+
+private func extractGeminiText(_ response: JSONValue) -> String {
+  guard case let .object(object) = response, case let .array(candidates) = object["candidates"] else {
+    return ""
+  }
+
+  let segments = candidates.flatMap { candidate -> [String] in
+    guard
+      case let .object(candidateObject) = candidate,
+      case let .object(content) = candidateObject["content"],
+      case let .array(parts) = content["parts"]
+    else {
+      return []
+    }
+    return parts.compactMap { part -> String? in
+      guard
+        case let .object(partObject) = part,
+        let text = stringValue(partObject["text"]),
+        !text.isEmpty
+      else {
+        return nil
+      }
+      return text
+    }
+  }
+
+  return segments.joined(separator: "\n")
+}
+
+private func geminiInlineDataParts(from input: AdapterExecutionInput) throws -> [GeminiInlineDataPart] {
+  let value = input.mergedVariables["geminiInlineDataParts"] ?? input.node.variables["geminiInlineDataParts"]
+  guard let value, value != .null else {
+    return []
+  }
+  guard case let .array(parts) = value else {
+    throw AdapterExecutionError(.policyBlocked, "geminiInlineDataParts must be an array")
+  }
+  return try parts.enumerated().map { index, part in
+    guard case let .object(object) = part else {
+      throw AdapterExecutionError(.policyBlocked, "geminiInlineDataParts[\(index)] must be an object")
+    }
+    guard let mimeType = nonEmptyStringValue(object["mimeType"]) else {
+      throw AdapterExecutionError(.policyBlocked, "geminiInlineDataParts[\(index)].mimeType is required")
+    }
+    guard let dataBase64 = nonEmptyStringValue(object["dataBase64"] ?? object["data"]) else {
+      throw AdapterExecutionError(.policyBlocked, "geminiInlineDataParts[\(index)].dataBase64 is required")
+    }
+    return GeminiInlineDataPart(mimeType: mimeType, dataBase64: dataBase64)
+  }
+}
+
+private func nonEmptyStringValue(_ value: JSONValue?) -> String? {
+  guard case let .string(text) = value, !text.isEmpty else {
+    return nil
+  }
+  return text
 }
 
 private func stringValue(_ value: JSONValue?) -> String? {

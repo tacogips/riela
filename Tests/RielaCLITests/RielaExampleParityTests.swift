@@ -125,6 +125,8 @@ final class RielaExampleParityTests: XCTestCase {
       "discord-persona-chat",
       "dispatcher-llm-resolver-stub",
       "first-four-arithmetic-pipeline",
+      "gemini-ocr-worker",
+      "gemini-sdk-worker",
       "matrix-agent-trio-chat",
       "matrix-chat-reply",
       "node-combinations-showcase",

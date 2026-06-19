@@ -12,6 +12,7 @@ public enum NodeExecutionBackend: String, Codable, CaseIterable, Sendable {
   case cursorCliAgent = "cursor-cli-agent"
   case officialOpenAISDK = "official/openai-sdk"
   case officialAnthropicSDK = "official/anthropic-sdk"
+  case officialGeminiSDK = "official/gemini-sdk"
   case officialCursorSDK = "official/cursor-sdk"
 
   public var cliAgentBackend: CliAgentBackend? {
@@ -22,7 +23,7 @@ public enum NodeExecutionBackend: String, Codable, CaseIterable, Sendable {
       .claudeCodeAgent
     case .cursorCliAgent:
       .cursorCliAgent
-    case .officialOpenAISDK, .officialAnthropicSDK, .officialCursorSDK:
+    case .officialOpenAISDK, .officialAnthropicSDK, .officialGeminiSDK, .officialCursorSDK:
       nil
     }
   }

@@ -9,8 +9,15 @@
 - Messages with no named bot route to Yui Codex.
 - Messages that call Mika Trend route only to Mika.
 - Messages that call Rina Cursor route only to Rina.
+- Persona replies are visibly distinct: Yui is mature and secretary-like, Mika
+  is frank and bright with light gyaru energy, and Rina is intellectual, cool,
+  concise, and Nagato-Yuki-like.
 - If the selected persona is asked to hear another named persona too, that node
   sets a handoff flag such as `handoff_mika`, allowing a follow-up node response.
+- The selected persona's reply is sent through its `send-*-reply` step before
+  any handoff transition runs, so multi-bot discussions produce visible Yui,
+  Mika, and Rina chat messages in workflow order instead of relying on Telegram
+  bot-to-bot mention delivery.
 - Handoff replies include a visible provider-neutral mention such as `@Mika` or
   `@Rina` plus a concrete question, so autonomous discussion is readable in the
   chat instead of being only an internal route.

@@ -37,7 +37,7 @@ final class CommandParsingTests: XCTestCase {
     let inspect = try parser.parse(["workflow", "inspect", "demo", "--structure"])
     if case let .workflow(.inspect(options)) = inspect {
       XCTAssertTrue(options.structure)
-      XCTAssertEqual(options.output, .text)
+      XCTAssertEqual(options.output, .jsonl)
     } else {
       XCTFail("expected inspect command")
     }
@@ -254,6 +254,28 @@ final class CommandParsingTests: XCTestCase {
         (error as? CLIUsageError)?.message,
         "`--output table` is only supported for workflow list, workflow status, package search, and package list"
       )
+    }
+  }
+
+  func testDefaultOutputIsJSONLForMachineReadableCommands() throws {
+    let parser = RielaArgumentParser()
+
+    if case let .workflow(.run(options)) = try parser.parse(["workflow", "run", "demo"]) {
+      XCTAssertEqual(options.output, .jsonl)
+    } else {
+      XCTFail("expected run command")
+    }
+
+    if case let .session(.status(options)) = try parser.parse(["session", "status", "session-1"]) {
+      XCTAssertEqual(options.output, .jsonl)
+    } else {
+      XCTFail("expected session status command")
+    }
+
+    if case let .workflow(.list(options)) = try parser.parse(["workflow", "list"]) {
+      XCTAssertEqual(options.output, .jsonl)
+    } else {
+      XCTFail("expected workflow list command")
     }
   }
 }

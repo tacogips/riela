@@ -239,7 +239,7 @@ public struct WorkflowPackageCommandRunner: Sendable {
       message: "package \(command.kind.rawValue) completed",
       runSessionId: result.session.sessionId
     )
-    if command.options.output == .json {
+    if command.options.output.isStructured {
       return CLICommandResult(exitCode: CLIExitCode(rawValue: result.exitCode) ?? .failure, stdout: try jsonString(packageResult))
     }
     return CLICommandResult(
@@ -613,6 +613,13 @@ public struct WorkflowPackageCommandRunner: Sendable {
       throw CLIUsageError("package source validation failed: \(issues.map { "\($0.path): \($0.message)" }.joined(separator: "; "))")
     }
     let destination = packageRoot(scope: parsed.scope, workingDirectory: workingDirectory).appendingPathComponent(target, isDirectory: true)
+    let skillProjections = try packageSkillProjectionPlans(
+      manifest: manifest,
+      packageRoot: sourceURL,
+      scope: parsed.scope,
+      workingDirectory: workingDirectory
+    )
+    try preflightSkillProjections(skillProjections, overwrite: parsed.overwrite)
     if parsed.dryRun {
       return destination
     }
@@ -624,6 +631,7 @@ public struct WorkflowPackageCommandRunner: Sendable {
     }
     try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
     try FileManager.default.copyItem(at: sourceURL, to: destination)
+    try installSkillProjections(skillProjections, installedPackageRoot: destination, overwrite: parsed.overwrite)
     return destination
   }
 
@@ -764,6 +772,267 @@ public struct WorkflowPackageCommandRunner: Sendable {
   }
 }
 
+private struct PackageSkillProjectionPlan {
+  var vendor: WorkflowPackageSkillVendor
+  var name: String
+  var sourcePath: String
+  var destination: URL
+}
+
+private func packageSkillProjectionPlans(
+  manifest: WorkflowPackageManifest,
+  packageRoot: URL,
+  scope: WorkflowScope,
+  workingDirectory: URL
+) throws -> [PackageSkillProjectionPlan] {
+  var plans: [PackageSkillProjectionPlan] = []
+  for skill in manifest.skills {
+    if let plan = try packageSkillProjectionPlan(
+      vendor: skill.vendor,
+      name: skill.name,
+      sourcePath: skill.sourcePath,
+      packageRoot: packageRoot,
+      scope: scope,
+      workingDirectory: workingDirectory
+    ) {
+      plans.append(plan)
+    }
+  }
+  if let skillDirectory = manifest.skillDirectory {
+    plans.append(contentsOf: try discoverPackageSkillDirectoryProjections(
+      skillDirectory: skillDirectory,
+      packageRoot: packageRoot,
+      scope: scope,
+      workingDirectory: workingDirectory
+    ))
+  }
+  var seen = Set<String>()
+  return plans.filter { plan in
+    let key = "\(plan.vendor.rawValue):\(plan.name):\(plan.destination.standardizedFileURL.path)"
+    return seen.insert(key).inserted
+  }
+}
+
+private func discoverPackageSkillDirectoryProjections(
+  skillDirectory: String,
+  packageRoot: URL,
+  scope: WorkflowScope,
+  workingDirectory: URL
+) throws -> [PackageSkillProjectionPlan] {
+  guard let normalized = WorkflowPackageManifestValidator.normalizePackageRelativePath(skillDirectory) else {
+    throw CLIUsageError("skillDirectory: path must be package-relative")
+  }
+  let root = packageRoot.appendingPathComponent(normalized, isDirectory: true)
+  guard FileManager.default.fileExists(atPath: root.path) else {
+    return []
+  }
+  var plans: [PackageSkillProjectionPlan] = []
+  let vendorDirectories = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey])
+  for vendorDirectory in vendorDirectories where (try? vendorDirectory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+    guard let vendor = WorkflowPackageSkillVendor(rawValue: vendorDirectory.lastPathComponent) else {
+      continue
+    }
+    switch vendor {
+    case .codex, .claude:
+      let skillDirectories = try FileManager.default.contentsOfDirectory(at: vendorDirectory, includingPropertiesForKeys: [.isDirectoryKey])
+      for skillDirectory in skillDirectories where (try? skillDirectory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+        let skillName = skillDirectory.lastPathComponent
+        guard FileManager.default.fileExists(atPath: skillDirectory.appendingPathComponent("SKILL.md").path) else {
+          continue
+        }
+        if let plan = try packageSkillProjectionPlan(
+          vendor: vendor,
+          name: skillName,
+          sourcePath: packageRelativePath(for: skillDirectory, packageRoot: packageRoot),
+          packageRoot: packageRoot,
+          scope: scope,
+          workingDirectory: workingDirectory
+        ) {
+          plans.append(plan)
+        }
+      }
+    case .cursor:
+      let cursorFiles = try FileManager.default.contentsOfDirectory(at: vendorDirectory, includingPropertiesForKeys: [.isRegularFileKey])
+      for cursorFile in cursorFiles where cursorFile.pathExtension == "mdc" {
+        let skillName = cursorFile.deletingPathExtension().lastPathComponent
+        if let plan = try packageSkillProjectionPlan(
+          vendor: vendor,
+          name: skillName,
+          sourcePath: packageRelativePath(for: cursorFile, packageRoot: packageRoot),
+          packageRoot: packageRoot,
+          scope: scope,
+          workingDirectory: workingDirectory
+        ) {
+          plans.append(plan)
+        }
+      }
+    case .agents:
+      let agentsFile = vendorDirectory.appendingPathComponent("AGENTS.md")
+      if FileManager.default.fileExists(atPath: agentsFile.path),
+        let plan = try packageSkillProjectionPlan(
+          vendor: vendor,
+          name: "agents",
+          sourcePath: packageRelativePath(for: agentsFile, packageRoot: packageRoot),
+          packageRoot: packageRoot,
+          scope: scope,
+          workingDirectory: workingDirectory
+        ) {
+        plans.append(plan)
+      }
+    case .gemini:
+      let geminiFile = vendorDirectory.appendingPathComponent("GEMINI.md")
+      if FileManager.default.fileExists(atPath: geminiFile.path),
+        let plan = try packageSkillProjectionPlan(
+          vendor: vendor,
+          name: "gemini",
+          sourcePath: packageRelativePath(for: geminiFile, packageRoot: packageRoot),
+          packageRoot: packageRoot,
+          scope: scope,
+          workingDirectory: workingDirectory
+        ) {
+        plans.append(plan)
+      }
+    }
+  }
+  return plans
+}
+
+private func packageSkillProjectionPlan(
+  vendor: WorkflowPackageSkillVendor,
+  name: String,
+  sourcePath: String,
+  packageRoot: URL,
+  scope: WorkflowScope,
+  workingDirectory: URL
+) throws -> PackageSkillProjectionPlan? {
+  guard isSafeSkillProjectionName(name) else {
+    throw CLIUsageError("invalid skill name '\(name)'")
+  }
+  guard let normalized = WorkflowPackageManifestValidator.normalizePackageRelativePath(sourcePath) else {
+    throw CLIUsageError("skills.\(name).sourcePath: path must be package-relative")
+  }
+  let source = packageRoot.appendingPathComponent(normalized)
+  let sourceIsDirectory = (try? source.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+  let sourceRoot: URL
+  switch vendor {
+  case .codex, .claude:
+    sourceRoot = source.lastPathComponent == "SKILL.md" ? source.deletingLastPathComponent() : source
+    guard FileManager.default.fileExists(atPath: sourceRoot.appendingPathComponent("SKILL.md").path) else {
+      throw CLIUsageError("skill source must contain SKILL.md: \(sourceRoot.path)")
+    }
+  case .cursor:
+    sourceRoot = sourceIsDirectory ? source.appendingPathComponent("\(name).mdc") : source
+    guard sourceRoot.pathExtension == "mdc", FileManager.default.fileExists(atPath: sourceRoot.path) else {
+      throw CLIUsageError("cursor skill source must be a .mdc file: \(sourceRoot.path)")
+    }
+  case .agents:
+    sourceRoot = sourceIsDirectory ? source.appendingPathComponent("AGENTS.md") : source
+    guard sourceRoot.lastPathComponent == "AGENTS.md", FileManager.default.fileExists(atPath: sourceRoot.path) else {
+      throw CLIUsageError("agents skill source must be AGENTS.md: \(sourceRoot.path)")
+    }
+  case .gemini:
+    sourceRoot = sourceIsDirectory ? source.appendingPathComponent("GEMINI.md") : source
+    guard sourceRoot.lastPathComponent == "GEMINI.md", FileManager.default.fileExists(atPath: sourceRoot.path) else {
+      throw CLIUsageError("gemini skill source must be GEMINI.md: \(sourceRoot.path)")
+    }
+  }
+  guard let destination = packageSkillProjectionDestination(vendor: vendor, name: name, scope: scope, workingDirectory: workingDirectory) else {
+    return nil
+  }
+  return PackageSkillProjectionPlan(
+    vendor: vendor,
+    name: name,
+    sourcePath: packageRelativePath(for: sourceRoot, packageRoot: packageRoot),
+    destination: destination
+  )
+}
+
+private func packageSkillProjectionDestination(
+  vendor: WorkflowPackageSkillVendor,
+  name: String,
+  scope: WorkflowScope,
+  workingDirectory: URL
+) -> URL? {
+  let home = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
+  switch vendor {
+  case .codex:
+    let codexHome = CLIRuntimeEnvironment.mergedProcessEnvironment()["CODEX_HOME"]
+      .flatMap { $0.isEmpty ? nil : $0 }
+      .map { URL(fileURLWithPath: $0, isDirectory: true) }
+      ?? home.appendingPathComponent(".codex", isDirectory: true)
+    let root = scope == .user ? codexHome : workingDirectory.appendingPathComponent(".codex", isDirectory: true)
+    return root.appendingPathComponent("skills", isDirectory: true).appendingPathComponent(name, isDirectory: true)
+  case .claude:
+    let root = scope == .user ? home.appendingPathComponent(".claude", isDirectory: true) : workingDirectory.appendingPathComponent(".claude", isDirectory: true)
+    return root.appendingPathComponent("skills", isDirectory: true).appendingPathComponent(name, isDirectory: true)
+  case .cursor:
+    guard scope != .user else {
+      return nil
+    }
+    return workingDirectory
+      .appendingPathComponent(".cursor", isDirectory: true)
+      .appendingPathComponent("rules", isDirectory: true)
+      .appendingPathComponent("\(name).mdc", isDirectory: false)
+  case .agents:
+    guard scope != .user else {
+      return nil
+    }
+    return workingDirectory.appendingPathComponent("AGENTS.md", isDirectory: false)
+  case .gemini:
+    guard scope != .user else {
+      return nil
+    }
+    return workingDirectory.appendingPathComponent("GEMINI.md", isDirectory: false)
+  }
+}
+
+private func preflightSkillProjections(_ projections: [PackageSkillProjectionPlan], overwrite: Bool) throws {
+  for projection in projections where FileManager.default.fileExists(atPath: projection.destination.path) {
+    guard overwrite else {
+      throw CLIUsageError("skill projection already exists: \(projection.destination.path); pass --overwrite to replace it")
+    }
+  }
+}
+
+private func installSkillProjections(
+  _ projections: [PackageSkillProjectionPlan],
+  installedPackageRoot: URL,
+  overwrite: Bool
+) throws {
+  for projection in projections {
+    let source = installedPackageRoot.appendingPathComponent(projection.sourcePath)
+    guard FileManager.default.fileExists(atPath: source.path) else {
+      throw CLIUsageError("installed skill source missing: \(source.path)")
+    }
+    if FileManager.default.fileExists(atPath: projection.destination.path) {
+      guard overwrite else {
+        throw CLIUsageError("skill projection already exists: \(projection.destination.path); pass --overwrite to replace it")
+      }
+      try FileManager.default.removeItem(at: projection.destination)
+    }
+    try FileManager.default.createDirectory(at: projection.destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try FileManager.default.copyItem(at: source, to: projection.destination)
+  }
+}
+
+private func packageRelativePath(for url: URL, packageRoot: URL) -> String {
+  let rootPath = packageRoot.standardizedFileURL.path
+  let urlPath = url.standardizedFileURL.path
+  if urlPath == rootPath {
+    return "."
+  }
+  return String(urlPath.dropFirst(rootPath.hasSuffix("/") ? rootPath.count : rootPath.count + 1))
+}
+
+private func isSafeSkillProjectionName(_ name: String) -> Bool {
+  guard let first = name.unicodeScalars.first, isParityASCIIAlphaNumeric(first), name.unicodeScalars.count <= 80 else {
+    return false
+  }
+  return name.unicodeScalars.allSatisfy { scalar in
+    isParityASCIIAlphaNumeric(scalar) || scalar == "." || scalar == "_" || scalar == "-"
+  }
+}
+
 private func packageRoot(scope: WorkflowScope, workingDirectory: URL) -> URL {
   switch scope {
   case .user:
@@ -862,7 +1131,7 @@ private func renderRegistryConfig(
   text: String? = nil
 ) throws -> CLICommandResult {
   switch output {
-  case .json:
+  case .json, .jsonl:
     return CLICommandResult(exitCode: .success, stdout: try jsonString(config))
   case .text, .table:
     if let text {
@@ -884,7 +1153,7 @@ private func renderRegistryConfig(
 
 private func renderPackage(_ result: WorkflowPackageCommandResult, output: WorkflowOutputFormat) throws -> CLICommandResult {
   switch output {
-  case .json:
+  case .json, .jsonl:
     return CLICommandResult(exitCode: .success, stdout: try jsonString(result))
   case .text:
     if result.packages.isEmpty {

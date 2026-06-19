@@ -35,7 +35,7 @@ Deferred:
 ## Verification
 
 - `swift test --filter RielaViewerTests`
-- `swift build --product RielaMenuBarApp`
+- `swift build --product RielaApp`
 - `swift test --filter RielaServerTests`
 - `nix flake check`
 

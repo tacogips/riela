@@ -16,7 +16,7 @@ public struct SessionRerunOptions: Equatable, Sendable {
   public init(
     sessionId: String,
     stepId: String,
-    output: WorkflowOutputFormat = .text,
+    output: WorkflowOutputFormat = .jsonl,
     scope: WorkflowScope = .auto,
     workflowDefinitionDir: String? = nil,
     workingDirectory: String = FileManager.default.currentDirectoryPath,
@@ -47,7 +47,7 @@ public struct SessionResumeOptions: Equatable, Sendable {
 
   public init(
     sessionId: String,
-    output: WorkflowOutputFormat = .text,
+    output: WorkflowOutputFormat = .jsonl,
     scope: WorkflowScope = .auto,
     workflowDefinitionDir: String? = nil,
     workingDirectory: String = FileManager.default.currentDirectoryPath,
@@ -126,7 +126,7 @@ public struct SessionInspectionCommand: Sendable {
     } catch let error as CLIUsageError {
       return CLICommandResult(exitCode: .usage, stderr: error.message)
     } catch {
-      if options.output == .json {
+      if options.output.isStructured {
         let payload = SessionCommandFailureResult(sessionId: sessionId, error: "\(error)", exitCode: CLIExitCode.failure.rawValue)
         return CLICommandResult(exitCode: .failure, stdout: (try? jsonString(payload)) ?? "")
       }
@@ -213,7 +213,7 @@ public struct SessionInspectionCommand: Sendable {
       health: health
     )
     switch output {
-    case .json:
+    case .json, .jsonl:
       return CLICommandResult(exitCode: .success, stdout: try jsonString(result))
     case .text, .table:
       var lines = [
@@ -313,7 +313,7 @@ public struct SessionRerunCommand: Sendable {
   private func renderRerunSuccess(options: SessionRerunOptions, result: WorkflowRunResult) -> CLICommandResult {
     let exitCode = CLIExitCode(rawValue: result.exitCode) ?? .failure
     switch options.output {
-    case .json:
+    case .json, .jsonl:
       let payload = SessionRerunCommandResult(
         sourceSessionId: options.sessionId,
         sessionId: result.session.sessionId,
@@ -338,7 +338,7 @@ public struct SessionRerunCommand: Sendable {
   }
 
   private func failure(options: SessionRerunOptions, exitCode: CLIExitCode, error: String) -> CLICommandResult {
-    guard options.output == .json else {
+    guard options.output.isStructured else {
       return CLICommandResult(exitCode: exitCode, stderr: error)
     }
     let payload = SessionCommandFailureResult(sessionId: options.sessionId, error: error, exitCode: exitCode.rawValue)
@@ -429,7 +429,7 @@ public struct SessionResumeCommand: Sendable {
   private func renderResumeSuccess(options: SessionResumeOptions, result: WorkflowRunResult) -> CLICommandResult {
     let exitCode = CLIExitCode(rawValue: result.exitCode) ?? .failure
     switch options.output {
-    case .json:
+    case .json, .jsonl:
       let payload = SessionResumeCommandResult(
         sessionId: result.session.sessionId,
         status: result.session.status,
@@ -450,7 +450,7 @@ public struct SessionResumeCommand: Sendable {
   }
 
   private func resumeFailure(options: SessionResumeOptions, exitCode: CLIExitCode, error: String) -> CLICommandResult {
-    guard options.output == .json else {
+    guard options.output.isStructured else {
       return CLICommandResult(exitCode: exitCode, stderr: error)
     }
     let payload = SessionCommandFailureResult(sessionId: options.sessionId, error: error, exitCode: exitCode.rawValue)

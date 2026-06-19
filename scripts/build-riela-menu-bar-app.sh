@@ -3,16 +3,16 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 configuration="${CONFIGURATION:-release}"
-bundle_root="${repo_root}/.build/${configuration}/Riela.app"
+bundle_root="${repo_root}/.build/${configuration}/RielaApp.app"
 contents_dir="${bundle_root}/Contents"
 macos_dir="${contents_dir}/MacOS"
 
 cd "${repo_root}"
-swift build -c "${configuration}" --product RielaMenuBarApp
+swift build -c "${configuration}" --product RielaApp
 
 rm -rf "${bundle_root}"
 mkdir -p "${macos_dir}"
-cp ".build/${configuration}/RielaMenuBarApp" "${macos_dir}/Riela"
+cp ".build/${configuration}/RielaApp" "${macos_dir}/RielaApp"
 
 cat > "${contents_dir}/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -21,14 +21,16 @@ cat > "${contents_dir}/Info.plist" <<'PLIST'
 <dict>
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
+  <key>CFBundleDisplayName</key>
+  <string>RielaApp</string>
   <key>CFBundleExecutable</key>
-  <string>Riela</string>
+  <string>RielaApp</string>
   <key>CFBundleIdentifier</key>
   <string>com.tacogips.riela.menubar</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>Riela</string>
+  <string>RielaApp</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>

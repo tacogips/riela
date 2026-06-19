@@ -13,7 +13,14 @@ public enum CLIExitCode: Int32, Codable, Equatable, Sendable {
 public enum WorkflowOutputFormat: String, Codable, Sendable {
   case text
   case json
+  case jsonl
   case table
+}
+
+public extension WorkflowOutputFormat {
+  var isStructured: Bool {
+    self == .json || self == .jsonl
+  }
 }
 
 public enum WorkflowScope: String, Codable, Sendable {
@@ -66,7 +73,7 @@ public struct WorkflowManifestValidateOptions: Equatable, Sendable {
 
   public init(
     manifestPath: String,
-    output: WorkflowOutputFormat = .text,
+    output: WorkflowOutputFormat = .jsonl,
     executable: Bool = false,
     workingDirectory: String = FileManager.default.currentDirectoryPath
   ) {
@@ -133,7 +140,7 @@ public struct CLICommandOptions: Equatable, Sendable {
     command: String? = nil,
     target: String? = nil,
     arguments: [String] = [],
-    output: WorkflowOutputFormat = .text
+    output: WorkflowOutputFormat = .jsonl
   ) {
     self.scope = scope
     self.command = command
@@ -172,7 +179,7 @@ public struct WorkflowValidateOptions: Equatable, Sendable {
   public init(
     workflowName: String,
     resolution: WorkflowResolutionOptions,
-    output: WorkflowOutputFormat = .text,
+    output: WorkflowOutputFormat = .jsonl,
     executable: Bool = false,
     nodePatch: String? = nil
   ) {
@@ -193,7 +200,7 @@ public struct WorkflowInspectOptions: Equatable, Sendable {
   public init(
     workflowName: String,
     resolution: WorkflowResolutionOptions,
-    output: WorkflowOutputFormat = .text,
+    output: WorkflowOutputFormat = .jsonl,
     structure: Bool = false
   ) {
     self.workflowName = workflowName
@@ -231,7 +238,7 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     variables: String? = nil,
     nodePatch: String? = nil,
     mockScenarioPath: String? = nil,
-    output: WorkflowOutputFormat = .text,
+    output: WorkflowOutputFormat = .jsonl,
     maxSteps: Int? = nil,
     maxConcurrency: Int? = nil,
     maxLoopIterations: Int? = nil,
@@ -713,7 +720,7 @@ public struct RielaArgumentParser: CLIArgumentParsing {
 private struct ParsedWorkflowOptions {
   var workflowDefinitionDir: String?
   var scope: WorkflowScope = .auto
-  var output: WorkflowOutputFormat = .text
+  var output: WorkflowOutputFormat = .jsonl
   var executable = false
   var structure = false
   var variables: String?
@@ -800,7 +807,7 @@ private struct ParsedWorkflowOptions {
     case "--output":
       let raw = try readOptionValue(token, tokens: tokens, index: &index)
       guard let value = WorkflowOutputFormat(rawValue: raw) else {
-        throw CLIUsageError("invalid --output value '\(raw)'; expected text, json, or table")
+        throw CLIUsageError("invalid --output value '\(raw)'; expected text, json, jsonl, or table")
       }
       if value == .table && !allowTableOutput {
         throw CLIUsageError("`--output table` is only supported for workflow list, workflow status, package search, and package list")
@@ -937,7 +944,7 @@ private struct ParsedWorkflowOptions {
 }
 
 private func parseOutputOnly(_ tokens: [String], allowTableOutput: Bool) throws -> WorkflowOutputFormat {
-  var output = WorkflowOutputFormat.text
+  var output = WorkflowOutputFormat.jsonl
   var index = 0
   while index < tokens.count {
     let token = tokens[index]
@@ -946,7 +953,7 @@ private func parseOutputOnly(_ tokens: [String], allowTableOutput: Bool) throws 
         throw CLIUsageError("--output requires a value")
       }
       guard let value = WorkflowOutputFormat(rawValue: tokens[index + 1]) else {
-        throw CLIUsageError("invalid --output value '\(tokens[index + 1])'; expected text, json, or table")
+        throw CLIUsageError("invalid --output value '\(tokens[index + 1])'; expected text, json, jsonl, or table")
       }
       if value == .table && !allowTableOutput {
         throw CLIUsageError("`--output table` is only supported for workflow list, workflow status, package search, and package list")
@@ -958,7 +965,7 @@ private func parseOutputOnly(_ tokens: [String], allowTableOutput: Bool) throws 
     if token.hasPrefix("--output=") {
       let raw = String(token.dropFirst("--output=".count))
       guard let value = WorkflowOutputFormat(rawValue: raw) else {
-        throw CLIUsageError("invalid --output value '\(raw)'; expected text, json, or table")
+        throw CLIUsageError("invalid --output value '\(raw)'; expected text, json, jsonl, or table")
       }
       if value == .table && !allowTableOutput {
         throw CLIUsageError("`--output table` is only supported for workflow list, workflow status, package search, and package list")

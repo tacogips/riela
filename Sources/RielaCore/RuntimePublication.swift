@@ -233,10 +233,11 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       throw WorkflowPublicationError.unsupportedTransition(reason)
     }
 
+    let publishesRootOutput = request.publishesRootOutput || (!request.transitions.isEmpty && publishableTransitions.isEmpty)
     let acceptedOutput = WorkflowAcceptedOutputMetadata(
       payload: payload,
       when: candidate.when,
-      isRootOutput: request.publishesRootOutput,
+      isRootOutput: publishesRootOutput,
       acceptedAt: clock.now()
     )
     var completedExecution = try await store.updateStepExecution(
@@ -286,7 +287,7 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       session: session,
       stepExecution: completedExecution,
       publishedMessages: publishedMessages,
-      rootOutput: request.publishesRootOutput ? payload : nil
+      rootOutput: publishesRootOutput ? payload : nil
     )
   }
 

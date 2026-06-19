@@ -45,6 +45,14 @@ existing Riela-authored data. Remote auto-improve input is opt-in:
 `workflow run --endpoint ...` omits `autoImprove` by default and only sends the
 supervision policy when `--auto-improve` is set.
 
+CLI commands default to JSONL so automation can read one complete JSON record
+per line. Most commands emit a single JSONL record. `riela workflow run` emits
+progress records such as `session_started`, `step_started`, and
+`step_completed` before the final `run_result`, so callers can capture the
+session id immediately and inspect it while the run is still active. Use
+`--output json` for the legacy single JSON document or `--output text` for
+human-readable output.
+
 ## Install
 
 Install the Homebrew formula:

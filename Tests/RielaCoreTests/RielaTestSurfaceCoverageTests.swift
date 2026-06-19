@@ -252,6 +252,8 @@ final class RielaTestSurfaceCoverageTests: XCTestCase {
     XCTAssertTrue(envrc.contains("# Use direnv-aware export from kinko."))
     XCTAssertTrue(envrc.contains("if command -v kinko >/dev/null 2>&1; then"))
     XCTAssertTrue(envrc.contains(#"eval "$(kinko direnv export)""#))
+    XCTAssertTrue(envrc.contains("kinko --force get GEMINI_API_KEY --reveal"))
+    XCTAssertTrue(envrc.contains("source_env_if_exists .env.local"))
   }
 
   private func sourceTestCategory(_ path: String) -> String {

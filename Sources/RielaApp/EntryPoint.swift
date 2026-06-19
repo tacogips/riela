@@ -6,8 +6,8 @@ import RielaViewer
 
 @main
 @MainActor
-final class RielaMenuBarApp: NSObject, NSApplicationDelegate {
-  private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+final class RielaApp: NSObject, NSApplicationDelegate {
+  private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
   private let controller = WorkflowServingController()
   private var selectedWorkflow: WorkflowServeSelection?
   private var selectedWorkingDirectory = FileManager.default.currentDirectoryPath
@@ -17,7 +17,7 @@ final class RielaMenuBarApp: NSObject, NSApplicationDelegate {
 
   static func main() {
     let app = NSApplication.shared
-    let delegate = RielaMenuBarApp()
+    let delegate = RielaApp()
     app.delegate = delegate
     app.setActivationPolicy(.accessory)
     app.run()
@@ -30,8 +30,14 @@ final class RielaMenuBarApp: NSObject, NSApplicationDelegate {
   }
 
   private func configureStatusItem() {
-    statusItem.button?.title = "Riela"
-    statusItem.button?.toolTip = "Riela workflow serving client"
+    guard let button = statusItem.button else {
+      return
+    }
+    button.image = RielaAppIcon.workflowTemplateImage()
+    button.imagePosition = .imageOnly
+    button.imageScaling = .scaleProportionallyDown
+    button.toolTip = "Riela workflow serving client"
+    button.setAccessibilityLabel("Riela workflow serving client")
   }
 
   private func rebuildMenu() {
@@ -177,6 +183,40 @@ final class RielaMenuBarApp: NSObject, NSApplicationDelegate {
       status = state.diagnostics.first?.message ?? "Failed"
     }
     rebuildMenu()
+  }
+}
+
+private enum RielaAppIcon {
+  static func workflowTemplateImage() -> NSImage {
+    let size = NSSize(width: 18, height: 18)
+    let image = NSImage(size: size)
+    image.lockFocus()
+
+    NSColor.black.setStroke()
+    let edgePath = NSBezierPath()
+    edgePath.lineWidth = 1.8
+    edgePath.lineCapStyle = .round
+    edgePath.lineJoinStyle = .round
+    edgePath.move(to: NSPoint(x: 5, y: 9))
+    edgePath.line(to: NSPoint(x: 9, y: 13))
+    edgePath.line(to: NSPoint(x: 13, y: 13))
+    edgePath.move(to: NSPoint(x: 5, y: 9))
+    edgePath.line(to: NSPoint(x: 9, y: 5))
+    edgePath.line(to: NSPoint(x: 13, y: 5))
+    edgePath.stroke()
+
+    NSColor.black.setFill()
+    for center in [
+      NSPoint(x: 5, y: 9),
+      NSPoint(x: 13, y: 13),
+      NSPoint(x: 13, y: 5)
+    ] {
+      NSBezierPath(ovalIn: NSRect(x: center.x - 2, y: center.y - 2, width: 4, height: 4)).fill()
+    }
+
+    image.unlockFocus()
+    image.isTemplate = true
+    return image
   }
 }
 
@@ -557,9 +597,9 @@ private final class WorkflowViewerWindowController: NSWindowController, NSOutlin
 
 #else
 @main
-struct RielaMenuBarAppUnsupported {
+struct RielaAppUnsupported {
   static func main() {
-    print("RielaMenuBarApp is available on macOS only.")
+    print("RielaApp is available on macOS only.")
   }
 }
 #endif

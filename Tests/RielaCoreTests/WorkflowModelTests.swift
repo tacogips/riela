@@ -8,6 +8,7 @@ final class WorkflowModelTests: XCTestCase {
     XCTAssertEqual(normalizeCliAgentBackend("cursor-cli-agent"), .cursorCliAgent)
     XCTAssertNil(normalizeCliAgentBackend("official/openai-sdk"))
     XCTAssertEqual(normalizeNodeExecutionBackend("official/anthropic-sdk"), .officialAnthropicSDK)
+    XCTAssertEqual(normalizeNodeExecutionBackend("official/gemini-sdk"), .officialGeminiSDK)
   }
 
   func testWorkflowDecodesStepAddressedShape() throws {

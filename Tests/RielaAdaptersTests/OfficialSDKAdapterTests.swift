@@ -170,6 +170,83 @@ final class OfficialSDKAdapterTests: XCTestCase {
     XCTAssertEqual(body.messages, [AnthropicMessage(role: "user", content: "hello")])
   }
 
+  func testGeminiAdapterBuildsGenerateContentRequestAndExtractsTextSegments() async throws {
+    let executor = RecordingOfficialSDKExecutor(outcomes: [
+      .success(
+        OfficialSDKResponse(
+          body: .object([
+            "candidates": .array([
+              .object([
+                "content": .object([
+                  "parts": .array([
+                    .object(["text": .string("first")]),
+                    .object(["text": .string("second")])
+                  ])
+                ])
+              ])
+            ])
+          ])
+        )
+      )
+    ])
+    let adapter = GeminiSDKAdapter(
+      configuration: OfficialSDKAdapterConfiguration(
+        environment: [
+          "GOOGLE_API_KEY": googleTestKey(),
+          "GEMINI_API_KEY": geminiTestKey()
+        ],
+        requestExecutor: executor
+      )
+    )
+
+    let output = try await adapter.execute(geminiInput(systemPromptText: "system"), context: AdapterExecutionContext())
+
+    XCTAssertEqual(output.provider, "official-gemini-sdk")
+    XCTAssertEqual(output.payload["text"], .string("first\nsecond"))
+    let request = try XCTUnwrap(executor.requests().first)
+    XCTAssertEqual(request.apiKey, googleTestKey())
+    guard case let .geminiGenerateContent(body) = request.body else {
+      return XCTFail("Expected Gemini generateContent request")
+    }
+    XCTAssertEqual(body.model, "gemini-3.5-flash")
+    XCTAssertEqual(body.input, "hello")
+    XCTAssertEqual(body.system, "system")
+  }
+
+  func testGeminiAdapterFallsBackToGeminiAPIKeyWhenGoogleAPIKeyIsUnset() async throws {
+    let executor = RecordingOfficialSDKExecutor(outcomes: [
+      .success(OfficialSDKResponse(body: .object(["candidates": .array([])])))
+    ])
+    let adapter = GeminiSDKAdapter(
+      configuration: OfficialSDKAdapterConfiguration(
+        environment: ["GEMINI_API_KEY": geminiTestKey()],
+        requestExecutor: executor
+      )
+    )
+
+    _ = try await adapter.execute(geminiInput(), context: AdapterExecutionContext())
+
+    let request = try XCTUnwrap(executor.requests().first)
+    XCTAssertEqual(request.apiKey, geminiTestKey())
+  }
+
+  func testGeminiAdapterReportsMissingAPIKeyAsPolicyBlocked() async throws {
+    let adapter = GeminiSDKAdapter(
+      configuration: OfficialSDKAdapterConfiguration(
+        environment: [:],
+        requestExecutor: RecordingOfficialSDKExecutor(outcomes: [])
+      )
+    )
+
+    do {
+      _ = try await adapter.execute(geminiInput(), context: AdapterExecutionContext())
+      XCTFail("Expected policy blocked")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .policyBlocked)
+      XCTAssertEqual(error.message, "missing Gemini API key")
+    }
+  }
+
   func testOfficialSDKAdapterRetriesAndRedactsProviderFailures() async throws {
     let secret = openAITestKey()
     let executor = RecordingOfficialSDKExecutor(outcomes: [
@@ -315,6 +392,108 @@ final class OfficialSDKAdapterTests: XCTestCase {
     XCTAssertEqual(body["messages"], .array([.object(["role": .string("user"), "content": .string("hello")])]))
   }
 
+  func testDefaultGeminiHTTPExecutorBuildsGenerateContentRequestWithoutInjectedRequestExecutor() async throws {
+    let transport = RecordingOfficialSDKHTTPTransport(responses: [
+      try httpResponse([
+        "candidates": .array([
+          .object([
+            "content": .object([
+              "parts": .array([.object(["text": .string("default gemini")])])
+            ])
+          ])
+        ])
+      ])
+    ])
+    let adapter = GeminiSDKAdapter(
+      configuration: OfficialSDKAdapterConfiguration(
+        apiKeyEnv: "TEST_GEMINI_KEY",
+        baseURL: URL(string: "https://gemini.test/v1beta"),
+        environment: ["TEST_GEMINI_KEY": geminiTestKey()],
+        httpTransport: transport
+      )
+    )
+
+    let output = try await adapter.execute(geminiInput(systemPromptText: "system"), context: AdapterExecutionContext())
+
+    XCTAssertEqual(output.payload["text"], .string("default gemini"))
+    let request = try XCTUnwrap(transport.requests().first)
+    XCTAssertEqual(request.url?.absoluteString, "https://gemini.test/v1beta/models/gemini-3.5-flash:generateContent")
+    XCTAssertEqual(request.httpMethod, "POST")
+    XCTAssertEqual(request.value(forHTTPHeaderField: "x-goog-api-key"), geminiTestKey())
+    XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+    let body = try requestJSONObject(request)
+    XCTAssertEqual(
+      body["contents"],
+      .array([
+        .object([
+          "role": .string("user"),
+          "parts": .array([.object(["text": .string("hello")])])
+        ])
+      ])
+    )
+    XCTAssertEqual(
+      body["systemInstruction"],
+      .object(["parts": .array([.object(["text": .string("system")])])])
+    )
+  }
+
+  func testDefaultGeminiHTTPExecutorIncludesInlineImageParts() async throws {
+    let transport = RecordingOfficialSDKHTTPTransport(responses: [
+      try httpResponse([
+        "candidates": .array([
+          .object([
+            "content": .object([
+              "parts": .array([.object(["text": .string("OCR SAMPLE")])])
+            ])
+          ])
+        ])
+      ])
+    ])
+    let adapter = GeminiSDKAdapter(
+      configuration: OfficialSDKAdapterConfiguration(
+        apiKeyEnv: "TEST_GEMINI_KEY",
+        baseURL: URL(string: "https://gemini.test/v1beta"),
+        environment: ["TEST_GEMINI_KEY": geminiTestKey()],
+        httpTransport: transport
+      )
+    )
+
+    let output = try await adapter.execute(
+      geminiInput(
+        mergedVariables: [
+          "geminiInlineDataParts": .array([
+            .object([
+              "mimeType": .string("image/png"),
+              "dataBase64": .string("iVBORw0KGgo=")
+            ])
+          ])
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    XCTAssertEqual(output.payload["text"], .string("OCR SAMPLE"))
+    let request = try XCTUnwrap(transport.requests().first)
+    let body = try requestJSONObject(request)
+    XCTAssertEqual(
+      body["contents"],
+      .array([
+        .object([
+          "role": .string("user"),
+          "parts": .array([
+            .object([
+              "inline_data": .object([
+                "mime_type": .string("image/png"),
+                "data": .string("iVBORw0KGgo=")
+              ])
+            ]),
+            .object(["text": .string("hello")])
+          ])
+        ])
+      ])
+    )
+  }
+
   func testDefaultHTTPExecutorNormalizesProviderHTTPFailures() async throws {
     let secret = openAITestKey()
     let transport = RecordingOfficialSDKHTTPTransport(responses: [
@@ -420,6 +599,9 @@ final class OfficialSDKAdapterTests: XCTestCase {
     let anthropicExecutor = RecordingOfficialSDKExecutor(outcomes: [
       .success(OfficialSDKResponse(body: .object(["content": .array([.object(["type": .string("text"), "text": .string("anthropic")])])])) )
     ])
+    let geminiExecutor = RecordingOfficialSDKExecutor(outcomes: [
+      .success(OfficialSDKResponse(body: .object(["candidates": .array([.object(["content": .object(["parts": .array([.object(["text": .string("gemini")])])])])])])) )
+    ])
     let adapter = DispatchingNodeAdapter(
       configuration: DispatchingNodeAdapterConfiguration(
         openAISDK: OfficialSDKAdapterConfiguration(
@@ -433,15 +615,22 @@ final class OfficialSDKAdapterTests: XCTestCase {
             environment: ["TEST_ANTHROPIC_KEY": anthropicTestKey()],
             requestExecutor: anthropicExecutor
           )
+        ),
+        geminiSDK: OfficialSDKAdapterConfiguration(
+          apiKeyEnv: "TEST_GEMINI_KEY",
+          environment: ["TEST_GEMINI_KEY": geminiTestKey()],
+          requestExecutor: geminiExecutor
         )
       )
     )
 
     let openAIOutput = try await adapter.execute(openAIInput(), context: AdapterExecutionContext())
     let anthropicOutput = try await adapter.execute(anthropicInput(), context: AdapterExecutionContext())
+    let geminiOutput = try await adapter.execute(geminiInput(), context: AdapterExecutionContext())
 
     XCTAssertEqual(openAIOutput.payload["text"], .string("openai"))
     XCTAssertEqual(anthropicOutput.payload["text"], .string("anthropic"))
+    XCTAssertEqual(geminiOutput.payload["text"], .string("gemini"))
 
     do {
       _ = try await adapter.execute(cursorSDKInput(), context: AdapterExecutionContext())
@@ -473,6 +662,9 @@ final class OfficialSDKAdapterTests: XCTestCase {
     let anthropicTransport = RecordingOfficialSDKHTTPTransport(responses: [
       try httpResponse(["content": .array([.object(["type": .string("text"), "text": .string("anthropic default")])])])
     ])
+    let geminiTransport = RecordingOfficialSDKHTTPTransport(responses: [
+      try httpResponse(["candidates": .array([.object(["content": .object(["parts": .array([.object(["text": .string("gemini default")])])])])])])
+    ])
     let adapter = DispatchingNodeAdapter(
       configuration: DispatchingNodeAdapterConfiguration(
         openAISDK: OfficialSDKAdapterConfiguration(
@@ -486,17 +678,25 @@ final class OfficialSDKAdapterTests: XCTestCase {
             environment: ["TEST_ANTHROPIC_KEY": anthropicTestKey()],
             httpTransport: anthropicTransport
           )
+        ),
+        geminiSDK: OfficialSDKAdapterConfiguration(
+          apiKeyEnv: "TEST_GEMINI_KEY",
+          environment: ["TEST_GEMINI_KEY": geminiTestKey()],
+          httpTransport: geminiTransport
         )
       )
     )
 
     let openAIOutput = try await adapter.execute(openAIInput(), context: AdapterExecutionContext())
     let anthropicOutput = try await adapter.execute(anthropicInput(), context: AdapterExecutionContext())
+    let geminiOutput = try await adapter.execute(geminiInput(), context: AdapterExecutionContext())
 
     XCTAssertEqual(openAIOutput.payload["text"], .string("openai default"))
     XCTAssertEqual(anthropicOutput.payload["text"], .string("anthropic default"))
+    XCTAssertEqual(geminiOutput.payload["text"], .string("gemini default"))
     XCTAssertEqual(openAITransport.requests().count, 1)
     XCTAssertEqual(anthropicTransport.requests().count, 1)
+    XCTAssertEqual(geminiTransport.requests().count, 1)
   }
 
   private func openAIInput(
@@ -518,6 +718,18 @@ final class OfficialSDKAdapterTests: XCTestCase {
     )
   }
 
+  private func geminiInput(
+    systemPromptText: String? = nil,
+    mergedVariables: JSONObject = [:]
+  ) -> AdapterExecutionInput {
+    AdapterExecutionInput(
+      node: AgentNodePayload(id: "worker", executionBackend: .officialGeminiSDK, model: "gemini-3.5-flash"),
+      promptText: "hello",
+      systemPromptText: systemPromptText,
+      mergedVariables: mergedVariables
+    )
+  }
+
   private func cursorSDKInput() -> AdapterExecutionInput {
     AdapterExecutionInput(
       node: AgentNodePayload(id: "worker", executionBackend: .officialCursorSDK, model: "composer-2"),
@@ -531,6 +743,14 @@ final class OfficialSDKAdapterTests: XCTestCase {
 
   private func anthropicTestKey() -> String {
     ["anthropic", "test", "123456"].joined(separator: "-")
+  }
+
+  private func geminiTestKey() -> String {
+    ["gemini", "test", "123456"].joined(separator: "-")
+  }
+
+  private func googleTestKey() -> String {
+    ["google", "test", "123456"].joined(separator: "-")
   }
 
   private func httpResponse(_ object: JSONObject, statusCode: Int = 200) throws -> OfficialSDKHTTPResponse {

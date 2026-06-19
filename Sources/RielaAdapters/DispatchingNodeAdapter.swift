@@ -7,17 +7,20 @@ public typealias NodeAdapterRegistry = [NodeExecutionBackend: NodeAdapterFactory
 public struct DispatchingNodeAdapterConfiguration: Sendable {
   public var openAISDK: OfficialSDKAdapterConfiguration
   public var anthropicSDK: AnthropicSDKAdapterConfiguration
+  public var geminiSDK: OfficialSDKAdapterConfiguration
   public var registry: NodeAdapterRegistry
   public var includeDefaultOfficialSDKAdapters: Bool
 
   public init(
     openAISDK: OfficialSDKAdapterConfiguration = OfficialSDKAdapterConfiguration(),
     anthropicSDK: AnthropicSDKAdapterConfiguration = AnthropicSDKAdapterConfiguration(),
+    geminiSDK: OfficialSDKAdapterConfiguration = OfficialSDKAdapterConfiguration(),
     registry: NodeAdapterRegistry = [:],
     includeDefaultOfficialSDKAdapters: Bool = true
   ) {
     self.openAISDK = openAISDK
     self.anthropicSDK = anthropicSDK
+    self.geminiSDK = geminiSDK
     self.registry = registry
     self.includeDefaultOfficialSDKAdapters = includeDefaultOfficialSDKAdapters
   }
@@ -66,6 +69,9 @@ public actor DispatchingNodeAdapter: NodeAdapter {
       },
       .officialAnthropicSDK: {
         AnthropicSDKAdapter(configuration: configuration.anthropicSDK)
+      },
+      .officialGeminiSDK: {
+        GeminiSDKAdapter(configuration: configuration.geminiSDK)
       }
     ]
   }

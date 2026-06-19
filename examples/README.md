@@ -304,6 +304,44 @@ riela workflow run telegram-sdk-trio-chat \
   --input '{"request":"Rina, explain the SDK trio setup"}'
 ```
 
+### `gemini-sdk-worker`
+
+Single-step workflow using the Gemini SDK worker add-on:
+
+- `ask-gemini` uses `riela/gemini-sdk-worker`
+- the worker resolves to `official/gemini-sdk`
+- live execution requires `addon.env.GEMINI_API_KEY` or
+  `addon.env.GOOGLE_API_KEY` to map from a runtime Gemini API key
+
+Validate it:
+
+```bash
+riela workflow validate gemini-sdk-worker --workflow-definition-dir ./examples
+```
+
+### `gemini-ocr-worker`
+
+Single-step OCR workflow using the Gemini SDK worker add-on:
+
+- `ocr-image` uses `riela/gemini-sdk-worker`
+- the worker resolves to `official/gemini-sdk`
+- the request includes a small inline JPEG image with visible text
+  `OCR SAMPLE 42`
+- live execution requires `addon.env.GEMINI_API_KEY` or
+  `addon.env.GOOGLE_API_KEY` to map from a runtime Gemini API key
+
+Validate it:
+
+```bash
+riela workflow validate gemini-ocr-worker --workflow-definition-dir ./examples
+```
+
+Run it live when `GEMINI_API_KEY` is available:
+
+```bash
+riela workflow run gemini-ocr-worker --workflow-definition-dir ./examples --output json
+```
+
 ### `telegram-agent-trio-time-signal`
 
 Scheduled Telegram reply companion for the Telegram trio chat:

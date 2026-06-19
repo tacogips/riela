@@ -2,7 +2,7 @@ import Foundation
 import RielaAddons
 import RielaCore
 
-public let rielaSwiftMigrationVersion = "0.1.2"
+public let rielaSwiftMigrationVersion = "0.1.3"
 
 public enum CLIExitCode: Int32, Codable, Equatable, Sendable {
   case success = 0

@@ -81,11 +81,21 @@ public struct DeterministicWorkflowExecutablePreflight: WorkflowExecutablePrefli
   }
 }
 
+public enum WorkflowSourceKind: String, Codable, Equatable, Sendable {
+  case workflow
+  case package
+}
+
 public struct WorkflowValidationCommandResult: Codable, Equatable, Sendable {
   public var valid: Bool
   public var workflowId: String
   public var sourceScope: WorkflowScope
+  public var sourceKind: WorkflowSourceKind
   public var workflowDirectory: String
+  public var packageName: String?
+  public var packageVersion: String?
+  public var packageDirectory: String?
+  public var mutable: Bool
   public var diagnostics: [WorkflowValidationDiagnostic]
   public var nodeValidationResults: [NodeValidationResult]
 
@@ -93,14 +103,24 @@ public struct WorkflowValidationCommandResult: Codable, Equatable, Sendable {
     valid: Bool,
     workflowId: String,
     sourceScope: WorkflowScope,
+    sourceKind: WorkflowSourceKind = .workflow,
     workflowDirectory: String,
+    packageName: String? = nil,
+    packageVersion: String? = nil,
+    packageDirectory: String? = nil,
+    mutable: Bool = true,
     diagnostics: [WorkflowValidationDiagnostic],
     nodeValidationResults: [NodeValidationResult]
   ) {
     self.valid = valid
     self.workflowId = workflowId
     self.sourceScope = sourceScope
+    self.sourceKind = sourceKind
     self.workflowDirectory = workflowDirectory
+    self.packageName = packageName
+    self.packageVersion = packageVersion
+    self.packageDirectory = packageDirectory
+    self.mutable = mutable
     self.diagnostics = diagnostics
     self.nodeValidationResults = nodeValidationResults
   }
@@ -451,13 +471,46 @@ public struct WorkflowManifestValidationCommandResult: Codable, Equatable, Senda
 public struct WorkflowCatalogEntry: Codable, Equatable, Sendable {
   public var workflowName: String
   public var scope: WorkflowScope
+  public var sourceKind: WorkflowSourceKind
   public var workflowDirectory: String
+  public var packageName: String?
+  public var packageVersion: String?
+  public var packageDirectory: String?
+  public var mutable: Bool
   public var valid: Bool
   public var diagnostics: [WorkflowValidationDiagnostic]
+
+  public init(
+    workflowName: String,
+    scope: WorkflowScope,
+    sourceKind: WorkflowSourceKind = .workflow,
+    workflowDirectory: String,
+    packageName: String? = nil,
+    packageVersion: String? = nil,
+    packageDirectory: String? = nil,
+    mutable: Bool = true,
+    valid: Bool,
+    diagnostics: [WorkflowValidationDiagnostic]
+  ) {
+    self.workflowName = workflowName
+    self.scope = scope
+    self.sourceKind = sourceKind
+    self.workflowDirectory = workflowDirectory
+    self.packageName = packageName
+    self.packageVersion = packageVersion
+    self.packageDirectory = packageDirectory
+    self.mutable = mutable
+    self.valid = valid
+    self.diagnostics = diagnostics
+  }
 }
 
 public struct WorkflowCatalogResult: Codable, Equatable, Sendable {
   public var workflows: [WorkflowCatalogEntry]
+}
+
+private func workflowSourceKind(_ bundle: ResolvedWorkflowBundle) -> WorkflowSourceKind {
+  bundle.packageManifest == nil ? .workflow : .package
 }
 
 public struct WorkflowManifestValidateCommand: Sendable {
@@ -548,7 +601,12 @@ public struct WorkflowCatalogCommand: Sendable {
       let entry = WorkflowCatalogEntry(
         workflowName: target,
         scope: bundle.sourceScope,
+        sourceKind: workflowSourceKind(bundle),
         workflowDirectory: bundle.workflowDirectory,
+        packageName: bundle.packageManifest?.name,
+        packageVersion: bundle.packageManifest?.version,
+        packageDirectory: bundle.packageDirectory,
+        mutable: bundle.packageManifest == nil,
         valid: !diagnostics.contains { $0.severity == .error },
         diagnostics: diagnostics
       )
@@ -582,7 +640,12 @@ public struct WorkflowCatalogCommand: Sendable {
           entries.append(WorkflowCatalogEntry(
             workflowName: name,
             scope: bundle.sourceScope,
+            sourceKind: workflowSourceKind(bundle),
             workflowDirectory: bundle.workflowDirectory,
+            packageName: bundle.packageManifest?.name,
+            packageVersion: bundle.packageManifest?.version,
+            packageDirectory: bundle.packageDirectory,
+            mutable: bundle.packageManifest == nil,
             valid: !diagnostics.contains { $0.severity == .error },
             diagnostics: diagnostics
           ))
@@ -590,7 +653,9 @@ public struct WorkflowCatalogCommand: Sendable {
           entries.append(WorkflowCatalogEntry(
             workflowName: name,
             scope: scope,
+            sourceKind: .workflow,
             workflowDirectory: root.appendingPathComponent(name).path,
+            mutable: true,
             valid: false,
             diagnostics: [
               WorkflowValidationDiagnostic(severity: .error, path: "workflow.json", message: "\(error)")
@@ -599,9 +664,71 @@ public struct WorkflowCatalogCommand: Sendable {
         }
       }
     }
+    entries.append(contentsOf: try packageCatalogEntries(options: parsed))
     return entries.sorted { left, right in
-      left.scope.rawValue == right.scope.rawValue ? left.workflowName < right.workflowName : left.scope.rawValue < right.scope.rawValue
+      if left.scope.rawValue != right.scope.rawValue {
+        return left.scope.rawValue < right.scope.rawValue
+      }
+      if left.workflowName != right.workflowName {
+        return left.workflowName < right.workflowName
+      }
+      return left.sourceKind.rawValue < right.sourceKind.rawValue
     }
+  }
+
+  private func packageCatalogEntries(options: ParsedCatalogOptions) throws -> [WorkflowCatalogEntry] {
+    var entries: [WorkflowCatalogEntry] = []
+    for (scope, root) in packageRoots(scope: options.scope, workingDirectory: options.workingDirectory) {
+      guard FileManager.default.fileExists(atPath: root.path) else {
+        continue
+      }
+      for manifestURL in try packageManifestURLs(in: root) {
+        let packageDirectory = manifestURL.deletingLastPathComponent().standardizedFileURL
+        do {
+          let manifest = try JSONDecoder().decode(WorkflowPackageManifest.self, from: Data(contentsOf: manifestURL))
+          guard manifest.kind == .workflow else {
+            continue
+          }
+          let issues = WorkflowPackageManifestValidator.validate(manifest)
+            + WorkflowPackageManifestValidator.validateWorkflowBundle(manifest, packageRoot: packageDirectory)
+          let workflowDirectory: URL
+          if let normalized = WorkflowPackageManifestValidator.normalizePackageRelativePath(manifest.workflowDirectory ?? ".") {
+            workflowDirectory = packageDirectory.appendingPathComponent(normalized, isDirectory: true).standardizedFileURL
+          } else {
+            workflowDirectory = packageDirectory
+          }
+          let diagnostics = issues.map {
+            WorkflowValidationDiagnostic(severity: .error, path: $0.path, message: $0.message)
+          }
+          entries.append(WorkflowCatalogEntry(
+            workflowName: manifest.name,
+            scope: scope,
+            sourceKind: .package,
+            workflowDirectory: workflowDirectory.path,
+            packageName: manifest.name,
+            packageVersion: manifest.version,
+            packageDirectory: packageDirectory.path,
+            mutable: false,
+            valid: diagnostics.isEmpty,
+            diagnostics: diagnostics
+          ))
+        } catch {
+          entries.append(WorkflowCatalogEntry(
+            workflowName: packageDirectoryRelativeName(packageDirectory, packageRoot: root),
+            scope: scope,
+            sourceKind: .package,
+            workflowDirectory: packageDirectory.path,
+            packageDirectory: packageDirectory.path,
+            mutable: false,
+            valid: false,
+            diagnostics: [
+              WorkflowValidationDiagnostic(severity: .error, path: "riela-package.json", message: "\(error)")
+            ]
+          ))
+        }
+      }
+    }
+    return entries
   }
 
   private func render(_ result: WorkflowCatalogResult, output: WorkflowOutputFormat) throws -> String {
@@ -609,10 +736,14 @@ public struct WorkflowCatalogCommand: Sendable {
     case .json:
       return try jsonString(result)
     case .text:
-      return result.workflows.map { "\($0.workflowName)\t\($0.scope.rawValue)\t\($0.valid ? "valid" : "invalid")\t\($0.workflowDirectory)" }.joined(separator: "\n") + (result.workflows.isEmpty ? "" : "\n")
+      return result.workflows.map {
+        "\($0.workflowName)\t\($0.scope.rawValue)\t\($0.sourceKind.rawValue)\t\($0.valid ? "valid" : "invalid")\t\($0.workflowDirectory)"
+      }.joined(separator: "\n") + (result.workflows.isEmpty ? "" : "\n")
     case .table:
-      let header = "WORKFLOW\tSCOPE\tSTATUS\tDIRECTORY"
-      let rows = result.workflows.map { "\($0.workflowName)\t\($0.scope.rawValue)\t\($0.valid ? "valid" : "invalid")\t\($0.workflowDirectory)" }
+      let header = "WORKFLOW\tSCOPE\tSOURCE\tSTATUS\tDIRECTORY"
+      let rows = result.workflows.map {
+        "\($0.workflowName)\t\($0.scope.rawValue)\t\($0.sourceKind.rawValue)\t\($0.valid ? "valid" : "invalid")\t\($0.workflowDirectory)"
+      }
       return ([header] + rows).joined(separator: "\n") + "\n"
     }
   }
@@ -674,6 +805,44 @@ public struct WorkflowCatalogCommand: Sendable {
       return url.lastPathComponent
     }
   }
+
+  private func packageRoots(scope: WorkflowScope, workingDirectory: String) -> [(WorkflowScope, URL)] {
+    let project = URL(fileURLWithPath: workingDirectory).appendingPathComponent(".riela/packages", isDirectory: true)
+    let user = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory()).appendingPathComponent(".riela/packages", isDirectory: true)
+    switch scope {
+    case .project:
+      return [(.project, project)]
+    case .user:
+      return [(.user, user)]
+    case .auto, .direct:
+      return [(.project, project), (.user, user)]
+    }
+  }
+
+  private func packageManifestURLs(in root: URL) throws -> [URL] {
+    guard let enumerator = FileManager.default.enumerator(
+      at: root,
+      includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey],
+      options: [.skipsHiddenFiles]
+    ) else {
+      return []
+    }
+    var urls: [URL] = []
+    for case let url as URL in enumerator where url.lastPathComponent == "riela-package.json" {
+      urls.append(url)
+      enumerator.skipDescendants()
+    }
+    return urls.sorted { $0.path < $1.path }
+  }
+
+  private func packageDirectoryRelativeName(_ packageDirectory: URL, packageRoot: URL) -> String {
+    let packagePath = packageDirectory.standardizedFileURL.path
+    let rootPath = packageRoot.standardizedFileURL.path
+    guard packagePath.hasPrefix(rootPath + "/") else {
+      return packageDirectory.lastPathComponent
+    }
+    return String(packagePath.dropFirst(rootPath.count + 1))
+  }
 }
 
 public struct WorkflowValidateCommand: Sendable {
@@ -717,7 +886,12 @@ public struct WorkflowValidateCommand: Sendable {
         valid: valid,
         workflowId: bundle.workflow.workflowId,
         sourceScope: bundle.sourceScope,
+        sourceKind: workflowSourceKind(bundle),
         workflowDirectory: bundle.workflowDirectory,
+        packageName: bundle.packageManifest?.name,
+        packageVersion: bundle.packageManifest?.version,
+        packageDirectory: bundle.packageDirectory,
+        mutable: bundle.packageManifest == nil,
         diagnostics: diagnostics,
         nodeValidationResults: nodeResults
       )
@@ -752,8 +926,12 @@ public struct WorkflowValidateCommand: Sendable {
     case .text, .table:
       var lines = [
         result.valid ? "valid: \(result.workflowId)" : "invalid: \(result.workflowId)",
-        "source: \(result.sourceScope.rawValue) \(result.workflowDirectory)"
+        "source: \(result.sourceScope.rawValue) \(result.sourceKind.rawValue) \(result.workflowDirectory)"
       ]
+      if let packageName = result.packageName {
+        lines.append("package: \(packageName) \(result.packageVersion ?? "") \(result.packageDirectory ?? "")")
+      }
+      lines.append("mutable: \(result.mutable ? "true" : "false")")
       lines.append(contentsOf: result.diagnostics.map { "\($0.severity.rawValue): \($0.path): \($0.message)" })
       lines.append(contentsOf: result.nodeValidationResults.map { "\($0.valid ? "ok" : "error"): \($0.nodeId): \($0.message)" })
       return lines.joined(separator: "\n") + "\n"
@@ -798,7 +976,12 @@ public struct WorkflowCallableInspection: Codable, Equatable, Sendable {
 public struct WorkflowInspectionSummary: Codable, Equatable, Sendable {
   public var workflowId: String
   public var sourceScope: WorkflowScope
+  public var sourceKind: WorkflowSourceKind
   public var workflowDirectory: String
+  public var packageName: String?
+  public var packageVersion: String?
+  public var packageDirectory: String?
+  public var mutable: Bool
   public var description: String
   public var entryStepId: String
   public var managerStepId: String?
@@ -958,7 +1141,12 @@ public struct WorkflowInspectCommand: Sendable {
     return WorkflowInspectionSummary(
       workflowId: workflow.workflowId,
       sourceScope: bundle.sourceScope,
+      sourceKind: workflowSourceKind(bundle),
       workflowDirectory: bundle.workflowDirectory,
+      packageName: bundle.packageManifest?.name,
+      packageVersion: bundle.packageManifest?.version,
+      packageDirectory: bundle.packageDirectory,
+      mutable: bundle.packageManifest == nil,
       description: workflow.description,
       entryStepId: workflow.entryStepId,
       managerStepId: workflow.managerStepId,
@@ -1017,7 +1205,7 @@ public struct WorkflowInspectCommand: Sendable {
   private func renderText(_ summary: WorkflowInspectionSummary) -> String {
     var lines = [
       "workflow: \(summary.workflowId)",
-      "source: \(summary.sourceScope.rawValue) \(summary.workflowDirectory)",
+      "source: \(summary.sourceScope.rawValue) \(summary.sourceKind.rawValue) \(summary.workflowDirectory)",
       "entryStepId: \(summary.entryStepId)",
       "steps: \(summary.stepIds.joined(separator: ", "))",
       "nodes: \(summary.nodeRegistryIds.joined(separator: ", "))",
@@ -1026,6 +1214,10 @@ public struct WorkflowInspectCommand: Sendable {
     if let manager = summary.managerStepId {
       lines.append("managerStepId: \(manager)")
     }
+    if let packageName = summary.packageName {
+      lines.append("package: \(packageName) \(summary.packageVersion ?? "") \(summary.packageDirectory ?? "")")
+    }
+    lines.append("mutable: \(summary.mutable ? "true" : "false")")
     lines.append("callableStepId: \(summary.callable.stepId)")
     lines.append("callableRole: \(summary.callable.role.rawValue)")
     if let input = summary.callable.input {

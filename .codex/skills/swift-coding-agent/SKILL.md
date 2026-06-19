@@ -86,6 +86,8 @@ Use Swift idioms:
 - Prefer `let` and immutable value types unless mutation is necessary.
 - Model invalid states out of existence with enums, optionals, throwing initializers, and typed errors.
 - Actively look for stringly typed domains during implementation and review. Prefer `RawRepresentable` enums for fixed modes, statuses, sort orders, roles, strategies, and policy values when invalid values should fail closed.
+- Do not add `String` fields for producer-owned closed DTO values. Public command/API result fields such as `sourceKind`, provenance kind, status, mode, role, policy, or decision should be typed as enums, usually `enum Name: String, Codable, Equatable, Sendable`, with stable raw values for JSON and CLI compatibility.
+- Keep `.rawValue` at wire/rendering boundaries. Internal branching, tests, and DTO construction should use enum cases such as `.workflow` or `.package`, not ad-hoc string literals.
 - For external protocol fields with arbitrary future values, prefer lossless open enums with known cases plus `custom(String)` when the type clarifies behavior without rejecting unknown data. Codable must decode unknown strings into `.custom`, encode back the exact original string, and preserve JSON/CLI/GraphQL/persisted raw spellings.
 - Keep validation and dispatch strict even for open enums: known supported cases may dispatch; `.custom` values should usually round-trip, log, or surface diagnostics, but must not be accidentally treated as supported.
 - Keep each external protocol field to one canonical wire format. Do not decode both numeric and string dates, multiple casing variants, or alternate spellings unless an explicit compatibility requirement exists; encode only the canonical form and reject non-canonical input at the boundary.

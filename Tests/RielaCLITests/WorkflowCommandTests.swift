@@ -792,7 +792,7 @@ extension WorkflowCommandTests {
     let validateFailure = try decodeJSON(WorkflowValidationFailureResult.self, from: validate.stdout)
     XCTAssertEqual(validateFailure.workflowId, "../../examples/worker-only-single-step")
     XCTAssertEqual(validateFailure.exitCode, CLIExitCode.usage.rawValue)
-    XCTAssertTrue(validateFailure.error.contains("invalid scoped workflow name"))
+    XCTAssertTrue(validateFailure.error.contains("invalid scoped workflow or package name"))
 
     let inspect = await RielaCLIApplication().run([
       "workflow", "inspect", "nested/workflow",
@@ -804,7 +804,7 @@ extension WorkflowCommandTests {
     let inspectFailure = try decodeJSON(WorkflowInspectionFailureResult.self, from: inspect.stdout)
     XCTAssertEqual(inspectFailure.workflowId, "nested/workflow")
     XCTAssertEqual(inspectFailure.exitCode, CLIExitCode.usage.rawValue)
-    XCTAssertTrue(inspectFailure.error.contains("invalid scoped workflow name"))
+    XCTAssertTrue(inspectFailure.error.contains("invalid scoped workflow or package name"))
 
     let run = await RielaCLIApplication().run([
       "workflow", "run", "../worker-only-single-step",
@@ -816,7 +816,50 @@ extension WorkflowCommandTests {
     let runFailure = try decodeJSON(WorkflowRunFailureResult.self, from: run.stdout)
     XCTAssertEqual(runFailure.target, "../worker-only-single-step")
     XCTAssertEqual(runFailure.exitCode, CLIExitCode.usage.rawValue)
-    XCTAssertTrue(runFailure.error.contains("invalid scoped workflow name"))
+    XCTAssertTrue(runFailure.error.contains("invalid scoped workflow or package name"))
+  }
+
+  func testWorkflowResolutionSkipsNonWorkflowPackages() async throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-non-workflow-package-\(UUID().uuidString)", isDirectory: true)
+    let packageDirectory = tempDir
+      .appendingPathComponent(".riela/packages/addon-only", isDirectory: true)
+    try FileManager.default.createDirectory(at: packageDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    try """
+    {
+      "name": "addon-only",
+      "version": "1.0.0",
+      "kind": "node-addon",
+      "description": "Addon-only package",
+      "tags": [],
+      "registry": "local",
+      "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "checksumAlgorithm": "md5",
+      "addons": [{
+        "name": "demo-addon",
+        "version": "1.0.0",
+        "sourcePath": "addons/demo-addon",
+        "contentDigest": "sha256:\(String(repeating: "a", count: 64))",
+        "capabilities": [{"name": "process.spawn", "reason": "runs package command"}],
+        "execution": {"kind": "local-command", "entrypoint": "run.sh"}
+      }]
+    }
+    """.write(to: packageDirectory.appendingPathComponent("riela-package.json"), atomically: true, encoding: .utf8)
+
+    let validate = await RielaCLIApplication().run([
+      "workflow", "validate", "addon-only",
+      "--scope", "project",
+      "--working-dir", tempDir.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(validate.exitCode, .failure)
+    XCTAssertTrue(validate.stderr.isEmpty)
+    let failure = try decodeJSON(WorkflowValidationFailureResult.self, from: validate.stdout)
+    XCTAssertEqual(failure.workflowId, "addon-only")
+    XCTAssertTrue(failure.error.contains("not found"), failure.error)
+    XCTAssertFalse(failure.error.contains("package source validation failed"), failure.error)
   }
 
   func testScopedWorkflowResolutionRejectsSymlinkEscapes() async throws {
@@ -1022,6 +1065,9 @@ extension WorkflowCommandTests {
     XCTAssertEqual(validate.exitCode, .success)
     let validation = try decodeJSON(WorkflowValidationCommandResult.self, from: validate.stdout)
     XCTAssertTrue(validation.valid)
+    XCTAssertEqual(validation.sourceKind, .package)
+    XCTAssertEqual(validation.packageDirectory, workflowDir.path)
+    XCTAssertEqual(validation.mutable, false)
     XCTAssertEqual(validation.nodeValidationResults, [])
 
     let inspect = await app.run([
@@ -1031,6 +1077,9 @@ extension WorkflowCommandTests {
     ])
     XCTAssertEqual(inspect.exitCode, .success)
     let summary = try decodeJSON(WorkflowInspectionSummary.self, from: inspect.stdout)
+    XCTAssertEqual(summary.sourceKind, .package)
+    XCTAssertEqual(summary.packageDirectory, workflowDir.path)
+    XCTAssertEqual(summary.mutable, false)
     let native = try XCTUnwrap(summary.nativeBundleAddons.first)
     XCTAssertEqual(native.nodeId, "native-node")
     XCTAssertEqual(native.addon, "native-runner")
@@ -1157,8 +1206,8 @@ extension WorkflowCommandTests {
     ])
     XCTAssertEqual(status.exitCode, .success)
     XCTAssertTrue(status.stderr.isEmpty)
-    XCTAssertTrue(status.stdout.contains("WORKFLOW\tSCOPE\tSTATUS\tDIRECTORY"))
-    XCTAssertTrue(status.stdout.contains("demo\tproject\tvalid"))
+    XCTAssertTrue(status.stdout.contains("WORKFLOW\tSCOPE\tSOURCE\tSTATUS\tDIRECTORY"))
+    XCTAssertTrue(status.stdout.contains("demo\tproject\tworkflow\tvalid"))
 
     let manifestURL = tempDir.appendingPathComponent("riela-package.json")
     try """
@@ -1578,6 +1627,58 @@ extension WorkflowCommandTests {
     XCTAssertEqual(listed.packages.map(\.name), ["demo-package"])
     XCTAssertEqual(listed.packages.first?.valid, true)
 
+    let workflowList = await app.run([
+      "workflow", "list",
+      "--scope", "project",
+      "--working-dir", tempDir.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(workflowList.exitCode, .success, workflowList.stderr)
+    let listedWorkflows = try decodeJSON(WorkflowCatalogResult.self, from: workflowList.stdout)
+    let packageCatalogEntry = try XCTUnwrap(listedWorkflows.workflows.first { $0.workflowName == "demo-package" })
+    XCTAssertEqual(packageCatalogEntry.sourceKind, .package)
+    XCTAssertEqual(packageCatalogEntry.packageName, "demo-package")
+    XCTAssertEqual(packageCatalogEntry.mutable, false)
+    XCTAssertEqual(packageCatalogEntry.valid, true)
+
+    let packageValidate = await app.run([
+      "workflow", "validate", "demo-package",
+      "--scope", "project",
+      "--working-dir", tempDir.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(packageValidate.exitCode, .success, packageValidate.stderr)
+    let packageValidation = try decodeJSON(WorkflowValidationCommandResult.self, from: packageValidate.stdout)
+    XCTAssertEqual(packageValidation.workflowId, "worker-only-single-step")
+    XCTAssertEqual(packageValidation.sourceKind, .package)
+    XCTAssertEqual(packageValidation.packageName, "demo-package")
+    XCTAssertEqual(packageValidation.mutable, false)
+
+    let packageInspect = await app.run([
+      "workflow", "inspect", "demo-package",
+      "--scope", "project",
+      "--working-dir", tempDir.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(packageInspect.exitCode, .success, packageInspect.stderr)
+    let workflowPackageInspection = try decodeJSON(WorkflowInspectionSummary.self, from: packageInspect.stdout)
+    XCTAssertEqual(workflowPackageInspection.workflowId, "worker-only-single-step")
+    XCTAssertEqual(workflowPackageInspection.sourceKind, .package)
+    XCTAssertEqual(workflowPackageInspection.packageName, "demo-package")
+    XCTAssertEqual(workflowPackageInspection.mutable, false)
+
+    let packageWorkflowRun = await app.run([
+      "workflow", "run", "demo-package",
+      "--scope", "project",
+      "--working-dir", tempDir.path,
+      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+      "--output", "json"
+    ])
+    XCTAssertEqual(packageWorkflowRun.exitCode, .success, packageWorkflowRun.stderr)
+    let packageWorkflowRunResult = try decodeJSON(WorkflowRunResult.self, from: packageWorkflowRun.stdout)
+    XCTAssertEqual(packageWorkflowRunResult.workflowId, "worker-only-single-step")
+    XCTAssertEqual(packageWorkflowRunResult.status, .completed)
+
     let registryAdd = await app.run([
       "package", "registry", "add", "local",
       "--registry-url", "https://github.com/example/registry",
@@ -1667,6 +1768,11 @@ extension WorkflowCommandTests {
     XCTAssertEqual(registryURLPrecedenceRecord["registry"]?.stringValue, "local")
     XCTAssertEqual(registryURLPrecedenceRecord["registryUrl"]?.stringValue, "https://github.com/override/packages")
 
+    let runtimeRecordsRoot = tempDir.appendingPathComponent(".riela/sessions/runtime-records", isDirectory: true)
+    let runtimeRecordCountBeforeDryRun = (try? FileManager.default.contentsOfDirectory(
+      at: runtimeRecordsRoot,
+      includingPropertiesForKeys: [.isDirectoryKey]
+    ).count) ?? 0
     for command in ["run", "temp-run"] {
       let dryRun = await app.run([
         "package", command, "demo-package",
@@ -1679,7 +1785,11 @@ extension WorkflowCommandTests {
       let dryRunResult = try decodeJSON(WorkflowPackageCommandResult.self, from: dryRun.stdout)
       XCTAssertEqual(dryRunResult.dryRun, true)
       XCTAssertNil(dryRunResult.runSessionId)
-      XCTAssertFalse(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent(".riela/sessions/runtime-records").path))
+      let runtimeRecordCountAfterDryRun = (try? FileManager.default.contentsOfDirectory(
+        at: runtimeRecordsRoot,
+        includingPropertiesForKeys: [.isDirectoryKey]
+      ).count) ?? 0
+      XCTAssertEqual(runtimeRecordCountAfterDryRun, runtimeRecordCountBeforeDryRun)
     }
 
     let scopedPackageSource = tempDir.appendingPathComponent("scoped-package-source", isDirectory: true)
@@ -1703,6 +1813,17 @@ extension WorkflowCommandTests {
       "--output", "json"
     ])
     XCTAssertEqual(scopedInstall.exitCode, .success, scopedInstall.stderr)
+
+    let scopedPackageValidate = await app.run([
+      "workflow", "validate", "@scope/scoped-flow",
+      "--scope", "project",
+      "--working-dir", tempDir.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(scopedPackageValidate.exitCode, .success, scopedPackageValidate.stderr)
+    let scopedPackageValidation = try decodeJSON(WorkflowValidationCommandResult.self, from: scopedPackageValidate.stdout)
+    XCTAssertEqual(scopedPackageValidation.sourceKind, .package)
+    XCTAssertEqual(scopedPackageValidation.packageName, "@scope/scoped-flow")
 
     let scopedRegistryRun = await app.run([
       "workflow", "run", "@scope/scoped-flow",

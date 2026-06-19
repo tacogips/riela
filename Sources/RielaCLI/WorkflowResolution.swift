@@ -9,6 +9,7 @@ public struct ResolvedWorkflowBundle: Equatable, Sendable {
   public var workflowDirectory: String
   public var diagnostics: [WorkflowValidationDiagnostic]
   public var packageManifest: WorkflowPackageManifest?
+  public var packageDirectory: String?
 
   public init(
     workflow: WorkflowDefinition,
@@ -16,7 +17,8 @@ public struct ResolvedWorkflowBundle: Equatable, Sendable {
     sourceScope: WorkflowScope,
     workflowDirectory: String,
     diagnostics: [WorkflowValidationDiagnostic] = [],
-    packageManifest: WorkflowPackageManifest? = nil
+    packageManifest: WorkflowPackageManifest? = nil,
+    packageDirectory: String? = nil
   ) {
     self.workflow = workflow
     self.nodePayloads = nodePayloads
@@ -24,6 +26,7 @@ public struct ResolvedWorkflowBundle: Equatable, Sendable {
     self.workflowDirectory = workflowDirectory
     self.diagnostics = diagnostics
     self.packageManifest = packageManifest
+    self.packageDirectory = packageDirectory
   }
 }
 
@@ -49,7 +52,12 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
         errors.append("\(workflowURL.path) not found")
         continue
       }
-      return try loadBundle(at: resolvedDirectory, scope: candidate.scope)
+      return try loadBundle(
+        at: resolvedDirectory,
+        scope: candidate.scope,
+        packageManifest: candidate.packageManifest,
+        packageDirectory: candidate.packageDirectory
+      )
     }
     throw WorkflowResolutionError.notFound(options.workflowName, errors)
   }
@@ -58,6 +66,22 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     var directory: URL
     var rootDirectory: URL
     var scope: WorkflowScope
+    var packageManifest: WorkflowPackageManifest?
+    var packageDirectory: URL?
+
+    init(
+      directory: URL,
+      rootDirectory: URL,
+      scope: WorkflowScope,
+      packageManifest: WorkflowPackageManifest? = nil,
+      packageDirectory: URL? = nil
+    ) {
+      self.directory = directory
+      self.rootDirectory = rootDirectory
+      self.scope = scope
+      self.packageManifest = packageManifest
+      self.packageDirectory = packageDirectory
+    }
   }
 
   private func candidateDirectories(for options: WorkflowResolutionOptions) throws -> [CandidateDirectory] {
@@ -70,8 +94,10 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
         CandidateDirectory(directory: directRoot, rootDirectory: directRoot, scope: .direct)
       ]
     }
-    guard isSafeScopedWorkflowName(options.workflowName) else {
-      throw CLIUsageError("invalid scoped workflow name '\(options.workflowName)'; expected /^[a-zA-Z0-9][a-zA-Z0-9-_]{0,63}$/")
+    let safeWorkflowName = isSafeScopedWorkflowName(options.workflowName)
+    let safePackageName = WorkflowPackageManifestValidator.isSafePackageName(options.workflowName)
+    guard safeWorkflowName || safePackageName else {
+      throw CLIUsageError("invalid scoped workflow or package name '\(options.workflowName)'")
     }
     let project = workingDirectory
       .appendingPathComponent(".riela")
@@ -81,21 +107,83 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       .appendingPathComponent(".riela")
       .appendingPathComponent("workflows")
       .standardizedFileURL
+    let workflowCandidates: [CandidateDirectory]
     switch options.scope {
     case .project:
-      return [CandidateDirectory(directory: project.appendingPathComponent(options.workflowName).standardizedFileURL, rootDirectory: project, scope: .project)]
+      workflowCandidates = safeWorkflowName
+        ? [CandidateDirectory(directory: project.appendingPathComponent(options.workflowName).standardizedFileURL, rootDirectory: project, scope: .project)]
+        : []
     case .user:
-      return [CandidateDirectory(directory: user.appendingPathComponent(options.workflowName).standardizedFileURL, rootDirectory: user, scope: .user)]
+      workflowCandidates = safeWorkflowName
+        ? [CandidateDirectory(directory: user.appendingPathComponent(options.workflowName).standardizedFileURL, rootDirectory: user, scope: .user)]
+        : []
     case .auto:
-      return [
+      workflowCandidates = safeWorkflowName ? [
         CandidateDirectory(directory: project.appendingPathComponent(options.workflowName).standardizedFileURL, rootDirectory: project, scope: .project),
         CandidateDirectory(directory: user.appendingPathComponent(options.workflowName).standardizedFileURL, rootDirectory: user, scope: .user)
-      ]
+      ] : []
     case .direct:
-      return [
+      workflowCandidates = safeWorkflowName ? [
         CandidateDirectory(directory: project.appendingPathComponent(options.workflowName).standardizedFileURL, rootDirectory: project, scope: .project),
         CandidateDirectory(directory: user.appendingPathComponent(options.workflowName).standardizedFileURL, rootDirectory: user, scope: .user)
-      ]
+      ] : []
+    }
+    return workflowCandidates + (safePackageName ? try packageCandidateDirectories(for: options, workingDirectory: workingDirectory) : [])
+  }
+
+  private func packageCandidateDirectories(
+    for options: WorkflowResolutionOptions,
+    workingDirectory: URL
+  ) throws -> [CandidateDirectory] {
+    var candidates: [CandidateDirectory] = []
+    for (scope, root) in packageRoots(scope: options.scope, workingDirectory: workingDirectory) {
+      let packageDirectory = root.appendingPathComponent(options.workflowName, isDirectory: true).standardizedFileURL
+      guard isContained(packageDirectory, in: root) else {
+        continue
+      }
+      let manifestURL = packageDirectory.appendingPathComponent("riela-package.json")
+      guard FileManager.default.fileExists(atPath: manifestURL.path) else {
+        continue
+      }
+      let manifest = try JSONDecoder().decode(WorkflowPackageManifest.self, from: Data(contentsOf: manifestURL))
+      guard manifest.kind == .workflow else {
+        continue
+      }
+      let issues = WorkflowPackageManifestValidator.validate(manifest)
+        + WorkflowPackageManifestValidator.validateWorkflowBundle(manifest, packageRoot: packageDirectory)
+      guard issues.isEmpty else {
+        throw CLIUsageError("package source validation failed: \(issues.map { "\($0.path): \($0.message)" }.joined(separator: "; "))")
+      }
+      guard let workflowDirectory = WorkflowPackageManifestValidator.normalizePackageRelativePath(manifest.workflowDirectory ?? ".") else {
+        throw CLIUsageError("package workflowDirectory must be package-relative")
+      }
+      let resolvedWorkflowDirectory = packageDirectory.appendingPathComponent(workflowDirectory, isDirectory: true).standardizedFileURL
+      guard isContained(resolvedWorkflowDirectory.resolvingSymlinksInPath(), in: packageDirectory.resolvingSymlinksInPath()) else {
+        throw CLIUsageError("package workflowDirectory escapes package root: \(manifest.workflowDirectory ?? ".")")
+      }
+      candidates.append(CandidateDirectory(
+        directory: resolvedWorkflowDirectory,
+        rootDirectory: packageDirectory,
+        scope: scope,
+        packageManifest: manifest,
+        packageDirectory: packageDirectory
+      ))
+    }
+    return candidates
+  }
+
+  private func packageRoots(scope: WorkflowScope, workingDirectory: URL) -> [(WorkflowScope, URL)] {
+    let project = workingDirectory.appendingPathComponent(".riela/packages", isDirectory: true).standardizedFileURL
+    let user = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory())
+      .appendingPathComponent(".riela/packages", isDirectory: true)
+      .standardizedFileURL
+    switch scope {
+    case .project:
+      return [(.project, project)]
+    case .user:
+      return [(.user, user)]
+    case .auto, .direct:
+      return [(.project, project), (.user, user)]
     }
   }
 
@@ -105,7 +193,12 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     return directoryPath == rootPath || directoryPath.hasPrefix(rootPath + "/")
   }
 
-  private func loadBundle(at directory: URL, scope: WorkflowScope) throws -> ResolvedWorkflowBundle {
+  private func loadBundle(
+    at directory: URL,
+    scope: WorkflowScope,
+    packageManifest providedPackageManifest: WorkflowPackageManifest? = nil,
+    packageDirectory: URL? = nil
+  ) throws -> ResolvedWorkflowBundle {
     let workflowURL = try containedFile(
       directory.appendingPathComponent("workflow.json"),
       in: directory,
@@ -139,14 +232,16 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       }
       nodePayloads[registryNode.id] = absolutizedStdioPaths(in: hydratedPayload, workflowDirectory: directory)
     }
-    let packageManifest = try loadPackageManifestIfPresent(at: directory)
+    let packageManifest = try providedPackageManifest ?? loadPackageManifestIfPresent(at: directory)
+    let resolvedPackageDirectory = packageDirectory?.path ?? (packageManifest == nil ? nil : directory.path)
     return ResolvedWorkflowBundle(
       workflow: workflow,
       nodePayloads: nodePayloads,
       sourceScope: scope,
       workflowDirectory: directory.path,
       diagnostics: validation.diagnostics,
-      packageManifest: packageManifest
+      packageManifest: packageManifest,
+      packageDirectory: resolvedPackageDirectory
     )
   }
 

@@ -1,4 +1,5 @@
 import Foundation
+import RielaAddons
 import RielaCore
 
 public let rielaSwiftMigrationVersion = "0.1.1"
@@ -683,10 +684,13 @@ public struct RielaArgumentParser: CLIArgumentParsing {
   }
 
   private func rejectUnsafeScopedWorkflowName(_ target: String, parsed: ParsedWorkflowOptions) throws {
-    guard parsed.workflowDefinitionDir == nil, !isSafeScopedWorkflowName(target) else {
+    guard parsed.workflowDefinitionDir == nil,
+      !isSafeScopedWorkflowName(target),
+      !WorkflowPackageManifestValidator.isSafePackageName(target)
+    else {
       return
     }
-    throw CLIUsageError("invalid scoped workflow name '\(target)'; expected /^[a-zA-Z0-9][a-zA-Z0-9-_]{0,63}$/")
+    throw CLIUsageError("invalid scoped workflow or package name '\(target)'")
   }
 
   private func rejectUnsafeScopedRunTarget(_ target: String, parsed: ParsedWorkflowOptions) throws {

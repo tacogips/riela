@@ -23,6 +23,16 @@ adapters return candidate outputs only; session ids, step execution ids,
 workflow message ids, output publication, root output selection, continuation,
 resume, rerun, replay, and GraphQL/session DTO projection are runtime-owned.
 
+Installed workflow packages are local workflow sources. After
+`riela package install <name>`, package-provided workflows appear in
+`riela workflow list` and can be used with ordinary workflow commands such as
+`riela workflow validate <name>`, `riela workflow inspect <name>`, and
+`riela workflow run <name>`. `workflow run --from-registry` is only for
+registry-backed execution without a prior local install. Workflow command JSON
+includes provenance fields such as `sourceKind`, `packageName`,
+`packageDirectory`, and `mutable` so package-derived workflows can be treated as
+installed, read-only artifacts.
+
 Local agent backend ids remain explicit compatibility contracts:
 `codex-agent`, `claude-code-agent`, and `cursor-cli-agent`. Official SDK adapter
 parity is tracked separately; `official/cursor-sdk` is not aliased to

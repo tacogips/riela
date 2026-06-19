@@ -560,8 +560,13 @@ fileprivate extension ScopedParityCommandRunner {
       guard let sourceId = options.target, let eventFile = parsed.eventFile else {
         throw CLIUsageError("events emit requires <source-id> --event-file <path>")
       }
-      let envelope = try eventEnvelope(from: JSONReferenceLoader().object(from: eventFile, workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath), sourceIdOverride: sourceId)
       let config = try loadEventConfigIfPresent(eventRoot: root)
+      let source = config?.sources.first { $0.id == sourceId }
+      let envelope = try eventEnvelope(
+        from: JSONReferenceLoader().object(from: eventFile, workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath),
+        sourceIdOverride: sourceId,
+        source: source
+      )
       let triggerResult: EventDryRunResult?
       if let config {
         triggerResult = await awaitDryRun(config: config, envelope: envelope)
@@ -987,11 +992,14 @@ fileprivate extension ScopedParityCommandRunner {
   }
 
   private func eventEnvelope(from object: JSONObject) throws -> ExternalEventEnvelope {
-    try eventEnvelope(from: object, sourceIdOverride: nil)
+    try eventEnvelope(from: object, sourceIdOverride: nil, source: nil)
   }
 
-  private func eventEnvelope(from object: JSONObject, sourceIdOverride: String?) throws -> ExternalEventEnvelope {
+  private func eventEnvelope(from object: JSONObject, sourceIdOverride: String?, source: EventSourceContract?) throws -> ExternalEventEnvelope {
     guard case let .string(sourceId)? = object["sourceId"] else {
+      if let sourceIdOverride, let normalized = gatewayFixtureEnvelope(from: object, sourceId: sourceIdOverride, source: source) {
+        return normalized
+      }
       if let sourceIdOverride {
         return ExternalEventEnvelope(
           sourceId: sourceIdOverride,
@@ -1031,6 +1039,126 @@ fileprivate extension ScopedParityCommandRunner {
     return date
   }
 
+  private func gatewayFixtureEnvelope(
+    from object: JSONObject,
+    sourceId: String,
+    source: EventSourceContract?
+  ) -> ExternalEventEnvelope? {
+    switch source?.kind {
+    case .telegramGateway:
+      return telegramGatewayFixtureEnvelope(from: object, sourceId: sourceId)
+    case .discordGateway:
+      return discordGatewayFixtureEnvelope(from: object, sourceId: sourceId)
+    default:
+      return nil
+    }
+  }
+
+  private func telegramGatewayFixtureEnvelope(from object: JSONObject, sourceId: String) -> ExternalEventEnvelope? {
+    guard let message = jsonObjectValue(object["message"]),
+      let text = message["text"]?.stringValue,
+      let chat = jsonObjectValue(message["chat"])
+    else {
+      return nil
+    }
+    let chatId = jsonStringOrIntegerValue(chat["id"]) ?? "telegram-chat"
+    let messageId = jsonStringOrIntegerValue(message["message_id"]) ?? "message"
+    let updateId = jsonStringOrIntegerValue(object["update_id"]) ?? messageId
+    let actor = telegramActor(message["from"])
+    let conversation = compactObject([
+      "id": .string(chatId),
+      "threadId": jsonStringOrIntegerValue(message["message_thread_id"]).map(JSONValue.string),
+      "title": chat["title"],
+      "type": chat["type"]
+    ])
+    return ExternalEventEnvelope(
+      sourceId: sourceId,
+      eventId: updateId,
+      provider: "telegram",
+      eventType: "chat.message",
+      receivedAt: Date(timeIntervalSince1970: jsonNumberValue(message["date"]) ?? 0),
+      actor: actor,
+      conversation: conversation,
+      input: [
+        "text": .string(text),
+        "provider": .string("telegram"),
+        "history": .array([]),
+        "historySource": .string("fixture"),
+        "attachments": .array([]),
+        "imagePaths": .array([]),
+        "attachmentText": .string("")
+      ]
+    )
+  }
+
+  private func telegramActor(_ value: JSONValue?) -> JSONObject? {
+    guard let from = jsonObjectValue(value) else {
+      return nil
+    }
+    return compactObject([
+      "id": jsonStringOrIntegerValue(from["id"]).map(JSONValue.string),
+      "displayName": from["first_name"] ?? from["username"],
+      "username": from["username"],
+      "isBot": from["is_bot"]
+    ])
+  }
+
+  private func discordGatewayFixtureEnvelope(from object: JSONObject, sourceId: String) -> ExternalEventEnvelope? {
+    guard let messageId = jsonStringOrIntegerValue(object["id"]),
+      let channelId = jsonStringOrIntegerValue(object["channel_id"]),
+      let text = object["content"]?.stringValue
+    else {
+      return nil
+    }
+    let parentChannelId = jsonStringOrIntegerValue(object["parent_channel_id"])
+    let conversationId = parentChannelId ?? channelId
+    let author = jsonObjectValue(object["author"])
+    let history = jsonArrayValue(object["history"]) ?? []
+    return ExternalEventEnvelope(
+      sourceId: sourceId,
+      eventId: messageId,
+      provider: "discord",
+      eventType: "chat.message",
+      receivedAt: discordTimestamp(object["timestamp"]),
+      actor: discordActor(author),
+      conversation: compactObject([
+        "id": .string(conversationId),
+        "threadId": parentChannelId == nil ? nil : .string(channelId),
+        "guildId": jsonStringOrIntegerValue(object["guild_id"]).map(JSONValue.string)
+      ]),
+      input: [
+        "text": .string(text),
+        "provider": .string("discord"),
+        "history": .array(history),
+        "historySource": object["historySourceMode"] ?? .string("fixture"),
+        "attachments": .array([]),
+        "imagePaths": .array([]),
+        "attachmentText": .string("")
+      ]
+    )
+  }
+
+  private func discordActor(_ author: JSONObject?) -> JSONObject? {
+    guard let author else {
+      return nil
+    }
+    return compactObject([
+      "id": jsonStringOrIntegerValue(author["id"]).map(JSONValue.string),
+      "displayName": author["global_name"] ?? author["username"],
+      "username": author["username"],
+      "isBot": author["bot"]
+    ])
+  }
+
+  private func discordTimestamp(_ value: JSONValue?) -> Date {
+    guard let timestamp = value?.stringValue else {
+      return Date(timeIntervalSince1970: 0)
+    }
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.date(from: timestamp) ?? Date(timeIntervalSince1970: 0)
+  }
+
   private func jsonObjectValue(_ value: JSONValue?) -> JSONObject? {
     guard case let .object(object)? = value else {
       return nil
@@ -1043,5 +1171,29 @@ fileprivate extension ScopedParityCommandRunner {
       return nil
     }
     return number
+  }
+
+  private func jsonArrayValue(_ value: JSONValue?) -> [JSONValue]? {
+    guard case let .array(array)? = value else {
+      return nil
+    }
+    return array
+  }
+
+  private func jsonStringOrIntegerValue(_ value: JSONValue?) -> String? {
+    switch value {
+    case let .string(string)?:
+      return string
+    case let .number(number)? where number.rounded() == number:
+      return String(Int64(number))
+    case let .number(number)?:
+      return String(number)
+    default:
+      return nil
+    }
+  }
+
+  private func compactObject(_ object: [String: JSONValue?]) -> JSONObject {
+    object.compactMapValues { $0 }
   }
 }

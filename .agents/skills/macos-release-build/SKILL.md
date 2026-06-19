@@ -54,20 +54,35 @@ password manager. Do not commit Apple credentials.
 
 ## Local Build Workflow
 
-### 1. Check release plan
+### 1. Check version alignment
+
+Before tagging or publishing, verify the release version is consistent across
+the package metadata and built CLI:
+
+```bash
+version="$(tr -d '[:space:]' < VERSION)"
+cli_version="$(nix develop -c bash -lc 'swift run riela --version' | tail -n 1 | tr -d '[:space:]')"
+test "$cli_version" = "$version"
+```
+
+The CLI output must exactly match `VERSION`. In this repository the CLI version
+is exposed through `rielaSwiftMigrationVersion`, so update that constant when
+preparing a new release.
+
+### 2. Check release plan
 
 ```bash
 task build:homebrew-cask -- --dry-run darwin-arm64 darwin-x64
 ```
 
-### 2. Build signed, notarized, and stapled DMGs
+### 3. Build signed, notarized, and stapled DMGs
 
 ```bash
 kinko exec --env APPLE_SIGNING_IDENTITY,APPLE_ID,APPLE_PASSWORD,APPLE_TEAM_ID -- \
   task build:homebrew-cask -- darwin-arm64 darwin-x64
 ```
 
-### 3. Verify DMG outputs
+### 4. Verify DMG outputs
 
 ```bash
 ls -lh dist/homebrew-cask/riela-<version>-darwin-arm64.dmg

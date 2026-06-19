@@ -180,15 +180,16 @@
       "role": "worker",
       "transitions": [
         {
-          "toStepId": "send-yui-reply"
-        },
-        {
           "toStepId": "read-mika-memory",
           "label": "handoff_mika"
         },
         {
           "toStepId": "read-rina-memory",
           "label": "handoff_rina"
+        },
+        {
+          "toStepId": "send-yui-reply",
+          "label": "!handoff_mika && !handoff_rina"
         }
       ]
     },
@@ -223,15 +224,16 @@
       "role": "worker",
       "transitions": [
         {
-          "toStepId": "send-mika-reply"
-        },
-        {
           "toStepId": "read-yui-memory",
           "label": "handoff_yui"
         },
         {
           "toStepId": "read-rina-memory",
           "label": "handoff_rina"
+        },
+        {
+          "toStepId": "send-mika-reply",
+          "label": "!handoff_yui && !handoff_rina"
         }
       ]
     },
@@ -266,15 +268,16 @@
       "role": "worker",
       "transitions": [
         {
-          "toStepId": "send-rina-reply"
-        },
-        {
           "toStepId": "read-yui-memory",
           "label": "handoff_yui"
         },
         {
           "toStepId": "read-mika-memory",
           "label": "handoff_mika"
+        },
+        {
+          "toStepId": "send-rina-reply",
+          "label": "!handoff_yui && !handoff_mika"
         }
       ]
     },

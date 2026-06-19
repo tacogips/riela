@@ -140,11 +140,12 @@ final class EventDryRunTests: XCTestCase {
     """#.utf8)))
   }
 
-  func testDryRunRejectsUnsupportedEnvelopeEventType() async {
+  func testDryRunAcceptsSourceSpecificEnvelopeEventType() async {
     let source = EventSourceContract(id: "web-a", kind: .webhook, provider: "web", routePath: "/hook")
     let binding = EventBindingContract(
       id: "bind-a",
       sourceId: "web-a",
+      match: .init(eventType: "custom.event"),
       workflowName: "workflow-a",
       inputMapping: .init(mode: .eventInput)
     )
@@ -159,12 +160,9 @@ final class EventDryRunTests: XCTestCase {
 
     let result = await DeterministicEventDryRunTrigger().dryRun(.init(sources: [source], bindings: [binding], envelope: envelope))
 
-    XCTAssertFalse(result.accepted)
-    XCTAssertTrue(result.diagnostics.contains {
-      $0.code == "INVALID_EVENT_ENVELOPE"
-        && $0.path == "envelope.eventType"
-        && $0.message == "event type must be one of message, chat.message, event-input"
-    })
+    XCTAssertTrue(result.accepted)
+    XCTAssertEqual(result.diagnostics, [])
+    XCTAssertEqual(result.triggers.map(\.bindingId), ["bind-a"])
   }
 
   func testEventSourceKindOpenEnumRoundTripsUnknownValues() throws {

@@ -11,6 +11,9 @@
 - Messages that call Rina Cursor route only to Rina.
 - If the selected persona is asked to hear another named persona too, that node
   sets a handoff flag such as `handoff_mika`, allowing a follow-up node response.
+- Handoff replies include a visible provider-neutral mention such as `@Mika` or
+  `@Rina` plus a concrete question, so autonomous discussion is readable in the
+  chat instead of being only an internal route.
 - Each persona reads only its own recent markdown memory before replying, using
   `workflowInput.memoryRoot`, `RIELA_TRIO_MEMORY_ROOT`, or the example fallback
   `/tmp/riflow-tribot`.

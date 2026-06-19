@@ -65,6 +65,8 @@ def is_object(value):
 def upstream_payloads(envelope):
   source = resolved_input(envelope)
   payloads = []
+  if is_object(source) and isinstance(source.get("replyText"), str):
+    payloads.append(source)
   for entry in source.get("upstream", []) if isinstance(source.get("upstream"), list) else []:
     payload = entry.get("output", {}).get("payload") if isinstance(entry, dict) else None
     if is_object(payload):

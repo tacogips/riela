@@ -69,8 +69,7 @@ cask "riela" do
   sha256 arm: "$darwin_arm64_sha",
          intel: "$darwin_x64_sha"
 
-  url "$release_base_url/riela-#{version}-#{arch}.dmg",
-      verified: "github.com/tacogips/riela/releases/download/"
+  url "$release_base_url/riela-#{version}-#{arch}.dmg"
   name "riela"
   desc "Swift-native workflow runtime for cooperative multi-agent execution"
   homepage "https://github.com/tacogips/riela"

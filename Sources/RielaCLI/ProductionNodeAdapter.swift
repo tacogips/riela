@@ -129,6 +129,9 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
         ]
       )
     }
+    if input.addon.name == "riela/chat-reply-worker" {
+      return try executeChatReplyWorker(input)
+    }
     return AdapterExecutionOutput(
       provider: "riela-builtin-addon",
       model: input.addon.name,
@@ -139,6 +142,73 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
         "addon": .string(input.addon.name),
         "stepId": .string(input.stepId)
       ]
+      )
+  }
+
+  private func executeChatReplyWorker(_ input: WorkflowAddonExecutionInput) throws -> AdapterExecutionOutput {
+    guard input.addon.version == nil || input.addon.version == "1" else {
+      throw AdapterExecutionError(.policyBlocked, "unsupported riela/chat-reply-worker version '\(input.addon.version ?? "")'")
+    }
+    let config = input.addon.config ?? [:]
+    guard let textTemplate = nonEmptyString(config["textTemplate"]) else {
+      throw AdapterExecutionError(.policyBlocked, "riela/chat-reply-worker config.textTemplate is required")
+    }
+
+    var variables = input.variables
+    for (key, value) in input.resolvedInputPayload {
+      variables[key] = value
+    }
+    variables["input"] = .object(input.resolvedInputPayload)
+    variables["inbox"] = .object([
+      "latest": .object([
+        "output": .object([
+          "payload": .object(input.resolvedInputPayload)
+        ])
+      ])
+    ])
+    variables["workflowId"] = .string(input.workflowId)
+    variables["stepId"] = .string(input.stepId)
+    variables["nodeId"] = .string(input.nodeId)
+    variables["addonName"] = .string(input.addon.name)
+    for (key, value) in renderAddonInputs(input.addon.inputs, variables: variables) {
+      variables[key] = value
+    }
+
+    let text = renderPromptTemplate(textTemplate, variables: variables)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else {
+      throw AdapterExecutionError(.invalidOutput, "riela/chat-reply-worker rendered empty reply text")
+    }
+
+    let replyAs = nonEmptyString(config["replyAsTemplate"]).map {
+      renderPromptTemplate($0, variables: variables)
+    }?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    var payload = input.resolvedInputPayload
+    payload["status"] = .string("ok")
+    payload["addon"] = .string(input.addon.name)
+    payload["stepId"] = .string(input.stepId)
+    payload["text"] = .string(text)
+    payload["replyText"] = .string(text)
+    payload["dispatchStatus"] = .string("intent-only")
+    if let replyAs, !replyAs.isEmpty {
+      payload["replyAs"] = .string(replyAs)
+    }
+
+    var when: [String: Bool] = ["always": true]
+    for (key, value) in input.resolvedInputPayload {
+      if case let .bool(flag) = value {
+        when[key] = flag
+      }
+    }
+
+    return AdapterExecutionOutput(
+      provider: "riela-builtin-addon",
+      model: input.addon.name,
+      promptText: "",
+      completionPassed: true,
+      when: when,
+      payload: payload
     )
   }
 

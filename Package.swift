@@ -23,7 +23,7 @@ let package = Package(
     .executable(name: "claude-code-agent", targets: ["ClaudeCodeAgentCLI"]),
     .executable(name: "cursor-cli-agent", targets: ["CursorCLIAgentCLI"]),
     .executable(name: "riela", targets: ["RielaCLI"]),
-    .executable(name: "RielaMenuBarApp", targets: ["RielaMenuBarApp"])
+    .executable(name: "RielaApp", targets: ["RielaApp"])
   ],
   targets: [
     .target(name: "RielaCore"),
@@ -59,7 +59,7 @@ let package = Package(
       ]
     ),
     .executableTarget(
-      name: "RielaMenuBarApp",
+      name: "RielaApp",
       dependencies: [
         "RielaServer",
         "RielaViewer"

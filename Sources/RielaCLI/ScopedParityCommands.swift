@@ -436,7 +436,7 @@ fileprivate extension ScopedParityCommandRunner {
         WorkflowRuntimePersistenceProjector.snapshot(session: result.session, workflowMessages: workflowMessages)
       )
       let rendered = try jsonString(result)
-      if options.output == .json {
+      if options.output.isStructured {
         return CLICommandResult(exitCode: CLIExitCode(rawValue: result.exitCode) ?? .failure, stdout: rendered)
       }
       return CLICommandResult(exitCode: CLIExitCode(rawValue: result.exitCode) ?? .failure, stdout: "called step \(stepId)\nstatus: \(result.status.rawValue)\n")

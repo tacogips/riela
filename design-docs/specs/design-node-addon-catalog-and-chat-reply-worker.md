@@ -541,9 +541,10 @@ compact authored reference instead of a workflow-local `node-*.json` payload:
 - `riela/claude-code-worker`
 - `riela/codex-sdk-worker`
 - `riela/claude-sdk-worker`
+- `riela/gemini-sdk-worker`
 - `riela/cursor-sdk-worker`
 
-All five are worker-only add-ons. They resolve to ordinary `agent` node
+All six are worker-only add-ons. They resolve to ordinary `agent` node
 payloads:
 
 - `riela/codex-worker` sets `executionBackend: "codex-agent"`
@@ -551,6 +552,7 @@ payloads:
 - `riela/codex-sdk-worker` sets `executionBackend: "official/openai-sdk"`
 - `riela/claude-sdk-worker` sets
   `executionBackend: "official/anthropic-sdk"`
+- `riela/gemini-sdk-worker` sets `executionBackend: "official/gemini-sdk"`
 - `riela/cursor-sdk-worker` sets
   `executionBackend: "official/cursor-sdk"`
 
@@ -600,11 +602,17 @@ interface AgentWorkerAddonConfig {
 template can reference those keys directly, and it can also reference the normal
 workflow runtime variables and inbox context.
 
-`addon.env` is not supported by these agent worker add-ons in version `1`.
-Credential and runtime environment handling remains owned by the configured
-agent backend adapters. Required SDK credentials are adapter preflight inputs:
-`OPENAI_API_KEY` for `official/openai-sdk`, `ANTHROPIC_API_KEY` for
-`official/anthropic-sdk`, and `CURSOR_API_KEY` for `official/cursor-sdk`.
+`addon.env` is not supported by the Codex, Claude, and Cursor worker add-ons in
+version `1`. Credential and runtime environment handling remains owned by the
+configured agent backend adapters. Required SDK credentials are adapter
+preflight inputs: `OPENAI_API_KEY` for `official/openai-sdk`,
+`ANTHROPIC_API_KEY` for `official/anthropic-sdk`, and `CURSOR_API_KEY` for
+`official/cursor-sdk`.
+
+`riela/gemini-sdk-worker` supports explicit `addon.env` bindings because the
+Gemini SDK worker is a direct built-in HTTP adapter boundary. It accepts
+`GEMINI_API_KEY` or `GOOGLE_API_KEY` target names, with `GOOGLE_API_KEY`
+preferred when both are present.
 Validation should surface missing backend support or credentials as runtime
 readiness/executability information rather than silently falling back to a
 different worker add-on.
@@ -614,7 +622,7 @@ SDK worker regression coverage should include:
 - add-on resolution for all three SDK add-ons in
   `packages/riela/src/workflow/node-addons/sdk-agent-workers.test.ts`
 - dispatch registration for `official/openai-sdk`,
-  `official/anthropic-sdk`, and `official/cursor-sdk`
+  `official/anthropic-sdk`, `official/gemini-sdk`, and `official/cursor-sdk`
 - package-boundary exports for workflow add-on types in
   `packages/riela/src/package-boundaries.test.ts`
 

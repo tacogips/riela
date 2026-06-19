@@ -34,6 +34,80 @@ private actor RecordingWorkflowGraphQLRunTransport: WorkflowGraphQLRunTransporti
   }
 }
 
+private actor RecordingGeminiAddonHarness {
+  private var configurations: [OfficialSDKAdapterConfiguration] = []
+  private var inputs: [AdapterExecutionInput] = []
+
+  func makeAdapter(configuration: OfficialSDKAdapterConfiguration) -> any NodeAdapter {
+    configurations.append(configuration)
+    return RecordingGeminiAddonAdapter(harness: self)
+  }
+
+  func record(_ input: AdapterExecutionInput) {
+    inputs.append(input)
+  }
+
+  func recordedConfigurations() -> [OfficialSDKAdapterConfiguration] {
+    configurations
+  }
+
+  func recordedInputs() -> [AdapterExecutionInput] {
+    inputs
+  }
+}
+
+private struct RecordingGeminiAddonAdapter: NodeAdapter {
+  let harness: RecordingGeminiAddonHarness
+
+  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    await harness.record(input)
+    return AdapterExecutionOutput(
+      provider: "official-gemini-sdk",
+      model: input.node.model,
+      promptText: input.promptText,
+      completionPassed: true,
+      payload: ["text": .string("gemini reply")]
+    )
+  }
+}
+
+private final class JSONLWriterProbe: @unchecked Sendable {
+  private let lock = NSLock()
+  private var recordedLines: [String] = []
+  private var persistedAtSessionStartValue = false
+  private let sessionStore: URL
+
+  init(sessionStore: URL) {
+    self.sessionStore = sessionStore
+  }
+
+  func record(_ line: String) {
+    lock.withLock {
+      recordedLines.append(line)
+      guard line.contains(#""type":"session_started""#),
+        let event = try? JSONDecoder().decode(WorkflowRunEvent.self, from: Data(line.utf8))
+      else {
+        return
+      }
+      let sessionPath = sessionStore.appendingPathComponent("\(event.sessionId).json").path
+      let snapshotPath = URL(fileURLWithPath: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStore.path), isDirectory: true)
+        .appendingPathComponent(event.sessionId, isDirectory: true)
+        .appendingPathComponent("runtime-snapshot.json")
+        .path
+      persistedAtSessionStartValue = FileManager.default.fileExists(atPath: sessionPath)
+        && FileManager.default.fileExists(atPath: snapshotPath)
+    }
+  }
+
+  func lines() -> [String] {
+    lock.withLock { recordedLines }
+  }
+
+  func persistedAtSessionStart() -> Bool {
+    lock.withLock { persistedAtSessionStartValue }
+  }
+}
+
 private final class RecordingGraphQLURLProtocol: URLProtocol {
   private static let lock = NSLock()
   private nonisolated(unsafe) static var responseQueue: [Data] = []
@@ -209,6 +283,56 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertEqual(result.rootOutput?["status"], .string("ready"))
   }
 
+  func testWorkflowRunDefaultsToJSONLEventsWithImmediateSessionRecord() async throws {
+    let root = repositoryRoot()
+    let run = await RielaCLIApplication().run([
+      "workflow", "run", "worker-only-single-step",
+      "--workflow-definition-dir", "\(root)/examples",
+      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json"
+    ])
+
+    XCTAssertEqual(run.exitCode, .success)
+    XCTAssertTrue(run.stderr.isEmpty)
+    let lines = run.stdout.split(separator: "\n").map(String.init)
+    XCTAssertEqual(lines.count, 5)
+
+    let first = try decodeJSON(WorkflowRunEvent.self, from: lines[0])
+    XCTAssertEqual(first.type, .sessionStarted)
+    XCTAssertEqual(first.workflowId, "worker-only-single-step")
+    XCTAssertTrue(first.sessionId.hasPrefix("worker-only-single-step-session-"))
+
+    let final = try decodeJSON(WorkflowRunResultRecord.self, from: lines[4])
+    XCTAssertEqual(final.type, "run_result")
+    XCTAssertEqual(final.result.status, .completed)
+    XCTAssertEqual(final.result.rootOutput?["status"], .string("ready"))
+  }
+
+  func testWorkflowRunJSONLWriterPersistsSessionBeforeStartRecordIsEmitted() async throws {
+    let root = repositoryRoot()
+    let sessionStore = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-jsonl-live-session-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: sessionStore) }
+    let probe = JSONLWriterProbe(sessionStore: sessionStore)
+    let app = RielaCLIApplication(
+      runCommand: WorkflowRunCommand(jsonlRecordWriter: { line in
+        probe.record(line)
+      })
+    )
+
+    let run = await app.run([
+      "workflow", "run", "worker-only-single-step",
+      "--workflow-definition-dir", "\(root)/examples",
+      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+      "--session-store", sessionStore.path
+    ])
+
+    XCTAssertEqual(run.exitCode, .success)
+    XCTAssertTrue(run.stdout.isEmpty)
+    XCTAssertTrue(run.stderr.isEmpty)
+    XCTAssertTrue(probe.persistedAtSessionStart())
+    XCTAssertEqual(probe.lines().count, 5)
+  }
+
   func testUsageSupportsAddonSmokeWorkflow() async throws {
     let root = repositoryRoot()
     let result = await RielaCLIApplication().run([
@@ -222,6 +346,164 @@ final class WorkflowCommandTests: XCTestCase {
     let summary = try decodeJSON(WorkflowInspectionSummary.self, from: result.stdout)
     XCTAssertEqual(summary.workflowId, "matrix-chat-reply")
     XCTAssertTrue(summary.addonSourceSummaries.contains("reply-to-matrix:riela/chat-reply-worker"))
+  }
+
+  func testBuiltinChatReplyWorkerRendersInboxTemplateAndPreservesHandoffFlags() async throws {
+    let output = try await BuiltinWorkflowAddonResolver(environment: [:]).execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "telegram-trio",
+        stepId: "send-yui-reply",
+        nodeId: "send-yui-reply",
+        addon: WorkflowNodeAddonRef(
+          name: "riela/chat-reply-worker",
+          version: "1",
+          config: [
+            "textTemplate": .string("{{inbox.latest.output.payload.replyText}}"),
+            "replyAsTemplate": .string("{{replyAs}}")
+          ]
+        ),
+        variables: [:],
+        resolvedInputPayload: [
+          "replyAs": .string("yui"),
+          "replyText": .string("Yui reply"),
+          "handoff_mika": .bool(true),
+          "handoff_rina": .bool(false)
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    XCTAssertEqual(output.payload["replyText"], .string("Yui reply"))
+    XCTAssertEqual(output.payload["text"], .string("Yui reply"))
+    XCTAssertEqual(output.payload["replyAs"], .string("yui"))
+    XCTAssertEqual(output.payload["dispatchStatus"], .string("intent-only"))
+    XCTAssertEqual(output.when["handoff_mika"], true)
+    XCTAssertEqual(output.when["handoff_rina"], false)
+  }
+
+  func testBuiltinGeminiSDKWorkerResolvesEnvironmentAndRenderedPrompt() async throws {
+    let harness = RecordingGeminiAddonHarness()
+    let resolver = BuiltinWorkflowAddonResolver(
+      environment: ["USER_GEMINI_KEY": "gemini-secret"],
+      geminiAdapterFactory: { configuration in
+        await harness.makeAdapter(configuration: configuration)
+      }
+    )
+    let output = try await resolver.execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "gemini-demo",
+        stepId: "ask-gemini",
+        nodeId: "ask-gemini",
+        addon: WorkflowNodeAddonRef(
+          name: "riela/gemini-sdk-worker",
+          version: "1",
+          config: [
+            "model": .string("gemini-3.5-flash"),
+            "systemPromptTemplate": .string("System {{topic}}"),
+            "promptTemplate": .string("Reply about {{topic}} from {{input.prior}} and {{userText}}."),
+            "inlineDataParts": .array([
+              .object([
+                "mimeType": .string("image/png"),
+                "dataBase64": .string("iVBORw0KGgo=")
+              ])
+            ])
+          ],
+          env: [
+            "GEMINI_API_KEY": .object([
+              "fromEnv": .string("USER_GEMINI_KEY"),
+              "required": .bool(true)
+            ])
+          ],
+          inputs: [
+            "userText": .string("{{input.prior}} plus addon input")
+          ]
+        ),
+        variables: ["topic": .string("weather")],
+        resolvedInputPayload: ["prior": .string("rain")]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    XCTAssertEqual(output.payload["text"], .string("gemini reply"))
+    let configurations = await harness.recordedConfigurations()
+    let configuration = try XCTUnwrap(configurations.first)
+    XCTAssertEqual(configuration.apiKeyEnv, "GEMINI_API_KEY")
+    XCTAssertEqual(configuration.environment?["GEMINI_API_KEY"], "gemini-secret")
+    let inputs = await harness.recordedInputs()
+    let input = try XCTUnwrap(inputs.first)
+    XCTAssertEqual(input.node.executionBackend, .officialGeminiSDK)
+    XCTAssertEqual(input.node.model, "gemini-3.5-flash")
+    XCTAssertEqual(input.promptText, "Reply about weather from rain and rain plus addon input.")
+    XCTAssertEqual(input.systemPromptText, "System weather")
+    XCTAssertEqual(
+      input.mergedVariables["geminiInlineDataParts"],
+      .array([
+        .object([
+          "mimeType": .string("image/png"),
+          "dataBase64": .string("iVBORw0KGgo=")
+        ])
+      ])
+    )
+  }
+
+  func testBuiltinGeminiSDKWorkerPrefersGoogleAPIKeyTargetWhenBothAreMapped() async throws {
+    let harness = RecordingGeminiAddonHarness()
+    let resolver = BuiltinWorkflowAddonResolver(
+      environment: [
+        "USER_GEMINI_KEY": "gemini-test-key",
+        "USER_GOOGLE_KEY": "google-test-key"
+      ],
+      geminiAdapterFactory: { configuration in
+        await harness.makeAdapter(configuration: configuration)
+      }
+    )
+
+    _ = try await resolver.execute(
+      geminiAddonExecutionInput(
+        env: [
+          "GEMINI_API_KEY": .object(["fromEnv": .string("USER_GEMINI_KEY")]),
+          "GOOGLE_API_KEY": .object(["fromEnv": .string("USER_GOOGLE_KEY")])
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    let configurations = await harness.recordedConfigurations()
+    let configuration = try XCTUnwrap(configurations.first)
+    XCTAssertEqual(configuration.apiKeyEnv, "GOOGLE_API_KEY")
+    XCTAssertEqual(configuration.environment?["GOOGLE_API_KEY"], "google-test-key")
+    XCTAssertEqual(configuration.environment?["GEMINI_API_KEY"], "gemini-test-key")
+  }
+
+  func testBuiltinGeminiSDKWorkerReadsTaskLocalCLIEnvironmentOverrides() async throws {
+    let harness = RecordingGeminiAddonHarness()
+    let output = try await CLIRuntimeEnvironment.$overrides.withValue(["USER_GEMINI_KEY": "override-gemini-key"]) {
+      try await BuiltinWorkflowAddonResolver(
+        geminiAdapterFactory: { configuration in
+          await harness.makeAdapter(configuration: configuration)
+        }
+      ).execute(
+        geminiAddonExecutionInput(),
+        context: AdapterExecutionContext()
+      )
+    }
+
+    XCTAssertEqual(output.payload["text"], .string("gemini reply"))
+    let configurations = await harness.recordedConfigurations()
+    let configuration = try XCTUnwrap(configurations.first)
+    XCTAssertEqual(configuration.environment?["GEMINI_API_KEY"], "override-gemini-key")
+  }
+
+  func testBuiltinGeminiSDKWorkerFailsClosedWhenRequiredAPIKeyEnvIsMissing() async throws {
+    let resolver = BuiltinWorkflowAddonResolver(environment: [:])
+
+    do {
+      _ = try await resolver.execute(geminiAddonExecutionInput(), context: AdapterExecutionContext())
+      XCTFail("Expected missing Gemini key failure")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .policyBlocked)
+      XCTAssertEqual(error.message, "required environment variable 'USER_GEMINI_KEY' is unavailable for addon.env.GEMINI_API_KEY")
+    }
   }
 
   func testNodePatchIsInMemoryOnly() async throws {
@@ -239,6 +521,36 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertEqual(result.exitCode, .success)
     let after = try String(contentsOfFile: nodePath, encoding: .utf8)
     XCTAssertEqual(after, before)
+  }
+
+  private func geminiAddonExecutionInput(
+    env: JSONObject = [
+      "GEMINI_API_KEY": .object([
+        "fromEnv": .string("USER_GEMINI_KEY"),
+        "required": .bool(true)
+      ])
+    ]
+  ) -> WorkflowAddonExecutionInput {
+    WorkflowAddonExecutionInput(
+      workflowId: "gemini-demo",
+      stepId: "ask-gemini",
+      nodeId: "ask-gemini",
+      addon: WorkflowNodeAddonRef(
+        name: "riela/gemini-sdk-worker",
+        version: "1",
+        config: [
+          "model": .string("gemini-3.5-flash"),
+          "systemPromptTemplate": .string("System {{topic}}"),
+          "promptTemplate": .string("Reply about {{topic}} from {{input.prior}} and {{userText}}.")
+        ],
+        env: env,
+        inputs: [
+          "userText": .string("{{input.prior}} plus addon input")
+        ]
+      ),
+      variables: ["topic": .string("weather")],
+      resolvedInputPayload: ["prior": .string("rain")]
+    )
   }
 }
 
@@ -477,7 +789,9 @@ extension WorkflowCommandTests {
       "session", "rerun", "sess-1", "step-1", "--nested-superviser"
     ])
     XCTAssertEqual(result.exitCode, .usage)
-    XCTAssertTrue(result.stderr.contains("not supported for session rerun"))
+    XCTAssertTrue(result.stderr.isEmpty)
+    let failure = try decodeJSON(SessionCommandFailureResult.self, from: result.stdout)
+    XCTAssertTrue(failure.error.contains("not supported for session rerun"))
   }
 
   func testUserScopeWorkflowRunSupportsDefaultAutoScopeSessionRerunAndResume() async throws {
@@ -533,14 +847,18 @@ extension WorkflowCommandTests {
       "--endpoint", "http://localhost:4000/graphql"
     ])
     XCTAssertEqual(validate.exitCode, .usage)
-    XCTAssertEqual(validate.stderr, "Swift TASK-007 supports local workflow validate only")
+    XCTAssertTrue(validate.stderr.isEmpty)
+    let validateFailure = try decodeJSON(WorkflowValidationFailureResult.self, from: validate.stdout)
+    XCTAssertEqual(validateFailure.error, "Swift TASK-007 supports local workflow validate only")
 
     let inspect = await app.run([
       "workflow", "inspect", "worker-only-single-step",
       "--from-registry"
     ])
     XCTAssertEqual(inspect.exitCode, .usage)
-    XCTAssertEqual(inspect.stderr, "Swift TASK-007 supports local workflow inspect only")
+    XCTAssertTrue(inspect.stderr.isEmpty)
+    let inspectFailure = try decodeJSON(WorkflowInspectionFailureResult.self, from: inspect.stdout)
+    XCTAssertEqual(inspectFailure.error, "Swift TASK-007 supports local workflow inspect only")
   }
 
   func testRunJSONFailureReturnsParseableFailureEnvelope() async throws {
@@ -1507,6 +1825,59 @@ extension WorkflowCommandTests {
     let packageRunResult = try decodeJSON(WorkflowPackageCommandResult.self, from: packageRun.stdout)
     XCTAssertEqual(packageRunResult.target, "fixture-clean-workflow")
     XCTAssertNotNil(packageRunResult.runSessionId)
+  }
+
+  func testUserPackageInstallProjectsCodexSkillDirectory() async throws {
+    let root = repositoryRoot()
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-user-codex-skill-\(UUID().uuidString)", isDirectory: true)
+    let homeDir = tempDir.appendingPathComponent("home", isDirectory: true)
+    let packageSource = tempDir.appendingPathComponent("package-source", isDirectory: true)
+    let workflowDirectory = packageSource.appendingPathComponent("workflows/riela-package-manager-skill", isDirectory: true)
+    let codexSkillDirectory = packageSource.appendingPathComponent("skills/codex/riela-package", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    try FileManager.default.createDirectory(at: workflowDirectory.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: codexSkillDirectory, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: homeDir, withIntermediateDirectories: true)
+    try FileManager.default.copyItem(
+      at: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step"),
+      to: workflowDirectory
+    )
+    try """
+    # Riela Package
+
+    Install and manage Riela packages.
+    """.write(to: codexSkillDirectory.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+    try """
+    {
+      "name": "riela-package-manager-skill",
+      "version": "1.0.0",
+      "description": "Package manager skill fixture.",
+      "tags": ["skill", "package"],
+      "registry": "fixture",
+      "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "checksumAlgorithm": "md5",
+      "workflowDirectory": "workflows/riela-package-manager-skill",
+      "skillDirectory": "skills"
+    }
+    """.write(to: packageSource.appendingPathComponent("riela-package.json"), atomically: true, encoding: .utf8)
+
+    let app = RielaCLIApplication()
+    let install = await app.run([
+      "package", "install", "riela-package-manager-skill",
+      "--source", packageSource.path,
+      "--scope", "user",
+      "--working-dir", tempDir.path,
+      "--output", "json"
+    ], environment: ["HOME": homeDir.path])
+
+    XCTAssertEqual(install.exitCode, .success, install.stderr)
+    let installed = try decodeJSON(WorkflowPackageCommandResult.self, from: install.stdout)
+    let installedPackage = homeDir.appendingPathComponent(".riela/packages/riela-package-manager-skill", isDirectory: true)
+    let projectedSkill = homeDir.appendingPathComponent(".codex/skills/riela-package/SKILL.md")
+    XCTAssertEqual(installed.destinationDirectory, installedPackage.path)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: installedPackage.appendingPathComponent("riela-package.json").path))
+    XCTAssertEqual(try String(contentsOf: projectedSkill), "# Riela Package\n\nInstall and manage Riela packages.")
   }
 
   func testWorkflowRunFromRegistryRejectsEscapingWorkflowDirectory() async throws {

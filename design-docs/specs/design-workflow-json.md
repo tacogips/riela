@@ -448,6 +448,9 @@ Initial built-in add-ons:
   `executionBackend: "codex-agent"`
 - `riela/claude-code-worker`: worker node that resolves to an `agent` payload
   using `executionBackend: "claude-code-agent"`
+- `riela/gemini-sdk-worker`: worker node that resolves to an `agent` payload
+  using `executionBackend: "official/gemini-sdk"` and explicit Gemini API key
+  environment binding
 - `riela/x-gateway-read`: worker node that runs the read-only
   `x-gateway-reader graphql query` surface in a Docker-compatible container
 - `riela/x-gateway`: worker node that runs the full `x-gateway graphql query`

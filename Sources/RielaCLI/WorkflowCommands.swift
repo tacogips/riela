@@ -178,6 +178,28 @@ public struct WorkflowRunFailureResult: Codable, Equatable, Sendable {
   }
 }
 
+public typealias WorkflowJSONLRecordWriting = @Sendable (String) -> Void
+
+public struct WorkflowRunResultRecord: Codable, Equatable, Sendable {
+  public var type: String
+  public var result: WorkflowRunResult
+
+  public init(type: String = "run_result", result: WorkflowRunResult) {
+    self.type = type
+    self.result = result
+  }
+}
+
+public struct WorkflowRemoteRunResultRecord: Codable, Equatable, Sendable {
+  public var type: String
+  public var result: WorkflowRemoteRunResult
+
+  public init(type: String = "run_result", result: WorkflowRemoteRunResult) {
+    self.type = type
+    self.result = result
+  }
+}
+
 public struct WorkflowRemoteRunRequest: Codable, Equatable, Sendable {
   public var workflowName: String
   public var runtimeVariables: JSONObject
@@ -249,6 +271,43 @@ public struct WorkflowRemoteRunResult: Codable, Equatable, Sendable {
     self.nodeExecutions = nodeExecutions
     self.transitions = transitions
     self.exitCode = exitCode
+  }
+}
+
+public struct WorkflowRunPersistenceFailureRecord: Codable, Equatable, Sendable {
+  public var type: String
+  public var sessionId: String
+  public var error: String
+
+  public init(type: String = "session_persist_failed", sessionId: String, error: String) {
+    self.type = type
+    self.sessionId = sessionId
+    self.error = error
+  }
+}
+
+private actor WorkflowRunJSONLRecorder {
+  private var lines: [String] = []
+  private let writer: WorkflowJSONLRecordWriting?
+
+  init(writer: WorkflowJSONLRecordWriting?) {
+    self.writer = writer
+  }
+
+  func append(_ event: WorkflowRunEvent) {
+    append((try? jsonString(event)) ?? #"{"type":"event_encode_failed"}"# + "\n")
+  }
+
+  func append(_ line: String) {
+    if let writer {
+      writer(line)
+    } else {
+      lines.append(line)
+    }
+  }
+
+  func bufferedOutput() -> String {
+    writer == nil ? lines.joined() : ""
   }
 }
 
@@ -537,7 +596,7 @@ public struct WorkflowManifestValidateCommand: Sendable {
         stdout: try render(result, output: options.output)
       )
     } catch {
-      if options.output == .json {
+      if options.output.isStructured {
         let result = WorkflowManifestValidationCommandResult(
           manifestPath: options.manifestPath,
           valid: false,
@@ -558,7 +617,7 @@ public struct WorkflowManifestValidateCommand: Sendable {
 
   private func render(_ result: WorkflowManifestValidationCommandResult, output: WorkflowOutputFormat) throws -> String {
     switch output {
-    case .json:
+    case .json, .jsonl:
       return try jsonString(result)
     case .text, .table:
       var lines = [
@@ -733,7 +792,7 @@ public struct WorkflowCatalogCommand: Sendable {
 
   private func render(_ result: WorkflowCatalogResult, output: WorkflowOutputFormat) throws -> String {
     switch output {
-    case .json:
+    case .json, .jsonl:
       return try jsonString(result)
     case .text:
       return result.workflows.map {
@@ -921,7 +980,7 @@ public struct WorkflowValidateCommand: Sendable {
 
   private func render(_ result: WorkflowValidationCommandResult, output: WorkflowOutputFormat) throws -> String {
     switch output {
-    case .json:
+    case .json, .jsonl:
       return try jsonString(result)
     case .text, .table:
       var lines = [
@@ -944,7 +1003,7 @@ public struct WorkflowValidateCommand: Sendable {
     error: String,
     diagnostics: [WorkflowValidationDiagnostic] = []
   ) -> CLICommandResult {
-    guard options.output == .json else {
+    guard options.output.isStructured else {
       return CLICommandResult(exitCode: exitCode, stderr: error)
     }
     let result = WorkflowValidationFailureResult(
@@ -1096,7 +1155,7 @@ public struct WorkflowInspectCommand: Sendable {
     do {
       let bundle = try resolver.resolve(options.resolution)
       let summary = buildSummary(bundle)
-      if options.output == .json {
+      if options.output.isStructured {
         return CLICommandResult(exitCode: .success, stdout: try jsonString(summary))
       }
       if options.structure {
@@ -1253,7 +1312,7 @@ public struct WorkflowInspectCommand: Sendable {
     error: String,
     diagnostics: [WorkflowValidationDiagnostic] = []
   ) -> CLICommandResult {
-    guard options.output == .json else {
+    guard options.output.isStructured else {
       return CLICommandResult(exitCode: exitCode, stderr: error)
     }
     let result = WorkflowInspectionFailureResult(
@@ -1274,17 +1333,20 @@ public struct WorkflowRunCommand: Sendable {
   public var patchApplier: any WorkflowNodePatchApplying
   public var jsonLoader: JSONReferenceLoader
   public var graphQLTransport: any WorkflowGraphQLRunTransporting
+  public var jsonlRecordWriter: WorkflowJSONLRecordWriting?
 
   public init(
     resolver: any WorkflowBundleResolving = FileSystemWorkflowBundleResolver(),
     patchApplier: any WorkflowNodePatchApplying = DefaultWorkflowNodePatchApplier(),
     jsonLoader: JSONReferenceLoader = JSONReferenceLoader(),
-    graphQLTransport: any WorkflowGraphQLRunTransporting = URLSessionWorkflowGraphQLRunTransport()
+    graphQLTransport: any WorkflowGraphQLRunTransporting = URLSessionWorkflowGraphQLRunTransport(),
+    jsonlRecordWriter: WorkflowJSONLRecordWriting? = nil
   ) {
     self.resolver = resolver
     self.patchApplier = patchApplier
     self.jsonLoader = jsonLoader
     self.graphQLTransport = graphQLTransport
+    self.jsonlRecordWriter = jsonlRecordWriter
   }
 
   public func run(_ options: WorkflowRunOptions) async -> CLICommandResult {
@@ -1331,6 +1393,29 @@ public struct WorkflowRunCommand: Sendable {
         addonResolver: BuiltinWorkflowAddonResolver(),
         stdioNodeExecutor: stdioNodeExecutor
       )
+      let persistedIdentity = persistenceIdentity(
+        requestedResolution: resolution,
+        bundle: bundle,
+        fromRegistry: options.fromRegistry
+      )
+      let jsonlRecorder = options.output == .jsonl ? WorkflowRunJSONLRecorder(writer: jsonlRecordWriter) : nil
+      let runEventHandler: WorkflowRunEventHandler?
+      if let jsonlRecorder {
+        runEventHandler = { event in
+          await persistLiveSessionRecordIfPresent(
+            sessionId: event.sessionId,
+            workflowName: persistedIdentity.workflowName,
+            resolution: persistedIdentity.resolution,
+            storeRoot: storeRoot,
+            runtimeStore: runtimeStore,
+            options: options,
+            recorder: jsonlRecorder
+          )
+          await jsonlRecorder.append(event)
+        }
+      } else {
+        runEventHandler = nil
+      }
       let initialRequest = DeterministicWorkflowRunRequest(
         workflow: bundle.workflow,
         nodePayloads: bundle.nodePayloads,
@@ -1339,7 +1424,8 @@ public struct WorkflowRunCommand: Sendable {
         maxConcurrency: options.maxConcurrency,
         maxLoopIterations: options.maxLoopIterations,
         defaultTimeoutMs: options.defaultTimeoutMs,
-        timeoutMs: options.timeoutMs
+        timeoutMs: options.timeoutMs,
+        eventHandler: runEventHandler
       )
       let result: WorkflowRunResult
       do {
@@ -1368,11 +1454,6 @@ public struct WorkflowRunCommand: Sendable {
         )
       }
       let workflowMessages = try await runtimeStore.listMessages(for: finalResult.session.sessionId, toStepId: nil)
-      let persistedIdentity = persistenceIdentity(
-        requestedResolution: resolution,
-        bundle: bundle,
-        fromRegistry: options.fromRegistry
-      )
       try persistSessionRecord(
         workflowName: persistedIdentity.workflowName,
         resolution: persistedIdentity.resolution,
@@ -1383,12 +1464,39 @@ public struct WorkflowRunCommand: Sendable {
       )
       return CLICommandResult(
         exitCode: CLIExitCode(rawValue: finalResult.exitCode) ?? .failure,
-        stdout: try renderRunResult(finalResult, output: options.output)
+        stdout: try await renderRunResult(finalResult, output: options.output, jsonlRecorder: jsonlRecorder)
       )
     } catch let error as CLIUsageError {
       return renderRunFailure(options: options, exitCode: .usage, error: error.message)
     } catch {
       return renderRunFailure(options: options, exitCode: .failure, error: "\(error)")
+    }
+  }
+
+  private func persistLiveSessionRecordIfPresent(
+    sessionId: String,
+    workflowName: String,
+    resolution: WorkflowResolutionOptions,
+    storeRoot: String,
+    runtimeStore: InMemoryWorkflowRuntimeStore,
+    options: WorkflowRunOptions,
+    recorder: WorkflowRunJSONLRecorder
+  ) async {
+    do {
+      guard let session = try await runtimeStore.loadSession(id: sessionId) else {
+        return
+      }
+      let workflowMessages = try await runtimeStore.listMessages(for: sessionId, toStepId: nil)
+      try persistSessionRecord(
+        workflowName: workflowName,
+        resolution: resolution,
+        session: session,
+        workflowMessages: workflowMessages,
+        storeRoot: storeRoot,
+        options: options
+      )
+    } catch {
+      await recorder.append((try? jsonString(WorkflowRunPersistenceFailureRecord(sessionId: sessionId, error: "\(error)"))) ?? "")
     }
   }
 
@@ -1482,6 +1590,30 @@ public struct WorkflowRunCommand: Sendable {
         workflowName: workflowName,
         supervision: supervision
       )
+    }
+  }
+
+  private func persistSessionRecord(
+    workflowName: String,
+    resolution: WorkflowResolutionOptions,
+    session: WorkflowSession,
+    workflowMessages: [WorkflowMessageRecord],
+    storeRoot: String,
+    options: WorkflowRunOptions
+  ) throws {
+    try CLIWorkflowSessionStore(rootDirectory: storeRoot).save(
+      PersistedCLIWorkflowSession(
+        workflowName: workflowName,
+        session: session,
+        resolution: resolution,
+        mockScenarioPath: options.mockScenarioPath
+      )
+    )
+    let snapshot = WorkflowRuntimePersistenceProjector.snapshot(session: session, workflowMessages: workflowMessages)
+    try FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot)).save(snapshot)
+    if let artifactRoot = options.artifactRoot {
+      let artifactURL = absoluteURL(artifactRoot, relativeTo: URL(fileURLWithPath: options.workingDirectory, isDirectory: true))
+      try FileWorkflowRuntimePersistenceStore(rootDirectory: artifactURL.path).save(snapshot)
     }
   }
 
@@ -1737,10 +1869,21 @@ public struct WorkflowRunCommand: Sendable {
     return byNodeId
   }
 
-  private func renderRunResult(_ result: WorkflowRunResult, output: WorkflowOutputFormat) throws -> String {
+  private func renderRunResult(
+    _ result: WorkflowRunResult,
+    output: WorkflowOutputFormat,
+    jsonlRecorder: WorkflowRunJSONLRecorder?
+  ) async throws -> String {
     switch output {
     case .json:
       return try jsonString(result)
+    case .jsonl:
+      let record = try jsonString(WorkflowRunResultRecord(result: result))
+      if let jsonlRecorder {
+        await jsonlRecorder.append(record)
+        return await jsonlRecorder.bufferedOutput()
+      }
+      return record
     case .text, .table:
       return "status: \(result.session.status.rawValue)\nworkflowId: \(result.workflowId)\nnodeExecutions: \(result.session.executions.count)\n"
     }
@@ -1750,13 +1893,15 @@ public struct WorkflowRunCommand: Sendable {
     switch output {
     case .json:
       return try jsonString(result)
+    case .jsonl:
+      return try jsonString(WorkflowRemoteRunResultRecord(result: result))
     case .text, .table:
       return "run session: \(result.sessionId)\nstatus: \(result.status)\nnodeExecutions: \(result.nodeExecutions)\n"
     }
   }
 
   private func renderRunFailure(options: WorkflowRunOptions, exitCode: CLIExitCode, error: String) -> CLICommandResult {
-    guard options.output == .json else {
+    guard options.output.isStructured else {
       return CLICommandResult(exitCode: exitCode, stderr: error)
     }
     let result = WorkflowRunFailureResult(target: options.target, exitCode: exitCode.rawValue, error: error)
@@ -1911,8 +2056,21 @@ public struct RielaCLIApplication: Sendable {
   }
 
   private func renderParserFailure(arguments: [String], error: CLIUsageError) -> CLICommandResult {
-    guard arguments.first == "workflow", requestsJSONOutput(arguments) else {
+    guard requestsStructuredOutput(arguments) else {
       return CLICommandResult(exitCode: .usage, stderr: error.message)
+    }
+    guard arguments.first == "workflow" else {
+      let result = CLIUnsupportedCommandResult(
+        scope: arguments.first ?? "riela",
+        command: arguments.dropFirst().first,
+        target: arguments.dropFirst(2).first,
+        exitCode: CLIExitCode.usage.rawValue,
+        error: error.message
+      )
+      return CLICommandResult(
+        exitCode: .usage,
+        stdout: (try? jsonString(result)) ?? #"{"error":"failed to encode parser failure","exitCode":2}"# + "\n"
+      )
     }
     let subcommand = arguments.count > 1 ? arguments[1] : "workflow"
     let target = parserFailureTarget(arguments: arguments, subcommand: subcommand)
@@ -1950,16 +2108,17 @@ public struct RielaCLIApplication: Sendable {
     )
   }
 
-  private func requestsJSONOutput(_ arguments: [String]) -> Bool {
+  private func requestsStructuredOutput(_ arguments: [String]) -> Bool {
     for index in arguments.indices {
-      if arguments[index] == "--output", index + 1 < arguments.count, arguments[index + 1] == "json" {
-        return true
+      if arguments[index] == "--output", index + 1 < arguments.count {
+        return arguments[index + 1] != "text" && arguments[index + 1] != "table"
       }
-      if arguments[index] == "--output=json" {
-        return true
+      if arguments[index].hasPrefix("--output=") {
+        let value = String(arguments[index].dropFirst("--output=".count))
+        return value != "text" && value != "table"
       }
     }
-    return false
+    return true
   }
 
   private func parserFailureTarget(arguments: [String], subcommand: String) -> String {
@@ -2023,19 +2182,21 @@ Riela CLI
 
 Usage:
   riela --version
-  riela workflow validate <workflow> [--scope project|user|auto] [--output json]
-  riela workflow inspect <workflow> [--scope project|user|auto] [--output json]
-  riela workflow usage <workflow> [--scope project|user|auto] [--output json]
-  riela workflow list|status [--output text|json|table]
-  riela workflow manifest validate <manifest-path> [--output json]
+  riela workflow validate <workflow> [--scope project|user|auto] [--output jsonl|json|text]
+  riela workflow inspect <workflow> [--scope project|user|auto] [--output jsonl|json|text]
+  riela workflow usage <workflow> [--scope project|user|auto] [--output jsonl|json|text]
+  riela workflow list|status [--output jsonl|json|text|table]
+  riela workflow manifest validate <manifest-path> [--output jsonl|json|text]
   riela workflow checkout|create|self-improve <workflow> [options]
   riela workflow package <search|list|status|install|update|remove|checkout|publish> [options]
-  riela workflow run <workflow> --mock-scenario <path> [--auto-improve] [--output json]
+  riela workflow run <workflow> --mock-scenario <path> [--auto-improve] [--output jsonl|json|text]
   riela package <search|list|status|install|update|remove|checkout|publish> [options]
-  riela session rerun <session-id> <step-id> [--scope project|user|auto] [--output json]
-  riela session resume <session-id> [--scope project|user|auto] [--output json]
+  riela session rerun <session-id> <step-id> [--scope project|user|auto] [--output jsonl|json|text]
+  riela session resume <session-id> [--scope project|user|auto] [--output jsonl|json|text]
   riela session progress|health|status|continue|step-runs|export|logs [session-id] [options]
   riela graphql|gql|hook|events|serve|call-step|workflow-call [command] [target] [options]
+
+Output defaults to JSONL for machine-readable commands. Use --output text for human-readable output or --output json for the legacy single JSON document.
 
 The Swift CLI is the production Homebrew runtime. Linux Homebrew archives remain unsupported until a reviewed Swift Linux build contract exists.
 

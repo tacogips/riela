@@ -25,7 +25,7 @@ preserving existing CLI behavior.
 - Workflow selection and validation integration
 - Start, stop, restart, state, and update reload semantics
 - Event-source handle lifecycle under served generations
-- Minimal `RielaMenuBarApp` SwiftPM executable target
+- Minimal `RielaApp` SwiftPM executable target
 - Local `.app` bundle script for macOS registration validation
 - Unit tests for library lifecycle, atomic reload, and macOS-style client use
 
@@ -173,7 +173,7 @@ preserving existing CLI behavior.
 **Status**: COMPLETED
 **Files**:
 
-- `Sources/RielaMenuBarApp/EntryPoint.swift`
+- `Sources/RielaApp/EntryPoint.swift`
 - `Tests/RielaServerTests/WorkflowServingControllerTests.swift`
 - `scripts/build-riela-menu-bar-app.sh`
 
@@ -184,7 +184,7 @@ preserving existing CLI behavior.
 - Add a test-only macOS-style client model for deterministic controller tests.
 - Verify no `RielaCLI` types are required by the client contract.
 - Verify update flow calls external update stub first, then `reload`.
-- Add a bundle wrapper that creates `.build/<configuration>/Riela.app`.
+- Add a bundle wrapper that creates `.build/<configuration>/RielaApp.app`.
 
 **Completion criteria**:
 
@@ -201,7 +201,7 @@ preserving existing CLI behavior.
 | Listener/event handles | `Sources/RielaServer/WorkflowServingController.swift` | COMPLETED | `Tests/RielaServerTests/WorkflowServingControllerTests.swift` |
 | Event-source lifecycle seam | `Sources/RielaServer/WorkflowServingController.swift` | COMPLETED | `Tests/RielaServerTests/WorkflowServingControllerTests.swift` |
 | CLI serve delegation | `Sources/RielaCLI/ScopedParityCommands.swift` | DEFERRED | existing CLI tests |
-| Mac client contract/app target | `Sources/RielaMenuBarApp/EntryPoint.swift` | COMPLETED | `Tests/RielaServerTests/WorkflowServingControllerTests.swift` |
+| Mac client contract/app target | `Sources/RielaApp/EntryPoint.swift` | COMPLETED | `Tests/RielaServerTests/WorkflowServingControllerTests.swift` |
 
 ## Dependencies
 
@@ -211,7 +211,7 @@ preserving existing CLI behavior.
 | `RielaGraphQL` contracts | Available | Used by server listener composition |
 | `RielaEvents` event contracts | Partial | Serving lifecycle may need new handle protocols/fakes |
 | Manifest design | Available | `design-docs/specs/design-server-workflow-manifest.md` |
-| macOS UI target | Available | `RielaMenuBarApp` consumes `RielaServer` directly |
+| macOS UI target | Available | `RielaApp` consumes `RielaServer` directly |
 
 ## Completion Criteria
 
@@ -223,19 +223,19 @@ preserving existing CLI behavior.
       or chat listeners.
 - [x] Structured diagnostics avoid environment and provider payload fields.
 - [x] Mac client contract tests prove UI-independent consumption.
-- [x] `RielaMenuBarApp` builds as an independent SwiftPM executable.
+- [x] `RielaApp` builds as an independent SwiftPM executable.
 - [x] Local `.app` bundle wrapper is available for registration validation.
 - [ ] Verification commands pass.
 
 ## Verification
 
 - `swift test --filter RielaServerTests`
-- `swift build --product RielaMenuBarApp`
+- `swift build --product RielaApp`
 - `scripts/build-riela-menu-bar-app.sh`
 - `swift test --filter RielaEventsTests`
 - `swift test --filter RielaCLITests`
 - `rg -n "import RielaCLI|import CodexAgent|import ClaudeCodeAgent|import CursorCLIAgent" Sources/RielaServer`
-- `rg -n "import RielaCLI" Sources/RielaMenuBarApp`
+- `rg -n "import RielaCLI" Sources/RielaApp`
 - `rg -n "WorkflowServingController|WorkflowServeStartRequest|WorkflowServeReloadRequest" Sources Tests`
 
 ## Review Decisions
@@ -292,7 +292,7 @@ without importing CLI types.
 
 **Tasks Completed**: Feature-local design and implementation plan created;
 serving controller contracts, lifecycle handles, atomic reload, macOS-style
-client contract tests, `RielaMenuBarApp`, and the local `.app` bundle wrapper
+client contract tests, `RielaApp`, and the local `.app` bundle wrapper
 implemented.
 **Tasks In Progress**: Verification.
 **Blockers**: None.

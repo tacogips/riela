@@ -23,7 +23,7 @@
       "handoff_rina": false
     },
     "payload": {
-      "replyText": "私の意見では、3人の役割を明確に分けて、通常対応はYui、見せ方はMika、深い技術検討はRinaに任せる形が扱いやすいです。@Mika、この分け方はTelegramの会話として自然に見えると思いますか？",
+      "replyText": "承知しました。私の見立てでは、通常の整理と進行はYui、場の見え方はMika、技術的な見落としはRinaに分けると、会話が落ち着いて回ります。@Mika、この役割分担はTelegram上でも親しみやすく見えるでしょうか？",
       "handoff_mika": true,
       "handoff_rina": false
     }
@@ -36,7 +36,7 @@
       "handoff_rina": true
     },
     "payload": {
-      "replyText": "自然だと思う。名前が短くて呼びやすいし、Yui、Mika、RinaならTelegramでもキャラ差が一発で伝わる。@Rina、この構成で技術的に気をつける点は何？",
+      "replyText": "いいじゃん、それアリ。Yuiは大人っぽく整えてくれるし、Mikaは明るくノリを作れるし、Rinaは冷静に締めてくれるから、3人のキャラ差がぱっと伝わる。@Rina、技術的に危ないとこある？",
       "handoff_yui": false,
       "handoff_rina": true
     }
@@ -49,7 +49,7 @@
       "handoff_mika": false
     },
     "payload": {
-      "replyText": "Rinaです。技術面では、3人を同じ入口で受けつつ persona ごとに routing、memory、reply identity を分けるのが堅いです。運用では handoff の上限とログ確認を入れておくと、Telegram でも議論が暴走しにくいです。",
+      "replyText": "結論。入口は一つでいい。ただし routing、memory、reply identity は persona ごとに分離するべき。handoff 上限とログ確認を固定すれば、議論の循環は制御できる。",
       "handoff_yui": false,
       "handoff_mika": false
     }

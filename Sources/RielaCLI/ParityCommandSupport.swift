@@ -192,7 +192,7 @@ func render<T: Encodable>(
   text: (T) -> String
 ) throws -> CLICommandResult {
   switch options.output {
-  case .json:
+  case .json, .jsonl:
     return CLICommandResult(exitCode: .success, stdout: try jsonString(value))
   case .text, .table:
     return CLICommandResult(exitCode: .success, stdout: text(value))
@@ -200,7 +200,7 @@ func render<T: Encodable>(
 }
 
 func failure(_ message: String, output: WorkflowOutputFormat, options: CLICommandOptions) -> CLICommandResult {
-  if output == .json {
+  if output.isStructured {
     let payload = CLIUnsupportedCommandResult(
       scope: options.scope,
       command: options.command,

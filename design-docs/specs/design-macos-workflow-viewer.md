@@ -7,7 +7,7 @@ messages.
 
 ## Goals
 
-- Open the viewer from `RielaMenuBarApp`.
+- Open the viewer from `RielaApp`.
 - Render workflow nodes as a tree using authored `workflow.json` transitions.
 - Show persisted workflow sessions for the selected workflow, including running
   sessions and active step ids.
@@ -23,7 +23,7 @@ messages.
 `RielaCore`, because persisted sessions and messages are core runtime
 contracts.
 
-`RielaMenuBarApp` owns AppKit UI: the menu item, viewer window, outline tree,
+`RielaApp` owns AppKit UI: the menu item, viewer window, outline tree,
 session selector, and detail pane. It must not parse runtime JSON directly.
 
 The first implementation reads local persisted state from the selected

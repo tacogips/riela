@@ -14,6 +14,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   public var rerunFromSessionId: String?
   public var rerunFromStepId: String?
   public var resumeSessionId: String?
+  public var eventHandler: WorkflowRunEventHandler?
 
   public init(
     workflow: WorkflowDefinition,
@@ -28,7 +29,8 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     addonAttachmentDescriptors: [String: WorkflowAddonAttachmentDescriptor] = [:],
     rerunFromSessionId: String? = nil,
     rerunFromStepId: String? = nil,
-    resumeSessionId: String? = nil
+    resumeSessionId: String? = nil,
+    eventHandler: WorkflowRunEventHandler? = nil
   ) {
     self.workflow = workflow
     self.nodePayloads = nodePayloads
@@ -43,8 +45,58 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     self.rerunFromSessionId = rerunFromSessionId
     self.rerunFromStepId = rerunFromStepId
     self.resumeSessionId = resumeSessionId
+    self.eventHandler = eventHandler
   }
 }
+
+public enum WorkflowRunEventType: String, Codable, Equatable, Sendable {
+  case sessionStarted = "session_started"
+  case stepStarted = "step_started"
+  case stepCompleted = "step_completed"
+  case sessionCompleted = "session_completed"
+}
+
+public struct WorkflowRunEvent: Codable, Equatable, Sendable {
+  public var type: WorkflowRunEventType
+  public var workflowId: String
+  public var sessionId: String
+  public var status: WorkflowSessionStatus?
+  public var currentStepId: String?
+  public var stepId: String?
+  public var nodeId: String?
+  public var executionId: String?
+  public var exitCode: Int32?
+  public var nodeExecutions: Int?
+  public var transitions: Int?
+
+  public init(
+    type: WorkflowRunEventType,
+    workflowId: String,
+    sessionId: String,
+    status: WorkflowSessionStatus? = nil,
+    currentStepId: String? = nil,
+    stepId: String? = nil,
+    nodeId: String? = nil,
+    executionId: String? = nil,
+    exitCode: Int32? = nil,
+    nodeExecutions: Int? = nil,
+    transitions: Int? = nil
+  ) {
+    self.type = type
+    self.workflowId = workflowId
+    self.sessionId = sessionId
+    self.status = status
+    self.currentStepId = currentStepId
+    self.stepId = stepId
+    self.nodeId = nodeId
+    self.executionId = executionId
+    self.exitCode = exitCode
+    self.nodeExecutions = nodeExecutions
+    self.transitions = transitions
+  }
+}
+
+public typealias WorkflowRunEventHandler = @Sendable (WorkflowRunEvent) async -> Void
 
 public struct WorkflowRunResult: Codable, Equatable, Sendable {
   public var workflowId: String
@@ -134,13 +186,15 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         throw DeterministicWorkflowRunnerError.resumeValidation("session workflow does not match command workflow")
       }
       if existing.status == .completed || existing.status == .failed {
-        return WorkflowRunResult(
+        let terminalResult = WorkflowRunResult(
           workflowId: request.workflow.workflowId,
           session: existing,
           rootOutput: existing.executions.last(where: { $0.acceptedOutput?.isRootOutput == true })?.acceptedOutput?.payload,
           exitCode: existing.status == .completed ? 0 : 1,
           transitions: 0
         )
+        await emitSessionCompletedEvent(result: terminalResult, handler: request.eventHandler)
+        return terminalResult
       }
       session = existing
       currentStepId = existing.currentStepId ?? existing.entryStepId
@@ -173,6 +227,8 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       currentStepId = entryStepId
     }
 
+    await emitSessionStartedEvent(workflowId: request.workflow.workflowId, session: session, handler: request.eventHandler)
+
     var visitedSteps = 0
     var publishedTransitions = 0
     var rootOutput: JSONObject?
@@ -191,6 +247,12 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       guard let registryNode = request.workflow.nodeRegistry.first(where: { $0.id == step.nodeId }) else {
         throw DeterministicWorkflowRunnerError.missingNode(step.nodeId)
       }
+      await emitStepStartedEvent(
+        workflowId: request.workflow.workflowId,
+        session: session,
+        step: step,
+        handler: request.eventHandler
+      )
       let executionIndex = (executionCounts[step.id] ?? 0) + 1
       executionCounts[step.id] = executionIndex
       let resolvedInput = try await inputResolver.resolveInput(for: session.sessionId, stepId: step.id, store: store)
@@ -261,19 +323,114 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       session = publishResult.session
       publishedTransitions += publishResult.publishedMessages.count
       rootOutput = publishResult.rootOutput ?? rootOutput
+      await emitStepCompletedEvent(
+        workflowId: request.workflow.workflowId,
+        session: session,
+        step: step,
+        publishResult: publishResult,
+        publishedTransitions: publishedTransitions,
+        handler: request.eventHandler
+      )
       currentStepId = publishResult.publishedMessages.first?.toStepId
     }
 
     guard let loadedSession = try await store.loadSession(id: session.sessionId) else {
       throw WorkflowRuntimeStoreError.sessionNotFound(session.sessionId)
     }
-    return WorkflowRunResult(
+    let completedResult = WorkflowRunResult(
       workflowId: request.workflow.workflowId,
       session: loadedSession,
       rootOutput: rootOutput,
       exitCode: loadedSession.status == .completed ? 0 : 1,
       transitions: publishedTransitions
     )
+    await emitSessionCompletedEvent(result: completedResult, handler: request.eventHandler)
+    return completedResult
+  }
+
+  private func emitSessionStartedEvent(
+    workflowId: String,
+    session: WorkflowSession,
+    handler: WorkflowRunEventHandler?
+  ) async {
+    await emitRunEvent(
+      .init(
+        type: .sessionStarted,
+        workflowId: workflowId,
+        sessionId: session.sessionId,
+        status: session.status,
+        currentStepId: session.currentStepId
+      ),
+      handler: handler
+    )
+  }
+
+  private func emitStepStartedEvent(
+    workflowId: String,
+    session: WorkflowSession,
+    step: WorkflowStepRef,
+    handler: WorkflowRunEventHandler?
+  ) async {
+    await emitRunEvent(
+      .init(
+        type: .stepStarted,
+        workflowId: workflowId,
+        sessionId: session.sessionId,
+        status: session.status,
+        currentStepId: step.id,
+        stepId: step.id,
+        nodeId: step.nodeId
+      ),
+      handler: handler
+    )
+  }
+
+  private func emitStepCompletedEvent(
+    workflowId: String,
+    session: WorkflowSession,
+    step: WorkflowStepRef,
+    publishResult: WorkflowPublicationResult,
+    publishedTransitions: Int,
+    handler: WorkflowRunEventHandler?
+  ) async {
+    await emitRunEvent(
+      .init(
+        type: .stepCompleted,
+        workflowId: workflowId,
+        sessionId: session.sessionId,
+        status: session.status,
+        currentStepId: session.currentStepId,
+        stepId: step.id,
+        nodeId: step.nodeId,
+        executionId: publishResult.stepExecution.executionId,
+        nodeExecutions: session.executions.count,
+        transitions: publishedTransitions
+      ),
+      handler: handler
+    )
+  }
+
+  private func emitSessionCompletedEvent(result: WorkflowRunResult, handler: WorkflowRunEventHandler?) async {
+    await emitRunEvent(
+      .init(
+        type: .sessionCompleted,
+        workflowId: result.workflowId,
+        sessionId: result.session.sessionId,
+        status: result.session.status,
+        currentStepId: result.session.currentStepId,
+        exitCode: result.exitCode,
+        nodeExecutions: result.nodeExecutions,
+        transitions: result.transitions
+      ),
+      handler: handler
+    )
+  }
+
+  private func emitRunEvent(_ event: WorkflowRunEvent, handler: WorkflowRunEventHandler?) async {
+    guard let handler else {
+      return
+    }
+    await handler(event)
   }
 
   private func executeStdioNodeAndPublish(

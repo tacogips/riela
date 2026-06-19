@@ -87,7 +87,7 @@ Recommended ownership:
   schedules, chat gateway adapters, receipts, and reply dispatch records.
 - `RielaGraphQL`: GraphQL schema and request/response contracts used by the
   server listener.
-- `RielaMenuBarApp` macOS app target: app lifecycle, menu bar UI, user
+- `RielaApp` macOS app target: app lifecycle, menu bar UI, user
   preferences, selection dialogs, update button, status presentation, and calls
   into `RielaServer`.
 
@@ -96,7 +96,7 @@ Recommended ownership:
 adapter injection and shared production adapter construction performed by the
 CLI or app composition root.
 
-`RielaMenuBarApp` must not import `RielaCLI`; this is the concrete guardrail
+`RielaApp` must not import `RielaCLI`; this is the concrete guardrail
 that keeps the app an independent client instead of a GUI wrapper around CLI
 commands. It may import the shared runtime composition library and the agent
 adapter products needed to build production execution dependencies.
@@ -123,7 +123,7 @@ agent commands directly or reinterpret Codex JSONL output inside UI code.
 
 There is no intentional behavior divergence from the local Riela reference for
 agent execution. The intentional architectural divergence is only at the
-client boundary: `RielaCLI` and `RielaMenuBarApp` become peer clients over the
+client boundary: `RielaCLI` and `RielaApp` become peer clients over the
 same serving library instead of the app shelling out to `riela serve`.
 
 ## Public API Shape
@@ -264,9 +264,9 @@ packaging, notarization, Sparkle updates, and Homebrew cask integration remain
 outside this issue.
 
 The initial implementation registers the app in SwiftPM as the
-`RielaMenuBarApp` executable product and provides
+`RielaApp` executable product and provides
 `scripts/build-riela-menu-bar-app.sh` to create a local
-`.build/<configuration>/Riela.app` bundle with `LSUIElement` enabled. The app
+`.build/<configuration>/RielaApp.app` bundle with `LSUIElement` enabled. The app
 imports `RielaServer`, not `RielaCLI`, and calls the shared controller directly
 for Select Workflow, Serve, Stop, Restart, Update/reload, and status actions.
 

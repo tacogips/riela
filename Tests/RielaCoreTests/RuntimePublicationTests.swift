@@ -151,6 +151,31 @@ final class RuntimePublicationTests: XCTestCase {
     XCTAssertEqual(result.session.status, .completed)
   }
 
+  func testNoMatchingConditionalTransitionsCompletesWithRootOutput() async throws {
+    let store = InMemoryWorkflowRuntimeStore(clock: FixedWorkflowRuntimeClock(Date(timeIntervalSince1970: 300)))
+    let session = try await store.createSession(WorkflowSessionCreateInput(workflowId: "wf", entryStepId: "output"))
+    let publisher = InMemoryWorkflowOutputPublisher(store: store)
+
+    let result = try await publisher.publishAcceptedOutput(
+      WorkflowPublicationRequest(
+        sessionId: session.sessionId,
+        stepId: "output",
+        nodeId: "node-output",
+        attempt: 1,
+        inlineCandidate: [
+          "when": .object(["handoff": .bool(false)]),
+          "payload": .object(["answer": .string("done"), "handoff": .bool(false)])
+        ],
+        transitions: [WorkflowStepTransition(toStepId: "next", label: "handoff")]
+      )
+    )
+
+    XCTAssertEqual(result.rootOutput, ["answer": .string("done"), "handoff": .bool(false)])
+    XCTAssertEqual(result.publishedMessages, [])
+    XCTAssertEqual(result.session.status, .completed)
+    XCTAssertEqual(result.stepExecution.acceptedOutput?.isRootOutput, true)
+  }
+
   func testTerminalNonOutputStepDoesNotPublishRootOutput() async throws {
     let store = InMemoryWorkflowRuntimeStore(clock: FixedWorkflowRuntimeClock(Date(timeIntervalSince1970: 300)))
     let session = try await store.createSession(WorkflowSessionCreateInput(workflowId: "wf", entryStepId: "cleanup"))

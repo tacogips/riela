@@ -12,10 +12,10 @@ class Riela < Formula
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/tacogips/riela/releases/download/v0.1.2/riela-0.1.2-darwin-arm64.tar.gz"
-      sha256 "274ce2ddd0cebb6f754154d0c8d53ee249db41df91f67dd3b66cba3d7220973c"
+      sha256 "13c6a56e0424461723c17aaf4754c70892f53e4924cbee423453999467b79e2c"
     else
       url "https://github.com/tacogips/riela/releases/download/v0.1.2/riela-0.1.2-darwin-x64.tar.gz"
-      sha256 "45a78a39521e5522c0505b763d6a1400852831330f87c4033ab7191dbd04a113"
+      sha256 "26bb7f5e859eb21e770a2d4c677b5885450b275d4330e48381139c1adbc8d1ac"
     end
   end
 

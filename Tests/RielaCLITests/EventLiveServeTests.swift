@@ -159,6 +159,8 @@ final class EventLiveServeTests: XCTestCase {
     XCTAssertEqual(serveRecord["lastPollingTarget"], .string("mika"))
     XCTAssertEqual(serveRecord["pollingTargetCount"], .number(2))
     XCTAssertEqual(serveRecord["lastUpdateCount"], .number(1))
+    XCTAssertEqual(serveRecord["lastReplyDispatchCount"], .number(1))
+    XCTAssertEqual(serveRecord["lastReplyAs"], .string("mika"))
   }
 
   func testTelegramGatewayServeRequiresConfiguredEnvironmentBeforeReady() async throws {
@@ -249,6 +251,15 @@ final class EventLiveServeTests: XCTestCase {
     ])
     XCTAssertEqual(history.map { $0["role"]?.stringValue }, ["user", "assistant"])
     XCTAssertEqual(history.last?["replyAs"]?.stringValue, "rina")
+  }
+
+  func testTelegramAPIStatusResponseReportsTelegramFailureDescription() throws {
+    let data = Data(#"{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}"#.utf8)
+    let response = try JSONDecoder().decode(TelegramAPIStatusResponse.self, from: data)
+
+    XCTAssertThrowsError(try response.validate(operation: "sendMessage")) { error in
+      XCTAssertTrue(String(describing: error).contains("Bad Request: chat not found"))
+    }
   }
 
   private func temporaryDirectory() throws -> URL {

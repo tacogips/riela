@@ -134,6 +134,14 @@ struct DefaultEventLiveServer: EventLiveServing {
             envelope: envelope,
             sourceToken: target.token
           )
+          if !replies.isEmpty {
+            try? writeServeRecord(
+              eventRoot: eventRoot,
+              status: "ready",
+              lastReplyDispatchCount: replies.count,
+              lastReplyAs: replies.compactMap(\.replyAs).joined(separator: ",")
+            )
+          }
           if let message = update.message {
             try historyStore.append(message: message, replies: replies)
             try dedupeStore.markSeen(message: message)
@@ -220,17 +228,28 @@ struct DefaultEventLiveServer: EventLiveServing {
     detail: String? = nil,
     pollingTarget: String? = nil,
     pollingTargetCount: Int? = nil,
-    lastUpdateCount: Int? = nil
+    lastUpdateCount: Int? = nil,
+    lastReplyDispatchCount: Int? = nil,
+    lastReplyAs: String? = nil
   ) throws {
     try FileManager.default.createDirectory(at: eventRoot, withIntermediateDirectories: true)
-    var record: JSONObject = [
-      "eventRoot": .string(eventRoot.path),
-      "status": .string(status),
-      "mode": .string("telegram-gateway-live"),
-      "updatedAt": .string(ISO8601DateFormatter().string(from: Date()))
-    ]
+    let recordURL = eventRoot.appendingPathComponent("serve-record.json")
+    var record: JSONObject = {
+      guard let data = try? Data(contentsOf: recordURL),
+        case let .object(existing) = try? JSONDecoder().decode(JSONValue.self, from: data)
+      else {
+        return [:]
+      }
+      return existing
+    }()
+    record["eventRoot"] = .string(eventRoot.path)
+    record["status"] = .string(status)
+    record["mode"] = .string("telegram-gateway-live")
+    record["updatedAt"] = .string(ISO8601DateFormatter().string(from: Date()))
     if let detail {
       record["detail"] = .string(detail)
+    } else if status != "failed" {
+      record.removeValue(forKey: "detail")
     }
     if let pollingTarget {
       record["lastPollingTarget"] = .string(pollingTarget)
@@ -241,8 +260,14 @@ struct DefaultEventLiveServer: EventLiveServing {
     if let lastUpdateCount {
       record["lastUpdateCount"] = .number(Double(lastUpdateCount))
     }
+    if let lastReplyDispatchCount {
+      record["lastReplyDispatchCount"] = .number(Double(lastReplyDispatchCount))
+    }
+    if let lastReplyAs, !lastReplyAs.isEmpty {
+      record["lastReplyAs"] = .string(lastReplyAs)
+    }
     try jsonString(record).write(
-      to: eventRoot.appendingPathComponent("serve-record.json"),
+      to: recordURL,
       atomically: true,
       encoding: .utf8
     )
@@ -624,10 +649,7 @@ struct URLSessionTelegramGatewayAPI: TelegramGatewayAPI {
     }
     let (data, _) = try await URLSession.shared.data(from: url)
     let decoded = try JSONDecoder().decode(TelegramGetUpdatesResponse.self, from: data)
-    guard decoded.ok else {
-      let detail = decoded.description ?? "unknown Telegram getUpdates error"
-      throw CLIUsageError("Telegram getUpdates failed: \(detail)")
-    }
+    try decoded.validate(operation: "getUpdates")
     return decoded.result ?? []
   }
 
@@ -647,10 +669,12 @@ struct URLSessionTelegramGatewayAPI: TelegramGatewayAPI {
     urlRequest.httpMethod = "POST"
     urlRequest.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
     urlRequest.httpBody = components.percentEncodedQuery?.data(using: .utf8)
-    let (_, response) = try await URLSession.shared.data(for: urlRequest)
+    let (data, response) = try await URLSession.shared.data(for: urlRequest)
     if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
       throw CLIUsageError("Telegram sendMessage failed with HTTP \(http.statusCode)")
     }
+    let decoded = try JSONDecoder().decode(TelegramAPIStatusResponse.self, from: data)
+    try decoded.validate(operation: "sendMessage")
   }
 }
 
@@ -749,17 +773,45 @@ private struct TelegramConversationHistoryEntry: Codable, Equatable {
   }
 }
 
-private struct TelegramGetUpdatesResponse: Decodable {
+struct TelegramAPIStatusResponse: Decodable, Equatable {
   var ok: Bool
-  var result: [TelegramUpdate]?
   var errorCode: Int?
   var description: String?
 
   private enum CodingKeys: String, CodingKey {
     case ok
-    case result
     case errorCode = "error_code"
     case description
+  }
+
+  func validate(operation: String) throws {
+    guard ok else {
+      let detail = description ?? errorCode.map { "error code \($0)" } ?? "unknown Telegram API error"
+      throw CLIUsageError("Telegram \(operation) failed: \(detail)")
+    }
+  }
+}
+
+private struct TelegramGetUpdatesResponse: Decodable {
+  var status: TelegramAPIStatusResponse
+  var result: [TelegramUpdate]?
+
+  var ok: Bool {
+    status.ok
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case result
+  }
+
+  init(from decoder: Decoder) throws {
+    self.status = try TelegramAPIStatusResponse(from: decoder)
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.result = try container.decodeIfPresent([TelegramUpdate].self, forKey: .result)
+  }
+
+  func validate(operation: String) throws {
+    try status.validate(operation: operation)
   }
 }
 

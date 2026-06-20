@@ -92,6 +92,63 @@ final class EventLiveServeTests: XCTestCase {
     XCTAssertEqual(sentMessages, [])
   }
 
+  func testTelegramGatewayServeIncludesPersistedConversationHistory() async throws {
+    let eventRoot = try temporaryDirectory()
+    try writeTelegramEventConfig(eventRoot: eventRoot)
+    let api = FakeTelegramGatewayAPI(updates: [
+      TelegramUpdate(
+        updateId: 50,
+        message: try TelegramMessage.fixture(
+          chatId: "100",
+          fromId: "200",
+          text: "@rinacursor0529bot 最近調子どう?"
+        )
+      ),
+      TelegramUpdate(
+        updateId: 51,
+        message: try TelegramMessage.fixture(
+          chatId: "100",
+          fromId: "200",
+          text: "@rinacursor0529bot なんの機能?"
+        )
+      )
+    ])
+    let workflowRunner = FakeEventWorkflowRunner(
+      replies: [
+        "順調だよ。今は新しい機能の検証を進めているところ。",
+        "さっき話した新しい機能の検証のことだよ。"
+      ],
+      replyAs: "rina"
+    )
+    let server = DefaultEventLiveServer(telegramAPI: api, workflowRunner: workflowRunner)
+
+    let result = try await CLIRuntimeEnvironment.$overrides.withValue([
+      "TEST_TELEGRAM_TOKEN": "source-token",
+      "TEST_TELEGRAM_BOT_ID": "999"
+    ]) {
+      try await server.serve(
+        eventRoot: eventRoot,
+        target: nil,
+        parsed: try ParsedParityOptions([
+          "--workflow-definition-dir", eventRoot.deletingLastPathComponent().path,
+          "--limit", "2"
+        ]),
+        output: .json
+      )
+    }
+
+    XCTAssertEqual(result.status, "ok")
+    let workflowRequests = await workflowRunner.requests
+    XCTAssertEqual(workflowRequests.count, 2)
+    let history = try XCTUnwrap(historyInput(from: workflowRequests[1]))
+    XCTAssertEqual(history.map { $0["text"]?.stringValue }, [
+      "@rinacursor0529bot 最近調子どう?",
+      "順調だよ。今は新しい機能の検証を進めているところ。"
+    ])
+    XCTAssertEqual(history.map { $0["role"]?.stringValue }, ["user", "assistant"])
+    XCTAssertEqual(history.last?["replyAs"]?.stringValue, "rina")
+  }
+
   private func temporaryDirectory() throws -> URL {
     let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
       .appendingPathComponent("riela-event-live-tests-\(UUID().uuidString)", isDirectory: true)
@@ -145,6 +202,22 @@ final class EventLiveServeTests: XCTestCase {
   }
 }
 
+private func historyInput(from request: EventWorkflowRunRequest) -> [JSONObject]? {
+  guard
+    case let .object(event)? = request.runtimeVariables["event"],
+    case let .object(input)? = event["input"],
+    case let .array(history)? = input["history"]
+  else {
+    return nil
+  }
+  return history.compactMap { value in
+    guard case let .object(object) = value else {
+      return nil
+    }
+    return object
+  }
+}
+
 private actor FakeTelegramGatewayAPI: TelegramGatewayAPI {
   private var queuedUpdates: [TelegramUpdate]
   private(set) var sentMessages: [TelegramSendMessageRequest] = []
@@ -166,16 +239,22 @@ private actor FakeTelegramGatewayAPI: TelegramGatewayAPI {
 
 private actor FakeEventWorkflowRunner: EventWorkflowRunning {
   private(set) var requests: [EventWorkflowRunRequest] = []
-  private let replyText: String
+  private let replyTexts: [String]
   private let replyAs: String
 
   init(replyText: String, replyAs: String) {
-    self.replyText = replyText
+    self.replyTexts = [replyText]
+    self.replyAs = replyAs
+  }
+
+  init(replies: [String], replyAs: String) {
+    self.replyTexts = replies
     self.replyAs = replyAs
   }
 
   func runWorkflow(_ request: EventWorkflowRunRequest) async throws -> WorkflowRunResult {
     requests.append(request)
+    let replyText = replyTexts[min(requests.count - 1, replyTexts.count - 1)]
     let now = Date(timeIntervalSince1970: 0)
     let output = WorkflowAcceptedOutputMetadata(
       payload: [

@@ -62,6 +62,21 @@ func makeScenarioBackedStdioNodeExecutor(
   return ScenarioWorkflowStdioNodeExecutor(scenario: scenario, fallback: fallback)
 }
 
+func makeScenarioBackedAddonResolver(
+  scenarioPath: String?,
+  workingDirectory: String
+) throws -> any WorkflowAddonResolving {
+  let fallback = BuiltinWorkflowAddonResolver()
+  guard let scenarioPath else {
+    return fallback
+  }
+  let scenario = try WorkflowMockScenarioLoader().loadScenario(at: absoluteURL(
+    scenarioPath,
+    relativeTo: URL(fileURLWithPath: workingDirectory)
+  ).path)
+  return ScenarioWorkflowAddonResolver(scenario: scenario, fallback: fallback)
+}
+
 actor ScenarioWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
   private let scenario: WorkflowMockScenario
   private let fallback: any WorkflowStdioNodeExecuting
@@ -89,7 +104,66 @@ actor ScenarioWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
   }
 }
 
+actor ScenarioWorkflowAddonResolver: WorkflowAddonResolving {
+  private let scenario: WorkflowMockScenario
+  private let fallback: any WorkflowAddonResolving
+  private var counts: [String: Int] = [:]
+
+  init(scenario: WorkflowMockScenario, fallback: any WorkflowAddonResolving) {
+    self.scenario = scenario
+    self.fallback = fallback
+  }
+
+  func execute(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    guard let sequence = scenario.responses[input.nodeId] else {
+      return try await fallback.execute(input, context: context)
+    }
+    let count = (counts[input.nodeId] ?? 0) + 1
+    counts[input.nodeId] = count
+    let response = sequence.isEmpty ? MockNodeResponse() : sequence[min(count - 1, sequence.count - 1)]
+    if response.fail == true {
+      throw AdapterExecutionError(.providerError, "scenario forced failure for add-on node '\(input.nodeId)'")
+    }
+    return AdapterExecutionOutput(
+      provider: response.provider ?? "scenario-mock",
+      model: response.model ?? input.addon.name,
+      promptText: response.promptText ?? "",
+      completionPassed: response.completionPassed ?? true,
+      when: response.when ?? ["always": true],
+      payload: response.payload ?? [:]
+    )
+  }
+}
+
 typealias GeminiAddonAdapterFactory = @Sendable (OfficialSDKAdapterConfiguration) async throws -> any NodeAdapter
+
+private enum BuiltinSDKWorker: String {
+  case codex = "riela/codex-sdk-worker"
+  case claude = "riela/claude-sdk-worker"
+  case cursor = "riela/cursor-sdk-worker"
+
+  var executionBackend: NodeExecutionBackend {
+    switch self {
+    case .codex:
+      .officialOpenAISDK
+    case .claude:
+      .officialAnthropicSDK
+    case .cursor:
+      .officialCursorSDK
+    }
+  }
+
+  var provider: String {
+    switch self {
+    case .codex:
+      OpenAiSDKAdapter.provider
+    case .claude:
+      AnthropicSDKAdapter.provider
+    case .cursor:
+      "official-cursor-sdk"
+    }
+  }
+}
 
 struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
   var environment: [String: String]
@@ -112,6 +186,9 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     if input.addon.name == "riela/gemini-sdk-worker" {
       return try await executeGeminiSDKWorker(input, context: context)
     }
+    if let sdkWorker = BuiltinSDKWorker(rawValue: input.addon.name) {
+      return try executeSDKWorker(input, sdkWorker: sdkWorker)
+    }
     if input.addon.name == "riela/chat-persona-router" {
       return executeChatPersonaRouter(input)
     }
@@ -128,7 +205,51 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
         "addon": .string(input.addon.name),
         "stepId": .string(input.stepId)
       ]
-      )
+    )
+  }
+
+  private func executeSDKWorker(
+    _ input: WorkflowAddonExecutionInput,
+    sdkWorker: BuiltinSDKWorker
+  ) throws -> AdapterExecutionOutput {
+    guard input.addon.version == nil || input.addon.version == "1" else {
+      throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
+    }
+    let config = input.addon.config ?? [:]
+    guard let model = nonEmptyString(config["model"]) else {
+      throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) config.model is required")
+    }
+    guard let promptTemplate = nonEmptyString(config["promptTemplate"]) else {
+      throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) config.promptTemplate is required")
+    }
+
+    let variables = addonVariables(for: input)
+    let promptText = renderPromptTemplate(promptTemplate, variables: variables)
+    let textTemplate = nonEmptyString(config["mockResponseTemplate"])
+      ?? nonEmptyString(config["dryRunTextTemplate"])
+    let text = (textTemplate.map { renderPromptTemplate($0, variables: variables) }
+      ?? "\(input.stepId) completed without live SDK execution.")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else {
+      throw AdapterExecutionError(.invalidOutput, "\(input.addon.name) rendered empty mock response text")
+    }
+
+    var payload = input.resolvedInputPayload
+    payload["status"] = .string("ok")
+    payload["addon"] = .string(input.addon.name)
+    payload["stepId"] = .string(input.stepId)
+    payload["executionBackend"] = .string(sdkWorker.executionBackend.rawValue)
+    payload["text"] = .string(text)
+    payload["replyText"] = .string(text)
+    payload["liveExecution"] = .bool(false)
+
+    return AdapterExecutionOutput(
+      provider: sdkWorker.provider,
+      model: model,
+      promptText: promptText,
+      completionPassed: true,
+      payload: payload
+    )
   }
 
   private func executeChatPersonaRouter(_ input: WorkflowAddonExecutionInput) -> AdapterExecutionOutput {
@@ -224,11 +345,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       throw AdapterExecutionError(.policyBlocked, "riela/chat-reply-worker config.textTemplate is required")
     }
 
-    var variables = input.variables
-    for (key, value) in input.resolvedInputPayload {
-      variables[key] = value
-    }
-    variables["input"] = .object(input.resolvedInputPayload)
+    var variables = addonVariables(for: input)
     variables["inbox"] = .object([
       "latest": .object([
         "output": .object([
@@ -236,14 +353,6 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
         ])
       ])
     ])
-    variables["workflowId"] = .string(input.workflowId)
-    variables["stepId"] = .string(input.stepId)
-    variables["nodeId"] = .string(input.nodeId)
-    variables["addonName"] = .string(input.addon.name)
-    for (key, value) in renderAddonInputs(input.addon.inputs, variables: variables) {
-      variables[key] = value
-    }
-
     let text = renderPromptTemplate(textTemplate, variables: variables)
       .trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else {
@@ -303,18 +412,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       throw AdapterExecutionError(.policyBlocked, "riela/gemini-sdk-worker requires addon.env.GEMINI_API_KEY or addon.env.GOOGLE_API_KEY")
     }
 
-    var variables = input.variables
-    for (key, value) in input.resolvedInputPayload {
-      variables[key] = value
-    }
-    variables["input"] = .object(input.resolvedInputPayload)
-    variables["workflowId"] = .string(input.workflowId)
-    variables["stepId"] = .string(input.stepId)
-    variables["nodeId"] = .string(input.nodeId)
-    variables["addonName"] = .string(input.addon.name)
-    for (key, value) in renderAddonInputs(input.addon.inputs, variables: variables) {
-      variables[key] = value
-    }
+    var variables = addonVariables(for: input)
     if let inlineDataParts = config["inlineDataParts"] {
       variables["geminiInlineDataParts"] = inlineDataParts
     }
@@ -344,6 +442,22 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       context: context
     )
   }
+}
+
+private func addonVariables(for input: WorkflowAddonExecutionInput) -> JSONObject {
+  var variables = input.variables
+  for (key, value) in input.resolvedInputPayload {
+    variables[key] = value
+  }
+  variables["input"] = .object(input.resolvedInputPayload)
+  variables["workflowId"] = .string(input.workflowId)
+  variables["stepId"] = .string(input.stepId)
+  variables["nodeId"] = .string(input.nodeId)
+  variables["addonName"] = .string(input.addon.name)
+  for (key, value) in renderAddonInputs(input.addon.inputs, variables: variables) {
+    variables[key] = value
+  }
+  return variables
 }
 
 private func environmentValue(_ key: String) -> String? {

@@ -1376,6 +1376,10 @@ public struct WorkflowRunCommand: Sendable {
         scenarioPath: options.mockScenarioPath,
         workingDirectory: options.workingDirectory
       )
+      let addonResolver = try makeScenarioBackedAddonResolver(
+        scenarioPath: options.mockScenarioPath,
+        workingDirectory: options.workingDirectory
+      )
       let persistedResolution = CLIWorkflowSessionResolution.resolutionForPersistence(
         resolution: resolution,
         resolvedSourceScope: bundle.sourceScope
@@ -1390,7 +1394,7 @@ public struct WorkflowRunCommand: Sendable {
       let runner = DeterministicWorkflowRunner(
         store: runtimeStore,
         adapter: adapter,
-        addonResolver: BuiltinWorkflowAddonResolver(),
+        addonResolver: addonResolver,
         stdioNodeExecutor: stdioNodeExecutor
       )
       let persistedIdentity = persistenceIdentity(

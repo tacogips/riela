@@ -381,6 +381,62 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertEqual(output.when["handoff_rina"], false)
   }
 
+  func testBuiltinSDKWorkerRendersMockResponseText() async throws {
+    let output = try await BuiltinWorkflowAddonResolver(environment: [:]).execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "telegram-sdk-trio-chat",
+        stepId: "rina-cursor-sdk",
+        nodeId: "rina-cursor-sdk",
+        addon: WorkflowNodeAddonRef(
+          name: "riela/cursor-sdk-worker",
+          version: "1",
+          config: [
+            "model": .string("gpt-5.5"),
+            "promptTemplate": .string("Reply to {{event.input.text}} as {{persona}}."),
+            "mockResponseTemplate": .string("{{persona}} says {{input.text}}")
+          ]
+        ),
+        variables: [
+          "event": .object(["input": .object(["text": .string("SDK trio")])]),
+          "persona": .string("Rina")
+        ],
+        resolvedInputPayload: ["text": .string("hello")]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    XCTAssertEqual(output.provider, "official-cursor-sdk")
+    XCTAssertEqual(output.model, "gpt-5.5")
+    XCTAssertEqual(output.promptText, "Reply to SDK trio as Rina.")
+    XCTAssertEqual(output.payload["executionBackend"], .string("official/cursor-sdk"))
+    XCTAssertEqual(output.payload["text"], .string("Rina says hello"))
+    XCTAssertEqual(output.payload["replyText"], .string("Rina says hello"))
+    XCTAssertEqual(output.payload["liveExecution"], .bool(false))
+  }
+
+  func testScenarioBackedAddonResolverUsesMockResponseBeforeFallback() async throws {
+    let root = repositoryRoot()
+    let resolver = try makeScenarioBackedAddonResolver(
+      scenarioPath: "\(root)/examples/telegram-sdk-trio-chat/mock-scenario.json",
+      workingDirectory: root
+    )
+    let output = try await resolver.execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "telegram-sdk-trio-chat",
+        stepId: "route-message",
+        nodeId: "route-message",
+        addon: WorkflowNodeAddonRef(name: "riela/chat-persona-router", version: "1"),
+        variables: [:]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    XCTAssertEqual(output.provider, "scenario-mock")
+    XCTAssertEqual(output.payload["target"], .string("rina"))
+    XCTAssertEqual(output.when["target_rina"], true)
+    XCTAssertEqual(output.when["target_yui"], false)
+  }
+
   func testBuiltinChatPersonaRouterSelectsNamedPersonas() async throws {
     let resolver = BuiltinWorkflowAddonResolver(environment: [:])
     let addon = WorkflowNodeAddonRef(

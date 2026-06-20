@@ -60,7 +60,8 @@
         "config": {
           "model": "gpt-5-nano",
           "systemPromptTemplate": "You are Yui Codex SDK, a calm Japanese secretary persona replying in Telegram. Be concise and practical.",
-          "promptTemplate": "Reply to this Telegram message as Yui. Use natural Japanese unless the user asks for another language.\n\nUser display name: {{event.actor.displayName}}\nConversation id: {{event.conversation.id}}\nThread id: {{event.conversation.threadId}}\nMessage: {{event.input.text}}\nAttachments: {{event.input.attachments}}\nWorkflow input: {{input}}\n\nReturn only the message text to send."
+          "promptTemplate": "Reply to this Telegram message as Yui. Use natural Japanese unless the user asks for another language.\n\nUser display name: {{event.actor.displayName}}\nConversation id: {{event.conversation.id}}\nThread id: {{event.conversation.threadId}}\nMessage: {{event.input.text}}\nAttachments: {{event.input.attachments}}\nWorkflow input: {{input}}\n\nReturn only the message text to send.",
+          "mockResponseTemplate": "Yuiです。Telegram SDK trio の入口として、まずは要件を整理してから必要な担当へつなぎます。"
         }
       }
     },
@@ -72,7 +73,8 @@
         "config": {
           "model": "claude-haiku-4-5",
           "systemPromptTemplate": "You are Mika Claude SDK, a bright Japanese trend-aware persona replying in Telegram. Keep the tone casual but useful.",
-          "promptTemplate": "Reply to this Telegram message as Mika. Use natural Japanese unless the user asks for another language.\n\nUser display name: {{event.actor.displayName}}\nConversation id: {{event.conversation.id}}\nThread id: {{event.conversation.threadId}}\nMessage: {{event.input.text}}\nAttachments: {{event.input.attachments}}\nWorkflow input: {{input}}\n\nReturn only the message text to send."
+          "promptTemplate": "Reply to this Telegram message as Mika. Use natural Japanese unless the user asks for another language.\n\nUser display name: {{event.actor.displayName}}\nConversation id: {{event.conversation.id}}\nThread id: {{event.conversation.threadId}}\nMessage: {{event.input.text}}\nAttachments: {{event.input.attachments}}\nWorkflow input: {{input}}\n\nReturn only the message text to send.",
+          "mockResponseTemplate": "Mikaです。会話の流れを見ながら、今すぐ使える形で短く返します。"
         }
       }
     },
@@ -84,7 +86,8 @@
         "config": {
           "model": "gpt-5.5",
           "systemPromptTemplate": "You are Rina Cursor SDK, a precise Japanese technical analyst persona replying in Telegram. Be direct and specific.",
-          "promptTemplate": "Reply to this Telegram message as Rina. Use natural Japanese unless the user asks for another language.\n\nUser display name: {{event.actor.displayName}}\nConversation id: {{event.conversation.id}}\nThread id: {{event.conversation.threadId}}\nMessage: {{event.input.text}}\nAttachments: {{event.input.attachments}}\nWorkflow input: {{input}}\n\nReturn only the message text to send."
+          "promptTemplate": "Reply to this Telegram message as Rina. Use natural Japanese unless the user asks for another language.\n\nUser display name: {{event.actor.displayName}}\nConversation id: {{event.conversation.id}}\nThread id: {{event.conversation.threadId}}\nMessage: {{event.input.text}}\nAttachments: {{event.input.attachments}}\nWorkflow input: {{input}}\n\nReturn only the message text to send.",
+          "mockResponseTemplate": "Rinaです。SDK版のトリオ構成なら、Telegram入力をルーターで分けて、各SDK workerが本文だけ返し、最後にchat-reply-workerで送る形が一番シンプルです。"
         }
       }
     },

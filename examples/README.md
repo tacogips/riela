@@ -287,7 +287,8 @@ Minimal Telegram trio chat workflow using the SDK-backed worker add-ons:
 - replies use `riela/chat-reply-worker` and dry-run when a local run has no
   Telegram chat target
 - the deterministic mock scenario exercises the routing and reply path without
-  requiring live SDK API keys
+  requiring live SDK API keys by rendering each SDK worker's
+  `mockResponseTemplate`
 
 Validate it:
 

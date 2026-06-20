@@ -49,6 +49,13 @@ struct DefaultEventLiveServer: EventLiveServing {
       return liveUnavailable(eventRoot: eventRoot, actionTarget: target, unsupportedSources: enabledSources.map { "\($0.id):\($0.kind.rawValue)" }.joined(separator: ","))
     }
 
+    let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
+    do {
+      try telegramSources.forEach { try $0.validateEnvironment(environment: environment) }
+    } catch {
+      try? writeServeRecord(eventRoot: eventRoot, status: "failed", detail: String(describing: error))
+      throw error
+    }
     try writeServeRecord(eventRoot: eventRoot, status: "ready")
     var processedEvents = 0
     let maximumEvents = parsed.limit
@@ -185,13 +192,17 @@ struct DefaultEventLiveServer: EventLiveServing {
     )
   }
 
-  private func writeServeRecord(eventRoot: URL, status: String) throws {
+  private func writeServeRecord(eventRoot: URL, status: String, detail: String? = nil) throws {
     try FileManager.default.createDirectory(at: eventRoot, withIntermediateDirectories: true)
-    try jsonString([
+    var record: JSONObject = [
       "eventRoot": .string(eventRoot.path),
       "status": .string(status),
       "mode": .string("telegram-gateway-live")
-    ] as JSONObject).write(
+    ]
+    if let detail {
+      record["detail"] = .string(detail)
+    }
+    try jsonString(record).write(
       to: eventRoot.appendingPathComponent("serve-record.json"),
       atomically: true,
       encoding: .utf8
@@ -310,6 +321,21 @@ struct TelegramGatewaySource: Decodable, Equatable, Sendable {
       throw CLIUsageError("telegram-gateway source '\(id)' requires \(tokenEnv ?? "RIELA_TELEGRAM_BOT_TOKEN")")
     }
     return token
+  }
+
+  func validateEnvironment(environment: [String: String]) throws {
+    _ = try token(environment: environment)
+    if let botIdEnv, environmentValue(botIdEnv, environment: environment) == nil {
+      throw CLIUsageError("telegram-gateway source '\(id)' requires \(botIdEnv)")
+    }
+    for (replyAs, replyBot) in replyBots.sorted(by: { $0.key < $1.key }) {
+      guard let tokenEnv = replyBot.tokenEnv else {
+        continue
+      }
+      guard environmentValue(tokenEnv, environment: environment) != nil else {
+        throw CLIUsageError("telegram-gateway source '\(id)' reply bot '\(replyAs)' requires \(tokenEnv)")
+      }
+    }
   }
 
   func replyToken(replyAs: String?, environment: [String: String]) -> String? {
@@ -541,7 +567,12 @@ struct URLSessionTelegramGatewayAPI: TelegramGatewayAPI {
       throw CLIUsageError("failed to build Telegram getUpdates URL")
     }
     let (data, _) = try await URLSession.shared.data(from: url)
-    return try JSONDecoder().decode(TelegramGetUpdatesResponse.self, from: data).result
+    let decoded = try JSONDecoder().decode(TelegramGetUpdatesResponse.self, from: data)
+    guard decoded.ok else {
+      let detail = decoded.description ?? "unknown Telegram getUpdates error"
+      throw CLIUsageError("Telegram getUpdates failed: \(detail)")
+    }
+    return decoded.result ?? []
   }
 
   func sendMessage(request: TelegramSendMessageRequest) async throws {
@@ -664,7 +695,16 @@ private struct TelegramConversationHistoryEntry: Codable, Equatable {
 
 private struct TelegramGetUpdatesResponse: Decodable {
   var ok: Bool
-  var result: [TelegramUpdate]
+  var result: [TelegramUpdate]?
+  var errorCode: Int?
+  var description: String?
+
+  private enum CodingKeys: String, CodingKey {
+    case ok
+    case result
+    case errorCode = "error_code"
+    case description
+  }
 }
 
 private struct TelegramOffsetStore {

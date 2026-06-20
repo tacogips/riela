@@ -75,7 +75,8 @@ final class EventLiveServeTests: XCTestCase {
 
     let result = try await CLIRuntimeEnvironment.$overrides.withValue([
       "TEST_TELEGRAM_TOKEN": "source-token",
-      "TEST_TELEGRAM_BOT_ID": "999"
+      "TEST_TELEGRAM_BOT_ID": "999",
+      "TEST_TELEGRAM_YUI_TOKEN": "yui-token"
     ]) {
       try await server.serve(
         eventRoot: eventRoot,
@@ -90,6 +91,35 @@ final class EventLiveServeTests: XCTestCase {
     let sentMessages = await api.sentMessages
     XCTAssertEqual(workflowRequests.count, 0)
     XCTAssertEqual(sentMessages, [])
+  }
+
+  func testTelegramGatewayServeRequiresConfiguredEnvironmentBeforeReady() async throws {
+    let eventRoot = try temporaryDirectory()
+    try writeTelegramEventConfig(eventRoot: eventRoot)
+    let server = DefaultEventLiveServer(
+      telegramAPI: FakeTelegramGatewayAPI(updates: []),
+      workflowRunner: FakeEventWorkflowRunner(replyText: "unused", replyAs: "yui")
+    )
+
+    do {
+      _ = try await CLIRuntimeEnvironment.$overrides.withValue([:]) {
+        try await server.serve(
+          eventRoot: eventRoot,
+          target: nil,
+          parsed: try ParsedParityOptions(["--limit", "1"]),
+          output: .json
+        )
+      }
+      XCTFail("Expected missing Telegram environment to fail before reporting ready.")
+    } catch {
+      XCTAssertTrue(String(describing: error).contains("TEST_TELEGRAM_TOKEN"))
+    }
+    let serveRecordData = try Data(contentsOf: eventRoot.appendingPathComponent("serve-record.json"))
+    guard case let .object(serveRecord) = try JSONDecoder().decode(JSONValue.self, from: serveRecordData) else {
+      return XCTFail("Expected serve record to be a JSON object.")
+    }
+    XCTAssertEqual(serveRecord["status"], .string("failed"))
+    XCTAssertTrue(serveRecord["detail"]?.stringValue?.contains("TEST_TELEGRAM_TOKEN") == true)
   }
 
   func testTelegramGatewayServeIncludesPersistedConversationHistory() async throws {
@@ -124,7 +154,8 @@ final class EventLiveServeTests: XCTestCase {
 
     let result = try await CLIRuntimeEnvironment.$overrides.withValue([
       "TEST_TELEGRAM_TOKEN": "source-token",
-      "TEST_TELEGRAM_BOT_ID": "999"
+      "TEST_TELEGRAM_BOT_ID": "999",
+      "TEST_TELEGRAM_YUI_TOKEN": "yui-token"
     ]) {
       try await server.serve(
         eventRoot: eventRoot,

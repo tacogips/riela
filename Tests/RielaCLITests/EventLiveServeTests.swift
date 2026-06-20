@@ -150,6 +150,13 @@ final class EventLiveServeTests: XCTestCase {
       encoding: .utf8
     )
     XCTAssertTrue(offsetText.contains(#""offset" : 89"#))
+    let serveRecordData = try Data(contentsOf: eventRoot.appendingPathComponent("serve-record.json"))
+    guard case let .object(serveRecord) = try JSONDecoder().decode(JSONValue.self, from: serveRecordData) else {
+      return XCTFail("Expected serve record to be a JSON object.")
+    }
+    XCTAssertEqual(serveRecord["lastPollingTarget"], .string("mika"))
+    XCTAssertEqual(serveRecord["pollingTargetCount"], .number(2))
+    XCTAssertEqual(serveRecord["lastUpdateCount"], .number(1))
   }
 
   func testTelegramGatewayServeRequiresConfiguredEnvironmentBeforeReady() async throws {

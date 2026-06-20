@@ -94,6 +94,13 @@ struct DefaultEventLiveServer: EventLiveServing {
         timeoutSeconds: source.polling.timeoutSeconds,
         limit: parsed.limit ?? source.polling.limit
       ))
+      try? writeServeRecord(
+        eventRoot: eventRoot,
+        status: "ready",
+        pollingTarget: target.recordId,
+        pollingTargetCount: targets.count,
+        lastUpdateCount: updates.count
+      )
       for update in updates {
         observedUpdates += 1
         try offsetStore.saveOffset(update.updateId + 1)
@@ -200,15 +207,32 @@ struct DefaultEventLiveServer: EventLiveServing {
     )
   }
 
-  private func writeServeRecord(eventRoot: URL, status: String, detail: String? = nil) throws {
+  private func writeServeRecord(
+    eventRoot: URL,
+    status: String,
+    detail: String? = nil,
+    pollingTarget: String? = nil,
+    pollingTargetCount: Int? = nil,
+    lastUpdateCount: Int? = nil
+  ) throws {
     try FileManager.default.createDirectory(at: eventRoot, withIntermediateDirectories: true)
     var record: JSONObject = [
       "eventRoot": .string(eventRoot.path),
       "status": .string(status),
-      "mode": .string("telegram-gateway-live")
+      "mode": .string("telegram-gateway-live"),
+      "updatedAt": .string(ISO8601DateFormatter().string(from: Date()))
     ]
     if let detail {
       record["detail"] = .string(detail)
+    }
+    if let pollingTarget {
+      record["lastPollingTarget"] = .string(pollingTarget)
+    }
+    if let pollingTargetCount {
+      record["pollingTargetCount"] = .number(Double(pollingTargetCount))
+    }
+    if let lastUpdateCount {
+      record["lastUpdateCount"] = .number(Double(lastUpdateCount))
     }
     try jsonString(record).write(
       to: eventRoot.appendingPathComponent("serve-record.json"),
@@ -474,6 +498,10 @@ struct TelegramGatewayReplyBot: Decodable, Equatable, Sendable {
 struct TelegramPollingTarget: Equatable, Sendable {
   var id: String?
   var token: String
+
+  var recordId: String {
+    id ?? "source"
+  }
 }
 
 struct TelegramGetUpdatesRequest: Equatable, Sendable {

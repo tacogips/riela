@@ -31,6 +31,63 @@ final class WorkflowModelTests: XCTestCase {
     XCTAssertEqual(workflow.steps?.first?.role, .worker)
   }
 
+  func testWorkflowDecodesNodeInputFilters() throws {
+    let data = Data("""
+      {
+        "workflowId": "telegram-filtered",
+        "description": "Sample workflow",
+        "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 3 },
+        "entryStepId": "reply",
+        "nodes": [{
+          "id": "reply",
+          "nodeFile": "nodes/reply.json",
+          "inputFilters": [{
+            "kind": "telegram",
+            "language": "javascript",
+            "expression": "telegram.message.text.includes('@yui')"
+          }]
+        }],
+        "steps": [{ "id": "reply", "nodeId": "reply", "role": "worker" }]
+      }
+      """.utf8)
+
+    let result = validateAuthoredWorkflowData(data)
+
+    XCTAssertEqual(result.diagnostics.filter { $0.severity == .error }, [])
+    let workflow = try XCTUnwrap(result.workflow)
+    XCTAssertEqual(workflow.nodeRegistry.first?.inputFilters?.first?.kind, .telegram)
+    XCTAssertEqual(workflow.nodeRegistry.first?.inputFilters?.first?.expression, "telegram.message.text.includes('@yui')")
+    XCTAssertEqual(workflow.nodes.first?.inputFilters?.first?.kind, .telegram)
+  }
+
+  func testWorkflowValidationRejectsUnsupportedNodeInputFilterKind() throws {
+    let data = Data("""
+      {
+        "workflowId": "telegram-filtered",
+        "description": "Sample workflow",
+        "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 3 },
+        "entryStepId": "reply",
+        "nodes": [{
+          "id": "reply",
+          "nodeFile": "nodes/reply.json",
+          "inputFilters": [{
+            "kind": "matrix",
+            "language": "javascript",
+            "expression": "true"
+          }]
+        }],
+        "steps": [{ "id": "reply", "nodeId": "reply", "role": "worker" }]
+      }
+      """.utf8)
+
+    let result = validateAuthoredWorkflowData(data)
+
+    XCTAssertNil(result.workflow)
+    XCTAssertTrue(result.diagnostics.contains {
+      $0.path == "workflow.nodes[0].inputFilters[0].kind" && $0.message == "must be 'telegram'"
+    })
+  }
+
   func testWorkflowValidationLoadsProjectDesignLoopFixture() throws {
     let rootURL = try repositoryRoot()
     let fixtureURL = rootURL.appendingPathComponent(".riela/workflows/codex-design-and-implement-review-loop/workflow.json")

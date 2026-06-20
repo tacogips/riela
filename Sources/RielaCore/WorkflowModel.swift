@@ -135,6 +135,60 @@ public struct WorkflowNodeAddonRef: Codable, Equatable, Sendable {
   }
 }
 
+public enum WorkflowInputFilterKind: RawRepresentable, Codable, Equatable, Sendable {
+  public typealias RawValue = String
+
+  case telegram
+  case custom(String)
+
+  public init(rawValue: String) {
+    switch rawValue {
+    case "telegram":
+      self = .telegram
+    default:
+      self = .custom(rawValue)
+    }
+  }
+
+  public var rawValue: String {
+    switch self {
+    case .telegram:
+      "telegram"
+    case let .custom(value):
+      value
+    }
+  }
+
+  public init(from decoder: Decoder) throws {
+    self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+public enum WorkflowInputFilterLanguage: String, Codable, CaseIterable, Sendable {
+  case javascript
+}
+
+public struct WorkflowInputFilter: Codable, Equatable, Sendable {
+  public var kind: WorkflowInputFilterKind
+  public var language: WorkflowInputFilterLanguage
+  public var expression: String
+
+  public init(
+    kind: WorkflowInputFilterKind,
+    language: WorkflowInputFilterLanguage = .javascript,
+    expression: String
+  ) {
+    self.kind = kind
+    self.language = language
+    self.expression = expression
+  }
+}
+
 public struct WorkflowNodeRegistryRef: Codable, Equatable, Sendable {
   public var id: String
   public var nodeFile: String?
@@ -142,6 +196,7 @@ public struct WorkflowNodeRegistryRef: Codable, Equatable, Sendable {
   public var execution: WorkflowNodeExecutionPolicy?
   public var kind: WorkflowRegistryNodeKind?
   public var repeatPolicy: WorkflowNodeRepeatPolicy?
+  public var inputFilters: [WorkflowInputFilter]?
 
   enum CodingKeys: String, CodingKey {
     case id
@@ -150,6 +205,7 @@ public struct WorkflowNodeRegistryRef: Codable, Equatable, Sendable {
     case execution
     case kind
     case repeatPolicy = "repeat"
+    case inputFilters
   }
 
   public init(
@@ -158,7 +214,8 @@ public struct WorkflowNodeRegistryRef: Codable, Equatable, Sendable {
     addon: WorkflowNodeAddonRef? = nil,
     execution: WorkflowNodeExecutionPolicy? = nil,
     kind: WorkflowRegistryNodeKind? = nil,
-    repeatPolicy: WorkflowNodeRepeatPolicy? = nil
+    repeatPolicy: WorkflowNodeRepeatPolicy? = nil,
+    inputFilters: [WorkflowInputFilter]? = nil
   ) {
     self.id = id
     self.nodeFile = nodeFile
@@ -166,6 +223,7 @@ public struct WorkflowNodeRegistryRef: Codable, Equatable, Sendable {
     self.execution = execution
     self.kind = kind
     self.repeatPolicy = repeatPolicy
+    self.inputFilters = inputFilters
   }
 }
 
@@ -335,6 +393,7 @@ public struct WorkflowNodeRef: Codable, Equatable, Sendable {
   public var role: NodeRole?
   public var execution: WorkflowNodeExecutionPolicy?
   public var repeatPolicy: WorkflowNodeRepeatPolicy?
+  public var inputFilters: [WorkflowInputFilter]?
 
   enum CodingKeys: String, CodingKey {
     case id
@@ -344,6 +403,7 @@ public struct WorkflowNodeRef: Codable, Equatable, Sendable {
     case role
     case execution
     case repeatPolicy = "repeat"
+    case inputFilters
   }
 
   public init(
@@ -353,7 +413,8 @@ public struct WorkflowNodeRef: Codable, Equatable, Sendable {
     kind: WorkflowRegistryNodeKind? = nil,
     role: NodeRole? = nil,
     execution: WorkflowNodeExecutionPolicy? = nil,
-    repeatPolicy: WorkflowNodeRepeatPolicy? = nil
+    repeatPolicy: WorkflowNodeRepeatPolicy? = nil,
+    inputFilters: [WorkflowInputFilter]? = nil
   ) {
     self.id = id
     self.nodeFile = nodeFile
@@ -362,6 +423,7 @@ public struct WorkflowNodeRef: Codable, Equatable, Sendable {
     self.role = role
     self.execution = execution
     self.repeatPolicy = repeatPolicy
+    self.inputFilters = inputFilters
   }
 }
 

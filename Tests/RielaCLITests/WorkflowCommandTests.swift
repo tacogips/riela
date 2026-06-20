@@ -423,18 +423,20 @@ final class WorkflowCommandTests: XCTestCase {
     let output = try await resolver.execute(
       WorkflowAddonExecutionInput(
         workflowId: "telegram-sdk-trio-chat",
-        stepId: "route-message",
-        nodeId: "route-message",
-        addon: WorkflowNodeAddonRef(name: "riela/chat-persona-router", version: "1"),
+        stepId: "rina-cursor-sdk",
+        nodeId: "rina-cursor-sdk",
+        addon: WorkflowNodeAddonRef(name: "riela/cursor-sdk-worker", version: "1"),
         variables: [:]
       ),
       context: AdapterExecutionContext()
     )
 
     XCTAssertEqual(output.provider, "scenario-mock")
-    XCTAssertEqual(output.payload["target"], .string("rina"))
-    XCTAssertEqual(output.when["target_rina"], true)
-    XCTAssertEqual(output.when["target_yui"], false)
+    XCTAssertEqual(output.model, "gpt-5.5")
+    let expectedText = "Rinaです。SDK版のトリオ構成なら、Telegram入力をnode inputFiltersで分けて、"
+      + "各SDK workerが本文だけ返し、最後にchat-reply-workerで送る形が一番シンプルです。"
+    XCTAssertEqual(output.payload["text"], .string(expectedText))
+    XCTAssertEqual(output.when["always"], true)
   }
 
   func testBuiltinChatPersonaRouterSelectsNamedPersonas() async throws {

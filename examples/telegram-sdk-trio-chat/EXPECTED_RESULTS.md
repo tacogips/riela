@@ -1,8 +1,11 @@
 # Expected Results
 
 - The workflow validates as a simple step-addressed Telegram trio chat bundle.
-- `route-message` uses `riela/chat-persona-router` to select Yui, Mika, or
-  Rina from a normalized Telegram message.
+- Persona and reply nodes use `inputFilters` with Telegram JavaScript
+  expressions. Filters are OR-able per node; non-matching nodes are skipped
+  without failing the workflow.
+- The default Yui filter accepts messages that do not name Mika/Rina, while
+  Mika and Rina filters activate on their aliases in `telegram.message.text`.
 - `yui-codex-sdk` uses `riela/codex-sdk-worker`, which resolves to
   `official/openai-sdk` and requires `OPENAI_API_KEY` for live execution.
 - `mika-claude-sdk` uses `riela/claude-sdk-worker`, which resolves to
@@ -16,5 +19,5 @@
 - `riela/chat-reply-worker` sends the selected persona reply to the same
   Telegram conversation and thread from the SDK worker's `payload.text`,
   dry-running when a local run has no chat target.
-- The bundled mock scenario routes a Telegram-style message to Rina and
+- The bundled mock scenario passes Telegram event variables that activate Rina and
   completes without requiring live API keys.

@@ -26,6 +26,7 @@ final class RielaExampleParityTests: XCTestCase {
     static let defaultSuperviserWorkflowName = "default-superviser"
     static let defaultSuperviserWorkflowId = "riela-default-superviser"
     static let supervisedMockRetryWorkflowName = "supervised-mock-retry"
+    static let telegramSDKTrioChatWorkflowName = "telegram-sdk-trio-chat"
   }
 
   private enum NodeRuntime {
@@ -43,6 +44,38 @@ final class RielaExampleParityTests: XCTestCase {
     static let outputFlag = "--output"
     static let jsonOutputFormat = "json"
     static let autoImproveFlag = "--auto-improve"
+  }
+
+  private enum TelegramSDKTrioChatMock {
+    static let variables = #"""
+    {
+      "workflowInput": {
+        "text": "Rina, explain the SDK trio setup",
+        "provider": "telegram"
+      },
+      "event": {
+        "sourceId": "telegram-live",
+        "eventId": "mock-1",
+        "provider": "telegram",
+        "eventType": "chat.message",
+        "input": {
+          "text": "Rina, explain the SDK trio setup",
+          "provider": "telegram",
+          "attachments": [],
+          "imagePaths": [],
+          "attachmentText": ""
+        },
+        "conversation": {
+          "id": "100",
+          "threadId": "topic-a"
+        },
+        "actor": {
+          "id": "200",
+          "displayName": "Mock User"
+        }
+      }
+    }
+    """#
   }
 
   func testAllRielaExampleWorkflowsArePortedAndValidateInSwift() throws {
@@ -97,6 +130,9 @@ final class RielaExampleParityTests: XCTestCase {
       ]
       if workflowName == WorkflowIds.supervisedMockRetryWorkflowName {
         arguments.append(WorkflowRunCLI.autoImproveFlag)
+      }
+      if workflowName == WorkflowIds.telegramSDKTrioChatWorkflowName {
+        arguments.append(contentsOf: ["--variables", TelegramSDKTrioChatMock.variables])
       }
       let result = await app.run(arguments)
 

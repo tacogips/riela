@@ -14,6 +14,8 @@ public struct WorkflowPublicationRequest: Sendable {
   public var outputContract: WorkflowOutputContract?
   public var transitions: [WorkflowStepTransition]
   public var publishesRootOutput: Bool
+  public var successfulExecutionStatus: WorkflowStepExecutionStatus
+  public var completesRootWithoutOutput: Bool
   public var allowsNoOutput: Bool
 
   public init(
@@ -30,6 +32,8 @@ public struct WorkflowPublicationRequest: Sendable {
     outputContract: WorkflowOutputContract? = nil,
     transitions: [WorkflowStepTransition] = [],
     publishesRootOutput: Bool = false,
+    successfulExecutionStatus: WorkflowStepExecutionStatus = .completed,
+    completesRootWithoutOutput: Bool = false,
     allowsNoOutput: Bool = false
   ) {
     self.sessionId = sessionId
@@ -45,6 +49,8 @@ public struct WorkflowPublicationRequest: Sendable {
     self.outputContract = outputContract
     self.transitions = transitions
     self.publishesRootOutput = publishesRootOutput
+    self.successfulExecutionStatus = successfulExecutionStatus
+    self.completesRootWithoutOutput = completesRootWithoutOutput
     self.allowsNoOutput = allowsNoOutput
   }
 }
@@ -156,9 +162,9 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
         WorkflowStepExecutionUpdateInput(
           sessionId: request.sessionId,
           executionId: recordedExecution.executionId,
-          status: .completed,
+          status: request.successfulExecutionStatus,
           adapterOutput: adapterOutputMetadata,
-          completesRootWithoutOutput: request.publishesRootOutput
+          completesRootWithoutOutput: request.publishesRootOutput || request.completesRootWithoutOutput
         )
       )
       guard let session = try await store.loadSession(id: request.sessionId) else {
@@ -244,9 +250,10 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       WorkflowStepExecutionUpdateInput(
         sessionId: request.sessionId,
         executionId: recordedExecution.executionId,
-        status: .completed,
+        status: request.successfulExecutionStatus,
         acceptedOutput: acceptedOutput,
-        adapterOutput: adapterOutputMetadata
+        adapterOutput: adapterOutputMetadata,
+        completesRootWithoutOutput: request.completesRootWithoutOutput
       )
     )
 

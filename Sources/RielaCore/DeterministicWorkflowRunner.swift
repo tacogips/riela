@@ -139,6 +139,8 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
   public var stdioNodeExecutor: (any WorkflowStdioNodeExecuting)?
   public var publisher: any WorkflowOutputPublishing
   public var inputResolver: any WorkflowMessageInputResolving
+  public var inputFilterEvaluator: WorkflowInputFilterEvaluator
+  public var inputFilterLogger: any WorkflowInputFilterLogging
 
   public init(
     store: (any WorkflowRuntimeStore)? = nil,
@@ -147,7 +149,9 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     attachmentProjector: any WorkflowAddonAttachmentProjecting = InlineWorkflowAddonAttachmentProjector(),
     stdioNodeExecutor: (any WorkflowStdioNodeExecuting)? = nil,
     publisher: (any WorkflowOutputPublishing)? = nil,
-    inputResolver: any WorkflowMessageInputResolving = DefaultWorkflowMessageInputResolver()
+    inputResolver: any WorkflowMessageInputResolving = DefaultWorkflowMessageInputResolver(),
+    inputFilterEvaluator: WorkflowInputFilterEvaluator = WorkflowInputFilterEvaluator(),
+    inputFilterLogger: any WorkflowInputFilterLogging = StandardErrorWorkflowInputFilterLogger()
   ) {
     let resolvedStore = store ?? InMemoryWorkflowRuntimeStore()
     self.store = resolvedStore
@@ -157,6 +161,8 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     self.stdioNodeExecutor = stdioNodeExecutor
     self.publisher = publisher ?? InMemoryWorkflowOutputPublisher(store: resolvedStore)
     self.inputResolver = inputResolver
+    self.inputFilterEvaluator = inputFilterEvaluator
+    self.inputFilterLogger = inputFilterLogger
   }
 
   public func run(_ request: DeterministicWorkflowRunRequest) async throws -> WorkflowRunResult {
@@ -247,16 +253,33 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       guard let registryNode = request.workflow.nodeRegistry.first(where: { $0.id == step.nodeId }) else {
         throw DeterministicWorkflowRunnerError.missingNode(step.nodeId)
       }
+      let executionIndex = (executionCounts[step.id] ?? 0) + 1
+      executionCounts[step.id] = executionIndex
+      let resolvedInput = try await inputResolver.resolveInput(for: session.sessionId, stepId: step.id, store: store)
+      let transitions = step.transitions ?? []
+      if let publishResult = try await skipFilteredStepIfNeeded(
+        registryNode: registryNode, requestVariables: request.variables, resolvedInputPayload: resolvedInput.payload,
+        sessionId: session.sessionId, step: step, transitions: transitions, executionIndex: executionIndex
+      ) {
+        session = publishResult.session
+        publishedTransitions += publishResult.publishedMessages.count
+        await emitStepCompletedEvent(
+          workflowId: request.workflow.workflowId,
+          session: session,
+          step: step,
+          publishResult: publishResult,
+          publishedTransitions: publishedTransitions,
+          handler: request.eventHandler
+        )
+        currentStepId = publishResult.publishedMessages.first?.toStepId
+        continue
+      }
       await emitStepStartedEvent(
         workflowId: request.workflow.workflowId,
         session: session,
         step: step,
         handler: request.eventHandler
       )
-      let executionIndex = (executionCounts[step.id] ?? 0) + 1
-      executionCounts[step.id] = executionIndex
-      let resolvedInput = try await inputResolver.resolveInput(for: session.sessionId, stepId: step.id, store: store)
-      let transitions = step.transitions ?? []
       let publishResult: WorkflowPublicationResult
       if let basePayload = request.nodePayloads[step.nodeId] {
         if let stdioNodeKind = workflowStdioNodeExecutionKind(for: basePayload) {

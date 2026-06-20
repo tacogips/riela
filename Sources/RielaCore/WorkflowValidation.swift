@@ -172,6 +172,7 @@ private func validateTypedAuthoredWorkflow(_ workflow: AuthoredWorkflowJSON) -> 
     if let nodeFile = node.nodeFile {
       validateWorkflowRelativePath(nodeFile, fieldName: "nodeFile", path: "\(path).nodeFile", diagnostics: &diagnostics)
     }
+    validateInputFilters(node.inputFilters, path: "\(path).inputFilters", diagnostics: &diagnostics)
   }
 
   let effectiveSteps = workflow.steps ?? workflow.nodes.map { WorkflowStepRef(id: $0.id, nodeId: $0.id) }
@@ -338,7 +339,7 @@ private func validateRawAuthoredWorkflow(_ raw: [String: Any]) -> [WorkflowValid
 
 private func validateNodeRegistry(_ entries: [Any], diagnostics: inout [WorkflowValidationDiagnostic]) {
   var seenIds: Set<String> = []
-  let allowedKeys: Set<String> = ["id", "nodeFile", "addon", "execution", "kind", "repeat"]
+  let allowedKeys: Set<String> = ["id", "nodeFile", "addon", "execution", "kind", "repeat", "inputFilters"]
 
   for (index, rawEntry) in entries.enumerated() {
     let path = "workflow.nodes[\(index)]"
@@ -369,6 +370,7 @@ private func validateNodeRegistry(_ entries: [Any], diagnostics: inout [Workflow
     if let nodeFile = entry["nodeFile"] {
       validateWorkflowRelativePath(nodeFile, fieldName: "nodeFile", path: "\(path).nodeFile", diagnostics: &diagnostics)
     }
+    validateRawInputFilters(entry["inputFilters"], path: "\(path).inputFilters", diagnostics: &diagnostics)
   }
 }
 
@@ -549,7 +551,8 @@ private func materializeWorkflowDefinition(from workflow: AuthoredWorkflowJSON) 
       kind: registryNode.kind,
       role: step.role,
       execution: registryNode.execution,
-      repeatPolicy: registryNode.repeatPolicy
+      repeatPolicy: registryNode.repeatPolicy,
+      inputFilters: registryNode.inputFilters
     )
   }
 
@@ -564,6 +567,67 @@ private func materializeWorkflowDefinition(from workflow: AuthoredWorkflowJSON) 
     steps: steps,
     nodes: runtimeNodes
   )
+}
+
+private func validateInputFilters(
+  _ filters: [WorkflowInputFilter]?,
+  path: String,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let filters else {
+    return
+  }
+  if filters.isEmpty {
+    diagnostics.append(error(path, "must contain at least one filter when present"))
+  }
+  for (index, filter) in filters.enumerated() {
+    let filterPath = "\(path)[\(index)]"
+    if filter.kind.rawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      diagnostics.append(error("\(filterPath).kind", "must be a non-empty string"))
+    } else if filter.kind != .telegram {
+      diagnostics.append(error("\(filterPath).kind", "must be 'telegram'"))
+    }
+    if filter.expression.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      diagnostics.append(error("\(filterPath).expression", "must be a non-empty JavaScript expression"))
+    }
+  }
+}
+
+private func validateRawInputFilters(
+  _ rawFilters: Any?,
+  path: String,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let rawFilters else {
+    return
+  }
+  guard let filters = rawFilters as? [Any] else {
+    diagnostics.append(error(path, "must be an array"))
+    return
+  }
+  if filters.isEmpty {
+    diagnostics.append(error(path, "must contain at least one filter when present"))
+  }
+  for (index, rawFilter) in filters.enumerated() {
+    let filterPath = "\(path)[\(index)]"
+    guard let filter = rawFilter as? [String: Any] else {
+      diagnostics.append(error(filterPath, "must be an object"))
+      continue
+    }
+    let allowedKeys: Set<String> = ["kind", "language", "expression"]
+    for key in filter.keys where !allowedKeys.contains(key) {
+      diagnostics.append(error("\(filterPath).\(key)", "uses an unsupported input filter field"))
+    }
+    validateNonEmptyString(filter["kind"], path: "\(filterPath).kind", diagnostics: &diagnostics)
+    if let kind = filter["kind"] as? String, !kind.isEmpty, kind != WorkflowInputFilterKind.telegram.rawValue {
+      diagnostics.append(error("\(filterPath).kind", "must be 'telegram'"))
+    }
+    validateNonEmptyString(filter["language"], path: "\(filterPath).language", diagnostics: &diagnostics)
+    validateNonEmptyString(filter["expression"], path: "\(filterPath).expression", diagnostics: &diagnostics)
+    if let language = filter["language"] as? String, language != WorkflowInputFilterLanguage.javascript.rawValue {
+      diagnostics.append(error("\(filterPath).language", "must be 'javascript'"))
+    }
+  }
 }
 
 private func error(_ path: String, _ message: String) -> WorkflowValidationDiagnostic {

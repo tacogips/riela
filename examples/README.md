@@ -280,14 +280,16 @@ riela workflow run telegram-agent-trio-chat \
 
 Minimal Telegram trio chat workflow using the SDK-backed worker add-ons:
 
-- routes normalized Telegram messages through `riela/chat-persona-router`
+- routes normalized Telegram messages through node-level Telegram
+  `inputFilters` evaluated with JavaScriptCore
 - `Yui Codex SDK` uses `riela/codex-sdk-worker`
 - `Mika Claude SDK` uses `riela/claude-sdk-worker`
 - `Rina Cursor SDK` uses `riela/cursor-sdk-worker` with model `gpt-5.5`
 - replies use `riela/chat-reply-worker` and dry-run when a local run has no
   Telegram chat target
-- the deterministic mock scenario exercises the routing and reply path without
-  requiring live SDK API keys by rendering each SDK worker's
+- the deterministic mock scenario passes Telegram event variables that activate
+  Rina's input filter and reply path without requiring live SDK API keys by
+  rendering each SDK worker's
   `mockResponseTemplate`
 
 Validate it:
@@ -302,7 +304,7 @@ Run the bundled deterministic Rina scenario:
 riela workflow run telegram-sdk-trio-chat \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/telegram-sdk-trio-chat/mock-scenario.json \
-  --input '{"request":"Rina, explain the SDK trio setup"}'
+  --variables '{"workflowInput":{"text":"Rina, explain the SDK trio setup","provider":"telegram"},"event":{"sourceId":"telegram-live","eventId":"mock-1","provider":"telegram","eventType":"chat.message","input":{"text":"Rina, explain the SDK trio setup","provider":"telegram","attachments":[],"imagePaths":[],"attachmentText":""},"conversation":{"id":"100","threadId":"topic-a"},"actor":{"id":"200","displayName":"Mock User"}}}'
 ```
 
 ### `gemini-sdk-worker`

@@ -95,6 +95,44 @@ final class EventLiveServeTests: XCTestCase {
     XCTAssertEqual(sentMessages, [])
   }
 
+  func testTelegramGatewayServeIgnoresAnyBotMessagesToPreventReplyLoops() async throws {
+    let eventRoot = try temporaryDirectory()
+    try writeTelegramEventConfig(eventRoot: eventRoot)
+    let api = FakeTelegramGatewayAPI(updates: [
+      TelegramUpdate(
+        updateId: 44,
+        message: try TelegramMessage.fixture(
+          chatId: "100",
+          fromId: "555",
+          text: "@mikatrend0529bot bot echo",
+          isBot: true
+        )
+      )
+    ])
+    let workflowRunner = FakeEventWorkflowRunner(replyText: "ignored", replyAs: "mika")
+    let server = DefaultEventLiveServer(telegramAPI: api, workflowRunner: workflowRunner)
+
+    let result = try await CLIRuntimeEnvironment.$overrides.withValue([
+      "TEST_TELEGRAM_TOKEN": "source-token",
+      "TEST_TELEGRAM_BOT_ID": "999",
+      "TEST_TELEGRAM_YUI_TOKEN": "yui-token",
+      "TEST_TELEGRAM_MIKA_TOKEN": "mika-token"
+    ]) {
+      try await server.serve(
+        eventRoot: eventRoot,
+        target: nil,
+        parsed: try ParsedParityOptions(["--limit", "1"]),
+        output: .json
+      )
+    }
+
+    XCTAssertEqual(result.status, "ok")
+    let workflowRequests = await workflowRunner.requests
+    let sentMessages = await api.sentMessages
+    XCTAssertEqual(workflowRequests.count, 0)
+    XCTAssertEqual(sentMessages, [])
+  }
+
   func testTelegramGatewayServePollsReplyBotTokensForMentionedMessages() async throws {
     let eventRoot = try temporaryDirectory()
     try writeTelegramEventConfig(eventRoot: eventRoot, timeoutSeconds: 10)
@@ -426,13 +464,19 @@ private actor FakeEventWorkflowRunner: EventWorkflowRunning {
 }
 
 private extension TelegramMessage {
-  static func fixture(chatId: String, fromId: String, messageId: String = "1", text: String) throws -> TelegramMessage {
+  static func fixture(
+    chatId: String,
+    fromId: String,
+    messageId: String = "1",
+    text: String,
+    isBot: Bool = false
+  ) throws -> TelegramMessage {
     try JSONDecoder().decode(TelegramMessage.self, from: Data("""
     {
       "message_id": "\(messageId)",
       "date": 0,
       "text": "\(text)",
-      "from": {"id": "\(fromId)", "is_bot": false, "first_name": "Tester"},
+      "from": {"id": "\(fromId)", "is_bot": \(isBot), "first_name": "Tester"},
       "chat": {"id": "\(chatId)", "type": "group", "title": "Test Chat"}
     }
     """.utf8))

@@ -12,6 +12,9 @@
   Rina.
 - Mention matching uses token-style boundaries, so concatenated strings such as
   `Mikausersidecheck` do not count as a Mika mention.
+- Bot-authored Telegram events are skipped by each node input filter even when
+  the text mentions a bot, so reply messages cannot recursively trigger another
+  reply in direct workflow runs.
 - Each persona prompt repeats the same mention policy so the LLM has the same
   routing condition as the node-level filter.
 - Rina's prompt keeps her persona cool-headed and analytical: short, precise,

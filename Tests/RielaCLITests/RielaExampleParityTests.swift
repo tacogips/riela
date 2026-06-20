@@ -50,7 +50,7 @@ final class RielaExampleParityTests: XCTestCase {
     static let variables = #"""
     {
       "workflowInput": {
-        "text": "Rina, explain the SDK trio setup",
+        "text": "@rinacursor0529bot explain the SDK trio setup",
         "provider": "telegram"
       },
       "event": {
@@ -59,7 +59,7 @@ final class RielaExampleParityTests: XCTestCase {
         "provider": "telegram",
         "eventType": "chat.message",
         "input": {
-          "text": "Rina, explain the SDK trio setup",
+          "text": "@rinacursor0529bot explain the SDK trio setup",
           "provider": "telegram",
           "attachments": [],
           "imagePaths": [],
@@ -76,6 +76,38 @@ final class RielaExampleParityTests: XCTestCase {
       }
     }
     """#
+
+    static func variables(text: String, eventId: String) -> String {
+      #"""
+      {
+        "workflowInput": {
+          "text": "\#(text)",
+          "provider": "telegram"
+        },
+        "event": {
+          "sourceId": "telegram-live",
+          "eventId": "\#(eventId)",
+          "provider": "telegram",
+          "eventType": "chat.message",
+          "input": {
+            "text": "\#(text)",
+            "provider": "telegram",
+            "attachments": [],
+            "imagePaths": [],
+            "attachmentText": ""
+          },
+          "conversation": {
+            "id": "100",
+            "threadId": "topic-a"
+          },
+          "actor": {
+            "id": "200",
+            "displayName": "Mock User"
+          }
+        }
+      }
+      """#
+    }
   }
 
   func testAllRielaExampleWorkflowsArePortedAndValidateInSwift() throws {
@@ -142,6 +174,39 @@ final class RielaExampleParityTests: XCTestCase {
       let payload = try decoder.decode(WorkflowRunResult.self, from: Data(result.stdout.utf8))
       XCTAssertEqual(payload.workflowId, workflowName)
       XCTAssertEqual(payload.status, .completed, workflowName)
+    }
+  }
+
+  func testTelegramSDKTrioChatMentionRoutingProducesRootReplies() async throws {
+    let root = repositoryRoot()
+    let examplesRoot = root.appendingPathComponent(ExampleCatalog.directoryName, isDirectory: true)
+    let scenario = examplesRoot
+      .appendingPathComponent(WorkflowIds.telegramSDKTrioChatWorkflowName, isDirectory: true)
+      .appendingPathComponent(MockScenario.fileName)
+    let cases = [
+      ("rina", "@rinacursor0529bot explain the SDK trio setup", "rina"),
+      ("mika", "@mikatrend0529bot give a short plan", "mika"),
+      ("yui-default", "Please summarize today's plan", "yui"),
+      ("concatenated-mika", "Mikausersidecheck.Replyshort.", "yui")
+    ]
+    let app = RielaCLIApplication()
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+
+    for (eventId, text, expectedReplyAs) in cases {
+      let result = await app.run(WorkflowRunCLI.workflowRunArgumentsPrefix + [
+        WorkflowIds.telegramSDKTrioChatWorkflowName,
+        WorkflowRunCLI.workflowDefinitionDirFlag, examplesRoot.path,
+        WorkflowRunCLI.mockScenarioFlag, scenario.path,
+        WorkflowRunCLI.outputFlag, WorkflowRunCLI.jsonOutputFormat,
+        "--variables", TelegramSDKTrioChatMock.variables(text: text, eventId: eventId)
+      ])
+
+      XCTAssertEqual(result.exitCode, .success, "\(eventId): \(result.stderr)\n\(result.stdout)")
+      let payload = try decoder.decode(WorkflowRunResult.self, from: Data(result.stdout.utf8))
+      XCTAssertEqual(payload.status, .completed, eventId)
+      XCTAssertEqual(payload.rootOutput?["replyAs"], .string(expectedReplyAs), eventId)
+      XCTAssertEqual(payload.rootOutput?["status"], .string("ok"), eventId)
     }
   }
 

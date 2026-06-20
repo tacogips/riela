@@ -13,12 +13,14 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   private let daemonDiscovery = RielaAppDaemonWorkflowDiscovery()
   private let daemonRuntime = RielaAppDaemonWorkflowRuntime()
   private let daemonStore = RielaAppDaemonWorkflowStore()
+  private let daemonStatusRefreshInterval: TimeInterval = 2
   private var selectedWorkflow: WorkflowServeSelection?
   private var selectedWorkingDirectory = FileManager.default.currentDirectoryPath
   private var selectedSessionStoreRoot: String?
   private var status = "Stopped"
   private var daemonState = RielaAppDaemonWorkflowState()
   private var daemonCandidates: [RielaAppDaemonWorkflowCandidate] = []
+  private var daemonStatusRefreshTimer: Timer?
   private var daemonWindowController: DaemonWorkflowWindowController?
   private var viewerWindowController: WorkflowViewerWindowController?
 
@@ -36,8 +38,14 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     logDaemon("discovered \(daemonCandidates.count) user daemon workflow candidate(s)")
     configureStatusItem()
     rebuildMenu()
+    startDaemonStatusRefreshTimer()
     openInitialViewerIfRequested()
     autostartDaemonWorkflows()
+  }
+
+  func applicationWillTerminate(_ notification: Notification) {
+    daemonStatusRefreshTimer?.invalidate()
+    daemonStatusRefreshTimer = nil
   }
 
   private func configureStatusItem() {
@@ -111,6 +119,17 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     refreshDaemonWorkflowWindow()
     daemonWindowController?.showWindow(nil)
     NSApp.activate(ignoringOtherApps: true)
+  }
+
+  private func startDaemonStatusRefreshTimer() {
+    daemonStatusRefreshTimer?.invalidate()
+    let timer = Timer(timeInterval: daemonStatusRefreshInterval, repeats: true) { [weak self] _ in
+      Task { @MainActor [weak self] in
+        self?.refreshDaemonWorkflowWindow()
+      }
+    }
+    RunLoop.main.add(timer, forMode: .common)
+    daemonStatusRefreshTimer = timer
   }
 
   @objc private func serveWorkflow() {

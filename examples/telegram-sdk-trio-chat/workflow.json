@@ -152,6 +152,7 @@
       "role": "worker",
       "transitions": [
         {
+          "label": "input_filter_skipped",
           "toStepId": "mika-claude-sdk"
         }
       ]
@@ -172,6 +173,7 @@
       "role": "worker",
       "transitions": [
         {
+          "label": "input_filter_skipped",
           "toStepId": "rina-cursor-sdk"
         }
       ]

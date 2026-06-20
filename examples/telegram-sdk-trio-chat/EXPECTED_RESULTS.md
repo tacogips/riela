@@ -27,5 +27,8 @@
 - `riela/chat-reply-worker` sends the selected persona reply to the same
   Telegram conversation and thread from the SDK worker's `payload.text`,
   dry-running when a local run has no chat target.
+- The selected `send-*-reply` step is the root output for that run. Non-selected
+  reply steps advance only through `input_filter_skipped` transitions, so Yui
+  and Mika replies are not overwritten by later skipped nodes.
 - The bundled mock scenario passes Telegram event variables with an explicit
   Rina mention and completes without requiring live API keys.

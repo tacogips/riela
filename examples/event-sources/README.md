@@ -357,6 +357,33 @@ riela events emit x-follower-ai-business-hourly-cron \
   --output json
 ```
 
+The `gmail-latest-mail-hourly-cron` source demonstrates a scheduled Telegram
+digest backed by Dockerized mail-gateway-reader. It fires every 30 minutes with
+`0 */30 * * * *`, dispatches `gmail-latest-mail-digest-telegram`, and uses
+`.riela-data/gmail-latest-mail-digest-telegram/state.json` to avoid duplicate
+message processing. The workflow fetches metadata for the latest 10 Gmail
+messages and asks mail-gateway for vendor-neutral file `downloadKey` values
+instead of GraphQL body or file payloads. A deterministic state node keeps only
+message ids that have not been seen in prior runs. Provide the Gmail
+mail-gateway configuration through
+`GMAIL_MAIL_GATEWAY_CONFIG` and the Telegram target through
+`RIELA_TELEGRAM_CHAT_ID`; keep live token values out of event and workflow
+files. The binding disables automatic final/error replies, so Telegram output
+should come only from the explicit digest reply step. The cursor file stores
+message ids only. If a legacy gateway response still contains body payloads,
+the normalization step writes them under
+`.riela-data/gmail-latest-mail-digest-telegram/messages/` and passes only file
+metadata downstream.
+
+```bash
+riela events emit gmail-latest-mail-hourly-cron \
+  --workflow-definition-dir ./examples \
+  --event-root ./examples/event-sources/.riela-events \
+  --artifact-root ./.riela-artifact/gmail-latest-mail-digest-telegram \
+  --event-file ./examples/event-sources/payloads/gmail-latest-mail-hourly-cron.json \
+  --output json
+```
+
 The `local-docs` source demonstrates local filesystem notifications. It
 watches `examples/event-sources/watched-docs` for `create`, `modify`, and
 `delete` changes to `.md` and `.json` files. The source emits

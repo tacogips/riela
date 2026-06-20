@@ -127,6 +127,7 @@ final class RielaExampleParityTests: XCTestCase {
       "first-four-arithmetic-pipeline",
       "gemini-ocr-worker",
       "gemini-sdk-worker",
+      "gmail-latest-mail-digest-telegram",
       "matrix-agent-trio-chat",
       "matrix-chat-reply",
       "node-combinations-showcase",

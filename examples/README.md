@@ -429,6 +429,61 @@ riela events emit x-follower-ai-business-hourly-cron \
   --output json
 ```
 
+### `gmail-latest-mail-digest-telegram`
+
+Scheduled Gmail digest for Telegram:
+
+- receives `cron.tick` events from `gmail-latest-mail-hourly-cron`
+- reads `.riela-data/gmail-latest-mail-digest-telegram/state.json` by default
+  and keeps fetched Gmail message ids for first-time-seen dedupe
+- runs `riela/mail-gateway-read` in Docker with
+  `ghcr.io/tacogips/mail-gateway:latest`
+- uses the read-only `mail-gateway-reader` client through the built-in add-on
+  to fetch the latest 10 Gmail messages for `accountId: "gmail"`
+- requests vendor-neutral file metadata and `downloadKey` values instead of
+  raw body or file payloads, so large mail content is downloaded only through a
+  later gateway command when needed
+- maps Gmail mail-gateway credentials from `GMAIL_MAIL_GATEWAY_CONFIG` only;
+  do not put credential values in workflow files
+- summarizes only newly seen messages in a separate Codex worker prompt that
+  treats email metadata and file references as untrusted data
+- validates LLM-selected message ids against the normalized selected messages
+  before rebuilding Telegram text
+- persists fetched message ids before Telegram delivery so the first run can
+  notify about the latest 10 messages and later runs notify only about messages
+  first seen in that run
+- posts through the existing `telegram-gateway-persona-replies` destination
+  only when a non-empty digest exists
+- disables automatic event final/error replies so Telegram output comes only
+  from the explicit `send-telegram-digest` chat-reply step
+- never writes email bodies to the workflow bundle; GraphQL file payloads should
+  not enter riela runtime artifacts, and any legacy body fallback is materialized
+  under `.riela-data/gmail-latest-mail-digest-telegram/messages/`
+
+Required live-run environment variables:
+
+```bash
+export GMAIL_MAIL_GATEWAY_CONFIG=<mail-gateway-gmail-config-json-or-path>
+export RIELA_TELEGRAM_CHAT_ID=<telegram-chat-id>
+```
+
+Validate it:
+
+```bash
+riela workflow validate gmail-latest-mail-digest-telegram --workflow-definition-dir ./examples
+```
+
+Run the deterministic cron fixture:
+
+```bash
+riela events emit gmail-latest-mail-hourly-cron \
+  --workflow-definition-dir ./examples \
+  --event-root ./examples/event-sources/.riela-events \
+  --artifact-root ./.riela-artifact/gmail-latest-mail-digest-telegram \
+  --event-file ./examples/event-sources/payloads/gmail-latest-mail-hourly-cron.json \
+  --output json
+```
+
 ### `matrix-agent-trio-chat`
 
 Matrix persona workflow using the same provider-neutral trio authoring shape as

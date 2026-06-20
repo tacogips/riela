@@ -1,0 +1,12 @@
+{
+  "id": "gmail-latest-mail-hourly-cron",
+  "kind": "cron",
+  "schedule": "0 */30 * * * *",
+  "timezone": "Asia/Tokyo",
+  "replyTarget": {
+    "sourceId": "telegram-gateway-personas",
+    "provider": "telegram",
+    "conversationId": "-1001234567890",
+    "conversationIdEnv": "RIELA_TELEGRAM_CHAT_ID"
+  }
+}

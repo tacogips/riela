@@ -257,6 +257,55 @@ final class CommandParsingTests: XCTestCase {
     }
   }
 
+  func testParsesMemoryCommandSurface() throws {
+    let parser = RielaArgumentParser()
+
+    XCTAssertEqual(
+      try parser.parse([
+        "memory", "save", "chat-memory",
+        "--workflow-id", "telegram-sdk-trio-chat",
+        "--node-id", "save-chat-event-memory",
+        "--payload-json", #"{"text":"hello"}"#,
+        "--registered-at", "2026-06-20T10:00:00Z",
+        "--memory-root", "tmp/memory",
+        "--output", "json"
+      ]),
+      .memory(MemoryCommand(
+        kind: .save,
+        options: MemoryCommandOptions(
+          memoryId: "chat-memory",
+          workflowId: "telegram-sdk-trio-chat",
+          nodeId: "save-chat-event-memory",
+          payloadJSON: #"{"text":"hello"}"#,
+          registeredAt: "2026-06-20T10:00:00Z",
+          databaseRoot: "tmp/memory",
+          output: .json
+        )
+      ))
+    )
+
+    XCTAssertEqual(
+      try parser.parse([
+        "memory", "search", "chat-memory",
+        "--workflow-id", "telegram-sdk-trio-chat",
+        "--match", "Yui",
+        "-e", "Rina",
+        "--limit", "5",
+        "--output=json"
+      ]),
+      .memory(MemoryCommand(
+        kind: .search,
+        options: MemoryCommandOptions(
+          memoryId: "chat-memory",
+          workflowId: "telegram-sdk-trio-chat",
+          matchPatterns: ["Yui", "Rina"],
+          limit: 5,
+          output: .json
+        )
+      ))
+    )
+  }
+
   func testDefaultOutputIsJSONLForMachineReadableCommands() throws {
     let parser = RielaArgumentParser()
 

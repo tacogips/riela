@@ -118,6 +118,72 @@ final class WorkflowModelTests: XCTestCase {
     XCTAssertEqual(workflow.nodeRegistry.first?.inputFilters?.first?.builtin, .mentionResponder)
   }
 
+  func testWorkflowValidationRequiresDeclaredMemoryForBuiltinMemoryAddons() throws {
+    let data = Data("""
+      {
+        "workflowId": "memory-declarations",
+        "description": "Sample workflow",
+        "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 3 },
+        "entryStepId": "save-memory",
+        "nodes": [{
+          "id": "save-memory",
+          "addon": {
+            "name": "riela/memory-save",
+            "version": "1",
+            "config": {
+              "memoryId": "chat-memory",
+              "payloadSource": "event"
+            }
+          }
+        }],
+        "steps": [{ "id": "save-memory", "nodeId": "save-memory", "role": "worker" }]
+      }
+      """.utf8)
+
+    let result = validateAuthoredWorkflowData(data)
+
+    XCTAssertNil(result.workflow)
+    XCTAssertTrue(result.diagnostics.contains {
+      $0.path == "workflow.nodes[0].addon.config.memoryId"
+        && $0.message == "memory addon uses 'chat-memory' but workflow.memories does not declare it"
+    })
+    XCTAssertTrue(result.diagnostics.contains {
+      $0.path == "workflow.nodes[0].memories"
+        && $0.message == "memory addon uses 'chat-memory' but node memories do not declare it"
+    })
+  }
+
+  func testWorkflowValidationAcceptsDeclaredMemoryForBuiltinMemoryAddons() throws {
+    let data = Data("""
+      {
+        "workflowId": "memory-declarations",
+        "description": "Sample workflow",
+        "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 3 },
+        "memories": [{ "id": "chat-memory", "scope": "workflow", "defaultLimit": 30 }],
+        "entryStepId": "save-memory",
+        "nodes": [{
+          "id": "save-memory",
+          "memories": [{ "id": "chat-memory", "purpose": "save incoming chat events" }],
+          "addon": {
+            "name": "riela/memory-save",
+            "version": "1",
+            "config": {
+              "memoryId": "chat-memory",
+              "payloadSource": "event"
+            }
+          }
+        }],
+        "steps": [{ "id": "save-memory", "nodeId": "save-memory", "role": "worker" }]
+      }
+      """.utf8)
+
+    let result = validateAuthoredWorkflowData(data)
+
+    XCTAssertEqual(result.diagnostics.filter { $0.severity == .error }, [])
+    XCTAssertEqual(result.workflow?.memories?.first?.id, "chat-memory")
+    XCTAssertEqual(result.workflow?.nodeRegistry.first?.memories?.first?.id, "chat-memory")
+  }
+
   func testWorkflowValidationLoadsProjectDesignLoopFixture() throws {
     let rootURL = try repositoryRoot()
     let fixtureURL = rootURL.appendingPathComponent(".riela/workflows/codex-design-and-implement-review-loop/workflow.json")

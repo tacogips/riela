@@ -60,4 +60,48 @@ final class RuntimeSessionTests: XCTestCase {
     XCTAssertEqual(decodedSession.executions.first?.adapterOutput?.provider, "codex-agent")
     XCTAssertEqual(decodedMessage.communicationId, "comm-000001")
   }
+
+  func testRuntimeSessionDecodesSkippedStepExecutionStatus() throws {
+    let data = Data(
+      """
+      {
+        "workflowId": "workflow-a",
+        "sessionId": "session-a",
+        "status": "completed",
+        "entryStepId": "filtered",
+        "currentStepId": "filtered",
+        "createdAt": 700000000,
+        "updatedAt": 700000001,
+        "executions": [
+          {
+            "executionId": "filtered-attempt-1-exec-1",
+            "stepId": "filtered",
+            "nodeId": "filtered-node",
+            "attempt": 1,
+            "status": "skipped",
+            "acceptedOutput": {
+              "payload": {
+                "inputFilterSkipped": true
+              },
+              "when": {
+                "input_filter_skipped": true
+              },
+              "isRootOutput": false,
+              "acceptedAt": 700000001
+            },
+            "createdAt": 700000000,
+            "updatedAt": 700000001
+          }
+        ]
+      }
+      """.utf8
+    )
+
+    let session = try JSONDecoder().decode(WorkflowSession.self, from: data)
+
+    XCTAssertEqual(session.status, .completed)
+    XCTAssertEqual(session.executions.first?.status, .skipped)
+    XCTAssertEqual(session.executions.first?.acceptedOutput?.payload["inputFilterSkipped"], .bool(true))
+    XCTAssertEqual(session.executions.first?.acceptedOutput?.when["input_filter_skipped"], true)
+  }
 }

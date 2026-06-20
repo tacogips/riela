@@ -669,7 +669,7 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     var index = 0
     while index < tokens.count {
       let token = tokens[index]
-      guard token.hasPrefix("--") else {
+      guard token.hasPrefix("-") else {
         throw CLIUsageError("unexpected positional argument '\(token)'")
       }
       if let value = inlineOptionValue(token, prefix: "--output=") {

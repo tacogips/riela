@@ -46,6 +46,16 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
       diagnostics.append(error("workflow.managerStepId", "must reference workflow.steps[] entry '\(managerStepId)'"))
     }
 
+    let workflowMemoryIds = Set((workflow.memories ?? []).map(\.id))
+    for (index, node) in workflow.nodeRegistry.enumerated() {
+      validateMemoryAddonDeclarations(
+        node,
+        path: "workflow.nodes[\(index)]",
+        workflowMemoryIds: workflowMemoryIds,
+        diagnostics: &diagnostics
+      )
+    }
+
     for step in workflow.steps {
       if !registryIds.contains(step.nodeId) {
         diagnostics.append(error("workflow.steps.\(step.id).nodeId", "must reference workflow.nodes[] entry '\(step.nodeId)'"))
@@ -152,6 +162,7 @@ private func validateTypedAuthoredWorkflow(_ workflow: AuthoredWorkflowJSON) -> 
     )
   }
   validateMemoryDeclarations(workflow.memories, path: "workflow.memories", diagnostics: &diagnostics)
+  let workflowMemoryIds = Set((workflow.memories ?? []).map(\.id))
 
   var nodeIds: Set<String> = []
   for (index, node) in workflow.nodes.enumerated() {
@@ -175,6 +186,12 @@ private func validateTypedAuthoredWorkflow(_ workflow: AuthoredWorkflowJSON) -> 
     }
     validateInputFilters(node.inputFilters, path: "\(path).inputFilters", diagnostics: &diagnostics)
     validateMemoryDeclarations(node.memories, path: "\(path).memories", diagnostics: &diagnostics)
+    validateMemoryAddonDeclarations(
+      node,
+      path: path,
+      workflowMemoryIds: workflowMemoryIds,
+      diagnostics: &diagnostics
+    )
   }
 
   let effectiveSteps = workflow.steps ?? workflow.nodes.map { WorkflowStepRef(id: $0.id, nodeId: $0.id) }
@@ -628,6 +645,35 @@ private func validateMemoryDeclarations(
   }
 }
 
+private func validateMemoryAddonDeclarations(
+  _ node: WorkflowNodeRegistryRef,
+  path: String,
+  workflowMemoryIds: Set<String>,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let addon = node.addon, builtinMemoryAddonNames.contains(addon.name) else {
+    return
+  }
+  let memoryId = stringValue(addon.config?["memoryId"]) ?? defaultMemoryId
+  let nodeMemoryIds = Set((node.memories ?? []).map(\.id))
+  if !workflowMemoryIds.contains(memoryId) {
+    diagnostics.append(
+      error(
+        "\(path).addon.config.memoryId",
+        "memory addon uses '\(memoryId)' but workflow.memories does not declare it"
+      )
+    )
+  }
+  if !nodeMemoryIds.contains(memoryId) {
+    diagnostics.append(
+      error(
+        "\(path).memories",
+        "memory addon uses '\(memoryId)' but node memories do not declare it"
+      )
+    )
+  }
+}
+
 private func validateRawMemoryDeclarations(
   _ rawMemories: Any?,
   path: String,
@@ -672,6 +718,21 @@ private func validateRawMemoryDeclarations(
       validatePositiveInteger(defaultLimit, path: "\(memoryPath).defaultLimit", diagnostics: &diagnostics)
     }
   }
+}
+
+private let builtinMemoryAddonNames: Set<String> = [
+  "riela/memory-save",
+  "riela/memory-load",
+  "riela/memory-search"
+]
+
+private let defaultMemoryId = "chat-memory"
+
+private func stringValue(_ value: JSONValue?) -> String? {
+  guard case let .string(value) = value, !value.isEmpty else {
+    return nil
+  }
+  return value
 }
 
 private func validateMemoryId(_ value: String, path: String, diagnostics: inout [WorkflowValidationDiagnostic]) {

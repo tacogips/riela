@@ -273,6 +273,54 @@ final class RielaExampleParityTests: XCTestCase {
     XCTAssertNil(payload.rootOutput)
   }
 
+  func testMatrixGatewayPayloadFixtureMatchesEventBinding() async throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-matrix-event-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    let eventRoot = tempDir.appendingPathComponent("events", isDirectory: true)
+    let sourcesRoot = eventRoot.appendingPathComponent("sources", isDirectory: true)
+    let bindingsRoot = eventRoot.appendingPathComponent("bindings", isDirectory: true)
+    try FileManager.default.createDirectory(at: sourcesRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: bindingsRoot, withIntermediateDirectories: true)
+    try """
+    {
+      "id": "team-matrix",
+      "kind": "matrix",
+      "provider": "matrix"
+    }
+    """.write(to: sourcesRoot.appendingPathComponent("team-matrix.json"), atomically: true, encoding: .utf8)
+    try """
+    {
+      "id": "matrix-agent-trio-to-workflow",
+      "sourceId": "team-matrix",
+      "match": {
+        "eventType": "chat.message",
+        "conversationId": "!persona:matrix.example"
+      },
+      "workflowName": "matrix-agent-trio-chat",
+      "inputMapping": {"mode": "event-input"}
+    }
+    """.write(
+      to: bindingsRoot.appendingPathComponent("matrix-agent-trio-to-workflow.json"),
+      atomically: true,
+      encoding: .utf8
+    )
+    let eventFile = repositoryRoot()
+      .appendingPathComponent("examples/event-sources/payloads/matrix-persona-message.json")
+    let result = await RielaCLIApplication().run([
+      "events", "emit", "team-matrix",
+      "--event-root", eventRoot.path,
+      "--event-file", eventFile.path,
+      "--read-only",
+      "--output", "json"
+    ])
+
+    XCTAssertEqual(result.exitCode, .success, result.stderr)
+    let scoped = try JSONDecoder().decode(ScopedParityCommandResult.self, from: Data(result.stdout.utf8))
+    XCTAssertEqual(scoped.status, "ok")
+    XCTAssertTrue(scoped.records.contains("status=dry-run"), scoped.records.joined(separator: "\n"))
+  }
+
   private func rielaExampleWorkflowNames() -> [String] {
     [
       "chat-event-attachment-judgement",

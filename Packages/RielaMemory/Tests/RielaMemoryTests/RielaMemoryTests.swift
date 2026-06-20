@@ -83,6 +83,30 @@ final class RielaMemoryTests: XCTestCase {
     )
   }
 
+  func testLoadAndSearchRecordReturnedMemoryReferences() throws {
+    let root = temporaryDirectory()
+    let store = RielaMemoryStore(rootDirectory: root.path)
+
+    let saved = try store.save(
+      memoryId: "chat-memory",
+      workflowId: "wf",
+      registeredAt: "2026-06-20T10:00:00Z",
+      payload: .object(["text": .string("remember this")])
+    )
+
+    XCTAssertEqual(try store.referenceHistory(memoryId: "chat-memory"), [])
+
+    _ = try store.load(memoryId: "chat-memory", workflowId: "wf")
+    _ = try store.search(
+      memoryId: "chat-memory",
+      options: MemorySearchOptions(workflowId: "wf", matchPatterns: ["remember"])
+    )
+
+    let references = try store.referenceHistory(memoryId: "chat-memory", recordId: saved.recordId)
+    XCTAssertEqual(references.map(\.recordId), [saved.recordId, saved.recordId])
+    XCTAssertTrue(references.allSatisfy { !$0.referencedAt.isEmpty })
+  }
+
   private func temporaryDirectory() -> URL {
     FileManager.default.temporaryDirectory
       .appendingPathComponent("riela-memory-tests-\(UUID().uuidString)", isDirectory: true)

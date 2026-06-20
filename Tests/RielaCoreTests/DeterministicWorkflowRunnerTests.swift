@@ -709,7 +709,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
     XCTAssertTrue(input.systemPromptText?.contains("persona-events") == true)
     XCTAssertTrue(input.systemPromptText?.contains("persona-summary") == true)
     XCTAssertTrue(input.systemPromptText?.contains("--workflow-id memory-runner") == true)
-    XCTAssertTrue(input.systemPromptText?.contains("--node-id persona-step") == true)
+    XCTAssertTrue(input.systemPromptText?.contains("--node-id persona-node") == true)
     guard case let .object(availableMemories)? = input.mergedVariables["availableMemories"],
       case let .array(nodeMemories)? = availableMemories["node"]
     else {

@@ -86,6 +86,20 @@ public struct MemoryRecord: Codable, Equatable, Sendable {
   }
 }
 
+public struct MemoryRecordReference: Codable, Equatable, Sendable {
+  public var referenceId: Int64
+  public var memoryId: String
+  public var recordId: Int64
+  public var referencedAt: String
+
+  public init(referenceId: Int64, memoryId: String, recordId: Int64, referencedAt: String) {
+    self.referenceId = referenceId
+    self.memoryId = memoryId
+    self.recordId = recordId
+    self.referencedAt = referencedAt
+  }
+}
+
 public struct MemorySearchOptions: Equatable, Sendable {
   public var workflowId: String
   public var nodeId: String?
@@ -187,11 +201,11 @@ public struct RielaMemoryStore: Sendable {
       return []
     }
 
-    let db = try openDatabase(memoryId: memoryId, readOnly: true)
+    let db = try openDatabase(memoryId: memoryId)
     defer {
       sqlite3_close(db)
     }
-    try ensureJSONBAvailable(db)
+    try ensureSchema(db)
 
     var sql = """
       SELECT record_id, workflow_id, node_id, registered_at, json(payload_json) AS payload_json
@@ -225,7 +239,53 @@ public struct RielaMemoryStore: Sendable {
         break
       }
     }
+    try recordReferences(records, db: db)
     return records
+  }
+
+  public func referenceHistory(memoryId: String, recordId: Int64? = nil, limit: Int = 30) throws -> [MemoryRecordReference] {
+    try validateMemoryId(memoryId)
+    guard limit > 0 else {
+      throw RielaMemoryError.invalidLimit(limit)
+    }
+    let path = try databasePath(memoryId: memoryId)
+    guard FileManager.default.fileExists(atPath: path) else {
+      return []
+    }
+
+    let db = try openDatabase(memoryId: memoryId)
+    defer {
+      sqlite3_close(db)
+    }
+    try ensureSchema(db)
+
+    var sql = """
+      SELECT reference_id, record_id, referenced_at
+      FROM memory_entry_references
+      """
+    var bindings: [SQLiteBinding] = []
+    if let recordId {
+      sql += " WHERE record_id = ?"
+      bindings.append(.int64(recordId))
+    }
+    sql += " ORDER BY referenced_at DESC, reference_id DESC LIMIT ?"
+    bindings.append(.int(limit))
+
+    return try queryRows(db, sql: sql, bindings: bindings).map { row in
+      guard
+        let referenceId = Int64(row.columns["reference_id"] ?? ""),
+        let rowRecordId = Int64(row.columns["record_id"] ?? ""),
+        let referencedAt = row.columns["referenced_at"]
+      else {
+        throw RielaMemoryError.sqliteFailed("memory reference row is missing required fields")
+      }
+      return MemoryRecordReference(
+        referenceId: referenceId,
+        memoryId: memoryId,
+        recordId: rowRecordId,
+        referencedAt: referencedAt
+      )
+    }
   }
 
   private func openDatabase(memoryId: String, readOnly: Bool = false) throws -> OpaquePointer? {
@@ -267,6 +327,20 @@ public struct RielaMemoryStore: Sendable {
     try execute(
       db,
       "CREATE INDEX IF NOT EXISTS idx_memory_entries_node_registered ON memory_entries (workflow_id, node_id, registered_at DESC, record_id DESC)"
+    )
+    try execute(
+      db,
+      """
+      CREATE TABLE IF NOT EXISTS memory_entry_references (
+        reference_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        record_id INTEGER NOT NULL,
+        referenced_at TEXT NOT NULL
+      )
+      """
+    )
+    try execute(
+      db,
+      "CREATE INDEX IF NOT EXISTS idx_memory_entry_references_record ON memory_entry_references (record_id, referenced_at DESC, reference_id DESC)"
     )
   }
 
@@ -321,6 +395,23 @@ public struct RielaMemoryStore: Sendable {
       throw RielaMemoryError.invalidPattern(pattern)
     }
   }
+
+  private func recordReferences(_ records: [MemoryRecord], db: OpaquePointer?) throws {
+    guard !records.isEmpty else {
+      return
+    }
+    let referencedAt = currentTimestamp()
+    for record in records {
+      try execute(
+        db,
+        """
+        INSERT INTO memory_entry_references (record_id, referenced_at)
+        VALUES (?, ?)
+        """,
+        bindings: [.int64(record.recordId), .text(referencedAt)]
+      )
+    }
+  }
 }
 
 private struct SQLiteRow {
@@ -335,6 +426,7 @@ private enum SQLiteBinding {
   case text(String)
   case optionalText(String?)
   case int(Int)
+  case int64(Int64)
 }
 
 private func execute(_ db: OpaquePointer?, _ sql: String, bindings: [SQLiteBinding] = []) throws {
@@ -401,6 +493,8 @@ private func bind(_ bindings: [SQLiteBinding], to statement: OpaquePointer?) thr
         result = sqlite3_bind_null(statement, index)
       }
     case let .int(value):
+      result = sqlite3_bind_int64(statement, index, sqlite3_int64(value))
+    case let .int64(value):
       result = sqlite3_bind_int64(statement, index, sqlite3_int64(value))
     }
     if result != SQLITE_OK {

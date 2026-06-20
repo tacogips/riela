@@ -14,6 +14,8 @@
   `Mikausersidecheck` do not count as a Mika mention.
 - Each persona prompt repeats the same mention policy so the LLM has the same
   routing condition as the node-level filter.
+- Rina's prompt keeps her persona cool-headed and analytical: short, precise,
+  low-temperature replies without bubbly enthusiasm or filler.
 - `yui-codex-sdk`, `mika-claude-sdk`, and `rina-cursor-sdk` use
   `riela/codex-sdk-worker`, which resolves to `official/openai-sdk`, runs
   model `gpt-5-nano`, and requires `OPENAI_API_KEY` for live execution.

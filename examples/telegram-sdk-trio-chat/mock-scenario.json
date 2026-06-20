@@ -17,7 +17,7 @@
     "provider": "scenario-mock",
     "model": "gpt-5-nano",
     "payload": {
-      "text": "Rinaです。明示的にRina宛てのmentionがあるので私が返します。SDK版のトリオ構成では、node inputFiltersで担当を絞り、LLM側のmention policyでも同じ条件を守らせます。"
+      "text": "問題ない。Rina宛てのmentionなので私が返す。SDK版のトリオ構成では、node inputFiltersとLLM側のmention policyで担当を二重に絞っている。"
     }
   }
 }

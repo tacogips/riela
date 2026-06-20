@@ -433,8 +433,9 @@ final class WorkflowCommandTests: XCTestCase {
 
     XCTAssertEqual(output.provider, "scenario-mock")
     XCTAssertEqual(output.model, "gpt-5.5")
-    let expectedText = "Rinaです。SDK版のトリオ構成なら、Telegram入力をnode inputFiltersで分けて、"
-      + "各SDK workerが本文だけ返し、最後にchat-reply-workerで送る形が一番シンプルです。"
+    let expectedText = "Rinaです。明示的にRina宛てのmentionがあるので私が返します。"
+      + "SDK版のトリオ構成では、node inputFiltersで担当を絞り、"
+      + "LLM側のmention policyでも同じ条件を守らせます。"
     XCTAssertEqual(output.payload["text"], .string(expectedText))
     XCTAssertEqual(output.when["always"], true)
   }

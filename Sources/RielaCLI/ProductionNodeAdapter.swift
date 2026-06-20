@@ -4,6 +4,7 @@ import CursorCLIAgent
 import Foundation
 import RielaAdapters
 import RielaCore
+import RielaMemory
 
 func makeProductionNodeAdapter() -> any NodeAdapter {
   DispatchingNodeAdapter(
@@ -212,6 +213,9 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     }
     if input.addon.name == "riela/chat-reply-worker" {
       return try executeChatReplyWorker(input)
+    }
+    if let memoryAddon = BuiltinMemoryAddon(rawValue: input.addon.name) {
+      return try executeMemoryAddon(input, operation: memoryAddon)
     }
     return AdapterExecutionOutput(
       provider: "riela-builtin-addon",
@@ -452,6 +456,85 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     )
   }
 
+  private func executeMemoryAddon(
+    _ input: WorkflowAddonExecutionInput,
+    operation: BuiltinMemoryAddon
+  ) throws -> AdapterExecutionOutput {
+    guard input.addon.version == nil || input.addon.version == "1" else {
+      throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
+    }
+
+    let config = input.addon.config ?? [:]
+    let variables = addonVariables(for: input)
+    let memoryId = nonEmptyString(config["memoryId"]) ?? nonEmptyString(variables["memoryId"]) ?? "chat-memory"
+    let nodeId = nonEmptyString(config["nodeId"]) ?? nonEmptyString(variables["memoryNodeId"]) ?? input.nodeId
+    let limit = intValue(config["limit"]) ?? intValue(variables["limit"]) ?? 30
+    let memoryRoot = nonEmptyString(config["memoryRoot"]) ?? nonEmptyString(variables["memoryRoot"])
+    let store = RielaMemoryStore(
+      rootDirectory: memoryRoot ?? RielaMemoryStore.defaultRootDirectory()
+    )
+
+    switch operation {
+    case .save:
+      let payload = try memoryPayload(config: config, variables: variables, input: input)
+      let record = try store.save(
+        memoryId: memoryId,
+        workflowId: input.workflowId,
+        nodeId: nodeId,
+        payload: payload
+      )
+      return memoryAddonOutput(
+        input: input,
+        operation: operation,
+        memoryId: memoryId,
+        databasePath: try store.databasePath(memoryId: memoryId),
+        payload: [
+          "saved": .bool(true),
+          "record": memoryRecordJSON(record)
+        ]
+      )
+    case .load:
+      let records = try store.load(
+        memoryId: memoryId,
+        workflowId: input.workflowId,
+        nodeId: optionalNodeScope(config: config, variables: variables),
+        limit: limit
+      )
+      return memoryAddonOutput(
+        input: input,
+        operation: operation,
+        memoryId: memoryId,
+        databasePath: try store.databasePath(memoryId: memoryId),
+        payload: [
+          "records": .array(records.map(memoryRecordJSON)),
+          "limit": .number(Double(limit))
+        ]
+      )
+    case .search:
+      let patterns = memoryMatchPatterns(config: config, variables: variables)
+      let records = try store.search(
+        memoryId: memoryId,
+        options: MemorySearchOptions(
+          workflowId: input.workflowId,
+          nodeId: optionalNodeScope(config: config, variables: variables),
+          matchPatterns: patterns,
+          limit: limit
+        )
+      )
+      return memoryAddonOutput(
+        input: input,
+        operation: operation,
+        memoryId: memoryId,
+        databasePath: try store.databasePath(memoryId: memoryId),
+        payload: [
+          "records": .array(records.map(memoryRecordJSON)),
+          "matchPatterns": .array(patterns.map { .string($0) }),
+          "limit": .number(Double(limit))
+        ]
+      )
+    }
+  }
+
   private func executeGeminiSDKWorker(
     _ input: WorkflowAddonExecutionInput,
     context: AdapterExecutionContext
@@ -503,6 +586,12 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       context: context
     )
   }
+}
+
+private enum BuiltinMemoryAddon: String {
+  case save = "riela/memory-save"
+  case load = "riela/memory-load"
+  case search = "riela/memory-search"
 }
 
 private func addonVariables(for input: WorkflowAddonExecutionInput) -> JSONObject {
@@ -617,6 +706,130 @@ private func intValue(_ value: JSONValue?) -> Int? {
     return nil
   }
   return Int(value)
+}
+
+private func optionalNodeScope(config: JSONObject, variables: JSONObject) -> String? {
+  if boolValue(config["workflowScopeOnly"]) == true || boolValue(variables["workflowScopeOnly"]) == true {
+    return nil
+  }
+  return nonEmptyString(config["nodeScope"]) ?? nonEmptyString(variables["nodeScope"])
+}
+
+private func memoryPayload(
+  config: JSONObject,
+  variables: JSONObject,
+  input: WorkflowAddonExecutionInput
+) throws -> MemoryJSONValue {
+  if let payload = config["payload"] ?? variables["payload"] {
+    return try memoryJSONValue(from: payload)
+  }
+
+  let payloadSource = nonEmptyString(config["payloadSource"]) ?? nonEmptyString(variables["payloadSource"]) ?? "input"
+  switch payloadSource {
+  case "event":
+    if let event = variables["event"] {
+      return try memoryJSONValue(from: event)
+    }
+    return .object([:])
+  case "variables":
+    return try memoryJSONValue(from: .object(variables))
+  case "resolvedInput", "input":
+    return try memoryJSONValue(from: .object(input.resolvedInputPayload))
+  default:
+    throw AdapterExecutionError(.policyBlocked, "unsupported memory payloadSource '\(payloadSource)'")
+  }
+}
+
+private func memoryMatchPatterns(config: JSONObject, variables: JSONObject) -> [String] {
+  if let configured = stringArrayValue(config["matchPatterns"]) {
+    return configured
+  }
+  if let variablePatterns = stringArrayValue(variables["matchPatterns"]) {
+    return variablePatterns
+  }
+  if let singlePattern = nonEmptyString(config["match"]) ?? nonEmptyString(variables["match"]) {
+    return [singlePattern]
+  }
+  return []
+}
+
+private func stringArrayValue(_ value: JSONValue?) -> [String]? {
+  guard case let .array(values) = value else {
+    return nil
+  }
+  return values.compactMap(nonEmptyString)
+}
+
+private func memoryAddonOutput(
+  input: WorkflowAddonExecutionInput,
+  operation: BuiltinMemoryAddon,
+  memoryId: String,
+  databasePath: String,
+  payload extraPayload: JSONObject
+) -> AdapterExecutionOutput {
+  var payload: JSONObject = [
+    "status": .string("ok"),
+    "addon": .string(input.addon.name),
+    "operation": .string(operation.rawValue.replacingOccurrences(of: "riela/memory-", with: "")),
+    "stepId": .string(input.stepId),
+    "memoryId": .string(memoryId),
+    "databasePath": .string(databasePath)
+  ]
+  for (key, value) in extraPayload {
+    payload[key] = value
+  }
+  return AdapterExecutionOutput(
+    provider: "riela-builtin-addon",
+    model: input.addon.name,
+    promptText: "",
+    completionPassed: true,
+    payload: payload
+  )
+}
+
+private func memoryRecordJSON(_ record: MemoryRecord) -> JSONValue {
+  .object([
+    "recordId": .number(Double(record.recordId)),
+    "memoryId": .string(record.memoryId),
+    "workflowId": .string(record.workflowId),
+    "nodeId": record.nodeId.map { .string($0) } ?? .null,
+    "registeredAt": .string(record.registeredAt),
+    "payload": jsonValue(from: record.payload)
+  ])
+}
+
+private func memoryJSONValue(from value: JSONValue) throws -> MemoryJSONValue {
+  switch value {
+  case .null:
+    return .null
+  case let .bool(value):
+    return .bool(value)
+  case let .number(value):
+    return .number(value)
+  case let .string(value):
+    return .string(value)
+  case let .array(values):
+    return .array(try values.map(memoryJSONValue))
+  case let .object(values):
+    return .object(try values.mapValues(memoryJSONValue))
+  }
+}
+
+private func jsonValue(from value: MemoryJSONValue) -> JSONValue {
+  switch value {
+  case .null:
+    return .null
+  case let .bool(value):
+    return .bool(value)
+  case let .number(value):
+    return .number(value)
+  case let .string(value):
+    return .string(value)
+  case let .array(values):
+    return .array(values.map(jsonValue))
+  case let .object(values):
+    return .object(values.mapValues(jsonValue))
+  }
 }
 
 private func objectValue(_ value: JSONValue?) -> JSONObject? {

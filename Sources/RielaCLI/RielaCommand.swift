@@ -36,6 +36,7 @@ public enum RielaCommand: Equatable, Sendable {
   case workflow(WorkflowCommand)
   case session(SessionCommand)
   case package(PackageCommand)
+  case memory(MemoryCommand)
   case scoped(ScopedCommand)
 }
 
@@ -105,6 +106,62 @@ public struct PackageCommand: Equatable, Sendable {
   public init(kind: PackageCommandKind, options: CLICommandOptions) {
     self.kind = kind
     self.options = options
+  }
+}
+
+public enum MemoryCommandKind: String, Codable, Sendable {
+  case save
+  case load
+  case search
+}
+
+public struct MemoryCommand: Equatable, Sendable {
+  public var kind: MemoryCommandKind
+  public var options: MemoryCommandOptions
+
+  public init(kind: MemoryCommandKind, options: MemoryCommandOptions) {
+    self.kind = kind
+    self.options = options
+  }
+}
+
+public struct MemoryCommandOptions: Equatable, Sendable {
+  public var memoryId: String
+  public var workflowId: String?
+  public var nodeId: String?
+  public var payloadJSON: String?
+  public var payloadFile: String?
+  public var registeredAt: String?
+  public var matchPatterns: [String]
+  public var limit: Int
+  public var databaseRoot: String?
+  public var workingDirectory: String
+  public var output: WorkflowOutputFormat
+
+  public init(
+    memoryId: String,
+    workflowId: String? = nil,
+    nodeId: String? = nil,
+    payloadJSON: String? = nil,
+    payloadFile: String? = nil,
+    registeredAt: String? = nil,
+    matchPatterns: [String] = [],
+    limit: Int = 30,
+    databaseRoot: String? = nil,
+    workingDirectory: String = FileManager.default.currentDirectoryPath,
+    output: WorkflowOutputFormat = .jsonl
+  ) {
+    self.memoryId = memoryId
+    self.workflowId = workflowId
+    self.nodeId = nodeId
+    self.payloadJSON = payloadJSON
+    self.payloadFile = payloadFile
+    self.registeredAt = registeredAt
+    self.matchPatterns = matchPatterns
+    self.limit = limit
+    self.databaseRoot = databaseRoot
+    self.workingDirectory = workingDirectory
+    self.output = output
   }
 }
 
@@ -349,11 +406,14 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     if arguments.first == "package" {
       return .package(try parsePackage(scope: "package", arguments: Array(arguments.dropFirst())))
     }
+    if arguments.first == "memory" {
+      return .memory(try parseMemory(Array(arguments.dropFirst())))
+    }
     if arguments.first == "session" {
       return try parseSession(Array(arguments.dropFirst()))
     }
     guard arguments.first == "workflow" else {
-      throw CLIUsageError("expected 'workflow', 'package', 'session', 'graphql', 'gql', 'hook', 'events', 'serve', or 'call-step' command")
+      throw CLIUsageError("expected 'workflow', 'package', 'memory', 'session', 'graphql', 'gql', 'hook', 'events', 'serve', or 'call-step' command")
     }
     guard arguments.count >= 2 else {
       throw CLIUsageError("workflow command requires a subcommand and workflow name")
@@ -565,6 +625,107 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       allowTableOutput: kind == .search || kind == .list
     )
     return PackageCommand(kind: kind, options: options)
+  }
+
+  private func parseMemory(_ arguments: [String]) throws -> MemoryCommand {
+    guard let subcommand = arguments.first else {
+      throw CLIUsageError("memory command requires a subcommand")
+    }
+    guard let kind = MemoryCommandKind(rawValue: subcommand) else {
+      throw CLIUsageError("unsupported memory subcommand '\(subcommand)'")
+    }
+    guard arguments.count >= 2, !arguments[1].hasPrefix("--") else {
+      throw CLIUsageError("memory \(subcommand) requires a memory id")
+    }
+    let options = try parseMemoryOptions(memoryId: arguments[1], tokens: Array(arguments.dropFirst(2)))
+    switch kind {
+    case .save:
+      if options.payloadJSON != nil && options.payloadFile != nil {
+        throw CLIUsageError("memory save accepts only one of --payload-json or --payload-file")
+      }
+      if options.payloadJSON == nil && options.payloadFile == nil {
+        throw CLIUsageError("memory save requires --payload-json or --payload-file")
+      }
+    case .load, .search:
+      break
+    }
+    if options.workflowId == nil {
+      throw CLIUsageError("memory \(subcommand) requires --workflow-id")
+    }
+    return MemoryCommand(kind: kind, options: options)
+  }
+
+  private func parseMemoryOptions(memoryId: String, tokens: [String]) throws -> MemoryCommandOptions {
+    var workflowId: String?
+    var nodeId: String?
+    var payloadJSON: String?
+    var payloadFile: String?
+    var registeredAt: String?
+    var matchPatterns: [String] = []
+    var limit = 30
+    var databaseRoot: String?
+    var workingDirectory = FileManager.default.currentDirectoryPath
+    var output: WorkflowOutputFormat = .jsonl
+    var index = 0
+    while index < tokens.count {
+      let token = tokens[index]
+      guard token.hasPrefix("--") else {
+        throw CLIUsageError("unexpected positional argument '\(token)'")
+      }
+      if let value = inlineOptionValue(token, prefix: "--output=") {
+        output = try parseOutputValue(value, allowTableOutput: false)
+        index += 1
+        continue
+      }
+      let value: () throws -> String = {
+        guard index + 1 < tokens.count, !tokens[index + 1].hasPrefix("--") else {
+          throw CLIUsageError("\(token) requires a value")
+        }
+        index += 1
+        return tokens[index]
+      }
+      switch token {
+      case "--workflow-id":
+        workflowId = try value()
+      case "--node-id":
+        nodeId = try value()
+      case "--payload-json":
+        payloadJSON = try value()
+      case "--payload-file":
+        payloadFile = try value()
+      case "--registered-at":
+        registeredAt = try value()
+      case "--match", "-e":
+        matchPatterns.append(try value())
+      case "--limit":
+        guard let parsed = Int(try value()), parsed > 0 else {
+          throw CLIUsageError("--limit must be a positive integer")
+        }
+        limit = parsed
+      case "--database-root", "--memory-root":
+        databaseRoot = try value()
+      case "--working-dir", "--working-directory":
+        workingDirectory = try value()
+      case "--output":
+        output = try parseOutputValue(try value(), allowTableOutput: false)
+      default:
+        throw CLIUsageError("unsupported memory option '\(token)'")
+      }
+      index += 1
+    }
+    return MemoryCommandOptions(
+      memoryId: memoryId,
+      workflowId: workflowId,
+      nodeId: nodeId,
+      payloadJSON: payloadJSON,
+      payloadFile: payloadFile,
+      registeredAt: registeredAt,
+      matchPatterns: matchPatterns,
+      limit: limit,
+      databaseRoot: databaseRoot,
+      workingDirectory: workingDirectory,
+      output: output
+    )
   }
 
   private func parseScoped(kind: ScopedCommandKind, arguments: [String]) throws -> ScopedCommand {
@@ -975,6 +1136,23 @@ private func parseOutputOnly(_ tokens: [String], allowTableOutput: Bool) throws 
     index += 1
   }
   return output
+}
+
+private func inlineOptionValue(_ token: String, prefix: String) -> String? {
+  guard token.hasPrefix(prefix) else {
+    return nil
+  }
+  return String(token.dropFirst(prefix.count))
+}
+
+private func parseOutputValue(_ raw: String, allowTableOutput: Bool) throws -> WorkflowOutputFormat {
+  guard let value = WorkflowOutputFormat(rawValue: raw) else {
+    throw CLIUsageError("invalid --output value '\(raw)'; expected text, json, jsonl, or table")
+  }
+  if value == .table && !allowTableOutput {
+    throw CLIUsageError("`--output table` is only supported for workflow list, workflow status, package search, and package list")
+  }
+  return value
 }
 
 private func requireRunOption(_ token: String, allowRunOptions: Bool) throws {

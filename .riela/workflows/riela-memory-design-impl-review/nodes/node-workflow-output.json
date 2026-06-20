@@ -1,0 +1,12 @@
+{
+  "id": "workflow-output",
+  "nodeType": "command",
+  "description": "Publish the memory feature Riela review summary.",
+  "command": {
+    "executable": "/usr/bin/env",
+    "argvTemplate": ["sh", ".riela/workflows/riela-memory-design-impl-review/scripts/review-memory-feature.sh", "summary"]
+  },
+  "output": {
+    "description": "Return final JSON summarizing design review, implementation review, and next implementation actions."
+  }
+}

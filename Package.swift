@@ -27,6 +27,9 @@ let package = Package(
     .executable(name: "riela", targets: ["RielaCLI"]),
     .executable(name: "RielaApp", targets: ["RielaApp"])
   ],
+  dependencies: [
+    .package(path: "Packages/RielaMemory")
+  ],
   targets: [
     .target(
       name: "RielaJavaScript",
@@ -56,6 +59,7 @@ let package = Package(
       name: "RielaCLI",
       dependencies: [
         "RielaCore",
+        .product(name: "RielaMemory", package: "RielaMemory"),
         "RielaAdapters",
         "RielaAddons",
         "RielaEvents",

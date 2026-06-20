@@ -83,7 +83,6 @@ struct DefaultEventLiveServer: EventLiveServing {
     var observedUpdates = 0
     let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
     let targets = try source.pollingTargets(environment: environment)
-    let historyStore = TelegramConversationHistoryStore(eventRoot: eventRoot, source: source)
     let dedupeStore = TelegramMessageDedupeStore(eventRoot: eventRoot, source: source)
     for target in targets {
       let offsetStore = TelegramOffsetStore(eventRoot: eventRoot, source: source, targetId: target.id)
@@ -104,8 +103,7 @@ struct DefaultEventLiveServer: EventLiveServing {
       for update in updates {
         observedUpdates += 1
         try offsetStore.saveOffset(update.updateId + 1)
-        let history = try update.message.map { try historyStore.loadHistory(for: $0) } ?? []
-        guard let envelope = source.envelope(from: update, eventRoot: eventRoot, history: history) else {
+        guard let envelope = source.envelope(from: update, eventRoot: eventRoot) else {
           continue
         }
         if let message = update.message, try dedupeStore.hasSeen(message: message) {
@@ -143,7 +141,6 @@ struct DefaultEventLiveServer: EventLiveServing {
             )
           }
           if let message = update.message {
-            try historyStore.append(message: message, replies: replies)
             try dedupeStore.markSeen(message: message)
           }
         }
@@ -419,7 +416,7 @@ struct TelegramGatewaySource: Decodable, Equatable, Sendable {
     return environmentValue(tokenEnv, environment: environment)
   }
 
-  func envelope(from update: TelegramUpdate, eventRoot: URL, history: [JSONValue] = []) -> ExternalEventEnvelope? {
+  func envelope(from update: TelegramUpdate, eventRoot: URL) -> ExternalEventEnvelope? {
     guard let message = update.message,
       let text = message.text,
       isAllowed(message: message, environment: CLIRuntimeEnvironment.mergedProcessEnvironment())
@@ -448,8 +445,8 @@ struct TelegramGatewaySource: Decodable, Equatable, Sendable {
       input: [
         "text": .string(text),
         "provider": .string("telegram"),
-        "history": .array(history),
-        "historySource": .string("live"),
+        "history": .array([]),
+        "historySource": .string("chat-memory"),
         "attachments": .array([]),
         "imagePaths": .array([]),
         "attachmentText": .string(""),
@@ -681,96 +678,6 @@ struct URLSessionTelegramGatewayAPI: TelegramGatewayAPI {
 struct TelegramConversationReply: Equatable, Sendable {
   var replyAs: String?
   var text: String
-}
-
-private struct TelegramConversationHistoryStore {
-  private static let maxEntries = 24
-
-  var eventRoot: URL
-  var source: TelegramGatewaySource
-
-  func loadHistory(for message: TelegramMessage) throws -> [JSONValue] {
-    let url = historyURL(for: message)
-    guard FileManager.default.fileExists(atPath: url.path) else {
-      return []
-    }
-    let entries = try JSONDecoder().decode([TelegramConversationHistoryEntry].self, from: Data(contentsOf: url))
-    return entries.suffix(Self.maxEntries).map(\.jsonValue)
-  }
-
-  func append(message: TelegramMessage, replies: [TelegramConversationReply]) throws {
-    guard let text = message.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-      return
-    }
-    let url = historyURL(for: message)
-    let existing: [TelegramConversationHistoryEntry]
-    if FileManager.default.fileExists(atPath: url.path) {
-      existing = (try? JSONDecoder().decode([TelegramConversationHistoryEntry].self, from: Data(contentsOf: url))) ?? []
-    } else {
-      existing = []
-    }
-    let userEntry = TelegramConversationHistoryEntry(
-      role: "user",
-      actorId: message.from?.id,
-      actorName: message.from?.displayName,
-      replyAs: nil,
-      text: text,
-      timestamp: message.date
-    )
-    let replyEntries = replies.map { reply in
-      TelegramConversationHistoryEntry(
-        role: "assistant",
-        actorId: nil,
-        actorName: reply.replyAs,
-        replyAs: reply.replyAs,
-        text: reply.text,
-        timestamp: Int(Date().timeIntervalSince1970)
-      )
-    }
-    let entries = Array((existing + [userEntry] + replyEntries).suffix(Self.maxEntries))
-    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    try encoder.encode(entries).write(to: url, options: .atomic)
-  }
-
-  private func historyURL(for message: TelegramMessage) -> URL {
-    let thread = message.messageThreadId ?? "main"
-    let filename = "\(safeHistoryComponent(message.chat.id))-\(safeHistoryComponent(thread)).json"
-    return eventRoot
-      .appendingPathComponent("telegram-history", isDirectory: true)
-      .appendingPathComponent(safeHistoryComponent(source.id), isDirectory: true)
-      .appendingPathComponent(filename)
-  }
-
-  private func safeHistoryComponent(_ value: String) -> String {
-    let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-"))
-    let scalars = value.unicodeScalars.map { scalar in
-      allowed.contains(scalar) ? Character(scalar) : "_"
-    }
-    let sanitized = String(scalars).trimmingCharacters(in: CharacterSet(charactersIn: "._-"))
-    return sanitized.isEmpty ? "unknown" : sanitized
-  }
-}
-
-private struct TelegramConversationHistoryEntry: Codable, Equatable {
-  var role: String
-  var actorId: String?
-  var actorName: String?
-  var replyAs: String?
-  var text: String
-  var timestamp: Int?
-
-  var jsonValue: JSONValue {
-    .object(compactObject([
-      "role": .string(role),
-      "actorId": actorId.map { .string($0) },
-      "actorName": actorName.map { .string($0) },
-      "replyAs": replyAs.map { .string($0) },
-      "text": .string(text),
-      "timestamp": timestamp.map { .number(Double($0)) }
-    ]))
-  }
 }
 
 struct TelegramAPIStatusResponse: Decodable, Equatable {

@@ -18,7 +18,11 @@
   messages must explicitly mention Yui to route to Yui.
 - Each persona prompt repeats the same mention policy so the LLM has the same
   routing condition as the node-level filter.
-- Each persona prompt treats recent chat history as the source of truth for
+- `save-chat-event-memory` persists every accepted Telegram chat event into the
+  workflow-scoped `chat-memory` SQLite memory before persona routing.
+- Each persona loads recent `chat-memory` records through the native
+  `riela/memory-load` add-on immediately before replying.
+- Each persona prompt treats recent chat memory as the source of truth for
   follow-up questions. Short follow-ups such as `なんの機能?` or
   `なんのトレンド?` should refer back to the most recent relevant bot reply
   instead of inventing generic capabilities or unrelated trend categories.

@@ -151,6 +151,7 @@ private func validateTypedAuthoredWorkflow(_ workflow: AuthoredWorkflowJSON) -> 
       )
     )
   }
+  validateMemoryDeclarations(workflow.memories, path: "workflow.memories", diagnostics: &diagnostics)
 
   var nodeIds: Set<String> = []
   for (index, node) in workflow.nodes.enumerated() {
@@ -173,6 +174,7 @@ private func validateTypedAuthoredWorkflow(_ workflow: AuthoredWorkflowJSON) -> 
       validateWorkflowRelativePath(nodeFile, fieldName: "nodeFile", path: "\(path).nodeFile", diagnostics: &diagnostics)
     }
     validateInputFilters(node.inputFilters, path: "\(path).inputFilters", diagnostics: &diagnostics)
+    validateMemoryDeclarations(node.memories, path: "\(path).memories", diagnostics: &diagnostics)
   }
 
   let effectiveSteps = workflow.steps ?? workflow.nodes.map { WorkflowStepRef(id: $0.id, nodeId: $0.id) }
@@ -313,6 +315,7 @@ private func validateRawAuthoredWorkflow(_ raw: [String: Any]) -> [WorkflowValid
   } else {
     diagnostics.append(error("workflow.defaults", "must be an object"))
   }
+  validateRawMemoryDeclarations(raw["memories"], path: "workflow.memories", diagnostics: &diagnostics)
 
   guard let nodeEntries = raw["nodes"] as? [Any] else {
     diagnostics.append(error("workflow.nodes", "must be an array"))
@@ -339,7 +342,7 @@ private func validateRawAuthoredWorkflow(_ raw: [String: Any]) -> [WorkflowValid
 
 private func validateNodeRegistry(_ entries: [Any], diagnostics: inout [WorkflowValidationDiagnostic]) {
   var seenIds: Set<String> = []
-  let allowedKeys: Set<String> = ["id", "nodeFile", "addon", "execution", "kind", "repeat", "inputFilters"]
+  let allowedKeys: Set<String> = ["id", "nodeFile", "addon", "execution", "kind", "repeat", "inputFilters", "memories"]
 
   for (index, rawEntry) in entries.enumerated() {
     let path = "workflow.nodes[\(index)]"
@@ -371,6 +374,7 @@ private func validateNodeRegistry(_ entries: [Any], diagnostics: inout [Workflow
       validateWorkflowRelativePath(nodeFile, fieldName: "nodeFile", path: "\(path).nodeFile", diagnostics: &diagnostics)
     }
     validateRawInputFilters(entry["inputFilters"], path: "\(path).inputFilters", diagnostics: &diagnostics)
+    validateRawMemoryDeclarations(entry["memories"], path: "\(path).memories", diagnostics: &diagnostics)
   }
 }
 
@@ -552,7 +556,8 @@ private func materializeWorkflowDefinition(from workflow: AuthoredWorkflowJSON) 
       role: step.role,
       execution: registryNode.execution,
       repeatPolicy: registryNode.repeatPolicy,
-      inputFilters: registryNode.inputFilters
+      inputFilters: registryNode.inputFilters,
+      memories: registryNode.memories
     )
   }
 
@@ -561,6 +566,7 @@ private func materializeWorkflowDefinition(from workflow: AuthoredWorkflowJSON) 
     description: workflow.description ?? "",
     defaults: workflow.defaults,
     prompts: workflow.prompts,
+    memories: workflow.memories,
     managerStepId: workflow.managerStepId,
     entryStepId: entryStepId,
     nodeRegistry: workflow.nodes,
@@ -592,6 +598,89 @@ private func validateInputFilters(
     if hasExpression == hasBuiltin {
       diagnostics.append(error(filterPath, "must specify exactly one of expression or builtin"))
     }
+  }
+}
+
+private func validateMemoryDeclarations(
+  _ memories: [WorkflowMemoryDeclaration]?,
+  path: String,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let memories else {
+    return
+  }
+  if memories.isEmpty {
+    diagnostics.append(error(path, "must contain at least one memory when present"))
+  }
+  var seenIds: Set<String> = []
+  for (index, memory) in memories.enumerated() {
+    let memoryPath = "\(path)[\(index)]"
+    validateMemoryId(memory.id, path: "\(memoryPath).id", diagnostics: &diagnostics)
+    if !memory.id.isEmpty {
+      if seenIds.contains(memory.id) {
+        diagnostics.append(error("\(memoryPath).id", "must be unique within this memory declaration list"))
+      }
+      seenIds.insert(memory.id)
+    }
+    if let defaultLimit = memory.defaultLimit, defaultLimit <= 0 {
+      diagnostics.append(error("\(memoryPath).defaultLimit", "must be a positive integer"))
+    }
+  }
+}
+
+private func validateRawMemoryDeclarations(
+  _ rawMemories: Any?,
+  path: String,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let rawMemories else {
+    return
+  }
+  guard let memories = rawMemories as? [Any] else {
+    diagnostics.append(error(path, "must be an array"))
+    return
+  }
+  if memories.isEmpty {
+    diagnostics.append(error(path, "must contain at least one memory when present"))
+  }
+  var seenIds: Set<String> = []
+  for (index, rawMemory) in memories.enumerated() {
+    let memoryPath = "\(path)[\(index)]"
+    guard let memory = rawMemory as? [String: Any] else {
+      diagnostics.append(error(memoryPath, "must be an object"))
+      continue
+    }
+    let allowedKeys: Set<String> = ["id", "description", "purpose", "scope", "defaultLimit"]
+    for key in memory.keys where !allowedKeys.contains(key) {
+      diagnostics.append(error("\(memoryPath).\(key)", "uses an unsupported memory declaration field"))
+    }
+    if let id = memory["id"] as? String {
+      validateMemoryId(id, path: "\(memoryPath).id", diagnostics: &diagnostics)
+      if !id.isEmpty {
+        if seenIds.contains(id) {
+          diagnostics.append(error("\(memoryPath).id", "must be unique within this memory declaration list"))
+        }
+        seenIds.insert(id)
+      }
+    } else {
+      diagnostics.append(error("\(memoryPath).id", "must be a non-empty string"))
+    }
+    if let scope = memory["scope"] as? String, WorkflowMemoryScope(rawValue: scope) == nil {
+      diagnostics.append(error("\(memoryPath).scope", "must be workflow, node, or cross-workflow"))
+    }
+    if let defaultLimit = memory["defaultLimit"] {
+      validatePositiveInteger(defaultLimit, path: "\(memoryPath).defaultLimit", diagnostics: &diagnostics)
+    }
+  }
+}
+
+private func validateMemoryId(_ value: String, path: String, diagnostics: inout [WorkflowValidationDiagnostic]) {
+  guard !value.isEmpty else {
+    diagnostics.append(error(path, "must be a non-empty string"))
+    return
+  }
+  if value.range(of: #"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"#, options: .regularExpression) == nil {
+    diagnostics.append(error(path, "must start with an alphanumeric character and contain only letters, digits, hyphens, underscores, or dots"))
   }
 }
 

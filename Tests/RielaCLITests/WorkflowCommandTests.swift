@@ -414,6 +414,88 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertEqual(output.when["handoff_rina"], false)
   }
 
+  func testBuiltinMemoryAddonsSaveLoadAndSearchWorkflowScopedRecords() async throws {
+    let root = repositoryRoot()
+    let memoryRoot = "\(root)/tmp/test-builtin-memory-addons-\(UUID().uuidString)"
+    defer {
+      try? FileManager.default.removeItem(atPath: memoryRoot)
+    }
+    let resolver = BuiltinWorkflowAddonResolver(environment: [:])
+    let saveAddon = WorkflowNodeAddonRef(
+      name: "riela/memory-save",
+      version: "1",
+      config: [
+        "memoryId": .string("chat-memory"),
+        "memoryRoot": .string(memoryRoot),
+        "nodeId": .string("chat-event"),
+        "payloadSource": .string("event")
+      ]
+    )
+
+    let save = try await resolver.execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "telegram-sdk-trio-chat",
+        stepId: "save-chat-event-memory",
+        nodeId: "save-chat-event-memory",
+        addon: saveAddon,
+        variables: [
+          "event": .object([
+            "input": .object(["text": .string("Yui, remember the routing test")]),
+            "conversation": .object(["id": .string("chat-1")])
+          ])
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(save.payload["saved"], .bool(true))
+    XCTAssertEqual(save.payload["memoryId"], .string("chat-memory"))
+
+    let load = try await resolver.execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "telegram-sdk-trio-chat",
+        stepId: "load-yui-chat-memory",
+        nodeId: "load-yui-chat-memory",
+        addon: WorkflowNodeAddonRef(
+          name: "riela/memory-load",
+          version: "1",
+          config: [
+            "memoryId": .string("chat-memory"),
+            "memoryRoot": .string(memoryRoot),
+            "workflowScopeOnly": .bool(true)
+          ]
+        )
+      ),
+      context: AdapterExecutionContext()
+    )
+    guard case let .array(loadedRecords)? = load.payload["records"] else {
+      return XCTFail("memory-load records were not returned")
+    }
+    XCTAssertEqual(loadedRecords.count, 1)
+
+    let search = try await resolver.execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "telegram-sdk-trio-chat",
+        stepId: "search-chat-memory",
+        nodeId: "search-chat-memory",
+        addon: WorkflowNodeAddonRef(
+          name: "riela/memory-search",
+          version: "1",
+          config: [
+            "memoryId": .string("chat-memory"),
+            "memoryRoot": .string(memoryRoot),
+            "workflowScopeOnly": .bool(true),
+            "matchPatterns": .array([.string("routing test")])
+          ]
+        )
+      ),
+      context: AdapterExecutionContext()
+    )
+    guard case let .array(searchRecords)? = search.payload["records"] else {
+      return XCTFail("memory-search records were not returned")
+    }
+    XCTAssertEqual(searchRecords.count, 1)
+  }
+
   func testBuiltinSDKWorkerExecutesInjectedLiveAdapter() async throws {
     let harness = RecordingSDKAddonHarness()
     let output = try await BuiltinWorkflowAddonResolver(

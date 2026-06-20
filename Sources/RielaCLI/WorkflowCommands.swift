@@ -1954,6 +1954,7 @@ public struct RielaCLIApplication: Sendable {
   public var sessionInspectionCommand: SessionInspectionCommand
   public var workflowScaffoldCommand: WorkflowScaffoldCommand
   public var packageCommandRunner: WorkflowPackageCommandRunner
+  public var memoryCommandRunner: MemoryCommandRunner
   public var sessionContinueCommand: SessionContinueCommand
   public var scopedCommandRunner: ScopedParityCommandRunner
 
@@ -1969,6 +1970,7 @@ public struct RielaCLIApplication: Sendable {
     sessionInspectionCommand: SessionInspectionCommand = SessionInspectionCommand(),
     workflowScaffoldCommand: WorkflowScaffoldCommand = WorkflowScaffoldCommand(),
     packageCommandRunner: WorkflowPackageCommandRunner = WorkflowPackageCommandRunner(),
+    memoryCommandRunner: MemoryCommandRunner = MemoryCommandRunner(),
     sessionContinueCommand: SessionContinueCommand = SessionContinueCommand(),
     scopedCommandRunner: ScopedParityCommandRunner = ScopedParityCommandRunner()
   ) {
@@ -1983,6 +1985,7 @@ public struct RielaCLIApplication: Sendable {
     self.sessionInspectionCommand = sessionInspectionCommand
     self.workflowScaffoldCommand = workflowScaffoldCommand
     self.packageCommandRunner = packageCommandRunner
+    self.memoryCommandRunner = memoryCommandRunner
     self.sessionContinueCommand = sessionContinueCommand
     self.scopedCommandRunner = scopedCommandRunner
   }
@@ -2049,6 +2052,8 @@ public struct RielaCLIApplication: Sendable {
         return sessionInspectionCommand.run(options)
       case let .package(command):
         return await packageCommandRunner.run(command)
+      case let .memory(command):
+        return memoryCommandRunner.run(command)
       case let .scoped(command):
         return await scopedCommandRunner.run(command)
       }
@@ -2195,6 +2200,8 @@ Usage:
   riela workflow package <search|list|status|install|update|remove|checkout|publish> [options]
   riela workflow run <workflow> --mock-scenario <path> [--auto-improve] [--output jsonl|json|text]
   riela package <search|list|status|install|update|remove|checkout|publish> [options]
+  riela memory save <memory-id> --workflow-id <workflow> --payload-json <json> [--node-id <node>] [--memory-root <dir>]
+  riela memory load|search <memory-id> --workflow-id <workflow> [--match <regex>] [--limit 30] [--memory-root <dir>]
   riela session rerun <session-id> <step-id> [--scope project|user|auto] [--output jsonl|json|text]
   riela session resume <session-id> [--scope project|user|auto] [--output jsonl|json|text]
   riela session progress|health|status|continue|step-runs|export|logs [session-id] [options]

@@ -246,12 +246,10 @@ public struct WorkflowViewerLoader: Sendable {
   }
 
   private func summary(_ snapshot: WorkflowRuntimePersistenceSnapshot) -> WorkflowViewerSessionSummary {
-    let active = Set(
-      snapshot.session.executions
-        .filter { $0.status == .running }
-        .map(\.stepId)
-        + [snapshot.session.currentStepId].compactMap { $0 }
-    )
+    var active = Set(snapshot.session.executions.filter { $0.status == .running }.map(\.stepId))
+    if snapshot.session.status == .running, let currentStepId = snapshot.session.currentStepId {
+      active.insert(currentStepId)
+    }
     return WorkflowViewerSessionSummary(
       sessionId: snapshot.session.sessionId,
       workflowId: snapshot.session.workflowId,
@@ -410,7 +408,9 @@ public struct WorkflowViewerLoader: Sendable {
     guard let selectedSession else {
       return .idle
     }
-    if selectedSession.currentStepId == stepId || selectedSession.executions.contains(where: { $0.stepId == stepId && $0.status == .running }) {
+    let isActive = selectedSession.executions.contains { $0.stepId == stepId && $0.status == .running }
+      || (selectedSession.status == .running && selectedSession.currentStepId == stepId)
+    if isActive {
       return .active
     }
     if selectedSession.executions.contains(where: { $0.stepId == stepId && $0.status == .failed }) {

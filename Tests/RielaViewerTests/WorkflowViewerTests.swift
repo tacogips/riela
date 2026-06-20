@@ -201,6 +201,78 @@ final class WorkflowViewerTests: XCTestCase {
     XCTAssertEqual(state.nodes.first?.children.first?.state, .idle)
   }
 
+  func testCompletedSessionCurrentStepIsNotRenderedActive() throws {
+    let temp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+      .appendingPathComponent("riela-viewer-completed-\(UUID().uuidString)", isDirectory: true)
+    let workflowDirectory = temp.appendingPathComponent("workflows/demo", isDirectory: true)
+    let sessionStoreRoot = temp.appendingPathComponent(".riela/sessions", isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: sessionStoreRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temp) }
+
+    let workflow = WorkflowDefinition(
+      workflowId: "viewer-completed",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 1_000, maxLoopIterations: 3),
+      entryStepId: "first",
+      nodeRegistry: [WorkflowNodeRegistryRef(id: "first"), WorkflowNodeRegistryRef(id: "second")],
+      steps: [
+        WorkflowStepRef(id: "first", nodeId: "first", transitions: [WorkflowStepTransition(toStepId: "second")]),
+        WorkflowStepRef(id: "second", nodeId: "second")
+      ],
+      nodes: [
+        WorkflowNodeRef(id: "first", nodeFile: "nodes/first.json"),
+        WorkflowNodeRef(id: "second", nodeFile: "nodes/second.json")
+      ]
+    )
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try encoder.encode(workflow).write(to: workflowDirectory.appendingPathComponent("workflow.json"))
+
+    let now = Date(timeIntervalSince1970: 20)
+    let session = WorkflowSession(
+      workflowId: "viewer-completed",
+      sessionId: "viewer-completed-session-1",
+      status: .completed,
+      entryStepId: "first",
+      currentStepId: "second",
+      createdAt: now,
+      updatedAt: now,
+      executions: [
+        WorkflowStepExecution(
+          executionId: "exec-first",
+          stepId: "first",
+          nodeId: "first",
+          attempt: 1,
+          status: .completed,
+          createdAt: now,
+          updatedAt: now
+        ),
+        WorkflowStepExecution(
+          executionId: "exec-second",
+          stepId: "second",
+          nodeId: "second",
+          attempt: 1,
+          status: .completed,
+          createdAt: now,
+          updatedAt: now
+        )
+      ]
+    )
+    try FileWorkflowRuntimePersistenceStore(
+      rootDirectory: sessionStoreRoot.appendingPathComponent("runtime-records", isDirectory: true).path
+    ).save(WorkflowRuntimePersistenceSnapshot(session: session))
+
+    let state = try WorkflowViewerLoader().load(WorkflowViewerLoadRequest(
+      workflowDirectory: workflowDirectory.path,
+      sessionStoreRoot: sessionStoreRoot.path
+    ))
+
+    XCTAssertEqual(state.sessions.first?.status, .completed)
+    XCTAssertEqual(state.sessions.first?.activeStepIds, [])
+    XCTAssertEqual(state.nodes.first?.state, .completed)
+    XCTAssertEqual(state.nodes.first?.children.first?.state, .completed)
+  }
+
   func testViewerDiscoversAncestorSessionStoreWhenRequestDoesNotPinRoot() throws {
     let temp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
       .appendingPathComponent("riela-viewer-discovery-\(UUID().uuidString)", isDirectory: true)

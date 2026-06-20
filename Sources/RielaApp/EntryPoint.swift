@@ -40,7 +40,11 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     rebuildMenu()
     startDaemonStatusRefreshTimer()
     openInitialViewerIfRequested()
-    autostartDaemonWorkflows()
+    if shouldAutostartDaemonWorkflows() {
+      autostartDaemonWorkflows()
+    } else {
+      logDaemon("daemon workflow autostart disabled by command-line option")
+    }
   }
 
   func applicationWillTerminate(_ notification: Notification) {
@@ -212,6 +216,10 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     status = "Selected"
     rebuildMenu()
     openViewer()
+  }
+
+  private func shouldAutostartDaemonWorkflows() -> Bool {
+    !CommandLine.arguments.dropFirst().contains("--no-autostart-daemons")
   }
 
   private func autostartDaemonWorkflows() {

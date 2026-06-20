@@ -381,6 +381,49 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertEqual(output.when["handoff_rina"], false)
   }
 
+  func testBuiltinChatPersonaRouterSelectsNamedPersonas() async throws {
+    let resolver = BuiltinWorkflowAddonResolver(environment: [:])
+    let addon = WorkflowNodeAddonRef(
+      name: "riela/chat-persona-router",
+      version: "1",
+      config: [
+        "defaultPersonaId": .string("yui"),
+        "personas": .array([
+          .object(["id": .string("yui"), "aliases": .array([.string("yui"), .string("codex")])]),
+          .object(["id": .string("mika"), "aliases": .array([.string("mika"), .string("claude")])]),
+          .object(["id": .string("rina"), "aliases": .array([.string("rina"), .string("cursor")])])
+        ])
+      ]
+    )
+
+    let rina = try await resolver.execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "telegram-trio",
+        stepId: "route-message",
+        nodeId: "route-message",
+        addon: addon,
+        variables: ["workflowInput": .object(["request": .string("Rina に技術観点を聞いて")])]
+      ),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(rina.payload["target"], .string("rina"))
+    XCTAssertEqual(rina.when["target_rina"], true)
+    XCTAssertEqual(rina.when["target_yui"], false)
+
+    let maki = try await resolver.execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "telegram-trio",
+        stepId: "route-message",
+        nodeId: "route-message",
+        addon: addon,
+        variables: ["humanInput": .object(["request": .string("Maki の見え方も聞きたい")])]
+      ),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(maki.payload["target"], .string("mika"))
+    XCTAssertEqual(maki.when["target_mika"], true)
+  }
+
   func testBuiltinGeminiSDKWorkerResolvesEnvironmentAndRenderedPrompt() async throws {
     let harness = RecordingGeminiAddonHarness()
     let resolver = BuiltinWorkflowAddonResolver(

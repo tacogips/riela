@@ -34,7 +34,15 @@ public struct SessionContinueCommand: Sendable {
 }
 
 public struct ScopedParityCommandRunner: Sendable {
-  public init() {}
+  var liveEventServer: any EventLiveServing
+
+  public init() {
+    self.liveEventServer = DefaultEventLiveServer()
+  }
+
+  init(liveEventServer: any EventLiveServing) {
+    self.liveEventServer = liveEventServer
+  }
 
   public func run(_ command: ScopedCommand) async -> CLICommandResult {
     do {
@@ -646,7 +654,7 @@ fileprivate extension ScopedParityCommandRunner {
       try saveEventReceipt(replay, eventRoot: root)
       return ScopedParityCommandResult(scope: "events", command: action, target: receiptId, status: "ok", records: ["replayedFrom=\(original.receiptId)", "receipt=\(replay.receiptId)", "status=\(replay.status)"])
     case "serve":
-      return try eventServeResult(root: root, action: action, target: options.target, parsed: parsed)
+      return try await eventServeResult(root: root, action: action, target: options.target, parsed: parsed)
     case "replies":
       let replies = try listEventReplies(eventRoot: root)
         .filter { reply in
@@ -727,23 +735,11 @@ fileprivate extension ScopedParityCommandRunner {
     await DeterministicEventDryRunTrigger().dryRun(EventDryRunRequest(sources: config.sources, bindings: config.bindings, envelope: envelope))
   }
 
-  private func eventServeResult(root: URL, action: String, target: String?, parsed: ParsedParityOptions) throws -> ScopedParityCommandResult {
+  private func eventServeResult(root: URL, action: String, target: String?, parsed: ParsedParityOptions) async throws -> ScopedParityCommandResult {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let config = try loadEventConfigIfPresent(eventRoot: root)
     if let config, !config.sources.isEmpty, !parsed.dryRun {
-      let unsupportedSources = config.sources.map { "\($0.id):\($0.kind.rawValue)" }.joined(separator: ",")
-      return ScopedParityCommandResult(
-        scope: "events",
-        command: action,
-        target: target,
-        status: "failed",
-        records: [
-          "eventRoot=\(root.path)",
-          "mode=\(EventServeMode.deterministicLocal)",
-          "status=\(EventServeStatus.unavailable)",
-          "unsupportedLiveSources=\(unsupportedSources)"
-        ]
-      )
+      return try await liveEventServer.serve(eventRoot: root, target: target, parsed: parsed, output: .json)
     }
     let serveRecord = root.appendingPathComponent(EventRootLayout.serveRecordFileName)
     let serveStatus = parsed.dryRun ? "dry-run" : EventServeStatus.ready

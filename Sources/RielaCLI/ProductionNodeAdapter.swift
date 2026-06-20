@@ -113,21 +113,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       return try await executeGeminiSDKWorker(input, context: context)
     }
     if input.addon.name == "riela/chat-persona-router" {
-      return AdapterExecutionOutput(
-        provider: "riela-builtin-addon",
-        model: input.addon.name,
-        promptText: "",
-        completionPassed: true,
-        when: ["target_yui": true, "target_mika": false, "target_rina": false],
-        payload: [
-          "status": .string("ok"),
-          "addon": .string(input.addon.name),
-          "target": .string("yui"),
-          "target_yui": .bool(true),
-          "target_mika": .bool(false),
-          "target_rina": .bool(false)
-        ]
-      )
+      return executeChatPersonaRouter(input)
     }
     if input.addon.name == "riela/chat-reply-worker" {
       return try executeChatReplyWorker(input)
@@ -143,6 +129,90 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
         "stepId": .string(input.stepId)
       ]
       )
+  }
+
+  private func executeChatPersonaRouter(_ input: WorkflowAddonExecutionInput) -> AdapterExecutionOutput {
+    let personas = chatPersonas(from: input.addon.config ?? [:])
+    let defaultPersonaId = nonEmptyString(input.addon.config?["defaultPersonaId"]) ?? personas.first?.id ?? "yui"
+    let request = routerRequestText(input)
+    let target = personas.first { persona in
+      persona.matches(request)
+    }?.id ?? defaultPersonaId
+    let knownTargetIds = Set(personas.map(\.id) + ["yui", "mika", "rina"])
+    var when = Dictionary(uniqueKeysWithValues: knownTargetIds.map { ("target_\($0)", $0 == target) })
+    when["always"] = true
+    var payload: JSONObject = [
+      "status": .string("ok"),
+      "addon": .string(input.addon.name),
+      "target": .string(target),
+      "reason": .string(target == defaultPersonaId ? "No persona alias matched, so the default persona was selected." : "Persona alias matched the incoming chat text.")
+    ]
+    for (key, value) in when {
+      payload[key] = .bool(value)
+    }
+    return AdapterExecutionOutput(
+      provider: "riela-builtin-addon",
+      model: input.addon.name,
+      promptText: "",
+      completionPassed: true,
+      when: when,
+      payload: payload
+    )
+  }
+
+  private struct ChatPersona {
+    var id: String
+    var aliases: [String]
+
+    func matches(_ request: String) -> Bool {
+      let normalizedRequest = request.lowercased()
+      return aliases.contains { alias in
+        let normalizedAlias = alias.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return !normalizedAlias.isEmpty && normalizedRequest.contains(normalizedAlias)
+      }
+    }
+  }
+
+  private func chatPersonas(from config: JSONObject) -> [ChatPersona] {
+    guard case let .array(personaValues)? = config["personas"] else {
+      return [
+        ChatPersona(id: "yui", aliases: ["yui", "codex"]),
+        ChatPersona(id: "mika", aliases: ["mika", "maki", "claude"]),
+        ChatPersona(id: "rina", aliases: ["rina", "cursor"])
+      ]
+    }
+    return personaValues.compactMap { value in
+      guard case let .object(persona) = value,
+        let id = nonEmptyString(persona["id"])
+      else {
+        return nil
+      }
+      var aliases = [id]
+      if let name = nonEmptyString(persona["name"]) {
+        aliases.append(name)
+      }
+      if case let .array(aliasValues)? = persona["aliases"] {
+        aliases.append(contentsOf: aliasValues.compactMap(nonEmptyString))
+      }
+      if id == "mika" {
+        aliases.append("maki")
+      }
+      return ChatPersona(id: id, aliases: aliases)
+    }
+  }
+
+  private func routerRequestText(_ input: WorkflowAddonExecutionInput) -> String {
+    for object in [
+      input.resolvedInputPayload,
+      objectValue(input.variables["humanInput"]) ?? [:],
+      objectValue(input.variables["workflowInput"]) ?? [:],
+      objectValue(objectValue(input.variables["event"])?["input"]) ?? [:]
+    ] {
+      if let request = nonEmptyString(object["request"]) ?? nonEmptyString(object["text"]) {
+        return request
+      }
+    }
+    return ""
   }
 
   private func executeChatReplyWorker(_ input: WorkflowAddonExecutionInput) throws -> AdapterExecutionOutput {
@@ -337,4 +407,11 @@ private func boolValue(_ value: JSONValue?) -> Bool? {
     return nil
   }
   return value
+}
+
+private func objectValue(_ value: JSONValue?) -> JSONObject? {
+  guard case let .object(object) = value else {
+    return nil
+  }
+  return object
 }

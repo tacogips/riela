@@ -23,6 +23,16 @@
         pkgs = import nixpkgs { inherit system; };
         pkgs-unstable = import nixpkgs-unstable { inherit system; };
         lib = pkgs.lib;
+        xcodeToolchain =
+          let
+            developerDir = "/Applications/Xcode.app/Contents/Developer";
+          in
+          {
+            inherit developerDir;
+            toolchainIdentifier = "com.apple.dt.toolchain.XcodeDefault";
+            sdkRoot = "${developerDir}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk";
+            toolchainBin = "${developerDir}/Toolchains/XcodeDefault.xctoolchain/usr/bin";
+          };
         runtimePackages =
           with pkgs;
           [
@@ -83,9 +93,15 @@
           packages = devPackages;
 
           shellHook = ''
-            # Dev-only: fixed root data dir for this checkout (production default is ~/.riela/project/<cwd-encoded>/riela-artifact).
-            export RIELA_ARTIFACT_DIR="/tmp/riela-artifact-dev"
+            # Dev-only: fixed root data dir for this checkout.
+            export RIELA_ARTIFACT_DIR="$HOME/.riela/dev/riela-artifact"
             ${preCommitCheck.shellHook}
+            ${lib.optionalString pkgs.stdenv.isDarwin ''
+              export DEVELOPER_DIR="${xcodeToolchain.developerDir}"
+              export SDKROOT="${xcodeToolchain.sdkRoot}"
+              export TOOLCHAINS="${xcodeToolchain.toolchainIdentifier}"
+              export PATH="${xcodeToolchain.toolchainBin}:$PATH"
+            ''}
 
             echo "Riela Swift development environment ready"
             echo "Bun version: $(bun --version)"

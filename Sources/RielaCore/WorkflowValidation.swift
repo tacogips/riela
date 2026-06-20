@@ -613,17 +613,38 @@ private func validatePositiveInteger(
   path: String,
   diagnostics: inout [WorkflowValidationDiagnostic]
 ) {
-  guard let number = value as? NSNumber, !(value is Bool), number.doubleValue > 0, floor(number.doubleValue) == number.doubleValue else {
+  guard let number = value as? NSNumber,
+    !isBooleanNumber(number),
+    number.doubleValue > 0,
+    floor(number.doubleValue) == number.doubleValue
+  else {
     diagnostics.append(error(path, "must be a positive integer"))
     return
   }
 }
 
 private func isFiniteNumber(_ value: Any) -> Bool {
-  guard let number = value as? NSNumber, !(value is Bool) else {
+  if let number = value as? NSNumber {
+    return !isBooleanNumber(number) && number.doubleValue.isFinite
+  }
+  switch value {
+  case let int as Int:
+    return Double(int).isFinite
+  case let int as Int64:
+    return Double(int).isFinite
+  case let int as UInt64:
+    return Double(int).isFinite
+  case let double as Double:
+    return double.isFinite
+  case let float as Float:
+    return float.isFinite
+  default:
     return false
   }
-  return number.doubleValue.isFinite
+}
+
+private func isBooleanNumber(_ number: NSNumber) -> Bool {
+  CFGetTypeID(number) == CFBooleanGetTypeID()
 }
 
 private func isSafeWorkflowId(_ value: String) -> Bool {

@@ -9,6 +9,7 @@ description: "Use when Codex is asked to implement, refactor, review, or maintai
 
 1. Inspect the project before editing:
    - Locate `Package.swift`, `*.xcodeproj`, `*.xcworkspace`, `.swiftlint.yml`, `.swiftformat`, `Makefile`, CI workflows, and existing test targets.
+   - In this repository, use Xcode's Swift toolchain explicitly. Do not rely on `/usr/bin/swift` or a Nix-provided `xcrun` shim for build/test/lint commands.
    - Read nearby source and tests to match naming, access control, dependency injection, error handling, concurrency style, and formatting.
    - Use `rg --files -g '*.swift'` and `wc -l` to identify Swift files over 1000 lines.
 
@@ -29,17 +30,27 @@ description: "Use when Codex is asked to implement, refactor, review, or maintai
 
 ## SwiftLint
 
-Always try to run SwiftLint for Swift code changes:
+Always try to run SwiftLint for Swift code changes. In this repository, run it
+with Xcode's toolchain and `xcrun` first:
 
 ```bash
-swiftlint
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk \
+TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault \
+PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH \
+/usr/bin/xcrun swiftlint
 ```
 
-When the repository uses a Nix flake and Xcode's Swift toolchain, prefer the
-project shell with Xcode toolchain variables so SwiftLint can load SourceKit:
+If the tool is available only through the Nix development shell, keep the same
+Xcode toolchain variables and `xcrun` path:
 
 ```bash
-nix develop -c bash -lc 'export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer; export SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk; export TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault; export PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH; swiftlint'
+nix develop -c env \
+  DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk \
+  TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault \
+  PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH \
+  /usr/bin/xcrun swiftlint
 ```
 
 If the project uses a wrapper, prefer it:
@@ -112,13 +123,28 @@ Treat this search as a starting point. Most hits are expected boundary strings; 
 
 ## Validation Commands
 
-Choose commands from project evidence:
+Choose commands from project evidence. In this repository, prefer the explicit
+Xcode toolchain binaries:
 
 ```bash
-swift test
-swift build
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test
+/usr/bin/xcrun --find swift
+/usr/bin/xcrun swiftlint
 xcodebuild test -scheme <Scheme> -destination '<Destination>'
 xcodebuild build -scheme <Scheme> -destination '<Destination>'
+```
+
+When the repository's Nix shell is needed for package dependencies, wrap the
+same Xcode paths with `nix develop -c env`:
+
+```bash
+nix develop -c env \
+  DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk \
+  TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault \
+  PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH \
+  /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build
 ```
 
 When unsure, inspect `Package.swift`, shared schemes, README, CI, and existing scripts before choosing. In final responses, report the exact lint/build/test commands run and any commands that could not run.

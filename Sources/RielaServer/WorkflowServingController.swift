@@ -45,7 +45,7 @@ public struct WorkflowServingDependencies: Sendable {
     resolver: any WorkflowServeResolving = DefaultWorkflowServeResolver(),
     listenerFactory: any WorkflowServeListenerFactory = InProcessWorkflowServeListenerFactory(),
     eventSourceFactory: any WorkflowServeEventSourceFactory = InProcessWorkflowServeEventSourceFactory(),
-    generationIDGenerator: any WorkflowServeGenerationIDGenerating = MonotonicWorkflowServeGenerationIDGenerator()
+    generationIDGenerator: any WorkflowServeGenerationIDGenerating = ServeGenerationIDGenerator()
   ) {
     self.resolver = resolver
     self.listenerFactory = listenerFactory
@@ -72,7 +72,14 @@ public actor WorkflowServingController {
   }
 
   public func currentState() -> WorkflowServeState {
-    state
+    guard let activeGeneration else {
+      return state
+    }
+    return WorkflowServeState(
+      status: state.status,
+      generation: generationSnapshot(from: activeGeneration),
+      diagnostics: state.diagnostics
+    )
   }
 
   public func start(_ request: WorkflowServeStartRequest) async throws -> WorkflowServeState {
@@ -179,6 +186,19 @@ public actor WorkflowServingController {
     }
   }
 
+  private func generationSnapshot(from generation: ActiveGeneration) -> WorkflowServeGeneration {
+    WorkflowServeGeneration(
+      generationId: generation.stateGeneration.generationId,
+      workflowId: generation.stateGeneration.workflowId,
+      selectedIdentity: generation.stateGeneration.selectedIdentity,
+      endpoint: generation.stateGeneration.endpoint,
+      eventSources: generation.eventSources.map(\.status),
+      sessionStoreRoot: generation.stateGeneration.sessionStoreRoot,
+      eventRoot: generation.stateGeneration.eventRoot,
+      validationDiagnostics: generation.stateGeneration.validationDiagnostics
+    )
+  }
+
   private func shutdown(_ generation: ActiveGeneration) async throws {
     var diagnostics: [WorkflowServeDiagnostics] = []
     for handle in generation.eventSources.reversed() {
@@ -227,12 +247,11 @@ public struct DefaultWorkflowServeResolver: WorkflowServeResolving {
           selection: request.selection
         ))
       }
-      let workflow = try JSONDecoder().decode(WorkflowDefinition.self, from: Data(contentsOf: workflowURL))
-      let diagnostics = DefaultWorkflowValidator().validate(workflow)
-      guard diagnostics.isEmpty else {
+      let validation = validateAuthoredWorkflowData(try Data(contentsOf: workflowURL))
+      guard let workflow = validation.workflow else {
         throw WorkflowServeError.validationFailed(WorkflowServeDiagnostics(
           code: "workflow_invalid",
-          message: diagnostics.map { $0.message }.joined(separator: "; "),
+          message: validation.diagnostics.map { "\($0.path): \($0.message)" }.joined(separator: "; "),
           selection: request.selection
         ))
       }
@@ -350,7 +369,7 @@ public final class InProcessWorkflowServeEventSourceHandle: WorkflowServeEventSo
   }
 }
 
-public actor MonotonicWorkflowServeGenerationIDGenerator: WorkflowServeGenerationIDGenerating {
+public actor ServeGenerationIDGenerator: WorkflowServeGenerationIDGenerating {
   private var counter = 0
 
   public init() {}

@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import Foundation
+import RielaAppSupport
 import RielaServer
 import RielaViewer
 
@@ -9,10 +10,16 @@ import RielaViewer
 final class RielaApp: NSObject, NSApplicationDelegate {
   private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
   private let controller = WorkflowServingController()
+  private let daemonDiscovery = RielaAppDaemonWorkflowDiscovery()
+  private let daemonRuntime = RielaAppDaemonWorkflowRuntime()
+  private let daemonStore = RielaAppDaemonWorkflowStore()
   private var selectedWorkflow: WorkflowServeSelection?
   private var selectedWorkingDirectory = FileManager.default.currentDirectoryPath
   private var selectedSessionStoreRoot: String?
   private var status = "Stopped"
+  private var daemonState = RielaAppDaemonWorkflowState()
+  private var daemonCandidates: [RielaAppDaemonWorkflowCandidate] = []
+  private var daemonWindowController: DaemonWorkflowWindowController?
   private var viewerWindowController: WorkflowViewerWindowController?
 
   static func main() {
@@ -24,9 +31,13 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   }
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    daemonState = daemonStore.load()
+    daemonCandidates = daemonDiscovery.discoverUserDaemonWorkflows()
+    logDaemon("discovered \(daemonCandidates.count) user daemon workflow candidate(s)")
     configureStatusItem()
     rebuildMenu()
     openInitialViewerIfRequested()
+    autostartDaemonWorkflows()
   }
 
   private func configureStatusItem() {
@@ -43,6 +54,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   private func rebuildMenu() {
     let menu = NSMenu()
     menu.addItem(menuItem("Select Workflow...", action: #selector(selectWorkflow)))
+    menu.addItem(menuItem("Daemon Workflows...", action: #selector(openDaemonWorkflows)))
     menu.addItem(menuItem("Serve", action: #selector(serveWorkflow), enabled: selectedWorkflow != nil))
     menu.addItem(menuItem("Stop", action: #selector(stopWorkflow)))
     menu.addItem(menuItem("Restart", action: #selector(restartWorkflow)))
@@ -50,6 +62,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     menu.addItem(menuItem("Open Viewer", action: #selector(openViewer), enabled: selectedWorkflow?.path != nil))
     menu.addItem(.separator())
     menu.addItem(NSMenuItem(title: "Status: \(status)", action: nil, keyEquivalent: ""))
+    menu.addItem(NSMenuItem(title: "Daemon Workflows: \(daemonSummary())", action: nil, keyEquivalent: ""))
     if let selectedWorkflow {
       menu.addItem(NSMenuItem(title: "Workflow: \(selectedWorkflow.identifier)", action: nil, keyEquivalent: ""))
     }
@@ -79,6 +92,25 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     selectedSessionStoreRoot = nil
     status = "Selected"
     rebuildMenu()
+  }
+
+  @objc private func openDaemonWorkflows() {
+    if daemonWindowController == nil {
+      daemonWindowController = DaemonWorkflowWindowController(
+        onRefresh: { [weak self] in
+          self?.refreshDaemonWorkflowWindow()
+        },
+        onSetEnabled: { [weak self] identity, enabled in
+          self?.setDaemonWorkflow(identity: identity, enabledAtLaunch: enabled)
+        },
+        onToggleActive: { [weak self] identity in
+          self?.toggleDaemonWorkflowActive(identity: identity)
+        }
+      )
+    }
+    refreshDaemonWorkflowWindow()
+    daemonWindowController?.showWindow(nil)
+    NSApp.activate(ignoringOtherApps: true)
   }
 
   @objc private func serveWorkflow() {
@@ -161,6 +193,106 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     status = "Selected"
     rebuildMenu()
     openViewer()
+  }
+
+  private func autostartDaemonWorkflows() {
+    Task { @MainActor in
+      for candidate in daemonCandidates {
+        let preference = daemonState.preference(for: candidate.id)
+        logDaemon(
+          "candidate=\(candidate.id) enabledAtLaunch=\(preference.enabledAtLaunch) active=\(preference.active)"
+        )
+        guard preference.enabledAtLaunch, preference.active else {
+          continue
+        }
+        await daemonRuntime.start(candidate)
+        let snapshot = daemonRuntime.snapshot(for: candidate.id)
+        logDaemon("start candidate=\(candidate.id) status=\(snapshot.status.rawValue) detail=\(snapshot.detail)")
+      }
+      refreshDaemonWorkflowWindow()
+      rebuildMenu()
+    }
+  }
+
+  private func refreshDaemonWorkflowWindow() {
+    daemonCandidates = daemonDiscovery.discoverUserDaemonWorkflows()
+    daemonWindowController?.update(
+      candidates: daemonCandidates,
+      state: daemonState,
+      snapshots: Dictionary(uniqueKeysWithValues: daemonCandidates.map { candidate in
+        (candidate.id, daemonRuntime.snapshot(for: candidate.id))
+      })
+    )
+    rebuildMenu()
+  }
+
+  private func setDaemonWorkflow(identity: String, enabledAtLaunch: Bool) {
+    updateDaemonPreference(identity: identity) { preference in
+      preference.enabledAtLaunch = enabledAtLaunch
+      preference.active = enabledAtLaunch
+    }
+    if enabledAtLaunch, let candidate = daemonCandidates.first(where: { $0.id == identity }) {
+      Task { @MainActor in
+        await daemonRuntime.start(candidate)
+        refreshDaemonWorkflowWindow()
+      }
+    } else {
+      Task { @MainActor in
+        await daemonRuntime.stop(identity: identity)
+        refreshDaemonWorkflowWindow()
+      }
+    }
+  }
+
+  private func toggleDaemonWorkflowActive(identity: String) {
+    let current = daemonState.preference(for: identity)
+    let nextActive = !current.active
+    updateDaemonPreference(identity: identity) { preference in
+      preference.active = nextActive
+      if nextActive {
+        preference.enabledAtLaunch = true
+      }
+    }
+    guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    Task { @MainActor in
+      if nextActive {
+        await daemonRuntime.start(candidate)
+      } else {
+        await daemonRuntime.stop(identity: identity)
+      }
+      refreshDaemonWorkflowWindow()
+    }
+  }
+
+  private func updateDaemonPreference(
+    identity: String,
+    mutate: (inout RielaAppDaemonWorkflowPreference) -> Void
+  ) {
+    var preference = daemonState.preference(for: identity)
+    mutate(&preference)
+    daemonState.preferences[identity] = preference
+    do {
+      try daemonStore.save(daemonState)
+    } catch {
+      status = "Failed to save daemon state: \(error)"
+    }
+    refreshDaemonWorkflowWindow()
+  }
+
+  private func daemonSummary() -> String {
+    let enabled = daemonCandidates.filter { daemonState.preference(for: $0.id).enabledAtLaunch }.count
+    let active = daemonCandidates.filter { daemonState.preference(for: $0.id).enabledAtLaunch && daemonState.preference(for: $0.id).active }.count
+    return "\(active) active / \(enabled) enabled"
+  }
+
+  private func logDaemon(_ message: String) {
+    let line = "[RielaApp daemon] \(message)\n"
+    if let data = line.data(using: .utf8) {
+      FileHandle.standardError.write(data)
+    }
   }
 
   @objc private func quit() {

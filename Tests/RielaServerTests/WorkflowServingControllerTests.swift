@@ -127,6 +127,23 @@ final class WorkflowServingControllerTests: XCTestCase {
     ])
   }
 
+  func testCurrentStateReflectsEventSourceHandleStatusChanges() async throws {
+    let eventSource = MutableEventSourceHandle(generationId: "generation-1")
+    let controller = WorkflowServingController(dependencies: WorkflowServingDependencies(
+      resolver: FakeServeResolver(workflowId: "demo-flow"),
+      listenerFactory: FakeListenerFactory(recorder: ServeRecorder()),
+      eventSourceFactory: FixedEventSourceFactory(eventSource: eventSource),
+      generationIDGenerator: FakeGenerationIDGenerator()
+    ))
+
+    _ = try await controller.start(WorkflowServeStartRequest(selection: .scopedName("demo-flow")))
+    eventSource.updateStatus("exited")
+
+    let state = await controller.currentState()
+
+    XCTAssertEqual(state.generation?.eventSources.first?.status, "exited")
+  }
+
   func testMacStyleClientCanUseControllerWithoutCLI() async throws {
     let controller = WorkflowServingController(dependencies: WorkflowServingDependencies(
       resolver: FakeServeResolver(workflowId: "menu-flow"),
@@ -143,6 +160,50 @@ final class WorkflowServingControllerTests: XCTestCase {
     XCTAssertEqual(state.status, .running)
     XCTAssertEqual(state.generation?.workflowId, "menu-flow")
     XCTAssertEqual(state.generation?.generationId, "generation-2")
+  }
+
+  func testDefaultResolverAcceptsAuthoredWorkflowWithoutNodeRegistry() async throws {
+    let root = try temporaryDirectory()
+    let workflowDirectory = root.appendingPathComponent("authored-flow", isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+    try """
+    {
+      "workflowId": "authored-flow",
+      "defaults": {
+        "nodeTimeoutMs": 1000,
+        "maxLoopIterations": 1
+      },
+      "entryStepId": "reply",
+      "nodes": [
+        {
+          "id": "reply",
+          "addon": {
+            "name": "riela/test-reply",
+            "version": "1"
+          }
+        }
+      ]
+    }
+    """.write(to: workflowDirectory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+
+    let resolved = try await DefaultWorkflowServeResolver().resolve(WorkflowServeStartRequest(
+      selection: .directDirectory(workflowDirectory.path, identifier: "authored-flow"),
+      workingDirectory: root.path
+    ))
+
+    XCTAssertEqual(resolved.workflowId, "authored-flow")
+    XCTAssertEqual(resolved.selectedIdentity, "authored-flow")
+    XCTAssertEqual(resolved.workflowDirectory, workflowDirectory.path)
+  }
+
+  private func temporaryDirectory() throws -> URL {
+    let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+      .appendingPathComponent("workflow-serving-controller-tests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    addTeardownBlock {
+      try? FileManager.default.removeItem(at: directory)
+    }
+    return directory
   }
 }
 
@@ -227,6 +288,18 @@ private struct FakeEventSourceFactory: WorkflowServeEventSourceFactory {
   }
 }
 
+private struct FixedEventSourceFactory: WorkflowServeEventSourceFactory {
+  let eventSource: MutableEventSourceHandle
+
+  func startEventSources(
+    for resolvedWorkflow: WorkflowServeResolvedWorkflow,
+    request: WorkflowServeStartRequest,
+    generationId: String
+  ) async throws -> [any WorkflowServeEventSourceHandle] {
+    [eventSource]
+  }
+}
+
 private struct FakeListenerHandle: WorkflowServeListenerHandle {
   let endpoint: String
   let generationId: String
@@ -247,6 +320,35 @@ private struct FakeEventSourceHandle: WorkflowServeEventSourceHandle {
 
   func shutdown() async throws {
     await recorder.append("events-stop:\(generationId)")
+  }
+}
+
+private final class MutableEventSourceHandle: WorkflowServeEventSourceHandle, @unchecked Sendable {
+  private let lock = NSLock()
+  private let sourceId: String
+  private let generationId: String
+  private var currentStatus: String
+
+  init(sourceId: String = "mutable", generationId: String, status: String = "running") {
+    self.sourceId = sourceId
+    self.generationId = generationId
+    self.currentStatus = status
+  }
+
+  var status: WorkflowServeEventSourceStatus {
+    lock.withLock {
+      WorkflowServeEventSourceStatus(sourceId: sourceId, status: currentStatus, generationId: generationId)
+    }
+  }
+
+  func updateStatus(_ status: String) {
+    lock.withLock {
+      currentStatus = status
+    }
+  }
+
+  func shutdown() async throws {
+    updateStatus("stopped")
   }
 }
 

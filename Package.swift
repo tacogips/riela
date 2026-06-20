@@ -16,6 +16,7 @@ let package = Package(
     .library(name: "RielaServer", targets: ["RielaServer"]),
     .library(name: "RielaViewer", targets: ["RielaViewer"]),
     .library(name: "RielaHook", targets: ["RielaHook"]),
+    .library(name: "RielaAppSupport", targets: ["RielaAppSupport"]),
     .library(name: "CodexAgent", targets: ["CodexAgent"]),
     .library(name: "ClaudeCodeAgent", targets: ["ClaudeCodeAgent"]),
     .library(name: "CursorCLIAgent", targets: ["CursorCLIAgent"]),
@@ -33,6 +34,7 @@ let package = Package(
     .target(name: "RielaServer", dependencies: ["RielaCore", "RielaGraphQL"]),
     .target(name: "RielaViewer", dependencies: ["RielaCore"]),
     .target(name: "RielaHook", dependencies: ["RielaCore"]),
+    .target(name: "RielaAppSupport", dependencies: ["RielaEvents", "RielaServer"]),
     .target(name: "CodexAgent", dependencies: ["RielaCore", "RielaAdapters"]),
     .executableTarget(name: "CodexAgentCLI", dependencies: ["CodexAgent"]),
     .target(name: "ClaudeCodeAgent", dependencies: ["RielaCore", "RielaAdapters"]),
@@ -61,6 +63,7 @@ let package = Package(
     .executableTarget(
       name: "RielaApp",
       dependencies: [
+        "RielaAppSupport",
         "RielaServer",
         "RielaViewer"
       ]
@@ -73,6 +76,7 @@ let package = Package(
     .testTarget(name: "RielaGraphQLTests", dependencies: ["RielaCore", "RielaGraphQL"]),
     .testTarget(name: "RielaServerTests", dependencies: ["RielaCore", "RielaGraphQL", "RielaServer"]),
     .testTarget(name: "RielaViewerTests", dependencies: ["RielaCore", "RielaViewer"]),
+    .testTarget(name: "RielaAppSupportTests", dependencies: ["RielaAppSupport", "RielaServer"]),
     .testTarget(name: "RielaCLITests", dependencies: ["RielaCore", "RielaAdapters", "RielaCLI"]),
     .testTarget(
       name: "AgentAdapterTests",

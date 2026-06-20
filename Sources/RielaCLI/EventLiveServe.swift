@@ -91,7 +91,7 @@ struct DefaultEventLiveServer: EventLiveServing {
       let updates = try await telegramAPI.getUpdates(request: TelegramGetUpdatesRequest(
         token: target.token,
         offset: offset,
-        timeoutSeconds: source.polling.timeoutSeconds,
+        timeoutSeconds: pollingTimeoutSeconds(for: target, source: source),
         limit: parsed.limit ?? source.polling.limit
       ))
       try? writeServeRecord(
@@ -175,6 +175,13 @@ struct DefaultEventLiveServer: EventLiveServing {
       replies.append(TelegramConversationReply(replyAs: replyAs, text: text))
     }
     return replies
+  }
+
+  private func pollingTimeoutSeconds(for target: TelegramPollingTarget, source: TelegramGatewaySource) -> Int {
+    guard target.id != nil else {
+      return source.polling.timeoutSeconds
+    }
+    return min(source.polling.timeoutSeconds, 2)
   }
 
   private func liveUnavailable(eventRoot: URL, actionTarget: String?, unsupportedSources: String) -> ScopedParityCommandResult {

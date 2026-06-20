@@ -97,7 +97,7 @@ final class EventLiveServeTests: XCTestCase {
 
   func testTelegramGatewayServePollsReplyBotTokensForMentionedMessages() async throws {
     let eventRoot = try temporaryDirectory()
-    try writeTelegramEventConfig(eventRoot: eventRoot)
+    try writeTelegramEventConfig(eventRoot: eventRoot, timeoutSeconds: 10)
     let api = FakeTelegramGatewayAPI(updatesByToken: [
       "source-token": [],
       "mika-token": [
@@ -134,6 +134,8 @@ final class EventLiveServeTests: XCTestCase {
     XCTAssertEqual(result.status, "ok")
     let getUpdateTokens = await api.getUpdateTokens
     XCTAssertEqual(getUpdateTokens.prefix(2), ["source-token", "mika-token"])
+    let getUpdateRequests = await api.getUpdateRequests
+    XCTAssertEqual(getUpdateRequests.prefix(2).map(\.timeoutSeconds), [10, 2])
     let workflowRequests = await workflowRunner.requests
     XCTAssertEqual(workflowRequests.map(\.workflowName), ["telegram-flow"])
     let sentMessages = await api.sentMessages
@@ -259,7 +261,7 @@ final class EventLiveServeTests: XCTestCase {
     return root
   }
 
-  private func writeTelegramEventConfig(eventRoot: URL) throws {
+  private func writeTelegramEventConfig(eventRoot: URL, timeoutSeconds: Int = 0) throws {
     let sources = eventRoot.appendingPathComponent("sources", isDirectory: true)
     let bindings = eventRoot.appendingPathComponent("bindings", isDirectory: true)
     try FileManager.default.createDirectory(at: sources, withIntermediateDirectories: true)
@@ -273,7 +275,7 @@ final class EventLiveServeTests: XCTestCase {
       "botIdEnv": "TEST_TELEGRAM_BOT_ID",
       "chats": [{"id": "100"}],
       "polling": {
-        "timeoutSeconds": 0,
+        "timeoutSeconds": \(timeoutSeconds),
         "limit": 1,
         "offsetPath": "telegram/telegram-live-offset.json"
       },
@@ -323,6 +325,7 @@ private actor FakeTelegramGatewayAPI: TelegramGatewayAPI {
   private var queuedUpdates: [TelegramUpdate]
   private var queuedUpdatesByToken: [String: [TelegramUpdate]]
   private(set) var getUpdateTokens: [String] = []
+  private(set) var getUpdateRequests: [TelegramGetUpdatesRequest] = []
   private(set) var sentMessages: [TelegramSendMessageRequest] = []
 
   init(updates: [TelegramUpdate]) {
@@ -336,6 +339,7 @@ private actor FakeTelegramGatewayAPI: TelegramGatewayAPI {
   }
 
   func getUpdates(request: TelegramGetUpdatesRequest) async throws -> [TelegramUpdate] {
+    getUpdateRequests.append(request)
     getUpdateTokens.append(request.token)
     let updates: [TelegramUpdate]
     if queuedUpdatesByToken.keys.contains(request.token) {

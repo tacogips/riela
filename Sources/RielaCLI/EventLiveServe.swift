@@ -904,10 +904,30 @@ private struct TelegramMessageDedupeStore {
   }
 
   private func key(for message: TelegramMessage) -> String {
-    [
+    if let contentKey = contentKey(for: message) {
+      return contentKey
+    }
+    return [
       message.chat.id,
       message.messageThreadId ?? "main",
       message.messageId
+    ].map(safeTelegramStorageComponent).joined(separator: ":")
+  }
+
+  private func contentKey(for message: TelegramMessage) -> String? {
+    guard let text = message.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !text.isEmpty,
+      let senderId = message.from?.id,
+      let date = message.date
+    else {
+      return nil
+    }
+    return [
+      message.chat.id,
+      message.messageThreadId ?? "main",
+      senderId,
+      String(date),
+      text
     ].map(safeTelegramStorageComponent).joined(separator: ":")
   }
 }

@@ -241,6 +241,70 @@ final class EventLiveServeTests: XCTestCase {
     XCTAssertEqual(serveRecord["lastReplyAs"], .string("mika"))
   }
 
+  func testTelegramGatewayServeDeduplicatesSameMessageAcrossPollingTargets() async throws {
+    let eventRoot = try temporaryDirectory()
+    try writeTelegramEventConfig(eventRoot: eventRoot, timeoutSeconds: 10)
+    let api = FakeTelegramGatewayAPI(updatesByToken: [
+      "source-token": [
+        TelegramUpdate(
+          updateId: 90,
+          message: try TelegramMessage.fixture(
+            chatId: "100",
+            fromId: "200",
+            messageId: "10",
+            text: "@rinacursor0529bot なんの機能?"
+          )
+        )
+      ],
+      "mika-token": [
+        TelegramUpdate(
+          updateId: 91,
+          message: try TelegramMessage.fixture(
+            chatId: "100",
+            fromId: "200",
+            messageId: "11",
+            text: "@rinacursor0529bot なんの機能?"
+          )
+        )
+      ]
+    ])
+    let workflowRunner = FakeEventWorkflowRunner(
+      replyText: "この三者チャットの言及ルーティングと会話の継続性を担う機能です。",
+      replyAs: "rina"
+    )
+    let server = DefaultEventLiveServer(telegramAPI: api, workflowRunner: workflowRunner)
+
+    let result = try await CLIRuntimeEnvironment.$overrides.withValue([
+      "TEST_TELEGRAM_TOKEN": "source-token",
+      "TEST_TELEGRAM_BOT_ID": "999",
+      "TEST_TELEGRAM_YUI_TOKEN": "source-token",
+      "TEST_TELEGRAM_MIKA_TOKEN": "mika-token"
+    ]) {
+      try await server.serve(
+        eventRoot: eventRoot,
+        target: nil,
+        parsed: try ParsedParityOptions([
+          "--workflow-definition-dir", eventRoot.deletingLastPathComponent().path,
+          "--limit", "2"
+        ]),
+        output: .json
+      )
+    }
+
+    XCTAssertEqual(result.status, "ok")
+    let workflowRequests = await workflowRunner.requests
+    let sentMessages = await api.sentMessages
+    XCTAssertEqual(workflowRequests.count, 1)
+    XCTAssertEqual(sentMessages.count, 1)
+    let history = try XCTUnwrap(historyInput(from: workflowRequests[0]))
+    XCTAssertEqual(history, [])
+    let historyData = try Data(contentsOf: eventRoot.appendingPathComponent(
+      "telegram-history/telegram-live/100-main.json"
+    ))
+    let historyValues = try JSONDecoder().decode([JSONValue].self, from: historyData)
+    XCTAssertEqual(historyValues.count, 2)
+  }
+
   func testTelegramGatewayServeRequiresConfiguredEnvironmentBeforeReady() async throws {
     let eventRoot = try temporaryDirectory()
     try writeTelegramEventConfig(eventRoot: eventRoot)

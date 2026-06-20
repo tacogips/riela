@@ -136,6 +136,9 @@ actor ScenarioWorkflowAddonResolver: WorkflowAddonResolving {
 }
 
 typealias GeminiAddonAdapterFactory = @Sendable (OfficialSDKAdapterConfiguration) async throws -> any NodeAdapter
+typealias OpenAIAddonAdapterFactory = @Sendable (OfficialSDKAdapterConfiguration) async throws -> any NodeAdapter
+typealias AnthropicAddonAdapterFactory = @Sendable (AnthropicSDKAdapterConfiguration) async throws -> any NodeAdapter
+typealias CursorAddonAdapterFactory = @Sendable ([String: String]) async throws -> any NodeAdapter
 
 private enum BuiltinSDKWorker: String {
   case codex = "riela/codex-sdk-worker"
@@ -167,15 +170,30 @@ private enum BuiltinSDKWorker: String {
 
 struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
   var environment: [String: String]
+  var openAIAdapterFactory: OpenAIAddonAdapterFactory
+  var anthropicAdapterFactory: AnthropicAddonAdapterFactory
+  var cursorAdapterFactory: CursorAddonAdapterFactory
   var geminiAdapterFactory: GeminiAddonAdapterFactory
 
   init(
     environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
+    openAIAdapterFactory: @escaping OpenAIAddonAdapterFactory = { configuration in
+      OpenAiSDKAdapter(configuration: configuration)
+    },
+    anthropicAdapterFactory: @escaping AnthropicAddonAdapterFactory = { configuration in
+      AnthropicSDKAdapter(configuration: configuration)
+    },
+    cursorAdapterFactory: @escaping CursorAddonAdapterFactory = { environment in
+      CursorCLIAgentAdapter(environment: environment)
+    },
     geminiAdapterFactory: @escaping GeminiAddonAdapterFactory = { configuration in
       GeminiSDKAdapter(configuration: configuration)
     }
   ) {
     self.environment = environment
+    self.openAIAdapterFactory = openAIAdapterFactory
+    self.anthropicAdapterFactory = anthropicAdapterFactory
+    self.cursorAdapterFactory = cursorAdapterFactory
     self.geminiAdapterFactory = geminiAdapterFactory
   }
 
@@ -187,7 +205,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       return try await executeGeminiSDKWorker(input, context: context)
     }
     if let sdkWorker = BuiltinSDKWorker(rawValue: input.addon.name) {
-      return try executeSDKWorker(input, sdkWorker: sdkWorker)
+      return try await executeSDKWorker(input, sdkWorker: sdkWorker, context: context)
     }
     if input.addon.name == "riela/chat-persona-router" {
       return executeChatPersonaRouter(input)
@@ -210,8 +228,9 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
 
   private func executeSDKWorker(
     _ input: WorkflowAddonExecutionInput,
-    sdkWorker: BuiltinSDKWorker
-  ) throws -> AdapterExecutionOutput {
+    sdkWorker: BuiltinSDKWorker,
+    context: AdapterExecutionContext
+  ) async throws -> AdapterExecutionOutput {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
     }
@@ -225,31 +244,73 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
 
     let variables = addonVariables(for: input)
     let promptText = renderPromptTemplate(promptTemplate, variables: variables)
-    let textTemplate = nonEmptyString(config["mockResponseTemplate"])
-      ?? nonEmptyString(config["dryRunTextTemplate"])
-    let text = (textTemplate.map { renderPromptTemplate($0, variables: variables) }
-      ?? "\(input.stepId) completed without live SDK execution.")
+    let systemPromptText = nonEmptyString(config["systemPromptTemplate"]).map {
+      renderPromptTemplate($0, variables: variables)
+    }
+    let resolvedEnvironment = try resolveAddonEnvironmentOverlay(input.addon.env, runtimeEnvironment: environment)
+    let adapterInput = AdapterExecutionInput(
+      node: AgentNodePayload(
+        id: input.nodeId,
+        nodeType: .addon,
+        executionBackend: sdkWorker.executionBackend,
+        model: model,
+        variables: objectValue(config["variables"]) ?? [:]
+      ),
+      promptText: promptText,
+      systemPromptText: systemPromptText,
+      arguments: input.variables,
+      mergedVariables: variables
+    )
+    let adapter = try await sdkAdapter(for: sdkWorker, config: config, environment: resolvedEnvironment)
+    let output = try await adapter.execute(adapterInput, context: context)
+    let text = (nonEmptyString(output.payload["text"]) ?? nonEmptyString(output.payload["replyText"]) ?? "")
       .trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else {
-      throw AdapterExecutionError(.invalidOutput, "\(input.addon.name) rendered empty mock response text")
+      throw AdapterExecutionError(.invalidOutput, "\(input.addon.name) returned empty reply text")
     }
 
-    var payload = input.resolvedInputPayload
+    var payload = output.payload
     payload["status"] = .string("ok")
     payload["addon"] = .string(input.addon.name)
     payload["stepId"] = .string(input.stepId)
     payload["executionBackend"] = .string(sdkWorker.executionBackend.rawValue)
     payload["text"] = .string(text)
     payload["replyText"] = .string(text)
-    payload["liveExecution"] = .bool(false)
+    payload["liveExecution"] = .bool(true)
+    payload.removeValue(forKey: "inputFilterSkipped")
 
     return AdapterExecutionOutput(
-      provider: sdkWorker.provider,
-      model: model,
-      promptText: promptText,
-      completionPassed: true,
+      provider: output.provider,
+      model: output.model,
+      promptText: output.promptText,
+      completionPassed: output.completionPassed,
+      when: output.when,
       payload: payload
     )
+  }
+
+  private func sdkAdapter(
+    for sdkWorker: BuiltinSDKWorker,
+    config: JSONObject,
+    environment: [String: String]
+  ) async throws -> any NodeAdapter {
+    let officialConfiguration = OfficialSDKAdapterConfiguration(
+      apiKeyEnv: nonEmptyString(config["apiKeyEnv"]),
+      baseURL: nonEmptyString(config["baseURL"]).flatMap(URL.init(string:)),
+      environment: environment
+    )
+    switch sdkWorker {
+    case .codex:
+      return try await openAIAdapterFactory(officialConfiguration)
+    case .claude:
+      let maxTokens = intValue(config["maxTokens"]) ?? 1024
+      return try await anthropicAdapterFactory(AnthropicSDKAdapterConfiguration(
+        officialSDK: officialConfiguration,
+        maxTokens: maxTokens
+      ))
+    case .cursor:
+      return try await cursorAdapterFactory(environment)
+    }
   }
 
   private func executeChatPersonaRouter(_ input: WorkflowAddonExecutionInput) -> AdapterExecutionOutput {
@@ -494,6 +555,34 @@ private func resolveAddonEnvironment(
   return resolved
 }
 
+private func resolveAddonEnvironmentOverlay(
+  _ env: JSONObject?,
+  runtimeEnvironment: [String: String]
+) throws -> [String: String] {
+  var resolved = runtimeEnvironment
+  guard let env else {
+    return resolved
+  }
+  for (targetName, bindingValue) in env {
+    guard case let .object(binding) = bindingValue else {
+      throw AdapterExecutionError(.policyBlocked, "addon.env.\(targetName) must be an object")
+    }
+    guard let sourceName = nonEmptyString(binding["fromEnv"]) else {
+      throw AdapterExecutionError(.policyBlocked, "addon.env.\(targetName).fromEnv is required")
+    }
+    let required = boolValue(binding["required"]) ?? true
+    guard let value = runtimeEnvironment[sourceName], !value.isEmpty else {
+      if required {
+        throw AdapterExecutionError(.policyBlocked, "required environment variable '\(sourceName)' is unavailable for addon.env.\(targetName)")
+      }
+      resolved.removeValue(forKey: targetName)
+      continue
+    }
+    resolved[targetName] = value
+  }
+  return resolved
+}
+
 private func renderAddonInputs(_ inputs: JSONObject?, variables: JSONObject) -> JSONObject {
   guard let inputs else {
     return [:]
@@ -521,6 +610,13 @@ private func boolValue(_ value: JSONValue?) -> Bool? {
     return nil
   }
   return value
+}
+
+private func intValue(_ value: JSONValue?) -> Int? {
+  guard case let .number(value) = value else {
+    return nil
+  }
+  return Int(value)
 }
 
 private func objectValue(_ value: JSONValue?) -> JSONObject? {

@@ -1,7 +1,21 @@
 {
+  "yui-codex-sdk": {
+    "provider": "scenario-mock",
+    "model": "gpt-5-nano",
+    "payload": {
+      "text": "Yuiです。明示的な他bot宛てmentionがないので、私が短く返します。"
+    }
+  },
+  "mika-claude-sdk": {
+    "provider": "scenario-mock",
+    "model": "gpt-5-nano",
+    "payload": {
+      "text": "Mikaです。明示的にMika宛てのmentionがあるので、明るく短く返します。"
+    }
+  },
   "rina-cursor-sdk": {
     "provider": "scenario-mock",
-    "model": "gpt-5.5",
+    "model": "gpt-5-nano",
     "payload": {
       "text": "Rinaです。明示的にRina宛てのmentionがあるので私が返します。SDK版のトリオ構成では、node inputFiltersで担当を絞り、LLM側のmention policyでも同じ条件を守らせます。"
     }

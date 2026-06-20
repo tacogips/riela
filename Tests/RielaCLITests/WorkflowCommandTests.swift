@@ -71,6 +71,39 @@ private struct RecordingGeminiAddonAdapter: NodeAdapter {
   }
 }
 
+private actor RecordingSDKAddonHarness {
+  private var inputs: [AdapterExecutionInput] = []
+
+  func makeAdapter(provider: String, text: String) -> any NodeAdapter {
+    RecordingSDKAddonAdapter(harness: self, provider: provider, text: text)
+  }
+
+  func record(_ input: AdapterExecutionInput) {
+    inputs.append(input)
+  }
+
+  func recordedInputs() -> [AdapterExecutionInput] {
+    inputs
+  }
+}
+
+private struct RecordingSDKAddonAdapter: NodeAdapter {
+  let harness: RecordingSDKAddonHarness
+  let provider: String
+  let text: String
+
+  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    await harness.record(input)
+    return AdapterExecutionOutput(
+      provider: provider,
+      model: input.node.model,
+      promptText: input.promptText,
+      completionPassed: true,
+      payload: ["text": .string(text)]
+    )
+  }
+}
+
 private final class JSONLWriterProbe: @unchecked Sendable {
   private let lock = NSLock()
   private var recordedLines: [String] = []
@@ -381,8 +414,14 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertEqual(output.when["handoff_rina"], false)
   }
 
-  func testBuiltinSDKWorkerRendersMockResponseText() async throws {
-    let output = try await BuiltinWorkflowAddonResolver(environment: [:]).execute(
+  func testBuiltinSDKWorkerExecutesInjectedLiveAdapter() async throws {
+    let harness = RecordingSDKAddonHarness()
+    let output = try await BuiltinWorkflowAddonResolver(
+      environment: ["CURSOR_API_KEY": "cursor-secret"],
+      cursorAdapterFactory: { _ in
+        return await harness.makeAdapter(provider: "cursor-cli-agent", text: "最近はいい感じ。短く試せる形で返すね。")
+      }
+    ).execute(
       WorkflowAddonExecutionInput(
         workflowId: "telegram-sdk-trio-chat",
         stepId: "rina-cursor-sdk",
@@ -392,26 +431,33 @@ final class WorkflowCommandTests: XCTestCase {
           version: "1",
           config: [
             "model": .string("gpt-5.5"),
+            "systemPromptTemplate": .string("You are {{persona}}."),
             "promptTemplate": .string("Reply to {{event.input.text}} as {{persona}}."),
-            "mockResponseTemplate": .string("{{persona}} says {{input.text}}")
+            "mockResponseTemplate": .string("this mock must not be used")
           ]
         ),
         variables: [
           "event": .object(["input": .object(["text": .string("SDK trio")])]),
           "persona": .string("Rina")
         ],
-        resolvedInputPayload: ["text": .string("hello")]
+        resolvedInputPayload: ["text": .string("hello"), "inputFilterSkipped": .bool(true)]
       ),
       context: AdapterExecutionContext()
     )
 
-    XCTAssertEqual(output.provider, "official-cursor-sdk")
+    XCTAssertEqual(output.provider, "cursor-cli-agent")
     XCTAssertEqual(output.model, "gpt-5.5")
     XCTAssertEqual(output.promptText, "Reply to SDK trio as Rina.")
     XCTAssertEqual(output.payload["executionBackend"], .string("official/cursor-sdk"))
-    XCTAssertEqual(output.payload["text"], .string("Rina says hello"))
-    XCTAssertEqual(output.payload["replyText"], .string("Rina says hello"))
-    XCTAssertEqual(output.payload["liveExecution"], .bool(false))
+    XCTAssertEqual(output.payload["text"], .string("最近はいい感じ。短く試せる形で返すね。"))
+    XCTAssertEqual(output.payload["replyText"], .string("最近はいい感じ。短く試せる形で返すね。"))
+    XCTAssertEqual(output.payload["liveExecution"], .bool(true))
+    XCTAssertNil(output.payload["inputFilterSkipped"])
+
+    let inputs = await harness.recordedInputs()
+    let input = try XCTUnwrap(inputs.first)
+    XCTAssertEqual(input.systemPromptText, "You are Rina.")
+    XCTAssertEqual(input.mergedVariables["input"], .object(["text": .string("hello"), "inputFilterSkipped": .bool(true)]))
   }
 
   func testScenarioBackedAddonResolverUsesMockResponseBeforeFallback() async throws {
@@ -432,7 +478,7 @@ final class WorkflowCommandTests: XCTestCase {
     )
 
     XCTAssertEqual(output.provider, "scenario-mock")
-    XCTAssertEqual(output.model, "gpt-5.5")
+    XCTAssertEqual(output.model, "gpt-5-nano")
     let expectedText = "Rinaです。明示的にRina宛てのmentionがあるので私が返します。"
       + "SDK版のトリオ構成では、node inputFiltersで担当を絞り、"
       + "LLM側のmention policyでも同じ条件を守らせます。"

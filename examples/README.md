@@ -443,10 +443,14 @@ Scheduled Gmail digest for Telegram:
 - requests vendor-neutral file metadata and `downloadKey` values instead of
   raw body or file payloads, so large mail content is downloaded only through a
   later gateway command when needed
+- downloads selected attachments out-of-band in `inspect-attachments`, previews
+  text-compatible files, and uses Gemini OCR/classification for PDF attachments
+  when `GOOGLE_API_KEY` or `GEMINI_API_KEY` is available
 - maps Gmail mail-gateway credentials from `GMAIL_MAIL_GATEWAY_CONFIG` only;
   do not put credential values in workflow files
 - summarizes only newly seen messages in a separate Codex worker prompt that
-  treats email metadata and file references as untrusted data
+  treats email metadata, attachment OCR text, and file references as untrusted
+  data
 - validates LLM-selected message ids against the normalized selected messages
   before rebuilding Telegram text
 - persists fetched message ids before Telegram delivery so the first run can
@@ -465,6 +469,12 @@ Required live-run environment variables:
 ```bash
 export GMAIL_MAIL_GATEWAY_CONFIG=<mail-gateway-gmail-config-json-or-path>
 export RIELA_TELEGRAM_CHAT_ID=<telegram-chat-id>
+```
+
+Optional for PDF attachment OCR:
+
+```bash
+export GEMINI_API_KEY=<gemini-api-key-for-pdf-ocr>
 ```
 
 Validate it:

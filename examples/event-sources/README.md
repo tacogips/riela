@@ -364,7 +364,10 @@ digest backed by Dockerized mail-gateway-reader. It fires every 30 minutes with
 message processing. The workflow fetches metadata for the latest 10 Gmail
 messages and asks mail-gateway for vendor-neutral file `downloadKey` values
 instead of GraphQL body or file payloads. A deterministic state node keeps only
-message ids that have not been seen in prior runs. Provide the Gmail
+message ids that have not been seen in prior runs. The workflow can download
+selected attachments out-of-band, preview text files, and use Gemini OCR to
+classify PDF attachments when `GOOGLE_API_KEY` or `GEMINI_API_KEY` is set.
+Provide the Gmail
 mail-gateway configuration through
 `GMAIL_MAIL_GATEWAY_CONFIG` and the Telegram target through
 `RIELA_TELEGRAM_CHAT_ID`; keep live token values out of event and workflow

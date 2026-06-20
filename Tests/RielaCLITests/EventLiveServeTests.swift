@@ -23,7 +23,8 @@ final class EventLiveServeTests: XCTestCase {
     let result = try await CLIRuntimeEnvironment.$overrides.withValue([
       "TEST_TELEGRAM_TOKEN": "source-token",
       "TEST_TELEGRAM_BOT_ID": "999",
-      "TEST_TELEGRAM_YUI_TOKEN": "yui-token"
+      "TEST_TELEGRAM_YUI_TOKEN": "yui-token",
+      "TEST_TELEGRAM_MIKA_TOKEN": "mika-token"
     ]) {
       try await server.serve(
         eventRoot: eventRoot,
@@ -76,7 +77,8 @@ final class EventLiveServeTests: XCTestCase {
     let result = try await CLIRuntimeEnvironment.$overrides.withValue([
       "TEST_TELEGRAM_TOKEN": "source-token",
       "TEST_TELEGRAM_BOT_ID": "999",
-      "TEST_TELEGRAM_YUI_TOKEN": "yui-token"
+      "TEST_TELEGRAM_YUI_TOKEN": "yui-token",
+      "TEST_TELEGRAM_MIKA_TOKEN": "mika-token"
     ]) {
       try await server.serve(
         eventRoot: eventRoot,
@@ -91,6 +93,63 @@ final class EventLiveServeTests: XCTestCase {
     let sentMessages = await api.sentMessages
     XCTAssertEqual(workflowRequests.count, 0)
     XCTAssertEqual(sentMessages, [])
+  }
+
+  func testTelegramGatewayServePollsReplyBotTokensForMentionedMessages() async throws {
+    let eventRoot = try temporaryDirectory()
+    try writeTelegramEventConfig(eventRoot: eventRoot)
+    let api = FakeTelegramGatewayAPI(updatesByToken: [
+      "source-token": [],
+      "mika-token": [
+        TelegramUpdate(
+          updateId: 88,
+          message: try TelegramMessage.fixture(
+            chatId: "100",
+            fromId: "200",
+            text: "@mikatrend0529bot 最近調子どう?"
+          )
+        )
+      ]
+    ])
+    let workflowRunner = FakeEventWorkflowRunner(replyText: "元気だよ。最近の流れも見てるよ。", replyAs: "mika")
+    let server = DefaultEventLiveServer(telegramAPI: api, workflowRunner: workflowRunner)
+
+    let result = try await CLIRuntimeEnvironment.$overrides.withValue([
+      "TEST_TELEGRAM_TOKEN": "source-token",
+      "TEST_TELEGRAM_BOT_ID": "999",
+      "TEST_TELEGRAM_YUI_TOKEN": "source-token",
+      "TEST_TELEGRAM_MIKA_TOKEN": "mika-token"
+    ]) {
+      try await server.serve(
+        eventRoot: eventRoot,
+        target: nil,
+        parsed: try ParsedParityOptions([
+          "--workflow-definition-dir", eventRoot.deletingLastPathComponent().path,
+          "--limit", "1"
+        ]),
+        output: .json
+      )
+    }
+
+    XCTAssertEqual(result.status, "ok")
+    let getUpdateTokens = await api.getUpdateTokens
+    XCTAssertEqual(getUpdateTokens.prefix(2), ["source-token", "mika-token"])
+    let workflowRequests = await workflowRunner.requests
+    XCTAssertEqual(workflowRequests.map(\.workflowName), ["telegram-flow"])
+    let sentMessages = await api.sentMessages
+    XCTAssertEqual(sentMessages, [
+      TelegramSendMessageRequest(
+        token: "mika-token",
+        chatId: "100",
+        threadId: nil,
+        text: "元気だよ。最近の流れも見てるよ。"
+      )
+    ])
+    let offsetText = try String(
+      contentsOf: eventRoot.appendingPathComponent("telegram/telegram-live-offset-mika.json"),
+      encoding: .utf8
+    )
+    XCTAssertTrue(offsetText.contains(#""offset" : 89"#))
   }
 
   func testTelegramGatewayServeRequiresConfiguredEnvironmentBeforeReady() async throws {
@@ -131,6 +190,7 @@ final class EventLiveServeTests: XCTestCase {
         message: try TelegramMessage.fixture(
           chatId: "100",
           fromId: "200",
+          messageId: "50",
           text: "@rinacursor0529bot 最近調子どう?"
         )
       ),
@@ -139,6 +199,7 @@ final class EventLiveServeTests: XCTestCase {
         message: try TelegramMessage.fixture(
           chatId: "100",
           fromId: "200",
+          messageId: "51",
           text: "@rinacursor0529bot なんの機能?"
         )
       )
@@ -155,7 +216,8 @@ final class EventLiveServeTests: XCTestCase {
     let result = try await CLIRuntimeEnvironment.$overrides.withValue([
       "TEST_TELEGRAM_TOKEN": "source-token",
       "TEST_TELEGRAM_BOT_ID": "999",
-      "TEST_TELEGRAM_YUI_TOKEN": "yui-token"
+      "TEST_TELEGRAM_YUI_TOKEN": "yui-token",
+      "TEST_TELEGRAM_MIKA_TOKEN": "mika-token"
     ]) {
       try await server.serve(
         eventRoot: eventRoot,
@@ -209,7 +271,8 @@ final class EventLiveServeTests: XCTestCase {
         "offsetPath": "telegram/telegram-live-offset.json"
       },
       "replyBots": {
-        "yui": {"tokenEnv": "TEST_TELEGRAM_YUI_TOKEN"}
+        "yui": {"tokenEnv": "TEST_TELEGRAM_YUI_TOKEN"},
+        "mika": {"tokenEnv": "TEST_TELEGRAM_MIKA_TOKEN"}
       }
     }
     """.write(to: sources.appendingPathComponent("telegram-live.json"), atomically: true, encoding: .utf8)
@@ -251,15 +314,30 @@ private func historyInput(from request: EventWorkflowRunRequest) -> [JSONObject]
 
 private actor FakeTelegramGatewayAPI: TelegramGatewayAPI {
   private var queuedUpdates: [TelegramUpdate]
+  private var queuedUpdatesByToken: [String: [TelegramUpdate]]
+  private(set) var getUpdateTokens: [String] = []
   private(set) var sentMessages: [TelegramSendMessageRequest] = []
 
   init(updates: [TelegramUpdate]) {
     self.queuedUpdates = updates
+    self.queuedUpdatesByToken = [:]
+  }
+
+  init(updatesByToken: [String: [TelegramUpdate]]) {
+    self.queuedUpdates = []
+    self.queuedUpdatesByToken = updatesByToken
   }
 
   func getUpdates(request: TelegramGetUpdatesRequest) async throws -> [TelegramUpdate] {
-    let updates = queuedUpdates
-    queuedUpdates = []
+    getUpdateTokens.append(request.token)
+    let updates: [TelegramUpdate]
+    if queuedUpdatesByToken.keys.contains(request.token) {
+      updates = queuedUpdatesByToken[request.token] ?? []
+      queuedUpdatesByToken[request.token] = []
+    } else {
+      updates = queuedUpdates
+      queuedUpdates = []
+    }
     return updates
   }
 
@@ -326,10 +404,10 @@ private actor FakeEventWorkflowRunner: EventWorkflowRunning {
 }
 
 private extension TelegramMessage {
-  static func fixture(chatId: String, fromId: String, text: String) throws -> TelegramMessage {
+  static func fixture(chatId: String, fromId: String, messageId: String = "1", text: String) throws -> TelegramMessage {
     try JSONDecoder().decode(TelegramMessage.self, from: Data("""
     {
-      "message_id": 1,
+      "message_id": "\(messageId)",
       "date": 0,
       "text": "\(text)",
       "from": {"id": "\(fromId)", "is_bot": false, "first_name": "Tester"},

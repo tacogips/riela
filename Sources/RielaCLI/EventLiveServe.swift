@@ -80,49 +80,57 @@ struct DefaultEventLiveServer: EventLiveServing {
     eventRoot: URL,
     parsed: ParsedParityOptions
   ) async throws -> Int {
-    let token = try source.token(environment: CLIRuntimeEnvironment.mergedProcessEnvironment())
-    let offsetStore = TelegramOffsetStore(eventRoot: eventRoot, source: source)
-    let offset = try offsetStore.loadOffset()
-    let updates = try await telegramAPI.getUpdates(request: TelegramGetUpdatesRequest(
-      token: token,
-      offset: offset,
-      timeoutSeconds: source.polling.timeoutSeconds,
-      limit: parsed.limit ?? source.polling.limit
-    ))
     var observedUpdates = 0
+    let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
+    let targets = try source.pollingTargets(environment: environment)
     let historyStore = TelegramConversationHistoryStore(eventRoot: eventRoot, source: source)
-    for update in updates {
-      observedUpdates += 1
-      try offsetStore.saveOffset(update.updateId + 1)
-      let history = try update.message.map { try historyStore.loadHistory(for: $0) } ?? []
-      guard let envelope = source.envelope(from: update, eventRoot: eventRoot, history: history) else {
-        continue
-      }
-      let triggerResult = await DeterministicEventDryRunTrigger().dryRun(EventDryRunRequest(
-        sources: config.sources,
-        bindings: config.bindings,
-        envelope: envelope
+    let dedupeStore = TelegramMessageDedupeStore(eventRoot: eventRoot, source: source)
+    for target in targets {
+      let offsetStore = TelegramOffsetStore(eventRoot: eventRoot, source: source, targetId: target.id)
+      let offset = try offsetStore.loadOffset()
+      let updates = try await telegramAPI.getUpdates(request: TelegramGetUpdatesRequest(
+        token: target.token,
+        offset: offset,
+        timeoutSeconds: source.polling.timeoutSeconds,
+        limit: parsed.limit ?? source.polling.limit
       ))
-      guard triggerResult.accepted else {
-        continue
-      }
-      for trigger in triggerResult.triggers {
-        guard let workflowName = trigger.workflowName else {
+      for update in updates {
+        observedUpdates += 1
+        try offsetStore.saveOffset(update.updateId + 1)
+        let history = try update.message.map { try historyStore.loadHistory(for: $0) } ?? []
+        guard let envelope = source.envelope(from: update, eventRoot: eventRoot, history: history) else {
           continue
         }
-        let result = try await workflowRunner.runWorkflow(EventWorkflowRunRequest(
-          workflowName: workflowName,
-          runtimeVariables: trigger.runtimeVariables,
-          parsed: parsed
+        if let message = update.message, try dedupeStore.hasSeen(message: message) {
+          continue
+        }
+        let triggerResult = await DeterministicEventDryRunTrigger().dryRun(EventDryRunRequest(
+          sources: config.sources,
+          bindings: config.bindings,
+          envelope: envelope
         ))
-        let replies = try await dispatchTelegramReplies(
-          result: result,
-          source: source,
-          envelope: envelope,
-          sourceToken: token
-        )
-        if let message = update.message {
-          try historyStore.append(message: message, replies: replies)
+        guard triggerResult.accepted else {
+          continue
+        }
+        for trigger in triggerResult.triggers {
+          guard let workflowName = trigger.workflowName else {
+            continue
+          }
+          let result = try await workflowRunner.runWorkflow(EventWorkflowRunRequest(
+            workflowName: workflowName,
+            runtimeVariables: trigger.runtimeVariables,
+            parsed: parsed
+          ))
+          let replies = try await dispatchTelegramReplies(
+            result: result,
+            source: source,
+            envelope: envelope,
+            sourceToken: target.token
+          )
+          if let message = update.message {
+            try historyStore.append(message: message, replies: replies)
+            try dedupeStore.markSeen(message: message)
+          }
         }
       }
     }
@@ -324,18 +332,26 @@ struct TelegramGatewaySource: Decodable, Equatable, Sendable {
   }
 
   func validateEnvironment(environment: [String: String]) throws {
-    _ = try token(environment: environment)
+    _ = try pollingTargets(environment: environment)
     if let botIdEnv, environmentValue(botIdEnv, environment: environment) == nil {
       throw CLIUsageError("telegram-gateway source '\(id)' requires \(botIdEnv)")
     }
+  }
+
+  func pollingTargets(environment: [String: String]) throws -> [TelegramPollingTarget] {
+    var targets = [TelegramPollingTarget(id: nil, token: try token(environment: environment))]
     for (replyAs, replyBot) in replyBots.sorted(by: { $0.key < $1.key }) {
       guard let tokenEnv = replyBot.tokenEnv else {
         continue
       }
-      guard environmentValue(tokenEnv, environment: environment) != nil else {
+      guard let token = environmentValue(tokenEnv, environment: environment) else {
         throw CLIUsageError("telegram-gateway source '\(id)' reply bot '\(replyAs)' requires \(tokenEnv)")
       }
+      if !targets.contains(where: { $0.token == token }) {
+        targets.append(TelegramPollingTarget(id: replyAs, token: token))
+      }
     }
+    return targets
   }
 
   func replyToken(replyAs: String?, environment: [String: String]) -> String? {
@@ -453,6 +469,11 @@ struct TelegramGatewayFilters: Decodable, Equatable, Sendable {
 
 struct TelegramGatewayReplyBot: Decodable, Equatable, Sendable {
   var tokenEnv: String?
+}
+
+struct TelegramPollingTarget: Equatable, Sendable {
+  var id: String?
+  var token: String
 }
 
 struct TelegramGetUpdatesRequest: Equatable, Sendable {
@@ -710,6 +731,7 @@ private struct TelegramGetUpdatesResponse: Decodable {
 private struct TelegramOffsetStore {
   var eventRoot: URL
   var source: TelegramGatewaySource
+  var targetId: String?
 
   func loadOffset() throws -> Int? {
     let url = offsetURL()
@@ -729,13 +751,91 @@ private struct TelegramOffsetStore {
   }
 
   private func offsetURL() -> URL {
-    let relative = source.polling.offsetPath ?? "telegram/\(source.id)-offset.json"
+    let relative = offsetPathWithTarget(
+      source.polling.offsetPath ?? "telegram/\(source.id)-offset.json",
+      targetId: targetId
+    )
     return eventRoot.appendingPathComponent(relative)
+  }
+
+  private func offsetPathWithTarget(_ relative: String, targetId: String?) -> String {
+    guard let targetId else {
+      return relative
+    }
+    let suffix = "-\(safeTelegramStorageComponent(targetId))"
+    let slashIndex = relative.lastIndex(of: "/")
+    let searchStart = slashIndex.map { relative.index(after: $0) } ?? relative.startIndex
+    if let dotIndex = relative[searchStart...].lastIndex(of: ".") {
+      return "\(relative[..<dotIndex])\(suffix)\(relative[dotIndex...])"
+    }
+    return relative + suffix
   }
 }
 
 private struct TelegramOffsetRecord: Codable {
   var offset: Int
+}
+
+private struct TelegramMessageDedupeStore {
+  private static let maxKeys = 512
+
+  var eventRoot: URL
+  var source: TelegramGatewaySource
+
+  func hasSeen(message: TelegramMessage) throws -> Bool {
+    try loadKeys().contains(key(for: message))
+  }
+
+  func markSeen(message: TelegramMessage) throws {
+    let url = storeURL()
+    var keys = try loadKeys()
+    keys.append(key(for: message))
+    var uniqueKeys: [String] = []
+    var seenKeys = Set<String>()
+    for key in keys.suffix(Self.maxKeys) where seenKeys.insert(key).inserted {
+      uniqueKeys.append(key)
+    }
+    keys = uniqueKeys
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try encoder.encode(TelegramMessageDedupeRecord(keys: keys)).write(to: url, options: .atomic)
+  }
+
+  private func loadKeys() throws -> [String] {
+    let url = storeURL()
+    guard FileManager.default.fileExists(atPath: url.path) else {
+      return []
+    }
+    return try JSONDecoder().decode(TelegramMessageDedupeRecord.self, from: Data(contentsOf: url)).keys
+  }
+
+  private func storeURL() -> URL {
+    eventRoot
+      .appendingPathComponent("telegram", isDirectory: true)
+      .appendingPathComponent("\(safeTelegramStorageComponent(source.id))-seen-messages.json")
+  }
+
+  private func key(for message: TelegramMessage) -> String {
+    [
+      message.chat.id,
+      message.messageThreadId ?? "main",
+      message.messageId
+    ].map(safeTelegramStorageComponent).joined(separator: ":")
+  }
+}
+
+private struct TelegramMessageDedupeRecord: Codable {
+  var keys: [String]
+}
+
+private func safeTelegramStorageComponent(_ value: String) -> String {
+  let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-"))
+  let scalars = value.unicodeScalars.map { scalar in
+    allowed.contains(scalar) ? Character(scalar) : "_"
+  }
+  let sanitized = String(scalars).trimmingCharacters(in: CharacterSet(charactersIn: "._-"))
+  return sanitized.isEmpty ? "unknown" : sanitized
 }
 
 private extension KeyedDecodingContainer {

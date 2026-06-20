@@ -88,6 +88,36 @@ final class WorkflowModelTests: XCTestCase {
     })
   }
 
+  func testWorkflowValidationAcceptsBuiltinInputFilter() throws {
+    let data = Data("""
+      {
+        "workflowId": "telegram-filtered",
+        "description": "Sample workflow",
+        "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 3 },
+        "entryStepId": "reply",
+        "nodes": [{
+          "id": "reply",
+          "nodeFile": "nodes/reply.json",
+          "inputFilters": [{
+            "kind": "telegram",
+            "builtin": "mention-responder",
+            "config": {
+              "aliases": ["yui", "@yuicodexf0529bot"],
+              "selfUsernames": ["yuicodexf0529bot"]
+            }
+          }]
+        }],
+        "steps": [{ "id": "reply", "nodeId": "reply", "role": "worker" }]
+      }
+      """.utf8)
+
+    let result = validateAuthoredWorkflowData(data)
+
+    XCTAssertEqual(result.diagnostics.filter { $0.severity == .error }, [])
+    let workflow = try XCTUnwrap(result.workflow)
+    XCTAssertEqual(workflow.nodeRegistry.first?.inputFilters?.first?.builtin, .mentionResponder)
+  }
+
   func testWorkflowValidationLoadsProjectDesignLoopFixture() throws {
     let rootURL = try repositoryRoot()
     let fixtureURL = rootURL.appendingPathComponent(".riela/workflows/codex-design-and-implement-review-loop/workflow.json")

@@ -10,8 +10,8 @@
   "inputMapping": {
     "mode": "template",
     "template": {
-      "request": "{{event.input.text}}",
-      "provider": "{{event.input.provider}}",
+      "request": "{{event.input.payload.text}}",
+      "provider": "{{event.input.payload.provider}}",
       "conversationId": "{{event.conversation.id}}",
       "threadId": "{{event.conversation.threadId}}",
       "personaNames": ["Yui Codex", "Mika Trend", "Rina Cursor"]

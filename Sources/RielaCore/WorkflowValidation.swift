@@ -587,8 +587,10 @@ private func validateInputFilters(
     } else if filter.kind != .telegram {
       diagnostics.append(error("\(filterPath).kind", "must be 'telegram'"))
     }
-    if filter.expression.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      diagnostics.append(error("\(filterPath).expression", "must be a non-empty JavaScript expression"))
+    let hasExpression = filter.expression?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    let hasBuiltin = filter.builtin != nil
+    if hasExpression == hasBuiltin {
+      diagnostics.append(error(filterPath, "must specify exactly one of expression or builtin"))
     }
   }
 }
@@ -614,7 +616,7 @@ private func validateRawInputFilters(
       diagnostics.append(error(filterPath, "must be an object"))
       continue
     }
-    let allowedKeys: Set<String> = ["kind", "language", "expression"]
+    let allowedKeys: Set<String> = ["kind", "language", "expression", "builtin", "config"]
     for key in filter.keys where !allowedKeys.contains(key) {
       diagnostics.append(error("\(filterPath).\(key)", "uses an unsupported input filter field"))
     }
@@ -622,10 +624,23 @@ private func validateRawInputFilters(
     if let kind = filter["kind"] as? String, !kind.isEmpty, kind != WorkflowInputFilterKind.telegram.rawValue {
       diagnostics.append(error("\(filterPath).kind", "must be 'telegram'"))
     }
-    validateNonEmptyString(filter["language"], path: "\(filterPath).language", diagnostics: &diagnostics)
-    validateNonEmptyString(filter["expression"], path: "\(filterPath).expression", diagnostics: &diagnostics)
+    let hasExpression = nonEmptyString(filter["expression"]) != nil
+    let hasBuiltin = nonEmptyString(filter["builtin"]) != nil
+    if hasExpression == hasBuiltin {
+      diagnostics.append(error(filterPath, "must specify exactly one of expression or builtin"))
+    }
+    if hasExpression {
+      validateNonEmptyString(filter["language"], path: "\(filterPath).language", diagnostics: &diagnostics)
+    }
     if let language = filter["language"] as? String, language != WorkflowInputFilterLanguage.javascript.rawValue {
       diagnostics.append(error("\(filterPath).language", "must be 'javascript'"))
+    }
+    if let builtin = filter["builtin"] as? String,
+      !WorkflowInputFilterBuiltin.allCases.map(\.rawValue).contains(builtin) {
+      diagnostics.append(error("\(filterPath).builtin", "uses an unsupported builtin input filter"))
+    }
+    if let config = filter["config"], !(config is [String: Any]) {
+      diagnostics.append(error("\(filterPath).config", "must be an object"))
     }
   }
 }
@@ -643,6 +658,14 @@ private func validateNonEmptyString(
     diagnostics.append(error(path, "must be a non-empty string"))
     return
   }
+}
+
+private func nonEmptyString(_ value: Any?) -> String? {
+  guard let string = value as? String else {
+    return nil
+  }
+  let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+  return trimmed.isEmpty ? nil : trimmed
 }
 
 private func validateWorkflowRelativePath(

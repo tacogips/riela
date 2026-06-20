@@ -23,7 +23,7 @@
     "includeBotMessages": false
   },
   "filters": {
-    "ignoreBots": true,
+    "ignoreBots": false,
     "ignoreSelf": true
   },
   "attachments": {

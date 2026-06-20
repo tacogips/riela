@@ -1,9 +1,8 @@
 # Expected Results
 
 - The workflow validates as a simple step-addressed Telegram trio chat bundle.
-- Persona and reply nodes use `inputFilters` with Telegram JavaScript
-  expressions. Filters are OR-able per node; non-matching nodes are skipped
-  without failing the workflow.
+- Persona and reply nodes use the built-in Telegram `mention-responder`
+  `inputFilters`. Non-matching nodes are skipped without failing the workflow.
 - Mika and Rina answer only when `telegram.message.text` explicitly mentions
   their display name or Telegram bot username, such as `Mika`,
   `@mikatrend0529bot`, `Rina`, or `@rinacursor0529bot`.
@@ -12,9 +11,11 @@
   Rina.
 - Mention matching uses token-style boundaries, so concatenated strings such as
   `Mikausersidecheck` do not count as a Mika mention.
-- Bot-authored Telegram events are skipped by each node input filter even when
-  the text mentions a bot, so reply messages cannot recursively trigger another
-  reply in direct workflow runs.
+- Bot-authored Telegram events can ask another bot a question when they include
+  that bot's mention. Each node still skips messages authored by the same bot
+  username, so reply messages cannot recursively trigger themselves.
+- Yui's default responder behavior applies to user-authored messages only; bot
+  messages must explicitly mention Yui to route to Yui.
 - Each persona prompt repeats the same mention policy so the LLM has the same
   routing condition as the node-level filter.
 - Rina's prompt keeps her persona cool-headed and analytical: short, precise,

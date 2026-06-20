@@ -178,6 +178,122 @@ final class WorkflowInputFilterRunnerTests: XCTestCase {
     XCTAssertEqual(decision.issues.map(\.code), [.parseError])
   }
 
+  func testTelegramInputFilterReadsCanonicalEventPayload() {
+    let decision = WorkflowInputFilterEvaluator().evaluate(
+      filters: [
+        WorkflowInputFilter(
+          kind: .telegram,
+          expression: "telegram.message.text.includes('@yui') && telegram.message.attachmentText === 'ocr text'"
+        )
+      ],
+      variables: [
+        "workflowInput": .object([:]),
+        "event": .object([
+          "sourceId": .string("telegram-live"),
+          "eventId": .string("42"),
+          "provider": .string("telegram"),
+          "eventType": .string("chat.message"),
+          "input": .object([
+            "event_source_type": .string("telegram-gateway"),
+            "payload": .object([
+              "text": .string("@yui hello"),
+              "provider": .string("telegram"),
+              "actor": .object(["id": .string("200")]),
+              "conversation": .object(["id": .string("100"), "threadId": .string("topic-a")]),
+              "attachments": .array([.object(["kind": .string("photo")])]),
+              "imagePaths": .array([.string("/tmp/image.png")]),
+              "attachmentText": .string("ocr text")
+            ])
+          ])
+        ])
+      ],
+      stepId: "yui",
+      nodeId: "yui"
+    )
+
+    XCTAssertTrue(decision.shouldRun)
+    XCTAssertEqual(decision.matchedFilterIndex, 0)
+    XCTAssertEqual(decision.issues.map(\.code), [])
+  }
+
+  func testMentionResponderBuiltinAllowsOtherBotMentionAndBlocksSelf() {
+    let filter = WorkflowInputFilter(
+      kind: .telegram,
+      builtin: .mentionResponder,
+      config: [
+        "aliases": .array([.string("rina"), .string("@rinacursor0529bot")]),
+        "selfUsernames": .array([.string("rinacursor0529bot")])
+      ]
+    )
+    let evaluator = WorkflowInputFilterEvaluator()
+
+    let otherBotDecision = evaluator.evaluate(
+      filters: [filter],
+      variables: inputFilterTelegramVariables(
+        text: "@rinacursor0529bot ここ見て",
+        actorUsername: "mikatrend0529bot",
+        actorIsBot: true
+      ),
+      stepId: "rina",
+      nodeId: "rina"
+    )
+    let selfDecision = evaluator.evaluate(
+      filters: [filter],
+      variables: inputFilterTelegramVariables(
+        text: "@rinacursor0529bot echo",
+        actorUsername: "rinacursor0529bot",
+        actorIsBot: true
+      ),
+      stepId: "rina",
+      nodeId: "rina"
+    )
+
+    XCTAssertTrue(otherBotDecision.shouldRun)
+    XCTAssertFalse(selfDecision.shouldRun)
+  }
+
+  func testMentionResponderBuiltinDefaultResponderSkipsUnaddressedBotMessages() {
+    let filter = WorkflowInputFilter(
+      kind: .telegram,
+      builtin: .mentionResponder,
+      config: [
+        "aliases": .array([.string("yui"), .string("@yuicodexf0529bot")]),
+        "selfUsernames": .array([.string("yuicodexf0529bot")]),
+        "defaultResponder": .bool(true),
+        "defaultSuppressedByAliases": .array([
+          .string("mika"),
+          .string("@mikatrend0529bot"),
+          .string("rina"),
+          .string("@rinacursor0529bot")
+        ])
+      ]
+    )
+    let evaluator = WorkflowInputFilterEvaluator()
+
+    let userDefault = evaluator.evaluate(
+      filters: [filter],
+      variables: inputFilterTelegramVariables(text: "誰かいる?"),
+      stepId: "yui",
+      nodeId: "yui"
+    )
+    let botDefault = evaluator.evaluate(
+      filters: [filter],
+      variables: inputFilterTelegramVariables(text: "誰かいる?", actorUsername: "mikatrend0529bot", actorIsBot: true),
+      stepId: "yui",
+      nodeId: "yui"
+    )
+    let botMention = evaluator.evaluate(
+      filters: [filter],
+      variables: inputFilterTelegramVariables(text: "@yuicodexf0529bot ここお願い", actorUsername: "mikatrend0529bot", actorIsBot: true),
+      stepId: "yui",
+      nodeId: "yui"
+    )
+
+    XCTAssertTrue(userDefault.shouldRun)
+    XCTAssertFalse(botDefault.shouldRun)
+    XCTAssertTrue(botMention.shouldRun)
+  }
+
   func testTelegramInputFilterSkipAwareTransitionUsesSkipPayload() async throws {
     let store = InMemoryWorkflowRuntimeStore()
     let adapter = InputFilterExecutedStepCapturingAdapter()
@@ -497,7 +613,11 @@ private func inputFilterPayload(output: NodeOutputContract? = nil) -> AgentNodeP
   AgentNodePayload(id: "node", executionBackend: .codexAgent, model: "gpt-5-nano", output: output)
 }
 
-private func inputFilterTelegramVariables(text: String) -> JSONObject {
+private func inputFilterTelegramVariables(
+  text: String,
+  actorUsername: String? = nil,
+  actorIsBot: Bool = false
+) -> JSONObject {
   [
     "workflowInput": .object([
       "text": .string(text),
@@ -518,7 +638,9 @@ private func inputFilterTelegramVariables(text: String) -> JSONObject {
       ]),
       "actor": .object([
         "id": .string("200"),
-        "displayName": .string("Test User")
+        "displayName": .string("Test User"),
+        "username": actorUsername.map(JSONValue.string) ?? .null,
+        "isBot": .bool(actorIsBot)
       ])
     ])
   ]

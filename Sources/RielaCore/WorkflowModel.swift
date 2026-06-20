@@ -173,10 +173,24 @@ public enum WorkflowInputFilterLanguage: String, Codable, CaseIterable, Sendable
   case javascript
 }
 
+public enum WorkflowInputFilterBuiltin: String, Codable, CaseIterable, Sendable {
+  case mentionResponder = "mention-responder"
+}
+
 public struct WorkflowInputFilter: Codable, Equatable, Sendable {
   public var kind: WorkflowInputFilterKind
   public var language: WorkflowInputFilterLanguage
-  public var expression: String
+  public var expression: String?
+  public var builtin: WorkflowInputFilterBuiltin?
+  public var config: JSONObject?
+
+  private enum CodingKeys: String, CodingKey {
+    case kind
+    case language
+    case expression
+    case builtin
+    case config
+  }
 
   public init(
     kind: WorkflowInputFilterKind,
@@ -186,6 +200,40 @@ public struct WorkflowInputFilter: Codable, Equatable, Sendable {
     self.kind = kind
     self.language = language
     self.expression = expression
+    self.builtin = nil
+    self.config = nil
+  }
+
+  public init(
+    kind: WorkflowInputFilterKind,
+    builtin: WorkflowInputFilterBuiltin,
+    config: JSONObject? = nil
+  ) {
+    self.kind = kind
+    self.language = .javascript
+    self.expression = nil
+    self.builtin = builtin
+    self.config = config
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.kind = try container.decode(WorkflowInputFilterKind.self, forKey: .kind)
+    self.language = try container.decodeIfPresent(WorkflowInputFilterLanguage.self, forKey: .language) ?? .javascript
+    self.expression = try container.decodeIfPresent(String.self, forKey: .expression)
+    self.builtin = try container.decodeIfPresent(WorkflowInputFilterBuiltin.self, forKey: .builtin)
+    self.config = try container.decodeIfPresent(JSONObject.self, forKey: .config)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(kind, forKey: .kind)
+    if builtin == nil || language != .javascript {
+      try container.encode(language, forKey: .language)
+    }
+    try container.encodeIfPresent(expression, forKey: .expression)
+    try container.encodeIfPresent(builtin, forKey: .builtin)
+    try container.encodeIfPresent(config, forKey: .config)
   }
 }
 

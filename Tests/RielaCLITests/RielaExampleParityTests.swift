@@ -77,7 +77,12 @@ final class RielaExampleParityTests: XCTestCase {
     }
     """#
 
-    static func variables(text: String, eventId: String, isBot: Bool = false) -> String {
+    static func variables(
+      text: String,
+      eventId: String,
+      isBot: Bool = false,
+      actorUsername: String? = nil
+    ) -> String {
       #"""
       {
         "workflowInput": {
@@ -103,6 +108,7 @@ final class RielaExampleParityTests: XCTestCase {
           "actor": {
             "id": "200",
             "displayName": "Mock User",
+            "username": "\#(actorUsername ?? "")",
             "isBot": \#(isBot)
           }
         }
@@ -211,7 +217,7 @@ final class RielaExampleParityTests: XCTestCase {
     }
   }
 
-  func testTelegramSDKTrioChatSkipsBotAuthoredMentions() async throws {
+  func testTelegramSDKTrioChatAllowsBotAuthoredCrossMentions() async throws {
     let root = repositoryRoot()
     let examplesRoot = root.appendingPathComponent(ExampleCatalog.directoryName, isDirectory: true)
     let scenario = examplesRoot
@@ -224,9 +230,38 @@ final class RielaExampleParityTests: XCTestCase {
       WorkflowRunCLI.mockScenarioFlag, scenario.path,
       WorkflowRunCLI.outputFlag, WorkflowRunCLI.jsonOutputFormat,
       "--variables", TelegramSDKTrioChatMock.variables(
-        text: "@mikatrend0529bot echo from bot",
-        eventId: "bot-authored-mika",
-        isBot: true
+        text: "@rinacursor0529bot ここ見て",
+        eventId: "bot-authored-rina",
+        isBot: true,
+        actorUsername: "mikatrend0529bot"
+      )
+    ])
+
+    XCTAssertEqual(result.exitCode, .success, "\(result.stderr)\n\(result.stdout)")
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let payload = try decoder.decode(WorkflowRunResult.self, from: Data(result.stdout.utf8))
+    XCTAssertEqual(payload.status, .completed)
+    XCTAssertEqual(payload.rootOutput?["replyAs"], .string("rina"))
+  }
+
+  func testTelegramSDKTrioChatSkipsSelfAuthoredMentions() async throws {
+    let root = repositoryRoot()
+    let examplesRoot = root.appendingPathComponent(ExampleCatalog.directoryName, isDirectory: true)
+    let scenario = examplesRoot
+      .appendingPathComponent(WorkflowIds.telegramSDKTrioChatWorkflowName, isDirectory: true)
+      .appendingPathComponent(MockScenario.fileName)
+    let app = RielaCLIApplication()
+    let result = await app.run(WorkflowRunCLI.workflowRunArgumentsPrefix + [
+      WorkflowIds.telegramSDKTrioChatWorkflowName,
+      WorkflowRunCLI.workflowDefinitionDirFlag, examplesRoot.path,
+      WorkflowRunCLI.mockScenarioFlag, scenario.path,
+      WorkflowRunCLI.outputFlag, WorkflowRunCLI.jsonOutputFormat,
+      "--variables", TelegramSDKTrioChatMock.variables(
+        text: "@mikatrend0529bot echo from self",
+        eventId: "self-authored-mika",
+        isBot: true,
+        actorUsername: "mikatrend0529bot"
       )
     ])
 

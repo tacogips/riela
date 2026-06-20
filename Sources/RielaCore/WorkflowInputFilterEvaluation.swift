@@ -75,6 +75,16 @@ public struct WorkflowInputFilterEvaluator: Sendable {
     var issues: [WorkflowInputFilterIssue] = []
 
     for (index, filter) in filters.enumerated() {
+      if let builtin = filter.builtin {
+        do {
+          if try evaluateBuiltin(builtin, filter: filter, variables: variables) {
+            return WorkflowInputFilterDecision(shouldRun: true, matchedFilterIndex: index, issues: issues)
+          }
+        } catch {
+          issues.append(issue(.evaluationError, stepId: stepId, nodeId: nodeId, filterIndex: index, message: "\(error)"))
+        }
+        continue
+      }
       guard filter.language == .javascript else {
         issues.append(issue(.unsupportedLanguage, stepId: stepId, nodeId: nodeId, filterIndex: index, message: "only javascript filters are supported"))
         continue
@@ -87,7 +97,11 @@ public struct WorkflowInputFilterEvaluator: Sendable {
         continue
       }
       do {
-        if try JavaScriptCoreBooleanEvaluator().evaluateBoolean(expression: filter.expression, variables: roots) {
+        guard let expression = filter.expression else {
+          issues.append(issue(.parseError, stepId: stepId, nodeId: nodeId, filterIndex: index, message: "expression is required for javascript filters"))
+          continue
+        }
+        if try JavaScriptCoreBooleanEvaluator().evaluateBoolean(expression: expression, variables: roots) {
           return WorkflowInputFilterDecision(shouldRun: true, matchedFilterIndex: index, issues: issues)
         }
       } catch let error as JavaScriptBooleanEvaluationError {
@@ -104,6 +118,49 @@ public struct WorkflowInputFilterEvaluator: Sendable {
     }
 
     return WorkflowInputFilterDecision(shouldRun: false, issues: issues)
+  }
+
+  private func evaluateBuiltin(
+    _ builtin: WorkflowInputFilterBuiltin,
+    filter: WorkflowInputFilter,
+    variables: JSONObject
+  ) throws -> Bool {
+    switch builtin {
+    case .mentionResponder:
+      return try evaluateMentionResponder(filter: filter, variables: variables)
+    }
+  }
+
+  private func evaluateMentionResponder(filter: WorkflowInputFilter, variables: JSONObject) throws -> Bool {
+    guard filter.kind == .telegram else {
+      throw WorkflowInputFilterBuiltinError.unsupportedKind(filter.kind.rawValue)
+    }
+    let root = try telegramRoot(event: objectValue(variables["event"]), workflowInput: objectValue(variables["workflowInput"]) ?? [:])
+    let config = filter.config ?? [:]
+    let text = stringValue(objectValue(root["message"])?["text"]) ?? ""
+    let actor = objectValue(root["actor"]) ?? [:]
+    let actorUsername = normalizedUsername(stringValue(actor["username"]))
+    let actorIsBot = boolValue(actor["isBot"]) ?? false
+    let selfUsernames = stringArray(config["selfUsernames"]).map(normalizedUsername).filter { !$0.isEmpty }
+    if !actorUsername.isEmpty, selfUsernames.contains(actorUsername) {
+      return false
+    }
+
+    let aliases = stringArray(config["aliases"])
+    if aliases.contains(where: { aliasMatches($0, in: text) }) {
+      return true
+    }
+
+    let defaultResponder = boolValue(config["defaultResponder"]) ?? false
+    guard defaultResponder else {
+      return false
+    }
+    let defaultForBotMessages = boolValue(config["defaultForBotMessages"]) ?? false
+    if actorIsBot && !defaultForBotMessages {
+      return false
+    }
+    let suppressedAliases = stringArray(config["defaultSuppressedByAliases"])
+    return !suppressedAliases.contains { aliasMatches($0, in: text) }
   }
 
   private func issue(
@@ -144,19 +201,23 @@ public struct WorkflowInputFilterEvaluator: Sendable {
 
   private func telegramRoot(event: JSONObject?, workflowInput: JSONObject) throws -> JSONObject {
     let input = objectValue(event?["input"]) ?? workflowInput
-    guard stringValue(event?["provider"]) == "telegram" || stringValue(input["provider"]) == "telegram" else {
+    let payload = objectValue(input["payload"]) ?? [:]
+    guard stringValue(event?["provider"]) == "telegram"
+      || stringValue(input["provider"]) == "telegram"
+      || stringValue(payload["provider"]) == "telegram"
+    else {
       throw WorkflowInputFilterParseError.providerMismatch(expected: "telegram")
     }
 
-    let actor = objectValue(event?["actor"]) ?? [:]
-    let conversation = objectValue(event?["conversation"]) ?? objectValue(event?["chat"]) ?? [:]
+    let actor = objectValue(event?["actor"]) ?? objectValue(payload["actor"]) ?? [:]
+    let conversation = objectValue(event?["conversation"]) ?? objectValue(payload["conversation"]) ?? objectValue(event?["chat"]) ?? [:]
     let chat = objectValue(event?["chat"]) ?? conversation
     let eventMessage = objectValue(event?["message"]) ?? [:]
     var message: JSONObject = [
-      "text": input["text"] ?? eventMessage["text"] ?? .string(""),
-      "attachments": input["attachments"] ?? eventMessage["attachments"] ?? .array([]),
-      "imagePaths": input["imagePaths"] ?? eventMessage["imagePaths"] ?? .array([]),
-      "attachmentText": input["attachmentText"] ?? eventMessage["attachmentText"] ?? .string("")
+      "text": input["text"] ?? payload["text"] ?? eventMessage["text"] ?? .string(""),
+      "attachments": input["attachments"] ?? payload["attachments"] ?? eventMessage["attachments"] ?? .array([]),
+      "imagePaths": input["imagePaths"] ?? payload["imagePaths"] ?? eventMessage["imagePaths"] ?? .array([]),
+      "attachmentText": input["attachmentText"] ?? payload["attachmentText"] ?? eventMessage["attachmentText"] ?? .string("")
     ]
     if let threadId = conversation["threadId"] {
       message["threadId"] = threadId
@@ -194,11 +255,62 @@ private func objectValue(_ value: JSONValue?) -> JSONObject? {
   return object
 }
 
+private enum WorkflowInputFilterBuiltinError: Error, CustomStringConvertible {
+  case unsupportedKind(String)
+
+  var description: String {
+    switch self {
+    case let .unsupportedKind(kind):
+      "builtin input filter does not support kind '\(kind)'"
+    }
+  }
+}
+
+private func boolValue(_ value: JSONValue?) -> Bool? {
+  guard case let .bool(bool)? = value else {
+    return nil
+  }
+  return bool
+}
+
 private func stringValue(_ value: JSONValue?) -> String? {
   guard case let .string(string)? = value else {
     return nil
   }
   return string
+}
+
+private func stringArray(_ value: JSONValue?) -> [String] {
+  guard case let .array(values)? = value else {
+    return []
+  }
+  return values.compactMap(stringValue)
+}
+
+private func normalizedUsername(_ value: String?) -> String {
+  value?
+    .trimmingCharacters(in: .whitespacesAndNewlines)
+    .trimmingPrefix("@")
+    .lowercased() ?? ""
+}
+
+private func aliasMatches(_ alias: String, in text: String) -> Bool {
+  let normalizedAlias = alias.trimmingCharacters(in: .whitespacesAndNewlines).trimmingPrefix("@")
+  guard !normalizedAlias.isEmpty else {
+    return false
+  }
+  let pattern = "(^|[^A-Za-z0-9_@])@?\(NSRegularExpression.escapedPattern(for: String(normalizedAlias)))(?=$|[^A-Za-z0-9_])"
+  return text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+}
+
+private extension String {
+  func trimmingPrefix(_ prefix: Character) -> String {
+    var value = self
+    while value.first == prefix {
+      value.removeFirst()
+    }
+    return value
+  }
 }
 
 private extension JSONValue {

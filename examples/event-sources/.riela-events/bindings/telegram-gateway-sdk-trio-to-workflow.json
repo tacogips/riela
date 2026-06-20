@@ -10,12 +10,12 @@
   "inputMapping": {
     "mode": "template",
     "template": {
-      "request": "{{event.input.text}}",
-      "history": "{{event.input.history}}",
-      "historySource": "{{event.input.historySource}}",
-      "attachments": "{{event.input.attachments}}",
-      "imagePaths": "{{event.input.imagePaths}}",
-      "attachmentText": "{{event.input.attachmentText}}",
+      "request": "{{event.input.payload.text}}",
+      "history": "{{event.input.payload.history}}",
+      "historySource": "{{event.input.payload.historySource}}",
+      "attachments": "{{event.input.payload.attachments}}",
+      "imagePaths": "{{event.input.payload.imagePaths}}",
+      "attachmentText": "{{event.input.payload.attachmentText}}",
       "personaCandidates": ["yui", "mika", "rina"],
       "conversationId": "{{event.conversation.id}}",
       "threadId": "{{event.conversation.threadId}}"

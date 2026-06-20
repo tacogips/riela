@@ -95,7 +95,7 @@ final class EventLiveServeTests: XCTestCase {
     XCTAssertEqual(sentMessages, [])
   }
 
-  func testTelegramGatewayServeIgnoresAnyBotMessagesToPreventReplyLoops() async throws {
+  func testTelegramGatewayServeIgnoresBotMessagesByDefault() async throws {
     let eventRoot = try temporaryDirectory()
     try writeTelegramEventConfig(eventRoot: eventRoot)
     let api = FakeTelegramGatewayAPI(updates: [
@@ -131,6 +131,46 @@ final class EventLiveServeTests: XCTestCase {
     let sentMessages = await api.sentMessages
     XCTAssertEqual(workflowRequests.count, 0)
     XCTAssertEqual(sentMessages, [])
+  }
+
+  func testTelegramGatewayServeAllowsBotMessagesWhenConfigured() async throws {
+    let eventRoot = try temporaryDirectory()
+    try writeTelegramEventConfig(eventRoot: eventRoot, ignoreBots: false)
+    let api = FakeTelegramGatewayAPI(updates: [
+      TelegramUpdate(
+        updateId: 45,
+        message: try TelegramMessage.fixture(
+          chatId: "100",
+          fromId: "555",
+          text: "@mikatrend0529bot bot question",
+          isBot: true
+        )
+      )
+    ])
+    let workflowRunner = FakeEventWorkflowRunner(replyText: "bot question accepted", replyAs: "mika")
+    let server = DefaultEventLiveServer(telegramAPI: api, workflowRunner: workflowRunner)
+
+    let result = try await CLIRuntimeEnvironment.$overrides.withValue([
+      "TEST_TELEGRAM_TOKEN": "source-token",
+      "TEST_TELEGRAM_BOT_ID": "999",
+      "TEST_TELEGRAM_YUI_TOKEN": "yui-token",
+      "TEST_TELEGRAM_MIKA_TOKEN": "mika-token"
+    ]) {
+      try await server.serve(
+        eventRoot: eventRoot,
+        target: nil,
+        parsed: try ParsedParityOptions(["--limit", "1"]),
+        output: .json
+      )
+    }
+
+    XCTAssertEqual(result.status, "ok")
+    let workflowRequests = await workflowRunner.requests
+    let sentMessages = await api.sentMessages
+    XCTAssertEqual(workflowRequests.count, 1)
+    XCTAssertEqual(sentMessages, [
+      TelegramSendMessageRequest(token: "mika-token", chatId: "100", threadId: nil, text: "bot question accepted")
+    ])
   }
 
   func testTelegramGatewayServePollsReplyBotTokensForMentionedMessages() async throws {
@@ -310,7 +350,7 @@ final class EventLiveServeTests: XCTestCase {
     return root
   }
 
-  private func writeTelegramEventConfig(eventRoot: URL, timeoutSeconds: Int = 0) throws {
+  private func writeTelegramEventConfig(eventRoot: URL, timeoutSeconds: Int = 0, ignoreBots: Bool? = nil) throws {
     let sources = eventRoot.appendingPathComponent("sources", isDirectory: true)
     let bindings = eventRoot.appendingPathComponent("bindings", isDirectory: true)
     try FileManager.default.createDirectory(at: sources, withIntermediateDirectories: true)
@@ -328,6 +368,7 @@ final class EventLiveServeTests: XCTestCase {
         "limit": 1,
         "offsetPath": "telegram/telegram-live-offset.json"
       },
+      \(ignoreBots.map { #""filters": {"ignoreBots": \#($0), "ignoreSelf": true},"# } ?? "")
       "replyBots": {
         "yui": {"tokenEnv": "TEST_TELEGRAM_YUI_TOKEN"},
         "mika": {"tokenEnv": "TEST_TELEGRAM_MIKA_TOKEN"}

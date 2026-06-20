@@ -16,8 +16,24 @@
       "inputFilters": [
         {
           "kind": "telegram",
-          "language": "javascript",
-          "expression": "(function(){const bot=(telegram.actor&&telegram.actor.isBot)===true;if(bot)return false;const text=String(telegram.message.text||'');const yui=/(^|[^A-Za-z0-9_@])(@?yuicodexf0529bot|@?yui)(?=$|[^A-Za-z0-9_])/i.test(text);const mika=/(^|[^A-Za-z0-9_@])(@?mikatrend0529bot|@?mika)(?=$|[^A-Za-z0-9_])/i.test(text);const rina=/(^|[^A-Za-z0-9_@])(@?rinacursor0529bot|@?rina)(?=$|[^A-Za-z0-9_])/i.test(text);return yui||(!mika&&!rina);})()"
+          "builtin": "mention-responder",
+          "config": {
+            "aliases": [
+              "yui",
+              "@yuicodexf0529bot"
+            ],
+            "selfUsernames": [
+              "yuicodexf0529bot"
+            ],
+            "defaultResponder": true,
+            "defaultForBotMessages": false,
+            "defaultSuppressedByAliases": [
+              "mika",
+              "@mikatrend0529bot",
+              "rina",
+              "@rinacursor0529bot"
+            ]
+          }
         }
       ],
       "addon": {
@@ -36,8 +52,16 @@
       "inputFilters": [
         {
           "kind": "telegram",
-          "language": "javascript",
-          "expression": "(function(){const bot=(telegram.actor&&telegram.actor.isBot)===true;if(bot)return false;const text=String(telegram.message.text||'');return /(^|[^A-Za-z0-9_@])(@?mikatrend0529bot|@?mika)(?=$|[^A-Za-z0-9_])/i.test(text);})()"
+          "builtin": "mention-responder",
+          "config": {
+            "aliases": [
+              "mika",
+              "@mikatrend0529bot"
+            ],
+            "selfUsernames": [
+              "mikatrend0529bot"
+            ]
+          }
         }
       ],
       "addon": {
@@ -56,8 +80,16 @@
       "inputFilters": [
         {
           "kind": "telegram",
-          "language": "javascript",
-          "expression": "(function(){const bot=(telegram.actor&&telegram.actor.isBot)===true;if(bot)return false;const text=String(telegram.message.text||'');return /(^|[^A-Za-z0-9_@])(@?rinacursor0529bot|@?rina)(?=$|[^A-Za-z0-9_])/i.test(text);})()"
+          "builtin": "mention-responder",
+          "config": {
+            "aliases": [
+              "rina",
+              "@rinacursor0529bot"
+            ],
+            "selfUsernames": [
+              "rinacursor0529bot"
+            ]
+          }
         }
       ],
       "addon": {
@@ -76,8 +108,24 @@
       "inputFilters": [
         {
           "kind": "telegram",
-          "language": "javascript",
-          "expression": "(function(){const bot=(telegram.actor&&telegram.actor.isBot)===true;if(bot)return false;const text=String(telegram.message.text||'');const yui=/(^|[^A-Za-z0-9_@])(@?yuicodexf0529bot|@?yui)(?=$|[^A-Za-z0-9_])/i.test(text);const mika=/(^|[^A-Za-z0-9_@])(@?mikatrend0529bot|@?mika)(?=$|[^A-Za-z0-9_])/i.test(text);const rina=/(^|[^A-Za-z0-9_@])(@?rinacursor0529bot|@?rina)(?=$|[^A-Za-z0-9_])/i.test(text);return yui||(!mika&&!rina);})()"
+          "builtin": "mention-responder",
+          "config": {
+            "aliases": [
+              "yui",
+              "@yuicodexf0529bot"
+            ],
+            "selfUsernames": [
+              "yuicodexf0529bot"
+            ],
+            "defaultResponder": true,
+            "defaultForBotMessages": false,
+            "defaultSuppressedByAliases": [
+              "mika",
+              "@mikatrend0529bot",
+              "rina",
+              "@rinacursor0529bot"
+            ]
+          }
         }
       ],
       "addon": {
@@ -97,8 +145,16 @@
       "inputFilters": [
         {
           "kind": "telegram",
-          "language": "javascript",
-          "expression": "(function(){const bot=(telegram.actor&&telegram.actor.isBot)===true;if(bot)return false;const text=String(telegram.message.text||'');return /(^|[^A-Za-z0-9_@])(@?mikatrend0529bot|@?mika)(?=$|[^A-Za-z0-9_])/i.test(text);})()"
+          "builtin": "mention-responder",
+          "config": {
+            "aliases": [
+              "mika",
+              "@mikatrend0529bot"
+            ],
+            "selfUsernames": [
+              "mikatrend0529bot"
+            ]
+          }
         }
       ],
       "addon": {
@@ -118,8 +174,16 @@
       "inputFilters": [
         {
           "kind": "telegram",
-          "language": "javascript",
-          "expression": "(function(){const bot=(telegram.actor&&telegram.actor.isBot)===true;if(bot)return false;const text=String(telegram.message.text||'');return /(^|[^A-Za-z0-9_@])(@?rinacursor0529bot|@?rina)(?=$|[^A-Za-z0-9_])/i.test(text);})()"
+          "builtin": "mention-responder",
+          "config": {
+            "aliases": [
+              "rina",
+              "@rinacursor0529bot"
+            ],
+            "selfUsernames": [
+              "rinacursor0529bot"
+            ]
+          }
         }
       ],
       "addon": {

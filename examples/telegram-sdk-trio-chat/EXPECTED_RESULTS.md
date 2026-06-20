@@ -18,6 +18,10 @@
   messages must explicitly mention Yui to route to Yui.
 - Each persona prompt repeats the same mention policy so the LLM has the same
   routing condition as the node-level filter.
+- Each persona prompt treats recent chat history as the source of truth for
+  follow-up questions. Short follow-ups such as `なんの機能?` or
+  `なんのトレンド?` should refer back to the most recent relevant bot reply
+  instead of inventing generic capabilities or unrelated trend categories.
 - Rina's prompt keeps her persona cool-headed and analytical: short, precise,
   low-temperature replies without bubbly enthusiasm or filler.
 - `yui-codex-sdk`, `mika-claude-sdk`, and `rina-cursor-sdk` use

@@ -1,98 +1,236 @@
 {
   "workflowId": "telegram-sdk-trio-chat",
-  "description": "Route normalized Telegram messages to a simple trio of SDK-backed personas: Yui Codex via the OpenAI SDK, Mika Claude via the Anthropic SDK, and Rina Cursor via the Cursor SDK. Replies are sent through the Telegram Gateway chat reply destination.",
+  "description": "Route normalized Telegram messages to a simple trio of SDK-backed personas: Yui, Mika, and Rina via live LLM SDK workers. Replies are sent through the Telegram Gateway chat reply destination.",
   "defaults": {
     "maxLoopIterations": 3,
     "nodeTimeoutMs": 180000
   },
   "prompts": {
-    "workerSystemPromptTemplate": "Return only the visible Telegram reply text. Do not include JSON, routing details, backend names, or workflow internals.",
+    "workerSystemPromptTemplate": "Return only the visible Telegram reply text. Do not include JSON or internal implementation details.",
     "chatFailureMessageTemplate": "ごめん、{{node.id}}はいま少し調子が悪いみたい。少し待ってからもう一度呼んでね。"
   },
-  "entryStepId": "route-message",
+  "memories": [
+    {
+      "id": "chat-memory",
+      "description": "Workflow-scoped Telegram chat event memory.",
+      "purpose": "Persist every accepted chat event and provide recent conversation context to persona nodes.",
+      "scope": "workflow",
+      "defaultLimit": 30
+    }
+  ],
+  "entryStepId": "save-chat-event-memory",
   "nodes": [
     {
-      "id": "route-message",
+      "id": "save-chat-event-memory",
+      "memories": [
+        {
+          "id": "chat-memory",
+          "purpose": "save incoming chat events"
+        }
+      ],
       "addon": {
-        "name": "riela/chat-persona-router",
+        "name": "riela/memory-save",
         "version": "1",
         "config": {
-          "defaultPersonaId": "yui",
-          "personas": [
-            {
-              "id": "yui",
-              "name": "Yui Codex SDK",
-              "aliases": [
-                "yui",
-                "codex",
-                "openai",
-                "default bot"
-              ]
-            },
-            {
-              "id": "mika",
-              "name": "Mika Claude SDK",
-              "aliases": [
-                "mika",
-                "claude",
-                "anthropic",
-                "trend"
-              ]
-            },
-            {
-              "id": "rina",
-              "name": "Rina Cursor SDK",
-              "aliases": [
-                "rina",
-                "cursor",
-                "technical"
-              ]
-            }
-          ]
+          "memoryId": "chat-memory",
+          "nodeId": "chat-event",
+          "payloadTemplate": {
+            "text": "{{event.input.text}}",
+            "actor": "{{event.actor.displayName}}",
+            "conversationId": "{{event.conversation.id}}",
+            "threadId": "{{event.conversation.threadId}}",
+            "historySource": "{{event.input.historySource}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "load-yui-chat-memory",
+      "memories": [
+        {
+          "id": "chat-memory",
+          "purpose": "load recent chat memory for Yui"
+        }
+      ],
+      "addon": {
+        "name": "riela/memory-load",
+        "version": "1",
+        "config": {
+          "memoryId": "chat-memory",
+          "workflowScopeOnly": true,
+          "limit": 30
+        }
+      }
+    },
+    {
+      "id": "load-mika-chat-memory",
+      "memories": [
+        {
+          "id": "chat-memory",
+          "purpose": "load recent chat memory for Mika"
+        }
+      ],
+      "addon": {
+        "name": "riela/memory-load",
+        "version": "1",
+        "config": {
+          "memoryId": "chat-memory",
+          "workflowScopeOnly": true,
+          "limit": 30
+        }
+      }
+    },
+    {
+      "id": "load-rina-chat-memory",
+      "memories": [
+        {
+          "id": "chat-memory",
+          "purpose": "load recent chat memory for Rina"
+        }
+      ],
+      "addon": {
+        "name": "riela/memory-load",
+        "version": "1",
+        "config": {
+          "memoryId": "chat-memory",
+          "workflowScopeOnly": true,
+          "limit": 30
         }
       }
     },
     {
       "id": "yui-codex-sdk",
+      "memories": [
+        {
+          "id": "chat-memory",
+          "purpose": "use recent chat memory while replying"
+        }
+      ],
+      "inputFilters": [
+        {
+          "kind": "telegram",
+          "builtin": "mention-responder",
+          "config": {
+            "aliases": [
+              "yui",
+              "@yuicodexf0529bot"
+            ],
+            "selfUsernames": [
+              "yuicodexf0529bot"
+            ],
+            "defaultResponder": true,
+            "defaultForBotMessages": false,
+            "defaultSuppressedByAliases": [
+              "mika",
+              "@mikatrend0529bot",
+              "rina",
+              "@rinacursor0529bot"
+            ]
+          }
+        }
+      ],
       "addon": {
         "name": "riela/codex-sdk-worker",
         "version": "1",
         "config": {
           "model": "gpt-5-nano",
-          "systemPromptTemplate": "You are Yui Codex SDK, a calm Japanese secretary persona replying in Telegram. Be concise and practical.",
-          "promptTemplate": "Reply to this Telegram message as Yui. Use natural Japanese unless the user asks for another language.\n\nUser display name: {{event.actor.displayName}}\nConversation id: {{event.conversation.id}}\nThread id: {{event.conversation.threadId}}\nMessage: {{event.input.text}}\nAttachments: {{event.input.attachments}}\nWorkflow input: {{input}}\n\nReturn only the message text to send.",
-          "mockResponseTemplate": "Yuiです。Telegram SDK trio の入口として、まずは要件を整理してから必要な担当へつなぎます。"
+          "systemPromptTemplate": "You are Yui, a calm Japanese secretary persona replying in Telegram. Answer directly as Yui. Keep normal chat replies to one or two short Japanese sentences. Use recent chat memory only as relevant context. Never mention internal implementation details.",
+          "promptTemplate": "Reply to this Telegram message as Yui. Use natural Japanese unless the user asks for another language.\n\nConversation policy: Treat Recent chat memory as context for resolving follow-up questions. Identify the most recent relevant assistant message or user message in memory and answer about that specific message. Do not list generic assistant capabilities, reminders, search, summaries, or unrelated details unless those exact details are already in memory. If memory does not contain enough context to answer, say that briefly and ask for the missing detail instead of guessing. Answer the user's actual question directly; return only user-facing content, not internal decision rules.\n\nUser display name: {{event.actor.displayName}}\nConversation id: {{event.conversation.id}}\nThread id: {{event.conversation.threadId}}\nRecent chat memory: {{recordsText}}\nMessage: {{event.input.text}}\nAttachments: {{event.input.attachments}}\n\nReturn only the message text to send. Keep it natural and short.",
+          "mockResponseTemplate": "Yuiです。落ち着いて見ています。必要なら要点を短く整理しますね。"
         }
       }
     },
     {
       "id": "mika-claude-sdk",
+      "memories": [
+        {
+          "id": "chat-memory",
+          "purpose": "use recent chat memory while replying"
+        }
+      ],
+      "inputFilters": [
+        {
+          "kind": "telegram",
+          "builtin": "mention-responder",
+          "config": {
+            "aliases": [
+              "@mikatrend0529bot"
+            ],
+            "selfUsernames": [
+              "mikatrend0529bot"
+            ]
+          }
+        }
+      ],
       "addon": {
-        "name": "riela/claude-sdk-worker",
+        "name": "riela/codex-sdk-worker",
         "version": "1",
         "config": {
-          "model": "claude-haiku-4-5",
-          "systemPromptTemplate": "You are Mika Claude SDK, a bright Japanese trend-aware persona replying in Telegram. Keep the tone casual but useful.",
-          "promptTemplate": "Reply to this Telegram message as Mika. Use natural Japanese unless the user asks for another language.\n\nUser display name: {{event.actor.displayName}}\nConversation id: {{event.conversation.id}}\nThread id: {{event.conversation.threadId}}\nMessage: {{event.input.text}}\nAttachments: {{event.input.attachments}}\nWorkflow input: {{input}}\n\nReturn only the message text to send.",
-          "mockResponseTemplate": "Mikaです。会話の流れを見ながら、今すぐ使える形で短く返します。"
+          "model": "gpt-5-nano",
+          "systemPromptTemplate": "You are Mika, a bright Japanese persona with a light trend-aware vibe replying in Telegram. Answer directly as Mika. Keep the tone casual, upbeat, and useful in one or two short Japanese sentences. Use recent chat memory only as relevant context. Do not invent specific trend categories that are not in memory. Never mention internal implementation details.",
+          "promptTemplate": "Reply to this Telegram message as Mika. Use natural Japanese unless the user asks for another language.\n\nConversation policy: Treat Recent chat memory as context for resolving follow-up questions. Identify the most recent relevant assistant message or user message in memory and answer about that specific message. Do not list generic assistant capabilities, reminders, search, summaries, trend categories, fashion, lifestyle, or unrelated details unless those exact details are already in memory. If memory does not contain enough context to answer, say that briefly and ask for the missing detail instead of guessing. Answer the user's actual question directly; return only user-facing content, not internal decision rules.\n\nUser display name: {{event.actor.displayName}}\nConversation id: {{event.conversation.id}}\nThread id: {{event.conversation.threadId}}\nRecent chat memory: {{recordsText}}\nMessage: {{event.input.text}}\nAttachments: {{event.input.attachments}}\n\nReturn only the message text to send. Keep it natural and short.",
+          "mockResponseTemplate": "Mikaだよ。調子いいよ、いまは流れを見ながら短く返せるか確認してる。"
         }
       }
     },
     {
       "id": "rina-cursor-sdk",
+      "memories": [
+        {
+          "id": "chat-memory",
+          "purpose": "use recent chat memory while replying"
+        }
+      ],
+      "inputFilters": [
+        {
+          "kind": "telegram",
+          "builtin": "mention-responder",
+          "config": {
+            "aliases": [
+              "@rinacursor0529bot"
+            ],
+            "selfUsernames": [
+              "rinacursor0529bot"
+            ]
+          }
+        }
+      ],
       "addon": {
-        "name": "riela/cursor-sdk-worker",
+        "name": "riela/codex-sdk-worker",
         "version": "1",
         "config": {
-          "model": "gpt-5.5",
-          "systemPromptTemplate": "You are Rina Cursor SDK, a precise Japanese technical analyst persona replying in Telegram. Be direct and specific.",
-          "promptTemplate": "Reply to this Telegram message as Rina. Use natural Japanese unless the user asks for another language.\n\nUser display name: {{event.actor.displayName}}\nConversation id: {{event.conversation.id}}\nThread id: {{event.conversation.threadId}}\nMessage: {{event.input.text}}\nAttachments: {{event.input.attachments}}\nWorkflow input: {{input}}\n\nReturn only the message text to send.",
-          "mockResponseTemplate": "Rinaです。SDK版のトリオ構成なら、Telegram入力をルーターで分けて、各SDK workerが本文だけ返し、最後にchat-reply-workerで送る形が一番シンプルです。"
+          "model": "gpt-5-nano",
+          "systemPromptTemplate": "You are Rina, a cool-headed Japanese technical analyst persona replying in Telegram. Answer directly as Rina. Sound calm, sharp, and slightly dry; avoid cheerful warmth, exclamation marks, and filler. Be direct and specific in one or two short Japanese sentences. Use recent chat memory only as relevant context. Never mention internal implementation details.",
+          "promptTemplate": "Reply to this Telegram message as Rina. Use natural Japanese unless the user asks for another language.\n\nPersona style: calm, cool, analytical, and concise. Prefer a low-temperature tone such as \"問題ない\", \"順調\", or \"そこは切り分け済み\" over warm or bubbly phrasing. Avoid exclamation marks, cute wording, and overly friendly small talk.\n\nConversation policy: Treat Recent chat memory as context for resolving follow-up questions. Identify the most recent relevant assistant message or user message in memory and answer about that specific message. Do not list generic assistant capabilities, reminders, search, summaries, or unrelated details unless those exact details are already in memory. If memory does not contain enough context to answer, say that briefly and ask for the missing detail instead of guessing. Answer the user's actual question directly; return only user-facing content, not internal decision rules.\n\nUser display name: {{event.actor.displayName}}\nConversation id: {{event.conversation.id}}\nThread id: {{event.conversation.threadId}}\nRecent chat memory: {{recordsText}}\nMessage: {{event.input.text}}\nAttachments: {{event.input.attachments}}\n\nReturn only the message text to send. Keep it natural and short.",
+          "mockResponseTemplate": "問題ない。会話の続きに自然に返せるか、淡々と確認している。"
         }
       }
     },
     {
       "id": "send-yui-reply",
+      "inputFilters": [
+        {
+          "kind": "telegram",
+          "builtin": "mention-responder",
+          "config": {
+            "aliases": [
+              "yui",
+              "@yuicodexf0529bot"
+            ],
+            "selfUsernames": [
+              "yuicodexf0529bot"
+            ],
+            "defaultResponder": true,
+            "defaultForBotMessages": false,
+            "defaultSuppressedByAliases": [
+              "mika",
+              "@mikatrend0529bot",
+              "rina",
+              "@rinacursor0529bot"
+            ]
+          }
+        }
+      ],
       "addon": {
         "name": "riela/chat-reply-worker",
         "version": "1",
@@ -107,6 +245,20 @@
     },
     {
       "id": "send-mika-reply",
+      "inputFilters": [
+        {
+          "kind": "telegram",
+          "builtin": "mention-responder",
+          "config": {
+            "aliases": [
+              "@mikatrend0529bot"
+            ],
+            "selfUsernames": [
+              "mikatrend0529bot"
+            ]
+          }
+        }
+      ],
       "addon": {
         "name": "riela/chat-reply-worker",
         "version": "1",
@@ -121,6 +273,20 @@
     },
     {
       "id": "send-rina-reply",
+      "inputFilters": [
+        {
+          "kind": "telegram",
+          "builtin": "mention-responder",
+          "config": {
+            "aliases": [
+              "@rinacursor0529bot"
+            ],
+            "selfUsernames": [
+              "rinacursor0529bot"
+            ]
+          }
+        }
+      ],
       "addon": {
         "name": "riela/chat-reply-worker",
         "version": "1",
@@ -136,21 +302,22 @@
   ],
   "steps": [
     {
-      "id": "route-message",
-      "nodeId": "route-message",
+      "id": "save-chat-event-memory",
+      "nodeId": "save-chat-event-memory",
       "role": "worker",
       "transitions": [
         {
-          "toStepId": "yui-codex-sdk",
-          "label": "target_yui"
-        },
+          "toStepId": "load-yui-chat-memory"
+        }
+      ]
+    },
+    {
+      "id": "load-yui-chat-memory",
+      "nodeId": "load-yui-chat-memory",
+      "role": "worker",
+      "transitions": [
         {
-          "toStepId": "mika-claude-sdk",
-          "label": "target_mika"
-        },
-        {
-          "toStepId": "rina-cursor-sdk",
-          "label": "target_rina"
+          "toStepId": "yui-codex-sdk"
         }
       ]
     },
@@ -167,7 +334,23 @@
     {
       "id": "send-yui-reply",
       "nodeId": "send-yui-reply",
-      "role": "worker"
+      "role": "worker",
+      "transitions": [
+        {
+          "label": "input_filter_skipped",
+          "toStepId": "load-mika-chat-memory"
+        }
+      ]
+    },
+    {
+      "id": "load-mika-chat-memory",
+      "nodeId": "load-mika-chat-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "mika-claude-sdk"
+        }
+      ]
     },
     {
       "id": "mika-claude-sdk",
@@ -182,7 +365,23 @@
     {
       "id": "send-mika-reply",
       "nodeId": "send-mika-reply",
-      "role": "worker"
+      "role": "worker",
+      "transitions": [
+        {
+          "label": "input_filter_skipped",
+          "toStepId": "load-rina-chat-memory"
+        }
+      ]
+    },
+    {
+      "id": "load-rina-chat-memory",
+      "nodeId": "load-rina-chat-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "rina-cursor-sdk"
+        }
+      ]
     },
     {
       "id": "rina-cursor-sdk",

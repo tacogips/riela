@@ -71,6 +71,39 @@ private struct RecordingGeminiAddonAdapter: NodeAdapter {
   }
 }
 
+private actor RecordingSDKAddonHarness {
+  private var inputs: [AdapterExecutionInput] = []
+
+  func makeAdapter(provider: String, text: String) -> any NodeAdapter {
+    RecordingSDKAddonAdapter(harness: self, provider: provider, text: text)
+  }
+
+  func record(_ input: AdapterExecutionInput) {
+    inputs.append(input)
+  }
+
+  func recordedInputs() -> [AdapterExecutionInput] {
+    inputs
+  }
+}
+
+private struct RecordingSDKAddonAdapter: NodeAdapter {
+  let harness: RecordingSDKAddonHarness
+  let provider: String
+  let text: String
+
+  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    await harness.record(input)
+    return AdapterExecutionOutput(
+      provider: provider,
+      model: input.node.model,
+      promptText: input.promptText,
+      completionPassed: true,
+      payload: ["text": .string(text)]
+    )
+  }
+}
+
 private final class JSONLWriterProbe: @unchecked Sendable {
   private let lock = NSLock()
   private var recordedLines: [String] = []
@@ -381,8 +414,115 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertEqual(output.when["handoff_rina"], false)
   }
 
-  func testBuiltinSDKWorkerRendersMockResponseText() async throws {
-    let output = try await BuiltinWorkflowAddonResolver(environment: [:]).execute(
+  func testBuiltinMemoryAddonsSaveLoadAndSearchWorkflowScopedRecords() async throws {
+    let root = repositoryRoot()
+    let memoryRoot = "\(root)/tmp/test-builtin-memory-addons-\(UUID().uuidString)"
+    defer {
+      try? FileManager.default.removeItem(atPath: memoryRoot)
+    }
+    let resolver = BuiltinWorkflowAddonResolver(environment: [:])
+    let saveAddon = WorkflowNodeAddonRef(
+      name: "riela/memory-save",
+      version: "1",
+      config: [
+        "memoryId": .string("chat-memory"),
+        "memoryRoot": .string(memoryRoot),
+        "nodeId": .string("chat-event"),
+        "payloadTemplate": .object([
+          "text": .string("{{event.input.text}}"),
+          "conversationId": .string("{{event.conversation.id}}")
+        ])
+      ]
+    )
+
+    let save = try await resolver.execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "telegram-sdk-trio-chat",
+        stepId: "save-chat-event-memory",
+        nodeId: "save-chat-event-memory",
+        addon: saveAddon,
+        variables: [
+          "event": .object([
+            "input": .object(["text": .string("Yui, remember the routing test")]),
+            "conversation": .object(["id": .string("chat-1")])
+          ])
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(save.payload["saved"], .bool(true))
+    XCTAssertEqual(save.payload["memoryId"], .string("chat-memory"))
+    guard
+      case let .object(savedRecord)? = save.payload["record"],
+      case let .object(savedPayload)? = savedRecord["payload"]
+    else {
+      return XCTFail("memory-save record payload was not returned")
+    }
+    XCTAssertEqual(savedPayload["text"], .string("Yui, remember the routing test"))
+    XCTAssertEqual(savedPayload["conversationId"], .string("chat-1"))
+
+    let load = try await resolver.execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "telegram-sdk-trio-chat",
+        stepId: "load-yui-chat-memory",
+        nodeId: "load-yui-chat-memory",
+        addon: WorkflowNodeAddonRef(
+          name: "riela/memory-load",
+          version: "1",
+          config: [
+            "memoryId": .string("chat-memory"),
+            "memoryRoot": .string(memoryRoot),
+            "workflowScopeOnly": .bool(true)
+          ]
+        )
+      ),
+      context: AdapterExecutionContext()
+    )
+    guard case let .array(loadedRecords)? = load.payload["records"] else {
+      return XCTFail("memory-load records were not returned")
+    }
+    XCTAssertEqual(loadedRecords.count, 1)
+    guard case let .string(loadRecordsText)? = load.payload["recordsText"] else {
+      return XCTFail("memory-load recordsText was not returned")
+    }
+    XCTAssertTrue(loadRecordsText.contains("Yui, remember the routing test"))
+
+    let search = try await resolver.execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "telegram-sdk-trio-chat",
+        stepId: "search-chat-memory",
+        nodeId: "search-chat-memory",
+        addon: WorkflowNodeAddonRef(
+          name: "riela/memory-search",
+          version: "1",
+          config: [
+            "memoryId": .string("chat-memory"),
+            "memoryRoot": .string(memoryRoot),
+            "workflowScopeOnly": .bool(true),
+            "matchPatterns": .array([.string("routing test")])
+          ]
+        )
+      ),
+      context: AdapterExecutionContext()
+    )
+    guard case let .array(searchRecords)? = search.payload["records"] else {
+      return XCTFail("memory-search records were not returned")
+    }
+    XCTAssertEqual(searchRecords.count, 1)
+    guard case let .string(searchRecordsText)? = search.payload["recordsText"] else {
+      return XCTFail("memory-search recordsText was not returned")
+    }
+    XCTAssertTrue(searchRecordsText.contains("Yui, remember the routing test"))
+  }
+
+  func testBuiltinSDKWorkerExecutesInjectedLiveAdapter() async throws {
+    let harness = RecordingSDKAddonHarness()
+    let output = try await BuiltinWorkflowAddonResolver(
+      environment: ["CURSOR_API_KEY": "cursor-secret"],
+      cursorAdapterFactory: { _ in
+        return await harness.makeAdapter(provider: "cursor-cli-agent", text: "最近はいい感じ。短く試せる形で返すね。")
+      }
+    ).execute(
       WorkflowAddonExecutionInput(
         workflowId: "telegram-sdk-trio-chat",
         stepId: "rina-cursor-sdk",
@@ -392,26 +532,33 @@ final class WorkflowCommandTests: XCTestCase {
           version: "1",
           config: [
             "model": .string("gpt-5.5"),
+            "systemPromptTemplate": .string("You are {{persona}}."),
             "promptTemplate": .string("Reply to {{event.input.text}} as {{persona}}."),
-            "mockResponseTemplate": .string("{{persona}} says {{input.text}}")
+            "mockResponseTemplate": .string("this mock must not be used")
           ]
         ),
         variables: [
           "event": .object(["input": .object(["text": .string("SDK trio")])]),
           "persona": .string("Rina")
         ],
-        resolvedInputPayload: ["text": .string("hello")]
+        resolvedInputPayload: ["text": .string("hello"), "inputFilterSkipped": .bool(true)]
       ),
       context: AdapterExecutionContext()
     )
 
-    XCTAssertEqual(output.provider, "official-cursor-sdk")
+    XCTAssertEqual(output.provider, "cursor-cli-agent")
     XCTAssertEqual(output.model, "gpt-5.5")
     XCTAssertEqual(output.promptText, "Reply to SDK trio as Rina.")
     XCTAssertEqual(output.payload["executionBackend"], .string("official/cursor-sdk"))
-    XCTAssertEqual(output.payload["text"], .string("Rina says hello"))
-    XCTAssertEqual(output.payload["replyText"], .string("Rina says hello"))
-    XCTAssertEqual(output.payload["liveExecution"], .bool(false))
+    XCTAssertEqual(output.payload["text"], .string("最近はいい感じ。短く試せる形で返すね。"))
+    XCTAssertEqual(output.payload["replyText"], .string("最近はいい感じ。短く試せる形で返すね。"))
+    XCTAssertEqual(output.payload["liveExecution"], .bool(true))
+    XCTAssertNil(output.payload["inputFilterSkipped"])
+
+    let inputs = await harness.recordedInputs()
+    let input = try XCTUnwrap(inputs.first)
+    XCTAssertEqual(input.systemPromptText, "You are Rina.")
+    XCTAssertEqual(input.mergedVariables["input"], .object(["text": .string("hello"), "inputFilterSkipped": .bool(true)]))
   }
 
   func testScenarioBackedAddonResolverUsesMockResponseBeforeFallback() async throws {
@@ -423,18 +570,20 @@ final class WorkflowCommandTests: XCTestCase {
     let output = try await resolver.execute(
       WorkflowAddonExecutionInput(
         workflowId: "telegram-sdk-trio-chat",
-        stepId: "route-message",
-        nodeId: "route-message",
-        addon: WorkflowNodeAddonRef(name: "riela/chat-persona-router", version: "1"),
+        stepId: "rina-cursor-sdk",
+        nodeId: "rina-cursor-sdk",
+        addon: WorkflowNodeAddonRef(name: "riela/cursor-sdk-worker", version: "1"),
         variables: [:]
       ),
       context: AdapterExecutionContext()
     )
 
     XCTAssertEqual(output.provider, "scenario-mock")
-    XCTAssertEqual(output.payload["target"], .string("rina"))
-    XCTAssertEqual(output.when["target_rina"], true)
-    XCTAssertEqual(output.when["target_yui"], false)
+    XCTAssertEqual(output.model, "gpt-5-nano")
+    let expectedText = "問題ない。Rina宛てのmentionなので私が返す。"
+      + "SDK版のトリオ構成では、node inputFiltersとLLM側のmention policyで担当を二重に絞っている。"
+    XCTAssertEqual(output.payload["text"], .string(expectedText))
+    XCTAssertEqual(output.when["always"], true)
   }
 
   func testBuiltinChatPersonaRouterSelectsNamedPersonas() async throws {

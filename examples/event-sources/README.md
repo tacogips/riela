@@ -3,6 +3,21 @@
 These fixtures demonstrate event source configuration outside workflow bundles.
 Use them with the existing example workflow root.
 
+Event inputs expose a common wrapper for workflow bindings:
+
+```json
+{
+  "event_source_type": "telegram-gateway",
+  "payload": {}
+}
+```
+
+The `payload` object remains source-specific. Chat-like sources normalize the
+payload to include `text`, `provider`, `actor`, `conversation`, `history`,
+`historySource`, `attachments`, `imagePaths`, and `attachmentText`. Legacy
+top-level fields such as `event.input.text` are still present for
+compatibility, but new chat bindings should prefer `event.input.payload.*`.
+
 Validate the source and binding configuration:
 
 ```bash
@@ -97,12 +112,14 @@ bot reply in the same room.
 The Matrix source fixture enables bounded room/thread history. During
 `events serve`, accepted Matrix messages are persisted as compact normalized
 history under the event data root and reloaded after restart. Workflows can read
-that context from `event.input.history` and `event.input.historySource`;
+that context from `event.input.payload.history` and
+`event.input.payload.historySource`;
 persisted files do not store Matrix access tokens or raw `/sync` payloads.
 The fixture also enables bounded text attachment downloads for text, markdown,
-and JSON files. Extracted text is appended to `event.input.text` and exposed as
-`event.input.attachmentText` plus `event.input.attachments` metadata during
-Matrix `/sync`; manual fixture emits keep attachment handling metadata-only.
+and JSON files. Extracted text is appended to the message text and exposed as
+`event.input.payload.attachmentText` plus `event.input.payload.attachments`
+metadata during Matrix `/sync`; manual fixture emits keep attachment handling
+metadata-only.
 
 The `chat-sdk-slack` and `chat-sdk-telegram` sources demonstrate the shared
 Chat SDK generic boundary.
@@ -111,8 +128,9 @@ The provider allow-list is `slack`, `teams`, `gchat`, `discord`, `telegram`,
 not import `@chat-adapter/*` packages directly; an operator-owned Chat SDK
 deployment posts normalized webhook payloads to riela and receives replies
 through the configured send endpoint. Slack and Telegram fixtures enable
-bounded conversation/thread history with the same `event.input.history` and
-`event.input.historySource` workflow contract.
+bounded conversation/thread history with the same
+`event.input.payload.history` and `event.input.payload.historySource` workflow
+contract.
 
 Serve the source with env-var references only:
 
@@ -255,8 +273,8 @@ Bot API ingestion. It is separate from the `chat-sdk-telegram` generic webhook
 path and does not require an external Chat SDK Telegram deployment. The Gateway
 runner polls Telegram `getUpdates`, filters to configured chats when `chats` is
 set, ignores bot and self messages by default, attaches bounded persisted chat
-history to `event.input.history`, and sends workflow replies through Telegram
-`sendMessage`. The paired trio workflow uses the same per-persona local
+history to `event.input.payload.history`, and sends workflow replies through
+Telegram `sendMessage`. The paired trio workflow uses the same per-persona local
 markdown memory as the Discord trio; set `RIELA_TRIO_MEMORY_ROOT` for served
 examples or use `workflowInput.memoryRoot` for one run. The default example
 root is `/tmp/riflow-tribot`.
@@ -296,7 +314,7 @@ riela events emit telegram-gateway-personas \
 ```
 
 Telegram photo handling is metadata-only in this fixture. The adapter exposes
-the largest photo size as `event.input.attachments[0]` with dimensions,
+the largest photo size as `event.input.payload.attachments[0]` with dimensions,
 provider file ids, caption, and optional `getFile` path. It does not download
 image bytes, OCR images, transcribe media, process commands, or handle inline
 keyboard callbacks in this slice. Persisted history stores only bounded

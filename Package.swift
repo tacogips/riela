@@ -9,6 +9,7 @@ let package = Package(
   ],
   products: [
     .library(name: "RielaCore", targets: ["RielaCore"]),
+    .library(name: "RielaJavaScript", targets: ["RielaJavaScript"]),
     .library(name: "RielaAddons", targets: ["RielaAddons"]),
     .library(name: "RielaAdapters", targets: ["RielaAdapters"]),
     .library(name: "RielaEvents", targets: ["RielaEvents"]),
@@ -26,8 +27,23 @@ let package = Package(
     .executable(name: "riela", targets: ["RielaCLI"]),
     .executable(name: "RielaApp", targets: ["RielaApp"])
   ],
+  dependencies: [
+    .package(path: "Packages/RielaMemory")
+  ],
   targets: [
-    .target(name: "RielaCore"),
+    .target(
+      name: "RielaJavaScript",
+      linkerSettings: [
+        .linkedFramework("JavaScriptCore")
+      ]
+    ),
+    .target(
+      name: "RielaCore",
+      dependencies: [
+        "RielaJavaScript",
+        .product(name: "RielaMemory", package: "RielaMemory")
+      ]
+    ),
     .target(name: "RielaAddons", dependencies: ["RielaCore"]),
     .target(name: "RielaEvents", dependencies: ["RielaCore"]),
     .target(name: "RielaGraphQL", dependencies: ["RielaCore"]),
@@ -49,6 +65,7 @@ let package = Package(
       name: "RielaCLI",
       dependencies: [
         "RielaCore",
+        .product(name: "RielaMemory", package: "RielaMemory"),
         "RielaAdapters",
         "RielaAddons",
         "RielaEvents",
@@ -68,7 +85,14 @@ let package = Package(
         "RielaViewer"
       ]
     ),
-    .testTarget(name: "RielaCoreTests", dependencies: ["RielaCore"]),
+    .testTarget(
+      name: "RielaCoreTests",
+      dependencies: [
+        "RielaCore",
+        .product(name: "RielaMemory", package: "RielaMemory")
+      ]
+    ),
+    .testTarget(name: "RielaJavaScriptTests", dependencies: ["RielaJavaScript"]),
     .testTarget(name: "RielaAddonsTests", dependencies: ["RielaCore", "RielaAddons"]),
     .testTarget(name: "RielaAdaptersTests", dependencies: ["RielaCore", "RielaAdapters"]),
     .testTarget(name: "RielaEventsTests", dependencies: ["RielaCore", "RielaEvents"]),

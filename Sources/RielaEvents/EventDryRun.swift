@@ -148,7 +148,7 @@ private func eventFilePath(_ envelope: ExternalEventEnvelope) -> String? {
 private func buildWorkflowInput(binding: EventBindingContract, envelope: ExternalEventEnvelope, source: EventSourceContract?) -> JSONObject {
   switch binding.inputMapping.mode {
   case .eventInput:
-    return envelope.input
+    return normalizedEventInput(envelope: envelope, source: source)
   case .template:
     let rendered = renderEventTemplateValue(
       binding.inputMapping.template ?? .object([:]),
@@ -164,7 +164,7 @@ private func buildWorkflowInput(binding: EventBindingContract, envelope: Externa
 private func buildRuntimeVariables(binding: EventBindingContract, input: JSONObject, envelope: ExternalEventEnvelope, source: EventSourceContract?) -> JSONObject {
   var runtimeVariables: JSONObject = [
     "workflowInput": .object(input),
-    "event": eventRoot(envelope),
+    "event": eventRoot(envelope, source: source),
     "eventBindingId": .string(binding.id),
     "eventMailboxBridgePolicy": mailboxBridgePolicyRoot(binding)
   ]
@@ -213,7 +213,7 @@ private func eventTemplateRoots(envelope: ExternalEventEnvelope, source: EventSo
     bindingRoot["workflowName"] = .string(workflowName)
   }
   var roots: [String: JSONValue] = [
-    "event": eventRoot(envelope),
+    "event": eventRoot(envelope, source: source),
     "binding": .object(bindingRoot)
   ]
   if let source {
@@ -222,14 +222,14 @@ private func eventTemplateRoots(envelope: ExternalEventEnvelope, source: EventSo
   return roots
 }
 
-private func eventRoot(_ envelope: ExternalEventEnvelope) -> JSONValue {
+private func eventRoot(_ envelope: ExternalEventEnvelope, source: EventSourceContract?) -> JSONValue {
   var object: JSONObject = [
     "sourceId": .string(envelope.sourceId),
     "eventId": .string(envelope.eventId),
     "provider": .string(envelope.provider.rawValue),
     "eventType": .string(envelope.eventType.rawValue),
     "receivedAt": .string(eventISO8601String(from: envelope.receivedAt)),
-    "input": .object(envelope.input),
+    "input": .object(normalizedEventInput(envelope: envelope, source: source)),
     "artifacts": .array(envelope.artifacts.map { .object(["root": .string($0.root), "path": .string($0.path)]) })
   ]
   if let dedupeKey = envelope.dedupeKey {
@@ -242,6 +242,62 @@ private func eventRoot(_ envelope: ExternalEventEnvelope) -> JSONValue {
     object["conversation"] = .object(conversation)
   }
   return .object(object)
+}
+
+private func normalizedEventInput(envelope: ExternalEventEnvelope, source: EventSourceContract?) -> JSONObject {
+  let eventSourceType = source?.kind.rawValue ?? envelope.provider.rawValue
+  var input = envelope.input
+  if input["event_source_type"] == nil {
+    input["event_source_type"] = .string(eventSourceType)
+  }
+  if input["payload"] == nil {
+    input["payload"] = .object(normalizedEventPayload(envelope: envelope, source: source))
+  }
+  return input
+}
+
+private func normalizedEventPayload(envelope: ExternalEventEnvelope, source: EventSourceContract?) -> JSONObject {
+  if isChatEvent(envelope: envelope, source: source) {
+    return normalizedChatEventPayload(envelope: envelope)
+  }
+  var payload = envelope.input
+  payload.removeValue(forKey: "event_source_type")
+  payload.removeValue(forKey: "payload")
+  return payload
+}
+
+private func isChatEvent(envelope: ExternalEventEnvelope, source: EventSourceContract?) -> Bool {
+  if envelope.eventType == .chatMessage || envelope.eventType == .message {
+    return true
+  }
+  switch source?.kind {
+  case .chatSdk, .discordGateway, .telegramGateway, .matrix:
+    return true
+  default:
+    return false
+  }
+}
+
+private func normalizedChatEventPayload(envelope: ExternalEventEnvelope) -> JSONObject {
+  var payload: JSONObject = [
+    "text": envelope.input["text"] ?? .string(""),
+    "provider": envelope.input["provider"] ?? .string(envelope.provider.rawValue),
+    "history": envelope.input["history"] ?? .array([]),
+    "historySource": envelope.input["historySource"] ?? .string(""),
+    "attachments": envelope.input["attachments"] ?? .array([]),
+    "imagePaths": envelope.input["imagePaths"] ?? .array([]),
+    "attachmentText": envelope.input["attachmentText"] ?? .string("")
+  ]
+  if let actor = envelope.actor {
+    payload["actor"] = .object(actor)
+  }
+  if let conversation = envelope.conversation {
+    payload["conversation"] = .object(conversation)
+  }
+  if let eventDataRoot = envelope.input["eventDataRoot"] {
+    payload["eventDataRoot"] = eventDataRoot
+  }
+  return payload
 }
 
 private func eventISO8601String(from date: Date) -> String {

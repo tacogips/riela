@@ -79,6 +79,9 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
     environment["RIELA_WORKFLOW_EXECUTION_ID"] = input.sessionId
     environment["RIELA_NODE_ID"] = input.nodeId
     environment["RIELA_NODE_EXEC_ID"] = "\(input.stepId)#\(input.executionIndex)"
+    if let memoryRoot = input.memoryRootDirectory {
+      environment["RIELA_MEMORY_ROOT"] = input.kind == .container ? containerMemoryRootPath : memoryRoot
+    }
     return environment
   }
 
@@ -86,6 +89,13 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
     var arguments = ["run", "--rm", "-i"]
     for key in container.environment.keys.sorted() where !strippedEnvironmentKeys.contains(key) {
       arguments += ["-e", key]
+    }
+    if let hostMemoryRoot = stringValue("memoryRoot", in: variables) {
+      try? FileManager.default.createDirectory(
+        at: URL(fileURLWithPath: hostMemoryRoot, isDirectory: true),
+        withIntermediateDirectories: true
+      )
+      arguments += ["-e", "RIELA_MEMORY_ROOT", "-v", "\(hostMemoryRoot):\(containerMemoryRootPath)"]
     }
     arguments.append(container.image)
     arguments.append(contentsOf: container.command.map { renderPromptTemplate($0, variables: variables) })
@@ -96,6 +106,9 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
     var variables = input.variables
     variables["workflowInput"] = .object(input.variables)
     variables["input"] = .object(input.resolvedInputPayload)
+    if let memoryRootDirectory = input.memoryRootDirectory {
+      variables["memoryRoot"] = .string(memoryRootDirectory)
+    }
     for (key, value) in input.resolvedInputPayload {
       variables[key] = value
     }
@@ -115,7 +128,9 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
       executionIndex: input.executionIndex,
       nodeType: input.kind.rawValue,
       variables: input.variables,
-      input: input.resolvedInputPayload
+      input: input.resolvedInputPayload,
+      memoryRootDirectory: input.memoryRootDirectory,
+      availableMemories: input.availableMemories
     )
     let data = try JSONEncoder().encode(envelope)
     guard let text = String(data: data, encoding: .utf8) else {
@@ -164,4 +179,13 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
   private var strippedEnvironmentKeys: Set<String> {
     ["RIELA_MAILBOX_DIR", "RIELA_WORKFLOW_INPUT", "RIELA_WORKFLOW_OUTPUT"]
   }
+}
+
+private let containerMemoryRootPath = "/riela/memory"
+
+private func stringValue(_ key: String, in object: JSONObject) -> String? {
+  guard case let .string(value)? = object[key], !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+    return nil
+  }
+  return value
 }

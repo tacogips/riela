@@ -670,6 +670,54 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
     }
   }
 
+  func testMemoryGuidanceUsesDeclaredNodeIdWhenStepIdDiffers() async throws {
+    let workflow = WorkflowDefinition(
+      workflowId: "memory-runner",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
+      entryStepId: "persona-step",
+      nodeRegistry: [
+        WorkflowNodeRegistryRef(
+          id: "persona-node",
+          nodeFile: "nodes/persona.json",
+          memories: [
+            WorkflowMemoryDeclaration(id: "persona-events", description: "chronological persona events")
+          ]
+        )
+      ],
+      steps: [WorkflowStepRef(id: "persona-step", nodeId: "persona-node", role: .worker)],
+      nodes: [
+        WorkflowNodeRef(
+          id: "persona-step",
+          nodeFile: "nodes/persona.json",
+          role: .worker,
+          memories: [
+            WorkflowMemoryDeclaration(id: "persona-summary", description: "summarized persona memory")
+          ]
+        )
+      ]
+    )
+    let adapter = InputCapturingAdapter()
+    let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: adapter)
+
+    _ = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: workflow,
+      nodePayloads: ["persona-node": AgentNodePayload(id: "persona-node", executionBackend: .codexAgent, model: "gpt-5.4-mini")]
+    ))
+
+    let capturedInput = await adapter.capturedInput()
+    let input = try XCTUnwrap(capturedInput)
+    XCTAssertTrue(input.systemPromptText?.contains("persona-events") == true)
+    XCTAssertTrue(input.systemPromptText?.contains("persona-summary") == true)
+    XCTAssertTrue(input.systemPromptText?.contains("--workflow-id memory-runner") == true)
+    XCTAssertTrue(input.systemPromptText?.contains("--node-id persona-node") == true)
+    guard case let .object(availableMemories)? = input.mergedVariables["availableMemories"],
+      case let .array(nodeMemories)? = availableMemories["node"]
+    else {
+      return XCTFail("expected availableMemories.node")
+    }
+    XCTAssertEqual(nodeMemories.count, 2)
+  }
+
   private func request(
     workflow: WorkflowDefinition? = nil,
     nodePayload: AgentNodePayload? = nil,

@@ -13,12 +13,15 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   private let daemonDiscovery = RielaAppDaemonWorkflowDiscovery()
   private let daemonRuntime = RielaAppDaemonWorkflowRuntime()
   private let daemonStore = RielaAppDaemonWorkflowStore()
+  private let launchAtLogin = RielaLaunchAtLoginController()
+  private let daemonStatusRefreshInterval: TimeInterval = 2
   private var selectedWorkflow: WorkflowServeSelection?
   private var selectedWorkingDirectory = FileManager.default.currentDirectoryPath
   private var selectedSessionStoreRoot: String?
   private var status = "Stopped"
   private var daemonState = RielaAppDaemonWorkflowState()
   private var daemonCandidates: [RielaAppDaemonWorkflowCandidate] = []
+  private var daemonStatusRefreshTimer: Timer?
   private var daemonWindowController: DaemonWorkflowWindowController?
   private var viewerWindowController: WorkflowViewerWindowController?
 
@@ -36,8 +39,18 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     logDaemon("discovered \(daemonCandidates.count) user daemon workflow candidate(s)")
     configureStatusItem()
     rebuildMenu()
+    startDaemonStatusRefreshTimer()
     openInitialViewerIfRequested()
-    autostartDaemonWorkflows()
+    if shouldAutostartDaemonWorkflows() {
+      autostartDaemonWorkflows()
+    } else {
+      logDaemon("daemon workflow autostart disabled by command-line option")
+    }
+  }
+
+  func applicationWillTerminate(_ notification: Notification) {
+    daemonStatusRefreshTimer?.invalidate()
+    daemonStatusRefreshTimer = nil
   }
 
   private func configureStatusItem() {
@@ -60,6 +73,11 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     menu.addItem(menuItem("Restart", action: #selector(restartWorkflow)))
     menu.addItem(menuItem("Update", action: #selector(updateWorkflow)))
     menu.addItem(menuItem("Open Viewer", action: #selector(openViewer), enabled: selectedWorkflow?.path != nil))
+    menu.addItem(.separator())
+    let launchAtLoginItem = menuItem("Launch on Login", action: #selector(toggleLaunchAtLogin))
+    launchAtLoginItem.state = launchAtLogin.isEnabled ? .on : .off
+    menu.addItem(launchAtLoginItem)
+    menu.addItem(NSMenuItem(title: "Launch on Login: \(launchAtLogin.statusDescription)", action: nil, keyEquivalent: ""))
     menu.addItem(.separator())
     menu.addItem(NSMenuItem(title: "Status: \(status)", action: nil, keyEquivalent: ""))
     menu.addItem(NSMenuItem(title: "Daemon Workflows: \(daemonSummary())", action: nil, keyEquivalent: ""))
@@ -111,6 +129,17 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     refreshDaemonWorkflowWindow()
     daemonWindowController?.showWindow(nil)
     NSApp.activate(ignoringOtherApps: true)
+  }
+
+  private func startDaemonStatusRefreshTimer() {
+    daemonStatusRefreshTimer?.invalidate()
+    let timer = Timer(timeInterval: daemonStatusRefreshInterval, repeats: true) { [weak self] _ in
+      Task { @MainActor [weak self] in
+        self?.refreshDaemonWorkflowWindow()
+      }
+    }
+    RunLoop.main.add(timer, forMode: .common)
+    daemonStatusRefreshTimer = timer
   }
 
   @objc private func serveWorkflow() {
@@ -193,6 +222,20 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     status = "Selected"
     rebuildMenu()
     openViewer()
+  }
+
+  @objc private func toggleLaunchAtLogin() {
+    do {
+      try launchAtLogin.setEnabled(!launchAtLogin.isEnabled)
+      status = "Launch on Login: \(launchAtLogin.statusDescription)"
+    } catch {
+      status = "Failed to update Launch on Login: \(error.localizedDescription)"
+    }
+    rebuildMenu()
+  }
+
+  private func shouldAutostartDaemonWorkflows() -> Bool {
+    !CommandLine.arguments.dropFirst().contains("--no-autostart-daemons")
   }
 
   private func autostartDaemonWorkflows() {

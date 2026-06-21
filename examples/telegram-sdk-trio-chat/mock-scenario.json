@@ -1,25 +1,23 @@
 {
-  "route-message": {
+  "yui-codex-sdk": {
     "provider": "scenario-mock",
-    "model": "router",
-    "when": {
-      "target_yui": false,
-      "target_mika": false,
-      "target_rina": true
-    },
+    "model": "gpt-5-nano",
     "payload": {
-      "target": "rina",
-      "reason": "The user explicitly called Rina.",
-      "target_yui": false,
-      "target_mika": false,
-      "target_rina": true
+      "text": "Yuiです。要点を短く整理しますね。"
+    }
+  },
+  "mika-claude-sdk": {
+    "provider": "scenario-mock",
+    "model": "gpt-5-nano",
+    "payload": {
+      "text": "Mikaだよ。まずは軽く整理して、すぐ動ける形にするね。"
     }
   },
   "rina-cursor-sdk": {
     "provider": "scenario-mock",
-    "model": "gpt-5.5",
+    "model": "gpt-5-nano",
     "payload": {
-      "text": "Rinaです。SDK版のトリオ構成なら、Telegram入力をルーターで分けて、各SDK workerが本文だけ返し、最後にchat-reply-workerで送る形が一番シンプルです。"
+      "text": "問題ない。直前の流れを見る限り、Mikaの答えは文脈に沿っている。"
     }
   }
 }

@@ -9,12 +9,12 @@
   "inputMapping": {
     "mode": "template",
     "template": {
-      "request": "{{event.input.text}}",
-      "provider": "{{event.input.provider}}",
+      "request": "{{event.input.payload.text}}",
+      "provider": "{{event.input.payload.provider}}",
       "conversationId": "{{event.conversation.id}}",
       "threadId": "{{event.conversation.threadId}}",
-      "history": "{{event.input.history}}",
-      "historySource": "{{event.input.historySource}}"
+      "history": "{{event.input.payload.history}}",
+      "historySource": "{{event.input.payload.historySource}}"
     },
     "mirrorToHumanInput": true
   },

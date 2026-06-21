@@ -69,6 +69,8 @@ public struct FileWorkflowRuntimePersistenceStore: Sendable {
     encoder.dateEncodingStrategy = .iso8601
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     try encoder.encode(snapshot).write(to: directory.appendingPathComponent("runtime-snapshot.json"), options: .atomic)
+    try SQLiteWorkflowMessageLog(databasePath: SQLiteWorkflowMessageLog.defaultDatabasePath(rootDirectory: rootDirectory))
+      .replaceMessages(for: snapshot.session.sessionId, with: snapshot.workflowMessages)
   }
 
   public func load(sessionId: String) throws -> WorkflowRuntimePersistenceSnapshot {

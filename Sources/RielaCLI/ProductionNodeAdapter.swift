@@ -4,6 +4,7 @@ import CursorCLIAgent
 import Foundation
 import RielaAdapters
 import RielaCore
+import RielaMemory
 
 func makeProductionNodeAdapter() -> any NodeAdapter {
   DispatchingNodeAdapter(
@@ -136,6 +137,9 @@ actor ScenarioWorkflowAddonResolver: WorkflowAddonResolving {
 }
 
 typealias GeminiAddonAdapterFactory = @Sendable (OfficialSDKAdapterConfiguration) async throws -> any NodeAdapter
+typealias OpenAIAddonAdapterFactory = @Sendable (OfficialSDKAdapterConfiguration) async throws -> any NodeAdapter
+typealias AnthropicAddonAdapterFactory = @Sendable (AnthropicSDKAdapterConfiguration) async throws -> any NodeAdapter
+typealias CursorAddonAdapterFactory = @Sendable ([String: String]) async throws -> any NodeAdapter
 
 private enum BuiltinSDKWorker: String {
   case codex = "riela/codex-sdk-worker"
@@ -167,15 +171,30 @@ private enum BuiltinSDKWorker: String {
 
 struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
   var environment: [String: String]
+  var openAIAdapterFactory: OpenAIAddonAdapterFactory
+  var anthropicAdapterFactory: AnthropicAddonAdapterFactory
+  var cursorAdapterFactory: CursorAddonAdapterFactory
   var geminiAdapterFactory: GeminiAddonAdapterFactory
 
   init(
     environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
+    openAIAdapterFactory: @escaping OpenAIAddonAdapterFactory = { configuration in
+      OpenAiSDKAdapter(configuration: configuration)
+    },
+    anthropicAdapterFactory: @escaping AnthropicAddonAdapterFactory = { configuration in
+      AnthropicSDKAdapter(configuration: configuration)
+    },
+    cursorAdapterFactory: @escaping CursorAddonAdapterFactory = { environment in
+      CursorCLIAgentAdapter(environment: environment)
+    },
     geminiAdapterFactory: @escaping GeminiAddonAdapterFactory = { configuration in
       GeminiSDKAdapter(configuration: configuration)
     }
   ) {
     self.environment = environment
+    self.openAIAdapterFactory = openAIAdapterFactory
+    self.anthropicAdapterFactory = anthropicAdapterFactory
+    self.cursorAdapterFactory = cursorAdapterFactory
     self.geminiAdapterFactory = geminiAdapterFactory
   }
 
@@ -187,13 +206,16 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       return try await executeGeminiSDKWorker(input, context: context)
     }
     if let sdkWorker = BuiltinSDKWorker(rawValue: input.addon.name) {
-      return try executeSDKWorker(input, sdkWorker: sdkWorker)
+      return try await executeSDKWorker(input, sdkWorker: sdkWorker, context: context)
     }
     if input.addon.name == "riela/chat-persona-router" {
       return executeChatPersonaRouter(input)
     }
     if input.addon.name == "riela/chat-reply-worker" {
       return try executeChatReplyWorker(input)
+    }
+    if let memoryAddon = BuiltinMemoryAddon(rawValue: input.addon.name) {
+      return try executeMemoryAddon(input, operation: memoryAddon)
     }
     return AdapterExecutionOutput(
       provider: "riela-builtin-addon",
@@ -210,8 +232,9 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
 
   private func executeSDKWorker(
     _ input: WorkflowAddonExecutionInput,
-    sdkWorker: BuiltinSDKWorker
-  ) throws -> AdapterExecutionOutput {
+    sdkWorker: BuiltinSDKWorker,
+    context: AdapterExecutionContext
+  ) async throws -> AdapterExecutionOutput {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
     }
@@ -225,31 +248,73 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
 
     let variables = addonVariables(for: input)
     let promptText = renderPromptTemplate(promptTemplate, variables: variables)
-    let textTemplate = nonEmptyString(config["mockResponseTemplate"])
-      ?? nonEmptyString(config["dryRunTextTemplate"])
-    let text = (textTemplate.map { renderPromptTemplate($0, variables: variables) }
-      ?? "\(input.stepId) completed without live SDK execution.")
+    let systemPromptText = nonEmptyString(config["systemPromptTemplate"]).map {
+      renderPromptTemplate($0, variables: variables)
+    }
+    let resolvedEnvironment = try resolveAddonEnvironmentOverlay(input.addon.env, runtimeEnvironment: environment)
+    let adapterInput = AdapterExecutionInput(
+      node: AgentNodePayload(
+        id: input.nodeId,
+        nodeType: .addon,
+        executionBackend: sdkWorker.executionBackend,
+        model: model,
+        variables: objectValue(config["variables"]) ?? [:]
+      ),
+      promptText: promptText,
+      systemPromptText: systemPromptText,
+      arguments: input.variables,
+      mergedVariables: variables
+    )
+    let adapter = try await sdkAdapter(for: sdkWorker, config: config, environment: resolvedEnvironment)
+    let output = try await adapter.execute(adapterInput, context: context)
+    let text = (nonEmptyString(output.payload["text"]) ?? nonEmptyString(output.payload["replyText"]) ?? "")
       .trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else {
-      throw AdapterExecutionError(.invalidOutput, "\(input.addon.name) rendered empty mock response text")
+      throw AdapterExecutionError(.invalidOutput, "\(input.addon.name) returned empty reply text")
     }
 
-    var payload = input.resolvedInputPayload
+    var payload = output.payload
     payload["status"] = .string("ok")
     payload["addon"] = .string(input.addon.name)
     payload["stepId"] = .string(input.stepId)
     payload["executionBackend"] = .string(sdkWorker.executionBackend.rawValue)
     payload["text"] = .string(text)
     payload["replyText"] = .string(text)
-    payload["liveExecution"] = .bool(false)
+    payload["liveExecution"] = .bool(true)
+    payload.removeValue(forKey: "inputFilterSkipped")
 
     return AdapterExecutionOutput(
-      provider: sdkWorker.provider,
-      model: model,
-      promptText: promptText,
-      completionPassed: true,
+      provider: output.provider,
+      model: output.model,
+      promptText: output.promptText,
+      completionPassed: output.completionPassed,
+      when: output.when,
       payload: payload
     )
+  }
+
+  private func sdkAdapter(
+    for sdkWorker: BuiltinSDKWorker,
+    config: JSONObject,
+    environment: [String: String]
+  ) async throws -> any NodeAdapter {
+    let officialConfiguration = OfficialSDKAdapterConfiguration(
+      apiKeyEnv: nonEmptyString(config["apiKeyEnv"]),
+      baseURL: nonEmptyString(config["baseURL"]).flatMap(URL.init(string:)),
+      environment: environment
+    )
+    switch sdkWorker {
+    case .codex:
+      return try await openAIAdapterFactory(officialConfiguration)
+    case .claude:
+      let maxTokens = intValue(config["maxTokens"]) ?? 1024
+      return try await anthropicAdapterFactory(AnthropicSDKAdapterConfiguration(
+        officialSDK: officialConfiguration,
+        maxTokens: maxTokens
+      ))
+    case .cursor:
+      return try await cursorAdapterFactory(environment)
+    }
   }
 
   private func executeChatPersonaRouter(_ input: WorkflowAddonExecutionInput) -> AdapterExecutionOutput {
@@ -391,6 +456,87 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     )
   }
 
+  private func executeMemoryAddon(
+    _ input: WorkflowAddonExecutionInput,
+    operation: BuiltinMemoryAddon
+  ) throws -> AdapterExecutionOutput {
+    guard input.addon.version == nil || input.addon.version == "1" else {
+      throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
+    }
+
+    let config = input.addon.config ?? [:]
+    let variables = addonVariables(for: input)
+    let memoryId = nonEmptyString(config["memoryId"]) ?? nonEmptyString(variables["memoryId"]) ?? "chat-memory"
+    let nodeId = nonEmptyString(config["nodeId"]) ?? nonEmptyString(variables["memoryNodeId"]) ?? input.nodeId
+    let limit = intValue(config["limit"]) ?? intValue(variables["limit"]) ?? 30
+    let memoryRoot = nonEmptyString(config["memoryRoot"]) ?? nonEmptyString(variables["memoryRoot"])
+    let store = RielaMemoryStore(
+      rootDirectory: memoryRoot ?? RielaMemoryStore.defaultRootDirectory()
+    )
+
+    switch operation {
+    case .save:
+      let payload = try memoryPayload(config: config, variables: variables, input: input)
+      let record = try store.save(
+        memoryId: memoryId,
+        workflowId: input.workflowId,
+        nodeId: nodeId,
+        payload: payload
+      )
+      return memoryAddonOutput(
+        input: input,
+        operation: operation,
+        memoryId: memoryId,
+        databasePath: try store.databasePath(memoryId: memoryId),
+        payload: [
+          "saved": .bool(true),
+          "record": memoryRecordJSON(record)
+        ]
+      )
+    case .load:
+      let records = try store.load(
+        memoryId: memoryId,
+        workflowId: input.workflowId,
+        nodeId: optionalNodeScope(config: config, variables: variables),
+        limit: limit
+      )
+      return memoryAddonOutput(
+        input: input,
+        operation: operation,
+        memoryId: memoryId,
+        databasePath: try store.databasePath(memoryId: memoryId),
+        payload: [
+          "records": .array(records.map(memoryRecordJSON)),
+          "recordsText": .string(memoryRecordsText(records)),
+          "limit": .number(Double(limit))
+        ]
+      )
+    case .search:
+      let patterns = memoryMatchPatterns(config: config, variables: variables)
+      let records = try store.search(
+        memoryId: memoryId,
+        options: MemorySearchOptions(
+          workflowId: input.workflowId,
+          nodeId: optionalNodeScope(config: config, variables: variables),
+          matchPatterns: patterns,
+          limit: limit
+        )
+      )
+      return memoryAddonOutput(
+        input: input,
+        operation: operation,
+        memoryId: memoryId,
+        databasePath: try store.databasePath(memoryId: memoryId),
+        payload: [
+          "records": .array(records.map(memoryRecordJSON)),
+          "recordsText": .string(memoryRecordsText(records)),
+          "matchPatterns": .array(patterns.map { .string($0) }),
+          "limit": .number(Double(limit))
+        ]
+      )
+    }
+  }
+
   private func executeGeminiSDKWorker(
     _ input: WorkflowAddonExecutionInput,
     context: AdapterExecutionContext
@@ -444,6 +590,12 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
   }
 }
 
+private enum BuiltinMemoryAddon: String {
+  case save = "riela/memory-save"
+  case load = "riela/memory-load"
+  case search = "riela/memory-search"
+}
+
 private func addonVariables(for input: WorkflowAddonExecutionInput) -> JSONObject {
   var variables = input.variables
   for (key, value) in input.resolvedInputPayload {
@@ -494,6 +646,34 @@ private func resolveAddonEnvironment(
   return resolved
 }
 
+private func resolveAddonEnvironmentOverlay(
+  _ env: JSONObject?,
+  runtimeEnvironment: [String: String]
+) throws -> [String: String] {
+  var resolved = runtimeEnvironment
+  guard let env else {
+    return resolved
+  }
+  for (targetName, bindingValue) in env {
+    guard case let .object(binding) = bindingValue else {
+      throw AdapterExecutionError(.policyBlocked, "addon.env.\(targetName) must be an object")
+    }
+    guard let sourceName = nonEmptyString(binding["fromEnv"]) else {
+      throw AdapterExecutionError(.policyBlocked, "addon.env.\(targetName).fromEnv is required")
+    }
+    let required = boolValue(binding["required"]) ?? true
+    guard let value = runtimeEnvironment[sourceName], !value.isEmpty else {
+      if required {
+        throw AdapterExecutionError(.policyBlocked, "required environment variable '\(sourceName)' is unavailable for addon.env.\(targetName)")
+      }
+      resolved.removeValue(forKey: targetName)
+      continue
+    }
+    resolved[targetName] = value
+  }
+  return resolved
+}
+
 private func renderAddonInputs(_ inputs: JSONObject?, variables: JSONObject) -> JSONObject {
   guard let inputs else {
     return [:]
@@ -507,6 +687,19 @@ private func renderAddonInputs(_ inputs: JSONObject?, variables: JSONObject) -> 
     }
   }
   return rendered
+}
+
+private func renderJSONTemplates(_ value: JSONValue, variables: JSONObject) -> JSONValue {
+  switch value {
+  case let .string(template):
+    return .string(renderPromptTemplate(template, variables: variables))
+  case let .array(values):
+    return .array(values.map { renderJSONTemplates($0, variables: variables) })
+  case let .object(object):
+    return .object(object.mapValues { renderJSONTemplates($0, variables: variables) })
+  case .null, .bool, .number:
+    return value
+  }
 }
 
 private func nonEmptyString(_ value: JSONValue?) -> String? {
@@ -523,9 +716,230 @@ private func boolValue(_ value: JSONValue?) -> Bool? {
   return value
 }
 
+private func intValue(_ value: JSONValue?) -> Int? {
+  guard case let .number(value) = value else {
+    return nil
+  }
+  return Int(value)
+}
+
+private func optionalNodeScope(config: JSONObject, variables: JSONObject) -> String? {
+  if boolValue(config["workflowScopeOnly"]) == true || boolValue(variables["workflowScopeOnly"]) == true {
+    return nil
+  }
+  return nonEmptyString(config["nodeScope"]) ?? nonEmptyString(variables["nodeScope"])
+}
+
+private func memoryPayload(
+  config: JSONObject,
+  variables: JSONObject,
+  input: WorkflowAddonExecutionInput
+) throws -> MemoryJSONValue {
+  if let payloadTemplate = config["payloadTemplate"] ?? variables["payloadTemplate"] {
+    let rendered = renderJSONTemplates(payloadTemplate, variables: variables)
+    return try memoryJSONValue(from: rendered)
+  }
+
+  if let payload = config["payload"] ?? variables["payload"] {
+    return try memoryJSONValue(from: payload)
+  }
+
+  let payloadSource = nonEmptyString(config["payloadSource"]) ?? nonEmptyString(variables["payloadSource"]) ?? "input"
+  switch payloadSource {
+  case "event":
+    if let event = variables["event"] {
+      return try memoryJSONValue(from: event)
+    }
+    return .object([:])
+  case "variables":
+    return try memoryJSONValue(from: .object(variables))
+  case "resolvedInput", "input":
+    return try memoryJSONValue(from: .object(input.resolvedInputPayload))
+  default:
+    throw AdapterExecutionError(.policyBlocked, "unsupported memory payloadSource '\(payloadSource)'")
+  }
+}
+
+private func memoryMatchPatterns(config: JSONObject, variables: JSONObject) -> [String] {
+  if let configured = stringArrayValue(config["matchPatterns"]) {
+    return configured
+  }
+  if let variablePatterns = stringArrayValue(variables["matchPatterns"]) {
+    return variablePatterns
+  }
+  if let singlePattern = nonEmptyString(config["match"]) ?? nonEmptyString(variables["match"]) {
+    return [singlePattern]
+  }
+  return []
+}
+
+private func stringArrayValue(_ value: JSONValue?) -> [String]? {
+  guard case let .array(values) = value else {
+    return nil
+  }
+  return values.compactMap(nonEmptyString)
+}
+
+private func memoryAddonOutput(
+  input: WorkflowAddonExecutionInput,
+  operation: BuiltinMemoryAddon,
+  memoryId: String,
+  databasePath: String,
+  payload extraPayload: JSONObject
+) -> AdapterExecutionOutput {
+  var payload: JSONObject = [
+    "status": .string("ok"),
+    "addon": .string(input.addon.name),
+    "operation": .string(operation.rawValue.replacingOccurrences(of: "riela/memory-", with: "")),
+    "stepId": .string(input.stepId),
+    "memoryId": .string(memoryId),
+    "databasePath": .string(databasePath)
+  ]
+  for (key, value) in extraPayload {
+    payload[key] = value
+  }
+  return AdapterExecutionOutput(
+    provider: "riela-builtin-addon",
+    model: input.addon.name,
+    promptText: "",
+    completionPassed: true,
+    payload: payload
+  )
+}
+
+private func memoryRecordJSON(_ record: MemoryRecord) -> JSONValue {
+  .object([
+    "recordId": .number(Double(record.recordId)),
+    "memoryId": .string(record.memoryId),
+    "workflowId": .string(record.workflowId),
+    "nodeId": record.nodeId.map { .string($0) } ?? .null,
+    "registeredAt": .string(record.registeredAt),
+    "payload": jsonValue(from: record.payload)
+  ])
+}
+
+private func memoryRecordsText(_ records: [MemoryRecord]) -> String {
+  records
+    .map { record in
+      let text = memoryPayloadText(record.payload, depth: 0).truncatedForMemoryPrompt()
+      let prefix = "#\(record.recordId) \(record.registeredAt)"
+      if let nodeId = record.nodeId, !nodeId.isEmpty {
+        return "\(prefix) [\(nodeId)] \(text)"
+      }
+      return "\(prefix) \(text)"
+    }
+    .joined(separator: "\n")
+}
+
+private func memoryPayloadText(_ value: MemoryJSONValue, depth: Int) -> String {
+  if depth >= 4 {
+    return compactMemoryJSON(value, maxLength: 300)
+  }
+  switch value {
+  case .null:
+    return "null"
+  case let .bool(value):
+    return value ? "true" : "false"
+  case let .number(value):
+    return String(value)
+  case let .string(value):
+    return value
+  case let .array(values):
+    return values.prefix(5).map { memoryPayloadText($0, depth: depth + 1) }.joined(separator: "; ")
+  case let .object(object):
+    for path in preferredMemorySummaryPaths {
+      if let value = memoryValue(at: path, in: object) {
+        let text = memoryPayloadText(value, depth: depth + 1)
+        if !text.isEmpty {
+          return text
+        }
+      }
+    }
+    return compactMemoryJSON(.object(object), maxLength: 500)
+  }
+}
+
+private let preferredMemorySummaryPaths: [[String]] = [
+  ["text"],
+  ["replyText"],
+  ["message"],
+  ["input", "text"],
+  ["payload", "text"],
+  ["payload", "replyText"],
+  ["payload", "event", "input", "text"],
+  ["event", "input", "text"]
+]
+
+private func memoryValue(at path: [String], in object: [String: MemoryJSONValue]) -> MemoryJSONValue? {
+  guard let first = path.first, let value = object[first] else {
+    return nil
+  }
+  if path.count == 1 {
+    return value
+  }
+  guard case let .object(nested) = value else {
+    return nil
+  }
+  return memoryValue(at: Array(path.dropFirst()), in: nested)
+}
+
+private func compactMemoryJSON(_ value: MemoryJSONValue, maxLength: Int) -> String {
+  jsonValue(from: value).compactJSONStringOrEmpty().truncatedForMemoryPrompt(maxLength)
+}
+
+private func memoryJSONValue(from value: JSONValue) throws -> MemoryJSONValue {
+  switch value {
+  case .null:
+    return .null
+  case let .bool(value):
+    return .bool(value)
+  case let .number(value):
+    return .number(value)
+  case let .string(value):
+    return .string(value)
+  case let .array(values):
+    return .array(try values.map(memoryJSONValue))
+  case let .object(values):
+    return .object(try values.mapValues(memoryJSONValue))
+  }
+}
+
+private func jsonValue(from value: MemoryJSONValue) -> JSONValue {
+  switch value {
+  case .null:
+    return .null
+  case let .bool(value):
+    return .bool(value)
+  case let .number(value):
+    return .number(value)
+  case let .string(value):
+    return .string(value)
+  case let .array(values):
+    return .array(values.map(jsonValue))
+  case let .object(values):
+    return .object(values.mapValues(jsonValue))
+  }
+}
+
 private func objectValue(_ value: JSONValue?) -> JSONObject? {
   guard case let .object(object) = value else {
     return nil
   }
   return object
+}
+
+private extension JSONValue {
+  func compactJSONStringOrEmpty() -> String {
+    (try? compactJSONString()) ?? ""
+  }
+}
+
+private extension String {
+  func truncatedForMemoryPrompt(_ maxLength: Int = 500) -> String {
+    guard count > maxLength else {
+      return self
+    }
+    let endIndex = index(startIndex, offsetBy: maxLength)
+    return String(self[..<endIndex]) + "..."
+  }
 }

@@ -385,7 +385,9 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
       session.status = .failed
     case .completed where input.acceptedOutput?.isRootOutput == true || input.completesRootWithoutOutput:
       session.status = .completed
-    case .completed, .running:
+    case .skipped where input.completesRootWithoutOutput:
+      session.status = .completed
+    case .completed, .running, .skipped:
       session.status = .running
     }
     sessions[input.sessionId] = session

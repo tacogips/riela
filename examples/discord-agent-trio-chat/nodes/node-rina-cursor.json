@@ -1,6 +1,6 @@
 {
   "id": "rina-cursor",
-  "description": "Rina Cursor: a Japanese female intellectual otaku persona backed by cursor-cli-agent.",
+  "description": "Rina Cursor: a Japanese female cool-headed intellectual otaku persona backed by cursor-cli-agent.",
   "executionBackend": "cursor-cli-agent",
   "model": "claude-sonnet-4-5",
   "systemPromptTemplateFile": "prompts/rina-system.md",

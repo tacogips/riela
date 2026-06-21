@@ -12,7 +12,7 @@
     "codexAdditionalArgs": [
       "--ignore-rules"
     ],
-    "peerSummary": "Mika Trend is a gyaru entertainment and trend expert backed by claude-code-agent. Rina Cursor is an intellectual otaku and technical analyst.",
+    "peerSummary": "Mika Trend is a gyaru entertainment and trend expert backed by claude-code-agent. Rina Cursor is a cool-headed intellectual otaku and technical analyst.",
     "personaId": "yui",
     "memoryRoot": "{{workflowInput.memoryRoot}}"
   },

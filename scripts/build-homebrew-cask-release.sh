@@ -13,7 +13,7 @@ Targets:
   darwin-arm64  darwin-x64
 
 Required environment for real builds:
-  APPLE_SIGNING_IDENTITY  Developer ID Application identity for the CLI executable.
+  APPLE_SIGNING_IDENTITY  Developer ID Application identity for RielaApp and the CLI executable.
   APPLE_ID                Apple ID email for notarization.
   APPLE_PASSWORD          Apple app-specific password for notarization.
   APPLE_TEAM_ID           Apple Developer Team ID for notarization.
@@ -24,6 +24,7 @@ Optional environment:
   RIELA_SWIFT               Swift executable. Defaults to Xcode's Swift toolchain.
   RIELA_SWIFT_DEVELOPER_DIR Defaults to /Applications/Xcode.app/Contents/Developer.
   RIELA_SWIFT_SDKROOT       Defaults to Xcode's macOS SDK path.
+  RIELA_APP_BUNDLE_ID       Defaults to com.tacogips.riela.menubar.
   RIELA_NOTARYTOOL          Defaults to Xcode's notarytool.
   RIELA_STAPLER             Defaults to Xcode's stapler.
 
@@ -32,8 +33,9 @@ Examples:
   kinko exec --env APPLE_SIGNING_IDENTITY,APPLE_ID,APPLE_PASSWORD,APPLE_TEAM_ID -- \
     scripts/build-homebrew-cask-release.sh darwin-arm64 darwin-x64
 
-This builder stages signed, notarized, and stapled macOS .dmg artifacts for a
-Homebrew Cask. It does not publish release assets, mutate a tap, or push commits.
+This builder stages signed, notarized, and stapled macOS .dmg artifacts for the
+Homebrew Cask. Each DMG contains RielaApp.app and the riela CLI. It does not
+publish release assets, mutate a tap, or push commits.
 EOF
 }
 
@@ -87,6 +89,26 @@ validate_version() {
     printf 'expected archive-safe semver-like value without path separators or parent traversal\n' >&2
     return 1
   fi
+}
+
+validate_bundle_id() {
+  local bundle_id part
+  local -a parts
+  bundle_id="$1"
+
+  if [[ "$bundle_id" != *.* ]]; then
+    printf 'unsafe RielaApp bundle identifier: %s\n' "$bundle_id" >&2
+    printf 'expected reverse-DNS identifier using letters, numbers, dots, or hyphens\n' >&2
+    return 1
+  fi
+  IFS='.' read -r -a parts <<< "$bundle_id"
+  for part in "${parts[@]}"; do
+    if [[ ! "$part" =~ ^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$ ]]; then
+      printf 'unsafe RielaApp bundle identifier: %s\n' "$bundle_id" >&2
+      printf 'expected reverse-DNS identifier using letters, numbers, dots, or hyphens\n' >&2
+      return 1
+    fi
+  done
 }
 
 absolute_path() {
@@ -170,8 +192,9 @@ package_version() {
 }
 
 swift_release_bin_path() {
-  local target swift_bin developer_dir sdkroot triple
+  local target product swift_bin developer_dir sdkroot triple
   target="$1"
+  product="$2"
   swift_bin="${RIELA_SWIFT:-/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift}"
   developer_dir="${RIELA_SWIFT_DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
   sdkroot="${RIELA_SWIFT_SDKROOT:-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk}"
@@ -180,9 +203,9 @@ swift_release_bin_path() {
   (
     cd "$repo_root"
     DEVELOPER_DIR="$developer_dir" SDKROOT="$sdkroot" \
-      "$swift_bin" build -c release --product riela --triple "$triple" >/dev/null
+      "$swift_bin" build -c release --product "$product" --triple "$triple" >/dev/null
     DEVELOPER_DIR="$developer_dir" SDKROOT="$sdkroot" \
-      "$swift_bin" build -c release --product riela --triple "$triple" --show-bin-path
+      "$swift_bin" build -c release --product "$product" --triple "$triple" --show-bin-path
   )
 }
 
@@ -192,14 +215,65 @@ assert_codesigning_identity() {
   security find-identity -v -p codesigning | grep -F -- "$identity" >/dev/null
 }
 
+bundle_short_version() {
+  printf '%s\n' "${1%%[-+]*}"
+}
+
+write_riela_app_bundle() {
+  local bundle_root source_executable version bundle_id contents_dir macos_dir
+  bundle_root="$1"
+  source_executable="$2"
+  version="$3"
+  bundle_id="${RIELA_APP_BUNDLE_ID:-com.tacogips.riela.menubar}"
+  contents_dir="$bundle_root/Contents"
+  macos_dir="$contents_dir/MacOS"
+
+  rm -rf "$bundle_root"
+  mkdir -p "$macos_dir"
+  cp "$source_executable" "$macos_dir/RielaApp"
+  chmod 0755 "$macos_dir/RielaApp"
+
+  cat > "$contents_dir/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleDisplayName</key>
+  <string>RielaApp</string>
+  <key>CFBundleExecutable</key>
+  <string>RielaApp</string>
+  <key>CFBundleIdentifier</key>
+  <string>$bundle_id</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>RielaApp</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>$(bundle_short_version "$version")</string>
+  <key>CFBundleVersion</key>
+  <string>$(bundle_short_version "$version")</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>14.0</string>
+  <key>LSUIElement</key>
+  <true/>
+</dict>
+</plist>
+PLIST
+}
+
 print_plan() {
-  local version target release_dir work_dir dmg_path staged_binary triple install_prefix
+  local version target release_dir work_dir dmg_path staged_binary staged_app triple install_prefix
   version="$1"
   target="$2"
   release_dir="$3"
   work_dir="$release_dir/work/riela-$version-$target"
   dmg_path="$release_dir/riela-$version-$target.dmg"
   staged_binary="$work_dir/riela"
+  staged_app="$work_dir/RielaApp.app"
   triple="$(swift_triple_for_target "$target")"
   install_prefix="$(install_prefix_for_target "$target")"
 
@@ -208,9 +282,11 @@ print_plan() {
 
   printf 'Swift Homebrew Cask DMG plan\n'
   printf '  product: riela\n'
+  printf '  app product: RielaApp\n'
   printf '  target: %s\n' "$target"
   printf '  swift triple: %s\n' "$triple"
   printf '  cask install prefix: %s\n' "$install_prefix"
+  printf '  staged signed app: %s\n' "$staged_app"
   printf '  staged signed binary: %s\n' "$staged_binary"
   printf '  notarized DMG: %s\n' "$dmg_path"
   printf '  checksum: %s.sha256\n' "$dmg_path"
@@ -219,13 +295,14 @@ print_plan() {
 }
 
 build_target() {
-  local version target release_dir work_dir dmg_path staged_binary bin_path notarytool stapler
+  local version target release_dir work_dir dmg_path staged_binary staged_app riela_bin_path app_bin_path notarytool stapler
   version="$1"
   target="$2"
   release_dir="$3"
   work_dir="$release_dir/work/riela-$version-$target"
   dmg_path="$release_dir/riela-$version-$target.dmg"
   staged_binary="$work_dir/riela"
+  staged_app="$work_dir/RielaApp.app"
   notarytool="${RIELA_NOTARYTOOL:-/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool}"
   stapler="${RIELA_STAPLER:-/Applications/Xcode.app/Contents/Developer/usr/bin/stapler}"
 
@@ -247,12 +324,16 @@ build_target() {
   rm -rf "$work_dir" "$dmg_path" "$dmg_path.sha256"
   mkdir -p "$work_dir"
 
-  bin_path="$(swift_release_bin_path "$target" | tail -n 1)"
-  cp "$bin_path/riela" "$staged_binary"
+  riela_bin_path="$(swift_release_bin_path "$target" riela | tail -n 1)"
+  cp "$riela_bin_path/riela" "$staged_binary"
   chmod 0755 "$staged_binary"
+  app_bin_path="$(swift_release_bin_path "$target" RielaApp | tail -n 1)"
+  write_riela_app_bundle "$staged_app" "$app_bin_path/RielaApp" "$version"
 
   codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$staged_binary"
   codesign --verify --strict --verbose=2 "$staged_binary"
+  codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$staged_app"
+  codesign --verify --deep --strict --verbose=2 "$staged_app"
 
   hdiutil create -quiet -fs HFS+ -format UDZO -volname "riela" -srcfolder "$work_dir" "$dmg_path"
   codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$dmg_path"
@@ -293,6 +374,7 @@ main() {
   local version release_dir
   version="$(package_version)"
   validate_version "$version"
+  validate_bundle_id "${RIELA_APP_BUNDLE_ID:-com.tacogips.riela.menubar}"
   release_dir="$(absolute_path "${RIELA_CASK_RELEASE_DIR:-dist/homebrew-cask}")"
   validate_release_dir "$release_dir"
 

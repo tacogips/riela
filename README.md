@@ -55,14 +55,16 @@ human-readable output.
 
 ## Install
 
-Install the Homebrew formula:
+Install the Homebrew formula for the `riela` command line tool. This is the
+Linux install path, and it is also the macOS CLI-only path:
 
 ```bash
 brew tap tacogips/tap
 brew install riela
 ```
 
-Install the signed and notarized macOS Cask archive:
+On macOS, install the signed and notarized Cask archive when you want both
+`RielaApp.app` and the `riela` command line tool:
 
 ```bash
 brew tap tacogips/tap

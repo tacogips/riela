@@ -10,6 +10,7 @@ public enum WorkflowSessionStatus: String, Codable, Sendable {
 public enum WorkflowStepExecutionStatus: String, Codable, Sendable {
   case running
   case completed
+  case skipped
   case failed
 }
 

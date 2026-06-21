@@ -9,7 +9,7 @@
     "personaName": "Mika Trend",
     "shortName": "Mika",
     "backendName": "claude-code-agent",
-    "peerSummary": "Yui Codex is a refined secretary and default coordinator. Rina Cursor is an intellectual otaku and technical analyst.",
+    "peerSummary": "Yui Codex is a refined secretary and default coordinator. Rina Cursor is a cool-headed intellectual otaku and technical analyst.",
     "personaId": "mika",
     "memoryRoot": "{{workflowInput.memoryRoot}}"
   },

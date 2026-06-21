@@ -1,13 +1,15 @@
 # Homebrew Packaging
 
-`riela` Homebrew releases install a standalone Swift executable built with
-Xcode SwiftPM. The published macOS archive contains `bin/riela`. Homebrew
-does not need a runtime dependency on Bun or a separate add-on package.
+`riela` Homebrew formula releases install a standalone Swift executable. The
+published CLI archives contain `bin/riela`. Homebrew does not need a runtime
+dependency on Bun or a separate add-on package.
 
-Build release archives:
+Build release archives on matching macOS/Linux hosts or CI runners, then gather
+the resulting archives under `dist/homebrew/` before rendering the formula:
 
 ```bash
 scripts/build-homebrew-release.sh darwin-arm64 darwin-x64
+scripts/build-homebrew-release.sh linux-arm64 linux-x64
 ```
 
 The command writes archives and checksum files under `dist/homebrew/`:
@@ -15,6 +17,8 @@ The command writes archives and checksum files under `dist/homebrew/`:
 ```text
 riela-<version>-darwin-arm64.tar.gz
 riela-<version>-darwin-x64.tar.gz
+riela-<version>-linux-arm64.tar.gz
+riela-<version>-linux-x64.tar.gz
 ```
 
 Each archive contains:
@@ -30,6 +34,8 @@ Create or update the GitHub release named `v<version>` with those archives:
 gh release create "v<version>" \
   dist/homebrew/riela-<version>-darwin-arm64.tar.gz \
   dist/homebrew/riela-<version>-darwin-x64.tar.gz \
+  dist/homebrew/riela-<version>-linux-arm64.tar.gz \
+  dist/homebrew/riela-<version>-linux-x64.tar.gz \
   --repo tacogips/riela \
   --title "riela v<version>" \
   --notes ""
@@ -41,6 +47,8 @@ If the release already exists, upload or replace the assets with:
 gh release upload "v<version>" \
   dist/homebrew/riela-<version>-darwin-arm64.tar.gz \
   dist/homebrew/riela-<version>-darwin-x64.tar.gz \
+  dist/homebrew/riela-<version>-linux-arm64.tar.gz \
+  dist/homebrew/riela-<version>-linux-x64.tar.gz \
   --repo tacogips/riela \
   --clobber
 ```
@@ -78,10 +86,14 @@ brew tap tacogips/tap
 brew install riela
 ```
 
+This formula path is CLI-only on both macOS and Linux. Linux users install only
+the `riela` command; `RielaApp.app` is macOS-only and is distributed through the
+Cask path below.
+
 ## Homebrew Cask Signed Archive Releases
 
 The Cask path publishes signed, notarized, and stapled macOS DMG archives for
-users who want a Gatekeeper-trusted install path:
+users who want `RielaApp.app` and the `riela` CLI together:
 
 ```bash
 brew tap tacogips/tap
@@ -96,10 +108,12 @@ riela-<version>-darwin-arm64.dmg
 riela-<version>-darwin-x64.dmg
 ```
 
-Each DMG contains the signed `riela` executable. Homebrew Cask mounts the DMG
-and links the binary into the native Homebrew prefix for the target architecture:
+Each DMG contains the signed `RielaApp.app` bundle and the signed `riela`
+executable. Homebrew Cask mounts the DMG, installs the app bundle, and links
+the binary into the native Homebrew prefix for the target architecture:
 
 ```text
+RielaApp.app -> /Applications/RielaApp.app
 darwin-arm64 -> /opt/homebrew/bin/riela
 darwin-x64   -> /usr/local/bin/riela
 ```
@@ -186,11 +200,20 @@ brew uninstall riela
 brew untap local/riela-test
 ```
 
-Linux Homebrew archives are fail-closed for this cutover. The formula renderer
-does not read Linux checksum files and generated formulas do not reference
-stale TypeScript/Bun Linux archive URLs. Add Linux only after a reviewed Swift
-Linux build contract defines targets, archive contents, checksum evidence, and
-formula behavior.
+Smoke-test a local Cask before upload by rendering into a temporary tap that
+uses the local DMG directory as its URL base. The cask installs both
+`RielaApp.app` and `riela`; the formula remains the CLI-only path:
+
+```bash
+brew tap-new local/riela-cask-test
+tap_root="$(brew --repository local/riela-cask-test)"
+RIELA_CASK_RELEASE_BASE_URL="file://$PWD/dist/homebrew-cask" \
+  scripts/render-homebrew-cask.sh <version> "$tap_root/Casks/riela.rb"
+brew install --cask local/riela-cask-test/riela
+riela --help
+brew uninstall --cask riela
+brew untap local/riela-cask-test
+```
 
 ## Swift Readiness And Production Cutover Archives
 

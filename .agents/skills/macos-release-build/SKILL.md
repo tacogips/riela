@@ -6,8 +6,9 @@ description: Use when building, signing, notarizing, validating, publishing, or 
 # macOS Release Build Skill
 
 This skill covers the repository-specific workflow for producing macOS
-Homebrew Cask `.dmg` artifacts, validating them locally, and preparing them for
-Apple signing/notarization and GitHub release publication.
+Homebrew Cask `.dmg` artifacts that contain `RielaApp.app` and the `riela`
+CLI, validating them locally, and preparing them for Apple
+signing/notarization and GitHub release publication.
 
 ## When To Apply
 
@@ -19,14 +20,17 @@ Apply this skill when:
 - publishing or verifying Cask release artifacts
 - rendering `Casks/riela.rb` in `tacogips/homebrew-tap`
 
-Use the formula packaging flow for `brew install riela` tarball releases.
+Use the formula packaging flow for CLI-only `brew install riela` tarball
+releases. The formula is the Linux install path and the macOS CLI-only path.
+The macOS Cask is the `RielaApp.app` + `riela` CLI install path.
 
 ## Repository Facts
 
 - `scripts/build-homebrew-release.sh` builds formula tarballs under
-  `dist/homebrew/`.
+  `dist/homebrew/` for the CLI-only `riela` command on macOS and Linux.
 - `scripts/build-homebrew-cask-release.sh` builds signed and notarized Cask
-  archives under `dist/homebrew-cask/`.
+  DMGs under `dist/homebrew-cask/`; each DMG contains `RielaApp.app` and the
+  `riela` CLI.
 - `scripts/render-homebrew-cask.sh` renders `Casks/riela.rb` from archive
   checksums.
 - `scripts/release-homebrew-cask-local.sh` builds, notarizes, uploads, and
@@ -46,7 +50,7 @@ The local release path consumes these secret names:
 Meaning:
 
 - `APPLE_SIGNING_IDENTITY` is the Developer ID Application identity used to
-  sign the `riela` executable.
+  sign `RielaApp.app` and the `riela` executable.
 - `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID` support notarization.
 
 Keep certificate material and password values in the local keychain and
@@ -73,6 +77,13 @@ preparing a new release.
 
 ```bash
 task build:homebrew-cask -- --dry-run darwin-arm64 darwin-x64
+```
+
+The dry-run plan must show both a staged signed app and a staged signed binary:
+
+```text
+staged signed app: .../RielaApp.app
+staged signed binary: .../riela
 ```
 
 ### 3. Build signed, notarized, and stapled DMGs
@@ -122,9 +133,27 @@ brew tap tacogips/tap
 brew install --cask riela
 ```
 
+That Cask installs `RielaApp.app` and links `riela`. Users who want only the
+command line tool on macOS should install the formula instead:
+
+```bash
+brew tap tacogips/tap
+brew install riela
+```
+
+Linux users install only the formula:
+
+```bash
+brew tap tacogips/tap
+brew install riela
+```
+
 ## Validation Notes
 
 - A successful Swift build does not prove notarization.
 - Gatekeeper trust requires the executable signature, notarization acceptance,
   stapling, and `spctl --type open` acceptance for the DMG.
+- The Cask DMG must contain both `RielaApp.app` and `riela`; do not regress it
+  to a CLI-only Cask.
+- The formula remains CLI-only; do not add `RielaApp.app` to formula archives.
 - The Cask builder does not upload releases, mutate the tap, or push commits.

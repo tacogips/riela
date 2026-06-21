@@ -1,5 +1,9 @@
 import Foundation
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto
+#endif
 
 public struct WorkflowAddonAttachmentValue: Codable, Equatable, Sendable {
   public var id: String

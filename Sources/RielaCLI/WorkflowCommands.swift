@@ -2,6 +2,9 @@
 // CLI workflow commands aggregate parser-facing result models and command runners in one production entrypoint.
 // Splitting it requires target-boundary edits outside this worker group's owned file, so the file_length rule is not actionable here.
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import RielaAdapters
 import RielaAddons
 import RielaCore

@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 
 public enum WorkflowValidationSeverity: String, Codable, Sendable {
   case error

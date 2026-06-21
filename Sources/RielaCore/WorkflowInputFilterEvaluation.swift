@@ -108,7 +108,7 @@ public struct WorkflowInputFilterEvaluator: Sendable {
         let code: WorkflowInputFilterIssueCode = switch error {
         case .syntaxError:
           .parseError
-        case .contextCreationFailed, .exception, .nonBooleanResult:
+        case .contextCreationFailed, .unavailable, .exception, .nonBooleanResult:
           .evaluationError
         }
         issues.append(issue(code, stepId: stepId, nodeId: nodeId, filterIndex: index, message: "\(error)"))

@@ -1,8 +1,11 @@
 import Foundation
+#if canImport(JavaScriptCore)
 import JavaScriptCore
+#endif
 
 public enum JavaScriptBooleanEvaluationError: Error, Equatable, Sendable, CustomStringConvertible {
   case contextCreationFailed
+  case unavailable(String)
   case syntaxError(String)
   case exception(String)
   case nonBooleanResult(String)
@@ -11,6 +14,8 @@ public enum JavaScriptBooleanEvaluationError: Error, Equatable, Sendable, Custom
     switch self {
     case .contextCreationFailed:
       "JavaScriptCore context creation failed"
+    case let .unavailable(message):
+      message
     case let .syntaxError(message):
       "JavaScript syntax error: \(message)"
     case let .exception(message):
@@ -25,6 +30,7 @@ public struct JavaScriptCoreBooleanEvaluator: Sendable {
   public init() {}
 
   public func evaluateBoolean(expression: String, variables: [String: Any]) throws -> Bool {
+    #if canImport(JavaScriptCore)
     guard let context = JSContext() else {
       throw JavaScriptBooleanEvaluationError.contextCreationFailed
     }
@@ -52,5 +58,12 @@ public struct JavaScriptCoreBooleanEvaluator: Sendable {
       throw JavaScriptBooleanEvaluationError.nonBooleanResult(result.toString() ?? "unknown")
     }
     return result.toBool()
+    #else
+    _ = expression
+    _ = variables
+    throw JavaScriptBooleanEvaluationError.unavailable(
+      "JavaScript expression filters require JavaScriptCore on this platform"
+    )
+    #endif
   }
 }

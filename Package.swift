@@ -28,34 +28,69 @@ let package = Package(
     .executable(name: "RielaApp", targets: ["RielaApp"])
   ],
   dependencies: [
-    .package(path: "Packages/RielaMemory")
+    .package(path: "Packages/RielaMemory"),
+    .package(url: "https://github.com/apple/swift-crypto.git", from: "3.15.1")
   ],
   targets: [
     .target(
       name: "RielaJavaScript",
       linkerSettings: [
-        .linkedFramework("JavaScriptCore")
+        .linkedFramework("JavaScriptCore", .when(platforms: [.macOS]))
       ]
     ),
     .target(
       name: "RielaCore",
       dependencies: [
         "RielaJavaScript",
+        .product(name: "Crypto", package: "swift-crypto"),
         .product(name: "RielaMemory", package: "RielaMemory")
       ]
     ),
-    .target(name: "RielaAddons", dependencies: ["RielaCore"]),
+    .target(
+      name: "RielaAddons",
+      dependencies: [
+        "RielaCore",
+        .product(name: "Crypto", package: "swift-crypto")
+      ]
+    ),
     .target(name: "RielaEvents", dependencies: ["RielaCore"]),
     .target(name: "RielaGraphQL", dependencies: ["RielaCore"]),
     .target(name: "RielaServer", dependencies: ["RielaCore", "RielaGraphQL"]),
     .target(name: "RielaViewer", dependencies: ["RielaCore"]),
-    .target(name: "RielaHook", dependencies: ["RielaCore"]),
+    .target(
+      name: "RielaHook",
+      dependencies: [
+        "RielaCore",
+        .product(name: "Crypto", package: "swift-crypto")
+      ]
+    ),
     .target(name: "RielaAppSupport", dependencies: ["RielaEvents", "RielaServer"]),
-    .target(name: "CodexAgent", dependencies: ["RielaCore", "RielaAdapters"]),
+    .target(
+      name: "CodexAgent",
+      dependencies: [
+        "RielaCore",
+        "RielaAdapters",
+        .product(name: "Crypto", package: "swift-crypto")
+      ]
+    ),
     .executableTarget(name: "CodexAgentCLI", dependencies: ["CodexAgent"]),
-    .target(name: "ClaudeCodeAgent", dependencies: ["RielaCore", "RielaAdapters"]),
+    .target(
+      name: "ClaudeCodeAgent",
+      dependencies: [
+        "RielaCore",
+        "RielaAdapters",
+        .product(name: "Crypto", package: "swift-crypto")
+      ]
+    ),
     .executableTarget(name: "ClaudeCodeAgentCLI", dependencies: ["ClaudeCodeAgent"]),
-    .target(name: "CursorCLIAgent", dependencies: ["RielaCore", "RielaAdapters"]),
+    .target(
+      name: "CursorCLIAgent",
+      dependencies: [
+        "RielaCore",
+        "RielaAdapters",
+        .product(name: "Crypto", package: "swift-crypto")
+      ]
+    ),
     .executableTarget(name: "CursorCLIAgentCLI", dependencies: ["CursorCLIAgent"]),
     .target(
       name: "RielaAdapters",

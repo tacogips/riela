@@ -11,7 +11,14 @@ let package = Package(
     .library(name: "RielaMemory", targets: ["RielaMemory"])
   ],
   targets: [
-    .target(name: "RielaMemory"),
+    .target(name: "RielaMemory", dependencies: ["SQLite3"]),
+    .systemLibrary(
+      name: "SQLite3",
+      providers: [
+        .apt(["libsqlite3-dev"]),
+        .brew(["sqlite"])
+      ]
+    ),
     .testTarget(name: "RielaMemoryTests", dependencies: ["RielaMemory"])
   ],
   swiftLanguageModes: [.v6]

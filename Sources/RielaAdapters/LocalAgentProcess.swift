@@ -1,6 +1,10 @@
-import Darwin
 import Foundation
 import RielaCore
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 public struct LocalAgentProcessConfiguration: Equatable, Sendable {
   public var executableURL: URL
@@ -194,10 +198,10 @@ private final class CStringArray {
   }
 
   func withUnsafeMutableBufferPointer<Result>(
-    _ body: (UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) throws -> Result
+    _ body: (UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>) throws -> Result
   ) rethrows -> Result {
     try pointers.withUnsafeMutableBufferPointer { buffer in
-      try body(buffer.baseAddress)
+      try body(buffer.baseAddress!)
     }
   }
 }
@@ -334,8 +338,13 @@ private func spawnProcess(
   errorReadDescriptor: Int32,
   errorWriteDescriptor: Int32
 ) throws -> pid_t {
+  #if canImport(Glibc)
+  var fileActions = posix_spawn_file_actions_t()
+  var attributes = posix_spawnattr_t()
+  #else
   var fileActions: posix_spawn_file_actions_t?
   var attributes: posix_spawnattr_t?
+  #endif
   posix_spawn_file_actions_init(&fileActions)
   posix_spawnattr_init(&attributes)
   defer {
@@ -358,10 +367,12 @@ private func spawnProcess(
     }
   }
 
-  try checkPosixSpawn(
-    posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT)),
-    operation: "set process flags"
-  )
+  #if canImport(Darwin)
+  let spawnFlags = Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT)
+  #else
+  let spawnFlags = Int16(POSIX_SPAWN_SETPGROUP)
+  #endif
+  try checkPosixSpawn(posix_spawnattr_setflags(&attributes, spawnFlags), operation: "set process flags")
   try checkPosixSpawn(posix_spawnattr_setpgroup(&attributes, 0), operation: "set child process group")
 
   let arguments = [configuration.executableURL.path] + configuration.arguments

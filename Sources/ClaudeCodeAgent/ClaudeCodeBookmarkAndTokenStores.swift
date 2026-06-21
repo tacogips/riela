@@ -1,4 +1,8 @@
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto
+#endif
 import Foundation
 
 public enum ClaudeCodeBookmarkType: String, Equatable, Codable, Sendable {

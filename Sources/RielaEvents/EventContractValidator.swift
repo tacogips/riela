@@ -260,14 +260,20 @@ public enum EventContractValidator {
     let pattern = #"\{\{\s*([^}]+?)\s*\}\}"#
     let regex = try? NSRegularExpression(pattern: pattern)
     let range = NSRange(value.startIndex..<value.endIndex, in: value)
+    var templateDiagnostics: [EventValidationDiagnostic] = []
     regex?.enumerateMatches(in: value, range: range) { match, _, _ in
       guard let match, match.numberOfRanges > 1, let refRange = Range(match.range(at: 1), in: value) else {
         return
       }
       let reference = String(value[refRange])
       if !reference.hasPrefix("event.") && !reference.hasPrefix("source.") && !reference.hasPrefix("binding.") {
-        diagnostics.append(.init(code: "INVALID_EVENT_TEMPLATE", path: path, message: "unsupported template reference '\(reference)'"))
+        templateDiagnostics.append(.init(
+          code: "INVALID_EVENT_TEMPLATE",
+          path: path,
+          message: "unsupported template reference '\(reference)'"
+        ))
       }
     }
+    diagnostics.append(contentsOf: templateDiagnostics)
   }
 }

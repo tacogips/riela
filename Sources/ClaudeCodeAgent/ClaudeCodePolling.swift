@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 import RielaCore
 #if canImport(Darwin)
 import Darwin

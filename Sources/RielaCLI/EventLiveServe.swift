@@ -132,6 +132,10 @@ struct DefaultEventLiveServer: EventLiveServing {
             envelope: envelope,
             sourceToken: target.token
           )
+          if let message = update.message {
+            try TelegramConversationHistoryStore(eventRoot: eventRoot, source: source)
+              .appendExchange(message: message, replies: replies)
+          }
           if !replies.isEmpty {
             try? writeServeRecord(
               eventRoot: eventRoot,
@@ -445,7 +449,11 @@ struct TelegramGatewaySource: Decodable, Equatable, Sendable {
       input: [
         "text": .string(text),
         "provider": .string("telegram"),
-        "history": .array([]),
+        "history": .array(
+          TelegramConversationHistoryStore(eventRoot: eventRoot, source: self)
+            .loadHistory(message: message)
+            .map(JSONValue.object)
+        ),
         "historySource": .string("chat-memory"),
         "attachments": .array([]),
         "imagePaths": .array([]),
@@ -841,6 +849,62 @@ private struct TelegramMessageDedupeStore {
 
 private struct TelegramMessageDedupeRecord: Codable {
   var keys: [String]
+}
+
+private struct TelegramConversationHistoryStore {
+  private static let maxEntries = 80
+
+  var eventRoot: URL
+  var source: TelegramGatewaySource
+
+  func loadHistory(message: TelegramMessage) -> [JSONObject] {
+    let url = historyURL(message: message)
+    guard FileManager.default.fileExists(atPath: url.path),
+      let data = try? Data(contentsOf: url),
+      let values = try? JSONDecoder().decode([JSONValue].self, from: data)
+    else {
+      return []
+    }
+    return values.compactMap { value in
+      guard case let .object(object) = value else {
+        return nil
+      }
+      return object
+    }
+  }
+
+  func appendExchange(message: TelegramMessage, replies: [TelegramConversationReply]) throws {
+    guard let text = message.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
+      return
+    }
+    let url = historyURL(message: message)
+    var history = loadHistory(message: message)
+    history.append(compactObject([
+      "role": .string("user"),
+      "text": .string(text),
+      "messageId": .string(message.messageId),
+      "senderId": message.from?.id.map(JSONValue.string)
+    ]))
+    for reply in replies {
+      history.append(compactObject([
+        "role": .string("assistant"),
+        "text": .string(reply.text),
+        "replyAs": reply.replyAs.map(JSONValue.string)
+      ]))
+    }
+    history = Array(history.suffix(Self.maxEntries))
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try encoder.encode(history.map(JSONValue.object)).write(to: url, options: .atomic)
+  }
+
+  private func historyURL(message: TelegramMessage) -> URL {
+    eventRoot
+      .appendingPathComponent("telegram-history", isDirectory: true)
+      .appendingPathComponent(safeTelegramStorageComponent(source.id), isDirectory: true)
+      .appendingPathComponent("\(safeTelegramStorageComponent(message.chat.id))-\(safeTelegramStorageComponent(message.messageThreadId ?? "main")).json")
+  }
 }
 
 private func safeTelegramStorageComponent(_ value: String) -> String {

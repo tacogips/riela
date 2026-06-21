@@ -234,7 +234,7 @@ extension DeterministicWorkflowRunner {
       "stepId": .string(stepId),
       "nodeId": .string(nodeId),
       "executionIndex": .number(Double(executionIndex)),
-      valueKey: value
+      valueKey: sanitizedNodeMemoryValue(value)
     ]
     for (key, value) in extra {
       object[key] = value
@@ -276,6 +276,34 @@ extension DeterministicWorkflowRunner {
   }
 }
 
+private func sanitizedNodeMemoryValue(_ value: JSONValue, depth: Int = 0) -> JSONValue {
+  if depth >= 6 {
+    return .string("[omitted: nested value]")
+  }
+  switch value {
+  case let .string(text):
+    return .string(text.truncatedForNodeMemory())
+  case let .array(values):
+    let prefix = values.prefix(20).map { sanitizedNodeMemoryValue($0, depth: depth + 1) }
+    if values.count > prefix.count {
+      return .array(prefix + [.string("[omitted: \(values.count - prefix.count) more items]")])
+    }
+    return .array(prefix)
+  case let .object(object):
+    var sanitized: JSONObject = [:]
+    for (key, child) in object {
+      if key == "records", object["recordsText"] != nil {
+        sanitized[key] = .string("[omitted: records are available as recordsText]")
+      } else {
+        sanitized[key] = sanitizedNodeMemoryValue(child, depth: depth + 1)
+      }
+    }
+    return .object(sanitized)
+  case .null, .bool, .number:
+    return value
+  }
+}
+
 private func memoryJSONValue(from value: JSONValue) -> MemoryJSONValue {
   switch value {
   case .null:
@@ -290,5 +318,15 @@ private func memoryJSONValue(from value: JSONValue) -> MemoryJSONValue {
     return .array(values.map(memoryJSONValue))
   case let .object(object):
     return .object(object.mapValues(memoryJSONValue))
+  }
+}
+
+private extension String {
+  func truncatedForNodeMemory(_ maxLength: Int = 2_000) -> String {
+    guard count > maxLength else {
+      return self
+    }
+    let endIndex = index(startIndex, offsetBy: maxLength)
+    return String(self[..<endIndex]) + "..."
   }
 }

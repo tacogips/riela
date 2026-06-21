@@ -507,6 +507,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
         databasePath: try store.databasePath(memoryId: memoryId),
         payload: [
           "records": .array(records.map(memoryRecordJSON)),
+          "recordsText": .string(memoryRecordsText(records)),
           "limit": .number(Double(limit))
         ]
       )
@@ -528,6 +529,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
         databasePath: try store.databasePath(memoryId: memoryId),
         payload: [
           "records": .array(records.map(memoryRecordJSON)),
+          "recordsText": .string(memoryRecordsText(records)),
           "matchPatterns": .array(patterns.map { .string($0) }),
           "limit": .number(Double(limit))
         ]
@@ -687,6 +689,19 @@ private func renderAddonInputs(_ inputs: JSONObject?, variables: JSONObject) -> 
   return rendered
 }
 
+private func renderJSONTemplates(_ value: JSONValue, variables: JSONObject) -> JSONValue {
+  switch value {
+  case let .string(template):
+    return .string(renderPromptTemplate(template, variables: variables))
+  case let .array(values):
+    return .array(values.map { renderJSONTemplates($0, variables: variables) })
+  case let .object(object):
+    return .object(object.mapValues { renderJSONTemplates($0, variables: variables) })
+  case .null, .bool, .number:
+    return value
+  }
+}
+
 private func nonEmptyString(_ value: JSONValue?) -> String? {
   guard case let .string(text) = value, !text.isEmpty else {
     return nil
@@ -720,6 +735,11 @@ private func memoryPayload(
   variables: JSONObject,
   input: WorkflowAddonExecutionInput
 ) throws -> MemoryJSONValue {
+  if let payloadTemplate = config["payloadTemplate"] ?? variables["payloadTemplate"] {
+    let rendered = renderJSONTemplates(payloadTemplate, variables: variables)
+    return try memoryJSONValue(from: rendered)
+  }
+
   if let payload = config["payload"] ?? variables["payload"] {
     return try memoryJSONValue(from: payload)
   }
@@ -798,6 +818,75 @@ private func memoryRecordJSON(_ record: MemoryRecord) -> JSONValue {
   ])
 }
 
+private func memoryRecordsText(_ records: [MemoryRecord]) -> String {
+  records
+    .map { record in
+      let text = memoryPayloadText(record.payload, depth: 0).truncatedForMemoryPrompt()
+      let prefix = "#\(record.recordId) \(record.registeredAt)"
+      if let nodeId = record.nodeId, !nodeId.isEmpty {
+        return "\(prefix) [\(nodeId)] \(text)"
+      }
+      return "\(prefix) \(text)"
+    }
+    .joined(separator: "\n")
+}
+
+private func memoryPayloadText(_ value: MemoryJSONValue, depth: Int) -> String {
+  if depth >= 4 {
+    return compactMemoryJSON(value, maxLength: 300)
+  }
+  switch value {
+  case .null:
+    return "null"
+  case let .bool(value):
+    return value ? "true" : "false"
+  case let .number(value):
+    return String(value)
+  case let .string(value):
+    return value
+  case let .array(values):
+    return values.prefix(5).map { memoryPayloadText($0, depth: depth + 1) }.joined(separator: "; ")
+  case let .object(object):
+    for path in preferredMemorySummaryPaths {
+      if let value = memoryValue(at: path, in: object) {
+        let text = memoryPayloadText(value, depth: depth + 1)
+        if !text.isEmpty {
+          return text
+        }
+      }
+    }
+    return compactMemoryJSON(.object(object), maxLength: 500)
+  }
+}
+
+private let preferredMemorySummaryPaths: [[String]] = [
+  ["text"],
+  ["replyText"],
+  ["message"],
+  ["input", "text"],
+  ["payload", "text"],
+  ["payload", "replyText"],
+  ["payload", "event", "input", "text"],
+  ["event", "input", "text"]
+]
+
+private func memoryValue(at path: [String], in object: [String: MemoryJSONValue]) -> MemoryJSONValue? {
+  guard let first = path.first, let value = object[first] else {
+    return nil
+  }
+  if path.count == 1 {
+    return value
+  }
+  guard case let .object(nested) = value else {
+    return nil
+  }
+  return memoryValue(at: Array(path.dropFirst()), in: nested)
+}
+
+private func compactMemoryJSON(_ value: MemoryJSONValue, maxLength: Int) -> String {
+  jsonValue(from: value).compactJSONStringOrEmpty().truncatedForMemoryPrompt(maxLength)
+}
+
 private func memoryJSONValue(from value: JSONValue) throws -> MemoryJSONValue {
   switch value {
   case .null:
@@ -837,4 +926,20 @@ private func objectValue(_ value: JSONValue?) -> JSONObject? {
     return nil
   }
   return object
+}
+
+private extension JSONValue {
+  func compactJSONStringOrEmpty() -> String {
+    (try? compactJSONString()) ?? ""
+  }
+}
+
+private extension String {
+  func truncatedForMemoryPrompt(_ maxLength: Int = 500) -> String {
+    guard count > maxLength else {
+      return self
+    }
+    let endIndex = index(startIndex, offsetBy: maxLength)
+    return String(self[..<endIndex]) + "..."
+  }
 }

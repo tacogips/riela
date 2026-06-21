@@ -101,12 +101,15 @@ public struct MemoryRecordReference: Codable, Equatable, Sendable {
 }
 
 public struct MemorySearchOptions: Equatable, Sendable {
+  public static let defaultMaxPayloadBytes = 1_000_000
+
   public var workflowId: String
   public var includeAllWorkflows: Bool
   public var nodeId: String?
   public var matchPatterns: [String]
   public var sortOrder: MemorySortOrder
   public var limit: Int
+  public var maxPayloadBytes: Int
 
   public init(
     workflowId: String,
@@ -114,7 +117,8 @@ public struct MemorySearchOptions: Equatable, Sendable {
     nodeId: String? = nil,
     matchPatterns: [String] = [],
     sortOrder: MemorySortOrder = .registeredDesc,
-    limit: Int = 30
+    limit: Int = 30,
+    maxPayloadBytes: Int = MemorySearchOptions.defaultMaxPayloadBytes
   ) {
     self.workflowId = workflowId
     self.includeAllWorkflows = includeAllWorkflows
@@ -122,6 +126,7 @@ public struct MemorySearchOptions: Equatable, Sendable {
     self.matchPatterns = matchPatterns
     self.sortOrder = sortOrder
     self.limit = limit
+    self.maxPayloadBytes = maxPayloadBytes
   }
 }
 
@@ -205,6 +210,9 @@ public struct RielaMemoryStore: Sendable {
     guard options.limit > 0 else {
       throw RielaMemoryError.invalidLimit(options.limit)
     }
+    guard options.maxPayloadBytes > 0 else {
+      throw RielaMemoryError.invalidLimit(options.maxPayloadBytes)
+    }
     let regexes = try options.matchPatterns.map(compileRegex)
     let path = try databasePath(memoryId: memoryId)
     guard FileManager.default.fileExists(atPath: path) else {
@@ -222,15 +230,18 @@ public struct RielaMemoryStore: Sendable {
       FROM memory_entries
       """
     var bindings: [SQLiteBinding] = []
+    var whereClauses: [String] = ["length(payload_json) <= ?"]
+    bindings.append(.int(options.maxPayloadBytes))
     if !options.includeAllWorkflows {
-      sql += " WHERE workflow_id = ?"
+      whereClauses.append("workflow_id = ?")
       bindings.append(.text(options.workflowId))
-    } else if options.nodeId != nil {
-      sql += " WHERE 1 = 1"
     }
     if let nodeId = options.nodeId {
-      sql += " AND node_id = ?"
+      whereClauses.append("node_id = ?")
       bindings.append(.text(nodeId))
+    }
+    if !whereClauses.isEmpty {
+      sql += " WHERE " + whereClauses.joined(separator: " AND ")
     }
     sql += options.sortOrder == .registeredAsc
       ? " ORDER BY registered_at ASC, record_id ASC"

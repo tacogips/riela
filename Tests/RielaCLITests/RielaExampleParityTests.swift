@@ -39,6 +39,7 @@ final class RielaExampleParityTests: XCTestCase {
     static let workflowRunArgumentsPrefix = ["workflow", "run"]
     static let workflowDefinitionDirFlag = "--workflow-definition-dir"
     static let mockScenarioFlag = "--mock-scenario"
+    static let sessionStoreFlag = "--session-store"
     static let maxStepsFlag = "--max-steps"
     static let mockRunMaxSteps = "200"
     static let outputFlag = "--output"
@@ -80,6 +81,7 @@ final class RielaExampleParityTests: XCTestCase {
     static func variables(
       text: String,
       eventId: String,
+      memoryRoot: String,
       isBot: Bool = false,
       actorUsername: String? = nil
     ) -> String {
@@ -87,8 +89,10 @@ final class RielaExampleParityTests: XCTestCase {
       {
         "workflowInput": {
           "text": "\#(text)",
-          "provider": "telegram"
+          "provider": "telegram",
+          "memoryRoot": "\#(memoryRoot)"
         },
+        "memoryRoot": "\#(memoryRoot)",
         "event": {
           "sourceId": "telegram-live",
           "eventId": "\#(eventId)",
@@ -190,9 +194,16 @@ final class RielaExampleParityTests: XCTestCase {
     let scenario = examplesRoot
       .appendingPathComponent(WorkflowIds.telegramSDKTrioChatWorkflowName, isDirectory: true)
       .appendingPathComponent(MockScenario.fileName)
+    let memoryRoot = root.appendingPathComponent("tmp/test-telegram-sdk-trio-chat-memory-\(UUID().uuidString)", isDirectory: true)
+    let sessionStore = root.appendingPathComponent("tmp/test-telegram-sdk-trio-chat-sessions-\(UUID().uuidString)", isDirectory: true)
+    defer {
+      try? FileManager.default.removeItem(at: memoryRoot)
+      try? FileManager.default.removeItem(at: sessionStore)
+    }
     let cases = [
       ("rina", "@rinacursor0529bot explain the SDK trio setup", "rina"),
       ("mika", "@mikatrend0529bot give a short plan", "mika"),
+      ("rina-about-mika", "@rinacursor0529bot さっきのmikaの回答は?", "rina"),
       ("yui-default", "Please summarize today's plan", "yui"),
       ("concatenated-mika", "Mikausersidecheck.Replyshort.", "yui")
     ]
@@ -205,8 +216,9 @@ final class RielaExampleParityTests: XCTestCase {
         WorkflowIds.telegramSDKTrioChatWorkflowName,
         WorkflowRunCLI.workflowDefinitionDirFlag, examplesRoot.path,
         WorkflowRunCLI.mockScenarioFlag, scenario.path,
+        WorkflowRunCLI.sessionStoreFlag, sessionStore.path,
         WorkflowRunCLI.outputFlag, WorkflowRunCLI.jsonOutputFormat,
-        "--variables", TelegramSDKTrioChatMock.variables(text: text, eventId: eventId)
+        "--variables", TelegramSDKTrioChatMock.variables(text: text, eventId: eventId, memoryRoot: memoryRoot.path)
       ])
 
       XCTAssertEqual(result.exitCode, .success, "\(eventId): \(result.stderr)\n\(result.stdout)")
@@ -223,15 +235,23 @@ final class RielaExampleParityTests: XCTestCase {
     let scenario = examplesRoot
       .appendingPathComponent(WorkflowIds.telegramSDKTrioChatWorkflowName, isDirectory: true)
       .appendingPathComponent(MockScenario.fileName)
+    let memoryRoot = root.appendingPathComponent("tmp/test-telegram-sdk-trio-chat-memory-\(UUID().uuidString)", isDirectory: true)
+    let sessionStore = root.appendingPathComponent("tmp/test-telegram-sdk-trio-chat-sessions-\(UUID().uuidString)", isDirectory: true)
+    defer {
+      try? FileManager.default.removeItem(at: memoryRoot)
+      try? FileManager.default.removeItem(at: sessionStore)
+    }
     let app = RielaCLIApplication()
     let result = await app.run(WorkflowRunCLI.workflowRunArgumentsPrefix + [
       WorkflowIds.telegramSDKTrioChatWorkflowName,
       WorkflowRunCLI.workflowDefinitionDirFlag, examplesRoot.path,
       WorkflowRunCLI.mockScenarioFlag, scenario.path,
+      WorkflowRunCLI.sessionStoreFlag, sessionStore.path,
       WorkflowRunCLI.outputFlag, WorkflowRunCLI.jsonOutputFormat,
       "--variables", TelegramSDKTrioChatMock.variables(
         text: "@rinacursor0529bot ここ見て",
         eventId: "bot-authored-rina",
+        memoryRoot: memoryRoot.path,
         isBot: true,
         actorUsername: "mikatrend0529bot"
       )
@@ -251,15 +271,23 @@ final class RielaExampleParityTests: XCTestCase {
     let scenario = examplesRoot
       .appendingPathComponent(WorkflowIds.telegramSDKTrioChatWorkflowName, isDirectory: true)
       .appendingPathComponent(MockScenario.fileName)
+    let memoryRoot = root.appendingPathComponent("tmp/test-telegram-sdk-trio-chat-memory-\(UUID().uuidString)", isDirectory: true)
+    let sessionStore = root.appendingPathComponent("tmp/test-telegram-sdk-trio-chat-sessions-\(UUID().uuidString)", isDirectory: true)
+    defer {
+      try? FileManager.default.removeItem(at: memoryRoot)
+      try? FileManager.default.removeItem(at: sessionStore)
+    }
     let app = RielaCLIApplication()
     let result = await app.run(WorkflowRunCLI.workflowRunArgumentsPrefix + [
       WorkflowIds.telegramSDKTrioChatWorkflowName,
       WorkflowRunCLI.workflowDefinitionDirFlag, examplesRoot.path,
       WorkflowRunCLI.mockScenarioFlag, scenario.path,
+      WorkflowRunCLI.sessionStoreFlag, sessionStore.path,
       WorkflowRunCLI.outputFlag, WorkflowRunCLI.jsonOutputFormat,
       "--variables", TelegramSDKTrioChatMock.variables(
         text: "@mikatrend0529bot echo from self",
         eventId: "self-authored-mika",
+        memoryRoot: memoryRoot.path,
         isBot: true,
         actorUsername: "mikatrend0529bot"
       )

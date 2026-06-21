@@ -428,7 +428,10 @@ final class WorkflowCommandTests: XCTestCase {
         "memoryId": .string("chat-memory"),
         "memoryRoot": .string(memoryRoot),
         "nodeId": .string("chat-event"),
-        "payloadSource": .string("event")
+        "payloadTemplate": .object([
+          "text": .string("{{event.input.text}}"),
+          "conversationId": .string("{{event.conversation.id}}")
+        ])
       ]
     )
 
@@ -449,6 +452,14 @@ final class WorkflowCommandTests: XCTestCase {
     )
     XCTAssertEqual(save.payload["saved"], .bool(true))
     XCTAssertEqual(save.payload["memoryId"], .string("chat-memory"))
+    guard
+      case let .object(savedRecord)? = save.payload["record"],
+      case let .object(savedPayload)? = savedRecord["payload"]
+    else {
+      return XCTFail("memory-save record payload was not returned")
+    }
+    XCTAssertEqual(savedPayload["text"], .string("Yui, remember the routing test"))
+    XCTAssertEqual(savedPayload["conversationId"], .string("chat-1"))
 
     let load = try await resolver.execute(
       WorkflowAddonExecutionInput(
@@ -471,6 +482,10 @@ final class WorkflowCommandTests: XCTestCase {
       return XCTFail("memory-load records were not returned")
     }
     XCTAssertEqual(loadedRecords.count, 1)
+    guard case let .string(loadRecordsText)? = load.payload["recordsText"] else {
+      return XCTFail("memory-load recordsText was not returned")
+    }
+    XCTAssertTrue(loadRecordsText.contains("Yui, remember the routing test"))
 
     let search = try await resolver.execute(
       WorkflowAddonExecutionInput(
@@ -494,6 +509,10 @@ final class WorkflowCommandTests: XCTestCase {
       return XCTFail("memory-search records were not returned")
     }
     XCTAssertEqual(searchRecords.count, 1)
+    guard case let .string(searchRecordsText)? = search.payload["recordsText"] else {
+      return XCTFail("memory-search recordsText was not returned")
+    }
+    XCTAssertTrue(searchRecordsText.contains("Yui, remember the routing test"))
   }
 
   func testBuiltinSDKWorkerExecutesInjectedLiveAdapter() async throws {

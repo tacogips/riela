@@ -162,6 +162,31 @@ final class RielaMemoryTests: XCTestCase {
     XCTAssertTrue(references.allSatisfy { !$0.referencedAt.isEmpty })
   }
 
+  func testSearchSkipsPayloadsAboveConfiguredSizeBeforeDecoding() throws {
+    let root = temporaryDirectory()
+    let store = RielaMemoryStore(rootDirectory: root.path)
+
+    try store.save(
+      memoryId: "chat-memory",
+      workflowId: "wf",
+      registeredAt: "2026-06-20T10:00:00Z",
+      payload: .object(["text": .string(String(repeating: "x", count: 2_000))])
+    )
+    try store.save(
+      memoryId: "chat-memory",
+      workflowId: "wf",
+      registeredAt: "2026-06-20T10:01:00Z",
+      payload: .object(["text": .string("small memory")])
+    )
+
+    let records = try store.search(
+      memoryId: "chat-memory",
+      options: MemorySearchOptions(workflowId: "wf", limit: 10, maxPayloadBytes: 500)
+    )
+
+    XCTAssertEqual(records.map(\.payload), [.object(["text": .string("small memory")])])
+  }
+
   private func temporaryDirectory() -> URL {
     FileManager.default.temporaryDirectory
       .appendingPathComponent("riela-memory-tests-\(UUID().uuidString)", isDirectory: true)

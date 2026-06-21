@@ -21,13 +21,14 @@ Apply this skill when:
 - rendering `Casks/riela.rb` in `tacogips/homebrew-tap`
 
 Use the formula packaging flow for CLI-only `brew install riela` tarball
-releases. The formula is the Linux install path and the macOS CLI-only path.
+releases on macOS. Linux CLI tarballs may be published to GitHub releases, but
+they are not rendered into the Homebrew tap.
 The macOS Cask is the `RielaApp.app` + `riela` CLI install path.
 
 ## Repository Facts
 
-- `scripts/build-homebrew-release.sh` builds formula tarballs under
-  `dist/homebrew/` for the CLI-only `riela` command on macOS and Linux.
+- `scripts/build-homebrew-release.sh` builds CLI-only `riela` tarballs under
+  `dist/homebrew/`. The Homebrew Formula uses the macOS archives only.
 - `scripts/build-homebrew-cask-release.sh` builds signed and notarized Cask
   DMGs under `dist/homebrew-cask/`; each DMG contains `RielaApp.app` and the
   `riela` CLI.
@@ -141,12 +142,8 @@ brew tap tacogips/tap
 brew install riela
 ```
 
-Linux users install only the formula:
-
-```bash
-brew tap tacogips/tap
-brew install riela
-```
+Linux users install CLI-only GitHub release tarballs directly; do not require
+Linux Formula assets for the macOS tap update.
 
 ## Validation Notes
 
@@ -155,5 +152,6 @@ brew install riela
   stapling, and `spctl --type open` acceptance for the DMG.
 - The Cask DMG must contain both `RielaApp.app` and `riela`; do not regress it
   to a CLI-only Cask.
-- The formula remains CLI-only; do not add `RielaApp.app` to formula archives.
+- The formula remains macOS CLI-only; do not add `RielaApp.app` or Linux
+  archive branches to formula archives.
 - The Cask builder does not upload releases, mutate the tap, or push commits.

@@ -55,16 +55,16 @@ human-readable output.
 
 ## Install
 
-Install the Homebrew formula for the `riela` command line tool. This is the
-Linux install path, and it is also the macOS CLI-only path:
+On macOS, install the Homebrew formula when you want only the `riela` command
+line tool:
 
 ```bash
 brew tap tacogips/tap
 brew install riela
 ```
 
-On macOS, install the signed and notarized Cask archive when you want both
-`RielaApp.app` and the `riela` command line tool:
+Install the signed and notarized Cask archive when you want both
+`RielaApp.app` and the `riela` command line tool on macOS:
 
 ```bash
 brew tap tacogips/tap
@@ -76,6 +76,9 @@ publishes signed, notarized, and stapled `.dmg` assets to the GitHub release bef
 `Casks/riela.rb` in `tacogips/homebrew-tap`. See
 `packaging/homebrew/README.md` for the signing, notarization, and tap update
 workflow.
+
+Linux releases are CLI-only tarballs published on GitHub releases. They are
+not wired into the Homebrew tap.
 
 ## TypeScript Deletion Gate
 

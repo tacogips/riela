@@ -17,10 +17,11 @@ Environment:
   RIELA_RELEASE_BASE_URL  Release URL base. Defaults to GitHub v<version>.
 
 Example:
-  scripts/build-homebrew-release.sh darwin-arm64 darwin-x64 linux-arm64 linux-x64
+  scripts/build-homebrew-release.sh darwin-arm64 darwin-x64
   scripts/render-homebrew-formula.sh 0.1.0 Formula/riela.rb
 
-This renderer expects Swift CLI production archives for macOS and Linux.
+This renderer expects macOS Swift CLI production archives. Linux CLI archives
+can be published separately without changing the Homebrew tap.
 EOF
 }
 
@@ -56,11 +57,8 @@ main() {
   release_base_url="${RIELA_RELEASE_BASE_URL:-https://github.com/tacogips/riela/releases/download/v$version}"
 
   local darwin_arm64_sha darwin_x64_sha
-  local linux_arm64_sha linux_x64_sha
   darwin_arm64_sha="$(sha_for_target "$version" darwin-arm64 "$release_dir")"
   darwin_x64_sha="$(sha_for_target "$version" darwin-x64 "$release_dir")"
-  linux_arm64_sha="$(sha_for_target "$version" linux-arm64 "$release_dir")"
-  linux_x64_sha="$(sha_for_target "$version" linux-x64 "$release_dir")"
 
   mkdir -p "$(dirname "$output")"
   cat > "$output" <<EOF
@@ -82,16 +80,6 @@ class Riela < Formula
     else
       url "$release_base_url/riela-$version-darwin-x64.tar.gz"
       sha256 "$darwin_x64_sha"
-    end
-  end
-
-  on_linux do
-    if Hardware::CPU.arm?
-      url "$release_base_url/riela-$version-linux-arm64.tar.gz"
-      sha256 "$linux_arm64_sha"
-    else
-      url "$release_base_url/riela-$version-linux-x64.tar.gz"
-      sha256 "$linux_x64_sha"
     end
   end
 

@@ -1,0 +1,43 @@
+name: Linux amd64 build
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-amd64-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build riela on Linux amd64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Build release CLI in Swift amd64 container
+        env:
+          SWIFT_IMAGE: swift@sha256:4c6af6663ed2316002a3b38ff5505a1fc1f2749ec31e84936c32dd336713c569
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --platform linux/amd64 \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            "$SWIFT_IMAGE" \
+            bash -lc '
+              set -euo pipefail
+              test "$(uname -m)" = "x86_64"
+              swift --version
+              apt-get update >/dev/null
+              apt-get install -y libsqlite3-dev >/dev/null
+              swift build -c release --product riela --triple x86_64-unknown-linux-gnu
+            '

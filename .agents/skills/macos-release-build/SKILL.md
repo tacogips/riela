@@ -107,6 +107,16 @@ spctl --assess --type open --context context:primary-signature --verbose=4 dist/
 
 ## Release Publication
 
+Formula release (`brew install riela`) and Cask release
+(`brew install --cask riela`) are separate:
+
+- Formula release is macOS CLI-only. Build/upload the darwin CLI tarballs and
+  render `../homebrew-tap/Formula/riela.rb`; no Apple Developer credentials,
+  signing, notarization, or `kinko` unlock is required.
+- Cask release contains `RielaApp.app` plus the `riela` CLI. It must be signed,
+  notarized, stapled, and therefore requires `kinko` to expose the Apple
+  credential environment.
+
 For a tagged release:
 
 ```bash

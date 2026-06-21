@@ -25,8 +25,10 @@ Examples:
   scripts/build-homebrew-release.sh --dry-run darwin-arm64
   scripts/build-homebrew-release.sh linux-x64
 
-This production builder stages Swift CLI archives only. It does not publish
-release assets, mutate a tap, render a formula, or remove TypeScript/Bun source.
+This production builder stages Swift CLI release archives only. It does not
+publish release assets, mutate a tap, render a formula, or remove TypeScript/Bun
+source. macOS archives feed the Homebrew Formula; Linux archives are standalone
+GitHub release assets.
 EOF
 }
 
@@ -187,7 +189,7 @@ print_plan() {
   assert_child_path "$release_dir" "$work_dir"
   assert_child_path "$release_dir" "$archive"
 
-  printf 'Swift production Homebrew archive plan\n'
+  printf 'Swift production CLI archive plan\n'
   printf '  product: riela\n'
   printf '  target: %s\n' "$target"
   printf '  swift triple: %s\n' "$triple"
@@ -263,7 +265,7 @@ main() {
     fi
   done
 
-  printf '\nRender a formula after all platform archives exist:\n'
+  printf '\nRender the macOS Homebrew formula after darwin archives exist:\n'
   printf '  scripts/render-homebrew-formula.sh %s\n' "$version"
 }
 

@@ -16,16 +16,16 @@
   username, so reply messages cannot recursively trigger themselves.
 - Yui's default responder behavior applies to user-authored messages only; bot
   messages must explicitly mention Yui to route to Yui.
-- Each persona prompt repeats the same mention policy so the LLM has the same
-  routing condition as the node-level filter.
+- Persona prompts do not expose routing or mention-policy explanations in
+  user-facing replies; routing is enforced by the node-level filters.
 - `save-chat-event-memory` persists every accepted Telegram chat event into the
   workflow-scoped `chat-memory` SQLite memory before persona routing.
 - Each persona loads recent `chat-memory` records through the native
   `riela/memory-load` add-on immediately before replying.
-- Each persona prompt treats recent chat memory as the source of truth for
-  follow-up questions. Short follow-ups such as `なんの機能?` or
-  `なんのトレンド?` should refer back to the most recent relevant bot reply
-  instead of inventing generic capabilities or unrelated trend categories.
+- Each persona prompt uses recent chat memory as context for follow-up
+  questions. Follow-ups should refer back to the most recent relevant bot reply
+  when memory provides enough context, and ask for clarification instead of
+  inventing generic capabilities or unrelated categories when it does not.
 - Rina's prompt keeps her persona cool-headed and analytical: short, precise,
   low-temperature replies without bubbly enthusiasm or filler.
 - `yui-codex-sdk`, `mika-claude-sdk`, and `rina-cursor-sdk` use

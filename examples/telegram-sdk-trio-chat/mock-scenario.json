@@ -3,21 +3,21 @@
     "provider": "scenario-mock",
     "model": "gpt-5-nano",
     "payload": {
-      "text": "Yuiです。明示的な他bot宛てmentionがないので、私が短く返します。"
+      "text": "Yuiです。要点を短く整理しますね。"
     }
   },
   "mika-claude-sdk": {
     "provider": "scenario-mock",
     "model": "gpt-5-nano",
     "payload": {
-      "text": "Mikaです。明示的にMika宛てのmentionがあるので、明るく短く返します。"
+      "text": "Mikaだよ。まずは軽く整理して、すぐ動ける形にするね。"
     }
   },
   "rina-cursor-sdk": {
     "provider": "scenario-mock",
     "model": "gpt-5-nano",
     "payload": {
-      "text": "問題ない。Rina宛てのmentionなので私が返す。SDK版のトリオ構成では、node inputFiltersとLLM側のmention policyで担当を二重に絞っている。"
+      "text": "問題ない。直前の流れを見る限り、Mikaの答えは文脈に沿っている。"
     }
   }
 }

@@ -11,7 +11,12 @@ let package = Package(
     .library(name: "RielaMemory", targets: ["RielaMemory"])
   ],
   targets: [
-    .target(name: "RielaMemory", dependencies: ["SQLite3"]),
+    .target(
+      name: "RielaMemory",
+      dependencies: [
+        .target(name: "SQLite3", condition: .when(platforms: [.linux]))
+      ]
+    ),
     .systemLibrary(
       name: "SQLite3",
       providers: [

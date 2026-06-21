@@ -2212,7 +2212,7 @@ Usage:
 
 Output defaults to JSONL for machine-readable commands. Use --output text for human-readable output or --output json for the legacy single JSON document.
 
-The Swift CLI is the production Homebrew runtime. The formula installs only the riela command on macOS and Linux; the macOS Cask installs RielaApp.app and riela together.
+The Swift CLI is the production Homebrew runtime. The formula installs only the riela command on macOS; Linux users install CLI release tarballs directly. The macOS Cask installs RielaApp.app and riela together.
 
 """
 

@@ -337,20 +337,21 @@ final class SwiftPackagingReadinessTests: XCTestCase {
     XCTAssertFalse(script.contains("riela-$version-linux"))
   }
 
-  func testFormulaRendererRequiresMacOSAndLinuxCliChecksums() throws {
+  func testFormulaRendererRequiresMacOSCliChecksumsOnly() throws {
     let rootURL = try repositoryRoot()
     let scriptURL = rootURL.appendingPathComponent("scripts/render-homebrew-formula.sh")
     let script = try String(contentsOf: scriptURL, encoding: .utf8)
 
     XCTAssertTrue(script.contains("darwin-arm64"))
     XCTAssertTrue(script.contains("darwin-x64"))
-    XCTAssertTrue(script.contains("linux-arm64"))
-    XCTAssertTrue(script.contains("linux-x64"))
-    XCTAssertTrue(script.contains("linux_arm64_sha"))
-    XCTAssertTrue(script.contains("linux_x64_sha"))
-    XCTAssertTrue(script.contains("riela-$version-linux"))
+    XCTAssertFalse(script.contains("linux-arm64"))
+    XCTAssertFalse(script.contains("linux-x64"))
+    XCTAssertFalse(script.contains("linux_arm64_sha"))
+    XCTAssertFalse(script.contains("linux_x64_sha"))
+    XCTAssertFalse(script.contains("riela-$version-linux"))
     XCTAssertTrue(script.contains("Swift-native workflow runtime"))
-    XCTAssertTrue(script.contains("This renderer expects Swift CLI production archives for macOS and Linux."))
+    XCTAssertTrue(script.contains("This renderer expects macOS Swift CLI production archives."))
+    XCTAssertTrue(script.contains("Linux CLI archives"))
   }
 
   private struct SwiftCutoverGateManifest: Decodable {

@@ -46,11 +46,16 @@ final class SwiftPackagingReadinessTests: XCTestCase {
       version: "0.1.15",
       target: .darwinX64
     )
+    let linuxX64 = makeSwiftHomebrewProductionArchivePlan(
+      version: "0.1.15",
+      target: .linuxX64
+    )
 
     XCTAssertEqual(arm64.executableProduct, "riela")
     XCTAssertEqual(arm64.releaseDirectory, "dist/homebrew")
     XCTAssertEqual(arm64.target.triple, "arm64-apple-macosx")
     XCTAssertEqual(x64.target.triple, "x86_64-apple-macosx")
+    XCTAssertEqual(linuxX64.target.triple, "x86_64-unknown-linux-gnu")
     XCTAssertEqual(
       arm64.stagedBinaryPath,
       "dist/homebrew/work/riela-0.1.15-darwin-arm64/bin/riela"
@@ -67,15 +72,20 @@ final class SwiftPackagingReadinessTests: XCTestCase {
       x64.archivePath,
       "dist/homebrew/riela-0.1.15-darwin-x64.tar.gz"
     )
+    XCTAssertEqual(
+      linuxX64.archivePath,
+      "dist/homebrew/riela-0.1.15-linux-x64.tar.gz"
+    )
     XCTAssertFalse(arm64.archivePath.contains("riela-swift-"))
     XCTAssertFalse(arm64.publishSideEffects)
     XCTAssertFalse(x64.publishSideEffects)
+    XCTAssertFalse(linuxX64.publishSideEffects)
   }
 
-  func testSupportedProductionTargetsAreMacOSOnly() {
+  func testSupportedProductionTargetsIncludeLinuxCLIOnlyArchives() {
     XCTAssertEqual(
       SwiftHomebrewProductionTarget.allCases.map(\.rawValue),
-      ["darwin-arm64", "darwin-x64"]
+      ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64"]
     )
   }
 
@@ -90,6 +100,7 @@ final class SwiftPackagingReadinessTests: XCTestCase {
     )
 
     XCTAssertEqual(arm64.executableProduct, "riela")
+    XCTAssertEqual(arm64.appProduct, "RielaApp")
     XCTAssertEqual(arm64.releaseDirectory, "dist/homebrew-cask")
     XCTAssertEqual(arm64.target.triple, "arm64-apple-macosx")
     XCTAssertEqual(x64.target.triple, "x86_64-apple-macosx")
@@ -98,6 +109,10 @@ final class SwiftPackagingReadinessTests: XCTestCase {
     XCTAssertEqual(
       arm64.stagedBinaryPath,
       "dist/homebrew-cask/work/riela-0.1.15-darwin-arm64/riela"
+    )
+    XCTAssertEqual(
+      arm64.stagedAppBundlePath,
+      "dist/homebrew-cask/work/riela-0.1.15-darwin-arm64/RielaApp.app"
     )
     XCTAssertEqual(
       x64.stagedBinaryPath,
@@ -211,14 +226,16 @@ final class SwiftPackagingReadinessTests: XCTestCase {
     XCTAssertTrue(result.stderr.contains("unsafe Swift readiness release directory"))
   }
 
-  func testProductionBuilderUsesSwiftAndRejectsLinuxTargets() throws {
+  func testProductionBuilderUsesSwiftAndSupportsLinuxCliTargets() throws {
     let rootURL = try repositoryRoot()
     let scriptURL = rootURL.appendingPathComponent("scripts/build-homebrew-release.sh")
     let script = try String(contentsOf: scriptURL, encoding: .utf8)
 
     XCTAssertTrue(script.contains("--dry-run"))
-    XCTAssertTrue(script.contains("swift build -c release --product riela"))
+    XCTAssertTrue(script.contains("build -c release --product riela"))
     XCTAssertTrue(script.contains("--triple"))
+    XCTAssertTrue(script.contains("linux-arm64"))
+    XCTAssertTrue(script.contains("linux-x64"))
     XCTAssertTrue(script.contains("riela-$version-$target.tar.gz"))
     XCTAssertFalse(script.contains("bun build"))
     XCTAssertFalse(script.contains("--target \"bun-$target\""))
@@ -231,8 +248,11 @@ final class SwiftPackagingReadinessTests: XCTestCase {
       environment: ["RIELA_VERSION": "0.0.0-cutover"],
       arguments: ["--dry-run", "linux-x64"]
     )
-    XCTAssertNotEqual(result.exitCode, 0)
-    XCTAssertTrue(result.stderr.contains("unsupported Swift production target"))
+    XCTAssertEqual(result.exitCode, 0)
+    XCTAssertTrue(result.stdout.contains("target: linux-x64"))
+    XCTAssertTrue(result.stdout.contains("swift triple: x86_64-unknown-linux-gnu"))
+    XCTAssertTrue(result.stdout.contains("staged binary:"))
+    XCTAssertFalse(result.stdout.contains("RielaApp.app"))
   }
 
   func testProductionBuilderWritesPortableChecksumSidecars() throws {
@@ -257,7 +277,11 @@ final class SwiftPackagingReadinessTests: XCTestCase {
     XCTAssertTrue(script.contains("APPLE_ID"))
     XCTAssertTrue(script.contains("APPLE_PASSWORD"))
     XCTAssertTrue(script.contains("APPLE_TEAM_ID"))
+    XCTAssertTrue(script.contains("RIELA_APP_BUNDLE_ID"))
+    XCTAssertTrue(script.contains("validate_bundle_id"))
+    XCTAssertTrue(script.contains("write_riela_app_bundle"))
     XCTAssertTrue(script.contains("codesign --force --options runtime --timestamp"))
+    XCTAssertTrue(script.contains("codesign --verify --deep --strict --verbose=2 \"$staged_app\""))
     XCTAssertTrue(script.contains("hdiutil create"))
     XCTAssertTrue(script.contains("notarytool\" submit"))
     XCTAssertTrue(script.contains("stapler\" staple"))
@@ -282,9 +306,20 @@ final class SwiftPackagingReadinessTests: XCTestCase {
     XCTAssertNotEqual(result.exitCode, 0)
     XCTAssertTrue(result.stderr.contains("unsafe Swift cask version"))
     XCTAssertFalse(result.stdout.contains("riela-x/../../../escape"))
+
+    let bundleResult = try runCaskBuilder(
+      rootURL: rootURL,
+      environment: [
+        "RIELA_VERSION": "0.1.15",
+        "RIELA_APP_BUNDLE_ID": "bad/bundle"
+      ],
+      arguments: ["--dry-run", "darwin-arm64"]
+    )
+    XCTAssertNotEqual(bundleResult.exitCode, 0)
+    XCTAssertTrue(bundleResult.stderr.contains("unsafe RielaApp bundle identifier"))
   }
 
-  func testCaskRendererUsesBinaryDmgCaskAndMacOSChecksums() throws {
+  func testCaskRendererUsesAppAndBinaryDmgCaskAndMacOSChecksums() throws {
     let rootURL = try repositoryRoot()
     let scriptURL = rootURL.appendingPathComponent("scripts/render-homebrew-cask.sh")
     let script = try String(contentsOf: scriptURL, encoding: .utf8)
@@ -296,23 +331,26 @@ final class SwiftPackagingReadinessTests: XCTestCase {
     XCTAssertTrue(script.contains("arch arm: \"darwin-arm64\", intel: \"darwin-x64\""))
     XCTAssertTrue(script.contains("sha256 arm:"))
     XCTAssertTrue(script.contains("riela-#{version}-#{arch}.dmg"))
+    XCTAssertTrue(script.contains("app \"RielaApp.app\""))
     XCTAssertTrue(script.contains("binary \"riela\""))
     XCTAssertFalse(script.contains("uninstall pkgutil"))
     XCTAssertFalse(script.contains("riela-$version-linux"))
   }
 
-  func testFormulaRendererRequiresOnlyMacOSChecksumsAndFailsLinuxClosed() throws {
+  func testFormulaRendererRequiresMacOSAndLinuxCliChecksums() throws {
     let rootURL = try repositoryRoot()
     let scriptURL = rootURL.appendingPathComponent("scripts/render-homebrew-formula.sh")
     let script = try String(contentsOf: scriptURL, encoding: .utf8)
 
     XCTAssertTrue(script.contains("darwin-arm64"))
     XCTAssertTrue(script.contains("darwin-x64"))
-    XCTAssertFalse(script.contains("linux_arm64_sha"))
-    XCTAssertFalse(script.contains("linux_x64_sha"))
-    XCTAssertFalse(script.contains("riela-$version-linux"))
+    XCTAssertTrue(script.contains("linux-arm64"))
+    XCTAssertTrue(script.contains("linux-x64"))
+    XCTAssertTrue(script.contains("linux_arm64_sha"))
+    XCTAssertTrue(script.contains("linux_x64_sha"))
+    XCTAssertTrue(script.contains("riela-$version-linux"))
     XCTAssertTrue(script.contains("Swift-native workflow runtime"))
-    XCTAssertTrue(script.contains("Swift Homebrew archives are currently macOS-only"))
+    XCTAssertTrue(script.contains("This renderer expects Swift CLI production archives for macOS and Linux."))
   }
 
   private struct SwiftCutoverGateManifest: Decodable {

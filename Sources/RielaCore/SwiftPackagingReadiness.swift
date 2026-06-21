@@ -80,6 +80,8 @@ public func makeSwiftHomebrewReadinessArchivePlan(
 public enum SwiftHomebrewProductionTarget: String, CaseIterable, Codable, Equatable, Sendable {
   case darwinArm64 = "darwin-arm64"
   case darwinX64 = "darwin-x64"
+  case linuxArm64 = "linux-arm64"
+  case linuxX64 = "linux-x64"
 
   public var triple: String {
     switch self {
@@ -87,6 +89,10 @@ public enum SwiftHomebrewProductionTarget: String, CaseIterable, Codable, Equata
       "arm64-apple-macosx"
     case .darwinX64:
       "x86_64-apple-macosx"
+    case .linuxArm64:
+      "aarch64-unknown-linux-gnu"
+    case .linuxX64:
+      "x86_64-unknown-linux-gnu"
     }
   }
 }
@@ -168,8 +174,10 @@ public struct SwiftHomebrewCaskArchivePlan: Codable, Equatable, Sendable {
   public var version: String
   public var target: SwiftHomebrewCaskTarget
   public var executableProduct: String
+  public var appProduct: String
   public var releaseDirectory: String
   public var stagedBinaryPath: String
+  public var stagedAppBundlePath: String
   public var archiveRootPath: String
   public var dmgPath: String
   public var checksumPath: String
@@ -181,8 +189,10 @@ public struct SwiftHomebrewCaskArchivePlan: Codable, Equatable, Sendable {
     version: String,
     target: SwiftHomebrewCaskTarget,
     executableProduct: String,
+    appProduct: String,
     releaseDirectory: String,
     stagedBinaryPath: String,
+    stagedAppBundlePath: String,
     archiveRootPath: String,
     dmgPath: String,
     checksumPath: String,
@@ -193,8 +203,10 @@ public struct SwiftHomebrewCaskArchivePlan: Codable, Equatable, Sendable {
     self.version = version
     self.target = target
     self.executableProduct = executableProduct
+    self.appProduct = appProduct
     self.releaseDirectory = releaseDirectory
     self.stagedBinaryPath = stagedBinaryPath
+    self.stagedAppBundlePath = stagedAppBundlePath
     self.archiveRootPath = archiveRootPath
     self.dmgPath = dmgPath
     self.checksumPath = checksumPath
@@ -216,8 +228,10 @@ public func makeSwiftHomebrewCaskArchivePlan(
     version: version,
     target: target,
     executableProduct: "riela",
+    appProduct: "RielaApp",
     releaseDirectory: releaseDirectory,
     stagedBinaryPath: "\(workDirectory)/riela",
+    stagedAppBundlePath: "\(workDirectory)/RielaApp.app",
     archiveRootPath: workDirectory,
     dmgPath: dmgPath,
     checksumPath: "\(dmgPath).sha256",

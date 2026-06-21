@@ -10,7 +10,7 @@ Usage:
   scripts/release-homebrew-cask-local.sh v<version> [tap-cask-file]
 
 Required local environment variables:
-  APPLE_SIGNING_IDENTITY  Developer ID Application identity for the CLI executable.
+  APPLE_SIGNING_IDENTITY  Developer ID Application identity for RielaApp and the CLI executable.
   APPLE_ID                Apple ID email for notarization.
   APPLE_PASSWORD          Apple app-specific password for notarization.
   APPLE_TEAM_ID           Apple Developer Team ID for notarization.
@@ -83,7 +83,7 @@ x64_dmg="$release_dir/riela-$version-darwin-x64.dmg"
 test -f "$arm_dmg"
 test -f "$x64_dmg"
 
-release_notes="Signed, notarized, and stapled macOS DMG archives for the Homebrew Cask release."
+release_notes="Signed, notarized, and stapled macOS DMG archives for the Homebrew Cask release. Each DMG contains RielaApp.app and the riela CLI."
 if ! gh release view "$release_tag" --repo tacogips/riela >/dev/null 2>&1; then
   gh release create "$release_tag" \
     --repo tacogips/riela \

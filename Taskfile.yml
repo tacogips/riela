@@ -10,12 +10,12 @@ tasks:
       - task --list
 
   build:homebrew:
-    desc: Build a standalone Homebrew release archive for the current platform, or pass targets after --
+    desc: Build standalone Homebrew CLI release archives for the current platform, or pass targets after --
     cmds:
       - scripts/build-homebrew-release.sh {{.CLI_ARGS}}
 
   build:homebrew-cask:
-    desc: Build signed and notarized Homebrew Cask pkg artifacts, or pass targets after --
+    desc: Build signed and notarized macOS Cask DMGs with RielaApp and riela, or pass targets after --
     cmds:
       - scripts/build-homebrew-cask-release.sh {{.CLI_ARGS}}
 

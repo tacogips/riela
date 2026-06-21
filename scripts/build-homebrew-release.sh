@@ -11,20 +11,21 @@ Usage:
 
 Targets:
   darwin-arm64  darwin-x64
+  linux-arm64   linux-x64
 
 Environment:
   RIELA_VERSION             Override package version used in archive names.
   RIELA_RELEASE_DIR         Output directory. Defaults to dist/homebrew.
-  RIELA_SWIFT               Swift executable. Defaults to Xcode's Swift toolchain.
+  RIELA_SWIFT               Swift executable. Defaults to Xcode's Swift toolchain on macOS and swift elsewhere.
   RIELA_SWIFT_DEVELOPER_DIR Defaults to /Applications/Xcode.app/Contents/Developer.
   RIELA_SWIFT_SDKROOT       Defaults to Xcode's macOS SDK path.
 
 Examples:
   scripts/build-homebrew-release.sh
-  scripts/build-homebrew-release.sh --dry-run darwin-arm64 darwin-x64
-  scripts/build-homebrew-release.sh darwin-arm64 darwin-x64
+  scripts/build-homebrew-release.sh --dry-run darwin-arm64
+  scripts/build-homebrew-release.sh linux-x64
 
-This production builder stages Swift macOS archives only. It does not publish
+This production builder stages Swift CLI archives only. It does not publish
 release assets, mutate a tap, render a formula, or remove TypeScript/Bun source.
 EOF
 }
@@ -37,6 +38,8 @@ detect_target() {
   case "$kernel:$arch" in
     Darwin:arm64) printf '%s\n' "darwin-arm64" ;;
     Darwin:x86_64) printf '%s\n' "darwin-x64" ;;
+    Linux:aarch64 | Linux:arm64) printf '%s\n' "linux-arm64" ;;
+    Linux:x86_64) printf '%s\n' "linux-x64" ;;
     *)
       printf 'unsupported Swift production host platform: %s/%s\n' "$kernel" "$arch" >&2
       return 1
@@ -46,10 +49,9 @@ detect_target() {
 
 validate_target() {
   case "$1" in
-    darwin-arm64 | darwin-x64) ;;
+    darwin-arm64 | darwin-x64 | linux-arm64 | linux-x64) ;;
     *)
       printf 'unsupported Swift production target: %s\n' "$1" >&2
-      printf 'Linux Homebrew archives are unsupported until a reviewed Swift Linux build contract exists.\n' >&2
       usage >&2
       return 1
       ;;
@@ -109,7 +111,17 @@ swift_triple_for_target() {
   case "$1" in
     darwin-arm64) printf '%s\n' "arm64-apple-macosx" ;;
     darwin-x64) printf '%s\n' "x86_64-apple-macosx" ;;
+    linux-arm64) printf '%s\n' "aarch64-unknown-linux-gnu" ;;
+    linux-x64) printf '%s\n' "x86_64-unknown-linux-gnu" ;;
   esac
+}
+
+swift_bin_default() {
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    printf '%s\n' "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift"
+    return
+  fi
+  printf '%s\n' "swift"
 }
 
 write_sha256() {
@@ -143,17 +155,22 @@ package_version() {
 swift_release_bin_path() {
   local target swift_bin developer_dir sdkroot triple
   target="$1"
-  swift_bin="${RIELA_SWIFT:-/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift}"
+  swift_bin="${RIELA_SWIFT:-$(swift_bin_default)}"
   developer_dir="${RIELA_SWIFT_DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
   sdkroot="${RIELA_SWIFT_SDKROOT:-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk}"
   triple="$(swift_triple_for_target "$target")"
 
   (
     cd "$repo_root"
-    DEVELOPER_DIR="$developer_dir" SDKROOT="$sdkroot" \
+    if [[ "$target" == darwin-* ]]; then
+      DEVELOPER_DIR="$developer_dir" SDKROOT="$sdkroot" \
+        "$swift_bin" build -c release --product riela --triple "$triple" >/dev/null
+      DEVELOPER_DIR="$developer_dir" SDKROOT="$sdkroot" \
+        "$swift_bin" build -c release --product riela --triple "$triple" --show-bin-path
+    else
       "$swift_bin" build -c release --product riela --triple "$triple" >/dev/null
-    DEVELOPER_DIR="$developer_dir" SDKROOT="$sdkroot" \
       "$swift_bin" build -c release --product riela --triple "$triple" --show-bin-path
+    fi
   )
 }
 

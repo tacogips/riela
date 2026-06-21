@@ -109,62 +109,6 @@ public struct PackageCommand: Equatable, Sendable {
   }
 }
 
-public enum MemoryCommandKind: String, Codable, Sendable {
-  case save
-  case load
-  case search
-}
-
-public struct MemoryCommand: Equatable, Sendable {
-  public var kind: MemoryCommandKind
-  public var options: MemoryCommandOptions
-
-  public init(kind: MemoryCommandKind, options: MemoryCommandOptions) {
-    self.kind = kind
-    self.options = options
-  }
-}
-
-public struct MemoryCommandOptions: Equatable, Sendable {
-  public var memoryId: String
-  public var workflowId: String?
-  public var nodeId: String?
-  public var payloadJSON: String?
-  public var payloadFile: String?
-  public var registeredAt: String?
-  public var matchPatterns: [String]
-  public var limit: Int
-  public var databaseRoot: String?
-  public var workingDirectory: String
-  public var output: WorkflowOutputFormat
-
-  public init(
-    memoryId: String,
-    workflowId: String? = nil,
-    nodeId: String? = nil,
-    payloadJSON: String? = nil,
-    payloadFile: String? = nil,
-    registeredAt: String? = nil,
-    matchPatterns: [String] = [],
-    limit: Int = 30,
-    databaseRoot: String? = nil,
-    workingDirectory: String = FileManager.default.currentDirectoryPath,
-    output: WorkflowOutputFormat = .jsonl
-  ) {
-    self.memoryId = memoryId
-    self.workflowId = workflowId
-    self.nodeId = nodeId
-    self.payloadJSON = payloadJSON
-    self.payloadFile = payloadFile
-    self.registeredAt = registeredAt
-    self.matchPatterns = matchPatterns
-    self.limit = limit
-    self.databaseRoot = databaseRoot
-    self.workingDirectory = workingDirectory
-    self.output = output
-  }
-}
-
 public enum ScopedCommandKind: String, Codable, Sendable {
   case graphql
   case gql
@@ -646,17 +590,20 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       if options.payloadJSON == nil && options.payloadFile == nil {
         throw CLIUsageError("memory save requires --payload-json or --payload-file")
       }
+      if options.workflowId == nil {
+        throw CLIUsageError("memory save requires --workflow-id")
+      }
     case .load, .search:
-      break
-    }
-    if options.workflowId == nil {
-      throw CLIUsageError("memory \(subcommand) requires --workflow-id")
+      if options.workflowId == nil && !options.allWorkflows {
+        throw CLIUsageError("memory \(subcommand) requires --workflow-id")
+      }
     }
     return MemoryCommand(kind: kind, options: options)
   }
 
   private func parseMemoryOptions(memoryId: String, tokens: [String]) throws -> MemoryCommandOptions {
     var workflowId: String?
+    var allWorkflows = false
     var nodeId: String?
     var payloadJSON: String?
     var payloadFile: String?
@@ -685,6 +632,8 @@ public struct RielaArgumentParser: CLIArgumentParsing {
         return tokens[index]
       }
       switch token {
+      case "--all-workflows":
+        allWorkflows = true
       case "--workflow-id":
         workflowId = try value()
       case "--node-id":
@@ -716,6 +665,7 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     return MemoryCommandOptions(
       memoryId: memoryId,
       workflowId: workflowId,
+      allWorkflows: allWorkflows,
       nodeId: nodeId,
       payloadJSON: payloadJSON,
       payloadFile: payloadFile,
@@ -878,232 +828,6 @@ public struct RielaArgumentParser: CLIArgumentParsing {
   }
 }
 
-private struct ParsedWorkflowOptions {
-  var workflowDefinitionDir: String?
-  var scope: WorkflowScope = .auto
-  var output: WorkflowOutputFormat = .jsonl
-  var executable = false
-  var structure = false
-  var variables: String?
-  var nodePatch: String?
-  var mockScenarioPath: String?
-  var maxSteps: Int?
-  var maxConcurrency: Int?
-  var maxLoopIterations: Int?
-  var defaultTimeoutMs: Int?
-  var timeoutMs: Int?
-  var artifactRoot: String?
-  var sessionStore: String?
-  var workingDirectory: String?
-  var endpoint: String?
-  var authToken: String?
-  var authTokenEnv: String?
-  var fromRegistry = false
-  var nestedSuperviser = false
-  var autoImprove = false
-  var maxSupervisedAttempts = 3
-  var maxWorkflowPatches = 2
-  var monitorIntervalMs = 1_000
-  var stallTimeoutMs = 30_000
-  var workflowMutationMode = WorkflowMutationMode.executionCopy
-
-  init(_ tokens: [String], allowRunOptions: Bool = false, allowTableOutput: Bool = false) throws {
-    var index = 0
-    while index < tokens.count {
-      let token = tokens[index]
-      guard token.hasPrefix("--") else {
-        throw CLIUsageError("unexpected positional argument '\(token)'")
-      }
-      try consumeOption(
-        token,
-        tokens: tokens,
-        index: &index,
-        allowRunOptions: allowRunOptions,
-        allowTableOutput: allowTableOutput
-      )
-      index += 1
-    }
-    if stallTimeoutMs < monitorIntervalMs {
-      throw CLIUsageError("invalid --auto-improve policy: stallTimeoutMs must be greater than or equal to monitorIntervalMs")
-    }
-  }
-
-  private mutating func consumeOption(
-    _ token: String,
-    tokens: [String],
-    index: inout Int,
-    allowRunOptions: Bool,
-    allowTableOutput: Bool
-  ) throws {
-    if try consumeCoreOption(token, tokens: tokens, index: &index, allowTableOutput: allowTableOutput) {
-      return
-    }
-    if try consumeStringOption(token, tokens: tokens, index: &index, allowRunOptions: allowRunOptions) {
-      return
-    }
-    if try consumeLimitOption(token, tokens: tokens, index: &index, allowRunOptions: allowRunOptions) {
-      return
-    }
-    if try consumeAutoImproveOption(token, tokens: tokens, index: &index, allowRunOptions: allowRunOptions) {
-      return
-    }
-    throw CLIUsageError("unknown option '\(token)'")
-  }
-
-  private mutating func consumeCoreOption(
-    _ token: String,
-    tokens: [String],
-    index: inout Int,
-    allowTableOutput: Bool
-  ) throws -> Bool {
-    switch token {
-    case "--workflow-definition-dir":
-      workflowDefinitionDir = try readOptionValue(token, tokens: tokens, index: &index)
-    case "--scope":
-      let raw = try readOptionValue(token, tokens: tokens, index: &index)
-      guard let value = WorkflowScope(rawValue: raw), value != .direct else {
-        throw CLIUsageError("invalid --scope value '\(raw)'; expected auto, project, or user")
-      }
-      scope = value
-    case "--output":
-      let raw = try readOptionValue(token, tokens: tokens, index: &index)
-      guard let value = WorkflowOutputFormat(rawValue: raw) else {
-        throw CLIUsageError("invalid --output value '\(raw)'; expected text, json, jsonl, or table")
-      }
-      if value == .table && !allowTableOutput {
-        throw CLIUsageError("`--output table` is only supported for workflow list, workflow status, package search, and package list")
-      }
-      output = value
-    case "--executable":
-      executable = true
-    case "--structure":
-      structure = true
-    case "--from-registry":
-      fromRegistry = true
-    case "--nested-superviser", "--nested-supervisor":
-      nestedSuperviser = true
-    default:
-      return false
-    }
-    return true
-  }
-
-  private mutating func consumeStringOption(
-    _ token: String,
-    tokens: [String],
-    index: inout Int,
-    allowRunOptions: Bool
-  ) throws -> Bool {
-    switch token {
-    case "--node-patch":
-      nodePatch = try readOptionValue(token, tokens: tokens, index: &index)
-    case "--variables":
-      try requireRunOption(token, allowRunOptions: allowRunOptions)
-      variables = try readOptionValue(token, tokens: tokens, index: &index)
-    case "--mock-scenario":
-      try requireRunOption(token, allowRunOptions: allowRunOptions)
-      mockScenarioPath = try readOptionValue(token, tokens: tokens, index: &index)
-    case "--artifact-root":
-      try requireRunOption(token, allowRunOptions: allowRunOptions)
-      artifactRoot = try readOptionValue(token, tokens: tokens, index: &index)
-    case "--session-store":
-      try requireRunOption(token, allowRunOptions: allowRunOptions)
-      sessionStore = try readOptionValue(token, tokens: tokens, index: &index)
-    case "--working-dir", "--working-directory":
-      workingDirectory = try readOptionValue(token, tokens: tokens, index: &index)
-    case "--endpoint":
-      endpoint = try readOptionValue(token, tokens: tokens, index: &index)
-    case "--auth-token":
-      try requireRunOption(token, allowRunOptions: allowRunOptions)
-      authToken = try readOptionValue(token, tokens: tokens, index: &index)
-    case "--auth-token-env":
-      try requireRunOption(token, allowRunOptions: allowRunOptions)
-      authTokenEnv = try readOptionValue(token, tokens: tokens, index: &index)
-    default:
-      return false
-    }
-    return true
-  }
-
-  private mutating func consumeLimitOption(
-    _ token: String,
-    tokens: [String],
-    index: inout Int,
-    allowRunOptions: Bool
-  ) throws -> Bool {
-    switch token {
-    case "--max-steps":
-      try requireRunOption(token, allowRunOptions: allowRunOptions)
-      maxSteps = try positiveInt(token, readOptionValue(token, tokens: tokens, index: &index))
-    case "--max-concurrency":
-      try requireRunOption(token, allowRunOptions: allowRunOptions)
-      maxConcurrency = try positiveInt(token, readOptionValue(token, tokens: tokens, index: &index))
-    case "--max-loop-iterations":
-      try requireRunOption(token, allowRunOptions: allowRunOptions)
-      maxLoopIterations = try positiveInt(token, readOptionValue(token, tokens: tokens, index: &index))
-    case "--default-timeout-ms":
-      try requireRunOption(token, allowRunOptions: allowRunOptions)
-      defaultTimeoutMs = try positiveInt(token, readOptionValue(token, tokens: tokens, index: &index))
-    case "--timeout-ms":
-      try requireRunOption(token, allowRunOptions: allowRunOptions)
-      timeoutMs = try positiveInt(token, readOptionValue(token, tokens: tokens, index: &index))
-    default:
-      return false
-    }
-    return true
-  }
-
-  private mutating func consumeAutoImproveOption(
-    _ token: String,
-    tokens: [String],
-    index: inout Int,
-    allowRunOptions: Bool
-  ) throws -> Bool {
-    switch token {
-    case "--auto-improve":
-      try requireRunOption(token, allowRunOptions: allowRunOptions)
-      autoImprove = true
-    case "--no-auto-improve":
-      try requireRunOption(token, allowRunOptions: allowRunOptions)
-      autoImprove = false
-      maxWorkflowPatches = 0
-    case "--max-supervised-attempts":
-      try requireRunOption(token, allowRunOptions: allowRunOptions)
-      maxSupervisedAttempts = try positiveInt(token, readOptionValue(token, tokens: tokens, index: &index))
-    case "--max-workflow-patches":
-      try requireRunOption(token, allowRunOptions: allowRunOptions)
-      maxWorkflowPatches = try nonNegativeInt(token, readOptionValue(token, tokens: tokens, index: &index))
-    case "--monitor-interval-ms":
-      try requireRunOption(token, allowRunOptions: allowRunOptions)
-      monitorIntervalMs = try positiveInt(token, readOptionValue(token, tokens: tokens, index: &index))
-    case "--stall-timeout-ms":
-      try requireRunOption(token, allowRunOptions: allowRunOptions)
-      stallTimeoutMs = try positiveInt(token, readOptionValue(token, tokens: tokens, index: &index))
-    case "--workflow-mutation-mode":
-      try requireRunOption(token, allowRunOptions: allowRunOptions)
-      let rawMode = try readOptionValue(token, tokens: tokens, index: &index)
-      guard let mode = WorkflowMutationMode(rawValue: rawMode) else {
-        throw CLIUsageError("invalid --workflow-mutation-mode value '\(rawMode)'; expected \(WorkflowMutationMode.acceptedValuesDescription)")
-      }
-      workflowMutationMode = mode
-    default:
-      return false
-    }
-    return true
-  }
-
-  var autoImprovePolicy: WorkflowAutoImprovePolicy {
-    WorkflowAutoImprovePolicy(
-      maxSupervisedAttempts: maxSupervisedAttempts,
-      maxWorkflowPatches: maxWorkflowPatches,
-      monitorIntervalMs: monitorIntervalMs,
-      stallTimeoutMs: stallTimeoutMs,
-      workflowMutationMode: workflowMutationMode,
-      nestedSuperviser: nestedSuperviser
-    )
-  }
-}
-
 private func parseOutputOnly(_ tokens: [String], allowTableOutput: Bool) throws -> WorkflowOutputFormat {
   var output = WorkflowOutputFormat.jsonl
   var index = 0
@@ -1155,13 +879,13 @@ private func parseOutputValue(_ raw: String, allowTableOutput: Bool) throws -> W
   return value
 }
 
-private func requireRunOption(_ token: String, allowRunOptions: Bool) throws {
+func requireRunOption(_ token: String, allowRunOptions: Bool) throws {
   if !allowRunOptions {
     throw CLIUsageError("\(token) is supported only by workflow run")
   }
 }
 
-private func readOptionValue(_ token: String, tokens: [String], index: inout Int) throws -> String {
+func readOptionValue(_ token: String, tokens: [String], index: inout Int) throws -> String {
   guard index + 1 < tokens.count, !tokens[index + 1].hasPrefix("--") else {
     throw CLIUsageError("\(token) requires a value")
   }
@@ -1169,14 +893,14 @@ private func readOptionValue(_ token: String, tokens: [String], index: inout Int
   return tokens[index]
 }
 
-private func positiveInt(_ token: String, _ raw: String) throws -> Int {
+func positiveInt(_ token: String, _ raw: String) throws -> Int {
   guard let value = Int(raw), value > 0 else {
     throw CLIUsageError("\(token) requires a positive integer")
   }
   return value
 }
 
-private func nonNegativeInt(_ token: String, _ raw: String) throws -> Int {
+func nonNegativeInt(_ token: String, _ raw: String) throws -> Int {
   guard let value = Int(raw), value >= 0 else {
     throw CLIUsageError("\(token) must be a non-negative integer")
   }

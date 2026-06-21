@@ -10,7 +10,8 @@ public struct MemorySaveCommandResult: Codable, Equatable, Sendable {
 public struct MemorySearchCommandResult: Codable, Equatable, Sendable {
   public var memoryId: String
   public var databasePath: String
-  public var workflowId: String
+  public var workflowId: String?
+  public var allWorkflows: Bool
   public var nodeId: String?
   public var matchPatterns: [String]
   public var limit: Int
@@ -59,12 +60,13 @@ public struct MemoryCommandRunner: Sendable {
   }
 
   private func list(_ options: MemoryCommandOptions, matchPatterns: [String]) throws -> CLICommandResult {
-    let workflowId = try requiredWorkflowId(options)
+    let workflowId = options.workflowId ?? "*"
     let store = memoryStore(options)
     let records = try store.search(
       memoryId: options.memoryId,
       options: MemorySearchOptions(
         workflowId: workflowId,
+        includeAllWorkflows: options.allWorkflows,
         nodeId: options.nodeId,
         matchPatterns: matchPatterns,
         limit: options.limit
@@ -73,7 +75,8 @@ public struct MemoryCommandRunner: Sendable {
     let result = MemorySearchCommandResult(
       memoryId: options.memoryId,
       databasePath: try store.databasePath(memoryId: options.memoryId),
-      workflowId: workflowId,
+      workflowId: options.workflowId,
+      allWorkflows: options.allWorkflows,
       nodeId: options.nodeId,
       matchPatterns: matchPatterns,
       limit: options.limit,

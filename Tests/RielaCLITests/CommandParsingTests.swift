@@ -304,6 +304,24 @@ final class CommandParsingTests: XCTestCase {
         )
       ))
     )
+
+    XCTAssertEqual(
+      try parser.parse([
+        "memory", "load", "rina-shared",
+        "--all-workflows",
+        "--node-id", "rina",
+        "--limit", "10"
+      ]),
+      .memory(MemoryCommand(
+        kind: .load,
+        options: MemoryCommandOptions(
+          memoryId: "rina-shared",
+          allWorkflows: true,
+          nodeId: "rina",
+          limit: 10
+        )
+      ))
+    )
   }
 
   func testDefaultOutputIsJSONLForMachineReadableCommands() throws {

@@ -102,6 +102,7 @@ public struct MemoryRecordReference: Codable, Equatable, Sendable {
 
 public struct MemorySearchOptions: Equatable, Sendable {
   public var workflowId: String
+  public var includeAllWorkflows: Bool
   public var nodeId: String?
   public var matchPatterns: [String]
   public var sortOrder: MemorySortOrder
@@ -109,12 +110,14 @@ public struct MemorySearchOptions: Equatable, Sendable {
 
   public init(
     workflowId: String,
+    includeAllWorkflows: Bool = false,
     nodeId: String? = nil,
     matchPatterns: [String] = [],
     sortOrder: MemorySortOrder = .registeredDesc,
     limit: Int = 30
   ) {
     self.workflowId = workflowId
+    self.includeAllWorkflows = includeAllWorkflows
     self.nodeId = nodeId
     self.matchPatterns = matchPatterns
     self.sortOrder = sortOrder
@@ -189,6 +192,13 @@ public struct RielaMemoryStore: Sendable {
     try search(memoryId: memoryId, options: MemorySearchOptions(workflowId: workflowId, nodeId: nodeId, limit: limit))
   }
 
+  public func loadAllWorkflows(memoryId: String, workflowId: String, nodeId: String? = nil, limit: Int = 30) throws -> [MemoryRecord] {
+    try search(
+      memoryId: memoryId,
+      options: MemorySearchOptions(workflowId: workflowId, includeAllWorkflows: true, nodeId: nodeId, limit: limit)
+    )
+  }
+
   public func search(memoryId: String, options: MemorySearchOptions) throws -> [MemoryRecord] {
     try validateMemoryId(memoryId)
     try validateWorkflowId(options.workflowId)
@@ -210,9 +220,14 @@ public struct RielaMemoryStore: Sendable {
     var sql = """
       SELECT record_id, workflow_id, node_id, registered_at, json(payload_json) AS payload_json
       FROM memory_entries
-      WHERE workflow_id = ?
       """
-    var bindings: [SQLiteBinding] = [.text(options.workflowId)]
+    var bindings: [SQLiteBinding] = []
+    if !options.includeAllWorkflows {
+      sql += " WHERE workflow_id = ?"
+      bindings.append(.text(options.workflowId))
+    } else if options.nodeId != nil {
+      sql += " WHERE 1 = 1"
+    }
     if let nodeId = options.nodeId {
       sql += " AND node_id = ?"
       bindings.append(.text(nodeId))
@@ -303,6 +318,7 @@ public struct RielaMemoryStore: Sendable {
       }
       throw RielaMemoryError.openFailed(message)
     }
+    sqlite3_busy_timeout(opened, 5_000)
     return opened
   }
 

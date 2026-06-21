@@ -83,6 +83,61 @@ final class RielaMemoryTests: XCTestCase {
     )
   }
 
+  func testSearchCanIncludeAllWorkflowsForSharedPersonaMemory() throws {
+    let root = temporaryDirectory()
+    let store = RielaMemoryStore(rootDirectory: root.path)
+
+    try store.save(
+      memoryId: "rina-shared",
+      workflowId: "discord-rina",
+      nodeId: "rina",
+      payload: .object(["text": .string("discord memory")])
+    )
+    try store.save(
+      memoryId: "rina-shared",
+      workflowId: "telegram-rina",
+      nodeId: "rina",
+      payload: .object(["text": .string("telegram memory")])
+    )
+
+    let scoped = try store.search(
+      memoryId: "rina-shared",
+      options: MemorySearchOptions(workflowId: "telegram-rina")
+    )
+    let shared = try store.search(
+      memoryId: "rina-shared",
+      options: MemorySearchOptions(workflowId: "telegram-rina", includeAllWorkflows: true)
+    )
+
+    XCTAssertEqual(scoped.map(\.workflowId), ["telegram-rina"])
+    XCTAssertEqual(Set(shared.map(\.workflowId)), ["discord-rina", "telegram-rina"])
+  }
+
+  func testConcurrentSavesWaitForSharedMemoryDatabaseLock() async throws {
+    let root = temporaryDirectory()
+    let store = RielaMemoryStore(rootDirectory: root.path)
+
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      for index in 0..<8 {
+        group.addTask {
+          try store.save(
+            memoryId: "rina-shared",
+            workflowId: "workflow-\(index)",
+            nodeId: "rina",
+            payload: .object(["index": .number(Double(index))])
+          )
+        }
+      }
+      try await group.waitForAll()
+    }
+
+    let records = try store.search(
+      memoryId: "rina-shared",
+      options: MemorySearchOptions(workflowId: "workflow-0", includeAllWorkflows: true, limit: 20)
+    )
+    XCTAssertEqual(records.count, 8)
+  }
+
   func testLoadAndSearchRecordReturnedMemoryReferences() throws {
     let root = temporaryDirectory()
     let store = RielaMemoryStore(rootDirectory: root.path)

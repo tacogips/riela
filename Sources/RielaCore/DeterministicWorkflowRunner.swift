@@ -14,6 +14,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   public var rerunFromSessionId: String?
   public var rerunFromStepId: String?
   public var resumeSessionId: String?
+  public var memoryRootDirectory: String?
   public var eventHandler: WorkflowRunEventHandler?
 
   public init(
@@ -30,6 +31,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     rerunFromSessionId: String? = nil,
     rerunFromStepId: String? = nil,
     resumeSessionId: String? = nil,
+    memoryRootDirectory: String? = nil,
     eventHandler: WorkflowRunEventHandler? = nil
   ) {
     self.workflow = workflow
@@ -45,6 +47,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     self.rerunFromSessionId = rerunFromSessionId
     self.rerunFromStepId = rerunFromStepId
     self.resumeSessionId = resumeSessionId
+    self.memoryRootDirectory = memoryRootDirectory
     self.eventHandler = eventHandler
   }
 }
@@ -280,69 +283,15 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         step: step,
         handler: request.eventHandler
       )
-      let publishResult: WorkflowPublicationResult
-      if let basePayload = request.nodePayloads[step.nodeId] {
-        if let stdioNodeKind = workflowStdioNodeExecutionKind(for: basePayload) {
-          var executionPayload = basePayload
-          executionPayload.id = step.id
-          publishResult = try await executeStdioNodeAndPublish(
-            kind: stdioNodeKind,
-            payload: executionPayload,
-            sessionId: session.sessionId,
-            workflow: request.workflow,
-            step: step,
-            resolvedInputPayload: resolvedInput.payload,
-            transitions: transitions,
-            request: request,
-            executionIndex: executionIndex
-          )
-        } else {
-          var executionPayload = try payload(basePayload, applyingPromptVariantFrom: step)
-          executionPayload.id = step.id
-          let mergedVariables = promptVariables(
-            workflow: request.workflow,
-            step: step,
-            payload: executionPayload,
-            requestVariables: request.variables,
-            resolvedInputPayload: resolvedInput.payload
-          )
-          let prompts = composedPrompts(
-            workflow: request.workflow,
-            step: step,
-            payload: executionPayload,
-            variables: mergedVariables
-          )
-          let adapterInput = AdapterExecutionInput(
-            node: executionPayload,
-            promptText: prompts.promptText,
-            systemPromptText: prompts.systemPromptText,
-            arguments: request.variables,
-            mergedVariables: mergedVariables
-          )
-          publishResult = try await executeAndPublish(
-            adapterInput: adapterInput,
-            sessionId: session.sessionId,
-            step: step,
-            basePayload: basePayload,
-            transitions: transitions,
-            request: request,
-            executionIndex: executionIndex
-          )
-        }
-      } else if let addon = registryNode.addon {
-        publishResult = try await executeAddonAndPublish(
-          addon: addon,
-          sessionId: session.sessionId,
-          workflow: request.workflow,
-          step: step,
-          resolvedInputPayload: resolvedInput.payload,
-          transitions: transitions,
-          request: request,
-          executionIndex: executionIndex
-        )
-      } else {
-        throw DeterministicWorkflowRunnerError.missingNodePayload(step.nodeId)
-      }
+      let publishResult = try await executeNodeAndRecordMemory(
+        registryNode: registryNode,
+        request: request,
+        session: session,
+        step: step,
+        resolvedInput: resolvedInput,
+        transitions: transitions,
+        executionIndex: executionIndex
+      )
       session = publishResult.session
       publishedTransitions += publishResult.publishedMessages.count
       rootOutput = publishResult.rootOutput ?? rootOutput
@@ -371,89 +320,137 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     return completedResult
   }
 
-  private func emitSessionStartedEvent(
-    workflowId: String,
-    session: WorkflowSession,
-    handler: WorkflowRunEventHandler?
-  ) async {
-    await emitRunEvent(
-      .init(
-        type: .sessionStarted,
-        workflowId: workflowId,
-        sessionId: session.sessionId,
-        status: session.status,
-        currentStepId: session.currentStepId
-      ),
-      handler: handler
-    )
-  }
-
-  private func emitStepStartedEvent(
-    workflowId: String,
+  private func executeNodeAndRecordMemory(
+    registryNode: WorkflowNodeRegistryRef,
+    request: DeterministicWorkflowRunRequest,
     session: WorkflowSession,
     step: WorkflowStepRef,
-    handler: WorkflowRunEventHandler?
-  ) async {
-    await emitRunEvent(
-      .init(
-        type: .stepStarted,
-        workflowId: workflowId,
+    resolvedInput: WorkflowResolvedMessageInput,
+    transitions: [WorkflowStepTransition],
+    executionIndex: Int
+  ) async throws -> WorkflowPublicationResult {
+    let publishResult: WorkflowPublicationResult
+    do {
+      if let basePayload = request.nodePayloads[step.nodeId] {
+        publishResult = try await executePayloadNodeAndRecordMemory(
+          basePayload: basePayload,
+          request: request,
+          session: session,
+          step: step,
+          resolvedInput: resolvedInput,
+          transitions: transitions,
+          executionIndex: executionIndex
+        )
+      } else if let addon = registryNode.addon {
+        try recordNodeMemoryInbox(
+          workflow: request.workflow,
+          step: step,
+          payload: nil,
+          request: request,
+          session: session,
+          executionIndex: executionIndex,
+          resolvedInput: resolvedInput
+        )
+        publishResult = try await executeAddonAndPublish(
+          addon: addon,
+          sessionId: session.sessionId,
+          workflow: request.workflow,
+          step: step,
+          resolvedInputPayload: resolvedInput.payload,
+          transitions: transitions,
+          request: request,
+          executionIndex: executionIndex
+        )
+      } else {
+        throw DeterministicWorkflowRunnerError.missingNodePayload(step.nodeId)
+      }
+    } catch {
+      try recordNodeMemoryFailureOutbox(
+        workflow: request.workflow,
+        step: step,
+        payload: request.nodePayloads[step.nodeId],
+        request: request,
         sessionId: session.sessionId,
-        status: session.status,
-        currentStepId: step.id,
-        stepId: step.id,
-        nodeId: step.nodeId
-      ),
-      handler: handler
-    )
-  }
-
-  private func emitStepCompletedEvent(
-    workflowId: String,
-    session: WorkflowSession,
-    step: WorkflowStepRef,
-    publishResult: WorkflowPublicationResult,
-    publishedTransitions: Int,
-    handler: WorkflowRunEventHandler?
-  ) async {
-    await emitRunEvent(
-      .init(
-        type: .stepCompleted,
-        workflowId: workflowId,
-        sessionId: session.sessionId,
-        status: session.status,
-        currentStepId: session.currentStepId,
-        stepId: step.id,
-        nodeId: step.nodeId,
-        executionId: publishResult.stepExecution.executionId,
-        nodeExecutions: session.executions.count,
-        transitions: publishedTransitions
-      ),
-      handler: handler
-    )
-  }
-
-  private func emitSessionCompletedEvent(result: WorkflowRunResult, handler: WorkflowRunEventHandler?) async {
-    await emitRunEvent(
-      .init(
-        type: .sessionCompleted,
-        workflowId: result.workflowId,
-        sessionId: result.session.sessionId,
-        status: result.session.status,
-        currentStepId: result.session.currentStepId,
-        exitCode: result.exitCode,
-        nodeExecutions: result.nodeExecutions,
-        transitions: result.transitions
-      ),
-      handler: handler
-    )
-  }
-
-  private func emitRunEvent(_ event: WorkflowRunEvent, handler: WorkflowRunEventHandler?) async {
-    guard let handler else {
-      return
+        executionIndex: executionIndex,
+        error: error
+      )
+      throw error
     }
-    await handler(event)
+    try recordNodeMemoryOutbox(
+      workflow: request.workflow,
+      step: step,
+      payload: request.nodePayloads[step.nodeId],
+      request: request,
+      publishResult: publishResult,
+      executionIndex: executionIndex
+    )
+    return publishResult
+  }
+
+  private func executePayloadNodeAndRecordMemory(
+    basePayload: AgentNodePayload,
+    request: DeterministicWorkflowRunRequest,
+    session: WorkflowSession,
+    step: WorkflowStepRef,
+    resolvedInput: WorkflowResolvedMessageInput,
+    transitions: [WorkflowStepTransition],
+    executionIndex: Int
+  ) async throws -> WorkflowPublicationResult {
+    try recordNodeMemoryInbox(
+      workflow: request.workflow,
+      step: step,
+      payload: basePayload,
+      request: request,
+      session: session,
+      executionIndex: executionIndex,
+      resolvedInput: resolvedInput
+    )
+    if let stdioNodeKind = workflowStdioNodeExecutionKind(for: basePayload) {
+      var executionPayload = basePayload
+      executionPayload.id = step.id
+      return try await executeStdioNodeAndPublish(
+        kind: stdioNodeKind,
+        payload: executionPayload,
+        sessionId: session.sessionId,
+        workflow: request.workflow,
+        step: step,
+        resolvedInputPayload: resolvedInput.payload,
+        transitions: transitions,
+        request: request,
+        executionIndex: executionIndex
+      )
+    }
+    var executionPayload = try payload(basePayload, applyingPromptVariantFrom: step)
+    executionPayload.id = step.id
+    let mergedVariables = promptVariables(
+      workflow: request.workflow,
+      step: step,
+      payload: executionPayload,
+      requestVariables: request.variables,
+      resolvedInputPayload: resolvedInput.payload
+    )
+    let prompts = composedPrompts(
+      workflow: request.workflow,
+      step: step,
+      payload: executionPayload,
+      variables: mergedVariables
+    )
+    let adapterInput = AdapterExecutionInput(
+      node: executionPayload,
+      promptText: prompts.promptText,
+      systemPromptText: prompts.systemPromptText,
+      arguments: request.variables,
+      mergedVariables: mergedVariables
+    )
+    return try await executeAndPublish(
+      adapterInput: adapterInput,
+      sessionId: session.sessionId,
+      step: step,
+      basePayload: basePayload,
+      transitions: transitions,
+      request: request,
+      executionIndex: executionIndex
+    )
   }
 
   private func executeStdioNodeAndPublish(
@@ -484,6 +481,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     }
 
     do {
+      let availableMemories = effectiveNodeMemories(workflow: workflow, step: step, payload: payload)
       let result = try await stdioNodeExecutor.execute(
         WorkflowStdioNodeExecutionInput(
           workflowId: workflow.workflowId,
@@ -494,7 +492,9 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           kind: kind,
           node: payload,
           variables: request.variables,
-          resolvedInputPayload: resolvedInputPayload
+          resolvedInputPayload: resolvedInputPayload,
+          memoryRootDirectory: availableMemories.isEmpty ? nil : resolvedMemoryRootDirectory(request: request),
+          availableMemories: availableMemories
         ),
         context: AdapterExecutionContext(deadline: deadline(for: step, request: request))
       )
@@ -860,11 +860,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     variables["workflowDescription"] = .string(workflow.description)
     variables["nodeId"] = .string(step.id)
     variables["nodeKind"] = .string(step.role?.rawValue ?? "task")
-    let nodeMemories = (
-      workflow.nodeRegistry.first { $0.id == step.nodeId }?.memories ?? []
-    ) + (
-      workflow.nodes.first { $0.id == step.id || $0.id == step.nodeId }?.memories ?? []
-    ) + (payload.memories ?? [])
+    let nodeMemories = effectiveNodeMemories(workflow: workflow, step: step, payload: payload)
     variables["availableMemories"] = .object([
       "workflow": .array((workflow.memories ?? []).map(memoryJSON)),
       "node": .array(nodeMemories.map(memoryJSON))

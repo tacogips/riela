@@ -37,7 +37,13 @@ let package = Package(
         .linkedFramework("JavaScriptCore")
       ]
     ),
-    .target(name: "RielaCore", dependencies: ["RielaJavaScript"]),
+    .target(
+      name: "RielaCore",
+      dependencies: [
+        "RielaJavaScript",
+        .product(name: "RielaMemory", package: "RielaMemory")
+      ]
+    ),
     .target(name: "RielaAddons", dependencies: ["RielaCore"]),
     .target(name: "RielaEvents", dependencies: ["RielaCore"]),
     .target(name: "RielaGraphQL", dependencies: ["RielaCore"]),
@@ -79,7 +85,13 @@ let package = Package(
         "RielaViewer"
       ]
     ),
-    .testTarget(name: "RielaCoreTests", dependencies: ["RielaCore"]),
+    .testTarget(
+      name: "RielaCoreTests",
+      dependencies: [
+        "RielaCore",
+        .product(name: "RielaMemory", package: "RielaMemory")
+      ]
+    ),
     .testTarget(name: "RielaJavaScriptTests", dependencies: ["RielaJavaScript"]),
     .testTarget(name: "RielaAddonsTests", dependencies: ["RielaCore", "RielaAddons"]),
     .testTarget(name: "RielaAdaptersTests", dependencies: ["RielaCore", "RielaAdapters"]),

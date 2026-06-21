@@ -15,6 +15,8 @@ public struct WorkflowStdioNodeExecutionInput: Equatable, Sendable {
   public var node: AgentNodePayload
   public var variables: JSONObject
   public var resolvedInputPayload: JSONObject
+  public var memoryRootDirectory: String?
+  public var availableMemories: [WorkflowMemoryDeclaration]
 
   public init(
     workflowId: String,
@@ -25,7 +27,9 @@ public struct WorkflowStdioNodeExecutionInput: Equatable, Sendable {
     kind: WorkflowStdioNodeExecutionKind,
     node: AgentNodePayload,
     variables: JSONObject,
-    resolvedInputPayload: JSONObject
+    resolvedInputPayload: JSONObject,
+    memoryRootDirectory: String? = nil,
+    availableMemories: [WorkflowMemoryDeclaration] = []
   ) {
     self.workflowId = workflowId
     self.sessionId = sessionId
@@ -36,6 +40,8 @@ public struct WorkflowStdioNodeExecutionInput: Equatable, Sendable {
     self.node = node
     self.variables = variables
     self.resolvedInputPayload = resolvedInputPayload
+    self.memoryRootDirectory = memoryRootDirectory
+    self.availableMemories = availableMemories
   }
 }
 
@@ -56,6 +62,8 @@ public struct WorkflowStdioNodeInvocationEnvelope: Codable, Equatable, Sendable 
   public var nodeType: String
   public var variables: JSONObject
   public var input: JSONObject
+  public var memoryRootDirectory: String?
+  public var availableMemories: [WorkflowMemoryDeclaration]
 
   public init(
     workflowId: String,
@@ -65,7 +73,9 @@ public struct WorkflowStdioNodeInvocationEnvelope: Codable, Equatable, Sendable 
     executionIndex: Int,
     nodeType: String,
     variables: JSONObject,
-    input: JSONObject
+    input: JSONObject,
+    memoryRootDirectory: String? = nil,
+    availableMemories: [WorkflowMemoryDeclaration] = []
   ) {
     self.workflowId = workflowId
     self.workflowExecutionId = workflowExecutionId
@@ -75,6 +85,8 @@ public struct WorkflowStdioNodeInvocationEnvelope: Codable, Equatable, Sendable 
     self.nodeType = nodeType
     self.variables = variables
     self.input = input
+    self.memoryRootDirectory = memoryRootDirectory
+    self.availableMemories = availableMemories
   }
 }
 

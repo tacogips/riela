@@ -280,6 +280,11 @@ final class SwiftPackagingReadinessTests: XCTestCase {
     XCTAssertTrue(script.contains("RIELA_APP_BUNDLE_ID"))
     XCTAssertTrue(script.contains("validate_bundle_id"))
     XCTAssertTrue(script.contains("write_riela_app_bundle"))
+    XCTAssertTrue(script.contains("img/riela_icon.png"))
+    XCTAssertTrue(script.contains("app_icon_name=\"RielaAppIcon\""))
+    XCTAssertTrue(script.contains("${icon_name}.icns"))
+    XCTAssertTrue(script.contains("<key>CFBundleIconFile</key>"))
+    XCTAssertTrue(script.contains("iconutil -c icns"))
     XCTAssertTrue(script.contains("codesign --force --options runtime --timestamp"))
     XCTAssertTrue(script.contains("codesign --verify --deep --strict --verbose=2 \"$staged_app\""))
     XCTAssertTrue(script.contains("hdiutil create"))
@@ -293,6 +298,18 @@ final class SwiftPackagingReadinessTests: XCTestCase {
     XCTAssertFalse(script.contains("gh release"))
     XCTAssertFalse(script.contains("git push"))
     XCTAssertFalse(script.contains("brew tap"))
+  }
+
+  func testMenuBarAppBuilderUsesRepositoryIconAsset() throws {
+    let rootURL = try repositoryRoot()
+    let scriptURL = rootURL.appendingPathComponent("scripts/build-riela-menu-bar-app.sh")
+    let script = try String(contentsOf: scriptURL, encoding: .utf8)
+
+    XCTAssertTrue(script.contains("img/riela_icon.png"))
+    XCTAssertTrue(script.contains("app_icon_name=\"RielaAppIcon\""))
+    XCTAssertTrue(script.contains("${icon_name}.icns"))
+    XCTAssertTrue(script.contains("<key>CFBundleIconFile</key>"))
+    XCTAssertTrue(script.contains("iconutil -c icns"))
   }
 
   func testCaskBuilderDryRunRejectsUnsafeInputs() throws {

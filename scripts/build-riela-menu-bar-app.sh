@@ -6,6 +6,9 @@ configuration="${CONFIGURATION:-release}"
 bundle_root="${repo_root}/.build/${configuration}/RielaApp.app"
 contents_dir="${bundle_root}/Contents"
 macos_dir="${contents_dir}/MacOS"
+resources_dir="${contents_dir}/Resources"
+app_icon_source="${repo_root}/img/riela_icon.png"
+app_icon_name="RielaAppIcon"
 swift_bin="${RIELA_SWIFT:-/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift}"
 developer_dir="${RIELA_SWIFT_DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 sdkroot="${RIELA_SWIFT_SDKROOT:-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk}"
@@ -44,6 +47,47 @@ validate_bundle_id() {
   done
 }
 
+require_command() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    printf 'missing required command: %s\n' "$1" >&2
+    return 1
+  fi
+}
+
+write_app_icon() {
+  local icon_source resources_dir icon_name iconset_dir size scale output_size suffix
+  icon_source="$1"
+  resources_dir="$2"
+  icon_name="$3"
+  iconset_dir="$resources_dir/${icon_name}.iconset"
+
+  if [[ ! -f "$icon_source" ]]; then
+    printf 'missing RielaApp icon source: %s\n' "$icon_source" >&2
+    return 1
+  fi
+
+  require_command sips
+  require_command iconutil
+
+  rm -rf "$iconset_dir"
+  mkdir -p "$iconset_dir"
+
+  for size in 16 32 128 256 512; do
+    for scale in 1 2; do
+      output_size=$((size * scale))
+      suffix=""
+      if [[ "$scale" -eq 2 ]]; then
+        suffix="@2x"
+      fi
+      sips -z "$output_size" "$output_size" "$icon_source" \
+        --out "$iconset_dir/icon_${size}x${size}${suffix}.png" >/dev/null
+    done
+  done
+
+  iconutil -c icns "$iconset_dir" -o "$resources_dir/${icon_name}.icns"
+  rm -rf "$iconset_dir"
+}
+
 validate_version "$version"
 validate_bundle_id "$bundle_id"
 
@@ -52,8 +96,9 @@ DEVELOPER_DIR="${developer_dir}" SDKROOT="${sdkroot}" \
   "${swift_bin}" build -c "${configuration}" --product RielaApp
 
 rm -rf "${bundle_root}"
-mkdir -p "${macos_dir}"
+mkdir -p "${macos_dir}" "${resources_dir}"
 cp ".build/${configuration}/RielaApp" "${macos_dir}/RielaApp"
+write_app_icon "${app_icon_source}" "${resources_dir}" "${app_icon_name}"
 
 cat > "${contents_dir}/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -66,6 +111,8 @@ cat > "${contents_dir}/Info.plist" <<PLIST
   <string>RielaApp</string>
   <key>CFBundleExecutable</key>
   <string>RielaApp</string>
+  <key>CFBundleIconFile</key>
+  <string>${app_icon_name}</string>
   <key>CFBundleIdentifier</key>
   <string>${bundle_id}</string>
   <key>CFBundleInfoDictionaryVersion</key>

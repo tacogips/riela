@@ -584,15 +584,18 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     }
     let options = try parseMemoryOptions(memoryId: arguments[1], tokens: Array(arguments.dropFirst(2)))
     switch kind {
-    case .save:
+    case .save, .update:
       if options.payloadJSON != nil && options.payloadFile != nil {
-        throw CLIUsageError("memory save accepts only one of --payload-json or --payload-file")
+        throw CLIUsageError("memory \(subcommand) accepts only one of --payload-json or --payload-file")
       }
       if options.payloadJSON == nil && options.payloadFile == nil {
-        throw CLIUsageError("memory save requires --payload-json or --payload-file")
+        throw CLIUsageError("memory \(subcommand) requires --payload-json or --payload-file")
       }
       if options.workflowId == nil {
-        throw CLIUsageError("memory save requires --workflow-id")
+        throw CLIUsageError("memory \(subcommand) requires --workflow-id")
+      }
+      if kind == .update && options.recordId == nil {
+        throw CLIUsageError("memory update requires --record-id")
       }
     case .load, .search:
       if options.workflowId == nil && !options.allWorkflows {
@@ -608,6 +611,7 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     var workflowId: String?
     var allWorkflows = false
     var nodeId: String?
+    var recordId: Int64?
     var payloadJSON: String?
     var payloadFile: String?
     var registeredAt: String?
@@ -650,6 +654,11 @@ public struct RielaArgumentParser: CLIArgumentParsing {
         workflowId = try value()
       case "--node-id":
         nodeId = try value()
+      case "--record-id":
+        guard let parsed = Int64(try value()), parsed > 0 else {
+          throw CLIUsageError("--record-id must be a positive integer")
+        }
+        recordId = parsed
       case "--payload-json":
         payloadJSON = try value()
       case "--payload-file":
@@ -693,6 +702,7 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       workflowId: workflowId,
       allWorkflows: allWorkflows,
       nodeId: nodeId,
+      recordId: recordId,
       payloadJSON: payloadJSON,
       payloadFile: payloadFile,
       registeredAt: registeredAt,

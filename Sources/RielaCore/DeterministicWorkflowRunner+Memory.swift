@@ -57,6 +57,7 @@ extension DeterministicWorkflowRunner {
     return """
       Available Riela memory ids for this node: \(memoryList).
       Save JSON memory: riela memory save <memory-id> --workflow-id \(workflowId) --node-id \(nodeId) --payload-json '<json>'.
+      Update JSON memory: riela memory update <memory-id> --workflow-id \(workflowId) --record-id <id> --payload-json '<json>'.
       Load recent memory: riela memory load <memory-id> --workflow-id \(workflowId) --node-id \(nodeId) --limit 30.
       Search memory with grep-style regular expressions: riela memory search <memory-id> --workflow-id \(workflowId) --match '<regex>' --limit 30.
       Inspect memory metadata before searching: riela memory metadata <memory-id>.
@@ -95,11 +96,11 @@ extension DeterministicWorkflowRunner {
     payload: AgentNodePayload?,
     request: DeterministicWorkflowRunRequest
   ) throws {
-    let memories = deduplicatedMemories((workflow.memories ?? []) + effectiveNodeMemories(
+    let memories = deduplicatedMemories(effectiveNodeMemories(
       workflow: workflow,
       step: step,
       payload: payload
-    ))
+    ) + (workflow.memories ?? []))
     guard !memories.isEmpty else {
       return
     }
@@ -360,7 +361,11 @@ private extension WorkflowMemoryDeclaration {
 }
 
 private let builtinMemoryAddonNames: Set<String> = [
+  "riela/chat-memory-raw-daily-summary",
+  "riela/chat-persona-memory-read",
+  "riela/chat-persona-memory-write",
   "riela/memory-save",
+  "riela/memory-update",
   "riela/memory-load",
   "riela/memory-search"
 ]

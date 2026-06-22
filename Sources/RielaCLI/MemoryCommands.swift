@@ -7,6 +7,13 @@ public struct MemorySaveCommandResult: Codable, Equatable, Sendable {
   public var record: MemoryRecord
 }
 
+public struct MemoryUpdateCommandResult: Codable, Equatable, Sendable {
+  public var memoryId: String
+  public var databasePath: String
+  public var updated: Bool
+  public var record: MemoryRecord
+}
+
 public struct MemorySearchCommandResult: Codable, Equatable, Sendable {
   public var memoryId: String
   public var databasePath: String
@@ -45,6 +52,8 @@ public struct MemoryCommandRunner: Sendable {
       switch command.kind {
       case .save:
         return try save(command.options)
+      case .update:
+        return try update(command.options)
       case .load:
         return try list(command.options, matchPatterns: [])
       case .search:
@@ -83,6 +92,35 @@ public struct MemoryCommandRunner: Sendable {
     )
     return try render(result, output: options.output) { result in
       "saved memory \(result.memoryId) record \(result.record.recordId) for workflow \(result.record.workflowId)\n"
+    }
+  }
+
+  private func update(_ options: MemoryCommandOptions) throws -> CLICommandResult {
+    guard let recordId = options.recordId else {
+      throw CLIUsageError("memory update requires --record-id")
+    }
+    guard let workflowId = options.workflowId else {
+      throw CLIUsageError("memory update requires --workflow-id")
+    }
+    let store = memoryStore(options)
+    let payload = try payloadValue(options)
+    let record = try store.update(
+      memoryId: options.memoryId,
+      recordId: recordId,
+      workflowId: workflowId,
+      nodeId: options.nodeId,
+      tags: options.tags,
+      relatedRecordIds: options.relatedRecordIds,
+      payload: payload
+    )
+    let result = MemoryUpdateCommandResult(
+      memoryId: options.memoryId,
+      databasePath: try store.databasePath(memoryId: options.memoryId),
+      updated: true,
+      record: record
+    )
+    return try render(result, output: options.output) { result in
+      "updated memory \(result.memoryId) record \(result.record.recordId) for workflow \(result.record.workflowId)\n"
     }
   }
 
@@ -200,7 +238,7 @@ public struct MemoryCommandRunner: Sendable {
       }
       return try decodePayload(string)
     }
-    throw CLIUsageError("memory save requires --payload-json or --payload-file")
+    throw CLIUsageError("memory command requires --payload-json or --payload-file")
   }
 
   private func decodePayload(_ json: String) throws -> MemoryJSONValue {

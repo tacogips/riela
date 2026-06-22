@@ -1,3 +1,4 @@
+import SQLite3
 import XCTest
 @testable import RielaMemory
 
@@ -69,6 +70,30 @@ final class RielaMemoryTests: XCTestCase {
     ])
   }
 
+  func testOpeningLegacyDatabaseMigratesWithoutDeletingRecords() throws {
+    let root = temporaryDirectory()
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let databaseURL = root.appendingPathComponent("legacy-memory.sqlite")
+    try createLegacyMemoryDatabase(at: databaseURL)
+
+    let store = RielaMemoryStore(rootDirectory: root.path)
+    let records = try store.load(memoryId: "legacy-memory", workflowId: "wf", limit: 10)
+
+    XCTAssertEqual(records.map(\.recordId), [1])
+    XCTAssertEqual(records[0].tags, [])
+    XCTAssertEqual(records[0].relatedRecordIds, [])
+    XCTAssertEqual(records[0].payload, .object(["text": .string("legacy survives")]))
+
+    let saved = try store.save(
+      memoryId: "legacy-memory",
+      workflowId: "wf",
+      tags: ["new"],
+      relatedRecordIds: [records[0].recordId],
+      payload: .object(["text": .string("new record")])
+    )
+    XCTAssertEqual(saved.recordId, 2)
+  }
+
   func testMetadataCanDescribeMemoryPurposeAndDataSchema() throws {
     let root = temporaryDirectory()
     let store = RielaMemoryStore(rootDirectory: root.path)
@@ -86,6 +111,59 @@ final class RielaMemoryTests: XCTestCase {
 
     XCTAssertEqual(metadata.memoryId, "persona-summary")
     XCTAssertEqual(try store.metadata(memoryId: "persona-summary"), metadata)
+  }
+
+  func testUpdateReplacesPayloadTagsAndRelatedIdsForRecord() throws {
+    let root = temporaryDirectory()
+    let store = RielaMemoryStore(rootDirectory: root.path)
+
+    let base = try store.save(
+      memoryId: "daily-summary",
+      workflowId: "wf",
+      registeredAt: "2026-06-20T10:00:00Z",
+      tags: ["date:2026-06-20"],
+      payload: .object(["summary": .string("old")])
+    )
+    let related = try store.save(
+      memoryId: "daily-summary",
+      workflowId: "wf",
+      registeredAt: "2026-06-20T10:01:00Z",
+      payload: .object(["summary": .string("source")])
+    )
+
+    let updated = try store.update(
+      memoryId: "daily-summary",
+      recordId: base.recordId,
+      workflowId: "wf",
+      tags: ["date:2026-06-20", "updated"],
+      relatedRecordIds: [related.recordId],
+      payload: .object(["summary": .string("new")])
+    )
+
+    XCTAssertEqual(updated.recordId, base.recordId)
+    XCTAssertEqual(updated.registeredAt, "2026-06-20T10:00:00Z")
+    XCTAssertEqual(updated.tags, ["date:2026-06-20", "updated"])
+    XCTAssertEqual(updated.relatedRecordIds, [related.recordId])
+    XCTAssertEqual(updated.payload, .object(["summary": .string("new")]))
+    XCTAssertEqual(
+      try store.search(memoryId: "daily-summary", options: MemorySearchOptions(workflowId: "wf", tags: ["updated"]))
+        .map(\.recordId),
+      [base.recordId]
+    )
+  }
+
+  func testUpdateRequiresExistingRecord() throws {
+    let root = temporaryDirectory()
+    let store = RielaMemoryStore(rootDirectory: root.path)
+
+    XCTAssertThrowsError(try store.update(
+      memoryId: "daily-summary",
+      recordId: 999,
+      workflowId: "wf",
+      payload: .object(["summary": .string("missing")])
+    )) { error in
+      XCTAssertEqual(error as? RielaMemoryError, .missingRecordId(999))
+    }
   }
 
   func testTagsAndRelatedRecordIdsAreStoredSearchableAndPageableAsUniqueValues() throws {
@@ -312,5 +390,40 @@ final class RielaMemoryTests: XCTestCase {
   private func temporaryDirectory() -> URL {
     FileManager.default.temporaryDirectory
       .appendingPathComponent("riela-memory-tests-\(UUID().uuidString)", isDirectory: true)
+  }
+
+  private func createLegacyMemoryDatabase(at url: URL) throws {
+    var db: OpaquePointer?
+    guard sqlite3_open(url.path, &db) == SQLITE_OK, let db else {
+      throw RielaMemoryError.openFailed("failed to create legacy test database")
+    }
+    defer {
+      sqlite3_close(db)
+    }
+    try executeLegacySQL(
+      db,
+      """
+      CREATE TABLE memory_entries (
+        record_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        workflow_id TEXT NOT NULL,
+        node_id TEXT,
+        registered_at TEXT NOT NULL,
+        payload_json BLOB NOT NULL CHECK (json_valid(payload_json, 8))
+      )
+      """
+    )
+    try executeLegacySQL(
+      db,
+      """
+      INSERT INTO memory_entries (workflow_id, node_id, registered_at, payload_json)
+      VALUES ('wf', 'node', '2026-06-20T10:00:00Z', jsonb('{"text":"legacy survives"}'))
+      """
+    )
+  }
+
+  private func executeLegacySQL(_ db: OpaquePointer?, _ sql: String) throws {
+    guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else {
+      throw RielaMemoryError.sqliteFailed(String(cString: sqlite3_errmsg(db)))
+    }
   }
 }

@@ -2204,6 +2204,7 @@ Usage:
   riela workflow run <workflow> --mock-scenario <path> [--auto-improve] [--output jsonl|json|text]
   riela package <search|list|status|install|update|remove|checkout|publish> [options]
   riela memory save <memory-id> --workflow-id <workflow> --payload-json <json> [--node-id <node>] [--tag <tag>] [--related-id <id>] [--memory-root <dir>]
+  riela memory update <memory-id> --workflow-id <workflow> --record-id <id> --payload-json <json> [--tag <tag>] [--related-id <id>] [--memory-root <dir>]
   riela memory load|search <memory-id> --workflow-id <workflow> [--match <regex>] [--tag <tag>] [--related-id <id>] [--limit 30] [--memory-root <dir>]
   riela memory metadata|tags|related-ids <memory-id> [--limit 30] [--offset 0] [--sort value-asc|value-desc] [--memory-root <dir>]
   riela session rerun <session-id> <step-id> [--scope project|user|auto] [--output jsonl|json|text]

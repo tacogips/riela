@@ -26,35 +26,41 @@ struct EventWorkflowRunRequest: Sendable {
 
 struct DefaultEventLiveServer: EventLiveServing {
   var telegramAPI: any TelegramGatewayAPI
+  var discordAPI: any DiscordGatewayAPI
   var workflowRunner: any EventWorkflowRunning
 
   init(
     telegramAPI: any TelegramGatewayAPI = URLSessionTelegramGatewayAPI(),
+    discordAPI: any DiscordGatewayAPI = URLSessionDiscordGatewayAPI(),
     workflowRunner: any EventWorkflowRunning = CLIEventWorkflowRunner()
   ) {
     self.telegramAPI = telegramAPI
+    self.discordAPI = discordAPI
     self.workflowRunner = workflowRunner
   }
 
   func serve(eventRoot: URL, target: String?, parsed: ParsedParityOptions, output: WorkflowOutputFormat) async throws -> ScopedParityCommandResult {
     let config = try EventLiveConfig.load(eventRoot: eventRoot)
-    let enabledSources = config.sources.filter(\.enabled)
+    let enabledSources = config.enabledSources(target: target)
     let unsupported = enabledSources
-      .filter { $0.kind != .telegramGateway }
+      .filter { ![.telegramGateway, .discordGateway].contains($0.kind) }
       .map { "\($0.id):\($0.kind.rawValue)" }
       .joined(separator: ",")
     guard unsupported.isEmpty else {
       return liveUnavailable(eventRoot: eventRoot, actionTarget: target, unsupportedSources: unsupported)
     }
+    let liveConfig = EventLiveConfig(sources: enabledSources, bindings: config.bindings)
 
-    let telegramSources = try config.telegramSources(eventRoot: eventRoot)
-    guard !telegramSources.isEmpty else {
+    let telegramSources = try liveConfig.telegramSources(eventRoot: eventRoot)
+    let discordSources = try liveConfig.discordSources(eventRoot: eventRoot)
+    guard !telegramSources.isEmpty || !discordSources.isEmpty else {
       return liveUnavailable(eventRoot: eventRoot, actionTarget: target, unsupportedSources: enabledSources.map { "\($0.id):\($0.kind.rawValue)" }.joined(separator: ","))
     }
 
     let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
     do {
       try telegramSources.forEach { try $0.validateEnvironment(environment: environment) }
+      try discordSources.forEach { try $0.validateEnvironment(environment: environment) }
     } catch {
       try? writeServeRecord(eventRoot: eventRoot, status: "failed", detail: String(describing: error))
       throw error
@@ -64,7 +70,13 @@ struct DefaultEventLiveServer: EventLiveServing {
     let maximumEvents = parsed.limit
     repeat {
       for source in telegramSources {
-        processedEvents += try await pollTelegramSource(source, config: config, eventRoot: eventRoot, parsed: parsed)
+        processedEvents += try await pollTelegramSource(source, config: liveConfig, eventRoot: eventRoot, parsed: parsed)
+        if let maximumEvents, processedEvents >= maximumEvents {
+          return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
+        }
+      }
+      for source in discordSources {
+        processedEvents += try await pollDiscordSource(source, config: liveConfig, eventRoot: eventRoot, parsed: parsed)
         if let maximumEvents, processedEvents >= maximumEvents {
           return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
         }
@@ -196,7 +208,7 @@ struct DefaultEventLiveServer: EventLiveServing {
     return min(source.polling.timeoutSeconds, 2)
   }
 
-  private func liveUnavailable(eventRoot: URL, actionTarget: String?, unsupportedSources: String) -> ScopedParityCommandResult {
+  func liveUnavailable(eventRoot: URL, actionTarget: String?, unsupportedSources: String) -> ScopedParityCommandResult {
     ScopedParityCommandResult(
       scope: "events",
       command: "serve",
@@ -204,14 +216,14 @@ struct DefaultEventLiveServer: EventLiveServing {
       status: "failed",
       records: [
         "eventRoot=\(eventRoot.path)",
-        "mode=telegram-gateway-live",
+        "mode=event-live",
         "status=unavailable",
         "unsupportedLiveSources=\(unsupportedSources)"
       ]
     )
   }
 
-  private func liveReady(eventRoot: URL, actionTarget: String?, processedEvents: Int) -> ScopedParityCommandResult {
+  func liveReady(eventRoot: URL, actionTarget: String?, processedEvents: Int) -> ScopedParityCommandResult {
     ScopedParityCommandResult(
       scope: "events",
       command: "serve",
@@ -219,14 +231,14 @@ struct DefaultEventLiveServer: EventLiveServing {
       status: "ok",
       records: [
         "eventRoot=\(eventRoot.path)",
-        "mode=telegram-gateway-live",
+        "mode=event-live",
         "status=ready",
         "processedEvents=\(processedEvents)"
       ]
     )
   }
 
-  private func writeServeRecord(
+  func writeServeRecord(
     eventRoot: URL,
     status: String,
     detail: String? = nil,
@@ -248,7 +260,7 @@ struct DefaultEventLiveServer: EventLiveServing {
     }()
     record["eventRoot"] = .string(eventRoot.path)
     record["status"] = .string(status)
-    record["mode"] = .string("telegram-gateway-live")
+    record["mode"] = .string("event-live")
     record["updatedAt"] = .string(ISO8601DateFormatter().string(from: Date()))
     if let detail {
       record["detail"] = .string(detail)
@@ -331,11 +343,18 @@ struct EventLiveConfig: Sendable {
   func telegramSources(eventRoot: URL) throws -> [TelegramGatewaySource] {
     let sourceDirectory = eventRoot.appendingPathComponent("sources", isDirectory: true)
     let boundSourceIds = Set(bindings.filter(\.enabled).map(\.sourceId))
-    return try Self.decodeDirectory(sourceDirectory, as: TelegramGatewaySource.self)
-      .filter { source in
-        boundSourceIds.contains(source.id)
-          && sources.contains { $0.id == source.id && $0.enabled && $0.kind == .telegramGateway }
-      }
+    let sourceIds = Set(sources.filter { source in
+      source.enabled && source.kind == .telegramGateway && boundSourceIds.contains(source.id)
+    }.map(\.id))
+    return try Self.decodeSourceDirectory(sourceDirectory, sourceIds: sourceIds, as: TelegramGatewaySource.self)
+  }
+
+  func enabledSources(target: String?) -> [EventSourceContract] {
+    let enabled = sources.filter(\.enabled)
+    guard let target, !target.isEmpty else {
+      return enabled
+    }
+    return enabled.filter { $0.id == target }
   }
 
   private static func decodeDirectory<T: Decodable>(_ directory: URL, as type: T.Type) throws -> [T] {
@@ -346,6 +365,23 @@ struct EventLiveConfig: Sendable {
       .filter { $0.pathExtension == "json" }
       .sorted { $0.lastPathComponent < $1.lastPathComponent }
       .map { try JSONDecoder().decode(type, from: Data(contentsOf: $0)) }
+  }
+
+  private static func decodeSourceDirectory<T: Decodable>(_ directory: URL, sourceIds: Set<String>, as type: T.Type) throws -> [T] {
+    guard FileManager.default.fileExists(atPath: directory.path) else {
+      return []
+    }
+    return try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+      .filter { $0.pathExtension == "json" }
+      .sorted { $0.lastPathComponent < $1.lastPathComponent }
+      .compactMap { url in
+        let data = try Data(contentsOf: url)
+        let contract = try JSONDecoder().decode(EventSourceContract.self, from: data)
+        guard sourceIds.contains(contract.id) else {
+          return nil
+        }
+        return try JSONDecoder().decode(type, from: data)
+      }
   }
 }
 

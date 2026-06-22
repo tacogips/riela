@@ -395,6 +395,104 @@ final class EventLiveServeTests: XCTestCase {
     XCTAssertEqual(history.last?["replyAs"]?.stringValue, "rina")
   }
 
+  func testDiscordGatewayServePollsRunsWorkflowAndSendsPersonaReplies() async throws {
+    let eventRoot = try temporaryDirectory()
+    try writeDiscordEventConfig(eventRoot: eventRoot)
+    let api = FakeDiscordGatewayAPI(messages: [
+      try DiscordMessage.fixture(
+        id: "1510000000000000001",
+        channelId: "200",
+        guildId: "100",
+        content: "Yui、MikaとRinaにも自然に聞いて"
+      )
+    ])
+    let workflowRunner = FakeEventWorkflowRunner(replies: [
+      ("YuiからMikaに渡します。@Mika、どう見えますか？", "yui"),
+      ("Mikaだよ。自然だと思う。@Rina、技術面どう？", "mika"),
+      ("Rinaです。routing と reply identity を分ければ問題ない。", "rina")
+    ])
+    let server = DefaultEventLiveServer(
+      telegramAPI: FakeTelegramGatewayAPI(updates: []),
+      discordAPI: api,
+      workflowRunner: workflowRunner
+    )
+
+    let result = try await CLIRuntimeEnvironment.$overrides.withValue([
+      "TEST_DISCORD_TOKEN": "source-token",
+      "TEST_DISCORD_APP_ID": "999",
+      "TEST_DISCORD_YUI_TOKEN": "yui-token",
+      "TEST_DISCORD_MIKA_TOKEN": "mika-token",
+      "TEST_DISCORD_RINA_TOKEN": "rina-token"
+    ]) {
+      try await server.serve(
+        eventRoot: eventRoot,
+        target: nil,
+        parsed: try ParsedParityOptions([
+          "--workflow-definition-dir", eventRoot.deletingLastPathComponent().path,
+          "--limit", "1"
+        ]),
+        output: .json
+      )
+    }
+
+    XCTAssertEqual(result.status, "ok")
+    XCTAssertTrue(result.records.contains("processedEvents=1"))
+    let workflowRequests = await workflowRunner.requests
+    XCTAssertEqual(workflowRequests.map(\.workflowName), ["discord-flow"])
+    XCTAssertEqual(workflowRequests.first?.runtimeVariables["humanInput"], .object([
+      "request": .string("Yui、MikaとRinaにも自然に聞いて"),
+      "conversationId": .string("200")
+    ]))
+    let sentMessages = await api.sentMessages
+    XCTAssertEqual(sentMessages, [
+      DiscordSendMessageRequest(token: "yui-token", channelId: "200", text: "YuiからMikaに渡します。@Mika、どう見えますか？"),
+      DiscordSendMessageRequest(token: "mika-token", channelId: "200", text: "Mikaだよ。自然だと思う。@Rina、技術面どう？"),
+      DiscordSendMessageRequest(token: "rina-token", channelId: "200", text: "Rinaです。routing と reply identity を分ければ問題ない。")
+    ])
+    let offsetText = try String(contentsOf: eventRoot.appendingPathComponent("discord/discord-live-200-offset.json"), encoding: .utf8)
+    XCTAssertTrue(offsetText.contains(#""lastMessageId" : "1510000000000000001""#))
+  }
+
+  func testDiscordGatewayServeUsesRequestedLimitOnInitialPoll() async throws {
+    let eventRoot = try temporaryDirectory()
+    try writeDiscordEventConfig(eventRoot: eventRoot)
+    let api = FakeDiscordGatewayAPI(messages: [
+      try DiscordMessage.fixture(id: "1510000000000000001", channelId: "200", guildId: "100", content: "first"),
+      try DiscordMessage.fixture(id: "1510000000000000002", channelId: "200", guildId: "100", content: "second")
+    ])
+    let workflowRunner = FakeEventWorkflowRunner(replies: ["reply one", "reply two"], replyAs: "yui")
+    let server = DefaultEventLiveServer(
+      telegramAPI: FakeTelegramGatewayAPI(updates: []),
+      discordAPI: api,
+      workflowRunner: workflowRunner
+    )
+
+    let result = try await CLIRuntimeEnvironment.$overrides.withValue([
+      "TEST_DISCORD_TOKEN": "source-token",
+      "TEST_DISCORD_APP_ID": "999",
+      "TEST_DISCORD_YUI_TOKEN": "yui-token",
+      "TEST_DISCORD_MIKA_TOKEN": "mika-token",
+      "TEST_DISCORD_RINA_TOKEN": "rina-token"
+    ]) {
+      try await server.serve(
+        eventRoot: eventRoot,
+        target: nil,
+        parsed: try ParsedParityOptions([
+          "--workflow-definition-dir", eventRoot.deletingLastPathComponent().path,
+          "--limit", "2"
+        ]),
+        output: .json
+      )
+    }
+
+    XCTAssertEqual(result.status, "ok")
+    XCTAssertTrue(result.records.contains("processedEvents=2"))
+    let getMessageRequests = await api.getMessageRequests
+    XCTAssertEqual(getMessageRequests.first?.limit, 2)
+    let workflowRequests = await workflowRunner.requests
+    XCTAssertEqual(workflowRequests.count, 2)
+  }
+
   func testTelegramAPIStatusResponseReportsTelegramFailureDescription() throws {
     let data = Data(#"{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}"#.utf8)
     let response = try JSONDecoder().decode(TelegramAPIStatusResponse.self, from: data)
@@ -457,6 +555,50 @@ final class EventLiveServeTests: XCTestCase {
     }
     """.write(to: bindings.appendingPathComponent("telegram-to-workflow.json"), atomically: true, encoding: .utf8)
   }
+
+  private func writeDiscordEventConfig(eventRoot: URL) throws {
+    let sources = eventRoot.appendingPathComponent("sources", isDirectory: true)
+    let bindings = eventRoot.appendingPathComponent("bindings", isDirectory: true)
+    try FileManager.default.createDirectory(at: sources, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: bindings, withIntermediateDirectories: true)
+    try """
+    {
+      "id": "discord-live",
+      "kind": "discord-gateway",
+      "provider": "discord",
+      "tokenEnv": "TEST_DISCORD_TOKEN",
+      "applicationIdEnv": "TEST_DISCORD_APP_ID",
+      "guildIds": ["100"],
+      "channels": [{"id": "200", "includeThreads": true, "personas": ["yui", "mika", "rina"]}],
+      "polling": {
+        "limit": 1,
+        "offsetPath": "discord/discord-live-200-offset.json"
+      },
+      "replyBots": {
+        "yui": {"tokenEnv": "TEST_DISCORD_YUI_TOKEN"},
+        "mika": {"tokenEnv": "TEST_DISCORD_MIKA_TOKEN"},
+        "rina": {"tokenEnv": "TEST_DISCORD_RINA_TOKEN"}
+      }
+    }
+    """.write(to: sources.appendingPathComponent("discord-live.json"), atomically: true, encoding: .utf8)
+    try """
+    {
+      "id": "discord-to-workflow",
+      "sourceId": "discord-live",
+      "workflowName": "discord-flow",
+      "match": {"eventType": "chat.message"},
+      "inputMapping": {
+        "mode": "template",
+        "template": {
+          "request": "{{event.input.text}}",
+          "conversationId": "{{event.conversation.id}}"
+        },
+        "mirrorToHumanInput": true
+      },
+      "outputDestinations": ["discord-replies"]
+    }
+    """.write(to: bindings.appendingPathComponent("discord-to-workflow.json"), atomically: true, encoding: .utf8)
+  }
 }
 
 private func historyInput(from request: EventWorkflowRunRequest) -> [JSONObject]? {
@@ -511,52 +653,75 @@ private actor FakeTelegramGatewayAPI: TelegramGatewayAPI {
   }
 }
 
+private actor FakeDiscordGatewayAPI: DiscordGatewayAPI {
+  private var queuedMessages: [DiscordMessage]
+  private(set) var getMessageRequests: [DiscordGetMessagesRequest] = []
+  private(set) var sentMessages: [DiscordSendMessageRequest] = []
+
+  init(messages: [DiscordMessage]) {
+    self.queuedMessages = messages
+  }
+
+  func getMessages(request: DiscordGetMessagesRequest) async throws -> [DiscordMessage] {
+    getMessageRequests.append(request)
+    let messages = queuedMessages
+    queuedMessages = []
+    return messages
+  }
+
+  func sendMessage(request: DiscordSendMessageRequest) async throws {
+    sentMessages.append(request)
+  }
+}
+
 private actor FakeEventWorkflowRunner: EventWorkflowRunning {
   private(set) var requests: [EventWorkflowRunRequest] = []
-  private let replyTexts: [String]
-  private let replyAs: String
+  private let repliesByRequest: [[(text: String, replyAs: String)]]
 
   init(replyText: String, replyAs: String) {
-    self.replyTexts = [replyText]
-    self.replyAs = replyAs
+    self.repliesByRequest = [[(replyText, replyAs)]]
   }
 
   init(replies: [String], replyAs: String) {
-    self.replyTexts = replies
-    self.replyAs = replyAs
+    self.repliesByRequest = replies.map { [($0, replyAs)] }
+  }
+
+  init(replies: [(text: String, replyAs: String)]) {
+    self.repliesByRequest = [replies]
   }
 
   func runWorkflow(_ request: EventWorkflowRunRequest) async throws -> WorkflowRunResult {
     requests.append(request)
-    let replyText = replyTexts[min(requests.count - 1, replyTexts.count - 1)]
+    let replies = repliesByRequest[min(requests.count - 1, repliesByRequest.count - 1)]
     let now = Date(timeIntervalSince1970: 0)
-    let output = WorkflowAcceptedOutputMetadata(
-      payload: [
-        "addon": .string("riela/chat-reply-worker"),
-        "text": .string(replyText),
-        "replyAs": .string(replyAs)
-      ],
-      when: [:],
-      acceptedAt: now
-    )
-    let execution = WorkflowStepExecution(
-      executionId: "exec-1",
-      stepId: "send-yui-reply",
-      nodeId: "send-yui-reply",
-      attempt: 1,
-      status: .completed,
-      acceptedOutput: output,
-      createdAt: now,
-      updatedAt: now
-    )
+    let executions = replies.enumerated().map { index, reply in
+      WorkflowStepExecution(
+        executionId: "exec-\(index + 1)",
+        stepId: "send-\(reply.replyAs)-reply",
+        nodeId: "send-\(reply.replyAs)-reply",
+        attempt: 1,
+        status: .completed,
+        acceptedOutput: WorkflowAcceptedOutputMetadata(
+          payload: [
+            "addon": .string("riela/chat-reply-worker"),
+            "text": .string(reply.text),
+            "replyAs": .string(reply.replyAs)
+          ],
+          when: [:],
+          acceptedAt: now
+        ),
+        createdAt: now,
+        updatedAt: now
+      )
+    }
     let session = WorkflowSession(
       workflowId: request.workflowName,
       sessionId: "session-1",
       status: .completed,
-      entryStepId: "send-yui-reply",
+      entryStepId: executions.first?.stepId ?? "send-yui-reply",
       createdAt: now,
       updatedAt: now,
-      executions: [execution]
+      executions: executions
     )
     return WorkflowRunResult(
       workflowId: request.workflowName,
@@ -583,6 +748,28 @@ private extension TelegramMessage {
       "text": "\(text)",
       "from": {"id": "\(fromId)", "is_bot": \(isBot), "first_name": "Tester"},
       "chat": {"id": "\(chatId)", "type": "group", "title": "Test Chat"}
+    }
+    """.utf8))
+  }
+}
+
+private extension DiscordMessage {
+  static func fixture(
+    id: String,
+    channelId: String,
+    guildId: String,
+    content: String,
+    isBot: Bool = false
+  ) throws -> DiscordMessage {
+    try JSONDecoder().decode(DiscordMessage.self, from: Data("""
+    {
+      "id": "\(id)",
+      "channel_id": "\(channelId)",
+      "guild_id": "\(guildId)",
+      "content": "\(content)",
+      "timestamp": "2026-06-21T23:40:00.000000+00:00",
+      "author": {"id": "300", "username": "tester", "global_name": "Tester", "bot": \(isBot)},
+      "attachments": []
     }
     """.utf8))
   }

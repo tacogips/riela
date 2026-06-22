@@ -287,6 +287,28 @@ final class CommandParsingTests: XCTestCase {
 
     XCTAssertEqual(
       try parser.parse([
+        "memory", "update", "daily-summary",
+        "--workflow-id", "telegram-sdk-trio-chat",
+        "--record-id", "7",
+        "--payload-json", #"{"summary":"updated"}"#,
+        "--tag", "date:2026-06-22",
+        "--output", "json"
+      ]),
+      .memory(MemoryCommand(
+        kind: .update,
+        options: MemoryCommandOptions(
+          memoryId: "daily-summary",
+          workflowId: "telegram-sdk-trio-chat",
+          recordId: 7,
+          payloadJSON: #"{"summary":"updated"}"#,
+          tags: ["date:2026-06-22"],
+          output: .json
+        )
+      ))
+    )
+
+    XCTAssertEqual(
+      try parser.parse([
         "memory", "search", "chat-memory",
         "--workflow-id", "telegram-sdk-trio-chat",
         "--match", "Yui",

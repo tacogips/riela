@@ -13,6 +13,7 @@ public enum RielaMemoryError: Error, Equatable, Sendable {
   case duplicateRelatedRecordId(Int64)
   case invalidRelatedRecordId(Int64)
   case missingRelatedRecordId(Int64)
+  case missingRecordId(Int64)
   case openFailed(String)
   case sqliteFailed(String)
   case jsonBUnavailable
@@ -275,6 +276,63 @@ public struct RielaMemoryStore: Sendable {
       relatedRecordIds: relatedRecordIds,
       payload: payload
     )
+  }
+
+  @discardableResult
+  public func update(
+    memoryId: String,
+    recordId: Int64,
+    workflowId: String? = nil,
+    nodeId: String? = nil,
+    tags: [String] = [],
+    relatedRecordIds: [Int64] = [],
+    payload: MemoryJSONValue
+  ) throws -> MemoryRecord {
+    try validateMemoryId(memoryId)
+    guard recordId > 0 else {
+      throw RielaMemoryError.missingRecordId(recordId)
+    }
+    if let workflowId {
+      try validateWorkflowId(workflowId)
+    }
+    try validateTags(tags)
+    try validateRelatedRecordIds(relatedRecordIds)
+    let payloadJSON = try encodedJSONString(payload)
+    let tagsJSON = try encodedJSONString(tags)
+    let relatedRecordIdsJSON = try encodedJSONString(relatedRecordIds)
+
+    let db = try openDatabase(memoryId: memoryId)
+    defer {
+      sqlite3_close(db)
+    }
+    try ensureSchema(db)
+    try validateRelatedRecordIdsExist(relatedRecordIds, db: db)
+    var sql = """
+      UPDATE memory_entries
+      SET tags_json = jsonb(?),
+        related_record_ids_json = jsonb(?),
+        payload_json = jsonb(?)
+      WHERE record_id = ?
+      """
+    var bindings: [SQLiteBinding] = [
+      .text(tagsJSON),
+      .text(relatedRecordIdsJSON),
+      .text(payloadJSON),
+      .int64(recordId)
+    ]
+    if let workflowId {
+      sql += " AND workflow_id = ?"
+      bindings.append(.text(workflowId))
+    }
+    if let nodeId {
+      sql += " AND node_id = ?"
+      bindings.append(.text(nodeId))
+    }
+    try execute(db, sql, bindings: bindings)
+    guard sqlite3_changes(db) > 0 else {
+      throw RielaMemoryError.missingRecordId(recordId)
+    }
+    return try record(memoryId: memoryId, recordId: recordId, db: db)
   }
 
   public func registerMetadata(
@@ -580,12 +638,12 @@ public struct RielaMemoryStore: Sendable {
 
   private func ensureSchema(_ db: OpaquePointer?) throws {
     try ensureJSONBAvailable(db)
-    let versionRows = try queryRows(db, sql: "PRAGMA user_version", bindings: [])
-    let userVersion = Int(versionRows.first?.columns["user_version"] ?? "0") ?? 0
-    if userVersion < currentSchemaVersion {
-      try execute(db, "DROP TABLE IF EXISTS memory_entry_references")
-      try execute(db, "DROP TABLE IF EXISTS memory_entries")
-      try execute(db, "DROP TABLE IF EXISTS memory_metadata")
+    try execute(db, "BEGIN IMMEDIATE")
+    var committed = false
+    defer {
+      if !committed {
+        try? execute(db, "ROLLBACK")
+      }
     }
     try execute(
       db,
@@ -600,20 +658,7 @@ public struct RielaMemoryStore: Sendable {
       )
       """
     )
-    try execute(
-      db,
-      """
-      CREATE TABLE IF NOT EXISTS memory_entries (
-        record_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        workflow_id TEXT NOT NULL,
-        node_id TEXT,
-        registered_at TEXT NOT NULL,
-        tags_json BLOB NOT NULL CHECK (json_valid(tags_json, 8)),
-        related_record_ids_json BLOB NOT NULL CHECK (json_valid(related_record_ids_json, 8)),
-        payload_json BLOB NOT NULL CHECK (json_valid(payload_json, 8))
-      )
-      """
-    )
+    try ensureMemoryEntriesSchema(db)
     try execute(
       db,
       "CREATE INDEX IF NOT EXISTS idx_memory_entries_workflow_registered ON memory_entries (workflow_id, registered_at DESC, record_id DESC)"
@@ -637,6 +682,64 @@ public struct RielaMemoryStore: Sendable {
       "CREATE INDEX IF NOT EXISTS idx_memory_entry_references_record ON memory_entry_references (record_id, referenced_at DESC, reference_id DESC)"
     )
     try execute(db, "PRAGMA user_version = \(currentSchemaVersion)")
+    try execute(db, "COMMIT")
+    committed = true
+  }
+
+  private func ensureMemoryEntriesSchema(_ db: OpaquePointer?) throws {
+    guard try tableExists("memory_entries", db: db) else {
+      try createMemoryEntriesTable(db)
+      return
+    }
+    let columns = try tableColumns("memory_entries", db: db)
+    guard !columns.contains("tags_json") || !columns.contains("related_record_ids_json") else {
+      return
+    }
+    try createMemoryEntriesTable(db, tableName: "memory_entries_migration")
+    try execute(
+      db,
+      """
+      INSERT INTO memory_entries_migration (
+        record_id, workflow_id, node_id, registered_at, tags_json, related_record_ids_json, payload_json
+      )
+      SELECT record_id, workflow_id, node_id, registered_at, jsonb('[]'), jsonb('[]'), payload_json
+      FROM memory_entries
+      ORDER BY record_id ASC
+      """
+    )
+    try execute(db, "DROP TABLE memory_entries")
+    try execute(db, "ALTER TABLE memory_entries_migration RENAME TO memory_entries")
+  }
+
+  private func createMemoryEntriesTable(_ db: OpaquePointer?, tableName: String = "memory_entries") throws {
+    try execute(
+      db,
+      """
+      CREATE TABLE IF NOT EXISTS \(tableName) (
+        record_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        workflow_id TEXT NOT NULL,
+        node_id TEXT,
+        registered_at TEXT NOT NULL,
+        tags_json BLOB NOT NULL CHECK (json_valid(tags_json, 8)),
+        related_record_ids_json BLOB NOT NULL CHECK (json_valid(related_record_ids_json, 8)),
+        payload_json BLOB NOT NULL CHECK (json_valid(payload_json, 8))
+      )
+      """
+    )
+  }
+
+  private func tableExists(_ tableName: String, db: OpaquePointer?) throws -> Bool {
+    let rows = try queryRows(
+      db,
+      sql: "SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+      bindings: [.text(tableName)]
+    )
+    return !rows.isEmpty
+  }
+
+  private func tableColumns(_ tableName: String, db: OpaquePointer?) throws -> Set<String> {
+    let rows = try queryRows(db, sql: "PRAGMA table_info(\(tableName))", bindings: [])
+    return Set(rows.compactMap { $0.columns["name"] })
   }
 
   private func ensureJSONBAvailable(_ db: OpaquePointer?) throws {
@@ -674,6 +777,26 @@ public struct RielaMemoryStore: Sendable {
       relatedRecordIds: relatedRecordIds,
       payload: payload
     )
+  }
+
+  private func record(memoryId: String, recordId: Int64, db: OpaquePointer?) throws -> MemoryRecord {
+    let rows = try queryRows(
+      db,
+      sql: """
+        SELECT record_id, workflow_id, node_id, registered_at,
+          json(tags_json) AS tags_json,
+          json(related_record_ids_json) AS related_record_ids_json,
+          json(payload_json) AS payload_json
+        FROM memory_entries
+        WHERE record_id = ?
+        LIMIT 1
+        """,
+      bindings: [.int64(recordId)]
+    )
+    guard let row = rows.first else {
+      throw RielaMemoryError.missingRecordId(recordId)
+    }
+    return try memoryRecord(from: row, memoryId: memoryId)
   }
 
   private func validateMemoryId(_ memoryId: String) throws {

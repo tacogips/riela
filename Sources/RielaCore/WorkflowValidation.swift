@@ -652,24 +652,50 @@ private func validateMemoryAddonDeclarations(
   workflowMemoryIds: Set<String>,
   diagnostics: inout [WorkflowValidationDiagnostic]
 ) {
-  guard let addon = node.addon, builtinMemoryAddonNames.contains(addon.name) else {
+  guard let addon = node.addon else {
     return
   }
-  let memoryId = stringValue(addon.config?["memoryId"]) ?? defaultMemoryId
-  let nodeMemoryIds = Set((node.memories ?? []).map(\.id))
-  if !workflowMemoryIds.contains(memoryId) {
-    diagnostics.append(
-      error(
-        "\(path).addon.config.memoryId",
-        "memory addon uses '\(memoryId)' but workflow.memories does not declare it"
-      )
-    )
+  validateMemoryAddonConfig(addon, path: path, diagnostics: &diagnostics)
+  let memoryIds = addonMemoryIds(addon)
+  guard !memoryIds.isEmpty else {
+    return
   }
-  if !nodeMemoryIds.contains(memoryId) {
+  let nodeMemoryIds = Set((node.memories ?? []).map(\.id))
+  for memoryId in memoryIds {
+    if !workflowMemoryIds.contains(memoryId) {
+      diagnostics.append(
+        error(
+          "\(path).addon.config.memoryId",
+          "memory addon uses '\(memoryId)' but workflow.memories does not declare it"
+        )
+      )
+    }
+    if !nodeMemoryIds.contains(memoryId) {
+      diagnostics.append(
+        error(
+          "\(path).memories",
+          "memory addon uses '\(memoryId)' but node memories do not declare it"
+        )
+      )
+    }
+  }
+}
+
+private func validateMemoryAddonConfig(
+  _ addon: WorkflowNodeAddonRef,
+  path: String,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard addon.name == "riela/chat-memory-raw-daily-summary" else {
+    return
+  }
+  let rawMemoryId = stringValue(addon.config?["rawMemoryId"]) ?? defaultRawMemoryId
+  let summaryMemoryId = stringValue(addon.config?["summaryMemoryId"]) ?? defaultSummaryMemoryId
+  if rawMemoryId == summaryMemoryId {
     diagnostics.append(
       error(
-        "\(path).memories",
-        "memory addon uses '\(memoryId)' but node memories do not declare it"
+        "\(path).addon.config.summaryMemoryId",
+        "rawMemoryId and summaryMemoryId must be distinct memory ids"
       )
     )
   }
@@ -721,13 +747,38 @@ private func validateRawMemoryDeclarations(
   }
 }
 
-private let builtinMemoryAddonNames: Set<String> = [
+private let simpleMemoryAddonNames: Set<String> = [
   "riela/memory-save",
+  "riela/memory-update",
   "riela/memory-load",
   "riela/memory-search"
 ]
 
+private let personaMemoryAddonNames: Set<String> = [
+  "riela/chat-persona-memory-read",
+  "riela/chat-persona-memory-write"
+]
+
 private let defaultMemoryId = "chat-memory"
+private let defaultPersonaMemoryId = "persona-chat-memory"
+private let defaultRawMemoryId = "raw-chat-log"
+private let defaultSummaryMemoryId = "daily-chat-summary"
+
+private func addonMemoryIds(_ addon: WorkflowNodeAddonRef) -> [String] {
+  if simpleMemoryAddonNames.contains(addon.name) {
+    return [stringValue(addon.config?["memoryId"]) ?? defaultMemoryId]
+  }
+  if personaMemoryAddonNames.contains(addon.name) {
+    return [stringValue(addon.config?["memoryId"]) ?? defaultPersonaMemoryId]
+  }
+  if addon.name == "riela/chat-memory-raw-daily-summary" {
+    return [
+      stringValue(addon.config?["rawMemoryId"]) ?? defaultRawMemoryId,
+      stringValue(addon.config?["summaryMemoryId"]) ?? defaultSummaryMemoryId
+    ]
+  }
+  return []
+}
 
 private func stringValue(_ value: JSONValue?) -> String? {
   guard case let .string(value) = value, !value.isEmpty else {

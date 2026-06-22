@@ -3,6 +3,7 @@
 import Foundation
 import RielaAdapters
 import RielaCore
+import RielaMemory
 import XCTest
 @testable import RielaCLI
 
@@ -462,6 +463,34 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertEqual(savedRecord["tags"], .array([.string("chat"), .string("routing")]))
     XCTAssertEqual(savedPayload["text"], .string("Yui, remember the routing test"))
     XCTAssertEqual(savedPayload["conversationId"], .string("chat-1"))
+    guard case let .number(savedRecordIdNumber)? = savedRecord["recordId"],
+      let savedRecordId = Int64(exactly: savedRecordIdNumber) else {
+      return XCTFail("memory-save record id was not returned")
+    }
+
+    let update = try await resolver.execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "telegram-sdk-trio-chat",
+        stepId: "update-chat-event-memory",
+        nodeId: "update-chat-event-memory",
+        addon: WorkflowNodeAddonRef(
+          name: "riela/memory-update",
+          version: "1",
+          config: [
+            "memoryId": .string("chat-memory"),
+            "memoryRoot": .string(memoryRoot),
+            "recordId": .number(Double(savedRecordId)),
+            "tags": .array([.string("chat"), .string("routing"), .string("updated")]),
+            "payload": .object([
+              "text": .string("Yui, remember the updated routing test"),
+              "conversationId": .string("chat-1")
+            ])
+          ]
+        )
+      ),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(update.payload["updated"], .bool(true))
 
     let load = try await resolver.execute(
       WorkflowAddonExecutionInput(
@@ -487,7 +516,7 @@ final class WorkflowCommandTests: XCTestCase {
     guard case let .string(loadRecordsText)? = load.payload["recordsText"] else {
       return XCTFail("memory-load recordsText was not returned")
     }
-    XCTAssertTrue(loadRecordsText.contains("Yui, remember the routing test"))
+    XCTAssertTrue(loadRecordsText.contains("Yui, remember the updated routing test"))
 
     let search = try await resolver.execute(
       WorkflowAddonExecutionInput(
@@ -502,7 +531,7 @@ final class WorkflowCommandTests: XCTestCase {
             "memoryRoot": .string(memoryRoot),
             "workflowScopeOnly": .bool(true),
             "matchPatterns": .array([.string("routing test")]),
-            "tags": .array([.string("routing")])
+            "tags": .array([.string("updated")])
           ]
         )
       ),
@@ -515,7 +544,7 @@ final class WorkflowCommandTests: XCTestCase {
     guard case let .string(searchRecordsText)? = search.payload["recordsText"] else {
       return XCTFail("memory-search recordsText was not returned")
     }
-    XCTAssertTrue(searchRecordsText.contains("Yui, remember the routing test"))
+    XCTAssertTrue(searchRecordsText.contains("Yui, remember the updated routing test"))
   }
 
   func testBuiltinMemoryAddonsRejectInvalidTagsAndRelatedRecordIds() async throws {
@@ -575,6 +604,174 @@ final class WorkflowCommandTests: XCTestCase {
       XCTAssertEqual(error.code, .policyBlocked)
       XCTAssertEqual(error.message, "memory relatedRecordIds[0] must be a positive integer record id")
     }
+  }
+
+  func testBuiltinChatMemoryRawDailySummaryAddonCreatesAndUpdatesSummary() async throws {
+    let root = repositoryRoot()
+    let memoryRoot = "\(root)/tmp/test-chat-memory-raw-daily-addon-\(UUID().uuidString)"
+    defer {
+      try? FileManager.default.removeItem(atPath: memoryRoot)
+    }
+    let resolver = BuiltinWorkflowAddonResolver(environment: [:])
+    let addon = WorkflowNodeAddonRef(
+      name: "riela/chat-memory-raw-daily-summary",
+      version: "1",
+      config: [
+        "rawMemoryId": .string("raw-chat-log"),
+        "summaryMemoryId": .string("daily-chat-summary"),
+        "memoryRoot": .string(memoryRoot)
+      ]
+    )
+
+    let first = try await resolver.execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "chat-memory-raw-and-daily-summary",
+        stepId: "update-chat-memory",
+        nodeId: "update-chat-memory",
+        addon: addon,
+        variables: rawDailySummaryVariables(text: "first message", eventId: "event-1", receivedAt: "2026-06-22T09:00:00Z")
+      ),
+      context: AdapterExecutionContext()
+    )
+    let second = try await resolver.execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "chat-memory-raw-and-daily-summary",
+        stepId: "update-chat-memory",
+        nodeId: "update-chat-memory",
+        addon: addon,
+        variables: rawDailySummaryVariables(text: "second message", eventId: "event-2", receivedAt: "2026-06-22T10:00:00Z")
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    XCTAssertEqual(first.payload["summaryAction"], .string("created"))
+    XCTAssertEqual(second.payload["summaryAction"], .string("updated"))
+    XCTAssertEqual(first.payload["summaryRecordId"], second.payload["summaryRecordId"])
+    let store = RielaMemoryStore(rootDirectory: memoryRoot)
+    let rawRecords = try store.search(
+      memoryId: "raw-chat-log",
+      options: MemorySearchOptions(workflowId: "chat-memory-raw-and-daily-summary", sortOrder: .registeredAsc, limit: 10)
+    )
+    let summaryRecords = try store.search(
+      memoryId: "daily-chat-summary",
+      options: MemorySearchOptions(workflowId: "chat-memory-raw-and-daily-summary", tags: ["summary:telegram:chat-1:2026-06-22"], limit: 10)
+    )
+    XCTAssertEqual(rawRecords.count, 2)
+    XCTAssertEqual(summaryRecords.count, 1)
+    XCTAssertNotEqual(try store.databasePath(memoryId: "raw-chat-log"), try store.databasePath(memoryId: "daily-chat-summary"))
+    XCTAssertEqual(memoryNumber(objectPayload(summaryRecords[0].payload)?["rawRecordCount"]), 2)
+    XCTAssertEqual(memoryInt64Array(objectPayload(summaryRecords[0].payload)?["rawLogRecordIds"]), rawRecords.map(\.recordId))
+    XCTAssertTrue(memoryString(objectPayload(summaryRecords[0].payload)?["summary"])?.contains("first message") == true)
+    XCTAssertTrue(memoryString(objectPayload(summaryRecords[0].payload)?["summary"])?.contains("second message") == true)
+  }
+
+  func testBuiltinChatMemoryRawDailySummaryKeepsTotalCountAndCapsRawLogRecordIds() async throws {
+    let root = repositoryRoot()
+    let memoryRoot = "\(root)/tmp/test-chat-memory-raw-daily-count-\(UUID().uuidString)"
+    defer {
+      try? FileManager.default.removeItem(atPath: memoryRoot)
+    }
+    let resolver = BuiltinWorkflowAddonResolver(environment: [:])
+    let addon = WorkflowNodeAddonRef(
+      name: "riela/chat-memory-raw-daily-summary",
+      version: "1",
+      config: [
+        "rawMemoryId": .string("raw-chat-log"),
+        "summaryMemoryId": .string("daily-chat-summary"),
+        "memoryRoot": .string(memoryRoot)
+      ]
+    )
+
+    for index in 1...12 {
+      _ = try await resolver.execute(
+        WorkflowAddonExecutionInput(
+          workflowId: "chat-memory-raw-and-daily-summary",
+          stepId: "update-chat-memory",
+          nodeId: "update-chat-memory",
+          addon: addon,
+          variables: rawDailySummaryVariables(
+            text: "message \(index)",
+            eventId: "event-\(index)",
+            receivedAt: "2026-06-22T10:\(String(format: "%02d", index)):00Z"
+          )
+        ),
+        context: AdapterExecutionContext()
+      )
+    }
+
+    let store = RielaMemoryStore(rootDirectory: memoryRoot)
+    let summaryRecords = try store.search(
+      memoryId: "daily-chat-summary",
+      options: MemorySearchOptions(workflowId: "chat-memory-raw-and-daily-summary", tags: ["summary:telegram:chat-1:2026-06-22"], limit: 10)
+    )
+
+    XCTAssertEqual(summaryRecords.count, 1)
+    XCTAssertEqual(memoryNumber(objectPayload(summaryRecords[0].payload)?["rawRecordCount"]), 12)
+    XCTAssertEqual(memoryInt64Array(objectPayload(summaryRecords[0].payload)?["rawLogRecordIds"]), Array(3...12).map(Int64.init))
+  }
+
+  func testBuiltinChatMemoryRawDailySummarySeparatesProvidersWithSameConversationId() async throws {
+    let root = repositoryRoot()
+    let memoryRoot = "\(root)/tmp/test-chat-memory-raw-daily-provider-\(UUID().uuidString)"
+    defer {
+      try? FileManager.default.removeItem(atPath: memoryRoot)
+    }
+    let resolver = BuiltinWorkflowAddonResolver(environment: [:])
+    let addon = WorkflowNodeAddonRef(
+      name: "riela/chat-memory-raw-daily-summary",
+      version: "1",
+      config: [
+        "rawMemoryId": .string("raw-chat-log"),
+        "summaryMemoryId": .string("daily-chat-summary"),
+        "memoryRoot": .string(memoryRoot)
+      ]
+    )
+
+    _ = try await resolver.execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "chat-memory-raw-and-daily-summary",
+        stepId: "update-chat-memory",
+        nodeId: "update-chat-memory",
+        addon: addon,
+        variables: rawDailySummaryVariables(
+          provider: "telegram",
+          text: "telegram message",
+          eventId: "telegram-1",
+          receivedAt: "2026-06-22T09:00:00Z"
+        )
+      ),
+      context: AdapterExecutionContext()
+    )
+    _ = try await resolver.execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "chat-memory-raw-and-daily-summary",
+        stepId: "update-chat-memory",
+        nodeId: "update-chat-memory",
+        addon: addon,
+        variables: rawDailySummaryVariables(
+          provider: "discord",
+          text: "discord message",
+          eventId: "discord-1",
+          receivedAt: "2026-06-22T09:01:00Z"
+        )
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    let store = RielaMemoryStore(rootDirectory: memoryRoot)
+    let summaryRecords = try store.search(
+      memoryId: "daily-chat-summary",
+      options: MemorySearchOptions(workflowId: "chat-memory-raw-and-daily-summary", limit: 10)
+    )
+
+    XCTAssertEqual(summaryRecords.count, 2)
+    XCTAssertEqual(Set(summaryRecords.flatMap(\.tags)), Set([
+      "daily-summary",
+      "summary:telegram:chat-1:2026-06-22",
+      "summary:discord:chat-1:2026-06-22",
+      "conversation:chat-1",
+      "date:2026-06-22"
+    ]))
   }
 
   func testBuiltinSDKWorkerExecutesInjectedLiveAdapter() async throws {
@@ -3753,6 +3950,73 @@ extension WorkflowCommandTests {
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
     return try decoder.decode(T.self, from: Data(stdout.utf8))
+  }
+
+  private func rawDailySummaryVariables(
+    provider: String = "telegram",
+    text: String,
+    eventId: String,
+    receivedAt: String
+  ) -> JSONObject {
+    [
+      "workflowInput": .object([
+        "provider": .string(provider),
+        "text": .string(text),
+        "eventId": .string(eventId),
+        "conversationId": .string("chat-1"),
+        "receivedAt": .string(receivedAt)
+      ]),
+      "event": .object([
+        "provider": .string(provider),
+        "eventId": .string(eventId),
+        "receivedAt": .string(receivedAt),
+        "input": .object([
+          "provider": .string(provider),
+          "text": .string(text)
+        ]),
+        "conversation": .object([
+          "id": .string("chat-1"),
+          "threadId": .string("topic-a")
+        ]),
+        "actor": .object([
+          "id": .string("user-1"),
+          "displayName": .string("Memory User")
+        ])
+      ])
+    ]
+  }
+
+  private func objectPayload(_ value: MemoryJSONValue) -> [String: MemoryJSONValue]? {
+    guard case let .object(object) = value else {
+      return nil
+    }
+    return object
+  }
+
+  private func memoryString(_ value: MemoryJSONValue?) -> String? {
+    guard case let .string(string)? = value else {
+      return nil
+    }
+    return string
+  }
+
+  private func memoryNumber(_ value: MemoryJSONValue?) -> Int? {
+    guard case let .number(number)? = value, number.rounded() == number else {
+      return nil
+    }
+    return Int(number)
+  }
+
+  private func memoryInt64Array(_ value: MemoryJSONValue?) -> [Int64] {
+    guard case let .array(values)? = value else {
+      return []
+    }
+    return values.compactMap { value in
+      guard case let .number(number) = value else {
+        return nil
+      }
+      return Int64(exactly: number)
+    }
   }
 
   private func repositoryRoot() -> String {

@@ -3,6 +3,7 @@ import RielaMemory
 
 public enum MemoryCommandKind: String, Codable, Sendable {
   case save
+  case update
   case load
   case search
   case metadata
@@ -25,6 +26,7 @@ public struct MemoryCommandOptions: Equatable, Sendable {
   public var workflowId: String?
   public var allWorkflows: Bool
   public var nodeId: String?
+  public var recordId: Int64?
   public var payloadJSON: String?
   public var payloadFile: String?
   public var registeredAt: String?
@@ -43,6 +45,7 @@ public struct MemoryCommandOptions: Equatable, Sendable {
     workflowId: String? = nil,
     allWorkflows: Bool = false,
     nodeId: String? = nil,
+    recordId: Int64? = nil,
     payloadJSON: String? = nil,
     payloadFile: String? = nil,
     registeredAt: String? = nil,
@@ -60,6 +63,7 @@ public struct MemoryCommandOptions: Equatable, Sendable {
     self.workflowId = workflowId
     self.allWorkflows = allWorkflows
     self.nodeId = nodeId
+    self.recordId = recordId
     self.payloadJSON = payloadJSON
     self.payloadFile = payloadFile
     self.registeredAt = registeredAt

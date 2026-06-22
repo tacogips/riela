@@ -1,4 +1,5 @@
 import XCTest
+import RielaMemory
 @testable import RielaCore
 
 final class DeterministicWorkflowRunnerTests: XCTestCase {
@@ -716,6 +717,49 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       return XCTFail("expected availableMemories.node")
     }
     XCTAssertEqual(nodeMemories.count, 2)
+  }
+
+  func testRegisteredMemoryMetadataPrefersNodePurposeAndFillsWorkflowDefaults() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-memory-metadata-\(UUID().uuidString)", isDirectory: true)
+      .path
+    defer { try? FileManager.default.removeItem(atPath: root) }
+    let workflow = WorkflowDefinition(
+      workflowId: "memory-runner",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
+      memories: [
+        WorkflowMemoryDeclaration(
+          id: "persona-memory",
+          description: "workflow description",
+          purpose: "workflow purpose",
+          scope: .crossWorkflow,
+          defaultLimit: 12
+        )
+      ],
+      entryStepId: "persona-step",
+      nodeRegistry: [
+        WorkflowNodeRegistryRef(
+          id: "persona-node",
+          nodeFile: "nodes/persona.json",
+          memories: [
+            WorkflowMemoryDeclaration(id: "persona-memory", purpose: "node-specific purpose")
+          ]
+        )
+      ],
+      steps: [WorkflowStepRef(id: "persona-step", nodeId: "persona-node", role: .worker)],
+      nodes: [WorkflowNodeRef(id: "persona-step", nodeFile: "nodes/persona.json")]
+    )
+    let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: StaticAdapter(output: output()))
+
+    _ = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: workflow,
+      nodePayloads: ["persona-node": AgentNodePayload(id: "persona-node", executionBackend: .codexAgent, model: "gpt-5.4-mini")],
+      memoryRootDirectory: root
+    ))
+
+    let metadata = try XCTUnwrap(RielaMemoryStore(rootDirectory: root).metadata(memoryId: "persona-memory"))
+    XCTAssertEqual(metadata.description, "workflow description")
+    XCTAssertEqual(metadata.purpose, "node-specific purpose")
   }
 
   private func request(

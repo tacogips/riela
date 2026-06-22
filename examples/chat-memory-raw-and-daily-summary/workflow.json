@@ -1,0 +1,63 @@
+{
+  "workflowId": "chat-memory-raw-and-daily-summary",
+  "description": "Persist every chat event to a raw-log memory database and maintain one daily summary record in a separate memory database.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "memories": [
+    {
+      "id": "raw-chat-log",
+      "description": "Append-only raw chat event log.",
+      "purpose": "Retain complete chat event facts for audit and later summarization.",
+      "dataSchema": {
+        "type": "object",
+        "required": ["provider", "conversationId", "text", "receivedAt"]
+      },
+      "scope": "workflow",
+      "defaultLimit": 50
+    },
+    {
+      "id": "daily-chat-summary",
+      "description": "One updated summary record per conversation and UTC day.",
+      "purpose": "Give workflow nodes compact daily chat context without loading all raw logs.",
+      "dataSchema": {
+        "type": "object",
+        "required": ["date", "conversationId", "summary", "rawRecordCount", "updatedAt"]
+      },
+      "scope": "workflow",
+      "defaultLimit": 10
+    }
+  ],
+  "entryStepId": "update-chat-memory",
+  "nodes": [
+    {
+      "id": "update-chat-memory",
+      "addon": {
+        "name": "riela/chat-memory-raw-daily-summary",
+        "version": "1",
+        "config": {
+          "rawMemoryId": "raw-chat-log",
+          "summaryMemoryId": "daily-chat-summary"
+        }
+      },
+      "memories": [
+        {
+          "id": "raw-chat-log",
+          "purpose": "save every incoming chat event as raw evidence"
+        },
+        {
+          "id": "daily-chat-summary",
+          "purpose": "save or update the compact daily summary for this conversation"
+        }
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "id": "update-chat-memory",
+      "nodeId": "update-chat-memory",
+      "role": "worker"
+    }
+  ]
+}

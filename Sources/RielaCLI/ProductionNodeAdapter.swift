@@ -214,6 +214,15 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     if input.addon.name == "riela/chat-reply-worker" {
       return try executeChatReplyWorker(input)
     }
+    if input.addon.name == "riela/chat-memory-raw-daily-summary" {
+      return try executeChatMemoryRawDailySummary(input)
+    }
+    if input.addon.name == "riela/chat-persona-memory-read" {
+      return try executeChatPersonaMemoryRead(input)
+    }
+    if input.addon.name == "riela/chat-persona-memory-write" {
+      return try executeChatPersonaMemoryWrite(input)
+    }
     if let memoryAddon = BuiltinMemoryAddon(rawValue: input.addon.name) {
       return try executeMemoryAddon(input, operation: memoryAddon)
     }
@@ -418,8 +427,9 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
         ])
       ])
     ])
-    let text = renderPromptTemplate(textTemplate, variables: variables)
+    let renderedText = renderPromptTemplate(textTemplate, variables: variables)
       .trimmingCharacters(in: .whitespacesAndNewlines)
+    let text = renderedText.isEmpty ? (chatReplyFallbackText(input.resolvedInputPayload) ?? "") : renderedText
     guard !text.isEmpty else {
       throw AdapterExecutionError(.invalidOutput, "riela/chat-reply-worker rendered empty reply text")
     }
@@ -454,6 +464,16 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       when: when,
       payload: payload
     )
+  }
+
+  private func chatReplyFallbackText(_ payload: JSONObject) -> String? {
+    if let text = nonEmptyString(payload["replyText"]) ?? nonEmptyString(payload["text"]) {
+      return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    if case let .object(nested)? = payload["payload"] {
+      return nonEmptyString(nested["replyText"]) ?? nonEmptyString(nested["text"])
+    }
+    return nil
   }
 
   private func executeMemoryAddon(
@@ -494,6 +514,30 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
         databasePath: try store.databasePath(memoryId: memoryId),
         payload: [
           "saved": .bool(true),
+          "record": memoryRecordJSON(record)
+        ]
+      )
+    case .update:
+      let recordId = try requiredMemoryRecordId(config: config, variables: variables)
+      let payload = try memoryPayload(config: config, variables: variables, input: input)
+      let tags = try memoryTags(config: config, variables: variables)
+      let relatedRecordIds = try memoryRelatedRecordIds(config: config, variables: variables)
+      let record = try store.update(
+        memoryId: memoryId,
+        recordId: recordId,
+        workflowId: input.workflowId,
+        nodeId: optionalNodeScope(config: config, variables: variables),
+        tags: tags,
+        relatedRecordIds: relatedRecordIds,
+        payload: payload
+      )
+      return memoryAddonOutput(
+        input: input,
+        operation: operation,
+        memoryId: memoryId,
+        databasePath: try store.databasePath(memoryId: memoryId),
+        payload: [
+          "updated": .bool(true),
           "record": memoryRecordJSON(record)
         ]
       )
@@ -602,11 +646,12 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
 
 private enum BuiltinMemoryAddon: String {
   case save = "riela/memory-save"
+  case update = "riela/memory-update"
   case load = "riela/memory-load"
   case search = "riela/memory-search"
 }
 
-private func addonVariables(for input: WorkflowAddonExecutionInput) -> JSONObject {
+func addonVariables(for input: WorkflowAddonExecutionInput) -> JSONObject {
   var variables = input.variables
   for (key, value) in input.resolvedInputPayload {
     variables[key] = value
@@ -712,7 +757,7 @@ private func renderJSONTemplates(_ value: JSONValue, variables: JSONObject) -> J
   }
 }
 
-private func nonEmptyString(_ value: JSONValue?) -> String? {
+func nonEmptyString(_ value: JSONValue?) -> String? {
   guard case let .string(text) = value, !text.isEmpty else {
     return nil
   }
@@ -808,6 +853,14 @@ private func memoryRelatedRecordIds(config: JSONObject, variables: JSONObject) t
     return [singleId]
   }
   return []
+}
+
+private func requiredMemoryRecordId(config: JSONObject, variables: JSONObject) throws -> Int64 {
+  if let recordId = try int64Value(config["recordId"], fieldName: "memory recordId")
+    ?? int64Value(variables["recordId"], fieldName: "memory recordId") {
+    return recordId
+  }
+  throw AdapterExecutionError(.policyBlocked, "memory recordId is required")
 }
 
 private func stringArrayValue(_ value: JSONValue?, fieldName: String) throws -> [String]? {

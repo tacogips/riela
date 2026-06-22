@@ -159,10 +159,20 @@ private func runCursorDefaultAuthPreflight(
   )
   let model: LocalAgentProcessResult
   do {
+    var modelArguments = [
+      executableName,
+      "--print",
+      "--output-format",
+      "text",
+      "--model",
+      preflightModel
+    ]
+    modelArguments.append(contentsOf: stringArray(input.node.variables["cursorAdditionalArgs"]))
+    modelArguments.append(contentsOf: ["--", "Reply with exactly OK."])
     model = try await runner.run(
       configuration: LocalAgentProcessConfiguration(
         executableURL: URL(fileURLWithPath: "/usr/bin/env"),
-        arguments: [executableName, "--print", "--output-format", "text", "--model", preflightModel, "--", "Reply with exactly OK."],
+        arguments: modelArguments,
         environment: preflightEnvironment,
         workingDirectoryURL: input.node.workingDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) }
       ),
@@ -252,7 +262,8 @@ private func normalizeCursorStreamJSONStdout(_ text: String) -> String {
     }
 
     switch stringValue(object["type"]) {
-    case "session.started", "session.pending", "session.materialized", "session.user_message", "session.thinking", "session.assistant_message", "session.completed", "session.error":
+    case "session.started", "session.pending", "session.materialized", "session.user_message", "session.thinking", "session.assistant_message", "session.completed", "session.error",
+         "system", "user", "thinking", "assistant", "result":
       containsCursorEvent = true
     default:
       continue
@@ -262,6 +273,9 @@ private func normalizeCursorStreamJSONStdout(_ text: String) -> String {
       responseText = assistantText
     }
     if stringValue(object["type"]) == "session.completed", let result = stringValue(object["result"]), !result.isEmpty {
+      completedResult = result
+    }
+    if stringValue(object["type"]) == "result", let result = stringValue(object["result"]), !result.isEmpty {
       completedResult = result
     }
   }
@@ -276,6 +290,12 @@ private func normalizeCursorStreamJSONStdout(_ text: String) -> String {
 }
 
 private func cursorAssistantText(from object: JSONObject) -> String? {
+  if stringValue(object["type"]) == "assistant",
+    let message = objectValue(object["message"]),
+    let content = cursorMessageContentText(from: message["content"]) {
+    return content
+  }
+
   guard stringValue(object["type"]) == "session.assistant_message", let message = objectValue(object["message"]) else {
     return nil
   }
@@ -286,4 +306,29 @@ private func cursorAssistantText(from object: JSONObject) -> String? {
     return rawText
   }
   return nil
+}
+
+private func cursorMessageContentText(from value: JSONValue?) -> String? {
+  guard let value else {
+    return nil
+  }
+  switch value {
+  case let .string(text):
+    return text.isEmpty ? nil : text
+  case let .array(entries):
+    let text = entries.compactMap { entry -> String? in
+      guard case let .object(object) = entry else {
+        return nil
+      }
+      if stringValue(object["type"]) == "text", let text = stringValue(object["text"]) {
+        return text
+      }
+      return cursorMessageContentText(from: object["content"])
+    }.joined()
+    return text.isEmpty ? nil : text
+  case let .object(object):
+    return cursorMessageContentText(from: object["content"])
+  case .null, .bool, .number:
+    return nil
+  }
 }

@@ -194,7 +194,7 @@ public func normalizeCodexExecJSONStdout(_ text: String) -> String {
 
 private func isCodexJSONEvent(_ object: JSONObject) -> Bool {
   switch stringValue(object["type"]) {
-  case "session_meta", "response_item", "assistant.snapshot", "session.started", "session.error":
+  case "session_meta", "thread.started", "turn.started", "turn.completed", "item.completed", "event_msg", "response_item", "assistant.snapshot", "session.started", "session.error":
     return true
   default:
     return false
@@ -204,6 +204,18 @@ private func isCodexJSONEvent(_ object: JSONObject) -> Bool {
 private func codexAssistantContent(from object: JSONObject) -> String? {
   if stringValue(object["type"]) == "assistant.snapshot", let content = stringValue(object["content"]) {
     return content
+  }
+
+  if ["AgentMessage", "agent_message"].contains(stringValue(object["type"])), let message = stringValue(object["message"]) {
+    return message
+  }
+
+  if ["AgentMessage", "agent_message"].contains(stringValue(object["type"])), let text = stringValue(object["text"]) {
+    return text
+  }
+
+  if ["TurnComplete", "task_complete"].contains(stringValue(object["type"])) {
+    return stringValue(object["last_agent_message"]) ?? stringValue(object["lastAgentMessage"])
   }
 
   if stringValue(object["role"]) == "assistant", let content = outputText(from: object["content"]) {

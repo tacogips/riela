@@ -2,11 +2,11 @@
   "workflowId": "matrix-agent-trio-chat",
   "description": "Route provider-neutral Matrix chat messages, including text-compatible attachment descriptors, to one of three named female bot personas: Yui Codex by default, Mika Trend when called, or Rina Cursor when called. Persona nodes can hand off to another named persona when the user explicitly asks one bot to hear another bot's opinion.",
   "defaults": {
-    "maxLoopIterations": 3,
+    "maxLoopIterations": 16,
     "nodeTimeoutMs": 180000
   },
   "prompts": {
-    "workerSystemPromptTemplate": "Return concise JSON only. Keep user-facing chat text in payload.replyText. Do not expose internal workflow routing details unless the user asks for diagnostics.",
+    "workerSystemPromptTemplate": "Return concise JSON only. Keep user-facing chat text in top-level replyText. Do not expose internal workflow routing details unless the user asks for diagnostics.",
     "chatFailureMessageTemplate": "ごめん、{{node.variables.shortName}}はいま少し調子が悪いみたい。少し待ってからもう一度呼んでね。"
   },
   "entryStepId": "route-message",
@@ -180,23 +180,24 @@
       "role": "worker",
       "transitions": [
         {
-          "toStepId": "read-mika-memory",
-          "label": "handoff_mika"
-        },
-        {
-          "toStepId": "read-rina-memory",
-          "label": "handoff_rina"
-        },
-        {
-          "toStepId": "send-yui-reply",
-          "label": "!handoff_mika && !handoff_rina"
+          "toStepId": "send-yui-reply"
         }
       ]
     },
     {
       "id": "send-yui-reply",
       "nodeId": "send-yui-reply",
-      "role": "worker"
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-mika-memory",
+          "label": "handoff_mika"
+        },
+        {
+          "toStepId": "read-rina-memory",
+          "label": "handoff_rina"
+        }
+      ]
     },
     {
       "id": "read-mika-memory",
@@ -224,23 +225,24 @@
       "role": "worker",
       "transitions": [
         {
-          "toStepId": "read-yui-memory",
-          "label": "handoff_yui"
-        },
-        {
-          "toStepId": "read-rina-memory",
-          "label": "handoff_rina"
-        },
-        {
-          "toStepId": "send-mika-reply",
-          "label": "!handoff_yui && !handoff_rina"
+          "toStepId": "send-mika-reply"
         }
       ]
     },
     {
       "id": "send-mika-reply",
       "nodeId": "send-mika-reply",
-      "role": "worker"
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-yui-memory",
+          "label": "handoff_yui"
+        },
+        {
+          "toStepId": "read-rina-memory",
+          "label": "handoff_rina"
+        }
+      ]
     },
     {
       "id": "read-rina-memory",
@@ -268,23 +270,24 @@
       "role": "worker",
       "transitions": [
         {
-          "toStepId": "read-yui-memory",
-          "label": "handoff_yui"
-        },
-        {
-          "toStepId": "read-mika-memory",
-          "label": "handoff_mika"
-        },
-        {
-          "toStepId": "send-rina-reply",
-          "label": "!handoff_yui && !handoff_mika"
+          "toStepId": "send-rina-reply"
         }
       ]
     },
     {
       "id": "send-rina-reply",
       "nodeId": "send-rina-reply",
-      "role": "worker"
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-yui-memory",
+          "label": "handoff_yui"
+        },
+        {
+          "toStepId": "read-mika-memory",
+          "label": "handoff_mika"
+        }
+      ]
     }
   ]
 }

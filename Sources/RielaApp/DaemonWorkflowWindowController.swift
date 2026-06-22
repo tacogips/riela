@@ -14,30 +14,44 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
 
   private let enabledTable = NSTableView()
   private let disabledTable = NSTableView()
+  private let profilePopup = NSPopUpButton()
+  private let profileField = NSTextField()
   private let statusLabel = NSTextField(labelWithString: "")
   private let onRefresh: () -> Void
+  private let onSelectProfile: (String) -> Void
+  private let onAddDirectory: () -> Void
+  private let onRemoveDirectory: (String) -> Void
   private let onSetEnabled: (String, Bool) -> Void
-  private let onToggleActive: (String) -> Void
+  private let onSetActive: (String, Bool) -> Void
 
   private var candidates: [RielaAppDaemonWorkflowCandidate] = []
   private var state = RielaAppDaemonWorkflowState()
   private var snapshots: [String: RielaAppDaemonWorkflowRuntime.RuntimeSnapshot] = [:]
+  private var profileName = RielaAppProfileName.default
+  private var profileNames: [RielaAppProfileName] = [.default]
+  private var isUpdatingProfileControls = false
 
   init(
     onRefresh: @escaping () -> Void,
+    onSelectProfile: @escaping (String) -> Void,
+    onAddDirectory: @escaping () -> Void,
+    onRemoveDirectory: @escaping (String) -> Void,
     onSetEnabled: @escaping (String, Bool) -> Void,
-    onToggleActive: @escaping (String) -> Void
+    onSetActive: @escaping (String, Bool) -> Void
   ) {
     self.onRefresh = onRefresh
+    self.onSelectProfile = onSelectProfile
+    self.onAddDirectory = onAddDirectory
+    self.onRemoveDirectory = onRemoveDirectory
     self.onSetEnabled = onSetEnabled
-    self.onToggleActive = onToggleActive
+    self.onSetActive = onSetActive
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 980, height: 560),
       styleMask: [.titled, .closable, .resizable, .miniaturizable],
       backing: .buffered,
       defer: false
     )
-    window.title = "Riela Daemon Workflows"
+    window.title = "Riela Workflows"
     super.init(window: window)
     buildContent(in: window)
   }
@@ -47,18 +61,28 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   }
 
   func update(
+    profileName: RielaAppProfileName,
+    profileNames: [RielaAppProfileName],
     candidates: [RielaAppDaemonWorkflowCandidate],
     state: RielaAppDaemonWorkflowState,
     snapshots: [String: RielaAppDaemonWorkflowRuntime.RuntimeSnapshot]
   ) {
+    self.profileName = profileName
+    self.profileNames = profileNames
     self.candidates = candidates
     self.state = state
     self.snapshots = snapshots
+    updateProfileControls()
     enabledTable.reloadData()
     disabledTable.reloadData()
-    let enabledCount = enabledCandidates.count
-    let activeCount = enabledCandidates.filter { state.preference(for: $0.id).active }.count
-    statusLabel.stringValue = "\(activeCount) active / \(enabledCount) enabled / \(disabledCandidates.count) disabled"
+    let startWithAppCount = enabledCandidates.count
+    let runningCount = candidates.filter { state.preference(for: $0.id).active }.count
+    statusLabel.stringValue = [
+      "Profile: \(profileName.rawValue)",
+      "\(runningCount) running now",
+      "\(startWithAppCount) start with RielaApp",
+      "\(disabledCandidates.count) available"
+    ].joined(separator: " | ")
   }
 
   private var enabledCandidates: [RielaAppDaemonWorkflowCandidate] {
@@ -74,17 +98,52 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     root.translatesAutoresizingMaskIntoConstraints = false
     window.contentView = root
 
+    let profileLabel = NSTextField(labelWithString: "Profile")
+    profilePopup.target = self
+    profilePopup.action = #selector(profilePopupChanged)
+    profilePopup.widthAnchor.constraint(equalToConstant: 160).isActive = true
+    profileField.placeholderString = RielaAppProfileName.defaultRawValue
+    profileField.widthAnchor.constraint(equalToConstant: 150).isActive = true
+    let useProfileButton = NSButton(title: "Use Profile", target: self, action: #selector(useTypedProfile))
+    let addButton = NSButton(title: "Add Workflow...", target: self, action: #selector(addDirectory))
+    let removeButton = NSButton(title: "Remove Workflow", target: self, action: #selector(removeSelectedDirectory))
     let refreshButton = NSButton(title: "Refresh", target: self, action: #selector(refresh))
-    let enableButton = NSButton(title: "Enable", target: self, action: #selector(enableSelected))
-    let disableButton = NSButton(title: "Disable", target: self, action: #selector(disableSelected))
-    let toggleButton = NSButton(title: "Toggle Active", target: self, action: #selector(toggleSelectedActive))
-    let toolbar = NSStackView(views: [refreshButton, enableButton, disableButton, toggleButton, statusLabel])
-    toolbar.orientation = .horizontal
-    toolbar.spacing = 10
+    let startButton = NSButton(title: "Start Now", target: self, action: #selector(startSelectedNow))
+    let stopButton = NSButton(title: "Stop Now", target: self, action: #selector(stopSelectedNow))
+    let enableButton = NSButton(title: "Start with App", target: self, action: #selector(enableSelected))
+    let disableButton = NSButton(title: "Do Not Start with App", target: self, action: #selector(disableSelected))
+    statusLabel.lineBreakMode = .byTruncatingTail
+    let profileRow = NSStackView(views: [
+      profileLabel,
+      profilePopup,
+      profileField,
+      useProfileButton,
+      statusLabel
+    ])
+    profileRow.orientation = .horizontal
+    profileRow.spacing = 10
+    let actionRow = NSStackView(views: [
+      addButton,
+      removeButton,
+      refreshButton,
+      startButton,
+      stopButton,
+      enableButton,
+      disableButton
+    ])
+    actionRow.orientation = .horizontal
+    actionRow.spacing = 10
+    let toolbar = NSStackView(views: [
+      profileRow,
+      actionRow
+    ])
+    toolbar.alignment = .leading
+    toolbar.orientation = .vertical
+    toolbar.spacing = 8
     toolbar.translatesAutoresizingMaskIntoConstraints = false
 
-    let enabledBox = box(title: "Enabled at Launch", table: enabledTable)
-    let disabledBox = box(title: "Disabled", table: disabledTable)
+    let enabledBox = box(title: "Starts with RielaApp", table: enabledTable)
+    let disabledBox = box(title: "Available Workflows", table: disabledTable)
     let split = NSStackView(views: [enabledBox, disabledBox])
     split.orientation = .horizontal
     split.distribution = .fillEqually
@@ -114,9 +173,9 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     table.target = self
     table.headerView = NSTableHeaderView()
     addColumn(Column.workflow, title: "Workflow", width: 150, to: table)
-    addColumn(Column.sources, title: "Sources", width: 190, to: table)
-    addColumn(Column.active, title: "Active", width: 82, to: table)
-    addColumn(Column.runtime, title: "Runtime", width: 160, to: table)
+    addColumn(Column.sources, title: "Event Sources", width: 190, to: table)
+    addColumn(Column.active, title: "Running Now", width: 110, to: table)
+    addColumn(Column.runtime, title: "Status", width: 160, to: table)
 
     let scroll = NSScrollView()
     scroll.documentView = table
@@ -175,9 +234,9 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     case Column.sources:
       return candidate.eventSourceSummary
     case Column.active:
-      return state.preference(for: candidate.id).active ? "Active" : "Inactive"
+      return state.preference(for: candidate.id).active ? "Yes" : "No"
     case Column.runtime:
-      return snapshots[candidate.id]?.detail ?? "Inactive"
+      return snapshots[candidate.id]?.detail ?? "Stopped"
     default:
       return ""
     }
@@ -204,6 +263,28 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     onRefresh()
   }
 
+  @objc private func profilePopupChanged() {
+    guard !isUpdatingProfileControls, let title = profilePopup.selectedItem?.title else {
+      return
+    }
+    onSelectProfile(title)
+  }
+
+  @objc private func useTypedProfile() {
+    onSelectProfile(profileField.stringValue)
+  }
+
+  @objc private func addDirectory() {
+    onAddDirectory()
+  }
+
+  @objc private func removeSelectedDirectory() {
+    guard let candidate = selectedCandidate(in: enabledTable) ?? selectedCandidate(in: disabledTable) else {
+      return
+    }
+    onRemoveDirectory(candidate.id)
+  }
+
   @objc private func enableSelected() {
     guard let candidate = selectedCandidate(in: disabledTable) else {
       return
@@ -218,11 +299,18 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     onSetEnabled(candidate.id, false)
   }
 
-  @objc private func toggleSelectedActive() {
-    guard let candidate = selectedCandidate(in: enabledTable) else {
+  @objc private func startSelectedNow() {
+    guard let candidate = selectedCandidate(in: enabledTable) ?? selectedCandidate(in: disabledTable) else {
       return
     }
-    onToggleActive(candidate.id)
+    onSetActive(candidate.id, true)
+  }
+
+  @objc private func stopSelectedNow() {
+    guard let candidate = selectedCandidate(in: enabledTable) ?? selectedCandidate(in: disabledTable) else {
+      return
+    }
+    onSetActive(candidate.id, false)
   }
 
   @objc private func tableClicked(_ sender: NSTableView) {
@@ -233,7 +321,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     guard column.identifier == Column.active, let candidate = selectedCandidate(in: sender) else {
       return
     }
-    onToggleActive(candidate.id)
+    onSetActive(candidate.id, !state.preference(for: candidate.id).active)
   }
 
   private func selectedCandidate(in tableView: NSTableView) -> RielaAppDaemonWorkflowCandidate? {
@@ -246,6 +334,15 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       return nil
     }
     return candidates[row]
+  }
+
+  private func updateProfileControls() {
+    isUpdatingProfileControls = true
+    profilePopup.removeAllItems()
+    profilePopup.addItems(withTitles: profileNames.map(\.rawValue))
+    profilePopup.selectItem(withTitle: profileName.rawValue)
+    profileField.stringValue = profileName.rawValue
+    isUpdatingProfileControls = false
   }
 }
 #endif

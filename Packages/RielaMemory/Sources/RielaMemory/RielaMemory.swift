@@ -6,10 +6,22 @@ public enum RielaMemoryError: Error, Equatable, Sendable {
   case invalidWorkflowId(String)
   case invalidLimit(Int)
   case invalidPattern(String)
+  case invalidOffset(Int)
+  case tooManyTags(Int)
+  case duplicateTag(String)
+  case tooManyRelatedRecordIds(Int)
+  case duplicateRelatedRecordId(Int64)
+  case invalidRelatedRecordId(Int64)
+  case missingRelatedRecordId(Int64)
   case openFailed(String)
   case sqliteFailed(String)
   case jsonBUnavailable
   case invalidJSON(String)
+}
+
+public enum MemoryValueSortOrder: String, Codable, Equatable, Sendable {
+  case valueAsc = "value-asc"
+  case valueDesc = "value-desc"
 }
 
 public enum MemorySortOrder: String, Codable, Equatable, Sendable {
@@ -67,6 +79,8 @@ public struct MemoryRecord: Codable, Equatable, Sendable {
   public var workflowId: String
   public var nodeId: String?
   public var registeredAt: String
+  public var tags: [String]
+  public var relatedRecordIds: [Int64]
   public var payload: MemoryJSONValue
 
   public init(
@@ -75,6 +89,8 @@ public struct MemoryRecord: Codable, Equatable, Sendable {
     workflowId: String,
     nodeId: String? = nil,
     registeredAt: String,
+    tags: [String] = [],
+    relatedRecordIds: [Int64] = [],
     payload: MemoryJSONValue
   ) {
     self.recordId = recordId
@@ -82,7 +98,31 @@ public struct MemoryRecord: Codable, Equatable, Sendable {
     self.workflowId = workflowId
     self.nodeId = nodeId
     self.registeredAt = registeredAt
+    self.tags = tags
+    self.relatedRecordIds = relatedRecordIds
     self.payload = payload
+  }
+}
+
+public struct MemoryMetadata: Codable, Equatable, Sendable {
+  public var memoryId: String
+  public var description: String?
+  public var purpose: String?
+  public var dataSchema: MemoryJSONValue?
+  public var updatedAt: String
+
+  public init(
+    memoryId: String,
+    description: String? = nil,
+    purpose: String? = nil,
+    dataSchema: MemoryJSONValue? = nil,
+    updatedAt: String
+  ) {
+    self.memoryId = memoryId
+    self.description = description
+    self.purpose = purpose
+    self.dataSchema = dataSchema
+    self.updatedAt = updatedAt
   }
 }
 
@@ -107,6 +147,8 @@ public struct MemorySearchOptions: Equatable, Sendable {
   public var includeAllWorkflows: Bool
   public var nodeId: String?
   public var matchPatterns: [String]
+  public var tags: [String]
+  public var relatedRecordIds: [Int64]
   public var sortOrder: MemorySortOrder
   public var limit: Int
   public var maxPayloadBytes: Int
@@ -116,6 +158,8 @@ public struct MemorySearchOptions: Equatable, Sendable {
     includeAllWorkflows: Bool = false,
     nodeId: String? = nil,
     matchPatterns: [String] = [],
+    tags: [String] = [],
+    relatedRecordIds: [Int64] = [],
     sortOrder: MemorySortOrder = .registeredDesc,
     limit: Int = 30,
     maxPayloadBytes: Int = MemorySearchOptions.defaultMaxPayloadBytes
@@ -124,9 +168,33 @@ public struct MemorySearchOptions: Equatable, Sendable {
     self.includeAllWorkflows = includeAllWorkflows
     self.nodeId = nodeId
     self.matchPatterns = matchPatterns
+    self.tags = tags
+    self.relatedRecordIds = relatedRecordIds
     self.sortOrder = sortOrder
     self.limit = limit
     self.maxPayloadBytes = maxPayloadBytes
+  }
+}
+
+public struct MemoryValueListOptions: Equatable, Sendable {
+  public var workflowId: String?
+  public var includeAllWorkflows: Bool
+  public var sortOrder: MemoryValueSortOrder
+  public var limit: Int
+  public var offset: Int
+
+  public init(
+    workflowId: String? = nil,
+    includeAllWorkflows: Bool = false,
+    sortOrder: MemoryValueSortOrder = .valueAsc,
+    limit: Int = 30,
+    offset: Int = 0
+  ) {
+    self.workflowId = workflowId
+    self.includeAllWorkflows = includeAllWorkflows
+    self.sortOrder = sortOrder
+    self.limit = limit
+    self.offset = offset
   }
 }
 
@@ -156,10 +224,14 @@ public struct RielaMemoryStore: Sendable {
     workflowId: String,
     nodeId: String? = nil,
     registeredAt: String? = nil,
+    tags: [String] = [],
+    relatedRecordIds: [Int64] = [],
     payload: MemoryJSONValue
   ) throws -> MemoryRecord {
     try validateMemoryId(memoryId)
     try validateWorkflowId(workflowId)
+    try validateTags(tags)
+    try validateRelatedRecordIds(relatedRecordIds)
     let storedRegisteredAt: String
     if let providedRegisteredAt = registeredAt?.trimmingCharacters(in: .whitespacesAndNewlines),
       !providedRegisteredAt.isEmpty {
@@ -168,6 +240,53 @@ public struct RielaMemoryStore: Sendable {
       storedRegisteredAt = currentTimestamp()
     }
     let payloadJSON = try encodedJSONString(payload)
+    let tagsJSON = try encodedJSONString(tags)
+    let relatedRecordIdsJSON = try encodedJSONString(relatedRecordIds)
+
+    let db = try openDatabase(memoryId: memoryId)
+    defer {
+      sqlite3_close(db)
+    }
+    try ensureSchema(db)
+    try validateRelatedRecordIdsExist(relatedRecordIds, db: db)
+    try execute(
+      db,
+      """
+      INSERT INTO memory_entries (workflow_id, node_id, registered_at, tags_json, related_record_ids_json, payload_json)
+      VALUES (?, ?, ?, jsonb(?), jsonb(?), jsonb(?))
+      """,
+      bindings: [
+        .text(workflowId),
+        .optionalText(nodeId),
+        .text(storedRegisteredAt),
+        .text(tagsJSON),
+        .text(relatedRecordIdsJSON),
+        .text(payloadJSON)
+      ]
+    )
+    let recordId = sqlite3_last_insert_rowid(db)
+    return MemoryRecord(
+      recordId: recordId,
+      memoryId: memoryId,
+      workflowId: workflowId,
+      nodeId: nodeId,
+      registeredAt: storedRegisteredAt,
+      tags: tags,
+      relatedRecordIds: relatedRecordIds,
+      payload: payload
+    )
+  }
+
+  public func registerMetadata(
+    memoryId: String,
+    description: String? = nil,
+    purpose: String? = nil,
+    dataSchema: MemoryJSONValue? = nil,
+    updatedAt: String? = nil
+  ) throws -> MemoryMetadata {
+    try validateMemoryId(memoryId)
+    let storedUpdatedAt = nonEmpty(updatedAt) ?? currentTimestamp()
+    let schemaJSON = try dataSchema.map { try encodedJSONString($0) }
 
     let db = try openDatabase(memoryId: memoryId)
     defer {
@@ -177,19 +296,69 @@ public struct RielaMemoryStore: Sendable {
     try execute(
       db,
       """
-      INSERT INTO memory_entries (workflow_id, node_id, registered_at, payload_json)
-      VALUES (?, ?, ?, jsonb(?))
+      INSERT INTO memory_metadata (metadata_id, memory_id, description, purpose, data_schema_json, updated_at)
+      VALUES (1, ?, ?, ?, CASE WHEN ? IS NULL THEN NULL ELSE jsonb(?) END, ?)
+      ON CONFLICT(metadata_id) DO UPDATE SET
+        memory_id = excluded.memory_id,
+        description = excluded.description,
+        purpose = excluded.purpose,
+        data_schema_json = excluded.data_schema_json,
+        updated_at = excluded.updated_at
       """,
-      bindings: [.text(workflowId), .optionalText(nodeId), .text(storedRegisteredAt), .text(payloadJSON)]
+      bindings: [
+        .text(memoryId),
+        .optionalText(nonEmpty(description)),
+        .optionalText(nonEmpty(purpose)),
+        .optionalText(schemaJSON),
+        .optionalText(schemaJSON),
+        .text(storedUpdatedAt)
+      ]
     )
-    let recordId = sqlite3_last_insert_rowid(db)
-    return MemoryRecord(
-      recordId: recordId,
+    return MemoryMetadata(
       memoryId: memoryId,
-      workflowId: workflowId,
-      nodeId: nodeId,
-      registeredAt: storedRegisteredAt,
-      payload: payload
+      description: nonEmpty(description),
+      purpose: nonEmpty(purpose),
+      dataSchema: dataSchema,
+      updatedAt: storedUpdatedAt
+    )
+  }
+
+  public func metadata(memoryId: String) throws -> MemoryMetadata? {
+    try validateMemoryId(memoryId)
+    let path = try databasePath(memoryId: memoryId)
+    guard FileManager.default.fileExists(atPath: path) else {
+      return nil
+    }
+
+    let db = try openDatabase(memoryId: memoryId)
+    defer {
+      sqlite3_close(db)
+    }
+    try ensureSchema(db)
+    let rows = try queryRows(
+      db,
+      sql: """
+        SELECT memory_id, description, purpose, json(data_schema_json) AS data_schema_json, updated_at
+        FROM memory_metadata
+        WHERE metadata_id = 1
+        """,
+      bindings: []
+    )
+    guard let row = rows.first else {
+      return nil
+    }
+    guard let storedMemoryId = row.columns["memory_id"], let updatedAt = row.columns["updated_at"] else {
+      throw RielaMemoryError.sqliteFailed("memory metadata row is missing required fields")
+    }
+    let dataSchema = try row.columns["data_schema_json"].map {
+      try JSONDecoder().decode(MemoryJSONValue.self, from: Data($0.utf8))
+    }
+    return MemoryMetadata(
+      memoryId: storedMemoryId,
+      description: row.columns["description"],
+      purpose: row.columns["purpose"],
+      dataSchema: dataSchema,
+      updatedAt: updatedAt
     )
   }
 
@@ -213,6 +382,8 @@ public struct RielaMemoryStore: Sendable {
     guard options.maxPayloadBytes > 0 else {
       throw RielaMemoryError.invalidLimit(options.maxPayloadBytes)
     }
+    try validateTags(options.tags)
+    try validateRelatedRecordIds(options.relatedRecordIds)
     let regexes = try options.matchPatterns.map(compileRegex)
     let path = try databasePath(memoryId: memoryId)
     guard FileManager.default.fileExists(atPath: path) else {
@@ -226,7 +397,10 @@ public struct RielaMemoryStore: Sendable {
     try ensureSchema(db)
 
     var sql = """
-      SELECT record_id, workflow_id, node_id, registered_at, json(payload_json) AS payload_json
+      SELECT record_id, workflow_id, node_id, registered_at,
+        json(tags_json) AS tags_json,
+        json(related_record_ids_json) AS related_record_ids_json,
+        json(payload_json) AS payload_json
       FROM memory_entries
       """
     var bindings: [SQLiteBinding] = []
@@ -239,6 +413,18 @@ public struct RielaMemoryStore: Sendable {
     if let nodeId = options.nodeId {
       whereClauses.append("node_id = ?")
       bindings.append(.text(nodeId))
+    }
+    if !options.tags.isEmpty {
+      whereClauses.append(
+        "EXISTS (SELECT 1 FROM json_each(json(tags_json)) WHERE json_each.value IN (\(placeholders(options.tags.count))))"
+      )
+      bindings.append(contentsOf: options.tags.map(SQLiteBinding.text))
+    }
+    if !options.relatedRecordIds.isEmpty {
+      whereClauses.append(
+        "EXISTS (SELECT 1 FROM json_each(json(related_record_ids_json)) WHERE json_each.value IN (\(placeholders(options.relatedRecordIds.count))))"
+      )
+      bindings.append(contentsOf: options.relatedRecordIds.map(SQLiteBinding.int64))
     }
     if !whereClauses.isEmpty {
       sql += " WHERE " + whereClauses.joined(separator: " AND ")
@@ -267,6 +453,65 @@ public struct RielaMemoryStore: Sendable {
     }
     try recordReferences(records, db: db)
     return records
+  }
+
+  public func uniqueTags(memoryId: String, options: MemoryValueListOptions = MemoryValueListOptions()) throws -> [String] {
+    try validateValueList(memoryId: memoryId, options: options)
+    let path = try databasePath(memoryId: memoryId)
+    guard FileManager.default.fileExists(atPath: path) else {
+      return []
+    }
+
+    let db = try openDatabase(memoryId: memoryId)
+    defer {
+      sqlite3_close(db)
+    }
+    try ensureSchema(db)
+
+    var sql = """
+      SELECT DISTINCT json_each.value AS value
+      FROM memory_entries, json_each(json(memory_entries.tags_json))
+      """
+    var bindings: [SQLiteBinding] = []
+    appendWorkflowFilter(options, sql: &sql, bindings: &bindings)
+    sql += options.sortOrder == .valueDesc ? " ORDER BY value DESC" : " ORDER BY value ASC"
+    sql += " LIMIT ? OFFSET ?"
+    bindings.append(.int(options.limit))
+    bindings.append(.int(options.offset))
+
+    return try queryRows(db, sql: sql, bindings: bindings).compactMap { $0.columns["value"] }
+  }
+
+  public func uniqueRelatedRecordIds(
+    memoryId: String,
+    options: MemoryValueListOptions = MemoryValueListOptions()
+  ) throws -> [Int64] {
+    try validateValueList(memoryId: memoryId, options: options)
+    let path = try databasePath(memoryId: memoryId)
+    guard FileManager.default.fileExists(atPath: path) else {
+      return []
+    }
+
+    let db = try openDatabase(memoryId: memoryId)
+    defer {
+      sqlite3_close(db)
+    }
+    try ensureSchema(db)
+
+    var sql = """
+      SELECT DISTINCT CAST(json_each.value AS INTEGER) AS value
+      FROM memory_entries, json_each(json(memory_entries.related_record_ids_json))
+      """
+    var bindings: [SQLiteBinding] = []
+    appendWorkflowFilter(options, sql: &sql, bindings: &bindings)
+    sql += options.sortOrder == .valueDesc ? " ORDER BY value DESC" : " ORDER BY value ASC"
+    sql += " LIMIT ? OFFSET ?"
+    bindings.append(.int(options.limit))
+    bindings.append(.int(options.offset))
+
+    return try queryRows(db, sql: sql, bindings: bindings).compactMap { row in
+      row.columns["value"].flatMap(Int64.init)
+    }
   }
 
   public func referenceHistory(memoryId: String, recordId: Int64? = nil, limit: Int = 30) throws -> [MemoryRecordReference] {
@@ -335,6 +580,26 @@ public struct RielaMemoryStore: Sendable {
 
   private func ensureSchema(_ db: OpaquePointer?) throws {
     try ensureJSONBAvailable(db)
+    let versionRows = try queryRows(db, sql: "PRAGMA user_version", bindings: [])
+    let userVersion = Int(versionRows.first?.columns["user_version"] ?? "0") ?? 0
+    if userVersion < currentSchemaVersion {
+      try execute(db, "DROP TABLE IF EXISTS memory_entry_references")
+      try execute(db, "DROP TABLE IF EXISTS memory_entries")
+      try execute(db, "DROP TABLE IF EXISTS memory_metadata")
+    }
+    try execute(
+      db,
+      """
+      CREATE TABLE IF NOT EXISTS memory_metadata (
+        metadata_id INTEGER PRIMARY KEY CHECK (metadata_id = 1),
+        memory_id TEXT NOT NULL,
+        description TEXT,
+        purpose TEXT,
+        data_schema_json BLOB CHECK (data_schema_json IS NULL OR json_valid(data_schema_json, 8)),
+        updated_at TEXT NOT NULL
+      )
+      """
+    )
     try execute(
       db,
       """
@@ -343,6 +608,8 @@ public struct RielaMemoryStore: Sendable {
         workflow_id TEXT NOT NULL,
         node_id TEXT,
         registered_at TEXT NOT NULL,
+        tags_json BLOB NOT NULL CHECK (json_valid(tags_json, 8)),
+        related_record_ids_json BLOB NOT NULL CHECK (json_valid(related_record_ids_json, 8)),
         payload_json BLOB NOT NULL CHECK (json_valid(payload_json, 8))
       )
       """
@@ -369,6 +636,7 @@ public struct RielaMemoryStore: Sendable {
       db,
       "CREATE INDEX IF NOT EXISTS idx_memory_entry_references_record ON memory_entry_references (record_id, referenced_at DESC, reference_id DESC)"
     )
+    try execute(db, "PRAGMA user_version = \(currentSchemaVersion)")
   }
 
   private func ensureJSONBAvailable(_ db: OpaquePointer?) throws {
@@ -391,12 +659,19 @@ public struct RielaMemoryStore: Sendable {
       throw RielaMemoryError.sqliteFailed("memory row is missing required fields")
     }
     let payload = try JSONDecoder().decode(MemoryJSONValue.self, from: Data(row.payloadJSON.utf8))
+    let tags = try JSONDecoder().decode([String].self, from: Data((row.columns["tags_json"] ?? "[]").utf8))
+    let relatedRecordIds = try JSONDecoder().decode(
+      [Int64].self,
+      from: Data((row.columns["related_record_ids_json"] ?? "[]").utf8)
+    )
     return MemoryRecord(
       recordId: recordId,
       memoryId: memoryId,
       workflowId: workflowId,
       nodeId: row.columns["node_id"],
       registeredAt: registeredAt,
+      tags: tags,
+      relatedRecordIds: relatedRecordIds,
       payload: payload
     )
   }
@@ -421,6 +696,73 @@ public struct RielaMemoryStore: Sendable {
     } catch {
       throw RielaMemoryError.invalidPattern(pattern)
     }
+  }
+
+  private func validateTags(_ tags: [String]) throws {
+    guard tags.count <= maximumMemoryTags else {
+      throw RielaMemoryError.tooManyTags(tags.count)
+    }
+    var seen: Set<String> = []
+    for tag in tags {
+      guard !seen.contains(tag) else {
+        throw RielaMemoryError.duplicateTag(tag)
+      }
+      seen.insert(tag)
+    }
+  }
+
+  private func validateRelatedRecordIds(_ relatedRecordIds: [Int64]) throws {
+    guard relatedRecordIds.count <= maximumRelatedRecordIds else {
+      throw RielaMemoryError.tooManyRelatedRecordIds(relatedRecordIds.count)
+    }
+    var seen: Set<Int64> = []
+    for relatedRecordId in relatedRecordIds {
+      guard relatedRecordId > 0 else {
+        throw RielaMemoryError.invalidRelatedRecordId(relatedRecordId)
+      }
+      guard !seen.contains(relatedRecordId) else {
+        throw RielaMemoryError.duplicateRelatedRecordId(relatedRecordId)
+      }
+      seen.insert(relatedRecordId)
+    }
+  }
+
+  private func validateRelatedRecordIdsExist(_ relatedRecordIds: [Int64], db: OpaquePointer?) throws {
+    for relatedRecordId in relatedRecordIds {
+      let rows = try queryRows(
+        db,
+        sql: "SELECT 1 AS found FROM memory_entries WHERE record_id = ? LIMIT 1",
+        bindings: [.int64(relatedRecordId)]
+      )
+      guard !rows.isEmpty else {
+        throw RielaMemoryError.missingRelatedRecordId(relatedRecordId)
+      }
+    }
+  }
+
+  private func validateValueList(memoryId: String, options: MemoryValueListOptions) throws {
+    try validateMemoryId(memoryId)
+    if let workflowId = options.workflowId, !options.includeAllWorkflows {
+      try validateWorkflowId(workflowId)
+    }
+    guard options.limit > 0 else {
+      throw RielaMemoryError.invalidLimit(options.limit)
+    }
+    guard options.offset >= 0 else {
+      throw RielaMemoryError.invalidOffset(options.offset)
+    }
+  }
+
+  private func appendWorkflowFilter(
+    _ options: MemoryValueListOptions,
+    sql: inout String,
+    bindings: inout [SQLiteBinding]
+  ) {
+    guard let workflowId = options.workflowId, !options.includeAllWorkflows else {
+      return
+    }
+    sql += " WHERE workflow_id = ?"
+    bindings.append(.text(workflowId))
   }
 
   private func recordReferences(_ records: [MemoryRecord], db: OpaquePointer?) throws {
@@ -448,6 +790,10 @@ private struct SQLiteRow {
     columns["payload_json"] ?? "null"
   }
 }
+
+private let currentSchemaVersion = 2
+private let maximumMemoryTags = 10
+private let maximumRelatedRecordIds = 10
 
 private enum SQLiteBinding {
   case text(String)
@@ -547,6 +893,27 @@ private func encodedJSONString(_ value: MemoryJSONValue) throws -> String {
     throw RielaMemoryError.invalidJSON("encoded JSON is not UTF-8")
   }
   return string
+}
+
+private func encodedJSONString<T: Encodable>(_ value: T) throws -> String {
+  let encoder = JSONEncoder()
+  encoder.outputFormatting = [.sortedKeys]
+  let data = try encoder.encode(value)
+  guard let string = String(data: data, encoding: .utf8) else {
+    throw RielaMemoryError.invalidJSON("encoded JSON is not UTF-8")
+  }
+  return string
+}
+
+private func placeholders(_ count: Int) -> String {
+  Array(repeating: "?", count: count).joined(separator: ", ")
+}
+
+private func nonEmpty(_ value: String?) -> String? {
+  guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+    return nil
+  }
+  return trimmed
 }
 
 private func currentTimestamp() -> String {

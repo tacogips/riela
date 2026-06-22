@@ -697,7 +697,7 @@ private func validateRawMemoryDeclarations(
       diagnostics.append(error(memoryPath, "must be an object"))
       continue
     }
-    let allowedKeys: Set<String> = ["id", "description", "purpose", "scope", "defaultLimit"]
+    let allowedKeys: Set<String> = ["id", "description", "purpose", "dataSchema", "scope", "defaultLimit"]
     for key in memory.keys where !allowedKeys.contains(key) {
       diagnostics.append(error("\(memoryPath).\(key)", "uses an unsupported memory declaration field"))
     }

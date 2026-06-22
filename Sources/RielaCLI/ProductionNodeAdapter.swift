@@ -477,10 +477,14 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     switch operation {
     case .save:
       let payload = try memoryPayload(config: config, variables: variables, input: input)
+      let tags = try memoryTags(config: config, variables: variables)
+      let relatedRecordIds = try memoryRelatedRecordIds(config: config, variables: variables)
       let record = try store.save(
         memoryId: memoryId,
         workflowId: input.workflowId,
         nodeId: nodeId,
+        tags: tags,
+        relatedRecordIds: relatedRecordIds,
         payload: payload
       )
       return memoryAddonOutput(
@@ -513,12 +517,16 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       )
     case .search:
       let patterns = memoryMatchPatterns(config: config, variables: variables)
+      let tags = try memoryTags(config: config, variables: variables)
+      let relatedRecordIds = try memoryRelatedRecordIds(config: config, variables: variables)
       let records = try store.search(
         memoryId: memoryId,
         options: MemorySearchOptions(
           workflowId: input.workflowId,
           nodeId: optionalNodeScope(config: config, variables: variables),
           matchPatterns: patterns,
+          tags: tags,
+          relatedRecordIds: relatedRecordIds,
           limit: limit
         )
       )
@@ -531,6 +539,8 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
           "records": .array(records.map(memoryRecordJSON)),
           "recordsText": .string(memoryRecordsText(records)),
           "matchPatterns": .array(patterns.map { .string($0) }),
+          "tags": .array(tags.map { .string($0) }),
+          "relatedRecordIds": .array(relatedRecordIds.map { .number(Double($0)) }),
           "limit": .number(Double(limit))
         ]
       )
@@ -773,11 +783,78 @@ private func memoryMatchPatterns(config: JSONObject, variables: JSONObject) -> [
   return []
 }
 
+private func memoryTags(config: JSONObject, variables: JSONObject) throws -> [String] {
+  if let configured = try stringArrayValue(config["tags"], fieldName: "memory tags") {
+    return configured
+  }
+  if let variableTags = try stringArrayValue(variables["tags"], fieldName: "memory tags") {
+    return variableTags
+  }
+  if let singleTag = nonEmptyString(config["tag"]) ?? nonEmptyString(variables["tag"]) {
+    return [singleTag]
+  }
+  return []
+}
+
+private func memoryRelatedRecordIds(config: JSONObject, variables: JSONObject) throws -> [Int64] {
+  if let configured = try int64ArrayValue(config["relatedRecordIds"], fieldName: "memory relatedRecordIds") {
+    return configured
+  }
+  if let variableIds = try int64ArrayValue(variables["relatedRecordIds"], fieldName: "memory relatedRecordIds") {
+    return variableIds
+  }
+  if let singleId = try int64Value(config["relatedRecordId"], fieldName: "memory relatedRecordId")
+    ?? int64Value(variables["relatedRecordId"], fieldName: "memory relatedRecordId") {
+    return [singleId]
+  }
+  return []
+}
+
+private func stringArrayValue(_ value: JSONValue?, fieldName: String) throws -> [String]? {
+  guard let value else {
+    return nil
+  }
+  guard case let .array(values) = value else {
+    throw AdapterExecutionError(.policyBlocked, "\(fieldName) must be an array of non-empty strings")
+  }
+  return try values.enumerated().map { index, value in
+    guard let string = nonEmptyString(value) else {
+      throw AdapterExecutionError(.policyBlocked, "\(fieldName)[\(index)] must be a non-empty string")
+    }
+    return string
+  }
+}
+
 private func stringArrayValue(_ value: JSONValue?) -> [String]? {
   guard case let .array(values) = value else {
     return nil
   }
   return values.compactMap(nonEmptyString)
+}
+
+private func int64ArrayValue(_ value: JSONValue?, fieldName: String) throws -> [Int64]? {
+  guard let value else {
+    return nil
+  }
+  guard case let .array(values) = value else {
+    throw AdapterExecutionError(.policyBlocked, "\(fieldName) must be an array of positive integer record ids")
+  }
+  return try values.enumerated().map { index, value in
+    guard let id = try int64Value(value, fieldName: "\(fieldName)[\(index)]") else {
+      throw AdapterExecutionError(.policyBlocked, "\(fieldName)[\(index)] must be a positive integer record id")
+    }
+    return id
+  }
+}
+
+private func int64Value(_ value: JSONValue?, fieldName: String) throws -> Int64? {
+  guard let value else {
+    return nil
+  }
+  guard case let .number(number) = value, let id = Int64(exactly: number), id > 0 else {
+    throw AdapterExecutionError(.policyBlocked, "\(fieldName) must be a positive integer record id")
+  }
+  return id
 }
 
 private func memoryAddonOutput(
@@ -814,6 +891,8 @@ private func memoryRecordJSON(_ record: MemoryRecord) -> JSONValue {
     "workflowId": .string(record.workflowId),
     "nodeId": record.nodeId.map { .string($0) } ?? .null,
     "registeredAt": .string(record.registeredAt),
+    "tags": .array(record.tags.map { .string($0) }),
+    "relatedRecordIds": .array(record.relatedRecordIds.map { .number(Double($0)) }),
     "payload": jsonValue(from: record.payload)
   ])
 }

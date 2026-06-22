@@ -1,4 +1,5 @@
 import XCTest
+import RielaMemory
 @testable import RielaCLI
 
 final class CommandParsingTests: XCTestCase {
@@ -290,6 +291,8 @@ final class CommandParsingTests: XCTestCase {
         "--workflow-id", "telegram-sdk-trio-chat",
         "--match", "Yui",
         "-e", "Rina",
+        "--tag", "chat",
+        "--related-id", "12",
         "--limit", "5",
         "--output=json"
       ]),
@@ -299,6 +302,8 @@ final class CommandParsingTests: XCTestCase {
           memoryId: "chat-memory",
           workflowId: "telegram-sdk-trio-chat",
           matchPatterns: ["Yui", "Rina"],
+          tags: ["chat"],
+          relatedRecordIds: [12],
           limit: 5,
           output: .json
         )
@@ -321,6 +326,31 @@ final class CommandParsingTests: XCTestCase {
           limit: 10
         )
       ))
+    )
+
+    XCTAssertEqual(
+      try parser.parse([
+        "memory", "tags", "chat-memory",
+        "--memory-root", "tmp/memory",
+        "--sort", "value-desc",
+        "--limit", "10",
+        "--offset", "5"
+      ]),
+      .memory(MemoryCommand(
+        kind: .tags,
+        options: MemoryCommandOptions(
+          memoryId: "chat-memory",
+          sortOrder: .valueDesc,
+          limit: 10,
+          offset: 5,
+          databaseRoot: "tmp/memory"
+        )
+      ))
+    )
+
+    XCTAssertEqual(
+      try parser.parse(["memory", "metadata", "chat-memory"]),
+      .memory(MemoryCommand(kind: .metadata, options: MemoryCommandOptions(memoryId: "chat-memory")))
     )
   }
 

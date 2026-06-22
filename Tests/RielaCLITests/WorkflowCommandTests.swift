@@ -428,6 +428,7 @@ final class WorkflowCommandTests: XCTestCase {
         "memoryId": .string("chat-memory"),
         "memoryRoot": .string(memoryRoot),
         "nodeId": .string("chat-event"),
+        "tags": .array([.string("chat"), .string("routing")]),
         "payloadTemplate": .object([
           "text": .string("{{event.input.text}}"),
           "conversationId": .string("{{event.conversation.id}}")
@@ -458,6 +459,7 @@ final class WorkflowCommandTests: XCTestCase {
     else {
       return XCTFail("memory-save record payload was not returned")
     }
+    XCTAssertEqual(savedRecord["tags"], .array([.string("chat"), .string("routing")]))
     XCTAssertEqual(savedPayload["text"], .string("Yui, remember the routing test"))
     XCTAssertEqual(savedPayload["conversationId"], .string("chat-1"))
 
@@ -499,7 +501,8 @@ final class WorkflowCommandTests: XCTestCase {
             "memoryId": .string("chat-memory"),
             "memoryRoot": .string(memoryRoot),
             "workflowScopeOnly": .bool(true),
-            "matchPatterns": .array([.string("routing test")])
+            "matchPatterns": .array([.string("routing test")]),
+            "tags": .array([.string("routing")])
           ]
         )
       ),
@@ -513,6 +516,65 @@ final class WorkflowCommandTests: XCTestCase {
       return XCTFail("memory-search recordsText was not returned")
     }
     XCTAssertTrue(searchRecordsText.contains("Yui, remember the routing test"))
+  }
+
+  func testBuiltinMemoryAddonsRejectInvalidTagsAndRelatedRecordIds() async throws {
+    let root = repositoryRoot()
+    let memoryRoot = "\(root)/tmp/test-invalid-memory-addon-input-\(UUID().uuidString)"
+    defer {
+      try? FileManager.default.removeItem(atPath: memoryRoot)
+    }
+    let resolver = BuiltinWorkflowAddonResolver(environment: [:])
+
+    do {
+      _ = try await resolver.execute(
+        WorkflowAddonExecutionInput(
+          workflowId: "telegram-sdk-trio-chat",
+          stepId: "save-chat-event-memory",
+          nodeId: "save-chat-event-memory",
+          addon: WorkflowNodeAddonRef(
+            name: "riela/memory-save",
+            version: "1",
+            config: [
+              "memoryId": .string("chat-memory"),
+              "memoryRoot": .string(memoryRoot),
+              "tags": .array([.number(1)]),
+              "payload": .object(["text": .string("invalid tag")])
+            ]
+          )
+        ),
+        context: AdapterExecutionContext()
+      )
+      XCTFail("Expected invalid tag failure")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .policyBlocked)
+      XCTAssertEqual(error.message, "memory tags[0] must be a non-empty string")
+    }
+
+    do {
+      _ = try await resolver.execute(
+        WorkflowAddonExecutionInput(
+          workflowId: "telegram-sdk-trio-chat",
+          stepId: "save-chat-event-memory",
+          nodeId: "save-chat-event-memory",
+          addon: WorkflowNodeAddonRef(
+            name: "riela/memory-save",
+            version: "1",
+            config: [
+              "memoryId": .string("chat-memory"),
+              "memoryRoot": .string(memoryRoot),
+              "relatedRecordIds": .array([.number(1.5)]),
+              "payload": .object(["text": .string("invalid related id")])
+            ]
+          )
+        ),
+        context: AdapterExecutionContext()
+      )
+      XCTFail("Expected invalid related record id failure")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .policyBlocked)
+      XCTAssertEqual(error.message, "memory relatedRecordIds[0] must be a positive integer record id")
+    }
   }
 
   func testBuiltinSDKWorkerExecutesInjectedLiveAdapter() async throws {

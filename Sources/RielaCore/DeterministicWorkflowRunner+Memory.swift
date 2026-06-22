@@ -23,6 +23,9 @@ extension DeterministicWorkflowRunner {
     if let purpose = memory.purpose {
       object["purpose"] = .string(purpose)
     }
+    if let dataSchema = memory.dataSchema {
+      object["dataSchema"] = dataSchema
+    }
     if let scope = memory.scope {
       object["scope"] = .string(scope.rawValue)
     }
@@ -56,6 +59,9 @@ extension DeterministicWorkflowRunner {
       Save JSON memory: riela memory save <memory-id> --workflow-id \(workflowId) --node-id \(nodeId) --payload-json '<json>'.
       Load recent memory: riela memory load <memory-id> --workflow-id \(workflowId) --node-id \(nodeId) --limit 30.
       Search memory with grep-style regular expressions: riela memory search <memory-id> --workflow-id \(workflowId) --match '<regex>' --limit 30.
+      Inspect memory metadata before searching: riela memory metadata <memory-id>.
+      List unique tags or related record ids with pagination: riela memory tags <memory-id> --limit 30 --offset 0; riela memory related-ids <memory-id> --limit 30 --offset 0.
+      Save/search can include up to 10 tags with repeated --tag and up to 10 same-database related record ids with repeated --related-id.
       Memory root for command/container nodes is available as $RIELA_MEMORY_ROOT and can be passed to riela memory commands with --memory-root "$RIELA_MEMORY_ROOT".\(crossWorkflowHelp)
       """
   }
@@ -81,6 +87,38 @@ extension DeterministicWorkflowRunner {
       return environmentRoot
     }
     return RielaMemoryStore.defaultRootDirectory()
+  }
+
+  func registerMemoryMetadata(
+    workflow: WorkflowDefinition,
+    step: WorkflowStepRef,
+    payload: AgentNodePayload?,
+    request: DeterministicWorkflowRunRequest
+  ) throws {
+    let memories = deduplicatedMemories((workflow.memories ?? []) + effectiveNodeMemories(
+      workflow: workflow,
+      step: step,
+      payload: payload
+    ))
+    guard !memories.isEmpty else {
+      return
+    }
+    let store = RielaMemoryStore(rootDirectory: resolvedMemoryRootDirectory(request: request))
+    for memory in memories {
+      _ = try store.registerMetadata(
+        memoryId: memory.id,
+        description: memory.description,
+        purpose: memory.purpose,
+        dataSchema: memory.dataSchema.map(memoryJSONValue)
+      )
+    }
+  }
+
+  func shouldRecordAutomaticMemory(for registryNode: WorkflowNodeRegistryRef) -> Bool {
+    guard let addon = registryNode.addon else {
+      return true
+    }
+    return !builtinMemoryAddonNames.contains(addon.name)
   }
 
   func recordNodeMemoryInbox(
@@ -243,11 +281,15 @@ extension DeterministicWorkflowRunner {
   }
 
   private func deduplicatedMemories(_ memories: [WorkflowMemoryDeclaration]) -> [WorkflowMemoryDeclaration] {
-    var seen: Set<String> = []
+    var indexesById: [String: Int] = [:]
     var result: [WorkflowMemoryDeclaration] = []
-    for memory in memories where !seen.contains(memory.id) {
-      seen.insert(memory.id)
-      result.append(memory)
+    for memory in memories {
+      if let index = indexesById[memory.id] {
+        result[index] = result[index].fillingMissingFields(from: memory)
+      } else {
+        indexesById[memory.id] = result.count
+        result.append(memory)
+      }
     }
     return result
   }
@@ -303,6 +345,25 @@ private func sanitizedNodeMemoryValue(_ value: JSONValue, depth: Int = 0) -> JSO
     return value
   }
 }
+
+private extension WorkflowMemoryDeclaration {
+  func fillingMissingFields(from other: WorkflowMemoryDeclaration) -> WorkflowMemoryDeclaration {
+    WorkflowMemoryDeclaration(
+      id: id,
+      description: description ?? other.description,
+      purpose: purpose ?? other.purpose,
+      dataSchema: dataSchema ?? other.dataSchema,
+      scope: scope ?? other.scope,
+      defaultLimit: defaultLimit ?? other.defaultLimit
+    )
+  }
+}
+
+private let builtinMemoryAddonNames: Set<String> = [
+  "riela/memory-save",
+  "riela/memory-load",
+  "riela/memory-search"
+]
 
 private func memoryJSONValue(from value: JSONValue) -> MemoryJSONValue {
   switch value {

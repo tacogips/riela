@@ -330,8 +330,16 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     executionIndex: Int
   ) async throws -> WorkflowPublicationResult {
     let publishResult: WorkflowPublicationResult
+    let basePayload = request.nodePayloads[step.nodeId]
+    let recordsAutomaticMemory = shouldRecordAutomaticMemory(for: registryNode)
+    try registerMemoryMetadata(
+      workflow: request.workflow,
+      step: step,
+      payload: basePayload,
+      request: request
+    )
     do {
-      if let basePayload = request.nodePayloads[step.nodeId] {
+      if let basePayload {
         publishResult = try await executePayloadNodeAndRecordMemory(
           basePayload: basePayload,
           request: request,
@@ -342,15 +350,17 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           executionIndex: executionIndex
         )
       } else if let addon = registryNode.addon {
-        try recordNodeMemoryInbox(
-          workflow: request.workflow,
-          step: step,
-          payload: nil,
-          request: request,
-          session: session,
-          executionIndex: executionIndex,
-          resolvedInput: resolvedInput
-        )
+        if recordsAutomaticMemory {
+          try recordNodeMemoryInbox(
+            workflow: request.workflow,
+            step: step,
+            payload: nil,
+            request: request,
+            session: session,
+            executionIndex: executionIndex,
+            resolvedInput: resolvedInput
+          )
+        }
         publishResult = try await executeAddonAndPublish(
           addon: addon,
           sessionId: session.sessionId,
@@ -365,25 +375,29 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         throw DeterministicWorkflowRunnerError.missingNodePayload(step.nodeId)
       }
     } catch {
-      try recordNodeMemoryFailureOutbox(
-        workflow: request.workflow,
-        step: step,
-        payload: request.nodePayloads[step.nodeId],
-        request: request,
-        sessionId: session.sessionId,
-        executionIndex: executionIndex,
-        error: error
-      )
+      if recordsAutomaticMemory {
+        try recordNodeMemoryFailureOutbox(
+          workflow: request.workflow,
+          step: step,
+          payload: basePayload,
+          request: request,
+          sessionId: session.sessionId,
+          executionIndex: executionIndex,
+          error: error
+        )
+      }
       throw error
     }
-    try recordNodeMemoryOutbox(
-      workflow: request.workflow,
-      step: step,
-      payload: request.nodePayloads[step.nodeId],
-      request: request,
-      publishResult: publishResult,
-      executionIndex: executionIndex
-    )
+    if recordsAutomaticMemory {
+      try recordNodeMemoryOutbox(
+        workflow: request.workflow,
+        step: step,
+        payload: basePayload,
+        request: request,
+        publishResult: publishResult,
+        executionIndex: executionIndex
+      )
+    }
     return publishResult
   }
 

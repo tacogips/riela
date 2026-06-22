@@ -1,6 +1,7 @@
 import Foundation
 import RielaAddons
 import RielaCore
+import RielaMemory
 
 public let rielaSwiftMigrationVersion = "0.1.5"
 
@@ -597,6 +598,8 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       if options.workflowId == nil && !options.allWorkflows {
         throw CLIUsageError("memory \(subcommand) requires --workflow-id")
       }
+    case .metadata, .tags, .relatedIds:
+      break
     }
     return MemoryCommand(kind: kind, options: options)
   }
@@ -609,7 +612,11 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     var payloadFile: String?
     var registeredAt: String?
     var matchPatterns: [String] = []
+    var tags: [String] = []
+    var relatedRecordIds: [Int64] = []
+    var sortOrder: MemoryValueSortOrder = .valueAsc
     var limit = 30
+    var offset = 0
     var databaseRoot: String?
     var workingDirectory = FileManager.default.currentDirectoryPath
     var output: WorkflowOutputFormat = .jsonl
@@ -621,6 +628,11 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       }
       if let value = inlineOptionValue(token, prefix: "--output=") {
         output = try parseOutputValue(value, allowTableOutput: false)
+        index += 1
+        continue
+      }
+      if let value = inlineOptionValue(token, prefix: "--sort=") {
+        sortOrder = try parseMemoryValueSort(value)
         index += 1
         continue
       }
@@ -646,11 +658,25 @@ public struct RielaArgumentParser: CLIArgumentParsing {
         registeredAt = try value()
       case "--match", "-e":
         matchPatterns.append(try value())
+      case "--tag":
+        tags.append(try value())
+      case "--related-id", "--related-record-id":
+        guard let parsed = Int64(try value()), parsed > 0 else {
+          throw CLIUsageError("\(token) must be a positive integer")
+        }
+        relatedRecordIds.append(parsed)
+      case "--sort":
+        sortOrder = try parseMemoryValueSort(try value())
       case "--limit":
         guard let parsed = Int(try value()), parsed > 0 else {
           throw CLIUsageError("--limit must be a positive integer")
         }
         limit = parsed
+      case "--offset":
+        guard let parsed = Int(try value()), parsed >= 0 else {
+          throw CLIUsageError("--offset must be zero or a positive integer")
+        }
+        offset = parsed
       case "--database-root", "--memory-root":
         databaseRoot = try value()
       case "--working-dir", "--working-directory":
@@ -671,7 +697,11 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       payloadFile: payloadFile,
       registeredAt: registeredAt,
       matchPatterns: matchPatterns,
+      tags: tags,
+      relatedRecordIds: relatedRecordIds,
+      sortOrder: sortOrder,
       limit: limit,
+      offset: offset,
       databaseRoot: databaseRoot,
       workingDirectory: workingDirectory,
       output: output
@@ -875,6 +905,13 @@ private func parseOutputValue(_ raw: String, allowTableOutput: Bool) throws -> W
   }
   if value == .table && !allowTableOutput {
     throw CLIUsageError("`--output table` is only supported for workflow list, workflow status, package search, and package list")
+  }
+  return value
+}
+
+private func parseMemoryValueSort(_ raw: String) throws -> MemoryValueSortOrder {
+  guard let value = MemoryValueSortOrder(rawValue: raw) else {
+    throw CLIUsageError("invalid --sort value '\(raw)'; expected value-asc or value-desc")
   }
   return value
 }

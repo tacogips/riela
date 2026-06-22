@@ -69,6 +69,128 @@ final class RielaMemoryTests: XCTestCase {
     ])
   }
 
+  func testMetadataCanDescribeMemoryPurposeAndDataSchema() throws {
+    let root = temporaryDirectory()
+    let store = RielaMemoryStore(rootDirectory: root.path)
+
+    let metadata = try store.registerMetadata(
+      memoryId: "persona-summary",
+      description: "summaries for each persona",
+      purpose: "help nodes decide when persona history should be searched",
+      dataSchema: .object([
+        "type": .string("object"),
+        "required": .array([.string("text")])
+      ]),
+      updatedAt: "2026-06-20T10:00:00Z"
+    )
+
+    XCTAssertEqual(metadata.memoryId, "persona-summary")
+    XCTAssertEqual(try store.metadata(memoryId: "persona-summary"), metadata)
+  }
+
+  func testTagsAndRelatedRecordIdsAreStoredSearchableAndPageableAsUniqueValues() throws {
+    let root = temporaryDirectory()
+    let store = RielaMemoryStore(rootDirectory: root.path)
+
+    let base = try store.save(
+      memoryId: "chat-memory",
+      workflowId: "wf",
+      registeredAt: "2026-06-20T10:00:00Z",
+      tags: ["chat", "yui"],
+      payload: .object(["text": .string("base memory")])
+    )
+    try store.save(
+      memoryId: "chat-memory",
+      workflowId: "wf",
+      registeredAt: "2026-06-20T10:01:00Z",
+      tags: ["chat", "rina"],
+      relatedRecordIds: [base.recordId],
+      payload: .object(["text": .string("related memory")])
+    )
+    try store.save(
+      memoryId: "chat-memory",
+      workflowId: "other-wf",
+      registeredAt: "2026-06-20T10:02:00Z",
+      tags: ["other"],
+      relatedRecordIds: [base.recordId],
+      payload: .object(["text": .string("other workflow memory")])
+    )
+
+    XCTAssertEqual(
+      try store.search(memoryId: "chat-memory", options: MemorySearchOptions(workflowId: "wf", tags: ["rina"]))
+        .map(\.payload),
+      [.object(["text": .string("related memory")])]
+    )
+    XCTAssertEqual(
+      try store.search(
+        memoryId: "chat-memory",
+        options: MemorySearchOptions(workflowId: "wf", relatedRecordIds: [base.recordId])
+      ).map(\.tags),
+      [["chat", "rina"]]
+    )
+    XCTAssertEqual(
+      try store.uniqueTags(memoryId: "chat-memory", options: MemoryValueListOptions(workflowId: "wf", limit: 2)),
+      ["chat", "rina"]
+    )
+    XCTAssertEqual(
+      try store.uniqueTags(
+        memoryId: "chat-memory",
+        options: MemoryValueListOptions(workflowId: "wf", sortOrder: .valueDesc, limit: 1, offset: 1)
+      ),
+      ["rina"]
+    )
+    XCTAssertEqual(
+      try store.uniqueRelatedRecordIds(memoryId: "chat-memory", options: MemoryValueListOptions()),
+      [base.recordId]
+    )
+  }
+
+  func testTagsAndRelatedRecordIdsMustBeUniqueAndLimited() throws {
+    let root = temporaryDirectory()
+    let store = RielaMemoryStore(rootDirectory: root.path)
+
+    XCTAssertThrowsError(try store.save(
+      memoryId: "chat-memory",
+      workflowId: "wf",
+      tags: ["chat", "chat"],
+      payload: .object([:])
+    )) { error in
+      XCTAssertEqual(error as? RielaMemoryError, .duplicateTag("chat"))
+    }
+    XCTAssertThrowsError(try store.save(
+      memoryId: "chat-memory",
+      workflowId: "wf",
+      tags: (0..<11).map { "tag-\($0)" },
+      payload: .object([:])
+    )) { error in
+      XCTAssertEqual(error as? RielaMemoryError, .tooManyTags(11))
+    }
+    XCTAssertThrowsError(try store.save(
+      memoryId: "chat-memory",
+      workflowId: "wf",
+      relatedRecordIds: [1, 1],
+      payload: .object([:])
+    )) { error in
+      XCTAssertEqual(error as? RielaMemoryError, .duplicateRelatedRecordId(1))
+    }
+    XCTAssertThrowsError(try store.save(
+      memoryId: "chat-memory",
+      workflowId: "wf",
+      relatedRecordIds: Array(1...11).map(Int64.init),
+      payload: .object([:])
+    )) { error in
+      XCTAssertEqual(error as? RielaMemoryError, .tooManyRelatedRecordIds(11))
+    }
+    XCTAssertThrowsError(try store.save(
+      memoryId: "chat-memory",
+      workflowId: "wf",
+      relatedRecordIds: [999],
+      payload: .object([:])
+    )) { error in
+      XCTAssertEqual(error as? RielaMemoryError, .missingRelatedRecordId(999))
+    }
+  }
+
   func testLoadAndSearchMissingMemoryReturnEmptyResults() throws {
     let root = temporaryDirectory()
     let store = RielaMemoryStore(rootDirectory: root.path)

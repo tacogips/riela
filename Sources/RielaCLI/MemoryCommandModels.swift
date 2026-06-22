@@ -1,9 +1,13 @@
 import Foundation
+import RielaMemory
 
 public enum MemoryCommandKind: String, Codable, Sendable {
   case save
   case load
   case search
+  case metadata
+  case tags
+  case relatedIds = "related-ids"
 }
 
 public struct MemoryCommand: Equatable, Sendable {
@@ -25,7 +29,11 @@ public struct MemoryCommandOptions: Equatable, Sendable {
   public var payloadFile: String?
   public var registeredAt: String?
   public var matchPatterns: [String]
+  public var tags: [String]
+  public var relatedRecordIds: [Int64]
+  public var sortOrder: MemoryValueSortOrder
   public var limit: Int
+  public var offset: Int
   public var databaseRoot: String?
   public var workingDirectory: String
   public var output: WorkflowOutputFormat
@@ -39,7 +47,11 @@ public struct MemoryCommandOptions: Equatable, Sendable {
     payloadFile: String? = nil,
     registeredAt: String? = nil,
     matchPatterns: [String] = [],
+    tags: [String] = [],
+    relatedRecordIds: [Int64] = [],
+    sortOrder: MemoryValueSortOrder = .valueAsc,
     limit: Int = 30,
+    offset: Int = 0,
     databaseRoot: String? = nil,
     workingDirectory: String = FileManager.default.currentDirectoryPath,
     output: WorkflowOutputFormat = .jsonl
@@ -52,7 +64,11 @@ public struct MemoryCommandOptions: Equatable, Sendable {
     self.payloadFile = payloadFile
     self.registeredAt = registeredAt
     self.matchPatterns = matchPatterns
+    self.tags = tags
+    self.relatedRecordIds = relatedRecordIds
+    self.sortOrder = sortOrder
     self.limit = limit
+    self.offset = offset
     self.databaseRoot = databaseRoot
     self.workingDirectory = workingDirectory
     self.output = output

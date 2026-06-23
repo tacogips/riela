@@ -458,6 +458,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     }?.trimmingCharacters(in: .whitespacesAndNewlines)
 
     var payload = input.resolvedInputPayload
+    payload.removeValue(forKey: "runtime")
     payload["status"] = .string("ok")
     payload["addon"] = .string(input.addon.name)
     payload["stepId"] = .string(input.stepId)

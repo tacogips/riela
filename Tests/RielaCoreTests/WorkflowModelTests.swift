@@ -118,6 +118,55 @@ final class WorkflowModelTests: XCTestCase {
     XCTAssertEqual(workflow.nodeRegistry.first?.inputFilters?.first?.builtin, .mentionResponder)
   }
 
+  func testWorkflowValidationAcceptsNodeReferenceSource() throws {
+    let data = Data("""
+      {
+        "workflowId": "telegram-persona",
+        "description": "Sample workflow",
+        "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 3 },
+        "entryStepId": "reply",
+        "nodes": [{
+          "id": "reply",
+          "nodeRef": { "workflowId": "shared-personas", "nodeId": "mika" }
+        }],
+        "steps": [{ "id": "reply", "nodeId": "reply", "role": "worker" }]
+      }
+      """.utf8)
+
+    let result = validateAuthoredWorkflowData(data)
+
+    XCTAssertEqual(result.diagnostics.filter { $0.severity == .error }, [])
+    let registryNode = try XCTUnwrap(result.workflow?.nodeRegistry.first)
+    XCTAssertEqual(registryNode.nodeRef, WorkflowSharedNodeRef(workflowId: "shared-personas", nodeId: "mika"))
+    XCTAssertNil(registryNode.nodeFile)
+    XCTAssertNil(registryNode.addon)
+    XCTAssertEqual(result.workflow?.nodes.first?.nodeRef?.workflowId, "shared-personas")
+  }
+
+  func testWorkflowValidationRejectsMultipleNodeSources() throws {
+    let data = Data("""
+      {
+        "workflowId": "bad-persona",
+        "description": "Sample workflow",
+        "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 3 },
+        "entryStepId": "reply",
+        "nodes": [{
+          "id": "reply",
+          "nodeFile": "nodes/reply.json",
+          "nodeRef": { "workflowId": "shared-personas", "nodeId": "mika" }
+        }],
+        "steps": [{ "id": "reply", "nodeId": "reply", "role": "worker" }]
+      }
+      """.utf8)
+
+    let result = validateAuthoredWorkflowData(data)
+
+    XCTAssertNil(result.workflow)
+    XCTAssertTrue(result.diagnostics.contains {
+      $0.path == "workflow.nodes[0]" && $0.message == "must define only one of nodeFile, nodeRef, or addon"
+    })
+  }
+
   func testWorkflowValidationRequiresDeclaredMemoryForBuiltinMemoryAddons() throws {
     let data = Data("""
       {
@@ -461,7 +510,7 @@ final class WorkflowModelTests: XCTestCase {
     )
     XCTAssertTrue(
       result.diagnostics.contains {
-        $0.path == "workflow.nodes[0]" && $0.message == "must define nodeFile, inline node, or addon"
+        $0.path == "workflow.nodes[0]" && $0.message == "must define exactly one of nodeFile, nodeRef, or addon"
       }
     )
   }

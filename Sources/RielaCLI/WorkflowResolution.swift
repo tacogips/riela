@@ -54,6 +54,7 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       }
       return try loadBundle(
         at: resolvedDirectory,
+        rootDirectory: candidate.rootDirectory,
         scope: candidate.scope,
         packageManifest: candidate.packageManifest,
         packageDirectory: candidate.packageDirectory
@@ -163,7 +164,7 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       }
       candidates.append(CandidateDirectory(
         directory: resolvedWorkflowDirectory,
-        rootDirectory: packageDirectory,
+        rootDirectory: resolvedWorkflowDirectory.deletingLastPathComponent(),
         scope: scope,
         packageManifest: manifest,
         packageDirectory: packageDirectory
@@ -195,6 +196,7 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
 
   private func loadBundle(
     at directory: URL,
+    rootDirectory: URL,
     scope: WorkflowScope,
     packageManifest providedPackageManifest: WorkflowPackageManifest? = nil,
     packageDirectory: URL? = nil
@@ -207,7 +209,7 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     )
     let workflowData = try Data(contentsOf: workflowURL)
     let validation = validateAuthoredWorkflowData(workflowData)
-    guard let workflow = validation.workflow else {
+    guard var workflow = validation.workflow else {
       throw WorkflowResolutionError.invalidWorkflow(validation.diagnostics)
     }
     var nodePayloads: [String: AgentNodePayload] = [:]
@@ -232,6 +234,15 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       }
       nodePayloads[registryNode.id] = absolutizedStdioPaths(in: hydratedPayload, workflowDirectory: directory)
     }
+    let materialized = try materializeSharedNodeReferences(
+      in: workflow,
+      nodePayloads: nodePayloads,
+      rootDirectory: rootDirectory,
+      scope: scope,
+      promptTemplateLoader: promptTemplateLoader
+    )
+    workflow = materialized.workflow
+    nodePayloads = materialized.nodePayloads
     let packageManifest = try providedPackageManifest ?? loadPackageManifestIfPresent(at: directory)
     let resolvedPackageDirectory = packageDirectory?.path ?? (packageManifest == nil ? nil : directory.path)
     return ResolvedWorkflowBundle(
@@ -243,6 +254,173 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       packageManifest: packageManifest,
       packageDirectory: resolvedPackageDirectory
     )
+  }
+
+  private func materializeSharedNodeReferences(
+    in workflow: WorkflowDefinition,
+    nodePayloads: [String: AgentNodePayload],
+    rootDirectory: URL,
+    scope: WorkflowScope,
+    promptTemplateLoader: PromptTemplateAssetLoader
+  ) throws -> (workflow: WorkflowDefinition, nodePayloads: [String: AgentNodePayload]) {
+    var workflow = workflow
+    var nodePayloads = nodePayloads
+    for index in workflow.nodeRegistry.indices {
+      guard let nodeRef = workflow.nodeRegistry[index].nodeRef else {
+        continue
+      }
+      let origin = WorkflowSharedNodeRef(workflowId: workflow.workflowId, nodeId: workflow.nodeRegistry[index].id)
+      let resolved = try resolveSharedNode(
+        nodeRef,
+        currentWorkflowId: workflow.workflowId,
+        rootDirectory: rootDirectory,
+        scope: scope,
+        promptTemplateLoader: promptTemplateLoader,
+        resolutionStack: [origin]
+      )
+      let localNodeId = workflow.nodeRegistry[index].id
+      let node = mergeSharedNodeReference(local: workflow.nodeRegistry[index], shared: resolved.node)
+      workflow.nodeRegistry[index] = node
+      if var payload = resolved.payload {
+        payload.id = localNodeId
+        nodePayloads[localNodeId] = payload
+      }
+    }
+    workflow.nodes = workflow.steps.compactMap { step -> WorkflowNodeRef? in
+      guard let registryNode = workflow.nodeRegistry.first(where: { $0.id == step.nodeId }) else {
+        return nil
+      }
+      return WorkflowNodeRef(
+        id: step.id,
+        nodeFile: registryNode.nodeFile,
+        nodeRef: registryNode.nodeRef,
+        addon: registryNode.addon,
+        kind: registryNode.kind,
+        role: step.role,
+        execution: registryNode.execution,
+        repeatPolicy: registryNode.repeatPolicy,
+        inputFilters: registryNode.inputFilters,
+        memories: registryNode.memories
+      )
+    }
+    return (workflow, nodePayloads)
+  }
+
+  private func resolveSharedNode(
+    _ nodeRef: WorkflowSharedNodeRef,
+    currentWorkflowId: String,
+    rootDirectory: URL,
+    scope: WorkflowScope,
+    promptTemplateLoader: PromptTemplateAssetLoader,
+    resolutionStack: [WorkflowSharedNodeRef]
+  ) throws -> (node: WorkflowNodeRegistryRef, payload: AgentNodePayload?) {
+    guard isSafeScopedWorkflowName(nodeRef.workflowId) else {
+      throw WorkflowResolutionError.invalidWorkflow([
+        WorkflowValidationDiagnostic(
+          severity: .error,
+          path: "workflow.nodes.nodeRef.workflowId",
+          message: "invalid shared workflow id '\(nodeRef.workflowId)'"
+        )
+      ])
+    }
+    guard isSafeSharedNodeId(nodeRef.nodeId) else {
+      throw WorkflowResolutionError.invalidWorkflow([
+        WorkflowValidationDiagnostic(
+          severity: .error,
+          path: "workflow.nodes.nodeRef.nodeId",
+          message: "invalid shared node id '\(nodeRef.nodeId)'"
+        )
+      ])
+    }
+    guard !resolutionStack.contains(nodeRef) else {
+      let cycle = (resolutionStack + [nodeRef]).map { "\($0.workflowId):\($0.nodeId)" }.joined(separator: " -> ")
+      throw WorkflowResolutionError.invalidWorkflow([
+        WorkflowValidationDiagnostic(
+          severity: .error,
+          path: "workflow.nodes.nodeRef",
+          message: "cyclic shared node reference: \(cycle)"
+        )
+      ])
+    }
+
+    let referencedDirectory = rootDirectory
+      .appendingPathComponent(nodeRef.workflowId, isDirectory: true)
+      .standardizedFileURL
+    guard isContained(referencedDirectory.resolvingSymlinksInPath(), in: rootDirectory.resolvingSymlinksInPath()) else {
+      throw WorkflowResolutionError.invalidJSONReference(
+        "nodeRef \(nodeRef.workflowId):\(nodeRef.nodeId) escapes \(rootDirectory.path)"
+      )
+    }
+    let workflowURL = referencedDirectory.appendingPathComponent("workflow.json")
+    guard FileManager.default.fileExists(atPath: workflowURL.path) else {
+      throw WorkflowResolutionError.invalidWorkflow([
+        WorkflowValidationDiagnostic(
+          severity: .error,
+          path: "workflow.nodes.nodeRef",
+          message: "shared node workflow '\(nodeRef.workflowId)' not found from workflow '\(currentWorkflowId)'"
+        )
+      ])
+    }
+    let validation = validateAuthoredWorkflowData(try Data(contentsOf: workflowURL))
+    guard let referencedWorkflow = validation.workflow else {
+      throw WorkflowResolutionError.invalidWorkflow(validation.diagnostics)
+    }
+    guard let referencedNode = referencedWorkflow.nodeRegistry.first(where: { $0.id == nodeRef.nodeId }) else {
+      throw WorkflowResolutionError.invalidWorkflow([
+        WorkflowValidationDiagnostic(
+          severity: .error,
+          path: "workflow.nodes.nodeRef.nodeId",
+          message: "shared node '\(nodeRef.nodeId)' not found in workflow '\(nodeRef.workflowId)'"
+        )
+      ])
+    }
+    if let nestedRef = referencedNode.nodeRef {
+      let resolved = try resolveSharedNode(
+        nestedRef,
+        currentWorkflowId: nodeRef.workflowId,
+        rootDirectory: rootDirectory,
+        scope: scope,
+        promptTemplateLoader: promptTemplateLoader,
+        resolutionStack: resolutionStack + [nodeRef]
+      )
+      return (mergeSharedNodeReference(local: referencedNode, shared: resolved.node), resolved.payload)
+    }
+    guard let nodeFile = referencedNode.nodeFile else {
+      return (referencedNode, nil)
+    }
+    let payloadURL = try containedFile(
+      referencedDirectory.appendingPathComponent(nodeFile),
+      in: referencedDirectory,
+      scope: scope,
+      label: "shared nodeFile \(nodeFile)"
+    )
+    let data = try Data(contentsOf: payloadURL)
+    let payload = try JSONDecoder().decode(AgentNodePayload.self, from: data)
+    do {
+      return (
+        referencedNode,
+        try absolutizedStdioPaths(
+          in: promptTemplateLoader.hydrate(payload, workflowDirectory: referencedDirectory),
+          workflowDirectory: referencedDirectory
+        )
+      )
+    } catch let error as PromptTemplateAssetLoadingError {
+      throw WorkflowResolutionError.invalidWorkflow([error.diagnostic])
+    }
+  }
+
+  private func mergeSharedNodeReference(
+    local: WorkflowNodeRegistryRef,
+    shared: WorkflowNodeRegistryRef
+  ) -> WorkflowNodeRegistryRef {
+    var node = local
+    node.addon = node.addon ?? shared.addon
+    node.execution = node.execution ?? shared.execution
+    node.kind = node.kind ?? shared.kind
+    node.repeatPolicy = node.repeatPolicy ?? shared.repeatPolicy
+    node.inputFilters = node.inputFilters ?? shared.inputFilters
+    node.memories = node.memories ?? shared.memories
+    return node
   }
 
   private func absolutizedStdioPaths(in payload: AgentNodePayload, workflowDirectory: URL) -> AgentNodePayload {
@@ -266,6 +444,10 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       return path
     }
     return workflowDirectory.appendingPathComponent(path).path
+  }
+
+  private func isSafeSharedNodeId(_ value: String) -> Bool {
+    value.range(of: #"^[a-z0-9][a-z0-9-]{1,63}$"#, options: .regularExpression) != nil
   }
 
   private func loadPackageManifestIfPresent(at directory: URL) throws -> WorkflowPackageManifest? {

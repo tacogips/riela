@@ -255,6 +255,227 @@ final class MemoryAddonFileTests: XCTestCase {
     XCTAssertEqual(output.when["target_mika"], false)
   }
 
+  func testBuiltinPersonaMemoryWriteBlocksHandoffBackToVisitedPersona() async throws {
+    let memoryRoot = "\(repositoryRoot())/tmp/test-persona-handoff-guard-\(UUID().uuidString)"
+    defer {
+      try? FileManager.default.removeItem(atPath: memoryRoot)
+    }
+    let output = try await BuiltinWorkflowAddonResolver(environment: [:]).execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "telegram-agent-trio-chat",
+        stepId: "write-rina-memory",
+        nodeId: "write-rina-memory",
+        addon: WorkflowNodeAddonRef(
+          name: "riela/chat-persona-memory-write",
+          version: "1",
+          config: [
+            "personaId": .string("rina"),
+            "personaName": .string("Rina Cursor"),
+            "memoryId": .string("persona-chat-memory"),
+            "memoryRoot": .string(memoryRoot)
+          ]
+        ),
+        resolvedInputPayload: [
+          "replyText": .string("結論。ここで止める。@Yui はどう見る？"),
+          "handoff_yui": .bool(true),
+          "latestOutputs": .array([
+            .object(["payload": .object(["replyAs": .string("yui"), "replyText": .string("Yui reply")])]),
+            .object(["payload": .object(["replyAs": .string("mika"), "replyText": .string("Mika reply")])])
+          ])
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    XCTAssertEqual(output.when["handoff_yui"], false)
+    XCTAssertEqual(output.when["handoff_mika"], false)
+    XCTAssertEqual(output.when["handoff_rina"], false)
+    XCTAssertEqual(output.payload["handoff_yui"], .bool(false))
+    XCTAssertEqual(output.payload["replyText"], .string("結論。ここで止める。"))
+    XCTAssertEqual(output.payload["autonomousTurns"], .number(3))
+    guard case let .object(guardPayload)? = output.payload["handoffGuard"] else {
+      return XCTFail("handoff guard metadata was not returned")
+    }
+    XCTAssertEqual(guardPayload["blocked"], .bool(true))
+    XCTAssertEqual(guardPayload["reason"], .string("target-persona-already-replied"))
+    XCTAssertEqual(guardPayload["selectedTarget"], .string("yui"))
+  }
+
+  func testBuiltinPersonaMemoryWriteUsesRuntimeReplyStepsForHandoffTrail() async throws {
+    let memoryRoot = "\(repositoryRoot())/tmp/test-persona-runtime-handoff-guard-\(UUID().uuidString)"
+    defer {
+      try? FileManager.default.removeItem(atPath: memoryRoot)
+    }
+    let output = try await BuiltinWorkflowAddonResolver(environment: [:]).execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "telegram-agent-trio-chat",
+        stepId: "write-rina-memory",
+        nodeId: "write-rina-memory",
+        addon: WorkflowNodeAddonRef(
+          name: "riela/chat-persona-memory-write",
+          version: "1",
+          config: [
+            "personaId": .string("rina"),
+            "personaName": .string("Rina Cursor"),
+            "memoryId": .string("persona-chat-memory"),
+            "memoryRoot": .string(memoryRoot)
+          ]
+        ),
+        resolvedInputPayload: [
+          "replyText": .string("結論。@Yui に戻す必要はない。"),
+          "handoff_yui": .bool(true),
+          "runtime": .object([
+            "executedStepIds": .array([
+              .string("route-message"),
+              .string("send-yui-reply"),
+              .string("send-mika-reply")
+            ])
+          ])
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    XCTAssertEqual(output.when["handoff_yui"], false)
+    XCTAssertEqual(output.payload["handoff_yui"], .bool(false))
+    XCTAssertEqual(output.payload["replyText"], .string("結論。"))
+    XCTAssertEqual(output.payload["handoffTrail"], .array([.string("yui"), .string("mika"), .string("rina")]))
+    XCTAssertEqual(output.payload["autonomousTurns"], .number(3))
+    guard case let .object(guardPayload)? = output.payload["handoffGuard"] else {
+      return XCTFail("handoff guard metadata was not returned")
+    }
+    XCTAssertEqual(guardPayload["blocked"], .bool(true))
+    XCTAssertEqual(guardPayload["reason"], .string("target-persona-already-replied"))
+    XCTAssertEqual(guardPayload["visitedPersonas"], .array([.string("yui"), .string("mika")]))
+  }
+
+  func testBuiltinPersonaMemoryWriteAllowsNextUnvisitedPersona() async throws {
+    let memoryRoot = "\(repositoryRoot())/tmp/test-persona-handoff-guard-\(UUID().uuidString)"
+    defer {
+      try? FileManager.default.removeItem(atPath: memoryRoot)
+    }
+    let output = try await BuiltinWorkflowAddonResolver(environment: [:]).execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "telegram-agent-trio-chat",
+        stepId: "write-mika-memory",
+        nodeId: "write-mika-memory",
+        addon: WorkflowNodeAddonRef(
+          name: "riela/chat-persona-memory-write",
+          version: "1",
+          config: [
+            "personaId": .string("mika"),
+            "personaName": .string("Mika Trend"),
+            "memoryId": .string("persona-chat-memory"),
+            "memoryRoot": .string(memoryRoot)
+          ]
+        ),
+        resolvedInputPayload: [
+          "replyText": .string("いいじゃん。@Rina はどう？"),
+          "handoff_rina": .bool(true),
+          "latestOutputs": .array([
+            .object(["payload": .object(["replyAs": .string("yui"), "replyText": .string("Yui reply")])])
+          ])
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    XCTAssertEqual(output.when["handoff_rina"], true)
+    XCTAssertEqual(output.payload["handoff_rina"], .bool(true))
+    guard case let .object(guardPayload)? = output.payload["handoffGuard"] else {
+      return XCTFail("handoff guard metadata was not returned")
+    }
+    XCTAssertEqual(guardPayload["blocked"], .bool(false))
+    XCTAssertEqual(guardPayload["selectedTarget"], .string("rina"))
+  }
+
+  func testBuiltinPersonaMemoryWriteRemovesBlockedJapaneseHandoffSentence() async throws {
+    let memoryRoot = "\(repositoryRoot())/tmp/test-persona-handoff-reply-sanitize-\(UUID().uuidString)"
+    defer {
+      try? FileManager.default.removeItem(atPath: memoryRoot)
+    }
+    let output = try await BuiltinWorkflowAddonResolver(environment: [:]).execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "telegram-agent-trio-chat",
+        stepId: "write-rina-memory",
+        nodeId: "write-rina-memory",
+        addon: WorkflowNodeAddonRef(
+          name: "riela/chat-persona-memory-write",
+          version: "1",
+          config: [
+            "personaId": .string("rina"),
+            "personaName": .string("Rina Cursor"),
+            "memoryId": .string("persona-chat-memory"),
+            "memoryRoot": .string(memoryRoot)
+          ]
+        ),
+        resolvedInputPayload: [
+          "replyText": .string("結論: ループガード retest妥当。ミカ、上記3点について短評をくれ。"),
+          "handoff_mika": .bool(true),
+          "runtime": .object([
+            "executedStepIds": .array([
+              .string("send-yui-reply"),
+              .string("send-mika-reply")
+            ])
+          ])
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    XCTAssertEqual(output.when["handoff_mika"], false)
+    XCTAssertEqual(output.payload["replyText"], .string("結論: ループガード retest妥当。"))
+    guard case let .object(guardPayload)? = output.payload["handoffGuard"] else {
+      return XCTFail("handoff guard metadata was not returned")
+    }
+    XCTAssertEqual(guardPayload["blocked"], .bool(true))
+    XCTAssertEqual(guardPayload["reason"], .string("target-persona-already-replied"))
+  }
+
+  func testBuiltinPersonaMemoryWriteRemovesFinalTurnContinuationToVisitedPersona() async throws {
+    let memoryRoot = "\(repositoryRoot())/tmp/test-persona-final-turn-reply-sanitize-\(UUID().uuidString)"
+    defer {
+      try? FileManager.default.removeItem(atPath: memoryRoot)
+    }
+    let output = try await BuiltinWorkflowAddonResolver(environment: [:]).execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "telegram-agent-trio-chat",
+        stepId: "write-rina-memory",
+        nodeId: "write-rina-memory",
+        addon: WorkflowNodeAddonRef(
+          name: "riela/chat-persona-memory-write",
+          version: "1",
+          config: [
+            "personaId": .string("rina"),
+            "personaName": .string("Rina Cursor"),
+            "memoryId": .string("persona-chat-memory"),
+            "memoryRoot": .string(memoryRoot)
+          ]
+        ),
+        resolvedInputPayload: [
+          "replyText": .string("結論: 妥当。要点は3点。次はミカの要点を受け取り、私の短評を返す。"),
+          "handoff_mika": .bool(false),
+          "handoff_yui": .bool(false),
+          "runtime": .object([
+            "executedStepIds": .array([
+              .string("send-yui-reply"),
+              .string("send-mika-reply")
+            ])
+          ])
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    XCTAssertEqual(output.when["handoff_mika"], false)
+    XCTAssertEqual(output.when["handoff_yui"], false)
+    XCTAssertEqual(output.payload["replyText"], .string("結論: 妥当。要点は3点。"))
+    guard case let .object(guardPayload)? = output.payload["handoffGuard"] else {
+      return XCTFail("handoff guard metadata was not returned")
+    }
+    XCTAssertEqual(guardPayload["blocked"], .bool(false))
+  }
+
   private func repositoryRoot() -> String {
     FileManager.default.currentDirectoryPath
   }

@@ -363,6 +363,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         }
         publishResult = try await executeAddonAndPublish(
           addon: addon,
+          session: session,
           sessionId: session.sessionId,
           workflow: request.workflow,
           step: step,
@@ -688,6 +689,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
 
   private func executeAddonAndPublish(
     addon: WorkflowNodeAddonRef,
+    session: WorkflowSession,
     sessionId: String,
     workflow: WorkflowDefinition,
     step: WorkflowStepRef,
@@ -745,7 +747,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       nodeId: step.nodeId,
       addon: addon,
       variables: request.variables,
-      resolvedInputPayload: resolvedInputPayload,
+      resolvedInputPayload: workflowAddonResolvedInputPayload(resolvedInputPayload, session: session),
       attachments: attachments
     )
     guard let addonResolver else {
@@ -970,27 +972,14 @@ private func errorMessage(_ error: WorkflowSessionEntryValidationError) -> Strin
   }
 }
 
-public struct DeterministicLocalNodeAdapter: NodeAdapter {
-  public init() {}
-
-  public func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
-    var payload: JSONObject = [
-      "nodeId": .string(input.node.id),
-      "provider": .string("deterministic-local"),
-      "status": .string("completed")
-    ]
-    if let resumedFromNodeExecId = input.mergedVariables["resumedFromNodeExecId"] {
-      payload["resumedFromNodeExecId"] = resumedFromNodeExecId
-    }
-    if input.mergedVariables["resumedFromNodeExecId"] != nil {
-      payload["promptText"] = .string(input.promptText)
-    }
-    return AdapterExecutionOutput(
-      provider: "deterministic-local",
-      model: input.node.model,
-      promptText: input.promptText,
-      completionPassed: true,
-      payload: payload
-    )
-  }
+private func workflowAddonResolvedInputPayload(_ payload: JSONObject, session: WorkflowSession) -> JSONObject {
+  var resolved = payload
+  let completedExecutions = session.executions.filter { $0.status == .completed }
+  resolved["runtime"] = .object([
+    "sessionId": .string(session.sessionId),
+    "workflowId": .string(session.workflowId),
+    "executedStepIds": .array(completedExecutions.map(\.stepId).map(JSONValue.string)),
+    "executedNodeIds": .array(completedExecutions.map(\.nodeId).map(JSONValue.string))
+  ])
+  return resolved
 }

@@ -1189,6 +1189,161 @@ extension WorkflowCommandTests {
     XCTAssertEqual(payload.promptVariants?["review"]?.promptTemplateFile, "prompts/review.md")
   }
 
+  func testResolverMaterializesNodeRefsFromSiblingWorkflow() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-tests-\(UUID().uuidString)", isDirectory: true)
+    let sharedWorkflow = root.appendingPathComponent("shared-personas", isDirectory: true)
+    let telegramWorkflow = root.appendingPathComponent("telegram-entry", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(
+      at: sharedWorkflow.appendingPathComponent("nodes"),
+      withIntermediateDirectories: true
+    )
+    try FileManager.default.createDirectory(
+      at: sharedWorkflow.appendingPathComponent("prompts"),
+      withIntermediateDirectories: true
+    )
+    try FileManager.default.createDirectory(at: telegramWorkflow, withIntermediateDirectories: true)
+    try """
+    {
+      "workflowId": "shared-personas",
+      "defaults": { "maxLoopIterations": 3, "nodeTimeoutMs": 120000 },
+      "entryStepId": "mika",
+      "nodes": [{
+        "id": "mika",
+        "nodeFile": "nodes/mika.json",
+        "memories": [{
+          "id": "persona-chat-memory",
+          "purpose": "shared Mika memory across chat vendors",
+          "scope": "cross-workflow"
+        }]
+      }],
+      "steps": [{ "id": "mika", "nodeId": "mika", "role": "worker" }]
+    }
+    """.write(to: sharedWorkflow.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+    try """
+    {
+      "id": "mika",
+      "executionBackend": "codex-agent",
+      "model": "gpt-5-nano",
+      "systemPromptTemplateFile": "prompts/mika-system.md",
+      "promptTemplate": "Reply as shared Mika.",
+      "variables": {}
+    }
+    """.write(to: sharedWorkflow.appendingPathComponent("nodes/mika.json"), atomically: true, encoding: .utf8)
+    try "shared Mika persona".write(
+      to: sharedWorkflow.appendingPathComponent("prompts/mika-system.md"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try """
+    {
+      "workflowId": "telegram-entry",
+      "defaults": { "maxLoopIterations": 3, "nodeTimeoutMs": 120000 },
+      "entryStepId": "reply",
+      "nodes": [{
+        "id": "telegram-mika",
+        "nodeRef": { "workflowId": "shared-personas", "nodeId": "mika" },
+        "inputFilters": [{
+          "kind": "telegram",
+          "builtin": "mention-responder",
+          "config": { "aliases": ["@mikatrend0529bot"] }
+        }]
+      }],
+      "steps": [{ "id": "reply", "nodeId": "telegram-mika", "role": "worker" }]
+    }
+    """.write(to: telegramWorkflow.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+
+    let bundle = try FileSystemWorkflowBundleResolver().resolve(
+      WorkflowResolutionOptions(workflowName: "telegram-entry", scope: .direct, workflowDefinitionDir: root.path)
+    )
+
+    let registryNode = try XCTUnwrap(bundle.workflow.nodeRegistry.first)
+    XCTAssertEqual(registryNode.id, "telegram-mika")
+    XCTAssertEqual(registryNode.nodeRef, WorkflowSharedNodeRef(workflowId: "shared-personas", nodeId: "mika"))
+    XCTAssertNil(registryNode.nodeFile)
+    XCTAssertEqual(registryNode.memories?.first?.id, "persona-chat-memory")
+    XCTAssertEqual(registryNode.memories?.first?.scope, .crossWorkflow)
+    XCTAssertEqual(registryNode.inputFilters?.first?.builtin, .mentionResponder)
+    XCTAssertNil(registryNode.addon)
+    let runtimeNode = try XCTUnwrap(bundle.workflow.nodes.first)
+    XCTAssertNil(runtimeNode.nodeFile)
+    XCTAssertEqual(runtimeNode.nodeRef, WorkflowSharedNodeRef(workflowId: "shared-personas", nodeId: "mika"))
+    XCTAssertEqual(runtimeNode.memories?.first?.id, "persona-chat-memory")
+    let payload = try XCTUnwrap(bundle.nodePayloads["telegram-mika"])
+    XCTAssertEqual(payload.id, "telegram-mika")
+    XCTAssertEqual(payload.systemPromptTemplate, "shared Mika persona")
+    XCTAssertEqual(payload.promptTemplate, "Reply as shared Mika.")
+    XCTAssertNil(bundle.nodePayloads["mika"])
+  }
+
+  func testResolverMaterializesNodeRefsInsidePackagedWorkflowRoot() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-tests-\(UUID().uuidString)", isDirectory: true)
+    let packageDirectory = root
+      .appendingPathComponent(".riela/packages/persona-package", isDirectory: true)
+    let sharedWorkflow = packageDirectory
+      .appendingPathComponent("workflows/shared-personas", isDirectory: true)
+    let entryWorkflow = packageDirectory
+      .appendingPathComponent("workflows/telegram-entry", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: sharedWorkflow, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: entryWorkflow, withIntermediateDirectories: true)
+    try """
+    {
+      "name": "persona-package",
+      "version": "1.0.0",
+      "description": "Persona package",
+      "tags": ["workflow"],
+      "registry": "local",
+      "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "checksumAlgorithm": "md5",
+      "workflowDirectory": "workflows/telegram-entry"
+    }
+    """.write(to: packageDirectory.appendingPathComponent("riela-package.json"), atomically: true, encoding: .utf8)
+    try """
+    {
+      "workflowId": "shared-personas",
+      "defaults": { "maxLoopIterations": 3, "nodeTimeoutMs": 120000 },
+      "entryStepId": "yui",
+      "nodes": [{
+        "id": "yui",
+        "memories": [{ "id": "persona-chat-memory", "scope": "cross-workflow" }],
+        "addon": {
+          "name": "riela/chat-reply-worker",
+          "version": "1",
+          "config": { "textTemplate": "shared yui" }
+        }
+      }],
+      "steps": [{ "id": "yui", "nodeId": "yui", "role": "worker" }]
+    }
+    """.write(to: sharedWorkflow.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+    try """
+    {
+      "workflowId": "telegram-entry",
+      "defaults": { "maxLoopIterations": 3, "nodeTimeoutMs": 120000 },
+      "entryStepId": "reply",
+      "nodes": [{
+        "id": "telegram-yui",
+        "nodeRef": { "workflowId": "shared-personas", "nodeId": "yui" }
+      }],
+      "steps": [{ "id": "reply", "nodeId": "telegram-yui", "role": "worker" }]
+    }
+    """.write(to: entryWorkflow.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+
+    let bundle = try FileSystemWorkflowBundleResolver().resolve(
+      WorkflowResolutionOptions(workflowName: "persona-package", scope: .project, workingDirectory: root.path)
+    )
+
+    XCTAssertEqual(bundle.workflow.workflowId, "telegram-entry")
+    XCTAssertEqual(bundle.packageDirectory, packageDirectory.path)
+    let registryNode = try XCTUnwrap(bundle.workflow.nodeRegistry.first)
+    XCTAssertEqual(registryNode.nodeRef, WorkflowSharedNodeRef(workflowId: "shared-personas", nodeId: "yui"))
+    XCTAssertEqual(registryNode.addon?.name, "riela/chat-reply-worker")
+    XCTAssertEqual(registryNode.memories?.first?.id, "persona-chat-memory")
+    XCTAssertTrue(bundle.nodePayloads.isEmpty)
+  }
+
   func testRunAcceptsTemporaryWorkflowJSONFileTarget() async throws {
     let root = repositoryRoot()
     let app = RielaCLIApplication()

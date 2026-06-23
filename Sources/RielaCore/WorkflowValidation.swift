@@ -179,12 +179,17 @@ private func validateTypedAuthoredWorkflow(_ workflow: AuthoredWorkflowJSON) -> 
       diagnostics.append(error("\(path).id", "must be unique across workflow.nodes[]"))
     }
     nodeIds.insert(node.id)
-    if node.nodeFile == nil && node.addon == nil {
-      diagnostics.append(error(path, "must define nodeFile, inline node, or addon"))
-    }
+    validateNodeSource(
+      nodeFile: node.nodeFile,
+      nodeRef: node.nodeRef,
+      addon: node.addon,
+      path: path,
+      diagnostics: &diagnostics
+    )
     if let nodeFile = node.nodeFile {
       validateWorkflowRelativePath(nodeFile, fieldName: "nodeFile", path: "\(path).nodeFile", diagnostics: &diagnostics)
     }
+    validateNodeReference(node.nodeRef, path: "\(path).nodeRef", diagnostics: &diagnostics)
     validateInputFilters(node.inputFilters, path: "\(path).inputFilters", diagnostics: &diagnostics)
     validateMemoryDeclarations(node.memories, path: "\(path).memories", diagnostics: &diagnostics)
     validateMemoryAddonDeclarations(
@@ -360,7 +365,7 @@ private func validateRawAuthoredWorkflow(_ raw: [String: Any]) -> [WorkflowValid
 
 private func validateNodeRegistry(_ entries: [Any], diagnostics: inout [WorkflowValidationDiagnostic]) {
   var seenIds: Set<String> = []
-  let allowedKeys: Set<String> = ["id", "nodeFile", "addon", "execution", "kind", "repeat", "inputFilters", "memories"]
+  let allowedKeys: Set<String> = ["id", "nodeFile", "nodeRef", "addon", "execution", "kind", "repeat", "inputFilters", "memories"]
 
   for (index, rawEntry) in entries.enumerated() {
     let path = "workflow.nodes[\(index)]"
@@ -385,12 +390,11 @@ private func validateNodeRegistry(_ entries: [Any], diagnostics: inout [Workflow
     }
     seenIds.insert(id)
 
-    if entry["nodeFile"] == nil && entry["addon"] == nil {
-      diagnostics.append(error(path, "must define nodeFile, inline node, or addon"))
-    }
+    validateRawNodeSource(entry, path: path, diagnostics: &diagnostics)
     if let nodeFile = entry["nodeFile"] {
       validateWorkflowRelativePath(nodeFile, fieldName: "nodeFile", path: "\(path).nodeFile", diagnostics: &diagnostics)
     }
+    validateRawNodeReference(entry["nodeRef"], path: "\(path).nodeRef", diagnostics: &diagnostics)
     validateRawInputFilters(entry["inputFilters"], path: "\(path).inputFilters", diagnostics: &diagnostics)
     validateRawMemoryDeclarations(entry["memories"], path: "\(path).memories", diagnostics: &diagnostics)
   }
@@ -566,9 +570,13 @@ private func materializeWorkflowDefinition(from workflow: AuthoredWorkflowJSON) 
     guard let registryNode = registryById[step.nodeId] else {
       return nil
     }
+    let defaultNodeFile = registryNode.addon == nil && registryNode.nodeRef == nil
+      ? "nodes/\(step.nodeId).json"
+      : nil
     return WorkflowNodeRef(
       id: step.id,
-      nodeFile: registryNode.nodeFile ?? (registryNode.addon == nil ? "nodes/\(step.nodeId).json" : nil),
+      nodeFile: registryNode.nodeFile ?? defaultNodeFile,
+      nodeRef: registryNode.nodeRef,
       addon: registryNode.addon,
       kind: registryNode.kind,
       role: step.role,
@@ -591,6 +599,84 @@ private func materializeWorkflowDefinition(from workflow: AuthoredWorkflowJSON) 
     steps: steps,
     nodes: runtimeNodes
   )
+}
+
+private func validateNodeSource(
+  nodeFile: String?,
+  nodeRef: WorkflowSharedNodeRef?,
+  addon: WorkflowNodeAddonRef?,
+  path: String,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  let sourceCount = [nodeFile != nil, nodeRef != nil, addon != nil].filter { $0 }.count
+  if sourceCount == 0 {
+    diagnostics.append(error(path, "must define exactly one of nodeFile, nodeRef, or addon"))
+  } else if sourceCount > 1 {
+    diagnostics.append(error(path, "must define only one of nodeFile, nodeRef, or addon"))
+  }
+}
+
+private func validateRawNodeSource(
+  _ entry: [String: Any],
+  path: String,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  let sourceCount = ["nodeFile", "nodeRef", "addon"].filter { entry[$0] != nil }.count
+  if sourceCount == 0 {
+    diagnostics.append(error(path, "must define exactly one of nodeFile, nodeRef, or addon"))
+  } else if sourceCount > 1 {
+    diagnostics.append(error(path, "must define only one of nodeFile, nodeRef, or addon"))
+  }
+}
+
+private func validateNodeReference(
+  _ nodeRef: WorkflowSharedNodeRef?,
+  path: String,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let nodeRef else {
+    return
+  }
+  validateNonEmptyString(nodeRef.workflowId, path: "\(path).workflowId", diagnostics: &diagnostics)
+  if !nodeRef.workflowId.isEmpty, !isSafeWorkflowId(nodeRef.workflowId) {
+    diagnostics.append(
+      error(
+        "\(path).workflowId",
+        "must start with an alphanumeric character and contain only letters, digits, hyphens, or underscores"
+      )
+    )
+  }
+  validateNonEmptyString(nodeRef.nodeId, path: "\(path).nodeId", diagnostics: &diagnostics)
+  if !nodeRef.nodeId.isEmpty, !isSafeNodeId(nodeRef.nodeId) {
+    diagnostics.append(error("\(path).nodeId", "must match ^[a-z0-9][a-z0-9-]{1,63}$"))
+  }
+}
+
+private func validateRawNodeReference(_ raw: Any?, path: String, diagnostics: inout [WorkflowValidationDiagnostic]) {
+  guard let raw else {
+    return
+  }
+  guard let object = raw as? [String: Any] else {
+    diagnostics.append(error(path, "must be an object when provided"))
+    return
+  }
+  let allowedKeys: Set<String> = ["workflowId", "nodeId"]
+  for key in object.keys where !allowedKeys.contains(key) {
+    diagnostics.append(error("\(path).\(key)", "uses an unsupported nodeRef field"))
+  }
+  validateNonEmptyString(object["workflowId"], path: "\(path).workflowId", diagnostics: &diagnostics)
+  if let workflowId = object["workflowId"] as? String, !workflowId.isEmpty, !isSafeWorkflowId(workflowId) {
+    diagnostics.append(
+      error(
+        "\(path).workflowId",
+        "must start with an alphanumeric character and contain only letters, digits, hyphens, or underscores"
+      )
+    )
+  }
+  validateNonEmptyString(object["nodeId"], path: "\(path).nodeId", diagnostics: &diagnostics)
+  if let nodeId = object["nodeId"] as? String, !nodeId.isEmpty, !isSafeNodeId(nodeId) {
+    diagnostics.append(error("\(path).nodeId", "must match ^[a-z0-9][a-z0-9-]{1,63}$"))
+  }
 }
 
 private func validateInputFilters(

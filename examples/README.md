@@ -217,6 +217,8 @@ riela events emit chat-sdk-slack \
 
 Discord chat workflow for three named bot personas in one channel:
 
+- Yui, Mika, and Rina persona nodes are shared through
+  `shared-agent-trio-personas` and referenced with `workflow.nodes[].nodeRef`
 - `Yui Codex` runs on `codex-agent` and is the default responder when no bot is named
 - `Mika Trend` runs on `claude-code-agent` and covers entertainment, trends, and gyaru-style audience sense
 - `Rina Cursor` runs on `cursor-cli-agent` and covers intellectual otaku and technical analysis
@@ -248,6 +250,8 @@ riela workflow run discord-agent-trio-chat \
 Telegram Gateway persona workflow using riela-owned Telegram Bot API
 ingestion:
 
+- Yui, Mika, and Rina persona nodes are shared through
+  `shared-agent-trio-personas` and referenced with `workflow.nodes[].nodeRef`
 - receives normalized Telegram messages from the `telegram-gateway-personas`
   event source
 - includes persisted bounded chat history in `event.input.history`
@@ -509,6 +513,8 @@ riela events emit gmail-latest-mail-hourly-cron \
 Matrix persona workflow using the same provider-neutral trio authoring shape as
 the Discord and Telegram examples:
 
+- Yui, Mika, and Rina persona nodes are shared through
+  `shared-agent-trio-personas` and referenced with `workflow.nodes[].nodeRef`
 - receives normalized Matrix `m.room.message` events from the `team-matrix`
   event source
 - routes replies as Yui, Mika, or Rina through `riela/chat-persona-router`
@@ -533,6 +539,23 @@ riela workflow run matrix-agent-trio-chat \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/matrix-agent-trio-chat/mock-scenario.json \
   --input '{"request":"Yui, give your opinion and ask Mika too"}'
+```
+
+### `shared-agent-trio-personas`
+
+Shared persona node workflow for the provider-neutral trio chat examples:
+
+- owns the single source of truth for `Yui Codex`, `Mika Trend`, and
+  `Rina Cursor` node payloads and prompts
+- is referenced by `telegram-agent-trio-chat`, `discord-agent-trio-chat`, and
+  `matrix-agent-trio-chat` through `workflow.nodes[].nodeRef`
+- declares the inherited `persona-chat-memory` contract as cross-workflow
+  memory so vendor workflows can keep using shared persona memory behavior
+
+Validate it:
+
+```bash
+riela workflow validate shared-agent-trio-personas --workflow-definition-dir ./examples
 ```
 
 ### `discord-persona-chat`

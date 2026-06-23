@@ -70,7 +70,10 @@
     },
     {
       "id": "yui-codex",
-      "nodeFile": "nodes/node-yui-codex.json"
+      "nodeRef": {
+        "workflowId": "shared-agent-trio-personas",
+        "nodeId": "yui-codex"
+      }
     },
     {
       "id": "read-yui-memory",
@@ -92,7 +95,10 @@
     },
     {
       "id": "mika-claude",
-      "nodeFile": "nodes/node-mika-claude.json"
+      "nodeRef": {
+        "workflowId": "shared-agent-trio-personas",
+        "nodeId": "mika-claude"
+      }
     },
     {
       "id": "read-mika-memory",
@@ -114,7 +120,10 @@
     },
     {
       "id": "rina-cursor",
-      "nodeFile": "nodes/node-rina-cursor.json"
+      "nodeRef": {
+        "workflowId": "shared-agent-trio-personas",
+        "nodeId": "rina-cursor"
+      }
     },
     {
       "id": "read-rina-memory",

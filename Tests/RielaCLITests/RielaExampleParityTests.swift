@@ -685,6 +685,7 @@ final class RielaExampleParityTests: XCTestCase {
       "riela-default-workflow-supervisor",
       "same-node-session-echo",
       "scheduled-sleep",
+      "shared-agent-trio-personas",
       "subworkflow-chained-simple",
       "supervised-mock-retry",
       "telegram-agent-trio-chat",

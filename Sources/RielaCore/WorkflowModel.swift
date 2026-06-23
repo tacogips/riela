@@ -271,6 +271,7 @@ public struct WorkflowInputFilter: Codable, Equatable, Sendable {
 public struct WorkflowNodeRegistryRef: Codable, Equatable, Sendable {
   public var id: String
   public var nodeFile: String?
+  public var nodeRef: WorkflowSharedNodeRef?
   public var addon: WorkflowNodeAddonRef?
   public var execution: WorkflowNodeExecutionPolicy?
   public var kind: WorkflowRegistryNodeKind?
@@ -281,6 +282,7 @@ public struct WorkflowNodeRegistryRef: Codable, Equatable, Sendable {
   enum CodingKeys: String, CodingKey {
     case id
     case nodeFile
+    case nodeRef
     case addon
     case execution
     case kind
@@ -292,6 +294,7 @@ public struct WorkflowNodeRegistryRef: Codable, Equatable, Sendable {
   public init(
     id: String,
     nodeFile: String? = nil,
+    nodeRef: WorkflowSharedNodeRef? = nil,
     addon: WorkflowNodeAddonRef? = nil,
     execution: WorkflowNodeExecutionPolicy? = nil,
     kind: WorkflowRegistryNodeKind? = nil,
@@ -301,12 +304,23 @@ public struct WorkflowNodeRegistryRef: Codable, Equatable, Sendable {
   ) {
     self.id = id
     self.nodeFile = nodeFile
+    self.nodeRef = nodeRef
     self.addon = addon
     self.execution = execution
     self.kind = kind
     self.repeatPolicy = repeatPolicy
     self.inputFilters = inputFilters
     self.memories = memories
+  }
+}
+
+public struct WorkflowSharedNodeRef: Codable, Equatable, Hashable, Sendable {
+  public var workflowId: String
+  public var nodeId: String
+
+  public init(workflowId: String, nodeId: String) {
+    self.workflowId = workflowId
+    self.nodeId = nodeId
   }
 }
 
@@ -474,6 +488,7 @@ public struct AuthoredWorkflowJSON: Codable, Equatable, Sendable {
 public struct WorkflowNodeRef: Codable, Equatable, Sendable {
   public var id: String
   public var nodeFile: String?
+  public var nodeRef: WorkflowSharedNodeRef?
   public var addon: WorkflowNodeAddonRef?
   public var kind: WorkflowRegistryNodeKind?
   public var role: NodeRole?
@@ -485,6 +500,7 @@ public struct WorkflowNodeRef: Codable, Equatable, Sendable {
   enum CodingKeys: String, CodingKey {
     case id
     case nodeFile
+    case nodeRef
     case addon
     case kind
     case role
@@ -497,6 +513,7 @@ public struct WorkflowNodeRef: Codable, Equatable, Sendable {
   public init(
     id: String,
     nodeFile: String? = nil,
+    nodeRef: WorkflowSharedNodeRef? = nil,
     addon: WorkflowNodeAddonRef? = nil,
     kind: WorkflowRegistryNodeKind? = nil,
     role: NodeRole? = nil,
@@ -507,6 +524,7 @@ public struct WorkflowNodeRef: Codable, Equatable, Sendable {
   ) {
     self.id = id
     self.nodeFile = nodeFile
+    self.nodeRef = nodeRef
     self.addon = addon
     self.kind = kind
     self.role = role

@@ -329,8 +329,9 @@ produce duplicate replies. Live SDK replies require `OPENAI_API_KEY`,
 The `telegram-time-signal-cron` source demonstrates scheduled Telegram output
 for the trio chat. It uses the six-field cron schedule `*/30 * * * * *`, so the
 event runner wakes every 30 seconds. The companion workflow
-`telegram-agent-trio-time-signal` sends a Yui time-signal reply only when the
-scheduled Asia/Tokyo local time is on a five-minute boundary. Set
+`telegram-agent-trio-time-signal` uses the built-in `riela/time-signal` add-on
+to send a Yui time-signal reply only when the scheduled Asia/Tokyo local time
+is on a five-minute boundary. Set
 `RIELA_TELEGRAM_CHAT_ID` to the target Telegram chat id for live runs; the
 checked-in placeholder remains deterministic for local validation.
 
@@ -351,9 +352,10 @@ riela events emit telegram-time-signal-cron \
 
 The `x-follower-ai-business-hourly-cron` source demonstrates a scheduled
 Telegram digest backed by Dockerized x-gateway. It fires hourly with
-`0 0 * * * *`, dispatches `x-follower-ai-business-digest`, and uses
-`.riela-data/x-follower-ai-business-digest/state.json` to avoid duplicate
-post processing. The digest is topic-centric: related reposts, quote posts, and
+`0 0 * * * *`, dispatches `x-follower-ai-business-digest`, and uses the
+built-in `riela/x-digest` add-on with
+`.riela-data/x-follower-ai-business-digest/state.json` to avoid duplicate post
+processing. The digest is topic-centric: related reposts, quote posts, and
 multiple posts about the same event/article are merged into one item with
 aggregate views, posting-user count, and up to three linked posting users.
 Provide X credentials through `X_GW_*` environment variables and the Telegram
@@ -379,11 +381,15 @@ digest backed by Dockerized mail-gateway-reader. It fires every 30 minutes with
 `0 */30 * * * *`, dispatches `gmail-latest-mail-digest-telegram`, and uses
 `.riela-data/gmail-latest-mail-digest-telegram/state.json` to avoid duplicate
 message processing. The workflow fetches metadata for the latest 10 Gmail
-messages and asks mail-gateway for vendor-neutral file `downloadKey` values
-instead of GraphQL body or file payloads. A deterministic state node keeps only
-message ids that have not been seen in prior runs. The workflow can download
-selected attachments out-of-band, preview text files, and use Gemini OCR to
-classify PDF attachments when `GOOGLE_API_KEY` or `GEMINI_API_KEY` is set.
+messages through mail-gateway's stable `threads(input:)` GraphQL field. Live
+Gmail reads can return `textBody`/`htmlBody`; the built-in `riela/gmail-digest`
+add-on materializes those bodies under the ignored runtime message directory
+and treats attachment records as metadata unless a `downloadKey` or local path
+is available. It owns deterministic state reads, mail normalization, attachment
+inspection, LLM output validation, cursor persistence, and no-mail output. It
+can download selected attachments out-of-band, preview text files, and use
+Gemini OCR to classify PDF attachments when `GOOGLE_API_KEY` or
+`GEMINI_API_KEY` is set.
 Provide the Gmail
 mail-gateway configuration through
 `GMAIL_MAIL_GATEWAY_CONFIG` and the Telegram target through

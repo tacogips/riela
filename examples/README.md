@@ -363,8 +363,8 @@ Scheduled Telegram reply companion for the Telegram trio chat:
 - receives `cron.tick` events from `telegram-time-signal-cron`
 - uses a six-field cron schedule, `*/30 * * * * *`, to evaluate every 30
   seconds
-- sends a Yui time-signal reply only when the scheduled Asia/Tokyo local time
-  is on a five-minute boundary
+- uses the built-in `riela/time-signal` add-on to announce only when the
+  scheduled Asia/Tokyo local time is on a five-minute boundary
 - reuses `telegram-gateway-persona-replies` so delivery stays on the Telegram
   Gateway reply path
 
@@ -389,8 +389,9 @@ riela events emit telegram-time-signal-cron \
 Hourly X follower-post digest for Telegram:
 
 - receives `cron.tick` events from `x-follower-ai-business-hourly-cron`
-- reads `.riela-data/x-follower-ai-business-digest/state.json` by default
-  and keeps the saved post id for dedupe/accounting
+- uses the built-in `riela/x-digest` add-on to read
+  `.riela-data/x-follower-ai-business-digest/state.json` by default and keep
+  the saved post id for dedupe/accounting
 - runs `riela/x-gateway-read` in Docker with
   `ghcr.io/tacogips/x-gateway:latest`
 - queries the stable x-gateway `followingTimeline` field for followed-account posts
@@ -398,7 +399,7 @@ Hourly X follower-post digest for Telegram:
   in workflow files
 - uses a Codex worker prompt that treats fetched posts as untrusted data and
   proposes event/topic digests rather than per-user post summaries, then a
-  deterministic validation step drops any source id that is not one of the
+  deterministic `riela/x-digest` validation step drops any source id that is not one of the
   normalized selected posts and rebuilds Telegram text from validated
   post/user links and metrics
 - reports each topic with aggregate views, posting-user count, and up to three
@@ -407,9 +408,9 @@ Hourly X follower-post digest for Telegram:
   only when the digest is non-empty
 - disables automatic event final/error replies so workflow failures are not
   posted to Telegram
-- never writes fetched post bodies to the workflow bundle; the cursor file keeps
-  only the newest post id and must live under an ignored/private runtime path
-  such as `.riela-data/`
+- never writes fetched post bodies to the workflow bundle; `riela/x-digest`
+  persists only the newest post id and requires the cursor file to live under
+  an ignored/private runtime path such as `.riela-data/`
 - raw fetched posts can still appear in riela runtime artifacts, so live runs
   must use an ignored artifact root such as
   `.riela-artifact/x-follower-ai-business-digest`
@@ -453,13 +454,21 @@ Scheduled Gmail digest for Telegram:
 - runs `riela/mail-gateway-read` in Docker with
   `ghcr.io/tacogips/mail-gateway:latest`
 - uses the read-only `mail-gateway-reader` client through the built-in add-on
-  to fetch the latest 10 Gmail messages for `accountId: "gmail"`
-- requests vendor-neutral file metadata and `downloadKey` values instead of
-  raw body or file payloads, so large mail content is downloaded only through a
-  later gateway command when needed
-- downloads selected attachments out-of-band in `inspect-attachments`, previews
-  text-compatible files, and uses Gemini OCR/classification for PDF attachments
-  when `GOOGLE_API_KEY` or `GEMINI_API_KEY` is available
+  to fetch Gmail thread edges for `accountId: "gmail"` through the stable
+  `threads(input:)` GraphQL field
+- requests message metadata plus `textBody`/`htmlBody` from the live Gmail read
+  surface; the digest add-on materializes body text under the ignored
+  `.riela-data/gmail-latest-mail-digest-telegram/messages/` runtime directory
+- treats attachment records as metadata unless they include a gateway
+  `downloadKey` or local path, so large file payloads are downloaded only
+  through a later `riela/gmail-digest` add-on operation when available
+- uses the built-in `riela/gmail-digest` add-on for deterministic state reads,
+  mail normalization, attachment inspection, LLM output validation, cursor
+  persistence, and no-mail output
+- downloads selected attachments out-of-band in `inspect-attachments` through
+  the add-on's gateway boundary, previews text-compatible files, and uses
+  Gemini OCR/classification for PDF attachments when `GOOGLE_API_KEY` or
+  `GEMINI_API_KEY` is available
 - maps Gmail mail-gateway credentials from `GMAIL_MAIL_GATEWAY_CONFIG` only;
   do not put credential values in workflow files
 - summarizes only newly seen messages in a separate Codex worker prompt that
@@ -474,9 +483,8 @@ Scheduled Gmail digest for Telegram:
   only when a non-empty digest exists
 - disables automatic event final/error replies so Telegram output comes only
   from the explicit `send-telegram-digest` chat-reply step
-- never writes email bodies to the workflow bundle; GraphQL file payloads should
-  not enter riela runtime artifacts, and any legacy body fallback is materialized
-  under `.riela-data/gmail-latest-mail-digest-telegram/messages/`
+- never writes email bodies to the workflow bundle; body fallback files are
+  materialized under `.riela-data/gmail-latest-mail-digest-telegram/messages/`
 
 Required live-run environment variables:
 

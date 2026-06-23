@@ -156,50 +156,6 @@ final class SourceDeletionReadinessTests: XCTestCase {
     )
   }
 
-  func testTimeSignalShellNormalizesOffsetTimestampLikeTypeScriptDate() throws {
-    let output = try runTimeSignalScript(
-      scheduledAt: "2026-05-31T10:05:00+09:00",
-      timezone: "Asia/Tokyo"
-    )
-
-    XCTAssertEqual(output.payload.scheduledAt, "2026-05-31T01:05:00.000Z")
-    XCTAssertEqual(output.payload.localTime, "2026-05-31 10:05")
-    XCTAssertTrue(output.payload.shouldAnnounce)
-    XCTAssertTrue(output.when.shouldAnnounce)
-  }
-
-  func testTimeSignalShellNormalizesOffsetTimestampWithoutGNUDate() throws {
-    let output = try runTimeSignalScript(
-      scheduledAt: "2026-05-31T10:05:00+09:00",
-      timezone: "Asia/Tokyo",
-      environmentOverrides: ["PATH": "/usr/bin:/bin"]
-    )
-
-    XCTAssertEqual(output.payload.scheduledAt, "2026-05-31T01:05:00.000Z")
-    XCTAssertEqual(output.payload.localTime, "2026-05-31 10:05")
-    XCTAssertTrue(output.payload.shouldAnnounce)
-  }
-
-  func testTimeSignalShellPreservesFractionalMilliseconds() throws {
-    let output = try runTimeSignalScript(
-      scheduledAt: "2026-05-31T10:05:00.123+09:00",
-      timezone: "Asia/Tokyo"
-    )
-
-    XCTAssertEqual(output.payload.scheduledAt, "2026-05-31T01:05:00.123Z")
-    XCTAssertEqual(output.payload.localTime, "2026-05-31 10:05")
-  }
-
-  func testTimeSignalShellRejectsInvalidTimezone() throws {
-    let result = try runTimeSignalScriptResult(
-      scheduledAt: "2026-05-31T10:05:00.000Z",
-      timezone: "Not/AZone"
-    )
-
-    XCTAssertNotEqual(result.exitCode, 0)
-    XCTAssertTrue(result.stderr.contains("invalid timezone: Not/AZone"), result.stderr)
-  }
-
   private func checkSourceFilenamePolicy(root: URL) throws -> FilenamePolicyCheckResult {
     let rootSourceTreePresent = FileManager.default.fileExists(atPath: root.appendingPathComponent("src").path)
     let sourceRoots = try collectPackageSourceRoots(root: root)
@@ -354,53 +310,6 @@ final class SourceDeletionReadinessTests: XCTestCase {
     try contents.write(to: url, atomically: true, encoding: .utf8)
   }
 
-  private func runTimeSignalScript(
-    scheduledAt: String,
-    timezone: String,
-    environmentOverrides: [String: String] = [:]
-  ) throws -> TimeSignalOutput {
-    let result = try runTimeSignalScriptResult(
-      scheduledAt: scheduledAt,
-      timezone: timezone,
-      environmentOverrides: environmentOverrides
-    )
-
-    if result.exitCode != 0 {
-      XCTFail("prepare-time-signal.sh failed with exit \(result.exitCode): \(result.stderr)")
-    }
-
-    return try JSONDecoder().decode(TimeSignalOutput.self, from: Data(result.stdout.utf8))
-  }
-
-  private func runTimeSignalScriptResult(
-    scheduledAt: String,
-    timezone: String,
-    environmentOverrides: [String: String] = [:]
-  ) throws -> ScriptResult {
-    let root = try repositoryRoot()
-    let script = root.appendingPathComponent("examples/telegram-agent-trio-time-signal/scripts/prepare-time-signal.sh")
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/bin/sh")
-    process.arguments = [script.path, scheduledAt, timezone]
-    if !environmentOverrides.isEmpty {
-      process.environment = ProcessInfo.processInfo.environment.merging(environmentOverrides) { _, override in override }
-    }
-
-    let stdout = Pipe()
-    let stderr = Pipe()
-    process.standardOutput = stdout
-    process.standardError = stderr
-
-    try process.run()
-    process.waitUntilExit()
-
-    return ScriptResult(
-      exitCode: process.terminationStatus,
-      stdout: String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "",
-      stderr: String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-    )
-  }
-
   private func runScript(root: URL, relativePath: String) throws -> ScriptResult {
     let process = Process()
     process.currentDirectoryURL = root
@@ -449,25 +358,6 @@ private struct AuditViolation: Equatable {
   var lineNumber: Int
   var rule: String
   var evidence: String
-}
-
-private struct TimeSignalOutput: Decodable {
-  var when: TimeSignalWhen
-  var payload: TimeSignalPayload
-}
-
-private struct TimeSignalWhen: Decodable {
-  var shouldAnnounce: Bool
-
-  private enum CodingKeys: String, CodingKey {
-    case shouldAnnounce = "should_announce"
-  }
-}
-
-private struct TimeSignalPayload: Decodable {
-  var shouldAnnounce: Bool
-  var scheduledAt: String
-  var localTime: String
 }
 
 private struct ScriptResult {

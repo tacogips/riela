@@ -971,15 +971,3 @@ private func errorMessage(_ error: WorkflowSessionEntryValidationError) -> Strin
     message
   }
 }
-
-private func workflowAddonResolvedInputPayload(_ payload: JSONObject, session: WorkflowSession) -> JSONObject {
-  var resolved = payload
-  let completedExecutions = session.executions.filter { $0.status == .completed }
-  resolved["runtime"] = .object([
-    "sessionId": .string(session.sessionId),
-    "workflowId": .string(session.workflowId),
-    "executedStepIds": .array(completedExecutions.map(\.stepId).map(JSONValue.string)),
-    "executedNodeIds": .array(completedExecutions.map(\.nodeId).map(JSONValue.string))
-  ])
-  return resolved
-}

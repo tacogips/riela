@@ -1,15 +1,11 @@
 {
   "id": "implementation-review",
-  "nodeType": "command",
   "description": "Review the current session SQLite persistence implementation.",
-  "command": {
-    "executable": "/usr/bin/env",
-    "argvTemplate": [
-      "sh",
-      ".riela/workflows/riela-session-sqlite-persistence-review/scripts/review-session-sqlite-persistence.sh",
-      "implementation"
-    ]
-  },
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "effort": "high",
+  "promptTemplateFile": "prompts/implementation-review.md",
+  "variables": {},
   "output": {
     "description": "Return JSON with accepted, needsRevision, findings, missingRequirements, and verificationRecommendations."
   }

@@ -1,15 +1,10 @@
 {
   "id": "workflow-output",
-  "nodeType": "command",
   "description": "Publish the session SQLite persistence review summary.",
-  "command": {
-    "executable": "/usr/bin/env",
-    "argvTemplate": [
-      "sh",
-      ".riela/workflows/riela-session-sqlite-persistence-review/scripts/review-session-sqlite-persistence.sh",
-      "summary"
-    ]
-  },
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "promptTemplateFile": "prompts/workflow-output.md",
+  "variables": {},
   "output": {
     "description": "Return final JSON summarizing review status and follow-up implementation work."
   }

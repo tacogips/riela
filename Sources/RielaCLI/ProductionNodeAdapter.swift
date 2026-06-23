@@ -223,6 +223,15 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     if input.addon.name == "riela/chat-persona-memory-write" {
       return try executeChatPersonaMemoryWrite(input)
     }
+    if input.addon.name == "riela/x-digest" {
+      return try executeXDigest(input)
+    }
+    if input.addon.name == "riela/gmail-digest" {
+      return try executeGmailDigest(input)
+    }
+    if input.addon.name == "riela/time-signal" {
+      return try executeTimeSignal(input)
+    }
     if let memoryAddon = BuiltinMemoryAddon(rawValue: input.addon.name) {
       return try executeMemoryAddon(input, operation: memoryAddon)
     }

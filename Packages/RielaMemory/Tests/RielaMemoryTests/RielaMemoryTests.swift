@@ -82,6 +82,7 @@ final class RielaMemoryTests: XCTestCase {
     XCTAssertEqual(records.map(\.recordId), [1])
     XCTAssertEqual(records[0].tags, [])
     XCTAssertEqual(records[0].relatedRecordIds, [])
+    XCTAssertEqual(records[0].files, [])
     XCTAssertEqual(records[0].payload, .object(["text": .string("legacy survives")]))
 
     let saved = try store.save(
@@ -150,6 +151,163 @@ final class RielaMemoryTests: XCTestCase {
         .map(\.recordId),
       [base.recordId]
     )
+  }
+
+  func testSaveCopiesFilesAndReturnsFileReferencesFromSearch() throws {
+    let root = temporaryDirectory()
+    let sourceDirectory = temporaryDirectory()
+    try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+    let sourceFile = sourceDirectory.appendingPathComponent("yui.png")
+    try Data([0x89, 0x50, 0x4E, 0x47]).write(to: sourceFile)
+    let store = RielaMemoryStore(rootDirectory: root.path)
+
+    let saved = try store.save(
+      memoryId: "chat-memory",
+      workflowId: "wf",
+      registeredAt: "2026-06-20T10:00:00Z",
+      files: [MemoryFileReference(path: sourceFile.path, mediaType: "image/png", kind: "image")],
+      payload: .object(["text": .string("image memory")])
+    )
+
+    XCTAssertEqual(saved.files.count, 1)
+    XCTAssertNotEqual(saved.files[0].path, sourceFile.path)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: saved.files[0].path))
+    XCTAssertTrue(saved.files[0].path.contains("/files/chat-memory/\(saved.recordId)/"))
+    XCTAssertEqual(saved.files[0].mediaType, "image/png")
+    XCTAssertEqual(saved.files[0].kind, "image")
+    XCTAssertEqual(saved.files[0].name, "yui.png")
+    XCTAssertEqual(saved.files[0].sizeBytes, 4)
+
+    let records = try store.search(memoryId: "chat-memory", options: MemorySearchOptions(workflowId: "wf"))
+    XCTAssertEqual(records.map(\.files), [saved.files])
+  }
+
+  func testSaveInfersCanonicalKindsForCommonFileFamilies() throws {
+    let root = temporaryDirectory()
+    let sourceDirectory = temporaryDirectory()
+    try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+    let image = sourceDirectory.appendingPathComponent("portrait.jpeg")
+    let video = sourceDirectory.appendingPathComponent("clip.mp4")
+    let audio = sourceDirectory.appendingPathComponent("voice.m4a")
+    let pdf = sourceDirectory.appendingPathComponent("brief.pdf")
+    try Data([1]).write(to: image)
+    try Data([2]).write(to: video)
+    try Data([3]).write(to: audio)
+    try Data([4]).write(to: pdf)
+    let store = RielaMemoryStore(rootDirectory: root.path)
+
+    let saved = try store.save(
+      memoryId: "chat-memory",
+      workflowId: "wf",
+      files: [
+        MemoryFileReference(path: image.path, kind: "photo"),
+        MemoryFileReference(path: video.path),
+        MemoryFileReference(path: audio.path),
+        MemoryFileReference(path: pdf.path, mediaType: " APPLICATION/PDF ", kind: "document")
+      ],
+      payload: .object(["text": .string("mixed files")])
+    )
+
+    XCTAssertEqual(saved.files.map(\.mediaType), ["image/jpeg", "video/mp4", "audio/mp4", "application/pdf"])
+    XCTAssertEqual(saved.files.map(\.kind), ["image", "video", "audio", "pdf"])
+  }
+
+  func testUpdatePreservesReplacesAndClearsFilesExplicitly() throws {
+    let root = temporaryDirectory()
+    let sourceDirectory = temporaryDirectory()
+    try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+    let firstFile = sourceDirectory.appendingPathComponent("first.png")
+    let secondFile = sourceDirectory.appendingPathComponent("second.pdf")
+    try Data([1, 2, 3]).write(to: firstFile)
+    try Data([4, 5]).write(to: secondFile)
+    let store = RielaMemoryStore(rootDirectory: root.path)
+
+    let saved = try store.save(
+      memoryId: "chat-memory",
+      workflowId: "wf",
+      files: [MemoryFileReference(path: firstFile.path)],
+      payload: .object(["text": .string("with first file")])
+    )
+    let originalStoredPath = try XCTUnwrap(saved.files.first?.path)
+
+    let preserved = try store.update(
+      memoryId: "chat-memory",
+      recordId: saved.recordId,
+      workflowId: "wf",
+      payload: .object(["text": .string("preserve file")])
+    )
+    XCTAssertEqual(preserved.files.map(\.path), [originalStoredPath])
+    XCTAssertTrue(FileManager.default.fileExists(atPath: originalStoredPath))
+
+    let replaced = try store.update(
+      memoryId: "chat-memory",
+      recordId: saved.recordId,
+      workflowId: "wf",
+      files: [MemoryFileReference(path: secondFile.path)],
+      payload: .object(["text": .string("replace file")])
+    )
+    let replacementStoredPath = try XCTUnwrap(replaced.files.first?.path)
+    XCTAssertEqual(replaced.files.map(\.kind), ["pdf"])
+    XCTAssertTrue(FileManager.default.fileExists(atPath: replacementStoredPath))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: originalStoredPath))
+
+    let cleared = try store.update(
+      memoryId: "chat-memory",
+      recordId: saved.recordId,
+      workflowId: "wf",
+      files: [],
+      payload: .object(["text": .string("clear file")])
+    )
+    XCTAssertEqual(cleared.files, [])
+    XCTAssertFalse(FileManager.default.fileExists(atPath: replacementStoredPath))
+  }
+
+  func testFilesMustBeUniqueExistingAndLimited() throws {
+    let root = temporaryDirectory()
+    let sourceDirectory = temporaryDirectory()
+    try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+    let sourceFile = sourceDirectory.appendingPathComponent("voice.mp3")
+    try Data([1, 2, 3]).write(to: sourceFile)
+    let store = RielaMemoryStore(rootDirectory: root.path)
+
+    XCTAssertThrowsError(try store.save(
+      memoryId: "chat-memory",
+      workflowId: "wf",
+      files: [
+        MemoryFileReference(path: sourceFile.path),
+        MemoryFileReference(path: sourceFile.path)
+      ],
+      payload: .object([:])
+    )) { error in
+      XCTAssertEqual(error as? RielaMemoryError, .duplicateFilePath(sourceFile.path))
+    }
+    XCTAssertThrowsError(try store.save(
+      memoryId: "chat-memory",
+      workflowId: "wf",
+      files: [
+        MemoryFileReference(path: sourceFile.path),
+        MemoryFileReference(path: sourceDirectory.appendingPathComponent("./voice.mp3").path)
+      ],
+      payload: .object([:])
+    )) { error in
+      XCTAssertEqual(error as? RielaMemoryError, .duplicateFilePath(sourceFile.path))
+    }
+    XCTAssertThrowsError(try store.save(
+      memoryId: "chat-memory",
+      workflowId: "wf",
+      files: (0..<11).map { MemoryFileReference(path: "\(sourceFile.path)-\($0)") },
+      payload: .object([:])
+    )) { error in
+      XCTAssertEqual(error as? RielaMemoryError, .tooManyFiles(11))
+    }
+    XCTAssertThrowsError(try store.save(
+      memoryId: "chat-memory",
+      workflowId: "wf",
+      files: [MemoryFileReference(path: sourceDirectory.appendingPathComponent("missing.pdf").path)],
+      payload: .object([:])
+    )) { error in
+      XCTAssertEqual(error as? RielaMemoryError, .invalidFilePath(sourceDirectory.appendingPathComponent("missing.pdf").path))
+    }
   }
 
   func testUpdateRequiresExistingRecord() throws {

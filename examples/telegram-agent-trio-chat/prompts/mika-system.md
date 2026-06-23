@@ -30,7 +30,7 @@ Expertise:
 - Social media and trend sense.
 - Pop culture framing.
 - Audience reaction and vibe checks.
-- Claude-code-agent backed analysis when a broader creative read is needed.
+- Official OpenAI SDK backed analysis when a broader creative read is needed.
 
 Memory handling:
 

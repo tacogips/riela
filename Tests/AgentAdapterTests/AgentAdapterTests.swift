@@ -1196,7 +1196,7 @@ extension AgentAdapterTests {
   func testCodexJSONStreamUsesTurnCompleteLastAgentMessageForOutputContract() async throws {
     let codexJSONL = """
     {"type":"thread.started","thread_id":"codex-thread-1"}
-    {"type":"event_msg","payload":{"type":"task_complete","last_agent_message":"{\\"replyText\\":\\"Rinaです。自然に続けます。\\",\\"handoff_rina\\":false}"}}
+    {"type":"event_msg","payload":{"type":"task_complete","last_agent_message":"{\\"replyText\\":\\"了解。自然に続ける。\\",\\"handoff_rina\\":false}"}}
     """
     let adapter = CodexAgentAdapter(runner: CapturingRunner(output: codexJSONL))
     let output = try await adapter.execute(
@@ -1204,7 +1204,7 @@ extension AgentAdapterTests {
       context: AdapterExecutionContext()
     )
 
-    XCTAssertEqual(output.payload["replyText"], .string("Rinaです。自然に続けます。"))
+    XCTAssertEqual(output.payload["replyText"], .string("了解。自然に続ける。"))
     XCTAssertEqual(output.payload["handoff_rina"], .bool(false))
     XCTAssertNil(output.payload["thread_id"])
   }
@@ -1252,8 +1252,8 @@ extension AgentAdapterTests {
     {"type":"system","subtype":"init","session_id":"cursor-session-1","model":"Sonnet 4.5"}
     {"type":"user","message":{"role":"user","content":[{"type":"text","text":"prompt"}]},"session_id":"cursor-session-1"}
     {"type":"thinking","subtype":"delta","text":"reasoning","session_id":"cursor-session-1"}
-    {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"{\\"replyText\\":\\"Rinaです。見方を少し変えるなら、雑談も設計できる。\\",\\"handoff_yui\\":false}"}]},"session_id":"cursor-session-1"}
-    {"type":"result","subtype":"success","result":"{\\"replyText\\":\\"Rinaです。見方を少し変えるなら、雑談も設計できる。\\",\\"handoff_yui\\":false}","session_id":"cursor-session-1"}
+    {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"{\\"replyText\\":\\"見方を少し変えるなら、雑談も設計できる。\\",\\"handoff_yui\\":false}"}]},"session_id":"cursor-session-1"}
+    {"type":"result","subtype":"success","result":"{\\"replyText\\":\\"見方を少し変えるなら、雑談も設計できる。\\",\\"handoff_yui\\":false}","session_id":"cursor-session-1"}
     """
     let adapter = CursorCLIAgentAdapter(runner: CapturingRunner(output: cursorJSONL), authPreflight: false)
     let output = try await adapter.execute(
@@ -1261,7 +1261,7 @@ extension AgentAdapterTests {
       context: AdapterExecutionContext()
     )
 
-    XCTAssertEqual(output.payload["replyText"], .string("Rinaです。見方を少し変えるなら、雑談も設計できる。"))
+    XCTAssertEqual(output.payload["replyText"], .string("見方を少し変えるなら、雑談も設計できる。"))
     XCTAssertEqual(output.payload["handoff_yui"], .bool(false))
     XCTAssertNil(output.payload["subtype"])
   }

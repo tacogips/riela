@@ -56,12 +56,13 @@ extension DeterministicWorkflowRunner {
       : "\nCross-workflow memory ids (\(crossWorkflowIds)) may be loaded or searched with --all-workflows when this node should share memory across Discord, Telegram, Matrix, container, or other workflow entrypoints."
     return """
       Available Riela memory ids for this node: \(memoryList).
-      Save JSON memory: riela memory save <memory-id> --workflow-id \(workflowId) --node-id \(nodeId) --payload-json '<json>'.
-      Update JSON memory: riela memory update <memory-id> --workflow-id \(workflowId) --record-id <id> --payload-json '<json>'.
+      Save JSON memory: riela memory save <memory-id> --workflow-id \(workflowId) --node-id \(nodeId) --payload-json '<json>' [--file <path>].
+      Update JSON memory: riela memory update <memory-id> --workflow-id \(workflowId) --record-id <id> --payload-json '<json>' [--file <path>].
       Load recent memory: riela memory load <memory-id> --workflow-id \(workflowId) --node-id \(nodeId) --limit 30.
       Search memory with grep-style regular expressions: riela memory search <memory-id> --workflow-id \(workflowId) --match '<regex>' --limit 30.
       Inspect memory metadata before searching: riela memory metadata <memory-id>.
       List unique tags or related record ids with pagination: riela memory tags <memory-id> --limit 30 --offset 0; riela memory related-ids <memory-id> --limit 30 --offset 0.
+      Save/update can copy up to 10 local files with repeated --file; search/load returns those file paths as record.files.
       Save/search can include up to 10 tags with repeated --tag and up to 10 same-database related record ids with repeated --related-id.
       Memory root for command/container nodes is available as $RIELA_MEMORY_ROOT and can be passed to riela memory commands with --memory-root "$RIELA_MEMORY_ROOT".\(crossWorkflowHelp)
       """

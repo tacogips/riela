@@ -60,9 +60,14 @@ extension ScopedParityCommandRunner {
 
   private func telegramGatewayFixtureEnvelope(from object: JSONObject, sourceId: String) -> ExternalEventEnvelope? {
     guard let message = jsonObjectValue(object["message"]),
-      let text = message["text"]?.stringValue,
       let chat = jsonObjectValue(message["chat"])
     else {
+      return nil
+    }
+    let text = (message["text"]?.stringValue ?? message["caption"]?.stringValue ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let attachmentInputs = telegramAttachmentInputs(from: message, caption: message["caption"]?.stringValue)
+    guard !text.isEmpty || !attachmentInputs.attachments.isEmpty else {
       return nil
     }
     let chatId = jsonStringOrIntegerValue(chat["id"]) ?? "telegram-chat"
@@ -83,7 +88,52 @@ extension ScopedParityCommandRunner {
       receivedAt: Date(timeIntervalSince1970: jsonNumberValue(message["date"]) ?? 0),
       actor: actor,
       conversation: conversation,
-      input: chatInput(text: text, provider: "telegram")
+      input: chatInput(
+        text: text,
+        provider: "telegram",
+        attachments: attachmentInputs.attachments,
+        imagePaths: attachmentInputs.imagePaths,
+        attachmentText: attachmentInputs.attachmentText
+      )
+    )
+  }
+
+  private struct FixtureAttachmentInputs {
+    var attachments: [JSONValue]
+    var imagePaths: [String]
+    var attachmentText: String
+  }
+
+  private func telegramAttachmentInputs(from message: JSONObject, caption: String?) -> FixtureAttachmentInputs {
+    guard let photos = jsonArrayValue(message["photo"]),
+      let largest = photos
+        .compactMap(jsonObjectValue)
+        .max(by: { (jsonNumberValue($0["width"]) ?? 0) * (jsonNumberValue($0["height"]) ?? 0) < (jsonNumberValue($1["width"]) ?? 0) * (jsonNumberValue($1["height"]) ?? 0) })
+    else {
+      return FixtureAttachmentInputs(attachments: [], imagePaths: [], attachmentText: "")
+    }
+    var descriptor = compactObject([
+      "kind": .string("photo"),
+      "provider": .string("telegram"),
+      "fileId": jsonStringOrIntegerValue(largest["file_id"]).map(JSONValue.string),
+      "fileUniqueId": jsonStringOrIntegerValue(largest["file_unique_id"]).map(JSONValue.string),
+      "width": largest["width"],
+      "height": largest["height"],
+      "fileSize": largest["file_size"],
+      "caption": caption.map(JSONValue.string)
+    ])
+    if let path = largest["path"]?.stringValue ?? largest["file_path"]?.stringValue ?? largest["localPath"]?.stringValue {
+      descriptor["path"] = .string(path)
+      return FixtureAttachmentInputs(
+        attachments: [.object(descriptor)],
+        imagePaths: [path],
+        attachmentText: caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      )
+    }
+    return FixtureAttachmentInputs(
+      attachments: [.object(descriptor)],
+      imagePaths: [],
+      attachmentText: caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     )
   }
 
@@ -188,16 +238,19 @@ extension ScopedParityCommandRunner {
     text: String,
     provider: String,
     history: [JSONValue] = [],
-    historySource: JSONValue = .string("fixture")
+    historySource: JSONValue = .string("fixture"),
+    attachments: [JSONValue] = [],
+    imagePaths: [String] = [],
+    attachmentText: String = ""
   ) -> JSONObject {
     [
       "text": .string(text),
       "provider": .string(provider),
       "history": .array(history),
       "historySource": historySource,
-      "attachments": .array([]),
-      "imagePaths": .array([]),
-      "attachmentText": .string("")
+      "attachments": .array(attachments),
+      "imagePaths": .array(imagePaths.map(JSONValue.string)),
+      "attachmentText": .string(attachmentText)
     ]
   }
 

@@ -123,13 +123,11 @@ private final class JSONLWriterProbe: @unchecked Sendable {
       else {
         return
       }
-      let sessionPath = sessionStore.appendingPathComponent("\(event.sessionId).json").path
-      let snapshotPath = URL(fileURLWithPath: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStore.path), isDirectory: true)
-        .appendingPathComponent(event.sessionId, isDirectory: true)
-        .appendingPathComponent("runtime-snapshot.json")
-        .path
-      persistedAtSessionStartValue = FileManager.default.fileExists(atPath: sessionPath)
-        && FileManager.default.fileExists(atPath: snapshotPath)
+      let session = try? CLIWorkflowSessionStore(rootDirectory: sessionStore.path).load(sessionId: event.sessionId)
+      let snapshot = try? SQLiteWorkflowRuntimePersistenceStore(
+        rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStore.path)
+      ).load(sessionId: event.sessionId)
+      persistedAtSessionStartValue = session != nil && snapshot != nil
     }
   }
 
@@ -365,6 +363,13 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertTrue(run.stderr.isEmpty)
     XCTAssertTrue(probe.persistedAtSessionStart())
     XCTAssertEqual(probe.lines().count, 5)
+    let canonicalDatabasePath = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(
+      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStore.path)
+    )
+    XCTAssertEqual(CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: sessionStore.path), canonicalDatabasePath)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: canonicalDatabasePath))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: sessionStore.appendingPathComponent("cli-workflow-sessions.sqlite").path))
+    XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: sessionStore.path).allSatisfy { !$0.hasSuffix(".json") })
   }
 
   func testUsageSupportsAddonSmokeWorkflow() async throws {
@@ -421,15 +426,18 @@ final class WorkflowCommandTests: XCTestCase {
     defer {
       try? FileManager.default.removeItem(atPath: memoryRoot)
     }
+    try FileManager.default.createDirectory(atPath: memoryRoot, withIntermediateDirectories: true)
+    let sourceFile = URL(fileURLWithPath: memoryRoot).appendingPathComponent("source-yui.png")
+    try Data([0x89, 0x50, 0x4E, 0x47]).write(to: sourceFile)
     let resolver = BuiltinWorkflowAddonResolver(environment: [:])
     let saveAddon = WorkflowNodeAddonRef(
       name: "riela/memory-save",
       version: "1",
       config: [
         "memoryId": .string("chat-memory"),
-        "memoryRoot": .string(memoryRoot),
         "nodeId": .string("chat-event"),
         "tags": .array([.string("chat"), .string("routing")]),
+        "filePaths": .array([.string(sourceFile.path)]),
         "payloadTemplate": .object([
           "text": .string("{{event.input.text}}"),
           "conversationId": .string("{{event.conversation.id}}")
@@ -444,6 +452,7 @@ final class WorkflowCommandTests: XCTestCase {
         nodeId: "save-chat-event-memory",
         addon: saveAddon,
         variables: [
+          "workflowInput": .object(["memoryRoot": .string(memoryRoot)]),
           "event": .object([
             "input": .object(["text": .string("Yui, remember the routing test")]),
             "conversation": .object(["id": .string("chat-1")])
@@ -461,6 +470,15 @@ final class WorkflowCommandTests: XCTestCase {
       return XCTFail("memory-save record payload was not returned")
     }
     XCTAssertEqual(savedRecord["tags"], .array([.string("chat"), .string("routing")]))
+    guard case let .array(savedFiles)? = savedRecord["files"],
+      case let .object(savedFile)? = savedFiles.first else {
+      return XCTFail("memory-save record files were not returned")
+    }
+    XCTAssertEqual(savedFile["kind"], .string("image"))
+    guard case let .string(savedFilePath)? = savedFile["path"] else {
+      return XCTFail("memory-save record file path was not returned")
+    }
+    XCTAssertTrue(FileManager.default.fileExists(atPath: savedFilePath))
     XCTAssertEqual(savedPayload["text"], .string("Yui, remember the routing test"))
     XCTAssertEqual(savedPayload["conversationId"], .string("chat-1"))
     guard case let .number(savedRecordIdNumber)? = savedRecord["recordId"],
@@ -478,15 +496,25 @@ final class WorkflowCommandTests: XCTestCase {
           version: "1",
           config: [
             "memoryId": .string("chat-memory"),
-            "memoryRoot": .string(memoryRoot),
             "recordId": .number(Double(savedRecordId)),
             "tags": .array([.string("chat"), .string("routing"), .string("updated")]),
+            "files": .array([
+              .object([
+                "path": .string(sourceFile.path),
+                "mediaType": .string("image/png"),
+                "kind": .string("image"),
+                "name": .string("yui.png")
+              ])
+            ]),
             "payload": .object([
               "text": .string("Yui, remember the updated routing test"),
               "conversationId": .string("chat-1")
             ])
           ]
-        )
+        ),
+        variables: [
+          "workflowInput": .object(["memoryRoot": .string(memoryRoot)])
+        ]
       ),
       context: AdapterExecutionContext()
     )
@@ -505,7 +533,10 @@ final class WorkflowCommandTests: XCTestCase {
             "memoryRoot": .string(memoryRoot),
             "workflowScopeOnly": .bool(true)
           ]
-        )
+        ),
+        variables: [
+          "workflowInput": .object(["memoryRoot": .string(memoryRoot)])
+        ]
       ),
       context: AdapterExecutionContext()
     )
@@ -516,7 +547,14 @@ final class WorkflowCommandTests: XCTestCase {
     guard case let .string(loadRecordsText)? = load.payload["recordsText"] else {
       return XCTFail("memory-load recordsText was not returned")
     }
+    XCTAssertEqual(load.payload["memoryAttachmentCountRead"], .number(1))
+    guard case let .array(loadImagePaths)? = load.payload["imagePaths"],
+      case let .string(loadImagePath)? = loadImagePaths.first else {
+      return XCTFail("memory-load imagePaths were not returned")
+    }
+    XCTAssertTrue(FileManager.default.fileExists(atPath: loadImagePath))
     XCTAssertTrue(loadRecordsText.contains("Yui, remember the updated routing test"))
+    XCTAssertTrue(loadRecordsText.contains("image image/png yui.png"))
 
     let search = try await resolver.execute(
       WorkflowAddonExecutionInput(
@@ -533,7 +571,10 @@ final class WorkflowCommandTests: XCTestCase {
             "matchPatterns": .array([.string("routing test")]),
             "tags": .array([.string("updated")])
           ]
-        )
+        ),
+        variables: [
+          "workflowInput": .object(["memoryRoot": .string(memoryRoot)])
+        ]
       ),
       context: AdapterExecutionContext()
     )
@@ -544,7 +585,13 @@ final class WorkflowCommandTests: XCTestCase {
     guard case let .string(searchRecordsText)? = search.payload["recordsText"] else {
       return XCTFail("memory-search recordsText was not returned")
     }
+    guard case let .array(searchFilePaths)? = search.payload["filePaths"],
+      case let .string(searchFilePath)? = searchFilePaths.first else {
+      return XCTFail("memory-search filePaths were not returned")
+    }
+    XCTAssertTrue(FileManager.default.fileExists(atPath: searchFilePath))
     XCTAssertTrue(searchRecordsText.contains("Yui, remember the updated routing test"))
+    XCTAssertTrue(searchRecordsText.contains("files: image image/png yui.png"))
   }
 
   func testBuiltinMemoryAddonsRejectInvalidTagsAndRelatedRecordIds() async throws {
@@ -839,8 +886,7 @@ final class WorkflowCommandTests: XCTestCase {
 
     XCTAssertEqual(output.provider, "scenario-mock")
     XCTAssertEqual(output.model, "gpt-5-nano")
-    let expectedText = "問題ない。Rina宛てのmentionなので私が返す。"
-      + "SDK版のトリオ構成では、node inputFiltersとLLM側のmention policyで担当を二重に絞っている。"
+    let expectedText = "問題ない。直前の流れを見る限り、Mikaの答えは文脈に沿っている。"
     XCTAssertEqual(output.payload["text"], .string(expectedText))
     XCTAssertEqual(output.when["always"], true)
   }
@@ -1283,8 +1329,12 @@ extension WorkflowCommandTests {
     XCTAssertEqual(secondRerun.exitCode, .success, secondRerun.stderr)
     let secondPayload = try decodeJSON(SessionRerunCommandResult.self, from: secondRerun.stdout)
     XCTAssertNotEqual(secondPayload.sessionId, payload.sessionId)
+    let runtimeStore = SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStore)
+    )
     for sessionId in [payload.sessionId, secondPayload.sessionId] {
-      XCTAssertTrue(FileManager.default.fileExists(atPath: URL(fileURLWithPath: sessionStore, isDirectory: true)
+      XCTAssertEqual(try runtimeStore.load(sessionId: sessionId).session.sessionId, sessionId)
+      XCTAssertFalse(FileManager.default.fileExists(atPath: URL(fileURLWithPath: sessionStore, isDirectory: true)
         .appendingPathComponent("runtime-records", isDirectory: true)
         .appendingPathComponent(sessionId, isDirectory: true)
         .appendingPathComponent("runtime-snapshot.json").path))
@@ -1417,22 +1467,16 @@ extension WorkflowCommandTests {
     XCTAssertEqual(request.authTokenEnv, "RIELA_REMOTE_AUTH_TOKEN")
   }
 
-  func testWorkflowRunEndpointUsesRielaAuthEnvironmentWithLegacyFallback() async throws {
+  func testWorkflowRunEndpointUsesRielaAuthEnvironment() async throws {
     let previousRielaToken = environmentValue("RIELA_MANAGER_AUTH_TOKEN")
-    let previousLegacyToken = environmentValue("RIEL_MANAGER_AUTH_TOKEN")
     let previousRielaSession = environmentValue("RIELA_MANAGER_SESSION_ID")
-    let previousLegacySession = environmentValue("RIEL_MANAGER_SESSION_ID")
     defer {
       setEnvironmentValue("RIELA_MANAGER_AUTH_TOKEN", previousRielaToken)
-      setEnvironmentValue("RIEL_MANAGER_AUTH_TOKEN", previousLegacyToken)
       setEnvironmentValue("RIELA_MANAGER_SESSION_ID", previousRielaSession)
-      setEnvironmentValue("RIEL_MANAGER_SESSION_ID", previousLegacySession)
     }
 
     setEnvironmentValue("RIELA_MANAGER_AUTH_TOKEN", "riela-token")
-    setEnvironmentValue("RIEL_MANAGER_AUTH_TOKEN", "legacy-token")
     setEnvironmentValue("RIELA_MANAGER_SESSION_ID", "riela-session")
-    setEnvironmentValue("RIEL_MANAGER_SESSION_ID", "legacy-session")
 
     let primaryTransport = RecordingWorkflowGraphQLRunTransport()
     let primaryApp = RielaCLIApplication(runCommand: WorkflowRunCommand(graphQLTransport: primaryTransport))
@@ -1448,34 +1492,13 @@ extension WorkflowCommandTests {
     XCTAssertEqual(primaryRequest.authToken, "riela-token")
     XCTAssertEqual(primaryRequest.authTokenEnv, "RIELA_MANAGER_AUTH_TOKEN")
     XCTAssertEqual(primaryRequest.managerSessionId, "riela-session")
-
-    setEnvironmentValue("RIELA_MANAGER_AUTH_TOKEN", nil)
-    setEnvironmentValue("RIELA_MANAGER_SESSION_ID", nil)
-
-    let legacyTransport = RecordingWorkflowGraphQLRunTransport()
-    let legacyApp = RielaCLIApplication(runCommand: WorkflowRunCommand(graphQLTransport: legacyTransport))
-    let legacyResult = await legacyApp.run([
-      "workflow", "run", "worker-only-single-step",
-      "--endpoint", "http://localhost:4000/graphql",
-      "--output", "json"
-    ])
-
-    XCTAssertEqual(legacyResult.exitCode, .success, legacyResult.stderr)
-    let recordedLegacyRequest = await legacyTransport.recordedRequest()
-    let legacyRequest = try XCTUnwrap(recordedLegacyRequest)
-    XCTAssertEqual(legacyRequest.authToken, "legacy-token")
-    XCTAssertEqual(legacyRequest.authTokenEnv, "RIELA_MANAGER_AUTH_TOKEN")
-    XCTAssertEqual(legacyRequest.managerSessionId, "legacy-session")
   }
 
   func testURLSessionWorkflowRunUsesSchemaAccurateRemotePayloadAndPausedStatus() async throws {
     let previousRielaManagerSession = environmentValue("RIELA_MANAGER_SESSION_ID")
-    let previousLegacyManagerSession = environmentValue("RIEL_MANAGER_SESSION_ID")
     setEnvironmentValue("RIELA_MANAGER_SESSION_ID", "manager-session-1")
-    setEnvironmentValue("RIEL_MANAGER_SESSION_ID", "legacy-manager-session")
     defer {
       setEnvironmentValue("RIELA_MANAGER_SESSION_ID", previousRielaManagerSession)
-      setEnvironmentValue("RIEL_MANAGER_SESSION_ID", previousLegacyManagerSession)
     }
 
     RecordingGraphQLURLProtocol.reset(responses: remoteGraphQLRunResponses())
@@ -2060,7 +2083,7 @@ extension WorkflowCommandTests {
     let envManifest = await app.run([
       "workflow", "manifest", "validate",
       "--output", "json"
-    ], environment: ["RIEL_WORKFLOW_MANIFEST": manifestURL.path])
+    ], environment: ["RIELA_WORKFLOW_MANIFEST": manifestURL.path])
     XCTAssertEqual(envManifest.exitCode, .usage)
     XCTAssertTrue(envManifest.stderr.isEmpty)
     let envManifestResult = try decodeJSON(WorkflowManifestValidationCommandResult.self, from: envManifest.stdout)
@@ -2082,10 +2105,10 @@ extension WorkflowCommandTests {
     ])
     XCTAssertEqual(run.exitCode, .success)
     let runResult = try decodeJSON(WorkflowRunResult.self, from: run.stdout)
-    let runtimeRoot = sessionStore
-      .appendingPathComponent("runtime-records", isDirectory: true)
+    let runtimeRoot = sessionStore.appendingPathComponent("runtime-records", isDirectory: true)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: runtimeRoot
       .appendingPathComponent(runResult.session.sessionId, isDirectory: true)
-    try FileManager.default.removeItem(at: runtimeRoot)
+      .appendingPathComponent("runtime-snapshot.json").path))
 
     for command in ["status", "progress", "health", "step-runs", "export", "logs"] {
       let result = await RielaCLIApplication().run([
@@ -2107,7 +2130,13 @@ extension WorkflowCommandTests {
         XCTAssertEqual(inspection.executions.first?.stepId, "main-worker", command)
       }
     }
-    XCTAssertTrue(FileManager.default.fileExists(atPath: runtimeRoot.appendingPathComponent("runtime-snapshot.json").path))
+    XCTAssertEqual(
+      try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot.path)
+        .load(sessionId: runResult.session.sessionId)
+        .session
+        .sessionId,
+      runResult.session.sessionId
+    )
   }
 
   func testPackageRegistryReadOnlyCommandsDoNotInitializeRegistryConfig() async throws {
@@ -2768,10 +2797,10 @@ extension WorkflowCommandTests {
     XCTAssertEqual(packageRun.exitCode, .success, packageRun.stderr)
     let packageRunResult = try decodeJSON(WorkflowPackageCommandResult.self, from: packageRun.stdout)
     let packageRunSessionId = try XCTUnwrap(packageRunResult.runSessionId)
-    XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir
+    let packageRuntimeStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: tempDir
       .appendingPathComponent(".riela/sessions/runtime-records", isDirectory: true)
-      .appendingPathComponent(packageRunSessionId, isDirectory: true)
-      .appendingPathComponent("runtime-snapshot.json").path))
+      .path)
+    XCTAssertEqual(try packageRuntimeStore.load(sessionId: packageRunSessionId).session.sessionId, packageRunSessionId)
     let secondPackageRun = await app.run([
       "package", "temp-run", "demo-package",
       "--working-dir", tempDir.path,
@@ -2783,10 +2812,7 @@ extension WorkflowCommandTests {
     let secondPackageRunSessionId = try XCTUnwrap(secondPackageRunResult.runSessionId)
     XCTAssertNotEqual(secondPackageRunSessionId, packageRunSessionId)
     for sessionId in [packageRunSessionId, secondPackageRunSessionId] {
-      XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir
-        .appendingPathComponent(".riela/sessions/runtime-records", isDirectory: true)
-        .appendingPathComponent(sessionId, isDirectory: true)
-        .appendingPathComponent("runtime-snapshot.json").path))
+      XCTAssertEqual(try packageRuntimeStore.load(sessionId: sessionId).session.sessionId, sessionId)
     }
     let packageRunStatus = await app.run([
       "session", "status", packageRunSessionId,
@@ -2895,11 +2921,11 @@ extension WorkflowCommandTests {
     XCTAssertEqual(secondRun.exitCode, .success, secondRun.stderr)
     let secondRunResult = try decodeJSON(WorkflowRunResult.self, from: secondRun.stdout)
     XCTAssertNotEqual(secondRunResult.session.sessionId, runResult.session.sessionId)
+    let normalRuntimeStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: tempDir
+      .appendingPathComponent("sessions/runtime-records", isDirectory: true)
+      .path)
     for sessionId in [runResult.session.sessionId, secondRunResult.session.sessionId] {
-      XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir
-        .appendingPathComponent("sessions/runtime-records", isDirectory: true)
-        .appendingPathComponent(sessionId, isDirectory: true)
-        .appendingPathComponent("runtime-snapshot.json").path))
+      XCTAssertEqual(try normalRuntimeStore.load(sessionId: sessionId).session.sessionId, sessionId)
     }
     let transitionWorkflowRoot = tempDir.appendingPathComponent("transition-workflows", isDirectory: true)
     let transitionWorkflow = try writeTwoStepWorkflow(at: transitionWorkflowRoot, workflowName: "two-step")
@@ -2922,7 +2948,7 @@ extension WorkflowCommandTests {
     ])
     XCTAssertEqual(secondTransitionRun.exitCode, .success, secondTransitionRun.stderr)
     let secondTransitionRunResult = try decodeJSON(WorkflowRunResult.self, from: secondTransitionRun.stdout)
-    let transitionPersistence = FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: transitionSessionStore.path))
+    let transitionPersistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: transitionSessionStore.path))
     let transitionCommunicationIds = try transitionPersistence
       .load(sessionId: transitionRunResult.session.sessionId)
       .workflowMessages
@@ -2956,7 +2982,7 @@ extension WorkflowCommandTests {
       createdOrder: 1,
       createdAt: Date(timeIntervalSince1970: 0)
     )
-    try FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: tempDir.appendingPathComponent("sessions", isDirectory: true).path)).save(
+    try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: tempDir.appendingPathComponent("sessions", isDirectory: true).path)).save(
       WorkflowRuntimePersistenceProjector.snapshot(session: runResult.session, workflowMessages: [preexistingResumeMessage])
     )
     let continued = await app.run([
@@ -2969,31 +2995,9 @@ extension WorkflowCommandTests {
     XCTAssertEqual(continued.exitCode, .success, continued.stderr)
     let continueResult = try decodeJSON(SessionResumeCommandResult.self, from: continued.stdout)
     XCTAssertEqual(continueResult.sessionId, runResult.session.sessionId)
-    let continuedSnapshot = try FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: tempDir.appendingPathComponent("sessions", isDirectory: true).path))
+    let continuedSnapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: tempDir.appendingPathComponent("sessions", isDirectory: true).path))
       .load(sessionId: runResult.session.sessionId)
     XCTAssertTrue(continuedSnapshot.workflowMessages.contains { $0.communicationId == "comm-000001" && $0.payload["mode"] == .string("preserve-on-resume") })
-    let runtimeSnapshotURL = runtimeRecordRoot.appendingPathComponent("runtime-snapshot.json")
-    try "not-json".write(to: runtimeSnapshotURL, atomically: true, encoding: .utf8)
-    let corruptContinue = await app.run([
-      "session", "continue", runResult.session.sessionId,
-      "--workflow-definition-dir", "\(root)/examples",
-      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
-      "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
-      "--output", "json"
-    ])
-    XCTAssertEqual(corruptContinue.exitCode, .failure)
-    XCTAssertEqual(try String(contentsOf: runtimeSnapshotURL, encoding: .utf8), "not-json")
-    let corruptRerun = await app.run([
-      "session", "rerun", runResult.session.sessionId, "main-worker",
-      "--workflow-definition-dir", "\(root)/examples",
-      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
-      "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
-      "--output", "json"
-    ])
-    XCTAssertEqual(corruptRerun.exitCode, .failure)
-    XCTAssertEqual(try String(contentsOf: runtimeSnapshotURL, encoding: .utf8), "not-json")
-    try FileManager.default.removeItem(at: runtimeRecordRoot)
-
     let eventConfig = tempDir.appendingPathComponent("events.json")
     try """
     {
@@ -3258,14 +3262,18 @@ extension WorkflowCommandTests {
     XCTAssertEqual(managerMessage.exitCode, .success, managerMessage.stderr)
     let managerMessageResult = try decodeJSON(ScopedParityCommandResult.self, from: managerMessage.stdout)
     XCTAssertEqual(managerMessageResult.status, "ok")
-    let managerCommunicationId = "graphql-manager-\(runResult.session.sessionId)-1"
+    let managerSnapshot = try SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: tempDir.appendingPathComponent("sessions", isDirectory: true).path)
+    ).load(sessionId: runResult.session.sessionId)
+    let managerMessageRecord = try XCTUnwrap(managerSnapshot.workflowMessages.first {
+      $0.payload["reason"] == .string("test-manager-control")
+    })
+    let managerCommunicationId = managerMessageRecord.communicationId
     XCTAssertTrue(managerMessageResult.records.first?.contains(managerCommunicationId) == true)
-    let managerSnapshotText = try String(contentsOf: runtimeRecordRoot.appendingPathComponent("runtime-snapshot.json"), encoding: .utf8)
-    XCTAssertTrue(managerSnapshotText.contains(managerCommunicationId))
-    XCTAssertTrue(managerSnapshotText.contains(#""kind" : "retry""#))
-    XCTAssertTrue(managerSnapshotText.contains(#""target" : "main-worker""#))
-    XCTAssertTrue(managerSnapshotText.contains(#""reason" : "test-manager-control""#))
-    XCTAssertFalse(managerSnapshotText.contains(#""managerMessage""#))
+    XCTAssertEqual(managerMessageRecord.payload["kind"], .string("retry"))
+    XCTAssertEqual(managerMessageRecord.payload["target"], .string("main-worker"))
+    XCTAssertEqual(managerMessageRecord.payload["reason"], .string("test-manager-control"))
+    XCTAssertNil(managerMessageRecord.payload["managerMessage"])
 
     var secondSession = runResult.session
     secondSession.sessionId = "worker-only-single-step-session-200"
@@ -3275,7 +3283,7 @@ extension WorkflowCommandTests {
       resolution: WorkflowResolutionOptions(workflowName: "worker-only-single-step", scope: .direct, workflowDefinitionDir: "\(root)/examples", workingDirectory: tempDir.path),
       mockScenarioPath: "\(root)/examples/worker-only-single-step/mock-scenario.json"
     ))
-    try FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: tempDir.appendingPathComponent("sessions", isDirectory: true).path)).save(
+    try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: tempDir.appendingPathComponent("sessions", isDirectory: true).path)).save(
       WorkflowRuntimePersistenceProjector.snapshot(session: secondSession)
     )
     let secondManagerMessage = await app.run([
@@ -3312,21 +3320,6 @@ extension WorkflowCommandTests {
     XCTAssertEqual(secondRetry.exitCode, .success, secondRetry.stderr)
     let secondRetryResult = try decodeJSON(ScopedParityCommandResult.self, from: secondRetry.stdout)
     XCTAssertTrue(secondRetryResult.records.first?.contains(secondManagerCommunicationId) == true)
-
-    let corruptRuntimeSnapshot = tempDir
-      .appendingPathComponent("sessions", isDirectory: true)
-      .appendingPathComponent("runtime-records", isDirectory: true)
-      .appendingPathComponent("corrupt-session", isDirectory: true)
-      .appendingPathComponent("runtime-snapshot.json")
-    try FileManager.default.createDirectory(at: corruptRuntimeSnapshot.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try "not-json".write(to: corruptRuntimeSnapshot, atomically: true, encoding: .utf8)
-    let corruptLookup = await app.run([
-      "graphql", "retry-communication", managerCommunicationId,
-      "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
-      "--output", "json"
-    ])
-    XCTAssertEqual(corruptLookup.exitCode, .failure)
-    XCTAssertTrue(corruptLookup.stdout.contains("dataCorrupted") || corruptLookup.stdout.contains("not in the correct format"))
 
     let callRoot = tempDir.appendingPathComponent("call-step-root", isDirectory: true)
     let callWorkflow = callRoot.appendingPathComponent("call-flow", isDirectory: true)
@@ -3382,24 +3375,7 @@ extension WorkflowCommandTests {
       createdOrder: 1,
       createdAt: Date(timeIntervalSince1970: 0)
     )
-    try FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: callSessionStore.path)).save(
-      WorkflowRuntimePersistenceProjector.snapshot(session: callSession, workflowMessages: [preexistingCallMessage])
-    )
-    let callSnapshotURL = callSessionStore
-      .appendingPathComponent("runtime-records", isDirectory: true)
-      .appendingPathComponent(callSession.sessionId, isDirectory: true)
-      .appendingPathComponent("runtime-snapshot.json")
-    try "not-json".write(to: callSnapshotURL, atomically: true, encoding: .utf8)
-    let corruptCall = await app.run([
-      "call-step", "call-flow", "call-flow-run-1", "step-b",
-      "--workflow-definition-dir", callRoot.path,
-      "--session-store", callSessionStore.path,
-      "--message-json", #"{"mode":"direct"}"#,
-      "--output", "json"
-    ])
-    XCTAssertEqual(corruptCall.exitCode, .failure)
-    XCTAssertEqual(try String(contentsOf: callSnapshotURL, encoding: .utf8), "not-json")
-    try FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: callSessionStore.path)).save(
+    try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: callSessionStore.path)).save(
       WorkflowRuntimePersistenceProjector.snapshot(session: callSession, workflowMessages: [preexistingCallMessage])
     )
     let called = await app.run([
@@ -3417,38 +3393,35 @@ extension WorkflowCommandTests {
     XCTAssertEqual(calledResult.session.executions.map(\.stepId), ["step-b"])
     XCTAssertEqual(calledResult.rootOutput?["resumedFromNodeExecId"], .string("previous-exec-1"))
     XCTAssertEqual(calledResult.rootOutput?["promptText"], .string("direct variant"))
-    XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir
-      .appendingPathComponent("call-step-sessions/runtime-records", isDirectory: true)
-      .appendingPathComponent(calledResult.session.sessionId, isDirectory: true)
-      .appendingPathComponent("runtime-snapshot.json").path))
-    let calledSnapshotText = try String(contentsOf: tempDir
-      .appendingPathComponent("call-step-sessions/runtime-records", isDirectory: true)
-      .appendingPathComponent(calledResult.session.sessionId, isDirectory: true)
-      .appendingPathComponent("runtime-snapshot.json"))
-    XCTAssertTrue(calledSnapshotText.contains("directCallPromptVariant"))
-    XCTAssertTrue(calledSnapshotText.contains("previous-exec-1"))
-    let calledSnapshot = try FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: callSessionStore.path))
+    let calledSnapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: callSessionStore.path))
       .load(sessionId: calledResult.session.sessionId)
+    let directCallMessage = try XCTUnwrap(calledSnapshot.workflowMessages.first { $0.payload["directCallPromptVariant"] == .string("direct") })
+    XCTAssertEqual(directCallMessage.payload["directCallPromptVariant"], .string("direct"))
+    XCTAssertEqual(calledSnapshot.rootOutput?["resumedFromNodeExecId"], .string("previous-exec-1"))
     let calledCommunicationIds = calledSnapshot.workflowMessages.map(\.communicationId)
     XCTAssertEqual(Set(calledCommunicationIds).count, calledCommunicationIds.count)
     XCTAssertTrue(calledCommunicationIds.contains("comm-000001"))
     XCTAssertTrue(calledCommunicationIds.contains("comm-000002"))
 
     let workflowCallSessionStore = tempDir.appendingPathComponent("workflow-call-sessions", isDirectory: true)
+    let workflowCallSession = WorkflowSession(
+      workflowId: "call-flow",
+      sessionId: "call-flow-run-2",
+      status: .running,
+      entryStepId: "step-a",
+      currentStepId: "step-b",
+      createdAt: Date(timeIntervalSince1970: 0),
+      updatedAt: Date(timeIntervalSince1970: 0)
+    )
     try CLIWorkflowSessionStore(rootDirectory: workflowCallSessionStore.path).save(PersistedCLIWorkflowSession(
       workflowName: "call-flow",
-      session: WorkflowSession(
-        workflowId: "call-flow",
-        sessionId: "call-flow-run-2",
-        status: .running,
-        entryStepId: "step-a",
-        currentStepId: "step-b",
-        createdAt: Date(timeIntervalSince1970: 0),
-        updatedAt: Date(timeIntervalSince1970: 0)
-      ),
+      session: workflowCallSession,
       resolution: WorkflowResolutionOptions(workflowName: "call-flow", scope: .direct, workflowDefinitionDir: callRoot.path, workingDirectory: tempDir.path),
       mockScenarioPath: callScenario.path
     ))
+    try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: workflowCallSessionStore.path)).save(
+      WorkflowRuntimePersistenceProjector.snapshot(session: workflowCallSession)
+    )
     let workflowCalled = await app.run([
       "workflow-call", "call-flow", "call-flow-run-2", "step-b",
       "--workflow-definition-dir", callRoot.path,
@@ -3460,10 +3433,13 @@ extension WorkflowCommandTests {
     let workflowCalledResult = try decodeJSON(WorkflowRunResult.self, from: workflowCalled.stdout)
     XCTAssertEqual(workflowCalledResult.session.sessionId, "call-flow-run-2")
     XCTAssertEqual(workflowCalledResult.session.executions.map(\.stepId), ["step-b"])
-    XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir
-      .appendingPathComponent("workflow-call-sessions/runtime-records", isDirectory: true)
-      .appendingPathComponent(workflowCalledResult.session.sessionId, isDirectory: true)
-      .appendingPathComponent("runtime-snapshot.json").path))
+    XCTAssertEqual(
+      try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: workflowCallSessionStore.path))
+        .load(sessionId: workflowCalledResult.session.sessionId)
+        .session
+        .sessionId,
+      workflowCalledResult.session.sessionId
+    )
   }
 
   func testScopedPackageIdsInstallListRunPublishUpdateAndRemove() async throws {
@@ -3956,7 +3932,8 @@ extension WorkflowCommandTests {
     provider: String = "telegram",
     text: String,
     eventId: String,
-    receivedAt: String
+    receivedAt: String,
+    attachments: [JSONValue] = []
   ) -> JSONObject {
     [
       "workflowInput": .object([
@@ -3972,7 +3949,8 @@ extension WorkflowCommandTests {
         "receivedAt": .string(receivedAt),
         "input": .object([
           "provider": .string(provider),
-          "text": .string(text)
+          "text": .string(text),
+          "attachments": .array(attachments)
         ]),
         "conversation": .object([
           "id": .string("chat-1"),

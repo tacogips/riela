@@ -27,6 +27,8 @@ riela workflow run chat-memory-raw-and-daily-summary \
 - The workflow completes with `status=completed`.
 - `raw-chat-log.sqlite` and `daily-chat-summary.sqlite` are created under the configured memory root.
 - Each run appends a raw log record to `raw-chat-log`.
+- If the input includes local `attachments`, `files`, or `imagePaths`, Riela copies up to 10 files into `<memoryRoot>/files/<memoryId>/<recordId>/` and returns them from memory search/load as `record.files`.
 - The first run creates one daily summary record in `daily-chat-summary`.
 - Later runs for the same `conversationId` and UTC date update the same daily summary record instead of creating a second daily summary row.
-- The workflow root output includes `rawRecordId`, `summaryRecordId`, `summaryAction`, and `rawRecordCount`.
+- The daily summary payload includes `rawFileCount` and `lastRawFilePaths` when file-backed raw records are present.
+- The workflow root output includes `rawRecordId`, `summaryRecordId`, `summaryAction`, `rawRecordCount`, and `rawFileCount`.

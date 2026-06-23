@@ -129,6 +129,35 @@ final class OfficialSDKAdapterTests: XCTestCase {
     XCTAssertEqual(output.payload["status"], .string("review"))
   }
 
+  func testOpenAIAdapterBuildsResponsesRequestWithImagePaths() async throws {
+    let imageURL = try temporaryImageFile(extension: "png", bytes: Data("image-bytes".utf8))
+    defer { try? FileManager.default.removeItem(at: imageURL.deletingLastPathComponent()) }
+    let executor = RecordingOfficialSDKExecutor(outcomes: [
+      .success(OfficialSDKResponse(body: .object(["output_text": .string("saw image")])))
+    ])
+    let adapter = OpenAiSDKAdapter(
+      configuration: OfficialSDKAdapterConfiguration(
+        apiKeyEnv: "TEST_OPENAI_KEY",
+        environment: ["TEST_OPENAI_KEY": openAITestKey()],
+        requestExecutor: executor
+      )
+    )
+
+    let output = try await adapter.execute(
+      openAIInput(mergedVariables: ["imagePaths": .array([.string(imageURL.path)])]),
+      context: AdapterExecutionContext()
+    )
+
+    XCTAssertEqual(output.payload["text"], .string("saw image"))
+    let request = try XCTUnwrap(executor.requests().first)
+    guard case let .openAIResponses(body) = request.body else {
+      return XCTFail("Expected OpenAI Responses request")
+    }
+    XCTAssertEqual(body.imageInputs, [
+      OpenAIImageInput(mimeType: "image/png", dataBase64: Data("image-bytes".utf8).base64EncodedString())
+    ])
+  }
+
   func testAnthropicAdapterBuildsMessagesRequestAndExtractsTextSegments() async throws {
     let executor = RecordingOfficialSDKExecutor(outcomes: [
       .success(
@@ -358,6 +387,50 @@ final class OfficialSDKAdapterTests: XCTestCase {
     XCTAssertEqual(body["model"], .string("gpt-5"))
     XCTAssertEqual(body["input"], .string("hello"))
     XCTAssertEqual(body["instructions"], .string("system"))
+  }
+
+  func testDefaultOpenAIHTTPExecutorIncludesImageInputs() async throws {
+    let imageURL = try temporaryImageFile(extension: "jpg", bytes: Data("jpg-bytes".utf8))
+    defer { try? FileManager.default.removeItem(at: imageURL.deletingLastPathComponent()) }
+    let transport = RecordingOfficialSDKHTTPTransport(responses: [
+      try httpResponse(["output_text": .string("default image openai")])
+    ])
+    let adapter = OpenAiSDKAdapter(
+      configuration: OfficialSDKAdapterConfiguration(
+        apiKeyEnv: "TEST_OPENAI_KEY",
+        baseURL: URL(string: "https://openai.test/v1"),
+        environment: ["TEST_OPENAI_KEY": openAITestKey()],
+        httpTransport: transport
+      )
+    )
+
+    let output = try await adapter.execute(
+      openAIInput(mergedVariables: ["imagePaths": .array([.string(imageURL.path)])]),
+      context: AdapterExecutionContext()
+    )
+
+    XCTAssertEqual(output.payload["text"], .string("default image openai"))
+    let request = try XCTUnwrap(transport.requests().first)
+    let body = try requestJSONObject(request)
+    XCTAssertEqual(body["model"], .string("gpt-5"))
+    XCTAssertEqual(
+      body["input"],
+      .array([
+        .object([
+          "role": .string("user"),
+          "content": .array([
+            .object([
+              "type": .string("input_text"),
+              "text": .string("hello")
+            ]),
+            .object([
+              "type": .string("input_image"),
+              "image_url": .string("data:image/jpeg;base64,\(Data("jpg-bytes".utf8).base64EncodedString())")
+            ])
+          ])
+        ])
+      ])
+    )
   }
 
   func testDefaultAnthropicHTTPExecutorBuildsMessagesRequestWithoutInjectedRequestExecutor() async throws {
@@ -701,12 +774,14 @@ final class OfficialSDKAdapterTests: XCTestCase {
 
   private func openAIInput(
     systemPromptText: String? = nil,
-    output: NodeOutputContract? = nil
+    output: NodeOutputContract? = nil,
+    mergedVariables: JSONObject = [:]
   ) -> AdapterExecutionInput {
     AdapterExecutionInput(
       node: AgentNodePayload(id: "worker", executionBackend: .officialOpenAISDK, model: "gpt-5", output: output),
       promptText: "hello",
-      systemPromptText: systemPromptText
+      systemPromptText: systemPromptText,
+      mergedVariables: mergedVariables
     )
   }
 
@@ -735,6 +810,15 @@ final class OfficialSDKAdapterTests: XCTestCase {
       node: AgentNodePayload(id: "worker", executionBackend: .officialCursorSDK, model: "composer-2"),
       promptText: "hello"
     )
+  }
+
+  private func temporaryImageFile(extension pathExtension: String, bytes: Data) throws -> URL {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-official-sdk-tests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let url = directory.appendingPathComponent("image.\(pathExtension)")
+    try bytes.write(to: url)
+    return url
   }
 
   private func openAITestKey() -> String {

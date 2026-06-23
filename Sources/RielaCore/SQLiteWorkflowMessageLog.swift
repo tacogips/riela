@@ -36,18 +36,26 @@ public struct SQLiteWorkflowMessageLog: Sendable {
     defer {
       sqlite3_close(db)
     }
-    try ensureSchema(db)
     try execute(db, "BEGIN IMMEDIATE")
     do {
-      try deleteMessages(db, workflowExecutionId: workflowExecutionId)
-      for message in messages {
-        try insertMessage(db, message)
-        try insertPayloadIndexRows(db, message)
-      }
+      try replaceMessages(for: workflowExecutionId, with: messages, in: db)
       try execute(db, "COMMIT")
     } catch {
       try? execute(db, "ROLLBACK")
       throw error
+    }
+  }
+
+  func replaceMessages(
+    for workflowExecutionId: String,
+    with messages: [WorkflowMessageRecord],
+    in db: OpaquePointer?
+  ) throws {
+    try ensureSchema(db)
+    try deleteMessages(db, workflowExecutionId: workflowExecutionId)
+    for message in messages {
+      try insertMessage(db, message)
+      try insertPayloadIndexRows(db, message)
     }
   }
 

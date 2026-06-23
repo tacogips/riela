@@ -12,7 +12,13 @@
       "purpose": "Retain complete chat event facts for audit and later summarization.",
       "dataSchema": {
         "type": "object",
-        "required": ["provider", "conversationId", "text", "receivedAt"]
+        "required": ["provider", "conversationId", "text", "receivedAt"],
+        "properties": {
+          "files": {
+            "type": "array",
+            "description": "Stored file references copied into the memory root. Supports image, video, audio, PDF, text, and generic files."
+          }
+        }
       },
       "scope": "workflow",
       "defaultLimit": 50
@@ -23,7 +29,17 @@
       "purpose": "Give workflow nodes compact daily chat context without loading all raw logs.",
       "dataSchema": {
         "type": "object",
-        "required": ["date", "conversationId", "summary", "rawRecordCount", "updatedAt"]
+        "required": ["date", "conversationId", "summary", "rawRecordCount", "updatedAt"],
+        "properties": {
+          "rawFileCount": {
+            "type": "integer",
+            "description": "Total number of files seen in raw records summarized by this daily row."
+          },
+          "lastRawFilePaths": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
       },
       "scope": "workflow",
       "defaultLimit": 10

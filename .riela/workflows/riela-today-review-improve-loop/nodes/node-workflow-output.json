@@ -1,0 +1,16 @@
+{
+  "id": "workflow-output",
+  "nodeType": "command",
+  "description": "Summarize the review and verification loop output.",
+  "command": {
+    "executable": "/usr/bin/env",
+    "argvTemplate": [
+      "sh",
+      ".riela/workflows/riela-today-review-improve-loop/scripts/review-today-changes.sh",
+      "summary"
+    ]
+  },
+  "output": {
+    "description": "JSON summary of accepted status and remaining actions."
+  }
+}

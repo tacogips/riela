@@ -83,6 +83,7 @@ public struct MemoryCommandRunner: Sendable {
       registeredAt: options.registeredAt,
       tags: options.tags,
       relatedRecordIds: options.relatedRecordIds,
+      files: memoryFileReferences(options),
       payload: payload
     )
     let result = MemorySaveCommandResult(
@@ -111,6 +112,7 @@ public struct MemoryCommandRunner: Sendable {
       nodeId: options.nodeId,
       tags: options.tags,
       relatedRecordIds: options.relatedRecordIds,
+      files: memoryUpdateFileReferences(options),
       payload: payload
     )
     let result = MemoryUpdateCommandResult(
@@ -239,6 +241,21 @@ public struct MemoryCommandRunner: Sendable {
       return try decodePayload(string)
     }
     throw CLIUsageError("memory command requires --payload-json or --payload-file")
+  }
+
+  private func memoryFileReferences(_ options: MemoryCommandOptions) -> [MemoryFileReference] {
+    options.filePaths.map { path in
+      let url = absoluteURL(path, relativeTo: URL(fileURLWithPath: options.workingDirectory, isDirectory: true))
+      return MemoryFileReference(path: url.path)
+    }
+  }
+
+  private func memoryUpdateFileReferences(_ options: MemoryCommandOptions) -> [MemoryFileReference]? {
+    if options.clearFiles {
+      return []
+    }
+    let references = memoryFileReferences(options)
+    return references.isEmpty ? nil : references
   }
 
   private func decodePayload(_ json: String) throws -> MemoryJSONValue {

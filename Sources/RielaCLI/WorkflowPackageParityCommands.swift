@@ -219,15 +219,15 @@ public struct WorkflowPackageCommandRunner: Sendable {
       adapter: adapter,
       stdioNodeExecutor: LocalWorkflowStdioNodeExecutor()
     ).run(DeterministicWorkflowRunRequest(workflow: bundle.workflow, nodePayloads: bundle.nodePayloads, variables: variables))
-    try CLIWorkflowSessionStore(rootDirectory: storeRoot).save(PersistedCLIWorkflowSession(
-      workflowName: workflowDirectory.lastPathComponent,
-      session: result.session,
-      resolution: persistedResolution,
-      mockScenarioPath: parsed.mockScenarioPath
-    ))
     let workflowMessages = try await runtimeStore.listMessages(for: result.session.sessionId, toStepId: nil)
-    try FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot)).save(
-      WorkflowRuntimePersistenceProjector.snapshot(session: result.session, workflowMessages: workflowMessages)
+    try CLIWorkflowSessionStore(rootDirectory: storeRoot).save(
+      PersistedCLIWorkflowSession(
+        workflowName: workflowDirectory.lastPathComponent,
+        session: result.session,
+        resolution: persistedResolution,
+        mockScenarioPath: parsed.mockScenarioPath
+      ),
+      runtimeSnapshot: WorkflowRuntimePersistenceProjector.snapshot(session: result.session, workflowMessages: workflowMessages)
     )
     let packageResult = WorkflowPackageCommandResult(
       scope: command.options.scope,

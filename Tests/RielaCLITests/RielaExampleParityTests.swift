@@ -29,6 +29,7 @@ final class RielaExampleParityTests: XCTestCase {
     static let chatMemoryRawAndDailySummaryWorkflowName = "chat-memory-raw-and-daily-summary"
     static let supervisedMockRetryWorkflowName = "supervised-mock-retry"
     static let discordAgentTrioChatWorkflowName = "discord-agent-trio-chat"
+    static let matrixAgentTrioChatWorkflowName = "matrix-agent-trio-chat"
     static let telegramAgentTrioChatWorkflowName = "telegram-agent-trio-chat"
     static let telegramSDKTrioChatWorkflowName = "telegram-sdk-trio-chat"
   }
@@ -380,7 +381,7 @@ final class RielaExampleParityTests: XCTestCase {
     XCTAssertNil(payload.rootOutput)
   }
 
-  func testTelegramAndDiscordTrioChatMemoryReadsAndWrites() async throws {
+  func testTelegramDiscordAndMatrixTrioChatMemoryReadsAndWrites() async throws {
     let root = repositoryRoot()
     let examplesRoot = root.appendingPathComponent(ExampleCatalog.directoryName, isDirectory: true)
     let tempDir = root.appendingPathComponent("tmp/test-trio-chat-memory-regression-\(UUID().uuidString)", isDirectory: true)
@@ -390,7 +391,8 @@ final class RielaExampleParityTests: XCTestCase {
     try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
     let cases = [
       (WorkflowIds.telegramAgentTrioChatWorkflowName, "telegram", "Telegram seeded Yui memory"),
-      (WorkflowIds.discordAgentTrioChatWorkflowName, "discord", "Discord seeded Yui memory")
+      (WorkflowIds.discordAgentTrioChatWorkflowName, "discord", "Discord seeded Yui memory"),
+      (WorkflowIds.matrixAgentTrioChatWorkflowName, "matrix", "Matrix seeded Yui memory")
     ]
     let app = RielaCLIApplication()
     let decoder = JSONDecoder()
@@ -444,7 +446,7 @@ final class RielaExampleParityTests: XCTestCase {
         payload.session.executions.first { $0.stepId == "read-yui-memory" }?.acceptedOutput?.payload,
         workflowName
       )
-      XCTAssertEqual(jsonNumber(readYuiMemory["memoryFileCountRead"]), 1, workflowName)
+      XCTAssertEqual(jsonNumber(readYuiMemory["memoryRecordCount"]), 1, workflowName)
       XCTAssertTrue(jsonString(readYuiMemory["memoryMarkdown"])?.contains(seededMemory) == true, workflowName)
       let writeYuiMemory = try XCTUnwrap(
         payload.session.executions.first { $0.stepId == "write-yui-memory" }?.acceptedOutput?.payload,
@@ -590,6 +592,70 @@ final class RielaExampleParityTests: XCTestCase {
     let scoped = try JSONDecoder().decode(ScopedParityCommandResult.self, from: Data(result.stdout.utf8))
     XCTAssertEqual(scoped.status, "ok")
     XCTAssertTrue(scoped.records.contains("status=dry-run"), scoped.records.joined(separator: "\n"))
+  }
+
+  func testTelegramGatewayPhotoFixtureMatchesEventBindingAndPreservesAttachmentMetadata() async throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-telegram-photo-event-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    let eventRoot = tempDir.appendingPathComponent("events", isDirectory: true)
+    let sourcesRoot = eventRoot.appendingPathComponent("sources", isDirectory: true)
+    let bindingsRoot = eventRoot.appendingPathComponent("bindings", isDirectory: true)
+    try FileManager.default.createDirectory(at: sourcesRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: bindingsRoot, withIntermediateDirectories: true)
+    try """
+    {
+      "id": "telegram-gateway-personas",
+      "kind": "telegram-gateway",
+      "provider": "telegram"
+    }
+    """.write(to: sourcesRoot.appendingPathComponent("telegram-gateway-personas.json"), atomically: true, encoding: .utf8)
+    try """
+    {
+      "id": "telegram-gateway-personas-to-workflow",
+      "sourceId": "telegram-gateway-personas",
+      "match": {
+        "eventType": "chat.message"
+      },
+      "workflowName": "telegram-agent-trio-chat",
+      "inputMapping": {"mode": "event-input"}
+    }
+    """.write(
+      to: bindingsRoot.appendingPathComponent("telegram-gateway-personas-to-workflow.json"),
+      atomically: true,
+      encoding: .utf8
+    )
+    let eventFile = repositoryRoot()
+      .appendingPathComponent("examples/event-sources/payloads/telegram-gateway-photo-message.json")
+    let result = await RielaCLIApplication().run([
+      "events", "emit", "telegram-gateway-personas",
+      "--event-root", eventRoot.path,
+      "--event-file", eventFile.path,
+      "--output", "json"
+    ])
+
+    XCTAssertEqual(result.exitCode, .success, result.stderr)
+    let scoped = try JSONDecoder().decode(ScopedParityCommandResult.self, from: Data(result.stdout.utf8))
+    XCTAssertEqual(scoped.status, "ok")
+    XCTAssertTrue(scoped.records.contains("status=dry-run"), scoped.records.joined(separator: "\n"))
+    let receiptURL = try XCTUnwrap(
+      FileManager.default.enumerator(at: eventRoot.appendingPathComponent("receipts"), includingPropertiesForKeys: nil)?
+        .compactMap { $0 as? URL }
+        .first { $0.pathExtension == "json" }
+    )
+    let receipt = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: receiptURL))
+    let receiptObject = try XCTUnwrap(jsonObject(receipt))
+    let envelope = try XCTUnwrap(jsonObject(receiptObject["envelope"]))
+    let input = try XCTUnwrap(jsonObject(envelope["input"]))
+    XCTAssertEqual(input["text"], .string("Yui, summarize this image and ask Mika too."))
+    XCTAssertEqual(input["attachmentText"], .string("Yui, summarize this image and ask Mika too."))
+    let attachments = try XCTUnwrap(jsonArray(input["attachments"]))
+    let attachment = try XCTUnwrap(jsonObject(attachments.first))
+    XCTAssertEqual(attachment["kind"], .string("photo"))
+    XCTAssertEqual(attachment["provider"], .string("telegram"))
+    XCTAssertEqual(attachment["fileId"], .string("telegram-large-photo"))
+    XCTAssertEqual(attachment["width"], .number(1280))
+    XCTAssertEqual(attachment["height"], .number(720))
   }
 
   private func rielaExampleWorkflowNames() -> [String] {

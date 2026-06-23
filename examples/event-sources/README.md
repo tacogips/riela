@@ -87,10 +87,10 @@ workflow and sends workflow replies through the explicit
 `release-matrix-chat` chat destination. The binding
 `matrix-agent-trio-to-workflow` runs `matrix-agent-trio-chat` for the
 `!persona:matrix.example` room and sends Yui, Mika, or Rina replies through
-`matrix-persona-replies`. The trio workflow stores only per-persona local
-markdown memory under `workflowInput.memoryRoot`, `RIELA_TRIO_MEMORY_ROOT`, or
-the fallback `/tmp/riflow-tribot`; this is separate from Matrix event
-history and remains outside the repository. Matrix support currently
+`matrix-persona-replies`. The trio workflow stores only per-persona records in
+the `persona-chat-memory` SQLite database under `workflowInput.memoryRoot`,
+`RIELA_MEMORY_ROOT`, or the default Riela memory root; this is separate from
+Matrix event history and remains outside the repository. Matrix support currently
 handles text-like `m.room.message` events from configured rooms, optional
 bounded text-compatible attachment downloads, and Matrix Client-Server room
 sends; encrypted rooms, encrypted attachments, binary OCR, audio/video
@@ -196,9 +196,8 @@ Mika Trend, and Rina Cursor are routed as separate named personas by
 `riela/chat-persona-router`. Use
 `examples/discord-agent-trio-chat/assets/icons/` as the Discord application icon
 source files for the three bot applications. Each trio persona also has its own
-local markdown memory. Set `RIELA_TRIO_MEMORY_ROOT` for served examples, or pass
-`workflowInput.memoryRoot` for a single run; the fallback example root is
-`/tmp/riflow-tribot`, outside the repository.
+records in the `persona-chat-memory` SQLite database. Set `RIELA_MEMORY_ROOT`
+for served examples, or pass `workflowInput.memoryRoot` for a single run.
 
 Serve the Discord source with env-var references only:
 
@@ -274,10 +273,10 @@ path and does not require an external Chat SDK Telegram deployment. The Gateway
 runner polls Telegram `getUpdates`, filters to configured chats when `chats` is
 set, ignores bot and self messages by default, attaches bounded persisted chat
 history to `event.input.payload.history`, and sends workflow replies through
-Telegram `sendMessage`. The paired trio workflow uses the same per-persona local
-markdown memory as the Discord trio; set `RIELA_TRIO_MEMORY_ROOT` for served
-examples or use `workflowInput.memoryRoot` for one run. The default example
-root is `/tmp/riflow-tribot`.
+Telegram `sendMessage`. The paired trio workflow uses the same per-persona
+`persona-chat-memory` SQLite database as the Discord trio; set
+`RIELA_MEMORY_ROOT` for served examples or use `workflowInput.memoryRoot` for
+one run.
 
 Serve the Gateway source with a Telegram bot token and bot id. Add the bot to
 the configured Telegram chat before serving:

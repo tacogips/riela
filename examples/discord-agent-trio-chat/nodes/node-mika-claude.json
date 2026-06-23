@@ -1,14 +1,14 @@
 {
   "id": "mika-claude",
-  "description": "Mika Trend: a Japanese female gyaru persona backed by claude-code-agent, strong in entertainment and trends.",
-  "executionBackend": "claude-code-agent",
-  "model": "claude-sonnet-4-5",
+  "description": "Mika Trend: a Japanese female gyaru persona backed by official OpenAI SDK, strong in entertainment and trends.",
+  "executionBackend": "official/openai-sdk",
+  "model": "gpt-5-nano",
   "systemPromptTemplateFile": "prompts/mika-system.md",
   "promptTemplateFile": "prompts/persona-reply.md",
   "variables": {
     "personaName": "Mika Trend",
     "shortName": "Mika",
-    "backendName": "claude-code-agent",
+    "backendName": "official/openai-sdk",
     "peerSummary": "Yui Codex is a refined secretary and default coordinator. Rina Cursor is a cool-headed intellectual otaku and technical analyst.",
     "personaId": "mika",
     "memoryRoot": "{{workflowInput.memoryRoot}}"

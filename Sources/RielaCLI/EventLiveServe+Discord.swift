@@ -7,6 +7,7 @@ import RielaEvents
 
 protocol DiscordGatewayAPI: Sendable {
   func getMessages(request: DiscordGetMessagesRequest) async throws -> [DiscordMessage]
+  func downloadAttachment(request: DiscordDownloadAttachmentRequest) async throws -> Data
   func sendMessage(request: DiscordSendMessageRequest) async throws
 }
 
@@ -40,7 +41,16 @@ extension DefaultEventLiveServer {
       for message in messages.sorted(by: { $0.sortKey < $1.sortKey }) {
         observedMessages += 1
         try offsetStore.saveLastMessageId(message.id)
-        guard let envelope = source.envelope(from: message, eventRoot: eventRoot) else {
+        let resolvedAttachments = try await resolveDiscordAttachments(
+          source: source,
+          message: message,
+          eventRoot: eventRoot
+        )
+        guard let envelope = source.envelope(
+          from: message,
+          eventRoot: eventRoot,
+          resolvedAttachments: resolvedAttachments
+        ) else {
           continue
         }
         let triggerResult = await DeterministicEventDryRunTrigger().dryRun(EventDryRunRequest(
@@ -74,6 +84,57 @@ extension DefaultEventLiveServer {
       }
     }
     return observedMessages
+  }
+
+  private func resolveDiscordAttachments(
+    source: DiscordGatewaySource,
+    message: DiscordMessage,
+    eventRoot: URL
+  ) async throws -> EventResolvedAttachmentInputs {
+    guard source.attachments.includeImages else {
+      return .empty
+    }
+    var descriptors: [JSONObject] = []
+    var imagePaths: [String] = []
+    for attachment in message.attachments where attachment.isImage {
+      if let maxBytes = source.attachments.maxBytes, let size = attachment.size, size > maxBytes {
+        continue
+      }
+      var descriptor = attachment.normalizedDescriptor
+      if source.attachments.resolveFilePaths, let url = attachment.url {
+        let data = try await discordAPI.downloadAttachment(request: DiscordDownloadAttachmentRequest(url: url))
+        if let maxBytes = source.attachments.maxBytes, data.count > maxBytes {
+          continue
+        }
+        let localURL = discordAttachmentURL(eventRoot: eventRoot, source: source, message: message, attachment: attachment)
+        try FileManager.default.createDirectory(at: localURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: localURL, options: .atomic)
+        descriptor["path"] = .string(localURL.path)
+        imagePaths.append(localURL.path)
+      }
+      descriptors.append(descriptor)
+    }
+    return EventResolvedAttachmentInputs(
+      attachments: descriptors,
+      imagePaths: imagePaths,
+      attachmentText: ""
+    )
+  }
+
+  private func discordAttachmentURL(
+    eventRoot: URL,
+    source: DiscordGatewaySource,
+    message: DiscordMessage,
+    attachment: DiscordAttachment
+  ) -> URL {
+    eventRoot
+      .appendingPathComponent("attachments", isDirectory: true)
+      .appendingPathComponent("discord", isDirectory: true)
+      .appendingPathComponent(safeDiscordStorageComponent(source.id), isDirectory: true)
+      .appendingPathComponent(safeDiscordStorageComponent(message.channelId), isDirectory: true)
+      .appendingPathComponent(
+        "\(safeDiscordStorageComponent(message.id))-\(safeDiscordStorageComponent(attachment.id))-\(safeDiscordStorageComponent(attachment.filename))"
+      )
   }
 
   private func dispatchDiscordReplies(
@@ -194,9 +255,9 @@ struct DiscordGatewaySource: Decodable, Equatable, Sendable {
   }
 
   func channelIds(environment: [String: String]) -> [String] {
-    let overrides = ["RIELA_DISCORD_CHANNEL_ID", "RIEL_DISCORD_CHANNEL_ID"].compactMap {
-      environment[$0]?.trimmingCharacters(in: .whitespacesAndNewlines)
-    }.filter { !$0.isEmpty }
+    let overrides = environment["RIELA_DISCORD_CHANNEL_ID"]
+      .map { [$0.trimmingCharacters(in: .whitespacesAndNewlines)] }?
+      .filter { !$0.isEmpty } ?? []
     if !overrides.isEmpty {
       return Array(Set(overrides)).sorted()
     }
@@ -212,9 +273,13 @@ struct DiscordGatewaySource: Decodable, Equatable, Sendable {
     return discordEnvironmentValue(tokenEnv, environment: environment)
   }
 
-  func envelope(from message: DiscordMessage, eventRoot: URL) -> ExternalEventEnvelope? {
+  func envelope(
+    from message: DiscordMessage,
+    eventRoot: URL,
+    resolvedAttachments: EventResolvedAttachmentInputs = .empty
+  ) -> ExternalEventEnvelope? {
     guard isAllowed(message: message),
-      !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !message.attachments.isEmpty
+      !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !resolvedAttachments.attachments.isEmpty
     else {
       return nil
     }
@@ -241,9 +306,9 @@ struct DiscordGatewaySource: Decodable, Equatable, Sendable {
         "provider": .string("discord"),
         "history": .array(DiscordConversationHistoryStore(eventRoot: eventRoot, source: self).loadHistory(message: message).map(JSONValue.object)),
         "historySource": .string("chat-memory"),
-        "attachments": .array(message.attachments.map { .object($0.normalizedDescriptor) }),
-        "imagePaths": .array([]),
-        "attachmentText": .string(""),
+        "attachments": .array(resolvedAttachments.attachments.map { .object($0) }),
+        "imagePaths": .array(resolvedAttachments.imagePaths.map { .string($0) }),
+        "attachmentText": .string(resolvedAttachments.attachmentText),
         "eventDataRoot": .string(eventRoot.path)
       ]
     )
@@ -325,6 +390,10 @@ struct DiscordSendMessageRequest: Equatable, Sendable {
   var token: String
   var channelId: String
   var text: String
+}
+
+struct DiscordDownloadAttachmentRequest: Equatable, Sendable {
+  var url: String
 }
 
 struct DiscordMessage: Decodable, Equatable, Sendable {
@@ -418,6 +487,14 @@ struct DiscordAttachment: Decodable, Equatable, Sendable {
     ])
   }
 
+  var isImage: Bool {
+    if contentType?.lowercased().hasPrefix("image/") == true {
+      return true
+    }
+    let imageExtensions: Set<String> = ["gif", "heic", "jpeg", "jpg", "png", "webp"]
+    return imageExtensions.contains(URL(fileURLWithPath: filename).pathExtension.lowercased())
+  }
+
   private enum CodingKeys: String, CodingKey {
     case id
     case filename
@@ -469,6 +546,15 @@ struct URLSessionDiscordGatewayAPI: DiscordGatewayAPI {
     urlRequest.httpBody = try JSONEncoder().encode(DiscordCreateMessageBody(content: request.text))
     let (data, response) = try await URLSession.shared.data(for: urlRequest)
     try validateDiscordHTTPResponse(response, data: data, operation: "create message")
+  }
+
+  func downloadAttachment(request: DiscordDownloadAttachmentRequest) async throws -> Data {
+    guard let url = URL(string: request.url) else {
+      throw CLIUsageError("failed to build Discord attachment URL")
+    }
+    let (data, response) = try await URLSession.shared.data(from: url)
+    try validateDiscordHTTPResponse(response, data: data, operation: "download attachment")
+    return data
   }
 
   private func validateDiscordHTTPResponse(_ response: URLResponse, data: Data, operation: String) throws {
@@ -579,12 +665,12 @@ private struct DiscordConversationHistoryStore {
 }
 
 private func discordEnvironmentValue(_ name: String, environment: [String: String]) -> String? {
-  let candidates = name.hasPrefix("RIELA_")
-    ? [name, "RIEL_" + name.dropFirst("RIELA_".count)]
-    : [name]
-  return candidates.lazy.compactMap { candidate in
-    environment[String(candidate)]?.trimmingCharacters(in: .whitespacesAndNewlines)
-  }.first { !$0.isEmpty }
+  guard let value = environment[name]?.trimmingCharacters(in: .whitespacesAndNewlines),
+    !value.isEmpty
+  else {
+    return nil
+  }
+  return value
 }
 
 private func safeDiscordStorageComponent(_ value: String) -> String {

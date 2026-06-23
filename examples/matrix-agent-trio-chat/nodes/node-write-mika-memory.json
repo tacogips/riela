@@ -1,16 +1,16 @@
 {
   "id": "write-mika-memory",
-  "description": "Persist Mika Trend memory entries proposed by the persona and pass through reply/handoff flags.",
-  "nodeType": "command",
-  "variables": {},
-  "command": {
-    "scriptPath": "scripts/write-persona-memory.sh",
-    "envTemplate": {
-      "RIELA_TRIO_MEMORY_PERSONA_ID": "mika",
-      "RIELA_TRIO_MEMORY_PERSONA_NAME": "Mika Trend"
+  "addon": {
+    "name": "riela/chat-persona-memory-write",
+    "version": "1",
+    "config": {
+      "personaId": "mika",
+      "personaName": "Mika Trend",
+      "memoryId": "persona-chat-memory"
     }
   },
+  "memories": [{"id": "persona-chat-memory", "purpose": "persist Mika Trend memory entries"}],
   "output": {
-    "description": "Return Mika Trend replyText and handoff flags after writing any memoryEntries."
+    "description": "Persist Mika Trend memory entries and pass through reply/handoff flags."
   }
 }

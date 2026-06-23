@@ -1,204 +1,6 @@
 import Foundation
 import SQLite3
 
-public enum RielaMemoryError: Error, Equatable, Sendable {
-  case invalidMemoryId(String)
-  case invalidWorkflowId(String)
-  case invalidLimit(Int)
-  case invalidPattern(String)
-  case invalidOffset(Int)
-  case tooManyTags(Int)
-  case duplicateTag(String)
-  case tooManyRelatedRecordIds(Int)
-  case duplicateRelatedRecordId(Int64)
-  case invalidRelatedRecordId(Int64)
-  case missingRelatedRecordId(Int64)
-  case missingRecordId(Int64)
-  case openFailed(String)
-  case sqliteFailed(String)
-  case jsonBUnavailable
-  case invalidJSON(String)
-}
-
-public enum MemoryValueSortOrder: String, Codable, Equatable, Sendable {
-  case valueAsc = "value-asc"
-  case valueDesc = "value-desc"
-}
-
-public enum MemorySortOrder: String, Codable, Equatable, Sendable {
-  case registeredDesc = "registered-desc"
-  case registeredAsc = "registered-asc"
-}
-
-public enum MemoryJSONValue: Codable, Equatable, Sendable {
-  case null
-  case bool(Bool)
-  case number(Double)
-  case string(String)
-  case array([MemoryJSONValue])
-  case object([String: MemoryJSONValue])
-
-  public init(from decoder: Decoder) throws {
-    let container = try decoder.singleValueContainer()
-    if container.decodeNil() {
-      self = .null
-    } else if let value = try? container.decode(Bool.self) {
-      self = .bool(value)
-    } else if let value = try? container.decode(Double.self) {
-      self = .number(value)
-    } else if let value = try? container.decode(String.self) {
-      self = .string(value)
-    } else if let value = try? container.decode([MemoryJSONValue].self) {
-      self = .array(value)
-    } else {
-      self = .object(try container.decode([String: MemoryJSONValue].self))
-    }
-  }
-
-  public func encode(to encoder: Encoder) throws {
-    var container = encoder.singleValueContainer()
-    switch self {
-    case .null:
-      try container.encodeNil()
-    case let .bool(value):
-      try container.encode(value)
-    case let .number(value):
-      try container.encode(value)
-    case let .string(value):
-      try container.encode(value)
-    case let .array(value):
-      try container.encode(value)
-    case let .object(value):
-      try container.encode(value)
-    }
-  }
-}
-
-public struct MemoryRecord: Codable, Equatable, Sendable {
-  public var recordId: Int64
-  public var memoryId: String
-  public var workflowId: String
-  public var nodeId: String?
-  public var registeredAt: String
-  public var tags: [String]
-  public var relatedRecordIds: [Int64]
-  public var payload: MemoryJSONValue
-
-  public init(
-    recordId: Int64,
-    memoryId: String,
-    workflowId: String,
-    nodeId: String? = nil,
-    registeredAt: String,
-    tags: [String] = [],
-    relatedRecordIds: [Int64] = [],
-    payload: MemoryJSONValue
-  ) {
-    self.recordId = recordId
-    self.memoryId = memoryId
-    self.workflowId = workflowId
-    self.nodeId = nodeId
-    self.registeredAt = registeredAt
-    self.tags = tags
-    self.relatedRecordIds = relatedRecordIds
-    self.payload = payload
-  }
-}
-
-public struct MemoryMetadata: Codable, Equatable, Sendable {
-  public var memoryId: String
-  public var description: String?
-  public var purpose: String?
-  public var dataSchema: MemoryJSONValue?
-  public var updatedAt: String
-
-  public init(
-    memoryId: String,
-    description: String? = nil,
-    purpose: String? = nil,
-    dataSchema: MemoryJSONValue? = nil,
-    updatedAt: String
-  ) {
-    self.memoryId = memoryId
-    self.description = description
-    self.purpose = purpose
-    self.dataSchema = dataSchema
-    self.updatedAt = updatedAt
-  }
-}
-
-public struct MemoryRecordReference: Codable, Equatable, Sendable {
-  public var referenceId: Int64
-  public var memoryId: String
-  public var recordId: Int64
-  public var referencedAt: String
-
-  public init(referenceId: Int64, memoryId: String, recordId: Int64, referencedAt: String) {
-    self.referenceId = referenceId
-    self.memoryId = memoryId
-    self.recordId = recordId
-    self.referencedAt = referencedAt
-  }
-}
-
-public struct MemorySearchOptions: Equatable, Sendable {
-  public static let defaultMaxPayloadBytes = 1_000_000
-
-  public var workflowId: String
-  public var includeAllWorkflows: Bool
-  public var nodeId: String?
-  public var matchPatterns: [String]
-  public var tags: [String]
-  public var relatedRecordIds: [Int64]
-  public var sortOrder: MemorySortOrder
-  public var limit: Int
-  public var maxPayloadBytes: Int
-
-  public init(
-    workflowId: String,
-    includeAllWorkflows: Bool = false,
-    nodeId: String? = nil,
-    matchPatterns: [String] = [],
-    tags: [String] = [],
-    relatedRecordIds: [Int64] = [],
-    sortOrder: MemorySortOrder = .registeredDesc,
-    limit: Int = 30,
-    maxPayloadBytes: Int = MemorySearchOptions.defaultMaxPayloadBytes
-  ) {
-    self.workflowId = workflowId
-    self.includeAllWorkflows = includeAllWorkflows
-    self.nodeId = nodeId
-    self.matchPatterns = matchPatterns
-    self.tags = tags
-    self.relatedRecordIds = relatedRecordIds
-    self.sortOrder = sortOrder
-    self.limit = limit
-    self.maxPayloadBytes = maxPayloadBytes
-  }
-}
-
-public struct MemoryValueListOptions: Equatable, Sendable {
-  public var workflowId: String?
-  public var includeAllWorkflows: Bool
-  public var sortOrder: MemoryValueSortOrder
-  public var limit: Int
-  public var offset: Int
-
-  public init(
-    workflowId: String? = nil,
-    includeAllWorkflows: Bool = false,
-    sortOrder: MemoryValueSortOrder = .valueAsc,
-    limit: Int = 30,
-    offset: Int = 0
-  ) {
-    self.workflowId = workflowId
-    self.includeAllWorkflows = includeAllWorkflows
-    self.sortOrder = sortOrder
-    self.limit = limit
-    self.offset = offset
-  }
-}
-
 public struct RielaMemoryStore: Sendable {
   public var rootDirectory: String
 
@@ -227,12 +29,14 @@ public struct RielaMemoryStore: Sendable {
     registeredAt: String? = nil,
     tags: [String] = [],
     relatedRecordIds: [Int64] = [],
+    files: [MemoryFileReference] = [],
     payload: MemoryJSONValue
   ) throws -> MemoryRecord {
     try validateMemoryId(memoryId)
     try validateWorkflowId(workflowId)
     try validateTags(tags)
     try validateRelatedRecordIds(relatedRecordIds)
+    try validateFiles(files)
     let storedRegisteredAt: String
     if let providedRegisteredAt = registeredAt?.trimmingCharacters(in: .whitespacesAndNewlines),
       !providedRegisteredAt.isEmpty {
@@ -249,6 +53,15 @@ public struct RielaMemoryStore: Sendable {
       sqlite3_close(db)
     }
     try ensureSchema(db)
+    var copiedPaths: [String] = []
+    try execute(db, "BEGIN IMMEDIATE")
+    var committed = false
+    defer {
+      if !committed {
+        try? execute(db, "ROLLBACK")
+        removeCopiedFiles(copiedPaths)
+      }
+    }
     try validateRelatedRecordIdsExist(relatedRecordIds, db: db)
     try execute(
       db,
@@ -266,6 +79,10 @@ public struct RielaMemoryStore: Sendable {
       ]
     )
     let recordId = sqlite3_last_insert_rowid(db)
+    let storedFiles = try storeFiles(files, memoryId: memoryId, recordId: recordId, copiedPaths: &copiedPaths)
+    _ = try replaceFiles(storedFiles, recordId: recordId, db: db)
+    try execute(db, "COMMIT")
+    committed = true
     return MemoryRecord(
       recordId: recordId,
       memoryId: memoryId,
@@ -274,6 +91,7 @@ public struct RielaMemoryStore: Sendable {
       registeredAt: storedRegisteredAt,
       tags: tags,
       relatedRecordIds: relatedRecordIds,
+      files: storedFiles,
       payload: payload
     )
   }
@@ -286,6 +104,7 @@ public struct RielaMemoryStore: Sendable {
     nodeId: String? = nil,
     tags: [String] = [],
     relatedRecordIds: [Int64] = [],
+    files: [MemoryFileReference]? = nil,
     payload: MemoryJSONValue
   ) throws -> MemoryRecord {
     try validateMemoryId(memoryId)
@@ -297,6 +116,7 @@ public struct RielaMemoryStore: Sendable {
     }
     try validateTags(tags)
     try validateRelatedRecordIds(relatedRecordIds)
+    try validateFiles(files)
     let payloadJSON = try encodedJSONString(payload)
     let tagsJSON = try encodedJSONString(tags)
     let relatedRecordIdsJSON = try encodedJSONString(relatedRecordIds)
@@ -306,6 +126,16 @@ public struct RielaMemoryStore: Sendable {
       sqlite3_close(db)
     }
     try ensureSchema(db)
+    var copiedPaths: [String] = []
+    var replacedFilePaths: [String] = []
+    try execute(db, "BEGIN IMMEDIATE")
+    var committed = false
+    defer {
+      if !committed {
+        try? execute(db, "ROLLBACK")
+        removeCopiedFiles(copiedPaths)
+      }
+    }
     try validateRelatedRecordIdsExist(relatedRecordIds, db: db)
     var sql = """
       UPDATE memory_entries
@@ -332,6 +162,13 @@ public struct RielaMemoryStore: Sendable {
     guard sqlite3_changes(db) > 0 else {
       throw RielaMemoryError.missingRecordId(recordId)
     }
+    if let files {
+      let storedFiles = try storeFiles(files, memoryId: memoryId, recordId: recordId, copiedPaths: &copiedPaths)
+      replacedFilePaths = try replaceFiles(storedFiles, recordId: recordId, db: db)
+    }
+    try execute(db, "COMMIT")
+    committed = true
+    removeStoredFiles(replacedFilePaths)
     return try record(memoryId: memoryId, recordId: recordId, db: db)
   }
 
@@ -681,6 +518,25 @@ public struct RielaMemoryStore: Sendable {
       db,
       "CREATE INDEX IF NOT EXISTS idx_memory_entry_references_record ON memory_entry_references (record_id, referenced_at DESC, reference_id DESC)"
     )
+    try execute(
+      db,
+      """
+      CREATE TABLE IF NOT EXISTS memory_files (
+        file_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        record_id INTEGER NOT NULL,
+        path TEXT NOT NULL,
+        media_type TEXT,
+        kind TEXT,
+        name TEXT,
+        size_bytes INTEGER,
+        created_at TEXT NOT NULL
+      )
+      """
+    )
+    try execute(
+      db,
+      "CREATE INDEX IF NOT EXISTS idx_memory_files_record ON memory_files (record_id, file_id ASC)"
+    )
     try execute(db, "PRAGMA user_version = \(currentSchemaVersion)")
     try execute(db, "COMMIT")
     committed = true
@@ -775,6 +631,7 @@ public struct RielaMemoryStore: Sendable {
       registeredAt: registeredAt,
       tags: tags,
       relatedRecordIds: relatedRecordIds,
+      files: try memoryFiles(recordId: recordId, db: row.db),
       payload: payload
     )
   }
@@ -863,6 +720,26 @@ public struct RielaMemoryStore: Sendable {
     }
   }
 
+  private func validateFiles(_ files: [MemoryFileReference]?) throws {
+    guard let files else {
+      return
+    }
+    guard files.count <= maximumMemoryFiles else {
+      throw RielaMemoryError.tooManyFiles(files.count)
+    }
+    var seen: Set<String> = []
+    for file in files {
+      let path = normalizedSourceFilePath(file.path)
+      guard !path.isEmpty else {
+        throw RielaMemoryError.invalidFilePath(file.path)
+      }
+      guard !seen.contains(path) else {
+        throw RielaMemoryError.duplicateFilePath(path)
+      }
+      seen.insert(path)
+    }
+  }
+
   private func validateValueList(memoryId: String, options: MemoryValueListOptions) throws {
     try validateMemoryId(memoryId)
     if let workflowId = options.workflowId, !options.includeAllWorkflows {
@@ -904,141 +781,90 @@ public struct RielaMemoryStore: Sendable {
       )
     }
   }
-}
 
-private struct SQLiteRow {
-  var columns: [String: String]
-
-  var payloadJSON: String {
-    columns["payload_json"] ?? "null"
-  }
-}
-
-private let currentSchemaVersion = 2
-private let maximumMemoryTags = 10
-private let maximumRelatedRecordIds = 10
-
-private enum SQLiteBinding {
-  case text(String)
-  case optionalText(String?)
-  case int(Int)
-  case int64(Int64)
-}
-
-private func execute(_ db: OpaquePointer?, _ sql: String, bindings: [SQLiteBinding] = []) throws {
-  var statement: OpaquePointer?
-  guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
-    throw RielaMemoryError.sqliteFailed(sqliteErrorMessage(db))
-  }
-  defer {
-    sqlite3_finalize(statement)
-  }
-  try bind(bindings, to: statement)
-  guard sqlite3_step(statement) == SQLITE_DONE else {
-    throw RielaMemoryError.sqliteFailed(sqliteErrorMessage(db))
-  }
-}
-
-private func queryRows(_ db: OpaquePointer?, sql: String, bindings: [SQLiteBinding]) throws -> [SQLiteRow] {
-  var statement: OpaquePointer?
-  guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
-    throw RielaMemoryError.sqliteFailed(sqliteErrorMessage(db))
-  }
-  defer {
-    sqlite3_finalize(statement)
-  }
-  try bind(bindings, to: statement)
-
-  var rows: [SQLiteRow] = []
-  while true {
-    let result = sqlite3_step(statement)
-    if result == SQLITE_DONE {
-      return rows
+  private func storeFiles(
+    _ files: [MemoryFileReference],
+    memoryId: String,
+    recordId: Int64,
+    copiedPaths: inout [String]
+  ) throws -> [MemoryFileReference] {
+    guard !files.isEmpty else {
+      return []
     }
-    if result == SQLITE_ROW {
-      var row: [String: String] = [:]
-      for index in 0..<sqlite3_column_count(statement) {
-        guard let name = sqlite3_column_name(statement, index) else {
-          continue
-        }
-        if sqlite3_column_type(statement, index) == SQLITE_NULL {
-          continue
-        }
-        if let text = sqlite3_column_text(statement, index) {
-          row[String(cString: name)] = String(cString: text)
-        }
+    let destinationDirectory = URL(fileURLWithPath: rootDirectory, isDirectory: true)
+      .appendingPathComponent("files", isDirectory: true)
+      .appendingPathComponent(memoryId, isDirectory: true)
+      .appendingPathComponent(String(recordId), isDirectory: true)
+    try FileManager.default.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+    return try files.enumerated().map { index, file in
+      let sourceURL = URL(fileURLWithPath: normalizedSourceFilePath(file.path))
+      var isDirectory: ObjCBool = false
+      guard FileManager.default.fileExists(atPath: sourceURL.path, isDirectory: &isDirectory), !isDirectory.boolValue else {
+        throw RielaMemoryError.invalidFilePath(file.path)
       }
-      rows.append(SQLiteRow(columns: row))
-      continue
-    }
-    throw RielaMemoryError.sqliteFailed(sqliteErrorMessage(db))
-  }
-}
-
-private func bind(_ bindings: [SQLiteBinding], to statement: OpaquePointer?) throws {
-  for (offset, binding) in bindings.enumerated() {
-    let index = Int32(offset + 1)
-    let result: Int32
-    switch binding {
-    case let .text(value):
-      result = sqlite3_bind_text(statement, index, value, -1, sqliteTransientDestructor)
-    case let .optionalText(value):
-      if let value {
-        result = sqlite3_bind_text(statement, index, value, -1, sqliteTransientDestructor)
-      } else {
-        result = sqlite3_bind_null(statement, index)
-      }
-    case let .int(value):
-      result = sqlite3_bind_int64(statement, index, sqlite3_int64(value))
-    case let .int64(value):
-      result = sqlite3_bind_int64(statement, index, sqlite3_int64(value))
-    }
-    if result != SQLITE_OK {
-      throw RielaMemoryError.sqliteFailed("sqlite bind failed at parameter \(index)")
+      let destinationURL = uniqueDestinationURL(
+        in: destinationDirectory,
+        sourceURL: sourceURL,
+        index: index,
+        preferredName: file.name
+      )
+      try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+      copiedPaths.append(destinationURL.path)
+      let storedMediaType = normalizedMediaType(file.mediaType) ?? inferredMediaType(path: destinationURL.path)
+      return MemoryFileReference(
+        path: destinationURL.path,
+        mediaType: storedMediaType,
+        kind: normalizedFileKind(provided: file.kind, mediaType: storedMediaType, path: destinationURL.path),
+        name: nonEmpty(file.name) ?? sourceURL.lastPathComponent,
+        sizeBytes: file.sizeBytes ?? fileSize(path: destinationURL.path)
+      )
     }
   }
-}
 
-private let sqliteTransientDestructor = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-
-private func sqliteErrorMessage(_ db: OpaquePointer?) -> String {
-  guard let message = sqlite3_errmsg(db) else {
-    return "unknown sqlite error"
+  private func replaceFiles(_ files: [MemoryFileReference], recordId: Int64, db: OpaquePointer?) throws -> [String] {
+    let oldPaths = try memoryFiles(recordId: recordId, db: db).map(\.path)
+    try execute(db, "DELETE FROM memory_files WHERE record_id = ?", bindings: [.int64(recordId)])
+    let createdAt = currentTimestamp()
+    for file in files {
+      try execute(
+        db,
+        """
+        INSERT INTO memory_files (record_id, path, media_type, kind, name, size_bytes, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        bindings: [
+          .int64(recordId),
+          .text(file.path),
+          .optionalText(nonEmpty(file.mediaType)),
+          .optionalText(nonEmpty(file.kind)),
+          .optionalText(nonEmpty(file.name)),
+          .optionalInt64(file.sizeBytes),
+          .text(createdAt)
+        ]
+      )
+    }
+    let newPaths = Set(files.map(\.path))
+    return oldPaths.filter { !newPaths.contains($0) }
   }
-  return String(cString: message)
-}
 
-private func encodedJSONString(_ value: MemoryJSONValue) throws -> String {
-  let encoder = JSONEncoder()
-  encoder.outputFormatting = [.sortedKeys]
-  let data = try encoder.encode(value)
-  guard let string = String(data: data, encoding: .utf8) else {
-    throw RielaMemoryError.invalidJSON("encoded JSON is not UTF-8")
+  private func memoryFiles(recordId: Int64, db: OpaquePointer?) throws -> [MemoryFileReference] {
+    try queryRows(
+      db,
+      sql: """
+        SELECT path, media_type, kind, name, size_bytes
+        FROM memory_files
+        WHERE record_id = ?
+        ORDER BY file_id ASC
+        """,
+      bindings: [.int64(recordId)]
+    ).map { row in
+      MemoryFileReference(
+        path: row.columns["path"] ?? "",
+        mediaType: row.columns["media_type"],
+        kind: row.columns["kind"],
+        name: row.columns["name"],
+        sizeBytes: row.columns["size_bytes"].flatMap(Int64.init)
+      )
+    }
   }
-  return string
-}
-
-private func encodedJSONString<T: Encodable>(_ value: T) throws -> String {
-  let encoder = JSONEncoder()
-  encoder.outputFormatting = [.sortedKeys]
-  let data = try encoder.encode(value)
-  guard let string = String(data: data, encoding: .utf8) else {
-    throw RielaMemoryError.invalidJSON("encoded JSON is not UTF-8")
-  }
-  return string
-}
-
-private func placeholders(_ count: Int) -> String {
-  Array(repeating: "?", count: count).joined(separator: ", ")
-}
-
-private func nonEmpty(_ value: String?) -> String? {
-  guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
-    return nil
-  }
-  return trimmed
-}
-
-private func currentTimestamp() -> String {
-  ISO8601DateFormatter().string(from: Date())
 }

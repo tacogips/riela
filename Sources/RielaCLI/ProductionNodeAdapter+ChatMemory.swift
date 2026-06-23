@@ -9,9 +9,12 @@ extension BuiltinWorkflowAddonResolver {
     }
     let config = input.addon.config ?? [:]
     let variables = addonVariables(for: input)
+    let workflowInput = jsonObject(variables["workflowInput"])
     let rawMemoryId = nonEmptyString(config["rawMemoryId"]) ?? "raw-chat-log"
     let summaryMemoryId = nonEmptyString(config["summaryMemoryId"]) ?? "daily-chat-summary"
-    let memoryRoot = nonEmptyString(config["memoryRoot"]) ?? nonEmptyString(variables["memoryRoot"])
+    let memoryRoot = nonEmptyString(config["memoryRoot"])
+      ?? nonEmptyString(variables["memoryRoot"])
+      ?? nonEmptyString(workflowInput["memoryRoot"])
     let store = RielaMemoryStore(rootDirectory: memoryRoot ?? RielaMemoryStore.defaultRootDirectory())
     let event = chatMemoryEvent(config: config, variables: variables)
     let conversationTag = "conversation:\(safeMemoryTagSegment(event.conversationId, fallback: "default"))"
@@ -28,7 +31,8 @@ extension BuiltinWorkflowAddonResolver {
       workflowId: input.workflowId,
       nodeId: nonEmptyString(config["rawNodeId"]) ?? "raw-log-writer",
       registeredAt: event.receivedAt,
-      tags: ["raw-log", providerTag, conversationTag, dateTag],
+      tags: rawMemoryTags(providerTag: providerTag, conversationTag: conversationTag, dateTag: dateTag, files: event.files),
+      files: event.files,
       payload: event.memoryPayload
     )
     let existingSummaries = try store.search(
@@ -81,6 +85,7 @@ extension BuiltinWorkflowAddonResolver {
         "summaryRecordId": .number(Double(summaryRecord.recordId)),
         "summaryAction": .string(summaryAction),
         "rawRecordCount": .number(Double(rawRecordCount)),
+        "rawFileCount": .number(Double(event.files.count)),
         "memoryRoot": .string(store.rootDirectory),
         "date": .string(event.date),
         "conversationId": .string(event.conversationId)
@@ -99,6 +104,7 @@ private struct ChatMemoryEvent {
   var text: String
   var receivedAt: String
   var date: String
+  var files: [MemoryFileReference]
 
   var memoryPayload: MemoryJSONValue {
     .object([
@@ -109,6 +115,7 @@ private struct ChatMemoryEvent {
       "actorDisplayName": .string(actorDisplayName),
       "eventId": .string(eventId),
       "text": .string(text),
+      "files": .array(files.map(chatMemoryFilePayload)),
       "receivedAt": .string(receivedAt),
       "date": .string(date)
     ])
@@ -120,6 +127,7 @@ private func chatMemoryEvent(config: JSONObject, variables: JSONObject) -> ChatM
   let event = jsonObject(variables["event"])
   let eventInput = jsonObject(event["input"])
   let directInput = jsonObject(variables["input"])
+  let payload = jsonObject(eventInput["payload"])
   let conversation = jsonObject(event["conversation"])
   let actor = jsonObject(event["actor"])
   let provider = nonEmptyString(config["provider"])
@@ -154,7 +162,8 @@ private func chatMemoryEvent(config: JSONObject, variables: JSONObject) -> ChatM
       ?? "\(provider)-\(receivedAt)",
     text: text,
     receivedAt: receivedAt,
-    date: datePrefix(receivedAt)
+    date: datePrefix(receivedAt),
+    files: chatMemoryFiles(config: config, workflowInput: workflowInput, eventInput: eventInput, payload: payload, directInput: directInput)
   )
 }
 
@@ -167,9 +176,11 @@ private func chatDailySummaryPayload(
   let existingObject = memoryObject(existingPayload)
   let previousRawRecordCount = memoryNumber(existingObject["rawRecordCount"]) ?? memoryInt64Array(existingObject["rawLogRecordIds"]).count
   let rawRecordIds = memoryInt64Array(existingObject["rawLogRecordIds"]) + [rawRecordId]
+  let previousRawFileCount = memoryNumber(existingObject["rawFileCount"]) ?? 0
   let previousSummary = memoryString(existingObject["summary"]) ?? ""
   let actor = event.actorDisplayName.isEmpty ? (event.actorId.isEmpty ? "user" : event.actorId) : event.actorDisplayName
-  let nextLine = "\(event.receivedAt) \(actor): \(event.text)"
+  let fileSuffix = event.files.isEmpty ? "" : " [files: \(event.files.map(\.path).joined(separator: ", "))]"
+  let nextLine = "\(event.receivedAt) \(actor): \(event.text)\(fileSuffix)"
   let summary = previousSummary.isEmpty ? nextLine : "\(previousSummary)\n\(nextLine)"
   return .object([
     "date": .string(event.date),
@@ -180,8 +191,122 @@ private func chatDailySummaryPayload(
     "rawLogMemoryId": .string(rawMemoryId),
     "rawLogRecordIds": .array(rawRecordIds.suffix(10).map { .number(Double($0)) }),
     "lastRawRecordId": .number(Double(rawRecordId)),
+    "rawFileCount": .number(Double(previousRawFileCount + event.files.count)),
+    "lastRawFilePaths": .array(event.files.map { .string($0.path) }),
     "updatedAt": .string(currentISO8601Timestamp())
   ])
+}
+
+private func rawMemoryTags(
+  providerTag: String,
+  conversationTag: String,
+  dateTag: String,
+  files: [MemoryFileReference]
+) -> [String] {
+  var tags = ["raw-log", providerTag, conversationTag, dateTag]
+  if !files.isEmpty {
+    tags.append("has-files")
+  }
+  for kind in Array(Set(files.compactMap(\.kind))).sorted().prefix(5) {
+    tags.append("file-kind:\(safeMemoryTagSegment(kind, fallback: "file"))")
+  }
+  return Array(tags.prefix(10))
+}
+
+private func chatMemoryFilePayload(_ file: MemoryFileReference) -> MemoryJSONValue {
+  .object([
+    "path": .string(file.path),
+    "mediaType": file.mediaType.map { .string($0) } ?? .null,
+    "kind": file.kind.map { .string($0) } ?? .null,
+    "name": file.name.map { .string($0) } ?? .null,
+    "sizeBytes": file.sizeBytes.map { .number(Double($0)) } ?? .null
+  ])
+}
+
+private func chatMemoryFiles(
+  config: JSONObject,
+  workflowInput: JSONObject,
+  eventInput: JSONObject,
+  payload: JSONObject,
+  directInput: JSONObject
+) -> [MemoryFileReference] {
+  let descriptorSources = [
+    config["files"],
+    workflowInput["files"],
+    eventInput["files"],
+    payload["files"],
+    config["attachments"],
+    workflowInput["attachments"],
+    eventInput["attachments"],
+    payload["attachments"],
+    directInput["attachments"]
+  ]
+  for source in descriptorSources {
+    let files = chatMemoryFileDescriptors(source)
+    if !files.isEmpty {
+      return files
+    }
+  }
+  let imagePaths = stringArray(config["imagePaths"])
+    + stringArray(workflowInput["imagePaths"])
+    + stringArray(eventInput["imagePaths"])
+    + stringArray(payload["imagePaths"])
+    + stringArray(directInput["imagePaths"])
+  return deduplicatedFileReferences(imagePaths.map { MemoryFileReference(path: $0, kind: "image") })
+}
+
+private func chatMemoryFileDescriptors(_ value: JSONValue?) -> [MemoryFileReference] {
+  guard case let .array(entries)? = value else {
+    return []
+  }
+  return deduplicatedFileReferences(entries.compactMap { entry in
+    if case let .string(path) = entry, !path.isEmpty {
+      return MemoryFileReference(path: path)
+    }
+    guard case let .object(object) = entry else {
+      return nil
+    }
+    guard let path = nonEmptyString(object["path"])
+      ?? nonEmptyString(object["localPath"])
+      ?? nonEmptyString(object["imagePath"])
+      ?? nonEmptyString(object["downloadPath"]) else {
+      return nil
+    }
+    return MemoryFileReference(
+      path: path,
+      mediaType: nonEmptyString(object["mediaType"])
+        ?? nonEmptyString(object["contentType"])
+        ?? nonEmptyString(object["mimetype"])
+        ?? nonEmptyString(object["mimeType"]),
+      kind: nonEmptyString(object["kind"]),
+      name: nonEmptyString(object["name"]) ?? nonEmptyString(object["fileName"]),
+      sizeBytes: int64(object["sizeBytes"]) ?? int64(object["fileSize"])
+    )
+  })
+}
+
+private func deduplicatedFileReferences(_ files: [MemoryFileReference]) -> [MemoryFileReference] {
+  var seen: Set<String> = []
+  var result: [MemoryFileReference] = []
+  for file in files where !file.path.isEmpty && !seen.contains(file.path) {
+    seen.insert(file.path)
+    result.append(file)
+  }
+  return Array(result.prefix(10))
+}
+
+private func stringArray(_ value: JSONValue?) -> [String] {
+  guard case let .array(values)? = value else {
+    return []
+  }
+  return values.compactMap(nonEmptyString)
+}
+
+private func int64(_ value: JSONValue?) -> Int64? {
+  guard case let .number(number)? = value else {
+    return nil
+  }
+  return Int64(exactly: number)
 }
 
 private func jsonObject(_ value: JSONValue?) -> JSONObject {

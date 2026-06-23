@@ -1,0 +1,16 @@
+{
+  "id": "design-review",
+  "nodeType": "command",
+  "description": "Review the proposed session SQLite persistence migration design.",
+  "command": {
+    "executable": "/usr/bin/env",
+    "argvTemplate": [
+      "sh",
+      ".riela/workflows/riela-session-sqlite-persistence-review/scripts/review-session-sqlite-persistence.sh",
+      "design"
+    ]
+  },
+  "output": {
+    "description": "Return JSON with accepted, findings, designDecisions, and requiredChanges."
+  }
+}

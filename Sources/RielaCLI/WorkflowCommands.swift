@@ -1521,9 +1521,7 @@ public struct WorkflowRunCommand: Sendable {
     let authTokenEnv = configuredAuthTokenEnv ?? "RIELA_MANAGER_AUTH_TOKEN"
     let authToken = nonEmptyString(options.authToken)
       ?? nonEmptyString(environment[authTokenEnv])
-      ?? (configuredAuthTokenEnv == nil ? nonEmptyString(environment["RIEL_MANAGER_AUTH_TOKEN"]) : nil)
     let managerSessionId = nonEmptyString(environment["RIELA_MANAGER_SESSION_ID"])
-      ?? nonEmptyString(environment["RIEL_MANAGER_SESSION_ID"])
     let request = WorkflowRemoteRunRequest(
       workflowName: options.target,
       runtimeVariables: variables,
@@ -1576,16 +1574,16 @@ public struct WorkflowRunCommand: Sendable {
       scope: persistedResolution.scope,
       workingDirectory: options.workingDirectory
     )
+    let snapshot = WorkflowRuntimePersistenceProjector.snapshot(session: result.session, workflowMessages: workflowMessages)
     try CLIWorkflowSessionStore(rootDirectory: storeRoot).save(
       PersistedCLIWorkflowSession(
         workflowName: workflowName,
         session: result.session,
         resolution: persistedResolution,
         mockScenarioPath: options.mockScenarioPath
-      )
+      ),
+      runtimeSnapshot: snapshot
     )
-    let snapshot = WorkflowRuntimePersistenceProjector.snapshot(session: result.session, workflowMessages: workflowMessages)
-    try FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot)).save(snapshot)
     if let artifactRoot = options.artifactRoot {
       let artifactURL = absoluteURL(artifactRoot, relativeTo: URL(fileURLWithPath: options.workingDirectory, isDirectory: true))
       try FileWorkflowRuntimePersistenceStore(rootDirectory: artifactURL.path).save(snapshot)
@@ -1608,16 +1606,16 @@ public struct WorkflowRunCommand: Sendable {
     storeRoot: String,
     options: WorkflowRunOptions
   ) throws {
+    let snapshot = WorkflowRuntimePersistenceProjector.snapshot(session: session, workflowMessages: workflowMessages)
     try CLIWorkflowSessionStore(rootDirectory: storeRoot).save(
       PersistedCLIWorkflowSession(
         workflowName: workflowName,
         session: session,
         resolution: resolution,
         mockScenarioPath: options.mockScenarioPath
-      )
+      ),
+      runtimeSnapshot: snapshot
     )
-    let snapshot = WorkflowRuntimePersistenceProjector.snapshot(session: session, workflowMessages: workflowMessages)
-    try FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot)).save(snapshot)
     if let artifactRoot = options.artifactRoot {
       let artifactURL = absoluteURL(artifactRoot, relativeTo: URL(fileURLWithPath: options.workingDirectory, isDirectory: true))
       try FileWorkflowRuntimePersistenceStore(rootDirectory: artifactURL.path).save(snapshot)
@@ -2203,8 +2201,8 @@ Usage:
   riela workflow package <search|list|status|install|update|remove|checkout|publish> [options]
   riela workflow run <workflow> --mock-scenario <path> [--auto-improve] [--output jsonl|json|text]
   riela package <search|list|status|install|update|remove|checkout|publish> [options]
-  riela memory save <memory-id> --workflow-id <workflow> --payload-json <json> [--node-id <node>] [--tag <tag>] [--related-id <id>] [--memory-root <dir>]
-  riela memory update <memory-id> --workflow-id <workflow> --record-id <id> --payload-json <json> [--tag <tag>] [--related-id <id>] [--memory-root <dir>]
+  riela memory save <memory-id> --workflow-id <workflow> --payload-json <json> [--node-id <node>] [--tag <tag>] [--related-id <id>] [--file <path>] [--memory-root <dir>]
+  riela memory update <memory-id> --workflow-id <workflow> --record-id <id> --payload-json <json> [--tag <tag>] [--related-id <id>] [--file <path>|--clear-files] [--memory-root <dir>]
   riela memory load|search <memory-id> --workflow-id <workflow> [--match <regex>] [--tag <tag>] [--related-id <id>] [--limit 30] [--memory-root <dir>]
   riela memory metadata|tags|related-ids <memory-id> [--limit 30] [--offset 0] [--sort value-asc|value-desc] [--memory-root <dir>]
   riela session rerun <session-id> <step-id> [--scope project|user|auto] [--output jsonl|json|text]

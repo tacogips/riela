@@ -538,11 +538,10 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     }
     if manifestPath == nil {
       let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
-      manifestPath = environment["RIEL_WORKFLOW_MANIFEST"].flatMap { $0.isEmpty ? nil : $0 }
-        ?? environment["RIELA_WORKFLOW_MANIFEST"].flatMap { $0.isEmpty ? nil : $0 }
+      manifestPath = environment["RIELA_WORKFLOW_MANIFEST"].flatMap { $0.isEmpty ? nil : $0 }
     }
     guard let manifestPath, !manifestPath.isEmpty else {
-      throw CLIUsageError("workflow manifest validate requires a manifest path, --workflow-manifest, RIEL_WORKFLOW_MANIFEST, or RIELA_WORKFLOW_MANIFEST")
+      throw CLIUsageError("workflow manifest validate requires a manifest path, --workflow-manifest, or RIELA_WORKFLOW_MANIFEST")
     }
     let parsed = try ParsedWorkflowOptions(optionTokens)
     return WorkflowManifestValidateOptions(
@@ -597,6 +596,12 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       if kind == .update && options.recordId == nil {
         throw CLIUsageError("memory update requires --record-id")
       }
+      if kind == .save && options.clearFiles {
+        throw CLIUsageError("memory save does not support --clear-files")
+      }
+      if options.clearFiles && !options.filePaths.isEmpty {
+        throw CLIUsageError("memory \(subcommand) cannot combine --clear-files with --file")
+      }
     case .load, .search:
       if options.workflowId == nil && !options.allWorkflows {
         throw CLIUsageError("memory \(subcommand) requires --workflow-id")
@@ -618,6 +623,8 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     var matchPatterns: [String] = []
     var tags: [String] = []
     var relatedRecordIds: [Int64] = []
+    var filePaths: [String] = []
+    var clearFiles = false
     var sortOrder: MemoryValueSortOrder = .valueAsc
     var limit = 30
     var offset = 0
@@ -674,6 +681,10 @@ public struct RielaArgumentParser: CLIArgumentParsing {
           throw CLIUsageError("\(token) must be a positive integer")
         }
         relatedRecordIds.append(parsed)
+      case "--file", "--file-path":
+        filePaths.append(try value())
+      case "--clear-files":
+        clearFiles = true
       case "--sort":
         sortOrder = try parseMemoryValueSort(try value())
       case "--limit":
@@ -709,6 +720,8 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       matchPatterns: matchPatterns,
       tags: tags,
       relatedRecordIds: relatedRecordIds,
+      filePaths: filePaths,
+      clearFiles: clearFiles,
       sortOrder: sortOrder,
       limit: limit,
       offset: offset,

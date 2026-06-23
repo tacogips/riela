@@ -1,0 +1,16 @@
+{
+  "id": "verify",
+  "nodeType": "command",
+  "description": "Verify today's local changes with targeted tests and SQLite smoke checks.",
+  "command": {
+    "executable": "/usr/bin/env",
+    "argvTemplate": [
+      "sh",
+      ".riela/workflows/riela-today-review-improve-loop/scripts/review-today-changes.sh",
+      "verify"
+    ]
+  },
+  "output": {
+    "description": "JSON with accepted, command results, smoke details, and residual risks."
+  }
+}

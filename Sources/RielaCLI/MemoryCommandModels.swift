@@ -33,6 +33,8 @@ public struct MemoryCommandOptions: Equatable, Sendable {
   public var matchPatterns: [String]
   public var tags: [String]
   public var relatedRecordIds: [Int64]
+  public var filePaths: [String]
+  public var clearFiles: Bool
   public var sortOrder: MemoryValueSortOrder
   public var limit: Int
   public var offset: Int
@@ -52,6 +54,8 @@ public struct MemoryCommandOptions: Equatable, Sendable {
     matchPatterns: [String] = [],
     tags: [String] = [],
     relatedRecordIds: [Int64] = [],
+    filePaths: [String] = [],
+    clearFiles: Bool = false,
     sortOrder: MemoryValueSortOrder = .valueAsc,
     limit: Int = 30,
     offset: Int = 0,
@@ -70,6 +74,8 @@ public struct MemoryCommandOptions: Equatable, Sendable {
     self.matchPatterns = matchPatterns
     self.tags = tags
     self.relatedRecordIds = relatedRecordIds
+    self.filePaths = filePaths
+    self.clearFiles = clearFiles
     self.sortOrder = sortOrder
     self.limit = limit
     self.offset = offset

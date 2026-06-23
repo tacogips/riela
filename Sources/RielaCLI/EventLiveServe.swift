@@ -11,6 +11,8 @@ protocol EventLiveServing: Sendable {
 
 protocol TelegramGatewayAPI: Sendable {
   func getUpdates(request: TelegramGetUpdatesRequest) async throws -> [TelegramUpdate]
+  func getFile(request: TelegramGetFileRequest) async throws -> TelegramFile
+  func downloadFile(request: TelegramDownloadFileRequest) async throws -> Data
   func sendMessage(request: TelegramSendMessageRequest) async throws
 }
 
@@ -22,6 +24,14 @@ struct EventWorkflowRunRequest: Sendable {
   var workflowName: String
   var runtimeVariables: JSONObject
   var parsed: ParsedParityOptions
+}
+
+struct EventResolvedAttachmentInputs: Equatable, Sendable {
+  var attachments: [JSONObject]
+  var imagePaths: [String]
+  var attachmentText: String
+
+  static let empty = EventResolvedAttachmentInputs(attachments: [], imagePaths: [], attachmentText: "")
 }
 
 struct DefaultEventLiveServer: EventLiveServing {
@@ -49,7 +59,11 @@ struct DefaultEventLiveServer: EventLiveServing {
     guard unsupported.isEmpty else {
       return liveUnavailable(eventRoot: eventRoot, actionTarget: target, unsupportedSources: unsupported)
     }
-    let liveConfig = EventLiveConfig(sources: enabledSources, bindings: config.bindings)
+    let enabledSourceIds = Set(enabledSources.map(\.id))
+    let liveConfig = EventLiveConfig(
+      sources: enabledSources,
+      bindings: config.bindings.filter { enabledSourceIds.contains($0.sourceId) }
+    )
 
     let telegramSources = try liveConfig.telegramSources(eventRoot: eventRoot)
     let discordSources = try liveConfig.discordSources(eventRoot: eventRoot)
@@ -118,10 +132,35 @@ struct DefaultEventLiveServer: EventLiveServing {
       for update in updates {
         observedUpdates += 1
         try offsetStore.saveOffset(update.updateId + 1)
-        guard let envelope = source.envelope(from: update, eventRoot: eventRoot) else {
+        let resolvedAttachments: EventResolvedAttachmentInputs
+        if let message = update.message {
+          resolvedAttachments = try await resolveTelegramAttachments(
+            source: source,
+            message: message,
+            eventRoot: eventRoot,
+            token: target.token
+          )
+        } else {
+          resolvedAttachments = .empty
+        }
+        guard let envelope = source.envelope(
+          from: update,
+          eventRoot: eventRoot,
+          resolvedAttachments: resolvedAttachments
+        ) else {
+          try? writeServeRecord(
+            eventRoot: eventRoot,
+            status: "ready",
+            lastIgnoredReason: "telegram-envelope-filtered-or-empty"
+          )
           continue
         }
         if let message = update.message, try dedupeStore.hasSeen(message: message) {
+          try? writeServeRecord(
+            eventRoot: eventRoot,
+            status: "ready",
+            lastIgnoredReason: "telegram-duplicate-message"
+          )
           continue
         }
         let triggerResult = await DeterministicEventDryRunTrigger().dryRun(EventDryRunRequest(
@@ -130,12 +169,36 @@ struct DefaultEventLiveServer: EventLiveServing {
           envelope: envelope
         ))
         guard triggerResult.accepted else {
+          try? writeServeRecord(
+            eventRoot: eventRoot,
+            status: "ready",
+            lastIgnoredReason: "telegram-trigger-not-accepted",
+            lastTriggerCount: triggerResult.triggers.count,
+            lastEnvelopeSourceId: envelope.sourceId,
+            lastEnvelopeEventType: envelope.eventType.rawValue,
+            lastEnvelopeConversationId: envelope.conversation?["id"]?.stringValue,
+            lastDiagnosticCodes: triggerResult.diagnostics.map(\.code).joined(separator: ","),
+            lastBindingIds: config.bindings.map(\.id).joined(separator: ",")
+          )
           continue
         }
         for trigger in triggerResult.triggers {
           guard let workflowName = trigger.workflowName else {
+            try? writeServeRecord(
+              eventRoot: eventRoot,
+              status: "ready",
+              lastIgnoredReason: "telegram-trigger-missing-workflow",
+              lastTriggerCount: triggerResult.triggers.count
+            )
             continue
           }
+          try? writeServeRecord(
+            eventRoot: eventRoot,
+            status: "ready",
+            lastIgnoredReason: "",
+            lastTriggerCount: triggerResult.triggers.count,
+            lastWorkflowName: workflowName
+          )
           let result = try await workflowRunner.runWorkflow(EventWorkflowRunRequest(
             workflowName: workflowName,
             runtimeVariables: trigger.runtimeVariables,
@@ -208,6 +271,61 @@ struct DefaultEventLiveServer: EventLiveServing {
     return min(source.polling.timeoutSeconds, 2)
   }
 
+  private func resolveTelegramAttachments(
+    source: TelegramGatewaySource,
+    message: TelegramMessage,
+    eventRoot: URL,
+    token: String
+  ) async throws -> EventResolvedAttachmentInputs {
+    guard source.attachments.includePhotos, let photo = message.largestPhoto else {
+      return .empty
+    }
+    var descriptor = photo.normalizedDescriptor
+    var imagePaths: [String] = []
+    if source.attachments.resolveFilePaths {
+      let file = try await telegramAPI.getFile(request: TelegramGetFileRequest(token: token, fileId: photo.fileId))
+      if let filePath = file.filePath {
+        let data = try await telegramAPI.downloadFile(request: TelegramDownloadFileRequest(token: token, filePath: filePath))
+        let localURL = telegramAttachmentURL(
+          eventRoot: eventRoot,
+          source: source,
+          message: message,
+          photo: photo,
+          remoteFilePath: filePath
+        )
+        try FileManager.default.createDirectory(at: localURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: localURL, options: .atomic)
+        descriptor["path"] = .string(localURL.path)
+        descriptor["remoteFilePath"] = .string(filePath)
+        imagePaths.append(localURL.path)
+      }
+    }
+    return EventResolvedAttachmentInputs(
+      attachments: [descriptor],
+      imagePaths: imagePaths,
+      attachmentText: message.caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    )
+  }
+
+  private func telegramAttachmentURL(
+    eventRoot: URL,
+    source: TelegramGatewaySource,
+    message: TelegramMessage,
+    photo: TelegramPhotoSize,
+    remoteFilePath: String
+  ) -> URL {
+    let remoteExtension = URL(fileURLWithPath: remoteFilePath).pathExtension
+    let fileExtension = remoteExtension.isEmpty ? "jpg" : safeTelegramStorageComponent(remoteExtension)
+    return eventRoot
+      .appendingPathComponent("attachments", isDirectory: true)
+      .appendingPathComponent("telegram", isDirectory: true)
+      .appendingPathComponent(safeTelegramStorageComponent(source.id), isDirectory: true)
+      .appendingPathComponent(safeTelegramStorageComponent(message.chat.id), isDirectory: true)
+      .appendingPathComponent(
+        "\(safeTelegramStorageComponent(message.messageId))-\(safeTelegramStorageComponent(photo.fileId)).\(fileExtension)"
+      )
+  }
+
   func liveUnavailable(eventRoot: URL, actionTarget: String?, unsupportedSources: String) -> ScopedParityCommandResult {
     ScopedParityCommandResult(
       scope: "events",
@@ -246,7 +364,15 @@ struct DefaultEventLiveServer: EventLiveServing {
     pollingTargetCount: Int? = nil,
     lastUpdateCount: Int? = nil,
     lastReplyDispatchCount: Int? = nil,
-    lastReplyAs: String? = nil
+    lastReplyAs: String? = nil,
+    lastIgnoredReason: String? = nil,
+    lastTriggerCount: Int? = nil,
+    lastWorkflowName: String? = nil,
+    lastEnvelopeSourceId: String? = nil,
+    lastEnvelopeEventType: String? = nil,
+    lastEnvelopeConversationId: String? = nil,
+    lastDiagnosticCodes: String? = nil,
+    lastBindingIds: String? = nil
   ) throws {
     try FileManager.default.createDirectory(at: eventRoot, withIntermediateDirectories: true)
     let recordURL = eventRoot.appendingPathComponent("serve-record.json")
@@ -281,6 +407,34 @@ struct DefaultEventLiveServer: EventLiveServing {
     }
     if let lastReplyAs, !lastReplyAs.isEmpty {
       record["lastReplyAs"] = .string(lastReplyAs)
+    }
+    if let lastIgnoredReason {
+      if lastIgnoredReason.isEmpty {
+        record.removeValue(forKey: "lastIgnoredReason")
+      } else {
+        record["lastIgnoredReason"] = .string(lastIgnoredReason)
+      }
+    }
+    if let lastTriggerCount {
+      record["lastTriggerCount"] = .number(Double(lastTriggerCount))
+    }
+    if let lastWorkflowName, !lastWorkflowName.isEmpty {
+      record["lastWorkflowName"] = .string(lastWorkflowName)
+    }
+    if let lastEnvelopeSourceId {
+      record["lastEnvelopeSourceId"] = .string(lastEnvelopeSourceId)
+    }
+    if let lastEnvelopeEventType {
+      record["lastEnvelopeEventType"] = .string(lastEnvelopeEventType)
+    }
+    if let lastEnvelopeConversationId {
+      record["lastEnvelopeConversationId"] = .string(lastEnvelopeConversationId)
+    }
+    if let lastDiagnosticCodes {
+      record["lastDiagnosticCodes"] = .string(lastDiagnosticCodes)
+    }
+    if let lastBindingIds {
+      record["lastBindingIds"] = .string(lastBindingIds)
     }
     try jsonString(record).write(
       to: recordURL,
@@ -388,599 +542,4 @@ struct EventLiveConfig: Sendable {
 private struct EventLiveConfigFile: Codable {
   var sources: [EventSourceContract]
   var bindings: [EventBindingContract]
-}
-
-struct TelegramGatewaySource: Decodable, Equatable, Sendable {
-  var id: String
-  var tokenEnv: String?
-  var botIdEnv: String?
-  var chats: [TelegramGatewayChat]
-  var polling: TelegramGatewayPolling
-  var filters: TelegramGatewayFilters
-  var replyBots: [String: TelegramGatewayReplyBot]
-
-  private enum CodingKeys: String, CodingKey {
-    case id
-    case tokenEnv
-    case botIdEnv
-    case chats
-    case polling
-    case filters
-    case replyBots
-  }
-
-  init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    self.id = try container.decode(String.self, forKey: .id)
-    self.tokenEnv = try container.decodeIfPresent(String.self, forKey: .tokenEnv)
-    self.botIdEnv = try container.decodeIfPresent(String.self, forKey: .botIdEnv)
-    self.chats = try container.decodeIfPresent([TelegramGatewayChat].self, forKey: .chats) ?? []
-    self.polling = try container.decodeIfPresent(TelegramGatewayPolling.self, forKey: .polling) ?? TelegramGatewayPolling()
-    self.filters = try container.decodeIfPresent(TelegramGatewayFilters.self, forKey: .filters) ?? TelegramGatewayFilters()
-    self.replyBots = try container.decodeIfPresent([String: TelegramGatewayReplyBot].self, forKey: .replyBots) ?? [:]
-  }
-
-  func token(environment: [String: String]) throws -> String {
-    guard let token = environmentValue(tokenEnv ?? "RIELA_TELEGRAM_BOT_TOKEN", environment: environment) else {
-      throw CLIUsageError("telegram-gateway source '\(id)' requires \(tokenEnv ?? "RIELA_TELEGRAM_BOT_TOKEN")")
-    }
-    return token
-  }
-
-  func validateEnvironment(environment: [String: String]) throws {
-    _ = try pollingTargets(environment: environment)
-    if let botIdEnv, environmentValue(botIdEnv, environment: environment) == nil {
-      throw CLIUsageError("telegram-gateway source '\(id)' requires \(botIdEnv)")
-    }
-  }
-
-  func pollingTargets(environment: [String: String]) throws -> [TelegramPollingTarget] {
-    var targets = [TelegramPollingTarget(id: nil, token: try token(environment: environment))]
-    for (replyAs, replyBot) in replyBots.sorted(by: { $0.key < $1.key }) {
-      guard let tokenEnv = replyBot.tokenEnv else {
-        continue
-      }
-      guard let token = environmentValue(tokenEnv, environment: environment) else {
-        throw CLIUsageError("telegram-gateway source '\(id)' reply bot '\(replyAs)' requires \(tokenEnv)")
-      }
-      if !targets.contains(where: { $0.token == token }) {
-        targets.append(TelegramPollingTarget(id: replyAs, token: token))
-      }
-    }
-    return targets
-  }
-
-  func replyToken(replyAs: String?, environment: [String: String]) -> String? {
-    guard let replyAs,
-      let tokenEnv = replyBots[replyAs]?.tokenEnv
-    else {
-      return nil
-    }
-    return environmentValue(tokenEnv, environment: environment)
-  }
-
-  func envelope(from update: TelegramUpdate, eventRoot: URL) -> ExternalEventEnvelope? {
-    guard let message = update.message,
-      let text = message.text,
-      isAllowed(message: message, environment: CLIRuntimeEnvironment.mergedProcessEnvironment())
-    else {
-      return nil
-    }
-    let chatId = message.chat.id
-    return ExternalEventEnvelope(
-      sourceId: id,
-      eventId: String(update.updateId),
-      provider: "telegram",
-      eventType: "chat.message",
-      receivedAt: Date(timeIntervalSince1970: TimeInterval(message.date ?? 0)),
-      actor: compactObject([
-        "id": message.from?.id.map { .string($0) },
-        "displayName": message.from?.displayName.map { .string($0) },
-        "username": message.from?.username.map { .string($0) },
-        "isBot": message.from?.isBot.map { .bool($0) }
-      ]),
-      conversation: compactObject([
-        "id": .string(chatId),
-        "threadId": message.messageThreadId.map { .string($0) },
-        "title": message.chat.title.map { .string($0) },
-        "type": message.chat.type.map { .string($0) }
-      ]),
-      input: [
-        "text": .string(text),
-        "provider": .string("telegram"),
-        "history": .array(
-          TelegramConversationHistoryStore(eventRoot: eventRoot, source: self)
-            .loadHistory(message: message)
-            .map(JSONValue.object)
-        ),
-        "historySource": .string("chat-memory"),
-        "attachments": .array([]),
-        "imagePaths": .array([]),
-        "attachmentText": .string(""),
-        "eventDataRoot": .string(eventRoot.path)
-      ]
-    )
-  }
-
-  private func isAllowed(message: TelegramMessage, environment: [String: String]) -> Bool {
-    if filters.ignoreBots, message.from?.isBot == true {
-      return false
-    }
-    if filters.ignoreSelf,
-      let botIdEnv,
-      let botId = environmentValue(botIdEnv, environment: environment),
-      message.from?.id == botId {
-      return false
-    }
-    let allowedChatIds = Set(chats.map(\.id) + chatIdOverrides(environment: environment))
-    return allowedChatIds.isEmpty || allowedChatIds.contains(message.chat.id)
-  }
-
-  private func chatIdOverrides(environment: [String: String]) -> [String] {
-    ["RIELA_TELEGRAM_CHAT_ID", "RIEL_TELEGRAM_CHAT_ID"].compactMap {
-      environment[$0]?.trimmingCharacters(in: .whitespacesAndNewlines)
-    }.filter { !$0.isEmpty }
-  }
-
-  private func environmentValue(_ name: String, environment: [String: String]) -> String? {
-    let candidates = name.hasPrefix("RIELA_")
-      ? [name, "RIEL_" + name.dropFirst("RIELA_".count)]
-      : [name]
-    return candidates.lazy.compactMap { candidate in
-      environment[String(candidate)]?.trimmingCharacters(in: .whitespacesAndNewlines)
-    }.first { !$0.isEmpty }
-  }
-}
-
-struct TelegramGatewayChat: Decodable, Equatable, Sendable {
-  var id: String
-
-  private enum CodingKeys: String, CodingKey {
-    case id
-  }
-
-  init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    self.id = try container.decodeTelegramStringID(forKey: .id)
-  }
-}
-
-struct TelegramGatewayPolling: Decodable, Equatable, Sendable {
-  var timeoutSeconds: Int
-  var limit: Int
-  var offsetPath: String?
-
-  init(timeoutSeconds: Int = 30, limit: Int = 100, offsetPath: String? = nil) {
-    self.timeoutSeconds = timeoutSeconds
-    self.limit = limit
-    self.offsetPath = offsetPath
-  }
-}
-
-struct TelegramGatewayFilters: Decodable, Equatable, Sendable {
-  var ignoreBots: Bool
-  var ignoreSelf: Bool
-
-  init(ignoreBots: Bool = true, ignoreSelf: Bool = true) {
-    self.ignoreBots = ignoreBots
-    self.ignoreSelf = ignoreSelf
-  }
-}
-
-struct TelegramGatewayReplyBot: Decodable, Equatable, Sendable {
-  var tokenEnv: String?
-}
-
-struct TelegramPollingTarget: Equatable, Sendable {
-  var id: String?
-  var token: String
-
-  var recordId: String {
-    id ?? "source"
-  }
-}
-
-struct TelegramGetUpdatesRequest: Equatable, Sendable {
-  var token: String
-  var offset: Int?
-  var timeoutSeconds: Int
-  var limit: Int
-}
-
-struct TelegramSendMessageRequest: Equatable, Sendable {
-  var token: String
-  var chatId: String
-  var threadId: String?
-  var text: String
-}
-
-struct TelegramUpdate: Decodable, Equatable, Sendable {
-  var updateId: Int
-  var message: TelegramMessage?
-
-  private enum CodingKeys: String, CodingKey {
-    case updateId = "update_id"
-    case message
-  }
-}
-
-struct TelegramMessage: Decodable, Equatable, Sendable {
-  var messageId: String
-  var messageThreadId: String?
-  var date: Int?
-  var text: String?
-  var from: TelegramSender?
-  var chat: TelegramChat
-
-  private enum CodingKeys: String, CodingKey {
-    case messageId = "message_id"
-    case messageThreadId = "message_thread_id"
-    case date
-    case text
-    case from
-    case chat
-  }
-
-  init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    self.messageId = try container.decodeTelegramStringID(forKey: .messageId)
-    self.messageThreadId = try container.decodeTelegramStringIDIfPresent(forKey: .messageThreadId)
-    self.date = try container.decodeIfPresent(Int.self, forKey: .date)
-    self.text = try container.decodeIfPresent(String.self, forKey: .text)
-    self.from = try container.decodeIfPresent(TelegramSender.self, forKey: .from)
-    self.chat = try container.decode(TelegramChat.self, forKey: .chat)
-  }
-}
-
-struct TelegramChat: Decodable, Equatable, Sendable {
-  var id: String
-  var title: String?
-  var type: String?
-
-  private enum CodingKeys: String, CodingKey {
-    case id
-    case title
-    case type
-  }
-
-  init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    self.id = try container.decodeTelegramStringID(forKey: .id)
-    self.title = try container.decodeIfPresent(String.self, forKey: .title)
-    self.type = try container.decodeIfPresent(String.self, forKey: .type)
-  }
-}
-
-struct TelegramSender: Decodable, Equatable, Sendable {
-  var id: String?
-  var isBot: Bool?
-  var firstName: String?
-  var username: String?
-
-  var displayName: String? {
-    firstName ?? username
-  }
-
-  private enum CodingKeys: String, CodingKey {
-    case id
-    case isBot = "is_bot"
-    case firstName = "first_name"
-    case username
-  }
-
-  init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    self.id = try container.decodeTelegramStringIDIfPresent(forKey: .id)
-    self.isBot = try container.decodeIfPresent(Bool.self, forKey: .isBot)
-    self.firstName = try container.decodeIfPresent(String.self, forKey: .firstName)
-    self.username = try container.decodeIfPresent(String.self, forKey: .username)
-  }
-}
-
-struct URLSessionTelegramGatewayAPI: TelegramGatewayAPI {
-  func getUpdates(request: TelegramGetUpdatesRequest) async throws -> [TelegramUpdate] {
-    var components = URLComponents(string: "https://api.telegram.org/bot\(request.token)/getUpdates")
-    var queryItems = [
-      URLQueryItem(name: "timeout", value: String(request.timeoutSeconds)),
-      URLQueryItem(name: "limit", value: String(request.limit))
-    ]
-    if let offset = request.offset {
-      queryItems.append(URLQueryItem(name: "offset", value: String(offset)))
-    }
-    components?.queryItems = queryItems
-    guard let url = components?.url else {
-      throw CLIUsageError("failed to build Telegram getUpdates URL")
-    }
-    let (data, _) = try await URLSession.shared.data(from: url)
-    let decoded = try JSONDecoder().decode(TelegramGetUpdatesResponse.self, from: data)
-    try decoded.validate(operation: "getUpdates")
-    return decoded.result ?? []
-  }
-
-  func sendMessage(request: TelegramSendMessageRequest) async throws {
-    guard let url = URL(string: "https://api.telegram.org/bot\(request.token)/sendMessage") else {
-      throw CLIUsageError("failed to build Telegram sendMessage URL")
-    }
-    var components = URLComponents()
-    components.queryItems = [
-      URLQueryItem(name: "chat_id", value: request.chatId),
-      URLQueryItem(name: "text", value: request.text)
-    ]
-    if let threadId = request.threadId {
-      components.queryItems?.append(URLQueryItem(name: "message_thread_id", value: threadId))
-    }
-    var urlRequest = URLRequest(url: url)
-    urlRequest.httpMethod = "POST"
-    urlRequest.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-    urlRequest.httpBody = components.percentEncodedQuery?.data(using: .utf8)
-    let (data, response) = try await URLSession.shared.data(for: urlRequest)
-    if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-      throw CLIUsageError("Telegram sendMessage failed with HTTP \(http.statusCode)")
-    }
-    let decoded = try JSONDecoder().decode(TelegramAPIStatusResponse.self, from: data)
-    try decoded.validate(operation: "sendMessage")
-  }
-}
-
-struct TelegramConversationReply: Equatable, Sendable {
-  var replyAs: String?
-  var text: String
-}
-
-struct TelegramAPIStatusResponse: Decodable, Equatable {
-  var ok: Bool
-  var errorCode: Int?
-  var description: String?
-
-  private enum CodingKeys: String, CodingKey {
-    case ok
-    case errorCode = "error_code"
-    case description
-  }
-
-  func validate(operation: String) throws {
-    guard ok else {
-      let detail = description ?? errorCode.map { "error code \($0)" } ?? "unknown Telegram API error"
-      throw CLIUsageError("Telegram \(operation) failed: \(detail)")
-    }
-  }
-}
-
-private struct TelegramGetUpdatesResponse: Decodable {
-  var status: TelegramAPIStatusResponse
-  var result: [TelegramUpdate]?
-
-  var ok: Bool {
-    status.ok
-  }
-
-  private enum CodingKeys: String, CodingKey {
-    case result
-  }
-
-  init(from decoder: Decoder) throws {
-    self.status = try TelegramAPIStatusResponse(from: decoder)
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    self.result = try container.decodeIfPresent([TelegramUpdate].self, forKey: .result)
-  }
-
-  func validate(operation: String) throws {
-    try status.validate(operation: operation)
-  }
-}
-
-private struct TelegramOffsetStore {
-  var eventRoot: URL
-  var source: TelegramGatewaySource
-  var targetId: String?
-
-  func loadOffset() throws -> Int? {
-    let url = offsetURL()
-    guard FileManager.default.fileExists(atPath: url.path) else {
-      return nil
-    }
-    let record = try JSONDecoder().decode(TelegramOffsetRecord.self, from: Data(contentsOf: url))
-    return record.offset
-  }
-
-  func saveOffset(_ offset: Int) throws {
-    let url = offsetURL()
-    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    try encoder.encode(TelegramOffsetRecord(offset: offset)).write(to: url, options: .atomic)
-  }
-
-  private func offsetURL() -> URL {
-    let relative = offsetPathWithTarget(
-      source.polling.offsetPath ?? "telegram/\(source.id)-offset.json",
-      targetId: targetId
-    )
-    return eventRoot.appendingPathComponent(relative)
-  }
-
-  private func offsetPathWithTarget(_ relative: String, targetId: String?) -> String {
-    guard let targetId else {
-      return relative
-    }
-    let suffix = "-\(safeTelegramStorageComponent(targetId))"
-    let slashIndex = relative.lastIndex(of: "/")
-    let searchStart = slashIndex.map { relative.index(after: $0) } ?? relative.startIndex
-    if let dotIndex = relative[searchStart...].lastIndex(of: ".") {
-      return "\(relative[..<dotIndex])\(suffix)\(relative[dotIndex...])"
-    }
-    return relative + suffix
-  }
-}
-
-private struct TelegramOffsetRecord: Codable {
-  var offset: Int
-}
-
-private struct TelegramMessageDedupeStore {
-  private static let maxKeys = 512
-
-  var eventRoot: URL
-  var source: TelegramGatewaySource
-
-  func hasSeen(message: TelegramMessage) throws -> Bool {
-    try loadKeys().contains(key(for: message))
-  }
-
-  func markSeen(message: TelegramMessage) throws {
-    let url = storeURL()
-    var keys = try loadKeys()
-    keys.append(key(for: message))
-    var uniqueKeys: [String] = []
-    var seenKeys = Set<String>()
-    for key in keys.suffix(Self.maxKeys) where seenKeys.insert(key).inserted {
-      uniqueKeys.append(key)
-    }
-    keys = uniqueKeys
-    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    try encoder.encode(TelegramMessageDedupeRecord(keys: keys)).write(to: url, options: .atomic)
-  }
-
-  private func loadKeys() throws -> [String] {
-    let url = storeURL()
-    guard FileManager.default.fileExists(atPath: url.path) else {
-      return []
-    }
-    return try JSONDecoder().decode(TelegramMessageDedupeRecord.self, from: Data(contentsOf: url)).keys
-  }
-
-  private func storeURL() -> URL {
-    eventRoot
-      .appendingPathComponent("telegram", isDirectory: true)
-      .appendingPathComponent("\(safeTelegramStorageComponent(source.id))-seen-messages.json")
-  }
-
-  private func key(for message: TelegramMessage) -> String {
-    if let contentKey = contentKey(for: message) {
-      return contentKey
-    }
-    return [
-      message.chat.id,
-      message.messageThreadId ?? "main",
-      message.messageId
-    ].map(safeTelegramStorageComponent).joined(separator: ":")
-  }
-
-  private func contentKey(for message: TelegramMessage) -> String? {
-    guard let text = message.text?.trimmingCharacters(in: .whitespacesAndNewlines),
-      !text.isEmpty,
-      let senderId = message.from?.id,
-      let date = message.date
-    else {
-      return nil
-    }
-    return [
-      message.chat.id,
-      message.messageThreadId ?? "main",
-      senderId,
-      String(date),
-      text
-    ].map(safeTelegramStorageComponent).joined(separator: ":")
-  }
-}
-
-private struct TelegramMessageDedupeRecord: Codable {
-  var keys: [String]
-}
-
-private struct TelegramConversationHistoryStore {
-  private static let maxEntries = 80
-
-  var eventRoot: URL
-  var source: TelegramGatewaySource
-
-  func loadHistory(message: TelegramMessage) -> [JSONObject] {
-    let url = historyURL(message: message)
-    guard FileManager.default.fileExists(atPath: url.path),
-      let data = try? Data(contentsOf: url),
-      let values = try? JSONDecoder().decode([JSONValue].self, from: data)
-    else {
-      return []
-    }
-    return values.compactMap { value in
-      guard case let .object(object) = value else {
-        return nil
-      }
-      return object
-    }
-  }
-
-  func appendExchange(message: TelegramMessage, replies: [TelegramConversationReply]) throws {
-    guard let text = message.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
-      return
-    }
-    let url = historyURL(message: message)
-    var history = loadHistory(message: message)
-    history.append(compactObject([
-      "role": .string("user"),
-      "text": .string(text),
-      "messageId": .string(message.messageId),
-      "senderId": message.from?.id.map(JSONValue.string)
-    ]))
-    for reply in replies {
-      history.append(compactObject([
-        "role": .string("assistant"),
-        "text": .string(reply.text),
-        "replyAs": reply.replyAs.map(JSONValue.string)
-      ]))
-    }
-    history = Array(history.suffix(Self.maxEntries))
-    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    try encoder.encode(history.map(JSONValue.object)).write(to: url, options: .atomic)
-  }
-
-  private func historyURL(message: TelegramMessage) -> URL {
-    eventRoot
-      .appendingPathComponent("telegram-history", isDirectory: true)
-      .appendingPathComponent(safeTelegramStorageComponent(source.id), isDirectory: true)
-      .appendingPathComponent("\(safeTelegramStorageComponent(message.chat.id))-\(safeTelegramStorageComponent(message.messageThreadId ?? "main")).json")
-  }
-}
-
-private func safeTelegramStorageComponent(_ value: String) -> String {
-  let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-"))
-  let scalars = value.unicodeScalars.map { scalar in
-    allowed.contains(scalar) ? Character(scalar) : "_"
-  }
-  let sanitized = String(scalars).trimmingCharacters(in: CharacterSet(charactersIn: "._-"))
-  return sanitized.isEmpty ? "unknown" : sanitized
-}
-
-private extension KeyedDecodingContainer {
-  func decodeTelegramStringID(forKey key: Key) throws -> String {
-    if let string = try? decode(String.self, forKey: key) {
-      return string
-    }
-    if let int = try? decode(Int64.self, forKey: key) {
-      return String(int)
-    }
-    throw DecodingError.typeMismatch(
-      String.self,
-      DecodingError.Context(codingPath: codingPath + [key], debugDescription: "expected string or integer id")
-    )
-  }
-
-  func decodeTelegramStringIDIfPresent(forKey key: Key) throws -> String? {
-    guard contains(key) else {
-      return nil
-    }
-    return try decodeTelegramStringID(forKey: key)
-  }
-}
-
-private func compactObject(_ fields: [String: JSONValue?]) -> JSONObject {
-  fields.reduce(into: JSONObject()) { result, pair in
-    if let value = pair.value {
-      result[pair.key] = value
-    }
-  }
 }

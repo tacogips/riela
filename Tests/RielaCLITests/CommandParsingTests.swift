@@ -268,6 +268,7 @@ final class CommandParsingTests: XCTestCase {
         "--node-id", "save-chat-event-memory",
         "--payload-json", #"{"text":"hello"}"#,
         "--registered-at", "2026-06-20T10:00:00Z",
+        "--file", "fixtures/yui.png",
         "--memory-root", "tmp/memory",
         "--output", "json"
       ]),
@@ -279,6 +280,7 @@ final class CommandParsingTests: XCTestCase {
           nodeId: "save-chat-event-memory",
           payloadJSON: #"{"text":"hello"}"#,
           registeredAt: "2026-06-20T10:00:00Z",
+          filePaths: ["fixtures/yui.png"],
           databaseRoot: "tmp/memory",
           output: .json
         )
@@ -303,6 +305,26 @@ final class CommandParsingTests: XCTestCase {
           payloadJSON: #"{"summary":"updated"}"#,
           tags: ["date:2026-06-22"],
           output: .json
+        )
+      ))
+    )
+
+    XCTAssertEqual(
+      try parser.parse([
+        "memory", "update", "chat-memory",
+        "--workflow-id", "telegram-sdk-trio-chat",
+        "--record-id", "8",
+        "--payload-json", #"{"text":"remove files"}"#,
+        "--clear-files"
+      ]),
+      .memory(MemoryCommand(
+        kind: .update,
+        options: MemoryCommandOptions(
+          memoryId: "chat-memory",
+          workflowId: "telegram-sdk-trio-chat",
+          recordId: 8,
+          payloadJSON: #"{"text":"remove files"}"#,
+          clearFiles: true
         )
       ))
     )

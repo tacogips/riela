@@ -330,9 +330,23 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     let personas = chatPersonas(from: input.addon.config ?? [:])
     let defaultPersonaId = nonEmptyString(input.addon.config?["defaultPersonaId"]) ?? personas.first?.id ?? "yui"
     let request = routerRequestText(input)
-    let target = personas.first { persona in
-      persona.matches(request)
-    }?.id ?? defaultPersonaId
+    var matchedPersonaId: String?
+    var matchedLocation: Int?
+    for persona in personas {
+      guard let location = persona.matchLocation(in: request) else {
+        continue
+      }
+      if let currentLocation = matchedLocation {
+        if location < currentLocation || (location == currentLocation && persona.id < (matchedPersonaId ?? persona.id)) {
+          matchedPersonaId = persona.id
+          matchedLocation = location
+        }
+      } else {
+        matchedPersonaId = persona.id
+        matchedLocation = location
+      }
+    }
+    let target = matchedPersonaId ?? defaultPersonaId
     let knownTargetIds = Set(personas.map(\.id) + ["yui", "mika", "rina"])
     var when = Dictionary(uniqueKeysWithValues: knownTargetIds.map { ("target_\($0)", $0 == target) })
     when["always"] = true
@@ -359,12 +373,17 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     var id: String
     var aliases: [String]
 
-    func matches(_ request: String) -> Bool {
+    func matchLocation(in request: String) -> Int? {
       let normalizedRequest = request.lowercased()
-      return aliases.contains { alias in
+      return aliases.compactMap { alias in
         let normalizedAlias = alias.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return !normalizedAlias.isEmpty && normalizedRequest.contains(normalizedAlias)
-      }
+        guard !normalizedAlias.isEmpty,
+          let range = normalizedRequest.range(of: normalizedAlias)
+        else {
+          return nil
+        }
+        return normalizedRequest.distance(from: normalizedRequest.startIndex, to: range.lowerBound)
+      }.min()
     }
   }
 
@@ -489,7 +508,10 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     let memoryId = nonEmptyString(config["memoryId"]) ?? nonEmptyString(variables["memoryId"]) ?? "chat-memory"
     let nodeId = nonEmptyString(config["nodeId"]) ?? nonEmptyString(variables["memoryNodeId"]) ?? input.nodeId
     let limit = intValue(config["limit"]) ?? intValue(variables["limit"]) ?? 30
-    let memoryRoot = nonEmptyString(config["memoryRoot"]) ?? nonEmptyString(variables["memoryRoot"])
+    let workflowInput = memoryAddonJSONObject(variables["workflowInput"])
+    let memoryRoot = nonEmptyString(config["memoryRoot"])
+      ?? nonEmptyString(variables["memoryRoot"])
+      ?? nonEmptyString(workflowInput["memoryRoot"])
     let store = RielaMemoryStore(
       rootDirectory: memoryRoot ?? RielaMemoryStore.defaultRootDirectory()
     )
@@ -499,12 +521,14 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       let payload = try memoryPayload(config: config, variables: variables, input: input)
       let tags = try memoryTags(config: config, variables: variables)
       let relatedRecordIds = try memoryRelatedRecordIds(config: config, variables: variables)
+      let files = try memoryFileReferences(config: config, variables: variables)
       let record = try store.save(
         memoryId: memoryId,
         workflowId: input.workflowId,
         nodeId: nodeId,
         tags: tags,
         relatedRecordIds: relatedRecordIds,
+        files: files,
         payload: payload
       )
       return memoryAddonOutput(
@@ -522,6 +546,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       let payload = try memoryPayload(config: config, variables: variables, input: input)
       let tags = try memoryTags(config: config, variables: variables)
       let relatedRecordIds = try memoryRelatedRecordIds(config: config, variables: variables)
+      let files = try memoryUpdateFileReferences(config: config, variables: variables)
       let record = try store.update(
         memoryId: memoryId,
         recordId: recordId,
@@ -529,6 +554,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
         nodeId: optionalNodeScope(config: config, variables: variables),
         tags: tags,
         relatedRecordIds: relatedRecordIds,
+        files: files,
         payload: payload
       )
       return memoryAddonOutput(
@@ -553,11 +579,11 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
         operation: operation,
         memoryId: memoryId,
         databasePath: try store.databasePath(memoryId: memoryId),
-        payload: [
+        payload: memoryRecordsPayload(records: records).merging([
           "records": .array(records.map(memoryRecordJSON)),
           "recordsText": .string(memoryRecordsText(records)),
           "limit": .number(Double(limit))
-        ]
+        ]) { _, new in new }
       )
     case .search:
       let patterns = memoryMatchPatterns(config: config, variables: variables)
@@ -579,14 +605,14 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
         operation: operation,
         memoryId: memoryId,
         databasePath: try store.databasePath(memoryId: memoryId),
-        payload: [
+        payload: memoryRecordsPayload(records: records).merging([
           "records": .array(records.map(memoryRecordJSON)),
           "recordsText": .string(memoryRecordsText(records)),
           "matchPatterns": .array(patterns.map { .string($0) }),
           "tags": .array(tags.map { .string($0) }),
           "relatedRecordIds": .array(relatedRecordIds.map { .number(Double($0)) }),
           "limit": .number(Double(limit))
-        ]
+        ]) { _, new in new }
       )
     }
   }
@@ -815,6 +841,13 @@ private func memoryPayload(
   }
 }
 
+private func memoryAddonJSONObject(_ value: JSONValue?) -> JSONObject {
+  guard case let .object(object)? = value else {
+    return [:]
+  }
+  return object
+}
+
 private func memoryMatchPatterns(config: JSONObject, variables: JSONObject) -> [String] {
   if let configured = stringArrayValue(config["matchPatterns"]) {
     return configured
@@ -853,6 +886,14 @@ private func memoryRelatedRecordIds(config: JSONObject, variables: JSONObject) t
     return [singleId]
   }
   return []
+}
+
+private func memoryUpdateFileReferences(config: JSONObject, variables: JSONObject) throws -> [MemoryFileReference]? {
+  if boolValue(config["clearFiles"]) == true || boolValue(variables["clearFiles"]) == true {
+    return []
+  }
+  let files = try memoryFileReferences(config: config, variables: variables)
+  return files.isEmpty ? nil : files
 }
 
 private func requiredMemoryRecordId(config: JSONObject, variables: JSONObject) throws -> Int64 {
@@ -946,21 +987,81 @@ private func memoryRecordJSON(_ record: MemoryRecord) -> JSONValue {
     "registeredAt": .string(record.registeredAt),
     "tags": .array(record.tags.map { .string($0) }),
     "relatedRecordIds": .array(record.relatedRecordIds.map { .number(Double($0)) }),
+    "files": .array(record.files.map(memoryFileJSON)),
     "payload": jsonValue(from: record.payload)
   ])
+}
+
+private func memoryFileJSON(_ file: MemoryFileReference) -> JSONValue {
+  .object([
+    "path": .string(file.path),
+    "mediaType": file.mediaType.map { .string($0) } ?? .null,
+    "kind": file.kind.map { .string($0) } ?? .null,
+    "name": file.name.map { .string($0) } ?? .null,
+    "sizeBytes": file.sizeBytes.map { .number(Double($0)) } ?? .null
+  ])
+}
+
+private func memoryRecordsPayload(records: [MemoryRecord]) -> JSONObject {
+  let files = records.flatMap(\.files)
+  return [
+    "files": .array(files.map(memoryFileJSON)),
+    "filePaths": .array(files.map(\.path).map(JSONValue.string)),
+    "imagePaths": .array(memoryFilePaths(files, kind: "image", mediaPrefix: "image/").map(JSONValue.string)),
+    "audioPaths": .array(memoryFilePaths(files, kind: "audio", mediaPrefix: "audio/").map(JSONValue.string)),
+    "videoPaths": .array(memoryFilePaths(files, kind: "video", mediaPrefix: "video/").map(JSONValue.string)),
+    "pdfPaths": .array(memoryFilePaths(files, kind: "pdf", mediaType: "application/pdf").map(JSONValue.string)),
+    "memoryAttachmentCountRead": .number(Double(files.count))
+  ]
+}
+
+private func memoryFilePaths(
+  _ files: [MemoryFileReference],
+  kind: String,
+  mediaPrefix: String? = nil,
+  mediaType: String? = nil
+) -> [String] {
+  files.filter { file in
+    if file.kind == kind {
+      return true
+    }
+    if let mediaPrefix, file.mediaType?.hasPrefix(mediaPrefix) == true {
+      return true
+    }
+    if let mediaType, file.mediaType == mediaType {
+      return true
+    }
+    return false
+  }.map(\.path)
 }
 
 private func memoryRecordsText(_ records: [MemoryRecord]) -> String {
   records
     .map { record in
       let text = memoryPayloadText(record.payload, depth: 0).truncatedForMemoryPrompt()
+      let fileText = memoryFilesText(record.files)
       let prefix = "#\(record.recordId) \(record.registeredAt)"
       if let nodeId = record.nodeId, !nodeId.isEmpty {
-        return "\(prefix) [\(nodeId)] \(text)"
+        return "\(prefix) [\(nodeId)] \(text)\(fileText)"
       }
-      return "\(prefix) \(text)"
+      return "\(prefix) \(text)\(fileText)"
     }
     .joined(separator: "\n")
+}
+
+private func memoryFilesText(_ files: [MemoryFileReference]) -> String {
+  guard !files.isEmpty else {
+    return ""
+  }
+  let rendered = files.prefix(10).map { file in
+    [
+      file.kind,
+      file.mediaType,
+      file.name,
+      file.path
+    ].compactMap { $0 }.joined(separator: " ")
+  }.joined(separator: "; ")
+  return " files: \(rendered)"
 }
 
 private func memoryPayloadText(_ value: MemoryJSONValue, depth: Int) -> String {

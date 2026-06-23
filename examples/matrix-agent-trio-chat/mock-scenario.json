@@ -49,7 +49,7 @@
       "handoff_mika": false
     },
     "payload": {
-      "replyText": "Rinaです。技術面では、3人を同じ入口で受けつつ persona ごとに routing、memory、reply identity を分けるのが堅いです。運用では handoff の上限とログ確認を入れておくと、Matrix でも議論が暴走しにくいです。",
+      "replyText": "観測結果。入口は一つでいい。ただし persona ごとに routing、memory、reply identity を分離。handoff 上限とログ確認で、Matrix の循環は制御可能。",
       "handoff_yui": false,
       "handoff_mika": false
     }

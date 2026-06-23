@@ -252,6 +252,39 @@ final class WorkflowInputFilterRunnerTests: XCTestCase {
     XCTAssertFalse(selfDecision.shouldRun)
   }
 
+  func testMentionResponderBuiltinSuppressesPlainAliasWhenAnotherBotIsAddressed() {
+    let filter = WorkflowInputFilter(
+      kind: .telegram,
+      builtin: .mentionResponder,
+      config: [
+        "aliases": .array([.string("mika"), .string("@mikatrend0529bot")]),
+        "selfUsernames": .array([.string("mikatrend0529bot")]),
+        "suppressedByAliases": .array([.string("@rinacursor0529bot")])
+      ]
+    )
+    let evaluator = WorkflowInputFilterEvaluator()
+
+    let addressedToRina = evaluator.evaluate(
+      filters: [filter],
+      variables: inputFilterTelegramVariables(
+        text: "@rinacursor0529bot What image did I just show Mika?"
+      ),
+      stepId: "mika",
+      nodeId: "mika"
+    )
+    let addressedToMikaAboutRina = evaluator.evaluate(
+      filters: [filter],
+      variables: inputFilterTelegramVariables(
+        text: "@mikatrend0529bot What did Rina say?"
+      ),
+      stepId: "mika",
+      nodeId: "mika"
+    )
+
+    XCTAssertFalse(addressedToRina.shouldRun)
+    XCTAssertTrue(addressedToMikaAboutRina.shouldRun)
+  }
+
   func testMentionResponderBuiltinDefaultResponderSkipsUnaddressedBotMessages() {
     let filter = WorkflowInputFilter(
       kind: .telegram,

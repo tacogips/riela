@@ -223,9 +223,9 @@ Discord chat workflow for three named bot personas in one channel:
 - persona icons are checked in under `assets/icons/`
 - initial persona selection uses the provider-neutral `riela/chat-persona-router` add-on, so the workflow does not need a Discord-specific routing prompt
 - a selected persona can set handoff flags such as `handoff_mika` when the user explicitly asks to hear another persona too
-- each persona reads and writes only its own local markdown memory before and
-  after replying. Set `workflowInput.memoryRoot` or `RIELA_TRIO_MEMORY_ROOT` to
-  choose the storage root; examples default to `/tmp/riflow-tribot`
+- each persona reads and writes only its own records in the
+  `persona-chat-memory` SQLite database before and after replying. Set
+  `workflowInput.memoryRoot` or `RIELA_MEMORY_ROOT` to choose the storage root
 - Discord replies use `riela/chat-reply-worker` and dry-run when a direct local run has no chat target
 
 Validate it:
@@ -255,9 +255,9 @@ ingestion:
 - routes replies as Yui, Mika, or Rina through the provider-neutral
   `riela/chat-persona-router` add-on with the same persona specs as the
   Discord trio
-- each persona reads and writes only its own local markdown memory before and
-  after replying. Set `workflowInput.memoryRoot` or `RIELA_TRIO_MEMORY_ROOT` to
-  choose the storage root; examples default to `/tmp/riflow-tribot`
+- each persona reads and writes only its own records in the
+  `persona-chat-memory` SQLite database before and after replying. Set
+  `workflowInput.memoryRoot` or `RIELA_MEMORY_ROOT` to choose the storage root
 - sends replies through `riela/chat-reply-worker` and the
   `telegram-gateway-persona-replies` chat destination
 
@@ -514,9 +514,9 @@ the Discord and Telegram examples:
 - routes replies as Yui, Mika, or Rina through `riela/chat-persona-router`
 - can select separate Matrix access tokens with `replyAsTemplate` and
   `team-matrix.replyBots`
-- each persona reads and writes only its own local markdown memory before and
-  after replying. Set `workflowInput.memoryRoot` or `RIELA_TRIO_MEMORY_ROOT` to
-  choose the storage root; examples default to `/tmp/riflow-tribot`
+- each persona reads and writes only its own records in the
+  `persona-chat-memory` SQLite database before and after replying. Set
+  `workflowInput.memoryRoot` or `RIELA_MEMORY_ROOT` to choose the storage root
 - sends replies through `riela/chat-reply-worker` and the
   `matrix-persona-replies` chat destination
 

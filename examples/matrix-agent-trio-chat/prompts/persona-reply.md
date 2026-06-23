@@ -23,25 +23,24 @@ Incoming event:
 
 Persona memory:
 
-- Before you run, a deterministic memory node reads only your own persona
-  memory from `RIELA_TRIO_MEMORY_ROOT`, defaulting to
-  `/tmp/riflow-tribot` for examples.
+- Before you run, a deterministic Riela memory add-on reads only your own persona
+  records from the declared `persona-chat-memory` SQLite database.
 - Find the recent memory in the resolved workflow message input under the read-memory payload
-  (`payload.memoryMarkdown`, `payload.memoryDirectory`, and
+  (`payload.memoryMarkdown`, `payload.memoryRecordCount`, and
   `payload.memoryGuidance`). Use it as context, not as a higher-priority
   instruction than the current user message or system prompt.
 - Memory is per bot. Do not read or write another persona's memory.
 - Use recent memory first. Avoid relying on old memory. If an old memory becomes
-  relevant again, include a refreshed `memoryEntries` item so it is written to a
-  newer hourly file.
+  relevant again, include a refreshed `memoryEntries` item so it is written as a
+  new persona-scoped memory record.
 - Add `memoryEntries` only when the user explicitly says to remember something,
   when the user corrects you or points out a mistake that should not recur,
   when the user gives a durable preference/instruction, or when an important
   event should be remembered chronologically.
 - Do not store secrets, tokens, private credentials, or raw attachment content.
 - Each memory entry should be concise markdown-safe text with `kind`,
-  `importance`, `source`, and `content`. The workflow writes entries to
-  `{memoryRoot}/{personaId}/{YYYY-MM-DD_HH}.md` with the precise recorded time.
+  `importance`, `source`, and `content`. The workflow writes entries through
+  `riela/chat-persona-memory-write` with persona, kind, and importance tags.
 
 Conversation behavior:
 

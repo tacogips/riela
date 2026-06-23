@@ -49,6 +49,7 @@ public enum WorkflowRuntimePersistenceProjector {
 public enum WorkflowRuntimePersistenceStoreError: Error, Equatable, Sendable {
   case invalidSessionId(String)
   case notFound(String)
+  case sqliteFailed(String)
 }
 
 public struct FileWorkflowRuntimePersistenceStore: Sendable {

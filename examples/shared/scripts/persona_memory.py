@@ -7,7 +7,25 @@ import re
 import sys
 
 
-DEFAULT_MEMORY_ROOT = "/tmp/riela-tribot"
+def repository_root():
+  configured = os.environ.get("RIELA_REPOSITORY_ROOT")
+  if configured:
+    configured_path = Path(configured).expanduser().resolve()
+    if (configured_path / "Package.swift").exists():
+      return configured_path
+  candidates = [
+    Path(__file__).resolve().parent,
+    *Path(__file__).resolve().parents,
+    Path.cwd().resolve(),
+    *Path.cwd().resolve().parents,
+  ]
+  for directory in candidates:
+    if (directory / "Package.swift").exists():
+      return directory
+  return Path.cwd()
+
+
+DEFAULT_MEMORY_ROOT = str(repository_root() / "tmp" / "riela-tribot")
 
 
 def read_envelope():
@@ -241,6 +259,45 @@ def sent_reply_count(payloads):
   return max(counts) if counts else sum(1 for payload in payloads if isinstance(payload.get("replyAs"), str))
 
 
+PERSONA_HANDOFF_KEYS = {
+  "yui": "handoff_yui",
+  "mika": "handoff_mika",
+  "rina": "handoff_rina",
+}
+
+PERSONA_HANDOFF_ALIASES = {
+  "yui": ("@yuicodexf0529bot", "@yui", "yui", "ゆい", "ユイ"),
+  "mika": ("@mikatrend0529bot", "@mika", "mika", "ミカ"),
+  "rina": ("@rinacursor0529bot", "@rina", "rina", "リナ"),
+}
+
+PERSONA_HANDOFF_CONTINUATION_CUES = (
+  "@",
+  "次",
+  "続",
+  "next",
+  "ask",
+  "聞",
+  "伺",
+  "お願い",
+  "どう",
+  "くれ",
+  "ください",
+  "教え",
+  "view",
+)
+
+
+def safe_fallback_reply(persona_id, persona_name):
+  if persona_id == "yui":
+    return "では、肩の力を抜いて続けましょう。"
+  if persona_id == "mika":
+    return "いいね、ゆるく続けよ。"
+  if persona_id == "rina":
+    return "了解。ここまでで一度区切れる。"
+  return f"{persona_name}です。今の話題を受けて、自然に続けます。"
+
+
 def fallback_reply(persona_id, persona_name, texts, autonomous_turns):
   if persona_id == "yui":
     return "では、肩の力を抜いて続けましょう。最近少し気分が上がったことはありますか？ @Mika なら、今の空気に合う軽い話題を拾えそうです。"
@@ -251,6 +308,63 @@ def fallback_reply(persona_id, persona_name, texts, autonomous_turns):
       return "了解。私は最近、配信サービスごとの独占作品が増えている流れが少し気になっている。見る側の選択肢は増えたようで、実際は追う負荷も増えている。@Yui はこういう変化、生活目線だとどう見える？"
     return "了解。ここまでで一度区切れる。次に話題を変えるなら、作品、開発、日常のどれでも対応できる。"
   return f"{persona_name}です。今の話題を受けて、自然に続けます。"
+
+
+def selected_handoff_persona(handoffs):
+  for persona_id, key in PERSONA_HANDOFF_KEYS.items():
+    if handoffs.get(key) is True:
+      return persona_id
+  return None
+
+
+def visited_persona_ids(payloads):
+  visited = []
+  for payload in payloads:
+    reply_as = payload.get("replyAs")
+    if isinstance(reply_as, str):
+      persona_id = safe_segment(reply_as, "")
+      if persona_id and persona_id not in visited:
+        visited.append(persona_id)
+  return visited
+
+
+def contains_handoff_address(text, persona_id):
+  lowered = text.lower()
+  aliases = PERSONA_HANDOFF_ALIASES.get(persona_id, (f"@{persona_id}", persona_id))
+  return any(alias.lower() in lowered for alias in aliases)
+
+
+def contains_continuation_cue(text):
+  lowered = text.lower()
+  return any(cue in lowered for cue in PERSONA_HANDOFF_CONTINUATION_CUES)
+
+
+def sentence_fragments(text):
+  fragments = []
+  current = ""
+  for character in text:
+    current += character
+    if character in ".。!?！？\n":
+      fragments.append(current)
+      current = ""
+  if current:
+    fragments.append(current)
+  return fragments or [text]
+
+
+def sanitized_reply_text(text, personas_to_remove, fallback):
+  if not personas_to_remove:
+    return text
+  kept = [
+    fragment
+    for fragment in sentence_fragments(text)
+    if not any(
+      contains_handoff_address(fragment, persona_id) and contains_continuation_cue(fragment)
+      for persona_id in personas_to_remove
+    )
+  ]
+  sanitized = "".join(kept).strip()
+  return sanitized or fallback
 
 
 def final_autonomous_reply(text):
@@ -379,10 +493,26 @@ def write_memory(envelope):
     }.get(persona_id, ["handoff_mika", "handoff_rina", "handoff_yui"])
     selected = next((name for name in priorities if name in true_handoffs), true_handoffs[0])
     handoffs = {name: name == selected for name in handoffs}
+  selected_target = selected_handoff_persona(handoffs)
+  visited_personas = visited_persona_ids(payloads)
+  blocked_reason = None
+  if selected_target == persona_id:
+    blocked_reason = "current-persona-already-replied"
+  elif selected_target in visited_personas:
+    blocked_reason = "target-persona-already-replied"
+  if blocked_reason is not None:
+    handoffs = {name: False for name in handoffs}
+    reply_text = sanitized_reply_text(reply_text, [selected_target], safe_fallback_reply(persona_id, persona_name))
   payload = dict(persona_payload)
   payload.update(handoffs)
   payload["replyText"] = reply_text
   payload["autonomousTurns"] = autonomous_turns
+  payload["handoffGuard"] = {
+    "blocked": blocked_reason is not None,
+    "reason": blocked_reason,
+    "selectedTarget": selected_target,
+    "visitedPersonas": visited_personas,
+  }
   payload["memory"] = {
     "personaId": persona_id,
     "memoryRoot": root,

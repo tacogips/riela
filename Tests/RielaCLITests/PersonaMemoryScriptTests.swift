@@ -2,6 +2,24 @@ import Foundation
 import XCTest
 
 final class PersonaMemoryScriptTests: XCTestCase {
+  func testDefaultMemoryRootStaysInsideRepositoryTmp() throws {
+    let defaultRoot = repositoryRoot().appendingPathComponent("tmp/riela-tribot", isDirectory: true)
+    try? FileManager.default.removeItem(at: defaultRoot)
+    addTeardownBlock {
+      try? FileManager.default.removeItem(at: defaultRoot)
+    }
+
+    let output = try runPersonaMemory(
+      personaId: "yui",
+      personaName: "Yui Codex",
+      envelopeJSON: makeEnvelopeWithoutMemoryRoot()
+    )
+    let payload = try payload(from: output)
+    let memory = try XCTUnwrap(payload["memory"] as? [String: Any])
+
+    XCTAssertEqual(memory["memoryRoot"] as? String, defaultRoot.path)
+  }
+
   func testMikaFallbackHandsOffToRinaForAutonomousChat() throws {
     let output = try runPersonaMemory(
       personaId: "mika",
@@ -81,6 +99,32 @@ final class PersonaMemoryScriptTests: XCTestCase {
     XCTAssertTrue(replyText.contains("ここで一度区切る。"), replyText)
   }
 
+  func testBlocksSelfHandoffAndRemovesDanglingMention() throws {
+    let output = try runPersonaMemory(
+      personaId: "yui",
+      personaName: "Yui Codex",
+      envelopeJSON: makeEnvelope(latestOutputsJSON: #"""
+      [
+        {
+          "payload": {
+            "replyAs": "yui",
+            "replyText": "続きは@Yuiが見るね。",
+            "handoff_yui": true
+          }
+        }
+      ]
+      """#)
+    )
+    let payload = try payload(from: output)
+    let guardPayload = try XCTUnwrap(payload["handoffGuard"] as? [String: Any])
+
+    XCTAssertEqual(payload["handoff_yui"] as? Bool, false)
+    XCTAssertEqual(payload["replyText"] as? String, "では、肩の力を抜いて続けましょう。")
+    XCTAssertEqual(guardPayload["blocked"] as? Bool, true)
+    XCTAssertEqual(guardPayload["reason"] as? String, "current-persona-already-replied")
+    XCTAssertEqual(guardPayload["selectedTarget"] as? String, "yui")
+  }
+
   private func runPersonaMemory(
     personaId: String,
     personaName: String,
@@ -96,6 +140,7 @@ final class PersonaMemoryScriptTests: XCTestCase {
     var environment = ProcessInfo.processInfo.environment
     environment["RIELA_TRIO_MEMORY_PERSONA_ID"] = personaId
     environment["RIELA_TRIO_MEMORY_PERSONA_NAME"] = personaName
+    environment.removeValue(forKey: "RIELA_TRIO_MEMORY_ROOT")
     process.environment = environment
 
     let input = Pipe()
@@ -144,6 +189,31 @@ final class PersonaMemoryScriptTests: XCTestCase {
       "input": {
         "request": "\#(request)",
         "latestOutputs": \#(latestOutputsJSON)
+      }
+    }
+    """#
+  }
+
+  private func makeEnvelopeWithoutMemoryRoot() -> String {
+    let request = "Yui、MikaとRinaでしばらく自然に雑談して。"
+    return #"""
+    {
+      "variables": {
+        "workflowInput": {
+          "request": "\#(request)"
+        },
+        "humanInput": {
+          "request": "\#(request)",
+          "conversationId": "test-default-memory-root"
+        },
+        "event": {
+          "conversation": {"id": "test-default-memory-root"},
+          "input": {"text": "\#(request)"}
+        }
+      },
+      "input": {
+        "request": "\#(request)",
+        "latestOutputs": []
       }
     }
     """#

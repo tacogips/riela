@@ -98,8 +98,13 @@ extension BuiltinWorkflowAddonResolver {
     for (key, value) in handoffs {
       payload[key] = .bool(value)
     }
-    let originalReplyText = nonEmptyString(payload["replyText"]) ?? personaMemoryFallbackReply(context: context)
-    let replyText = sanitizedPersonaReplyText(originalReplyText, handoffDecision: handoffDecision)
+    let fallbackReplyText = personaMemoryFallbackReply(context: context)
+    let originalReplyText = nonEmptyString(payload["replyText"]) ?? fallbackReplyText
+    let replyText = sanitizedPersonaReplyText(
+      originalReplyText,
+      handoffDecision: handoffDecision,
+      fallback: fallbackReplyText
+    )
     payload["status"] = .string("ok")
     payload["addon"] = .string(input.addon.name)
     payload["stepId"] = .string(input.stepId)
@@ -119,7 +124,7 @@ extension BuiltinWorkflowAddonResolver {
     payload["handoffTrail"] = .array(handoffDecision.handoffTrail.map(JSONValue.string))
     payload["handoffGuard"] = .object([
       "blocked": .bool(handoffDecision.blocked),
-      "reason": handoffDecision.reason.map(JSONValue.string) ?? .null,
+      "reason": handoffDecision.reason.map(\.rawValue).map(JSONValue.string) ?? .null,
       "selectedTarget": handoffDecision.selectedTarget.map(JSONValue.string) ?? .null,
       "visitedPersonas": .array(handoffDecision.visitedPersonas.map(JSONValue.string)),
       "maxTurns": .number(Double(handoffDecision.maxTurns))
@@ -161,8 +166,51 @@ private struct PersonaHandoffDecision {
   var turnCount: Int
   var maxTurns: Int
   var blocked: Bool
-  var reason: String?
+  var reason: PersonaHandoffBlockReason?
 }
+
+private enum PersonaHandoffBlockReason: String {
+  case currentPersonaAlreadyReplied = "current-persona-already-replied"
+  case targetPersonaAlreadyReplied = "target-persona-already-replied"
+  case maxHandoffTurnsReached = "max-handoff-turns-reached"
+}
+
+private struct PersonaHandoffTarget {
+  var id: String
+  var handoffKey: String
+  var aliases: [String]
+}
+
+private let personaHandoffTargets: [PersonaHandoffTarget] = [
+  PersonaHandoffTarget(id: "yui", handoffKey: "handoff_yui", aliases: ["@yuicodexf0529bot", "@yui", "yui", "ゆい", "ユイ"]),
+  PersonaHandoffTarget(id: "mika", handoffKey: "handoff_mika", aliases: ["@mikatrend0529bot", "@mika", "mika", "ミカ"]),
+  PersonaHandoffTarget(id: "rina", handoffKey: "handoff_rina", aliases: ["@rinacursor0529bot", "@rina", "rina", "リナ"])
+]
+
+private let personaHandoffPriorityByPersonaId: [String: [String]] = [
+  "yui": ["mika", "rina"],
+  "mika": ["rina", "yui"],
+  "rina": ["mika", "yui"]
+]
+
+private let defaultPersonaHandoffPriority = ["mika", "rina", "yui"]
+
+private let personaHandoffContinuationCues = [
+  "@",
+  "次",
+  "next",
+  "ask",
+  "聞",
+  "伺",
+  "お願い",
+  "どう",
+  "くれ",
+  "ください",
+  "教え",
+  "view"
+]
+
+private let personaHandoffTargetsById = Dictionary(uniqueKeysWithValues: personaHandoffTargets.map { ($0.id, $0) })
 
 private func personaMemoryContext(_ input: WorkflowAddonExecutionInput) -> PersonaMemoryContext {
   let config = input.addon.config ?? [:]
@@ -367,14 +415,14 @@ private func guardedPersonaHandoffs(
   let handoffTrail = appendingPersona(personaId, to: visitedPersonas)
   var handoffs = normalizedPersonaHandoffs(personaId: personaId, payload: payload)
   let selectedTarget = selectedHandoffTarget(from: handoffs)
-  var blockedReason: String?
+  var blockedReason: PersonaHandoffBlockReason?
 
-  if visitedPersonas.contains(personaId) {
-    blockedReason = "current-persona-already-replied"
+  if selectedTarget == personaId || visitedPersonas.contains(personaId) {
+    blockedReason = .currentPersonaAlreadyReplied
   } else if let selectedTarget, visitedPersonas.contains(selectedTarget) {
-    blockedReason = "target-persona-already-replied"
+    blockedReason = .targetPersonaAlreadyReplied
   } else if selectedTarget != nil, handoffTrail.count >= maxTurns {
-    blockedReason = "max-handoff-turns-reached"
+    blockedReason = .maxHandoffTurnsReached
   }
 
   if blockedReason != nil {
@@ -395,19 +443,19 @@ private func guardedPersonaHandoffs(
   )
 }
 
-private func sanitizedPersonaReplyText(_ text: String, handoffDecision: PersonaHandoffDecision) -> String {
-  let requireContinuationCue: Bool
-  var personasToRemove: [String]
+private func sanitizedPersonaReplyText(
+  _ text: String,
+  handoffDecision: PersonaHandoffDecision,
+  fallback: String
+) -> String {
+  let personasToRemove: [String]
   if handoffDecision.blocked, let selectedTarget = handoffDecision.selectedTarget {
     personasToRemove = [selectedTarget]
-    requireContinuationCue = false
   } else if selectedHandoffTarget(from: handoffDecision.handoffs) == nil,
     handoffDecision.turnCount >= handoffDecision.maxTurns {
     personasToRemove = handoffDecision.visitedPersonas
-    requireContinuationCue = true
   } else {
     personasToRemove = []
-    requireContinuationCue = true
   }
   guard !personasToRemove.isEmpty else {
     return text
@@ -416,11 +464,11 @@ private func sanitizedPersonaReplyText(_ text: String, handoffDecision: PersonaH
   let kept = fragments.filter { fragment in
     !personasToRemove.contains { personaId in
       containsPersonaHandoffAddress(fragment, personaId: personaId)
-        && (!requireContinuationCue || containsContinuationCue(fragment))
+        && containsContinuationCue(fragment)
     }
   }
   let sanitized = kept.joined().trimmingCharacters(in: .whitespacesAndNewlines)
-  return sanitized.isEmpty ? text : sanitized
+  return sanitized.isEmpty ? fallback : sanitized
 }
 
 private func sentenceFragments(in text: String) -> [String] {
@@ -448,47 +496,24 @@ private func containsPersonaHandoffAddress(_ text: String, personaId: String) ->
 
 private func containsContinuationCue(_ text: String) -> Bool {
   let lowered = text.lowercased()
-  return [
-    "@",
-    "次",
-    "next",
-    "ask",
-    "聞",
-    "伺",
-    "お願い",
-    "どう",
-    "view"
-  ].contains { lowered.contains($0) }
+  return personaHandoffContinuationCues.contains { lowered.contains($0) }
 }
 
 private func personaHandoffAddressAliases(personaId: String) -> [String] {
-  switch personaId {
-  case "yui":
-    return ["@yuicodexf0529bot", "@yui", "yui", "ゆい", "ユイ"]
-  case "mika":
-    return ["@mikatrend0529bot", "@mika", "mika", "ミカ"]
-  case "rina":
-    return ["@rinacursor0529bot", "@rina", "rina", "リナ"]
-  default:
-    return ["@\(personaId)", personaId]
-  }
+  personaHandoffTargetsById[personaId]?.aliases ?? ["@\(personaId)", personaId]
 }
 
 private func normalizedPersonaHandoffs(personaId: String, payload: JSONObject) -> [String: Bool] {
-  var handoffs = [
-    "handoff_yui": personaMemoryBool(payload["handoff_yui"]) ?? false,
-    "handoff_mika": personaMemoryBool(payload["handoff_mika"]) ?? false,
-    "handoff_rina": personaMemoryBool(payload["handoff_rina"]) ?? false
-  ]
+  var handoffs = Dictionary(
+    uniqueKeysWithValues: personaHandoffTargets.map { target in
+      (target.handoffKey, personaMemoryBool(payload[target.handoffKey]) ?? false)
+    }
+  )
   let enabled = handoffs.filter(\.value).map(\.key)
   guard enabled.count > 1 else {
     return handoffs
   }
-  let priorities = [
-    "yui": ["handoff_mika", "handoff_rina"],
-    "mika": ["handoff_rina", "handoff_yui"],
-    "rina": ["handoff_mika", "handoff_yui"]
-  ][personaId] ?? ["handoff_mika", "handoff_rina", "handoff_yui"]
+  let priorities = prioritizedHandoffKeys(for: personaId)
   let selected = priorities.first { enabled.contains($0) } ?? enabled[0]
   for key in handoffs.keys {
     handoffs[key] = key == selected
@@ -497,16 +522,12 @@ private func normalizedPersonaHandoffs(personaId: String, payload: JSONObject) -
 }
 
 private func selectedHandoffTarget(from handoffs: [String: Bool]) -> String? {
-  if handoffs["handoff_yui"] == true {
-    return "yui"
-  }
-  if handoffs["handoff_mika"] == true {
-    return "mika"
-  }
-  if handoffs["handoff_rina"] == true {
-    return "rina"
-  }
-  return nil
+  personaHandoffTargets.first { handoffs[$0.handoffKey] == true }?.id
+}
+
+private func prioritizedHandoffKeys(for personaId: String) -> [String] {
+  let priorityIds = personaHandoffPriorityByPersonaId[personaId] ?? defaultPersonaHandoffPriority
+  return priorityIds.compactMap { personaHandoffTargetsById[$0]?.handoffKey }
 }
 
 private func visitedPersonaReplyIds(from input: JSONObject) -> [String] {

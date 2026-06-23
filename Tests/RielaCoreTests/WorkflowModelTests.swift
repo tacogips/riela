@@ -118,6 +118,55 @@ final class WorkflowModelTests: XCTestCase {
     XCTAssertEqual(workflow.nodeRegistry.first?.inputFilters?.first?.builtin, .mentionResponder)
   }
 
+  func testWorkflowValidationAcceptsNodeReferenceSource() throws {
+    let data = Data("""
+      {
+        "workflowId": "telegram-persona",
+        "description": "Sample workflow",
+        "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 3 },
+        "entryStepId": "reply",
+        "nodes": [{
+          "id": "reply",
+          "nodeRef": { "workflowId": "shared-personas", "nodeId": "mika" }
+        }],
+        "steps": [{ "id": "reply", "nodeId": "reply", "role": "worker" }]
+      }
+      """.utf8)
+
+    let result = validateAuthoredWorkflowData(data)
+
+    XCTAssertEqual(result.diagnostics.filter { $0.severity == .error }, [])
+    let registryNode = try XCTUnwrap(result.workflow?.nodeRegistry.first)
+    XCTAssertEqual(registryNode.nodeRef, WorkflowSharedNodeRef(workflowId: "shared-personas", nodeId: "mika"))
+    XCTAssertNil(registryNode.nodeFile)
+    XCTAssertNil(registryNode.addon)
+    XCTAssertEqual(result.workflow?.nodes.first?.nodeRef?.workflowId, "shared-personas")
+  }
+
+  func testWorkflowValidationRejectsMultipleNodeSources() throws {
+    let data = Data("""
+      {
+        "workflowId": "bad-persona",
+        "description": "Sample workflow",
+        "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 3 },
+        "entryStepId": "reply",
+        "nodes": [{
+          "id": "reply",
+          "nodeFile": "nodes/reply.json",
+          "nodeRef": { "workflowId": "shared-personas", "nodeId": "mika" }
+        }],
+        "steps": [{ "id": "reply", "nodeId": "reply", "role": "worker" }]
+      }
+      """.utf8)
+
+    let result = validateAuthoredWorkflowData(data)
+
+    XCTAssertNil(result.workflow)
+    XCTAssertTrue(result.diagnostics.contains {
+      $0.path == "workflow.nodes[0]" && $0.message == "must define only one of nodeFile, nodeRef, or addon"
+    })
+  }
+
   func testWorkflowValidationRequiresDeclaredMemoryForBuiltinMemoryAddons() throws {
     let data = Data("""
       {
@@ -182,6 +231,69 @@ final class WorkflowModelTests: XCTestCase {
     XCTAssertEqual(result.diagnostics.filter { $0.severity == .error }, [])
     XCTAssertEqual(result.workflow?.memories?.first?.id, "chat-memory")
     XCTAssertEqual(result.workflow?.nodeRegistry.first?.memories?.first?.id, "chat-memory")
+  }
+
+  func testWorkflowValidationUsesPersonaMemoryDefaultForPersonaAddons() throws {
+    let data = Data("""
+      {
+        "workflowId": "persona-memory-declarations",
+        "description": "Sample workflow",
+        "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 3 },
+        "memories": [{ "id": "persona-chat-memory", "scope": "cross-workflow", "defaultLimit": 30 }],
+        "entryStepId": "read-memory",
+        "nodes": [{
+          "id": "read-memory",
+          "memories": [{ "id": "persona-chat-memory", "purpose": "read persona chat memory" }],
+          "addon": {
+            "name": "riela/chat-persona-memory-read",
+            "version": "1",
+            "config": {
+              "personaId": "yui"
+            }
+          }
+        }],
+        "steps": [{ "id": "read-memory", "nodeId": "read-memory", "role": "worker" }]
+      }
+      """.utf8)
+
+    let result = validateAuthoredWorkflowData(data)
+
+    XCTAssertEqual(result.diagnostics.filter { $0.severity == .error }, [])
+    XCTAssertEqual(result.workflow?.memories?.first?.id, "persona-chat-memory")
+    XCTAssertEqual(result.workflow?.nodeRegistry.first?.memories?.first?.id, "persona-chat-memory")
+  }
+
+  func testWorkflowValidationRejectsRawDailySummaryMemoryIdCollision() throws {
+    let data = Data("""
+      {
+        "workflowId": "raw-daily-memory",
+        "description": "Sample workflow",
+        "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 3 },
+        "memories": [{ "id": "chat-log", "scope": "workflow", "defaultLimit": 30 }],
+        "entryStepId": "record-chat",
+        "nodes": [{
+          "id": "record-chat",
+          "memories": [{ "id": "chat-log", "purpose": "record chat memory" }],
+          "addon": {
+            "name": "riela/chat-memory-raw-daily-summary",
+            "version": "1",
+            "config": {
+              "rawMemoryId": "chat-log",
+              "summaryMemoryId": "chat-log"
+            }
+          }
+        }],
+        "steps": [{ "id": "record-chat", "nodeId": "record-chat", "role": "worker" }]
+      }
+      """.utf8)
+
+    let result = validateAuthoredWorkflowData(data)
+
+    XCTAssertNil(result.workflow)
+    XCTAssertTrue(result.diagnostics.contains {
+      $0.path == "workflow.nodes[0].addon.config.summaryMemoryId"
+        && $0.message == "rawMemoryId and summaryMemoryId must be distinct memory ids"
+    })
   }
 
   func testWorkflowValidationLoadsProjectDesignLoopFixture() throws {
@@ -398,7 +510,7 @@ final class WorkflowModelTests: XCTestCase {
     )
     XCTAssertTrue(
       result.diagnostics.contains {
-        $0.path == "workflow.nodes[0]" && $0.message == "must define nodeFile, inline node, or addon"
+        $0.path == "workflow.nodes[0]" && $0.message == "must define exactly one of nodeFile, nodeRef, or addon"
       }
     )
   }

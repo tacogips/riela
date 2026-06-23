@@ -9,7 +9,17 @@
   "nodes": [
     {
       "id": "prepare-time-signal",
-      "nodeFile": "nodes/node-prepare-time-signal.json"
+      "addon": {
+        "name": "riela/time-signal",
+        "version": "1",
+        "config": {
+          "intervalMinutes": 5
+        },
+        "inputs": {
+          "scheduledAt": "{{event.input.scheduledAt}}",
+          "timezone": "{{event.input.timezone}}"
+        }
+      }
     },
     {
       "id": "send-time-signal",
@@ -17,7 +27,7 @@
         "name": "riela/chat-reply-worker",
         "version": "1",
         "config": {
-          "textTemplate": "{{workflowInput.replyText}}",
+          "textTemplate": "{{inbox.latest.output.payload.replyText}}",
           "replyAsTemplate": "yui",
           "visibility": "public",
           "threadPolicy": "same-thread",

@@ -39,9 +39,7 @@ parity is tracked separately; `official/cursor-sdk` is not aliased to
 `cursor-cli-agent`.
 
 Riela-owned environment names use the `RIELA_` prefix. Remote GraphQL workflow
-runs read `RIELA_MANAGER_AUTH_TOKEN` and `RIELA_MANAGER_SESSION_ID`, with
-legacy `RIEL_MANAGER_AUTH_TOKEN` and `RIEL_MANAGER_SESSION_ID` fallback for
-existing Riela-authored data. Remote auto-improve input is opt-in:
+runs read `RIELA_MANAGER_AUTH_TOKEN` and `RIELA_MANAGER_SESSION_ID`. Remote auto-improve input is opt-in:
 `workflow run --endpoint ...` omits `autoImprove` by default and only sends the
 supervision policy when `--auto-improve` is set.
 

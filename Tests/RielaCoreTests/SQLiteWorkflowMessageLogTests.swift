@@ -44,9 +44,12 @@ final class SQLiteWorkflowMessageLogTests: XCTestCase {
       createdAt: date
     )
 
-    try FileWorkflowRuntimePersistenceStore(rootDirectory: root.path).save(
+    try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path).save(
       WorkflowRuntimePersistenceProjector.snapshot(session: session, workflowMessages: [message])
     )
+    XCTAssertFalse(FileManager.default.fileExists(atPath: root
+      .appendingPathComponent(session.sessionId, isDirectory: true)
+      .appendingPathComponent("runtime-snapshot.json").path))
 
     let dbPath = SQLiteWorkflowMessageLog.defaultDatabasePath(rootDirectory: root.path)
     let storage = try sqliteColumns(
@@ -59,6 +62,15 @@ final class SQLiteWorkflowMessageLogTests: XCTestCase {
       """
     )
     XCTAssertEqual(storage, ["blob", "1", "0", "needle", "blob", "artifact-a"])
+    let snapshotStorage = try sqliteColumns(
+      dbPath,
+      """
+      SELECT typeof(session_json), json_valid(session_json, 8), json_valid(session_json),
+        json_extract(session_json, '$.sessionId')
+      FROM workflow_runtime_snapshots
+      """
+    )
+    XCTAssertEqual(snapshotStorage, ["blob", "1", "0", "session-jsonb"])
 
     let log = SQLiteWorkflowMessageLog(databasePath: dbPath)
     XCTAssertEqual(try log.jsonPathStringValues(workflowExecutionId: session.sessionId, path: "$.nested.value"), ["needle"])

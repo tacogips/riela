@@ -74,11 +74,32 @@ public struct OpenAIResponsesRequest: Equatable, Sendable {
   public var model: String
   public var input: String
   public var instructions: String?
+  public var imageInputs: [OpenAIImageInput]
 
-  public init(model: String, input: String, instructions: String? = nil) {
+  public init(
+    model: String,
+    input: String,
+    instructions: String? = nil,
+    imageInputs: [OpenAIImageInput] = []
+  ) {
     self.model = model
     self.input = input
     self.instructions = instructions
+    self.imageInputs = imageInputs
+  }
+}
+
+public struct OpenAIImageInput: Equatable, Sendable {
+  public var mimeType: String
+  public var dataBase64: String
+
+  public init(mimeType: String, dataBase64: String) {
+    self.mimeType = mimeType
+    self.dataBase64 = dataBase64
+  }
+
+  public var dataURL: String {
+    "data:\(mimeType);base64,\(dataBase64)"
   }
 }
 
@@ -208,7 +229,8 @@ public struct OpenAiSDKAdapter: NodeAdapter {
         OpenAIResponsesRequest(
           model: input.node.model,
           input: input.promptText,
-          instructions: input.systemPromptText
+          instructions: input.systemPromptText,
+          imageInputs: try openAIImageInputs(from: input)
         )
       )
     )
@@ -510,7 +532,7 @@ private func makeURLRequest(for request: OfficialSDKRequest) throws -> URLReques
     endpoint = officialSDKEndpoint(baseURL: request.baseURL, defaultBaseURL: "https://api.openai.com/v1", pathComponents: ["responses"])
     body = [
       "model": .string(openAIRequest.model),
-      "input": .string(openAIRequest.input)
+      "input": openAIInputValue(openAIRequest)
     ]
     if let instructions = openAIRequest.instructions {
       body["instructions"] = .string(instructions)
@@ -579,6 +601,32 @@ private func makeURLRequest(for request: OfficialSDKRequest) throws -> URLReques
   }
   urlRequest.httpBody = try JSONEncoder().encode(JSONValue.object(body))
   return urlRequest
+}
+
+private func openAIInputValue(_ request: OpenAIResponsesRequest) -> JSONValue {
+  guard !request.imageInputs.isEmpty else {
+    return .string(request.input)
+  }
+
+  var content: [JSONValue] = [
+    .object([
+      "type": .string("input_text"),
+      "text": .string(request.input)
+    ])
+  ]
+  content += request.imageInputs.map { image in
+    .object([
+      "type": .string("input_image"),
+      "image_url": .string(image.dataURL)
+    ])
+  }
+
+  return .array([
+    .object([
+      "role": .string("user"),
+      "content": .array(content)
+    ])
+  ])
 }
 
 private func geminiGenerateContentEndpoint(baseURL: URL?, model: String) -> URL {
@@ -708,6 +756,39 @@ private func geminiInlineDataParts(from input: AdapterExecutionInput) throws -> 
       throw AdapterExecutionError(.policyBlocked, "geminiInlineDataParts[\(index)].dataBase64 is required")
     }
     return GeminiInlineDataPart(mimeType: mimeType, dataBase64: dataBase64)
+  }
+}
+
+private func openAIImageInputs(from input: AdapterExecutionInput) throws -> [OpenAIImageInput] {
+  try resolveAdapterImagePaths(input).map { path in
+    let url = URL(fileURLWithPath: path)
+    let data: Data
+    do {
+      data = try Data(contentsOf: url)
+    } catch {
+      throw AdapterExecutionError(.policyBlocked, "failed to read OpenAI image attachment at \(path)")
+    }
+    return OpenAIImageInput(
+      mimeType: openAIImageMimeType(for: url),
+      dataBase64: data.base64EncodedString()
+    )
+  }
+}
+
+private func openAIImageMimeType(for url: URL) -> String {
+  switch url.pathExtension.lowercased() {
+  case "gif":
+    return "image/gif"
+  case "heic":
+    return "image/heic"
+  case "jpeg", "jpg":
+    return "image/jpeg"
+  case "png":
+    return "image/png"
+  case "webp":
+    return "image/webp"
+  default:
+    return "application/octet-stream"
   }
 }
 

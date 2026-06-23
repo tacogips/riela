@@ -1,11 +1,11 @@
 {
   "id": "design-review",
-  "nodeType": "command",
   "description": "Review the proposed memory feature design against the user's requested behavior.",
-  "command": {
-    "executable": "/usr/bin/env",
-    "argvTemplate": ["sh", ".riela/workflows/riela-memory-design-impl-review/scripts/review-memory-feature.sh", "design"]
-  },
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "effort": "high",
+  "promptTemplateFile": "prompts/design-review.md",
+  "variables": {},
   "output": {
     "description": "Return JSON with accepted, findings, designDecisions, and requiredChanges."
   }

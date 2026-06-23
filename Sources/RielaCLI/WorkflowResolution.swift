@@ -54,6 +54,7 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       }
       return try loadBundle(
         at: resolvedDirectory,
+        rootDirectory: candidate.rootDirectory,
         scope: candidate.scope,
         packageManifest: candidate.packageManifest,
         packageDirectory: candidate.packageDirectory
@@ -163,7 +164,7 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       }
       candidates.append(CandidateDirectory(
         directory: resolvedWorkflowDirectory,
-        rootDirectory: packageDirectory,
+        rootDirectory: resolvedWorkflowDirectory.deletingLastPathComponent(),
         scope: scope,
         packageManifest: manifest,
         packageDirectory: packageDirectory
@@ -187,7 +188,7 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     }
   }
 
-  private func isContained(_ directory: URL, in root: URL) -> Bool {
+  func isContained(_ directory: URL, in root: URL) -> Bool {
     let rootPath = root.standardizedFileURL.path
     let directoryPath = directory.standardizedFileURL.path
     return directoryPath == rootPath || directoryPath.hasPrefix(rootPath + "/")
@@ -195,6 +196,7 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
 
   private func loadBundle(
     at directory: URL,
+    rootDirectory: URL,
     scope: WorkflowScope,
     packageManifest providedPackageManifest: WorkflowPackageManifest? = nil,
     packageDirectory: URL? = nil
@@ -207,7 +209,7 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     )
     let workflowData = try Data(contentsOf: workflowURL)
     let validation = validateAuthoredWorkflowData(workflowData)
-    guard let workflow = validation.workflow else {
+    guard var workflow = validation.workflow else {
       throw WorkflowResolutionError.invalidWorkflow(validation.diagnostics)
     }
     var nodePayloads: [String: AgentNodePayload] = [:]
@@ -232,6 +234,15 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       }
       nodePayloads[registryNode.id] = absolutizedStdioPaths(in: hydratedPayload, workflowDirectory: directory)
     }
+    let materialized = try materializeSharedNodeReferences(
+      in: workflow,
+      nodePayloads: nodePayloads,
+      rootDirectory: rootDirectory,
+      scope: scope,
+      promptTemplateLoader: promptTemplateLoader
+    )
+    workflow = materialized.workflow
+    nodePayloads = materialized.nodePayloads
     let packageManifest = try providedPackageManifest ?? loadPackageManifestIfPresent(at: directory)
     let resolvedPackageDirectory = packageDirectory?.path ?? (packageManifest == nil ? nil : directory.path)
     return ResolvedWorkflowBundle(
@@ -245,7 +256,7 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     )
   }
 
-  private func absolutizedStdioPaths(in payload: AgentNodePayload, workflowDirectory: URL) -> AgentNodePayload {
+  func absolutizedStdioPaths(in payload: AgentNodePayload, workflowDirectory: URL) -> AgentNodePayload {
     var payload = payload
     if var command = payload.command {
       command.executable = absoluteCommandPath(command.executable, relativeTo: workflowDirectory)
@@ -276,7 +287,7 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     return try JSONDecoder().decode(WorkflowPackageManifest.self, from: Data(contentsOf: manifestURL))
   }
 
-  private func containedFile(_ file: URL, in directory: URL, scope: WorkflowScope, label: String) throws -> URL {
+  func containedFile(_ file: URL, in directory: URL, scope: WorkflowScope, label: String) throws -> URL {
     let resolvedFile = file.resolvingSymlinksInPath().standardizedFileURL
     guard scope == .direct || isContained(resolvedFile, in: directory) else {
       throw WorkflowResolutionError.invalidJSONReference("\(label) \(resolvedFile.path) escapes \(directory.path)")

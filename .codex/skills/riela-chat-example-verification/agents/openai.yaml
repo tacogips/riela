@@ -1,0 +1,4 @@
+interface:
+  display_name: "Riela Chat Example Verification"
+  short_description: "Verify Riela chat examples end to end"
+  default_prompt: "Use $riela-chat-example-verification to verify Telegram, Discord, or Matrix chat examples through RielaApp."

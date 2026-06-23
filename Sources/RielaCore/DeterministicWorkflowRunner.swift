@@ -330,8 +330,16 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     executionIndex: Int
   ) async throws -> WorkflowPublicationResult {
     let publishResult: WorkflowPublicationResult
+    let basePayload = request.nodePayloads[step.nodeId]
+    let recordsAutomaticMemory = shouldRecordAutomaticMemory(for: registryNode)
+    try registerMemoryMetadata(
+      workflow: request.workflow,
+      step: step,
+      payload: basePayload,
+      request: request
+    )
     do {
-      if let basePayload = request.nodePayloads[step.nodeId] {
+      if let basePayload {
         publishResult = try await executePayloadNodeAndRecordMemory(
           basePayload: basePayload,
           request: request,
@@ -342,17 +350,20 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           executionIndex: executionIndex
         )
       } else if let addon = registryNode.addon {
-        try recordNodeMemoryInbox(
-          workflow: request.workflow,
-          step: step,
-          payload: nil,
-          request: request,
-          session: session,
-          executionIndex: executionIndex,
-          resolvedInput: resolvedInput
-        )
+        if recordsAutomaticMemory {
+          try recordNodeMemoryInbox(
+            workflow: request.workflow,
+            step: step,
+            payload: nil,
+            request: request,
+            session: session,
+            executionIndex: executionIndex,
+            resolvedInput: resolvedInput
+          )
+        }
         publishResult = try await executeAddonAndPublish(
           addon: addon,
+          session: session,
           sessionId: session.sessionId,
           workflow: request.workflow,
           step: step,
@@ -365,25 +376,29 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         throw DeterministicWorkflowRunnerError.missingNodePayload(step.nodeId)
       }
     } catch {
-      try recordNodeMemoryFailureOutbox(
-        workflow: request.workflow,
-        step: step,
-        payload: request.nodePayloads[step.nodeId],
-        request: request,
-        sessionId: session.sessionId,
-        executionIndex: executionIndex,
-        error: error
-      )
+      if recordsAutomaticMemory {
+        try recordNodeMemoryFailureOutbox(
+          workflow: request.workflow,
+          step: step,
+          payload: basePayload,
+          request: request,
+          sessionId: session.sessionId,
+          executionIndex: executionIndex,
+          error: error
+        )
+      }
       throw error
     }
-    try recordNodeMemoryOutbox(
-      workflow: request.workflow,
-      step: step,
-      payload: request.nodePayloads[step.nodeId],
-      request: request,
-      publishResult: publishResult,
-      executionIndex: executionIndex
-    )
+    if recordsAutomaticMemory {
+      try recordNodeMemoryOutbox(
+        workflow: request.workflow,
+        step: step,
+        payload: basePayload,
+        request: request,
+        publishResult: publishResult,
+        executionIndex: executionIndex
+      )
+    }
     return publishResult
   }
 
@@ -439,6 +454,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       node: executionPayload,
       promptText: prompts.promptText,
       systemPromptText: prompts.systemPromptText,
+      sessionPolicy: step.sessionPolicy ?? executionPayload.sessionPolicy,
       arguments: request.variables,
       mergedVariables: mergedVariables
     )
@@ -674,6 +690,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
 
   private func executeAddonAndPublish(
     addon: WorkflowNodeAddonRef,
+    session: WorkflowSession,
     sessionId: String,
     workflow: WorkflowDefinition,
     step: WorkflowStepRef,
@@ -731,7 +748,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       nodeId: step.nodeId,
       addon: addon,
       variables: request.variables,
-      resolvedInputPayload: resolvedInputPayload,
+      resolvedInputPayload: workflowAddonResolvedInputPayload(resolvedInputPayload, session: session),
       attachments: attachments
     )
     guard let addonResolver else {
@@ -953,30 +970,5 @@ private func errorMessage(_ error: WorkflowSessionEntryValidationError) -> Strin
   switch error {
   case let .usage(message), let .validation(message):
     message
-  }
-}
-
-public struct DeterministicLocalNodeAdapter: NodeAdapter {
-  public init() {}
-
-  public func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
-    var payload: JSONObject = [
-      "nodeId": .string(input.node.id),
-      "provider": .string("deterministic-local"),
-      "status": .string("completed")
-    ]
-    if let resumedFromNodeExecId = input.mergedVariables["resumedFromNodeExecId"] {
-      payload["resumedFromNodeExecId"] = resumedFromNodeExecId
-    }
-    if input.mergedVariables["resumedFromNodeExecId"] != nil {
-      payload["promptText"] = .string(input.promptText)
-    }
-    return AdapterExecutionOutput(
-      provider: "deterministic-local",
-      model: input.node.model,
-      promptText: input.promptText,
-      completionPassed: true,
-      payload: payload
-    )
   }
 }

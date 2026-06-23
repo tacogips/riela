@@ -213,19 +213,19 @@ fileprivate extension ScopedParityCommandRunner {
     throw CLIUsageError("graphql \(action) requires --message-json or --message-file")
   }
 
-  private func runtimePersistenceStore(parsed: ParsedParityOptions) -> FileWorkflowRuntimePersistenceStore {
+  private func runtimePersistenceStore(parsed: ParsedParityOptions) -> SQLiteWorkflowRuntimePersistenceStore {
     let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
     let sessionRoot = CLIWorkflowSessionStore.resolveRootDirectory(
       sessionStore: parsed.sessionStore,
       scope: parsed.scope,
       workingDirectory: workingDirectory
     )
-    return FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionRoot))
+    return SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionRoot))
   }
 
   private func loadExistingWorkflowMessages(
     sessionId: String,
-    persistenceStore: FileWorkflowRuntimePersistenceStore
+    persistenceStore: SQLiteWorkflowRuntimePersistenceStore
   ) throws -> [WorkflowMessageRecord] {
     do {
       return try persistenceStore.load(sessionId: sessionId).workflowMessages
@@ -237,20 +237,7 @@ fileprivate extension ScopedParityCommandRunner {
   private func loadRuntimeSnapshot(sessionId rawSessionId: String?, parsed: ParsedParityOptions, action: String) throws -> WorkflowRuntimePersistenceSnapshot {
     let sessionId = try requiredGraphQLTargetValue(rawSessionId, action: action, label: "persisted session id")
     let store = runtimePersistenceStore(parsed: parsed)
-    do {
-      return try store.load(sessionId: sessionId)
-    } catch WorkflowRuntimePersistenceStoreError.notFound {
-      let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
-      let loaded = try CLIWorkflowSessionResolution.loadPersistedSession(
-        sessionId: sessionId,
-        sessionStore: parsed.sessionStore,
-        scope: parsed.scope,
-        workingDirectory: workingDirectory
-      )
-      let repaired = WorkflowRuntimePersistenceProjector.snapshot(session: loaded.record.session)
-      try store.save(repaired)
-      return repaired
-    }
+    return try store.load(sessionId: sessionId)
   }
 
   private func loadRuntimeSnapshot(containingCommunicationId communicationId: String, parsed: ParsedParityOptions, action: String) throws -> WorkflowRuntimePersistenceSnapshot {
@@ -385,7 +372,7 @@ fileprivate extension ScopedParityCommandRunner {
         scope: persistedResolution.scope,
         workingDirectory: resolution.workingDirectory
       )
-      let persistenceStore = FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot))
+      let persistenceStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot))
       let existingMessages = try loadExistingWorkflowMessages(sessionId: persisted.record.session.sessionId, persistenceStore: persistenceStore)
       let runtimeStore = InMemoryWorkflowRuntimeStore()
       var seededSession = persisted.record.session
@@ -434,14 +421,14 @@ fileprivate extension ScopedParityCommandRunner {
         )
       )
       let workflowMessages = try await runtimeStore.listMessages(for: result.session.sessionId, toStepId: nil)
-      try CLIWorkflowSessionStore(rootDirectory: storeRoot).save(PersistedCLIWorkflowSession(
-        workflowName: persisted.record.workflowName,
-        session: result.session,
-        resolution: persistedResolution,
-        mockScenarioPath: parsed.mockScenarioPath
-      ))
-      try persistenceStore.save(
-        WorkflowRuntimePersistenceProjector.snapshot(session: result.session, workflowMessages: workflowMessages)
+      try CLIWorkflowSessionStore(rootDirectory: storeRoot).save(
+        PersistedCLIWorkflowSession(
+          workflowName: persisted.record.workflowName,
+          session: result.session,
+          resolution: persistedResolution,
+          mockScenarioPath: parsed.mockScenarioPath
+        ),
+        runtimeSnapshot: WorkflowRuntimePersistenceProjector.snapshot(session: result.session, workflowMessages: workflowMessages)
       )
       let rendered = try jsonString(result)
       if options.output.isStructured {

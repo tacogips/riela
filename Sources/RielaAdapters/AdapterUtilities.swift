@@ -142,10 +142,10 @@ private func collectImagePathCandidates(
 }
 
 private func isImageDescriptor(_ object: JSONObject) -> Bool {
-  if case let .string(kind) = object["kind"], kind == "image" {
+  if case let .string(kind) = object["kind"], ["image", "photo", "picture", "screenshot"].contains(kind.lowercased()) {
     return true
   }
-  return ["mediaType", "contentType", "mimetype"].contains { key in
+  return ["mediaType", "contentType", "mimetype", "mimeType"].contains { key in
     guard case let .string(value) = object[key] else {
       return false
     }
@@ -154,7 +154,7 @@ private func isImageDescriptor(_ object: JSONObject) -> Bool {
 }
 
 private func appendImageDescriptorPaths(_ object: JSONObject, paths: inout [String]) {
-  for key in ["localPath", "imagePath", "downloadPath"] {
+  for key in ["path", "localPath", "imagePath", "downloadPath"] {
     if case let .string(path) = object[key], !path.isEmpty {
       paths.append(path)
     }
@@ -162,7 +162,7 @@ private func appendImageDescriptorPaths(_ object: JSONObject, paths: inout [Stri
   guard case let .object(source) = object["source"] else {
     return
   }
-  for key in ["localPath", "imagePath", "downloadPath"] {
+  for key in ["path", "localPath", "imagePath", "downloadPath"] {
     if case let .string(path) = source[key], !path.isEmpty {
       paths.append(path)
     }

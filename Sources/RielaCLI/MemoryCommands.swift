@@ -7,6 +7,13 @@ public struct MemorySaveCommandResult: Codable, Equatable, Sendable {
   public var record: MemoryRecord
 }
 
+public struct MemoryUpdateCommandResult: Codable, Equatable, Sendable {
+  public var memoryId: String
+  public var databasePath: String
+  public var updated: Bool
+  public var record: MemoryRecord
+}
+
 public struct MemorySearchCommandResult: Codable, Equatable, Sendable {
   public var memoryId: String
   public var databasePath: String
@@ -14,8 +21,27 @@ public struct MemorySearchCommandResult: Codable, Equatable, Sendable {
   public var allWorkflows: Bool
   public var nodeId: String?
   public var matchPatterns: [String]
+  public var tags: [String]
+  public var relatedRecordIds: [Int64]
   public var limit: Int
   public var records: [MemoryRecord]
+}
+
+public struct MemoryMetadataCommandResult: Codable, Equatable, Sendable {
+  public var memoryId: String
+  public var databasePath: String
+  public var metadata: MemoryMetadata?
+}
+
+public struct MemoryValuesCommandResult<Value: Codable & Equatable & Sendable>: Codable, Equatable, Sendable {
+  public var memoryId: String
+  public var databasePath: String
+  public var workflowId: String?
+  public var allWorkflows: Bool
+  public var sortOrder: MemoryValueSortOrder
+  public var limit: Int
+  public var offset: Int
+  public var values: [Value]
 }
 
 public struct MemoryCommandRunner: Sendable {
@@ -26,10 +52,18 @@ public struct MemoryCommandRunner: Sendable {
       switch command.kind {
       case .save:
         return try save(command.options)
+      case .update:
+        return try update(command.options)
       case .load:
         return try list(command.options, matchPatterns: [])
       case .search:
         return try list(command.options, matchPatterns: command.options.matchPatterns)
+      case .metadata:
+        return try metadata(command.options)
+      case .tags:
+        return try tags(command.options)
+      case .relatedIds:
+        return try relatedIds(command.options)
       }
     } catch let error as CLIUsageError {
       return failure(error.message, output: command.options.output, options: command.options.cliOptions)
@@ -47,6 +81,9 @@ public struct MemoryCommandRunner: Sendable {
       workflowId: workflowId,
       nodeId: options.nodeId,
       registeredAt: options.registeredAt,
+      tags: options.tags,
+      relatedRecordIds: options.relatedRecordIds,
+      files: memoryFileReferences(options),
       payload: payload
     )
     let result = MemorySaveCommandResult(
@@ -56,6 +93,36 @@ public struct MemoryCommandRunner: Sendable {
     )
     return try render(result, output: options.output) { result in
       "saved memory \(result.memoryId) record \(result.record.recordId) for workflow \(result.record.workflowId)\n"
+    }
+  }
+
+  private func update(_ options: MemoryCommandOptions) throws -> CLICommandResult {
+    guard let recordId = options.recordId else {
+      throw CLIUsageError("memory update requires --record-id")
+    }
+    guard let workflowId = options.workflowId else {
+      throw CLIUsageError("memory update requires --workflow-id")
+    }
+    let store = memoryStore(options)
+    let payload = try payloadValue(options)
+    let record = try store.update(
+      memoryId: options.memoryId,
+      recordId: recordId,
+      workflowId: workflowId,
+      nodeId: options.nodeId,
+      tags: options.tags,
+      relatedRecordIds: options.relatedRecordIds,
+      files: memoryUpdateFileReferences(options),
+      payload: payload
+    )
+    let result = MemoryUpdateCommandResult(
+      memoryId: options.memoryId,
+      databasePath: try store.databasePath(memoryId: options.memoryId),
+      updated: true,
+      record: record
+    )
+    return try render(result, output: options.output) { result in
+      "updated memory \(result.memoryId) record \(result.record.recordId) for workflow \(result.record.workflowId)\n"
     }
   }
 
@@ -69,6 +136,8 @@ public struct MemoryCommandRunner: Sendable {
         includeAllWorkflows: options.allWorkflows,
         nodeId: options.nodeId,
         matchPatterns: matchPatterns,
+        tags: options.tags,
+        relatedRecordIds: options.relatedRecordIds,
         limit: options.limit
       )
     )
@@ -79,6 +148,8 @@ public struct MemoryCommandRunner: Sendable {
       allWorkflows: options.allWorkflows,
       nodeId: options.nodeId,
       matchPatterns: matchPatterns,
+      tags: options.tags,
+      relatedRecordIds: options.relatedRecordIds,
       limit: options.limit,
       records: records
     )
@@ -86,6 +157,62 @@ public struct MemoryCommandRunner: Sendable {
       result.records.map { record in
         "\(record.registeredAt) \(record.workflowId) \(record.nodeId ?? "-") #\(record.recordId) \(compactPayload(record.payload))"
       }.joined(separator: "\n") + (result.records.isEmpty ? "" : "\n")
+    }
+  }
+
+  private func metadata(_ options: MemoryCommandOptions) throws -> CLICommandResult {
+    let store = memoryStore(options)
+    let result = MemoryMetadataCommandResult(
+      memoryId: options.memoryId,
+      databasePath: try store.databasePath(memoryId: options.memoryId),
+      metadata: try store.metadata(memoryId: options.memoryId)
+    )
+    return try render(result, output: options.output) { result in
+      guard let metadata = result.metadata else {
+        return ""
+      }
+      return [
+        "memoryId: \(metadata.memoryId)",
+        metadata.description.map { "description: \($0)" },
+        metadata.purpose.map { "purpose: \($0)" },
+        "updatedAt: \(metadata.updatedAt)"
+      ].compactMap(\.self).joined(separator: "\n") + "\n"
+    }
+  }
+
+  private func tags(_ options: MemoryCommandOptions) throws -> CLICommandResult {
+    let store = memoryStore(options)
+    let values = try store.uniqueTags(memoryId: options.memoryId, options: valueListOptions(options))
+    let result = MemoryValuesCommandResult<String>(
+      memoryId: options.memoryId,
+      databasePath: try store.databasePath(memoryId: options.memoryId),
+      workflowId: options.workflowId,
+      allWorkflows: options.allWorkflows,
+      sortOrder: options.sortOrder,
+      limit: options.limit,
+      offset: options.offset,
+      values: values
+    )
+    return try render(result, output: options.output) { result in
+      result.values.joined(separator: "\n") + (result.values.isEmpty ? "" : "\n")
+    }
+  }
+
+  private func relatedIds(_ options: MemoryCommandOptions) throws -> CLICommandResult {
+    let store = memoryStore(options)
+    let values = try store.uniqueRelatedRecordIds(memoryId: options.memoryId, options: valueListOptions(options))
+    let result = MemoryValuesCommandResult<Int64>(
+      memoryId: options.memoryId,
+      databasePath: try store.databasePath(memoryId: options.memoryId),
+      workflowId: options.workflowId,
+      allWorkflows: options.allWorkflows,
+      sortOrder: options.sortOrder,
+      limit: options.limit,
+      offset: options.offset,
+      values: values
+    )
+    return try render(result, output: options.output) { result in
+      result.values.map(String.init).joined(separator: "\n") + (result.values.isEmpty ? "" : "\n")
     }
   }
 
@@ -113,7 +240,22 @@ public struct MemoryCommandRunner: Sendable {
       }
       return try decodePayload(string)
     }
-    throw CLIUsageError("memory save requires --payload-json or --payload-file")
+    throw CLIUsageError("memory command requires --payload-json or --payload-file")
+  }
+
+  private func memoryFileReferences(_ options: MemoryCommandOptions) -> [MemoryFileReference] {
+    options.filePaths.map { path in
+      let url = absoluteURL(path, relativeTo: URL(fileURLWithPath: options.workingDirectory, isDirectory: true))
+      return MemoryFileReference(path: url.path)
+    }
+  }
+
+  private func memoryUpdateFileReferences(_ options: MemoryCommandOptions) -> [MemoryFileReference]? {
+    if options.clearFiles {
+      return []
+    }
+    let references = memoryFileReferences(options)
+    return references.isEmpty ? nil : references
   }
 
   private func decodePayload(_ json: String) throws -> MemoryJSONValue {
@@ -135,6 +277,16 @@ public struct MemoryCommandRunner: Sendable {
     case .text, .table:
       return CLICommandResult(exitCode: .success, stdout: text(result))
     }
+  }
+
+  private func valueListOptions(_ options: MemoryCommandOptions) -> MemoryValueListOptions {
+    MemoryValueListOptions(
+      workflowId: options.workflowId,
+      includeAllWorkflows: options.allWorkflows,
+      sortOrder: options.sortOrder,
+      limit: options.limit,
+      offset: options.offset
+    )
   }
 }
 

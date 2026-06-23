@@ -23,7 +23,7 @@
       "handoff_rina": false
     },
     "payload": {
-      "replyText": "Yuiです。まず私の意見としては、3人の役割を明確に分けて、通常対応は私、流行や見せ方はMika、深い技術検討はRinaに任せる形が扱いやすいです。Mikaの視点も聞いてみます。",
+      "replyText": "Yuiです。まず私の意見としては、3人の役割を明確に分けて、通常対応は私、流行や見せ方はMika、深い技術検討はRinaに任せる形が扱いやすいです。@Mika、この分け方はMatrixの会話として自然に見えると思いますか？",
       "handoff_mika": true,
       "handoff_rina": false
     }
@@ -33,12 +33,25 @@
     "model": "claude-sonnet-4-5",
     "when": {
       "handoff_yui": false,
-      "handoff_rina": false
+      "handoff_rina": true
     },
     "payload": {
-      "replyText": "Mikaだよ。見え方としては名前が短くて呼びやすいのが大事。Yui、Mika、RinaならMatrixでも読みやすいし、キャラ差も一発で伝わると思う。",
+      "replyText": "Mikaだよ。見え方としては名前が短くて呼びやすいのが大事。Yui、Mika、RinaならMatrixでも読みやすいし、キャラ差も一発で伝わると思う。@Rina、この構成で技術的に気をつける点は何？",
       "handoff_yui": false,
-      "handoff_rina": false
+      "handoff_rina": true
+    }
+  },
+  "rina-cursor": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "handoff_yui": false,
+      "handoff_mika": false
+    },
+    "payload": {
+      "replyText": "観測結果。入口は一つでいい。ただし persona ごとに routing、memory、reply identity を分離。handoff 上限とログ確認で、Matrix の循環は制御可能。",
+      "handoff_yui": false,
+      "handoff_mika": false
     }
   }
 }

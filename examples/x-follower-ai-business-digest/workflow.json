@@ -15,7 +15,13 @@
   "nodes": [
     {
       "id": "read-digest-state",
-      "nodeFile": "nodes/node-read-digest-state.json"
+      "addon": {
+        "name": "riela/x-digest",
+        "version": "1",
+        "config": {
+          "operation": "read-state"
+        }
+      }
     },
     {
       "id": "fetch-follower-posts",
@@ -56,15 +62,33 @@
     },
     {
       "id": "validate-summary-output",
-      "nodeFile": "nodes/node-validate-summary-output.json"
+      "addon": {
+        "name": "riela/x-digest",
+        "version": "1",
+        "config": {
+          "operation": "validate-summary-output"
+        }
+      }
     },
     {
       "id": "normalize-fetched-posts",
-      "nodeFile": "nodes/node-normalize-fetched-posts.json"
+      "addon": {
+        "name": "riela/x-digest",
+        "version": "1",
+        "config": {
+          "operation": "normalize-fetched-posts"
+        }
+      }
     },
     {
       "id": "persist-digest-state",
-      "nodeFile": "nodes/node-persist-digest-state.json"
+      "addon": {
+        "name": "riela/x-digest",
+        "version": "1",
+        "config": {
+          "operation": "persist-state"
+        }
+      }
     },
     {
       "id": "send-telegram-digest",
@@ -82,7 +106,13 @@
     },
     {
       "id": "no-digest-output",
-      "nodeFile": "nodes/node-no-digest-output.json"
+      "addon": {
+        "name": "riela/x-digest",
+        "version": "1",
+        "config": {
+          "operation": "no-digest-output"
+        }
+      }
     }
   ],
   "steps": [

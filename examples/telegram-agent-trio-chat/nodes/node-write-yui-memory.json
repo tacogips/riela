@@ -1,15 +1,16 @@
 {
   "id": "write-yui-memory",
   "description": "Persist Yui Codex memory entries proposed by the persona and pass through reply/handoff flags.",
-  "nodeType": "command",
-  "variables": {},
-  "command": {
-    "scriptPath": "scripts/write-persona-memory.sh",
-    "envTemplate": {
-      "RIELA_TRIO_MEMORY_PERSONA_ID": "yui",
-      "RIELA_TRIO_MEMORY_PERSONA_NAME": "Yui Codex"
+  "addon": {
+    "name": "riela/chat-persona-memory-write",
+    "version": "1",
+    "config": {
+      "personaId": "yui",
+      "personaName": "Yui Codex",
+      "memoryId": "persona-chat-memory"
     }
   },
+  "memories": [{"id": "persona-chat-memory", "purpose": "persist Yui memory entries"}],
   "output": {
     "description": "Return Yui Codex replyText and handoff flags after writing any memoryEntries."
   }

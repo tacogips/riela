@@ -219,19 +219,57 @@ bundle_short_version() {
   printf '%s\n' "${1%%[-+]*}"
 }
 
+write_app_icon() {
+  local icon_source resources_dir icon_name iconset_dir size scale output_size suffix
+  icon_source="$1"
+  resources_dir="$2"
+  icon_name="$3"
+  iconset_dir="$resources_dir/${icon_name}.iconset"
+
+  if [[ ! -f "$icon_source" ]]; then
+    printf 'missing RielaApp icon source: %s\n' "$icon_source" >&2
+    return 1
+  fi
+
+  require_command sips
+  require_command iconutil
+
+  rm -rf "$iconset_dir"
+  mkdir -p "$iconset_dir"
+
+  for size in 16 32 128 256 512; do
+    for scale in 1 2; do
+      output_size=$((size * scale))
+      suffix=""
+      if [[ "$scale" -eq 2 ]]; then
+        suffix="@2x"
+      fi
+      sips -z "$output_size" "$output_size" "$icon_source" \
+        --out "$iconset_dir/icon_${size}x${size}${suffix}.png" >/dev/null
+    done
+  done
+
+  iconutil -c icns "$iconset_dir" -o "$resources_dir/${icon_name}.icns"
+  rm -rf "$iconset_dir"
+}
+
 write_riela_app_bundle() {
-  local bundle_root source_executable version bundle_id contents_dir macos_dir
+  local bundle_root source_executable version bundle_id contents_dir macos_dir resources_dir app_icon_source app_icon_name
   bundle_root="$1"
   source_executable="$2"
   version="$3"
   bundle_id="${RIELA_APP_BUNDLE_ID:-com.tacogips.riela.menubar}"
   contents_dir="$bundle_root/Contents"
   macos_dir="$contents_dir/MacOS"
+  resources_dir="$contents_dir/Resources"
+  app_icon_source="$repo_root/img/riela_icon.png"
+  app_icon_name="RielaAppIcon"
 
   rm -rf "$bundle_root"
-  mkdir -p "$macos_dir"
+  mkdir -p "$macos_dir" "$resources_dir"
   cp "$source_executable" "$macos_dir/RielaApp"
   chmod 0755 "$macos_dir/RielaApp"
+  write_app_icon "$app_icon_source" "$resources_dir" "$app_icon_name"
 
   cat > "$contents_dir/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -244,6 +282,8 @@ write_riela_app_bundle() {
   <string>RielaApp</string>
   <key>CFBundleExecutable</key>
   <string>RielaApp</string>
+  <key>CFBundleIconFile</key>
+  <string>$app_icon_name</string>
   <key>CFBundleIdentifier</key>
   <string>$bundle_id</string>
   <key>CFBundleInfoDictionaryVersion</key>

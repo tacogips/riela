@@ -1,4 +1,5 @@
 import XCTest
+import RielaMemory
 @testable import RielaCore
 
 final class DeterministicWorkflowRunnerTests: XCTestCase {
@@ -716,6 +717,148 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       return XCTFail("expected availableMemories.node")
     }
     XCTAssertEqual(nodeMemories.count, 2)
+  }
+
+  func testRegisteredMemoryMetadataPrefersNodePurposeAndFillsWorkflowDefaults() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-memory-metadata-\(UUID().uuidString)", isDirectory: true)
+      .path
+    defer { try? FileManager.default.removeItem(atPath: root) }
+    let workflow = WorkflowDefinition(
+      workflowId: "memory-runner",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
+      memories: [
+        WorkflowMemoryDeclaration(
+          id: "persona-memory",
+          description: "workflow description",
+          purpose: "workflow purpose",
+          scope: .crossWorkflow,
+          defaultLimit: 12
+        )
+      ],
+      entryStepId: "persona-step",
+      nodeRegistry: [
+        WorkflowNodeRegistryRef(
+          id: "persona-node",
+          nodeFile: "nodes/persona.json",
+          memories: [
+            WorkflowMemoryDeclaration(id: "persona-memory", purpose: "node-specific purpose")
+          ]
+        )
+      ],
+      steps: [WorkflowStepRef(id: "persona-step", nodeId: "persona-node", role: .worker)],
+      nodes: [WorkflowNodeRef(id: "persona-step", nodeFile: "nodes/persona.json")]
+    )
+    let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: StaticAdapter(output: output()))
+
+    _ = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: workflow,
+      nodePayloads: ["persona-node": AgentNodePayload(id: "persona-node", executionBackend: .codexAgent, model: "gpt-5.4-mini")],
+      memoryRootDirectory: root
+    ))
+
+    let metadata = try XCTUnwrap(RielaMemoryStore(rootDirectory: root).metadata(memoryId: "persona-memory"))
+    XCTAssertEqual(metadata.description, "workflow description")
+    XCTAssertEqual(metadata.purpose, "node-specific purpose")
+  }
+
+  func testStepSessionPolicyIsPassedToAdapterInput() async throws {
+    let adapter = InputCapturingAdapter()
+    let workflow = WorkflowDefinition(
+      workflowId: "session-policy-runner",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
+      entryStepId: "verify",
+      nodeRegistry: [WorkflowNodeRegistryRef(id: "verify-node", nodeFile: "nodes/verify.json")],
+      steps: [
+        WorkflowStepRef(
+          id: "verify",
+          nodeId: "verify-node",
+          sessionPolicy: WorkflowStepSessionPolicy(mode: .new)
+        )
+      ],
+      nodes: [WorkflowNodeRef(id: "verify", nodeFile: "nodes/verify.json")]
+    )
+    let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: adapter)
+
+    _ = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: workflow,
+      nodePayloads: [
+        "verify-node": AgentNodePayload(
+          id: "verify-node",
+          executionBackend: .codexAgent,
+          model: "gpt-5-nano"
+        )
+      ]
+    ))
+
+    let capturedInput = await adapter.capturedInput()
+    let input = try XCTUnwrap(capturedInput)
+    XCTAssertEqual(input.sessionPolicy?.mode, .new)
+    XCTAssertNil(input.sessionPolicy?.inheritFromStepId)
+  }
+
+  func testStepSessionPolicyOverridesNodeSessionPolicy() async throws {
+    let adapter = InputCapturingAdapter()
+    let workflow = WorkflowDefinition(
+      workflowId: "session-policy-runner",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
+      entryStepId: "worker",
+      nodeRegistry: [WorkflowNodeRegistryRef(id: "worker-node", nodeFile: "nodes/worker.json")],
+      steps: [
+        WorkflowStepRef(
+          id: "worker",
+          nodeId: "worker-node",
+          sessionPolicy: WorkflowStepSessionPolicy(mode: .new)
+        )
+      ],
+      nodes: [WorkflowNodeRef(id: "worker", nodeFile: "nodes/worker.json")]
+    )
+    let node = AgentNodePayload(
+      id: "worker-node",
+      executionBackend: .codexAgent,
+      model: "gpt-5-nano",
+      sessionPolicy: WorkflowStepSessionPolicy(mode: .reuse, inheritFromStepId: "prior")
+    )
+    let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: adapter)
+
+    _ = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: workflow,
+      nodePayloads: ["worker-node": node]
+    ))
+
+    let capturedInput = await adapter.capturedInput()
+    let input = try XCTUnwrap(capturedInput)
+    XCTAssertEqual(input.sessionPolicy?.mode, .new)
+    XCTAssertNil(input.sessionPolicy?.inheritFromStepId)
+  }
+
+  func testNodeSessionPolicyIsPassedToAdapterInputWhenStepDoesNotOverride() async throws {
+    let adapter = InputCapturingAdapter()
+    let workflow = WorkflowDefinition(
+      workflowId: "session-policy-runner",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
+      entryStepId: "worker",
+      nodeRegistry: [WorkflowNodeRegistryRef(id: "worker-node", nodeFile: "nodes/worker.json")],
+      steps: [WorkflowStepRef(id: "worker", nodeId: "worker-node")],
+      nodes: [WorkflowNodeRef(id: "worker", nodeFile: "nodes/worker.json")]
+    )
+    let node = AgentNodePayload(
+      id: "worker-node",
+      executionBackend: .codexAgent,
+      model: "gpt-5-nano",
+      sessionPolicy: WorkflowStepSessionPolicy(mode: .reuse, inheritFromStepId: "prior")
+    )
+    let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: adapter)
+
+    _ = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: workflow,
+      nodePayloads: ["worker-node": node]
+    ))
+
+    let capturedInput = await adapter.capturedInput()
+    let input = try XCTUnwrap(capturedInput)
+    XCTAssertEqual(input.sessionPolicy?.mode, .reuse)
+    XCTAssertEqual(input.sessionPolicy?.inheritFromStepId, "prior")
   }
 
   private func request(

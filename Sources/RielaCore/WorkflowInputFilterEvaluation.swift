@@ -147,6 +147,14 @@ public struct WorkflowInputFilterEvaluator: Sendable {
     }
 
     let aliases = stringArray(config["aliases"])
+    let suppressedAliases = stringArray(config["suppressedByAliases"])
+    let explicitlyAddressed = aliases.contains(where: { explicitAliasMatches($0, in: text) })
+    if explicitlyAddressed {
+      return true
+    }
+    if suppressedAliases.contains(where: { aliasMatches($0, in: text) }) {
+      return false
+    }
     if aliases.contains(where: { aliasMatches($0, in: text) }) {
       return true
     }
@@ -159,8 +167,8 @@ public struct WorkflowInputFilterEvaluator: Sendable {
     if actorIsBot && !defaultForBotMessages {
       return false
     }
-    let suppressedAliases = stringArray(config["defaultSuppressedByAliases"])
-    return !suppressedAliases.contains { aliasMatches($0, in: text) }
+    let defaultSuppressedAliases = stringArray(config["defaultSuppressedByAliases"])
+    return !defaultSuppressedAliases.contains { aliasMatches($0, in: text) }
   }
 
   private func issue(
@@ -300,6 +308,19 @@ private func aliasMatches(_ alias: String, in text: String) -> Bool {
     return false
   }
   let pattern = "(^|[^A-Za-z0-9_@])@?\(NSRegularExpression.escapedPattern(for: String(normalizedAlias)))(?=$|[^A-Za-z0-9_])"
+  return text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+}
+
+private func explicitAliasMatches(_ alias: String, in text: String) -> Bool {
+  let trimmed = alias.trimmingCharacters(in: .whitespacesAndNewlines)
+  guard trimmed.first == "@" else {
+    return false
+  }
+  let normalizedAlias = trimmed.trimmingPrefix("@")
+  guard !normalizedAlias.isEmpty else {
+    return false
+  }
+  let pattern = "(^|[^A-Za-z0-9_@])@\(NSRegularExpression.escapedPattern(for: String(normalizedAlias)))(?=$|[^A-Za-z0-9_])"
   return text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
 }
 

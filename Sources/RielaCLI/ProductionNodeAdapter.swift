@@ -214,6 +214,24 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     if input.addon.name == "riela/chat-reply-worker" {
       return try executeChatReplyWorker(input)
     }
+    if input.addon.name == "riela/chat-memory-raw-daily-summary" {
+      return try executeChatMemoryRawDailySummary(input)
+    }
+    if input.addon.name == "riela/chat-persona-memory-read" {
+      return try executeChatPersonaMemoryRead(input)
+    }
+    if input.addon.name == "riela/chat-persona-memory-write" {
+      return try executeChatPersonaMemoryWrite(input)
+    }
+    if input.addon.name == "riela/x-digest" {
+      return try executeXDigest(input)
+    }
+    if input.addon.name == "riela/gmail-digest" {
+      return try executeGmailDigest(input)
+    }
+    if input.addon.name == "riela/time-signal" {
+      return try executeTimeSignal(input)
+    }
     if let memoryAddon = BuiltinMemoryAddon(rawValue: input.addon.name) {
       return try executeMemoryAddon(input, operation: memoryAddon)
     }
@@ -321,9 +339,23 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     let personas = chatPersonas(from: input.addon.config ?? [:])
     let defaultPersonaId = nonEmptyString(input.addon.config?["defaultPersonaId"]) ?? personas.first?.id ?? "yui"
     let request = routerRequestText(input)
-    let target = personas.first { persona in
-      persona.matches(request)
-    }?.id ?? defaultPersonaId
+    var matchedPersonaId: String?
+    var matchedLocation: Int?
+    for persona in personas {
+      guard let location = persona.matchLocation(in: request) else {
+        continue
+      }
+      if let currentLocation = matchedLocation {
+        if location < currentLocation || (location == currentLocation && persona.id < (matchedPersonaId ?? persona.id)) {
+          matchedPersonaId = persona.id
+          matchedLocation = location
+        }
+      } else {
+        matchedPersonaId = persona.id
+        matchedLocation = location
+      }
+    }
+    let target = matchedPersonaId ?? defaultPersonaId
     let knownTargetIds = Set(personas.map(\.id) + ["yui", "mika", "rina"])
     var when = Dictionary(uniqueKeysWithValues: knownTargetIds.map { ("target_\($0)", $0 == target) })
     when["always"] = true
@@ -350,12 +382,17 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     var id: String
     var aliases: [String]
 
-    func matches(_ request: String) -> Bool {
+    func matchLocation(in request: String) -> Int? {
       let normalizedRequest = request.lowercased()
-      return aliases.contains { alias in
+      return aliases.compactMap { alias in
         let normalizedAlias = alias.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return !normalizedAlias.isEmpty && normalizedRequest.contains(normalizedAlias)
-      }
+        guard !normalizedAlias.isEmpty,
+          let range = normalizedRequest.range(of: normalizedAlias)
+        else {
+          return nil
+        }
+        return normalizedRequest.distance(from: normalizedRequest.startIndex, to: range.lowerBound)
+      }.min()
     }
   }
 
@@ -418,8 +455,9 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
         ])
       ])
     ])
-    let text = renderPromptTemplate(textTemplate, variables: variables)
+    let renderedText = renderPromptTemplate(textTemplate, variables: variables)
       .trimmingCharacters(in: .whitespacesAndNewlines)
+    let text = renderedText.isEmpty ? (chatReplyFallbackText(input.resolvedInputPayload) ?? "") : renderedText
     guard !text.isEmpty else {
       throw AdapterExecutionError(.invalidOutput, "riela/chat-reply-worker rendered empty reply text")
     }
@@ -429,6 +467,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     }?.trimmingCharacters(in: .whitespacesAndNewlines)
 
     var payload = input.resolvedInputPayload
+    payload.removeValue(forKey: "runtime")
     payload["status"] = .string("ok")
     payload["addon"] = .string(input.addon.name)
     payload["stepId"] = .string(input.stepId)
@@ -456,6 +495,16 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     )
   }
 
+  private func chatReplyFallbackText(_ payload: JSONObject) -> String? {
+    if let text = nonEmptyString(payload["replyText"]) ?? nonEmptyString(payload["text"]) {
+      return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    if case let .object(nested)? = payload["payload"] {
+      return nonEmptyString(nested["replyText"]) ?? nonEmptyString(nested["text"])
+    }
+    return nil
+  }
+
   private func executeMemoryAddon(
     _ input: WorkflowAddonExecutionInput,
     operation: BuiltinMemoryAddon
@@ -469,7 +518,10 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     let memoryId = nonEmptyString(config["memoryId"]) ?? nonEmptyString(variables["memoryId"]) ?? "chat-memory"
     let nodeId = nonEmptyString(config["nodeId"]) ?? nonEmptyString(variables["memoryNodeId"]) ?? input.nodeId
     let limit = intValue(config["limit"]) ?? intValue(variables["limit"]) ?? 30
-    let memoryRoot = nonEmptyString(config["memoryRoot"]) ?? nonEmptyString(variables["memoryRoot"])
+    let workflowInput = memoryAddonJSONObject(variables["workflowInput"])
+    let memoryRoot = nonEmptyString(config["memoryRoot"])
+      ?? nonEmptyString(variables["memoryRoot"])
+      ?? nonEmptyString(workflowInput["memoryRoot"])
     let store = RielaMemoryStore(
       rootDirectory: memoryRoot ?? RielaMemoryStore.defaultRootDirectory()
     )
@@ -477,10 +529,16 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     switch operation {
     case .save:
       let payload = try memoryPayload(config: config, variables: variables, input: input)
+      let tags = try memoryTags(config: config, variables: variables)
+      let relatedRecordIds = try memoryRelatedRecordIds(config: config, variables: variables)
+      let files = try memoryFileReferences(config: config, variables: variables)
       let record = try store.save(
         memoryId: memoryId,
         workflowId: input.workflowId,
         nodeId: nodeId,
+        tags: tags,
+        relatedRecordIds: relatedRecordIds,
+        files: files,
         payload: payload
       )
       return memoryAddonOutput(
@@ -490,6 +548,32 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
         databasePath: try store.databasePath(memoryId: memoryId),
         payload: [
           "saved": .bool(true),
+          "record": memoryRecordJSON(record)
+        ]
+      )
+    case .update:
+      let recordId = try requiredMemoryRecordId(config: config, variables: variables)
+      let payload = try memoryPayload(config: config, variables: variables, input: input)
+      let tags = try memoryTags(config: config, variables: variables)
+      let relatedRecordIds = try memoryRelatedRecordIds(config: config, variables: variables)
+      let files = try memoryUpdateFileReferences(config: config, variables: variables)
+      let record = try store.update(
+        memoryId: memoryId,
+        recordId: recordId,
+        workflowId: input.workflowId,
+        nodeId: optionalNodeScope(config: config, variables: variables),
+        tags: tags,
+        relatedRecordIds: relatedRecordIds,
+        files: files,
+        payload: payload
+      )
+      return memoryAddonOutput(
+        input: input,
+        operation: operation,
+        memoryId: memoryId,
+        databasePath: try store.databasePath(memoryId: memoryId),
+        payload: [
+          "updated": .bool(true),
           "record": memoryRecordJSON(record)
         ]
       )
@@ -505,20 +589,24 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
         operation: operation,
         memoryId: memoryId,
         databasePath: try store.databasePath(memoryId: memoryId),
-        payload: [
+        payload: memoryRecordsPayload(records: records).merging([
           "records": .array(records.map(memoryRecordJSON)),
           "recordsText": .string(memoryRecordsText(records)),
           "limit": .number(Double(limit))
-        ]
+        ]) { _, new in new }
       )
     case .search:
       let patterns = memoryMatchPatterns(config: config, variables: variables)
+      let tags = try memoryTags(config: config, variables: variables)
+      let relatedRecordIds = try memoryRelatedRecordIds(config: config, variables: variables)
       let records = try store.search(
         memoryId: memoryId,
         options: MemorySearchOptions(
           workflowId: input.workflowId,
           nodeId: optionalNodeScope(config: config, variables: variables),
           matchPatterns: patterns,
+          tags: tags,
+          relatedRecordIds: relatedRecordIds,
           limit: limit
         )
       )
@@ -527,12 +615,14 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
         operation: operation,
         memoryId: memoryId,
         databasePath: try store.databasePath(memoryId: memoryId),
-        payload: [
+        payload: memoryRecordsPayload(records: records).merging([
           "records": .array(records.map(memoryRecordJSON)),
           "recordsText": .string(memoryRecordsText(records)),
           "matchPatterns": .array(patterns.map { .string($0) }),
+          "tags": .array(tags.map { .string($0) }),
+          "relatedRecordIds": .array(relatedRecordIds.map { .number(Double($0)) }),
           "limit": .number(Double(limit))
-        ]
+        ]) { _, new in new }
       )
     }
   }
@@ -592,11 +682,12 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
 
 private enum BuiltinMemoryAddon: String {
   case save = "riela/memory-save"
+  case update = "riela/memory-update"
   case load = "riela/memory-load"
   case search = "riela/memory-search"
 }
 
-private func addonVariables(for input: WorkflowAddonExecutionInput) -> JSONObject {
+func addonVariables(for input: WorkflowAddonExecutionInput) -> JSONObject {
   var variables = input.variables
   for (key, value) in input.resolvedInputPayload {
     variables[key] = value
@@ -702,7 +793,7 @@ private func renderJSONTemplates(_ value: JSONValue, variables: JSONObject) -> J
   }
 }
 
-private func nonEmptyString(_ value: JSONValue?) -> String? {
+func nonEmptyString(_ value: JSONValue?) -> String? {
   guard case let .string(text) = value, !text.isEmpty else {
     return nil
   }
@@ -760,6 +851,13 @@ private func memoryPayload(
   }
 }
 
+private func memoryAddonJSONObject(_ value: JSONValue?) -> JSONObject {
+  guard case let .object(object)? = value else {
+    return [:]
+  }
+  return object
+}
+
 private func memoryMatchPatterns(config: JSONObject, variables: JSONObject) -> [String] {
   if let configured = stringArrayValue(config["matchPatterns"]) {
     return configured
@@ -773,11 +871,94 @@ private func memoryMatchPatterns(config: JSONObject, variables: JSONObject) -> [
   return []
 }
 
+private func memoryTags(config: JSONObject, variables: JSONObject) throws -> [String] {
+  if let configured = try stringArrayValue(config["tags"], fieldName: "memory tags") {
+    return configured
+  }
+  if let variableTags = try stringArrayValue(variables["tags"], fieldName: "memory tags") {
+    return variableTags
+  }
+  if let singleTag = nonEmptyString(config["tag"]) ?? nonEmptyString(variables["tag"]) {
+    return [singleTag]
+  }
+  return []
+}
+
+private func memoryRelatedRecordIds(config: JSONObject, variables: JSONObject) throws -> [Int64] {
+  if let configured = try int64ArrayValue(config["relatedRecordIds"], fieldName: "memory relatedRecordIds") {
+    return configured
+  }
+  if let variableIds = try int64ArrayValue(variables["relatedRecordIds"], fieldName: "memory relatedRecordIds") {
+    return variableIds
+  }
+  if let singleId = try int64Value(config["relatedRecordId"], fieldName: "memory relatedRecordId")
+    ?? int64Value(variables["relatedRecordId"], fieldName: "memory relatedRecordId") {
+    return [singleId]
+  }
+  return []
+}
+
+private func memoryUpdateFileReferences(config: JSONObject, variables: JSONObject) throws -> [MemoryFileReference]? {
+  if boolValue(config["clearFiles"]) == true || boolValue(variables["clearFiles"]) == true {
+    return []
+  }
+  let files = try memoryFileReferences(config: config, variables: variables)
+  return files.isEmpty ? nil : files
+}
+
+private func requiredMemoryRecordId(config: JSONObject, variables: JSONObject) throws -> Int64 {
+  if let recordId = try int64Value(config["recordId"], fieldName: "memory recordId")
+    ?? int64Value(variables["recordId"], fieldName: "memory recordId") {
+    return recordId
+  }
+  throw AdapterExecutionError(.policyBlocked, "memory recordId is required")
+}
+
+private func stringArrayValue(_ value: JSONValue?, fieldName: String) throws -> [String]? {
+  guard let value else {
+    return nil
+  }
+  guard case let .array(values) = value else {
+    throw AdapterExecutionError(.policyBlocked, "\(fieldName) must be an array of non-empty strings")
+  }
+  return try values.enumerated().map { index, value in
+    guard let string = nonEmptyString(value) else {
+      throw AdapterExecutionError(.policyBlocked, "\(fieldName)[\(index)] must be a non-empty string")
+    }
+    return string
+  }
+}
+
 private func stringArrayValue(_ value: JSONValue?) -> [String]? {
   guard case let .array(values) = value else {
     return nil
   }
   return values.compactMap(nonEmptyString)
+}
+
+private func int64ArrayValue(_ value: JSONValue?, fieldName: String) throws -> [Int64]? {
+  guard let value else {
+    return nil
+  }
+  guard case let .array(values) = value else {
+    throw AdapterExecutionError(.policyBlocked, "\(fieldName) must be an array of positive integer record ids")
+  }
+  return try values.enumerated().map { index, value in
+    guard let id = try int64Value(value, fieldName: "\(fieldName)[\(index)]") else {
+      throw AdapterExecutionError(.policyBlocked, "\(fieldName)[\(index)] must be a positive integer record id")
+    }
+    return id
+  }
+}
+
+private func int64Value(_ value: JSONValue?, fieldName: String) throws -> Int64? {
+  guard let value else {
+    return nil
+  }
+  guard case let .number(number) = value, let id = Int64(exactly: number), id > 0 else {
+    throw AdapterExecutionError(.policyBlocked, "\(fieldName) must be a positive integer record id")
+  }
+  return id
 }
 
 private func memoryAddonOutput(
@@ -814,21 +995,83 @@ private func memoryRecordJSON(_ record: MemoryRecord) -> JSONValue {
     "workflowId": .string(record.workflowId),
     "nodeId": record.nodeId.map { .string($0) } ?? .null,
     "registeredAt": .string(record.registeredAt),
+    "tags": .array(record.tags.map { .string($0) }),
+    "relatedRecordIds": .array(record.relatedRecordIds.map { .number(Double($0)) }),
+    "files": .array(record.files.map(memoryFileJSON)),
     "payload": jsonValue(from: record.payload)
   ])
+}
+
+private func memoryFileJSON(_ file: MemoryFileReference) -> JSONValue {
+  .object([
+    "path": .string(file.path),
+    "mediaType": file.mediaType.map { .string($0) } ?? .null,
+    "kind": file.kind.map { .string($0) } ?? .null,
+    "name": file.name.map { .string($0) } ?? .null,
+    "sizeBytes": file.sizeBytes.map { .number(Double($0)) } ?? .null
+  ])
+}
+
+private func memoryRecordsPayload(records: [MemoryRecord]) -> JSONObject {
+  let files = records.flatMap(\.files)
+  return [
+    "files": .array(files.map(memoryFileJSON)),
+    "filePaths": .array(files.map(\.path).map(JSONValue.string)),
+    "imagePaths": .array(memoryFilePaths(files, kind: "image", mediaPrefix: "image/").map(JSONValue.string)),
+    "audioPaths": .array(memoryFilePaths(files, kind: "audio", mediaPrefix: "audio/").map(JSONValue.string)),
+    "videoPaths": .array(memoryFilePaths(files, kind: "video", mediaPrefix: "video/").map(JSONValue.string)),
+    "pdfPaths": .array(memoryFilePaths(files, kind: "pdf", mediaType: "application/pdf").map(JSONValue.string)),
+    "memoryAttachmentCountRead": .number(Double(files.count))
+  ]
+}
+
+private func memoryFilePaths(
+  _ files: [MemoryFileReference],
+  kind: String,
+  mediaPrefix: String? = nil,
+  mediaType: String? = nil
+) -> [String] {
+  files.filter { file in
+    if file.kind == kind {
+      return true
+    }
+    if let mediaPrefix, file.mediaType?.hasPrefix(mediaPrefix) == true {
+      return true
+    }
+    if let mediaType, file.mediaType == mediaType {
+      return true
+    }
+    return false
+  }.map(\.path)
 }
 
 private func memoryRecordsText(_ records: [MemoryRecord]) -> String {
   records
     .map { record in
       let text = memoryPayloadText(record.payload, depth: 0).truncatedForMemoryPrompt()
+      let fileText = memoryFilesText(record.files)
       let prefix = "#\(record.recordId) \(record.registeredAt)"
       if let nodeId = record.nodeId, !nodeId.isEmpty {
-        return "\(prefix) [\(nodeId)] \(text)"
+        return "\(prefix) [\(nodeId)] \(text)\(fileText)"
       }
-      return "\(prefix) \(text)"
+      return "\(prefix) \(text)\(fileText)"
     }
     .joined(separator: "\n")
+}
+
+private func memoryFilesText(_ files: [MemoryFileReference]) -> String {
+  guard !files.isEmpty else {
+    return ""
+  }
+  let rendered = files.prefix(10).map { file in
+    [
+      file.kind,
+      file.mediaType,
+      file.name,
+      file.path
+    ].compactMap { $0 }.joined(separator: " ")
+  }.joined(separator: "; ")
+  return " files: \(rendered)"
 }
 
 private func memoryPayloadText(_ value: MemoryJSONValue, depth: Int) -> String {

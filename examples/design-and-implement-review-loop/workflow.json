@@ -3,7 +3,7 @@
   "description": "Shared workflow for either full issue resolution or planning-only Codex-reference design and implementation-plan handoff, with explicit review gates, an issue-resolution user-facing documentation refresh step, a final commit-message step, built-in git commit and git push steps, and return paths.",
   "defaults": {
     "fanoutConcurrency": 20,
-    "maxLoopIterations": 3,
+    "maxLoopIterations": 10,
     "nodeTimeoutMs": 3600000
   },
   "prompts": {

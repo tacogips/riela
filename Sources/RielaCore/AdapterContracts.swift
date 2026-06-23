@@ -21,6 +21,7 @@ public struct AdapterExecutionInput: Codable, Equatable, Sendable {
   public var node: AgentNodePayload
   public var promptText: String
   public var systemPromptText: String?
+  public var sessionPolicy: WorkflowStepSessionPolicy?
   public var arguments: JSONObject
   public var mergedVariables: JSONObject
   public var executionIndex: Int
@@ -30,6 +31,7 @@ public struct AdapterExecutionInput: Codable, Equatable, Sendable {
     node: AgentNodePayload,
     promptText: String,
     systemPromptText: String? = nil,
+    sessionPolicy: WorkflowStepSessionPolicy? = nil,
     arguments: JSONObject = [:],
     mergedVariables: JSONObject = [:],
     executionIndex: Int = 1,
@@ -38,6 +40,7 @@ public struct AdapterExecutionInput: Codable, Equatable, Sendable {
     self.node = node
     self.promptText = promptText
     self.systemPromptText = systemPromptText
+    self.sessionPolicy = sessionPolicy
     self.arguments = arguments
     self.mergedVariables = mergedVariables
     self.executionIndex = executionIndex

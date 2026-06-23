@@ -15,7 +15,13 @@
   "nodes": [
     {
       "id": "read-mail-state",
-      "nodeFile": "nodes/node-read-mail-state.json"
+      "addon": {
+        "name": "riela/gmail-digest",
+        "version": "1",
+        "config": {
+          "operation": "read-state"
+        }
+      }
     },
     {
       "id": "fetch-latest-gmail",
@@ -28,7 +34,7 @@
           }
         },
         "config": {
-          "queryTemplate": "query {\n  messages(\n    accountId: \"{{inbox.latest.output.payload.accountId}}\"\n    maxResults: {{inbox.latest.output.payload.maxMessages}}\n    query: \"{{inbox.latest.output.payload.gmailSearchQuery}}\"\n    includeFileReferences: true\n  ) {\n    id\n    threadId\n    subject\n    snippet\n    date\n    internalDate\n    from {\n      name\n      address\n    }\n    to {\n      name\n      address\n    }\n    cc {\n      name\n      address\n    }\n    files {\n      kind\n      filename\n      hasPayload\n      mimeType\n      sizeBytes\n      downloadKey\n      materializationState\n    }\n    attachments {\n      id\n      filename\n      mimeType\n      sizeBytes\n      downloadKey\n      materializationState\n    }\n  }\n}",
+          "queryTemplate": "query {\n  threads(input: {\n    accountId: \"{{inbox.latest.output.payload.accountId}}\"\n    query: \"{{inbox.latest.output.payload.gmailSearchQuery}}\"\n  }) {\n    totalCount\n    pageInfo {\n      hasNextPage\n      endCursor\n    }\n    edges {\n      cursor\n      node {\n        id\n        accountId\n        subject\n        snippet\n        messages {\n          id\n          threadId\n          subject\n          snippet\n          sentAt\n          receivedAt\n          textBody\n          htmlBody\n          from {\n            name\n            address\n          }\n          to {\n            name\n            address\n          }\n          cc {\n            name\n            address\n          }\n          attachments {\n            id\n            filename\n            mimeType\n            sizeBytes\n            materializationState\n          }\n        }\n      }\n    }\n  }\n}",
           "image": "ghcr.io/tacogips/mail-gateway:latest",
           "runnerKind": "docker",
           "networkPolicy": "egress-allowed"
@@ -37,11 +43,23 @@
     },
     {
       "id": "normalize-new-mail",
-      "nodeFile": "nodes/node-normalize-new-mail.json"
+      "addon": {
+        "name": "riela/gmail-digest",
+        "version": "1",
+        "config": {
+          "operation": "normalize-new-mail"
+        }
+      }
     },
     {
       "id": "inspect-attachments",
-      "nodeFile": "nodes/node-inspect-attachments.json"
+      "addon": {
+        "name": "riela/gmail-digest",
+        "version": "1",
+        "config": {
+          "operation": "inspect-attachments"
+        }
+      }
     },
     {
       "id": "summarize-new-mail",
@@ -49,11 +67,23 @@
     },
     {
       "id": "validate-summary-output",
-      "nodeFile": "nodes/node-validate-summary-output.json"
+      "addon": {
+        "name": "riela/gmail-digest",
+        "version": "1",
+        "config": {
+          "operation": "validate-summary-output"
+        }
+      }
     },
     {
       "id": "persist-mail-state",
-      "nodeFile": "nodes/node-persist-mail-state.json"
+      "addon": {
+        "name": "riela/gmail-digest",
+        "version": "1",
+        "config": {
+          "operation": "persist-state"
+        }
+      }
     },
     {
       "id": "send-telegram-digest",
@@ -71,7 +101,13 @@
     },
     {
       "id": "no-mail-output",
-      "nodeFile": "nodes/node-no-mail-output.json"
+      "addon": {
+        "name": "riela/gmail-digest",
+        "version": "1",
+        "config": {
+          "operation": "no-mail-output"
+        }
+      }
     }
   ],
   "steps": [

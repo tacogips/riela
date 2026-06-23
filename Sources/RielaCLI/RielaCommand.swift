@@ -1,6 +1,7 @@
 import Foundation
 import RielaAddons
 import RielaCore
+import RielaMemory
 
 public let rielaSwiftMigrationVersion = "0.1.5"
 
@@ -537,11 +538,10 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     }
     if manifestPath == nil {
       let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
-      manifestPath = environment["RIEL_WORKFLOW_MANIFEST"].flatMap { $0.isEmpty ? nil : $0 }
-        ?? environment["RIELA_WORKFLOW_MANIFEST"].flatMap { $0.isEmpty ? nil : $0 }
+      manifestPath = environment["RIELA_WORKFLOW_MANIFEST"].flatMap { $0.isEmpty ? nil : $0 }
     }
     guard let manifestPath, !manifestPath.isEmpty else {
-      throw CLIUsageError("workflow manifest validate requires a manifest path, --workflow-manifest, RIEL_WORKFLOW_MANIFEST, or RIELA_WORKFLOW_MANIFEST")
+      throw CLIUsageError("workflow manifest validate requires a manifest path, --workflow-manifest, or RIELA_WORKFLOW_MANIFEST")
     }
     let parsed = try ParsedWorkflowOptions(optionTokens)
     return WorkflowManifestValidateOptions(
@@ -583,20 +583,31 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     }
     let options = try parseMemoryOptions(memoryId: arguments[1], tokens: Array(arguments.dropFirst(2)))
     switch kind {
-    case .save:
+    case .save, .update:
       if options.payloadJSON != nil && options.payloadFile != nil {
-        throw CLIUsageError("memory save accepts only one of --payload-json or --payload-file")
+        throw CLIUsageError("memory \(subcommand) accepts only one of --payload-json or --payload-file")
       }
       if options.payloadJSON == nil && options.payloadFile == nil {
-        throw CLIUsageError("memory save requires --payload-json or --payload-file")
+        throw CLIUsageError("memory \(subcommand) requires --payload-json or --payload-file")
       }
       if options.workflowId == nil {
-        throw CLIUsageError("memory save requires --workflow-id")
+        throw CLIUsageError("memory \(subcommand) requires --workflow-id")
+      }
+      if kind == .update && options.recordId == nil {
+        throw CLIUsageError("memory update requires --record-id")
+      }
+      if kind == .save && options.clearFiles {
+        throw CLIUsageError("memory save does not support --clear-files")
+      }
+      if options.clearFiles && !options.filePaths.isEmpty {
+        throw CLIUsageError("memory \(subcommand) cannot combine --clear-files with --file")
       }
     case .load, .search:
       if options.workflowId == nil && !options.allWorkflows {
         throw CLIUsageError("memory \(subcommand) requires --workflow-id")
       }
+    case .metadata, .tags, .relatedIds:
+      break
     }
     return MemoryCommand(kind: kind, options: options)
   }
@@ -605,11 +616,18 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     var workflowId: String?
     var allWorkflows = false
     var nodeId: String?
+    var recordId: Int64?
     var payloadJSON: String?
     var payloadFile: String?
     var registeredAt: String?
     var matchPatterns: [String] = []
+    var tags: [String] = []
+    var relatedRecordIds: [Int64] = []
+    var filePaths: [String] = []
+    var clearFiles = false
+    var sortOrder: MemoryValueSortOrder = .valueAsc
     var limit = 30
+    var offset = 0
     var databaseRoot: String?
     var workingDirectory = FileManager.default.currentDirectoryPath
     var output: WorkflowOutputFormat = .jsonl
@@ -621,6 +639,11 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       }
       if let value = inlineOptionValue(token, prefix: "--output=") {
         output = try parseOutputValue(value, allowTableOutput: false)
+        index += 1
+        continue
+      }
+      if let value = inlineOptionValue(token, prefix: "--sort=") {
+        sortOrder = try parseMemoryValueSort(value)
         index += 1
         continue
       }
@@ -638,6 +661,11 @@ public struct RielaArgumentParser: CLIArgumentParsing {
         workflowId = try value()
       case "--node-id":
         nodeId = try value()
+      case "--record-id":
+        guard let parsed = Int64(try value()), parsed > 0 else {
+          throw CLIUsageError("--record-id must be a positive integer")
+        }
+        recordId = parsed
       case "--payload-json":
         payloadJSON = try value()
       case "--payload-file":
@@ -646,11 +674,29 @@ public struct RielaArgumentParser: CLIArgumentParsing {
         registeredAt = try value()
       case "--match", "-e":
         matchPatterns.append(try value())
+      case "--tag":
+        tags.append(try value())
+      case "--related-id", "--related-record-id":
+        guard let parsed = Int64(try value()), parsed > 0 else {
+          throw CLIUsageError("\(token) must be a positive integer")
+        }
+        relatedRecordIds.append(parsed)
+      case "--file", "--file-path":
+        filePaths.append(try value())
+      case "--clear-files":
+        clearFiles = true
+      case "--sort":
+        sortOrder = try parseMemoryValueSort(try value())
       case "--limit":
         guard let parsed = Int(try value()), parsed > 0 else {
           throw CLIUsageError("--limit must be a positive integer")
         }
         limit = parsed
+      case "--offset":
+        guard let parsed = Int(try value()), parsed >= 0 else {
+          throw CLIUsageError("--offset must be zero or a positive integer")
+        }
+        offset = parsed
       case "--database-root", "--memory-root":
         databaseRoot = try value()
       case "--working-dir", "--working-directory":
@@ -667,11 +713,18 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       workflowId: workflowId,
       allWorkflows: allWorkflows,
       nodeId: nodeId,
+      recordId: recordId,
       payloadJSON: payloadJSON,
       payloadFile: payloadFile,
       registeredAt: registeredAt,
       matchPatterns: matchPatterns,
+      tags: tags,
+      relatedRecordIds: relatedRecordIds,
+      filePaths: filePaths,
+      clearFiles: clearFiles,
+      sortOrder: sortOrder,
       limit: limit,
+      offset: offset,
       databaseRoot: databaseRoot,
       workingDirectory: workingDirectory,
       output: output
@@ -875,6 +928,13 @@ private func parseOutputValue(_ raw: String, allowTableOutput: Bool) throws -> W
   }
   if value == .table && !allowTableOutput {
     throw CLIUsageError("`--output table` is only supported for workflow list, workflow status, package search, and package list")
+  }
+  return value
+}
+
+private func parseMemoryValueSort(_ raw: String) throws -> MemoryValueSortOrder {
+  guard let value = MemoryValueSortOrder(rawValue: raw) else {
+    throw CLIUsageError("invalid --sort value '\(raw)'; expected value-asc or value-desc")
   }
   return value
 }

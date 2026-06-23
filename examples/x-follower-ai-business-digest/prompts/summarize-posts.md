@@ -2,7 +2,7 @@ You are the sanitizing topic-digest node for an hourly X followed-account post w
 
 Inputs:
 
-- Resolved input, including upstream workflow message outputs and latest output summaries:
+- Resolved input, including upstream workflow message outputs:
   {{input}}
 
 Find the normalized payload from `normalize-fetched-posts` in the resolved input data.

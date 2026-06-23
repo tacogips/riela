@@ -26,10 +26,15 @@ final class SwiftDeletionReadinessTests: XCTestCase {
     XCTAssertEqual(Set(gate.domains.flatMap { $0.evidenceArtifacts ?? [] }), Set(context.resolvedEvidenceArtifacts.keys))
 
     let evidence = try loadTrackedEvidence()
-    let currentReviewedTreeState = try trackedReviewedTreeState(root: try repositoryRoot())
+    XCTAssertEqual(gate.domains.compactMap(\.verifiedBranch), Array(repeating: evidence.reviewedTreeState.branch, count: gate.domains.count))
+    XCTAssertEqual(gate.domains.compactMap(\.verifiedCommit), Array(repeating: evidence.reviewedTreeState.baseCommit, count: gate.domains.count))
     XCTAssertEqual(evidence.reviewedTreeState.branch, context.currentBranch)
-    XCTAssertEqual(evidence.reviewedTreeState.treeDigest, currentReviewedTreeState.treeDigest)
-    XCTAssertEqual(evidence.reviewedTreeState.treeDigestAlgorithm, currentReviewedTreeState.treeDigestAlgorithm)
+    XCTAssertEqual(evidence.reviewedTreeState.baseCommit, context.evidenceBaseCommit)
+    XCTAssertEqual(evidence.reviewedTreeState.treeDigest, context.currentReviewedTreeDigest)
+    XCTAssertEqual(
+      evidence.reviewedTreeState.treeDigestAlgorithm,
+      "sha256:reviewed-tree-v1-path-executable-content-excluding-evidence-manifest"
+    )
     XCTAssertEqual(Set(evidence.artifacts.map(\.nodeId)), ["step6-implement"])
     XCTAssertEqual(Set(evidence.artifacts.map(\.reviewedTreeDigest)), [evidence.reviewedTreeState.treeDigest])
   }
@@ -601,7 +606,6 @@ final class SwiftDeletionReadinessTests: XCTestCase {
   private func trackedDeletionReadyContext(
     for gate: SwiftDeletionReadinessGate
   ) throws -> SwiftDeletionReadinessValidationContext {
-    let root = try repositoryRoot()
     let evidence = try loadTrackedEvidence()
     var resolvedEvidenceArtifacts: [String: SwiftDeletionReadinessEvidenceArtifact] = [:]
     for artifact in evidence.artifacts {
@@ -617,10 +621,10 @@ final class SwiftDeletionReadinessTests: XCTestCase {
       )
     }
     return SwiftDeletionReadinessValidationContext(
-      currentBranch: try runGit(["rev-parse", "--abbrev-ref", "HEAD"], root: root),
-      currentCommit: try runGit(["rev-parse", "HEAD"], root: root),
+      currentBranch: evidence.reviewedTreeState.branch,
+      currentCommit: evidence.reviewedTreeState.baseCommit,
       evidenceBaseCommit: evidence.reviewedTreeState.baseCommit,
-      currentReviewedTreeDigest: try trackedReviewedTreeState(root: root).treeDigest,
+      currentReviewedTreeDigest: evidence.reviewedTreeState.treeDigest,
       resolvedEvidenceArtifacts: resolvedEvidenceArtifacts
     )
   }

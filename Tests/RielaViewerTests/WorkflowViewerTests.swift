@@ -93,7 +93,7 @@ final class WorkflowViewerTests: XCTestCase {
         createdAt: now
       )
     ]
-    try FileWorkflowRuntimePersistenceStore(
+    try SQLiteWorkflowRuntimePersistenceStore(
       rootDirectory: sessionStoreRoot.appendingPathComponent("runtime-records", isDirectory: true).path
     ).save(WorkflowRuntimePersistenceSnapshot(session: session, workflowMessages: messages))
 
@@ -150,7 +150,7 @@ final class WorkflowViewerTests: XCTestCase {
 
     let older = Date(timeIntervalSince1970: 1)
     let newer = Date(timeIntervalSince1970: 2)
-    let store = FileWorkflowRuntimePersistenceStore(
+    let store = SQLiteWorkflowRuntimePersistenceStore(
       rootDirectory: sessionStoreRoot.appendingPathComponent("runtime-records", isDirectory: true).path
     )
     try store.save(WorkflowRuntimePersistenceSnapshot(session: WorkflowSession(
@@ -258,7 +258,7 @@ final class WorkflowViewerTests: XCTestCase {
         )
       ]
     )
-    try FileWorkflowRuntimePersistenceStore(
+    try SQLiteWorkflowRuntimePersistenceStore(
       rootDirectory: sessionStoreRoot.appendingPathComponent("runtime-records", isDirectory: true).path
     ).save(WorkflowRuntimePersistenceSnapshot(session: session))
 
@@ -297,7 +297,7 @@ final class WorkflowViewerTests: XCTestCase {
     try encoder.encode(workflow).write(to: workflowDirectory.appendingPathComponent("workflow.json"))
 
     let now = Date(timeIntervalSince1970: 3)
-    try FileWorkflowRuntimePersistenceStore(
+    try SQLiteWorkflowRuntimePersistenceStore(
       rootDirectory: projectSessionStoreRoot.appendingPathComponent("runtime-records", isDirectory: true).path
     ).save(WorkflowRuntimePersistenceSnapshot(session: WorkflowSession(
       workflowId: "viewer-discovery",
@@ -339,9 +339,7 @@ final class WorkflowViewerTests: XCTestCase {
       at: corruptRuntimeRoot.appendingPathComponent("bad-session", isDirectory: true),
       withIntermediateDirectories: true
     )
-    try Data("{".utf8).write(to: corruptRuntimeRoot
-      .appendingPathComponent("bad-session", isDirectory: true)
-      .appendingPathComponent("runtime-snapshot.json"))
+    try Data("{".utf8).write(to: corruptRuntimeRoot.appendingPathComponent("runtime-message-log.sqlite"))
     defer { try? FileManager.default.removeItem(at: temp) }
 
     let workflow = WorkflowDefinition(
@@ -357,7 +355,7 @@ final class WorkflowViewerTests: XCTestCase {
     try encoder.encode(workflow).write(to: workflowDirectory.appendingPathComponent("workflow.json"))
 
     let now = Date(timeIntervalSince1970: 4)
-    try FileWorkflowRuntimePersistenceStore(
+    try SQLiteWorkflowRuntimePersistenceStore(
       rootDirectory: projectSessionStoreRoot.appendingPathComponent("runtime-records", isDirectory: true).path
     ).save(WorkflowRuntimePersistenceSnapshot(session: WorkflowSession(
       workflowId: "viewer-corrupt-discovery",

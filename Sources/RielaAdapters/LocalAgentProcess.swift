@@ -546,6 +546,12 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
     requiresOutputContract: Bool
   ) throws -> OutputContractEnvelopeNormalization {
     guard requiresOutputContract else {
+      let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+      if trimmed.hasPrefix("{"),
+        let parsed = try? parseJSONObjectCandidate(trimmed, source: source),
+        let normalized = try? normalizeOutputContractEnvelope(parsed, source: source) {
+        return normalized
+      }
       return OutputContractEnvelopeNormalization(
         completionPassed: true,
         when: ["always": true],

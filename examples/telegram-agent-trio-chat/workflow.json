@@ -2,13 +2,26 @@
   "workflowId": "telegram-agent-trio-chat",
   "description": "Route provider-neutral chat messages, including attachment descriptors, to one of three named female bot personas: Yui Codex by default, Mika Trend when called, or Rina Cursor when called. Persona nodes can hand off to another named persona when the user explicitly asks one bot to hear another bot's opinion.",
   "defaults": {
-    "maxLoopIterations": 3,
+    "maxLoopIterations": 16,
     "nodeTimeoutMs": 180000
   },
   "prompts": {
-    "workerSystemPromptTemplate": "Return concise JSON only. Keep user-facing chat text in payload.replyText. Do not expose internal workflow routing details unless the user asks for diagnostics.",
+    "workerSystemPromptTemplate": "Return concise JSON only. Keep user-facing chat text in top-level replyText. Do not expose internal workflow routing details unless the user asks for diagnostics.",
     "chatFailureMessageTemplate": "ごめん、{{node.variables.shortName}}はいま少し調子が悪いみたい。少し待ってからもう一度呼んでね。"
   },
+  "memories": [
+    {
+      "id": "persona-chat-memory",
+      "description": "Persona-specific durable chat memory for Yui, Mika, and Rina.",
+      "purpose": "Provide recent persona memory to chat reply nodes and persist explicit memoryEntries without Python scripts.",
+      "dataSchema": {
+        "type": "object",
+        "required": ["personaId", "content", "recordedAt"]
+      },
+      "scope": "cross-workflow",
+      "defaultLimit": 3
+    }
+  ],
   "entryStepId": "route-message",
   "nodes": [
     {
@@ -58,39 +71,78 @@
     },
     {
       "id": "yui-codex",
-      "nodeFile": "nodes/node-yui-codex.json"
+      "nodeRef": {
+        "workflowId": "shared-agent-trio-personas",
+        "nodeId": "yui-codex"
+      }
     },
     {
       "id": "read-yui-memory",
-      "nodeFile": "nodes/node-read-yui-memory.json"
+      "addon": {
+        "name": "riela/chat-persona-memory-read",
+        "version": "1",
+        "config": {"personaId": "yui", "personaName": "Yui Codex", "memoryId": "persona-chat-memory"}
+      },
+      "memories": [{"id": "persona-chat-memory", "purpose": "read recent Yui memory"}]
     },
     {
       "id": "write-yui-memory",
-      "nodeFile": "nodes/node-write-yui-memory.json"
+      "addon": {
+        "name": "riela/chat-persona-memory-write",
+        "version": "1",
+        "config": {"personaId": "yui", "personaName": "Yui Codex", "memoryId": "persona-chat-memory"}
+      },
+      "memories": [{"id": "persona-chat-memory", "purpose": "persist Yui memory entries"}]
     },
     {
       "id": "mika-claude",
-      "nodeFile": "nodes/node-mika-claude.json"
+      "nodeRef": {
+        "workflowId": "shared-agent-trio-personas",
+        "nodeId": "mika-claude"
+      }
     },
     {
       "id": "read-mika-memory",
-      "nodeFile": "nodes/node-read-mika-memory.json"
+      "addon": {
+        "name": "riela/chat-persona-memory-read",
+        "version": "1",
+        "config": {"personaId": "mika", "personaName": "Mika Trend", "memoryId": "persona-chat-memory"}
+      },
+      "memories": [{"id": "persona-chat-memory", "purpose": "read recent Mika memory"}]
     },
     {
       "id": "write-mika-memory",
-      "nodeFile": "nodes/node-write-mika-memory.json"
+      "addon": {
+        "name": "riela/chat-persona-memory-write",
+        "version": "1",
+        "config": {"personaId": "mika", "personaName": "Mika Trend", "memoryId": "persona-chat-memory"}
+      },
+      "memories": [{"id": "persona-chat-memory", "purpose": "persist Mika memory entries"}]
     },
     {
       "id": "rina-cursor",
-      "nodeFile": "nodes/node-rina-cursor.json"
+      "nodeRef": {
+        "workflowId": "shared-agent-trio-personas",
+        "nodeId": "rina-cursor"
+      }
     },
     {
       "id": "read-rina-memory",
-      "nodeFile": "nodes/node-read-rina-memory.json"
+      "addon": {
+        "name": "riela/chat-persona-memory-read",
+        "version": "1",
+        "config": {"personaId": "rina", "personaName": "Rina Cursor", "memoryId": "persona-chat-memory"}
+      },
+      "memories": [{"id": "persona-chat-memory", "purpose": "read recent Rina memory"}]
     },
     {
       "id": "write-rina-memory",
-      "nodeFile": "nodes/node-write-rina-memory.json"
+      "addon": {
+        "name": "riela/chat-persona-memory-write",
+        "version": "1",
+        "config": {"personaId": "rina", "personaName": "Rina Cursor", "memoryId": "persona-chat-memory"}
+      },
+      "memories": [{"id": "persona-chat-memory", "purpose": "persist Rina memory entries"}]
     },
     {
       "id": "send-yui-reply",

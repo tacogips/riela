@@ -185,20 +185,8 @@ public struct SessionInspectionCommand: Sendable {
       scope: parsed.scope,
       workingDirectory: parsed.workingDirectory
     )
-    let store = FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot))
-    do {
-      return try store.load(sessionId: sessionId)
-    } catch WorkflowRuntimePersistenceStoreError.notFound {
-      let loaded = try CLIWorkflowSessionResolution.loadPersistedSession(
-        sessionId: sessionId,
-        sessionStore: parsed.sessionStore,
-        scope: parsed.scope,
-        workingDirectory: parsed.workingDirectory
-      )
-      let repaired = WorkflowRuntimePersistenceProjector.snapshot(session: loaded.record.session)
-      try FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: loaded.storeRoot)).save(repaired)
-      return repaired
-    }
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot))
+    return try store.load(sessionId: sessionId)
   }
 
   private func render(snapshot: WorkflowRuntimePersistenceSnapshot, command: String, output: WorkflowOutputFormat) throws -> CLICommandResult {
@@ -276,7 +264,6 @@ public struct SessionRerunCommand: Sendable {
         mockScenarioPath: options.mockScenarioPath ?? persisted.mockScenarioPath,
         workingDirectory: options.workingDirectory
       )
-      let persistenceStore = FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot))
       let runtimeStore = InMemoryWorkflowRuntimeStore()
       try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: storeRoot)
       let runner = DeterministicWorkflowRunner(store: runtimeStore, adapter: adapter, stdioNodeExecutor: LocalWorkflowStdioNodeExecutor())
@@ -288,17 +275,15 @@ public struct SessionRerunCommand: Sendable {
           rerunFromStepId: options.stepId
         )
       )
+      let workflowMessages = try await runtimeStore.listMessages(for: result.session.sessionId, toStepId: nil)
       try CLIWorkflowSessionStore(rootDirectory: storeRoot).save(
         PersistedCLIWorkflowSession(
           workflowName: persisted.workflowName,
           session: result.session,
           resolution: resolution,
           mockScenarioPath: options.mockScenarioPath ?? persisted.mockScenarioPath
-        )
-      )
-      let workflowMessages = try await runtimeStore.listMessages(for: result.session.sessionId, toStepId: nil)
-      try persistenceStore.save(
-        WorkflowRuntimePersistenceProjector.snapshot(session: result.session, workflowMessages: workflowMessages)
+        ),
+        runtimeSnapshot: WorkflowRuntimePersistenceProjector.snapshot(session: result.session, workflowMessages: workflowMessages)
       )
       return renderRerunSuccess(options: options, result: result)
     } catch let error as CLIWorkflowSessionStoreError {
@@ -393,7 +378,6 @@ public struct SessionResumeCommand: Sendable {
         mockScenarioPath: options.mockScenarioPath ?? persisted.mockScenarioPath,
         workingDirectory: options.workingDirectory
       )
-      let persistenceStore = FileWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot))
       let runtimeStore = InMemoryWorkflowRuntimeStore()
       try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: storeRoot)
       let runner = DeterministicWorkflowRunner(store: runtimeStore, adapter: adapter, stdioNodeExecutor: LocalWorkflowStdioNodeExecutor())
@@ -404,17 +388,15 @@ public struct SessionResumeCommand: Sendable {
           resumeSessionId: persisted.session.sessionId
         )
       )
+      let workflowMessages = try await runtimeStore.listMessages(for: result.session.sessionId, toStepId: nil)
       try CLIWorkflowSessionStore(rootDirectory: storeRoot).save(
         PersistedCLIWorkflowSession(
           workflowName: persisted.workflowName,
           session: result.session,
           resolution: resolution,
           mockScenarioPath: options.mockScenarioPath ?? persisted.mockScenarioPath
-        )
-      )
-      let workflowMessages = try await runtimeStore.listMessages(for: result.session.sessionId, toStepId: nil)
-      try persistenceStore.save(
-        WorkflowRuntimePersistenceProjector.snapshot(session: result.session, workflowMessages: workflowMessages)
+        ),
+        runtimeSnapshot: WorkflowRuntimePersistenceProjector.snapshot(session: result.session, workflowMessages: workflowMessages)
       )
       return renderResumeSuccess(options: options, result: result)
     } catch let error as CLIWorkflowSessionStoreError {
@@ -468,7 +450,7 @@ private func makeSessionNodeAdapter(mockScenarioPath: String?, workingDirectory:
 
 private func loadExistingWorkflowMessages(
   sessionId: String,
-  persistenceStore: FileWorkflowRuntimePersistenceStore
+  persistenceStore: SQLiteWorkflowRuntimePersistenceStore
 ) throws -> [WorkflowMessageRecord] {
   do {
     return try persistenceStore.load(sessionId: sessionId).workflowMessages

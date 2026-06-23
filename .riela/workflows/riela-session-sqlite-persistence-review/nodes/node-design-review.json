@@ -1,0 +1,12 @@
+{
+  "id": "design-review",
+  "description": "Review the proposed session SQLite persistence migration design.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "effort": "high",
+  "promptTemplateFile": "prompts/design-review.md",
+  "variables": {},
+  "output": {
+    "description": "Return JSON with accepted, findings, designDecisions, and requiredChanges."
+  }
+}

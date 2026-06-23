@@ -145,6 +145,7 @@ public struct WorkflowMemoryDeclaration: Codable, Equatable, Sendable {
   public var id: String
   public var description: String?
   public var purpose: String?
+  public var dataSchema: JSONValue?
   public var scope: WorkflowMemoryScope?
   public var defaultLimit: Int?
 
@@ -152,12 +153,14 @@ public struct WorkflowMemoryDeclaration: Codable, Equatable, Sendable {
     id: String,
     description: String? = nil,
     purpose: String? = nil,
+    dataSchema: JSONValue? = nil,
     scope: WorkflowMemoryScope? = nil,
     defaultLimit: Int? = nil
   ) {
     self.id = id
     self.description = description
     self.purpose = purpose
+    self.dataSchema = dataSchema
     self.scope = scope
     self.defaultLimit = defaultLimit
   }
@@ -268,6 +271,7 @@ public struct WorkflowInputFilter: Codable, Equatable, Sendable {
 public struct WorkflowNodeRegistryRef: Codable, Equatable, Sendable {
   public var id: String
   public var nodeFile: String?
+  public var nodeRef: WorkflowSharedNodeRef?
   public var addon: WorkflowNodeAddonRef?
   public var execution: WorkflowNodeExecutionPolicy?
   public var kind: WorkflowRegistryNodeKind?
@@ -278,6 +282,7 @@ public struct WorkflowNodeRegistryRef: Codable, Equatable, Sendable {
   enum CodingKeys: String, CodingKey {
     case id
     case nodeFile
+    case nodeRef
     case addon
     case execution
     case kind
@@ -289,6 +294,7 @@ public struct WorkflowNodeRegistryRef: Codable, Equatable, Sendable {
   public init(
     id: String,
     nodeFile: String? = nil,
+    nodeRef: WorkflowSharedNodeRef? = nil,
     addon: WorkflowNodeAddonRef? = nil,
     execution: WorkflowNodeExecutionPolicy? = nil,
     kind: WorkflowRegistryNodeKind? = nil,
@@ -298,12 +304,23 @@ public struct WorkflowNodeRegistryRef: Codable, Equatable, Sendable {
   ) {
     self.id = id
     self.nodeFile = nodeFile
+    self.nodeRef = nodeRef
     self.addon = addon
     self.execution = execution
     self.kind = kind
     self.repeatPolicy = repeatPolicy
     self.inputFilters = inputFilters
     self.memories = memories
+  }
+}
+
+public struct WorkflowSharedNodeRef: Codable, Equatable, Hashable, Sendable {
+  public var workflowId: String
+  public var nodeId: String
+
+  public init(workflowId: String, nodeId: String) {
+    self.workflowId = workflowId
+    self.nodeId = nodeId
   }
 }
 
@@ -471,6 +488,7 @@ public struct AuthoredWorkflowJSON: Codable, Equatable, Sendable {
 public struct WorkflowNodeRef: Codable, Equatable, Sendable {
   public var id: String
   public var nodeFile: String?
+  public var nodeRef: WorkflowSharedNodeRef?
   public var addon: WorkflowNodeAddonRef?
   public var kind: WorkflowRegistryNodeKind?
   public var role: NodeRole?
@@ -482,6 +500,7 @@ public struct WorkflowNodeRef: Codable, Equatable, Sendable {
   enum CodingKeys: String, CodingKey {
     case id
     case nodeFile
+    case nodeRef
     case addon
     case kind
     case role
@@ -494,6 +513,7 @@ public struct WorkflowNodeRef: Codable, Equatable, Sendable {
   public init(
     id: String,
     nodeFile: String? = nil,
+    nodeRef: WorkflowSharedNodeRef? = nil,
     addon: WorkflowNodeAddonRef? = nil,
     kind: WorkflowRegistryNodeKind? = nil,
     role: NodeRole? = nil,
@@ -504,6 +524,7 @@ public struct WorkflowNodeRef: Codable, Equatable, Sendable {
   ) {
     self.id = id
     self.nodeFile = nodeFile
+    self.nodeRef = nodeRef
     self.addon = addon
     self.kind = kind
     self.role = role
@@ -701,6 +722,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
   public var promptTemplateFile: String?
   public var sessionStartPromptTemplate: String?
   public var sessionStartPromptTemplateFile: String?
+  public var sessionPolicy: WorkflowStepSessionPolicy?
   public var promptVariants: [String: NodePromptVariant]?
   public var memories: [WorkflowMemoryDeclaration]?
   public var variables: JSONObject
@@ -723,6 +745,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     promptTemplateFile: String? = nil,
     sessionStartPromptTemplate: String? = nil,
     sessionStartPromptTemplateFile: String? = nil,
+    sessionPolicy: WorkflowStepSessionPolicy? = nil,
     promptVariants: [String: NodePromptVariant]? = nil,
     memories: [WorkflowMemoryDeclaration]? = nil,
     variables: JSONObject = [:],
@@ -744,6 +767,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     self.promptTemplateFile = promptTemplateFile
     self.sessionStartPromptTemplate = sessionStartPromptTemplate
     self.sessionStartPromptTemplateFile = sessionStartPromptTemplateFile
+    self.sessionPolicy = sessionPolicy
     self.promptVariants = promptVariants
     self.memories = memories
     self.variables = variables
@@ -767,6 +791,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     case promptTemplateFile
     case sessionStartPromptTemplate
     case sessionStartPromptTemplateFile
+    case sessionPolicy
     case promptVariants
     case memories
     case variables
@@ -791,6 +816,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     self.promptTemplateFile = try container.decodeIfPresent(String.self, forKey: .promptTemplateFile)
     self.sessionStartPromptTemplate = try container.decodeIfPresent(String.self, forKey: .sessionStartPromptTemplate)
     self.sessionStartPromptTemplateFile = try container.decodeIfPresent(String.self, forKey: .sessionStartPromptTemplateFile)
+    self.sessionPolicy = try container.decodeIfPresent(WorkflowStepSessionPolicy.self, forKey: .sessionPolicy)
     self.promptVariants = try container.decodeIfPresent([String: NodePromptVariant].self, forKey: .promptVariants)
     self.memories = try container.decodeIfPresent([WorkflowMemoryDeclaration].self, forKey: .memories)
     self.variables = try container.decodeIfPresent(JSONObject.self, forKey: .variables) ?? [:]

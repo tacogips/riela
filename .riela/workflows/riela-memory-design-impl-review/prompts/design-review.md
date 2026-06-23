@@ -1,4 +1,4 @@
-You are reviewing the design for the Riela memory feature.
+Adversarially review the current Riela memory feature design from the repository diff.
 
 User objective:
 {{workflowInput.requestedWork}}
@@ -6,37 +6,30 @@ User objective:
 Acceptance criteria:
 {{workflowInput.acceptanceCriteria}}
 
-Inspect the current repository state and diff. Focus on the architecture, not line-by-line implementation.
+Do not modify files. Return one JSON object only with keys:
+- `accepted`
+- `findings`
+- `designDecisions`
+- `requiredChanges`
 
-Review whether the design supports:
-- memory as an independent facility usable across workflows
-- explicit workflow/node declarations for memories that a workflow or node may use
-- workflow-id scoped save/load/search commands
-- one SQLite database file per memory id
-- JSONB payload storage with arbitrary JSON payload and registration date
-- grep-style multiple match search with default registered-desc sort and limit 30
-- a `riela memory` command surface usable by autonomous LLM nodes
-- node templates for save/load/search handoff
-- replacing chat example history retrieval with chat memory
+Focus on whether the Python-script behavior has been generalized into Riela correctly:
+- the built-in `riela/chat-memory-raw-daily-summary` add-on contract and naming
+- whether it is reusable beyond one example
+- whether memory metadata and `dataSchema` remain discoverable by workflow nodes
+- whether tags and related ids remain bounded and pageable
+- whether raw chat logs and daily summaries are correctly separated into different memory databases
+- whether Telegram and Discord chat memory regression coverage proves memory still works
 
-Return JSON only:
+Also adversarially review the file-aware memory design:
+- whether records can persist up to 10 local file references by copying bytes into memory-owned storage
+- whether SQLite stores enough metadata to return files later
+- whether MIME/kind normalization covers image, audio, video, PDF, and text without overfitting to Telegram
+- whether memory-load/search/persona-read expose generic files plus typed paths for model adapters
+- whether update should replace, preserve, or clear existing files explicitly
+- whether file paths are safe and portable enough for local workflow execution
+- whether adapter image forwarding can inspect images recalled from memory
+- whether non-image file support is honestly bounded by downstream adapter capability
 
-```json
-{
-  "accepted": false,
-  "findings": [
-    {
-      "severity": "high|mid|low",
-      "message": "Issue and impact.",
-      "file": "relative/path",
-      "line": 1
-    }
-  ],
-  "designDecisions": [
-    "Decision to keep or change."
-  ],
-  "requiredChanges": [
-    "Concrete design change before completion."
-  ]
-}
-```
+Also check the independent RielaMemory package, workflow/node memory declarations, workflow-id scoped save/load/search/update, JSONB payloads, one SQLite file per memory id, default registered-desc limit 30, LLM command guidance, and chat memory replacement.
+
+Treat unrelated dirty files outside memory/add-on/example/test scope as out of scope.

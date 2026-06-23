@@ -11,6 +11,11 @@ final class DeterministicWorkflowRunnerMemoryTests: XCTestCase {
     let sharedMemory = WorkflowMemoryDeclaration(
       id: "rina-shared",
       description: "Rina conversation memory shared by chat entrypoints",
+      purpose: "share persona history across chat entrypoints",
+      dataSchema: .object([
+        "type": .string("object"),
+        "required": .array([.string("direction"), .string("workflowId")])
+      ]),
       scope: .crossWorkflow
     )
     let platforms = [
@@ -44,6 +49,13 @@ final class DeterministicWorkflowRunnerMemoryTests: XCTestCase {
     )
 
     XCTAssertEqual(records.count, 6)
+    let metadata = try RielaMemoryStore(rootDirectory: memoryRoot).metadata(memoryId: "rina-shared")
+    XCTAssertEqual(metadata?.description, "Rina conversation memory shared by chat entrypoints")
+    XCTAssertEqual(metadata?.purpose, "share persona history across chat entrypoints")
+    XCTAssertEqual(metadata?.dataSchema, .object([
+      "type": .string("object"),
+      "required": .array([.string("direction"), .string("workflowId")])
+    ]))
     XCTAssertEqual(Set(records.map(\.workflowId)), ["discord-rina", "telegram-rina", "matrix-rina"])
     let payloads = records.compactMap(objectPayload)
     XCTAssertEqual(payloads.filter { $0["direction"] == .string("inbox") }.count, 3)
@@ -114,6 +126,11 @@ final class DeterministicWorkflowRunnerMemoryTests: XCTestCase {
       try? FileManager.default.removeItem(atPath: memoryRoot)
     }
     let memory = WorkflowMemoryDeclaration(id: "dedupe-memory")
+    let nodeMemory = WorkflowMemoryDeclaration(
+      id: "dedupe-memory",
+      purpose: "retain deduplicated node context",
+      dataSchema: .object(["type": .string("object")])
+    )
     let runner = DeterministicWorkflowRunner(
       adapter: MemoryStaticAdapter(output: adapterOutput(payload: ["status": .string("ok")])),
       inputResolver: StaticInputResolver(payload: ["message": .string("dedupe")])
@@ -126,7 +143,7 @@ final class DeterministicWorkflowRunnerMemoryTests: XCTestCase {
           id: "agent-node",
           executionBackend: .codexAgent,
           model: "gpt-5-nano",
-          memories: [memory]
+          memories: [nodeMemory]
         )
       ],
       variables: ["workflowInput": .object(["memoryRoot": .string(memoryRoot)])]
@@ -138,6 +155,9 @@ final class DeterministicWorkflowRunnerMemoryTests: XCTestCase {
     )
     XCTAssertEqual(records.count, 2)
     XCTAssertEqual(records.compactMap(objectPayload).map { $0["direction"] }, [.string("outbox"), .string("inbox")])
+    let metadata = try RielaMemoryStore(rootDirectory: memoryRoot).metadata(memoryId: "dedupe-memory")
+    XCTAssertEqual(metadata?.purpose, "retain deduplicated node context")
+    XCTAssertEqual(metadata?.dataSchema, .object(["type": .string("object")]))
   }
 
   func testCommandNodeRecordsInboxAndNullOutboxWhileReceivingMemoryContext() async throws {
@@ -217,6 +237,31 @@ final class DeterministicWorkflowRunnerMemoryTests: XCTestCase {
     XCTAssertTrue(payloads.contains { $0["nodeId"] == .string("addon-node") && $0["output"] == .object(["addon": .bool(true)]) })
   }
 
+  func testBuiltinMemoryAddonNodesDoNotRecordAutomaticMemoryAuditEntries() async throws {
+    let memoryRoot = temporaryDirectory("builtin-memory-addon-audit")
+    defer {
+      try? FileManager.default.removeItem(atPath: memoryRoot)
+    }
+    let memory = WorkflowMemoryDeclaration(id: "chat-memory", purpose: "load chat context")
+    let addonResolver = MemoryAddonResolver(output: adapterOutput(payload: ["records": .array([])]))
+    let runner = DeterministicWorkflowRunner(
+      addonResolver: addonResolver,
+      inputResolver: StaticInputResolver(payload: ["message": .string("hello")])
+    )
+
+    _ = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: builtinMemoryAddonWorkflow(memory: memory),
+      memoryRootDirectory: memoryRoot
+    ))
+
+    let records = try RielaMemoryStore(rootDirectory: memoryRoot).search(
+      memoryId: "chat-memory",
+      options: MemorySearchOptions(workflowId: "builtin-memory-addon-workflow", limit: 20)
+    )
+    XCTAssertEqual(records, [])
+    XCTAssertEqual(try RielaMemoryStore(rootDirectory: memoryRoot).metadata(memoryId: "chat-memory")?.purpose, "load chat context")
+  }
+
   private func rinaWorkflow(
     workflowId: String,
     nodeId: String,
@@ -288,6 +333,26 @@ final class DeterministicWorkflowRunnerMemoryTests: XCTestCase {
       nodes: [
         WorkflowNodeRef(id: "container-step", nodeFile: "nodes/container.json", role: .worker, memories: [memory]),
         WorkflowNodeRef(id: "addon-step", addon: WorkflowNodeAddonRef(name: "example/addon"), role: .worker, memories: [memory])
+      ]
+    )
+  }
+
+  private func builtinMemoryAddonWorkflow(memory: WorkflowMemoryDeclaration) -> WorkflowDefinition {
+    WorkflowDefinition(
+      workflowId: "builtin-memory-addon-workflow",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
+      memories: [memory],
+      entryStepId: "load-memory",
+      nodeRegistry: [
+        WorkflowNodeRegistryRef(
+          id: "load-memory",
+          addon: WorkflowNodeAddonRef(name: "riela/memory-load"),
+          memories: [memory]
+        )
+      ],
+      steps: [WorkflowStepRef(id: "load-memory", nodeId: "load-memory", role: .worker)],
+      nodes: [
+        WorkflowNodeRef(id: "load-memory", addon: WorkflowNodeAddonRef(name: "riela/memory-load"), role: .worker, memories: [memory])
       ]
     )
   }

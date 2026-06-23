@@ -262,8 +262,7 @@ public struct WorkflowViewerLoader: Sendable {
 
   private func loadSnapshots(sessionStoreRoot: String) throws -> [WorkflowRuntimePersistenceSnapshot] {
     let runtimeRoot = runtimeStoreRoot(sessionStoreRoot: sessionStoreRoot)
-    var snapshots = try FileWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot).loadAll()
-    snapshots.append(contentsOf: try loadSessionOnlySnapshots(sessionStoreRoot: sessionStoreRoot))
+    let snapshots = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot).loadAll()
     var seen: Set<String> = []
     return snapshots.filter { snapshot in
       seen.insert(snapshot.session.sessionId).inserted
@@ -274,30 +273,7 @@ public struct WorkflowViewerLoader: Sendable {
     guard isSafeSessionId(sessionId) else {
       throw WorkflowViewerLoadError.unsafeSessionId(sessionId)
     }
-    do {
-      return try FileWorkflowRuntimePersistenceStore(rootDirectory: runtimeStoreRoot(sessionStoreRoot: sessionStoreRoot)).load(sessionId: sessionId)
-    } catch let error as WorkflowRuntimePersistenceStoreError {
-      if case .notFound = error {
-        if let sessionOnly = try loadSessionOnlySnapshots(sessionStoreRoot: sessionStoreRoot)
-          .first(where: { $0.session.sessionId == sessionId }) {
-          return sessionOnly
-        }
-      }
-      throw error
-    }
-  }
-
-  private func loadSessionOnlySnapshots(sessionStoreRoot: String) throws -> [WorkflowRuntimePersistenceSnapshot] {
-    let root = URL(fileURLWithPath: sessionStoreRoot, isDirectory: true)
-    guard FileManager.default.fileExists(atPath: root.path) else {
-      return []
-    }
-    let decoder = JSONDecoder()
-    decoder.dateDecodingStrategy = .iso8601
-    return try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
-      .filter { $0.pathExtension == "json" }
-      .map { try decoder.decode(PersistedViewerSessionRecord.self, from: Data(contentsOf: $0)) }
-      .map { WorkflowRuntimePersistenceSnapshot(session: $0.session) }
+    return try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeStoreRoot(sessionStoreRoot: sessionStoreRoot)).load(sessionId: sessionId)
   }
 
   private func resolveSessionStore(
@@ -491,10 +467,6 @@ public struct WorkflowViewerLoader: Sendable {
     }
     return value.range(of: #"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"#, options: .regularExpression) != nil
   }
-}
-
-private struct PersistedViewerSessionRecord: Codable {
-  var session: WorkflowSession
 }
 
 private struct WorkflowViewerSessionStoreResolution {

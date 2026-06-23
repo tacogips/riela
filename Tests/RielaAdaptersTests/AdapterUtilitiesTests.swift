@@ -27,6 +27,51 @@ final class AdapterUtilitiesTests: XCTestCase {
     }
   }
 
+  func testResolveAdapterImagePathsFindsGatewayDescriptorPathKeys() {
+    let input = AdapterExecutionInput(
+      node: AgentNodePayload(id: "worker", model: "gpt-5"),
+      promptText: "hello",
+      mergedVariables: [
+        "workflowInput": .object([
+          "imagePaths": .array([.string("/tmp/from-image-paths.png")]),
+          "attachments": .array([
+            .object([
+              "kind": .string("image"),
+              "mediaType": .string("image/jpeg"),
+              "path": .string("/tmp/from-path.jpg")
+            ]),
+            .object([
+              "contentType": .string("image/png"),
+              "localPath": .string("/tmp/from-local-path.png")
+            ]),
+            .object([
+              "mediaType": .string("image/webp"),
+              "source": .object([
+                "downloadPath": .string("/tmp/from-source-download.webp")
+              ])
+            ]),
+            .object([
+              "kind": .string("photo"),
+              "mimeType": .string("image/png"),
+              "downloadPath": .string("/tmp/from-photo-kind.png")
+            ])
+          ])
+        ])
+      ]
+    )
+
+    XCTAssertEqual(
+      resolveAdapterImagePaths(input),
+      [
+        "/tmp/from-image-paths.png",
+        "/tmp/from-path.jpg",
+        "/tmp/from-local-path.png",
+        "/tmp/from-source-download.webp",
+        "/tmp/from-photo-kind.png"
+      ]
+    )
+  }
+
   func testOutputContractEnvelopeDefaultsAndBusinessPayloadFallback() throws {
     let envelope = try normalizeOutputContractEnvelope(
       ["when": .object(["accepted": .bool(true)]), "payload": .object(["status": .string("ok")])],

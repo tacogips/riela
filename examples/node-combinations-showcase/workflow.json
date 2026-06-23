@@ -2,7 +2,7 @@
   "workflowId": "node-combinations-showcase",
   "description": "Compact reference bundle in the step-addressed shape: command-node, container-node, and a foreach lane with a judge step that branches back on continue_items (same behavior as the former node-local repeat authoring).",
   "defaults": {
-    "maxLoopIterations": 3,
+    "maxLoopIterations": 10,
     "nodeTimeoutMs": 120000,
     "containerRuntime": {
       "runnerKind": "podman"

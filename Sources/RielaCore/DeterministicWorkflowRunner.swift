@@ -454,6 +454,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       node: executionPayload,
       promptText: prompts.promptText,
       systemPromptText: prompts.systemPromptText,
+      sessionPolicy: step.sessionPolicy ?? executionPayload.sessionPolicy,
       arguments: request.variables,
       mergedVariables: mergedVariables
     )

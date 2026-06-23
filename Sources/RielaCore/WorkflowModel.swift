@@ -722,6 +722,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
   public var promptTemplateFile: String?
   public var sessionStartPromptTemplate: String?
   public var sessionStartPromptTemplateFile: String?
+  public var sessionPolicy: WorkflowStepSessionPolicy?
   public var promptVariants: [String: NodePromptVariant]?
   public var memories: [WorkflowMemoryDeclaration]?
   public var variables: JSONObject
@@ -744,6 +745,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     promptTemplateFile: String? = nil,
     sessionStartPromptTemplate: String? = nil,
     sessionStartPromptTemplateFile: String? = nil,
+    sessionPolicy: WorkflowStepSessionPolicy? = nil,
     promptVariants: [String: NodePromptVariant]? = nil,
     memories: [WorkflowMemoryDeclaration]? = nil,
     variables: JSONObject = [:],
@@ -765,6 +767,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     self.promptTemplateFile = promptTemplateFile
     self.sessionStartPromptTemplate = sessionStartPromptTemplate
     self.sessionStartPromptTemplateFile = sessionStartPromptTemplateFile
+    self.sessionPolicy = sessionPolicy
     self.promptVariants = promptVariants
     self.memories = memories
     self.variables = variables
@@ -788,6 +791,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     case promptTemplateFile
     case sessionStartPromptTemplate
     case sessionStartPromptTemplateFile
+    case sessionPolicy
     case promptVariants
     case memories
     case variables
@@ -812,6 +816,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     self.promptTemplateFile = try container.decodeIfPresent(String.self, forKey: .promptTemplateFile)
     self.sessionStartPromptTemplate = try container.decodeIfPresent(String.self, forKey: .sessionStartPromptTemplate)
     self.sessionStartPromptTemplateFile = try container.decodeIfPresent(String.self, forKey: .sessionStartPromptTemplateFile)
+    self.sessionPolicy = try container.decodeIfPresent(WorkflowStepSessionPolicy.self, forKey: .sessionPolicy)
     self.promptVariants = try container.decodeIfPresent([String: NodePromptVariant].self, forKey: .promptVariants)
     self.memories = try container.decodeIfPresent([WorkflowMemoryDeclaration].self, forKey: .memories)
     self.variables = try container.decodeIfPresent(JSONObject.self, forKey: .variables) ?? [:]

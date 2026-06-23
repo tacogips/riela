@@ -762,6 +762,105 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
     XCTAssertEqual(metadata.purpose, "node-specific purpose")
   }
 
+  func testStepSessionPolicyIsPassedToAdapterInput() async throws {
+    let adapter = InputCapturingAdapter()
+    let workflow = WorkflowDefinition(
+      workflowId: "session-policy-runner",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
+      entryStepId: "verify",
+      nodeRegistry: [WorkflowNodeRegistryRef(id: "verify-node", nodeFile: "nodes/verify.json")],
+      steps: [
+        WorkflowStepRef(
+          id: "verify",
+          nodeId: "verify-node",
+          sessionPolicy: WorkflowStepSessionPolicy(mode: .new)
+        )
+      ],
+      nodes: [WorkflowNodeRef(id: "verify", nodeFile: "nodes/verify.json")]
+    )
+    let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: adapter)
+
+    _ = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: workflow,
+      nodePayloads: [
+        "verify-node": AgentNodePayload(
+          id: "verify-node",
+          executionBackend: .codexAgent,
+          model: "gpt-5-nano"
+        )
+      ]
+    ))
+
+    let capturedInput = await adapter.capturedInput()
+    let input = try XCTUnwrap(capturedInput)
+    XCTAssertEqual(input.sessionPolicy?.mode, .new)
+    XCTAssertNil(input.sessionPolicy?.inheritFromStepId)
+  }
+
+  func testStepSessionPolicyOverridesNodeSessionPolicy() async throws {
+    let adapter = InputCapturingAdapter()
+    let workflow = WorkflowDefinition(
+      workflowId: "session-policy-runner",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
+      entryStepId: "worker",
+      nodeRegistry: [WorkflowNodeRegistryRef(id: "worker-node", nodeFile: "nodes/worker.json")],
+      steps: [
+        WorkflowStepRef(
+          id: "worker",
+          nodeId: "worker-node",
+          sessionPolicy: WorkflowStepSessionPolicy(mode: .new)
+        )
+      ],
+      nodes: [WorkflowNodeRef(id: "worker", nodeFile: "nodes/worker.json")]
+    )
+    let node = AgentNodePayload(
+      id: "worker-node",
+      executionBackend: .codexAgent,
+      model: "gpt-5-nano",
+      sessionPolicy: WorkflowStepSessionPolicy(mode: .reuse, inheritFromStepId: "prior")
+    )
+    let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: adapter)
+
+    _ = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: workflow,
+      nodePayloads: ["worker-node": node]
+    ))
+
+    let capturedInput = await adapter.capturedInput()
+    let input = try XCTUnwrap(capturedInput)
+    XCTAssertEqual(input.sessionPolicy?.mode, .new)
+    XCTAssertNil(input.sessionPolicy?.inheritFromStepId)
+  }
+
+  func testNodeSessionPolicyIsPassedToAdapterInputWhenStepDoesNotOverride() async throws {
+    let adapter = InputCapturingAdapter()
+    let workflow = WorkflowDefinition(
+      workflowId: "session-policy-runner",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
+      entryStepId: "worker",
+      nodeRegistry: [WorkflowNodeRegistryRef(id: "worker-node", nodeFile: "nodes/worker.json")],
+      steps: [WorkflowStepRef(id: "worker", nodeId: "worker-node")],
+      nodes: [WorkflowNodeRef(id: "worker", nodeFile: "nodes/worker.json")]
+    )
+    let node = AgentNodePayload(
+      id: "worker-node",
+      executionBackend: .codexAgent,
+      model: "gpt-5-nano",
+      sessionPolicy: WorkflowStepSessionPolicy(mode: .reuse, inheritFromStepId: "prior")
+    )
+    let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: adapter)
+
+    _ = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: workflow,
+      nodePayloads: ["worker-node": node]
+    ))
+
+    let capturedInput = await adapter.capturedInput()
+    let input = try XCTUnwrap(capturedInput)
+    XCTAssertEqual(input.sessionPolicy?.mode, .reuse)
+    XCTAssertEqual(input.sessionPolicy?.inheritFromStepId, "prior")
+  }
+
   private func request(
     workflow: WorkflowDefinition? = nil,
     nodePayload: AgentNodePayload? = nil,

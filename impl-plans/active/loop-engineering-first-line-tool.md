@@ -685,19 +685,24 @@ Swift package test suite.
 
 ### Session: 2026-06-25 21:10
 
-**Tasks Completed**: Synchronized the package-scope
-`.riela/packages/codex-design-and-implement-review-loop` workflow copy with the
-project-scope first-party loop metadata template. Added package manifest
-`loop.promotionReady` metadata for usage contract, required mock scenarios,
-expected results, required gates, required policies, and minimum evidence schema
-version. Refreshed the package checksum and integrity digest by running the
-`riela-package-release` digest script through a `tmp/` symlink registry rooted
-at `tmp/package-digest-run`.
+**Tasks Completed**: Verified the local installed package-scope
+`.riela/packages/codex-design-and-implement-review-loop` workflow copy against
+the tracked project-scope first-party loop metadata template. The installed
+package copy is ignored by this repository's `.gitignore`, so the tracked
+deliverables in this repository remain the project workflow metadata, package
+promotion-readiness validators, mock scenarios, expected results, and tests.
+The local installed package manifest was updated with `loop.promotionReady`
+metadata for usage contract, required mock scenarios, expected results,
+required gates, required policies, and minimum evidence schema version, then
+its checksum and integrity digest were refreshed through a `tmp/` symlink
+registry rooted at `tmp/package-digest-run`.
 
 **Tasks In Progress**: None known in the active implementation plan.
 
-**Blockers**: None for the package-scope loop template and package manifest
-metadata update.
+**Blockers**: None for the tracked project-scope loop template, package
+promotion-readiness code, or local installed package verification. Publishing
+the package manifest to an external package registry remains a separate
+registry-maintenance action outside this repository.
 
 **Verification**: `.build/debug/riela workflow validate
 codex-design-and-implement-review-loop --workflow-definition-dir

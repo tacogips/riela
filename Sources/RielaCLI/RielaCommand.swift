@@ -3,7 +3,7 @@ import RielaAddons
 import RielaCore
 import RielaMemory
 
-public let rielaSwiftMigrationVersion = "0.1.7"
+public let rielaSwiftMigrationVersion = "0.1.8"
 
 public enum CLIExitCode: Int32, Codable, Equatable, Sendable {
   case success = 0
@@ -58,6 +58,7 @@ public enum WorkflowCommand: Equatable, Sendable {
   case inspect(WorkflowInspectOptions)
   case usage(WorkflowInspectOptions)
   case run(WorkflowRunOptions)
+  case runHelp(String?)
   case list(CLICommandOptions)
   case status(CLICommandOptions)
   case manifestValidate(WorkflowManifestValidateOptions)
@@ -397,6 +398,9 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     guard arguments.count >= 3 else {
       throw CLIUsageError("workflow command requires a subcommand and workflow name")
     }
+    if subcommand == "run", isHelpOption(arguments[2]) {
+      return .workflow(.runHelp(nil))
+    }
     let target = arguments[2]
     guard !target.hasPrefix("--") else {
       throw CLIUsageError("workflow \(subcommand) requires a workflow name")
@@ -410,6 +414,9 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     case "usage":
       return .workflow(.usage(try parseInspect(target: target, tokens: optionTokens)))
     case "run":
+      if optionTokens.contains(where: isHelpOption) {
+        return .workflow(.runHelp(target))
+      }
       return .workflow(.run(try parseRun(target: target, tokens: optionTokens)))
     case "checkout":
       return .workflow(.checkout(try parseGeneric(scope: "workflow", command: subcommand, target: target, arguments: optionTokens)))
@@ -420,6 +427,10 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     default:
       throw CLIUsageError("unsupported workflow subcommand '\(subcommand)'")
     }
+  }
+
+  private func isHelpOption(_ token: String) -> Bool {
+    token == "--help" || token == "-h"
   }
 
   private func parseSession(_ arguments: [String]) throws -> RielaCommand {

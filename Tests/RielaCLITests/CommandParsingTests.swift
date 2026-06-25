@@ -8,6 +8,17 @@ final class CommandParsingTests: XCTestCase {
     XCTAssertEqual(try RielaArgumentParser().parse(["-h"]), .help)
   }
 
+  func testParsesWorkflowRunHelp() throws {
+    XCTAssertEqual(
+      try RielaArgumentParser().parse(["workflow", "run", "demo", "--help"]),
+      .workflow(.runHelp("demo"))
+    )
+    XCTAssertEqual(
+      try RielaArgumentParser().parse(["workflow", "run", "--help"]),
+      .workflow(.runHelp(nil))
+    )
+  }
+
   func testParsesValidateInspectAndRunOptions() throws {
     let parser = RielaArgumentParser()
 

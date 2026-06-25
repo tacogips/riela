@@ -2059,6 +2059,8 @@ public struct RielaCLIApplication: Sendable {
         return inspectCommand.run(options)
       case let .workflow(.usage(options)):
         return inspectCommand.run(options)
+      case let .workflow(.runHelp(target)):
+        return CLICommandResult(exitCode: .success, stdout: workflowRunHelpText(target: target))
       case let .workflow(.run(options)):
         return await runCommand.run(options)
       case let .workflow(.list(options)):
@@ -2241,7 +2243,7 @@ Usage:
   riela workflow manifest validate <manifest-path> [--output jsonl|json|text]
   riela workflow checkout|create|self-improve <workflow> [options]
   riela workflow package <search|list|status|install|update|remove|checkout|publish> [options]
-  riela workflow run <workflow> --mock-scenario <path> [--auto-improve] [--output jsonl|json|text]
+  riela workflow run <workflow> [--variables <json|@file>] [--mock-scenario <path>] [--auto-improve] [--output jsonl|json|text]
   riela package <search|list|status|install|update|remove|checkout|publish> [options]
   riela memory save <memory-id> --workflow-id <workflow> --payload-json <json> [--node-id <node>] [--tag <tag>] [--related-id <id>] [--file <path>] [--memory-root <dir>]
   riela memory update <memory-id> --workflow-id <workflow> --record-id <id> --payload-json <json> [--tag <tag>] [--related-id <id>] [--file <path>|--clear-files] [--memory-root <dir>]
@@ -2257,6 +2259,46 @@ Output defaults to JSONL for machine-readable commands. Use --output text for hu
 The Swift CLI is the production Homebrew runtime. The formula installs only the riela command on macOS; Linux users install CLI release tarballs directly. The macOS Cask installs RielaApp.app and riela together.
 
 """
+
+func workflowRunHelpText(target: String?) -> String {
+  let workflow = target ?? "<workflow>"
+  return """
+  Riela workflow run
+
+  Usage:
+    riela workflow run \(workflow) [options]
+
+  Input options:
+    --variables <json|@file>       Runtime variables JSON object or a JSON file reference.
+    --mock-scenario <path>         Deterministic mock responses for local verification.
+    --node-patch <json|@file>      Patch node payloads before running.
+    --workflow-definition-dir <dir>
+    --scope project|user|auto
+    --working-dir <dir>
+
+  Runtime options:
+    --session-store <path>         Persist CLI session records under this store.
+    --artifact-root <path>         Write runtime artifacts under this root.
+    --max-steps <n>
+    --max-concurrency <n>
+    --max-loop-iterations <n>
+    --default-timeout-ms <n>
+    --timeout-ms <n>
+    --auto-improve
+    --output jsonl|json|text       Defaults to jsonl. JSONL streams session_started before worker backends run.
+
+  Remote options:
+    --endpoint <url>
+    --auth-token <token>
+    --auth-token-env <name>
+    --from-registry
+
+  Examples:
+    riela workflow run \(workflow) --variables '{"workflowInput":{"request":"hello"}}'
+    riela workflow run \(workflow) --mock-scenario ./mock-scenario.json --output json
+
+  """
+}
 
 func jsonString<T: Encodable>(_ value: T) throws -> String {
   let encoder = JSONEncoder()

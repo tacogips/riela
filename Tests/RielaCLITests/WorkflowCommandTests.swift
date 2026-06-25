@@ -266,6 +266,7 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertEqual(result.exitCode, .success)
     XCTAssertTrue(result.stderr.isEmpty)
     XCTAssertTrue(result.stdout.contains("workflow validate"))
+    XCTAssertTrue(result.stdout.contains("workflow run <workflow> [--variables <json|@file>]"))
     XCTAssertTrue(result.stdout.contains("Swift CLI is the production Homebrew runtime"))
     XCTAssertFalse(result.stdout.contains("TypeScript/Bun"))
     XCTAssertFalse(result.stdout.contains("cutover gates pass"))
@@ -304,6 +305,7 @@ final class WorkflowCommandTests: XCTestCase {
       "workflow", "run", "worker-only-single-step",
       "--workflow-definition-dir", "\(root)/examples",
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+      "--variables", #"{"workflowInput":{"request":"noop reproduction for CLI variables handling"}}"#,
       "--output", "json"
     ])
     XCTAssertEqual(run.exitCode, .success)
@@ -320,7 +322,8 @@ final class WorkflowCommandTests: XCTestCase {
     let run = await RielaCLIApplication().run([
       "workflow", "run", "worker-only-single-step",
       "--workflow-definition-dir", "\(root)/examples",
-      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json"
+      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+      "--variables", #"{"workflowInput":{"request":"noop reproduction for CLI variables handling"}}"#
     ])
 
     XCTAssertEqual(run.exitCode, .success)

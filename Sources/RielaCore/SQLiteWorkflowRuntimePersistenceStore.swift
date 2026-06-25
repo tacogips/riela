@@ -101,7 +101,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       if let db {
         sqlite3_close(db)
       }
-      throw WorkflowRuntimePersistenceStoreError.sqliteFailed(message)
+      throw WorkflowRuntimePersistenceStoreError.sqliteFailed("failed to open sqlite database at \(databasePath): \(message)")
     }
     return opened
   }

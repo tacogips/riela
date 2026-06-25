@@ -107,6 +107,22 @@ final class SQLiteWorkflowMessageLogTests: XCTestCase {
     XCTAssertTrue(result.stderr.contains("CHECK constraint failed"))
   }
 
+  func testRuntimePersistenceOpenFailureIncludesDatabasePath() throws {
+    let root = temporaryDirectory()
+    try FileManager.default.createDirectory(at: root.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data("not a directory".utf8).write(to: root)
+    let runtimeRoot = root.appendingPathComponent("runtime-records", isDirectory: true)
+    let databasePath = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: runtimeRoot.path)
+
+    do {
+      _ = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot.path).load(sessionId: "session-1")
+      XCTFail("expected SQLite open failure")
+    } catch WorkflowRuntimePersistenceStoreError.sqliteFailed(let message) {
+      XCTAssertTrue(message.contains(databasePath), message)
+      XCTAssertTrue(message.contains("failed to open sqlite database"), message)
+    }
+  }
+
   private func temporaryDirectory() -> URL {
     FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
   }

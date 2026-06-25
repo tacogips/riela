@@ -180,12 +180,13 @@ public struct SessionInspectionCommand: Sendable {
   }
 
   private func loadRuntimeSnapshot(sessionId: String, parsed: ParsedOptions) throws -> WorkflowRuntimePersistenceSnapshot {
-    let storeRoot = CLIWorkflowSessionStore.resolveRootDirectory(
+    let loaded = try CLIWorkflowSessionResolution.loadPersistedSession(
+      sessionId: sessionId,
       sessionStore: parsed.sessionStore,
       scope: parsed.scope,
       workingDirectory: parsed.workingDirectory
     )
-    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot))
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: loaded.storeRoot))
     return try store.load(sessionId: sessionId)
   }
 

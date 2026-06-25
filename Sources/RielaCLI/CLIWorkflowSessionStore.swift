@@ -180,7 +180,7 @@ public struct CLIWorkflowSessionStore: Sendable {
       if let db {
         sqlite3_close(db)
       }
-      throw CLIWorkflowSessionStoreError.sqliteFailed(message)
+      throw CLIWorkflowSessionStoreError.sqliteFailed("failed to open sqlite database at \(databasePath): \(message)")
     }
     return opened
   }

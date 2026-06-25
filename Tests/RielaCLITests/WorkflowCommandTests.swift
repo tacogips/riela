@@ -2142,6 +2142,50 @@ extension WorkflowCommandTests {
     )
   }
 
+  func testSessionInspectionFindsUserStoreSessionWhenScopeIsAuto() async throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-user-session-inspection-\(UUID().uuidString)", isDirectory: true)
+    let projectRoot = tempDir.appendingPathComponent("project", isDirectory: true)
+    let homeRoot = tempDir.appendingPathComponent("home", isDirectory: true)
+    let userSessionStore = homeRoot.appendingPathComponent(".riela/sessions", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
+
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let session = WorkflowSession(
+      workflowId: "codex-simple-work-package",
+      sessionId: "codex-simple-work-package-session-12",
+      status: .running,
+      entryStepId: "main",
+      createdAt: date,
+      updatedAt: date
+    )
+    try CLIWorkflowSessionStore(rootDirectory: userSessionStore.path).save(
+      PersistedCLIWorkflowSession(
+        workflowName: "codex-simple-work-package",
+        session: session,
+        resolution: WorkflowResolutionOptions(
+          workflowName: "codex-simple-work-package",
+          scope: .user,
+          workingDirectory: projectRoot.path
+        )
+      ),
+      runtimeSnapshot: WorkflowRuntimePersistenceProjector.snapshot(session: session)
+    )
+
+    let result = await RielaCLIApplication().run([
+      "session", "status", session.sessionId,
+      "--working-dir", projectRoot.path,
+      "--output", "json"
+    ], environment: ["HOME": homeRoot.path])
+
+    XCTAssertEqual(result.exitCode, .success, result.stdout + result.stderr)
+    let inspection = try decodeJSON(SessionInspectionCommandResult.self, from: result.stdout)
+    XCTAssertEqual(inspection.sessionId, session.sessionId)
+    XCTAssertEqual(inspection.workflowName, "codex-simple-work-package")
+    XCTAssertEqual(inspection.status, .running)
+  }
+
   func testPackageRegistryReadOnlyCommandsDoNotInitializeRegistryConfig() async throws {
     let root = repositoryRoot()
     let tempDir = FileManager.default.temporaryDirectory

@@ -141,7 +141,7 @@ public struct SQLiteWorkflowMessageLog: Sendable {
       if let db {
         sqlite3_close(db)
       }
-      throw SQLiteWorkflowMessageLogError.openFailed(message)
+      throw SQLiteWorkflowMessageLogError.openFailed("failed to open sqlite database at \(databasePath): \(message)")
     }
     return opened
   }

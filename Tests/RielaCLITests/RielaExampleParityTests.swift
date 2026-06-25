@@ -32,6 +32,7 @@ final class RielaExampleParityTests: XCTestCase {
     static let matrixAgentTrioChatWorkflowName = "matrix-agent-trio-chat"
     static let telegramAgentTrioChatWorkflowName = "telegram-agent-trio-chat"
     static let telegramSDKTrioChatWorkflowName = "telegram-sdk-trio-chat"
+    static let requiredLoopGateFailureWorkflowName = "required-loop-gate-failure"
   }
 
   private enum NodeRuntime {
@@ -682,6 +683,7 @@ final class RielaExampleParityTests: XCTestCase {
       "matrix-chat-reply",
       "node-combinations-showcase",
       "recent-change-quality-loop",
+      "required-loop-gate-failure",
       "riela-default-workflow-supervisor",
       "same-node-session-echo",
       "scheduled-sleep",

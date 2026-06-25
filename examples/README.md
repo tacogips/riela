@@ -802,6 +802,34 @@ Live execution note:
   execution can also create commits and push them through that delegated
   workflow
 
+### `required-loop-gate-failure`
+
+Minimal required-loop fail-closed reference:
+
+- one `implementation-review` step
+- `workflow.loop.required` is `true`
+- one required `implementation-review` gate with `maxHighFindings` and
+  `maxMediumFindings` set to `0`
+- deterministic rejected mock scenario returns a high finding
+- CLI exits non-zero while preserving loop evidence for `riela loop gates`
+
+Validate it:
+
+```bash
+riela workflow validate required-loop-gate-failure --workflow-definition-dir ./examples
+```
+
+Run the rejected deterministic scenario:
+
+```bash
+riela workflow run required-loop-gate-failure \
+  --workflow-definition-dir ./examples \
+  --mock-scenario ./examples/required-loop-gate-failure/mock-scenario-rejected.json \
+  --session-store ./tmp/required-loop-gate-failure/sessions \
+  --artifact-root ./tmp/required-loop-gate-failure/artifacts \
+  --output json
+```
+
 ### `subworkflow-chained-simple`
 
 Minimal runnable reference for two sequential grouped lanes in the

@@ -112,15 +112,20 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
   }
 
   public func publishAcceptedOutput(_ request: WorkflowPublicationRequest) async throws -> WorkflowPublicationResult {
-    let recordedExecution = try await store.recordStepExecution(
-      WorkflowStepExecutionRecordInput(
-        sessionId: request.sessionId,
-        stepId: request.stepId,
-        nodeId: request.nodeId,
-        attempt: request.attempt,
-        backend: request.backend
+    let recordedExecution: WorkflowStepExecution
+    if let existingExecution = try await runningExecution(for: request) {
+      recordedExecution = existingExecution
+    } else {
+      recordedExecution = try await store.recordStepExecution(
+        WorkflowStepExecutionRecordInput(
+          sessionId: request.sessionId,
+          stepId: request.stepId,
+          nodeId: request.nodeId,
+          attempt: request.attempt,
+          backend: request.backend
+        )
       )
-    )
+    }
     let adapterOutputMetadata = request.adapterOutput.map {
       WorkflowAdapterOutputMetadata(
         provider: $0.provider,
@@ -296,6 +301,18 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       publishedMessages: publishedMessages,
       rootOutput: publishesRootOutput ? payload : nil
     )
+  }
+
+  private func runningExecution(for request: WorkflowPublicationRequest) async throws -> WorkflowStepExecution? {
+    guard let session = try await store.loadSession(id: request.sessionId) else {
+      throw WorkflowRuntimeStoreError.sessionNotFound(request.sessionId)
+    }
+    return session.executions.last {
+      $0.stepId == request.stepId &&
+        $0.nodeId == request.nodeId &&
+        $0.attempt == request.attempt &&
+        $0.status == .running
+    }
   }
 
   private func runtimeCandidate(from request: WorkflowPublicationRequest) async throws -> RuntimeOutputCandidate {

@@ -1,0 +1,17 @@
+{
+  "id": "work",
+  "description": "Implement or revise the loop engineering Swift MVP slice.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "effort": "high",
+  "promptTemplateFile": "prompts/work.md",
+  "promptVariants": {
+    "revision": {
+      "promptTemplateFile": "prompts/work-revision.md"
+    }
+  },
+  "variables": {},
+  "output": {
+    "description": "Return JSON with changed files, implementation summary, tests, and residual risks."
+  }
+}

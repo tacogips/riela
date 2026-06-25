@@ -1,0 +1,12 @@
+{
+  "id": "intake-or-plan",
+  "description": "Analyze the accepted loop engineering proposal and define the detailed-design/implementation-plan scope.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "effort": "high",
+  "promptTemplateFile": "prompts/intake-or-plan.md",
+  "variables": {},
+  "output": {
+    "description": "Return JSON with accepted scope, MVP boundaries, migration posture, target files, and risks."
+  }
+}

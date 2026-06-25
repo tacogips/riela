@@ -64,6 +64,32 @@ final class SourceDeletionReadinessTests: XCTestCase {
     XCTAssertEqual(violations, [], "Runnable examples must use the Swift riela CLI after TypeScript source deletion")
   }
 
+  func testFixturesDoNotReferenceRemovedCodexNanoModel() throws {
+    let root = try repositoryRoot()
+    let scanRoots = [
+      ".riela/workflows",
+      "design-docs",
+      "examples",
+      "impl-plans",
+      "Tests"
+    ]
+    let scannedExtensions = Set([".json", ".md", ".swift"])
+    let files = try scanRoots.flatMap { try collectFiles(root: root, relativePath: $0) }
+      .filter { scannedExtensions.contains(URL(fileURLWithPath: $0).pathExtensionWithDot) }
+      .sorted()
+    let removedModelName = "gpt-5-" + "nano"
+    var violations: [String] = []
+
+    for file in files {
+      let text = try String(contentsOf: root.appendingPathComponent(file), encoding: .utf8)
+      if text.contains(removedModelName) {
+        violations.append(file)
+      }
+    }
+
+    XCTAssertEqual(violations, [], "Fixtures and tracked design/test evidence must not reference the removed nano model")
+  }
+
   func testSourceFilenamePolicyRemainsCoveredWithoutTypeScriptScript() throws {
     let root = try repositoryRoot()
     let result = try checkSourceFilenamePolicy(root: root)

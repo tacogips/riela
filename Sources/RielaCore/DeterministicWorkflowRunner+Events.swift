@@ -22,6 +22,7 @@ extension DeterministicWorkflowRunner {
     workflowId: String,
     session: WorkflowSession,
     step: WorkflowStepRef,
+    execution: WorkflowStepExecution? = nil,
     handler: WorkflowRunEventHandler?
   ) async {
     await emitRunEvent(
@@ -32,7 +33,9 @@ extension DeterministicWorkflowRunner {
         status: session.status,
         currentStepId: step.id,
         stepId: step.id,
-        nodeId: step.nodeId
+        nodeId: step.nodeId,
+        executionId: execution?.executionId,
+        nodeExecutions: execution == nil ? nil : session.executions.count
       ),
       handler: handler
     )

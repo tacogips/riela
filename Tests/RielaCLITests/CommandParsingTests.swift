@@ -107,6 +107,74 @@ final class CommandParsingTests: XCTestCase {
     }
   }
 
+  func testParsesLoopInspectionCommands() throws {
+    let parser = RielaArgumentParser()
+    let status = try parser.parse([
+      "loop", "status", "session-1",
+      "--session-store", "./sessions",
+      "--output", "json"
+    ])
+    XCTAssertEqual(
+      status,
+      .loop(LoopCommand(
+        kind: .status,
+        options: CLICommandOptions(
+          scope: "loop",
+          command: "status",
+          target: "session-1",
+          arguments: ["--session-store", "./sessions", "--output", "json"],
+          output: .json
+        )
+      ))
+    )
+
+    let evidence = try parser.parse(["loop", "evidence", "session-1", "--output=json"])
+    XCTAssertEqual(
+      evidence,
+      .loop(LoopCommand(
+        kind: .evidence,
+        options: CLICommandOptions(
+          scope: "loop",
+          command: "evidence",
+          target: "session-1",
+          arguments: ["--output=json"],
+          output: .json
+        )
+      ))
+    )
+
+    let gates = try parser.parse(["loop", "gates", "session-1"])
+    XCTAssertEqual(
+      gates,
+      .loop(LoopCommand(
+        kind: .gates,
+        options: CLICommandOptions(scope: "loop", command: "gates", target: "session-1")
+      ))
+    )
+  }
+
+  func testParsesLoopRecoverCommand() throws {
+    let command = try RielaArgumentParser().parse([
+      "loop", "recover", "session-1",
+      "--from-step", "step-1",
+      "--session-store", "./sessions",
+      "--output", "json"
+    ])
+    XCTAssertEqual(
+      command,
+      .loop(LoopCommand(
+        kind: .recover,
+        options: CLICommandOptions(
+          scope: "loop",
+          command: "recover",
+          target: "session-1",
+          arguments: ["--from-step", "step-1", "--session-store", "./sessions", "--output", "json"],
+          output: .json
+        )
+      ))
+    )
+  }
+
   func testRejectsInvalidAutoImprovePolicy() {
     XCTAssertThrowsError(try RielaArgumentParser().parse([
       "workflow", "run", "demo",

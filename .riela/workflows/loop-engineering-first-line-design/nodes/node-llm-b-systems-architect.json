@@ -1,0 +1,12 @@
+{
+  "id": "llm-b-systems-architect",
+  "description": "LLM B: runtime systems and reliability architect for Riela loop engineering.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "effort": "high",
+  "promptTemplateFile": "prompts/llm-b-systems-architect.md",
+  "variables": {},
+  "output": {
+    "description": "Return JSON with critique of LLM A, system-first counterproposal, priorities, and risks."
+  }
+}

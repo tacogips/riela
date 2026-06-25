@@ -888,7 +888,7 @@ final class WorkflowCommandTests: XCTestCase {
     )
 
     XCTAssertEqual(output.provider, "scenario-mock")
-    XCTAssertEqual(output.model, "gpt-5-nano")
+    XCTAssertEqual(output.model, "gpt-5.3-codex-spark")
     let expectedText = "問題ない。直前の流れを見る限り、Mikaの答えは文脈に沿っている。"
     XCTAssertEqual(output.payload["text"], .string(expectedText))
     XCTAssertEqual(output.when["always"], true)
@@ -1164,7 +1164,7 @@ extension WorkflowCommandTests {
     {
       "id": "worker",
       "executionBackend": "codex-agent",
-      "model": "gpt-5-nano",
+      "model": "gpt-5.5",
       "systemPromptTemplateFile": "prompts/system.md",
       "promptTemplateFile": "prompts/main.md",
       "sessionStartPromptTemplateFile": "prompts/start.md",
@@ -1190,6 +1190,162 @@ extension WorkflowCommandTests {
     XCTAssertEqual(payload.promptVariants?["review"]?.promptTemplate, "review")
     XCTAssertEqual(payload.promptTemplateFile, "prompts/main.md")
     XCTAssertEqual(payload.promptVariants?["review"]?.promptTemplateFile, "prompts/review.md")
+  }
+
+  func testWorkflowInspectAndUsageExposeLoopMetadataSummary() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-loop-summary-\(UUID().uuidString)", isDirectory: true)
+    let workflowDirectory = root.appendingPathComponent("loop-summary", isDirectory: true)
+    let nodesDirectory = workflowDirectory.appendingPathComponent("nodes", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: nodesDirectory, withIntermediateDirectories: true)
+    try """
+    {
+      "workflowId": "loop-summary",
+      "description": "Loop summary workflow",
+      "defaults": { "maxLoopIterations": 3, "nodeTimeoutMs": 120000 },
+      "entryStepId": "implement",
+      "loop": {
+        "kind": "design-implement-review",
+        "required": true,
+        "description": "Implementation loop",
+        "evidence": {
+          "required": true,
+          "artifactRootPolicy": "runtime-owned",
+          "requiredSections": ["changed-files", "verification"]
+        },
+        "policies": {
+          "mutation": {
+            "allowedWriteRoots": ["Sources", "Tests"],
+            "scratchRoot": "tmp/loop-summary",
+            "commit": "deny",
+            "push": "deny"
+          },
+          "process": {
+            "nestedRiela": "deny",
+            "nestedCodex": "deny",
+            "allowedBackends": ["codex-agent"],
+            "requiredWorkerModel": "gpt-5.5"
+          },
+          "network": { "mode": "inherit-command" }
+        },
+        "implementationPlan": {
+          "required": true,
+          "pathPattern": "impl-plans/active/*.md"
+        },
+        "gates": [{
+          "id": "review-gate",
+          "stepId": "review",
+          "required": true,
+          "acceptWhen": {
+            "decision": "accepted",
+            "maxHighFindings": 0,
+            "maxMediumFindings": 0
+          }
+        }]
+      },
+      "nodes": [
+        { "id": "implement", "nodeFile": "nodes/implement.json" },
+        { "id": "review", "nodeFile": "nodes/review.json" }
+      ],
+      "steps": [
+        {
+          "id": "implement",
+          "nodeId": "implement",
+          "role": "worker",
+          "loop": {
+            "role": "worker",
+            "evidenceTags": ["changed-files"],
+            "recordsChangedFiles": true
+          },
+          "transitions": [{ "toStepId": "review" }]
+        },
+        {
+          "id": "review",
+          "nodeId": "review",
+          "role": "worker",
+          "loop": {
+            "role": "gate",
+            "gateId": "review-gate",
+            "evidenceTags": ["verification"],
+            "recordsVerification": true
+          }
+        }
+      ]
+    }
+    """.write(to: workflowDirectory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+    try """
+    {
+      "id": "implement",
+      "executionBackend": "codex-agent",
+      "model": "gpt-5.5",
+      "promptTemplate": "implement",
+      "variables": {}
+    }
+    """.write(to: nodesDirectory.appendingPathComponent("implement.json"), atomically: true, encoding: .utf8)
+    try """
+    {
+      "id": "review",
+      "executionBackend": "codex-agent",
+      "model": "gpt-5.5",
+      "promptTemplate": "review",
+      "variables": {}
+    }
+    """.write(to: nodesDirectory.appendingPathComponent("review.json"), atomically: true, encoding: .utf8)
+
+    let app = RielaCLIApplication()
+    let inspect = await app.run([
+      "workflow", "inspect", "loop-summary",
+      "--workflow-definition-dir", root.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(inspect.exitCode, .success)
+    let inspectSummary = try decodeJSON(WorkflowInspectionSummary.self, from: inspect.stdout)
+    let inspectLoop = try XCTUnwrap(inspectSummary.loop)
+    XCTAssertEqual(inspectLoop.kind, "design-implement-review")
+    XCTAssertTrue(inspectLoop.required)
+    XCTAssertTrue(inspectLoop.evidenceRequired)
+    XCTAssertEqual(inspectLoop.artifactRootPolicy, "runtime-owned")
+    XCTAssertEqual(inspectLoop.requiredEvidenceSections, ["changed-files", "verification"])
+    XCTAssertEqual(inspectLoop.gates, [
+      WorkflowLoopGateInspection(
+        id: "review-gate",
+        stepId: "review",
+        required: true,
+        acceptDecision: .accepted,
+        maxHighFindings: 0,
+        maxMediumFindings: 0
+      )
+    ])
+    XCTAssertEqual(inspectLoop.steps.map(\.stepId), ["implement", "review"])
+    XCTAssertEqual(inspectLoop.steps.last?.gateId, "review-gate")
+    XCTAssertEqual(inspectLoop.policies?.allowedWriteRoots, ["Sources", "Tests"])
+    XCTAssertEqual(inspectLoop.policies?.scratchRoot, "tmp/loop-summary")
+    XCTAssertEqual(inspectLoop.policies?.commit, "deny")
+    XCTAssertEqual(inspectLoop.policies?.push, "deny")
+    XCTAssertEqual(inspectLoop.policies?.nestedRiela, "deny")
+    XCTAssertEqual(inspectLoop.policies?.nestedCodex, "deny")
+    XCTAssertEqual(inspectLoop.policies?.allowedBackends, ["codex-agent"])
+    XCTAssertEqual(inspectLoop.policies?.requiredWorkerModel, "gpt-5.5")
+    XCTAssertEqual(inspectLoop.policies?.networkMode, "inherit-command")
+    XCTAssertEqual(inspectLoop.implementationPlan?.pathPattern, "impl-plans/active/*.md")
+
+    let usage = await app.run([
+      "workflow", "usage", "loop-summary",
+      "--workflow-definition-dir", root.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(usage.exitCode, .success)
+    let usageSummary = try decodeJSON(WorkflowInspectionSummary.self, from: usage.stdout)
+    XCTAssertEqual(usageSummary.loop, inspectSummary.loop)
+
+    let text = await app.run([
+      "workflow", "inspect", "loop-summary",
+      "--workflow-definition-dir", root.path,
+      "--output", "text"
+    ])
+    XCTAssertEqual(text.exitCode, .success)
+    XCTAssertTrue(text.stdout.contains("loop: required=true kind=design-implement-review gates=1 stepMetadata=2 artifactRootPolicy=runtime-owned"))
   }
 
   func testRunAcceptsTemporaryWorkflowJSONFileTarget() async throws {
@@ -1228,7 +1384,7 @@ extension WorkflowCommandTests {
     {
       "id": "worker",
       "executionBackend": "codex-agent",
-      "model": "gpt-5-nano",
+      "model": "gpt-5.5",
       "promptTemplate": "dispatch through codex",
       "variables": {}
     }
@@ -1322,16 +1478,23 @@ extension WorkflowCommandTests {
     XCTAssertEqual(payload.rerunFromStepId, "main-worker")
     XCTAssertNotEqual(payload.sessionId, first.session.sessionId)
     XCTAssertEqual(payload.status, .completed)
-    let secondRerun = await app.run([
-      "session", "rerun", first.session.sessionId, "main-worker",
+    XCTAssertEqual(payload.recovery?.entryMode, .rerun)
+    XCTAssertEqual(payload.recovery?.sourceSessionId, first.session.sessionId)
+    XCTAssertEqual(payload.recovery?.sourceStepId, "main-worker")
+    let loopRecover = await app.run([
+      "loop", "recover", first.session.sessionId,
+      "--from-step", "main-worker",
       "--workflow-definition-dir", "\(root)/examples",
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
       "--session-store", sessionStore,
       "--output", "json"
     ])
-    XCTAssertEqual(secondRerun.exitCode, .success, secondRerun.stderr)
-    let secondPayload = try decodeJSON(SessionRerunCommandResult.self, from: secondRerun.stdout)
+    XCTAssertEqual(loopRecover.exitCode, .success, loopRecover.stderr)
+    let secondPayload = try decodeJSON(SessionRerunCommandResult.self, from: loopRecover.stdout)
+    XCTAssertEqual(secondPayload.sourceSessionId, first.session.sessionId)
+    XCTAssertEqual(secondPayload.rerunFromStepId, "main-worker")
     XCTAssertNotEqual(secondPayload.sessionId, payload.sessionId)
+    XCTAssertEqual(secondPayload.recovery?.entryMode, .rerun)
     let runtimeStore = SQLiteWorkflowRuntimePersistenceStore(
       rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStore)
     )
@@ -1386,6 +1549,8 @@ extension WorkflowCommandTests {
     let rerunPayload = try decodeJSON(SessionRerunCommandResult.self, from: rerun.stdout)
     XCTAssertEqual(rerunPayload.sourceSessionId, first.session.sessionId)
     XCTAssertEqual(rerunPayload.rerunFromStepId, "main-worker")
+    XCTAssertEqual(rerunPayload.recovery?.entryMode, .rerun)
+    XCTAssertEqual(rerunPayload.recovery?.sourceSessionId, first.session.sessionId)
 
     let resume = await app.run([
       "session", "resume", rerunPayload.sessionId,
@@ -1395,8 +1560,11 @@ extension WorkflowCommandTests {
     ], environment: environment)
     XCTAssertEqual(resume.exitCode, .success, resume.stderr)
     let resumePayload = try decodeJSON(SessionResumeCommandResult.self, from: resume.stdout)
+    XCTAssertEqual(resumePayload.sourceSessionId, rerunPayload.sessionId)
     XCTAssertEqual(resumePayload.sessionId, rerunPayload.sessionId)
     XCTAssertEqual(resumePayload.status, .completed)
+    XCTAssertEqual(resumePayload.recovery?.entryMode, .resume)
+    XCTAssertEqual(resumePayload.recovery?.sourceSessionId, rerunPayload.sessionId)
   }
 
   func testValidateAndInspectRejectRemoteResolutionFlagsWithUsageExit() async throws {
@@ -2276,6 +2444,93 @@ extension WorkflowCommandTests {
     XCTAssertEqual(registryRecord["registryUrl"]?.stringValue, "https://github.com/tacogips/riela-packages")
     XCTAssertEqual(registryRecord["registryRef"]?.stringValue, "main")
     XCTAssertTrue(FileManager.default.fileExists(atPath: "\(tempDir.path)-packages/registry/default-registry-package.json"))
+  }
+
+  func testPackagePublishDryRunReportsRequiredLoopReadinessIssues() async throws {
+    let root = repositoryRoot()
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-package-loop-readiness-\(UUID().uuidString)", isDirectory: true)
+    let packageSource = tempDir.appendingPathComponent("package-source", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    try FileManager.default.copyItem(
+      at: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step"),
+      to: packageSource
+    )
+    try """
+    {
+      "workflowId": "worker-only-single-step",
+      "description": "Required loop workflow missing package readiness declarations.",
+      "defaults": { "maxLoopIterations": 3, "nodeTimeoutMs": 120000 },
+      "entryStepId": "main-worker",
+      "loop": { "required": true },
+      "nodes": [{ "id": "main-worker", "nodeFile": "nodes/node-main-worker.json" }],
+      "steps": [{ "id": "main-worker", "nodeId": "main-worker", "role": "worker" }]
+    }
+    """.write(to: packageSource.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+
+    let app = RielaCLIApplication()
+    let missing = await app.run([
+      "package", "publish", packageSource.path,
+      "--package-name", "loop-readiness-missing",
+      "--dry-run",
+      "--working-dir", tempDir.path,
+      "--output", "json"
+    ])
+
+    XCTAssertEqual(missing.exitCode, .success, missing.stderr)
+    let missingResult = try decodeJSON(WorkflowPackageCommandResult.self, from: missing.stdout)
+    let missingSummary = try XCTUnwrap(missingResult.packages.first)
+    XCTAssertFalse(missingSummary.valid)
+    XCTAssertTrue(missingSummary.issues.allSatisfy { $0.code == "LOOP_READINESS" })
+    XCTAssertTrue(missingSummary.issues.contains { $0.path == "workflow.loop.evidence.required" })
+    XCTAssertTrue(missingSummary.issues.contains { $0.path == "workflow.loop.gates" })
+    XCTAssertTrue(missingSummary.issues.contains { $0.path == "workflow.loop.policies.mutation" })
+    XCTAssertTrue(missingSummary.issues.contains { $0.path == "workflow.loop.policies.process" })
+
+    try """
+    {
+      "workflowId": "worker-only-single-step",
+      "description": "Required loop workflow with package readiness declarations.",
+      "defaults": { "maxLoopIterations": 3, "nodeTimeoutMs": 120000 },
+      "entryStepId": "main-worker",
+      "loop": {
+        "required": true,
+        "evidence": { "required": true, "artifactRootPolicy": "runtime-owned" },
+        "policies": {
+          "mutation": {
+            "allowedWriteRoots": ["Sources", "Tests", "tmp"],
+            "scratchRoot": "tmp",
+            "commit": "deny",
+            "push": "deny"
+          },
+          "process": {
+            "nestedRiela": "deny",
+            "nestedCodex": "deny",
+            "allowedBackends": ["codex-agent"]
+          }
+        },
+        "implementationPlan": { "required": true, "pathPattern": "impl-plans/active/*.md" },
+        "gates": [{ "id": "implementation-review", "stepId": "main-worker", "required": true }]
+      },
+      "nodes": [{ "id": "main-worker", "nodeFile": "nodes/node-main-worker.json" }],
+      "steps": [{ "id": "main-worker", "nodeId": "main-worker", "role": "worker" }]
+    }
+    """.write(to: packageSource.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+
+    let ready = await app.run([
+      "package", "publish", packageSource.path,
+      "--package-name", "loop-readiness-ready",
+      "--dry-run",
+      "--working-dir", tempDir.path,
+      "--output", "json"
+    ])
+
+    XCTAssertEqual(ready.exitCode, .success, ready.stderr)
+    let readyResult = try decodeJSON(WorkflowPackageCommandResult.self, from: ready.stdout)
+    let readySummary = try XCTUnwrap(readyResult.packages.first)
+    XCTAssertTrue(readySummary.valid)
+    XCTAssertEqual(readySummary.issues, [])
   }
 
   func testPackageCommandsUseRielaFixtureRegistryLocalPath() async throws {
@@ -3386,12 +3641,12 @@ extension WorkflowCommandTests {
       ]
     }
     """.write(to: callWorkflow.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
-    try #"{"id":"node-a","executionBackend":"codex-agent","model":"gpt-5-nano","variables":{}}"#
+    try #"{"id":"node-a","executionBackend":"codex-agent","model":"gpt-5.5","variables":{}}"#
       .write(to: callWorkflow.appendingPathComponent("nodes/node-a.json"), atomically: true, encoding: .utf8)
-    try #"{"id":"node-b","executionBackend":"codex-agent","model":"gpt-5-nano","variables":{},"promptVariants":{"direct":{"promptTemplate":"direct variant"}}}"#
+    try #"{"id":"node-b","executionBackend":"codex-agent","model":"gpt-5.5","variables":{},"promptVariants":{"direct":{"promptTemplate":"direct variant"}}}"#
       .write(to: callWorkflow.appendingPathComponent("nodes/node-b.json"), atomically: true, encoding: .utf8)
     let callScenario = tempDir.appendingPathComponent("call-step-scenario.json")
-    try #"{"step-b":{"provider":"scenario-mock","model":"gpt-5-nano","payload":{"status":"called-step-b"}}}"#
+    try #"{"step-b":{"provider":"scenario-mock","model":"gpt-5.5","payload":{"status":"called-step-b"}}}"#
       .write(to: callScenario, atomically: true, encoding: .utf8)
     let callSessionStore = tempDir.appendingPathComponent("call-step-sessions", isDirectory: true)
     let callSession = WorkflowSession(
@@ -3779,7 +4034,7 @@ extension WorkflowCommandTests {
         "node": AgentNodePayload(
           id: "node",
           executionBackend: .codexAgent,
-          model: "gpt-5-nano",
+          model: "gpt-5.5",
           output: NodeOutputContract(
             jsonSchema: [
               "type": .string("object"),
@@ -3788,7 +4043,7 @@ extension WorkflowCommandTests {
             maxValidationAttempts: 2
           )
         ),
-        "next-node": AgentNodePayload(id: "next-node", executionBackend: .codexAgent, model: "gpt-5-nano")
+        "next-node": AgentNodePayload(id: "next-node", executionBackend: .codexAgent, model: "gpt-5.5")
       ]
     ))
 
@@ -3842,7 +4097,7 @@ extension WorkflowCommandTests {
         "node": AgentNodePayload(
           id: "node",
           executionBackend: .codexAgent,
-          model: "gpt-5-nano",
+          model: "gpt-5.5",
           output: NodeOutputContract(
             jsonSchema: [
               "type": .string("object"),
@@ -3851,7 +4106,7 @@ extension WorkflowCommandTests {
             maxValidationAttempts: 2
           )
         ),
-        "final-node": AgentNodePayload(id: "final-node", executionBackend: .codexAgent, model: "gpt-5-nano")
+        "final-node": AgentNodePayload(id: "final-node", executionBackend: .codexAgent, model: "gpt-5.5")
       ],
       maxSteps: 3
     ))
@@ -3876,7 +4131,7 @@ extension WorkflowCommandTests {
     {
       "step-a": {
         "provider": "scenario-mock",
-        "model": "gpt-5-nano",
+        "model": "gpt-5.5",
         "payload": {
           "status": "step-key-used"
         }
@@ -3910,7 +4165,7 @@ extension WorkflowCommandTests {
         "nodes/shared-worker.json": {
           "id": "shared-worker",
           "executionBackend": "codex-agent",
-          "model": "gpt-5-nano",
+          "model": "gpt-5.5",
           "variables": {}
         }
       }
@@ -4073,15 +4328,15 @@ extension WorkflowCommandTests {
       ]
     }
     """.write(to: workflowDirectory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
-    try #"{"id":"node-a","executionBackend":"codex-agent","model":"gpt-5-nano","variables":{}}"#
+    try #"{"id":"node-a","executionBackend":"codex-agent","model":"gpt-5.5","variables":{}}"#
       .write(to: workflowDirectory.appendingPathComponent("nodes/node-a.json"), atomically: true, encoding: .utf8)
-    try #"{"id":"node-b","executionBackend":"codex-agent","model":"gpt-5-nano","variables":{}}"#
+    try #"{"id":"node-b","executionBackend":"codex-agent","model":"gpt-5.5","variables":{}}"#
       .write(to: workflowDirectory.appendingPathComponent("nodes/node-b.json"), atomically: true, encoding: .utf8)
     let scenarioURL = root.appendingPathComponent("\(workflowName)-scenario.json")
     try """
     {
-      "step-a": {"provider":"scenario-mock","model":"gpt-5-nano","when":{"always":true},"payload":{"status":"first"}},
-      "step-b": {"provider":"scenario-mock","model":"gpt-5-nano","when":{"always":true},"payload":{"status":"second"}}
+      "step-a": {"provider":"scenario-mock","model":"gpt-5.5","when":{"always":true},"payload":{"status":"first"}},
+      "step-b": {"provider":"scenario-mock","model":"gpt-5.5","when":{"always":true},"payload":{"status":"second"}}
     }
     """.write(to: scenarioURL, atomically: true, encoding: .utf8)
     return (workflowDirectory, scenarioURL.path)

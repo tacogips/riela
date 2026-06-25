@@ -1,0 +1,1 @@
+Implement loop evidence summary projection for `riela session status`, `health`, `export`, and related inspection commands using persisted runtime snapshots. Preserve unrelated dirty changes. Return JSON with `changed_files`, `implemented`, `verification_to_run`, and `risks`.

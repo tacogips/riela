@@ -1,7 +1,7 @@
 {
   "id": "workflow-c-spec-and-implementation",
   "executionBackend": "codex-agent",
-  "model": "gpt-5-nano",
+  "model": "gpt-5.3-codex-spark",
   "promptTemplateFile": "prompts/workflow-c-spec-and-implementation.md",
   "variables": {},
   "output": {

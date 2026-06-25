@@ -30,7 +30,7 @@
   low-temperature replies without bubbly enthusiasm or filler.
 - `yui-codex-sdk`, `mika-claude-sdk`, and `rina-cursor-sdk` use
   `riela/codex-sdk-worker`, which resolves to `official/openai-sdk`, runs
-  model `gpt-5-nano`, and requires `OPENAI_API_KEY` for live execution.
+  model `gpt-5.3-codex-spark`, and requires `OPENAI_API_KEY` for live execution.
 - Each SDK worker returns visible reply text in `payload.text`; the bundled
   mock path uses each worker's `mockResponseTemplate` so local runs do not need
   live SDK API keys.

@@ -1,0 +1,12 @@
+{
+  "id": "review",
+  "description": "Review the detailed design and implementation plan for correctness, migration safety, and implementation usefulness.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "effort": "high",
+  "promptTemplateFile": "prompts/review.md",
+  "variables": {},
+  "output": {
+    "description": "Return JSON with needs_revision, findings, accepted, verification, and feedback."
+  }
+}

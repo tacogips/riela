@@ -1690,7 +1690,7 @@ extension AgentAdapterTests {
 
   func testReadinessSummariesAndValidationMirrorRuntimeAgentProbeCategories() {
     let codexRequirement = CodexAgentReadiness.runtimeRequirement(
-      candidate: AgentBackendRequirementCandidate(backend: .codexAgent, models: ["gpt-5-nano"], sourceStepIds: ["worker"]),
+      candidate: AgentBackendRequirementCandidate(backend: .codexAgent, models: ["gpt-5.5"], sourceStepIds: ["worker"]),
       toolVersions: CodexBackendToolVersions(
         codex: AgentBackendToolInfo(name: "codex", command: "codex", version: "codex-cli 0.135.0", status: .available),
         git: AgentBackendToolInfo(name: "git", command: "git", status: .unavailable, error: "missing")
@@ -1700,7 +1700,7 @@ extension AgentAdapterTests {
     XCTAssertTrue(codexRequirement.detail.contains("bundled sdk=codex-agent"))
     XCTAssertEqual(codexRequirement.sourceStepIds, ["worker"])
 
-    let codexCandidate = AgentBackendPreflightCandidate(backend: .codexAgent, models: ["gpt-5-nano"], nodeIds: ["worker"], stepIds: ["worker"])
+    let codexCandidate = AgentBackendPreflightCandidate(backend: .codexAgent, models: ["gpt-5.5"], nodeIds: ["worker"], stepIds: ["worker"])
     let codexAuth = CodexAgentReadiness.authValidation(
       candidate: codexCandidate,
       status: CodexBackendLoginStatus(ok: false, error: "not logged in", exitCode: 1)
@@ -1741,7 +1741,7 @@ extension AgentAdapterTests {
   }
 
   func testReadinessAPIsUseInjectedProbeOperations() async {
-    let codexCandidate = AgentBackendRequirementCandidate(backend: .codexAgent, models: ["gpt-5-nano"], sourceStepIds: ["worker"])
+    let codexCandidate = AgentBackendRequirementCandidate(backend: .codexAgent, models: ["gpt-5.5"], sourceStepIds: ["worker"])
     let codexRequirement = await CodexAgentReadiness.runtimeRequirement(
       candidate: codexCandidate,
       operations: MockCodexReadinessOperations()

@@ -44,7 +44,149 @@ final class GraphQLContractsTests: XCTestCase {
     XCTAssertEqual(dto.stepExecutions.first?.backend, "codex-agent")
     XCTAssertEqual(dto.communications.first?.lifecycleStatus, "delivered")
     XCTAssertEqual(dto.hookEvents.first?.eventName, "PostToolUse")
+    XCTAssertNil(dto.loopEvidence)
+    XCTAssertTrue(dto.loopGates.isEmpty)
+    XCTAssertNil(dto.loopRecovery)
     XCTAssertTrue(GraphQLContractProjector.schemaContract.contains("continueSession"))
+  }
+
+  func testProjectsPersistedLoopEvidenceFromRuntimeSnapshot() {
+    let date = Date(timeIntervalSince1970: 1_000)
+    let session = WorkflowSession(
+      workflowId: "workflow-loop",
+      sessionId: "session-loop",
+      status: .completed,
+      entryStepId: "step-1",
+      currentStepId: nil,
+      createdAt: date,
+      updatedAt: date
+    )
+    let message = WorkflowMessageRecord(
+      communicationId: "comm-loop",
+      workflowExecutionId: "session-loop",
+      fromStepId: "step-1",
+      toStepId: nil,
+      sourceStepExecutionId: "exec-loop",
+      payload: ["ok": .bool(true)],
+      lifecycleStatus: .delivered,
+      createdOrder: 1,
+      createdAt: date
+    )
+    let evidence = LoopEvidenceManifest(
+      schemaVersion: 1,
+      manifestId: "manifest-loop",
+      workflowId: "workflow-loop",
+      sessionId: "session-loop",
+      workflowSource: LoopWorkflowSource(scope: "project", kind: "workflow-directory", mutable: true),
+      policy: LoopPolicyEvidence(),
+      recovery: LoopRecoveryLineage(
+        entryMode: .rerun,
+        sourceSessionId: "source-session",
+        sourceStepId: "step-1",
+        inputReusePolicy: "accepted-output",
+        preservedFailureEvidenceRefs: ["failure.json"]
+      ),
+      gates: [
+        LoopGateResult(
+          gateId: "implementation-review",
+          stepId: "step-1",
+          stepExecutionId: "exec-loop",
+          decision: .accepted,
+          severityCounts: LoopFindingSeverityCounts(high: 0, medium: 1),
+          blockingFindings: [
+            LoopBlockingFinding(
+              id: "finding-1",
+              severity: "medium",
+              filePath: "Sources/File.swift",
+              line: 12,
+              message: "review note",
+              evidenceRefs: ["review.json"]
+            )
+          ],
+          evidenceRefs: ["review.json"],
+          residualRisks: [
+            LoopResidualRisk(severity: "low", message: "follow-up", evidenceRefs: ["risk.json"], accepted: true)
+          ],
+          acceptedAt: date,
+          diagnostics: ["ok"]
+        )
+      ],
+      redaction: LoopRedactionSummary(policyName: "default", status: "clean"),
+      createdAt: date,
+      updatedAt: date
+    )
+    let snapshot = WorkflowRuntimePersistenceSnapshot(
+      session: session,
+      workflowMessages: [message],
+      loopEvidence: evidence
+    )
+
+    let dto = GraphQLContractProjector.project(snapshot: snapshot)
+
+    XCTAssertEqual(dto.workflowId, "workflow-loop")
+    XCTAssertEqual(dto.communications.map(\.communicationId), ["comm-loop"])
+    XCTAssertEqual(dto.loopEvidence?.manifestId, "manifest-loop")
+    XCTAssertEqual(dto.loopEvidence?.gateCount, 1)
+    XCTAssertEqual(dto.loopEvidence?.acceptedGateCount, 1)
+    XCTAssertEqual(dto.loopEvidence?.blockingFindingCount, 1)
+    XCTAssertEqual(dto.loopEvidence?.redactionStatus, "clean")
+    XCTAssertEqual(dto.loopGates.first?.gateId, "implementation-review")
+    XCTAssertEqual(dto.loopGates.first?.decision, "accepted")
+    XCTAssertEqual(dto.loopGates.first?.severityCounts.medium, 1)
+    XCTAssertEqual(dto.loopGates.first?.blockingFindings.first?.filePath, "Sources/File.swift")
+    XCTAssertEqual(dto.loopGates.first?.residualRisks.first?.message, "follow-up")
+    XCTAssertEqual(dto.loopRecovery?.entryMode, "rerun")
+    XCTAssertEqual(dto.loopRecovery?.sourceSessionId, "source-session")
+    XCTAssertEqual(dto.loopRecovery?.preservedFailureEvidenceRefs, ["failure.json"])
+  }
+
+  func testRuntimeSnapshotQueryServiceReturnsLoopEvidenceSummary() async {
+    let date = Date(timeIntervalSince1970: 1_000)
+    let snapshot = WorkflowRuntimePersistenceSnapshot(
+      session: workflowSession(workflowId: "workflow-loop", sessionId: "session-loop", date: date),
+      loopEvidence: loopEvidenceManifest(workflowId: "workflow-loop", sessionId: "session-loop", date: date)
+    )
+    let service = GraphQLRuntimeSnapshotQueryService { sessionId in
+      guard sessionId == "session-loop" else {
+        throw WorkflowRuntimePersistenceStoreError.notFound(sessionId)
+      }
+      return snapshot
+    }
+
+    let result = await service.loopEvidence(.init(workflowId: "workflow-loop", sessionId: "session-loop"))
+
+    XCTAssertTrue(result.result.accepted)
+    XCTAssertEqual(result.result.status, GraphQLLoopEvidenceQueryStatus.found.rawValue)
+    XCTAssertEqual(result.evidence?.manifestId, "manifest-loop")
+    XCTAssertEqual(result.evidence?.gateCount, 1)
+    XCTAssertEqual(result.gates.first?.gateId, "implementation-review")
+    XCTAssertEqual(result.recovery?.entryMode, "rerun")
+  }
+
+  func testRuntimeSnapshotQueryServiceDistinguishesMissingSession() async {
+    let service = GraphQLRuntimeSnapshotQueryService { sessionId in
+      throw WorkflowRuntimePersistenceStoreError.notFound(sessionId)
+    }
+
+    let result = await service.loopEvidence(.init(workflowId: "workflow-loop", sessionId: "missing-session"))
+
+    XCTAssertFalse(result.result.accepted)
+    XCTAssertEqual(result.result.status, GraphQLLoopEvidenceQueryStatus.notFound.rawValue)
+    XCTAssertNil(result.evidence)
+  }
+
+  func testRuntimeSnapshotQueryServiceDistinguishesMissingLoopEvidence() async {
+    let date = Date(timeIntervalSince1970: 1_000)
+    let snapshot = WorkflowRuntimePersistenceSnapshot(
+      session: workflowSession(workflowId: "workflow-loop", sessionId: "session-loop", date: date)
+    )
+    let service = GraphQLRuntimeSnapshotQueryService { _ in snapshot }
+
+    let result = await service.loopEvidence(.init(workflowId: "workflow-loop", sessionId: "session-loop"))
+
+    XCTAssertFalse(result.result.accepted)
+    XCTAssertEqual(result.result.status, GraphQLLoopEvidenceQueryStatus.noEvidence.rawValue)
+    XCTAssertNil(result.evidence)
   }
 
   func testSchemaContractExposesStableInspectionDTOFields() {
@@ -61,6 +203,13 @@ final class GraphQLContractsTests: XCTestCase {
       "replyDispatches: [ReplyDispatch!]!",
       "logs: [LogEntry!]!",
       "llmSessionMessages: [LLMSessionMessage!]!",
+      "type LoopEvidenceSummary",
+      "type LoopGateResult",
+      "type LoopRecoveryLineage",
+      "loopEvidence: LoopEvidenceSummary",
+      "loopGates: [LoopGateResult!]!",
+      "loopRecovery: LoopRecoveryLineage",
+      "loopEvidence(workflowId: String!, sessionId: String!): LoopEvidenceSummary",
       "createdOrder: Int!",
       "failureReason: String",
       "input ContinueSessionInput { workflowId: String!, sessionId: String!, input: JSONObject! }",
@@ -148,5 +297,51 @@ final class GraphQLContractsTests: XCTestCase {
       return [:]
     }
     return object
+  }
+
+  private func workflowSession(workflowId: String, sessionId: String, date: Date) -> WorkflowSession {
+    WorkflowSession(
+      workflowId: workflowId,
+      sessionId: sessionId,
+      status: .completed,
+      entryStepId: "step-1",
+      currentStepId: nil,
+      createdAt: date,
+      updatedAt: date
+    )
+  }
+
+  private func loopEvidenceManifest(workflowId: String, sessionId: String, date: Date) -> LoopEvidenceManifest {
+    LoopEvidenceManifest(
+      schemaVersion: 1,
+      manifestId: "manifest-loop",
+      workflowId: workflowId,
+      sessionId: sessionId,
+      workflowSource: LoopWorkflowSource(scope: "project", kind: "workflow-directory", mutable: true),
+      policy: LoopPolicyEvidence(),
+      recovery: LoopRecoveryLineage(
+        entryMode: .rerun,
+        sourceSessionId: "source-session",
+        sourceStepId: "step-1",
+        inputReusePolicy: "accepted-output",
+        preservedFailureEvidenceRefs: ["failure.json"]
+      ),
+      gates: [
+        LoopGateResult(
+          gateId: "implementation-review",
+          stepId: "step-1",
+          stepExecutionId: "exec-loop",
+          decision: .accepted,
+          severityCounts: LoopFindingSeverityCounts(high: 0, medium: 1),
+          blockingFindings: [],
+          evidenceRefs: ["review.json"],
+          acceptedAt: date,
+          diagnostics: ["ok"]
+        )
+      ],
+      redaction: LoopRedactionSummary(policyName: "default", status: "clean"),
+      createdAt: date,
+      updatedAt: date
+    )
   }
 }

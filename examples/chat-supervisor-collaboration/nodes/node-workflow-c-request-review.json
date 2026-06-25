@@ -1,7 +1,7 @@
 {
   "id": "workflow-c-request-review",
   "executionBackend": "codex-agent",
-  "model": "gpt-5-nano",
+  "model": "gpt-5.3-codex-spark",
   "promptTemplateFile": "prompts/workflow-c-request-review.md",
   "variables": {},
   "output": {

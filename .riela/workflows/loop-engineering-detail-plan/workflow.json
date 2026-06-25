@@ -1,0 +1,89 @@
+{
+  "workflowId": "loop-engineering-detail-plan",
+  "description": "Create a detailed design and implementation plan for Riela loop engineering from the accepted first-line tool proposal, with a review/revision gate.",
+  "defaults": {
+    "nodeTimeoutMs": 3600000,
+    "maxLoopIterations": 2
+  },
+  "prompts": {
+    "rielaPromptTemplate": "Run {{workflowId}}. Start with intake-or-plan, write the detailed design and implementation plan in work, review them, revise when review reports needs_revision, then publish workflow-output. Do not commit or push.",
+    "workerSystemPromptTemplate": "Return concise business JSON only. Preserve unrelated dirty worktree changes. Do not commit or push. Do not start nested riela or codex processes. Keep file paths, decisions, verification, findings, and residual risks explicit."
+  },
+  "entryStepId": "intake-or-plan",
+  "nodes": [
+    {
+      "id": "intake-or-plan",
+      "nodeFile": "nodes/node-intake-or-plan.json"
+    },
+    {
+      "id": "work",
+      "nodeFile": "nodes/node-work.json"
+    },
+    {
+      "id": "review",
+      "nodeFile": "nodes/node-review.json"
+    },
+    {
+      "id": "workflow-output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "intake-or-plan",
+      "nodeId": "intake-or-plan",
+      "description": "Summarize the accepted loop-engineering proposal into a bounded detailed-design and implementation-plan scope.",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "work"
+        }
+      ]
+    },
+    {
+      "id": "work",
+      "nodeId": "work",
+      "description": "Write the detailed design and implementation plan.",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "review"
+        }
+      ]
+    },
+    {
+      "id": "work-revision",
+      "nodeId": "work",
+      "description": "Revise the detailed design and implementation plan from review feedback.",
+      "role": "worker",
+      "promptVariant": "revision",
+      "transitions": [
+        {
+          "toStepId": "review"
+        }
+      ]
+    },
+    {
+      "id": "review",
+      "nodeId": "review",
+      "description": "Review the generated detailed design and implementation plan.",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "work-revision",
+          "label": "needs_revision"
+        },
+        {
+          "toStepId": "workflow-output",
+          "label": "!(needs_revision)"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "description": "Publish the accepted detailed design and implementation-plan handoff.",
+      "role": "worker"
+    }
+  ]
+}

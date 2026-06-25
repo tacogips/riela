@@ -1,0 +1,89 @@
+{
+  "workflowId": "loop-engineering-mvp-implementation",
+  "description": "Implement the first additive Swift MVP slice for Riela loop engineering: core loop metadata, evidence manifest, gate result, and recovery lineage models with focused tests.",
+  "defaults": {
+    "nodeTimeoutMs": 3600000,
+    "maxLoopIterations": 2
+  },
+  "prompts": {
+    "rielaPromptTemplate": "Run {{workflowId}}. Intake the current design and implementation plan, implement the first core Swift MVP slice, review the implementation, revise if review reports needs_revision, then publish workflow-output. Do not commit or push.",
+    "workerSystemPromptTemplate": "Return concise business JSON only. Preserve unrelated dirty worktree changes. Do not commit or push. Do not start nested riela or codex processes. Keep changed files, tests, findings, and residual risks explicit."
+  },
+  "entryStepId": "intake-or-plan",
+  "nodes": [
+    {
+      "id": "intake-or-plan",
+      "nodeFile": "nodes/node-intake-or-plan.json"
+    },
+    {
+      "id": "work",
+      "nodeFile": "nodes/node-work.json"
+    },
+    {
+      "id": "review",
+      "nodeFile": "nodes/node-review.json"
+    },
+    {
+      "id": "workflow-output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "intake-or-plan",
+      "nodeId": "intake-or-plan",
+      "description": "Select the first compatible Swift MVP implementation slice.",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "work"
+        }
+      ]
+    },
+    {
+      "id": "work",
+      "nodeId": "work",
+      "description": "Implement the first core Swift MVP slice and tests.",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "review"
+        }
+      ]
+    },
+    {
+      "id": "work-revision",
+      "nodeId": "work",
+      "description": "Revise the implementation from review feedback.",
+      "role": "worker",
+      "promptVariant": "revision",
+      "transitions": [
+        {
+          "toStepId": "review"
+        }
+      ]
+    },
+    {
+      "id": "review",
+      "nodeId": "review",
+      "description": "Review the Swift MVP implementation.",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "work-revision",
+          "label": "needs_revision"
+        },
+        {
+          "toStepId": "workflow-output",
+          "label": "!(needs_revision)"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "description": "Publish the accepted implementation handoff.",
+      "role": "worker"
+    }
+  ]
+}

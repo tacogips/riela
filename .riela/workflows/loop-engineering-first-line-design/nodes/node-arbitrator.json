@@ -1,0 +1,20 @@
+{
+  "id": "arbitrator",
+  "description": "Arbitrator: resolves the two LLM arguments into a design proposal for Riela as a loop-engineering tool.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "effort": "high",
+  "sessionPolicy": {
+    "mode": "reuse"
+  },
+  "promptTemplateFile": "prompts/arbitrator.md",
+  "promptVariants": {
+    "workflow-output": {
+      "promptTemplateFile": "prompts/workflow-output.md"
+    }
+  },
+  "variables": {},
+  "output": {
+    "description": "Return JSON with the arbitrated decision, written design document path, roadmap, verification, and residual risks."
+  }
+}

@@ -622,7 +622,7 @@ Authored shape:
 {
   "id": "implement",
   "executionBackend": "codex-agent",
-  "model": "gpt-5-nano",
+  "model": "gpt-5.5",
   "promptTemplateFile": "prompts/implement.md",
   "variables": {},
   "sessionPolicy": {

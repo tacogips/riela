@@ -17,6 +17,7 @@ final class WorkflowStdioNodeExecutorTests: XCTestCase {
       XCTAssertEqual(decoded.nodeType, "command")
       XCTAssertEqual(decoded.input["upstream"], .string("ready"))
       XCTAssertEqual(decoded.variables["target"], .string("prod"))
+      XCTAssertEqual(decoded.policy?.allowed, true)
       XCTAssertNil(configuration.environment["RIELA_MAILBOX_DIR"])
       XCTAssertNil(configuration.environment["RIELA_WORKFLOW_INPUT"])
       XCTAssertNil(configuration.environment["RIELA_WORKFLOW_OUTPUT"])
@@ -39,11 +40,17 @@ final class WorkflowStdioNodeExecutorTests: XCTestCase {
             "KEEP": "1"
           ]
         )
-      )),
+      ), policy: allowedPolicy()),
       context: AdapterExecutionContext()
     )
 
     XCTAssertEqual(result.payload, ["status": .string("ok")])
+    XCTAssertEqual(result.commandEvidence?.id, "step#1")
+    XCTAssertEqual(result.commandEvidence?.argvRedactionStatus, "clean")
+    XCTAssertEqual(result.commandEvidence?.stdoutStoragePolicy, "summary-only")
+    XCTAssertEqual(result.commandEvidence?.stderrStoragePolicy, "summary-only")
+    XCTAssertEqual(result.commandEvidence?.exitCode, 0)
+    XCTAssertEqual(result.commandEvidence?.argvSummary, "/usr/bin/env node worker.js")
     let configurations = await runner.configurations()
     let configuration = try XCTUnwrap(configurations.first)
     XCTAssertEqual(configuration.executableURL.path, "/usr/bin/env")
@@ -51,6 +58,33 @@ final class WorkflowStdioNodeExecutorTests: XCTestCase {
     XCTAssertEqual(configuration.environment["KEEP"], "1")
     XCTAssertTrue(configuration.unsetEnvironmentKeys.contains("RIELA_WORKFLOW_INPUT"))
     XCTAssertTrue(configuration.unsetEnvironmentKeys.contains("RIELA_WORKFLOW_OUTPUT"))
+  }
+
+  func testPolicyDeniedCommandNodeFailsBeforeProcessLaunch() async throws {
+    let runner = RecordingStdioNodeProcessRunner { _, _ in
+      XCTFail("process runner should not be invoked when policy denies stdio execution")
+      return ""
+    }
+    let executor = LocalWorkflowStdioNodeExecutor(runner: runner)
+
+    do {
+      _ = try await executor.execute(
+        input(kind: .command, node: AgentNodePayload(
+          id: "node",
+          nodeType: .command,
+          model: "",
+          command: WorkflowCommandExecution(executable: "/bin/sh", arguments: ["-c", "codex exec"])
+        ), policy: deniedPolicy()),
+        context: AdapterExecutionContext()
+      )
+      XCTFail("expected policy blocked error")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .policyBlocked)
+      XCTAssertTrue(error.message.contains("process.nestedCodex"))
+    }
+
+    let configurations = await runner.configurations()
+    XCTAssertTrue(configurations.isEmpty)
   }
 
   func testEmptyStdoutMeansNoWorkflowOutput() async throws {
@@ -247,7 +281,8 @@ final class WorkflowStdioNodeExecutorTests: XCTestCase {
     node: AgentNodePayload,
     variables: JSONObject = ["target": .string("prod")],
     memoryRootDirectory: String? = nil,
-    availableMemories: [WorkflowMemoryDeclaration] = []
+    availableMemories: [WorkflowMemoryDeclaration] = [],
+    policy: LoopPolicyStepDecision? = nil
   ) -> WorkflowStdioNodeExecutionInput {
     WorkflowStdioNodeExecutionInput(
       workflowId: "workflow",
@@ -260,7 +295,28 @@ final class WorkflowStdioNodeExecutorTests: XCTestCase {
       variables: variables,
       resolvedInputPayload: ["upstream": .string("ready")],
       memoryRootDirectory: memoryRootDirectory,
-      availableMemories: availableMemories
+      availableMemories: availableMemories,
+      policy: policy
+    )
+  }
+
+  private func allowedPolicy() -> LoopPolicyStepDecision {
+    LoopPolicyStepDecision(
+      stepId: "step",
+      nodeId: "node",
+      allowed: true,
+      decisions: [LoopPolicyDecision(id: "allow", policy: "process.allowedBackends", decision: "allow")]
+    )
+  }
+
+  private func deniedPolicy() -> LoopPolicyStepDecision {
+    let denial = LoopPolicyDecision(id: "deny", policy: "process.nestedCodex", decision: "deny")
+    return LoopPolicyStepDecision(
+      stepId: "step",
+      nodeId: "node",
+      allowed: false,
+      decisions: [denial],
+      denials: [denial]
     )
   }
 }

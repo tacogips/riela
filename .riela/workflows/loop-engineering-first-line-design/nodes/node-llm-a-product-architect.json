@@ -1,0 +1,12 @@
+{
+  "id": "llm-a-product-architect",
+  "description": "LLM A: product and workflow experience architect for Riela loop engineering.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "effort": "high",
+  "promptTemplateFile": "prompts/llm-a-product-architect.md",
+  "variables": {},
+  "output": {
+    "description": "Return JSON with the product-first argument, inspected evidence, proposed changes, priorities, and risks."
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "id": "work",
+  "description": "Implement loop evidence summary projection for session inspection commands.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "promptTemplateFile": "prompts/work.md",
+  "variables": {}
+}

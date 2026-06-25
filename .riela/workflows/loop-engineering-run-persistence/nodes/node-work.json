@@ -1,0 +1,9 @@
+{
+  "id": "work",
+  "description": "Implement loop evidence projection during workflow run persistence.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "effort": "medium",
+  "promptTemplateFile": "prompts/work.md",
+  "variables": {}
+}

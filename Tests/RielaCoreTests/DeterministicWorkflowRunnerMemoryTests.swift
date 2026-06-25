@@ -35,7 +35,7 @@ final class DeterministicWorkflowRunnerMemoryTests: XCTestCase {
           platform.1: AgentNodePayload(
             id: platform.1,
             executionBackend: .codexAgent,
-            model: "gpt-5-nano",
+            model: "gpt-5.5",
             memories: [sharedMemory]
           )
         ],
@@ -87,7 +87,7 @@ final class DeterministicWorkflowRunnerMemoryTests: XCTestCase {
     await XCTAssertThrowsErrorAsync(try await runner.run(DeterministicWorkflowRunRequest(
       workflow: singleNodeWorkflow(workflowId: "failure-workflow", nodeId: "agent-node", memory: memory),
       nodePayloads: [
-        "agent-node": AgentNodePayload(id: "agent-node", executionBackend: .codexAgent, model: "gpt-5-nano")
+        "agent-node": AgentNodePayload(id: "agent-node", executionBackend: .codexAgent, model: "gpt-5.5")
       ],
       memoryRootDirectory: memoryRoot
     )))
@@ -112,7 +112,7 @@ final class DeterministicWorkflowRunnerMemoryTests: XCTestCase {
     _ = try await runner.run(DeterministicWorkflowRunRequest(
       workflow: singleNodeWorkflow(workflowId: "no-memory-workflow", nodeId: "agent-node", memory: nil),
       nodePayloads: [
-        "agent-node": AgentNodePayload(id: "agent-node", executionBackend: .codexAgent, model: "gpt-5-nano")
+        "agent-node": AgentNodePayload(id: "agent-node", executionBackend: .codexAgent, model: "gpt-5.5")
       ],
       memoryRootDirectory: memoryRoot
     ))
@@ -142,7 +142,7 @@ final class DeterministicWorkflowRunnerMemoryTests: XCTestCase {
         "agent-node": AgentNodePayload(
           id: "agent-node",
           executionBackend: .codexAgent,
-          model: "gpt-5-nano",
+          model: "gpt-5.5",
           memories: [nodeMemory]
         )
       ],
@@ -435,7 +435,7 @@ private func adapterOutput(
 ) -> AdapterExecutionOutput {
   AdapterExecutionOutput(
     provider: "test",
-    model: "gpt-5-nano",
+    model: "gpt-5.5",
     promptText: "prompt",
     completionPassed: true,
     payload: payload

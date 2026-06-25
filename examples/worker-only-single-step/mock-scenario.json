@@ -1,7 +1,7 @@
 {
   "main-worker": {
     "provider": "scenario-mock",
-    "model": "gpt-5-nano",
+    "model": "gpt-5.3-codex-spark",
     "when": {
       "always": true
     },

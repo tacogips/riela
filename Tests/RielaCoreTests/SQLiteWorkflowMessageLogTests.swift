@@ -84,6 +84,65 @@ final class SQLiteWorkflowMessageLogTests: XCTestCase {
     )
   }
 
+  func testSQLiteRuntimePersistenceRoundTripsLoopEvidenceAndMigratesExistingDatabase() throws {
+    let root = temporaryDirectory()
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let dbPath = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
+    let migrationSetup = runSQLite(
+      dbPath,
+      """
+      CREATE TABLE workflow_runtime_snapshots (
+        workflow_execution_id TEXT PRIMARY KEY,
+        session_json BLOB NOT NULL CHECK (json_valid(session_json, 8)),
+        root_output_json BLOB CHECK (root_output_json IS NULL OR json_valid(root_output_json, 8)),
+        diagnostics_json BLOB NOT NULL CHECK (json_valid(diagnostics_json, 8)),
+        updated_at TEXT NOT NULL
+      )
+      """
+    )
+    XCTAssertEqual(migrationSetup.exitCode, 0, migrationSetup.stderr)
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let session = WorkflowSession(
+      workflowId: "wf",
+      sessionId: "session-loop",
+      status: .completed,
+      entryStepId: "review",
+      createdAt: date,
+      updatedAt: date
+    )
+    let manifest = LoopEvidenceManifest(
+      schemaVersion: 1,
+      manifestId: "loop-evidence-session-loop",
+      workflowId: "wf",
+      sessionId: "session-loop",
+      workflowSource: LoopWorkflowSource(scope: "project", kind: "workflow-directory", mutable: true),
+      policy: LoopPolicyEvidence(),
+      gates: [
+        LoopGateResult(gateId: "implementation-review", stepId: "review", stepExecutionId: "review-exec", decision: .accepted)
+      ],
+      redaction: LoopRedactionSummary(policyName: "summary-only", status: "clean"),
+      createdAt: date,
+      updatedAt: date
+    )
+
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    try store.save(WorkflowRuntimePersistenceSnapshot(session: session, loopEvidence: manifest))
+    let loaded = try store.load(sessionId: "session-loop")
+
+    XCTAssertEqual(loaded.loopEvidence, manifest)
+
+    let storage = try sqliteColumns(
+      dbPath,
+      """
+      SELECT typeof(loop_evidence_json), json_valid(loop_evidence_json, 8),
+        json_extract(loop_evidence_json, '$.gates[0].decision')
+      FROM workflow_runtime_snapshots
+      WHERE workflow_execution_id = 'session-loop'
+      """
+    )
+    XCTAssertEqual(storage, ["blob", "1", "accepted"])
+  }
+
   func testWorkflowMessageLogRejectsPlainTextJSONColumns() throws {
     let dbPath = temporaryDirectory().appendingPathComponent("runtime-message-log.sqlite").path
     try SQLiteWorkflowMessageLog(databasePath: dbPath).replaceMessages(for: "session-jsonb", with: [])

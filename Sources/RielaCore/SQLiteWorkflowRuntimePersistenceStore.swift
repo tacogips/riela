@@ -49,12 +49,14 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     defer {
       sqlite3_close(db)
     }
+    let loopEvidenceSelect = try loopEvidenceSelectExpression(db)
     let rows = try queryRows(
       db,
       sql: """
         SELECT json(session_json) AS session_json,
           CASE WHEN root_output_json IS NULL THEN NULL ELSE json(root_output_json) END AS root_output_json,
-          json(diagnostics_json) AS diagnostics_json
+          json(diagnostics_json) AS diagnostics_json,
+          \(loopEvidenceSelect)
         FROM workflow_runtime_snapshots
         WHERE workflow_execution_id = ?
         LIMIT 1
@@ -75,12 +77,14 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     defer {
       sqlite3_close(db)
     }
+    let loopEvidenceSelect = try loopEvidenceSelectExpression(db)
     return try queryRows(
       db,
       sql: """
         SELECT json(session_json) AS session_json,
           CASE WHEN root_output_json IS NULL THEN NULL ELSE json(root_output_json) END AS root_output_json,
-          json(diagnostics_json) AS diagnostics_json
+          json(diagnostics_json) AS diagnostics_json,
+          \(loopEvidenceSelect)
         FROM workflow_runtime_snapshots
         ORDER BY updated_at DESC, workflow_execution_id
         """,
@@ -116,56 +120,49 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
         session_json BLOB NOT NULL CHECK (json_valid(session_json, 8)),
         root_output_json BLOB CHECK (root_output_json IS NULL OR json_valid(root_output_json, 8)),
         diagnostics_json BLOB NOT NULL CHECK (json_valid(diagnostics_json, 8)),
+        loop_evidence_json BLOB CHECK (loop_evidence_json IS NULL OR json_valid(loop_evidence_json, 8)),
         updated_at TEXT NOT NULL
       )
       """
     )
+    if try !tableColumnNames(db, tableName: "workflow_runtime_snapshots").contains("loop_evidence_json") {
+      try execute(
+        db,
+        """
+        ALTER TABLE workflow_runtime_snapshots
+        ADD COLUMN loop_evidence_json BLOB CHECK (loop_evidence_json IS NULL OR json_valid(loop_evidence_json, 8))
+        """
+      )
+    }
     try execute(db, "CREATE INDEX IF NOT EXISTS idx_workflow_runtime_snapshots_updated ON workflow_runtime_snapshots (updated_at DESC, workflow_execution_id)")
   }
 
   private func upsertSnapshot(_ db: OpaquePointer?, _ snapshot: WorkflowRuntimePersistenceSnapshot) throws {
-    if let rootOutput = snapshot.rootOutput {
-      try execute(
-        db,
-        """
-        INSERT INTO workflow_runtime_snapshots (
-          workflow_execution_id, session_json, root_output_json, diagnostics_json, updated_at
-        ) VALUES (?, jsonb(?), jsonb(?), jsonb(?), ?)
-        ON CONFLICT(workflow_execution_id) DO UPDATE SET
-          session_json = excluded.session_json,
-          root_output_json = excluded.root_output_json,
-          diagnostics_json = excluded.diagnostics_json,
-          updated_at = excluded.updated_at
-        """,
-        bindings: [
-          .text(snapshot.session.sessionId),
-          .text(try jsonString(snapshot.session)),
-          .text(try jsonString(rootOutput)),
-          .text(try jsonString(snapshot.diagnostics)),
-          .text(Self.dateString(snapshot.session.updatedAt))
-        ]
-      )
-    } else {
-      try execute(
-        db,
-        """
-        INSERT INTO workflow_runtime_snapshots (
-          workflow_execution_id, session_json, root_output_json, diagnostics_json, updated_at
-        ) VALUES (?, jsonb(?), NULL, jsonb(?), ?)
-        ON CONFLICT(workflow_execution_id) DO UPDATE SET
-          session_json = excluded.session_json,
-          root_output_json = excluded.root_output_json,
-          diagnostics_json = excluded.diagnostics_json,
-          updated_at = excluded.updated_at
-        """,
-        bindings: [
-          .text(snapshot.session.sessionId),
-          .text(try jsonString(snapshot.session)),
-          .text(try jsonString(snapshot.diagnostics)),
-          .text(Self.dateString(snapshot.session.updatedAt))
-        ]
-      )
-    }
+    try execute(
+      db,
+      """
+      INSERT INTO workflow_runtime_snapshots (
+        workflow_execution_id, session_json, root_output_json, diagnostics_json, loop_evidence_json, updated_at
+      ) VALUES (?, jsonb(?), CASE WHEN ? IS NULL THEN NULL ELSE jsonb(?) END, jsonb(?),
+        CASE WHEN ? IS NULL THEN NULL ELSE jsonb(?) END, ?)
+      ON CONFLICT(workflow_execution_id) DO UPDATE SET
+        session_json = excluded.session_json,
+        root_output_json = excluded.root_output_json,
+        diagnostics_json = excluded.diagnostics_json,
+        loop_evidence_json = excluded.loop_evidence_json,
+        updated_at = excluded.updated_at
+      """,
+      bindings: [
+        .text(snapshot.session.sessionId),
+        .text(try jsonString(snapshot.session)),
+        .nullableText(try snapshot.rootOutput.map(jsonString)),
+        .nullableText(try snapshot.rootOutput.map(jsonString)),
+        .text(try jsonString(snapshot.diagnostics)),
+        .nullableText(try snapshot.loopEvidence.map(jsonString)),
+        .nullableText(try snapshot.loopEvidence.map(jsonString)),
+        .text(Self.dateString(snapshot.session.updatedAt))
+      ]
+    )
   }
 
   private func snapshot(from row: [String: String?]) throws -> WorkflowRuntimePersistenceSnapshot {
@@ -185,13 +182,20 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     } else {
       rootOutput = nil
     }
+    let loopEvidence: LoopEvidenceManifest?
+    if let loopEvidenceText = row["loop_evidence_json"] ?? nil, let data = loopEvidenceText.data(using: .utf8) {
+      loopEvidence = try decoder.decode(LoopEvidenceManifest.self, from: data)
+    } else {
+      loopEvidence = nil
+    }
     let messages = try SQLiteWorkflowMessageLog(databasePath: Self.defaultDatabasePath(rootDirectory: rootDirectory))
       .listMessages(workflowExecutionId: session.sessionId)
     return WorkflowRuntimePersistenceSnapshot(
       session: session,
       workflowMessages: messages,
       rootOutput: rootOutput,
-      diagnostics: diagnostics
+      diagnostics: diagnostics,
+      loopEvidence: loopEvidence
     )
   }
 
@@ -256,6 +260,18 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     }
   }
 
+  private func tableColumnNames(_ db: OpaquePointer?, tableName: String) throws -> Set<String> {
+    let rows = try queryRows(db, sql: "PRAGMA table_info(\(tableName))", bindings: [])
+    return Set(rows.compactMap { $0["name"] ?? nil })
+  }
+
+  private func loopEvidenceSelectExpression(_ db: OpaquePointer?) throws -> String {
+    if try tableColumnNames(db, tableName: "workflow_runtime_snapshots").contains("loop_evidence_json") {
+      return "CASE WHEN loop_evidence_json IS NULL THEN NULL ELSE json(loop_evidence_json) END AS loop_evidence_json"
+    }
+    return "NULL AS loop_evidence_json"
+  }
+
   private func bind(_ statement: OpaquePointer?, _ bindings: [RuntimeSQLiteBinding]) throws {
     for (offset, binding) in bindings.enumerated() {
       let index = Int32(offset + 1)
@@ -263,6 +279,12 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       switch binding {
       case .text(let value):
         result = sqlite3_bind_text(statement, index, value, -1, sqliteTransientDestructor)
+      case .nullableText(let value):
+        if let value {
+          result = sqlite3_bind_text(statement, index, value, -1, sqliteTransientDestructor)
+        } else {
+          result = sqlite3_bind_null(statement, index)
+        }
       }
       guard result == SQLITE_OK else {
         throw WorkflowRuntimePersistenceStoreError.sqliteFailed("sqlite bind failed at parameter \(index)")
@@ -292,6 +314,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
 
 private enum RuntimeSQLiteBinding {
   case text(String)
+  case nullableText(String?)
 }
 
 private let sqliteTransientDestructor = unsafeBitCast(-1, to: sqlite3_destructor_type.self)

@@ -1,0 +1,9 @@
+{
+  "id": "intake-or-plan",
+  "description": "Confirm the runtime evidence projection and persistence slice.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "effort": "medium",
+  "promptTemplateFile": "prompts/intake-or-plan.md",
+  "variables": {}
+}

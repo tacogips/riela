@@ -6,6 +6,124 @@
     "maxLoopIterations": 3,
     "nodeTimeoutMs": 3600000
   },
+  "loop": {
+    "kind": "design-implement-review",
+    "required": false,
+    "description": "First-party Codex design, implementation-plan, implementation, review, documentation, and commit workflow loop metadata.",
+    "evidence": {
+      "required": true,
+      "artifactRootPolicy": "runtime-owned",
+      "requiredSections": [
+        "changed-files",
+        "verification",
+        "implementation-plan",
+        "review"
+      ]
+    },
+    "policies": {
+      "mutation": {
+        "allowedWriteRoots": [
+          "Sources",
+          "Tests",
+          "design-docs",
+          "impl-plans",
+          "examples",
+          ".riela/workflows",
+          "tmp"
+        ],
+        "scratchRoot": "tmp",
+        "commit": "prompt",
+        "push": "prompt"
+      },
+      "process": {
+        "nestedRiela": "deny",
+        "nestedCodex": "deny",
+        "allowedBackends": [
+          "codex-agent"
+        ],
+        "requiredWorkerModel": "gpt-5.5"
+      },
+      "network": {
+        "mode": "inherit-command"
+      },
+      "redaction": {
+        "secretPolicy": "summary-only",
+        "storeRawStdout": false,
+        "storeRawStderr": false
+      }
+    },
+    "implementationPlan": {
+      "required": true,
+      "pathPattern": "impl-plans/active/*.md"
+    },
+    "gates": [
+      {
+        "id": "design-review",
+        "stepId": "step3-design-review",
+        "required": false,
+        "acceptWhen": {
+          "decision": "accepted",
+          "maxHighFindings": 0,
+          "maxMediumFindings": 0
+        }
+      },
+      {
+        "id": "implementation-plan-review",
+        "stepId": "step5-impl-plan-review",
+        "required": false,
+        "acceptWhen": {
+          "decision": "accepted",
+          "maxHighFindings": 0,
+          "maxMediumFindings": 0
+        }
+      },
+      {
+        "id": "test-integrity-review",
+        "stepId": "step6-test-integrity-check",
+        "required": false,
+        "acceptWhen": {
+          "decision": "accepted",
+          "maxHighFindings": 0,
+          "maxMediumFindings": 0
+        }
+      },
+      {
+        "id": "implementation-review",
+        "stepId": "step7-review",
+        "required": false,
+        "acceptWhen": {
+          "decision": "accepted",
+          "maxHighFindings": 0,
+          "maxMediumFindings": 0
+        }
+      },
+      {
+        "id": "adversarial-implementation-review",
+        "stepId": "step7-adversarial-review",
+        "required": false,
+        "acceptWhen": {
+          "decision": "accepted",
+          "maxHighFindings": 0,
+          "maxMediumFindings": 0
+        }
+      },
+      {
+        "id": "implementation-plan-completion-check",
+        "stepId": "step8-impl-plan-completion-check",
+        "required": false,
+        "acceptWhen": {
+          "decision": "accepted",
+          "maxHighFindings": 0,
+          "maxMediumFindings": 0
+        }
+      }
+    ],
+    "recovery": {
+      "resume": "preserve-session",
+      "rerun": "new-child-session",
+      "retry": "same-communication-or-step-attempt"
+    }
+  },
   "prompts": {
     "rielaPromptTemplate": "Coordinate {{workflowId}}. Run Step 1 intake first. If Step 1 classifies independent feature fanout items, run feature-local design and implementation-plan work through the local bounded fanout worker, join at Step 5 feature-plan join, then continue to Step 6 for issue-resolution mode or Step 9 for planning-only mode. If Step 1 does not classify fanout items, run the sequential path: Step 2 design-doc update, Step 2 self-review, Step 3 design review, Step 4 implementation-plan creation, Step 4 self-review, and Step 5 implementation-plan review. If a self-review reports blocking findings, route back to its authoring step before running the independent review. If Step 3 reports any high or mid findings, route back to Step 2. If Step 5 reports design changes are required, route back to Step 2. If Step 5 reports plan-only changes are required, route back to Step 4. After Step 5 acceptance for a planning-only run, run Step 9 commit-message creation, Step 10 git commit, Step 11 git push, then finish. Otherwise run Step 6 implementation, Step 6 self-review, Step 6 test-integrity check, then Step 7 implementation review. If Step 6 self-review, Step 6 test-integrity check, or Step 7 reports any high or mid findings, route back to Step 6. If Step 7 accepts and marks requires_adversarial_review, run Step 7 adversarial implementation review before documentation refresh. If the adversarial review reports any high or mid finding, route back to Step 6. After Step 7 acceptance and any required adversarial acceptance, run Step 8 user-facing documentation refresh, then Step 8 implementation-plan completion check. If Step 8 completion check reports needs_revision, return to Step 8; otherwise run Step 9 commit-message creation, Step 10 git commit, Step 11 git push, then finish. Finish only when the required self-review, test-integrity check, independent review, and high-risk adversarial gates are accepted, feature-local fanout branches have been joined when present, accepted implementation plans are not left completed under impl-plans/active, and the final workflow changes have been committed and pushed for the selected mode.",
     "workerSystemPromptTemplate": "Return concise business JSON only. Keep workflow mode, issue references, codex-agent references, file paths, findings, review decisions, and verification commands explicit."
@@ -147,6 +265,14 @@
       "nodeId": "step2-design-doc-update",
       "description": "Update the design documents from the accepted intake brief before planning or implementation.",
       "role": "worker",
+      "loop": {
+        "role": "worker",
+        "evidenceTags": [
+          "design",
+          "changed-files"
+        ],
+        "recordsChangedFiles": true
+      },
       "transitions": [
         {
           "toStepId": "step2-design-self-review"
@@ -179,6 +305,15 @@
       "nodeId": "step3-design-review",
       "description": "Review the design update and return to Step 2 when any high or mid finding exists.",
       "role": "worker",
+      "loop": {
+        "role": "gate",
+        "gateId": "design-review",
+        "evidenceTags": [
+          "design-review",
+          "blocking-findings"
+        ],
+        "recordsVerification": true
+      },
       "transitions": [
         {
           "toStepId": "step2-design-doc-update",
@@ -195,6 +330,14 @@
       "nodeId": "step4-impl-plan-create",
       "description": "Create or revise the implementation plan from the accepted design.",
       "role": "worker",
+      "loop": {
+        "role": "worker",
+        "evidenceTags": [
+          "implementation-plan",
+          "changed-files"
+        ],
+        "recordsChangedFiles": true
+      },
       "transitions": [
         {
           "toStepId": "step4-impl-plan-self-review"
@@ -231,6 +374,15 @@
       "nodeId": "step5-impl-plan-review",
       "description": "Review the implementation plan and final design-plan consistency, then return to the correct authoring step when blocking findings exist.",
       "role": "worker",
+      "loop": {
+        "role": "gate",
+        "gateId": "implementation-plan-review",
+        "evidenceTags": [
+          "implementation-plan-review",
+          "blocking-findings"
+        ],
+        "recordsVerification": true
+      },
       "transitions": [
         {
           "toStepId": "step2-design-doc-update",
@@ -254,7 +406,16 @@
       "id": "feature-local-plan",
       "nodeId": "feature-local-plan",
       "role": "worker",
-      "description": "Run one complete feature-local design and implementation-plan branch for a fanout item."
+      "description": "Run one complete feature-local design and implementation-plan branch for a fanout item.",
+      "loop": {
+        "role": "worker",
+        "evidenceTags": [
+          "feature-local-plan",
+          "implementation-plan",
+          "changed-files"
+        ],
+        "recordsChangedFiles": true
+      }
     },
     {
       "id": "step5-feature-plan-join",
@@ -277,6 +438,16 @@
       "nodeId": "step6-implement",
       "description": "Implement the accepted plan, run verification, and update plan progress.",
       "role": "worker",
+      "loop": {
+        "role": "worker",
+        "evidenceTags": [
+          "implementation",
+          "changed-files",
+          "verification"
+        ],
+        "recordsChangedFiles": true,
+        "recordsVerification": true
+      },
       "transitions": [
         {
           "toStepId": "step6-implement-self-review"
@@ -309,6 +480,15 @@
       "nodeId": "step6-test-integrity-check",
       "description": "Check the implementation for inappropriate test deletion, weakened assertions, test-only hacks, skipped coverage, and other verification integrity regressions.",
       "role": "worker",
+      "loop": {
+        "role": "gate",
+        "gateId": "test-integrity-review",
+        "evidenceTags": [
+          "test-integrity",
+          "verification"
+        ],
+        "recordsVerification": true
+      },
       "transitions": [
         {
           "toStepId": "step6-implement",
@@ -325,6 +505,15 @@
       "nodeId": "step7-review",
       "description": "Review the implementation diff and return to Step 6 when any high or mid finding exists.",
       "role": "worker",
+      "loop": {
+        "role": "gate",
+        "gateId": "implementation-review",
+        "evidenceTags": [
+          "implementation-review",
+          "blocking-findings"
+        ],
+        "recordsVerification": true
+      },
       "transitions": [
         {
           "toStepId": "step6-implement",
@@ -345,6 +534,15 @@
       "nodeId": "step7-adversarial-review",
       "description": "Adversarially review high-risk accepted implementation changes for failure modes, misuse paths, misleading success states, and verification loopholes.",
       "role": "worker",
+      "loop": {
+        "role": "gate",
+        "gateId": "adversarial-implementation-review",
+        "evidenceTags": [
+          "adversarial-review",
+          "blocking-findings"
+        ],
+        "recordsVerification": true
+      },
       "transitions": [
         {
           "toStepId": "step6-implement",
@@ -361,6 +559,14 @@
       "nodeId": "step8-docs-refresh",
       "description": "Refresh the user-facing repository documentation after implementation acceptance and before commit generation.",
       "role": "worker",
+      "loop": {
+        "role": "worker",
+        "evidenceTags": [
+          "documentation",
+          "changed-files"
+        ],
+        "recordsChangedFiles": true
+      },
       "transitions": [
         {
           "toStepId": "step8-impl-plan-completion-check"
@@ -372,6 +578,15 @@
       "nodeId": "step8-impl-plan-completion-check",
       "description": "Verify accepted implementation plans are archived out of impl-plans/active before commit generation.",
       "role": "worker",
+      "loop": {
+        "role": "gate",
+        "gateId": "implementation-plan-completion-check",
+        "evidenceTags": [
+          "implementation-plan",
+          "completion-check"
+        ],
+        "recordsVerification": true
+      },
       "transitions": [
         {
           "toStepId": "step8-docs-refresh",

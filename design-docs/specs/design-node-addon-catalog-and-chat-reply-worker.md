@@ -175,7 +175,7 @@ Each local add-on version has an `addon.json` manifest:
     "kind": "node-payload-template",
     "nodeType": "agent",
     "executionBackend": "codex-agent",
-    "model": "gpt-5-nano",
+    "model": "gpt-5.5",
     "promptTemplateFile": "templates/prompt.md"
   },
   "inputSchema": {

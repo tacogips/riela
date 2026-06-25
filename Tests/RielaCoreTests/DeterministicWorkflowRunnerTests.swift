@@ -155,7 +155,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       store: store,
       adapter: StaticAdapter(output: AdapterExecutionOutput(
         provider: "test",
-        model: "gpt-5-nano",
+        model: "gpt-5.5",
         promptText: "prompt",
         completionPassed: true,
         when: ["left": false, "right": false],
@@ -424,7 +424,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
     let node = AgentNodePayload(
       id: "node",
       executionBackend: .codexAgent,
-      model: "gpt-5-nano",
+      model: "gpt-5.5",
       systemPromptTemplate: "base system {{topic}}",
       promptTemplate: "base prompt {{topic}}",
       sessionStartPromptTemplate: "base start {{topic}}",
@@ -482,7 +482,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
     let node = AgentNodePayload(
       id: "node",
       executionBackend: .codexAgent,
-      model: "gpt-5-nano",
+      model: "gpt-5.5",
       promptTemplate: "{{ missing.path }}"
     )
     let runner = DeterministicWorkflowRunner(adapter: adapter)
@@ -632,6 +632,8 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
     ))
     XCTAssertEqual(first.status, .completed)
     XCTAssertEqual(first.session.executions.map(\.stepId), ["step-a", "step-b"])
+    XCTAssertEqual(first.recovery?.entryMode, .run)
+    XCTAssertEqual(first.recovery?.inputReusePolicy, "fresh-input")
 
     let rerun = try await runner.run(DeterministicWorkflowRunRequest(
       workflow: workflow,
@@ -644,6 +646,23 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
     XCTAssertEqual(rerun.status, .completed)
     XCTAssertEqual(rerun.session.executions.map(\.stepId), ["step-b"])
     XCTAssertEqual(rerun.rootOutput?["status"], .string("second"))
+    XCTAssertEqual(rerun.recovery?.entryMode, .rerun)
+    XCTAssertEqual(rerun.recovery?.sourceSessionId, first.session.sessionId)
+    XCTAssertEqual(rerun.recovery?.sourceStepId, "step-b")
+    XCTAssertEqual(rerun.recovery?.sourceStepExecutionId, first.session.executions.last?.executionId)
+    XCTAssertEqual(rerun.recovery?.parentSessionId, first.session.sessionId)
+    XCTAssertEqual(rerun.recovery?.childSessionIds, [rerun.session.sessionId])
+
+    let terminalResume = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: workflow,
+      nodePayloads: nodePayloads(for: workflow),
+      resumeSessionId: rerun.session.sessionId
+    ))
+
+    XCTAssertEqual(terminalResume.session.sessionId, rerun.session.sessionId)
+    XCTAssertEqual(terminalResume.recovery?.entryMode, .resume)
+    XCTAssertEqual(terminalResume.recovery?.sourceSessionId, rerun.session.sessionId)
+    XCTAssertEqual(terminalResume.recovery?.inputReusePolicy, "existing-session")
   }
 
   func testRerunRejectsUnknownStepWithStepOrientedMessage() async throws {
@@ -786,7 +805,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
         "verify-node": AgentNodePayload(
           id: "verify-node",
           executionBackend: .codexAgent,
-          model: "gpt-5-nano"
+          model: "gpt-5.5"
         )
       ]
     ))
@@ -816,7 +835,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
     let node = AgentNodePayload(
       id: "worker-node",
       executionBackend: .codexAgent,
-      model: "gpt-5-nano",
+      model: "gpt-5.5",
       sessionPolicy: WorkflowStepSessionPolicy(mode: .reuse, inheritFromStepId: "prior")
     )
     let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: adapter)
@@ -845,7 +864,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
     let node = AgentNodePayload(
       id: "worker-node",
       executionBackend: .codexAgent,
-      model: "gpt-5-nano",
+      model: "gpt-5.5",
       sessionPolicy: WorkflowStepSessionPolicy(mode: .reuse, inheritFromStepId: "prior")
     )
     let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: adapter)
@@ -912,7 +931,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
 
   private func nodePayloads(for workflow: WorkflowDefinition) -> [String: AgentNodePayload] {
     Dictionary(uniqueKeysWithValues: workflow.nodeRegistry.map { ref in
-      (ref.id, AgentNodePayload(id: ref.id, executionBackend: .codexAgent, model: "gpt-5-nano"))
+      (ref.id, AgentNodePayload(id: ref.id, executionBackend: .codexAgent, model: "gpt-5.5"))
     })
   }
 
@@ -938,7 +957,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
   }
 
   private func payload(output: NodeOutputContract? = nil) -> AgentNodePayload {
-    AgentNodePayload(id: "node", executionBackend: .codexAgent, model: "gpt-5-nano", output: output)
+    AgentNodePayload(id: "node", executionBackend: .codexAgent, model: "gpt-5.5", output: output)
   }
 
   private func commandPayload(output: NodeOutputContract? = nil) -> AgentNodePayload {
@@ -958,7 +977,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
   ) -> AdapterExecutionOutput {
     AdapterExecutionOutput(
       provider: "test",
-      model: "gpt-5-nano",
+      model: "gpt-5.5",
       promptText: "prompt",
       completionPassed: completionPassed,
       when: when,

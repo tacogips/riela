@@ -1,0 +1,11 @@
+{
+  "id": "implementation-review",
+  "description": "Produce the structured review gate result for the required loop example.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "promptTemplateFile": "prompts/implementation-review.md",
+  "variables": {},
+  "output": {
+    "description": "Return a loopGate object with decision, severityCounts, blockingFindings, evidenceRefs, and diagnostics."
+  }
+}

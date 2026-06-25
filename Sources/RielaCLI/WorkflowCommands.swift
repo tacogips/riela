@@ -1620,6 +1620,7 @@ public struct WorkflowRunCommand: Sendable {
         recovery: finalResult.recovery
       )
       finalResult.loopEvidence = loopEvidence.map(LoopEvidenceSummary.init)
+      applyRequiredLoopGateFailureIfNeeded(&finalResult, loopEvidence: loopEvidence, workflow: bundle.workflow)
       try persistSessionRecord(
         workflowName: persistedIdentity.workflowName,
         resolution: persistedIdentity.resolution,
@@ -1640,6 +1641,21 @@ public struct WorkflowRunCommand: Sendable {
     } catch {
       return await renderRunFailure(options: options, exitCode: .failure, error: "\(error)", state: livePersistenceState)
     }
+  }
+
+  private func applyRequiredLoopGateFailureIfNeeded(
+    _ result: inout WorkflowRunResult,
+    loopEvidence: LoopEvidenceManifest?,
+    workflow: WorkflowDefinition
+  ) {
+    guard workflow.loop?.required == true,
+          let loopEvidence,
+          loopEvidence.gates.contains(where: { !$0.blockingFindings.isEmpty }) else {
+      return
+    }
+    result.exitCode = 1
+    result.status = .failed
+    result.session.status = .failed
   }
 
   private func persistLiveSessionRecordIfPresent(

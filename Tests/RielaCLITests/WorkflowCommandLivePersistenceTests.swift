@@ -435,6 +435,141 @@ final class WorkflowCommandLivePersistenceTests: XCTestCase {
     XCTAssertEqual(rerunSnapshot.loopEvidence?.recovery?.childSessionIds, [rerunResult.sessionId])
   }
 
+  func testWorkflowRunPersistsRejectedRequiredLoopGateForFailedRunInspection() async throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-rejected-loop-gate-\(UUID().uuidString)", isDirectory: true)
+    let workflowRoot = tempDir.appendingPathComponent("workflows", isDirectory: true)
+    let workflowDirectory = workflowRoot.appendingPathComponent("rejected-loop-command", isDirectory: true)
+    let sessionStore = tempDir.appendingPathComponent("sessions", isDirectory: true)
+    let artifactRoot = tempDir.appendingPathComponent("artifacts", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    let script = try createExecutable(
+      directory: tempDir,
+      name: "rejected-loop-gate-command.sh",
+      body: """
+      tr -d '\\n' <<'JSON'
+      {
+        "loopGate": {
+          "gateId": "implementation-review",
+          "stepId": "run-command",
+          "decision": "accepted",
+          "severityCounts": { "high": 1, "medium": 0 },
+          "blockingFindings": [
+            {
+              "id": "missing-test",
+              "severity": "high",
+              "message": "Regression coverage is missing.",
+              "evidenceRefs": ["review.json"]
+            }
+          ],
+          "evidenceRefs": ["review.json"],
+          "diagnostics": ["high finding remained"]
+        }
+      }
+      JSON
+      printf '\\n'
+      """
+    )
+    try writeSingleCommandWorkflow(
+      workflowDirectory: workflowDirectory,
+      workflowId: "rejected-loop-command",
+      workflowLoopJSON: """
+      {
+        "kind": "design-implement-review",
+        "required": true,
+        "gates": [
+          {
+            "id": "implementation-review",
+            "stepId": "run-command",
+            "required": true,
+            "acceptWhen": { "decision": "accepted", "maxHighFindings": 0, "maxMediumFindings": 0 }
+          }
+        ]
+      }
+      """,
+      stepLoopJSON: """
+      {
+        "role": "gate",
+        "gateId": "implementation-review",
+        "evidenceTags": ["review"],
+        "recordsVerification": true
+      }
+      """,
+      nodeJSON: """
+      {
+        "id": "run-command",
+        "nodeType": "command",
+        "command": {
+          "executable": "\(script.path)"
+        }
+      }
+      """
+    )
+
+    let result = await RielaCLIApplication().run([
+      "workflow", "run", "rejected-loop-command",
+      "--workflow-definition-dir", workflowRoot.path,
+      "--session-store", sessionStore.path,
+      "--artifact-root", artifactRoot.path,
+      "--output", "json"
+    ])
+
+    XCTAssertEqual(result.exitCode, .failure, result.stderr + result.stdout)
+    let runResult = try decodeJSON(WorkflowRunResult.self, from: result.stdout)
+    XCTAssertEqual(runResult.workflowId, "rejected-loop-command")
+    XCTAssertEqual(runResult.exitCode, 1)
+    XCTAssertEqual(runResult.status, .failed)
+    XCTAssertEqual(runResult.session.status, .failed)
+    XCTAssertEqual(runResult.loopEvidence?.gateCount, 1)
+    XCTAssertEqual(runResult.loopEvidence?.acceptedGateCount, 0)
+    XCTAssertEqual(runResult.loopEvidence?.rejectedGateCount, 1)
+    XCTAssertEqual(runResult.loopEvidence?.blockingFindingCount, 2)
+
+    let sessionSnapshot = try SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStore.path)
+    ).load(sessionId: runResult.session.sessionId)
+    let artifactSnapshot = try FileWorkflowRuntimePersistenceStore(rootDirectory: artifactRoot.path)
+      .load(sessionId: runResult.session.sessionId)
+    for snapshot in [sessionSnapshot, artifactSnapshot] {
+      XCTAssertEqual(snapshot.session.status, .failed)
+      let evidence = try XCTUnwrap(snapshot.loopEvidence)
+      XCTAssertEqual(evidence.gates.count, 1)
+      XCTAssertEqual(evidence.gates.first?.decision, .rejected)
+      XCTAssertEqual(evidence.gates.first?.severityCounts.high, 1)
+      XCTAssertEqual(evidence.gates.first?.evidenceRefs, ["review.json"])
+      XCTAssertEqual(evidence.gates.first?.blockingFindings.count, 2)
+      XCTAssertTrue(evidence.gates.first?.blockingFindings.contains(where: { finding in
+        finding.id.contains("max-high-findings")
+      }) ?? false)
+      XCTAssertTrue(evidence.gates.first?.blockingFindings.contains(where: { finding in
+        finding.message.contains("Regression coverage is missing")
+      }) ?? false)
+    }
+
+    let loopGates = await RielaCLIApplication().run([
+      "loop", "gates", runResult.session.sessionId,
+      "--session-store", sessionStore.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(loopGates.exitCode, .success, loopGates.stderr + loopGates.stdout)
+    let gates = try decodeJSON(LoopGatesCommandResult.self, from: loopGates.stdout)
+    XCTAssertTrue(gates.loopEvidenceRecorded)
+    XCTAssertEqual(gates.gates.first?.decision, .rejected)
+    XCTAssertEqual(gates.gates.first?.blockingFindings.count, 2)
+
+    let loopStatus = await RielaCLIApplication().run([
+      "loop", "status", runResult.session.sessionId,
+      "--session-store", sessionStore.path,
+      "--output", "text"
+    ])
+    XCTAssertEqual(loopStatus.exitCode, .success, loopStatus.stderr + loopStatus.stdout)
+    XCTAssertTrue(loopStatus.stdout.contains("gates: 1"))
+    XCTAssertTrue(loopStatus.stdout.contains("acceptedGates: 0"))
+    XCTAssertTrue(loopStatus.stdout.contains("blockingFindings: 2"))
+  }
+
   func testWorkflowRunJSONSignalFailureIncludesPersistedSessionDiagnostic() async throws {
     let tempDir = FileManager.default.temporaryDirectory
       .appendingPathComponent("riela-json-signal-failure-\(UUID().uuidString)", isDirectory: true)

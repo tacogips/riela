@@ -1,0 +1,1 @@
+{"phase":52,"status":"Completed","tasks":{"TASK-001":{"deps":["graphql-manager-artifact-atomic-writes:TASK-002"],"parallelizable":true,"status":"Completed"},"TASK-002":{"deps":["TASK-001"],"parallelizable":false,"status":"Completed"}}}

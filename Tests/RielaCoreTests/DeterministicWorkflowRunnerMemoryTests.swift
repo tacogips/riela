@@ -459,17 +459,6 @@ private func memoryPayloads(
     .compactMap(objectPayload)
 }
 
-private func XCTAssertThrowsErrorAsync(
-  _ expression: @autoclosure () async throws -> some Sendable,
-  file: StaticString = #filePath,
-  line: UInt = #line
-) async {
-  do {
-    _ = try await expression()
-    XCTFail("expected error", file: file, line: line)
-  } catch {}
-}
-
 private func temporaryDirectory(_ name: String) -> String {
   URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
     .appendingPathComponent("riela-\(name)-\(UUID().uuidString)", isDirectory: true)

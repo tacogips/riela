@@ -131,6 +131,34 @@ final class WorkflowObservabilityTests: XCTestCase {
       XCTAssertFalse(bodyText?.contains("raw prompt") == true)
     }
   }
+
+  func testOTLPExporterFlushHonorsTimeoutWhenCollectorDoesNotRespond() async throws {
+    HangingOTLPURLProtocol.reset()
+    URLProtocol.registerClass(HangingOTLPURLProtocol.self)
+    defer { URLProtocol.unregisterClass(HangingOTLPURLProtocol.self) }
+    let telemetry = RielaTelemetryFactory.make(configuration: RielaTelemetryConfiguration(
+      enabled: true,
+      surface: .cli,
+      serviceName: "riela-test",
+      endpoint: try XCTUnwrap(URL(string: "http://collector.test:4318")),
+      resourceAttributes: [:],
+      enabledSignals: [.traces]
+    ))
+
+    await telemetry.recordSpan(RielaTelemetrySpan(
+      name: "riela.workflow.run",
+      status: .ok,
+      startedAt: Date(timeIntervalSince1970: 1),
+      attributes: ["workflow.id": "workflow-a"]
+    ))
+
+    let start = ContinuousClock.now
+    await telemetry.flush(timeout: .milliseconds(50))
+    let elapsed = start.duration(to: ContinuousClock.now)
+
+    XCTAssertEqual(HangingOTLPURLProtocol.startedRequestCount(), 1)
+    XCTAssertLessThan(elapsed, .seconds(1))
+  }
 }
 
 private struct RecordedOTLPRequest {
@@ -196,6 +224,37 @@ private final class RecordingOTLPURLProtocol: URLProtocol {
     }
     return data
   }
+}
+
+private final class HangingOTLPURLProtocol: URLProtocol {
+  private static let lock = NSLock()
+  private nonisolated(unsafe) static var startedRequests = 0
+
+  static func reset() {
+    lock.withLock {
+      startedRequests = 0
+    }
+  }
+
+  static func startedRequestCount() -> Int {
+    lock.withLock { startedRequests }
+  }
+
+  override static func canInit(with request: URLRequest) -> Bool {
+    request.url?.host == "collector.test"
+  }
+
+  override static func canonicalRequest(for request: URLRequest) -> URLRequest {
+    request
+  }
+
+  override func startLoading() {
+    Self.lock.withLock {
+      Self.startedRequests += 1
+    }
+  }
+
+  override func stopLoading() {}
 }
 
 private struct TelemetryStaticAdapter: NodeAdapter {

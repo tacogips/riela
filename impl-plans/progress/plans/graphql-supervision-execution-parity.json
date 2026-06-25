@@ -1,0 +1,1 @@
+{"phase":134,"status":"Completed","tasks":{"TASK-001":{"deps":["graphql-cli-execution-transport:TASK-002","auto-improve-superviser-workflow-phase-2:TASK-001"],"parallelizable":false,"status":"Completed"},"TASK-002":{"deps":["TASK-001"],"parallelizable":false,"status":"Completed"},"TASK-003":{"deps":["TASK-001","TASK-002"],"parallelizable":true,"status":"Completed"}}}

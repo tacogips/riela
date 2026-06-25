@@ -124,7 +124,8 @@ private func bindingMatchesEnvelope(_ binding: EventBindingContract, envelope: E
     if let conversationId = match.conversationId, conversationId != stringField(envelope.conversation, key: "id") {
       return false
     }
-    if let pathPrefix = match.pathPrefix, eventFilePath(envelope)?.hasPrefix(pathPrefix) != true {
+    if let pathPrefix = match.pathPrefix,
+       !eventFilePathMatchesPrefix(eventFilePath(envelope), prefix: pathPrefix) {
       return false
     }
   }
@@ -143,6 +144,19 @@ private func eventFilePath(_ envelope: ExternalEventEnvelope) -> String? {
     return nil
   }
   return path
+}
+
+private func eventFilePathMatchesPrefix(_ path: String?, prefix: String) -> Bool {
+  guard let path else {
+    return false
+  }
+  guard !prefix.isEmpty else {
+    return true
+  }
+  if prefix.hasSuffix("/") {
+    return path.hasPrefix(prefix)
+  }
+  return path == prefix || path.hasPrefix("\(prefix)/")
 }
 
 private func buildWorkflowInput(binding: EventBindingContract, envelope: ExternalEventEnvelope, source: EventSourceContract?) -> JSONObject {

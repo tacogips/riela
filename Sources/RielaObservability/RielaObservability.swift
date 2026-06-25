@@ -323,9 +323,24 @@ private actor OTLPRielaTelemetryExporter: RielaTelemetry {
     logs.removeAll()
     metrics.removeAll()
     await withTaskGroup(of: Void.self) { group in
-      group.addTask { await sendBestEffort(spansToSend, signalPath: "v1/traces", endpoint: endpoint, configuration: configuration) }
-      group.addTask { await sendBestEffort(logsToSend, signalPath: "v1/logs", endpoint: endpoint, configuration: configuration) }
-      group.addTask { await sendBestEffort(metricsToSend, signalPath: "v1/metrics", endpoint: endpoint, configuration: configuration) }
+      group.addTask {
+        await withTaskGroup(of: Void.self) { sendGroup in
+          sendGroup.addTask {
+            await sendBestEffort(spansToSend, signalPath: "v1/traces", endpoint: endpoint, configuration: configuration, timeout: timeout)
+          }
+          sendGroup.addTask {
+            await sendBestEffort(logsToSend, signalPath: "v1/logs", endpoint: endpoint, configuration: configuration, timeout: timeout)
+          }
+          sendGroup.addTask {
+            await sendBestEffort(metricsToSend, signalPath: "v1/metrics", endpoint: endpoint, configuration: configuration, timeout: timeout)
+          }
+        }
+      }
+      group.addTask {
+        try? await Task.sleep(for: timeout)
+      }
+      await group.next()
+      group.cancelAll()
     }
   }
 }
@@ -334,7 +349,8 @@ private func sendBestEffort<T: Encodable & Sendable>(
   _ records: [T],
   signalPath: String,
   endpoint: URL,
-  configuration: RielaTelemetryConfiguration
+  configuration: RielaTelemetryConfiguration,
+  timeout: Duration
 ) async {
   guard !records.isEmpty else {
     return
@@ -342,6 +358,7 @@ private func sendBestEffort<T: Encodable & Sendable>(
   do {
     var request = URLRequest(url: endpoint.appendingPathComponent(signalPath))
     request.httpMethod = "POST"
+    request.timeoutInterval = timeoutInterval(for: timeout)
     request.addValue("application/json", forHTTPHeaderField: "Content-Type")
     request.httpBody = try JSONEncoder.telemetryEncoder.encode(
       OTLPPayload(
@@ -354,6 +371,13 @@ private func sendBestEffort<T: Encodable & Sendable>(
     _ = try await URLSession.shared.data(for: request)
   } catch {
   }
+}
+
+private func timeoutInterval(for duration: Duration) -> TimeInterval {
+  let components = duration.components
+  let seconds = TimeInterval(components.seconds)
+  let fractionalSeconds = TimeInterval(components.attoseconds) / 1_000_000_000_000_000_000
+  return max(0.001, seconds + fractionalSeconds)
 }
 
 private struct OTLPPayload<Record: Encodable>: Encodable {

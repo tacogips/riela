@@ -2,6 +2,8 @@ import XCTest
 import RielaMemory
 @testable import RielaCore
 
+// This suite keeps related runner state-machine cases together while support fixtures live in a separate file.
+// swiftlint:disable:next type_body_length
 final class DeterministicWorkflowRunnerTests: XCTestCase {
   func testAdapterFailureRecordsFailedExecutionWithoutMessages() async throws {
     let store = InMemoryWorkflowRuntimeStore()
@@ -983,132 +985,5 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       when: when,
       payload: payload
     )
-  }
-}
-
-private struct FailingAdapter: NodeAdapter {
-  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
-    throw AdapterExecutionError(.providerError, "forced failure")
-  }
-}
-
-private struct StaticAdapter: NodeAdapter {
-  var output: AdapterExecutionOutput
-
-  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
-    output
-  }
-}
-
-private struct StepCapturingAdapter: NodeAdapter {
-  var outputsByStep: [String: AdapterExecutionOutput]
-
-  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
-    outputsByStep[input.node.id] ?? AdapterExecutionOutput(
-      provider: "test",
-      model: input.node.model,
-      promptText: input.promptText,
-      completionPassed: true,
-      payload: ["status": .string("ok")]
-    )
-  }
-}
-
-private actor DeadlineCapturingAdapter: NodeAdapter {
-  private(set) var deadline: Date?
-
-  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
-    deadline = context.deadline
-    return AdapterExecutionOutput(
-      provider: "test",
-      model: input.node.model,
-      promptText: input.promptText,
-      completionPassed: true,
-      payload: ["status": .string("ok")]
-    )
-  }
-
-  func capturedDeadline() -> Date? {
-    deadline
-  }
-}
-
-private actor InputCapturingAdapter: NodeAdapter {
-  private var input: AdapterExecutionInput?
-
-  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
-    self.input = input
-    return AdapterExecutionOutput(
-      provider: "test",
-      model: input.node.model,
-      promptText: input.promptText,
-      completionPassed: true,
-      payload: ["status": .string("ok")]
-    )
-  }
-
-  func capturedInput() -> AdapterExecutionInput? {
-    input
-  }
-}
-
-private actor CapturingAddonResolver: WorkflowAddonResolving {
-  private var input: WorkflowAddonExecutionInput?
-  var output: AdapterExecutionOutput
-
-  init(output: AdapterExecutionOutput) {
-    self.output = output
-  }
-
-  func execute(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
-    self.input = input
-    return output
-  }
-
-  func capturedInput() -> WorkflowAddonExecutionInput? {
-    input
-  }
-}
-
-private actor StaticStdioNodeExecutor: WorkflowStdioNodeExecuting {
-  private let result: WorkflowStdioNodeExecutionResult?
-  private let error: AdapterExecutionError?
-  private var inputs: [WorkflowStdioNodeExecutionInput] = []
-
-  init(result: WorkflowStdioNodeExecutionResult? = nil, error: AdapterExecutionError? = nil) {
-    self.result = result
-    self.error = error
-  }
-
-  func execute(
-    _ input: WorkflowStdioNodeExecutionInput,
-    context: AdapterExecutionContext
-  ) async throws -> WorkflowStdioNodeExecutionResult {
-    inputs.append(input)
-    if let error {
-      throw error
-    }
-    return result ?? WorkflowStdioNodeExecutionResult(payload: nil)
-  }
-
-  func capturedInputs() -> [WorkflowStdioNodeExecutionInput] {
-    inputs
-  }
-}
-
-private func XCTAssertThrowsErrorAsync(
-  _ expression: @autoclosure () async throws -> some Sendable,
-  file: StaticString = #filePath,
-  line: UInt = #line
-) async {
-  do {
-    _ = try await expression()
-    XCTFail("expected error", file: file, line: line)
-  } catch {}
-}
-
-private extension InMemoryWorkflowRuntimeStore {
-  func loadSessionForTest(id: String) async -> WorkflowSession? {
-    try? await loadSession(id: id)
   }
 }

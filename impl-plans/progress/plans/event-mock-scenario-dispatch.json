@@ -1,0 +1,1 @@
+{"phase":96,"status":"Completed","tasks":{"TASK-001":{"deps":["event-receipt-operator-commands:TASK-003"],"parallelizable":false,"status":"Completed"},"TASK-002":{"deps":["TASK-001"],"parallelizable":false,"status":"Completed"},"TASK-003":{"deps":["TASK-001"],"parallelizable":true,"status":"Completed"}}}

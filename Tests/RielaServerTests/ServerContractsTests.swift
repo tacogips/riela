@@ -1,4 +1,5 @@
 import Foundation
+import RielaObservability
 import XCTest
 @testable import RielaCore
 @testable import RielaServer
@@ -93,6 +94,32 @@ final class ServerContractsTests: XCTestCase {
     }
     XCTAssertEqual(contextObject["bearerTokenPresent"], .bool(true))
     XCTAssertEqual(contextObject["managerSessionId"], .string("lower-session"))
+  }
+
+  func testGraphQLRouteRecordsRedactedTelemetryWithoutQueriesVariablesOrHeaders() async throws {
+    let telemetry = InMemoryRielaTelemetry()
+    let handler = DeterministicServerRouteHandler(telemetry: telemetry)
+    let body = Data(#"{"query":"mutation RunWorkflow($token:String){ run(token:$token) }","variables":{"token":"secret-token"},"operationName":"RunWorkflow"}"#.utf8)
+
+    let response = await handler.route(
+      .init(
+        method: "POST",
+        path: "/graphql",
+        headers: ["Authorization": "Bearer secret-token"],
+        body: body
+      ),
+      context: .init()
+    )
+
+    XCTAssertEqual(response.status, 200)
+    let spans = await telemetry.spans()
+    let span = try XCTUnwrap(spans.first { $0.name == "riela.server.request" })
+    XCTAssertEqual(span.attributes["http.method"], "POST")
+    XCTAssertEqual(span.attributes["http.path"], "/graphql")
+    XCTAssertEqual(span.attributes["graphql.operation.type"], "mutation")
+    XCTAssertEqual(span.attributes["graphql.operation.name"], "RunWorkflow")
+    XCTAssertFalse(span.attributes.values.contains { $0.contains("secret-token") })
+    XCTAssertFalse(span.attributes.values.contains { $0.contains("run(token") })
   }
 
   func testReadOnlyRoutesAndFailuresAreDeterministic() async {

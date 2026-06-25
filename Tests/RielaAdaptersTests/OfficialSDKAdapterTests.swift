@@ -94,6 +94,34 @@ final class OfficialSDKAdapterTests: XCTestCase {
     XCTAssertEqual(body.instructions, "system")
   }
 
+  func testOpenAIAdapterUsesNodeAgentEnvironmentForApiKeyAliasAndBaseURL() async throws {
+    let executor = RecordingOfficialSDKExecutor(outcomes: [
+      .success(OfficialSDKResponse(body: .object(["output_text": .string("hello from node env")])))
+    ])
+    let adapter = OpenAiSDKAdapter(
+      configuration: OfficialSDKAdapterConfiguration(
+        apiKeyEnv: "ROUTED_OPENAI_KEY",
+        environment: [
+          "ROUTED_OPENAI_KEY": "adapter-key",
+          "OPENAI_BASE_URL": "https://adapter-openai.test/v1"
+        ],
+        requestExecutor: executor
+      )
+    )
+
+    _ = try await adapter.execute(
+      openAIInput(agentEnvironment: [
+        "ROUTED_OPENAI_KEY": openAITestKey(),
+        "OPENAI_BASE_URL": "https://node-openai.test/v1"
+      ]),
+      context: AdapterExecutionContext()
+    )
+
+    let request = try XCTUnwrap(executor.requests().first)
+    XCTAssertEqual(request.apiKey, openAITestKey())
+    XCTAssertEqual(request.baseURL?.absoluteString, "https://node-openai.test/v1")
+  }
+
   func testOpenAIAdapterExtractsSegmentedOutputTextAndNormalizesEnvelope() async throws {
     let executor = RecordingOfficialSDKExecutor(outcomes: [
       .success(
@@ -197,6 +225,28 @@ final class OfficialSDKAdapterTests: XCTestCase {
     XCTAssertEqual(body.maxTokens, 1)
     XCTAssertEqual(body.system, "system")
     XCTAssertEqual(body.messages, [AnthropicMessage(role: "user", content: "hello")])
+  }
+
+  func testAnthropicAdapterUsesNodeAgentEnvironmentForBaseURL() async throws {
+    let executor = RecordingOfficialSDKExecutor(outcomes: [
+      .success(OfficialSDKResponse(body: .object(["content": .array([.object(["text": .string("ok")])])])))
+    ])
+    let adapter = AnthropicSDKAdapter(
+      configuration: AnthropicSDKAdapterConfiguration(
+        officialSDK: OfficialSDKAdapterConfiguration(
+          environment: ["ANTHROPIC_API_KEY": anthropicTestKey()],
+          requestExecutor: executor
+        )
+      )
+    )
+
+    _ = try await adapter.execute(
+      anthropicInput(agentEnvironment: ["ANTHROPIC_BASE_URL": "https://node-anthropic.test"]),
+      context: AdapterExecutionContext()
+    )
+
+    let request = try XCTUnwrap(executor.requests().first)
+    XCTAssertEqual(request.baseURL?.absoluteString, "https://node-anthropic.test")
   }
 
   func testGeminiAdapterBuildsGenerateContentRequestAndExtractsTextSegments() async throws {
@@ -775,21 +825,27 @@ final class OfficialSDKAdapterTests: XCTestCase {
   private func openAIInput(
     systemPromptText: String? = nil,
     output: NodeOutputContract? = nil,
-    mergedVariables: JSONObject = [:]
+    mergedVariables: JSONObject = [:],
+    agentEnvironment: [String: String] = [:]
   ) -> AdapterExecutionInput {
     AdapterExecutionInput(
       node: AgentNodePayload(id: "worker", executionBackend: .officialOpenAISDK, model: "gpt-5", output: output),
       promptText: "hello",
       systemPromptText: systemPromptText,
-      mergedVariables: mergedVariables
+      mergedVariables: mergedVariables,
+      agentEnvironment: agentEnvironment
     )
   }
 
-  private func anthropicInput(systemPromptText: String? = nil) -> AdapterExecutionInput {
+  private func anthropicInput(
+    systemPromptText: String? = nil,
+    agentEnvironment: [String: String] = [:]
+  ) -> AdapterExecutionInput {
     AdapterExecutionInput(
       node: AgentNodePayload(id: "worker", executionBackend: .officialAnthropicSDK, model: "claude-sonnet-4-5"),
       promptText: "hello",
-      systemPromptText: systemPromptText
+      systemPromptText: systemPromptText,
+      agentEnvironment: agentEnvironment
     )
   }
 

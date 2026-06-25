@@ -221,9 +221,11 @@ public struct OpenAiSDKAdapter: NodeAdapter {
 
   public func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
     let request = try makeOfficialSDKRequest(
+      input: input,
       provider: Self.provider,
       configuration: configuration,
       defaultApiKeyEnv: Self.defaultApiKeyEnv,
+      defaultBaseURLEnv: "OPENAI_BASE_URL",
       missingApiKeyMessage: "missing OpenAI API key",
       body: .openAIResponses(
         OpenAIResponsesRequest(
@@ -260,9 +262,11 @@ public struct AnthropicSDKAdapter: NodeAdapter {
 
   public func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
     let request = try makeOfficialSDKRequest(
+      input: input,
       provider: Self.provider,
       configuration: configuration.officialSDK,
       defaultApiKeyEnv: Self.defaultApiKeyEnv,
+      defaultBaseURLEnv: "ANTHROPIC_BASE_URL",
       missingApiKeyMessage: "missing Anthropic API key",
       body: .anthropicMessages(
         AnthropicMessagesRequest(
@@ -299,9 +303,11 @@ public struct GeminiSDKAdapter: NodeAdapter {
 
   public func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
     let request = try makeOfficialSDKRequest(
+      input: input,
       provider: Self.provider,
       configuration: configuration,
       defaultApiKeyEnvs: Self.defaultApiKeyEnvs,
+      defaultBaseURLEnvs: ["GEMINI_BASE_URL"],
       missingApiKeyMessage: "missing Gemini API key",
       body: .geminiGenerateContent(
         GeminiGenerateContentRequest(
@@ -327,38 +333,49 @@ public struct GeminiSDKAdapter: NodeAdapter {
 }
 
 private func makeOfficialSDKRequest(
+  input: AdapterExecutionInput,
   provider: String,
   configuration: OfficialSDKAdapterConfiguration,
   defaultApiKeyEnv: String,
+  defaultBaseURLEnv: String,
   missingApiKeyMessage: String,
   body: OfficialSDKRequestBody
 ) throws -> OfficialSDKRequest {
   try makeOfficialSDKRequest(
+    input: input,
     provider: provider,
     configuration: configuration,
     defaultApiKeyEnvs: [defaultApiKeyEnv],
+    defaultBaseURLEnvs: [defaultBaseURLEnv],
     missingApiKeyMessage: missingApiKeyMessage,
     body: body
   )
 }
 
 private func makeOfficialSDKRequest(
+  input: AdapterExecutionInput,
   provider: String,
   configuration: OfficialSDKAdapterConfiguration,
   defaultApiKeyEnvs: [String],
+  defaultBaseURLEnvs: [String],
   missingApiKeyMessage: String,
   body: OfficialSDKRequestBody
 ) throws -> OfficialSDKRequest {
-  let environment = configuration.environment ?? ProcessInfo.processInfo.environment
+  let environment = (configuration.environment ?? ProcessInfo.processInfo.environment)
+    .merging(input.agentEnvironment) { _, nodeValue in nodeValue }
   let envNames = configuration.apiKeyEnv.map { [$0] } ?? defaultApiKeyEnvs
   guard let apiKey = envNames.compactMap({ environment[$0] }).first(where: { !$0.isEmpty }) else {
     throw AdapterExecutionError(.policyBlocked, missingApiKeyMessage)
   }
+  let baseURL = configuration.baseURL ?? defaultBaseURLEnvs
+    .compactMap { environment[$0] }
+    .first(where: { !$0.isEmpty })
+    .flatMap(URL.init(string:))
 
   return OfficialSDKRequest(
     provider: provider,
     apiKey: apiKey,
-    baseURL: configuration.baseURL,
+    baseURL: baseURL,
     body: body
   )
 }

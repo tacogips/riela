@@ -24,6 +24,7 @@ public struct AdapterExecutionInput: Codable, Equatable, Sendable {
   public var sessionPolicy: WorkflowStepSessionPolicy?
   public var arguments: JSONObject
   public var mergedVariables: JSONObject
+  public var agentEnvironment: [String: String]
   public var executionIndex: Int
   public var output: AdapterOutputAttemptContext?
 
@@ -34,6 +35,7 @@ public struct AdapterExecutionInput: Codable, Equatable, Sendable {
     sessionPolicy: WorkflowStepSessionPolicy? = nil,
     arguments: JSONObject = [:],
     mergedVariables: JSONObject = [:],
+    agentEnvironment: [String: String] = [:],
     executionIndex: Int = 1,
     output: AdapterOutputAttemptContext? = nil
   ) {
@@ -43,6 +45,7 @@ public struct AdapterExecutionInput: Codable, Equatable, Sendable {
     self.sessionPolicy = sessionPolicy
     self.arguments = arguments
     self.mergedVariables = mergedVariables
+    self.agentEnvironment = agentEnvironment
     self.executionIndex = executionIndex
     self.output = output
   }

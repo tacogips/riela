@@ -1,6 +1,7 @@
 import Foundation
 import RielaCore
 import RielaGraphQL
+import RielaObservability
 
 public struct ServerRequestEnvelope: Equatable, Sendable {
   public var method: String
@@ -75,37 +76,50 @@ public protocol ServerRouteHandling: Sendable {
 }
 
 public struct DeterministicServerRouteHandler: ServerRouteHandling {
-  public init() {}
+  public var telemetry: any RielaTelemetry
+
+  public init(telemetry: any RielaTelemetry = NoOpRielaTelemetry()) {
+    self.telemetry = telemetry
+  }
 
   public func route(_ request: ServerRequestEnvelope, context: ServerRequestContext) async -> ServerResponseDescriptor {
+    let startedAt = Date()
     let normalizedMethod = request.method.uppercased()
     let contextWithHeaders = context.withHeaders(from: request.headers)
+    let response: ServerResponseDescriptor
     switch (normalizedMethod, request.path) {
     case ("GET", "/"), ("GET", "/overview"):
-      return .init(status: 200, body: [
+      response = .init(status: 200, body: [
         "service": .string(context.serviceName),
         "route": .string(request.path),
         "readOnly": .bool(true)
       ])
     case ("GET", "/healthz"):
-      return .init(status: 200, body: [
+      response = .init(status: 200, body: [
         "service": .string(context.serviceName),
         "status": .string("ok")
       ])
     case ("POST", "/graphql"):
-      return routeGraphQL(request, context: contextWithHeaders)
+      response = routeGraphQL(request, context: contextWithHeaders)
     case (_, "/"), (_, "/overview"), (_, "/healthz"), (_, "/graphql"):
-      return .init(status: 405, body: [
+      response = .init(status: 405, body: [
         "error": .string("unsupported method"),
         "method": .string(normalizedMethod),
         "path": .string(request.path)
       ])
     default:
-      return .init(status: 404, body: [
+      response = .init(status: 404, body: [
         "error": .string("unknown path"),
         "path": .string(request.path)
       ])
     }
+    await recordServerTelemetry(
+      request: request,
+      normalizedMethod: normalizedMethod,
+      response: response,
+      startedAt: startedAt
+    )
+    return response
   }
 
   public func parseGraphQLEnvelope(_ request: ServerRequestEnvelope) -> GraphQLEnvelopeParseResult {
@@ -177,6 +191,58 @@ public struct DeterministicServerRouteHandler: ServerRouteHandling {
 public enum GraphQLEnvelopeParseResult: Equatable, Sendable {
   case success(GraphQLServerEnvelope)
   case failure(String)
+}
+
+private extension DeterministicServerRouteHandler {
+  func recordServerTelemetry(
+    request: ServerRequestEnvelope,
+    normalizedMethod: String,
+    response: ServerResponseDescriptor,
+    startedAt: Date
+  ) async {
+    var attributes: [String: String] = [
+      "runtime.surface": "serve",
+      "http.method": normalizedMethod,
+      "http.path": request.path,
+      "status": String(response.status)
+    ]
+    if request.path == "/graphql" {
+      attributes["graphql.operation.type"] = graphqlOperationType(request)
+      if case let .success(envelope) = parseGraphQLEnvelope(request),
+        let operationName = envelope.operationName {
+        attributes["graphql.operation.name"] = operationName
+      }
+    }
+    let status: RielaTelemetryStatus = (200...399).contains(response.status) ? .ok : .error
+    await telemetry.recordSpan(RielaTelemetrySpan(
+      name: "riela.server.request",
+      status: status,
+      startedAt: startedAt,
+      attributes: attributes
+    ))
+    await telemetry.recordMetric(RielaTelemetryMetric(
+      name: "riela.server.request.count",
+      value: 1,
+      attributes: attributes
+    ))
+  }
+
+  func graphqlOperationType(_ request: ServerRequestEnvelope) -> String {
+    guard case let .success(envelope) = parseGraphQLEnvelope(request) else {
+      return "unknown"
+    }
+    let trimmed = envelope.query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if trimmed.hasPrefix("mutation") {
+      return "mutation"
+    }
+    if trimmed.hasPrefix("subscription") {
+      return "subscription"
+    }
+    if trimmed.hasPrefix("query") || trimmed.hasPrefix("{") {
+      return "query"
+    }
+    return "unknown"
+  }
 }
 
 private extension ServerRequestContext {

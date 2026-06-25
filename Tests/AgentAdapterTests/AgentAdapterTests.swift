@@ -849,6 +849,53 @@ final class AgentAdapterTests: XCTestCase {
     XCTAssertEqual(cursorRuns.count, 1)
   }
 
+  func testNodeAgentEnvironmentOverridesAdapterEnvironmentForCliExecution() async throws {
+    let input = input(
+      backend: .codexAgent,
+      agentEnvironment: [
+        "OPENAI_BASE_URL": "https://node-router.test/v1",
+        "CODEX_HOME": "/tmp/node-codex-home",
+        "RIELA_AGENT_BACKEND": "spoofed"
+      ]
+    )
+    let runner = RecordingRunner(output: "done")
+
+    _ = try await CodexAgentAdapter(
+      runner: runner,
+      environment: [
+        "OPENAI_BASE_URL": "https://adapter-router.test/v1",
+        "CODEX_HOME": "/tmp/adapter-codex-home"
+      ],
+      authPreflight: false
+    ).execute(input, context: AdapterExecutionContext())
+
+    let runs = await runner.runs()
+    let run = try XCTUnwrap(runs.last)
+    XCTAssertEqual(run.configuration.environment["OPENAI_BASE_URL"], "https://node-router.test/v1")
+    XCTAssertEqual(run.configuration.environment["CODEX_HOME"], "/tmp/node-codex-home")
+    XCTAssertEqual(run.configuration.environment["RIELA_AGENT_BACKEND"], "codex-agent")
+  }
+
+  func testNodeAgentEnvironmentIsUsedByCliAuthPreflightAndExecution() async throws {
+    let runner = SequencedRunner([
+      LocalAgentProcessResult(stdout: "Logged in", stderr: "", terminationStatus: 0),
+      LocalAgentProcessResult(stdout: "done", stderr: "", terminationStatus: 0)
+    ])
+
+    _ = try await CodexAgentAdapter(
+      runner: runner,
+      environment: ["OPENAI_BASE_URL": "https://adapter-router.test/v1"]
+    ).execute(
+      input(backend: .codexAgent, agentEnvironment: ["OPENAI_BASE_URL": "https://node-router.test/v1"]),
+      context: AdapterExecutionContext()
+    )
+
+    let runs = await runner.runs()
+    XCTAssertEqual(runs.count, 2)
+    XCTAssertEqual(runs[0].configuration.environment["OPENAI_BASE_URL"], "https://node-router.test/v1")
+    XCTAssertEqual(runs[1].configuration.environment["OPENAI_BASE_URL"], "https://node-router.test/v1")
+  }
+
   func testCodexDefaultAuthPreflightMapsLoginFailureToPolicyBlockedBeforeCommand() async throws {
     let runner = SequencedRunner([
       LocalAgentProcessResult(stdout: "", stderr: "not logged in", terminationStatus: 1),
@@ -1795,7 +1842,8 @@ extension AgentAdapterTests {
     systemPromptText: String? = nil,
     variables: JSONObject = [:],
     arguments: JSONObject = [:],
-    mergedVariables: JSONObject = [:]
+    mergedVariables: JSONObject = [:],
+    agentEnvironment: [String: String] = [:]
   ) -> AdapterExecutionInput {
     AdapterExecutionInput(
       node: AgentNodePayload(
@@ -1810,7 +1858,8 @@ extension AgentAdapterTests {
       promptText: promptText,
       systemPromptText: systemPromptText,
       arguments: arguments,
-      mergedVariables: mergedVariables
+      mergedVariables: mergedVariables,
+      agentEnvironment: agentEnvironment
     )
   }
 // File splitting would be the normal file_length fix, but this worker may edit only this owned file.

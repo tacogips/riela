@@ -49,8 +49,11 @@ public struct CursorCLIAgentCommandBuilder: LocalAgentCommandBuilding {
     arguments.append(contentsOf: stringArray(input.node.variables["cursorAdditionalArgs"]))
     arguments.append(contentsOf: ["--", buildCombinedPromptText(promptText: input.promptText, systemPromptText: input.systemPromptText)])
 
-    var environment = environment
-    environment["RIELA_AGENT_BACKEND"] = provider
+    let environment = mergedAgentProcessEnvironment(
+      baseEnvironment: environment,
+      input: input,
+      provider: provider
+    )
     return LocalAgentCommand(
       provider: provider,
       configuration: LocalAgentProcessConfiguration(
@@ -109,7 +112,13 @@ public struct CursorCLIAgentAdapter: NodeAdapter {
           throw AdapterExecutionError(.policyBlocked, "cursor-cli-agent authentication is unavailable: \(redactAdapterSensitiveText(error.localizedDescription))")
         }
       } else {
-        try await runCursorDefaultAuthPreflight(input: input, executableName: executableName, environment: environment, runner: runner, deadline: context.deadline)
+        try await runCursorDefaultAuthPreflight(
+          input: input,
+          executableName: executableName,
+          environment: environment,
+          runner: runner,
+          deadline: context.deadline
+        )
       }
     }
     return try await adapter.execute(input, context: context)
@@ -123,8 +132,11 @@ private func runCursorDefaultAuthPreflight(
   runner: any LocalAgentProcessRunning,
   deadline: Date?
 ) async throws {
-  var preflightEnvironment = environment
-  preflightEnvironment["RIELA_AGENT_BACKEND"] = CliAgentBackend.cursorCliAgent.rawValue
+  let preflightEnvironment = mergedAgentProcessEnvironment(
+    baseEnvironment: environment,
+    input: input,
+    provider: CliAgentBackend.cursorCliAgent.rawValue
+  )
   let sensitiveValues = sensitiveAdapterEnvironmentValues(preflightEnvironment)
   let versionDeadline = defaultAgentPreflightDeadline(existingDeadline: deadline, timeout: defaultCursorAuthPreflightTimeout)
   let version: LocalAgentProcessResult

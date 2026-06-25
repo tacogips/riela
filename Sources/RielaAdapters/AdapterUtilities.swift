@@ -44,6 +44,16 @@ public func resolveNodeExecutionBackend(_ node: AgentNodePayload) throws -> Node
   return executionBackend
 }
 
+public func mergedAgentProcessEnvironment(
+  baseEnvironment: [String: String],
+  input: AdapterExecutionInput,
+  provider: String
+) -> [String: String] {
+  var environment = baseEnvironment.merging(input.agentEnvironment) { _, nodeValue in nodeValue }
+  environment["RIELA_AGENT_BACKEND"] = provider
+  return environment
+}
+
 public func defaultAgentPreflightDeadline(existingDeadline: Date?, timeout: TimeInterval, now: Date = Date()) -> Date {
   let timeoutDeadline = now.addingTimeInterval(max(0, timeout))
   guard let existingDeadline else {

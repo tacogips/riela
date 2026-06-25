@@ -219,14 +219,16 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     XCTAssertEqual(command.workingDirectory, "/users/workflows")
   }
 
-  func testProcessEventSourceFactoryMergesUserEnvironmentFile() throws {
+  func testProcessEventSourceFactoryPassesOnlyTelemetryAndTraceEnvironmentToChild() throws {
     let root = try temporaryHome()
     let envURL = root.appendingPathComponent(".riela/rielaapp.env")
     try FileManager.default.createDirectory(at: envURL.deletingLastPathComponent(), withIntermediateDirectories: true)
     try """
     # Used by GUI-launched RielaApp daemon children.
-    export RIELA_APP_TEST_TOKEN=from-file
-    RIELA_APP_TEST_QUOTED_TOKEN="quoted token"
+    export RIELA_OTEL_ENABLED=true
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://collector.test:4318
+    OTEL_RESOURCE_ATTRIBUTES=deployment.environment=test
+    RIELA_APP_TEST_TOKEN=from-file
     INVALID-NAME=ignored
     """.write(to: envURL, atomically: true, encoding: .utf8)
     let factory = RielaAppDaemonProcessEventSourceFactory(
@@ -240,8 +242,14 @@ final class DaemonWorkflowSupportTests: XCTestCase {
       executablePath: "/bin/echo"
     )
 
-    XCTAssertEqual(command.environment["RIELA_APP_TEST_TOKEN"], "from-file")
-    XCTAssertEqual(command.environment["RIELA_APP_TEST_QUOTED_TOKEN"], "quoted token")
+    XCTAssertEqual(command.environment["RIELA_OTEL_ENABLED"], "true")
+    XCTAssertEqual(command.environment["OTEL_EXPORTER_OTLP_ENDPOINT"], "http://collector.test:4318")
+    XCTAssertEqual(command.environment["OTEL_SERVICE_NAME"], "riela-events-serve")
+    XCTAssertEqual(command.environment["RIELA_OTEL_SERVICE_NAME"], "riela-events-serve")
+    XCTAssertEqual(command.environment["RIELA_OTEL_PARENT_SURFACE"], "riela-app")
+    XCTAssertNotNil(command.environment["traceparent"])
+    XCTAssertTrue(command.environment["OTEL_RESOURCE_ATTRIBUTES"]?.contains("riela.parent.surface=riela-app") == true)
+    XCTAssertNil(command.environment["RIELA_APP_TEST_TOKEN"])
     XCTAssertNil(command.environment["INVALID-NAME"])
   }
 

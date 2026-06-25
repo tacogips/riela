@@ -2,6 +2,7 @@
 import AppKit
 import Foundation
 import RielaAppSupport
+import RielaObservability
 import RielaServer
 import RielaViewer
 
@@ -12,6 +13,9 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   private let controller = WorkflowServingController()
   private let daemonDiscovery = RielaAppDaemonWorkflowDiscovery()
   private let daemonRuntime = RielaAppDaemonWorkflowRuntime()
+  private let telemetry = RielaTelemetryFactory.make(configuration: .fromEnvironment(
+    surface: .app
+  ))
   private let profileStore = RielaAppProfileStore()
   private var daemonStore = RielaAppDaemonWorkflowStore(profileName: .default)
   private let launchAtLogin = RielaLaunchAtLoginController()
@@ -42,6 +46,16 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     daemonCandidates = daemonDiscovery.discoverUserDaemonWorkflows(
       additionalWorkflowDirectories: daemonState.workflowDirectories
     )
+    Task {
+      await telemetry.recordLog(RielaTelemetryLog(
+        name: "riela.app.start",
+        attributes: [
+          "runtime.surface": "app",
+          "profile.name": daemonProfileName.rawValue,
+          "workflow.count": String(daemonCandidates.count)
+        ]
+      ))
+    }
     logDaemon("profile=\(daemonProfileName.rawValue) discovered \(daemonCandidates.count) user daemon workflow candidate(s)")
     configureStatusItem()
     rebuildMenu()
@@ -57,6 +71,9 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   func applicationWillTerminate(_ notification: Notification) {
     daemonStatusRefreshTimer?.invalidate()
     daemonStatusRefreshTimer = nil
+    Task {
+      await telemetry.flush(timeout: .seconds(2))
+    }
   }
 
   private func configureStatusItem() {

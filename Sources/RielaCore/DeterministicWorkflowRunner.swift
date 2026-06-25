@@ -1,4 +1,5 @@
 import Foundation
+import RielaObservability
 
 public struct DeterministicWorkflowRunRequest: Sendable {
   public var workflow: WorkflowDefinition
@@ -151,6 +152,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
   public var inputFilterEvaluator: WorkflowInputFilterEvaluator
   public var inputFilterLogger: any WorkflowInputFilterLogging
   public var loopPolicyEvaluator: any LoopPolicyEvaluating
+  public var telemetry: any RielaTelemetry
 
   public init(
     store: (any WorkflowRuntimeStore)? = nil,
@@ -162,7 +164,8 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     inputResolver: any WorkflowMessageInputResolving = DefaultWorkflowMessageInputResolver(),
     inputFilterEvaluator: WorkflowInputFilterEvaluator = WorkflowInputFilterEvaluator(),
     inputFilterLogger: any WorkflowInputFilterLogging = StandardErrorWorkflowInputFilterLogger(),
-    loopPolicyEvaluator: any LoopPolicyEvaluating = DefaultLoopPolicyEvaluator()
+    loopPolicyEvaluator: any LoopPolicyEvaluating = DefaultLoopPolicyEvaluator(),
+    telemetry: any RielaTelemetry = NoOpRielaTelemetry()
   ) {
     let resolvedStore = store ?? InMemoryWorkflowRuntimeStore()
     self.store = resolvedStore
@@ -175,6 +178,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     self.inputFilterEvaluator = inputFilterEvaluator
     self.inputFilterLogger = inputFilterLogger
     self.loopPolicyEvaluator = loopPolicyEvaluator
+    self.telemetry = telemetry
   }
 
   public func run(_ request: DeterministicWorkflowRunRequest) async throws -> WorkflowRunResult {
@@ -495,13 +499,23 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       payload: executionPayload,
       variables: mergedVariables
     )
+    let agentEnvironment: [String: String]
+    do {
+      agentEnvironment = try resolveAgentEnvironment(
+        executionPayload.agentEnvironment,
+        variables: mergedVariables
+      )
+    } catch let error as AgentEnvironmentResolutionError {
+      throw AdapterExecutionError(.policyBlocked, error.localizedDescription)
+    }
     let adapterInput = AdapterExecutionInput(
       node: executionPayload,
       promptText: prompts.promptText,
       systemPromptText: prompts.systemPromptText,
       sessionPolicy: step.sessionPolicy ?? executionPayload.sessionPolicy,
       arguments: request.variables,
-      mergedVariables: mergedVariables
+      mergedVariables: mergedVariables,
+      agentEnvironment: agentEnvironment
     )
     return try await executeAndPublish(
       adapterInput: adapterInput,

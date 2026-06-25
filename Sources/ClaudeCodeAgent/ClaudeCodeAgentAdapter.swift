@@ -52,8 +52,11 @@ public struct ClaudeCodeAgentCommandBuilder: LocalAgentCommandBuilding {
     arguments.append(contentsOf: additionalArguments)
     arguments.append(contentsOf: stringArray(input.node.variables["claudeAdditionalArgs"]))
 
-    var environment = environment
-    environment["RIELA_AGENT_BACKEND"] = provider
+    let environment = mergedAgentProcessEnvironment(
+      baseEnvironment: environment,
+      input: input,
+      provider: provider
+    )
     return LocalAgentCommand(
       provider: provider,
       configuration: LocalAgentProcessConfiguration(
@@ -115,7 +118,13 @@ public struct ClaudeCodeAgentAdapter: NodeAdapter {
           throw AdapterExecutionError(.policyBlocked, "claude-code-agent authentication is unavailable: \(redactAdapterSensitiveText(error.localizedDescription))")
         }
       } else {
-        try await runClaudeDefaultAuthPreflight(input: input, executableName: executableName, environment: environment, runner: runner, deadline: context.deadline)
+        try await runClaudeDefaultAuthPreflight(
+          input: input,
+          executableName: executableName,
+          environment: environment,
+          runner: runner,
+          deadline: context.deadline
+        )
       }
     }
     return try await adapter.execute(input, context: context)
@@ -129,8 +138,11 @@ private func runClaudeDefaultAuthPreflight(
   runner: any LocalAgentProcessRunning,
   deadline: Date?
 ) async throws {
-  var preflightEnvironment = environment
-  preflightEnvironment["RIELA_AGENT_BACKEND"] = CliAgentBackend.claudeCodeAgent.rawValue
+  let preflightEnvironment = mergedAgentProcessEnvironment(
+    baseEnvironment: environment,
+    input: input,
+    provider: CliAgentBackend.claudeCodeAgent.rawValue
+  )
   let sensitiveValues = sensitiveAdapterEnvironmentValues(preflightEnvironment)
   let versionDeadline = defaultAgentPreflightDeadline(existingDeadline: deadline, timeout: defaultClaudeAuthPreflightTimeout)
   let version: LocalAgentProcessResult

@@ -35,8 +35,11 @@ public struct CodexAgentCommandBuilder: LocalAgentCommandBuilding {
       options: processOptions
     )
 
-    var environment = environment
-    environment["RIELA_AGENT_BACKEND"] = provider
+    let environment = mergedAgentProcessEnvironment(
+      baseEnvironment: environment,
+      input: input,
+      provider: provider
+    )
     return LocalAgentCommand(
       provider: provider,
       configuration: LocalAgentProcessConfiguration(
@@ -93,7 +96,13 @@ public struct CodexAgentAdapter: NodeAdapter {
           throw AdapterExecutionError(.policyBlocked, "codex-agent authentication is unavailable: \(redactAdapterSensitiveText(error.localizedDescription))")
         }
       } else {
-        try await runCodexDefaultAuthPreflight(input: input, executableName: executableName, environment: environment, runner: runner, deadline: context.deadline)
+        try await runCodexDefaultAuthPreflight(
+          input: input,
+          executableName: executableName,
+          environment: environment,
+          runner: runner,
+          deadline: context.deadline
+        )
       }
     }
     return try await adapter.execute(input, context: context)
@@ -107,8 +116,11 @@ private func runCodexDefaultAuthPreflight(
   runner: any LocalAgentProcessRunning,
   deadline: Date?
 ) async throws {
-  var preflightEnvironment = environment
-  preflightEnvironment["RIELA_AGENT_BACKEND"] = CliAgentBackend.codexAgent.rawValue
+  let preflightEnvironment = mergedAgentProcessEnvironment(
+    baseEnvironment: environment,
+    input: input,
+    provider: CliAgentBackend.codexAgent.rawValue
+  )
   let sensitiveValues = sensitiveAdapterEnvironmentValues(preflightEnvironment)
   let preflightDeadline = defaultAgentPreflightDeadline(existingDeadline: deadline, timeout: defaultCodexAuthPreflightTimeout)
   let result: LocalAgentProcessResult

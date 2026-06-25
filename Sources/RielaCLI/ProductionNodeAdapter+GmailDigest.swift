@@ -126,9 +126,10 @@ private struct GmailDigestEngine {
     let maxMessages = Int(gmailNumber(statePayload["maxMessages"]) ?? Double(Self.maxMessageLimit))
     let accountId = gmailNonEmptyString(statePayload["accountId"]) ?? Self.defaultAccountId
     let messageRoot = gmailNonEmptyString(statePayload["messageFileRoot"]) ?? Self.defaultMessageFileRoot
+    let fileDescriptorsByMessageId = gatewayMessageFileDescriptors(payloads)
     let fetched = try gatewayMessages(payloads)
       .compactMap { gmailObject($0) }
-      .compactMap { try normalizeMessage($0, accountId: accountId, messageFileRoot: messageRoot) }
+      .compactMap { try normalizeMessage($0, accountId: accountId, messageFileRoot: messageRoot, fileDescriptorsByMessageId: fileDescriptorsByMessageId) }
       .sorted { gmailDateSortKey($0) > gmailDateSortKey($1) }
       .prefix(maxMessages)
     let fetchedMessages = Array(fetched)
@@ -441,6 +442,40 @@ private struct GmailDigestEngine {
     return (gmailArray(value) ?? []).flatMap(threadMessages)
   }
 
+  private func gatewayMessageFileDescriptors(_ payloads: [JSONObject]) -> [String: [JSONObject]] {
+    var descriptors: [String: [JSONObject]] = [:]
+    for payload in payloads {
+      guard let gateway = gmailObject(payload["mailGateway"]) else {
+        continue
+      }
+      for fileSet in messageFileSets(.object(gateway)) {
+        guard let messageId = gmailNonEmptyString(fileSet["messageId"]) else {
+          continue
+        }
+        let files = (gmailArray(fileSet["files"]) ?? []).compactMap(normalizeFileDescriptor).filter { !$0.isEmpty }
+        if !files.isEmpty {
+          descriptors[messageId, default: []].append(contentsOf: files)
+        }
+      }
+    }
+    return descriptors
+  }
+
+  private func messageFileSets(_ value: JSONValue) -> [JSONObject] {
+    if let object = gmailObject(value) {
+      var sets: [JSONObject] = []
+      if gmailNonEmptyString(object["messageId"]) != nil,
+         gmailArray(object["files"]) != nil {
+        sets.append(object)
+      }
+      for candidate in object.values {
+        sets.append(contentsOf: messageFileSets(candidate))
+      }
+      return sets
+    }
+    return (gmailArray(value) ?? []).flatMap(messageFileSets)
+  }
+
   private func threadMessages(_ value: JSONValue) -> [JSONValue] {
     guard let object = gmailObject(value) else { return [] }
     if let node = object["node"] {
@@ -458,7 +493,12 @@ private struct GmailDigestEngine {
     return []
   }
 
-  private func normalizeMessage(_ message: JSONObject, accountId: String, messageFileRoot: String) throws -> JSONObject? {
+  private func normalizeMessage(
+    _ message: JSONObject,
+    accountId: String,
+    messageFileRoot: String,
+    fileDescriptorsByMessageId: [String: [JSONObject]]
+  ) throws -> JSONObject? {
     guard let messageId = gmailNonEmptyString(message["id"]) else {
       return nil
     }
@@ -466,6 +506,7 @@ private struct GmailDigestEngine {
       ?? message["receivedAt"]
       ?? message["sentAt"]
     var files = messageFileDescriptors(message)
+    files.append(contentsOf: fileDescriptorsByMessageId[messageId] ?? [])
     if let textBody = gmailString(message["textBody"]), !textBody.isEmpty {
       files.append([
         "kind": .string("BODY_TEXT"),
@@ -495,7 +536,7 @@ private struct GmailDigestEngine {
       "to": .array(displayAddressList(message["to"]).map(JSONValue.string)),
       "cc": .array(displayAddressList(message["cc"]).map(JSONValue.string)),
       "receivedAt": .string(gmailCompactText(dateValue)),
-      "files": .array(files.map(JSONValue.object))
+      "files": .array(deduplicatedFileDescriptors(files).map(JSONValue.object))
     ]
   }
 
@@ -528,6 +569,27 @@ private struct GmailDigestEngine {
       }
     }
     return files
+  }
+
+  private func deduplicatedFileDescriptors(_ files: [JSONObject]) -> [JSONObject] {
+    var seen = Set<String>()
+    var deduplicated: [JSONObject] = []
+    for file in files {
+      let key = [
+        gmailString(file["downloadKey"]),
+        gmailString(file["localPath"]),
+        gmailString(file["attachmentId"]),
+        gmailString(file["kind"]),
+        gmailString(file["filename"])
+      ]
+      .compactMap { $0 }
+      .joined(separator: "\u{1f}")
+      guard seen.insert(key).inserted else {
+        continue
+      }
+      deduplicated.append(file)
+    }
+    return deduplicated
   }
 
   private func normalizeFileDescriptor(_ value: JSONValue) -> JSONObject {

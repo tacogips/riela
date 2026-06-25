@@ -400,9 +400,10 @@ private func normalizePost(_ post: JSONObject) -> JSONObject {
   let metrics = object(post["metrics"]) ?? [:]
   let author = object(post["author"]) ?? [:]
   let refs = array(post["referencedPosts"]) ?? []
-  return [
+  var normalized: JSONObject = [
     "id": .string(nonEmptyString(post["id"]) ?? ""),
     "text": .string(string(post["text"]) ?? ""),
+    "promotionStatus": .string(nonEmptyString(post["promotionStatus"]) ?? ""),
     "createdAt": .string(nonEmptyString(post["createdAt"]) ?? ""),
     "author": .object([
       "username": .string(nonEmptyString(author["username"]) ?? ""),
@@ -416,19 +417,42 @@ private func normalizePost(_ post: JSONObject) -> JSONObject {
       "quoteCount": numberValue(metrics["quoteCount"]).map(JSONValue.number) ?? .null,
       "bookmarkCount": numberValue(metrics["bookmarkCount"]).map(JSONValue.number) ?? .null
     ]),
-    "referencedPosts": .array(refs.compactMap { value -> JSONValue? in
-      guard let ref = object(value) else { return nil }
-      let refAuthor = object(ref["author"]) ?? [:]
-      return .object([
-        "relation": .string(nonEmptyString(ref["relation"]) ?? ""),
-        "id": .string(nonEmptyString(ref["id"]) ?? ""),
-        "text": .string(string(ref["text"]) ?? ""),
-        "author": .object([
-          "username": .string(nonEmptyString(refAuthor["username"]) ?? ""),
-          "name": .string(nonEmptyString(refAuthor["name"]) ?? "")
-        ])
-      ])
-    })
+    "media": .array((array(post["media"]) ?? []).compactMap(normalizeMediaAsset).map(JSONValue.object)),
+    "referencedPosts": .array(refs.compactMap { object($0).flatMap(normalizeReferencedPost) }.map(JSONValue.object))
+  ]
+  for key in ["replyTo", "quote", "repost"] {
+    if let normalizedReference = post[key].flatMap(object).flatMap(normalizeReferencedPost) {
+      normalized[key] = .object(normalizedReference)
+    }
+  }
+  return normalized
+}
+
+private func normalizeMediaAsset(_ value: JSONValue) -> JSONObject? {
+  guard let asset = object(value) else {
+    return nil
+  }
+  return [
+    "kind": .string(nonEmptyString(asset["kind"]) ?? ""),
+    "contentType": .string(nonEmptyString(asset["contentType"]) ?? ""),
+    "sourceUrl": .string(nonEmptyString(asset["sourceUrl"]) ?? ""),
+    "previewImageUrl": .string(nonEmptyString(asset["previewImageUrl"]) ?? ""),
+    "localFilePath": .string(nonEmptyString(asset["localFilePath"]) ?? "")
+  ]
+}
+
+private func normalizeReferencedPost(_ ref: JSONObject) -> JSONObject? {
+  let refAuthor = object(ref["author"]) ?? [:]
+  return [
+    "relation": .string(nonEmptyString(ref["relation"]) ?? ""),
+    "id": .string(nonEmptyString(ref["id"]) ?? ""),
+    "text": .string(string(ref["text"]) ?? ""),
+    "promotionStatus": .string(nonEmptyString(ref["promotionStatus"]) ?? ""),
+    "createdAt": .string(nonEmptyString(ref["createdAt"]) ?? ""),
+    "author": .object([
+      "username": .string(nonEmptyString(refAuthor["username"]) ?? ""),
+      "name": .string(nonEmptyString(refAuthor["name"]) ?? "")
+    ])
   ]
 }
 

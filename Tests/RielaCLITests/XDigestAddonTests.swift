@@ -64,6 +64,15 @@ final class XDigestAddonTests: XCTestCase {
     XCTAssertEqual(normalizeOutput.payload["fetchedPostCount"], .number(3))
     XCTAssertEqual(normalizeOutput.payload["selectedPostCount"], .number(2))
     XCTAssertEqual(normalizeOutput.payload["maxFetchedPostId"], .string("102"))
+    let selectedPosts = try XCTUnwrap(jsonArray(normalizeOutput.payload["selectedPosts"]))
+    let newestPost = try XCTUnwrap(jsonObject(selectedPosts.first))
+    XCTAssertEqual(newestPost["promotionStatus"], .string("NOT_PROMOTED"))
+    let media = try XCTUnwrap(jsonArray(newestPost["media"]))
+    let firstMedia = try XCTUnwrap(jsonObject(media.first))
+    XCTAssertEqual(firstMedia["sourceUrl"], .string("https://cdn.example.com/102.jpg"))
+    let referencedPosts = try XCTUnwrap(jsonArray(newestPost["referencedPosts"]))
+    let referencedPost = try XCTUnwrap(jsonObject(referencedPosts.first))
+    XCTAssertEqual(referencedPost["promotionStatus"], .string("UNKNOWN"))
 
     let summaryPayload: JSONObject = [
       "shouldSendTelegram": .bool(true),
@@ -169,6 +178,7 @@ final class XDigestAddonTests: XCTestCase {
       "id": .string(id),
       "text": .string(text),
       "createdAt": .string("2026-06-23T03:30:00Z"),
+      "promotionStatus": .string("NOT_PROMOTED"),
       "author": .object([
         "username": .string(username),
         "name": .string(username.capitalized)
@@ -181,7 +191,26 @@ final class XDigestAddonTests: XCTestCase {
         "quoteCount": .number(0),
         "bookmarkCount": .number(0)
       ]),
-      "referencedPosts": .array([])
+      "media": .array([
+        .object([
+          "kind": .string("photo"),
+          "contentType": .string("image/jpeg"),
+          "sourceUrl": .string("https://cdn.example.com/\(id).jpg"),
+          "previewImageUrl": .string("https://cdn.example.com/\(id)-preview.jpg")
+        ])
+      ]),
+      "referencedPosts": .array([
+        .object([
+          "relation": .string("quoted"),
+          "id": .string("ref-\(id)"),
+          "text": .string("referenced context"),
+          "promotionStatus": .string("UNKNOWN"),
+          "author": .object([
+            "username": .string("refuser"),
+            "name": .string("Reference User")
+          ])
+        ])
+      ])
     ]
   }
 

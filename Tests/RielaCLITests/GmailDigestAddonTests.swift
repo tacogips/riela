@@ -61,7 +61,17 @@ final class GmailDigestAddonTests: XCTestCase {
                         id: "m2",
                         subject: "Quarterly report",
                         body: "report summary",
-                        date: "2026-06-23T03:30:00Z"
+                        date: "2026-06-23T03:30:00Z",
+                        files: [
+                          [
+                            "kind": .string("ATTACHMENT"),
+                            "filename": .string("report.pdf"),
+                            "mimeType": .string("application/pdf"),
+                            "sizeBytes": .number(1024),
+                            "downloadKey": .string("attachment-key"),
+                            "materializationState": .string("CACHED")
+                          ]
+                        ]
                       )
                     ]
                   ))
@@ -81,10 +91,33 @@ final class GmailDigestAddonTests: XCTestCase {
         ])
       ])
     ]
+    let messageFileSetPayload: JSONObject = [
+      "mailGateway": .object([
+        "data": .object([
+          "data": .object([
+            "messageFileSet": .object([
+              "accountId": .string("primary"),
+              "messageId": .string("m2"),
+              "hasFiles": .bool(true),
+              "files": .array([
+                .object([
+                  "kind": .string("BODY_TEXT"),
+                  "filename": .string("body.txt"),
+                  "mimeType": .string("text/plain"),
+                  "sizeBytes": .number(14),
+                  "downloadKey": .string("body-key"),
+                  "materializationState": .string("CACHED")
+                ])
+              ])
+            ])
+          ])
+        ])
+      ])
+    ]
     let normalizeOutput = try await resolver.execute(
       gmailDigestInput(
         operation: "normalize-new-mail",
-        resolvedInputPayload: upstreamPayloads([readOutput.payload, gatewayPayload]),
+        resolvedInputPayload: upstreamPayloads([readOutput.payload, gatewayPayload, messageFileSetPayload]),
         variables: ["nowIso": .string("2026-06-23T04:00:00Z")]
       ),
       context: AdapterExecutionContext()
@@ -94,6 +127,12 @@ final class GmailDigestAddonTests: XCTestCase {
     XCTAssertEqual(normalizeOutput.payload["fetchedMessageCount"], .number(2))
     XCTAssertEqual(normalizeOutput.payload["selectedMessageCount"], .number(1))
     XCTAssertEqual(normalizeOutput.payload["lastFetchedMessageId"], .string("m2"))
+    let selectedMessages = try XCTUnwrap(jsonArray(normalizeOutput.payload["selectedMessages"]))
+    let selectedMessage = try XCTUnwrap(jsonObject(selectedMessages.first))
+    let files = try XCTUnwrap(jsonArray(selectedMessage["files"]))
+    XCTAssertEqual(files.count, 3)
+    XCTAssertTrue(files.contains { jsonObject($0)?["downloadKey"] == .string("attachment-key") })
+    XCTAssertTrue(files.contains { jsonObject($0)?["downloadKey"] == .string("body-key") })
 
     let summaryPayload: JSONObject = [
       "messageDigests": .array([
@@ -189,7 +228,13 @@ final class GmailDigestAddonTests: XCTestCase {
     ]
   }
 
-  private func message(id: String, subject: String, body: String, date: String) -> JSONObject {
+  private func message(
+    id: String,
+    subject: String,
+    body: String,
+    date: String,
+    files: [JSONObject] = []
+  ) -> JSONObject {
     [
       "id": .string(id),
       "threadId": .string("thread-\(id)"),
@@ -207,7 +252,7 @@ final class GmailDigestAddonTests: XCTestCase {
         ])
       ]),
       "textBody": .string(body),
-      "files": .array([])
+      "files": .array(files.map(JSONValue.object))
     ]
   }
 

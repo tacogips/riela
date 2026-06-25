@@ -725,6 +725,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
   public var workingDirectory: String?
   public var command: WorkflowCommandExecution?
   public var container: WorkflowContainerExecution?
+  public var agentEnvironment: [String: AgentEnvironmentBinding]
   public var systemPromptTemplate: String?
   public var systemPromptTemplateFile: String?
   public var promptTemplate: String?
@@ -748,6 +749,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     workingDirectory: String? = nil,
     command: WorkflowCommandExecution? = nil,
     container: WorkflowContainerExecution? = nil,
+    agentEnvironment: [String: AgentEnvironmentBinding] = [:],
     systemPromptTemplate: String? = nil,
     systemPromptTemplateFile: String? = nil,
     promptTemplate: String? = nil,
@@ -770,6 +772,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     self.workingDirectory = workingDirectory
     self.command = command
     self.container = container
+    self.agentEnvironment = agentEnvironment
     self.systemPromptTemplate = systemPromptTemplate
     self.systemPromptTemplateFile = systemPromptTemplateFile
     self.promptTemplate = promptTemplate
@@ -794,6 +797,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     case workingDirectory
     case command
     case container
+    case agentEnvironment
     case systemPromptTemplate
     case systemPromptTemplateFile
     case promptTemplate
@@ -819,6 +823,26 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     self.workingDirectory = try container.decodeIfPresent(String.self, forKey: .workingDirectory)
     self.command = try container.decodeIfPresent(WorkflowCommandExecution.self, forKey: .command)
     self.container = try container.decodeIfPresent(WorkflowContainerExecution.self, forKey: .container)
+    self.agentEnvironment = try container.decodeIfPresent(
+      [String: AgentEnvironmentBinding].self,
+      forKey: .agentEnvironment
+    ) ?? [:]
+    for key in agentEnvironment.keys {
+      guard isValidEnvironmentVariableName(key) else {
+        throw DecodingError.dataCorruptedError(
+          forKey: .agentEnvironment,
+          in: container,
+          debugDescription: "agentEnvironment target '\(key)' must be a valid environment variable name"
+        )
+      }
+      guard !reservedAgentEnvironmentNames.contains(key) else {
+        throw DecodingError.dataCorruptedError(
+          forKey: .agentEnvironment,
+          in: container,
+          debugDescription: "agentEnvironment target '\(key)' is reserved by Riela"
+        )
+      }
+    }
     self.systemPromptTemplate = try container.decodeIfPresent(String.self, forKey: .systemPromptTemplate)
     self.systemPromptTemplateFile = try container.decodeIfPresent(String.self, forKey: .systemPromptTemplateFile)
     self.promptTemplate = try container.decodeIfPresent(String.self, forKey: .promptTemplate)

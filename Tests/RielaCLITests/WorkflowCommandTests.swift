@@ -1666,15 +1666,10 @@ extension WorkflowCommandTests {
   }
 
   func testURLSessionWorkflowRunUsesSchemaAccurateRemotePayloadAndPausedStatus() async throws {
-    let previousRielaManagerSession = environmentValue("RIELA_MANAGER_SESSION_ID")
-    setEnvironmentValue("RIELA_MANAGER_SESSION_ID", "manager-session-1")
-    defer {
-      setEnvironmentValue("RIELA_MANAGER_SESSION_ID", previousRielaManagerSession)
-    }
-
     RecordingGraphQLURLProtocol.reset(responses: remoteGraphQLRunResponses())
     URLProtocol.registerClass(RecordingGraphQLURLProtocol.self)
     defer { URLProtocol.unregisterClass(RecordingGraphQLURLProtocol.self) }
+    let traceparent = "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
 
     let result = await RielaCLIApplication().run([
       "workflow", "run", "worker-only-single-step",
@@ -1684,6 +1679,11 @@ extension WorkflowCommandTests {
       "--max-concurrency", "3",
       "--timeout-ms", "100",
       "--output", "json"
+    ], environment: [
+      "RIELA_MANAGER_SESSION_ID": "manager-session-1",
+      "traceparent": traceparent,
+      "tracestate": "vendor=state",
+      "baggage": "tenant=blue"
     ])
 
     XCTAssertEqual(result.exitCode, .success, result.stderr)
@@ -1702,6 +1702,9 @@ extension WorkflowCommandTests {
     for header in headers {
       XCTAssertEqual(header["Authorization"], "Bearer explicit-token")
       XCTAssertEqual(header["X-Riela-Manager-Session-Id"], "manager-session-1")
+      XCTAssertEqual(header["traceparent"], traceparent)
+      XCTAssertEqual(header["tracestate"], "vendor=state")
+      XCTAssertEqual(header["baggage"], "tenant=blue")
     }
     let executeBody = try XCTUnwrap(bodies.first)
     let executeQuery = try XCTUnwrap(executeBody["query"] as? String)

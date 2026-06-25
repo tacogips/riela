@@ -4,6 +4,7 @@ import FoundationNetworking
 #endif
 import RielaCore
 import RielaEvents
+import RielaObservability
 
 protocol EventLiveServing: Sendable {
   func serve(eventRoot: URL, target: String?, parsed: ParsedParityOptions, output: WorkflowOutputFormat) async throws -> ScopedParityCommandResult
@@ -38,20 +39,34 @@ struct DefaultEventLiveServer: EventLiveServing {
   var telegramAPI: any TelegramGatewayAPI
   var discordAPI: any DiscordGatewayAPI
   var workflowRunner: any EventWorkflowRunning
+  var telemetry: any RielaTelemetry
 
   init(
     telegramAPI: any TelegramGatewayAPI = URLSessionTelegramGatewayAPI(),
     discordAPI: any DiscordGatewayAPI = URLSessionDiscordGatewayAPI(),
-    workflowRunner: any EventWorkflowRunning = CLIEventWorkflowRunner()
+    workflowRunner: any EventWorkflowRunning = CLIEventWorkflowRunner(),
+    telemetry: (any RielaTelemetry)? = nil
   ) {
     self.telegramAPI = telegramAPI
     self.discordAPI = discordAPI
     self.workflowRunner = workflowRunner
+    self.telemetry = telemetry ?? RielaTelemetryFactory.make(configuration: .fromEnvironment(
+      CLIRuntimeEnvironment.mergedProcessEnvironment(),
+      surface: .eventsServe
+    ))
   }
 
   func serve(eventRoot: URL, target: String?, parsed: ParsedParityOptions, output: WorkflowOutputFormat) async throws -> ScopedParityCommandResult {
+    let startedAt = Date()
     let config = try EventLiveConfig.load(eventRoot: eventRoot)
     let enabledSources = config.enabledSources(target: target)
+    await telemetry.recordLog(RielaTelemetryLog(
+      name: "riela.events.serve.start",
+      attributes: [
+        "runtime.surface": "events-serve",
+        "event.source.count": String(enabledSources.count)
+      ]
+    ))
     let unsupported = enabledSources
       .filter { ![.telegramGateway, .discordGateway].contains($0.kind) }
       .map { "\($0.id):\($0.kind.rawValue)" }
@@ -86,12 +101,14 @@ struct DefaultEventLiveServer: EventLiveServing {
       for source in telegramSources {
         processedEvents += try await pollTelegramSource(source, config: liveConfig, eventRoot: eventRoot, parsed: parsed)
         if let maximumEvents, processedEvents >= maximumEvents {
+          await recordEventsServeCompletion(startedAt: startedAt, processedEvents: processedEvents)
           return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
         }
       }
       for source in discordSources {
         processedEvents += try await pollDiscordSource(source, config: liveConfig, eventRoot: eventRoot, parsed: parsed)
         if let maximumEvents, processedEvents >= maximumEvents {
+          await recordEventsServeCompletion(startedAt: startedAt, processedEvents: processedEvents)
           return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
         }
       }
@@ -100,7 +117,28 @@ struct DefaultEventLiveServer: EventLiveServing {
       }
     } while maximumEvents == nil || processedEvents < (maximumEvents ?? 0)
 
+    await recordEventsServeCompletion(startedAt: startedAt, processedEvents: processedEvents)
     return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
+  }
+
+  private func recordEventsServeCompletion(startedAt: Date, processedEvents: Int) async {
+    let attributes = [
+      "runtime.surface": "events-serve",
+      "event.count": String(processedEvents),
+      "status": "completed"
+    ]
+    await telemetry.recordSpan(RielaTelemetrySpan(
+      name: "riela.events.serve",
+      status: .ok,
+      startedAt: startedAt,
+      attributes: attributes
+    ))
+    await telemetry.recordMetric(RielaTelemetryMetric(
+      name: "riela.events.processed.count",
+      value: Double(processedEvents),
+      attributes: attributes
+    ))
+    await telemetry.flush(timeout: .seconds(2))
   }
 
   private func pollTelegramSource(

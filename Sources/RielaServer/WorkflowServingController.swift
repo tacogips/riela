@@ -1,5 +1,6 @@
 import Foundation
 import RielaCore
+import RielaObservability
 
 public protocol WorkflowServeResolving: Sendable {
   func resolve(_ request: WorkflowServeStartRequest) async throws -> WorkflowServeResolvedWorkflow
@@ -40,17 +41,20 @@ public struct WorkflowServingDependencies: Sendable {
   public var listenerFactory: any WorkflowServeListenerFactory
   public var eventSourceFactory: any WorkflowServeEventSourceFactory
   public var generationIDGenerator: any WorkflowServeGenerationIDGenerating
+  public var telemetry: any RielaTelemetry
 
   public init(
     resolver: any WorkflowServeResolving = DefaultWorkflowServeResolver(),
     listenerFactory: any WorkflowServeListenerFactory = InProcessWorkflowServeListenerFactory(),
     eventSourceFactory: any WorkflowServeEventSourceFactory = InProcessWorkflowServeEventSourceFactory(),
-    generationIDGenerator: any WorkflowServeGenerationIDGenerating = ServeGenerationIDGenerator()
+    generationIDGenerator: any WorkflowServeGenerationIDGenerating = ServeGenerationIDGenerator(),
+    telemetry: any RielaTelemetry = NoOpRielaTelemetry()
   ) {
     self.resolver = resolver
     self.listenerFactory = listenerFactory
     self.eventSourceFactory = eventSourceFactory
     self.generationIDGenerator = generationIDGenerator
+    self.telemetry = telemetry
   }
 }
 
@@ -86,15 +90,27 @@ public actor WorkflowServingController {
     guard activeGeneration == nil else {
       throw WorkflowServeError.alreadyRunning
     }
+    let startedAt = Date()
+    await dependencies.telemetry.recordLog(RielaTelemetryLog(
+      name: "riela.serve.start",
+      attributes: serveAttributes(selection: request.selection)
+    ))
     state = WorkflowServeState(status: .starting)
     do {
       let generation = try await startGeneration(request)
       activeGeneration = generation
       lastAcceptedStartRequest = request
       state = WorkflowServeState(status: .running, generation: generation.stateGeneration)
+      await recordServeSpan(name: "riela.serve.generation", status: .ok, startedAt: startedAt, generation: generation)
       return state
     } catch {
       state = WorkflowServeState(status: .failed, diagnostics: [diagnostic(from: error, selection: request.selection)])
+      await dependencies.telemetry.recordSpan(RielaTelemetrySpan(
+        name: "riela.serve.generation",
+        status: .error,
+        startedAt: startedAt,
+        attributes: serveAttributes(selection: request.selection)
+      ))
       throw error
     }
   }
@@ -108,6 +124,10 @@ public actor WorkflowServingController {
     try await shutdown(generation)
     activeGeneration = nil
     state = WorkflowServeState(status: .stopped)
+    await dependencies.telemetry.recordLog(RielaTelemetryLog(
+      name: "riela.serve.stop",
+      attributes: serveAttributes(generation: generation)
+    ))
     return state
   }
 
@@ -134,6 +154,10 @@ public actor WorkflowServingController {
       lastAcceptedStartRequest = replacementRequest
       state = WorkflowServeState(status: .running, generation: replacement.stateGeneration)
       try await shutdown(current)
+      await dependencies.telemetry.recordLog(RielaTelemetryLog(
+        name: "riela.serve.reload",
+        attributes: serveAttributes(generation: replacement)
+      ))
       return state
     } catch {
       let diagnostics = [diagnostic(from: error, selection: replacementRequest.selection)]
@@ -184,6 +208,42 @@ public actor WorkflowServingController {
       try? await listener.shutdown()
       throw error
     }
+  }
+
+  private func recordServeSpan(
+    name: String,
+    status: RielaTelemetryStatus,
+    startedAt: Date,
+    generation: ActiveGeneration
+  ) async {
+    await dependencies.telemetry.recordSpan(RielaTelemetrySpan(
+      name: name,
+      status: status,
+      startedAt: startedAt,
+      attributes: serveAttributes(generation: generation)
+    ))
+    await dependencies.telemetry.recordMetric(RielaTelemetryMetric(
+      name: "riela.serve.generation.count",
+      value: 1,
+      attributes: serveAttributes(generation: generation)
+    ))
+  }
+
+  private func serveAttributes(selection: WorkflowServeSelection) -> [String: String] {
+    [
+      "runtime.surface": "serve",
+      "workflow.id": selection.identifier
+    ]
+  }
+
+  private func serveAttributes(generation: ActiveGeneration) -> [String: String] {
+    [
+      "runtime.surface": "serve",
+      "serve.generation.id": generation.stateGeneration.generationId,
+      "workflow.id": generation.stateGeneration.workflowId,
+      "event.source.count": String(generation.eventSources.count),
+      "status": state.status.rawValue
+    ]
   }
 
   private func generationSnapshot(from generation: ActiveGeneration) -> WorkflowServeGeneration {

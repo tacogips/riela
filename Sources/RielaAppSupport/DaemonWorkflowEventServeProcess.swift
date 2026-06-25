@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import RielaObservability
 import RielaServer
 
 public struct RielaAppDaemonEventServeCommand: Equatable, Sendable {
@@ -133,7 +134,10 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
       executablePath: executable,
       arguments: arguments,
       workingDirectory: workflowDefinitionDirectory,
-      environment: mergedEnvironment()
+      environment: eventServeEnvironment(
+        workflowDefinitionDirectory: workflowDefinitionDirectory,
+        eventRoot: eventRoot
+      )
     )
   }
 
@@ -170,6 +174,21 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
       return "riela events serve exited before becoming ready with status \(status)"
     }
     return "riela events serve exited before becoming ready with status \(status): \(output)"
+  }
+
+  private func eventServeEnvironment(
+    workflowDefinitionDirectory: String,
+    eventRoot: String
+  ) -> [String: String] {
+    telemetryChildProcessEnvironment(
+      from: mergedEnvironment(),
+      additionalResourceAttributes: [
+        "runtime.surface": "events-serve",
+        "riela.parent.surface": "riela-app",
+        "workflow.id": URL(fileURLWithPath: workflowDefinitionDirectory).lastPathComponent,
+        "event.source.id": URL(fileURLWithPath: eventRoot).lastPathComponent
+      ]
+    )
   }
 
   private func mergedEnvironment() -> [String: String] {

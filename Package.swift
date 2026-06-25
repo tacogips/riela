@@ -13,6 +13,7 @@ let package = Package(
     .library(name: "RielaAddons", targets: ["RielaAddons"]),
     .library(name: "RielaAdapters", targets: ["RielaAdapters"]),
     .library(name: "RielaEvents", targets: ["RielaEvents"]),
+    .library(name: "RielaObservability", targets: ["RielaObservability"]),
     .library(name: "RielaGraphQL", targets: ["RielaGraphQL"]),
     .library(name: "RielaServer", targets: ["RielaServer"]),
     .library(name: "RielaViewer", targets: ["RielaViewer"]),
@@ -41,11 +42,13 @@ let package = Package(
     .target(
       name: "RielaCore",
       dependencies: [
+        "RielaObservability",
         "RielaJavaScript",
         .product(name: "Crypto", package: "swift-crypto"),
         .product(name: "RielaMemory", package: "RielaMemory")
       ]
     ),
+    .target(name: "RielaObservability"),
     .target(
       name: "RielaAddons",
       dependencies: [
@@ -55,7 +58,7 @@ let package = Package(
     ),
     .target(name: "RielaEvents", dependencies: ["RielaCore"]),
     .target(name: "RielaGraphQL", dependencies: ["RielaCore"]),
-    .target(name: "RielaServer", dependencies: ["RielaCore", "RielaGraphQL"]),
+    .target(name: "RielaServer", dependencies: ["RielaCore", "RielaGraphQL", "RielaObservability"]),
     .target(name: "RielaViewer", dependencies: ["RielaCore"]),
     .target(
       name: "RielaHook",
@@ -64,7 +67,7 @@ let package = Package(
         .product(name: "Crypto", package: "swift-crypto")
       ]
     ),
-    .target(name: "RielaAppSupport", dependencies: ["RielaEvents", "RielaServer"]),
+    .target(name: "RielaAppSupport", dependencies: ["RielaEvents", "RielaServer", "RielaObservability"]),
     .target(
       name: "CodexAgent",
       dependencies: [
@@ -104,6 +107,7 @@ let package = Package(
         "RielaAdapters",
         "RielaAddons",
         "RielaEvents",
+        "RielaObservability",
         "RielaGraphQL",
         "RielaServer",
         "RielaHook",
@@ -117,13 +121,15 @@ let package = Package(
       dependencies: [
         "RielaAppSupport",
         "RielaServer",
-        "RielaViewer"
+        "RielaViewer",
+        "RielaObservability"
       ]
     ),
     .testTarget(
       name: "RielaCoreTests",
       dependencies: [
         "RielaCore",
+        "RielaObservability",
         .product(name: "RielaMemory", package: "RielaMemory")
       ]
     ),
@@ -133,7 +139,7 @@ let package = Package(
     .testTarget(name: "RielaEventsTests", dependencies: ["RielaCore", "RielaEvents"]),
     .testTarget(name: "RielaHookTests", dependencies: ["RielaCore", "RielaHook"]),
     .testTarget(name: "RielaGraphQLTests", dependencies: ["RielaCore", "RielaGraphQL"]),
-    .testTarget(name: "RielaServerTests", dependencies: ["RielaCore", "RielaGraphQL", "RielaServer"]),
+    .testTarget(name: "RielaServerTests", dependencies: ["RielaCore", "RielaGraphQL", "RielaServer", "RielaObservability"]),
     .testTarget(name: "RielaViewerTests", dependencies: ["RielaCore", "RielaViewer"]),
     .testTarget(name: "RielaAppSupportTests", dependencies: ["RielaAppSupport", "RielaServer"]),
     .testTarget(name: "RielaCLITests", dependencies: ["RielaCore", "RielaAdapters", "RielaCLI"]),

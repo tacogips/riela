@@ -9,6 +9,7 @@ import RielaAdapters
 import RielaAddons
 import RielaCore
 import RielaGraphQL
+import RielaObservability
 
 public struct CLICommandResult: Equatable, Sendable {
   public var exitCode: CLIExitCode
@@ -351,6 +352,10 @@ public struct URLSessionWorkflowGraphQLRunTransport: WorkflowGraphQLRunTransport
     }
     if let managerSessionId = nonEmptyString(request.managerSessionId) {
       urlRequest.setValue(managerSessionId, forHTTPHeaderField: "X-Riela-Manager-Session-Id")
+    }
+    let traceContext = RielaTraceContext.fromEnvironment(CLIRuntimeEnvironment.mergedProcessEnvironment()) ?? .generated()
+    for (header, value) in traceContext.environmentValues() {
+      urlRequest.setValue(value, forHTTPHeaderField: header)
     }
     let input = remoteRunInputObject(request)
     let graphQLRequest = GraphQLRequest(
@@ -1541,11 +1546,16 @@ public struct WorkflowRunCommand: Sendable {
       )
       let runtimeStore = InMemoryWorkflowRuntimeStore()
       try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: storeRoot)
+      let telemetry = RielaTelemetryFactory.make(configuration: .fromEnvironment(
+        CLIRuntimeEnvironment.mergedProcessEnvironment(),
+        surface: .cli
+      ))
       let runner = DeterministicWorkflowRunner(
         store: runtimeStore,
         adapter: adapter,
         addonResolver: addonResolver,
-        stdioNodeExecutor: stdioNodeExecutor
+        stdioNodeExecutor: stdioNodeExecutor,
+        telemetry: telemetry
       )
       let persistedIdentity = persistenceIdentity(
         requestedResolution: resolution,
@@ -1632,6 +1642,7 @@ public struct WorkflowRunCommand: Sendable {
         options: options,
         loopEvidence: loopEvidence
       )
+      await telemetry.flush(timeout: .seconds(2))
       return CLICommandResult(
         exitCode: CLIExitCode(rawValue: finalResult.exitCode) ?? .failure,
         stdout: try await renderRunResult(finalResult, output: options.output, jsonlRecorder: jsonlRecorder)

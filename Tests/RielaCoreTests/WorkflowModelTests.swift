@@ -361,6 +361,107 @@ final class WorkflowModelTests: XCTestCase {
     XCTAssertEqual(container.workingDirectory, "/workspace")
   }
 
+  func testAgentNodePayloadDecodesAndEncodesAgentEnvironmentBindings() throws {
+    let data = Data("""
+      {
+        "id": "planner",
+        "executionBackend": "codex-agent",
+        "model": "gpt-5",
+        "agentEnvironment": {
+          "OPENAI_BASE_URL": { "value": "https://{{router.host}}/v1" },
+          "OPENAI_API_KEY": { "fromEnv": "RIELA_OPENAI_API_KEY", "required": true }
+        }
+      }
+      """.utf8)
+
+    let payload = try JSONDecoder().decode(AgentNodePayload.self, from: data)
+
+    XCTAssertEqual(payload.agentEnvironment["OPENAI_BASE_URL"]?.value, "https://{{router.host}}/v1")
+    XCTAssertEqual(payload.agentEnvironment["OPENAI_API_KEY"]?.fromEnv, "RIELA_OPENAI_API_KEY")
+    XCTAssertEqual(payload.agentEnvironment["OPENAI_API_KEY"]?.required, true)
+
+    let encoded = try JSONEncoder().encode(payload)
+    let roundTrip = try JSONDecoder().decode(AgentNodePayload.self, from: encoded)
+    XCTAssertEqual(roundTrip.agentEnvironment, payload.agentEnvironment)
+  }
+
+  func testAgentEnvironmentRejectsInvalidBindingShapes() {
+    let data = Data("""
+      {
+        "id": "planner",
+        "model": "gpt-5",
+        "agentEnvironment": {
+          "OPENAI_API_KEY": { "value": "literal", "fromEnv": "SOURCE_ENV" }
+        }
+      }
+      """.utf8)
+
+    XCTAssertThrowsError(try JSONDecoder().decode(AgentNodePayload.self, from: data))
+  }
+
+  func testAgentEnvironmentRejectsInvalidAndReservedTargetNames() {
+    let invalidName = Data("""
+      {
+        "id": "planner",
+        "model": "gpt-5",
+        "agentEnvironment": {
+          "INVALID-NAME": { "value": "literal" }
+        }
+      }
+      """.utf8)
+    XCTAssertThrowsError(try JSONDecoder().decode(AgentNodePayload.self, from: invalidName))
+
+    let reservedName = Data("""
+      {
+        "id": "planner",
+        "model": "gpt-5",
+        "agentEnvironment": {
+          "RIELA_AGENT_BACKEND": { "value": "spoof" }
+        }
+      }
+      """.utf8)
+    XCTAssertThrowsError(try JSONDecoder().decode(AgentNodePayload.self, from: reservedName))
+  }
+
+  func testAgentEnvironmentResolutionTemplatesValuesAndRequiresSources() throws {
+    let bindings: [String: AgentEnvironmentBinding] = [
+      "OPENAI_BASE_URL": AgentEnvironmentBinding(value: "https://{{routerHost}}/v1"),
+      "OPENAI_API_KEY": AgentEnvironmentBinding(fromEnv: "RIELA_OPENAI_API_KEY", required: true),
+      "OPTIONAL_TOKEN": AgentEnvironmentBinding(fromEnv: "MISSING_OPTIONAL")
+    ]
+
+    let resolved = try resolveAgentEnvironment(
+      bindings,
+      variables: ["routerHost": .string("router.example.test")],
+      runtimeEnvironment: ["RIELA_OPENAI_API_KEY": "secret-value"]
+    )
+
+    XCTAssertEqual(resolved["OPENAI_BASE_URL"], "https://router.example.test/v1")
+    XCTAssertEqual(resolved["OPENAI_API_KEY"], "secret-value")
+    XCTAssertNil(resolved["OPTIONAL_TOKEN"])
+
+    XCTAssertThrowsError(try resolveAgentEnvironment(
+      ["OPENAI_API_KEY": AgentEnvironmentBinding(fromEnv: "MISSING", required: true)],
+      variables: [:],
+      runtimeEnvironment: [:]
+    )) { error in
+      XCTAssertEqual(
+        error as? AgentEnvironmentResolutionError,
+        .missingRequiredSource(targetName: "OPENAI_API_KEY", sourceName: "MISSING")
+      )
+    }
+  }
+
+  func testAgentEnvironmentResolutionRejectsReservedTargets() {
+    XCTAssertThrowsError(try resolveAgentEnvironment(
+      ["RIELA_AGENT_BACKEND": AgentEnvironmentBinding(value: "spoof")],
+      variables: [:],
+      runtimeEnvironment: [:]
+    )) { error in
+      XCTAssertEqual(error as? AgentEnvironmentResolutionError, .reservedTargetName("RIELA_AGENT_BACKEND"))
+    }
+  }
+
   func testWorkflowValidationRejectsRemovedTopLevelEdgesAndBrokenStepReference() throws {
     let data = Data("""
       {

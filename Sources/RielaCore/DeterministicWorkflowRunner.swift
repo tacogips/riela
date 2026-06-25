@@ -110,6 +110,8 @@ public struct WorkflowRunResult: Codable, Equatable, Sendable {
   public var nodeExecutions: Int
   public var transitions: Int
   public var supervision: JSONObject?
+  public var loopEvidence: LoopEvidenceSummary?
+  public var recovery: LoopRecoveryLineage?
 
   public init(
     workflowId: String,
@@ -117,7 +119,9 @@ public struct WorkflowRunResult: Codable, Equatable, Sendable {
     rootOutput: JSONObject?,
     exitCode: Int32,
     transitions: Int,
-    supervision: JSONObject? = nil
+    supervision: JSONObject? = nil,
+    loopEvidence: LoopEvidenceSummary? = nil,
+    recovery: LoopRecoveryLineage? = nil
   ) {
     self.workflowId = workflowId
     self.session = session
@@ -127,6 +131,8 @@ public struct WorkflowRunResult: Codable, Equatable, Sendable {
     self.nodeExecutions = session.executions.count
     self.transitions = transitions
     self.supervision = supervision
+    self.loopEvidence = loopEvidence
+    self.recovery = recovery
   }
 }
 
@@ -144,6 +150,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
   public var inputResolver: any WorkflowMessageInputResolving
   public var inputFilterEvaluator: WorkflowInputFilterEvaluator
   public var inputFilterLogger: any WorkflowInputFilterLogging
+  public var loopPolicyEvaluator: any LoopPolicyEvaluating
 
   public init(
     store: (any WorkflowRuntimeStore)? = nil,
@@ -154,7 +161,8 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     publisher: (any WorkflowOutputPublishing)? = nil,
     inputResolver: any WorkflowMessageInputResolving = DefaultWorkflowMessageInputResolver(),
     inputFilterEvaluator: WorkflowInputFilterEvaluator = WorkflowInputFilterEvaluator(),
-    inputFilterLogger: any WorkflowInputFilterLogging = StandardErrorWorkflowInputFilterLogger()
+    inputFilterLogger: any WorkflowInputFilterLogging = StandardErrorWorkflowInputFilterLogger(),
+    loopPolicyEvaluator: any LoopPolicyEvaluating = DefaultLoopPolicyEvaluator()
   ) {
     let resolvedStore = store ?? InMemoryWorkflowRuntimeStore()
     self.store = resolvedStore
@@ -166,6 +174,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     self.inputResolver = inputResolver
     self.inputFilterEvaluator = inputFilterEvaluator
     self.inputFilterLogger = inputFilterLogger
+    self.loopPolicyEvaluator = loopPolicyEvaluator
   }
 
   public func run(_ request: DeterministicWorkflowRunRequest) async throws -> WorkflowRunResult {
@@ -173,6 +182,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     if let diagnostic = diagnostics.first(where: { $0.severity == .error }) {
       throw DeterministicWorkflowRunnerError.invalidWorkflow("\(diagnostic.path): \(diagnostic.message)")
     }
+    try enforceRequiredLoopPolicyPreflight(request)
 
     do {
       try WorkflowSessionEntryValidation.validateMutuallyExclusiveSessionEntryModes(
@@ -187,6 +197,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     let entryStepId: String
     var session: WorkflowSession
     var currentStepId: String?
+    let recoveryLineage: LoopRecoveryLineage
     if let resumeSessionId = request.resumeSessionId {
       guard let existing = try await store.loadSession(id: resumeSessionId) else {
         throw DeterministicWorkflowRunnerError.resumeValidation("resume session not found: \(resumeSessionId)")
@@ -194,13 +205,15 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       guard existing.workflowId == request.workflow.workflowId else {
         throw DeterministicWorkflowRunnerError.resumeValidation("session workflow does not match command workflow")
       }
+      let resumeLineage = resumeRecoveryLineage(sourceSessionId: resumeSessionId)
       if existing.status == .completed || existing.status == .failed {
         let terminalResult = WorkflowRunResult(
           workflowId: request.workflow.workflowId,
           session: existing,
-          rootOutput: existing.executions.last(where: { $0.acceptedOutput?.isRootOutput == true })?.acceptedOutput?.payload,
+          rootOutput: terminalRootOutput(from: existing),
           exitCode: existing.status == .completed ? 0 : 1,
-          transitions: 0
+          transitions: 0,
+          recovery: resumeLineage
         )
         await emitSessionCompletedEvent(result: terminalResult, handler: request.eventHandler)
         return terminalResult
@@ -208,6 +221,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       session = existing
       currentStepId = existing.currentStepId ?? existing.entryStepId
       entryStepId = existing.entryStepId
+      recoveryLineage = resumeLineage
     } else if let rerunFromSessionId = request.rerunFromSessionId {
       guard let sourceSession = try await store.loadSession(id: rerunFromSessionId) else {
         throw DeterministicWorkflowRunnerError.rerunValidation("source session not found: \(rerunFromSessionId)")
@@ -228,12 +242,18 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         WorkflowSessionCreateInput(workflowId: request.workflow.workflowId, entryStepId: entryStepId)
       )
       currentStepId = entryStepId
+      recoveryLineage = rerunRecoveryLineage(
+        sourceSession: sourceSession,
+        sourceStepId: entryStepId,
+        childSessionId: session.sessionId
+      )
     } else {
       entryStepId = request.workflow.entryStepId
       session = try await store.createSession(
         WorkflowSessionCreateInput(workflowId: request.workflow.workflowId, entryStepId: entryStepId)
       )
       currentStepId = entryStepId
+      recoveryLineage = runRecoveryLineage()
     }
 
     await emitSessionStartedEvent(workflowId: request.workflow.workflowId, session: session, handler: request.eventHandler)
@@ -277,12 +297,6 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         currentStepId = publishResult.publishedMessages.first?.toStepId
         continue
       }
-      await emitStepStartedEvent(
-        workflowId: request.workflow.workflowId,
-        session: session,
-        step: step,
-        handler: request.eventHandler
-      )
       let publishResult = try await executeNodeAndRecordMemory(
         registryNode: registryNode,
         request: request,
@@ -314,7 +328,8 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       session: loadedSession,
       rootOutput: rootOutput,
       exitCode: loadedSession.status == .completed ? 0 : 1,
-      transitions: publishedTransitions
+      transitions: publishedTransitions,
+      recovery: recoveryLineage
     )
     await emitSessionCompletedEvent(result: completedResult, handler: request.eventHandler)
     return completedResult
@@ -400,6 +415,36 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       )
     }
     return publishResult
+  }
+
+  private func recordStepStartedExecution(
+    workflowId: String,
+    sessionId: String,
+    step: WorkflowStepRef,
+    attempt: Int,
+    backend: NodeExecutionBackend?,
+    handler: WorkflowRunEventHandler?
+  ) async throws -> WorkflowStepExecution {
+    let execution = try await store.recordStepExecution(
+      WorkflowStepExecutionRecordInput(
+        sessionId: sessionId,
+        stepId: step.id,
+        nodeId: step.nodeId,
+        attempt: attempt,
+        backend: backend
+      )
+    )
+    guard let updatedSession = try await store.loadSession(id: sessionId) else {
+      throw WorkflowRuntimeStoreError.sessionNotFound(sessionId)
+    }
+    await emitStepStartedEvent(
+      workflowId: workflowId,
+      session: updatedSession,
+      step: step,
+      execution: execution,
+      handler: handler
+    )
+    return execution
   }
 
   private func executePayloadNodeAndRecordMemory(
@@ -497,6 +542,14 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     }
 
     do {
+      _ = try await recordStepStartedExecution(
+        workflowId: workflow.workflowId,
+        sessionId: sessionId,
+        step: step,
+        attempt: executionIndex,
+        backend: payload.executionBackend,
+        handler: request.eventHandler
+      )
       let availableMemories = effectiveNodeMemories(workflow: workflow, step: step, payload: payload)
       let result = try await stdioNodeExecutor.execute(
         WorkflowStdioNodeExecutionInput(
@@ -510,7 +563,8 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           variables: request.variables,
           resolvedInputPayload: resolvedInputPayload,
           memoryRootDirectory: availableMemories.isEmpty ? nil : resolvedMemoryRootDirectory(request: request),
-          availableMemories: availableMemories
+          availableMemories: availableMemories,
+          policy: stdioPolicyContext(workflow: workflow, step: step, payload: payload, request: request)
         ),
         context: AdapterExecutionContext(deadline: deadline(for: step, request: request))
       )
@@ -574,13 +628,6 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     }
   }
 
-  private func workflowOutputContract(from output: NodeOutputContract?) -> WorkflowOutputContract? {
-    guard let output else {
-      return nil
-    }
-    return WorkflowOutputContract(schema: output.jsonSchema, requiredObject: true)
-  }
-
   private func executeAndPublish(
     adapterInput: AdapterExecutionInput,
     sessionId: String,
@@ -593,6 +640,14 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     let maxAttempts = maxValidationAttempts(from: basePayload.output)
     var lastValidationError: Error?
     for attempt in 1...maxAttempts {
+      _ = try await recordStepStartedExecution(
+        workflowId: request.workflow.workflowId,
+        sessionId: sessionId,
+        step: step,
+        attempt: attempt,
+        backend: basePayload.executionBackend,
+        handler: request.eventHandler
+      )
       var attemptInput = adapterInput
       attemptInput.executionIndex = executionIndex
       attemptInput.output = basePayload.output == nil
@@ -769,6 +824,14 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
 
     let adapterOutput: AdapterExecutionOutput
     do {
+      _ = try await recordStepStartedExecution(
+        workflowId: workflow.workflowId,
+        sessionId: sessionId,
+        step: step,
+        attempt: executionIndex,
+        backend: nil,
+        handler: request.eventHandler
+      )
       adapterOutput = try await addonResolver.execute(
         addonInput,
         context: AdapterExecutionContext(deadline: deadline(for: step, request: request))
@@ -831,128 +894,6 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     )
   }
 
-  private func maxValidationAttempts(from output: NodeOutputContract?) -> Int {
-    max(1, output?.maxValidationAttempts ?? 1)
-  }
-
-  private func payload(_ basePayload: AgentNodePayload, applyingPromptVariantFrom step: WorkflowStepRef) throws -> AgentNodePayload {
-    guard let promptVariantName = step.promptVariant else {
-      return basePayload
-    }
-    guard let promptVariant = basePayload.promptVariants?[promptVariantName] else {
-      throw DeterministicWorkflowRunnerError.missingPromptVariant(step.id, promptVariantName)
-    }
-
-    var payload = basePayload
-    if promptVariant.systemPromptTemplate != nil || promptVariant.systemPromptTemplateFile != nil {
-      payload.systemPromptTemplate = promptVariant.systemPromptTemplate
-      payload.systemPromptTemplateFile = promptVariant.systemPromptTemplateFile
-    }
-    if promptVariant.promptTemplate != nil || promptVariant.promptTemplateFile != nil {
-      payload.promptTemplate = promptVariant.promptTemplate
-      payload.promptTemplateFile = promptVariant.promptTemplateFile
-    }
-    if promptVariant.sessionStartPromptTemplate != nil || promptVariant.sessionStartPromptTemplateFile != nil {
-      payload.sessionStartPromptTemplate = promptVariant.sessionStartPromptTemplate
-      payload.sessionStartPromptTemplateFile = promptVariant.sessionStartPromptTemplateFile
-    }
-    return payload
-  }
-
-  private func promptVariables(
-    workflow: WorkflowDefinition,
-    step: WorkflowStepRef,
-    payload: AgentNodePayload,
-    requestVariables: JSONObject,
-    resolvedInputPayload: JSONObject
-  ) -> JSONObject {
-    var variables = payload.variables
-    for (key, value) in requestVariables {
-      variables[key] = value
-    }
-    for (key, value) in resolvedInputPayload {
-      variables[key] = value
-    }
-    variables["workflowId"] = .string(workflow.workflowId)
-    variables["workflowDescription"] = .string(workflow.description)
-    variables["nodeId"] = .string(step.id)
-    variables["nodeKind"] = .string(step.role?.rawValue ?? "task")
-    let nodeMemories = effectiveNodeMemories(workflow: workflow, step: step, payload: payload)
-    variables["availableMemories"] = .object([
-      "workflow": .array((workflow.memories ?? []).map(memoryJSON)),
-      "node": .array(nodeMemories.map(memoryJSON))
-    ])
-    variables["memoryCommandHelp"] = .string(memoryCommandHelp(
-      workflowId: workflow.workflowId,
-      nodeId: step.nodeId,
-      workflowMemories: workflow.memories ?? [],
-      nodeMemories: nodeMemories
-    ))
-    return variables
-  }
-
-  private func composedPrompts(
-    workflow: WorkflowDefinition,
-    step: WorkflowStepRef,
-    payload: AgentNodePayload,
-    variables: JSONObject
-  ) -> (promptText: String, systemPromptText: String?) {
-    let fallbackPrompt = step.description ?? workflow.description
-    let usesConfiguredPromptTemplate = payload.promptTemplate != nil
-    let promptTemplate = payload.promptTemplate ?? fallbackPrompt
-    let sessionStartPrompt = payload.sessionStartPromptTemplate.map {
-      renderPromptTemplate($0, variables: variables).trimmingCharacters(in: .whitespacesAndNewlines)
-    } ?? ""
-    let promptText = renderPromptTemplate(promptTemplate, variables: variables)
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    let renderedPromptText = [sessionStartPrompt, promptText]
-      .filter { !$0.isEmpty }
-      .joined(separator: "\n\n")
-
-    let systemPromptText = [
-      workflow.prompts?.workerSystemPromptTemplate,
-      payload.systemPromptTemplate,
-      memoryGuidance(variables: variables)
-    ]
-      .compactMap { template in
-        template.map {
-          renderPromptTemplate($0, variables: variables)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-      }
-      .filter { !$0.isEmpty }
-      .joined(separator: "\n\n")
-
-    return (
-      promptText: renderedPromptText.isEmpty && !usesConfiguredPromptTemplate ? fallbackPrompt : renderedPromptText,
-      systemPromptText: systemPromptText.isEmpty ? nil : systemPromptText
-    )
-  }
-
-  private func multiplePublishableTransitionFailure(
-    transitions: [WorkflowStepTransition],
-    candidate: RuntimeOutputCandidate
-  ) -> AdapterExecutionError? {
-    let evaluator = WorkflowBranchEvaluator()
-    let publishableCount = transitions.filter { transition in
-      evaluator.evaluate(label: transition.label, when: candidate.when, payload: candidate.payload)
-    }.count
-    guard publishableCount > 1 else {
-      return nil
-    }
-    return AdapterExecutionError(
-      .invalidOutput,
-      "multiple direct transitions are not supported by the Swift TASK-007 sequential runner"
-    )
-  }
-
-  private func deadline(for step: WorkflowStepRef, request: DeterministicWorkflowRunRequest) -> Date? {
-    let timeoutMs = request.timeoutMs ?? step.timeoutMs ?? request.defaultTimeoutMs ?? request.workflow.defaults.nodeTimeoutMs
-    guard timeoutMs > 0 else {
-      return nil
-    }
-    return Date(timeIntervalSinceNow: Double(timeoutMs) / 1000)
-  }
 }
 
 public enum DeterministicWorkflowRunnerError: Error, Equatable, Sendable {

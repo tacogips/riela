@@ -1,21 +1,21 @@
 {
   "yui-codex-sdk": {
     "provider": "scenario-mock",
-    "model": "gpt-5-nano",
+    "model": "gpt-5.3-codex-spark",
     "payload": {
       "text": "Yuiです。要点を短く整理しますね。"
     }
   },
   "mika-claude-sdk": {
     "provider": "scenario-mock",
-    "model": "gpt-5-nano",
+    "model": "gpt-5.3-codex-spark",
     "payload": {
       "text": "Mikaだよ。まずは軽く整理して、すぐ動ける形にするね。"
     }
   },
   "rina-cursor-sdk": {
     "provider": "scenario-mock",
-    "model": "gpt-5-nano",
+    "model": "gpt-5.3-codex-spark",
     "payload": {
       "text": "問題ない。直前の流れを見る限り、Mikaの答えは文脈に沿っている。"
     }

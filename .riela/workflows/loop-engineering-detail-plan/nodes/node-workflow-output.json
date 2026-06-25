@@ -1,0 +1,12 @@
+{
+  "id": "workflow-output",
+  "description": "Publish the accepted detailed design and implementation-plan handoff.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "effort": "high",
+  "promptTemplateFile": "prompts/workflow-output.md",
+  "variables": {},
+  "output": {
+    "description": "Return final JSON summarizing the detailed design, implementation plan, verification, changed files, and residual risks."
+  }
+}

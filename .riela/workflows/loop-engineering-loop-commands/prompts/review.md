@@ -1,0 +1,1 @@
+Review the read-only `riela loop` command implementation for parser compatibility, session-store resolution, output contracts, tests, and regressions. Return JSON with `accepted`, `needs_revision`, `findings`, and `verification`.

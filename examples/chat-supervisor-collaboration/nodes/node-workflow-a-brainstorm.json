@@ -1,7 +1,7 @@
 {
   "id": "workflow-a-brainstorm",
   "executionBackend": "codex-agent",
-  "model": "gpt-5-nano",
+  "model": "gpt-5.3-codex-spark",
   "promptTemplateFile": "prompts/workflow-a-brainstorm.md",
   "variables": {},
   "output": {

@@ -1,7 +1,7 @@
 {
   "id": "main-worker",
   "executionBackend": "codex-agent",
-  "model": "gpt-5-nano",
+  "model": "gpt-5.3-codex-spark",
   "promptTemplateFile": "prompts/main-worker.md",
   "variables": {},
   "output": {

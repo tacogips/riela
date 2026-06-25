@@ -1,7 +1,7 @@
 {
   "workflow-a-brainstorm": {
     "provider": "scenario-mock",
-    "model": "gpt-5-nano",
+    "model": "gpt-5.3-codex-spark",
     "when": {
       "always": true
     },
@@ -13,7 +13,7 @@
   },
   "workflow-b-brainstorm": {
     "provider": "scenario-mock",
-    "model": "gpt-5-nano",
+    "model": "gpt-5.3-codex-spark",
     "when": {
       "always": true
     },
@@ -25,7 +25,7 @@
   },
   "workflow-c-spec-and-implementation": {
     "provider": "scenario-mock",
-    "model": "gpt-5-nano",
+    "model": "gpt-5.3-codex-spark",
     "when": {
       "always": true
     },
@@ -40,7 +40,7 @@
   },
   "workflow-c-request-review": {
     "provider": "scenario-mock",
-    "model": "gpt-5-nano",
+    "model": "gpt-5.3-codex-spark",
     "when": {
       "always": true
     },
@@ -51,7 +51,7 @@
   },
   "workflow-output": {
     "provider": "scenario-mock",
-    "model": "gpt-5-nano",
+    "model": "gpt-5.3-codex-spark",
     "when": {
       "always": true
     },

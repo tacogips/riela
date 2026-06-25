@@ -21,6 +21,15 @@ final class WorkflowPackageManifestTests: XCTestCase {
       "minimumRielaVersion": "0.1.0",
       "backends": ["codex-agent"],
       "workflowDirectory": "workflows/main",
+      "loop": {
+        "promotionReady": true,
+        "usageContract": true,
+        "requiredMockScenarios": ["mock-scenario.json"],
+        "expectedResults": ["EXPECTED_RESULTS.md"],
+        "requiredGates": ["implementation-review"],
+        "requiredPolicies": ["runtime-owned-evidence"],
+        "minimumEvidenceSchemaVersion": 1
+      },
       "skills": [{"vendor": "codex", "name": "use-package", "sourcePath": "skills/use-package/SKILL.md"}],
       "dependencies": ["string-dependency", {"packageId": "shared-package", "kind": "workflow"}],
       "addons": [{"name": "reply", "version": "1.0.0", "sourcePath": "addons/reply", "execution": {"kind": "declarative"}}]
@@ -35,6 +44,9 @@ final class WorkflowPackageManifestTests: XCTestCase {
     XCTAssertEqual(manifest.dependencies.first?.packageId, "string-dependency")
     XCTAssertEqual(manifest.backends, ["codex-agent"])
     XCTAssertEqual(manifest.nodeAddons.first?.execution?.kind, .declarative)
+    XCTAssertEqual(manifest.loop?.requiredMockScenarios, ["mock-scenario.json"])
+    XCTAssertEqual(manifest.loop?.expectedResults, ["EXPECTED_RESULTS.md"])
+    XCTAssertEqual(manifest.loop?.minimumEvidenceSchemaVersion, 1)
     XCTAssertEqual(WorkflowPackageManifestValidator.validate(manifest), [])
   }
 
@@ -53,6 +65,7 @@ final class WorkflowPackageManifestTests: XCTestCase {
     let skillData = Data(#"{"name":"sample","skills":[{"vendor":"codex","name":"skill","sourcePath":"skills/skill/SKILL.md","unsupported":true}]}"#.utf8)
     let workflowData = Data(#"{"name":"sample","workflow":{"description":"sample","unsupported":true}}"#.utf8)
     let integrityData = Data(#"{"name":"sample","integrity":{"digest":"abc","unsupported":true}}"#.utf8)
+    let loopData = Data(#"{"name":"sample","loop":{"promotionReady":true,"unsupported":true}}"#.utf8)
 
     XCTAssertThrowsError(try JSONDecoder().decode(WorkflowPackageManifest.self, from: dependencyData))
     XCTAssertThrowsError(try JSONDecoder().decode(WorkflowPackageManifest.self, from: addonData))
@@ -60,6 +73,7 @@ final class WorkflowPackageManifestTests: XCTestCase {
     XCTAssertThrowsError(try JSONDecoder().decode(WorkflowPackageManifest.self, from: skillData))
     XCTAssertThrowsError(try JSONDecoder().decode(WorkflowPackageManifest.self, from: workflowData))
     XCTAssertThrowsError(try JSONDecoder().decode(WorkflowPackageManifest.self, from: integrityData))
+    XCTAssertThrowsError(try JSONDecoder().decode(WorkflowPackageManifest.self, from: loopData))
   }
 
   func testManifestValidationRequiresDecodedTagsAndRejectsEmptyTags() throws {
@@ -462,6 +476,96 @@ final class WorkflowPackageManifestTests: XCTestCase {
 
     XCTAssertTrue(issues.contains { $0.path == "workflowDirectory" })
     XCTAssertTrue(issues.contains { $0.path == "skillDirectory" })
+  }
+
+  func testLoopPromotionMetadataValidatesRequiredFieldsAndPaths() {
+    let missingRequired = WorkflowPackageManifest(
+      name: "workflow-package",
+      version: "1.0.0",
+      description: "Workflow package",
+      tags: [],
+      registry: "default",
+      checksum: "abc123",
+      checksumAlgorithm: "md5",
+      loop: WorkflowPackageLoopMetadata(promotionReady: true)
+    )
+    let unsafePaths = WorkflowPackageManifest(
+      name: "workflow-package",
+      version: "1.0.0",
+      description: "Workflow package",
+      tags: [],
+      registry: "default",
+      checksum: "abc123",
+      checksumAlgorithm: "md5",
+      loop: WorkflowPackageLoopMetadata(
+        promotionReady: false,
+        requiredMockScenarios: ["../mock.json", "."],
+        expectedResults: ["/tmp/EXPECTED_RESULTS.md"],
+        requiredGates: [""],
+        requiredPolicies: [" "],
+        minimumEvidenceSchemaVersion: 0
+      )
+    )
+
+    let missingIssues = WorkflowPackageManifestValidator.validate(missingRequired)
+    XCTAssertTrue(missingIssues.contains { $0.path == "loop.usageContract" })
+    XCTAssertTrue(missingIssues.contains { $0.path == "loop.requiredMockScenarios" })
+    XCTAssertTrue(missingIssues.contains { $0.path == "loop.expectedResults" })
+    XCTAssertTrue(missingIssues.contains { $0.path == "loop.requiredGates" })
+    XCTAssertTrue(missingIssues.contains { $0.path == "loop.requiredPolicies" })
+    XCTAssertTrue(missingIssues.contains { $0.path == "loop.minimumEvidenceSchemaVersion" })
+
+    let unsafeIssues = WorkflowPackageManifestValidator.validate(unsafePaths)
+    XCTAssertTrue(unsafeIssues.contains { $0.path == "loop.requiredMockScenarios[0]" })
+    XCTAssertTrue(unsafeIssues.contains { $0.path == "loop.requiredMockScenarios[1]" })
+    XCTAssertTrue(unsafeIssues.contains { $0.path == "loop.expectedResults[0]" })
+    XCTAssertTrue(unsafeIssues.contains { $0.path == "loop.requiredGates[0]" })
+    XCTAssertTrue(unsafeIssues.contains { $0.path == "loop.requiredPolicies[0]" })
+    XCTAssertTrue(unsafeIssues.contains { $0.path == "loop.minimumEvidenceSchemaVersion" })
+  }
+
+  func testLoaderValidationRequiresPromotionArtifactsWhenPromotionReady() async throws {
+    let packageRoot = temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: packageRoot) }
+    try FileManager.default.createDirectory(at: packageRoot, withIntermediateDirectories: true)
+    try Data(#"{"nodes":[]}"#.utf8).write(to: packageRoot.appendingPathComponent("workflow.json"))
+    let manifest = WorkflowPackageManifest(
+      name: "workflow-package",
+      version: "1.0.0",
+      description: "Workflow package",
+      tags: [],
+      registry: "default",
+      checksum: "abc123",
+      checksumAlgorithm: "md5",
+      loop: WorkflowPackageLoopMetadata(
+        promotionReady: true,
+        usageContract: true,
+        requiredMockScenarios: ["mock-scenarios/review.json"],
+        expectedResults: ["EXPECTED_RESULTS.md"],
+        requiredGates: ["implementation-review"],
+        requiredPolicies: ["runtime-owned-evidence"],
+        minimumEvidenceSchemaVersion: 1
+      )
+    )
+    let loader = FileWorkflowPackageManifestLoader()
+
+    let missingIssues = await loader.validate(manifest, packageRoot: packageRoot)
+
+    XCTAssertTrue(missingIssues.contains {
+      $0.code == "MISSING_PROMOTION_ARTIFACT" && $0.path == "loop.requiredMockScenarios[0]"
+    })
+    XCTAssertTrue(missingIssues.contains {
+      $0.code == "MISSING_PROMOTION_ARTIFACT" && $0.path == "loop.expectedResults[0]"
+    })
+
+    let mockRoot = packageRoot.appendingPathComponent("mock-scenarios", isDirectory: true)
+    try FileManager.default.createDirectory(at: mockRoot, withIntermediateDirectories: true)
+    try Data(#"{"messages":[]}"#.utf8).write(to: mockRoot.appendingPathComponent("review.json"))
+    try Data("expected results\n".utf8).write(to: packageRoot.appendingPathComponent("EXPECTED_RESULTS.md"))
+
+    let presentIssues = await loader.validate(manifest, packageRoot: packageRoot)
+
+    XCTAssertFalse(presentIssues.contains { $0.code == "MISSING_PROMOTION_ARTIFACT" })
   }
 
   private func validManifest(nodeAddons: [WorkflowPackageNodeAddon]) -> WorkflowPackageManifest {

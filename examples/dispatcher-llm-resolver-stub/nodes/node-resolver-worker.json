@@ -1,7 +1,7 @@
 {
   "id": "resolver-worker",
   "executionBackend": "codex-agent",
-  "model": "gpt-5-nano",
+  "model": "gpt-5.3-codex-spark",
   "promptTemplateFile": "prompts/resolver-worker.md",
   "variables": {}
 }

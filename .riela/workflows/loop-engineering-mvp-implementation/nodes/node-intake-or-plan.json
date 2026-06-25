@@ -1,0 +1,12 @@
+{
+  "id": "intake-or-plan",
+  "description": "Select the first implementation slice from the loop engineering plan.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "effort": "high",
+  "promptTemplateFile": "prompts/intake-or-plan.md",
+  "variables": {},
+  "output": {
+    "description": "Return JSON with selected slice, target files, tests, and boundaries."
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "id": "workflow-output",
+  "description": "Publish accepted loop validation handoff.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "effort": "low",
+  "promptTemplateFile": "prompts/workflow-output.md",
+  "variables": {}
+}

@@ -46,8 +46,10 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
     if let managerStepId = workflow.managerStepId, !stepIds.contains(managerStepId) {
       diagnostics.append(error("workflow.managerStepId", "must reference workflow.steps[] entry '\(managerStepId)'"))
     }
+    validateTypedLoopMetadata(workflow.loop, stepIds: stepIds, diagnostics: &diagnostics)
 
     let workflowMemoryIds = Set((workflow.memories ?? []).map(\.id))
+    let gateIds = Set(workflow.loop?.gates.map(\.id) ?? [])
     for (index, node) in workflow.nodeRegistry.enumerated() {
       validateMemoryAddonDeclarations(
         node,
@@ -61,6 +63,12 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
       if !registryIds.contains(step.nodeId) {
         diagnostics.append(error("workflow.steps.\(step.id).nodeId", "must reference workflow.nodes[] entry '\(step.nodeId)'"))
       }
+      validateTypedStepLoop(
+        step.loop,
+        path: "workflow.steps.\(step.id).loop",
+        gateIds: gateIds,
+        diagnostics: &diagnostics
+      )
       for transition in step.transitions ?? [] {
         if transition.toWorkflowId == nil && !stepIds.contains(transition.toStepId) {
           diagnostics.append(
@@ -203,6 +211,7 @@ private func validateTypedAuthoredWorkflow(_ workflow: AuthoredWorkflowJSON) -> 
   let effectiveSteps = workflow.steps ?? workflow.nodes.map { WorkflowStepRef(id: $0.id, nodeId: $0.id) }
   var stepIds: Set<String> = []
   var duplicateStepIds: Set<String> = []
+  let gateIds = Set(workflow.loop?.gates.map(\.id) ?? [])
   for step in effectiveSteps where !step.id.isEmpty {
     if stepIds.contains(step.id) {
       duplicateStepIds.insert(step.id)
@@ -230,6 +239,7 @@ private func validateTypedAuthoredWorkflow(_ workflow: AuthoredWorkflowJSON) -> 
     if let transitions = step.transitions {
       validateTypedTransitions(transitions, path: "\(path).transitions", stepIds: stepIds, diagnostics: &diagnostics)
     }
+    validateTypedStepLoop(step.loop, path: "\(path).loop", gateIds: gateIds, diagnostics: &diagnostics)
   }
 
   let effectiveEntryStepId = workflow.entryStepId ?? effectiveSteps.first?.id
@@ -246,6 +256,8 @@ private func validateTypedAuthoredWorkflow(_ workflow: AuthoredWorkflowJSON) -> 
       diagnostics.append(error("workflow.managerStepId", "must reference workflow.steps[] entry '\(managerStepId)'"))
     }
   }
+
+  validateTypedLoopMetadata(workflow.loop, stepIds: stepIds, diagnostics: &diagnostics)
 
   return diagnostics
 }
@@ -359,6 +371,13 @@ private func validateRawAuthoredWorkflow(_ raw: [String: Any]) -> [WorkflowValid
     return ["id": id, "nodeId": id]
   }
   validateSteps(stepEntries, nodeEntries: nodeEntries, raw: raw, diagnostics: &diagnostics)
+  let stepIds = Set(stepEntries.compactMap { entry -> String? in
+    guard let entry = entry as? [String: Any], let id = entry["id"] as? String, !id.isEmpty else {
+      return nil
+    }
+    return id
+  })
+  validateRawLoopMetadata(raw["loop"], stepIds: stepIds, diagnostics: &diagnostics)
 
   return diagnostics
 }
@@ -425,7 +444,8 @@ private func validateSteps(
     "timeoutMs",
     "stallTimeoutMs",
     "sessionPolicy",
-    "transitions"
+    "transitions",
+    "loop"
   ]
 
   for rawEntry in entries {
@@ -437,6 +457,7 @@ private func validateSteps(
     }
     stepIds.insert(id)
   }
+  let gateIds = rawLoopGateIds(raw["loop"])
 
   for (index, rawEntry) in entries.enumerated() {
     let path = "workflow.steps[\(index)]"
@@ -480,6 +501,7 @@ private func validateSteps(
     if let transitions = entry["transitions"] {
       validateTransitions(transitions, path: "\(path).transitions", stepIds: stepIds, diagnostics: &diagnostics)
     }
+    validateRawStepLoop(entry["loop"], path: "\(path).loop", gateIds: gateIds, diagnostics: &diagnostics)
   }
 
   let effectiveEntryStepId = raw["entryStepId"] as? String ?? entries.compactMap { entry -> String? in
@@ -597,7 +619,8 @@ private func materializeWorkflowDefinition(from workflow: AuthoredWorkflowJSON) 
     entryStepId: entryStepId,
     nodeRegistry: workflow.nodes,
     steps: steps,
-    nodes: runtimeNodes
+    nodes: runtimeNodes,
+    loop: workflow.loop
   )
 }
 

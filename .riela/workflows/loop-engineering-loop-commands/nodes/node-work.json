@@ -1,0 +1,8 @@
+{
+  "id": "work",
+  "description": "Implement read-only riela loop commands.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "promptTemplateFile": "prompts/work.md",
+  "variables": {}
+}

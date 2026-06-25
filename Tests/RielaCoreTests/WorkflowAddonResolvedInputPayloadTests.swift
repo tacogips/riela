@@ -13,7 +13,7 @@ final class WorkflowAddonResolvedInputPayloadTests: XCTestCase {
     _ = try await runner.run(DeterministicWorkflowRunRequest(
       workflow: addonAfterWorkerWorkflow(),
       nodePayloads: [
-        "worker-node": AgentNodePayload(id: "worker-node", executionBackend: .codexAgent, model: "gpt-5-nano")
+        "worker-node": AgentNodePayload(id: "worker-node", executionBackend: .codexAgent, model: "gpt-5.5")
       ]
     ))
 

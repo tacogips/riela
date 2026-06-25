@@ -1053,6 +1053,54 @@ public struct WorkflowCallableInspection: Codable, Equatable, Sendable {
   public var output: NodeOutputContract?
 }
 
+public struct WorkflowLoopInspectionSummary: Codable, Equatable, Sendable {
+  public var kind: String?
+  public var required: Bool
+  public var description: String?
+  public var evidenceRequired: Bool
+  public var artifactRootPolicy: String?
+  public var requiredEvidenceSections: [String]
+  public var gates: [WorkflowLoopGateInspection]
+  public var steps: [WorkflowStepLoopInspection]
+  public var policies: WorkflowLoopPolicyInspection?
+  public var implementationPlan: WorkflowLoopImplementationPlanInspection?
+}
+
+public struct WorkflowLoopGateInspection: Codable, Equatable, Sendable {
+  public var id: String
+  public var stepId: String
+  public var required: Bool
+  public var acceptDecision: LoopGateDecision?
+  public var maxHighFindings: Int?
+  public var maxMediumFindings: Int?
+}
+
+public struct WorkflowStepLoopInspection: Codable, Equatable, Sendable {
+  public var stepId: String
+  public var role: String?
+  public var gateId: String?
+  public var evidenceTags: [String]
+  public var recordsChangedFiles: Bool?
+  public var recordsVerification: Bool?
+}
+
+public struct WorkflowLoopPolicyInspection: Codable, Equatable, Sendable {
+  public var allowedWriteRoots: [String]
+  public var scratchRoot: String?
+  public var commit: String?
+  public var push: String?
+  public var nestedRiela: String?
+  public var nestedCodex: String?
+  public var allowedBackends: [String]
+  public var requiredWorkerModel: String?
+  public var networkMode: String?
+}
+
+public struct WorkflowLoopImplementationPlanInspection: Codable, Equatable, Sendable {
+  public var required: Bool
+  public var pathPattern: String?
+}
+
 public struct WorkflowInspectionSummary: Codable, Equatable, Sendable {
   public var workflowId: String
   public var sourceScope: WorkflowScope
@@ -1074,6 +1122,7 @@ public struct WorkflowInspectionSummary: Codable, Equatable, Sendable {
   public var addonSourceSummaries: [String]
   public var nativeBundleAddons: [NativeBundleAddonInspection]
   public var runtimeReadinessDescriptors: [String]
+  public var loop: WorkflowLoopInspectionSummary?
 }
 
 public struct NativeBundleAddonInspection: Codable, Equatable, Sendable {
@@ -1242,7 +1291,68 @@ public struct WorkflowInspectCommand: Sendable {
       callable: callable,
       addonSourceSummaries: addonSummaries,
       nativeBundleAddons: nativeBundleAddons,
-      runtimeReadinessDescriptors: readiness
+      runtimeReadinessDescriptors: readiness,
+      loop: buildLoopInspection(workflow)
+    )
+  }
+
+  private func buildLoopInspection(_ workflow: WorkflowDefinition) -> WorkflowLoopInspectionSummary? {
+    guard let loop = workflow.loop else {
+      return nil
+    }
+    let gates = loop.gates.map { gate in
+      WorkflowLoopGateInspection(
+        id: gate.id,
+        stepId: gate.stepId,
+        required: gate.required,
+        acceptDecision: gate.acceptWhen.decision,
+        maxHighFindings: gate.acceptWhen.maxHighFindings,
+        maxMediumFindings: gate.acceptWhen.maxMediumFindings
+      )
+    }
+    let steps = workflow.steps.compactMap { step -> WorkflowStepLoopInspection? in
+      guard let loop = step.loop else {
+        return nil
+      }
+      return WorkflowStepLoopInspection(
+        stepId: step.id,
+        role: loop.role,
+        gateId: loop.gateId,
+        evidenceTags: loop.evidenceTags,
+        recordsChangedFiles: loop.recordsChangedFiles,
+        recordsVerification: loop.recordsVerification
+      )
+    }
+    return WorkflowLoopInspectionSummary(
+      kind: loop.kind,
+      required: loop.required,
+      description: loop.description,
+      evidenceRequired: loop.evidence?.required ?? false,
+      artifactRootPolicy: loop.evidence?.artifactRootPolicy,
+      requiredEvidenceSections: loop.evidence?.requiredSections ?? [],
+      gates: gates,
+      steps: steps,
+      policies: buildLoopPolicyInspection(loop.policies),
+      implementationPlan: loop.implementationPlan.map {
+        WorkflowLoopImplementationPlanInspection(required: $0.required, pathPattern: $0.pathPattern)
+      }
+    )
+  }
+
+  private func buildLoopPolicyInspection(_ policies: LoopPolicyDeclaration?) -> WorkflowLoopPolicyInspection? {
+    guard let policies else {
+      return nil
+    }
+    return WorkflowLoopPolicyInspection(
+      allowedWriteRoots: policies.mutation?.allowedWriteRoots ?? [],
+      scratchRoot: policies.mutation?.scratchRoot,
+      commit: policies.mutation?.commit,
+      push: policies.mutation?.push,
+      nestedRiela: policies.process?.nestedRiela,
+      nestedCodex: policies.process?.nestedCodex,
+      allowedBackends: policies.process?.allowedBackends ?? [],
+      requiredWorkerModel: policies.process?.requiredWorkerModel,
+      networkMode: policies.network?.mode
     )
   }
 
@@ -1294,6 +1404,9 @@ public struct WorkflowInspectCommand: Sendable {
     if let manager = summary.managerStepId {
       lines.append("managerStepId: \(manager)")
     }
+    if let loop = summary.loop {
+      lines.append(renderLoopText(loop))
+    }
     if let packageName = summary.packageName {
       lines.append("package: \(packageName) \(summary.packageVersion ?? "") \(summary.packageDirectory ?? "")")
     }
@@ -1318,6 +1431,21 @@ public struct WorkflowInspectCommand: Sendable {
       })
     }
     return lines.joined(separator: "\n") + "\n"
+  }
+
+  private func renderLoopText(_ loop: WorkflowLoopInspectionSummary) -> String {
+    var parts = ["loop: required=\(loop.required ? "true" : "false")"]
+    if let kind = loop.kind, !kind.isEmpty {
+      parts.append("kind=\(kind)")
+    }
+    parts.append("gates=\(loop.gates.count)")
+    if !loop.steps.isEmpty {
+      parts.append("stepMetadata=\(loop.steps.count)")
+    }
+    if let artifactRootPolicy = loop.artifactRootPolicy, !artifactRootPolicy.isEmpty {
+      parts.append("artifactRootPolicy=\(artifactRootPolicy)")
+    }
+    return parts.joined(separator: " ")
   }
 
   private func contractDescription(_ description: String?) -> String {
@@ -1428,12 +1556,15 @@ public struct WorkflowRunCommand: Sendable {
       let persistenceState = WorkflowRunLivePersistenceState()
       await persistenceState.configure(storeRoot: storeRoot)
       livePersistenceState = persistenceState
+      let persistenceBundle = bundle
       let runEventHandler: WorkflowRunEventHandler = { event in
         await persistLiveSessionRecordIfPresent(
           sessionId: event.sessionId,
           workflowName: persistedIdentity.workflowName,
           resolution: persistedIdentity.resolution,
           storeRoot: storeRoot,
+          bundle: persistenceBundle,
+          variables: variables,
           runtimeStore: runtimeStore,
           options: options,
           recorder: jsonlRecorder,
@@ -1481,13 +1612,24 @@ public struct WorkflowRunCommand: Sendable {
         )
       }
       let workflowMessages = try await runtimeStore.listMessages(for: finalResult.session.sessionId, toStepId: nil)
+      let loopEvidence = projectLoopEvidence(
+        session: finalResult.session,
+        workflowMessages: workflowMessages,
+        bundle: bundle,
+        variables: variables,
+        recovery: finalResult.recovery
+      )
+      finalResult.loopEvidence = loopEvidence.map(LoopEvidenceSummary.init)
       try persistSessionRecord(
         workflowName: persistedIdentity.workflowName,
         resolution: persistedIdentity.resolution,
         resolvedSourceScope: bundle.sourceScope,
         result: finalResult,
         workflowMessages: workflowMessages,
-        options: options
+        bundle: bundle,
+        variables: variables,
+        options: options,
+        loopEvidence: loopEvidence
       )
       return CLICommandResult(
         exitCode: CLIExitCode(rawValue: finalResult.exitCode) ?? .failure,
@@ -1505,6 +1647,8 @@ public struct WorkflowRunCommand: Sendable {
     workflowName: String,
     resolution: WorkflowResolutionOptions,
     storeRoot: String,
+    bundle: ResolvedWorkflowBundle,
+    variables: JSONObject,
     runtimeStore: InMemoryWorkflowRuntimeStore,
     options: WorkflowRunOptions,
     recorder: WorkflowRunJSONLRecorder?,
@@ -1520,6 +1664,8 @@ public struct WorkflowRunCommand: Sendable {
         resolution: resolution,
         session: session,
         workflowMessages: workflowMessages,
+        bundle: bundle,
+        variables: variables,
         storeRoot: storeRoot,
         options: options
       )
@@ -1588,7 +1734,10 @@ public struct WorkflowRunCommand: Sendable {
     resolvedSourceScope: WorkflowScope,
     result: WorkflowRunResult,
     workflowMessages: [WorkflowMessageRecord],
-    options: WorkflowRunOptions
+    bundle: ResolvedWorkflowBundle,
+    variables: JSONObject,
+    options: WorkflowRunOptions,
+    loopEvidence: LoopEvidenceManifest? = nil
   ) throws {
     let persistedResolution = CLIWorkflowSessionResolution.resolutionForPersistence(
       resolution: resolution,
@@ -1599,7 +1748,14 @@ public struct WorkflowRunCommand: Sendable {
       scope: persistedResolution.scope,
       workingDirectory: options.workingDirectory
     )
-    let snapshot = WorkflowRuntimePersistenceProjector.snapshot(session: result.session, workflowMessages: workflowMessages)
+    let snapshot = runtimeSnapshot(
+      session: result.session,
+      workflowMessages: workflowMessages,
+      bundle: bundle,
+      variables: variables,
+      recovery: result.recovery,
+      loopEvidence: loopEvidence
+    )
     try CLIWorkflowSessionStore(rootDirectory: storeRoot).save(
       PersistedCLIWorkflowSession(
         workflowName: workflowName,
@@ -1628,10 +1784,19 @@ public struct WorkflowRunCommand: Sendable {
     resolution: WorkflowResolutionOptions,
     session: WorkflowSession,
     workflowMessages: [WorkflowMessageRecord],
+    bundle: ResolvedWorkflowBundle,
+    variables: JSONObject,
     storeRoot: String,
-    options: WorkflowRunOptions
+    options: WorkflowRunOptions,
+    loopEvidence: LoopEvidenceManifest? = nil
   ) throws {
-    let snapshot = WorkflowRuntimePersistenceProjector.snapshot(session: session, workflowMessages: workflowMessages)
+    let snapshot = runtimeSnapshot(
+      session: session,
+      workflowMessages: workflowMessages,
+      bundle: bundle,
+      variables: variables,
+      loopEvidence: loopEvidence
+    )
     try CLIWorkflowSessionStore(rootDirectory: storeRoot).save(
       PersistedCLIWorkflowSession(
         workflowName: workflowName,
@@ -1645,6 +1810,59 @@ public struct WorkflowRunCommand: Sendable {
       let artifactURL = absoluteURL(artifactRoot, relativeTo: URL(fileURLWithPath: options.workingDirectory, isDirectory: true))
       try FileWorkflowRuntimePersistenceStore(rootDirectory: artifactURL.path).save(snapshot)
     }
+  }
+
+  private func runtimeSnapshot(
+    session: WorkflowSession,
+    workflowMessages: [WorkflowMessageRecord],
+    bundle: ResolvedWorkflowBundle,
+    variables: JSONObject,
+    recovery: LoopRecoveryLineage? = nil,
+    loopEvidence: LoopEvidenceManifest? = nil
+  ) -> WorkflowRuntimePersistenceSnapshot {
+    let projectedLoopEvidence = loopEvidence ?? projectLoopEvidence(
+      session: session,
+      workflowMessages: workflowMessages,
+      bundle: bundle,
+      variables: variables,
+      recovery: recovery
+    )
+    return WorkflowRuntimePersistenceProjector.snapshot(
+      session: session,
+      workflowMessages: workflowMessages,
+      loopEvidence: projectedLoopEvidence
+    )
+  }
+
+  private func projectLoopEvidence(
+    session: WorkflowSession,
+    workflowMessages: [WorkflowMessageRecord],
+    bundle: ResolvedWorkflowBundle,
+    variables: JSONObject,
+    recovery: LoopRecoveryLineage? = nil
+  ) -> LoopEvidenceManifest? {
+    try? DefaultLoopEvidenceProjector().project(
+      LoopEvidenceProjectionInput(
+        workflow: bundle.workflow,
+        session: session,
+        workflowMessages: workflowMessages,
+        workflowSource: loopWorkflowSource(from: bundle),
+        variables: variables,
+        recovery: recovery
+      )
+    )
+  }
+
+  private func loopWorkflowSource(from bundle: ResolvedWorkflowBundle) -> LoopWorkflowSource {
+    LoopWorkflowSource(
+      scope: bundle.sourceScope.rawValue,
+      kind: bundle.packageManifest == nil ? "workflow-directory" : "package",
+      workflowDirectory: bundle.workflowDirectory,
+      packageName: bundle.packageManifest?.name,
+      packageVersion: bundle.packageManifest?.version,
+      packageDirectory: bundle.packageDirectory,
+      mutable: bundle.packageManifest == nil
+    )
   }
 
   private func persistenceIdentity(
@@ -1915,7 +2133,18 @@ public struct WorkflowRunCommand: Sendable {
       }
       return record
     case .text, .table:
-      return "status: \(result.session.status.rawValue)\nworkflowId: \(result.workflowId)\nnodeExecutions: \(result.session.executions.count)\n"
+      var lines = [
+        "status: \(result.session.status.rawValue)",
+        "workflowId: \(result.workflowId)",
+        "nodeExecutions: \(result.session.executions.count)"
+      ]
+      if let loopEvidence = result.loopEvidence {
+        lines.append(
+          "loopEvidence: gates=\(loopEvidence.gateCount) accepted=\(loopEvidence.acceptedGateCount) " +
+            "rejected=\(loopEvidence.rejectedGateCount) blockingFindings=\(loopEvidence.blockingFindingCount)"
+        )
+      }
+      return lines.joined(separator: "\n") + "\n"
     }
   }
 
@@ -1998,6 +2227,7 @@ public struct RielaCLIApplication: Sendable {
   public var workflowScaffoldCommand: WorkflowScaffoldCommand
   public var packageCommandRunner: WorkflowPackageCommandRunner
   public var memoryCommandRunner: MemoryCommandRunner
+  public var loopCommandRunner: LoopCommandRunner
   public var sessionContinueCommand: SessionContinueCommand
   public var scopedCommandRunner: ScopedParityCommandRunner
 
@@ -2014,6 +2244,7 @@ public struct RielaCLIApplication: Sendable {
     workflowScaffoldCommand: WorkflowScaffoldCommand = WorkflowScaffoldCommand(),
     packageCommandRunner: WorkflowPackageCommandRunner = WorkflowPackageCommandRunner(),
     memoryCommandRunner: MemoryCommandRunner = MemoryCommandRunner(),
+    loopCommandRunner: LoopCommandRunner = LoopCommandRunner(),
     sessionContinueCommand: SessionContinueCommand = SessionContinueCommand(),
     scopedCommandRunner: ScopedParityCommandRunner = ScopedParityCommandRunner()
   ) {
@@ -2029,6 +2260,7 @@ public struct RielaCLIApplication: Sendable {
     self.workflowScaffoldCommand = workflowScaffoldCommand
     self.packageCommandRunner = packageCommandRunner
     self.memoryCommandRunner = memoryCommandRunner
+    self.loopCommandRunner = loopCommandRunner
     self.sessionContinueCommand = sessionContinueCommand
     self.scopedCommandRunner = scopedCommandRunner
   }
@@ -2093,6 +2325,8 @@ public struct RielaCLIApplication: Sendable {
         return sessionInspectionCommand.run(options)
       case let .session(.logs(options)):
         return sessionInspectionCommand.run(options)
+      case let .loop(command):
+        return await loopCommandRunner.run(command)
       case let .package(command):
         return await packageCommandRunner.run(command)
       case let .memory(command):
@@ -2250,6 +2484,8 @@ Usage:
   riela session rerun <session-id> <step-id> [--scope project|user|auto] [--output jsonl|json|text]
   riela session resume <session-id> [--scope project|user|auto] [--output jsonl|json|text]
   riela session progress|health|status|continue|step-runs|export|logs [session-id] [options]
+  riela loop status|evidence|gates <session-id> [--session-store <dir>] [--output jsonl|json|text]
+  riela loop recover <session-id> --from-step <step-id> [--session-store <dir>] [--output jsonl|json|text]
   riela graphql|gql|hook|events|serve|call-step|workflow-call [command] [target] [options]
 
 Output defaults to JSONL for machine-readable commands. Use --output text for human-readable output or --output json for the legacy single JSON document.

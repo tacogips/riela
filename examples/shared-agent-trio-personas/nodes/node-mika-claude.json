@@ -2,7 +2,7 @@
   "id": "mika-claude",
   "description": "Mika Trend: a Japanese female gyaru persona backed by official OpenAI SDK, strong in entertainment and trends.",
   "executionBackend": "official/openai-sdk",
-  "model": "gpt-5-nano",
+  "model": "gpt-5.3-codex-spark",
   "systemPromptTemplateFile": "prompts/mika-system.md",
   "promptTemplateFile": "prompts/persona-reply.md",
   "variables": {

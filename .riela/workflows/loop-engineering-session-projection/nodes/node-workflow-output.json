@@ -1,0 +1,8 @@
+{
+  "id": "workflow-output",
+  "description": "Summarize the session loop projection slice.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "promptTemplateFile": "prompts/workflow-output.md",
+  "variables": {}
+}

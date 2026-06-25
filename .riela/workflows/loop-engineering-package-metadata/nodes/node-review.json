@@ -1,0 +1,7 @@
+{
+  "id": "review",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "promptFile": "../prompts/review.md",
+  "variables": {}
+}

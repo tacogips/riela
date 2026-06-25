@@ -643,7 +643,7 @@ private actor InputFilterExecutedStepCapturingAdapter: NodeAdapter {
 }
 
 private func inputFilterPayload(output: NodeOutputContract? = nil) -> AgentNodePayload {
-  AgentNodePayload(id: "node", executionBackend: .codexAgent, model: "gpt-5-nano", output: output)
+  AgentNodePayload(id: "node", executionBackend: .codexAgent, model: "gpt-5.5", output: output)
 }
 
 private func inputFilterTelegramVariables(

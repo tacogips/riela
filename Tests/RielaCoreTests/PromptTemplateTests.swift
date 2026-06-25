@@ -85,7 +85,7 @@ final class PromptTemplateTests: XCTestCase {
     let payload = AgentNodePayload(
       id: "worker",
       executionBackend: .codexAgent,
-      model: "gpt-5-nano",
+      model: "gpt-5.5",
       systemPromptTemplateFile: "prompts/system.md",
       promptTemplateFile: "prompts/prompt.md",
       sessionStartPromptTemplateFile: "prompts/start.md",
@@ -127,7 +127,7 @@ final class PromptTemplateTests: XCTestCase {
       let payload = AgentNodePayload(
         id: "worker",
         executionBackend: .codexAgent,
-        model: "gpt-5-nano",
+        model: "gpt-5.5",
         promptTemplateFile: invalidPath
       )
 

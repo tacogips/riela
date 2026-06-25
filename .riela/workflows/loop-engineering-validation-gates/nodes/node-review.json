@@ -1,0 +1,9 @@
+{
+  "id": "review",
+  "description": "Review loop metadata validation changes.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "effort": "low",
+  "promptTemplateFile": "prompts/review.md",
+  "variables": {}
+}

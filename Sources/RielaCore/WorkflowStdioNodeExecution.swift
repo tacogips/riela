@@ -17,6 +17,7 @@ public struct WorkflowStdioNodeExecutionInput: Equatable, Sendable {
   public var resolvedInputPayload: JSONObject
   public var memoryRootDirectory: String?
   public var availableMemories: [WorkflowMemoryDeclaration]
+  public var policy: LoopPolicyStepDecision?
 
   public init(
     workflowId: String,
@@ -29,7 +30,8 @@ public struct WorkflowStdioNodeExecutionInput: Equatable, Sendable {
     variables: JSONObject,
     resolvedInputPayload: JSONObject,
     memoryRootDirectory: String? = nil,
-    availableMemories: [WorkflowMemoryDeclaration] = []
+    availableMemories: [WorkflowMemoryDeclaration] = [],
+    policy: LoopPolicyStepDecision? = nil
   ) {
     self.workflowId = workflowId
     self.sessionId = sessionId
@@ -42,14 +44,17 @@ public struct WorkflowStdioNodeExecutionInput: Equatable, Sendable {
     self.resolvedInputPayload = resolvedInputPayload
     self.memoryRootDirectory = memoryRootDirectory
     self.availableMemories = availableMemories
+    self.policy = policy
   }
 }
 
 public struct WorkflowStdioNodeExecutionResult: Equatable, Sendable {
   public var payload: JSONObject?
+  public var commandEvidence: LoopCommandEvidence?
 
-  public init(payload: JSONObject? = nil) {
+  public init(payload: JSONObject? = nil, commandEvidence: LoopCommandEvidence? = nil) {
     self.payload = payload
+    self.commandEvidence = commandEvidence
   }
 }
 
@@ -64,6 +69,7 @@ public struct WorkflowStdioNodeInvocationEnvelope: Codable, Equatable, Sendable 
   public var input: JSONObject
   public var memoryRootDirectory: String?
   public var availableMemories: [WorkflowMemoryDeclaration]
+  public var policy: LoopPolicyStepDecision?
 
   public init(
     workflowId: String,
@@ -75,7 +81,8 @@ public struct WorkflowStdioNodeInvocationEnvelope: Codable, Equatable, Sendable 
     variables: JSONObject,
     input: JSONObject,
     memoryRootDirectory: String? = nil,
-    availableMemories: [WorkflowMemoryDeclaration] = []
+    availableMemories: [WorkflowMemoryDeclaration] = [],
+    policy: LoopPolicyStepDecision? = nil
   ) {
     self.workflowId = workflowId
     self.workflowExecutionId = workflowExecutionId
@@ -87,6 +94,7 @@ public struct WorkflowStdioNodeInvocationEnvelope: Codable, Equatable, Sendable 
     self.input = input
     self.memoryRootDirectory = memoryRootDirectory
     self.availableMemories = availableMemories
+    self.policy = policy
   }
 }
 

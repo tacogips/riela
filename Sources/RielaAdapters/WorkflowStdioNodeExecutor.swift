@@ -14,9 +14,12 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
     _ input: WorkflowStdioNodeExecutionInput,
     context: AdapterExecutionContext
   ) async throws -> WorkflowStdioNodeExecutionResult {
+    try enforcePolicy(input.policy, input: input)
     let inputLine = try invocationInputJSONL(for: input)
     let configuration = try processConfiguration(for: input)
+    let startedAt = Date()
     let result = try await runner.run(configuration: configuration, stdin: inputLine, deadline: context.deadline)
+    let durationMs = max(0, Int(Date().timeIntervalSince(startedAt) * 1000))
     guard result.terminationStatus == 0 else {
       let detail = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
       throw AdapterExecutionError(
@@ -24,7 +27,31 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
         "\(input.kind.rawValue) node '\(input.nodeId)' failed with exit code \(result.terminationStatus): \(detail)"
       )
     }
-    return WorkflowStdioNodeExecutionResult(payload: try outputPayload(fromStdout: result.stdout, kind: input.kind))
+    return WorkflowStdioNodeExecutionResult(
+      payload: try outputPayload(fromStdout: result.stdout, kind: input.kind),
+      commandEvidence: commandEvidence(
+        input: input,
+        configuration: configuration,
+        exitCode: Int(result.terminationStatus),
+        durationMs: durationMs
+      )
+    )
+  }
+
+  private func enforcePolicy(
+    _ policy: LoopPolicyStepDecision?,
+    input: WorkflowStdioNodeExecutionInput
+  ) throws {
+    guard let policy, !policy.allowed else {
+      return
+    }
+    let denialSummary = policy.denials
+      .map { "\($0.policy)=\($0.decision)" }
+      .joined(separator: ", ")
+    throw AdapterExecutionError(
+      .policyBlocked,
+      "\(input.kind.rawValue) node '\(input.nodeId)' denied by loop policy: \(denialSummary)"
+    )
   }
 
   private func processConfiguration(
@@ -130,7 +157,8 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
       variables: input.variables,
       input: input.resolvedInputPayload,
       memoryRootDirectory: input.memoryRootDirectory,
-      availableMemories: input.availableMemories
+      availableMemories: input.availableMemories,
+      policy: input.policy
     )
     let data = try JSONEncoder().encode(envelope)
     guard let text = String(data: data, encoding: .utf8) else {
@@ -178,6 +206,24 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
 
   private var strippedEnvironmentKeys: Set<String> {
     ["RIELA_MAILBOX_DIR", "RIELA_WORKFLOW_INPUT", "RIELA_WORKFLOW_OUTPUT"]
+  }
+
+  private func commandEvidence(
+    input: WorkflowStdioNodeExecutionInput,
+    configuration: LocalAgentProcessConfiguration,
+    exitCode: Int,
+    durationMs: Int
+  ) -> LoopCommandEvidence {
+    LoopCommandEvidence(
+      id: "\(input.stepId)#\(input.executionIndex)",
+      argvSummary: ([configuration.executableURL.path] + configuration.arguments).joined(separator: " "),
+      argvRedactionStatus: "clean",
+      workingDirectoryPolicyStatus: "allowed",
+      exitCode: exitCode,
+      durationMs: durationMs,
+      stdoutStoragePolicy: "summary-only",
+      stderrStoragePolicy: "summary-only"
+    )
   }
 }
 

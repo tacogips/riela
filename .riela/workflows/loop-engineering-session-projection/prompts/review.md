@@ -1,0 +1,1 @@
+Review the session loop projection implementation for additive compatibility, text/JSON output shape, tests, and regressions. Return JSON with `accepted`, `needs_revision`, `findings`, and `verification`.

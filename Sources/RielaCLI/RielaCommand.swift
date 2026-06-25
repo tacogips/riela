@@ -36,6 +36,7 @@ public enum RielaCommand: Equatable, Sendable {
   case version
   case workflow(WorkflowCommand)
   case session(SessionCommand)
+  case loop(LoopCommand)
   case package(PackageCommand)
   case memory(MemoryCommand)
   case scoped(ScopedCommand)
@@ -65,6 +66,23 @@ public enum WorkflowCommand: Equatable, Sendable {
   case create(CLICommandOptions)
   case selfImprove(CLICommandOptions)
   case package(PackageCommand)
+}
+
+public enum LoopCommandKind: String, Codable, Sendable {
+  case status
+  case evidence
+  case gates
+  case recover
+}
+
+public struct LoopCommand: Equatable, Sendable {
+  public var kind: LoopCommandKind
+  public var options: CLICommandOptions
+
+  public init(kind: LoopCommandKind, options: CLICommandOptions) {
+    self.kind = kind
+    self.options = options
+  }
 }
 
 public struct WorkflowManifestValidateOptions: Equatable, Sendable {
@@ -357,8 +375,11 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     if arguments.first == "session" {
       return try parseSession(Array(arguments.dropFirst()))
     }
+    if arguments.first == "loop" {
+      return .loop(try parseLoop(Array(arguments.dropFirst())))
+    }
     guard arguments.first == "workflow" else {
-      throw CLIUsageError("expected 'workflow', 'package', 'memory', 'session', 'graphql', 'gql', 'hook', 'events', 'serve', or 'call-step' command")
+      throw CLIUsageError("expected 'workflow', 'package', 'memory', 'session', 'loop', 'graphql', 'gql', 'hook', 'events', 'serve', or 'call-step' command")
     }
     guard arguments.count >= 2 else {
       throw CLIUsageError("workflow command requires a subcommand and workflow name")
@@ -497,6 +518,27 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       command: subcommand,
       target: target,
       arguments: Array(arguments.dropFirst(optionStart))
+    )
+  }
+
+  private func parseLoop(_ arguments: [String]) throws -> LoopCommand {
+    guard let subcommand = arguments.first else {
+      throw CLIUsageError("loop command requires a subcommand")
+    }
+    guard let kind = LoopCommandKind(rawValue: subcommand) else {
+      throw CLIUsageError("unsupported loop subcommand '\(subcommand)'")
+    }
+    guard arguments.count >= 2, !arguments[1].hasPrefix("--") else {
+      throw CLIUsageError("loop \(subcommand) requires a session id")
+    }
+    return LoopCommand(
+      kind: kind,
+      options: try parseGeneric(
+        scope: "loop",
+        command: subcommand,
+        target: arguments[1],
+        arguments: Array(arguments.dropFirst(2))
+      )
     )
   }
 

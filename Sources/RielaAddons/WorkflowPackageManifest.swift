@@ -1,26 +1,6 @@
 import Foundation
 import RielaCore
 
-public enum WorkflowPackageKind: String, Codable, Sendable {
-  case workflow
-  case nodeAddon = "node-addon"
-}
-
-public enum WorkflowPackageSkillVendor: String, Codable, CaseIterable, Sendable {
-  case agents
-  case claude
-  case codex
-  case cursor
-  case gemini
-}
-
-public enum WorkflowPackageAddonExecutionKind: String, Codable, Sendable {
-  case declarative
-  case container
-  case localCommand = "local-command"
-  case nativeBundle = "native-bundle"
-}
-
 public struct WorkflowAddonCapability: Codable, Equatable, Sendable {
   public var name: String
   public var required: Bool?
@@ -419,6 +399,7 @@ public struct WorkflowPackageManifest: Codable, Equatable, Sendable {
   public var skills: [WorkflowPackageSkill]
   public var dependencies: [WorkflowPackageDependency]
   public var integrity: WorkflowPackageIntegrity?
+  public var loop: WorkflowPackageLoopMetadata?
   public var title: String?
   public var authors: [String]
   public var license: String?
@@ -446,6 +427,7 @@ public struct WorkflowPackageManifest: Codable, Equatable, Sendable {
     case skills
     case dependencies
     case integrity
+    case loop
     case title
     case authors
     case license
@@ -473,6 +455,7 @@ public struct WorkflowPackageManifest: Codable, Equatable, Sendable {
     skills: [WorkflowPackageSkill] = [],
     dependencies: [WorkflowPackageDependency] = [],
     integrity: WorkflowPackageIntegrity? = nil,
+    loop: WorkflowPackageLoopMetadata? = nil,
     title: String? = nil,
     authors: [String] = [],
     license: String? = nil,
@@ -498,6 +481,7 @@ public struct WorkflowPackageManifest: Codable, Equatable, Sendable {
     self.skills = skills
     self.dependencies = dependencies
     self.integrity = integrity
+    self.loop = loop
     self.title = title
     self.authors = authors
     self.license = license
@@ -538,6 +522,7 @@ public struct WorkflowPackageManifest: Codable, Equatable, Sendable {
     self.skills = try container.decodeIfPresent([WorkflowPackageSkill].self, forKey: .skills) ?? []
     self.dependencies = try container.decodeIfPresent([WorkflowPackageDependency].self, forKey: .dependencies) ?? []
     self.integrity = try container.decodeIfPresent(WorkflowPackageIntegrity.self, forKey: .integrity)
+    self.loop = try container.decodeIfPresent(WorkflowPackageLoopMetadata.self, forKey: .loop)
     self.title = try container.decodeIfPresent(String.self, forKey: .title)
     self.authors = try container.decodeIfPresent([String].self, forKey: .authors) ?? []
     self.license = try container.decodeIfPresent(String.self, forKey: .license)
@@ -566,6 +551,7 @@ public struct WorkflowPackageManifest: Codable, Equatable, Sendable {
     try container.encode(skills, forKey: .skills)
     try container.encode(dependencies, forKey: .dependencies)
     try container.encodeIfPresent(integrity, forKey: .integrity)
+    try container.encodeIfPresent(loop, forKey: .loop)
     try container.encodeIfPresent(title, forKey: .title)
     try container.encode(authors, forKey: .authors)
     try container.encodeIfPresent(license, forKey: .license)
@@ -574,45 +560,6 @@ public struct WorkflowPackageManifest: Codable, Equatable, Sendable {
     try container.encode(examples, forKey: .examples)
     try container.encodeIfPresent(minimumRielaVersion, forKey: .minimumRielaVersion)
     try container.encode(backends, forKey: .backends)
-  }
-}
-
-public struct WorkflowPackageValidationIssue: Codable, Equatable, Sendable {
-  public var code: String
-  public var path: String
-  public var message: String
-
-  public init(code: String, path: String, message: String) {
-    self.code = code
-    self.path = path
-    self.message = message
-  }
-}
-
-public protocol WorkflowPackageManifestLoading: Sendable {
-  func loadManifest(from url: URL) async throws -> WorkflowPackageManifest
-  func validate(_ manifest: WorkflowPackageManifest, packageRoot: URL) async -> [WorkflowPackageValidationIssue]
-}
-
-public enum WorkflowPackageManifestLoadingError: Error, Equatable, Sendable {
-  case nonFileURL(String)
-}
-
-public struct FileWorkflowPackageManifestLoader: WorkflowPackageManifestLoading {
-  public init() {}
-
-  public func loadManifest(from url: URL) async throws -> WorkflowPackageManifest {
-    guard url.isFileURL else {
-      throw WorkflowPackageManifestLoadingError.nonFileURL(url.absoluteString)
-    }
-    let data = try Data(contentsOf: url)
-    return try JSONDecoder().decode(WorkflowPackageManifest.self, from: data)
-  }
-
-  public func validate(_ manifest: WorkflowPackageManifest, packageRoot: URL) async -> [WorkflowPackageValidationIssue] {
-    var issues = WorkflowPackageManifestValidator.validate(manifest)
-    issues.append(contentsOf: WorkflowPackageManifestValidator.validateWorkflowBundle(manifest, packageRoot: packageRoot))
-    return issues
   }
 }
 
@@ -676,6 +623,7 @@ public enum WorkflowPackageManifestValidator {
     validateManifestMetadata(manifest, into: &issues)
     validateSkills(manifest.skills, into: &issues)
     validateDependencies(manifest.dependencies, packageName: manifest.name, into: &issues)
+    validateLoopMetadata(manifest.loop, into: &issues)
     validateNodeAddons(manifest.nodeAddons, packageKind: manifest.kind, into: &issues)
     validateNodeAddonPackageShape(manifest, into: &issues)
     validateDuplicateNodeAddons(manifest.nodeAddons, into: &issues)
@@ -1035,31 +983,5 @@ public enum WorkflowPackageManifestValidator {
 
   private static func isWindowsAbsolutePath(_ rawPath: String) -> Bool {
     rawPath.hasPrefix("\\\\") || rawPath.range(of: #"^[A-Za-z]:[\\/]"#, options: .regularExpression) != nil
-  }
-}
-
-private struct DynamicCodingKey: CodingKey {
-  var stringValue: String
-  var intValue: Int?
-
-  init?(stringValue: String) {
-    self.stringValue = stringValue
-  }
-
-  init?(intValue: Int) {
-    self.stringValue = String(intValue)
-    self.intValue = intValue
-  }
-}
-
-private func rejectUnsupportedKeys(_ decoder: Decoder, allowed: [String], label: String) throws {
-  let allowed = Set(allowed)
-  let dynamic = try decoder.container(keyedBy: DynamicCodingKey.self)
-  for key in dynamic.allKeys where !allowed.contains(key.stringValue) {
-    throw DecodingError.dataCorruptedError(
-      forKey: key,
-      in: dynamic,
-      debugDescription: "\(label) has unsupported key '\(key.stringValue)'"
-    )
   }
 }

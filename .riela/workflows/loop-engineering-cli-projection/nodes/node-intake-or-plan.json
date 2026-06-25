@@ -1,0 +1,8 @@
+{
+  "id": "intake-or-plan",
+  "description": "Confirm the CLI loop projection slice and constraints.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "promptTemplateFile": "prompts/intake-or-plan.md",
+  "variables": {}
+}

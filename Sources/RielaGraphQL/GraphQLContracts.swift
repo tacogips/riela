@@ -112,6 +112,150 @@ public struct GraphQLLLMSessionMessageDTO: Codable, Equatable, Sendable {
   }
 }
 
+public struct GraphQLLoopEvidenceSummaryDTO: Codable, Equatable, Sendable {
+  public var manifestId: String
+  public var schemaVersion: Int
+  public var workflowId: String
+  public var sessionId: String
+  public var gateCount: Int
+  public var acceptedGateCount: Int
+  public var rejectedGateCount: Int
+  public var needsWorkGateCount: Int
+  public var skippedGateCount: Int
+  public var blockingFindingCount: Int
+  public var stepCount: Int
+  public var artifactCount: Int
+  public var changedFileCount: Int
+  public var commandCount: Int
+  public var verificationCount: Int
+  public var implementationPlanCount: Int
+  public var residualRiskCount: Int
+  public var redactionStatus: String
+  public var updatedAt: String
+
+  public init(summary: LoopEvidenceSummary) {
+    self.manifestId = summary.manifestId
+    self.schemaVersion = summary.schemaVersion
+    self.workflowId = summary.workflowId
+    self.sessionId = summary.sessionId
+    self.gateCount = summary.gateCount
+    self.acceptedGateCount = summary.acceptedGateCount
+    self.rejectedGateCount = summary.rejectedGateCount
+    self.needsWorkGateCount = summary.needsWorkGateCount
+    self.skippedGateCount = summary.skippedGateCount
+    self.blockingFindingCount = summary.blockingFindingCount
+    self.stepCount = summary.stepCount
+    self.artifactCount = summary.artifactCount
+    self.changedFileCount = summary.changedFileCount
+    self.commandCount = summary.commandCount
+    self.verificationCount = summary.verificationCount
+    self.implementationPlanCount = summary.implementationPlanCount
+    self.residualRiskCount = summary.residualRiskCount
+    self.redactionStatus = summary.redactionStatus
+    self.updatedAt = GraphQLContractProjector.iso8601String(summary.updatedAt)
+  }
+}
+
+public struct GraphQLLoopFindingSeverityCountsDTO: Codable, Equatable, Sendable {
+  public var high: Int
+  public var medium: Int
+  public var low: Int
+  public var informational: Int
+
+  public init(counts: LoopFindingSeverityCounts) {
+    self.high = counts.high
+    self.medium = counts.medium
+    self.low = counts.low
+    self.informational = counts.informational
+  }
+}
+
+public struct GraphQLLoopBlockingFindingDTO: Codable, Equatable, Sendable {
+  public var id: String
+  public var severity: String
+  public var filePath: String?
+  public var line: Int?
+  public var message: String
+  public var evidenceRefs: [String]
+
+  public init(finding: LoopBlockingFinding) {
+    self.id = finding.id
+    self.severity = finding.severity
+    self.filePath = finding.filePath
+    self.line = finding.line
+    self.message = finding.message
+    self.evidenceRefs = finding.evidenceRefs
+  }
+}
+
+public struct GraphQLLoopResidualRiskDTO: Codable, Equatable, Sendable {
+  public var severity: String
+  public var message: String
+  public var evidenceRefs: [String]
+  public var owner: String?
+  public var accepted: Bool
+
+  public init(risk: LoopResidualRisk) {
+    self.severity = risk.severity
+    self.message = risk.message
+    self.evidenceRefs = risk.evidenceRefs
+    self.owner = risk.owner
+    self.accepted = risk.accepted
+  }
+}
+
+public struct GraphQLLoopGateResultDTO: Codable, Equatable, Sendable {
+  public var gateId: String
+  public var stepId: String
+  public var stepExecutionId: String
+  public var decision: String
+  public var severityCounts: GraphQLLoopFindingSeverityCountsDTO
+  public var blockingFindings: [GraphQLLoopBlockingFindingDTO]
+  public var evidenceRefs: [String]
+  public var rerunPolicy: String?
+  public var residualRisks: [GraphQLLoopResidualRiskDTO]
+  public var acceptedAt: String?
+  public var diagnostics: [String]
+
+  public init(gate: LoopGateResult) {
+    self.gateId = gate.gateId
+    self.stepId = gate.stepId
+    self.stepExecutionId = gate.stepExecutionId
+    self.decision = gate.decision.rawValue
+    self.severityCounts = GraphQLLoopFindingSeverityCountsDTO(counts: gate.severityCounts)
+    self.blockingFindings = gate.blockingFindings.map(GraphQLLoopBlockingFindingDTO.init)
+    self.evidenceRefs = gate.evidenceRefs
+    self.rerunPolicy = gate.rerunPolicy
+    self.residualRisks = gate.residualRisks.map(GraphQLLoopResidualRiskDTO.init)
+    self.acceptedAt = gate.acceptedAt.map(GraphQLContractProjector.iso8601String)
+    self.diagnostics = gate.diagnostics
+  }
+}
+
+public struct GraphQLLoopRecoveryLineageDTO: Codable, Equatable, Sendable {
+  public var entryMode: String
+  public var sourceSessionId: String?
+  public var sourceStepId: String?
+  public var sourceStepExecutionId: String?
+  public var parentSessionId: String?
+  public var childSessionIds: [String]
+  public var reason: String?
+  public var inputReusePolicy: String
+  public var preservedFailureEvidenceRefs: [String]
+
+  public init(lineage: LoopRecoveryLineage) {
+    self.entryMode = lineage.entryMode.rawValue
+    self.sourceSessionId = lineage.sourceSessionId
+    self.sourceStepId = lineage.sourceStepId
+    self.sourceStepExecutionId = lineage.sourceStepExecutionId
+    self.parentSessionId = lineage.parentSessionId
+    self.childSessionIds = lineage.childSessionIds
+    self.reason = lineage.reason
+    self.inputReusePolicy = lineage.inputReusePolicy
+    self.preservedFailureEvidenceRefs = lineage.preservedFailureEvidenceRefs
+  }
+}
+
 public struct GraphQLWorkflowSessionDTO: Codable, Equatable, Sendable {
   public var workflowId: String
   public var sessionId: String
@@ -124,6 +268,9 @@ public struct GraphQLWorkflowSessionDTO: Codable, Equatable, Sendable {
   public var replyDispatches: [GraphQLReplyDispatchDTO]
   public var logs: [GraphQLLogEntryDTO]
   public var llmSessionMessages: [GraphQLLLMSessionMessageDTO]
+  public var loopEvidence: GraphQLLoopEvidenceSummaryDTO?
+  public var loopGates: [GraphQLLoopGateResultDTO]
+  public var loopRecovery: GraphQLLoopRecoveryLineageDTO?
 
   public init(
     workflowId: String,
@@ -136,7 +283,10 @@ public struct GraphQLWorkflowSessionDTO: Codable, Equatable, Sendable {
     eventReceipts: [GraphQLEventReceiptDTO] = [],
     replyDispatches: [GraphQLReplyDispatchDTO] = [],
     logs: [GraphQLLogEntryDTO] = [],
-    llmSessionMessages: [GraphQLLLMSessionMessageDTO] = []
+    llmSessionMessages: [GraphQLLLMSessionMessageDTO] = [],
+    loopEvidence: GraphQLLoopEvidenceSummaryDTO? = nil,
+    loopGates: [GraphQLLoopGateResultDTO] = [],
+    loopRecovery: GraphQLLoopRecoveryLineageDTO? = nil
   ) {
     self.workflowId = workflowId
     self.sessionId = sessionId
@@ -149,6 +299,9 @@ public struct GraphQLWorkflowSessionDTO: Codable, Equatable, Sendable {
     self.replyDispatches = replyDispatches
     self.logs = logs
     self.llmSessionMessages = llmSessionMessages
+    self.loopEvidence = loopEvidence
+    self.loopGates = loopGates
+    self.loopRecovery = loopRecovery
   }
 }
 
@@ -160,6 +313,17 @@ public struct GraphQLInspectSessionRequest: Codable, Equatable, Sendable {
     self.workflowId = workflowId
     self.sessionId = sessionId
   }
+}
+
+public typealias GraphQLLoopEvidenceRequest = GraphQLInspectSessionRequest
+
+public enum GraphQLLoopEvidenceQueryStatus: String, Codable, Equatable, Sendable {
+  case found
+  case notFound = "not-found"
+  case noEvidence = "no-loop-evidence"
+  case workflowMismatch = "workflow-mismatch"
+  case invalidRequest = "invalid-request"
+  case error
 }
 
 public struct GraphQLContinueSessionRequest: Codable, Equatable, Sendable {
@@ -349,13 +513,57 @@ public struct GraphQLInspectSessionResult: Codable, Equatable, Sendable {
   }
 }
 
+public struct GraphQLLoopEvidenceResult: Codable, Equatable, Sendable {
+  public var result: GraphQLControlPlaneResult
+  public var evidence: GraphQLLoopEvidenceSummaryDTO?
+  public var gates: [GraphQLLoopGateResultDTO]
+  public var recovery: GraphQLLoopRecoveryLineageDTO?
+
+  public init(
+    result: GraphQLControlPlaneResult,
+    evidence: GraphQLLoopEvidenceSummaryDTO? = nil,
+    gates: [GraphQLLoopGateResultDTO] = [],
+    recovery: GraphQLLoopRecoveryLineageDTO? = nil
+  ) {
+    self.result = result
+    self.evidence = evidence
+    self.gates = gates
+    self.recovery = recovery
+  }
+}
+
 public protocol GraphQLControlPlaneServicing: Sendable {
   func inspectSession(_ request: GraphQLInspectSessionRequest) async -> GraphQLInspectSessionResult
+  func loopEvidence(_ request: GraphQLLoopEvidenceRequest) async -> GraphQLLoopEvidenceResult
   func continueSession(_ request: GraphQLContinueSessionRequest) async -> GraphQLControlPlaneResult
   func managerSession(_ request: GraphQLManagerSessionLookupRequest) async -> GraphQLManagerSessionViewDTO?
   func sendManagerMessage(_ request: GraphQLSendManagerMessageRequest) async -> GraphQLSendManagerMessagePayload
   func replayCommunication(_ request: GraphQLReplayCommunicationRequest) async -> GraphQLReplayCommunicationPayload
   func retryCommunicationDelivery(_ request: GraphQLRetryCommunicationDeliveryRequest) async -> GraphQLRetryCommunicationDeliveryPayload
+}
+
+public extension GraphQLControlPlaneServicing {
+  func loopEvidence(_ request: GraphQLLoopEvidenceRequest) async -> GraphQLLoopEvidenceResult {
+    let inspected = await inspectSession(request)
+    guard inspected.result.accepted, let session = inspected.session else {
+      return GraphQLLoopEvidenceResult(result: inspected.result)
+    }
+    guard let evidence = session.loopEvidence else {
+      return GraphQLLoopEvidenceResult(
+        result: GraphQLControlPlaneResult(
+          accepted: false,
+          status: GraphQLLoopEvidenceQueryStatus.noEvidence.rawValue,
+          diagnostics: ["loop evidence not found for session \(request.sessionId)"]
+        )
+      )
+    }
+    return GraphQLLoopEvidenceResult(
+      result: GraphQLControlPlaneResult(accepted: true, status: GraphQLLoopEvidenceQueryStatus.found.rawValue),
+      evidence: evidence,
+      gates: session.loopGates,
+      recovery: session.loopRecovery
+    )
+  }
 }
 
 public enum GraphQLContractProjector {
@@ -378,6 +586,67 @@ public enum GraphQLContractProjector {
   }
   type ReplayCommunicationPayload { sourceCommunicationId: String!, workflowExecutionId: String!, replayedCommunicationId: String!, status: String! }
   type RetryCommunicationDeliveryPayload { communicationId: String!, activeDeliveryAttemptId: String!, status: String! }
+  type LoopEvidenceSummary {
+    manifestId: String!
+    schemaVersion: Int!
+    workflowId: String!
+    sessionId: String!
+    gateCount: Int!
+    acceptedGateCount: Int!
+    rejectedGateCount: Int!
+    needsWorkGateCount: Int!
+    skippedGateCount: Int!
+    blockingFindingCount: Int!
+    stepCount: Int!
+    artifactCount: Int!
+    changedFileCount: Int!
+    commandCount: Int!
+    verificationCount: Int!
+    implementationPlanCount: Int!
+    residualRiskCount: Int!
+    redactionStatus: String!
+    updatedAt: String!
+  }
+  type LoopFindingSeverityCounts { high: Int!, medium: Int!, low: Int!, informational: Int! }
+  type LoopBlockingFinding {
+    id: String!
+    severity: String!
+    filePath: String
+    line: Int
+    message: String!
+    evidenceRefs: [String!]!
+  }
+  type LoopResidualRisk {
+    severity: String!
+    message: String!
+    evidenceRefs: [String!]!
+    owner: String
+    accepted: Boolean!
+  }
+  type LoopGateResult {
+    gateId: String!
+    stepId: String!
+    stepExecutionId: String!
+    decision: String!
+    severityCounts: LoopFindingSeverityCounts!
+    blockingFindings: [LoopBlockingFinding!]!
+    evidenceRefs: [String!]!
+    rerunPolicy: String
+    residualRisks: [LoopResidualRisk!]!
+    acceptedAt: String
+    diagnostics: [String!]!
+  }
+  type LoopRecoveryLineage {
+    entryMode: String!
+    sourceSessionId: String
+    sourceStepId: String
+    sourceStepExecutionId: String
+    parentSessionId: String
+    childSessionIds: [String!]!
+    reason: String
+    inputReusePolicy: String!
+    preservedFailureEvidenceRefs: [String!]!
+  }
   type WorkflowSession {
     workflowId: String!
     sessionId: String!
@@ -390,6 +659,9 @@ public enum GraphQLContractProjector {
     replyDispatches: [ReplyDispatch!]!
     logs: [LogEntry!]!
     llmSessionMessages: [LLMSessionMessage!]!
+    loopEvidence: LoopEvidenceSummary
+    loopGates: [LoopGateResult!]!
+    loopRecovery: LoopRecoveryLineage
   }
   type StepExecution { executionId: String!, stepId: String!, nodeId: String!, attempt: Int!, backend: String, status: String!, failureReason: String }
   type Communication { communicationId: String!, fromStepId: String, toStepId: String, lifecycleStatus: String!, deliveryKind: String!, createdOrder: Int! }
@@ -402,7 +674,11 @@ public enum GraphQLContractProjector {
   input SendManagerMessageInput { workflowId: String!, workflowExecutionId: String!, message: String, actions: JSON, attachments: JSON, idempotencyKey: String, managerSessionId: String, managerNodeExecId: String }
   input ReplayCommunicationInput { workflowId: String!, workflowExecutionId: String!, communicationId: String!, reason: String, idempotencyKey: String, managerSessionId: String }
   input RetryCommunicationDeliveryInput { workflowId: String!, workflowExecutionId: String!, communicationId: String!, reason: String, idempotencyKey: String, managerSessionId: String }
-  type Query { workflowSession(workflowId: String!, sessionId: String!): WorkflowSession managerSession(managerSessionId: String): ManagerSessionView }
+  type Query {
+    workflowSession(workflowId: String!, sessionId: String!): WorkflowSession
+    loopEvidence(workflowId: String!, sessionId: String!): LoopEvidenceSummary
+    managerSession(managerSessionId: String): ManagerSessionView
+  }
   type Mutation {
     continueSession(input: ContinueSessionInput!): ControlPlaneResult!
     sendManagerMessage(input: SendManagerMessageInput!): SendManagerMessagePayload!
@@ -418,7 +694,8 @@ public enum GraphQLContractProjector {
     eventReceipts: [GraphQLEventReceiptDTO] = [],
     replyDispatches: [GraphQLReplyDispatchDTO] = [],
     logs: [GraphQLLogEntryDTO] = [],
-    llmSessionMessages: [GraphQLLLMSessionMessageDTO] = []
+    llmSessionMessages: [GraphQLLLMSessionMessageDTO] = [],
+    loopEvidence: LoopEvidenceManifest? = nil
   ) -> GraphQLWorkflowSessionDTO {
     .init(
       workflowId: session.workflowId,
@@ -450,7 +727,34 @@ public enum GraphQLContractProjector {
       eventReceipts: eventReceipts,
       replyDispatches: replyDispatches,
       logs: logs,
-      llmSessionMessages: llmSessionMessages
+      llmSessionMessages: llmSessionMessages,
+      loopEvidence: loopEvidence.map { GraphQLLoopEvidenceSummaryDTO(summary: LoopEvidenceSummary(manifest: $0)) },
+      loopGates: loopEvidence?.gates.map(GraphQLLoopGateResultDTO.init) ?? [],
+      loopRecovery: loopEvidence?.recovery.map(GraphQLLoopRecoveryLineageDTO.init)
     )
+  }
+
+  public static func project(
+    snapshot: WorkflowRuntimePersistenceSnapshot,
+    hookEvents: [GraphQLHookEventDTO] = [],
+    eventReceipts: [GraphQLEventReceiptDTO] = [],
+    replyDispatches: [GraphQLReplyDispatchDTO] = [],
+    logs: [GraphQLLogEntryDTO] = [],
+    llmSessionMessages: [GraphQLLLMSessionMessageDTO] = []
+  ) -> GraphQLWorkflowSessionDTO {
+    project(
+      session: snapshot.session,
+      communications: snapshot.workflowMessages,
+      hookEvents: hookEvents,
+      eventReceipts: eventReceipts,
+      replyDispatches: replyDispatches,
+      logs: logs,
+      llmSessionMessages: llmSessionMessages,
+      loopEvidence: snapshot.loopEvidence
+    )
+  }
+
+  public static func iso8601String(_ date: Date) -> String {
+    ISO8601DateFormatter().string(from: date)
   }
 }

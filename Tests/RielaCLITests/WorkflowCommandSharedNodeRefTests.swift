@@ -40,7 +40,7 @@ extension WorkflowCommandTests {
     {
       "id": "mika",
       "executionBackend": "codex-agent",
-      "model": "gpt-5-nano",
+      "model": "gpt-5.5",
       "systemPromptTemplateFile": "prompts/mika-system.md",
       "promptTemplate": "Reply as shared Mika.",
       "variables": {}
@@ -117,7 +117,7 @@ extension WorkflowCommandTests {
     {
       "id": "mika",
       "executionBackend": "codex-agent",
-      "model": "gpt-5-nano",
+      "model": "gpt-5.5",
       "systemPromptTemplateFile": "prompts/mika-system.md",
       "promptTemplate": "Reply as nested Mika.",
       "variables": {}

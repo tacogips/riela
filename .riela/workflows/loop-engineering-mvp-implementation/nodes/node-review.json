@@ -1,0 +1,12 @@
+{
+  "id": "review",
+  "description": "Review the loop engineering Swift MVP implementation.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "effort": "high",
+  "promptTemplateFile": "prompts/review.md",
+  "variables": {},
+  "output": {
+    "description": "Return JSON with needs_revision, findings, verification, and accepted."
+  }
+}

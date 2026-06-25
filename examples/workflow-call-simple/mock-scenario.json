@@ -12,7 +12,7 @@
   },
   "draft-write": {
     "provider": "scenario-mock",
-    "model": "gpt-5-nano",
+    "model": "gpt-5.3-codex-spark",
     "when": {
       "always": true
     },
@@ -27,7 +27,7 @@
   },
   "reviewer": {
     "provider": "scenario-mock",
-    "model": "gpt-5-nano",
+    "model": "gpt-5.3-codex-spark",
     "when": {
       "always": true
     },
@@ -43,7 +43,7 @@
   },
   "apply-review": {
     "provider": "scenario-mock",
-    "model": "gpt-5-nano",
+    "model": "gpt-5.3-codex-spark",
     "when": {
       "always": true
     },

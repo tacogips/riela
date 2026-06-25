@@ -41,6 +41,56 @@ final class RuntimeStoreTests: XCTestCase {
     XCTAssertEqual(snapshot.diagnostics, [])
   }
 
+  func testFileRuntimePersistenceRoundTripsLoopEvidenceAndDecodesLegacySnapshot() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let session = WorkflowSession(
+      workflowId: "wf",
+      sessionId: "session-loop",
+      status: .completed,
+      entryStepId: "review",
+      createdAt: date,
+      updatedAt: date
+    )
+    let manifest = LoopEvidenceManifest(
+      schemaVersion: 1,
+      manifestId: "loop-evidence-session-loop",
+      workflowId: "wf",
+      sessionId: "session-loop",
+      workflowSource: LoopWorkflowSource(scope: "project", kind: "workflow-directory", mutable: true),
+      policy: LoopPolicyEvidence(),
+      redaction: LoopRedactionSummary(policyName: "summary-only", status: "clean"),
+      createdAt: date,
+      updatedAt: date
+    )
+
+    let store = FileWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    try store.save(WorkflowRuntimePersistenceSnapshot(session: session, loopEvidence: manifest))
+    let loaded = try store.load(sessionId: "session-loop")
+
+    XCTAssertEqual(loaded.loopEvidence, manifest)
+
+    let legacyData = Data(
+      """
+      {
+        "session": {
+          "workflowId": "wf",
+          "sessionId": "legacy-session",
+          "status": "completed",
+          "entryStepId": "review",
+          "createdAt": 1700000000,
+          "updatedAt": 1700000000,
+          "executions": []
+        },
+        "workflowMessages": [],
+        "diagnostics": []
+      }
+      """.utf8
+    )
+    let legacy = try JSONDecoder().decode(WorkflowRuntimePersistenceSnapshot.self, from: legacyData)
+    XCTAssertNil(legacy.loopEvidence)
+  }
+
   func testInMemoryStoreUsesDeterministicIdsTimestampsAndCreatedOrder() async throws {
     let date = Date(timeIntervalSince1970: 100)
     let store = InMemoryWorkflowRuntimeStore(clock: FixedWorkflowRuntimeClock(date))

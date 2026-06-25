@@ -425,6 +425,7 @@ public struct WorkflowStepRef: Codable, Equatable, Sendable {
   public var stallTimeoutMs: Int?
   public var sessionPolicy: WorkflowStepSessionPolicy?
   public var transitions: [WorkflowStepTransition]?
+  public var loop: WorkflowStepLoopMetadata?
 
   public init(
     id: String,
@@ -436,7 +437,8 @@ public struct WorkflowStepRef: Codable, Equatable, Sendable {
     timeoutMs: Int? = nil,
     stallTimeoutMs: Int? = nil,
     sessionPolicy: WorkflowStepSessionPolicy? = nil,
-    transitions: [WorkflowStepTransition]? = nil
+    transitions: [WorkflowStepTransition]? = nil,
+    loop: WorkflowStepLoopMetadata? = nil
   ) {
     self.id = id
     self.stepFile = stepFile
@@ -448,6 +450,7 @@ public struct WorkflowStepRef: Codable, Equatable, Sendable {
     self.stallTimeoutMs = stallTimeoutMs
     self.sessionPolicy = sessionPolicy
     self.transitions = transitions
+    self.loop = loop
   }
 }
 
@@ -461,6 +464,7 @@ public struct AuthoredWorkflowJSON: Codable, Equatable, Sendable {
   public var entryStepId: String?
   public var nodes: [WorkflowNodeRegistryRef]
   public var steps: [WorkflowStepRef]?
+  public var loop: WorkflowLoopMetadata?
 
   public init(
     workflowId: String,
@@ -471,7 +475,8 @@ public struct AuthoredWorkflowJSON: Codable, Equatable, Sendable {
     managerStepId: String? = nil,
     entryStepId: String? = nil,
     nodes: [WorkflowNodeRegistryRef],
-    steps: [WorkflowStepRef]? = nil
+    steps: [WorkflowStepRef]? = nil,
+    loop: WorkflowLoopMetadata? = nil
   ) {
     self.workflowId = workflowId
     self.description = description
@@ -482,6 +487,7 @@ public struct AuthoredWorkflowJSON: Codable, Equatable, Sendable {
     self.entryStepId = entryStepId
     self.nodes = nodes
     self.steps = steps
+    self.loop = loop
   }
 }
 
@@ -546,6 +552,7 @@ public struct WorkflowDefinition: Codable, Equatable, Sendable {
   public var nodeRegistry: [WorkflowNodeRegistryRef]
   public var steps: [WorkflowStepRef]
   public var nodes: [WorkflowNodeRef]
+  public var loop: WorkflowLoopMetadata?
 
   public init(
     workflowId: String,
@@ -557,7 +564,8 @@ public struct WorkflowDefinition: Codable, Equatable, Sendable {
     entryStepId: String,
     nodeRegistry: [WorkflowNodeRegistryRef],
     steps: [WorkflowStepRef],
-    nodes: [WorkflowNodeRef]
+    nodes: [WorkflowNodeRef],
+    loop: WorkflowLoopMetadata? = nil
   ) {
     self.workflowId = workflowId
     self.description = description
@@ -569,6 +577,7 @@ public struct WorkflowDefinition: Codable, Equatable, Sendable {
     self.nodeRegistry = nodeRegistry
     self.steps = steps
     self.nodes = nodes
+    self.loop = loop
   }
 }
 

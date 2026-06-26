@@ -232,7 +232,7 @@ public enum CodexSessionIndex {
   }
 
   public static func listSessions(options: CodexSessionListOptions = CodexSessionListOptions()) -> CodexSessionListResult {
-    var sessions = mergedIndexedSessions(options: options)
+    var sessions = mergedIndexedSessions(codexHome: options.codexHome)
     sessions = sessions.filter { CodexSessionQuery.matches($0, options: options) }
     sessions = CodexSessionQuery.sorted(sessions, options: options)
     let total = sessions.count
@@ -240,22 +240,20 @@ public enum CodexSessionIndex {
     return CodexSessionListResult(sessions: Array(sessions[pageRange]), total: total, offset: options.offset, limit: options.limit)
   }
 
-  private static func mergedIndexedSessions(options: CodexSessionListOptions) -> [CodexSession] {
-    let sqliteSessions = allSQLiteSessions(options: options)
-    let rolloutSessions = preferredRolloutSessions(discoverRolloutPaths(codexHome: options.codexHome).compactMap(buildSession))
+  private static func mergedIndexedSessions(codexHome: String?) -> [CodexSession] {
+    let sqliteSessions = unfilteredSQLiteSessions(codexHome: codexHome)
+    let rolloutSessions = preferredRolloutSessions(discoverRolloutPaths(codexHome: codexHome).compactMap(buildSession))
     let rolloutIds = Set(rolloutSessions.map(\.id))
     return rolloutSessions + sqliteSessions.filter { !rolloutIds.contains($0.id) }
   }
 
-  private static func allSQLiteSessions(options: CodexSessionListOptions) -> [CodexSession] {
+  private static func unfilteredSQLiteSessions(codexHome: String?) -> [CodexSession] {
     CodexSessionSQLiteIndex.listSessionsSqlite(
-      codexHome: options.codexHome,
+      codexHome: codexHome,
       options: CodexSessionListOptions(
-        codexHome: options.codexHome,
+        codexHome: codexHome,
         limit: Int.max,
-        offset: 0,
-        sortBy: options.sortBy,
-        sortOrder: options.sortOrder
+        offset: 0
       )
     )?.sessions ?? []
   }
@@ -287,8 +285,7 @@ public enum CodexSessionIndex {
   }
 
   public static func findSession(id: String, codexHome: String? = nil) -> CodexSession? {
-    let options = CodexSessionListOptions(codexHome: codexHome, limit: Int.max)
-    return mergedIndexedSessions(options: options).first { $0.id == id }
+    mergedIndexedSessions(codexHome: codexHome).first { $0.id == id }
   }
 
   public static func findLatestSession(codexHome: String? = nil, cwd: String? = nil) -> CodexSession? {
@@ -436,13 +433,14 @@ public enum CodexSessionIndex {
         sortOrder: options.sortOrder
       )
     ).sessions
-    let maxSessions = max(0, searchOptions.maxSessions ?? allCandidates.count)
-    let candidates = allCandidates.lazy.filter(sessionHasReadableTranscript).prefix(maxSessions)
+    let readableCandidates = allCandidates.filter(sessionHasReadableTranscript)
+    let maxSessions = max(0, searchOptions.maxSessions ?? readableCandidates.count)
+    let candidates = readableCandidates.prefix(maxSessions)
     var matches: [String] = []
     var scannedBytes = 0
     var scannedEvents = 0
     var scannedSessions = 0
-    var truncated = false
+    var truncated = readableCandidates.count > candidates.count
     var timedOut = false
     for session in candidates {
       if let timeoutMs = searchOptions.timeoutMs, Date().timeIntervalSince(startedAt) * 1000 >= Double(timeoutMs) {
@@ -569,6 +567,28 @@ public enum CodexSessionSearchError: Error, Equatable {
 }
 
 enum CodexSessionQuery {
+  private enum SortField: String {
+    case createdAt
+    case updatedAt
+
+    init(option: String) {
+      self = Self(rawValue: option) ?? .createdAt
+    }
+  }
+
+  private enum SortDirection: String {
+    case ascending = "asc"
+    case descending = "desc"
+
+    init(option: String) {
+      self = Self(rawValue: option) ?? .descending
+    }
+
+    var isAscending: Bool {
+      self == .ascending
+    }
+  }
+
   static func matches(_ session: CodexSession, options: CodexSessionListOptions) -> Bool {
     if let source = options.source, session.source != source {
       return false
@@ -596,29 +616,30 @@ enum CodexSessionQuery {
   }
 
   private static func isOrderedBefore(_ lhs: CodexSession, _ rhs: CodexSession, options: CodexSessionListOptions) -> Bool {
-    let ascending = options.sortOrder == "asc"
-    let leftPrimary = primarySortDate(lhs, options: options)
-    let rightPrimary = primarySortDate(rhs, options: options)
+    let field = SortField(option: options.sortBy)
+    let direction = SortDirection(option: options.sortOrder)
+    let leftPrimary = primarySortDate(lhs, field: field)
+    let rightPrimary = primarySortDate(rhs, field: field)
     if leftPrimary != rightPrimary {
-      return ascending ? leftPrimary < rightPrimary : leftPrimary > rightPrimary
+      return direction.isAscending ? leftPrimary < rightPrimary : leftPrimary > rightPrimary
     }
-    let leftSecondary = secondarySortDate(lhs, options: options)
-    let rightSecondary = secondarySortDate(rhs, options: options)
+    let leftSecondary = secondarySortDate(lhs, field: field)
+    let rightSecondary = secondarySortDate(rhs, field: field)
     if leftSecondary != rightSecondary {
-      return ascending ? leftSecondary < rightSecondary : leftSecondary > rightSecondary
+      return direction.isAscending ? leftSecondary < rightSecondary : leftSecondary > rightSecondary
     }
     if lhs.id != rhs.id {
-      return ascending ? lhs.id < rhs.id : lhs.id > rhs.id
+      return direction.isAscending ? lhs.id < rhs.id : lhs.id > rhs.id
     }
-    return ascending ? lhs.rolloutPath < rhs.rolloutPath : lhs.rolloutPath > rhs.rolloutPath
+    return direction.isAscending ? lhs.rolloutPath < rhs.rolloutPath : lhs.rolloutPath > rhs.rolloutPath
   }
 
-  private static func primarySortDate(_ session: CodexSession, options: CodexSessionListOptions) -> Date {
-    options.sortBy == "updatedAt" ? session.updatedAt : session.createdAt
+  private static func primarySortDate(_ session: CodexSession, field: SortField) -> Date {
+    field == .updatedAt ? session.updatedAt : session.createdAt
   }
 
-  private static func secondarySortDate(_ session: CodexSession, options: CodexSessionListOptions) -> Date {
-    options.sortBy == "updatedAt" ? session.createdAt : session.updatedAt
+  private static func secondarySortDate(_ session: CodexSession, field: SortField) -> Date {
+    field == .updatedAt ? session.createdAt : session.updatedAt
   }
 }
 

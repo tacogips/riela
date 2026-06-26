@@ -193,6 +193,7 @@ public struct LoopEvidenceManifest: Codable, Equatable, Sendable {
   public var worktree: LoopWorktreeSummary?
   public var policy: LoopPolicyEvidence
   public var recovery: LoopRecoveryLineage?
+  public var workflowMutation: LoopWorkflowMutationEvidence?
   public var steps: [LoopStepEvidence]
   public var gates: [LoopGateResult]
   public var artifacts: [LoopArtifactRef]
@@ -220,6 +221,9 @@ MVP field semantics:
 - `policy`: declared policy, effective policy, decisions, and denials.
 - `recovery`: entry mode, source session id, source step id, parent/child
   session ids, reason, and input reuse policy.
+- `workflowMutation`: optional self-improve or in-place auto-improve
+  change-set, snapshot, apply, and restore evidence when the loop mutates a
+  workflow bundle.
 - `steps`: one record per `WorkflowStepExecution`, with step id, node id,
   execution id, backend, model, status, artifact refs, accepted output summary,
   and evidence tags.
@@ -338,6 +342,101 @@ new child session and records both parent and child manifests. Retry and replay
 record the source communication or step attempt but do not erase the original
 failure evidence. Terminal sessions are not mutated by resume; the current
 runner behavior of returning the terminal result remains compatible.
+
+## Workflow Self-Evolution And Version Safety
+
+Workflow self-improvement should use the same evidence and gate discipline as
+code-changing loops. The current reviewed mutation path records backups and
+reports, but a first-line loop tool needs bundle-wide versioning rather than a
+single-file backup.
+
+Add an optional self-evolution contract under workflow loop metadata:
+
+```json
+{
+  "loop": {
+    "selfEvolution": {
+      "allowed": true,
+      "defaultMode": "propose",
+      "requiresReviewGate": true,
+      "snapshotPolicy": "bundle-before-apply",
+      "historyRoot": ".riela/workflow-history",
+      "immutablePackageMutation": "deny",
+      "requiredVerification": ["workflow validate", "mock-scenario"]
+    }
+  }
+}
+```
+
+Add runtime models:
+
+```swift
+public struct LoopWorkflowMutationEvidence: Codable, Equatable, Sendable {
+  public var mode: String
+  public var changeSetId: String?
+  public var snapshotId: String?
+  public var restoreId: String?
+  public var workflowId: String
+  public var workflowDirectory: String
+  public var sourceMutable: Bool
+  public var packageName: String?
+  public var packageVersion: String?
+  public var workflowContractVersion: String?
+  public var beforeDigest: String?
+  public var afterDigest: String?
+  public var reviewedByGateId: String?
+  public var applied: Bool
+  public var restored: Bool
+  public var diagnostics: [String]
+}
+
+public struct WorkflowChangeSet: Codable, Equatable, Sendable {
+  public var changeSetId: String
+  public var sourceSessionId: String
+  public var sourceStepId: String?
+  public var targetWorkflowId: String
+  public var targetWorkflowDirectory: String
+  public var proposedFiles: [LoopChangedFile]
+  public var rationale: String
+  public var validation: [LoopVerificationEvidence]
+  public var reviewerGateId: String?
+  public var rejectedAlternatives: [String]
+}
+
+public struct WorkflowBundleSnapshotManifest: Codable, Equatable, Sendable {
+  public var snapshotId: String
+  public var workflowId: String
+  public var workflowDirectory: String
+  public var createdBySessionId: String?
+  public var createdBeforeChangeSetId: String?
+  public var sourceKind: String
+  public var packageName: String?
+  public var packageVersion: String?
+  public var workflowContractVersion: String?
+  public var bundleDigest: String
+  public var files: [LoopArtifactRef]
+  public var retentionClass: String
+  public var redactionStatus: String
+}
+```
+
+Snapshot semantics:
+
+- Snapshot the whole workflow bundle before applying a reviewed mutation:
+  `workflow.json`, node files, prompt files, nested workflow directories owned
+  by the bundle, mock scenarios, `EXPECTED_RESULTS.md`, package metadata, and
+  executable file bits.
+- Store snapshots under `.riela/workflow-history/<workflow-id>/snapshots/` for
+  project workflows and under the user data root for user-scope workflows.
+- Treat installed package workflows as immutable by default. `workflow
+  self-improve` should propose an overlay or package update instead of
+  mutating the installed package directory unless an explicit update mode is
+  implemented.
+- Restore must check containment, ownership, and dirty destination files before
+  writing. It fails closed unless the user supplies explicit restore approval.
+- Package `version` is distribution metadata. Workflow behavior compatibility
+  should use an authored `workflowContractVersion` plus bundle digests and
+  snapshot ids.
 
 ## Mutation And Process Policy Enforcement
 
@@ -506,7 +605,14 @@ Phase 4: package promotion readiness.
 - Validate mock scenarios, expected results, policies, gates, and usage
   contracts for promotion-ready packages.
 
-Phase 5: first-party loop templates.
+Phase 5: workflow self-evolution safety.
+
+- Add `WorkflowChangeSet` and `WorkflowBundleSnapshotManifest`.
+- Upgrade `workflow self-improve` to propose/review/apply/restore semantics.
+- Add workflow version listing, diff, and restore CLI commands.
+- Link self-improve and in-place auto-improve mutations into loop evidence.
+
+Phase 6: first-party loop templates.
 
 - Update first-party design/implement/review, secure review, package release,
   event-source verification, and self-improve workflows with loop metadata.
@@ -523,3 +629,7 @@ Phase 5: first-party loop templates.
 - No cosmetic loop UX before evidence, gate, recovery, and policy records
   exist.
 - No attempt to infer contracts from prompt text.
+- No claim that package metadata version alone is workflow version control.
+- No `workflow.json`-only backup for workflow self-evolution; bundle behavior
+  is defined by workflow JSON, nodes, prompts, mocks, expected results, and
+  package metadata together.

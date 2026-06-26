@@ -120,32 +120,125 @@ func legacySwiftCoverageProbes() -> [LegacyCoverageProbe] {
 }
 
 func makeTemporaryDirectory() throws -> URL {
-  let url = FileManager.default.temporaryDirectory.appendingPathComponent("riela-claude-agent-\(UUID().uuidString)", isDirectory: true)
+  let repoTmp = URL(
+    fileURLWithPath: FileManager.default.currentDirectoryPath,
+    isDirectory: true
+  ).appendingPathComponent("tmp/riela-claude-agent-tests", isDirectory: true)
+  try FileManager.default.createDirectory(at: repoTmp, withIntermediateDirectories: true)
+  let url = repoTmp.appendingPathComponent(UUID().uuidString, isDirectory: true)
   try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
   return url
 }
 
-func writeClaudeRollout(home: URL, sessionId: String, cwd: String = "/tmp/project") throws {
-  let day = home.appendingPathComponent("sessions/2026/06/17", isDirectory: true)
-  try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
-  let rollout = day.appendingPathComponent("rollout-2026-06-17T00-00-00-\(sessionId).jsonl")
-  let lines = [
-    #"{"timestamp":"2026-06-17T00:00:00.000Z","type":"session_meta","# +
-      #""payload":{"meta":{"id":"\#(sessionId)","timestamp":"2026-06-17T00:00:00.000Z","# +
-      #""cwd":"\#(cwd)","cli_version":"0.1.0","source":"cli","model_provider":"anthropic"}}}"#,
-    #"{"timestamp":"2026-06-17T00:00:01.000Z","type":"event_msg","payload":{"type":"UserMessage","message":"hello"}}"#
-  ]
-  try lines.joined(separator: "\n").write(to: rollout, atomically: true, encoding: .utf8)
+func testDate(_ text: String) throws -> Date {
+  try XCTUnwrap(ISO8601DateFormatter().date(from: text))
 }
 
-func writeClaudeSQLiteState(home: URL, sessionId: String) throws {
+func claudeRolloutLine(_ timestamp: String, _ type: String, _ payload: JSONValue) -> String {
+  let object = JSONValue.object([
+    "timestamp": .string(timestamp),
+    "type": .string(type),
+    "payload": payload
+  ])
+  guard
+    let data = try? JSONEncoder().encode(object),
+    let string = String(data: data, encoding: .utf8)
+  else {
+    XCTFail("expected Claude rollout JSON encoding to succeed")
+    return ""
+  }
+  return string
+}
+
+func claudeSessionMetaLine(
+  id: String,
+  timestamp: String,
+  cwd: String,
+  cliVersion: String,
+  source: String,
+  modelProvider: String,
+  branch: String? = nil
+) -> String {
+  var payload: JSONObject = [
+    "meta": .object([
+      "id": .string(id),
+      "timestamp": .string(timestamp),
+      "cwd": .string(cwd),
+      "cli_version": .string(cliVersion),
+      "source": .string(source),
+      "model_provider": .string(modelProvider)
+    ])
+  ]
+  if let branch {
+    payload["git"] = .object(["branch": .string(branch)])
+  }
+  return claudeRolloutLine(timestamp, "session_meta", .object(payload))
+}
+
+func claudeEventMessageLine(timestamp: String, type: String, message: String) -> String {
+  claudeRolloutLine(timestamp, "event_msg", .object(["type": .string(type), "message": .string(message)]))
+}
+
+func claudeSQLLiteral(_ value: String) -> String {
+  "'\(value.replacingOccurrences(of: "'", with: "''"))'"
+}
+
+@discardableResult
+func writeClaudeRollout(
+  home: URL,
+  sessionId: String,
+  cwd: String = "/tmp/project",
+  source: String = "cli",
+  branch: String? = nil,
+  message: String = "hello",
+  modifiedAt: String? = nil,
+  rolloutFileTimestamp: String = "2026-06-17T00-00-00"
+) throws -> URL {
+  let day = home.appendingPathComponent("sessions/2026/06/17", isDirectory: true)
+  try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
+  let rollout = day.appendingPathComponent("rollout-\(rolloutFileTimestamp)-\(sessionId).jsonl")
+  let lines = [
+    claudeSessionMetaLine(
+      id: sessionId,
+      timestamp: "2026-06-17T00:00:00.000Z",
+      cwd: cwd,
+      cliVersion: "0.1.0",
+      source: source,
+      modelProvider: "anthropic",
+      branch: branch
+    ),
+    claudeEventMessageLine(timestamp: "2026-06-17T00:00:01.000Z", type: "UserMessage", message: message)
+  ]
+  try lines.joined(separator: "\n").write(to: rollout, atomically: true, encoding: .utf8)
+  if let modifiedAt {
+    try FileManager.default.setAttributes(
+      [.modificationDate: try testDate(modifiedAt)],
+      ofItemAtPath: rollout.path
+    )
+  }
+  return rollout
+}
+
+func writeClaudeSQLiteState(
+  home: URL,
+  sessionId: String,
+  cwd: String = "/tmp/sqlite-project",
+  source: String = "cli",
+  branch: String = ""
+) throws {
   let state = home.appendingPathComponent("state")
   let rollout = home.appendingPathComponent("sqlite-\(sessionId).jsonl")
   try [
-    #"{"timestamp":"2026-06-17T00:02:00.000Z","type":"session_meta","# +
-      #""payload":{"meta":{"id":"\#(sessionId)","timestamp":"2026-06-17T00:02:00.000Z","# +
-      #""cwd":"/tmp/sqlite-project","cli_version":"1.0.0","source":"cli","model_provider":"anthropic"}}}"#,
-    #"{"timestamp":"2026-06-17T00:02:01.000Z","type":"event_msg","payload":{"type":"UserMessage","message":"sqlite hello"}}"#
+    claudeSessionMetaLine(
+      id: sessionId,
+      timestamp: "2026-06-17T00:02:00.000Z",
+      cwd: cwd,
+      cliVersion: "1.0.0",
+      source: source,
+      modelProvider: "anthropic",
+      branch: branch.isEmpty ? nil : branch
+    ),
+    claudeEventMessageLine(timestamp: "2026-06-17T00:02:01.000Z", type: "UserMessage", message: "sqlite hello")
   ].joined(separator: "\n").write(to: rollout, atomically: true, encoding: .utf8)
   let sql = """
   CREATE TABLE threads (
@@ -165,19 +258,19 @@ func writeClaudeSQLiteState(home: URL, sessionId: String) throws {
     git_origin_url TEXT
   );
   INSERT INTO threads VALUES (
-    '\(sessionId)',
-    '\(rollout.path)',
+    \(claudeSQLLiteral(sessionId)),
+    \(claudeSQLLiteral(rollout.path)),
     '2026-06-17T00:02:00.000Z',
     '2026-06-17T00:03:00.000Z',
-    'cli',
+    \(claudeSQLLiteral(source)),
     'anthropic',
-    '/tmp/sqlite-project',
+    \(claudeSQLLiteral(cwd)),
     '1.0.0',
     'SQLite session',
     'sqlite hello',
     '',
     '',
-    '',
+    \(claudeSQLLiteral(branch)),
     ''
   );
   """

@@ -17,26 +17,13 @@ public enum ClaudeCodeSessionSQLiteIndex {
       return nil
     }
     let rows = selectRows(dbPath: dbPath)
-    let sessions = rows.compactMap(rowToSession).filter { session in
-      if let source = options.source, session.source != source {
-        return false
-      }
-      if let cwd = options.cwd, session.cwd != cwd {
-        return false
-      }
-      if let branch = options.branch, session.git?.branch != branch {
-        return false
-      }
-      return true
-    }.sorted { lhs, rhs in
-      let left = options.sortBy == "updatedAt" ? lhs.updatedAt : lhs.createdAt
-      let right = options.sortBy == "updatedAt" ? rhs.updatedAt : rhs.createdAt
-      return options.sortOrder == "asc" ? left < right : left > right
-    }
+    let sessions = ClaudeCodeSessionQuery.sorted(
+      rows.compactMap(rowToSession).filter { ClaudeCodeSessionQuery.matches($0, options: options) },
+      options: options
+    )
     let total = sessions.count
-    let start = min(max(options.offset, 0), sessions.count)
-    let end = min(start + max(options.limit, 0), sessions.count)
-    return ClaudeCodeSessionListResult(sessions: Array(sessions[start..<end]), total: total, offset: options.offset, limit: options.limit)
+    let pageRange = ClaudeCodeSessionQuery.page(totalCount: total, offset: options.offset, limit: options.limit)
+    return ClaudeCodeSessionListResult(sessions: Array(sessions[pageRange]), total: total, offset: options.offset, limit: options.limit)
   }
 
   public static func findSessionSqlite(id: String, claudeCodeHome: String? = nil) -> ClaudeCodeSession? {

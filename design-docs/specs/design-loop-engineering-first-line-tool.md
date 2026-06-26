@@ -208,6 +208,14 @@ An engineer runs a workflow self-improve or retrospective loop that proposes
 prompt/workflow/plan updates, records incidents and rejected alternatives, and
 requires review before mutating durable project workflows.
 
+### Restore a Workflow Version
+
+An engineer sees that a self-improve or in-place auto-improve changed a
+workflow badly. Riela shows the prior bundle snapshot, the applied change-set,
+validation status, package provenance, and dependent skills. The engineer
+restores the previous version without touching unrelated project files or
+unrelated workflow packages.
+
 ## Capability Changes
 
 Riela should add or harden these capabilities:
@@ -232,6 +240,11 @@ Riela should add or harden these capabilities:
   results, policy declarations, and output contracts.
 - Distilled loop memory with provenance, redaction, scope, expiry, confidence,
   and invalidation.
+- Workflow self-evolution as a reviewed change-set lifecycle, not an immediate
+  source mutation: propose, snapshot, validate, review, apply, verify, and
+  optionally restore.
+- Bundle-wide workflow version records for mutable project/user workflows,
+  separate from package metadata versions and execution session ids.
 
 ## Runtime, Workflow, and Agent UX Changes
 
@@ -245,6 +258,12 @@ Riela should add or harden these capabilities:
   semantics.
 - Fail closed when required gate/output contracts are missing or invalid.
 - Track workflow definition digest and reviewed-tree metadata for integrity.
+- Treat workflow self-improvement as an auditable mutation transaction with a
+  bundle snapshot, proposed patch, validation evidence, reviewer decision,
+  apply result, and rollback metadata.
+- Distinguish `workflowDefinitionDigest`, `workflowContractVersion`,
+  `workflowSourceVersion`, and package `version`; do not use package metadata
+  version as a substitute for workflow behavior versioning.
 
 ### Workflow Authoring
 
@@ -257,6 +276,10 @@ Riela should add or harden these capabilities:
   workflows.
 - Make final workflow outputs include decisions, roadmap, changed files,
   verification, rejected alternatives, and residual risks.
+- Add optional authored `workflow.version` or `workflow.contractVersion` only
+  for compatibility promises. Runtime source history should still be based on
+  bundle digests and immutable snapshots, because many valid workflow changes
+  are local and unreleased.
 
 ### Agent UX
 
@@ -269,6 +292,66 @@ Riela should add or harden these capabilities:
 - Add `riela loop start/status/evidence/rerun-step/promote` as thin,
   discoverable wrappers over workflow/session/package primitives after the
   evidence contract exists.
+
+## Self-Evolution and Workflow Versioning
+
+Current review found a gap between the self-improve product goal and the
+mutation safety model. `workflow self-improve` has an explicit approval gate and
+creates a backup/report, but the current shape is closer to a local patch
+helper than durable workflow version management. The better model is:
+
+- `workflow self-improve --dry-run` produces a `WorkflowChangeSet` only.
+- `workflow self-improve --yes` first captures a bundle-wide snapshot, then
+  applies a reviewed change-set atomically.
+- A snapshot includes `workflow.json`, node files, prompts, nested workflow
+  directories owned by the bundle, mock scenarios, expected results, package
+  metadata when present, and a file manifest with digests and executable bits.
+- A change-set records proposed file edits, rationale, source session id,
+  reviewer gate, validation commands, expected-result updates, and rejected
+  alternatives.
+- Restore is a first-class operation that applies a snapshot back to the bundle
+  root only after checking ownership, destination containment, dirty-file
+  conflicts, and package mutability.
+
+Version records should live outside ordinary scratch output:
+
+```text
+.riela/workflow-history/
+  <workflow-id>/
+    snapshots/<snapshot-id>/manifest.json
+    snapshots/<snapshot-id>/bundle/
+    changesets/<change-id>.json
+    restores/<restore-id>.json
+```
+
+The history store is not a replacement for Git. It is a local safety layer for
+Riela-managed workflow mutation. Git remains the durable repository history,
+while Riela history explains which workflow session proposed a change, which
+gate accepted it, what was applied, and how to restore it without guessing.
+
+Required CLI surface:
+
+- `riela workflow versions <workflow>` lists snapshots and applied change-sets.
+- `riela workflow version show <workflow> <snapshot-id>` prints provenance,
+  digests, validation, and restore safety.
+- `riela workflow version diff <workflow> <from> <to>` shows bundle-level
+  changes without reading raw secrets.
+- `riela workflow restore <workflow> <snapshot-id> [--yes]` restores a
+  snapshot with the same containment and dirty-worktree protections used by
+  checkout/install mutation paths.
+- `riela loop evidence <session-id>` links to workflow change-set ids and
+  snapshot ids when a loop mutates workflow definitions.
+
+Package semantics:
+
+- Package `version` remains package metadata and distribution identity.
+- Package `checksum` and integrity fields identify a published package payload.
+- Workflow contract version identifies compatibility of callable input/output,
+  loop policy, gate contracts, and evidence schema expectations.
+- Mutable project/user workflow snapshots identify local source history.
+- Installed package workflows are read-only unless an explicit update or
+  overlay workflow is created; self-improve should refuse to mutate immutable
+  package sources by default.
 
 ## Observability Requirements
 
@@ -295,6 +378,11 @@ Riela should add or harden these capabilities:
 - Auto-improve records incidents, remediation attempts, target session ids,
   patch modes, budgets, policy, and final acceptance/rejection.
 - Recovery surfaces must explain what will be reused, replaced, or revalidated.
+- In-place workflow mutation must create a restorable bundle snapshot before
+  applying any patch. Execution-copy auto-improve may record change proposals
+  without mutating the source bundle.
+- Rollback and restore must be evidence-producing operations with their own
+  session or command record, not untracked file copies.
 
 ## Security Requirements
 
@@ -353,14 +441,23 @@ Riela should add or harden these capabilities:
 - Require final outputs to list decisions, roadmap, verification, rejected
   alternatives, and residual risks.
 
-### P4: Product Loop UX
+### P4: Workflow Self-Evolution Safety
+
+- Add `WorkflowChangeSet` and bundle snapshot records.
+- Upgrade `workflow self-improve` from single-file backup/report behavior to
+  bundle-wide propose/review/apply/restore semantics.
+- Add workflow version listing, diff, and restore commands.
+- Refuse self-improve mutation against immutable package sources unless an
+  explicit overlay/update path is selected.
+
+### P5: Product Loop UX
 
 - Add thin `riela loop` aliases over workflow/session/package primitives.
 - Add RielaApp/WorkflowViewer evidence timelines.
 - Show policy and evidence expectations before start.
 - Add `loop promote` for package-readiness checks.
 
-### P5: Durable Learning and Telemetry Reconciliation
+### P6: Durable Learning and Telemetry Reconciliation
 
 - Store redacted, distilled loop lessons with source-session provenance,
   expiry, scope, confidence, and invalidation triggers.
@@ -383,6 +480,12 @@ Riela should add or harden these capabilities:
   first-line engineering tool must keep operator control clear.
 - Nested Riela/Codex recursion as the primary strategy: rejected because it
   hides cost, state, auth, mutation, and recovery boundaries.
+- Treating self-improve backups as `workflow.json`-only copies: rejected
+  because workflow behavior also lives in nodes, prompts, mocks, expected
+  results, nested workflow directories, and package metadata.
+- Treating package `version` as workflow version control: rejected because a
+  package metadata version does not identify local mutable workflow history or
+  callable-contract compatibility by itself.
 
 ## Open Questions
 
@@ -399,6 +502,11 @@ Riela should add or harden these capabilities:
   adapter/tool audit records?
 - What are the first three first-party loop templates worth promoting before
   broad package publication?
+- Should workflow history be stored only in project `.riela/workflow-history`,
+  or should user-scope workflows use `~/.riela/workflow-history` with
+  project-local restore records?
+- What retention policy should apply to bundle snapshots that may contain
+  proprietary prompts or sensitive examples?
 
 ## Risks
 
@@ -414,6 +522,12 @@ Riela should add or harden these capabilities:
   unless mutation and process policy are shown before start.
 - Durable learning can preserve stale conclusions unless lessons have expiry,
   invalidation triggers, and source-session provenance.
+- Workflow history can leak prompt or mock-scenario content if snapshots are
+  copied carelessly. Snapshot manifests should support redaction flags,
+  retention classes, and explicit export controls.
+- Restore can overwrite valuable local edits if it ignores dirty state.
+  Restore must fail closed on conflicts unless the user supplies explicit
+  path-scoped overwrite approval.
 
 ## Next Implementation-Plan Candidates
 
@@ -436,3 +550,6 @@ Riela should add or harden these capabilities:
    lessons with expiry and invalidation.
 8. `viewer-loop-evidence-timeline`: add a stage-oriented evidence timeline to
    RielaApp/WorkflowViewer.
+9. `workflow-self-evolution-versioning`: add bundle snapshots, reviewed
+   change-sets, workflow version listing/diff/restore commands, and
+   self-improve integration.

@@ -233,49 +233,59 @@ public enum CursorCLISessionIndex {
   }
 
   public static func listSessions(options: CursorCLISessionListOptions = CursorCLISessionListOptions()) -> CursorCLISessionListResult {
-    var sessions: [CursorCLISession] = []
-    if let sqliteResult = CursorCLISessionSQLiteIndex.listSessionsSqlite(
-      cursorCLIHome: options.cursorCLIHome,
-      options: CursorCLISessionListOptions(cursorCLIHome: options.cursorCLIHome, limit: Int.max, offset: 0, sortBy: options.sortBy, sortOrder: options.sortOrder)
-    ) {
-      sessions.append(contentsOf: sqliteResult.sessions)
-    }
-    let existingIds = Set(sessions.map(\.id))
-    sessions.append(contentsOf: discoverRolloutPaths(cursorCLIHome: options.cursorCLIHome).compactMap(buildSession).filter { !existingIds.contains($0.id) })
-    sessions = sessions.filter { session in
-      if let source = options.source, session.source != source {
-        return false
-      }
-      if let cwd = options.cwd, URL(fileURLWithPath: session.cwd).standardizedFileURL.path != URL(fileURLWithPath: cwd).standardizedFileURL.path {
-        return false
-      }
-      if let branch = options.branch, session.git?.branch != branch {
-        return false
-      }
-      return true
-    }
-    sessions.sort { lhs, rhs in
-      let left = options.sortBy == "updatedAt" ? lhs.updatedAt : lhs.createdAt
-      let right = options.sortBy == "updatedAt" ? rhs.updatedAt : rhs.createdAt
-      return options.sortOrder == "asc" ? left < right : left > right
-    }
+    var sessions = mergedIndexedSessions(cursorCLIHome: options.cursorCLIHome)
+    sessions = CursorCLISessionQuery.sorted(sessions.filter { CursorCLISessionQuery.matches($0, options: options) }, options: options)
     let total = sessions.count
-    let start = min(max(options.offset, 0), sessions.count)
-    let end = min(start + max(options.limit, 0), sessions.count)
-    return CursorCLISessionListResult(sessions: Array(sessions[start..<end]), total: total, offset: options.offset, limit: options.limit)
+    let pageRange = CursorCLISessionQuery.page(totalCount: total, offset: options.offset, limit: options.limit)
+    return CursorCLISessionListResult(sessions: Array(sessions[pageRange]), total: total, offset: options.offset, limit: options.limit)
+  }
+
+  private static func mergedIndexedSessions(cursorCLIHome: String?) -> [CursorCLISession] {
+    let sqliteSessions = unfilteredSQLiteSessions(cursorCLIHome: cursorCLIHome)
+    let rolloutSessions = preferredRolloutSessions(discoverRolloutPaths(cursorCLIHome: cursorCLIHome).compactMap(buildSession))
+    let rolloutIds = Set(rolloutSessions.map(\.id))
+    return rolloutSessions + sqliteSessions.filter { !rolloutIds.contains($0.id) }
+  }
+
+  private static func unfilteredSQLiteSessions(cursorCLIHome: String?) -> [CursorCLISession] {
+    CursorCLISessionSQLiteIndex.listSessionsSqlite(
+      cursorCLIHome: cursorCLIHome,
+      options: CursorCLISessionListOptions(
+        cursorCLIHome: cursorCLIHome,
+        limit: Int.max,
+        offset: 0
+      )
+    )?.sessions ?? []
+  }
+
+  private static func preferredRolloutSessions(_ sessions: [CursorCLISession]) -> [CursorCLISession] {
+    var ids: [String] = []
+    var sessionsById: [String: CursorCLISession] = [:]
+    for session in sessions {
+      guard let existing = sessionsById[session.id] else {
+        ids.append(session.id)
+        sessionsById[session.id] = session
+        continue
+      }
+      if shouldPreferRolloutSession(session, over: existing) {
+        sessionsById[session.id] = session
+      }
+    }
+    return ids.compactMap { sessionsById[$0] }
+  }
+
+  private static func shouldPreferRolloutSession(_ candidate: CursorCLISession, over existing: CursorCLISession) -> Bool {
+    if candidate.updatedAt != existing.updatedAt {
+      return candidate.updatedAt > existing.updatedAt
+    }
+    if candidate.createdAt != existing.createdAt {
+      return candidate.createdAt > existing.createdAt
+    }
+    return candidate.rolloutPath > existing.rolloutPath
   }
 
   public static func findSession(id: String, cursorCLIHome: String? = nil) -> CursorCLISession? {
-    if let session = CursorCLISessionSQLiteIndex.findSessionSqlite(id: id, cursorCLIHome: cursorCLIHome) {
-      return session
-    }
-    for path in discoverRolloutPaths(cursorCLIHome: cursorCLIHome) {
-      guard let session = buildSession(rolloutPath: path), session.id == id else {
-        continue
-      }
-      return session
-    }
-    return nil
+    mergedIndexedSessions(cursorCLIHome: cursorCLIHome).first { $0.id == id }
   }
 
   public static func findLatestSession(cursorCLIHome: String? = nil, cwd: String? = nil) -> CursorCLISession? {
@@ -417,13 +427,14 @@ public enum CursorCLISessionIndex {
         sortOrder: options.sortOrder
       )
     ).sessions
-    let maxSessions = max(0, searchOptions.maxSessions ?? allCandidates.count)
-    let candidates = Array(allCandidates.prefix(maxSessions))
+    let readableCandidates = allCandidates.filter(sessionHasReadableTranscript)
+    let maxSessions = max(0, searchOptions.maxSessions ?? readableCandidates.count)
+    let candidates = readableCandidates.prefix(maxSessions)
     var matches: [String] = []
     var scannedBytes = 0
     var scannedEvents = 0
     var scannedSessions = 0
-    var truncated = false
+    var truncated = readableCandidates.count > candidates.count
     var timedOut = false
     for session in candidates {
       if let timeoutMs = searchOptions.timeoutMs, Date().timeIntervalSince(startedAt) * 1000 >= Double(timeoutMs) {
@@ -464,12 +475,9 @@ public enum CursorCLISessionIndex {
       }
     }
     let total = matches.count
-    let requestedOffset = max(0, searchOptions.offset)
-    let requestedLimit = max(0, searchOptions.limit)
-    let start = min(requestedOffset, matches.count)
-    let end = min(start + requestedLimit, matches.count)
+    let pageRange = CursorCLISessionQuery.page(totalCount: total, offset: searchOptions.offset, limit: searchOptions.limit)
     return CursorCLISessionsSearchResult(
-      sessionIds: Array(matches[start..<end]),
+      sessionIds: Array(matches[pageRange]),
       total: total,
       offset: searchOptions.offset,
       limit: searchOptions.limit,
@@ -480,6 +488,10 @@ public enum CursorCLISessionIndex {
       timedOut: timedOut,
       durationMs: Date().timeIntervalSince(startedAt) * 1000
     )
+  }
+
+  private static func sessionHasReadableTranscript(_ session: CursorCLISession) -> Bool {
+    FileManager.default.isReadableFile(atPath: session.rolloutPath)
   }
 
   private static func countMatches(text: String, query: String, caseSensitive: Bool) -> Int {
@@ -537,6 +549,83 @@ public enum CursorCLISessionIndex {
 
 public enum CursorCLISessionSearchError: Error, Equatable {
   case emptyQuery
+}
+
+enum CursorCLISessionQuery {
+  private enum SortField: String {
+    case createdAt
+    case updatedAt
+
+    init(option: String) {
+      self = Self(rawValue: option) ?? .createdAt
+    }
+  }
+
+  private enum SortDirection: String {
+    case ascending = "asc"
+    case descending = "desc"
+
+    init(option: String) {
+      self = Self(rawValue: option) ?? .descending
+    }
+
+    var isAscending: Bool {
+      self == .ascending
+    }
+  }
+
+  static func matches(_ session: CursorCLISession, options: CursorCLISessionListOptions) -> Bool {
+    if let source = options.source, session.source != source {
+      return false
+    }
+    if let cwd = options.cwd, standardizedPath(session.cwd) != standardizedPath(cwd) {
+      return false
+    }
+    if let branch = options.branch, session.git?.branch != branch {
+      return false
+    }
+    return true
+  }
+
+  static func sorted(_ sessions: [CursorCLISession], options: CursorCLISessionListOptions) -> [CursorCLISession] {
+    sessions.sorted { lhs, rhs in
+      isOrderedBefore(lhs, rhs, options: options)
+    }
+  }
+
+  static func page(totalCount: Int, offset: Int, limit: Int) -> Range<Int> {
+    let start = min(max(offset, 0), totalCount)
+    let requestedCount = max(limit, 0)
+    let end = start + min(requestedCount, totalCount - start)
+    return start..<end
+  }
+
+  private static func isOrderedBefore(_ lhs: CursorCLISession, _ rhs: CursorCLISession, options: CursorCLISessionListOptions) -> Bool {
+    let field = SortField(option: options.sortBy)
+    let direction = SortDirection(option: options.sortOrder)
+    let leftPrimary = primarySortDate(lhs, field: field)
+    let rightPrimary = primarySortDate(rhs, field: field)
+    if leftPrimary != rightPrimary {
+      return direction.isAscending ? leftPrimary < rightPrimary : leftPrimary > rightPrimary
+    }
+    let leftSecondary = secondarySortDate(lhs, field: field)
+    let rightSecondary = secondarySortDate(rhs, field: field)
+    if leftSecondary != rightSecondary {
+      return direction.isAscending ? leftSecondary < rightSecondary : leftSecondary > rightSecondary
+    }
+    if lhs.id != rhs.id {
+      return direction.isAscending ? lhs.id < rhs.id : lhs.id > rhs.id
+    }
+    return direction.isAscending ? lhs.rolloutPath < rhs.rolloutPath : lhs.rolloutPath > rhs.rolloutPath
+  }
+
+  private static func primarySortDate(_ session: CursorCLISession, field: SortField) -> Date {
+    field == .updatedAt ? session.updatedAt : session.createdAt
+  }
+
+  private static func secondarySortDate(_ session: CursorCLISession, field: SortField) -> Date {
+    field == .updatedAt ? session.createdAt : session.updatedAt
+  }
 }
 
 public func resolveCursorCLIHome(environment: [String: String] = ProcessInfo.processInfo.environment) -> String {
@@ -696,6 +785,10 @@ private func isoDate(_ text: String) -> Date? {
     return date
   }
   return ISO8601DateFormatter().date(from: text)
+}
+
+private func standardizedPath(_ path: String) -> String {
+  URL(fileURLWithPath: path).standardizedFileURL.path
 }
 
 private func jsonString(_ value: RielaCore.JSONValue?) -> String? {

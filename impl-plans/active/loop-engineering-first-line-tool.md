@@ -481,7 +481,64 @@ public struct WorkflowPackageLoopMetadata: Codable, Equatable, Sendable {
 - [x] Check package manifest usage contract, gates, mock scenarios, expected
   results, and policies for promotion-ready packages.
 
-### 8. Tests
+### 8. Workflow Self-Evolution Versioning
+
+#### `Sources/RielaCore/WorkflowHistoryModels.swift`
+
+**Status**: NOT STARTED
+
+Planned models:
+
+- `WorkflowChangeSet`
+- `WorkflowBundleSnapshotManifest`
+- `WorkflowRestoreRecord`
+- `LoopWorkflowMutationEvidence`
+
+**Checklist**:
+
+- [ ] Model bundle-wide snapshots with workflow id, source kind, package
+  provenance, workflow contract version, bundle digest, file refs, retention,
+  and redaction status.
+- [ ] Model reviewed change-sets with source session id, reviewer gate,
+  proposed files, rationale, validation evidence, and rejected alternatives.
+- [ ] Model restore records with source snapshot id, dirty-conflict handling,
+  restored files, skipped files, and validation evidence.
+- [ ] Add deterministic Codable tests.
+
+#### `Sources/RielaCLI/WorkflowSelfImproveVersioning.swift`
+
+**Status**: NOT STARTED
+
+**Checklist**:
+
+- [ ] Upgrade `workflow self-improve --dry-run` to emit a reviewed
+  `WorkflowChangeSet` without mutating sources.
+- [ ] Before `workflow self-improve --yes`, capture a bundle-wide snapshot
+  under `.riela/workflow-history/<workflow-id>/`.
+- [ ] Snapshot `workflow.json`, nodes, prompts, nested bundle-owned workflows,
+  mock scenarios, `EXPECTED_RESULTS.md`, package metadata, and executable bits.
+- [ ] Refuse mutation of immutable installed package workflows unless an
+  explicit overlay/update mode is selected.
+- [ ] Write `LoopWorkflowMutationEvidence` into loop evidence when workflow
+  mutation happens during a loop.
+- [ ] Replace single-file rollback metadata with bundle snapshot ids.
+
+#### `Sources/RielaCLI/WorkflowVersionCommands.swift`
+
+**Status**: NOT STARTED
+
+**Checklist**:
+
+- [ ] Add `riela workflow versions <workflow>`.
+- [ ] Add `riela workflow version show <workflow> <snapshot-id>`.
+- [ ] Add `riela workflow version diff <workflow> <from> <to>`.
+- [ ] Add `riela workflow restore <workflow> <snapshot-id> [--yes]`.
+- [ ] Restore only after containment, ownership, package mutability, and dirty
+  destination checks pass.
+- [ ] Add tests for conflict failure, explicit restore approval, package-source
+  immutability, and successful project workflow restore.
+
+### 9. Tests
 
 #### `Tests/RielaCoreTests/LoopEngineeringModelsTests.swift` and `WorkflowLoopMetadataCodableTests.swift`
 
@@ -607,6 +664,7 @@ Validation coverage lives in
 | GraphQL DTOs and query service | `Sources/RielaGraphQL/GraphQLContracts.swift`, `Sources/RielaGraphQL/RielaGraphQL.swift` | DONE | `GraphQLContractsTests` |
 | Package manifest metadata | `Sources/RielaAddons/WorkflowPackageManifest.swift`, `Sources/RielaAddons/WorkflowPackagePromotionArtifacts.swift` | DONE | `WorkflowPackageManifestTests` |
 | Package publish readiness | `Sources/RielaCLI/WorkflowPackageParityCommands.swift`, `Sources/RielaCLI/WorkflowPackageLoopReadiness.swift` | DONE | `WorkflowCommandTests` |
+| Workflow self-evolution versioning | `Sources/RielaCore/WorkflowHistoryModels.swift`, `Sources/RielaCLI/WorkflowSelfImproveVersioning.swift`, `Sources/RielaCLI/WorkflowVersionCommands.swift` | NOT STARTED | planned |
 
 ## Dependencies
 
@@ -620,6 +678,7 @@ Validation coverage lives in
 | Gate enforcement | Gate model, projector, policy evaluator | Available |
 | Package promotion checks | Workflow loop metadata and package loop metadata | Available |
 | First-party loop template updates | Gate enforcement and usage projection | Available |
+| Workflow self-evolution versioning | Evidence manifest, package mutability metadata, self-improve command surface | Not started |
 
 ## Dependency Ordering
 
@@ -633,6 +692,8 @@ Validation coverage lives in
 8. Add policy preflight and required gate enforcement.
 9. Add package promotion readiness checks.
 10. Update first-party workflows only after runtime and tests are stable.
+11. Add workflow self-evolution versioning after evidence manifests and
+    package mutability metadata are stable.
 
 ## Test Plan By Module
 
@@ -667,6 +728,8 @@ Swift package test suite.
   expected results, gates, and usage contracts.
 - [x] CLI, GraphQL, runtime, and package tests pass.
 - [x] No unrelated dirty worktree changes are reverted.
+- [ ] Workflow self-improve captures bundle-wide snapshots, records reviewed
+  change-sets, and supports list/show/diff/restore version commands.
 
 ## Migration And Backward-Compatibility Notes
 

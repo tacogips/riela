@@ -510,7 +510,7 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
 
   public static func isDaemonSourceKind(_ rawKind: String) -> Bool {
     switch EventSourceKind(rawValue: rawKind) {
-    case .cron, .chatSdk, .discordGateway, .fileChange, .telegramGateway, .matrix, .s3Repository, .sequentialList:
+    case .cron, .chatSdk, .discordGateway, .fileChange, .slackGateway, .telegramGateway, .matrix, .s3Repository, .sequentialList:
       true
     case .webhook, .custom:
       false

@@ -4,6 +4,48 @@ import XCTest
 @testable import RielaCore
 
 final class CodexAgentSessionIndexCompatibilityTests: XCTestCase {
+  func testSessionQueryUsesDeterministicTieBreakers() throws {
+    let sessions = [
+      CodexSession(
+        id: "beta",
+        rolloutPath: "/tmp/beta.jsonl",
+        createdAt: try isoDate("2026-06-17T00:01:00.000Z"),
+        updatedAt: try isoDate("2026-06-17T00:10:00.000Z"),
+        source: .cli,
+        cwd: "/tmp/project",
+        cliVersion: "1.0.0",
+        title: "Beta"
+      ),
+      CodexSession(
+        id: "zeta",
+        rolloutPath: "/tmp/zeta.jsonl",
+        createdAt: try isoDate("2026-06-17T00:01:00.000Z"),
+        updatedAt: try isoDate("2026-06-17T00:10:00.000Z"),
+        source: .cli,
+        cwd: "/tmp/project",
+        cliVersion: "1.0.0",
+        title: "Zeta"
+      ),
+      CodexSession(
+        id: "alpha",
+        rolloutPath: "/tmp/alpha.jsonl",
+        createdAt: try isoDate("2026-06-17T00:02:00.000Z"),
+        updatedAt: try isoDate("2026-06-17T00:10:00.000Z"),
+        source: .cli,
+        cwd: "/tmp/project",
+        cliVersion: "1.0.0",
+        title: "Alpha"
+      )
+    ]
+
+    let sorted = CodexSessionQuery.sorted(
+      sessions,
+      options: CodexSessionListOptions(sortBy: "updatedAt", sortOrder: "desc")
+    )
+
+    XCTAssertEqual(sorted.map(\.id), ["alpha", "zeta", "beta"])
+  }
+
   func testSessionIndexListsFiltersFindsLatestAndSearchesTranscripts() throws {
     let home = try makeTemporaryDirectory()
     addTeardownBlock {
@@ -324,6 +366,43 @@ final class CodexAgentSessionIndexCompatibilityTests: XCTestCase {
     )
     XCTAssertEqual(search.sessionIds, [readableSessionId])
     XCTAssertEqual(search.scannedSessions, 1)
+  }
+
+  func testSessionSearchReportsTruncationWhenMaxSessionsSkipsReadableCandidates() throws {
+    let home = try makeTemporaryDirectory()
+    addTeardownBlock {
+      try? FileManager.default.removeItem(at: home)
+    }
+    let sessionsDir = home.appendingPathComponent("sessions/2026/02/20", isDirectory: true)
+    try FileManager.default.createDirectory(at: sessionsDir, withIntermediateDirectories: true)
+    try writeRollout(
+      sessionsDir.appendingPathComponent("rollout-2026-02-20T10-02-00-first.jsonl"),
+      id: "first",
+      cwd: "/tmp/project",
+      source: "cli",
+      branch: "main",
+      message: "not the target",
+      modifiedAt: "2026-02-20T10:02:00.000Z"
+    )
+    try writeRollout(
+      sessionsDir.appendingPathComponent("rollout-2026-02-20T10-01-00-second.jsonl"),
+      id: "second",
+      cwd: "/tmp/project",
+      source: "cli",
+      branch: "main",
+      message: "target needle",
+      modifiedAt: "2026-02-20T10:01:00.000Z"
+    )
+
+    let search = try CodexSessionIndex.searchSessions(
+      query: "target needle",
+      options: CodexSessionListOptions(codexHome: home.path, sortBy: "updatedAt"),
+      searchOptions: CodexSessionTranscriptSearchOptions(maxSessions: 1)
+    )
+
+    XCTAssertEqual(search.sessionIds, [])
+    XCTAssertEqual(search.scannedSessions, 1)
+    XCTAssertTrue(search.truncated)
   }
 
   private func createThreadsDatabase(at state: URL) throws {

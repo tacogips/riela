@@ -120,32 +120,44 @@ public struct WorkflowRunCommand: Sendable {
         timeoutMs: options.timeoutMs,
         eventHandler: runEventHandler
       )
-      let result: WorkflowRunResult
-      do {
-        result = try await runner.run(initialRequest)
-      } catch {
-        guard options.autoImprove, let failedSession = await runtimeStore.latestSession(workflowId: bundle.workflow.workflowId) else {
-          throw error
-        }
-        result = WorkflowRunResult(
-          workflowId: bundle.workflow.workflowId,
-          session: failedSession,
-          rootOutput: nil,
-          exitCode: 1,
-          transitions: 0
-        )
-      }
-      var finalResult = result
       if options.autoImprove {
-        finalResult = try await runAutoImproveIfNeeded(
-          initialResult: finalResult,
+        var finalResult = try await runWithAutoImprove(
+          initialRequest: initialRequest,
           runner: runner,
           workflow: bundle.workflow,
           nodePayloads: bundle.nodePayloads,
           variables: variables,
-          options: options
+          options: options,
+          runtimeStore: runtimeStore
+        )
+        let workflowMessages = try await runtimeStore.listMessages(for: finalResult.session.sessionId, toStepId: nil)
+        let loopEvidence = projectLoopEvidence(
+          session: finalResult.session,
+          workflowMessages: workflowMessages,
+          bundle: bundle,
+          variables: variables,
+          recovery: finalResult.recovery
+        )
+        finalResult.loopEvidence = loopEvidence.map(LoopEvidenceSummary.init)
+        applyRequiredLoopGateFailureIfNeeded(&finalResult, loopEvidence: loopEvidence, workflow: bundle.workflow)
+        try persistSessionRecord(
+          workflowName: persistedIdentity.workflowName,
+          resolution: persistedIdentity.resolution,
+          resolvedSourceScope: bundle.sourceScope,
+          result: finalResult,
+          workflowMessages: workflowMessages,
+          bundle: bundle,
+          variables: variables,
+          options: options,
+          loopEvidence: loopEvidence
+        )
+        await telemetry.flush(timeout: .seconds(2))
+        return CLICommandResult(
+          exitCode: CLIExitCode(rawValue: finalResult.exitCode) ?? .failure,
+          stdout: try await renderRunResult(finalResult, output: options.output, jsonlRecorder: jsonlRecorder)
         )
       }
+      var finalResult = try await runner.run(initialRequest)
       let workflowMessages = try await runtimeStore.listMessages(for: finalResult.session.sessionId, toStepId: nil)
       let loopEvidence = projectLoopEvidence(
         session: finalResult.session,
@@ -449,103 +461,6 @@ public struct WorkflowRunCommand: Sendable {
     record["sessionId"] = .string(sessionId)
     record["workflowName"] = .string(workflowName)
     try jsonString(record).write(to: directory.appendingPathComponent("supervision-record.json"), atomically: true, encoding: .utf8)
-  }
-
-  private func runAutoImproveIfNeeded(
-    initialResult: WorkflowRunResult,
-    runner: DeterministicWorkflowRunner,
-    workflow: WorkflowDefinition,
-    nodePayloads: [String: AgentNodePayload],
-    variables: JSONObject,
-    options: WorkflowRunOptions
-  ) async throws -> WorkflowRunResult {
-    var current = initialResult
-    var incidents: [JSONValue] = []
-    var remediations: [JSONValue] = []
-    var supervisedAttempts = 1
-
-    while current.status == .failed && supervisedAttempts < options.autoImprovePolicy.maxSupervisedAttempts {
-      let failedExecution = current.session.executions.last { $0.status == .failed }
-      let targetStepId = failedExecution?.stepId ?? workflow.entryStepId
-      let incidentId = "incident-\(supervisedAttempts)"
-      incidents.append(.object([
-        "incidentId": .string(incidentId),
-        "category": .string("failure"),
-        "sessionId": .string(current.session.sessionId),
-        "stepId": .string(targetStepId),
-        "executionId": .string(failedExecution?.executionId ?? ""),
-        "message": .string(failedExecution?.failureReason ?? "workflow failed")
-      ]))
-
-      let sourceSessionId = current.session.sessionId
-      supervisedAttempts += 1
-      let rerun = try await runner.run(
-        DeterministicWorkflowRunRequest(
-          workflow: workflow,
-          nodePayloads: nodePayloads,
-          variables: variables,
-          maxSteps: options.maxSteps,
-          maxConcurrency: options.maxConcurrency,
-          maxLoopIterations: options.maxLoopIterations,
-          defaultTimeoutMs: options.defaultTimeoutMs,
-          timeoutMs: options.timeoutMs,
-          rerunFromSessionId: sourceSessionId,
-          rerunFromStepId: targetStepId
-        )
-      )
-      remediations.append(.object([
-        "remediationId": .string("remediation-\(supervisedAttempts - 1)"),
-        "incidentId": .string(incidentId),
-        "action": .string("rerun-workflow"),
-        "managerControl": .string("session rerun"),
-        "sourceSessionId": .string(sourceSessionId),
-        "targetSessionId": .string(rerun.session.sessionId),
-        "targetStepId": .string(targetStepId)
-      ]))
-      current = rerun
-    }
-
-    current.supervision = supervisionRecord(
-      status: current.status == .completed ? "succeeded" : "failed",
-      policy: options.autoImprovePolicy,
-      targetSessionId: current.session.sessionId,
-      attempts: supervisedAttempts,
-      incidents: incidents,
-      remediations: remediations
-    )
-    return current
-  }
-
-  private func supervisionRecord(
-    status: String,
-    policy: WorkflowAutoImprovePolicy,
-    targetSessionId: String,
-    attempts: Int,
-    incidents: [JSONValue],
-    remediations: [JSONValue]
-  ) -> JSONObject {
-    [
-      "supervisionRunId": .string("supervision-\(targetSessionId)"),
-      "targetSessionId": .string(targetSessionId),
-      "mode": .string("auto-improve"),
-      "status": .string(status),
-      "attempts": .number(Double(attempts)),
-      "policy": .object([
-        "maxSupervisedAttempts": .number(Double(policy.maxSupervisedAttempts)),
-        "maxWorkflowPatches": .number(Double(policy.maxWorkflowPatches)),
-        "monitorIntervalMs": .number(Double(policy.monitorIntervalMs)),
-        "stallTimeoutMs": .number(Double(policy.stallTimeoutMs)),
-        "workflowMutationMode": .string(policy.workflowMutationMode.rawValue),
-        "nestedSuperviser": .bool(policy.nestedSuperviser)
-      ]),
-      "incidents": .array(incidents),
-      "remediations": .array(remediations),
-      "managerControl": .object([
-        "transport": .string("local-runtime"),
-        "targetedRerun": .bool(!remediations.isEmpty),
-        "command": .string("session rerun")
-      ])
-    ]
   }
 
   private func resolveRunBundle(options: WorkflowRunOptions, resolution: WorkflowResolutionOptions) throws -> ResolvedWorkflowBundle {

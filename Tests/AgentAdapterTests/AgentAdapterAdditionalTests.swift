@@ -507,6 +507,47 @@ extension AgentAdapterTests {
     }
   }
 
+  func testFoundationRunnerCancellationTerminatesSpawnedProcessGroup() async throws {
+    let runner = FoundationLocalAgentProcessRunner()
+    let pidFile = URL(fileURLWithPath: NSTemporaryDirectory())
+      .appendingPathComponent("riela-cancel-resistant-child-\(UUID().uuidString).pid")
+    defer { try? FileManager.default.removeItem(at: pidFile) }
+
+    let script = """
+    trap 'exit 0' TERM
+    /bin/sh -c 'trap "" TERM; echo $$ > "$1"; while :; do :; done' child "$1" &
+    wait
+    """
+
+    let task = Task {
+      try await runner.run(
+        configuration: LocalAgentProcessConfiguration(
+          executableURL: URL(fileURLWithPath: "/bin/sh"),
+          arguments: ["-c", script, "riela-test", pidFile.path]
+        ),
+        stdin: "",
+        deadline: nil
+      )
+    }
+
+    let childProcessId = try waitForPidFile(pidFile)
+    task.cancel()
+    do {
+      _ = try await task.value
+      XCTFail("Expected cancellation")
+    } catch is CancellationError {
+    }
+
+    let deadline = Date(timeIntervalSinceNow: 3)
+    while Date() < deadline {
+      if kill(childProcessId, 0) != 0 {
+        return
+      }
+      usleep(50_000)
+    }
+    XCTFail("Expected cancellation to terminate the spawned child process group")
+  }
+
   func testLocalProcessHandleCancelsDelayedKillAfterProcessReap() throws {
     let recorder = SignalRecorder()
     let handle = LocalProcessHandle(signalProcess: recorder.record(pid:signal:))

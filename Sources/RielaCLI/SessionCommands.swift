@@ -92,6 +92,10 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
   public var workflowName: String
   public var status: WorkflowSessionStatus
   public var currentStepId: String?
+  public var activeStepId: String?
+  public var activeExecutionId: String?
+  public var activeBackend: NodeExecutionBackend?
+  public var activeExecutionUpdatedAt: Date?
   public var executionCount: Int
   public var executions: [WorkflowStepExecution]
   public var health: String?
@@ -103,6 +107,10 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
     workflowName: String,
     status: WorkflowSessionStatus,
     currentStepId: String?,
+    activeStepId: String? = nil,
+    activeExecutionId: String? = nil,
+    activeBackend: NodeExecutionBackend? = nil,
+    activeExecutionUpdatedAt: Date? = nil,
     executionCount: Int,
     executions: [WorkflowStepExecution],
     health: String? = nil,
@@ -113,6 +121,10 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
     self.workflowName = workflowName
     self.status = status
     self.currentStepId = currentStepId
+    self.activeStepId = activeStepId
+    self.activeExecutionId = activeExecutionId
+    self.activeBackend = activeBackend
+    self.activeExecutionUpdatedAt = activeExecutionUpdatedAt
     self.executionCount = executionCount
     self.executions = executions
     self.health = health
@@ -202,13 +214,19 @@ public struct SessionInspectionCommand: Sendable {
   private func render(snapshot: WorkflowRuntimePersistenceSnapshot, command: String, output: WorkflowOutputFormat) throws -> CLICommandResult {
     let health = command == "health" ? (snapshot.session.status == .failed ? "failed" : "ok") : nil
     let loopEvidence = snapshot.loopEvidence.map(LoopEvidenceSummary.init)
+    let runningExecutions = snapshot.session.executions.filter { $0.status == .running }
+    let activeExecution = runningExecutions.last
     let result = SessionInspectionCommandResult(
       sessionId: snapshot.session.sessionId,
       workflowName: snapshot.session.workflowId,
       status: snapshot.session.status,
       currentStepId: snapshot.session.currentStepId,
+      activeStepId: activeExecution?.stepId,
+      activeExecutionId: activeExecution?.executionId,
+      activeBackend: activeExecution?.backend,
+      activeExecutionUpdatedAt: activeExecution?.updatedAt,
       executionCount: snapshot.session.executions.count,
-      executions: command == "status" || command == "export" || command == "step-runs" ? snapshot.session.executions : [],
+      executions: executionRows(for: command, allExecutions: snapshot.session.executions, runningExecutions: runningExecutions),
       health: health,
       loopEvidenceRecorded: snapshot.loopEvidence != nil,
       loopEvidence: loopEvidence
@@ -222,6 +240,10 @@ public struct SessionInspectionCommand: Sendable {
         "workflow: \(result.workflowName)",
         "status: \(result.status.rawValue)",
         "currentStepId: \(result.currentStepId ?? "-")",
+        "activeStepId: \(result.activeStepId ?? "-")",
+        "activeExecutionId: \(result.activeExecutionId ?? "-")",
+        "activeBackend: \(result.activeBackend?.rawValue ?? "-")",
+        "activeExecutionUpdatedAt: \(result.activeExecutionUpdatedAt.map(iso8601String) ?? "-")",
         "executionCount: \(result.executionCount)",
         "loopEvidenceRecorded: \(result.loopEvidenceRecorded ? "true" : "false")"
       ]
@@ -241,6 +263,25 @@ public struct SessionInspectionCommand: Sendable {
       return CLICommandResult(exitCode: .success, stdout: lines.joined(separator: "\n") + "\n")
     }
   }
+
+  private func executionRows(
+    for command: String,
+    allExecutions: [WorkflowStepExecution],
+    runningExecutions: [WorkflowStepExecution]
+  ) -> [WorkflowStepExecution] {
+    switch command {
+    case "status", "export", "step-runs":
+      return allExecutions
+    case "progress":
+      return runningExecutions
+    default:
+      return []
+    }
+  }
+}
+
+private func iso8601String(_ date: Date) -> String {
+  ISO8601DateFormatter().string(from: date)
 }
 
 public struct SessionRerunCommand: Sendable {

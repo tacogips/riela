@@ -469,7 +469,8 @@ private func remoteAutoImprovePolicyInput(_ policy: WorkflowAutoImprovePolicy) -
     "maxSupervisedAttempts": .number(Double(policy.maxSupervisedAttempts)),
     "maxWorkflowPatches": .number(Double(policy.maxWorkflowPatches)),
     "monitorIntervalMs": .number(Double(policy.monitorIntervalMs)),
-    "stallTimeoutMs": .number(Double(policy.stallTimeoutMs))
+    "stallTimeoutMs": .number(Double(policy.stallTimeoutMs)),
+    "stallDetectionEnabled": .bool(policy.stallDetectionEnabled)
   ]
   if policy.workflowMutationMode.isForwardedToRemoteExecution {
     input["workflowMutationMode"] = .string(policy.workflowMutationMode.rawValue)

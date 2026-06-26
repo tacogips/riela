@@ -52,13 +52,21 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
         errors.append("\(workflowURL.path) not found")
         continue
       }
-      return try loadBundle(
-        at: resolvedDirectory,
-        rootDirectory: candidate.rootDirectory,
-        scope: candidate.scope,
-        packageManifest: candidate.packageManifest,
-        packageDirectory: candidate.packageDirectory
-      )
+      do {
+        return try loadBundle(
+          at: resolvedDirectory,
+          rootDirectory: candidate.rootDirectory,
+          scope: candidate.scope,
+          packageManifest: candidate.packageManifest,
+          packageDirectory: candidate.packageDirectory
+        )
+      } catch {
+        guard options.scope == .auto else {
+          throw error
+        }
+        errors.append("\(resolvedDirectory.path) invalid: \(workflowResolutionErrorDescription(error))")
+        continue
+      }
     }
     throw WorkflowResolutionError.notFound(options.workflowName, errors)
   }
@@ -300,6 +308,24 @@ public enum WorkflowResolutionError: Error, Equatable, Sendable {
   case notFound(String, [String])
   case invalidWorkflow([WorkflowValidationDiagnostic])
   case invalidJSONReference(String)
+}
+
+private func workflowResolutionErrorDescription(_ error: Error) -> String {
+  switch error {
+  case let error as WorkflowResolutionError:
+    switch error {
+    case let .notFound(name, reasons):
+      return "workflow '\(name)' not found: \(reasons.joined(separator: "; "))"
+    case let .invalidWorkflow(diagnostics):
+      return diagnostics.map { "\($0.path): \($0.message)" }.joined(separator: "; ")
+    case let .invalidJSONReference(message):
+      return message
+    }
+  case let error as CLIUsageError:
+    return error.message
+  default:
+    return "\(error)"
+  }
 }
 
 public protocol WorkflowNodePatchApplying: Sendable {

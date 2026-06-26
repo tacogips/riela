@@ -312,8 +312,17 @@ func workflowRunHelpText(target: String?) -> String {
     --max-loop-iterations <n>
     --default-timeout-ms <n>
     --timeout-ms <n>
-    --auto-improve
+    --auto-improve                 Retry failed supervised runs and record supervision state.
+    --max-supervised-attempts <n>  Maximum auto-improve attempts.
+    --monitor-interval-ms <n>      Polling interval for explicit stall detection.
+    --stall-timeout-ms <n>         Enable stall detection for local non-agent executions.
     --output jsonl|json|text       Defaults to jsonl. JSONL streams session_started before worker backends run.
+
+  Stall detection:
+    --stall-timeout-ms is opt-in. CLI agent and official SDK backends are not
+    treated as stalled from missing session heartbeats, because a long LLM
+    inference and a provider-side stall are not distinguishable from local
+    session records alone.
 
   Remote options:
     --endpoint <url>

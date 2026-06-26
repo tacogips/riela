@@ -6,6 +6,51 @@ import XCTest
 @testable import RielaCLI
 
 extension WorkflowCommandTests {
+  func testAutoScopeSkipsInvalidProjectWorkflowWhenUserWorkflowIsValid() async throws {
+    let root = repositoryRoot()
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-auto-invalid-project-\(UUID().uuidString)", isDirectory: true)
+    let projectRoot = tempDir.appendingPathComponent("project", isDirectory: true)
+    let homeRoot = tempDir.appendingPathComponent("home", isDirectory: true)
+    let workflowName = "shadowed-flow"
+    let projectWorkflow = projectRoot
+      .appendingPathComponent(".riela/workflows", isDirectory: true)
+      .appendingPathComponent(workflowName, isDirectory: true)
+    let userWorkflow = homeRoot
+      .appendingPathComponent(".riela/workflows", isDirectory: true)
+      .appendingPathComponent(workflowName, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    try FileManager.default.createDirectory(at: projectWorkflow, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: userWorkflow.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try #"{"workflowId": "broken","#.write(
+      to: projectWorkflow.appendingPathComponent("workflow.json"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try FileManager.default.copyItem(
+      at: URL(fileURLWithPath: root).appendingPathComponent("examples/worker-only-single-step", isDirectory: true),
+      to: userWorkflow
+    )
+
+    let auto = await RielaCLIApplication().run([
+      "workflow", "usage", workflowName,
+      "--working-dir", projectRoot.path,
+      "--output", "json"
+    ], environment: ["HOME": homeRoot.path])
+    XCTAssertEqual(auto.exitCode, .success, auto.stderr + auto.stdout)
+    let autoSummary = try decodeJSON(WorkflowInspectionSummary.self, from: auto.stdout)
+    XCTAssertEqual(autoSummary.sourceScope, .user)
+
+    let project = await RielaCLIApplication().run([
+      "workflow", "usage", workflowName,
+      "--scope", "project",
+      "--working-dir", projectRoot.path,
+      "--output", "json"
+    ], environment: ["HOME": homeRoot.path])
+    XCTAssertEqual(project.exitCode, .failure)
+  }
+
   func testAddonOnlyExecutableValidationMatchesDeterministicRunFailure() async throws {
     let tempDir = FileManager.default.temporaryDirectory
       .appendingPathComponent("riela-cli-addon-only-\(UUID().uuidString)", isDirectory: true)

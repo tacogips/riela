@@ -664,6 +664,7 @@ extension WorkflowCommandTests {
     let enabledAutoImprove = try XCTUnwrap(enabledInput["autoImprove"] as? [String: Any])
     XCTAssertEqual((enabledAutoImprove["enabled"] as? NSNumber)?.boolValue, true)
     XCTAssertEqual((enabledAutoImprove["maxSupervisedAttempts"] as? NSNumber)?.intValue, 4)
+    XCTAssertEqual((enabledAutoImprove["stallDetectionEnabled"] as? NSNumber)?.boolValue, false)
     XCTAssertEqual((enabledInput["nestedSuperviser"] as? NSNumber)?.boolValue, true)
   }
 

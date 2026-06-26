@@ -115,6 +115,87 @@ final class WorkflowCommandLivePersistenceTests: XCTestCase {
     XCTAssertEqual(runResult.rootOutput?["status"], .string("done"))
   }
 
+  func testSessionProgressReportsActiveStepDuringLiveSecondStep() async throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-live-active-step-\(UUID().uuidString)", isDirectory: true)
+    let workflowRoot = tempDir.appendingPathComponent("workflows", isDirectory: true)
+    let workflowDirectory = workflowRoot.appendingPathComponent("two-step-command", isDirectory: true)
+    let nodesDirectory = workflowDirectory.appendingPathComponent("nodes", isDirectory: true)
+    let sessionStore = tempDir.appendingPathComponent("sessions", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    try FileManager.default.createDirectory(at: nodesDirectory, withIntermediateDirectories: true)
+    let firstScript = try createExecutable(
+      directory: tempDir,
+      name: "first-step.sh",
+      body: #"printf '%s\n' '{"status":"first"}'"#
+    )
+    let secondScript = try createExecutable(
+      directory: tempDir,
+      name: "second-step.sh",
+      body: """
+      sleep 1
+      printf '%s\\n' '{"status":"second"}'
+      """
+    )
+    try writeTwoCommandWorkflow(
+      workflowDirectory: workflowDirectory,
+      firstNodeJSON: """
+      {
+        "id": "first-command",
+        "nodeType": "command",
+        "command": { "executable": "\(firstScript.path)" }
+      }
+      """,
+      secondNodeJSON: """
+      {
+        "id": "second-command",
+        "nodeType": "command",
+        "command": { "executable": "\(secondScript.path)" }
+      }
+      """
+    )
+
+    let app = RielaCLIApplication()
+    let task = Task {
+      await app.run([
+        "workflow", "run", "two-step-command",
+        "--workflow-definition-dir", workflowRoot.path,
+        "--session-store", sessionStore.path,
+        "--output", "json"
+      ])
+    }
+
+    var progress: SessionInspectionCommandResult?
+    let deadline = Date().addingTimeInterval(3)
+    while Date() < deadline {
+      if let persisted = try? CLIWorkflowSessionStore(rootDirectory: sessionStore.path).loadAll().first {
+        let result = await RielaCLIApplication().run([
+          "session", "progress", persisted.session.sessionId,
+          "--session-store", sessionStore.path,
+          "--output", "json"
+        ])
+        if result.exitCode == .success,
+           let decoded = try? decodeJSON(SessionInspectionCommandResult.self, from: result.stdout),
+           decoded.activeStepId == "second-step" {
+          progress = decoded
+          break
+        }
+      }
+      try await Task.sleep(nanoseconds: 50_000_000)
+    }
+
+    let liveProgress = try XCTUnwrap(progress)
+    XCTAssertEqual(liveProgress.activeStepId, "second-step")
+    XCTAssertNil(liveProgress.activeBackend)
+    XCTAssertNotNil(liveProgress.activeExecutionUpdatedAt)
+    XCTAssertEqual(liveProgress.executions.map(\.stepId), ["second-step"])
+    XCTAssertEqual(liveProgress.executions.first?.status, .running)
+
+    let result = await task.value
+    XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
+  }
+
   func testWorkflowRunPersistsLoopEvidenceDuringLiveProgress() async throws {
     let tempDir = FileManager.default.temporaryDirectory
       .appendingPathComponent("riela-live-loop-evidence-\(UUID().uuidString)", isDirectory: true)
@@ -675,6 +756,41 @@ final class WorkflowCommandLivePersistenceTests: XCTestCase {
     }
     """.write(to: workflowDirectory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
     try nodeJSON.write(to: nodesDirectory.appendingPathComponent("node-run-command.json"), atomically: true, encoding: .utf8)
+  }
+
+  private func writeTwoCommandWorkflow(
+    workflowDirectory: URL,
+    firstNodeJSON: String,
+    secondNodeJSON: String
+  ) throws {
+    let nodesDirectory = workflowDirectory.appendingPathComponent("nodes", isDirectory: true)
+    try FileManager.default.createDirectory(at: nodesDirectory, withIntermediateDirectories: true)
+    try """
+    {
+      "workflowId": "two-step-command",
+      "defaults": { "maxLoopIterations": 1, "nodeTimeoutMs": 10000 },
+      "entryStepId": "first-step",
+      "nodes": [
+        { "id": "first-command", "nodeFile": "nodes/node-first-command.json" },
+        { "id": "second-command", "nodeFile": "nodes/node-second-command.json" }
+      ],
+      "steps": [
+        {
+          "id": "first-step",
+          "nodeId": "first-command",
+          "role": "worker",
+          "transitions": [{ "toStepId": "second-step" }]
+        },
+        {
+          "id": "second-step",
+          "nodeId": "second-command",
+          "role": "worker"
+        }
+      ]
+    }
+    """.write(to: workflowDirectory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+    try firstNodeJSON.write(to: nodesDirectory.appendingPathComponent("node-first-command.json"), atomically: true, encoding: .utf8)
+    try secondNodeJSON.write(to: nodesDirectory.appendingPathComponent("node-second-command.json"), atomically: true, encoding: .utf8)
   }
 
   private func createExecutable(directory: URL, name: String, body: String) throws -> URL {

@@ -322,14 +322,26 @@ public struct WorkflowAutoImprovePolicy: Codable, Equatable, Sendable {
   public var maxWorkflowPatches: Int
   public var monitorIntervalMs: Int
   public var stallTimeoutMs: Int
+  public var stallDetectionEnabled: Bool
   public var workflowMutationMode: WorkflowMutationMode
   public var nestedSuperviser: Bool
+
+  private enum CodingKeys: String, CodingKey {
+    case maxSupervisedAttempts
+    case maxWorkflowPatches
+    case monitorIntervalMs
+    case stallTimeoutMs
+    case stallDetectionEnabled
+    case workflowMutationMode
+    case nestedSuperviser
+  }
 
   public init(
     maxSupervisedAttempts: Int = 3,
     maxWorkflowPatches: Int = 2,
     monitorIntervalMs: Int = 1_000,
     stallTimeoutMs: Int = 30_000,
+    stallDetectionEnabled: Bool = false,
     workflowMutationMode: WorkflowMutationMode = .executionCopy,
     nestedSuperviser: Bool = false
   ) {
@@ -337,8 +349,20 @@ public struct WorkflowAutoImprovePolicy: Codable, Equatable, Sendable {
     self.maxWorkflowPatches = maxWorkflowPatches
     self.monitorIntervalMs = monitorIntervalMs
     self.stallTimeoutMs = stallTimeoutMs
+    self.stallDetectionEnabled = stallDetectionEnabled
     self.workflowMutationMode = workflowMutationMode
     self.nestedSuperviser = nestedSuperviser
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    maxSupervisedAttempts = try container.decode(Int.self, forKey: .maxSupervisedAttempts)
+    maxWorkflowPatches = try container.decode(Int.self, forKey: .maxWorkflowPatches)
+    monitorIntervalMs = try container.decode(Int.self, forKey: .monitorIntervalMs)
+    stallTimeoutMs = try container.decode(Int.self, forKey: .stallTimeoutMs)
+    stallDetectionEnabled = try container.decodeIfPresent(Bool.self, forKey: .stallDetectionEnabled) ?? false
+    workflowMutationMode = try container.decode(WorkflowMutationMode.self, forKey: .workflowMutationMode)
+    nestedSuperviser = try container.decode(Bool.self, forKey: .nestedSuperviser)
   }
 }
 

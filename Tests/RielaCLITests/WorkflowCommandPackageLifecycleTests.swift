@@ -418,6 +418,7 @@ extension WorkflowCommandTests {
     XCTAssertEqual(policy["maxSupervisedAttempts"], .number(3))
     XCTAssertEqual(policy["monitorIntervalMs"], .number(1000))
     XCTAssertEqual(policy["stallTimeoutMs"], .number(2000))
+    XCTAssertEqual(policy["stallDetectionEnabled"], .bool(true))
     XCTAssertEqual(policy["workflowMutationMode"], .string("execution-copy"))
     guard case let .array(incidents)? = supervision["incidents"] else {
       return XCTFail("expected supervision incidents")

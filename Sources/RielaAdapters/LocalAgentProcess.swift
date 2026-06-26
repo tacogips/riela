@@ -183,6 +183,82 @@ private final class LocalProcessCompletion: @unchecked Sendable {
   }
 }
 
+private final class LocalProcessCancellationState: @unchecked Sendable {
+  private let lock = NSLock()
+  private var didCancel = false
+  private var didFinish = false
+  private var processHandle: LocalProcessHandle?
+  private var pipes: LocalProcessPipes?
+  private var completion: LocalProcessCompletion?
+
+  func configure(
+    processHandle: LocalProcessHandle,
+    pipes: LocalProcessPipes,
+    completion: LocalProcessCompletion
+  ) {
+    let shouldCancel: Bool
+    lock.lock()
+    if didFinish {
+      lock.unlock()
+      return
+    }
+    self.processHandle = processHandle
+    self.pipes = pipes
+    self.completion = completion
+    shouldCancel = didCancel
+    lock.unlock()
+
+    if shouldCancel {
+      cancelConfiguredProcess(processHandle: processHandle, pipes: pipes, completion: completion)
+    }
+  }
+
+  func cancel() {
+    let currentProcessHandle: LocalProcessHandle?
+    let currentPipes: LocalProcessPipes?
+    let currentCompletion: LocalProcessCompletion?
+    lock.lock()
+    guard !didFinish, !didCancel else {
+      lock.unlock()
+      return
+    }
+    didCancel = true
+    currentProcessHandle = processHandle
+    currentPipes = pipes
+    currentCompletion = completion
+    lock.unlock()
+
+    if let currentProcessHandle, let currentPipes, let currentCompletion {
+      cancelConfiguredProcess(
+        processHandle: currentProcessHandle,
+        pipes: currentPipes,
+        completion: currentCompletion
+      )
+    }
+  }
+
+  func finish() {
+    lock.lock()
+    didFinish = true
+    processHandle = nil
+    pipes = nil
+    completion = nil
+    lock.unlock()
+  }
+
+  private func cancelConfiguredProcess(
+    processHandle: LocalProcessHandle,
+    pipes: LocalProcessPipes,
+    completion: LocalProcessCompletion
+  ) {
+    pipes.closeForFailureOrTimeout()
+    if processHandle.terminateGroupOrProcess() {
+      processHandle.scheduleKillIfRunning(after: 1)
+    }
+    completion.resume(.failure(CancellationError()))
+  }
+}
+
 private final class CStringArray {
   private var pointers: [UnsafeMutablePointer<CChar>?]
 
@@ -412,95 +488,105 @@ public struct FoundationLocalAgentProcessRunner: LocalAgentProcessRunning {
   public init() {}
 
   public func run(configuration: LocalAgentProcessConfiguration, stdin: String, deadline: Date? = nil) async throws -> LocalAgentProcessResult {
-    try await withCheckedThrowingContinuation { continuation in
-      let inputPipe = Pipe()
-      let outputPipe = Pipe()
-      let errorPipe = Pipe()
-      let processHandle = LocalProcessHandle()
-      let pipes = LocalProcessPipes(inputPipe: inputPipe, outputPipe: outputPipe, errorPipe: errorPipe)
+    let cancellationState = LocalProcessCancellationState()
+    return try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { continuation in
+        let inputPipe = Pipe()
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        let processHandle = LocalProcessHandle()
+        let pipes = LocalProcessPipes(inputPipe: inputPipe, outputPipe: outputPipe, errorPipe: errorPipe)
 
-      let outputGroup = DispatchGroup()
-      let outputData = LockedProcessData()
-      let errorData = LockedProcessData()
-      let outputReader = LocalProcessPipeReader(fileHandle: outputPipe.fileHandleForReading)
-      let errorReader = LocalProcessPipeReader(fileHandle: errorPipe.fileHandleForReading)
+        let outputGroup = DispatchGroup()
+        let outputData = LockedProcessData()
+        let errorData = LockedProcessData()
+        let outputReader = LocalProcessPipeReader(fileHandle: outputPipe.fileHandleForReading)
+        let errorReader = LocalProcessPipeReader(fileHandle: errorPipe.fileHandleForReading)
 
-      outputGroup.enter()
-      DispatchQueue.global(qos: .utility).async {
-        outputData.store(outputReader.readToEnd())
-        outputGroup.leave()
-      }
-
-      outputGroup.enter()
-      DispatchQueue.global(qos: .utility).async {
-        errorData.store(errorReader.readToEnd())
-        outputGroup.leave()
-      }
-
-      let completion = LocalProcessCompletion(continuation: continuation)
-
-      do {
-        let processId = try spawnProcess(
-          configuration: configuration,
-          inputReadDescriptor: inputPipe.fileHandleForReading.fileDescriptor,
-          inputWriteDescriptor: inputPipe.fileHandleForWriting.fileDescriptor,
-          outputReadDescriptor: outputPipe.fileHandleForReading.fileDescriptor,
-          outputWriteDescriptor: outputPipe.fileHandleForWriting.fileDescriptor,
-          errorReadDescriptor: errorPipe.fileHandleForReading.fileDescriptor,
-          errorWriteDescriptor: errorPipe.fileHandleForWriting.fileDescriptor
-        )
-        processHandle.store(processId: processId)
-        try? inputPipe.fileHandleForReading.close()
-        pipes.closeParentOutputWriters()
-
+        outputGroup.enter()
         DispatchQueue.global(qos: .utility).async {
-          var status: Int32 = 0
-          _ = waitpid(processId, &status, 0)
-          processHandle.markExited(afterTimeout: completion.timedOut())
-          completion.cancelDeadline()
-          outputGroup.notify(queue: .global(qos: .utility)) {
-            if completion.timedOut() {
-              return
-            }
+          outputData.store(outputReader.readToEnd())
+          outputGroup.leave()
+        }
 
-            let output = String(data: outputData.load(), encoding: .utf8) ?? ""
-            let error = String(data: errorData.load(), encoding: .utf8) ?? ""
-            completion.resume(
-              .success(
-                LocalAgentProcessResult(
-                  stdout: output,
-                  stderr: error,
-                  terminationStatus: terminationStatus(fromWaitStatus: status)
+        outputGroup.enter()
+        DispatchQueue.global(qos: .utility).async {
+          errorData.store(errorReader.readToEnd())
+          outputGroup.leave()
+        }
+
+        let completion = LocalProcessCompletion(continuation: continuation)
+
+        do {
+          let processId = try spawnProcess(
+            configuration: configuration,
+            inputReadDescriptor: inputPipe.fileHandleForReading.fileDescriptor,
+            inputWriteDescriptor: inputPipe.fileHandleForWriting.fileDescriptor,
+            outputReadDescriptor: outputPipe.fileHandleForReading.fileDescriptor,
+            outputWriteDescriptor: outputPipe.fileHandleForWriting.fileDescriptor,
+            errorReadDescriptor: errorPipe.fileHandleForReading.fileDescriptor,
+            errorWriteDescriptor: errorPipe.fileHandleForWriting.fileDescriptor
+          )
+          processHandle.store(processId: processId)
+          cancellationState.configure(processHandle: processHandle, pipes: pipes, completion: completion)
+          try? inputPipe.fileHandleForReading.close()
+          pipes.closeParentOutputWriters()
+
+          DispatchQueue.global(qos: .utility).async {
+            var status: Int32 = 0
+            _ = waitpid(processId, &status, 0)
+            processHandle.markExited(afterTimeout: completion.timedOut())
+            completion.cancelDeadline()
+            outputGroup.notify(queue: .global(qos: .utility)) {
+              if completion.timedOut() {
+                return
+              }
+
+              let output = String(data: outputData.load(), encoding: .utf8) ?? ""
+              let error = String(data: errorData.load(), encoding: .utf8) ?? ""
+              cancellationState.finish()
+              completion.resume(
+                .success(
+                  LocalAgentProcessResult(
+                    stdout: output,
+                    stderr: error,
+                    terminationStatus: terminationStatus(fromWaitStatus: status)
+                  )
                 )
               )
-            )
-          }
-        }
-
-        if let deadline {
-          let delay = max(0, deadline.timeIntervalSinceNow)
-          let workItem = DispatchWorkItem {
-            completion.markTimedOut()
-            pipes.closeForFailureOrTimeout()
-            if processHandle.terminateGroupOrProcess() {
-              processHandle.scheduleKillIfRunning(after: 1)
             }
-            completion.resume(.failure(localProcessTimeoutError()))
           }
-          completion.setDeadlineWorkItem(workItem)
-          DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay, execute: workItem)
-        }
-        inputPipe.fileHandleForWriting.write(Data(stdin.utf8))
-        try inputPipe.fileHandleForWriting.close()
-      } catch {
-        pipes.closeForFailureOrTimeout()
-        processHandle.terminateGroupOrProcess()
-        if completion.timedOut() {
-          completion.resume(.failure(localProcessTimeoutError()))
-        } else {
-          completion.resume(.failure(error))
+
+          if let deadline {
+            let delay = max(0, deadline.timeIntervalSinceNow)
+            let workItem = DispatchWorkItem {
+              completion.markTimedOut()
+              pipes.closeForFailureOrTimeout()
+              if processHandle.terminateGroupOrProcess() {
+                processHandle.scheduleKillIfRunning(after: 1)
+              }
+              cancellationState.finish()
+              completion.resume(.failure(localProcessTimeoutError()))
+            }
+            completion.setDeadlineWorkItem(workItem)
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay, execute: workItem)
+          }
+          inputPipe.fileHandleForWriting.write(Data(stdin.utf8))
+          try inputPipe.fileHandleForWriting.close()
+        } catch {
+          pipes.closeForFailureOrTimeout()
+          processHandle.terminateGroupOrProcess()
+          if completion.timedOut() {
+            cancellationState.finish()
+            completion.resume(.failure(localProcessTimeoutError()))
+          } else {
+            cancellationState.finish()
+            completion.resume(.failure(error))
+          }
         }
       }
+    } onCancel: {
+      cancellationState.cancel()
     }
   }
 }

@@ -27,6 +27,7 @@ struct ParsedWorkflowOptions {
   var maxWorkflowPatches = 2
   var monitorIntervalMs = 1_000
   var stallTimeoutMs = 30_000
+  var stallDetectionEnabled = false
   var workflowMutationMode = WorkflowMutationMode.executionCopy
 
   init(_ tokens: [String], allowRunOptions: Bool = false, allowTableOutput: Bool = false) throws {
@@ -201,6 +202,7 @@ struct ParsedWorkflowOptions {
     case "--stall-timeout-ms":
       try requireRunOption(token, allowRunOptions: allowRunOptions)
       stallTimeoutMs = try positiveInt(token, readOptionValue(token, tokens: tokens, index: &index))
+      stallDetectionEnabled = true
     case "--workflow-mutation-mode":
       try requireRunOption(token, allowRunOptions: allowRunOptions)
       let rawMode = try readOptionValue(token, tokens: tokens, index: &index)
@@ -220,6 +222,7 @@ struct ParsedWorkflowOptions {
       maxWorkflowPatches: maxWorkflowPatches,
       monitorIntervalMs: monitorIntervalMs,
       stallTimeoutMs: stallTimeoutMs,
+      stallDetectionEnabled: stallDetectionEnabled,
       workflowMutationMode: workflowMutationMode,
       nestedSuperviser: nestedSuperviser
     )

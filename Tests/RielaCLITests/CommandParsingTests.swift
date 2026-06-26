@@ -100,6 +100,7 @@ final class CommandParsingTests: XCTestCase {
       XCTAssertEqual(options.autoImprovePolicy.maxWorkflowPatches, 1)
       XCTAssertEqual(options.autoImprovePolicy.monitorIntervalMs, 1000)
       XCTAssertEqual(options.autoImprovePolicy.stallTimeoutMs, 2000)
+      XCTAssertTrue(options.autoImprovePolicy.stallDetectionEnabled)
       XCTAssertEqual(options.autoImprovePolicy.workflowMutationMode, .executionCopy)
       XCTAssertTrue(options.autoImprovePolicy.nestedSuperviser)
     } else {

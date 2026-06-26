@@ -35,12 +35,19 @@ func writeRollout(
   cwd: String,
   source: String,
   branch: String?,
-  message: String
+  message: String,
+  modifiedAt: String? = nil
 ) throws {
   try [
     codexSessionMetaLine(id: id, cwd: cwd, source: source, branch: branch),
     codexEventMessageLine(timestamp: "2025-05-07T17:25:00.000Z", type: "UserMessage", message: message)
   ].joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+  if let modifiedAt {
+    try FileManager.default.setAttributes(
+      [.modificationDate: try isoDate(modifiedAt)],
+      ofItemAtPath: url.path
+    )
+  }
 }
 
 func codexSessionMetaLine(

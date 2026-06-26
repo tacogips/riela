@@ -256,16 +256,10 @@ private func sessionTranscriptSearchResult(
   request: CodexGraphQLExecutionRequest
 ) throws -> GraphQLResult {
   guard let session = CodexSessionIndex.findSession(id: id, codexHome: request.codexHome) else {
-    return GraphQLResult(data: .object([
-      "sessionId": .string(id),
-      "matched": .bool(false),
-      "matchCount": .number(0),
-      "scannedBytes": .number(0),
-      "scannedEvents": .number(0),
-      "truncated": .bool(false),
-      "timedOut": .bool(false),
-      "durationMs": .number(0)
-    ]))
+    return emptySessionTranscriptSearchResult(id: id)
+  }
+  guard FileManager.default.isReadableFile(atPath: session.rolloutPath) else {
+    return emptySessionTranscriptSearchResult(id: id)
   }
   let search = try CodexSessionIndex.searchSessionTranscriptDetailed(
     session: session,
@@ -281,6 +275,19 @@ private func sessionTranscriptSearchResult(
     "truncated": .bool(search.truncated),
     "timedOut": .bool(search.timedOut),
     "durationMs": .number(search.durationMs)
+  ]))
+}
+
+private func emptySessionTranscriptSearchResult(id: String) -> GraphQLResult {
+  GraphQLResult(data: .object([
+    "sessionId": .string(id),
+    "matched": .bool(false),
+    "matchCount": .number(0),
+    "scannedBytes": .number(0),
+    "scannedEvents": .number(0),
+    "truncated": .bool(false),
+    "timedOut": .bool(false),
+    "durationMs": .number(0)
   ]))
 }
 

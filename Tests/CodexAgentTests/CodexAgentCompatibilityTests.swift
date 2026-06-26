@@ -22,7 +22,7 @@ final class CodexAgentCompatibilityTests: XCTestCase {
       "src/queue/repository.test.ts": ["testProcessManagerRunAgentAndOperationalStores", "testQueueGroupBookmarkAndTokenFocusedMutations", "testPersistentQueueAndBookmarkRepositoriesMirrorReferenceConfigFiles"],
       "src/queue/runner.test.ts": ["testQueueGroupBookmarkAndTokenFocusedMutations"],
       "src/rollout/reader.test.ts": ["testParseRolloutLineNormalizesReferenceRolloutAndExecEvents", "testReadRolloutSessionMessagesAndSystemInjectedFiltering"],
-      "src/rollout/watcher.test.ts": ["testRolloutWatcherAndSQLiteSessionIndexFallbackContracts"],
+      "src/rollout/watcher.test.ts": ["CodexAgentSessionIndexCompatibilityTests.testRolloutWatcherEmitsCompleteLines"],
       "src/sdk/agent-runner.dist-runtime.test.ts": ["testProcessManagerRunAgentAndOperationalStores"],
       "src/sdk/agent-runner.process-options.test.ts": [
         "AgentAdapterTests.testCodexProcessCommandBuilderMatchesReferenceExecCompatibilityArgs",
@@ -46,9 +46,12 @@ final class CodexAgentCompatibilityTests: XCTestCase {
       "src/sdk/tool-registry.test.ts": ["testActivityMockRunnerEmitterToolRegistryAttachmentsAndOps"],
       "src/sdk/tool-versions.test.ts": ["AgentAdapterTests.testCodexDefaultReadinessOperationsProbeToolsAuthAndModels"],
       "src/sdk/usage-stats.test.ts": ["testUsageStatsAggregatesMessagesToolsTurnCompleteAndTokenCountDeltas"],
-      "src/session/index.test.ts": ["testSessionIndexListsFiltersFindsLatestAndSearchesTranscripts"],
-      "src/session/search.test.ts": ["testSessionIndexListsFiltersFindsLatestAndSearchesTranscripts", "testGraphQLVariablesFileChangesAndTranscriptSearchBudgets"],
-      "src/session/sqlite.test.ts": ["testRolloutWatcherAndSQLiteSessionIndexFallbackContracts"]
+      "src/session/index.test.ts": ["CodexAgentSessionIndexCompatibilityTests.testSessionIndexListsFiltersFindsLatestAndSearchesTranscripts"],
+      "src/session/search.test.ts": [
+        "CodexAgentSessionIndexCompatibilityTests.testSessionIndexListsFiltersFindsLatestAndSearchesTranscripts",
+        "testGraphQLVariablesFileChangesAndTranscriptSearchBudgets"
+      ],
+      "src/session/sqlite.test.ts": ["CodexAgentSessionIndexCompatibilityTests.testSessionIndexMergesSQLiteAndRolloutsWithRolloutMetadataPrecedence"]
     ]
     let expectedLegacyTests: Set<String> = [
       "src/activity/manager.test.ts",
@@ -153,125 +156,6 @@ final class CodexAgentCompatibilityTests: XCTestCase {
       options: CodexSessionMessageOptions(excludeToolRelated: true, excludeSystemInjected: true)
     )
     XCTAssertEqual(filtered.map(\.text), ["Fix the auth bug", "I will fix it."])
-  }
-
-  func testSessionIndexListsFiltersFindsLatestAndSearchesTranscripts() throws {
-    let home = try makeTemporaryDirectory()
-    addTeardownBlock {
-      try? FileManager.default.removeItem(at: home)
-    }
-    let day1 = home.appendingPathComponent("sessions/2025/05/07", isDirectory: true)
-    let day2 = home.appendingPathComponent("sessions/2025/05/08", isDirectory: true)
-    try FileManager.default.createDirectory(at: day1, withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(at: day2, withIntermediateDirectories: true)
-    let session1 = "aaaa0000-0000-0000-0000-000000000001"
-    let session2 = "bbbb0000-0000-0000-0000-000000000002"
-    let session3 = "cccc0000-0000-0000-0000-000000000003"
-    try writeRollout(day1.appendingPathComponent("rollout-2025-05-07T17-24-21-\(session1).jsonl"), id: session1, cwd: "/tmp/project-a", source: "cli", branch: "main", message: "Fix bug in auth")
-    try writeRollout(day1.appendingPathComponent("rollout-2025-05-07T18-00-00-\(session2).jsonl"), id: session2, cwd: "/tmp/project-b", source: "vscode", branch: "develop", message: "Add tests")
-    try writeRollout(day2.appendingPathComponent("rollout-2025-05-08T10-00-00-\(session3).jsonl"), id: session3, cwd: "/tmp/project-a", source: "exec", branch: nil, message: "日本語 transcript")
-
-    let paths = discoverRolloutPaths(codexHome: home.path)
-    XCTAssertEqual(paths.count, 3)
-    XCTAssertTrue(paths[0].contains(session3))
-
-    let all = listSessions(options: CodexSessionListOptions(codexHome: home.path))
-    XCTAssertEqual(all.total, 3)
-    let graphQLList = CodexGraphQLCommandExecutor.execute(command: "session.list", variables: ["codexHome": .string(home.path)])
-    let graphQLSession = try XCTUnwrap(jsonObject(jsonArray(jsonObject(graphQLList.data)?["sessions"])?.first))
-    XCTAssertNotNil(graphQLSession["createdAt"])
-    XCTAssertNotNil(graphQLSession["updatedAt"])
-    XCTAssertNotNil(graphQLSession["cliVersion"])
-    XCTAssertNotNil(graphQLSession["firstUserMessage"])
-    XCTAssertNotNil(graphQLSession["git"])
-    XCTAssertEqual(listSessions(options: CodexSessionListOptions(codexHome: home.path, source: .cli)).sessions.map(\.id), [session1])
-    XCTAssertEqual(listSessions(options: CodexSessionListOptions(codexHome: home.path, branch: "develop")).sessions.map(\.id), [session2])
-    XCTAssertEqual(findSession(id: session2, codexHome: home.path)?.source, .vscode)
-    XCTAssertEqual(findLatestSession(codexHome: home.path, cwd: "/tmp/project-a")?.id, session3)
-
-    let search = try CodexSessionIndex.searchSessions(query: "日本語", options: CodexSessionListOptions(codexHome: home.path))
-    XCTAssertEqual(search.sessionIds, [session3])
-
-    let truncated = try CodexSessionIndex.searchSessions(
-      query: "auth",
-      options: CodexSessionListOptions(codexHome: home.path),
-      searchOptions: CodexSessionTranscriptSearchOptions(maxEvents: 1)
-    )
-    XCTAssertEqual(truncated.scannedSessions, 1)
-    XCTAssertTrue(truncated.truncated)
-
-    let timedOut = try CodexSessionIndex.searchSessions(
-      query: "auth",
-      options: CodexSessionListOptions(codexHome: home.path),
-      searchOptions: CodexSessionTranscriptSearchOptions(timeoutMs: 0)
-    )
-    XCTAssertTrue(timedOut.timedOut)
-  }
-
-  func testRolloutWatcherAndSQLiteSessionIndexFallbackContracts() throws {
-    let home = try makeTemporaryDirectory()
-    addTeardownBlock {
-      try? FileManager.default.removeItem(at: home)
-    }
-    let rollout = home.appendingPathComponent("sessions/2025/05/07/rollout-2025-05-07T17-24-21-session-watch.jsonl")
-    try FileManager.default.createDirectory(at: rollout.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try "".write(to: rollout, atomically: true, encoding: .utf8)
-
-    let watcher = CodexRolloutWatcher()
-    watcher.watchFile(path: rollout.path)
-    try #"{"timestamp":"2025-05-07T17:24:23.000Z","type":"event_msg","payload":{"type":"UserMessage","message":"hello"}}"#.appendLine(to: rollout)
-    let events = watcher.flush()
-    XCTAssertEqual(events.count, 1)
-    if case let .line(path, line) = try XCTUnwrap(events.first) {
-      XCTAssertEqual(path, rollout.path)
-      XCTAssertEqual(line.type, "event_msg")
-    } else {
-      XCTFail("expected appended line event")
-    }
-    try #"{"timestamp":"2025-05-07T17:24:24.000Z","type":"event_msg","payload":{"type":"AgentMessage","message":"partial"}"#.appendRaw(to: rollout)
-    XCTAssertEqual(watcher.flush(), [])
-    try "}\n".appendRaw(to: rollout)
-    let completedPartial = watcher.flush()
-    XCTAssertEqual(completedPartial.count, 1)
-    if case let .line(_, line) = try XCTUnwrap(completedPartial.first) {
-      if case let .object(payload) = line.payload {
-        XCTAssertEqual(payload["message"], .string("partial"))
-      } else {
-        XCTFail("expected object payload")
-      }
-    } else {
-      XCTFail("expected completed partial line event")
-    }
-    watcher.stop()
-    XCTAssertTrue(watcher.isClosed)
-    XCTAssertTrue(CodexRolloutWatcher.sessionsWatchDir(codexHome: home.path).hasSuffix("/sessions"))
-
-    let state = home.appendingPathComponent("state")
-    try runSQLite(
-      state.path,
-      """
-      CREATE TABLE threads (
-        id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-        source TEXT NOT NULL, model_provider TEXT, cwd TEXT NOT NULL, cli_version TEXT NOT NULL, title TEXT,
-        first_user_message TEXT, archived_at TEXT, git_sha TEXT, git_branch TEXT, git_origin_url TEXT
-      );
-      """
-    )
-    try runSQLite(
-      state.path,
-      """
-      INSERT INTO threads VALUES (
-        'sqlite-session', '/tmp/rollout.jsonl', '2026-02-20T10:00:00Z', '2026-02-20T10:05:00Z',
-        'cli', 'openai', '/tmp/project', '1.0.0', 'SQLite title', 'Hello', NULL, 'abc', 'main',
-        'https://example.test/repo.git'
-      );
-      """
-    )
-
-    XCTAssertEqual(CodexSessionSQLiteIndex.openCodexDb(codexHome: home.path), state.path)
-    let sqliteSessions = try XCTUnwrap(CodexSessionSQLiteIndex.listSessionsSqlite(codexHome: home.path))
-    XCTAssertEqual(sqliteSessions.sessions.map(\.id), ["sqlite-session"])
-    XCTAssertEqual(findSession(id: "sqlite-session", codexHome: home.path)?.git?.branch, "main")
   }
 
   func testProcessManagerRunAgentAndOperationalStores() throws {

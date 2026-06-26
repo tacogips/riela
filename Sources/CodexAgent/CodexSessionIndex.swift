@@ -232,60 +232,69 @@ public enum CodexSessionIndex {
   }
 
   public static func listSessions(options: CodexSessionListOptions = CodexSessionListOptions()) -> CodexSessionListResult {
-    if let sqliteResult = CodexSessionSQLiteIndex.listSessionsSqlite(codexHome: options.codexHome, options: options) {
-      return sqliteResult
-    }
-    var sessions = discoverRolloutPaths(codexHome: options.codexHome).compactMap(buildSession)
-    sessions = sessions.filter { session in
-      if let source = options.source, session.source != source {
-        return false
-      }
-      if let cwd = options.cwd, URL(fileURLWithPath: session.cwd).standardizedFileURL.path != URL(fileURLWithPath: cwd).standardizedFileURL.path {
-        return false
-      }
-      if let branch = options.branch, session.git?.branch != branch {
-        return false
-      }
-      return true
-    }
-    sessions.sort { lhs, rhs in
-      let left = options.sortBy == "updatedAt" ? lhs.updatedAt : lhs.createdAt
-      let right = options.sortBy == "updatedAt" ? rhs.updatedAt : rhs.createdAt
-      return options.sortOrder == "asc" ? left < right : left > right
-    }
+    var sessions = mergedIndexedSessions(options: options)
+    sessions = sessions.filter { CodexSessionQuery.matches($0, options: options) }
+    sessions = CodexSessionQuery.sorted(sessions, options: options)
     let total = sessions.count
-    let start = min(max(options.offset, 0), sessions.count)
-    let end = min(start + max(options.limit, 0), sessions.count)
-    return CodexSessionListResult(sessions: Array(sessions[start..<end]), total: total, offset: options.offset, limit: options.limit)
+    let pageRange = CodexSessionQuery.page(totalCount: total, offset: options.offset, limit: options.limit)
+    return CodexSessionListResult(sessions: Array(sessions[pageRange]), total: total, offset: options.offset, limit: options.limit)
+  }
+
+  private static func mergedIndexedSessions(options: CodexSessionListOptions) -> [CodexSession] {
+    let sqliteSessions = allSQLiteSessions(options: options)
+    let rolloutSessions = preferredRolloutSessions(discoverRolloutPaths(codexHome: options.codexHome).compactMap(buildSession))
+    let rolloutIds = Set(rolloutSessions.map(\.id))
+    return rolloutSessions + sqliteSessions.filter { !rolloutIds.contains($0.id) }
+  }
+
+  private static func allSQLiteSessions(options: CodexSessionListOptions) -> [CodexSession] {
+    CodexSessionSQLiteIndex.listSessionsSqlite(
+      codexHome: options.codexHome,
+      options: CodexSessionListOptions(
+        codexHome: options.codexHome,
+        limit: Int.max,
+        offset: 0,
+        sortBy: options.sortBy,
+        sortOrder: options.sortOrder
+      )
+    )?.sessions ?? []
+  }
+
+  private static func preferredRolloutSessions(_ sessions: [CodexSession]) -> [CodexSession] {
+    var ids: [String] = []
+    var sessionsById: [String: CodexSession] = [:]
+    for session in sessions {
+      guard let existing = sessionsById[session.id] else {
+        ids.append(session.id)
+        sessionsById[session.id] = session
+        continue
+      }
+      if shouldPreferRolloutSession(session, over: existing) {
+        sessionsById[session.id] = session
+      }
+    }
+    return ids.compactMap { sessionsById[$0] }
+  }
+
+  private static func shouldPreferRolloutSession(_ candidate: CodexSession, over existing: CodexSession) -> Bool {
+    if candidate.updatedAt != existing.updatedAt {
+      return candidate.updatedAt > existing.updatedAt
+    }
+    if candidate.createdAt != existing.createdAt {
+      return candidate.createdAt > existing.createdAt
+    }
+    return candidate.rolloutPath > existing.rolloutPath
   }
 
   public static func findSession(id: String, codexHome: String? = nil) -> CodexSession? {
-    if let session = CodexSessionSQLiteIndex.findSessionSqlite(id: id, codexHome: codexHome) {
-      return session
-    }
-    for path in discoverRolloutPaths(codexHome: codexHome) {
-      guard let session = buildSession(rolloutPath: path), session.id == id else {
-        continue
-      }
-      return session
-    }
-    return nil
+    let options = CodexSessionListOptions(codexHome: codexHome, limit: Int.max)
+    return mergedIndexedSessions(options: options).first { $0.id == id }
   }
 
   public static func findLatestSession(codexHome: String? = nil, cwd: String? = nil) -> CodexSession? {
-    if let session = CodexSessionSQLiteIndex.findLatestSessionSqlite(codexHome: codexHome, cwd: cwd) {
-      return session
-    }
-    for path in discoverRolloutPaths(codexHome: codexHome) {
-      guard let session = buildSession(rolloutPath: path) else {
-        continue
-      }
-      if let cwd, URL(fileURLWithPath: session.cwd).standardizedFileURL.path != URL(fileURLWithPath: cwd).standardizedFileURL.path {
-        continue
-      }
-      return session
-    }
-    return nil
+    listSessions(
+      options: CodexSessionListOptions(codexHome: codexHome, cwd: cwd, limit: 1, sortBy: "updatedAt")
+    ).sessions.first
   }
 
   public static func searchSessionTranscript(
@@ -428,7 +437,7 @@ public enum CodexSessionIndex {
       )
     ).sessions
     let maxSessions = max(0, searchOptions.maxSessions ?? allCandidates.count)
-    let candidates = Array(allCandidates.prefix(maxSessions))
+    let candidates = allCandidates.lazy.filter(sessionHasReadableTranscript).prefix(maxSessions)
     var matches: [String] = []
     var scannedBytes = 0
     var scannedEvents = 0
@@ -479,12 +488,13 @@ public enum CodexSessionIndex {
       }
     }
     let total = matches.count
-    let requestedOffset = max(0, searchOptions.offset)
-    let requestedLimit = max(0, searchOptions.limit)
-    let start = min(requestedOffset, matches.count)
-    let end = min(start + requestedLimit, matches.count)
+    let pageRange = CodexSessionQuery.page(
+      totalCount: matches.count,
+      offset: searchOptions.offset,
+      limit: searchOptions.limit
+    )
     return CodexSessionsSearchResult(
-      sessionIds: Array(matches[start..<end]),
+      sessionIds: Array(matches[pageRange]),
       total: total,
       offset: searchOptions.offset,
       limit: searchOptions.limit,
@@ -528,6 +538,10 @@ public enum CodexSessionIndex {
     return result
   }
 
+  private static func sessionHasReadableTranscript(_ session: CodexSession) -> Bool {
+    FileManager.default.isReadableFile(atPath: session.rolloutPath)
+  }
+
   public static func deriveActivityEntry(sessionId: String, lines: [CodexRolloutLine]) -> CodexActivityEntry {
     var status = CodexActivityStatus.idle
     var updatedAt = lines.last?.timestamp ?? ""
@@ -552,6 +566,60 @@ public enum CodexSessionIndex {
 
 public enum CodexSessionSearchError: Error, Equatable {
   case emptyQuery
+}
+
+enum CodexSessionQuery {
+  static func matches(_ session: CodexSession, options: CodexSessionListOptions) -> Bool {
+    if let source = options.source, session.source != source {
+      return false
+    }
+    if let cwd = options.cwd, standardizedPath(session.cwd) != standardizedPath(cwd) {
+      return false
+    }
+    if let branch = options.branch, session.git?.branch != branch {
+      return false
+    }
+    return true
+  }
+
+  static func sorted(_ sessions: [CodexSession], options: CodexSessionListOptions) -> [CodexSession] {
+    sessions.sorted { lhs, rhs in
+      isOrderedBefore(lhs, rhs, options: options)
+    }
+  }
+
+  static func page(totalCount: Int, offset: Int, limit: Int) -> Range<Int> {
+    let start = min(max(offset, 0), totalCount)
+    let requestedCount = max(limit, 0)
+    let end = start + min(requestedCount, totalCount - start)
+    return start..<end
+  }
+
+  private static func isOrderedBefore(_ lhs: CodexSession, _ rhs: CodexSession, options: CodexSessionListOptions) -> Bool {
+    let ascending = options.sortOrder == "asc"
+    let leftPrimary = primarySortDate(lhs, options: options)
+    let rightPrimary = primarySortDate(rhs, options: options)
+    if leftPrimary != rightPrimary {
+      return ascending ? leftPrimary < rightPrimary : leftPrimary > rightPrimary
+    }
+    let leftSecondary = secondarySortDate(lhs, options: options)
+    let rightSecondary = secondarySortDate(rhs, options: options)
+    if leftSecondary != rightSecondary {
+      return ascending ? leftSecondary < rightSecondary : leftSecondary > rightSecondary
+    }
+    if lhs.id != rhs.id {
+      return ascending ? lhs.id < rhs.id : lhs.id > rhs.id
+    }
+    return ascending ? lhs.rolloutPath < rhs.rolloutPath : lhs.rolloutPath > rhs.rolloutPath
+  }
+
+  private static func primarySortDate(_ session: CodexSession, options: CodexSessionListOptions) -> Date {
+    options.sortBy == "updatedAt" ? session.updatedAt : session.createdAt
+  }
+
+  private static func secondarySortDate(_ session: CodexSession, options: CodexSessionListOptions) -> Date {
+    options.sortBy == "updatedAt" ? session.createdAt : session.updatedAt
+  }
 }
 
 public func resolveCodexHome(environment: [String: String] = ProcessInfo.processInfo.environment) -> String {
@@ -615,6 +683,10 @@ private func isoDate(_ text: String) -> Date? {
     return date
   }
   return ISO8601DateFormatter().date(from: text)
+}
+
+private func standardizedPath(_ path: String) -> String {
+  URL(fileURLWithPath: path).standardizedFileURL.path
 }
 
 private func jsonString(_ value: RielaCore.JSONValue?) -> String? {

@@ -128,6 +128,27 @@ actor FakeDiscordGatewayAPI: DiscordGatewayAPI {
   }
 }
 
+actor FakeSlackGatewayAPI: SlackGatewayAPI {
+  private var queuedMessages: [SlackMessage]
+  private(set) var getMessageRequests: [SlackGetMessagesRequest] = []
+  private(set) var sentMessages: [SlackSendMessageRequest] = []
+
+  init(messages: [SlackMessage]) {
+    self.queuedMessages = messages
+  }
+
+  func getMessages(request: SlackGetMessagesRequest) async throws -> [SlackMessage] {
+    getMessageRequests.append(request)
+    let messages = queuedMessages
+    queuedMessages = []
+    return messages
+  }
+
+  func sendMessage(request: SlackSendMessageRequest) async throws {
+    sentMessages.append(request)
+  }
+}
+
 actor FakeEventWorkflowRunner: EventWorkflowRunning {
   private(set) var requests: [EventWorkflowRunRequest] = []
   private let repliesByRequest: [[(text: String, replyAs: String)]]
@@ -251,6 +272,31 @@ extension DiscordMessage {
       "timestamp": "2026-06-21T23:40:00.000000+00:00",
       "author": {"id": "300", "username": "tester", "global_name": "Tester", "bot": \(isBot)},
       "attachments": \(attachmentsJSON)
+    }
+    """.utf8))
+  }
+}
+
+extension SlackMessage {
+  static func fixture(
+    ts: String,
+    channelId: String = "C200",
+    user: String = "U300",
+    text: String,
+    threadTimestamp: String? = nil,
+    isBot: Bool = false
+  ) throws -> SlackMessage {
+    let botFields = isBot ? #","subtype":"bot_message","bot_id":"B999","username":"Riela""# : ""
+    let threadField = threadTimestamp.map { #","thread_ts":"\#($0)""# } ?? ""
+    return try JSONDecoder().decode(SlackMessage.self, from: Data("""
+    {
+      "type": "message",
+      "channel": "\(channelId)",
+      "user": "\(user)",
+      "text": "\(text)",
+      "ts": "\(ts)"
+      \(threadField)
+      \(botFields)
     }
     """.utf8))
   }

@@ -1,0 +1,21 @@
+{
+  "type": "message",
+  "channel": "C0123456789",
+  "user": "U0123456789",
+  "text": "Yui, SlackでもMikaとRinaに順番に意見を聞いて、3人で短く議論して。",
+  "ts": "1780000100.000100",
+  "thread_ts": "1780000100.000000",
+  "historySourceMode": "memory",
+  "history": [
+    {
+      "messageId": "1780000100.000000",
+      "authorId": "U0123456789",
+      "displayName": "Operator",
+      "isBot": false,
+      "createdAt": "2026-06-26T00:00:00.000Z",
+      "text": "Slack gateway trio test: confirm Yui, Mika, and Rina can each respond in one thread.",
+      "conversationId": "C0123456789",
+      "threadId": "1780000100.000000"
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "id": "slack-gateway-personas-to-workflow",
+  "sourceId": "slack-gateway-personas",
+  "outputDestinations": ["slack-gateway-persona-replies"],
+  "workflowName": "slack-agent-trio-chat",
+  "match": {
+    "eventType": "chat.message"
+  },
+  "inputMapping": {
+    "mode": "template",
+    "template": {
+      "request": "{{event.input.payload.text}}",
+      "history": "{{event.input.payload.history}}",
+      "historySource": "{{event.input.payload.historySource}}",
+      "attachments": "{{event.input.payload.attachments}}",
+      "imagePaths": "{{event.input.payload.imagePaths}}",
+      "attachmentText": "{{event.input.payload.attachmentText}}",
+      "personaCandidates": ["yui", "mika", "rina"],
+      "conversationId": "{{event.conversation.id}}",
+      "threadId": "{{event.conversation.threadId}}"
+    },
+    "mirrorToHumanInput": true
+  },
+  "execution": {
+    "async": true,
+    "dedupeWindowMs": 86400000,
+    "maxConcurrentPerKey": 1,
+    "concurrencyKey": "{{event.sourceId}}:{{event.conversation.id}}:{{event.conversation.threadId}}"
+  },
+  "taskPlanning": {
+    "enabled": false
+  },
+  "mailboxBridge": {
+    "output": {
+      "progress": {
+        "mode": "none"
+      }
+    }
+  }
+}

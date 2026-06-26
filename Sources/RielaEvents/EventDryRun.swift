@@ -285,7 +285,7 @@ private func isChatEvent(envelope: ExternalEventEnvelope, source: EventSourceCon
     return true
   }
   switch source?.kind {
-  case .chatSdk, .discordGateway, .telegramGateway, .matrix:
+  case .chatSdk, .discordGateway, .slackGateway, .telegramGateway, .matrix:
     return true
   default:
     return false

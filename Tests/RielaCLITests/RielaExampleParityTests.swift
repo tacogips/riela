@@ -11,7 +11,7 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum ExampleCatalog {
     static let directoryName = "examples"
-    static let expectedMockScenarioCount = 23
+    static let expectedMockScenarioCount = 25
     static let expectedNodeMockScenarioCount = 0
   }
 
@@ -688,6 +688,8 @@ final class RielaExampleParityTests: XCTestCase {
       "same-node-session-echo",
       "scheduled-sleep",
       "shared-agent-trio-personas",
+      "slack-agent-trio-chat",
+      "slack-codex-chat",
       "subworkflow-chained-simple",
       "supervised-mock-retry",
       "telegram-agent-trio-chat",

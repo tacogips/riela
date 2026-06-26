@@ -9,6 +9,7 @@ public enum EventSourceKind: RawRepresentable, Codable, Equatable, Sendable {
   case chatSdk
   case discordGateway
   case fileChange
+  case slackGateway
   case telegramGateway
   case matrix
   case s3Repository
@@ -27,6 +28,8 @@ public enum EventSourceKind: RawRepresentable, Codable, Equatable, Sendable {
       self = .discordGateway
     case "file-change":
       self = .fileChange
+    case "slack-gateway":
+      self = .slackGateway
     case "telegram-gateway":
       self = .telegramGateway
     case "matrix":
@@ -52,6 +55,8 @@ public enum EventSourceKind: RawRepresentable, Codable, Equatable, Sendable {
       "discord-gateway"
     case .fileChange:
       "file-change"
+    case .slackGateway:
+      "slack-gateway"
     case .telegramGateway:
       "telegram-gateway"
     case .matrix:

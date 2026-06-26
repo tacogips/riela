@@ -1,0 +1,5 @@
+{
+  "id": "slack-gateway-persona-replies",
+  "kind": "chat",
+  "sourceId": "slack-gateway-personas"
+}

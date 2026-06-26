@@ -1,0 +1,27 @@
+{
+  "id": "slack-gateway-codex-to-workflow",
+  "sourceId": "slack-gateway-codex",
+  "outputDestinations": ["slack-gateway-codex-replies"],
+  "workflowName": "slack-codex-chat",
+  "match": {
+    "eventType": "chat.message"
+  },
+  "inputMapping": {
+    "mode": "template",
+    "template": {
+      "request": "{{event.input.payload.text}}",
+      "history": "{{event.input.payload.history}}",
+      "historySource": "{{event.input.payload.historySource}}",
+      "attachments": "{{event.input.payload.attachments}}",
+      "conversationId": "{{event.conversation.id}}",
+      "threadId": "{{event.conversation.threadId}}"
+    },
+    "mirrorToHumanInput": true
+  },
+  "execution": {
+    "async": true,
+    "dedupeWindowMs": 86400000,
+    "maxConcurrentPerKey": 1,
+    "concurrencyKey": "{{event.sourceId}}:{{event.conversation.id}}:{{event.conversation.threadId}}"
+  }
+}

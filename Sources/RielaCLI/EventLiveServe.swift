@@ -17,6 +17,11 @@ protocol TelegramGatewayAPI: Sendable {
   func sendMessage(request: TelegramSendMessageRequest) async throws
 }
 
+protocol SlackGatewayAPI: Sendable {
+  func getMessages(request: SlackGetMessagesRequest) async throws -> [SlackMessage]
+  func sendMessage(request: SlackSendMessageRequest) async throws
+}
+
 protocol EventWorkflowRunning: Sendable {
   func runWorkflow(_ request: EventWorkflowRunRequest) async throws -> WorkflowRunResult
 }
@@ -38,17 +43,20 @@ struct EventResolvedAttachmentInputs: Equatable, Sendable {
 struct DefaultEventLiveServer: EventLiveServing {
   var telegramAPI: any TelegramGatewayAPI
   var discordAPI: any DiscordGatewayAPI
+  var slackAPI: any SlackGatewayAPI
   var workflowRunner: any EventWorkflowRunning
   var telemetry: any RielaTelemetry
 
   init(
     telegramAPI: any TelegramGatewayAPI = URLSessionTelegramGatewayAPI(),
     discordAPI: any DiscordGatewayAPI = URLSessionDiscordGatewayAPI(),
+    slackAPI: any SlackGatewayAPI = URLSessionSlackGatewayAPI(),
     workflowRunner: any EventWorkflowRunning = CLIEventWorkflowRunner(),
     telemetry: (any RielaTelemetry)? = nil
   ) {
     self.telegramAPI = telegramAPI
     self.discordAPI = discordAPI
+    self.slackAPI = slackAPI
     self.workflowRunner = workflowRunner
     self.telemetry = telemetry ?? RielaTelemetryFactory.make(configuration: .fromEnvironment(
       CLIRuntimeEnvironment.mergedProcessEnvironment(),
@@ -68,7 +76,7 @@ struct DefaultEventLiveServer: EventLiveServing {
       ]
     ))
     let unsupported = enabledSources
-      .filter { ![.telegramGateway, .discordGateway].contains($0.kind) }
+      .filter { ![.telegramGateway, .discordGateway, .slackGateway].contains($0.kind) }
       .map { "\($0.id):\($0.kind.rawValue)" }
       .joined(separator: ",")
     guard unsupported.isEmpty else {
@@ -82,7 +90,8 @@ struct DefaultEventLiveServer: EventLiveServing {
 
     let telegramSources = try liveConfig.telegramSources(eventRoot: eventRoot)
     let discordSources = try liveConfig.discordSources(eventRoot: eventRoot)
-    guard !telegramSources.isEmpty || !discordSources.isEmpty else {
+    let slackSources = try liveConfig.slackSources(eventRoot: eventRoot)
+    guard !telegramSources.isEmpty || !discordSources.isEmpty || !slackSources.isEmpty else {
       return liveUnavailable(eventRoot: eventRoot, actionTarget: target, unsupportedSources: enabledSources.map { "\($0.id):\($0.kind.rawValue)" }.joined(separator: ","))
     }
 
@@ -90,6 +99,7 @@ struct DefaultEventLiveServer: EventLiveServing {
     do {
       try telegramSources.forEach { try $0.validateEnvironment(environment: environment) }
       try discordSources.forEach { try $0.validateEnvironment(environment: environment) }
+      try slackSources.forEach { try $0.validateEnvironment(environment: environment) }
     } catch {
       try? writeServeRecord(eventRoot: eventRoot, status: "failed", detail: String(describing: error))
       throw error
@@ -107,6 +117,13 @@ struct DefaultEventLiveServer: EventLiveServing {
       }
       for source in discordSources {
         processedEvents += try await pollDiscordSource(source, config: liveConfig, eventRoot: eventRoot, parsed: parsed)
+        if let maximumEvents, processedEvents >= maximumEvents {
+          await recordEventsServeCompletion(startedAt: startedAt, processedEvents: processedEvents)
+          return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
+        }
+      }
+      for source in slackSources {
+        processedEvents += try await pollSlackSource(source, config: liveConfig, eventRoot: eventRoot, parsed: parsed)
         if let maximumEvents, processedEvents >= maximumEvents {
           await recordEventsServeCompletion(startedAt: startedAt, processedEvents: processedEvents)
           return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
@@ -539,6 +556,15 @@ struct EventLiveConfig: Sendable {
       source.enabled && source.kind == .telegramGateway && boundSourceIds.contains(source.id)
     }.map(\.id))
     return try Self.decodeSourceDirectory(sourceDirectory, sourceIds: sourceIds, as: TelegramGatewaySource.self)
+  }
+
+  func slackSources(eventRoot: URL) throws -> [SlackGatewaySource] {
+    let sourceDirectory = eventRoot.appendingPathComponent("sources", isDirectory: true)
+    let boundSourceIds = Set(bindings.filter(\.enabled).map(\.sourceId))
+    let sourceIds = Set(sources.filter { source in
+      source.enabled && source.kind == .slackGateway && boundSourceIds.contains(source.id)
+    }.map(\.id))
+    return try Self.decodeSourceDirectory(sourceDirectory, sourceIds: sourceIds, as: SlackGatewaySource.self)
   }
 
   func enabledSources(target: String?) -> [EventSourceContract] {

@@ -1,0 +1,11 @@
+{
+  "id": "answer-slack-message",
+  "description": "Generate the user-facing Slack reply text from the normalized chat event.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.4-mini",
+  "promptTemplateFile": "prompts/answer-slack-message.md",
+  "variables": {},
+  "output": {
+    "description": "Return JSON with replyText containing the exact Slack reply text to send."
+  }
+}

@@ -212,6 +212,72 @@ riela events emit discord-gateway-personas \
   --output json
 ```
 
+### `slack-codex-chat`
+
+Slack Gateway worker-only workflow using riela-owned Slack Web API ingestion:
+
+- receives normalized Slack `chat.message` events from the
+  `slack-gateway-codex` event source
+- includes bounded persisted Slack thread history in `event.input.payload.history`
+- answers with `codex-agent` model `gpt-5.4-mini`
+- sends replies through `riela/chat-reply-worker` and the
+  `slack-gateway-codex-replies` chat destination
+- replies in the same Slack thread timestamp carried by the normalized event
+
+Validate it:
+
+```bash
+riela workflow validate slack-codex-chat --workflow-definition-dir ./examples
+```
+
+Run it through the deterministic Slack Gateway fixture without contacting
+Slack:
+
+```bash
+riela events emit slack-gateway-codex \
+  --workflow-definition-dir ./examples \
+  --event-root ./examples/event-sources/.riela-events \
+  --artifact-root ./tmp/event-source-demo/workflow-artifacts \
+  --event-file ./examples/event-sources/payloads/slack-gateway-message-with-history.json \
+  --mock-scenario ./examples/slack-codex-chat/mock-scenario.json \
+  --output json
+```
+
+### `slack-agent-trio-chat`
+
+Slack Gateway persona workflow using riela-owned Slack Web API ingestion:
+
+- receives normalized Slack `chat.message` events from the
+  `slack-gateway-personas` event source
+- includes bounded persisted Slack thread history in `event.input.payload.history`
+- lets Yui, Mika, and Rina hand off the discussion through the same persona
+  memory pattern as the Discord and Telegram trio examples
+- sends persona replies through `riela/chat-reply-worker` and the
+  `slack-gateway-persona-replies` chat destination
+- selects separate Slack bot tokens from `RIELA_SLACK_YUI_BOT_TOKEN`,
+  `RIELA_SLACK_MIKA_BOT_TOKEN`, and `RIELA_SLACK_RINA_BOT_TOKEN` so the Slack
+  UI can show distinct Yui, Mika, and Rina bot identities while preserving each
+  logical `replyAs` identity in workflow output and chat history
+
+Validate it:
+
+```bash
+riela workflow validate slack-agent-trio-chat --workflow-definition-dir ./examples
+```
+
+Run it through the deterministic Slack Gateway fixture without contacting
+Slack:
+
+```bash
+riela events emit slack-gateway-personas \
+  --workflow-definition-dir ./examples \
+  --event-root ./examples/event-sources/.riela-events \
+  --artifact-root ./tmp/event-source-demo/workflow-artifacts \
+  --event-file ./examples/event-sources/payloads/slack-gateway-persona-message-with-history.json \
+  --mock-scenario ./examples/slack-agent-trio-chat/mock-scenario.json \
+  --output json
+```
+
 ### `matrix-chat-reply`
 
 Element/Matrix worker-only workflow showing the same built-in reply add-on

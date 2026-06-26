@@ -1,0 +1,17 @@
+{
+  "id": "read-mika-memory",
+  "description": "Read recent Mika Trend memory from the configured local memory root before the persona replies.",
+  "addon": {
+    "name": "riela/chat-persona-memory-read",
+    "version": "1",
+    "config": {
+      "personaId": "mika",
+      "personaName": "Mika Trend",
+      "memoryId": "persona-chat-memory"
+    }
+  },
+  "memories": [{"id": "persona-chat-memory", "purpose": "read recent Mika memory"}],
+  "output": {
+    "description": "Return recent Mika Trend memory markdown and the persona-specific memory directory."
+  }
+}

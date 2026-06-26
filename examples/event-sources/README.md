@@ -267,6 +267,73 @@ ingestion. History is bounded by `maxMessages`, `maxBytes`, and `maxAgeMs`,
 and it is Discord channel/thread context rather than workflow inbox or agent
 transcript history.
 
+The `slack-gateway-codex` source demonstrates riela-owned Slack Web API
+ingestion. It is separate from the `chat-sdk-slack` generic webhook path and
+does not require an external Chat SDK Slack deployment. The Gateway runner uses
+Slack bot credentials from environment-variable names in the source config,
+polls configured channels with `conversations.history`, ignores bot and self
+messages by default, attaches bounded persisted Slack thread history to
+`event.input.payload.history`, and sends workflow replies back to the same
+thread with `chat.postMessage`.
+
+Serve the Gateway source with a Slack bot token, bot user id, and channel id.
+The Slack app needs channel access plus Web API scopes such as
+`channels:history`, `groups:history`, `chat:write`, and any matching private or
+IM history scopes for the conversations you configure:
+
+```bash
+export RIELA_SLACK_BOT_TOKEN=<slack-bot-token>
+export RIELA_SLACK_BOT_USER_ID=<slack-bot-user-id>
+export RIELA_SLACK_CHANNEL_ID=<slack-channel-id>
+export RIELA_SLACK_RIELA_BOT_TOKEN=<optional-reply-bot-token>
+riela events serve --workflow-definition-dir ./examples --event-root ./examples/event-sources/.riela-events --source slack-gateway-codex
+```
+
+For deterministic local checks, emit the checked-in Slack payload without
+contacting Slack. The payload includes prior thread history so
+`slack-codex-chat` can answer with context:
+
+```bash
+riela events emit slack-gateway-codex \
+  --workflow-definition-dir ./examples \
+  --event-root ./examples/event-sources/.riela-events \
+  --artifact-root ./tmp/event-source-demo/workflow-artifacts \
+  --event-file ./examples/event-sources/payloads/slack-gateway-message-with-history.json \
+  --mock-scenario ./examples/slack-codex-chat/mock-scenario.json \
+  --output json
+```
+
+The companion `slack-gateway-personas` source dispatches Slack messages to
+`slack-agent-trio-chat`, where Yui, Mika, and Rina can hand off a discussion
+before the final reply is sent to the originating Slack thread. Configure
+separate Slack bot tokens for the three reply personas when the Slack UI should
+show distinct Yui, Mika, and Rina bot identities:
+
+```bash
+export RIELA_SLACK_YUI_BOT_TOKEN=<yui-slack-bot-token>
+export RIELA_SLACK_MIKA_BOT_TOKEN=<mika-slack-bot-token>
+export RIELA_SLACK_RINA_BOT_TOKEN=<rina-slack-bot-token>
+```
+
+Riela selects the token from each reply's logical `replyAs` identity and keeps
+that identity in workflow output and normalized chat history.
+
+```bash
+riela events emit slack-gateway-personas \
+  --workflow-definition-dir ./examples \
+  --event-root ./examples/event-sources/.riela-events \
+  --artifact-root ./tmp/event-source-demo/workflow-artifacts \
+  --event-file ./examples/event-sources/payloads/slack-gateway-persona-message-with-history.json \
+  --mock-scenario ./examples/slack-agent-trio-chat/mock-scenario.json \
+  --output json
+```
+
+Persisted Slack history stores only bounded normalized conversation items and
+never stores bot tokens or raw Slack Web API responses. Slack file payloads are
+metadata-only in this fixture; direct file downloads, Events API Socket Mode,
+slash commands, shortcuts, reactions, edits, and modals are out of scope for
+this Gateway example.
+
 The `telegram-gateway-personas` source demonstrates riela-owned Telegram
 Bot API ingestion. It is separate from the `chat-sdk-telegram` generic webhook
 path and does not require an external Chat SDK Telegram deployment. The Gateway

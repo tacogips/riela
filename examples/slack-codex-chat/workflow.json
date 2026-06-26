@@ -1,0 +1,48 @@
+{
+  "workflowId": "slack-codex-chat",
+  "description": "Reply to Slack chat messages by generating a concise answer with codex-agent gpt-5.4-mini, then sending that answer back through the configured Slack chat destination.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "prompts": {
+    "workerSystemPromptTemplate": "Return concise business JSON only. Keep the Slack reply text in replyText and avoid exposing internal workflow details."
+  },
+  "entryStepId": "answer-slack-message",
+  "nodes": [
+    {
+      "id": "answer-slack-message",
+      "nodeFile": "nodes/node-answer-slack-message.json"
+    },
+    {
+      "id": "send-slack-reply",
+      "addon": {
+        "name": "riela/chat-reply-worker",
+        "version": "1",
+        "config": {
+          "textTemplate": "{{inbox.latest.output.payload.replyText}}",
+          "visibility": "public",
+          "threadPolicy": "same-thread",
+          "onMissingTarget": "dry-run"
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "answer-slack-message",
+      "nodeId": "answer-slack-message",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "send-slack-reply"
+        }
+      ]
+    },
+    {
+      "id": "send-slack-reply",
+      "nodeId": "send-slack-reply",
+      "role": "worker"
+    }
+  ]
+}

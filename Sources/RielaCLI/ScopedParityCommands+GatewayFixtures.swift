@@ -51,6 +51,8 @@ extension ScopedParityCommandRunner {
       return telegramGatewayFixtureEnvelope(from: object, sourceId: sourceId)
     case .discordGateway:
       return discordGatewayFixtureEnvelope(from: object, sourceId: sourceId)
+    case .slackGateway:
+      return slackGatewayFixtureEnvelope(from: object, sourceId: sourceId)
     case .matrix:
       return matrixFixtureEnvelope(from: object, sourceId: sourceId)
     default:
@@ -191,6 +193,60 @@ extension ScopedParityCommandRunner {
       "username": author["username"],
       "isBot": author["bot"]
     ])
+  }
+
+  private func slackGatewayFixtureEnvelope(from object: JSONObject, sourceId: String) -> ExternalEventEnvelope? {
+    guard let messageId = object["ts"]?.stringValue,
+      let channelId = object["channel"]?.stringValue,
+      let text = object["text"]?.stringValue
+    else {
+      return nil
+    }
+    let threadId = object["thread_ts"]?.stringValue ?? messageId
+    return ExternalEventEnvelope(
+      sourceId: sourceId,
+      eventId: "\(channelId):\(messageId)",
+      provider: "slack",
+      eventType: "chat.message",
+      receivedAt: Date(timeIntervalSince1970: jsonNumberValue(object["ts"]) ?? 0),
+      actor: slackActor(object),
+      conversation: compactObject([
+        "id": .string(channelId),
+        "threadId": .string(threadId),
+        "messageTs": .string(messageId)
+      ]),
+      input: chatInput(
+        text: text,
+        provider: "slack",
+        history: jsonArrayValue(object["history"]) ?? [],
+        historySource: object["historySourceMode"] ?? .string("fixture"),
+        attachments: slackFileAttachments(object["files"])
+      )
+    )
+  }
+
+  private func slackActor(_ object: JSONObject) -> JSONObject? {
+    compactObject([
+      "id": object["user"],
+      "displayName": object["username"] ?? object["user"],
+      "botId": object["bot_id"],
+      "isBot": .bool(object["subtype"]?.stringValue == "bot_message" || object["bot_id"] != nil)
+    ])
+  }
+
+  private func slackFileAttachments(_ value: JSONValue?) -> [JSONValue] {
+    (jsonArrayValue(value) ?? [])
+      .compactMap(jsonObjectValue)
+      .map { file in
+        .object(compactObject([
+          "id": file["id"],
+          "name": file["name"],
+          "mimetype": file["mimetype"],
+          "filetype": file["filetype"],
+          "urlPrivate": file["url_private"],
+          "size": file["size"]
+        ]))
+      }
   }
 
   private func matrixFixtureEnvelope(from object: JSONObject, sourceId: String) -> ExternalEventEnvelope? {

@@ -1,0 +1,12 @@
+{
+  "answer-slack-message": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.4-mini",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "replyText": "Slackから受け取ったよ。このスレッドでそのまま相談や作業依頼を送って。必要なことがあれば短く確認して進めるよ。"
+    }
+  }
+}

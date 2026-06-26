@@ -76,11 +76,11 @@ extension WorkflowCommandTests {
     XCTAssertNotEqual(remediation["sourceSessionId"], remediation["targetSessionId"])
   }
 
-  func testAutoImproveDoesNotTreatAgentBackendAsStallDetectable() {
+  func testAutoImproveTreatsOnlyHeartbeatObservedAgentBackendAsStallDetectable() {
     let now = Date()
     let later = now.addingTimeInterval(60)
-    let agentExecution = WorkflowStepExecution(
-      executionId: "exec-agent",
+    let silentAgentExecution = WorkflowStepExecution(
+      executionId: "exec-silent-agent",
       stepId: "agent-step",
       nodeId: "agent-node",
       attempt: 1,
@@ -88,6 +88,18 @@ extension WorkflowCommandTests {
       status: .running,
       createdAt: later,
       updatedAt: later
+    )
+    let heartbeatAgentExecution = WorkflowStepExecution(
+      executionId: "exec-heartbeat-agent",
+      stepId: "agent-heartbeat-step",
+      nodeId: "agent-heartbeat-node",
+      attempt: 1,
+      backend: .codexAgent,
+      status: .running,
+      lastBackendEventAt: later,
+      lastBackendEventType: "turn.started",
+      createdAt: now,
+      updatedAt: now
     )
     let commandExecution = WorkflowStepExecution(
       executionId: "exec-command",
@@ -99,7 +111,8 @@ extension WorkflowCommandTests {
       createdAt: now,
       updatedAt: now
     )
-    XCTAssertFalse(workflowAutoImproveCanDetectStall(in: agentExecution))
+    XCTAssertFalse(workflowAutoImproveCanDetectStall(in: silentAgentExecution))
+    XCTAssertTrue(workflowAutoImproveCanDetectStall(in: heartbeatAgentExecution))
     XCTAssertTrue(workflowAutoImproveCanDetectStall(in: commandExecution))
 
     let session = WorkflowSession(
@@ -109,10 +122,10 @@ extension WorkflowCommandTests {
       entryStepId: "command-step",
       createdAt: now,
       updatedAt: later,
-      executions: [commandExecution, agentExecution]
+      executions: [commandExecution, silentAgentExecution, heartbeatAgentExecution]
     )
-    XCTAssertEqual(workflowAutoImproveStallTarget(in: session)?.executionId, "exec-command")
-    XCTAssertEqual(workflowAutoImproveLatestStallActivityDate(in: session), now)
+    XCTAssertEqual(workflowAutoImproveStallTarget(in: session)?.executionId, "exec-heartbeat-agent")
+    XCTAssertEqual(workflowAutoImproveLatestStallActivityDate(in: session), later)
   }
 
   func testAutoImproveStallRetryRequiresExplicitStallTimeout() async throws {

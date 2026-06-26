@@ -56,6 +56,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
 public enum WorkflowRunEventType: String, Codable, Equatable, Sendable {
   case sessionStarted = "session_started"
   case stepStarted = "step_started"
+  case backendEvent = "backend_event"
   case stepCompleted = "step_completed"
   case sessionCompleted = "session_completed"
 }
@@ -69,6 +70,7 @@ public struct WorkflowRunEvent: Codable, Equatable, Sendable {
   public var stepId: String?
   public var nodeId: String?
   public var executionId: String?
+  public var backendEventType: String?
   public var exitCode: Int32?
   public var nodeExecutions: Int?
   public var transitions: Int?
@@ -82,6 +84,7 @@ public struct WorkflowRunEvent: Codable, Equatable, Sendable {
     stepId: String? = nil,
     nodeId: String? = nil,
     executionId: String? = nil,
+    backendEventType: String? = nil,
     exitCode: Int32? = nil,
     nodeExecutions: Int? = nil,
     transitions: Int? = nil
@@ -94,6 +97,7 @@ public struct WorkflowRunEvent: Codable, Equatable, Sendable {
     self.stepId = stepId
     self.nodeId = nodeId
     self.executionId = executionId
+    self.backendEventType = backendEventType
     self.exitCode = exitCode
     self.nodeExecutions = nodeExecutions
     self.transitions = transitions
@@ -451,6 +455,40 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     return execution
   }
 
+  private func adapterExecutionContext(
+    deadline: Date?,
+    workflowId: String,
+    sessionId: String,
+    step: WorkflowStepRef,
+    execution: WorkflowStepExecution,
+    handler: WorkflowRunEventHandler?
+  ) -> AdapterExecutionContext {
+    AdapterExecutionContext(deadline: deadline) { backendEvent in
+      guard !backendEvent.eventType.isEmpty else {
+        return
+      }
+      let updatedExecution = try? await self.store.recordStepBackendEvent(
+        WorkflowStepBackendEventInput(
+          sessionId: sessionId,
+          executionId: execution.executionId,
+          eventType: backendEvent.eventType
+        )
+      )
+      guard let updatedExecution,
+            let updatedSession = try? await self.store.loadSession(id: sessionId) else {
+        return
+      }
+      await self.emitBackendEvent(
+        workflowId: workflowId,
+        session: updatedSession,
+        step: step,
+        execution: updatedExecution,
+        backendEvent: backendEvent,
+        handler: handler
+      )
+    }
+  }
+
   private func executePayloadNodeAndRecordMemory(
     basePayload: AgentNodePayload,
     request: DeterministicWorkflowRunRequest,
@@ -556,7 +594,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     }
 
     do {
-      _ = try await recordStepStartedExecution(
+      let execution = try await recordStepStartedExecution(
         workflowId: workflow.workflowId,
         sessionId: sessionId,
         step: step,
@@ -580,7 +618,14 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           availableMemories: availableMemories,
           policy: stdioPolicyContext(workflow: workflow, step: step, payload: payload, request: request)
         ),
-        context: AdapterExecutionContext(deadline: deadline(for: step, request: request))
+        context: adapterExecutionContext(
+          deadline: deadline(for: step, request: request),
+          workflowId: workflow.workflowId,
+          sessionId: sessionId,
+          step: step,
+          execution: execution,
+          handler: request.eventHandler
+        )
       )
       if let payload = result.payload {
         let candidate = try normalizeRuntimeInlineCandidate(payload)
@@ -654,7 +699,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     let maxAttempts = maxValidationAttempts(from: basePayload.output)
     var lastValidationError: Error?
     for attempt in 1...maxAttempts {
-      _ = try await recordStepStartedExecution(
+      let execution = try await recordStepStartedExecution(
         workflowId: request.workflow.workflowId,
         sessionId: sessionId,
         step: step,
@@ -669,7 +714,17 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         : AdapterOutputAttemptContext(maxValidationAttempts: maxAttempts, attempt: attempt)
       let adapterOutput: AdapterExecutionOutput
       do {
-        adapterOutput = try await adapter.execute(attemptInput, context: AdapterExecutionContext(deadline: deadline(for: step, request: request)))
+        adapterOutput = try await adapter.execute(
+          attemptInput,
+          context: adapterExecutionContext(
+            deadline: deadline(for: step, request: request),
+            workflowId: request.workflow.workflowId,
+            sessionId: sessionId,
+            step: step,
+            execution: execution,
+            handler: request.eventHandler
+          )
+        )
       } catch let adapterFailure as AdapterExecutionError {
         _ = try? await publisher.publishAcceptedOutput(
           WorkflowPublicationRequest(

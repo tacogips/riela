@@ -131,6 +131,35 @@ final class RuntimeStoreTests: XCTestCase {
     XCTAssertEqual(listedMessages, [first, second])
   }
 
+  func testRecordStepBackendEventUpdatesDedicatedHeartbeatFieldsOnly() async throws {
+    let startedAt = Date(timeIntervalSince1970: 100)
+    let heartbeatAt = Date(timeIntervalSince1970: 105)
+    let clock = MutableWorkflowRuntimeClock(startedAt)
+    let store = InMemoryWorkflowRuntimeStore(clock: clock)
+
+    let session = try await store.createSession(WorkflowSessionCreateInput(workflowId: "wf", entryStepId: "start"))
+    let execution = try await store.recordStepExecution(
+      WorkflowStepExecutionRecordInput(sessionId: session.sessionId, stepId: "start", nodeId: "node-start", attempt: 1, backend: .codexAgent)
+    )
+
+    clock.set(heartbeatAt)
+    let updated = try await store.recordStepBackendEvent(
+      WorkflowStepBackendEventInput(
+        sessionId: session.sessionId,
+        executionId: execution.executionId,
+        eventType: "turn.started"
+      )
+    )
+
+    XCTAssertEqual(updated.updatedAt, execution.updatedAt)
+    XCTAssertEqual(updated.lastBackendEventAt, heartbeatAt)
+    XCTAssertEqual(updated.lastBackendEventType, "turn.started")
+    let maybeLoaded = try await store.loadSession(id: session.sessionId)
+    let loaded = try XCTUnwrap(maybeLoaded)
+    XCTAssertEqual(loaded.updatedAt, session.updatedAt)
+    XCTAssertEqual(loaded.executions.first?.lastBackendEventAt, heartbeatAt)
+  }
+
   func testAppendFailureIsObservableAndDoesNotCreateMessages() async throws {
     let store = InMemoryWorkflowRuntimeStore(
       clock: FixedWorkflowRuntimeClock(Date(timeIntervalSince1970: 100)),
@@ -290,6 +319,10 @@ private struct StaticWorkflowRuntimeStore: WorkflowRuntimeStore {
     throw WorkflowRuntimeStoreError.messageAppendRejected("static store does not update executions")
   }
 
+  func recordStepBackendEvent(_ input: WorkflowStepBackendEventInput) async throws -> WorkflowStepExecution {
+    throw WorkflowRuntimeStoreError.messageAppendRejected("static store does not record backend events")
+  }
+
   func appendWorkflowMessage(_ input: WorkflowMessageAppendInput) async throws -> WorkflowMessageRecord {
     throw WorkflowRuntimeStoreError.messageAppendRejected("static store does not append messages")
   }
@@ -310,5 +343,26 @@ private struct StaticWorkflowRuntimeStore: WorkflowRuntimeStore {
 
   func loadSession(id: String) async throws -> WorkflowSession? {
     nil
+  }
+}
+
+private final class MutableWorkflowRuntimeClock: WorkflowRuntimeClock, @unchecked Sendable {
+  private let lock = NSLock()
+  private var date: Date
+
+  init(_ date: Date) {
+    self.date = date
+  }
+
+  func set(_ date: Date) {
+    lock.lock()
+    self.date = date
+    lock.unlock()
+  }
+
+  func now() -> Date {
+    lock.lock()
+    defer { lock.unlock() }
+    return date
   }
 }

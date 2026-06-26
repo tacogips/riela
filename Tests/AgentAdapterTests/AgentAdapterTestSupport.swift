@@ -64,6 +64,49 @@ final class RecordingRunner: LocalAgentProcessRunning, @unchecked Sendable {
   }
 }
 
+actor BackendEventRecorder {
+  private var events: [AdapterBackendEvent] = []
+
+  func append(_ event: AdapterBackendEvent) {
+    events.append(event)
+  }
+
+  func recordedEvents() -> [AdapterBackendEvent] {
+    events
+  }
+}
+
+final class StreamingRecordingRunner: LocalAgentProcessRunning, LocalAgentProcessEventStreaming, @unchecked Sendable {
+  private let output: String
+  private let error: String
+  private let status: Int32
+
+  init(output: String, error: String = "", status: Int32 = 0) {
+    self.output = output
+    self.error = error
+    self.status = status
+  }
+
+  func run(configuration: LocalAgentProcessConfiguration, stdin: String, deadline: Date?) async throws -> LocalAgentProcessResult {
+    try await run(configuration: configuration, stdin: stdin, deadline: deadline, outputEventHandler: nil)
+  }
+
+  func run(
+    configuration: LocalAgentProcessConfiguration,
+    stdin: String,
+    deadline: Date?,
+    outputEventHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
+  ) async throws -> LocalAgentProcessResult {
+    for line in output.split(whereSeparator: \.isNewline).map(String.init) {
+      outputEventHandler?(LocalAgentProcessOutputEvent(stream: .stdout, line: line))
+    }
+    for line in error.split(whereSeparator: \.isNewline).map(String.init) {
+      outputEventHandler?(LocalAgentProcessOutputEvent(stream: .stderr, line: line))
+    }
+    return LocalAgentProcessResult(stdout: output, stderr: error, terminationStatus: status)
+  }
+}
+
 actor SequencedRunnerStore {
   private var results: [LocalAgentProcessResult]
   private var recordedRuns: [RecordedRun] = []

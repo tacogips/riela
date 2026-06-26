@@ -49,7 +49,8 @@ public struct CodexAgentCommandBuilder: LocalAgentCommandBuilding {
         workingDirectoryURL: input.node.workingDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) }
       ),
       stdin: "",
-      normalizeStdout: normalizeCodexExecJSONStdout
+      normalizeStdout: normalizeCodexExecJSONStdout,
+      backendEventType: codexBackendEventType
     )
   }
 }
@@ -211,6 +212,18 @@ private func isCodexJSONEvent(_ object: JSONObject) -> Bool {
   default:
     return false
   }
+}
+
+private func codexBackendEventType(_ line: String) -> String? {
+  guard
+    let data = line.data(using: .utf8),
+    let decoded = try? JSONDecoder().decode(JSONValue.self, from: data),
+    case let .object(object) = decoded,
+    isCodexJSONEvent(object)
+  else {
+    return nil
+  }
+  return stringValue(object["type"]) ?? "json-event"
 }
 
 private func codexAssistantContent(from object: JSONObject) -> String? {

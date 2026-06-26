@@ -51,11 +51,25 @@ public struct AdapterExecutionInput: Codable, Equatable, Sendable {
   }
 }
 
+public struct AdapterBackendEvent: Equatable, Sendable {
+  public var provider: String
+  public var eventType: String
+
+  public init(provider: String, eventType: String) {
+    self.provider = provider
+    self.eventType = eventType
+  }
+}
+
+public typealias AdapterBackendEventHandler = @Sendable (AdapterBackendEvent) async -> Void
+
 public struct AdapterExecutionContext: Sendable {
   public var deadline: Date?
+  public var backendEventHandler: AdapterBackendEventHandler?
 
-  public init(deadline: Date? = nil) {
+  public init(deadline: Date? = nil, backendEventHandler: AdapterBackendEventHandler? = nil) {
     self.deadline = deadline
+    self.backendEventHandler = backendEventHandler
   }
 }
 

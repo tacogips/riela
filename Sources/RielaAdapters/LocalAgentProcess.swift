@@ -33,17 +33,20 @@ public struct LocalAgentCommand: Sendable {
   public var configuration: LocalAgentProcessConfiguration
   public var stdin: String
   public var normalizeStdout: @Sendable (String) -> String
+  public var backendEventType: @Sendable (String) -> String?
 
   public init(
     provider: String,
     configuration: LocalAgentProcessConfiguration,
     stdin: String,
-    normalizeStdout: @escaping @Sendable (String) -> String = { $0 }
+    normalizeStdout: @escaping @Sendable (String) -> String = { $0 },
+    backendEventType: @escaping @Sendable (String) -> String? = { _ in nil }
   ) {
     self.provider = provider
     self.configuration = configuration
     self.stdin = stdin
     self.normalizeStdout = normalizeStdout
+    self.backendEventType = backendEventType
   }
 }
 
@@ -68,6 +71,30 @@ public protocol LocalAgentProcessRunning: Sendable {
   func run(configuration: LocalAgentProcessConfiguration, stdin: String, deadline: Date?) async throws -> LocalAgentProcessResult
 }
 
+public enum LocalAgentProcessOutputStream: String, Equatable, Sendable {
+  case stdout
+  case stderr
+}
+
+public struct LocalAgentProcessOutputEvent: Equatable, Sendable {
+  public var stream: LocalAgentProcessOutputStream
+  public var line: String
+
+  public init(stream: LocalAgentProcessOutputStream, line: String) {
+    self.stream = stream
+    self.line = line
+  }
+}
+
+public protocol LocalAgentProcessEventStreaming: LocalAgentProcessRunning {
+  func run(
+    configuration: LocalAgentProcessConfiguration,
+    stdin: String,
+    deadline: Date?,
+    outputEventHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
+  ) async throws -> LocalAgentProcessResult
+}
+
 private final class LockedProcessData: @unchecked Sendable {
   private let lock = NSLock()
   private var data = Data()
@@ -87,13 +114,62 @@ private final class LockedProcessData: @unchecked Sendable {
 
 private final class LocalProcessPipeReader: @unchecked Sendable {
   private let fileHandle: FileHandle
+  private let stream: LocalAgentProcessOutputStream
+  private let outputEventHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
 
-  init(fileHandle: FileHandle) {
+  init(
+    fileHandle: FileHandle,
+    stream: LocalAgentProcessOutputStream,
+    outputEventHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
+  ) {
     self.fileHandle = fileHandle
+    self.stream = stream
+    self.outputEventHandler = outputEventHandler
   }
 
   func readToEnd() -> Data {
-    fileHandle.readDataToEndOfFile()
+    var output = Data()
+    var pendingLine = Data()
+    while true {
+      let chunk = fileHandle.readData(ofLength: 4_096)
+      guard !chunk.isEmpty else {
+        break
+      }
+      output.append(chunk)
+      pendingLine.append(chunk)
+      emitCompleteLines(from: &pendingLine)
+    }
+    emitPendingLine(pendingLine)
+    return output
+  }
+
+  private func emitCompleteLines(from pendingLine: inout Data) {
+    while let newlineIndex = pendingLine.firstIndex(of: 10) {
+      let lineData = pendingLine[..<newlineIndex]
+      pendingLine.removeSubrange(...newlineIndex)
+      emitLine(Data(lineData))
+    }
+  }
+
+  private func emitPendingLine(_ pendingLine: Data) {
+    guard !pendingLine.isEmpty else {
+      return
+    }
+    emitLine(pendingLine)
+  }
+
+  private func emitLine(_ data: Data) {
+    guard let outputEventHandler else {
+      return
+    }
+    var lineData = data
+    if lineData.last == 13 {
+      lineData.removeLast()
+    }
+    guard let line = String(data: lineData, encoding: .utf8), !line.isEmpty else {
+      return
+    }
+    outputEventHandler(LocalAgentProcessOutputEvent(stream: stream, line: line))
   }
 }
 
@@ -484,10 +560,19 @@ private func terminationStatus(fromWaitStatus status: Int32) -> Int32 {
   return -(status & 0x7f)
 }
 
-public struct FoundationLocalAgentProcessRunner: LocalAgentProcessRunning {
+public struct FoundationLocalAgentProcessRunner: LocalAgentProcessRunning, LocalAgentProcessEventStreaming {
   public init() {}
 
   public func run(configuration: LocalAgentProcessConfiguration, stdin: String, deadline: Date? = nil) async throws -> LocalAgentProcessResult {
+    try await run(configuration: configuration, stdin: stdin, deadline: deadline, outputEventHandler: nil)
+  }
+
+  public func run(
+    configuration: LocalAgentProcessConfiguration,
+    stdin: String,
+    deadline: Date? = nil,
+    outputEventHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
+  ) async throws -> LocalAgentProcessResult {
     let cancellationState = LocalProcessCancellationState()
     return try await withTaskCancellationHandler {
       try await withCheckedThrowingContinuation { continuation in
@@ -500,8 +585,16 @@ public struct FoundationLocalAgentProcessRunner: LocalAgentProcessRunning {
         let outputGroup = DispatchGroup()
         let outputData = LockedProcessData()
         let errorData = LockedProcessData()
-        let outputReader = LocalProcessPipeReader(fileHandle: outputPipe.fileHandleForReading)
-        let errorReader = LocalProcessPipeReader(fileHandle: errorPipe.fileHandleForReading)
+        let outputReader = LocalProcessPipeReader(
+          fileHandle: outputPipe.fileHandleForReading,
+          stream: .stdout,
+          outputEventHandler: outputEventHandler
+        )
+        let errorReader = LocalProcessPipeReader(
+          fileHandle: errorPipe.fileHandleForReading,
+          stream: .stderr,
+          outputEventHandler: outputEventHandler
+        )
 
         outputGroup.enter()
         DispatchQueue.global(qos: .utility).async {
@@ -605,7 +698,17 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
 
   public func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
     let command = try commandBuilder.buildCommand(for: input)
-    let result = try await runner.run(configuration: command.configuration, stdin: command.stdin, deadline: context.deadline)
+    let result: LocalAgentProcessResult
+    if let streamingRunner = runner as? any LocalAgentProcessEventStreaming {
+      result = try await streamingRunner.run(
+        configuration: command.configuration,
+        stdin: command.stdin,
+        deadline: context.deadline,
+        outputEventHandler: outputEventHandler(command: command, context: context)
+      )
+    } else {
+      result = try await runner.run(configuration: command.configuration, stdin: command.stdin, deadline: context.deadline)
+    }
     guard result.terminationStatus == 0 else {
       let detail = redactAdapterSensitiveText(
         result.stderr.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -624,6 +727,27 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
       when: normalized.when,
       payload: normalized.payload
     )
+  }
+
+  private func outputEventHandler(
+    command: LocalAgentCommand,
+    context: AdapterExecutionContext
+  ) -> (@Sendable (LocalAgentProcessOutputEvent) -> Void)? {
+    guard let backendEventHandler = context.backendEventHandler else {
+      return nil
+    }
+    return { outputEvent in
+      guard outputEvent.stream == .stdout,
+            let eventType = command.backendEventType(outputEvent.line) else {
+        return
+      }
+      let semaphore = DispatchSemaphore(value: 0)
+      Task {
+        await backendEventHandler(AdapterBackendEvent(provider: command.provider, eventType: eventType))
+        semaphore.signal()
+      }
+      semaphore.wait()
+    }
   }
 
   private func normalizeAgentOutput(

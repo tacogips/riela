@@ -158,7 +158,13 @@ private enum SupervisedAttemptOutcome: Sendable {
 }
 
 func workflowAutoImproveCanDetectStall(in execution: WorkflowStepExecution) -> Bool {
-  execution.status == .running && execution.backend == nil
+  guard execution.status == .running else {
+    return false
+  }
+  guard let backend = execution.backend else {
+    return true
+  }
+  return workflowAutoImproveBackendSupportsHeartbeat(backend) && execution.lastBackendEventAt != nil
 }
 
 func workflowAutoImproveStallTarget(in session: WorkflowSession) -> WorkflowStepExecution? {
@@ -168,8 +174,24 @@ func workflowAutoImproveStallTarget(in session: WorkflowSession) -> WorkflowStep
 func workflowAutoImproveLatestStallActivityDate(in session: WorkflowSession) -> Date? {
   session.executions
     .filter(workflowAutoImproveCanDetectStall)
-    .map(\.updatedAt)
+    .compactMap(workflowAutoImproveStallActivityDate)
     .max()
+}
+
+func workflowAutoImproveStallActivityDate(_ execution: WorkflowStepExecution) -> Date? {
+  if workflowAutoImproveBackendSupportsHeartbeat(execution.backend) {
+    return execution.lastBackendEventAt
+  }
+  return execution.updatedAt
+}
+
+func workflowAutoImproveBackendSupportsHeartbeat(_ backend: NodeExecutionBackend?) -> Bool {
+  switch backend {
+  case .codexAgent, .claudeCodeAgent, .cursorCliAgent:
+    return true
+  case .officialOpenAISDK, .officialAnthropicSDK, .officialGeminiSDK, .officialCursorSDK, nil:
+    return false
+  }
 }
 
 private extension WorkflowRunCommand {

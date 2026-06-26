@@ -52,6 +52,8 @@ public struct WorkflowStepExecution: Codable, Equatable, Sendable {
   public var acceptedOutput: WorkflowAcceptedOutputMetadata?
   public var adapterOutput: WorkflowAdapterOutputMetadata?
   public var failureReason: String?
+  public var lastBackendEventAt: Date?
+  public var lastBackendEventType: String?
   public var createdAt: Date
   public var updatedAt: Date
 
@@ -65,6 +67,8 @@ public struct WorkflowStepExecution: Codable, Equatable, Sendable {
     acceptedOutput: WorkflowAcceptedOutputMetadata? = nil,
     adapterOutput: WorkflowAdapterOutputMetadata? = nil,
     failureReason: String? = nil,
+    lastBackendEventAt: Date? = nil,
+    lastBackendEventType: String? = nil,
     createdAt: Date,
     updatedAt: Date
   ) {
@@ -77,6 +81,8 @@ public struct WorkflowStepExecution: Codable, Equatable, Sendable {
     self.acceptedOutput = acceptedOutput
     self.adapterOutput = adapterOutput
     self.failureReason = failureReason
+    self.lastBackendEventAt = lastBackendEventAt
+    self.lastBackendEventType = lastBackendEventType
     self.createdAt = createdAt
     self.updatedAt = updatedAt
   }

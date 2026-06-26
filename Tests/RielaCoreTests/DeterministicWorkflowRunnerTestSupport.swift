@@ -16,6 +16,33 @@ struct StaticAdapter: NodeAdapter {
   }
 }
 
+struct BackendEventEmittingAdapter: NodeAdapter {
+  var eventType: String
+
+  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    await context.backendEventHandler?(AdapterBackendEvent(provider: input.node.executionBackend?.rawValue ?? "test", eventType: eventType))
+    return AdapterExecutionOutput(
+      provider: "test",
+      model: input.node.model,
+      promptText: input.promptText,
+      completionPassed: true,
+      payload: ["status": .string("ok")]
+    )
+  }
+}
+
+actor WorkflowRunEventRecorder {
+  private var recordedEvents: [WorkflowRunEvent] = []
+
+  func append(_ event: WorkflowRunEvent) {
+    recordedEvents.append(event)
+  }
+
+  func events() -> [WorkflowRunEvent] {
+    recordedEvents
+  }
+}
+
 struct StepCapturingAdapter: NodeAdapter {
   var outputsByStep: [String: AdapterExecutionOutput]
 

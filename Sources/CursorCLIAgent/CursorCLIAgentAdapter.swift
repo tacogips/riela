@@ -63,7 +63,8 @@ public struct CursorCLIAgentCommandBuilder: LocalAgentCommandBuilding {
         workingDirectoryURL: input.node.workingDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) }
       ),
       stdin: "",
-      normalizeStdout: normalizeCursorStreamJSONStdout
+      normalizeStdout: normalizeCursorStreamJSONStdout,
+      backendEventType: cursorBackendEventType
     )
   }
 }
@@ -299,6 +300,28 @@ private func normalizeCursorStreamJSONStdout(_ text: String) -> String {
     return responseText
   }
   return completedResult
+}
+
+private func cursorBackendEventType(_ line: String) -> String? {
+  guard
+    let data = line.data(using: .utf8),
+    let decoded = try? JSONDecoder().decode(JSONValue.self, from: data),
+    case let .object(object) = decoded,
+    isCursorJSONEvent(object)
+  else {
+    return nil
+  }
+  return stringValue(object["type"]) ?? "json-event"
+}
+
+private func isCursorJSONEvent(_ object: JSONObject) -> Bool {
+  switch stringValue(object["type"]) {
+  case "session.started", "session.pending", "session.materialized", "session.user_message", "session.thinking", "session.assistant_message", "session.completed", "session.error",
+       "system", "user", "thinking", "assistant", "result":
+    return true
+  default:
+    return false
+  }
 }
 
 private func cursorAssistantText(from object: JSONObject) -> String? {

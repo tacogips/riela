@@ -8,6 +8,46 @@ import XCTest
 @testable import RielaCore
 
 extension AgentAdapterTests {
+  func testAgentAdaptersReportBackendEventsFromStreamJSONStdout() async throws {
+    let recorder = BackendEventRecorder()
+    let context = AdapterExecutionContext { event in
+      await recorder.append(event)
+    }
+
+    _ = try await CodexAgentAdapter(
+      runner: StreamingRecordingRunner(output: #"{"type":"turn.started"}"# + "\n" + #"{"type":"assistant.snapshot","content":"done"}"#),
+      authPreflight: false
+    ).execute(input(backend: .codexAgent), context: context)
+    _ = try await ClaudeCodeAgentAdapter(
+      runner: StreamingRecordingRunner(output: #"{"type":"assistant","message":{"content":"done"}}"#),
+      authPreflight: false
+    ).execute(input(backend: .claudeCodeAgent), context: context)
+    _ = try await CursorCLIAgentAdapter(
+      runner: StreamingRecordingRunner(output: #"{"type":"session.thinking"}"# + "\n" + #"{"type":"result","result":"done"}"#),
+      authPreflight: false
+    ).execute(input(backend: .cursorCliAgent), context: context)
+
+    let events = await recorder.recordedEvents()
+    XCTAssertEqual(events.map(\.provider), ["codex-agent", "codex-agent", "claude-code-agent", "cursor-cli-agent", "cursor-cli-agent"])
+    XCTAssertEqual(events.map(\.eventType), ["turn.started", "assistant.snapshot", "assistant", "session.thinking", "result"])
+  }
+
+  func testAgentAdaptersIgnoreNonJSONAndStderrForBackendEvents() async throws {
+    let recorder = BackendEventRecorder()
+    _ = try await CodexAgentAdapter(
+      runner: StreamingRecordingRunner(output: "plain output", error: #"{"type":"turn.started"}"#),
+      authPreflight: false
+    ).execute(
+      input(backend: .codexAgent),
+      context: AdapterExecutionContext { event in
+        await recorder.append(event)
+      }
+    )
+
+    let events = await recorder.recordedEvents()
+    XCTAssertEqual(events, [])
+  }
+
   func testCursorDefaultPreflightUsesResolvedGpt55ModelInProbeAndDiagnostics() async throws {
     let modelFailureRunner = SequencedRunner([
       LocalAgentProcessResult(stdout: "0.45.0", stderr: "", terminationStatus: 0),

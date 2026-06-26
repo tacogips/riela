@@ -96,6 +96,8 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
   public var activeExecutionId: String?
   public var activeBackend: NodeExecutionBackend?
   public var activeExecutionUpdatedAt: Date?
+  public var activeBackendEventAt: Date?
+  public var activeBackendEventType: String?
   public var executionCount: Int
   public var executions: [WorkflowStepExecution]
   public var health: String?
@@ -111,6 +113,8 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
     activeExecutionId: String? = nil,
     activeBackend: NodeExecutionBackend? = nil,
     activeExecutionUpdatedAt: Date? = nil,
+    activeBackendEventAt: Date? = nil,
+    activeBackendEventType: String? = nil,
     executionCount: Int,
     executions: [WorkflowStepExecution],
     health: String? = nil,
@@ -125,6 +129,8 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
     self.activeExecutionId = activeExecutionId
     self.activeBackend = activeBackend
     self.activeExecutionUpdatedAt = activeExecutionUpdatedAt
+    self.activeBackendEventAt = activeBackendEventAt
+    self.activeBackendEventType = activeBackendEventType
     self.executionCount = executionCount
     self.executions = executions
     self.health = health
@@ -225,6 +231,8 @@ public struct SessionInspectionCommand: Sendable {
       activeExecutionId: activeExecution?.executionId,
       activeBackend: activeExecution?.backend,
       activeExecutionUpdatedAt: activeExecution?.updatedAt,
+      activeBackendEventAt: activeExecution?.lastBackendEventAt,
+      activeBackendEventType: activeExecution?.lastBackendEventType,
       executionCount: snapshot.session.executions.count,
       executions: executionRows(for: command, allExecutions: snapshot.session.executions, runningExecutions: runningExecutions),
       health: health,
@@ -244,6 +252,8 @@ public struct SessionInspectionCommand: Sendable {
         "activeExecutionId: \(result.activeExecutionId ?? "-")",
         "activeBackend: \(result.activeBackend?.rawValue ?? "-")",
         "activeExecutionUpdatedAt: \(result.activeExecutionUpdatedAt.map(iso8601String) ?? "-")",
+        "activeBackendEventAt: \(result.activeBackendEventAt.map(iso8601String) ?? "-")",
+        "activeBackendEventType: \(result.activeBackendEventType ?? "-")",
         "executionCount: \(result.executionCount)",
         "loopEvidenceRecorded: \(result.loopEvidenceRecorded ? "true" : "false")"
       ]

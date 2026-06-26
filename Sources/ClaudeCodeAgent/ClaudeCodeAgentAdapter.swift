@@ -69,7 +69,8 @@ public struct ClaudeCodeAgentCommandBuilder: LocalAgentCommandBuilding {
         prompt: input.promptText,
         systemPrompt: input.systemPromptText,
         attachmentPaths: attachmentPaths
-      )
+      ),
+      backendEventType: claudeBackendEventType
     )
   }
 }
@@ -222,6 +223,17 @@ private func buildClaudePrompt(prompt: String, systemPrompt: String?, attachment
     parts.append(contentsOf: attachmentPaths.map { "- \($0)" })
   }
   return parts.joined(separator: "\n")
+}
+
+private func claudeBackendEventType(_ line: String) -> String? {
+  guard
+    let data = line.data(using: .utf8),
+    let decoded = try? JSONDecoder().decode(JSONValue.self, from: data),
+    case let .object(object) = decoded
+  else {
+    return nil
+  }
+  return stringValue(object["type"]) ?? stringValue(object["event"]) ?? "json-event"
 }
 
 private func uniqueSortedDirectories(containing paths: [String]) -> [String] {

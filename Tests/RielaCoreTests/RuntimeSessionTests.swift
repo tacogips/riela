@@ -25,6 +25,8 @@ final class RuntimeSessionTests: XCTestCase {
       status: .completed,
       acceptedOutput: acceptedOutput,
       adapterOutput: adapterOutput,
+      lastBackendEventAt: date,
+      lastBackendEventType: "turn.started",
       createdAt: date,
       updatedAt: date
     )
@@ -58,6 +60,8 @@ final class RuntimeSessionTests: XCTestCase {
     XCTAssertEqual(decodedSession, session)
     XCTAssertEqual(decodedMessage, message)
     XCTAssertEqual(decodedSession.executions.first?.adapterOutput?.provider, "codex-agent")
+    XCTAssertEqual(decodedSession.executions.first?.lastBackendEventAt, date)
+    XCTAssertEqual(decodedSession.executions.first?.lastBackendEventType, "turn.started")
     XCTAssertEqual(decodedMessage.communicationId, "comm-000001")
   }
 
@@ -103,5 +107,7 @@ final class RuntimeSessionTests: XCTestCase {
     XCTAssertEqual(session.executions.first?.status, .skipped)
     XCTAssertEqual(session.executions.first?.acceptedOutput?.payload["inputFilterSkipped"], .bool(true))
     XCTAssertEqual(session.executions.first?.acceptedOutput?.when["input_filter_skipped"], true)
+    XCTAssertNil(session.executions.first?.lastBackendEventAt)
+    XCTAssertNil(session.executions.first?.lastBackendEventType)
   }
 }

@@ -149,6 +149,18 @@ public struct WorkflowStepExecutionUpdateInput: Equatable, Sendable {
   }
 }
 
+public struct WorkflowStepBackendEventInput: Equatable, Sendable {
+  public var sessionId: String
+  public var executionId: String
+  public var eventType: String
+
+  public init(sessionId: String, executionId: String, eventType: String) {
+    self.sessionId = sessionId
+    self.executionId = executionId
+    self.eventType = eventType
+  }
+}
+
 public struct WorkflowMessageAppendInput: Equatable, Sendable {
   public var workflowExecutionId: String
   public var fromStepId: String?
@@ -193,6 +205,7 @@ public protocol WorkflowRuntimeStore: Sendable {
   func createSession(_ input: WorkflowSessionCreateInput) async throws -> WorkflowSession
   func recordStepExecution(_ input: WorkflowStepExecutionRecordInput) async throws -> WorkflowStepExecution
   func updateStepExecution(_ input: WorkflowStepExecutionUpdateInput) async throws -> WorkflowStepExecution
+  func recordStepBackendEvent(_ input: WorkflowStepBackendEventInput) async throws -> WorkflowStepExecution
   func appendWorkflowMessage(_ input: WorkflowMessageAppendInput) async throws -> WorkflowMessageRecord
   func appendWorkflowMessages(_ inputs: [WorkflowMessageAppendInput]) async throws -> [WorkflowMessageRecord]
   func listMessages(for sessionId: String, toStepId: String?) async throws -> [WorkflowMessageRecord]
@@ -390,6 +403,26 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     case .completed, .running, .skipped:
       session.status = .running
     }
+    sessions[input.sessionId] = session
+    return execution
+  }
+
+  public func recordStepBackendEvent(_ input: WorkflowStepBackendEventInput) async throws -> WorkflowStepExecution {
+    guard var session = sessions[input.sessionId] else {
+      throw WorkflowRuntimeStoreError.sessionNotFound(input.sessionId)
+    }
+    guard let index = session.executions.firstIndex(where: { $0.executionId == input.executionId }) else {
+      throw WorkflowRuntimeStoreError.stepExecutionNotFound(input.executionId)
+    }
+    guard session.executions[index].status == .running else {
+      return session.executions[index]
+    }
+
+    let date = clock.now()
+    var execution = session.executions[index]
+    execution.lastBackendEventAt = date
+    execution.lastBackendEventType = input.eventType
+    session.executions[index] = execution
     sessions[input.sessionId] = session
     return execution
   }

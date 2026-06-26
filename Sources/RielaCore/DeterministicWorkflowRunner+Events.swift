@@ -67,6 +67,31 @@ extension DeterministicWorkflowRunner {
     )
   }
 
+  func emitBackendEvent(
+    workflowId: String,
+    session: WorkflowSession,
+    step: WorkflowStepRef,
+    execution: WorkflowStepExecution,
+    backendEvent: AdapterBackendEvent,
+    handler: WorkflowRunEventHandler?
+  ) async {
+    await emitRunEvent(
+      .init(
+        type: .backendEvent,
+        workflowId: workflowId,
+        sessionId: session.sessionId,
+        status: session.status,
+        currentStepId: session.currentStepId,
+        stepId: step.id,
+        nodeId: step.nodeId,
+        executionId: execution.executionId,
+        backendEventType: backendEvent.eventType,
+        nodeExecutions: session.executions.count
+      ),
+      handler: handler
+    )
+  }
+
   func emitSessionCompletedEvent(result: WorkflowRunResult, handler: WorkflowRunEventHandler?) async {
     await emitRunEvent(
       .init(
@@ -99,6 +124,8 @@ extension DeterministicWorkflowRunner {
       await telemetry.recordMetric(RielaTelemetryMetric(name: "riela.workflow.run.count", value: 1, attributes: attributes))
     case .stepStarted:
       await telemetry.recordLog(RielaTelemetryLog(name: "riela.workflow.step.start", attributes: attributes))
+    case .backendEvent:
+      await telemetry.recordLog(RielaTelemetryLog(name: "riela.workflow.backend.event", attributes: attributes))
     case .stepCompleted:
       await telemetry.recordSpan(RielaTelemetrySpan(
         name: "riela.workflow.step",
@@ -144,6 +171,9 @@ extension DeterministicWorkflowRunner {
     }
     if let transitions = event.transitions {
       attributes["transition.count"] = String(transitions)
+    }
+    if let backendEventType = event.backendEventType {
+      attributes["backend.event.type"] = backendEventType
     }
     return attributes
   }

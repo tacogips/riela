@@ -24,6 +24,7 @@ public struct CodexAgentCommandBuilder: LocalAgentCommandBuilding {
   public func buildCommand(for input: AdapterExecutionInput) throws -> LocalAgentCommand {
     let imagePaths = resolveAdapterImagePaths(input)
     let configOverrides = input.node.effort.map { [#"model_reasoning_effort="\#($0.rawValue)""#] } ?? []
+    let promptText = buildCombinedPromptText(promptText: input.promptText, systemPromptText: input.systemPromptText)
     let processOptions = CodexProcessOptions(
       model: input.node.model,
       images: imagePaths,
@@ -31,9 +32,10 @@ public struct CodexAgentCommandBuilder: LocalAgentCommandBuilding {
       additionalArguments: additionalArguments + stringArray(input.node.variables["codexAdditionalArgs"])
     )
     let arguments = [executableName] + CodexProcessCommandBuilder.buildExecArguments(
-      prompt: buildCombinedPromptText(promptText: input.promptText, systemPromptText: input.systemPromptText),
+      prompt: "-",
       options: processOptions
     )
+    try CodexProcessCommandBuilder.validatePipedStdinExecPromptTransport(arguments: arguments)
 
     let environment = mergedAgentProcessEnvironment(
       baseEnvironment: environment,
@@ -48,7 +50,7 @@ public struct CodexAgentCommandBuilder: LocalAgentCommandBuilding {
         environment: environment,
         workingDirectoryURL: input.node.workingDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) }
       ),
-      stdin: "",
+      stdin: promptText,
       normalizeStdout: normalizeCodexExecJSONStdout,
       backendEventType: codexBackendEventType
     )

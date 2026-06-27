@@ -51,6 +51,24 @@ public struct CodexProcessOptions: Equatable, Sendable {
 }
 
 public enum CodexProcessCommandBuilder {
+  private static let execSubcommandsWithoutInitialPrompt: Set<String> = ["help", "resume", "review"]
+  private static let execOptionsRequiringValue: Set<String> = [
+    "-a", "--ask-for-approval",
+    "-C", "--cd",
+    "-c", "--config",
+    "-i", "--image",
+    "-m", "--model",
+    "-o", "--output-last-message",
+    "-p", "--profile",
+    "-s", "--sandbox",
+    "--add-dir",
+    "--color",
+    "--disable",
+    "--enable",
+    "--local-provider",
+    "--output-schema"
+  ]
+
   public static func buildExecArguments(
     prompt: String,
     options: CodexProcessOptions = CodexProcessOptions(),
@@ -64,6 +82,16 @@ public enum CodexProcessCommandBuilder {
     }
     arguments.append(buildPromptWithSystemPrompt(prompt: prompt, systemPrompt: options.systemPrompt))
     return arguments
+  }
+
+  public static func validatePipedStdinExecPromptTransport(arguments: [String]) throws {
+    guard let promptArgument = execPromptArgument(in: arguments), promptArgument != "-" else {
+      return
+    }
+    throw AdapterExecutionError(
+      .policyBlocked,
+      "invalid codex-agent command: codex exec prompt cannot be passed as argv when stdin is piped; use '-' as the prompt argument and send the prompt through stdin"
+    )
   }
 
   public static func buildResumeArguments(
@@ -139,6 +167,40 @@ public enum CodexProcessCommandBuilder {
     }
     arguments.append(contentsOf: options.additionalArguments)
     return arguments
+  }
+
+  private static func execPromptArgument(in arguments: [String]) -> String? {
+    guard let execIndex = arguments.firstIndex(of: "exec") else {
+      return nil
+    }
+    var index = arguments.index(after: execIndex)
+    guard index < arguments.endIndex else {
+      return nil
+    }
+    if execSubcommandsWithoutInitialPrompt.contains(arguments[index]) {
+      return nil
+    }
+
+    while index < arguments.endIndex {
+      let argument = arguments[index]
+      if argument == "--" {
+        let promptIndex = arguments.index(after: index)
+        return promptIndex < arguments.endIndex ? arguments[promptIndex] : nil
+      }
+      if argument == "-" {
+        return argument
+      }
+      if argument.hasPrefix("-") {
+        if execOptionsRequiringValue.contains(argument), arguments.index(after: index) < arguments.endIndex {
+          index = arguments.index(index, offsetBy: 2)
+        } else {
+          index = arguments.index(after: index)
+        }
+      } else {
+        return argument
+      }
+    }
+    return nil
   }
 
   private static func buildResumeCommonArguments(_ options: CodexProcessOptions) -> [String] {

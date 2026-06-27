@@ -143,7 +143,7 @@ let package = Package(
     .testTarget(name: "RielaServerTests", dependencies: ["RielaCore", "RielaGraphQL", "RielaServer", "RielaObservability"]),
     .testTarget(name: "RielaViewerTests", dependencies: ["RielaCore", "RielaViewer"]),
     .testTarget(name: "RielaAppSupportTests", dependencies: ["RielaAddons", "RielaAppSupport", "RielaServer"]),
-    .testTarget(name: "RielaCLITests", dependencies: ["RielaCore", "RielaAdapters", "RielaCLI"]),
+    .testTarget(name: "RielaCLITests", dependencies: ["RielaCore", "RielaAdapters", "RielaAppSupport", "RielaCLI"]),
     .testTarget(
       name: "AgentAdapterTests",
       dependencies: ["RielaCore", "RielaAdapters", "CodexAgent", "ClaudeCodeAgent", "CursorCLIAgent"]

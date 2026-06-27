@@ -94,13 +94,13 @@ final class AgentAdapterTests: XCTestCase {
         "codex-dev", "exec", "--json", "--model", "model", "-c", #"model_reasoning_effort="high""#,
         "--sandbox", "workspace-write", "--dangerously-bypass-approvals-and-sandbox", "--image",
         "/tmp/screenshot.png", "--image", "/tmp/duplicate.png", "--image", "/tmp/nested.png",
-        "--image", "/tmp/source.png", "--image", "/tmp/argument.png", "--", "system\n\nhello"
+        "--image", "/tmp/source.png", "--image", "/tmp/argument.png", "--", "-"
       ]
     )
     XCTAssertEqual(run.configuration.environment["RIELA_AGENT_BACKEND"], "codex-agent")
     XCTAssertEqual(run.configuration.environment["CODEX_HOME"], "/tmp/codex-home")
     XCTAssertEqual(run.configuration.workingDirectoryURL?.path, "/tmp/work")
-    XCTAssertEqual(run.stdin, "")
+    XCTAssertEqual(run.stdin, "system\n\nhello")
     XCTAssertEqual(run.deadline, deadline)
   }
 
@@ -115,8 +115,32 @@ final class AgentAdapterTests: XCTestCase {
 
     let runs = await runner.runs()
     let run = try XCTUnwrap(runs.last)
-    XCTAssertEqual(Array(run.configuration.arguments.suffix(2)), ["--", "--model other"])
+    XCTAssertEqual(Array(run.configuration.arguments.suffix(2)), ["--", "-"])
+    XCTAssertEqual(run.stdin, "--model other")
     XCTAssertEqual(run.configuration.arguments.filter { $0 == "--model" }.count, 1)
+  }
+
+  func testCodexProcessCommandBuilderRejectsArgvPromptWhenStdinIsPiped() throws {
+    let legacyArguments = ["codex", "exec", "--json", "--model", "gpt-5.5", "--", "hello"]
+
+    XCTAssertThrowsError(
+      try CodexProcessCommandBuilder.validatePipedStdinExecPromptTransport(arguments: legacyArguments)
+    ) { error in
+      guard let adapterError = error as? AdapterExecutionError else {
+        XCTFail("Expected AdapterExecutionError, got \(error)")
+        return
+      }
+      XCTAssertEqual(adapterError.code, .policyBlocked)
+      XCTAssertTrue(adapterError.message.contains("prompt cannot be passed as argv when stdin is piped"))
+    }
+  }
+
+  func testCodexProcessCommandBuilderAllowsStdinPromptMarkerWhenStdinIsPiped() throws {
+    let arguments = ["codex", "exec", "--json", "--model", "gpt-5.5", "--", "-"]
+
+    XCTAssertNoThrow(
+      try CodexProcessCommandBuilder.validatePipedStdinExecPromptTransport(arguments: arguments)
+    )
   }
 
   func testCodexProcessCommandBuilderMatchesReferenceExecCompatibilityArgs() {

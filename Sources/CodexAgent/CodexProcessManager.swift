@@ -115,7 +115,8 @@ public final class CodexProcessManager: @unchecked Sendable {
   }
 
   public func spawnExec(prompt: String, options: CodexProcessOptions = CodexProcessOptions()) -> (process: CodexProcessRecord, result: CodexProcessExecution) {
-    run(prompt: prompt, arguments: CodexProcessCommandBuilder.buildExecArguments(prompt: prompt, options: options), options: options)
+    let arguments = CodexProcessCommandBuilder.buildExecArguments(prompt: "-", options: options)
+    return run(prompt: prompt, arguments: arguments, options: options, initialInput: prompt)
   }
 
   public func spawnResume(sessionId: String, prompt: String? = nil, options: CodexProcessOptions = CodexProcessOptions()) -> (process: CodexProcessRecord, result: CodexProcessExecution) {
@@ -143,7 +144,8 @@ public final class CodexProcessManager: @unchecked Sendable {
   }
 
   public func spawnExecStream(prompt: String, options: CodexProcessOptions = CodexProcessOptions()) -> CodexExecStreamResult {
-    stream(prompt: prompt, arguments: CodexProcessCommandBuilder.buildExecArguments(prompt: prompt, options: options), options: options)
+    let arguments = CodexProcessCommandBuilder.buildExecArguments(prompt: "-", options: options)
+    return stream(prompt: prompt, arguments: arguments, options: options, initialInput: prompt)
   }
 
   public func spawnResumeStream(sessionId: String, prompt: String? = nil, options: CodexProcessOptions = CodexProcessOptions()) -> CodexExecStreamResult {
@@ -213,11 +215,22 @@ public final class CodexProcessManager: @unchecked Sendable {
     return removed
   }
 
-  private func run(prompt: String, arguments: [String], options: CodexProcessOptions) -> (process: CodexProcessRecord, result: CodexProcessExecution) {
+  private func run(
+    prompt: String,
+    arguments: [String],
+    options: CodexProcessOptions,
+    initialInput: String? = nil
+  ) -> (process: CodexProcessRecord, result: CodexProcessExecution) {
     let allArguments = [executableName] + arguments
     let environment = CodexProcessCommandBuilder.buildEnvironment(options: options)
     guard let executor else {
-      let started = startManagedProcess(prompt: prompt, arguments: arguments, options: options, closeInputAfterPrompt: true)
+      let started = startManagedProcess(
+        prompt: prompt,
+        arguments: arguments,
+        options: options,
+        closeInputAfterPrompt: true,
+        initialInput: initialInput
+      )
       started.managed.waitUntilExit()
       let result = started.managed.execution()
       lock.lock()
@@ -263,7 +276,12 @@ public final class CodexProcessManager: @unchecked Sendable {
     return record
   }
 
-  private func stream(prompt: String, arguments: [String], options: CodexProcessOptions) -> CodexExecStreamResult {
+  private func stream(
+    prompt: String,
+    arguments: [String],
+    options: CodexProcessOptions,
+    initialInput: String? = nil
+  ) -> CodexExecStreamResult {
     if executor != nil {
       let executed = run(prompt: prompt, arguments: arguments, options: options)
       let buffers = ProcessOutputBuffers()
@@ -277,7 +295,13 @@ public final class CodexProcessManager: @unchecked Sendable {
       )
     }
 
-    let started = startManagedProcess(prompt: prompt, arguments: arguments, options: options, closeInputAfterPrompt: true)
+    let started = startManagedProcess(
+      prompt: prompt,
+      arguments: arguments,
+      options: options,
+      closeInputAfterPrompt: true,
+      initialInput: initialInput
+    )
     return CodexExecStreamResult(
       process: started.process,
       lines: CodexRolloutLineStream(buffers: started.managed.outputBuffers),
@@ -291,7 +315,13 @@ public final class CodexProcessManager: @unchecked Sendable {
     )
   }
 
-  private func startManagedProcess(prompt: String, arguments: [String], options: CodexProcessOptions, closeInputAfterPrompt: Bool) -> (process: CodexProcessRecord, managed: ManagedCodexProcess) {
+  private func startManagedProcess(
+    prompt: String,
+    arguments: [String],
+    options: CodexProcessOptions,
+    closeInputAfterPrompt: Bool,
+    initialInput: String? = nil
+  ) -> (process: CodexProcessRecord, managed: ManagedCodexProcess) {
     let allArguments = [executableName] + arguments
     let environment = CodexProcessCommandBuilder.buildEnvironment(options: options)
     let process = Process()
@@ -319,6 +349,9 @@ public final class CodexProcessManager: @unchecked Sendable {
       let managed = ManagedCodexProcess(process: process, input: inputPipe.fileHandleForWriting, output: outputPipe.fileHandleForReading, error: errorPipe.fileHandleForReading, outputBuffers: outputBuffers)
       managed.startDraining()
       if closeInputAfterPrompt {
+        if let initialInput {
+          _ = managed.write(initialInput)
+        }
         managed.closeInput()
       }
       lock.lock()

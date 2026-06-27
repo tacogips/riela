@@ -159,8 +159,10 @@ final class CodexAgentCompatibilityTests: XCTestCase {
   }
 
   func testProcessManagerRunAgentAndOperationalStores() throws {
-    let manager = CodexProcessManager(executableName: "codex-dev") { arguments, _, environment in
+    let manager = CodexProcessManager(executableName: "codex-dev") { arguments, prompt, environment in
       XCTAssertEqual(arguments.prefix(3), ["codex-dev", "exec", "--json"])
+      XCTAssertEqual(Array(arguments.suffix(2)), ["--", "-"])
+      XCTAssertEqual(prompt, "hello")
       XCTAssertEqual(environment["CODEX_TEST"], "1")
       return CodexProcessExecution(
         stdout: #"{"timestamp":"2025-05-07T17:24:23.000Z","type":"event_msg","payload":{"type":"AgentMessage","message":"done"}}"#,
@@ -207,6 +209,36 @@ final class CodexAgentCompatibilityTests: XCTestCase {
     let trackedFork = manager.spawnForkProcess(sessionId: "session-sdk", nthMessage: 2)
     XCTAssertEqual(trackedFork.status, .running)
     XCTAssertTrue(manager.kill(id: trackedFork.id))
+  }
+
+  func testProcessManagerManagedExecUsesStdinPromptMarkerAndWritesPromptToStdin() throws {
+    let temp = try makeTemporaryDirectory()
+    addTeardownBlock {
+      try? FileManager.default.removeItem(at: temp)
+    }
+    let argumentsFile = temp.appendingPathComponent("codex-arguments.txt")
+    let stdinFile = temp.appendingPathComponent("codex-stdin.txt")
+    let fakeCodex = try createExecutable(
+      directory: temp,
+      name: "fake-codex-stdin-transport.sh",
+      body: """
+      printf '%s\\n' "$@" > '\(argumentsFile.path)'
+      cat > '\(stdinFile.path)'
+      printf '{"timestamp":"2025-05-07T17:24:23.000Z","type":"event_msg","payload":{"type":"AgentMessage","message":"done"}}\\n'
+      """
+    )
+    let manager = CodexProcessManager(executableName: fakeCodex.path)
+
+    let run = manager.spawnExec(prompt: "--model other")
+
+    XCTAssertEqual(run.result.exitCode, 0)
+    let arguments = try String(contentsOf: argumentsFile, encoding: .utf8)
+      .split(whereSeparator: \.isNewline)
+      .map(String.init)
+    XCTAssertEqual(arguments.prefix(2), ["exec", "--json"])
+    XCTAssertEqual(Array(arguments.suffix(2)), ["--", "-"])
+    XCTAssertFalse(arguments.contains("--model other"))
+    XCTAssertEqual(try String(contentsOf: stdinFile, encoding: .utf8), "--model other")
   }
 
   func testProcessManagerResumeStreamAndProductionRunAgentRunner() throws {

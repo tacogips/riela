@@ -419,12 +419,6 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
     var workflowId: String
   }
 
-  private struct PackageManifest: Decodable {
-    var kind: String?
-    var workflowDirectory: String?
-    var name: String?
-  }
-
   private struct EventBinding: Decodable {
     var enabled: Bool?
     var sourceId: String
@@ -586,11 +580,11 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
     identityPrefix: String
   ) -> [RielaAppDaemonWorkflowCandidate] {
     return directoryChildren(root).compactMap { packageDirectory in
-      let manifestURL = packageDirectory.appendingPathComponent("riela-package.json")
+      let manifestURL = packageDirectory.appendingPathComponent(WorkflowPackageArchiveManager.manifestFileName)
       guard
         let data = try? Data(contentsOf: manifestURL),
-        let manifest = try? JSONDecoder().decode(PackageManifest.self, from: data),
-        manifest.kind == nil || manifest.kind == "workflow"
+        let manifest = try? JSONDecoder().decode(WorkflowPackageManifest.self, from: data),
+        manifest.kind == .workflow
       else {
         return nil
       }
@@ -611,7 +605,7 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
       return candidate(
         workflowDirectory: workflowDirectory,
         packageDirectory: packageDirectory,
-        packageName: manifest.name ?? packageDirectory.lastPathComponent,
+        packageName: manifest.name,
         sourceDescription: sourceDescription,
         identityPrefix: identityPrefix,
         requiresLiveEventSource: false

@@ -97,6 +97,9 @@ Imported packages are expanded into the active profile package root. Startup
 discovery, refresh/read, and execution discover those managed package
 directories and run their workflow bundles through the same daemon workflow
 runtime as project and user packages.
+Discovery decodes the shared `WorkflowPackageManifest` shape and surfaces only
+workflow packages as daemon workflow candidates; import performs full package
+validation before writing content into the active profile.
 
 RielaApp package import performs the same package-tree and manifest validation
 as the command path after materialization. Invalid package metadata, unsafe

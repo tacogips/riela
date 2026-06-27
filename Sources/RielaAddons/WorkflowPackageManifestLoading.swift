@@ -21,9 +21,18 @@ public struct FileWorkflowPackageManifestLoader: WorkflowPackageManifestLoading 
   }
 
   public func validate(_ manifest: WorkflowPackageManifest, packageRoot: URL) async -> [WorkflowPackageValidationIssue] {
-    var issues = WorkflowPackageManifestValidator.validate(manifest)
-    issues.append(contentsOf: WorkflowPackageManifestValidator.validateWorkflowBundle(manifest, packageRoot: packageRoot))
-    issues.append(contentsOf: WorkflowPackageManifestValidator.validateLoopPromotionArtifacts(manifest.loop, packageRoot: packageRoot))
+    WorkflowPackageManifestValidator.validatePackageSource(manifest, packageRoot: packageRoot)
+  }
+}
+
+public extension WorkflowPackageManifestValidator {
+  static func validatePackageSource(
+    _ manifest: WorkflowPackageManifest,
+    packageRoot: URL
+  ) -> [WorkflowPackageValidationIssue] {
+    var issues = validate(manifest)
+    issues.append(contentsOf: validateWorkflowBundle(manifest, packageRoot: packageRoot))
+    issues.append(contentsOf: validateLoopPromotionArtifacts(manifest.loop, packageRoot: packageRoot))
     return issues
   }
 }

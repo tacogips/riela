@@ -169,9 +169,7 @@ public struct RielaAppManagedPackageInstaller: Sendable {
     } catch {
       throw RielaAppManagedWorkflowInstallError.invalidPackageDirectory(packageDirectory.path)
     }
-    let issues = WorkflowPackageManifestValidator.validate(manifest)
-      + WorkflowPackageManifestValidator.validateWorkflowBundle(manifest, packageRoot: packageDirectory)
-      + WorkflowPackageManifestValidator.validateLoopPromotionArtifacts(manifest.loop, packageRoot: packageDirectory)
+    let issues = WorkflowPackageManifestValidator.validatePackageSource(manifest, packageRoot: packageDirectory)
     guard issues.isEmpty else {
       throw RielaAppManagedWorkflowInstallError.invalidPackageDirectory(packageDirectory.path)
     }

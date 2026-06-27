@@ -1,4 +1,5 @@
 import Foundation
+import RielaAddons
 import XCTest
 @testable import RielaCLI
 
@@ -85,6 +86,31 @@ extension WorkflowCommandTests {
     XCTAssertEqual(validated.packages.first?.valid, true)
   }
 
+  func testPackageInstallSourceArchiveUsesManifestName() async throws {
+    let root = repositoryRoot()
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-source-archive-package-\(UUID().uuidString)", isDirectory: true)
+    let packageSource = tempDir.appendingPathComponent("package-source", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    try makeArchivePackageSource(root: root, packageSource: packageSource, packageName: "source-archive-demo")
+    let archiveURL = tempDir.appendingPathComponent("source-archive-demo.rielapkg")
+    try WorkflowPackageArchiveManager().createArchive(from: packageSource, to: archiveURL)
+
+    let app = RielaCLIApplication()
+    let install = await app.run([
+      "package", "install",
+      "--source", archiveURL.path,
+      "--working-dir", tempDir.path,
+      "--output", "json"
+    ])
+
+    XCTAssertEqual(install.exitCode, .success, install.stderr)
+    let installed = try decodeJSON(WorkflowPackageCommandResult.self, from: install.stdout)
+    let installedDirectory = tempDir.appendingPathComponent(".riela/packages/source-archive-demo", isDirectory: true)
+    XCTAssertEqual(installed.destinationDirectory, installedDirectory.path)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: installedDirectory.appendingPathComponent("riela-package.json").path))
+  }
+
   func testPackagePackRejectsHiddenSymlink() async throws {
     let root = repositoryRoot()
     let tempDir = FileManager.default.temporaryDirectory
@@ -131,6 +157,34 @@ extension WorkflowCommandTests {
 
     XCTAssertNotEqual(validate.exitCode, .success)
     XCTAssertTrue((validate.stdout + validate.stderr).contains("unsafeArchiveEntry"), validate.stdout + validate.stderr)
+    let extractionRoot = tempDir.appendingPathComponent(".riela/tmp/rielapkg", isDirectory: true)
+    let extractionChildren = (try? FileManager.default.contentsOfDirectory(
+      at: extractionRoot,
+      includingPropertiesForKeys: nil
+    )) ?? []
+    XCTAssertEqual(extractionChildren, [])
+  }
+
+  func testPackageValidateRejectsSiblingBesideTopLevelPackageDirectory() async throws {
+    let root = repositoryRoot()
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-top-level-sibling-package-\(UUID().uuidString)", isDirectory: true)
+    let packageSource = tempDir.appendingPathComponent("package-dir", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    try makeArchivePackageSource(root: root, packageSource: packageSource, packageName: "sibling-demo")
+    try "extra".write(to: tempDir.appendingPathComponent("sibling.txt"), atomically: true, encoding: .utf8)
+    let archiveURL = tempDir.appendingPathComponent("sibling-demo.zip")
+    try runZip(arguments: ["-qry", archiveURL.path, "package-dir", "sibling.txt"], currentDirectory: tempDir)
+
+    let app = RielaCLIApplication()
+    let validate = await app.run([
+      "package", "validate", archiveURL.path,
+      "--working-dir", tempDir.path,
+      "--output", "json"
+    ])
+
+    XCTAssertNotEqual(validate.exitCode, .success)
+    XCTAssertTrue((validate.stdout + validate.stderr).contains("missingPackageManifest"), validate.stdout + validate.stderr)
   }
 
   private func makeArchivePackageSource(root: String, packageSource: URL, packageName: String) throws {

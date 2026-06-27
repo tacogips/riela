@@ -68,11 +68,16 @@ public struct WorkflowPackageArchiveManager: Sendable {
       try FileManager.default.removeItem(at: extractionRoot)
     }
     try FileManager.default.createDirectory(at: extractionRoot, withIntermediateDirectories: true)
-    try validateArchiveEntries(archiveURL, extractionRoot: extractionRoot)
-    try runArchiveExtract(archiveURL: archiveURL, extractionRoot: extractionRoot)
-    let packageRoot = try packageRoot(inExtractedDirectory: extractionRoot)
-    try validateExtractedPackageTree(packageRoot)
-    return packageRoot
+    do {
+      try validateArchiveEntries(archiveURL, extractionRoot: extractionRoot)
+      try runArchiveExtract(archiveURL: archiveURL, extractionRoot: extractionRoot)
+      let packageRoot = try packageRoot(inExtractedDirectory: extractionRoot)
+      try validateExtractedPackageTree(packageRoot)
+      return packageRoot
+    } catch {
+      try? FileManager.default.removeItem(at: extractionRoot)
+      throw error
+    }
   }
 
   public func packageRoot(inExtractedDirectory extractionRoot: URL) throws -> URL {
@@ -82,11 +87,11 @@ public struct WorkflowPackageArchiveManager: Sendable {
       return extractionRoot
     }
     let children = try meaningfulChildren(in: extractionRoot)
-    let packageDirectories = children.filter { child in
-      (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
-        && FileManager.default.fileExists(atPath: child.appendingPathComponent(Self.manifestFileName).path)
-    }
-    guard packageDirectories.count == 1, let packageDirectory = packageDirectories.first else {
+    guard children.count == 1,
+      let packageDirectory = children.first,
+      (try? packageDirectory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true,
+      FileManager.default.fileExists(atPath: packageDirectory.appendingPathComponent(Self.manifestFileName).path)
+    else {
       throw WorkflowPackageArchiveError.missingPackageManifest(extractionRoot.path)
     }
     return packageDirectory.standardizedFileURL

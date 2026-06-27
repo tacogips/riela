@@ -70,6 +70,15 @@ public enum EventSourceKind: RawRepresentable, Codable, Equatable, Sendable {
     }
   }
 
+  public var supportsLiveEventServe: Bool {
+    switch self {
+    case .telegramGateway, .discordGateway, .slackGateway:
+      true
+    case .cron, .webhook, .chatSdk, .fileChange, .matrix, .s3Repository, .sequentialList, .custom:
+      false
+    }
+  }
+
   public init(from decoder: Decoder) throws {
     self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
   }

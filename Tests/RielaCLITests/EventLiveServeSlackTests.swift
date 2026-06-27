@@ -24,7 +24,8 @@ final class EventLiveServeSlackTests: XCTestCase {
       "TEST_SLACK_RIELA_TOKEN": "riela-token",
       "TEST_SLACK_YUI_TOKEN": "yui-token",
       "TEST_SLACK_MIKA_TOKEN": "mika-token",
-      "TEST_SLACK_RINA_TOKEN": "rina-token"
+      "TEST_SLACK_RINA_TOKEN": "rina-token",
+      "RIELA_SLACK_CHANNEL_ID": "C1C278ZBL"
     ]) {
       try await server.serve(
         eventRoot: eventRoot,
@@ -97,6 +98,85 @@ final class EventLiveServeSlackTests: XCTestCase {
     let sentMessages = await api.sentMessages
     XCTAssertEqual(workflowRequests.count, 0)
     XCTAssertEqual(sentMessages, [])
+  }
+
+  func testSlackGatewayServeDoesNotAdvanceOffsetWhenWorkflowProcessingFails() async throws {
+    let eventRoot = try temporaryDirectory()
+    try writeSlackEventConfig(eventRoot: eventRoot)
+    let api = FakeSlackGatewayAPI(messages: [
+      try SlackMessage.fixture(ts: "1780000000.000250", text: "Riela, this should retry")
+    ])
+    let workflowRunner = FakeEventWorkflowRunner(failureMessage: "forced workflow failure")
+    let server = DefaultEventLiveServer(
+      telegramAPI: FakeTelegramGatewayAPI(updates: []),
+      discordAPI: FakeDiscordGatewayAPI(messages: []),
+      slackAPI: api,
+      workflowRunner: workflowRunner
+    )
+
+    do {
+      _ = try await CLIRuntimeEnvironment.$overrides.withValue([
+        "TEST_SLACK_TOKEN": "source-token",
+        "TEST_SLACK_BOT_USER_ID": "U999",
+        "TEST_SLACK_RIELA_TOKEN": "riela-token",
+        "TEST_SLACK_YUI_TOKEN": "yui-token",
+        "TEST_SLACK_MIKA_TOKEN": "mika-token",
+        "TEST_SLACK_RINA_TOKEN": "rina-token"
+      ]) {
+        try await server.serve(
+          eventRoot: eventRoot,
+          target: nil,
+          parsed: try ParsedParityOptions(["--limit", "1"]),
+          output: .json
+        )
+      }
+      XCTFail("expected Slack workflow processing failure")
+    } catch {
+      XCTAssertTrue(String(describing: error).contains("forced workflow failure"))
+    }
+
+    XCTAssertFalse(FileManager.default.fileExists(
+      atPath: eventRoot.appendingPathComponent("slack/slack-live-C200-offset.json").path
+    ))
+  }
+
+  func testSlackGatewayServeRejectsEscapingOffsetPath() async throws {
+    let eventRoot = try temporaryDirectory()
+    try writeSlackEventConfig(eventRoot: eventRoot, pollingJSON: #""limit": 1, "offsetPath": "../escape.json""#)
+    let api = FakeSlackGatewayAPI(messages: [
+      try SlackMessage.fixture(ts: "1780000000.000260", text: "Riela, check offset path")
+    ])
+    let workflowRunner = FakeEventWorkflowRunner(replyText: "ok", replyAs: "riela")
+    let server = DefaultEventLiveServer(
+      telegramAPI: FakeTelegramGatewayAPI(updates: []),
+      discordAPI: FakeDiscordGatewayAPI(messages: []),
+      slackAPI: api,
+      workflowRunner: workflowRunner
+    )
+
+    do {
+      _ = try await CLIRuntimeEnvironment.$overrides.withValue([
+        "TEST_SLACK_TOKEN": "source-token",
+        "TEST_SLACK_BOT_USER_ID": "U999",
+        "TEST_SLACK_RIELA_TOKEN": "riela-token",
+        "TEST_SLACK_YUI_TOKEN": "yui-token",
+        "TEST_SLACK_MIKA_TOKEN": "mika-token",
+        "TEST_SLACK_RINA_TOKEN": "rina-token"
+      ]) {
+        try await server.serve(
+          eventRoot: eventRoot,
+          target: nil,
+          parsed: try ParsedParityOptions(["--limit", "1"]),
+          output: .json
+        )
+      }
+      XCTFail("expected escaping Slack offsetPath to be rejected")
+    } catch {
+      XCTAssertTrue(String(describing: error).contains("offsetPath"))
+    }
+
+    XCTAssertFalse(FileManager.default.fileExists(atPath: eventRoot.deletingLastPathComponent()
+      .appendingPathComponent("escape.json").path))
   }
 
   func testSlackGatewayServeIncludesPersistedConversationHistory() async throws {
@@ -231,7 +311,7 @@ final class EventLiveServeSlackTests: XCTestCase {
     return root
   }
 
-  private func writeSlackEventConfig(eventRoot: URL) throws {
+  private func writeSlackEventConfig(eventRoot: URL, pollingJSON: String = #""limit": 1"#) throws {
     let sources = eventRoot.appendingPathComponent("sources", isDirectory: true)
     let bindings = eventRoot.appendingPathComponent("bindings", isDirectory: true)
     try FileManager.default.createDirectory(at: sources, withIntermediateDirectories: true)
@@ -245,7 +325,7 @@ final class EventLiveServeSlackTests: XCTestCase {
       "botUserIdEnv": "TEST_SLACK_BOT_USER_ID",
       "channels": [{"id": "C200"}],
       "polling": {
-        "limit": 1
+        \(pollingJSON)
       },
       "replyBots": {
         "riela": {"tokenEnv": "TEST_SLACK_RIELA_TOKEN"},

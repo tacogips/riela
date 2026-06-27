@@ -268,9 +268,9 @@ Usage:
   riela workflow list|status [--output jsonl|json|text|table]
   riela workflow manifest validate <manifest-path> [--output jsonl|json|text]
   riela workflow checkout|create|self-improve <workflow> [options]
-  riela workflow package <search|list|status|install|update|remove|checkout|publish> [options]
+  riela workflow package <search|list|status|install|update|remove|checkout|validate|pack|publish> [options]
   riela workflow run <workflow> [--variables <json|@file>] [--mock-scenario <path>] [--auto-improve] [--output jsonl|json|text]
-  riela package <search|list|status|install|update|remove|checkout|publish> [options]
+  riela package <search|list|status|install|update|remove|checkout|validate|pack|publish> [options]
   riela memory save <memory-id> --workflow-id <workflow> --payload-json <json> [--node-id <node>] [--tag <tag>] [--related-id <id>] [--file <path>] [--memory-root <dir>]
   riela memory update <memory-id> --workflow-id <workflow> --record-id <id> --payload-json <json> [--tag <tag>] [--related-id <id>] [--file <path>|--clear-files] [--memory-root <dir>]
   riela memory load|search <memory-id> --workflow-id <workflow> [--match <regex>] [--tag <tag>] [--related-id <id>] [--limit 30] [--memory-root <dir>]
@@ -282,7 +282,11 @@ Usage:
   riela loop recover <session-id> --from-step <step-id> [--session-store <dir>] [--output jsonl|json|text]
   riela graphql|gql|hook|events|serve|call-step|workflow-call [command] [target] [options]
 
-Output defaults to JSONL for machine-readable commands. Use --output text for human-readable output or --output json for the legacy single JSON document.
+Output defaults to JSONL for machine-readable commands. Prefer --output jsonl
+for automation, agents, and LLM-driven tool use, especially for workflow run.
+Use --output text for human-readable output. Use --output json only when a
+legacy caller explicitly requires one non-streaming JSON document after
+completion.
 
 The Swift CLI is the production Homebrew runtime. The formula installs only the riela command on macOS; Linux users install CLI release tarballs directly. The macOS Cask installs RielaApp.app and riela together.
 
@@ -316,7 +320,7 @@ func workflowRunHelpText(target: String?) -> String {
     --max-supervised-attempts <n>  Maximum auto-improve attempts.
     --monitor-interval-ms <n>      Polling interval for explicit stall detection.
     --stall-timeout-ms <n>         Enable stall detection for local non-agent executions.
-    --output jsonl|json|text       Defaults to jsonl. JSONL streams session_started before worker backends run.
+    --output jsonl|json|text       Defaults to jsonl. Prefer jsonl for agents/LLMs; json is legacy and emits only after completion.
 
   Stall detection:
     --stall-timeout-ms is opt-in. CLI agent and official SDK backends are not
@@ -331,8 +335,8 @@ func workflowRunHelpText(target: String?) -> String {
     --from-registry
 
   Examples:
-    riela workflow run \(workflow) --variables '{"workflowInput":{"request":"hello"}}'
-    riela workflow run \(workflow) --mock-scenario ./mock-scenario.json --output json
+    riela workflow run \(workflow) --variables '{"workflowInput":{"request":"hello"}}' --output jsonl
+    riela workflow run \(workflow) --mock-scenario ./mock-scenario.json --output jsonl
 
   """
 }

@@ -34,9 +34,30 @@ tasks:
           CONFIGURATION="${CONFIGURATION:-release}" scripts/build-riela-menu-bar-app.sh
         fi
         if [ -n "{{.CLI_ARGS}}" ]; then
-          open "$app_path" --args {{.CLI_ARGS}}
+          open "$app_path" --args --project-root "$PWD" {{.CLI_ARGS}}
         else
-          open "$app_path"
+          open "$app_path" --args --project-root "$PWD"
+        fi
+
+  app:rebuild-run:
+    desc: Quit RielaApp, rebuild RielaApp.app, and open it again (pass app args after --)
+    cmds:
+      - |
+        set -euo pipefail
+        osascript -e 'tell application id "com.tacogips.riela.menubar" to quit' >/dev/null 2>&1 || true
+        for _ in 1 2 3 4 5; do
+          pgrep -x RielaApp >/dev/null 2>&1 || break
+          sleep 0.2
+        done
+        if pgrep -x RielaApp >/dev/null 2>&1; then
+          pkill -x RielaApp || true
+        fi
+        CONFIGURATION="${CONFIGURATION:-release}" scripts/build-riela-menu-bar-app.sh
+        app_path="${RIELA_APP_PATH:-.build/${CONFIGURATION:-release}/RielaApp.app}"
+        if [ -n "{{.CLI_ARGS}}" ]; then
+          open "$app_path" --args --project-root "$PWD" {{.CLI_ARGS}}
+        else
+          open "$app_path" --args --project-root "$PWD"
         fi
 
   homebrew:formula:

@@ -473,6 +473,11 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
       )
     }
     messagesBySession[firstInput.workflowExecutionId, default: []].append(contentsOf: records)
+    if var session = sessions[firstInput.workflowExecutionId] {
+      session.currentStepId = records.first?.toStepId
+      session.updatedAt = records.last?.createdAt ?? session.updatedAt
+      sessions[firstInput.workflowExecutionId] = session
+    }
     return records
   }
 

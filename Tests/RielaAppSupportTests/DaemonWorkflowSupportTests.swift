@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import RielaAddons
 @testable import RielaAppSupport
 import RielaServer
 import XCTest
@@ -28,7 +29,7 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     XCTAssertEqual(candidates.first?.eventSourceSummary, "telegram-source:telegram-gateway")
   }
 
-  func testExcludesWebhookOnlyWorkflow() throws {
+  func testDiscoversWebhookOnlyWorkflowWithoutStartingEventSources() throws {
     let root = try temporaryHome()
     let workflowDirectory = root.appendingPathComponent(".riela/workflows/webhook-workflow", isDirectory: true)
     try writeWorkflow(id: "webhook-workflow", to: workflowDirectory)
@@ -38,7 +39,46 @@ final class DaemonWorkflowSupportTests: XCTestCase {
 
     let candidates = RielaAppDaemonWorkflowDiscovery(homeDirectory: root).discoverUserDaemonWorkflows()
 
-    XCTAssertEqual(candidates, [])
+    XCTAssertEqual(candidates.map(\.workflowId), ["webhook-workflow"])
+    XCTAssertEqual(candidates.first?.eventSourceSummary, "None")
+    XCTAssertFalse(try XCTUnwrap(candidates.first).startsEventSources)
+  }
+
+  func testDiscoversProjectWorkflowWithoutEventSource() throws {
+    let root = try temporaryHome()
+    let projectRoot = root.appendingPathComponent("project", isDirectory: true)
+    let workflowDirectory = projectRoot.appendingPathComponent(".riela/workflows/project-loop", isDirectory: true)
+    try writeWorkflow(id: "project-loop", to: workflowDirectory)
+
+    let candidates = RielaAppDaemonWorkflowDiscovery(
+      homeDirectory: root,
+      projectRoot: projectRoot
+    ).discoverUserDaemonWorkflows()
+
+    XCTAssertEqual(candidates.map(\.id), ["project-workflow:\(projectRoot.path):project-loop"])
+    XCTAssertEqual(candidates.first?.workflowId, "project-loop")
+    XCTAssertEqual(candidates.first?.sourceDescription, "project workflow")
+    XCTAssertEqual(candidates.first?.eventSourceSummary, "None")
+    XCTAssertFalse(try XCTUnwrap(candidates.first).startsEventSources)
+  }
+
+  func testDiscoversAppWorkflowRootAndMultipleProjectDirectories() throws {
+    let root = try temporaryHome()
+    let appWorkflowRoot = RielaAppProfileStore.defaultWorkflowRootURL(homeDirectory: root)
+    let appWorkflowDirectory = appWorkflowRoot.appendingPathComponent("app-loop", isDirectory: true)
+    try writeWorkflow(id: "app-loop", to: appWorkflowDirectory)
+    let projectA = root.appendingPathComponent("project-a", isDirectory: true)
+    let projectB = root.appendingPathComponent("project-b", isDirectory: true)
+    try writeWorkflow(id: "project-a-loop", to: projectA.appendingPathComponent(".riela/workflows/project-a-loop"))
+    try writeWorkflow(id: "project-b-loop", to: projectB.appendingPathComponent(".riela/workflows/project-b-loop"))
+
+    let candidates = RielaAppDaemonWorkflowDiscovery(homeDirectory: root).discoverUserDaemonWorkflows(
+      appWorkflowRoot: appWorkflowRoot,
+      projectDirectories: [projectA.path, projectB.path]
+    )
+
+    XCTAssertEqual(candidates.map(\.workflowId), ["app-loop", "project-a-loop", "project-b-loop"])
+    XCTAssertEqual(candidates.first?.sourceDescription, "RielaApp workflow")
   }
 
   func testDiscoversUserPackageWorkflowEventTemplates() throws {
@@ -51,8 +91,8 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     """.write(to: packageDirectory.appendingPathComponent("riela-package.json"), atomically: true, encoding: .utf8)
     try writeWorkflow(id: "trio", to: workflowDirectory)
     let eventRoot = packageDirectory.appendingPathComponent("event-templates/.riela-events", isDirectory: true)
-    try writeEventSource(id: "cron-source", kind: "cron", eventRoot: eventRoot)
-    try writeBinding(id: "cron-to-trio", sourceId: "cron-source", workflowName: "trio", eventRoot: eventRoot)
+    try writeEventSource(id: "slack-source", kind: "slack-gateway", eventRoot: eventRoot)
+    try writeBinding(id: "slack-to-trio", sourceId: "slack-source", workflowName: "trio", eventRoot: eventRoot)
 
     let candidates = RielaAppDaemonWorkflowDiscovery(homeDirectory: root).discoverUserDaemonWorkflows()
 
@@ -62,6 +102,25 @@ final class DaemonWorkflowSupportTests: XCTestCase {
       URL(fileURLWithPath: eventRootPath).resolvingSymlinksInPath().path,
       eventRoot.resolvingSymlinksInPath().path
     )
+  }
+
+  func testSkipsPackageWorkflowDirectorySymlinkThatEscapesPackageRoot() throws {
+    let root = try temporaryHome()
+    let packageDirectory = root.appendingPathComponent(".riela/packages/escape-package", isDirectory: true)
+    let outsideWorkflow = root.appendingPathComponent("outside-workflow", isDirectory: true)
+    try FileManager.default.createDirectory(at: packageDirectory, withIntermediateDirectories: true)
+    try writeWorkflow(id: "escaped", to: outsideWorkflow)
+    try FileManager.default.createSymbolicLink(
+      at: packageDirectory.appendingPathComponent("linked-workflow"),
+      withDestinationURL: outsideWorkflow
+    )
+    try """
+    {"kind":"workflow","name":"escape-package","workflowDirectory":"linked-workflow"}
+    """.write(to: packageDirectory.appendingPathComponent("riela-package.json"), atomically: true, encoding: .utf8)
+
+    let candidates = RielaAppDaemonWorkflowDiscovery(homeDirectory: root).discoverUserDaemonWorkflows()
+
+    XCTAssertFalse(candidates.contains { $0.workflowId == "escaped" })
   }
 
   func testDiscoversSelectedWorkflowDirectoryWithoutDaemonEventSource() throws {
@@ -86,14 +145,29 @@ final class DaemonWorkflowSupportTests: XCTestCase {
       stateURL: root.appendingPathComponent("state/daemon-workflows.json")
     )
     let state = RielaAppDaemonWorkflowState(preferences: [
-      "workflow-a": RielaAppDaemonWorkflowPreference(identity: "workflow-a", enabledAtLaunch: true, active: false)
+      "workflow-a": RielaAppDaemonWorkflowPreference(identity: "workflow-a", available: true, active: false)
     ], workflowDirectories: [
       root.appendingPathComponent("selected-workflow", isDirectory: true).path
+    ], projectDirectories: [
+      root.appendingPathComponent("project-a", isDirectory: true).path
     ])
 
     try store.save(state)
 
     XCTAssertEqual(store.load(), state)
+    let savedData = try Data(contentsOf: store.stateURL)
+    let savedJSON = try XCTUnwrap(String(data: savedData, encoding: .utf8))
+    XCTAssertTrue(savedJSON.contains("\"available\" : true"))
+    XCTAssertFalse(savedJSON.contains("enabledAtLaunch"))
+  }
+
+  func testDefaultPreferenceIsUnavailableAndInactive() {
+    let state = RielaAppDaemonWorkflowState()
+
+    let preference = state.preference(for: "new-workflow")
+
+    XCTAssertFalse(preference.available)
+    XCTAssertFalse(preference.active)
   }
 
   func testProfileStoreRoundTripsActiveProfileAndListsProfiles() throws {
@@ -137,8 +211,31 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     let state = RielaAppDaemonWorkflowStore(stateURL: stateURL).load()
 
     XCTAssertEqual(state.workflowDirectories, [])
-    XCTAssertEqual(state.preferences["workflow-a"]?.enabledAtLaunch, true)
+    XCTAssertEqual(state.projectDirectories, [])
+    XCTAssertEqual(state.preferences["workflow-a"]?.available, true)
     XCTAssertEqual(state.preferences["workflow-a"]?.active, false)
+  }
+
+  func testStoreLoadsLegacyAvailableWorkflowAsActiveWhenActiveIsMissing() throws {
+    let root = try temporaryHome()
+    let stateURL = root.appendingPathComponent("state/daemon-workflows.json")
+    try FileManager.default.createDirectory(at: stateURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try """
+    {
+      "version": 1,
+      "preferences": {
+        "workflow-a": {
+          "identity": "workflow-a",
+          "enabledAtLaunch": true
+        }
+      }
+    }
+    """.write(to: stateURL, atomically: true, encoding: .utf8)
+
+    let state = RielaAppDaemonWorkflowStore(stateURL: stateURL).load()
+
+    XCTAssertEqual(state.preferences["workflow-a"]?.available, true)
+    XCTAssertEqual(state.preferences["workflow-a"]?.active, true)
   }
 
   func testDefaultStoreLivesUnderDefaultRielaAppProfileDirectory() {
@@ -146,6 +243,13 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     let defaultPath = RielaAppDaemonWorkflowStore.defaultStateURL(homeDirectory: root).path
 
     XCTAssertEqual(defaultPath, "/tmp/rielaapp-home/.riela/rielaapp/profiles/default/daemon-workflows.json")
+  }
+
+  func testDefaultAppWorkflowRootLivesUnderProfileDirectory() {
+    let root = URL(fileURLWithPath: "/tmp/rielaapp-home", isDirectory: true)
+    let defaultPath = RielaAppProfileStore.defaultWorkflowRootURL(homeDirectory: root).path
+
+    XCTAssertEqual(defaultPath, "/tmp/rielaapp-home/.riela/rielaapp/profiles/default/workflows")
   }
 
   func testProfileStoreLoadsLegacyUserRielaStateForDefaultProfileOnly() throws {
@@ -170,14 +274,101 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     let otherState = RielaAppDaemonWorkflowStore(profileName: RielaAppProfileName("work"), homeDirectory: root).load()
 
     XCTAssertEqual(defaultState.workflowDirectories, ["/tmp/legacy-workflow"])
-    XCTAssertEqual(defaultState.preferences["legacy"]?.enabledAtLaunch, true)
+    XCTAssertEqual(defaultState.projectDirectories, [])
+    XCTAssertEqual(defaultState.preferences["legacy"]?.available, true)
     XCTAssertEqual(otherState, RielaAppDaemonWorkflowState())
   }
 
+  func testManagedWorkflowInstallerCopiesWorkflowIntoProfileWorkflowRoot() throws {
+    let root = try temporaryHome()
+    let source = root.appendingPathComponent("source/custom workflow", isDirectory: true)
+    try writeWorkflow(id: "custom workflow", to: source)
+    try "payload".write(
+      to: source.appendingPathComponent("prompt.txt"),
+      atomically: true,
+      encoding: .utf8
+    )
+    let workflowRoot = RielaAppProfileStore.defaultWorkflowRootURL(homeDirectory: root)
+    let installer = RielaAppManagedWorkflowInstaller(workflowRoot: workflowRoot)
+
+    let installedURL = try installer.installWorkflowDirectory(source)
+
+    XCTAssertEqual(installedURL.path, workflowRoot.appendingPathComponent("custom-workflow").path)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: installedURL.appendingPathComponent("workflow.json").path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: installedURL.appendingPathComponent("prompt.txt").path))
+    XCTAssertTrue(installer.containsInstalledWorkflowDirectory(installedURL))
+  }
+
+  func testManagedWorkflowInstallerRejectsNonWorkflowDirectory() throws {
+    let root = try temporaryHome()
+    let source = root.appendingPathComponent("not-workflow", isDirectory: true)
+    try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+    let installer = RielaAppManagedWorkflowInstaller(
+      workflowRoot: RielaAppProfileStore.defaultWorkflowRootURL(homeDirectory: root)
+    )
+
+    XCTAssertThrowsError(try installer.installWorkflowDirectory(source)) { error in
+      XCTAssertEqual(
+        error as? RielaAppManagedWorkflowInstallError,
+        .invalidWorkflowDirectory(source.standardizedFileURL.path)
+      )
+    }
+  }
+
+  func testDefaultAppPackageRootLivesUnderProfileDirectory() {
+    let root = URL(fileURLWithPath: "/tmp/rielaapp-home", isDirectory: true)
+    let defaultPath = RielaAppProfileStore.defaultPackageRootURL(homeDirectory: root).path
+
+    XCTAssertEqual(defaultPath, "/tmp/rielaapp-home/.riela/rielaapp/profiles/default/packages")
+  }
+
+  func testManagedPackageInstallerCopiesPackageDirectoryIntoProfilePackageRoot() throws {
+    let root = try temporaryHome()
+    let source = root.appendingPathComponent("source/package", isDirectory: true)
+    try writePackage(name: "profile-package", workflowId: "profile-workflow", to: source)
+    let packageRoot = RielaAppProfileStore.defaultPackageRootURL(homeDirectory: root)
+    let installer = RielaAppManagedPackageInstaller(packageRoot: packageRoot)
+
+    let installedURL = try installer.installPackageSource(source)
+
+    XCTAssertEqual(installedURL.path, packageRoot.appendingPathComponent("profile-package").path)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: installedURL.appendingPathComponent("riela-package.json").path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: installedURL.appendingPathComponent("workflow.json").path))
+    XCTAssertTrue(installer.containsInstalledPackageDirectory(installedURL))
+
+    let candidate = try XCTUnwrap(RielaAppDaemonWorkflowDiscovery(homeDirectory: root).discoverUserDaemonWorkflows(
+      appPackageRoot: packageRoot
+    ).first)
+    XCTAssertEqual(candidate.id, "app-package:profile-package:profile-workflow")
+    XCTAssertEqual(
+      URL(fileURLWithPath: try XCTUnwrap(candidate.packageDirectory)).resolvingSymlinksInPath().path,
+      installedURL.resolvingSymlinksInPath().path
+    )
+    XCTAssertEqual(candidate.sourceDescription, "RielaApp package")
+  }
+
+  func testManagedPackageInstallerImportsRielaPackageArchiveIntoProfilePackageRoot() throws {
+    let root = try temporaryHome()
+    let source = root.appendingPathComponent("source/archive-package", isDirectory: true)
+    try writePackage(name: "archive-profile-package", workflowId: "archive-profile-workflow", to: source)
+    let archiveURL = root.appendingPathComponent("archive-profile-package.rielapkg")
+    try WorkflowPackageArchiveManager().createArchive(from: source, to: archiveURL)
+    let packageRoot = RielaAppProfileStore.defaultPackageRootURL(homeDirectory: root)
+    let installer = RielaAppManagedPackageInstaller(packageRoot: packageRoot)
+
+    let installedURL = try installer.installPackageSource(archiveURL)
+
+    XCTAssertEqual(installedURL.path, packageRoot.appendingPathComponent("archive-profile-package").path)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: installedURL.appendingPathComponent("riela-package.json").path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: installedURL.appendingPathComponent("workflow.json").path))
+  }
+
   func testDaemonSourceKindPolicy() {
-    XCTAssertTrue(RielaAppDaemonWorkflowDiscovery.isDaemonSourceKind("cron"))
     XCTAssertTrue(RielaAppDaemonWorkflowDiscovery.isDaemonSourceKind("telegram-gateway"))
-    XCTAssertTrue(RielaAppDaemonWorkflowDiscovery.isDaemonSourceKind("chat-sdk"))
+    XCTAssertTrue(RielaAppDaemonWorkflowDiscovery.isDaemonSourceKind("discord-gateway"))
+    XCTAssertTrue(RielaAppDaemonWorkflowDiscovery.isDaemonSourceKind("slack-gateway"))
+    XCTAssertFalse(RielaAppDaemonWorkflowDiscovery.isDaemonSourceKind("cron"))
+    XCTAssertFalse(RielaAppDaemonWorkflowDiscovery.isDaemonSourceKind("chat-sdk"))
     XCTAssertFalse(RielaAppDaemonWorkflowDiscovery.isDaemonSourceKind("webhook"))
     XCTAssertFalse(RielaAppDaemonWorkflowDiscovery.isDaemonSourceKind("custom-kind"))
   }
@@ -334,6 +525,23 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     try """
     {"workflowId":"\(id)","steps":[],"nodes":[]}
     """.write(to: directory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+  }
+
+  private func writePackage(name: String, workflowId: String, to directory: URL) throws {
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    try """
+    {
+      "name": "\(name)",
+      "version": "1.0.0",
+      "description": "Profile package",
+      "tags": ["profile"],
+      "registry": "local",
+      "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "checksumAlgorithm": "md5",
+      "workflowDirectory": "."
+    }
+    """.write(to: directory.appendingPathComponent("riela-package.json"), atomically: true, encoding: .utf8)
+    try writeWorkflow(id: workflowId, to: directory)
   }
 
   private func writeRunnableWorkflow(id: String, to directory: URL) throws {

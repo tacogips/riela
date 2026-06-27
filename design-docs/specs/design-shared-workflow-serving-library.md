@@ -255,6 +255,40 @@ options required to rebuild `WorkflowServeStartRequest` on user action. It must
 not auto-start serving on login or background launch unless a future design adds
 that policy explicitly.
 
+## Profile-Scoped RielaApp Workflow Management
+
+A later RielaApp workflow-management layer adds profile-scoped daemon workflow
+selection on top of the shared serving controller. This app policy is separate
+from `riela serve`: the CLI remains a direct serving client over explicit CLI
+arguments, while RielaApp stores profile-local workflow availability and active
+state under `~/.riela/rielaapp/profiles/<profile>/`.
+
+RielaApp-managed workflow/package imports use profile-specific roots:
+
+```text
+~/.riela/rielaapp/profiles/<profile>/workflows/
+~/.riela/rielaapp/profiles/<profile>/packages/
+```
+
+The profile state file stores app daemon preferences. The canonical preference
+field is `available`; legacy `enabledAtLaunch` state may be decoded for
+compatibility but new writes use `available`.
+
+Required semantics:
+
+- `available` is profile-local RielaApp policy and must not mutate workflow
+  definitions, package manifests, event source contracts, or `riela serve`
+  resolution.
+- Disabled workflows remain discoverable in the RielaApp workflow window, but
+  are not startable from the app.
+- Disabling a workflow clears app active state and stops the app-owned runtime
+  for that candidate.
+- Switching profiles stops runtimes from the previous profile before loading
+  the new profile's availability/active state.
+- App-managed removal may delete only content contained inside the current
+  profile's managed roots; project/user package and workflow directories remain
+  owned by their normal CLI/package lifecycle.
+
 ## macOS App Registration And Rollout
 
 The issue requires Riela to be usable as a command-line-independent macOS app.

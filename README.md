@@ -47,8 +47,10 @@ CLI commands default to JSONL so automation can read one complete JSON record
 per line. Most commands emit a single JSONL record. `riela workflow run` emits
 progress records such as `session_started`, `step_started`, and
 `step_completed` before the final `run_result`, so callers can capture the
-session id immediately and inspect it while the run is still active. Use
-`--output json` for the legacy single JSON document or `--output text` for
+session id immediately and inspect it while the run is still active. Automation,
+agents, and LLM-driven tool use should prefer `--output jsonl`, especially for
+`workflow run`. Use `--output json` only when a legacy caller explicitly needs a
+single non-streaming JSON document after completion, or `--output text` for
 human-readable output.
 
 ## Install

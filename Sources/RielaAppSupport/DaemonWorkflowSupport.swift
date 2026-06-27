@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import RielaAddons
 import RielaEvents
 import RielaServer
 
@@ -19,6 +20,7 @@ public struct RielaAppDaemonWorkflowCandidate: Identifiable, Equatable, Sendable
   public var displayName: String
   public var sourceDescription: String
   public var workflowDirectory: String
+  public var packageDirectory: String?
   public var workingDirectory: String
   public var eventRoot: String?
   public var eventSources: [RielaAppDaemonEventSourceSummary]
@@ -29,6 +31,7 @@ public struct RielaAppDaemonWorkflowCandidate: Identifiable, Equatable, Sendable
     displayName: String,
     sourceDescription: String,
     workflowDirectory: String,
+    packageDirectory: String? = nil,
     workingDirectory: String,
     eventRoot: String?,
     eventSources: [RielaAppDaemonEventSourceSummary]
@@ -38,6 +41,7 @@ public struct RielaAppDaemonWorkflowCandidate: Identifiable, Equatable, Sendable
     self.displayName = displayName
     self.sourceDescription = sourceDescription
     self.workflowDirectory = workflowDirectory
+    self.packageDirectory = packageDirectory
     self.workingDirectory = workingDirectory
     self.eventRoot = eventRoot
     self.eventSources = eventSources
@@ -59,13 +63,45 @@ public struct RielaAppDaemonWorkflowCandidate: Identifiable, Equatable, Sendable
 
 public struct RielaAppDaemonWorkflowPreference: Codable, Equatable, Sendable {
   public var identity: String
-  public var enabledAtLaunch: Bool
+  public var available: Bool
   public var active: Bool
 
-  public init(identity: String, enabledAtLaunch: Bool = false, active: Bool = true) {
+  private enum CodingKeys: String, CodingKey {
+    case identity
+    case available
+    case enabledAtLaunch
+    case active
+  }
+
+  public init(identity: String, available: Bool = false, active: Bool = false) {
     self.identity = identity
-    self.enabledAtLaunch = enabledAtLaunch
+    self.available = available
     self.active = active
+  }
+
+  public init(identity: String, enabledAtLaunch: Bool, active: Bool = false) {
+    self.init(identity: identity, available: enabledAtLaunch, active: active)
+  }
+
+  public var enabledAtLaunch: Bool {
+    get { available }
+    set { available = newValue }
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    identity = try container.decode(String.self, forKey: .identity)
+    available = try container.decodeIfPresent(Bool.self, forKey: .available)
+      ?? container.decodeIfPresent(Bool.self, forKey: .enabledAtLaunch)
+      ?? false
+    active = try container.decodeIfPresent(Bool.self, forKey: .active) ?? available
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(identity, forKey: .identity)
+    try container.encode(available, forKey: .available)
+    try container.encode(active, forKey: .active)
   }
 }
 
@@ -176,27 +212,57 @@ public struct RielaAppProfileStore: Sendable {
   public static func profilesRootURL(appRootURL: URL) -> URL {
     appRootURL.appendingPathComponent("profiles", isDirectory: true)
   }
+
+  public static func workflowRootURL(appRootURL: URL, profileName: RielaAppProfileName) -> URL {
+    profilesRootURL(appRootURL: appRootURL)
+      .appendingPathComponent(profileName.rawValue, isDirectory: true)
+      .appendingPathComponent("workflows", isDirectory: true)
+  }
+
+  public static func packageRootURL(appRootURL: URL, profileName: RielaAppProfileName) -> URL {
+    profilesRootURL(appRootURL: appRootURL)
+      .appendingPathComponent(profileName.rawValue, isDirectory: true)
+      .appendingPathComponent("packages", isDirectory: true)
+  }
+
+  public static func defaultWorkflowRootURL(
+    profileName: RielaAppProfileName = .default,
+    homeDirectory: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+  ) -> URL {
+    workflowRootURL(appRootURL: defaultAppRootURL(homeDirectory: homeDirectory), profileName: profileName)
+  }
+
+  public static func defaultPackageRootURL(
+    profileName: RielaAppProfileName = .default,
+    homeDirectory: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+  ) -> URL {
+    packageRootURL(appRootURL: defaultAppRootURL(homeDirectory: homeDirectory), profileName: profileName)
+  }
 }
 
 public struct RielaAppDaemonWorkflowState: Codable, Equatable, Sendable {
   public var version: Int
   public var preferences: [String: RielaAppDaemonWorkflowPreference]
   public var workflowDirectories: [String]
+  public var projectDirectories: [String]
 
   private enum CodingKeys: String, CodingKey {
     case version
     case preferences
     case workflowDirectories
+    case projectDirectories
   }
 
   public init(
     version: Int = 1,
     preferences: [String: RielaAppDaemonWorkflowPreference] = [:],
-    workflowDirectories: [String] = []
+    workflowDirectories: [String] = [],
+    projectDirectories: [String] = []
   ) {
     self.version = version
     self.preferences = preferences
     self.workflowDirectories = workflowDirectories
+    self.projectDirectories = projectDirectories
   }
 
   public func preference(for identity: String) -> RielaAppDaemonWorkflowPreference {
@@ -211,16 +277,17 @@ public struct RielaAppDaemonWorkflowState: Codable, Equatable, Sendable {
       forKey: .preferences
     ) ?? [:]
     workflowDirectories = try container.decodeIfPresent([String].self, forKey: .workflowDirectories) ?? []
+    projectDirectories = try container.decodeIfPresent([String].self, forKey: .projectDirectories) ?? []
   }
 
   public func containsWorkflowDirectory(_ path: String) -> Bool {
-    let normalizedPath = Self.normalizedWorkflowDirectory(path)
-    return workflowDirectories.contains { Self.normalizedWorkflowDirectory($0) == normalizedPath }
+    let normalizedPath = Self.normalizedDirectory(path)
+    return workflowDirectories.contains { Self.normalizedDirectory($0) == normalizedPath }
   }
 
   public mutating func addWorkflowDirectory(_ path: String) {
-    let normalizedPath = Self.normalizedWorkflowDirectory(path)
-    guard !workflowDirectories.contains(where: { Self.normalizedWorkflowDirectory($0) == normalizedPath }) else {
+    let normalizedPath = Self.normalizedDirectory(path)
+    guard !workflowDirectories.contains(where: { Self.normalizedDirectory($0) == normalizedPath }) else {
       return
     }
     workflowDirectories.append(normalizedPath)
@@ -228,12 +295,44 @@ public struct RielaAppDaemonWorkflowState: Codable, Equatable, Sendable {
   }
 
   public mutating func removeWorkflowDirectory(_ path: String) {
-    let normalizedPath = Self.normalizedWorkflowDirectory(path)
-    workflowDirectories.removeAll { Self.normalizedWorkflowDirectory($0) == normalizedPath }
+    let normalizedPath = Self.normalizedDirectory(path)
+    workflowDirectories.removeAll { Self.normalizedDirectory($0) == normalizedPath }
   }
 
-  private static func normalizedWorkflowDirectory(_ path: String) -> String {
+  public func containsProjectDirectory(_ path: String) -> Bool {
+    let normalizedPath = Self.normalizedDirectory(path)
+    return projectDirectories.contains { Self.normalizedDirectory($0) == normalizedPath }
+  }
+
+  public func projectDirectory(containing path: String) -> String? {
+    let normalizedPath = Self.normalizedDirectory(path)
+    return projectDirectories.first { projectDirectory in
+      Self.path(normalizedPath, isContainedIn: Self.normalizedDirectory(projectDirectory))
+    }
+  }
+
+  public mutating func addProjectDirectory(_ path: String) {
+    let normalizedPath = Self.normalizedDirectory(path)
+    guard !projectDirectories.contains(where: { Self.normalizedDirectory($0) == normalizedPath }) else {
+      return
+    }
+    projectDirectories.append(normalizedPath)
+    projectDirectories.sort()
+  }
+
+  public mutating func removeProjectDirectory(_ path: String) {
+    let normalizedPath = Self.normalizedDirectory(path)
+    projectDirectories.removeAll { Self.normalizedDirectory($0) == normalizedPath }
+  }
+
+  public static func normalizedDirectory(_ path: String) -> String {
     URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL.path
+  }
+
+  public static func path(_ path: String, isContainedIn rootPath: String) -> Bool {
+    let normalizedPath = normalizedDirectory(path)
+    let normalizedRoot = normalizedDirectory(rootPath)
+    return normalizedPath == normalizedRoot || normalizedPath.hasPrefix(normalizedRoot + "/")
   }
 }
 
@@ -338,15 +437,37 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
   }
 
   public var homeDirectory: URL
+  public var projectRoots: [URL]
 
-  public init(homeDirectory: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)) {
+  public init(
+    homeDirectory: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true),
+    projectRoot: URL? = nil,
+    projectRoots: [URL] = []
+  ) {
     self.homeDirectory = homeDirectory
+    self.projectRoots = Self.uniqueProjectRoots(([projectRoot].compactMap { $0 } + projectRoots))
   }
 
   public func discoverUserDaemonWorkflows(
+    appWorkflowRoot: URL? = nil,
+    appPackageRoot: URL? = nil,
+    projectDirectories: [String] = [],
     additionalWorkflowDirectories: [String] = []
   ) -> [RielaAppDaemonWorkflowCandidate] {
     var candidates: [RielaAppDaemonWorkflowCandidate] = []
+    let effectiveProjectRoots = Self.uniqueProjectRoots(projectRoots + projectDirectories.map {
+      URL(fileURLWithPath: $0, isDirectory: true)
+    })
+    if let appWorkflowRoot {
+      candidates.append(contentsOf: discoverAppWorkflowDirectories(root: appWorkflowRoot))
+    }
+    if let appPackageRoot {
+      candidates.append(contentsOf: discoverAppPackageWorkflows(root: appPackageRoot))
+    }
+    for projectRoot in effectiveProjectRoots {
+      candidates.append(contentsOf: discoverProjectWorkflowDirectories(projectRoot: projectRoot))
+      candidates.append(contentsOf: discoverProjectPackageWorkflows(projectRoot: projectRoot))
+    }
     candidates.append(contentsOf: discoverUserWorkflowDirectories())
     candidates.append(contentsOf: discoverUserPackageWorkflows())
     candidates.append(contentsOf: discoverSelectedWorkflowDirectories(additionalWorkflowDirectories))
@@ -363,8 +484,28 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
       workflowDirectory: directory,
       sourceDescription: "selected workflow",
       identityPrefix: "selected-workflow",
-      requiresDaemonEventSource: false
+      requiresLiveEventSource: false,
+      usesPathIdentity: true
     )
+  }
+
+  public func discoverAppWorkflowDirectory(_ path: String) -> RielaAppDaemonWorkflowCandidate? {
+    let directory = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
+    return candidate(
+      workflowDirectory: directory,
+      sourceDescription: "RielaApp workflow",
+      identityPrefix: "app-workflow",
+      requiresLiveEventSource: false
+    )
+  }
+
+  public func discoverAppPackageDirectory(_ path: String) -> RielaAppDaemonWorkflowCandidate? {
+    let directory = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
+    return discoverPackageWorkflows(
+      root: directory.deletingLastPathComponent(),
+      sourceDescription: "RielaApp package",
+      identityPrefix: "app-package"
+    ).first { $0.packageDirectory == directory.path }
   }
 
   private func discoverSelectedWorkflowDirectories(_ paths: [String]) -> [RielaAppDaemonWorkflowCandidate] {
@@ -373,19 +514,77 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
 
   private func discoverUserWorkflowDirectories() -> [RielaAppDaemonWorkflowCandidate] {
     let root = homeDirectory.appendingPathComponent(".riela/workflows", isDirectory: true)
+    return discoverWorkflowDirectories(
+      root: root,
+      sourceDescription: "user workflow",
+      identityPrefix: "user-workflow"
+    )
+  }
+
+  private func discoverAppWorkflowDirectories(root: URL) -> [RielaAppDaemonWorkflowCandidate] {
+    discoverWorkflowDirectories(
+      root: root,
+      sourceDescription: "RielaApp workflow",
+      identityPrefix: "app-workflow"
+    )
+  }
+
+  private func discoverProjectWorkflowDirectories(projectRoot: URL) -> [RielaAppDaemonWorkflowCandidate] {
+    let root = projectRoot.appendingPathComponent(".riela/workflows", isDirectory: true)
+    return discoverWorkflowDirectories(
+      root: root,
+      sourceDescription: "project workflow",
+      identityPrefix: "project-workflow:\(projectRoot.path)"
+    )
+  }
+
+  private func discoverWorkflowDirectories(
+    root: URL,
+    sourceDescription: String,
+    identityPrefix: String
+  ) -> [RielaAppDaemonWorkflowCandidate] {
     let directories = directoryChildren(root)
     return directories.compactMap { directory in
       candidate(
         workflowDirectory: directory,
-        sourceDescription: "user workflow",
-        identityPrefix: "user-workflow",
-        requiresDaemonEventSource: true
+        sourceDescription: sourceDescription,
+        identityPrefix: identityPrefix,
+        requiresLiveEventSource: false
       )
     }
   }
 
   private func discoverUserPackageWorkflows() -> [RielaAppDaemonWorkflowCandidate] {
     let root = homeDirectory.appendingPathComponent(".riela/packages", isDirectory: true)
+    return discoverPackageWorkflows(
+      root: root,
+      sourceDescription: "user package",
+      identityPrefix: "user-package"
+    )
+  }
+
+  private func discoverAppPackageWorkflows(root: URL) -> [RielaAppDaemonWorkflowCandidate] {
+    discoverPackageWorkflows(
+      root: root,
+      sourceDescription: "RielaApp package",
+      identityPrefix: "app-package"
+    )
+  }
+
+  private func discoverProjectPackageWorkflows(projectRoot: URL) -> [RielaAppDaemonWorkflowCandidate] {
+    let root = projectRoot.appendingPathComponent(".riela/packages", isDirectory: true)
+    return discoverPackageWorkflows(
+      root: root,
+      sourceDescription: "project package",
+      identityPrefix: "project-package:\(projectRoot.path)"
+    )
+  }
+
+  private func discoverPackageWorkflows(
+    root: URL,
+    sourceDescription: String,
+    identityPrefix: String
+  ) -> [RielaAppDaemonWorkflowCandidate] {
     return directoryChildren(root).compactMap { packageDirectory in
       let manifestURL = packageDirectory.appendingPathComponent("riela-package.json")
       guard
@@ -395,17 +594,27 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
       else {
         return nil
       }
-      let workflowRelativePath = manifest.workflowDirectory ?? "workflows/\(packageDirectory.lastPathComponent)"
+      guard let workflowRelativePath = WorkflowPackageManifestValidator.normalizePackageRelativePath(
+        manifest.workflowDirectory ?? "."
+      ) else {
+        return nil
+      }
       let workflowDirectory = packageDirectory
         .appendingPathComponent(workflowRelativePath, isDirectory: true)
         .standardizedFileURL
+      guard RielaAppDaemonWorkflowState.path(
+        workflowDirectory.resolvingSymlinksInPath().path,
+        isContainedIn: packageDirectory.resolvingSymlinksInPath().path
+      ) else {
+        return nil
+      }
       return candidate(
         workflowDirectory: workflowDirectory,
         packageDirectory: packageDirectory,
         packageName: manifest.name ?? packageDirectory.lastPathComponent,
-        sourceDescription: "user package",
-        identityPrefix: "user-package",
-        requiresDaemonEventSource: true
+        sourceDescription: sourceDescription,
+        identityPrefix: identityPrefix,
+        requiresLiveEventSource: false
       )
     }
   }
@@ -416,7 +625,8 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
     packageName: String? = nil,
     sourceDescription: String,
     identityPrefix: String,
-    requiresDaemonEventSource: Bool
+    requiresLiveEventSource: Bool,
+    usesPathIdentity: Bool = false
   ) -> RielaAppDaemonWorkflowCandidate? {
     let workflowURL = workflowDirectory.appendingPathComponent("workflow.json")
     guard
@@ -432,13 +642,13 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
         return eventSources.isEmpty ? nil : (eventRoot, eventSources)
       }
       .first
-    if requiresDaemonEventSource, eventRootAndSources == nil {
+    if requiresLiveEventSource, eventRootAndSources == nil {
       return nil
     }
-    let identity = if requiresDaemonEventSource {
-      "\(identityPrefix)\(packageName.map { ":\($0)" } ?? ""):\(workflow.workflowId)"
-    } else {
+    let identity = if usesPathIdentity {
       "\(identityPrefix):\(workflowDirectory.path)"
+    } else {
+      "\(identityPrefix)\(packageName.map { ":\($0)" } ?? ""):\(workflow.workflowId)"
     }
     return RielaAppDaemonWorkflowCandidate(
       id: identity,
@@ -446,6 +656,7 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
       displayName: workflow.workflowId,
       sourceDescription: sourceDescription,
       workflowDirectory: workflowDirectory.path,
+      packageDirectory: packageDirectory?.path,
       workingDirectory: workflowDirectory.deletingLastPathComponent().path,
       eventRoot: eventRootAndSources?.0.path,
       eventSources: eventRootAndSources?.1 ?? []
@@ -509,12 +720,21 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
   }
 
   public static func isDaemonSourceKind(_ rawKind: String) -> Bool {
-    switch EventSourceKind(rawValue: rawKind) {
-    case .cron, .chatSdk, .discordGateway, .fileChange, .slackGateway, .telegramGateway, .matrix, .s3Repository, .sequentialList:
-      true
-    case .webhook, .custom:
-      false
+    EventSourceKind(rawValue: rawKind).supportsLiveEventServe
+  }
+
+  private static func uniqueProjectRoots(_ roots: [URL]) -> [URL] {
+    var seen = Set<String>()
+    var unique: [URL] = []
+    for root in roots {
+      let normalized = root.standardizedFileURL
+      guard !seen.contains(normalized.path) else {
+        continue
+      }
+      seen.insert(normalized.path)
+      unique.append(normalized)
     }
+    return unique
   }
 }
 

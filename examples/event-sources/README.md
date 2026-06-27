@@ -284,10 +284,13 @@ IM history scopes for the conversations you configure:
 ```bash
 export RIELA_SLACK_BOT_TOKEN=<slack-bot-token>
 export RIELA_SLACK_BOT_USER_ID=<slack-bot-user-id>
-export RIELA_SLACK_CHANNEL_ID=<slack-channel-id>
 export RIELA_SLACK_RIELA_BOT_TOKEN=<optional-reply-bot-token>
 riela events serve --workflow-definition-dir ./examples --event-root ./examples/event-sources/.riela-events --source slack-gateway-codex
 ```
+
+Set the channel in the source's `channels` array. `RIELA_SLACK_CHANNEL_ID` is a
+fallback only for source configs that omit `channels`; it does not override an
+explicitly configured channel list.
 
 For deterministic local checks, emit the checked-in Slack payload without
 contacting Slack. The payload includes prior thread history so

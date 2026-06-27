@@ -4,14 +4,13 @@ import Foundation
 import RielaAppSupport
 import RielaObservability
 import RielaServer
-import RielaViewer
 
 @main
 @MainActor
 final class RielaApp: NSObject, NSApplicationDelegate {
   private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
   private let controller = WorkflowServingController()
-  private let daemonDiscovery = RielaAppDaemonWorkflowDiscovery()
+  private var daemonDiscovery = RielaAppDaemonWorkflowDiscovery()
   private let daemonRuntime = RielaAppDaemonWorkflowRuntime()
   private let telemetry = RielaTelemetryFactory.make(configuration: .fromEnvironment(
     surface: .app
@@ -41,11 +40,10 @@ final class RielaApp: NSObject, NSApplicationDelegate {
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     daemonProfileName = initialDaemonProfileName()
+    daemonDiscovery = RielaAppDaemonWorkflowDiscovery(projectRoot: commandLineProjectRoot())
     daemonStore = RielaAppDaemonWorkflowStore(profileName: daemonProfileName)
     daemonState = daemonStore.load()
-    daemonCandidates = daemonDiscovery.discoverUserDaemonWorkflows(
-      additionalWorkflowDirectories: daemonState.workflowDirectories
-    )
+    daemonCandidates = discoverDaemonCandidates()
     Task {
       await telemetry.recordLog(RielaTelemetryLog(
         name: "riela.app.start",
@@ -91,7 +89,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     let menu = NSMenu()
     menu.addItem(menuItem("Workflows...", action: #selector(openDaemonWorkflows)))
     menu.addItem(menuItem(
-      "Start Workflows in Profile",
+      "Start Enabled Workflows",
       action: #selector(startProfileWorkflows),
       enabled: hasStartableProfileWorkflows
     ))
@@ -117,12 +115,15 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   private var hasStartableProfileWorkflows: Bool {
     daemonCandidates.contains { candidate in
       let preference = daemonState.preference(for: candidate.id)
-      return preference.enabledAtLaunch && !preference.active
+      return preference.available && !preference.active
     }
   }
 
   private var hasRunningProfileWorkflows: Bool {
-    daemonCandidates.contains { daemonState.preference(for: $0.id).active }
+    daemonCandidates.contains { candidate in
+      let preference = daemonState.preference(for: candidate.id)
+      return preference.available && preference.active
+    }
   }
 
   private func menuItem(_ title: String, action: Selector, enabled: Bool = true) -> NSMenuItem {
@@ -160,11 +161,14 @@ final class RielaApp: NSObject, NSApplicationDelegate {
         onAddDirectory: { [weak self] in
           self?.addDaemonWorkflowDirectory()
         },
+        onAddProject: { [weak self] in
+          self?.addDaemonProjectDirectory()
+        },
         onRemoveDirectory: { [weak self] identity in
           self?.removeDaemonWorkflowDirectory(identity: identity)
         },
         onSetEnabled: { [weak self] identity, enabled in
-          self?.setDaemonWorkflow(identity: identity, enabledAtLaunch: enabled)
+          self?.setDaemonWorkflow(identity: identity, available: enabled)
         },
         onSetActive: { [weak self] identity, active in
           self?.setDaemonWorkflowActive(identity: identity, active: active)
@@ -295,9 +299,9 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     for candidate in daemonCandidates {
       let preference = daemonState.preference(for: candidate.id)
       logDaemon(
-        "profile=\(daemonProfileName.rawValue) candidate=\(candidate.id) enabledAtLaunch=\(preference.enabledAtLaunch) active=\(preference.active)"
+        "profile=\(daemonProfileName.rawValue) candidate=\(candidate.id) available=\(preference.available) active=\(preference.active)"
       )
-      guard preference.enabledAtLaunch, preference.active else {
+      guard preference.available, preference.active else {
         continue
       }
       await daemonRuntime.start(candidate)
@@ -307,7 +311,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   }
 
   @objc private func startProfileWorkflows() {
-    for candidate in daemonCandidates where daemonState.preference(for: candidate.id).enabledAtLaunch {
+    for candidate in daemonCandidates where daemonState.preference(for: candidate.id).available {
       var preference = daemonState.preference(for: candidate.id)
       preference.active = true
       daemonState.preferences[candidate.id] = preference
@@ -340,9 +344,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   }
 
   private func refreshDaemonWorkflowWindow() {
-    daemonCandidates = daemonDiscovery.discoverUserDaemonWorkflows(
-      additionalWorkflowDirectories: daemonState.workflowDirectories
-    )
+    daemonCandidates = discoverDaemonCandidates()
     daemonWindowController?.update(
       profileName: daemonProfileName,
       profileNames: availableDaemonProfileNames(),
@@ -387,24 +389,60 @@ final class RielaApp: NSObject, NSApplicationDelegate {
 
   private func addDaemonWorkflowDirectory() {
     let panel = NSOpenPanel()
-    panel.title = "Add Workflow to RielaApp"
-    panel.message = "Select a workflow folder containing workflow.json."
-    panel.canChooseFiles = false
+    panel.title = "Add Workflow or Package to RielaApp"
+    panel.message = "Select a workflow folder, package folder, .rielapkg, or .zip package."
+    panel.canChooseFiles = true
     panel.canChooseDirectories = true
     panel.allowsMultipleSelection = false
     guard panel.runModal() == .OK, let url = panel.url else {
       return
     }
-    let path = url.standardizedFileURL.path
-    guard let candidate = daemonDiscovery.discoverSelectedWorkflowDirectory(path) else {
-      status = "Selected folder is not a Riela workflow"
+    let candidate: RielaAppDaemonWorkflowCandidate
+    do {
+      candidate = try installDaemonWorkflowOrPackageSource(url)
+    } catch {
+      status = "Failed to add workflow: \(error.localizedDescription)"
       rebuildMenu()
       return
     }
-    daemonState.addWorkflowDirectory(candidate.workflowDirectory)
+    startImportedCandidate(candidate)
+  }
+
+  private func installDaemonWorkflowOrPackageSource(_ url: URL) throws -> RielaAppDaemonWorkflowCandidate {
+    let url = url.standardizedFileURL
+    if isDirectory(url), FileManager.default.fileExists(atPath: url.appendingPathComponent("workflow.json").path) {
+      let installedURL = try daemonWorkflowInstaller.installWorkflowDirectory(url)
+      guard let candidate = daemonDiscovery.discoverAppWorkflowDirectory(installedURL.path) else {
+        throw RielaAppManagedWorkflowInstallError.invalidWorkflowDirectory(installedURL.path)
+      }
+      return candidate
+    }
+    if isPackageSource(url) {
+      let installedURL = try daemonPackageInstaller.installPackageSource(url)
+      guard let candidate = daemonDiscovery.discoverAppPackageDirectory(installedURL.path) else {
+        throw RielaAppManagedWorkflowInstallError.invalidPackageDirectory(installedURL.path)
+      }
+      return candidate
+    }
+    throw RielaAppManagedWorkflowInstallError.unsupportedPackageSource(url.path)
+  }
+
+  private func isPackageSource(_ url: URL) -> Bool {
+    if isDirectory(url) {
+      return FileManager.default.fileExists(atPath: url.appendingPathComponent("riela-package.json").path)
+    }
+    let pathExtension = url.pathExtension.lowercased()
+    return pathExtension == "rielapkg" || pathExtension == "zip"
+  }
+
+  private func isDirectory(_ url: URL) -> Bool {
+    (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+  }
+
+  private func startImportedCandidate(_ candidate: RielaAppDaemonWorkflowCandidate) {
     daemonState.preferences[candidate.id] = RielaAppDaemonWorkflowPreference(
       identity: candidate.id,
-      enabledAtLaunch: true,
+      available: true,
       active: true
     )
     saveDaemonState()
@@ -415,16 +453,58 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
   }
 
+  private func addDaemonProjectDirectory() {
+    let panel = NSOpenPanel()
+    panel.title = "Add Riela Project to Profile"
+    panel.message = "Select a project folder containing .riela/workflows or .riela/packages."
+    panel.canChooseFiles = false
+    panel.canChooseDirectories = true
+    panel.allowsMultipleSelection = false
+    guard panel.runModal() == .OK, let url = panel.url else {
+      return
+    }
+    let projectRoot = url.standardizedFileURL
+    guard isRielaWorkflowProject(projectRoot) else {
+      status = "Selected folder has no .riela/workflows or .riela/packages"
+      rebuildMenu()
+      return
+    }
+    daemonState.addProjectDirectory(projectRoot.path)
+    saveDaemonState()
+    refreshDaemonWorkflowWindow()
+  }
+
   private func removeDaemonWorkflowDirectory(identity: String) {
     guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
       return
     }
-    guard daemonState.containsWorkflowDirectory(candidate.workflowDirectory) else {
-      status = "Only workflows added from this window can be removed"
+    let candidateURL = URL(fileURLWithPath: candidate.workflowDirectory, isDirectory: true)
+    if let packageDirectory = candidate.packageDirectory,
+      daemonPackageInstaller.containsInstalledPackageDirectory(URL(fileURLWithPath: packageDirectory, isDirectory: true)) {
+      do {
+        try daemonPackageInstaller.removeInstalledPackageDirectory(URL(fileURLWithPath: packageDirectory, isDirectory: true))
+      } catch {
+        status = "Failed to remove package: \(error.localizedDescription)"
+        rebuildMenu()
+        return
+      }
+    } else if daemonWorkflowInstaller.containsInstalledWorkflowDirectory(candidateURL) {
+      do {
+        try daemonWorkflowInstaller.removeInstalledWorkflowDirectory(candidateURL)
+      } catch {
+        status = "Failed to remove workflow: \(error.localizedDescription)"
+        rebuildMenu()
+        return
+      }
+    } else if let projectDirectory = daemonState.projectDirectory(containing: candidate.workflowDirectory) {
+      daemonState.removeProjectDirectory(projectDirectory)
+    } else if daemonState.containsWorkflowDirectory(candidate.workflowDirectory) {
+      daemonState.removeWorkflowDirectory(candidate.workflowDirectory)
+    } else {
+      status = "Only RielaApp workflows and profile project workflows can be removed"
       rebuildMenu()
       return
     }
-    daemonState.removeWorkflowDirectory(candidate.workflowDirectory)
     daemonState.preferences.removeValue(forKey: identity)
     saveDaemonState()
     Task { @MainActor in
@@ -433,12 +513,12 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
   }
 
-  private func setDaemonWorkflow(identity: String, enabledAtLaunch: Bool) {
+  private func setDaemonWorkflow(identity: String, available: Bool) {
     updateDaemonPreference(identity: identity) { preference in
-      preference.enabledAtLaunch = enabledAtLaunch
-      preference.active = enabledAtLaunch
+      preference.available = available
+      preference.active = available
     }
-    if enabledAtLaunch, let candidate = daemonCandidates.first(where: { $0.id == identity }) {
+    if available, let candidate = daemonCandidates.first(where: { $0.id == identity }) {
       Task { @MainActor in
         await daemonRuntime.start(candidate)
         refreshDaemonWorkflowWindow()
@@ -452,6 +532,11 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   }
 
   private func setDaemonWorkflowActive(identity: String, active: Bool) {
+    if active, !daemonState.preference(for: identity).available {
+      status = "Enable workflow before starting"
+      refreshDaemonWorkflowWindow()
+      return
+    }
     updateDaemonPreference(identity: identity) { preference in
       preference.active = active
     }
@@ -490,10 +575,45 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
   }
 
+  private var daemonWorkflowInstaller: RielaAppManagedWorkflowInstaller {
+    RielaAppManagedWorkflowInstaller(workflowRoot: daemonAppWorkflowRoot)
+  }
+
+  private var daemonPackageInstaller: RielaAppManagedPackageInstaller {
+    RielaAppManagedPackageInstaller(packageRoot: daemonAppPackageRoot)
+  }
+
+  private var daemonAppWorkflowRoot: URL {
+    RielaAppProfileStore.defaultWorkflowRootURL(profileName: daemonProfileName)
+  }
+
+  private var daemonAppPackageRoot: URL {
+    RielaAppProfileStore.defaultPackageRootURL(profileName: daemonProfileName)
+  }
+
+  private func discoverDaemonCandidates() -> [RielaAppDaemonWorkflowCandidate] {
+    daemonDiscovery.discoverUserDaemonWorkflows(
+      appWorkflowRoot: daemonAppWorkflowRoot,
+      appPackageRoot: daemonAppPackageRoot,
+      projectDirectories: daemonState.projectDirectories,
+      additionalWorkflowDirectories: daemonState.workflowDirectories
+    )
+  }
+
+  private func isRielaWorkflowProject(_ projectRoot: URL) -> Bool {
+    let workflowRoot = projectRoot.appendingPathComponent(".riela/workflows", isDirectory: true)
+    let packageRoot = projectRoot.appendingPathComponent(".riela/packages", isDirectory: true)
+    return FileManager.default.fileExists(atPath: workflowRoot.path)
+      || FileManager.default.fileExists(atPath: packageRoot.path)
+  }
+
   private func daemonSummary() -> String {
-    let enabled = daemonCandidates.filter { daemonState.preference(for: $0.id).enabledAtLaunch }.count
-    let running = daemonCandidates.filter { daemonState.preference(for: $0.id).active }.count
-    return "\(running) running / \(enabled) start with app"
+    let enabled = daemonCandidates.filter { daemonState.preference(for: $0.id).available }.count
+    let running = daemonCandidates.filter { candidate in
+      let preference = daemonState.preference(for: candidate.id)
+      return preference.available && preference.active
+    }.count
+    return "\(running) running / \(enabled) enabled"
   }
 
   private func initialDaemonProfileName() -> RielaAppProfileName {
@@ -508,6 +628,22 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       }
       if argument.hasPrefix("--profile=") {
         return RielaAppProfileName(String(argument.dropFirst("--profile=".count)))
+      }
+    }
+    return nil
+  }
+
+  private func commandLineProjectRoot() -> URL? {
+    let arguments = Array(CommandLine.arguments.dropFirst())
+    for (index, argument) in arguments.enumerated() {
+      if argument == "--project-root", arguments.indices.contains(index + 1) {
+        return URL(fileURLWithPath: arguments[index + 1], isDirectory: true).standardizedFileURL
+      }
+      if argument.hasPrefix("--project-root=") {
+        return URL(
+          fileURLWithPath: String(argument.dropFirst("--project-root=".count)),
+          isDirectory: true
+        ).standardizedFileURL
       }
     }
     return nil
@@ -574,381 +710,6 @@ private enum RielaAppIcon {
     image.unlockFocus()
     image.isTemplate = true
     return image
-  }
-}
-
-@MainActor
-private final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDataSource, NSOutlineViewDelegate {
-  private let loader = WorkflowViewerLoader()
-  private let outlineView = NSOutlineView()
-  private let sessionPopup = NSPopUpButton()
-  private let statusLabel = NSTextField(labelWithString: "No workflow loaded")
-  private let detailTextView = NSTextView()
-  private let detailFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-  private let detailTextColor = NSColor(calibratedWhite: 0.92, alpha: 1)
-  private let detailBackgroundColor = NSColor(calibratedWhite: 0.08, alpha: 1)
-  private var workflowDirectory: String?
-  private var sessionStoreRoot: String?
-  private var state: WorkflowViewerState?
-  private var selectedNodeId: String?
-
-  init() {
-    let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 980, height: 620),
-      styleMask: [.titled, .closable, .resizable, .miniaturizable],
-      backing: .buffered,
-      defer: false
-    )
-    window.title = "Riela Workflow Viewer"
-    super.init(window: window)
-    buildContent(in: window)
-  }
-
-  required init?(coder: NSCoder) {
-    nil
-  }
-
-  func show(workflowDirectory: String, sessionStoreRoot: String?) {
-    if self.workflowDirectory != workflowDirectory {
-      selectedNodeId = nil
-    }
-    self.workflowDirectory = workflowDirectory
-    self.sessionStoreRoot = sessionStoreRoot
-    refresh()
-    showWindow(nil)
-    window?.makeKeyAndOrderFront(nil)
-    NSApp.activate(ignoringOtherApps: true)
-  }
-
-  private func buildContent(in window: NSWindow) {
-    let splitView = NSSplitView()
-    splitView.isVertical = true
-    splitView.dividerStyle = .thin
-    splitView.translatesAutoresizingMaskIntoConstraints = false
-
-    outlineView.headerView = nil
-    outlineView.dataSource = self
-    outlineView.delegate = self
-    let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("workflow-node"))
-    column.title = "Workflow"
-    column.width = 360
-    outlineView.addTableColumn(column)
-    outlineView.outlineTableColumn = column
-
-    let outlineScroll = NSScrollView()
-    outlineScroll.documentView = outlineView
-    outlineScroll.hasVerticalScroller = true
-    outlineScroll.hasHorizontalScroller = true
-    outlineScroll.translatesAutoresizingMaskIntoConstraints = false
-    outlineScroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
-
-    let rightStack = NSStackView()
-    rightStack.orientation = .vertical
-    rightStack.alignment = .leading
-    rightStack.spacing = 8
-    rightStack.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
-    rightStack.translatesAutoresizingMaskIntoConstraints = false
-
-    let toolbar = NSStackView()
-    toolbar.orientation = .horizontal
-    toolbar.alignment = .centerY
-    toolbar.spacing = 8
-    let refreshButton = NSButton(title: "Refresh", target: self, action: #selector(refreshButtonPressed))
-    sessionPopup.target = self
-    sessionPopup.action = #selector(sessionSelectionChanged)
-    sessionPopup.widthAnchor.constraint(equalToConstant: 360).isActive = true
-    toolbar.addArrangedSubview(NSTextField(labelWithString: "Session"))
-    toolbar.addArrangedSubview(sessionPopup)
-    toolbar.addArrangedSubview(refreshButton)
-
-    statusLabel.lineBreakMode = .byTruncatingTail
-    detailTextView.isEditable = false
-    detailTextView.isRichText = false
-    detailTextView.font = detailFont
-    detailTextView.textColor = detailTextColor
-    detailTextView.backgroundColor = detailBackgroundColor
-    detailTextView.drawsBackground = true
-    detailTextView.textContainerInset = NSSize(width: 10, height: 10)
-    detailTextView.isVerticallyResizable = true
-    detailTextView.isHorizontallyResizable = true
-    detailTextView.autoresizingMask = [.width]
-    detailTextView.textContainer?.widthTracksTextView = true
-    detailTextView.textContainer?.containerSize = NSSize(
-      width: detailScrollContentWidthFallback,
-      height: CGFloat.greatestFiniteMagnitude
-    )
-    let detailScroll = NSScrollView()
-    detailScroll.documentView = detailTextView
-    detailScroll.hasVerticalScroller = true
-    detailScroll.hasHorizontalScroller = true
-    detailScroll.borderType = .bezelBorder
-    detailScroll.translatesAutoresizingMaskIntoConstraints = false
-
-    rightStack.addArrangedSubview(toolbar)
-    rightStack.addArrangedSubview(statusLabel)
-    rightStack.addArrangedSubview(detailScroll)
-    detailScroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 520).isActive = true
-    detailScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 500).isActive = true
-
-    splitView.addArrangedSubview(outlineScroll)
-    splitView.addArrangedSubview(rightStack)
-    window.contentView = splitView
-    splitView.setPosition(360, ofDividerAt: 0)
-  }
-
-  @objc private func refreshButtonPressed() {
-    refresh()
-  }
-
-  @objc private func sessionSelectionChanged() {
-    guard let workflowDirectory, let state, sessionPopup.indexOfSelectedItem >= 0,
-      sessionPopup.indexOfSelectedItem < state.sessions.count
-    else {
-      return
-    }
-    let selected = state.sessions[sessionPopup.indexOfSelectedItem]
-    do {
-      self.state = try loader.load(WorkflowViewerLoadRequest(
-        workflowDirectory: workflowDirectory,
-        sessionStoreRoot: state.sessionStoreRoot,
-        selectedSessionId: selected.sessionId
-      ))
-      outlineView.reloadData()
-      expandAll()
-      updateDetails()
-    } catch {
-      statusLabel.stringValue = "Failed to switch session: \(error)"
-    }
-  }
-
-  private func refresh() {
-    guard let workflowDirectory else {
-      return
-    }
-    do {
-      let previouslySelectedSessionId = state?.selectedSessionId
-      let loaded = try loader.load(WorkflowViewerLoadRequest(
-        workflowDirectory: workflowDirectory,
-        sessionStoreRoot: sessionStoreRoot,
-        selectedSessionId: previouslySelectedSessionId
-      ))
-      state = loaded
-      selectedNodeId = selectedNodeId ?? loaded.workflow.entryStepId
-      sessionPopup.removeAllItems()
-      if loaded.sessions.isEmpty {
-        sessionPopup.addItem(withTitle: "No sessions")
-        sessionPopup.isEnabled = false
-      } else {
-        sessionPopup.addItems(withTitles: loaded.sessions.map { sessionTitle($0) })
-        sessionPopup.selectItem(at: 0)
-        sessionPopup.isEnabled = true
-      }
-      outlineView.reloadData()
-      expandAll()
-      updateDetails()
-    } catch {
-      statusLabel.stringValue = "Failed to load viewer: \(error)"
-      setDetailText("\(error)")
-    }
-  }
-
-  private func updateDetails() {
-    guard let state else {
-      statusLabel.stringValue = "No workflow loaded"
-      setDetailText("")
-      return
-    }
-    let session = selectedSession(in: state)
-    statusLabel.stringValue = [
-      "Workflow: \(state.workflow.workflowId)",
-      "Sessions: \(state.sessions.count)",
-      session.map { "Selected: \($0.sessionId) (\($0.status.rawValue))" }
-    ].compactMap { $0 }.joined(separator: " | ")
-    guard let selectedNodeId else {
-      setDetailText(workflowOverview(state: state))
-      return
-    }
-    var lines: [String] = []
-    lines.append("Node: \(selectedNodeId)")
-    if let node = flattenedNodes(state.nodes).first(where: { $0.id == selectedNodeId }) {
-      lines.append("Runtime: \(node.state.rawValue)")
-      lines.append("Node ID: \(node.nodeId)")
-      if let detail = node.detail {
-        lines.append("Detail: \(detail)")
-      }
-    }
-    lines.append("")
-    lines.append("Workflow")
-    lines.append(workflowOverview(state: state))
-    if state.sessions.isEmpty {
-      lines.append("")
-      lines.append("Sessions")
-      lines.append("No persisted sessions found for this workflow.")
-      lines.append("Searched:")
-      lines.append(contentsOf: state.sessionStoreCandidates.map { "- \($0)" })
-    }
-    if !state.diagnostics.isEmpty {
-      lines.append("")
-      lines.append("Diagnostics")
-      lines.append(contentsOf: state.diagnostics.map { "- \($0)" })
-    }
-    if let session {
-      do {
-        let messages = try loader.nodeMessages(
-          stepId: selectedNodeId,
-          sessionId: session.sessionId,
-          sessionStoreRoot: state.sessionStoreRoot
-        )
-        lines.append("")
-        lines.append("Inbox")
-        lines.append(contentsOf: render(messages.inbox))
-        lines.append("")
-        lines.append("Outbox")
-        lines.append(contentsOf: render(messages.outbox))
-      } catch {
-        lines.append("")
-        lines.append("Messages failed to load: \(error)")
-      }
-    }
-    setDetailText(lines.joined(separator: "\n"))
-  }
-
-  private func setDetailText(_ text: String) {
-    detailTextView.textStorage?.setAttributedString(NSAttributedString(
-      string: text,
-      attributes: [
-        .font: detailFont,
-        .foregroundColor: detailTextColor,
-        .backgroundColor: detailBackgroundColor
-      ]
-    ))
-  }
-
-  private var detailScrollContentWidthFallback: CGFloat {
-    520
-  }
-
-  private func selectedSession(in state: WorkflowViewerState) -> WorkflowViewerSessionSummary? {
-    guard let selectedSessionId = state.selectedSessionId else {
-      return nil
-    }
-    return state.sessions.first { $0.sessionId == selectedSessionId }
-  }
-
-  private func workflowOverview(state: WorkflowViewerState) -> String {
-    [
-      "id: \(state.workflow.workflowId)",
-      "entry: \(state.workflow.entryStepId)",
-      "description: \(state.workflow.description.isEmpty ? "-" : state.workflow.description)",
-      "steps: \(state.workflow.steps.count)",
-      "sessionStore: \(state.sessionStoreRoot)"
-    ].joined(separator: "\n")
-  }
-
-  private func render(_ messages: [WorkflowViewerMessage]) -> [String] {
-    guard !messages.isEmpty else {
-      return ["(none)"]
-    }
-    return messages.map { message in
-      [
-        "- \(message.id) [\(message.status.rawValue)]",
-        "  from: \(message.fromStepId ?? "-")",
-        "  to: \(message.toStepId ?? "-")",
-        "  payload: \(message.payloadPreview)"
-      ].joined(separator: "\n")
-    }
-  }
-
-  private func sessionTitle(_ summary: WorkflowViewerSessionSummary) -> String {
-    let active = summary.activeStepIds.isEmpty ? "" : " active: \(summary.activeStepIds.joined(separator: ","))"
-    return "\(summary.sessionId) - \(summary.status.rawValue)\(active)"
-  }
-
-  private func flattenedNodes(_ nodes: [WorkflowViewerNode]) -> [WorkflowViewerNode] {
-    nodes.flatMap { [$0] + flattenedNodes($0.children) }
-  }
-
-  private func expandAll() {
-    for node in state?.nodes ?? [] {
-      outlineView.expandItem(node, expandChildren: true)
-    }
-  }
-
-  func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
-    if let node = item as? WorkflowViewerNode {
-      return node.children.count
-    }
-    return state?.nodes.count ?? 0
-  }
-
-  func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
-    if let node = item as? WorkflowViewerNode {
-      return node.children[index]
-    }
-    return state?.nodes[index] ?? WorkflowViewerNode(id: "missing", nodeId: "missing", title: "missing", state: .failed)
-  }
-
-  func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
-    (item as? WorkflowViewerNode)?.children.isEmpty == false
-  }
-
-  func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
-    guard let node = item as? WorkflowViewerNode else {
-      return nil
-    }
-    let identifier = NSUserInterfaceItemIdentifier("workflow-node-cell")
-    let cell = outlineView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView ?? NSTableCellView()
-    cell.identifier = identifier
-    let field = cell.textField ?? NSTextField(labelWithString: "")
-    field.translatesAutoresizingMaskIntoConstraints = false
-    if field.superview == nil {
-      cell.addSubview(field)
-      cell.textField = field
-      NSLayoutConstraint.activate([
-        field.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
-        field.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
-        field.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
-      ])
-    }
-    field.stringValue = "\(stateMarker(node.state)) \(node.title)"
-    field.textColor = color(for: node.state)
-    field.font = node.state == .active ? NSFont.boldSystemFont(ofSize: 13) : NSFont.systemFont(ofSize: 13)
-    return cell
-  }
-
-  func outlineViewSelectionDidChange(_ notification: Notification) {
-    let row = outlineView.selectedRow
-    guard row >= 0, let node = outlineView.item(atRow: row) as? WorkflowViewerNode else {
-      return
-    }
-    selectedNodeId = node.id
-    updateDetails()
-  }
-
-  private func stateMarker(_ state: WorkflowViewerNodeRuntimeState) -> String {
-    switch state {
-    case .active:
-      "[Running]"
-    case .completed:
-      "[Completed]"
-    case .failed:
-      "[Failed]"
-    case .idle:
-      "[Idle]"
-    }
-  }
-
-  private func color(for state: WorkflowViewerNodeRuntimeState) -> NSColor {
-    switch state {
-    case .active:
-      .systemGreen
-    case .completed:
-      .secondaryLabelColor
-    case .failed:
-      .systemRed
-    case .idle:
-      .labelColor
-    }
   }
 }
 

@@ -34,8 +34,8 @@ extension DefaultEventLiveServer {
       )
       for message in messages.sorted(by: { $0.sortKey < $1.sortKey }) {
         observedMessages += 1
-        try offsetStore.saveLastTimestamp(message.ts)
         guard let envelope = source.envelope(from: message, channelId: channelId, eventRoot: eventRoot) else {
+          try offsetStore.saveLastTimestamp(message.ts)
           continue
         }
         let triggerResult = await DeterministicEventDryRunTrigger().dryRun(EventDryRunRequest(
@@ -44,6 +44,7 @@ extension DefaultEventLiveServer {
           envelope: envelope
         ))
         guard triggerResult.accepted else {
+          try offsetStore.saveLastTimestamp(message.ts)
           continue
         }
         for trigger in triggerResult.triggers {
@@ -70,6 +71,7 @@ extension DefaultEventLiveServer {
             )
           }
         }
+        try offsetStore.saveLastTimestamp(message.ts)
       }
     }
     return observedMessages
@@ -164,13 +166,15 @@ struct SlackGatewaySource: Decodable, Equatable, Sendable {
   }
 
   func channelIds(environment: [String: String]) -> [String] {
-    let overrides = environment["RIELA_SLACK_CHANNEL_ID"]
+    let configured = channels.map { $0.id.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    if !configured.isEmpty {
+      return configured
+    }
+    let fallback = environment["RIELA_SLACK_CHANNEL_ID"]
       .map { [$0.trimmingCharacters(in: .whitespacesAndNewlines)] }?
       .filter { !$0.isEmpty } ?? []
-    if !overrides.isEmpty {
-      return Array(Set(overrides)).sorted()
-    }
-    return channels.map(\.id)
+    return Array(Set(fallback)).sorted()
   }
 
   func replyToken(replyAs: String?, environment: [String: String]) -> String? {
@@ -471,7 +475,7 @@ private struct SlackMessageOffsetStore {
   var channelId: String
 
   func loadLastTimestamp() throws -> String? {
-    let url = offsetURL()
+    let url = try offsetURL()
     guard FileManager.default.fileExists(atPath: url.path) else {
       return nil
     }
@@ -479,16 +483,16 @@ private struct SlackMessageOffsetStore {
   }
 
   func saveLastTimestamp(_ timestamp: String) throws {
-    let url = offsetURL()
+    let url = try offsetURL()
     try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     try encoder.encode(SlackOffsetRecord(lastTimestamp: timestamp)).write(to: url, options: .atomic)
   }
 
-  private func offsetURL() -> URL {
+  private func offsetURL() throws -> URL {
     let relative = source.polling.offsetPath ?? "slack/\(source.id)-\(safeSlackStorageComponent(channelId))-offset.json"
-    return eventRoot.appendingPathComponent(relative)
+    return try safeSlackEventRootRelativeURL(eventRoot: eventRoot, relativePath: relative)
   }
 }
 
@@ -568,6 +572,37 @@ private func safeSlackStorageComponent(_ value: String) -> String {
   }
   let sanitized = String(scalars).trimmingCharacters(in: CharacterSet(charactersIn: "._-"))
   return sanitized.isEmpty ? "unknown" : sanitized
+}
+
+private func safeSlackEventRootRelativeURL(eventRoot: URL, relativePath: String) throws -> URL {
+  guard let normalizedPath = normalizedSlackEventRootRelativePath(relativePath) else {
+    throw CLIUsageError("slack-gateway offsetPath must be event-root-relative: \(relativePath)")
+  }
+  let root = eventRoot.standardizedFileURL
+  let url = root.appendingPathComponent(normalizedPath).standardizedFileURL
+  guard url.path == root.path || url.path.hasPrefix(root.path + "/") else {
+    throw CLIUsageError("slack-gateway offsetPath escapes event root: \(relativePath)")
+  }
+  return url
+}
+
+private func normalizedSlackEventRootRelativePath(_ rawPath: String) -> String? {
+  guard !rawPath.isEmpty,
+    !rawPath.hasPrefix("/"),
+    rawPath.range(of: #"^[A-Za-z]:[\\/]"#, options: .regularExpression) == nil
+  else {
+    return nil
+  }
+  let segments = rawPath.replacingOccurrences(of: "\\", with: "/")
+    .split(separator: "/", omittingEmptySubsequences: false)
+  guard !segments.contains(where: { $0 == ".." }) else {
+    return nil
+  }
+  let normalized = segments
+    .filter { !$0.isEmpty && $0 != "." }
+    .map(String.init)
+    .joined(separator: "/")
+  return normalized.isEmpty ? nil : normalized
 }
 
 private func compactSlackObject(_ fields: [String: JSONValue?]) -> JSONObject {

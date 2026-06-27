@@ -20,6 +20,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   private let onRefresh: () -> Void
   private let onSelectProfile: (String) -> Void
   private let onAddDirectory: () -> Void
+  private let onAddProject: () -> Void
   private let onRemoveDirectory: (String) -> Void
   private let onSetEnabled: (String, Bool) -> Void
   private let onSetActive: (String, Bool) -> Void
@@ -35,6 +36,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     onRefresh: @escaping () -> Void,
     onSelectProfile: @escaping (String) -> Void,
     onAddDirectory: @escaping () -> Void,
+    onAddProject: @escaping () -> Void,
     onRemoveDirectory: @escaping (String) -> Void,
     onSetEnabled: @escaping (String, Bool) -> Void,
     onSetActive: @escaping (String, Bool) -> Void
@@ -42,6 +44,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     self.onRefresh = onRefresh
     self.onSelectProfile = onSelectProfile
     self.onAddDirectory = onAddDirectory
+    self.onAddProject = onAddProject
     self.onRemoveDirectory = onRemoveDirectory
     self.onSetEnabled = onSetEnabled
     self.onSetActive = onSetActive
@@ -75,22 +78,25 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     updateProfileControls()
     enabledTable.reloadData()
     disabledTable.reloadData()
-    let startWithAppCount = enabledCandidates.count
-    let runningCount = candidates.filter { state.preference(for: $0.id).active }.count
+    let availableCount = enabledCandidates.count
+    let runningCount = candidates.filter { candidate in
+      let preference = state.preference(for: candidate.id)
+      return preference.available && preference.active
+    }.count
     statusLabel.stringValue = [
       "Profile: \(profileName.rawValue)",
       "\(runningCount) running now",
-      "\(startWithAppCount) start with RielaApp",
-      "\(disabledCandidates.count) available"
+      "\(availableCount) enabled",
+      "\(disabledCandidates.count) disabled"
     ].joined(separator: " | ")
   }
 
   private var enabledCandidates: [RielaAppDaemonWorkflowCandidate] {
-    candidates.filter { state.preference(for: $0.id).enabledAtLaunch }
+    candidates.filter { state.preference(for: $0.id).available }
   }
 
   private var disabledCandidates: [RielaAppDaemonWorkflowCandidate] {
-    candidates.filter { !state.preference(for: $0.id).enabledAtLaunch }
+    candidates.filter { !state.preference(for: $0.id).available }
   }
 
   private func buildContent(in window: NSWindow) {
@@ -106,12 +112,13 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     profileField.widthAnchor.constraint(equalToConstant: 150).isActive = true
     let useProfileButton = NSButton(title: "Use Profile", target: self, action: #selector(useTypedProfile))
     let addButton = NSButton(title: "Add Workflow...", target: self, action: #selector(addDirectory))
-    let removeButton = NSButton(title: "Remove Workflow", target: self, action: #selector(removeSelectedDirectory))
+    let addProjectButton = NSButton(title: "Add Project...", target: self, action: #selector(addProject))
+    let removeButton = NSButton(title: "Remove Selected", target: self, action: #selector(removeSelectedDirectory))
     let refreshButton = NSButton(title: "Refresh", target: self, action: #selector(refresh))
     let startButton = NSButton(title: "Start Now", target: self, action: #selector(startSelectedNow))
     let stopButton = NSButton(title: "Stop Now", target: self, action: #selector(stopSelectedNow))
-    let enableButton = NSButton(title: "Start with App", target: self, action: #selector(enableSelected))
-    let disableButton = NSButton(title: "Do Not Start with App", target: self, action: #selector(disableSelected))
+    let enableButton = NSButton(title: "Enable", target: self, action: #selector(enableSelected))
+    let disableButton = NSButton(title: "Disable", target: self, action: #selector(disableSelected))
     statusLabel.lineBreakMode = .byTruncatingTail
     let profileRow = NSStackView(views: [
       profileLabel,
@@ -124,6 +131,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     profileRow.spacing = 10
     let actionRow = NSStackView(views: [
       addButton,
+      addProjectButton,
       removeButton,
       refreshButton,
       startButton,
@@ -142,8 +150,8 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     toolbar.spacing = 8
     toolbar.translatesAutoresizingMaskIntoConstraints = false
 
-    let enabledBox = box(title: "Starts with RielaApp", table: enabledTable)
-    let disabledBox = box(title: "Available Workflows", table: disabledTable)
+    let enabledBox = box(title: "Enabled Workflows", table: enabledTable)
+    let disabledBox = box(title: "Disabled Workflows", table: disabledTable)
     let split = NSStackView(views: [enabledBox, disabledBox])
     split.orientation = .horizontal
     split.distribution = .fillEqually
@@ -278,6 +286,10 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     onAddDirectory()
   }
 
+  @objc private func addProject() {
+    onAddProject()
+  }
+
   @objc private func removeSelectedDirectory() {
     guard let candidate = selectedCandidate(in: enabledTable) ?? selectedCandidate(in: disabledTable) else {
       return
@@ -300,7 +312,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   }
 
   @objc private func startSelectedNow() {
-    guard let candidate = selectedCandidate(in: enabledTable) ?? selectedCandidate(in: disabledTable) else {
+    guard let candidate = selectedCandidate(in: enabledTable) else {
       return
     }
     onSetActive(candidate.id, true)

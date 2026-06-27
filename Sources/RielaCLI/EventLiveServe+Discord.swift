@@ -255,13 +255,15 @@ struct DiscordGatewaySource: Decodable, Equatable, Sendable {
   }
 
   func channelIds(environment: [String: String]) -> [String] {
-    let overrides = environment["RIELA_DISCORD_CHANNEL_ID"]
+    let configured = channels.map { $0.id.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    if !configured.isEmpty {
+      return configured
+    }
+    let fallback = environment["RIELA_DISCORD_CHANNEL_ID"]
       .map { [$0.trimmingCharacters(in: .whitespacesAndNewlines)] }?
       .filter { !$0.isEmpty } ?? []
-    if !overrides.isEmpty {
-      return Array(Set(overrides)).sorted()
-    }
-    return channels.map(\.id)
+    return Array(Set(fallback)).sorted()
   }
 
   func replyToken(replyAs: String?, environment: [String: String]) -> String? {

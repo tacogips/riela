@@ -14,11 +14,17 @@ public struct RielaAppDaemonEventSourceSummary: Equatable, Sendable {
   }
 }
 
+public enum RielaAppDaemonWorkflowSourceScope: String, Equatable, Sendable {
+  case profile
+  case external
+}
+
 public struct RielaAppDaemonWorkflowCandidate: Identifiable, Equatable, Sendable {
   public var id: String
   public var workflowId: String
   public var displayName: String
   public var sourceDescription: String
+  public var sourceScope: RielaAppDaemonWorkflowSourceScope
   public var workflowDirectory: String
   public var packageDirectory: String?
   public var workingDirectory: String
@@ -30,6 +36,7 @@ public struct RielaAppDaemonWorkflowCandidate: Identifiable, Equatable, Sendable
     workflowId: String,
     displayName: String,
     sourceDescription: String,
+    sourceScope: RielaAppDaemonWorkflowSourceScope = .external,
     workflowDirectory: String,
     packageDirectory: String? = nil,
     workingDirectory: String,
@@ -40,6 +47,7 @@ public struct RielaAppDaemonWorkflowCandidate: Identifiable, Equatable, Sendable
     self.workflowId = workflowId
     self.displayName = displayName
     self.sourceDescription = sourceDescription
+    self.sourceScope = sourceScope
     self.workflowDirectory = workflowDirectory
     self.packageDirectory = packageDirectory
     self.workingDirectory = workingDirectory
@@ -50,6 +58,14 @@ public struct RielaAppDaemonWorkflowCandidate: Identifiable, Equatable, Sendable
   public var eventSourceSummary: String {
     let summary = eventSources.map { "\($0.id):\($0.kind)" }.joined(separator: ", ")
     return summary.isEmpty ? "None" : summary
+  }
+
+  public var sourceDirectory: String {
+    packageDirectory ?? workflowDirectory
+  }
+
+  public var isRielaAppProfileScoped: Bool {
+    sourceScope == .profile
   }
 
   public var serveSelection: WorkflowServeSelection {
@@ -83,6 +99,10 @@ public struct RielaAppDaemonWorkflowPreference: Codable, Equatable, Sendable {
     self.init(identity: identity, available: enabledAtLaunch, active: active)
   }
 
+  public static func imported(identity: String, startsImmediately: Bool) -> RielaAppDaemonWorkflowPreference {
+    RielaAppDaemonWorkflowPreference(identity: identity, available: true, active: startsImmediately)
+  }
+
   public var enabledAtLaunch: Bool {
     get { available }
     set { available = newValue }
@@ -112,12 +132,16 @@ public struct RielaAppProfileName: Codable, Equatable, Hashable, Sendable, Custo
   public var rawValue: String
 
   public init(_ rawValue: String) {
-    let sanitized = Self.sanitized(rawValue)
-    self.rawValue = sanitized.isEmpty ? Self.defaultRawValue : sanitized
+    self.rawValue = Self.sanitizedRawValue(rawValue)
   }
 
   public var description: String {
     rawValue
+  }
+
+  public static func sanitizedRawValue(_ rawValue: String) -> String {
+    let sanitized = sanitized(rawValue)
+    return sanitized.isEmpty ? defaultRawValue : sanitized
   }
 
   private static func sanitized(_ rawValue: String) -> String {
@@ -167,6 +191,7 @@ public struct RielaAppProfileStore: Sendable {
   }
 
   public func saveActiveProfileName(_ profileName: RielaAppProfileName) throws {
+    try createProfileDirectories(profileName)
     try FileManager.default.createDirectory(
       at: activeProfileURL.deletingLastPathComponent(),
       withIntermediateDirectories: true
@@ -176,6 +201,25 @@ public struct RielaAppProfileStore: Sendable {
     try encoder.encode(RielaAppProfileState(activeProfile: profileName.rawValue)).write(
       to: activeProfileURL,
       options: .atomic
+    )
+  }
+
+  public func prepareInitialProfile(_ profileName: RielaAppProfileName, persistsSelection: Bool) throws {
+    if persistsSelection {
+      try saveActiveProfileName(profileName)
+    } else {
+      try createProfileDirectories(profileName)
+    }
+  }
+
+  public func createProfileDirectories(_ profileName: RielaAppProfileName) throws {
+    try FileManager.default.createDirectory(
+      at: Self.workflowRootURL(appRootURL: appRootURL, profileName: profileName),
+      withIntermediateDirectories: true
+    )
+    try FileManager.default.createDirectory(
+      at: Self.packageRootURL(appRootURL: appRootURL, profileName: profileName),
+      withIntermediateDirectories: true
     )
   }
 
@@ -487,7 +531,8 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
     let directory = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
     return candidate(
       workflowDirectory: directory,
-      sourceDescription: "RielaApp workflow",
+      sourceDescription: "profile workflow",
+      sourceScope: .profile,
       identityPrefix: "app-workflow",
       requiresLiveEventSource: false
     )
@@ -497,7 +542,8 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
     let directory = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
     return discoverPackageWorkflows(
       root: directory.deletingLastPathComponent(),
-      sourceDescription: "RielaApp package",
+      sourceDescription: "profile package",
+      sourceScope: .profile,
       identityPrefix: "app-package"
     ).first { $0.packageDirectory == directory.path }
   }
@@ -518,7 +564,8 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
   private func discoverAppWorkflowDirectories(root: URL) -> [RielaAppDaemonWorkflowCandidate] {
     discoverWorkflowDirectories(
       root: root,
-      sourceDescription: "RielaApp workflow",
+      sourceDescription: "profile workflow",
+      sourceScope: .profile,
       identityPrefix: "app-workflow"
     )
   }
@@ -535,6 +582,7 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
   private func discoverWorkflowDirectories(
     root: URL,
     sourceDescription: String,
+    sourceScope: RielaAppDaemonWorkflowSourceScope = .external,
     identityPrefix: String
   ) -> [RielaAppDaemonWorkflowCandidate] {
     let directories = directoryChildren(root)
@@ -542,6 +590,7 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
       candidate(
         workflowDirectory: directory,
         sourceDescription: sourceDescription,
+        sourceScope: sourceScope,
         identityPrefix: identityPrefix,
         requiresLiveEventSource: false
       )
@@ -560,7 +609,8 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
   private func discoverAppPackageWorkflows(root: URL) -> [RielaAppDaemonWorkflowCandidate] {
     discoverPackageWorkflows(
       root: root,
-      sourceDescription: "RielaApp package",
+      sourceDescription: "profile package",
+      sourceScope: .profile,
       identityPrefix: "app-package"
     )
   }
@@ -577,6 +627,7 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
   private func discoverPackageWorkflows(
     root: URL,
     sourceDescription: String,
+    sourceScope: RielaAppDaemonWorkflowSourceScope = .external,
     identityPrefix: String
   ) -> [RielaAppDaemonWorkflowCandidate] {
     return directoryChildren(root).compactMap { packageDirectory in
@@ -607,6 +658,7 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
         packageDirectory: packageDirectory,
         packageName: manifest.name,
         sourceDescription: sourceDescription,
+        sourceScope: sourceScope,
         identityPrefix: identityPrefix,
         requiresLiveEventSource: false
       )
@@ -618,6 +670,7 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
     packageDirectory: URL? = nil,
     packageName: String? = nil,
     sourceDescription: String,
+    sourceScope: RielaAppDaemonWorkflowSourceScope = .external,
     identityPrefix: String,
     requiresLiveEventSource: Bool,
     usesPathIdentity: Bool = false
@@ -649,6 +702,7 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
       workflowId: workflow.workflowId,
       displayName: workflow.workflowId,
       sourceDescription: sourceDescription,
+      sourceScope: sourceScope,
       workflowDirectory: workflowDirectory.path,
       packageDirectory: packageDirectory?.path,
       workingDirectory: workflowDirectory.deletingLastPathComponent().path,

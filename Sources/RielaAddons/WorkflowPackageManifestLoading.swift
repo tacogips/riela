@@ -23,16 +23,32 @@ public struct FileWorkflowPackageManifestLoader: WorkflowPackageManifestLoading 
   public func validate(_ manifest: WorkflowPackageManifest, packageRoot: URL) async -> [WorkflowPackageValidationIssue] {
     WorkflowPackageManifestValidator.validatePackageSource(manifest, packageRoot: packageRoot)
   }
+
+  public func validate(
+    _ manifest: WorkflowPackageManifest,
+    packageRoot: URL,
+    verifiesChecksum: Bool
+  ) async -> [WorkflowPackageValidationIssue] {
+    WorkflowPackageManifestValidator.validatePackageSource(
+      manifest,
+      packageRoot: packageRoot,
+      verifiesChecksum: verifiesChecksum
+    )
+  }
 }
 
 public extension WorkflowPackageManifestValidator {
   static func validatePackageSource(
     _ manifest: WorkflowPackageManifest,
-    packageRoot: URL
+    packageRoot: URL,
+    verifiesChecksum: Bool = false
   ) -> [WorkflowPackageValidationIssue] {
     var issues = validate(manifest)
     issues.append(contentsOf: validateWorkflowBundle(manifest, packageRoot: packageRoot))
     issues.append(contentsOf: validateLoopPromotionArtifacts(manifest.loop, packageRoot: packageRoot))
+    if verifiesChecksum, let issue = WorkflowPackageChecksum.validate(manifest: manifest, packageRoot: packageRoot) {
+      issues.append(issue)
+    }
     return issues
   }
 }

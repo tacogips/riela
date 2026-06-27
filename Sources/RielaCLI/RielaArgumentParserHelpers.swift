@@ -1,8 +1,12 @@
 import Foundation
 import RielaMemory
 
-func parseOutputOnly(_ tokens: [String], allowTableOutput: Bool) throws -> WorkflowOutputFormat {
-  var output = WorkflowOutputFormat.jsonl
+func parseOutputOnly(
+  _ tokens: [String],
+  allowTableOutput: Bool,
+  defaultOutput: WorkflowOutputFormat = .jsonl
+) throws -> WorkflowOutputFormat {
+  var output = defaultOutput
   var index = 0
   while index < tokens.count {
     let token = tokens[index]

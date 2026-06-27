@@ -40,13 +40,13 @@ public struct WorkflowPackageCommandRunner: Sendable {
       case .registry:
         throw CLIUsageError("unreachable package registry command")
       case .install, .checkout:
-        let destination = try await installPackage(target: options.target, parsed: parsed)
+        let installation = try await installPackage(target: options.target, parsed: parsed)
         let result = WorkflowPackageCommandResult(
           scope: options.scope,
           command: command.kind.rawValue,
           target: options.target,
-          packages: [],
-          destinationDirectory: destination.path,
+          packages: [installation.summary],
+          destinationDirectory: installation.destination.path,
           dryRun: parsed.dryRun,
           message: parsed.dryRun ? "package \(command.kind.rawValue) dry run" : "package \(command.kind.rawValue) completed",
           runSessionId: nil
@@ -86,6 +86,19 @@ public struct WorkflowPackageCommandRunner: Sendable {
         return try renderPackage(result, output: options.output)
       case .run, .tempRun:
         return try await runPackage(command: command, parsed: parsed)
+      case .initialize:
+        let initialized = try await initializePackage(target: options.target, parsed: parsed)
+        let result = WorkflowPackageCommandResult(
+          scope: options.scope,
+          command: command.kind.rawValue,
+          target: options.target,
+          packages: [initialized.summary],
+          destinationDirectory: initialized.manifestURL.path,
+          dryRun: parsed.dryRun,
+          message: parsed.dryRun ? "package init dry run" : "package manifest created",
+          runSessionId: nil
+        )
+        return try renderPackage(result, output: options.output)
       case .validate:
         let validation = try await validatePackage(target: options.target, parsed: parsed)
         let result = WorkflowPackageCommandResult(
@@ -93,7 +106,7 @@ public struct WorkflowPackageCommandRunner: Sendable {
           command: command.kind.rawValue,
           target: options.target,
           packages: [validation.summary],
-          destinationDirectory: validation.packageDirectory.path,
+          destinationDirectory: validation.source.path,
           dryRun: parsed.dryRun,
           message: validation.summary.valid ? "package validation passed" : "package validation failed",
           runSessionId: nil
@@ -148,7 +161,7 @@ public struct WorkflowPackageCommandRunner: Sendable {
     } catch let error as CLIUsageError {
       return failure(error.message, output: options.output, options: options)
     } catch {
-      return failure("\(error)", output: options.output, options: options)
+      return failure(packageCommandErrorDescription(error), output: options.output, options: options)
     }
   }
 
@@ -179,6 +192,15 @@ public struct WorkflowPackageCommandRunner: Sendable {
     default:
       throw CLIUsageError("package registry supports: add, list")
     }
+  }
+
+  private func packageCommandErrorDescription(_ error: Error) -> String {
+    if let localized = error as? LocalizedError,
+      let description = localized.errorDescription,
+      !description.isEmpty {
+      return description
+    }
+    return "\(error)"
   }
 
   private func runPackage(command: PackageCommand, parsed: ParsedParityOptions) async throws -> CLICommandResult {
@@ -627,55 +649,6 @@ public struct WorkflowPackageCommandRunner: Sendable {
     default:
       return packages.filter { $0.name == target }
     }
-  }
-
-  private func installPackage(target: String?, parsed: ParsedParityOptions) async throws -> URL {
-    let workingDirectory = URL(fileURLWithPath: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath, isDirectory: true)
-    let resolvedSource = try await sourcePackageDirectory(
-      target: target,
-      parsed: parsed,
-      workingDirectory: workingDirectory,
-      allowRegistry: true
-    )
-    defer {
-      if let temporaryRoot = resolvedSource.temporaryRoot {
-        try? FileManager.default.removeItem(at: temporaryRoot)
-      }
-    }
-    let sourceURL = resolvedSource.directory
-    let loader = FileWorkflowPackageManifestLoader()
-    let manifest = try await loader.loadManifest(from: sourceURL.appendingPathComponent(WorkflowPackageArchiveManager.manifestFileName))
-    let issues = await loader.validate(manifest, packageRoot: sourceURL)
-    guard issues.isEmpty else {
-      throw CLIUsageError("package source validation failed: \(issues.map { "\($0.path): \($0.message)" }.joined(separator: "; "))")
-    }
-    let destinationName = try installDestinationPackageName(
-      target: target,
-      parsed: parsed,
-      workingDirectory: workingDirectory,
-      manifestName: manifest.name
-    )
-    let destination = packageRoot(scope: parsed.scope, workingDirectory: workingDirectory).appendingPathComponent(destinationName, isDirectory: true)
-    let skillProjections = try packageSkillProjectionPlans(
-      manifest: manifest,
-      packageRoot: sourceURL,
-      scope: parsed.scope,
-      workingDirectory: workingDirectory
-    )
-    try preflightSkillProjections(skillProjections, overwrite: parsed.overwrite)
-    if parsed.dryRun {
-      return destination
-    }
-    if FileManager.default.fileExists(atPath: destination.path) {
-      guard parsed.overwrite else {
-        throw CLIUsageError("package destination already exists: \(destination.path); pass --overwrite to replace it")
-      }
-      try FileManager.default.removeItem(at: destination)
-    }
-    try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try FileManager.default.copyItem(at: sourceURL, to: destination)
-    try installSkillProjections(skillProjections, installedPackageRoot: destination, overwrite: parsed.overwrite)
-    return destination
   }
 
   func registryPackageSource(

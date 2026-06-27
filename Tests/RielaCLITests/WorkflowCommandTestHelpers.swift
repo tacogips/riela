@@ -1,5 +1,6 @@
 import Foundation
 import RielaAdapters
+import RielaAddons
 import RielaCore
 import RielaMemory
 import XCTest
@@ -49,6 +50,10 @@ extension WorkflowCommandTests {
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
     return try decoder.decode(T.self, from: Data(stdout.utf8))
+  }
+
+  func packageChecksum(packageRoot: URL) throws -> String {
+    try WorkflowPackageChecksum.md5(packageRoot: packageRoot)
   }
 
   func rawDailySummaryVariables(

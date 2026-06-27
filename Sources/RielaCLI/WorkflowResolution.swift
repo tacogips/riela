@@ -310,7 +310,7 @@ public enum WorkflowResolutionError: Error, Equatable, Sendable {
   case invalidJSONReference(String)
 }
 
-private func workflowResolutionErrorDescription(_ error: Error) -> String {
+func workflowResolutionErrorDescription(_ error: Error) -> String {
   switch error {
   case let error as WorkflowResolutionError:
     switch error {
@@ -409,8 +409,10 @@ public struct JSONReferenceLoader: Sendable {
 }
 
 func absoluteURL(_ rawPath: String, relativeTo directory: URL) -> URL {
-  let url = URL(fileURLWithPath: rawPath)
-  return url.path.hasPrefix("/") ? url.standardizedFileURL : directory.appendingPathComponent(rawPath).standardizedFileURL
+  if rawPath.hasPrefix("/") {
+    return URL(fileURLWithPath: rawPath).standardizedFileURL
+  }
+  return directory.standardizedFileURL.appendingPathComponent(rawPath).standardizedFileURL
 }
 
 public extension JSONValue {

@@ -4,18 +4,20 @@ import Foundation
 import RielaAppSupport
 import RielaObservability
 import RielaServer
+import UniformTypeIdentifiers
 
 @main
 @MainActor
 final class RielaApp: NSObject, NSApplicationDelegate {
   private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
   private let controller = WorkflowServingController()
+  private let launchOptions = RielaAppLaunchOptions.current()
   private var daemonDiscovery = RielaAppDaemonWorkflowDiscovery()
   private let daemonRuntime = RielaAppDaemonWorkflowRuntime()
   private let telemetry = RielaTelemetryFactory.make(configuration: .fromEnvironment(
     surface: .app
   ))
-  private let profileStore = RielaAppProfileStore()
+  private var profileStore = RielaAppProfileStore()
   private var daemonStore = RielaAppDaemonWorkflowStore(profileName: .default)
   private let launchAtLogin = RielaLaunchAtLoginController()
   private let daemonStatusRefreshInterval: TimeInterval = 2
@@ -26,6 +28,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   private var daemonProfileName = RielaAppProfileName.default
   private var daemonState = RielaAppDaemonWorkflowState()
   private var daemonCandidates: [RielaAppDaemonWorkflowCandidate] = []
+  private var appHomeDirectory = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
   private var daemonStatusRefreshTimer: Timer?
   private var daemonWindowController: DaemonWorkflowWindowController?
   private var viewerWindowController: WorkflowViewerWindowController?
@@ -39,9 +42,18 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   }
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    appHomeDirectory = configuredHomeDirectory()
+    profileStore = RielaAppProfileStore(
+      appRootURL: launchOptions.appRoot ?? RielaAppProfileStore.defaultAppRootURL(homeDirectory: appHomeDirectory)
+    )
     daemonProfileName = initialDaemonProfileName()
-    daemonDiscovery = RielaAppDaemonWorkflowDiscovery(projectRoot: commandLineProjectRoot())
-    daemonStore = RielaAppDaemonWorkflowStore(profileName: daemonProfileName)
+    do {
+      try prepareInitialDaemonProfile()
+    } catch {
+      status = "Failed to prepare profile: \(error.localizedDescription)"
+    }
+    daemonDiscovery = RielaAppDaemonWorkflowDiscovery(homeDirectory: appHomeDirectory, projectRoot: launchOptions.projectRoot)
+    daemonStore = makeDaemonStore(profileName: daemonProfileName)
     daemonState = daemonStore.load()
     daemonCandidates = discoverDaemonCandidates()
     Task {
@@ -58,7 +70,9 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     configureStatusItem()
     rebuildMenu()
     startDaemonStatusRefreshTimer()
+    importDaemonSourcesIfRequested()
     openInitialViewerIfRequested()
+    openInitialWorkflowsIfRequested()
     if shouldAutostartDaemonWorkflows() {
       autostartDaemonWorkflows()
     } else {
@@ -88,13 +102,14 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   private func rebuildMenu() {
     let menu = NSMenu()
     menu.addItem(menuItem("Workflows...", action: #selector(openDaemonWorkflows)))
+    menu.addItem(menuItem("Open Profile Folder", action: #selector(openProfileFolder)))
     menu.addItem(menuItem(
-      "Start Enabled Workflows",
+      "Auto-Start Enabled Workflows",
       action: #selector(startProfileWorkflows),
       enabled: hasStartableProfileWorkflows
     ))
     menu.addItem(menuItem(
-      "Stop Workflows in Profile",
+      "Stop and Disable Auto-Start",
       action: #selector(stopProfileWorkflows),
       enabled: hasRunningProfileWorkflows
     ))
@@ -150,6 +165,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   }
 
   @objc private func openDaemonWorkflows() {
+    logDaemon("opening workflows window for profile=\(daemonProfileName.rawValue)")
     if daemonWindowController == nil {
       daemonWindowController = DaemonWorkflowWindowController(
         onRefresh: { [weak self] in
@@ -163,6 +179,12 @@ final class RielaApp: NSObject, NSApplicationDelegate {
         },
         onAddProject: { [weak self] in
           self?.addDaemonProjectDirectory()
+        },
+        onOpenProfileFolder: { [weak self] in
+          self?.openProfileFolder()
+        },
+        onRevealSelectedSource: { [weak self] identity in
+          self?.revealDaemonWorkflowSource(identity: identity)
         },
         onRemoveDirectory: { [weak self] identity in
           self?.removeDaemonWorkflowDirectory(identity: identity)
@@ -178,6 +200,100 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     refreshDaemonWorkflowWindow()
     daemonWindowController?.showWindow(nil)
     NSApp.activate(ignoringOtherApps: true)
+  }
+
+  private func importDaemonSourcesIfRequested() {
+    let sources = launchOptions.importSources
+    guard !sources.isEmpty else {
+      return
+    }
+    importDaemonWorkflowOrPackageSources(
+      sources,
+      startsImmediately: launchOptions.autostartsDaemonWorkflows,
+      startsImportedCandidates: false
+    )
+  }
+
+  private func importDaemonWorkflowOrPackageSources(
+    _ sources: [URL],
+    startsImmediately: Bool,
+    startsImportedCandidates: Bool = true
+  ) {
+    let previousState = daemonState
+    var importedNames: [String] = []
+    var updatedNames: [String] = []
+    var autostartOffNames: [String] = []
+    var failures: [String] = []
+    var importedCandidates: [RielaAppDaemonWorkflowCandidate] = []
+    for source in sources {
+      do {
+        let importResult = try installDaemonWorkflowOrPackageSource(source)
+        let candidate = importResult.candidate
+        importedCandidates.append(candidate)
+        if importResult.replacedExisting {
+          updatedNames.append(candidate.displayName)
+        } else {
+          importedNames.append(candidate.displayName)
+        }
+        logDaemon("imported source=\(source.path) candidate=\(candidate.id) profile=\(daemonProfileName.rawValue)")
+        let preference = RielaAppImportPreferencePolicy.preference(
+          identity: candidate.id,
+          existingPreference: daemonState.preferences[candidate.id],
+          replacedExisting: importResult.replacedExisting,
+          startsImmediately: startsImmediately
+        )
+        daemonState.preferences[candidate.id] = preference
+        if !preference.active {
+          autostartOffNames.append(candidate.displayName)
+        }
+      } catch {
+        failures.append("\(source.lastPathComponent): \(error.localizedDescription)")
+        logDaemon("failed to import source=\(source.path) error=\(error.localizedDescription)")
+      }
+    }
+    if !importedCandidates.isEmpty, !saveDaemonState() {
+      daemonState = previousState
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    let summary = RielaAppImportSummary(
+      importedNames: importedNames,
+      updatedNames: updatedNames,
+      failures: failures,
+      profileName: daemonProfileName,
+      startsImmediately: startsImmediately,
+      autostartOffNames: autostartOffNames
+    )
+    if let statusMessage = summary.statusMessage {
+      status = statusMessage
+    }
+    refreshDaemonWorkflowWindow()
+    if let selectedCandidate = importedCandidates.last {
+      daemonWindowController?.selectCandidate(identity: selectedCandidate.id)
+    }
+    guard startsImmediately, startsImportedCandidates, !importedCandidates.isEmpty else {
+      return
+    }
+    let candidatesToStart = importedCandidates
+      .filter { candidate in
+        RielaAppImportPreferencePolicy.shouldStartAfterImport(
+          preference: daemonState.preference(for: candidate.id),
+          startsImportedCandidates: startsImportedCandidates
+        )
+      }
+    let selectedIdentity = importedCandidates.last?.id
+    guard !candidatesToStart.isEmpty else {
+      return
+    }
+    Task { @MainActor in
+      for candidate in candidatesToStart {
+        await daemonRuntime.start(candidate)
+      }
+      refreshDaemonWorkflowWindow()
+      if let selectedIdentity {
+        daemonWindowController?.selectCandidate(identity: selectedIdentity)
+      }
+    }
   }
 
   private func startDaemonStatusRefreshTimer() {
@@ -255,22 +371,51 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   }
 
   private func openInitialViewerIfRequested() {
-    let arguments = Array(CommandLine.arguments.dropFirst())
-    guard let optionIndex = arguments.firstIndex(of: "--open-viewer"),
-      arguments.indices.contains(optionIndex + 1)
-    else {
+    guard let initialViewer = launchOptions.initialViewer else {
       return
     }
-    let path = arguments[optionIndex + 1]
+    let path = initialViewer.workflowPath
     selectedWorkflow = .directDirectory(path, identifier: URL(fileURLWithPath: path, isDirectory: true).lastPathComponent)
     selectedWorkingDirectory = URL(fileURLWithPath: path, isDirectory: true).deletingLastPathComponent().path
-    if let sessionStoreOptionIndex = arguments.firstIndex(of: "--session-store-root"),
-      arguments.indices.contains(sessionStoreOptionIndex + 1) {
-      selectedSessionStoreRoot = arguments[sessionStoreOptionIndex + 1]
-    }
+    selectedSessionStoreRoot = initialViewer.sessionStoreRoot
     status = "Selected"
     rebuildMenu()
-    openViewer()
+    DispatchQueue.main.async { [weak self] in
+      self?.openViewer()
+    }
+  }
+
+  private func openInitialWorkflowsIfRequested() {
+    guard launchOptions.opensWorkflows else {
+      return
+    }
+    DispatchQueue.main.async { [weak self] in
+      self?.openDaemonWorkflows()
+    }
+  }
+
+  @objc private func openProfileFolder() {
+    let profileURL = daemonProfileRoot
+    do {
+      try profileStore.createProfileDirectories(daemonProfileName)
+      NSWorkspace.shared.open(profileURL)
+      status = "Opened profile folder: \(daemonProfileName.rawValue)"
+    } catch {
+      status = "Failed to open profile folder: \(error.localizedDescription)"
+    }
+    refreshDaemonWorkflowWindow()
+  }
+
+  private func revealDaemonWorkflowSource(identity: String) {
+    guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
+      status = "Selected workflow is no longer available"
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    let sourceURL = URL(fileURLWithPath: candidate.packageDirectory ?? candidate.workflowDirectory, isDirectory: true)
+    NSWorkspace.shared.activateFileViewerSelecting([sourceURL])
+    status = "Revealed \(candidate.displayName)"
+    refreshDaemonWorkflowWindow()
   }
 
   @objc private func toggleLaunchAtLogin() {
@@ -284,7 +429,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   }
 
   private func shouldAutostartDaemonWorkflows() -> Bool {
-    !CommandLine.arguments.dropFirst().contains("--no-autostart-daemons")
+    launchOptions.autostartsDaemonWorkflows
   }
 
   private func autostartDaemonWorkflows() {
@@ -311,34 +456,44 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   }
 
   @objc private func startProfileWorkflows() {
+    let previousState = daemonState
     for candidate in daemonCandidates where daemonState.preference(for: candidate.id).available {
       var preference = daemonState.preference(for: candidate.id)
       preference.active = true
       daemonState.preferences[candidate.id] = preference
     }
-    saveDaemonState()
+    guard saveDaemonState() else {
+      daemonState = previousState
+      refreshDaemonWorkflowWindow()
+      return
+    }
     refreshDaemonWorkflowWindow()
     Task { @MainActor in
       await startEnabledDaemonWorkflows()
-      status = "Started profile workflows"
+      status = "Auto-start enabled and started profile workflows"
       refreshDaemonWorkflowWindow()
     }
   }
 
   @objc private func stopProfileWorkflows() {
+    let previousState = daemonState
     let candidates = daemonCandidates
     for candidate in candidates {
       var preference = daemonState.preference(for: candidate.id)
       preference.active = false
       daemonState.preferences[candidate.id] = preference
     }
-    saveDaemonState()
+    guard saveDaemonState() else {
+      daemonState = previousState
+      refreshDaemonWorkflowWindow()
+      return
+    }
     refreshDaemonWorkflowWindow()
     Task { @MainActor in
       for candidate in candidates {
         await daemonRuntime.stop(identity: candidate.id)
       }
-      status = "Stopped profile workflows"
+      status = "Auto-start disabled and stopped profile workflows"
       refreshDaemonWorkflowWindow()
     }
   }
@@ -352,7 +507,8 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       state: daemonState,
       snapshots: Dictionary(uniqueKeysWithValues: daemonCandidates.map { candidate in
         (candidate.id, daemonRuntime.snapshot(for: candidate.id))
-      })
+      }),
+      statusMessage: status
     )
     rebuildMenu()
   }
@@ -360,6 +516,14 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   private func switchDaemonProfile(to rawProfileName: String) {
     let profileName = RielaAppProfileName(rawProfileName)
     guard profileName != daemonProfileName else {
+      status = daemonProfileStatus(rawProfileName: rawProfileName, profileName: profileName)
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    do {
+      try profileStore.saveActiveProfileName(profileName)
+    } catch {
+      status = "Failed to save profile: \(error.localizedDescription)"
       refreshDaemonWorkflowWindow()
       return
     }
@@ -369,18 +533,25 @@ final class RielaApp: NSObject, NSApplicationDelegate {
         await daemonRuntime.stop(identity: candidate.id)
       }
       daemonProfileName = profileName
-      daemonStore = RielaAppDaemonWorkflowStore(profileName: profileName)
+      daemonStore = makeDaemonStore(profileName: profileName)
       daemonState = daemonStore.load()
-      do {
-        try profileStore.saveActiveProfileName(profileName)
-        status = "Profile: \(profileName.rawValue)"
-      } catch {
-        status = "Failed to save profile: \(error.localizedDescription)"
+      status = daemonProfileStatus(rawProfileName: rawProfileName, profileName: profileName)
+      refreshDaemonWorkflowWindow()
+      if shouldAutostartDaemonWorkflows() {
+        await startEnabledDaemonWorkflows()
+      } else {
+        logDaemon("profile switch autostart disabled by command-line option")
       }
       refreshDaemonWorkflowWindow()
-      await startEnabledDaemonWorkflows()
-      refreshDaemonWorkflowWindow()
     }
+  }
+
+  private func daemonProfileStatus(rawProfileName: String, profileName: RielaAppProfileName) -> String {
+    RielaAppProfileSwitchSummary(
+      rawProfileName: rawProfileName,
+      profileName: profileName,
+      autostartsDaemonWorkflows: launchOptions.autostartsDaemonWorkflows
+    ).statusMessage
   }
 
   private func availableDaemonProfileNames() -> [RielaAppProfileName] {
@@ -390,123 +561,160 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   private func addDaemonWorkflowDirectory() {
     let panel = NSOpenPanel()
     panel.title = "Add Workflow or Package to RielaApp"
-    panel.message = "Select a workflow folder, package folder, .rielapkg, or .zip package."
+    panel.message = "Select one or more workflow folders, package folders, .rielapkg files, or .zip packages."
+    panel.prompt = "Add"
     panel.canChooseFiles = true
     panel.canChooseDirectories = true
-    panel.allowsMultipleSelection = false
-    guard panel.runModal() == .OK, let url = panel.url else {
+    panel.allowsMultipleSelection = true
+    panel.allowedContentTypes = packageImportContentTypes()
+    guard panel.runModal() == .OK, !panel.urls.isEmpty else {
       return
     }
-    let candidate: RielaAppDaemonWorkflowCandidate
-    do {
-      candidate = try installDaemonWorkflowOrPackageSource(url)
-    } catch {
-      status = "Failed to add workflow: \(error.localizedDescription)"
-      rebuildMenu()
-      return
-    }
-    startImportedCandidate(candidate)
+    importDaemonWorkflowOrPackageSources(panel.urls, startsImmediately: true)
   }
 
-  private func installDaemonWorkflowOrPackageSource(_ url: URL) throws -> RielaAppDaemonWorkflowCandidate {
+  private func installDaemonWorkflowOrPackageSource(_ url: URL) throws -> RielaAppDaemonImportResult {
     let url = url.standardizedFileURL
-    if isDirectory(url), FileManager.default.fileExists(atPath: url.appendingPathComponent("workflow.json").path) {
-      let installedURL = try daemonWorkflowInstaller.installWorkflowDirectory(url)
-      guard let candidate = daemonDiscovery.discoverAppWorkflowDirectory(installedURL.path) else {
-        throw RielaAppManagedWorkflowInstallError.invalidWorkflowDirectory(installedURL.path)
-      }
-      return candidate
-    }
-    if isPackageSource(url) {
-      let installedURL = try daemonPackageInstaller.installPackageSource(url)
+    switch RielaAppImportSourceClassifier.kind(for: url) {
+    case .packageSource:
+      let installResult = try daemonPackageInstaller.installPackageSourceResult(url)
+      let installedURL = installResult.installedURL
       guard let candidate = daemonDiscovery.discoverAppPackageDirectory(installedURL.path) else {
         throw RielaAppManagedWorkflowInstallError.invalidPackageDirectory(installedURL.path)
       }
-      return candidate
+      return RielaAppDaemonImportResult(candidate: candidate, replacedExisting: installResult.replacedExisting)
+    case .workflowDirectory:
+      let installResult = try daemonWorkflowInstaller.installWorkflowDirectoryResult(url)
+      let installedURL = installResult.installedURL
+      guard let candidate = daemonDiscovery.discoverAppWorkflowDirectory(installedURL.path) else {
+        throw RielaAppManagedWorkflowInstallError.invalidWorkflowDirectory(installedURL.path)
+      }
+      return RielaAppDaemonImportResult(candidate: candidate, replacedExisting: installResult.replacedExisting)
+    case .unsupported:
+      throw RielaAppManagedWorkflowInstallError.unsupportedPackageSource(url.path)
     }
-    throw RielaAppManagedWorkflowInstallError.unsupportedPackageSource(url.path)
-  }
-
-  private func isPackageSource(_ url: URL) -> Bool {
-    if isDirectory(url) {
-      return FileManager.default.fileExists(atPath: url.appendingPathComponent("riela-package.json").path)
-    }
-    let pathExtension = url.pathExtension.lowercased()
-    return pathExtension == "rielapkg" || pathExtension == "zip"
   }
 
   private func isDirectory(_ url: URL) -> Bool {
     (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
   }
 
-  private func startImportedCandidate(_ candidate: RielaAppDaemonWorkflowCandidate) {
-    daemonState.preferences[candidate.id] = RielaAppDaemonWorkflowPreference(
-      identity: candidate.id,
-      available: true,
-      active: true
-    )
-    saveDaemonState()
-    refreshDaemonWorkflowWindow()
-    Task { @MainActor in
-      await daemonRuntime.start(candidate)
-      refreshDaemonWorkflowWindow()
+  private func packageImportContentTypes() -> [UTType] {
+    RielaAppManagedPackageInstaller.supportedPackageArchiveExtensions.compactMap {
+      UTType(filenameExtension: $0)
     }
   }
 
   private func addDaemonProjectDirectory() {
     let panel = NSOpenPanel()
     panel.title = "Add Riela Project to Profile"
-    panel.message = "Select a project folder containing .riela/workflows or .riela/packages."
+    panel.message = "Select one or more project folders containing .riela/workflows or .riela/packages."
     panel.canChooseFiles = false
     panel.canChooseDirectories = true
-    panel.allowsMultipleSelection = false
-    guard panel.runModal() == .OK, let url = panel.url else {
+    panel.allowsMultipleSelection = true
+    guard panel.runModal() == .OK, !panel.urls.isEmpty else {
       return
     }
-    let projectRoot = url.standardizedFileURL
-    guard isRielaWorkflowProject(projectRoot) else {
-      status = "Selected folder has no .riela/workflows or .riela/packages"
-      rebuildMenu()
+    addDaemonProjectDirectories(panel.urls)
+  }
+
+  private func addDaemonProjectDirectories(_ urls: [URL]) {
+    let previousState = daemonState
+    var acceptedProjects: [(root: URL, alreadyAdded: Bool)] = []
+    var failures: [String] = []
+    for url in urls {
+      let projectRoot = url.standardizedFileURL
+      guard isRielaWorkflowProject(projectRoot) else {
+        failures.append("\(projectRoot.lastPathComponent): folder has no .riela/workflows or .riela/packages")
+        continue
+      }
+      let wasAlreadyAdded = daemonState.containsProjectDirectory(projectRoot.path)
+      daemonState.addProjectDirectory(projectRoot.path)
+      acceptedProjects.append((projectRoot, wasAlreadyAdded))
+    }
+    if !acceptedProjects.isEmpty, !saveDaemonState() {
+      daemonState = previousState
+      refreshDaemonWorkflowWindow()
       return
     }
-    daemonState.addProjectDirectory(projectRoot.path)
-    saveDaemonState()
     refreshDaemonWorkflowWindow()
+    let projectResults = acceptedProjects.map { project in
+      RielaAppProjectImportSummary.Project(
+        name: project.root.lastPathComponent,
+        workflowCount: daemonCandidates(in: project.root).count,
+        alreadyAdded: project.alreadyAdded
+      )
+    }
+    status = RielaAppProjectImportSummary(
+      projects: projectResults,
+      failures: failures,
+      profileName: daemonProfileName
+    ).statusMessage ?? status
+    refreshDaemonWorkflowWindow()
+    if let projectRoot = acceptedProjects.last?.root,
+      let candidate = daemonCandidates(in: projectRoot).first {
+      daemonWindowController?.selectCandidate(identity: candidate.id)
+    }
+  }
+
+  private func daemonCandidates(in projectRoot: URL) -> [RielaAppDaemonWorkflowCandidate] {
+    let projectRootPath = projectRoot.standardizedFileURL.path
+    return daemonCandidates.filter { candidate in
+      RielaAppDaemonWorkflowState.path(candidate.workflowDirectory, isContainedIn: projectRootPath)
+    }
   }
 
   private func removeDaemonWorkflowDirectory(identity: String) {
     guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
       return
     }
+    let previousState = daemonState
     let candidateURL = URL(fileURLWithPath: candidate.workflowDirectory, isDirectory: true)
+    let removedDescription: String
+    let canRollbackStateOnlyRemoval: Bool
     if let packageDirectory = candidate.packageDirectory,
       daemonPackageInstaller.containsInstalledPackageDirectory(URL(fileURLWithPath: packageDirectory, isDirectory: true)) {
       do {
         try daemonPackageInstaller.removeInstalledPackageDirectory(URL(fileURLWithPath: packageDirectory, isDirectory: true))
+        removedDescription = "package \(candidate.displayName)"
+        canRollbackStateOnlyRemoval = false
       } catch {
         status = "Failed to remove package: \(error.localizedDescription)"
-        rebuildMenu()
+        refreshDaemonWorkflowWindow()
         return
       }
     } else if daemonWorkflowInstaller.containsInstalledWorkflowDirectory(candidateURL) {
       do {
         try daemonWorkflowInstaller.removeInstalledWorkflowDirectory(candidateURL)
+        removedDescription = "workflow \(candidate.displayName)"
+        canRollbackStateOnlyRemoval = false
       } catch {
         status = "Failed to remove workflow: \(error.localizedDescription)"
-        rebuildMenu()
+        refreshDaemonWorkflowWindow()
         return
       }
     } else if let projectDirectory = daemonState.projectDirectory(containing: candidate.workflowDirectory) {
       daemonState.removeProjectDirectory(projectDirectory)
+      removedDescription = "project \(URL(fileURLWithPath: projectDirectory, isDirectory: true).lastPathComponent)"
+      canRollbackStateOnlyRemoval = true
     } else if daemonState.containsWorkflowDirectory(candidate.workflowDirectory) {
       daemonState.removeWorkflowDirectory(candidate.workflowDirectory)
+      removedDescription = "selected workflow \(candidate.displayName)"
+      canRollbackStateOnlyRemoval = true
     } else {
-      status = "Only RielaApp workflows and profile project workflows can be removed"
-      rebuildMenu()
+      status = "Only RielaApp imports and profile project workflows can be removed"
+      refreshDaemonWorkflowWindow()
       return
     }
     daemonState.preferences.removeValue(forKey: identity)
-    saveDaemonState()
+    status = "Removed \(removedDescription) from profile \(daemonProfileName.rawValue)"
+    guard saveDaemonState() else {
+      if canRollbackStateOnlyRemoval {
+        daemonState = previousState
+      }
+      refreshDaemonWorkflowWindow()
+      return
+    }
     Task { @MainActor in
       await daemonRuntime.stop(identity: identity)
       refreshDaemonWorkflowWindow()
@@ -514,10 +722,18 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   }
 
   private func setDaemonWorkflow(identity: String, available: Bool) {
-    updateDaemonPreference(identity: identity) { preference in
+    let candidateName = daemonCandidates.first(where: { $0.id == identity })?.displayName ?? identity
+    let didSave = updateDaemonPreference(identity: identity) { preference in
       preference.available = available
       preference.active = available
     }
+    guard didSave else {
+      return
+    }
+    status = available
+      ? "Enabled \(candidateName) in profile \(daemonProfileName.rawValue)"
+      : "Disabled \(candidateName) in profile \(daemonProfileName.rawValue)"
+    rebuildMenu()
     if available, let candidate = daemonCandidates.first(where: { $0.id == identity }) {
       Task { @MainActor in
         await daemonRuntime.start(candidate)
@@ -537,8 +753,10 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       refreshDaemonWorkflowWindow()
       return
     }
-    updateDaemonPreference(identity: identity) { preference in
+    guard updateDaemonPreference(identity: identity, mutate: { preference in
       preference.active = active
+    }) else {
+      return
     }
     guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
       refreshDaemonWorkflowWindow()
@@ -547,10 +765,10 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     Task { @MainActor in
       if active {
         await daemonRuntime.start(candidate)
-        status = "Started \(candidate.displayName)"
+        status = "Auto-start enabled and started \(candidate.displayName)"
       } else {
         await daemonRuntime.stop(identity: identity)
-        status = "Stopped \(candidate.displayName)"
+        status = "Auto-start disabled and stopped \(candidate.displayName)"
       }
       refreshDaemonWorkflowWindow()
     }
@@ -559,19 +777,31 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   private func updateDaemonPreference(
     identity: String,
     mutate: (inout RielaAppDaemonWorkflowPreference) -> Void
-  ) {
+  ) -> Bool {
+    let previousPreference = daemonState.preferences[identity]
     var preference = daemonState.preference(for: identity)
     mutate(&preference)
     daemonState.preferences[identity] = preference
-    saveDaemonState()
+    let didSave = saveDaemonState()
+    if !didSave {
+      if let previousPreference {
+        daemonState.preferences[identity] = previousPreference
+      } else {
+        daemonState.preferences.removeValue(forKey: identity)
+      }
+    }
     refreshDaemonWorkflowWindow()
+    return didSave
   }
 
-  private func saveDaemonState() {
+  @discardableResult
+  private func saveDaemonState() -> Bool {
     do {
       try daemonStore.save(daemonState)
+      return true
     } catch {
-      status = "Failed to save startup workflow state: \(error)"
+      status = "Failed to save workflow profile state: \(error.localizedDescription)"
+      return false
     }
   }
 
@@ -584,11 +814,16 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   }
 
   private var daemonAppWorkflowRoot: URL {
-    RielaAppProfileStore.defaultWorkflowRootURL(profileName: daemonProfileName)
+    RielaAppProfileStore.workflowRootURL(appRootURL: profileStore.appRootURL, profileName: daemonProfileName)
   }
 
   private var daemonAppPackageRoot: URL {
-    RielaAppProfileStore.defaultPackageRootURL(profileName: daemonProfileName)
+    RielaAppProfileStore.packageRootURL(appRootURL: profileStore.appRootURL, profileName: daemonProfileName)
+  }
+
+  private var daemonProfileRoot: URL {
+    RielaAppProfileStore.profilesRootURL(appRootURL: profileStore.appRootURL)
+      .appendingPathComponent(daemonProfileName.rawValue, isDirectory: true)
   }
 
   private func discoverDaemonCandidates() -> [RielaAppDaemonWorkflowCandidate] {
@@ -599,7 +834,14 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       additionalWorkflowDirectories: daemonState.workflowDirectories
     )
   }
+}
 
+private struct RielaAppDaemonImportResult {
+  var candidate: RielaAppDaemonWorkflowCandidate
+  var replacedExisting: Bool
+}
+
+private extension RielaApp {
   private func isRielaWorkflowProject(_ projectRoot: URL) -> Bool {
     let workflowRoot = projectRoot.appendingPathComponent(".riela/workflows", isDirectory: true)
     let packageRoot = projectRoot.appendingPathComponent(".riela/packages", isDirectory: true)
@@ -617,36 +859,29 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   }
 
   private func initialDaemonProfileName() -> RielaAppProfileName {
-    commandLineDaemonProfileName() ?? profileStore.loadActiveProfileName()
+    launchOptions.profileName ?? profileStore.loadActiveProfileName()
   }
 
-  private func commandLineDaemonProfileName() -> RielaAppProfileName? {
-    let arguments = Array(CommandLine.arguments.dropFirst())
-    for (index, argument) in arguments.enumerated() {
-      if argument == "--profile", arguments.indices.contains(index + 1) {
-        return RielaAppProfileName(arguments[index + 1])
-      }
-      if argument.hasPrefix("--profile=") {
-        return RielaAppProfileName(String(argument.dropFirst("--profile=".count)))
-      }
-    }
-    return nil
+  private func prepareInitialDaemonProfile() throws {
+    try profileStore.prepareInitialProfile(daemonProfileName, persistsSelection: launchOptions.profileName != nil)
   }
 
-  private func commandLineProjectRoot() -> URL? {
-    let arguments = Array(CommandLine.arguments.dropFirst())
-    for (index, argument) in arguments.enumerated() {
-      if argument == "--project-root", arguments.indices.contains(index + 1) {
-        return URL(fileURLWithPath: arguments[index + 1], isDirectory: true).standardizedFileURL
-      }
-      if argument.hasPrefix("--project-root=") {
-        return URL(
-          fileURLWithPath: String(argument.dropFirst("--project-root=".count)),
-          isDirectory: true
-        ).standardizedFileURL
-      }
-    }
-    return nil
+  private func makeDaemonStore(profileName: RielaAppProfileName) -> RielaAppDaemonWorkflowStore {
+    let stateURL = RielaAppProfileStore.profilesRootURL(appRootURL: profileStore.appRootURL)
+      .appendingPathComponent(profileName.rawValue, isDirectory: true)
+      .appendingPathComponent("daemon-workflows.json")
+    let legacyStateURLs = profileStore.appRootURL == RielaAppProfileStore.defaultAppRootURL(homeDirectory: appHomeDirectory)
+      ? RielaAppDaemonWorkflowStore.defaultLegacyStateURLs(homeDirectory: appHomeDirectory)
+      : []
+    return RielaAppDaemonWorkflowStore(
+      stateURL: stateURL,
+      legacyStateURLs: profileName == .default ? legacyStateURLs : [],
+      profileName: profileName
+    )
+  }
+
+  private func configuredHomeDirectory() -> URL {
+    launchOptions.homeDirectory(defaultHome: NSHomeDirectory())
   }
 
   private func logDaemon(_ message: String) {

@@ -111,6 +111,7 @@ let package = Package(
         "RielaGraphQL",
         "RielaServer",
         "RielaHook",
+        .product(name: "Crypto", package: "swift-crypto"),
         "CodexAgent",
         "ClaudeCodeAgent",
         "CursorCLIAgent"

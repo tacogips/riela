@@ -5,6 +5,7 @@ import RielaAddons
 public enum RielaAppManagedWorkflowInstallError: Error, LocalizedError, Equatable {
   case invalidWorkflowDirectory(String)
   case invalidPackageDirectory(String)
+  case invalidPackageManifest(String, issues: [String])
   case unsupportedPackageSource(String)
   case unsafeDestination(String)
 
@@ -14,11 +15,23 @@ public enum RielaAppManagedWorkflowInstallError: Error, LocalizedError, Equatabl
       "Selected folder is not a Riela workflow: \(path)"
     case let .invalidPackageDirectory(path):
       "Selected source is not a Riela package: \(path)"
+    case let .invalidPackageManifest(path, issues):
+      "Selected Riela package is invalid: \(path). \(issues.joined(separator: "; "))"
     case let .unsupportedPackageSource(path):
-      "Selected source is not a workflow folder or .rielapkg package: \(path)"
+      "Selected source is not a workflow folder, package folder, .rielapkg, or .zip package: \(path)"
     case let .unsafeDestination(path):
       "Refusing to modify workflow outside the RielaApp profile directory: \(path)"
     }
+  }
+}
+
+public struct RielaAppManagedInstallResult: Equatable, Sendable {
+  public var installedURL: URL
+  public var replacedExisting: Bool
+
+  public init(installedURL: URL, replacedExisting: Bool) {
+    self.installedURL = installedURL
+    self.replacedExisting = replacedExisting
   }
 }
 
@@ -34,6 +47,10 @@ public struct RielaAppManagedWorkflowInstaller: Sendable {
   }
 
   public func installWorkflowDirectory(_ source: URL) throws -> URL {
+    try installWorkflowDirectoryResult(source).installedURL
+  }
+
+  public func installWorkflowDirectoryResult(_ source: URL) throws -> RielaAppManagedInstallResult {
     let source = source.standardizedFileURL
     let workflow = try decodeWorkflow(at: source)
     let destination = workflowRoot
@@ -45,13 +62,14 @@ public struct RielaAppManagedWorkflowInstaller: Sendable {
     try validateSourceDestinationContainment(source: source, destination: destination)
     try FileManager.default.createDirectory(at: workflowRoot, withIntermediateDirectories: true)
     if source.path == destination.path {
-      return destination
+      return RielaAppManagedInstallResult(installedURL: destination, replacedExisting: false)
     }
-    if FileManager.default.fileExists(atPath: destination.path) {
+    let replacedExisting = FileManager.default.fileExists(atPath: destination.path)
+    if replacedExisting {
       try FileManager.default.removeItem(at: destination)
     }
     try FileManager.default.copyItem(at: source, to: destination)
-    return destination
+    return RielaAppManagedInstallResult(installedURL: destination, replacedExisting: replacedExisting)
   }
 
   public func removeInstalledWorkflowDirectory(_ workflowDirectory: URL) throws {
@@ -93,6 +111,11 @@ public struct RielaAppManagedWorkflowInstaller: Sendable {
 }
 
 public struct RielaAppManagedPackageInstaller: Sendable {
+  public static let supportedPackageArchiveExtensions = [
+    WorkflowPackageArchiveManager.packageExtension,
+    WorkflowPackageArchiveManager.zipExtension
+  ]
+
   public var packageRoot: URL
 
   public init(packageRoot: URL) {
@@ -100,6 +123,10 @@ public struct RielaAppManagedPackageInstaller: Sendable {
   }
 
   public func installPackageSource(_ source: URL) throws -> URL {
+    try installPackageSourceResult(source).installedURL
+  }
+
+  public func installPackageSourceResult(_ source: URL) throws -> RielaAppManagedInstallResult {
     let source = source.standardizedFileURL
     let materialized = try materializedPackageSource(source)
     defer {
@@ -117,13 +144,14 @@ public struct RielaAppManagedPackageInstaller: Sendable {
     try validateSourceDestinationContainment(source: materialized.packageRoot, destination: destination)
     try FileManager.default.createDirectory(at: packageRoot, withIntermediateDirectories: true)
     if materialized.packageRoot.path == destination.path {
-      return destination
+      return RielaAppManagedInstallResult(installedURL: destination, replacedExisting: false)
     }
-    if FileManager.default.fileExists(atPath: destination.path) {
+    let replacedExisting = FileManager.default.fileExists(atPath: destination.path)
+    if replacedExisting {
       try FileManager.default.removeItem(at: destination)
     }
     try FileManager.default.copyItem(at: materialized.packageRoot, to: destination)
-    return destination
+    return RielaAppManagedInstallResult(installedURL: destination, replacedExisting: replacedExisting)
   }
 
   public func removeInstalledPackageDirectory(_ packageDirectory: URL) throws {
@@ -144,9 +172,8 @@ public struct RielaAppManagedPackageInstaller: Sendable {
 
   private func materializedPackageSource(_ source: URL) throws -> (packageRoot: URL, temporaryRoot: URL?) {
     if WorkflowPackageArchiveManager.isPackageArchive(source) {
-      let temporaryRoot = packageRoot
-        .deletingLastPathComponent()
-        .appendingPathComponent("tmp/rielapkg", isDirectory: true)
+      let temporaryRoot = FileManager.default.temporaryDirectory
+        .appendingPathComponent("RielaApp/rielapkg", isDirectory: true)
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
       let packageDirectory = try WorkflowPackageArchiveManager().extractArchive(source, to: temporaryRoot)
       return (packageDirectory, temporaryRoot)
@@ -169,11 +196,50 @@ public struct RielaAppManagedPackageInstaller: Sendable {
     } catch {
       throw RielaAppManagedWorkflowInstallError.invalidPackageDirectory(packageDirectory.path)
     }
-    let issues = WorkflowPackageManifestValidator.validatePackageSource(manifest, packageRoot: packageDirectory)
+    let issues = WorkflowPackageManifestValidator.validatePackageSource(
+      manifest,
+      packageRoot: packageDirectory,
+      verifiesChecksum: true
+    )
     guard issues.isEmpty else {
-      throw RielaAppManagedWorkflowInstallError.invalidPackageDirectory(packageDirectory.path)
+      throw RielaAppManagedWorkflowInstallError.invalidPackageManifest(
+        packageDirectory.path,
+        issues: issues.map { "\($0.path): \($0.message)" }
+      )
     }
     return manifest
+  }
+}
+
+public enum RielaAppImportSourceKind: Equatable, Sendable {
+  case workflowDirectory
+  case packageSource
+  case unsupported
+}
+
+public enum RielaAppImportSourceClassifier {
+  public static func kind(for source: URL) -> RielaAppImportSourceKind {
+    let source = source.standardizedFileURL
+    if isPackageSource(source) {
+      return .packageSource
+    }
+    if isDirectory(source), FileManager.default.fileExists(atPath: source.appendingPathComponent("workflow.json").path) {
+      return .workflowDirectory
+    }
+    return .unsupported
+  }
+
+  private static func isPackageSource(_ source: URL) -> Bool {
+    if isDirectory(source) {
+      return FileManager.default.fileExists(
+        atPath: source.appendingPathComponent(WorkflowPackageArchiveManager.manifestFileName).path
+      )
+    }
+    return RielaAppManagedPackageInstaller.supportedPackageArchiveExtensions.contains(source.pathExtension.lowercased())
+  }
+
+  private static func isDirectory(_ source: URL) -> Bool {
+    (try? source.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
   }
 }
 

@@ -1,5 +1,6 @@
 import Foundation
 import RielaAddons
+import RielaCore
 
 extension WorkflowPackageCommandRunner {
   struct ResolvedPackageSource {
@@ -8,13 +9,84 @@ extension WorkflowPackageCommandRunner {
   }
 
   struct PackageValidation {
-    var packageDirectory: URL
+    var source: URL
     var summary: WorkflowPackageSummary
   }
 
   struct PackedPackage {
     var archiveURL: URL
     var summary: WorkflowPackageSummary
+  }
+
+  struct InitializedPackage {
+    var manifestURL: URL
+    var summary: WorkflowPackageSummary
+  }
+
+  func initializePackage(target: String?, parsed: ParsedParityOptions) async throws -> InitializedPackage {
+    guard let target, !target.isEmpty else {
+      throw CLIUsageError("package init requires a workflow or package directory")
+    }
+    let workingDirectory = URL(
+      fileURLWithPath: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath,
+      isDirectory: true
+    )
+    let packageDirectory = absoluteURL(target, relativeTo: workingDirectory).standardizedFileURL
+    guard FileManager.default.fileExists(atPath: packageDirectory.path) else {
+      throw CLIUsageError("package init directory does not exist: \(packageDirectory.path)")
+    }
+    let manifestURL = packageDirectory.appendingPathComponent(WorkflowPackageArchiveManager.manifestFileName)
+    if FileManager.default.fileExists(atPath: manifestURL.path), !parsed.overwrite {
+      throw CLIUsageError("package manifest already exists: \(manifestURL.path); pass --overwrite to replace it")
+    }
+    let workflowRelativePath = try initialWorkflowRelativePath(
+      parsed.workflowDefinitionDir,
+      packageDirectory: packageDirectory
+    )
+    let workflowDirectory = packageDirectory.appendingPathComponent(workflowRelativePath, isDirectory: true)
+    guard FileManager.default.fileExists(atPath: workflowDirectory.appendingPathComponent("workflow.json").path) else {
+      throw CLIUsageError("package init workflow directory must contain workflow.json: \(workflowDirectory.path)")
+    }
+    let bundle: ResolvedWorkflowBundle
+    do {
+      bundle = try FileSystemWorkflowBundleResolver().resolve(WorkflowResolutionOptions(
+        workflowName: workflowDirectory.lastPathComponent,
+        scope: .direct,
+        workflowDefinitionDir: workflowDirectory.path,
+        workingDirectory: workingDirectory.path
+      ))
+    } catch {
+      throw CLIUsageError(
+        "package init workflow validation failed: \(packageInitWorkflowValidationErrorDescription(error))"
+      )
+    }
+    let packageName = parsed.packageName ?? parsed.packageID ?? bundle.workflow.workflowId
+    guard WorkflowPackageManifestValidator.isSafePackageName(packageName) else {
+      throw CLIUsageError("invalid package name '\(packageName)'; pass --package-name <safe-name>")
+    }
+    let manifest = initialPackageManifest(
+      packageName: packageName,
+      workflowId: bundle.workflow.workflowId,
+      workflowDirectory: workflowRelativePath,
+      checksum: try initialPackageChecksum(packageRoot: packageDirectory)
+    )
+    let issues = WorkflowPackageManifestValidator.validatePackageSource(manifest, packageRoot: packageDirectory)
+    let summary = WorkflowPackageSummary(
+      name: manifest.name,
+      version: manifest.version,
+      kind: manifest.kind,
+      packageDirectory: packageDirectory.path,
+      workflowDirectory: manifest.workflowDirectory,
+      valid: issues.isEmpty,
+      issues: issues
+    )
+    guard issues.isEmpty else {
+      throw CLIUsageError("generated package manifest is invalid: \(issues.map { "\($0.path): \($0.message)" }.joined(separator: "; "))")
+    }
+    if !parsed.dryRun {
+      try writeInitialPackageManifest(manifest, to: manifestURL)
+    }
+    return InitializedPackage(manifestURL: manifestURL.standardizedFileURL, summary: summary)
   }
 
   func validatePackage(target: String?, parsed: ParsedParityOptions) async throws -> PackageValidation {
@@ -25,13 +97,20 @@ extension WorkflowPackageCommandRunner {
       workingDirectory: workingDirectory,
       allowRegistry: false
     )
+    let source = validatePackageResultSource(
+      target: target,
+      parsed: parsed,
+      workingDirectory: workingDirectory,
+      resolvedDirectory: resolvedSource.directory
+    )
     defer {
       if let temporaryRoot = resolvedSource.temporaryRoot {
         try? FileManager.default.removeItem(at: temporaryRoot)
       }
     }
-    let validation = try await packageValidationSummary(packageDirectory: resolvedSource.directory)
-    return PackageValidation(packageDirectory: resolvedSource.directory, summary: validation)
+    var validation = try await packageValidationSummary(packageDirectory: resolvedSource.directory)
+    validation.packageDirectory = source.path
+    return PackageValidation(source: source, summary: validation)
   }
 
   func packPackage(target: String?, parsed: ParsedParityOptions) async throws -> PackedPackage {
@@ -48,7 +127,8 @@ extension WorkflowPackageCommandRunner {
       throw CLIUsageError("package source validation failed: \(summary.issues.map { "\($0.path): \($0.message)" }.joined(separator: "; "))")
     }
     let destination = parsed.destination.map { absoluteURL($0, relativeTo: workingDirectory) }
-      ?? workingDirectory.appendingPathComponent("\(packageFilesystemKey(summary.name)).\(WorkflowPackageArchiveManager.packageExtension)")
+      ?? packageDirectory.deletingLastPathComponent()
+        .appendingPathComponent("\(packageFilesystemKey(summary.name)).\(WorkflowPackageArchiveManager.packageExtension)")
     if !parsed.dryRun {
       try WorkflowPackageArchiveManager().createArchive(
         from: packageDirectory,
@@ -66,7 +146,7 @@ extension WorkflowPackageCommandRunner {
     }
     let loader = FileWorkflowPackageManifestLoader()
     let manifest = try await loader.loadManifest(from: manifestURL)
-    let issues = await loader.validate(manifest, packageRoot: packageDirectory)
+    let issues = await loader.validate(manifest, packageRoot: packageDirectory, verifiesChecksum: true)
     return WorkflowPackageSummary(
       name: manifest.name,
       version: manifest.version,
@@ -163,5 +243,144 @@ extension WorkflowPackageCommandRunner {
     workingDirectory
       .appendingPathComponent(".riela/tmp/rielapkg", isDirectory: true)
       .appendingPathComponent(UUID().uuidString, isDirectory: true)
+  }
+
+  private func validatePackageResultSource(
+    target: String?,
+    parsed: ParsedParityOptions,
+    workingDirectory: URL,
+    resolvedDirectory: URL
+  ) -> URL {
+    if let source = parsed.source {
+      return absoluteURL(source, relativeTo: workingDirectory).standardizedFileURL
+    }
+    if let target, !target.isEmpty {
+      let targetURL = absoluteURL(target, relativeTo: workingDirectory).standardizedFileURL
+      if FileManager.default.fileExists(atPath: targetURL.path) || WorkflowPackageArchiveManager.isPackageArchive(targetURL) {
+        return targetURL
+      }
+    }
+    return resolvedDirectory.standardizedFileURL
+  }
+
+  private func initialWorkflowRelativePath(_ rawPath: String?, packageDirectory: URL) throws -> String {
+    let candidate = try rawPath ?? inferredInitialWorkflowRelativePath(packageDirectory: packageDirectory)
+    guard let normalized = WorkflowPackageManifestValidator.normalizePackageRelativePath(candidate) else {
+      throw CLIUsageError(
+        "package init --workflow-definition-dir must stay inside the package; use a relative path without '..': \(candidate)"
+      )
+    }
+    return normalized
+  }
+
+  private func inferredInitialWorkflowRelativePath(packageDirectory: URL) throws -> String {
+    if FileManager.default.fileExists(atPath: packageDirectory.appendingPathComponent("workflow.json").path) {
+      return "."
+    }
+    let workflowsRoot = packageDirectory.appendingPathComponent("workflows", isDirectory: true)
+    let workflowDirectories = directChildWorkflowDirectories(in: workflowsRoot)
+    switch workflowDirectories.count {
+    case 1:
+      return "workflows/\(workflowDirectories[0].lastPathComponent)"
+    case 2...:
+      let candidates = workflowDirectories
+        .map { "workflows/\($0.lastPathComponent)" }
+        .joined(separator: ", ")
+      throw CLIUsageError(
+        "package init found multiple workflow directories; pass --workflow-definition-dir <relative-path>: \(candidates)"
+      )
+    default:
+      return "."
+    }
+  }
+
+  private func directChildWorkflowDirectories(in workflowsRoot: URL) -> [URL] {
+    guard let children = try? FileManager.default.contentsOfDirectory(
+      at: workflowsRoot,
+      includingPropertiesForKeys: [.isDirectoryKey],
+      options: [.skipsHiddenFiles]
+    ) else {
+      return []
+    }
+    return children
+      .filter { child in
+        let isDirectory = (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        return isDirectory && FileManager.default.fileExists(atPath: child.appendingPathComponent("workflow.json").path)
+      }
+      .sorted { $0.lastPathComponent < $1.lastPathComponent }
+  }
+
+  private func initialPackageManifest(
+    packageName: String,
+    workflowId: String,
+    workflowDirectory: String,
+    checksum: String
+  ) -> WorkflowPackageManifest {
+    WorkflowPackageManifest(
+      name: packageName,
+      version: "0.1.0",
+      description: "Riela workflow package for \(workflowId)",
+      tags: ["workflow"],
+      registry: "local",
+      checksum: checksum,
+      checksumAlgorithm: "md5",
+      workflowDirectory: workflowDirectory
+    )
+  }
+
+  private func initialPackageChecksum(packageRoot: URL) throws -> String {
+    try WorkflowPackageChecksum.md5(packageRoot: packageRoot)
+  }
+
+  private func writeInitialPackageManifest(_ manifest: WorkflowPackageManifest, to manifestURL: URL) throws {
+    let payload: [String: Any] = [
+      "checksum": manifest.checksum ?? "",
+      "checksumAlgorithm": manifest.checksumAlgorithm ?? "",
+      "description": manifest.description ?? "",
+      "name": manifest.name,
+      "registry": manifest.registry ?? "",
+      "tags": manifest.tags,
+      "version": manifest.version ?? "",
+      "workflowDirectory": manifest.workflowDirectory ?? "."
+    ]
+    var data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
+    data.append(0x0A)
+    try data.write(to: manifestURL, options: [.atomic])
+  }
+
+  private func packageInitWorkflowValidationErrorDescription(_ error: Error) -> String {
+    let description = workflowResolutionErrorDescription(error)
+    let hints = packageInitWorkflowValidationHints(error)
+    guard !hints.isEmpty else {
+      return description
+    }
+    return ([description] + hints.map { "Hint: \($0)" }).joined(separator: "\n")
+  }
+
+  private func packageInitWorkflowValidationHints(_ error: Error) -> [String] {
+    guard let resolutionError = error as? WorkflowResolutionError,
+      case let .invalidWorkflow(diagnostics) = resolutionError
+    else {
+      return []
+    }
+    var hints: [String] = []
+    if diagnostics.contains(where: isLikelyInlineNodeDiagnostic) {
+      hints.append(
+        "workflow.json nodes must reference nodeFile, nodeRef, or addon; "
+          + "move backend/model/prompt fields into a node JSON file and reference it with nodeFile."
+      )
+    }
+    if diagnostics.contains(where: { $0.path == "workflow.workflowId" || $0.path == "workflow.defaults" }) {
+      hints.append(
+        "start from examples/worker-only-single-step for the current workflow schema, then rerun riela package init."
+      )
+    }
+    return hints
+  }
+
+  private func isLikelyInlineNodeDiagnostic(_ diagnostic: WorkflowValidationDiagnostic) -> Bool {
+    diagnostic.path.hasPrefix("workflow.nodes[")
+      && (diagnostic.message.contains("unsupported step-addressed node registry field")
+        || diagnostic.message.contains("must define exactly one of nodeFile, nodeRef, or addon"))
   }
 }

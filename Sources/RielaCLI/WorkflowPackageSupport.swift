@@ -386,12 +386,144 @@ func renderPackage(_ result: WorkflowPackageCommandResult, output: WorkflowOutpu
   case .json, .jsonl:
     return CLICommandResult(exitCode: .success, stdout: try jsonString(result))
   case .text:
-    if result.packages.isEmpty {
-      return CLICommandResult(exitCode: .success, stdout: result.message + "\n")
-    }
-    return CLICommandResult(exitCode: .success, stdout: result.packages.map { "\($0.name)\t\($0.version ?? "-")\t\($0.valid ? "valid" : "invalid")\t\($0.packageDirectory)" }.joined(separator: "\n") + "\n")
+    return CLICommandResult(exitCode: .success, stdout: humanReadablePackageResult(result))
   case .table:
     let rows = result.packages.map { "\($0.name)\t\($0.version ?? "-")\t\($0.kind.rawValue)\t\($0.valid ? "valid" : "invalid")" }
     return CLICommandResult(exitCode: .success, stdout: (["PACKAGE\tVERSION\tKIND\tSTATUS"] + rows).joined(separator: "\n") + "\n")
   }
+}
+
+private func humanReadablePackageResult(_ result: WorkflowPackageCommandResult) -> String {
+  var lines = [result.message]
+  let commandPrefix = result.scope == "workflow package" ? "riela workflow package" : "riela package"
+  for package in result.packages {
+    lines.append("Package: \(package.name) \(package.version ?? "-") (\(package.kind.rawValue), \(package.valid ? "valid" : "invalid"))")
+    if let workflowDirectory = package.workflowDirectory {
+      lines.append("Workflow: \(workflowDirectory)")
+    }
+    if result.command == PackageCommandKind.validate.rawValue,
+      let input = result.destinationDirectory ?? result.target {
+      lines.append("Input: \(input)")
+    } else if result.command != PackageCommandKind.install.rawValue,
+      result.command != PackageCommandKind.checkout.rawValue {
+      lines.append("Source: \(package.packageDirectory)")
+    }
+    if !package.issues.isEmpty {
+      lines.append("Issues:")
+      lines.append(contentsOf: package.issues.map { "  - \($0.path): \($0.message)" })
+    }
+  }
+  if let destination = result.destinationDirectory, result.command != PackageCommandKind.validate.rawValue {
+    lines.append(destinationLabel(for: result.command) + ": \(destination)")
+  }
+  if let runSessionId = result.runSessionId {
+    lines.append("Run session: \(runSessionId)")
+  }
+  if let nextStep = packageNextStep(result, commandPrefix: commandPrefix) {
+    lines.append("Next: \(nextStep)")
+  }
+  if let appStep = packageRielaAppStep(result) {
+    lines.append("RielaApp: \(appStep)")
+  }
+  return lines.joined(separator: "\n") + "\n"
+}
+
+private func destinationLabel(for command: String) -> String {
+  switch command {
+  case PackageCommandKind.initialize.rawValue:
+    return "Manifest"
+  case PackageCommandKind.pack.rawValue:
+    return "Archive"
+  case PackageCommandKind.install.rawValue:
+    return "Installed"
+  case PackageCommandKind.publish.rawValue:
+    return "Registry record"
+  default:
+    return "Path"
+  }
+}
+
+private func packageNextStep(_ result: WorkflowPackageCommandResult, commandPrefix: String) -> String? {
+  switch result.command {
+  case PackageCommandKind.initialize.rawValue:
+    guard let source = result.packages.first?.packageDirectory else {
+      return nil
+    }
+    return "\(commandPrefix) pack \(shellArgument(source))"
+  case PackageCommandKind.pack.rawValue:
+    guard let archive = result.destinationDirectory else {
+      return nil
+    }
+    return "\(commandPrefix) validate \(shellArgument(archive))"
+  case PackageCommandKind.validate.rawValue:
+    return nil
+  case PackageCommandKind.install.rawValue:
+    guard let packageName = result.packages.first?.name,
+      let destination = result.destinationDirectory else {
+      return nil
+    }
+    return workflowRunNextStep(packageName: packageName, installedPackageDirectory: destination)
+  default:
+    return nil
+  }
+}
+
+private func workflowRunNextStep(packageName: String, installedPackageDirectory: String) -> String {
+  let destination = URL(fileURLWithPath: installedPackageDirectory, isDirectory: true).standardizedFileURL
+  let packageRoot = destination.deletingLastPathComponent()
+  let rielaRoot = packageRoot.deletingLastPathComponent()
+  guard packageRoot.lastPathComponent == "packages", rielaRoot.lastPathComponent == ".riela" else {
+    return "riela workflow run \(packageName) --scope project"
+  }
+  let userPackageRoot = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
+    .appendingPathComponent(".riela/packages", isDirectory: true)
+    .standardizedFileURL
+  if packageRoot.path == userPackageRoot.path {
+    return "riela workflow run \(packageName) --scope user"
+  }
+  let projectRoot = rielaRoot.deletingLastPathComponent()
+  return "riela workflow run \(packageName) --scope project --working-dir \(shellArgument(projectRoot.path))"
+}
+
+private func packageRielaAppStep(_ result: WorkflowPackageCommandResult) -> String? {
+  if result.command == PackageCommandKind.pack.rawValue, let archive = result.destinationDirectory {
+    return appImportStep(source: archive)
+  }
+  if result.command == PackageCommandKind.validate.rawValue,
+    let source = result.destinationDirectory ?? result.target,
+    result.packages.first?.valid == true {
+    return appImportStep(source: source)
+  }
+  guard result.command == PackageCommandKind.install.rawValue,
+    let destination = result.destinationDirectory else {
+    return nil
+  }
+  let destinationURL = URL(fileURLWithPath: destination, isDirectory: true).standardizedFileURL
+  let packageRoot = destinationURL.deletingLastPathComponent()
+  let rielaRoot = packageRoot.deletingLastPathComponent()
+  guard packageRoot.lastPathComponent == "packages", rielaRoot.lastPathComponent == ".riela" else {
+    return nil
+  }
+  let userPackageRoot = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
+    .appendingPathComponent(".riela/packages", isDirectory: true)
+    .standardizedFileURL
+  if packageRoot.path == userPackageRoot.path {
+    return "Workflows... > Refresh to show the user package in every profile, or Add Workflow/Package... and choose \(destination)"
+  }
+  return "Add Project... and choose \(rielaRoot.deletingLastPathComponent().path)"
+}
+
+private func appImportStep(source: String) -> String {
+  "Add Workflow/Package... and choose \(source), or launch RielaApp with --import-workflow-or-package \(shellArgument(source)) --open-workflows"
+}
+
+private func shellArgument(_ value: String) -> String {
+  guard !value.isEmpty else {
+    return "''"
+  }
+  let safeScalars = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_+-=.,/:@%")
+  if value.unicodeScalars.allSatisfy({ safeScalars.contains($0) }) {
+    return value
+  }
+  return "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
 }

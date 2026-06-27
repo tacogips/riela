@@ -109,7 +109,7 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
     artifactRoot: String? = nil,
     executablePath: String?
   ) -> RielaAppDaemonEventServeCommand {
-    let executable = resolvedExecutablePath(executablePath)
+    let executable = resolveExecutablePath(executablePath)
     var serveArguments = [
       "events",
       "serve",
@@ -141,6 +141,18 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
     )
   }
 
+  public func resolvedExecutablePath() -> String {
+    resolveExecutablePath(executablePath)
+  }
+
+  public func resolvedExecutableDescription() -> String {
+    Self.executableDescription(for: resolvedExecutablePath())
+  }
+
+  public static func executableDescription(for resolvedExecutablePath: String) -> String {
+    resolvedExecutablePath == "/usr/bin/env" ? "PATH lookup: riela" : resolvedExecutablePath
+  }
+
   public static func defaultEnvironmentFileURLs() -> [URL] {
     let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
     return [
@@ -149,7 +161,7 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
     ]
   }
 
-  private func resolvedExecutablePath(_ configuredPath: String?) -> String {
+  private func resolveExecutablePath(_ configuredPath: String?) -> String {
     if let configuredPath, FileManager.default.isExecutableFile(atPath: configuredPath) {
       return configuredPath
     }

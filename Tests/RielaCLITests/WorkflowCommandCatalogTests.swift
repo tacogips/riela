@@ -624,6 +624,7 @@ extension WorkflowCommandTests {
       at: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step"),
       to: fixtureWorkflow
     )
+    let fixturePackageChecksum = try packageChecksum(packageRoot: fixturePackage)
     try """
     {
       "name": "fixture-clean-workflow",
@@ -636,7 +637,7 @@ extension WorkflowCommandTests {
         "backends": ["codex-agent"]
       },
       "registry": "fixture",
-      "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "checksum": "\(fixturePackageChecksum)",
       "checksumAlgorithm": "md5",
       "workflowDirectory": "workflows/fixture-clean-workflow",
       "repository": "https://github.com/tacogips/riela-fixture"
@@ -762,6 +763,7 @@ extension WorkflowCommandTests {
 
     Install and manage Riela packages.
     """.write(to: codexSkillDirectory.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+    let packageSourceChecksum = try packageChecksum(packageRoot: packageSource)
     try """
     {
       "name": "riela-package-manager-skill",
@@ -769,7 +771,7 @@ extension WorkflowCommandTests {
       "description": "Package manager skill fixture.",
       "tags": ["skill", "package"],
       "registry": "fixture",
-      "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "checksum": "\(packageSourceChecksum)",
       "checksumAlgorithm": "md5",
       "workflowDirectory": "workflows/riela-package-manager-skill",
       "skillDirectory": "skills"

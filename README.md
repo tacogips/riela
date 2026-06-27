@@ -49,9 +49,10 @@ progress records such as `session_started`, `step_started`, and
 `step_completed` before the final `run_result`, so callers can capture the
 session id immediately and inspect it while the run is still active. Automation,
 agents, and LLM-driven tool use should prefer `--output jsonl`, especially for
-`workflow run`. Use `--output json` only when a legacy caller explicitly needs a
-single non-streaming JSON document after completion, or `--output text` for
-human-readable output.
+`workflow run`. Package commands are the exception: they default to text for
+interactive package creation and import flows. Use `--output json` only when a
+legacy caller explicitly needs a single non-streaming JSON document after
+completion.
 
 ## Install
 
@@ -79,6 +80,85 @@ workflow.
 
 Linux releases are CLI-only tarballs published on GitHub releases. They are
 not wired into the Homebrew tap.
+
+## RielaApp Packages And Profiles
+
+RielaApp imports workflow folders, package folders, and `.rielapkg` archives
+from the menu bar item:
+
+```text
+Workflows... > Add Workflow/Package...
+```
+
+The picker accepts multiple selections, so several package archives or workflow
+folders can be added to the active profile in one pass.
+
+Package archives can also be imported at launch, which is useful after a CLI
+pack step or in support reproductions:
+
+```bash
+RIELA_APP_ROOT="$PWD/tmp/rielaapp-root" \
+.build/debug/RielaApp \
+  --profile work \
+  --import-workflow-or-package "$PWD/my-workflow.rielapkg" \
+  --open-workflows
+```
+
+Imported packages are stored under the selected RielaApp profile. The Workflows
+window shows each workflow's source as `profile`, `user`, or `project` so
+profile-scoped imports can be separated from user-level or project-level
+workflows that are visible in every profile.
+The Workflows table uses `Auto-Start` for the profile preference that starts a
+workflow when RielaApp launches or when the profile is started; `Status` shows
+the current runtime state. The `Auto-Start On` and `Auto-Start Off` actions
+change that saved profile preference and start or stop the workflow immediately.
+Selecting a workflow shows its source path, event sources, profile scope,
+auto-start preference, and runtime detail below the toolbar.
+Use `Add Project...` to attach one or more project folders containing
+`.riela/workflows` or `.riela/packages` without copying them into the profile.
+Use `Open Profile Folder` from the menu bar item or Workflows window to inspect
+the active profile's imported `workflows/`, `packages/`, and daemon state.
+Use `Reveal Selected` in the Workflows window to open the selected workflow or
+package source directly.
+
+To turn an existing workflow folder into a package that RielaApp can import,
+generate the package manifest first, then archive it:
+
+```bash
+riela package init ./my-workflow --package-name my-workflow
+riela package pack ./my-workflow
+```
+
+For a package source that keeps workflows under `workflows/<name>/`,
+`package init` automatically uses the single workflow it finds:
+
+```bash
+riela package init ./my-package-source --package-name my-workflow
+riela package pack ./my-package-source
+```
+
+If the package source contains multiple workflows, add
+`--workflow-definition-dir workflows/<name>`.
+
+For manual verification, demos, or support reproduction without touching the
+normal user catalog, launch RielaApp with isolated roots:
+
+```bash
+HOME="$PWD/tmp/rielaapp-home" \
+RIELA_APP_ROOT="$PWD/tmp/rielaapp-root" \
+RIELA_APP_RIELA_EXECUTABLE="$PWD/.build/debug/riela" \
+.build/debug/RielaApp \
+  --import-workflow-or-package "$PWD/tmp/rielaapp-demo.rielapkg" \
+  --open-workflows \
+  --no-autostart-daemons \
+  --project-root "$PWD/tmp/empty-project"
+```
+
+`RIELA_APP_HOME` or `--home-root <path>` can be used instead of `HOME`; `--app-root
+<path>` can be used instead of `RIELA_APP_ROOT`.
+For a local `.app` bundle, run `scripts/build-riela-menu-bar-app.sh` after
+building; the plain `.build/debug/RielaApp` executable is the fastest path for
+development and support reproductions.
 
 ## TypeScript Deletion Gate
 

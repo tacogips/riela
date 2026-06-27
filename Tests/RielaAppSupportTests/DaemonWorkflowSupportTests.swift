@@ -26,6 +26,7 @@ final class DaemonWorkflowSupportTests: XCTestCase {
 
     XCTAssertEqual(candidates.map(\.workflowId), ["chat-workflow"])
     XCTAssertEqual(candidates.first?.sourceDescription, "user workflow")
+    XCTAssertEqual(candidates.first?.sourceScope, .external)
     XCTAssertEqual(candidates.first?.eventSourceSummary, "telegram-source:telegram-gateway")
   }
 
@@ -58,6 +59,7 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     XCTAssertEqual(candidates.map(\.id), ["project-workflow:\(projectRoot.path):project-loop"])
     XCTAssertEqual(candidates.first?.workflowId, "project-loop")
     XCTAssertEqual(candidates.first?.sourceDescription, "project workflow")
+    XCTAssertEqual(candidates.first?.sourceScope, .external)
     XCTAssertEqual(candidates.first?.eventSourceSummary, "None")
     XCTAssertFalse(try XCTUnwrap(candidates.first).startsEventSources)
   }
@@ -78,7 +80,8 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     )
 
     XCTAssertEqual(candidates.map(\.workflowId), ["app-loop", "project-a-loop", "project-b-loop"])
-    XCTAssertEqual(candidates.first?.sourceDescription, "RielaApp workflow")
+    XCTAssertEqual(candidates.first?.sourceDescription, "profile workflow")
+    XCTAssertEqual(candidates.first?.sourceScope, .profile)
   }
 
   func testDiscoversUserPackageWorkflowEventTemplates() throws {
@@ -97,6 +100,8 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     let candidates = RielaAppDaemonWorkflowDiscovery(homeDirectory: root).discoverUserDaemonWorkflows()
 
     XCTAssertEqual(candidates.map(\.id), ["user-package:trio-package:trio"])
+    XCTAssertEqual(candidates.first?.sourceDescription, "user package")
+    XCTAssertEqual(candidates.first?.sourceScope, .external)
     let eventRootPath = try XCTUnwrap(candidates.first?.eventRoot)
     XCTAssertEqual(
       URL(fileURLWithPath: eventRootPath).resolvingSymlinksInPath().path,
@@ -203,6 +208,199 @@ final class DaemonWorkflowSupportTests: XCTestCase {
       RielaAppProfileName("experiments"),
       RielaAppProfileName("work")
     ])
+  }
+
+  func testProfileNameExposesSanitizedRawValueForUserFeedback() {
+    XCTAssertEqual(RielaAppProfileName.sanitizedRawValue(" work/team "), "work-team")
+    XCTAssertEqual(RielaAppProfileName(" work/team ").rawValue, "work-team")
+    XCTAssertEqual(RielaAppProfileName.sanitizedRawValue("..."), RielaAppProfileName.defaultRawValue)
+  }
+
+  func testProfileStoreSavingActiveProfileMaterializesProfileRoots() throws {
+    let root = try temporaryHome()
+    let appRoot = root.appendingPathComponent(".riela/rielaapp", isDirectory: true)
+    let store = RielaAppProfileStore(appRootURL: appRoot)
+    let profileName = RielaAppProfileName("demo")
+
+    try store.saveActiveProfileName(profileName)
+
+    XCTAssertTrue(FileManager.default.fileExists(
+      atPath: RielaAppProfileStore.workflowRootURL(appRootURL: appRoot, profileName: profileName).path
+    ))
+    XCTAssertTrue(FileManager.default.fileExists(
+      atPath: RielaAppProfileStore.packageRootURL(appRootURL: appRoot, profileName: profileName).path
+    ))
+    XCTAssertEqual(store.listProfileNames(), [.default, profileName])
+  }
+
+  func testProfileStorePreparingCommandLineProfilePersistsSelection() throws {
+    let root = try temporaryHome()
+    let appRoot = root.appendingPathComponent(".riela/rielaapp", isDirectory: true)
+    let store = RielaAppProfileStore(appRootURL: appRoot)
+
+    try store.prepareInitialProfile(RielaAppProfileName("work/team"), persistsSelection: true)
+
+    XCTAssertEqual(store.loadActiveProfileName(), RielaAppProfileName("work-team"))
+    XCTAssertTrue(FileManager.default.fileExists(
+      atPath: RielaAppProfileStore.workflowRootURL(
+        appRootURL: appRoot,
+        profileName: RielaAppProfileName("work-team")
+      ).path
+    ))
+  }
+
+  func testProfileStorePreparingLoadedProfileDoesNotOverwriteActiveSelection() throws {
+    let root = try temporaryHome()
+    let appRoot = root.appendingPathComponent(".riela/rielaapp", isDirectory: true)
+    let store = RielaAppProfileStore(appRootURL: appRoot)
+
+    try store.saveActiveProfileName(RielaAppProfileName("work"))
+    try store.prepareInitialProfile(RielaAppProfileName("scratch"), persistsSelection: false)
+
+    XCTAssertEqual(store.loadActiveProfileName(), RielaAppProfileName("work"))
+    XCTAssertTrue(FileManager.default.fileExists(
+      atPath: RielaAppProfileStore.workflowRootURL(
+        appRootURL: appRoot,
+        profileName: RielaAppProfileName("scratch")
+      ).path
+    ))
+  }
+
+  func testLaunchOptionsParseProfileRootsImportSourcesAndWindowFlags() {
+    let options = RielaAppLaunchOptions(
+      arguments: [
+        "--profile=work/team",
+        "--home-root", "/tmp/riela-home",
+        "--app-root=/tmp/riela-app",
+        "--project-root", "/tmp/project",
+        "--import-workflow-or-package", "/tmp/demo.rielapkg",
+        "--import-workflow-or-package=/tmp/other-workflow",
+        "--open-workflows",
+        "--open-viewer", "/tmp/workflow",
+        "--session-store-root", "/tmp/sessions",
+        "--no-autostart-daemons"
+      ],
+      environment: [:]
+    )
+
+    XCTAssertEqual(options.profileName?.rawValue, "work-team")
+    XCTAssertEqual(options.homeDirectory(defaultHome: "/tmp/default-home").path, "/tmp/riela-home")
+    XCTAssertEqual(options.appRoot?.path, "/tmp/riela-app")
+    XCTAssertEqual(options.projectRoot?.path, "/tmp/project")
+    XCTAssertEqual(options.importSources.map(\.path), ["/tmp/demo.rielapkg", "/tmp/other-workflow"])
+    XCTAssertEqual(options.opensWorkflows, true)
+    XCTAssertEqual(options.initialViewer, RielaAppLaunchOptions.InitialViewer(
+      workflowPath: "/tmp/workflow",
+      sessionStoreRoot: "/tmp/sessions"
+    ))
+    XCTAssertEqual(options.autostartsDaemonWorkflows, false)
+  }
+
+  func testLaunchOptionsUseEnvironmentFallbacks() {
+    let options = RielaAppLaunchOptions(
+      arguments: [],
+      environment: [
+        "HOME": "/tmp/home-env",
+        "RIELA_APP_HOME": "/tmp/app-home-env",
+        "RIELA_APP_ROOT": "/tmp/app-root-env"
+      ]
+    )
+
+    XCTAssertEqual(options.homeDirectory(defaultHome: "/tmp/default-home").path, "/tmp/app-home-env")
+    XCTAssertEqual(options.appRoot?.path, "/tmp/app-root-env")
+    XCTAssertNil(options.profileName)
+    XCTAssertEqual(options.importSources, [])
+    XCTAssertEqual(options.autostartsDaemonWorkflows, true)
+  }
+
+  func testLaunchOptionsDoNotConsumeFollowingFlagsAsValues() {
+    let options = RielaAppLaunchOptions(
+      arguments: [
+        "--profile",
+        "--open-workflows",
+        "--import-workflow-or-package",
+        "--no-autostart-daemons",
+        "--open-viewer",
+        "--session-store-root",
+        "--project-root",
+        "--app-root",
+        "--home-root"
+      ],
+      environment: [:]
+    )
+
+    XCTAssertNil(options.profileName)
+    XCTAssertEqual(options.importSources, [])
+    XCTAssertNil(options.initialViewer)
+    XCTAssertNil(options.projectRoot)
+    XCTAssertNil(options.appRoot)
+    XCTAssertEqual(options.homeDirectory(defaultHome: "/tmp/default-home").path, "/tmp/default-home")
+    XCTAssertEqual(options.opensWorkflows, true)
+    XCTAssertEqual(options.autostartsDaemonWorkflows, false)
+  }
+
+  func testImportedWorkflowPreferenceSeparatesAvailabilityFromImmediateStart() {
+    let quietImport = RielaAppDaemonWorkflowPreference.imported(
+      identity: "app-package:demo:workflow",
+      startsImmediately: false
+    )
+    let activeImport = RielaAppDaemonWorkflowPreference.imported(
+      identity: "app-package:demo:workflow",
+      startsImmediately: true
+    )
+
+    XCTAssertEqual(quietImport.available, true)
+    XCTAssertEqual(quietImport.active, false)
+    XCTAssertEqual(activeImport.available, true)
+    XCTAssertEqual(activeImport.active, true)
+  }
+
+  func testImportSummaryDescribesSingleMultipleAndFailedImports() {
+    XCTAssertEqual(
+      RielaAppImportSummary(
+        importedNames: ["demo"],
+        failures: [],
+        profileName: RielaAppProfileName("work"),
+        startsImmediately: true
+      ).statusMessage,
+      "Imported demo into profile work"
+    )
+    XCTAssertEqual(
+      RielaAppImportSummary(
+        importedNames: ["demo"],
+        failures: [],
+        profileName: RielaAppProfileName("work"),
+        startsImmediately: false
+      ).statusMessage,
+      "Imported demo into profile work with auto-start off"
+    )
+    XCTAssertEqual(
+      RielaAppImportSummary(
+        importedNames: ["first", "second"],
+        failures: [],
+        profileName: RielaAppProfileName("work"),
+        startsImmediately: true
+      ).statusMessage,
+      "Imported 2 items into profile work"
+    )
+    XCTAssertEqual(
+      RielaAppImportSummary(
+        importedNames: [],
+        failures: ["bad.rielapkg: invalid package"],
+        profileName: RielaAppProfileName("work"),
+        startsImmediately: true
+      ).statusMessage,
+      "Import failed: bad.rielapkg: invalid package"
+    )
+    XCTAssertEqual(
+      RielaAppImportSummary(
+        importedNames: ["good"],
+        failures: ["bad.rielapkg: invalid package"],
+        profileName: RielaAppProfileName("work"),
+        startsImmediately: true
+      ).statusMessage,
+      "Import completed with errors; imported: good; failed: bad.rielapkg: invalid package"
+    )
   }
 
   func testStoreLoadsLegacyStateWithoutWorkflowDirectories() throws {
@@ -358,7 +556,13 @@ final class DaemonWorkflowSupportTests: XCTestCase {
       URL(fileURLWithPath: try XCTUnwrap(candidate.packageDirectory)).resolvingSymlinksInPath().path,
       installedURL.resolvingSymlinksInPath().path
     )
-    XCTAssertEqual(candidate.sourceDescription, "RielaApp package")
+    XCTAssertEqual(candidate.sourceDescription, "profile package")
+    XCTAssertEqual(candidate.sourceScope, .profile)
+    XCTAssertEqual(
+      URL(fileURLWithPath: candidate.sourceDirectory).resolvingSymlinksInPath().path,
+      installedURL.resolvingSymlinksInPath().path
+    )
+    XCTAssertTrue(candidate.isRielaAppProfileScoped)
   }
 
   func testManagedPackageInstallerImportsRielaPackageArchiveIntoProfilePackageRoot() throws {
@@ -375,6 +579,33 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     XCTAssertEqual(installedURL.path, packageRoot.appendingPathComponent("archive-profile-package").path)
     XCTAssertTrue(FileManager.default.fileExists(atPath: installedURL.appendingPathComponent("riela-package.json").path))
     XCTAssertTrue(FileManager.default.fileExists(atPath: installedURL.appendingPathComponent("workflow.json").path))
+    XCTAssertFalse(FileManager.default.fileExists(
+      atPath: packageRoot.deletingLastPathComponent().appendingPathComponent("tmp/rielapkg").path
+    ))
+  }
+
+  func testManagedPackageInstallerKeepsImportedPackagesProfileScoped() throws {
+    let root = try temporaryHome()
+    let defaultSource = root.appendingPathComponent("source/default-package", isDirectory: true)
+    let workSource = root.appendingPathComponent("source/work-package", isDirectory: true)
+    try writePackage(name: "default-profile-package", workflowId: "default-profile-workflow", to: defaultSource)
+    try writePackage(name: "work-profile-package", workflowId: "work-profile-workflow", to: workSource)
+    let defaultPackageRoot = RielaAppProfileStore.defaultPackageRootURL(homeDirectory: root)
+    let workPackageRoot = RielaAppProfileStore.defaultPackageRootURL(
+      profileName: RielaAppProfileName("work"),
+      homeDirectory: root
+    )
+    _ = try RielaAppManagedPackageInstaller(packageRoot: defaultPackageRoot).installPackageSource(defaultSource)
+    _ = try RielaAppManagedPackageInstaller(packageRoot: workPackageRoot).installPackageSource(workSource)
+    let discovery = RielaAppDaemonWorkflowDiscovery(homeDirectory: root)
+
+    let defaultCandidates = discovery.discoverUserDaemonWorkflows(appPackageRoot: defaultPackageRoot)
+    let workCandidates = discovery.discoverUserDaemonWorkflows(appPackageRoot: workPackageRoot)
+
+    XCTAssertTrue(defaultCandidates.contains { $0.id == "app-package:default-profile-package:default-profile-workflow" })
+    XCTAssertFalse(defaultCandidates.contains { $0.id == "app-package:work-profile-package:work-profile-workflow" })
+    XCTAssertTrue(workCandidates.contains { $0.id == "app-package:work-profile-package:work-profile-workflow" })
+    XCTAssertFalse(workCandidates.contains { $0.id == "app-package:default-profile-package:default-profile-workflow" })
   }
 
   func testManagedPackageInstallerRejectsInvalidPackageManifest() throws {
@@ -393,10 +624,17 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     )
 
     XCTAssertThrowsError(try installer.installPackageSource(source)) { error in
-      XCTAssertEqual(
-        error as? RielaAppManagedWorkflowInstallError,
-        .invalidPackageDirectory(source.standardizedFileURL.path)
-      )
+      guard case let .invalidPackageManifest(path, issues) = error as? RielaAppManagedWorkflowInstallError else {
+        return XCTFail("expected invalidPackageManifest, got \(error)")
+      }
+      XCTAssertEqual(path, source.standardizedFileURL.path)
+      XCTAssertTrue(issues.contains("registry: registry is required"))
+      XCTAssertTrue(issues.contains("checksum: checksum is required"))
+      XCTAssertTrue(issues.contains("tags: tags is required"))
+      XCTAssertTrue(issues.contains("checksumAlgorithm: checksumAlgorithm must be md5"))
+      let description = error.localizedDescription
+      XCTAssertTrue(description.contains("Selected Riela package is invalid"))
+      XCTAssertTrue(description.contains("registry: registry is required"))
     }
   }
 
@@ -445,6 +683,16 @@ final class DaemonWorkflowSupportTests: XCTestCase {
       "/users/.riela/sessions"
     ])
     XCTAssertEqual(command.workingDirectory, "/users/workflows")
+  }
+
+  func testProcessEventSourceFactoryDescribesResolvedExecutable() {
+    let factory = RielaAppDaemonProcessEventSourceFactory(executablePath: "/bin/echo")
+
+    XCTAssertEqual(factory.resolvedExecutableDescription(), "/bin/echo")
+    XCTAssertEqual(
+      RielaAppDaemonProcessEventSourceFactory.executableDescription(for: "/usr/bin/env"),
+      "PATH lookup: riela"
+    )
   }
 
   func testProcessEventSourceFactoryPassesOnlyTelemetryAndTraceEnvironmentToChild() throws {
@@ -566,6 +814,8 @@ final class DaemonWorkflowSupportTests: XCTestCase {
 
   private func writePackage(name: String, workflowId: String, to directory: URL) throws {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    try writeWorkflow(id: workflowId, to: directory)
+    let checksum = try WorkflowPackageChecksum.md5(packageRoot: directory)
     try """
     {
       "name": "\(name)",
@@ -573,12 +823,11 @@ final class DaemonWorkflowSupportTests: XCTestCase {
       "description": "Profile package",
       "tags": ["profile"],
       "registry": "local",
-      "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "checksum": "\(checksum)",
       "checksumAlgorithm": "md5",
       "workflowDirectory": "."
     }
     """.write(to: directory.appendingPathComponent("riela-package.json"), atomically: true, encoding: .utf8)
-    try writeWorkflow(id: workflowId, to: directory)
   }
 
   private func writeRunnableWorkflow(id: String, to directory: URL) throws {

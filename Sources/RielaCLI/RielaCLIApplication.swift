@@ -75,6 +75,8 @@ public struct RielaCLIApplication: Sendable {
       switch try parser.parse(arguments) {
       case .help:
         return CLICommandResult(exitCode: .success, stdout: rielaCLIHelpText)
+      case let .packageHelp(scope):
+        return CLICommandResult(exitCode: .success, stdout: packageHelpText(scope: scope))
       case .version:
         return CLICommandResult(exitCode: .success, stdout: "\(rielaSwiftMigrationVersion)\n")
       case let .workflow(.validate(options)):
@@ -268,9 +270,9 @@ Usage:
   riela workflow list|status [--output jsonl|json|text|table]
   riela workflow manifest validate <manifest-path> [--output jsonl|json|text]
   riela workflow checkout|create|self-improve <workflow> [options]
-  riela workflow package <search|list|status|install|update|remove|checkout|validate|pack|publish> [options]
+  riela workflow package <search|list|status|install|update|remove|checkout|init|validate|pack|publish> [options]
   riela workflow run <workflow> [--variables <json|@file>] [--mock-scenario <path>] [--auto-improve] [--output jsonl|json|text]
-  riela package <search|list|status|install|update|remove|checkout|validate|pack|publish> [options]
+  riela package <search|list|status|install|update|remove|checkout|init|validate|pack|publish> [options]
   riela memory save <memory-id> --workflow-id <workflow> --payload-json <json> [--node-id <node>] [--tag <tag>] [--related-id <id>] [--file <path>] [--memory-root <dir>]
   riela memory update <memory-id> --workflow-id <workflow> --record-id <id> --payload-json <json> [--tag <tag>] [--related-id <id>] [--file <path>|--clear-files] [--memory-root <dir>]
   riela memory load|search <memory-id> --workflow-id <workflow> [--match <regex>] [--tag <tag>] [--related-id <id>] [--limit 30] [--memory-root <dir>]
@@ -291,6 +293,60 @@ completion.
 The Swift CLI is the production Homebrew runtime. The formula installs only the riela command on macOS; Linux users install CLI release tarballs directly. The macOS Cask installs RielaApp.app and riela together.
 
 """
+
+func packageHelpText(scope: PackageHelpScope) -> String {
+  let commandPrefix = scope == .workflowPackage ? "riela workflow package" : "riela package"
+  return """
+  Riela package
+
+  Usage:
+    \(commandPrefix) init <workflow-or-package-dir> [--package-name <name>] [--workflow-definition-dir <relative-path>] [--overwrite] [--output jsonl|json|text]
+    \(commandPrefix) pack <package-dir> [--destination <path>] [--overwrite] [--output jsonl|json|text]
+    \(commandPrefix) validate <package-dir|archive.rielapkg|archive.zip> [--output jsonl|json|text]
+    \(commandPrefix) install <package-name|package-dir|archive.rielapkg|archive.zip> [--source <path>] [--scope project|user] [--overwrite] [--output jsonl|json|text]
+    \(commandPrefix) list|search|status [package-name] [--scope project|user|auto] [--output jsonl|json|text|table]
+    \(commandPrefix) run|temp-run <package-name|package-dir|archive.rielapkg|archive.zip> [--mock-scenario <path>] [--output jsonl|json|text]
+    \(commandPrefix) registry add|list [options]
+
+  Package archives:
+    A .rielapkg or .zip is a portable package archive containing riela-package.json
+    and its workflow files. Create one with pack, validate the archive, then install
+    it into the project or user package catalog.
+
+  Output:
+    Package commands default to human-readable text. Pass --output json or
+    --output jsonl when another tool needs structured output.
+
+  Package init:
+    init writes riela-package.json with package metadata, workflowDirectory, and
+    a content-derived checksum. Edit name, description, and tags if needed, then
+    run pack. If <workflow-or-package-dir> contains workflow.json, init packages
+    that workflow directly. If it contains exactly one workflows/<name>/workflow.json,
+    init uses that workflow automatically; pass --workflow-definition-dir when
+    multiple workflows are present.
+
+  Manual manifests:
+    If authoring riela-package.json by hand, include name, version, description,
+    tags, registry, checksum, checksumAlgorithm, and workflowDirectory. Current
+    package validation expects checksumAlgorithm to be md5 for local package
+    metadata parity.
+
+  App import:
+    RielaApp can import the same package folder, .rielapkg, or .zip from Workflows... >
+    Add Workflow/Package..., or launch RielaApp with --import-workflow-or-package <path> --open-workflows.
+    The app stores imported packages under the selected profile, so switching
+    profiles keeps enabled workflows and imported packages separate.
+
+  Examples:
+    \(commandPrefix) init ./my-workflow --package-name my-package
+    \(commandPrefix) init ./my-package-source --package-name my-package
+    \(commandPrefix) pack ./my-package
+    \(commandPrefix) validate ./my-package.rielapkg
+    \(commandPrefix) install ./my-package.rielapkg --scope project
+    riela workflow run my-package --scope project --output jsonl
+
+  """
+}
 
 func workflowRunHelpText(target: String?) -> String {
   let workflow = target ?? "<workflow>"

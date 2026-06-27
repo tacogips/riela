@@ -25,6 +25,7 @@ extension WorkflowCommandTests {
       at: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step/prompts"),
       to: packageSource.appendingPathComponent("prompts")
     )
+    let packageSourceChecksum = try packageChecksum(packageRoot: packageSource)
     try """
     {
       "name": "@scope/scoped-flow",
@@ -32,7 +33,7 @@ extension WorkflowCommandTests {
       "description": "Scoped package",
       "tags": ["scoped"],
       "registry": "local",
-      "checksum": "cccccccccccccccccccccccccccccccc",
+      "checksum": "\(packageSourceChecksum)",
       "checksumAlgorithm": "md5",
       "workflowDirectory": "."
     }
@@ -141,6 +142,7 @@ extension WorkflowCommandTests {
       at: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step/prompts"),
       to: escapedPackage.appendingPathComponent("prompts")
     )
+    let escapedPackageChecksum = try packageChecksum(packageRoot: escapedPackage)
     try """
     {
       "name": "escape",
@@ -148,7 +150,7 @@ extension WorkflowCommandTests {
       "description": "Escaped package",
       "tags": ["test"],
       "registry": "local",
-      "checksum": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "checksum": "\(escapedPackageChecksum)",
       "checksumAlgorithm": "md5",
       "workflowDirectory": "."
     }

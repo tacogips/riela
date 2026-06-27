@@ -2,6 +2,7 @@ import Foundation
 
 public enum WorkflowPackageArchiveError: Error, LocalizedError, Equatable, Sendable {
   case unsupportedArchive(String)
+  case archiveNotFound(String)
   case archiveAlreadyExists(String)
   case archiveToolFailed(String)
   case missingPackageManifest(String)
@@ -11,6 +12,8 @@ public enum WorkflowPackageArchiveError: Error, LocalizedError, Equatable, Senda
     switch self {
     case let .unsupportedArchive(path):
       "Unsupported package archive: \(path)"
+    case let .archiveNotFound(path):
+      "Package archive does not exist: \(path)"
     case let .archiveAlreadyExists(path):
       "Package archive already exists: \(path)"
     case let .archiveToolFailed(message):
@@ -63,6 +66,9 @@ public struct WorkflowPackageArchiveManager: Sendable {
     let extractionRoot = extractionRoot.standardizedFileURL
     guard Self.isPackageArchive(archiveURL) else {
       throw WorkflowPackageArchiveError.unsupportedArchive(archiveURL.path)
+    }
+    guard FileManager.default.fileExists(atPath: archiveURL.path) else {
+      throw WorkflowPackageArchiveError.archiveNotFound(archiveURL.path)
     }
     if FileManager.default.fileExists(atPath: extractionRoot.path) {
       try FileManager.default.removeItem(at: extractionRoot)

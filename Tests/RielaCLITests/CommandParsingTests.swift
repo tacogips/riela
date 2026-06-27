@@ -8,6 +8,34 @@ final class CommandParsingTests: XCTestCase {
     XCTAssertEqual(try RielaArgumentParser().parse(["-h"]), .help)
   }
 
+  func testParsesPackageHelp() throws {
+    XCTAssertEqual(try RielaArgumentParser().parse(["package"]), .packageHelp(.package))
+    XCTAssertEqual(try RielaArgumentParser().parse(["package", "--help"]), .packageHelp(.package))
+    XCTAssertEqual(try RielaArgumentParser().parse(["package", "-h"]), .packageHelp(.package))
+    XCTAssertEqual(try RielaArgumentParser().parse(["package", "help"]), .packageHelp(.package))
+    XCTAssertEqual(try RielaArgumentParser().parse(["workflow", "package"]), .packageHelp(.workflowPackage))
+    XCTAssertEqual(try RielaArgumentParser().parse(["workflow", "package", "--help"]), .packageHelp(.workflowPackage))
+    XCTAssertEqual(
+      try RielaArgumentParser().parse(["package", "init", "demo", "--package-name", "demo-package"]),
+      .package(PackageCommand(kind: .initialize, options: CLICommandOptions(
+        scope: "package",
+        command: "init",
+        target: "demo",
+        arguments: ["--package-name", "demo-package"],
+        output: .text
+      )))
+    )
+    XCTAssertEqual(
+      try RielaArgumentParser().parse(["workflow", "package", "pack", "demo"]),
+      .workflow(.package(PackageCommand(kind: .pack, options: CLICommandOptions(
+        scope: "workflow package",
+        command: "pack",
+        target: "demo",
+        output: .text
+      ))))
+    )
+  }
+
   func testParsesWorkflowRunHelp() throws {
     XCTAssertEqual(
       try RielaArgumentParser().parse(["workflow", "run", "demo", "--help"]),
@@ -497,6 +525,22 @@ final class CommandParsingTests: XCTestCase {
       XCTAssertEqual(options.output, .jsonl)
     } else {
       XCTFail("expected workflow list command")
+    }
+  }
+
+  func testPackageCommandsDefaultToTextForInteractiveUse() throws {
+    let parser = RielaArgumentParser()
+
+    if case let .package(command) = try parser.parse(["package", "validate", "demo.rielapkg"]) {
+      XCTAssertEqual(command.options.output, .text)
+    } else {
+      XCTFail("expected package validate command")
+    }
+
+    if case let .package(command) = try parser.parse(["package", "validate", "demo.rielapkg", "--output", "json"]) {
+      XCTAssertEqual(command.options.output, .json)
+    } else {
+      XCTFail("expected package validate command")
     }
   }
 }

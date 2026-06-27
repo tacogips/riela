@@ -15,7 +15,6 @@ extension WorkflowCommandTests {
     let packageSource = tempDir.appendingPathComponent("package-source", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: tempDir) }
     try FileManager.default.createDirectory(at: packageSource, withIntermediateDirectories: true)
-
     let app = RielaCLIApplication()
     let create = await app.run([
       "workflow", "create", "created-flow",
@@ -55,6 +54,7 @@ extension WorkflowCommandTests {
       at: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step/prompts"),
       to: packageSource.appendingPathComponent("prompts")
     )
+    let packageSourceChecksum = try packageChecksum(packageRoot: packageSource)
     try """
     {
       "name": "demo-package",
@@ -62,7 +62,7 @@ extension WorkflowCommandTests {
       "description": "Demo package",
       "tags": ["demo"],
       "registry": "local",
-      "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "checksum": "\(packageSourceChecksum)",
       "checksumAlgorithm": "md5",
       "workflowDirectory": "."
     }
@@ -255,6 +255,7 @@ extension WorkflowCommandTests {
 
     let scopedPackageSource = tempDir.appendingPathComponent("scoped-package-source", isDirectory: true)
     try FileManager.default.copyItem(at: packageSource, to: scopedPackageSource)
+    let scopedPackageSourceChecksum = try packageChecksum(packageRoot: scopedPackageSource)
     try """
     {
       "name": "@scope/scoped-flow",
@@ -262,7 +263,7 @@ extension WorkflowCommandTests {
       "description": "Scoped demo package",
       "tags": ["demo"],
       "registry": "local",
-      "checksum": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "checksum": "\(scopedPackageSourceChecksum)",
       "checksumAlgorithm": "md5",
       "workflowDirectory": "."
     }
@@ -996,5 +997,4 @@ extension WorkflowCommandTests {
       workflowCalledResult.session.sessionId
     )
   }
-
 }

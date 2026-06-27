@@ -27,4 +27,41 @@ final class WorkflowRunHelpTests: XCTestCase {
     XCTAssertTrue(result.stdout.contains("riela workflow run worker-only-single-step --variables"))
     XCTAssertTrue(result.stdout.contains("--output jsonl"))
   }
+
+  func testPackageHelpDocumentsArchiveAndAppImportFlow() async {
+    let result = await RielaCLIApplication().run(["package", "--help"])
+
+    XCTAssertEqual(result.exitCode, .success)
+    XCTAssertTrue(result.stderr.isEmpty)
+    XCTAssertTrue(result.stdout.contains("Riela package"))
+    XCTAssertTrue(result.stdout.contains("init <workflow-or-package-dir>"))
+    XCTAssertTrue(result.stdout.contains("pack <package-dir>"))
+    XCTAssertTrue(result.stdout.contains("validate <package-dir|archive.rielapkg|archive.zip>"))
+    XCTAssertTrue(result.stdout.contains("install <package-name|package-dir|archive.rielapkg|archive.zip>"))
+    XCTAssertTrue(result.stdout.contains("run|temp-run <package-name|package-dir|archive.rielapkg|archive.zip>"))
+    XCTAssertTrue(result.stdout.contains("Package init:"))
+    XCTAssertTrue(result.stdout.contains("content-derived checksum"))
+    XCTAssertTrue(result.stdout.contains("contains exactly one workflows/<name>/workflow.json"))
+    XCTAssertTrue(result.stdout.contains("pass --workflow-definition-dir"))
+    XCTAssertTrue(result.stdout.contains("multiple workflows are present"))
+    XCTAssertTrue(result.stdout.contains("Manual manifests:"))
+    XCTAssertTrue(result.stdout.contains("checksumAlgorithm"))
+    XCTAssertTrue(result.stdout.contains("md5"))
+    XCTAssertTrue(result.stdout.contains("A .rielapkg or .zip is a portable package archive"))
+    XCTAssertTrue(result.stdout.contains("RielaApp can import the same package folder, .rielapkg, or .zip"))
+    XCTAssertTrue(result.stdout.contains("--import-workflow-or-package <path>"))
+    XCTAssertTrue(result.stdout.contains("--import-workflow-or-package <path> --open-workflows"))
+    XCTAssertTrue(result.stdout.contains("launch RielaApp with --import-workflow-or-package <path> --open-workflows"))
+    XCTAssertTrue(result.stdout.contains("profiles keeps enabled workflows and imported packages separate"))
+  }
+
+  func testWorkflowPackageHelpUsesWorkflowPackagePrefix() async {
+    let result = await RielaCLIApplication().run(["workflow", "package", "--help"])
+
+    XCTAssertEqual(result.exitCode, .success)
+    XCTAssertTrue(result.stderr.isEmpty)
+    XCTAssertTrue(result.stdout.contains("riela workflow package pack <package-dir>"))
+    XCTAssertTrue(result.stdout.contains("riela workflow package init <workflow-or-package-dir>"))
+    XCTAssertTrue(result.stdout.contains("riela workflow package install"))
+  }
 }

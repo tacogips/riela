@@ -7,7 +7,7 @@ import RielaServer
 final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate {
   private enum Column {
     static let workflow = NSUserInterfaceItemIdentifier("workflow")
-    static let sources = NSUserInterfaceItemIdentifier("sources")
+    static let source = NSUserInterfaceItemIdentifier("source")
     static let active = NSUserInterfaceItemIdentifier("active")
     static let runtime = NSUserInterfaceItemIdentifier("runtime")
   }
@@ -17,10 +17,20 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   private let profilePopup = NSPopUpButton()
   private let profileField = NSTextField()
   private let statusLabel = NSTextField(labelWithString: "")
+  private let actionStatusLabel = NSTextField(labelWithString: "Last Action: Ready")
+  private let selectionDetailLabel = NSTextField(labelWithString: "")
+  private let revealSourceButton = NSButton(title: "Reveal Selected", target: nil, action: nil)
+  private let removeButton = NSButton(title: "Remove Selected", target: nil, action: nil)
+  private let startButton = NSButton(title: "Auto-Start On", target: nil, action: nil)
+  private let stopButton = NSButton(title: "Auto-Start Off", target: nil, action: nil)
+  private let enableButton = NSButton(title: "Enable", target: nil, action: nil)
+  private let disableButton = NSButton(title: "Disable", target: nil, action: nil)
   private let onRefresh: () -> Void
   private let onSelectProfile: (String) -> Void
   private let onAddDirectory: () -> Void
   private let onAddProject: () -> Void
+  private let onOpenProfileFolder: () -> Void
+  private let onRevealSelectedSource: (String) -> Void
   private let onRemoveDirectory: (String) -> Void
   private let onSetEnabled: (String, Bool) -> Void
   private let onSetActive: (String, Bool) -> Void
@@ -30,13 +40,18 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   private var snapshots: [String: RielaAppDaemonWorkflowRuntime.RuntimeSnapshot] = [:]
   private var profileName = RielaAppProfileName.default
   private var profileNames: [RielaAppProfileName] = [.default]
+  private var selectedIdentity: String?
+  private var selectedIdentityByProfile: [RielaAppProfileName: String] = [:]
   private var isUpdatingProfileControls = false
+  private var isUpdatingTableSelection = false
 
   init(
     onRefresh: @escaping () -> Void,
     onSelectProfile: @escaping (String) -> Void,
     onAddDirectory: @escaping () -> Void,
     onAddProject: @escaping () -> Void,
+    onOpenProfileFolder: @escaping () -> Void,
+    onRevealSelectedSource: @escaping (String) -> Void,
     onRemoveDirectory: @escaping (String) -> Void,
     onSetEnabled: @escaping (String, Bool) -> Void,
     onSetActive: @escaping (String, Bool) -> Void
@@ -45,11 +60,13 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     self.onSelectProfile = onSelectProfile
     self.onAddDirectory = onAddDirectory
     self.onAddProject = onAddProject
+    self.onOpenProfileFolder = onOpenProfileFolder
+    self.onRevealSelectedSource = onRevealSelectedSource
     self.onRemoveDirectory = onRemoveDirectory
     self.onSetEnabled = onSetEnabled
     self.onSetActive = onSetActive
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 980, height: 560),
+      contentRect: NSRect(x: 0, y: 0, width: 1180, height: 560),
       styleMask: [.titled, .closable, .resizable, .miniaturizable],
       backing: .buffered,
       defer: false
@@ -68,26 +85,44 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     profileNames: [RielaAppProfileName],
     candidates: [RielaAppDaemonWorkflowCandidate],
     state: RielaAppDaemonWorkflowState,
-    snapshots: [String: RielaAppDaemonWorkflowRuntime.RuntimeSnapshot]
+    snapshots: [String: RielaAppDaemonWorkflowRuntime.RuntimeSnapshot],
+    statusMessage: String
   ) {
+    let didChangeProfile = self.profileName != profileName
     self.profileName = profileName
     self.profileNames = profileNames
     self.candidates = candidates
     self.state = state
     self.snapshots = snapshots
+    if didChangeProfile || selectedIdentity == nil {
+      selectedIdentity = selectedIdentityByProfile[profileName]
+    }
     updateProfileControls()
     enabledTable.reloadData()
     disabledTable.reloadData()
+    restoreSelection()
+    updateSelectionDetail()
+    updateSelectionActionStates()
+    actionStatusLabel.stringValue = "Last Action: \(statusMessage)"
+    if candidates.isEmpty {
+      statusLabel.stringValue = "Profile: \(profileName.rawValue) | no workflows | Add Workflow/Package... imports into this profile"
+      return
+    }
     let availableCount = enabledCandidates.count
     let runningCount = candidates.filter { candidate in
-      let preference = state.preference(for: candidate.id)
-      return preference.available && preference.active
+      snapshots[candidate.id]?.status == .running
     }.count
+    let autostartCount = candidates.filter { state.preference(for: $0.id).active }.count
+    let profileScopedCount = candidates.filter(\.isRielaAppProfileScoped).count
+    let externalCount = candidates.count - profileScopedCount
     statusLabel.stringValue = [
       "Profile: \(profileName.rawValue)",
-      "\(runningCount) running now",
+      "\(runningCount) running",
       "\(availableCount) enabled",
-      "\(disabledCandidates.count) disabled"
+      "\(autostartCount) auto-start",
+      "\(disabledCandidates.count) disabled",
+      "\(profileScopedCount) in profile",
+      "\(externalCount) external"
     ].joined(separator: " | ")
   }
 
@@ -110,16 +145,39 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     profilePopup.widthAnchor.constraint(equalToConstant: 160).isActive = true
     profileField.placeholderString = RielaAppProfileName.defaultRawValue
     profileField.widthAnchor.constraint(equalToConstant: 150).isActive = true
-    let useProfileButton = NSButton(title: "Use Profile", target: self, action: #selector(useTypedProfile))
-    let addButton = NSButton(title: "Add Workflow...", target: self, action: #selector(addDirectory))
+    let useProfileButton = NSButton(title: "Switch/Create", target: self, action: #selector(useTypedProfile))
+    let addButton = NSButton(title: "Add Workflow/Package...", target: self, action: #selector(addDirectory))
     let addProjectButton = NSButton(title: "Add Project...", target: self, action: #selector(addProject))
-    let removeButton = NSButton(title: "Remove Selected", target: self, action: #selector(removeSelectedDirectory))
+    let openProfileButton = NSButton(title: "Open Profile Folder", target: self, action: #selector(openProfileFolder))
     let refreshButton = NSButton(title: "Refresh", target: self, action: #selector(refresh))
-    let startButton = NSButton(title: "Start Now", target: self, action: #selector(startSelectedNow))
-    let stopButton = NSButton(title: "Stop Now", target: self, action: #selector(stopSelectedNow))
-    let enableButton = NSButton(title: "Enable", target: self, action: #selector(enableSelected))
-    let disableButton = NSButton(title: "Disable", target: self, action: #selector(disableSelected))
+    revealSourceButton.target = self
+    revealSourceButton.action = #selector(revealSelectedSource)
+    removeButton.target = self
+    removeButton.action = #selector(removeSelectedDirectory)
+    startButton.target = self
+    startButton.action = #selector(startSelectedNow)
+    stopButton.target = self
+    stopButton.action = #selector(stopSelectedNow)
+    enableButton.target = self
+    enableButton.action = #selector(enableSelected)
+    disableButton.target = self
+    disableButton.action = #selector(disableSelected)
+    useProfileButton.toolTip = "Switch to the typed profile name, creating it if needed."
+    addButton.toolTip = "Import a workflow folder, package folder, .rielapkg, or .zip into this profile."
+    addProjectButton.toolTip = "Show workflows and packages from a project directory without copying them into this profile."
+    openProfileButton.toolTip = "Open this profile's workflows, packages, and daemon state in Finder."
+    revealSourceButton.toolTip = "Reveal the selected workflow, package, or project source in Finder."
+    removeButton.toolTip = "Remove the selected profile import or project reference."
+    startButton.toolTip = "Turn on auto-start for the selected enabled workflow and start it now."
+    stopButton.toolTip = "Turn off auto-start for the selected workflow and stop it now."
+    enableButton.toolTip = "Enable the selected disabled workflow for this profile."
+    disableButton.toolTip = "Disable the selected enabled workflow for this profile."
     statusLabel.lineBreakMode = .byTruncatingTail
+    actionStatusLabel.lineBreakMode = .byTruncatingMiddle
+    actionStatusLabel.textColor = .secondaryLabelColor
+    selectionDetailLabel.lineBreakMode = .byTruncatingMiddle
+    selectionDetailLabel.textColor = .secondaryLabelColor
+    selectionDetailLabel.stringValue = "Selected: None"
     let profileRow = NSStackView(views: [
       profileLabel,
       profilePopup,
@@ -132,6 +190,8 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     let actionRow = NSStackView(views: [
       addButton,
       addProjectButton,
+      openProfileButton,
+      revealSourceButton,
       removeButton,
       refreshButton,
       startButton,
@@ -141,18 +201,30 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     ])
     actionRow.orientation = .horizontal
     actionRow.spacing = 10
+    let actionStatusRow = NSStackView(views: [
+      actionStatusLabel
+    ])
+    actionStatusRow.orientation = .horizontal
+    actionStatusRow.spacing = 0
+    let selectionRow = NSStackView(views: [
+      selectionDetailLabel
+    ])
+    selectionRow.orientation = .horizontal
+    selectionRow.spacing = 0
     let toolbar = NSStackView(views: [
       profileRow,
-      actionRow
+      actionRow,
+      actionStatusRow,
+      selectionRow
     ])
     toolbar.alignment = .leading
     toolbar.orientation = .vertical
     toolbar.spacing = 8
     toolbar.translatesAutoresizingMaskIntoConstraints = false
 
-    let enabledBox = box(title: "Enabled Workflows", table: enabledTable)
-    let disabledBox = box(title: "Disabled Workflows", table: disabledTable)
-    let split = NSStackView(views: [enabledBox, disabledBox])
+    let enabledList = workflowList(title: "Enabled Workflows", table: enabledTable)
+    let disabledList = workflowList(title: "Disabled Workflows", table: disabledTable)
+    let split = NSStackView(views: [enabledList, disabledList])
     split.orientation = .horizontal
     split.distribution = .fillEqually
     split.spacing = 14
@@ -172,28 +244,38 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     ])
   }
 
-  private func box(title: String, table: NSTableView) -> NSBox {
+  private func workflowList(title: String, table: NSTableView) -> NSView {
     table.delegate = self
     table.dataSource = self
     table.usesAlternatingRowBackgroundColors = true
     table.rowHeight = 28
+    table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
     table.action = #selector(tableClicked(_:))
     table.target = self
     table.headerView = NSTableHeaderView()
-    addColumn(Column.workflow, title: "Workflow", width: 150, to: table)
-    addColumn(Column.sources, title: "Event Sources", width: 190, to: table)
-    addColumn(Column.active, title: "Running Now", width: 110, to: table)
-    addColumn(Column.runtime, title: "Status", width: 160, to: table)
+    addColumn(Column.workflow, title: "Workflow", width: 170, to: table)
+    addColumn(Column.source, title: "Source", width: 130, to: table)
+    addColumn(Column.active, title: "Auto-Start", width: 85, to: table)
+    addColumn(Column.runtime, title: "Status", width: 115, to: table)
 
     let scroll = NSScrollView()
     scroll.documentView = table
     scroll.hasVerticalScroller = true
+    scroll.hasHorizontalScroller = false
     scroll.translatesAutoresizingMaskIntoConstraints = false
+    scroll.borderType = .bezelBorder
+    scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
 
-    let box = NSBox()
-    box.title = title
-    box.contentView = scroll
-    return box
+    let label = NSTextField(labelWithString: title)
+    label.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+
+    let container = NSStackView(views: [label, scroll])
+    container.orientation = .vertical
+    container.spacing = 6
+    container.alignment = .leading
+    scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor).isActive = true
+    scroll.trailingAnchor.constraint(equalTo: container.trailingAnchor).isActive = true
+    return container
   }
 
   private func addColumn(
@@ -228,6 +310,8 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     ])
     if tableColumn.identifier == Column.active, tableView == enabledTable {
       text.textColor = NSColor.controlAccentColor
+    } else if tableColumn.identifier == Column.source {
+      text.textColor = NSColor.secondaryLabelColor
     } else if tableColumn.identifier == Column.runtime {
       text.textColor = runtimeColor(for: rows(for: tableView)[row].id)
     }
@@ -239,8 +323,8 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     switch column {
     case Column.workflow:
       return candidate.displayName
-    case Column.sources:
-      return candidate.eventSourceSummary
+    case Column.source:
+      return candidate.sourceDescription
     case Column.active:
       return state.preference(for: candidate.id).active ? "Yes" : "No"
     case Column.runtime:
@@ -290,6 +374,17 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     onAddProject()
   }
 
+  @objc private func openProfileFolder() {
+    onOpenProfileFolder()
+  }
+
+  @objc private func revealSelectedSource() {
+    guard let candidate = selectedCandidate(in: enabledTable) ?? selectedCandidate(in: disabledTable) else {
+      return
+    }
+    onRevealSelectedSource(candidate.id)
+  }
+
   @objc private func removeSelectedDirectory() {
     guard let candidate = selectedCandidate(in: enabledTable) ?? selectedCandidate(in: disabledTable) else {
       return
@@ -336,6 +431,29 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     onSetActive(candidate.id, !state.preference(for: candidate.id).active)
   }
 
+  func selectCandidate(identity: String) {
+    rememberSelection(identity)
+    restoreSelection()
+    updateSelectionDetail()
+    updateSelectionActionStates()
+  }
+
+  func tableViewSelectionDidChange(_ notification: Notification) {
+    guard !isUpdatingTableSelection, let tableView = notification.object as? NSTableView else {
+      return
+    }
+    isUpdatingTableSelection = true
+    if tableView == enabledTable, enabledTable.selectedRow >= 0 {
+      disabledTable.deselectAll(nil)
+    } else if tableView == disabledTable, disabledTable.selectedRow >= 0 {
+      enabledTable.deselectAll(nil)
+    }
+    isUpdatingTableSelection = false
+    rememberSelection((selectedCandidate(in: enabledTable) ?? selectedCandidate(in: disabledTable))?.id)
+    updateSelectionDetail()
+    updateSelectionActionStates()
+  }
+
   private func selectedCandidate(in tableView: NSTableView) -> RielaAppDaemonWorkflowCandidate? {
     let row = tableView.selectedRow
     guard row >= 0 else {
@@ -346,6 +464,99 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       return nil
     }
     return candidates[row]
+  }
+
+  private func updateSelectionDetail() {
+    guard let candidate = selectedCandidate(in: enabledTable) ?? selectedCandidate(in: disabledTable) else {
+      selectionDetailLabel.stringValue = "Selected: None"
+      return
+    }
+    let preference = state.preference(for: candidate.id)
+    let runtimeDetail = snapshots[candidate.id]?.detail ?? "Stopped"
+    let scope = candidate.isRielaAppProfileScoped ? "profile" : "external"
+    var details = [
+      "Selected: \(candidate.displayName)",
+      "Source: \(candidate.sourceDescription)",
+      "Scope: \(scope)",
+      "Auto-start: \(preference.active ? "yes" : "no")",
+      "Events: \(candidate.eventSourceSummary)",
+      "Runtime: \(runtimeDetail)",
+      "Path: \(candidate.sourceDirectory)"
+    ]
+    if candidate.startsEventSources {
+      details.append("Event runner: \(RielaAppDaemonProcessEventSourceFactory().resolvedExecutableDescription())")
+    }
+    selectionDetailLabel.stringValue = details.joined(separator: " | ")
+  }
+
+  private func updateSelectionActionStates() {
+    let selectedEnabled = selectedCandidate(in: enabledTable)
+    let selectedDisabled = selectedCandidate(in: disabledTable)
+    let selectedCandidate = selectedEnabled ?? selectedDisabled
+    let hasSelection = selectedCandidate != nil
+    let isAutoStartEnabled = selectedCandidate.map { state.preference(for: $0.id).active } ?? false
+    let selectedRuntimeIsActive = selectedCandidate.map { isRuntimeActive(identity: $0.id) } ?? false
+    revealSourceButton.isEnabled = hasSelection
+    removeButton.isEnabled = selectedCandidate.map(canRemove) ?? false
+    startButton.isEnabled = selectedEnabled != nil && !isAutoStartEnabled
+    stopButton.isEnabled = hasSelection && (isAutoStartEnabled || selectedRuntimeIsActive)
+    enableButton.isEnabled = selectedDisabled != nil
+    disableButton.isEnabled = selectedEnabled != nil
+  }
+
+  private func isRuntimeActive(identity: String) -> Bool {
+    switch snapshots[identity]?.status {
+    case .running, .starting, .reloading, .stopping:
+      return true
+    case .failed, .stopped, nil:
+      return false
+    }
+  }
+
+  private func restoreSelection() {
+    guard let selectedIdentity = selectedIdentity ?? selectedIdentityByProfile[profileName] else {
+      enabledTable.deselectAll(nil)
+      disabledTable.deselectAll(nil)
+      return
+    }
+    self.selectedIdentity = selectedIdentity
+    if select(identity: selectedIdentity, in: enabledTable, rows: enabledCandidates) {
+      disabledTable.deselectAll(nil)
+      return
+    }
+    if select(identity: selectedIdentity, in: disabledTable, rows: disabledCandidates) {
+      enabledTable.deselectAll(nil)
+      return
+    }
+    rememberSelection(nil)
+    enabledTable.deselectAll(nil)
+    disabledTable.deselectAll(nil)
+  }
+
+  private func rememberSelection(_ identity: String?) {
+    selectedIdentity = identity
+    if let identity {
+      selectedIdentityByProfile[profileName] = identity
+    } else {
+      selectedIdentityByProfile.removeValue(forKey: profileName)
+    }
+  }
+
+  private func select(identity: String, in tableView: NSTableView, rows: [RielaAppDaemonWorkflowCandidate]) -> Bool {
+    guard let row = rows.firstIndex(where: { $0.id == identity }) else {
+      return false
+    }
+    isUpdatingTableSelection = true
+    tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+    tableView.scrollRowToVisible(row)
+    isUpdatingTableSelection = false
+    return true
+  }
+
+  private func canRemove(_ candidate: RielaAppDaemonWorkflowCandidate) -> Bool {
+    candidate.isRielaAppProfileScoped
+      || state.projectDirectory(containing: candidate.workflowDirectory) != nil
+      || state.containsWorkflowDirectory(candidate.workflowDirectory)
   }
 
   private func updateProfileControls() {

@@ -33,6 +33,7 @@ public enum WorkflowScope: String, Codable, Sendable {
 
 public enum RielaCommand: Equatable, Sendable {
   case help
+  case packageHelp(PackageHelpScope)
   case version
   case workflow(WorkflowCommand)
   case session(SessionCommand)
@@ -40,6 +41,11 @@ public enum RielaCommand: Equatable, Sendable {
   case package(PackageCommand)
   case memory(MemoryCommand)
   case scoped(ScopedCommand)
+}
+
+public enum PackageHelpScope: String, Codable, Sendable {
+  case package
+  case workflowPackage = "workflow package"
 }
 
 public enum SessionCommand: Equatable, Sendable {
@@ -115,6 +121,7 @@ public enum PackageCommandKind: String, Codable, Sendable {
   case checkout
   case run
   case tempRun = "temp-run"
+  case initialize = "init"
   case validate
   case pack
   case publish
@@ -394,7 +401,11 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       return .scoped(try parseScoped(kind: scopedKind, arguments: Array(arguments.dropFirst())))
     }
     if arguments.first == "package" {
-      return .package(try parsePackage(scope: "package", arguments: Array(arguments.dropFirst())))
+      let packageArguments = Array(arguments.dropFirst())
+      if isPackageHelpRequest(packageArguments) {
+        return .packageHelp(.package)
+      }
+      return .package(try parsePackage(scope: "package", arguments: packageArguments))
     }
     if arguments.first == "memory" {
       return .memory(try parseMemory(Array(arguments.dropFirst())))
@@ -412,7 +423,11 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       throw CLIUsageError("workflow command requires a subcommand and workflow name")
     }
     if arguments[1] == "package" {
-      return .workflow(.package(try parsePackage(scope: "workflow package", arguments: Array(arguments.dropFirst(2)))))
+      let packageArguments = Array(arguments.dropFirst(2))
+      if isPackageHelpRequest(packageArguments) {
+        return .packageHelp(.workflowPackage)
+      }
+      return .workflow(.package(try parsePackage(scope: "workflow package", arguments: packageArguments)))
     }
     if arguments[1] == "manifest" {
       return .workflow(.manifestValidate(try parseWorkflowManifest(Array(arguments.dropFirst(2)))))
@@ -478,6 +493,10 @@ public struct RielaArgumentParser: CLIArgumentParsing {
 
   private func isHelpOption(_ token: String) -> Bool {
     token == "--help" || token == "-h"
+  }
+
+  private func isPackageHelpRequest(_ arguments: [String]) -> Bool {
+    arguments.isEmpty || (arguments.count == 1 && (isHelpOption(arguments[0]) || arguments[0] == "help"))
   }
 
   private func parseSession(_ arguments: [String]) throws -> RielaCommand {
@@ -645,7 +664,8 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       command: subcommand,
       target: target,
       arguments: Array(arguments.dropFirst(optionStart)),
-      allowTableOutput: kind == .search || kind == .list
+      allowTableOutput: kind == .search || kind == .list,
+      defaultOutput: .text
     )
     return PackageCommand(kind: kind, options: options)
   }
@@ -849,9 +869,10 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     command: String?,
     target: String? = nil,
     arguments: [String],
-    allowTableOutput: Bool = false
+    allowTableOutput: Bool = false,
+    defaultOutput: WorkflowOutputFormat = .jsonl
   ) throws -> CLICommandOptions {
-    let output = try parseOutputOnly(arguments, allowTableOutput: allowTableOutput)
+    let output = try parseOutputOnly(arguments, allowTableOutput: allowTableOutput, defaultOutput: defaultOutput)
     return CLICommandOptions(scope: scope, command: command, target: target, arguments: arguments, output: output)
   }
 

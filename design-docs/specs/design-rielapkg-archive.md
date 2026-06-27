@@ -28,10 +28,13 @@ skills/
 addons/
 ```
 
-It may also contain one top-level directory that contains `riela-package.json`.
-In both cases, `riela-package.json` is the package manifest. For workflow
-packages, `workflowDirectory` points to the workflow bundle and defaults to `.`
-when omitted.
+It may also contain exactly one top-level directory that contains
+`riela-package.json`. Archives with sibling entries beside that top-level package
+directory are rejected; package content must either live directly at the archive
+root or under that single package directory. In both accepted layouts,
+`riela-package.json` is the package manifest. For workflow packages,
+`workflowDirectory` points to the workflow bundle and defaults to `.` when
+omitted.
 
 ## CLI Behavior
 
@@ -41,12 +44,17 @@ The package command supports both unpacked directories and archives:
 riela package pack <package-dir> --destination <name>.rielapkg
 riela package validate <package-dir-or-archive>
 riela package install <package-dir-or-archive>
-riela package install <package-id> --source <package-dir-or-archive>
+riela package install --source <package-dir-or-archive>
+riela package run <package-name-or-archive>
 ```
 
-`pack` accepts `.rielapkg` and `.zip` destinations. `install` uses the manifest
-package name when the source is a path or archive, and uses the target package id
-only when resolving from an installed/registry package name.
+`pack` accepts `.rielapkg` and `.zip` destinations. `validate`, `install`, and
+`run` materialize archives under a command-owned temporary root before loading
+the manifest. `install` uses the manifest package name when the source is an
+unpacked path or archive; a target package id is used only when resolving an
+installed or registry package by name. This avoids treating
+`riela package install <other-name> --source ./pkg.rielapkg` as a package rename
+operation.
 
 ## RielaApp Behavior
 
@@ -89,6 +97,15 @@ Imported packages are expanded into the active profile package root. Startup
 discovery, refresh/read, and execution discover those managed package
 directories and run their workflow bundles through the same daemon workflow
 runtime as project and user packages.
+Discovery decodes the shared `WorkflowPackageManifest` shape and surfaces only
+workflow packages as daemon workflow candidates; import performs full package
+validation before writing content into the active profile.
+
+RielaApp package import performs the same package-tree and manifest validation
+as the command path after materialization. Invalid package metadata, unsafe
+`workflowDirectory` values, missing workflow bundles, loop-promotion artifact
+gaps, symlinks, and non-regular filesystem entries are rejected before content
+is copied into the profile package root.
 
 The workflow window separates `Enabled Workflows` from `Disabled Workflows`.
 Enable moves a discovered workflow into the enabled set and starts it for the
@@ -96,6 +113,9 @@ profile. Disable moves it into the disabled set, clears active state, and stops
 the app-owned serving controller for that workflow. Removing an app-managed
 workflow or package deletes only content contained by the active profile's
 managed roots; project/user workflows outside those roots are not deleted.
+The add/import and enable/disable/start/stop/remove user actions are implemented
+in the RielaApp entry point and daemon workflow window controller, while the
+path, profile, validation, and discovery rules live in RielaAppSupport.
 
 ## Safety
 
@@ -108,3 +128,8 @@ or device nodes when the archive metadata exposes them. After extraction it
 performs a second package-tree validation that rejects symlinks and non-regular
 filesystem entries before install or App import. Extraction happens under a
 temporary directory before the package is copied into the final package root.
+CLI archive materialization uses `.riela/tmp/rielapkg/<uuid>` below the command
+working directory; RielaApp archive materialization uses a profile-local
+temporary package root. Temporary materializations are removed after
+validation, install, import, or package execution returns, and they are also
+removed when archive materialization fails.

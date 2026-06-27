@@ -104,6 +104,20 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     )
   }
 
+  func testSkipsNonWorkflowPackageManifestInDiscovery() throws {
+    let root = try temporaryHome()
+    let packageDirectory = root.appendingPathComponent(".riela/packages/addon-package", isDirectory: true)
+    try FileManager.default.createDirectory(at: packageDirectory, withIntermediateDirectories: true)
+    try """
+    {"kind":"node-addon","name":"addon-package","workflowDirectory":"."}
+    """.write(to: packageDirectory.appendingPathComponent("riela-package.json"), atomically: true, encoding: .utf8)
+    try writeWorkflow(id: "not-a-daemon-workflow", to: packageDirectory)
+
+    let candidates = RielaAppDaemonWorkflowDiscovery(homeDirectory: root).discoverUserDaemonWorkflows()
+
+    XCTAssertFalse(candidates.contains { $0.workflowId == "not-a-daemon-workflow" })
+  }
+
   func testSkipsPackageWorkflowDirectorySymlinkThatEscapesPackageRoot() throws {
     let root = try temporaryHome()
     let packageDirectory = root.appendingPathComponent(".riela/packages/escape-package", isDirectory: true)
@@ -361,6 +375,29 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     XCTAssertEqual(installedURL.path, packageRoot.appendingPathComponent("archive-profile-package").path)
     XCTAssertTrue(FileManager.default.fileExists(atPath: installedURL.appendingPathComponent("riela-package.json").path))
     XCTAssertTrue(FileManager.default.fileExists(atPath: installedURL.appendingPathComponent("workflow.json").path))
+  }
+
+  func testManagedPackageInstallerRejectsInvalidPackageManifest() throws {
+    let root = try temporaryHome()
+    let source = root.appendingPathComponent("source/invalid-package", isDirectory: true)
+    try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+    try """
+    {
+      "name": "invalid-profile-package",
+      "workflowDirectory": "."
+    }
+    """.write(to: source.appendingPathComponent("riela-package.json"), atomically: true, encoding: .utf8)
+    try writeWorkflow(id: "invalid-profile-workflow", to: source)
+    let installer = RielaAppManagedPackageInstaller(
+      packageRoot: RielaAppProfileStore.defaultPackageRootURL(homeDirectory: root)
+    )
+
+    XCTAssertThrowsError(try installer.installPackageSource(source)) { error in
+      XCTAssertEqual(
+        error as? RielaAppManagedWorkflowInstallError,
+        .invalidPackageDirectory(source.standardizedFileURL.path)
+      )
+    }
   }
 
   func testDaemonSourceKindPolicy() {

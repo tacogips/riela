@@ -93,12 +93,6 @@ public struct RielaAppManagedWorkflowInstaller: Sendable {
 }
 
 public struct RielaAppManagedPackageInstaller: Sendable {
-  private struct MinimalPackageManifest: Decodable {
-    var name: String
-    var kind: String?
-    var workflowDirectory: String?
-  }
-
   public var packageRoot: URL
 
   public init(packageRoot: URL) {
@@ -113,14 +107,13 @@ public struct RielaAppManagedPackageInstaller: Sendable {
         try? FileManager.default.removeItem(at: temporaryRoot)
       }
     }
-    let manifest = try decodePackageManifest(at: materialized.packageRoot)
+    let manifest = try validatedPackageManifest(at: materialized.packageRoot)
     let destination = packageRoot
       .appendingPathComponent(RielaAppManagedWorkflowInstaller.sanitizedDirectoryName(manifest.name), isDirectory: true)
       .standardizedFileURL
     guard containsInstalledPackageDirectory(destination) else {
       throw RielaAppManagedWorkflowInstallError.unsafeDestination(destination.path)
     }
-    try validatePackageWorkflow(manifest: manifest, packageDirectory: materialized.packageRoot)
     try validateSourceDestinationContainment(source: materialized.packageRoot, destination: destination)
     try FileManager.default.createDirectory(at: packageRoot, withIntermediateDirectories: true)
     if materialized.packageRoot.path == destination.path {
@@ -167,29 +160,20 @@ public struct RielaAppManagedPackageInstaller: Sendable {
     return (source, nil)
   }
 
-  private func decodePackageManifest(at packageDirectory: URL) throws -> MinimalPackageManifest {
+  private func validatedPackageManifest(at packageDirectory: URL) throws -> WorkflowPackageManifest {
     let manifestURL = packageDirectory.appendingPathComponent(WorkflowPackageArchiveManager.manifestFileName)
-    guard
-      let data = try? Data(contentsOf: manifestURL),
-      let manifest = try? JSONDecoder().decode(MinimalPackageManifest.self, from: data),
-      manifest.kind == nil || manifest.kind == "workflow"
-    else {
+    let manifest: WorkflowPackageManifest
+    do {
+      let data = try Data(contentsOf: manifestURL)
+      manifest = try JSONDecoder().decode(WorkflowPackageManifest.self, from: data)
+    } catch {
+      throw RielaAppManagedWorkflowInstallError.invalidPackageDirectory(packageDirectory.path)
+    }
+    let issues = WorkflowPackageManifestValidator.validatePackageSource(manifest, packageRoot: packageDirectory)
+    guard issues.isEmpty else {
       throw RielaAppManagedWorkflowInstallError.invalidPackageDirectory(packageDirectory.path)
     }
     return manifest
-  }
-
-  private func validatePackageWorkflow(manifest: MinimalPackageManifest, packageDirectory: URL) throws {
-    let workflowRelativePath = manifest.workflowDirectory ?? "."
-    guard let normalized = WorkflowPackageManifestValidator.normalizePackageRelativePath(workflowRelativePath) else {
-      throw RielaAppManagedWorkflowInstallError.invalidPackageDirectory(packageDirectory.path)
-    }
-    let workflowURL = packageDirectory
-      .appendingPathComponent(normalized, isDirectory: true)
-      .appendingPathComponent("workflow.json")
-    guard FileManager.default.fileExists(atPath: workflowURL.path) else {
-      throw RielaAppManagedWorkflowInstallError.invalidPackageDirectory(packageDirectory.path)
-    }
   }
 }
 

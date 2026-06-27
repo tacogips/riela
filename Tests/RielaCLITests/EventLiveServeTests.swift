@@ -524,7 +524,8 @@ final class EventLiveServeTests: XCTestCase {
       "TEST_DISCORD_APP_ID": "999",
       "TEST_DISCORD_YUI_TOKEN": "yui-token",
       "TEST_DISCORD_MIKA_TOKEN": "mika-token",
-      "TEST_DISCORD_RINA_TOKEN": "rina-token"
+      "TEST_DISCORD_RINA_TOKEN": "rina-token",
+      "RIELA_DISCORD_CHANNEL_ID": "999"
     ]) {
       try await server.serve(
         eventRoot: eventRoot,

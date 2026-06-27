@@ -152,21 +152,33 @@ actor FakeSlackGatewayAPI: SlackGatewayAPI {
 actor FakeEventWorkflowRunner: EventWorkflowRunning {
   private(set) var requests: [EventWorkflowRunRequest] = []
   private let repliesByRequest: [[(text: String, replyAs: String)]]
+  private let failureMessage: String?
 
   init(replyText: String, replyAs: String) {
     self.repliesByRequest = [[(replyText, replyAs)]]
+    self.failureMessage = nil
   }
 
   init(replies: [String], replyAs: String) {
     self.repliesByRequest = replies.map { [($0, replyAs)] }
+    self.failureMessage = nil
   }
 
   init(replies: [(text: String, replyAs: String)]) {
     self.repliesByRequest = [replies]
+    self.failureMessage = nil
+  }
+
+  init(failureMessage: String) {
+    self.repliesByRequest = [[]]
+    self.failureMessage = failureMessage
   }
 
   func runWorkflow(_ request: EventWorkflowRunRequest) async throws -> WorkflowRunResult {
     requests.append(request)
+    if let failureMessage {
+      throw CLIUsageError(failureMessage)
+    }
     let replies = repliesByRequest[min(requests.count - 1, repliesByRequest.count - 1)]
     let now = Date(timeIntervalSince1970: 0)
     let executions = replies.enumerated().map { index, reply in

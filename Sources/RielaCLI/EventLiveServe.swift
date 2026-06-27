@@ -76,7 +76,7 @@ struct DefaultEventLiveServer: EventLiveServing {
       ]
     ))
     let unsupported = enabledSources
-      .filter { ![.telegramGateway, .discordGateway, .slackGateway].contains($0.kind) }
+      .filter { !$0.kind.supportsLiveEventServe }
       .map { "\($0.id):\($0.kind.rawValue)" }
       .joined(separator: ",")
     guard unsupported.isEmpty else {

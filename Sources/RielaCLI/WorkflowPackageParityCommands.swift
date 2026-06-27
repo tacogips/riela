@@ -86,6 +86,37 @@ public struct WorkflowPackageCommandRunner: Sendable {
         return try renderPackage(result, output: options.output)
       case .run, .tempRun:
         return try await runPackage(command: command, parsed: parsed)
+      case .validate:
+        let validation = try await validatePackage(target: options.target, parsed: parsed)
+        let result = WorkflowPackageCommandResult(
+          scope: options.scope,
+          command: command.kind.rawValue,
+          target: options.target,
+          packages: [validation.summary],
+          destinationDirectory: validation.packageDirectory.path,
+          dryRun: parsed.dryRun,
+          message: validation.summary.valid ? "package validation passed" : "package validation failed",
+          runSessionId: nil
+        )
+        let rendered = try renderPackage(result, output: options.output)
+        return CLICommandResult(
+          exitCode: validation.summary.valid ? .success : .failure,
+          stdout: rendered.stdout,
+          stderr: rendered.stderr
+        )
+      case .pack:
+        let packed = try await packPackage(target: options.target, parsed: parsed)
+        let result = WorkflowPackageCommandResult(
+          scope: options.scope,
+          command: command.kind.rawValue,
+          target: options.target,
+          packages: [packed.summary],
+          destinationDirectory: packed.archiveURL.path,
+          dryRun: parsed.dryRun,
+          message: parsed.dryRun ? "package pack dry run" : "package archive created",
+          runSessionId: nil
+        )
+        return try renderPackage(result, output: options.output)
       case .publish:
         if parsed.dryRun {
           let published = try await publishPackage(target: options.target, parsed: parsed)
@@ -154,7 +185,17 @@ public struct WorkflowPackageCommandRunner: Sendable {
     guard let target = command.options.target, !target.isEmpty else {
       throw CLIUsageError("\(command.options.scope) \(command.kind.rawValue) requires a package name")
     }
-    let packageDirectory = try packageDirectory(target: target, parsed: parsed)
+    let workingDirectoryURL = URL(
+      fileURLWithPath: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath,
+      isDirectory: true
+    )
+    let resolvedSource = try await runnablePackageSource(target: target, parsed: parsed, workingDirectory: workingDirectoryURL)
+    defer {
+      if let temporaryRoot = resolvedSource.temporaryRoot {
+        try? FileManager.default.removeItem(at: temporaryRoot)
+      }
+    }
+    let packageDirectory = resolvedSource.directory
     let manifestURL = packageDirectory.appendingPathComponent("riela-package.json")
     let loader = FileWorkflowPackageManifestLoader()
     let manifest = try await loader.loadManifest(from: manifestURL)
@@ -193,7 +234,7 @@ public struct WorkflowPackageCommandRunner: Sendable {
       return try renderPackage(packageResult, output: command.options.output)
     }
     let variables = try parsed.variables.map { try JSONReferenceLoader().object(from: $0, workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath) } ?? [:]
-    let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
+    let workingDirectory = workingDirectoryURL.path
     let adapter = try makeScenarioBackedNodeAdapter(
       scenarioPath: parsed.mockScenarioPath,
       workingDirectory: workingDirectory
@@ -248,7 +289,7 @@ public struct WorkflowPackageCommandRunner: Sendable {
     )
   }
 
-  private func packageDirectory(target: String, parsed: ParsedParityOptions) throws -> URL {
+  func packageDirectory(target: String, parsed: ParsedParityOptions) throws -> URL {
     let workingDirectory = URL(fileURLWithPath: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath, isDirectory: true)
     guard WorkflowPackageManifestValidator.isSafePackageName(target) else {
       throw CLIUsageError("invalid package name '\(target)'")
@@ -589,31 +630,32 @@ public struct WorkflowPackageCommandRunner: Sendable {
   }
 
   private func installPackage(target: String?, parsed: ParsedParityOptions) async throws -> URL {
-    guard let target, !target.isEmpty else {
-      throw CLIUsageError("package install requires a package name")
-    }
-    guard WorkflowPackageManifestValidator.isSafePackageName(target) else {
-      throw CLIUsageError("invalid package name '\(target)'")
-    }
     let workingDirectory = URL(fileURLWithPath: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath, isDirectory: true)
-    let sourceURL: URL
-    if let source = parsed.source {
-      sourceURL = absoluteURL(source, relativeTo: workingDirectory)
-    } else if let registrySource = try await registryPackageSource(named: target, parsed: parsed, workingDirectory: workingDirectory) {
-      sourceURL = registrySource
-    } else {
-      throw CLIUsageError("package install requires --source <package-dir> or a registry local path containing \(target)")
+    let resolvedSource = try await sourcePackageDirectory(
+      target: target,
+      parsed: parsed,
+      workingDirectory: workingDirectory,
+      allowRegistry: true
+    )
+    defer {
+      if let temporaryRoot = resolvedSource.temporaryRoot {
+        try? FileManager.default.removeItem(at: temporaryRoot)
+      }
     }
-    guard FileManager.default.fileExists(atPath: sourceURL.appendingPathComponent("riela-package.json").path) else {
-      throw CLIUsageError("package source must contain riela-package.json: \(sourceURL.path)")
-    }
+    let sourceURL = resolvedSource.directory
     let loader = FileWorkflowPackageManifestLoader()
-    let manifest = try await loader.loadManifest(from: sourceURL.appendingPathComponent("riela-package.json"))
+    let manifest = try await loader.loadManifest(from: sourceURL.appendingPathComponent(WorkflowPackageArchiveManager.manifestFileName))
     let issues = await loader.validate(manifest, packageRoot: sourceURL)
     guard issues.isEmpty else {
       throw CLIUsageError("package source validation failed: \(issues.map { "\($0.path): \($0.message)" }.joined(separator: "; "))")
     }
-    let destination = packageRoot(scope: parsed.scope, workingDirectory: workingDirectory).appendingPathComponent(target, isDirectory: true)
+    let destinationName = try installDestinationPackageName(
+      target: target,
+      parsed: parsed,
+      workingDirectory: workingDirectory,
+      manifestName: manifest.name
+    )
+    let destination = packageRoot(scope: parsed.scope, workingDirectory: workingDirectory).appendingPathComponent(destinationName, isDirectory: true)
     let skillProjections = try packageSkillProjectionPlans(
       manifest: manifest,
       packageRoot: sourceURL,
@@ -636,7 +678,7 @@ public struct WorkflowPackageCommandRunner: Sendable {
     return destination
   }
 
-  private func registryPackageSource(
+  func registryPackageSource(
     named target: String,
     parsed: ParsedParityOptions,
     workingDirectory: URL

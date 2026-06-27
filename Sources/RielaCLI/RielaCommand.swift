@@ -115,6 +115,8 @@ public enum PackageCommandKind: String, Codable, Sendable {
   case checkout
   case run
   case tempRun = "temp-run"
+  case validate
+  case pack
   case publish
   case registry
 }

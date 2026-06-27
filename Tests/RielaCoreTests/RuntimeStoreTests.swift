@@ -129,6 +129,10 @@ final class RuntimeStoreTests: XCTestCase {
     XCTAssertEqual(second.createdAt, date)
     let listedMessages = try await store.listMessages(for: session.sessionId, toStepId: "next")
     XCTAssertEqual(listedMessages, [first, second])
+    let loadedSession = try await store.loadSession(id: session.sessionId)
+    let loaded = try XCTUnwrap(loadedSession)
+    XCTAssertEqual(loaded.currentStepId, "next")
+    XCTAssertEqual(loaded.updatedAt, date)
   }
 
   func testRecordStepBackendEventUpdatesDedicatedHeartbeatFieldsOnly() async throws {

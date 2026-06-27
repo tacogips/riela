@@ -67,7 +67,7 @@ let package = Package(
         .product(name: "Crypto", package: "swift-crypto")
       ]
     ),
-    .target(name: "RielaAppSupport", dependencies: ["RielaEvents", "RielaServer", "RielaObservability"]),
+    .target(name: "RielaAppSupport", dependencies: ["RielaAddons", "RielaEvents", "RielaServer", "RielaObservability"]),
     .target(
       name: "CodexAgent",
       dependencies: [
@@ -141,7 +141,7 @@ let package = Package(
     .testTarget(name: "RielaGraphQLTests", dependencies: ["RielaCore", "RielaGraphQL"]),
     .testTarget(name: "RielaServerTests", dependencies: ["RielaCore", "RielaGraphQL", "RielaServer", "RielaObservability"]),
     .testTarget(name: "RielaViewerTests", dependencies: ["RielaCore", "RielaViewer"]),
-    .testTarget(name: "RielaAppSupportTests", dependencies: ["RielaAppSupport", "RielaServer"]),
+    .testTarget(name: "RielaAppSupportTests", dependencies: ["RielaAddons", "RielaAppSupport", "RielaServer"]),
     .testTarget(name: "RielaCLITests", dependencies: ["RielaCore", "RielaAdapters", "RielaCLI"]),
     .testTarget(
       name: "AgentAdapterTests",

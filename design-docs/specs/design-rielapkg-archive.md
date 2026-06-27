@@ -72,7 +72,8 @@ RielaApp also keeps a profile-local daemon workflow state file at:
 ```
 
 That state is app-local policy, not package or workflow source metadata. Each
-candidate has an `available` flag and an `active` flag:
+candidate has an `available` flag, an `active` flag, and an optional
+`environmentFilePath`:
 
 - `available: true` means the workflow is enabled in the current RielaApp
   profile and may be started by the app.
@@ -82,6 +83,8 @@ candidate has an `available` flag and an `active` flag:
 - `active` records whether the enabled workflow should currently be running in
   the app profile. A disabled workflow is never startable from RielaApp even if
   stale state contains `active: true`.
+- `environmentFilePath` is the selected per-workflow credential env file path
+  stored on `RielaAppDaemonWorkflowPreference`.
 
 The profile-local `available` setting affects only RielaApp daemon workflow
 management. It does not rewrite workflow files, package manifests, checkout
@@ -116,6 +119,30 @@ managed roots; project/user workflows outside those roots are not deleted.
 The add/import and enable/disable/start/stop/remove user actions are implemented
 in the RielaApp entry point and daemon workflow window controller, while the
 path, profile, validation, and discovery rules live in RielaAppSupport.
+
+The same workflow window has an `Env` column and an `Env File...` action for
+the selected workflow. `Env File...` accepts files named `.env` or ending in
+`.env`, asks the user to confirm that the file is credential material, and then
+saves the standardized path in `environmentFilePath`. If an env file already
+exists for the workflow, the action offers choose, clear, or cancel.
+
+RielaApp reports env readiness only as status text. The `Env` column shows no
+required env, ready, or a missing count; the selected-workflow detail summary
+includes the selected filename or no file plus no required env, missing required
+env names, or all required env set. It does not display env values.
+
+Required env for the app is collected from package manifest
+`environmentVariables` entries whose `required` value is true, workflow
+`addon.env.*.fromEnv` bindings unless they explicitly set `required: false`,
+and `agentEnvironment.*.fromEnv` bindings whose `required` value is true.
+Duplicate names are collapsed and the displayed readiness list is sorted.
+
+At start time RielaApp parses the selected env file, ignores invalid variable
+names, unquotes simple quoted values, and merges file values over the current
+process environment. The merged environment is passed as the workflow serving
+request's inherited environment. Event-source child processes receive that
+inherited environment with telemetry child-process environment values merged on
+top.
 
 ## Safety
 

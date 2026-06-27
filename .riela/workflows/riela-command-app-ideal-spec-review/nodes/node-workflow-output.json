@@ -1,0 +1,8 @@
+{
+  "id": "workflow-output",
+  "description": "Summarize the final user-facing ideal-spec review workflow result.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "promptTemplateFile": "prompts/workflow-output.md",
+  "variables": {}
+}

@@ -24,11 +24,11 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   private var selectedWorkflow: WorkflowServeSelection?
   private var selectedWorkingDirectory = FileManager.default.currentDirectoryPath
   private var selectedSessionStoreRoot: String?
-  private var status = "Ready"
+  var status = "Ready"
   private var daemonProfileName = RielaAppProfileName.default
-  private var daemonState = RielaAppDaemonWorkflowState()
-  private var daemonCandidates: [RielaAppDaemonWorkflowCandidate] = []
-  private var appHomeDirectory = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+  var daemonState = RielaAppDaemonWorkflowState()
+  var daemonCandidates: [RielaAppDaemonWorkflowCandidate] = []
+  var appHomeDirectory = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
   private var daemonStatusRefreshTimer: Timer?
   private var daemonWindowController: DaemonWorkflowWindowController?
   private var viewerWindowController: WorkflowViewerWindowController?
@@ -194,6 +194,15 @@ final class RielaApp: NSObject, NSApplicationDelegate {
         },
         onSetActive: { [weak self] identity, active in
           self?.setDaemonWorkflowActive(identity: identity, active: active)
+        },
+        onSetEnvironment: { [weak self] identity in
+          self?.setDaemonWorkflowEnvironment(identity: identity)
+        },
+        environmentSummary: { [weak self] candidate in
+          self?.daemonEnvironmentSummary(for: candidate) ?? "unknown"
+        },
+        environmentColumnStatus: { [weak self] candidate in
+          self?.daemonEnvironmentColumnStatus(for: candidate) ?? "Unknown"
         }
       )
     }
@@ -287,7 +296,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
     Task { @MainActor in
       for candidate in candidatesToStart {
-        await daemonRuntime.start(candidate)
+        await daemonRuntime.start(candidate, inheritedEnvironment: daemonEnvironment(for: candidate))
       }
       refreshDaemonWorkflowWindow()
       if let selectedIdentity {
@@ -449,7 +458,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       guard preference.available, preference.active else {
         continue
       }
-      await daemonRuntime.start(candidate)
+      await daemonRuntime.start(candidate, inheritedEnvironment: daemonEnvironment(for: candidate))
       let snapshot = daemonRuntime.snapshot(for: candidate.id)
       logDaemon("start candidate=\(candidate.id) status=\(snapshot.status.rawValue) detail=\(snapshot.detail)")
     }
@@ -498,7 +507,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
   }
 
-  private func refreshDaemonWorkflowWindow() {
+  func refreshDaemonWorkflowWindow() {
     daemonCandidates = discoverDaemonCandidates()
     daemonWindowController?.update(
       profileName: daemonProfileName,
@@ -736,7 +745,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     rebuildMenu()
     if available, let candidate = daemonCandidates.first(where: { $0.id == identity }) {
       Task { @MainActor in
-        await daemonRuntime.start(candidate)
+        await daemonRuntime.start(candidate, inheritedEnvironment: daemonEnvironment(for: candidate))
         refreshDaemonWorkflowWindow()
       }
     } else {
@@ -764,7 +773,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
     Task { @MainActor in
       if active {
-        await daemonRuntime.start(candidate)
+        await daemonRuntime.start(candidate, inheritedEnvironment: daemonEnvironment(for: candidate))
         status = "Auto-start enabled and started \(candidate.displayName)"
       } else {
         await daemonRuntime.stop(identity: identity)
@@ -774,7 +783,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
   }
 
-  private func updateDaemonPreference(
+  func updateDaemonPreference(
     identity: String,
     mutate: (inout RielaAppDaemonWorkflowPreference) -> Void
   ) -> Bool {

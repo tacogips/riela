@@ -11,15 +11,33 @@ Use this skill to turn a vague improvement request into concrete, verified produ
 
 - Work from the repo root and current worktree. Do not assume prior notes are authoritative.
 - Keep scratch artifacts under `tmp/<task-name>/`; remove them when finished unless they are useful evidence the user asked to keep.
+- For requests to think through, review, or improve a user-facing ideal specification for Riela/RielaApp, run the project workflow `riela-command-app-ideal-spec-review` first and use its output as the review baseline.
 - If touching Swift, also read and follow the repo's Swift coding skill before editing.
 - If editing GitHub Actions, use the secure GitHub Actions skill.
 - Do not preserve legacy behavior by default. Preserve compatibility only when the user requests it or the product contract requires it.
 - Touch the sibling `riela-packages` checkout only when the improvement affects packaged workflows, registry metadata, package docs, or external package fixtures.
 
+## Ideal Spec Workflow
+
+Use `.riela/workflows/riela-command-app-ideal-spec-review` when the task is about user-facing ideal behavior, product review, or spec improvement across the `riela` command and RielaApp. This includes package flows, workflow import/list/run UX, disabled/enabled state, update readiness, required environment metadata, onboarding, and recovery behavior.
+
+Validate or run it from project scope:
+
+```bash
+riela workflow validate riela-command-app-ideal-spec-review --scope project --output json
+riela workflow run riela-command-app-ideal-spec-review \
+  --scope project \
+  --variables '{"workflowInput":{"requestedWork":"<requested user-facing review>","featureName":"<feature or package flow>","sourceDocumentPaths":["<repo-relative-doc-or-source>"],"outputDocumentPath":"<optional-repo-relative-markdown>","constraints":["Preserve unrelated dirty worktree changes.","Do not commit or push."]}}' \
+  --output json
+```
+
+If project-scope lookup is unavailable, use `--workflow-definition-dir .riela/workflows` with the same workflow id. After it finishes, continue from the workflow output: apply only the accepted improvements, update the relevant docs/help/UI/code, and verify the exact CLI and App journeys named by the workflow.
+
 ## Workflow
 
 1. Define the user journey.
    - Rewrite the request as a concrete user action: create a package, import it into RielaApp, switch profiles, run a workflow, install from an archive, recover from an error, or follow help text.
+   - When the request is about the ideal product specification, use the `riela-command-app-ideal-spec-review` workflow output to define the journey before editing docs or code.
    - Identify the exact entry points: CLI command, RielaApp launch flag, menu/button, profile state file, package manifest, README, or example workflow.
    - List expected success signals before changing code.
 

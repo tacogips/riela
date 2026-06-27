@@ -1,0 +1,8 @@
+{
+  "id": "review-and-improve",
+  "description": "Review and improve the synthesized ideal specification for completeness and actionability.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "promptTemplateFile": "prompts/review-and-improve.md",
+  "variables": {}
+}

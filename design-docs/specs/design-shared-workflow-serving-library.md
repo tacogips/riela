@@ -272,7 +272,9 @@ RielaApp-managed workflow/package imports use profile-specific roots:
 
 The profile state file stores app daemon preferences. The canonical preference
 field is `available`; legacy `enabledAtLaunch` state may be decoded for
-compatibility but new writes use `available`.
+compatibility but new writes use `available`. A preference may also store
+`environmentFilePath`, the selected per-workflow `.env` or `*.env` file used by
+RielaApp to build the serving request inherited environment.
 
 Required semantics:
 
@@ -285,6 +287,9 @@ Required semantics:
   for that candidate.
 - Switching profiles stops runtimes from the previous profile before loading
   the new profile's availability/active state.
+- RielaApp env-file handling is app policy: the UI stores only
+  `environmentFilePath`, displays set/missing status without values, and passes
+  parsed env values through `WorkflowServeStartRequest.inheritedEnvironment`.
 - App-managed removal may delete only content contained inside the current
   profile's managed roots; project/user package and workflow directories remain
   owned by their normal CLI/package lifecycle.

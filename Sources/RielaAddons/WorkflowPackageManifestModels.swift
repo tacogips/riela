@@ -18,6 +18,42 @@ public enum WorkflowPackageAddonExecutionKind: String, Codable, Sendable {
   case nativeBundle = "native-bundle"
 }
 
+public struct WorkflowPackageEnvironmentVariable: Codable, Equatable, Sendable {
+  public var name: String
+  public var description: String?
+  public var required: Bool
+  public var secret: Bool
+
+  public init(name: String, description: String? = nil, required: Bool = true, secret: Bool = false) {
+    self.name = name
+    self.description = description
+    self.required = required
+    self.secret = secret
+  }
+
+  private enum CodingKeys: String, CodingKey, CaseIterable {
+    case name
+    case description
+    case required
+    case secret
+  }
+
+  public init(from decoder: Decoder) throws {
+    if let name = try? decoder.singleValueContainer().decode(String.self) {
+      self.init(name: name)
+      return
+    }
+    try rejectUnsupportedKeys(decoder, allowed: CodingKeys.allCases.map(\.rawValue), label: "package manifest environment variable")
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      name: try container.decode(String.self, forKey: .name),
+      description: try container.decodeIfPresent(String.self, forKey: .description),
+      required: try container.decodeIfPresent(Bool.self, forKey: .required) ?? true,
+      secret: try container.decodeIfPresent(Bool.self, forKey: .secret) ?? false
+    )
+  }
+}
+
 public struct WorkflowPackageLoopMetadata: Codable, Equatable, Sendable {
   public var promotionReady: Bool
   public var usageContract: Bool

@@ -152,6 +152,10 @@ Recommended package metadata fields:
 - `examples`
 - `minimumRielaVersion`
 - `backends`: searchable execution backend ids used by the workflow
+- `environmentVariables`: environment variable names a package wants local
+  surfaces to check before execution; entries may be strings, which are
+  required by default, or objects with `name`, `description`, `required`, and
+  `secret`
 - `dependencies`: package ids, or dependency objects with `packageId`,
   `registry`, and `branch`, that must be checked out before validating and
   installing this package
@@ -197,6 +201,15 @@ and write the normalized array into package index records. If an authored
 manifest also contains `backends`, it must be an array of non-empty strings and
 must be reconciled with the derived values during normalization so search and
 checkout do not rely on stale manual metadata.
+
+`environmentVariables` is package readiness metadata, not a secret store.
+Manifest decoding accepts a string shorthand such as `"RIELA_TOKEN"` and an
+object form such as
+`{"name":"RIELA_TOKEN","description":"Token","required":true,"secret":true}`.
+Validation rejects invalid environment variable names and duplicate names. The
+current RielaApp implementation uses required package entries to populate
+workflow/package readiness, while optional entries are retained as manifest
+metadata but do not make the app show a missing-env state.
 
 ## Checksums
 

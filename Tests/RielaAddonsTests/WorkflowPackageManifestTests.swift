@@ -20,6 +20,10 @@ final class WorkflowPackageManifestTests: XCTestCase {
       "examples": ["examples/sample"],
       "minimumRielaVersion": "0.1.0",
       "backends": ["codex-agent"],
+      "environmentVariables": [
+        "RIELA_TOKEN",
+        {"name": "RIELA_OPTIONAL_MODE", "description": "Optional mode", "required": false, "secret": false}
+      ],
       "workflowDirectory": "workflows/main",
       "loop": {
         "promotionReady": true,
@@ -43,6 +47,10 @@ final class WorkflowPackageManifestTests: XCTestCase {
     XCTAssertEqual(manifest.checksumAlgorithm, "md5")
     XCTAssertEqual(manifest.dependencies.first?.packageId, "string-dependency")
     XCTAssertEqual(manifest.backends, ["codex-agent"])
+    XCTAssertEqual(manifest.environmentVariables.first?.name, "RIELA_TOKEN")
+    XCTAssertEqual(manifest.environmentVariables.first?.required, true)
+    XCTAssertEqual(manifest.environmentVariables.last?.name, "RIELA_OPTIONAL_MODE")
+    XCTAssertEqual(manifest.environmentVariables.last?.required, false)
     XCTAssertEqual(manifest.nodeAddons.first?.execution?.kind, .declarative)
     XCTAssertEqual(manifest.loop?.requiredMockScenarios, ["mock-scenario.json"])
     XCTAssertEqual(manifest.loop?.expectedResults, ["EXPECTED_RESULTS.md"])
@@ -66,6 +74,7 @@ final class WorkflowPackageManifestTests: XCTestCase {
     let workflowData = Data(#"{"name":"sample","workflow":{"description":"sample","unsupported":true}}"#.utf8)
     let integrityData = Data(#"{"name":"sample","integrity":{"digest":"abc","unsupported":true}}"#.utf8)
     let loopData = Data(#"{"name":"sample","loop":{"promotionReady":true,"unsupported":true}}"#.utf8)
+    let environmentData = Data(#"{"name":"sample","environmentVariables":[{"name":"TOKEN","unsupported":true}]}"#.utf8)
 
     XCTAssertThrowsError(try JSONDecoder().decode(WorkflowPackageManifest.self, from: dependencyData))
     XCTAssertThrowsError(try JSONDecoder().decode(WorkflowPackageManifest.self, from: addonData))
@@ -74,6 +83,29 @@ final class WorkflowPackageManifestTests: XCTestCase {
     XCTAssertThrowsError(try JSONDecoder().decode(WorkflowPackageManifest.self, from: workflowData))
     XCTAssertThrowsError(try JSONDecoder().decode(WorkflowPackageManifest.self, from: integrityData))
     XCTAssertThrowsError(try JSONDecoder().decode(WorkflowPackageManifest.self, from: loopData))
+    XCTAssertThrowsError(try JSONDecoder().decode(WorkflowPackageManifest.self, from: environmentData))
+  }
+
+  func testManifestValidationRejectsInvalidAndDuplicateEnvironmentVariables() {
+    let manifest = WorkflowPackageManifest(
+      name: "env-package",
+      version: "1.0.0",
+      description: "Environment package",
+      tags: ["env"],
+      registry: "local",
+      checksum: "abc123",
+      checksumAlgorithm: "md5",
+      environmentVariables: [
+        .init(name: "RIELA_TOKEN"),
+        .init(name: "RIELA_TOKEN"),
+        .init(name: "1BAD")
+      ]
+    )
+
+    let issues = WorkflowPackageManifestValidator.validate(manifest)
+
+    XCTAssertTrue(issues.contains { $0.path == "environmentVariables[1].name" })
+    XCTAssertTrue(issues.contains { $0.path == "environmentVariables[2].name" })
   }
 
   func testManifestValidationRequiresDecodedTagsAndRejectsEmptyTags() throws {

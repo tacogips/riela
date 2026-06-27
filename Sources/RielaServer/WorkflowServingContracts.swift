@@ -71,6 +71,7 @@ public struct WorkflowServeStartRequest: Codable, Equatable, Sendable {
   public var artifactRoot: String?
   public var sessionStoreRoot: String?
   public var eventRoot: String?
+  public var inheritedEnvironment: [String: String]
   public var defaultVariables: JSONObject
   public var startsEventSources: Bool
 
@@ -81,6 +82,7 @@ public struct WorkflowServeStartRequest: Codable, Equatable, Sendable {
     artifactRoot: String? = nil,
     sessionStoreRoot: String? = nil,
     eventRoot: String? = nil,
+    inheritedEnvironment: [String: String] = [:],
     defaultVariables: JSONObject = [:],
     startsEventSources: Bool = true
   ) {
@@ -90,6 +92,7 @@ public struct WorkflowServeStartRequest: Codable, Equatable, Sendable {
     self.artifactRoot = artifactRoot
     self.sessionStoreRoot = sessionStoreRoot
     self.eventRoot = eventRoot
+    self.inheritedEnvironment = inheritedEnvironment
     self.defaultVariables = defaultVariables
     self.startsEventSources = startsEventSources
   }

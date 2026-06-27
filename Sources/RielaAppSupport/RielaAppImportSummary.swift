@@ -47,7 +47,8 @@ public struct RielaAppImportSummary: Equatable, Sendable {
     if importedNames.isEmpty, updatedNames.count == 1, let name = updatedNames.first {
       return singleStatus(action: "Updated", name: name)
     }
-    let profileStatus = "\(successfulSummary) in profile \(profileName.rawValue)"
+    let preposition = updatedNames.isEmpty ? "into" : "in"
+    let profileStatus = "\(successfulSummary) \(preposition) profile \(profileName.rawValue)"
     return autoStartOffSuffix.isEmpty ? profileStatus : "\(profileStatus)\(autoStartOffSuffix)"
   }
 

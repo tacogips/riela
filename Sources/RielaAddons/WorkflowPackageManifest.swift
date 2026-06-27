@@ -408,6 +408,7 @@ public struct WorkflowPackageManifest: Codable, Equatable, Sendable {
   public var examples: [String]
   public var minimumRielaVersion: String?
   public var backends: [String]
+  public var environmentVariables: [WorkflowPackageEnvironmentVariable]
   fileprivate var tagsFieldPresent: Bool
 
   private enum CodingKeys: String, CodingKey, CaseIterable {
@@ -436,6 +437,7 @@ public struct WorkflowPackageManifest: Codable, Equatable, Sendable {
     case examples
     case minimumRielaVersion
     case backends
+    case environmentVariables
   }
 
   public init(
@@ -463,7 +465,8 @@ public struct WorkflowPackageManifest: Codable, Equatable, Sendable {
     repository: String? = nil,
     examples: [String] = [],
     minimumRielaVersion: String? = nil,
-    backends: [String] = []
+    backends: [String] = [],
+    environmentVariables: [WorkflowPackageEnvironmentVariable] = []
   ) {
     self.name = name
     self.version = version
@@ -490,6 +493,7 @@ public struct WorkflowPackageManifest: Codable, Equatable, Sendable {
     self.examples = examples
     self.minimumRielaVersion = minimumRielaVersion
     self.backends = backends
+    self.environmentVariables = environmentVariables
     self.tagsFieldPresent = true
   }
 
@@ -531,6 +535,7 @@ public struct WorkflowPackageManifest: Codable, Equatable, Sendable {
     self.examples = try container.decodeIfPresent([String].self, forKey: .examples) ?? []
     self.minimumRielaVersion = try container.decodeIfPresent(String.self, forKey: .minimumRielaVersion)
     self.backends = try container.decodeIfPresent([String].self, forKey: .backends) ?? []
+    self.environmentVariables = try container.decodeIfPresent([WorkflowPackageEnvironmentVariable].self, forKey: .environmentVariables) ?? []
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -560,6 +565,7 @@ public struct WorkflowPackageManifest: Codable, Equatable, Sendable {
     try container.encode(examples, forKey: .examples)
     try container.encodeIfPresent(minimumRielaVersion, forKey: .minimumRielaVersion)
     try container.encode(backends, forKey: .backends)
+    try container.encode(environmentVariables, forKey: .environmentVariables)
   }
 }
 
@@ -624,6 +630,7 @@ public enum WorkflowPackageManifestValidator {
     validateSkills(manifest.skills, into: &issues)
     validateDependencies(manifest.dependencies, packageName: manifest.name, into: &issues)
     validateLoopMetadata(manifest.loop, into: &issues)
+    validateEnvironmentVariables(manifest.environmentVariables, into: &issues)
     validateNodeAddons(manifest.nodeAddons, packageKind: manifest.kind, into: &issues)
     validateNodeAddonPackageShape(manifest, into: &issues)
     validateDuplicateNodeAddons(manifest.nodeAddons, into: &issues)

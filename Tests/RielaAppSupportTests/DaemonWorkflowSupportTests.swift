@@ -160,11 +160,15 @@ final class DaemonWorkflowSupportTests: XCTestCase {
 
   func testStoreRoundTripsPreferences() throws {
     let root = try temporaryHome()
-    let store = RielaAppDaemonWorkflowStore(
-      stateURL: root.appendingPathComponent("state/daemon-workflows.json")
+    let store = RielaAppDaemonWorkflowStore(stateURL: root.appendingPathComponent("state/daemon-workflows.json"))
+    let preference = RielaAppDaemonWorkflowPreference(
+      identity: "workflow-a",
+      available: true,
+      active: false,
+      environmentFilePath: "workflow.env"
     )
     let state = RielaAppDaemonWorkflowState(preferences: [
-      "workflow-a": RielaAppDaemonWorkflowPreference(identity: "workflow-a", available: true, active: false)
+      "workflow-a": preference
     ], workflowDirectories: [
       root.appendingPathComponent("selected-workflow", isDirectory: true).path
     ], projectDirectories: [
@@ -177,6 +181,7 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     let savedData = try Data(contentsOf: store.stateURL)
     let savedJSON = try XCTUnwrap(String(data: savedData, encoding: .utf8))
     XCTAssertTrue(savedJSON.contains("\"available\" : true"))
+    XCTAssertTrue(savedJSON.contains("\"environmentFilePath\""))
     XCTAssertFalse(savedJSON.contains("enabledAtLaunch"))
   }
 
@@ -695,7 +700,7 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     )
   }
 
-  func testProcessEventSourceFactoryPassesOnlyTelemetryAndTraceEnvironmentToChild() throws {
+  func testProcessEventSourceFactoryPassesFallbackEnvironmentAndTelemetryToChild() throws {
     let root = try temporaryHome()
     let envURL = root.appendingPathComponent(".riela/rielaapp.env")
     try FileManager.default.createDirectory(at: envURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -709,12 +714,12 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     """.write(to: envURL, atomically: true, encoding: .utf8)
     let factory = RielaAppDaemonProcessEventSourceFactory(
       executablePath: "/bin/echo",
-      environmentFileURLs: [envURL]
+      fallbackEnvironmentFileURLs: [envURL]
     )
 
     let command = factory.eventServeCommand(
-      workflowDefinitionDirectory: "/users/workflows",
-      eventRoot: "/users/workflows/chat-workflow/.riela-events",
+      workflowDefinitionDirectory: "/tmp/riela-workflows",
+      eventRoot: "/tmp/riela-workflows/chat-workflow/.riela-events",
       executablePath: "/bin/echo"
     )
 
@@ -725,8 +730,26 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     XCTAssertEqual(command.environment["RIELA_OTEL_PARENT_SURFACE"], "riela-app")
     XCTAssertNotNil(command.environment["traceparent"])
     XCTAssertTrue(command.environment["OTEL_RESOURCE_ATTRIBUTES"]?.contains("riela.parent.surface=riela-app") == true)
-    XCTAssertNil(command.environment["RIELA_APP_TEST_TOKEN"])
+    XCTAssertEqual(command.environment["RIELA_APP_TEST_TOKEN"], "from-file")
     XCTAssertNil(command.environment["INVALID-NAME"])
+  }
+
+  func testProcessEventSourceFactoryPassesInheritedEnvironmentToChild() throws {
+    let factory = RielaAppDaemonProcessEventSourceFactory(executablePath: "/bin/echo")
+
+    let command = factory.eventServeCommand(
+      workflowDefinitionDirectory: "/tmp/riela-workflows",
+      eventRoot: "/tmp/riela-workflows/chat-workflow/.riela-events",
+      executablePath: "/bin/echo",
+      inheritedEnvironment: [
+        "RIELA_APP_TEST_TOKEN": "selected-file-token",
+        "RIELA_OTEL_ENABLED": "true"
+      ]
+    )
+
+    XCTAssertEqual(command.environment["RIELA_APP_TEST_TOKEN"], "selected-file-token")
+    XCTAssertEqual(command.environment["RIELA_OTEL_ENABLED"], "true")
+    XCTAssertEqual(command.environment["OTEL_SERVICE_NAME"], "riela-events-serve")
   }
 
   func testProcessEventSourceFactoryFailsWhenEventsServeExitsImmediately() async throws {
@@ -769,10 +792,7 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     let workflowDirectory = root.appendingPathComponent(".riela/workflows/chat-workflow", isDirectory: true)
     try writeRunnableWorkflow(id: "chat-workflow", to: workflowDirectory)
     let factory = RestartCountingEventSourceFactory()
-    let runtime = RielaAppDaemonWorkflowRuntime(
-      eventSourceFactory: factory,
-      monitorIntervalNanoseconds: 10_000_000
-    )
+    let runtime = RielaAppDaemonWorkflowRuntime(eventSourceFactory: factory, monitorIntervalNanoseconds: 10_000_000)
     let candidate = RielaAppDaemonWorkflowCandidate(
       id: "user-workflow:chat-workflow",
       workflowId: "chat-workflow",
@@ -784,7 +804,7 @@ final class DaemonWorkflowSupportTests: XCTestCase {
       eventSources: [RielaAppDaemonEventSourceSummary(id: "chat-source", kind: "telegram-gateway")]
     )
 
-    await runtime.start(candidate)
+    await runtime.start(candidate, inheritedEnvironment: ["RIELA_APP_TEST_TOKEN": "runtime-token"])
     factory.markLatestExited()
 
     for _ in 0..<50 where factory.startCount < 2 {
@@ -792,6 +812,7 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     }
 
     XCTAssertGreaterThanOrEqual(factory.startCount, 2)
+    XCTAssertEqual(factory.requests.last?.inheritedEnvironment["RIELA_APP_TEST_TOKEN"], "runtime-token")
     await runtime.stop(identity: candidate.id)
   }
 
@@ -919,9 +940,14 @@ private final class FakeEventServeProcessHandle: RielaAppDaemonEventServeProcess
 private final class RestartCountingEventSourceFactory: WorkflowServeEventSourceFactory, @unchecked Sendable {
   private let lock = NSLock()
   private var handles: [RestartCountingEventSourceHandle] = []
+  private var recordedRequests: [WorkflowServeStartRequest] = []
 
   var startCount: Int {
     lock.withLock { handles.count }
+  }
+
+  var requests: [WorkflowServeStartRequest] {
+    lock.withLock { recordedRequests }
   }
 
   func startEventSources(
@@ -932,6 +958,7 @@ private final class RestartCountingEventSourceFactory: WorkflowServeEventSourceF
     let handle = RestartCountingEventSourceHandle(generationId: generationId)
     lock.withLock {
       handles.append(handle)
+      recordedRequests.append(request)
     }
     return [handle]
   }

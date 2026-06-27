@@ -67,7 +67,7 @@ let package = Package(
         .product(name: "Crypto", package: "swift-crypto")
       ]
     ),
-    .target(name: "RielaAppSupport", dependencies: ["RielaAddons", "RielaEvents", "RielaServer", "RielaObservability"]),
+    .target(name: "RielaAppSupport", dependencies: ["RielaAddons", "RielaCore", "RielaEvents", "RielaServer", "RielaObservability"]),
     .target(
       name: "CodexAgent",
       dependencies: [

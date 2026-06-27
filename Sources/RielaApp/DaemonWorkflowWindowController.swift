@@ -8,6 +8,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   private enum Column {
     static let workflow = NSUserInterfaceItemIdentifier("workflow")
     static let source = NSUserInterfaceItemIdentifier("source")
+    static let environment = NSUserInterfaceItemIdentifier("environment")
     static let active = NSUserInterfaceItemIdentifier("active")
     static let runtime = NSUserInterfaceItemIdentifier("runtime")
   }
@@ -25,6 +26,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   private let stopButton = NSButton(title: "Auto-Start Off", target: nil, action: nil)
   private let enableButton = NSButton(title: "Enable", target: nil, action: nil)
   private let disableButton = NSButton(title: "Disable", target: nil, action: nil)
+  private let setEnvironmentButton = NSButton(title: "Env File...", target: nil, action: nil)
   private let onRefresh: () -> Void
   private let onSelectProfile: (String) -> Void
   private let onAddDirectory: () -> Void
@@ -34,6 +36,9 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   private let onRemoveDirectory: (String) -> Void
   private let onSetEnabled: (String, Bool) -> Void
   private let onSetActive: (String, Bool) -> Void
+  private let onSetEnvironment: (String) -> Void
+  private let environmentSummary: (RielaAppDaemonWorkflowCandidate) -> String
+  private let environmentColumnStatus: (RielaAppDaemonWorkflowCandidate) -> String
 
   private var candidates: [RielaAppDaemonWorkflowCandidate] = []
   private var state = RielaAppDaemonWorkflowState()
@@ -54,7 +59,10 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     onRevealSelectedSource: @escaping (String) -> Void,
     onRemoveDirectory: @escaping (String) -> Void,
     onSetEnabled: @escaping (String, Bool) -> Void,
-    onSetActive: @escaping (String, Bool) -> Void
+    onSetActive: @escaping (String, Bool) -> Void,
+    onSetEnvironment: @escaping (String) -> Void,
+    environmentSummary: @escaping (RielaAppDaemonWorkflowCandidate) -> String,
+    environmentColumnStatus: @escaping (RielaAppDaemonWorkflowCandidate) -> String
   ) {
     self.onRefresh = onRefresh
     self.onSelectProfile = onSelectProfile
@@ -65,6 +73,9 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     self.onRemoveDirectory = onRemoveDirectory
     self.onSetEnabled = onSetEnabled
     self.onSetActive = onSetActive
+    self.onSetEnvironment = onSetEnvironment
+    self.environmentSummary = environmentSummary
+    self.environmentColumnStatus = environmentColumnStatus
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 1180, height: 560),
       styleMask: [.titled, .closable, .resizable, .miniaturizable],
@@ -162,6 +173,8 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     enableButton.action = #selector(enableSelected)
     disableButton.target = self
     disableButton.action = #selector(disableSelected)
+    setEnvironmentButton.target = self
+    setEnvironmentButton.action = #selector(setSelectedEnvironment)
     useProfileButton.toolTip = "Switch to the typed profile name, creating it if needed."
     addButton.toolTip = "Import a workflow folder, package folder, .rielapkg, or .zip into this profile."
     addProjectButton.toolTip = "Show workflows and packages from a project directory without copying them into this profile."
@@ -170,8 +183,9 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     removeButton.toolTip = "Remove the selected profile import or project reference."
     startButton.toolTip = "Turn on auto-start for the selected enabled workflow and start it now."
     stopButton.toolTip = "Turn off auto-start for the selected workflow and stop it now."
-    enableButton.toolTip = "Enable the selected disabled workflow for this profile."
-    disableButton.toolTip = "Disable the selected enabled workflow for this profile."
+    enableButton.toolTip = "Enable the selected disabled workflow or package for this profile."
+    disableButton.toolTip = "Disable the selected enabled workflow or package for this profile."
+    setEnvironmentButton.toolTip = "Select a credential .env file for the selected workflow."
     statusLabel.lineBreakMode = .byTruncatingTail
     actionStatusLabel.lineBreakMode = .byTruncatingMiddle
     actionStatusLabel.textColor = .secondaryLabelColor
@@ -197,7 +211,8 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       startButton,
       stopButton,
       enableButton,
-      disableButton
+      disableButton,
+      setEnvironmentButton
     ])
     actionRow.orientation = .horizontal
     actionRow.spacing = 10
@@ -222,8 +237,8 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     toolbar.spacing = 8
     toolbar.translatesAutoresizingMaskIntoConstraints = false
 
-    let enabledList = workflowList(title: "Enabled Workflows", table: enabledTable)
-    let disabledList = workflowList(title: "Disabled Workflows", table: disabledTable)
+    let enabledList = workflowList(title: "Enabled Workflows / Packages", table: enabledTable)
+    let disabledList = workflowList(title: "Disabled Workflows / Packages", table: disabledTable)
     let split = NSStackView(views: [enabledList, disabledList])
     split.orientation = .horizontal
     split.distribution = .fillEqually
@@ -255,6 +270,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     table.headerView = NSTableHeaderView()
     addColumn(Column.workflow, title: "Workflow", width: 170, to: table)
     addColumn(Column.source, title: "Source", width: 130, to: table)
+    addColumn(Column.environment, title: "Env", width: 90, to: table)
     addColumn(Column.active, title: "Auto-Start", width: 85, to: table)
     addColumn(Column.runtime, title: "Status", width: 115, to: table)
 
@@ -310,7 +326,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     ])
     if tableColumn.identifier == Column.active, tableView == enabledTable {
       text.textColor = NSColor.controlAccentColor
-    } else if tableColumn.identifier == Column.source {
+    } else if tableColumn.identifier == Column.source || tableColumn.identifier == Column.environment {
       text.textColor = NSColor.secondaryLabelColor
     } else if tableColumn.identifier == Column.runtime {
       text.textColor = runtimeColor(for: rows(for: tableView)[row].id)
@@ -325,6 +341,8 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       return candidate.displayName
     case Column.source:
       return candidate.sourceDescription
+    case Column.environment:
+      return environmentColumnStatus(candidate)
     case Column.active:
       return state.preference(for: candidate.id).active ? "Yes" : "No"
     case Column.runtime:
@@ -420,6 +438,13 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     onSetActive(candidate.id, false)
   }
 
+  @objc private func setSelectedEnvironment() {
+    guard let candidate = selectedCandidate(in: enabledTable) ?? selectedCandidate(in: disabledTable) else {
+      return
+    }
+    onSetEnvironment(candidate.id)
+  }
+
   @objc private func tableClicked(_ sender: NSTableView) {
     guard sender == enabledTable, sender.clickedColumn >= 0 else {
       return
@@ -486,6 +511,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     if candidate.startsEventSources {
       details.append("Event runner: \(RielaAppDaemonProcessEventSourceFactory().resolvedExecutableDescription())")
     }
+    details.append("Environment: \(environmentSummary(candidate))")
     selectionDetailLabel.stringValue = details.joined(separator: " | ")
   }
 
@@ -502,6 +528,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     stopButton.isEnabled = hasSelection && (isAutoStartEnabled || selectedRuntimeIsActive)
     enableButton.isEnabled = selectedDisabled != nil
     disableButton.isEnabled = selectedEnabled != nil
+    setEnvironmentButton.isEnabled = hasSelection
   }
 
   private func isRuntimeActive(identity: String) -> Bool {

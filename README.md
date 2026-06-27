@@ -140,6 +140,21 @@ riela package pack ./my-package-source
 If the package source contains multiple workflows, add
 `--workflow-definition-dir workflows/<name>`.
 
+Packages can declare environment variables that must be configured before the
+workflow is useful. Add them to `riela-package.json` with `environmentVariables`;
+RielaApp shows whether each required value is set. The Workflows window also
+detects required workflow env bindings from `addon.env.*.fromEnv` and required
+`agentEnvironment.*.fromEnv` entries. Select the workflow, choose `Env File...`,
+and pick a `.env` or `*.env` file to pass those values to the workflow and its
+event-source process. Env file contents are treated as credentials: RielaApp
+confirms before using the file and only displays set/missing status, not values.
+
+```json
+"environmentVariables": [
+  {"name": "RIELA_TELEGRAM_BOT_TOKEN", "description": "Telegram bot token", "secret": true}
+]
+```
+
 For manual verification, demos, or support reproduction without touching the
 normal user catalog, launch RielaApp with isolated roots:
 

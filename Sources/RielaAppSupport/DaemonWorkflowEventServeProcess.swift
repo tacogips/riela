@@ -38,18 +38,18 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
   public var executablePath: String?
   public var launcher: any RielaAppDaemonEventServeProcessLaunching
   public var earlyExitGraceNanoseconds: UInt64
-  public var environmentFileURLs: [URL]
+  public var fallbackEnvironmentFileURLs: [URL]
 
   public init(
     executablePath: String? = nil,
     launcher: any RielaAppDaemonEventServeProcessLaunching = DefaultEventServeProcessLauncher(),
     earlyExitGraceNanoseconds: UInt64 = 300_000_000,
-    environmentFileURLs: [URL] = Self.defaultEnvironmentFileURLs()
+    fallbackEnvironmentFileURLs: [URL] = []
   ) {
     self.executablePath = executablePath
     self.launcher = launcher
     self.earlyExitGraceNanoseconds = earlyExitGraceNanoseconds
-    self.environmentFileURLs = environmentFileURLs
+    self.fallbackEnvironmentFileURLs = fallbackEnvironmentFileURLs
   }
 
   public func startEventSources(
@@ -68,7 +68,8 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
       eventRoot: eventRoot,
       sessionStoreRoot: request.sessionStoreRoot,
       artifactRoot: request.artifactRoot,
-      executablePath: executablePath
+      executablePath: executablePath,
+      inheritedEnvironment: request.inheritedEnvironment
     )
     logEventServe("launch \(command.executablePath) \(command.arguments.joined(separator: " ")) cwd=\(command.workingDirectory)")
     let process: any RielaAppDaemonEventServeProcessHandle
@@ -107,7 +108,8 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
     eventRoot: String,
     sessionStoreRoot: String? = nil,
     artifactRoot: String? = nil,
-    executablePath: String?
+    executablePath: String?,
+    inheritedEnvironment: [String: String] = [:]
   ) -> RielaAppDaemonEventServeCommand {
     let executable = resolveExecutablePath(executablePath)
     var serveArguments = [
@@ -136,7 +138,8 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
       workingDirectory: workflowDefinitionDirectory,
       environment: eventServeEnvironment(
         workflowDefinitionDirectory: workflowDefinitionDirectory,
-        eventRoot: eventRoot
+        eventRoot: eventRoot,
+        inheritedEnvironment: inheritedEnvironment
       )
     )
   }
@@ -151,14 +154,6 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
 
   public static func executableDescription(for resolvedExecutablePath: String) -> String {
     resolvedExecutablePath == "/usr/bin/env" ? "PATH lookup: riela" : resolvedExecutablePath
-  }
-
-  public static func defaultEnvironmentFileURLs() -> [URL] {
-    let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
-    return [
-      home.appendingPathComponent(".riela/rielaapp.env"),
-      home.appendingPathComponent(".riela/env")
-    ]
   }
 
   private func resolveExecutablePath(_ configuredPath: String?) -> String {
@@ -190,10 +185,12 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
 
   private func eventServeEnvironment(
     workflowDefinitionDirectory: String,
-    eventRoot: String
+    eventRoot: String,
+    inheritedEnvironment: [String: String]
   ) -> [String: String] {
-    telemetryChildProcessEnvironment(
-      from: mergedEnvironment(),
+    var environment = inheritedEnvironment.isEmpty ? fallbackEnvironment() : inheritedEnvironment
+    let telemetryEnvironment = telemetryChildProcessEnvironment(
+      from: inheritedEnvironment.isEmpty ? fallbackEnvironment() : inheritedEnvironment,
       additionalResourceAttributes: [
         "runtime.surface": "events-serve",
         "riela.parent.surface": "riela-app",
@@ -201,60 +198,16 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
         "event.source.id": URL(fileURLWithPath: eventRoot).lastPathComponent
       ]
     )
-  }
-
-  private func mergedEnvironment() -> [String: String] {
-    var environment = environmentFileURLs.reduce(into: [String: String]()) { result, url in
-      result.merge(Self.parseEnvironmentFile(url)) { current, _ in current }
-    }
-    environment.merge(ProcessInfo.processInfo.environment) { _, processValue in processValue }
+    environment.merge(telemetryEnvironment) { _, telemetryValue in telemetryValue }
     return environment
   }
 
-  private static func parseEnvironmentFile(_ url: URL) -> [String: String] {
-    guard let contents = try? String(contentsOf: url, encoding: .utf8) else {
-      return [:]
+  private func fallbackEnvironment() -> [String: String] {
+    var environment = ProcessInfo.processInfo.environment
+    for url in fallbackEnvironmentFileURLs {
+      environment.merge(RielaAppEnvironmentFileStore.parseEnvironmentFile(url)) { _, fileValue in fileValue }
     }
-    var values: [String: String] = [:]
-    for rawLine in contents.components(separatedBy: .newlines) {
-      let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !line.isEmpty, !line.hasPrefix("#") else {
-        continue
-      }
-      let assignment = line.hasPrefix("export ")
-        ? String(line.dropFirst("export ".count)).trimmingCharacters(in: .whitespaces)
-        : line
-      guard let separator = assignment.firstIndex(of: "=") else {
-        continue
-      }
-      let key = assignment[..<separator].trimmingCharacters(in: .whitespaces)
-      guard isValidEnvironmentKey(key) else {
-        continue
-      }
-      let value = assignment[assignment.index(after: separator)...].trimmingCharacters(in: .whitespaces)
-      values[key] = unquotedEnvironmentValue(String(value))
-    }
-    return values
-  }
-
-  private static func isValidEnvironmentKey(_ key: String) -> Bool {
-    guard let first = key.first, first == "_" || first.isLetter else {
-      return false
-    }
-    return key.allSatisfy { character in
-      character == "_" || character.isLetter || character.isNumber
-    }
-  }
-
-  private static func unquotedEnvironmentValue(_ value: String) -> String {
-    guard value.count >= 2,
-      let first = value.first,
-      let last = value.last,
-      (first == "\"" && last == "\"") || (first == "'" && last == "'")
-    else {
-      return value
-    }
-    return String(value.dropFirst().dropLast())
+    return environment
   }
 }
 

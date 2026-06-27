@@ -1,4 +1,4 @@
 interface:
   display_name: "Riela Usability Improvement Loop"
   short_description: "Improve Riela and RielaApp usability from real user workflows."
-  default_prompt: "Use this skill to improve a Riela or RielaApp feature by reproducing the real user workflow, finding friction, implementing focused fixes, and verifying with realistic CLI/App operations plus tests."
+  default_prompt: "Use this skill to improve a Riela or RielaApp feature by first running the project ideal-spec review workflow when the task is product/spec oriented, then reproducing the real user workflow, fixing friction, and verifying CLI/App behavior plus tests."

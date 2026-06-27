@@ -19,6 +19,26 @@ tasks:
     cmds:
       - scripts/build-homebrew-cask-release.sh {{.CLI_ARGS}}
 
+  app:build:
+    desc: Build RielaApp.app (defaults to release; override with CONFIGURATION=debug)
+    cmds:
+      - CONFIGURATION="${CONFIGURATION:-release}" scripts/build-riela-menu-bar-app.sh
+
+  app:run:
+    desc: Run RielaApp.app, building it first when missing (pass app args after --)
+    cmds:
+      - |
+        set -euo pipefail
+        app_path="${RIELA_APP_PATH:-.build/${CONFIGURATION:-release}/RielaApp.app}"
+        if [ ! -d "$app_path" ]; then
+          CONFIGURATION="${CONFIGURATION:-release}" scripts/build-riela-menu-bar-app.sh
+        fi
+        if [ -n "{{.CLI_ARGS}}" ]; then
+          open "$app_path" --args {{.CLI_ARGS}}
+        else
+          open "$app_path"
+        fi
+
   homebrew:formula:
     desc: Render Formula/riela.rb from dist/homebrew checksums (pass the version after --)
     cmds:

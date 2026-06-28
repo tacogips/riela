@@ -8,7 +8,7 @@ import RielaCore
 extension RielaApp {
   func duplicateDaemonWorkflowInstance(identity: String) {
     guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
-      status = "Selected workflow is no longer available"
+      status = "Selected instance is no longer available"
       refreshDaemonWorkflowWindow()
       return
     }
@@ -22,7 +22,7 @@ extension RielaApp {
       return
     }
     guard !daemonState.preferences.keys.contains(result.identity) else {
-      status = "Management ID already exists: \(result.identity)"
+      status = "Instance ID already exists: \(result.identity)"
       refreshDaemonWorkflowWindow()
       return
     }
@@ -44,14 +44,14 @@ extension RielaApp {
       refreshDaemonWorkflowWindow()
       return
     }
-    status = "Created workflow instance \(result.identity)"
+    status = "Created instance \(result.identity)"
     refreshDaemonWorkflowWindow()
     daemonWindowController?.selectCandidate(identity: result.identity)
   }
 
   func renameDaemonWorkflowInstance(identity: String) {
     guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
-      status = "Selected workflow is no longer available"
+      status = "Selected instance is no longer available"
       refreshDaemonWorkflowWindow()
       return
     }
@@ -66,7 +66,7 @@ extension RielaApp {
     let previousPreference = daemonState.preferences[identity]
     let previousTargetPreference = daemonState.preferences[result.identity]
     if result.identity != identity, previousTargetPreference != nil {
-      status = "Management ID already exists: \(result.identity)"
+      status = "Instance ID already exists: \(result.identity)"
       refreshDaemonWorkflowWindow()
       return
     }
@@ -92,7 +92,7 @@ extension RielaApp {
       if result.identity != identity {
         await daemonRuntime.stop(identity: identity)
       }
-      status = "Renamed workflow instance to \(result.identity)"
+      status = "Renamed instance to \(result.identity)"
       refreshDaemonWorkflowWindow()
       if shouldRestart, let renamedCandidate = daemonCandidates.first(where: { $0.id == result.identity }) {
         await daemonRuntime.start(
@@ -107,14 +107,14 @@ extension RielaApp {
 
   func setDaemonWorkflowEnvironmentVariables(identity: String) {
     guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
-      status = "Selected workflow is no longer available"
+      status = "Selected instance is no longer available"
       refreshDaemonWorkflowWindow()
       return
     }
     let existing = environmentText(from: daemonState.preference(for: identity).environmentVariables)
     guard let text = promptForMultilineValue(
-      title: "Environment Variables",
-      message: "Enter KEY=VALUE lines for \(candidate.displayName).",
+      title: "Instance Environment Variables",
+      message: "Enter KEY=VALUE lines for instance \(candidate.displayName).",
       value: existing
     ) else {
       return
@@ -141,14 +141,14 @@ extension RielaApp {
 
   func setDaemonWorkflowDefaultVariables(identity: String) {
     guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
-      status = "Selected workflow is no longer available"
+      status = "Selected instance is no longer available"
       refreshDaemonWorkflowWindow()
       return
     }
     let existing = workflowVariablesText(from: daemonState.preference(for: identity).defaultVariables)
     guard let text = promptForMultilineValue(
-      title: "Workflow Variables",
-      message: "Enter key=value lines for \(candidate.displayName). Use key:=JSON for typed values.",
+      title: "Instance Variables",
+      message: "Enter key=value lines for instance \(candidate.displayName). Use key:=JSON for typed values.",
       value: existing
     ) else {
       return
@@ -161,14 +161,14 @@ extension RielaApp {
       }) else {
         return
       }
-      status = "Updated workflow variables for \(candidate.displayName)"
+      status = "Updated instance variables for \(candidate.displayName)"
       refreshDaemonWorkflowWindow()
       restartActiveDaemonWorkflowAfterConfigurationChange(
         identity: identity,
-        changeDescription: "workflow variables"
+        changeDescription: "instance variables"
       )
     } catch {
-      status = "Invalid workflow variables: \(error.localizedDescription)"
+      status = "Invalid instance variables: \(error.localizedDescription)"
       refreshDaemonWorkflowWindow()
     }
   }
@@ -185,11 +185,11 @@ extension RielaApp {
     displayNameValue: String
   ) -> InstancePromptResult? {
     let idField = NSTextField(string: idValue)
-    idField.placeholderString = "management-id"
+    idField.placeholderString = "instance-id"
     let nameField = NSTextField(string: displayNameValue)
     nameField.placeholderString = "Display name"
     let stack = NSStackView(views: [
-      NSTextField(labelWithString: "Management ID"),
+      NSTextField(labelWithString: "Instance ID"),
       idField,
       NSTextField(labelWithString: "Display Name"),
       nameField
@@ -208,7 +208,7 @@ extension RielaApp {
     }
     let identity = sanitizedDaemonInstanceId(idField.stringValue)
     guard !identity.isEmpty else {
-      status = "Management ID is required"
+      status = "Instance ID is required"
       refreshDaemonWorkflowWindow()
       return nil
     }

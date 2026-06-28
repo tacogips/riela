@@ -87,7 +87,7 @@ RielaApp imports workflow folders, package folders, and `.rielapkg` archives
 from the menu bar item:
 
 ```text
-Workflows... > Add Workflow/Package...
+Instances... > Add Workflow/Package...
 ```
 
 The picker accepts multiple selections, so several package archives or workflow
@@ -104,21 +104,29 @@ RIELA_APP_ROOT="$PWD/tmp/rielaapp-root" \
   --open-workflows
 ```
 
-Imported packages are stored under the selected RielaApp profile. The Workflows
-window shows each workflow's source as `profile`, `user`, or `project` so
-profile-scoped imports can be separated from user-level or project-level
-workflows that are visible in every profile.
-The Workflows table uses `Auto-Start` for the profile preference that starts a
-workflow when RielaApp launches or when the profile is started; `Status` shows
-the current runtime state. The `Auto-Start On` and `Auto-Start Off` actions
-change that saved profile preference and start or stop the workflow immediately.
-Selecting a workflow shows its source path, event sources, profile scope,
-auto-start preference, and runtime detail below the toolbar.
+Imported packages are stored under the selected RielaApp profile. The Instances
+window separates workflow/package sources from workflow instances. An instance is
+the configured run unit RielaApp starts: a workflow source plus the saved
+environment file, inline environment values, default variables, working
+directory, enabled state, and active state. The source column shows `profile`,
+`user`, or `project` so profile-scoped imports can be separated from user-level
+or project-level workflow sources that are visible in every profile.
+On a fresh install, the default profile is seeded with inactive starter
+packages for a Discord Yuki chat bot, a Telegram Yuki chat bot, a Slack chat
+bot, and a mail-gateway latest-mail digest. They appear in the Instances window
+with auto-start off, so new users can inspect required credentials, attach an
+env file, and activate only the instance they want to try.
+The Instances table uses `Active` for the saved profile preference that starts
+an instance when RielaApp launches or when the profile is started; `Status`
+shows the current runtime state. Toggling `Active` starts or stops that instance
+immediately. Selecting an instance shows its source path, event sources, profile
+scope, active preference, instance variables, and runtime detail below the
+toolbar.
 Use `Add Project...` to attach one or more project folders containing
 `.riela/workflows` or `.riela/packages` without copying them into the profile.
-Use `Open Profile Folder` from the menu bar item or Workflows window to inspect
+Use `Open Profile Folder` from the menu bar item or Instances window to inspect
 the active profile's imported `workflows/`, `packages/`, and daemon state.
-Use `Reveal Selected` in the Workflows window to open the selected workflow or
+Use `Reveal Source` in the Instances window to open the selected workflow or
 package source directly.
 
 To turn an existing workflow folder into a package that RielaApp can import,
@@ -142,9 +150,9 @@ If the package source contains multiple workflows, add
 
 Packages can declare environment variables that must be configured before the
 workflow is useful. Add them to `riela-package.json` with `environmentVariables`;
-RielaApp shows whether each required value is set. The Workflows window also
+RielaApp shows whether each required value is set. The Instances window also
 detects required workflow env bindings from `addon.env.*.fromEnv` and required
-`agentEnvironment.*.fromEnv` entries. Select the workflow, choose `Env File...`,
+`agentEnvironment.*.fromEnv` entries. Select the instance, choose `Env File...`,
 and pick a `.env` or `*.env` file to pass those values to the workflow and its
 event-source process. Env file contents are treated as credentials: RielaApp
 confirms before using the file and only displays set/missing status, not values.

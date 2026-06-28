@@ -20,7 +20,7 @@ final class RielaAppInterfaceIdentifierTests: XCTestCase {
     )
   }
 
-  func testWorkflowListUsesActiveAndListControlsInsteadOfStartStopMenuActions() throws {
+  func testInstanceListUsesActiveAndListControlsInsteadOfStartStopMenuActions() throws {
     let root = try repositoryRoot()
     let appSource = try String(
       contentsOf: root.appendingPathComponent("Sources/RielaApp/EntryPoint.swift"),
@@ -35,6 +35,12 @@ final class RielaAppInterfaceIdentifierTests: XCTestCase {
     XCTAssertFalse(appSource.contains("Stop and Disable Auto-Start"))
     XCTAssertFalse(controllerSource.contains("Add Workflow/Package..."))
     XCTAssertFalse(controllerSource.contains("Add Project..."))
+    XCTAssertTrue(appSource.contains("menuItem(\"Instances...\""))
+    XCTAssertTrue(appSource.contains("\"Instances: \\(daemonSummary())\""))
+    XCTAssertTrue(controllerSource.contains("window.title = \"Riela Workflow Instances\""))
+    XCTAssertTrue(controllerSource.contains("title: \"Instance\""))
+    XCTAssertTrue(controllerSource.contains("Enabled Instances"))
+    XCTAssertTrue(controllerSource.contains("Instance ID:"))
     XCTAssertTrue(controllerSource.contains("NSButton(title: \"+\""))
     XCTAssertTrue(controllerSource.contains("NSButton(title: \"-\""))
     XCTAssertTrue(controllerSource.contains("title: \"Active\""))
@@ -57,10 +63,27 @@ final class RielaAppInterfaceIdentifierTests: XCTestCase {
     XCTAssertTrue(controllerSource.contains("tabItem(label: \"Structure\""))
     XCTAssertTrue(renderingSource.contains("Original Workflow Templates"))
     XCTAssertTrue(renderingSource.contains("Step Timeline"))
-    XCTAssertTrue(controllerSource.contains("Current Dir:"))
+    XCTAssertTrue(controllerSource.contains("Instance Dir:"))
+    XCTAssertTrue(controllerSource.contains("Instance Env:"))
+    XCTAssertTrue(controllerSource.contains("Instance Variables:"))
     XCTAssertTrue(controllerSource.contains("currentDirectoryButtonPressed"))
     XCTAssertTrue(controllerSource.contains("environmentVariablesButtonPressed"))
     XCTAssertTrue(controllerSource.contains("workflowVariablesButtonPressed"))
+  }
+
+  func testProcessTerminologyIsPreservedForEventSourceProcesses() throws {
+    let root = try repositoryRoot()
+    let controllerSource = try String(
+      contentsOf: root.appendingPathComponent("Sources/RielaApp/DaemonWorkflowWindowController.swift"),
+      encoding: .utf8
+    )
+    let storeSource = try String(
+      contentsOf: root.appendingPathComponent("Sources/RielaAppSupport/RielaAppEnvironmentFileStore.swift"),
+      encoding: .utf8
+    )
+
+    XCTAssertTrue(controllerSource.contains("Event runner:"))
+    XCTAssertTrue(storeSource.contains("processEnvironment"))
   }
 
   private func repositoryRoot() throws -> URL {

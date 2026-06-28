@@ -11,12 +11,12 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
   private let sessionPopup = NSPopUpButton()
   private let templatePopup = NSPopUpButton()
   private let statusLabel = NSTextField(labelWithString: "No workflow loaded")
-  private let currentDirectoryLabel = NSTextField(labelWithString: "Current Dir: -")
-  private let currentDirectoryButton = NSButton(title: "Current Dir...", target: nil, action: nil)
-  private let environmentVariablesLabel = NSTextField(labelWithString: "Env Vars: -")
-  private let environmentVariablesButton = NSButton(title: "Env Vars...", target: nil, action: nil)
-  private let workflowVariablesLabel = NSTextField(labelWithString: "Workflow Variables: -")
-  private let workflowVariablesButton = NSButton(title: "Workflow Variables...", target: nil, action: nil)
+  private let currentDirectoryLabel = NSTextField(labelWithString: "Instance Dir: -")
+  private let currentDirectoryButton = NSButton(title: "Instance Dir...", target: nil, action: nil)
+  private let environmentVariablesLabel = NSTextField(labelWithString: "Instance Env: -")
+  private let environmentVariablesButton = NSButton(title: "Instance Env...", target: nil, action: nil)
+  private let workflowVariablesLabel = NSTextField(labelWithString: "Instance Variables: -")
+  private let workflowVariablesButton = NSButton(title: "Instance Variables...", target: nil, action: nil)
   private let detailTextView = NSTextView()
   private let logTextView = NSTextView()
   private let structureTextView = NSTextView()
@@ -357,13 +357,13 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
 
   private func updateCurrentDirectoryLabel() {
     let path = currentDirectory?.trimmingCharacters(in: .whitespacesAndNewlines)
-    currentDirectoryLabel.stringValue = "Current Dir: \((path?.isEmpty == false ? path : nil) ?? "-")"
+    currentDirectoryLabel.stringValue = "Instance Dir: \((path?.isEmpty == false ? path : nil) ?? "-")"
     currentDirectoryButton.isEnabled = onSetWorkingDirectory != nil
   }
 
   private func updateVariableLabels() {
-    environmentVariablesLabel.stringValue = "Env Vars: \(environmentVariablesSummary ?? "-")"
-    workflowVariablesLabel.stringValue = "Workflow Variables: \(workflowVariablesSummary ?? "-")"
+    environmentVariablesLabel.stringValue = "Instance Env: \(environmentVariablesSummary ?? "-")"
+    workflowVariablesLabel.stringValue = "Instance Variables: \(workflowVariablesSummary ?? "-")"
     environmentVariablesButton.isEnabled = onSetEnvironmentVariables != nil
     workflowVariablesButton.isEnabled = onSetWorkflowVariables != nil
   }

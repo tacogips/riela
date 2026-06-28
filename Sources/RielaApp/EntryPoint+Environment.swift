@@ -6,7 +6,7 @@ import RielaServer
 extension RielaApp {
   func setDaemonWorkflowWorkingDirectory(identity: String) {
     guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
-      status = "Selected workflow is no longer available"
+      status = "Selected instance is no longer available"
       refreshDaemonWorkflowWindow()
       return
     }
@@ -23,7 +23,7 @@ extension RielaApp {
 
   func setDaemonWorkflowEnvironment(identity: String) {
     guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
-      status = "Selected workflow is no longer available"
+      status = "Selected instance is no longer available"
       refreshDaemonWorkflowWindow()
       return
     }
@@ -106,8 +106,8 @@ extension RielaApp {
       return .choose
     }
     let alert = NSAlert()
-    alert.messageText = "Environment File"
-    alert.informativeText = "Choose a .env file for \(candidate.displayName), clear the current file, or cancel."
+    alert.messageText = "Instance Environment File"
+    alert.informativeText = "Choose a .env file for instance \(candidate.displayName), clear the current file, or cancel."
     alert.addButton(withTitle: "Choose File")
     alert.addButton(withTitle: "Clear")
     alert.addButton(withTitle: "Cancel")
@@ -129,8 +129,8 @@ extension RielaApp {
       return .choose
     }
     let alert = NSAlert()
-    alert.messageText = "Working Directory"
-    alert.informativeText = "Choose the current directory for \(candidate.displayName), clear the override, or cancel."
+    alert.messageText = "Instance Directory"
+    alert.informativeText = "Choose the current directory for instance \(candidate.displayName), clear the override, or cancel."
     alert.addButton(withTitle: "Choose Directory")
     alert.addButton(withTitle: "Clear")
     alert.addButton(withTitle: "Cancel")
@@ -146,8 +146,8 @@ extension RielaApp {
 
   private func chooseWorkingDirectory(for candidate: RielaAppDaemonWorkflowCandidate) {
     let panel = NSOpenPanel()
-    panel.title = "Select Working Directory"
-    panel.message = "Select the current directory to use when \(candidate.displayName) runs."
+    panel.title = "Select Instance Directory"
+    panel.message = "Select the current directory to use when instance \(candidate.displayName) runs."
     panel.canChooseFiles = false
     panel.canChooseDirectories = true
     panel.allowsMultipleSelection = false
@@ -160,11 +160,11 @@ extension RielaApp {
     }) else {
       return
     }
-    status = "Set current directory for \(candidate.displayName): \(url.standardizedFileURL.path)"
+    status = "Set instance directory for \(candidate.displayName): \(url.standardizedFileURL.path)"
     refreshDaemonWorkflowWindow()
     restartActiveDaemonWorkflowAfterConfigurationChange(
       identity: candidate.id,
-      changeDescription: "current directory"
+      changeDescription: "instance directory"
     )
   }
 
@@ -174,18 +174,18 @@ extension RielaApp {
     }) else {
       return
     }
-    status = "Cleared current directory override for \(candidate.displayName)"
+    status = "Cleared instance directory override for \(candidate.displayName)"
     refreshDaemonWorkflowWindow()
     restartActiveDaemonWorkflowAfterConfigurationChange(
       identity: candidate.id,
-      changeDescription: "current directory"
+      changeDescription: "instance directory"
     )
   }
 
   private func chooseEnvironmentFile(for candidate: RielaAppDaemonWorkflowCandidate) {
     let panel = NSOpenPanel()
     panel.title = "Select .env File"
-    panel.message = "Select the credential env file to pass to \(candidate.displayName)."
+    panel.message = "Select the credential env file to pass to instance \(candidate.displayName)."
     panel.canChooseFiles = true
     panel.canChooseDirectories = false
     panel.allowsMultipleSelection = false
@@ -194,7 +194,7 @@ extension RielaApp {
       return
     }
     guard isSupportedEnvironmentFile(url) else {
-      status = "Select a .env file for \(candidate.displayName)"
+      status = "Select a .env file for instance \(candidate.displayName)"
       refreshDaemonWorkflowWindow()
       return
     }
@@ -206,7 +206,7 @@ extension RielaApp {
     }) else {
       return
     }
-    status = "Selected env file for \(candidate.displayName): \(daemonEnvironmentSummary(for: candidate))"
+    status = "Selected env file for instance \(candidate.displayName): \(daemonEnvironmentSummary(for: candidate))"
     refreshDaemonWorkflowWindow()
     restartActiveDaemonWorkflowAfterConfigurationChange(
       identity: candidate.id,
@@ -220,7 +220,7 @@ extension RielaApp {
     }) else {
       return
     }
-    status = "Cleared env file for \(candidate.displayName): \(daemonEnvironmentSummary(for: candidate))"
+    status = "Cleared env file for instance \(candidate.displayName): \(daemonEnvironmentSummary(for: candidate))"
     refreshDaemonWorkflowWindow()
     restartActiveDaemonWorkflowAfterConfigurationChange(
       identity: candidate.id,

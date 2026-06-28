@@ -3,6 +3,7 @@
   "description": "Classify normalized Chat SDK attachment descriptors from workflow input or event runtime variables.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.4-mini",
+  "modelFreeze": true,
   "promptTemplateFile": "prompts/judge-attachments.md",
   "variables": {},
   "output": {

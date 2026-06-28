@@ -3,6 +3,7 @@
   "description": "Sanitizes untrusted X post data, filters non-AI/non-business chatter, and produces a Telegram-ready digest sorted by view count.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.4-mini",
+  "modelFreeze": true,
   "promptTemplateFile": "prompts/summarize-posts.md",
   "variables": {
     "codexAdditionalArgs": [

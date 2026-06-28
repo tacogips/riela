@@ -2,6 +2,7 @@
   "id": "workflow-c-spec-and-implementation",
   "executionBackend": "codex-agent",
   "model": "gpt-5.3-codex-spark",
+  "modelFreeze": true,
   "promptTemplateFile": "prompts/workflow-c-spec-and-implementation.md",
   "variables": {},
   "output": {

@@ -354,6 +354,7 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
       if let configuration = node.configuration {
         lines.append("Node file: \(configuration.nodeFile)")
         lines.append("Base model: \(configuration.model)")
+        lines.append("Model freeze: \(configuration.modelFreeze)")
         lines.append("Base backend: \(configuration.executionBackend?.rawValue ?? "-")")
         lines.append("Base effort: \(configuration.effort?.rawValue ?? "-")")
         if let patch = nodePatches[node.nodeId], !patch.isEmpty {
@@ -442,9 +443,15 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     }
 
     let patch = node.flatMap { nodePatches[$0.nodeId] }
-    let modelOptions = modelChoices(configuration: configuration, patch: patch)
-    configurePopup(modelPopup, titles: ["Workflow default: \(configuration.model)"] + modelOptions)
-    selectPopupValue(modelPopup, value: patch?.model, values: modelOptions)
+    let modelOptions: [String]
+    if configuration.modelFreeze {
+      modelOptions = []
+      configurePopup(modelPopup, titles: ["Frozen: \(configuration.model)"])
+    } else {
+      modelOptions = modelChoices(configuration: configuration, patch: patch)
+      configurePopup(modelPopup, titles: ["Workflow default: \(configuration.model)"] + modelOptions)
+      selectPopupValue(modelPopup, value: patch?.model, values: modelOptions)
+    }
 
     let backendOptions = NodeExecutionBackend.allCases.map(\.rawValue)
     configurePopup(
@@ -458,7 +465,7 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     selectPopupValue(effortPopup, value: patch?.effort?.rawValue, values: effortOptions)
 
     let canEdit = onSaveNodePatch != nil
-    modelPopup.isEnabled = canEdit
+    modelPopup.isEnabled = canEdit && !configuration.modelFreeze
     backendPopup.isEnabled = canEdit
     effortPopup.isEnabled = canEdit
     saveNodePatchButton.isEnabled = canEdit
@@ -515,7 +522,7 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     guard node.configuration != nil else {
       return nil
     }
-    let selectedModel = selectedPatchValue(from: modelPopup)
+    let selectedModel = node.configuration?.modelFreeze == true ? nil : selectedPatchValue(from: modelPopup)
     let selectedBackend = selectedPatchValue(from: backendPopup).flatMap(NodeExecutionBackend.init(rawValue:))
     let selectedEffort = selectedPatchValue(from: effortPopup).flatMap(NodeReasoningEffort.init(rawValue:))
     return RielaAppDaemonWorkflowNodePatch(

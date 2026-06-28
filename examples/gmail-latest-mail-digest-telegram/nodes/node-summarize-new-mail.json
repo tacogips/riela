@@ -3,6 +3,7 @@
   "description": "Summarizes newly seen Gmail messages into a compact Telegram digest.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.4-mini",
+  "modelFreeze": true,
   "promptTemplateFile": "prompts/summarize-new-mail.md",
   "variables": {
     "codexAdditionalArgs": [

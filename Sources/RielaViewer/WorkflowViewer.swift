@@ -101,17 +101,20 @@ public struct WorkflowViewerNodeConfiguration: Codable, Equatable, Hashable, Sen
   public var nodeFile: String
   public var executionBackend: NodeExecutionBackend?
   public var model: String
+  public var modelFreeze: Bool
   public var effort: NodeReasoningEffort?
 
   public init(
     nodeFile: String,
     executionBackend: NodeExecutionBackend? = nil,
     model: String,
+    modelFreeze: Bool = false,
     effort: NodeReasoningEffort? = nil
   ) {
     self.nodeFile = nodeFile
     self.executionBackend = executionBackend
     self.model = model
+    self.modelFreeze = modelFreeze
     self.effort = effort
   }
 }
@@ -551,6 +554,7 @@ public struct WorkflowViewerLoader: Sendable {
       nodeFile: nodePayload.nodeFile,
       executionBackend: nodePayload.payload.executionBackend,
       model: nodePayload.payload.model,
+      modelFreeze: nodePayload.payload.modelFreeze,
       effort: nodePayload.payload.effort
     )
   }

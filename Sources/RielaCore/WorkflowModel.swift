@@ -721,6 +721,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
   public var nodeType: NodeType?
   public var executionBackend: NodeExecutionBackend?
   public var model: String
+  public var modelFreeze: Bool
   public var effort: NodeReasoningEffort?
   public var workingDirectory: String?
   public var command: WorkflowCommandExecution?
@@ -745,6 +746,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     nodeType: NodeType? = nil,
     executionBackend: NodeExecutionBackend? = nil,
     model: String,
+    modelFreeze: Bool = false,
     effort: NodeReasoningEffort? = nil,
     workingDirectory: String? = nil,
     command: WorkflowCommandExecution? = nil,
@@ -768,6 +770,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     self.nodeType = nodeType
     self.executionBackend = executionBackend
     self.model = model
+    self.modelFreeze = modelFreeze
     self.effort = effort
     self.workingDirectory = workingDirectory
     self.command = command
@@ -793,6 +796,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     case nodeType
     case executionBackend
     case model
+    case modelFreeze
     case effort
     case workingDirectory
     case command
@@ -819,6 +823,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     self.nodeType = try container.decodeIfPresent(NodeType.self, forKey: .nodeType)
     self.executionBackend = try container.decodeIfPresent(NodeExecutionBackend.self, forKey: .executionBackend)
     self.model = try container.decodeIfPresent(String.self, forKey: .model) ?? ""
+    self.modelFreeze = try container.decodeIfPresent(Bool.self, forKey: .modelFreeze) ?? false
     self.effort = try container.decodeIfPresent(NodeReasoningEffort.self, forKey: .effort)
     self.workingDirectory = try container.decodeIfPresent(String.self, forKey: .workingDirectory)
     self.command = try container.decodeIfPresent(WorkflowCommandExecution.self, forKey: .command)

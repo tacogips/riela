@@ -3,6 +3,7 @@
   "description": "Generate the user-facing Slack reply text from the normalized chat event.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.4-mini",
+  "modelFreeze": true,
   "promptTemplateFile": "prompts/answer-slack-message.md",
   "variables": {},
   "output": {

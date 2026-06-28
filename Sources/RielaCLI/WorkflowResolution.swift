@@ -358,6 +358,9 @@ public struct DefaultWorkflowNodePatchApplier: WorkflowNodePatchApplying {
           guard let model = nodePatch[field]?.stringValue, !model.isEmpty else {
             throw NodePatchError.invalidFieldValue(field)
           }
+          guard !payload.modelFreeze || model == payload.model else {
+            throw NodePatchError.modelChangeFrozen(key)
+          }
           payload.model = model
         case "effort":
           guard let raw = nodePatch[field]?.stringValue, let effort = NodeReasoningEffort(rawValue: raw) else {
@@ -379,6 +382,7 @@ public enum NodePatchError: Error, Equatable, Sendable {
   case unknownNodeId(String)
   case unsupportedField(String)
   case invalidFieldValue(String)
+  case modelChangeFrozen(String)
 }
 
 public struct JSONReferenceLoader: Sendable {

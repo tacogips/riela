@@ -32,6 +32,7 @@ final class WorkflowViewerTests: XCTestCase {
       AgentNodePayload(
         id: "worker",
         model: "gpt-5",
+        modelFreeze: true,
         promptTemplateFile: "prompts/worker.md"
       ),
       to: workflowDirectory.appendingPathComponent("nodes/worker.json")
@@ -52,6 +53,7 @@ final class WorkflowViewerTests: XCTestCase {
     XCTAssertTrue(templateFile.isActiveForStep)
     XCTAssertEqual(state.nodes.first?.configuration?.nodeFile, "nodes/worker.json")
     XCTAssertEqual(state.nodes.first?.configuration?.model, "gpt-5")
+    XCTAssertEqual(state.nodes.first?.configuration?.modelFreeze, true)
     XCTAssertEqual(state.nodes.first?.configuration?.executionBackend, nil)
     XCTAssertEqual(state.nodes.first?.configuration?.effort, nil)
     XCTAssertEqual(try loader.templateFileContent(templateFile, workflowDirectory: workflowDirectory.path), "original prompt")

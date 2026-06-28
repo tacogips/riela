@@ -385,6 +385,27 @@ final class WorkflowModelTests: XCTestCase {
     XCTAssertEqual(roundTrip.agentEnvironment, payload.agentEnvironment)
   }
 
+  func testAgentNodePayloadDecodesModelFreezeDefaultingToFalse() throws {
+    let frozen = Data("""
+      {
+        "id": "planner",
+        "executionBackend": "codex-agent",
+        "model": "gpt-5",
+        "modelFreeze": true
+      }
+      """.utf8)
+    let defaulted = Data("""
+      {
+        "id": "planner",
+        "executionBackend": "codex-agent",
+        "model": "gpt-5"
+      }
+      """.utf8)
+
+    XCTAssertTrue(try JSONDecoder().decode(AgentNodePayload.self, from: frozen).modelFreeze)
+    XCTAssertFalse(try JSONDecoder().decode(AgentNodePayload.self, from: defaulted).modelFreeze)
+  }
+
   func testAgentEnvironmentRejectsInvalidBindingShapes() {
     let data = Data("""
       {

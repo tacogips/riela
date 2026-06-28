@@ -3,6 +3,7 @@
   "description": "Review the current session SQLite persistence implementation.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "effort": "high",
   "promptTemplateFile": "prompts/implementation-review.md",
   "variables": {},

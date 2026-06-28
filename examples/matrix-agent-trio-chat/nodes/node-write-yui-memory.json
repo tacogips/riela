@@ -1,5 +1,6 @@
 {
   "id": "write-yui-memory",
+  "modelFreeze": false,
   "addon": {
     "name": "riela/chat-persona-memory-write",
     "version": "1",

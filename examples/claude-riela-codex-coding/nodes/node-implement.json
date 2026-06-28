@@ -2,6 +2,7 @@
   "id": "implement",
   "executionBackend": "codex-agent",
   "model": "gpt-5.3-codex-spark",
+  "modelFreeze": false,
   "sessionPolicy": {
     "mode": "reuse"
   },

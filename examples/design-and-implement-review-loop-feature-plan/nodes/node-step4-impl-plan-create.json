@@ -3,6 +3,7 @@
   "description": "Create or revise a feature-local implementation plan from the accepted branch design.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "sessionPolicy": {
     "mode": "reuse"
   },

@@ -279,6 +279,7 @@ extension WorkflowCommandTests {
       "description": "Uses the cheap ChatGPT model for live runs; deterministic tests use mock-scenario.json.",
       "executionBackend": "official/openai-sdk",
       "model": "gpt-5-mini",
+      "modelFreeze": false,
       "agentEnvironment": {
         "OPENAI_API_KEY": {
           "fromEnv": "RIELA_SCENARIO_OPENAI_API_KEY",

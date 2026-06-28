@@ -3,6 +3,7 @@
   "description": "Review the feature-local design update and route back to Step 2 when high or mid findings exist.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/step3-design-review.md",
   "variables": {},
   "output": {

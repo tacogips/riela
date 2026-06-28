@@ -79,7 +79,7 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
         throw AdapterExecutionError(.providerError, "container node '\(input.nodeId)' is missing container execution metadata")
       }
       let templateVariables = templateVariables(for: input)
-      let runnerPath = containerRunnerExecutable(for: container, variables: templateVariables)
+      let runnerPath = try containerRunnerExecutable(for: container, variables: templateVariables)
       let invocation = processInvocation(
         executable: runnerPath,
         arguments: containerArguments(container, variables: templateVariables)
@@ -204,19 +204,22 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
     return (URL(fileURLWithPath: "/usr/bin/env"), [executable] + arguments)
   }
 
-  private func containerRunnerExecutable(for container: WorkflowContainerExecution, variables: JSONObject) -> String {
+  private func containerRunnerExecutable(for container: WorkflowContainerExecution, variables: JSONObject) throws -> String {
     if let runnerPath = container.runnerPath {
-      return renderPromptTemplate(runnerPath, variables: variables)
+      return try nonEmptyContainerRunner(renderPromptTemplate(runnerPath, variables: variables), field: "runnerPath")
     }
-    let runnerKind = renderPromptTemplate(container.runnerKind ?? "docker", variables: variables)
-    switch runnerKind.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-    case "":
-      return "docker"
-    case "apple", "apple-container", "container":
-      return "container"
-    default:
-      return runnerKind
+    return try nonEmptyContainerRunner(
+      renderPromptTemplate(container.runnerKind ?? "docker", variables: variables),
+      field: "runnerKind"
+    )
+  }
+
+  private func nonEmptyContainerRunner(_ value: String, field: String) throws -> String {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else {
+      throw AdapterExecutionError(.providerError, "container node \(field) rendered empty")
     }
+    return trimmed
   }
 
   private var strippedEnvironmentKeys: Set<String> {

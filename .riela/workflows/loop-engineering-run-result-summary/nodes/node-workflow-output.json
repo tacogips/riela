@@ -3,6 +3,7 @@
   "description": "Summarize the completed run-result loop evidence summary slice.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/workflow-output.md",
   "variables": {}
 }

@@ -3,6 +3,7 @@
   "description": "Update the design documentation from the shared intake brief, including Codex-reference mapping when the run is reference-driven.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "sessionPolicy": {
     "mode": "reuse"
   },

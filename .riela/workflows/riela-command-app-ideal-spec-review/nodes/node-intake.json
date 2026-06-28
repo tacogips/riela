@@ -3,6 +3,7 @@
   "description": "Normalize the requested ideal-spec review scope and gather source-document context.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/intake.md",
   "variables": {}
 }

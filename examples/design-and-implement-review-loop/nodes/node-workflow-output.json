@@ -3,6 +3,7 @@
   "description": "Publish either the accepted planning handoff or the final accepted issue-resolution handoff after the required review gates pass, the issue-resolution documentation refresh runs when required, Step 9 emits the commit message, and Step 10 successfully commits and pushes.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/workflow-output.md",
   "variables": {},
   "output": {

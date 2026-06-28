@@ -317,7 +317,7 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
     selectedSessionId = try container.decodeIfPresent(String.self, forKey: .selectedSessionId)
     sessions = try container.decode([WorkflowViewerSessionSummary].self, forKey: .sessions)
     nodes = try container.decode([WorkflowViewerNode].self, forKey: .nodes)
-    timeline = try container.decodeIfPresent([WorkflowViewerTimelineEntry].self, forKey: .timeline) ?? []
+    timeline = try container.decode([WorkflowViewerTimelineEntry].self, forKey: .timeline)
     diagnostics = try container.decodeIfPresent([String].self, forKey: .diagnostics) ?? []
   }
 }

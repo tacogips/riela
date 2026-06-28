@@ -2,6 +2,7 @@
   "id": "main-worker",
   "executionBackend": "codex-agent",
   "model": "gpt-5.3-codex-spark",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/main-worker.md",
   "variables": {},
   "output": {

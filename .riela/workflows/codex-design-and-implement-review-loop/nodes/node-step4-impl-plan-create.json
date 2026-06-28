@@ -3,6 +3,7 @@
   "description": "Create or revise the implementation plan that executes the accepted design, including Codex-reference traceability when relevant.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "effort": "high",
   "sessionPolicy": {
     "mode": "reuse"

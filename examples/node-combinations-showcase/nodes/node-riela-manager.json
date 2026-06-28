@@ -2,6 +2,7 @@
   "id": "riela-manager",
   "executionBackend": "claude-code-agent",
   "model": "claude-haiku-4-5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/riela-manager.md",
   "variables": {
     "workflowId": "node-combinations-showcase"

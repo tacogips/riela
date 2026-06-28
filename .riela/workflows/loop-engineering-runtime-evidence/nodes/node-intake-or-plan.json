@@ -3,6 +3,7 @@
   "description": "Confirm the runtime evidence projection and persistence slice.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "effort": "medium",
   "promptTemplateFile": "prompts/intake-or-plan.md",
   "variables": {}

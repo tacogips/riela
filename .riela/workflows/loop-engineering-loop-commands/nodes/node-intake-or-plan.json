@@ -3,6 +3,7 @@
   "description": "Confirm the read-only riela loop command slice and constraints.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/intake-or-plan.md",
   "variables": {}
 }

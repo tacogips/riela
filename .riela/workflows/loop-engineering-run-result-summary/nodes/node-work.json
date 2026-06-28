@@ -3,6 +3,7 @@
   "description": "Implement final run-result loop evidence summary projection.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/work.md",
   "variables": {}
 }

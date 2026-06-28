@@ -823,7 +823,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     self.nodeType = try container.decodeIfPresent(NodeType.self, forKey: .nodeType)
     self.executionBackend = try container.decodeIfPresent(NodeExecutionBackend.self, forKey: .executionBackend)
     self.model = try container.decodeIfPresent(String.self, forKey: .model) ?? ""
-    self.modelFreeze = try container.decodeIfPresent(Bool.self, forKey: .modelFreeze) ?? false
+    self.modelFreeze = try container.decode(Bool.self, forKey: .modelFreeze)
     self.effort = try container.decodeIfPresent(NodeReasoningEffort.self, forKey: .effort)
     self.workingDirectory = try container.decodeIfPresent(String.self, forKey: .workingDirectory)
     self.command = try container.decodeIfPresent(WorkflowCommandExecution.self, forKey: .command)

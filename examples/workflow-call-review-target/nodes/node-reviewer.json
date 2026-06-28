@@ -3,6 +3,7 @@
   "description": "Review the caller payload passed in through runtimeVariables.workflowCall.input and return concise review guidance.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.3-codex-spark",
+  "modelFreeze": false,
   "promptTemplate": "Review the incoming workflowCall.input payload and return the review result only.",
   "variables": {}
 }

@@ -1,5 +1,6 @@
 {
   "id": "divide-worker",
+  "modelFreeze": false,
   "nodeType": "command",
   "variables": {
     "stageName": "divide"

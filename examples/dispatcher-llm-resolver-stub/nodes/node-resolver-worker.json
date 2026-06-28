@@ -2,6 +2,7 @@
   "id": "resolver-worker",
   "executionBackend": "codex-agent",
   "model": "gpt-5.3-codex-spark",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/resolver-worker.md",
   "variables": {}
 }

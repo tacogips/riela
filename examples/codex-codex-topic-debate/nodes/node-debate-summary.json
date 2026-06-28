@@ -2,6 +2,7 @@
   "id": "debate-summary",
   "executionBackend": "codex-agent",
   "model": "gpt-5.3-codex-spark",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/debate-summary.md",
   "variables": {},
   "output": {

@@ -154,9 +154,9 @@ extension WorkflowCommandTests {
       ]
     }
     """.write(to: workflowDirectory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
-    try #"{"id":"node-a","executionBackend":"codex-agent","model":"gpt-5.5","variables":{}}"#
+    try #"{"id":"node-a","executionBackend":"codex-agent","model":"gpt-5.5","modelFreeze":false,"variables":{}}"#
       .write(to: workflowDirectory.appendingPathComponent("nodes/node-a.json"), atomically: true, encoding: .utf8)
-    try #"{"id":"node-b","executionBackend":"codex-agent","model":"gpt-5.5","variables":{}}"#
+    try #"{"id":"node-b","executionBackend":"codex-agent","model":"gpt-5.5","modelFreeze":false,"variables":{}}"#
       .write(to: workflowDirectory.appendingPathComponent("nodes/node-b.json"), atomically: true, encoding: .utf8)
     let scenarioURL = root.appendingPathComponent("\(workflowName)-scenario.json")
     try """

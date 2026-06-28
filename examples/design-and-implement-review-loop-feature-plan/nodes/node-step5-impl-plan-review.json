@@ -3,6 +3,7 @@
   "description": "Review the feature-local implementation plan against the accepted branch design.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/step5-impl-plan-review.md",
   "variables": {},
   "output": {

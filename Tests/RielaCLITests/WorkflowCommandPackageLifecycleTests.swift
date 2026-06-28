@@ -895,9 +895,9 @@ extension WorkflowCommandTests {
       ]
     }
     """.write(to: callWorkflow.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
-    try #"{"id":"node-a","executionBackend":"codex-agent","model":"gpt-5.5","variables":{}}"#
+    try #"{"id":"node-a","executionBackend":"codex-agent","model":"gpt-5.5","modelFreeze":false,"variables":{}}"#
       .write(to: callWorkflow.appendingPathComponent("nodes/node-a.json"), atomically: true, encoding: .utf8)
-    try #"{"id":"node-b","executionBackend":"codex-agent","model":"gpt-5.5","variables":{},"promptVariants":{"direct":{"promptTemplate":"direct variant"}}}"#
+    try #"{"id":"node-b","executionBackend":"codex-agent","model":"gpt-5.5","modelFreeze":false,"variables":{},"promptVariants":{"direct":{"promptTemplate":"direct variant"}}}"#
       .write(to: callWorkflow.appendingPathComponent("nodes/node-b.json"), atomically: true, encoding: .utf8)
     let callScenario = tempDir.appendingPathComponent("call-step-scenario.json")
     try #"{"step-b":{"provider":"scenario-mock","model":"gpt-5.5","payload":{"status":"called-step-b"}}}"#

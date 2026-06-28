@@ -46,7 +46,7 @@ cannot override that binary with the full `x-gateway` client.
 interface XGatewayReadAddonConfig {
   readonly queryTemplate: string;
   readonly image?: string;
-  readonly runnerKind?: "podman" | "docker" | "nerdctl" | "container" | "apple-container" | "apple";
+  readonly runnerKind?: "podman" | "docker" | "nerdctl" | "container";
   readonly runnerPath?: string;
   readonly networkPolicy?: "disabled" | "egress-allowed";
 }
@@ -86,7 +86,7 @@ Environment rules:
 Validation rules:
 
 - `queryTemplate` is required and must render to a non-empty string
-- `runnerKind` must be `podman`, `docker`, `nerdctl`, `container`, `apple-container`, or `apple`
+- `runnerKind` must be `podman`, `docker`, `nerdctl`, or `container`
 - `networkPolicy` must be `disabled` or `egress-allowed`
 - write and mutation surfaces are intentionally omitted from version `1`
 
@@ -146,7 +146,7 @@ binary or supply an arbitrary command.
 interface XGatewayAddonConfig {
   readonly documentTemplate: string;
   readonly image?: string;
-  readonly runnerKind?: "podman" | "docker" | "nerdctl" | "container" | "apple-container" | "apple";
+  readonly runnerKind?: "podman" | "docker" | "nerdctl" | "container";
   readonly runnerPath?: string;
   readonly networkPolicy?: "disabled" | "egress-allowed";
 }
@@ -177,7 +177,7 @@ variables are runtime readiness prerequisites, and optional bindings may set
 Validation rules:
 
 - `documentTemplate` is required and must render to a non-empty string
-- `runnerKind` must be `podman`, `docker`, `nerdctl`, `container`, `apple-container`, or `apple`
+- `runnerKind` must be `podman`, `docker`, `nerdctl`, or `container`
 - `networkPolicy` must be `disabled` or `egress-allowed`
 - command or binary overrides are rejected; version `1` always runs
   `x-gateway`
@@ -230,7 +230,7 @@ authors cannot override that binary with the full `mail-gateway` client.
 interface MailGatewayReadAddonConfig {
   readonly queryTemplate: string;
   readonly image?: string;
-  readonly runnerKind?: "podman" | "docker" | "nerdctl" | "container" | "apple-container" | "apple";
+  readonly runnerKind?: "podman" | "docker" | "nerdctl" | "container";
   readonly runnerPath?: string;
   readonly networkPolicy?: "disabled" | "egress-allowed";
 }
@@ -261,7 +261,7 @@ variables are runtime readiness prerequisites, and optional bindings may set
 Validation rules:
 
 - `queryTemplate` is required and must render to a non-empty string
-- `runnerKind` must be `podman`, `docker`, `nerdctl`, `container`, `apple-container`, or `apple`
+- `runnerKind` must be `podman`, `docker`, `nerdctl`, or `container`
 - `networkPolicy` must be `disabled` or `egress-allowed`
 - send and mutation surfaces are intentionally omitted from version `1`
 
@@ -315,7 +315,7 @@ binary or supply an arbitrary command.
 interface MailGatewayAddonConfig {
   readonly documentTemplate: string;
   readonly image?: string;
-  readonly runnerKind?: "podman" | "docker" | "nerdctl" | "container" | "apple-container" | "apple";
+  readonly runnerKind?: "podman" | "docker" | "nerdctl" | "container";
   readonly runnerPath?: string;
   readonly networkPolicy?: "disabled" | "egress-allowed";
 }
@@ -346,7 +346,7 @@ variables are runtime readiness prerequisites, and optional bindings may set
 Validation rules:
 
 - `documentTemplate` is required and must render to a non-empty string
-- `runnerKind` must be `podman`, `docker`, `nerdctl`, `container`, `apple-container`, or `apple`
+- `runnerKind` must be `podman`, `docker`, `nerdctl`, or `container`
 - `networkPolicy` must be `disabled` or `egress-allowed`
 - command or binary overrides are rejected; version `1` always runs
   `mail-gateway`

@@ -3,6 +3,7 @@
   "description": "Analyze the accepted loop engineering proposal and define the detailed-design/implementation-plan scope.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "effort": "high",
   "promptTemplateFile": "prompts/intake-or-plan.md",
   "variables": {},

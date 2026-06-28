@@ -60,6 +60,7 @@ extension WorkflowCommandTests {
       "id": "worker",
       "executionBackend": "codex-agent",
       "model": "gpt-5.5",
+      "modelFreeze": false,
       "systemPromptTemplateFile": "prompts/system.md",
       "promptTemplateFile": "prompts/main.md",
       "sessionStartPromptTemplateFile": "prompts/start.md",
@@ -174,6 +175,7 @@ extension WorkflowCommandTests {
       "id": "implement",
       "executionBackend": "codex-agent",
       "model": "gpt-5.5",
+      "modelFreeze": false,
       "promptTemplate": "implement",
       "variables": {}
     }
@@ -183,6 +185,7 @@ extension WorkflowCommandTests {
       "id": "review",
       "executionBackend": "codex-agent",
       "model": "gpt-5.5",
+      "modelFreeze": false,
       "promptTemplate": "review",
       "variables": {}
     }
@@ -280,6 +283,7 @@ extension WorkflowCommandTests {
       "id": "worker",
       "executionBackend": "codex-agent",
       "model": "gpt-5.5",
+      "modelFreeze": false,
       "promptTemplate": "dispatch through codex",
       "variables": {}
     }

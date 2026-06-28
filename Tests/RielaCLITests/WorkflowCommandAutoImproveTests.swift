@@ -200,6 +200,7 @@ extension WorkflowCommandTests {
     {
       "id": "main-worker",
       "nodeType": "command",
+      "modelFreeze": false,
       "command": {
         "executable": "\(executable.path)",
         "arguments": ["\(argument.path)"]

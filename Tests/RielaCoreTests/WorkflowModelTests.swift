@@ -367,6 +367,7 @@ final class WorkflowModelTests: XCTestCase {
         "id": "planner",
         "executionBackend": "codex-agent",
         "model": "gpt-5",
+        "modelFreeze": false,
         "agentEnvironment": {
           "OPENAI_BASE_URL": { "value": "https://{{router.host}}/v1" },
           "OPENAI_API_KEY": { "fromEnv": "RIELA_OPENAI_API_KEY", "required": true }
@@ -385,7 +386,7 @@ final class WorkflowModelTests: XCTestCase {
     XCTAssertEqual(roundTrip.agentEnvironment, payload.agentEnvironment)
   }
 
-  func testAgentNodePayloadDecodesModelFreezeDefaultingToFalse() throws {
+  func testAgentNodePayloadRequiresModelFreeze() throws {
     let frozen = Data("""
       {
         "id": "planner",
@@ -394,7 +395,7 @@ final class WorkflowModelTests: XCTestCase {
         "modelFreeze": true
       }
       """.utf8)
-    let defaulted = Data("""
+    let missingModelFreeze = Data("""
       {
         "id": "planner",
         "executionBackend": "codex-agent",
@@ -403,7 +404,7 @@ final class WorkflowModelTests: XCTestCase {
       """.utf8)
 
     XCTAssertTrue(try JSONDecoder().decode(AgentNodePayload.self, from: frozen).modelFreeze)
-    XCTAssertFalse(try JSONDecoder().decode(AgentNodePayload.self, from: defaulted).modelFreeze)
+    XCTAssertThrowsError(try JSONDecoder().decode(AgentNodePayload.self, from: missingModelFreeze))
   }
 
   func testAgentEnvironmentRejectsInvalidBindingShapes() {
@@ -411,6 +412,7 @@ final class WorkflowModelTests: XCTestCase {
       {
         "id": "planner",
         "model": "gpt-5",
+        "modelFreeze": false,
         "agentEnvironment": {
           "OPENAI_API_KEY": { "value": "literal", "fromEnv": "SOURCE_ENV" }
         }
@@ -425,6 +427,7 @@ final class WorkflowModelTests: XCTestCase {
       {
         "id": "planner",
         "model": "gpt-5",
+        "modelFreeze": false,
         "agentEnvironment": {
           "INVALID-NAME": { "value": "literal" }
         }
@@ -436,6 +439,7 @@ final class WorkflowModelTests: XCTestCase {
       {
         "id": "planner",
         "model": "gpt-5",
+        "modelFreeze": false,
         "agentEnvironment": {
           "RIELA_AGENT_BACKEND": { "value": "spoof" }
         }

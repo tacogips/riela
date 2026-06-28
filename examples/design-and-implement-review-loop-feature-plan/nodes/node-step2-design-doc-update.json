@@ -3,6 +3,7 @@
   "description": "Create or revise feature-local design documentation for one fanout branch.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "sessionPolicy": {
     "mode": "reuse"
   },

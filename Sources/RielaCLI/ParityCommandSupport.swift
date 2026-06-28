@@ -235,6 +235,7 @@ func scaffoldNodeJSON() -> String {
     "id": "main-worker",
     "executionBackend": "codex-agent",
     "model": "gpt-5.5",
+    "modelFreeze": false,
     "prompt": "Return a concise JSON object with a status field.",
     "variables": {}
   }

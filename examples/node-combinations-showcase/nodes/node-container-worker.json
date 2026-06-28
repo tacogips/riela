@@ -1,5 +1,6 @@
 {
   "id": "container-worker",
+  "modelFreeze": false,
   "nodeType": "container",
   "variables": {
     "lane": "container"

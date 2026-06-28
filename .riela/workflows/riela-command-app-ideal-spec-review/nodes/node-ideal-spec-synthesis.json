@@ -3,6 +3,7 @@
   "description": "Synthesize the command and app reviews into a unified user-facing ideal specification.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/ideal-spec-synthesis.md",
   "variables": {}
 }

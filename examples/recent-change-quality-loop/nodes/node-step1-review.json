@@ -3,6 +3,7 @@
   "description": "Review recent committed and uncommitted changes for quality issues.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/step1-review.md",
   "variables": {},
   "output": {

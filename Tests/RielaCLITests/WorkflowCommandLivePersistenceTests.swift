@@ -28,6 +28,7 @@ final class WorkflowCommandLivePersistenceTests: XCTestCase {
       {
         "id": "run-command",
         "nodeType": "command",
+        "modelFreeze": false,
         "command": { "executable": "\(script.path)" }
       }
       """
@@ -144,6 +145,7 @@ final class WorkflowCommandLivePersistenceTests: XCTestCase {
       {
         "id": "first-command",
         "nodeType": "command",
+        "modelFreeze": false,
         "command": { "executable": "\(firstScript.path)" }
       }
       """,
@@ -151,6 +153,7 @@ final class WorkflowCommandLivePersistenceTests: XCTestCase {
       {
         "id": "second-command",
         "nodeType": "command",
+        "modelFreeze": false,
         "command": { "executable": "\(secondScript.path)" }
       }
       """
@@ -258,6 +261,7 @@ final class WorkflowCommandLivePersistenceTests: XCTestCase {
       {
         "id": "run-command",
         "nodeType": "command",
+        "modelFreeze": false,
         "command": {
           "executable": "\(script.path)"
         }
@@ -372,6 +376,7 @@ final class WorkflowCommandLivePersistenceTests: XCTestCase {
       {
         "id": "run-command",
         "nodeType": "command",
+        "modelFreeze": false,
         "command": {
           "executable": "\(script.path)"
         }
@@ -582,6 +587,7 @@ final class WorkflowCommandLivePersistenceTests: XCTestCase {
       {
         "id": "run-command",
         "nodeType": "command",
+        "modelFreeze": false,
         "command": {
           "executable": "\(script.path)"
         }
@@ -666,6 +672,7 @@ final class WorkflowCommandLivePersistenceTests: XCTestCase {
       {
         "id": "run-command",
         "nodeType": "command",
+        "modelFreeze": false,
         "command": { "executable": "/bin/sh", "arguments": ["-c", "kill -13 $$"] }
       }
       """
@@ -707,6 +714,7 @@ final class WorkflowCommandLivePersistenceTests: XCTestCase {
       {
         "id": "run-command",
         "nodeType": "command",
+        "modelFreeze": false,
         "command": {
           "executable": "/bin/sh",
           "arguments": ["-c", "i=0; while [ $i -lt 9000 ]; do printf x >&2; i=$((i + 1)); done; exit 1"]

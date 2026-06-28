@@ -3,6 +3,7 @@
   "description": "Consume the workflow-call result delivered back from the review workflow and finalize the parent result.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.3-codex-spark",
+  "modelFreeze": false,
   "promptTemplate": "Read the latest upstream review result and finalize the reviewed outcome.",
   "variables": {}
 }

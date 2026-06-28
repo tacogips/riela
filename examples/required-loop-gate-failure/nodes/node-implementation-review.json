@@ -3,6 +3,7 @@
   "description": "Produce the structured review gate result for the required loop example.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/implementation-review.md",
   "variables": {},
   "output": {

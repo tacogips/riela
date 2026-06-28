@@ -3,6 +3,7 @@
   "description": "Check test and verification integrity after implementation before independent review.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "effort": "high",
   "promptTemplateFile": "prompts/step6-test-integrity-check.md",
   "variables": {},

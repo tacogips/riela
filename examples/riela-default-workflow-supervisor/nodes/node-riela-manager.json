@@ -2,6 +2,7 @@
   "id": "riela-manager",
   "executionBackend": "codex-agent",
   "model": "gpt-5.3-codex-spark",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/supervisor-manager.md",
   "variables": {
     "workflowId": "riela-default-workflow-supervisor"

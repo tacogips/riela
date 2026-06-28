@@ -2,6 +2,7 @@
   "id": "negative-output",
   "executionBackend": "codex-agent",
   "model": "gpt-5.3-codex-spark",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/negative-output.md",
   "variables": {
     "stanceLabel": "negative"

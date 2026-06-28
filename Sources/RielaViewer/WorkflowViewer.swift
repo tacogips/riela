@@ -219,6 +219,50 @@ public struct WorkflowViewerNodeMessages: Codable, Equatable, Sendable {
   }
 }
 
+public struct WorkflowViewerTimelineEntry: Codable, Equatable, Identifiable, Sendable {
+  public var id: String
+  public var stepId: String
+  public var nodeId: String
+  public var attempt: Int
+  public var status: WorkflowStepExecutionStatus
+  public var backend: NodeExecutionBackend?
+  public var startedAt: Date
+  public var endedAt: Date?
+  public var lastBackendEventAt: Date?
+  public var lastBackendEventType: String?
+  public var failureReason: String?
+
+  public init(
+    id: String,
+    stepId: String,
+    nodeId: String,
+    attempt: Int,
+    status: WorkflowStepExecutionStatus,
+    backend: NodeExecutionBackend? = nil,
+    startedAt: Date,
+    endedAt: Date? = nil,
+    lastBackendEventAt: Date? = nil,
+    lastBackendEventType: String? = nil,
+    failureReason: String? = nil
+  ) {
+    self.id = id
+    self.stepId = stepId
+    self.nodeId = nodeId
+    self.attempt = attempt
+    self.status = status
+    self.backend = backend
+    self.startedAt = startedAt
+    self.endedAt = endedAt
+    self.lastBackendEventAt = lastBackendEventAt
+    self.lastBackendEventType = lastBackendEventType
+    self.failureReason = failureReason
+  }
+
+  public var duration: TimeInterval? {
+    endedAt.map { $0.timeIntervalSince(startedAt) }
+  }
+}
+
 public struct WorkflowViewerState: Codable, Equatable, Sendable {
   public var workflow: WorkflowDefinition
   public var workflowDirectory: String
@@ -227,6 +271,7 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
   public var selectedSessionId: String?
   public var sessions: [WorkflowViewerSessionSummary]
   public var nodes: [WorkflowViewerNode]
+  public var timeline: [WorkflowViewerTimelineEntry]
   public var diagnostics: [String]
 
   public init(
@@ -237,6 +282,7 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
     selectedSessionId: String?,
     sessions: [WorkflowViewerSessionSummary],
     nodes: [WorkflowViewerNode],
+    timeline: [WorkflowViewerTimelineEntry] = [],
     diagnostics: [String] = []
   ) {
     self.workflow = workflow
@@ -246,6 +292,7 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
     self.selectedSessionId = selectedSessionId
     self.sessions = sessions
     self.nodes = nodes
+    self.timeline = timeline
     self.diagnostics = diagnostics
   }
 
@@ -257,6 +304,7 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
     case selectedSessionId
     case sessions
     case nodes
+    case timeline
     case diagnostics
   }
 
@@ -269,6 +317,7 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
     selectedSessionId = try container.decodeIfPresent(String.self, forKey: .selectedSessionId)
     sessions = try container.decode([WorkflowViewerSessionSummary].self, forKey: .sessions)
     nodes = try container.decode([WorkflowViewerNode].self, forKey: .nodes)
+    timeline = try container.decodeIfPresent([WorkflowViewerTimelineEntry].self, forKey: .timeline) ?? []
     diagnostics = try container.decodeIfPresent([String].self, forKey: .diagnostics) ?? []
   }
 }
@@ -341,6 +390,7 @@ public struct WorkflowViewerLoader: Sendable {
       selectedSessionId: selectedSnapshot?.session.sessionId,
       sessions: summaries,
       nodes: buildTree(workflow: workflow, workflowDirectory: workflowDirectory, selectedSession: selectedSnapshot?.session),
+      timeline: selectedSnapshot.map { timelineEntries(from: $0.session) } ?? [],
       diagnostics: diagnostics
     )
   }
@@ -394,6 +444,31 @@ public struct WorkflowViewerLoader: Sendable {
       activeStepIds: active.sorted(),
       updatedAt: snapshot.session.updatedAt
     )
+  }
+
+  private func timelineEntries(from session: WorkflowSession) -> [WorkflowViewerTimelineEntry] {
+    session.executions
+      .sorted { lhs, rhs in
+        if lhs.createdAt == rhs.createdAt {
+          return lhs.executionId < rhs.executionId
+        }
+        return lhs.createdAt < rhs.createdAt
+      }
+      .map { execution in
+        WorkflowViewerTimelineEntry(
+          id: execution.executionId,
+          stepId: execution.stepId,
+          nodeId: execution.nodeId,
+          attempt: execution.attempt,
+          status: execution.status,
+          backend: execution.backend,
+          startedAt: execution.createdAt,
+          endedAt: execution.status == .running ? nil : execution.updatedAt,
+          lastBackendEventAt: execution.lastBackendEventAt,
+          lastBackendEventType: execution.lastBackendEventType,
+          failureReason: execution.failureReason
+        )
+      }
   }
 
   private func loadSnapshots(sessionStoreRoot: String) throws -> [WorkflowRuntimePersistenceSnapshot] {

@@ -6,12 +6,20 @@ import RielaViewer
 
 @MainActor
 final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDataSource, NSOutlineViewDelegate {
-  private let loader = WorkflowViewerLoader()
+  let loader = WorkflowViewerLoader()
   private let outlineView = NSOutlineView()
   private let sessionPopup = NSPopUpButton()
   private let templatePopup = NSPopUpButton()
   private let statusLabel = NSTextField(labelWithString: "No workflow loaded")
+  private let currentDirectoryLabel = NSTextField(labelWithString: "Current Dir: -")
+  private let currentDirectoryButton = NSButton(title: "Current Dir...", target: nil, action: nil)
+  private let environmentVariablesLabel = NSTextField(labelWithString: "Env Vars: -")
+  private let environmentVariablesButton = NSButton(title: "Env Vars...", target: nil, action: nil)
+  private let workflowVariablesLabel = NSTextField(labelWithString: "Workflow Variables: -")
+  private let workflowVariablesButton = NSButton(title: "Workflow Variables...", target: nil, action: nil)
   private let detailTextView = NSTextView()
+  private let logTextView = NSTextView()
+  private let structureTextView = NSTextView()
   private let modelPopup = NSPopUpButton()
   private let backendPopup = NSPopUpButton()
   private let effortPopup = NSPopUpButton()
@@ -20,6 +28,12 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
   private let templateTextView = NSTextView()
   private let saveTemplateButton = NSButton(title: "Save", target: nil, action: nil)
   private let reloadTemplateButton = NSButton(title: "Reload", target: nil, action: nil)
+  let timelineDateFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.dateStyle = .short
+    formatter.timeStyle = .medium
+    return formatter
+  }()
   private let detailFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
   private let detailTextColor = NSColor(calibratedWhite: 0.92, alpha: 1)
   private let detailBackgroundColor = NSColor(calibratedWhite: 0.08, alpha: 1)
@@ -29,8 +43,14 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
   private var state: WorkflowViewerState?
   private var selectedNodeId: String?
   private var selectedTemplateFileId: String?
+  private var currentDirectory: String?
+  private var environmentVariablesSummary: String?
+  private var workflowVariablesSummary: String?
   private var nodePatches: [String: RielaAppDaemonWorkflowNodePatch] = [:]
   private var onSaveNodePatch: ((String, RielaAppDaemonWorkflowNodePatch?) -> Bool)?
+  private var onSetWorkingDirectory: (() -> String?)?
+  private var onSetEnvironmentVariables: (() -> String?)?
+  private var onSetWorkflowVariables: (() -> String?)?
 
   init() {
     let window = NSWindow(
@@ -51,16 +71,30 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
   func show(
     workflowDirectory: String,
     sessionStoreRoot: String?,
+    currentDirectory: String? = nil,
+    environmentVariablesSummary: String? = nil,
+    workflowVariablesSummary: String? = nil,
     nodePatches: [String: RielaAppDaemonWorkflowNodePatch] = [:],
-    onSaveNodePatch: ((String, RielaAppDaemonWorkflowNodePatch?) -> Bool)? = nil
+    onSaveNodePatch: ((String, RielaAppDaemonWorkflowNodePatch?) -> Bool)? = nil,
+    onSetWorkingDirectory: (() -> String?)? = nil,
+    onSetEnvironmentVariables: (() -> String?)? = nil,
+    onSetWorkflowVariables: (() -> String?)? = nil
   ) {
     if self.workflowDirectory != workflowDirectory {
       selectedNodeId = nil
     }
     self.workflowDirectory = workflowDirectory
     self.sessionStoreRoot = sessionStoreRoot
+    self.currentDirectory = currentDirectory
+    self.environmentVariablesSummary = environmentVariablesSummary
+    self.workflowVariablesSummary = workflowVariablesSummary
     self.nodePatches = nodePatches
     self.onSaveNodePatch = onSaveNodePatch
+    self.onSetWorkingDirectory = onSetWorkingDirectory
+    self.onSetEnvironmentVariables = onSetEnvironmentVariables
+    self.onSetWorkflowVariables = onSetWorkflowVariables
+    updateCurrentDirectoryLabel()
+    updateVariableLabels()
     refresh()
     showWindow(nil)
     window?.makeKeyAndOrderFront(nil)
@@ -144,28 +178,39 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     templateToolbar.addArrangedSubview(saveTemplateButton)
     templateToolbar.addArrangedSubview(reloadTemplateButton)
 
+    let currentDirectoryToolbar = NSStackView()
+    currentDirectoryToolbar.orientation = .horizontal
+    currentDirectoryToolbar.alignment = .centerY
+    currentDirectoryToolbar.spacing = 8
+    currentDirectoryLabel.lineBreakMode = .byTruncatingMiddle
+    currentDirectoryButton.target = self
+    currentDirectoryButton.action = #selector(currentDirectoryButtonPressed)
+    currentDirectoryButton.toolTip = "Choose the current directory used when this workflow runs."
+    currentDirectoryToolbar.addArrangedSubview(currentDirectoryLabel)
+    currentDirectoryToolbar.addArrangedSubview(currentDirectoryButton)
+
+    let variableActionsToolbar = NSStackView()
+    variableActionsToolbar.orientation = .horizontal
+    variableActionsToolbar.alignment = .centerY
+    variableActionsToolbar.spacing = 8
+    environmentVariablesLabel.lineBreakMode = .byTruncatingTail
+    workflowVariablesLabel.lineBreakMode = .byTruncatingTail
+    environmentVariablesButton.target = self
+    environmentVariablesButton.action = #selector(environmentVariablesButtonPressed)
+    workflowVariablesButton.target = self
+    workflowVariablesButton.action = #selector(workflowVariablesButtonPressed)
+    variableActionsToolbar.addArrangedSubview(environmentVariablesLabel)
+    variableActionsToolbar.addArrangedSubview(environmentVariablesButton)
+    variableActionsToolbar.addArrangedSubview(workflowVariablesLabel)
+    variableActionsToolbar.addArrangedSubview(workflowVariablesButton)
+
     statusLabel.lineBreakMode = .byTruncatingTail
-    detailTextView.isEditable = false
-    detailTextView.isRichText = false
-    detailTextView.font = detailFont
-    detailTextView.textColor = detailTextColor
-    detailTextView.backgroundColor = detailBackgroundColor
-    detailTextView.drawsBackground = true
-    detailTextView.textContainerInset = NSSize(width: 10, height: 10)
-    detailTextView.isVerticallyResizable = true
-    detailTextView.isHorizontallyResizable = true
-    detailTextView.autoresizingMask = [.width]
-    detailTextView.textContainer?.widthTracksTextView = true
-    detailTextView.textContainer?.containerSize = NSSize(
-      width: detailScrollContentWidthFallback,
-      height: CGFloat.greatestFiniteMagnitude
-    )
-    let detailScroll = NSScrollView()
-    detailScroll.documentView = detailTextView
-    detailScroll.hasVerticalScroller = true
-    detailScroll.hasHorizontalScroller = true
-    detailScroll.borderType = .bezelBorder
-    detailScroll.translatesAutoresizingMaskIntoConstraints = false
+    configureReadOnlyTextView(detailTextView, textColor: detailTextColor, backgroundColor: detailBackgroundColor)
+    configureReadOnlyTextView(logTextView, textColor: detailTextColor, backgroundColor: detailBackgroundColor)
+    configureReadOnlyTextView(structureTextView, textColor: detailTextColor, backgroundColor: detailBackgroundColor)
+    let detailScroll = scrollView(for: detailTextView)
+    let logScroll = scrollView(for: logTextView)
+    let structureScroll = scrollView(for: structureTextView)
 
     templateTextView.isEditable = false
     templateTextView.isRichText = false
@@ -186,21 +231,88 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     templateScroll.borderType = .bezelBorder
     templateScroll.translatesAutoresizingMaskIntoConstraints = false
 
+    let editStack = NSStackView(views: [
+      detailScroll,
+      templateToolbar,
+      templateScroll
+    ])
+    editStack.orientation = .vertical
+    editStack.alignment = .leading
+    editStack.spacing = 8
+    editStack.translatesAutoresizingMaskIntoConstraints = false
+
+    let variablesStack = NSStackView(views: [
+      currentDirectoryToolbar,
+      variableActionsToolbar,
+      patchToolbar
+    ])
+    variablesStack.orientation = .vertical
+    variablesStack.alignment = .leading
+    variablesStack.spacing = 8
+    variablesStack.translatesAutoresizingMaskIntoConstraints = false
+
+    let tabView = NSTabView()
+    tabView.translatesAutoresizingMaskIntoConstraints = false
+    tabView.addTabViewItem(tabItem(label: "Edit", view: editStack))
+    tabView.addTabViewItem(tabItem(label: "Variables", view: variablesStack))
+    tabView.addTabViewItem(tabItem(label: "Run Log", view: logScroll))
+    tabView.addTabViewItem(tabItem(label: "Structure", view: structureScroll))
+
     rightStack.addArrangedSubview(toolbar)
     rightStack.addArrangedSubview(statusLabel)
-    rightStack.addArrangedSubview(detailScroll)
-    rightStack.addArrangedSubview(patchToolbar)
-    rightStack.addArrangedSubview(templateToolbar)
-    rightStack.addArrangedSubview(templateScroll)
+    rightStack.addArrangedSubview(tabView)
     detailScroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 520).isActive = true
     detailScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
+    logScroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 520).isActive = true
+    structureScroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 520).isActive = true
     templateScroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 520).isActive = true
     templateScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
+    tabView.widthAnchor.constraint(greaterThanOrEqualToConstant: 540).isActive = true
+    tabView.heightAnchor.constraint(greaterThanOrEqualToConstant: 500).isActive = true
 
     splitView.addArrangedSubview(outlineScroll)
     splitView.addArrangedSubview(rightStack)
     window.contentView = splitView
     splitView.setPosition(360, ofDividerAt: 0)
+  }
+
+  private func configureReadOnlyTextView(
+    _ textView: NSTextView,
+    textColor: NSColor,
+    backgroundColor: NSColor
+  ) {
+    textView.isEditable = false
+    textView.isRichText = false
+    textView.font = detailFont
+    textView.textColor = textColor
+    textView.backgroundColor = backgroundColor
+    textView.drawsBackground = true
+    textView.textContainerInset = NSSize(width: 10, height: 10)
+    textView.isVerticallyResizable = true
+    textView.isHorizontallyResizable = true
+    textView.autoresizingMask = [.width]
+    textView.textContainer?.widthTracksTextView = true
+    textView.textContainer?.containerSize = NSSize(
+      width: detailScrollContentWidthFallback,
+      height: CGFloat.greatestFiniteMagnitude
+    )
+  }
+
+  private func scrollView(for textView: NSTextView) -> NSScrollView {
+    let scroll = NSScrollView()
+    scroll.documentView = textView
+    scroll.hasVerticalScroller = true
+    scroll.hasHorizontalScroller = true
+    scroll.borderType = .bezelBorder
+    scroll.translatesAutoresizingMaskIntoConstraints = false
+    return scroll
+  }
+
+  private func tabItem(label: String, view: NSView) -> NSTabViewItem {
+    let item = NSTabViewItem(identifier: label)
+    item.label = label
+    item.view = view
+    return item
   }
 
   @objc private func refreshButtonPressed() {
@@ -214,6 +326,46 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
 
   @objc private func reloadTemplateButtonPressed() {
     loadSelectedTemplateFile()
+  }
+
+  @objc private func currentDirectoryButtonPressed() {
+    guard let onSetWorkingDirectory else {
+      statusLabel.stringValue = "Current directory editing is unavailable for this viewer"
+      return
+    }
+    currentDirectory = onSetWorkingDirectory()
+    updateCurrentDirectoryLabel()
+  }
+
+  @objc private func environmentVariablesButtonPressed() {
+    guard let onSetEnvironmentVariables else {
+      statusLabel.stringValue = "Environment variable editing is unavailable for this viewer"
+      return
+    }
+    environmentVariablesSummary = onSetEnvironmentVariables()
+    updateVariableLabels()
+  }
+
+  @objc private func workflowVariablesButtonPressed() {
+    guard let onSetWorkflowVariables else {
+      statusLabel.stringValue = "Workflow variable editing is unavailable for this viewer"
+      return
+    }
+    workflowVariablesSummary = onSetWorkflowVariables()
+    updateVariableLabels()
+  }
+
+  private func updateCurrentDirectoryLabel() {
+    let path = currentDirectory?.trimmingCharacters(in: .whitespacesAndNewlines)
+    currentDirectoryLabel.stringValue = "Current Dir: \((path?.isEmpty == false ? path : nil) ?? "-")"
+    currentDirectoryButton.isEnabled = onSetWorkingDirectory != nil
+  }
+
+  private func updateVariableLabels() {
+    environmentVariablesLabel.stringValue = "Env Vars: \(environmentVariablesSummary ?? "-")"
+    workflowVariablesLabel.stringValue = "Workflow Variables: \(workflowVariablesSummary ?? "-")"
+    environmentVariablesButton.isEnabled = onSetEnvironmentVariables != nil
+    workflowVariablesButton.isEnabled = onSetWorkflowVariables != nil
   }
 
   @objc private func saveNodePatchButtonPressed() {
@@ -320,6 +472,8 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     } catch {
       statusLabel.stringValue = "Failed to load viewer: \(error)"
       setDetailText("\(error)")
+      setLogText("")
+      setStructureText("")
     }
   }
 
@@ -327,6 +481,8 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     guard let state else {
       statusLabel.stringValue = "No workflow loaded"
       setDetailText("")
+      setLogText("")
+      setStructureText("")
       updateTemplateControls(for: nil)
       updateNodePatchControls(for: nil)
       return
@@ -339,6 +495,8 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     ].compactMap { $0 }.joined(separator: " | ")
     guard let selectedNodeId else {
       setDetailText(workflowOverview(state: state))
+      setLogText(renderRunLog(state: state, selectedStepId: nil, session: session).joined(separator: "\n"))
+      setStructureText(renderWorkflowStructure(state: state).joined(separator: "\n"))
       updateTemplateControls(for: nil)
       updateNodePatchControls(for: nil)
       return
@@ -378,41 +536,40 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     lines.append("")
     lines.append("Workflow")
     lines.append(workflowOverview(state: state))
-    if state.sessions.isEmpty {
-      lines.append("")
-      lines.append("Sessions")
-      lines.append("No persisted sessions found for this workflow.")
-      lines.append("Searched:")
-      lines.append(contentsOf: state.sessionStoreCandidates.map { "- \($0)" })
-    }
     if !state.diagnostics.isEmpty {
       lines.append("")
       lines.append("Diagnostics")
       lines.append(contentsOf: state.diagnostics.map { "- \($0)" })
     }
-    if let session {
-      do {
-        let messages = try loader.nodeMessages(
-          stepId: selectedNodeId,
-          sessionId: session.sessionId,
-          sessionStoreRoot: state.sessionStoreRoot
-        )
-        lines.append("")
-        lines.append("Inbox")
-        lines.append(contentsOf: render(messages.inbox))
-        lines.append("")
-        lines.append("Outbox")
-        lines.append(contentsOf: render(messages.outbox))
-      } catch {
-        lines.append("")
-        lines.append("Messages failed to load: \(error)")
-      }
-    }
     setDetailText(lines.joined(separator: "\n"))
+    setLogText(renderRunLog(state: state, selectedStepId: selectedNodeId, session: session).joined(separator: "\n"))
+    setStructureText(renderWorkflowStructure(state: state).joined(separator: "\n"))
   }
 
   private func setDetailText(_ text: String) {
     detailTextView.textStorage?.setAttributedString(NSAttributedString(
+      string: text,
+      attributes: [
+        .font: detailFont,
+        .foregroundColor: detailTextColor,
+        .backgroundColor: detailBackgroundColor
+      ]
+    ))
+  }
+
+  private func setLogText(_ text: String) {
+    logTextView.textStorage?.setAttributedString(NSAttributedString(
+      string: text,
+      attributes: [
+        .font: detailFont,
+        .foregroundColor: detailTextColor,
+        .backgroundColor: detailBackgroundColor
+      ]
+    ))
+  }
+
+  private func setStructureText(_ text: String) {
+    structureTextView.textStorage?.setAttributedString(NSAttributedString(
       string: text,
       attributes: [
         .font: detailFont,
@@ -604,46 +761,6 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
 
   private var detailScrollContentWidthFallback: CGFloat {
     520
-  }
-
-  private func selectedSession(in state: WorkflowViewerState) -> WorkflowViewerSessionSummary? {
-    guard let selectedSessionId = state.selectedSessionId else {
-      return nil
-    }
-    return state.sessions.first { $0.sessionId == selectedSessionId }
-  }
-
-  private func workflowOverview(state: WorkflowViewerState) -> String {
-    [
-      "id: \(state.workflow.workflowId)",
-      "entry: \(state.workflow.entryStepId)",
-      "description: \(state.workflow.description.isEmpty ? "-" : state.workflow.description)",
-      "steps: \(state.workflow.steps.count)",
-      "sessionStore: \(state.sessionStoreRoot)"
-    ].joined(separator: "\n")
-  }
-
-  private func render(_ messages: [WorkflowViewerMessage]) -> [String] {
-    guard !messages.isEmpty else {
-      return ["(none)"]
-    }
-    return messages.map { message in
-      [
-        "- \(message.id) [\(message.status.rawValue)]",
-        "  from: \(message.fromStepId ?? "-")",
-        "  to: \(message.toStepId ?? "-")",
-        "  payload: \(message.payloadPreview)"
-      ].joined(separator: "\n")
-    }
-  }
-
-  private func sessionTitle(_ summary: WorkflowViewerSessionSummary) -> String {
-    let active = summary.activeStepIds.isEmpty ? "" : " active: \(summary.activeStepIds.joined(separator: ","))"
-    return "\(summary.sessionId) - \(summary.status.rawValue)\(active)"
-  }
-
-  private func flattenedNodes(_ nodes: [WorkflowViewerNode]) -> [WorkflowViewerNode] {
-    nodes.flatMap { [$0] + flattenedNodes($0.children) }
   }
 
   private func expandAll() {

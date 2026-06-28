@@ -1,5 +1,19 @@
 # Node Add-on Catalog and Built-in Workers: Gateway Built-ins
 
+## Shared Container Runner Rules
+
+All gateway add-ons use the same container runner contract:
+
+- `runnerKind` accepts only `podman`, `docker`, `nerdctl`, or `container`
+- `container` selects the Apple `container` CLI by name
+- legacy aliases such as `apple` and `apple-container` are not accepted
+- `runnerPath`, when provided, is an explicit executable override and takes
+  precedence over `runnerKind`
+- after template rendering, `runnerPath` or `runnerKind` must resolve to a
+  non-empty executable name; empty or whitespace-only values fail before the
+  process is launched
+- when both fields are omitted, execution defaults to `docker`
+
 ## Built-in `riela/x-gateway-read`
 
 ### Purpose

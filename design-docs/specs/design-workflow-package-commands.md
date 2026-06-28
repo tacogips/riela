@@ -38,14 +38,14 @@ mention compatibility routes such as `workflow package ...`, `workflow search`,
 - Issue addendum: `workflowInput: Add package listing and removal for
   checkout-installed workflows and skills`
 - Primary source touchpoints:
-  - `packages/riela/src/cli.ts`
-  - `packages/riela/src/cli/workflow-command-handler.ts`
-  - `packages/riela/src/cli/workflow-package-command-handler.ts`
-  - `packages/riela/src/cli/input-output-helpers.ts`
-  - `packages/riela/src/workflow/packages/checkout.ts`
-  - `packages/riela/src/workflow/packages/status.ts`
-  - `packages/riela/src/workflow/packages/skills.ts`
-  - `packages/riela/src/workflow/packages/types.ts`
+  - `Sources/RielaCLI/RielaCLIApplication.swift`
+  - `Sources/RielaCLI/WorkflowPackageParityCommands.swift`
+  - `Sources/RielaCLI/WorkflowPackageCommandRunner+Install.swift`
+  - `Sources/RielaCLI/WorkflowPackageCommandRunner+Archives.swift`
+  - `Sources/RielaCLI/WorkflowPackageSupport.swift`
+  - `Sources/RielaAddons/WorkflowPackageManifest.swift`
+  - `Sources/RielaAddons/WorkflowPackageChecksum.swift`
+  - `Sources/RielaAddons/WorkflowPackageArchive.swift`
   - `README.md`
 
 ## Command Map
@@ -151,6 +151,7 @@ Required list JSON fields:
 - `installId`
 - `packageId`
 - `packageName`
+- `tags`
 - `workflowName`
 - `scope`
 - `destinationDirectory`
@@ -298,6 +299,7 @@ applicable:
 - `registryUrl`
 - `registryRef`
 - `packageId`
+- `tags`
 - `workflowName`
 - `workflowDirectory`
 - `checksum`
@@ -320,12 +322,12 @@ ids and destination directories.
 
 ## CLI Integration
 
-The command parser currently routes workflow commands through
-`packages/riela/src/cli/workflow-command-handler.ts`; top-level entry remains
-`packages/riela/src/cli.ts`. The implementation should keep parsing and
-rendering near existing workflow command handling and move package-specific data
-operations into workflow package modules rather than expanding the handler with
-Git, cache, or checksum logic.
+The Swift command parser routes top-level `package` commands through
+`RielaCLIApplication` and the package command runner types under
+`Sources/RielaCLI`. Package-specific data operations remain in
+`WorkflowPackageParityCommands`, `WorkflowPackageCommandRunner+Install`,
+`WorkflowPackageCommandRunner+Archives`, and `WorkflowPackageSupport`; manifest,
+checksum, and archive behavior live under `Sources/RielaAddons`.
 
 `riela package publish` uses the package command handler and should remain
 the only package publication command surface. Help and README content should
@@ -353,7 +355,8 @@ Help output and README examples must make these distinctions explicit:
   unambiguous package/workflow selector
 - `workflow checkout <github-url>` installs a direct GitHub workflow directory
 - `workflow checkout <package-id>` is rejected; use `package install`
-- `package search` searches package metadata, not session state
+- `package search` searches package metadata, including package names and tags,
+  not session state
 - `package publish` writes to a GitHub registry and may push or create a PR
 
 ## Decisions
@@ -424,15 +427,14 @@ Help output and README examples must make these distinctions explicit:
 Expected focused verification commands:
 
 ```bash
-bun test packages/riela/src/cli.test.ts
-bun test packages/riela/src/workflow/packages/packages.test.ts
-bun run packages/riela/src/bin.ts package registry list --output json
-bun test packages/riela/src/workflow/checkout/checkout.test.ts
-bun test packages/riela/src/workflow/catalog.test.ts
-bun run packages/riela/src/bin.ts package search --output json
-bun run packages/riela/src/bin.ts package install <package-id> --output json
-bun run packages/riela/src/bin.ts package publish <workflow-name-or-path> --registry https://github.com/tacogips/riela-packages --dry-run --output json
-bun run tsc --noEmit
+swift test --filter WorkflowCommandPackageLifecycleTests
+swift test --filter WorkflowCommandPackageTagTests
+swift test --filter WorkflowPackageArchiveCommandTests
+swift test --filter WorkflowPackageManifestTests
+swift run riela package registry list --output json
+swift run riela package search --output json
+swift run riela package install <package-id> --output json
+swift run riela package publish <workflow-name-or-path> --registry https://github.com/tacogips/riela-packages --dry-run --output json
 git diff --check
 ```
 
@@ -442,6 +444,7 @@ git diff --check
 - `design-docs/specs/design-workflow-package-checkout-search.md`
 - `design-docs/specs/design-workflow-package-publish.md`
 - `design-docs/specs/design-workflow-package-registry-migration.md`
-- `packages/riela/src/cli.ts`
-- `packages/riela/src/cli/workflow-command-handler.ts`
+- `Sources/RielaCLI/RielaCLIApplication.swift`
+- `Sources/RielaCLI/WorkflowPackageParityCommands.swift`
+- `Sources/RielaAddons/WorkflowPackageManifest.swift`
 - `README.md`

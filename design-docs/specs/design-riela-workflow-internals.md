@@ -27,6 +27,21 @@ reading the first published message's `toStepId`. The diagram is sequence-like:
 the horizontal arrows show the actual call/return order for one step execution
 loop.
 
+## Cancellation
+
+CLI signal handling cancels the running workflow task on `SIGINT` or `SIGTERM`.
+Local agent, command, and container processes terminate their process group or
+process with `SIGTERM` and then schedule a best-effort `SIGKILL` if the child is
+still running.
+
+Cancellation is a terminal workflow result. When cancellation reaches the
+runner, `WorkflowRuntimeStore.markSessionFailed` marks the session `failed`,
+updates any running step execution to `failed`, records the failure reason
+`workflow run cancelled`, and emits the terminal session-completed event with
+failed status. If cancellation happens after a transition is published but
+before the next step execution starts, the session still becomes failed while
+the already completed execution and queued message remain recorded.
+
 ## Inbox And Outbox Boundary
 
 `workflow_messages` is the durable transport boundary between steps. A

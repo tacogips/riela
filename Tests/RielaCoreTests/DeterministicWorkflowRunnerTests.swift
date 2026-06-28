@@ -20,6 +20,66 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
     XCTAssertEqual(messages, [])
   }
 
+  func testCancellationMarksRunningSessionFailedAndEmitsTerminalEvent() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    let recorder = WorkflowRunEventRecorder()
+    let runner = DeterministicWorkflowRunner(store: store, adapter: CancellingAdapter())
+
+    do {
+      _ = try await runner.run(request(eventHandler: { event in
+        await recorder.append(event)
+      }))
+      XCTFail("expected cancellation")
+    } catch is CancellationError {} catch {
+      XCTFail("expected cancellation, got \(error)")
+    }
+
+    let maybeSession = await store.loadSessionForTest(id: "runner-session-1")
+    let session = try XCTUnwrap(maybeSession)
+    XCTAssertEqual(session.status, .failed)
+    XCTAssertEqual(session.executions.count, 1)
+    XCTAssertEqual(session.executions.first?.status, .failed)
+    XCTAssertEqual(session.executions.first?.failureReason, "workflow run cancelled")
+    let events = await recorder.events()
+    XCTAssertEqual(events.last?.type, .sessionCompleted)
+    XCTAssertEqual(events.last?.status, .failed)
+  }
+
+  func testCancellationAfterTransitionMarksSessionFailedWithoutRunningExecution() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    let recorder = WorkflowRunEventRecorder()
+    let workflow = twoStepWorkflow()
+    let runner = DeterministicWorkflowRunner(
+      store: store,
+      adapter: StaticAdapter(output: output()),
+      inputResolver: StepCancellingInputResolver(cancelledStepId: "step-b")
+    )
+
+    do {
+      _ = try await runner.run(DeterministicWorkflowRunRequest(
+        workflow: workflow,
+        nodePayloads: nodePayloads(for: workflow),
+        eventHandler: { event in
+          await recorder.append(event)
+        }
+      ))
+      XCTFail("expected cancellation")
+    } catch is CancellationError {} catch {
+      XCTFail("expected cancellation, got \(error)")
+    }
+
+    let maybeSession = await store.loadSessionForTest(id: "rerun-runner-session-1")
+    let session = try XCTUnwrap(maybeSession)
+    XCTAssertEqual(session.status, .failed)
+    XCTAssertEqual(session.executions.count, 1)
+    XCTAssertEqual(session.executions.first?.status, .completed)
+    let messages = try await store.listMessages(for: session.sessionId, toStepId: nil)
+    XCTAssertEqual(messages.map(\.toStepId), ["step-b"])
+    let events = await recorder.events()
+    XCTAssertEqual(events.last?.type, .sessionCompleted)
+    XCTAssertEqual(events.last?.status, .failed)
+  }
+
   func testCompletionFailureRecordsFailedExecutionWithoutMessages() async throws {
     let store = InMemoryWorkflowRuntimeStore()
     let runner = DeterministicWorkflowRunner(

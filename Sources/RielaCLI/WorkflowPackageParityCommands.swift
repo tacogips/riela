@@ -242,6 +242,7 @@ public struct WorkflowPackageCommandRunner: Sendable {
             name: manifest.name,
             version: manifest.version,
             kind: manifest.kind,
+            tags: manifest.tags,
             packageDirectory: packageDirectory.path,
             workflowDirectory: manifest.workflowDirectory,
             valid: true,
@@ -371,6 +372,7 @@ public struct WorkflowPackageCommandRunner: Sendable {
       name: packageName,
       version: "0.1.0",
       kind: .workflow,
+      tags: ["workflow"],
       packageDirectory: workflowDirectory.path,
       workflowDirectory: ".",
       valid: readinessIssues.isEmpty,
@@ -612,6 +614,7 @@ public struct WorkflowPackageCommandRunner: Sendable {
             name: manifest.name,
             version: manifest.version,
             kind: manifest.kind,
+            tags: manifest.tags,
             packageDirectory: url.path,
             workflowDirectory: manifest.workflowDirectory,
             valid: issues.isEmpty,
@@ -622,6 +625,7 @@ public struct WorkflowPackageCommandRunner: Sendable {
             name: inferredPackageName(from: url),
             version: nil,
             kind: .workflow,
+            tags: [],
             packageDirectory: url.path,
             workflowDirectory: nil,
             valid: false,
@@ -645,7 +649,10 @@ public struct WorkflowPackageCommandRunner: Sendable {
     }
     switch command {
     case .search:
-      return packages.filter { $0.name.localizedCaseInsensitiveContains(target) }
+      return packages.filter { package in
+        package.name.localizedCaseInsensitiveContains(target)
+          || package.tags.contains { $0.localizedCaseInsensitiveContains(target) }
+      }
     default:
       return packages.filter { $0.name == target }
     }

@@ -190,6 +190,46 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
     XCTAssertEqual(command.arguments[variableIndex + 1], #"{"persona":"assistant-a"}"#)
   }
 
+  func testProcessEventSourceFactorySeparatesWorkflowDefinitionDirFromRuntimeWorkingDirectory() async throws {
+    let process = NodePatchFakeEventServeProcessHandle(isRunning: true)
+    let launcher = NodePatchEventLauncher(process: process)
+    let factory = RielaAppDaemonProcessEventSourceFactory(
+      executablePath: "/bin/echo",
+      launcher: launcher,
+      earlyExitGraceNanoseconds: 0
+    )
+
+    _ = try await factory.startEventSources(
+      for: WorkflowServeResolvedWorkflow(
+        workflowId: "chat-workflow",
+        selectedIdentity: "chat-workflow",
+        workflowDirectory: "/users/workflows/chat-workflow"
+      ),
+      request: WorkflowServeStartRequest(
+        selection: .directDirectory("/users/workflows/chat-workflow", identifier: "chat-workflow"),
+        configuration: WorkflowServeRuntimeConfiguration(
+          workingDirectory: "/projects/persona-a",
+          inheritedEnvironment: ["TOKEN": "value"],
+          defaultVariables: ["persona": .string("assistant-a")]
+        ),
+        eventRoot: "/users/workflows/chat-workflow/.riela-events",
+        startsEventSources: true
+      ),
+      generationId: "generation-1"
+    )
+
+    let command = try XCTUnwrap(launcher.commands.first)
+    guard let definitionIndex = command.arguments.firstIndex(of: "--workflow-definition-dir") else {
+      return XCTFail("expected --workflow-definition-dir")
+    }
+    guard let workingDirectoryIndex = command.arguments.firstIndex(of: "--working-directory") else {
+      return XCTFail("expected --working-directory")
+    }
+    XCTAssertEqual(command.arguments[definitionIndex + 1], "/users/workflows/chat-workflow")
+    XCTAssertEqual(command.arguments[workingDirectoryIndex + 1], "/projects/persona-a")
+    XCTAssertEqual(command.workingDirectory, "/projects/persona-a")
+  }
+
   @MainActor
   func testRuntimeRestartsWorkflowWhenEventSourceExits() async throws {
     let root = try temporaryHome()

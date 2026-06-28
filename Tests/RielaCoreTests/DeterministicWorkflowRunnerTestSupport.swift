@@ -8,6 +8,12 @@ struct FailingAdapter: NodeAdapter {
   }
 }
 
+struct CancellingAdapter: NodeAdapter {
+  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    throw CancellationError()
+  }
+}
+
 struct StaticAdapter: NodeAdapter {
   var output: AdapterExecutionOutput
 
@@ -40,6 +46,22 @@ actor WorkflowRunEventRecorder {
 
   func events() -> [WorkflowRunEvent] {
     recordedEvents
+  }
+}
+
+struct StepCancellingInputResolver: WorkflowMessageInputResolving {
+  var cancelledStepId: String
+  var delegate = DefaultWorkflowMessageInputResolver()
+
+  func resolveInput(
+    for sessionId: String,
+    stepId: String,
+    store: any WorkflowRuntimeStore
+  ) async throws -> WorkflowResolvedMessageInput {
+    if stepId == cancelledStepId {
+      throw CancellationError()
+    }
+    return try await delegate.resolveInput(for: sessionId, stepId: stepId, store: store)
   }
 }
 

@@ -207,6 +207,7 @@ private final class LocalProcessCompletion: @unchecked Sendable {
   private let lock = NSLock()
   private var didResume = false
   private var didTimeout = false
+  private var didCancel = false
   private var deadlineWorkItem: DispatchWorkItem?
   private let continuation: CheckedContinuation<LocalAgentProcessResult, Error>
 
@@ -226,10 +227,22 @@ private final class LocalProcessCompletion: @unchecked Sendable {
     lock.unlock()
   }
 
+  func markCancelled() {
+    lock.lock()
+    didCancel = true
+    lock.unlock()
+  }
+
   func timedOut() -> Bool {
     lock.lock()
     defer { lock.unlock() }
     return didTimeout
+  }
+
+  func cancelled() -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return didCancel
   }
 
   func cancelDeadline() {
@@ -327,11 +340,11 @@ private final class LocalProcessCancellationState: @unchecked Sendable {
     pipes: LocalProcessPipes,
     completion: LocalProcessCompletion
   ) {
+    completion.markCancelled()
     pipes.closeForFailureOrTimeout()
     if processHandle.terminateGroupOrProcess() {
       processHandle.scheduleKillIfRunning(after: 1)
     }
-    completion.resume(.failure(CancellationError()))
   }
 }
 
@@ -632,6 +645,11 @@ public struct FoundationLocalAgentProcessRunner: LocalAgentProcessRunning, Local
             completion.cancelDeadline()
             outputGroup.notify(queue: .global(qos: .utility)) {
               if completion.timedOut() {
+                return
+              }
+              if completion.cancelled() {
+                cancellationState.finish()
+                completion.resume(.failure(CancellationError()))
                 return
               }
 

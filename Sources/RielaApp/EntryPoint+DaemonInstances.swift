@@ -129,6 +129,10 @@ extension RielaApp {
       }
       status = "Updated inline env for \(candidate.displayName)"
       refreshDaemonWorkflowWindow()
+      restartActiveDaemonWorkflowAfterConfigurationChange(
+        identity: identity,
+        changeDescription: "inline env"
+      )
     } catch {
       status = "Invalid env vars: \(error.localizedDescription)"
       refreshDaemonWorkflowWindow()
@@ -159,6 +163,10 @@ extension RielaApp {
       }
       status = "Updated workflow variables for \(candidate.displayName)"
       refreshDaemonWorkflowWindow()
+      restartActiveDaemonWorkflowAfterConfigurationChange(
+        identity: identity,
+        changeDescription: "workflow variables"
+      )
     } catch {
       status = "Invalid workflow variables: \(error.localizedDescription)"
       refreshDaemonWorkflowWindow()

@@ -388,8 +388,16 @@ func renderPackage(_ result: WorkflowPackageCommandResult, output: WorkflowOutpu
   case .text:
     return CLICommandResult(exitCode: .success, stdout: humanReadablePackageResult(result))
   case .table:
-    let rows = result.packages.map { "\($0.name)\t\($0.version ?? "-")\t\($0.kind.rawValue)\t\($0.valid ? "valid" : "invalid")" }
-    return CLICommandResult(exitCode: .success, stdout: (["PACKAGE\tVERSION\tKIND\tSTATUS"] + rows).joined(separator: "\n") + "\n")
+    let rows = result.packages.map {
+      [
+        $0.name,
+        $0.version ?? "-",
+        $0.kind.rawValue,
+        $0.tags.isEmpty ? "-" : $0.tags.joined(separator: ","),
+        $0.valid ? "valid" : "invalid"
+      ].joined(separator: "\t")
+    }
+    return CLICommandResult(exitCode: .success, stdout: (["PACKAGE\tVERSION\tKIND\tTAGS\tSTATUS"] + rows).joined(separator: "\n") + "\n")
   }
 }
 
@@ -398,6 +406,9 @@ private func humanReadablePackageResult(_ result: WorkflowPackageCommandResult) 
   let commandPrefix = result.scope == "workflow package" ? "riela workflow package" : "riela package"
   for package in result.packages {
     lines.append("Package: \(package.name) \(package.version ?? "-") (\(package.kind.rawValue), \(package.valid ? "valid" : "invalid"))")
+    if !package.tags.isEmpty {
+      lines.append("Tags: \(package.tags.joined(separator: ", "))")
+    }
     if let workflowDirectory = package.workflowDirectory {
       lines.append("Workflow: \(workflowDirectory)")
     }

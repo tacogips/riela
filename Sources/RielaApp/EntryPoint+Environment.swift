@@ -162,6 +162,10 @@ extension RielaApp {
     }
     status = "Set current directory for \(candidate.displayName): \(url.standardizedFileURL.path)"
     refreshDaemonWorkflowWindow()
+    restartActiveDaemonWorkflowAfterConfigurationChange(
+      identity: candidate.id,
+      changeDescription: "current directory"
+    )
   }
 
   private func clearWorkingDirectory(for candidate: RielaAppDaemonWorkflowCandidate) {
@@ -172,6 +176,10 @@ extension RielaApp {
     }
     status = "Cleared current directory override for \(candidate.displayName)"
     refreshDaemonWorkflowWindow()
+    restartActiveDaemonWorkflowAfterConfigurationChange(
+      identity: candidate.id,
+      changeDescription: "current directory"
+    )
   }
 
   private func chooseEnvironmentFile(for candidate: RielaAppDaemonWorkflowCandidate) {
@@ -200,6 +208,10 @@ extension RielaApp {
     }
     status = "Selected env file for \(candidate.displayName): \(daemonEnvironmentSummary(for: candidate))"
     refreshDaemonWorkflowWindow()
+    restartActiveDaemonWorkflowAfterConfigurationChange(
+      identity: candidate.id,
+      changeDescription: "env file"
+    )
   }
 
   private func clearEnvironmentFile(for candidate: RielaAppDaemonWorkflowCandidate) {
@@ -210,6 +222,10 @@ extension RielaApp {
     }
     status = "Cleared env file for \(candidate.displayName): \(daemonEnvironmentSummary(for: candidate))"
     refreshDaemonWorkflowWindow()
+    restartActiveDaemonWorkflowAfterConfigurationChange(
+      identity: candidate.id,
+      changeDescription: "env file"
+    )
   }
 
   private func confirmCredentialEnvironmentFile(_ url: URL, candidate: RielaAppDaemonWorkflowCandidate) -> Bool {

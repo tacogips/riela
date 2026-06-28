@@ -186,6 +186,8 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
   }
 
   public func run(_ request: DeterministicWorkflowRunRequest) async throws -> WorkflowRunResult {
+    var interruptedSessionId: String?
+    do {
     let diagnostics = DefaultWorkflowValidator().validate(request.workflow)
     if let diagnostic = diagnostics.first(where: { $0.severity == .error }) {
       throw DeterministicWorkflowRunnerError.invalidWorkflow("\(diagnostic.path): \(diagnostic.message)")
@@ -264,6 +266,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       recoveryLineage = runRecoveryLineage()
     }
 
+    interruptedSessionId = session.sessionId
     await emitSessionStartedEvent(workflowId: request.workflow.workflowId, session: session, handler: request.eventHandler)
 
     var visitedSteps = 0
@@ -341,6 +344,12 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     )
     await emitSessionCompletedEvent(result: completedResult, handler: request.eventHandler)
     return completedResult
+    } catch {
+      if isWorkflowRunCancellation(error), let interruptedSessionId {
+        await markInterruptedSessionFailed(sessionId: interruptedSessionId, request: request)
+      }
+      throw error
+    }
   }
 
   private func executeNodeAndRecordMemory(
@@ -423,70 +432,6 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       )
     }
     return publishResult
-  }
-
-  private func recordStepStartedExecution(
-    workflowId: String,
-    sessionId: String,
-    step: WorkflowStepRef,
-    attempt: Int,
-    backend: NodeExecutionBackend?,
-    handler: WorkflowRunEventHandler?
-  ) async throws -> WorkflowStepExecution {
-    let execution = try await store.recordStepExecution(
-      WorkflowStepExecutionRecordInput(
-        sessionId: sessionId,
-        stepId: step.id,
-        nodeId: step.nodeId,
-        attempt: attempt,
-        backend: backend
-      )
-    )
-    guard let updatedSession = try await store.loadSession(id: sessionId) else {
-      throw WorkflowRuntimeStoreError.sessionNotFound(sessionId)
-    }
-    await emitStepStartedEvent(
-      workflowId: workflowId,
-      session: updatedSession,
-      step: step,
-      execution: execution,
-      handler: handler
-    )
-    return execution
-  }
-
-  private func adapterExecutionContext(
-    deadline: Date?,
-    workflowId: String,
-    sessionId: String,
-    step: WorkflowStepRef,
-    execution: WorkflowStepExecution,
-    handler: WorkflowRunEventHandler?
-  ) -> AdapterExecutionContext {
-    AdapterExecutionContext(deadline: deadline) { backendEvent in
-      guard !backendEvent.eventType.isEmpty else {
-        return
-      }
-      let updatedExecution = try? await self.store.recordStepBackendEvent(
-        WorkflowStepBackendEventInput(
-          sessionId: sessionId,
-          executionId: execution.executionId,
-          eventType: backendEvent.eventType
-        )
-      )
-      guard let updatedExecution,
-            let updatedSession = try? await self.store.loadSession(id: sessionId) else {
-        return
-      }
-      await self.emitBackendEvent(
-        workflowId: workflowId,
-        session: updatedSession,
-        step: step,
-        execution: updatedExecution,
-        backendEvent: backendEvent,
-        handler: handler
-      )
-    }
   }
 
   private func executePayloadNodeAndRecordMemory(
@@ -671,6 +616,9 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       )
       throw adapterFailure
     } catch {
+      if isWorkflowRunCancellation(error) {
+        throw error
+      }
       let adapterFailure = AdapterExecutionError(.providerError, String(describing: error))
       _ = try? await publisher.publishAcceptedOutput(
         WorkflowPublicationRequest(
@@ -740,6 +688,9 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         )
         throw adapterFailure
       } catch {
+        if isWorkflowRunCancellation(error) {
+          throw error
+        }
         let adapterFailure = AdapterExecutionError(.providerError, String(describing: error))
         _ = try? await publisher.publishAcceptedOutput(
           WorkflowPublicationRequest(
@@ -851,6 +802,9 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       )
       throw adapterFailure
     } catch {
+      if isWorkflowRunCancellation(error) {
+        throw error
+      }
       let adapterFailure = AdapterExecutionError(.policyBlocked, "native_attachment_projection_failed: \(String(describing: error))")
       _ = try? await publisher.publishAcceptedOutput(
         WorkflowPublicationRequest(
@@ -919,6 +873,9 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       )
       throw adapterFailure
     } catch {
+      if isWorkflowRunCancellation(error) {
+        throw error
+      }
       let adapterFailure = AdapterExecutionError(.providerError, String(describing: error))
       _ = try? await publisher.publishAcceptedOutput(
         WorkflowPublicationRequest(
@@ -963,22 +920,4 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     )
   }
 
-}
-
-public enum DeterministicWorkflowRunnerError: Error, Equatable, Sendable {
-  case invalidWorkflow(String)
-  case missingNode(String)
-  case missingStep(String)
-  case missingNodePayload(String)
-  case missingPromptVariant(String, String)
-  case maxStepsExceeded(Int)
-  case rerunValidation(String)
-  case resumeValidation(String)
-}
-
-private func errorMessage(_ error: WorkflowSessionEntryValidationError) -> String {
-  switch error {
-  case let .usage(message), let .validation(message):
-    message
-  }
 }

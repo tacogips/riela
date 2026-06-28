@@ -149,6 +149,16 @@ public struct WorkflowStepExecutionUpdateInput: Equatable, Sendable {
   }
 }
 
+public struct WorkflowSessionFailureInput: Equatable, Sendable {
+  public var sessionId: String
+  public var reason: String
+
+  public init(sessionId: String, reason: String) {
+    self.sessionId = sessionId
+    self.reason = reason
+  }
+}
+
 public struct WorkflowStepBackendEventInput: Equatable, Sendable {
   public var sessionId: String
   public var executionId: String
@@ -205,6 +215,7 @@ public protocol WorkflowRuntimeStore: Sendable {
   func createSession(_ input: WorkflowSessionCreateInput) async throws -> WorkflowSession
   func recordStepExecution(_ input: WorkflowStepExecutionRecordInput) async throws -> WorkflowStepExecution
   func updateStepExecution(_ input: WorkflowStepExecutionUpdateInput) async throws -> WorkflowStepExecution
+  func markSessionFailed(_ input: WorkflowSessionFailureInput) async throws -> WorkflowSession
   func recordStepBackendEvent(_ input: WorkflowStepBackendEventInput) async throws -> WorkflowStepExecution
   func appendWorkflowMessage(_ input: WorkflowMessageAppendInput) async throws -> WorkflowMessageRecord
   func appendWorkflowMessages(_ inputs: [WorkflowMessageAppendInput]) async throws -> [WorkflowMessageRecord]
@@ -405,6 +416,28 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     }
     sessions[input.sessionId] = session
     return execution
+  }
+
+  public func markSessionFailed(_ input: WorkflowSessionFailureInput) async throws -> WorkflowSession {
+    guard var session = sessions[input.sessionId] else {
+      throw WorkflowRuntimeStoreError.sessionNotFound(input.sessionId)
+    }
+
+    let date = clock.now()
+    session.status = .failed
+    session.updatedAt = date
+    session.executions = session.executions.map { execution in
+      guard execution.status == .running else {
+        return execution
+      }
+      var failedExecution = execution
+      failedExecution.status = .failed
+      failedExecution.failureReason = input.reason
+      failedExecution.updatedAt = date
+      return failedExecution
+    }
+    sessions[input.sessionId] = session
+    return session
   }
 
   public func recordStepBackendEvent(_ input: WorkflowStepBackendEventInput) async throws -> WorkflowStepExecution {

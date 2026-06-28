@@ -164,6 +164,44 @@ final class RuntimeStoreTests: XCTestCase {
     XCTAssertEqual(loaded.executions.first?.lastBackendEventAt, heartbeatAt)
   }
 
+  func testMarkSessionFailedFailsRunningExecutionsAndTerminalizesSession() async throws {
+    let startedAt = Date(timeIntervalSince1970: 100)
+    let failedAt = Date(timeIntervalSince1970: 105)
+    let clock = MutableWorkflowRuntimeClock(startedAt)
+    let store = InMemoryWorkflowRuntimeStore(clock: clock)
+
+    let session = try await store.createSession(WorkflowSessionCreateInput(workflowId: "wf", entryStepId: "start"))
+    _ = try await store.recordStepExecution(
+      WorkflowStepExecutionRecordInput(sessionId: session.sessionId, stepId: "start", nodeId: "node-start", attempt: 1)
+    )
+
+    clock.set(failedAt)
+    let failedSession = try await store.markSessionFailed(
+      WorkflowSessionFailureInput(sessionId: session.sessionId, reason: "workflow run cancelled")
+    )
+
+    XCTAssertEqual(failedSession.status, .failed)
+    XCTAssertEqual(failedSession.updatedAt, failedAt)
+    XCTAssertEqual(failedSession.executions.first?.status, .failed)
+    XCTAssertEqual(failedSession.executions.first?.failureReason, "workflow run cancelled")
+    XCTAssertEqual(failedSession.executions.first?.updatedAt, failedAt)
+  }
+
+  func testMarkSessionFailedTerminalizesSessionWithoutRunningExecution() async throws {
+    let date = Date(timeIntervalSince1970: 100)
+    let store = InMemoryWorkflowRuntimeStore(clock: FixedWorkflowRuntimeClock(date))
+
+    let session = try await store.createSession(WorkflowSessionCreateInput(workflowId: "wf", entryStepId: "start"))
+
+    let failedSession = try await store.markSessionFailed(
+      WorkflowSessionFailureInput(sessionId: session.sessionId, reason: "workflow run cancelled")
+    )
+
+    XCTAssertEqual(failedSession.status, .failed)
+    XCTAssertEqual(failedSession.executions, [])
+    XCTAssertEqual(failedSession.currentStepId, "start")
+  }
+
   func testAppendFailureIsObservableAndDoesNotCreateMessages() async throws {
     let store = InMemoryWorkflowRuntimeStore(
       clock: FixedWorkflowRuntimeClock(Date(timeIntervalSince1970: 100)),
@@ -321,6 +359,10 @@ private struct StaticWorkflowRuntimeStore: WorkflowRuntimeStore {
 
   func updateStepExecution(_ input: WorkflowStepExecutionUpdateInput) async throws -> WorkflowStepExecution {
     throw WorkflowRuntimeStoreError.messageAppendRejected("static store does not update executions")
+  }
+
+  func markSessionFailed(_ input: WorkflowSessionFailureInput) async throws -> WorkflowSession {
+    throw WorkflowRuntimeStoreError.messageAppendRejected("static store does not fail sessions")
   }
 
   func recordStepBackendEvent(_ input: WorkflowStepBackendEventInput) async throws -> WorkflowStepExecution {

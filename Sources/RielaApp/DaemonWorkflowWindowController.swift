@@ -31,6 +31,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   private let disableButton = NSButton(title: "Disable", target: nil, action: nil)
   private let setEnvironmentButton = NSButton(title: "Env File...", target: nil, action: nil)
   private let setEnvironmentVariablesButton = NSButton(title: "Env Vars...", target: nil, action: nil)
+  private let setWorkingDirectoryButton = NSButton(title: "Working Dir...", target: nil, action: nil)
   private let setVariablesButton = NSButton(title: "Variables...", target: nil, action: nil)
   private let onRefresh: () -> Void
   private let onSelectProfile: (String) -> Void
@@ -46,6 +47,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   private let onSetActive: (String, Bool) -> Void
   private let onSetEnvironment: (String) -> Void
   private let onSetEnvironmentVariables: (String) -> Void
+  private let onSetWorkingDirectory: (String) -> Void
   private let onSetVariables: (String) -> Void
   private let environmentSummary: (RielaAppDaemonWorkflowCandidate) -> String
   private let environmentColumnStatus: (RielaAppDaemonWorkflowCandidate) -> String
@@ -75,6 +77,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     onSetActive: @escaping (String, Bool) -> Void,
     onSetEnvironment: @escaping (String) -> Void,
     onSetEnvironmentVariables: @escaping (String) -> Void,
+    onSetWorkingDirectory: @escaping (String) -> Void,
     onSetVariables: @escaping (String) -> Void,
     environmentSummary: @escaping (RielaAppDaemonWorkflowCandidate) -> String,
     environmentColumnStatus: @escaping (RielaAppDaemonWorkflowCandidate) -> String
@@ -93,6 +96,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     self.onSetActive = onSetActive
     self.onSetEnvironment = onSetEnvironment
     self.onSetEnvironmentVariables = onSetEnvironmentVariables
+    self.onSetWorkingDirectory = onSetWorkingDirectory
     self.onSetVariables = onSetVariables
     self.environmentSummary = environmentSummary
     self.environmentColumnStatus = environmentColumnStatus
@@ -203,6 +207,8 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     setEnvironmentButton.action = #selector(setSelectedEnvironment)
     setEnvironmentVariablesButton.target = self
     setEnvironmentVariablesButton.action = #selector(setSelectedEnvironmentVariables)
+    setWorkingDirectoryButton.target = self
+    setWorkingDirectoryButton.action = #selector(setSelectedWorkingDirectory)
     setVariablesButton.target = self
     setVariablesButton.action = #selector(setSelectedVariables)
     useProfileButton.toolTip = "Switch to the typed profile name, creating it if needed."
@@ -220,6 +226,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     disableButton.toolTip = "Disable the selected enabled workflow or package for this profile."
     setEnvironmentButton.toolTip = "Select a credential .env file for the selected workflow."
     setEnvironmentVariablesButton.toolTip = "Edit inline environment variables for this managed workflow instance."
+    setWorkingDirectoryButton.toolTip = "Choose the current directory used when this managed workflow runs."
     setVariablesButton.toolTip = "Edit workflow default variables for this managed workflow instance."
     statusLabel.lineBreakMode = .byTruncatingTail
     actionStatusLabel.lineBreakMode = .byTruncatingMiddle
@@ -252,6 +259,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       disableButton,
       setEnvironmentButton,
       setEnvironmentVariablesButton,
+      setWorkingDirectoryButton,
       setVariablesButton
     ])
     actionRow.orientation = .horizontal
@@ -513,6 +521,13 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     onSetEnvironmentVariables(candidate.id)
   }
 
+  @objc private func setSelectedWorkingDirectory() {
+    guard let candidate = selectedCandidate(in: enabledTable) ?? selectedCandidate(in: disabledTable) else {
+      return
+    }
+    onSetWorkingDirectory(candidate.id)
+  }
+
   @objc private func setSelectedVariables() {
     guard let candidate = selectedCandidate(in: enabledTable) ?? selectedCandidate(in: disabledTable) else {
       return
@@ -589,6 +604,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       details.append("Event runner: \(RielaAppDaemonProcessEventSourceFactory().resolvedExecutableDescription())")
     }
     details.append("Environment: \(environmentSummary(candidate))")
+    details.append("Current Dir: \(preference.workingDirectory ?? candidate.workingDirectory)")
     if !preference.defaultVariables.isEmpty {
       details.append("Variables: \(preference.defaultVariables.count)")
     }
@@ -613,6 +629,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     disableButton.isEnabled = selectedEnabled != nil
     setEnvironmentButton.isEnabled = hasSelection
     setEnvironmentVariablesButton.isEnabled = hasSelection
+    setWorkingDirectoryButton.isEnabled = hasSelection
     setVariablesButton.isEnabled = hasSelection
   }
 

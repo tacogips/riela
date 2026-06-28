@@ -210,6 +210,9 @@ final class RielaApp: NSObject, NSApplicationDelegate {
         onSetEnvironmentVariables: { [weak self] identity in
           self?.setDaemonWorkflowEnvironmentVariables(identity: identity)
         },
+        onSetWorkingDirectory: { [weak self] identity in
+          self?.setDaemonWorkflowWorkingDirectory(identity: identity)
+        },
         onSetVariables: { [weak self] identity in
           self?.setDaemonWorkflowDefaultVariables(identity: identity)
         },
@@ -311,12 +314,9 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
     Task { @MainActor in
       for candidate in candidatesToStart {
-        let preference = daemonState.preference(for: candidate.id)
         await daemonRuntime.start(
           candidate,
-          inheritedEnvironment: daemonEnvironment(for: candidate),
-          defaultVariables: preference.defaultVariables,
-          nodePatch: preference.nodePatchJSONObject
+          configuration: daemonRuntimeConfiguration(for: candidate)
         )
       }
       refreshDaemonWorkflowWindow()
@@ -457,9 +457,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       }
       await daemonRuntime.start(
         candidate,
-        inheritedEnvironment: daemonEnvironment(for: candidate),
-        defaultVariables: preference.defaultVariables,
-        nodePatch: preference.nodePatchJSONObject
+        configuration: daemonRuntimeConfiguration(for: candidate)
       )
       let snapshot = daemonRuntime.snapshot(for: candidate.id)
       logDaemon("start candidate=\(candidate.id) status=\(snapshot.status.rawValue) detail=\(snapshot.detail)")
@@ -713,12 +711,9 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     rebuildMenu()
     if available, let candidate = daemonCandidates.first(where: { $0.id == identity }) {
       Task { @MainActor in
-        let preference = self.daemonState.preference(for: candidate.id)
         await daemonRuntime.start(
           candidate,
-          inheritedEnvironment: daemonEnvironment(for: candidate),
-          defaultVariables: preference.defaultVariables,
-          nodePatch: preference.nodePatchJSONObject
+          configuration: daemonRuntimeConfiguration(for: candidate)
         )
         refreshDaemonWorkflowWindow()
       }
@@ -747,12 +742,9 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
     Task { @MainActor in
       if active {
-        let preference = self.daemonState.preference(for: candidate.id)
         await daemonRuntime.start(
           candidate,
-          inheritedEnvironment: daemonEnvironment(for: candidate),
-          defaultVariables: preference.defaultVariables,
-          nodePatch: preference.nodePatchJSONObject
+          configuration: daemonRuntimeConfiguration(for: candidate)
         )
         status = "Auto-start enabled and started \(candidate.displayName)"
       } else {

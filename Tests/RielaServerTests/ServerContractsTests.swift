@@ -5,6 +5,49 @@ import XCTest
 @testable import RielaServer
 
 final class ServerContractsTests: XCTestCase {
+  func testWorkflowServeStartRequestEncodesRuntimeConfigurationAsSinglePayload() throws {
+    let request = WorkflowServeStartRequest(
+      selection: .directDirectory("/workflows/demo", identifier: "demo"),
+      workingDirectory: "/project",
+      inheritedEnvironment: ["TOKEN": "value"],
+      defaultVariables: ["persona": .string("assistant-a")],
+      nodePatch: ["worker": .object(["model": .string("gpt-5-mini")])]
+    )
+
+    let data = try JSONEncoder().encode(request)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let configuration = try XCTUnwrap(object["configuration"] as? [String: Any])
+
+    XCTAssertNil(object["workingDirectory"])
+    XCTAssertNil(object["inheritedEnvironment"])
+    XCTAssertNil(object["defaultVariables"])
+    XCTAssertNil(object["nodePatch"])
+    XCTAssertEqual(configuration["workingDirectory"] as? String, "/project")
+    XCTAssertNotNil(configuration["inheritedEnvironment"])
+    XCTAssertNotNil(configuration["defaultVariables"])
+    XCTAssertNotNil(configuration["nodePatch"])
+  }
+
+  func testWorkflowServeStartRequestDecodesLegacyRuntimeFields() throws {
+    let data = Data("""
+    {
+      "selection": {"kind": "direct-directory", "identifier": "demo", "path": "/workflows/demo"},
+      "workingDirectory": "/legacy-project",
+      "inheritedEnvironment": {"TOKEN": "value"},
+      "defaultVariables": {"persona": "assistant-a"},
+      "nodePatch": {"worker": {"model": "gpt-5-mini"}},
+      "startsEventSources": true
+    }
+    """.utf8)
+
+    let request = try JSONDecoder().decode(WorkflowServeStartRequest.self, from: data)
+
+    XCTAssertEqual(request.workingDirectory, "/legacy-project")
+    XCTAssertEqual(request.inheritedEnvironment["TOKEN"], "value")
+    XCTAssertEqual(request.defaultVariables["persona"], .string("assistant-a"))
+    XCTAssertEqual(request.nodePatch?["worker"], .object(["model": .string("gpt-5-mini")]))
+  }
+
   func testGraphQLRouteValidatesEnvelopeAndPropagatesContext() async throws {
     let body = Data(#"{"query":"  query Test { workflowSession }  ","variables":null,"operationName":"  Test  "}"#.utf8)
     let request = ServerRequestEnvelope(

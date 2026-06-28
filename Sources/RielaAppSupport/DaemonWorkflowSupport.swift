@@ -822,9 +822,7 @@ public final class RielaAppDaemonWorkflowRuntime {
 
   private struct RunningWorkflow {
     var candidate: RielaAppDaemonWorkflowCandidate
-    var inheritedEnvironment: [String: String]
-    var defaultVariables: JSONObject
-    var nodePatch: JSONObject?
+    var configuration: WorkflowServeRuntimeConfiguration
     var controller: WorkflowServingController
     var snapshot: RuntimeSnapshot
     var monitorTask: Task<Void, Never>?
@@ -841,7 +839,6 @@ public final class RielaAppDaemonWorkflowRuntime {
     self.eventSourceFactory = eventSourceFactory
     self.monitorIntervalNanoseconds = monitorIntervalNanoseconds
   }
-
   public func snapshot(for identity: String) -> RuntimeSnapshot {
     runningWorkflows[identity]?.snapshot ?? RuntimeSnapshot(status: .stopped, detail: "Inactive")
   }
@@ -857,14 +854,30 @@ public final class RielaAppDaemonWorkflowRuntime {
     }
     await startController(
       candidate,
-      inheritedEnvironment: inheritedEnvironment,
-      defaultVariables: defaultVariables,
-      nodePatch: nodePatch,
+      configuration: WorkflowServeRuntimeConfiguration(
+        workingDirectory: candidate.workingDirectory,
+        inheritedEnvironment: inheritedEnvironment,
+        defaultVariables: defaultVariables,
+        nodePatch: nodePatch
+      ),
       monitorTask: nil
     )
     scheduleMonitorIfNeeded(for: candidate.id)
   }
-
+  public func start(
+    _ candidate: RielaAppDaemonWorkflowCandidate,
+    configuration: WorkflowServeRuntimeConfiguration
+  ) async {
+    if runningWorkflows[candidate.id]?.snapshot.status == .running {
+      return
+    }
+    var runtimeConfiguration = configuration
+    if runtimeConfiguration.workingDirectory == nil {
+      runtimeConfiguration.workingDirectory = candidate.workingDirectory
+    }
+    await startController(candidate, configuration: runtimeConfiguration, monitorTask: nil)
+    scheduleMonitorIfNeeded(for: candidate.id)
+  }
   public func refresh(identity: String) async {
     guard let running = runningWorkflows[identity] else {
       return
@@ -877,18 +890,14 @@ public final class RielaAppDaemonWorkflowRuntime {
     _ = try? await running.controller.stop()
     await startController(
       running.candidate,
-      inheritedEnvironment: running.inheritedEnvironment,
-      defaultVariables: running.defaultVariables,
-      nodePatch: running.nodePatch,
+      configuration: running.configuration,
       monitorTask: running.monitorTask
     )
   }
 
   private func startController(
     _ candidate: RielaAppDaemonWorkflowCandidate,
-    inheritedEnvironment: [String: String],
-    defaultVariables: JSONObject,
-    nodePatch: JSONObject?,
+    configuration: WorkflowServeRuntimeConfiguration,
     monitorTask: Task<Void, Never>?
   ) async {
     let controller = WorkflowServingController(dependencies: WorkflowServingDependencies(
@@ -896,9 +905,7 @@ public final class RielaAppDaemonWorkflowRuntime {
     ))
     runningWorkflows[candidate.id] = RunningWorkflow(
       candidate: candidate,
-      inheritedEnvironment: inheritedEnvironment,
-      defaultVariables: defaultVariables,
-      nodePatch: nodePatch,
+      configuration: configuration,
       controller: controller,
       snapshot: RuntimeSnapshot(status: .starting, detail: "Starting"),
       monitorTask: monitorTask
@@ -907,12 +914,9 @@ public final class RielaAppDaemonWorkflowRuntime {
       let state = try await controller.start(WorkflowServeStartRequest(
         selection: candidate.serveSelection,
         server: RielaServerConfiguration(port: Self.port(for: candidate.id)),
-        workingDirectory: candidate.workingDirectory,
+        configuration: configuration,
         sessionStoreRoot: defaultSessionStoreRoot(),
         eventRoot: candidate.eventRoot,
-        inheritedEnvironment: inheritedEnvironment,
-        defaultVariables: defaultVariables,
-        nodePatch: nodePatch,
         startsEventSources: candidate.startsEventSources
       ))
       runningWorkflows[candidate.id]?.snapshot = snapshot(from: state)

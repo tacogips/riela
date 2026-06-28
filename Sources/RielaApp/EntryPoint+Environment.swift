@@ -1,8 +1,26 @@
 #if os(macOS)
 import AppKit
 import RielaAppSupport
+import RielaServer
 
 extension RielaApp {
+  func setDaemonWorkflowWorkingDirectory(identity: String) {
+    guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
+      status = "Selected workflow is no longer available"
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    let existingPath = daemonState.preference(for: identity).workingDirectory
+    switch workingDirectoryAction(candidate: candidate, existingPath: existingPath) {
+    case .choose:
+      chooseWorkingDirectory(for: candidate)
+    case .clear:
+      clearWorkingDirectory(for: candidate)
+    case .cancel:
+      return
+    }
+  }
+
   func setDaemonWorkflowEnvironment(identity: String) {
     guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
       status = "Selected workflow is no longer available"
@@ -50,7 +68,25 @@ extension RielaApp {
     return environment
   }
 
+  func daemonRuntimeConfiguration(
+    for candidate: RielaAppDaemonWorkflowCandidate
+  ) -> WorkflowServeRuntimeConfiguration {
+    var configuration = daemonState.preference(for: candidate.id).configuration.serveConfiguration(
+      inheritedEnvironment: daemonEnvironment(for: candidate)
+    )
+    if configuration.workingDirectory == nil {
+      configuration.workingDirectory = candidate.workingDirectory
+    }
+    return configuration
+  }
+
   private enum EnvironmentFileAction {
+    case choose
+    case clear
+    case cancel
+  }
+
+  private enum WorkingDirectoryAction {
     case choose
     case clear
     case cancel
@@ -83,6 +119,59 @@ extension RielaApp {
     default:
       return .cancel
     }
+  }
+
+  private func workingDirectoryAction(
+    candidate: RielaAppDaemonWorkflowCandidate,
+    existingPath: String?
+  ) -> WorkingDirectoryAction {
+    guard existingPath?.isEmpty == false else {
+      return .choose
+    }
+    let alert = NSAlert()
+    alert.messageText = "Working Directory"
+    alert.informativeText = "Choose the current directory for \(candidate.displayName), clear the override, or cancel."
+    alert.addButton(withTitle: "Choose Directory")
+    alert.addButton(withTitle: "Clear")
+    alert.addButton(withTitle: "Cancel")
+    switch alert.runModal() {
+    case .alertFirstButtonReturn:
+      return .choose
+    case .alertSecondButtonReturn:
+      return .clear
+    default:
+      return .cancel
+    }
+  }
+
+  private func chooseWorkingDirectory(for candidate: RielaAppDaemonWorkflowCandidate) {
+    let panel = NSOpenPanel()
+    panel.title = "Select Working Directory"
+    panel.message = "Select the current directory to use when \(candidate.displayName) runs."
+    panel.canChooseFiles = false
+    panel.canChooseDirectories = true
+    panel.allowsMultipleSelection = false
+    panel.showsHiddenFiles = true
+    guard panel.runModal() == .OK, let url = panel.url else {
+      return
+    }
+    guard updateDaemonPreference(identity: candidate.id, mutate: { preference in
+      preference.workingDirectory = url.standardizedFileURL.path
+    }) else {
+      return
+    }
+    status = "Set current directory for \(candidate.displayName): \(url.standardizedFileURL.path)"
+    refreshDaemonWorkflowWindow()
+  }
+
+  private func clearWorkingDirectory(for candidate: RielaAppDaemonWorkflowCandidate) {
+    guard updateDaemonPreference(identity: candidate.id, mutate: { preference in
+      preference.workingDirectory = nil
+    }) else {
+      return
+    }
+    status = "Cleared current directory override for \(candidate.displayName)"
+    refreshDaemonWorkflowWindow()
   }
 
   private func chooseEnvironmentFile(for candidate: RielaAppDaemonWorkflowCandidate) {

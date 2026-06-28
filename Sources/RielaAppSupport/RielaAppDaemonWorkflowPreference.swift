@@ -9,10 +9,7 @@ public struct RielaAppDaemonWorkflowPreference: Codable, Equatable, Sendable {
   public var displayName: String?
   public var available: Bool
   public var active: Bool
-  public var environmentFilePath: String?
-  public var environmentVariables: [String: String]
-  public var defaultVariables: JSONObject
-  public var nodePatches: [String: RielaAppDaemonWorkflowNodePatch]
+  public var configuration: RielaAppDaemonWorkflowConfiguration
 
   private enum CodingKeys: String, CodingKey {
     case identity
@@ -25,6 +22,7 @@ public struct RielaAppDaemonWorkflowPreference: Codable, Equatable, Sendable {
     case environmentVariables
     case defaultVariables
     case nodePatches
+    case configuration
   }
 
   public init(
@@ -33,6 +31,7 @@ public struct RielaAppDaemonWorkflowPreference: Codable, Equatable, Sendable {
     displayName: String? = nil,
     available: Bool = false,
     active: Bool = false,
+    workingDirectory: String? = nil,
     environmentFilePath: String? = nil,
     environmentVariables: [String: String] = [:],
     defaultVariables: JSONObject = [:],
@@ -43,10 +42,13 @@ public struct RielaAppDaemonWorkflowPreference: Codable, Equatable, Sendable {
     self.displayName = displayName
     self.available = available
     self.active = active
-    self.environmentFilePath = environmentFilePath
-    self.environmentVariables = environmentVariables
-    self.defaultVariables = defaultVariables
-    self.nodePatches = nodePatches
+    configuration = RielaAppDaemonWorkflowConfiguration(
+      workingDirectory: workingDirectory,
+      environmentFilePath: environmentFilePath,
+      environmentVariables: environmentVariables,
+      defaultVariables: defaultVariables,
+      nodePatches: nodePatches
+    )
   }
 
   public init(identity: String, enabledAtLaunch: Bool, active: Bool = false) {
@@ -71,13 +73,22 @@ public struct RielaAppDaemonWorkflowPreference: Codable, Equatable, Sendable {
       ?? container.decodeIfPresent(Bool.self, forKey: .enabledAtLaunch)
       ?? false
     active = try container.decodeIfPresent(Bool.self, forKey: .active) ?? available
-    environmentFilePath = try container.decodeIfPresent(String.self, forKey: .environmentFilePath)
-    environmentVariables = try container.decodeIfPresent([String: String].self, forKey: .environmentVariables) ?? [:]
-    defaultVariables = try container.decodeIfPresent(JSONObject.self, forKey: .defaultVariables) ?? [:]
-    nodePatches = try container.decodeIfPresent(
-      [String: RielaAppDaemonWorkflowNodePatch].self,
-      forKey: .nodePatches
-    ) ?? [:]
+    if let decodedConfiguration = try container.decodeIfPresent(
+      RielaAppDaemonWorkflowConfiguration.self,
+      forKey: .configuration
+    ) {
+      configuration = decodedConfiguration
+    } else {
+      configuration = RielaAppDaemonWorkflowConfiguration(
+        environmentFilePath: try container.decodeIfPresent(String.self, forKey: .environmentFilePath),
+        environmentVariables: try container.decodeIfPresent([String: String].self, forKey: .environmentVariables) ?? [:],
+        defaultVariables: try container.decodeIfPresent(JSONObject.self, forKey: .defaultVariables) ?? [:],
+        nodePatches: try container.decodeIfPresent(
+          [String: RielaAppDaemonWorkflowNodePatch].self,
+          forKey: .nodePatches
+        ) ?? [:]
+      )
+    }
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -87,17 +98,68 @@ public struct RielaAppDaemonWorkflowPreference: Codable, Equatable, Sendable {
     try container.encodeIfPresent(displayName, forKey: .displayName)
     try container.encode(available, forKey: .available)
     try container.encode(active, forKey: .active)
-    try container.encodeIfPresent(environmentFilePath, forKey: .environmentFilePath)
-    if !environmentVariables.isEmpty {
-      try container.encode(environmentVariables, forKey: .environmentVariables)
+    if !configuration.isEmpty {
+      try container.encode(configuration, forKey: .configuration)
     }
-    if !defaultVariables.isEmpty {
-      try container.encode(defaultVariables, forKey: .defaultVariables)
-    }
-    let nonEmptyPatches = nodePatches.filter { !$0.value.isEmpty }
-    if !nonEmptyPatches.isEmpty {
-      try container.encode(nonEmptyPatches, forKey: .nodePatches)
-    }
+  }
+
+  public var workingDirectory: String? {
+    get { configuration.workingDirectory }
+    set { configuration.workingDirectory = newValue }
+  }
+
+  public var environmentFilePath: String? {
+    get { configuration.environmentFilePath }
+    set { configuration.environmentFilePath = newValue }
+  }
+
+  public var environmentVariables: [String: String] {
+    get { configuration.environmentVariables }
+    set { configuration.environmentVariables = newValue }
+  }
+
+  public var defaultVariables: JSONObject {
+    get { configuration.defaultVariables }
+    set { configuration.defaultVariables = newValue }
+  }
+
+  public var nodePatches: [String: RielaAppDaemonWorkflowNodePatch] {
+    get { configuration.nodePatches }
+    set { configuration.nodePatches = newValue }
+  }
+
+  public var nodePatchJSONObject: JSONObject? {
+    configuration.nodePatchJSONObject
+  }
+}
+
+public struct RielaAppDaemonWorkflowConfiguration: Codable, Equatable, Sendable {
+  public var workingDirectory: String?
+  public var environmentFilePath: String?
+  public var environmentVariables: [String: String]
+  public var defaultVariables: JSONObject
+  public var nodePatches: [String: RielaAppDaemonWorkflowNodePatch]
+
+  public init(
+    workingDirectory: String? = nil,
+    environmentFilePath: String? = nil,
+    environmentVariables: [String: String] = [:],
+    defaultVariables: JSONObject = [:],
+    nodePatches: [String: RielaAppDaemonWorkflowNodePatch] = [:]
+  ) {
+    self.workingDirectory = workingDirectory
+    self.environmentFilePath = environmentFilePath
+    self.environmentVariables = environmentVariables
+    self.defaultVariables = defaultVariables
+    self.nodePatches = nodePatches
+  }
+
+  public var isEmpty: Bool {
+    normalizedWorkingDirectory == nil
+      && environmentFilePath == nil
+      && environmentVariables.isEmpty
+      && defaultVariables.isEmpty
+      && nodePatches.values.allSatisfy(\.isEmpty)
   }
 
   public var nodePatchJSONObject: JSONObject? {
@@ -108,6 +170,23 @@ public struct RielaAppDaemonWorkflowPreference: Codable, Equatable, Sendable {
       return nil
     }
     return Dictionary(uniqueKeysWithValues: entries)
+  }
+
+  public func serveConfiguration(inheritedEnvironment: [String: String]) -> WorkflowServeRuntimeConfiguration {
+    WorkflowServeRuntimeConfiguration(
+      workingDirectory: normalizedWorkingDirectory,
+      inheritedEnvironment: inheritedEnvironment,
+      defaultVariables: defaultVariables,
+      nodePatch: nodePatchJSONObject
+    )
+  }
+
+  private var normalizedWorkingDirectory: String? {
+    guard let workingDirectory = workingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !workingDirectory.isEmpty else {
+      return nil
+    }
+    return workingDirectory
   }
 }
 

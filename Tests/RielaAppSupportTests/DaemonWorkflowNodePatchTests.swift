@@ -40,6 +40,7 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
       displayName: "Telegram Persona A",
       available: true,
       active: true,
+      workingDirectory: "/projects/persona-a",
       environmentVariables: [
         "TELEGRAM_BOT_TOKEN": "token-a",
         "PERSONA": "assistant-a"
@@ -54,14 +55,43 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
     )
 
     let data = try JSONEncoder().encode(preference)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let configuration = try XCTUnwrap(object["configuration"] as? [String: Any])
     let decoded = try JSONDecoder().decode(RielaAppDaemonWorkflowPreference.self, from: data)
 
+    XCTAssertNil(object["environmentVariables"])
+    XCTAssertNil(object["defaultVariables"])
+    XCTAssertNil(object["nodePatches"])
+    XCTAssertEqual(configuration["workingDirectory"] as? String, "/projects/persona-a")
     XCTAssertEqual(decoded.identity, "telegram-persona-a")
     XCTAssertEqual(decoded.sourceIdentity, "user-workflow:telegram-bot")
     XCTAssertEqual(decoded.displayName, "Telegram Persona A")
+    XCTAssertEqual(decoded.workingDirectory, "/projects/persona-a")
     XCTAssertEqual(decoded.environmentVariables["PERSONA"], "assistant-a")
     XCTAssertEqual(decoded.defaultVariables["persona"], .string("assistant-a"))
     XCTAssertEqual(decoded.nodePatchJSONObject?["worker"], .object(["model": .string("gpt-5-mini")]))
+  }
+
+  func testWorkflowPreferenceDecodesLegacyInstanceConfigurationFields() throws {
+    let data = Data("""
+    {
+      "identity": "telegram-persona-a",
+      "sourceIdentity": "user-workflow:telegram-bot",
+      "available": true,
+      "active": true,
+      "environmentFilePath": "/secrets/persona-a.env",
+      "environmentVariables": {"PERSONA": "assistant-a"},
+      "defaultVariables": {"persona": "assistant-a"},
+      "nodePatches": {"worker": {"model": "gpt-5-mini"}}
+    }
+    """.utf8)
+
+    let decoded = try JSONDecoder().decode(RielaAppDaemonWorkflowPreference.self, from: data)
+
+    XCTAssertEqual(decoded.environmentFilePath, "/secrets/persona-a.env")
+    XCTAssertEqual(decoded.environmentVariables["PERSONA"], "assistant-a")
+    XCTAssertEqual(decoded.defaultVariables["persona"], .string("assistant-a"))
+    XCTAssertEqual(decoded.nodePatches["worker"]?.model, "gpt-5-mini")
   }
 
   func testStateProjectsMultipleManagedInstancesFromOneSourceWorkflow() {
@@ -180,9 +210,12 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
 
     await runtime.start(
       candidate,
-      inheritedEnvironment: ["RIELA_APP_TEST_TOKEN": "runtime-token"],
-      defaultVariables: ["persona": .string("assistant-a")],
-      nodePatch: ["worker": .object(["model": .string("gpt-5-mini")])]
+      configuration: WorkflowServeRuntimeConfiguration(
+        workingDirectory: root.path,
+        inheritedEnvironment: ["RIELA_APP_TEST_TOKEN": "runtime-token"],
+        defaultVariables: ["persona": .string("assistant-a")],
+        nodePatch: ["worker": .object(["model": .string("gpt-5-mini")])]
+      )
     )
     factory.markLatestExited()
 
@@ -191,6 +224,7 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
     }
 
     XCTAssertGreaterThanOrEqual(factory.startCount, 2)
+    XCTAssertEqual(factory.requests.last?.workingDirectory, root.path)
     XCTAssertEqual(factory.requests.last?.inheritedEnvironment["RIELA_APP_TEST_TOKEN"], "runtime-token")
     XCTAssertEqual(factory.requests.last?.defaultVariables["persona"], .string("assistant-a"))
     XCTAssertEqual(factory.requests.last?.nodePatch?["worker"], .object(["model": .string("gpt-5-mini")]))

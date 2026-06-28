@@ -95,12 +95,9 @@ extension RielaApp {
       status = "Renamed workflow instance to \(result.identity)"
       refreshDaemonWorkflowWindow()
       if shouldRestart, let renamedCandidate = daemonCandidates.first(where: { $0.id == result.identity }) {
-        let preference = daemonState.preference(for: renamedCandidate.id)
         await daemonRuntime.start(
           renamedCandidate,
-          inheritedEnvironment: daemonEnvironment(for: renamedCandidate),
-          defaultVariables: preference.defaultVariables,
-          nodePatch: preference.nodePatchJSONObject
+          configuration: daemonRuntimeConfiguration(for: renamedCandidate)
         )
         refreshDaemonWorkflowWindow()
       }
@@ -144,16 +141,16 @@ extension RielaApp {
       refreshDaemonWorkflowWindow()
       return
     }
-    let existing = jsonText(from: daemonState.preference(for: identity).defaultVariables)
+    let existing = workflowVariablesText(from: daemonState.preference(for: identity).defaultVariables)
     guard let text = promptForMultilineValue(
       title: "Workflow Variables",
-      message: "Enter a JSON object for \(candidate.displayName).",
+      message: "Enter key=value lines for \(candidate.displayName). Use key:=JSON for typed values.",
       value: existing
     ) else {
       return
     }
     do {
-      let variables = try parseJSONObject(text)
+      let variables = try parseWorkflowVariables(text)
       guard updateDaemonPreference(identity: identity, mutate: { preference in
         preference.sourceIdentity = candidate.sourceIdentity
         preference.defaultVariables = variables
@@ -277,26 +274,55 @@ extension RielaApp {
     return variables
   }
 
-  private func jsonText(from object: JSONObject) -> String {
-    guard !object.isEmpty,
-      let data = try? JSONEncoder().encode(JSONValue.object(object)),
-      let text = String(data: data, encoding: .utf8)
-    else {
-      return "{}"
-    }
-    return text
+  private func workflowVariablesText(from variables: JSONObject) -> String {
+    variables.keys.sorted().map { key in
+      guard let value = variables[key] else {
+        return "\(key)="
+      }
+      if case let .string(stringValue) = value {
+        return "\(key)=\(stringValue)"
+      }
+      return "\(key):=\(jsonText(from: value))"
+    }.joined(separator: "\n")
   }
 
-  private func parseJSONObject(_ text: String) throws -> JSONObject {
-    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else {
-      return [:]
+  private func parseWorkflowVariables(_ text: String) throws -> JSONObject {
+    var variables: JSONObject = [:]
+    for rawLine in text.components(separatedBy: .newlines) {
+      let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !line.isEmpty, !line.hasPrefix("#") else {
+        continue
+      }
+      if let typedSeparator = line.range(of: ":=") {
+        let name = String(line[..<typedSeparator.lowerBound]).trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else {
+          throw NSError(domain: "RielaApp", code: 3, userInfo: [NSLocalizedDescriptionKey: "variable name is required"])
+        }
+        let valueText = String(line[typedSeparator.upperBound...]).trimmingCharacters(in: .whitespaces)
+        guard !valueText.isEmpty else {
+          throw NSError(domain: "RielaApp", code: 4, userInfo: [NSLocalizedDescriptionKey: "typed value is required for \(name)"])
+        }
+        variables[name] = try JSONDecoder().decode(JSONValue.self, from: Data(valueText.utf8))
+        continue
+      }
+      guard let separator = line.firstIndex(of: "=") else {
+        throw NSError(domain: "RielaApp", code: 5, userInfo: [NSLocalizedDescriptionKey: "missing '=' in \(line)"])
+      }
+      let name = String(line[..<separator]).trimmingCharacters(in: .whitespaces)
+      guard !name.isEmpty else {
+        throw NSError(domain: "RielaApp", code: 6, userInfo: [NSLocalizedDescriptionKey: "variable name is required"])
+      }
+      variables[name] = .string(String(line[line.index(after: separator)...]).trimmingCharacters(in: .whitespaces))
     }
-    let value = try JSONDecoder().decode(JSONValue.self, from: Data(trimmed.utf8))
-    guard case let .object(object) = value else {
-      throw NSError(domain: "RielaApp", code: 3, userInfo: [NSLocalizedDescriptionKey: "variables must be a JSON object"])
+    return variables
+  }
+
+  private func jsonText(from value: JSONValue) -> String {
+    guard let data = try? JSONEncoder().encode(value),
+          let text = String(data: data, encoding: .utf8) else {
+      return "null"
     }
-    return object
+    return text
   }
 }
 #endif

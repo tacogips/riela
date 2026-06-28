@@ -4,6 +4,125 @@ import RielaViewer
 import XCTest
 
 final class WorkflowViewerTests: XCTestCase {
+  func testViewerExposesAndSavesNodeTemplateFileMarkdown() throws {
+    let temp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+      .appendingPathComponent("riela-viewer-template-\(UUID().uuidString)", isDirectory: true)
+    let workflowDirectory = temp.appendingPathComponent("workflows/demo", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: workflowDirectory.appendingPathComponent("nodes", isDirectory: true),
+      withIntermediateDirectories: true
+    )
+    try FileManager.default.createDirectory(
+      at: workflowDirectory.appendingPathComponent("prompts", isDirectory: true),
+      withIntermediateDirectories: true
+    )
+    defer { try? FileManager.default.removeItem(at: temp) }
+
+    try writeWorkflow(
+      AuthoredWorkflowJSON(
+        workflowId: "viewer-template",
+        defaults: WorkflowDefaults(nodeTimeoutMs: 1_000, maxLoopIterations: 3),
+        entryStepId: "work",
+        nodes: [WorkflowNodeRegistryRef(id: "worker", nodeFile: "nodes/worker.json")],
+        steps: [WorkflowStepRef(id: "work", nodeId: "worker")]
+      ),
+      to: workflowDirectory
+    )
+    try writeNode(
+      AgentNodePayload(
+        id: "worker",
+        model: "gpt-5",
+        promptTemplateFile: "prompts/worker.md"
+      ),
+      to: workflowDirectory.appendingPathComponent("nodes/worker.json")
+    )
+    let promptURL = workflowDirectory.appendingPathComponent("prompts/worker.md")
+    try "original prompt".write(to: promptURL, atomically: true, encoding: .utf8)
+
+    let loader = WorkflowViewerLoader()
+    let state = try loader.load(WorkflowViewerLoadRequest(workflowDirectory: workflowDirectory.path))
+    let templateFile = try XCTUnwrap(state.nodes.first?.templateFiles.first)
+
+    XCTAssertEqual(templateFile.stepId, "work")
+    XCTAssertEqual(templateFile.nodeId, "worker")
+    XCTAssertEqual(templateFile.nodeFile, "nodes/worker.json")
+    XCTAssertEqual(templateFile.fieldPath, "promptTemplateFile")
+    XCTAssertEqual(templateFile.relativePath, "prompts/worker.md")
+    XCTAssertEqual(templateFile.resolvedPath, promptURL.resolvingSymlinksInPath().path)
+    XCTAssertTrue(templateFile.isActiveForStep)
+    XCTAssertEqual(state.nodes.first?.configuration?.nodeFile, "nodes/worker.json")
+    XCTAssertEqual(state.nodes.first?.configuration?.model, "gpt-5")
+    XCTAssertEqual(state.nodes.first?.configuration?.executionBackend, nil)
+    XCTAssertEqual(state.nodes.first?.configuration?.effort, nil)
+    XCTAssertEqual(try loader.templateFileContent(templateFile, workflowDirectory: workflowDirectory.path), "original prompt")
+
+    try loader.saveTemplateFile("edited prompt", templateFile: templateFile, workflowDirectory: workflowDirectory.path)
+
+    XCTAssertEqual(try String(contentsOf: promptURL, encoding: .utf8), "edited prompt")
+  }
+
+  func testViewerMarksPromptVariantTemplateFilesUsedByStep() throws {
+    let temp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+      .appendingPathComponent("riela-viewer-template-variant-\(UUID().uuidString)", isDirectory: true)
+    let workflowDirectory = temp.appendingPathComponent("workflows/demo", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: workflowDirectory.appendingPathComponent("nodes", isDirectory: true),
+      withIntermediateDirectories: true
+    )
+    try FileManager.default.createDirectory(
+      at: workflowDirectory.appendingPathComponent("prompts", isDirectory: true),
+      withIntermediateDirectories: true
+    )
+    defer { try? FileManager.default.removeItem(at: temp) }
+
+    try writeWorkflow(
+      AuthoredWorkflowJSON(
+        workflowId: "viewer-template-variant",
+        defaults: WorkflowDefaults(nodeTimeoutMs: 1_000, maxLoopIterations: 3),
+        entryStepId: "review",
+        nodes: [WorkflowNodeRegistryRef(id: "worker", nodeFile: "nodes/worker.json")],
+        steps: [WorkflowStepRef(id: "review", nodeId: "worker", promptVariant: "self-review")]
+      ),
+      to: workflowDirectory
+    )
+    try writeNode(
+      AgentNodePayload(
+        id: "worker",
+        model: "gpt-5",
+        promptTemplateFile: "prompts/base.md",
+        promptVariants: [
+          "self-review": NodePromptVariant(
+            systemPromptTemplateFile: "prompts/review-system.md",
+            promptTemplateFile: "prompts/review.md"
+          )
+        ]
+      ),
+      to: workflowDirectory.appendingPathComponent("nodes/worker.json")
+    )
+    try "base".write(to: workflowDirectory.appendingPathComponent("prompts/base.md"), atomically: true, encoding: .utf8)
+    try "system".write(
+      to: workflowDirectory.appendingPathComponent("prompts/review-system.md"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "review".write(to: workflowDirectory.appendingPathComponent("prompts/review.md"), atomically: true, encoding: .utf8)
+
+    let state = try WorkflowViewerLoader().load(WorkflowViewerLoadRequest(workflowDirectory: workflowDirectory.path))
+    let templateFiles = try XCTUnwrap(state.nodes.first?.templateFiles)
+
+    XCTAssertEqual(templateFiles.map(\.relativePath), [
+      "prompts/base.md",
+      "prompts/review-system.md",
+      "prompts/review.md"
+    ])
+    XCTAssertEqual(
+      templateFiles.filter(\.isActiveForStep).map(\.relativePath),
+      ["prompts/review-system.md", "prompts/review.md"]
+    )
+    XCTAssertEqual(templateFiles.first { $0.relativePath == "prompts/review.md" }?.variantName, "self-review")
+    XCTAssertEqual(templateFiles.first { $0.relativePath == "prompts/base.md" }?.isActiveForStep, false)
+  }
+
   func testViewerLoadsWorkflowTreeRunningStateAndNodeMessages() throws {
     let temp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
       .appendingPathComponent("riela-viewer-\(UUID().uuidString)", isDirectory: true)
@@ -440,5 +559,17 @@ final class WorkflowViewerTests: XCTestCase {
     XCTAssertEqual(decoded.workflow.workflowId, "viewer-legacy-state")
     XCTAssertEqual(decoded.sessionStoreCandidates, [])
     XCTAssertEqual(decoded.diagnostics, [])
+  }
+
+  private func writeWorkflow(_ workflow: AuthoredWorkflowJSON, to workflowDirectory: URL) throws {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try encoder.encode(workflow).write(to: workflowDirectory.appendingPathComponent("workflow.json"))
+  }
+
+  private func writeNode(_ node: AgentNodePayload, to url: URL) throws {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try encoder.encode(node).write(to: url)
   }
 }

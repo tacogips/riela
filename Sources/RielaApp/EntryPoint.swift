@@ -13,7 +13,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   private let controller = WorkflowServingController()
   private let launchOptions = RielaAppLaunchOptions.current()
   private var daemonDiscovery = RielaAppDaemonWorkflowDiscovery()
-  private let daemonRuntime = RielaAppDaemonWorkflowRuntime()
+  let daemonRuntime = RielaAppDaemonWorkflowRuntime()
   private let telemetry = RielaTelemetryFactory.make(configuration: .fromEnvironment(
     surface: .app
   ))
@@ -30,7 +30,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   var daemonCandidates: [RielaAppDaemonWorkflowCandidate] = []
   var appHomeDirectory = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
   private var daemonStatusRefreshTimer: Timer?
-  private var daemonWindowController: DaemonWorkflowWindowController?
+  var daemonWindowController: DaemonWorkflowWindowController?
   private var viewerWindowController: WorkflowViewerWindowController?
 
   static func main() {
@@ -183,8 +183,17 @@ final class RielaApp: NSObject, NSApplicationDelegate {
         onOpenProfileFolder: { [weak self] in
           self?.openProfileFolder()
         },
+        onViewSelectedWorkflow: { [weak self] identity in
+          self?.openDaemonWorkflowViewer(identity: identity)
+        },
         onRevealSelectedSource: { [weak self] identity in
           self?.revealDaemonWorkflowSource(identity: identity)
+        },
+        onDuplicateWorkflow: { [weak self] identity in
+          self?.duplicateDaemonWorkflowInstance(identity: identity)
+        },
+        onRenameWorkflow: { [weak self] identity in
+          self?.renameDaemonWorkflowInstance(identity: identity)
         },
         onRemoveDirectory: { [weak self] identity in
           self?.removeDaemonWorkflowDirectory(identity: identity)
@@ -197,6 +206,12 @@ final class RielaApp: NSObject, NSApplicationDelegate {
         },
         onSetEnvironment: { [weak self] identity in
           self?.setDaemonWorkflowEnvironment(identity: identity)
+        },
+        onSetEnvironmentVariables: { [weak self] identity in
+          self?.setDaemonWorkflowEnvironmentVariables(identity: identity)
+        },
+        onSetVariables: { [weak self] identity in
+          self?.setDaemonWorkflowDefaultVariables(identity: identity)
         },
         environmentSummary: { [weak self] candidate in
           self?.daemonEnvironmentSummary(for: candidate) ?? "unknown"
@@ -296,7 +311,13 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
     Task { @MainActor in
       for candidate in candidatesToStart {
-        await daemonRuntime.start(candidate, inheritedEnvironment: daemonEnvironment(for: candidate))
+        let preference = daemonState.preference(for: candidate.id)
+        await daemonRuntime.start(
+          candidate,
+          inheritedEnvironment: daemonEnvironment(for: candidate),
+          defaultVariables: preference.defaultVariables,
+          nodePatch: preference.nodePatchJSONObject
+        )
       }
       refreshDaemonWorkflowWindow()
       if let selectedIdentity {
@@ -403,30 +424,6 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
   }
 
-  @objc private func openProfileFolder() {
-    let profileURL = daemonProfileRoot
-    do {
-      try profileStore.createProfileDirectories(daemonProfileName)
-      NSWorkspace.shared.open(profileURL)
-      status = "Opened profile folder: \(daemonProfileName.rawValue)"
-    } catch {
-      status = "Failed to open profile folder: \(error.localizedDescription)"
-    }
-    refreshDaemonWorkflowWindow()
-  }
-
-  private func revealDaemonWorkflowSource(identity: String) {
-    guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
-      status = "Selected workflow is no longer available"
-      refreshDaemonWorkflowWindow()
-      return
-    }
-    let sourceURL = URL(fileURLWithPath: candidate.packageDirectory ?? candidate.workflowDirectory, isDirectory: true)
-    NSWorkspace.shared.activateFileViewerSelecting([sourceURL])
-    status = "Revealed \(candidate.displayName)"
-    refreshDaemonWorkflowWindow()
-  }
-
   @objc private func toggleLaunchAtLogin() {
     do {
       try launchAtLogin.setEnabled(!launchAtLogin.isEnabled)
@@ -458,52 +455,14 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       guard preference.available, preference.active else {
         continue
       }
-      await daemonRuntime.start(candidate, inheritedEnvironment: daemonEnvironment(for: candidate))
+      await daemonRuntime.start(
+        candidate,
+        inheritedEnvironment: daemonEnvironment(for: candidate),
+        defaultVariables: preference.defaultVariables,
+        nodePatch: preference.nodePatchJSONObject
+      )
       let snapshot = daemonRuntime.snapshot(for: candidate.id)
       logDaemon("start candidate=\(candidate.id) status=\(snapshot.status.rawValue) detail=\(snapshot.detail)")
-    }
-  }
-
-  @objc private func startProfileWorkflows() {
-    let previousState = daemonState
-    for candidate in daemonCandidates where daemonState.preference(for: candidate.id).available {
-      var preference = daemonState.preference(for: candidate.id)
-      preference.active = true
-      daemonState.preferences[candidate.id] = preference
-    }
-    guard saveDaemonState() else {
-      daemonState = previousState
-      refreshDaemonWorkflowWindow()
-      return
-    }
-    refreshDaemonWorkflowWindow()
-    Task { @MainActor in
-      await startEnabledDaemonWorkflows()
-      status = "Auto-start enabled and started profile workflows"
-      refreshDaemonWorkflowWindow()
-    }
-  }
-
-  @objc private func stopProfileWorkflows() {
-    let previousState = daemonState
-    let candidates = daemonCandidates
-    for candidate in candidates {
-      var preference = daemonState.preference(for: candidate.id)
-      preference.active = false
-      daemonState.preferences[candidate.id] = preference
-    }
-    guard saveDaemonState() else {
-      daemonState = previousState
-      refreshDaemonWorkflowWindow()
-      return
-    }
-    refreshDaemonWorkflowWindow()
-    Task { @MainActor in
-      for candidate in candidates {
-        await daemonRuntime.stop(identity: candidate.id)
-      }
-      status = "Auto-start disabled and stopped profile workflows"
-      refreshDaemonWorkflowWindow()
     }
   }
 
@@ -604,10 +563,6 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
   }
 
-  private func isDirectory(_ url: URL) -> Bool {
-    (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
-  }
-
   private func packageImportContentTypes() -> [UTType] {
     RielaAppManagedPackageInstaller.supportedPackageArchiveExtensions.compactMap {
       UTType(filenameExtension: $0)
@@ -675,6 +630,19 @@ final class RielaApp: NSObject, NSApplicationDelegate {
 
   private func removeDaemonWorkflowDirectory(identity: String) {
     guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
+      return
+    }
+    if candidate.isManagedInstance, candidate.id != candidate.sourceIdentity {
+      daemonState.preferences.removeValue(forKey: identity)
+      guard saveDaemonState() else {
+        refreshDaemonWorkflowWindow()
+        return
+      }
+      Task { @MainActor in
+        await daemonRuntime.stop(identity: identity)
+        status = "Removed workflow instance \(identity)"
+        refreshDaemonWorkflowWindow()
+      }
       return
     }
     let previousState = daemonState
@@ -745,7 +713,13 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     rebuildMenu()
     if available, let candidate = daemonCandidates.first(where: { $0.id == identity }) {
       Task { @MainActor in
-        await daemonRuntime.start(candidate, inheritedEnvironment: daemonEnvironment(for: candidate))
+        let preference = self.daemonState.preference(for: candidate.id)
+        await daemonRuntime.start(
+          candidate,
+          inheritedEnvironment: daemonEnvironment(for: candidate),
+          defaultVariables: preference.defaultVariables,
+          nodePatch: preference.nodePatchJSONObject
+        )
         refreshDaemonWorkflowWindow()
       }
     } else {
@@ -773,7 +747,13 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
     Task { @MainActor in
       if active {
-        await daemonRuntime.start(candidate, inheritedEnvironment: daemonEnvironment(for: candidate))
+        let preference = self.daemonState.preference(for: candidate.id)
+        await daemonRuntime.start(
+          candidate,
+          inheritedEnvironment: daemonEnvironment(for: candidate),
+          defaultVariables: preference.defaultVariables,
+          nodePatch: preference.nodePatchJSONObject
+        )
         status = "Auto-start enabled and started \(candidate.displayName)"
       } else {
         await daemonRuntime.stop(identity: identity)
@@ -804,7 +784,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   }
 
   @discardableResult
-  private func saveDaemonState() -> Bool {
+  func saveDaemonState() -> Bool {
     do {
       try daemonStore.save(daemonState)
       return true
@@ -836,21 +816,105 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   }
 
   private func discoverDaemonCandidates() -> [RielaAppDaemonWorkflowCandidate] {
-    daemonDiscovery.discoverUserDaemonWorkflows(
+    let sourceCandidates = daemonDiscovery.discoverUserDaemonWorkflows(
       appWorkflowRoot: daemonAppWorkflowRoot,
       appPackageRoot: daemonAppPackageRoot,
       projectDirectories: daemonState.projectDirectories,
       additionalWorkflowDirectories: daemonState.workflowDirectories
     )
+    return daemonState.managedCandidates(from: sourceCandidates)
   }
 }
 
-private struct RielaAppDaemonImportResult {
-  var candidate: RielaAppDaemonWorkflowCandidate
-  var replacedExisting: Bool
-}
-
 private extension RielaApp {
+  @objc private func startProfileWorkflows() {
+    let previousState = daemonState
+    for candidate in daemonCandidates where daemonState.preference(for: candidate.id).available {
+      var preference = daemonState.preference(for: candidate.id)
+      preference.active = true
+      daemonState.preferences[candidate.id] = preference
+    }
+    guard saveDaemonState() else {
+      daemonState = previousState
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    refreshDaemonWorkflowWindow()
+    Task { @MainActor in
+      await startEnabledDaemonWorkflows()
+      status = "Auto-start enabled and started profile workflows"
+      refreshDaemonWorkflowWindow()
+    }
+  }
+
+  @objc private func stopProfileWorkflows() {
+    let previousState = daemonState
+    let candidates = daemonCandidates
+    for candidate in candidates {
+      var preference = daemonState.preference(for: candidate.id)
+      preference.active = false
+      daemonState.preferences[candidate.id] = preference
+    }
+    guard saveDaemonState() else {
+      daemonState = previousState
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    refreshDaemonWorkflowWindow()
+    Task { @MainActor in
+      for candidate in candidates {
+        await daemonRuntime.stop(identity: candidate.id)
+      }
+      status = "Auto-start disabled and stopped profile workflows"
+      refreshDaemonWorkflowWindow()
+    }
+  }
+
+  @objc private func openProfileFolder() {
+    let profileURL = daemonProfileRoot
+    do {
+      try profileStore.createProfileDirectories(daemonProfileName)
+      NSWorkspace.shared.open(profileURL)
+      status = "Opened profile folder: \(daemonProfileName.rawValue)"
+    } catch {
+      status = "Failed to open profile folder: \(error.localizedDescription)"
+    }
+    refreshDaemonWorkflowWindow()
+  }
+
+  private func revealDaemonWorkflowSource(identity: String) {
+    guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
+      status = "Selected workflow is no longer available"
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    let sourceURL = URL(fileURLWithPath: candidate.packageDirectory ?? candidate.workflowDirectory, isDirectory: true)
+    NSWorkspace.shared.activateFileViewerSelecting([sourceURL])
+    status = "Revealed \(candidate.displayName)"
+    refreshDaemonWorkflowWindow()
+  }
+
+  private func openDaemonWorkflowViewer(identity: String) {
+    guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
+      status = "Selected workflow is no longer available"
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    if viewerWindowController == nil {
+      viewerWindowController = WorkflowViewerWindowController()
+    }
+    viewerWindowController?.show(
+      workflowDirectory: candidate.workflowDirectory,
+      sessionStoreRoot: nil,
+      nodePatches: daemonState.preference(for: candidate.id).nodePatches,
+      onSaveNodePatch: { [weak self] nodeId, patch in
+        self?.saveDaemonNodePatch(identity: identity, nodeId: nodeId, patch: patch) ?? false
+      }
+    )
+    status = "Opened viewer: \(candidate.displayName)"
+    refreshDaemonWorkflowWindow()
+  }
+
   private func isRielaWorkflowProject(_ projectRoot: URL) -> Bool {
     let workflowRoot = projectRoot.appendingPathComponent(".riela/workflows", isDirectory: true)
     let packageRoot = projectRoot.appendingPathComponent(".riela/packages", isDirectory: true)
@@ -920,40 +984,6 @@ private extension RielaApp {
       status = state.diagnostics.first?.message ?? "Failed"
     }
     rebuildMenu()
-  }
-}
-
-private enum RielaAppIcon {
-  static func workflowTemplateImage() -> NSImage {
-    let size = NSSize(width: 18, height: 18)
-    let image = NSImage(size: size)
-    image.lockFocus()
-
-    NSColor.black.setStroke()
-    let edgePath = NSBezierPath()
-    edgePath.lineWidth = 1.8
-    edgePath.lineCapStyle = .round
-    edgePath.lineJoinStyle = .round
-    edgePath.move(to: NSPoint(x: 5, y: 9))
-    edgePath.line(to: NSPoint(x: 9, y: 13))
-    edgePath.line(to: NSPoint(x: 13, y: 13))
-    edgePath.move(to: NSPoint(x: 5, y: 9))
-    edgePath.line(to: NSPoint(x: 9, y: 5))
-    edgePath.line(to: NSPoint(x: 13, y: 5))
-    edgePath.stroke()
-
-    NSColor.black.setFill()
-    for center in [
-      NSPoint(x: 5, y: 9),
-      NSPoint(x: 13, y: 13),
-      NSPoint(x: 13, y: 5)
-    ] {
-      NSBezierPath(ovalIn: NSRect(x: center.x - 2, y: center.y - 2, width: 4, height: 4)).fill()
-    }
-
-    image.unlockFocus()
-    image.isTemplate = true
-    return image
   }
 }
 

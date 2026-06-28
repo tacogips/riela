@@ -95,6 +95,43 @@ final class EventLiveServeTests: XCTestCase {
     XCTAssertEqual(sentMessages, [])
   }
 
+  func testTelegramGatewayServeCarriesNodePatchIntoWorkflowRunRequest() async throws {
+    let eventRoot = try temporaryDirectory()
+    try writeTelegramEventConfig(eventRoot: eventRoot)
+    let api = FakeTelegramGatewayAPI(updates: [
+      TelegramUpdate(
+        updateId: 45,
+        message: try TelegramMessage.fixture(
+          chatId: "100",
+          fromId: "200",
+          text: "hello"
+        )
+      )
+    ])
+    let workflowRunner = FakeEventWorkflowRunner(replyText: "patched", replyAs: "yui")
+    let server = DefaultEventLiveServer(telegramAPI: api, workflowRunner: workflowRunner)
+
+    _ = try await CLIRuntimeEnvironment.$overrides.withValue([
+      "TEST_TELEGRAM_TOKEN": "source-token",
+      "TEST_TELEGRAM_BOT_ID": "999",
+      "TEST_TELEGRAM_YUI_TOKEN": "yui-token",
+      "TEST_TELEGRAM_MIKA_TOKEN": "mika-token"
+    ]) {
+      try await server.serve(
+        eventRoot: eventRoot,
+        target: nil,
+        parsed: try ParsedParityOptions([
+          "--node-patch", #"{"worker":{"model":"gpt-5-mini"}}"#,
+          "--limit", "1"
+        ]),
+        output: .json
+      )
+    }
+
+    let workflowRequests = await workflowRunner.requests
+    XCTAssertEqual(workflowRequests.first?.parsed.nodePatch, #"{"worker":{"model":"gpt-5-mini"}}"#)
+  }
+
   func testTelegramGatewayServeIgnoresBotMessagesByDefault() async throws {
     let eventRoot = try temporaryDirectory()
     try writeTelegramEventConfig(eventRoot: eventRoot)

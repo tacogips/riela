@@ -118,6 +118,8 @@ extension WorkflowCommandTests {
       )
     ])
 
+    assertManagedInstanceScenario(candidate: candidate)
+
     let envNames = candidate.requiredEnvironment.map(\.name)
     XCTAssertEqual(
       RielaAppEnvironmentFileStore(processEnvironment: [:]).statuses(for: envNames),
@@ -196,6 +198,60 @@ extension WorkflowCommandTests {
     XCTAssertEqual(progressResult.status, .completed)
     XCTAssertEqual(progressResult.executionCount, 1)
     XCTAssertEqual(progressResult.executions, [])
+  }
+
+  private func assertManagedInstanceScenario(candidate: RielaAppDaemonWorkflowCandidate) {
+    let appState = RielaAppDaemonWorkflowState(preferences: [
+      "scenario-persona-a": RielaAppDaemonWorkflowPreference(
+        identity: "scenario-persona-a",
+        sourceIdentity: candidate.id,
+        displayName: "Scenario Persona A",
+        available: true,
+        active: true,
+        environmentVariables: [
+          "RIELA_SCENARIO_OPENAI_API_KEY": "present-for-persona-a",
+          "SCENARIO_PERSONA": "a"
+        ],
+        defaultVariables: [
+          "workflowInput": .object(["request": .string("persona a")])
+        ],
+        nodePatches: [
+          "main": RielaAppDaemonWorkflowNodePatch(model: "gpt-5.5")
+        ]
+      ),
+      "scenario-persona-b": RielaAppDaemonWorkflowPreference(
+        identity: "scenario-persona-b",
+        sourceIdentity: candidate.id,
+        displayName: "Scenario Persona B",
+        available: true,
+        active: false,
+        environmentVariables: [
+          "RIELA_SCENARIO_OPENAI_API_KEY": "present-for-persona-b",
+          "SCENARIO_PERSONA": "b"
+        ],
+        defaultVariables: [
+          "workflowInput": .object(["request": .string("persona b")])
+        ],
+        nodePatches: [
+          "main": RielaAppDaemonWorkflowNodePatch(model: "gpt-5-mini")
+        ]
+      )
+    ])
+
+    let managedCandidates = appState.managedCandidates(from: [candidate])
+
+    XCTAssertEqual(managedCandidates.map(\.id), ["scenario-persona-a", "scenario-persona-b"])
+    XCTAssertEqual(managedCandidates.map(\.sourceIdentity), [candidate.id, candidate.id])
+    XCTAssertEqual(managedCandidates.map(\.displayName), ["Scenario Persona A", "Scenario Persona B"])
+    XCTAssertEqual(appState.preference(for: "scenario-persona-a").environmentVariables["SCENARIO_PERSONA"], "a")
+    XCTAssertEqual(
+      appState.preference(for: "scenario-persona-a").defaultVariables["workflowInput"],
+      .object(["request": .string("persona a")])
+    )
+    XCTAssertEqual(
+      appState.preference(for: "scenario-persona-a").nodePatchJSONObject?["main"],
+      .object(["model": .string("gpt-5.5")])
+    )
   }
 
   private func writeScenarioPackageWorkflow(at packageSource: URL) throws {

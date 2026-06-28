@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import RielaCore
 import RielaObservability
 import RielaServer
 
@@ -68,6 +69,8 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
       eventRoot: eventRoot,
       sessionStoreRoot: request.sessionStoreRoot,
       artifactRoot: request.artifactRoot,
+      defaultVariables: request.defaultVariables,
+      nodePatch: request.nodePatch,
       executablePath: executablePath,
       inheritedEnvironment: request.inheritedEnvironment
     )
@@ -108,6 +111,8 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
     eventRoot: String,
     sessionStoreRoot: String? = nil,
     artifactRoot: String? = nil,
+    defaultVariables: JSONObject = [:],
+    nodePatch: JSONObject? = nil,
     executablePath: String?,
     inheritedEnvironment: [String: String] = [:]
   ) -> RielaAppDaemonEventServeCommand {
@@ -125,6 +130,12 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
     }
     if let artifactRoot, !artifactRoot.isEmpty {
       serveArguments.append(contentsOf: ["--artifact-root", artifactRoot])
+    }
+    if !defaultVariables.isEmpty, let serializedVariables = serializedJSONObject(defaultVariables) {
+      serveArguments.append(contentsOf: ["--variables", serializedVariables])
+    }
+    if let nodePatch, let serializedPatch = serializedNodePatch(nodePatch) {
+      serveArguments.append(contentsOf: ["--node-patch", serializedPatch])
     }
     let arguments: [String]
     if executable == "/usr/bin/env" {
@@ -172,6 +183,17 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
       return sibling
     }
     return "/usr/bin/env"
+  }
+
+  private func serializedNodePatch(_ nodePatch: JSONObject) -> String? {
+    serializedJSONObject(nodePatch)
+  }
+
+  private func serializedJSONObject(_ object: JSONObject) -> String? {
+    guard let data = try? JSONEncoder().encode(JSONValue.object(object)) else {
+      return nil
+    }
+    return String(data: data, encoding: .utf8)
   }
 
   private func earlyExitMessage(process: any RielaAppDaemonEventServeProcessHandle) -> String {

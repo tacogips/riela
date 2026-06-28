@@ -24,13 +24,14 @@ extension RielaApp {
   func daemonEnvironmentSummary(for candidate: RielaAppDaemonWorkflowCandidate) -> String {
     let summary = daemonEnvironmentStatus(for: candidate)
     let prefix = summary.fileDisplayName.map { "file \($0)" } ?? "no file"
+    let inline = summary.inlineCount == 0 ? "no inline env" : "\(summary.inlineCount) inline env"
     guard !candidate.requiredEnvironment.isEmpty else {
-      return "\(prefix), no required env"
+      return "\(prefix), \(inline), no required env"
     }
     if summary.missingNames.isEmpty {
-      return "\(prefix), all required env set"
+      return "\(prefix), \(inline), all required env set"
     }
-    return "\(prefix), missing \(summary.missingNames.joined(separator: ", "))"
+    return "\(prefix), \(inline), missing \(summary.missingNames.joined(separator: ", "))"
   }
 
   func daemonEnvironmentColumnStatus(for candidate: RielaAppDaemonWorkflowCandidate) -> String {
@@ -42,7 +43,11 @@ extension RielaApp {
   }
 
   func daemonEnvironment(for candidate: RielaAppDaemonWorkflowCandidate) -> [String: String] {
-    daemonEnvironmentStore(for: candidate).mergedEnvironment()
+    var environment = daemonEnvironmentStore(for: candidate).mergedEnvironment()
+    for (name, value) in daemonState.preference(for: candidate.id).environmentVariables {
+      environment[name] = value
+    }
+    return environment
   }
 
   private enum EnvironmentFileAction {
@@ -53,6 +58,7 @@ extension RielaApp {
 
   private struct EnvironmentStatusSummary {
     var fileDisplayName: String?
+    var inlineCount: Int
     var missingNames: [String]
   }
 
@@ -131,11 +137,13 @@ extension RielaApp {
 
   private func daemonEnvironmentStatus(for candidate: RielaAppDaemonWorkflowCandidate) -> EnvironmentStatusSummary {
     let preference = daemonState.preference(for: candidate.id)
-    let store = daemonEnvironmentStore(for: candidate)
-    let statuses = store.statuses(for: candidate.requiredEnvironment.map(\.name))
-    let missingNames = statuses.filter { !$0.configured }.map(\.name)
+    let environment = daemonEnvironment(for: candidate)
+    let missingNames = candidate.requiredEnvironment.map(\.name).filter { name in
+      environment[name]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
+    }
     return EnvironmentStatusSummary(
       fileDisplayName: preference.environmentFilePath.map { URL(fileURLWithPath: $0).lastPathComponent },
+      inlineCount: preference.environmentVariables.count,
       missingNames: missingNames
     )
   }

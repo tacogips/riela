@@ -73,6 +73,7 @@ public struct WorkflowServeStartRequest: Codable, Equatable, Sendable {
   public var eventRoot: String?
   public var inheritedEnvironment: [String: String]
   public var defaultVariables: JSONObject
+  public var nodePatch: JSONObject?
   public var startsEventSources: Bool
 
   public init(
@@ -84,6 +85,7 @@ public struct WorkflowServeStartRequest: Codable, Equatable, Sendable {
     eventRoot: String? = nil,
     inheritedEnvironment: [String: String] = [:],
     defaultVariables: JSONObject = [:],
+    nodePatch: JSONObject? = nil,
     startsEventSources: Bool = true
   ) {
     self.selection = selection
@@ -94,6 +96,7 @@ public struct WorkflowServeStartRequest: Codable, Equatable, Sendable {
     self.eventRoot = eventRoot
     self.inheritedEnvironment = inheritedEnvironment
     self.defaultVariables = defaultVariables
+    self.nodePatch = nodePatch
     self.startsEventSources = startsEventSources
   }
 }

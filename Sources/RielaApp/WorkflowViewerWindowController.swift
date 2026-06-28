@@ -1,5 +1,7 @@
 #if os(macOS)
 import AppKit
+import RielaAppSupport
+import RielaCore
 import RielaViewer
 
 @MainActor
@@ -7,15 +9,28 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
   private let loader = WorkflowViewerLoader()
   private let outlineView = NSOutlineView()
   private let sessionPopup = NSPopUpButton()
+  private let templatePopup = NSPopUpButton()
   private let statusLabel = NSTextField(labelWithString: "No workflow loaded")
   private let detailTextView = NSTextView()
+  private let modelPopup = NSPopUpButton()
+  private let backendPopup = NSPopUpButton()
+  private let effortPopup = NSPopUpButton()
+  private let saveNodePatchButton = NSButton(title: "Save Patch", target: nil, action: nil)
+  private let clearNodePatchButton = NSButton(title: "Clear Patch", target: nil, action: nil)
+  private let templateTextView = NSTextView()
+  private let saveTemplateButton = NSButton(title: "Save", target: nil, action: nil)
+  private let reloadTemplateButton = NSButton(title: "Reload", target: nil, action: nil)
   private let detailFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
   private let detailTextColor = NSColor(calibratedWhite: 0.92, alpha: 1)
   private let detailBackgroundColor = NSColor(calibratedWhite: 0.08, alpha: 1)
+  private let templateFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
   private var workflowDirectory: String?
   private var sessionStoreRoot: String?
   private var state: WorkflowViewerState?
   private var selectedNodeId: String?
+  private var selectedTemplateFileId: String?
+  private var nodePatches: [String: RielaAppDaemonWorkflowNodePatch] = [:]
+  private var onSaveNodePatch: ((String, RielaAppDaemonWorkflowNodePatch?) -> Bool)?
 
   init() {
     let window = NSWindow(
@@ -33,12 +48,19 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     nil
   }
 
-  func show(workflowDirectory: String, sessionStoreRoot: String?) {
+  func show(
+    workflowDirectory: String,
+    sessionStoreRoot: String?,
+    nodePatches: [String: RielaAppDaemonWorkflowNodePatch] = [:],
+    onSaveNodePatch: ((String, RielaAppDaemonWorkflowNodePatch?) -> Bool)? = nil
+  ) {
     if self.workflowDirectory != workflowDirectory {
       selectedNodeId = nil
     }
     self.workflowDirectory = workflowDirectory
     self.sessionStoreRoot = sessionStoreRoot
+    self.nodePatches = nodePatches
+    self.onSaveNodePatch = onSaveNodePatch
     refresh()
     showWindow(nil)
     window?.makeKeyAndOrderFront(nil)
@@ -86,6 +108,42 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     toolbar.addArrangedSubview(sessionPopup)
     toolbar.addArrangedSubview(refreshButton)
 
+    let patchToolbar = NSStackView()
+    patchToolbar.orientation = .horizontal
+    patchToolbar.alignment = .centerY
+    patchToolbar.spacing = 8
+    modelPopup.widthAnchor.constraint(equalToConstant: 210).isActive = true
+    backendPopup.widthAnchor.constraint(equalToConstant: 180).isActive = true
+    effortPopup.widthAnchor.constraint(equalToConstant: 150).isActive = true
+    saveNodePatchButton.target = self
+    saveNodePatchButton.action = #selector(saveNodePatchButtonPressed)
+    clearNodePatchButton.target = self
+    clearNodePatchButton.action = #selector(clearNodePatchButtonPressed)
+    patchToolbar.addArrangedSubview(NSTextField(labelWithString: "Model"))
+    patchToolbar.addArrangedSubview(modelPopup)
+    patchToolbar.addArrangedSubview(NSTextField(labelWithString: "Backend"))
+    patchToolbar.addArrangedSubview(backendPopup)
+    patchToolbar.addArrangedSubview(NSTextField(labelWithString: "Effort"))
+    patchToolbar.addArrangedSubview(effortPopup)
+    patchToolbar.addArrangedSubview(saveNodePatchButton)
+    patchToolbar.addArrangedSubview(clearNodePatchButton)
+
+    let templateToolbar = NSStackView()
+    templateToolbar.orientation = .horizontal
+    templateToolbar.alignment = .centerY
+    templateToolbar.spacing = 8
+    templatePopup.target = self
+    templatePopup.action = #selector(templateSelectionChanged)
+    templatePopup.widthAnchor.constraint(equalToConstant: 360).isActive = true
+    saveTemplateButton.target = self
+    saveTemplateButton.action = #selector(saveTemplateButtonPressed)
+    reloadTemplateButton.target = self
+    reloadTemplateButton.action = #selector(reloadTemplateButtonPressed)
+    templateToolbar.addArrangedSubview(NSTextField(labelWithString: "Template"))
+    templateToolbar.addArrangedSubview(templatePopup)
+    templateToolbar.addArrangedSubview(saveTemplateButton)
+    templateToolbar.addArrangedSubview(reloadTemplateButton)
+
     statusLabel.lineBreakMode = .byTruncatingTail
     detailTextView.isEditable = false
     detailTextView.isRichText = false
@@ -109,11 +167,35 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     detailScroll.borderType = .bezelBorder
     detailScroll.translatesAutoresizingMaskIntoConstraints = false
 
+    templateTextView.isEditable = false
+    templateTextView.isRichText = false
+    templateTextView.font = templateFont
+    templateTextView.textContainerInset = NSSize(width: 10, height: 10)
+    templateTextView.isVerticallyResizable = true
+    templateTextView.isHorizontallyResizable = true
+    templateTextView.autoresizingMask = [.width]
+    templateTextView.textContainer?.widthTracksTextView = true
+    templateTextView.textContainer?.containerSize = NSSize(
+      width: detailScrollContentWidthFallback,
+      height: CGFloat.greatestFiniteMagnitude
+    )
+    let templateScroll = NSScrollView()
+    templateScroll.documentView = templateTextView
+    templateScroll.hasVerticalScroller = true
+    templateScroll.hasHorizontalScroller = true
+    templateScroll.borderType = .bezelBorder
+    templateScroll.translatesAutoresizingMaskIntoConstraints = false
+
     rightStack.addArrangedSubview(toolbar)
     rightStack.addArrangedSubview(statusLabel)
     rightStack.addArrangedSubview(detailScroll)
+    rightStack.addArrangedSubview(patchToolbar)
+    rightStack.addArrangedSubview(templateToolbar)
+    rightStack.addArrangedSubview(templateScroll)
     detailScroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 520).isActive = true
-    detailScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 500).isActive = true
+    detailScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
+    templateScroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 520).isActive = true
+    templateScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
 
     splitView.addArrangedSubview(outlineScroll)
     splitView.addArrangedSubview(rightStack)
@@ -123,6 +205,70 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
 
   @objc private func refreshButtonPressed() {
     refresh()
+  }
+
+  @objc private func templateSelectionChanged() {
+    selectedTemplateFileId = selectedTemplateFile()?.id
+    loadSelectedTemplateFile()
+  }
+
+  @objc private func reloadTemplateButtonPressed() {
+    loadSelectedTemplateFile()
+  }
+
+  @objc private func saveNodePatchButtonPressed() {
+    guard let selectedNode = selectedNode(), let patch = selectedNodePatchFromControls(for: selectedNode) else {
+      return
+    }
+    guard let onSaveNodePatch else {
+      statusLabel.stringValue = "Node patch editing is unavailable for this viewer"
+      return
+    }
+    if onSaveNodePatch(selectedNode.nodeId, patch.isEmpty ? nil : patch) {
+      if patch.isEmpty {
+        nodePatches.removeValue(forKey: selectedNode.nodeId)
+        statusLabel.stringValue = "Cleared node patch for \(selectedNode.nodeId)"
+      } else {
+        nodePatches[selectedNode.nodeId] = patch
+        statusLabel.stringValue = "Saved node patch for \(selectedNode.nodeId)"
+      }
+      updateNodePatchControls(for: selectedNode)
+    } else {
+      statusLabel.stringValue = "Failed to save node patch for \(selectedNode.nodeId)"
+    }
+  }
+
+  @objc private func clearNodePatchButtonPressed() {
+    guard let selectedNode = selectedNode() else {
+      return
+    }
+    guard let onSaveNodePatch else {
+      statusLabel.stringValue = "Node patch editing is unavailable for this viewer"
+      return
+    }
+    if onSaveNodePatch(selectedNode.nodeId, nil) {
+      nodePatches.removeValue(forKey: selectedNode.nodeId)
+      statusLabel.stringValue = "Cleared node patch for \(selectedNode.nodeId)"
+      updateNodePatchControls(for: selectedNode)
+    } else {
+      statusLabel.stringValue = "Failed to clear node patch for \(selectedNode.nodeId)"
+    }
+  }
+
+  @objc private func saveTemplateButtonPressed() {
+    guard let workflowDirectory, let templateFile = selectedTemplateFile() else {
+      return
+    }
+    do {
+      try loader.saveTemplateFile(
+        templateTextView.string,
+        templateFile: templateFile,
+        workflowDirectory: workflowDirectory
+      )
+      statusLabel.stringValue = "Saved \(templateFile.relativePath)"
+    } catch {
+      statusLabel.stringValue = "Failed to save template: \(error)"
+    }
   }
 
   @objc private func sessionSelectionChanged() {
@@ -181,6 +327,8 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     guard let state else {
       statusLabel.stringValue = "No workflow loaded"
       setDetailText("")
+      updateTemplateControls(for: nil)
+      updateNodePatchControls(for: nil)
       return
     }
     let session = selectedSession(in: state)
@@ -191,6 +339,8 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     ].compactMap { $0 }.joined(separator: " | ")
     guard let selectedNodeId else {
       setDetailText(workflowOverview(state: state))
+      updateTemplateControls(for: nil)
+      updateNodePatchControls(for: nil)
       return
     }
     var lines: [String] = []
@@ -201,6 +351,28 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
       if let detail = node.detail {
         lines.append("Detail: \(detail)")
       }
+      if let configuration = node.configuration {
+        lines.append("Node file: \(configuration.nodeFile)")
+        lines.append("Base model: \(configuration.model)")
+        lines.append("Base backend: \(configuration.executionBackend?.rawValue ?? "-")")
+        lines.append("Base effort: \(configuration.effort?.rawValue ?? "-")")
+        if let patch = nodePatches[node.nodeId], !patch.isEmpty {
+          lines.append("Patch model: \(patch.model ?? "-")")
+          lines.append("Patch backend: \(patch.executionBackend?.rawValue ?? "-")")
+          lines.append("Patch effort: \(patch.effort?.rawValue ?? "-")")
+        }
+      }
+      if !node.templateFiles.isEmpty {
+        lines.append("Template files:")
+        lines.append(contentsOf: node.templateFiles.map { templateFile in
+          "- \(templateFile.displayName) [\(templateFile.fieldPath)]"
+        })
+      }
+      updateTemplateControls(for: node)
+      updateNodePatchControls(for: node)
+    } else {
+      updateTemplateControls(for: nil)
+      updateNodePatchControls(for: nil)
     }
     lines.append("")
     lines.append("Workflow")
@@ -247,6 +419,180 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
         .backgroundColor: detailBackgroundColor
       ]
     ))
+  }
+
+  private func setTemplateText(_ text: String) {
+    templateTextView.textStorage?.setAttributedString(NSAttributedString(
+      string: text,
+      attributes: [.font: templateFont]
+    ))
+  }
+
+  private func updateNodePatchControls(for node: WorkflowViewerNode?) {
+    guard let configuration = node?.configuration else {
+      configurePopup(modelPopup, titles: ["No node model"])
+      configurePopup(backendPopup, titles: ["No backend"])
+      configurePopup(effortPopup, titles: ["No effort"])
+      modelPopup.isEnabled = false
+      backendPopup.isEnabled = false
+      effortPopup.isEnabled = false
+      saveNodePatchButton.isEnabled = false
+      clearNodePatchButton.isEnabled = false
+      return
+    }
+
+    let patch = node.flatMap { nodePatches[$0.nodeId] }
+    let modelOptions = modelChoices(configuration: configuration, patch: patch)
+    configurePopup(modelPopup, titles: ["Workflow default: \(configuration.model)"] + modelOptions)
+    selectPopupValue(modelPopup, value: patch?.model, values: modelOptions)
+
+    let backendOptions = NodeExecutionBackend.allCases.map(\.rawValue)
+    configurePopup(
+      backendPopup,
+      titles: ["Workflow default: \(configuration.executionBackend?.rawValue ?? "-")"] + backendOptions
+    )
+    selectPopupValue(backendPopup, value: patch?.executionBackend?.rawValue, values: backendOptions)
+
+    let effortOptions = NodeReasoningEffort.allCases.map(\.rawValue)
+    configurePopup(effortPopup, titles: ["Workflow default: \(configuration.effort?.rawValue ?? "-")"] + effortOptions)
+    selectPopupValue(effortPopup, value: patch?.effort?.rawValue, values: effortOptions)
+
+    let canEdit = onSaveNodePatch != nil
+    modelPopup.isEnabled = canEdit
+    backendPopup.isEnabled = canEdit
+    effortPopup.isEnabled = canEdit
+    saveNodePatchButton.isEnabled = canEdit
+    clearNodePatchButton.isEnabled = canEdit && patch != nil
+  }
+
+  private func configurePopup(_ popup: NSPopUpButton, titles: [String]) {
+    popup.removeAllItems()
+    popup.addItems(withTitles: titles)
+    popup.selectItem(at: 0)
+  }
+
+  private func selectPopupValue(_ popup: NSPopUpButton, value: String?, values: [String]) {
+    guard let value, let index = values.firstIndex(of: value) else {
+      popup.selectItem(at: 0)
+      return
+    }
+    popup.selectItem(at: index + 1)
+  }
+
+  private func modelChoices(
+    configuration: WorkflowViewerNodeConfiguration,
+    patch: RielaAppDaemonWorkflowNodePatch?
+  ) -> [String] {
+    uniqueValues([
+      patch?.model,
+      configuration.model,
+      "gpt-5.5",
+      "gpt-5.4-mini",
+      "gpt-5.3-codex-spark",
+      "gpt-5",
+      "gpt-5-mini",
+      "gpt-5-nano",
+      "claude-sonnet-4-5",
+      "claude-haiku-4-5",
+      "claude-sonnet",
+      "riela/chat-reply-worker"
+    ].compactMap { $0 })
+  }
+
+  private func uniqueValues(_ values: [String]) -> [String] {
+    var seen: Set<String> = []
+    return values.filter { value in
+      let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !normalized.isEmpty, !seen.contains(normalized) else {
+        return false
+      }
+      seen.insert(normalized)
+      return true
+    }
+  }
+
+  private func selectedNodePatchFromControls(for node: WorkflowViewerNode) -> RielaAppDaemonWorkflowNodePatch? {
+    guard node.configuration != nil else {
+      return nil
+    }
+    let selectedModel = selectedPatchValue(from: modelPopup)
+    let selectedBackend = selectedPatchValue(from: backendPopup).flatMap(NodeExecutionBackend.init(rawValue:))
+    let selectedEffort = selectedPatchValue(from: effortPopup).flatMap(NodeReasoningEffort.init(rawValue:))
+    return RielaAppDaemonWorkflowNodePatch(
+      executionBackend: selectedBackend,
+      model: selectedModel,
+      effort: selectedEffort
+    )
+  }
+
+  private func selectedPatchValue(from popup: NSPopUpButton) -> String? {
+    guard popup.indexOfSelectedItem > 0 else {
+      return nil
+    }
+    return popup.titleOfSelectedItem
+  }
+
+  private func updateTemplateControls(for node: WorkflowViewerNode?) {
+    let templateFiles = node?.templateFiles ?? []
+    templatePopup.removeAllItems()
+    guard !templateFiles.isEmpty else {
+      templatePopup.addItem(withTitle: "No template files")
+      templatePopup.isEnabled = false
+      saveTemplateButton.isEnabled = false
+      reloadTemplateButton.isEnabled = false
+      templateTextView.isEditable = false
+      selectedTemplateFileId = nil
+      setTemplateText("")
+      return
+    }
+
+    templatePopup.addItems(withTitles: templateFiles.map(\.displayName))
+    let selectedIndex = selectedTemplateIndex(in: templateFiles)
+    templatePopup.selectItem(at: selectedIndex)
+    selectedTemplateFileId = templateFiles[selectedIndex].id
+    templatePopup.isEnabled = true
+    saveTemplateButton.isEnabled = true
+    reloadTemplateButton.isEnabled = true
+    templateTextView.isEditable = true
+    loadSelectedTemplateFile()
+  }
+
+  private func selectedTemplateIndex(in templateFiles: [WorkflowViewerTemplateFile]) -> Int {
+    if let selectedTemplateFileId,
+      let index = templateFiles.firstIndex(where: { $0.id == selectedTemplateFileId }) {
+      return index
+    }
+    return templateFiles.firstIndex(where: \.isActiveForStep) ?? 0
+  }
+
+  private func selectedTemplateFile() -> WorkflowViewerTemplateFile? {
+    guard let selectedNode = selectedNode(),
+      templatePopup.indexOfSelectedItem >= 0,
+      templatePopup.indexOfSelectedItem < selectedNode.templateFiles.count
+    else {
+      return nil
+    }
+    return selectedNode.templateFiles[templatePopup.indexOfSelectedItem]
+  }
+
+  private func selectedNode() -> WorkflowViewerNode? {
+    guard let state, let selectedNodeId else {
+      return nil
+    }
+    return flattenedNodes(state.nodes).first { $0.id == selectedNodeId }
+  }
+
+  private func loadSelectedTemplateFile() {
+    guard let workflowDirectory, let templateFile = selectedTemplateFile() else {
+      setTemplateText("")
+      return
+    }
+    do {
+      setTemplateText(try loader.templateFileContent(templateFile, workflowDirectory: workflowDirectory))
+    } catch {
+      setTemplateText("")
+      statusLabel.stringValue = "Failed to load template: \(error)"
+    }
   }
 
   private var detailScrollContentWidthFallback: CGFloat {

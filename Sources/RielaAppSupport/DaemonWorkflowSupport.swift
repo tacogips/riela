@@ -1,6 +1,7 @@
 #if os(macOS)
 import Foundation
 import RielaAddons
+import RielaCore
 import RielaEvents
 import RielaServer
 
@@ -33,6 +34,8 @@ public enum RielaAppDaemonWorkflowSourceScope: String, Equatable, Sendable {
 
 public struct RielaAppDaemonWorkflowCandidate: Identifiable, Equatable, Sendable {
   public var id: String
+  public var sourceIdentity: String
+  public var managementId: String?
   public var workflowId: String
   public var displayName: String
   public var sourceDescription: String
@@ -46,6 +49,8 @@ public struct RielaAppDaemonWorkflowCandidate: Identifiable, Equatable, Sendable
 
   public init(
     id: String,
+    sourceIdentity: String? = nil,
+    managementId: String? = nil,
     workflowId: String,
     displayName: String,
     sourceDescription: String,
@@ -58,6 +63,8 @@ public struct RielaAppDaemonWorkflowCandidate: Identifiable, Equatable, Sendable
     requiredEnvironment: [RielaAppEnvRequirement] = []
   ) {
     self.id = id
+    self.sourceIdentity = sourceIdentity ?? id
+    self.managementId = managementId
     self.workflowId = workflowId
     self.displayName = displayName
     self.sourceDescription = sourceDescription
@@ -90,63 +97,27 @@ public struct RielaAppDaemonWorkflowCandidate: Identifiable, Equatable, Sendable
   public var startsEventSources: Bool {
     eventRoot != nil && !eventSources.isEmpty
   }
-}
 
-public struct RielaAppDaemonWorkflowPreference: Codable, Equatable, Sendable {
-  public var identity: String
-  public var available: Bool
-  public var active: Bool
-  public var environmentFilePath: String?
-
-  private enum CodingKeys: String, CodingKey {
-    case identity
-    case available
-    case enabledAtLaunch
-    case active
-    case environmentFilePath
+  public var isManagedInstance: Bool {
+    managementId != nil
   }
 
-  public init(
-    identity: String,
-    available: Bool = false,
-    active: Bool = false,
-    environmentFilePath: String? = nil
-  ) {
-    self.identity = identity
-    self.available = available
-    self.active = active
-    self.environmentFilePath = environmentFilePath
-  }
-
-  public init(identity: String, enabledAtLaunch: Bool, active: Bool = false) {
-    self.init(identity: identity, available: enabledAtLaunch, active: active)
-  }
-
-  public static func imported(identity: String, startsImmediately: Bool) -> RielaAppDaemonWorkflowPreference {
-    RielaAppDaemonWorkflowPreference(identity: identity, available: true, active: startsImmediately)
-  }
-
-  public var enabledAtLaunch: Bool {
-    get { available }
-    set { available = newValue }
-  }
-
-  public init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    identity = try container.decode(String.self, forKey: .identity)
-    available = try container.decodeIfPresent(Bool.self, forKey: .available)
-      ?? container.decodeIfPresent(Bool.self, forKey: .enabledAtLaunch)
-      ?? false
-    active = try container.decodeIfPresent(Bool.self, forKey: .active) ?? available
-    environmentFilePath = try container.decodeIfPresent(String.self, forKey: .environmentFilePath)
-  }
-
-  public func encode(to encoder: Encoder) throws {
-    var container = encoder.container(keyedBy: CodingKeys.self)
-    try container.encode(identity, forKey: .identity)
-    try container.encode(available, forKey: .available)
-    try container.encode(active, forKey: .active)
-    try container.encodeIfPresent(environmentFilePath, forKey: .environmentFilePath)
+  public func managedInstance(identity: String, displayName: String? = nil) -> RielaAppDaemonWorkflowCandidate {
+    RielaAppDaemonWorkflowCandidate(
+      id: identity,
+      sourceIdentity: id,
+      managementId: identity,
+      workflowId: workflowId,
+      displayName: displayName?.isEmpty == false ? displayName ?? self.displayName : self.displayName,
+      sourceDescription: sourceDescription,
+      sourceScope: sourceScope,
+      workflowDirectory: workflowDirectory,
+      packageDirectory: packageDirectory,
+      workingDirectory: workingDirectory,
+      eventRoot: eventRoot,
+      eventSources: eventSources,
+      requiredEnvironment: requiredEnvironment
+    )
   }
 }
 
@@ -336,6 +307,26 @@ public struct RielaAppDaemonWorkflowState: Codable, Equatable, Sendable {
 
   public func preference(for identity: String) -> RielaAppDaemonWorkflowPreference {
     preferences[identity] ?? RielaAppDaemonWorkflowPreference(identity: identity)
+  }
+
+  public func managedCandidates(
+    from sourceCandidates: [RielaAppDaemonWorkflowCandidate]
+  ) -> [RielaAppDaemonWorkflowCandidate] {
+    let sourcesByIdentity = Dictionary(uniqueKeysWithValues: sourceCandidates.map { ($0.id, $0) })
+    let configuredCandidates = preferences
+      .sorted { lhs, rhs in lhs.key.localizedCaseInsensitiveCompare(rhs.key) == .orderedAscending }
+      .compactMap { identity, preference -> RielaAppDaemonWorkflowCandidate? in
+        let sourceIdentity = preference.sourceIdentity ?? identity
+        guard let source = sourcesByIdentity[sourceIdentity] else {
+          return nil
+        }
+        return source.managedInstance(identity: identity, displayName: preference.displayName)
+      }
+    let configuredSourceIds = Set(preferences.map { identity, preference in
+      preference.sourceIdentity ?? identity
+    })
+    let unconfiguredSources = sourceCandidates.filter { !configuredSourceIds.contains($0.id) }
+    return configuredCandidates + unconfiguredSources
   }
 
   public init(from decoder: Decoder) throws {
@@ -832,6 +823,8 @@ public final class RielaAppDaemonWorkflowRuntime {
   private struct RunningWorkflow {
     var candidate: RielaAppDaemonWorkflowCandidate
     var inheritedEnvironment: [String: String]
+    var defaultVariables: JSONObject
+    var nodePatch: JSONObject?
     var controller: WorkflowServingController
     var snapshot: RuntimeSnapshot
     var monitorTask: Task<Void, Never>?
@@ -853,11 +846,22 @@ public final class RielaAppDaemonWorkflowRuntime {
     runningWorkflows[identity]?.snapshot ?? RuntimeSnapshot(status: .stopped, detail: "Inactive")
   }
 
-  public func start(_ candidate: RielaAppDaemonWorkflowCandidate, inheritedEnvironment: [String: String] = [:]) async {
+  public func start(
+    _ candidate: RielaAppDaemonWorkflowCandidate,
+    inheritedEnvironment: [String: String] = [:],
+    defaultVariables: JSONObject = [:],
+    nodePatch: JSONObject? = nil
+  ) async {
     if runningWorkflows[candidate.id]?.snapshot.status == .running {
       return
     }
-    await startController(candidate, inheritedEnvironment: inheritedEnvironment, monitorTask: nil)
+    await startController(
+      candidate,
+      inheritedEnvironment: inheritedEnvironment,
+      defaultVariables: defaultVariables,
+      nodePatch: nodePatch,
+      monitorTask: nil
+    )
     scheduleMonitorIfNeeded(for: candidate.id)
   }
 
@@ -874,6 +878,8 @@ public final class RielaAppDaemonWorkflowRuntime {
     await startController(
       running.candidate,
       inheritedEnvironment: running.inheritedEnvironment,
+      defaultVariables: running.defaultVariables,
+      nodePatch: running.nodePatch,
       monitorTask: running.monitorTask
     )
   }
@@ -881,6 +887,8 @@ public final class RielaAppDaemonWorkflowRuntime {
   private func startController(
     _ candidate: RielaAppDaemonWorkflowCandidate,
     inheritedEnvironment: [String: String],
+    defaultVariables: JSONObject,
+    nodePatch: JSONObject?,
     monitorTask: Task<Void, Never>?
   ) async {
     let controller = WorkflowServingController(dependencies: WorkflowServingDependencies(
@@ -889,6 +897,8 @@ public final class RielaAppDaemonWorkflowRuntime {
     runningWorkflows[candidate.id] = RunningWorkflow(
       candidate: candidate,
       inheritedEnvironment: inheritedEnvironment,
+      defaultVariables: defaultVariables,
+      nodePatch: nodePatch,
       controller: controller,
       snapshot: RuntimeSnapshot(status: .starting, detail: "Starting"),
       monitorTask: monitorTask
@@ -901,6 +911,8 @@ public final class RielaAppDaemonWorkflowRuntime {
         sessionStoreRoot: defaultSessionStoreRoot(),
         eventRoot: candidate.eventRoot,
         inheritedEnvironment: inheritedEnvironment,
+        defaultVariables: defaultVariables,
+        nodePatch: nodePatch,
         startsEventSources: candidate.startsEventSources
       ))
       runningWorkflows[candidate.id]?.snapshot = snapshot(from: state)

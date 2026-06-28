@@ -1,7 +1,7 @@
 import Foundation
 import RielaCore
 
-public enum WorkflowViewerNodeRuntimeState: String, Codable, Equatable, Sendable {
+public enum WorkflowViewerNodeRuntimeState: String, Codable, Equatable, Hashable, Sendable {
   case idle
   case active
   case completed
@@ -38,11 +38,13 @@ public struct WorkflowViewerSessionSummary: Codable, Equatable, Sendable {
   }
 }
 
-public struct WorkflowViewerNode: Codable, Equatable, Identifiable, Sendable {
+public struct WorkflowViewerNode: Codable, Equatable, Hashable, Identifiable, Sendable {
   public var id: String
   public var nodeId: String
   public var title: String
   public var detail: String?
+  public var configuration: WorkflowViewerNodeConfiguration?
+  public var templateFiles: [WorkflowViewerTemplateFile]
   public var state: WorkflowViewerNodeRuntimeState
   public var depth: Int
   public var children: [WorkflowViewerNode]
@@ -52,6 +54,8 @@ public struct WorkflowViewerNode: Codable, Equatable, Identifiable, Sendable {
     nodeId: String,
     title: String,
     detail: String? = nil,
+    configuration: WorkflowViewerNodeConfiguration? = nil,
+    templateFiles: [WorkflowViewerTemplateFile] = [],
     state: WorkflowViewerNodeRuntimeState,
     depth: Int = 0,
     children: [WorkflowViewerNode] = []
@@ -60,9 +64,115 @@ public struct WorkflowViewerNode: Codable, Equatable, Identifiable, Sendable {
     self.nodeId = nodeId
     self.title = title
     self.detail = detail
+    self.configuration = configuration
+    self.templateFiles = templateFiles
     self.state = state
     self.depth = depth
     self.children = children
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case nodeId
+    case title
+    case detail
+    case configuration
+    case templateFiles
+    case state
+    case depth
+    case children
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(String.self, forKey: .id)
+    nodeId = try container.decode(String.self, forKey: .nodeId)
+    title = try container.decode(String.self, forKey: .title)
+    detail = try container.decodeIfPresent(String.self, forKey: .detail)
+    configuration = try container.decodeIfPresent(WorkflowViewerNodeConfiguration.self, forKey: .configuration)
+    templateFiles = try container.decodeIfPresent([WorkflowViewerTemplateFile].self, forKey: .templateFiles) ?? []
+    state = try container.decode(WorkflowViewerNodeRuntimeState.self, forKey: .state)
+    depth = try container.decode(Int.self, forKey: .depth)
+    children = try container.decode([WorkflowViewerNode].self, forKey: .children)
+  }
+}
+
+public struct WorkflowViewerNodeConfiguration: Codable, Equatable, Hashable, Sendable {
+  public var nodeFile: String
+  public var executionBackend: NodeExecutionBackend?
+  public var model: String
+  public var effort: NodeReasoningEffort?
+
+  public init(
+    nodeFile: String,
+    executionBackend: NodeExecutionBackend? = nil,
+    model: String,
+    effort: NodeReasoningEffort? = nil
+  ) {
+    self.nodeFile = nodeFile
+    self.executionBackend = executionBackend
+    self.model = model
+    self.effort = effort
+  }
+}
+
+public enum WorkflowViewerTemplateRole: String, Codable, Equatable, Hashable, Sendable {
+  case systemPrompt
+  case prompt
+  case sessionStart
+
+  public var label: String {
+    switch self {
+    case .systemPrompt:
+      "System prompt"
+    case .prompt:
+      "Prompt"
+    case .sessionStart:
+      "Session start"
+    }
+  }
+}
+
+public struct WorkflowViewerTemplateFile: Codable, Equatable, Hashable, Identifiable, Sendable {
+  public var id: String
+  public var stepId: String
+  public var nodeId: String
+  public var nodeFile: String
+  public var fieldPath: String
+  public var role: WorkflowViewerTemplateRole
+  public var variantName: String?
+  public var relativePath: String
+  public var resolvedPath: String
+  public var isActiveForStep: Bool
+
+  public init(
+    id: String,
+    stepId: String,
+    nodeId: String,
+    nodeFile: String,
+    fieldPath: String,
+    role: WorkflowViewerTemplateRole,
+    variantName: String? = nil,
+    relativePath: String,
+    resolvedPath: String,
+    isActiveForStep: Bool
+  ) {
+    self.id = id
+    self.stepId = stepId
+    self.nodeId = nodeId
+    self.nodeFile = nodeFile
+    self.fieldPath = fieldPath
+    self.role = role
+    self.variantName = variantName
+    self.relativePath = relativePath
+    self.resolvedPath = resolvedPath
+    self.isActiveForStep = isActiveForStep
+  }
+
+  public var displayName: String {
+    let variant = variantName.map { " / variant \($0)" } ?? ""
+    let active = isActiveForStep ? " / active" : ""
+    return "\(role.label)\(variant)\(active): \(relativePath)"
   }
 }
 
@@ -176,6 +286,7 @@ public enum WorkflowViewerLoadError: Error, Equatable, Sendable, CustomStringCon
   case workflowNotFound(String)
   case invalidWorkflow([String])
   case unsafeSessionId(String)
+  case templateFileNotFound(String)
 
   public var description: String {
     switch self {
@@ -185,6 +296,8 @@ public enum WorkflowViewerLoadError: Error, Equatable, Sendable, CustomStringCon
       "workflow is invalid: \(diagnostics.joined(separator: "; "))"
     case let .unsafeSessionId(sessionId):
       "unsafe session id: \(sessionId)"
+    case let .templateFileNotFound(path):
+      "template file was not found at \(path)"
     }
   }
 }
@@ -224,9 +337,29 @@ public struct WorkflowViewerLoader: Sendable {
       sessionStoreCandidates: sessionStoreResolution.candidates,
       selectedSessionId: selectedSnapshot?.session.sessionId,
       sessions: summaries,
-      nodes: buildTree(workflow: workflow, selectedSession: selectedSnapshot?.session),
+      nodes: buildTree(workflow: workflow, workflowDirectory: workflowDirectory, selectedSession: selectedSnapshot?.session),
       diagnostics: diagnostics
     )
+  }
+
+  public func templateFileContent(_ templateFile: WorkflowViewerTemplateFile, workflowDirectory: String) throws -> String {
+    let resolved = try resolveTemplateFile(templateFile, workflowDirectory: workflowDirectory)
+    guard FileManager.default.fileExists(atPath: resolved.path) else {
+      throw WorkflowViewerLoadError.templateFileNotFound(resolved.path)
+    }
+    return try String(contentsOf: resolved, encoding: .utf8)
+  }
+
+  public func saveTemplateFile(
+    _ content: String,
+    templateFile: WorkflowViewerTemplateFile,
+    workflowDirectory: String
+  ) throws {
+    let resolved = try resolveTemplateFile(templateFile, workflowDirectory: workflowDirectory)
+    guard FileManager.default.fileExists(atPath: resolved.path) else {
+      throw WorkflowViewerLoadError.templateFileNotFound(resolved.path)
+    }
+    try content.write(to: resolved, atomically: true, encoding: .utf8)
   }
 
   public func nodeMessages(
@@ -324,15 +457,37 @@ public struct WorkflowViewerLoader: Sendable {
     )
   }
 
-  private func buildTree(workflow: WorkflowDefinition, selectedSession: WorkflowSession?) -> [WorkflowViewerNode] {
+  private func buildTree(
+    workflow: WorkflowDefinition,
+    workflowDirectory: String,
+    selectedSession: WorkflowSession?
+  ) -> [WorkflowViewerNode] {
     let stepsById = Dictionary(uniqueKeysWithValues: workflow.steps.map { ($0.id, $0) })
     var rendered: Set<String> = []
     var nodes: [WorkflowViewerNode] = []
     if stepsById[workflow.entryStepId] != nil {
-      nodes.append(renderNode(stepId: workflow.entryStepId, workflow: workflow, stepsById: stepsById, selectedSession: selectedSession, path: [], rendered: &rendered, depth: 0))
+      nodes.append(renderNode(
+        stepId: workflow.entryStepId,
+        workflow: workflow,
+        workflowDirectory: workflowDirectory,
+        stepsById: stepsById,
+        selectedSession: selectedSession,
+        path: [],
+        rendered: &rendered,
+        depth: 0
+      ))
     }
     for step in workflow.steps where !rendered.contains(step.id) {
-      nodes.append(renderNode(stepId: step.id, workflow: workflow, stepsById: stepsById, selectedSession: selectedSession, path: [], rendered: &rendered, depth: 0))
+      nodes.append(renderNode(
+        stepId: step.id,
+        workflow: workflow,
+        workflowDirectory: workflowDirectory,
+        stepsById: stepsById,
+        selectedSession: selectedSession,
+        path: [],
+        rendered: &rendered,
+        depth: 0
+      ))
     }
     return nodes
   }
@@ -340,6 +495,7 @@ public struct WorkflowViewerLoader: Sendable {
   private func renderNode(
     stepId: String,
     workflow: WorkflowDefinition,
+    workflowDirectory: String,
     stepsById: [String: WorkflowStepRef],
     selectedSession: WorkflowSession?,
     path: Set<String>,
@@ -357,6 +513,7 @@ public struct WorkflowViewerLoader: Sendable {
         renderNode(
           stepId: transition.toStepId,
           workflow: workflow,
+          workflowDirectory: workflowDirectory,
           stepsById: stepsById,
           selectedSession: selectedSession,
           path: path.union([stepId]),
@@ -374,10 +531,206 @@ public struct WorkflowViewerLoader: Sendable {
       nodeId: step.nodeId,
       title: step.id,
       detail: detailParts.isEmpty ? nil : detailParts.joined(separator: " - "),
+      configuration: nodeConfiguration(for: step, workflow: workflow, workflowDirectory: workflowDirectory),
+      templateFiles: templateFiles(for: step, workflow: workflow, workflowDirectory: workflowDirectory),
       state: runtimeState(stepId: step.id, selectedSession: selectedSession),
       depth: depth,
       children: children
     )
+  }
+
+  private func nodeConfiguration(
+    for step: WorkflowStepRef,
+    workflow: WorkflowDefinition,
+    workflowDirectory: String
+  ) -> WorkflowViewerNodeConfiguration? {
+    guard let nodePayload = nodePayload(for: step, workflow: workflow, workflowDirectory: workflowDirectory) else {
+      return nil
+    }
+    return WorkflowViewerNodeConfiguration(
+      nodeFile: nodePayload.nodeFile,
+      executionBackend: nodePayload.payload.executionBackend,
+      model: nodePayload.payload.model,
+      effort: nodePayload.payload.effort
+    )
+  }
+
+  private func templateFiles(
+    for step: WorkflowStepRef,
+    workflow: WorkflowDefinition,
+    workflowDirectory: String
+  ) -> [WorkflowViewerTemplateFile] {
+    guard let nodePayload = nodePayload(for: step, workflow: workflow, workflowDirectory: workflowDirectory) else {
+      return []
+    }
+
+    return templateFiles(
+      payload: nodePayload.payload,
+      step: step,
+      nodeFile: nodePayload.nodeFile,
+      workflowDirectory: workflowDirectory
+    )
+  }
+
+  private func nodePayload(
+    for step: WorkflowStepRef,
+    workflow: WorkflowDefinition,
+    workflowDirectory: String
+  ) -> (nodeFile: String, payload: AgentNodePayload)? {
+    guard let registryNode = workflow.nodeRegistry.first(where: { $0.id == step.nodeId }),
+      let nodeFile = nodeFile(for: registryNode),
+      let nodeURL = try? resolveWorkflowRelativeFilePath(nodeFile, workflowDirectory: workflowDirectory),
+      FileManager.default.fileExists(atPath: nodeURL.path),
+      let data = try? Data(contentsOf: nodeURL),
+      let payload = try? JSONDecoder().decode(AgentNodePayload.self, from: data)
+    else {
+      return nil
+    }
+    return (nodeFile, payload)
+  }
+
+  private func templateFiles(
+    payload: AgentNodePayload,
+    step: WorkflowStepRef,
+    nodeFile: String,
+    workflowDirectory: String
+  ) -> [WorkflowViewerTemplateFile] {
+    let variant = step.promptVariant.flatMap { payload.promptVariants?[$0] }
+    var files: [WorkflowViewerTemplateFile] = []
+
+    appendTemplateFile(
+      payload.systemPromptTemplateFile,
+      fieldPath: "systemPromptTemplateFile",
+      role: .systemPrompt,
+      step: step,
+      nodeFile: nodeFile,
+      workflowDirectory: workflowDirectory,
+      isActiveForStep: variant == nil || variant?.systemPromptTemplate == nil && variant?.systemPromptTemplateFile == nil,
+      to: &files
+    )
+    appendTemplateFile(
+      payload.promptTemplateFile,
+      fieldPath: "promptTemplateFile",
+      role: .prompt,
+      step: step,
+      nodeFile: nodeFile,
+      workflowDirectory: workflowDirectory,
+      isActiveForStep: variant == nil || variant?.promptTemplate == nil && variant?.promptTemplateFile == nil,
+      to: &files
+    )
+    appendTemplateFile(
+      payload.sessionStartPromptTemplateFile,
+      fieldPath: "sessionStartPromptTemplateFile",
+      role: .sessionStart,
+      step: step,
+      nodeFile: nodeFile,
+      workflowDirectory: workflowDirectory,
+      isActiveForStep: variant == nil || variant?.sessionStartPromptTemplate == nil && variant?.sessionStartPromptTemplateFile == nil,
+      to: &files
+    )
+
+    for variantName in (payload.promptVariants ?? [:]).keys.sorted() {
+      guard let promptVariant = payload.promptVariants?[variantName] else {
+        continue
+      }
+      appendTemplateFile(
+        promptVariant.systemPromptTemplateFile,
+        fieldPath: "promptVariants.\(variantName).systemPromptTemplateFile",
+        role: .systemPrompt,
+        variantName: variantName,
+        step: step,
+        nodeFile: nodeFile,
+        workflowDirectory: workflowDirectory,
+        isActiveForStep: step.promptVariant == variantName,
+        to: &files
+      )
+      appendTemplateFile(
+        promptVariant.promptTemplateFile,
+        fieldPath: "promptVariants.\(variantName).promptTemplateFile",
+        role: .prompt,
+        variantName: variantName,
+        step: step,
+        nodeFile: nodeFile,
+        workflowDirectory: workflowDirectory,
+        isActiveForStep: step.promptVariant == variantName,
+        to: &files
+      )
+      appendTemplateFile(
+        promptVariant.sessionStartPromptTemplateFile,
+        fieldPath: "promptVariants.\(variantName).sessionStartPromptTemplateFile",
+        role: .sessionStart,
+        variantName: variantName,
+        step: step,
+        nodeFile: nodeFile,
+        workflowDirectory: workflowDirectory,
+        isActiveForStep: step.promptVariant == variantName,
+        to: &files
+      )
+    }
+
+    return files
+  }
+
+  private func appendTemplateFile(
+    _ relativePath: String?,
+    fieldPath: String,
+    role: WorkflowViewerTemplateRole,
+    variantName: String? = nil,
+    step: WorkflowStepRef,
+    nodeFile: String,
+    workflowDirectory: String,
+    isActiveForStep: Bool,
+    to files: inout [WorkflowViewerTemplateFile]
+  ) {
+    guard let relativePath,
+      let resolved = try? resolvePromptTemplatePath(
+        relativePath,
+        fieldName: fieldPath,
+        workflowDirectory: URL(fileURLWithPath: workflowDirectory, isDirectory: true)
+      )
+    else {
+      return
+    }
+    files.append(WorkflowViewerTemplateFile(
+      id: [step.id, step.nodeId, fieldPath, relativePath].joined(separator: "|"),
+      stepId: step.id,
+      nodeId: step.nodeId,
+      nodeFile: nodeFile,
+      fieldPath: fieldPath,
+      role: role,
+      variantName: variantName,
+      relativePath: relativePath,
+      resolvedPath: resolved.path,
+      isActiveForStep: isActiveForStep
+    ))
+  }
+
+  private func nodeFile(for registryNode: WorkflowNodeRegistryRef) -> String? {
+    if let nodeFile = registryNode.nodeFile {
+      return nodeFile
+    }
+    if registryNode.addon == nil && registryNode.nodeRef == nil {
+      return "nodes/\(registryNode.id).json"
+    }
+    return nil
+  }
+
+  private func resolveTemplateFile(_ templateFile: WorkflowViewerTemplateFile, workflowDirectory: String) throws -> URL {
+    try resolvePromptTemplatePath(
+      templateFile.relativePath,
+      fieldName: templateFile.fieldPath,
+      workflowDirectory: URL(fileURLWithPath: workflowDirectory, isDirectory: true)
+    )
+  }
+
+  private func resolveWorkflowRelativeFilePath(_ relativePath: String, workflowDirectory: String) throws -> URL {
+    let root = URL(fileURLWithPath: workflowDirectory, isDirectory: true).standardizedFileURL.resolvingSymlinksInPath()
+    let resolved = root.appendingPathComponent(relativePath).standardizedFileURL.resolvingSymlinksInPath()
+    let rootPath = root.path
+    guard resolved.path == rootPath || resolved.path.hasPrefix(rootPath + "/") else {
+      throw WorkflowViewerLoadError.workflowNotFound(resolved.path)
+    }
+    return resolved
   }
 
   private func runtimeState(stepId: String, selectedSession: WorkflowSession?) -> WorkflowViewerNodeRuntimeState {

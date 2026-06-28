@@ -6,7 +6,7 @@ public enum CliAgentBackend: String, Codable, CaseIterable, Sendable {
   case cursorCliAgent = "cursor-cli-agent"
 }
 
-public enum NodeExecutionBackend: String, Codable, CaseIterable, Sendable {
+public enum NodeExecutionBackend: String, Codable, CaseIterable, Hashable, Sendable {
   case codexAgent = "codex-agent"
   case claudeCodeAgent = "claude-code-agent"
   case cursorCliAgent = "cursor-cli-agent"
@@ -29,7 +29,7 @@ public enum NodeExecutionBackend: String, Codable, CaseIterable, Sendable {
   }
 }
 
-public enum NodeReasoningEffort: String, Codable, CaseIterable, Sendable {
+public enum NodeReasoningEffort: String, Codable, CaseIterable, Hashable, Sendable {
   case low
   case medium
   case high

@@ -20,23 +20,33 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   private let statusLabel = NSTextField(labelWithString: "")
   private let actionStatusLabel = NSTextField(labelWithString: "Last Action: Ready")
   private let selectionDetailLabel = NSTextField(labelWithString: "")
+  private let viewWorkflowButton = NSButton(title: "View Selected", target: nil, action: nil)
   private let revealSourceButton = NSButton(title: "Reveal Selected", target: nil, action: nil)
+  private let duplicateButton = NSButton(title: "Duplicate Instance", target: nil, action: nil)
+  private let renameButton = NSButton(title: "Rename ID...", target: nil, action: nil)
   private let removeButton = NSButton(title: "Remove Selected", target: nil, action: nil)
   private let startButton = NSButton(title: "Auto-Start On", target: nil, action: nil)
   private let stopButton = NSButton(title: "Auto-Start Off", target: nil, action: nil)
   private let enableButton = NSButton(title: "Enable", target: nil, action: nil)
   private let disableButton = NSButton(title: "Disable", target: nil, action: nil)
   private let setEnvironmentButton = NSButton(title: "Env File...", target: nil, action: nil)
+  private let setEnvironmentVariablesButton = NSButton(title: "Env Vars...", target: nil, action: nil)
+  private let setVariablesButton = NSButton(title: "Variables...", target: nil, action: nil)
   private let onRefresh: () -> Void
   private let onSelectProfile: (String) -> Void
   private let onAddDirectory: () -> Void
   private let onAddProject: () -> Void
   private let onOpenProfileFolder: () -> Void
+  private let onViewSelectedWorkflow: (String) -> Void
   private let onRevealSelectedSource: (String) -> Void
+  private let onDuplicateWorkflow: (String) -> Void
+  private let onRenameWorkflow: (String) -> Void
   private let onRemoveDirectory: (String) -> Void
   private let onSetEnabled: (String, Bool) -> Void
   private let onSetActive: (String, Bool) -> Void
   private let onSetEnvironment: (String) -> Void
+  private let onSetEnvironmentVariables: (String) -> Void
+  private let onSetVariables: (String) -> Void
   private let environmentSummary: (RielaAppDaemonWorkflowCandidate) -> String
   private let environmentColumnStatus: (RielaAppDaemonWorkflowCandidate) -> String
 
@@ -56,11 +66,16 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     onAddDirectory: @escaping () -> Void,
     onAddProject: @escaping () -> Void,
     onOpenProfileFolder: @escaping () -> Void,
+    onViewSelectedWorkflow: @escaping (String) -> Void,
     onRevealSelectedSource: @escaping (String) -> Void,
+    onDuplicateWorkflow: @escaping (String) -> Void,
+    onRenameWorkflow: @escaping (String) -> Void,
     onRemoveDirectory: @escaping (String) -> Void,
     onSetEnabled: @escaping (String, Bool) -> Void,
     onSetActive: @escaping (String, Bool) -> Void,
     onSetEnvironment: @escaping (String) -> Void,
+    onSetEnvironmentVariables: @escaping (String) -> Void,
+    onSetVariables: @escaping (String) -> Void,
     environmentSummary: @escaping (RielaAppDaemonWorkflowCandidate) -> String,
     environmentColumnStatus: @escaping (RielaAppDaemonWorkflowCandidate) -> String
   ) {
@@ -69,11 +84,16 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     self.onAddDirectory = onAddDirectory
     self.onAddProject = onAddProject
     self.onOpenProfileFolder = onOpenProfileFolder
+    self.onViewSelectedWorkflow = onViewSelectedWorkflow
     self.onRevealSelectedSource = onRevealSelectedSource
+    self.onDuplicateWorkflow = onDuplicateWorkflow
+    self.onRenameWorkflow = onRenameWorkflow
     self.onRemoveDirectory = onRemoveDirectory
     self.onSetEnabled = onSetEnabled
     self.onSetActive = onSetActive
     self.onSetEnvironment = onSetEnvironment
+    self.onSetEnvironmentVariables = onSetEnvironmentVariables
+    self.onSetVariables = onSetVariables
     self.environmentSummary = environmentSummary
     self.environmentColumnStatus = environmentColumnStatus
     let window = NSWindow(
@@ -161,8 +181,14 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     let addProjectButton = NSButton(title: "Add Project...", target: self, action: #selector(addProject))
     let openProfileButton = NSButton(title: "Open Profile Folder", target: self, action: #selector(openProfileFolder))
     let refreshButton = NSButton(title: "Refresh", target: self, action: #selector(refresh))
+    viewWorkflowButton.target = self
+    viewWorkflowButton.action = #selector(viewSelectedWorkflow)
     revealSourceButton.target = self
     revealSourceButton.action = #selector(revealSelectedSource)
+    duplicateButton.target = self
+    duplicateButton.action = #selector(duplicateSelectedWorkflow)
+    renameButton.target = self
+    renameButton.action = #selector(renameSelectedWorkflow)
     removeButton.target = self
     removeButton.action = #selector(removeSelectedDirectory)
     startButton.target = self
@@ -175,17 +201,26 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     disableButton.action = #selector(disableSelected)
     setEnvironmentButton.target = self
     setEnvironmentButton.action = #selector(setSelectedEnvironment)
+    setEnvironmentVariablesButton.target = self
+    setEnvironmentVariablesButton.action = #selector(setSelectedEnvironmentVariables)
+    setVariablesButton.target = self
+    setVariablesButton.action = #selector(setSelectedVariables)
     useProfileButton.toolTip = "Switch to the typed profile name, creating it if needed."
     addButton.toolTip = "Import a workflow folder, package folder, .rielapkg, or .zip into this profile."
     addProjectButton.toolTip = "Show workflows and packages from a project directory without copying them into this profile."
     openProfileButton.toolTip = "Open this profile's workflows, packages, and daemon state in Finder."
+    viewWorkflowButton.toolTip = "Open the selected workflow in the viewer."
     revealSourceButton.toolTip = "Reveal the selected workflow, package, or project source in Finder."
+    duplicateButton.toolTip = "Create another managed instance from the selected source workflow."
+    renameButton.toolTip = "Change the selected managed instance id and display name."
     removeButton.toolTip = "Remove the selected profile import or project reference."
     startButton.toolTip = "Turn on auto-start for the selected enabled workflow and start it now."
     stopButton.toolTip = "Turn off auto-start for the selected workflow and stop it now."
     enableButton.toolTip = "Enable the selected disabled workflow or package for this profile."
     disableButton.toolTip = "Disable the selected enabled workflow or package for this profile."
     setEnvironmentButton.toolTip = "Select a credential .env file for the selected workflow."
+    setEnvironmentVariablesButton.toolTip = "Edit inline environment variables for this managed workflow instance."
+    setVariablesButton.toolTip = "Edit workflow default variables for this managed workflow instance."
     statusLabel.lineBreakMode = .byTruncatingTail
     actionStatusLabel.lineBreakMode = .byTruncatingMiddle
     actionStatusLabel.textColor = .secondaryLabelColor
@@ -205,14 +240,19 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       addButton,
       addProjectButton,
       openProfileButton,
+      viewWorkflowButton,
       revealSourceButton,
+      duplicateButton,
+      renameButton,
       removeButton,
       refreshButton,
       startButton,
       stopButton,
       enableButton,
       disableButton,
-      setEnvironmentButton
+      setEnvironmentButton,
+      setEnvironmentVariablesButton,
+      setVariablesButton
     ])
     actionRow.orientation = .horizontal
     actionRow.spacing = 10
@@ -396,11 +436,32 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     onOpenProfileFolder()
   }
 
+  @objc private func viewSelectedWorkflow() {
+    guard let candidate = selectedCandidate(in: enabledTable) ?? selectedCandidate(in: disabledTable) else {
+      return
+    }
+    onViewSelectedWorkflow(candidate.id)
+  }
+
   @objc private func revealSelectedSource() {
     guard let candidate = selectedCandidate(in: enabledTable) ?? selectedCandidate(in: disabledTable) else {
       return
     }
     onRevealSelectedSource(candidate.id)
+  }
+
+  @objc private func duplicateSelectedWorkflow() {
+    guard let candidate = selectedCandidate(in: enabledTable) ?? selectedCandidate(in: disabledTable) else {
+      return
+    }
+    onDuplicateWorkflow(candidate.id)
+  }
+
+  @objc private func renameSelectedWorkflow() {
+    guard let candidate = selectedCandidate(in: enabledTable) ?? selectedCandidate(in: disabledTable) else {
+      return
+    }
+    onRenameWorkflow(candidate.id)
   }
 
   @objc private func removeSelectedDirectory() {
@@ -443,6 +504,20 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       return
     }
     onSetEnvironment(candidate.id)
+  }
+
+  @objc private func setSelectedEnvironmentVariables() {
+    guard let candidate = selectedCandidate(in: enabledTable) ?? selectedCandidate(in: disabledTable) else {
+      return
+    }
+    onSetEnvironmentVariables(candidate.id)
+  }
+
+  @objc private func setSelectedVariables() {
+    guard let candidate = selectedCandidate(in: enabledTable) ?? selectedCandidate(in: disabledTable) else {
+      return
+    }
+    onSetVariables(candidate.id)
   }
 
   @objc private func tableClicked(_ sender: NSTableView) {
@@ -501,6 +576,8 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     let scope = candidate.isRielaAppProfileScoped ? "profile" : "external"
     var details = [
       "Selected: \(candidate.displayName)",
+      "Management ID: \(candidate.id)",
+      "Source ID: \(candidate.sourceIdentity)",
       "Source: \(candidate.sourceDescription)",
       "Scope: \(scope)",
       "Auto-start: \(preference.active ? "yes" : "no")",
@@ -512,6 +589,9 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       details.append("Event runner: \(RielaAppDaemonProcessEventSourceFactory().resolvedExecutableDescription())")
     }
     details.append("Environment: \(environmentSummary(candidate))")
+    if !preference.defaultVariables.isEmpty {
+      details.append("Variables: \(preference.defaultVariables.count)")
+    }
     selectionDetailLabel.stringValue = details.joined(separator: " | ")
   }
 
@@ -522,13 +602,18 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     let hasSelection = selectedCandidate != nil
     let isAutoStartEnabled = selectedCandidate.map { state.preference(for: $0.id).active } ?? false
     let selectedRuntimeIsActive = selectedCandidate.map { isRuntimeActive(identity: $0.id) } ?? false
+    viewWorkflowButton.isEnabled = hasSelection
     revealSourceButton.isEnabled = hasSelection
+    duplicateButton.isEnabled = hasSelection
+    renameButton.isEnabled = hasSelection
     removeButton.isEnabled = selectedCandidate.map(canRemove) ?? false
     startButton.isEnabled = selectedEnabled != nil && !isAutoStartEnabled
     stopButton.isEnabled = hasSelection && (isAutoStartEnabled || selectedRuntimeIsActive)
     enableButton.isEnabled = selectedDisabled != nil
     disableButton.isEnabled = selectedEnabled != nil
     setEnvironmentButton.isEnabled = hasSelection
+    setEnvironmentVariablesButton.isEnabled = hasSelection
+    setVariablesButton.isEnabled = hasSelection
   }
 
   private func isRuntimeActive(identity: String) -> Bool {

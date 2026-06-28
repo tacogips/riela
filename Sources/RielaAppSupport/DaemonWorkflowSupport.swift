@@ -312,21 +312,7 @@ public struct RielaAppDaemonWorkflowState: Codable, Equatable, Sendable {
   public func managedCandidates(
     from sourceCandidates: [RielaAppDaemonWorkflowCandidate]
   ) -> [RielaAppDaemonWorkflowCandidate] {
-    let sourcesByIdentity = Dictionary(uniqueKeysWithValues: sourceCandidates.map { ($0.id, $0) })
-    let configuredCandidates = preferences
-      .sorted { lhs, rhs in lhs.key.localizedCaseInsensitiveCompare(rhs.key) == .orderedAscending }
-      .compactMap { identity, preference -> RielaAppDaemonWorkflowCandidate? in
-        let sourceIdentity = preference.sourceIdentity ?? identity
-        guard let source = sourcesByIdentity[sourceIdentity] else {
-          return nil
-        }
-        return source.managedInstance(identity: identity, displayName: preference.displayName)
-      }
-    let configuredSourceIds = Set(preferences.map { identity, preference in
-      preference.sourceIdentity ?? identity
-    })
-    let unconfiguredSources = sourceCandidates.filter { !configuredSourceIds.contains($0.id) }
-    return configuredCandidates + unconfiguredSources
+    workflowInstances(from: sourceCandidates).map(\.candidate)
   }
 
   public init(from decoder: Decoder) throws {

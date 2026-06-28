@@ -130,6 +130,94 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
     XCTAssertTrue(candidates.allSatisfy(\.isManagedInstance))
   }
 
+  func testStateProjectsWorkflowInstancesWithSourceAndPreference() {
+    let source = RielaAppDaemonWorkflowCandidate(
+      id: "user-workflow:telegram-bot",
+      workflowId: "telegram-bot",
+      displayName: "Telegram Bot",
+      sourceDescription: "user workflow",
+      workflowDirectory: "/workflows/telegram-bot",
+      workingDirectory: "/workflows",
+      eventRoot: "/workflows/telegram-bot/.riela-events",
+      eventSources: [RielaAppDaemonEventSourceSummary(id: "telegram", kind: "telegram-gateway")]
+    )
+    let state = RielaAppDaemonWorkflowState(preferences: [
+      "persona-a": RielaAppDaemonWorkflowPreference(
+        identity: "persona-a",
+        sourceIdentity: source.id,
+        displayName: "Persona A",
+        available: true,
+        active: true,
+        workingDirectory: "/projects/persona-a",
+        environmentVariables: ["PERSONA": "a"],
+        defaultVariables: ["persona": .string("a")]
+      )
+    ])
+
+    let instances = state.workflowInstances(from: [source])
+    let instance = instances.first
+
+    XCTAssertEqual(instances.count, 1)
+    XCTAssertEqual(instance?.id, "persona-a")
+    XCTAssertEqual(instance?.source.id, source.id)
+    XCTAssertEqual(instance?.sourceIdentity, source.id)
+    XCTAssertEqual(instance?.displayName, "Persona A")
+    XCTAssertEqual(instance?.preference.workingDirectory, "/projects/persona-a")
+    XCTAssertEqual(instance?.preference.defaultVariables["persona"], .string("a"))
+    XCTAssertEqual(instance?.candidate.id, "persona-a")
+    XCTAssertEqual(instance?.candidate.sourceIdentity, source.id)
+    XCTAssertEqual(instance?.candidate.workflowDirectory, source.workflowDirectory)
+  }
+
+  func testStateKeepsUnconfiguredWorkflowSourcesAsUnconfiguredInstances() {
+    let source = RielaAppDaemonWorkflowCandidate(
+      id: "user-workflow:mail-digest",
+      workflowId: "mail-digest",
+      displayName: "Mail Digest",
+      sourceDescription: "user workflow",
+      workflowDirectory: "/workflows/mail-digest",
+      workingDirectory: "/workflows",
+      eventRoot: nil,
+      eventSources: []
+    )
+
+    let instance = RielaAppDaemonWorkflowState().workflowInstances(from: [source]).first
+
+    XCTAssertEqual(instance?.id, source.id)
+    XCTAssertEqual(instance?.source.id, source.id)
+    XCTAssertEqual(instance?.displayName, "Mail Digest")
+    XCTAssertEqual(instance?.preference.available, false)
+    XCTAssertEqual(instance?.isConfigured, false)
+    XCTAssertEqual(instance?.candidate, source)
+  }
+
+  func testWorkflowInstanceNormalizesPreferenceIdentityToStateKey() {
+    let source = RielaAppDaemonWorkflowCandidate(
+      id: "user-workflow:telegram-bot",
+      workflowId: "telegram-bot",
+      displayName: "Telegram Bot",
+      sourceDescription: "user workflow",
+      workflowDirectory: "/workflows/telegram-bot",
+      workingDirectory: "/workflows",
+      eventRoot: nil,
+      eventSources: []
+    )
+    let state = RielaAppDaemonWorkflowState(preferences: [
+      "persona-a": RielaAppDaemonWorkflowPreference(
+        identity: "stale-persona-id",
+        sourceIdentity: source.id,
+        displayName: "Persona A",
+        available: true
+      )
+    ])
+
+    let instance = state.workflowInstances(from: [source]).first
+
+    XCTAssertEqual(instance?.id, "persona-a")
+    XCTAssertEqual(instance?.preference.identity, "persona-a")
+    XCTAssertEqual(instance?.candidate.id, "persona-a")
+  }
+
   func testProcessEventSourceFactoryPassesNodePatchToEventsServeCommand() async throws {
     let process = NodePatchFakeEventServeProcessHandle(isRunning: true)
     let launcher = NodePatchEventLauncher(process: process)

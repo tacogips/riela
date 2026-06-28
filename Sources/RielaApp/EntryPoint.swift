@@ -27,6 +27,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   var status = "Ready"
   private var daemonProfileName = RielaAppProfileName.default
   var daemonState = RielaAppDaemonWorkflowState()
+  var daemonInstances: [WorkflowInstance] = []
   var daemonCandidates: [RielaAppDaemonWorkflowCandidate] = []
   var appHomeDirectory = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
   private var daemonStatusRefreshTimer: Timer?
@@ -55,18 +56,18 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     daemonDiscovery = RielaAppDaemonWorkflowDiscovery(homeDirectory: appHomeDirectory, projectRoot: launchOptions.projectRoot)
     daemonStore = makeDaemonStore(profileName: daemonProfileName)
     daemonState = daemonStore.load()
-    daemonCandidates = discoverDaemonCandidates()
+    refreshDaemonInstanceCache()
     Task {
       await telemetry.recordLog(RielaTelemetryLog(
         name: "riela.app.start",
         attributes: [
           "runtime.surface": "app",
           "profile.name": daemonProfileName.rawValue,
-          "workflow.count": String(daemonCandidates.count)
+          "workflow.count": String(daemonInstances.count)
         ]
       ))
     }
-    logDaemon("profile=\(daemonProfileName.rawValue) discovered \(daemonCandidates.count) user daemon workflow candidate(s)")
+    logDaemon("profile=\(daemonProfileName.rawValue) discovered \(daemonInstances.count) workflow instance(s)")
     configureStatusItem()
     rebuildMenu()
     startDaemonStatusRefreshTimer()
@@ -422,8 +423,9 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   }
 
   private func startEnabledDaemonWorkflows() async {
-    for candidate in daemonCandidates {
-      let preference = daemonState.preference(for: candidate.id)
+    for instance in daemonInstances {
+      let candidate = instance.candidate
+      let preference = instance.preference
       logDaemon(
         "profile=\(daemonProfileName.rawValue) candidate=\(candidate.id) available=\(preference.available) active=\(preference.active)"
       )
@@ -440,7 +442,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   }
 
   func refreshDaemonWorkflowWindow() {
-    daemonCandidates = discoverDaemonCandidates()
+    refreshDaemonInstanceCache()
     daemonWindowController?.update(
       profileName: daemonProfileName,
       profileNames: availableDaemonProfileNames(),
@@ -596,8 +598,12 @@ final class RielaApp: NSObject, NSApplicationDelegate {
 
   private func daemonCandidates(in projectRoot: URL) -> [RielaAppDaemonWorkflowCandidate] {
     let projectRootPath = projectRoot.standardizedFileURL.path
-    return daemonCandidates.filter { candidate in
-      RielaAppDaemonWorkflowState.path(candidate.workflowDirectory, isContainedIn: projectRootPath)
+    return daemonInstances.compactMap { instance in
+      let candidate = instance.candidate
+      guard RielaAppDaemonWorkflowState.path(candidate.workflowDirectory, isContainedIn: projectRootPath) else {
+        return nil
+      }
+      return candidate
     }
   }
 
@@ -777,14 +783,19 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       .appendingPathComponent(daemonProfileName.rawValue, isDirectory: true)
   }
 
-  private func discoverDaemonCandidates() -> [RielaAppDaemonWorkflowCandidate] {
+  private func refreshDaemonInstanceCache() {
+    daemonInstances = discoverDaemonInstances()
+    daemonCandidates = daemonInstances.map(\.candidate)
+  }
+
+  private func discoverDaemonInstances() -> [WorkflowInstance] {
     let sourceCandidates = daemonDiscovery.discoverUserDaemonWorkflows(
       appWorkflowRoot: daemonAppWorkflowRoot,
       appPackageRoot: daemonAppPackageRoot,
       projectDirectories: daemonState.projectDirectories,
       additionalWorkflowDirectories: daemonState.workflowDirectories
     )
-    return daemonState.managedCandidates(from: sourceCandidates)
+    return daemonState.workflowInstances(from: sourceCandidates)
   }
 }
 

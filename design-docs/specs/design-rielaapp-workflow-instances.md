@@ -78,6 +78,11 @@ The top profile row contains:
 
 - Profile popup
 
+The top area does not show profile summary text such as
+`Profile: default | 1 running | 4 stopped`, last-action captions, or selected
+instance captions. Those details either belong in the status menu or in the
+same-window instance detail view after the user chooses an instance.
+
 The Instances section header contains:
 
 - `+ Add Instance`
@@ -195,16 +200,17 @@ separate source-management action outside the primary instance list.
 
 Selecting an instance keeps the user in the same window. Choosing a row
 replaces the list with an instance detail view and a `Back to Instances`
-control. The detail view contains runtime actions, configuration actions, and
-source actions without opening a separate window.
+control. The detail header does not repeat state labels such as `State: Running`
+or `Runtime: ...`. The list already owns state. The detail view shows current
+settings as persistent field/value rows. Editable rows behave like iOS Settings
+rows: selecting the row opens the editor, with a disclosure marker instead of
+an exposed `Edit`, `Rename`, or `Duplicate` button.
 
 Primary row actions:
 
 - list row selection: open the same-window instance detail view
 - detail view actions:
   - `Reveal Source`
-  - `Duplicate`
-  - `Rename`
   - `Stop`
   - `Start`
   - `Restart`
@@ -212,6 +218,16 @@ Primary row actions:
   - `Environment...`
   - `Working Directory...`
   - `Variables...`
+
+Current setting rows shown in the detail view:
+
+- workflow source, selectable to reveal;
+- name, selectable to rename;
+- environment file, selectable to edit;
+- inline environment variables, selectable to edit;
+- working directory, selectable to edit;
+- default variables, selectable to edit;
+- event sources, read-only.
 
 The header should not show every row action as a separate button. These actions
 belong near the selection as a compact action menu or in the viewer/editor.
@@ -358,10 +374,16 @@ Add Instance workflow selection empty state:
   or an `Active` column.
 - The status menu no longer contains active/enabled/available summaries.
 - The profile row contains only profile selection.
+- The main list top area does not show profile summary, last-action, or
+  selected-instance caption rows.
 - The Instances section header contains `+ Add Instance` and `Refresh`; row
   actions live in the same-window instance detail view.
 - Instance details open in the same window with a `Back to Instances` control,
   not in a separate instance-editing window.
+- The detail view shows current settings as selectable rows instead of
+  header/caption labels for state or runtime.
+- The detail view does not expose standalone `Rename`, `Duplicate`, or `Edit`
+  buttons; editable settings are opened by selecting their rows.
 - Workflow sources are selected from the `+` add-instance sheet rather than
   shown as a permanent disabled-instance list.
 - A user can create an always-on instance by selecting a workflow and entering

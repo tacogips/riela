@@ -60,17 +60,17 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
 
   private let instanceTable = NSTableView()
   private let profilePopup = NSPopUpButton()
-  private let statusLabel = NSTextField(labelWithString: "")
-  private let actionStatusLabel = NSTextField(labelWithString: "Last Action: Ready")
-  private let selectionDetailLabel = NSTextField(labelWithString: "")
   private let addListButton = NSButton(title: "+ Add Instance", target: nil, action: nil)
   private let refreshButton = NSButton(title: "Refresh", target: nil, action: nil)
   private let backToInstancesButton = NSButton(title: "Back to Instances", target: nil, action: nil)
   private let detailTitleLabel = NSTextField(labelWithString: "")
-  private let detailStateLabel = NSTextField(labelWithString: "")
-  private let detailSourceLabel = NSTextField(labelWithString: "")
-  private let detailRuntimeLabel = NSTextField(labelWithString: "")
-  private let detailConfigurationLabel = NSTextField(labelWithString: "")
+  private let detailNameValueLabel = NSTextField(labelWithString: "")
+  private let detailWorkflowValueLabel = NSTextField(labelWithString: "")
+  private let detailEnvironmentValueLabel = NSTextField(labelWithString: "")
+  private let detailInlineEnvironmentValueLabel = NSTextField(labelWithString: "")
+  private let detailWorkingDirectoryValueLabel = NSTextField(labelWithString: "")
+  private let detailVariablesValueLabel = NSTextField(labelWithString: "")
+  private let detailEventSourcesValueLabel = NSTextField(labelWithString: "")
   private let onRefresh: () -> Void
   private let onSelectProfile: (String) -> Void
   private let onCreateProfile: (String) -> RielaAppProfileName?
@@ -190,16 +190,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     updateProfileControls()
     instanceTable.reloadData()
     restoreSelection()
-    updateSelectionDetail()
     updateInstanceDetail()
-    actionStatusLabel.stringValue = "Last Action: \(statusMessage)"
-    let rows = instanceRows
-    if rows.isEmpty {
-      statusLabel.stringValue = "Profile: \(profileName.rawValue) | no instances | press + to select a workflow"
-      return
-    }
-    let counts = stateCounts(for: rows)
-    statusLabel.stringValue = "Profile: \(profileName.rawValue) | \(counts)"
   }
 
   private func buildContent(in window: NSWindow) {
@@ -219,21 +210,17 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     backToInstancesButton.action = #selector(showInstancesList)
     profilePopup.toolTip = "Switch profiles or open Profile Select."
     addListButton.toolTip = "Create an instance from a workflow source."
-    statusLabel.lineBreakMode = .byTruncatingTail
-    statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    actionStatusLabel.lineBreakMode = .byTruncatingMiddle
-    actionStatusLabel.textColor = .secondaryLabelColor
-    actionStatusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    selectionDetailLabel.lineBreakMode = .byTruncatingMiddle
-    selectionDetailLabel.textColor = .secondaryLabelColor
-    selectionDetailLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    selectionDetailLabel.stringValue = "Selected: None"
     detailTitleLabel.font = .boldSystemFont(ofSize: 18)
-    detailStateLabel.textColor = .secondaryLabelColor
-    detailSourceLabel.textColor = .secondaryLabelColor
-    detailRuntimeLabel.textColor = .secondaryLabelColor
-    detailConfigurationLabel.textColor = .secondaryLabelColor
-    for label in [detailTitleLabel, detailStateLabel, detailSourceLabel, detailRuntimeLabel, detailConfigurationLabel] {
+    for label in [
+      detailTitleLabel,
+      detailNameValueLabel,
+      detailWorkflowValueLabel,
+      detailEnvironmentValueLabel,
+      detailInlineEnvironmentValueLabel,
+      detailWorkingDirectoryValueLabel,
+      detailVariablesValueLabel,
+      detailEventSourcesValueLabel
+    ] {
       label.lineBreakMode = .byTruncatingMiddle
       label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     }
@@ -243,24 +230,8 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     ])
     profileRow.orientation = .horizontal
     profileRow.spacing = 8
-    let statusRow = NSStackView(views: [statusLabel])
-    statusRow.orientation = .horizontal
-    statusRow.spacing = 0
-    let actionStatusRow = NSStackView(views: [
-      actionStatusLabel
-    ])
-    actionStatusRow.orientation = .horizontal
-    actionStatusRow.spacing = 0
-    let selectionRow = NSStackView(views: [
-      selectionDetailLabel
-    ])
-    selectionRow.orientation = .horizontal
-    selectionRow.spacing = 0
     let toolbar = NSStackView(views: [
-      profileRow,
-      statusRow,
-      actionStatusRow,
-      selectionRow
+      profileRow
     ])
     toolbar.alignment = .leading
     toolbar.orientation = .vertical
@@ -280,14 +251,14 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     root.addSubview(detail)
 
     NSLayoutConstraint.activate([
-      toolbar.topAnchor.constraint(equalTo: root.topAnchor, constant: 14),
+      toolbar.topAnchor.constraint(equalTo: root.topAnchor, constant: 10),
       toolbar.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
       toolbar.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
-      instancesList.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 12),
+      instancesList.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 6),
       instancesList.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
       instancesList.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
       instancesList.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -14),
-      detail.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 12),
+      detail.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 6),
       detail.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
       detail.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
       detail.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -14)
@@ -295,20 +266,9 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   }
 
   private func buildInstanceDetailView() -> NSView {
-    let sourceButton = NSButton(title: "Reveal Source", target: self, action: #selector(revealSelectedSource))
-    let duplicateDetailButton = NSButton(title: "Duplicate", target: self, action: #selector(duplicateSelectedWorkflow))
-    let renameDetailButton = NSButton(title: "Rename", target: self, action: #selector(renameSelectedWorkflow))
     let startDetailButton = NSButton(title: "Start", target: self, action: #selector(startSelectedInstance))
     let stopDetailButton = NSButton(title: "Stop", target: self, action: #selector(stopSelectedInstance))
     let restartDetailButton = NSButton(title: "Restart", target: self, action: #selector(restartSelectedInstance))
-    let environmentDetailButton = NSButton(title: "Environment...", target: self, action: #selector(setSelectedEnvironment))
-    let workingDirectoryDetailButton = NSButton(
-      title: "Working Directory...",
-      target: self,
-      action: #selector(setSelectedWorkingDirectory)
-    )
-    let variablesDetailButton = NSButton(title: "Variables...", target: self, action: #selector(setSelectedVariables))
-    let inlineEnvDetailButton = NSButton(title: "Inline Env...", target: self, action: #selector(setSelectedEnvironmentVariables))
     let removeDetailButton = NSButton(title: "Remove Instance", target: self, action: #selector(removeSelectedInstance))
 
     let topRow = NSStackView(views: [backToInstancesButton, NSView(), removeDetailButton])
@@ -317,28 +277,29 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     let runRow = NSStackView(views: [startDetailButton, stopDetailButton, restartDetailButton])
     runRow.orientation = .horizontal
     runRow.spacing = 8
-    let configureRow = NSStackView(views: [
-      environmentDetailButton,
-      inlineEnvDetailButton,
-      workingDirectoryDetailButton,
-      variablesDetailButton
-    ])
-    configureRow.orientation = .horizontal
-    configureRow.spacing = 8
-    let sourceRow = NSStackView(views: [sourceButton, duplicateDetailButton, renameDetailButton])
-    sourceRow.orientation = .horizontal
-    sourceRow.spacing = 8
+    let settingsTitle = NSTextField(labelWithString: "Current Settings")
+    settingsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
 
     let stack = NSStackView(views: [
       topRow,
       detailTitleLabel,
-      detailStateLabel,
-      detailSourceLabel,
-      detailRuntimeLabel,
-      detailConfigurationLabel,
       runRow,
-      configureRow,
-      sourceRow
+      settingsTitle,
+      settingRow(title: "Workflow", valueLabel: detailWorkflowValueLabel, action: #selector(revealSelectedSource)),
+      settingRow(title: "Name", valueLabel: detailNameValueLabel, action: #selector(renameSelectedWorkflow)),
+      settingRow(title: "Env File", valueLabel: detailEnvironmentValueLabel, action: #selector(setSelectedEnvironment)),
+      settingRow(
+        title: "Inline Env",
+        valueLabel: detailInlineEnvironmentValueLabel,
+        action: #selector(setSelectedEnvironmentVariables)
+      ),
+      settingRow(
+        title: "Working Directory",
+        valueLabel: detailWorkingDirectoryValueLabel,
+        action: #selector(setSelectedWorkingDirectory)
+      ),
+      settingRow(title: "Variables", valueLabel: detailVariablesValueLabel, action: #selector(setSelectedVariables)),
+      settingRow(title: "Event Sources", valueLabel: detailEventSourcesValueLabel, action: nil)
     ])
     stack.orientation = .vertical
     stack.alignment = .leading
@@ -346,6 +307,36 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     topRow.leadingAnchor.constraint(equalTo: stack.leadingAnchor).isActive = true
     topRow.trailingAnchor.constraint(equalTo: stack.trailingAnchor).isActive = true
     return stack
+  }
+
+  private func settingRow(
+    title: String,
+    valueLabel: NSTextField,
+    action: Selector?
+  ) -> NSStackView {
+    let titleLabel = NSTextField(labelWithString: title)
+    titleLabel.textColor = .secondaryLabelColor
+    titleLabel.widthAnchor.constraint(equalToConstant: 130).isActive = true
+    valueLabel.textColor = .labelColor
+    let spacer = NSView()
+    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    var views: [NSView] = [titleLabel, valueLabel, spacer]
+    if action != nil {
+      let chevron = NSTextField(labelWithString: ">")
+      chevron.textColor = .tertiaryLabelColor
+      views.append(chevron)
+    }
+    let row = NSStackView(views: views)
+    row.orientation = .horizontal
+    row.spacing = 8
+    row.alignment = .firstBaseline
+    valueLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
+    if let action {
+      row.wantsLayer = true
+      row.toolTip = "Open \(title)"
+      row.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: action))
+    }
+    return row
   }
 
   private func workflowList(title: String, table: NSTableView) -> NSView {
@@ -613,7 +604,6 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     isShowingInstanceDetail = false
     instancesListView?.isHidden = false
     instanceDetailView?.isHidden = true
-    updateSelectionDetail()
   }
 
   private func showInstanceDetail() {
@@ -629,7 +619,6 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   func selectCandidate(identity: String) {
     rememberSelection(identity)
     restoreSelection()
-    updateSelectionDetail()
     updateInstanceDetail()
   }
 
@@ -641,7 +630,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       return
     }
     rememberSelection(selectedRow()?.id)
-    updateSelectionDetail()
+    updateInstanceDetail()
   }
 
   private func selectedRow() -> ConfiguredWorkflowInstanceRow? {
@@ -656,39 +645,6 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     return rows[row]
   }
 
-  private func updateSelectionDetail() {
-    guard let row = selectedRow() else {
-      selectionDetailLabel.stringValue = "Selected: None"
-      return
-    }
-    let runtimeDetail = snapshots[row.id]?.detail ?? row.state.rawValue
-    let scope = row.candidate?.isRielaAppProfileScoped == true ? "profile" : "external"
-    var details = [
-      "Instance: \(row.instanceName)",
-      "Instance ID: \(row.id)",
-      "Workflow Source ID: \(row.sourceIdentity)",
-      "Source: \(row.sourceDescription)",
-      "Scope: \(scope)",
-      "State: \(row.state.rawValue)",
-      "Runtime: \(runtimeDetail)",
-    ]
-    if let candidate = row.candidate {
-      details.append("Events: \(candidate.eventSourceSummary)")
-      details.append("Path: \(candidate.sourceDirectory)")
-    }
-    if row.candidate?.startsEventSources == true {
-      details.append("Event runner: \(RielaAppDaemonProcessEventSourceFactory().resolvedExecutableDescription())")
-    }
-    if let candidate = row.candidate {
-      details.append("Instance Environment: \(environmentSummary(candidate))")
-      details.append("Instance Dir: \(row.preference.workingDirectory ?? candidate.workingDirectory)")
-    }
-    if !row.preference.defaultVariables.isEmpty {
-      details.append("Instance Variables: \(row.preference.defaultVariables.count)")
-    }
-    selectionDetailLabel.stringValue = details.joined(separator: " | ")
-  }
-
   private func updateInstanceDetail() {
     guard isShowingInstanceDetail else {
       return
@@ -697,20 +653,21 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       showInstancesList()
       return
     }
-    let runtimeDetail = snapshots[row.id]?.detail ?? row.state.rawValue
     detailTitleLabel.stringValue = row.instanceName
-    detailStateLabel.stringValue = "State: \(row.state.rawValue)"
-    detailSourceLabel.stringValue = "Workflow: \(row.workflowName) | Source: \(row.sourceDescription)"
-    detailRuntimeLabel.stringValue = "Runtime: \(runtimeDetail)"
+    detailNameValueLabel.stringValue = row.instanceName
+    detailWorkflowValueLabel.stringValue = "\(row.workflowName) | \(row.sourceDescription)"
     if let candidate = row.candidate {
-      detailConfigurationLabel.stringValue = [
-        "Env: \(environmentSummary(candidate))",
-        "Working Directory: \(row.preference.workingDirectory ?? candidate.workingDirectory)",
-        "Variables: \(row.preference.defaultVariables.count)",
-        "Events: \(candidate.eventSourceSummary)"
-      ].joined(separator: " | ")
+      detailEnvironmentValueLabel.stringValue = environmentSummary(candidate)
+      detailInlineEnvironmentValueLabel.stringValue = "\(row.preference.environmentVariables.count) values"
+      detailWorkingDirectoryValueLabel.stringValue = row.preference.workingDirectory ?? candidate.workingDirectory
+      detailVariablesValueLabel.stringValue = "\(row.preference.defaultVariables.count) values"
+      detailEventSourcesValueLabel.stringValue = candidate.eventSourceSummary
     } else {
-      detailConfigurationLabel.stringValue = "Workflow source is missing. Remove this instance or relink the source later."
+      detailEnvironmentValueLabel.stringValue = "Unavailable"
+      detailInlineEnvironmentValueLabel.stringValue = "\(row.preference.environmentVariables.count) values"
+      detailWorkingDirectoryValueLabel.stringValue = row.preference.workingDirectory ?? "Unavailable"
+      detailVariablesValueLabel.stringValue = "\(row.preference.defaultVariables.count) values"
+      detailEventSourcesValueLabel.stringValue = "Workflow source is missing"
     }
   }
 
@@ -803,14 +760,6 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     case .stopped, nil:
       return .stopped
     }
-  }
-
-  private func stateCounts(for rows: [ConfiguredWorkflowInstanceRow]) -> String {
-    let grouped = Dictionary(grouping: rows, by: \.state)
-    let fragments = grouped.keys.sorted { lhs, rhs in lhs.sortOrder < rhs.sortOrder }.map { state in
-      "\(grouped[state]?.count ?? 0) \(state.rawValue.lowercased())"
-    }
-    return fragments.isEmpty ? "no instances" : fragments.joined(separator: " | ")
   }
 
   private func workflowSourceOptions() -> [WorkflowSourceOption] {

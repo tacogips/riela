@@ -38,6 +38,20 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     }
   }
 
+  private enum DetailActionStyle {
+    case normal
+    case destructive
+
+    var titleColor: NSColor {
+      switch self {
+      case .normal:
+        .labelColor
+      case .destructive:
+        .systemRed
+      }
+    }
+  }
+
   private struct ConfiguredWorkflowInstanceRow {
     var id: String
     var preference: RielaAppDaemonWorkflowPreference
@@ -59,7 +73,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   private let profilePopup = NSPopUpButton()
   private let addListButton = NSButton(title: "+ Add Instance", target: nil, action: nil)
   private let refreshButton = NSButton(title: "Refresh", target: nil, action: nil)
-  private let backToInstancesButton = NSButton(title: "Back to Instances", target: nil, action: nil)
+  private let backToInstancesButton = NSButton(title: "< Instances", target: nil, action: nil)
   private let detailTitleLabel = NSTextField(labelWithString: "")
   private let detailNameValueLabel = NSTextField(labelWithString: "")
   private let detailWorkflowValueLabel = NSTextField(labelWithString: "")
@@ -263,24 +277,23 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   }
 
   private func buildInstanceDetailView() -> NSView {
-    let startDetailButton = NSButton(title: "Start", target: self, action: #selector(startSelectedInstance))
-    let stopDetailButton = NSButton(title: "Stop", target: self, action: #selector(stopSelectedInstance))
-    let restartDetailButton = NSButton(title: "Restart", target: self, action: #selector(restartSelectedInstance))
-    let removeDetailButton = NSButton(title: "Remove Instance", target: self, action: #selector(removeSelectedInstance))
-
-    let topRow = NSStackView(views: [backToInstancesButton, NSView(), removeDetailButton])
+    let topSpacer = NSView()
+    topSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    topSpacer.setContentHuggingPriority(.required, for: .vertical)
+    let topRow = NSStackView(views: [backToInstancesButton, topSpacer])
     topRow.orientation = .horizontal
     topRow.spacing = 8
-    let runRow = NSStackView(views: [startDetailButton, stopDetailButton, restartDetailButton])
-    runRow.orientation = .horizontal
-    runRow.spacing = 8
+    topRow.alignment = .centerY
+    topRow.setContentHuggingPriority(.required, for: .vertical)
+    topRow.heightAnchor.constraint(equalToConstant: 28).isActive = true
     let settingsTitle = NSTextField(labelWithString: "Current Settings")
     settingsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    let actionsTitle = NSTextField(labelWithString: "Instance Actions")
+    actionsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
 
     let stack = NSStackView(views: [
       topRow,
       detailTitleLabel,
-      runRow,
       settingsTitle,
       settingRow(title: "Workflow", valueLabel: detailWorkflowValueLabel, action: #selector(revealSelectedSource)),
       settingRow(title: "Name", valueLabel: detailNameValueLabel, action: #selector(renameSelectedWorkflow)),
@@ -296,107 +309,44 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
         action: #selector(setSelectedWorkingDirectory)
       ),
       settingRow(title: "Variables", valueLabel: detailVariablesValueLabel, action: #selector(setSelectedVariables)),
-      settingRow(title: "Event Sources", valueLabel: detailEventSourcesValueLabel, action: nil)
+      settingRow(title: "Event Sources", valueLabel: detailEventSourcesValueLabel, action: nil),
+      actionsTitle,
+      actionRow(title: "Start", detail: "Run this instance and include it in future app launches.", action: #selector(startSelectedInstance)),
+      actionRow(title: "Stop", detail: "Stop this instance while keeping it visible.", action: #selector(stopSelectedInstance)),
+      actionRow(title: "Restart", detail: "Stop and start this instance again.", action: #selector(restartSelectedInstance)),
+      actionRow(
+        title: "Remove Instance",
+        detail: "Delete only this daemon configuration.",
+        style: .destructive,
+        action: #selector(removeSelectedInstance)
+      )
     ])
     stack.orientation = .vertical
     stack.alignment = .leading
     stack.spacing = 10
+    stack.setContentHuggingPriority(.required, for: .vertical)
+    stack.translatesAutoresizingMaskIntoConstraints = false
     topRow.leadingAnchor.constraint(equalTo: stack.leadingAnchor).isActive = true
     topRow.trailingAnchor.constraint(equalTo: stack.trailingAnchor).isActive = true
-    return stack
-  }
 
-  private func settingRow(
-    title: String,
-    valueLabel: NSTextField,
-    action: Selector?
-  ) -> NSStackView {
-    let titleLabel = NSTextField(labelWithString: title)
-    titleLabel.textColor = .secondaryLabelColor
-    titleLabel.widthAnchor.constraint(equalToConstant: 130).isActive = true
-    valueLabel.textColor = .labelColor
-    let spacer = NSView()
-    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    var views: [NSView] = [titleLabel, valueLabel, spacer]
-    if action != nil {
-      let chevron = NSTextField(labelWithString: ">")
-      chevron.textColor = .tertiaryLabelColor
-      views.append(chevron)
-    }
-    let row = NSStackView(views: views)
-    row.orientation = .horizontal
-    row.spacing = 8
-    row.alignment = .firstBaseline
-    valueLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
-    if let action {
-      row.wantsLayer = true
-      row.toolTip = "Open \(title)"
-      row.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: action))
-    }
-    return row
-  }
-
-  private func workflowList(title: String, table: NSTableView) -> NSView {
-    table.delegate = self
-    table.dataSource = self
-    table.usesAlternatingRowBackgroundColors = false
-    table.rowHeight = 58
-    table.intercellSpacing = NSSize(width: 0, height: 6)
-    table.gridStyleMask = []
-    table.selectionHighlightStyle = .regular
-    table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
-    table.action = #selector(tableClicked(_:))
-    table.doubleAction = #selector(tableDoubleClicked(_:))
-    table.target = self
-    table.headerView = nil
-    addColumn(Column.instance, title: "", width: 480, to: table)
+    let document = NSView()
+    document.translatesAutoresizingMaskIntoConstraints = false
+    document.addSubview(stack)
+    NSLayoutConstraint.activate([
+      stack.topAnchor.constraint(equalTo: document.topAnchor),
+      stack.leadingAnchor.constraint(equalTo: document.leadingAnchor),
+      stack.trailingAnchor.constraint(equalTo: document.trailingAnchor),
+      stack.bottomAnchor.constraint(lessThanOrEqualTo: document.bottomAnchor)
+    ])
 
     let scroll = NSScrollView()
-    scroll.documentView = table
+    scroll.documentView = document
     scroll.hasVerticalScroller = true
     scroll.hasHorizontalScroller = false
-    scroll.translatesAutoresizingMaskIntoConstraints = false
     scroll.borderType = .noBorder
-    scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
-
-    let label = NSTextField(labelWithString: title)
-    label.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
-    let headerSpacer = NSView()
-    headerSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    let header = NSStackView(views: [
-      label,
-      headerSpacer,
-      addListButton,
-      refreshButton
-    ])
-    header.orientation = .horizontal
-    header.spacing = 8
-    header.alignment = .centerY
-    header.translatesAutoresizingMaskIntoConstraints = false
-
-    let container = NSView()
-    container.addSubview(header)
-    container.addSubview(scroll)
-    header.leadingAnchor.constraint(equalTo: container.leadingAnchor).isActive = true
-    header.trailingAnchor.constraint(equalTo: container.trailingAnchor).isActive = true
-    header.topAnchor.constraint(equalTo: container.topAnchor).isActive = true
-    scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor).isActive = true
-    scroll.trailingAnchor.constraint(equalTo: container.trailingAnchor).isActive = true
-    scroll.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 6).isActive = true
-    scroll.bottomAnchor.constraint(equalTo: container.bottomAnchor).isActive = true
-    return container
-  }
-
-  private func addColumn(
-    _ identifier: NSUserInterfaceItemIdentifier,
-    title: String,
-    width: CGFloat,
-    to table: NSTableView
-  ) {
-    let column = NSTableColumn(identifier: identifier)
-    column.title = title
-    column.width = width
-    table.addTableColumn(column)
+    document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor).isActive = true
+    document.heightAnchor.constraint(greaterThanOrEqualTo: scroll.contentView.heightAnchor).isActive = true
+    return scroll
   }
 
   func numberOfRows(in tableView: NSTableView) -> Int {
@@ -408,73 +358,6 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       return nil
     }
     return makeInstanceRowView(for: instanceRows[row])
-  }
-
-  private func makeInstanceRowView(for row: ConfiguredWorkflowInstanceRow) -> NSView {
-    let cell = NSTableCellView()
-    cell.wantsLayer = true
-
-    let title = NSTextField(labelWithString: row.instanceName)
-    title.font = .systemFont(ofSize: 13, weight: .medium)
-    title.lineBreakMode = .byTruncatingTail
-
-    let subtitle = NSTextField(labelWithString: instanceSubtitle(for: row))
-    subtitle.font = .systemFont(ofSize: 11)
-    subtitle.textColor = .secondaryLabelColor
-    subtitle.lineBreakMode = .byTruncatingMiddle
-
-    let textStack = NSStackView(views: [title, subtitle])
-    textStack.orientation = .vertical
-    textStack.spacing = 2
-    textStack.alignment = .leading
-    textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-    let state = NSTextField(labelWithString: row.state.rawValue)
-    state.font = .systemFont(ofSize: 12, weight: .medium)
-    state.textColor = stateColor(for: row.state)
-    state.alignment = .right
-    state.widthAnchor.constraint(greaterThanOrEqualToConstant: 88).isActive = true
-
-    let chevron = NSTextField(labelWithString: ">")
-    chevron.textColor = .tertiaryLabelColor
-
-    let spacer = NSView()
-    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-
-    let rowStack = NSStackView(views: [textStack, spacer, state, chevron])
-    rowStack.orientation = .horizontal
-    rowStack.spacing = 10
-    rowStack.alignment = .centerY
-    rowStack.translatesAutoresizingMaskIntoConstraints = false
-    cell.addSubview(rowStack)
-    NSLayoutConstraint.activate([
-      rowStack.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 8),
-      rowStack.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8),
-      rowStack.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
-    ])
-    return cell
-  }
-
-  private func instanceSubtitle(for row: ConfiguredWorkflowInstanceRow) -> String {
-    guard let candidate = row.candidate else {
-      return "\(row.workflowName) | Missing source"
-    }
-    return "\(row.workflowName) | \(environmentColumnStatus(candidate)) | \(row.sourceDescription)"
-  }
-
-  private func stateColor(for state: InstanceState) -> NSColor {
-    switch state {
-    case .running:
-      .systemGreen
-    case .failed:
-      .systemRed
-    case .starting, .reloading, .stopping:
-      .systemOrange
-    case .needsSource:
-      .systemYellow
-    case .stopped:
-      .secondaryLabelColor
-    }
   }
 
   @objc private func refresh() {
@@ -888,258 +771,199 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   }
 }
 
-@MainActor
-private final class ProfileSelectWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate {
-  static let menuTitle = "Profile Select..."
-
-  private let tableView = NSTableView()
-  private let addButton = NSButton(title: "+", target: nil, action: nil)
-  private let removeButton = NSButton(title: "-", target: nil, action: nil)
-  private let openButton = NSButton(title: "Open", target: nil, action: nil)
-  private let cancelButton = NSButton(title: "Cancel", target: nil, action: nil)
-  private let statusLabel = NSTextField(labelWithString: "")
-  private let onSelectProfile: (String) -> Void
-  private let onCreateProfile: (String) -> RielaAppProfileName?
-  private let onRemoveProfile: (RielaAppProfileName) -> Bool
-  private var currentProfile = RielaAppProfileName.default
-  private var profileNames: [RielaAppProfileName] = [.default]
-
-  init(
-    onSelectProfile: @escaping (String) -> Void,
-    onCreateProfile: @escaping (String) -> RielaAppProfileName?,
-    onRemoveProfile: @escaping (RielaAppProfileName) -> Bool
-  ) {
-    self.onSelectProfile = onSelectProfile
-    self.onCreateProfile = onCreateProfile
-    self.onRemoveProfile = onRemoveProfile
-    let window = NSPanel(
-      contentRect: NSRect(x: 0, y: 0, width: 360, height: 320),
-      styleMask: [.titled, .closable],
-      backing: .buffered,
-      defer: false
-    )
-    window.title = "Profile Select"
-    super.init(window: window)
-    buildContent(in: window)
+private extension DaemonWorkflowWindowController {
+  private func settingRow(
+    title: String,
+    valueLabel: NSTextField,
+    action: Selector?
+  ) -> NSStackView {
+    let titleLabel = NSTextField(labelWithString: title)
+    titleLabel.textColor = .secondaryLabelColor
+    titleLabel.widthAnchor.constraint(equalToConstant: 130).isActive = true
+    valueLabel.textColor = .labelColor
+    let spacer = NSView()
+    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    var views: [NSView] = [titleLabel, valueLabel, spacer]
+    if action != nil {
+      let chevron = NSTextField(labelWithString: ">")
+      chevron.textColor = .tertiaryLabelColor
+      views.append(chevron)
+    }
+    let row = NSStackView(views: views)
+    row.orientation = .horizontal
+    row.spacing = 8
+    row.alignment = .firstBaseline
+    valueLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
+    if let action {
+      row.wantsLayer = true
+      row.toolTip = "Open \(title)"
+      row.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: action))
+    }
+    return row
   }
 
-  required init?(coder: NSCoder) {
-    nil
+  private func actionRow(
+    title: String,
+    detail: String,
+    style: DetailActionStyle = .normal,
+    action: Selector
+  ) -> NSStackView {
+    let titleLabel = NSTextField(labelWithString: title)
+    titleLabel.textColor = style.titleColor
+    titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
+    let detailLabel = NSTextField(labelWithString: detail)
+    detailLabel.textColor = .secondaryLabelColor
+    detailLabel.font = .systemFont(ofSize: 11)
+    detailLabel.lineBreakMode = .byTruncatingTail
+    let labelStack = NSStackView(views: [titleLabel, detailLabel])
+    labelStack.orientation = .vertical
+    labelStack.spacing = 2
+    labelStack.alignment = .leading
+    labelStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    let spacer = NSView()
+    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    let chevron = NSTextField(labelWithString: ">")
+    chevron.textColor = .tertiaryLabelColor
+    let row = NSStackView(views: [labelStack, spacer, chevron])
+    row.orientation = .horizontal
+    row.spacing = 8
+    row.alignment = .centerY
+    row.wantsLayer = true
+    row.toolTip = title
+    row.widthAnchor.constraint(greaterThanOrEqualToConstant: 420).isActive = true
+    row.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: action))
+    return row
   }
 
-  func show(
-    currentProfile: RielaAppProfileName,
-    profileNames: [RielaAppProfileName],
-    parentWindow: NSWindow?
-  ) {
-    self.currentProfile = currentProfile
-    self.profileNames = profileNames
-    tableView.reloadData()
-    selectProfile(currentProfile)
-    updateButtons()
-    statusLabel.stringValue = ""
-    guard let window else {
-      return
-    }
-    if let parentWindow {
-      parentWindow.beginSheet(window)
-    } else {
-      showWindow(nil)
-      window.makeKeyAndOrderFront(nil)
-    }
-  }
+  private func workflowList(title: String, table: NSTableView) -> NSView {
+    table.delegate = self
+    table.dataSource = self
+    table.usesAlternatingRowBackgroundColors = false
+    table.rowHeight = 58
+    table.intercellSpacing = NSSize(width: 0, height: 6)
+    table.gridStyleMask = []
+    table.selectionHighlightStyle = .regular
+    table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
+    table.action = #selector(tableClicked(_:))
+    table.doubleAction = #selector(tableDoubleClicked(_:))
+    table.target = self
+    table.headerView = nil
+    addColumn(Column.instance, title: "", width: 480, to: table)
 
-  private func buildContent(in window: NSWindow) {
-    guard let root = window.contentView else {
-      return
-    }
-    let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("profile"))
-    column.title = "Profile"
-    tableView.addTableColumn(column)
-    tableView.headerView = nil
-    tableView.delegate = self
-    tableView.dataSource = self
-    tableView.doubleAction = #selector(openSelectedProfile)
-    tableView.target = self
+    let scroll = NSScrollView()
+    scroll.documentView = table
+    scroll.hasVerticalScroller = true
+    scroll.hasHorizontalScroller = false
+    scroll.translatesAutoresizingMaskIntoConstraints = false
+    scroll.borderType = .noBorder
+    scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
 
-    let scrollView = NSScrollView()
-    scrollView.documentView = tableView
-    scrollView.hasVerticalScroller = true
-    scrollView.borderType = .bezelBorder
-    scrollView.translatesAutoresizingMaskIntoConstraints = false
-
-    addButton.target = self
-    addButton.action = #selector(addProfile)
-    addButton.bezelStyle = .texturedRounded
-    addButton.widthAnchor.constraint(equalToConstant: 30).isActive = true
-    removeButton.target = self
-    removeButton.action = #selector(removeProfile)
-    removeButton.bezelStyle = .texturedRounded
-    removeButton.widthAnchor.constraint(equalToConstant: 30).isActive = true
-    openButton.target = self
-    openButton.action = #selector(openSelectedProfile)
-    cancelButton.target = self
-    cancelButton.action = #selector(cancel)
-    statusLabel.textColor = .secondaryLabelColor
-    statusLabel.lineBreakMode = .byTruncatingMiddle
-
-    let listControls = NSStackView(views: [addButton, removeButton])
-    listControls.orientation = .horizontal
-    listControls.spacing = 4
-    let buttonRow = NSStackView(views: [listControls, NSView(), cancelButton, openButton])
-    buttonRow.orientation = .horizontal
-    buttonRow.spacing = 8
-    let stack = NSStackView(views: [scrollView, statusLabel, buttonRow])
-    stack.orientation = .vertical
-    stack.spacing = 10
-    stack.translatesAutoresizingMaskIntoConstraints = false
-    root.addSubview(stack)
-
-    NSLayoutConstraint.activate([
-      stack.topAnchor.constraint(equalTo: root.topAnchor, constant: 14),
-      stack.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
-      stack.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
-      stack.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -14),
-      scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 220)
+    let label = NSTextField(labelWithString: title)
+    label.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    let headerSpacer = NSView()
+    headerSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    let header = NSStackView(views: [
+      label,
+      headerSpacer,
+      addListButton,
+      refreshButton
     ])
+    header.orientation = .horizontal
+    header.spacing = 8
+    header.alignment = .centerY
+    header.translatesAutoresizingMaskIntoConstraints = false
+
+    let container = NSView()
+    container.addSubview(header)
+    container.addSubview(scroll)
+    header.leadingAnchor.constraint(equalTo: container.leadingAnchor).isActive = true
+    header.trailingAnchor.constraint(equalTo: container.trailingAnchor).isActive = true
+    header.topAnchor.constraint(equalTo: container.topAnchor).isActive = true
+    scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor).isActive = true
+    scroll.trailingAnchor.constraint(equalTo: container.trailingAnchor).isActive = true
+    scroll.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 6).isActive = true
+    scroll.bottomAnchor.constraint(equalTo: container.bottomAnchor).isActive = true
+    return container
   }
 
-  func numberOfRows(in tableView: NSTableView) -> Int {
-    profileNames.count
+  private func addColumn(
+    _ identifier: NSUserInterfaceItemIdentifier,
+    title: String,
+    width: CGFloat,
+    to table: NSTableView
+  ) {
+    let column = NSTableColumn(identifier: identifier)
+    column.title = title
+    column.width = width
+    table.addTableColumn(column)
   }
 
-  func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+  private func makeInstanceRowView(for row: ConfiguredWorkflowInstanceRow) -> NSView {
     let cell = NSTableCellView()
-    let label = NSTextField(labelWithString: profileNames[row].rawValue)
-    if profileNames[row] == currentProfile {
-      label.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
-    }
-    label.translatesAutoresizingMaskIntoConstraints = false
-    cell.addSubview(label)
+    cell.wantsLayer = true
+
+    let title = NSTextField(labelWithString: row.instanceName)
+    title.font = .systemFont(ofSize: 13, weight: .medium)
+    title.lineBreakMode = .byTruncatingTail
+
+    let subtitle = NSTextField(labelWithString: instanceSubtitle(for: row))
+    subtitle.font = .systemFont(ofSize: 11)
+    subtitle.textColor = .secondaryLabelColor
+    subtitle.lineBreakMode = .byTruncatingMiddle
+
+    let textStack = NSStackView(views: [title, subtitle])
+    textStack.orientation = .vertical
+    textStack.spacing = 2
+    textStack.alignment = .leading
+    textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+    let state = NSTextField(labelWithString: row.state.rawValue)
+    state.font = .systemFont(ofSize: 12, weight: .medium)
+    state.textColor = stateColor(for: row.state)
+    state.alignment = .right
+    state.widthAnchor.constraint(greaterThanOrEqualToConstant: 88).isActive = true
+
+    let chevron = NSTextField(labelWithString: ">")
+    chevron.textColor = .tertiaryLabelColor
+
+    let spacer = NSView()
+    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+    let rowStack = NSStackView(views: [textStack, spacer, state, chevron])
+    rowStack.orientation = .horizontal
+    rowStack.spacing = 10
+    rowStack.alignment = .centerY
+    rowStack.translatesAutoresizingMaskIntoConstraints = false
+    cell.addSubview(rowStack)
     NSLayoutConstraint.activate([
-      label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 6),
-      label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
-      label.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
+      rowStack.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 8),
+      rowStack.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8),
+      rowStack.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
     ])
     return cell
   }
 
-  func tableViewSelectionDidChange(_ notification: Notification) {
-    updateButtons()
+  private func instanceSubtitle(for row: ConfiguredWorkflowInstanceRow) -> String {
+    guard let candidate = row.candidate else {
+      return "\(row.workflowName) | Missing source"
+    }
+    return "\(row.workflowName) | \(environmentColumnStatus(candidate)) | \(row.sourceDescription)"
   }
 
-  @objc private func addProfile() {
-    guard let rawName = promptForProfileName() else {
-      return
-    }
-    guard let profileName = onCreateProfile(rawName) else {
-      statusLabel.stringValue = "Failed to add profile"
-      return
-    }
-    if !profileNames.contains(profileName) {
-      profileNames.append(profileName)
-      profileNames.sort { lhs, rhs in
-        lhs.rawValue.localizedCaseInsensitiveCompare(rhs.rawValue) == .orderedAscending
-      }
-    }
-    tableView.reloadData()
-    selectProfile(profileName)
-    statusLabel.stringValue = "Added profile \(profileName.rawValue)"
-  }
-
-  @objc private func removeProfile() {
-    guard let profileName = selectedProfile() else {
-      return
-    }
-    guard profileName != .default else {
-      statusLabel.stringValue = "Default profile cannot be removed"
-      return
-    }
-    guard profileName != currentProfile else {
-      statusLabel.stringValue = "Current profile cannot be removed"
-      return
-    }
-    guard confirmProfileRemoval(profileName) else {
-      return
-    }
-    guard onRemoveProfile(profileName) else {
-      statusLabel.stringValue = "Failed to remove profile \(profileName.rawValue)"
-      return
-    }
-    profileNames.removeAll { $0 == profileName }
-    tableView.reloadData()
-    selectProfile(currentProfile)
-    statusLabel.stringValue = "Removed profile \(profileName.rawValue)"
-  }
-
-  @objc private func openSelectedProfile() {
-    guard let profileName = selectedProfile() else {
-      return
-    }
-    closeSheet()
-    onSelectProfile(profileName.rawValue)
-  }
-
-  @objc private func cancel() {
-    closeSheet()
-  }
-
-  private func promptForProfileName() -> String? {
-    let field = NSTextField(string: "")
-    field.placeholderString = RielaAppProfileName.defaultRawValue
-    field.frame = NSRect(x: 0, y: 0, width: 260, height: 24)
-    let alert = NSAlert()
-    alert.messageText = "Add Profile"
-    alert.accessoryView = field
-    alert.addButton(withTitle: "Add")
-    alert.addButton(withTitle: "Cancel")
-    guard alert.runModal() == .alertFirstButtonReturn else {
-      return nil
-    }
-    return field.stringValue
-  }
-
-  private func confirmProfileRemoval(_ profileName: RielaAppProfileName) -> Bool {
-    let alert = NSAlert()
-    alert.messageText = "Remove Profile"
-    alert.informativeText = "Remove profile \(profileName.rawValue) and its workflow sources, packages, and instance state?"
-    alert.alertStyle = .warning
-    alert.addButton(withTitle: "Remove")
-    alert.addButton(withTitle: "Cancel")
-    return alert.runModal() == .alertFirstButtonReturn
-  }
-
-  private func selectedProfile() -> RielaAppProfileName? {
-    let row = tableView.selectedRow
-    guard profileNames.indices.contains(row) else {
-      return nil
-    }
-    return profileNames[row]
-  }
-
-  private func selectProfile(_ profileName: RielaAppProfileName) {
-    guard let row = profileNames.firstIndex(of: profileName) else {
-      return
-    }
-    tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-    tableView.scrollRowToVisible(row)
-  }
-
-  private func updateButtons() {
-    let selected = selectedProfile()
-    openButton.isEnabled = selected != nil
-    removeButton.isEnabled = selected != nil && selected != .default && selected != currentProfile
-  }
-
-  private func closeSheet() {
-    guard let window else {
-      return
-    }
-    if let sheetParent = window.sheetParent {
-      sheetParent.endSheet(window)
-    } else {
-      window.close()
+  private func stateColor(for state: InstanceState) -> NSColor {
+    switch state {
+    case .running:
+      .systemGreen
+    case .failed:
+      .systemRed
+    case .starting, .reloading, .stopping:
+      .systemOrange
+    case .needsSource:
+      .systemYellow
+    case .stopped:
+      .secondaryLabelColor
     }
   }
 }
+
 #endif

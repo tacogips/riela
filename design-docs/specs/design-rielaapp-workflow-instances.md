@@ -202,25 +202,29 @@ registrations. Deleting or unregistering a workflow/package/project source is a
 separate source-management action outside the primary instance list.
 
 Selecting an instance keeps the user in the same window. Choosing a row
-replaces the list with an instance detail view and a `Back to Instances`
-control. The detail header does not repeat state labels such as `State: Running`
-or `Runtime: ...`. The list already owns state. The detail view shows current
-settings as persistent field/value rows. Editable rows behave like iOS Settings
-rows: selecting the row opens the editor, with a disclosure marker instead of
-an exposed `Edit`, `Rename`, or `Duplicate` button.
+replaces the list with an instance detail view and a compact `< Instances`
+navigation control. The detail header does not repeat state labels such as
+`State: Running` or `Runtime: ...`. The list already owns state. The detail
+view shows current settings as persistent field/value rows. Editable rows
+behave like iOS Settings rows: selecting the row opens the editor, with a
+disclosure marker instead of an exposed `Edit`, `Rename`, or `Duplicate`
+button.
 
 Primary row actions:
 
 - list row selection: open the same-window instance detail view
-- detail view actions:
-  - `Reveal Source`
-  - `Stop`
-  - `Start`
-  - `Restart`
-  - `Remove Instance`
-  - `Environment...`
-  - `Working Directory...`
-  - `Variables...`
+- detail setting row selection:
+  - reveal source
+  - rename
+  - edit environment file
+  - edit inline environment variables
+  - edit working directory
+  - edit default variables
+- detail action row selection:
+  - start
+  - stop
+  - restart
+  - remove instance
 
 Current setting rows shown in the detail view:
 
@@ -232,8 +236,13 @@ Current setting rows shown in the detail view:
 - default variables, selectable to edit;
 - event sources, read-only.
 
-The header should not show every row action as a separate button. These actions
-belong near the selection as a compact action menu or in the viewer/editor.
+The detail view has an `Instance Actions` section for start, stop, restart, and
+remove. These are selectable Settings-style rows, not a horizontal button bar.
+`Remove Instance` is styled as a destructive row and deletes only the daemon
+preference/configuration.
+
+The detail view is vertically scrollable. A tiled window with reduced height
+must not trap instance actions below the visible area.
 
 ### Add Instance Sheet
 
@@ -384,12 +393,16 @@ Add Instance workflow selection empty state:
 - The Instances list has no `Workflow`, `Env`, or `State` table headers; those
   values are folded into a Settings-style row with a trailing state and
   disclosure marker.
-- Instance details open in the same window with a `Back to Instances` control,
+- Instance details open in the same window with a compact `< Instances` control,
   not in a separate instance-editing window.
 - The detail view shows current settings as selectable rows instead of
   header/caption labels for state or runtime.
 - The detail view does not expose standalone `Rename`, `Duplicate`, or `Edit`
   buttons; editable settings are opened by selecting their rows.
+- The detail view exposes `Start`, `Stop`, `Restart`, and `Remove Instance` as
+  selectable `Instance Actions` rows, not as a horizontal button bar.
+- The detail view scrolls vertically so settings and action rows remain
+  reachable in short tiled windows.
 - Workflow sources are selected from the `+` add-instance sheet rather than
   shown as a permanent disabled-instance list.
 - A user can create an always-on instance by selecting a workflow and entering

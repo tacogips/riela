@@ -27,6 +27,10 @@ final class RielaAppInterfaceIdentifierTests: XCTestCase {
       contentsOf: root.appendingPathComponent("Sources/RielaApp/DaemonWorkflowWindowController.swift"),
       encoding: .utf8
     )
+    let profileSelectSource = try String(
+      contentsOf: root.appendingPathComponent("Sources/RielaApp/ProfileSelectWindowController.swift"),
+      encoding: .utf8
+    )
 
     XCTAssertFalse(appSource.contains("Auto-Start Enabled Workflows"))
     XCTAssertFalse(appSource.contains("Stop and Disable Auto-Start"))
@@ -51,7 +55,7 @@ final class RielaAppInterfaceIdentifierTests: XCTestCase {
     XCTAssertTrue(appSource.contains("setActivationPolicy(.regular)"))
     XCTAssertTrue(appSource.contains("\"Instances: \\(daemonSummary())\""))
     XCTAssertTrue(controllerSource.contains("window.title = \"Riela Workflow Instances\""))
-    XCTAssertTrue(controllerSource.contains("window.title = \"Profile Select\""))
+    XCTAssertTrue(profileSelectSource.contains("window.title = \"Profile Select\""))
     XCTAssertFalse(controllerSource.contains("addColumn(Column.workflow, title: \"Workflow\""))
     XCTAssertFalse(controllerSource.contains("addColumn(Column.state, title: \"State\""))
     XCTAssertTrue(controllerSource.contains("table.headerView = nil"))
@@ -59,12 +63,19 @@ final class RielaAppInterfaceIdentifierTests: XCTestCase {
     XCTAssertTrue(controllerSource.contains("instanceSubtitle(for:"))
     XCTAssertTrue(controllerSource.contains("messageText = \"Add Instance\""))
     XCTAssertTrue(controllerSource.contains("Select a workflow and enter instance parameters."))
-    XCTAssertTrue(controllerSource.contains("Back to Instances"))
+    XCTAssertTrue(controllerSource.contains("\"< Instances\""))
     XCTAssertTrue(controllerSource.contains("Current Settings"))
+    XCTAssertTrue(controllerSource.contains("Instance Actions"))
     XCTAssertTrue(controllerSource.contains("NSClickGestureRecognizer"))
     XCTAssertTrue(controllerSource.contains("settingRow(title: \"Name\""))
+    XCTAssertTrue(controllerSource.contains("actionRow(title: \"Start\""))
+    XCTAssertTrue(controllerSource.contains("title: \"Remove Instance\""))
     XCTAssertFalse(controllerSource.contains("NSButton(title: \"Duplicate\""))
     XCTAssertFalse(controllerSource.contains("NSButton(title: \"Rename\""))
+    XCTAssertFalse(controllerSource.contains("NSButton(title: \"Start\""))
+    XCTAssertFalse(controllerSource.contains("NSButton(title: \"Stop\""))
+    XCTAssertFalse(controllerSource.contains("NSButton(title: \"Restart\""))
+    XCTAssertFalse(controllerSource.contains("NSButton(title: \"Remove Instance\""))
     XCTAssertFalse(controllerSource.contains("buttonTitle: \"Edit\""))
     XCTAssertTrue(controllerSource.contains("showInstanceDetail()"))
     XCTAssertFalse(controllerSource.contains("NSButton(title: \"Actions\""))
@@ -72,10 +83,6 @@ final class RielaAppInterfaceIdentifierTests: XCTestCase {
     XCTAssertFalse(controllerSource.contains("onViewSelectedWorkflow"))
     XCTAssertTrue(controllerSource.contains("Missing source"))
     XCTAssertTrue(controllerSource.contains("Needs Source"))
-    XCTAssertTrue(controllerSource.contains("NSButton(title: \"Start\""))
-    XCTAssertTrue(controllerSource.contains("NSButton(title: \"Stop\""))
-    XCTAssertTrue(controllerSource.contains("NSButton(title: \"Restart\""))
-    XCTAssertTrue(controllerSource.contains("NSButton(title: \"Remove Instance\""))
     XCTAssertTrue(controllerSource.contains("labelWithString: \"Instance ID\""))
     XCTAssertTrue(controllerSource.contains("NSButton(title: \"+ Add Instance\""))
   }

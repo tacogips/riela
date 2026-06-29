@@ -85,7 +85,7 @@ On Ubuntu x64, install the latest CLI archive from GitHub Releases:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y ca-certificates curl libsqlite3-0
+sudo apt-get install -y ca-certificates curl libcurl4 libsqlite3-0
 version="$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/tacogips/riela/releases/latest | sed 's#.*/v##')"
 curl -LO "https://github.com/tacogips/riela/releases/download/v${version}/riela-${version}-linux-x64.tar.gz"
 curl -LO "https://github.com/tacogips/riela/releases/download/v${version}/riela-${version}-linux-x64.tar.gz.sha256"

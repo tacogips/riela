@@ -95,7 +95,7 @@ jobs:
             bash -lc '
               set -euo pipefail
               apt-get update >/dev/null
-              apt-get install -y ca-certificates libsqlite3-0 >/dev/null
+              apt-get install -y ca-certificates libcurl4 libsqlite3-0 >/dev/null
               mkdir -p /tmp/riela-install
               tar -xzf "dist/homebrew/riela-$RELEASE_VERSION-linux-x64.tar.gz" -C /tmp/riela-install
               install -m 0755 /tmp/riela-install/bin/riela /usr/local/bin/riela

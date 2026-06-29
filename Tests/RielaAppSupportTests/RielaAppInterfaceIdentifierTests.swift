@@ -76,6 +76,14 @@ final class RielaAppInterfaceIdentifierTests: XCTestCase {
     XCTAssertTrue(controllerSource.contains("messageText = \"Add Instance\""))
     XCTAssertTrue(controllerSource.contains("Select a workflow and enter instance parameters."))
     XCTAssertTrue(controllerSource.contains("Instance Parameters"))
+    XCTAssertTrue(controllerSource.contains("addInstanceFieldRow("))
+    XCTAssertTrue(controllerSource.contains("addInstanceToggleRow("))
+    XCTAssertTrue(controllerSource.contains("addInstanceFieldRow(title: \"Workflow\""))
+    XCTAssertTrue(controllerSource.contains("addInstanceFieldRow(title: \"Instance ID\""))
+    XCTAssertTrue(controllerSource.contains("addInstanceFieldRow(title: \"Display Name\""))
+    XCTAssertTrue(controllerSource.contains("addInstanceFieldRow(title: \"Env File\""))
+    XCTAssertTrue(controllerSource.contains("addInstanceFieldRow(title: \"Working Directory\""))
+    XCTAssertTrue(controllerSource.contains("addInstanceToggleRow(title: \"Start\""))
     XCTAssertTrue(controllerSource.contains("Source Actions"))
     XCTAssertTrue(controllerSource.contains("sourceActionStack()"))
     XCTAssertTrue(controllerSource.contains("title: \"Import Workflow or Package\""))
@@ -111,7 +119,7 @@ final class RielaAppInterfaceIdentifierTests: XCTestCase {
     XCTAssertFalse(controllerSource.contains("onViewSelectedWorkflow"))
     XCTAssertTrue(controllerSource.contains("Missing source"))
     XCTAssertTrue(controllerSource.contains("Needs Source"))
-    XCTAssertTrue(controllerSource.contains("labelWithString: \"Instance ID\""))
+    XCTAssertFalse(controllerSource.contains("labelWithString: \"Instance ID\""))
     XCTAssertTrue(controllerSource.contains("NSButton(title: \"+ Add Instance\""))
   }
 

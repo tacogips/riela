@@ -721,22 +721,17 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     sourceActionsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
     let stack = NSStackView(views: [
       parameterTitle,
-      NSTextField(labelWithString: "Workflow"),
-      workflowPopup,
-      NSTextField(labelWithString: "Instance ID"),
-      idField,
-      NSTextField(labelWithString: "Display Name"),
-      nameField,
-      NSTextField(labelWithString: "Env File"),
-      envField,
-      NSTextField(labelWithString: "Working Directory"),
-      directoryField,
-      startCheckbox,
+      addInstanceFieldRow(title: "Workflow", control: workflowPopup),
+      addInstanceFieldRow(title: "Instance ID", control: idField),
+      addInstanceFieldRow(title: "Display Name", control: nameField),
+      addInstanceFieldRow(title: "Env File", control: envField),
+      addInstanceFieldRow(title: "Working Directory", control: directoryField),
+      addInstanceToggleRow(title: "Start", checkbox: startCheckbox),
       sourceActionsTitle,
       sourceActionStack()
     ])
     stack.orientation = .vertical
-    stack.spacing = 6
+    stack.spacing = 8
     stack.frame = NSRect(x: 0, y: 0, width: 520, height: 350)
 
     let alert = NSAlert()
@@ -783,6 +778,31 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       onAddProject()
     }
     return true
+  }
+
+  private func addInstanceFieldRow(title: String, control: NSView) -> NSStackView {
+    let titleLabel = NSTextField(labelWithString: title)
+    titleLabel.textColor = .secondaryLabelColor
+    titleLabel.widthAnchor.constraint(equalToConstant: 145).isActive = true
+    control.widthAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
+    let row = NSStackView(views: [titleLabel, control])
+    row.orientation = .horizontal
+    row.spacing = 8
+    row.alignment = .firstBaseline
+    row.widthAnchor.constraint(greaterThanOrEqualToConstant: 500).isActive = true
+    return row
+  }
+
+  private func addInstanceToggleRow(title: String, checkbox: NSButton) -> NSStackView {
+    let titleLabel = NSTextField(labelWithString: title)
+    titleLabel.textColor = .secondaryLabelColor
+    titleLabel.widthAnchor.constraint(equalToConstant: 145).isActive = true
+    let row = NSStackView(views: [titleLabel, checkbox])
+    row.orientation = .horizontal
+    row.spacing = 8
+    row.alignment = .firstBaseline
+    row.widthAnchor.constraint(greaterThanOrEqualToConstant: 500).isActive = true
+    return row
   }
 
   private func sourceActionStack() -> NSStackView {

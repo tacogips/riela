@@ -281,6 +281,11 @@ Creating an instance prompts for:
 - default variables, when the workflow declares or benefits from them
 - whether to start immediately, default on
 
+The parameter step uses Settings-style field rows. `Workflow`, `Instance ID`,
+`Display Name`, `Env File`, and `Working Directory` appear as label/control
+rows. `Start` is a binary row with a checkbox. The sheet should not read as a
+vertical form with detached labels above every field.
+
 The saved preference should use:
 
 - `sourceIdentity = selectedSource.id`
@@ -299,6 +304,7 @@ Add Instance contract:
     project sources, then refreshes the source list without making workflow
     source management a permanent main-window table.
 - Step 2, Configure Instance:
+  - presents fields as Settings-style label/control rows;
   - validates instance id with the same sanitizer as managed duplicate/rename;
   - rejects duplicate ids unless the user explicitly chooses an existing
     stopped instance to update;
@@ -439,6 +445,8 @@ Add Instance workflow selection empty state:
   Settings-style rows and keeps selected-node overrides visually separate.
 - The Add Instance sheet exposes source-management as `Source Actions` rows,
   not as extra alert buttons beside `Create` and `Cancel`.
+- The Add Instance parameter step uses Settings-style field rows rather than a
+  detached vertical label/input form.
 - Workflow sources are selected from the `+` add-instance sheet rather than
   shown as a permanent disabled-instance list.
 - A user can create an always-on instance by selecting a workflow and entering

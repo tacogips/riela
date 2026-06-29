@@ -58,6 +58,11 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     }
   }
 
+  private enum AddInstanceSheetAction {
+    case importWorkflowOrPackage
+    case addProjectSource
+  }
+
   private struct ConfiguredWorkflowInstanceRow {
     var id: String
     var preference: RielaAppDaemonWorkflowPreference
@@ -118,6 +123,8 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   private var selectedIdentity: String?
   private var selectedIdentityByProfile: [RielaAppProfileName: String] = [:]
   private var isUpdatingProfileControls = false
+  private var activeAddInstanceAlert: NSAlert?
+  private var pendingAddInstanceSheetAction: AddInstanceSheetAction?
   private var isUpdatingTableSelection = false
   private var profileSelectController: ProfileSelectWindowController?
   private weak var instancesListView: NSView?
@@ -686,15 +693,13 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       let alert = NSAlert()
       alert.messageText = "No Selectable Workflows"
       alert.informativeText = "Import a workflow, package, or project source."
-      alert.addButton(withTitle: "Import Workflow or Package...")
-      alert.addButton(withTitle: "Add Project Source...")
+      alert.accessoryView = sourceActionStack()
       alert.addButton(withTitle: "Cancel")
-      let response = alert.runModal()
-      if response == .alertFirstButtonReturn {
-        onAddDirectory()
-      } else if response == .alertSecondButtonReturn {
-        onAddProject()
-      }
+      pendingAddInstanceSheetAction = nil
+      activeAddInstanceAlert = alert
+      _ = alert.runModal()
+      activeAddInstanceAlert = nil
+      handlePendingAddInstanceSheetAction()
       return nil
     }
 
@@ -710,7 +715,12 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     directoryField.placeholderString = "Optional working directory"
     let startCheckbox = NSButton(checkboxWithTitle: "Start now", target: nil, action: nil)
     startCheckbox.state = .on
+    let parameterTitle = NSTextField(labelWithString: "Instance Parameters")
+    parameterTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    let sourceActionsTitle = NSTextField(labelWithString: "Source Actions")
+    sourceActionsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
     let stack = NSStackView(views: [
+      parameterTitle,
       NSTextField(labelWithString: "Workflow"),
       workflowPopup,
       NSTextField(labelWithString: "Instance ID"),
@@ -721,27 +731,25 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       envField,
       NSTextField(labelWithString: "Working Directory"),
       directoryField,
-      startCheckbox
+      startCheckbox,
+      sourceActionsTitle,
+      sourceActionStack()
     ])
     stack.orientation = .vertical
     stack.spacing = 6
-    stack.frame = NSRect(x: 0, y: 0, width: 520, height: 260)
+    stack.frame = NSRect(x: 0, y: 0, width: 520, height: 350)
 
     let alert = NSAlert()
     alert.messageText = "Add Instance"
     alert.informativeText = "Select a workflow and enter instance parameters."
     alert.accessoryView = stack
     alert.addButton(withTitle: "Create")
-    alert.addButton(withTitle: "Import Workflow or Package...")
-    alert.addButton(withTitle: "Add Project Source...")
     alert.addButton(withTitle: "Cancel")
+    pendingAddInstanceSheetAction = nil
+    activeAddInstanceAlert = alert
     let response = alert.runModal()
-    if response == .alertSecondButtonReturn {
-      onAddDirectory()
-      return nil
-    }
-    if response == .alertThirdButtonReturn {
-      onAddProject()
+    activeAddInstanceAlert = nil
+    if handlePendingAddInstanceSheetAction() {
       return nil
     }
     guard response == .alertFirstButtonReturn else {
@@ -760,6 +768,54 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       workingDirectory: workingDirectory.isEmpty ? nil : workingDirectory,
       startsImmediately: startCheckbox.state == .on
     )
+  }
+
+  @discardableResult
+  private func handlePendingAddInstanceSheetAction() -> Bool {
+    guard let pendingAddInstanceSheetAction else {
+      return false
+    }
+    self.pendingAddInstanceSheetAction = nil
+    switch pendingAddInstanceSheetAction {
+    case .importWorkflowOrPackage:
+      onAddDirectory()
+    case .addProjectSource:
+      onAddProject()
+    }
+    return true
+  }
+
+  private func sourceActionStack() -> NSStackView {
+    let stack = NSStackView(views: [
+      actionRow(
+        title: "Import Workflow or Package",
+        detail: "Add a workflow or package source, then return to instance creation.",
+        action: #selector(importWorkflowOrPackageFromAddInstanceSheet)
+      ),
+      actionRow(
+        title: "Add Project Source",
+        detail: "Make project workflows selectable for new instances.",
+        action: #selector(addProjectSourceFromAddInstanceSheet)
+      )
+    ])
+    stack.orientation = .vertical
+    stack.alignment = .leading
+    stack.spacing = 8
+    return stack
+  }
+
+  @objc private func importWorkflowOrPackageFromAddInstanceSheet() {
+    finishAddInstanceSheet(with: .importWorkflowOrPackage)
+  }
+
+  @objc private func addProjectSourceFromAddInstanceSheet() {
+    finishAddInstanceSheet(with: .addProjectSource)
+  }
+
+  private func finishAddInstanceSheet(with action: AddInstanceSheetAction) {
+    pendingAddInstanceSheetAction = action
+    activeAddInstanceAlert?.window.orderOut(nil)
+    NSApp.stopModal(withCode: .alertSecondButtonReturn)
   }
 
   private func updateProfileControls() {

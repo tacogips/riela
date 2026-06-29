@@ -111,13 +111,16 @@ context to choose safely:
 - source path or package name
 - environment readiness
 
-The sheet also has secondary source-management actions:
+The sheet also has a `Source Actions` section with secondary
+source-management rows:
 
-- `Import Workflow or Package...`
-- `Add Project Source...`
+- `Import Workflow or Package`
+- `Add Project Source`
 
 These actions are available while adding an instance because they answer the
-user's real question: "the workflow I need is not selectable yet."
+user's real question: "the workflow I need is not selectable yet." They are
+selectable Settings-style rows inside the sheet, not extra modal buttons next
+to `Create`/`Cancel`.
 
 The main content has one primary section:
 
@@ -285,8 +288,9 @@ Add Instance contract:
   - lists discoverable workflow sources;
   - filters out no-source legacy rows;
   - shows env readiness using the same `Env` vocabulary as the instance list;
-  - has secondary actions to import workflow/package sources or add project
-    sources, then refreshes the source list without closing the sheet.
+  - has secondary action rows to import workflow/package sources or add
+    project sources, then refreshes the source list without making workflow
+    source management a permanent main-window table.
 - Step 2, Configure Instance:
   - validates instance id with the same sanitizer as managed duplicate/rename;
   - rejects duplicate ids unless the user explicitly chooses an existing
@@ -424,6 +428,8 @@ Add Instance workflow selection empty state:
   reachable in short tiled windows.
 - The workflow viewer `Variables` tab shows instance configuration as
   Settings-style rows and keeps selected-node overrides visually separate.
+- The Add Instance sheet exposes source-management as `Source Actions` rows,
+  not as extra alert buttons beside `Create` and `Cancel`.
 - Workflow sources are selected from the `+` add-instance sheet rather than
   shown as a permanent disabled-instance list.
 - A user can create an always-on instance by selecting a workflow and entering

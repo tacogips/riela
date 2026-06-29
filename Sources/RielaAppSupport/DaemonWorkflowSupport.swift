@@ -219,6 +219,15 @@ public struct RielaAppProfileStore: Sendable {
     )
   }
 
+  public func removeProfile(_ profileName: RielaAppProfileName) throws {
+    let profileURL = Self.profilesRootURL(appRootURL: appRootURL)
+      .appendingPathComponent(profileName.rawValue, isDirectory: true)
+    guard FileManager.default.fileExists(atPath: profileURL.path) else {
+      return
+    }
+    try FileManager.default.removeItem(at: profileURL)
+  }
+
   public func listProfileNames(including activeProfileName: RielaAppProfileName? = nil) -> [RielaAppProfileName] {
     let profilesRoot = Self.profilesRootURL(appRootURL: appRootURL)
     let children = (try? FileManager.default.contentsOfDirectory(

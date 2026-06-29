@@ -6,6 +6,161 @@ import RielaAppSupport
 import RielaCore
 
 extension RielaApp {
+  func addDaemonWorkflowInstance(_ request: DaemonWorkflowAddInstanceRequest) {
+    guard let source = daemonWorkflowSources.first(where: { $0.id == request.sourceIdentity }) else {
+      status = "Selected workflow source is no longer available"
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    let defaultIdentity = uniqueDaemonInstanceId(for: source)
+    let identity = sanitizedDaemonInstanceId(request.identity).isEmpty
+      ? defaultIdentity
+      : sanitizedDaemonInstanceId(request.identity)
+    guard !daemonState.preferences.keys.contains(identity) else {
+      status = "Instance ID already exists: \(identity)"
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    let previousPreference = daemonState.preferences[identity]
+    let preference = RielaAppDaemonWorkflowPreference(
+      identity: identity,
+      sourceIdentity: source.id,
+      displayName: request.displayName,
+      available: true,
+      active: request.startsImmediately,
+      workingDirectory: request.workingDirectory,
+      environmentFilePath: request.environmentFilePath
+    )
+    daemonState.preferences[identity] = preference
+    guard saveDaemonState() else {
+      if let previousPreference {
+        daemonState.preferences[identity] = previousPreference
+      } else {
+        daemonState.preferences.removeValue(forKey: identity)
+      }
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    status = "Created instance \(identity)"
+    refreshDaemonWorkflowWindow()
+    daemonWindowController?.selectCandidate(identity: identity)
+    guard request.startsImmediately,
+      let candidate = daemonCandidateForInstance(identity: identity)
+    else {
+      return
+    }
+    Task { @MainActor in
+      await daemonRuntime.start(
+        candidate,
+        configuration: daemonRuntimeConfiguration(for: candidate)
+      )
+      status = "Started \(candidate.displayName)"
+      refreshDaemonWorkflowWindow()
+      daemonWindowController?.selectCandidate(identity: identity)
+    }
+  }
+
+  func startDaemonWorkflowInstance(identity: String) {
+    guard let candidate = daemonCandidateForInstance(identity: identity) else {
+      status = "Selected instance needs a workflow source"
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    guard updateDaemonPreference(identity: identity, mutate: { preference in
+      preference.sourceIdentity = candidate.sourceIdentity
+      preference.available = true
+      preference.active = true
+    }) else {
+      return
+    }
+    Task { @MainActor in
+      await daemonRuntime.start(
+        candidate,
+        configuration: daemonRuntimeConfiguration(for: candidate)
+      )
+      status = "Started \(candidate.displayName)"
+      refreshDaemonWorkflowWindow()
+    }
+  }
+
+  func stopDaemonWorkflowInstance(identity: String) {
+    guard let candidate = daemonCandidateForInstance(identity: identity) else {
+      status = "Selected instance needs a workflow source"
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    guard updateDaemonPreference(identity: identity, mutate: { preference in
+      preference.sourceIdentity = candidate.sourceIdentity
+      preference.available = true
+      preference.active = false
+    }) else {
+      return
+    }
+    Task { @MainActor in
+      await daemonRuntime.stop(identity: identity)
+      status = "Stopped \(candidate.displayName)"
+      refreshDaemonWorkflowWindow()
+    }
+  }
+
+  func restartDaemonWorkflowInstance(identity: String) {
+    guard let candidate = daemonCandidateForInstance(identity: identity) else {
+      status = "Selected instance needs a workflow source"
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    guard updateDaemonPreference(identity: identity, mutate: { preference in
+      preference.sourceIdentity = candidate.sourceIdentity
+      preference.available = true
+      preference.active = true
+    }) else {
+      return
+    }
+    Task { @MainActor in
+      await daemonRuntime.stop(identity: identity)
+      await daemonRuntime.start(
+        candidate,
+        configuration: daemonRuntimeConfiguration(for: candidate)
+      )
+      status = "Restarted \(candidate.displayName)"
+      refreshDaemonWorkflowWindow()
+    }
+  }
+
+  func removeDaemonWorkflowInstance(identity: String) {
+    let previousPreference = daemonState.preferences[identity]
+    guard previousPreference != nil else {
+      status = "Selected instance is no longer available"
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    daemonState.preferences.removeValue(forKey: identity)
+    guard saveDaemonState() else {
+      if let previousPreference {
+        daemonState.preferences[identity] = previousPreference
+      }
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    Task { @MainActor in
+      await daemonRuntime.stop(identity: identity)
+      status = "Removed instance \(identity)"
+      refreshDaemonWorkflowWindow()
+    }
+  }
+
+  func daemonCandidateForInstance(identity: String) -> RielaAppDaemonWorkflowCandidate? {
+    if let candidate = daemonCandidates.first(where: { $0.id == identity }) {
+      return candidate
+    }
+    let preference = daemonState.preference(for: identity)
+    let sourceIdentity = preference.sourceIdentity ?? identity
+    guard let source = daemonWorkflowSources.first(where: { $0.id == sourceIdentity }) else {
+      return nil
+    }
+    return source.managedInstance(identity: identity, displayName: preference.displayName)
+  }
+
   func duplicateDaemonWorkflowInstance(identity: String) {
     guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
       status = "Selected instance is no longer available"

@@ -20,7 +20,7 @@ final class RielaAppInterfaceIdentifierTests: XCTestCase {
     )
   }
 
-  func testInstanceListUsesActiveAndListControlsInsteadOfStartStopMenuActions() throws {
+  func testInstanceListUsesStateAndAddInstanceFlowInsteadOfEnabledDisabledSplit() throws {
     let root = try repositoryRoot()
     let appSource = try String(
       contentsOf: root.appendingPathComponent("Sources/RielaApp/EntryPoint.swift"),
@@ -33,17 +33,37 @@ final class RielaAppInterfaceIdentifierTests: XCTestCase {
 
     XCTAssertFalse(appSource.contains("Auto-Start Enabled Workflows"))
     XCTAssertFalse(appSource.contains("Stop and Disable Auto-Start"))
+    XCTAssertFalse(appSource.contains("menuItem(\"Open Profile Folder\""))
     XCTAssertFalse(controllerSource.contains("Add Workflow/Package..."))
     XCTAssertFalse(controllerSource.contains("Add Project..."))
+    XCTAssertFalse(controllerSource.contains("profileField"))
+    XCTAssertFalse(controllerSource.contains("Switch/Create"))
+    XCTAssertFalse(controllerSource.contains("Open Profile Folder"))
+    XCTAssertFalse(controllerSource.contains("Enabled Instances"))
+    XCTAssertFalse(controllerSource.contains("Disabled Instances"))
+    XCTAssertFalse(controllerSource.contains("title: \"Active\""))
+    XCTAssertFalse(controllerSource.contains("Active:"))
+    XCTAssertFalse(appSource.contains("active /"))
+    XCTAssertFalse(appSource.contains("enabled\""))
     XCTAssertTrue(appSource.contains("menuItem(\"Instances...\""))
+    XCTAssertTrue(appSource.contains("setActivationPolicy(.regular)"))
     XCTAssertTrue(appSource.contains("\"Instances: \\(daemonSummary())\""))
     XCTAssertTrue(controllerSource.contains("window.title = \"Riela Workflow Instances\""))
+    XCTAssertTrue(controllerSource.contains("window.title = \"Profile Select\""))
     XCTAssertTrue(controllerSource.contains("title: \"Instance\""))
-    XCTAssertTrue(controllerSource.contains("Enabled Instances"))
+    XCTAssertTrue(controllerSource.contains("title: \"Workflow\""))
+    XCTAssertTrue(controllerSource.contains("title: \"State\""))
+    XCTAssertTrue(controllerSource.contains("messageText = \"Add Instance\""))
+    XCTAssertTrue(controllerSource.contains("Select a workflow and enter instance parameters."))
+    XCTAssertTrue(controllerSource.contains("Missing source"))
+    XCTAssertTrue(controllerSource.contains("Needs Source"))
+    XCTAssertTrue(controllerSource.contains("addAction(\"Start\""))
+    XCTAssertTrue(controllerSource.contains("addAction(\"Stop\""))
+    XCTAssertTrue(controllerSource.contains("addAction(\"Restart\""))
+    XCTAssertTrue(controllerSource.contains("addAction(\"Remove Instance\""))
     XCTAssertTrue(controllerSource.contains("Instance ID:"))
     XCTAssertTrue(controllerSource.contains("NSButton(title: \"+\""))
     XCTAssertTrue(controllerSource.contains("NSButton(title: \"-\""))
-    XCTAssertTrue(controllerSource.contains("title: \"Active\""))
   }
 
   func testWorkflowEditViewerSeparatesEditRunLogAndStructureTabs() throws {

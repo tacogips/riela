@@ -239,6 +239,23 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     XCTAssertEqual(store.listProfileNames(), [.default, profileName])
   }
 
+  func testProfileStoreCanRemoveMaterializedProfile() throws {
+    let root = try temporaryHome()
+    let appRoot = root.appendingPathComponent(".riela/rielaapp", isDirectory: true)
+    let store = RielaAppProfileStore(appRootURL: appRoot)
+    let profileName = RielaAppProfileName("scratch")
+
+    try store.createProfileDirectories(profileName)
+    XCTAssertEqual(store.listProfileNames(), [.default, profileName])
+
+    try store.removeProfile(profileName)
+
+    XCTAssertEqual(store.listProfileNames(), [.default])
+    XCTAssertFalse(FileManager.default.fileExists(
+      atPath: RielaAppProfileStore.workflowRootURL(appRootURL: appRoot, profileName: profileName).path
+    ))
+  }
+
   func testProfileStorePreparingCommandLineProfilePersistsSelection() throws {
     let root = try temporaryHome()
     let appRoot = root.appendingPathComponent(".riela/rielaapp", isDirectory: true)

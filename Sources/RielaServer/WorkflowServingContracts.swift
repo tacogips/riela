@@ -64,16 +64,55 @@ public struct WorkflowServeSelection: Codable, Equatable, Sendable {
   }
 }
 
+public struct WorkflowServeRuntimeConfiguration: Codable, Equatable, Sendable {
+  public var workingDirectory: String?
+  public var inheritedEnvironment: [String: String]
+  public var defaultVariables: JSONObject
+  public var nodePatch: JSONObject?
+
+  public init(
+    workingDirectory: String? = nil,
+    inheritedEnvironment: [String: String] = [:],
+    defaultVariables: JSONObject = [:],
+    nodePatch: JSONObject? = nil
+  ) {
+    self.workingDirectory = workingDirectory
+    self.inheritedEnvironment = inheritedEnvironment
+    self.defaultVariables = defaultVariables
+    self.nodePatch = nodePatch
+  }
+
+  public func effectiveWorkingDirectory(default defaultWorkingDirectory: String) -> String {
+    let normalized = workingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let normalized, !normalized.isEmpty else {
+      return defaultWorkingDirectory
+    }
+    return normalized
+  }
+}
+
 public struct WorkflowServeStartRequest: Codable, Equatable, Sendable {
   public var selection: WorkflowServeSelection
   public var server: RielaServerConfiguration
-  public var workingDirectory: String
+  public var configuration: WorkflowServeRuntimeConfiguration
   public var artifactRoot: String?
   public var sessionStoreRoot: String?
   public var eventRoot: String?
-  public var inheritedEnvironment: [String: String]
-  public var defaultVariables: JSONObject
   public var startsEventSources: Bool
+
+  private enum CodingKeys: String, CodingKey {
+    case selection
+    case server
+    case configuration
+    case workingDirectory
+    case artifactRoot
+    case sessionStoreRoot
+    case eventRoot
+    case inheritedEnvironment
+    case defaultVariables
+    case nodePatch
+    case startsEventSources
+  }
 
   public init(
     selection: WorkflowServeSelection,
@@ -84,17 +123,94 @@ public struct WorkflowServeStartRequest: Codable, Equatable, Sendable {
     eventRoot: String? = nil,
     inheritedEnvironment: [String: String] = [:],
     defaultVariables: JSONObject = [:],
+    nodePatch: JSONObject? = nil,
     startsEventSources: Bool = true
   ) {
     self.selection = selection
     self.server = server
-    self.workingDirectory = workingDirectory
+    configuration = WorkflowServeRuntimeConfiguration(
+      workingDirectory: workingDirectory,
+      inheritedEnvironment: inheritedEnvironment,
+      defaultVariables: defaultVariables,
+      nodePatch: nodePatch
+    )
     self.artifactRoot = artifactRoot
     self.sessionStoreRoot = sessionStoreRoot
     self.eventRoot = eventRoot
-    self.inheritedEnvironment = inheritedEnvironment
-    self.defaultVariables = defaultVariables
     self.startsEventSources = startsEventSources
+  }
+
+  public init(
+    selection: WorkflowServeSelection,
+    server: RielaServerConfiguration = RielaServerConfiguration(),
+    configuration: WorkflowServeRuntimeConfiguration,
+    artifactRoot: String? = nil,
+    sessionStoreRoot: String? = nil,
+    eventRoot: String? = nil,
+    startsEventSources: Bool = true
+  ) {
+    self.selection = selection
+    self.server = server
+    self.configuration = configuration
+    self.artifactRoot = artifactRoot
+    self.sessionStoreRoot = sessionStoreRoot
+    self.eventRoot = eventRoot
+    self.startsEventSources = startsEventSources
+  }
+
+  public var workingDirectory: String {
+    get { configuration.effectiveWorkingDirectory(default: FileManager.default.currentDirectoryPath) }
+    set { configuration.workingDirectory = newValue }
+  }
+
+  public var inheritedEnvironment: [String: String] {
+    get { configuration.inheritedEnvironment }
+    set { configuration.inheritedEnvironment = newValue }
+  }
+
+  public var defaultVariables: JSONObject {
+    get { configuration.defaultVariables }
+    set { configuration.defaultVariables = newValue }
+  }
+
+  public var nodePatch: JSONObject? {
+    get { configuration.nodePatch }
+    set { configuration.nodePatch = newValue }
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    selection = try container.decode(WorkflowServeSelection.self, forKey: .selection)
+    server = try container.decodeIfPresent(RielaServerConfiguration.self, forKey: .server) ?? RielaServerConfiguration()
+    if let decodedConfiguration = try container.decodeIfPresent(
+      WorkflowServeRuntimeConfiguration.self,
+      forKey: .configuration
+    ) {
+      configuration = decodedConfiguration
+    } else {
+      configuration = WorkflowServeRuntimeConfiguration(
+        workingDirectory: try container.decodeIfPresent(String.self, forKey: .workingDirectory)
+          ?? FileManager.default.currentDirectoryPath,
+        inheritedEnvironment: try container.decodeIfPresent([String: String].self, forKey: .inheritedEnvironment) ?? [:],
+        defaultVariables: try container.decodeIfPresent(JSONObject.self, forKey: .defaultVariables) ?? [:],
+        nodePatch: try container.decodeIfPresent(JSONObject.self, forKey: .nodePatch)
+      )
+    }
+    artifactRoot = try container.decodeIfPresent(String.self, forKey: .artifactRoot)
+    sessionStoreRoot = try container.decodeIfPresent(String.self, forKey: .sessionStoreRoot)
+    eventRoot = try container.decodeIfPresent(String.self, forKey: .eventRoot)
+    startsEventSources = try container.decodeIfPresent(Bool.self, forKey: .startsEventSources) ?? true
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(selection, forKey: .selection)
+    try container.encode(server, forKey: .server)
+    try container.encode(configuration, forKey: .configuration)
+    try container.encodeIfPresent(artifactRoot, forKey: .artifactRoot)
+    try container.encodeIfPresent(sessionStoreRoot, forKey: .sessionStoreRoot)
+    try container.encodeIfPresent(eventRoot, forKey: .eventRoot)
+    try container.encode(startsEventSources, forKey: .startsEventSources)
   }
 }
 

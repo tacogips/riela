@@ -3,6 +3,7 @@
   "description": "Review the proposed memory feature design against the user's requested behavior.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "effort": "high",
   "promptTemplateFile": "prompts/design-review.md",
   "variables": {},

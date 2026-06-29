@@ -3,6 +3,7 @@
   "description": "Review the design-doc update and route back when any high or mid finding exists.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/step3-design-review.md",
   "variables": {},
   "output": {

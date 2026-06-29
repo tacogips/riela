@@ -1,5 +1,6 @@
 {
   "id": "read-yui-memory",
+  "modelFreeze": false,
   "description": "Read recent Yui Codex memory from the configured local memory root before the persona replies.",
   "addon": {
     "name": "riela/chat-persona-memory-read",

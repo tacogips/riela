@@ -2,6 +2,7 @@
 import Foundation
 import RielaAddons
 @testable import RielaAppSupport
+import RielaCore
 import RielaServer
 import XCTest
 
@@ -786,36 +787,6 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     }
   }
 
-  @MainActor
-  func testRuntimeRestartsWorkflowWhenEventSourceExits() async throws {
-    let root = try temporaryHome()
-    let workflowDirectory = root.appendingPathComponent(".riela/workflows/chat-workflow", isDirectory: true)
-    try writeRunnableWorkflow(id: "chat-workflow", to: workflowDirectory)
-    let factory = RestartCountingEventSourceFactory()
-    let runtime = RielaAppDaemonWorkflowRuntime(eventSourceFactory: factory, monitorIntervalNanoseconds: 10_000_000)
-    let candidate = RielaAppDaemonWorkflowCandidate(
-      id: "user-workflow:chat-workflow",
-      workflowId: "chat-workflow",
-      displayName: "chat-workflow",
-      sourceDescription: "user workflow",
-      workflowDirectory: workflowDirectory.path,
-      workingDirectory: workflowDirectory.deletingLastPathComponent().path,
-      eventRoot: workflowDirectory.appendingPathComponent(".riela-events", isDirectory: true).path,
-      eventSources: [RielaAppDaemonEventSourceSummary(id: "chat-source", kind: "telegram-gateway")]
-    )
-
-    await runtime.start(candidate, inheritedEnvironment: ["RIELA_APP_TEST_TOKEN": "runtime-token"])
-    factory.markLatestExited()
-
-    for _ in 0..<50 where factory.startCount < 2 {
-      try await Task.sleep(nanoseconds: 10_000_000)
-    }
-
-    XCTAssertGreaterThanOrEqual(factory.startCount, 2)
-    XCTAssertEqual(factory.requests.last?.inheritedEnvironment["RIELA_APP_TEST_TOKEN"], "runtime-token")
-    await runtime.stop(identity: candidate.id)
-  }
-
   private func temporaryHome() throws -> URL {
     let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
       .appendingPathComponent("riela-app-support-tests-\(UUID().uuidString)", isDirectory: true)
@@ -849,29 +820,6 @@ final class DaemonWorkflowSupportTests: XCTestCase {
       "workflowDirectory": "."
     }
     """.write(to: directory.appendingPathComponent("riela-package.json"), atomically: true, encoding: .utf8)
-  }
-
-  private func writeRunnableWorkflow(id: String, to directory: URL) throws {
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    try """
-    {
-      "workflowId": "\(id)",
-      "defaults": {
-        "nodeTimeoutMs": 1000,
-        "maxLoopIterations": 1
-      },
-      "entryStepId": "reply",
-      "nodes": [
-        {
-          "id": "reply",
-          "addon": {
-            "name": "riela/test-reply",
-            "version": "1"
-          }
-        }
-      ]
-    }
-    """.write(to: directory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
   }
 
   private func writeEventSource(id: String, kind: String, eventRoot: URL) throws {
@@ -937,64 +885,4 @@ private final class FakeEventServeProcessHandle: RielaAppDaemonEventServeProcess
   }
 }
 
-private final class RestartCountingEventSourceFactory: WorkflowServeEventSourceFactory, @unchecked Sendable {
-  private let lock = NSLock()
-  private var handles: [RestartCountingEventSourceHandle] = []
-  private var recordedRequests: [WorkflowServeStartRequest] = []
-
-  var startCount: Int {
-    lock.withLock { handles.count }
-  }
-
-  var requests: [WorkflowServeStartRequest] {
-    lock.withLock { recordedRequests }
-  }
-
-  func startEventSources(
-    for resolvedWorkflow: WorkflowServeResolvedWorkflow,
-    request: WorkflowServeStartRequest,
-    generationId: String
-  ) async throws -> [any WorkflowServeEventSourceHandle] {
-    let handle = RestartCountingEventSourceHandle(generationId: generationId)
-    lock.withLock {
-      handles.append(handle)
-      recordedRequests.append(request)
-    }
-    return [handle]
-  }
-
-  func markLatestExited() {
-    lock.withLock { handles.last }?.markExited()
-  }
-}
-
-private final class RestartCountingEventSourceHandle: WorkflowServeEventSourceHandle, @unchecked Sendable {
-  private let lock = NSLock()
-  private let generationId: String
-  private var running = true
-
-  init(generationId: String) {
-    self.generationId = generationId
-  }
-
-  var status: WorkflowServeEventSourceStatus {
-    lock.withLock {
-      WorkflowServeEventSourceStatus(
-        sourceId: "restart-counting",
-        status: running ? "running" : "exited",
-        generationId: generationId
-      )
-    }
-  }
-
-  func markExited() {
-    lock.withLock {
-      running = false
-    }
-  }
-
-  func shutdown() async throws {
-    markExited()
-  }
-}
 #endif

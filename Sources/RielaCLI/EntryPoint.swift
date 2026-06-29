@@ -3,11 +3,20 @@ import Foundation
 @main
 struct RielaSwiftCLI {
   static func main() async {
-    let result = await RielaCLIApplication(
+    let app = RielaCLIApplication(
       runCommand: WorkflowRunCommand(jsonlRecordWriter: { line in
         FileHandle.standardOutput.write(Data(line.utf8))
       })
-    ).run(Array(CommandLine.arguments.dropFirst()))
+    )
+    let arguments = Array(CommandLine.arguments.dropFirst())
+    let runTask = Task {
+      await app.run(arguments)
+    }
+    let signalCancellation = CLISignalCancellation { _ in
+      runTask.cancel()
+    }
+    let result = await runTask.value
+    signalCancellation.cancel()
     if !result.stdout.isEmpty {
       FileHandle.standardOutput.write(Data(result.stdout.utf8))
     }

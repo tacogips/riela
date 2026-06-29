@@ -1,5 +1,19 @@
 # Node Add-on Catalog and Built-in Workers: Gateway Built-ins
 
+## Shared Container Runner Rules
+
+All gateway add-ons use the same container runner contract:
+
+- `runnerKind` accepts only `podman`, `docker`, `nerdctl`, or `container`
+- `container` selects the Apple `container` CLI by name
+- legacy aliases such as `apple` and `apple-container` are not accepted
+- `runnerPath`, when provided, is an explicit executable override and takes
+  precedence over `runnerKind`
+- after template rendering, `runnerPath` or `runnerKind` must resolve to a
+  non-empty executable name; empty or whitespace-only values fail before the
+  process is launched
+- when both fields are omitted, execution defaults to `docker`
+
 ## Built-in `riela/x-gateway-read`
 
 ### Purpose
@@ -46,7 +60,7 @@ cannot override that binary with the full `x-gateway` client.
 interface XGatewayReadAddonConfig {
   readonly queryTemplate: string;
   readonly image?: string;
-  readonly runnerKind?: "podman" | "docker" | "nerdctl";
+  readonly runnerKind?: "podman" | "docker" | "nerdctl" | "container";
   readonly runnerPath?: string;
   readonly networkPolicy?: "disabled" | "egress-allowed";
 }
@@ -86,7 +100,7 @@ Environment rules:
 Validation rules:
 
 - `queryTemplate` is required and must render to a non-empty string
-- `runnerKind` must be `podman`, `docker`, or `nerdctl`
+- `runnerKind` must be `podman`, `docker`, `nerdctl`, or `container`
 - `networkPolicy` must be `disabled` or `egress-allowed`
 - write and mutation surfaces are intentionally omitted from version `1`
 
@@ -146,7 +160,7 @@ binary or supply an arbitrary command.
 interface XGatewayAddonConfig {
   readonly documentTemplate: string;
   readonly image?: string;
-  readonly runnerKind?: "podman" | "docker" | "nerdctl";
+  readonly runnerKind?: "podman" | "docker" | "nerdctl" | "container";
   readonly runnerPath?: string;
   readonly networkPolicy?: "disabled" | "egress-allowed";
 }
@@ -177,7 +191,7 @@ variables are runtime readiness prerequisites, and optional bindings may set
 Validation rules:
 
 - `documentTemplate` is required and must render to a non-empty string
-- `runnerKind` must be `podman`, `docker`, or `nerdctl`
+- `runnerKind` must be `podman`, `docker`, `nerdctl`, or `container`
 - `networkPolicy` must be `disabled` or `egress-allowed`
 - command or binary overrides are rejected; version `1` always runs
   `x-gateway`
@@ -230,7 +244,7 @@ authors cannot override that binary with the full `mail-gateway` client.
 interface MailGatewayReadAddonConfig {
   readonly queryTemplate: string;
   readonly image?: string;
-  readonly runnerKind?: "podman" | "docker" | "nerdctl";
+  readonly runnerKind?: "podman" | "docker" | "nerdctl" | "container";
   readonly runnerPath?: string;
   readonly networkPolicy?: "disabled" | "egress-allowed";
 }
@@ -261,7 +275,7 @@ variables are runtime readiness prerequisites, and optional bindings may set
 Validation rules:
 
 - `queryTemplate` is required and must render to a non-empty string
-- `runnerKind` must be `podman`, `docker`, or `nerdctl`
+- `runnerKind` must be `podman`, `docker`, `nerdctl`, or `container`
 - `networkPolicy` must be `disabled` or `egress-allowed`
 - send and mutation surfaces are intentionally omitted from version `1`
 
@@ -315,7 +329,7 @@ binary or supply an arbitrary command.
 interface MailGatewayAddonConfig {
   readonly documentTemplate: string;
   readonly image?: string;
-  readonly runnerKind?: "podman" | "docker" | "nerdctl";
+  readonly runnerKind?: "podman" | "docker" | "nerdctl" | "container";
   readonly runnerPath?: string;
   readonly networkPolicy?: "disabled" | "egress-allowed";
 }
@@ -346,7 +360,7 @@ variables are runtime readiness prerequisites, and optional bindings may set
 Validation rules:
 
 - `documentTemplate` is required and must render to a non-empty string
-- `runnerKind` must be `podman`, `docker`, or `nerdctl`
+- `runnerKind` must be `podman`, `docker`, `nerdctl`, or `container`
 - `networkPolicy` must be `disabled` or `egress-allowed`
 - command or binary overrides are rejected; version `1` always runs
   `mail-gateway`

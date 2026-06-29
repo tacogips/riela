@@ -3,6 +3,7 @@
   "description": "Review the implementation plan against the design, including final design-plan consistency, and route back to the right authoring step when blocking findings exist.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "effort": "high",
   "promptTemplateFile": "prompts/step5-impl-plan-review.md",
   "variables": {},

@@ -2,6 +2,7 @@
   "id": "add-worker",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/add-worker.md",
   "variables": {},
   "output": {

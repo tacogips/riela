@@ -2,6 +2,7 @@
   "id": "multiply-output",
   "executionBackend": "claude-code-agent",
   "model": "claude-haiku-4-5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/multiply-output.md",
   "variables": {},
   "output": {

@@ -3,6 +3,7 @@
   "description": "Select the first implementation slice from the loop engineering plan.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "effort": "high",
   "promptTemplateFile": "prompts/intake-or-plan.md",
   "variables": {},

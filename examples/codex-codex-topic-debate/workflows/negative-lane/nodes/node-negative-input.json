@@ -2,6 +2,7 @@
   "id": "negative-input",
   "executionBackend": "codex-agent",
   "model": "gpt-5.3-codex-spark",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/negative-input.md",
   "variables": {
     "stanceLabel": "negative"

@@ -3,6 +3,7 @@
   "description": "Review session loop projection implementation.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/review.md",
   "variables": {}
 }

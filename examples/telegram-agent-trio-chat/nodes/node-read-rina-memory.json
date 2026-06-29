@@ -1,5 +1,6 @@
 {
   "id": "read-rina-memory",
+  "modelFreeze": false,
   "description": "Read recent Rina Cursor memory from the configured local memory root before the persona replies.",
   "addon": {
     "name": "riela/chat-persona-memory-read",

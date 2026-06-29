@@ -21,7 +21,23 @@ workflows and event-source children.
 ## User Flow
 
 The Workflows window lists enabled and disabled workflow/package candidates.
-Each row includes an `Env` status column:
+Each row includes `Env`, `Active`, and runtime status columns. `Enabled`
+controls whether the workflow is available in the profile. `Active` controls
+whether an enabled workflow should be running; disabling a workflow also clears
+its active preference and stops any running instance.
+
+The list uses `+` and `-` controls for adding/removing profile entries. The `+`
+menu can import a workflow/package or add a project reference. The selected
+workflow opens through `Edit Selected` or by double-clicking any non-`Active`
+cell. The edit view is tabbed:
+
+- `Edit`: node details, node patch controls, and prompt template editing
+- `Variables`: current directory, inline environment variable overrides, and
+  workflow default variables for the managed instance
+- `Run Log`: selected-session timeline and node inbox/outbox details
+- `Structure`: workflow structure rendered from the loaded workflow graph
+
+The `Env` status column reports:
 
 - `No req`: the workflow has no known required environment variables and no
   env file selected.
@@ -42,13 +58,16 @@ treated as credential material.
 ## State Model
 
 The selected file path is stored in
-`RielaAppDaemonWorkflowPreference.environmentFilePath`. Preferences are already
-profile-scoped and keyed by workflow identity, so env file selection follows
-the same profile and workflow boundary as availability and auto-start.
+`RielaAppDaemonWorkflowPreference.environmentFilePath`. Inline environment
+overrides, workflow default variables, current directory overrides, active
+state, availability, and node patches are stored on the same profile-scoped
+preference keyed by workflow identity.
 
 Re-importing a package or workflow preserves the existing preference when the
 import replaces an existing profile item. Clearing the env file removes only
-`environmentFilePath`; it does not alter availability or auto-start.
+`environmentFilePath`; it does not alter availability, active state, inline
+environment variables, workflow default variables, current directory, or node
+patches.
 
 ## Environment Sources
 
@@ -75,12 +94,22 @@ When RielaApp starts or restarts a daemon workflow, it passes the merged
 environment through `WorkflowServeStartRequest.inheritedEnvironment`.
 `RielaAppDaemonWorkflowRuntime` retains that inherited environment with the
 running workflow so automatic event-source restarts use the same values.
+The selected current directory and workflow default variables are passed with
+the managed workflow start request so the daemon instance uses the same
+per-profile overrides shown in the edit view.
+When an active managed workflow's env file, inline env, workflow variables,
+current directory, or node patch changes, RielaApp stops and restarts that
+workflow so the running daemon instance picks up the new configuration.
 
 `RielaAppDaemonProcessEventSourceFactory` receives the same inherited
 environment for child `riela events serve` processes and overlays telemetry
 propagation values. This keeps workflow event sources consistent with the
 selected RielaApp env file while preserving OpenTelemetry child-process
 attributes.
+For project-backed workflows, event-source serving keeps
+`--workflow-definition-dir` pointed at the resolved workflow directory while
+using the managed current directory as the child process working directory and,
+when different, passing it through `--working-directory`.
 
 ## Security And Privacy
 

@@ -3,6 +3,7 @@
   "description": "LLM A: product and workflow experience architect for Riela loop engineering.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "effort": "high",
   "promptTemplateFile": "prompts/llm-a-product-architect.md",
   "variables": {},

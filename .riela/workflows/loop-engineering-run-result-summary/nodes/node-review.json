@@ -3,6 +3,7 @@
   "description": "Review the final run-result loop evidence summary implementation.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/review.md",
   "variables": {}
 }

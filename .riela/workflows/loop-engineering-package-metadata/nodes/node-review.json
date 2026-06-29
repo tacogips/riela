@@ -2,6 +2,7 @@
   "id": "review",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "promptFile": "../prompts/review.md",
   "variables": {}
 }

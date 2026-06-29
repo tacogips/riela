@@ -2,6 +2,7 @@
   "id": "workflow-c-request-review",
   "executionBackend": "codex-agent",
   "model": "gpt-5.3-codex-spark",
+  "modelFreeze": true,
   "promptTemplateFile": "prompts/workflow-c-request-review.md",
   "variables": {},
   "output": {

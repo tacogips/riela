@@ -231,6 +231,40 @@ final class WorkflowStdioNodeExecutorTests: XCTestCase {
     XCTAssertFalse(configuration.arguments.contains("RIELA_WORKFLOW_OUTPUT"))
   }
 
+  func testContainerRunnerKindUsesContainerCLI() async throws {
+    let runner = RecordingStdioNodeProcessRunner { _, _ in
+      #"{"container":true}"# + "\n"
+    }
+    let executor = LocalWorkflowStdioNodeExecutor(runner: runner)
+
+    _ = try await executor.execute(
+      input(
+        kind: .container,
+        node: AgentNodePayload(
+          id: "node",
+          nodeType: .container,
+          model: "",
+          container: WorkflowContainerExecution(
+            image: "ghcr.io/example/worker:latest",
+            runnerKind: "container",
+            command: ["./run.sh"],
+            environment: ["APP_ENV": "test"]
+          )
+        ),
+        variables: ["target": .string("prod")]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    let configurations = await runner.configurations()
+    let configuration = try XCTUnwrap(configurations.first)
+    XCTAssertEqual(configuration.executableURL.path, "/usr/bin/env")
+    XCTAssertEqual(Array(configuration.arguments.prefix(4)), ["container", "run", "--rm", "-i"])
+    XCTAssertTrue(configuration.arguments.contains("APP_ENV"))
+    XCTAssertTrue(configuration.arguments.contains("ghcr.io/example/worker:latest"))
+    XCTAssertTrue(configuration.arguments.contains("./run.sh"))
+  }
+
   func testContainerNodeReceivesWritableMemoryBindAndContainerMemoryRoot() async throws {
     let memoryRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
       .appendingPathComponent("riela-container-memory-\(UUID().uuidString)", isDirectory: true)

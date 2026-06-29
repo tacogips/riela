@@ -1,5 +1,6 @@
 {
   "id": "command-worker",
+  "modelFreeze": false,
   "nodeType": "command",
   "variables": {
     "lane": "command"

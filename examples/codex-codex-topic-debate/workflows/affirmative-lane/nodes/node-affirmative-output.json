@@ -2,6 +2,7 @@
   "id": "affirmative-output",
   "executionBackend": "codex-agent",
   "model": "gpt-5.3-codex-spark",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/affirmative-output.md",
   "variables": {
     "stanceLabel": "affirmative"

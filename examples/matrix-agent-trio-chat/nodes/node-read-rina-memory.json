@@ -1,5 +1,6 @@
 {
   "id": "read-rina-memory",
+  "modelFreeze": false,
   "addon": {
     "name": "riela/chat-persona-memory-read",
     "version": "1",

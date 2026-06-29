@@ -3,6 +3,7 @@
   "description": "Review the detailed design and implementation plan for correctness, migration safety, and implementation usefulness.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "effort": "high",
   "promptTemplateFile": "prompts/review.md",
   "variables": {},

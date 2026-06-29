@@ -7,10 +7,14 @@ Supporting design:
 
 Implementation references:
 
-- `src/workflow/types.ts` for authored and normalized workflow types
-- `src/workflow/validate.ts` for validation, defaults, and normalization
-- `src/workflow/authored-workflow.ts` for rejected legacy top-level fields
-- `src/workflow/node-addons.ts` for built-in add-on names and versions
+- `Sources/RielaCore/WorkflowModel.swift` for authored and normalized workflow
+  models, node payload decoding, and core validation DTOs
+- `Sources/RielaCLI/WorkflowResolution.swift` for runtime node patch
+  enforcement, including model-freeze checks
+- `Sources/RielaAddons/` for built-in add-on names, versions, and package
+  manifest handling
+- `Sources/RielaAdapters/WorkflowStdioNodeExecutor.swift` for command and
+  container node execution behavior
 
 ## Overview
 
@@ -191,8 +195,14 @@ Validation rules:
 - `steps[]` must be non-empty
 - node registry ids must be unique
 - step ids must be unique
-- dedicated legacy top-level fields are rejected by key set: step-addressed bundles use `REJECTED_AUTHORED_STEP_ADDRESSED_DISALLOWED_TOP_LEVEL_KEYS` in `src/workflow/authored-workflow.ts` (includes `managerRuntimeId`, `managerNodeId`, `entryNodeId`, `subWorkflows`, `workflowCalls`, `subWorkflowConversations`, `edges`, `loops`, and `branching`). `src/workflow/validate.ts` re-exports those constants for compatibility
-- dedicated legacy top-level field lists, rejection strings, canonical issue construction, and save-time authored-boundary stripping are centralized in `src/workflow/authored-workflow.ts`; validation re-exports those constants from `src/workflow/validate.ts` for compatibility
+- dedicated legacy top-level fields are rejected by key set in
+  `Sources/RielaCore/WorkflowRawValidation.swift` (includes
+  `managerRuntimeId`, `managerNodeId`, `entryNodeId`, `subWorkflows`,
+  `workflowCalls`, `subWorkflowConversations`, `edges`, `loops`, and
+  `branching`)
+- dedicated legacy top-level field lists, rejection strings, canonical issue
+  construction, and save-time authored-boundary stripping are centralized in the
+  Swift workflow raw-validation and resolution paths
 - `defaults.selfImprove`, when present, may contain only `enabled`, `mode`, and
   `defaultLogLimit`
 - `defaults.selfImprove.enabled`, when present, must be boolean
@@ -416,41 +426,48 @@ Rules:
 
 ### Built-in Add-on Package Boundary
 
-The `riela/*` add-on catalog is runtime-owned and resolved through the
-boundary package loader before workflow validation materializes add-on-backed
-nodes. Source-tree execution and packaged execution have different freshness
-constraints:
+The `riela/*` add-on catalog is runtime-owned. The Swift CLI resolves built-in
+add-ons through `BuiltinWorkflowAddonResolver` in
+`Sources/RielaCLI/ProductionNodeAdapter.swift`; native package add-ons are
+resolved separately through `NativeBundleAddonResolver` in `Sources/RielaAddons`.
 
-- when `riela` is executing from `packages/riela/src`, the boundary loader
-  must prefer `packages/riela-addons/src/index.ts` for built-in add-on
-  resolution, because local development can add catalog entries before
-  `packages/riela-addons/dist/index.js` is rebuilt
-- when `riela` is executing from `packages/riela/dist` or a published
-  package layout, the loader may use `packages/riela-addons/dist/index.js`
-  first and fall back to source only for missing local development artifacts
-- an existing dist entrypoint is not sufficient evidence that the catalog is
-  fresh during source-tree validation; stale dist must not hide newly added
-  built-in add-ons such as `riela/workflow-package-sandbox-review`
-- third-party and scoped local add-on lookup remain outside this boundary:
-  `riela/` names are reserved for built-ins, and non-`riela/` names still
-  resolve through local add-on roots or host-provided resolvers
+Rules:
 
-Validation acceptance signal: `validateWorkflowBundleDetailedAsync` must resolve
-new source-tree built-in add-ons even when a stale
-`packages/riela-addons/dist/index.js` is present, while preserving installed
-package behavior that uses built artifacts.
+- `riela/` names are reserved for runtime built-ins and are not loadable as
+  third-party native-bundle registrations
+- non-`riela/` add-ons may resolve from scoped local add-on roots or
+  host-provided native-bundle registrations
+- scenario-backed runs may intercept add-on execution for deterministic tests,
+  then fall back to the production resolver
+- built-in resolver validation is implementation-local and must reject
+  unsupported versions, missing required config fields, and missing required
+  `addon.env` sources before calling the provider adapter
 
 Initial built-in add-ons:
 
 - `riela/chat-reply-worker`: worker node that replies to the chat event target
   in `runtimeVariables.event` through the event reply adapter registry
-- `riela/codex-worker`: worker node that resolves to an `agent` payload using
-  `executionBackend: "codex-agent"`
-- `riela/claude-code-worker`: worker node that resolves to an `agent` payload
-  using `executionBackend: "claude-code-agent"`
+- `riela/codex-sdk-worker`: worker node that dispatches through the official
+  OpenAI SDK backend
+- `riela/claude-sdk-worker`: worker node that dispatches through the official
+  Anthropic SDK backend
+- `riela/cursor-sdk-worker`: worker node that dispatches through the Cursor SDK
+  adapter boundary
 - `riela/gemini-sdk-worker`: worker node that resolves to an `agent` payload
   using `executionBackend: "official/gemini-sdk"` and explicit Gemini API key
   environment binding
+- `riela/chat-persona-router`: worker node that chooses chat persona routing
+- `riela/chat-memory-raw-daily-summary`: worker node that maintains raw and
+  daily-summary chat memory
+- `riela/chat-persona-memory-read` and `riela/chat-persona-memory-write`:
+  worker nodes that read and write persona-scoped chat memory
+- `riela/memory-save`, `riela/memory-update`, `riela/memory-load`, and
+  `riela/memory-search`: worker nodes for file-backed workflow memory records
+- `riela/x-digest`: worker node that summarizes X/Twitter data through the
+  production X digest adapter
+- `riela/gmail-digest`: worker node that summarizes Gmail/mail-gateway data
+  through the production Gmail digest adapter
+- `riela/time-signal`: worker node for scheduled time-signal payloads
 - `riela/x-gateway-read`: worker node that runs the read-only
   `x-gateway-reader graphql query` surface in a Docker-compatible container
 - `riela/x-gateway`: worker node that runs the full `x-gateway graphql query`
@@ -551,7 +568,14 @@ Rules:
 - a step may have at most one cross-workflow transition
 - cross-workflow transitions must target the callee workflow's callable entry step, which is normally its `managerStepId`, or `entryStepId` for a worker-only workflow
 - transitions always target steps, never raw node ids
-- optional `label` uses the same expression grammar as the `when` field on step-derived routing edges (`getStructuralEdges` in `src/workflow/types.ts` maps omitted `label` to `always`). For cross-workflow transitions, omitted `label` means the derived cross-workflow dispatch is unconditional. When set, `label` gates both local transition selection and cross-workflow dispatch matching. Step-authored cross-workflow transitions are **not** copied onto `workflow.workflowCalls` during normalization; the engine and inspection surfaces derive the effective dispatch list (deterministic ids `__cw:<callerStepId>`) from `steps[]`
+- optional `label` uses the same expression grammar as the `when` field on
+  step-derived routing edges; `WorkflowBranchEvaluator` treats an omitted label
+  as unconditional. For cross-workflow transitions, omitted `label` means the
+  derived cross-workflow dispatch is unconditional. When set, `label` gates both
+  local transition selection and cross-workflow dispatch matching.
+  Step-authored cross-workflow transitions are **not** copied onto
+  `workflow.workflowCalls` during normalization; the engine and inspection
+  surfaces derive the effective dispatch list from `steps[]`
 
 ### `StepTransitionFanout`
 
@@ -623,6 +647,7 @@ Authored shape:
   "id": "implement",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/implement.md",
   "variables": {},
   "sessionPolicy": {
@@ -639,6 +664,7 @@ Authored shape:
 Required:
 
 - `id`
+- `modelFreeze`
 - `variables`
 
 Optional:
@@ -672,6 +698,9 @@ Important rules:
 
 - omitted `nodeType` defaults to `agent`
 - `agent` nodes require `executionBackend`, `model`, and `promptTemplate` unless a manager code-path default is explicitly allowed by the loader
+- every authored node payload must include `modelFreeze` as a boolean; author
+  `false` when the node's model may be patched at run time, and `true` when
+  run-time node patches must not change the authored `model`
 - manager-role nodes must stay on the agent execution path; `command`,
   `container`, `user-action`, `sleep`, and runtime-owned `addon` payloads are
   worker execution paths
@@ -745,6 +774,21 @@ Current backend values:
 `model` is backend-specific model naming. It is required for executable `agent` nodes.
 
 For `agent` nodes, `model` must be a provider or backend-specific model name. Do not put CLI-wrapper identifiers such as `codex-agent`, `claude-code-agent`, `tacogips/codex-agent`, or `tacogips/claude-code-agent` in `model`.
+
+### `modelFreeze`
+
+`modelFreeze` is a required boolean on every authored node payload. It is part
+of the serialized node contract, not an implicit default.
+
+Rules:
+
+- `false` allows explicit run-time node patches to replace `model`
+- `true` allows the node to keep its authored model even when other node patch
+  fields are applied; a patch that changes `model` fails validation for that
+  node
+- `modelFreeze` is still required for non-agent payload shapes such as
+  `command`, `container`, `sleep`, and `user-action` because they share the same
+  node payload envelope
 
 ### `userAction`
 

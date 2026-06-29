@@ -3,6 +3,7 @@
   "description": "Route based on Step 1 review severity.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/step2-exit-gate.md",
   "variables": {},
   "output": {

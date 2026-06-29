@@ -1,5 +1,6 @@
 {
   "id": "read-mika-memory",
+  "modelFreeze": false,
   "description": "Read recent Mika Trend memory from the configured local memory root before the persona replies.",
   "addon": {
     "name": "riela/chat-persona-memory-read",

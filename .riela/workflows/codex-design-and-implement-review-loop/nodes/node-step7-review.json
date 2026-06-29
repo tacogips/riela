@@ -3,6 +3,7 @@
   "description": "Review the implementation against the repository diff and route back when any high or mid finding exists.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "effort": "high",
   "promptTemplateFile": "prompts/step7-review.md",
   "variables": {},

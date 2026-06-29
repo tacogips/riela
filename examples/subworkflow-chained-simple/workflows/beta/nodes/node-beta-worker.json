@@ -2,6 +2,7 @@
   "id": "beta-worker",
   "executionBackend": "claude-code-agent",
   "model": "claude-haiku-4-5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/beta-worker.md",
   "variables": {}
 }

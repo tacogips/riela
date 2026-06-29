@@ -3,6 +3,7 @@
   "description": "Review the ideal specification from the RielaApp user perspective.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/riela-app-review.md",
   "variables": {}
 }

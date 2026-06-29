@@ -2,6 +2,7 @@
   "id": "workflow-output",
   "executionBackend": "codex-agent",
   "model": "gpt-5.3-codex-spark",
+  "modelFreeze": true,
   "promptTemplateFile": "prompts/workflow-output.md",
   "variables": {},
   "output": {

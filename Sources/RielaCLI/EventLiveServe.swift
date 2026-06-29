@@ -517,6 +517,7 @@ struct CLIEventWorkflowRunner: EventWorkflowRunning {
         workingDirectory: workingDirectory
       ),
       variables: try jsonString(request.runtimeVariables),
+      nodePatch: request.parsed.nodePatch,
       mockScenarioPath: request.parsed.mockScenarioPath,
       output: .json,
       timeoutMs: request.parsed.timeoutMs,

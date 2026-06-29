@@ -3,6 +3,7 @@
   "description": "Review the proposed session SQLite persistence migration design.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "effort": "high",
   "promptTemplateFile": "prompts/design-review.md",
   "variables": {},

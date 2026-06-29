@@ -79,9 +79,9 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
         throw AdapterExecutionError(.providerError, "container node '\(input.nodeId)' is missing container execution metadata")
       }
       let templateVariables = templateVariables(for: input)
-      let runnerPath = container.runnerPath ?? container.runnerKind ?? "docker"
+      let runnerPath = try containerRunnerExecutable(for: container, variables: templateVariables)
       let invocation = processInvocation(
-        executable: renderPromptTemplate(runnerPath, variables: templateVariables),
+        executable: runnerPath,
         arguments: containerArguments(container, variables: templateVariables)
       )
       return LocalAgentProcessConfiguration(
@@ -202,6 +202,24 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
       return (URL(fileURLWithPath: executable), arguments)
     }
     return (URL(fileURLWithPath: "/usr/bin/env"), [executable] + arguments)
+  }
+
+  private func containerRunnerExecutable(for container: WorkflowContainerExecution, variables: JSONObject) throws -> String {
+    if let runnerPath = container.runnerPath {
+      return try nonEmptyContainerRunner(renderPromptTemplate(runnerPath, variables: variables), field: "runnerPath")
+    }
+    return try nonEmptyContainerRunner(
+      renderPromptTemplate(container.runnerKind ?? "docker", variables: variables),
+      field: "runnerKind"
+    )
+  }
+
+  private func nonEmptyContainerRunner(_ value: String, field: String) throws -> String {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else {
+      throw AdapterExecutionError(.providerError, "container node \(field) rendered empty")
+    }
+    return trimmed
   }
 
   private var strippedEnvironmentKeys: Set<String> {

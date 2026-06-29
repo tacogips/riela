@@ -3,6 +3,7 @@
   "description": "Implement or revise the loop engineering Swift MVP slice.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "effort": "high",
   "promptTemplateFile": "prompts/work.md",
   "promptVariants": {

@@ -3,6 +3,7 @@
   "description": "Summarize the accepted workflow changes and emit the commit message that the command-node git step must use verbatim.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/step9-commit-message.md",
   "variables": {},
   "output": {

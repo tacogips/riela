@@ -3,6 +3,7 @@
   "description": "Review the loop engineering Swift MVP implementation.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "effort": "high",
   "promptTemplateFile": "prompts/review.md",
   "variables": {},

@@ -3,6 +3,7 @@
   "description": "Confirm the run-result loop evidence summary slice and constraints.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/intake-or-plan.md",
   "variables": {}
 }

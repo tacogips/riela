@@ -16,6 +16,7 @@ struct ParsedParityOptions: Sendable {
   var overwrite = false
   var dryRun = false
   var variables: String?
+  var nodePatch: String?
   var mockScenarioPath: String?
   var sessionStore: String?
   var artifactRoot: String?
@@ -101,6 +102,8 @@ struct ParsedParityOptions: Sendable {
       dryRun = true
     case "--variables":
       variables = try value()
+    case "--node-patch":
+      nodePatch = try value()
     case "--mock-scenario":
       mockScenarioPath = try value()
     case "--session-store":
@@ -232,6 +235,7 @@ func scaffoldNodeJSON() -> String {
     "id": "main-worker",
     "executionBackend": "codex-agent",
     "model": "gpt-5.5",
+    "modelFreeze": false,
     "prompt": "Return a concise JSON object with a status field.",
     "variables": {}
   }

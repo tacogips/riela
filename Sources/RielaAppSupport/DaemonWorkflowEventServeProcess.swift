@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import RielaCore
 import RielaObservability
 import RielaServer
 
@@ -64,10 +65,13 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
       return []
     }
     let command = eventServeCommand(
-      workflowDefinitionDirectory: request.workingDirectory,
+      workflowDefinitionDirectory: resolvedWorkflow.workflowDirectory ?? request.workingDirectory,
+      workingDirectory: request.workingDirectory,
       eventRoot: eventRoot,
       sessionStoreRoot: request.sessionStoreRoot,
       artifactRoot: request.artifactRoot,
+      defaultVariables: request.defaultVariables,
+      nodePatch: request.nodePatch,
       executablePath: executablePath,
       inheritedEnvironment: request.inheritedEnvironment
     )
@@ -105,9 +109,12 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
 
   public func eventServeCommand(
     workflowDefinitionDirectory: String,
+    workingDirectory: String? = nil,
     eventRoot: String,
     sessionStoreRoot: String? = nil,
     artifactRoot: String? = nil,
+    defaultVariables: JSONObject = [:],
+    nodePatch: JSONObject? = nil,
     executablePath: String?,
     inheritedEnvironment: [String: String] = [:]
   ) -> RielaAppDaemonEventServeCommand {
@@ -120,11 +127,21 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
       "--event-root",
       eventRoot
     ]
+    let processWorkingDirectory = normalizedDirectory(workingDirectory) ?? workflowDefinitionDirectory
+    if processWorkingDirectory != workflowDefinitionDirectory {
+      serveArguments.append(contentsOf: ["--working-directory", processWorkingDirectory])
+    }
     if let sessionStoreRoot, !sessionStoreRoot.isEmpty {
       serveArguments.append(contentsOf: ["--session-store", sessionStoreRoot])
     }
     if let artifactRoot, !artifactRoot.isEmpty {
       serveArguments.append(contentsOf: ["--artifact-root", artifactRoot])
+    }
+    if !defaultVariables.isEmpty, let serializedVariables = serializedJSONObject(defaultVariables) {
+      serveArguments.append(contentsOf: ["--variables", serializedVariables])
+    }
+    if let nodePatch, let serializedPatch = serializedNodePatch(nodePatch) {
+      serveArguments.append(contentsOf: ["--node-patch", serializedPatch])
     }
     let arguments: [String]
     if executable == "/usr/bin/env" {
@@ -135,7 +152,7 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
     return RielaAppDaemonEventServeCommand(
       executablePath: executable,
       arguments: arguments,
-      workingDirectory: workflowDefinitionDirectory,
+      workingDirectory: processWorkingDirectory,
       environment: eventServeEnvironment(
         workflowDefinitionDirectory: workflowDefinitionDirectory,
         eventRoot: eventRoot,
@@ -172,6 +189,26 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
       return sibling
     }
     return "/usr/bin/env"
+  }
+
+  private func serializedNodePatch(_ nodePatch: JSONObject) -> String? {
+    serializedJSONObject(nodePatch)
+  }
+
+  private func serializedJSONObject(_ object: JSONObject) -> String? {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    guard let data = try? encoder.encode(JSONValue.object(object)) else {
+      return nil
+    }
+    return String(data: data, encoding: .utf8)
+  }
+
+  private func normalizedDirectory(_ path: String?) -> String? {
+    guard let path = path?.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty else {
+      return nil
+    }
+    return path
   }
 
   private func earlyExitMessage(process: any RielaAppDaemonEventServeProcessHandle) -> String {

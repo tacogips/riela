@@ -3,6 +3,7 @@
   "description": "Implement loop evidence summary projection for session inspection commands.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/work.md",
   "variables": {}
 }

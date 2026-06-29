@@ -2,6 +2,7 @@
   "id": "debate-judge",
   "executionBackend": "codex-agent",
   "model": "gpt-5.3-codex-spark",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/debate-judge.md",
   "variables": {},
   "output": {

@@ -2,6 +2,7 @@
   "id": "foreach-output",
   "executionBackend": "claude-code-agent",
   "model": "claude-haiku-4-5",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/foreach-output.md",
   "variables": {
     "lane": "foreach-loop"

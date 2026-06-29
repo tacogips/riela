@@ -52,6 +52,7 @@ extension WorkflowPackageCommandRunner {
       name: manifest.name,
       version: manifest.version,
       kind: manifest.kind,
+      tags: manifest.tags,
       packageDirectory: destination.path,
       workflowDirectory: manifest.workflowDirectory,
       valid: true,

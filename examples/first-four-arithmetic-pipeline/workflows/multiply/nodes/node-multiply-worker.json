@@ -1,5 +1,6 @@
 {
   "id": "multiply-worker",
+  "modelFreeze": false,
   "nodeType": "container",
   "variables": {
     "stageName": "multiply"

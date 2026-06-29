@@ -3,6 +3,7 @@
   "description": "Adversarially review a high-risk accepted implementation for failure modes, misuse paths, misleading success states, and verification loopholes.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "effort": "high",
   "promptTemplateFile": "prompts/step7-adversarial-review.md",
   "variables": {},

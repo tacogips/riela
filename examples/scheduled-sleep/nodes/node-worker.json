@@ -2,6 +2,7 @@
   "id": "worker-node",
   "executionBackend": "codex-agent",
   "model": "gpt-5.3-codex-spark",
+  "modelFreeze": false,
   "promptTemplate": "Report that the scheduled sleep completed.",
   "variables": {}
 }

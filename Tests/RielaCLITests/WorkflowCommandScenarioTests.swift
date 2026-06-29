@@ -430,6 +430,7 @@ extension WorkflowCommandTests {
           "id": "shared-worker",
           "executionBackend": "codex-agent",
           "model": "gpt-5.5",
+          "modelFreeze": false,
           "variables": {}
         }
       }

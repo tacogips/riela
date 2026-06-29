@@ -46,6 +46,7 @@ public struct WorkflowPackageSummary: Codable, Equatable, Sendable {
   public var name: String
   public var version: String?
   public var kind: WorkflowPackageKind
+  public var tags: [String]
   public var packageDirectory: String
   public var workflowDirectory: String?
   public var valid: Bool

@@ -367,6 +367,7 @@ final class WorkflowModelTests: XCTestCase {
         "id": "planner",
         "executionBackend": "codex-agent",
         "model": "gpt-5",
+        "modelFreeze": false,
         "agentEnvironment": {
           "OPENAI_BASE_URL": { "value": "https://{{router.host}}/v1" },
           "OPENAI_API_KEY": { "fromEnv": "RIELA_OPENAI_API_KEY", "required": true }
@@ -385,11 +386,33 @@ final class WorkflowModelTests: XCTestCase {
     XCTAssertEqual(roundTrip.agentEnvironment, payload.agentEnvironment)
   }
 
+  func testAgentNodePayloadRequiresModelFreeze() throws {
+    let frozen = Data("""
+      {
+        "id": "planner",
+        "executionBackend": "codex-agent",
+        "model": "gpt-5",
+        "modelFreeze": true
+      }
+      """.utf8)
+    let missingModelFreeze = Data("""
+      {
+        "id": "planner",
+        "executionBackend": "codex-agent",
+        "model": "gpt-5"
+      }
+      """.utf8)
+
+    XCTAssertTrue(try JSONDecoder().decode(AgentNodePayload.self, from: frozen).modelFreeze)
+    XCTAssertThrowsError(try JSONDecoder().decode(AgentNodePayload.self, from: missingModelFreeze))
+  }
+
   func testAgentEnvironmentRejectsInvalidBindingShapes() {
     let data = Data("""
       {
         "id": "planner",
         "model": "gpt-5",
+        "modelFreeze": false,
         "agentEnvironment": {
           "OPENAI_API_KEY": { "value": "literal", "fromEnv": "SOURCE_ENV" }
         }
@@ -404,6 +427,7 @@ final class WorkflowModelTests: XCTestCase {
       {
         "id": "planner",
         "model": "gpt-5",
+        "modelFreeze": false,
         "agentEnvironment": {
           "INVALID-NAME": { "value": "literal" }
         }
@@ -415,6 +439,7 @@ final class WorkflowModelTests: XCTestCase {
       {
         "id": "planner",
         "model": "gpt-5",
+        "modelFreeze": false,
         "agentEnvironment": {
           "RIELA_AGENT_BACKEND": { "value": "spoof" }
         }

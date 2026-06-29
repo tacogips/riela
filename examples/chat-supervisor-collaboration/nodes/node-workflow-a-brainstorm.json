@@ -2,6 +2,7 @@
   "id": "workflow-a-brainstorm",
   "executionBackend": "codex-agent",
   "model": "gpt-5.3-codex-spark",
+  "modelFreeze": true,
   "promptTemplateFile": "prompts/workflow-a-brainstorm.md",
   "variables": {},
   "output": {

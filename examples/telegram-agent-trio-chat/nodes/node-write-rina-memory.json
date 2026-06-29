@@ -1,5 +1,6 @@
 {
   "id": "write-rina-memory",
+  "modelFreeze": false,
   "description": "Persist Rina Cursor memory entries proposed by the persona and pass through reply/handoff flags.",
   "addon": {
     "name": "riela/chat-persona-memory-write",

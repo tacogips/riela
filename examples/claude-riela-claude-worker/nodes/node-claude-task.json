@@ -2,6 +2,7 @@
   "id": "claude-task",
   "executionBackend": "claude-code-agent",
   "model": "claude-haiku-4-5",
+  "modelFreeze": false,
   "sessionPolicy": {
     "mode": "reuse"
   },

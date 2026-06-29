@@ -3,6 +3,7 @@
   "description": "Implement the accepted plan for the issue, run verification, and update the active implementation plan progress.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "effort": "high",
   "sessionPolicy": {
     "mode": "reuse"

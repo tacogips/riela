@@ -162,6 +162,51 @@ final class WorkflowServingControllerTests: XCTestCase {
     XCTAssertEqual(state.generation?.generationId, "generation-2")
   }
 
+  func testServeScenarioPreservesInstanceParametersAcrossRestart() async throws {
+    let eventSourceFactory = RequestRecordingEventSourceFactory()
+    let controller = WorkflowServingController(dependencies: WorkflowServingDependencies(
+      resolver: FakeServeResolver(workflowId: "telegram-bot-workflow"),
+      listenerFactory: FakeListenerFactory(recorder: ServeRecorder()),
+      eventSourceFactory: eventSourceFactory,
+      generationIDGenerator: FakeGenerationIDGenerator()
+    ))
+    let request = WorkflowServeStartRequest(
+      selection: .directDirectory("/workflows/telegram-bot", identifier: "persona-a"),
+      inheritedEnvironment: [
+        "TELEGRAM_BOT_TOKEN": "token-a",
+        "SCENARIO_PERSONA": "a"
+      ],
+      defaultVariables: [
+        "workflowInput": .object(["persona": .string("a")])
+      ],
+      nodePatch: [
+        "worker": .object(["model": .string("gpt-5.5")])
+      ],
+      startsEventSources: true
+    )
+
+    _ = try await controller.start(request)
+    _ = try await controller.restart()
+
+    let requests = await eventSourceFactory.requests()
+    XCTAssertEqual(requests.map(\.selection.identifier), ["persona-a", "persona-a"])
+    XCTAssertEqual(requests.map { $0.inheritedEnvironment["SCENARIO_PERSONA"] }, ["a", "a"])
+    XCTAssertEqual(
+      requests.map { $0.defaultVariables["workflowInput"] },
+      [
+        .object(["persona": .string("a")]),
+        .object(["persona": .string("a")])
+      ]
+    )
+    XCTAssertEqual(
+      requests.compactMap { $0.nodePatch?["worker"] },
+      [
+        .object(["model": .string("gpt-5.5")]),
+        .object(["model": .string("gpt-5.5")])
+      ]
+    )
+  }
+
   func testDefaultResolverAcceptsAuthoredWorkflowWithoutNodeRegistry() async throws {
     let root = try temporaryDirectory()
     let workflowDirectory = root.appendingPathComponent("authored-flow", isDirectory: true)
@@ -297,6 +342,23 @@ private struct FixedEventSourceFactory: WorkflowServeEventSourceFactory {
     generationId: String
   ) async throws -> [any WorkflowServeEventSourceHandle] {
     [eventSource]
+  }
+}
+
+private actor RequestRecordingEventSourceFactory: WorkflowServeEventSourceFactory {
+  private var recordedRequests: [WorkflowServeStartRequest] = []
+
+  func startEventSources(
+    for resolvedWorkflow: WorkflowServeResolvedWorkflow,
+    request: WorkflowServeStartRequest,
+    generationId: String
+  ) async throws -> [any WorkflowServeEventSourceHandle] {
+    recordedRequests.append(request)
+    return [FakeEventSourceHandle(generationId: generationId, recorder: ServeRecorder())]
+  }
+
+  func requests() -> [WorkflowServeStartRequest] {
+    recordedRequests
   }
 }
 

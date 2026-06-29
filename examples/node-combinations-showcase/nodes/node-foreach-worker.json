@@ -2,6 +2,7 @@
   "id": "foreach-worker",
   "executionBackend": "codex-agent",
   "model": "gpt-5.3-codex-spark",
+  "modelFreeze": false,
   "promptTemplateFile": "prompts/foreach-worker.md",
   "variables": {
     "lane": "foreach-loop"

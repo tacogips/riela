@@ -3,6 +3,7 @@
   "description": "Publish accepted run persistence projection handoff.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
+  "modelFreeze": false,
   "effort": "low",
   "promptTemplateFile": "prompts/workflow-output.md",
   "variables": {}

@@ -3,20 +3,17 @@ import Foundation
 import XCTest
 
 final class RielaAppInterfaceIdentifierTests: XCTestCase {
-  func testWorkflowSourceColumnUsesOnlySourceIdentifier() throws {
+  func testInstanceListDoesNotExposeLegacySourceColumnIdentifier() throws {
     let root = try repositoryRoot()
     let controllerURL = root.appendingPathComponent(
       "Sources/RielaApp/DaemonWorkflowWindowController.swift"
     )
     let source = try String(contentsOf: controllerURL, encoding: .utf8)
 
-    XCTAssertTrue(
-      source.contains("NSUserInterfaceItemIdentifier(\"source\")"),
-      "Workflow source column should use the canonical 'source' identifier."
-    )
     XCTAssertFalse(
+      source.contains("NSUserInterfaceItemIdentifier(\"source\")") ||
       source.contains("NSUserInterfaceItemIdentifier(\"sources\")"),
-      "Do not keep a legacy 'sources' user-interface identifier."
+      "The main instance list should not keep workflow-source table column identifiers."
     )
   }
 
@@ -55,9 +52,11 @@ final class RielaAppInterfaceIdentifierTests: XCTestCase {
     XCTAssertTrue(appSource.contains("\"Instances: \\(daemonSummary())\""))
     XCTAssertTrue(controllerSource.contains("window.title = \"Riela Workflow Instances\""))
     XCTAssertTrue(controllerSource.contains("window.title = \"Profile Select\""))
-    XCTAssertTrue(controllerSource.contains("title: \"Instance\""))
-    XCTAssertTrue(controllerSource.contains("title: \"Workflow\""))
-    XCTAssertTrue(controllerSource.contains("title: \"State\""))
+    XCTAssertFalse(controllerSource.contains("addColumn(Column.workflow, title: \"Workflow\""))
+    XCTAssertFalse(controllerSource.contains("addColumn(Column.state, title: \"State\""))
+    XCTAssertTrue(controllerSource.contains("table.headerView = nil"))
+    XCTAssertTrue(controllerSource.contains("makeInstanceRowView"))
+    XCTAssertTrue(controllerSource.contains("instanceSubtitle(for:"))
     XCTAssertTrue(controllerSource.contains("messageText = \"Add Instance\""))
     XCTAssertTrue(controllerSource.contains("Select a workflow and enter instance parameters."))
     XCTAssertTrue(controllerSource.contains("Back to Instances"))

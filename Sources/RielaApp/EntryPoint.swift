@@ -168,9 +168,6 @@ final class RielaApp: NSObject, NSApplicationDelegate {
         onRevealSelectedSource: { [weak self] identity in
           self?.revealDaemonWorkflowSource(identity: identity)
         },
-        onDuplicateWorkflow: { [weak self] identity in
-          self?.duplicateDaemonWorkflowInstance(identity: identity)
-        },
         onRenameWorkflow: { [weak self] identity in
           self?.renameDaemonWorkflowInstance(identity: identity)
         },

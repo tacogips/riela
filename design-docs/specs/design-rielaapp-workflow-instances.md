@@ -147,17 +147,20 @@ discovered workflow candidates. Those are workflow sources and appear only in
 the Add Instance flow.
 
 If a persisted preference cannot resolve to a workflow source and has no
-display metadata, the table uses the preference key as the instance label,
-shows workflow as `Missing source`, and uses `State = Needs Source`.
+display metadata, the list uses the preference key as the instance label,
+shows workflow/source context as `Missing source`, and uses `Needs Source` as
+the trailing state.
 
-Columns:
+The main list is not a multi-column table. It behaves like a macOS Settings or
+iOS Settings list:
 
-- `Instance`
-- `Workflow`
-- `Env`
-- `State`
+- primary text: instance name
+- secondary text: workflow name, environment readiness, and source description
+- trailing text: one user-facing state
+- trailing disclosure marker: selecting the row opens the same-window detail
+  view
 
-There are no separate `Active` and `Status` columns. The single `State` column
+There are no separate `Active` and `Status` columns. The single trailing state
 combines configured daemon intent and runtime status into user-facing states:
 
 - `Running`
@@ -168,8 +171,8 @@ combines configured daemon intent and runtime status into user-facing states:
 - `Stopping`
 - `Needs Source`
 
-The main list only contains intended daemon instances, so the state column does
-not need to say whether the row is active. If a row exists here, it is a saved
+The main list only contains intended daemon instances, so the state display
+does not need to say whether the row is active. If a row exists here, it is a saved
 instance RielaApp can manage.
 
 State mapping:
@@ -378,6 +381,9 @@ Add Instance workflow selection empty state:
   selected-instance caption rows.
 - The Instances section header contains `+ Add Instance` and `Refresh`; row
   actions live in the same-window instance detail view.
+- The Instances list has no `Workflow`, `Env`, or `State` table headers; those
+  values are folded into a Settings-style row with a trailing state and
+  disclosure marker.
 - Instance details open in the same window with a `Back to Instances` control,
   not in a separate instance-editing window.
 - The detail view shows current settings as selectable rows instead of

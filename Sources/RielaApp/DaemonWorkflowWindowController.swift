@@ -16,9 +16,6 @@ struct DaemonWorkflowAddInstanceRequest {
 final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate {
   private enum Column {
     static let instance = NSUserInterfaceItemIdentifier("instance")
-    static let workflow = NSUserInterfaceItemIdentifier("source")
-    static let environment = NSUserInterfaceItemIdentifier("environment")
-    static let state = NSUserInterfaceItemIdentifier("state")
   }
 
   private enum InstanceState: String {
@@ -79,7 +76,6 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   private let onAddProject: () -> Void
   private let onAddInstance: (DaemonWorkflowAddInstanceRequest) -> Void
   private let onRevealSelectedSource: (String) -> Void
-  private let onDuplicateWorkflow: (String) -> Void
   private let onRenameWorkflow: (String) -> Void
   private let onRemoveInstance: (String) -> Void
   private let onStartInstance: (String) -> Void
@@ -117,7 +113,6 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     onAddProject: @escaping () -> Void,
     onAddInstance: @escaping (DaemonWorkflowAddInstanceRequest) -> Void,
     onRevealSelectedSource: @escaping (String) -> Void,
-    onDuplicateWorkflow: @escaping (String) -> Void,
     onRenameWorkflow: @escaping (String) -> Void,
     onRemoveInstance: @escaping (String) -> Void,
     onStartInstance: @escaping (String) -> Void,
@@ -139,7 +134,6 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     self.onAddProject = onAddProject
     self.onAddInstance = onAddInstance
     self.onRevealSelectedSource = onRevealSelectedSource
-    self.onDuplicateWorkflow = onDuplicateWorkflow
     self.onRenameWorkflow = onRenameWorkflow
     self.onRemoveInstance = onRemoveInstance
     self.onStartInstance = onStartInstance
@@ -237,9 +231,12 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     toolbar.orientation = .vertical
     toolbar.spacing = 8
     toolbar.translatesAutoresizingMaskIntoConstraints = false
+    toolbar.setContentHuggingPriority(.required, for: .vertical)
+    toolbar.heightAnchor.constraint(equalToConstant: 42).isActive = true
 
     let instancesList = workflowList(title: "Instances", table: instanceTable)
     instancesList.translatesAutoresizingMaskIntoConstraints = false
+    instancesList.setContentHuggingPriority(.defaultLow, for: .vertical)
     instancesListView = instancesList
     let detail = buildInstanceDetailView()
     detail.translatesAutoresizingMaskIntoConstraints = false
@@ -342,24 +339,24 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   private func workflowList(title: String, table: NSTableView) -> NSView {
     table.delegate = self
     table.dataSource = self
-    table.usesAlternatingRowBackgroundColors = true
-    table.rowHeight = 28
+    table.usesAlternatingRowBackgroundColors = false
+    table.rowHeight = 58
+    table.intercellSpacing = NSSize(width: 0, height: 6)
+    table.gridStyleMask = []
+    table.selectionHighlightStyle = .regular
     table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
     table.action = #selector(tableClicked(_:))
     table.doubleAction = #selector(tableDoubleClicked(_:))
     table.target = self
-    table.headerView = NSTableHeaderView()
-    addColumn(Column.instance, title: "Instance", width: 150, to: table)
-    addColumn(Column.workflow, title: "Workflow", width: 160, to: table)
-    addColumn(Column.environment, title: "Env", width: 70, to: table)
-    addColumn(Column.state, title: "State", width: 105, to: table)
+    table.headerView = nil
+    addColumn(Column.instance, title: "", width: 480, to: table)
 
     let scroll = NSScrollView()
     scroll.documentView = table
     scroll.hasVerticalScroller = true
     scroll.hasHorizontalScroller = false
     scroll.translatesAutoresizingMaskIntoConstraints = false
-    scroll.borderType = .bezelBorder
+    scroll.borderType = .noBorder
     scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
 
     let label = NSTextField(labelWithString: title)
@@ -375,15 +372,18 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     header.orientation = .horizontal
     header.spacing = 8
     header.alignment = .centerY
+    header.translatesAutoresizingMaskIntoConstraints = false
 
-    let container = NSStackView(views: [header, scroll])
-    container.orientation = .vertical
-    container.spacing = 6
-    container.alignment = .leading
+    let container = NSView()
+    container.addSubview(header)
+    container.addSubview(scroll)
     header.leadingAnchor.constraint(equalTo: container.leadingAnchor).isActive = true
     header.trailingAnchor.constraint(equalTo: container.trailingAnchor).isActive = true
+    header.topAnchor.constraint(equalTo: container.topAnchor).isActive = true
     scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor).isActive = true
     scroll.trailingAnchor.constraint(equalTo: container.trailingAnchor).isActive = true
+    scroll.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 6).isActive = true
+    scroll.bottomAnchor.constraint(equalTo: container.bottomAnchor).isActive = true
     return container
   }
 
@@ -404,44 +404,62 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   }
 
   func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-    guard let tableColumn else {
+    guard tableColumn?.identifier == Column.instance, instanceRows.indices.contains(row) else {
       return nil
     }
+    return makeInstanceRowView(for: instanceRows[row])
+  }
+
+  private func makeInstanceRowView(for row: ConfiguredWorkflowInstanceRow) -> NSView {
     let cell = NSTableCellView()
-    let text = NSTextField(labelWithString: value(for: tableView, column: tableColumn.identifier, row: row))
-    text.lineBreakMode = .byTruncatingMiddle
-    text.translatesAutoresizingMaskIntoConstraints = false
-    cell.addSubview(text)
+    cell.wantsLayer = true
+
+    let title = NSTextField(labelWithString: row.instanceName)
+    title.font = .systemFont(ofSize: 13, weight: .medium)
+    title.lineBreakMode = .byTruncatingTail
+
+    let subtitle = NSTextField(labelWithString: instanceSubtitle(for: row))
+    subtitle.font = .systemFont(ofSize: 11)
+    subtitle.textColor = .secondaryLabelColor
+    subtitle.lineBreakMode = .byTruncatingMiddle
+
+    let textStack = NSStackView(views: [title, subtitle])
+    textStack.orientation = .vertical
+    textStack.spacing = 2
+    textStack.alignment = .leading
+    textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+    let state = NSTextField(labelWithString: row.state.rawValue)
+    state.font = .systemFont(ofSize: 12, weight: .medium)
+    state.textColor = stateColor(for: row.state)
+    state.alignment = .right
+    state.widthAnchor.constraint(greaterThanOrEqualToConstant: 88).isActive = true
+
+    let chevron = NSTextField(labelWithString: ">")
+    chevron.textColor = .tertiaryLabelColor
+
+    let spacer = NSView()
+    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+    let rowStack = NSStackView(views: [textStack, spacer, state, chevron])
+    rowStack.orientation = .horizontal
+    rowStack.spacing = 10
+    rowStack.alignment = .centerY
+    rowStack.translatesAutoresizingMaskIntoConstraints = false
+    cell.addSubview(rowStack)
     NSLayoutConstraint.activate([
-      text.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 6),
-      text.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
-      text.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
+      rowStack.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 8),
+      rowStack.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8),
+      rowStack.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
     ])
-    if tableColumn.identifier == Column.workflow || tableColumn.identifier == Column.environment {
-      text.textColor = NSColor.secondaryLabelColor
-    } else if tableColumn.identifier == Column.state {
-      text.textColor = stateColor(for: instanceRows[row].state)
-    }
     return cell
   }
 
-  private func value(for tableView: NSTableView, column: NSUserInterfaceItemIdentifier, row: Int) -> String {
-    let row = instanceRows[row]
-    switch column {
-    case Column.instance:
-      return row.instanceName
-    case Column.workflow:
-      return row.workflowName
-    case Column.environment:
-      guard let candidate = row.candidate else {
-        return "Missing"
-      }
-      return environmentColumnStatus(candidate)
-    case Column.state:
-      return row.state.rawValue
-    default:
-      return ""
+  private func instanceSubtitle(for row: ConfiguredWorkflowInstanceRow) -> String {
+    guard let candidate = row.candidate else {
+      return "\(row.workflowName) | Missing source"
     }
+    return "\(row.workflowName) | \(environmentColumnStatus(candidate)) | \(row.sourceDescription)"
   }
 
   private func stateColor(for state: InstanceState) -> NSColor {
@@ -514,13 +532,6 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       return
     }
     onRevealSelectedSource(identity)
-  }
-
-  @objc private func duplicateSelectedWorkflow() {
-    guard let identity = selectedRow()?.id else {
-      return
-    }
-    onDuplicateWorkflow(identity)
   }
 
   @objc private func renameSelectedWorkflow() {

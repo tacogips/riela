@@ -165,9 +165,6 @@ final class RielaApp: NSObject, NSApplicationDelegate {
         onAddInstance: { [weak self] request in
           self?.addDaemonWorkflowInstance(request)
         },
-        onViewSelectedWorkflow: { [weak self] identity in
-          self?.openDaemonWorkflowViewer(identity: identity)
-        },
         onRevealSelectedSource: { [weak self] identity in
           self?.revealDaemonWorkflowSource(identity: identity)
         },

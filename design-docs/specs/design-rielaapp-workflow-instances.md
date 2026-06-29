@@ -74,11 +74,13 @@ instance without deleting the underlying workflow source.
 
 The window title remains `Riela Workflow Instances`.
 
-The header contains:
+The top profile row contains:
 
 - Profile popup
-- `+` add instance
-- `-` remove action
+
+The Instances section header contains:
+
+- `+ Add Instance`
 - `Refresh`
 
 The `+` action opens an `Add Instance` sheet. It does not expose workflow
@@ -191,11 +193,15 @@ directories, package directories, package metadata, or project source
 registrations. Deleting or unregistering a workflow/package/project source is a
 separate source-management action outside the primary instance list.
 
+Selecting an instance keeps the user in the same window. Choosing a row
+replaces the list with an instance detail view and a `Back to Instances`
+control. The detail view contains runtime actions, configuration actions, and
+source actions without opening a separate window.
+
 Primary row actions:
 
-- double-click: open the instance editor/viewer
-- selected-row context or compact action menu:
-  - `Open`
+- list row selection: open the same-window instance detail view
+- detail view actions:
   - `Reveal Source`
   - `Duplicate`
   - `Rename`
@@ -351,8 +357,11 @@ Add Instance workflow selection empty state:
 - The main window no longer contains `Enabled Instances`, `Disabled Instances`,
   or an `Active` column.
 - The status menu no longer contains active/enabled/available summaries.
-- Header buttons are reduced to profile, `+`, `-`, refresh, and at most one
-  selected-row action menu.
+- The profile row contains only profile selection.
+- The Instances section header contains `+ Add Instance` and `Refresh`; row
+  actions live in the same-window instance detail view.
+- Instance details open in the same window with a `Back to Instances` control,
+  not in a separate instance-editing window.
 - Workflow sources are selected from the `+` add-instance sheet rather than
   shown as a permanent disabled-instance list.
 - A user can create an always-on instance by selecting a workflow and entering

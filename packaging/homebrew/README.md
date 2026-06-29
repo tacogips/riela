@@ -88,7 +88,9 @@ brew install riela
 
 This formula path is CLI-only on both macOS and Linux. Linux users install only
 the `riela` command; `RielaApp.app` is macOS-only and is distributed through the
-Cask path below.
+Cask path below. The `.github/workflows/linux-release.yml` workflow builds and
+uploads the `linux-x64` CLI archive automatically when a pushed tag such as
+`v0.1.10` matches `VERSION`.
 
 ## Homebrew Cask Signed Archive Releases
 

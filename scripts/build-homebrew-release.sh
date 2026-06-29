@@ -169,6 +169,9 @@ swift_release_bin_path() {
         "$swift_bin" build -c release --product riela --triple "$triple" >/dev/null
       DEVELOPER_DIR="$developer_dir" SDKROOT="$sdkroot" \
         "$swift_bin" build -c release --product riela --triple "$triple" --show-bin-path
+    elif [[ "$target" == linux-* ]]; then
+      "$swift_bin" build -c release --product riela --triple "$triple" -Xswiftc -static-stdlib >/dev/null
+      "$swift_bin" build -c release --product riela --triple "$triple" -Xswiftc -static-stdlib --show-bin-path
     else
       "$swift_bin" build -c release --product riela --triple "$triple" >/dev/null
       "$swift_bin" build -c release --product riela --triple "$triple" --show-bin-path
@@ -193,7 +196,11 @@ print_plan() {
   printf '  product: riela\n'
   printf '  target: %s\n' "$target"
   printf '  swift triple: %s\n' "$triple"
-  printf '  release bin path command: swift build -c release --product riela --triple %s --show-bin-path\n' "$triple"
+  if [[ "$target" == linux-* ]]; then
+    printf '  release bin path command: swift build -c release --product riela --triple %s -Xswiftc -static-stdlib --show-bin-path\n' "$triple"
+  else
+    printf '  release bin path command: swift build -c release --product riela --triple %s --show-bin-path\n' "$triple"
+  fi
   printf '  staged binary: %s\n' "$binary"
   printf '  archive: %s\n' "$archive"
   printf '  checksum: %s.sha256\n' "$archive"

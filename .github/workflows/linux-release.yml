@@ -1,0 +1,116 @@
+name: Linux release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-linux-x64:
+    name: Build and upload Linux x64 CLI archive
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Validate release tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s\n' "$RELEASE_TAG" | grep -Eq '^v[0-9]+[.][0-9]+[.][0-9]+([-+][0-9A-Za-z][0-9A-Za-z.+-]*)?$'; then
+            echo "release tag must look like v<major>.<minor>.<patch>" >&2
+            exit 1
+          fi
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          if ! printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+[.][0-9]+[.][0-9]+([-+][0-9A-Za-z][0-9A-Za-z.+-]*)?$'; then
+            echo "VERSION must be semver-like" >&2
+            exit 1
+          fi
+          if [ "${RELEASE_TAG#v}" != "$VERSION" ]; then
+            echo "VERSION ($VERSION) does not match release tag ($RELEASE_TAG)" >&2
+            exit 1
+          fi
+          echo "RELEASE_VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Build Linux x64 CLI archive
+        env:
+          SWIFT_IMAGE: swift@sha256:4c6af6663ed2316002a3b38ff5505a1fc1f2749ec31e84936c32dd336713c569
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --platform linux/amd64 \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            "$SWIFT_IMAGE" \
+            bash -lc '
+              set -euo pipefail
+              test "$(uname -m)" = "x86_64"
+              swift --version
+              apt-get update >/dev/null
+              apt-get install -y libsqlite3-dev >/dev/null
+              scripts/build-homebrew-release.sh linux-x64
+            '
+
+      - name: Verify Linux x64 CLI archive
+        run: |
+          set -euo pipefail
+          archive="dist/homebrew/riela-$RELEASE_VERSION-linux-x64.tar.gz"
+          checksum="$archive.sha256"
+          test -f "$archive"
+          test -f "$checksum"
+          (cd dist/homebrew && sha256sum -c "riela-$RELEASE_VERSION-linux-x64.tar.gz.sha256")
+          tar -tzf "$archive" | grep -Fx './bin/riela'
+          "dist/homebrew/work/riela-$RELEASE_VERSION-linux-x64/bin/riela" --version | grep -Fx "$RELEASE_VERSION"
+
+      - name: Smoke test archive on clean Ubuntu
+        env:
+          UBUNTU_IMAGE: ubuntu@sha256:353675e2a41babd526e2b837d7ec780c2a05bca0164f7ea5dbbd433d21d166fc
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --platform linux/amd64 \
+            -e RELEASE_VERSION="$RELEASE_VERSION" \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            "$UBUNTU_IMAGE" \
+            bash -lc '
+              set -euo pipefail
+              apt-get update >/dev/null
+              apt-get install -y ca-certificates libsqlite3-0 >/dev/null
+              mkdir -p /tmp/riela-install
+              tar -xzf "dist/homebrew/riela-$RELEASE_VERSION-linux-x64.tar.gz" -C /tmp/riela-install
+              install -m 0755 /tmp/riela-install/bin/riela /usr/local/bin/riela
+              riela --version | grep -Fx "$RELEASE_VERSION"
+            '
+
+      - name: Upload Linux x64 release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          release_notes="Linux x64 CLI archive for riela $RELEASE_TAG."
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "riela $RELEASE_TAG" \
+              --notes "$release_notes"
+          fi
+          gh release upload "$RELEASE_TAG" \
+            "dist/homebrew/riela-$RELEASE_VERSION-linux-x64.tar.gz" \
+            "dist/homebrew/riela-$RELEASE_VERSION-linux-x64.tar.gz.sha256" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber

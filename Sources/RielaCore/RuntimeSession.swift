@@ -89,6 +89,19 @@ public struct WorkflowStepExecution: Codable, Equatable, Sendable {
 }
 
 public struct WorkflowSession: Codable, Equatable, Sendable {
+  private enum CodingKeys: String, CodingKey {
+    case workflowId
+    case sessionId
+    case status
+    case entryStepId
+    case currentStepId
+    case createdAt
+    case updatedAt
+    case executions
+    case fanoutGroups
+    case reviewFindings
+  }
+
   public var workflowId: String
   public var sessionId: String
   public var status: WorkflowSessionStatus
@@ -98,6 +111,7 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
   public var updatedAt: Date
   public var executions: [WorkflowStepExecution]
   public var fanoutGroups: [WorkflowFanoutGroupRecord]?
+  public var reviewFindings: [WorkflowReviewFinding]
 
   public init(
     workflowId: String,
@@ -108,7 +122,8 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     createdAt: Date,
     updatedAt: Date,
     executions: [WorkflowStepExecution] = [],
-    fanoutGroups: [WorkflowFanoutGroupRecord]? = nil
+    fanoutGroups: [WorkflowFanoutGroupRecord]? = nil,
+    reviewFindings: [WorkflowReviewFinding] = []
   ) {
     self.workflowId = workflowId
     self.sessionId = sessionId
@@ -119,6 +134,35 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     self.updatedAt = updatedAt
     self.executions = executions
     self.fanoutGroups = fanoutGroups
+    self.reviewFindings = reviewFindings
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.workflowId = try container.decode(String.self, forKey: .workflowId)
+    self.sessionId = try container.decode(String.self, forKey: .sessionId)
+    self.status = try container.decode(WorkflowSessionStatus.self, forKey: .status)
+    self.entryStepId = try container.decode(String.self, forKey: .entryStepId)
+    self.currentStepId = try container.decodeIfPresent(String.self, forKey: .currentStepId)
+    self.createdAt = try container.decode(Date.self, forKey: .createdAt)
+    self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+    self.executions = try container.decodeIfPresent([WorkflowStepExecution].self, forKey: .executions) ?? []
+    self.fanoutGroups = try container.decodeIfPresent([WorkflowFanoutGroupRecord].self, forKey: .fanoutGroups)
+    self.reviewFindings = try container.decodeIfPresent([WorkflowReviewFinding].self, forKey: .reviewFindings) ?? []
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(workflowId, forKey: .workflowId)
+    try container.encode(sessionId, forKey: .sessionId)
+    try container.encode(status, forKey: .status)
+    try container.encode(entryStepId, forKey: .entryStepId)
+    try container.encodeIfPresent(currentStepId, forKey: .currentStepId)
+    try container.encode(createdAt, forKey: .createdAt)
+    try container.encode(updatedAt, forKey: .updatedAt)
+    try container.encode(executions, forKey: .executions)
+    try container.encodeIfPresent(fanoutGroups, forKey: .fanoutGroups)
+    try container.encode(reviewFindings, forKey: .reviewFindings)
   }
 }
 

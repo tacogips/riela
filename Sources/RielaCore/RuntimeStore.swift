@@ -402,6 +402,18 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     execution.adapterOutput = input.adapterOutput ?? execution.adapterOutput
     execution.failureReason = input.failureReason
     execution.updatedAt = date
+    if let acceptedOutput = input.acceptedOutput {
+      let extractedFindings = WorkflowReviewFindingExtractor.extract(
+        from: acceptedOutput,
+        sessionId: input.sessionId,
+        execution: execution
+      )
+      if !extractedFindings.isEmpty {
+        let extractedIds = Set(extractedFindings.map(\.id))
+        session.reviewFindings.removeAll { extractedIds.contains($0.id) }
+        session.reviewFindings.append(contentsOf: extractedFindings)
+      }
+    }
     session.executions[index] = execution
     session.updatedAt = date
     switch input.status {

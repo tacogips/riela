@@ -203,6 +203,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     } catch let error as WorkflowSessionEntryValidationError {
       throw DeterministicWorkflowRunnerError.resumeValidation(errorMessage(error))
     }
+    var effectiveRequest = request
 
     let entryStepId: String
     var session: WorkflowSession
@@ -251,6 +252,12 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       session = try await store.createSession(
         WorkflowSessionCreateInput(workflowId: request.workflow.workflowId, entryStepId: entryStepId)
       )
+      for (key, value) in WorkflowReviewFindingReplayContext.variables(
+        from: sourceSession.reviewFindings,
+        targetStepId: entryStepId
+      ) {
+        effectiveRequest.variables[key] = value
+      }
       currentStepId = entryStepId
       recoveryLineage = rerunRecoveryLineage(
         sourceSession: sourceSession,
@@ -267,24 +274,24 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     }
 
     interruptedSessionId = session.sessionId
-    await emitSessionStartedEvent(workflowId: request.workflow.workflowId, session: session, handler: request.eventHandler)
+    await emitSessionStartedEvent(workflowId: effectiveRequest.workflow.workflowId, session: session, handler: effectiveRequest.eventHandler)
 
     var visitedSteps = 0
     var publishedTransitions = 0
     var rootOutput: JSONObject?
     var executionCounts: [String: Int] = [:]
-    let maxLoopIterations = request.maxLoopIterations ?? request.workflow.defaults.maxLoopIterations
-    let maxSteps = request.maxSteps ?? max(1, request.workflow.steps.count + maxLoopIterations)
+    let maxLoopIterations = effectiveRequest.maxLoopIterations ?? effectiveRequest.workflow.defaults.maxLoopIterations
+    let maxSteps = effectiveRequest.maxSteps ?? max(1, effectiveRequest.workflow.steps.count + maxLoopIterations)
 
     while let stepId = currentStepId {
       visitedSteps += 1
       if visitedSteps > maxSteps {
         throw DeterministicWorkflowRunnerError.maxStepsExceeded(maxSteps)
       }
-      guard let step = request.workflow.steps.first(where: { $0.id == stepId }) else {
+      guard let step = effectiveRequest.workflow.steps.first(where: { $0.id == stepId }) else {
         throw DeterministicWorkflowRunnerError.missingStep(stepId)
       }
-      guard let registryNode = request.workflow.nodeRegistry.first(where: { $0.id == step.nodeId }) else {
+      guard let registryNode = effectiveRequest.workflow.nodeRegistry.first(where: { $0.id == step.nodeId }) else {
         throw DeterministicWorkflowRunnerError.missingNode(step.nodeId)
       }
       let executionIndex = (executionCounts[step.id] ?? 0) + 1
@@ -292,25 +299,25 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       let resolvedInput = try await inputResolver.resolveInput(for: session.sessionId, stepId: step.id, store: store)
       let transitions = step.transitions ?? []
       if let publishResult = try await skipFilteredStepIfNeeded(
-        registryNode: registryNode, requestVariables: request.variables, resolvedInputPayload: resolvedInput.payload,
+        registryNode: registryNode, requestVariables: effectiveRequest.variables, resolvedInputPayload: resolvedInput.payload,
         sessionId: session.sessionId, step: step, transitions: transitions, executionIndex: executionIndex
       ) {
         session = publishResult.session
         publishedTransitions += publishResult.publishedMessages.count
         await emitStepCompletedEvent(
-          workflowId: request.workflow.workflowId,
+          workflowId: effectiveRequest.workflow.workflowId,
           session: session,
           step: step,
           publishResult: publishResult,
           publishedTransitions: publishedTransitions,
-          handler: request.eventHandler
+          handler: effectiveRequest.eventHandler
         )
         currentStepId = publishResult.publishedMessages.first?.toStepId
         continue
       }
       let publishResult = try await executeNodeAndRecordMemory(
         registryNode: registryNode,
-        request: request,
+        request: effectiveRequest,
         session: session,
         step: step,
         resolvedInput: resolvedInput,
@@ -321,12 +328,12 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       publishedTransitions += publishResult.publishedMessages.count
       rootOutput = publishResult.rootOutput ?? rootOutput
       await emitStepCompletedEvent(
-        workflowId: request.workflow.workflowId,
+        workflowId: effectiveRequest.workflow.workflowId,
         session: session,
         step: step,
         publishResult: publishResult,
         publishedTransitions: publishedTransitions,
-        handler: request.eventHandler
+        handler: effectiveRequest.eventHandler
       )
       currentStepId = publishResult.publishedMessages.first?.toStepId
     }
@@ -335,14 +342,14 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       throw WorkflowRuntimeStoreError.sessionNotFound(session.sessionId)
     }
     let completedResult = WorkflowRunResult(
-      workflowId: request.workflow.workflowId,
+      workflowId: effectiveRequest.workflow.workflowId,
       session: loadedSession,
       rootOutput: rootOutput,
       exitCode: loadedSession.status == .completed ? 0 : 1,
       transitions: publishedTransitions,
       recovery: recoveryLineage
     )
-    await emitSessionCompletedEvent(result: completedResult, handler: request.eventHandler)
+    await emitSessionCompletedEvent(result: completedResult, handler: effectiveRequest.eventHandler)
     return completedResult
     } catch {
       if isWorkflowRunCancellation(error), let interruptedSessionId {

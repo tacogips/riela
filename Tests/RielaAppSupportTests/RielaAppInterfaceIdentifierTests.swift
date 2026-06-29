@@ -35,6 +35,10 @@ final class RielaAppInterfaceIdentifierTests: XCTestCase {
       contentsOf: root.appendingPathComponent("Sources/RielaApp/EntryPoint+Environment.swift"),
       encoding: .utf8
     )
+    let disclosureSource = try String(
+      contentsOf: root.appendingPathComponent("Sources/RielaApp/RielaAppDisclosureIndicator.swift"),
+      encoding: .utf8
+    )
     let daemonInstancesSource = try String(
       contentsOf: root.appendingPathComponent("Sources/RielaApp/EntryPoint+DaemonInstances.swift"),
       encoding: .utf8
@@ -105,9 +109,14 @@ final class RielaAppInterfaceIdentifierTests: XCTestCase {
     XCTAssertTrue(controllerSource.contains("Current Settings"))
     XCTAssertTrue(controllerSource.contains("Instance Actions"))
     XCTAssertTrue(controllerSource.contains("NSClickGestureRecognizer"))
-    XCTAssertTrue(controllerSource.contains("disclosureIndicator()"))
-    XCTAssertTrue(controllerSource.contains("NSImage(systemSymbolName: \"chevron.right\""))
+    XCTAssertTrue(disclosureSource.contains("NSImage(systemSymbolName: \"chevron.right\""))
+    XCTAssertTrue(disclosureSource.contains("imageView.setAccessibilityElement(false)"))
+    XCTAssertTrue(controllerSource.contains("rielaAppDisclosureIndicator()"))
+    XCTAssertTrue(profileSelectSource.contains("rielaAppDisclosureIndicator()"))
+    XCTAssertTrue(environmentSource.contains("rielaAppDisclosureIndicator()"))
     XCTAssertFalse(controllerSource.contains("labelWithString: \">\""))
+    XCTAssertFalse(profileSelectSource.contains("labelWithString: \">\""))
+    XCTAssertFalse(environmentSource.contains("labelWithString: \">\""))
     XCTAssertTrue(controllerSource.contains("settingRow(title: \"Name\""))
     XCTAssertTrue(controllerSource.contains("actionRow(title: \"Start\""))
     XCTAssertTrue(controllerSource.contains("title: \"Remove Instance\""))
@@ -172,6 +181,8 @@ final class RielaAppInterfaceIdentifierTests: XCTestCase {
     XCTAssertTrue(controllerSource.contains("currentDirectoryRowSelected"))
     XCTAssertTrue(controllerSource.contains("environmentVariablesRowSelected"))
     XCTAssertTrue(controllerSource.contains("workflowVariablesRowSelected"))
+    XCTAssertTrue(controllerSource.contains("rielaAppDisclosureIndicator()"))
+    XCTAssertFalse(controllerSource.contains("labelWithString: \">\""))
     XCTAssertFalse(controllerSource.contains("NSButton(title: \"Instance Dir...\""))
     XCTAssertFalse(controllerSource.contains("NSButton(title: \"Instance Env...\""))
     XCTAssertFalse(controllerSource.contains("NSButton(title: \"Instance Variables...\""))

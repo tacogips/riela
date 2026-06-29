@@ -195,10 +195,8 @@ final class ProfileSelectWindowController: NSWindowController, NSTableViewDataSo
 
     let spacer = NSView()
     spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    let chevron = NSTextField(labelWithString: ">")
-    chevron.textColor = .tertiaryLabelColor
 
-    let row = NSStackView(views: [labelStack, spacer, chevron])
+    let row = NSStackView(views: [labelStack, spacer, rielaAppDisclosureIndicator()])
     row.orientation = .horizontal
     row.spacing = 8
     row.alignment = .centerY

@@ -327,9 +327,7 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     valueLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 280).isActive = true
     let spacer = NSView()
     spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    let chevron = NSTextField(labelWithString: ">")
-    chevron.textColor = .tertiaryLabelColor
-    let row = NSStackView(views: [titleLabel, valueLabel, spacer, chevron])
+    let row = NSStackView(views: [titleLabel, valueLabel, spacer, rielaAppDisclosureIndicator()])
     row.orientation = .horizontal
     row.spacing = 8
     row.alignment = .firstBaseline

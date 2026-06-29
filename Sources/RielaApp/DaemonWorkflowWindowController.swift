@@ -862,7 +862,7 @@ private extension DaemonWorkflowWindowController {
     spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
     var views: [NSView] = [titleLabel, valueLabel, spacer]
     if action != nil {
-      views.append(disclosureIndicator())
+      views.append(rielaAppDisclosureIndicator())
     }
     let row = NSStackView(views: views)
     row.orientation = .horizontal
@@ -897,7 +897,7 @@ private extension DaemonWorkflowWindowController {
     labelStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     let spacer = NSView()
     spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    let row = NSStackView(views: [labelStack, spacer, disclosureIndicator()])
+    let row = NSStackView(views: [labelStack, spacer, rielaAppDisclosureIndicator()])
     row.orientation = .horizontal
     row.spacing = 8
     row.alignment = .centerY
@@ -999,7 +999,7 @@ private extension DaemonWorkflowWindowController {
     let spacer = NSView()
     spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-    let rowStack = NSStackView(views: [textStack, spacer, state, disclosureIndicator()])
+    let rowStack = NSStackView(views: [textStack, spacer, state, rielaAppDisclosureIndicator()])
     rowStack.orientation = .horizontal
     rowStack.spacing = 10
     rowStack.alignment = .centerY
@@ -1011,20 +1011,6 @@ private extension DaemonWorkflowWindowController {
       rowStack.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
     ])
     return cell
-  }
-
-  private func disclosureIndicator() -> NSImageView {
-    let image = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil)
-    let imageView = NSImageView(image: image ?? NSImage())
-    imageView.translatesAutoresizingMaskIntoConstraints = false
-    imageView.imageScaling = .scaleProportionallyDown
-    imageView.contentTintColor = .tertiaryLabelColor
-    imageView.setAccessibilityElement(false)
-    NSLayoutConstraint.activate([
-      imageView.widthAnchor.constraint(equalToConstant: 10),
-      imageView.heightAnchor.constraint(equalToConstant: 12)
-    ])
-    return imageView
   }
 
   private func instanceSubtitle(for row: ConfiguredWorkflowInstanceRow) -> String {

@@ -88,7 +88,9 @@ management only; it is not where workflow instances are added. Profile rows are
 shown as Settings-style rows with the current profile marked inline. Switching
 profiles uses the selected row/action, while creating or removing profiles uses
 `Add Profile` and `Remove Selected Profile` rows. The sheet should not expose a
-legacy `+`, `-`, `Open`, and `Cancel` button strip.
+legacy `+`, `-`, `Open`, and `Cancel` button strip. Profile action rows use the
+same platform chevron disclosure marker as instance rows, not a literal `>`
+text label.
 
 The top area does not show profile summary text such as
 `Profile: default | 1 running | 4 stopped`, last-action captions, or selected
@@ -270,7 +272,8 @@ model. When `Env File` or `Working Directory` already has a value, the prompt
 shows the current value and an `Actions` section with selectable rows such as
 `Choose File`, `Clear Env File`, `Choose Directory`, or
 `Clear Directory Override`. These choices should not be presented as a
-horizontal alert button strip.
+horizontal alert button strip, and their disclosure marker is the platform
+chevron symbol rather than a literal `>` text label.
 
 The `Name` editor opened from the detail view also uses Settings-style
 label/control rows for `Instance ID` and `Display Name`; it should not fall
@@ -283,11 +286,12 @@ show a `Variable Settings` section, a `Current Lines` summary row, and an
 
 The workflow viewer's `Variables` tab follows the same pattern for instance
 configuration. `Current Directory`, `Environment Variables`, and
-`Workflow Variables` are field/value rows with disclosure markers. Selecting a
-row opens the editor. The tab should not show separate `Instance Dir...`,
-`Instance Env...`, or `Instance Variables...` buttons beside duplicate status
-labels. Node model/backend/effort overrides remain a separate `Node Overrides`
-section because they apply to the selected workflow node rather than the
+`Workflow Variables` are field/value rows with platform chevron disclosure
+markers. Selecting a row opens the editor. The tab should not show separate
+`Instance Dir...`, `Instance Env...`, or `Instance Variables...` buttons beside
+duplicate status labels. Node model/backend/effort overrides remain a separate
+`Node Overrides` section because they apply to the selected workflow node rather
+than the
 instance as a whole.
 
 ### Add Instance Sheet
@@ -443,7 +447,8 @@ Add Instance workflow selection empty state:
   still exposes `Profile` as its accessibility label.
 - `Profile Select...` is separate from instance creation and uses
   Settings-style selectable/action rows rather than a `+`, `-`, `Open`,
-  `Cancel` button strip.
+  `Cancel` button strip. Its action rows use platform chevrons, not literal
+  `>` text labels.
 - The main list top area does not show profile summary, last-action, or
   selected-instance caption rows.
 - The Instances section header contains `+ Add Instance` and `Refresh`; row
@@ -463,6 +468,7 @@ Add Instance workflow selection empty state:
   reachable in short tiled windows.
 - Follow-on prompts for env file and working directory show current values and
   selectable action rows instead of `Choose`/`Clear` alert button strips.
+  Their disclosure markers use platform chevrons, not literal `>` text labels.
 - The detail `Name` editor presents instance id and display name as
   Settings-style field rows.
 - Inline env/default variable editors show a current-lines summary row and an

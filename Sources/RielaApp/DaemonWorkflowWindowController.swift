@@ -12,6 +12,12 @@ struct DaemonWorkflowAddInstanceRequest {
   var startsImmediately: Bool
 }
 
+private final class FlippedDocumentView: NSView {
+  override var isFlipped: Bool {
+    true
+  }
+}
+
 @MainActor
 final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate {
   private enum Column {
@@ -329,7 +335,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     topRow.leadingAnchor.constraint(equalTo: stack.leadingAnchor).isActive = true
     topRow.trailingAnchor.constraint(equalTo: stack.trailingAnchor).isActive = true
 
-    let document = NSView()
+    let document = FlippedDocumentView()
     document.translatesAutoresizingMaskIntoConstraints = false
     document.addSubview(stack)
     NSLayoutConstraint.activate([

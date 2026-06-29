@@ -178,7 +178,8 @@ iOS Settings list:
 - secondary text: workflow name, environment readiness, and source description
 - trailing text: one user-facing state
 - trailing disclosure marker: selecting the row opens the same-window detail
-  view
+  view. This marker uses the platform chevron symbol, not a literal `>` text
+  label.
 
 There are no separate `Active` and `Status` columns. The single trailing state
 combines configured daemon intent and runtime status into user-facing states:
@@ -227,8 +228,8 @@ navigation control. The detail header does not repeat state labels such as
 `State: Running` or `Runtime: ...`. The list already owns state. The detail
 view shows current settings as persistent field/value rows. Editable rows
 behave like iOS Settings rows: selecting the row opens the editor, with a
-disclosure marker instead of an exposed `Edit`, `Rename`, or `Duplicate`
-button.
+platform chevron disclosure marker instead of an exposed `Edit`, `Rename`, or
+`Duplicate` button.
 
 Primary row actions:
 
@@ -449,7 +450,7 @@ Add Instance workflow selection empty state:
   actions live in the same-window instance detail view.
 - The Instances list has no `Workflow`, `Env`, or `State` table headers; those
   values are folded into a Settings-style row with a trailing state and
-  disclosure marker.
+  platform chevron disclosure marker rather than a literal `>` text label.
 - Instance details open in the same window with a compact `< Instances` control,
   not in a separate instance-editing window.
 - The detail view shows current settings as selectable rows instead of

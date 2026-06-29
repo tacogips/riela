@@ -78,6 +78,11 @@ The top profile row contains:
 
 - Profile popup
 
+It does not show a separate visible `Profile` label. The popup is the only
+visible control in that row, retains a non-visible accessibility label of
+`Profile`, and the row stays compact so the instance list begins near the top
+of the window in tiled layouts.
+
 The profile popup can open `Profile Select...`. That sheet is profile
 management only; it is not where workflow instances are added. Profile rows are
 shown as Settings-style rows with the current profile marked inline. Switching
@@ -432,7 +437,9 @@ Add Instance workflow selection empty state:
 - The main window no longer contains `Enabled Instances`, `Disabled Instances`,
   or an `Active` column.
 - The status menu no longer contains active/enabled/available summaries.
-- The profile row contains only profile selection.
+- The profile row contains only profile selection, with no separate visible
+  `Profile` label or tall fixed toolbar gap above the instance list. The popup
+  still exposes `Profile` as its accessibility label.
 - `Profile Select...` is separate from instance creation and uses
   Settings-style selectable/action rows rather than a `+`, `-`, `Open`,
   `Cancel` button strip.

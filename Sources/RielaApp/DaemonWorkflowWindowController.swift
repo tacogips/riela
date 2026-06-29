@@ -220,10 +220,10 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     root.translatesAutoresizingMaskIntoConstraints = false
     window.contentView = root
 
-    let profileLabel = NSTextField(labelWithString: "Profile")
     profilePopup.target = self
     profilePopup.action = #selector(profilePopupChanged)
     profilePopup.widthAnchor.constraint(equalToConstant: 160).isActive = true
+    profilePopup.setAccessibilityLabel("Profile")
     refreshButton.target = self
     refreshButton.action = #selector(refresh)
     addListButton.target = self
@@ -246,21 +246,15 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       label.lineBreakMode = .byTruncatingMiddle
       label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     }
-    let profileRow = NSStackView(views: [
-      profileLabel,
+    let toolbar = NSStackView(views: [
       profilePopup
     ])
-    profileRow.orientation = .horizontal
-    profileRow.spacing = 8
-    let toolbar = NSStackView(views: [
-      profileRow
-    ])
     toolbar.alignment = .leading
-    toolbar.orientation = .vertical
-    toolbar.spacing = 8
+    toolbar.orientation = .horizontal
+    toolbar.spacing = 0
     toolbar.translatesAutoresizingMaskIntoConstraints = false
     toolbar.setContentHuggingPriority(.required, for: .vertical)
-    toolbar.heightAnchor.constraint(equalToConstant: 42).isActive = true
+    toolbar.heightAnchor.constraint(equalToConstant: 28).isActive = true
 
     let instancesList = workflowList(title: "Instances", table: instanceTable)
     instancesList.translatesAutoresizingMaskIntoConstraints = false
@@ -276,14 +270,14 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     root.addSubview(detail)
 
     NSLayoutConstraint.activate([
-      toolbar.topAnchor.constraint(equalTo: root.topAnchor, constant: 10),
+      toolbar.topAnchor.constraint(equalTo: root.topAnchor, constant: 8),
       toolbar.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
       toolbar.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
-      instancesList.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 6),
+      instancesList.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 4),
       instancesList.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
       instancesList.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
       instancesList.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -14),
-      detail.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 6),
+      detail.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 4),
       detail.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
       detail.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
       detail.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -14)

@@ -90,6 +90,11 @@ The top area does not show profile summary text such as
 instance captions. Those details either belong in the status menu or in the
 same-window instance detail view after the user chooses an instance.
 
+The main window should open at a compact Settings-like size rather than a wide
+table-management size. Its default width should fit comfortably in tiled window
+managers, and it should declare a practical minimum size so row truncation and
+scrolling handle narrow layouts instead of forcing an oversized window.
+
 The Instances section header contains:
 
 - `+ Add Instance`
@@ -484,3 +489,5 @@ Add Instance workflow selection empty state:
   shown to users.
 - The window remains stable under AeroSpace when tiled narrower than the old
   1180px layout.
+- The main instance window uses a compact default width and an explicit minimum
+  size instead of keeping the old wide table-style default.

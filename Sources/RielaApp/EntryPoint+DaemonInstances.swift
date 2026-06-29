@@ -343,15 +343,16 @@ extension RielaApp {
     idField.placeholderString = "instance-id"
     let nameField = NSTextField(string: displayNameValue)
     nameField.placeholderString = "Display name"
+    let fieldsTitle = NSTextField(labelWithString: "Instance Settings")
+    fieldsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
     let stack = NSStackView(views: [
-      NSTextField(labelWithString: "Instance ID"),
-      idField,
-      NSTextField(labelWithString: "Display Name"),
-      nameField
+      fieldsTitle,
+      daemonInstancePromptFieldRow(title: "Instance ID", control: idField),
+      daemonInstancePromptFieldRow(title: "Display Name", control: nameField)
     ])
     stack.orientation = .vertical
-    stack.spacing = 6
-    stack.frame = NSRect(x: 0, y: 0, width: 360, height: 110)
+    stack.spacing = 8
+    stack.frame = NSRect(x: 0, y: 0, width: 420, height: 110)
     let alert = NSAlert()
     alert.messageText = title
     alert.informativeText = message
@@ -369,6 +370,19 @@ extension RielaApp {
     }
     let displayName = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
     return InstancePromptResult(identity: identity, displayName: displayName.isEmpty ? nil : displayName)
+  }
+
+  private func daemonInstancePromptFieldRow(title: String, control: NSView) -> NSStackView {
+    let titleLabel = NSTextField(labelWithString: title)
+    titleLabel.textColor = .secondaryLabelColor
+    titleLabel.widthAnchor.constraint(equalToConstant: 130).isActive = true
+    control.widthAnchor.constraint(greaterThanOrEqualToConstant: 250).isActive = true
+    let row = NSStackView(views: [titleLabel, control])
+    row.orientation = .horizontal
+    row.spacing = 8
+    row.alignment = .firstBaseline
+    row.widthAnchor.constraint(greaterThanOrEqualToConstant: 400).isActive = true
+    return row
   }
 
   private func promptForMultilineValue(title: String, message: String, value: String) -> String? {

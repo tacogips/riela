@@ -35,6 +35,10 @@ final class RielaAppInterfaceIdentifierTests: XCTestCase {
       contentsOf: root.appendingPathComponent("Sources/RielaApp/EntryPoint+Environment.swift"),
       encoding: .utf8
     )
+    let daemonInstancesSource = try String(
+      contentsOf: root.appendingPathComponent("Sources/RielaApp/EntryPoint+DaemonInstances.swift"),
+      encoding: .utf8
+    )
 
     XCTAssertFalse(appSource.contains("Auto-Start Enabled Workflows"))
     XCTAssertFalse(appSource.contains("Stop and Disable Auto-Start"))
@@ -117,6 +121,11 @@ final class RielaAppInterfaceIdentifierTests: XCTestCase {
     XCTAssertFalse(controllerSource.contains("NSButton(title: \"Actions\""))
     XCTAssertFalse(controllerSource.contains("addAction(\"Open\""))
     XCTAssertFalse(controllerSource.contains("onViewSelectedWorkflow"))
+    XCTAssertTrue(daemonInstancesSource.contains("daemonInstancePromptFieldRow("))
+    XCTAssertTrue(daemonInstancesSource.contains("daemonInstancePromptFieldRow(title: \"Instance ID\""))
+    XCTAssertTrue(daemonInstancesSource.contains("daemonInstancePromptFieldRow(title: \"Display Name\""))
+    XCTAssertFalse(daemonInstancesSource.contains("labelWithString: \"Instance ID\""))
+    XCTAssertFalse(daemonInstancesSource.contains("labelWithString: \"Display Name\""))
     XCTAssertTrue(controllerSource.contains("Missing source"))
     XCTAssertTrue(controllerSource.contains("Needs Source"))
     XCTAssertFalse(controllerSource.contains("labelWithString: \"Instance ID\""))

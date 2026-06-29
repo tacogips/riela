@@ -31,6 +31,10 @@ final class RielaAppInterfaceIdentifierTests: XCTestCase {
       contentsOf: root.appendingPathComponent("Sources/RielaApp/ProfileSelectWindowController.swift"),
       encoding: .utf8
     )
+    let environmentSource = try String(
+      contentsOf: root.appendingPathComponent("Sources/RielaApp/EntryPoint+Environment.swift"),
+      encoding: .utf8
+    )
 
     XCTAssertFalse(appSource.contains("Auto-Start Enabled Workflows"))
     XCTAssertFalse(appSource.contains("Stop and Disable Auto-Start"))
@@ -92,6 +96,15 @@ final class RielaAppInterfaceIdentifierTests: XCTestCase {
     XCTAssertFalse(controllerSource.contains("NSButton(title: \"Restart\""))
     XCTAssertFalse(controllerSource.contains("NSButton(title: \"Remove Instance\""))
     XCTAssertFalse(controllerSource.contains("buttonTitle: \"Edit\""))
+    XCTAssertTrue(environmentSource.contains("environmentChoiceStack("))
+    XCTAssertTrue(environmentSource.contains("environmentActionRow("))
+    XCTAssertTrue(environmentSource.contains("Choose File"))
+    XCTAssertTrue(environmentSource.contains("Clear Env File"))
+    XCTAssertTrue(environmentSource.contains("Choose Directory"))
+    XCTAssertTrue(environmentSource.contains("Clear Directory Override"))
+    XCTAssertFalse(environmentSource.contains("alert.addButton(withTitle: \"Choose File\""))
+    XCTAssertFalse(environmentSource.contains("alert.addButton(withTitle: \"Choose Directory\""))
+    XCTAssertFalse(environmentSource.contains("alert.addButton(withTitle: \"Clear\""))
     XCTAssertTrue(controllerSource.contains("showInstanceDetail()"))
     XCTAssertFalse(controllerSource.contains("NSButton(title: \"Actions\""))
     XCTAssertFalse(controllerSource.contains("addAction(\"Open\""))

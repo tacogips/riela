@@ -3,6 +3,31 @@ import AppKit
 import RielaAppSupport
 import RielaServer
 
+@MainActor
+private final class EnvironmentChoiceRowTarget: NSObject {
+  enum Choice {
+    case choose
+    case clear
+  }
+
+  weak var alert: NSAlert?
+  var choice: Choice?
+
+  @objc func choose() {
+    finish(with: .choose)
+  }
+
+  @objc func clear() {
+    finish(with: .clear)
+  }
+
+  private func finish(with choice: Choice) {
+    self.choice = choice
+    alert?.window.orderOut(nil)
+    NSApp.stopModal(withCode: .alertSecondButtonReturn)
+  }
+}
+
 extension RielaApp {
   func setDaemonWorkflowWorkingDirectory(identity: String) {
     guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
@@ -107,16 +132,26 @@ extension RielaApp {
     }
     let alert = NSAlert()
     alert.messageText = "Instance Environment File"
-    alert.informativeText = "Choose a .env file for instance \(candidate.displayName), clear the current file, or cancel."
-    alert.addButton(withTitle: "Choose File")
-    alert.addButton(withTitle: "Clear")
+    alert.informativeText = "Review the current env file for instance \(candidate.displayName)."
+    let target = EnvironmentChoiceRowTarget()
+    target.alert = alert
+    alert.accessoryView = environmentChoiceStack(
+      currentTitle: "Current Env File",
+      currentValue: existingPath ?? "-",
+      chooseTitle: "Choose File",
+      chooseDetail: "Select a different .env file for this instance.",
+      clearTitle: "Clear Env File",
+      clearDetail: "Use inline env and inherited process environment only.",
+      target: target
+    )
     alert.addButton(withTitle: "Cancel")
-    switch alert.runModal() {
-    case .alertFirstButtonReturn:
+    _ = alert.runModal()
+    switch target.choice {
+    case .choose:
       return .choose
-    case .alertSecondButtonReturn:
+    case .clear:
       return .clear
-    default:
+    case nil:
       return .cancel
     }
   }
@@ -130,18 +165,99 @@ extension RielaApp {
     }
     let alert = NSAlert()
     alert.messageText = "Instance Directory"
-    alert.informativeText = "Choose the current directory for instance \(candidate.displayName), clear the override, or cancel."
-    alert.addButton(withTitle: "Choose Directory")
-    alert.addButton(withTitle: "Clear")
+    alert.informativeText = "Review the current directory override for instance \(candidate.displayName)."
+    let target = EnvironmentChoiceRowTarget()
+    target.alert = alert
+    alert.accessoryView = environmentChoiceStack(
+      currentTitle: "Current Directory",
+      currentValue: existingPath ?? "-",
+      chooseTitle: "Choose Directory",
+      chooseDetail: "Select the directory used when this instance runs.",
+      clearTitle: "Clear Directory Override",
+      clearDetail: "Use the workflow source's natural working directory.",
+      target: target
+    )
     alert.addButton(withTitle: "Cancel")
-    switch alert.runModal() {
-    case .alertFirstButtonReturn:
+    _ = alert.runModal()
+    switch target.choice {
+    case .choose:
       return .choose
-    case .alertSecondButtonReturn:
+    case .clear:
       return .clear
-    default:
+    case nil:
       return .cancel
     }
+  }
+
+  private func environmentChoiceStack(
+    currentTitle: String,
+    currentValue: String,
+    chooseTitle: String,
+    chooseDetail: String,
+    clearTitle: String,
+    clearDetail: String,
+    target: EnvironmentChoiceRowTarget
+  ) -> NSStackView {
+    let currentLabel = NSTextField(labelWithString: currentValue)
+    currentLabel.lineBreakMode = .byTruncatingMiddle
+    let actionsTitle = NSTextField(labelWithString: "Actions")
+    actionsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    let stack = NSStackView(views: [
+      environmentSettingRow(title: currentTitle, valueLabel: currentLabel),
+      actionsTitle,
+      environmentActionRow(title: chooseTitle, detail: chooseDetail, target: target, action: #selector(target.choose)),
+      environmentActionRow(title: clearTitle, detail: clearDetail, target: target, action: #selector(target.clear))
+    ])
+    stack.orientation = .vertical
+    stack.alignment = .leading
+    stack.spacing = 8
+    stack.frame = NSRect(x: 0, y: 0, width: 520, height: 150)
+    return stack
+  }
+
+  private func environmentSettingRow(title: String, valueLabel: NSTextField) -> NSStackView {
+    let titleLabel = NSTextField(labelWithString: title)
+    titleLabel.textColor = .secondaryLabelColor
+    titleLabel.widthAnchor.constraint(equalToConstant: 145).isActive = true
+    valueLabel.textColor = .labelColor
+    valueLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
+    let row = NSStackView(views: [titleLabel, valueLabel])
+    row.orientation = .horizontal
+    row.spacing = 8
+    row.alignment = .firstBaseline
+    return row
+  }
+
+  private func environmentActionRow(
+    title: String,
+    detail: String,
+    target: EnvironmentChoiceRowTarget,
+    action: Selector
+  ) -> NSStackView {
+    let titleLabel = NSTextField(labelWithString: title)
+    titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
+    let detailLabel = NSTextField(labelWithString: detail)
+    detailLabel.font = .systemFont(ofSize: 11)
+    detailLabel.textColor = .secondaryLabelColor
+    detailLabel.lineBreakMode = .byTruncatingTail
+    let labelStack = NSStackView(views: [titleLabel, detailLabel])
+    labelStack.orientation = .vertical
+    labelStack.spacing = 2
+    labelStack.alignment = .leading
+    labelStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    let spacer = NSView()
+    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    let chevron = NSTextField(labelWithString: ">")
+    chevron.textColor = .tertiaryLabelColor
+    let row = NSStackView(views: [labelStack, spacer, chevron])
+    row.orientation = .horizontal
+    row.spacing = 8
+    row.alignment = .centerY
+    row.widthAnchor.constraint(greaterThanOrEqualToConstant: 500).isActive = true
+    row.wantsLayer = true
+    row.toolTip = title
+    row.addGestureRecognizer(NSClickGestureRecognizer(target: target, action: action))
+    return row
   }
 
   private func chooseWorkingDirectory(for candidate: RielaAppDaemonWorkflowCandidate) {

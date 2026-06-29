@@ -254,6 +254,13 @@ preference/configuration.
 The detail view is vertically scrollable. A tiled window with reduced height
 must not trap instance actions below the visible area.
 
+Follow-on editors opened from detail setting rows keep the same interaction
+model. When `Env File` or `Working Directory` already has a value, the prompt
+shows the current value and an `Actions` section with selectable rows such as
+`Choose File`, `Clear Env File`, `Choose Directory`, or
+`Clear Directory Override`. These choices should not be presented as a
+horizontal alert button strip.
+
 The workflow viewer's `Variables` tab follows the same pattern for instance
 configuration. `Current Directory`, `Environment Variables`, and
 `Workflow Variables` are field/value rows with disclosure markers. Selecting a
@@ -426,6 +433,8 @@ Add Instance workflow selection empty state:
   selectable `Instance Actions` rows, not as a horizontal button bar.
 - The detail view scrolls vertically so settings and action rows remain
   reachable in short tiled windows.
+- Follow-on prompts for env file and working directory show current values and
+  selectable action rows instead of `Choose`/`Clear` alert button strips.
 - The workflow viewer `Variables` tab shows instance configuration as
   Settings-style rows and keeps selected-node overrides visually separate.
 - The Add Instance sheet exposes source-management as `Source Actions` rows,

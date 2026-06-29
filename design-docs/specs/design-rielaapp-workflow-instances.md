@@ -265,6 +265,11 @@ The `Name` editor opened from the detail view also uses Settings-style
 label/control rows for `Instance ID` and `Display Name`; it should not fall
 back to a detached vertical label/input form.
 
+The inline environment variables and default variables editors keep their
+multiline text editor, but the prompt still uses Settings-style structure:
+show a `Variable Settings` section, a `Current Lines` summary row, and an
+`Editor` row containing the text editor.
+
 The workflow viewer's `Variables` tab follows the same pattern for instance
 configuration. `Current Directory`, `Environment Variables`, and
 `Workflow Variables` are field/value rows with disclosure markers. Selecting a
@@ -447,6 +452,8 @@ Add Instance workflow selection empty state:
   selectable action rows instead of `Choose`/`Clear` alert button strips.
 - The detail `Name` editor presents instance id and display name as
   Settings-style field rows.
+- Inline env/default variable editors show a current-lines summary row and an
+  editor row instead of a bare text view.
 - The workflow viewer `Variables` tab shows instance configuration as
   Settings-style rows and keeps selected-node overrides visually separate.
 - The Add Instance sheet exposes source-management as `Source Actions` rows,

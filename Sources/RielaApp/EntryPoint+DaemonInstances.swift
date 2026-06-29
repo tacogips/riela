@@ -394,16 +394,51 @@ extension RielaApp {
     scrollView.documentView = textView
     scrollView.hasVerticalScroller = true
     scrollView.borderType = .bezelBorder
+    let stack = multilineValueEditorStack(currentValue: value, editorView: scrollView)
     let alert = NSAlert()
     alert.messageText = title
     alert.informativeText = message
-    alert.accessoryView = scrollView
+    alert.accessoryView = stack
     alert.addButton(withTitle: "Save")
     alert.addButton(withTitle: "Cancel")
     guard alert.runModal() == .alertFirstButtonReturn else {
       return nil
     }
     return textView.string
+  }
+
+  private func multilineValueEditorStack(currentValue: String, editorView: NSView) -> NSStackView {
+    let title = NSTextField(labelWithString: "Variable Settings")
+    title.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    let lineCount = currentValue
+      .split(whereSeparator: \.isNewline)
+      .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+      .count
+    let lineCountLabel = NSTextField(labelWithString: "\(lineCount) configured")
+    editorView.widthAnchor.constraint(greaterThanOrEqualToConstant: 360).isActive = true
+    editorView.heightAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
+    let stack = NSStackView(views: [
+      title,
+      multilineValueFieldRow(title: "Current Lines", control: lineCountLabel),
+      multilineValueFieldRow(title: "Editor", control: editorView)
+    ])
+    stack.orientation = .vertical
+    stack.spacing = 8
+    stack.alignment = .leading
+    stack.frame = NSRect(x: 0, y: 0, width: 520, height: 285)
+    return stack
+  }
+
+  private func multilineValueFieldRow(title: String, control: NSView) -> NSStackView {
+    let titleLabel = NSTextField(labelWithString: title)
+    titleLabel.textColor = .secondaryLabelColor
+    titleLabel.widthAnchor.constraint(equalToConstant: 130).isActive = true
+    let row = NSStackView(views: [titleLabel, control])
+    row.orientation = .horizontal
+    row.spacing = 8
+    row.alignment = .firstBaseline
+    row.widthAnchor.constraint(greaterThanOrEqualToConstant: 500).isActive = true
+    return row
   }
 
   private func uniqueDaemonInstanceId(for candidate: RielaAppDaemonWorkflowCandidate) -> String {

@@ -78,6 +78,13 @@ The top profile row contains:
 
 - Profile popup
 
+The profile popup can open `Profile Select...`. That sheet is profile
+management only; it is not where workflow instances are added. Profile rows are
+shown as Settings-style rows with the current profile marked inline. Switching
+profiles uses the selected row/action, while creating or removing profiles uses
+`Add Profile` and `Remove Selected Profile` rows. The sheet should not expose a
+legacy `+`, `-`, `Open`, and `Cancel` button strip.
+
 The top area does not show profile summary text such as
 `Profile: default | 1 running | 4 stopped`, last-action captions, or selected
 instance captions. Those details either belong in the status menu or in the
@@ -386,6 +393,9 @@ Add Instance workflow selection empty state:
   or an `Active` column.
 - The status menu no longer contains active/enabled/available summaries.
 - The profile row contains only profile selection.
+- `Profile Select...` is separate from instance creation and uses
+  Settings-style selectable/action rows rather than a `+`, `-`, `Open`,
+  `Cancel` button strip.
 - The main list top area does not show profile summary, last-action, or
   selected-instance caption rows.
 - The Instances section header contains `+ Add Instance` and `Refresh`; row

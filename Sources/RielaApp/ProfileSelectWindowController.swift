@@ -7,11 +7,9 @@ final class ProfileSelectWindowController: NSWindowController, NSTableViewDataSo
   static let menuTitle = "Profile Select..."
 
   private let tableView = NSTableView()
-  private let addButton = NSButton(title: "+", target: nil, action: nil)
-  private let removeButton = NSButton(title: "-", target: nil, action: nil)
-  private let openButton = NSButton(title: "Open", target: nil, action: nil)
-  private let cancelButton = NSButton(title: "Cancel", target: nil, action: nil)
   private let statusLabel = NSTextField(labelWithString: "")
+  private let removeProfileTitleLabel = NSTextField(labelWithString: "Remove Selected Profile")
+  private let removeProfileDetailLabel = NSTextField(labelWithString: "Delete this profile's sources, packages, and instance state.")
   private let onSelectProfile: (String) -> Void
   private let onCreateProfile: (String) -> RielaAppProfileName?
   private let onRemoveProfile: (RielaAppProfileName) -> Bool
@@ -27,7 +25,7 @@ final class ProfileSelectWindowController: NSWindowController, NSTableViewDataSo
     self.onCreateProfile = onCreateProfile
     self.onRemoveProfile = onRemoveProfile
     let window = NSPanel(
-      contentRect: NSRect(x: 0, y: 0, width: 360, height: 320),
+      contentRect: NSRect(x: 0, y: 0, width: 420, height: 420),
       styleMask: [.titled, .closable],
       backing: .buffered,
       defer: false
@@ -50,7 +48,7 @@ final class ProfileSelectWindowController: NSWindowController, NSTableViewDataSo
     self.profileNames = profileNames
     tableView.reloadData()
     selectProfile(currentProfile)
-    updateButtons()
+    updateActionRows()
     statusLabel.stringValue = ""
     guard let window else {
       return
@@ -75,35 +73,43 @@ final class ProfileSelectWindowController: NSWindowController, NSTableViewDataSo
     tableView.dataSource = self
     tableView.doubleAction = #selector(openSelectedProfile)
     tableView.target = self
+    tableView.usesAlternatingRowBackgroundColors = false
+    tableView.rowHeight = 44
+    tableView.intercellSpacing = NSSize(width: 0, height: 4)
+    tableView.gridStyleMask = []
+    tableView.selectionHighlightStyle = .regular
 
     let scrollView = NSScrollView()
     scrollView.documentView = tableView
     scrollView.hasVerticalScroller = true
-    scrollView.borderType = .bezelBorder
+    scrollView.borderType = .noBorder
     scrollView.translatesAutoresizingMaskIntoConstraints = false
 
-    addButton.target = self
-    addButton.action = #selector(addProfile)
-    addButton.bezelStyle = .texturedRounded
-    addButton.widthAnchor.constraint(equalToConstant: 30).isActive = true
-    removeButton.target = self
-    removeButton.action = #selector(removeProfile)
-    removeButton.bezelStyle = .texturedRounded
-    removeButton.widthAnchor.constraint(equalToConstant: 30).isActive = true
-    openButton.target = self
-    openButton.action = #selector(openSelectedProfile)
-    cancelButton.target = self
-    cancelButton.action = #selector(cancel)
+    let actionRows = NSStackView(views: [
+      profileActionRow(
+        title: "Use Selected Profile",
+        detail: "Switch the instance window to this profile.",
+        action: #selector(openSelectedProfile)
+      ),
+      profileActionRow(
+        title: "Add Profile",
+        detail: "Create a separate profile for another instance set.",
+        action: #selector(addProfile)
+      ),
+      profileActionRow(
+        titleLabel: removeProfileTitleLabel,
+        detailLabel: removeProfileDetailLabel,
+        action: #selector(removeProfile)
+      )
+    ])
+    actionRows.orientation = .vertical
+    actionRows.spacing = 8
+    actionRows.alignment = .leading
+
     statusLabel.textColor = .secondaryLabelColor
     statusLabel.lineBreakMode = .byTruncatingMiddle
 
-    let listControls = NSStackView(views: [addButton, removeButton])
-    listControls.orientation = .horizontal
-    listControls.spacing = 4
-    let buttonRow = NSStackView(views: [listControls, NSView(), cancelButton, openButton])
-    buttonRow.orientation = .horizontal
-    buttonRow.spacing = 8
-    let stack = NSStackView(views: [scrollView, statusLabel, buttonRow])
+    let stack = NSStackView(views: [scrollView, actionRows, statusLabel])
     stack.orientation = .vertical
     stack.spacing = 10
     stack.translatesAutoresizingMaskIntoConstraints = false
@@ -124,22 +130,98 @@ final class ProfileSelectWindowController: NSWindowController, NSTableViewDataSo
 
   func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
     let cell = NSTableCellView()
-    let label = NSTextField(labelWithString: profileNames[row].rawValue)
-    if profileNames[row] == currentProfile {
-      label.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
-    }
-    label.translatesAutoresizingMaskIntoConstraints = false
-    cell.addSubview(label)
+    let profileName = profileNames[row]
+    let title = NSTextField(labelWithString: profileName.rawValue)
+    title.font = .systemFont(ofSize: 13, weight: profileName == currentProfile ? .semibold : .regular)
+    title.lineBreakMode = .byTruncatingTail
+
+    let detail = NSTextField(labelWithString: profileName == currentProfile ? "Current" : "Available")
+    detail.font = .systemFont(ofSize: 11)
+    detail.textColor = .secondaryLabelColor
+
+    let textStack = NSStackView(views: [title, detail])
+    textStack.orientation = .vertical
+    textStack.spacing = 2
+    textStack.alignment = .leading
+    textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+    let spacer = NSView()
+    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    let checkmark = NSTextField(labelWithString: profileName == currentProfile ? "✓" : "")
+    checkmark.textColor = .controlAccentColor
+    checkmark.font = .systemFont(ofSize: 13, weight: .semibold)
+    checkmark.widthAnchor.constraint(equalToConstant: 18).isActive = true
+
+    let rowStack = NSStackView(views: [textStack, spacer, checkmark])
+    rowStack.orientation = .horizontal
+    rowStack.spacing = 10
+    rowStack.alignment = .centerY
+    rowStack.translatesAutoresizingMaskIntoConstraints = false
+    cell.addSubview(rowStack)
     NSLayoutConstraint.activate([
-      label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 6),
-      label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
-      label.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
+      rowStack.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 8),
+      rowStack.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8),
+      rowStack.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
     ])
     return cell
   }
 
+  private func profileActionRow(
+    title: String,
+    detail: String,
+    action: Selector
+  ) -> NSStackView {
+    let titleLabel = NSTextField(labelWithString: title)
+    titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
+    let detailLabel = NSTextField(labelWithString: detail)
+    return profileActionRow(titleLabel: titleLabel, detailLabel: detailLabel, action: action)
+  }
+
+  private func profileActionRow(
+    titleLabel: NSTextField,
+    detailLabel: NSTextField,
+    action: Selector
+  ) -> NSStackView {
+    titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
+    detailLabel.font = .systemFont(ofSize: 11)
+    detailLabel.textColor = .secondaryLabelColor
+    detailLabel.lineBreakMode = .byTruncatingTail
+
+    let labelStack = NSStackView(views: [titleLabel, detailLabel])
+    labelStack.orientation = .vertical
+    labelStack.spacing = 2
+    labelStack.alignment = .leading
+    labelStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+    let spacer = NSView()
+    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    let chevron = NSTextField(labelWithString: ">")
+    chevron.textColor = .tertiaryLabelColor
+
+    let row = NSStackView(views: [labelStack, spacer, chevron])
+    row.orientation = .horizontal
+    row.spacing = 8
+    row.alignment = .centerY
+    row.wantsLayer = true
+    row.toolTip = titleLabel.stringValue
+    row.widthAnchor.constraint(greaterThanOrEqualToConstant: 360).isActive = true
+    row.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: action))
+    return row
+  }
+
   func tableViewSelectionDidChange(_ notification: Notification) {
-    updateButtons()
+    updateActionRows()
+  }
+
+  private func updateActionRows() {
+    guard let selected = selectedProfile() else {
+      removeProfileTitleLabel.textColor = .disabledControlTextColor
+      removeProfileDetailLabel.textColor = .disabledControlTextColor
+      return
+    }
+    let canRemove = selected != .default && selected != currentProfile
+    removeProfileTitleLabel.textColor = canRemove ? .systemRed : .disabledControlTextColor
+    removeProfileDetailLabel.textColor = canRemove ? .secondaryLabelColor : .disabledControlTextColor
   }
 
   @objc private func addProfile() {
@@ -194,10 +276,6 @@ final class ProfileSelectWindowController: NSWindowController, NSTableViewDataSo
     onSelectProfile(profileName.rawValue)
   }
 
-  @objc private func cancel() {
-    closeSheet()
-  }
-
   private func promptForProfileName() -> String? {
     let field = NSTextField(string: "")
     field.placeholderString = RielaAppProfileName.defaultRawValue
@@ -237,12 +315,6 @@ final class ProfileSelectWindowController: NSWindowController, NSTableViewDataSo
     }
     tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
     tableView.scrollRowToVisible(row)
-  }
-
-  private func updateButtons() {
-    let selected = selectedProfile()
-    openButton.isEnabled = selected != nil
-    removeButton.isEnabled = selected != nil && selected != .default && selected != currentProfile
   }
 
   private func closeSheet() {

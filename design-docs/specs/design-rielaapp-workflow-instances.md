@@ -225,8 +225,9 @@ registrations. Deleting or unregistering a workflow/package/project source is a
 separate source-management action outside the primary instance list.
 
 Selecting an instance keeps the user in the same window. Choosing a row
-replaces the list with an instance detail view and a compact `< Instances`
-navigation control. The detail header does not repeat state labels such as
+replaces the list with an instance detail view and a compact `Instances`
+navigation control with a platform back chevron. The control must not render a
+literal `<` text marker. The detail header does not repeat state labels such as
 `State: Running` or `Runtime: ...`. The list already owns state. The detail
 view shows current settings as persistent field/value rows. Editable rows
 behave like iOS Settings rows: selecting the row opens the editor, with a
@@ -456,8 +457,9 @@ Add Instance workflow selection empty state:
 - The Instances list has no `Workflow`, `Env`, or `State` table headers; those
   values are folded into a Settings-style row with a trailing state and
   platform chevron disclosure marker rather than a literal `>` text label.
-- Instance details open in the same window with a compact `< Instances` control,
-  not in a separate instance-editing window.
+- Instance details open in the same window with a compact `Instances` back
+  control that uses a platform chevron-left symbol, not in a separate
+  instance-editing window and not with a literal `<` text marker.
 - The detail view shows current settings as selectable rows instead of
   header/caption labels for state or runtime.
 - The detail view does not expose standalone `Rename`, `Duplicate`, or `Edit`

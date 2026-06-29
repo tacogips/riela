@@ -84,7 +84,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   private let profilePopup = NSPopUpButton()
   private let addListButton = NSButton(title: "+ Add Instance", target: nil, action: nil)
   private let refreshButton = NSButton(title: "Refresh", target: nil, action: nil)
-  private let backToInstancesButton = NSButton(title: "< Instances", target: nil, action: nil)
+  private let backToInstancesButton = NSButton(title: "Instances", target: nil, action: nil)
   private let detailTitleLabel = NSTextField(labelWithString: "")
   private let detailNameValueLabel = NSTextField(labelWithString: "")
   private let detailWorkflowValueLabel = NSTextField(labelWithString: "")
@@ -230,6 +230,10 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     addListButton.action = #selector(addListButtonPressed)
     backToInstancesButton.target = self
     backToInstancesButton.action = #selector(showInstancesList)
+    backToInstancesButton.image = NSImage(systemSymbolName: "chevron.left", accessibilityDescription: nil)
+    backToInstancesButton.imagePosition = .imageLeading
+    backToInstancesButton.toolTip = "Back to instances"
+    backToInstancesButton.setAccessibilityLabel("Back to Instances")
     profilePopup.toolTip = "Switch profiles or open Profile Select."
     addListButton.toolTip = "Create an instance from a workflow source."
     detailTitleLabel.font = .boldSystemFont(ofSize: 18)

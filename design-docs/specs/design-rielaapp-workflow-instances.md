@@ -251,6 +251,15 @@ preference/configuration.
 The detail view is vertically scrollable. A tiled window with reduced height
 must not trap instance actions below the visible area.
 
+The workflow viewer's `Variables` tab follows the same pattern for instance
+configuration. `Current Directory`, `Environment Variables`, and
+`Workflow Variables` are field/value rows with disclosure markers. Selecting a
+row opens the editor. The tab should not show separate `Instance Dir...`,
+`Instance Env...`, or `Instance Variables...` buttons beside duplicate status
+labels. Node model/backend/effort overrides remain a separate `Node Overrides`
+section because they apply to the selected workflow node rather than the
+instance as a whole.
+
 ### Add Instance Sheet
 
 Creating an instance prompts for:
@@ -413,6 +422,8 @@ Add Instance workflow selection empty state:
   selectable `Instance Actions` rows, not as a horizontal button bar.
 - The detail view scrolls vertically so settings and action rows remain
   reachable in short tiled windows.
+- The workflow viewer `Variables` tab shows instance configuration as
+  Settings-style rows and keeps selected-node overrides visually separate.
 - Workflow sources are selected from the `+` add-instance sheet rather than
   shown as a permanent disabled-instance list.
 - A user can create an always-on instance by selecting a workflow and entering

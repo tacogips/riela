@@ -11,12 +11,9 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
   private let sessionPopup = NSPopUpButton()
   private let templatePopup = NSPopUpButton()
   private let statusLabel = NSTextField(labelWithString: "No workflow loaded")
-  private let currentDirectoryLabel = NSTextField(labelWithString: "Instance Dir: -")
-  private let currentDirectoryButton = NSButton(title: "Instance Dir...", target: nil, action: nil)
-  private let environmentVariablesLabel = NSTextField(labelWithString: "Instance Env: -")
-  private let environmentVariablesButton = NSButton(title: "Instance Env...", target: nil, action: nil)
-  private let workflowVariablesLabel = NSTextField(labelWithString: "Instance Variables: -")
-  private let workflowVariablesButton = NSButton(title: "Instance Variables...", target: nil, action: nil)
+  private let currentDirectoryLabel = NSTextField(labelWithString: "-")
+  private let environmentVariablesLabel = NSTextField(labelWithString: "-")
+  private let workflowVariablesLabel = NSTextField(labelWithString: "-")
   private let detailTextView = NSTextView()
   private let logTextView = NSTextView()
   private let structureTextView = NSTextView()
@@ -178,31 +175,33 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     templateToolbar.addArrangedSubview(saveTemplateButton)
     templateToolbar.addArrangedSubview(reloadTemplateButton)
 
-    let currentDirectoryToolbar = NSStackView()
-    currentDirectoryToolbar.orientation = .horizontal
-    currentDirectoryToolbar.alignment = .centerY
-    currentDirectoryToolbar.spacing = 8
     currentDirectoryLabel.lineBreakMode = .byTruncatingMiddle
-    currentDirectoryButton.target = self
-    currentDirectoryButton.action = #selector(currentDirectoryButtonPressed)
-    currentDirectoryButton.toolTip = "Choose the current directory used when this workflow runs."
-    currentDirectoryToolbar.addArrangedSubview(currentDirectoryLabel)
-    currentDirectoryToolbar.addArrangedSubview(currentDirectoryButton)
-
-    let variableActionsToolbar = NSStackView()
-    variableActionsToolbar.orientation = .horizontal
-    variableActionsToolbar.alignment = .centerY
-    variableActionsToolbar.spacing = 8
     environmentVariablesLabel.lineBreakMode = .byTruncatingTail
     workflowVariablesLabel.lineBreakMode = .byTruncatingTail
-    environmentVariablesButton.target = self
-    environmentVariablesButton.action = #selector(environmentVariablesButtonPressed)
-    workflowVariablesButton.target = self
-    workflowVariablesButton.action = #selector(workflowVariablesButtonPressed)
-    variableActionsToolbar.addArrangedSubview(environmentVariablesLabel)
-    variableActionsToolbar.addArrangedSubview(environmentVariablesButton)
-    variableActionsToolbar.addArrangedSubview(workflowVariablesLabel)
-    variableActionsToolbar.addArrangedSubview(workflowVariablesButton)
+    let instanceSettingsTitle = NSTextField(labelWithString: "Instance Settings")
+    instanceSettingsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    let instanceSettingsStack = NSStackView(views: [
+      instanceSettingRow(
+        title: "Current Directory",
+        valueLabel: currentDirectoryLabel,
+        action: #selector(currentDirectoryRowSelected)
+      ),
+      instanceSettingRow(
+        title: "Environment Variables",
+        valueLabel: environmentVariablesLabel,
+        action: #selector(environmentVariablesRowSelected)
+      ),
+      instanceSettingRow(
+        title: "Workflow Variables",
+        valueLabel: workflowVariablesLabel,
+        action: #selector(workflowVariablesRowSelected)
+      )
+    ])
+    instanceSettingsStack.orientation = .vertical
+    instanceSettingsStack.alignment = .leading
+    instanceSettingsStack.spacing = 8
+    let nodeOverrideTitle = NSTextField(labelWithString: "Node Overrides")
+    nodeOverrideTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
 
     statusLabel.lineBreakMode = .byTruncatingTail
     configureReadOnlyTextView(detailTextView, textColor: detailTextColor, backgroundColor: detailBackgroundColor)
@@ -242,8 +241,9 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     editStack.translatesAutoresizingMaskIntoConstraints = false
 
     let variablesStack = NSStackView(views: [
-      currentDirectoryToolbar,
-      variableActionsToolbar,
+      instanceSettingsTitle,
+      instanceSettingsStack,
+      nodeOverrideTitle,
       patchToolbar
     ])
     variablesStack.orientation = .vertical
@@ -315,6 +315,31 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     return item
   }
 
+  private func instanceSettingRow(
+    title: String,
+    valueLabel: NSTextField,
+    action: Selector
+  ) -> NSStackView {
+    let titleLabel = NSTextField(labelWithString: title)
+    titleLabel.textColor = .secondaryLabelColor
+    titleLabel.widthAnchor.constraint(equalToConstant: 150).isActive = true
+    valueLabel.textColor = .labelColor
+    valueLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 280).isActive = true
+    let spacer = NSView()
+    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    let chevron = NSTextField(labelWithString: ">")
+    chevron.textColor = .tertiaryLabelColor
+    let row = NSStackView(views: [titleLabel, valueLabel, spacer, chevron])
+    row.orientation = .horizontal
+    row.spacing = 8
+    row.alignment = .firstBaseline
+    row.widthAnchor.constraint(greaterThanOrEqualToConstant: 520).isActive = true
+    row.wantsLayer = true
+    row.toolTip = "Open \(title)"
+    row.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: action))
+    return row
+  }
+
   @objc private func refreshButtonPressed() {
     refresh()
   }
@@ -328,7 +353,7 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     loadSelectedTemplateFile()
   }
 
-  @objc private func currentDirectoryButtonPressed() {
+  @objc private func currentDirectoryRowSelected() {
     guard let onSetWorkingDirectory else {
       statusLabel.stringValue = "Current directory editing is unavailable for this viewer"
       return
@@ -337,7 +362,7 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     updateCurrentDirectoryLabel()
   }
 
-  @objc private func environmentVariablesButtonPressed() {
+  @objc private func environmentVariablesRowSelected() {
     guard let onSetEnvironmentVariables else {
       statusLabel.stringValue = "Environment variable editing is unavailable for this viewer"
       return
@@ -346,7 +371,7 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     updateVariableLabels()
   }
 
-  @objc private func workflowVariablesButtonPressed() {
+  @objc private func workflowVariablesRowSelected() {
     guard let onSetWorkflowVariables else {
       statusLabel.stringValue = "Workflow variable editing is unavailable for this viewer"
       return
@@ -357,15 +382,12 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
 
   private func updateCurrentDirectoryLabel() {
     let path = currentDirectory?.trimmingCharacters(in: .whitespacesAndNewlines)
-    currentDirectoryLabel.stringValue = "Instance Dir: \((path?.isEmpty == false ? path : nil) ?? "-")"
-    currentDirectoryButton.isEnabled = onSetWorkingDirectory != nil
+    currentDirectoryLabel.stringValue = (path?.isEmpty == false ? path : nil) ?? "-"
   }
 
   private func updateVariableLabels() {
-    environmentVariablesLabel.stringValue = "Instance Env: \(environmentVariablesSummary ?? "-")"
-    workflowVariablesLabel.stringValue = "Instance Variables: \(workflowVariablesSummary ?? "-")"
-    environmentVariablesButton.isEnabled = onSetEnvironmentVariables != nil
-    workflowVariablesButton.isEnabled = onSetWorkflowVariables != nil
+    environmentVariablesLabel.stringValue = environmentVariablesSummary ?? "-"
+    workflowVariablesLabel.stringValue = workflowVariablesSummary ?? "-"
   }
 
   @objc private func saveNodePatchButtonPressed() {

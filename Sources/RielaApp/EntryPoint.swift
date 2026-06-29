@@ -157,7 +157,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
           self?.removeDaemonProfile(profileName) ?? false
         },
         onAddDirectory: { [weak self] in
-          self?.addDaemonWorkflowDirectory()
+          self?.addDaemonWorkflowSourceOnlyDirectory()
         },
         onAddProject: { [weak self] in
           self?.addDaemonProjectDirectory()
@@ -561,7 +561,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
   }
 
-  private func addDaemonWorkflowDirectory() {
+  private func addDaemonWorkflowSourceOnlyDirectory() {
     let panel = NSOpenPanel()
     panel.title = "Add Workflow or Package Source to RielaApp"
     panel.message = "Select one or more workflow folders, package folders, .rielapkg files, or .zip packages."
@@ -573,7 +573,37 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     guard panel.runModal() == .OK, !panel.urls.isEmpty else {
       return
     }
-    importDaemonWorkflowOrPackageSources(panel.urls, startsImmediately: true)
+    importDaemonWorkflowOrPackageSourcesOnly(panel.urls)
+  }
+
+  private func importDaemonWorkflowOrPackageSourcesOnly(_ sources: [URL]) {
+    var importedNames: [String] = []
+    var updatedNames: [String] = []
+    var failures: [String] = []
+    for source in sources {
+      do {
+        let importResult = try installDaemonWorkflowOrPackageSource(source)
+        let candidate = importResult.candidate
+        if importResult.replacedExisting {
+          updatedNames.append(candidate.displayName)
+        } else {
+          importedNames.append(candidate.displayName)
+        }
+        logDaemon("added source=\(source.path) candidate=\(candidate.id) profile=\(daemonProfileName.rawValue)")
+      } catch {
+        failures.append("\(source.lastPathComponent): \(error.localizedDescription)")
+        logDaemon("failed to add source=\(source.path) error=\(error.localizedDescription)")
+      }
+    }
+    let summaryParts = [
+      importedNames.isEmpty ? nil : "Added \(importedNames.joined(separator: ", "))",
+      updatedNames.isEmpty ? nil : "Updated \(updatedNames.joined(separator: ", "))",
+      failures.isEmpty ? nil : "Failed \(failures.joined(separator: "; "))"
+    ].compactMap { $0 }
+    if !summaryParts.isEmpty {
+      status = summaryParts.joined(separator: ". ")
+    }
+    refreshDaemonWorkflowWindow()
   }
 
   private func installDaemonWorkflowOrPackageSource(_ url: URL) throws -> RielaAppDaemonImportResult {

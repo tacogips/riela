@@ -63,6 +63,12 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     case addProjectSource
   }
 
+  private enum WorkflowSourceSelection {
+    case selected(WorkflowSourceOption)
+    case retry
+    case cancelled
+  }
+
   private struct ConfiguredWorkflowInstanceRow {
     var id: String
     var preference: RielaAppDaemonWorkflowPreference
@@ -687,69 +693,112 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   }
 
   private func promptForAddInstance() -> DaemonWorkflowAddInstanceRequest? {
-    let options = workflowSourceOptions()
-    guard !options.isEmpty else {
-      let alert = NSAlert()
-      alert.messageText = "No Selectable Workflows"
-      alert.informativeText = "Import a workflow, package, or project source."
-      alert.accessoryView = sourceActionStack()
-      alert.addButton(withTitle: "Cancel")
-      pendingAddInstanceSheetAction = nil
-      activeAddInstanceAlert = alert
-      _ = alert.runModal()
-      activeAddInstanceAlert = nil
-      handlePendingAddInstanceSheetAction()
-      return nil
-    }
+    while true {
+      let options = workflowSourceOptions()
+      guard !options.isEmpty else {
+        let alert = NSAlert()
+        alert.messageText = "No Selectable Workflows"
+        alert.informativeText = "Import a workflow, package, or project source."
+        alert.accessoryView = sourceActionStack()
+        alert.addButton(withTitle: "Cancel")
+        pendingAddInstanceSheetAction = nil
+        activeAddInstanceAlert = alert
+        _ = alert.runModal()
+        activeAddInstanceAlert = nil
+        if handlePendingAddInstanceSheetAction() {
+          continue
+        }
+        return nil
+      }
 
+      switch promptForWorkflowSourceOption(options) {
+      case let .selected(option):
+        return promptForInstanceParameters(sourceOption: option)
+      case .retry:
+        continue
+      case .cancelled:
+        return nil
+      }
+    }
+  }
+
+  private func promptForWorkflowSourceOption(_ options: [WorkflowSourceOption]) -> WorkflowSourceSelection {
     let workflowPopup = NSPopUpButton()
     workflowPopup.addItems(withTitles: options.map(\.title))
-    let idField = NSTextField(string: "")
-    idField.placeholderString = "instance-id"
-    let nameField = NSTextField(string: "")
-    nameField.placeholderString = "Display name"
-    let envField = NSTextField(string: "")
-    envField.placeholderString = "Optional .env path"
-    let directoryField = NSTextField(string: "")
-    directoryField.placeholderString = "Optional working directory"
-    let startCheckbox = NSButton(checkboxWithTitle: "Start now", target: nil, action: nil)
-    startCheckbox.state = .on
-    let parameterTitle = NSTextField(labelWithString: "Instance Parameters")
-    parameterTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    let workflowTitle = NSTextField(labelWithString: "Select Workflow")
+    workflowTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
     let sourceActionsTitle = NSTextField(labelWithString: "Source Actions")
     sourceActionsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
     let stack = NSStackView(views: [
-      parameterTitle,
+      workflowTitle,
       addInstanceFieldRow(title: "Workflow", control: workflowPopup),
-      addInstanceFieldRow(title: "Instance ID", control: idField),
-      addInstanceFieldRow(title: "Display Name", control: nameField),
-      addInstanceFieldRow(title: "Env File", control: envField),
-      addInstanceFieldRow(title: "Working Directory", control: directoryField),
-      addInstanceToggleRow(title: "Start", checkbox: startCheckbox),
       sourceActionsTitle,
       sourceActionStack()
     ])
     stack.orientation = .vertical
     stack.spacing = 8
-    stack.frame = NSRect(x: 0, y: 0, width: 520, height: 350)
+    stack.frame = NSRect(x: 0, y: 0, width: 520, height: 180)
 
     let alert = NSAlert()
     alert.messageText = "Add Instance"
-    alert.informativeText = "Select a workflow and enter instance parameters."
+    alert.informativeText = "Select a workflow source."
     alert.accessoryView = stack
-    alert.addButton(withTitle: "Create")
+    alert.addButton(withTitle: "Next")
     alert.addButton(withTitle: "Cancel")
     pendingAddInstanceSheetAction = nil
     activeAddInstanceAlert = alert
     let response = alert.runModal()
     activeAddInstanceAlert = nil
     if handlePendingAddInstanceSheetAction() {
-      return nil
+      return .retry
     }
+    guard response == .alertFirstButtonReturn else {
+      return .cancelled
+    }
+    return .selected(options[max(0, workflowPopup.indexOfSelectedItem)])
+  }
+
+  private func promptForInstanceParameters(sourceOption option: WorkflowSourceOption) -> DaemonWorkflowAddInstanceRequest? {
+    let idField = NSTextField(string: "")
+    idField.placeholderString = "instance-id"
+    let nameField = NSTextField(string: option.candidate.displayName)
+    nameField.placeholderString = "Display name"
+    let envField = NSTextField(string: "")
+    envField.placeholderString = "Optional .env path"
+    let directoryField = NSTextField(string: option.candidate.workingDirectory)
+    directoryField.placeholderString = "Optional working directory"
+    let startCheckbox = NSButton(checkboxWithTitle: "Start now", target: nil, action: nil)
+    startCheckbox.state = .on
+    let parameterTitle = NSTextField(labelWithString: "Configure Instance")
+    parameterTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    let workflowValue = NSTextField(labelWithString: option.title)
+    workflowValue.lineBreakMode = .byTruncatingMiddle
+    workflowValue.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    let stack = NSStackView(views: [
+      parameterTitle,
+      addInstanceValueRow(title: "Workflow", valueLabel: workflowValue),
+      addInstanceFieldRow(title: "Instance ID", control: idField),
+      addInstanceFieldRow(title: "Display Name", control: nameField),
+      addInstanceFieldRow(title: "Env File", control: envField),
+      addInstanceFieldRow(title: "Working Directory", control: directoryField),
+      addInstanceToggleRow(title: "Start", checkbox: startCheckbox)
+    ])
+    stack.orientation = .vertical
+    stack.spacing = 8
+    stack.frame = NSRect(x: 0, y: 0, width: 520, height: 240)
+
+    let alert = NSAlert()
+    alert.messageText = "Add Instance"
+    alert.informativeText = "Enter instance parameters."
+    alert.accessoryView = stack
+    alert.addButton(withTitle: "Create")
+    alert.addButton(withTitle: "Cancel")
+    activeAddInstanceAlert = alert
+    let response = alert.runModal()
+    activeAddInstanceAlert = nil
     guard response == .alertFirstButtonReturn else {
       return nil
     }
-    let option = options[max(0, workflowPopup.indexOfSelectedItem)]
     let rawIdentity = idField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
     let displayName = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
     let envPath = envField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -779,12 +828,56 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     return true
   }
 
+  @objc private func importWorkflowOrPackageFromAddInstanceSheet() {
+    finishAddInstanceSheet(with: .importWorkflowOrPackage)
+  }
+
+  @objc private func addProjectSourceFromAddInstanceSheet() {
+    finishAddInstanceSheet(with: .addProjectSource)
+  }
+
+  private func finishAddInstanceSheet(with action: AddInstanceSheetAction) {
+    pendingAddInstanceSheetAction = action
+    activeAddInstanceAlert?.window.orderOut(nil)
+    NSApp.stopModal(withCode: .alertSecondButtonReturn)
+  }
+
+  private func updateProfileControls() {
+    isUpdatingProfileControls = true
+    profilePopup.removeAllItems()
+    profilePopup.addItems(withTitles: profileNames.map(\.rawValue))
+    profilePopup.menu?.addItem(.separator())
+    profilePopup.addItem(withTitle: ProfileSelectWindowController.menuTitle)
+    profilePopup.selectItem(withTitle: profileName.rawValue)
+    isUpdatingProfileControls = false
+  }
+
+  func windowWillClose(_ notification: Notification) {
+    onWindowWillClose()
+  }
+}
+
+private extension DaemonWorkflowWindowController {
   private func addInstanceFieldRow(title: String, control: NSView) -> NSStackView {
     let titleLabel = NSTextField(labelWithString: title)
     titleLabel.textColor = .secondaryLabelColor
     titleLabel.widthAnchor.constraint(equalToConstant: 145).isActive = true
     control.widthAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
     let row = NSStackView(views: [titleLabel, control])
+    row.orientation = .horizontal
+    row.spacing = 8
+    row.alignment = .firstBaseline
+    row.widthAnchor.constraint(greaterThanOrEqualToConstant: 500).isActive = true
+    return row
+  }
+
+  private func addInstanceValueRow(title: String, valueLabel: NSTextField) -> NSStackView {
+    let titleLabel = NSTextField(labelWithString: title)
+    titleLabel.textColor = .secondaryLabelColor
+    titleLabel.widthAnchor.constraint(equalToConstant: 145).isActive = true
+    valueLabel.textColor = .labelColor
+    valueLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
+    let row = NSStackView(views: [titleLabel, valueLabel])
     row.orientation = .horizontal
     row.spacing = 8
     row.alignment = .firstBaseline
@@ -823,36 +916,6 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     return stack
   }
 
-  @objc private func importWorkflowOrPackageFromAddInstanceSheet() {
-    finishAddInstanceSheet(with: .importWorkflowOrPackage)
-  }
-
-  @objc private func addProjectSourceFromAddInstanceSheet() {
-    finishAddInstanceSheet(with: .addProjectSource)
-  }
-
-  private func finishAddInstanceSheet(with action: AddInstanceSheetAction) {
-    pendingAddInstanceSheetAction = action
-    activeAddInstanceAlert?.window.orderOut(nil)
-    NSApp.stopModal(withCode: .alertSecondButtonReturn)
-  }
-
-  private func updateProfileControls() {
-    isUpdatingProfileControls = true
-    profilePopup.removeAllItems()
-    profilePopup.addItems(withTitles: profileNames.map(\.rawValue))
-    profilePopup.menu?.addItem(.separator())
-    profilePopup.addItem(withTitle: ProfileSelectWindowController.menuTitle)
-    profilePopup.selectItem(withTitle: profileName.rawValue)
-    isUpdatingProfileControls = false
-  }
-
-  func windowWillClose(_ notification: Notification) {
-    onWindowWillClose()
-  }
-}
-
-private extension DaemonWorkflowWindowController {
   private func settingRow(
     title: String,
     valueLabel: NSTextField,

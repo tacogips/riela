@@ -115,6 +115,12 @@ The sheet has two steps:
 1. Select workflow
 2. Configure instance parameters
 
+In AppKit, the first implementation may present these as two sequential
+`Add Instance` sheets: a compact `Select Workflow` sheet with `Next`, followed
+by a `Configure Instance` sheet with `Create`. The user-visible flow must still
+read as workflow selection first and parameter entry second; the selected
+workflow is repeated as a read-only Settings-style row on the configure step.
+
 The workflow selection step lists selectable workflow sources with enough
 context to choose safely:
 
@@ -133,6 +139,12 @@ These actions are available while adding an instance because they answer the
 user's real question: "the workflow I need is not selectable yet." They are
 selectable Settings-style rows inside the sheet, not extra modal buttons next
 to `Create`/`Cancel`.
+
+Source Actions in the Add Instance flow are source-only operations. Importing a
+workflow/package from this sheet must not create an instance preference, mark a
+source active, or start a daemon. After the source operation finishes, the
+workflow selection step reopens with refreshed selectable sources so the user
+can continue into Configure Instance.
 
 The main content has one primary section:
 

@@ -117,8 +117,8 @@ final class RielaAppControllerLayoutTests: XCTestCase {
       workflowId: "daily-summary",
       displayName: "Daily Summary",
       sourceDescription: "user workflow",
-      workflowDirectory: "/workflows/daily-summary",
-      workingDirectory: "/workflows",
+      workflowDirectory: "workflows/daily-summary",
+      workingDirectory: "workflows",
       eventRoot: nil,
       eventSources: []
     )
@@ -220,6 +220,9 @@ final class RielaAppControllerLayoutTests: XCTestCase {
     )
 
     let root = try XCTUnwrap(controller.window?.contentView)
+    let window = try XCTUnwrap(controller.window)
+    window.setFrame(NSRect(x: 0, y: 0, width: 920, height: 640), display: false)
+    window.layoutIfNeeded()
     let table = try XCTUnwrap(firstSubview(of: NSTableView.self, in: root))
     let cell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? RielaAppTableSelectionCellView)
     XCTAssertEqual(cell.accessibilityRole(), NSAccessibility.Role.button)

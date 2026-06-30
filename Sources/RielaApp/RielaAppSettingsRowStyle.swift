@@ -4,8 +4,12 @@ import AppKit
 @MainActor
 class RielaAppSettingsRow: NSStackView {
   private(set) var isSettingsRowSelected = false
+  private(set) var isGroupedSettingsRow = false
 
   var settingsRowBackgroundAlpha: CGFloat {
+    if isGroupedSettingsRow {
+      return isSettingsRowSelected ? 0.1 : 0
+    }
     if isSettingsRowSelected {
       return 0.62
     }
@@ -21,9 +25,18 @@ class RielaAppSettingsRow: NSStackView {
   }
 
   func applySettingsRowStyle() {
+    isGroupedSettingsRow = false
     edgeInsets = NSEdgeInsets(top: 9, left: 12, bottom: 9, right: 12)
     wantsLayer = true
     layer?.cornerRadius = 12
+    updateSettingsRowBackground()
+  }
+
+  func applyGroupedSettingsRowStyle() {
+    isGroupedSettingsRow = true
+    edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
+    wantsLayer = true
+    layer?.cornerRadius = 0
     updateSettingsRowBackground()
   }
 
@@ -34,7 +47,9 @@ class RielaAppSettingsRow: NSStackView {
 
   func updateSettingsRowBackground() {
     effectiveAppearance.performAsCurrentDrawingAppearance {
-      layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(settingsRowBackgroundAlpha).cgColor
+      layer?.backgroundColor = settingsRowBackgroundAlpha > 0
+        ? NSColor.controlBackgroundColor.withAlphaComponent(settingsRowBackgroundAlpha).cgColor
+        : NSColor.clear.cgColor
     }
   }
 }
@@ -50,6 +65,15 @@ final class RielaAppSelectableSettingsRow: RielaAppSettingsRow {
   private(set) var rielaAccessibilityEnabled = true
 
   override var settingsRowBackgroundAlpha: CGFloat {
+    if isGroupedSettingsRow {
+      if isMouseDownInside {
+        return 0.16
+      }
+      if isKeyboardFocused || isHovered {
+        return 0.08
+      }
+      return super.settingsRowBackgroundAlpha
+    }
     if isMouseDownInside {
       return 0.68
     }
@@ -175,10 +199,19 @@ final class RielaAppSelectableSettingsRow: RielaAppSettingsRow {
 
 @MainActor
 final class RielaAppTableSelectionCellView: NSTableCellView {
+  private enum GroupedListLayout {
+    static let separatorHeight: CGFloat = 1
+    static let selectedAlpha: CGFloat = 0
+    static let cornerRadius: CGFloat = 14
+  }
+
   private weak var tableViewReference: NSTableView?
   private weak var actionTarget: AnyObject?
   private var action: Selector?
   private var rowIndex = -1
+  private let groupedSeparator = NSView()
+  private var isGroupedListCell = false
+  private var groupedSeparatorLeadingInset: CGFloat = 0
 
   func configureSelection(
     tableView: NSTableView,
@@ -203,11 +236,54 @@ final class RielaAppTableSelectionCellView: NSTableCellView {
     if let accessibilityHelp {
       setAccessibilityHelp(accessibilityHelp)
     }
+    updateGroupedListAppearance()
+  }
+
+  func configureGroupedListStyle(separatorLeadingInset: CGFloat, showsSeparator: Bool) {
+    isGroupedListCell = true
+    groupedSeparatorLeadingInset = separatorLeadingInset
+    wantsLayer = true
+    layer?.cornerRadius = 0
+    layer?.masksToBounds = false
+    if groupedSeparator.superview == nil {
+      groupedSeparator.wantsLayer = true
+      addSubview(groupedSeparator)
+    }
+    groupedSeparator.isHidden = !showsSeparator
+    updateGroupedListAppearance()
+    needsLayout = true
   }
 
   override func viewWillDraw() {
     super.viewWillDraw()
     updateSettingsRowSelection()
+  }
+
+  override func draw(_ dirtyRect: NSRect) {
+    if isGroupedListCell {
+      groupedListSurfaceColor().setFill()
+      groupedListBackgroundPath().fill()
+    }
+    super.draw(dirtyRect)
+  }
+
+  override func layout() {
+    super.layout()
+    guard isGroupedListCell else {
+      return
+    }
+    groupedSeparator.frame = NSRect(
+      x: groupedSeparatorLeadingInset,
+      y: 0,
+      width: max(0, bounds.width - groupedSeparatorLeadingInset - 12),
+      height: GroupedListLayout.separatorHeight
+    )
+  }
+
+  override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
+    updateGroupedListAppearance()
+    needsDisplay = true
   }
 
   override func addSubview(_ view: NSView) {
@@ -233,10 +309,9 @@ final class RielaAppTableSelectionCellView: NSTableCellView {
     guard let tableViewReference, rowIndex >= 0 else {
       return
     }
-    setSettingsRowSelection(
-      in: self,
-      selected: tableViewReference.selectedRowIndexes.contains(rowIndex)
-    )
+    let selected = tableViewReference.selectedRowIndexes.contains(rowIndex)
+    setSettingsRowSelection(in: self, selected: selected)
+    updateGroupedListAppearance(selected: selected)
   }
 
   private func setSettingsRowSelection(in view: NSView, selected: Bool) {
@@ -245,6 +320,179 @@ final class RielaAppTableSelectionCellView: NSTableCellView {
     }
     for subview in view.subviews {
       setSettingsRowSelection(in: subview, selected: selected)
+    }
+  }
+
+  private func updateGroupedListAppearance(selected explicitSelection: Bool? = nil) {
+    guard isGroupedListCell else {
+      return
+    }
+    let selected = explicitSelection ?? tableViewReference?.selectedRowIndexes.contains(rowIndex) ?? false
+    effectiveAppearance.performAsCurrentDrawingAppearance {
+      let surfaceColor = groupedListSurfaceColor()
+      layer?.backgroundColor = selected
+        ? NSColor.selectedContentBackgroundColor.withAlphaComponent(GroupedListLayout.selectedAlpha).cgColor
+        : surfaceColor.cgColor
+      groupedSeparator.layer?.backgroundColor = NSColor.separatorColor.withAlphaComponent(0.45).cgColor
+    }
+    needsDisplay = true
+  }
+
+  private func groupedListSurfaceColor() -> NSColor {
+    NSColor.controlBackgroundColor.blended(withFraction: 0.08, of: .labelColor)
+      ?? NSColor.controlBackgroundColor
+  }
+
+  private func groupedListBackgroundPath() -> NSBezierPath {
+    guard tableViewReference?.numberOfRows == 1 else {
+      return NSBezierPath(rect: bounds)
+    }
+    return NSBezierPath(
+      roundedRect: bounds,
+      xRadius: GroupedListLayout.cornerRadius,
+      yRadius: GroupedListLayout.cornerRadius
+    )
+  }
+}
+
+@MainActor
+final class RielaAppSymbolTileView: NSView {
+  private enum Layout {
+    static let tileSize: CGFloat = 32
+    static let imageSize: CGFloat = 18
+  }
+
+  private let imageView: NSImageView
+  private let backgroundColor: NSColor
+
+  init(symbolName: String, backgroundColor: NSColor, symbolColor: NSColor = .white) {
+    self.imageView = NSImageView(
+      image: NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) ?? NSImage()
+    )
+    self.backgroundColor = backgroundColor
+    super.init(frame: .zero)
+    wantsLayer = true
+    layer?.cornerRadius = 7
+    imageView.contentTintColor = symbolColor
+    imageView.translatesAutoresizingMaskIntoConstraints = false
+    imageView.setAccessibilityElement(false)
+    addSubview(imageView)
+    translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      widthAnchor.constraint(equalToConstant: Layout.tileSize),
+      heightAnchor.constraint(equalToConstant: Layout.tileSize),
+      imageView.centerXAnchor.constraint(equalTo: centerXAnchor),
+      imageView.centerYAnchor.constraint(equalTo: centerYAnchor),
+      imageView.widthAnchor.constraint(equalToConstant: Layout.imageSize),
+      imageView.heightAnchor.constraint(equalToConstant: Layout.imageSize)
+    ])
+    updateBackgroundColor()
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
+    updateBackgroundColor()
+  }
+
+  private func updateBackgroundColor() {
+    effectiveAppearance.performAsCurrentDrawingAppearance {
+      layer?.backgroundColor = backgroundColor.cgColor
+    }
+  }
+}
+
+@MainActor
+final class RielaAppSettingsSectionView: NSStackView {
+  private enum Layout {
+    static let cornerRadius: CGFloat = 12
+    static let separatorHeight: CGFloat = 1
+  }
+
+  private let rowViews: [NSView]
+  private var separatorViews: [NSView] = []
+
+  init(rows: [NSView]) {
+    self.rowViews = rows
+    super.init(frame: .zero)
+    orientation = .vertical
+    alignment = .width
+    spacing = 0
+    wantsLayer = true
+    layer?.cornerRadius = Layout.cornerRadius
+    layer?.masksToBounds = true
+    setContentHuggingPriority(.required, for: .vertical)
+    setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    for (index, row) in rows.enumerated() {
+      applyGroupedRowStyle(to: row)
+      addArrangedSubview(row)
+      guard index < rows.count - 1 else {
+        continue
+      }
+      let separator = separatorView()
+      separatorViews.append(separator)
+      addArrangedSubview(separator)
+    }
+    updateBackgroundColor()
+    updateSeparatorColors()
+    updateSeparatorVisibility()
+  }
+
+  @available(*, unavailable)
+  required init(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  override func layout() {
+    updateSeparatorVisibility()
+    super.layout()
+  }
+
+  override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
+    updateBackgroundColor()
+    updateSeparatorColors()
+  }
+
+  private func applyGroupedRowStyle(to row: NSView) {
+    if let settingsRow = row as? RielaAppSettingsRow {
+      settingsRow.applyGroupedSettingsRowStyle()
+    }
+  }
+
+  private func separatorView() -> NSView {
+    let separator = NSView()
+    separator.wantsLayer = true
+    separator.translatesAutoresizingMaskIntoConstraints = false
+    separator.heightAnchor.constraint(equalToConstant: Layout.separatorHeight).isActive = true
+    return separator
+  }
+
+  private func updateSeparatorVisibility() {
+    for (index, separator) in separatorViews.enumerated() {
+      let hasPreviousVisibleRow = !rowViews[index].isHidden
+      let hasFollowingVisibleRow = rowViews[(index + 1)...].contains { !$0.isHidden }
+      separator.isHidden = !(hasPreviousVisibleRow && hasFollowingVisibleRow)
+    }
+  }
+
+  private func updateBackgroundColor() {
+    effectiveAppearance.performAsCurrentDrawingAppearance {
+      let surfaceColor = NSColor.controlBackgroundColor.blended(withFraction: 0.08, of: .labelColor)
+        ?? NSColor.controlBackgroundColor
+      layer?.backgroundColor = surfaceColor.cgColor
+    }
+  }
+
+  private func updateSeparatorColors() {
+    effectiveAppearance.performAsCurrentDrawingAppearance {
+      for separator in separatorViews {
+        separator.layer?.backgroundColor = NSColor.separatorColor.withAlphaComponent(0.45).cgColor
+      }
     }
   }
 }
@@ -261,6 +509,11 @@ func rielaAppSettingsRow(_ row: NSStackView) -> NSStackView {
   row.layer?.cornerRadius = 12
   row.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.42).cgColor
   return row
+}
+
+@MainActor
+func rielaAppSettingsSection(rows: [NSView]) -> RielaAppSettingsSectionView {
+  RielaAppSettingsSectionView(rows: rows)
 }
 
 @discardableResult
@@ -305,6 +558,7 @@ func rielaAppConfigureSettingsTableSelection(_ tableView: NSTableView) {
   tableView.usesAlternatingRowBackgroundColors = false
   tableView.gridStyleMask = []
   tableView.selectionHighlightStyle = .none
+  tableView.backgroundColor = .clear
 }
 
 @MainActor
@@ -314,6 +568,22 @@ func rielaAppConfigureGroupedTextScroll(_ scroll: NSScrollView) {
   scroll.wantsLayer = true
   scroll.layer?.cornerRadius = 12
   scroll.layer?.masksToBounds = true
+}
+
+@MainActor
+func rielaAppConfigureGroupedListScroll(_ scroll: NSScrollView, cornerRadius: CGFloat = 14) {
+  scroll.borderType = .noBorder
+  scroll.drawsBackground = false
+  scroll.backgroundColor = .clear
+  scroll.contentView.drawsBackground = false
+  scroll.wantsLayer = true
+  scroll.layer?.cornerRadius = cornerRadius
+  scroll.layer?.masksToBounds = true
+  scroll.effectiveAppearance.performAsCurrentDrawingAppearance {
+    let surfaceColor = NSColor.controlBackgroundColor.blended(withFraction: 0.08, of: .labelColor)
+      ?? NSColor.controlBackgroundColor
+    scroll.layer?.backgroundColor = surfaceColor.cgColor
+  }
 }
 
 #endif

@@ -290,11 +290,11 @@ extension DaemonWorkflowWindowController {
       detail: "Make project workflows available to saved instances.",
       action: #selector(addProject)
     )
+    let actionSection = rielaAppSettingsSection(rows: [importRow, projectRow])
     let stack = settingsDocumentStack(views: [
       title,
       sourcesSummaryLabel,
-      importRow,
-      projectRow
+      actionSection
     ])
     return settingsScrollView(documentStack: stack)
   }
@@ -308,10 +308,11 @@ extension DaemonWorkflowWindowController {
       detail: "Switch, create, or remove RielaApp profiles.",
       action: #selector(openProfilesFromSidebar)
     )
+    let actionSection = rielaAppSettingsSection(rows: [manageRow])
     let stack = settingsDocumentStack(views: [
       title,
       profilesSummaryLabel,
-      manageRow
+      actionSection
     ])
     return settingsScrollView(documentStack: stack)
   }
@@ -324,7 +325,7 @@ extension DaemonWorkflowWindowController {
     assistantSaveStatusLabel.lineBreakMode = .byWordWrapping
     assistantSaveStatusLabel.maximumNumberOfLines = 2
 
-    let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 520, height: 280))
+    let textView = NSTextView(frame: .zero)
     textView.isRichText = false
     textView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
     textView.textColor = .labelColor
@@ -345,12 +346,13 @@ extension DaemonWorkflowWindowController {
       detail: "Update the assistant assistance text for this profile.",
       action: #selector(saveAssistantAssistance)
     )
+    let actionSection = rielaAppSettingsSection(rows: [saveRow])
     let stack = settingsDocumentStack(views: [
       title,
       assistantSummaryLabel,
       scroll,
       assistantSaveStatusLabel,
-      saveRow
+      actionSection
     ])
     return settingsScrollView(documentStack: stack)
   }

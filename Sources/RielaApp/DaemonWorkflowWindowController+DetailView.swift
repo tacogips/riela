@@ -16,6 +16,9 @@ extension DaemonWorkflowWindowController {
     settingsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
     let actionsTitle = NSTextField(labelWithString: "Manage Instance")
     actionsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    let detailTitleRow = detailHeaderRow(label: detailTitleLabel)
+    let settingsTitleRow = detailHeaderRow(label: settingsTitle)
+    let actionsTitleRow = detailHeaderRow(label: actionsTitle)
     let relinkRow = actionRow(
       title: "Relink Source",
       detail: "Choose a workflow source for this saved instance.",
@@ -82,11 +85,13 @@ extension DaemonWorkflowWindowController {
     startInstanceActionRow = startRow
     stopInstanceActionRow = stopRow
     restartInstanceActionRow = restartRow
-
-    let stack = NSStackView(views: [
-      topRow,
-      detailTitleLabel,
-      settingsTitle,
+    let removeRow = actionRow(
+      title: "Remove Instance",
+      detail: "Delete only this instance.",
+      style: .destructive,
+      action: #selector(removeSelectedInstance)
+    )
+    let settingsSection = rielaAppSettingsSection(rows: [
       workflowRow,
       missingSourceRow,
       nameRow,
@@ -94,18 +99,23 @@ extension DaemonWorkflowWindowController {
       inlineEnvironmentRow,
       workingDirectoryRow,
       variablesRow,
-      eventSourcesRow,
-      actionsTitle,
+      eventSourcesRow
+    ])
+    let actionsSection = rielaAppSettingsSection(rows: [
       relinkRow,
       startRow,
       stopRow,
       restartRow,
-      actionRow(
-        title: "Remove Instance",
-        detail: "Delete only this instance.",
-        style: .destructive,
-        action: #selector(removeSelectedInstance)
-      )
+      removeRow
+    ])
+
+    let stack = NSStackView(views: [
+      topRow,
+      detailTitleRow,
+      settingsTitleRow,
+      settingsSection,
+      actionsTitleRow,
+      actionsSection
     ])
     stack.orientation = .vertical
     stack.alignment = .width
@@ -133,6 +143,19 @@ extension DaemonWorkflowWindowController {
     document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor).isActive = true
     document.heightAnchor.constraint(greaterThanOrEqualTo: scroll.contentView.heightAnchor).isActive = true
     return scroll
+  }
+
+  private func detailHeaderRow(label: NSTextField) -> NSStackView {
+    label.alignment = .left
+    label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    let spacer = NSView()
+    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    let row = NSStackView(views: [label, spacer])
+    row.orientation = .horizontal
+    row.alignment = .firstBaseline
+    row.spacing = 8
+    row.setContentHuggingPriority(.required, for: .vertical)
+    return row
   }
 }
 #endif

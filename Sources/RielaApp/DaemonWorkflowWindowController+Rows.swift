@@ -36,11 +36,13 @@ final class DaemonWorkflowInstanceListView: NSView {
     super.layout()
     header.frame = NSRect(x: 0, y: 0, width: bounds.width, height: Layout.headerHeight)
     let scrollY = Layout.headerHeight + Layout.verticalSpacing
+    let availableScrollHeight = max(0, bounds.height - scrollY)
+    let scrollHeight = min(availableScrollHeight, preferredScrollHeight(defaultHeight: availableScrollHeight))
     scrollView.frame = NSRect(
       x: 0,
       y: scrollY,
       width: bounds.width,
-      height: max(0, bounds.height - scrollY)
+      height: scrollHeight
     )
     let emptyWidth = min(Layout.emptyLabelWidth, max(0, scrollView.bounds.width - 32))
     emptyLabel.frame = NSRect(
@@ -49,6 +51,17 @@ final class DaemonWorkflowInstanceListView: NSView {
       width: emptyWidth,
       height: Layout.emptyLabelHeight
     )
+  }
+
+  private func preferredScrollHeight(defaultHeight: CGFloat) -> CGFloat {
+    guard
+      let table = scrollView.documentView as? NSTableView,
+      table.numberOfRows > 0
+    else {
+      return defaultHeight
+    }
+    let rowHeight = table.rowHeight + table.intercellSpacing.height
+    return max(rowHeight, CGFloat(table.numberOfRows) * rowHeight)
   }
 }
 
@@ -129,8 +142,8 @@ extension DaemonWorkflowWindowController {
   func workflowList(title: String, table: NSTableView) -> NSView {
     table.delegate = self
     table.dataSource = self
-    table.rowHeight = 58
-    table.intercellSpacing = NSSize(width: 0, height: 6)
+    table.rowHeight = 62
+    table.intercellSpacing = .zero
     rielaAppConfigureSettingsTableSelection(table)
     table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
     table.action = #selector(tableClicked(_:))
@@ -145,7 +158,7 @@ extension DaemonWorkflowWindowController {
     scroll.hasHorizontalScroller = false
     scroll.translatesAutoresizingMaskIntoConstraints = true
     scroll.autoresizingMask = []
-    scroll.borderType = .noBorder
+    rielaAppConfigureGroupedListScroll(scroll)
     scroll.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
 
     let label = NSTextField(labelWithString: title)
@@ -186,9 +199,18 @@ extension DaemonWorkflowWindowController {
       action: #selector(tableClicked(_:))
     )
     cell.wantsLayer = true
+    cell.configureGroupedListStyle(
+      separatorLeadingInset: 60,
+      showsSeparator: tableRow < instanceRows.count - 1
+    )
+
+    let tile = RielaAppSymbolTileView(
+      symbolName: "rectangle.stack.fill",
+      backgroundColor: stateColor(for: row.state)
+    )
 
     let title = NSTextField(labelWithString: row.instanceName)
-    title.font = .systemFont(ofSize: 13, weight: .medium)
+    title.font = .systemFont(ofSize: 14, weight: .medium)
     title.lineBreakMode = .byTruncatingTail
     title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
@@ -225,17 +247,18 @@ extension DaemonWorkflowWindowController {
     let spacer = NSView()
     spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-    let rowStack = RielaAppSettingsRow(views: [textStack, spacer, stateStack, rielaAppDisclosureIndicator()])
+    let rowStack = NSStackView(views: [tile, textStack, spacer, stateStack, rielaAppDisclosureIndicator()])
     rowStack.orientation = .horizontal
-    rowStack.spacing = 10
+    rowStack.spacing = 12
     rowStack.alignment = .centerY
+    rowStack.edgeInsets = NSEdgeInsets(top: 9, left: 12, bottom: 9, right: 12)
     rowStack.translatesAutoresizingMaskIntoConstraints = false
-    rielaAppSettingsRow(rowStack)
     cell.addSubview(rowStack)
     NSLayoutConstraint.activate([
-      rowStack.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
-      rowStack.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
-      rowStack.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
+      rowStack.leadingAnchor.constraint(equalTo: cell.leadingAnchor),
+      rowStack.trailingAnchor.constraint(equalTo: cell.trailingAnchor),
+      rowStack.topAnchor.constraint(equalTo: cell.topAnchor),
+      rowStack.bottomAnchor.constraint(equalTo: cell.bottomAnchor)
     ])
     return cell
   }

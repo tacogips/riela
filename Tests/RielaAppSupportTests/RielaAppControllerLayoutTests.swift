@@ -77,6 +77,7 @@ final class RielaAppControllerLayoutTests: XCTestCase {
       workflowSources: [],
       state: state,
       snapshots: [:],
+      assistantAssistance: "",
       statusMessage: ""
     )
     controller.selectCandidate(identity: "lost-instance")
@@ -137,6 +138,7 @@ final class RielaAppControllerLayoutTests: XCTestCase {
       workflowSources: [source],
       state: state,
       snapshots: [:],
+      assistantAssistance: "",
       statusMessage: ""
     )
     controller.selectCandidate(identity: "morning-summary")
@@ -174,6 +176,7 @@ final class RielaAppControllerLayoutTests: XCTestCase {
       snapshots: [
         "morning-summary": RielaAppDaemonWorkflowRuntime.RuntimeSnapshot(status: .running, detail: "Running")
       ],
+      assistantAssistance: "",
       statusMessage: ""
     )
     controller.window?.layoutIfNeeded()
@@ -212,6 +215,7 @@ final class RielaAppControllerLayoutTests: XCTestCase {
       workflowSources: [source],
       state: state,
       snapshots: [:],
+      assistantAssistance: "",
       statusMessage: ""
     )
 
@@ -688,9 +692,12 @@ final class RielaAppControllerLayoutTests: XCTestCase {
       onStopInstance: { _ in },
       onRestartInstance: { _ in },
       onSetEnvironment: { _ in },
-      onSetEnvironmentVariables: { _ in },
       onSetWorkingDirectory: { _ in },
-      onSetVariables: { _ in },
+      onSaveEnvironmentVariables: { _, _ in nil },
+      onSaveWorkflowVariables: { _, _ in nil },
+      onRegisterEventSource: { _, _, _ in nil },
+      configuredEnvironmentValues: { _ in [] },
+      onSaveAssistantAssistance: { _ in nil },
       environmentSummary: { _ in "Ready" },
       environmentColumnStatus: { _ in "Ready" },
       onWindowWillClose: {}

@@ -154,6 +154,7 @@ extension DaemonWorkflowWindowController {
     instancesList.translatesAutoresizingMaskIntoConstraints = true
     instancesList.setContentHuggingPriority(.defaultLow, for: .vertical)
     instancesListView = instancesList
+    contentHost = root.contentHost
     let detail = buildInstanceDetailView()
     detail.translatesAutoresizingMaskIntoConstraints = true
     detail.isHidden = true
@@ -161,6 +162,9 @@ extension DaemonWorkflowWindowController {
     let sources = buildSourcesOverviewView()
     sources.isHidden = true
     sourcesOverviewView = sources
+    let assistant = buildAssistantOverviewView()
+    assistant.isHidden = true
+    assistantOverviewView = assistant
     let profiles = buildProfilesOverviewView()
     profiles.isHidden = true
     profilesOverviewView = profiles
@@ -168,6 +172,7 @@ extension DaemonWorkflowWindowController {
     root.contentHost.addSubview(instancesList)
     root.contentHost.addSubview(detail)
     root.contentHost.addSubview(sources)
+    root.contentHost.addSubview(assistant)
     root.contentHost.addSubview(profiles)
     showInstancesList()
   }
@@ -221,7 +226,7 @@ extension DaemonWorkflowWindowController {
     sidebarSearchField.translatesAutoresizingMaskIntoConstraints = false
     sidebarSearchField.heightAnchor.constraint(equalToConstant: 36).isActive = true
 
-    for button in [sidebarInstancesButton, sidebarSourcesButton, sidebarProfilesButton] {
+    for button in [sidebarInstancesButton, sidebarSourcesButton, sidebarAssistantButton, sidebarProfilesButton] {
       button.target = self
       button.bezelStyle = .regularSquare
       button.isBordered = false
@@ -235,6 +240,8 @@ extension DaemonWorkflowWindowController {
     sidebarInstancesButton.action = #selector(showInstancesPane)
     sidebarSourcesButton.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
     sidebarSourcesButton.action = #selector(showSourcesPane)
+    sidebarAssistantButton.image = NSImage(systemSymbolName: "bubble.left.and.text.bubble.right", accessibilityDescription: nil)
+    sidebarAssistantButton.action = #selector(showAssistantPane)
     sidebarProfilesButton.image = NSImage(systemSymbolName: "person.crop.circle", accessibilityDescription: nil)
     sidebarProfilesButton.action = #selector(showProfilesPane)
 
@@ -246,6 +253,7 @@ extension DaemonWorkflowWindowController {
       appTitle,
       sidebarInstancesButton,
       sidebarSourcesButton,
+      sidebarAssistantButton,
       sidebarProfilesButton
     ])
     menuStack.orientation = .vertical
@@ -262,6 +270,7 @@ extension DaemonWorkflowWindowController {
       appTitle.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
       sidebarInstancesButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
       sidebarSourcesButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
+      sidebarAssistantButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
       sidebarProfilesButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor)
     ])
     return container
@@ -303,6 +312,45 @@ extension DaemonWorkflowWindowController {
       title,
       profilesSummaryLabel,
       manageRow
+    ])
+    return settingsScrollView(documentStack: stack)
+  }
+
+  private func buildAssistantOverviewView() -> NSView {
+    let title = NSTextField(labelWithString: "Assistant")
+    title.font = .systemFont(ofSize: 18, weight: .bold)
+    assistantSummaryLabel.textColor = .secondaryLabelColor
+    assistantSaveStatusLabel.textColor = .secondaryLabelColor
+    assistantSaveStatusLabel.lineBreakMode = .byWordWrapping
+    assistantSaveStatusLabel.maximumNumberOfLines = 2
+
+    let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 520, height: 280))
+    textView.isRichText = false
+    textView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+    textView.textColor = .labelColor
+    textView.backgroundColor = .controlBackgroundColor
+    textView.drawsBackground = true
+    assistantAssistanceTextView = textView
+
+    let scroll = NSScrollView()
+    scroll.documentView = textView
+    scroll.hasVerticalScroller = true
+    scroll.hasHorizontalScroller = false
+    scroll.translatesAutoresizingMaskIntoConstraints = false
+    rielaAppConfigureGroupedTextScroll(scroll)
+    scroll.heightAnchor.constraint(equalToConstant: 280).isActive = true
+
+    let saveRow = actionRow(
+      title: "Save Assistance",
+      detail: "Update the assistant assistance text for this profile.",
+      action: #selector(saveAssistantAssistance)
+    )
+    let stack = settingsDocumentStack(views: [
+      title,
+      assistantSummaryLabel,
+      scroll,
+      assistantSaveStatusLabel,
+      saveRow
     ])
     return settingsScrollView(documentStack: stack)
   }

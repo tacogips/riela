@@ -68,6 +68,31 @@ extension RielaApp {
     return environment
   }
 
+  func daemonConfiguredEnvironmentValues(
+    for candidate: RielaAppDaemonWorkflowCandidate
+  ) -> [RielaAppConfiguredEnvironmentValue] {
+    let preference = daemonState.preference(for: candidate.id)
+    let fileValues = preference.environmentFilePath
+      .map { RielaAppEnvironmentFileStore.parseEnvironmentFile(URL(fileURLWithPath: $0)) } ?? [:]
+    let inlineValues = preference.environmentVariables
+    let names = Set(fileValues.keys).union(inlineValues.keys)
+    return names.map { name in
+      if let inlineValue = inlineValues[name] {
+        let source = fileValues[name] == nil ? "inline" : "inline override"
+        return RielaAppConfiguredEnvironmentValue(
+          name: name,
+          value: inlineValue,
+          source: source
+        )
+      }
+      return RielaAppConfiguredEnvironmentValue(
+        name: name,
+        value: fileValues[name] ?? "",
+        source: ".env"
+      )
+    }
+  }
+
   func daemonRuntimeConfiguration(
     for candidate: RielaAppDaemonWorkflowCandidate
   ) -> WorkflowServeRuntimeConfiguration {

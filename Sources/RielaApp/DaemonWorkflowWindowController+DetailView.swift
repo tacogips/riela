@@ -65,7 +65,11 @@ extension DaemonWorkflowWindowController {
       valueLabel: detailVariablesValueLabel,
       action: #selector(setSelectedVariables)
     )
-    let eventSourcesRow = settingRow(title: "Event Sources", valueLabel: detailEventSourcesValueLabel, action: nil)
+    let eventSourcesRow = settingRow(
+      title: "Event Sources",
+      valueLabel: detailEventSourcesValueLabel,
+      action: #selector(setSelectedEventSources)
+    )
     workflowSettingRow = workflowRow
     missingSourceSettingRow = missingSourceRow
     nameSettingRow = nameRow

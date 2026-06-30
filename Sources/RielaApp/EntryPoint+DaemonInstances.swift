@@ -298,13 +298,23 @@ extension RielaApp {
     ) else {
       return
     }
+    if let error = saveDaemonWorkflowEnvironmentVariables(identity: identity, text: text) {
+      status = error
+      refreshDaemonWorkflowWindow()
+    }
+  }
+
+  func saveDaemonWorkflowEnvironmentVariables(identity: String, text: String) -> String? {
+    guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
+      return "Instance could not be found"
+    }
     do {
       let variables = try parseEnvironmentVariables(text)
       guard updateDaemonPreference(identity: identity, mutate: { preference in
         preference.sourceIdentity = candidate.sourceIdentity
         preference.environmentVariables = variables
       }) else {
-        return
+        return status
       }
       status = "Updated environment variables for \(candidate.displayName)"
       refreshDaemonWorkflowWindow()
@@ -312,9 +322,9 @@ extension RielaApp {
         identity: identity,
         changeDescription: "environment variables"
       )
+      return nil
     } catch {
-      status = "Invalid environment variables: \(error.localizedDescription)"
-      refreshDaemonWorkflowWindow()
+      return "Invalid environment variables: \(error.localizedDescription)"
     }
   }
 
@@ -332,13 +342,23 @@ extension RielaApp {
     ) else {
       return
     }
+    if let error = saveDaemonWorkflowDefaultVariables(identity: identity, text: text) {
+      status = error
+      refreshDaemonWorkflowWindow()
+    }
+  }
+
+  func saveDaemonWorkflowDefaultVariables(identity: String, text: String) -> String? {
+    guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
+      return "Instance could not be found"
+    }
     do {
       let variables = try parseWorkflowVariables(text)
       guard updateDaemonPreference(identity: identity, mutate: { preference in
         preference.sourceIdentity = candidate.sourceIdentity
         preference.defaultVariables = variables
       }) else {
-        return
+        return status
       }
       status = "Updated workflow variables for \(candidate.displayName)"
       refreshDaemonWorkflowWindow()
@@ -346,9 +366,9 @@ extension RielaApp {
         identity: identity,
         changeDescription: "workflow variables"
       )
+      return nil
     } catch {
-      status = "Invalid workflow variables: \(error.localizedDescription)"
-      refreshDaemonWorkflowWindow()
+      return "Invalid workflow variables: \(error.localizedDescription)"
     }
   }
 

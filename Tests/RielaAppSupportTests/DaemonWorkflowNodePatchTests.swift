@@ -94,6 +94,17 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
     XCTAssertEqual(decoded.nodePatches["worker"]?.model, "gpt-5-mini")
   }
 
+  func testWorkflowStateStoresAssistantAssistance() throws {
+    let state = RielaAppDaemonWorkflowState(
+      assistant: RielaAppAssistantSettings(assistance: "Prefer concise help.")
+    )
+
+    let data = try JSONEncoder().encode(state)
+    let decoded = try JSONDecoder().decode(RielaAppDaemonWorkflowState.self, from: data)
+
+    XCTAssertEqual(decoded.assistant.assistance, "Prefer concise help.")
+  }
+
   func testStateProjectsMultipleManagedInstancesFromOneSourceWorkflow() {
     let source = RielaAppDaemonWorkflowCandidate(
       id: "user-workflow:telegram-bot",

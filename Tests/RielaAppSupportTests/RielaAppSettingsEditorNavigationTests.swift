@@ -1,0 +1,252 @@
+#if os(macOS)
+import AppKit
+@testable import RielaApp
+@testable import RielaAppSupport
+import RielaCore
+import XCTest
+
+@MainActor
+final class RielaAppSettingsEditorNavigationTests: XCTestCase {
+  func testInstanceDetailRowsNavigateToInlineConfigurationEditorsAtRuntime() throws {
+    let controller = DaemonWorkflowWindowController(
+      onRefresh: {},
+      onSelectProfile: { _ in },
+      onCreateProfile: { RielaAppProfileName($0) },
+      onRemoveProfile: { _ in true },
+      onAddDirectory: {},
+      onAddProject: {},
+      onAddInstance: { _ in },
+      onRevealSelectedSource: { _ in },
+      onRelinkInstance: { _, _ in },
+      onRenameWorkflow: { _ in },
+      onRemoveInstance: { _ in },
+      onStartInstance: { _ in },
+      onStopInstance: { _ in },
+      onRestartInstance: { _ in },
+      onSetEnvironment: { _ in },
+      onSetWorkingDirectory: { _ in },
+      onSaveEnvironmentVariables: { _, _ in nil },
+      onSaveWorkflowVariables: { _, _ in nil },
+      onRegisterEventSource: { _, _, _ in nil },
+      configuredEnvironmentValues: { _ in [
+        RielaAppConfiguredEnvironmentValue(
+          name: "DUPLICATE_TOKEN",
+          value: "inline-value",
+          source: "inline override"
+        ),
+        RielaAppConfiguredEnvironmentValue(name: "FILE_ONLY", value: "file-value", source: ".env")
+      ] },
+      onSaveAssistantAssistance: { _ in nil },
+      environmentSummary: { _ in ".env file demo.env, 1 environment variables, all required environment variables set" },
+      environmentColumnStatus: { _ in "Ready" },
+      onWindowWillClose: {}
+    )
+    let source = RielaAppDaemonWorkflowCandidate(
+      id: "user-workflow:chat",
+      workflowId: "chat",
+      displayName: "Chat",
+      sourceDescription: "user workflow",
+      workflowDirectory: "/workflows/chat",
+      workingDirectory: "/workflows",
+      eventRoot: "/workflows/chat/.riela-events",
+      eventSources: [RielaAppDaemonEventSourceSummary(id: "telegram", kind: "telegram-gateway")]
+    )
+    var state = RielaAppDaemonWorkflowState()
+    state.preferences["chat-instance"] = RielaAppDaemonWorkflowPreference(
+      identity: "chat-instance",
+      sourceIdentity: source.id,
+      environmentFilePath: "/workflows/chat/demo.env",
+      environmentVariables: ["DUPLICATE_TOKEN": "inline-value"],
+      defaultVariables: ["persona": .string("yuki")]
+    )
+
+    controller.update(
+      profileName: .default,
+      profileNames: [.default],
+      candidates: [source],
+      workflowSources: [source],
+      state: state,
+      snapshots: [:],
+      assistantAssistance: "",
+      statusMessage: ""
+    )
+    controller.selectCandidate(identity: "chat-instance")
+
+    let root = try XCTUnwrap(controller.window?.contentView)
+    let table = try XCTUnwrap(firstSubview(of: NSTableView.self, in: root))
+    controller.tableClicked(table)
+    controller.window?.layoutIfNeeded()
+
+    XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "Environment Variables", in: root)).accessibilityPerformPress())
+    controller.window?.layoutIfNeeded()
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Effective Configured Environment" })
+    XCTAssertTrue(textViews(in: root).contains { $0.string.contains("DUPLICATE_TOKEN=inline-value (inline override)") })
+    XCTAssertTrue(textViews(in: root).contains { $0.string.contains("FILE_ONLY=file-value (.env)") })
+    XCTAssertTrue(textViews(in: root).contains { $0.string.contains("DUPLICATE_TOKEN=inline-value") })
+
+    controller.cancelConfigurationEditor()
+    XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "Workflow Variables", in: root)).accessibilityPerformPress())
+    controller.window?.layoutIfNeeded()
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Effective Workflow Variables" })
+    XCTAssertTrue(textViews(in: root).contains { $0.string.contains("persona=yuki") })
+
+    controller.cancelConfigurationEditor()
+    XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "Event Sources", in: root)).accessibilityPerformPress())
+    controller.window?.layoutIfNeeded()
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Source JSON" })
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Binding JSON" })
+    XCTAssertTrue(textViews(in: root).contains { $0.string.contains(#""workflowName" : "chat""#) })
+  }
+
+  func testAssistantSidebarPaneEditsAssistanceAtRuntime() throws {
+    var savedAssistance: String?
+    let controller = DaemonWorkflowWindowController(
+      onRefresh: {},
+      onSelectProfile: { _ in },
+      onCreateProfile: { RielaAppProfileName($0) },
+      onRemoveProfile: { _ in true },
+      onAddDirectory: {},
+      onAddProject: {},
+      onAddInstance: { _ in },
+      onRevealSelectedSource: { _ in },
+      onRelinkInstance: { _, _ in },
+      onRenameWorkflow: { _ in },
+      onRemoveInstance: { _ in },
+      onStartInstance: { _ in },
+      onStopInstance: { _ in },
+      onRestartInstance: { _ in },
+      onSetEnvironment: { _ in },
+      onSetWorkingDirectory: { _ in },
+      onSaveEnvironmentVariables: { _, _ in nil },
+      onSaveWorkflowVariables: { _, _ in nil },
+      onRegisterEventSource: { _, _, _ in nil },
+      configuredEnvironmentValues: { _ in [] },
+      onSaveAssistantAssistance: { assistance in
+        savedAssistance = assistance
+        return nil
+      },
+      environmentSummary: { _ in "Ready" },
+      environmentColumnStatus: { _ in "Ready" },
+      onWindowWillClose: {}
+    )
+    let state = RielaAppDaemonWorkflowState(
+      assistant: RielaAppAssistantSettings(assistance: "Use short direct answers.")
+    )
+    controller.update(
+      profileName: .default,
+      profileNames: [.default],
+      candidates: [],
+      workflowSources: [],
+      state: state,
+      snapshots: [:],
+      assistantAssistance: state.assistant.assistance,
+      statusMessage: ""
+    )
+
+    let root = try XCTUnwrap(controller.window?.contentView)
+    let assistantButton = try XCTUnwrap(button(accessibilityLabel: "Assistant", in: root))
+    XCTAssertNotNil(assistantButton.image)
+    controller.showAssistantPane()
+    controller.window?.layoutIfNeeded()
+
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Assistant" })
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "25 characters configured" })
+    let editor = try XCTUnwrap(textViews(in: root).first { $0.string.contains("Use short direct answers.") })
+    editor.string = "Prefer concise assistance."
+    XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "Save Assistance", in: root)).accessibilityPerformPress())
+
+    XCTAssertEqual(savedAssistance, "Prefer concise assistance.")
+  }
+
+  func testEventSourceRegistrationWritesSourceAndBindingFiles() throws {
+    let temp = try scratchRoot(name: "riela-app-event-source-registration-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: temp) }
+    let workflowDirectory = temp.appendingPathComponent("workflow", isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+    let app = RielaApp()
+    app.daemonCandidates = [
+      RielaAppDaemonWorkflowCandidate(
+        id: "user-workflow:chat",
+        workflowId: "chat",
+        displayName: "Chat",
+        sourceDescription: "user workflow",
+        workflowDirectory: workflowDirectory.path,
+        workingDirectory: temp.path,
+        eventRoot: nil,
+        eventSources: []
+      )
+    ]
+
+    let error = app.registerDaemonWorkflowEventSource(
+      identity: "user-workflow:chat",
+      sourceJSON: #"{"id":"telegram-chat","kind":"telegram-gateway","provider":"telegram"}"#,
+      bindingJSON: #"{"id":"telegram-chat-to-workflow","sourceId":"telegram-chat","workflowName":"chat","inputMapping":{"mode":"event-input"}}"#
+    )
+
+    XCTAssertNil(error)
+    XCTAssertTrue(FileManager.default.fileExists(
+      atPath: workflowDirectory.appendingPathComponent(".riela-events/sources/telegram-chat.json").path
+    ))
+    XCTAssertTrue(FileManager.default.fileExists(
+      atPath: workflowDirectory.appendingPathComponent(".riela-events/bindings/telegram-chat-to-workflow.json").path
+    ))
+  }
+
+  private func firstSubview<T: NSView>(of type: T.Type, in root: NSView) -> T? {
+    if let typed = root as? T {
+      return typed
+    }
+    for subview in root.subviews {
+      if let found = firstSubview(of: type, in: subview) {
+        return found
+      }
+    }
+    return nil
+  }
+
+  private func button(accessibilityLabel: String, in root: NSView) -> NSButton? {
+    allSubviews(of: NSButton.self, in: root).first { button in
+      button.accessibilityLabel() == accessibilityLabel
+    }
+  }
+
+  private func visibleTextFields(in root: NSView) -> [NSTextField] {
+    allSubviews(of: NSTextField.self, in: root).filter { !$0.hasHiddenAncestor }
+  }
+
+  private func textViews(in root: NSView) -> [NSTextView] {
+    allSubviews(of: NSTextView.self, in: root).filter { !$0.hasHiddenAncestor }
+  }
+
+  private func selectableRow(accessibilityLabel: String, in root: NSView) -> RielaAppSelectableSettingsRow? {
+    allSubviews(of: RielaAppSelectableSettingsRow.self, in: root).first { row in
+      !row.hasHiddenAncestor &&
+        row.accessibilityLabel() == accessibilityLabel &&
+        row.accessibilityRole() == .button
+    }
+  }
+
+  private func allSubviews<T: NSView>(of type: T.Type, in root: NSView) -> [T] {
+    let current = (root as? T).map { [$0] } ?? []
+    return current + root.subviews.flatMap { allSubviews(of: type, in: $0) }
+  }
+
+  private func scratchRoot(name: String) throws -> URL {
+    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+      .appendingPathComponent("tmp", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let scratch = root.appendingPathComponent(name, isDirectory: true)
+    try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+    return scratch
+  }
+}
+
+private extension NSView {
+  var hasHiddenAncestor: Bool {
+    if isHidden {
+      return true
+    }
+    return superview?.hasHiddenAncestor ?? false
+  }
+}
+#endif

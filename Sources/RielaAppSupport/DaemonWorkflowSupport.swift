@@ -121,50 +121,6 @@ public struct RielaAppDaemonWorkflowCandidate: Identifiable, Equatable, Sendable
   }
 }
 
-public struct RielaAppProfileName: Codable, Equatable, Hashable, Sendable, CustomStringConvertible {
-  public static let `default` = RielaAppProfileName(Self.defaultRawValue)
-  public static let defaultRawValue = "default"
-
-  public var rawValue: String
-
-  public init(_ rawValue: String) {
-    self.rawValue = Self.sanitizedRawValue(rawValue)
-  }
-
-  public var description: String {
-    rawValue
-  }
-
-  public static func sanitizedRawValue(_ rawValue: String) -> String {
-    let sanitized = sanitized(rawValue)
-    return sanitized.isEmpty ? defaultRawValue : sanitized
-  }
-
-  private static func sanitized(_ rawValue: String) -> String {
-    let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-    let mapped = trimmed.map { character in
-      character.isLetter || character.isNumber || character == "-" || character == "_" || character == "."
-        ? character
-        : "-"
-    }
-    return String(mapped).trimmingCharacters(in: CharacterSet(charactersIn: ".-_"))
-  }
-}
-
-public struct RielaAppProfileState: Codable, Equatable, Sendable {
-  public var version: Int
-  public var activeProfile: String
-
-  public init(version: Int = 1, activeProfile: String = RielaAppProfileName.defaultRawValue) {
-    self.version = version
-    self.activeProfile = RielaAppProfileName(activeProfile).rawValue
-  }
-
-  public var activeProfileName: RielaAppProfileName {
-    RielaAppProfileName(activeProfile)
-  }
-}
-
 public struct RielaAppProfileStore: Sendable {
   public var appRootURL: URL
   public var activeProfileURL: URL
@@ -294,24 +250,28 @@ public struct RielaAppDaemonWorkflowState: Codable, Equatable, Sendable {
   public var preferences: [String: RielaAppDaemonWorkflowPreference]
   public var workflowDirectories: [String]
   public var projectDirectories: [String]
+  public var assistant: RielaAppAssistantSettings
 
   private enum CodingKeys: String, CodingKey {
     case version
     case preferences
     case workflowDirectories
     case projectDirectories
+    case assistant
   }
 
   public init(
     version: Int = 1,
     preferences: [String: RielaAppDaemonWorkflowPreference] = [:],
     workflowDirectories: [String] = [],
-    projectDirectories: [String] = []
+    projectDirectories: [String] = [],
+    assistant: RielaAppAssistantSettings = RielaAppAssistantSettings()
   ) {
     self.version = version
     self.preferences = preferences
     self.workflowDirectories = workflowDirectories
     self.projectDirectories = projectDirectories
+    self.assistant = assistant
   }
 
   public func preference(for identity: String) -> RielaAppDaemonWorkflowPreference {
@@ -333,6 +293,8 @@ public struct RielaAppDaemonWorkflowState: Codable, Equatable, Sendable {
     ) ?? [:]
     workflowDirectories = try container.decodeIfPresent([String].self, forKey: .workflowDirectories) ?? []
     projectDirectories = try container.decodeIfPresent([String].self, forKey: .projectDirectories) ?? []
+    assistant = try container.decodeIfPresent(RielaAppAssistantSettings.self, forKey: .assistant)
+      ?? RielaAppAssistantSettings()
   }
 
   public func containsWorkflowDirectory(_ path: String) -> Bool {

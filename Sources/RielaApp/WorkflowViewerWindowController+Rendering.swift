@@ -12,13 +12,13 @@ extension WorkflowViewerWindowController {
   }
 
   func workflowOverview(state: WorkflowViewerState) -> String {
-    [
-      "id: \(state.workflow.workflowId)",
-      "entry: \(state.workflow.entryStepId)",
-      "description: \(state.workflow.description.isEmpty ? "-" : state.workflow.description)",
-      "steps: \(state.workflow.steps.count)",
-      "sessionStore: \(state.sessionStoreRoot)"
-    ].joined(separator: "\n")
+    rielaAppMetadataText([
+      "Workflow \(state.workflow.workflowId)",
+      "Entry \(state.workflow.entryStepId)",
+      "Steps \(state.workflow.steps.count)",
+      "Session Store \(state.sessionStoreRoot)",
+      state.workflow.description.isEmpty ? "" : "Description \(state.workflow.description)"
+    ])
   }
 
   func renderRunLog(
@@ -28,14 +28,16 @@ extension WorkflowViewerWindowController {
   ) -> [String] {
     var lines = ["Run Log"]
     guard let session else {
-      lines.append("No persisted sessions found for this workflow.")
-      lines.append("Searched:")
+      lines.append("No runs recorded for this workflow.")
+      lines.append("Searched Session Stores")
       lines.append(contentsOf: state.sessionStoreCandidates.map { "- \($0)" })
       return lines
     }
-    lines.append("Session: \(session.sessionId)")
-    lines.append("Status: \(session.status.rawValue)")
-    lines.append("Updated: \(timelineDateFormatter.string(from: session.updatedAt))")
+    lines.append(rielaAppMetadataText([
+      "Session \(session.sessionId)",
+      "State \(workflowViewerStateText(session.status.rawValue))",
+      "Updated \(timelineDateFormatter.string(from: session.updatedAt))"
+    ]))
     lines.append("")
     lines.append("Step Timeline")
     lines.append(contentsOf: renderTimeline(state.timeline))
@@ -43,7 +45,7 @@ extension WorkflowViewerWindowController {
       return lines
     }
     lines.append("")
-    lines.append("Selected Step Messages")
+    lines.append("Step Messages")
     do {
       let messages = try loader.nodeMessages(
         stepId: selectedStepId,
@@ -81,14 +83,15 @@ extension WorkflowViewerWindowController {
       lines.append("(none)")
     } else {
       lines.append(contentsOf: templateFiles.map { templateFile in
-        [
-          "- \(templateFile.relativePath)",
-          "  step: \(templateFile.stepId)",
-          "  node: \(templateFile.nodeId)",
-          "  role: \(templateFile.role.label)",
-          "  field: \(templateFile.fieldPath)",
-          "  active: \(templateFile.isActiveForStep ? "yes" : "no")"
-        ].joined(separator: "\n")
+        let metadata = rielaAppMetadataText([
+          templateFile.relativePath,
+          "Step \(templateFile.stepId)",
+          "Node \(templateFile.nodeId)",
+          "Role \(templateFile.role.label)",
+          "Field \(templateFile.fieldPath)",
+          "Used by Step \(templateFile.isActiveForStep ? "Yes" : "No")"
+        ])
+        return "- \(metadata)"
       })
     }
     return lines
@@ -96,8 +99,13 @@ extension WorkflowViewerWindowController {
 
   func renderStructureNodes(_ nodes: [WorkflowViewerNode], indent: String = "") -> [String] {
     nodes.flatMap { node in
-      let templates = node.templateFiles.isEmpty ? "" : " templates: \(node.templateFiles.count)"
-      let current = "\(indent)- \(node.id) -> \(node.nodeId) [\(node.state.rawValue)]\(templates)"
+      let metadata = rielaAppMetadataText([
+        node.id,
+        "Node \(node.nodeId)",
+        "State \(workflowViewerStateText(node.state.rawValue))",
+        node.templateFiles.isEmpty ? "" : "Templates \(node.templateFiles.count)"
+      ])
+      let current = "\(indent)- \(metadata)"
       return [current] + renderStructureNodes(node.children, indent: "\(indent)  ")
     }
   }
@@ -107,18 +115,35 @@ extension WorkflowViewerWindowController {
       return ["(none)"]
     }
     return messages.map { message in
-      [
-        "- \(message.id) [\(message.status.rawValue)]",
-        "  from: \(message.fromStepId ?? "-")",
-        "  to: \(message.toStepId ?? "-")",
-        "  payload: \(message.payloadPreview)"
+      let metadata = rielaAppMetadataText([
+        message.id,
+        "State \(workflowViewerStateText(message.status.rawValue))",
+        "From \(message.fromStepId ?? "-")",
+        "To \(message.toStepId ?? "-")"
+      ])
+      return [
+        "- \(metadata)",
+        "  Payload \(message.payloadPreview)"
       ].joined(separator: "\n")
     }
   }
 
   func sessionTitle(_ summary: WorkflowViewerSessionSummary) -> String {
-    let active = summary.activeStepIds.isEmpty ? "" : " active: \(summary.activeStepIds.joined(separator: ","))"
-    return "\(summary.sessionId) - \(summary.status.rawValue)\(active)"
+    rielaAppMetadataText([
+      summary.sessionId,
+      workflowViewerStateText(summary.status.rawValue),
+      summary.activeStepIds.isEmpty ? "" : "Current Step \(summary.activeStepIds.joined(separator: ","))"
+    ])
+  }
+
+  func workflowViewerStateText(_ rawValue: String) -> String {
+    if rawValue == WorkflowViewerNodeRuntimeState.active.rawValue {
+      return "Running"
+    }
+    return rawValue
+      .replacingOccurrences(of: "_", with: " ")
+      .replacingOccurrences(of: "-", with: " ")
+      .capitalized
   }
 
   func renderTimeline(_ entries: [WorkflowViewerTimelineEntry]) -> [String] {
@@ -126,29 +151,20 @@ extension WorkflowViewerWindowController {
       return ["No step executions recorded for this session."]
     }
     return entries.map { entry in
-      [
-        "\(timelineMarker(entry.status)) \(entry.stepId) [\(entry.status.rawValue)]",
-        "  node: \(entry.nodeId)",
-        "  attempt: \(entry.attempt)",
-        "  started: \(timelineDateFormatter.string(from: entry.startedAt))",
-        "  duration: \(timelineDuration(entry.duration))",
-        entry.backend.map { "  backend: \($0.rawValue)" },
-        entry.lastBackendEventType.map { "  last event: \($0)" },
-        entry.failureReason.map { "  failure: \($0)" }
+      let metadata = rielaAppMetadataText([
+        entry.stepId,
+        "State \(workflowViewerStateText(entry.status.rawValue))",
+        "Node \(entry.nodeId)",
+        "Attempt \(entry.attempt)",
+        "Started \(timelineDateFormatter.string(from: entry.startedAt))",
+        "Duration \(timelineDuration(entry.duration))"
+      ])
+      return [
+        "- \(metadata)",
+        entry.backend.map { "  Backend \($0.rawValue)" },
+        entry.lastBackendEventType.map { "  Last Event \($0)" },
+        entry.failureReason.map { "  Failure \($0)" }
       ].compactMap { $0 }.joined(separator: "\n")
-    }
-  }
-
-  func timelineMarker(_ status: WorkflowStepExecutionStatus) -> String {
-    switch status {
-    case .running:
-      "[Running]"
-    case .completed:
-      "[Done]"
-    case .skipped:
-      "[Skipped]"
-    case .failed:
-      "[Failed]"
     }
   }
 

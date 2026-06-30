@@ -6,28 +6,39 @@ import RielaViewer
 
 @MainActor
 final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDataSource, NSOutlineViewDelegate {
+  private enum Layout {
+    static let initialWindowSize = NSSize(width: 640, height: 560)
+    static let minimumWindowSize = NSSize(width: 420, height: 380)
+    static let sidebarWidth: CGFloat = 180
+  }
+
   let loader = WorkflowViewerLoader()
   private let outlineView = NSOutlineView()
   private let sessionPopup = NSPopUpButton()
   private let templatePopup = NSPopUpButton()
-  private let statusLabel = NSTextField(labelWithString: "No workflow loaded")
-  private let currentDirectoryLabel = NSTextField(labelWithString: "Instance Dir: -")
-  private let currentDirectoryButton = NSButton(title: "Instance Dir...", target: nil, action: nil)
-  private let environmentVariablesLabel = NSTextField(labelWithString: "Instance Env: -")
-  private let environmentVariablesButton = NSButton(title: "Instance Env...", target: nil, action: nil)
-  private let workflowVariablesLabel = NSTextField(labelWithString: "Instance Variables: -")
-  private let workflowVariablesButton = NSButton(title: "Instance Variables...", target: nil, action: nil)
+  private let workflowTitleLabel = NSTextField(labelWithString: "Choose Workflow")
+  private let workflowSubtitleLabel = NSTextField(labelWithString: "")
+  private let currentDirectoryLabel = NSTextField(labelWithString: "-")
+  private let environmentVariablesLabel = NSTextField(labelWithString: "-")
+  private let workflowVariablesLabel = NSTextField(labelWithString: "-")
+  private weak var currentDirectorySettingRow: RielaAppSelectableSettingsRow?
+  private weak var environmentVariablesSettingRow: RielaAppSelectableSettingsRow?
+  private weak var workflowVariablesSettingRow: RielaAppSelectableSettingsRow?
   private let detailTextView = NSTextView()
   private let logTextView = NSTextView()
   private let structureTextView = NSTextView()
   private let modelPopup = NSPopUpButton()
   private let backendPopup = NSPopUpButton()
   private let effortPopup = NSPopUpButton()
-  private let saveNodePatchButton = NSButton(title: "Save Patch", target: nil, action: nil)
-  private let clearNodePatchButton = NSButton(title: "Clear Patch", target: nil, action: nil)
+  private weak var modelOverrideRow: RielaAppSettingsRow?
+  private weak var backendOverrideRow: RielaAppSettingsRow?
+  private weak var effortOverrideRow: RielaAppSettingsRow?
+  private weak var nodePatchOverrideRow: RielaAppSettingsRow?
+  private let saveNodePatchButton = NSButton(title: "", target: nil, action: nil)
+  private let clearNodePatchButton = NSButton(title: "", target: nil, action: nil)
   private let templateTextView = NSTextView()
-  private let saveTemplateButton = NSButton(title: "Save", target: nil, action: nil)
-  private let reloadTemplateButton = NSButton(title: "Reload", target: nil, action: nil)
+  private let saveTemplateButton = NSButton(title: "", target: nil, action: nil)
+  private let reloadTemplateButton = NSButton(title: "", target: nil, action: nil)
   let timelineDateFormatter: DateFormatter = {
     let formatter = DateFormatter()
     formatter.dateStyle = .short
@@ -35,8 +46,8 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     return formatter
   }()
   private let detailFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-  private let detailTextColor = NSColor(calibratedWhite: 0.92, alpha: 1)
-  private let detailBackgroundColor = NSColor(calibratedWhite: 0.08, alpha: 1)
+  private let detailTextColor = NSColor.labelColor
+  private let detailBackgroundColor = NSColor.controlBackgroundColor
   private let templateFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
   private var workflowDirectory: String?
   private var sessionStoreRoot: String?
@@ -54,12 +65,13 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
 
   init() {
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 980, height: 620),
+      contentRect: NSRect(origin: .zero, size: Layout.initialWindowSize),
       styleMask: [.titled, .closable, .resizable, .miniaturizable],
       backing: .buffered,
       defer: false
     )
     window.title = "Riela Workflow Viewer"
+    window.minSize = Layout.minimumWindowSize
     super.init(window: window)
     buildContent(in: window)
   }
@@ -93,6 +105,7 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     self.onSetWorkingDirectory = onSetWorkingDirectory
     self.onSetEnvironmentVariables = onSetEnvironmentVariables
     self.onSetWorkflowVariables = onSetWorkflowVariables
+    updateInstanceSettingRows()
     updateCurrentDirectoryLabel()
     updateVariableLabels()
     refresh()
@@ -102,6 +115,9 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
   }
 
   private func buildContent(in window: NSWindow) {
+    guard let contentView = window.contentView else {
+      return
+    }
     let splitView = NSSplitView()
     splitView.isVertical = true
     splitView.dividerStyle = .thin
@@ -110,101 +126,122 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     outlineView.headerView = nil
     outlineView.dataSource = self
     outlineView.delegate = self
+    rielaAppConfigureSettingsTableSelection(outlineView)
     let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("workflow-node"))
     column.title = "Workflow"
-    column.width = 360
+    column.width = Layout.sidebarWidth
     outlineView.addTableColumn(column)
     outlineView.outlineTableColumn = column
 
     let outlineScroll = NSScrollView()
     outlineScroll.documentView = outlineView
     outlineScroll.hasVerticalScroller = true
-    outlineScroll.hasHorizontalScroller = true
+    outlineScroll.hasHorizontalScroller = false
     outlineScroll.translatesAutoresizingMaskIntoConstraints = false
-    outlineScroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
 
     let rightStack = NSStackView()
     rightStack.orientation = .vertical
-    rightStack.alignment = .leading
+    rightStack.alignment = .width
     rightStack.spacing = 8
     rightStack.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
     rightStack.translatesAutoresizingMaskIntoConstraints = false
 
-    let toolbar = NSStackView()
-    toolbar.orientation = .horizontal
-    toolbar.alignment = .centerY
-    toolbar.spacing = 8
-    let refreshButton = NSButton(title: "Refresh", target: self, action: #selector(refreshButtonPressed))
+    let refreshButton = iconButton(
+      symbolName: "arrow.clockwise",
+      accessibilityLabel: "Refresh Viewer",
+      action: #selector(refreshButtonPressed)
+    )
     sessionPopup.target = self
     sessionPopup.action = #selector(sessionSelectionChanged)
-    sessionPopup.widthAnchor.constraint(equalToConstant: 360).isActive = true
-    toolbar.addArrangedSubview(NSTextField(labelWithString: "Session"))
-    toolbar.addArrangedSubview(sessionPopup)
-    toolbar.addArrangedSubview(refreshButton)
+    configureCompactPopup(sessionPopup, maximumWidth: 260)
+    let sessionRow = workflowViewerControlRow(title: "Session", views: [sessionPopup, refreshButton])
 
-    let patchToolbar = NSStackView()
-    patchToolbar.orientation = .horizontal
-    patchToolbar.alignment = .centerY
-    patchToolbar.spacing = 8
-    modelPopup.widthAnchor.constraint(equalToConstant: 210).isActive = true
-    backendPopup.widthAnchor.constraint(equalToConstant: 180).isActive = true
-    effortPopup.widthAnchor.constraint(equalToConstant: 150).isActive = true
+    configureCompactPopup(modelPopup, maximumWidth: 220)
+    configureCompactPopup(backendPopup, maximumWidth: 180)
+    configureCompactPopup(effortPopup, maximumWidth: 150)
     saveNodePatchButton.target = self
     saveNodePatchButton.action = #selector(saveNodePatchButtonPressed)
+    configureIconButton(saveNodePatchButton, symbolName: "square.and.arrow.down", accessibilityLabel: "Save Node Patch")
     clearNodePatchButton.target = self
     clearNodePatchButton.action = #selector(clearNodePatchButtonPressed)
-    patchToolbar.addArrangedSubview(NSTextField(labelWithString: "Model"))
-    patchToolbar.addArrangedSubview(modelPopup)
-    patchToolbar.addArrangedSubview(NSTextField(labelWithString: "Backend"))
-    patchToolbar.addArrangedSubview(backendPopup)
-    patchToolbar.addArrangedSubview(NSTextField(labelWithString: "Effort"))
-    patchToolbar.addArrangedSubview(effortPopup)
-    patchToolbar.addArrangedSubview(saveNodePatchButton)
-    patchToolbar.addArrangedSubview(clearNodePatchButton)
+    configureIconButton(clearNodePatchButton, symbolName: "trash", accessibilityLabel: "Clear Node Patch")
+    let modelOverrideRow = workflowViewerControlRow(title: "Model", views: [modelPopup])
+    let backendOverrideRow = workflowViewerControlRow(title: "Backend", views: [backendPopup])
+    let effortOverrideRow = workflowViewerControlRow(title: "Effort", views: [effortPopup])
+    let nodePatchOverrideRow = workflowViewerControlRow(
+      title: "Node Patch",
+      views: [saveNodePatchButton, clearNodePatchButton]
+    )
+    self.modelOverrideRow = modelOverrideRow
+    self.backendOverrideRow = backendOverrideRow
+    self.effortOverrideRow = effortOverrideRow
+    self.nodePatchOverrideRow = nodePatchOverrideRow
+    let nodeOverrideStack = NSStackView(views: [
+      modelOverrideRow,
+      backendOverrideRow,
+      effortOverrideRow,
+      nodePatchOverrideRow
+    ])
+    nodeOverrideStack.orientation = .vertical
+    nodeOverrideStack.alignment = .width
+    nodeOverrideStack.spacing = 8
 
-    let templateToolbar = NSStackView()
-    templateToolbar.orientation = .horizontal
-    templateToolbar.alignment = .centerY
-    templateToolbar.spacing = 8
     templatePopup.target = self
     templatePopup.action = #selector(templateSelectionChanged)
-    templatePopup.widthAnchor.constraint(equalToConstant: 360).isActive = true
+    configureCompactPopup(templatePopup, maximumWidth: 260)
     saveTemplateButton.target = self
     saveTemplateButton.action = #selector(saveTemplateButtonPressed)
+    configureIconButton(saveTemplateButton, symbolName: "square.and.arrow.down", accessibilityLabel: "Save Template")
     reloadTemplateButton.target = self
     reloadTemplateButton.action = #selector(reloadTemplateButtonPressed)
-    templateToolbar.addArrangedSubview(NSTextField(labelWithString: "Template"))
-    templateToolbar.addArrangedSubview(templatePopup)
-    templateToolbar.addArrangedSubview(saveTemplateButton)
-    templateToolbar.addArrangedSubview(reloadTemplateButton)
+    configureIconButton(reloadTemplateButton, symbolName: "arrow.clockwise", accessibilityLabel: "Reload Template")
+    let templateRow = workflowViewerControlRow(
+      title: "Template",
+      views: [templatePopup, saveTemplateButton, reloadTemplateButton]
+    )
 
-    let currentDirectoryToolbar = NSStackView()
-    currentDirectoryToolbar.orientation = .horizontal
-    currentDirectoryToolbar.alignment = .centerY
-    currentDirectoryToolbar.spacing = 8
     currentDirectoryLabel.lineBreakMode = .byTruncatingMiddle
-    currentDirectoryButton.target = self
-    currentDirectoryButton.action = #selector(currentDirectoryButtonPressed)
-    currentDirectoryButton.toolTip = "Choose the current directory used when this workflow runs."
-    currentDirectoryToolbar.addArrangedSubview(currentDirectoryLabel)
-    currentDirectoryToolbar.addArrangedSubview(currentDirectoryButton)
-
-    let variableActionsToolbar = NSStackView()
-    variableActionsToolbar.orientation = .horizontal
-    variableActionsToolbar.alignment = .centerY
-    variableActionsToolbar.spacing = 8
     environmentVariablesLabel.lineBreakMode = .byTruncatingTail
     workflowVariablesLabel.lineBreakMode = .byTruncatingTail
-    environmentVariablesButton.target = self
-    environmentVariablesButton.action = #selector(environmentVariablesButtonPressed)
-    workflowVariablesButton.target = self
-    workflowVariablesButton.action = #selector(workflowVariablesButtonPressed)
-    variableActionsToolbar.addArrangedSubview(environmentVariablesLabel)
-    variableActionsToolbar.addArrangedSubview(environmentVariablesButton)
-    variableActionsToolbar.addArrangedSubview(workflowVariablesLabel)
-    variableActionsToolbar.addArrangedSubview(workflowVariablesButton)
+    let instanceSettingsTitle = NSTextField(labelWithString: "Instance Settings")
+    instanceSettingsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    let currentDirectoryRow = instanceSettingRow(
+      title: "Current Directory",
+      valueLabel: currentDirectoryLabel,
+      action: #selector(currentDirectoryRowSelected)
+    )
+    let environmentVariablesRow = instanceSettingRow(
+      title: "Environment Variables",
+      valueLabel: environmentVariablesLabel,
+      action: #selector(environmentVariablesRowSelected)
+    )
+    let workflowVariablesRow = instanceSettingRow(
+      title: "Workflow Variables",
+      valueLabel: workflowVariablesLabel,
+      action: #selector(workflowVariablesRowSelected)
+    )
+    currentDirectorySettingRow = currentDirectoryRow
+    environmentVariablesSettingRow = environmentVariablesRow
+    workflowVariablesSettingRow = workflowVariablesRow
+    let instanceSettingsStack = NSStackView(views: [
+      currentDirectoryRow,
+      environmentVariablesRow,
+      workflowVariablesRow
+    ])
+    instanceSettingsStack.orientation = .vertical
+    instanceSettingsStack.alignment = .width
+    instanceSettingsStack.spacing = 8
+    let nodeOverrideTitle = NSTextField(labelWithString: "Node Overrides")
+    nodeOverrideTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
 
-    statusLabel.lineBreakMode = .byTruncatingTail
+    workflowTitleLabel.font = .boldSystemFont(ofSize: NSFont.systemFontSize + 1)
+    workflowTitleLabel.lineBreakMode = .byTruncatingMiddle
+    workflowSubtitleLabel.textColor = .secondaryLabelColor
+    workflowSubtitleLabel.lineBreakMode = .byTruncatingMiddle
+    let headerStack = NSStackView(views: [workflowTitleLabel, workflowSubtitleLabel])
+    headerStack.orientation = .vertical
+    headerStack.alignment = .leading
+    headerStack.spacing = 2
     configureReadOnlyTextView(detailTextView, textColor: detailTextColor, backgroundColor: detailBackgroundColor)
     configureReadOnlyTextView(logTextView, textColor: detailTextColor, backgroundColor: detailBackgroundColor)
     configureReadOnlyTextView(structureTextView, textColor: detailTextColor, backgroundColor: detailBackgroundColor)
@@ -215,6 +252,9 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     templateTextView.isEditable = false
     templateTextView.isRichText = false
     templateTextView.font = templateFont
+    templateTextView.textColor = .labelColor
+    templateTextView.backgroundColor = detailBackgroundColor
+    templateTextView.drawsBackground = true
     templateTextView.textContainerInset = NSSize(width: 10, height: 10)
     templateTextView.isVerticallyResizable = true
     templateTextView.isHorizontallyResizable = true
@@ -228,26 +268,27 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     templateScroll.documentView = templateTextView
     templateScroll.hasVerticalScroller = true
     templateScroll.hasHorizontalScroller = true
-    templateScroll.borderType = .bezelBorder
     templateScroll.translatesAutoresizingMaskIntoConstraints = false
+    rielaAppConfigureGroupedTextScroll(templateScroll)
 
     let editStack = NSStackView(views: [
       detailScroll,
-      templateToolbar,
+      templateRow,
       templateScroll
     ])
     editStack.orientation = .vertical
-    editStack.alignment = .leading
+    editStack.alignment = .width
     editStack.spacing = 8
     editStack.translatesAutoresizingMaskIntoConstraints = false
 
     let variablesStack = NSStackView(views: [
-      currentDirectoryToolbar,
-      variableActionsToolbar,
-      patchToolbar
+      instanceSettingsTitle,
+      instanceSettingsStack,
+      nodeOverrideTitle,
+      nodeOverrideStack
     ])
     variablesStack.orientation = .vertical
-    variablesStack.alignment = .leading
+    variablesStack.alignment = .width
     variablesStack.spacing = 8
     variablesStack.translatesAutoresizingMaskIntoConstraints = false
 
@@ -258,22 +299,23 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     tabView.addTabViewItem(tabItem(label: "Run Log", view: logScroll))
     tabView.addTabViewItem(tabItem(label: "Structure", view: structureScroll))
 
-    rightStack.addArrangedSubview(toolbar)
-    rightStack.addArrangedSubview(statusLabel)
+    rightStack.addArrangedSubview(headerStack)
+    rightStack.addArrangedSubview(sessionRow)
     rightStack.addArrangedSubview(tabView)
-    detailScroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 520).isActive = true
-    detailScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
-    logScroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 520).isActive = true
-    structureScroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 520).isActive = true
-    templateScroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 520).isActive = true
-    templateScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
-    tabView.widthAnchor.constraint(greaterThanOrEqualToConstant: 540).isActive = true
-    tabView.heightAnchor.constraint(greaterThanOrEqualToConstant: 500).isActive = true
+    applyPreferredHeight(140, to: detailScroll)
+    applyPreferredHeight(180, to: templateScroll)
+    applyPreferredHeight(300, to: tabView)
 
     splitView.addArrangedSubview(outlineScroll)
     splitView.addArrangedSubview(rightStack)
-    window.contentView = splitView
-    splitView.setPosition(360, ofDividerAt: 0)
+    contentView.addSubview(splitView)
+    NSLayoutConstraint.activate([
+      splitView.topAnchor.constraint(equalTo: contentView.topAnchor),
+      splitView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+      splitView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+      splitView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+    ])
+    splitView.setPosition(Layout.sidebarWidth, ofDividerAt: 0)
   }
 
   private func configureReadOnlyTextView(
@@ -303,8 +345,8 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     scroll.documentView = textView
     scroll.hasVerticalScroller = true
     scroll.hasHorizontalScroller = true
-    scroll.borderType = .bezelBorder
     scroll.translatesAutoresizingMaskIntoConstraints = false
+    rielaAppConfigureGroupedTextScroll(scroll)
     return scroll
   }
 
@@ -313,6 +355,66 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     item.label = label
     item.view = view
     return item
+  }
+
+  private func applyPreferredHeight(_ height: CGFloat, to view: NSView) {
+    view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+    let preferredHeight = view.heightAnchor.constraint(equalToConstant: height)
+    preferredHeight.priority = .defaultLow
+    preferredHeight.isActive = true
+  }
+
+  private func instanceSettingRow(
+    title: String,
+    valueLabel: NSTextField,
+    action: Selector
+  ) -> RielaAppSelectableSettingsRow {
+    let titleLabel = rielaAppSettingsTitleLabel(title, maxWidth: 150)
+    valueLabel.textColor = .labelColor
+    valueLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    let spacer = NSView()
+    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    let row = RielaAppSelectableSettingsRow(views: [titleLabel, valueLabel, spacer, rielaAppDisclosureIndicator()])
+    row.orientation = .horizontal
+    row.spacing = 8
+    row.alignment = .firstBaseline
+    row.toolTip = "Change \(title)"
+    return rielaAppSelectableSettingsRow(
+      row,
+      target: self,
+      action: action,
+      accessibilityLabel: title,
+      accessibilityHelp: "Change \(title)"
+    )
+  }
+
+  private func updateInstanceSettingRows() {
+    updateInstanceSettingRow(
+      currentDirectorySettingRow,
+      title: "Current Directory",
+      isEnabled: onSetWorkingDirectory != nil
+    )
+    updateInstanceSettingRow(
+      environmentVariablesSettingRow,
+      title: "Environment Variables",
+      isEnabled: onSetEnvironmentVariables != nil
+    )
+    updateInstanceSettingRow(
+      workflowVariablesSettingRow,
+      title: "Workflow Variables",
+      isEnabled: onSetWorkflowVariables != nil
+    )
+  }
+
+  private func updateInstanceSettingRow(
+    _ row: RielaAppSelectableSettingsRow?,
+    title: String,
+    isEnabled: Bool
+  ) {
+    let help = isEnabled ? "Change \(title)" : "\(title) cannot be edited here"
+    row?.setRielaAccessibilityEnabled(isEnabled)
+    row?.setAccessibilityHelp(help)
+    row?.toolTip = help
   }
 
   @objc private func refreshButtonPressed() {
@@ -328,27 +430,27 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     loadSelectedTemplateFile()
   }
 
-  @objc private func currentDirectoryButtonPressed() {
+  @objc private func currentDirectoryRowSelected() {
     guard let onSetWorkingDirectory else {
-      statusLabel.stringValue = "Current directory editing is unavailable for this viewer"
+      setViewerMessage("Current directory cannot be edited here")
       return
     }
     currentDirectory = onSetWorkingDirectory()
     updateCurrentDirectoryLabel()
   }
 
-  @objc private func environmentVariablesButtonPressed() {
+  @objc private func environmentVariablesRowSelected() {
     guard let onSetEnvironmentVariables else {
-      statusLabel.stringValue = "Environment variable editing is unavailable for this viewer"
+      setViewerMessage("Environment variables cannot be edited here")
       return
     }
     environmentVariablesSummary = onSetEnvironmentVariables()
     updateVariableLabels()
   }
 
-  @objc private func workflowVariablesButtonPressed() {
+  @objc private func workflowVariablesRowSelected() {
     guard let onSetWorkflowVariables else {
-      statusLabel.stringValue = "Workflow variable editing is unavailable for this viewer"
+      setViewerMessage("Workflow variables cannot be edited here")
       return
     }
     workflowVariablesSummary = onSetWorkflowVariables()
@@ -357,15 +459,12 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
 
   private func updateCurrentDirectoryLabel() {
     let path = currentDirectory?.trimmingCharacters(in: .whitespacesAndNewlines)
-    currentDirectoryLabel.stringValue = "Instance Dir: \((path?.isEmpty == false ? path : nil) ?? "-")"
-    currentDirectoryButton.isEnabled = onSetWorkingDirectory != nil
+    currentDirectoryLabel.stringValue = (path?.isEmpty == false ? path : nil) ?? "-"
   }
 
   private func updateVariableLabels() {
-    environmentVariablesLabel.stringValue = "Instance Env: \(environmentVariablesSummary ?? "-")"
-    workflowVariablesLabel.stringValue = "Instance Variables: \(workflowVariablesSummary ?? "-")"
-    environmentVariablesButton.isEnabled = onSetEnvironmentVariables != nil
-    workflowVariablesButton.isEnabled = onSetWorkflowVariables != nil
+    environmentVariablesLabel.stringValue = environmentVariablesSummary ?? "-"
+    workflowVariablesLabel.stringValue = workflowVariablesSummary ?? "-"
   }
 
   @objc private func saveNodePatchButtonPressed() {
@@ -373,20 +472,20 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
       return
     }
     guard let onSaveNodePatch else {
-      statusLabel.stringValue = "Node patch editing is unavailable for this viewer"
+      setViewerMessage("Node patches cannot be edited here")
       return
     }
     if onSaveNodePatch(selectedNode.nodeId, patch.isEmpty ? nil : patch) {
       if patch.isEmpty {
         nodePatches.removeValue(forKey: selectedNode.nodeId)
-        statusLabel.stringValue = "Cleared node patch for \(selectedNode.nodeId)"
+        setViewerMessage("Cleared node patch for \(selectedNode.nodeId)")
       } else {
         nodePatches[selectedNode.nodeId] = patch
-        statusLabel.stringValue = "Saved node patch for \(selectedNode.nodeId)"
+        setViewerMessage("Saved node patch for \(selectedNode.nodeId)")
       }
       updateNodePatchControls(for: selectedNode)
     } else {
-      statusLabel.stringValue = "Failed to save node patch for \(selectedNode.nodeId)"
+      setViewerMessage("Failed to save node patch for \(selectedNode.nodeId)")
     }
   }
 
@@ -395,15 +494,15 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
       return
     }
     guard let onSaveNodePatch else {
-      statusLabel.stringValue = "Node patch editing is unavailable for this viewer"
+      setViewerMessage("Node patches cannot be edited here")
       return
     }
     if onSaveNodePatch(selectedNode.nodeId, nil) {
       nodePatches.removeValue(forKey: selectedNode.nodeId)
-      statusLabel.stringValue = "Cleared node patch for \(selectedNode.nodeId)"
+      setViewerMessage("Cleared node patch for \(selectedNode.nodeId)")
       updateNodePatchControls(for: selectedNode)
     } else {
-      statusLabel.stringValue = "Failed to clear node patch for \(selectedNode.nodeId)"
+      setViewerMessage("Failed to clear node patch for \(selectedNode.nodeId)")
     }
   }
 
@@ -417,9 +516,9 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
         templateFile: templateFile,
         workflowDirectory: workflowDirectory
       )
-      statusLabel.stringValue = "Saved \(templateFile.relativePath)"
+      setViewerMessage("Saved \(templateFile.relativePath)")
     } catch {
-      statusLabel.stringValue = "Failed to save template: \(error)"
+      setViewerMessage("Failed to save template: \(error)")
     }
   }
 
@@ -436,11 +535,12 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
         sessionStoreRoot: state.sessionStoreRoot,
         selectedSessionId: selected.sessionId
       ))
+      updateSessionPopup(for: self.state)
       outlineView.reloadData()
       expandAll()
       updateDetails()
     } catch {
-      statusLabel.stringValue = "Failed to switch session: \(error)"
+      setViewerMessage("Failed to switch session: \(error)")
     }
   }
 
@@ -457,29 +557,35 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
       ))
       state = loaded
       selectedNodeId = selectedNodeId ?? loaded.workflow.entryStepId
-      sessionPopup.removeAllItems()
-      if loaded.sessions.isEmpty {
-        sessionPopup.addItem(withTitle: "No sessions")
-        sessionPopup.isEnabled = false
-      } else {
-        sessionPopup.addItems(withTitles: loaded.sessions.map { sessionTitle($0) })
-        sessionPopup.selectItem(at: 0)
-        sessionPopup.isEnabled = true
-      }
+      updateSessionPopup(for: loaded)
       outlineView.reloadData()
       expandAll()
       updateDetails()
     } catch {
-      statusLabel.stringValue = "Failed to load viewer: \(error)"
+      workflowTitleLabel.stringValue = "Unable to load workflow"
+      setViewerMessage("\(error)")
       setDetailText("\(error)")
       setLogText("")
       setStructureText("")
     }
   }
 
+  private func updateSessionPopup(for state: WorkflowViewerState?) {
+    sessionPopup.removeAllItems()
+    guard let state, !state.sessions.isEmpty else {
+      sessionPopup.addItem(withTitle: "No Runs")
+      sessionPopup.isEnabled = false
+      return
+    }
+    sessionPopup.addItems(withTitles: state.sessions.map { sessionTitle($0) })
+    sessionPopup.selectItem(at: state.selectedSessionIndex)
+    sessionPopup.isEnabled = true
+  }
+
   private func updateDetails() {
     guard let state else {
-      statusLabel.stringValue = "No workflow loaded"
+      workflowTitleLabel.stringValue = "Choose Workflow"
+      setViewerMessage("")
       setDetailText("")
       setLogText("")
       setStructureText("")
@@ -488,11 +594,8 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
       return
     }
     let session = selectedSession(in: state)
-    statusLabel.stringValue = [
-      "Workflow: \(state.workflow.workflowId)",
-      "Sessions: \(state.sessions.count)",
-      session.map { "Selected: \($0.sessionId) (\($0.status.rawValue))" }
-    ].compactMap { $0 }.joined(separator: " | ")
+    workflowTitleLabel.stringValue = state.workflow.workflowId
+    setViewerMessage(sessionSummary(state: state, session: session))
     guard let selectedNodeId else {
       setDetailText(workflowOverview(state: state))
       setLogText(renderRunLog(state: state, selectedStepId: nil, session: session).joined(separator: "\n"))
@@ -502,29 +605,41 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
       return
     }
     var lines: [String] = []
-    lines.append("Node: \(selectedNodeId)")
+    lines.append(selectedNodeId)
     if let node = flattenedNodes(state.nodes).first(where: { $0.id == selectedNodeId }) {
-      lines.append("Runtime: \(node.state.rawValue)")
-      lines.append("Node ID: \(node.nodeId)")
-      if let detail = node.detail {
-        lines.append("Detail: \(detail)")
-      }
+      lines.append(rielaAppMetadataText([
+        "State \(workflowViewerStateText(node.state.rawValue))",
+        "Node \(node.nodeId)",
+        node.detail.map { "Detail \($0)" } ?? ""
+      ]))
       if let configuration = node.configuration {
-        lines.append("Node file: \(configuration.nodeFile)")
-        lines.append("Base model: \(configuration.model)")
-        lines.append("Model freeze: \(configuration.modelFreeze)")
-        lines.append("Base backend: \(configuration.executionBackend?.rawValue ?? "-")")
-        lines.append("Base effort: \(configuration.effort?.rawValue ?? "-")")
+        lines.append("Configuration")
+        lines.append(rielaAppMetadataText([
+          "File \(configuration.nodeFile)",
+          "Model \(configuration.model)",
+          "Freeze \(configuration.modelFreeze ? "On" : "Off")",
+          "Backend \(configuration.executionBackend?.rawValue ?? "-")",
+          "Effort \(configuration.effort?.rawValue ?? "-")"
+        ]))
         if let patch = nodePatches[node.nodeId], !patch.isEmpty {
-          lines.append("Patch model: \(patch.model ?? "-")")
-          lines.append("Patch backend: \(patch.executionBackend?.rawValue ?? "-")")
-          lines.append("Patch effort: \(patch.effort?.rawValue ?? "-")")
+          lines.append("Patch")
+          lines.append(rielaAppMetadataText([
+            "Model \(patch.model ?? "-")",
+            "Backend \(patch.executionBackend?.rawValue ?? "-")",
+            "Effort \(patch.effort?.rawValue ?? "-")"
+          ]))
         }
       }
       if !node.templateFiles.isEmpty {
-        lines.append("Template files:")
+        lines.append("Template Files")
         lines.append(contentsOf: node.templateFiles.map { templateFile in
-          "- \(templateFile.displayName) [\(templateFile.fieldPath)]"
+          let metadata = rielaAppMetadataText([
+            templateFile.displayName,
+            "Field \(templateFile.fieldPath)",
+            "Role \(templateFile.role.label)",
+            "Used by Step \(templateFile.isActiveForStep ? "Yes" : "No")"
+          ])
+          return "- \(metadata)"
         })
       }
       updateTemplateControls(for: node)
@@ -596,6 +711,12 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
       effortPopup.isEnabled = false
       saveNodePatchButton.isEnabled = false
       clearNodePatchButton.isEnabled = false
+      updateNodeOverrideRows(
+        canEdit: false,
+        modelCanEdit: false,
+        reason: "Choose a node to edit overrides",
+        modelReason: "Choose a node to edit overrides"
+      )
       return
     }
 
@@ -627,20 +748,14 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     effortPopup.isEnabled = canEdit
     saveNodePatchButton.isEnabled = canEdit
     clearNodePatchButton.isEnabled = canEdit && patch != nil
-  }
-
-  private func configurePopup(_ popup: NSPopUpButton, titles: [String]) {
-    popup.removeAllItems()
-    popup.addItems(withTitles: titles)
-    popup.selectItem(at: 0)
-  }
-
-  private func selectPopupValue(_ popup: NSPopUpButton, value: String?, values: [String]) {
-    guard let value, let index = values.firstIndex(of: value) else {
-      popup.selectItem(at: 0)
-      return
-    }
-    popup.selectItem(at: index + 1)
+    updateNodeOverrideRows(
+      canEdit: canEdit,
+      modelCanEdit: canEdit && !configuration.modelFreeze,
+      reason: canEdit ? "Change node override" : "Node overrides cannot be edited here",
+      modelReason: configuration.modelFreeze
+        ? "Model is frozen by workflow"
+        : (canEdit ? "Change node model override" : "Node overrides cannot be edited here")
+    )
   }
 
   private func modelChoices(
@@ -755,15 +870,18 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
       setTemplateText(try loader.templateFileContent(templateFile, workflowDirectory: workflowDirectory))
     } catch {
       setTemplateText("")
-      statusLabel.stringValue = "Failed to load template: \(error)"
+      setViewerMessage("Failed to load template: \(error)")
     }
   }
 
+}
+
+extension WorkflowViewerWindowController {
   private var detailScrollContentWidthFallback: CGFloat {
-    520
+    360
   }
 
-  private func expandAll() {
+  func expandAll() {
     for node in state?.nodes ?? [] {
       outlineView.expandItem(node, expandChildren: true)
     }
@@ -792,23 +910,55 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
       return nil
     }
     let identifier = NSUserInterfaceItemIdentifier("workflow-node-cell")
-    let cell = outlineView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView ?? NSTableCellView()
+    let cell = outlineView.makeView(withIdentifier: identifier, owner: self) as? RielaAppTableSelectionCellView
+      ?? RielaAppTableSelectionCellView()
     cell.identifier = identifier
+    cell.configureSelection(
+      tableView: outlineView,
+      row: outlineView.row(forItem: node),
+      role: .button,
+      accessibilityLabel: node.title,
+      accessibilityValue: stateAccessibilityLabel(node.state),
+      accessibilityHelp: "Show workflow node details",
+      actionTarget: self,
+      action: #selector(workflowTreeRowPressed(_:))
+    )
+    let imageView = cell.imageView ?? NSImageView()
     let field = cell.textField ?? NSTextField(labelWithString: "")
+    imageView.translatesAutoresizingMaskIntoConstraints = false
     field.translatesAutoresizingMaskIntoConstraints = false
+    if imageView.superview == nil {
+      cell.addSubview(imageView)
+      cell.imageView = imageView
+      NSLayoutConstraint.activate([
+        imageView.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+        imageView.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+        imageView.widthAnchor.constraint(equalToConstant: 12),
+        imageView.heightAnchor.constraint(equalToConstant: 12)
+      ])
+    }
     if field.superview == nil {
       cell.addSubview(field)
       cell.textField = field
       NSLayoutConstraint.activate([
-        field.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+        field.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 6),
         field.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
         field.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
       ])
     }
-    field.stringValue = "\(stateMarker(node.state)) \(node.title)"
-    field.textColor = color(for: node.state)
+    imageView.image = NSImage(
+      systemSymbolName: stateSymbolName(node.state),
+      accessibilityDescription: stateAccessibilityLabel(node.state)
+    )
+    imageView.contentTintColor = color(for: node.state)
+    field.stringValue = node.title
+    field.textColor = .labelColor
     field.font = node.state == .active ? NSFont.boldSystemFont(ofSize: 13) : NSFont.systemFont(ofSize: 13)
     return cell
+  }
+
+  @objc private func workflowTreeRowPressed(_ sender: NSOutlineView) {
+    outlineViewSelectionDidChange(Notification(name: NSOutlineView.selectionDidChangeNotification, object: sender))
   }
 
   func outlineViewSelectionDidChange(_ notification: Notification) {
@@ -820,20 +970,33 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     updateDetails()
   }
 
-  private func stateMarker(_ state: WorkflowViewerNodeRuntimeState) -> String {
+  func stateSymbolName(_ state: WorkflowViewerNodeRuntimeState) -> String {
     switch state {
     case .active:
-      "[Running]"
+      "circle.fill"
     case .completed:
-      "[Completed]"
+      "checkmark.circle.fill"
     case .failed:
-      "[Failed]"
+      "xmark.circle.fill"
     case .idle:
-      "[Idle]"
+      "circle"
     }
   }
 
-  private func color(for state: WorkflowViewerNodeRuntimeState) -> NSColor {
+  func stateAccessibilityLabel(_ state: WorkflowViewerNodeRuntimeState) -> String {
+    switch state {
+    case .active:
+      "Running"
+    case .completed:
+      "Completed"
+    case .failed:
+      "Failed"
+    case .idle:
+      "Idle"
+    }
+  }
+
+  func color(for state: WorkflowViewerNodeRuntimeState) -> NSColor {
     switch state {
     case .active:
       .systemGreen
@@ -846,4 +1009,92 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     }
   }
 }
+
+private extension WorkflowViewerWindowController {
+  func configurePopup(_ popup: NSPopUpButton, titles: [String]) {
+    popup.removeAllItems()
+    popup.addItems(withTitles: titles)
+    popup.selectItem(at: 0)
+  }
+
+  func selectPopupValue(_ popup: NSPopUpButton, value: String?, values: [String]) {
+    guard let value, let index = values.firstIndex(of: value) else {
+      popup.selectItem(at: 0)
+      return
+    }
+    popup.selectItem(at: index + 1)
+  }
+
+  func updateNodeOverrideRows(
+    canEdit: Bool,
+    modelCanEdit: Bool,
+    reason: String,
+    modelReason: String
+  ) {
+    updateWorkflowViewerControlRow(modelOverrideRow, isEnabled: modelCanEdit, help: modelReason)
+    updateWorkflowViewerControlRow(backendOverrideRow, isEnabled: canEdit, help: reason)
+    updateWorkflowViewerControlRow(effortOverrideRow, isEnabled: canEdit, help: reason)
+    updateWorkflowViewerControlRow(nodePatchOverrideRow, isEnabled: canEdit, help: reason)
+  }
+
+  func updateWorkflowViewerControlRow(_ row: RielaAppSettingsRow?, isEnabled: Bool, help: String) {
+    row?.alphaValue = isEnabled ? 1 : 0.55
+    row?.setAccessibilityEnabled(isEnabled)
+    row?.setAccessibilityHelp(help)
+    row?.toolTip = help
+  }
+
+  func workflowViewerControlRow(title: String, views: [NSView]) -> RielaAppSettingsRow {
+    let titleLabel = rielaAppSettingsTitleLabel(title, maxWidth: 86)
+    for view in views {
+      if let popup = view as? NSPopUpButton {
+        popup.setAccessibilityLabel(title)
+      }
+    }
+    let spacer = NSView()
+    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    let row = RielaAppSettingsRow(views: [titleLabel] + views + [spacer])
+    row.orientation = .horizontal
+    row.spacing = 8
+    row.alignment = .centerY
+    row.setAccessibilityElement(true)
+    row.setAccessibilityRole(.group)
+    row.setAccessibilityLabel(title)
+    rielaAppSettingsRow(row)
+    return row
+  }
+
+  func setViewerMessage(_ message: String) {
+    workflowSubtitleLabel.stringValue = message
+  }
+
+  func sessionSummary(state: WorkflowViewerState, session: WorkflowViewerSessionSummary?) -> String {
+    let count = state.sessions.count
+    let countSummary = count == 1 ? "1 session" : "\(count) sessions"
+    guard let session else {
+      return countSummary
+    }
+    return "\(countSummary) · \(session.status.rawValue.capitalized) \(session.sessionId)"
+  }
+
+  func iconButton(symbolName: String, accessibilityLabel: String, action: Selector) -> NSButton {
+    let button = NSButton(title: "", target: self, action: action)
+    configureIconButton(button, symbolName: symbolName, accessibilityLabel: accessibilityLabel)
+    return button
+  }
+
+  func configureIconButton(_ button: NSButton, symbolName: String, accessibilityLabel: String) {
+    button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
+    button.bezelStyle = .toolbar
+    button.toolTip = accessibilityLabel
+    button.setAccessibilityLabel(accessibilityLabel)
+  }
+
+  func configureCompactPopup(_ popup: NSPopUpButton, maximumWidth: CGFloat) {
+    popup.widthAnchor.constraint(lessThanOrEqualToConstant: maximumWidth).isActive = true
+    popup.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+  }
+
+}
+
 #endif

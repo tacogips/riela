@@ -627,6 +627,75 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
     XCTAssertEqual(terminalResume.recovery?.inputReusePolicy, "existing-session")
   }
 
+  func testRerunInjectsUnresolvedHighAndMidReviewFindingsIntoWorkerPrompt() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    let workflow = twoStepWorkflow()
+    let date = Date(timeIntervalSince1970: 100)
+    let sourceSession = WorkflowSession(
+      workflowId: workflow.workflowId,
+      sessionId: "rerun-runner-session-20",
+      status: .completed,
+      entryStepId: "step-a",
+      currentStepId: "step-b",
+      createdAt: date,
+      updatedAt: date,
+      reviewFindings: [
+        WorkflowReviewFinding(
+          id: "finding-high",
+          issueReference: "owner/repo#123",
+          workflowMode: "issue-resolution",
+          sourceReviewStepId: "review",
+          sourceStepExecutionId: "review-exec",
+          sourceExecutionAttempt: 1,
+          targetStepId: "step-b",
+          filePath: "Sources/App.swift",
+          line: 42,
+          severity: .high,
+          message: "Preserve review feedback.",
+          feedback: "Use persisted review context.",
+          originatingSessionId: "rerun-runner-session-20",
+          createdAt: date
+        ),
+        WorkflowReviewFinding(
+          id: "finding-low",
+          sourceReviewStepId: "review",
+          sourceStepExecutionId: "review-exec",
+          sourceExecutionAttempt: 1,
+          severity: .low,
+          message: "Cosmetic note.",
+          originatingSessionId: "rerun-runner-session-20",
+          createdAt: date
+        )
+      ]
+    )
+    await store.seedSession(sourceSession)
+    let adapter = InputCapturingAdapter()
+    let runner = DeterministicWorkflowRunner(store: store, adapter: adapter)
+
+    let rerun = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: workflow,
+      nodePayloads: nodePayloads(for: workflow),
+      rerunFromSessionId: sourceSession.sessionId,
+      rerunFromStepId: "step-b"
+    ))
+
+    XCTAssertEqual(rerun.status, .completed)
+    let capturedInput = await adapter.capturedInput()
+    let input = try XCTUnwrap(capturedInput)
+    XCTAssertTrue(input.systemPromptText?.contains("Prior unresolved high and mid review findings") == true)
+    XCTAssertTrue(input.systemPromptText?.contains("Preserve review feedback.") == true)
+    XCTAssertTrue(input.systemPromptText?.contains("Use persisted review context.") == true)
+    XCTAssertFalse(input.systemPromptText?.contains("Cosmetic note.") == true)
+    guard case let .array(findings)? = input.mergedVariables["priorReviewFindings"],
+          case let .object(finding)? = findings.first else {
+      return XCTFail("expected priorReviewFindings")
+    }
+    XCTAssertEqual(findings.count, 1)
+    XCTAssertEqual(finding["id"], .string("finding-high"))
+    XCTAssertEqual(finding["severity"], .string("high"))
+    XCTAssertEqual(finding["targetStepId"], .string("step-b"))
+  }
+
   func testRerunRejectsUnknownStepWithStepOrientedMessage() async throws {
     let store = InMemoryWorkflowRuntimeStore()
     let workflow = twoStepWorkflow()

@@ -20,16 +20,23 @@ workflows and event-source children.
 
 ## User Flow
 
-The Workflows window lists enabled and disabled workflow/package candidates.
-Each row includes `Env`, `Active`, and runtime status columns. `Enabled`
-controls whether the workflow is available in the profile. `Active` controls
-whether an enabled workflow should be running; disabling a workflow also clears
-its active preference and stops any running instance.
+The Workflows window is instance-first. The main list shows saved instances for
+the current profile as grouped Settings-style rows with one user-facing state,
+such as `Running`, `Stopped`, or `Needs Source`. There are no separate
+`Enabled`, `Disabled`, or `Active` columns in the user-facing list.
 
-The list uses `+` and `-` controls for adding/removing profile entries. The `+`
-menu can import a workflow/package or add a project reference. The selected
-workflow opens through `Edit Selected` or by double-clicking any non-`Active`
-cell. The edit view is tabbed:
+The list header provides profile switching, refresh, and a compact `+` control.
+Pressing `+` opens workflow selection first; after the user chooses a workflow
+source, RielaApp asks for the instance name and required instance parameters.
+Selecting an instance opens the same-window detail view instead of creating a
+new window. The detail view shows current settings as grouped rows:
+
+- `.env File`: selected credential env file and required-variable readiness;
+- `Environment Variables`: inline environment variable overrides;
+- `Working Directory`: per-instance current directory; and
+- `Workflow Variables`: default workflow variables for that instance.
+
+Workflow editing opens in the viewer and is tabbed:
 
 - `Edit`: node details, node patch controls, and prompt template editing
 - `Variables`: current directory, inline environment variable overrides, and
@@ -37,7 +44,7 @@ cell. The edit view is tabbed:
 - `Run Log`: selected-session timeline and node inbox/outbox details
 - `Structure`: workflow structure rendered from the loaded workflow graph
 
-The `Env` status column reports:
+The `.env File` row and list metadata report:
 
 - `No req`: the workflow has no known required environment variables and no
   env file selected.
@@ -47,27 +54,26 @@ The `Env` status column reports:
   or inherited process environment.
 - `Missing <n>`: one or more required variables are not configured.
 
-Selecting a row shows detail text that includes the selected env file name, the
-missing variable names, or `all required env set`. The `Env File...` action is
-enabled for any selected workflow. When no file is selected it opens an
-`NSOpenPanel`; when a file is already selected it offers choose, clear, or
-cancel. The picker accepts `.env` and `*.env` paths, including hidden `.env`
-files. Before saving the selection, RielaApp confirms that the file will be
-treated as credential material.
+Selecting the `.env File` row opens a Settings-style prompt. When no file is
+selected it opens an `NSOpenPanel`; when a file is already selected it offers
+`Use .env File`, clear, or cancel from the row-based prompt. The picker accepts
+`.env` and `*.env` paths, including hidden `.env` files. Before saving the
+selection, RielaApp confirms that the file will be treated as credential
+material.
 
 ## State Model
 
 The selected file path is stored in
 `RielaAppDaemonWorkflowPreference.environmentFilePath`. Inline environment
-overrides, workflow default variables, current directory overrides, active
-state, availability, and node patches are stored on the same profile-scoped
-preference keyed by workflow identity.
+overrides, workflow default variables, current directory overrides, launch
+preference, source availability, and node patches are stored on the same
+profile-scoped preference keyed by instance identity.
 
 Re-importing a package or workflow preserves the existing preference when the
 import replaces an existing profile item. Clearing the env file removes only
-`environmentFilePath`; it does not alter availability, active state, inline
-environment variables, workflow default variables, current directory, or node
-patches.
+`environmentFilePath`; it does not alter source availability, launch
+preference, inline environment variables, workflow default variables, current
+directory, or node patches.
 
 ## Environment Sources
 

@@ -6,7 +6,7 @@ import RielaServer
 extension RielaApp {
   func setDaemonWorkflowWorkingDirectory(identity: String) {
     guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
-      status = "Selected instance is no longer available"
+      status = "Instance could not be found"
       refreshDaemonWorkflowWindow()
       return
     }
@@ -23,7 +23,7 @@ extension RielaApp {
 
   func setDaemonWorkflowEnvironment(identity: String) {
     guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
-      status = "Selected instance is no longer available"
+      status = "Instance could not be found"
       refreshDaemonWorkflowWindow()
       return
     }
@@ -41,15 +41,15 @@ extension RielaApp {
 
   func daemonEnvironmentSummary(for candidate: RielaAppDaemonWorkflowCandidate) -> String {
     let summary = daemonEnvironmentStatus(for: candidate)
-    let prefix = summary.fileDisplayName.map { "file \($0)" } ?? "no file"
-    let inline = summary.inlineCount == 0 ? "no inline env" : "\(summary.inlineCount) inline env"
+    let prefix = summary.fileDisplayName.map { ".env file \($0)" } ?? "no .env file"
+    let inline = summary.inlineCount == 0 ? "no environment variables" : "\(summary.inlineCount) environment variables"
     guard !candidate.requiredEnvironment.isEmpty else {
-      return "\(prefix), \(inline), no required env"
+      return "\(prefix), \(inline), no required environment variables"
     }
     if summary.missingNames.isEmpty {
-      return "\(prefix), \(inline), all required env set"
+      return "\(prefix), \(inline), all required environment variables set"
     }
-    return "\(prefix), \(inline), missing \(summary.missingNames.joined(separator: ", "))"
+    return "\(prefix), \(inline), missing required \(summary.missingNames.joined(separator: ", "))"
   }
 
   func daemonEnvironmentColumnStatus(for candidate: RielaAppDaemonWorkflowCandidate) -> String {
@@ -105,18 +105,22 @@ extension RielaApp {
     guard existingPath?.isEmpty == false else {
       return .choose
     }
-    let alert = NSAlert()
-    alert.messageText = "Instance Environment File"
-    alert.informativeText = "Choose a .env file for instance \(candidate.displayName), clear the current file, or cancel."
-    alert.addButton(withTitle: "Choose File")
-    alert.addButton(withTitle: "Clear")
-    alert.addButton(withTitle: "Cancel")
-    switch alert.runModal() {
-    case .alertFirstButtonReturn:
+    let action = RielaAppSettingsEditorWindowController.chooseAction(
+      title: ".env File",
+      message: "Choose or clear the .env file for \(candidate.displayName).",
+      currentTitle: "Current .env File",
+      currentValue: existingPath ?? "-",
+      actions: [
+        ("Choose File", "Choose a different .env file for this instance."),
+        ("Clear .env File", "Use Environment Variables and inherited process environment only.")
+      ]
+    )
+    switch action {
+    case 0:
       return .choose
-    case .alertSecondButtonReturn:
+    case 1:
       return .clear
-    default:
+    case nil, _:
       return .cancel
     }
   }
@@ -128,26 +132,30 @@ extension RielaApp {
     guard existingPath?.isEmpty == false else {
       return .choose
     }
-    let alert = NSAlert()
-    alert.messageText = "Instance Directory"
-    alert.informativeText = "Choose the current directory for instance \(candidate.displayName), clear the override, or cancel."
-    alert.addButton(withTitle: "Choose Directory")
-    alert.addButton(withTitle: "Clear")
-    alert.addButton(withTitle: "Cancel")
-    switch alert.runModal() {
-    case .alertFirstButtonReturn:
+    let action = RielaAppSettingsEditorWindowController.chooseAction(
+      title: "Working Directory",
+      message: "Choose or clear the working directory for \(candidate.displayName).",
+      currentTitle: "Current Directory",
+      currentValue: existingPath ?? "-",
+      actions: [
+        ("Choose Directory", "Choose the directory used when this instance runs."),
+        ("Clear Directory Override", "Use the workflow source's natural working directory.")
+      ]
+    )
+    switch action {
+    case 0:
       return .choose
-    case .alertSecondButtonReturn:
+    case 1:
       return .clear
-    default:
+    case nil, _:
       return .cancel
     }
   }
 
   private func chooseWorkingDirectory(for candidate: RielaAppDaemonWorkflowCandidate) {
     let panel = NSOpenPanel()
-    panel.title = "Select Instance Directory"
-    panel.message = "Select the current directory to use when instance \(candidate.displayName) runs."
+    panel.title = "Choose Working Directory"
+    panel.message = "Choose the directory used when \(candidate.displayName) runs."
     panel.canChooseFiles = false
     panel.canChooseDirectories = true
     panel.allowsMultipleSelection = false
@@ -160,11 +168,11 @@ extension RielaApp {
     }) else {
       return
     }
-    status = "Set instance directory for \(candidate.displayName): \(url.standardizedFileURL.path)"
+    status = "Set working directory for \(candidate.displayName): \(url.standardizedFileURL.path)"
     refreshDaemonWorkflowWindow()
     restartActiveDaemonWorkflowAfterConfigurationChange(
       identity: candidate.id,
-      changeDescription: "instance directory"
+      changeDescription: "working directory"
     )
   }
 
@@ -174,18 +182,18 @@ extension RielaApp {
     }) else {
       return
     }
-    status = "Cleared instance directory override for \(candidate.displayName)"
+    status = "Cleared working directory for \(candidate.displayName)"
     refreshDaemonWorkflowWindow()
     restartActiveDaemonWorkflowAfterConfigurationChange(
       identity: candidate.id,
-      changeDescription: "instance directory"
+      changeDescription: "working directory"
     )
   }
 
   private func chooseEnvironmentFile(for candidate: RielaAppDaemonWorkflowCandidate) {
     let panel = NSOpenPanel()
-    panel.title = "Select .env File"
-    panel.message = "Select the credential env file to pass to instance \(candidate.displayName)."
+    panel.title = "Choose .env File"
+    panel.message = "Choose the .env file passed to \(candidate.displayName)."
     panel.canChooseFiles = true
     panel.canChooseDirectories = false
     panel.allowsMultipleSelection = false
@@ -194,7 +202,7 @@ extension RielaApp {
       return
     }
     guard isSupportedEnvironmentFile(url) else {
-      status = "Select a .env file for instance \(candidate.displayName)"
+      status = "Choose a .env file for \(candidate.displayName)"
       refreshDaemonWorkflowWindow()
       return
     }
@@ -206,11 +214,11 @@ extension RielaApp {
     }) else {
       return
     }
-    status = "Selected env file for instance \(candidate.displayName): \(daemonEnvironmentSummary(for: candidate))"
+    status = "Set .env file for \(candidate.displayName): \(daemonEnvironmentSummary(for: candidate))"
     refreshDaemonWorkflowWindow()
     restartActiveDaemonWorkflowAfterConfigurationChange(
       identity: candidate.id,
-      changeDescription: "env file"
+      changeDescription: ".env file"
     )
   }
 
@@ -220,22 +228,22 @@ extension RielaApp {
     }) else {
       return
     }
-    status = "Cleared env file for instance \(candidate.displayName): \(daemonEnvironmentSummary(for: candidate))"
+    status = "Cleared .env file for \(candidate.displayName): \(daemonEnvironmentSummary(for: candidate))"
     refreshDaemonWorkflowWindow()
     restartActiveDaemonWorkflowAfterConfigurationChange(
       identity: candidate.id,
-      changeDescription: "env file"
+      changeDescription: ".env file"
     )
   }
 
   private func confirmCredentialEnvironmentFile(_ url: URL, candidate: RielaAppDaemonWorkflowCandidate) -> Bool {
     let alert = NSAlert()
-    alert.messageText = "Use Credential Env File?"
+    alert.messageText = "Use .env File?"
     alert.informativeText = [
-      "RielaApp will treat \(url.lastPathComponent) as credential material.",
-      "Values will not be displayed in the app, but they will be passed to \(candidate.displayName) and its event source process."
+      "\(url.lastPathComponent) may contain credentials.",
+      "Values stay hidden in the app and are passed to \(candidate.displayName) and its event source process."
     ].joined(separator: " ")
-    alert.addButton(withTitle: "Use Env File")
+    alert.addButton(withTitle: "Use .env File")
     alert.addButton(withTitle: "Cancel")
     return alert.runModal() == .alertFirstButtonReturn
   }

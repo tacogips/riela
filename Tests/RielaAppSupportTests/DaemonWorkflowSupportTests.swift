@@ -239,6 +239,23 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     XCTAssertEqual(store.listProfileNames(), [.default, profileName])
   }
 
+  func testProfileStoreCanRemoveMaterializedProfile() throws {
+    let root = try temporaryHome()
+    let appRoot = root.appendingPathComponent(".riela/rielaapp", isDirectory: true)
+    let store = RielaAppProfileStore(appRootURL: appRoot)
+    let profileName = RielaAppProfileName("scratch")
+
+    try store.createProfileDirectories(profileName)
+    XCTAssertEqual(store.listProfileNames(), [.default, profileName])
+
+    try store.removeProfile(profileName)
+
+    XCTAssertEqual(store.listProfileNames(), [.default])
+    XCTAssertFalse(FileManager.default.fileExists(
+      atPath: RielaAppProfileStore.workflowRootURL(appRootURL: appRoot, profileName: profileName).path
+    ))
+  }
+
   func testProfileStorePreparingCommandLineProfilePersistsSelection() throws {
     let root = try temporaryHome()
     let appRoot = root.appendingPathComponent(".riela/rielaapp", isDirectory: true)
@@ -396,7 +413,7 @@ final class DaemonWorkflowSupportTests: XCTestCase {
         profileName: RielaAppProfileName("work"),
         startsImmediately: true
       ).statusMessage,
-      "Import failed: bad.rielapkg: invalid package"
+      "Import failed. bad.rielapkg: invalid package"
     )
     XCTAssertEqual(
       RielaAppImportSummary(
@@ -405,7 +422,7 @@ final class DaemonWorkflowSupportTests: XCTestCase {
         profileName: RielaAppProfileName("work"),
         startsImmediately: true
       ).statusMessage,
-      "Import completed with errors; imported: good; failed: bad.rielapkg: invalid package"
+      "Import completed with errors. Imported good. Failed bad.rielapkg: invalid package"
     )
   }
 

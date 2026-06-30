@@ -89,6 +89,7 @@ extension DeterministicWorkflowRunner {
     let systemPromptText = [
       workflow.prompts?.workerSystemPromptTemplate,
       payload.systemPromptTemplate,
+      priorReviewFeedbackPrompt(variables: variables),
       memoryGuidance(variables: variables)
     ]
       .compactMap { template in
@@ -104,6 +105,17 @@ extension DeterministicWorkflowRunner {
       promptText: renderedPromptText.isEmpty && !usesConfiguredPromptTemplate ? fallbackPrompt : renderedPromptText,
       systemPromptText: systemPromptText.isEmpty ? nil : systemPromptText
     )
+  }
+
+  private func priorReviewFeedbackPrompt(variables: JSONObject) -> String? {
+    guard case let .string(feedback)? = variables["priorReviewFeedback"] else {
+      return nil
+    }
+    let trimmed = feedback.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else {
+      return nil
+    }
+    return "Prior unresolved high and mid review findings for this rerun:\n\(trimmed)"
   }
 
   func multiplePublishableTransitionFailure(

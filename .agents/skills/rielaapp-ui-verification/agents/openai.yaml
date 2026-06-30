@@ -1,0 +1,4 @@
+interface:
+  display_name: "RielaApp UI Verification"
+  short_description: "Verify current RielaApp UI builds."
+  default_prompt: "Use $rielaapp-ui-verification to verify RielaApp UI changes with the current debug executable and screenshots."

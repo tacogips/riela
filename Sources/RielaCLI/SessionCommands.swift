@@ -100,6 +100,8 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
   public var activeBackendEventType: String?
   public var executionCount: Int
   public var executions: [WorkflowStepExecution]
+  public var reviewFindingCount: Int
+  public var reviewFindings: [WorkflowReviewFinding]
   public var health: String?
   public var loopEvidenceRecorded: Bool
   public var loopEvidence: LoopEvidenceSummary?
@@ -117,6 +119,8 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
     activeBackendEventType: String? = nil,
     executionCount: Int,
     executions: [WorkflowStepExecution],
+    reviewFindingCount: Int = 0,
+    reviewFindings: [WorkflowReviewFinding] = [],
     health: String? = nil,
     loopEvidenceRecorded: Bool = false,
     loopEvidence: LoopEvidenceSummary? = nil
@@ -133,6 +137,8 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
     self.activeBackendEventType = activeBackendEventType
     self.executionCount = executionCount
     self.executions = executions
+    self.reviewFindingCount = reviewFindingCount
+    self.reviewFindings = reviewFindings
     self.health = health
     self.loopEvidenceRecorded = loopEvidenceRecorded
     self.loopEvidence = loopEvidence
@@ -235,6 +241,8 @@ public struct SessionInspectionCommand: Sendable {
       activeBackendEventType: activeExecution?.lastBackendEventType,
       executionCount: snapshot.session.executions.count,
       executions: executionRows(for: command, allExecutions: snapshot.session.executions, runningExecutions: runningExecutions),
+      reviewFindingCount: snapshot.session.reviewFindings.count,
+      reviewFindings: snapshot.session.reviewFindings,
       health: health,
       loopEvidenceRecorded: snapshot.loopEvidence != nil,
       loopEvidence: loopEvidence
@@ -255,6 +263,7 @@ public struct SessionInspectionCommand: Sendable {
         "activeBackendEventAt: \(result.activeBackendEventAt.map(iso8601String) ?? "-")",
         "activeBackendEventType: \(result.activeBackendEventType ?? "-")",
         "executionCount: \(result.executionCount)",
+        "reviewFindingCount: \(result.reviewFindingCount)",
         "loopEvidenceRecorded: \(result.loopEvidenceRecorded ? "true" : "false")"
       ]
       if let health {

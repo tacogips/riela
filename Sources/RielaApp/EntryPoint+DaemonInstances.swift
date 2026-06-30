@@ -6,16 +6,195 @@ import RielaAppSupport
 import RielaCore
 
 extension RielaApp {
+  func addDaemonWorkflowInstance(_ request: DaemonWorkflowAddInstanceRequest) {
+    guard let source = daemonWorkflowSources.first(where: { $0.id == request.sourceIdentity }) else {
+      status = "Workflow source could not be found"
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    let defaultIdentity = uniqueDaemonInstanceId(for: source)
+    let identity = sanitizedDaemonInstanceId(request.identity).isEmpty
+      ? defaultIdentity
+      : sanitizedDaemonInstanceId(request.identity)
+    guard !daemonState.preferences.keys.contains(identity) else {
+      status = "Instance ID already exists: \(identity)"
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    let previousPreference = daemonState.preferences[identity]
+    let preference = RielaAppDaemonWorkflowPreference(
+      identity: identity,
+      sourceIdentity: source.id,
+      displayName: request.displayName,
+      available: true,
+      active: request.startsImmediately,
+      workingDirectory: request.workingDirectory,
+      environmentFilePath: request.environmentFilePath
+    )
+    daemonState.preferences[identity] = preference
+    guard saveDaemonState() else {
+      if let previousPreference {
+        daemonState.preferences[identity] = previousPreference
+      } else {
+        daemonState.preferences.removeValue(forKey: identity)
+      }
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    status = "Created instance \(identity)"
+    refreshDaemonWorkflowWindow()
+    daemonWindowController?.selectCandidate(identity: identity)
+    guard request.startsImmediately,
+      let candidate = daemonCandidateForInstance(identity: identity)
+    else {
+      return
+    }
+    Task { @MainActor in
+      await daemonRuntime.start(
+        candidate,
+        configuration: daemonRuntimeConfiguration(for: candidate)
+      )
+      status = "Started \(candidate.displayName)"
+      refreshDaemonWorkflowWindow()
+      daemonWindowController?.selectCandidate(identity: identity)
+    }
+  }
+
+  func startDaemonWorkflowInstance(identity: String) {
+    guard let candidate = daemonCandidateForInstance(identity: identity) else {
+      status = "Instance needs a workflow source"
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    guard updateDaemonPreference(identity: identity, mutate: { preference in
+      preference.sourceIdentity = candidate.sourceIdentity
+      preference.available = true
+      preference.active = true
+    }) else {
+      return
+    }
+    Task { @MainActor in
+      await daemonRuntime.start(
+        candidate,
+        configuration: daemonRuntimeConfiguration(for: candidate)
+      )
+      status = "Started \(candidate.displayName)"
+      refreshDaemonWorkflowWindow()
+    }
+  }
+
+  func stopDaemonWorkflowInstance(identity: String) {
+    guard let candidate = daemonCandidateForInstance(identity: identity) else {
+      status = "Instance needs a workflow source"
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    guard updateDaemonPreference(identity: identity, mutate: { preference in
+      preference.sourceIdentity = candidate.sourceIdentity
+      preference.available = true
+      preference.active = false
+    }) else {
+      return
+    }
+    Task { @MainActor in
+      await daemonRuntime.stop(identity: identity)
+      status = "Stopped \(candidate.displayName)"
+      refreshDaemonWorkflowWindow()
+    }
+  }
+
+  func restartDaemonWorkflowInstance(identity: String) {
+    guard let candidate = daemonCandidateForInstance(identity: identity) else {
+      status = "Instance needs a workflow source"
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    guard updateDaemonPreference(identity: identity, mutate: { preference in
+      preference.sourceIdentity = candidate.sourceIdentity
+      preference.available = true
+      preference.active = true
+    }) else {
+      return
+    }
+    Task { @MainActor in
+      await daemonRuntime.stop(identity: identity)
+      await daemonRuntime.start(
+        candidate,
+        configuration: daemonRuntimeConfiguration(for: candidate)
+      )
+      status = "Restarted \(candidate.displayName)"
+      refreshDaemonWorkflowWindow()
+    }
+  }
+
+  func removeDaemonWorkflowInstance(identity: String) {
+    let previousPreference = daemonState.preferences[identity]
+    guard previousPreference != nil else {
+      status = "Instance could not be found"
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    daemonState.preferences.removeValue(forKey: identity)
+    guard saveDaemonState() else {
+      if let previousPreference {
+        daemonState.preferences[identity] = previousPreference
+      }
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    Task { @MainActor in
+      await daemonRuntime.stop(identity: identity)
+      status = "Removed instance \(identity)"
+      refreshDaemonWorkflowWindow()
+    }
+  }
+
+  func relinkDaemonWorkflowInstance(identity: String, sourceIdentity: String) {
+    guard let source = daemonWorkflowSources.first(where: { candidate in
+      candidate.id == sourceIdentity || candidate.sourceIdentity == sourceIdentity
+    }) else {
+      status = "Workflow source could not be found"
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    guard updateDaemonPreference(identity: identity, mutate: { preference in
+      preference.identity = identity
+      preference.sourceIdentity = source.id
+      preference.available = true
+      preference.active = false
+    }) else {
+      return
+    }
+    Task { @MainActor in
+      await daemonRuntime.stop(identity: identity)
+      status = "Relinked \(identity) to \(source.displayName)"
+      refreshDaemonWorkflowWindow()
+      daemonWindowController?.selectCandidate(identity: identity)
+    }
+  }
+
+  func daemonCandidateForInstance(identity: String) -> RielaAppDaemonWorkflowCandidate? {
+    if let candidate = daemonCandidates.first(where: { $0.id == identity }) {
+      return candidate
+    }
+    let preference = daemonState.preference(for: identity)
+    let sourceIdentity = preference.sourceIdentity ?? identity
+    guard let source = daemonWorkflowSources.first(where: { $0.id == sourceIdentity }) else {
+      return nil
+    }
+    return source.managedInstance(identity: identity, displayName: preference.displayName)
+  }
+
   func duplicateDaemonWorkflowInstance(identity: String) {
     guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
-      status = "Selected instance is no longer available"
+      status = "Instance could not be found"
       refreshDaemonWorkflowWindow()
       return
     }
     let defaultId = uniqueDaemonInstanceId(for: candidate)
     guard let result = promptForDaemonInstance(
-      title: "Duplicate Workflow Instance",
-      message: "Create another managed instance from \(candidate.displayName).",
+      title: "New Instance",
+      message: "Create another saved instance from \(candidate.displayName).",
       idValue: defaultId,
       displayNameValue: "\(candidate.displayName) copy"
     ) else {
@@ -51,13 +230,13 @@ extension RielaApp {
 
   func renameDaemonWorkflowInstance(identity: String) {
     guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
-      status = "Selected instance is no longer available"
+      status = "Instance could not be found"
       refreshDaemonWorkflowWindow()
       return
     }
     guard let result = promptForDaemonInstance(
-      title: "Rename Workflow Instance",
-      message: "Change the management id and display name for \(candidate.displayName).",
+      title: "Instance Name",
+      message: "Update the saved instance identifier and display name for \(candidate.displayName).",
       idValue: identity,
       displayNameValue: candidate.displayName
     ) else {
@@ -107,13 +286,13 @@ extension RielaApp {
 
   func setDaemonWorkflowEnvironmentVariables(identity: String) {
     guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
-      status = "Selected instance is no longer available"
+      status = "Instance could not be found"
       refreshDaemonWorkflowWindow()
       return
     }
     let existing = environmentText(from: daemonState.preference(for: identity).environmentVariables)
     guard let text = promptForMultilineValue(
-      title: "Instance Environment Variables",
+      title: "Environment Variables",
       message: "Enter KEY=VALUE lines for instance \(candidate.displayName).",
       value: existing
     ) else {
@@ -127,28 +306,28 @@ extension RielaApp {
       }) else {
         return
       }
-      status = "Updated inline env for \(candidate.displayName)"
+      status = "Updated environment variables for \(candidate.displayName)"
       refreshDaemonWorkflowWindow()
       restartActiveDaemonWorkflowAfterConfigurationChange(
         identity: identity,
-        changeDescription: "inline env"
+        changeDescription: "environment variables"
       )
     } catch {
-      status = "Invalid env vars: \(error.localizedDescription)"
+      status = "Invalid environment variables: \(error.localizedDescription)"
       refreshDaemonWorkflowWindow()
     }
   }
 
   func setDaemonWorkflowDefaultVariables(identity: String) {
     guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
-      status = "Selected instance is no longer available"
+      status = "Instance could not be found"
       refreshDaemonWorkflowWindow()
       return
     }
     let existing = workflowVariablesText(from: daemonState.preference(for: identity).defaultVariables)
     guard let text = promptForMultilineValue(
-      title: "Instance Variables",
-      message: "Enter key=value lines for instance \(candidate.displayName). Use key:=JSON for typed values.",
+      title: "Workflow Variables",
+      message: "Enter workflow variables for \(candidate.displayName). Use key=value or key:=JSON lines.",
       value: existing
     ) else {
       return
@@ -161,14 +340,14 @@ extension RielaApp {
       }) else {
         return
       }
-      status = "Updated instance variables for \(candidate.displayName)"
+      status = "Updated workflow variables for \(candidate.displayName)"
       refreshDaemonWorkflowWindow()
       restartActiveDaemonWorkflowAfterConfigurationChange(
         identity: identity,
-        changeDescription: "instance variables"
+        changeDescription: "workflow variables"
       )
     } catch {
-      status = "Invalid instance variables: \(error.localizedDescription)"
+      status = "Invalid workflow variables: \(error.localizedDescription)"
       refreshDaemonWorkflowWindow()
     }
   }
@@ -176,6 +355,10 @@ extension RielaApp {
   private struct InstancePromptResult {
     var identity: String
     var displayName: String?
+  }
+
+  private var daemonInstancePromptViewFactory: DaemonInstancePromptViewFactory {
+    DaemonInstancePromptViewFactory()
   }
 
   private func promptForDaemonInstance(
@@ -188,20 +371,12 @@ extension RielaApp {
     idField.placeholderString = "instance-id"
     let nameField = NSTextField(string: displayNameValue)
     nameField.placeholderString = "Display name"
-    let stack = NSStackView(views: [
-      NSTextField(labelWithString: "Instance ID"),
-      idField,
-      NSTextField(labelWithString: "Display Name"),
-      nameField
-    ])
-    stack.orientation = .vertical
-    stack.spacing = 6
-    stack.frame = NSRect(x: 0, y: 0, width: 360, height: 110)
+    let stack = daemonInstancePromptViewFactory.nameEditorStack(idField: idField, nameField: nameField)
     let alert = NSAlert()
     alert.messageText = title
     alert.informativeText = message
     alert.accessoryView = stack
-    alert.addButton(withTitle: "Save")
+    alert.addButton(withTitle: "Done")
     alert.addButton(withTitle: "Cancel")
     guard alert.runModal() == .alertFirstButtonReturn else {
       return nil
@@ -217,24 +392,7 @@ extension RielaApp {
   }
 
   private func promptForMultilineValue(title: String, message: String, value: String) -> String? {
-    let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 460, height: 220))
-    textView.isRichText = false
-    textView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-    textView.string = value
-    let scrollView = NSScrollView(frame: textView.frame)
-    scrollView.documentView = textView
-    scrollView.hasVerticalScroller = true
-    scrollView.borderType = .bezelBorder
-    let alert = NSAlert()
-    alert.messageText = title
-    alert.informativeText = message
-    alert.accessoryView = scrollView
-    alert.addButton(withTitle: "Save")
-    alert.addButton(withTitle: "Cancel")
-    guard alert.runModal() == .alertFirstButtonReturn else {
-      return nil
-    }
-    return textView.string
+    RielaAppSettingsEditorWindowController.editMultiline(title: title, message: message, value: value)
   }
 
   private func uniqueDaemonInstanceId(for candidate: RielaAppDaemonWorkflowCandidate) -> String {
@@ -331,6 +489,74 @@ extension RielaApp {
       return "null"
     }
     return text
+  }
+}
+
+@MainActor
+struct DaemonInstancePromptViewFactory {
+  static let nameEditorSize = NSSize(width: 360, height: 104)
+  static let variableEditorSize = NSSize(width: 440, height: 225)
+  static let editorTextSize = NSSize(width: 380, height: 160)
+
+  func nameEditorStack(idField: NSTextField, nameField: NSTextField) -> NSStackView {
+    accessoryStack(
+      views: [
+        sectionTitle("Instance Settings"),
+        fieldRow(title: "Instance ID", control: idField),
+        fieldRow(title: "Display Name", control: nameField)
+      ],
+      size: Self.nameEditorSize
+    )
+  }
+
+  func variableEditorStack(currentValue: String, editorView: NSView) -> NSStackView {
+    let lineCount = currentValue
+      .split(whereSeparator: \.isNewline)
+      .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+      .count
+    let lineCountLabel = NSTextField(labelWithString: "\(lineCount) configured")
+    lineCountLabel.lineBreakMode = .byTruncatingTail
+    lineCountLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    editorView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+    let preferredHeight = editorView.heightAnchor.constraint(equalToConstant: Self.editorTextSize.height)
+    preferredHeight.priority = .defaultLow
+    preferredHeight.isActive = true
+    return accessoryStack(
+      views: [
+        sectionTitle("Variable Settings"),
+        fieldRow(title: "Current Lines", control: lineCountLabel),
+        fieldRow(title: "Editor", control: editorView)
+      ],
+      size: Self.variableEditorSize
+    )
+  }
+
+  private func accessoryStack(views: [NSView], size: NSSize) -> NSStackView {
+    let stack = NSStackView(views: views)
+    stack.orientation = .vertical
+    stack.spacing = 8
+    stack.alignment = .width
+    stack.frame = NSRect(origin: .zero, size: size)
+    stack.widthAnchor.constraint(lessThanOrEqualToConstant: size.width).isActive = true
+    return stack
+  }
+
+  private func sectionTitle(_ text: String) -> NSTextField {
+    let title = NSTextField(labelWithString: text)
+    title.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    title.lineBreakMode = .byTruncatingTail
+    title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    return title
+  }
+
+  private func fieldRow(title: String, control: NSView) -> NSStackView {
+    let titleLabel = rielaAppSettingsTitleLabel(title, maxWidth: 130)
+    control.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    let row = RielaAppSettingsRow(views: [titleLabel, control])
+    row.orientation = .horizontal
+    row.spacing = 8
+    row.alignment = .firstBaseline
+    return rielaAppSettingsRow(row)
   }
 }
 #endif

@@ -1,0 +1,11 @@
+title = "riela gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Ignore generated SwiftPM build output and repository scratch artifacts during no-git scans."
+paths = [
+  '''(?:^|/)\.build/''',
+  '''(?:^|/)tmp/''',
+]

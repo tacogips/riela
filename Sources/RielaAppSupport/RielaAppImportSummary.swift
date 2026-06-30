@@ -31,9 +31,9 @@ public struct RielaAppImportSummary: Equatable, Sendable {
       return importedStatus
     }
     if !hasSuccessfulImports {
-      return "Import failed: \(failures.joined(separator: "; "))"
+      return "Import failed. \(failures.joined(separator: "; "))"
     }
-    return "Import completed with errors; \(successfulSegments.joined(separator: "; ")); failed: \(failures.joined(separator: "; "))"
+    return "Import completed with errors. \(successfulSegments.joined(separator: ". ")). Failed \(failures.joined(separator: "; "))"
   }
 
   private var hasSuccessfulImports: Bool {
@@ -62,7 +62,7 @@ public struct RielaAppImportSummary: Equatable, Sendable {
 
   private var autoStartOffSuffix: String {
     if !autostartOffNames.isEmpty {
-      return "; auto-start off: \(autostartOffNames.joined(separator: ", "))"
+      return ". Auto-start off for \(autostartOffNames.joined(separator: ", "))"
     }
     return startsImmediately ? "" : " with auto-start off"
   }
@@ -85,13 +85,13 @@ public struct RielaAppImportSummary: Equatable, Sendable {
   private var successfulSegments: [String] {
     var segments: [String] = []
     if !importedNames.isEmpty {
-      segments.append("imported: \(importedNames.joined(separator: ", "))")
+      segments.append("Imported \(importedNames.joined(separator: ", "))")
     }
     if !updatedNames.isEmpty {
-      segments.append("updated: \(updatedNames.joined(separator: ", "))")
+      segments.append("Updated \(updatedNames.joined(separator: ", "))")
     }
     if !autostartOffNames.isEmpty {
-      segments.append("auto-start off: \(autostartOffNames.joined(separator: ", "))")
+      segments.append("Auto-start off for \(autostartOffNames.joined(separator: ", "))")
     }
     return segments
   }
@@ -126,11 +126,11 @@ public struct RielaAppProjectImportSummary: Equatable, Sendable {
     }
     if projects.count == 1, failures.isEmpty, let project = projects.first {
       return project.alreadyAdded
-        ? "Project already in profile \(profileName.rawValue): \(project.name) (\(workflowCountDescription(project.workflowCount)))"
-        : "Added project to profile \(profileName.rawValue): \(project.name) (\(workflowCountDescription(project.workflowCount)))"
+        ? "Project \(project.name) already in profile \(profileName.rawValue) (\(workflowCountDescription(project.workflowCount)))"
+        : "Added project \(project.name) to profile \(profileName.rawValue) (\(workflowCountDescription(project.workflowCount)))"
     }
     if projects.isEmpty {
-      return "Project import failed: \(failures.joined(separator: "; "))"
+      return "Project import failed. \(failures.joined(separator: "; "))"
     }
     let totalWorkflows = projects.reduce(0) { $0 + $1.workflowCount }
     let alreadyAddedCount = projects.filter(\.alreadyAdded).count
@@ -143,7 +143,7 @@ public struct RielaAppProjectImportSummary: Equatable, Sendable {
     }
     status += " (\(workflowCountDescription(totalWorkflows)))"
     if !failures.isEmpty {
-      status += "; failed: \(failures.joined(separator: "; "))"
+      status += ". Failed \(failures.joined(separator: "; "))"
     }
     return status
   }
@@ -168,9 +168,9 @@ public struct RielaAppProfileSwitchSummary: Equatable, Sendable {
     let baseStatus: String
     let typedName = rawProfileName.trimmingCharacters(in: .whitespacesAndNewlines)
     if typedName.isEmpty || typedName == profileName.rawValue {
-      baseStatus = "Profile: \(profileName.rawValue)"
+      baseStatus = "Profile \(profileName.rawValue)"
     } else {
-      baseStatus = "Profile: \(profileName.rawValue) (safe name for \(typedName))"
+      baseStatus = "Profile \(profileName.rawValue) (safe name for \(typedName))"
     }
     return autostartsDaemonWorkflows ? baseStatus : "\(baseStatus); auto-start off"
   }

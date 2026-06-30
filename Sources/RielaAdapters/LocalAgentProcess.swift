@@ -113,7 +113,7 @@ private final class LockedProcessData: @unchecked Sendable {
 }
 
 private final class LocalProcessPipeReader: @unchecked Sendable {
-  private let fileHandle: FileHandle
+  private let fileDescriptor: Int32
   private let stream: LocalAgentProcessOutputStream
   private let outputEventHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
 
@@ -122,7 +122,7 @@ private final class LocalProcessPipeReader: @unchecked Sendable {
     stream: LocalAgentProcessOutputStream,
     outputEventHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
   ) {
-    self.fileHandle = fileHandle
+    self.fileDescriptor = fileHandle.fileDescriptor
     self.stream = stream
     self.outputEventHandler = outputEventHandler
   }
@@ -130,11 +130,21 @@ private final class LocalProcessPipeReader: @unchecked Sendable {
   func readToEnd() -> Data {
     var output = Data()
     var pendingLine = Data()
+    var buffer = [UInt8](repeating: 0, count: 4_096)
     while true {
-      let chunk = fileHandle.readData(ofLength: 4_096)
-      guard !chunk.isEmpty else {
+      let byteCount = buffer.withUnsafeMutableBytes { pointer in
+        read(fileDescriptor, pointer.baseAddress, pointer.count)
+      }
+      if byteCount == 0 {
         break
       }
+      if byteCount < 0 {
+        if errno == EINTR {
+          continue
+        }
+        break
+      }
+      let chunk = Data(buffer.prefix(byteCount))
       output.append(chunk)
       pendingLine.append(chunk)
       emitCompleteLines(from: &pendingLine)

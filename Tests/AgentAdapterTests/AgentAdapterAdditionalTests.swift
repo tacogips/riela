@@ -547,6 +547,31 @@ extension AgentAdapterTests {
     }
   }
 
+  func testFoundationRunnerCancellationDoesNotAbortPipeReaders() async throws {
+    let runner = FoundationLocalAgentProcessRunner()
+    let task = Task {
+      try await runner.run(
+        configuration: LocalAgentProcessConfiguration(
+          executableURL: URL(fileURLWithPath: "/bin/sh"),
+          arguments: ["-c", "while :; do sleep 1; done"]
+        ),
+        stdin: "",
+        deadline: nil
+      )
+    }
+
+    try await Task.sleep(nanoseconds: 100_000_000)
+    task.cancel()
+
+    do {
+      _ = try await task.value
+      XCTFail("Expected cancellation")
+    } catch is CancellationError {
+    } catch {
+      XCTFail("Expected cancellation, got \(error)")
+    }
+  }
+
   func testFoundationRunnerCancellationTerminatesSpawnedProcessGroup() async throws {
     let runner = FoundationLocalAgentProcessRunner()
     let pidFile = URL(fileURLWithPath: NSTemporaryDirectory())

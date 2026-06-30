@@ -10,7 +10,7 @@ final class RielaAppImportSummaryTests: XCTestCase {
         profileName: RielaAppProfileName("work"),
         autostartsDaemonWorkflows: true
       ).statusMessage,
-      "Profile: work"
+      "Profile work"
     )
     XCTAssertEqual(
       RielaAppProfileSwitchSummary(
@@ -18,7 +18,7 @@ final class RielaAppImportSummaryTests: XCTestCase {
         profileName: RielaAppProfileName("work-team"),
         autostartsDaemonWorkflows: false
       ).statusMessage,
-      "Profile: work-team (safe name for work/team); auto-start off"
+      "Profile work-team (safe name for work/team); auto-start off"
     )
   }
 
@@ -58,7 +58,7 @@ final class RielaAppImportSummaryTests: XCTestCase {
 
     XCTAssertEqual(
       summary.statusMessage,
-      "Import completed with errors; imported: new-demo; updated: existing-demo; failed: bad: Selected source is not a workflow folder"
+      "Import completed with errors. Imported new-demo. Updated existing-demo. Failed bad: Selected source is not a workflow folder"
     )
   }
 
@@ -74,7 +74,7 @@ final class RielaAppImportSummaryTests: XCTestCase {
 
     XCTAssertEqual(
       summary.statusMessage,
-      "Import completed with errors; imported: new-demo; updated: existing-demo; auto-start off: new-demo, existing-demo; failed: bad: Selected source is not a workflow folder"
+      "Import completed with errors. Imported new-demo. Updated existing-demo. Auto-start off for new-demo, existing-demo. Failed bad: Selected source is not a workflow folder"
     )
   }
 
@@ -90,7 +90,7 @@ final class RielaAppImportSummaryTests: XCTestCase {
 
     XCTAssertEqual(
       summary.statusMessage,
-      "Imported 1 item and updated 1 item in profile work; auto-start off: existing-demo"
+      "Imported 1 item and updated 1 item in profile work. Auto-start off for existing-demo"
     )
   }
 
@@ -103,7 +103,7 @@ final class RielaAppImportSummaryTests: XCTestCase {
       profileName: RielaAppProfileName("work")
     )
 
-    XCTAssertEqual(summary.statusMessage, "Added project to profile work: demo (2 workflows)")
+    XCTAssertEqual(summary.statusMessage, "Added project demo to profile work (2 workflows)")
   }
 
   func testProjectImportSummaryDescribesSingleExistingProject() {
@@ -115,7 +115,7 @@ final class RielaAppImportSummaryTests: XCTestCase {
       profileName: RielaAppProfileName("work")
     )
 
-    XCTAssertEqual(summary.statusMessage, "Project already in profile work: demo (1 workflow)")
+    XCTAssertEqual(summary.statusMessage, "Project demo already in profile work (1 workflow)")
   }
 
   func testProjectImportSummaryDescribesMultipleAndFailedProjects() {
@@ -130,7 +130,7 @@ final class RielaAppImportSummaryTests: XCTestCase {
 
     XCTAssertEqual(
       summary.statusMessage,
-      "Added 1 project to profile work; 1 already in profile (4 workflows); failed: bad: folder has no .riela/workflows or .riela/packages"
+      "Added 1 project to profile work; 1 already in profile (4 workflows). Failed bad: folder has no .riela/workflows or .riela/packages"
     )
   }
 
@@ -143,7 +143,7 @@ final class RielaAppImportSummaryTests: XCTestCase {
 
     XCTAssertEqual(
       summary.statusMessage,
-      "Project import failed: bad: folder has no .riela/workflows or .riela/packages"
+      "Project import failed. bad: folder has no .riela/workflows or .riela/packages"
     )
   }
 }

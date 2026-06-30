@@ -17,10 +17,10 @@ final class DaemonWorkflowWindowContentHostView: NSView {
 
 final class DaemonWorkflowSettingsRootView: NSView {
   private enum Layout {
-    static let sidebarWidth: CGFloat = 230
+    static let sidebarWidth: CGFloat = 280
     static let dividerWidth: CGFloat = 1
-    static let contentGutter: CGFloat = 24
-    static let toolbarHeight: CGFloat = 56
+    static let contentGutter: CGFloat = 28
+    static let toolbarHeight: CGFloat = 72
   }
 
   let sidebar = NSVisualEffectView()
@@ -33,9 +33,11 @@ final class DaemonWorkflowSettingsRootView: NSView {
 
   override init(frame frameRect: NSRect) {
     super.init(frame: frameRect)
-    sidebar.material = .sidebar
-    sidebar.blendingMode = .behindWindow
+    sidebar.material = .windowBackground
+    sidebar.blendingMode = .withinWindow
     sidebar.state = .active
+    wantsLayer = true
+    updateBackgroundColor()
     addSubview(sidebar)
     addSubview(toolbar)
     addSubview(contentHost)
@@ -44,6 +46,11 @@ final class DaemonWorkflowSettingsRootView: NSView {
   @available(*, unavailable)
   required init?(coder: NSCoder) {
     fatalError("init(coder:) has not been implemented")
+  }
+
+  override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
+    updateBackgroundColor()
   }
 
   override func layout() {
@@ -73,17 +80,26 @@ final class DaemonWorkflowSettingsRootView: NSView {
     toolbar.layoutSubtreeIfNeeded()
     contentHost.layoutSubtreeIfNeeded()
   }
+
+  private func updateBackgroundColor() {
+    effectiveAppearance.performAsCurrentDrawingAppearance {
+      layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+    }
+  }
 }
 
 @MainActor
 enum DaemonWorkflowWindowLayout {
-  static let initialWindowSize = NSSize(width: 760, height: 620)
-  static let minimumWindowSize = NSSize(width: 640, height: 460)
+  static let initialWindowSize = NSSize(width: 920, height: 680)
+  static let minimumWindowSize = NSSize(width: 760, height: 520)
 }
 
 extension DaemonWorkflowWindowController {
   func buildContent(in window: NSWindow) {
     let root = DaemonWorkflowSettingsRootView()
+    window.titleVisibility = .hidden
+    window.titlebarAppearsTransparent = true
+    window.isMovableByWindowBackground = true
     window.contentView = root
 
     configureNavigationControls()
@@ -203,6 +219,7 @@ extension DaemonWorkflowWindowController {
     sidebarSearchField.placeholderString = "Search"
     sidebarSearchField.isEnabled = false
     sidebarSearchField.translatesAutoresizingMaskIntoConstraints = false
+    sidebarSearchField.heightAnchor.constraint(equalToConstant: 36).isActive = true
 
     for button in [sidebarInstancesButton, sidebarSourcesButton, sidebarProfilesButton] {
       button.target = self
@@ -212,7 +229,7 @@ extension DaemonWorkflowWindowController {
       button.imagePosition = .imageLeading
       button.contentTintColor = .labelColor
       button.translatesAutoresizingMaskIntoConstraints = false
-      button.heightAnchor.constraint(equalToConstant: 34).isActive = true
+      button.heightAnchor.constraint(equalToConstant: 38).isActive = true
     }
     sidebarInstancesButton.image = NSImage(systemSymbolName: "rectangle.stack", accessibilityDescription: nil)
     sidebarInstancesButton.action = #selector(showInstancesPane)
@@ -239,9 +256,9 @@ extension DaemonWorkflowWindowController {
     let container = NSView()
     container.addSubview(menuStack)
     NSLayoutConstraint.activate([
-      menuStack.topAnchor.constraint(equalTo: container.topAnchor, constant: 76),
-      menuStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
-      menuStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -18),
+      menuStack.topAnchor.constraint(equalTo: container.topAnchor, constant: 88),
+      menuStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 28),
+      menuStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -24),
       appTitle.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
       sidebarInstancesButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
       sidebarSourcesButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor),

@@ -13,8 +13,8 @@ final class RielaAppControllerLayoutTests: XCTestCase {
     let window = try XCTUnwrap(controller.window)
     window.layoutIfNeeded()
 
-    XCTAssertEqual(window.minSize, NSSize(width: 640, height: 460))
-    XCTAssertEqual(window.frame.size.width, 760, accuracy: 0.1)
+    XCTAssertEqual(window.minSize, NSSize(width: 760, height: 520))
+    XCTAssertEqual(window.frame.size.width, 920, accuracy: 0.1)
 
     let root = try XCTUnwrap(window.contentView)
     let listScroll = try XCTUnwrap(firstSubview(of: NSScrollView.self, in: root))
@@ -522,8 +522,8 @@ final class RielaAppControllerLayoutTests: XCTestCase {
     let nameRows = allSubviews(of: RielaAppSettingsRow.self, in: nameStack)
     XCTAssertEqual(nameRows.count, 2)
     for row in nameRows {
-      XCTAssertEqual(row.edgeInsets.left, 10)
-      XCTAssertEqual(row.layer?.cornerRadius, 8)
+      XCTAssertEqual(row.edgeInsets.left, 12)
+      XCTAssertEqual(row.layer?.cornerRadius, 12)
     }
     for label in settingsTitleLabels(in: nameStack) {
       XCTAssertTrue(hasWidthConstraint(label, relation: .lessThanOrEqual, constant: 130))
@@ -584,8 +584,8 @@ final class RielaAppControllerLayoutTests: XCTestCase {
     addStack.layoutSubtreeIfNeeded()
 
     XCTAssertEqual(addStack.orientation, .vertical)
-    XCTAssertEqual(addStack.spacing, 8)
-    XCTAssertEqual(addStack.frame.size.width, AddInstancePromptLayout.accessoryWidth, accuracy: 0.1)
+    XCTAssertEqual(addStack.spacing, 10)
+    XCTAssertEqual(addStack.frame.size.width, AddInstancePromptLayout.windowWidth, accuracy: 0.1)
     XCTAssertTrue(
       hasWidthConstraint(
         addStack,

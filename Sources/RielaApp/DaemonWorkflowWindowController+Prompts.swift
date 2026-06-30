@@ -53,11 +53,38 @@ private struct WorkflowSourceOptionRow {
 
 @MainActor
 enum AddInstancePromptLayout {
-  static let accessoryWidth: CGFloat = 480
-  static let relinkSize = NSSize(width: accessoryWidth, height: 260)
-  static let workflowSelectionSize = NSSize(width: accessoryWidth, height: 360)
-  static let parameterSize = NSSize(width: accessoryWidth, height: 260)
-  static let parameterRowsPreferredHeight: CGFloat = 210
+  static let windowWidth: CGFloat = 560
+  static let relinkSize = NSSize(width: windowWidth, height: 360)
+  static let workflowSelectionSize = NSSize(width: windowWidth, height: 500)
+  static let parameterSize = NSSize(width: windowWidth, height: 440)
+  static let parameterRowsPreferredHeight: CGFloat = 280
+}
+
+@MainActor
+private final class AddInstancePromptModalTarget: NSObject, NSWindowDelegate {
+  weak var window: NSWindow?
+  private var hasStoppedModal = false
+
+  @objc func confirm() {
+    stop(with: .OK)
+  }
+
+  @objc func cancel() {
+    stop(with: .cancel)
+  }
+
+  func windowWillClose(_ notification: Notification) {
+    stop(with: .cancel)
+  }
+
+  private func stop(with response: NSApplication.ModalResponse) {
+    guard !hasStoppedModal else {
+      return
+    }
+    hasStoppedModal = true
+    window?.orderOut(nil)
+    NSApp.stopModal(withCode: response)
+  }
 }
 
 @MainActor
@@ -65,8 +92,8 @@ struct AddInstancePromptViewFactory {
   func accessoryStack(views: [NSView], size: NSSize) -> NSStackView {
     let stack = NSStackView(views: views)
     stack.orientation = .vertical
-    stack.alignment = .width
-    stack.spacing = 8
+    stack.alignment = .leading
+    stack.spacing = 10
     stack.frame = NSRect(origin: .zero, size: size)
     stack.widthAnchor.constraint(lessThanOrEqualToConstant: size.width).isActive = true
     return stack
@@ -119,6 +146,7 @@ struct AddInstancePromptViewFactory {
 
     let sourceActionsTitle = NSTextField(labelWithString: "Manage Sources")
     sourceActionsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    sourceActionsTitle.alignment = .left
 
     return accessoryStack(views: [emptyLabel, sourceActionsTitle, sourceActions], size: size)
   }
@@ -129,19 +157,19 @@ extension DaemonWorkflowWindowController {
     while true {
       let options = workflowSourceOptions()
       guard !options.isEmpty else {
-        let alert = NSAlert()
-        alert.messageText = "Choose Workflow"
-        alert.informativeText = ""
-        alert.accessoryView = AddInstancePromptViewFactory().emptyWorkflowSelectionStack(
+        let stack = AddInstancePromptViewFactory().emptyWorkflowSelectionStack(
           message: "No workflows. Import a workflow, package, or project source.",
           sourceActions: sourceActionStack(context: .addInstance),
           size: AddInstancePromptLayout.relinkSize
         )
-        alert.addButton(withTitle: "Cancel")
         pendingAddInstanceSheetAction = nil
-        activeAddInstanceAlert = alert
-        _ = alert.runModal()
-        activeAddInstanceAlert = nil
+        _ = runAddInstancePromptWindow(
+          title: "Choose Workflow",
+          message: "No workflow sources are available.",
+          content: stack,
+          contentSize: AddInstancePromptLayout.relinkSize,
+          primaryTitle: nil
+        )
         if handlePendingAddInstanceSheetAction() {
           continue
         }
@@ -161,46 +189,44 @@ extension DaemonWorkflowWindowController {
 
   func promptForRelinkSourceOption(_ options: [WorkflowSourceOption]) -> WorkflowSourceSelection {
     guard !options.isEmpty else {
-      let alert = NSAlert()
-      alert.messageText = "Relink Source"
-      alert.informativeText = ""
-      alert.accessoryView = AddInstancePromptViewFactory().emptyWorkflowSelectionStack(
+      let stack = AddInstancePromptViewFactory().emptyWorkflowSelectionStack(
         message: "No workflows. Import a workflow, package, or project source.",
         sourceActions: sourceActionStack(context: .relink),
         size: AddInstancePromptLayout.relinkSize
       )
-      alert.addButton(withTitle: "Cancel")
       pendingAddInstanceSheetAction = nil
-      activeAddInstanceAlert = alert
-      _ = alert.runModal()
-      activeAddInstanceAlert = nil
+      _ = runAddInstancePromptWindow(
+        title: "Relink Source",
+        message: "No workflow sources are available.",
+        content: stack,
+        contentSize: AddInstancePromptLayout.relinkSize,
+        primaryTitle: nil
+      )
       if handlePendingAddInstanceSheetAction() {
         return .retry
       }
       return .cancelled
     }
 
-    let alert = NSAlert()
     let sourceSelection = workflowSourceSelectionStack(options: options) {
-      alert.window.orderOut(nil)
+      self.activeAddInstanceWindow?.orderOut(nil)
       NSApp.stopModal(withCode: .OK)
     }
-    let title = NSTextField(labelWithString: "Relink Source")
-    title.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
     let stack = AddInstancePromptViewFactory().accessoryStack(
       views: [
-        title,
         sourceSelection.stack
       ],
       size: AddInstancePromptLayout.relinkSize
     )
 
-    alert.messageText = "Relink Source"
-    alert.informativeText = "Choose a workflow source for this saved instance."
-    alert.accessoryView = stack
-    alert.addButton(withTitle: "Cancel")
     let response = withExtendedLifetime(sourceSelection.target) {
-      alert.runModal()
+      runAddInstancePromptWindow(
+        title: "Relink Source",
+        message: "Choose a workflow source for this saved instance.",
+        content: stack,
+        contentSize: AddInstancePromptLayout.relinkSize,
+        primaryTitle: nil
+      )
     }
     guard response == .OK else {
       return .cancelled
@@ -209,18 +235,15 @@ extension DaemonWorkflowWindowController {
   }
 
   private func promptForWorkflowSourceOption(_ options: [WorkflowSourceOption]) -> WorkflowSourceSelection {
-    let alert = NSAlert()
-    let workflowTitle = NSTextField(labelWithString: "Choose Workflow")
-    workflowTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
     let sourceActionsTitle = NSTextField(labelWithString: "Manage Sources")
     sourceActionsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    sourceActionsTitle.alignment = .left
     let sourceSelection = workflowSourceSelectionStack(options: options) {
-      alert.window.orderOut(nil)
+      self.activeAddInstanceWindow?.orderOut(nil)
       NSApp.stopModal(withCode: .OK)
     }
     let stack = AddInstancePromptViewFactory().accessoryStack(
       views: [
-        workflowTitle,
         sourceSelection.stack,
         sourceActionsTitle,
         sourceActionStack(context: .addInstance)
@@ -228,16 +251,16 @@ extension DaemonWorkflowWindowController {
       size: AddInstancePromptLayout.workflowSelectionSize
     )
 
-    alert.messageText = "Choose Workflow"
-    alert.informativeText = "Choose a workflow source."
-    alert.accessoryView = stack
-    alert.addButton(withTitle: "Cancel")
     pendingAddInstanceSheetAction = nil
-    activeAddInstanceAlert = alert
     let response = withExtendedLifetime(sourceSelection.target) {
-      alert.runModal()
+      runAddInstancePromptWindow(
+        title: "Choose Workflow",
+        message: "Choose a workflow source.",
+        content: stack,
+        contentSize: AddInstancePromptLayout.workflowSelectionSize,
+        primaryTitle: nil
+      )
     }
-    activeAddInstanceAlert = nil
     if handlePendingAddInstanceSheetAction() {
       return .retry
     }
@@ -256,6 +279,7 @@ extension DaemonWorkflowWindowController {
     envField.placeholderString = "Optional .env path"
     let directoryField = NSTextField(string: option.candidate.workingDirectory)
     directoryField.placeholderString = "Optional working directory"
+    [idField, nameField, envField, directoryField].forEach(configureAddInstanceTextField)
     let startCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     startCheckbox.state = .on
     startCheckbox.setAccessibilityLabel("Start")
@@ -263,6 +287,7 @@ extension DaemonWorkflowWindowController {
     startCheckbox.setContentHuggingPriority(.required, for: .horizontal)
     let parameterTitle = NSTextField(labelWithString: "Configure Instance")
     parameterTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    parameterTitle.alignment = .left
     let workflowValue = NSTextField(labelWithString: option.title)
     workflowValue.lineBreakMode = .byTruncatingMiddle
     workflowValue.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -278,16 +303,15 @@ extension DaemonWorkflowWindowController {
       ]
     )
 
-    let alert = NSAlert()
-    alert.messageText = "Configure Instance"
-    alert.informativeText = "Enter instance parameters."
-    alert.accessoryView = stack
-    alert.addButton(withTitle: "Create")
-    alert.addButton(withTitle: "Cancel")
-    activeAddInstanceAlert = alert
-    let response = alert.runModal()
-    activeAddInstanceAlert = nil
-    guard response == .alertFirstButtonReturn else {
+    let response = runAddInstancePromptWindow(
+      title: "Configure Instance",
+      message: "Enter instance parameters.",
+      content: stack,
+      contentSize: AddInstancePromptLayout.parameterSize,
+      primaryTitle: "Create",
+      initialFirstResponder: idField
+    )
+    guard response == .OK else {
       return nil
     }
     let rawIdentity = idField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -329,22 +353,31 @@ extension DaemonWorkflowWindowController {
 
   private func finishAddInstanceSheet(with action: AddInstanceSheetAction) {
     pendingAddInstanceSheetAction = action
-    activeAddInstanceAlert?.window.orderOut(nil)
-    NSApp.stopModal(withCode: .alertSecondButtonReturn)
+    activeAddInstanceWindow?.orderOut(nil)
+    NSApp.stopModal(withCode: .cancel)
   }
 
   private func addInstanceFieldRow(title: String, control: NSView) -> NSStackView {
     let titleLabel = rielaAppSettingsTitleLabel(title, maxWidth: 145)
+    titleLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
     control.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     let row = RielaAppSettingsRow(views: [titleLabel, control])
     row.orientation = .horizontal
     row.spacing = 8
-    row.alignment = .firstBaseline
+    row.alignment = .centerY
     return rielaAppSettingsRow(row)
+  }
+
+  private func configureAddInstanceTextField(_ field: NSTextField) {
+    field.bezelStyle = .roundedBezel
+    field.controlSize = .large
+    field.font = .systemFont(ofSize: NSFont.systemFontSize)
+    field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
   }
 
   private func addInstanceValueRow(title: String, valueLabel: NSTextField) -> NSStackView {
     let titleLabel = rielaAppSettingsTitleLabel(title, maxWidth: 145)
+    titleLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
     valueLabel.textColor = .labelColor
     valueLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     let row = RielaAppSettingsRow(views: [titleLabel, valueLabel])
@@ -356,6 +389,7 @@ extension DaemonWorkflowWindowController {
 
   private func addInstanceToggleRow(title: String, checkbox: NSButton) -> NSStackView {
     let titleLabel = rielaAppSettingsTitleLabel(title, maxWidth: 145)
+    titleLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
     let spacer = NSView()
     spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
     let row = RielaAppSettingsRow(views: [titleLabel, spacer, checkbox])
@@ -363,6 +397,122 @@ extension DaemonWorkflowWindowController {
     row.spacing = 8
     row.alignment = .centerY
     return rielaAppSettingsRow(row)
+  }
+
+  private func runAddInstancePromptWindow(
+    title: String,
+    message: String,
+    content: NSView,
+    contentSize: NSSize,
+    primaryTitle: String?,
+    initialFirstResponder: NSView? = nil
+  ) -> NSApplication.ModalResponse {
+    let target = AddInstancePromptModalTarget()
+    let window = NSWindow(
+      contentRect: NSRect(origin: .zero, size: contentSize),
+      styleMask: [.titled, .closable],
+      backing: .buffered,
+      defer: false
+    )
+    window.title = title
+    window.titlebarAppearsTransparent = true
+    window.isMovableByWindowBackground = true
+    window.minSize = NSSize(width: min(420, contentSize.width), height: min(280, contentSize.height))
+    target.window = window
+    window.delegate = target
+    window.contentView = buildAddInstancePromptWindowContent(
+      title: title,
+      message: message,
+      content: content,
+      primaryTitle: primaryTitle,
+      target: target
+    )
+    activeAddInstanceWindow = window
+    positionAddInstancePromptWindow(window)
+    window.makeKeyAndOrderFront(nil)
+    if let initialFirstResponder {
+      window.makeFirstResponder(initialFirstResponder)
+    }
+    let response = withExtendedLifetime(target) {
+      NSApp.runModal(for: window)
+    }
+    activeAddInstanceWindow = nil
+    window.delegate = nil
+    return response
+  }
+
+  private func buildAddInstancePromptWindowContent(
+    title: String,
+    message: String,
+    content: NSView,
+    primaryTitle: String?,
+    target: AddInstancePromptModalTarget
+  ) -> NSView {
+    let titleLabel = NSTextField(labelWithString: title)
+    titleLabel.font = .systemFont(ofSize: 24, weight: .bold)
+    titleLabel.lineBreakMode = .byTruncatingTail
+    titleLabel.alignment = .left
+
+    let messageLabel = NSTextField(labelWithString: message)
+    messageLabel.textColor = .secondaryLabelColor
+    messageLabel.lineBreakMode = .byWordWrapping
+    messageLabel.maximumNumberOfLines = 2
+    messageLabel.alignment = .left
+
+    content.translatesAutoresizingMaskIntoConstraints = false
+    let contentStack = NSStackView(views: [titleLabel, messageLabel, content])
+    contentStack.orientation = .vertical
+    contentStack.alignment = .leading
+    contentStack.spacing = 12
+    contentStack.translatesAutoresizingMaskIntoConstraints = false
+
+    let cancelButton = NSButton(title: "Cancel", target: target, action: #selector(AddInstancePromptModalTarget.cancel))
+    cancelButton.keyEquivalent = "\u{1b}"
+    var buttons = [cancelButton]
+    if let primaryTitle {
+      let primaryButton = NSButton(
+        title: primaryTitle,
+        target: target,
+        action: #selector(AddInstancePromptModalTarget.confirm)
+      )
+      primaryButton.keyEquivalent = "\r"
+      primaryButton.bezelStyle = .rounded
+      buttons.append(primaryButton)
+    }
+    let buttonStack = NSStackView(views: buttons)
+    buttonStack.orientation = .horizontal
+    buttonStack.alignment = .centerY
+    buttonStack.spacing = 8
+    buttonStack.translatesAutoresizingMaskIntoConstraints = false
+
+    let backdrop = NSVisualEffectView()
+    backdrop.material = .windowBackground
+    backdrop.blendingMode = .withinWindow
+    backdrop.state = .active
+    backdrop.addSubview(contentStack)
+    backdrop.addSubview(buttonStack)
+    NSLayoutConstraint.activate([
+      contentStack.topAnchor.constraint(equalTo: backdrop.topAnchor, constant: 26),
+      contentStack.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor, constant: 24),
+      contentStack.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor, constant: -24),
+      content.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
+      buttonStack.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor, constant: -24),
+      buttonStack.bottomAnchor.constraint(equalTo: backdrop.bottomAnchor, constant: -22),
+      contentStack.bottomAnchor.constraint(lessThanOrEqualTo: buttonStack.topAnchor, constant: -18)
+    ])
+    return backdrop
+  }
+
+  private func positionAddInstancePromptWindow(_ promptWindow: NSWindow) {
+    guard let parentFrame = window?.frame else {
+      promptWindow.center()
+      return
+    }
+    let promptFrame = promptWindow.frame
+    promptWindow.setFrameOrigin(NSPoint(
+      x: parentFrame.midX - (promptFrame.width / 2),
+      y: parentFrame.midY - (promptFrame.height / 2)
+    ))
   }
 
   private func sourceActionStack(context: SourceActionContext) -> NSStackView {
@@ -391,6 +541,7 @@ extension DaemonWorkflowWindowController {
     let target = WorkflowSourceSelectionTarget(onConfirm: onConfirm)
     let title = NSTextField(labelWithString: "Workflow Sources")
     title.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    title.alignment = .left
     let optionRows = options.enumerated().map { index, option in
       workflowSourceOptionRow(option: option, index: index, selectionTarget: target)
     }
@@ -425,7 +576,7 @@ extension DaemonWorkflowWindowController {
     ])
     let stack = NSStackView(views: [title, scroll])
     stack.orientation = .vertical
-    stack.alignment = .width
+    stack.alignment = .leading
     stack.spacing = 8
     return (stack, target)
   }

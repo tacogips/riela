@@ -7,9 +7,9 @@ class RielaAppSettingsRow: NSStackView {
 
   var settingsRowBackgroundAlpha: CGFloat {
     if isSettingsRowSelected {
-      return 0.58
+      return 0.62
     }
-    return 0.35
+    return 0.42
   }
 
   func setSettingsRowSelected(_ selected: Bool) {
@@ -21,9 +21,9 @@ class RielaAppSettingsRow: NSStackView {
   }
 
   func applySettingsRowStyle() {
-    edgeInsets = NSEdgeInsets(top: 7, left: 10, bottom: 7, right: 10)
+    edgeInsets = NSEdgeInsets(top: 9, left: 12, bottom: 9, right: 12)
     wantsLayer = true
-    layer?.cornerRadius = 8
+    layer?.cornerRadius = 12
     updateSettingsRowBackground()
   }
 
@@ -51,10 +51,10 @@ final class RielaAppSelectableSettingsRow: RielaAppSettingsRow {
 
   override var settingsRowBackgroundAlpha: CGFloat {
     if isMouseDownInside {
-      return 0.62
+      return 0.68
     }
     if isKeyboardFocused || isHovered {
-      return 0.48
+      return 0.54
     }
     return super.settingsRowBackgroundAlpha
   }
@@ -256,10 +256,10 @@ func rielaAppSettingsRow(_ row: NSStackView) -> NSStackView {
     settingsRow.applySettingsRowStyle()
     return settingsRow
   }
-  row.edgeInsets = NSEdgeInsets(top: 7, left: 10, bottom: 7, right: 10)
+  row.edgeInsets = NSEdgeInsets(top: 9, left: 12, bottom: 9, right: 12)
   row.wantsLayer = true
-  row.layer?.cornerRadius = 8
-  row.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.35).cgColor
+  row.layer?.cornerRadius = 12
+  row.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.42).cgColor
   return row
 }
 
@@ -312,7 +312,7 @@ func rielaAppConfigureGroupedTextScroll(_ scroll: NSScrollView) {
   scroll.borderType = .noBorder
   scroll.drawsBackground = false
   scroll.wantsLayer = true
-  scroll.layer?.cornerRadius = 8
+  scroll.layer?.cornerRadius = 12
   scroll.layer?.masksToBounds = true
 }
 

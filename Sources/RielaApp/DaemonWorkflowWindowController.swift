@@ -168,7 +168,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   private var selectedIdentity: String?
   private var selectedIdentityByProfile: [RielaAppProfileName: String] = [:]
   private var isUpdatingProfileControls = false
-  var activeAddInstanceAlert: NSAlert?
+  weak var activeAddInstanceWindow: NSWindow?
   var pendingAddInstanceSheetAction: AddInstanceSheetAction?
   private var isUpdatingTableSelection = false
   private var profileSelectController: ProfileSelectWindowController?
@@ -366,7 +366,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
 
   private func updateSidebarButton(_ button: NSButton, selected: Bool) {
     button.wantsLayer = true
-    button.layer?.cornerRadius = 8
+    button.layer?.cornerRadius = 10
     button.layer?.backgroundColor = selected ? NSColor.controlAccentColor.cgColor : NSColor.clear.cgColor
     button.contentTintColor = selected ? .white : .labelColor
   }

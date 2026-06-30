@@ -218,6 +218,48 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
     XCTAssertEqual(instance?.candidate.id, "persona-a")
   }
 
+  func testRelinkedWorkflowInstanceResolvesSourceAndKeepsAutostartOff() throws {
+    let source = RielaAppDaemonWorkflowCandidate(
+      id: "user-workflow:telegram-bot",
+      workflowId: "telegram-bot",
+      displayName: "Telegram Bot",
+      sourceDescription: "user workflow",
+      workflowDirectory: "/workflows/telegram-bot",
+      workingDirectory: "/workflows",
+      eventRoot: nil,
+      eventSources: []
+    )
+    var preference = RielaAppDaemonWorkflowPreference(
+      identity: "persona-a",
+      sourceIdentity: "missing-source",
+      displayName: "Persona A",
+      available: true,
+      active: true
+    )
+    let unresolvedState = RielaAppDaemonWorkflowState(preferences: [
+      "persona-a": preference
+    ])
+
+    XCTAssertNil(unresolvedState.workflowInstances(from: [source]).first { $0.id == "persona-a" })
+
+    preference.sourceIdentity = source.id
+    preference.available = true
+    preference.active = false
+    let relinkedState = RielaAppDaemonWorkflowState(preferences: [
+      "persona-a": preference
+    ])
+
+    let instance = try XCTUnwrap(relinkedState.workflowInstances(from: [source]).first)
+    XCTAssertEqual(instance.id, "persona-a")
+    XCTAssertEqual(instance.sourceIdentity, source.id)
+    XCTAssertEqual(instance.source.id, source.id)
+    XCTAssertEqual(instance.displayName, "Persona A")
+    XCTAssertEqual(instance.candidate.id, "persona-a")
+    XCTAssertEqual(instance.candidate.sourceIdentity, source.id)
+    XCTAssertTrue(instance.preference.available)
+    XCTAssertFalse(instance.preference.active)
+  }
+
   func testProcessEventSourceFactoryPassesNodePatchToEventsServeCommand() async throws {
     let process = NodePatchFakeEventServeProcessHandle(isRunning: true)
     let launcher = NodePatchEventLauncher(process: process)

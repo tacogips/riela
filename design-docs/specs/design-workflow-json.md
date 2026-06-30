@@ -664,7 +664,6 @@ Authored shape:
 Required:
 
 - `id`
-- `modelFreeze`
 - `variables`
 
 Optional:
@@ -675,6 +674,7 @@ Optional:
 - `workingDirectory`
 - `executionBackend`
 - `model`
+- `modelFreeze`
 - `sessionPolicy`
 - `systemPromptTemplate`
 - `systemPromptTemplateFile`
@@ -698,9 +698,9 @@ Important rules:
 
 - omitted `nodeType` defaults to `agent`
 - `agent` nodes require `executionBackend`, `model`, and `promptTemplate` unless a manager code-path default is explicitly allowed by the loader
-- every authored node payload must include `modelFreeze` as a boolean; author
-  `false` when the node's model may be patched at run time, and `true` when
-  run-time node patches must not change the authored `model`
+- authored node payloads should include `modelFreeze` as a boolean for an
+  explicit patching contract; omitted `modelFreeze` is accepted for
+  compatibility and defaults to `false`
 - manager-role nodes must stay on the agent execution path; `command`,
   `container`, `user-action`, `sleep`, and runtime-owned `addon` payloads are
   worker execution paths
@@ -777,8 +777,10 @@ For `agent` nodes, `model` must be a provider or backend-specific model name. Do
 
 ### `modelFreeze`
 
-`modelFreeze` is a required boolean on every authored node payload. It is part
-of the serialized node contract, not an implicit default.
+`modelFreeze` is an optional boolean on authored node payloads. Omitted values
+default to `false` for compatibility with older packages. Authors should still
+write it explicitly so the model patching contract is visible in serialized
+workflow files.
 
 Rules:
 
@@ -786,9 +788,9 @@ Rules:
 - `true` allows the node to keep its authored model even when other node patch
   fields are applied; a patch that changes `model` fails validation for that
   node
-- `modelFreeze` is still required for non-agent payload shapes such as
-  `command`, `container`, `sleep`, and `user-action` because they share the same
-  node payload envelope
+- omitted `modelFreeze` has the same patching semantics as explicit `false`,
+  including for non-agent payload shapes such as `command`, `container`,
+  `sleep`, and `user-action` because they share the same node payload envelope
 
 ### `userAction`
 
@@ -877,6 +879,54 @@ Rules:
 - at least one of `description` or `jsonSchema` must be present when `output` exists
 - the runtime validates candidate payloads before writing final `output.json`
 - candidate-file submission is only allowed when `output` is configured
+
+## Runtime Input Provenance
+
+Worker prompt variables include the merged payload from direct workflow
+messages for backward compatibility. They also include `_rielaInput`, a
+runtime-owned object that preserves the source of those messages without
+requiring authors to infer it from merged top-level keys.
+
+Shape:
+
+```json
+{
+  "_rielaInput": {
+    "workflowExecutionId": "workflow-session-id",
+    "stepId": "current-step-id",
+    "communicationIds": ["comm-000001"],
+    "sourceStepIds": ["previous-step-id"],
+    "messages": [
+      {
+        "communicationId": "comm-000001",
+        "workflowExecutionId": "workflow-session-id",
+        "fromStepId": "previous-step-id",
+        "toStepId": "current-step-id",
+        "sourceStepExecutionId": "previous-step-attempt-1-exec-1",
+        "deliveryKind": "direct",
+        "routingScope": "workflow",
+        "lifecycleStatus": "delivered",
+        "createdOrder": 1,
+        "payload": {}
+      }
+    ],
+    "latest": {
+      "communicationId": "comm-000001",
+      "payload": {}
+    }
+  }
+}
+```
+
+Rules:
+
+- `_rielaInput.latest.payload` is the authoritative direct input for finalizer
+  or review-output nodes that must use the immediately preceding step result
+- `messages` preserves ordered resolvable inputs after lifecycle filtering
+- `_rielaInput` is runtime-owned and may overwrite a same-named key from a
+  worker payload
+- top-level merged keys remain for compatibility but should not be used when
+  provenance or same-key conflict resolution matters
 
 ## Node Order
 

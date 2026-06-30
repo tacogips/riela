@@ -81,16 +81,40 @@ The top profile row contains:
 It does not show a separate visible `Profile` label. The popup is the only
 visible control in that row, retains a non-visible accessibility label of
 `Profile`, and the row stays compact so the instance list begins near the top
-of the window in tiled layouts.
+of the window in tiled layouts. The popup may grow for readable profile names,
+but it uses a capped, compressible width rather than a fixed 160px frame.
 
-The profile popup can open `Profile Select...`. That sheet is profile
+The profile popup can open `Profiles...`. That sheet is profile
 management only; it is not where workflow instances are added. Profile rows are
 shown as Settings-style rows with the current profile marked inline. Switching
 profiles uses the selected row/action, while creating or removing profiles uses
-`Add Profile` and `Remove Selected Profile` rows. The sheet should not expose a
+`Use Profile`, `Add Profile`, and `Remove Profile` rows. The sheet title is `Profiles`,
+not implementation-oriented copy such as `Profile Select`. The sheet should not expose a
 legacy `+`, `-`, `Open`, and `Cancel` button strip. Profile action rows use the
 same platform chevron disclosure marker as instance rows, not a literal `>`
 text label.
+When `Remove Profile` cannot apply to the selected row, it is visually dimmed
+and exposed as disabled to accessibility clients with help text explaining why,
+using user-facing reasons such as `Default profile cannot be removed here.`
+rather than raw profile ids.
+When the selected profile is already current, `Use Profile` is also dimmed and
+reported as disabled with `This profile is already current.` so the action list
+does not invite a no-op.
+Profile list rows use the same padded grouped row treatment as action rows, and
+the current profile marker uses a platform checkmark symbol rather than a text
+glyph. Non-current profile rows use neutral profile copy rather than internal
+availability vocabulary. The Add Profile action opens a `Profile Name` edit
+surface with a compact Settings-style field row and `Done` confirmation,
+instead of a command-titled `Add Profile` form with a detached text field. Its
+accessory view uses a bounded width constraint, so it follows the same compact
+prompt sizing rules as Add Instance and environment editors.
+The Remove Profile row and confirmation must make the deletion boundary clear:
+only the selected profile's workflow sources, packages, and instance state are
+removed, and other profiles are unchanged. The confirmation should not use a
+single ambiguous sentence like `Remove profile <name> and its workflow sources,
+packages, and instance state?`.
+The profile list uses a preferred, low-priority height rather than a required
+minimum so the sheet can shrink and scroll cleanly in short tiled windows.
 
 The top area does not show profile summary text such as
 `Profile: default | 1 running | 4 stopped`, last-action captions, or selected
@@ -99,27 +123,38 @@ same-window instance detail view after the user chooses an instance.
 
 The main window should open at a compact Settings-like size rather than a wide
 table-management size. Its default width should fit comfortably in tiled window
-managers, and it should declare a practical minimum size so row truncation and
-scrolling handle narrow layouts instead of forcing an oversized window.
+managers, and it should declare a practical minimum size around 420px wide so
+row truncation and scrolling handle narrow layouts instead of forcing an
+oversized window. The window should not return to the earlier 700px-wide
+default that made tiled layouts feel unstable. The instance table uses one
+resizable Settings-style column with an approximately 180px minimum; it must
+not keep a fixed desktop-width column that is wider than the narrow tiled
+viewport. The list's 260pt height is only a preferred height, not a required
+minimum, so short tiled windows shrink the list and scroll instead of fighting
+Auto Layout.
 
-The Instances section header contains:
+The Instances section header contains compact icon controls:
 
-- `+ Add Instance`
-- `Refresh`
+- plus, with accessibility label `Add Instance`
+- refresh, with accessibility label `Refresh Instances`
 
-The `+` action opens an `Add Instance` sheet. It does not expose workflow
-sources as a second permanent table.
+The profile popup sits in this same header, capped and compressible, so the
+window does not need a separate profile-only toolbar row above the instance
+list. The plus action opens an `Add Instance` sheet. It does not expose
+workflow sources as a second permanent table. Text labels are kept out of these
+toolbar controls so the window can stay stable in narrow tiled layouts.
 
 The sheet has two steps:
 
-1. Select workflow
+1. Choose workflow
 2. Configure instance parameters
 
 In AppKit, the first implementation may present these as two sequential
-`Add Instance` sheets: a compact `Select Workflow` sheet with `Next`, followed
-by a `Configure Instance` sheet with `Create`. The user-visible flow must still
-read as workflow selection first and parameter entry second; the selected
-workflow is repeated as a read-only Settings-style row on the configure step.
+`Add Instance` sheets: a compact `Choose Workflow` sheet where selecting a
+workflow row advances to a `Configure Instance` sheet with `Create`. The
+user-visible flow must still read as workflow selection first and parameter
+entry second; the selected workflow is repeated as a read-only Settings-style row
+on the configure step.
 
 The workflow selection step lists selectable workflow sources with enough
 context to choose safely:
@@ -129,7 +164,20 @@ context to choose safely:
 - source path or package name
 - environment readiness
 
-The sheet also has a `Source Actions` section with secondary
+Workflow source selection uses a `Workflow Sources` section with
+Settings-style selectable rows, not a compact popup as the primary choice
+control. Each source row shows name, source kind, environment readiness, and
+location, and selecting the row performs the primary choose/relink action. The
+user should not have to select a row and then press a separate `Next` or
+`Relink` alert button.
+The source row list is constrained to a scrollable area so a profile with many
+workflow sources does not create an oversized modal or destabilize tiled
+window layouts. Its scroll area uses a low-priority preferred height rather
+than a required height, so short tiled windows can shrink the sheet and keep the
+rows reachable through scrolling. Its scroll document is top-anchored so the
+initially visible source rows match the current selection target.
+
+The sheet also has a `Manage Sources` section with secondary
 source-management rows:
 
 - `Import Workflow or Package`
@@ -140,7 +188,22 @@ user's real question: "the workflow I need is not selectable yet." They are
 selectable Settings-style rows inside the sheet, not extra modal buttons next
 to `Create`/`Cancel`.
 
-Source Actions in the Add Instance flow are source-only operations. Importing a
+The Finder panels opened from those rows use direct action titles instead of
+product/profile-scoped implementation language:
+
+- `Add Workflow Source`
+- `Add Project Source`
+
+The explanatory panel copy starts with `Choose`, not `Select one or more`, so it
+matches the tone of macOS Settings and keeps the user focused on the object they
+are adding.
+
+Add-instance, relink, profile, environment, rename, and variable prompts should
+not impose wide fixed row minimums. Their accessory stacks can keep a reasonable
+starting frame, but row content must truncate or compress inside that frame
+instead of forcing a wider modal or tiled window.
+
+Manage Sources in the Add Instance flow are source-only operations. Importing a
 workflow/package from this sheet must not create an instance preference, mark a
 source active, or start a daemon. After the source operation finishes, the
 workflow selection step reopens with refreshed selectable sources so the user
@@ -172,8 +235,8 @@ Additional fields improve the row, but are not required for visibility:
   resolves to a workflow source;
 - `sourceIdentity` is present;
 - `displayName` is present;
-- environment file, inline environment variables, working directory, default
-  variables, or node patches are present;
+- `.env File`, environment variables, working directory, workflow variables, or
+  node patches are present;
 - legacy `available == true`, regardless of `active`.
 
 Rows do not include synthetic unconfigured preferences created for bare
@@ -182,8 +245,8 @@ the Add Instance flow.
 
 If a persisted preference cannot resolve to a workflow source and has no
 display metadata, the list uses the preference key as the instance label,
-shows workflow/source context as `Missing source`, and uses `Needs Source` as
-the trailing state.
+shows workflow/source context as `Missing source` plus the saved source
+identity, and uses `Needs Source` as the trailing state.
 
 The main list is not a multi-column table. It behaves like a macOS Settings or
 iOS Settings list:
@@ -194,6 +257,17 @@ iOS Settings list:
 - trailing disclosure marker: selecting the row opens the same-window detail
   view. This marker uses the platform chevron symbol, not a literal `>` text
   label.
+
+The visual row container uses the same shared padded grouped row treatment as
+detail and prompt rows. Even though AppKit may still use `NSTableView` for
+selection and keyboard behavior, the user-facing presentation should read as a
+Settings list row rather than a plain multi-column table cell.
+Instance rows are accessibility buttons that open the same-window detail view.
+Profile rows are accessibility radio-style choices that update the selected
+profile row for the action list. Their accessibility help includes the target
+profile name, such as `Use work profile`, rather than repeating a generic
+`Choose profile` phrase. The list must not be visually Settings-like while
+remaining a plain inaccessible table to keyboard or VoiceOver users.
 
 There are no separate `Active` and `Status` columns. The single trailing state
 combines configured daemon intent and runtime status into user-facing states:
@@ -209,6 +283,10 @@ combines configured daemon intent and runtime status into user-facing states:
 The main list only contains intended daemon instances, so the state display
 does not need to say whether the row is active. If a row exists here, it is a saved
 instance RielaApp can manage.
+
+The trailing state appears as an accessory value with a small platform symbol
+and state text. It is not a fixed-width table column or a large label chip, so
+the instance name and workflow summary keep priority when the window is narrow.
 
 State mapping:
 
@@ -229,6 +307,21 @@ action-oriented verbs and one visible state.
 
 `Needs Source` rows offer `Relink Source...` and `Remove Instance`. They do not
 offer `Start` until the source is resolved.
+The same-window detail action section hides `Start`, `Stop`, and `Restart`
+while the row is `Needs Source`, shows `Relink Source`, and keeps
+`Remove Instance` available. Relinking chooses an existing workflow source by
+selecting its row, updates the saved instance `sourceIdentity`, keeps the
+instance stopped, and returns the row to the normal instance action set.
+If no workflow source is currently selectable, pressing `Relink Source` must
+not silently do nothing. It shows the same Settings-style Manage Sources rows
+used by Add Instance, with copy that clearly returns the user to relinking this
+instance after importing a workflow, package, or project source.
+While the row is `Needs Source`, the detail settings section shows only a
+read-only missing-source workflow summary that includes the saved source
+identity. It must hide source-dependent clickable setting rows such as workflow
+reveal, name, environment, working directory, variables, and event sources,
+because those actions cannot produce a useful result until the instance is
+relinked.
 
 `Remove Instance` deletes only the daemon preference/configuration and stops
 the runtime for that identity. It must not delete imported workflow
@@ -246,6 +339,11 @@ behave like iOS Settings rows: selecting the row opens the editor, with a
 platform chevron disclosure marker instead of an exposed `Edit`, `Rename`, or
 `Duplicate` button.
 
+Transient status messages for stale selections use user-facing recovery
+language such as `Instance could not be found` or
+`Workflow source could not be found`; they do not expose
+`available`/`unavailable` storage vocabulary.
+
 Primary row actions:
 
 - list row selection: open the same-window instance detail view
@@ -253,9 +351,9 @@ Primary row actions:
   - reveal source
   - rename
   - edit environment file
-  - edit inline environment variables
+  - edit `Environment Variables`
   - edit working directory
-  - edit default variables
+  - edit `Workflow Variables`
 - detail action row selection:
   - start
   - stop
@@ -267,35 +365,94 @@ Current setting rows shown in the detail view:
 - workflow source, selectable to reveal;
 - name, selectable to rename;
 - environment file, selectable to edit;
-- inline environment variables, selectable to edit;
+- `Environment Variables`, selectable to edit;
 - working directory, selectable to edit;
-- default variables, selectable to edit;
+- `Workflow Variables`, selectable to edit;
 - event sources, read-only.
 
-The detail view has an `Instance Actions` section for start, stop, restart, and
-remove. These are selectable Settings-style rows, not a horizontal button bar.
-`Remove Instance` is styled as a destructive row and deletes only the daemon
-preference/configuration.
+The detail view has a `Manage Instance` section for the state-relevant
+runtime action and remove. These are selectable Settings-style rows, not a
+horizontal button bar. The section should not make the user choose among every
+possible runtime verb at once:
+
+- `Stopped` and `Failed` show `Start`.
+- `Running` and `Reloading` show `Stop` and `Restart`.
+- `Starting` and `Stopping` show `Stop`.
+- `Needs Source` shows `Relink Source` and `Remove Instance`.
+
+`Remove Instance` is styled as a destructive row and uses direct copy such as
+`Delete only this instance.` The action removes only the instance setting; it
+does not remove the workflow source, package, or project.
 
 The detail view is vertically scrollable. A tiled window with reduced height
 must not trap instance actions below the visible area.
 
 Follow-on editors opened from detail setting rows keep the same interaction
-model. When `Env File` or `Working Directory` already has a value, the prompt
-shows the current value and an `Actions` section with selectable rows such as
-`Choose File`, `Clear Env File`, `Choose Directory`, or
+model. When `.env File` or `Working Directory` already has a value, the prompt
+shows the current value and target-specific option sections such as
+`.env File Options` or `Directory Options` with selectable rows such as
+`Choose File`, `Clear .env File`, `Choose Directory`, or
 `Clear Directory Override`. These choices should not be presented as a
 horizontal alert button strip, and their disclosure marker is the platform
-chevron symbol rather than a literal `>` text label.
+chevron symbol rather than a literal `>` text label. Prompt and picker copy
+uses direct action language such as `Choose .env File` or
+`Choose Working Directory`, not passive review-oriented text.
+Status messages use the same vocabulary: `Set working directory`,
+`Cleared working directory`, `Choose a .env file`, `Set .env file`, and
+`Updated environment variables`, `Updated workflow variables`, and
+`Invalid workflow variables`, rather
+than `instance directory`, `Selected env file`, `Select a different .env file`,
+`Set env file`, `Cleared env file for instance`, `Invalid env vars`,
+`Updated instance variables`, `Invalid instance variables`, or
+`Select the directory used`. The credential confirmation
+uses `Use .env File?` and explains that values stay hidden in the app, avoiding
+implementation-oriented phrases such as `credential material`.
+Environment summaries use `.env file`, `environment variables`, and
+`required environment variables`, not `file`, `inline env`, or `required env`.
+
+Selectable setting/action rows use one shared AppKit row treatment: padded row
+insets, a subtle grouped background, and an 8px corner radius. Profile,
+instance detail, environment, rename, add-instance, relink, and variable rows
+should look like members of the same Settings-style list instead of unrelated
+labels, bare controls, or button strips. Grouped row backgrounds must resolve
+against the current effective AppKit appearance so light/dark mode changes do
+not leave stale fixed colors. Selectable rows should visibly respond to pointer
+hover, press, and keyboard focus with subtle background emphasis. Rows that
+perform an action when selected expose button accessibility semantics with a
+clear accessibility label and help text, so the iOS/Settings-style interaction
+is available beyond visual styling. They should also execute their configured
+action from VoiceOver press and keyboard activation with Space or Return,
+instead of relying only on a mouse click gesture. Rows with detail text reuse
+that detail for hover tooltip and accessibility help rather than repeating only
+the row title. Metadata in row subtitles, tooltips, and workflow-source labels
+should be short readable helper text
+rather than table-like pipe-delimited captions.
+Setting-row title labels may use a preferred maximum width for alignment, but
+they must remain compressible. They should not use fixed equal-width
+constraints that force add-instance, relink, environment, rename, or variable
+prompts wider than their accessory view.
+
+Add-instance and relink input rows use that same row treatment for read-only
+workflow rows, text-field rows, and toggle rows. Manage Sources fill the prompt
+width as a vertical Settings-style list instead of shrinking to the intrinsic
+width of their labels. The prompt accessory uses a compact bounded width around
+480px with a `lessThanOrEqual` width constraint, so it does not behave like a
+fixed desktop form in tiled window layouts.
 
 The `Name` editor opened from the detail view also uses Settings-style
 label/control rows for `Instance ID` and `Display Name`; it should not fall
-back to a detached vertical label/input form.
+back to a detached vertical label/input form. Name and variable editors use
+`Done` as their confirmation action, matching a Settings edit surface, rather
+than a document-style `Save` action.
 
-The inline environment variables and default variables editors keep their
-multiline text editor, but the prompt still uses Settings-style structure:
-show a `Variable Settings` section, a `Current Lines` summary row, and an
-`Editor` row containing the text editor.
+The `Environment Variables` and `Workflow Variables` editors keep their
+multiline text editor, but the prompt still uses Settings-style structure: show
+a `Variable Settings` section, a `Current Lines` summary row, and an `Editor`
+row containing the text editor. The editor should remain usable for several
+lines without forcing a wide desktop-sized alert; compact tiled-window layouts
+should see a bounded editor accessory rather than a 520px-wide fixed panel. The
+editor may prefer a readable height, but that height is low priority so the
+prompt can shrink and scroll in short tiled windows.
 
 The workflow viewer's `Variables` tab follows the same pattern for instance
 configuration. `Current Directory`, `Environment Variables`, and
@@ -315,13 +472,17 @@ Creating an instance prompts for:
 - display name
 - required environment readiness or a path to configure it
 - working directory, defaulting to the workflow source's natural directory
-- default variables, when the workflow declares or benefits from them
+- workflow variables, when the workflow declares or benefits from them
 - whether to start immediately, default on
 
 The parameter step uses Settings-style field rows. `Workflow`, `Instance ID`,
-`Display Name`, `Env File`, and `Working Directory` appear as label/control
-rows. `Start` is a binary row with a checkbox. The sheet should not read as a
-vertical form with detached labels above every field.
+`Display Name`, `.env File`, and `Working Directory` appear as label/control
+rows. `Start` is a binary row with a trailing checkbox; it does not repeat a
+second visible `Start now` label inside the control. The sheet should not read
+as a vertical form with detached labels above every field. The parameter rows
+sit inside a bounded vertical scroll area with a low-priority preferred height,
+so a short tiled window can still reach every setting instead of clipping or
+forcing a taller alert.
 
 The saved preference should use:
 
@@ -333,7 +494,7 @@ The saved preference should use:
 
 Add Instance contract:
 
-- Step 1, Select Workflow:
+- Step 1, Choose Workflow:
   - lists discoverable workflow sources;
   - filters out no-source legacy rows;
   - shows env readiness using the same `Env` vocabulary as the instance list;
@@ -342,13 +503,15 @@ Add Instance contract:
     source management a permanent main-window table.
 - Step 2, Configure Instance:
   - presents fields as Settings-style label/control rows;
+  - presents the start-immediately option as a `Start` row with a trailing
+    checkbox and no duplicate visible `Start now` control title;
   - validates instance id with the same sanitizer as managed duplicate/rename;
   - rejects duplicate ids unless the user explicitly chooses an existing
     stopped instance to update;
   - defaults display name from workflow name;
   - defaults working directory from the selected source;
-  - lets the user choose or clear an env file;
-  - lets the user enter inline env variables and default variables using the
+  - lets the user choose or clear a `.env File`;
+  - lets the user enter environment variables and workflow variables using the
     existing parsers;
   - leaves node patches out of the first sheet version; node patches remain in
     the viewer/editor;
@@ -419,18 +582,32 @@ Neither label appears in main-window columns, summaries, tooltips, or tests.
 The status item menu should summarize instance state without exposing
 `active`, `enabled`, or `available`.
 
-Replace strings like:
+Replace table-like strings such as:
 
 - `Instances: 2 active / 3 enabled`
+- `Status: Ready`
+- `Profile: default`
 
-with state vocabulary, for example:
+with one compact state-vocabulary summary, for example:
 
-- `Instances: 2 running / 1 stopped`
-- `Instances: 1 failed / 2 running`
-- `Instances: none`
+- `Instances 2 running / 1 stopped, Profile default`
+- `Instances 1 failed / 2 running, Profile work`
+- `Instances none, Profile default`
 
 The status menu remains a compact summary and entry point; detailed workflow
 source management stays in the Add Instance sheet.
+The compact instance/profile summary line is a disabled secondary menu item
+with matching tooltip text, so it reads as status information rather than an
+available command.
+Any fallback workflow picker opened for the viewer uses direct action language
+that names the real action, such as `Choose Workflow to View`, and avoids old
+serve-instance language or single-word status messages like `Selected`.
+
+The Launch on Login menu item uses the native checked menu state for ordinary
+On/Off state. It should not add a second `Launch on Login: ...` caption row;
+only exceptional states such as approval required or unavailable may show a
+short supplemental line. That line is disabled, styled as secondary menu text,
+and uses the same copy as its tooltip.
 
 ## Empty States
 
@@ -440,7 +617,12 @@ Instances empty state:
 
 Add Instance workflow selection empty state:
 
-> No selectable workflows. Import a workflow, package, or project source.
+> No workflows. Import a workflow, package, or project source.
+
+The empty source state still uses the same sheet context (`Choose Workflow` for
+new instances, `Relink Source` for missing-source recovery) and shows the empty
+copy as secondary accessory content above Settings-style `Manage Sources` rows.
+It should not fall back to a plain alert body with only a Cancel button.
 
 ## Risk Review Questions
 
@@ -455,52 +637,145 @@ Add Instance workflow selection empty state:
 - The main window no longer contains `Enabled Instances`, `Disabled Instances`,
   or an `Active` column.
 - The status menu no longer contains active/enabled/available summaries.
+- Profile switch status messages use compact metadata-style copy such as
+  `Profile work`, not colon captions such as `Profile: work`.
+- Import and project-import status messages use sentence-style segments such
+  as `Imported demo` and `Failed bad.rielapkg`, not label-like fragments such
+  as `imported: demo`, `failed: ...`, or `auto-start off: ...`.
 - The profile row contains only profile selection, with no separate visible
   `Profile` label or tall fixed toolbar gap above the instance list. The popup
-  still exposes `Profile` as its accessibility label.
-- `Profile Select...` is separate from instance creation and uses
+  still exposes `Profile` as its accessibility label and uses a capped,
+  compressible width instead of a fixed 160px frame.
+- `Profiles...` is separate from instance creation and uses
   Settings-style selectable/action rows rather than a `+`, `-`, `Open`,
   `Cancel` button strip. Its action rows use platform chevrons, not literal
   `>` text labels.
+- Disabled profile actions, especially `Remove Profile` for the default/current
+  profile, are dimmed and reported as disabled to accessibility clients.
+- `Use Profile` is disabled for the current profile and becomes enabled only
+  after selecting a different profile.
+- `Remove Profile` row help, tooltip, and confirmation copy make clear that
+  only the selected profile is removed and other profiles are unchanged.
+- Profile list rows share the padded grouped row styling, and the current
+  profile is marked with a platform checkmark symbol.
+- The Add Profile prompt opens a `Profile Name` edit surface with a
+  Settings-style field row, a compressible label, bounded accessory width, and
+  `Done` confirmation instead of a command-titled form with a detached alert
+  text field.
+- The `Profiles...` sheet list has a low-priority preferred height, no required
+  `greaterThanOrEqual` list-height constraint, and can shrink in short tiled
+  windows while preserving scrolling.
 - The main list top area does not show profile summary, last-action, or
   selected-instance caption rows.
-- The Instances section header contains `+ Add Instance` and `Refresh`; row
-  actions live in the same-window instance detail view.
+- The empty instance list shows secondary empty-state copy,
+  `No instances. Press + to select a workflow and create one.`, instead of a
+  blank table.
+- The Instances section header contains compact plus and refresh icon controls
+  with accessibility labels; row actions live in the same-window instance
+  detail view.
 - The Instances list has no `Workflow`, `Env`, or `State` table headers; those
   values are folded into a Settings-style row with a trailing state and
   platform chevron disclosure marker rather than a literal `>` text label.
+- The trailing state uses a small platform symbol plus text and must not reserve
+  a fixed 88px-or-wider state label that causes narrow-window pressure.
+- Instance list rows use the shared padded grouped row styling, so the main
+  list does not visually regress to plain table cells.
 - Instance details open in the same window with a compact `Instances` back
   control that uses a platform chevron-left symbol, not in a separate
   instance-editing window and not with a literal `<` text marker.
+- Instance list rows expose same-window navigation as `Show instance details`,
+  not `Open instance settings`, so assistive copy matches the in-place detail
+  transition.
 - The detail view shows current settings as selectable rows instead of
   header/caption labels for state or runtime.
+- The detail view's setting and action rows fill the available scroll width
+  like a grouped Settings list; they do not shrink to their intrinsic label
+  widths and look like detached controls.
+- Detail setting rows expose their current value as the row accessibility value,
+  so VoiceOver users hear the setting and value together instead of only the
+  row title.
 - The detail view does not expose standalone `Rename`, `Duplicate`, or `Edit`
   buttons; editable settings are opened by selecting their rows.
-- The detail view exposes `Start`, `Stop`, `Restart`, and `Remove Instance` as
-  selectable `Instance Actions` rows, not as a horizontal button bar.
+- The detail view exposes only state-relevant runtime rows in `Instance
+  Actions`: `Start` for stopped or failed rows, `Stop` plus `Restart` for
+  running or reloading rows, `Stop` for transitional rows, and relink/remove
+  recovery for `Needs Source`.
+- `Manage Instance` rows are selectable rows, not a horizontal button bar.
 - The detail view scrolls vertically so settings and action rows remain
   reachable in short tiled windows.
-- Follow-on prompts for env file and working directory show current values and
+- Follow-on prompts for `.env File` and working directory show current values and
   selectable action rows instead of `Choose`/`Clear` alert button strips.
   Their disclosure markers use platform chevrons, not literal `>` text labels.
+  Their accessory width is bounded around 440px and rows remain compressible.
+- Selectable setting/action rows share padded grouped row styling instead of
+  appearing as unrelated labels, bare controls, or horizontal button strips.
+- Add-instance and relink field/value/toggle rows use the same padded grouped
+  row styling, and Manage Sources fill the prompt width.
 - The detail `Name` editor presents instance id and display name as
-  Settings-style field rows.
+  Settings-style field rows and uses `Instance Name` copy rather than a
+  standalone rename command title.
 - Inline env/default variable editors show a current-lines summary row and an
-  editor row instead of a bare text view.
+  editor row instead of a bare text view. The editor row uses a low-priority
+  preferred height rather than a required minimum height.
 - The workflow viewer `Variables` tab shows instance configuration as
   Settings-style rows and keeps selected-node overrides visually separate.
-- The Add Instance sheet exposes source-management as `Source Actions` rows,
+- The Add Instance sheet exposes source-management as `Manage Sources` rows,
   not as extra alert buttons beside `Create` and `Cancel`.
+- The `Choose Workflow` step advances by selecting a workflow source row; it does
+  not require a separate `Next` alert button after row selection.
+- The Add Instance flow uses step-specific sheet titles, `Choose Workflow` and
+  `Configure Instance`, rather than reusing a generic `Add Instance` title for
+  both steps.
 - The Add Instance parameter step uses Settings-style field rows rather than a
-  detached vertical label/input form.
+  detached vertical label/input form, and its start-immediately control is a
+  trailing checkbox in the `Start` row rather than a duplicated `Start now`
+  label. Its parameter rows are in a bounded scroll view with a low-priority
+  preferred height.
+- Add-instance, relink, profile, environment, rename, and variable prompts avoid
+  wide fixed row minimums; labels and values truncate or compress inside the
+  prompt instead of forcing an oversized window.
+- Multiline variable editor prompts use the shared borderless grouped text
+  surface with rounded corners, not AppKit's bezel-bordered text panel.
 - Workflow sources are selected from the `+` add-instance sheet rather than
   shown as a permanent disabled-instance list.
+- Add/relink source selection shows Settings-style selectable source rows with
+  name, source kind, location, environment readiness, and a selected-row
+  checkmark, not a compressed popup label.
+- Add/relink source rows expose row-specific accessibility help such as
+  `Choose <workflow name>` instead of repeating the same generic help text for
+  every workflow.
+- Add/relink source rows are inside a bounded vertical scroll area, so many
+  selectable workflows do not make the modal taller than the screen or tiled
+  window space. That scroll area's height is a low-priority preference, not a
+  required fixed height.
 - A user can create an always-on instance by selecting a workflow and entering
   instance parameters.
 - `Active` and runtime `Status` are unified into one user-facing `State`.
 - `Stopped` instances remain visible until removed; stopping never makes a row
   disappear.
 - `Needs Source` instances remain visible with relink/remove recovery.
+- `Needs Source` detail actions show `Relink Source` and `Remove Instance`, and
+  do not show `Start`, `Stop`, or `Restart` until relink succeeds.
+- If no source is available, `Relink Source` opens Manage Sources instead of
+  doing nothing.
+- Empty Add Instance and Relink Source sheets show the shared secondary
+  `No workflows. Import a workflow, package, or project source.` state above
+  Settings-style `Manage Sources` rows.
+- `Needs Source` detail settings show only a read-only missing-source workflow
+  summary and do not expose source-dependent edit/reveal rows before relink.
+- Runtime AppKit tests instantiate the workflow instances controller and verify
+  compact window sizing, accessible icon controls, profile popup compression,
+  `Needs Source` detail visibility, and selectable detail-row button semantics
+  instead of relying only on source-string assertions.
+- Runtime AppKit tests also instantiate the name and variable prompt view
+  factory to verify Settings-style rows, bounded accessory widths, and
+  compressible row labels.
+- Runtime AppKit tests instantiate the add/relink and environment prompt
+  accessory factories to verify bounded widths and `lessThanOrEqual` width
+  constraints without relying only on source-string assertions.
+- Runtime AppKit tests verify workflow-source row target selection updates the
+  selected index and platform checkmark visibility, including out-of-range
+  clamping.
 - Existing persisted state still loads without data loss.
 - Tests fail if main-window source contains `Enabled Instances`,
   `Disabled Instances`, `title: "Active"`, or active/enabled summary copy.
@@ -511,11 +786,23 @@ Add Instance workflow selection empty state:
 - Every persisted daemon preference row remains visible as an instance unless
   the implementation can prove it is only a synthetic discovered-source option.
 - Unresolved persisted preferences render with a stable fallback label,
-  `Workflow = Missing source`, and `State = Needs Source`.
+  `Workflow = Missing source, <saved source identity>`, and
+  `State = Needs Source`.
 - `Start`, `Stop`, and `Remove Instance` update the legacy `available` and
   `active` fields only as compatibility storage; those field names are never
   shown to users.
 - The window remains stable under AeroSpace when tiled narrower than the old
   1180px layout.
 - The main instance window uses a compact default width and an explicit minimum
-  size instead of keeping the old wide table-style default.
+  size instead of keeping the old wide table-style default, with tight
+  Settings-style content insets around the list and detail views. The list
+  header should not appear detached by a large top gap.
+- The instance table column resizes with the table and has a narrow minimum, so
+  row labels truncate inside the viewport instead of forcing horizontal
+  overflow.
+- The instance list scroll area does not keep a required 260pt-or-taller height
+  constraint; it may prefer that height at low priority but must shrink in
+  short tiled windows.
+- Instance, profile, and workflow-tree tables use the grouped Settings row
+  background for selection instead of AppKit's full-width blue table highlight,
+  so selection feels like the rest of the row-based iOS/macOS Settings UI.

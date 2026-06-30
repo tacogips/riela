@@ -12,7 +12,7 @@ struct DaemonWorkflowAddInstanceRequest {
   var startsImmediately: Bool
 }
 
-private final class FlippedDocumentView: NSView {
+final class FlippedDocumentView: NSView {
   override var isFlipped: Bool {
     true
   }
@@ -20,11 +20,11 @@ private final class FlippedDocumentView: NSView {
 
 @MainActor
 final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate {
-  private enum Column {
+  enum Column {
     static let instance = NSUserInterfaceItemIdentifier("instance")
   }
 
-  private enum InstanceState: String {
+  enum InstanceState: String {
     case running = "Running"
     case starting = "Starting"
     case reloading = "Reloading"
@@ -44,7 +44,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     }
   }
 
-  private enum DetailActionStyle {
+  enum DetailActionStyle {
     case normal
     case destructive
 
@@ -58,18 +58,41 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     }
   }
 
-  private enum AddInstanceSheetAction {
+  enum AddInstanceSheetAction {
     case importWorkflowOrPackage
     case addProjectSource
   }
 
-  private enum WorkflowSourceSelection {
+  enum SourceActionContext {
+    case addInstance
+    case relink
+
+    var importDetail: String {
+      switch self {
+      case .addInstance:
+        "Add a workflow or package source, then return to instance creation."
+      case .relink:
+        "Add a workflow or package source, then return to relink this instance."
+      }
+    }
+
+    var projectDetail: String {
+      switch self {
+      case .addInstance:
+        "Make project workflows selectable for new instances."
+      case .relink:
+        "Make project workflows selectable for relinking this instance."
+      }
+    }
+  }
+
+  enum WorkflowSourceSelection {
     case selected(WorkflowSourceOption)
     case retry
     case cancelled
   }
 
-  private struct ConfiguredWorkflowInstanceRow {
+  struct ConfiguredWorkflowInstanceRow {
     var id: String
     var preference: RielaAppDaemonWorkflowPreference
     var candidate: RielaAppDaemonWorkflowCandidate?
@@ -80,33 +103,49 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     var state: InstanceState
   }
 
-  private struct WorkflowSourceOption {
+  struct WorkflowSourceOption {
     var sourceIdentity: String
     var candidate: RielaAppDaemonWorkflowCandidate
     var title: String
+    var environmentStatus: String
+    var location: String
   }
 
-  private let instanceTable = NSTableView()
-  private let profilePopup = NSPopUpButton()
-  private let addListButton = NSButton(title: "+ Add Instance", target: nil, action: nil)
-  private let refreshButton = NSButton(title: "Refresh", target: nil, action: nil)
-  private let backToInstancesButton = NSButton(title: "Instances", target: nil, action: nil)
-  private let detailTitleLabel = NSTextField(labelWithString: "")
-  private let detailNameValueLabel = NSTextField(labelWithString: "")
-  private let detailWorkflowValueLabel = NSTextField(labelWithString: "")
-  private let detailEnvironmentValueLabel = NSTextField(labelWithString: "")
-  private let detailInlineEnvironmentValueLabel = NSTextField(labelWithString: "")
-  private let detailWorkingDirectoryValueLabel = NSTextField(labelWithString: "")
-  private let detailVariablesValueLabel = NSTextField(labelWithString: "")
-  private let detailEventSourcesValueLabel = NSTextField(labelWithString: "")
+  let instanceTable = NSTableView()
+  let profilePopup = NSPopUpButton()
+  let addListButton = NSButton(title: "", target: nil, action: nil)
+  let refreshButton = NSButton(title: "", target: nil, action: nil)
+  let navigationBackButton = NSButton(title: "", target: nil, action: nil)
+  let navigationForwardButton = NSButton(title: "", target: nil, action: nil)
+  let navigationTitleLabel = NSTextField(labelWithString: "Instances")
+  let sidebarInstancesButton = NSButton(title: "Instances", target: nil, action: nil)
+  let sidebarSourcesButton = NSButton(title: "Workflow Sources", target: nil, action: nil)
+  let sidebarProfilesButton = NSButton(title: "Profiles", target: nil, action: nil)
+  let sidebarSearchField = NSSearchField()
+  let sourcesSummaryLabel = NSTextField(labelWithString: "")
+  let profilesSummaryLabel = NSTextField(labelWithString: "")
+  let emptyInstancesLabel = NSTextField(
+    labelWithString: "No instances. Press + to select a workflow and create one."
+  )
+  let backToInstancesButton = NSButton(title: "Instances", target: nil, action: nil)
+  let detailTitleLabel = NSTextField(labelWithString: "")
+  let detailNameValueLabel = NSTextField(labelWithString: "")
+  let detailWorkflowValueLabel = NSTextField(labelWithString: "")
+  let detailEnvironmentValueLabel = NSTextField(labelWithString: "")
+  let detailInlineEnvironmentValueLabel = NSTextField(labelWithString: "")
+  let detailWorkingDirectoryValueLabel = NSTextField(labelWithString: "")
+  let detailVariablesValueLabel = NSTextField(labelWithString: "")
+  let detailEventSourcesValueLabel = NSTextField(labelWithString: "")
+  let detailMissingSourceValueLabel = NSTextField(labelWithString: "")
   private let onRefresh: () -> Void
   private let onSelectProfile: (String) -> Void
   private let onCreateProfile: (String) -> RielaAppProfileName?
   private let onRemoveProfile: (RielaAppProfileName) -> Bool
-  private let onAddDirectory: () -> Void
-  private let onAddProject: () -> Void
+  let onAddDirectory: () -> Void
+  let onAddProject: () -> Void
   private let onAddInstance: (DaemonWorkflowAddInstanceRequest) -> Void
   private let onRevealSelectedSource: (String) -> Void
+  private let onRelinkInstance: (String, String) -> Void
   private let onRenameWorkflow: (String) -> Void
   private let onRemoveInstance: (String) -> Void
   private let onStartInstance: (String) -> Void
@@ -117,7 +156,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   private let onSetWorkingDirectory: (String) -> Void
   private let onSetVariables: (String) -> Void
   private let environmentSummary: (RielaAppDaemonWorkflowCandidate) -> String
-  private let environmentColumnStatus: (RielaAppDaemonWorkflowCandidate) -> String
+  let environmentColumnStatus: (RielaAppDaemonWorkflowCandidate) -> String
   private let onWindowWillClose: () -> Void
 
   private var candidates: [RielaAppDaemonWorkflowCandidate] = []
@@ -129,13 +168,34 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   private var selectedIdentity: String?
   private var selectedIdentityByProfile: [RielaAppProfileName: String] = [:]
   private var isUpdatingProfileControls = false
-  private var activeAddInstanceAlert: NSAlert?
-  private var pendingAddInstanceSheetAction: AddInstanceSheetAction?
+  var activeAddInstanceAlert: NSAlert?
+  var pendingAddInstanceSheetAction: AddInstanceSheetAction?
   private var isUpdatingTableSelection = false
   private var profileSelectController: ProfileSelectWindowController?
-  private weak var instancesListView: NSView?
-  private weak var instanceDetailView: NSView?
+  weak var instancesListView: NSView?
+  weak var instanceDetailView: NSView?
+  weak var sourcesOverviewView: NSView?
+  weak var profilesOverviewView: NSView?
+  weak var workflowSettingRow: NSView?
+  weak var missingSourceSettingRow: NSView?
+  weak var nameSettingRow: NSView?
+  weak var environmentSettingRow: NSView?
+  weak var inlineEnvironmentSettingRow: NSView?
+  weak var workingDirectorySettingRow: NSView?
+  weak var variablesSettingRow: NSView?
+  weak var eventSourcesSettingRow: NSView?
+  weak var relinkSourceActionRow: NSView?
+  weak var startInstanceActionRow: NSView?
+  weak var stopInstanceActionRow: NSView?
+  weak var restartInstanceActionRow: NSView?
   private var isShowingInstanceDetail = false
+  private var activeSidebarPane: SidebarPane = .instances
+
+  private enum SidebarPane {
+    case instances
+    case sources
+    case profiles
+  }
 
   init(
     onRefresh: @escaping () -> Void,
@@ -146,6 +206,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     onAddProject: @escaping () -> Void,
     onAddInstance: @escaping (DaemonWorkflowAddInstanceRequest) -> Void,
     onRevealSelectedSource: @escaping (String) -> Void,
+    onRelinkInstance: @escaping (String, String) -> Void,
     onRenameWorkflow: @escaping (String) -> Void,
     onRemoveInstance: @escaping (String) -> Void,
     onStartInstance: @escaping (String) -> Void,
@@ -167,6 +228,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     self.onAddProject = onAddProject
     self.onAddInstance = onAddInstance
     self.onRevealSelectedSource = onRevealSelectedSource
+    self.onRelinkInstance = onRelinkInstance
     self.onRenameWorkflow = onRenameWorkflow
     self.onRemoveInstance = onRemoveInstance
     self.onStartInstance = onStartInstance
@@ -180,13 +242,13 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     self.environmentColumnStatus = environmentColumnStatus
     self.onWindowWillClose = onWindowWillClose
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
+      contentRect: NSRect(origin: .zero, size: DaemonWorkflowWindowLayout.initialWindowSize),
       styleMask: [.titled, .closable, .resizable, .miniaturizable],
       backing: .buffered,
       defer: false
     )
     window.title = "Riela Workflow Instances"
-    window.minSize = NSSize(width: 640, height: 420)
+    window.minSize = DaemonWorkflowWindowLayout.minimumWindowSize
     super.init(window: window)
     window.delegate = self
     buildContent(in: window)
@@ -216,155 +278,11 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       selectedIdentity = selectedIdentityByProfile[profileName]
     }
     updateProfileControls()
+    updateOverviewSummaries()
     instanceTable.reloadData()
+    emptyInstancesLabel.isHidden = !instanceRows.isEmpty
     restoreSelection()
     updateInstanceDetail()
-  }
-
-  private func buildContent(in window: NSWindow) {
-    let root = NSView()
-    root.translatesAutoresizingMaskIntoConstraints = false
-    window.contentView = root
-
-    profilePopup.target = self
-    profilePopup.action = #selector(profilePopupChanged)
-    profilePopup.widthAnchor.constraint(equalToConstant: 160).isActive = true
-    profilePopup.setAccessibilityLabel("Profile")
-    refreshButton.target = self
-    refreshButton.action = #selector(refresh)
-    addListButton.target = self
-    addListButton.action = #selector(addListButtonPressed)
-    backToInstancesButton.target = self
-    backToInstancesButton.action = #selector(showInstancesList)
-    backToInstancesButton.image = NSImage(systemSymbolName: "chevron.left", accessibilityDescription: nil)
-    backToInstancesButton.imagePosition = .imageLeading
-    backToInstancesButton.toolTip = "Back to instances"
-    backToInstancesButton.setAccessibilityLabel("Back to Instances")
-    profilePopup.toolTip = "Switch profiles or open Profile Select."
-    addListButton.toolTip = "Create an instance from a workflow source."
-    detailTitleLabel.font = .boldSystemFont(ofSize: 18)
-    for label in [
-      detailTitleLabel,
-      detailNameValueLabel,
-      detailWorkflowValueLabel,
-      detailEnvironmentValueLabel,
-      detailInlineEnvironmentValueLabel,
-      detailWorkingDirectoryValueLabel,
-      detailVariablesValueLabel,
-      detailEventSourcesValueLabel
-    ] {
-      label.lineBreakMode = .byTruncatingMiddle
-      label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    }
-    let toolbar = NSStackView(views: [
-      profilePopup
-    ])
-    toolbar.alignment = .leading
-    toolbar.orientation = .horizontal
-    toolbar.spacing = 0
-    toolbar.translatesAutoresizingMaskIntoConstraints = false
-    toolbar.setContentHuggingPriority(.required, for: .vertical)
-    toolbar.heightAnchor.constraint(equalToConstant: 28).isActive = true
-
-    let instancesList = workflowList(title: "Instances", table: instanceTable)
-    instancesList.translatesAutoresizingMaskIntoConstraints = false
-    instancesList.setContentHuggingPriority(.defaultLow, for: .vertical)
-    instancesListView = instancesList
-    let detail = buildInstanceDetailView()
-    detail.translatesAutoresizingMaskIntoConstraints = false
-    detail.isHidden = true
-    instanceDetailView = detail
-
-    root.addSubview(toolbar)
-    root.addSubview(instancesList)
-    root.addSubview(detail)
-
-    NSLayoutConstraint.activate([
-      toolbar.topAnchor.constraint(equalTo: root.topAnchor, constant: 8),
-      toolbar.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
-      toolbar.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
-      instancesList.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 4),
-      instancesList.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
-      instancesList.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
-      instancesList.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -14),
-      detail.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 4),
-      detail.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
-      detail.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
-      detail.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -14)
-    ])
-  }
-
-  private func buildInstanceDetailView() -> NSView {
-    let topSpacer = NSView()
-    topSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    topSpacer.setContentHuggingPriority(.required, for: .vertical)
-    let topRow = NSStackView(views: [backToInstancesButton, topSpacer])
-    topRow.orientation = .horizontal
-    topRow.spacing = 8
-    topRow.alignment = .centerY
-    topRow.setContentHuggingPriority(.required, for: .vertical)
-    topRow.heightAnchor.constraint(equalToConstant: 28).isActive = true
-    let settingsTitle = NSTextField(labelWithString: "Current Settings")
-    settingsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
-    let actionsTitle = NSTextField(labelWithString: "Instance Actions")
-    actionsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
-
-    let stack = NSStackView(views: [
-      topRow,
-      detailTitleLabel,
-      settingsTitle,
-      settingRow(title: "Workflow", valueLabel: detailWorkflowValueLabel, action: #selector(revealSelectedSource)),
-      settingRow(title: "Name", valueLabel: detailNameValueLabel, action: #selector(renameSelectedWorkflow)),
-      settingRow(title: "Env File", valueLabel: detailEnvironmentValueLabel, action: #selector(setSelectedEnvironment)),
-      settingRow(
-        title: "Inline Env",
-        valueLabel: detailInlineEnvironmentValueLabel,
-        action: #selector(setSelectedEnvironmentVariables)
-      ),
-      settingRow(
-        title: "Working Directory",
-        valueLabel: detailWorkingDirectoryValueLabel,
-        action: #selector(setSelectedWorkingDirectory)
-      ),
-      settingRow(title: "Variables", valueLabel: detailVariablesValueLabel, action: #selector(setSelectedVariables)),
-      settingRow(title: "Event Sources", valueLabel: detailEventSourcesValueLabel, action: nil),
-      actionsTitle,
-      actionRow(title: "Start", detail: "Run this instance and include it in future app launches.", action: #selector(startSelectedInstance)),
-      actionRow(title: "Stop", detail: "Stop this instance while keeping it visible.", action: #selector(stopSelectedInstance)),
-      actionRow(title: "Restart", detail: "Stop and start this instance again.", action: #selector(restartSelectedInstance)),
-      actionRow(
-        title: "Remove Instance",
-        detail: "Delete only this daemon configuration.",
-        style: .destructive,
-        action: #selector(removeSelectedInstance)
-      )
-    ])
-    stack.orientation = .vertical
-    stack.alignment = .leading
-    stack.spacing = 10
-    stack.setContentHuggingPriority(.required, for: .vertical)
-    stack.translatesAutoresizingMaskIntoConstraints = false
-    topRow.leadingAnchor.constraint(equalTo: stack.leadingAnchor).isActive = true
-    topRow.trailingAnchor.constraint(equalTo: stack.trailingAnchor).isActive = true
-
-    let document = FlippedDocumentView()
-    document.translatesAutoresizingMaskIntoConstraints = false
-    document.addSubview(stack)
-    NSLayoutConstraint.activate([
-      stack.topAnchor.constraint(equalTo: document.topAnchor),
-      stack.leadingAnchor.constraint(equalTo: document.leadingAnchor),
-      stack.trailingAnchor.constraint(equalTo: document.trailingAnchor),
-      stack.bottomAnchor.constraint(lessThanOrEqualTo: document.bottomAnchor)
-    ])
-
-    let scroll = NSScrollView()
-    scroll.documentView = document
-    scroll.hasVerticalScroller = true
-    scroll.hasHorizontalScroller = false
-    scroll.borderType = .noBorder
-    document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor).isActive = true
-    document.heightAnchor.constraint(greaterThanOrEqualTo: scroll.contentView.heightAnchor).isActive = true
-    return scroll
   }
 
   func numberOfRows(in tableView: NSTableView) -> Int {
@@ -375,14 +293,85 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     guard tableColumn?.identifier == Column.instance, instanceRows.indices.contains(row) else {
       return nil
     }
-    return makeInstanceRowView(for: instanceRows[row])
+    return makeInstanceRowView(for: instanceRows[row], in: tableView, tableRow: row)
   }
 
-  @objc private func refresh() {
+  @objc func refresh() {
     onRefresh()
   }
 
-  @objc private func profilePopupChanged() {
+  @objc func goBack() {
+    if isShowingInstanceDetail {
+      showInstancesList()
+      return
+    }
+    guard activeSidebarPane != .instances else {
+      return
+    }
+    showInstancesPane()
+  }
+
+  @objc func goForward() {}
+
+  @objc func showInstancesPane() {
+    activeSidebarPane = .instances
+    showInstancesList()
+  }
+
+  @objc func showSourcesPane() {
+    activeSidebarPane = .sources
+    isShowingInstanceDetail = false
+    instancesListView?.isHidden = true
+    instanceDetailView?.isHidden = true
+    sourcesOverviewView?.isHidden = false
+    profilesOverviewView?.isHidden = true
+    navigationTitleLabel.stringValue = "Workflow Sources"
+    updateNavigationState()
+    updateSidebarSelection()
+  }
+
+  @objc func showProfilesPane() {
+    activeSidebarPane = .profiles
+    isShowingInstanceDetail = false
+    instancesListView?.isHidden = true
+    instanceDetailView?.isHidden = true
+    sourcesOverviewView?.isHidden = true
+    profilesOverviewView?.isHidden = false
+    navigationTitleLabel.stringValue = "Profiles"
+    updateNavigationState()
+    updateSidebarSelection()
+  }
+
+  @objc func openProfilesFromSidebar() {
+    openProfileSelect()
+  }
+
+  private func updateOverviewSummaries() {
+    let sourceCount = workflowSources.count
+    sourcesSummaryLabel.stringValue = sourceCount == 1 ? "1 workflow source" : "\(sourceCount) workflow sources"
+    let profileCount = profileNames.count
+    profilesSummaryLabel.stringValue = profileCount == 1 ? "1 profile" : "\(profileCount) profiles"
+  }
+
+  private func updateNavigationState() {
+    navigationBackButton.isEnabled = isShowingInstanceDetail || activeSidebarPane != .instances
+    navigationForwardButton.isEnabled = false
+  }
+
+  private func updateSidebarSelection() {
+    updateSidebarButton(sidebarInstancesButton, selected: activeSidebarPane == .instances)
+    updateSidebarButton(sidebarSourcesButton, selected: activeSidebarPane == .sources)
+    updateSidebarButton(sidebarProfilesButton, selected: activeSidebarPane == .profiles)
+  }
+
+  private func updateSidebarButton(_ button: NSButton, selected: Bool) {
+    button.wantsLayer = true
+    button.layer?.cornerRadius = 8
+    button.layer?.backgroundColor = selected ? NSColor.controlAccentColor.cgColor : NSColor.clear.cgColor
+    button.contentTintColor = selected ? .white : .labelColor
+  }
+
+  @objc func profilePopupChanged() {
     guard !isUpdatingProfileControls, let title = profilePopup.selectedItem?.title else {
       return
     }
@@ -394,15 +383,15 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     onSelectProfile(title)
   }
 
-  @objc private func addDirectory() {
+  @objc func addDirectory() {
     onAddDirectory()
   }
 
-  @objc private func addProject() {
+  @objc func addProject() {
     onAddProject()
   }
 
-  @objc private func addListButtonPressed() {
+  @objc func addListButtonPressed() {
     guard let request = promptForAddInstance() else {
       return
     }
@@ -428,104 +417,132 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     showInstanceDetail()
   }
 
-  @objc private func revealSelectedSource() {
+  @objc func revealSelectedSource() {
     guard let identity = selectedRow()?.id else {
       return
     }
     onRevealSelectedSource(identity)
   }
 
-  @objc private func renameSelectedWorkflow() {
+  @objc func relinkSelectedSource() {
+    guard let identity = selectedRow()?.id else {
+      return
+    }
+    while true {
+      switch promptForRelinkSourceOption(workflowSourceOptions()) {
+      case let .selected(option):
+        onRelinkInstance(identity, option.sourceIdentity)
+        return
+      case .retry:
+        continue
+      case .cancelled:
+        return
+      }
+    }
+  }
+
+  @objc func renameSelectedWorkflow() {
     guard let identity = selectedRow()?.id else {
       return
     }
     onRenameWorkflow(identity)
   }
 
-  @objc private func removeSelectedInstance() {
+  @objc func removeSelectedInstance() {
     guard let identity = selectedRow()?.id else {
       return
     }
     onRemoveInstance(identity)
   }
 
-  @objc private func startSelectedInstance() {
+  @objc func startSelectedInstance() {
     guard let identity = selectedRow()?.id else {
       return
     }
     onStartInstance(identity)
   }
 
-  @objc private func stopSelectedInstance() {
+  @objc func stopSelectedInstance() {
     guard let identity = selectedRow()?.id else {
       return
     }
     onStopInstance(identity)
   }
 
-  @objc private func restartSelectedInstance() {
+  @objc func restartSelectedInstance() {
     guard let identity = selectedRow()?.id else {
       return
     }
     onRestartInstance(identity)
   }
 
-  @objc private func setSelectedEnvironment() {
+  @objc func setSelectedEnvironment() {
     guard let identity = selectedRow()?.id else {
       return
     }
     onSetEnvironment(identity)
   }
 
-  @objc private func setSelectedEnvironmentVariables() {
+  @objc func setSelectedEnvironmentVariables() {
     guard let identity = selectedRow()?.id else {
       return
     }
     onSetEnvironmentVariables(identity)
   }
 
-  @objc private func setSelectedWorkingDirectory() {
+  @objc func setSelectedWorkingDirectory() {
     guard let identity = selectedRow()?.id else {
       return
     }
     onSetWorkingDirectory(identity)
   }
 
-  @objc private func setSelectedVariables() {
+  @objc func setSelectedVariables() {
     guard let identity = selectedRow()?.id else {
       return
     }
     onSetVariables(identity)
   }
 
-  @objc private func tableClicked(_ sender: NSTableView) {
+  @objc func tableClicked(_ sender: NSTableView) {
     guard sender == instanceTable, selectedRow() != nil else {
       return
     }
     showInstanceDetail()
   }
 
-  @objc private func tableDoubleClicked(_ sender: NSTableView) {
+  @objc func tableDoubleClicked(_ sender: NSTableView) {
     guard selectedRow() != nil, sender.clickedColumn >= 0 else {
       return
     }
     showInstanceDetail()
   }
 
-  @objc private func showInstancesList() {
+  @objc func showInstancesList() {
+    activeSidebarPane = .instances
     isShowingInstanceDetail = false
     instancesListView?.isHidden = false
     instanceDetailView?.isHidden = true
+    sourcesOverviewView?.isHidden = true
+    profilesOverviewView?.isHidden = true
+    navigationTitleLabel.stringValue = "Instances"
+    updateNavigationState()
+    updateSidebarSelection()
   }
 
   private func showInstanceDetail() {
     guard selectedRow() != nil else {
       return
     }
+    activeSidebarPane = .instances
     isShowingInstanceDetail = true
     updateInstanceDetail()
     instancesListView?.isHidden = true
     instanceDetailView?.isHidden = false
+    sourcesOverviewView?.isHidden = true
+    profilesOverviewView?.isHidden = true
+    updateNavigationState()
+    updateSidebarSelection()
   }
 
   func selectCandidate(identity: String) {
@@ -565,9 +582,11 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       showInstancesList()
       return
     }
+    navigationTitleLabel.stringValue = row.instanceName
     detailTitleLabel.stringValue = row.instanceName
     detailNameValueLabel.stringValue = row.instanceName
-    detailWorkflowValueLabel.stringValue = "\(row.workflowName) | \(row.sourceDescription)"
+    detailWorkflowValueLabel.stringValue = rielaAppMetadataText([row.workflowName, row.sourceDescription])
+    detailMissingSourceValueLabel.stringValue = rielaAppMetadataText(["Missing source", row.sourceIdentity])
     if let candidate = row.candidate {
       detailEnvironmentValueLabel.stringValue = environmentSummary(candidate)
       detailInlineEnvironmentValueLabel.stringValue = "\(row.preference.environmentVariables.count) values"
@@ -575,11 +594,67 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       detailVariablesValueLabel.stringValue = "\(row.preference.defaultVariables.count) values"
       detailEventSourcesValueLabel.stringValue = candidate.eventSourceSummary
     } else {
-      detailEnvironmentValueLabel.stringValue = "Unavailable"
+      detailEnvironmentValueLabel.stringValue = "Needs source"
       detailInlineEnvironmentValueLabel.stringValue = "\(row.preference.environmentVariables.count) values"
-      detailWorkingDirectoryValueLabel.stringValue = row.preference.workingDirectory ?? "Unavailable"
+      detailWorkingDirectoryValueLabel.stringValue = row.preference.workingDirectory ?? "Needs source"
       detailVariablesValueLabel.stringValue = "\(row.preference.defaultVariables.count) values"
       detailEventSourcesValueLabel.stringValue = "Workflow source is missing"
+    }
+    updateDetailRowAccessibilityValues()
+    updateDetailActions(for: row.state)
+  }
+
+  private func updateDetailRowAccessibilityValues() {
+    workflowSettingRow?.setAccessibilityValue(detailWorkflowValueLabel.stringValue)
+    missingSourceSettingRow?.setAccessibilityValue(detailMissingSourceValueLabel.stringValue)
+    nameSettingRow?.setAccessibilityValue(detailNameValueLabel.stringValue)
+    environmentSettingRow?.setAccessibilityValue(detailEnvironmentValueLabel.stringValue)
+    inlineEnvironmentSettingRow?.setAccessibilityValue(detailInlineEnvironmentValueLabel.stringValue)
+    workingDirectorySettingRow?.setAccessibilityValue(detailWorkingDirectoryValueLabel.stringValue)
+    variablesSettingRow?.setAccessibilityValue(detailVariablesValueLabel.stringValue)
+    eventSourcesSettingRow?.setAccessibilityValue(detailEventSourcesValueLabel.stringValue)
+  }
+
+  private func updateDetailActions(for state: InstanceState) {
+    let needsSource = state == .needsSource
+    workflowSettingRow?.isHidden = needsSource
+    missingSourceSettingRow?.isHidden = !needsSource
+    nameSettingRow?.isHidden = needsSource
+    environmentSettingRow?.isHidden = needsSource
+    inlineEnvironmentSettingRow?.isHidden = needsSource
+    workingDirectorySettingRow?.isHidden = needsSource
+    variablesSettingRow?.isHidden = needsSource
+    eventSourcesSettingRow?.isHidden = needsSource
+    relinkSourceActionRow?.isHidden = !needsSource
+    startInstanceActionRow?.isHidden = !showsStartAction(for: state)
+    stopInstanceActionRow?.isHidden = !showsStopAction(for: state)
+    restartInstanceActionRow?.isHidden = !showsRestartAction(for: state)
+  }
+
+  private func showsStartAction(for state: InstanceState) -> Bool {
+    switch state {
+    case .stopped, .failed:
+      true
+    case .running, .starting, .reloading, .stopping, .needsSource:
+      false
+    }
+  }
+
+  private func showsStopAction(for state: InstanceState) -> Bool {
+    switch state {
+    case .running, .starting, .reloading, .stopping:
+      true
+    case .stopped, .failed, .needsSource:
+      false
+    }
+  }
+
+  private func showsRestartAction(for state: InstanceState) -> Bool {
+    switch state {
+    case .running, .reloading:
+      true
+    case .starting, .stopping, .stopped, .failed, .needsSource:
+      false
     }
   }
 
@@ -616,6 +691,10 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     isUpdatingTableSelection = true
     tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
     tableView.scrollRowToVisible(row)
+    if row == 0, let scrollView = tableView.enclosingScrollView {
+      scrollView.contentView.scroll(to: .zero)
+      scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
     isUpdatingTableSelection = false
     return true
   }
@@ -674,7 +753,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     }
   }
 
-  private func workflowSourceOptions() -> [WorkflowSourceOption] {
+  func workflowSourceOptions() -> [WorkflowSourceOption] {
     let sources = workflowSources.isEmpty ? candidates : workflowSources
     var seen = Set<String>()
     return sources.compactMap { candidate in
@@ -687,159 +766,11 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       return WorkflowSourceOption(
         sourceIdentity: identity,
         candidate: candidate,
-        title: "\(candidate.displayName) | \(candidate.sourceDescription) | \(env)"
+        title: rielaAppMetadataText([candidate.displayName, candidate.sourceDescription, env]),
+        environmentStatus: env,
+        location: candidate.workflowDirectory
       )
     }
-  }
-
-  private func promptForAddInstance() -> DaemonWorkflowAddInstanceRequest? {
-    while true {
-      let options = workflowSourceOptions()
-      guard !options.isEmpty else {
-        let alert = NSAlert()
-        alert.messageText = "No Selectable Workflows"
-        alert.informativeText = "Import a workflow, package, or project source."
-        alert.accessoryView = sourceActionStack()
-        alert.addButton(withTitle: "Cancel")
-        pendingAddInstanceSheetAction = nil
-        activeAddInstanceAlert = alert
-        _ = alert.runModal()
-        activeAddInstanceAlert = nil
-        if handlePendingAddInstanceSheetAction() {
-          continue
-        }
-        return nil
-      }
-
-      switch promptForWorkflowSourceOption(options) {
-      case let .selected(option):
-        return promptForInstanceParameters(sourceOption: option)
-      case .retry:
-        continue
-      case .cancelled:
-        return nil
-      }
-    }
-  }
-
-  private func promptForWorkflowSourceOption(_ options: [WorkflowSourceOption]) -> WorkflowSourceSelection {
-    let workflowPopup = NSPopUpButton()
-    workflowPopup.addItems(withTitles: options.map(\.title))
-    let workflowTitle = NSTextField(labelWithString: "Select Workflow")
-    workflowTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
-    let sourceActionsTitle = NSTextField(labelWithString: "Source Actions")
-    sourceActionsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
-    let stack = NSStackView(views: [
-      workflowTitle,
-      addInstanceFieldRow(title: "Workflow", control: workflowPopup),
-      sourceActionsTitle,
-      sourceActionStack()
-    ])
-    stack.orientation = .vertical
-    stack.spacing = 8
-    stack.frame = NSRect(x: 0, y: 0, width: 520, height: 180)
-
-    let alert = NSAlert()
-    alert.messageText = "Add Instance"
-    alert.informativeText = "Select a workflow source."
-    alert.accessoryView = stack
-    alert.addButton(withTitle: "Next")
-    alert.addButton(withTitle: "Cancel")
-    pendingAddInstanceSheetAction = nil
-    activeAddInstanceAlert = alert
-    let response = alert.runModal()
-    activeAddInstanceAlert = nil
-    if handlePendingAddInstanceSheetAction() {
-      return .retry
-    }
-    guard response == .alertFirstButtonReturn else {
-      return .cancelled
-    }
-    return .selected(options[max(0, workflowPopup.indexOfSelectedItem)])
-  }
-
-  private func promptForInstanceParameters(sourceOption option: WorkflowSourceOption) -> DaemonWorkflowAddInstanceRequest? {
-    let idField = NSTextField(string: "")
-    idField.placeholderString = "instance-id"
-    let nameField = NSTextField(string: option.candidate.displayName)
-    nameField.placeholderString = "Display name"
-    let envField = NSTextField(string: "")
-    envField.placeholderString = "Optional .env path"
-    let directoryField = NSTextField(string: option.candidate.workingDirectory)
-    directoryField.placeholderString = "Optional working directory"
-    let startCheckbox = NSButton(checkboxWithTitle: "Start now", target: nil, action: nil)
-    startCheckbox.state = .on
-    let parameterTitle = NSTextField(labelWithString: "Configure Instance")
-    parameterTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
-    let workflowValue = NSTextField(labelWithString: option.title)
-    workflowValue.lineBreakMode = .byTruncatingMiddle
-    workflowValue.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    let stack = NSStackView(views: [
-      parameterTitle,
-      addInstanceValueRow(title: "Workflow", valueLabel: workflowValue),
-      addInstanceFieldRow(title: "Instance ID", control: idField),
-      addInstanceFieldRow(title: "Display Name", control: nameField),
-      addInstanceFieldRow(title: "Env File", control: envField),
-      addInstanceFieldRow(title: "Working Directory", control: directoryField),
-      addInstanceToggleRow(title: "Start", checkbox: startCheckbox)
-    ])
-    stack.orientation = .vertical
-    stack.spacing = 8
-    stack.frame = NSRect(x: 0, y: 0, width: 520, height: 240)
-
-    let alert = NSAlert()
-    alert.messageText = "Add Instance"
-    alert.informativeText = "Enter instance parameters."
-    alert.accessoryView = stack
-    alert.addButton(withTitle: "Create")
-    alert.addButton(withTitle: "Cancel")
-    activeAddInstanceAlert = alert
-    let response = alert.runModal()
-    activeAddInstanceAlert = nil
-    guard response == .alertFirstButtonReturn else {
-      return nil
-    }
-    let rawIdentity = idField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-    let displayName = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-    let envPath = envField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-    let workingDirectory = directoryField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-    return DaemonWorkflowAddInstanceRequest(
-      sourceIdentity: option.sourceIdentity,
-      identity: rawIdentity,
-      displayName: displayName.isEmpty ? nil : displayName,
-      environmentFilePath: envPath.isEmpty ? nil : envPath,
-      workingDirectory: workingDirectory.isEmpty ? nil : workingDirectory,
-      startsImmediately: startCheckbox.state == .on
-    )
-  }
-
-  @discardableResult
-  private func handlePendingAddInstanceSheetAction() -> Bool {
-    guard let pendingAddInstanceSheetAction else {
-      return false
-    }
-    self.pendingAddInstanceSheetAction = nil
-    switch pendingAddInstanceSheetAction {
-    case .importWorkflowOrPackage:
-      onAddDirectory()
-    case .addProjectSource:
-      onAddProject()
-    }
-    return true
-  }
-
-  @objc private func importWorkflowOrPackageFromAddInstanceSheet() {
-    finishAddInstanceSheet(with: .importWorkflowOrPackage)
-  }
-
-  @objc private func addProjectSourceFromAddInstanceSheet() {
-    finishAddInstanceSheet(with: .addProjectSource)
-  }
-
-  private func finishAddInstanceSheet(with action: AddInstanceSheetAction) {
-    pendingAddInstanceSheetAction = action
-    activeAddInstanceAlert?.window.orderOut(nil)
-    NSApp.stopModal(withCode: .alertSecondButtonReturn)
   }
 
   private func updateProfileControls() {
@@ -854,252 +785,6 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
 
   func windowWillClose(_ notification: Notification) {
     onWindowWillClose()
-  }
-}
-
-private extension DaemonWorkflowWindowController {
-  private func addInstanceFieldRow(title: String, control: NSView) -> NSStackView {
-    let titleLabel = NSTextField(labelWithString: title)
-    titleLabel.textColor = .secondaryLabelColor
-    titleLabel.widthAnchor.constraint(equalToConstant: 145).isActive = true
-    control.widthAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
-    let row = NSStackView(views: [titleLabel, control])
-    row.orientation = .horizontal
-    row.spacing = 8
-    row.alignment = .firstBaseline
-    row.widthAnchor.constraint(greaterThanOrEqualToConstant: 500).isActive = true
-    return row
-  }
-
-  private func addInstanceValueRow(title: String, valueLabel: NSTextField) -> NSStackView {
-    let titleLabel = NSTextField(labelWithString: title)
-    titleLabel.textColor = .secondaryLabelColor
-    titleLabel.widthAnchor.constraint(equalToConstant: 145).isActive = true
-    valueLabel.textColor = .labelColor
-    valueLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
-    let row = NSStackView(views: [titleLabel, valueLabel])
-    row.orientation = .horizontal
-    row.spacing = 8
-    row.alignment = .firstBaseline
-    row.widthAnchor.constraint(greaterThanOrEqualToConstant: 500).isActive = true
-    return row
-  }
-
-  private func addInstanceToggleRow(title: String, checkbox: NSButton) -> NSStackView {
-    let titleLabel = NSTextField(labelWithString: title)
-    titleLabel.textColor = .secondaryLabelColor
-    titleLabel.widthAnchor.constraint(equalToConstant: 145).isActive = true
-    let row = NSStackView(views: [titleLabel, checkbox])
-    row.orientation = .horizontal
-    row.spacing = 8
-    row.alignment = .firstBaseline
-    row.widthAnchor.constraint(greaterThanOrEqualToConstant: 500).isActive = true
-    return row
-  }
-
-  private func sourceActionStack() -> NSStackView {
-    let stack = NSStackView(views: [
-      actionRow(
-        title: "Import Workflow or Package",
-        detail: "Add a workflow or package source, then return to instance creation.",
-        action: #selector(importWorkflowOrPackageFromAddInstanceSheet)
-      ),
-      actionRow(
-        title: "Add Project Source",
-        detail: "Make project workflows selectable for new instances.",
-        action: #selector(addProjectSourceFromAddInstanceSheet)
-      )
-    ])
-    stack.orientation = .vertical
-    stack.alignment = .leading
-    stack.spacing = 8
-    return stack
-  }
-
-  private func settingRow(
-    title: String,
-    valueLabel: NSTextField,
-    action: Selector?
-  ) -> NSStackView {
-    let titleLabel = NSTextField(labelWithString: title)
-    titleLabel.textColor = .secondaryLabelColor
-    titleLabel.widthAnchor.constraint(equalToConstant: 130).isActive = true
-    valueLabel.textColor = .labelColor
-    let spacer = NSView()
-    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    var views: [NSView] = [titleLabel, valueLabel, spacer]
-    if action != nil {
-      views.append(rielaAppDisclosureIndicator())
-    }
-    let row = NSStackView(views: views)
-    row.orientation = .horizontal
-    row.spacing = 8
-    row.alignment = .firstBaseline
-    valueLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
-    if let action {
-      row.wantsLayer = true
-      row.toolTip = "Open \(title)"
-      row.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: action))
-    }
-    return row
-  }
-
-  private func actionRow(
-    title: String,
-    detail: String,
-    style: DetailActionStyle = .normal,
-    action: Selector
-  ) -> NSStackView {
-    let titleLabel = NSTextField(labelWithString: title)
-    titleLabel.textColor = style.titleColor
-    titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
-    let detailLabel = NSTextField(labelWithString: detail)
-    detailLabel.textColor = .secondaryLabelColor
-    detailLabel.font = .systemFont(ofSize: 11)
-    detailLabel.lineBreakMode = .byTruncatingTail
-    let labelStack = NSStackView(views: [titleLabel, detailLabel])
-    labelStack.orientation = .vertical
-    labelStack.spacing = 2
-    labelStack.alignment = .leading
-    labelStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    let spacer = NSView()
-    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    let row = NSStackView(views: [labelStack, spacer, rielaAppDisclosureIndicator()])
-    row.orientation = .horizontal
-    row.spacing = 8
-    row.alignment = .centerY
-    row.wantsLayer = true
-    row.toolTip = title
-    row.widthAnchor.constraint(greaterThanOrEqualToConstant: 420).isActive = true
-    row.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: action))
-    return row
-  }
-
-  private func workflowList(title: String, table: NSTableView) -> NSView {
-    table.delegate = self
-    table.dataSource = self
-    table.usesAlternatingRowBackgroundColors = false
-    table.rowHeight = 58
-    table.intercellSpacing = NSSize(width: 0, height: 6)
-    table.gridStyleMask = []
-    table.selectionHighlightStyle = .regular
-    table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
-    table.action = #selector(tableClicked(_:))
-    table.doubleAction = #selector(tableDoubleClicked(_:))
-    table.target = self
-    table.headerView = nil
-    addColumn(Column.instance, title: "", width: 480, to: table)
-
-    let scroll = NSScrollView()
-    scroll.documentView = table
-    scroll.hasVerticalScroller = true
-    scroll.hasHorizontalScroller = false
-    scroll.translatesAutoresizingMaskIntoConstraints = false
-    scroll.borderType = .noBorder
-    scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
-
-    let label = NSTextField(labelWithString: title)
-    label.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
-    let headerSpacer = NSView()
-    headerSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    let header = NSStackView(views: [
-      label,
-      headerSpacer,
-      addListButton,
-      refreshButton
-    ])
-    header.orientation = .horizontal
-    header.spacing = 8
-    header.alignment = .centerY
-    header.translatesAutoresizingMaskIntoConstraints = false
-
-    let container = NSView()
-    container.addSubview(header)
-    container.addSubview(scroll)
-    header.leadingAnchor.constraint(equalTo: container.leadingAnchor).isActive = true
-    header.trailingAnchor.constraint(equalTo: container.trailingAnchor).isActive = true
-    header.topAnchor.constraint(equalTo: container.topAnchor).isActive = true
-    scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor).isActive = true
-    scroll.trailingAnchor.constraint(equalTo: container.trailingAnchor).isActive = true
-    scroll.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 6).isActive = true
-    scroll.bottomAnchor.constraint(equalTo: container.bottomAnchor).isActive = true
-    return container
-  }
-
-  private func addColumn(
-    _ identifier: NSUserInterfaceItemIdentifier,
-    title: String,
-    width: CGFloat,
-    to table: NSTableView
-  ) {
-    let column = NSTableColumn(identifier: identifier)
-    column.title = title
-    column.width = width
-    table.addTableColumn(column)
-  }
-
-  private func makeInstanceRowView(for row: ConfiguredWorkflowInstanceRow) -> NSView {
-    let cell = NSTableCellView()
-    cell.wantsLayer = true
-
-    let title = NSTextField(labelWithString: row.instanceName)
-    title.font = .systemFont(ofSize: 13, weight: .medium)
-    title.lineBreakMode = .byTruncatingTail
-
-    let subtitle = NSTextField(labelWithString: instanceSubtitle(for: row))
-    subtitle.font = .systemFont(ofSize: 11)
-    subtitle.textColor = .secondaryLabelColor
-    subtitle.lineBreakMode = .byTruncatingMiddle
-
-    let textStack = NSStackView(views: [title, subtitle])
-    textStack.orientation = .vertical
-    textStack.spacing = 2
-    textStack.alignment = .leading
-    textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-    let state = NSTextField(labelWithString: row.state.rawValue)
-    state.font = .systemFont(ofSize: 12, weight: .medium)
-    state.textColor = stateColor(for: row.state)
-    state.alignment = .right
-    state.widthAnchor.constraint(greaterThanOrEqualToConstant: 88).isActive = true
-
-    let spacer = NSView()
-    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-
-    let rowStack = NSStackView(views: [textStack, spacer, state, rielaAppDisclosureIndicator()])
-    rowStack.orientation = .horizontal
-    rowStack.spacing = 10
-    rowStack.alignment = .centerY
-    rowStack.translatesAutoresizingMaskIntoConstraints = false
-    cell.addSubview(rowStack)
-    NSLayoutConstraint.activate([
-      rowStack.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 8),
-      rowStack.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8),
-      rowStack.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
-    ])
-    return cell
-  }
-
-  private func instanceSubtitle(for row: ConfiguredWorkflowInstanceRow) -> String {
-    guard let candidate = row.candidate else {
-      return "\(row.workflowName) | Missing source"
-    }
-    return "\(row.workflowName) | \(environmentColumnStatus(candidate)) | \(row.sourceDescription)"
-  }
-
-  private func stateColor(for state: InstanceState) -> NSColor {
-    switch state {
-    case .running:
-      .systemGreen
-    case .failed:
-      .systemRed
-    case .starting, .reloading, .stopping:
-      .systemOrange
-    case .needsSource:
-      .systemYellow
-    case .stopped:
-      .secondaryLabelColor
-    }
   }
 }
 

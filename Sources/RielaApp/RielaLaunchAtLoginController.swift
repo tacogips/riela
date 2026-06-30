@@ -22,6 +22,19 @@ struct RielaLaunchAtLoginController {
     }
   }
 
+  var menuSupplementaryStatusDescription: String? {
+    switch service.status {
+    case .enabled, .notRegistered:
+      nil
+    case .requiresApproval:
+      "Requires approval in System Settings"
+    case .notFound:
+      "Unavailable"
+    @unknown default:
+      "Unknown"
+    }
+  }
+
   func setEnabled(_ enabled: Bool) throws {
     if enabled {
       try registerIfNeeded()

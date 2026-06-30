@@ -33,6 +33,24 @@ final class PromptTemplateTests: XCTestCase {
     XCTAssertEqual(rendered, "ok {{ invalid path }} {{#each items}}")
   }
 
+  func testPromptRenderingResolvesRuntimeInputProvenancePaths() {
+    let rendered = renderPromptTemplate(
+      "{{ _rielaInput.latest.fromStepId }} {{ _rielaInput.latest.payload.reviewSubject }}",
+      variables: [
+        "_rielaInput": .object([
+          "latest": .object([
+            "fromStepId": .string("adversarial-review"),
+            "payload": .object([
+              "reviewSubject": .string("Scoped review")
+            ])
+          ])
+        ])
+      ]
+    )
+
+    XCTAssertEqual(rendered, "adversarial-review Scoped review")
+  }
+
   func testPromptRenderingFormatsLargeIntegralNumbersWithoutTrapping() {
     let rendered = renderPromptTemplate(
       "{{ total }} {{ decimal }} {{ precise }} {{ exponent }} {{ threshold }} {{ negativeThreshold }} {{ small }} {{ zero }}",

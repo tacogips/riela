@@ -322,6 +322,8 @@ final class WorkflowViewerTests: XCTestCase {
     ))
 
     XCTAssertEqual(state.selectedSessionId, "older")
+    XCTAssertEqual(state.sessions.map(\.sessionId), ["newer", "older"])
+    XCTAssertEqual(state.selectedSessionIndex, 1)
     XCTAssertEqual(state.nodes.first?.state, .active)
     XCTAssertEqual(state.nodes.first?.children.first?.state, .idle)
   }
@@ -533,7 +535,7 @@ final class WorkflowViewerTests: XCTestCase {
     XCTAssertEqual(state.sessionStoreRoot, nearerRoot.path)
     XCTAssertTrue(state.sessions.isEmpty)
     XCTAssertTrue(state.sessionStoreCandidates.contains(nearerRoot.path))
-    XCTAssertEqual(state.diagnostics, ["No persisted sessions found for workflow 'viewer-empty' in searched session stores."])
+    XCTAssertEqual(state.diagnostics, ["No runs recorded for workflow 'viewer-empty' in searched session stores."])
   }
 
   func testViewerStateDecodesLegacyPayloadWithoutSessionStoreCandidates() throws {

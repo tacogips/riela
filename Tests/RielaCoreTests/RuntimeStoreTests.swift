@@ -333,9 +333,62 @@ final class RuntimeStoreTests: XCTestCase {
     XCTAssertEqual(resolved.communicationIds, ["comm-000001", "comm-000003"])
     XCTAssertEqual(resolved.messages.map(\.toStepId), ["target", "target"])
     XCTAssertEqual(resolved.sourceStepIds, ["start", "branch"])
+    let inputMetadata = try XCTUnwrap(resolved.payload["_rielaInput"])
     XCTAssertEqual(
       resolved.payload,
-      ["shared": .string("second"), "startOnly": .bool(true), "branchOnly": .number(2)]
+      [
+        "shared": .string("second"),
+        "startOnly": .bool(true),
+        "branchOnly": .number(2),
+        "_rielaInput": inputMetadata
+      ]
+    )
+    XCTAssertEqual(
+      inputMetadata,
+      .object([
+        "workflowExecutionId": .string(session.sessionId),
+        "stepId": .string("target"),
+        "communicationIds": .array([.string("comm-000001"), .string("comm-000003")]),
+        "sourceStepIds": .array([.string("start"), .string("branch")]),
+        "messages": .array([
+          .object([
+            "communicationId": .string("comm-000001"),
+            "workflowExecutionId": .string(session.sessionId),
+            "fromStepId": .string("start"),
+            "toStepId": .string("target"),
+            "sourceStepExecutionId": .string(startExecution.executionId),
+            "deliveryKind": .string("direct"),
+            "routingScope": .string("workflow"),
+            "lifecycleStatus": .string("delivered"),
+            "createdOrder": .number(1),
+            "payload": .object(["shared": .string("first"), "startOnly": .bool(true)])
+          ]),
+          .object([
+            "communicationId": .string("comm-000003"),
+            "workflowExecutionId": .string(session.sessionId),
+            "fromStepId": .string("branch"),
+            "toStepId": .string("target"),
+            "sourceStepExecutionId": .string(branchExecution.executionId),
+            "deliveryKind": .string("direct"),
+            "routingScope": .string("workflow"),
+            "lifecycleStatus": .string("delivered"),
+            "createdOrder": .number(3),
+            "payload": .object(["shared": .string("second"), "branchOnly": .number(2)])
+          ])
+        ]),
+        "latest": .object([
+          "communicationId": .string("comm-000003"),
+          "workflowExecutionId": .string(session.sessionId),
+          "fromStepId": .string("branch"),
+          "toStepId": .string("target"),
+          "sourceStepExecutionId": .string(branchExecution.executionId),
+          "deliveryKind": .string("direct"),
+          "routingScope": .string("workflow"),
+          "lifecycleStatus": .string("delivered"),
+          "createdOrder": .number(3),
+          "payload": .object(["shared": .string("second"), "branchOnly": .number(2)])
+        ])
+      ])
     )
 
     let adapterInput = resolved.applying(
@@ -351,7 +404,8 @@ final class RuntimeStoreTests: XCTestCase {
         "existing": .string("kept"),
         "shared": .string("second"),
         "startOnly": .bool(true),
-        "branchOnly": .number(2)
+        "branchOnly": .number(2),
+        "_rielaInput": inputMetadata
       ]
     )
   }
@@ -374,7 +428,55 @@ final class RuntimeStoreTests: XCTestCase {
     )
 
     XCTAssertEqual(resolved.communicationIds, ["delivered", "consumed"])
-    XCTAssertEqual(resolved.payload, ["keep": .string("consumed")])
+    XCTAssertEqual(resolved.payload["keep"], .string("consumed"))
+    XCTAssertEqual(resolved.payload["_rielaInput.latest.payload"], nil)
+    XCTAssertEqual(
+      resolved.payload["_rielaInput"],
+      .object([
+        "workflowExecutionId": .string("session"),
+        "stepId": .string("target"),
+        "communicationIds": .array([.string("delivered"), .string("consumed")]),
+        "sourceStepIds": .array([.string("source")]),
+        "messages": .array([
+          .object([
+            "communicationId": .string("delivered"),
+            "workflowExecutionId": .string("session"),
+            "fromStepId": .string("source"),
+            "toStepId": .string("target"),
+            "sourceStepExecutionId": .string("source-exec"),
+            "deliveryKind": .string("direct"),
+            "routingScope": .string("workflow"),
+            "lifecycleStatus": .string("delivered"),
+            "createdOrder": .number(2),
+            "payload": .object(["keep": .string("delivered")])
+          ]),
+          .object([
+            "communicationId": .string("consumed"),
+            "workflowExecutionId": .string("session"),
+            "fromStepId": .string("source"),
+            "toStepId": .string("target"),
+            "sourceStepExecutionId": .string("source-exec"),
+            "deliveryKind": .string("direct"),
+            "routingScope": .string("workflow"),
+            "lifecycleStatus": .string("consumed"),
+            "createdOrder": .number(4),
+            "payload": .object(["keep": .string("consumed")])
+          ])
+        ]),
+        "latest": .object([
+          "communicationId": .string("consumed"),
+          "workflowExecutionId": .string("session"),
+          "fromStepId": .string("source"),
+          "toStepId": .string("target"),
+          "sourceStepExecutionId": .string("source-exec"),
+          "deliveryKind": .string("direct"),
+          "routingScope": .string("workflow"),
+          "lifecycleStatus": .string("consumed"),
+          "createdOrder": .number(4),
+          "payload": .object(["keep": .string("consumed")])
+        ])
+      ])
+    )
   }
 
   private func message(

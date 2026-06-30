@@ -107,14 +107,30 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     let launchAtLoginItem = menuItem("Launch on Login", action: #selector(toggleLaunchAtLogin))
     launchAtLoginItem.state = launchAtLogin.isEnabled ? .on : .off
     menu.addItem(launchAtLoginItem)
-    menu.addItem(NSMenuItem(title: "Launch on Login: \(launchAtLogin.statusDescription)", action: nil, keyEquivalent: ""))
+    if let launchAtLoginDetail = launchAtLogin.menuSupplementaryStatusDescription {
+      menu.addItem(supplementaryMenuItem(launchAtLoginDetail))
+    }
     menu.addItem(.separator())
-    menu.addItem(NSMenuItem(title: "Status: \(status)", action: nil, keyEquivalent: ""))
-    menu.addItem(NSMenuItem(title: "Profile: \(daemonProfileName.rawValue)", action: nil, keyEquivalent: ""))
-    menu.addItem(NSMenuItem(title: "Instances: \(daemonSummary())", action: nil, keyEquivalent: ""))
+    menu.addItem(supplementaryMenuItem(
+      rielaAppMetadataText(["Instances \(daemonSummary())", "Profile \(daemonProfileName.rawValue)"])
+    ))
     menu.addItem(.separator())
     menu.addItem(menuItem("Quit", action: #selector(quit)))
     statusItem.menu = menu
+  }
+
+  private func supplementaryMenuItem(_ title: String) -> NSMenuItem {
+    let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+    item.isEnabled = false
+    item.toolTip = title
+    item.attributedTitle = NSAttributedString(
+      string: title,
+      attributes: [
+        .foregroundColor: NSColor.secondaryLabelColor,
+        .font: NSFont.menuFont(ofSize: NSFont.smallSystemFontSize)
+      ]
+    )
+    return item
   }
 
   private func menuItem(_ title: String, action: Selector, enabled: Bool = true) -> NSMenuItem {
@@ -126,7 +142,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
 
   @objc private func selectWorkflow() {
     let panel = NSOpenPanel()
-    panel.title = "Select Workflow to Serve"
+    panel.title = "Choose Workflow to View"
     panel.canChooseFiles = false
     panel.canChooseDirectories = true
     panel.allowsMultipleSelection = false
@@ -136,7 +152,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     selectedWorkflow = .directDirectory(url.path, identifier: url.lastPathComponent)
     selectedWorkingDirectory = url.deletingLastPathComponent().path
     selectedSessionStoreRoot = nil
-    status = "Selected"
+    status = "Workflow ready to view"
     rebuildMenu()
   }
 
@@ -167,6 +183,9 @@ final class RielaApp: NSObject, NSApplicationDelegate {
         },
         onRevealSelectedSource: { [weak self] identity in
           self?.revealDaemonWorkflowSource(identity: identity)
+        },
+        onRelinkInstance: { [weak self] identity, sourceIdentity in
+          self?.relinkDaemonWorkflowInstance(identity: identity, sourceIdentity: sourceIdentity)
         },
         onRenameWorkflow: { [weak self] identity in
           self?.renameDaemonWorkflowInstance(identity: identity)
@@ -391,7 +410,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     selectedWorkflow = .directDirectory(path, identifier: URL(fileURLWithPath: path, isDirectory: true).lastPathComponent)
     selectedWorkingDirectory = URL(fileURLWithPath: path, isDirectory: true).deletingLastPathComponent().path
     selectedSessionStoreRoot = initialViewer.sessionStoreRoot
-    status = "Selected"
+    status = "Workflow ready to view"
     rebuildMenu()
     DispatchQueue.main.async { [weak self] in
       self?.openViewer()
@@ -423,7 +442,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   @objc private func toggleLaunchAtLogin() {
     do {
       try launchAtLogin.setEnabled(!launchAtLogin.isEnabled)
-      status = "Launch on Login: \(launchAtLogin.statusDescription)"
+      status = "Launch on Login \(launchAtLogin.statusDescription)"
     } catch {
       status = "Failed to update Launch on Login: \(error.localizedDescription)"
     }
@@ -563,8 +582,8 @@ final class RielaApp: NSObject, NSApplicationDelegate {
 
   private func addDaemonWorkflowSourceOnlyDirectory() {
     let panel = NSOpenPanel()
-    panel.title = "Add Workflow or Package Source to RielaApp"
-    panel.message = "Select one or more workflow folders, package folders, .rielapkg files, or .zip packages."
+    panel.title = "Add Workflow Source"
+    panel.message = "Choose workflow folders, package folders, .rielapkg files, or .zip packages."
     panel.prompt = "Add"
     panel.canChooseFiles = true
     panel.canChooseDirectories = true
@@ -636,8 +655,8 @@ final class RielaApp: NSObject, NSApplicationDelegate {
 
   private func addDaemonProjectDirectory() {
     let panel = NSOpenPanel()
-    panel.title = "Add Riela Project to Profile"
-    panel.message = "Select one or more project folders containing .riela/workflows or .riela/packages."
+    panel.title = "Add Project Source"
+    panel.message = "Choose project folders containing .riela/workflows or .riela/packages."
     panel.canChooseFiles = false
     panel.canChooseDirectories = true
     panel.allowsMultipleSelection = true
@@ -829,7 +848,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
 private extension RielaApp {
   private func revealDaemonWorkflowSource(identity: String) {
     guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
-      status = "Selected instance is no longer available"
+      status = "Instance could not be found"
       refreshDaemonWorkflowWindow()
       return
     }
@@ -841,7 +860,7 @@ private extension RielaApp {
 
   private func openDaemonWorkflowViewer(identity: String) {
     guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
-      status = "Selected instance is no longer available"
+      status = "Instance could not be found"
       refreshDaemonWorkflowWindow()
       return
     }

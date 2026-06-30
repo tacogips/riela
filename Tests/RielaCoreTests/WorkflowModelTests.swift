@@ -386,7 +386,7 @@ final class WorkflowModelTests: XCTestCase {
     XCTAssertEqual(roundTrip.agentEnvironment, payload.agentEnvironment)
   }
 
-  func testAgentNodePayloadRequiresModelFreeze() throws {
+  func testAgentNodePayloadDefaultsMissingModelFreezeToFalse() throws {
     let frozen = Data("""
       {
         "id": "planner",
@@ -404,7 +404,7 @@ final class WorkflowModelTests: XCTestCase {
       """.utf8)
 
     XCTAssertTrue(try JSONDecoder().decode(AgentNodePayload.self, from: frozen).modelFreeze)
-    XCTAssertThrowsError(try JSONDecoder().decode(AgentNodePayload.self, from: missingModelFreeze))
+    XCTAssertFalse(try JSONDecoder().decode(AgentNodePayload.self, from: missingModelFreeze).modelFreeze)
   }
 
   func testAgentEnvironmentRejectsInvalidBindingShapes() {

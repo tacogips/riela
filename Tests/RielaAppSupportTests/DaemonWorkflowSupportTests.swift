@@ -413,7 +413,7 @@ final class DaemonWorkflowSupportTests: XCTestCase {
         profileName: RielaAppProfileName("work"),
         startsImmediately: true
       ).statusMessage,
-      "Import failed: bad.rielapkg: invalid package"
+      "Import failed. bad.rielapkg: invalid package"
     )
     XCTAssertEqual(
       RielaAppImportSummary(
@@ -422,7 +422,7 @@ final class DaemonWorkflowSupportTests: XCTestCase {
         profileName: RielaAppProfileName("work"),
         startsImmediately: true
       ).statusMessage,
-      "Import completed with errors; imported: good; failed: bad.rielapkg: invalid package"
+      "Import completed with errors. Imported good. Failed bad.rielapkg: invalid package"
     )
   }
 

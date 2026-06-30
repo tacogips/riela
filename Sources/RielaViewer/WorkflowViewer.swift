@@ -174,8 +174,8 @@ public struct WorkflowViewerTemplateFile: Codable, Equatable, Hashable, Identifi
 
   public var displayName: String {
     let variant = variantName.map { " / variant \($0)" } ?? ""
-    let active = isActiveForStep ? " / active" : ""
-    return "\(role.label)\(variant)\(active): \(relativePath)"
+    let usage = isActiveForStep ? " / used by step" : ""
+    return "\(role.label)\(variant)\(usage): \(relativePath)"
   }
 }
 
@@ -294,6 +294,15 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
     self.nodes = nodes
     self.timeline = timeline
     self.diagnostics = diagnostics
+  }
+
+  public var selectedSessionIndex: Int {
+    guard let selectedSessionId,
+      let index = sessions.firstIndex(where: { $0.sessionId == selectedSessionId })
+    else {
+      return 0
+    }
+    return index
   }
 
   enum CodingKeys: String, CodingKey {
@@ -531,7 +540,7 @@ public struct WorkflowViewerLoader: Sendable {
       root: fallbackRoot,
       candidates: candidates,
       snapshots: firstSnapshots ?? [],
-      diagnostics: diagnostics + ["No persisted sessions found for workflow '\(workflowId)' in searched session stores."]
+      diagnostics: diagnostics + ["No runs recorded for workflow '\(workflowId)' in searched session stores."]
     )
   }
 

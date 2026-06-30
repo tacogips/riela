@@ -1,0 +1,483 @@
+#if os(macOS)
+import AppKit
+
+@MainActor
+final class WorkflowSourceSelectionTarget: NSObject {
+  private var checkmarks: [NSImageView] = []
+  private var rowTargets: [WorkflowSourceSelectionRowTarget] = []
+  private let onConfirm: (() -> Void)?
+  private(set) var selectedIndex = 0
+
+  init(onConfirm: (() -> Void)? = nil) {
+    self.onConfirm = onConfirm
+  }
+
+  func attach(checkmarks: [NSImageView], rowTargets: [WorkflowSourceSelectionRowTarget]) {
+    self.checkmarks = checkmarks
+    self.rowTargets = rowTargets
+    updateSelection(index: selectedIndex)
+  }
+
+  func updateSelection(index: Int, confirm: Bool = false) {
+    selectedIndex = max(0, min(index, checkmarks.count - 1))
+    for (checkmarkIndex, checkmark) in checkmarks.enumerated() {
+      checkmark.isHidden = checkmarkIndex != selectedIndex
+    }
+    if confirm {
+      onConfirm?()
+    }
+  }
+}
+
+@MainActor
+final class WorkflowSourceSelectionRowTarget: NSObject {
+  private weak var selectionTarget: WorkflowSourceSelectionTarget?
+  private let index: Int
+
+  init(selectionTarget: WorkflowSourceSelectionTarget, index: Int) {
+    self.selectionTarget = selectionTarget
+    self.index = index
+  }
+
+  @objc func select() {
+    selectionTarget?.updateSelection(index: index, confirm: true)
+  }
+}
+
+@MainActor
+private struct WorkflowSourceOptionRow {
+  var row: NSStackView
+  var checkmark: NSImageView
+  var rowTarget: WorkflowSourceSelectionRowTarget
+}
+
+@MainActor
+enum AddInstancePromptLayout {
+  static let accessoryWidth: CGFloat = 480
+  static let relinkSize = NSSize(width: accessoryWidth, height: 260)
+  static let workflowSelectionSize = NSSize(width: accessoryWidth, height: 360)
+  static let parameterSize = NSSize(width: accessoryWidth, height: 260)
+  static let parameterRowsPreferredHeight: CGFloat = 210
+}
+
+@MainActor
+struct AddInstancePromptViewFactory {
+  func accessoryStack(views: [NSView], size: NSSize) -> NSStackView {
+    let stack = NSStackView(views: views)
+    stack.orientation = .vertical
+    stack.alignment = .width
+    stack.spacing = 8
+    stack.frame = NSRect(origin: .zero, size: size)
+    stack.widthAnchor.constraint(lessThanOrEqualToConstant: size.width).isActive = true
+    return stack
+  }
+
+  func scrollingParameterStack(title: NSTextField, rows: [NSView]) -> NSStackView {
+    let rowsStack = NSStackView(views: rows)
+    rowsStack.orientation = .vertical
+    rowsStack.alignment = .width
+    rowsStack.spacing = 8
+    rowsStack.translatesAutoresizingMaskIntoConstraints = false
+
+    let document = FlippedDocumentView()
+    document.translatesAutoresizingMaskIntoConstraints = false
+    document.addSubview(rowsStack)
+
+    let scroll = NSScrollView()
+    scroll.documentView = document
+    scroll.hasVerticalScroller = true
+    scroll.hasHorizontalScroller = false
+    scroll.borderType = .noBorder
+    scroll.translatesAutoresizingMaskIntoConstraints = false
+    scroll.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+    let preferredHeight = scroll.heightAnchor.constraint(equalToConstant: AddInstancePromptLayout.parameterRowsPreferredHeight)
+    preferredHeight.priority = .defaultLow
+    preferredHeight.isActive = true
+
+    NSLayoutConstraint.activate([
+      rowsStack.leadingAnchor.constraint(equalTo: document.leadingAnchor),
+      rowsStack.trailingAnchor.constraint(equalTo: document.trailingAnchor),
+      rowsStack.topAnchor.constraint(equalTo: document.topAnchor),
+      rowsStack.bottomAnchor.constraint(equalTo: document.bottomAnchor),
+      rowsStack.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor)
+    ])
+
+    return accessoryStack(
+      views: [title, scroll],
+      size: AddInstancePromptLayout.parameterSize
+    )
+  }
+
+  func emptyWorkflowSelectionStack(message: String, sourceActions: NSView, size: NSSize) -> NSStackView {
+    let emptyLabel = NSTextField(labelWithString: message)
+    emptyLabel.textColor = .secondaryLabelColor
+    emptyLabel.alignment = .center
+    emptyLabel.lineBreakMode = .byWordWrapping
+    emptyLabel.maximumNumberOfLines = 2
+    emptyLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    emptyLabel.setAccessibilityLabel(message)
+
+    let sourceActionsTitle = NSTextField(labelWithString: "Manage Sources")
+    sourceActionsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+
+    return accessoryStack(views: [emptyLabel, sourceActionsTitle, sourceActions], size: size)
+  }
+}
+
+extension DaemonWorkflowWindowController {
+  func promptForAddInstance() -> DaemonWorkflowAddInstanceRequest? {
+    while true {
+      let options = workflowSourceOptions()
+      guard !options.isEmpty else {
+        let alert = NSAlert()
+        alert.messageText = "Choose Workflow"
+        alert.informativeText = ""
+        alert.accessoryView = AddInstancePromptViewFactory().emptyWorkflowSelectionStack(
+          message: "No workflows. Import a workflow, package, or project source.",
+          sourceActions: sourceActionStack(context: .addInstance),
+          size: AddInstancePromptLayout.relinkSize
+        )
+        alert.addButton(withTitle: "Cancel")
+        pendingAddInstanceSheetAction = nil
+        activeAddInstanceAlert = alert
+        _ = alert.runModal()
+        activeAddInstanceAlert = nil
+        if handlePendingAddInstanceSheetAction() {
+          continue
+        }
+        return nil
+      }
+
+      switch promptForWorkflowSourceOption(options) {
+      case let .selected(option):
+        return promptForInstanceParameters(sourceOption: option)
+      case .retry:
+        continue
+      case .cancelled:
+        return nil
+      }
+    }
+  }
+
+  func promptForRelinkSourceOption(_ options: [WorkflowSourceOption]) -> WorkflowSourceSelection {
+    guard !options.isEmpty else {
+      let alert = NSAlert()
+      alert.messageText = "Relink Source"
+      alert.informativeText = ""
+      alert.accessoryView = AddInstancePromptViewFactory().emptyWorkflowSelectionStack(
+        message: "No workflows. Import a workflow, package, or project source.",
+        sourceActions: sourceActionStack(context: .relink),
+        size: AddInstancePromptLayout.relinkSize
+      )
+      alert.addButton(withTitle: "Cancel")
+      pendingAddInstanceSheetAction = nil
+      activeAddInstanceAlert = alert
+      _ = alert.runModal()
+      activeAddInstanceAlert = nil
+      if handlePendingAddInstanceSheetAction() {
+        return .retry
+      }
+      return .cancelled
+    }
+
+    let alert = NSAlert()
+    let sourceSelection = workflowSourceSelectionStack(options: options) {
+      alert.window.orderOut(nil)
+      NSApp.stopModal(withCode: .OK)
+    }
+    let title = NSTextField(labelWithString: "Relink Source")
+    title.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    let stack = AddInstancePromptViewFactory().accessoryStack(
+      views: [
+        title,
+        sourceSelection.stack
+      ],
+      size: AddInstancePromptLayout.relinkSize
+    )
+
+    alert.messageText = "Relink Source"
+    alert.informativeText = "Choose a workflow source for this saved instance."
+    alert.accessoryView = stack
+    alert.addButton(withTitle: "Cancel")
+    let response = withExtendedLifetime(sourceSelection.target) {
+      alert.runModal()
+    }
+    guard response == .OK else {
+      return .cancelled
+    }
+    return .selected(options[sourceSelection.target.selectedIndex])
+  }
+
+  private func promptForWorkflowSourceOption(_ options: [WorkflowSourceOption]) -> WorkflowSourceSelection {
+    let alert = NSAlert()
+    let workflowTitle = NSTextField(labelWithString: "Choose Workflow")
+    workflowTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    let sourceActionsTitle = NSTextField(labelWithString: "Manage Sources")
+    sourceActionsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    let sourceSelection = workflowSourceSelectionStack(options: options) {
+      alert.window.orderOut(nil)
+      NSApp.stopModal(withCode: .OK)
+    }
+    let stack = AddInstancePromptViewFactory().accessoryStack(
+      views: [
+        workflowTitle,
+        sourceSelection.stack,
+        sourceActionsTitle,
+        sourceActionStack(context: .addInstance)
+      ],
+      size: AddInstancePromptLayout.workflowSelectionSize
+    )
+
+    alert.messageText = "Choose Workflow"
+    alert.informativeText = "Choose a workflow source."
+    alert.accessoryView = stack
+    alert.addButton(withTitle: "Cancel")
+    pendingAddInstanceSheetAction = nil
+    activeAddInstanceAlert = alert
+    let response = withExtendedLifetime(sourceSelection.target) {
+      alert.runModal()
+    }
+    activeAddInstanceAlert = nil
+    if handlePendingAddInstanceSheetAction() {
+      return .retry
+    }
+    guard response == .OK else {
+      return .cancelled
+    }
+    return .selected(options[sourceSelection.target.selectedIndex])
+  }
+
+  private func promptForInstanceParameters(sourceOption option: WorkflowSourceOption) -> DaemonWorkflowAddInstanceRequest? {
+    let idField = NSTextField(string: "")
+    idField.placeholderString = "instance-id"
+    let nameField = NSTextField(string: option.candidate.displayName)
+    nameField.placeholderString = "Display name"
+    let envField = NSTextField(string: "")
+    envField.placeholderString = "Optional .env path"
+    let directoryField = NSTextField(string: option.candidate.workingDirectory)
+    directoryField.placeholderString = "Optional working directory"
+    let startCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+    startCheckbox.state = .on
+    startCheckbox.setAccessibilityLabel("Start")
+    startCheckbox.setAccessibilityHelp("Start this instance immediately after creating it.")
+    startCheckbox.setContentHuggingPriority(.required, for: .horizontal)
+    let parameterTitle = NSTextField(labelWithString: "Configure Instance")
+    parameterTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    let workflowValue = NSTextField(labelWithString: option.title)
+    workflowValue.lineBreakMode = .byTruncatingMiddle
+    workflowValue.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    let stack = AddInstancePromptViewFactory().scrollingParameterStack(
+      title: parameterTitle,
+      rows: [
+        addInstanceValueRow(title: "Workflow", valueLabel: workflowValue),
+        addInstanceFieldRow(title: "Instance ID", control: idField),
+        addInstanceFieldRow(title: "Display Name", control: nameField),
+        addInstanceFieldRow(title: ".env File", control: envField),
+        addInstanceFieldRow(title: "Working Directory", control: directoryField),
+        addInstanceToggleRow(title: "Start", checkbox: startCheckbox)
+      ]
+    )
+
+    let alert = NSAlert()
+    alert.messageText = "Configure Instance"
+    alert.informativeText = "Enter instance parameters."
+    alert.accessoryView = stack
+    alert.addButton(withTitle: "Create")
+    alert.addButton(withTitle: "Cancel")
+    activeAddInstanceAlert = alert
+    let response = alert.runModal()
+    activeAddInstanceAlert = nil
+    guard response == .alertFirstButtonReturn else {
+      return nil
+    }
+    let rawIdentity = idField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    let displayName = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    let envPath = envField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    let workingDirectory = directoryField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    return DaemonWorkflowAddInstanceRequest(
+      sourceIdentity: option.sourceIdentity,
+      identity: rawIdentity,
+      displayName: displayName.isEmpty ? nil : displayName,
+      environmentFilePath: envPath.isEmpty ? nil : envPath,
+      workingDirectory: workingDirectory.isEmpty ? nil : workingDirectory,
+      startsImmediately: startCheckbox.state == .on
+    )
+  }
+
+  @discardableResult
+  private func handlePendingAddInstanceSheetAction() -> Bool {
+    guard let pendingAddInstanceSheetAction else {
+      return false
+    }
+    self.pendingAddInstanceSheetAction = nil
+    switch pendingAddInstanceSheetAction {
+    case .importWorkflowOrPackage:
+      onAddDirectory()
+    case .addProjectSource:
+      onAddProject()
+    }
+    return true
+  }
+
+  @objc private func importWorkflowOrPackageFromAddInstanceSheet() {
+    finishAddInstanceSheet(with: .importWorkflowOrPackage)
+  }
+
+  @objc private func addProjectSourceFromAddInstanceSheet() {
+    finishAddInstanceSheet(with: .addProjectSource)
+  }
+
+  private func finishAddInstanceSheet(with action: AddInstanceSheetAction) {
+    pendingAddInstanceSheetAction = action
+    activeAddInstanceAlert?.window.orderOut(nil)
+    NSApp.stopModal(withCode: .alertSecondButtonReturn)
+  }
+
+  private func addInstanceFieldRow(title: String, control: NSView) -> NSStackView {
+    let titleLabel = rielaAppSettingsTitleLabel(title, maxWidth: 145)
+    control.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    let row = RielaAppSettingsRow(views: [titleLabel, control])
+    row.orientation = .horizontal
+    row.spacing = 8
+    row.alignment = .firstBaseline
+    return rielaAppSettingsRow(row)
+  }
+
+  private func addInstanceValueRow(title: String, valueLabel: NSTextField) -> NSStackView {
+    let titleLabel = rielaAppSettingsTitleLabel(title, maxWidth: 145)
+    valueLabel.textColor = .labelColor
+    valueLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    let row = RielaAppSettingsRow(views: [titleLabel, valueLabel])
+    row.orientation = .horizontal
+    row.spacing = 8
+    row.alignment = .firstBaseline
+    return rielaAppSettingsRow(row)
+  }
+
+  private func addInstanceToggleRow(title: String, checkbox: NSButton) -> NSStackView {
+    let titleLabel = rielaAppSettingsTitleLabel(title, maxWidth: 145)
+    let spacer = NSView()
+    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    let row = RielaAppSettingsRow(views: [titleLabel, spacer, checkbox])
+    row.orientation = .horizontal
+    row.spacing = 8
+    row.alignment = .centerY
+    return rielaAppSettingsRow(row)
+  }
+
+  private func sourceActionStack(context: SourceActionContext) -> NSStackView {
+    let stack = NSStackView(views: [
+      actionRow(
+        title: "Import Workflow or Package",
+        detail: context.importDetail,
+        action: #selector(importWorkflowOrPackageFromAddInstanceSheet)
+      ),
+      actionRow(
+        title: "Add Project Source",
+        detail: context.projectDetail,
+        action: #selector(addProjectSourceFromAddInstanceSheet)
+      )
+    ])
+    stack.orientation = .vertical
+    stack.alignment = .width
+    stack.spacing = 8
+    return stack
+  }
+
+  private func workflowSourceSelectionStack(
+    options: [WorkflowSourceOption],
+    onConfirm: (() -> Void)? = nil
+  ) -> (stack: NSStackView, target: WorkflowSourceSelectionTarget) {
+    let target = WorkflowSourceSelectionTarget(onConfirm: onConfirm)
+    let title = NSTextField(labelWithString: "Workflow Sources")
+    title.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    let optionRows = options.enumerated().map { index, option in
+      workflowSourceOptionRow(option: option, index: index, selectionTarget: target)
+    }
+    target.attach(
+      checkmarks: optionRows.map(\.checkmark),
+      rowTargets: optionRows.map(\.rowTarget)
+    )
+    let sourceList = NSStackView(views: optionRows.map(\.row))
+    sourceList.orientation = .vertical
+    sourceList.alignment = .width
+    sourceList.spacing = 8
+    sourceList.translatesAutoresizingMaskIntoConstraints = false
+    let document = FlippedDocumentView()
+    document.translatesAutoresizingMaskIntoConstraints = false
+    document.addSubview(sourceList)
+    let scroll = NSScrollView()
+    scroll.documentView = document
+    scroll.hasVerticalScroller = true
+    scroll.hasHorizontalScroller = false
+    scroll.borderType = .noBorder
+    scroll.translatesAutoresizingMaskIntoConstraints = false
+    scroll.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+    let preferredHeight = scroll.heightAnchor.constraint(equalToConstant: min(CGFloat(options.count) * 70, 220))
+    preferredHeight.priority = .defaultLow
+    preferredHeight.isActive = true
+    NSLayoutConstraint.activate([
+      sourceList.leadingAnchor.constraint(equalTo: document.leadingAnchor),
+      sourceList.trailingAnchor.constraint(equalTo: document.trailingAnchor),
+      sourceList.topAnchor.constraint(equalTo: document.topAnchor),
+      sourceList.bottomAnchor.constraint(equalTo: document.bottomAnchor),
+      sourceList.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor)
+    ])
+    let stack = NSStackView(views: [title, scroll])
+    stack.orientation = .vertical
+    stack.alignment = .width
+    stack.spacing = 8
+    return (stack, target)
+  }
+
+  private func workflowSourceOptionRow(
+    option: WorkflowSourceOption,
+    index: Int,
+    selectionTarget: WorkflowSourceSelectionTarget
+  ) -> WorkflowSourceOptionRow {
+    let titleLabel = NSTextField(labelWithString: option.candidate.displayName)
+    titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
+    titleLabel.lineBreakMode = .byTruncatingTail
+    let detailLabel = NSTextField(
+      labelWithString: rielaAppMetadataText([option.candidate.sourceDescription, option.environmentStatus])
+    )
+    detailLabel.font = .systemFont(ofSize: 11)
+    detailLabel.textColor = .secondaryLabelColor
+    detailLabel.lineBreakMode = .byTruncatingTail
+    let locationLabel = NSTextField(labelWithString: option.location)
+    locationLabel.font = .systemFont(ofSize: 11)
+    locationLabel.textColor = .secondaryLabelColor
+    locationLabel.lineBreakMode = .byTruncatingMiddle
+    let labelStack = NSStackView(views: [titleLabel, detailLabel, locationLabel])
+    labelStack.orientation = .vertical
+    labelStack.spacing = 2
+    labelStack.alignment = .leading
+    labelStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    let spacer = NSView()
+    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    let checkmark = NSImageView(
+      image: NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil) ?? NSImage()
+    )
+    checkmark.setAccessibilityElement(false)
+    checkmark.contentTintColor = .controlAccentColor
+    let row = RielaAppSelectableSettingsRow(views: [labelStack, spacer, checkmark])
+    row.orientation = .horizontal
+    row.spacing = 8
+    row.alignment = .centerY
+    row.toolTip = option.title
+    let rowTarget = WorkflowSourceSelectionRowTarget(selectionTarget: selectionTarget, index: index)
+    return WorkflowSourceOptionRow(
+      row: rielaAppSelectableSettingsRow(
+        row,
+        target: rowTarget,
+        action: #selector(rowTarget.select),
+        accessibilityLabel: option.title,
+        accessibilityHelp: "Choose \(option.candidate.displayName)"
+      ),
+      checkmark: checkmark,
+      rowTarget: rowTarget
+    )
+  }
+}
+
+#endif

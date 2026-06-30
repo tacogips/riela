@@ -290,6 +290,12 @@ public struct DefaultWorkflowMessageInputResolver: WorkflowMessageInputResolving
         payload[key] = value
       }
     }
+    payload["_rielaInput"] = resolvedInputMetadata(
+      sessionId: sessionId,
+      stepId: stepId,
+      messages: messages,
+      sourceStepIds: sourceStepIds
+    )
     return WorkflowResolvedMessageInput(
       workflowExecutionId: sessionId,
       stepId: stepId,
@@ -299,6 +305,49 @@ public struct DefaultWorkflowMessageInputResolver: WorkflowMessageInputResolving
       sourceStepIds: sourceStepIds
     )
   }
+}
+
+private func resolvedInputMetadata(
+  sessionId: String,
+  stepId: String,
+  messages: [WorkflowMessageRecord],
+  sourceStepIds: [String]
+) -> JSONValue {
+  let messageValues = messages.map(resolvedInputMessageMetadata)
+  var metadata: JSONObject = [
+    "workflowExecutionId": .string(sessionId),
+    "stepId": .string(stepId),
+    "communicationIds": .array(messages.map(\.communicationId).map(JSONValue.string)),
+    "sourceStepIds": .array(sourceStepIds.map(JSONValue.string)),
+    "messages": .array(messageValues)
+  ]
+  if let latest = messages.last {
+    metadata["latest"] = resolvedInputMessageMetadata(latest)
+  }
+  return .object(metadata)
+}
+
+private func resolvedInputMessageMetadata(_ message: WorkflowMessageRecord) -> JSONValue {
+  var metadata: JSONObject = [
+    "communicationId": .string(message.communicationId),
+    "workflowExecutionId": .string(message.workflowExecutionId),
+    "sourceStepExecutionId": .string(message.sourceStepExecutionId),
+    "deliveryKind": .string(message.deliveryKind.rawValue),
+    "routingScope": .string(message.routingScope.rawValue),
+    "lifecycleStatus": .string(message.lifecycleStatus.rawValue),
+    "createdOrder": .number(Double(message.createdOrder)),
+    "payload": .object(message.payload)
+  ]
+  if let fromStepId = message.fromStepId {
+    metadata["fromStepId"] = .string(fromStepId)
+  }
+  if let toStepId = message.toStepId {
+    metadata["toStepId"] = .string(toStepId)
+  }
+  if let transitionCondition = message.transitionCondition {
+    metadata["transitionCondition"] = .string(transitionCondition)
+  }
+  return .object(metadata)
 }
 
 public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {

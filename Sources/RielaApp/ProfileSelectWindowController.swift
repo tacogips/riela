@@ -3,13 +3,37 @@ import AppKit
 import RielaAppSupport
 
 @MainActor
+enum ProfilePromptLayout {
+  static let nameSize = NSSize(width: 360, height: 72)
+}
+
+@MainActor
+struct ProfilePromptViewFactory {
+  func accessoryStack(views: [NSView], size: NSSize) -> NSStackView {
+    let stack = NSStackView(views: views)
+    stack.orientation = .vertical
+    stack.spacing = 8
+    stack.alignment = .width
+    stack.frame = NSRect(origin: .zero, size: size)
+    stack.widthAnchor.constraint(lessThanOrEqualToConstant: size.width).isActive = true
+    return stack
+  }
+}
+
+@MainActor
 final class ProfileSelectWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate {
-  static let menuTitle = "Profile Select..."
+  static let menuTitle = "Profiles..."
 
   private let tableView = NSTableView()
   private let statusLabel = NSTextField(labelWithString: "")
-  private let removeProfileTitleLabel = NSTextField(labelWithString: "Remove Selected Profile")
-  private let removeProfileDetailLabel = NSTextField(labelWithString: "Delete this profile's sources, packages, and instance state.")
+  private let useProfileTitleLabel = NSTextField(labelWithString: "Use Profile")
+  private let useProfileDetailLabel = NSTextField(labelWithString: "Show this profile's workflow instances.")
+  private let removeProfileTitleLabel = NSTextField(labelWithString: "Remove Profile")
+  private let removeProfileDetailLabel = NSTextField(
+    labelWithString: "Remove this profile's sources, packages, and instance state. Other profiles are unchanged."
+  )
+  private weak var useProfileActionRow: RielaAppSelectableSettingsRow?
+  private weak var removeProfileActionRow: RielaAppSelectableSettingsRow?
   private let onSelectProfile: (String) -> Void
   private let onCreateProfile: (String) -> RielaAppProfileName?
   private let onRemoveProfile: (RielaAppProfileName) -> Bool
@@ -30,7 +54,7 @@ final class ProfileSelectWindowController: NSWindowController, NSTableViewDataSo
       backing: .buffered,
       defer: false
     )
-    window.title = "Profile Select"
+    window.title = "Profiles"
     super.init(window: window)
     buildContent(in: window)
   }
@@ -73,38 +97,41 @@ final class ProfileSelectWindowController: NSWindowController, NSTableViewDataSo
     tableView.dataSource = self
     tableView.doubleAction = #selector(openSelectedProfile)
     tableView.target = self
-    tableView.usesAlternatingRowBackgroundColors = false
-    tableView.rowHeight = 44
+    tableView.rowHeight = 52
     tableView.intercellSpacing = NSSize(width: 0, height: 4)
-    tableView.gridStyleMask = []
-    tableView.selectionHighlightStyle = .regular
+    rielaAppConfigureSettingsTableSelection(tableView)
 
     let scrollView = NSScrollView()
     scrollView.documentView = tableView
     scrollView.hasVerticalScroller = true
     scrollView.borderType = .noBorder
     scrollView.translatesAutoresizingMaskIntoConstraints = false
+    scrollView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
 
+    let removeProfileRow = profileActionRow(
+      titleLabel: removeProfileTitleLabel,
+      detailLabel: removeProfileDetailLabel,
+      action: #selector(removeProfile)
+    )
+    let useProfileRow = profileActionRow(
+      titleLabel: useProfileTitleLabel,
+      detailLabel: useProfileDetailLabel,
+      action: #selector(openSelectedProfile)
+    )
+    useProfileActionRow = useProfileRow
+    removeProfileActionRow = removeProfileRow
     let actionRows = NSStackView(views: [
-      profileActionRow(
-        title: "Use Selected Profile",
-        detail: "Switch the instance window to this profile.",
-        action: #selector(openSelectedProfile)
-      ),
+      useProfileRow,
       profileActionRow(
         title: "Add Profile",
         detail: "Create a separate profile for another instance set.",
         action: #selector(addProfile)
       ),
-      profileActionRow(
-        titleLabel: removeProfileTitleLabel,
-        detailLabel: removeProfileDetailLabel,
-        action: #selector(removeProfile)
-      )
+      removeProfileRow
     ])
     actionRows.orientation = .vertical
     actionRows.spacing = 8
-    actionRows.alignment = .leading
+    actionRows.alignment = .width
 
     statusLabel.textColor = .secondaryLabelColor
     statusLabel.lineBreakMode = .byTruncatingMiddle
@@ -115,12 +142,15 @@ final class ProfileSelectWindowController: NSWindowController, NSTableViewDataSo
     stack.translatesAutoresizingMaskIntoConstraints = false
     root.addSubview(stack)
 
+    let preferredHeight = scrollView.heightAnchor.constraint(equalToConstant: 220)
+    preferredHeight.priority = .defaultLow
+
     NSLayoutConstraint.activate([
       stack.topAnchor.constraint(equalTo: root.topAnchor, constant: 14),
       stack.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
       stack.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
       stack.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -14),
-      scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 220)
+      preferredHeight
     ])
   }
 
@@ -129,15 +159,25 @@ final class ProfileSelectWindowController: NSWindowController, NSTableViewDataSo
   }
 
   func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-    let cell = NSTableCellView()
+    let cell = RielaAppTableSelectionCellView()
     let profileName = profileNames[row]
+    cell.configureSelection(
+      tableView: tableView,
+      row: row,
+      role: .radioButton,
+      accessibilityLabel: profileName.rawValue,
+      accessibilityValue: profileName == currentProfile ? "Current" : "Profile",
+      accessibilityHelp: "Use \(profileName.rawValue) profile"
+    )
     let title = NSTextField(labelWithString: profileName.rawValue)
     title.font = .systemFont(ofSize: 13, weight: profileName == currentProfile ? .semibold : .regular)
     title.lineBreakMode = .byTruncatingTail
+    title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-    let detail = NSTextField(labelWithString: profileName == currentProfile ? "Current" : "Available")
+    let detail = NSTextField(labelWithString: profileName == currentProfile ? "Current" : "Profile")
     detail.font = .systemFont(ofSize: 11)
     detail.textColor = .secondaryLabelColor
+    detail.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
     let textStack = NSStackView(views: [title, detail])
     textStack.orientation = .vertical
@@ -147,20 +187,26 @@ final class ProfileSelectWindowController: NSWindowController, NSTableViewDataSo
 
     let spacer = NSView()
     spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    let checkmark = NSTextField(labelWithString: profileName == currentProfile ? "✓" : "")
-    checkmark.textColor = .controlAccentColor
-    checkmark.font = .systemFont(ofSize: 13, weight: .semibold)
+    let checkmarkImage = profileName == currentProfile
+      ? NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil)
+      : NSImage()
+    let checkmark = NSImageView(image: checkmarkImage ?? NSImage())
+    checkmark.contentTintColor = .controlAccentColor
+    checkmark.imageScaling = .scaleProportionallyDown
     checkmark.widthAnchor.constraint(equalToConstant: 18).isActive = true
+    checkmark.heightAnchor.constraint(equalToConstant: 14).isActive = true
+    checkmark.setAccessibilityElement(false)
 
-    let rowStack = NSStackView(views: [textStack, spacer, checkmark])
+    let rowStack = RielaAppSettingsRow(views: [textStack, spacer, checkmark])
     rowStack.orientation = .horizontal
     rowStack.spacing = 10
     rowStack.alignment = .centerY
     rowStack.translatesAutoresizingMaskIntoConstraints = false
+    rielaAppSettingsRow(rowStack)
     cell.addSubview(rowStack)
     NSLayoutConstraint.activate([
-      rowStack.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 8),
-      rowStack.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8),
+      rowStack.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
+      rowStack.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
       rowStack.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
     ])
     return cell
@@ -170,7 +216,7 @@ final class ProfileSelectWindowController: NSWindowController, NSTableViewDataSo
     title: String,
     detail: String,
     action: Selector
-  ) -> NSStackView {
+  ) -> RielaAppSelectableSettingsRow {
     let titleLabel = NSTextField(labelWithString: title)
     titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
     let detailLabel = NSTextField(labelWithString: detail)
@@ -181,7 +227,7 @@ final class ProfileSelectWindowController: NSWindowController, NSTableViewDataSo
     titleLabel: NSTextField,
     detailLabel: NSTextField,
     action: Selector
-  ) -> NSStackView {
+  ) -> RielaAppSelectableSettingsRow {
     titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
     detailLabel.font = .systemFont(ofSize: 11)
     detailLabel.textColor = .secondaryLabelColor
@@ -196,15 +242,18 @@ final class ProfileSelectWindowController: NSWindowController, NSTableViewDataSo
     let spacer = NSView()
     spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-    let row = NSStackView(views: [labelStack, spacer, rielaAppDisclosureIndicator()])
+    let row = RielaAppSelectableSettingsRow(views: [labelStack, spacer, rielaAppDisclosureIndicator()])
     row.orientation = .horizontal
     row.spacing = 8
     row.alignment = .centerY
-    row.wantsLayer = true
-    row.toolTip = titleLabel.stringValue
-    row.widthAnchor.constraint(greaterThanOrEqualToConstant: 360).isActive = true
-    row.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: action))
-    return row
+    row.toolTip = detailLabel.stringValue
+    return rielaAppSelectableSettingsRow(
+      row,
+      target: self,
+      action: action,
+      accessibilityLabel: titleLabel.stringValue,
+      accessibilityHelp: detailLabel.stringValue
+    )
   }
 
   func tableViewSelectionDidChange(_ notification: Notification) {
@@ -213,13 +262,40 @@ final class ProfileSelectWindowController: NSWindowController, NSTableViewDataSo
 
   private func updateActionRows() {
     guard let selected = selectedProfile() else {
+      useProfileTitleLabel.textColor = .disabledControlTextColor
+      useProfileDetailLabel.textColor = .disabledControlTextColor
+      useProfileActionRow?.setRielaAccessibilityEnabled(false)
+      useProfileActionRow?.setAccessibilityHelp("Choose a profile first.")
       removeProfileTitleLabel.textColor = .disabledControlTextColor
       removeProfileDetailLabel.textColor = .disabledControlTextColor
+      removeProfileActionRow?.setRielaAccessibilityEnabled(false)
+      removeProfileActionRow?.setAccessibilityHelp("Choose a removable profile first.")
       return
     }
+    let canUse = selected != currentProfile
+    useProfileTitleLabel.textColor = canUse ? .labelColor : .disabledControlTextColor
+    useProfileDetailLabel.textColor = canUse ? .secondaryLabelColor : .disabledControlTextColor
+    useProfileActionRow?.setRielaAccessibilityEnabled(canUse)
+    useProfileActionRow?.setAccessibilityHelp(canUse
+      ? useProfileDetailLabel.stringValue
+      : "This profile is already current.")
     let canRemove = selected != .default && selected != currentProfile
     removeProfileTitleLabel.textColor = canRemove ? .systemRed : .disabledControlTextColor
     removeProfileDetailLabel.textColor = canRemove ? .secondaryLabelColor : .disabledControlTextColor
+    removeProfileActionRow?.setRielaAccessibilityEnabled(canRemove)
+    removeProfileActionRow?.setAccessibilityHelp(canRemove
+      ? removeProfileDetailLabel.stringValue
+      : removeProfileUnavailableHelp(for: selected))
+  }
+
+  private func removeProfileUnavailableHelp(for selected: RielaAppProfileName) -> String {
+    if selected == .default {
+      return "Default profile cannot be removed here."
+    }
+    if selected == currentProfile {
+      return "Current profile cannot be removed here."
+    }
+    return "Choose a removable profile first."
   }
 
   @objc private func addProfile() {
@@ -277,11 +353,21 @@ final class ProfileSelectWindowController: NSWindowController, NSTableViewDataSo
   private func promptForProfileName() -> String? {
     let field = NSTextField(string: "")
     field.placeholderString = RielaAppProfileName.defaultRawValue
-    field.frame = NSRect(x: 0, y: 0, width: 260, height: 24)
+    field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    let title = NSTextField(labelWithString: "Profile Name")
+    title.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    let stack = ProfilePromptViewFactory().accessoryStack(
+      views: [
+        title,
+        profileFieldRow(title: "Name", control: field)
+      ],
+      size: ProfilePromptLayout.nameSize
+    )
     let alert = NSAlert()
-    alert.messageText = "Add Profile"
-    alert.accessoryView = field
-    alert.addButton(withTitle: "Add")
+    alert.messageText = "Profile Name"
+    alert.informativeText = "Create a saved profile for another instance set."
+    alert.accessoryView = stack
+    alert.addButton(withTitle: "Done")
     alert.addButton(withTitle: "Cancel")
     guard alert.runModal() == .alertFirstButtonReturn else {
       return nil
@@ -289,12 +375,24 @@ final class ProfileSelectWindowController: NSWindowController, NSTableViewDataSo
     return field.stringValue
   }
 
+  private func profileFieldRow(title: String, control: NSView) -> NSStackView {
+    let titleLabel = rielaAppSettingsTitleLabel(title, maxWidth: 90)
+    let row = RielaAppSettingsRow(views: [titleLabel, control])
+    row.orientation = .horizontal
+    row.spacing = 8
+    row.alignment = .firstBaseline
+    return rielaAppSettingsRow(row)
+  }
+
   private func confirmProfileRemoval(_ profileName: RielaAppProfileName) -> Bool {
     let alert = NSAlert()
-    alert.messageText = "Remove Profile"
-    alert.informativeText = "Remove profile \(profileName.rawValue) and its workflow sources, packages, and instance state?"
+    alert.messageText = "Remove \(profileName.rawValue)?"
+    alert.informativeText = [
+      "This removes only this profile's workflow sources, packages, and instance state.",
+      "Other profiles are unchanged."
+    ].joined(separator: " ")
     alert.alertStyle = .warning
-    alert.addButton(withTitle: "Remove")
+    alert.addButton(withTitle: "Remove Profile")
     alert.addButton(withTitle: "Cancel")
     return alert.runModal() == .alertFirstButtonReturn
   }

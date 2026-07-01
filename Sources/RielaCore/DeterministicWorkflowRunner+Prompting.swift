@@ -50,6 +50,10 @@ extension DeterministicWorkflowRunner {
     for (key, value) in resolvedInputPayload {
       variables[key] = value
     }
+    variables["runtimeVariables"] = .object(runtimeVariables(
+      requestVariables: requestVariables,
+      resolvedInputPayload: resolvedInputPayload
+    ))
     variables["workflowId"] = .string(workflow.workflowId)
     variables["workflowDescription"] = .string(workflow.description)
     variables["nodeId"] = .string(step.id)
@@ -65,6 +69,14 @@ extension DeterministicWorkflowRunner {
       workflowMemories: workflow.memories ?? [],
       nodeMemories: nodeMemories
     ))
+    return variables
+  }
+
+  private func runtimeVariables(requestVariables: JSONObject, resolvedInputPayload: JSONObject) -> JSONObject {
+    var variables = requestVariables
+    for (key, value) in resolvedInputPayload {
+      variables[key] = value
+    }
     return variables
   }
 

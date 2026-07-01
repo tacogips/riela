@@ -32,6 +32,11 @@ Preferred sources:
 - `runtimeVariables.workflowInput.riskLevel`
 - `runtimeVariables.workflowInput.requiresAdversarialReview`
 
+Runtime variables visible to this run:
+```json
+{{runtimeVariables}}
+```
+
 Rules:
 - For cross-workflow calls, prefer `runtimeVariables.workflowCall.input.workflowInput` over parent runtime defaults when both are present.
 - Default `workflowMode` to `issue-resolution` unless the effective workflow input execution mode explicitly requests `design-plan-only`, `planning-only`, or another planning-only synonym.

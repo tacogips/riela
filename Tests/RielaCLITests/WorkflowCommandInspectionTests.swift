@@ -319,6 +319,105 @@ extension WorkflowCommandTests {
     XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("exec --json"), true)
   }
 
+  func testProjectScopeCodexDesignIntakePromptIncludesWorkflowRunVariables() async throws {
+    let repositoryRoot = repositoryRoot()
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-codex-intake-variables-\(UUID().uuidString)", isDirectory: true)
+    let promptDirectory = tempDir.appendingPathComponent("prompts", isDirectory: true)
+    try FileManager.default.createDirectory(at: promptDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let counter = tempDir.appendingPathComponent("prompt-count.txt")
+    let fakeCodex = try createExecutable(
+      directory: tempDir,
+      name: "fake-codex.sh",
+      body: """
+      if [ "$1" = "login" ] && [ "$2" = "status" ]; then
+        exit 0
+      fi
+      count=0
+      if [ -f '\(counter.path)' ]; then
+        count=$(cat '\(counter.path)')
+      fi
+      count=$((count + 1))
+      printf '%s' "$count" > '\(counter.path)'
+      cat > '\(promptDirectory.path)'/prompt-"$count".txt
+      if [ "$count" = "1" ]; then
+        cat <<'JSON'
+      {
+        "completionPassed": true,
+        "when": { "always": true },
+        "payload": { "status": "manager-ready" }
+      }
+      JSON
+      else
+        cat <<'JSON'
+      {
+        "completionPassed": true,
+        "when": { "has_feature_fanout": false },
+        "payload": {
+          "workflowMode": "issue-resolution",
+          "problemSummary": "captured intake",
+          "acceptanceSignals": [],
+          "impactedAreas": [],
+          "constraints": [],
+          "unknowns": [],
+          "risks": [],
+          "requiresAdversarialReview": false,
+          "codexAgentReferences": [],
+          "featureFanoutItems": []
+        }
+      }
+      JSON
+      fi
+      exit 0
+      """
+    )
+    let previousCodexExecutable = environmentValue("RIELA_CODEX_AGENT_EXECUTABLE")
+    setEnvironmentValue("RIELA_CODEX_AGENT_EXECUTABLE", fakeCodex.path)
+    defer { setEnvironmentValue("RIELA_CODEX_AGENT_EXECUTABLE", previousCodexExecutable) }
+
+    let variableObject: JSONObject = [
+      "workflowInput": .object([
+        "executionMode": .string("review-and-improve-existing-work"),
+        "targetFeatureArea": .string("RielaApp Instances window performance"),
+        "requestedBehavior": .string("Review project input visibility"),
+        "codexAgentReferences": .array([.string("Sources/RielaApp/EntryPoint.swift")]),
+        "referenceRepositoryRoot": .string(repositoryRoot)
+      ]),
+      "workflowCall": .object([
+        "input": .object([
+          "workflowInput": .object([
+            "requestedBehavior": .string("Prefer cross workflow input")
+          ])
+        ])
+      ])
+    ]
+    let variables = try jsonString(variableObject)
+
+    let result = await RielaCLIApplication().run([
+      "workflow", "run", "codex-design-and-implement-review-loop",
+      "--scope", "project",
+      "--working-dir", repositoryRoot,
+      "--artifact-root", tempDir.appendingPathComponent("artifacts", isDirectory: true).path,
+      "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
+      "--variables", variables,
+      "--max-steps", "2",
+      "--output", "json"
+    ])
+
+    XCTAssertEqual(result.exitCode, CLIExitCode.failure)
+    let intakePrompt = try String(
+      contentsOf: promptDirectory.appendingPathComponent("prompt-2.txt"),
+      encoding: .utf8
+    )
+    XCTAssertTrue(intakePrompt.contains("Runtime variables visible to this run:"))
+    XCTAssertTrue(intakePrompt.contains(#""requestedBehavior":"Review project input visibility""#))
+    XCTAssertTrue(intakePrompt.contains(#""targetFeatureArea":"RielaApp Instances window performance""#))
+    XCTAssertTrue(intakePrompt.contains(#""codexAgentReferences":["Sources/RielaApp/EntryPoint.swift"]"#))
+    XCTAssertTrue(intakePrompt.contains(#""requestedBehavior":"Prefer cross workflow input""#))
+  }
+
   func testRunHonorsArtifactRootAndForwardsMaxConcurrency() async throws {
     let root = repositoryRoot()
     let tempDir = FileManager.default.temporaryDirectory

@@ -1,8 +1,58 @@
 import XCTest
 @testable import RielaCore
 
-final class WorkflowRuntimeVariablesTests: XCTestCase {
-  func testPromptVariablesExposeRuntimeVariablesAliasForWorkflowRunInput() async throws {
+final class RuntimeVariablesPromptingTests: XCTestCase {
+  func testRequestVariablesAreExposedAsRuntimeVariablesInWorkerPromptContext() async throws {
+    let adapter = InputCapturingAdapter()
+    let workflow = runtimeVariablesWorkflow(
+      workflowId: "runtime-variable-runner",
+      nodeId: "echo-node",
+      stepId: "echo",
+      systemPromptTemplate: "workflow system"
+    )
+    let node = AgentNodePayload(
+      id: "echo-node",
+      executionBackend: .codexAgent,
+      model: "gpt-5.5",
+      promptTemplate: "requested={{runtimeVariables.workflowInput.requestedBehavior}}"
+    )
+    let runtimeVariables: JSONObject = [
+      "workflowInput": .object([
+        "requestedBehavior": .string("sentinel-from-cli"),
+        "templateLikeValue": .string("{{must-remain-literal}}")
+      ]),
+      "workflowCall": .object([
+        "input": .object([
+          "workflowInput": .object([
+            "requestedBehavior": .string("sentinel-from-call")
+          ])
+        ])
+      ])
+    ]
+    let runner = DeterministicWorkflowRunner(adapter: adapter)
+
+    _ = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: workflow,
+      nodePayloads: ["echo-node": node],
+      variables: runtimeVariables
+    ))
+
+    let capturedInput = await adapter.capturedInput()
+    let input = try XCTUnwrap(capturedInput)
+    guard case let .object(projectedRuntimeVariables)? = input.mergedVariables["runtimeVariables"] else {
+      return XCTFail("runtimeVariables should be projected as an object")
+    }
+    XCTAssertEqual(projectedRuntimeVariables["workflowInput"], runtimeVariables["workflowInput"])
+    XCTAssertEqual(projectedRuntimeVariables["workflowCall"], runtimeVariables["workflowCall"])
+    XCTAssertEqual(input.promptText, "requested=sentinel-from-cli")
+    let systemPromptText = try XCTUnwrap(input.systemPromptText)
+    XCTAssertTrue(systemPromptText.contains("Runtime variables are available under `runtimeVariables`."))
+    XCTAssertTrue(systemPromptText.contains(#""requestedBehavior":"sentinel-from-cli""#))
+    XCTAssertTrue(systemPromptText.contains(#""templateLikeValue":"{{must-remain-literal}}""#))
+    XCTAssertTrue(systemPromptText.contains(#""requestedBehavior":"sentinel-from-call""#))
+  }
+
+  func testPromptVariablesExposeDirectAndCrossWorkflowInputPaths() async throws {
     let adapter = InputCapturingAdapter()
     let runner = DeterministicWorkflowRunner(adapter: adapter)
     let workflowInput: JSONObject = [
@@ -19,7 +69,7 @@ final class WorkflowRuntimeVariablesTests: XCTestCase {
     ]
 
     _ = try await runner.run(DeterministicWorkflowRunRequest(
-      workflow: runtimeVariablesWorkflow(),
+      workflow: runtimeVariablesWorkflow(workflowId: "runtime-variables", nodeId: "worker", stepId: "worker"),
       nodePayloads: [
         "worker": AgentNodePayload(
           id: "worker",
@@ -52,17 +102,23 @@ final class WorkflowRuntimeVariablesTests: XCTestCase {
     XCTAssertEqual(runtimeVariables["workflowCall"], .object(["input": .object(workflowCallInput)]))
   }
 
-  private func runtimeVariablesWorkflow() -> WorkflowDefinition {
+  private func runtimeVariablesWorkflow(
+    workflowId: String,
+    nodeId: String,
+    stepId: String,
+    systemPromptTemplate: String? = nil
+  ) -> WorkflowDefinition {
     WorkflowDefinition(
-      workflowId: "runtime-variables",
+      workflowId: workflowId,
       description: "runtime variables test",
       defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
-      entryStepId: "worker",
-      nodeRegistry: [WorkflowNodeRegistryRef(id: "worker", nodeFile: "nodes/worker.json")],
+      prompts: systemPromptTemplate.map { WorkflowPrompts(workerSystemPromptTemplate: $0) },
+      entryStepId: stepId,
+      nodeRegistry: [WorkflowNodeRegistryRef(id: nodeId, nodeFile: "nodes/\(nodeId).json")],
       steps: [
-        WorkflowStepRef(id: "worker", nodeId: "worker", role: .worker)
+        WorkflowStepRef(id: stepId, nodeId: nodeId, role: .worker)
       ],
-      nodes: [WorkflowNodeRef(id: "worker", nodeFile: "nodes/worker.json")]
+      nodes: [WorkflowNodeRef(id: stepId, nodeFile: "nodes/\(nodeId).json")]
     )
   }
 }

@@ -2,25 +2,127 @@
 import AppKit
 
 final class DaemonWorkflowInstanceListView: NSView {
+  static let listBottomPadding: CGFloat = 18
+
   private enum Layout {
     static let headerHeight: CGFloat = 28
     static let verticalSpacing: CGFloat = 12
+    static let footerHeight: CGFloat = 44
+    static let footerHorizontalInset: CGFloat = 12
     static let emptyLabelWidth: CGFloat = 360
     static let emptyLabelHeight: CGFloat = 44
   }
 
   let header: NSView
   let scrollView: NSScrollView
+  let footer: NSView
   let emptyLabel: NSTextField
+  private let scrollBackgroundView = NSView()
 
-  init(header: NSView, scrollView: NSScrollView, emptyLabel: NSTextField) {
+  init(header: NSView, scrollView: NSScrollView, footer: NSView, emptyLabel: NSTextField) {
     self.header = header
     self.scrollView = scrollView
+    self.footer = footer
     self.emptyLabel = emptyLabel
     super.init(frame: .zero)
+    scrollBackgroundView.wantsLayer = true
+    scrollBackgroundView.layer?.cornerRadius = 14
+    scrollBackgroundView.layer?.masksToBounds = true
+    updateScrollBackgroundColor()
     addSubview(header)
+    addSubview(scrollBackgroundView)
     addSubview(scrollView)
+    addSubview(footer)
     addSubview(emptyLabel)
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  override var isFlipped: Bool {
+    true
+  }
+
+  override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
+    updateScrollBackgroundColor()
+  }
+
+  override func layout() {
+    super.layout()
+    header.frame = NSRect(x: 0, y: 0, width: bounds.width, height: Layout.headerHeight)
+    let panelY = Layout.headerHeight + Layout.verticalSpacing
+    let availablePanelHeight = max(0, bounds.height - panelY)
+    let panelHeight = min(availablePanelHeight, preferredPanelHeight(defaultHeight: availablePanelHeight))
+    let footerHeight = min(Layout.footerHeight, panelHeight)
+    let scrollHeight = max(0, panelHeight - footerHeight)
+    scrollView.frame = NSRect(
+      x: 0,
+      y: panelY,
+      width: bounds.width,
+      height: scrollHeight
+    )
+    scrollBackgroundView.frame = NSRect(x: 0, y: panelY, width: bounds.width, height: panelHeight)
+    footer.frame = NSRect(x: 0, y: panelY + scrollHeight, width: bounds.width, height: footerHeight)
+    if let footerStack = footer as? NSStackView {
+      footerStack.edgeInsets = NSEdgeInsets(
+        top: 0,
+        left: Layout.footerHorizontalInset,
+        bottom: 0,
+        right: Layout.footerHorizontalInset
+      )
+    }
+    footer.layoutSubtreeIfNeeded()
+    let emptyWidth = min(Layout.emptyLabelWidth, max(0, scrollView.bounds.width - 32))
+    emptyLabel.frame = NSRect(
+      x: scrollView.frame.minX + max(16, (scrollView.bounds.width - emptyWidth) / 2),
+      y: scrollView.frame.minY + max(0, (scrollView.bounds.height - Layout.emptyLabelHeight) / 2),
+      width: emptyWidth,
+      height: Layout.emptyLabelHeight
+    )
+  }
+
+  private func preferredPanelHeight(defaultHeight: CGFloat) -> CGFloat {
+    guard
+      let table = scrollView.documentView as? NSTableView,
+      table.numberOfRows > 0
+    else {
+      return defaultHeight
+    }
+    let rowHeight = table.rowHeight + table.intercellSpacing.height
+    return max(rowHeight, CGFloat(table.numberOfRows) * rowHeight)
+      + Self.listBottomPadding
+      + Layout.footerHeight
+  }
+
+  private func updateScrollBackgroundColor() {
+    effectiveAppearance.performAsCurrentDrawingAppearance {
+      let surfaceColor = NSColor.controlBackgroundColor.blended(withFraction: 0.08, of: .labelColor)
+        ?? NSColor.controlBackgroundColor
+      scrollBackgroundView.layer?.backgroundColor = surfaceColor.cgColor
+    }
+  }
+}
+
+final class DaemonWorkflowOverviewPaneView: NSView {
+  static let contentBottomPadding: CGFloat = 18
+
+  private enum Layout {
+    static let headerHeight: CGFloat = 28
+    static let verticalSpacing: CGFloat = 12
+  }
+
+  let header: NSView
+  let contentView: NSView
+
+  init(header: NSView, contentView: NSView) {
+    self.header = header
+    self.contentView = contentView
+    super.init(frame: .zero)
+    addSubview(header)
+    addSubview(contentView)
   }
 
   @available(*, unavailable)
@@ -35,33 +137,39 @@ final class DaemonWorkflowInstanceListView: NSView {
   override func layout() {
     super.layout()
     header.frame = NSRect(x: 0, y: 0, width: bounds.width, height: Layout.headerHeight)
-    let scrollY = Layout.headerHeight + Layout.verticalSpacing
-    let availableScrollHeight = max(0, bounds.height - scrollY)
-    let scrollHeight = min(availableScrollHeight, preferredScrollHeight(defaultHeight: availableScrollHeight))
-    scrollView.frame = NSRect(
+    let contentY = Layout.headerHeight + Layout.verticalSpacing
+    let availableContentHeight = max(0, bounds.height - contentY)
+    contentView.frame = NSRect(
       x: 0,
-      y: scrollY,
+      y: contentY,
       width: bounds.width,
-      height: scrollHeight
-    )
-    let emptyWidth = min(Layout.emptyLabelWidth, max(0, scrollView.bounds.width - 32))
-    emptyLabel.frame = NSRect(
-      x: scrollView.frame.minX + max(16, (scrollView.bounds.width - emptyWidth) / 2),
-      y: scrollView.frame.minY + max(0, (scrollView.bounds.height - Layout.emptyLabelHeight) / 2),
-      width: emptyWidth,
-      height: Layout.emptyLabelHeight
+      height: preferredContentHeight(defaultHeight: availableContentHeight)
     )
   }
 
-  private func preferredScrollHeight(defaultHeight: CGFloat) -> CGFloat {
+  private func preferredContentHeight(defaultHeight: CGFloat) -> CGFloat {
     guard
-      let table = scrollView.documentView as? NSTableView,
-      table.numberOfRows > 0
+      let scroll = contentView as? NSScrollView,
+      let stack = scroll.documentView?.subviews.first as? NSStackView
     else {
       return defaultHeight
     }
-    let rowHeight = table.rowHeight + table.intercellSpacing.height
-    return max(rowHeight, CGFloat(table.numberOfRows) * rowHeight)
+    stack.layoutSubtreeIfNeeded()
+    let visibleViews = stack.arrangedSubviews.filter { !$0.isHidden }
+    let estimatedStackHeight = visibleViews.enumerated().reduce(CGFloat(0)) { partial, item in
+      let spacing = item.offset == 0 ? CGFloat(0) : stack.spacing
+      return partial + spacing + preferredHeight(for: item.element)
+    }
+    let contentHeight = max(stack.fittingSize.height, estimatedStackHeight) + Self.contentBottomPadding
+    scroll.hasVerticalScroller = contentHeight > defaultHeight + 0.5
+    return min(defaultHeight, max(1, contentHeight))
+  }
+
+  private func preferredHeight(for view: NSView) -> CGFloat {
+    if let section = view as? RielaAppSettingsSectionView {
+      return section.preferredGroupedListHeight
+    }
+    return max(view.fittingSize.height, view.frame.height)
   }
 }
 
@@ -113,7 +221,9 @@ extension DaemonWorkflowWindowController {
   ) -> NSStackView {
     let titleLabel = NSTextField(labelWithString: title)
     titleLabel.textColor = style.titleColor
-    titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
+    titleLabel.font = .systemFont(ofSize: 14, weight: .medium)
+    titleLabel.lineBreakMode = .byTruncatingTail
+    titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     let detailLabel = NSTextField(labelWithString: detail)
     detailLabel.textColor = .secondaryLabelColor
     detailLabel.font = .systemFont(ofSize: 11)
@@ -156,6 +266,13 @@ extension DaemonWorkflowWindowController {
     scroll.documentView = table
     scroll.hasVerticalScroller = true
     scroll.hasHorizontalScroller = false
+    scroll.automaticallyAdjustsContentInsets = false
+    scroll.contentInsets = NSEdgeInsets(
+      top: 0,
+      left: 0,
+      bottom: DaemonWorkflowInstanceListView.listBottomPadding,
+      right: 0
+    )
     scroll.translatesAutoresizingMaskIntoConstraints = true
     scroll.autoresizingMask = []
     rielaAppConfigureGroupedListScroll(scroll)
@@ -169,7 +286,6 @@ extension DaemonWorkflowWindowController {
       label,
       headerSpacer,
       profilePopup,
-      addListButton,
       refreshButton
     ])
     header.orientation = .horizontal
@@ -177,9 +293,22 @@ extension DaemonWorkflowWindowController {
     header.alignment = .centerY
     header.translatesAutoresizingMaskIntoConstraints = true
     header.autoresizingMask = []
+    let footerSpacer = NSView()
+    footerSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    let footer = NSStackView(views: [footerSpacer, addListButton])
+    footer.orientation = .horizontal
+    footer.spacing = 8
+    footer.alignment = .centerY
+    footer.translatesAutoresizingMaskIntoConstraints = true
+    footer.autoresizingMask = []
     emptyInstancesLabel.translatesAutoresizingMaskIntoConstraints = true
     emptyInstancesLabel.autoresizingMask = []
-    return DaemonWorkflowInstanceListView(header: header, scrollView: scroll, emptyLabel: emptyInstancesLabel)
+    return DaemonWorkflowInstanceListView(
+      header: header,
+      scrollView: scroll,
+      footer: footer,
+      emptyLabel: emptyInstancesLabel
+    )
   }
 
   func makeInstanceRowView(

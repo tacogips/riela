@@ -153,38 +153,141 @@ struct AddInstancePromptViewFactory {
 }
 
 extension DaemonWorkflowWindowController {
-  func promptForAddInstance() -> DaemonWorkflowAddInstanceRequest? {
-    while true {
-      let options = workflowSourceOptions()
-      guard !options.isEmpty else {
-        let stack = AddInstancePromptViewFactory().emptyWorkflowSelectionStack(
-          message: "No workflows. Import a workflow, package, or project source.",
-          sourceActions: sourceActionStack(context: .addInstance),
-          size: AddInstancePromptLayout.relinkSize
-        )
-        pendingAddInstanceSheetAction = nil
-        _ = runAddInstancePromptWindow(
-          title: "Choose Workflow",
-          message: "No workflow sources are available.",
-          content: stack,
-          contentSize: AddInstancePromptLayout.relinkSize,
-          primaryTitle: nil
-        )
-        if handlePendingAddInstanceSheetAction() {
-          continue
-        }
-        return nil
-      }
+  func showAddInstanceSelectionPane() {
+    activeSidebarPane = .instances
+    isShowingInstanceDetail = false
+    isShowingAddInstanceSelection = true
+    instanceDetailPane = .overview
+    let selectionView = buildInlineAddInstanceSelectionView(options: workflowSourceOptions())
+    selectionView.translatesAutoresizingMaskIntoConstraints = true
+    addInstanceSelectionView?.removeFromSuperview()
+    contentHost?.addSubview(selectionView)
+    addInstanceSelectionView = selectionView
+    instancesListView?.isHidden = true
+    instanceDetailView?.isHidden = true
+    addInstanceSelectionView?.isHidden = false
+    configurationEditorView?.isHidden = true
+    sourcesOverviewView?.isHidden = true
+    assistantOverviewView?.isHidden = true
+    profilesOverviewView?.isHidden = true
+    navigationTitleLabel.stringValue = "Choose Workflow"
+    contentHost?.needsLayout = true
+    contentHost?.layoutSubtreeIfNeeded()
+    updateNavigationState()
+    updateSidebarSelection()
+  }
 
-      switch promptForWorkflowSourceOption(options) {
-      case let .selected(option):
-        return promptForInstanceParameters(sourceOption: option)
-      case .retry:
-        continue
-      case .cancelled:
-        return nil
-      }
+  func confirmInlineAddInstanceSelection() {
+    guard
+      let selectedIndex = inlineAddInstanceSourceSelectionTarget?.selectedIndex,
+      inlineAddInstanceSourceOptions.indices.contains(selectedIndex),
+      let request = promptForInstanceParameters(sourceOption: inlineAddInstanceSourceOptions[selectedIndex])
+    else {
+      return
     }
+    onAddInstance(request)
+    showInstancesList()
+  }
+
+  private func buildInlineAddInstanceSelectionView(options: [WorkflowSourceOption]) -> NSView {
+    inlineAddInstanceSourceOptions = options
+    let titleLabel = NSTextField(labelWithString: "Choose Workflow")
+    titleLabel.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    let countLabel = NSTextField(
+      labelWithString: options.count == 1 ? "1 workflow source" : "\(options.count) workflow sources"
+    )
+    countLabel.textColor = .secondaryLabelColor
+    countLabel.lineBreakMode = .byTruncatingTail
+    countLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    let headerSpacer = NSView()
+    headerSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    let header = NSStackView(views: [titleLabel, headerSpacer, countLabel])
+    header.orientation = .horizontal
+    header.spacing = 8
+    header.alignment = .centerY
+    header.translatesAutoresizingMaskIntoConstraints = true
+    header.autoresizingMask = []
+
+    let stack: NSStackView
+    if options.isEmpty {
+      inlineAddInstanceSourceSelectionTarget = nil
+      let emptyLabel = NSTextField(labelWithString: "No workflows. Import a workflow, package, or project source.")
+      emptyLabel.textColor = .secondaryLabelColor
+      emptyLabel.alignment = .center
+      emptyLabel.lineBreakMode = .byWordWrapping
+      emptyLabel.maximumNumberOfLines = 2
+      let actionsTitle = NSTextField(labelWithString: "Manage Sources")
+      actionsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+      stack = inlineAddInstanceDocumentStack(views: [emptyLabel, actionsTitle, inlineSourceActionStack()])
+    } else {
+      let sourceSelection = workflowSourceSelectionStack(options: options) {
+        self.confirmInlineAddInstanceSelection()
+      }
+      inlineAddInstanceSourceSelectionTarget = sourceSelection.target
+      let actionsTitle = NSTextField(labelWithString: "Manage Sources")
+      actionsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+      stack = inlineAddInstanceDocumentStack(views: [
+        sourceSelection.stack,
+        actionsTitle,
+        inlineSourceActionStack()
+      ])
+    }
+    let scroll = inlineAddInstanceScrollView(documentStack: stack)
+    scroll.translatesAutoresizingMaskIntoConstraints = true
+    scroll.autoresizingMask = []
+    return DaemonWorkflowOverviewPaneView(header: header, contentView: scroll)
+  }
+
+  private func inlineSourceActionStack() -> NSStackView {
+    let stack = NSStackView(views: [
+      actionRow(
+        title: "Import Workflow or Package",
+        detail: "Add a workflow, package directory, or archive to this profile.",
+        action: #selector(addDirectory)
+      ),
+      actionRow(
+        title: "Add Project Source",
+        detail: "Make project workflows available to saved instances.",
+        action: #selector(addProject)
+      )
+    ])
+    stack.orientation = .vertical
+    stack.alignment = .width
+    stack.spacing = 8
+    return stack
+  }
+
+  private func inlineAddInstanceDocumentStack(views: [NSView]) -> NSStackView {
+    let stack = NSStackView(views: views)
+    stack.orientation = .vertical
+    stack.alignment = .width
+    stack.spacing = 12
+    stack.translatesAutoresizingMaskIntoConstraints = false
+    return stack
+  }
+
+  private func inlineAddInstanceScrollView(documentStack stack: NSStackView) -> NSScrollView {
+    let document = FlippedDocumentView()
+    document.translatesAutoresizingMaskIntoConstraints = false
+    document.addSubview(stack)
+    NSLayoutConstraint.activate([
+      stack.topAnchor.constraint(equalTo: document.topAnchor),
+      stack.leadingAnchor.constraint(equalTo: document.leadingAnchor),
+      stack.trailingAnchor.constraint(equalTo: document.trailingAnchor),
+      stack.bottomAnchor.constraint(equalTo: document.bottomAnchor, constant: -DaemonWorkflowOverviewPaneView.contentBottomPadding)
+    ])
+
+    let scroll = NSScrollView()
+    scroll.documentView = document
+    scroll.hasVerticalScroller = true
+    scroll.autohidesScrollers = true
+    scroll.hasHorizontalScroller = false
+    scroll.borderType = .noBorder
+    scroll.drawsBackground = false
+    scroll.backgroundColor = .clear
+    scroll.contentView.drawsBackground = false
+    document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor).isActive = true
+    return scroll
   }
 
   func promptForRelinkSourceOption(_ options: [WorkflowSourceOption]) -> WorkflowSourceSelection {
@@ -227,42 +330,6 @@ extension DaemonWorkflowWindowController {
         contentSize: AddInstancePromptLayout.relinkSize,
         primaryTitle: nil
       )
-    }
-    guard response == .OK else {
-      return .cancelled
-    }
-    return .selected(options[sourceSelection.target.selectedIndex])
-  }
-
-  private func promptForWorkflowSourceOption(_ options: [WorkflowSourceOption]) -> WorkflowSourceSelection {
-    let sourceActionsTitle = NSTextField(labelWithString: "Manage Sources")
-    sourceActionsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
-    sourceActionsTitle.alignment = .left
-    let sourceSelection = workflowSourceSelectionStack(options: options) {
-      self.activeAddInstanceWindow?.orderOut(nil)
-      NSApp.stopModal(withCode: .OK)
-    }
-    let stack = AddInstancePromptViewFactory().accessoryStack(
-      views: [
-        sourceSelection.stack,
-        sourceActionsTitle,
-        sourceActionStack(context: .addInstance)
-      ],
-      size: AddInstancePromptLayout.workflowSelectionSize
-    )
-
-    pendingAddInstanceSheetAction = nil
-    let response = withExtendedLifetime(sourceSelection.target) {
-      runAddInstancePromptWindow(
-        title: "Choose Workflow",
-        message: "Choose a workflow source.",
-        content: stack,
-        contentSize: AddInstancePromptLayout.workflowSelectionSize,
-        primaryTitle: nil
-      )
-    }
-    if handlePendingAddInstanceSheetAction() {
-      return .retry
     }
     guard response == .OK else {
       return .cancelled

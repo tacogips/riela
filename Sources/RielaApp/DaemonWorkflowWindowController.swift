@@ -129,15 +129,22 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   let sidebarSourcesButton = NSButton(title: "Workflow Sources", target: nil, action: nil)
   let sidebarAssistantButton = NSButton(title: "Assistant", target: nil, action: nil)
   let sidebarProfilesButton = NSButton(title: "Profiles", target: nil, action: nil)
-  let sidebarSearchField = NSSearchField()
   let sourcesSummaryLabel = NSTextField(labelWithString: "")
   let assistantSummaryLabel = NSTextField(labelWithString: "")
   let assistantSaveStatusLabel = NSTextField(labelWithString: "")
+  let assistantPanelTitleLabel = NSTextField(labelWithString: "Riela Assistant")
+  let assistantAvailabilityLabel = NSTextField(labelWithString: "")
+  let assistantSelectionSummaryLabel = NSTextField(labelWithString: "")
+  let assistantContextLabel = NSTextField(labelWithString: "")
+  let assistantFoldButton = NSButton(title: "", target: nil, action: nil)
+  let assistantSettingsVendorPopup = NSPopUpButton()
+  let assistantSettingsModelPopup = NSPopUpButton()
+  let assistantPromptField = NSTextField(string: "")
+  let assistantSendButton = NSButton(title: "", target: nil, action: nil)
   let profilesSummaryLabel = NSTextField(labelWithString: "")
   let emptyInstancesLabel = NSTextField(
     labelWithString: "No instances. Press + to select a workflow and create one."
   )
-  let backToInstancesButton = NSButton(title: "Instances", target: nil, action: nil)
   let detailTitleLabel = NSTextField(labelWithString: "")
   let detailNameValueLabel = NSTextField(labelWithString: "")
   let detailWorkflowValueLabel = NSTextField(labelWithString: "")
@@ -153,7 +160,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   private let onRemoveProfile: (RielaAppProfileName) -> Bool
   let onAddDirectory: () -> Void
   let onAddProject: () -> Void
-  private let onAddInstance: (DaemonWorkflowAddInstanceRequest) -> Void
+  let onAddInstance: (DaemonWorkflowAddInstanceRequest) -> Void
   private let onRevealSelectedSource: (String) -> Void
   private let onRelinkInstance: (String, String) -> Void
   private let onRenameWorkflow: (String) -> Void
@@ -168,16 +175,18 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   let onRegisterEventSource: (String, String, String) -> String?
   let configuredEnvironmentValues: (RielaAppDaemonWorkflowCandidate) -> [RielaAppConfiguredEnvironmentValue]
   let onSaveAssistantAssistance: (String) -> String?
+  let onSaveAssistantSettings: (RielaAppAssistantSettings) -> String?
+  let onSubmitAssistantMessage: (String, String?) -> Void
   private let environmentSummary: (RielaAppDaemonWorkflowCandidate) -> String
   let environmentColumnStatus: (RielaAppDaemonWorkflowCandidate) -> String
   private let onWindowWillClose: () -> Void
 
   private var candidates: [RielaAppDaemonWorkflowCandidate] = []
-  private var workflowSources: [RielaAppDaemonWorkflowCandidate] = []
-  private var state = RielaAppDaemonWorkflowState()
+  var workflowSources: [RielaAppDaemonWorkflowCandidate] = []
+  var state = RielaAppDaemonWorkflowState()
   private var snapshots: [String: RielaAppDaemonWorkflowRuntime.RuntimeSnapshot] = [:]
-  private var profileName = RielaAppProfileName.default
-  private var profileNames: [RielaAppProfileName] = [.default]
+  var profileName = RielaAppProfileName.default
+  var profileNames: [RielaAppProfileName] = [.default]
   private var selectedIdentity: String?
   private var selectedIdentityByProfile: [RielaAppProfileName: String] = [:]
   private var isUpdatingProfileControls = false
@@ -188,6 +197,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   weak var instancesListView: NSView?
   weak var contentHost: DaemonWorkflowWindowContentHostView?
   weak var instanceDetailView: NSView?
+  weak var addInstanceSelectionView: NSView?
   weak var configurationEditorView: NSView?
   weak var sourcesOverviewView: NSView?
   weak var assistantOverviewView: NSView?
@@ -210,11 +220,18 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   var eventSourceTextView: NSTextView?
   var eventBindingTextView: NSTextView?
   var assistantAssistanceTextView: NSTextView?
+  var assistantTranscriptTextView: NSTextView?
+  weak var assistantTranscriptScrollView: NSScrollView?
+  weak var assistantInputStackView: NSStackView?
+  weak var settingsRootView: DaemonWorkflowSettingsRootView?
+  var inlineAddInstanceSourceSelectionTarget: WorkflowSourceSelectionTarget?
+  var inlineAddInstanceSourceOptions: [WorkflowSourceOption] = []
   var instanceDetailPane: InstanceDetailPane = .overview
-  private var isShowingInstanceDetail = false
-  private var activeSidebarPane: SidebarPane = .instances
+  var isShowingInstanceDetail = false
+  var isShowingAddInstanceSelection = false
+  var activeSidebarPane: SidebarPane = .instances
 
-  private enum SidebarPane {
+  enum SidebarPane {
     case instances
     case sources
     case assistant
@@ -243,6 +260,8 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     onRegisterEventSource: @escaping (String, String, String) -> String?,
     configuredEnvironmentValues: @escaping (RielaAppDaemonWorkflowCandidate) -> [RielaAppConfiguredEnvironmentValue],
     onSaveAssistantAssistance: @escaping (String) -> String?,
+    onSaveAssistantSettings: @escaping (RielaAppAssistantSettings) -> String? = { _ in nil },
+    onSubmitAssistantMessage: @escaping (String, String?) -> Void = { _, _ in },
     environmentSummary: @escaping (RielaAppDaemonWorkflowCandidate) -> String,
     environmentColumnStatus: @escaping (RielaAppDaemonWorkflowCandidate) -> String,
     onWindowWillClose: @escaping () -> Void
@@ -268,6 +287,8 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     self.onRegisterEventSource = onRegisterEventSource
     self.configuredEnvironmentValues = configuredEnvironmentValues
     self.onSaveAssistantAssistance = onSaveAssistantAssistance
+    self.onSaveAssistantSettings = onSaveAssistantSettings
+    self.onSubmitAssistantMessage = onSubmitAssistantMessage
     self.environmentSummary = environmentSummary
     self.environmentColumnStatus = environmentColumnStatus
     self.onWindowWillClose = onWindowWillClose
@@ -313,8 +334,12 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     }
     updateProfileControls()
     updateOverviewSummaries()
+    updateAssistantPanel()
     instanceTable.reloadData()
     emptyInstancesLabel.isHidden = !instanceRows.isEmpty
+    if isShowingAddInstanceSelection {
+      showAddInstanceSelectionPane()
+    }
     restoreSelection()
     updateInstanceDetail()
   }
@@ -334,115 +359,8 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     onRefresh()
   }
 
-  @objc func goBack() {
-    if isShowingInstanceDetail, instanceDetailPane != .overview {
-      showInstanceDetailOverview()
-      return
-    }
-    if isShowingInstanceDetail {
-      showInstancesList()
-      return
-    }
-    guard activeSidebarPane != .instances else {
-      return
-    }
-    showInstancesPane()
-  }
-
-  @objc func goForward() {}
-
-  @objc func showInstancesPane() {
-    activeSidebarPane = .instances
-    showInstancesList()
-  }
-
-  @objc func showSourcesPane() {
-    activeSidebarPane = .sources
-    isShowingInstanceDetail = false
-    instancesListView?.isHidden = true
-    instanceDetailView?.isHidden = true
-    configurationEditorView?.isHidden = true
-    sourcesOverviewView?.isHidden = false
-    assistantOverviewView?.isHidden = true
-    profilesOverviewView?.isHidden = true
-    navigationTitleLabel.stringValue = "Workflow Sources"
-    updateNavigationState()
-    updateSidebarSelection()
-  }
-
-  @objc func showProfilesPane() {
-    activeSidebarPane = .profiles
-    isShowingInstanceDetail = false
-    instancesListView?.isHidden = true
-    instanceDetailView?.isHidden = true
-    configurationEditorView?.isHidden = true
-    sourcesOverviewView?.isHidden = true
-    assistantOverviewView?.isHidden = true
-    profilesOverviewView?.isHidden = false
-    navigationTitleLabel.stringValue = "Profiles"
-    updateNavigationState()
-    updateSidebarSelection()
-  }
-
-  @objc func showAssistantPane() {
-    activeSidebarPane = .assistant
-    isShowingInstanceDetail = false
-    instancesListView?.isHidden = true
-    instanceDetailView?.isHidden = true
-    configurationEditorView?.isHidden = true
-    sourcesOverviewView?.isHidden = true
-    assistantOverviewView?.isHidden = false
-    profilesOverviewView?.isHidden = true
-    navigationTitleLabel.stringValue = "Assistant"
-    updateNavigationState()
-    updateSidebarSelection()
-  }
-
   @objc func openProfilesFromSidebar() {
     openProfileSelect()
-  }
-
-  @objc func saveAssistantAssistance() {
-    let assistance = assistantAssistanceTextView?.string ?? ""
-    if let error = onSaveAssistantAssistance(assistance) {
-      assistantSaveStatusLabel.textColor = .systemRed
-      assistantSaveStatusLabel.stringValue = error
-      NSApp.requestUserAttention(.informationalRequest)
-      return
-    }
-    assistantSaveStatusLabel.textColor = .secondaryLabelColor
-    assistantSaveStatusLabel.stringValue = "Saved assistance"
-    updateOverviewSummaries()
-  }
-
-  private func updateOverviewSummaries() {
-    let sourceCount = workflowSources.count
-    sourcesSummaryLabel.stringValue = sourceCount == 1 ? "1 workflow source" : "\(sourceCount) workflow sources"
-    let assistance = state.assistant.normalizedAssistance
-    assistantSummaryLabel.stringValue = assistance.isEmpty
-      ? "No assistance configured"
-      : "\(assistance.count) characters configured"
-    let profileCount = profileNames.count
-    profilesSummaryLabel.stringValue = profileCount == 1 ? "1 profile" : "\(profileCount) profiles"
-  }
-
-  func updateNavigationState() {
-    navigationBackButton.isEnabled = isShowingInstanceDetail || activeSidebarPane != .instances
-    navigationForwardButton.isEnabled = false
-  }
-
-  func updateSidebarSelection() {
-    updateSidebarButton(sidebarInstancesButton, selected: activeSidebarPane == .instances)
-    updateSidebarButton(sidebarSourcesButton, selected: activeSidebarPane == .sources)
-    updateSidebarButton(sidebarAssistantButton, selected: activeSidebarPane == .assistant)
-    updateSidebarButton(sidebarProfilesButton, selected: activeSidebarPane == .profiles)
-  }
-
-  private func updateSidebarButton(_ button: NSButton, selected: Bool) {
-    button.wantsLayer = true
-    button.layer?.cornerRadius = 10
-    button.layer?.backgroundColor = selected ? NSColor.controlAccentColor.cgColor : NSColor.clear.cgColor
-    button.contentTintColor = selected ? .white : .labelColor
   }
 
   @objc func profilePopupChanged() {
@@ -466,10 +384,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   }
 
   @objc func addListButtonPressed() {
-    guard let request = promptForAddInstance() else {
-      return
-    }
-    onAddInstance(request)
+    showAddInstanceSelectionPane()
   }
 
   private func openProfileSelect() {
@@ -602,9 +517,11 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   @objc func showInstancesList() {
     activeSidebarPane = .instances
     isShowingInstanceDetail = false
+    isShowingAddInstanceSelection = false
     instanceDetailPane = .overview
     instancesListView?.isHidden = false
     instanceDetailView?.isHidden = true
+    addInstanceSelectionView?.isHidden = true
     configurationEditorView?.isHidden = true
     sourcesOverviewView?.isHidden = true
     assistantOverviewView?.isHidden = true
@@ -620,10 +537,12 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     }
     activeSidebarPane = .instances
     isShowingInstanceDetail = true
+    isShowingAddInstanceSelection = false
     instanceDetailPane = .overview
     updateInstanceDetail()
     instancesListView?.isHidden = true
     instanceDetailView?.isHidden = false
+    addInstanceSelectionView?.isHidden = true
     configurationEditorView?.isHidden = true
     sourcesOverviewView?.isHidden = true
     assistantOverviewView?.isHidden = true
@@ -652,7 +571,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     updateInstanceDetail()
   }
 
-  private func selectedRow() -> ConfiguredWorkflowInstanceRow? {
+  func selectedRow() -> ConfiguredWorkflowInstanceRow? {
     let row = instanceTable.selectedRow
     guard row >= 0 else {
       return nil
@@ -725,10 +644,12 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   }
 
   func showInstanceDetailOverview() {
+    isShowingAddInstanceSelection = false
     instanceDetailPane = .overview
     updateInstanceDetail()
     instancesListView?.isHidden = true
     instanceDetailView?.isHidden = false
+    addInstanceSelectionView?.isHidden = true
     configurationEditorView?.isHidden = true
     sourcesOverviewView?.isHidden = true
     assistantOverviewView?.isHidden = true

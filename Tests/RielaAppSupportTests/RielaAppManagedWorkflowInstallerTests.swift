@@ -119,7 +119,7 @@ final class RielaAppManagedWorkflowInstallerTests: XCTestCase {
       guard case let .invalidPackageManifest(_, issues) = error as? RielaAppManagedWorkflowInstallError else {
         return XCTFail("expected invalidPackageManifest, got \(error)")
       }
-      XCTAssertTrue(issues.contains { $0.contains("CHECKSUM_MISMATCH") || $0.contains("checksum does not match") })
+      XCTAssertTrue(issues.contains { $0.contains("checksum does not match package contents") })
     }
   }
 

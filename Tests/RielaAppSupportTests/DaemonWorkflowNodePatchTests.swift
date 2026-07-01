@@ -96,13 +96,44 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
 
   func testWorkflowStateStoresAssistantAssistance() throws {
     let state = RielaAppDaemonWorkflowState(
-      assistant: RielaAppAssistantSettings(assistance: "Prefer concise help.")
+      assistant: RielaAppAssistantSettings(
+        assistance: "Prefer concise help.",
+        vendor: .openAIAPI,
+        model: "gpt-5",
+        isFolded: true,
+        messages: [
+          RielaAppAssistantMessage(role: .user, content: "Create an instance"),
+          RielaAppAssistantMessage(role: .assistant, content: "Use the Add Instance control.")
+        ]
+      )
     )
 
     let data = try JSONEncoder().encode(state)
     let decoded = try JSONDecoder().decode(RielaAppDaemonWorkflowState.self, from: data)
 
     XCTAssertEqual(decoded.assistant.assistance, "Prefer concise help.")
+    XCTAssertEqual(decoded.assistant.vendor, .openAIAPI)
+    XCTAssertEqual(decoded.assistant.model, "gpt-5")
+    XCTAssertEqual(decoded.assistant.isFolded, true)
+    XCTAssertEqual(decoded.assistant.messages.map(\.content), ["Create an instance", "Use the Add Instance control."])
+  }
+
+  func testWorkflowStateDecodesLegacyAssistantAssistanceOnly() throws {
+    let data = Data("""
+    {
+      "version": 1,
+      "assistant": {
+        "assistance": "Prefer concise help."
+      }
+    }
+    """.utf8)
+
+    let decoded = try JSONDecoder().decode(RielaAppDaemonWorkflowState.self, from: data)
+
+    XCTAssertEqual(decoded.assistant.assistance, "Prefer concise help.")
+    XCTAssertEqual(decoded.assistant.vendor, .openAIAPI)
+    XCTAssertEqual(decoded.assistant.normalizedModel, RielaAppAssistantVendor.openAIAPI.defaultModel)
+    XCTAssertEqual(decoded.assistant.messages, [])
   }
 
   func testStateProjectsMultipleManagedInstancesFromOneSourceWorkflow() {

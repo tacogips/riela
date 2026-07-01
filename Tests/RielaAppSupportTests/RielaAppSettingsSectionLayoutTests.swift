@@ -21,6 +21,18 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     XCTAssertTrue(allSubviews(of: RielaAppSettingsRow.self, in: sections[1]).allSatisfy(\.isGroupedSettingsRow))
   }
 
+  func testInstanceDetailDoesNotShowInlineBackButtonAtRuntime() throws {
+    let controller = configuredInstanceDetailController()
+
+    let root = try XCTUnwrap(controller.window?.contentView)
+    let table = try XCTUnwrap(firstSubview(of: NSTableView.self, in: root))
+    controller.tableClicked(table)
+    controller.window?.layoutIfNeeded()
+
+    let visibleButtons = visibleSubviews(of: NSButton.self, in: root)
+    XCTAssertFalse(visibleButtons.contains { $0.accessibilityLabel() == "Back to Instances" })
+  }
+
   func testGroupedSettingsWindowRendersNonBlankAtRuntime() throws {
     let controller = configuredInstanceDetailController()
     let root = try XCTUnwrap(controller.window?.contentView)
@@ -63,9 +75,68 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     XCTAssertEqual(table.intercellSpacing, .zero)
     XCTAssertEqual(table.backgroundColor, .clear)
     XCTAssertEqual(listView.scrollView.layer?.cornerRadius, 14)
-    XCTAssertEqual(listView.scrollView.frame.height, table.rowHeight, accuracy: 1)
+    XCTAssertEqual(listView.scrollView.layer?.masksToBounds, true)
+    XCTAssertNotNil(listView.scrollView.layer?.backgroundColor)
+    XCTAssertEqual(
+      listView.scrollView.contentInsets.bottom,
+      DaemonWorkflowInstanceListView.listBottomPadding,
+      accuracy: 0.1
+    )
+    XCTAssertEqual(
+      listView.scrollView.frame.height,
+      table.rowHeight + DaemonWorkflowInstanceListView.listBottomPadding,
+      accuracy: 1
+    )
     XCTAssertTrue(allSubviews(of: RielaAppSettingsRow.self, in: cell).isEmpty)
     XCTAssertNotNil(firstSubview(of: RielaAppSymbolTileView.self, in: cell))
+  }
+
+  func testSettingsShellSidebarUsesRoundedPanelAtRuntime() throws {
+    let controller = configuredInstanceListController()
+    let window = try XCTUnwrap(controller.window)
+    window.setFrame(NSRect(x: 0, y: 0, width: 920, height: 640), display: false)
+    window.layoutIfNeeded()
+
+    let root = try XCTUnwrap(window.contentView)
+    let sidebar = try XCTUnwrap(root.subviews.compactMap { $0 as? NSVisualEffectView }.first)
+
+    XCTAssertEqual(sidebar.frame.minX, 8, accuracy: 0.1)
+    XCTAssertEqual(sidebar.frame.minY, 8, accuracy: 0.1)
+    XCTAssertEqual(sidebar.frame.height, root.bounds.height - 16, accuracy: 0.1)
+    XCTAssertEqual(sidebar.layer?.cornerRadius, 22)
+    XCTAssertEqual(sidebar.layer?.masksToBounds, true)
+    XCTAssertEqual(sidebar.layer?.borderWidth, 1)
+    XCTAssertNotNil(sidebar.layer?.borderColor)
+  }
+
+  func testSidebarOverviewPanesUseInstanceRightPaneLayoutAtRuntime() throws {
+    let controller = makeController()
+    let window = try XCTUnwrap(controller.window)
+    window.setFrame(NSRect(x: 0, y: 0, width: 920, height: 640), display: false)
+    let root = try XCTUnwrap(window.contentView)
+
+    controller.showSourcesPane()
+    window.layoutIfNeeded()
+    var overview = try XCTUnwrap(visibleSubviews(of: DaemonWorkflowOverviewPaneView.self, in: root).first)
+    overview.layoutSubtreeIfNeeded()
+    XCTAssertEqual(overview.header.frame.minY, 0, accuracy: 0.1)
+    XCTAssertEqual(overview.header.frame.height, 28, accuracy: 0.1)
+    XCTAssertEqual(overview.contentView.frame.minY, 40, accuracy: 0.1)
+    XCTAssertEqual((overview.contentView as? NSScrollView)?.hasVerticalScroller, false)
+    XCTAssertEqual(visibleSubviews(of: RielaAppSettingsSectionView.self, in: overview).count, 1)
+
+    controller.showProfilesPane()
+    window.layoutIfNeeded()
+    overview = try XCTUnwrap(visibleSubviews(of: DaemonWorkflowOverviewPaneView.self, in: root).first)
+    overview.layoutSubtreeIfNeeded()
+    XCTAssertEqual(overview.contentView.frame.minY, 40, accuracy: 0.1)
+    XCTAssertEqual((overview.contentView as? NSScrollView)?.hasVerticalScroller, false)
+
+    controller.showAssistantPane()
+    window.layoutIfNeeded()
+    overview = try XCTUnwrap(visibleSubviews(of: DaemonWorkflowOverviewPaneView.self, in: root).first)
+    overview.layoutSubtreeIfNeeded()
+    XCTAssertEqual(overview.contentView.frame.minY, 40, accuracy: 0.1)
   }
 
   func testSidebarOverviewActionRowsUseGroupedSettingsSectionsAtRuntime() throws {
@@ -89,7 +160,27 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     controller.window?.layoutIfNeeded()
     sections = visibleSubviews(of: RielaAppSettingsSectionView.self, in: root)
     XCTAssertEqual(sections.count, 1)
-    XCTAssertEqual(allSubviews(of: RielaAppSettingsRow.self, in: sections[0]).count, 1)
+    XCTAssertEqual(allSubviews(of: RielaAppSettingsRow.self, in: sections[0]).count, 2)
+  }
+
+  func testSidebarOverviewActionRowsUseInstanceListTypographyAtRuntime() throws {
+    let controller = makeController()
+    let root = try XCTUnwrap(controller.window?.contentView)
+
+    controller.showSourcesPane()
+    controller.window?.layoutIfNeeded()
+
+    let titleLabel = try XCTUnwrap(
+      visibleSubviews(of: NSTextField.self, in: root)
+        .first { $0.stringValue == "Import Workflow or Package" }
+    )
+    let detailLabel = try XCTUnwrap(
+      visibleSubviews(of: NSTextField.self, in: root)
+        .first { $0.stringValue == "Add a workflow, package directory, or archive to this profile." }
+    )
+
+    XCTAssertEqual(titleLabel.font?.pointSize, 14)
+    XCTAssertEqual(detailLabel.font?.pointSize, 11)
   }
 
   private func makeController() -> DaemonWorkflowWindowController {

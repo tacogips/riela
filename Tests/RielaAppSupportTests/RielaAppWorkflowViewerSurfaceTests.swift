@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 @testable import RielaApp
+@testable import RielaAppSupport
 import XCTest
 
 @MainActor
@@ -17,6 +18,47 @@ final class RielaAppWorkflowViewerSurfaceTests: XCTestCase {
     try assertVisibleTextScrollsAreGrouped(in: root, minimumCount: 1)
   }
 
+  func testWorkflowViewerAssistantPanelSubmitsCurrentDirectoryAndPersistsState() throws {
+    var savedSettings: RielaAppAssistantSettings?
+    var submittedMessage: String?
+    var submittedWorkingDirectory: String?
+    let controller = WorkflowViewerWindowController()
+
+    controller.show(
+      workflowDirectory: "/workflows/demo",
+      sessionStoreRoot: nil,
+      currentDirectory: "/projects/demo",
+      assistantProfileName: RielaAppProfileName("work"),
+      assistantSettings: RielaAppAssistantSettings(
+        vendor: .openAIAPI,
+        model: "gpt-5",
+        messages: [RielaAppAssistantMessage(role: .assistant, content: "Ready.")]
+      ),
+      onSaveAssistantSettings: { settings in
+        savedSettings = settings
+        return nil
+      },
+      onSubmitAssistantMessage: { message, workingDirectory in
+        submittedMessage = message
+        submittedWorkingDirectory = workingDirectory
+      }
+    )
+    controller.window?.layoutIfNeeded()
+
+    let root = try XCTUnwrap(controller.window?.contentView)
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Riela Assistant" })
+    XCTAssertTrue(controller.assistantTranscriptTextView?.string.contains("Ready.") == true)
+
+    controller.assistantPromptField.stringValue = "Explain this workflow"
+    controller.sendAssistantMessage()
+    XCTAssertEqual(submittedMessage, "Explain this workflow")
+    XCTAssertEqual(submittedWorkingDirectory, "/projects/demo")
+
+    controller.toggleAssistantFolded()
+    XCTAssertEqual(savedSettings?.isFolded, true)
+    XCTAssertEqual(controller.assistantTranscriptScrollView?.isHidden, true)
+  }
+
   private func assertVisibleTextScrollsAreGrouped(in root: NSView, minimumCount: Int) throws {
     let scrolls = allSubviews(of: NSScrollView.self, in: root).filter { scroll in
       !hasHiddenAncestor(scroll) && scroll.documentView is NSTextView
@@ -24,7 +66,7 @@ final class RielaAppWorkflowViewerSurfaceTests: XCTestCase {
     XCTAssertGreaterThanOrEqual(scrolls.count, minimumCount)
     for scroll in scrolls {
       XCTAssertTrue(scroll.borderType == NSBorderType.noBorder)
-      XCTAssertEqual(scroll.layer?.cornerRadius, 8)
+      XCTAssertEqual(scroll.layer?.cornerRadius, 12)
       XCTAssertEqual(scroll.layer?.masksToBounds, true)
     }
   }
@@ -61,6 +103,10 @@ final class RielaAppWorkflowViewerSurfaceTests: XCTestCase {
       matches.append(contentsOf: allSubviews(of: type, in: subview))
     }
     return matches
+  }
+
+  private func visibleTextFields(in root: NSView) -> [NSTextField] {
+    allSubviews(of: NSTextField.self, in: root).filter { !hasHiddenAncestor($0) }
   }
 
   private func hasHiddenAncestor(_ view: NSView) -> Bool {

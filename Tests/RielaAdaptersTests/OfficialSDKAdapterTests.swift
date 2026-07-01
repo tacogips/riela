@@ -715,7 +715,7 @@ final class OfficialSDKAdapterTests: XCTestCase {
     }
   }
 
-  func testDispatchingNodeAdapterRegistersOfficialSDKBackendsAndDefersCursorSDK() async throws {
+  func testDispatchingNodeAdapterRegistersOfficialSDKBackends() async throws {
     let openAIExecutor = RecordingOfficialSDKExecutor(outcomes: [
       .success(OfficialSDKResponse(body: .object(["output_text": .string("openai")])) )
     ])
@@ -724,6 +724,9 @@ final class OfficialSDKAdapterTests: XCTestCase {
     ])
     let geminiExecutor = RecordingOfficialSDKExecutor(outcomes: [
       .success(OfficialSDKResponse(body: .object(["candidates": .array([.object(["content": .object(["parts": .array([.object(["text": .string("gemini")])])])])])])) )
+    ])
+    let cursorExecutor = RecordingOfficialSDKExecutor(outcomes: [
+      .success(OfficialSDKResponse(body: .object(["result": .string("cursor")])) )
     ])
     let adapter = DispatchingNodeAdapter(
       configuration: DispatchingNodeAdapterConfiguration(
@@ -743,6 +746,11 @@ final class OfficialSDKAdapterTests: XCTestCase {
           apiKeyEnv: "TEST_GEMINI_KEY",
           environment: ["TEST_GEMINI_KEY": geminiTestKey()],
           requestExecutor: geminiExecutor
+        ),
+        cursorSDK: OfficialSDKAdapterConfiguration(
+          apiKeyEnv: "TEST_CURSOR_KEY",
+          environment: ["TEST_CURSOR_KEY": cursorTestKey()],
+          requestExecutor: cursorExecutor
         )
       )
     )
@@ -750,18 +758,12 @@ final class OfficialSDKAdapterTests: XCTestCase {
     let openAIOutput = try await adapter.execute(openAIInput(), context: AdapterExecutionContext())
     let anthropicOutput = try await adapter.execute(anthropicInput(), context: AdapterExecutionContext())
     let geminiOutput = try await adapter.execute(geminiInput(), context: AdapterExecutionContext())
+    let cursorOutput = try await adapter.execute(cursorSDKInput(), context: AdapterExecutionContext())
 
     XCTAssertEqual(openAIOutput.payload["text"], .string("openai"))
     XCTAssertEqual(anthropicOutput.payload["text"], .string("anthropic"))
     XCTAssertEqual(geminiOutput.payload["text"], .string("gemini"))
-
-    do {
-      _ = try await adapter.execute(cursorSDKInput(), context: AdapterExecutionContext())
-      XCTFail("Expected missing cursor SDK adapter")
-    } catch let error as AdapterExecutionError {
-      XCTAssertEqual(error.code, .providerError)
-      XCTAssertEqual(error.message, "node execution backend 'official/cursor-sdk' has no registered adapter")
-    }
+    XCTAssertEqual(cursorOutput.payload["text"], .string("cursor"))
   }
 
   func testDispatchingNodeAdapterCanStillReportMissingRegistrationDeterministically() async throws {
@@ -861,10 +863,15 @@ final class OfficialSDKAdapterTests: XCTestCase {
     )
   }
 
-  private func cursorSDKInput() -> AdapterExecutionInput {
+  private func cursorSDKInput(
+    systemPromptText: String? = nil,
+    agentEnvironment: [String: String] = [:]
+  ) -> AdapterExecutionInput {
     AdapterExecutionInput(
       node: AgentNodePayload(id: "worker", executionBackend: .officialCursorSDK, model: "composer-2"),
-      promptText: "hello"
+      promptText: "hello",
+      systemPromptText: systemPromptText,
+      agentEnvironment: agentEnvironment
     )
   }
 
@@ -891,6 +898,10 @@ final class OfficialSDKAdapterTests: XCTestCase {
 
   private func googleTestKey() -> String {
     ["google", "test", "123456"].joined(separator: "-")
+  }
+
+  private func cursorTestKey() -> String {
+    ["cursor", "test", "123456"].joined(separator: "-")
   }
 
   private func httpResponse(_ object: JSONObject, statusCode: Int = 200) throws -> OfficialSDKHTTPResponse {

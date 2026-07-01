@@ -325,7 +325,7 @@ extension WorkflowCommandTests {
     XCTAssertTrue(manifest.stderr.isEmpty)
     let manifestResult = try decodeJSON(WorkflowManifestValidationCommandResult.self, from: manifest.stdout)
     XCTAssertFalse(manifestResult.valid)
-    XCTAssertTrue(manifestResult.issues.contains { $0.path == "workflowDirectory" || $0.message.contains("workflow.json not found") })
+    XCTAssertTrue(manifestResult.issues.contains { $0.code == "MISSING_WORKFLOW_BUNDLE" && $0.path == "workflowDirectory" })
 
     let envManifest = await app.run([
       "workflow", "manifest", "validate",

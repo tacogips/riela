@@ -10,58 +10,75 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     static let initialWindowSize = NSSize(width: 640, height: 560)
     static let minimumWindowSize = NSSize(width: 420, height: 380)
     static let sidebarWidth: CGFloat = 180
+    static let assistantExpandedHeight: CGFloat = 176
+    static let assistantFoldedHeight: CGFloat = 42
   }
 
   let loader = WorkflowViewerLoader()
-  private let outlineView = NSOutlineView()
+  let outlineView = NSOutlineView()
   private let sessionPopup = NSPopUpButton()
   private let templatePopup = NSPopUpButton()
   private let workflowTitleLabel = NSTextField(labelWithString: "Choose Workflow")
-  private let workflowSubtitleLabel = NSTextField(labelWithString: "")
-  private let currentDirectoryLabel = NSTextField(labelWithString: "-")
-  private let environmentVariablesLabel = NSTextField(labelWithString: "-")
-  private let workflowVariablesLabel = NSTextField(labelWithString: "-")
-  private weak var currentDirectorySettingRow: RielaAppSelectableSettingsRow?
-  private weak var environmentVariablesSettingRow: RielaAppSelectableSettingsRow?
-  private weak var workflowVariablesSettingRow: RielaAppSelectableSettingsRow?
+  let workflowSubtitleLabel = NSTextField(labelWithString: "")
+  let currentDirectoryLabel = NSTextField(labelWithString: "-")
+  let environmentVariablesLabel = NSTextField(labelWithString: "-")
+  let workflowVariablesLabel = NSTextField(labelWithString: "-")
+  weak var currentDirectorySettingRow: RielaAppSelectableSettingsRow?
+  weak var environmentVariablesSettingRow: RielaAppSelectableSettingsRow?
+  weak var workflowVariablesSettingRow: RielaAppSelectableSettingsRow?
   private let detailTextView = NSTextView()
   private let logTextView = NSTextView()
   private let structureTextView = NSTextView()
   private let modelPopup = NSPopUpButton()
   private let backendPopup = NSPopUpButton()
   private let effortPopup = NSPopUpButton()
-  private weak var modelOverrideRow: RielaAppSettingsRow?
-  private weak var backendOverrideRow: RielaAppSettingsRow?
-  private weak var effortOverrideRow: RielaAppSettingsRow?
-  private weak var nodePatchOverrideRow: RielaAppSettingsRow?
+  weak var modelOverrideRow: RielaAppSettingsRow?
+  weak var backendOverrideRow: RielaAppSettingsRow?
+  weak var effortOverrideRow: RielaAppSettingsRow?
+  weak var nodePatchOverrideRow: RielaAppSettingsRow?
   private let saveNodePatchButton = NSButton(title: "", target: nil, action: nil)
   private let clearNodePatchButton = NSButton(title: "", target: nil, action: nil)
   private let templateTextView = NSTextView()
   private let saveTemplateButton = NSButton(title: "", target: nil, action: nil)
   private let reloadTemplateButton = NSButton(title: "", target: nil, action: nil)
+  let assistantPanelHost = NSView()
+  let assistantPanelTitleLabel = NSTextField(labelWithString: "Riela Assistant")
+  let assistantAvailabilityLabel = NSTextField(labelWithString: "")
+  let assistantContextLabel = NSTextField(labelWithString: "")
+  let assistantFoldButton = NSButton(title: "", target: nil, action: nil)
+  let assistantPromptField = NSTextField(string: "")
+  let assistantSendButton = NSButton(title: "", target: nil, action: nil)
+  var assistantTranscriptTextView: NSTextView?
+  weak var assistantTranscriptScrollView: NSScrollView?
+  weak var assistantInputStackView: NSStackView?
+  var assistantPanelHeightConstraint: NSLayoutConstraint?
   let timelineDateFormatter: DateFormatter = {
     let formatter = DateFormatter()
     formatter.dateStyle = .short
     formatter.timeStyle = .medium
     return formatter
   }()
-  private let detailFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-  private let detailTextColor = NSColor.labelColor
-  private let detailBackgroundColor = NSColor.controlBackgroundColor
+  let detailFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+  let detailTextColor = NSColor.labelColor
+  let detailBackgroundColor = NSColor.controlBackgroundColor
   private let templateFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-  private var workflowDirectory: String?
+  var workflowDirectory: String?
   private var sessionStoreRoot: String?
-  private var state: WorkflowViewerState?
-  private var selectedNodeId: String?
+  var state: WorkflowViewerState?
+  var selectedNodeId: String?
   private var selectedTemplateFileId: String?
-  private var currentDirectory: String?
+  var currentDirectory: String?
   private var environmentVariablesSummary: String?
   private var workflowVariablesSummary: String?
   private var nodePatches: [String: RielaAppDaemonWorkflowNodePatch] = [:]
   private var onSaveNodePatch: ((String, RielaAppDaemonWorkflowNodePatch?) -> Bool)?
-  private var onSetWorkingDirectory: (() -> String?)?
-  private var onSetEnvironmentVariables: (() -> String?)?
-  private var onSetWorkflowVariables: (() -> String?)?
+  var onSetWorkingDirectory: (() -> String?)?
+  var onSetEnvironmentVariables: (() -> String?)?
+  var onSetWorkflowVariables: (() -> String?)?
+  var assistantProfileName = RielaAppProfileName.default
+  var assistantSettings = RielaAppAssistantSettings()
+  var onSaveAssistantSettings: ((RielaAppAssistantSettings) -> String?)?
+  var onSubmitAssistantMessage: ((String, String?) -> Void)?
 
   init() {
     let window = NSWindow(
@@ -90,7 +107,11 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     onSaveNodePatch: ((String, RielaAppDaemonWorkflowNodePatch?) -> Bool)? = nil,
     onSetWorkingDirectory: (() -> String?)? = nil,
     onSetEnvironmentVariables: (() -> String?)? = nil,
-    onSetWorkflowVariables: (() -> String?)? = nil
+    onSetWorkflowVariables: (() -> String?)? = nil,
+    assistantProfileName: RielaAppProfileName = .default,
+    assistantSettings: RielaAppAssistantSettings = RielaAppAssistantSettings(),
+    onSaveAssistantSettings: ((RielaAppAssistantSettings) -> String?)? = nil,
+    onSubmitAssistantMessage: ((String, String?) -> Void)? = nil
   ) {
     if self.workflowDirectory != workflowDirectory {
       selectedNodeId = nil
@@ -105,9 +126,14 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     self.onSetWorkingDirectory = onSetWorkingDirectory
     self.onSetEnvironmentVariables = onSetEnvironmentVariables
     self.onSetWorkflowVariables = onSetWorkflowVariables
+    self.assistantProfileName = assistantProfileName
+    self.assistantSettings = assistantSettings
+    self.onSaveAssistantSettings = onSaveAssistantSettings
+    self.onSubmitAssistantMessage = onSubmitAssistantMessage
     updateInstanceSettingRows()
     updateCurrentDirectoryLabel()
     updateVariableLabels()
+    updateAssistantPanel()
     refresh()
     showWindow(nil)
     window?.makeKeyAndOrderFront(nil)
@@ -138,6 +164,9 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     outlineScroll.hasVerticalScroller = true
     outlineScroll.hasHorizontalScroller = false
     outlineScroll.translatesAutoresizingMaskIntoConstraints = false
+    let sidebarWidth = outlineScroll.widthAnchor.constraint(equalToConstant: Layout.sidebarWidth)
+    sidebarWidth.priority = .defaultHigh
+    sidebarWidth.isActive = true
 
     let rightStack = NSStackView()
     rightStack.orientation = .vertical
@@ -308,113 +337,9 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
 
     splitView.addArrangedSubview(outlineScroll)
     splitView.addArrangedSubview(rightStack)
-    contentView.addSubview(splitView)
-    NSLayoutConstraint.activate([
-      splitView.topAnchor.constraint(equalTo: contentView.topAnchor),
-      splitView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-      splitView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-      splitView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
-    ])
+    installViewerRoot(splitView: splitView, in: contentView)
     splitView.setPosition(Layout.sidebarWidth, ofDividerAt: 0)
-  }
-
-  private func configureReadOnlyTextView(
-    _ textView: NSTextView,
-    textColor: NSColor,
-    backgroundColor: NSColor
-  ) {
-    textView.isEditable = false
-    textView.isRichText = false
-    textView.font = detailFont
-    textView.textColor = textColor
-    textView.backgroundColor = backgroundColor
-    textView.drawsBackground = true
-    textView.textContainerInset = NSSize(width: 10, height: 10)
-    textView.isVerticallyResizable = true
-    textView.isHorizontallyResizable = true
-    textView.autoresizingMask = [.width]
-    textView.textContainer?.widthTracksTextView = true
-    textView.textContainer?.containerSize = NSSize(
-      width: detailScrollContentWidthFallback,
-      height: CGFloat.greatestFiniteMagnitude
-    )
-  }
-
-  private func scrollView(for textView: NSTextView) -> NSScrollView {
-    let scroll = NSScrollView()
-    scroll.documentView = textView
-    scroll.hasVerticalScroller = true
-    scroll.hasHorizontalScroller = true
-    scroll.translatesAutoresizingMaskIntoConstraints = false
-    rielaAppConfigureGroupedTextScroll(scroll)
-    return scroll
-  }
-
-  private func tabItem(label: String, view: NSView) -> NSTabViewItem {
-    let item = NSTabViewItem(identifier: label)
-    item.label = label
-    item.view = view
-    return item
-  }
-
-  private func applyPreferredHeight(_ height: CGFloat, to view: NSView) {
-    view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
-    let preferredHeight = view.heightAnchor.constraint(equalToConstant: height)
-    preferredHeight.priority = .defaultLow
-    preferredHeight.isActive = true
-  }
-
-  private func instanceSettingRow(
-    title: String,
-    valueLabel: NSTextField,
-    action: Selector
-  ) -> RielaAppSelectableSettingsRow {
-    let titleLabel = rielaAppSettingsTitleLabel(title, maxWidth: 150)
-    valueLabel.textColor = .labelColor
-    valueLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    let spacer = NSView()
-    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    let row = RielaAppSelectableSettingsRow(views: [titleLabel, valueLabel, spacer, rielaAppDisclosureIndicator()])
-    row.orientation = .horizontal
-    row.spacing = 8
-    row.alignment = .firstBaseline
-    row.toolTip = "Change \(title)"
-    return rielaAppSelectableSettingsRow(
-      row,
-      target: self,
-      action: action,
-      accessibilityLabel: title,
-      accessibilityHelp: "Change \(title)"
-    )
-  }
-
-  private func updateInstanceSettingRows() {
-    updateInstanceSettingRow(
-      currentDirectorySettingRow,
-      title: "Current Directory",
-      isEnabled: onSetWorkingDirectory != nil
-    )
-    updateInstanceSettingRow(
-      environmentVariablesSettingRow,
-      title: "Environment Variables",
-      isEnabled: onSetEnvironmentVariables != nil
-    )
-    updateInstanceSettingRow(
-      workflowVariablesSettingRow,
-      title: "Workflow Variables",
-      isEnabled: onSetWorkflowVariables != nil
-    )
-  }
-
-  private func updateInstanceSettingRow(
-    _ row: RielaAppSelectableSettingsRow?,
-    title: String,
-    isEnabled: Bool
-  ) {
-    let help = isEnabled ? "Change \(title)" : "\(title) cannot be edited here"
-    row?.setRielaAccessibilityEnabled(isEnabled)
-    row?.setAccessibilityHelp(help)
-    row?.toolTip = help
+    updateAssistantPanel()
   }
 
   @objc private func refreshButtonPressed() {
@@ -582,7 +507,7 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     sessionPopup.isEnabled = true
   }
 
-  private func updateDetails() {
+  func updateDetails() {
     guard let state else {
       workflowTitleLabel.stringValue = "Choose Workflow"
       setViewerMessage("")
@@ -872,227 +797,6 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
       setTemplateText("")
       setViewerMessage("Failed to load template: \(error)")
     }
-  }
-
-}
-
-extension WorkflowViewerWindowController {
-  private var detailScrollContentWidthFallback: CGFloat {
-    360
-  }
-
-  func expandAll() {
-    for node in state?.nodes ?? [] {
-      outlineView.expandItem(node, expandChildren: true)
-    }
-  }
-
-  func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
-    if let node = item as? WorkflowViewerNode {
-      return node.children.count
-    }
-    return state?.nodes.count ?? 0
-  }
-
-  func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
-    if let node = item as? WorkflowViewerNode {
-      return node.children[index]
-    }
-    return state?.nodes[index] ?? WorkflowViewerNode(id: "missing", nodeId: "missing", title: "missing", state: .failed)
-  }
-
-  func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
-    (item as? WorkflowViewerNode)?.children.isEmpty == false
-  }
-
-  func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
-    guard let node = item as? WorkflowViewerNode else {
-      return nil
-    }
-    let identifier = NSUserInterfaceItemIdentifier("workflow-node-cell")
-    let cell = outlineView.makeView(withIdentifier: identifier, owner: self) as? RielaAppTableSelectionCellView
-      ?? RielaAppTableSelectionCellView()
-    cell.identifier = identifier
-    cell.configureSelection(
-      tableView: outlineView,
-      row: outlineView.row(forItem: node),
-      role: .button,
-      accessibilityLabel: node.title,
-      accessibilityValue: stateAccessibilityLabel(node.state),
-      accessibilityHelp: "Show workflow node details",
-      actionTarget: self,
-      action: #selector(workflowTreeRowPressed(_:))
-    )
-    let imageView = cell.imageView ?? NSImageView()
-    let field = cell.textField ?? NSTextField(labelWithString: "")
-    imageView.translatesAutoresizingMaskIntoConstraints = false
-    field.translatesAutoresizingMaskIntoConstraints = false
-    if imageView.superview == nil {
-      cell.addSubview(imageView)
-      cell.imageView = imageView
-      NSLayoutConstraint.activate([
-        imageView.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
-        imageView.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-        imageView.widthAnchor.constraint(equalToConstant: 12),
-        imageView.heightAnchor.constraint(equalToConstant: 12)
-      ])
-    }
-    if field.superview == nil {
-      cell.addSubview(field)
-      cell.textField = field
-      NSLayoutConstraint.activate([
-        field.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 6),
-        field.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
-        field.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
-      ])
-    }
-    imageView.image = NSImage(
-      systemSymbolName: stateSymbolName(node.state),
-      accessibilityDescription: stateAccessibilityLabel(node.state)
-    )
-    imageView.contentTintColor = color(for: node.state)
-    field.stringValue = node.title
-    field.textColor = .labelColor
-    field.font = node.state == .active ? NSFont.boldSystemFont(ofSize: 13) : NSFont.systemFont(ofSize: 13)
-    return cell
-  }
-
-  @objc private func workflowTreeRowPressed(_ sender: NSOutlineView) {
-    outlineViewSelectionDidChange(Notification(name: NSOutlineView.selectionDidChangeNotification, object: sender))
-  }
-
-  func outlineViewSelectionDidChange(_ notification: Notification) {
-    let row = outlineView.selectedRow
-    guard row >= 0, let node = outlineView.item(atRow: row) as? WorkflowViewerNode else {
-      return
-    }
-    selectedNodeId = node.id
-    updateDetails()
-  }
-
-  func stateSymbolName(_ state: WorkflowViewerNodeRuntimeState) -> String {
-    switch state {
-    case .active:
-      "circle.fill"
-    case .completed:
-      "checkmark.circle.fill"
-    case .failed:
-      "xmark.circle.fill"
-    case .idle:
-      "circle"
-    }
-  }
-
-  func stateAccessibilityLabel(_ state: WorkflowViewerNodeRuntimeState) -> String {
-    switch state {
-    case .active:
-      "Running"
-    case .completed:
-      "Completed"
-    case .failed:
-      "Failed"
-    case .idle:
-      "Idle"
-    }
-  }
-
-  func color(for state: WorkflowViewerNodeRuntimeState) -> NSColor {
-    switch state {
-    case .active:
-      .systemGreen
-    case .completed:
-      .secondaryLabelColor
-    case .failed:
-      .systemRed
-    case .idle:
-      .labelColor
-    }
-  }
-}
-
-private extension WorkflowViewerWindowController {
-  func configurePopup(_ popup: NSPopUpButton, titles: [String]) {
-    popup.removeAllItems()
-    popup.addItems(withTitles: titles)
-    popup.selectItem(at: 0)
-  }
-
-  func selectPopupValue(_ popup: NSPopUpButton, value: String?, values: [String]) {
-    guard let value, let index = values.firstIndex(of: value) else {
-      popup.selectItem(at: 0)
-      return
-    }
-    popup.selectItem(at: index + 1)
-  }
-
-  func updateNodeOverrideRows(
-    canEdit: Bool,
-    modelCanEdit: Bool,
-    reason: String,
-    modelReason: String
-  ) {
-    updateWorkflowViewerControlRow(modelOverrideRow, isEnabled: modelCanEdit, help: modelReason)
-    updateWorkflowViewerControlRow(backendOverrideRow, isEnabled: canEdit, help: reason)
-    updateWorkflowViewerControlRow(effortOverrideRow, isEnabled: canEdit, help: reason)
-    updateWorkflowViewerControlRow(nodePatchOverrideRow, isEnabled: canEdit, help: reason)
-  }
-
-  func updateWorkflowViewerControlRow(_ row: RielaAppSettingsRow?, isEnabled: Bool, help: String) {
-    row?.alphaValue = isEnabled ? 1 : 0.55
-    row?.setAccessibilityEnabled(isEnabled)
-    row?.setAccessibilityHelp(help)
-    row?.toolTip = help
-  }
-
-  func workflowViewerControlRow(title: String, views: [NSView]) -> RielaAppSettingsRow {
-    let titleLabel = rielaAppSettingsTitleLabel(title, maxWidth: 86)
-    for view in views {
-      if let popup = view as? NSPopUpButton {
-        popup.setAccessibilityLabel(title)
-      }
-    }
-    let spacer = NSView()
-    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    let row = RielaAppSettingsRow(views: [titleLabel] + views + [spacer])
-    row.orientation = .horizontal
-    row.spacing = 8
-    row.alignment = .centerY
-    row.setAccessibilityElement(true)
-    row.setAccessibilityRole(.group)
-    row.setAccessibilityLabel(title)
-    rielaAppSettingsRow(row)
-    return row
-  }
-
-  func setViewerMessage(_ message: String) {
-    workflowSubtitleLabel.stringValue = message
-  }
-
-  func sessionSummary(state: WorkflowViewerState, session: WorkflowViewerSessionSummary?) -> String {
-    let count = state.sessions.count
-    let countSummary = count == 1 ? "1 session" : "\(count) sessions"
-    guard let session else {
-      return countSummary
-    }
-    return "\(countSummary) · \(session.status.rawValue.capitalized) \(session.sessionId)"
-  }
-
-  func iconButton(symbolName: String, accessibilityLabel: String, action: Selector) -> NSButton {
-    let button = NSButton(title: "", target: self, action: action)
-    configureIconButton(button, symbolName: symbolName, accessibilityLabel: accessibilityLabel)
-    return button
-  }
-
-  func configureIconButton(_ button: NSButton, symbolName: String, accessibilityLabel: String) {
-    button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
-    button.bezelStyle = .toolbar
-    button.toolTip = accessibilityLabel
-    button.setAccessibilityLabel(accessibilityLabel)
-  }
-
-  func configureCompactPopup(_ popup: NSPopUpButton, maximumWidth: CGFloat) {
-    popup.widthAnchor.constraint(lessThanOrEqualToConstant: maximumWidth).isActive = true
-    popup.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
   }
 
 }

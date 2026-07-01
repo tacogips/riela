@@ -202,7 +202,6 @@ final class RielaAppTableSelectionCellView: NSTableCellView {
   private enum GroupedListLayout {
     static let separatorHeight: CGFloat = 1
     static let selectedAlpha: CGFloat = 0
-    static let cornerRadius: CGFloat = 14
   }
 
   private weak var tableViewReference: NSTableView?
@@ -257,14 +256,6 @@ final class RielaAppTableSelectionCellView: NSTableCellView {
   override func viewWillDraw() {
     super.viewWillDraw()
     updateSettingsRowSelection()
-  }
-
-  override func draw(_ dirtyRect: NSRect) {
-    if isGroupedListCell {
-      groupedListSurfaceColor().setFill()
-      groupedListBackgroundPath().fill()
-    }
-    super.draw(dirtyRect)
   }
 
   override func layout() {
@@ -329,29 +320,12 @@ final class RielaAppTableSelectionCellView: NSTableCellView {
     }
     let selected = explicitSelection ?? tableViewReference?.selectedRowIndexes.contains(rowIndex) ?? false
     effectiveAppearance.performAsCurrentDrawingAppearance {
-      let surfaceColor = groupedListSurfaceColor()
       layer?.backgroundColor = selected
         ? NSColor.selectedContentBackgroundColor.withAlphaComponent(GroupedListLayout.selectedAlpha).cgColor
-        : surfaceColor.cgColor
+        : NSColor.clear.cgColor
       groupedSeparator.layer?.backgroundColor = NSColor.separatorColor.withAlphaComponent(0.45).cgColor
     }
     needsDisplay = true
-  }
-
-  private func groupedListSurfaceColor() -> NSColor {
-    NSColor.controlBackgroundColor.blended(withFraction: 0.08, of: .labelColor)
-      ?? NSColor.controlBackgroundColor
-  }
-
-  private func groupedListBackgroundPath() -> NSBezierPath {
-    guard tableViewReference?.numberOfRows == 1 else {
-      return NSBezierPath(rect: bounds)
-    }
-    return NSBezierPath(
-      roundedRect: bounds,
-      xRadius: GroupedListLayout.cornerRadius,
-      yRadius: GroupedListLayout.cornerRadius
-    )
   }
 }
 
@@ -411,6 +385,7 @@ final class RielaAppSettingsSectionView: NSStackView {
   private enum Layout {
     static let cornerRadius: CGFloat = 12
     static let separatorHeight: CGFloat = 1
+    static let rowMinimumHeight: CGFloat = 62
   }
 
   private let rowViews: [NSView]
@@ -429,6 +404,9 @@ final class RielaAppSettingsSectionView: NSStackView {
     setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     for (index, row) in rows.enumerated() {
       applyGroupedRowStyle(to: row)
+      let rowHeight = row.heightAnchor.constraint(greaterThanOrEqualToConstant: Layout.rowMinimumHeight)
+      rowHeight.priority = .defaultHigh
+      rowHeight.isActive = true
       addArrangedSubview(row)
       guard index < rows.count - 1 else {
         continue
@@ -456,6 +434,13 @@ final class RielaAppSettingsSectionView: NSStackView {
     super.viewDidChangeEffectiveAppearance()
     updateBackgroundColor()
     updateSeparatorColors()
+  }
+
+  var preferredGroupedListHeight: CGFloat {
+    let visibleRowCount = rowViews.filter { !$0.isHidden }.count
+    let separatorCount = max(0, visibleRowCount - 1)
+    return (CGFloat(visibleRowCount) * Layout.rowMinimumHeight)
+      + (CGFloat(separatorCount) * Layout.separatorHeight)
   }
 
   private func applyGroupedRowStyle(to row: NSView) {

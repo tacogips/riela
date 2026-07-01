@@ -8,6 +8,7 @@ public struct DispatchingNodeAdapterConfiguration: Sendable {
   public var openAISDK: OfficialSDKAdapterConfiguration
   public var anthropicSDK: AnthropicSDKAdapterConfiguration
   public var geminiSDK: OfficialSDKAdapterConfiguration
+  public var cursorSDK: OfficialSDKAdapterConfiguration
   public var registry: NodeAdapterRegistry
   public var includeDefaultOfficialSDKAdapters: Bool
 
@@ -15,12 +16,14 @@ public struct DispatchingNodeAdapterConfiguration: Sendable {
     openAISDK: OfficialSDKAdapterConfiguration = OfficialSDKAdapterConfiguration(),
     anthropicSDK: AnthropicSDKAdapterConfiguration = AnthropicSDKAdapterConfiguration(),
     geminiSDK: OfficialSDKAdapterConfiguration = OfficialSDKAdapterConfiguration(),
+    cursorSDK: OfficialSDKAdapterConfiguration = OfficialSDKAdapterConfiguration(),
     registry: NodeAdapterRegistry = [:],
     includeDefaultOfficialSDKAdapters: Bool = true
   ) {
     self.openAISDK = openAISDK
     self.anthropicSDK = anthropicSDK
     self.geminiSDK = geminiSDK
+    self.cursorSDK = cursorSDK
     self.registry = registry
     self.includeDefaultOfficialSDKAdapters = includeDefaultOfficialSDKAdapters
   }
@@ -72,6 +75,9 @@ public actor DispatchingNodeAdapter: NodeAdapter {
       },
       .officialGeminiSDK: {
         GeminiSDKAdapter(configuration: configuration.geminiSDK)
+      },
+      .officialCursorSDK: {
+        CursorSDKAdapter(configuration: configuration.cursorSDK)
       }
     ]
   }

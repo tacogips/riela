@@ -3,15 +3,6 @@ import AppKit
 
 extension DaemonWorkflowWindowController {
   func buildInstanceDetailView() -> NSView {
-    let topSpacer = NSView()
-    topSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    topSpacer.setContentHuggingPriority(.required, for: .vertical)
-    let topRow = NSStackView(views: [backToInstancesButton, topSpacer])
-    topRow.orientation = .horizontal
-    topRow.spacing = 8
-    topRow.alignment = .centerY
-    topRow.setContentHuggingPriority(.required, for: .vertical)
-    topRow.heightAnchor.constraint(equalToConstant: 28).isActive = true
     let settingsTitle = NSTextField(labelWithString: "Current Settings")
     settingsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
     let actionsTitle = NSTextField(labelWithString: "Manage Instance")
@@ -110,7 +101,6 @@ extension DaemonWorkflowWindowController {
     ])
 
     let stack = NSStackView(views: [
-      topRow,
       detailTitleRow,
       settingsTitleRow,
       settingsSection,
@@ -122,8 +112,6 @@ extension DaemonWorkflowWindowController {
     stack.spacing = 10
     stack.setContentHuggingPriority(.required, for: .vertical)
     stack.translatesAutoresizingMaskIntoConstraints = false
-    topRow.leadingAnchor.constraint(equalTo: stack.leadingAnchor).isActive = true
-    topRow.trailingAnchor.constraint(equalTo: stack.trailingAnchor).isActive = true
 
     let document = FlippedDocumentView()
     document.translatesAutoresizingMaskIntoConstraints = false

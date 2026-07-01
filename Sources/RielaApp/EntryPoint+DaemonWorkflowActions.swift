@@ -56,6 +56,14 @@ extension RielaApp {
           return nil
         }
         return "\(self.daemonState.preference(for: identity).defaultVariables.count) values"
+      },
+      assistantProfileName: daemonProfileName,
+      assistantSettings: daemonState.assistant,
+      onSaveAssistantSettings: { [weak self] settings in
+        self?.saveAssistantSettings(settings) ?? "RielaApp is not available"
+      },
+      onSubmitAssistantMessage: { [weak self] message, workingDirectory in
+        self?.submitAssistantMessage(message, workingDirectory: workingDirectory)
       }
     )
     status = "Opened viewer: \(candidate.displayName)"

@@ -103,7 +103,8 @@ final class CodexAgentCompatibilityCLITests: XCTestCase {
       XCTAssertTrue(arguments.contains(.string("--dangerously-bypass-approvals-and-sandbox")))
       XCTAssertTrue(arguments.contains(.string("--stream-granularity")))
       XCTAssertTrue(arguments.contains(.string("event")))
-      XCTAssertTrue(arguments.contains(.string("hello with spaces")))
+      XCTAssertEqual(Array(arguments.suffix(2)), [.string("--"), .string("-")])
+      XCTAssertFalse(arguments.contains(.string("hello with spaces")))
       XCTAssertEqual(jsonNumber(data["exitCode"]), 0)
       XCTAssertEqual(jsonString(data["stderr"]), "CODEX_HOME=\(temp.path)\n")
     } else {
@@ -148,7 +149,11 @@ final class CodexAgentCompatibilityCLITests: XCTestCase {
       directory: configDir,
       name: "fake-codex-runner.sh",
       body: """
-      printf '%s\\n' "$*" >> "\(marker.path)"
+      printf 'ARGS %s\\n' "$*" >> "\(marker.path)"
+      stdin="$(cat)"
+      if [ -n "$stdin" ]; then
+        printf 'STDIN %s\\n' "$stdin" >> "\(marker.path)"
+      fi
       printf '{"type":"turn_complete","session_id":"fake"}\\n'
       exit "${FAKE_CODEX_EXIT_CODE:-0}"
       """
@@ -266,14 +271,15 @@ final class CodexAgentCompatibilityCLITests: XCTestCase {
       }
       Thread.sleep(forTimeInterval: 0.05)
     }
-    XCTAssertTrue(markerText.contains("first") || markerText.contains("updated"))
-    XCTAssertTrue(markerText.contains("ship"))
-    XCTAssertTrue(markerText.contains("resume"))
-    XCTAssertTrue(markerText.contains("session-1"))
-    XCTAssertTrue(markerText.contains("foo=bar"))
-    XCTAssertTrue(markerText.contains("resume via cli flag"))
-    XCTAssertTrue(markerText.contains("resume via cli positionals"))
-    XCTAssertTrue(markerText.contains("--nth-message 2"))
+    XCTAssertTrue(markerText.contains("updated"), markerText)
+    XCTAssertTrue(markerText.contains("second"), markerText)
+    XCTAssertTrue(markerText.contains("ship"), markerText)
+    XCTAssertTrue(markerText.contains("resume"), markerText)
+    XCTAssertTrue(markerText.contains("session-1"), markerText)
+    XCTAssertTrue(markerText.contains("foo=bar"), markerText)
+    XCTAssertTrue(markerText.contains("resume via cli flag"), markerText)
+    XCTAssertTrue(markerText.contains("resume via cli positionals"), markerText)
+    XCTAssertTrue(markerText.contains("--nth-message 2"), markerText)
     let aliasRun = CodexGraphQLCommandExecutor.execute(
       command: "session.run",
       variables: [

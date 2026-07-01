@@ -68,6 +68,7 @@ public enum OfficialSDKRequestBody: Equatable, Sendable {
   case openAIResponses(OpenAIResponsesRequest)
   case anthropicMessages(AnthropicMessagesRequest)
   case geminiGenerateContent(GeminiGenerateContentRequest)
+  case cursorCreateAgent(CursorAgentRequest)
 }
 
 public struct OpenAIResponsesRequest: Equatable, Sendable {
@@ -153,6 +154,31 @@ public struct GeminiInlineDataPart: Equatable, Sendable {
   public init(mimeType: String, dataBase64: String) {
     self.mimeType = mimeType
     self.dataBase64 = dataBase64
+  }
+}
+
+public struct CursorAgentRequest: Equatable, Sendable {
+  public var model: String
+  public var prompt: String
+  public var repositoryURL: String?
+  public var startingRef: String?
+  public var workOnCurrentBranch: Bool?
+  public var autoCreatePR: Bool?
+
+  public init(
+    model: String,
+    prompt: String,
+    repositoryURL: String? = nil,
+    startingRef: String? = nil,
+    workOnCurrentBranch: Bool? = nil,
+    autoCreatePR: Bool? = nil
+  ) {
+    self.model = model
+    self.prompt = prompt
+    self.repositoryURL = repositoryURL
+    self.startingRef = startingRef
+    self.workOnCurrentBranch = workOnCurrentBranch
+    self.autoCreatePR = autoCreatePR
   }
 }
 
@@ -328,6 +354,40 @@ public struct GeminiSDKAdapter: NodeAdapter {
       timeoutMessage: "official Gemini SDK request aborted",
       fallbackFailureMessage: "unknown Gemini SDK failure",
       extractText: extractGeminiText
+    )
+  }
+}
+
+public struct CursorSDKAdapter: NodeAdapter {
+  public static let provider = "official-cursor-sdk"
+  private static let defaultApiKeyEnv = "CURSOR_API_KEY"
+
+  public var configuration: OfficialSDKAdapterConfiguration
+
+  public init(configuration: OfficialSDKAdapterConfiguration = OfficialSDKAdapterConfiguration()) {
+    self.configuration = configuration
+  }
+
+  public func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    let request = try makeOfficialSDKRequest(
+      input: input,
+      provider: Self.provider,
+      configuration: configuration,
+      defaultApiKeyEnv: Self.defaultApiKeyEnv,
+      defaultBaseURLEnv: "CURSOR_BASE_URL",
+      missingApiKeyMessage: "missing Cursor API key",
+      body: .cursorCreateAgent(cursorAgentRequest(from: input))
+    )
+
+    return try await executeOfficialSDKRequest(
+      adapterInput: input,
+      context: context,
+      configuration: configuration,
+      request: request,
+      responseLabel: "official Cursor SDK response",
+      timeoutMessage: "official Cursor SDK request aborted",
+      fallbackFailureMessage: "unknown Cursor SDK failure",
+      extractText: extractCursorAgentText
     )
   }
 }
@@ -609,6 +669,29 @@ private func makeURLRequest(for request: OfficialSDKRequest) throws -> URLReques
       "x-goog-api-key": request.apiKey,
       "Content-Type": "application/json"
     ]
+  case let .cursorCreateAgent(cursorRequest):
+    endpoint = officialSDKEndpoint(baseURL: request.baseURL, defaultBaseURL: "https://api.cursor.com/v1", pathComponents: ["agents"])
+    body = [
+      "prompt": .object(["text": .string(cursorRequest.prompt)]),
+      "model": .object(["id": .string(cursorRequest.model)])
+    ]
+    if let repositoryURL = cursorRequest.repositoryURL {
+      var repo: JSONObject = ["url": .string(repositoryURL)]
+      if let startingRef = cursorRequest.startingRef {
+        repo["startingRef"] = .string(startingRef)
+      }
+      body["repos"] = .array([.object(repo)])
+    }
+    if let workOnCurrentBranch = cursorRequest.workOnCurrentBranch {
+      body["workOnCurrentBranch"] = .bool(workOnCurrentBranch)
+    }
+    if let autoCreatePR = cursorRequest.autoCreatePR {
+      body["autoCreatePR"] = .bool(autoCreatePR)
+    }
+    headers = [
+      "Authorization": "Basic \(Data("\(request.apiKey):".utf8).base64EncodedString())",
+      "Content-Type": "application/json"
+    ]
   }
 
   var urlRequest = URLRequest(url: endpoint)
@@ -754,6 +837,55 @@ private func extractGeminiText(_ response: JSONValue) -> String {
   return segments.joined(separator: "\n")
 }
 
+private func extractCursorAgentText(_ response: JSONValue) -> String {
+  guard case let .object(object) = response else {
+    return ""
+  }
+  if let result = stringValue(object["result"]), !result.isEmpty {
+    return result
+  }
+  let id = stringValue(object["id"])
+  let status = stringValue(object["status"])
+  let url = stringValue(object["url"])
+  let latestRunId = stringValue(object["latestRunId"])
+  let summary = [
+    id.map { "Cursor agent \($0)" },
+    status.map { "status: \($0)" },
+    latestRunId.map { "latest run: \($0)" },
+    url
+  ].compactMap { $0 }
+  return summary.isEmpty ? "" : summary.joined(separator: "\n")
+}
+
+private func cursorAgentRequest(from input: AdapterExecutionInput) -> CursorAgentRequest {
+  CursorAgentRequest(
+    model: input.node.model,
+    prompt: [input.systemPromptText, input.promptText].compactMap { text in
+      text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? text : nil
+    }.joined(separator: "\n\n"),
+    repositoryURL: firstNonEmptyString(
+      input.mergedVariables["cursorRepositoryURL"],
+      input.node.variables["cursorRepositoryURL"],
+      input.agentEnvironment["CURSOR_REPOSITORY_URL"].map(JSONValue.string)
+    ),
+    startingRef: firstNonEmptyString(
+      input.mergedVariables["cursorStartingRef"],
+      input.node.variables["cursorStartingRef"],
+      input.agentEnvironment["CURSOR_STARTING_REF"].map(JSONValue.string)
+    ),
+    workOnCurrentBranch: firstBool(
+      input.mergedVariables["cursorWorkOnCurrentBranch"],
+      input.node.variables["cursorWorkOnCurrentBranch"],
+      input.agentEnvironment["CURSOR_WORK_ON_CURRENT_BRANCH"].map(JSONValue.string)
+    ),
+    autoCreatePR: firstBool(
+      input.mergedVariables["cursorAutoCreatePR"],
+      input.node.variables["cursorAutoCreatePR"],
+      input.agentEnvironment["CURSOR_AUTO_CREATE_PR"].map(JSONValue.string)
+    )
+  )
+}
+
 private func geminiInlineDataParts(from input: AdapterExecutionInput) throws -> [GeminiInlineDataPart] {
   let value = input.mergedVariables["geminiInlineDataParts"] ?? input.node.variables["geminiInlineDataParts"]
   guard let value, value != .null else {
@@ -821,4 +953,23 @@ private func stringValue(_ value: JSONValue?) -> String? {
     return nil
   }
   return text
+}
+
+private func firstNonEmptyString(_ values: JSONValue?...) -> String? {
+  values.compactMap(nonEmptyStringValue).first
+}
+
+private func firstBool(_ values: JSONValue?...) -> Bool? {
+  values.compactMap(boolValue).first
+}
+
+private func boolValue(_ value: JSONValue?) -> Bool? {
+  switch value {
+  case let .bool(flag):
+    flag
+  case let .string(text):
+    Bool(text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+  default:
+    nil
+  }
 }

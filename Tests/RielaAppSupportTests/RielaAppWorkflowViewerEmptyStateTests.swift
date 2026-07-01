@@ -42,10 +42,36 @@ final class RielaAppWorkflowViewerEmptyStateTests: XCTestCase {
   }
 
   func testSessionPickerEmptyCopyUsesRunsNotSessions() throws {
-    let source = try String(contentsOfFile: rielaAppSourceURL().path, encoding: .utf8)
+    let temp = try scratchRoot(name: "riela-app-empty-session-picker-\(UUID().uuidString)")
+    let workflowDirectory = temp.appendingPathComponent("workflows/demo", isDirectory: true)
+    let nodeDirectory = workflowDirectory.appendingPathComponent("nodes", isDirectory: true)
+    let sessionStoreRoot = temp.appendingPathComponent(".riela/sessions", isDirectory: true)
+    try FileManager.default.createDirectory(at: nodeDirectory, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: sessionStoreRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temp) }
 
-    XCTAssertTrue(source.contains("sessionPopup.addItem(withTitle: \"No Runs\")"))
-    XCTAssertFalse(source.contains("sessionPopup.addItem(withTitle: \"No sessions\")"))
+    let controller = WorkflowViewerWindowController()
+    let workflow = WorkflowDefinition(
+      workflowId: "empty-session-picker",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 1_000, maxLoopIterations: 3),
+      entryStepId: "first",
+      nodeRegistry: [WorkflowNodeRegistryRef(id: "first")],
+      steps: [WorkflowStepRef(id: "first", nodeId: "first")],
+      nodes: [WorkflowNodeRef(id: "first", nodeFile: "nodes/first.json")]
+    )
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try encoder.encode(workflow).write(to: workflowDirectory.appendingPathComponent("workflow.json"))
+
+    controller.show(workflowDirectory: workflowDirectory.path, sessionStoreRoot: sessionStoreRoot.path)
+    let root = try XCTUnwrap(controller.window?.contentView)
+    let popups = allSubviews(of: NSPopUpButton.self, in: root)
+    XCTAssertTrue(popups.contains { popup in
+      (0..<popup.numberOfItems).contains { popup.itemTitle(at: $0) == "No Runs" }
+    })
+    XCTAssertFalse(popups.contains { popup in
+      (0..<popup.numberOfItems).contains { popup.itemTitle(at: $0) == "No sessions" }
+    })
   }
 
   private func visibleTextFields(in root: NSView) -> [NSTextField] {
@@ -57,21 +83,28 @@ final class RielaAppWorkflowViewerEmptyStateTests: XCTestCase {
     return current + root.subviews.flatMap { allSubviews(of: type, in: $0) }
   }
 
-  private func rielaAppSourceURL() throws -> URL {
+  private func scratchRoot(name: String) throws -> URL {
+    let root = try repositoryRoot().appendingPathComponent("tmp", isDirectory: true)
+    let scratch = root.appendingPathComponent(name, isDirectory: true)
+    try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+    return scratch
+  }
+
+  private func repositoryRoot() throws -> URL {
     var current = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
     while current.path != "/" {
-      let candidate = current.appendingPathComponent("Sources/RielaApp/WorkflowViewerWindowController.swift")
-      if FileManager.default.fileExists(atPath: candidate.path) {
-        return candidate
+      if FileManager.default.fileExists(atPath: current.appendingPathComponent("Package.swift").path) {
+        return current
       }
       current.deleteLastPathComponent()
     }
     throw NSError(
       domain: "RielaAppWorkflowViewerEmptyStateTests",
       code: 1,
-      userInfo: [NSLocalizedDescriptionKey: "WorkflowViewerWindowController.swift was not found"]
+      userInfo: [NSLocalizedDescriptionKey: "Package.swift not found"]
     )
   }
+
 }
 
 private extension NSView {

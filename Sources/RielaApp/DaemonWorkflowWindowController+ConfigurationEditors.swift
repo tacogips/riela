@@ -126,6 +126,7 @@ extension DaemonWorkflowWindowController {
     guard let contentHost else {
       return
     }
+    isShowingAddInstanceSelection = false
     navigationTitleLabel.stringValue = title
     let editor = configurationEditorView(
       title: title,
@@ -140,6 +141,7 @@ extension DaemonWorkflowWindowController {
     configurationEditorView = editor
     instancesListView?.isHidden = true
     instanceDetailView?.isHidden = true
+    addInstanceSelectionView?.isHidden = true
     sourcesOverviewView?.isHidden = true
     assistantOverviewView?.isHidden = true
     profilesOverviewView?.isHidden = true

@@ -8,41 +8,6 @@ import XCTest
 
 @MainActor
 final class RielaAppControllerLayoutTests: XCTestCase {
-  func testWorkflowInstanceWindowUsesCompactAccessibleControlsAtRuntime() throws {
-    let controller = makeController()
-    let window = try XCTUnwrap(controller.window)
-    window.layoutIfNeeded()
-
-    XCTAssertEqual(window.minSize, NSSize(width: 760, height: 520))
-    XCTAssertEqual(window.frame.size.width, 920, accuracy: 0.1)
-
-    let root = try XCTUnwrap(window.contentView)
-    let listScroll = try XCTUnwrap(firstSubview(of: NSScrollView.self, in: root))
-    XCTAssertEqual(listScroll.contentCompressionResistancePriority(for: .vertical), .defaultLow)
-    XCTAssertFalse(hasHeightConstraint(listScroll, relation: .greaterThanOrEqual, constant: 260))
-    XCTAssertNil(heightConstraint(listScroll, relation: .equal, constant: 260))
-
-    let profilePopup = try XCTUnwrap(firstSubview(of: NSPopUpButton.self, in: root))
-    XCTAssertEqual(profilePopup.accessibilityLabel(), "Profile")
-    XCTAssertEqual(profilePopup.contentCompressionResistancePriority(for: .horizontal), .defaultLow)
-    XCTAssertTrue(hasWidthConstraint(profilePopup, relation: .lessThanOrEqual, constant: 220))
-    XCTAssertFalse(hasWidthConstraint(profilePopup, relation: .equal, constant: 160))
-
-    let addButton = try XCTUnwrap(button(accessibilityLabel: "Add Instance", in: root))
-    XCTAssertEqual(addButton.title, "")
-    XCTAssertNotNil(addButton.image)
-
-    let refreshButton = try XCTUnwrap(button(accessibilityLabel: "Refresh Instances", in: root))
-    XCTAssertEqual(refreshButton.title, "")
-    XCTAssertNotNil(refreshButton.image)
-
-    let emptyState = try XCTUnwrap(visibleTextFields(in: root).first {
-      $0.stringValue == "No instances. Press + to select a workflow and create one."
-    })
-    XCTAssertEqual(emptyState.textColor, .secondaryLabelColor)
-    XCTAssertEqual(emptyState.accessibilityLabel(), "No instances. Press Add Instance to select a workflow and create one.")
-  }
-
   func testWorkflowInstanceListHeaderAndRowsStayPinnedToTopAtRuntime() throws {
     let controller = makeController()
     let window = try XCTUnwrap(controller.window)

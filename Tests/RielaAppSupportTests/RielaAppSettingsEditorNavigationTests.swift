@@ -98,8 +98,7 @@ final class RielaAppSettingsEditorNavigationTests: XCTestCase {
     XCTAssertTrue(textViews(in: root).contains { $0.string.contains(#""workflowName" : "chat""#) })
   }
 
-  func testAssistantSidebarPaneEditsAssistanceAtRuntime() throws {
-    var savedAssistance: String?
+  func testAssistantSidebarPaneShowsOnlyVendorAndModelSettingsAtRuntime() throws {
     let controller = DaemonWorkflowWindowController(
       onRefresh: {},
       onSelectProfile: { _ in },
@@ -121,8 +120,8 @@ final class RielaAppSettingsEditorNavigationTests: XCTestCase {
       onSaveWorkflowVariables: { _, _ in nil },
       onRegisterEventSource: { _, _, _ in nil },
       configuredEnvironmentValues: { _ in [] },
-      onSaveAssistantAssistance: { assistance in
-        savedAssistance = assistance
+      onSaveAssistantAssistance: { _ in
+        XCTFail("Assistant assistance is not edited from the settings pane")
         return nil
       },
       environmentSummary: { _ in "Ready" },
@@ -151,11 +150,159 @@ final class RielaAppSettingsEditorNavigationTests: XCTestCase {
 
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Assistant" })
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "25 characters configured" })
-    let editor = try XCTUnwrap(textViews(in: root).first { $0.string.contains("Use short direct answers.") })
-    editor.string = "Prefer concise assistance."
-    XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "Save Assistance", in: root)).accessibilityPerformPress())
+    XCTAssertFalse(textViews(in: root).contains { $0.string.contains("Use short direct answers.") })
+    XCTAssertNil(selectableRow(accessibilityLabel: "Save Assistance", in: root))
+    XCTAssertFalse(controller.assistantSettingsVendorPopup.itemTitles.contains("Automatic"))
+    XCTAssertEqual(controller.assistantSettingsVendorPopup.selectedItem?.title, RielaAppAssistantVendor.openAIAPI.displayName)
+    XCTAssertEqual(controller.assistantSettingsModelPopup.itemTitles, RielaAppAssistantVendor.openAIAPI.modelSuggestions)
+    XCTAssertEqual(controller.assistantSettingsModelPopup.selectedItem?.title, RielaAppAssistantVendor.openAIAPI.defaultModel)
+  }
 
-    XCTAssertEqual(savedAssistance, "Prefer concise assistance.")
+  func testAssistantSidebarPaneDefaultsToFirstModelAndSavesSelectedModelPerVendor() throws {
+    var savedSettings: RielaAppAssistantSettings?
+    let controller = DaemonWorkflowWindowController(
+      onRefresh: {},
+      onSelectProfile: { _ in },
+      onCreateProfile: { RielaAppProfileName($0) },
+      onRemoveProfile: { _ in true },
+      onAddDirectory: {},
+      onAddProject: {},
+      onAddInstance: { _ in },
+      onRevealSelectedSource: { _ in },
+      onRelinkInstance: { _, _ in },
+      onRenameWorkflow: { _ in },
+      onRemoveInstance: { _ in },
+      onStartInstance: { _ in },
+      onStopInstance: { _ in },
+      onRestartInstance: { _ in },
+      onSetEnvironment: { _ in },
+      onSetWorkingDirectory: { _ in },
+      onSaveEnvironmentVariables: { _, _ in nil },
+      onSaveWorkflowVariables: { _, _ in nil },
+      onRegisterEventSource: { _, _, _ in nil },
+      configuredEnvironmentValues: { _ in [] },
+      onSaveAssistantAssistance: { _ in nil },
+      onSaveAssistantSettings: { settings in
+        savedSettings = settings
+        return nil
+      },
+      environmentSummary: { _ in "Ready" },
+      environmentColumnStatus: { _ in "Ready" },
+      onWindowWillClose: {}
+    )
+    controller.update(
+      profileName: .default,
+      profileNames: [.default],
+      candidates: [],
+      workflowSources: [],
+      state: RielaAppDaemonWorkflowState(),
+      snapshots: [:],
+      assistantAssistance: "",
+      statusMessage: ""
+    )
+    controller.showAssistantPane()
+    controller.window?.layoutIfNeeded()
+
+    controller.assistantSettingsVendorPopup.selectItem(withTitle: RielaAppAssistantVendor.anthropicAPI.displayName)
+    controller.assistantVendorChanged()
+    XCTAssertEqual(controller.assistantSettingsModelPopup.itemTitles, RielaAppAssistantVendor.anthropicAPI.modelSuggestions)
+    XCTAssertEqual(savedSettings?.vendor, .anthropicAPI)
+    XCTAssertEqual(savedSettings?.normalizedModel, RielaAppAssistantVendor.anthropicAPI.defaultModel)
+
+    controller.assistantSettingsModelPopup.selectItem(withTitle: "claude-sonnet-4-5")
+    controller.assistantModelChanged()
+    XCTAssertEqual(savedSettings?.modelsByVendor[RielaAppAssistantVendor.anthropicAPI.rawValue], "claude-sonnet-4-5")
+    XCTAssertEqual(savedSettings?.normalizedModel, "claude-sonnet-4-5")
+  }
+
+  func testAssistantPanelPersistsAcrossPaneNavigationAndSubmitsSelectedWorkingDirectory() throws {
+    var savedSettings: RielaAppAssistantSettings?
+    var submittedMessage: String?
+    var submittedWorkingDirectory: String?
+    let controller = DaemonWorkflowWindowController(
+      onRefresh: {},
+      onSelectProfile: { _ in },
+      onCreateProfile: { RielaAppProfileName($0) },
+      onRemoveProfile: { _ in true },
+      onAddDirectory: {},
+      onAddProject: {},
+      onAddInstance: { _ in },
+      onRevealSelectedSource: { _ in },
+      onRelinkInstance: { _, _ in },
+      onRenameWorkflow: { _ in },
+      onRemoveInstance: { _ in },
+      onStartInstance: { _ in },
+      onStopInstance: { _ in },
+      onRestartInstance: { _ in },
+      onSetEnvironment: { _ in },
+      onSetWorkingDirectory: { _ in },
+      onSaveEnvironmentVariables: { _, _ in nil },
+      onSaveWorkflowVariables: { _, _ in nil },
+      onRegisterEventSource: { _, _, _ in nil },
+      configuredEnvironmentValues: { _ in [] },
+      onSaveAssistantAssistance: { _ in nil },
+      onSaveAssistantSettings: { settings in
+        savedSettings = settings
+        return nil
+      },
+      onSubmitAssistantMessage: { message, workingDirectory in
+        submittedMessage = message
+        submittedWorkingDirectory = workingDirectory
+      },
+      environmentSummary: { _ in "Ready" },
+      environmentColumnStatus: { _ in "Ready" },
+      onWindowWillClose: {}
+    )
+    let source = RielaAppDaemonWorkflowCandidate(
+      id: "user-workflow:ops",
+      workflowId: "ops",
+      displayName: "Ops",
+      sourceDescription: "project workflow",
+      workflowDirectory: "/workflows/ops",
+      workingDirectory: "/projects/ops",
+      eventRoot: nil,
+      eventSources: []
+    )
+    var state = RielaAppDaemonWorkflowState(
+      assistant: RielaAppAssistantSettings(
+        vendor: .openAIAPI,
+        model: "gpt-5",
+        messages: [RielaAppAssistantMessage(role: .assistant, content: "Ready.")]
+      )
+    )
+    state.preferences["ops-instance"] = RielaAppDaemonWorkflowPreference(
+      identity: "ops-instance",
+      sourceIdentity: source.id,
+      workingDirectory: "/projects/ops/profile-a"
+    )
+
+    controller.update(
+      profileName: .default,
+      profileNames: [.default],
+      candidates: [source],
+      workflowSources: [source],
+      state: state,
+      snapshots: [:],
+      assistantAssistance: "",
+      statusMessage: ""
+    )
+    controller.selectCandidate(identity: "ops-instance")
+    controller.window?.layoutIfNeeded()
+
+    XCTAssertEqual(controller.assistantTranscriptTextView?.string.contains("Ready."), true)
+    controller.showSourcesPane()
+    controller.window?.layoutIfNeeded()
+    XCTAssertEqual(controller.assistantPromptField.hasHiddenAncestor, false)
+
+    controller.assistantPromptField.stringValue = "Create a second workflow instance"
+    controller.sendAssistantMessage()
+
+    XCTAssertEqual(submittedMessage, "Create a second workflow instance")
+    XCTAssertEqual(submittedWorkingDirectory, "/projects/ops/profile-a")
+
+    controller.toggleAssistantFolded()
+    XCTAssertEqual(savedSettings?.isFolded, true)
+    XCTAssertEqual(controller.assistantTranscriptScrollView?.isHidden, true)
   }
 
   func testEventSourceRegistrationWritesSourceAndBindingFiles() throws {

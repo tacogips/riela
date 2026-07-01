@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 @main
 @MainActor
 final class RielaApp: NSObject, NSApplicationDelegate {
-  private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+  let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
   private let controller = WorkflowServingController()
   private let launchOptions = RielaAppLaunchOptions.current()
   private var daemonDiscovery = RielaAppDaemonWorkflowDiscovery()
@@ -17,13 +17,13 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   private let telemetry = RielaTelemetryFactory.make(configuration: .fromEnvironment(surface: .app))
   private var profileStore = RielaAppProfileStore()
   private var daemonStore = RielaAppDaemonWorkflowStore(profileName: .default)
-  private let launchAtLogin = RielaLaunchAtLoginController()
+  let launchAtLogin = RielaLaunchAtLoginController()
   private let daemonStatusRefreshInterval: TimeInterval = 2
-  private var selectedWorkflow: WorkflowServeSelection?
-  private var selectedWorkingDirectory = FileManager.default.currentDirectoryPath
-  private var selectedSessionStoreRoot: String?
+  var selectedWorkflow: WorkflowServeSelection?
+  var selectedWorkingDirectory = FileManager.default.currentDirectoryPath
+  var selectedSessionStoreRoot: String?
   var status = "Ready"
-  private var daemonProfileName = RielaAppProfileName.default
+  var daemonProfileName = RielaAppProfileName.default
   var daemonState = RielaAppDaemonWorkflowState()
   var daemonInstances: [WorkflowInstance] = []
   var daemonCandidates: [RielaAppDaemonWorkflowCandidate] = []
@@ -88,57 +88,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
   }
 
-  private func configureStatusItem() {
-    guard let button = statusItem.button else {
-      return
-    }
-    button.image = RielaAppIcon.workflowTemplateImage()
-    button.imagePosition = .imageOnly
-    button.imageScaling = .scaleProportionallyDown
-    button.toolTip = "Riela workflow instances"
-    button.setAccessibilityLabel("Riela workflow instances")
-  }
-
-  private func rebuildMenu() {
-    let menu = NSMenu()
-    menu.addItem(menuItem("Instances...", action: #selector(openDaemonInstances)))
-    let launchAtLoginItem = menuItem("Launch on Login", action: #selector(toggleLaunchAtLogin))
-    launchAtLoginItem.state = launchAtLogin.isEnabled ? .on : .off
-    menu.addItem(launchAtLoginItem)
-    if let launchAtLoginDetail = launchAtLogin.menuSupplementaryStatusDescription {
-      menu.addItem(supplementaryMenuItem(launchAtLoginDetail))
-    }
-    menu.addItem(.separator())
-    menu.addItem(supplementaryMenuItem(
-      rielaAppMetadataText(["Instances \(daemonSummary())", "Profile \(daemonProfileName.rawValue)"])
-    ))
-    menu.addItem(.separator())
-    menu.addItem(menuItem("Quit", action: #selector(quit)))
-    statusItem.menu = menu
-  }
-
-  private func supplementaryMenuItem(_ title: String) -> NSMenuItem {
-    let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-    item.isEnabled = false
-    item.toolTip = title
-    item.attributedTitle = NSAttributedString(
-      string: title,
-      attributes: [
-        .foregroundColor: NSColor.secondaryLabelColor,
-        .font: NSFont.menuFont(ofSize: NSFont.smallSystemFontSize)
-      ]
-    )
-    return item
-  }
-
-  private func menuItem(_ title: String, action: Selector, enabled: Bool = true) -> NSMenuItem {
-    let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-    item.target = self
-    item.isEnabled = enabled
-    return item
-  }
-
-  @objc private func selectWorkflow() {
+  @objc func selectWorkflow() {
     let panel = NSOpenPanel()
     panel.title = "Choose Workflow to View"
     panel.canChooseFiles = false
@@ -154,7 +104,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     rebuildMenu()
   }
 
-  @objc private func openDaemonInstances() {
+  @objc func openDaemonInstances() {
     logDaemon("opening instances window for profile=\(daemonProfileName.rawValue)")
     if daemonWindowController == nil {
       daemonWindowController = DaemonWorkflowWindowController(
@@ -224,6 +174,12 @@ final class RielaApp: NSObject, NSApplicationDelegate {
         },
         onSaveAssistantAssistance: { [weak self] assistance in
           self?.saveAssistantAssistance(assistance) ?? "RielaApp is not available"
+        },
+        onSaveAssistantSettings: { [weak self] settings in
+          self?.saveAssistantSettings(settings) ?? "RielaApp is not available"
+        },
+        onSubmitAssistantMessage: { [weak self] message, workingDirectory in
+          self?.submitAssistantMessage(message, workingDirectory: workingDirectory)
         },
         environmentSummary: { [weak self] candidate in
           self?.daemonEnvironmentSummary(for: candidate) ?? "unknown"
@@ -402,17 +358,6 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
   }
 
-  @objc private func openViewer() {
-    guard let path = selectedWorkflow?.path else {
-      selectWorkflow()
-      return
-    }
-    if viewerWindowController == nil {
-      viewerWindowController = WorkflowViewerWindowController()
-    }
-    viewerWindowController?.show(workflowDirectory: path, sessionStoreRoot: selectedSessionStoreRoot)
-  }
-
   private func openInitialViewerIfRequested() {
     guard let initialViewer = launchOptions.initialViewer else {
       return
@@ -450,13 +395,14 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     NSApp.setActivationPolicy(.accessory)
   }
 
-  @objc private func toggleLaunchAtLogin() {
+  @objc func toggleLaunchAtLogin() {
     do {
       try launchAtLogin.setEnabled(!launchAtLogin.isEnabled)
       status = "Launch on Login \(launchAtLogin.statusDescription)"
     } catch {
       status = "Failed to update Launch on Login: \(error.localizedDescription)"
     }
+    viewerWindowController?.updateAssistantPanel(settings: daemonState.assistant, profileName: daemonProfileName)
     rebuildMenu()
   }
 
@@ -900,7 +846,7 @@ private extension RielaApp {
     }
   }
 
-  @objc private func quit() {
+  @objc func quit() {
     NSApplication.shared.terminate(nil)
   }
 

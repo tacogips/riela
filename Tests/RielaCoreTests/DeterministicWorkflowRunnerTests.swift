@@ -513,10 +513,8 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       input.promptText,
       "variant start release\n\nvariant prompt release step worker"
     )
-    XCTAssertEqual(
-      input.systemPromptText,
-      "workflow system release\n\nvariant system release"
-    )
+    XCTAssertTrue(input.systemPromptText?.hasPrefix("workflow system release\n\nvariant system release") == true)
+    XCTAssertTrue(input.systemPromptText?.contains(#""topic":"release""#) == true)
     XCTAssertFalse(input.promptText.contains("fallback"))
     XCTAssertFalse(input.promptText.contains("base prompt"))
     XCTAssertEqual(input.node.promptTemplateFile, nil)

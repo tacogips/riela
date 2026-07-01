@@ -50,6 +50,7 @@ extension DeterministicWorkflowRunner {
     for (key, value) in resolvedInputPayload {
       variables[key] = value
     }
+    variables["runtimeVariables"] = .object(requestVariables)
     variables["workflowId"] = .string(workflow.workflowId)
     variables["workflowDescription"] = .string(workflow.description)
     variables["nodeId"] = .string(step.id)
@@ -86,17 +87,26 @@ extension DeterministicWorkflowRunner {
       .filter { !$0.isEmpty }
       .joined(separator: "\n\n")
 
-    let systemPromptText = [
+    let renderedSystemPromptTemplates = [
       workflow.prompts?.workerSystemPromptTemplate,
-      payload.systemPromptTemplate,
-      priorReviewFeedbackPrompt(variables: variables),
-      memoryGuidance(variables: variables)
+      payload.systemPromptTemplate
     ]
       .compactMap { template in
         template.map {
           renderPromptTemplate($0, variables: variables)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         }
+      }
+
+    let systemPromptText = (
+      renderedSystemPromptTemplates + [
+      runtimeVariablesPrompt(variables: variables),
+      priorReviewFeedbackPrompt(variables: variables),
+      memoryGuidance(variables: variables)
+      ]
+    )
+      .compactMap { template in
+        template?.trimmingCharacters(in: .whitespacesAndNewlines)
       }
       .filter { !$0.isEmpty }
       .joined(separator: "\n\n")
@@ -105,6 +115,19 @@ extension DeterministicWorkflowRunner {
       promptText: renderedPromptText.isEmpty && !usesConfiguredPromptTemplate ? fallbackPrompt : renderedPromptText,
       systemPromptText: systemPromptText.isEmpty ? nil : systemPromptText
     )
+  }
+
+  private func runtimeVariablesPrompt(variables: JSONObject) -> String? {
+    guard case let .object(runtimeVariables)? = variables["runtimeVariables"], !runtimeVariables.isEmpty else {
+      return nil
+    }
+    guard let rendered = try? JSONValue.object(runtimeVariables).compactJSONString() else {
+      return nil
+    }
+    return """
+    Runtime variables are available under `runtimeVariables`. Use this JSON as the authoritative runtimeVariables object:
+    \(rendered)
+    """
   }
 
   private func priorReviewFeedbackPrompt(variables: JSONObject) -> String? {

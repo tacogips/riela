@@ -180,6 +180,7 @@ extension DaemonWorkflowWindowController {
     activeSidebarPane = .instances
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = true
+    isShowingProfileDetail = false
     instanceDetailPane = .overview
     let selectionView = buildInlineAddInstanceSelectionView(options: workflowSourceOptions())
     selectionView.translatesAutoresizingMaskIntoConstraints = true
@@ -236,7 +237,7 @@ extension DaemonWorkflowWindowController {
     let stack: NSStackView
     if options.isEmpty {
       inlineAddInstanceSourceSelectionTarget = nil
-      let emptyLabel = NSTextField(labelWithString: "No workflows. Import a workflow or package directory.")
+      let emptyLabel = NSTextField(labelWithString: "No workflows. Import a workflow or package source.")
       emptyLabel.textColor = .secondaryLabelColor
       emptyLabel.alignment = .center
       emptyLabel.lineBreakMode = .byWordWrapping
@@ -329,8 +330,8 @@ extension DaemonWorkflowWindowController {
   private func inlineSourceActionStack() -> NSStackView {
     let stack = NSStackView(views: [
       actionRow(
-        title: "Import Directory",
-        detail: "Add a workflow directory, package directory, .rielapkg, or .zip archive.",
+        title: ImportSourceCopy.fileOrDirectoryTitle,
+        detail: ImportSourceCopy.fileOrDirectoryDetail,
         action: #selector(addDirectory)
       ),
       actionRow(
@@ -381,7 +382,7 @@ extension DaemonWorkflowWindowController {
   func promptForRelinkSourceOption(_ options: [WorkflowSourceOption]) -> WorkflowSourceSelection {
     guard !options.isEmpty else {
       let stack = AddInstancePromptViewFactory().emptyWorkflowSelectionStack(
-        message: "No workflows. Import a workflow or package directory.",
+        message: "No workflows. Import a workflow or package source.",
         sourceActions: sourceActionStack(context: .relink),
         size: AddInstancePromptLayout.relinkSize
       )
@@ -732,7 +733,7 @@ extension DaemonWorkflowWindowController {
   private func sourceActionStack(context: SourceActionContext) -> NSStackView {
     let stack = NSStackView(views: [
       actionRow(
-        title: "Import Directory",
+        title: ImportSourceCopy.fileOrDirectoryTitle,
         detail: context.importDetail,
         action: #selector(importWorkflowOrPackageFromAddInstanceSheet)
       ),

@@ -68,6 +68,16 @@ final class DaemonWorkflowWindowController: NSWindowController,
     case importWorkflowOrPackageFromURL
   }
 
+  enum ProfileDetailMode: Equatable {
+    case overview
+    case removalConfirmation
+  }
+
+  enum ImportSourceCopy {
+    static let fileOrDirectoryTitle = "Import Package File or Directory"
+    static let fileOrDirectoryDetail = "Add a workflow directory, package directory, .rielapkg, or .zip archive."
+  }
+
   enum SourceActionContext {
     case addInstance
     case relink
@@ -75,9 +85,9 @@ final class DaemonWorkflowWindowController: NSWindowController,
     var importDetail: String {
       switch self {
       case .addInstance:
-        "Import a workflow or package directory, then return to instance creation."
+        "Import a workflow directory, package directory, or package file, then return to instance creation."
       case .relink:
-        "Import a workflow or package directory, then return to relink this instance."
+        "Import a workflow directory, package directory, or package file, then return to relink this instance."
       }
     }
   }
@@ -119,6 +129,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
   let instanceTable = NSTableView()
   let profilePopup = NSPopUpButton()
   let addListButton = NSButton(title: "", target: nil, action: nil)
+  let addProfileButton = NSButton(title: "", target: nil, action: nil)
   let refreshButton = NSButton(title: "", target: nil, action: nil)
   let navigationBackButton = NSButton(title: "", target: nil, action: nil)
   let navigationForwardButton = NSButton(title: "", target: nil, action: nil)
@@ -144,6 +155,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
     labelWithString: "No instances. Press + to select a workflow and create one."
   )
   let detailTitleLabel = NSTextField(labelWithString: "")
+  let detailSummaryLabel = NSTextField(labelWithString: "")
   let detailNameValueLabel = NSTextField(labelWithString: "")
   let detailWorkflowValueLabel = NSTextField(labelWithString: "")
   let detailEnvironmentValueLabel = NSTextField(labelWithString: "")
@@ -153,9 +165,9 @@ final class DaemonWorkflowWindowController: NSWindowController,
   let detailEventSourcesValueLabel = NSTextField(labelWithString: "")
   let detailMissingSourceValueLabel = NSTextField(labelWithString: "")
   private let onRefresh: () -> Void
-  private let onSelectProfile: (String) -> Void
+  let onSelectProfile: (String) -> Void
   let onCreateProfile: (String) -> RielaAppProfileName?
-  private let onRemoveProfile: (RielaAppProfileName) -> Bool
+  let onRemoveProfile: (RielaAppProfileName) -> Bool
   let onAddDirectory: () -> Void
   let onAddURL: (String) -> Void
   let onAddInstance: (DaemonWorkflowAddInstanceRequest) -> Void
@@ -200,7 +212,6 @@ final class DaemonWorkflowWindowController: NSWindowController,
   private var cachedInstanceRows: [ConfiguredWorkflowInstanceRow] = []
   private var instanceRowsFingerprint = ""
   var renderedAssistantSettings: RielaAppAssistantSettings?
-  private var profileSelectController: ProfileSelectWindowController?
   var instancesListView: NSView?
   weak var contentHost: DaemonWorkflowWindowContentHostView?
   var instanceDetailView: NSView?
@@ -209,6 +220,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
   var sourcesOverviewView: NSView?
   var assistantOverviewView: NSView?
   var profilesOverviewView: NSView?
+  var profileDetailView: NSView?
   var profilesOverviewFingerprint: String?
   weak var workflowSettingRow: NSView?
   weak var missingSourceSettingRow: NSView?
@@ -239,6 +251,9 @@ final class DaemonWorkflowWindowController: NSWindowController,
   var instanceDetailPane: InstanceDetailPane = .overview
   var isShowingInstanceDetail = false
   var isShowingAddInstanceSelection = false
+  var isShowingProfileDetail = false
+  var selectedProfileDetailName: RielaAppProfileName?
+  var profileDetailMode: ProfileDetailMode = .overview
   var activeSidebarPane: SidebarPane = .instances
 
   enum SidebarPane {
@@ -354,6 +369,13 @@ final class DaemonWorkflowWindowController: NSWindowController,
     rebuildProfilesOverviewView()
     updateOverviewSummaries()
     updateAssistantPanel()
+    if isShowingProfileDetail, let selectedProfileDetailName {
+      if profileNames.contains(selectedProfileDetailName) {
+        showProfileDetail(selectedProfileDetailName, mode: profileDetailMode)
+      } else {
+        showProfilesPane()
+      }
+    }
     if rowsChanged || didChangeProfile {
       instanceTable.reloadData()
     }
@@ -385,16 +407,11 @@ extension DaemonWorkflowWindowController {
   }
 
   @objc func openProfilesFromSidebar() {
-    openProfileSelect()
+    showProfilesPane()
   }
 
   @objc func profilePopupChanged() {
     guard !isUpdatingProfileControls, let title = profilePopup.selectedItem?.title else {
-      return
-    }
-    if title == ProfileSelectWindowController.menuTitle {
-      updateProfileControls()
-      openProfileSelect()
       return
     }
     if title == Self.allProfilesMenuTitle {
@@ -409,21 +426,6 @@ extension DaemonWorkflowWindowController {
       return
     }
     onSelectProfile(title)
-  }
-
-  private func openProfileSelect() {
-    if profileSelectController == nil {
-      profileSelectController = ProfileSelectWindowController(
-        onSelectProfile: onSelectProfile,
-        onCreateProfile: onCreateProfile,
-        onRemoveProfile: onRemoveProfile
-      )
-    }
-    profileSelectController?.show(
-      currentProfile: profileName,
-      profileNames: profileNames,
-      parentWindow: window
-    )
   }
 
   @objc private func viewSelectedWorkflow() {
@@ -542,6 +544,7 @@ extension DaemonWorkflowWindowController {
     activeSidebarPane = .instances
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = false
+    isShowingProfileDetail = false
     instanceDetailPane = .overview
     showContentPane(instancesListView)
     navigationTitleLabel.stringValue = "Instances"
@@ -556,6 +559,7 @@ extension DaemonWorkflowWindowController {
     activeSidebarPane = .instances
     isShowingInstanceDetail = true
     isShowingAddInstanceSelection = false
+    isShowingProfileDetail = false
     instanceDetailPane = .overview
     updateInstanceDetail()
     showContentPane(instanceDetailView)
@@ -608,6 +612,10 @@ extension DaemonWorkflowWindowController {
     }
     navigationTitleLabel.stringValue = row.instanceName
     detailTitleLabel.stringValue = row.instanceName
+    detailSummaryLabel.stringValue = rielaAppMetadataText([
+      row.state.rawValue,
+      "Profile \(row.profileName.rawValue)"
+    ])
     detailNameValueLabel.stringValue = row.instanceName
     detailWorkflowValueLabel.stringValue = rielaAppMetadataText([
       "Profile \(row.profileName.rawValue)",
@@ -906,8 +914,6 @@ extension DaemonWorkflowWindowController {
       profilePopup.addItem(withTitle: Self.allProfilesMenuTitle)
       profilePopup.menu?.addItem(.separator())
       profilePopup.addItems(withTitles: profileNames.map(\.rawValue))
-      profilePopup.menu?.addItem(.separator())
-      profilePopup.addItem(withTitle: ProfileSelectWindowController.menuTitle)
     }
     let selectedTitle = profileFilterName?.rawValue ?? Self.allProfilesMenuTitle
     if profilePopup.selectedItem?.title != selectedTitle {

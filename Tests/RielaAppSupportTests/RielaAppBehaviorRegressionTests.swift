@@ -44,6 +44,7 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
 
     XCTAssertTrue(controller.profilePopup.itemTitles.contains("All Profiles"))
     XCTAssertTrue(controller.profilePopup.itemTitles.contains("default"))
+    XCTAssertFalse(controller.profilePopup.itemTitles.contains(ProfileSelectWindowController.menuTitle))
     XCTAssertEqual(controller.instanceRows.map(\.profileName), [.default])
 
     controller.profilePopup.selectItem(withTitle: "All Profiles")
@@ -61,9 +62,8 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     _ = table.view(atColumn: 0, row: 1, makeIfNecessary: true)
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue.contains("Profile work") })
 
-    controller.profilePopup.selectItem(withTitle: ProfileSelectWindowController.menuTitle)
-    controller.profilePopupChanged()
-    XCTAssertEqual(controller.profilePopup.selectedItem?.title, "All Profiles")
+    controller.showProfilesPane()
+    XCTAssertTrue(controller.activeSidebarPane == .profiles)
   }
 
   func testInstanceListUsesWarningIconForMissingEnvironmentAndHidesSourceDescription() throws {

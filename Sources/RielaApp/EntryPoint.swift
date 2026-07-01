@@ -553,7 +553,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
 
   private func addDaemonWorkflowSourceOnlyDirectory() {
     let panel = NSOpenPanel()
-    panel.title = "Add Workflow Source"
+    panel.title = "Import Package File or Directory"
     panel.message = "Choose workflow folders, package folders, .rielapkg files, or .zip packages."
     panel.prompt = "Add"
     panel.canChooseFiles = true

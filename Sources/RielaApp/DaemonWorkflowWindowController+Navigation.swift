@@ -11,7 +11,8 @@ extension DaemonWorkflowWindowController {
       configurationEditorView,
       sourcesOverviewView,
       assistantOverviewView,
-      profilesOverviewView
+      profilesOverviewView,
+      profileDetailView
     ].compactMap { $0 }
     for pane in panes where pane !== visiblePane {
       pane.isHidden = true
@@ -40,6 +41,14 @@ extension DaemonWorkflowWindowController {
       showInstancesList()
       return
     }
+    if isShowingProfileDetail, profileDetailMode == .removalConfirmation, let selectedProfileDetailName {
+      showProfileDetail(selectedProfileDetailName)
+      return
+    }
+    if isShowingProfileDetail {
+      showProfilesPane()
+      return
+    }
     guard activeSidebarPane != .instances else {
       return
     }
@@ -57,6 +66,7 @@ extension DaemonWorkflowWindowController {
     activeSidebarPane = .sources
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = false
+    isShowingProfileDetail = false
     showContentPane(sourcesOverviewView)
     navigationTitleLabel.stringValue = "Workflow Sources"
     updateNavigationState()
@@ -68,6 +78,7 @@ extension DaemonWorkflowWindowController {
     rebuildProfilesOverviewView()
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = false
+    isShowingProfileDetail = false
     showContentPane(profilesOverviewView)
     navigationTitleLabel.stringValue = "Profiles"
     updateNavigationState()
@@ -78,6 +89,7 @@ extension DaemonWorkflowWindowController {
     activeSidebarPane = .assistant
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = false
+    isShowingProfileDetail = false
     showContentPane(assistantOverviewView)
     navigationTitleLabel.stringValue = "Assistant"
     updateNavigationState()

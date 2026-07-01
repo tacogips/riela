@@ -7,22 +7,22 @@ import XCTest
 final class RielaAppPromptAccessoryTests: XCTestCase {
   func testEmptyWorkflowSelectionAccessoryUsesSecondarySettingsStyleState() throws {
     let sourceActions = NSStackView(views: [
-      RielaAppSelectableSettingsRow(views: [NSTextField(labelWithString: "Import Directory")]),
+      RielaAppSelectableSettingsRow(views: [NSTextField(labelWithString: "Import Package File or Directory")]),
       RielaAppSelectableSettingsRow(views: [NSTextField(labelWithString: "Import from URL")])
     ])
     let stack = AddInstancePromptViewFactory().emptyWorkflowSelectionStack(
-      message: "No workflows. Import a workflow or package directory.",
+      message: "No workflows. Import a workflow or package source.",
       sourceActions: sourceActions,
       size: AddInstancePromptLayout.relinkSize
     )
     stack.layoutSubtreeIfNeeded()
 
     let emptyText = try XCTUnwrap(visibleTextFields(in: stack).first {
-      $0.stringValue == "No workflows. Import a workflow or package directory."
+      $0.stringValue == "No workflows. Import a workflow or package source."
     })
     XCTAssertEqual(emptyText.textColor, .secondaryLabelColor)
     XCTAssertEqual(emptyText.alignment, .center)
-    XCTAssertEqual(emptyText.accessibilityLabel(), "No workflows. Import a workflow or package directory.")
+    XCTAssertEqual(emptyText.accessibilityLabel(), "No workflows. Import a workflow or package source.")
     XCTAssertTrue(visibleTextFields(in: stack).contains { $0.stringValue == "Manage Sources" })
     XCTAssertTrue(
       hasWidthConstraint(stack, relation: .lessThanOrEqual, constant: AddInstancePromptLayout.relinkSize.width)

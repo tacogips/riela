@@ -85,16 +85,34 @@ final class DaemonWorkflowInstanceListView: NSView {
   }
 
   private func preferredPanelHeight(defaultHeight: CGFloat) -> CGFloat {
-    guard
-      let table = scrollView.documentView as? NSTableView,
-      table.numberOfRows > 0
-    else {
+    if let table = scrollView.documentView as? NSTableView, table.numberOfRows > 0 {
+      let rowHeight = table.rowHeight + table.intercellSpacing.height
+      return max(rowHeight, CGFloat(table.numberOfRows) * rowHeight)
+        + Self.listBottomPadding
+        + Layout.footerHeight
+    }
+    guard let stack = scrollView.documentView?.subviews.first as? NSStackView else {
       return defaultHeight
     }
-    let rowHeight = table.rowHeight + table.intercellSpacing.height
-    return max(rowHeight, CGFloat(table.numberOfRows) * rowHeight)
+    stack.layoutSubtreeIfNeeded()
+    let visibleViews = stack.arrangedSubviews.filter { !$0.isHidden }
+    guard !visibleViews.isEmpty else {
+      return defaultHeight
+    }
+    let estimatedStackHeight = visibleViews.enumerated().reduce(CGFloat(0)) { partial, item in
+      let spacing = item.offset == 0 ? CGFloat(0) : stack.spacing
+      return partial + spacing + preferredHeight(for: item.element)
+    }
+    return max(1, max(stack.fittingSize.height, estimatedStackHeight))
       + Self.listBottomPadding
       + Layout.footerHeight
+  }
+
+  private func preferredHeight(for view: NSView) -> CGFloat {
+    if let section = view as? RielaAppSettingsSectionView {
+      return section.preferredGroupedListHeight
+    }
+    return max(view.fittingSize.height, view.frame.height)
   }
 
   private func updateScrollBackgroundColor() {

@@ -15,6 +15,14 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     controller.tableClicked(table)
     controller.window?.layoutIfNeeded()
 
+    let overview = try XCTUnwrap(visibleSubviews(of: DaemonWorkflowOverviewPaneView.self, in: root).first)
+    overview.layoutSubtreeIfNeeded()
+    XCTAssertTrue(controller.instanceDetailView === overview)
+    XCTAssertEqual(overview.header.frame.minY, 0, accuracy: 0.1)
+    XCTAssertEqual(overview.header.frame.height, 28, accuracy: 0.1)
+    XCTAssertEqual(overview.contentView.frame.minY, 40, accuracy: 0.1)
+    XCTAssertEqual((overview.contentView as? NSScrollView)?.drawsBackground, false)
+
     let sections = visibleSubviews(of: RielaAppSettingsSectionView.self, in: root)
     XCTAssertGreaterThanOrEqual(sections.count, 2)
     XCTAssertTrue(allSubviews(of: RielaAppSettingsRow.self, in: sections[0]).allSatisfy(\.isGroupedSettingsRow))
@@ -151,10 +159,13 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
 
     controller.showProfilesPane()
     window.layoutIfNeeded()
-    overview = try XCTUnwrap(visibleSubviews(of: DaemonWorkflowOverviewPaneView.self, in: root).first)
-    overview.layoutSubtreeIfNeeded()
-    XCTAssertEqual(overview.contentView.frame.minY, 40, accuracy: 0.1)
-    XCTAssertEqual((overview.contentView as? NSScrollView)?.hasVerticalScroller, false)
+    let profileList = try XCTUnwrap(visibleSubviews(of: DaemonWorkflowInstanceListView.self, in: root).first)
+    profileList.layoutSubtreeIfNeeded()
+    XCTAssertEqual(profileList.header.frame.minY, 0, accuracy: 0.1)
+    XCTAssertEqual(profileList.scrollView.layer?.cornerRadius, 14)
+    XCTAssertEqual(profileList.footer.frame.height, 44, accuracy: 0.1)
+    XCTAssertLessThan(profileList.scrollView.frame.height, 140)
+    XCTAssertGreaterThan(profileList.scrollView.frame.height, 50)
 
     controller.showAssistantPane()
     window.layoutIfNeeded()
@@ -177,9 +188,8 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     controller.showProfilesPane()
     controller.window?.layoutIfNeeded()
     sections = visibleSubviews(of: RielaAppSettingsSectionView.self, in: root)
-    XCTAssertEqual(sections.count, 2)
+    XCTAssertEqual(sections.count, 1)
     XCTAssertEqual(allSubviews(of: RielaAppSettingsRow.self, in: sections[0]).count, 1)
-    XCTAssertEqual(allSubviews(of: RielaAppSettingsRow.self, in: sections[1]).count, 2)
 
     controller.showAssistantPane()
     controller.window?.layoutIfNeeded()
@@ -197,7 +207,7 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
 
     let titleLabel = try XCTUnwrap(
       visibleSubviews(of: NSTextField.self, in: root)
-        .first { $0.stringValue == "Import Directory" }
+        .first { $0.stringValue == "Import Package File or Directory" }
     )
     let detailLabel = try XCTUnwrap(
       visibleSubviews(of: NSTextField.self, in: root)
@@ -226,19 +236,93 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     controller.window?.layoutIfNeeded()
 
     let sections = visibleSubviews(of: RielaAppSettingsSectionView.self, in: root)
-    XCTAssertEqual(sections.count, 2)
+    XCTAssertEqual(sections.count, 1)
     XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: sections[0]).contains { $0.stringValue == "default" })
     XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: sections[0]).contains { $0.stringValue == "work" })
-    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: sections[1]).contains { $0.stringValue == "Add Profile" })
-    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: sections[1]).contains { $0.stringValue == "Edit Profiles" })
+    XCTAssertTrue(visibleSubviews(of: NSButton.self, in: root).contains { $0.accessibilityLabel() == "Add Profile" })
+    XCTAssertFalse(visibleSubviews(of: NSTextField.self, in: root).contains { $0.stringValue == "Edit Profiles" })
   }
 
-  private func makeController() -> DaemonWorkflowWindowController {
+  func testProfileRowsOpenInlineDetailAndBackReturnsToProfilesAtRuntime() throws {
+    var selectedProfile: String?
+    let controller = makeController(onSelectProfile: { selectedProfile = $0 })
+    controller.update(
+      profileName: .default,
+      profileNames: [.default, RielaAppProfileName("work")],
+      candidates: [],
+      workflowSources: [],
+      state: RielaAppDaemonWorkflowState(),
+      snapshots: [:],
+      assistantAssistance: "",
+      statusMessage: ""
+    )
+    let root = try XCTUnwrap(controller.window?.contentView)
+
+    controller.showProfilesPane()
+    controller.window?.layoutIfNeeded()
+    let workRow = try XCTUnwrap(selectableRow(accessibilityLabel: "work", in: root))
+    XCTAssertTrue(workRow.accessibilityPerformPress())
+    controller.window?.layoutIfNeeded()
+
+    XCTAssertTrue(controller.isShowingProfileDetail)
+    XCTAssertTrue(controller.profileDetailView?.isHidden == false)
+    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains { $0.stringValue == "Use Profile" })
+    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains { $0.stringValue == "Remove Profile" })
+
+    let useRow = try XCTUnwrap(selectableRow(accessibilityLabel: "Use Profile", in: root))
+    XCTAssertTrue(useRow.accessibilityPerformPress())
+    XCTAssertEqual(selectedProfile, "work")
+
+    controller.goBack()
+    controller.window?.layoutIfNeeded()
+    XCTAssertFalse(controller.isShowingProfileDetail)
+    XCTAssertTrue(controller.profilesOverviewView?.isHidden == false)
+  }
+
+  func testProfileRemovalUsesInlineConfirmationPaneAtRuntime() throws {
+    var removedProfile: RielaAppProfileName?
+    let controller = makeController(onRemoveProfile: {
+      removedProfile = $0
+      return true
+    })
+    let workProfile = RielaAppProfileName("work")
+    controller.update(
+      profileName: .default,
+      profileNames: [.default, workProfile],
+      candidates: [],
+      workflowSources: [],
+      state: RielaAppDaemonWorkflowState(),
+      snapshots: [:],
+      assistantAssistance: "",
+      statusMessage: ""
+    )
+    let root = try XCTUnwrap(controller.window?.contentView)
+
+    controller.showProfileDetail(workProfile)
+    controller.window?.layoutIfNeeded()
+    let removeReviewRow = try XCTUnwrap(selectableRow(accessibilityLabel: "Remove Profile", in: root))
+    XCTAssertTrue(removeReviewRow.accessibilityPerformPress())
+    controller.window?.layoutIfNeeded()
+
+    XCTAssertEqual(controller.profileDetailMode, .removalConfirmation)
+    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains { $0.stringValue == "Confirm Removal" })
+    let confirmedRemoveRow = try XCTUnwrap(
+      visibleSubviews(of: RielaAppSelectableSettingsRow.self, in: root)
+        .first { $0.accessibilityLabel() == "Remove Profile" && $0.accessibilityHelp() == "Remove this profile. Other profiles are unchanged." }
+    )
+    XCTAssertTrue(confirmedRemoveRow.accessibilityPerformPress())
+    XCTAssertEqual(removedProfile, workProfile)
+  }
+
+  private func makeController(
+    onSelectProfile: @escaping (String) -> Void = { _ in },
+    onRemoveProfile: @escaping (RielaAppProfileName) -> Bool = { _ in true }
+  ) -> DaemonWorkflowWindowController {
     DaemonWorkflowWindowController(
       onRefresh: {},
-      onSelectProfile: { _ in },
+      onSelectProfile: onSelectProfile,
       onCreateProfile: { RielaAppProfileName($0) },
-      onRemoveProfile: { _ in true },
+      onRemoveProfile: onRemoveProfile,
       onAddDirectory: {},
       onAddURL: { _ in },
       onAddInstance: { _ in },
@@ -358,6 +442,12 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
 
   private func visibleSubviews<T: NSView>(of type: T.Type, in root: NSView) -> [T] {
     allSubviews(of: type, in: root).filter { !$0.hasHiddenAncestor }
+  }
+
+  private func selectableRow(accessibilityLabel: String, in root: NSView) -> RielaAppSelectableSettingsRow? {
+    visibleSubviews(of: RielaAppSelectableSettingsRow.self, in: root).first { row in
+      row.accessibilityLabel() == accessibilityLabel
+    }
   }
 
   private func allSubviews<T: NSView>(of type: T.Type, in root: NSView) -> [T] {

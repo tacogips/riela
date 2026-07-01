@@ -167,6 +167,12 @@ extension DaemonWorkflowWindowController {
     addListButton.bezelStyle = .toolbar
     addListButton.toolTip = "Add instance"
     addListButton.setAccessibilityLabel("Add Instance")
+    addProfileButton.target = self
+    addProfileButton.action = #selector(addProfileFromOverview)
+    addProfileButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)
+    addProfileButton.bezelStyle = .toolbar
+    addProfileButton.toolTip = "Add profile"
+    addProfileButton.setAccessibilityLabel("Add Profile")
     emptyInstancesLabel.textColor = .secondaryLabelColor
     emptyInstancesLabel.alignment = .center
     emptyInstancesLabel.lineBreakMode = .byWordWrapping
@@ -175,7 +181,8 @@ extension DaemonWorkflowWindowController {
     emptyInstancesLabel.setAccessibilityLabel("No instances. Press Add Instance to select a workflow and create one.")
     profilePopup.toolTip = "Switch profiles or manage profiles."
     configureAssistantControls()
-    detailTitleLabel.font = .boldSystemFont(ofSize: 18)
+    detailSummaryLabel.textColor = .secondaryLabelColor
+    detailSummaryLabel.lineBreakMode = .byTruncatingTail
     for label in [
       detailTitleLabel,
       detailNameValueLabel,
@@ -310,8 +317,8 @@ extension DaemonWorkflowWindowController {
     sourcesSummaryLabel.textColor = .secondaryLabelColor
     sourcesSummaryLabel.lineBreakMode = .byTruncatingTail
     let importRow = actionRow(
-      title: "Import Directory",
-      detail: "Add a workflow directory, package directory, .rielapkg, or .zip archive.",
+      title: ImportSourceCopy.fileOrDirectoryTitle,
+      detail: ImportSourceCopy.fileOrDirectoryDetail,
       action: #selector(addDirectory)
     )
     let importURLRow = actionRow(
@@ -335,25 +342,41 @@ extension DaemonWorkflowWindowController {
     profilesSummaryLabel.lineBreakMode = .byTruncatingTail
     let profileRows = profileNames.map { profileOverviewRow($0) }
     let profileSection = rielaAppSettingsSection(rows: profileRows)
-    let addRow = actionRow(
-      title: "Add Profile",
-      detail: "Create a separate profile for another instance set.",
-      action: #selector(addProfileFromOverview)
-    )
-    let editRow = actionRow(
-      title: "Edit Profiles",
-      detail: "Switch or remove profiles.",
-      action: #selector(openProfilesFromSidebar)
-    )
-    let actionSection = rielaAppSettingsSection(rows: [addRow, editRow])
     let stack = settingsDocumentStack(views: [
-      profileSection,
-      actionSection
+      profileSection
     ])
-    return overviewPane(
-      title: "Profiles",
-      summaryLabel: profilesSummaryLabel,
-      documentStack: stack
+    let scroll = settingsScrollView(documentStack: stack, topInset: 0)
+    scroll.translatesAutoresizingMaskIntoConstraints = true
+    scroll.autoresizingMask = []
+    rielaAppConfigureGroupedListScroll(scroll)
+    let titleLabel = NSTextField(labelWithString: "Profiles")
+    titleLabel.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    titleLabel.alignment = .left
+    let headerSpacer = NSView()
+    headerSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    let header = NSStackView(views: [titleLabel, headerSpacer, profilesSummaryLabel])
+    header.orientation = .horizontal
+    header.spacing = 8
+    header.alignment = .centerY
+    header.translatesAutoresizingMaskIntoConstraints = true
+    header.autoresizingMask = []
+    let footerSpacer = NSView()
+    footerSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    let footer = NSStackView(views: [footerSpacer, addProfileButton])
+    footer.orientation = .horizontal
+    footer.spacing = 8
+    footer.alignment = .centerY
+    footer.translatesAutoresizingMaskIntoConstraints = true
+    footer.autoresizingMask = []
+    let emptyLabel = NSTextField(labelWithString: "No profiles.")
+    emptyLabel.textColor = .secondaryLabelColor
+    emptyLabel.alignment = .center
+    emptyLabel.isHidden = !profileRows.isEmpty
+    return DaemonWorkflowInstanceListView(
+      header: header,
+      scrollView: scroll,
+      footer: footer,
+      emptyLabel: emptyLabel
     )
   }
 
@@ -386,11 +409,158 @@ extension DaemonWorkflowWindowController {
     } else {
       detail = "Profile"
     }
-    return actionRow(
+    let row = actionRow(
       title: profileName.rawValue,
       detail: detail,
-      action: #selector(openProfilesFromSidebar)
+      action: #selector(openProfileDetailFromRow(_:))
     )
+    row.identifier = NSUserInterfaceItemIdentifier(profileName.rawValue)
+    return row
+  }
+
+  @objc func openProfileDetailFromRow(_ sender: Any) {
+    guard
+      let row = sender as? NSView,
+      let rawValue = row.identifier?.rawValue
+    else {
+      return
+    }
+    showProfileDetail(RielaAppProfileName(rawValue))
+  }
+
+  func showProfileDetail(
+    _ profileName: RielaAppProfileName,
+    mode: ProfileDetailMode = .overview
+  ) {
+    activeSidebarPane = .profiles
+    isShowingInstanceDetail = false
+    isShowingAddInstanceSelection = false
+    isShowingProfileDetail = true
+    selectedProfileDetailName = profileName
+    profileDetailMode = mode
+    profileDetailView?.removeFromSuperview()
+    let detail = mode == .removalConfirmation
+      ? buildProfileRemovalConfirmationView(profileName)
+      : buildProfileDetailView(profileName)
+    detail.translatesAutoresizingMaskIntoConstraints = true
+    detail.isHidden = false
+    profileDetailView = detail
+    showContentPane(detail)
+    navigationTitleLabel.stringValue = profileName.rawValue
+    updateNavigationState()
+    updateSidebarSelection()
+  }
+
+  private func buildProfileDetailView(_ profileName: RielaAppProfileName) -> NSView {
+    let summaryLabel = NSTextField(labelWithString: profileName == self.profileName ? "Current" : "Available")
+    summaryLabel.textColor = .secondaryLabelColor
+    summaryLabel.lineBreakMode = .byTruncatingTail
+    let statusValue = NSTextField(labelWithString: profileName == self.profileName ? "Current profile" : "Available profile")
+    let statusSection = rielaAppSettingsSection(rows: [
+      settingRow(title: "Status", valueLabel: statusValue, action: nil)
+    ])
+    let useRow = actionRow(
+      title: "Use Profile",
+      detail: "Switch to this profile's workflow instances.",
+      action: #selector(useSelectedProfileDetail)
+    )
+    setActionRow(useRow, enabled: profileName != self.profileName, disabledHelp: "This profile is already current.")
+    let removeRow = actionRow(
+      title: "Remove Profile",
+      detail: "Review removal for this profile's sources, packages, and instance state.",
+      style: .destructive,
+      action: #selector(confirmRemoveSelectedProfileDetail)
+    )
+    setActionRow(removeRow, enabled: canRemoveProfile(profileName), disabledHelp: removeProfileUnavailableHelp(for: profileName))
+    let actionsSection = rielaAppSettingsSection(rows: [useRow, removeRow])
+    let stack = settingsDocumentStack(views: [statusSection, actionsSection])
+    return overviewPane(title: profileName.rawValue, summaryLabel: summaryLabel, documentStack: stack)
+  }
+
+  private func buildProfileRemovalConfirmationView(_ profileName: RielaAppProfileName) -> NSView {
+    let summaryLabel = NSTextField(labelWithString: "Confirm Removal")
+    summaryLabel.textColor = .secondaryLabelColor
+    summaryLabel.lineBreakMode = .byTruncatingTail
+    let messageValue = NSTextField(
+      labelWithString: "Removes only this profile's workflow sources, packages, and instance state."
+    )
+    messageValue.lineBreakMode = .byWordWrapping
+    messageValue.maximumNumberOfLines = 2
+    let messageSection = rielaAppSettingsSection(rows: [
+      settingRow(title: "Scope", valueLabel: messageValue, action: nil)
+    ])
+    let cancelRow = actionRow(
+      title: "Cancel",
+      detail: "Return to this profile without removing it.",
+      action: #selector(cancelRemoveSelectedProfileDetail)
+    )
+    let removeRow = actionRow(
+      title: "Remove Profile",
+      detail: "Remove this profile. Other profiles are unchanged.",
+      style: .destructive,
+      action: #selector(removeSelectedProfileDetail)
+    )
+    let actionsSection = rielaAppSettingsSection(rows: [cancelRow, removeRow])
+    let stack = settingsDocumentStack(views: [messageSection, actionsSection])
+    return overviewPane(title: profileName.rawValue, summaryLabel: summaryLabel, documentStack: stack)
+  }
+
+  private func setActionRow(_ row: NSStackView, enabled: Bool, disabledHelp: String) {
+    guard let selectableRow = row as? RielaAppSelectableSettingsRow else {
+      return
+    }
+    selectableRow.setRielaAccessibilityEnabled(enabled)
+    if !enabled {
+      selectableRow.toolTip = disabledHelp
+      selectableRow.setAccessibilityHelp(disabledHelp)
+    }
+  }
+
+  @objc func useSelectedProfileDetail() {
+    guard let selectedProfileDetailName, selectedProfileDetailName != profileName else {
+      return
+    }
+    onSelectProfile(selectedProfileDetailName.rawValue)
+  }
+
+  @objc func confirmRemoveSelectedProfileDetail() {
+    guard let selectedProfileDetailName, canRemoveProfile(selectedProfileDetailName) else {
+      return
+    }
+    showProfileDetail(selectedProfileDetailName, mode: .removalConfirmation)
+  }
+
+  @objc func cancelRemoveSelectedProfileDetail() {
+    guard let selectedProfileDetailName else {
+      showProfilesPane()
+      return
+    }
+    showProfileDetail(selectedProfileDetailName)
+  }
+
+  @objc func removeSelectedProfileDetail() {
+    guard let selectedProfileDetailName, canRemoveProfile(selectedProfileDetailName) else {
+      return
+    }
+    guard onRemoveProfile(selectedProfileDetailName) else {
+      showProfileDetail(selectedProfileDetailName)
+      return
+    }
+    showProfilesPane()
+  }
+
+  private func canRemoveProfile(_ profileName: RielaAppProfileName) -> Bool {
+    profileName != .default && profileName != self.profileName
+  }
+
+  private func removeProfileUnavailableHelp(for profileName: RielaAppProfileName) -> String {
+    if profileName == .default {
+      return "Default profile cannot be removed."
+    }
+    if profileName == self.profileName {
+      return "Current profile cannot be removed."
+    }
+    return "Choose a removable profile first."
   }
 
   private func buildAssistantOverviewView() -> NSView {
@@ -411,7 +581,7 @@ extension DaemonWorkflowWindowController {
     )
   }
 
-  private func settingsDocumentStack(views: [NSView]) -> NSStackView {
+  func settingsDocumentStack(views: [NSView]) -> NSStackView {
     let stack = NSStackView(views: views)
     stack.orientation = .vertical
     stack.alignment = .width
@@ -420,14 +590,24 @@ extension DaemonWorkflowWindowController {
     return stack
   }
 
-  private func overviewPane(
+  func overviewPane(
     title: String,
     summaryLabel: NSTextField,
     documentStack stack: NSStackView
   ) -> NSView {
-    summaryLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     let titleLabel = NSTextField(labelWithString: title)
+    return overviewPane(titleLabel: titleLabel, summaryLabel: summaryLabel, documentStack: stack)
+  }
+
+  func overviewPane(
+    titleLabel: NSTextField,
+    summaryLabel: NSTextField,
+    documentStack stack: NSStackView
+  ) -> NSView {
+    titleLabel.alignment = .left
     titleLabel.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    titleLabel.lineBreakMode = .byTruncatingTail
+    summaryLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     let spacer = NSView()
     spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
     let header = NSStackView(views: [titleLabel, spacer, summaryLabel])

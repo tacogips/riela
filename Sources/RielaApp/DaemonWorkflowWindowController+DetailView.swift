@@ -7,7 +7,6 @@ extension DaemonWorkflowWindowController {
     settingsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
     let actionsTitle = NSTextField(labelWithString: "Manage Instance")
     actionsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
-    let detailTitleRow = detailHeaderRow(label: detailTitleLabel)
     let settingsTitleRow = detailHeaderRow(label: settingsTitle)
     let actionsTitleRow = detailHeaderRow(label: actionsTitle)
     let relinkRow = actionRow(
@@ -100,37 +99,17 @@ extension DaemonWorkflowWindowController {
       removeRow
     ])
 
-    let stack = NSStackView(views: [
-      detailTitleRow,
+    let stack = settingsDocumentStack(views: [
       settingsTitleRow,
       settingsSection,
       actionsTitleRow,
       actionsSection
     ])
-    stack.orientation = .vertical
-    stack.alignment = .width
-    stack.spacing = 10
-    stack.setContentHuggingPriority(.required, for: .vertical)
-    stack.translatesAutoresizingMaskIntoConstraints = false
-
-    let document = FlippedDocumentView()
-    document.translatesAutoresizingMaskIntoConstraints = false
-    document.addSubview(stack)
-    NSLayoutConstraint.activate([
-      stack.topAnchor.constraint(equalTo: document.topAnchor),
-      stack.leadingAnchor.constraint(equalTo: document.leadingAnchor),
-      stack.trailingAnchor.constraint(equalTo: document.trailingAnchor),
-      stack.bottomAnchor.constraint(lessThanOrEqualTo: document.bottomAnchor)
-    ])
-
-    let scroll = NSScrollView()
-    scroll.documentView = document
-    scroll.hasVerticalScroller = true
-    scroll.hasHorizontalScroller = false
-    scroll.borderType = .noBorder
-    document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor).isActive = true
-    document.heightAnchor.constraint(greaterThanOrEqualTo: scroll.contentView.heightAnchor).isActive = true
-    return scroll
+    return overviewPane(
+      titleLabel: detailTitleLabel,
+      summaryLabel: detailSummaryLabel,
+      documentStack: stack
+    )
   }
 
   private func detailHeaderRow(label: NSTextField) -> NSStackView {

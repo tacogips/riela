@@ -184,18 +184,9 @@ extension DaemonWorkflowWindowController {
     let selectionView = buildInlineAddInstanceSelectionView(options: workflowSourceOptions())
     selectionView.translatesAutoresizingMaskIntoConstraints = true
     addInstanceSelectionView?.removeFromSuperview()
-    contentHost?.addSubview(selectionView)
     addInstanceSelectionView = selectionView
-    instancesListView?.isHidden = true
-    instanceDetailView?.isHidden = true
-    addInstanceSelectionView?.isHidden = false
-    configurationEditorView?.isHidden = true
-    sourcesOverviewView?.isHidden = true
-    assistantOverviewView?.isHidden = true
-    profilesOverviewView?.isHidden = true
+    showContentPane(selectionView)
     navigationTitleLabel.stringValue = "Choose Workflow"
-    contentHost?.needsLayout = true
-    contentHost?.layoutSubtreeIfNeeded()
     updateNavigationState()
     updateSidebarSelection()
   }
@@ -330,11 +321,8 @@ extension DaemonWorkflowWindowController {
     let selectionView = buildInlineAddInstanceSelectionView(options: inlineAddInstanceAllSourceOptions)
     selectionView.translatesAutoresizingMaskIntoConstraints = true
     addInstanceSelectionView?.removeFromSuperview()
-    contentHost?.addSubview(selectionView)
     addInstanceSelectionView = selectionView
-    addInstanceSelectionView?.isHidden = false
-    contentHost?.needsLayout = true
-    contentHost?.layoutSubtreeIfNeeded()
+    showContentPane(selectionView)
     window?.makeFirstResponder(inlineAddInstanceSearchField)
   }
 

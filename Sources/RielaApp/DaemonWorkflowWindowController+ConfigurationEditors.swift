@@ -137,15 +137,8 @@ extension DaemonWorkflowWindowController {
     )
     editor.frame = contentHost.bounds
     editor.autoresizingMask = [.width, .height]
-    contentHost.addSubview(editor)
     configurationEditorView = editor
-    instancesListView?.isHidden = true
-    instanceDetailView?.isHidden = true
-    addInstanceSelectionView?.isHidden = true
-    sourcesOverviewView?.isHidden = true
-    assistantOverviewView?.isHidden = true
-    profilesOverviewView?.isHidden = true
-    editor.isHidden = false
+    showContentPane(editor)
     updateNavigationState()
     updateSidebarSelection()
   }

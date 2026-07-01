@@ -197,14 +197,15 @@ final class DaemonWorkflowWindowController: NSWindowController,
   var pendingAddInstanceSheetAction: AddInstanceSheetAction?
   private var isUpdatingTableSelection = false
   private var profileSelectController: ProfileSelectWindowController?
-  weak var instancesListView: NSView?
+  var instancesListView: NSView?
   weak var contentHost: DaemonWorkflowWindowContentHostView?
-  weak var instanceDetailView: NSView?
-  weak var addInstanceSelectionView: NSView?
-  weak var configurationEditorView: NSView?
-  weak var sourcesOverviewView: NSView?
-  weak var assistantOverviewView: NSView?
-  weak var profilesOverviewView: NSView?
+  var instanceDetailView: NSView?
+  var addInstanceSelectionView: NSView?
+  var configurationEditorView: NSView?
+  var sourcesOverviewView: NSView?
+  var assistantOverviewView: NSView?
+  var profilesOverviewView: NSView?
+  var profilesOverviewFingerprint: String?
   weak var workflowSettingRow: NSView?
   weak var missingSourceSettingRow: NSView?
   weak var nameSettingRow: NSView?
@@ -530,13 +531,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = false
     instanceDetailPane = .overview
-    instancesListView?.isHidden = false
-    instanceDetailView?.isHidden = true
-    addInstanceSelectionView?.isHidden = true
-    configurationEditorView?.isHidden = true
-    sourcesOverviewView?.isHidden = true
-    assistantOverviewView?.isHidden = true
-    profilesOverviewView?.isHidden = true
+    showContentPane(instancesListView)
     navigationTitleLabel.stringValue = "Instances"
     updateNavigationState()
     updateSidebarSelection()
@@ -551,13 +546,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
     isShowingAddInstanceSelection = false
     instanceDetailPane = .overview
     updateInstanceDetail()
-    instancesListView?.isHidden = true
-    instanceDetailView?.isHidden = false
-    addInstanceSelectionView?.isHidden = true
-    configurationEditorView?.isHidden = true
-    sourcesOverviewView?.isHidden = true
-    assistantOverviewView?.isHidden = true
-    profilesOverviewView?.isHidden = true
+    showContentPane(instanceDetailView)
     updateNavigationState()
     updateSidebarSelection()
   }
@@ -661,13 +650,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
     isShowingAddInstanceSelection = false
     instanceDetailPane = .overview
     updateInstanceDetail()
-    instancesListView?.isHidden = true
-    instanceDetailView?.isHidden = false
-    addInstanceSelectionView?.isHidden = true
-    configurationEditorView?.isHidden = true
-    sourcesOverviewView?.isHidden = true
-    assistantOverviewView?.isHidden = true
-    profilesOverviewView?.isHidden = true
+    showContentPane(instanceDetailView)
     updateNavigationState()
     updateSidebarSelection()
   }

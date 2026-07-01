@@ -3,6 +3,31 @@ import AppKit
 
 @MainActor
 extension DaemonWorkflowWindowController {
+  func showContentPane(_ visiblePane: NSView?) {
+    let panes = [
+      instancesListView,
+      instanceDetailView,
+      addInstanceSelectionView,
+      configurationEditorView,
+      sourcesOverviewView,
+      assistantOverviewView,
+      profilesOverviewView
+    ].compactMap { $0 }
+    for pane in panes where pane !== visiblePane {
+      pane.isHidden = true
+      pane.removeFromSuperview()
+    }
+    guard let visiblePane else {
+      contentHost?.needsLayout = true
+      return
+    }
+    visiblePane.isHidden = false
+    if visiblePane.superview !== contentHost {
+      contentHost?.addSubview(visiblePane)
+    }
+    contentHost?.needsLayout = true
+  }
+
   @objc func goBack() {
     if isShowingAddInstanceSelection {
       showInstancesList()
@@ -33,13 +58,7 @@ extension DaemonWorkflowWindowController {
     activeSidebarPane = .sources
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = false
-    instancesListView?.isHidden = true
-    instanceDetailView?.isHidden = true
-    addInstanceSelectionView?.isHidden = true
-    configurationEditorView?.isHidden = true
-    sourcesOverviewView?.isHidden = false
-    assistantOverviewView?.isHidden = true
-    profilesOverviewView?.isHidden = true
+    showContentPane(sourcesOverviewView)
     navigationTitleLabel.stringValue = "Workflow Sources"
     updateNavigationState()
     updateSidebarSelection()
@@ -50,13 +69,7 @@ extension DaemonWorkflowWindowController {
     rebuildProfilesOverviewView()
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = false
-    instancesListView?.isHidden = true
-    instanceDetailView?.isHidden = true
-    addInstanceSelectionView?.isHidden = true
-    configurationEditorView?.isHidden = true
-    sourcesOverviewView?.isHidden = true
-    assistantOverviewView?.isHidden = true
-    profilesOverviewView?.isHidden = false
+    showContentPane(profilesOverviewView)
     navigationTitleLabel.stringValue = "Profiles"
     updateNavigationState()
     updateSidebarSelection()
@@ -66,13 +79,7 @@ extension DaemonWorkflowWindowController {
     activeSidebarPane = .assistant
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = false
-    instancesListView?.isHidden = true
-    instanceDetailView?.isHidden = true
-    addInstanceSelectionView?.isHidden = true
-    configurationEditorView?.isHidden = true
-    sourcesOverviewView?.isHidden = true
-    assistantOverviewView?.isHidden = false
-    profilesOverviewView?.isHidden = true
+    showContentPane(assistantOverviewView)
     navigationTitleLabel.stringValue = "Assistant"
     updateNavigationState()
     updateSidebarSelection()

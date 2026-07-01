@@ -11,7 +11,12 @@ final class DaemonWorkflowWindowContentHostView: NSView {
     super.layout()
     for subview in subviews {
       subview.frame = bounds
-      subview.layoutSubtreeIfNeeded()
+      if subview.isHidden {
+        subview.needsLayout = false
+      } else {
+        subview.needsLayout = true
+        subview.layoutSubtreeIfNeeded()
+      }
     }
   }
 }
@@ -113,7 +118,7 @@ final class DaemonWorkflowSettingsRootView: NSView {
     }
     sidebar.layoutSubtreeIfNeeded()
     toolbar.layoutSubtreeIfNeeded()
-    contentHost.layoutSubtreeIfNeeded()
+    contentHost.needsLayout = true
     assistantPanelHost.layoutSubtreeIfNeeded()
   }
 
@@ -200,14 +205,10 @@ extension DaemonWorkflowWindowController {
     assistant.isHidden = true
     assistantOverviewView = assistant
     let profiles = buildProfilesOverviewView()
+    profilesOverviewFingerprint = profilesOverviewFingerprintValue()
     profiles.isHidden = true
     profilesOverviewView = profiles
 
-    root.contentHost.addSubview(instancesList)
-    root.contentHost.addSubview(detail)
-    root.contentHost.addSubview(sources)
-    root.contentHost.addSubview(assistant)
-    root.contentHost.addSubview(profiles)
     updateAssistantPanel()
     showInstancesList()
   }
@@ -357,13 +358,23 @@ extension DaemonWorkflowWindowController {
   }
 
   func rebuildProfilesOverviewView() {
-    let wasHidden = profilesOverviewView?.isHidden ?? true
+    let fingerprint = profilesOverviewFingerprintValue()
+    guard profilesOverviewFingerprint != fingerprint || profilesOverviewView == nil else {
+      return
+    }
+    let wasVisible = profilesOverviewView?.isHidden == false
     profilesOverviewView?.removeFromSuperview()
     let profiles = buildProfilesOverviewView()
-    profiles.isHidden = wasHidden
+    profiles.isHidden = !wasVisible
     profilesOverviewView = profiles
-    contentHost?.addSubview(profiles)
-    contentHost?.needsLayout = true
+    profilesOverviewFingerprint = fingerprint
+    if wasVisible {
+      showContentPane(profiles)
+    }
+  }
+
+  func profilesOverviewFingerprintValue() -> String {
+    ([profileName.rawValue] + profileNames.map(\.rawValue)).joined(separator: "\u{0}")
   }
 
   private func profileOverviewRow(_ profileName: RielaAppProfileName) -> NSView {

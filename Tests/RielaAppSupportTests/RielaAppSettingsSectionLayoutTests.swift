@@ -109,6 +109,27 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     XCTAssertNotNil(sidebar.layer?.borderColor)
   }
 
+  func testContentHostKeepsOnlyActivePaneAttachedAtRuntime() throws {
+    let controller = configuredInstanceListController()
+    let contentHost = try XCTUnwrap(controller.contentHost)
+    controller.window?.layoutIfNeeded()
+
+    XCTAssertEqual(contentHost.subviews.count, 1)
+    XCTAssertTrue(contentHost.subviews.first === controller.instancesListView)
+
+    controller.showSourcesPane()
+    controller.window?.layoutIfNeeded()
+
+    XCTAssertEqual(contentHost.subviews.count, 1)
+    XCTAssertTrue(contentHost.subviews.first === controller.sourcesOverviewView)
+
+    controller.showInstancesPane()
+    controller.window?.layoutIfNeeded()
+
+    XCTAssertEqual(contentHost.subviews.count, 1)
+    XCTAssertTrue(contentHost.subviews.first === controller.instancesListView)
+  }
+
   func testSidebarOverviewPanesUseInstanceRightPaneLayoutAtRuntime() throws {
     let controller = makeController()
     let window = try XCTUnwrap(controller.window)

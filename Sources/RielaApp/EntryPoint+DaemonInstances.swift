@@ -61,73 +61,102 @@ extension RielaApp {
   }
 
   func startDaemonWorkflowInstance(identity: String) {
-    guard let candidate = daemonCandidateForInstance(identity: identity) else {
+    guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
       status = "Instance needs a workflow source"
       refreshDaemonWorkflowWindow()
       return
     }
-    guard updateDaemonPreference(identity: identity, mutate: { preference in
-      preference.sourceIdentity = candidate.sourceIdentity
-      preference.available = true
-      preference.active = true
-    }) else {
+    var state = resolved.state
+    var preference = resolved.preference
+    preference.sourceIdentity = resolved.instance.instance.source.id
+    preference.available = true
+    preference.active = true
+    state.preferences[resolved.localIdentity] = preference
+    guard saveDaemonState(state, profileName: resolved.profileName) else {
+      refreshDaemonWorkflowWindow()
       return
     }
     Task { @MainActor in
       await daemonRuntime.start(
-        candidate,
-        configuration: daemonRuntimeConfiguration(for: candidate)
+        resolved.instance.runtimeCandidate,
+        configuration: daemonRuntimeConfiguration(for: resolved.instance.runtimeCandidate, preference: preference)
       )
-      status = "Started \(candidate.displayName)"
+      status = "Started \(resolved.instance.runtimeCandidate.displayName)"
       refreshDaemonWorkflowWindow()
     }
   }
 
   func stopDaemonWorkflowInstance(identity: String) {
-    guard let candidate = daemonCandidateForInstance(identity: identity) else {
+    guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
       status = "Instance needs a workflow source"
       refreshDaemonWorkflowWindow()
       return
     }
-    guard updateDaemonPreference(identity: identity, mutate: { preference in
-      preference.sourceIdentity = candidate.sourceIdentity
-      preference.available = true
-      preference.active = false
-    }) else {
+    var state = resolved.state
+    var preference = resolved.preference
+    preference.sourceIdentity = resolved.instance.instance.source.id
+    preference.available = true
+    preference.active = false
+    state.preferences[resolved.localIdentity] = preference
+    guard saveDaemonState(state, profileName: resolved.profileName) else {
+      refreshDaemonWorkflowWindow()
       return
     }
     Task { @MainActor in
-      await daemonRuntime.stop(identity: identity)
-      status = "Stopped \(candidate.displayName)"
+      await daemonRuntime.stop(identity: resolved.instance.id)
+      status = "Stopped \(resolved.instance.runtimeCandidate.displayName)"
       refreshDaemonWorkflowWindow()
     }
   }
 
   func restartDaemonWorkflowInstance(identity: String) {
-    guard let candidate = daemonCandidateForInstance(identity: identity) else {
+    guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
       status = "Instance needs a workflow source"
       refreshDaemonWorkflowWindow()
       return
     }
-    guard updateDaemonPreference(identity: identity, mutate: { preference in
-      preference.sourceIdentity = candidate.sourceIdentity
+    var state = resolved.state
+    var preference = resolved.preference
+    preference.sourceIdentity = resolved.instance.instance.source.id
       preference.available = true
       preference.active = true
-    }) else {
+    state.preferences[resolved.localIdentity] = preference
+    guard saveDaemonState(state, profileName: resolved.profileName) else {
+      refreshDaemonWorkflowWindow()
       return
     }
     Task { @MainActor in
-      await daemonRuntime.stop(identity: identity)
+      await daemonRuntime.stop(identity: resolved.instance.id)
       await daemonRuntime.start(
-        candidate,
-        configuration: daemonRuntimeConfiguration(for: candidate)
+        resolved.instance.runtimeCandidate,
+        configuration: daemonRuntimeConfiguration(for: resolved.instance.runtimeCandidate, preference: preference)
       )
-      status = "Restarted \(candidate.displayName)"
+      status = "Restarted \(resolved.instance.runtimeCandidate.displayName)"
       refreshDaemonWorkflowWindow()
     }
   }
 
   func removeDaemonWorkflowInstance(identity: String) {
+    if let parsed = RielaAppProfileInstanceIdentity(rawValue: identity), parsed.profileName != daemonProfileName {
+      var state = makeDaemonStore(profileName: parsed.profileName).load()
+      let previousPreference = state.preferences[parsed.identity]
+      guard previousPreference != nil else {
+        status = "Instance could not be found"
+        refreshDaemonWorkflowWindow()
+        return
+      }
+      state.preferences.removeValue(forKey: parsed.identity)
+      guard saveDaemonState(state, profileName: parsed.profileName) else {
+        refreshDaemonWorkflowWindow()
+        return
+      }
+      Task { @MainActor in
+        await daemonRuntime.stop(identity: identity)
+        status = "Removed instance \(parsed.identity) from profile \(parsed.profileName.rawValue)"
+        refreshDaemonWorkflowWindow()
+      }
+      return
+    }
     let previousPreference = daemonState.preferences[identity]
     guard previousPreference != nil else {
       status = "Instance could not be found"
@@ -439,6 +468,49 @@ extension RielaApp {
     variables.keys.sorted().map { key in
       "\(key)=\(variables[key] ?? "")"
     }.joined(separator: "\n")
+  }
+
+  private struct ResolvedDaemonWorkflowInstance {
+    var profileName: RielaAppProfileName
+    var localIdentity: String
+    var state: RielaAppDaemonWorkflowState
+    var preference: RielaAppDaemonWorkflowPreference
+    var instance: RielaAppProfiledWorkflowInstance
+  }
+
+  private func resolveDaemonWorkflowInstance(identity rawIdentity: String) -> ResolvedDaemonWorkflowInstance? {
+    let parsed = RielaAppProfileInstanceIdentity(rawValue: rawIdentity)
+    let profileName = parsed?.profileName ?? daemonProfileName
+    let localIdentity = parsed?.identity ?? rawIdentity
+    let state = profileName == daemonProfileName
+      ? daemonState
+      : makeDaemonStore(profileName: profileName).load()
+    let sources = profileName == daemonProfileName
+      ? daemonWorkflowSources
+      : daemonWorkflowSources(profileName: profileName, state: state)
+    guard let instance = state.workflowInstances(from: sources).first(where: { $0.identity == localIdentity }) else {
+      return nil
+    }
+    return ResolvedDaemonWorkflowInstance(
+      profileName: profileName,
+      localIdentity: localIdentity,
+      state: state,
+      preference: state.preference(for: localIdentity),
+      instance: RielaAppProfiledWorkflowInstance(profileName: profileName, instance: instance)
+    )
+  }
+
+  private func saveDaemonState(_ state: RielaAppDaemonWorkflowState, profileName: RielaAppProfileName) -> Bool {
+    do {
+      try makeDaemonStore(profileName: profileName).save(state)
+      if profileName == daemonProfileName {
+        daemonState = state
+      }
+      return true
+    } catch {
+      status = "Failed to save instance profile state: \(error.localizedDescription)"
+      return false
+    }
   }
 
   private func parseEnvironmentVariables(_ text: String) throws -> [String: String] {

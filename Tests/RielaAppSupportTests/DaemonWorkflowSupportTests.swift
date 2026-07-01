@@ -7,6 +7,22 @@ import RielaServer
 import XCTest
 
 final class DaemonWorkflowSupportTests: XCTestCase {
+  func testProfileInstanceIdentityRoundTripsProfileAndLocalInstanceId() throws {
+    let identity = RielaAppProfileInstanceIdentity(
+      profileName: RielaAppProfileName("work"),
+      identity: "daily:instance"
+    )
+
+    let decoded = try XCTUnwrap(RielaAppProfileInstanceIdentity(rawValue: identity.rawValue))
+
+    XCTAssertEqual(decoded.profileName, RielaAppProfileName("work"))
+    XCTAssertEqual(decoded.identity, "daily:instance")
+    XCTAssertNotEqual(
+      identity.rawValue,
+      RielaAppProfileInstanceIdentity(profileName: .default, identity: "daily:instance").rawValue
+    )
+  }
+
   func testDiscoversUserWorkflowWithDaemonEventSource() throws {
     let root = try temporaryHome()
     let workflowDirectory = root.appendingPathComponent(".riela/workflows/chat-workflow", isDirectory: true)

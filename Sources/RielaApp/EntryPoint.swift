@@ -26,6 +26,9 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   var daemonProfileName = RielaAppProfileName.default
   var daemonState = RielaAppDaemonWorkflowState()
   var daemonInstances: [WorkflowInstance] = []
+  var daemonProfileInstances: [RielaAppProfiledWorkflowInstance] = []
+  var daemonProfileStates: [RielaAppProfileName: RielaAppDaemonWorkflowState] = [:]
+  var daemonProfileWorkflowSources: [RielaAppProfileName: [RielaAppDaemonWorkflowCandidate]] = [:]
   var daemonCandidates: [RielaAppDaemonWorkflowCandidate] = []
   var daemonWorkflowSources: [RielaAppDaemonWorkflowCandidate] = []
   var appHomeDirectory = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
@@ -419,18 +422,19 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   }
 
   private func startEnabledDaemonWorkflows() async {
-    for instance in daemonInstances {
-      let candidate = instance.candidate
-      let preference = instance.preference
+    refreshDaemonInstanceCache()
+    for profiledInstance in daemonProfileInstances {
+      let candidate = profiledInstance.runtimeCandidate
+      let preference = profiledInstance.preference
       logDaemon(
-        "profile=\(daemonProfileName.rawValue) candidate=\(candidate.id) available=\(preference.available) active=\(preference.active)"
+        "profile=\(profiledInstance.profileName.rawValue) candidate=\(candidate.id) available=\(preference.available) active=\(preference.active)"
       )
       guard preference.available, preference.active else {
         continue
       }
       await daemonRuntime.start(
         candidate,
-        configuration: daemonRuntimeConfiguration(for: candidate)
+        configuration: daemonRuntimeConfiguration(for: candidate, preference: preference)
       )
       let snapshot = daemonRuntime.snapshot(for: candidate.id)
       logDaemon("start candidate=\(candidate.id) status=\(snapshot.status.rawValue) detail=\(snapshot.detail)")
@@ -444,8 +448,9 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       profileNames: availableDaemonProfileNames(),
       candidates: daemonCandidates,
       workflowSources: daemonWorkflowSources,
+      profileInstances: daemonProfileInstances,
       state: daemonState,
-      snapshots: Dictionary(uniqueKeysWithValues: Set(daemonCandidates.map(\.id)).union(daemonState.preferences.keys).map {
+      snapshots: Dictionary(uniqueKeysWithValues: Set(daemonProfileInstances.map(\.id)).union(daemonCandidates.map(\.id)).map {
         ($0, daemonRuntime.snapshot(for: $0))
       }),
       assistantAssistance: daemonState.assistant.assistance,
@@ -469,10 +474,6 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       return
     }
     Task { @MainActor in
-      let previousCandidates = daemonCandidates
-      for candidate in previousCandidates {
-        await daemonRuntime.stop(identity: candidate.id)
-      }
       daemonProfileName = profileName
       daemonStore = makeDaemonStore(profileName: profileName)
       daemonState = daemonStore.load()
@@ -784,26 +785,58 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   }
 
   private var daemonAppWorkflowRoot: URL {
-    RielaAppProfileStore.workflowRootURL(appRootURL: profileStore.appRootURL, profileName: daemonProfileName)
+    daemonAppWorkflowRoot(profileName: daemonProfileName)
   }
 
   private var daemonAppPackageRoot: URL {
-    RielaAppProfileStore.packageRootURL(appRootURL: profileStore.appRootURL, profileName: daemonProfileName)
+    daemonAppPackageRoot(profileName: daemonProfileName)
   }
 
   private func refreshDaemonInstanceCache() {
-    daemonWorkflowSources = daemonDiscovery.discoverUserDaemonWorkflows(
-      appWorkflowRoot: daemonAppWorkflowRoot,
-      appPackageRoot: daemonAppPackageRoot,
-      projectDirectories: daemonState.projectDirectories,
-      additionalWorkflowDirectories: daemonState.workflowDirectories
+    let profileNames = availableDaemonProfileNames()
+    daemonProfileStates = [:]
+    daemonProfileWorkflowSources = [:]
+    daemonProfileInstances = []
+    for profileName in profileNames {
+      let state = profileName == daemonProfileName ? daemonState : makeDaemonStore(profileName: profileName).load()
+      let sources = daemonWorkflowSources(profileName: profileName, state: state)
+      let instances = state.workflowInstances(from: sources)
+      daemonProfileStates[profileName] = state
+      daemonProfileWorkflowSources[profileName] = sources
+      daemonProfileInstances.append(contentsOf: instances.filter(\.isConfigured).map {
+        RielaAppProfiledWorkflowInstance(profileName: profileName, instance: $0)
+      })
+      guard profileName == daemonProfileName else {
+        continue
+      }
+      daemonWorkflowSources = sources
+      daemonInstances = instances
+      daemonCandidates = instances.map(\.candidate)
+    }
+  }
+
+  func daemonWorkflowSources(
+    profileName: RielaAppProfileName,
+    state: RielaAppDaemonWorkflowState
+  ) -> [RielaAppDaemonWorkflowCandidate] {
+    daemonDiscovery.discoverUserDaemonWorkflows(
+      appWorkflowRoot: daemonAppWorkflowRoot(profileName: profileName),
+      appPackageRoot: daemonAppPackageRoot(profileName: profileName),
+      projectDirectories: state.projectDirectories,
+      additionalWorkflowDirectories: state.workflowDirectories
     )
-    daemonInstances = daemonState.workflowInstances(from: daemonWorkflowSources)
-    daemonCandidates = daemonInstances.map(\.candidate)
+  }
+
+  private func daemonAppWorkflowRoot(profileName: RielaAppProfileName) -> URL {
+    RielaAppProfileStore.workflowRootURL(appRootURL: profileStore.appRootURL, profileName: profileName)
+  }
+
+  private func daemonAppPackageRoot(profileName: RielaAppProfileName) -> URL {
+    RielaAppProfileStore.packageRootURL(appRootURL: profileStore.appRootURL, profileName: profileName)
   }
 }
 
-private extension RielaApp {
+extension RielaApp {
   private func initialDaemonProfileName() -> RielaAppProfileName {
     launchOptions.profileName ?? profileStore.loadActiveProfileName()
   }
@@ -821,7 +854,7 @@ private extension RielaApp {
     }
   }
 
-  private func makeDaemonStore(profileName: RielaAppProfileName) -> RielaAppDaemonWorkflowStore {
+  func makeDaemonStore(profileName: RielaAppProfileName) -> RielaAppDaemonWorkflowStore {
     let stateURL = RielaAppProfileStore.profilesRootURL(appRootURL: profileStore.appRootURL)
       .appendingPathComponent(profileName.rawValue, isDirectory: true)
       .appendingPathComponent("daemon-workflows.json")

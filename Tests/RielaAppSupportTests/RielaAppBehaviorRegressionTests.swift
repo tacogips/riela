@@ -20,6 +20,39 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     XCTAssertNil(table.headerView)
   }
 
+  func testInstanceListShowsProfileAndCanClearProfileFilterAtRuntime() throws {
+    let controller = makeDaemonController()
+    let defaultInstance = profiledInstance(profileName: .default, identity: "daily", displayName: "Daily")
+    let workInstance = profiledInstance(profileName: RielaAppProfileName("work"), identity: "daily", displayName: "Work Daily")
+
+    controller.update(
+      profileName: .default,
+      profileNames: [.default, RielaAppProfileName("work")],
+      candidates: [defaultInstance.instance.candidate],
+      workflowSources: [defaultInstance.instance.source],
+      profileInstances: [defaultInstance, workInstance],
+      state: RielaAppDaemonWorkflowState(),
+      snapshots: [:],
+      assistantAssistance: "",
+      statusMessage: ""
+    )
+
+    XCTAssertTrue(controller.profilePopup.itemTitles.contains("All Profiles"))
+    XCTAssertTrue(controller.profilePopup.itemTitles.contains("default"))
+    XCTAssertEqual(controller.instanceRows.map(\.profileName), [.default])
+
+    controller.profilePopup.selectItem(withTitle: "All Profiles")
+    controller.profilePopupChanged()
+
+    XCTAssertEqual(controller.profileFilterName, nil)
+    XCTAssertEqual(controller.instanceRows.map(\.profileName), [.default, RielaAppProfileName("work")])
+
+    let root = try XCTUnwrap(controller.window?.contentView)
+    let table = try XCTUnwrap(firstSubview(of: NSTableView.self, in: root))
+    _ = table.view(atColumn: 0, row: 1, makeIfNecessary: true)
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue.contains("Profile work") })
+  }
+
   func testStatusMenuUsesCompactSummaryItemsAtRuntime() throws {
     let app = RielaApp()
     app.daemonProfileName = RielaAppProfileName("work")
@@ -339,6 +372,33 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     let scratch = root.appendingPathComponent(name, isDirectory: true)
     try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
     return scratch
+  }
+
+  private func profiledInstance(
+    profileName: RielaAppProfileName,
+    identity: String,
+    displayName: String
+  ) -> RielaAppProfiledWorkflowInstance {
+    let source = RielaAppDaemonWorkflowCandidate(
+      id: "source-\(profileName.rawValue)-\(identity)",
+      workflowId: "workflow-\(identity)",
+      displayName: "\(displayName) Workflow",
+      sourceDescription: "profile workflow",
+      workflowDirectory: "/workflows/\(profileName.rawValue)/\(identity)",
+      workingDirectory: "/work/\(profileName.rawValue)",
+      eventRoot: nil,
+      eventSources: []
+    )
+    var state = RielaAppDaemonWorkflowState()
+    state.preferences[identity] = RielaAppDaemonWorkflowPreference(
+      identity: identity,
+      sourceIdentity: source.id,
+      displayName: displayName,
+      available: true,
+      active: false
+    )
+    let instance = state.workflowInstances(from: [source]).first { $0.identity == identity }
+    return RielaAppProfiledWorkflowInstance(profileName: profileName, instance: instance ?? .unconfigured(source: source))
   }
 
   private func repositoryRoot() throws -> URL {

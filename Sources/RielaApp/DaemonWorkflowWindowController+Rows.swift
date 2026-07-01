@@ -407,10 +407,11 @@ extension DaemonWorkflowWindowController {
   }
 
   private func instanceSubtitle(for row: ConfiguredWorkflowInstanceRow) -> String {
+    let profile = "Profile \(row.profileName.rawValue)"
     guard let candidate = row.candidate else {
-      return rielaAppMetadataText([row.workflowName, "Missing source", row.sourceIdentity])
+      return rielaAppMetadataText([profile, row.workflowName, "Missing source", row.sourceIdentity])
     }
-    return rielaAppMetadataText([row.workflowName, environmentColumnStatus(candidate), row.sourceDescription])
+    return rielaAppMetadataText([profile, row.workflowName, environmentColumnStatus(candidate), row.sourceDescription])
   }
 
   private func stateColor(for state: InstanceState) -> NSColor {

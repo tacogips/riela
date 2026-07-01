@@ -61,8 +61,15 @@ extension RielaApp {
   }
 
   func daemonEnvironment(for candidate: RielaAppDaemonWorkflowCandidate) -> [String: String] {
+    daemonEnvironment(for: candidate, preference: daemonState.preference(for: candidate.id))
+  }
+
+  func daemonEnvironment(
+    for candidate: RielaAppDaemonWorkflowCandidate,
+    preference: RielaAppDaemonWorkflowPreference
+  ) -> [String: String] {
     var environment = daemonEnvironmentStore(for: candidate).mergedEnvironment()
-    for (name, value) in daemonState.preference(for: candidate.id).environmentVariables {
+    for (name, value) in preference.environmentVariables {
       environment[name] = value
     }
     return environment
@@ -96,8 +103,15 @@ extension RielaApp {
   func daemonRuntimeConfiguration(
     for candidate: RielaAppDaemonWorkflowCandidate
   ) -> WorkflowServeRuntimeConfiguration {
-    var configuration = daemonState.preference(for: candidate.id).configuration.serveConfiguration(
-      inheritedEnvironment: daemonEnvironment(for: candidate)
+    daemonRuntimeConfiguration(for: candidate, preference: daemonState.preference(for: candidate.id))
+  }
+
+  func daemonRuntimeConfiguration(
+    for candidate: RielaAppDaemonWorkflowCandidate,
+    preference: RielaAppDaemonWorkflowPreference
+  ) -> WorkflowServeRuntimeConfiguration {
+    var configuration = preference.configuration.serveConfiguration(
+      inheritedEnvironment: daemonEnvironment(for: candidate, preference: preference)
     )
     if configuration.workingDirectory == nil {
       configuration.workingDirectory = candidate.workingDirectory

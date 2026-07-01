@@ -101,6 +101,8 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
 
   struct ConfiguredWorkflowInstanceRow {
     var id: String
+    var profileName: RielaAppProfileName
+    var localIdentity: String
     var preference: RielaAppDaemonWorkflowPreference
     var candidate: RielaAppDaemonWorkflowCandidate?
     var sourceIdentity: String
@@ -181,12 +183,16 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   let environmentColumnStatus: (RielaAppDaemonWorkflowCandidate) -> String
   private let onWindowWillClose: () -> Void
 
+  private static let allProfilesMenuTitle = "All Profiles"
+
   private var candidates: [RielaAppDaemonWorkflowCandidate] = []
   var workflowSources: [RielaAppDaemonWorkflowCandidate] = []
+  var profileInstances: [RielaAppProfiledWorkflowInstance] = []
   var state = RielaAppDaemonWorkflowState()
   private var snapshots: [String: RielaAppDaemonWorkflowRuntime.RuntimeSnapshot] = [:]
   var profileName = RielaAppProfileName.default
   var profileNames: [RielaAppProfileName] = [.default]
+  var profileFilterName: RielaAppProfileName? = .default
   private var selectedIdentity: String?
   private var selectedIdentityByProfile: [RielaAppProfileName: String] = [:]
   private var isUpdatingProfileControls = false
@@ -314,6 +320,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     profileNames: [RielaAppProfileName],
     candidates: [RielaAppDaemonWorkflowCandidate],
     workflowSources: [RielaAppDaemonWorkflowCandidate],
+    profileInstances: [RielaAppProfiledWorkflowInstance] = [],
     state: RielaAppDaemonWorkflowState,
     snapshots: [String: RielaAppDaemonWorkflowRuntime.RuntimeSnapshot],
     assistantAssistance: String,
@@ -324,10 +331,14 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     self.profileNames = profileNames
     self.candidates = candidates
     self.workflowSources = workflowSources
+    self.profileInstances = profileInstances
     self.state = state
     self.snapshots = snapshots
     if activeSidebarPane != .assistant {
       assistantAssistanceTextView?.string = assistantAssistance
+    }
+    if didChangeProfile {
+      profileFilterName = profileName
     }
     if didChangeProfile || selectedIdentity == nil {
       selectedIdentity = selectedIdentityByProfile[profileName]
@@ -370,6 +381,16 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     if title == ProfileSelectWindowController.menuTitle {
       updateProfileControls()
       openProfileSelect()
+      return
+    }
+    if title == Self.allProfilesMenuTitle {
+      profileFilterName = nil
+      selectedIdentity = nil
+      updateProfileControls()
+      instanceTable.reloadData()
+      emptyInstancesLabel.isHidden = !instanceRows.isEmpty
+      restoreSelection()
+      updateInstanceDetail()
       return
     }
     onSelectProfile(title)
@@ -597,7 +618,11 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     navigationTitleLabel.stringValue = row.instanceName
     detailTitleLabel.stringValue = row.instanceName
     detailNameValueLabel.stringValue = row.instanceName
-    detailWorkflowValueLabel.stringValue = rielaAppMetadataText([row.workflowName, row.sourceDescription])
+    detailWorkflowValueLabel.stringValue = rielaAppMetadataText([
+      "Profile \(row.profileName.rawValue)",
+      row.workflowName,
+      row.sourceDescription
+    ])
     detailMissingSourceValueLabel.stringValue = rielaAppMetadataText(["Missing source", row.sourceIdentity])
     if let candidate = row.candidate {
       detailEnvironmentValueLabel.stringValue = environmentSummary(candidate)
@@ -727,6 +752,9 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   }
 
   var instanceRows: [ConfiguredWorkflowInstanceRow] {
+    if !profileInstances.isEmpty {
+      return profiledInstanceRows()
+    }
     let allCandidates = candidates + workflowSources
     let candidatesById = Dictionary(allCandidates.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     let candidatesBySourceIdentity = Dictionary(
@@ -749,6 +777,8 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
           : candidate?.displayName ?? storedIdentity
         return ConfiguredWorkflowInstanceRow(
           id: storedIdentity,
+          profileName: profileName,
+          localIdentity: storedIdentity,
           preference: preference,
           candidate: candidate,
           sourceIdentity: sourceIdentity,
@@ -756,6 +786,34 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
           workflowName: sourceCandidate?.displayName ?? candidate?.workflowId ?? "Missing source",
           sourceDescription: sourceCandidate?.sourceDescription ?? candidate?.sourceDescription ?? "Missing source",
           state: instanceState(identity: storedIdentity, hasSource: candidate != nil)
+        )
+      }
+  }
+
+  private func profiledInstanceRows() -> [ConfiguredWorkflowInstanceRow] {
+    profileInstances
+      .filter { profileFilterName == nil || $0.profileName == profileFilterName }
+      .sorted { lhs, rhs in
+        let profileCompare = lhs.profileName.rawValue.localizedCaseInsensitiveCompare(rhs.profileName.rawValue)
+        if profileCompare != .orderedSame {
+          return profileCompare == .orderedAscending
+        }
+        return lhs.instance.displayName.localizedCaseInsensitiveCompare(rhs.instance.displayName) == .orderedAscending
+      }
+      .map { profiledInstance in
+        let instance = profiledInstance.instance
+        let runtimeCandidate = profiledInstance.runtimeCandidate
+        return ConfiguredWorkflowInstanceRow(
+          id: profiledInstance.id,
+          profileName: profiledInstance.profileName,
+          localIdentity: instance.identity,
+          preference: instance.preference,
+          candidate: runtimeCandidate,
+          sourceIdentity: instance.sourceIdentity,
+          instanceName: instance.displayName,
+          workflowName: instance.source.displayName,
+          sourceDescription: instance.source.sourceDescription,
+          state: instanceState(identity: profiledInstance.id, hasSource: true)
         )
       }
   }
@@ -803,10 +861,12 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   private func updateProfileControls() {
     isUpdatingProfileControls = true
     profilePopup.removeAllItems()
+    profilePopup.addItem(withTitle: Self.allProfilesMenuTitle)
+    profilePopup.menu?.addItem(.separator())
     profilePopup.addItems(withTitles: profileNames.map(\.rawValue))
     profilePopup.menu?.addItem(.separator())
     profilePopup.addItem(withTitle: ProfileSelectWindowController.menuTitle)
-    profilePopup.selectItem(withTitle: profileName.rawValue)
+    profilePopup.selectItem(withTitle: profileFilterName?.rawValue ?? Self.allProfilesMenuTitle)
     isUpdatingProfileControls = false
   }
 

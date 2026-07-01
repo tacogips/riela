@@ -13,7 +13,7 @@ final class RielaAppWindowContentInsetTests: XCTestCase {
       onCreateProfile: { RielaAppProfileName($0) },
       onRemoveProfile: { _ in true },
       onAddDirectory: {},
-      onAddProject: {},
+      onAddURL: { _ in },
       onAddInstance: { _ in },
       onRevealSelectedSource: { _ in },
       onRelinkInstance: { _, _ in },

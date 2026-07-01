@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import RielaAppSupport
 
 @MainActor
 final class WorkflowSourceSelectionTarget: NSObject {
@@ -153,6 +154,28 @@ struct AddInstancePromptViewFactory {
 }
 
 extension DaemonWorkflowWindowController {
+  @objc func addDirectory() {
+    onAddDirectory()
+  }
+
+  @objc func addURL() {
+    guard let rawURL = promptForImportURL() else {
+      return
+    }
+    onAddURL(rawURL)
+  }
+
+  @objc func addListButtonPressed() {
+    showAddInstanceSelectionPane()
+  }
+
+  @objc func addProfileFromOverview() {
+    guard let rawName = promptForProfileName(message: "Create a saved profile for another instance set.") else {
+      return
+    }
+    _ = onCreateProfile(rawName)
+  }
+
   func showAddInstanceSelectionPane() {
     activeSidebarPane = .instances
     isShowingInstanceDetail = false
@@ -189,12 +212,22 @@ extension DaemonWorkflowWindowController {
     showInstancesList()
   }
 
+  func controlTextDidChange(_ notification: Notification) {
+    guard notification.object as? NSSearchField === inlineAddInstanceSearchField,
+      isShowingAddInstanceSelection else {
+      return
+    }
+    rebuildInlineAddInstanceSelectionForSearch()
+  }
+
   private func buildInlineAddInstanceSelectionView(options: [WorkflowSourceOption]) -> NSView {
-    inlineAddInstanceSourceOptions = options
+    inlineAddInstanceAllSourceOptions = options
+    let filteredOptions = filteredInlineAddInstanceOptions()
+    inlineAddInstanceSourceOptions = filteredOptions
     let titleLabel = NSTextField(labelWithString: "Choose Workflow")
     titleLabel.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
     let countLabel = NSTextField(
-      labelWithString: options.count == 1 ? "1 workflow source" : "\(options.count) workflow sources"
+      labelWithString: addInstanceSourceCountText(visibleCount: filteredOptions.count, totalCount: options.count)
     )
     countLabel.textColor = .secondaryLabelColor
     countLabel.lineBreakMode = .byTruncatingTail
@@ -207,11 +240,12 @@ extension DaemonWorkflowWindowController {
     header.alignment = .centerY
     header.translatesAutoresizingMaskIntoConstraints = true
     header.autoresizingMask = []
+    configureInlineAddInstanceSearchField()
 
     let stack: NSStackView
     if options.isEmpty {
       inlineAddInstanceSourceSelectionTarget = nil
-      let emptyLabel = NSTextField(labelWithString: "No workflows. Import a workflow, package, or project source.")
+      let emptyLabel = NSTextField(labelWithString: "No workflows. Import a workflow or package directory.")
       emptyLabel.textColor = .secondaryLabelColor
       emptyLabel.alignment = .center
       emptyLabel.lineBreakMode = .byWordWrapping
@@ -219,14 +253,30 @@ extension DaemonWorkflowWindowController {
       let actionsTitle = NSTextField(labelWithString: "Manage Sources")
       actionsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
       stack = inlineAddInstanceDocumentStack(views: [emptyLabel, actionsTitle, inlineSourceActionStack()])
+    } else if filteredOptions.isEmpty {
+      inlineAddInstanceSourceSelectionTarget = nil
+      let emptyLabel = NSTextField(labelWithString: "No workflows match the current filter.")
+      emptyLabel.textColor = .secondaryLabelColor
+      emptyLabel.alignment = .center
+      emptyLabel.lineBreakMode = .byWordWrapping
+      emptyLabel.maximumNumberOfLines = 2
+      let actionsTitle = NSTextField(labelWithString: "Manage Sources")
+      actionsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+      stack = inlineAddInstanceDocumentStack(views: [
+        inlineAddInstanceSearchField,
+        emptyLabel,
+        actionsTitle,
+        inlineSourceActionStack()
+      ])
     } else {
-      let sourceSelection = workflowSourceSelectionStack(options: options) {
+      let sourceSelection = workflowSourceSelectionStack(options: filteredOptions) {
         self.confirmInlineAddInstanceSelection()
       }
       inlineAddInstanceSourceSelectionTarget = sourceSelection.target
       let actionsTitle = NSTextField(labelWithString: "Manage Sources")
       actionsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
       stack = inlineAddInstanceDocumentStack(views: [
+        inlineAddInstanceSearchField,
         sourceSelection.stack,
         actionsTitle,
         inlineSourceActionStack()
@@ -238,17 +288,67 @@ extension DaemonWorkflowWindowController {
     return DaemonWorkflowOverviewPaneView(header: header, contentView: scroll)
   }
 
+  private func configureInlineAddInstanceSearchField() {
+    inlineAddInstanceSearchField.placeholderString = "Filter workflows"
+    inlineAddInstanceSearchField.target = self
+    inlineAddInstanceSearchField.delegate = self
+    inlineAddInstanceSearchField.sendsSearchStringImmediately = true
+    inlineAddInstanceSearchField.controlSize = .large
+    inlineAddInstanceSearchField.setAccessibilityLabel("Filter Workflows")
+  }
+
+  private func filteredInlineAddInstanceOptions() -> [WorkflowSourceOption] {
+    let query = inlineAddInstanceSearchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !query.isEmpty else {
+      return inlineAddInstanceAllSourceOptions
+    }
+    return inlineAddInstanceAllSourceOptions.filter { option in
+      workflowSourceOptionSearchText(option)
+        .range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+    }
+  }
+
+  private func workflowSourceOptionSearchText(_ option: WorkflowSourceOption) -> String {
+    [
+      option.candidate.displayName,
+      option.candidate.workflowId,
+      option.candidate.sourceDescription,
+      option.environmentStatus,
+      option.location
+    ].joined(separator: " ")
+  }
+
+  private func addInstanceSourceCountText(visibleCount: Int, totalCount: Int) -> String {
+    let totalText = totalCount == 1 ? "1 workflow source" : "\(totalCount) workflow sources"
+    guard visibleCount != totalCount else {
+      return totalText
+    }
+    return "\(visibleCount) of \(totalText)"
+  }
+
+  private func rebuildInlineAddInstanceSelectionForSearch() {
+    let selectionView = buildInlineAddInstanceSelectionView(options: inlineAddInstanceAllSourceOptions)
+    selectionView.translatesAutoresizingMaskIntoConstraints = true
+    addInstanceSelectionView?.removeFromSuperview()
+    contentHost?.addSubview(selectionView)
+    addInstanceSelectionView = selectionView
+    addInstanceSelectionView?.isHidden = false
+    contentHost?.needsLayout = true
+    contentHost?.layoutSubtreeIfNeeded()
+    window?.makeFirstResponder(inlineAddInstanceSearchField)
+  }
+
   private func inlineSourceActionStack() -> NSStackView {
     let stack = NSStackView(views: [
       actionRow(
-        title: "Import Workflow or Package",
-        detail: "Add a workflow, package directory, or archive to this profile.",
+        title: "Import Directory",
+        detail: "Add a workflow directory, package directory, .rielapkg, or .zip archive.",
         action: #selector(addDirectory)
       ),
       actionRow(
-        title: "Add Project Source",
-        detail: "Make project workflows available to saved instances.",
-        action: #selector(addProject)
+        title: "Import from URL",
+        detail: "Add a workflow or package directory from a GitHub URL.",
+        action: #selector(addURL)
       )
     ])
     stack.orientation = .vertical
@@ -293,7 +393,7 @@ extension DaemonWorkflowWindowController {
   func promptForRelinkSourceOption(_ options: [WorkflowSourceOption]) -> WorkflowSourceSelection {
     guard !options.isEmpty else {
       let stack = AddInstancePromptViewFactory().emptyWorkflowSelectionStack(
-        message: "No workflows. Import a workflow, package, or project source.",
+        message: "No workflows. Import a workflow or package directory.",
         sourceActions: sourceActionStack(context: .relink),
         size: AddInstancePromptLayout.relinkSize
       )
@@ -402,20 +502,20 @@ extension DaemonWorkflowWindowController {
     }
     self.pendingAddInstanceSheetAction = nil
     switch pendingAddInstanceSheetAction {
-    case .importWorkflowOrPackage:
+    case .importWorkflowOrPackageFromFile:
       onAddDirectory()
-    case .addProjectSource:
-      onAddProject()
+    case .importWorkflowOrPackageFromURL:
+      addURL()
     }
     return true
   }
 
   @objc private func importWorkflowOrPackageFromAddInstanceSheet() {
-    finishAddInstanceSheet(with: .importWorkflowOrPackage)
+    finishAddInstanceSheet(with: .importWorkflowOrPackageFromFile)
   }
 
-  @objc private func addProjectSourceFromAddInstanceSheet() {
-    finishAddInstanceSheet(with: .addProjectSource)
+  @objc private func importWorkflowOrPackageFromURLFromAddInstanceSheet() {
+    finishAddInstanceSheet(with: .importWorkflowOrPackageFromURL)
   }
 
   private func finishAddInstanceSheet(with action: AddInstanceSheetAction) {
@@ -464,6 +564,65 @@ extension DaemonWorkflowWindowController {
     row.spacing = 8
     row.alignment = .centerY
     return rielaAppSettingsRow(row)
+  }
+
+  private func promptForImportURL() -> String? {
+    let field = NSTextField(string: "")
+    field.placeholderString = "https://github.com/owner/repo/tree/main/path"
+    configurePromptTextField(field)
+    let response = runAddInstancePromptWindow(
+      title: "Import from URL",
+      message: "Enter a GitHub workflow or package directory URL.",
+      content: promptFieldStack(title: "URL", control: field),
+      contentSize: NSSize(width: 468, height: 190),
+      primaryTitle: "Import",
+      initialFirstResponder: field
+    )
+    guard response == .OK else {
+      return nil
+    }
+    let value = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    return value.isEmpty ? nil : value
+  }
+
+  private func promptForProfileName(message: String) -> String? {
+    let field = NSTextField(string: "")
+    field.placeholderString = RielaAppProfileName.defaultRawValue
+    configurePromptTextField(field)
+    let stack = promptFieldStack(title: "Name", control: field)
+    let alert = NSAlert()
+    alert.messageText = "Profile Name"
+    alert.informativeText = message
+    alert.accessoryView = stack
+    alert.addButton(withTitle: "Done")
+    alert.addButton(withTitle: "Cancel")
+    guard alert.runModal() == .alertFirstButtonReturn else {
+      return nil
+    }
+    let value = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    return value.isEmpty ? nil : value
+  }
+
+  private func promptFieldStack(title: String, control: NSView) -> NSStackView {
+    let titleLabel = rielaAppSettingsTitleLabel(title, maxWidth: 70)
+    let row = RielaAppSettingsRow(views: [titleLabel, control])
+    row.orientation = .horizontal
+    row.spacing = 8
+    row.alignment = .firstBaseline
+    let stack = NSStackView(views: [rielaAppSettingsRow(row)])
+    stack.orientation = .vertical
+    stack.alignment = .width
+    stack.spacing = 8
+    stack.frame = NSRect(x: 0, y: 0, width: 420, height: 44)
+    stack.widthAnchor.constraint(lessThanOrEqualToConstant: 420).isActive = true
+    return stack
+  }
+
+  private func configurePromptTextField(_ field: NSTextField) {
+    field.bezelStyle = .roundedBezel
+    field.controlSize = .large
+    field.font = .systemFont(ofSize: NSFont.systemFontSize)
+    field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
   }
 
   private func runAddInstancePromptWindow(
@@ -585,14 +744,14 @@ extension DaemonWorkflowWindowController {
   private func sourceActionStack(context: SourceActionContext) -> NSStackView {
     let stack = NSStackView(views: [
       actionRow(
-        title: "Import Workflow or Package",
+        title: "Import Directory",
         detail: context.importDetail,
         action: #selector(importWorkflowOrPackageFromAddInstanceSheet)
       ),
       actionRow(
-        title: "Add Project Source",
-        detail: context.projectDetail,
-        action: #selector(addProjectSourceFromAddInstanceSheet)
+        title: "Import from URL",
+        detail: "Add a workflow or package directory from a GitHub URL.",
+        action: #selector(importWorkflowOrPackageFromURLFromAddInstanceSheet)
       )
     ])
     stack.orientation = .vertical

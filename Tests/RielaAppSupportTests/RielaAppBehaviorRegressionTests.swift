@@ -62,6 +62,53 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue.contains("Profile work") })
   }
 
+  func testInstanceListUsesWarningIconForMissingEnvironmentAndHidesSourceDescription() throws {
+    let controller = makeDaemonController(environmentColumnStatus: { _ in "Missing 1" })
+    let source = RielaAppDaemonWorkflowCandidate(
+      id: "app-package:chat:bot",
+      workflowId: "bot",
+      displayName: "Chat Bot",
+      sourceDescription: "profile package",
+      workflowDirectory: "/workflows/chat",
+      packageDirectory: "/packages/chat",
+      workingDirectory: "/work",
+      eventRoot: nil,
+      eventSources: [],
+      requiredEnvironment: [RielaAppEnvRequirement(name: "RIELA_TOKEN")]
+    )
+    var state = RielaAppDaemonWorkflowState()
+    state.preferences["chat"] = RielaAppDaemonWorkflowPreference(
+      identity: "chat",
+      sourceIdentity: source.id,
+      displayName: "Chat",
+      available: true,
+      active: false
+    )
+
+    controller.update(
+      profileName: .default,
+      profileNames: [.default],
+      candidates: [source],
+      workflowSources: [source],
+      state: state,
+      snapshots: [:],
+      assistantAssistance: "",
+      statusMessage: ""
+    )
+
+    let root = try XCTUnwrap(controller.window?.contentView)
+    let table = try XCTUnwrap(firstSubview(of: NSTableView.self, in: root))
+    _ = table.view(atColumn: 0, row: 0, makeIfNecessary: true)
+
+    XCTAssertFalse(visibleTextFields(in: root).contains { $0.stringValue.contains("Missing 1") })
+    XCTAssertFalse(visibleTextFields(in: root).contains { $0.stringValue.contains("profile package") })
+    let warningIcon = allSubviews(of: NSImageView.self, in: root).first {
+      $0.accessibilityLabel() == "Missing required environment variables"
+    }
+    XCTAssertEqual(warningIcon?.toolTip, "Missing 1")
+    XCTAssertEqual(warningIcon?.accessibilityHelp(), "Missing 1")
+  }
+
   func testProfileQualifiedInstanceConfigurationUsesSelectedProfileStateAndWorkingDirectory() throws {
     let temp = try scratchRoot(name: "riela-app-profile-qualified-instance-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: temp) }
@@ -400,14 +447,16 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     XCTAssertEqual(target.pressCount, 1)
   }
 
-  private func makeDaemonController() -> DaemonWorkflowWindowController {
+  private func makeDaemonController(
+    environmentColumnStatus: @escaping (RielaAppDaemonWorkflowCandidate) -> String = { _ in "Ready" }
+  ) -> DaemonWorkflowWindowController {
     DaemonWorkflowWindowController(
       onRefresh: {},
       onSelectProfile: { _ in },
       onCreateProfile: { RielaAppProfileName($0) },
       onRemoveProfile: { _ in true },
       onAddDirectory: {},
-      onAddProject: {},
+      onAddURL: { _ in },
       onAddInstance: { _ in },
       onRevealSelectedSource: { _ in },
       onRelinkInstance: { _, _ in },
@@ -424,7 +473,7 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
       configuredEnvironmentValues: { _ in [] },
       onSaveAssistantAssistance: { _ in nil },
       environmentSummary: { _ in "Ready" },
-      environmentColumnStatus: { _ in "Ready" },
+      environmentColumnStatus: environmentColumnStatus,
       onWindowWillClose: {}
     )
   }

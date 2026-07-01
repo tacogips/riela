@@ -376,7 +376,16 @@ extension DaemonWorkflowWindowController {
     let spacer = NSView()
     spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-    let rowStack = NSStackView(views: [tile, textStack, spacer, stateStack, rielaAppDisclosureIndicator()])
+    let statusViews = missingEnvironmentTooltip(for: row).map {
+      [missingEnvironmentWarningIcon(toolTip: $0), stateStack]
+    } ?? [stateStack]
+    let statusStack = NSStackView(views: statusViews)
+    statusStack.orientation = .horizontal
+    statusStack.spacing = 8
+    statusStack.alignment = .centerY
+    statusStack.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+
+    let rowStack = NSStackView(views: [tile, textStack, spacer, statusStack, rielaAppDisclosureIndicator()])
     rowStack.orientation = .horizontal
     rowStack.spacing = 12
     rowStack.alignment = .centerY
@@ -408,10 +417,34 @@ extension DaemonWorkflowWindowController {
 
   private func instanceSubtitle(for row: ConfiguredWorkflowInstanceRow) -> String {
     let profile = "Profile \(row.profileName.rawValue)"
-    guard let candidate = row.candidate else {
+    guard row.candidate != nil else {
       return rielaAppMetadataText([profile, row.workflowName, "Missing source", row.sourceIdentity])
     }
-    return rielaAppMetadataText([profile, row.workflowName, environmentColumnStatus(candidate), row.sourceDescription])
+    return rielaAppMetadataText([profile, row.workflowName])
+  }
+
+  private func missingEnvironmentTooltip(for row: ConfiguredWorkflowInstanceRow) -> String? {
+    guard row.hasMissingRequiredEnvironment, let candidate = row.candidate else {
+      return nil
+    }
+    return environmentColumnStatus(candidate)
+  }
+
+  private func missingEnvironmentWarningIcon(toolTip: String) -> NSImageView {
+    let icon = NSImageView(
+      image: NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil) ?? NSImage()
+    )
+    icon.translatesAutoresizingMaskIntoConstraints = false
+    icon.contentTintColor = .systemYellow
+    icon.toolTip = toolTip
+    icon.setAccessibilityElement(true)
+    icon.setAccessibilityLabel("Missing required environment variables")
+    icon.setAccessibilityHelp(toolTip)
+    NSLayoutConstraint.activate([
+      icon.widthAnchor.constraint(equalToConstant: 15),
+      icon.heightAnchor.constraint(equalToConstant: 15)
+    ])
+    return icon
   }
 
   private func stateColor(for state: InstanceState) -> NSColor {

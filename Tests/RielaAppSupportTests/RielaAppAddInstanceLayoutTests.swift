@@ -87,6 +87,55 @@ final class RielaAppAddInstanceLayoutTests: XCTestCase {
     XCTAssertEqual(controller.addInstanceSelectionView?.isHidden, true)
   }
 
+  func testAddInstanceWorkflowSelectionCanFilterSourcesAtRuntime() throws {
+    let controller = makeController()
+    let daily = RielaAppDaemonWorkflowCandidate(
+      id: "user-workflow:daily-summary",
+      workflowId: "daily-summary",
+      displayName: "Daily Summary",
+      sourceDescription: "user workflow",
+      workflowDirectory: "/workflows/daily-summary",
+      workingDirectory: "/workflows",
+      eventRoot: nil,
+      eventSources: []
+    )
+    let slack = RielaAppDaemonWorkflowCandidate(
+      id: "user-workflow:slack-chat",
+      workflowId: "slack-chat",
+      displayName: "Slack Chat",
+      sourceDescription: "user workflow",
+      workflowDirectory: "/workflows/slack-chat",
+      workingDirectory: "/workflows",
+      eventRoot: nil,
+      eventSources: []
+    )
+    controller.update(
+      profileName: .default,
+      profileNames: [.default],
+      candidates: [daily, slack],
+      workflowSources: [daily, slack],
+      state: RielaAppDaemonWorkflowState(),
+      snapshots: [:],
+      assistantAssistance: "",
+      statusMessage: ""
+    )
+
+    let root = try XCTUnwrap(controller.window?.contentView)
+    try XCTUnwrap(button(accessibilityLabel: "Add Instance", in: root)).performClick(nil)
+    controller.window?.layoutIfNeeded()
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Daily Summary" })
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Slack Chat" })
+
+    let searchField = try XCTUnwrap(firstSubview(of: NSSearchField.self, in: root))
+    searchField.stringValue = "slack"
+    controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+    controller.window?.layoutIfNeeded()
+
+    XCTAssertFalse(visibleTextFields(in: root).contains { $0.stringValue == "Daily Summary" })
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Slack Chat" })
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "1 of 2 workflow sources" })
+  }
+
   private func makeController() -> DaemonWorkflowWindowController {
     DaemonWorkflowWindowController(
       onRefresh: {},
@@ -94,7 +143,7 @@ final class RielaAppAddInstanceLayoutTests: XCTestCase {
       onCreateProfile: { RielaAppProfileName($0) },
       onRemoveProfile: { _ in true },
       onAddDirectory: {},
-      onAddProject: {},
+      onAddURL: { _ in },
       onAddInstance: { _ in },
       onRevealSelectedSource: { _ in },
       onRelinkInstance: { _, _ in },

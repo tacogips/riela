@@ -153,8 +153,9 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     controller.showProfilesPane()
     controller.window?.layoutIfNeeded()
     sections = visibleSubviews(of: RielaAppSettingsSectionView.self, in: root)
-    XCTAssertEqual(sections.count, 1)
+    XCTAssertEqual(sections.count, 2)
     XCTAssertEqual(allSubviews(of: RielaAppSettingsRow.self, in: sections[0]).count, 1)
+    XCTAssertEqual(allSubviews(of: RielaAppSettingsRow.self, in: sections[1]).count, 2)
 
     controller.showAssistantPane()
     controller.window?.layoutIfNeeded()
@@ -172,15 +173,40 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
 
     let titleLabel = try XCTUnwrap(
       visibleSubviews(of: NSTextField.self, in: root)
-        .first { $0.stringValue == "Import Workflow or Package" }
+        .first { $0.stringValue == "Import Directory" }
     )
     let detailLabel = try XCTUnwrap(
       visibleSubviews(of: NSTextField.self, in: root)
-        .first { $0.stringValue == "Add a workflow, package directory, or archive to this profile." }
+        .first { $0.stringValue == "Add a workflow directory, package directory, .rielapkg, or .zip archive." }
     )
 
     XCTAssertEqual(titleLabel.font?.pointSize, 14)
     XCTAssertEqual(detailLabel.font?.pointSize, 11)
+  }
+
+  func testProfilesPaneShowsProfileListBeforeProfileActionsAtRuntime() throws {
+    let controller = makeController()
+    controller.update(
+      profileName: .default,
+      profileNames: [.default, RielaAppProfileName("work")],
+      candidates: [],
+      workflowSources: [],
+      state: RielaAppDaemonWorkflowState(),
+      snapshots: [:],
+      assistantAssistance: "",
+      statusMessage: ""
+    )
+    let root = try XCTUnwrap(controller.window?.contentView)
+
+    controller.showProfilesPane()
+    controller.window?.layoutIfNeeded()
+
+    let sections = visibleSubviews(of: RielaAppSettingsSectionView.self, in: root)
+    XCTAssertEqual(sections.count, 2)
+    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: sections[0]).contains { $0.stringValue == "default" })
+    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: sections[0]).contains { $0.stringValue == "work" })
+    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: sections[1]).contains { $0.stringValue == "Add Profile" })
+    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: sections[1]).contains { $0.stringValue == "Edit Profiles" })
   }
 
   private func makeController() -> DaemonWorkflowWindowController {
@@ -190,7 +216,7 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
       onCreateProfile: { RielaAppProfileName($0) },
       onRemoveProfile: { _ in true },
       onAddDirectory: {},
-      onAddProject: {},
+      onAddURL: { _ in },
       onAddInstance: { _ in },
       onRevealSelectedSource: { _ in },
       onRelinkInstance: { _, _ in },

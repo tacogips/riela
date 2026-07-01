@@ -47,6 +47,7 @@ extension DaemonWorkflowWindowController {
 
   @objc func showProfilesPane() {
     activeSidebarPane = .profiles
+    rebuildProfilesOverviewView()
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = false
     instancesListView?.isHidden = true

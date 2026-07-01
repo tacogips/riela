@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import RielaAppSupport
 
 final class DaemonWorkflowWindowContentHostView: NSView {
   override var isFlipped: Bool {
@@ -308,16 +309,16 @@ extension DaemonWorkflowWindowController {
     sourcesSummaryLabel.textColor = .secondaryLabelColor
     sourcesSummaryLabel.lineBreakMode = .byTruncatingTail
     let importRow = actionRow(
-      title: "Import Workflow or Package",
-      detail: "Add a workflow, package directory, or archive to this profile.",
+      title: "Import Directory",
+      detail: "Add a workflow directory, package directory, .rielapkg, or .zip archive.",
       action: #selector(addDirectory)
     )
-    let projectRow = actionRow(
-      title: "Add Project Source",
-      detail: "Make project workflows available to saved instances.",
-      action: #selector(addProject)
+    let importURLRow = actionRow(
+      title: "Import from URL",
+      detail: "Add a workflow or package directory from a GitHub URL.",
+      action: #selector(addURL)
     )
-    let actionSection = rielaAppSettingsSection(rows: [importRow, projectRow])
+    let actionSection = rielaAppSettingsSection(rows: [importRow, importURLRow])
     let stack = settingsDocumentStack(views: [
       actionSection
     ])
@@ -331,19 +332,53 @@ extension DaemonWorkflowWindowController {
   private func buildProfilesOverviewView() -> NSView {
     profilesSummaryLabel.textColor = .secondaryLabelColor
     profilesSummaryLabel.lineBreakMode = .byTruncatingTail
-    let manageRow = actionRow(
-      title: "Manage Profiles",
-      detail: "Switch, create, or remove RielaApp profiles.",
+    let profileRows = profileNames.map { profileOverviewRow($0) }
+    let profileSection = rielaAppSettingsSection(rows: profileRows)
+    let addRow = actionRow(
+      title: "Add Profile",
+      detail: "Create a separate profile for another instance set.",
+      action: #selector(addProfileFromOverview)
+    )
+    let editRow = actionRow(
+      title: "Edit Profiles",
+      detail: "Switch or remove profiles.",
       action: #selector(openProfilesFromSidebar)
     )
-    let actionSection = rielaAppSettingsSection(rows: [manageRow])
+    let actionSection = rielaAppSettingsSection(rows: [addRow, editRow])
     let stack = settingsDocumentStack(views: [
+      profileSection,
       actionSection
     ])
     return overviewPane(
       title: "Profiles",
       summaryLabel: profilesSummaryLabel,
       documentStack: stack
+    )
+  }
+
+  func rebuildProfilesOverviewView() {
+    let wasHidden = profilesOverviewView?.isHidden ?? true
+    profilesOverviewView?.removeFromSuperview()
+    let profiles = buildProfilesOverviewView()
+    profiles.isHidden = wasHidden
+    profilesOverviewView = profiles
+    contentHost?.addSubview(profiles)
+    contentHost?.needsLayout = true
+  }
+
+  private func profileOverviewRow(_ profileName: RielaAppProfileName) -> NSView {
+    let detail: String
+    if profileName == self.profileName {
+      detail = "Current"
+    } else if profileName == .default {
+      detail = "Default profile"
+    } else {
+      detail = "Profile"
+    }
+    return actionRow(
+      title: profileName.rawValue,
+      detail: detail,
+      action: #selector(openProfilesFromSidebar)
     )
   }
 

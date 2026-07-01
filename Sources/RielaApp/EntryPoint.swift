@@ -126,8 +126,8 @@ final class RielaApp: NSObject, NSApplicationDelegate {
         onAddDirectory: { [weak self] in
           self?.addDaemonWorkflowSourceOnlyDirectory()
         },
-        onAddProject: { [weak self] in
-          self?.addDaemonProjectDirectory()
+        onAddURL: { [weak self] rawURL in
+          self?.addDaemonWorkflowSourceOnlyURL(rawURL)
         },
         onAddInstance: { [weak self] request in
           self?.addDaemonWorkflowInstance(request)
@@ -564,7 +564,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     importDaemonWorkflowOrPackageSourcesOnly(panel.urls)
   }
 
-  private func importDaemonWorkflowOrPackageSourcesOnly(_ sources: [URL]) {
+  func importDaemonWorkflowOrPackageSourcesOnly(_ sources: [URL]) {
     var importedNames: [String] = []
     var updatedNames: [String] = []
     var failures: [String] = []
@@ -619,69 +619,6 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   private func packageImportContentTypes() -> [UTType] {
     RielaAppManagedPackageInstaller.supportedPackageArchiveExtensions.compactMap {
       UTType(filenameExtension: $0)
-    }
-  }
-
-  private func addDaemonProjectDirectory() {
-    let panel = NSOpenPanel()
-    panel.title = "Add Project Source"
-    panel.message = "Choose project folders containing .riela/workflows or .riela/packages."
-    panel.canChooseFiles = false
-    panel.canChooseDirectories = true
-    panel.allowsMultipleSelection = true
-    guard panel.runModal() == .OK, !panel.urls.isEmpty else {
-      return
-    }
-    addDaemonProjectDirectories(panel.urls)
-  }
-
-  private func addDaemonProjectDirectories(_ urls: [URL]) {
-    let previousState = daemonState
-    var acceptedProjects: [(root: URL, alreadyAdded: Bool)] = []
-    var failures: [String] = []
-    for url in urls {
-      let projectRoot = url.standardizedFileURL
-      guard isRielaWorkflowProject(projectRoot) else {
-        failures.append("\(projectRoot.lastPathComponent): folder has no .riela/workflows or .riela/packages")
-        continue
-      }
-      let wasAlreadyAdded = daemonState.containsProjectDirectory(projectRoot.path)
-      daemonState.addProjectDirectory(projectRoot.path)
-      acceptedProjects.append((projectRoot, wasAlreadyAdded))
-    }
-    if !acceptedProjects.isEmpty, !saveDaemonState() {
-      daemonState = previousState
-      refreshDaemonWorkflowWindow()
-      return
-    }
-    refreshDaemonWorkflowWindow()
-    let projectResults = acceptedProjects.map { project in
-      RielaAppProjectImportSummary.Project(
-        name: project.root.lastPathComponent,
-        workflowCount: daemonCandidates(in: project.root).count,
-        alreadyAdded: project.alreadyAdded
-      )
-    }
-    status = RielaAppProjectImportSummary(
-      projects: projectResults,
-      failures: failures,
-      profileName: daemonProfileName
-    ).statusMessage ?? status
-    refreshDaemonWorkflowWindow()
-    if let projectRoot = acceptedProjects.last?.root,
-      let candidate = daemonCandidates(in: projectRoot).first {
-      daemonWindowController?.selectCandidate(identity: candidate.id)
-    }
-  }
-
-  private func daemonCandidates(in projectRoot: URL) -> [RielaAppDaemonWorkflowCandidate] {
-    let projectRootPath = projectRoot.standardizedFileURL.path
-    return daemonInstances.compactMap { instance in
-      let candidate = instance.candidate
-      guard RielaAppDaemonWorkflowState.path(candidate.workflowDirectory, isContainedIn: projectRootPath) else {
-        return nil
-      }
-      return candidate
     }
   }
 

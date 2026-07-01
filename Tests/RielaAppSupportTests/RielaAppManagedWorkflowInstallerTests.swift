@@ -17,6 +17,27 @@ final class RielaAppManagedWorkflowInstallerTests: XCTestCase {
     )
   }
 
+  func testGitHubSourceMaterializerParsesWorkflowDirectoryURL() throws {
+    let reference = try RielaAppGitHubSourceMaterializer.parseDirectoryReference(
+      "https://github.com/tacogips/riela-packages/tree/main/packages/chat-bot"
+    )
+
+    XCTAssertEqual(reference.owner, "tacogips")
+    XCTAssertEqual(reference.repository, "riela-packages")
+    XCTAssertEqual(reference.branch, "main")
+    XCTAssertEqual(reference.sourcePath, "packages/chat-bot")
+    XCTAssertEqual(reference.cloneURL, "https://github.com/tacogips/riela-packages.git")
+  }
+
+  func testGitHubSourceMaterializerRejectsUnsafeOrUnsupportedURL() {
+    XCTAssertThrowsError(try RielaAppGitHubSourceMaterializer.parseDirectoryReference(
+      "https://github.com/tacogips/riela-packages/blob/main/packages/chat-bot"
+    ))
+    XCTAssertThrowsError(try RielaAppGitHubSourceMaterializer.parseDirectoryReference(
+      "https://github.com/tacogips/riela-packages/tree/main/../chat-bot"
+    ))
+  }
+
   func testWorkflowInstallerReportsExistingWorkflowReplacement() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("riela-app-workflow-replace-\(UUID().uuidString)", isDirectory: true)

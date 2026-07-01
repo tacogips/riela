@@ -19,7 +19,12 @@ final class FlippedDocumentView: NSView {
 }
 
 @MainActor
-final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate {
+final class DaemonWorkflowWindowController: NSWindowController,
+  NSSearchFieldDelegate,
+  NSTextFieldDelegate,
+  NSTableViewDataSource,
+  NSTableViewDelegate,
+  NSWindowDelegate {
   enum Column {
     static let instance = NSUserInterfaceItemIdentifier("instance")
   }
@@ -59,8 +64,8 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   }
 
   enum AddInstanceSheetAction {
-    case importWorkflowOrPackage
-    case addProjectSource
+    case importWorkflowOrPackageFromFile
+    case importWorkflowOrPackageFromURL
   }
 
   enum SourceActionContext {
@@ -70,18 +75,9 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     var importDetail: String {
       switch self {
       case .addInstance:
-        "Add a workflow or package source, then return to instance creation."
+        "Import a workflow or package directory, then return to instance creation."
       case .relink:
-        "Add a workflow or package source, then return to relink this instance."
-      }
-    }
-
-    var projectDetail: String {
-      switch self {
-      case .addInstance:
-        "Make project workflows selectable for new instances."
-      case .relink:
-        "Make project workflows selectable for relinking this instance."
+        "Import a workflow or package directory, then return to relink this instance."
       }
     }
   }
@@ -108,7 +104,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     var sourceIdentity: String
     var instanceName: String
     var workflowName: String
-    var sourceDescription: String
+    var hasMissingRequiredEnvironment: Bool
     var state: InstanceState
   }
 
@@ -158,10 +154,10 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   let detailMissingSourceValueLabel = NSTextField(labelWithString: "")
   private let onRefresh: () -> Void
   private let onSelectProfile: (String) -> Void
-  private let onCreateProfile: (String) -> RielaAppProfileName?
+  let onCreateProfile: (String) -> RielaAppProfileName?
   private let onRemoveProfile: (RielaAppProfileName) -> Bool
   let onAddDirectory: () -> Void
-  let onAddProject: () -> Void
+  let onAddURL: (String) -> Void
   let onAddInstance: (DaemonWorkflowAddInstanceRequest) -> Void
   private let onRevealSelectedSource: (String) -> Void
   private let onRelinkInstance: (String, String) -> Void
@@ -233,6 +229,8 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   weak var settingsRootView: DaemonWorkflowSettingsRootView?
   var inlineAddInstanceSourceSelectionTarget: WorkflowSourceSelectionTarget?
   var inlineAddInstanceSourceOptions: [WorkflowSourceOption] = []
+  var inlineAddInstanceAllSourceOptions: [WorkflowSourceOption] = []
+  let inlineAddInstanceSearchField = NSSearchField()
   var instanceDetailPane: InstanceDetailPane = .overview
   var isShowingInstanceDetail = false
   var isShowingAddInstanceSelection = false
@@ -251,7 +249,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     onCreateProfile: @escaping (String) -> RielaAppProfileName?,
     onRemoveProfile: @escaping (RielaAppProfileName) -> Bool,
     onAddDirectory: @escaping () -> Void,
-    onAddProject: @escaping () -> Void,
+    onAddURL: @escaping (String) -> Void,
     onAddInstance: @escaping (DaemonWorkflowAddInstanceRequest) -> Void,
     onRevealSelectedSource: @escaping (String) -> Void,
     onRelinkInstance: @escaping (String, String) -> Void,
@@ -278,7 +276,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     self.onCreateProfile = onCreateProfile
     self.onRemoveProfile = onRemoveProfile
     self.onAddDirectory = onAddDirectory
-    self.onAddProject = onAddProject
+    self.onAddURL = onAddURL
     self.onAddInstance = onAddInstance
     self.onRevealSelectedSource = onRevealSelectedSource
     self.onRelinkInstance = onRelinkInstance
@@ -347,6 +345,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       selectedIdentity = selectedIdentityByProfile[profileName]
     }
     updateProfileControls()
+    rebuildProfilesOverviewView()
     updateOverviewSummaries()
     updateAssistantPanel()
     instanceTable.reloadData()
@@ -397,18 +396,6 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
       return
     }
     onSelectProfile(title)
-  }
-
-  @objc func addDirectory() {
-    onAddDirectory()
-  }
-
-  @objc func addProject() {
-    onAddProject()
-  }
-
-  @objc func addListButtonPressed() {
-    showAddInstanceSelectionPane()
   }
 
   private func openProfileSelect() {
@@ -623,8 +610,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     detailNameValueLabel.stringValue = row.instanceName
     detailWorkflowValueLabel.stringValue = rielaAppMetadataText([
       "Profile \(row.profileName.rawValue)",
-      row.workflowName,
-      row.sourceDescription
+      row.workflowName
     ])
     detailMissingSourceValueLabel.stringValue = rielaAppMetadataText(["Missing source", row.sourceIdentity])
     if let candidate = row.candidate {
@@ -787,7 +773,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
           sourceIdentity: sourceIdentity,
           instanceName: instanceName,
           workflowName: sourceCandidate?.displayName ?? candidate?.workflowId ?? "Missing source",
-          sourceDescription: sourceCandidate?.sourceDescription ?? candidate?.sourceDescription ?? "Missing source",
+          hasMissingRequiredEnvironment: candidate.map(hasMissingRequiredEnvironment) ?? false,
           state: instanceState(identity: storedIdentity, hasSource: candidate != nil)
         )
       }
@@ -815,10 +801,14 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
           sourceIdentity: instance.sourceIdentity,
           instanceName: instance.displayName,
           workflowName: instance.source.displayName,
-          sourceDescription: instance.source.sourceDescription,
+          hasMissingRequiredEnvironment: hasMissingRequiredEnvironment(runtimeCandidate),
           state: instanceState(identity: profiledInstance.id, hasSource: true)
         )
       }
+  }
+
+  private func hasMissingRequiredEnvironment(_ candidate: RielaAppDaemonWorkflowCandidate) -> Bool {
+    environmentColumnStatus(candidate).hasPrefix("Missing ")
   }
 
   private func instanceState(identity: String, hasSource: Bool) -> InstanceState {

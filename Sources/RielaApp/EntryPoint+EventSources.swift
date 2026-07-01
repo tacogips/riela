@@ -4,9 +4,10 @@ import RielaAppSupport
 
 extension RielaApp {
   func registerDaemonWorkflowEventSource(identity: String, sourceJSON: String, bindingJSON: String) -> String? {
-    guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
+    guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
       return "Instance could not be found"
     }
+    let candidate = resolved.candidate
     do {
       let sourceObject = try parseEventJSONObject(sourceJSON, label: "source")
       let bindingObject = try parseEventJSONObject(bindingJSON, label: "binding")

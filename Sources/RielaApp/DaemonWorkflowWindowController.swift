@@ -187,6 +187,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
 
   private var candidates: [RielaAppDaemonWorkflowCandidate] = []
   var workflowSources: [RielaAppDaemonWorkflowCandidate] = []
+  var profileWorkflowSources: [RielaAppProfileName: [RielaAppDaemonWorkflowCandidate]] = [:]
   var profileInstances: [RielaAppProfiledWorkflowInstance] = []
   var state = RielaAppDaemonWorkflowState()
   private var snapshots: [String: RielaAppDaemonWorkflowRuntime.RuntimeSnapshot] = [:]
@@ -320,6 +321,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     profileNames: [RielaAppProfileName],
     candidates: [RielaAppDaemonWorkflowCandidate],
     workflowSources: [RielaAppDaemonWorkflowCandidate],
+    profileWorkflowSources: [RielaAppProfileName: [RielaAppDaemonWorkflowCandidate]] = [:],
     profileInstances: [RielaAppProfiledWorkflowInstance] = [],
     state: RielaAppDaemonWorkflowState,
     snapshots: [String: RielaAppDaemonWorkflowRuntime.RuntimeSnapshot],
@@ -331,6 +333,7 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
     self.profileNames = profileNames
     self.candidates = candidates
     self.workflowSources = workflowSources
+    self.profileWorkflowSources = profileWorkflowSources
     self.profileInstances = profileInstances
     self.state = state
     self.snapshots = snapshots
@@ -435,13 +438,13 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   }
 
   @objc func relinkSelectedSource() {
-    guard let identity = selectedRow()?.id else {
+    guard let row = selectedRow() else {
       return
     }
     while true {
-      switch promptForRelinkSourceOption(workflowSourceOptions()) {
+      switch promptForRelinkSourceOption(workflowSourceOptions(profileName: row.profileName)) {
       case let .selected(option):
-        onRelinkInstance(identity, option.sourceIdentity)
+        onRelinkInstance(row.id, option.sourceIdentity)
         return
       case .retry:
         continue
@@ -839,7 +842,12 @@ final class DaemonWorkflowWindowController: NSWindowController, NSTableViewDataS
   }
 
   func workflowSourceOptions() -> [WorkflowSourceOption] {
-    let sources = workflowSources.isEmpty ? candidates : workflowSources
+    workflowSourceOptions(profileName: profileName)
+  }
+
+  func workflowSourceOptions(profileName: RielaAppProfileName) -> [WorkflowSourceOption] {
+    let profileSources = profileWorkflowSources[profileName] ?? []
+    let sources = profileSources.isEmpty ? (workflowSources.isEmpty ? candidates : workflowSources) : profileSources
     var seen = Set<String>()
     return sources.compactMap { candidate in
       let identity = candidate.sourceIdentity

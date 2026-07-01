@@ -4,11 +4,12 @@ import Foundation
 
 extension RielaApp {
   func revealDaemonWorkflowSource(identity: String) {
-    guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
+    guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
       status = "Instance could not be found"
       refreshDaemonWorkflowWindow()
       return
     }
+    let candidate = resolved.candidate
     let sourceURL = URL(fileURLWithPath: candidate.packageDirectory ?? candidate.workflowDirectory, isDirectory: true)
     NSWorkspace.shared.activateFileViewerSelecting([sourceURL])
     status = "Revealed \(candidate.displayName)"
@@ -16,49 +17,51 @@ extension RielaApp {
   }
 
   func openDaemonWorkflowViewer(identity: String) {
-    guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
+    guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
       status = "Instance could not be found"
       refreshDaemonWorkflowWindow()
       return
     }
+    let candidate = resolved.candidate
+    let preference = resolved.preference
     if viewerWindowController == nil {
       viewerWindowController = WorkflowViewerWindowController()
     }
     viewerWindowController?.show(
       workflowDirectory: candidate.workflowDirectory,
       sessionStoreRoot: nil,
-      currentDirectory: daemonState.preference(for: candidate.id).workingDirectory ?? candidate.workingDirectory,
-      environmentVariablesSummary: "\(daemonState.preference(for: candidate.id).environmentVariables.count) inline",
-      workflowVariablesSummary: "\(daemonState.preference(for: candidate.id).defaultVariables.count) values",
-      nodePatches: daemonState.preference(for: candidate.id).nodePatches,
+      currentDirectory: preference.workingDirectory ?? candidate.workingDirectory,
+      environmentVariablesSummary: "\(preference.environmentVariables.count) inline",
+      workflowVariablesSummary: "\(preference.defaultVariables.count) values",
+      nodePatches: preference.nodePatches,
       onSaveNodePatch: { [weak self] nodeId, patch in
         self?.saveDaemonNodePatch(identity: identity, nodeId: nodeId, patch: patch) ?? false
       },
       onSetWorkingDirectory: { [weak self] in
         self?.setDaemonWorkflowWorkingDirectory(identity: identity)
         guard let self,
-          let candidate = self.daemonCandidates.first(where: { $0.id == identity })
+          let resolved = self.resolveDaemonWorkflowInstance(identity: identity)
         else {
           return nil
         }
-        return self.daemonState.preference(for: identity).workingDirectory ?? candidate.workingDirectory
+        return resolved.preference.workingDirectory ?? resolved.candidate.workingDirectory
       },
       onSetEnvironmentVariables: { [weak self] in
         self?.setDaemonWorkflowEnvironmentVariables(identity: identity)
-        guard let self else {
+        guard let resolved = self?.resolveDaemonWorkflowInstance(identity: identity) else {
           return nil
         }
-        return "\(self.daemonState.preference(for: identity).environmentVariables.count) inline"
+        return "\(resolved.preference.environmentVariables.count) inline"
       },
       onSetWorkflowVariables: { [weak self] in
         self?.setDaemonWorkflowDefaultVariables(identity: identity)
-        guard let self else {
+        guard let resolved = self?.resolveDaemonWorkflowInstance(identity: identity) else {
           return nil
         }
-        return "\(self.daemonState.preference(for: identity).defaultVariables.count) values"
+        return "\(resolved.preference.defaultVariables.count) values"
       },
-      assistantProfileName: daemonProfileName,
-      assistantSettings: daemonState.assistant,
+      assistantProfileName: resolved.profileName,
+      assistantSettings: resolved.state.assistant,
       onSaveAssistantSettings: { [weak self] settings in
         self?.saveAssistantSettings(settings) ?? "RielaApp is not available"
       },

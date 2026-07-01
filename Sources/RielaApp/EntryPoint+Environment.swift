@@ -5,35 +5,33 @@ import RielaServer
 
 extension RielaApp {
   func setDaemonWorkflowWorkingDirectory(identity: String) {
-    guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
+    guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
       status = "Instance could not be found"
       refreshDaemonWorkflowWindow()
       return
     }
-    let existingPath = daemonState.preference(for: identity).workingDirectory
-    switch workingDirectoryAction(candidate: candidate, existingPath: existingPath) {
+    switch workingDirectoryAction(candidate: resolved.candidate, existingPath: resolved.preference.workingDirectory) {
     case .choose:
-      chooseWorkingDirectory(for: candidate)
+      chooseWorkingDirectory(for: resolved, rawIdentity: identity)
     case .clear:
-      clearWorkingDirectory(for: candidate)
+      clearWorkingDirectory(for: resolved, rawIdentity: identity)
     case .cancel:
       return
     }
   }
 
   func setDaemonWorkflowEnvironment(identity: String) {
-    guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
+    guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
       status = "Instance could not be found"
       refreshDaemonWorkflowWindow()
       return
     }
-    let existingPath = daemonState.preference(for: identity).environmentFilePath
-    let action = environmentFileAction(candidate: candidate, existingPath: existingPath)
+    let action = environmentFileAction(candidate: resolved.candidate, existingPath: resolved.preference.environmentFilePath)
     switch action {
     case .choose:
-      chooseEnvironmentFile(for: candidate)
+      chooseEnvironmentFile(for: resolved, rawIdentity: identity)
     case .clear:
-      clearEnvironmentFile(for: candidate)
+      clearEnvironmentFile(for: resolved, rawIdentity: identity)
     case .cancel:
       return
     }
@@ -61,14 +59,14 @@ extension RielaApp {
   }
 
   func daemonEnvironment(for candidate: RielaAppDaemonWorkflowCandidate) -> [String: String] {
-    daemonEnvironment(for: candidate, preference: daemonState.preference(for: candidate.id))
+    daemonEnvironment(for: candidate, preference: daemonPreference(for: candidate))
   }
 
   func daemonEnvironment(
     for candidate: RielaAppDaemonWorkflowCandidate,
     preference: RielaAppDaemonWorkflowPreference
   ) -> [String: String] {
-    var environment = daemonEnvironmentStore(for: candidate).mergedEnvironment()
+    var environment = daemonEnvironmentStore(preference: preference).mergedEnvironment()
     for (name, value) in preference.environmentVariables {
       environment[name] = value
     }
@@ -78,7 +76,7 @@ extension RielaApp {
   func daemonConfiguredEnvironmentValues(
     for candidate: RielaAppDaemonWorkflowCandidate
   ) -> [RielaAppConfiguredEnvironmentValue] {
-    let preference = daemonState.preference(for: candidate.id)
+    let preference = daemonPreference(for: candidate)
     let fileValues = preference.environmentFilePath
       .map { RielaAppEnvironmentFileStore.parseEnvironmentFile(URL(fileURLWithPath: $0)) } ?? [:]
     let inlineValues = preference.environmentVariables
@@ -103,7 +101,7 @@ extension RielaApp {
   func daemonRuntimeConfiguration(
     for candidate: RielaAppDaemonWorkflowCandidate
   ) -> WorkflowServeRuntimeConfiguration {
-    daemonRuntimeConfiguration(for: candidate, preference: daemonState.preference(for: candidate.id))
+    daemonRuntimeConfiguration(for: candidate, preference: daemonPreference(for: candidate))
   }
 
   func daemonRuntimeConfiguration(
@@ -191,10 +189,10 @@ extension RielaApp {
     }
   }
 
-  private func chooseWorkingDirectory(for candidate: RielaAppDaemonWorkflowCandidate) {
+  private func chooseWorkingDirectory(for resolved: ResolvedDaemonWorkflowInstance, rawIdentity: String) {
     let panel = NSOpenPanel()
     panel.title = "Choose Working Directory"
-    panel.message = "Choose the directory used when \(candidate.displayName) runs."
+    panel.message = "Choose the directory used when \(resolved.candidate.displayName) runs."
     panel.canChooseFiles = false
     panel.canChooseDirectories = true
     panel.allowsMultipleSelection = false
@@ -202,37 +200,39 @@ extension RielaApp {
     guard panel.runModal() == .OK, let url = panel.url else {
       return
     }
-    guard updateDaemonPreference(identity: candidate.id, mutate: { preference in
+    guard updateDaemonPreference(identity: rawIdentity, mutate: { preference in
+      preference.sourceIdentity = resolved.instance.instance.source.id
       preference.workingDirectory = url.standardizedFileURL.path
     }) else {
       return
     }
-    status = "Set working directory for \(candidate.displayName): \(url.standardizedFileURL.path)"
+    status = "Set working directory for \(resolved.candidate.displayName): \(url.standardizedFileURL.path)"
     refreshDaemonWorkflowWindow()
     restartActiveDaemonWorkflowAfterConfigurationChange(
-      identity: candidate.id,
+      identity: rawIdentity,
       changeDescription: "working directory"
     )
   }
 
-  private func clearWorkingDirectory(for candidate: RielaAppDaemonWorkflowCandidate) {
-    guard updateDaemonPreference(identity: candidate.id, mutate: { preference in
+  private func clearWorkingDirectory(for resolved: ResolvedDaemonWorkflowInstance, rawIdentity: String) {
+    guard updateDaemonPreference(identity: rawIdentity, mutate: { preference in
+      preference.sourceIdentity = resolved.instance.instance.source.id
       preference.workingDirectory = nil
     }) else {
       return
     }
-    status = "Cleared working directory for \(candidate.displayName)"
+    status = "Cleared working directory for \(resolved.candidate.displayName)"
     refreshDaemonWorkflowWindow()
     restartActiveDaemonWorkflowAfterConfigurationChange(
-      identity: candidate.id,
+      identity: rawIdentity,
       changeDescription: "working directory"
     )
   }
 
-  private func chooseEnvironmentFile(for candidate: RielaAppDaemonWorkflowCandidate) {
+  private func chooseEnvironmentFile(for resolved: ResolvedDaemonWorkflowInstance, rawIdentity: String) {
     let panel = NSOpenPanel()
     panel.title = "Choose .env File"
-    panel.message = "Choose the .env file passed to \(candidate.displayName)."
+    panel.message = "Choose the .env file passed to \(resolved.candidate.displayName)."
     panel.canChooseFiles = true
     panel.canChooseDirectories = false
     panel.allowsMultipleSelection = false
@@ -241,36 +241,38 @@ extension RielaApp {
       return
     }
     guard isSupportedEnvironmentFile(url) else {
-      status = "Choose a .env file for \(candidate.displayName)"
+      status = "Choose a .env file for \(resolved.candidate.displayName)"
       refreshDaemonWorkflowWindow()
       return
     }
-    guard confirmCredentialEnvironmentFile(url, candidate: candidate) else {
+    guard confirmCredentialEnvironmentFile(url, candidate: resolved.candidate) else {
       return
     }
-    guard updateDaemonPreference(identity: candidate.id, mutate: { preference in
+    guard updateDaemonPreference(identity: rawIdentity, mutate: { preference in
+      preference.sourceIdentity = resolved.instance.instance.source.id
       preference.environmentFilePath = url.standardizedFileURL.path
     }) else {
       return
     }
-    status = "Set .env file for \(candidate.displayName): \(daemonEnvironmentSummary(for: candidate))"
+    status = "Set .env file for \(resolved.candidate.displayName): \(daemonEnvironmentSummary(for: resolved.candidate))"
     refreshDaemonWorkflowWindow()
     restartActiveDaemonWorkflowAfterConfigurationChange(
-      identity: candidate.id,
+      identity: rawIdentity,
       changeDescription: ".env file"
     )
   }
 
-  private func clearEnvironmentFile(for candidate: RielaAppDaemonWorkflowCandidate) {
-    guard updateDaemonPreference(identity: candidate.id, mutate: { preference in
+  private func clearEnvironmentFile(for resolved: ResolvedDaemonWorkflowInstance, rawIdentity: String) {
+    guard updateDaemonPreference(identity: rawIdentity, mutate: { preference in
+      preference.sourceIdentity = resolved.instance.instance.source.id
       preference.environmentFilePath = nil
     }) else {
       return
     }
-    status = "Cleared .env file for \(candidate.displayName): \(daemonEnvironmentSummary(for: candidate))"
+    status = "Cleared .env file for \(resolved.candidate.displayName): \(daemonEnvironmentSummary(for: resolved.candidate))"
     refreshDaemonWorkflowWindow()
     restartActiveDaemonWorkflowAfterConfigurationChange(
-      identity: candidate.id,
+      identity: rawIdentity,
       changeDescription: ".env file"
     )
   }
@@ -288,8 +290,8 @@ extension RielaApp {
   }
 
   private func daemonEnvironmentStatus(for candidate: RielaAppDaemonWorkflowCandidate) -> EnvironmentStatusSummary {
-    let preference = daemonState.preference(for: candidate.id)
-    let environment = daemonEnvironment(for: candidate)
+    let preference = daemonPreference(for: candidate)
+    let environment = daemonEnvironment(for: candidate, preference: preference)
     let missingNames = candidate.requiredEnvironment.map(\.name).filter { name in
       environment[name]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
     }
@@ -301,9 +303,17 @@ extension RielaApp {
   }
 
   private func daemonEnvironmentStore(for candidate: RielaAppDaemonWorkflowCandidate) -> RielaAppEnvironmentFileStore {
-    let path = daemonState.preference(for: candidate.id).environmentFilePath
+    daemonEnvironmentStore(preference: daemonPreference(for: candidate))
+  }
+
+  private func daemonEnvironmentStore(preference: RielaAppDaemonWorkflowPreference) -> RielaAppEnvironmentFileStore {
+    let path = preference.environmentFilePath
     let url = path.map { URL(fileURLWithPath: $0) }
     return RielaAppEnvironmentFileStore(environmentFileURL: url)
+  }
+
+  private func daemonPreference(for candidate: RielaAppDaemonWorkflowCandidate) -> RielaAppDaemonWorkflowPreference {
+    resolveDaemonWorkflowInstance(identity: candidate.id)?.preference ?? daemonState.preference(for: candidate.id)
   }
 
   private func isSupportedEnvironmentFile(_ url: URL) -> Bool {

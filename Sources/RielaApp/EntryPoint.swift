@@ -15,7 +15,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   private var daemonDiscovery = RielaAppDaemonWorkflowDiscovery()
   let daemonRuntime = RielaAppDaemonWorkflowRuntime()
   private let telemetry = RielaTelemetryFactory.make(configuration: .fromEnvironment(surface: .app))
-  private var profileStore = RielaAppProfileStore()
+  var profileStore = RielaAppProfileStore()
   private var daemonStore = RielaAppDaemonWorkflowStore(profileName: .default)
   let launchAtLogin = RielaLaunchAtLoginController()
   private let daemonStatusRefreshInterval: TimeInterval = 2
@@ -268,7 +268,10 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
     refreshDaemonWorkflowWindow()
     if let selectedCandidate = importedCandidates.last {
-      daemonWindowController?.selectCandidate(identity: selectedCandidate.id)
+      daemonWindowController?.selectCandidate(identity: profileRuntimeIdentity(
+        profileName: daemonProfileName,
+        localIdentity: selectedCandidate.id
+      ))
     }
     guard startsImmediately, startsImportedCandidates, !importedCandidates.isEmpty else {
       return
@@ -280,15 +283,21 @@ final class RielaApp: NSObject, NSApplicationDelegate {
           startsImportedCandidates: startsImportedCandidates
         )
       }
-    let selectedIdentity = importedCandidates.last?.id
+    let selectedIdentity = importedCandidates.last.map {
+      profileRuntimeIdentity(profileName: daemonProfileName, localIdentity: $0.id)
+    }
     guard !candidatesToStart.isEmpty else {
       return
     }
     Task { @MainActor in
       for candidate in candidatesToStart {
+        let runtimeIdentity = profileRuntimeIdentity(profileName: daemonProfileName, localIdentity: candidate.id)
+        guard let resolved = resolveDaemonWorkflowInstance(identity: runtimeIdentity) else {
+          continue
+        }
         await daemonRuntime.start(
-          candidate,
-          configuration: daemonRuntimeConfiguration(for: candidate)
+          resolved.candidate,
+          configuration: daemonRuntimeConfiguration(for: resolved.candidate, preference: resolved.preference)
         )
       }
       refreshDaemonWorkflowWindow()
@@ -448,6 +457,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       profileNames: availableDaemonProfileNames(),
       candidates: daemonCandidates,
       workflowSources: daemonWorkflowSources,
+      profileWorkflowSources: daemonProfileWorkflowSources,
       profileInstances: daemonProfileInstances,
       state: daemonState,
       snapshots: Dictionary(uniqueKeysWithValues: Set(daemonProfileInstances.map(\.id)).union(daemonCandidates.map(\.id)).map {
@@ -749,16 +759,19 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     identity: String,
     mutate: (inout RielaAppDaemonWorkflowPreference) -> Void
   ) -> Bool {
-    let previousPreference = daemonState.preferences[identity]
-    var preference = daemonState.preference(for: identity)
+    let resolvedIdentity = resolvedProfileIdentity(identity)
+    var state = daemonState(profileName: resolvedIdentity.profileName)
+    let previousPreference = state.preferences[resolvedIdentity.localIdentity]
+    var preference = state.preference(for: resolvedIdentity.localIdentity)
     mutate(&preference)
-    daemonState.preferences[identity] = preference
-    let didSave = saveDaemonState()
+    preference.identity = resolvedIdentity.localIdentity
+    state.preferences[resolvedIdentity.localIdentity] = preference
+    let didSave = saveDaemonState(state, profileName: resolvedIdentity.profileName)
     if !didSave {
       if let previousPreference {
-        daemonState.preferences[identity] = previousPreference
+        state.preferences[resolvedIdentity.localIdentity] = previousPreference
       } else {
-        daemonState.preferences.removeValue(forKey: identity)
+        state.preferences.removeValue(forKey: resolvedIdentity.localIdentity)
       }
     }
     refreshDaemonWorkflowWindow()

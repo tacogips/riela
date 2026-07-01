@@ -8,7 +8,13 @@ extension RielaApp {
     nodeId: String,
     patch: RielaAppDaemonWorkflowNodePatch?
   ) -> Bool {
+    guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
+      status = "Instance could not be found"
+      refreshDaemonWorkflowWindow()
+      return false
+    }
     let didSave = updateDaemonPreference(identity: identity) { preference in
+      preference.sourceIdentity = resolved.instance.instance.source.id
       if let patch, !patch.isEmpty {
         preference.nodePatches[nodeId] = patch
       } else {

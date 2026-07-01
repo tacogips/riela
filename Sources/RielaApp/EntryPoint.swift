@@ -311,7 +311,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     daemonStatusRefreshTimer?.invalidate()
     let timer = Timer(timeInterval: daemonStatusRefreshInterval, repeats: true) { [weak self] _ in
       Task { @MainActor [weak self] in
-        self?.refreshDaemonWorkflowWindow()
+        self?.refreshDaemonWorkflowWindow(refreshesInstanceCache: false)
       }
     }
     RunLoop.main.add(timer, forMode: .common)
@@ -450,8 +450,10 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
   }
 
-  func refreshDaemonWorkflowWindow() {
-    refreshDaemonInstanceCache()
+  func refreshDaemonWorkflowWindow(refreshesInstanceCache: Bool = true) {
+    if refreshesInstanceCache {
+      refreshDaemonInstanceCache()
+    }
     daemonWindowController?.update(
       profileName: daemonProfileName,
       profileNames: availableDaemonProfileNames(),

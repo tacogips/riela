@@ -193,9 +193,13 @@ final class DaemonWorkflowWindowController: NSWindowController,
   private var selectedIdentity: String?
   private var selectedIdentityByProfile: [RielaAppProfileName: String] = [:]
   private var isUpdatingProfileControls = false
+  private var profileControlsFingerprint = ""
   weak var activeAddInstanceWindow: NSWindow?
   var pendingAddInstanceSheetAction: AddInstanceSheetAction?
   private var isUpdatingTableSelection = false
+  private var cachedInstanceRows: [ConfiguredWorkflowInstanceRow] = []
+  private var instanceRowsFingerprint = ""
+  var renderedAssistantSettings: RielaAppAssistantSettings?
   private var profileSelectController: ProfileSelectWindowController?
   var instancesListView: NSView?
   weak var contentHost: DaemonWorkflowWindowContentHostView?
@@ -345,19 +349,26 @@ final class DaemonWorkflowWindowController: NSWindowController,
     if didChangeProfile || selectedIdentity == nil {
       selectedIdentity = selectedIdentityByProfile[profileName]
     }
+    let rowsChanged = rebuildInstanceRows()
     updateProfileControls()
     rebuildProfilesOverviewView()
     updateOverviewSummaries()
     updateAssistantPanel()
-    instanceTable.reloadData()
+    if rowsChanged || didChangeProfile {
+      instanceTable.reloadData()
+    }
     emptyInstancesLabel.isHidden = !instanceRows.isEmpty
     if isShowingAddInstanceSelection {
       showAddInstanceSelectionPane()
     }
-    restoreSelection()
+    if rowsChanged || didChangeProfile || selectedIdentity == nil {
+      restoreSelection(scrollToSelection: didChangeProfile)
+    }
     updateInstanceDetail()
   }
+}
 
+extension DaemonWorkflowWindowController {
   func numberOfRows(in tableView: NSTableView) -> Int {
     instanceRows.count
   }
@@ -389,6 +400,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
     if title == Self.allProfilesMenuTitle {
       profileFilterName = nil
       selectedIdentity = nil
+      _ = rebuildInstanceRows()
       updateProfileControls()
       instanceTable.reloadData()
       emptyInstancesLabel.isHidden = !instanceRows.isEmpty
@@ -553,7 +565,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
 
   func selectCandidate(identity: String) {
     rememberSelection(identity)
-    restoreSelection()
+    restoreSelection(scrollToSelection: true)
     if instanceDetailPane != .overview {
       showInstanceDetailOverview()
     }
@@ -682,13 +694,18 @@ final class DaemonWorkflowWindowController: NSWindowController,
     }
   }
 
-  private func restoreSelection() {
+  private func restoreSelection(scrollToSelection: Bool = false) {
     guard let selectedIdentity = selectedIdentity ?? selectedIdentityByProfile[profileName] ?? firstSelectableCandidateId() else {
       instanceTable.deselectAll(nil)
       return
     }
     self.selectedIdentity = selectedIdentity
-    if select(identity: selectedIdentity, in: instanceTable, rows: instanceRows) {
+    if select(
+      identity: selectedIdentity,
+      in: instanceTable,
+      rows: instanceRows,
+      scrollToSelection: scrollToSelection
+    ) {
       return
     }
     rememberSelection(nil)
@@ -708,14 +725,21 @@ final class DaemonWorkflowWindowController: NSWindowController,
     }
   }
 
-  private func select(identity: String, in tableView: NSTableView, rows: [ConfiguredWorkflowInstanceRow]) -> Bool {
+  private func select(
+    identity: String,
+    in tableView: NSTableView,
+    rows: [ConfiguredWorkflowInstanceRow],
+    scrollToSelection: Bool = false
+  ) -> Bool {
     guard let row = rows.firstIndex(where: { $0.id == identity }) else {
       return false
     }
     isUpdatingTableSelection = true
     tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-    tableView.scrollRowToVisible(row)
-    if row == 0, let scrollView = tableView.enclosingScrollView {
+    if scrollToSelection {
+      tableView.scrollRowToVisible(row)
+    }
+    if scrollToSelection, row == 0, let scrollView = tableView.enclosingScrollView {
       scrollView.contentView.scroll(to: .zero)
       scrollView.reflectScrolledClipView(scrollView.contentView)
     }
@@ -724,6 +748,20 @@ final class DaemonWorkflowWindowController: NSWindowController,
   }
 
   var instanceRows: [ConfiguredWorkflowInstanceRow] {
+    cachedInstanceRows
+  }
+
+  @discardableResult
+  private func rebuildInstanceRows() -> Bool {
+    let rows = makeInstanceRows()
+    let fingerprint = instanceRowsFingerprint(for: rows)
+    let changed = fingerprint != instanceRowsFingerprint
+    cachedInstanceRows = rows
+    instanceRowsFingerprint = fingerprint
+    return changed
+  }
+
+  private func makeInstanceRows() -> [ConfiguredWorkflowInstanceRow] {
     if !profileInstances.isEmpty {
       return profiledInstanceRows()
     }
@@ -760,6 +798,26 @@ final class DaemonWorkflowWindowController: NSWindowController,
           state: instanceState(identity: storedIdentity, hasSource: candidate != nil)
         )
       }
+  }
+
+  private func instanceRowsFingerprint(for rows: [ConfiguredWorkflowInstanceRow]) -> String {
+    rows.map { row in
+      [
+        row.id,
+        row.profileName.rawValue,
+        row.localIdentity,
+        row.sourceIdentity,
+        row.instanceName,
+        row.workflowName,
+        String(row.hasMissingRequiredEnvironment),
+        row.state.rawValue,
+        row.preference.environmentFilePath ?? "",
+        row.preference.workingDirectory ?? "",
+        String(row.preference.environmentVariables.count),
+        String(row.preference.defaultVariables.count),
+        row.candidate?.eventSourceSummary ?? ""
+      ].joined(separator: "\u{1f}")
+    }.joined(separator: "\u{1e}")
   }
 
   private func profiledInstanceRows() -> [ConfiguredWorkflowInstanceRow] {
@@ -841,13 +899,20 @@ final class DaemonWorkflowWindowController: NSWindowController,
 
   private func updateProfileControls() {
     isUpdatingProfileControls = true
-    profilePopup.removeAllItems()
-    profilePopup.addItem(withTitle: Self.allProfilesMenuTitle)
-    profilePopup.menu?.addItem(.separator())
-    profilePopup.addItems(withTitles: profileNames.map(\.rawValue))
-    profilePopup.menu?.addItem(.separator())
-    profilePopup.addItem(withTitle: ProfileSelectWindowController.menuTitle)
-    profilePopup.selectItem(withTitle: profileFilterName?.rawValue ?? Self.allProfilesMenuTitle)
+    let fingerprint = profileNames.map(\.rawValue).joined(separator: "\u{1f}")
+    if fingerprint != profileControlsFingerprint {
+      profileControlsFingerprint = fingerprint
+      profilePopup.removeAllItems()
+      profilePopup.addItem(withTitle: Self.allProfilesMenuTitle)
+      profilePopup.menu?.addItem(.separator())
+      profilePopup.addItems(withTitles: profileNames.map(\.rawValue))
+      profilePopup.menu?.addItem(.separator())
+      profilePopup.addItem(withTitle: ProfileSelectWindowController.menuTitle)
+    }
+    let selectedTitle = profileFilterName?.rawValue ?? Self.allProfilesMenuTitle
+    if profilePopup.selectedItem?.title != selectedTitle {
+      profilePopup.selectItem(withTitle: selectedTitle)
+    }
     isUpdatingProfileControls = false
   }
 

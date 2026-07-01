@@ -60,6 +60,10 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     let table = try XCTUnwrap(firstSubview(of: NSTableView.self, in: root))
     _ = table.view(atColumn: 0, row: 1, makeIfNecessary: true)
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue.contains("Profile work") })
+
+    controller.profilePopup.selectItem(withTitle: ProfileSelectWindowController.menuTitle)
+    controller.profilePopupChanged()
+    XCTAssertEqual(controller.profilePopup.selectedItem?.title, "All Profiles")
   }
 
   func testInstanceListUsesWarningIconForMissingEnvironmentAndHidesSourceDescription() throws {
@@ -107,6 +111,36 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     }
     XCTAssertEqual(warningIcon?.toolTip, "Missing 1")
     XCTAssertEqual(warningIcon?.accessibilityHelp(), "Missing 1")
+  }
+
+  func testInstanceRowsAreCachedBetweenTableQueriesAtRuntime() throws {
+    var environmentStatusCalls = 0
+    let controller = makeDaemonController(environmentColumnStatus: { _ in
+      environmentStatusCalls += 1
+      return "Ready"
+    })
+    let instances = (0..<12).map { index in
+      profiledInstance(profileName: .default, identity: "daily-\(index)", displayName: "Daily \(index)")
+    }
+
+    controller.update(
+      profileName: .default,
+      profileNames: [.default],
+      candidates: instances.map(\.instance.candidate),
+      workflowSources: instances.map(\.instance.source),
+      profileWorkflowSources: [.default: instances.map(\.instance.source)],
+      profileInstances: instances,
+      state: RielaAppDaemonWorkflowState(),
+      snapshots: [:],
+      assistantAssistance: "",
+      statusMessage: ""
+    )
+
+    XCTAssertEqual(environmentStatusCalls, instances.count)
+    XCTAssertEqual(controller.instanceRows.count, instances.count)
+    XCTAssertEqual(controller.numberOfRows(in: controller.instanceTable), instances.count)
+    _ = controller.instanceRows.map(\.instanceName)
+    XCTAssertEqual(environmentStatusCalls, instances.count)
   }
 
   func testProfileQualifiedInstanceConfigurationUsesSelectedProfileStateAndWorkingDirectory() throws {

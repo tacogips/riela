@@ -15,7 +15,6 @@ extension DaemonWorkflowWindowController {
     ].compactMap { $0 }
     for pane in panes where pane !== visiblePane {
       pane.isHidden = true
-      pane.removeFromSuperview()
     }
     guard let visiblePane else {
       contentHost?.needsLayout = true

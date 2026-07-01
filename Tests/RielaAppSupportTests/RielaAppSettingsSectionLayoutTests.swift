@@ -109,25 +109,28 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     XCTAssertNotNil(sidebar.layer?.borderColor)
   }
 
-  func testContentHostKeepsOnlyActivePaneAttachedAtRuntime() throws {
+  func testContentHostKeepsOnlyActivePaneVisibleAtRuntime() throws {
     let controller = configuredInstanceListController()
     let contentHost = try XCTUnwrap(controller.contentHost)
     controller.window?.layoutIfNeeded()
 
-    XCTAssertEqual(contentHost.subviews.count, 1)
-    XCTAssertTrue(contentHost.subviews.first === controller.instancesListView)
+    XCTAssertTrue(contentHost.subviews.contains { $0 === controller.instancesListView })
+    XCTAssertEqual(contentHost.subviews.filter { !$0.isHidden }.count, 1)
+    XCTAssertTrue(contentHost.subviews.first { !$0.isHidden } === controller.instancesListView)
 
     controller.showSourcesPane()
     controller.window?.layoutIfNeeded()
 
-    XCTAssertEqual(contentHost.subviews.count, 1)
-    XCTAssertTrue(contentHost.subviews.first === controller.sourcesOverviewView)
+    XCTAssertTrue(contentHost.subviews.contains { $0 === controller.instancesListView })
+    XCTAssertTrue(contentHost.subviews.contains { $0 === controller.sourcesOverviewView })
+    XCTAssertEqual(contentHost.subviews.filter { !$0.isHidden }.count, 1)
+    XCTAssertTrue(contentHost.subviews.first { !$0.isHidden } === controller.sourcesOverviewView)
 
     controller.showInstancesPane()
     controller.window?.layoutIfNeeded()
 
-    XCTAssertEqual(contentHost.subviews.count, 1)
-    XCTAssertTrue(contentHost.subviews.first === controller.instancesListView)
+    XCTAssertEqual(contentHost.subviews.filter { !$0.isHidden }.count, 1)
+    XCTAssertTrue(contentHost.subviews.first { !$0.isHidden } === controller.instancesListView)
   }
 
   func testSidebarOverviewPanesUseInstanceRightPaneLayoutAtRuntime() throws {

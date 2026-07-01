@@ -53,6 +53,9 @@ extension DaemonWorkflowWindowController {
 
   func updateAssistantPanel() {
     var settings = state.assistant
+    guard renderedAssistantSettings != settings else {
+      return
+    }
     let settingsVendor = settings.vendor.settingsSelectableVendor
     assistantPanelTitleLabel.stringValue = "Riela Assistant"
     assistantContextLabel.stringValue = ""
@@ -77,6 +80,7 @@ extension DaemonWorkflowWindowController {
     settingsRootView?.assistantPanelCollapsed = settings.isFolded
     settingsRootView?.needsLayout = true
     settingsRootView?.layoutSubtreeIfNeeded()
+    renderedAssistantSettings = settings
   }
 
   private func selectedAssistantVendor() -> RielaAppAssistantVendor {

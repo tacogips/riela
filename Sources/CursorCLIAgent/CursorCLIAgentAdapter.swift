@@ -108,6 +108,8 @@ public struct CursorCLIAgentAdapter: NodeAdapter {
       if let checkAuthPreflight {
         do {
           try await checkAuthPreflight(input)
+        } catch let error as CancellationError {
+          throw error
         } catch let error as AdapterExecutionError {
           throw error
         } catch {
@@ -153,6 +155,8 @@ private func runCursorDefaultAuthPreflight(
       stdin: "",
       deadline: versionDeadline
     )
+  } catch let error as CancellationError {
+    throw error
   } catch {
     throw AdapterExecutionError(
       .policyBlocked,
@@ -193,6 +197,8 @@ private func runCursorDefaultAuthPreflight(
       stdin: "",
       deadline: modelDeadline
     )
+  } catch let error as CancellationError {
+    throw error
   } catch {
     throw AdapterExecutionError(
       .policyBlocked,

@@ -115,6 +115,29 @@ final class AdapterUtilitiesTests: XCTestCase {
     XCTAssertEqual(attempts.value(), 2)
   }
 
+  func testExecuteWithRetryRethrowsCancellationWithoutNormalizing() async {
+    let attempts = RetryAttemptRecorder()
+
+    do {
+      let _: String = try await executeWithRetry(
+        policy: RetryPolicy(maxAttempts: 3, retryDelay: .zero),
+        operation: {
+          _ = attempts.increment()
+          throw CancellationError()
+        },
+        normalizeError: { _ in
+          XCTFail("Cancellation should bypass adapter failure normalization")
+          return AdapterExecutionError(.providerError, "unexpected")
+        }
+      )
+      XCTFail("Expected cancellation")
+    } catch is CancellationError {
+      XCTAssertEqual(attempts.value(), 1)
+    } catch {
+      XCTFail("Expected cancellation, got \(error)")
+    }
+  }
+
   func testBuildCombinedPromptTextPreservesSystemPromptBoundary() {
     XCTAssertEqual(
       buildCombinedPromptText(promptText: "Do work", systemPromptText: "Be concise"),

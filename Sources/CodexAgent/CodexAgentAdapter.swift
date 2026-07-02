@@ -94,6 +94,8 @@ public struct CodexAgentAdapter: NodeAdapter {
       if let checkAuthPreflight {
         do {
           try await checkAuthPreflight(input)
+        } catch let error as CancellationError {
+          throw error
         } catch let error as AdapterExecutionError {
           throw error
         } catch {
@@ -139,6 +141,8 @@ private func runCodexDefaultAuthPreflight(
       stdin: "",
       deadline: preflightDeadline
     )
+  } catch let error as CancellationError {
+    throw error
   } catch {
     throw AdapterExecutionError(
       .policyBlocked,

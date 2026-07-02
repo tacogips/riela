@@ -67,6 +67,9 @@ public func agentPreflightErrorDetail(
   fallback: String,
   additionalSensitiveValues: [String] = []
 ) -> String {
+  if error is CancellationError {
+    return "preflight cancelled"
+  }
   if let error = error as? AdapterExecutionError {
     return redactAdapterSensitiveText(
       error.message.isEmpty ? fallback : error.message,
@@ -75,6 +78,12 @@ public func agentPreflightErrorDetail(
   }
   let message = error.localizedDescription.isEmpty ? fallback : error.localizedDescription
   return redactAdapterSensitiveText(message, additionalSensitiveValues: additionalSensitiveValues)
+}
+
+public func rethrowIfCancellation(_ error: Error) throws {
+  if let error = error as? CancellationError {
+    throw error
+  }
 }
 
 public func executeWithRetry<T: Sendable>(
@@ -89,6 +98,7 @@ public func executeWithRetry<T: Sendable>(
     do {
       return try await operation()
     } catch {
+      try rethrowIfCancellation(error)
       let normalized = normalizeError(error)
       if !shouldRetryAdapterFailure(normalized, attempt: attempt, policy: policy, deadline: deadline, now: now()) {
         throw normalized

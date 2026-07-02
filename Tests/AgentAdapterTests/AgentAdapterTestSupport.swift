@@ -147,6 +147,7 @@ final class SequencedRunner: LocalAgentProcessRunning, @unchecked Sendable {
 enum ProcessRunOutcome: Sendable {
   case result(LocalAgentProcessResult)
   case error(AdapterExecutionError)
+  case cancellation
 }
 
 actor OutcomeRunnerStore {
@@ -167,6 +168,8 @@ actor OutcomeRunnerStore {
       return result
     case let .error(error):
       throw error
+    case .cancellation:
+      throw CancellationError()
     }
   }
 

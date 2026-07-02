@@ -180,6 +180,78 @@ extension WorkflowCommandTests {
     XCTAssertEqual(try String(contentsOf: counterFile, encoding: .utf8), "1")
   }
 
+  func testAutoImproveCancellationDoesNotCreateIncidentOrRerun() async throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-auto-improve-cancel-\(UUID().uuidString)", isDirectory: true)
+    let workflowRoot = tempDir.appendingPathComponent("workflows", isDirectory: true)
+    let workflowDirectory = workflowRoot.appendingPathComponent("cancelled-run", isDirectory: true)
+    let nodesDirectory = workflowDirectory.appendingPathComponent("nodes", isDirectory: true)
+    let sessionStore = tempDir.appendingPathComponent("sessions", isDirectory: true)
+    let ignoredArgument = tempDir.appendingPathComponent("unused.txt")
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    try FileManager.default.createDirectory(at: nodesDirectory, withIntermediateDirectories: true)
+
+    let script = try createExecutable(
+      directory: tempDir,
+      name: "wait-forever.sh",
+      body: """
+      while :; do
+        sleep 1
+      done
+      """
+    )
+    try writeSingleCommandWorkflow(
+      workflowDirectory: workflowDirectory,
+      nodesDirectory: nodesDirectory,
+      workflowId: "cancelled-run",
+      executable: script,
+      argument: ignoredArgument
+    )
+
+    let task = Task {
+      await RielaCLIApplication().run([
+        "workflow", "run", "cancelled-run",
+        "--workflow-definition-dir", workflowRoot.path,
+        "--session-store", sessionStore.path,
+        "--auto-improve",
+        "--max-supervised-attempts", "3",
+        "--output", "json"
+      ])
+    }
+
+    let liveRecord = try await waitForPersistedSession(sessionStore: sessionStore, workflowName: "cancelled-run")
+    task.cancel()
+    let result = await task.value
+
+    XCTAssertEqual(result.exitCode, .failure, result.stderr + result.stdout)
+    XCTAssertTrue(result.stderr.isEmpty, result.stderr)
+    let runResult = try decodeJSON(WorkflowRunResult.self, from: result.stdout)
+    XCTAssertEqual(runResult.session.sessionId, liveRecord.session.sessionId)
+    XCTAssertEqual(runResult.status, .failed)
+    let supervision = try XCTUnwrap(runResult.supervision)
+    XCTAssertEqual(supervision["status"], .string("cancelled"))
+    XCTAssertEqual(supervision["attempts"], .number(1))
+    XCTAssertEqual(supervision["targetSessionId"], .string(runResult.session.sessionId))
+    XCTAssertEqual(supervision["incidents"], .array([]))
+    XCTAssertEqual(supervision["remediations"], .array([]))
+    guard case let .object(managerControl)? = supervision["managerControl"] else {
+      return XCTFail("expected supervision managerControl")
+    }
+    XCTAssertEqual(managerControl["targetedRerun"], .bool(false))
+
+    let sessions = try CLIWorkflowSessionStore(rootDirectory: sessionStore.path).loadAll()
+    XCTAssertEqual(sessions.map(\.session.sessionId), [runResult.session.sessionId])
+
+    let supervisionRecord = URL(fileURLWithPath: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStore.path), isDirectory: true)
+      .appendingPathComponent(runResult.session.sessionId, isDirectory: true)
+      .appendingPathComponent("supervision-record.json")
+    XCTAssertTrue(FileManager.default.fileExists(atPath: supervisionRecord.path))
+    let persistedSupervision = try decodeJSON(JSONObject.self, from: String(contentsOf: supervisionRecord, encoding: .utf8))
+    XCTAssertEqual(persistedSupervision["status"], .string("cancelled"))
+    XCTAssertEqual(persistedSupervision["incidents"], .array([]))
+    XCTAssertEqual(persistedSupervision["remediations"], .array([]))
+  }
+
   private func writeSingleCommandWorkflow(
     workflowDirectory: URL,
     nodesDirectory: URL,
@@ -208,4 +280,22 @@ extension WorkflowCommandTests {
     }
     """.write(to: nodesDirectory.appendingPathComponent("main-worker.json"), atomically: true, encoding: .utf8)
   }
+
+  private func waitForPersistedSession(sessionStore: URL, workflowName: String) async throws -> PersistedCLIWorkflowSession {
+    let deadline = Date().addingTimeInterval(3)
+    while Date() < deadline {
+      if let record = try? CLIWorkflowSessionStore(rootDirectory: sessionStore.path).loadAll().first(where: {
+        $0.workflowName == workflowName
+      }) {
+        return record
+      }
+      try await Task.sleep(nanoseconds: 50_000_000)
+    }
+    XCTFail("timed out waiting for live persisted session")
+    throw AutoImproveTestError.timedOutWaitingForSession
+  }
+}
+
+private enum AutoImproveTestError: Error {
+  case timedOutWaitingForSession
 }

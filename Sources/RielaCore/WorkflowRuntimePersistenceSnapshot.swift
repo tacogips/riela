@@ -68,15 +68,22 @@ public struct FileWorkflowRuntimePersistenceStore: Sendable {
     guard isSafeId(snapshot.session.sessionId) else {
       throw WorkflowRuntimePersistenceStoreError.invalidSessionId(snapshot.session.sessionId)
     }
-    let directory = URL(fileURLWithPath: rootDirectory, isDirectory: true)
-      .appendingPathComponent(snapshot.session.sessionId, isDirectory: true)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    let encoder = JSONEncoder()
-    encoder.dateEncodingStrategy = .iso8601
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    try encoder.encode(snapshot).write(to: directory.appendingPathComponent("runtime-snapshot.json"), options: .atomic)
+    try writeSnapshot(snapshot)
     try SQLiteWorkflowMessageLog(databasePath: SQLiteWorkflowMessageLog.defaultDatabasePath(rootDirectory: rootDirectory))
       .replaceMessages(for: snapshot.session.sessionId, with: snapshot.workflowMessages)
+  }
+
+  public func save(
+    _ snapshot: WorkflowRuntimePersistenceSnapshot,
+    appendingWorkflowMessages messages: [WorkflowMessageRecord]
+  ) throws {
+    guard isSafeId(snapshot.session.sessionId),
+          messages.allSatisfy({ $0.workflowExecutionId == snapshot.session.sessionId }) else {
+      throw WorkflowRuntimePersistenceStoreError.invalidSessionId(snapshot.session.sessionId)
+    }
+    try writeSnapshot(snapshot)
+    try SQLiteWorkflowMessageLog(databasePath: SQLiteWorkflowMessageLog.defaultDatabasePath(rootDirectory: rootDirectory))
+      .upsertMessages(messages)
   }
 
   public func load(sessionId: String) throws -> WorkflowRuntimePersistenceSnapshot {
@@ -116,5 +123,15 @@ public struct FileWorkflowRuntimePersistenceStore: Sendable {
       return false
     }
     return value.range(of: #"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"#, options: .regularExpression) != nil
+  }
+
+  private func writeSnapshot(_ snapshot: WorkflowRuntimePersistenceSnapshot) throws {
+    let directory = URL(fileURLWithPath: rootDirectory, isDirectory: true)
+      .appendingPathComponent(snapshot.session.sessionId, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try encoder.encode(snapshot).write(to: directory.appendingPathComponent("runtime-snapshot.json"), options: .atomic)
   }
 }

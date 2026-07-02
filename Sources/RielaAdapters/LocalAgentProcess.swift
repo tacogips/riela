@@ -216,6 +216,38 @@ private final class LocalProcessPipes: @unchecked Sendable {
   }
 }
 
+private struct LocalProcessStdinWriter: Sendable {
+  var fileDescriptor: Int32
+  var stdin: String
+
+  func writeAndClose() {
+    disableSigpipeForStdin(fileDescriptor)
+    let data = Data(stdin.utf8)
+    data.withUnsafeBytes { buffer in
+      guard let baseAddress = buffer.baseAddress else {
+        return
+      }
+      var written = 0
+      while written < buffer.count {
+        let byteCount = min(16_384, buffer.count - written)
+        let result = write(fileDescriptor, baseAddress.advanced(by: written), byteCount)
+        if result > 0 {
+          written += result
+          continue
+        }
+        if result == -1 && errno == EINTR {
+          continue
+        }
+        if result == -1 && (errno == EPIPE || errno == EBADF) {
+          break
+        }
+        break
+      }
+    }
+    _ = close(fileDescriptor)
+  }
+}
+
 private final class LocalProcessCompletion: @unchecked Sendable {
   private let lock = NSLock()
   private var didResume = false
@@ -507,6 +539,14 @@ private func localProcessTimeoutError() -> AdapterExecutionError {
   AdapterExecutionError(.timeout, "local agent process exceeded deadline and was terminated")
 }
 
+private func disableSigpipeForStdin(_ fileDescriptor: Int32) {
+  #if canImport(Darwin)
+  _ = fcntl(fileDescriptor, F_SETNOSIGPIPE, 1)
+  #else
+  _ = signal(SIGPIPE, SIG_IGN)
+  #endif
+}
+
 private func spawnProcess(
   configuration: LocalAgentProcessConfiguration,
   inputReadDescriptor: Int32,
@@ -695,8 +735,13 @@ public struct FoundationLocalAgentProcessRunner: LocalAgentProcessRunning, Local
             completion.setDeadlineWorkItem(workItem)
             DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay, execute: workItem)
           }
-          inputPipe.fileHandleForWriting.write(Data(stdin.utf8))
-          try inputPipe.fileHandleForWriting.close()
+          let stdinWriter = LocalProcessStdinWriter(
+            fileDescriptor: inputPipe.fileHandleForWriting.fileDescriptor,
+            stdin: stdin
+          )
+          DispatchQueue.global(qos: .utility).async {
+            stdinWriter.writeAndClose()
+          }
         } catch {
           pipes.closeForFailureOrTimeout()
           processHandle.terminateGroupOrProcess()

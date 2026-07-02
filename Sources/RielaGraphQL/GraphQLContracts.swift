@@ -259,6 +259,7 @@ public struct GraphQLLoopRecoveryLineageDTO: Codable, Equatable, Sendable {
 public struct GraphQLWorkflowSessionDTO: Codable, Equatable, Sendable {
   public var workflowId: String
   public var sessionId: String
+  public var workflowExecutionId: String
   public var status: String
   public var currentStepId: String?
   public var stepExecutions: [GraphQLStepExecutionDTO]
@@ -275,6 +276,7 @@ public struct GraphQLWorkflowSessionDTO: Codable, Equatable, Sendable {
   public init(
     workflowId: String,
     sessionId: String,
+    workflowExecutionId: String? = nil,
     status: String,
     currentStepId: String? = nil,
     stepExecutions: [GraphQLStepExecutionDTO] = [],
@@ -290,6 +292,7 @@ public struct GraphQLWorkflowSessionDTO: Codable, Equatable, Sendable {
   ) {
     self.workflowId = workflowId
     self.sessionId = sessionId
+    self.workflowExecutionId = workflowExecutionId ?? sessionId
     self.status = status
     self.currentStepId = currentStepId
     self.stepExecutions = stepExecutions
@@ -308,6 +311,11 @@ public struct GraphQLWorkflowSessionDTO: Codable, Equatable, Sendable {
 public struct GraphQLInspectSessionRequest: Codable, Equatable, Sendable {
   public var workflowId: String
   public var sessionId: String
+
+  public var workflowExecutionId: String {
+    get { sessionId }
+    set { sessionId = newValue }
+  }
 
   public init(workflowId: String, sessionId: String) {
     self.workflowId = workflowId
@@ -330,6 +338,11 @@ public struct GraphQLContinueSessionRequest: Codable, Equatable, Sendable {
   public var workflowId: String
   public var sessionId: String
   public var input: JSONObject
+
+  public var workflowExecutionId: String {
+    get { sessionId }
+    set { sessionId = newValue }
+  }
 
   public init(workflowId: String, sessionId: String, input: JSONObject = [:]) {
     self.workflowId = workflowId
@@ -650,6 +663,7 @@ public enum GraphQLContractProjector {
   type WorkflowSession {
     workflowId: String!
     sessionId: String!
+    workflowExecutionId: String!
     status: String!
     currentStepId: String
     stepExecutions: [StepExecution!]!
@@ -700,6 +714,7 @@ public enum GraphQLContractProjector {
     .init(
       workflowId: session.workflowId,
       sessionId: session.sessionId,
+      workflowExecutionId: session.workflowExecutionId,
       status: session.status.rawValue,
       currentStepId: session.currentStepId,
       stepExecutions: session.executions.map {

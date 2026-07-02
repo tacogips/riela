@@ -112,6 +112,8 @@ private func timeSignalIntervalMinutes(_ config: JSONObject) throws -> Int {
 
 private func timeSignalInt(_ value: JSONValue?) -> Int? {
   switch value {
+  case let .integer(integer):
+    return Int(exactly: integer)
   case let .number(number):
     return Int(exactly: number)
   case let .string(string):

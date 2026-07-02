@@ -11,17 +11,20 @@ public struct RuntimeOutputCandidate: Equatable, Sendable {
   public var payload: JSONObject
   public var completionPassed: Bool
   public var when: [String: Bool]
+  public var routingDiagnostics: [String]
 
   public init(
     source: RuntimeOutputCandidateSource,
     payload: JSONObject,
     completionPassed: Bool = true,
-    when: [String: Bool] = ["always": true]
+    when: [String: Bool] = ["always": true],
+    routingDiagnostics: [String] = []
   ) {
     self.source = source
     self.payload = payload
     self.completionPassed = completionPassed
     self.when = when
+    self.routingDiagnostics = routingDiagnostics
   }
 }
 
@@ -39,7 +42,8 @@ public protocol CandidatePathReading: Sendable {
     from path: URL,
     stagingDirectory: URL,
     attemptStartedAt: Date,
-    requiresObjectPayload: Bool
+    requiresObjectPayload: Bool,
+    routingReconciler: OutputContractRoutingReconciler?
   ) async throws -> RuntimeOutputCandidate
 }
 
@@ -50,7 +54,8 @@ public struct DefaultCandidatePathReader: CandidatePathReading {
     from path: URL,
     stagingDirectory: URL,
     attemptStartedAt: Date,
-    requiresObjectPayload: Bool
+    requiresObjectPayload: Bool,
+    routingReconciler: OutputContractRoutingReconciler? = nil
   ) async throws -> RuntimeOutputCandidate {
     let standardizedPath = path.standardizedFileURL.resolvingSymlinksInPath()
     let standardizedStagingDirectory = stagingDirectory.standardizedFileURL.resolvingSymlinksInPath()
@@ -75,37 +80,55 @@ public struct DefaultCandidatePathReader: CandidatePathReading {
     guard case let .object(object) = decoded else {
       throw RuntimeOutputCandidateError.nonObjectCandidate(standardizedPath.path)
     }
-    let normalized = try normalizeOutputContractEnvelope(object, source: "candidatePath")
+    let normalized = try normalizeOutputContractEnvelope(
+      object,
+      source: "candidatePath",
+      routingReconciler: routingReconciler
+    )
     return RuntimeOutputCandidate(
       source: .candidatePath(standardizedPath),
       payload: normalized.payload,
       completionPassed: normalized.completionPassed,
-      when: normalized.when
+      when: normalized.when,
+      routingDiagnostics: normalized.routingDiagnostics
     )
   }
 }
 
-public func normalizeRuntimeInlineCandidate(_ object: JSONObject) throws -> RuntimeOutputCandidate {
-  let normalized = try normalizeOutputContractEnvelope(object, source: "inlineCandidate")
+public func normalizeRuntimeInlineCandidate(
+  _ object: JSONObject,
+  routingReconciler: OutputContractRoutingReconciler? = nil
+) throws -> RuntimeOutputCandidate {
+  let normalized = try normalizeOutputContractEnvelope(
+    object,
+    source: "inlineCandidate",
+    routingReconciler: routingReconciler
+  )
   return RuntimeOutputCandidate(
     source: .inlineCandidate,
     payload: normalized.payload,
     completionPassed: normalized.completionPassed,
-    when: normalized.when
+    when: normalized.when,
+    routingDiagnostics: normalized.routingDiagnostics
   )
 }
 
-public func normalizeRuntimeAdapterOutput(_ output: AdapterExecutionOutput) throws -> RuntimeOutputCandidate {
+public func normalizeRuntimeAdapterOutput(
+  _ output: AdapterExecutionOutput,
+  routingReconciler: OutputContractRoutingReconciler? = nil
+) throws -> RuntimeOutputCandidate {
   let normalized = try normalizeOutputContractEnvelope(
     output.payload,
     source: "adapterOutput",
-    defaults: (output.completionPassed, output.when)
+    defaults: (output.completionPassed, output.when),
+    routingReconciler: routingReconciler
   )
   return RuntimeOutputCandidate(
     source: .adapterOutput,
     payload: normalized.payload,
     completionPassed: normalized.completionPassed,
-    when: normalized.when
+    when: normalized.when,
+    routingDiagnostics: normalized.routingDiagnostics
   )
 }
 

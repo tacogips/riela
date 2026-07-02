@@ -397,7 +397,7 @@ private func cursorMessageContentText(from value: JSONValue?) -> String? {
     return text.isEmpty ? nil : text
   case let .object(object):
     return cursorMessageContentText(from: object["content"])
-  case .null, .bool, .number:
+  case .null, .bool, .integer, .number:
     return nil
   }
 }

@@ -432,6 +432,8 @@ private func stringifyTemplateValue(_ value: JSONValue?) -> String {
     return ""
   case let .bool(bool):
     return bool ? "true" : "false"
+  case let .integer(number):
+    return String(number)
   case let .number(number):
     return String(number)
   case let .string(string):

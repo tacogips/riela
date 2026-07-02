@@ -44,6 +44,45 @@ final class CursorCLISessionIndexCompatibilityTests: XCTestCase {
     XCTAssertEqual(sorted.map(\.id), ["alpha", "zeta", "beta"])
   }
 
+  func testRolloutWatcherEmitsCompleteLines() throws {
+    let home = try makeTemporaryDirectory()
+    addTeardownBlock {
+      try? FileManager.default.removeItem(at: home)
+    }
+    let rollout = home.appendingPathComponent("projects/2026/06/17/rollout-session-watch.jsonl")
+    try FileManager.default.createDirectory(at: rollout.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try "".write(to: rollout, atomically: true, encoding: .utf8)
+
+    let watcher = CursorCLIRolloutWatcher()
+    watcher.watchFile(path: rollout.path)
+    try appendRaw(cursorEventMessageLine(timestamp: "2026-06-17T00:00:01.000Z", type: "UserMessage", message: "hello") + "\n", to: rollout)
+    let events = watcher.flush()
+    XCTAssertEqual(events.count, 1)
+    if case let .line(path, line) = try XCTUnwrap(events.first) {
+      XCTAssertEqual(path, rollout.path)
+      XCTAssertEqual(line.type, "event_msg")
+    } else {
+      XCTFail("expected appended line event")
+    }
+    try appendRaw(
+      #"{"timestamp":"2026-06-17T00:00:02.000Z","type":"event_msg","payload":{"type":"AgentMessage","message":"partial"}"#,
+      to: rollout
+    )
+    XCTAssertEqual(watcher.flush(), [])
+    try appendRaw("}\n", to: rollout)
+    let completedPartial = watcher.flush()
+    XCTAssertEqual(completedPartial.count, 1)
+    if case let .line(_, line) = try XCTUnwrap(completedPartial.first),
+       case let .object(payload) = line.payload {
+      XCTAssertEqual(payload["message"], .string("partial"))
+    } else {
+      XCTFail("expected completed partial line event")
+    }
+    watcher.stop()
+    XCTAssertTrue(watcher.isClosed)
+    XCTAssertTrue(CursorCLIRolloutWatcher.sessionsWatchDir(cursorCLIHome: home.path).hasSuffix("/projects"))
+  }
+
   func testSessionIndexUsesRolloutMetadataBeforeStaleSQLiteRows() throws {
     let home = try makeTemporaryDirectory()
     addTeardownBlock {
@@ -203,6 +242,15 @@ final class CursorCLISessionIndexCompatibilityTests: XCTestCase {
     XCTAssertEqual(search.sessionIds, [])
     XCTAssertEqual(search.scannedSessions, 1)
     XCTAssertTrue(search.truncated)
+  }
+
+  private func appendRaw(_ text: String, to url: URL) throws {
+    let handle = try FileHandle(forWritingTo: url)
+    defer {
+      try? handle.close()
+    }
+    try handle.seekToEnd()
+    try handle.write(contentsOf: Data(text.utf8))
   }
 }
 

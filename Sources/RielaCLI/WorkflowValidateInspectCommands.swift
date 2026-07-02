@@ -33,7 +33,9 @@ public struct WorkflowValidateCommand: Sendable {
           to: bundle.nodePayloads
         )
       }
-      let diagnostics = bundle.diagnostics + DefaultWorkflowValidator().validate(bundle.workflow)
+      let diagnostics = bundle.diagnostics +
+        DefaultWorkflowValidator().validate(bundle.workflow) +
+        DeterministicWorkflowRunner.unsupportedFeatures(in: bundle.workflow).map(\.diagnostic)
       let nodeResults = options.executable
         ? try await preflight.preflight(
           bundle.workflow,

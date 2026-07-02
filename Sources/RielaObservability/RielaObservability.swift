@@ -28,6 +28,10 @@ public struct RielaTelemetryConfiguration: Equatable, Sendable {
   public var endpoint: URL?
   public var resourceAttributes: [String: String]
   public var enabledSignals: Set<RielaTelemetrySignal>
+  public var maxBufferRecords: Int
+  public var legacyPayload: Bool
+  public var traceContext: RielaTraceContext?
+  public var autoFlushInterval: Duration?
 
   public init(
     enabled: Bool,
@@ -35,7 +39,11 @@ public struct RielaTelemetryConfiguration: Equatable, Sendable {
     serviceName: String,
     endpoint: URL? = nil,
     resourceAttributes: [String: String] = [:],
-    enabledSignals: Set<RielaTelemetrySignal> = [.traces, .logs, .metrics]
+    enabledSignals: Set<RielaTelemetrySignal> = [.traces, .logs, .metrics],
+    maxBufferRecords: Int = 2_048,
+    legacyPayload: Bool = false,
+    traceContext: RielaTraceContext? = nil,
+    autoFlushInterval: Duration? = .seconds(10)
   ) {
     self.enabled = enabled
     self.surface = surface
@@ -43,6 +51,10 @@ public struct RielaTelemetryConfiguration: Equatable, Sendable {
     self.endpoint = endpoint
     self.resourceAttributes = resourceAttributes
     self.enabledSignals = enabledSignals
+    self.maxBufferRecords = max(1, maxBufferRecords)
+    self.legacyPayload = legacyPayload
+    self.traceContext = traceContext
+    self.autoFlushInterval = autoFlushInterval
   }
 
   public static func fromEnvironment(
@@ -64,13 +76,18 @@ public struct RielaTelemetryConfiguration: Equatable, Sendable {
       environment["RIELA_OTEL_RESOURCE_ATTRIBUTES"]
     ))
     let signals = resolveEnabledSignals(environment)
+    let maxBufferRecords = positiveInt(environment["RIELA_OTEL_MAX_BUFFER_RECORDS"]) ?? 2_048
+    let legacyPayload = boolValue(environment["RIELA_OTEL_LEGACY_PAYLOAD"]) == true
     return RielaTelemetryConfiguration(
       enabled: enabled,
       surface: surface,
       serviceName: serviceName,
       endpoint: endpoint,
       resourceAttributes: resources,
-      enabledSignals: signals
+      enabledSignals: signals,
+      maxBufferRecords: maxBufferRecords,
+      legacyPayload: legacyPayload,
+      traceContext: RielaTraceContext.fromEnvironment(environment)
     )
   }
 }
@@ -188,7 +205,7 @@ public enum RielaTelemetryRedactor {
   private static let allowedValueKeys = [
     "id", "name", "version", "surface", "command", "status", "kind", "type", "backend", "provider", "model",
     "attempt", "count", "duration_ms", "elapsed_ms", "host", "port", "path", "method", "enabled",
-    "error_class", "error_code"
+    "error_class", "error_code", "environment", "profile"
   ]
   private static let allowedValueKeyPattern = #"(?i)(^|\.)(\#(allowedValueKeys.joined(separator: "|")))$"#
 
@@ -283,93 +300,335 @@ private func randomHex(byteCount: Int) -> String {
 private actor OTLPRielaTelemetryExporter: RielaTelemetry {
   private let configuration: RielaTelemetryConfiguration
   private let endpoint: URL
+  private let traceId: String
+  private let parentSpanId: String?
   private var spans: [RielaTelemetrySpan] = []
   private var logs: [RielaTelemetryLog] = []
   private var metrics: [RielaTelemetryMetric] = []
+  private var droppedSpans = 0
+  private var droppedLogs = 0
+  private var droppedMetrics = 0
+  private var consecutiveExportFailures = 0
+  private var autoFlushTask: Task<Void, Never>?
 
   init(configuration: RielaTelemetryConfiguration, endpoint: URL) {
     self.configuration = configuration
     self.endpoint = endpoint
+    let generatedContext = RielaTraceContext.generated()
+    let context = configuration.traceContext ?? generatedContext
+    self.traceId = traceIdValue(from: context.traceparent) ?? traceIdValue(from: generatedContext.traceparent) ?? randomHex(byteCount: 16)
+    self.parentSpanId = configuration.traceContext.flatMap { spanIdValue(from: $0.traceparent) }
   }
 
   func recordSpan(_ span: RielaTelemetrySpan) {
     guard configuration.enabledSignals.contains(.traces) else {
       return
     }
-    spans.append(span)
+    appendBounded(span, to: &spans, droppedCount: &droppedSpans)
+    startAutoFlushIfNeeded()
   }
 
   func recordLog(_ log: RielaTelemetryLog) {
     guard configuration.enabledSignals.contains(.logs) else {
       return
     }
-    logs.append(log)
+    appendBounded(log, to: &logs, droppedCount: &droppedLogs)
+    startAutoFlushIfNeeded()
   }
 
   func recordMetric(_ metric: RielaTelemetryMetric) {
     guard configuration.enabledSignals.contains(.metrics) else {
       return
     }
-    metrics.append(metric)
+    appendBounded(metric, to: &metrics, droppedCount: &droppedMetrics)
+    startAutoFlushIfNeeded()
   }
 
   func flush(timeout: Duration) async {
     let spansToSend = spans
     let logsToSend = logs
     let metricsToSend = metrics
+    let dropped = DroppedTelemetryCounts(spans: droppedSpans, logs: droppedLogs, metrics: droppedMetrics)
     let endpoint = self.endpoint
     let configuration = self.configuration
+    let traceId = self.traceId
+    let parentSpanId = self.parentSpanId
     spans.removeAll()
     logs.removeAll()
     metrics.removeAll()
-    await withTaskGroup(of: Void.self) { group in
-      group.addTask {
-        await withTaskGroup(of: Void.self) { sendGroup in
-          sendGroup.addTask {
-            await sendBestEffort(spansToSend, signalPath: "v1/traces", endpoint: endpoint, configuration: configuration, timeout: timeout)
-          }
-          sendGroup.addTask {
-            await sendBestEffort(logsToSend, signalPath: "v1/logs", endpoint: endpoint, configuration: configuration, timeout: timeout)
-          }
-          sendGroup.addTask {
-            await sendBestEffort(metricsToSend, signalPath: "v1/metrics", endpoint: endpoint, configuration: configuration, timeout: timeout)
-          }
+    droppedSpans = 0
+    droppedLogs = 0
+    droppedMetrics = 0
+    var outcomes: [TelemetryExportOutcome] = []
+    await withTaskGroup(of: TelemetryExportOutcome.self) { group in
+      var sendTasks = 0
+      if !spansToSend.isEmpty {
+        sendTasks += 1
+        group.addTask {
+          await sendTelemetry(
+            .traces,
+            records: .spans(spansToSend, traceId: traceId, parentSpanId: parentSpanId),
+            endpoint: endpoint,
+            configuration: configuration,
+            dropped: dropped,
+            timeout: timeout
+          )
         }
+      }
+      if !logsToSend.isEmpty {
+        sendTasks += 1
+        group.addTask {
+          await sendTelemetry(
+            .logs,
+            records: .logs(logsToSend),
+            endpoint: endpoint,
+            configuration: configuration,
+            dropped: dropped,
+            timeout: timeout
+          )
+        }
+      }
+      if !metricsToSend.isEmpty {
+        sendTasks += 1
+        group.addTask {
+          await sendTelemetry(
+            .metrics,
+            records: .metrics(metricsToSend),
+            endpoint: endpoint,
+            configuration: configuration,
+            dropped: dropped,
+            timeout: timeout
+          )
+        }
+      }
+      guard sendTasks > 0 else {
+        return
       }
       group.addTask {
         try? await Task.sleep(for: timeout)
+        return .failure("telemetry export timed out")
       }
-      await group.next()
-      group.cancelAll()
+      while let outcome = await group.next() {
+        outcomes.append(outcome)
+        if case .failure = outcome {
+          group.cancelAll()
+          break
+        }
+        if outcomes.count == sendTasks {
+          group.cancelAll()
+          break
+        }
+      }
     }
+    recordExportOutcomes(outcomes)
+  }
+
+  private func appendBounded<T>(_ record: T, to records: inout [T], droppedCount: inout Int) {
+    let overflowCount = records.count - configuration.maxBufferRecords + 1
+    if overflowCount > 0 {
+      records.removeFirst(overflowCount)
+      droppedCount += overflowCount
+    }
+    records.append(record)
+  }
+
+  private func startAutoFlushIfNeeded() {
+    guard autoFlushTask == nil, let interval = configuration.autoFlushInterval else {
+      return
+    }
+    autoFlushTask = Task { [weak self] in
+      while !Task.isCancelled {
+        try? await Task.sleep(for: interval)
+        guard let self else {
+          return
+        }
+        await self.flush(timeout: .seconds(2))
+      }
+    }
+  }
+
+  private func recordExportOutcomes(_ outcomes: [TelemetryExportOutcome]) {
+    let failureMessages = outcomes.compactMap { outcome -> String? in
+      if case let .failure(message) = outcome {
+        return message
+      }
+      return nil
+    }
+    if let message = failureMessages.first {
+      if consecutiveExportFailures == 0 {
+        writeTelemetryWarning("failed: \(message)")
+      }
+      consecutiveExportFailures += 1
+      return
+    }
+    if consecutiveExportFailures > 0 {
+      writeTelemetryWarning("recovered")
+    }
+    consecutiveExportFailures = 0
   }
 }
 
-private func sendBestEffort<T: Encodable & Sendable>(
-  _ records: [T],
-  signalPath: String,
+private enum TelemetryExportRecords: Sendable {
+  case spans([RielaTelemetrySpan], traceId: String, parentSpanId: String?)
+  case logs([RielaTelemetryLog])
+  case metrics([RielaTelemetryMetric])
+}
+
+private enum TelemetryExportOutcome: Sendable {
+  case success
+  case failure(String)
+}
+
+private struct DroppedTelemetryCounts: Equatable, Sendable {
+  var spans: Int
+  var logs: Int
+  var metrics: Int
+}
+
+private func sendTelemetry(
+  _ signal: RielaTelemetrySignal,
+  records: TelemetryExportRecords,
   endpoint: URL,
   configuration: RielaTelemetryConfiguration,
+  dropped: DroppedTelemetryCounts,
   timeout: Duration
-) async {
-  guard !records.isEmpty else {
-    return
-  }
+) async -> TelemetryExportOutcome {
   do {
-    var request = URLRequest(url: endpoint.appendingPathComponent(signalPath))
+    var request = URLRequest(url: endpoint.appendingPathComponent(signalPath(for: signal)))
     request.httpMethod = "POST"
     request.timeoutInterval = timeoutInterval(for: timeout)
     request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.httpBody = try JSONEncoder.telemetryEncoder.encode(
-      OTLPPayload(
-        serviceName: configuration.serviceName,
-        surface: configuration.surface.rawValue,
-        resourceAttributes: configuration.resourceAttributes,
-        records: records
-      )
+    request.httpBody = try telemetryBody(
+      signal: signal,
+      records: records,
+      configuration: configuration,
+      dropped: dropped
     )
-    _ = try await URLSession.shared.data(for: request)
+    let (_, response) = try await URLSession.shared.data(for: request)
+    if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+      return .failure("collector returned HTTP \(httpResponse.statusCode) for \(signal.rawValue)")
+    }
+    return .success
   } catch {
+    return .failure(String(describing: error))
+  }
+}
+
+private func telemetryBody(
+  signal: RielaTelemetrySignal,
+  records: TelemetryExportRecords,
+  configuration: RielaTelemetryConfiguration,
+  dropped: DroppedTelemetryCounts
+) throws -> Data {
+  if configuration.legacyPayload {
+    return try legacyTelemetryBody(records: records, configuration: configuration, dropped: dropped)
+  }
+  let encoder = JSONEncoder.telemetryEncoder
+  switch records {
+  case let .spans(spans, traceId, parentSpanId):
+    return try encoder.encode(OTLPTraceExportRequest(
+      resourceSpans: [
+        OTLPResourceSpans(
+          resource: otlpResource(configuration: configuration, dropped: dropped),
+          scopeSpans: [
+            OTLPScopeSpans(scope: otlpScope(), spans: spans.map {
+              OTLPSpan(
+                traceId: traceId,
+                spanId: randomHex(byteCount: 8),
+                parentSpanId: parentSpanId,
+                name: $0.name,
+                startTimeUnixNano: unixNanoString($0.startedAt),
+                endTimeUnixNano: unixNanoString($0.endedAt),
+                attributes: otlpAttributes($0.attributes),
+                status: OTLPStatus(code: $0.status == .error ? 2 : 1)
+              )
+            })
+          ]
+        )
+      ]
+    ))
+  case let .logs(logs):
+    return try encoder.encode(OTLPLogExportRequest(
+      resourceLogs: [
+        OTLPResourceLogs(
+          resource: otlpResource(configuration: configuration, dropped: dropped),
+          scopeLogs: [
+            OTLPScopeLogs(scope: otlpScope(), logRecords: logs.map {
+              OTLPLogRecord(
+                timeUnixNano: unixNanoString($0.timestamp),
+                severityText: $0.severity,
+                body: OTLPAnyValue(stringValue: $0.name),
+                attributes: otlpAttributes($0.attributes)
+              )
+            })
+          ]
+        )
+      ]
+    ))
+  case let .metrics(metrics):
+    return try encoder.encode(OTLPMetricExportRequest(
+      resourceMetrics: [
+        OTLPResourceMetrics(
+          resource: otlpResource(configuration: configuration, dropped: dropped),
+          scopeMetrics: [
+            OTLPScopeMetrics(scope: otlpScope(), metrics: metrics.map {
+              OTLPMetric(
+                name: $0.name,
+                gauge: OTLPGauge(dataPoints: [
+                  OTLPNumberDataPoint(
+                    timeUnixNano: unixNanoString($0.timestamp),
+                    asDouble: $0.value,
+                    attributes: otlpAttributes($0.attributes)
+                  )
+                ])
+              )
+            })
+          ]
+        )
+      ]
+    ))
+  }
+}
+
+private func legacyTelemetryBody(
+  records: TelemetryExportRecords,
+  configuration: RielaTelemetryConfiguration,
+  dropped: DroppedTelemetryCounts
+) throws -> Data {
+  let resourceAttributes = resourceAttributes(configuration: configuration, dropped: dropped)
+  switch records {
+  case let .spans(spans, _, _):
+    return try JSONEncoder.telemetryEncoder.encode(OTLPLegacyPayload(
+      serviceName: configuration.serviceName,
+      surface: configuration.surface.rawValue,
+      resourceAttributes: resourceAttributes,
+      records: spans
+    ))
+  case let .logs(logs):
+    return try JSONEncoder.telemetryEncoder.encode(OTLPLegacyPayload(
+      serviceName: configuration.serviceName,
+      surface: configuration.surface.rawValue,
+      resourceAttributes: resourceAttributes,
+      records: logs
+    ))
+  case let .metrics(metrics):
+    return try JSONEncoder.telemetryEncoder.encode(OTLPLegacyPayload(
+      serviceName: configuration.serviceName,
+      surface: configuration.surface.rawValue,
+      resourceAttributes: resourceAttributes,
+      records: metrics
+    ))
+  }
+}
+
+private func signalPath(for signal: RielaTelemetrySignal) -> String {
+  switch signal {
+  case .traces:
+    return "v1/traces"
+  case .logs:
+    return "v1/logs"
+  case .metrics:
+    return "v1/metrics"
   }
 }
 
@@ -380,11 +639,166 @@ private func timeoutInterval(for duration: Duration) -> TimeInterval {
   return max(0.001, seconds + fractionalSeconds)
 }
 
-private struct OTLPPayload<Record: Encodable>: Encodable {
+private struct OTLPLegacyPayload<Record: Encodable>: Encodable {
   var serviceName: String
   var surface: String
   var resourceAttributes: [String: String]
   var records: [Record]
+}
+
+private struct OTLPTraceExportRequest: Encodable {
+  var resourceSpans: [OTLPResourceSpans]
+}
+
+private struct OTLPResourceSpans: Encodable {
+  var resource: OTLPResource
+  var scopeSpans: [OTLPScopeSpans]
+}
+
+private struct OTLPScopeSpans: Encodable {
+  var scope: OTLPScope
+  var spans: [OTLPSpan]
+}
+
+private struct OTLPSpan: Encodable {
+  var traceId: String
+  var spanId: String
+  var parentSpanId: String?
+  var name: String
+  var startTimeUnixNano: String
+  var endTimeUnixNano: String
+  var attributes: [OTLPKeyValue]
+  var status: OTLPStatus
+}
+
+private struct OTLPStatus: Encodable {
+  var code: Int
+}
+
+private struct OTLPLogExportRequest: Encodable {
+  var resourceLogs: [OTLPResourceLogs]
+}
+
+private struct OTLPResourceLogs: Encodable {
+  var resource: OTLPResource
+  var scopeLogs: [OTLPScopeLogs]
+}
+
+private struct OTLPScopeLogs: Encodable {
+  var scope: OTLPScope
+  var logRecords: [OTLPLogRecord]
+}
+
+private struct OTLPLogRecord: Encodable {
+  var timeUnixNano: String
+  var severityText: String
+  var body: OTLPAnyValue
+  var attributes: [OTLPKeyValue]
+}
+
+private struct OTLPMetricExportRequest: Encodable {
+  var resourceMetrics: [OTLPResourceMetrics]
+}
+
+private struct OTLPResourceMetrics: Encodable {
+  var resource: OTLPResource
+  var scopeMetrics: [OTLPScopeMetrics]
+}
+
+private struct OTLPScopeMetrics: Encodable {
+  var scope: OTLPScope
+  var metrics: [OTLPMetric]
+}
+
+private struct OTLPMetric: Encodable {
+  var name: String
+  var gauge: OTLPGauge
+}
+
+private struct OTLPGauge: Encodable {
+  var dataPoints: [OTLPNumberDataPoint]
+}
+
+private struct OTLPNumberDataPoint: Encodable {
+  var timeUnixNano: String
+  var asDouble: Double
+  var attributes: [OTLPKeyValue]
+}
+
+private struct OTLPResource: Encodable {
+  var attributes: [OTLPKeyValue]
+}
+
+private struct OTLPScope: Encodable {
+  var name: String
+}
+
+private struct OTLPKeyValue: Encodable {
+  var key: String
+  var value: OTLPAnyValue
+}
+
+private struct OTLPAnyValue: Encodable {
+  var stringValue: String?
+  var doubleValue: Double?
+}
+
+private func otlpResource(configuration: RielaTelemetryConfiguration, dropped: DroppedTelemetryCounts) -> OTLPResource {
+  OTLPResource(attributes: otlpAttributes(resourceAttributes(configuration: configuration, dropped: dropped)))
+}
+
+private func resourceAttributes(
+  configuration: RielaTelemetryConfiguration,
+  dropped: DroppedTelemetryCounts
+) -> [String: String] {
+  var attributes = RielaTelemetryRedactor.redactedAttributes(configuration.resourceAttributes)
+  attributes["service.name"] = configuration.serviceName
+  attributes["riela.surface"] = configuration.surface.rawValue
+  if dropped.spans > 0 {
+    attributes["riela.telemetry.dropped.spans"] = String(dropped.spans)
+  }
+  if dropped.logs > 0 {
+    attributes["riela.telemetry.dropped.logs"] = String(dropped.logs)
+  }
+  if dropped.metrics > 0 {
+    attributes["riela.telemetry.dropped.metrics"] = String(dropped.metrics)
+  }
+  return attributes
+}
+
+private func otlpScope() -> OTLPScope {
+  OTLPScope(name: "riela")
+}
+
+private func otlpAttributes(_ attributes: [String: String]) -> [OTLPKeyValue] {
+  attributes.sorted { $0.key < $1.key }.map { key, value in
+    OTLPKeyValue(key: key, value: OTLPAnyValue(stringValue: value))
+  }
+}
+
+private func unixNanoString(_ date: Date) -> String {
+  let nanoseconds = max(0, date.timeIntervalSince1970 * 1_000_000_000)
+  return String(Int64(nanoseconds.rounded()))
+}
+
+private func traceIdValue(from traceparent: String) -> String? {
+  traceparentComponents(traceparent).traceId
+}
+
+private func spanIdValue(from traceparent: String) -> String? {
+  traceparentComponents(traceparent).spanId
+}
+
+private func traceparentComponents(_ traceparent: String) -> (traceId: String?, spanId: String?) {
+  let parts = traceparent.split(separator: "-").map(String.init)
+  guard parts.count >= 4, parts[1].count == 32, parts[2].count == 16 else {
+    return (nil, nil)
+  }
+  return (parts[1], parts[2])
+}
+
+private func writeTelemetryWarning(_ message: String) {
+  FileHandle.standardError.write(Data("riela telemetry export \(message)\n".utf8))
 }
 
 private extension JSONEncoder {
@@ -415,6 +829,13 @@ private func boolValue(_ value: String?) -> Bool? {
   default:
     return nil
   }
+}
+
+private func positiveInt(_ value: String?) -> Int? {
+  guard let value, let parsed = Int(value), parsed > 0 else {
+    return nil
+  }
+  return parsed
 }
 
 private func defaultServiceName(surface: RielaTelemetrySurface) -> String {

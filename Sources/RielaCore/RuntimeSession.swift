@@ -15,16 +15,52 @@ public enum WorkflowStepExecutionStatus: String, Codable, Sendable {
 }
 
 public struct WorkflowAcceptedOutputMetadata: Codable, Equatable, Sendable {
+  private enum CodingKeys: String, CodingKey {
+    case payload
+    case when
+    case isRootOutput
+    case acceptedAt
+    case routingDiagnostics
+  }
+
   public var payload: JSONObject
   public var when: [String: Bool]
   public var isRootOutput: Bool
   public var acceptedAt: Date
+  public var routingDiagnostics: [String]
 
-  public init(payload: JSONObject, when: [String: Bool], isRootOutput: Bool = false, acceptedAt: Date) {
+  public init(
+    payload: JSONObject,
+    when: [String: Bool],
+    isRootOutput: Bool = false,
+    acceptedAt: Date,
+    routingDiagnostics: [String] = []
+  ) {
     self.payload = payload
     self.when = when
     self.isRootOutput = isRootOutput
     self.acceptedAt = acceptedAt
+    self.routingDiagnostics = routingDiagnostics
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.payload = try container.decode(JSONObject.self, forKey: .payload)
+    self.when = try container.decode([String: Bool].self, forKey: .when)
+    self.isRootOutput = try container.decodeIfPresent(Bool.self, forKey: .isRootOutput) ?? false
+    self.acceptedAt = try container.decode(Date.self, forKey: .acceptedAt)
+    self.routingDiagnostics = try container.decodeIfPresent([String].self, forKey: .routingDiagnostics) ?? []
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(payload, forKey: .payload)
+    try container.encode(when, forKey: .when)
+    try container.encode(isRootOutput, forKey: .isRootOutput)
+    try container.encode(acceptedAt, forKey: .acceptedAt)
+    if !routingDiagnostics.isEmpty {
+      try container.encode(routingDiagnostics, forKey: .routingDiagnostics)
+    }
   }
 }
 
@@ -146,6 +182,11 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
   public var executions: [WorkflowStepExecution]
   public var fanoutGroups: [WorkflowFanoutGroupRecord]?
   public var reviewFindings: [WorkflowReviewFinding]
+
+  public var workflowExecutionId: String {
+    get { sessionId }
+    set { sessionId = newValue }
+  }
 
   public init(
     workflowId: String,

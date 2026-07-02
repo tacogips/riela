@@ -27,6 +27,18 @@ reading the first published message's `toStepId`. The diagram is sequence-like:
 the horizontal arrows show the actual call/return order for one step execution
 loop.
 
+## Runtime Identity Glossary
+
+`workflowExecutionId` is the canonical name for a single durable workflow
+execution. It is the value stored in the message transport's
+`workflow_execution_id` column and used by `WorkflowMessageRecord` and resolved
+message inputs.
+
+`sessionId` remains a compatibility name on existing `WorkflowSession` and
+GraphQL request/response surfaces. New Swift APIs should prefer
+`workflowExecutionId`, while existing Codable keys and GraphQL input names stay
+stable until a versioned contract migration can remove the legacy spelling.
+
 ## Cancellation
 
 CLI signal handling cancels the running workflow task on `SIGINT` or `SIGTERM`.

@@ -342,10 +342,7 @@ extension ScopedParityCommandRunner {
   }
 
   private func jsonNumberValue(_ value: JSONValue?) -> Double? {
-    guard case let .number(number)? = value else {
-      return nil
-    }
-    return number
+    value?.asDouble
   }
 
   private func jsonArrayValue(_ value: JSONValue?) -> [JSONValue]? {
@@ -359,6 +356,8 @@ extension ScopedParityCommandRunner {
     switch value {
     case let .string(string)?:
       return string
+    case let .integer(integer)?:
+      return String(integer)
     case let .number(number)? where number.rounded() == number:
       return String(Int64(number))
     case let .number(number)?:

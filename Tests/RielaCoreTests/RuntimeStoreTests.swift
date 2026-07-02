@@ -184,7 +184,7 @@ final class RuntimeStoreTests: XCTestCase {
     XCTAssertEqual(listedMessages, [first, second])
     let loadedSession = try await store.loadSession(id: session.sessionId)
     let loaded = try XCTUnwrap(loadedSession)
-    XCTAssertEqual(loaded.currentStepId, "next")
+    XCTAssertEqual(loaded.currentStepId, "start")
     XCTAssertEqual(loaded.updatedAt, date)
   }
 
@@ -223,6 +223,84 @@ final class RuntimeStoreTests: XCTestCase {
     XCTAssertEqual(loaded.updatedAt, session.updatedAt)
     XCTAssertEqual(loaded.executions.first?.lastBackendEventAt, heartbeatAt)
     XCTAssertEqual(loaded.executions.first?.streamedResponseText, "working")
+  }
+
+  func testRecordStepBackendEventReceiptAvoidsReturningProjectedExecutionPayload() async throws {
+    let startedAt = Date(timeIntervalSince1970: 100)
+    let heartbeatAt = Date(timeIntervalSince1970: 105)
+    let clock = MutableWorkflowRuntimeClock(startedAt)
+    let store = InMemoryWorkflowRuntimeStore(clock: clock)
+    let session = try await store.createSession(WorkflowSessionCreateInput(workflowId: "wf", entryStepId: "start"))
+    let execution = try await store.recordStepExecution(
+      WorkflowStepExecutionRecordInput(
+        sessionId: session.sessionId,
+        stepId: "start",
+        nodeId: "node-start",
+        attempt: 1,
+        backend: .codexAgent
+      )
+    )
+
+    clock.set(heartbeatAt)
+    let receipt = try await store.recordStepBackendEventReceipt(
+      WorkflowStepBackendEventInput(
+        sessionId: session.sessionId,
+        executionId: execution.executionId,
+        eventType: "assistant.delta",
+        channel: .assistant,
+        contentDelta: "stream",
+        isDelta: true
+      )
+    )
+
+    XCTAssertEqual(receipt.executionId, execution.executionId)
+    XCTAssertEqual(receipt.sequence, 1)
+    XCTAssertEqual(receipt.at, heartbeatAt)
+    let maybeLoaded = try await store.loadSession(id: session.sessionId)
+    let loaded = try XCTUnwrap(maybeLoaded)
+    XCTAssertEqual(loaded.executions.first?.streamedResponseText, "stream")
+    XCTAssertEqual(loaded.executions.first?.backendEventCount, 1)
+  }
+
+  func testBackendLiveTailProjectsAfterStepCompletionAndLatestSessionLookup() async throws {
+    let store = InMemoryWorkflowRuntimeStore(clock: FixedWorkflowRuntimeClock(Date(timeIntervalSince1970: 100)))
+    let session = try await store.createSession(WorkflowSessionCreateInput(workflowId: "wf", entryStepId: "start"))
+    let execution = try await store.recordStepExecution(
+      WorkflowStepExecutionRecordInput(
+        sessionId: session.sessionId,
+        stepId: "start",
+        nodeId: "node-start",
+        attempt: 1,
+        backend: .codexAgent
+      )
+    )
+
+    _ = try await store.recordStepBackendEvent(
+      WorkflowStepBackendEventInput(
+        sessionId: session.sessionId,
+        executionId: execution.executionId,
+        eventType: "assistant",
+        channel: .assistant,
+        contentSnapshot: "live"
+      )
+    )
+    let completed = try await store.updateStepExecution(
+      WorkflowStepExecutionUpdateInput(
+        sessionId: session.sessionId,
+        executionId: execution.executionId,
+        status: .completed
+      )
+    )
+
+    XCTAssertEqual(completed.status, .completed)
+    XCTAssertEqual(completed.backendEventCount, 1)
+    XCTAssertEqual(completed.streamedResponseText, "live")
+    let maybeLoaded = try await store.loadSession(id: session.sessionId)
+    let loaded = try XCTUnwrap(maybeLoaded)
+    XCTAssertEqual(loaded.executions.first?.status, .completed)
+    XCTAssertEqual(loaded.executions.first?.streamedResponseText, "live")
+    let latest = await store.latestSession(workflowId: "wf")
+    XCTAssertEqual(latest?.executions.first?.streamedResponseText, "live")
   }
 
   func testRecordStepBackendEventAppendsAssistantDeltasAndLifecycleCount() async throws {
@@ -313,6 +391,46 @@ final class RuntimeStoreTests: XCTestCase {
     XCTAssertLessThanOrEqual(streamedResponseText.utf8.count, 32 * 1024)
     XCTAssertTrue(streamedResponseText.hasPrefix("head"))
     XCTAssertTrue(streamedResponseText.hasSuffix("tail"))
+  }
+
+  func testRecordStepBackendEventAppendsDeltasToCappedStreamedResponseText() async throws {
+    let store = InMemoryWorkflowRuntimeStore(clock: FixedWorkflowRuntimeClock(Date(timeIntervalSince1970: 100)))
+    let session = try await store.createSession(WorkflowSessionCreateInput(workflowId: "wf", entryStepId: "start"))
+    let execution = try await store.recordStepExecution(
+      WorkflowStepExecutionRecordInput(
+        sessionId: session.sessionId,
+        stepId: "start",
+        nodeId: "node-start",
+        attempt: 1,
+        backend: .codexAgent
+      )
+    )
+    let snapshot = "head" + String(repeating: "x", count: 40 * 1024) + "tail"
+
+    _ = try await store.recordStepBackendEvent(
+      WorkflowStepBackendEventInput(
+        sessionId: session.sessionId,
+        executionId: execution.executionId,
+        eventType: "assistant.snapshot",
+        channel: .assistant,
+        contentSnapshot: snapshot
+      )
+    )
+    let updated = try await store.recordStepBackendEvent(
+      WorkflowStepBackendEventInput(
+        sessionId: session.sessionId,
+        executionId: execution.executionId,
+        eventType: "assistant.delta",
+        channel: .assistant,
+        contentDelta: "delta-tail",
+        isDelta: true
+      )
+    )
+
+    let streamedResponseText = try XCTUnwrap(updated.streamedResponseText)
+    XCTAssertLessThanOrEqual(streamedResponseText.utf8.count, 32 * 1024)
+    XCTAssertTrue(streamedResponseText.hasPrefix("head"))
+    XCTAssertTrue(streamedResponseText.hasSuffix("taildelta-tail"))
   }
 
   func testMarkSessionFailedFailsRunningExecutionsAndTerminalizesSession() async throws {

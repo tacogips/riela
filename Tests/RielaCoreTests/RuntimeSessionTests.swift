@@ -59,6 +59,7 @@ final class RuntimeSessionTests: XCTestCase {
 
     XCTAssertEqual(decodedSession, session)
     XCTAssertEqual(decodedMessage, message)
+    XCTAssertEqual(decodedSession.workflowExecutionId, "session-a")
     XCTAssertEqual(decodedSession.executions.first?.adapterOutput?.provider, "codex-agent")
     XCTAssertEqual(decodedSession.executions.first?.lastBackendEventAt, date)
     XCTAssertEqual(decodedSession.executions.first?.lastBackendEventType, "turn.started")
@@ -107,7 +108,26 @@ final class RuntimeSessionTests: XCTestCase {
     XCTAssertEqual(session.executions.first?.status, .skipped)
     XCTAssertEqual(session.executions.first?.acceptedOutput?.payload["inputFilterSkipped"], .bool(true))
     XCTAssertEqual(session.executions.first?.acceptedOutput?.when["input_filter_skipped"], true)
+    XCTAssertEqual(session.executions.first?.acceptedOutput?.routingDiagnostics, [])
     XCTAssertNil(session.executions.first?.lastBackendEventAt)
     XCTAssertNil(session.executions.first?.lastBackendEventType)
+  }
+
+  func testWorkflowSessionWorkflowExecutionIdAliasesSessionId() {
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    var session = WorkflowSession(
+      workflowId: "workflow-a",
+      sessionId: "session-a",
+      entryStepId: "step-1",
+      createdAt: date,
+      updatedAt: date
+    )
+
+    XCTAssertEqual(session.workflowExecutionId, "session-a")
+
+    session.workflowExecutionId = "session-b"
+
+    XCTAssertEqual(session.sessionId, "session-b")
+    XCTAssertEqual(session.workflowExecutionId, "session-b")
   }
 }

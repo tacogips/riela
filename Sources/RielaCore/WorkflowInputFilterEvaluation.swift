@@ -341,6 +341,8 @@ private extension JSONValue {
       NSNull()
     case let .bool(value):
       value
+    case let .integer(value):
+      value
     case let .number(value):
       value
     case let .string(value):

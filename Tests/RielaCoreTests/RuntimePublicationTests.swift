@@ -15,14 +15,14 @@ final class RuntimePublicationTests: XCTestCase {
         nodeId: "node-start",
         attempt: 1,
         backend: .codexAgent,
-        adapterOutput: AdapterExecutionOutput(
+        body: .adapterOutput(AdapterExecutionOutput(
           provider: "codex-agent",
           model: "gpt-5",
           promptText: "prompt",
           completionPassed: true,
           when: ["next": true],
           payload: ["answer": .string("ok")]
-        ),
+        )),
         outputContract: WorkflowOutputContract(requiredObject: true),
         transitions: [WorkflowStepTransition(toStepId: "next", label: "next")]
       )
@@ -35,7 +35,46 @@ final class RuntimePublicationTests: XCTestCase {
     XCTAssertEqual(result.publishedMessages.first?.sourceStepExecutionId, result.stepExecution.executionId)
     XCTAssertEqual(result.publishedMessages.first?.payload, ["answer": .string("ok")])
     XCTAssertEqual(result.publishedMessages.first?.lifecycleStatus, .delivered)
+    XCTAssertEqual(result.nextStepId, "next")
+    XCTAssertEqual(result.session.currentStepId, "next")
     XCTAssertNil(result.rootOutput)
+  }
+
+  func testPublicationRecordsExplicitLoopRoutingReconciliationDiagnostic() async throws {
+    let date = Date(timeIntervalSince1970: 300)
+    let store = InMemoryWorkflowRuntimeStore(clock: FixedWorkflowRuntimeClock(date))
+    let session = try await store.createSession(WorkflowSessionCreateInput(workflowId: "wf", entryStepId: "review"))
+    let publisher = InMemoryWorkflowOutputPublisher(store: store, clock: FixedWorkflowRuntimeClock(date))
+
+    let result = try await publisher.publishAcceptedOutput(
+      WorkflowPublicationRequest(
+        sessionId: session.sessionId,
+        stepId: "review",
+        nodeId: "review-node",
+        attempt: 1,
+        body: .adapterOutput(AdapterExecutionOutput(
+          provider: "codex-agent",
+          model: "gpt-5",
+          promptText: "prompt",
+          completionPassed: true,
+          when: ["always": true],
+          payload: [
+            "decision": .string("needs_work"),
+            "goalAchieved": .bool(false)
+          ]
+        )),
+        routingReconciler: reconcileCompletionReviewRouting,
+        transitions: [
+          WorkflowStepTransition(toStepId: "rework", label: "needs_work"),
+          WorkflowStepTransition(toStepId: "done", label: "accepted")
+        ]
+      )
+    )
+
+    XCTAssertEqual(result.nextStepId, "rework")
+    XCTAssertEqual(result.stepExecution.acceptedOutput?.when, ["needs_replan": false, "needs_work": true])
+    XCTAssertEqual(result.stepExecution.acceptedOutput?.routingDiagnostics.count, 1)
+    XCTAssertTrue(result.stepExecution.acceptedOutput?.routingDiagnostics.first?.contains("reconciled") == true)
   }
 
   func testValidationFailureMarksStepFailedAndPublishesNoMessages() async throws {
@@ -50,7 +89,7 @@ final class RuntimePublicationTests: XCTestCase {
           stepId: "start",
           nodeId: "node-start",
           attempt: 1,
-          inlineCandidate: ["completionPassed": .bool(false), "when": .object(["next": .bool(true)]), "payload": .object(["answer": .string("bad")])],
+          body: .inlineCandidate(["completionPassed": .bool(false), "when": .object(["next": .bool(true)]), "payload": .object(["answer": .string("bad")])]),
           outputContract: WorkflowOutputContract(requiredObject: true),
           transitions: [WorkflowStepTransition(toStepId: "next", label: "next")]
         )
@@ -82,7 +121,7 @@ final class RuntimePublicationTests: XCTestCase {
           stepId: "start",
           nodeId: "node-start",
           attempt: 1,
-          inlineCandidate: ["answer": .string("ok")],
+          body: .inlineCandidate(["answer": .string("ok")]),
           transitions: [WorkflowStepTransition(toStepId: "next")]
         )
       )
@@ -113,7 +152,7 @@ final class RuntimePublicationTests: XCTestCase {
           stepId: "start",
           nodeId: "node-start",
           attempt: 1,
-          inlineCandidate: ["answer": .string("ok")],
+          body: .inlineCandidate(["answer": .string("ok")]),
           transitions: [
             WorkflowStepTransition(toStepId: "first"),
             WorkflowStepTransition(toStepId: "second")
@@ -140,7 +179,7 @@ final class RuntimePublicationTests: XCTestCase {
         stepId: "output",
         nodeId: "node-output",
         attempt: 1,
-        inlineCandidate: ["answer": .string("root")],
+        body: .inlineCandidate(["answer": .string("root")]),
         transitions: [],
         publishesRootOutput: true
       )
@@ -162,10 +201,10 @@ final class RuntimePublicationTests: XCTestCase {
         stepId: "output",
         nodeId: "node-output",
         attempt: 1,
-        inlineCandidate: [
+        body: .inlineCandidate([
           "when": .object(["handoff": .bool(false)]),
           "payload": .object(["answer": .string("done"), "handoff": .bool(false)])
-        ],
+        ]),
         transitions: [WorkflowStepTransition(toStepId: "next", label: "handoff")]
       )
     )
@@ -187,7 +226,7 @@ final class RuntimePublicationTests: XCTestCase {
         stepId: "cleanup",
         nodeId: "node-cleanup",
         attempt: 1,
-        inlineCandidate: ["internal": .bool(true)],
+        body: .inlineCandidate(["internal": .bool(true)]),
         transitions: []
       )
     )
@@ -236,7 +275,7 @@ final class RuntimePublicationTests: XCTestCase {
           nodeId: "node-start",
           attempt: 1,
           backend: .codexAgent,
-          adapterFailure: AdapterExecutionError(.policyBlocked, "codex login required"),
+          body: .failure(AdapterExecutionError(.policyBlocked, "codex login required")),
           transitions: [WorkflowStepTransition(toStepId: "next")]
         )
       )
@@ -253,14 +292,9 @@ final class RuntimePublicationTests: XCTestCase {
     XCTAssertEqual(updatedSession.executions.first?.failureReason, "policy_blocked: codex login required")
   }
 
-  func testPublicationRejectsAmbiguousCandidateSourcesAndFinalizesStaging() async throws {
-    let root = temporaryDirectory()
-    defer { try? FileManager.default.removeItem(at: root) }
+  func testFailurePublicationBodyCanCarryAdapterOutputMetadata() async throws {
     let store = InMemoryWorkflowRuntimeStore(clock: FixedWorkflowRuntimeClock(Date(timeIntervalSince1970: 300)))
     let session = try await store.createSession(WorkflowSessionCreateInput(workflowId: "wf", entryStepId: "start"))
-    let staging = FileSystemRuntimeCandidatePathStaging(rootDirectory: root, clock: FixedWorkflowRuntimeClock(Date(timeIntervalSince1970: 300)))
-    let reservation = try await staging.prepareCandidatePath(sessionId: session.sessionId, stepExecutionId: "exec", attempt: 1)
-    try writeCandidate(["answer": .string("from-file")], to: reservation.candidatePath)
     let publisher = InMemoryWorkflowOutputPublisher(store: store)
 
     do {
@@ -270,84 +304,33 @@ final class RuntimePublicationTests: XCTestCase {
           stepId: "start",
           nodeId: "node-start",
           attempt: 1,
-          adapterOutput: AdapterExecutionOutput(
-            provider: "codex-agent",
-            model: "gpt-5",
-            promptText: "prompt",
-            completionPassed: true,
-            payload: ["answer": .string("from-adapter")]
+          body: .failure(
+            AdapterExecutionError(.invalidOutput, "bad output"),
+            adapterOutput: AdapterExecutionOutput(
+              provider: "codex-agent",
+              model: "gpt-5",
+              promptText: "prompt",
+              completionPassed: false,
+              when: ["repair": true],
+              payload: ["answer": .string("bad")]
+            )
           ),
-          candidatePath: reservation.candidatePath,
-          candidatePathReservation: reservation,
           transitions: [WorkflowStepTransition(toStepId: "next")]
         )
       )
-      XCTFail("expected ambiguous candidate source rejection")
-    } catch WorkflowPublicationError.ambiguousCandidateSources(let sources) {
-      XCTAssertEqual(sources, ["adapterOutput", "candidatePath"])
+      XCTFail("expected adapter failure")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .invalidOutput)
     }
 
     let listedMessages = try await store.listMessages(for: session.sessionId, toStepId: nil)
     let loadedSession = try await store.loadSession(id: session.sessionId)
+    let execution = try XCTUnwrap(loadedSession?.executions.first)
     XCTAssertEqual(listedMessages, [])
-    XCTAssertEqual(loadedSession?.executions.first?.status, .failed)
-    XCTAssertFalse(FileManager.default.fileExists(atPath: reservation.stagingDirectory.path))
-  }
-
-  func testPublicationRejectsInlineCandidatePathAmbiguityAndReservationWithoutCandidatePath() async throws {
-    let root = temporaryDirectory()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let firstStore = InMemoryWorkflowRuntimeStore(clock: FixedWorkflowRuntimeClock(Date(timeIntervalSince1970: 300)))
-    let firstSession = try await firstStore.createSession(WorkflowSessionCreateInput(workflowId: "wf", entryStepId: "start"))
-    let staging = FileSystemRuntimeCandidatePathStaging(rootDirectory: root, clock: FixedWorkflowRuntimeClock(Date(timeIntervalSince1970: 300)))
-    let firstReservation = try await staging.prepareCandidatePath(sessionId: firstSession.sessionId, stepExecutionId: "exec-1", attempt: 1)
-    try writeCandidate(["answer": .string("from-file")], to: firstReservation.candidatePath)
-
-    do {
-      _ = try await InMemoryWorkflowOutputPublisher(store: firstStore).publishAcceptedOutput(
-        WorkflowPublicationRequest(
-          sessionId: firstSession.sessionId,
-          stepId: "start",
-          nodeId: "node-start",
-          attempt: 1,
-          inlineCandidate: ["answer": .string("inline")],
-          candidatePath: firstReservation.candidatePath,
-          candidatePathReservation: firstReservation,
-          transitions: [WorkflowStepTransition(toStepId: "next")]
-        )
-      )
-      XCTFail("expected ambiguous inline and candidate path rejection")
-    } catch WorkflowPublicationError.ambiguousCandidateSources(let sources) {
-      XCTAssertEqual(sources, ["inlineCandidate", "candidatePath"])
-    }
-    XCTAssertFalse(FileManager.default.fileExists(atPath: firstReservation.stagingDirectory.path))
-
-    let secondStore = InMemoryWorkflowRuntimeStore(clock: FixedWorkflowRuntimeClock(Date(timeIntervalSince1970: 300)))
-    let secondSession = try await secondStore.createSession(WorkflowSessionCreateInput(workflowId: "wf", entryStepId: "start"))
-    let secondReservation = try await staging.prepareCandidatePath(sessionId: secondSession.sessionId, stepExecutionId: "exec-2", attempt: 1)
-    try writeCandidate(["answer": .string("from-file")], to: secondReservation.candidatePath)
-
-    do {
-      _ = try await InMemoryWorkflowOutputPublisher(store: secondStore).publishAcceptedOutput(
-        WorkflowPublicationRequest(
-          sessionId: secondSession.sessionId,
-          stepId: "start",
-          nodeId: "node-start",
-          attempt: 1,
-          adapterOutput: AdapterExecutionOutput(
-            provider: "codex-agent",
-            model: "gpt-5",
-            promptText: "prompt",
-            completionPassed: true,
-            payload: ["answer": .string("adapter")]
-          ),
-          candidatePathReservation: secondReservation,
-          transitions: [WorkflowStepTransition(toStepId: "next")]
-        )
-      )
-      XCTFail("expected reservation without candidate path rejection")
-    } catch WorkflowPublicationError.candidatePathReservationRequiresCandidatePath {}
-    XCTAssertFalse(FileManager.default.fileExists(atPath: secondReservation.stagingDirectory.path))
+    XCTAssertEqual(execution.status, .failed)
+    XCTAssertEqual(execution.adapterOutput?.provider, "codex-agent")
+    XCTAssertEqual(execution.adapterOutput?.completionPassed, false)
+    XCTAssertEqual(execution.failureReason, "invalid_output: bad output")
   }
 
   func testPublicationFinalizesCandidatePathStagingAfterSuccess() async throws {
@@ -366,8 +349,7 @@ final class RuntimePublicationTests: XCTestCase {
         stepId: "start",
         nodeId: "node-start",
         attempt: 1,
-        candidatePath: reservation.candidatePath,
-        candidatePathReservation: reservation,
+        body: .candidatePath(reservation.candidatePath, reservation),
         transitions: [WorkflowStepTransition(toStepId: "next")]
       )
     )
@@ -394,8 +376,7 @@ final class RuntimePublicationTests: XCTestCase {
           stepId: "start",
           nodeId: "node-start",
           attempt: 1,
-          candidatePath: reservation.candidatePath,
-          candidatePathReservation: reservation,
+          body: .candidatePath(reservation.candidatePath, reservation),
           outputContract: WorkflowOutputContract(requiredObject: true),
           transitions: [WorkflowStepTransition(toStepId: "next")]
         )
@@ -430,8 +411,7 @@ final class RuntimePublicationTests: XCTestCase {
           stepId: "start",
           nodeId: "node-start",
           attempt: 1,
-          candidatePath: reservation.candidatePath,
-          candidatePathReservation: reservation,
+          body: .candidatePath(reservation.candidatePath, reservation),
           transitions: [WorkflowStepTransition(toStepId: "next")]
         )
       )
@@ -456,7 +436,7 @@ final class RuntimePublicationTests: XCTestCase {
         stepId: "start",
         nodeId: "node-start",
         attempt: 1,
-        inlineCandidate: ["answer": .string("ok")],
+        body: .inlineCandidate(["answer": .string("ok")]),
         transitions: [WorkflowStepTransition(toStepId: "child-start", toWorkflowId: "child-workflow", resumeStepId: "resume")]
       )
     )
@@ -470,18 +450,18 @@ final class RuntimePublicationTests: XCTestCase {
     let unsupportedTransitions: [(WorkflowStepTransition, String)] = [
       (
         WorkflowStepTransition(toStepId: "child-start", toWorkflowId: "child-workflow"),
-        "cross-workflow transitions are not supported by the Swift TASK-005 in-memory publisher"
+        "cross-workflow transitions are not supported by this in-memory publisher"
       ),
       (
         WorkflowStepTransition(toStepId: "next", resumeStepId: "resume"),
-        "resume-step transitions are not supported by the Swift TASK-005 in-memory publisher"
+        "resume-step transitions are not supported by this in-memory publisher"
       ),
       (
         WorkflowStepTransition(
           toStepId: "fanout-start",
           fanout: WorkflowStepFanout(groupId: "group", itemsFrom: "items", joinStepId: "join")
         ),
-        "fanout transitions are not supported by the Swift TASK-005 in-memory publisher"
+        "fanout transitions are not supported by this in-memory publisher"
       )
     ]
 
@@ -497,7 +477,7 @@ final class RuntimePublicationTests: XCTestCase {
             stepId: "start",
             nodeId: "node-start",
             attempt: 1,
-            inlineCandidate: ["answer": .string("ok")],
+            body: .inlineCandidate(["answer": .string("ok")]),
             transitions: [transition]
           )
         )

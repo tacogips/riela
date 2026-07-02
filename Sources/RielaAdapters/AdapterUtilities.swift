@@ -79,6 +79,8 @@ public func agentPreflightErrorDetail(
 
 public func executeWithRetry<T: Sendable>(
   policy: RetryPolicy,
+  deadline: Date? = nil,
+  now: @Sendable () -> Date = { Date() },
   operation: @Sendable () async throws -> T,
   normalizeError: @Sendable (Error) -> AdapterExecutionError
 ) async throws -> T {
@@ -86,13 +88,9 @@ public func executeWithRetry<T: Sendable>(
   while true {
     do {
       return try await operation()
-    } catch let error as AdapterExecutionError {
-      if attempt >= policy.maxAttempts || (error.code != .providerError && error.code != .timeout) {
-        throw error
-      }
     } catch {
       let normalized = normalizeError(error)
-      if attempt >= policy.maxAttempts || (normalized.code != .providerError && normalized.code != .timeout) {
+      if !shouldRetryAdapterFailure(normalized, attempt: attempt, policy: policy, deadline: deadline, now: now()) {
         throw normalized
       }
     }
@@ -100,6 +98,32 @@ public func executeWithRetry<T: Sendable>(
     attempt += 1
     try await Task.sleep(for: policy.retryDelay)
   }
+}
+
+private func shouldRetryAdapterFailure(
+  _ error: AdapterExecutionError,
+  attempt: Int,
+  policy: RetryPolicy,
+  deadline: Date?,
+  now: Date
+) -> Bool {
+  guard attempt < policy.maxAttempts, error.code == .providerError || error.code == .timeout else {
+    return false
+  }
+  guard let deadline else {
+    return true
+  }
+  guard error.code != .timeout else {
+    return false
+  }
+  return deadline > now.addingTimeInterval(timeInterval(for: policy.retryDelay))
+}
+
+private func timeInterval(for duration: Duration) -> TimeInterval {
+  let components = duration.components
+  let seconds = TimeInterval(components.seconds)
+  let fractionalSeconds = TimeInterval(components.attoseconds) / 1_000_000_000_000_000_000
+  return max(0, seconds + fractionalSeconds)
 }
 
 public func normalizeAdapterFailure(_ error: Error, fallbackMessage: String) -> AdapterExecutionError {
@@ -146,7 +170,7 @@ private func collectImagePathCandidates(
       }
     }
 
-  case .null, .bool, .number, .string:
+  case .null, .bool, .integer, .number, .string:
     return
   }
 }

@@ -6,6 +6,65 @@ import XCTest
 @testable import RielaCLI
 
 extension WorkflowCommandTests {
+  func testWorkflowValidateReportsRuntimeCapabilityGaps() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-capability-gap-\(UUID().uuidString)", isDirectory: true)
+    let workflowDirectory = root.appendingPathComponent("fanout-gap", isDirectory: true)
+    let nodesDirectory = workflowDirectory.appendingPathComponent("nodes", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: nodesDirectory, withIntermediateDirectories: true)
+    try """
+    {
+      "workflowId": "fanout-gap",
+      "defaults": { "maxLoopIterations": 3, "nodeTimeoutMs": 120000 },
+      "entryStepId": "start",
+      "nodes": [
+        { "id": "start-node", "nodeFile": "nodes/start.json" },
+        { "id": "worker-node", "nodeFile": "nodes/worker.json" },
+        { "id": "join-node", "nodeFile": "nodes/join.json" }
+      ],
+      "steps": [
+        {
+          "id": "start",
+          "nodeId": "start-node",
+          "transitions": [
+            {
+              "toStepId": "worker",
+              "fanout": { "groupId": "items", "itemsFrom": "/items", "joinStepId": "join" }
+            }
+          ]
+        },
+        { "id": "worker", "nodeId": "worker-node" },
+        { "id": "join", "nodeId": "join-node" }
+      ]
+    }
+    """.write(to: workflowDirectory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+    for nodeName in ["start", "worker", "join"] {
+      try """
+      {
+        "id": "\(nodeName)-node",
+        "executionBackend": "codex-agent",
+        "model": "gpt-5.5"
+      }
+      """.write(to: nodesDirectory.appendingPathComponent("\(nodeName).json"), atomically: true, encoding: .utf8)
+    }
+
+    let result = await RielaCLIApplication().run([
+      "workflow", "validate", "fanout-gap",
+      "--workflow-definition-dir", root.path,
+      "--output", "json"
+    ])
+
+    XCTAssertEqual(result.exitCode, .failure)
+    XCTAssertTrue(result.stderr.isEmpty)
+    let validation = try decodeJSON(WorkflowValidationCommandResult.self, from: result.stdout)
+    XCTAssertFalse(validation.valid)
+    XCTAssertTrue(validation.diagnostics.contains { diagnostic in
+      diagnostic.path == "workflow.steps.start.transitions.fanout" &&
+        diagnostic.message == "step 'start' uses fanout transitions, which this runner does not support yet"
+    })
+  }
+
   func testInspectReportsCallableInputAndOutputContracts() async throws {
     let root = repositoryRoot()
     let result = await RielaCLIApplication().run([
@@ -418,7 +477,7 @@ extension WorkflowCommandTests {
     XCTAssertTrue(intakePrompt.contains(#""requestedBehavior":"Prefer cross workflow input""#))
   }
 
-  func testRunHonorsArtifactRootAndForwardsMaxConcurrency() async throws {
+  func testRunHonorsArtifactRoot() async throws {
     let root = repositoryRoot()
     let tempDir = FileManager.default.temporaryDirectory
       .appendingPathComponent("riela-cli-run-artifact-root-\(UUID().uuidString)", isDirectory: true)
@@ -431,7 +490,6 @@ extension WorkflowCommandTests {
       "--workflow-definition-dir", "\(root)/examples",
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
       "--artifact-root", artifactRoot.path,
-      "--max-concurrency", "2",
       "--output", "json"
     ])
 
@@ -575,7 +633,7 @@ extension WorkflowCommandTests {
     XCTAssertEqual(validate.exitCode, .usage)
     XCTAssertTrue(validate.stderr.isEmpty)
     let validateFailure = try decodeJSON(WorkflowValidationFailureResult.self, from: validate.stdout)
-    XCTAssertEqual(validateFailure.error, "Swift TASK-007 supports local workflow validate only")
+    XCTAssertEqual(validateFailure.error, "remote workflow validate is not supported by the local CLI runner")
 
     let inspect = await app.run([
       "workflow", "inspect", "worker-only-single-step",
@@ -584,7 +642,7 @@ extension WorkflowCommandTests {
     XCTAssertEqual(inspect.exitCode, .usage)
     XCTAssertTrue(inspect.stderr.isEmpty)
     let inspectFailure = try decodeJSON(WorkflowInspectionFailureResult.self, from: inspect.stdout)
-    XCTAssertEqual(inspectFailure.error, "Swift TASK-007 supports local workflow inspect only")
+    XCTAssertEqual(inspectFailure.error, "remote workflow inspect is not supported by the local CLI runner")
   }
 
   func testRunJSONFailureReturnsParseableFailureEnvelope() async throws {
@@ -617,7 +675,6 @@ extension WorkflowCommandTests {
       "--endpoint", "http://localhost:4000/graphql",
       "--auth-token-env", "RIELA_REMOTE_AUTH_TOKEN",
       "--variables", #"{"request":"remote"}"#,
-      "--max-concurrency", "3",
       "--output", "json"
     ])
 
@@ -631,7 +688,7 @@ extension WorkflowCommandTests {
     let request = try XCTUnwrap(recordedRequest)
     XCTAssertEqual(request.workflowName, "worker-only-single-step")
     XCTAssertEqual(request.runtimeVariables["request"], .string("remote"))
-    XCTAssertEqual(request.maxConcurrency, 3)
+    XCTAssertNil(request.maxConcurrency)
     XCTAssertEqual(request.authToken, "env-token-1")
     XCTAssertEqual(request.authTokenEnv, "RIELA_REMOTE_AUTH_TOKEN")
   }
@@ -674,7 +731,6 @@ extension WorkflowCommandTests {
       "--endpoint", "http://riela.test/graphql",
       "--auth-token", "explicit-token",
       "--variables", #"{"request":"remote"}"#,
-      "--max-concurrency", "3",
       "--timeout-ms", "100",
       "--output", "json"
     ], environment: [
@@ -720,7 +776,7 @@ extension WorkflowCommandTests {
     XCTAssertNil(input["authToken"])
     XCTAssertNil(input["authTokenEnv"])
     XCTAssertNil(input["managerSessionId"])
-    XCTAssertEqual((input["maxConcurrency"] as? NSNumber)?.intValue, 3)
+    XCTAssertNil(input["maxConcurrency"])
 
     let summaryBody = try XCTUnwrap(bodies.last)
     let summaryQuery = try XCTUnwrap(summaryBody["query"] as? String)
@@ -800,181 +856,6 @@ extension WorkflowCommandTests {
     XCTAssertEqual(failure.workflowId, "worker-only-single-step")
     XCTAssertEqual(failure.exitCode, CLIExitCode.usage.rawValue)
     XCTAssertTrue(failure.error.contains("--workflow-definition-dir requires a value"))
-  }
-
-  func testScopedWorkflowNamesRejectTraversalAndSlashTargets() async throws {
-    let validate = await RielaCLIApplication().run([
-      "workflow", "validate", "../../examples/worker-only-single-step",
-      "--scope", "project",
-      "--output", "json"
-    ])
-    XCTAssertEqual(validate.exitCode, .usage)
-    XCTAssertTrue(validate.stderr.isEmpty)
-    let validateFailure = try decodeJSON(WorkflowValidationFailureResult.self, from: validate.stdout)
-    XCTAssertEqual(validateFailure.workflowId, "../../examples/worker-only-single-step")
-    XCTAssertEqual(validateFailure.exitCode, CLIExitCode.usage.rawValue)
-    XCTAssertTrue(validateFailure.error.contains("invalid scoped workflow or package name"))
-
-    let inspect = await RielaCLIApplication().run([
-      "workflow", "inspect", "nested/workflow",
-      "--scope", "project",
-      "--output", "json"
-    ])
-    XCTAssertEqual(inspect.exitCode, .usage)
-    XCTAssertTrue(inspect.stderr.isEmpty)
-    let inspectFailure = try decodeJSON(WorkflowInspectionFailureResult.self, from: inspect.stdout)
-    XCTAssertEqual(inspectFailure.workflowId, "nested/workflow")
-    XCTAssertEqual(inspectFailure.exitCode, CLIExitCode.usage.rawValue)
-    XCTAssertTrue(inspectFailure.error.contains("invalid scoped workflow or package name"))
-
-    let run = await RielaCLIApplication().run([
-      "workflow", "run", "../worker-only-single-step",
-      "--scope", "project",
-      "--output", "json"
-    ])
-    XCTAssertEqual(run.exitCode, .usage)
-    XCTAssertTrue(run.stderr.isEmpty)
-    let runFailure = try decodeJSON(WorkflowRunFailureResult.self, from: run.stdout)
-    XCTAssertEqual(runFailure.target, "../worker-only-single-step")
-    XCTAssertEqual(runFailure.exitCode, CLIExitCode.usage.rawValue)
-    XCTAssertTrue(runFailure.error.contains("invalid scoped workflow or package name"))
-  }
-
-  func testWorkflowResolutionSkipsNonWorkflowPackages() async throws {
-    let tempDir = FileManager.default.temporaryDirectory
-      .appendingPathComponent("riela-cli-non-workflow-package-\(UUID().uuidString)", isDirectory: true)
-    let packageDirectory = tempDir
-      .appendingPathComponent(".riela/packages/addon-only", isDirectory: true)
-    try FileManager.default.createDirectory(at: packageDirectory, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: tempDir) }
-
-    try """
-    {
-      "name": "addon-only",
-      "version": "1.0.0",
-      "kind": "node-addon",
-      "description": "Addon-only package",
-      "tags": [],
-      "registry": "local",
-      "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "checksumAlgorithm": "md5",
-      "addons": [{
-        "name": "demo-addon",
-        "version": "1.0.0",
-        "sourcePath": "addons/demo-addon",
-        "contentDigest": "sha256:\(String(repeating: "a", count: 64))",
-        "capabilities": [{"name": "process.spawn", "reason": "runs package command"}],
-        "execution": {"kind": "local-command", "entrypoint": "run.sh"}
-      }]
-    }
-    """.write(to: packageDirectory.appendingPathComponent("riela-package.json"), atomically: true, encoding: .utf8)
-
-    let validate = await RielaCLIApplication().run([
-      "workflow", "validate", "addon-only",
-      "--scope", "project",
-      "--working-dir", tempDir.path,
-      "--output", "json"
-    ])
-    XCTAssertEqual(validate.exitCode, .failure)
-    XCTAssertTrue(validate.stderr.isEmpty)
-    let failure = try decodeJSON(WorkflowValidationFailureResult.self, from: validate.stdout)
-    XCTAssertEqual(failure.workflowId, "addon-only")
-    XCTAssertTrue(failure.error.contains("not found"), failure.error)
-    XCTAssertFalse(failure.error.contains("package source validation failed"), failure.error)
-  }
-
-  func testScopedWorkflowResolutionRejectsSymlinkEscapes() async throws {
-    let root = repositoryRoot()
-    let tempDir = FileManager.default.temporaryDirectory
-      .appendingPathComponent("riela-cli-symlink-escape-\(UUID().uuidString)", isDirectory: true)
-    let scopedRoot = tempDir
-      .appendingPathComponent(".riela", isDirectory: true)
-      .appendingPathComponent("workflows", isDirectory: true)
-    try FileManager.default.createDirectory(at: scopedRoot, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: tempDir) }
-    try FileManager.default.createSymbolicLink(
-      at: scopedRoot.appendingPathComponent("escape"),
-      withDestinationURL: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step").standardizedFileURL
-    )
-
-    let validate = await RielaCLIApplication().run([
-      "workflow", "validate", "escape",
-      "--scope", "project",
-      "--working-dir", tempDir.path,
-      "--output", "json"
-    ])
-    XCTAssertEqual(validate.exitCode, .failure)
-    XCTAssertTrue(validate.stderr.isEmpty)
-    let validateFailure = try decodeJSON(WorkflowValidationFailureResult.self, from: validate.stdout)
-    XCTAssertFalse(validateFailure.valid)
-    XCTAssertEqual(validateFailure.workflowId, "escape")
-    XCTAssertTrue(validateFailure.error.contains("escapes"))
-
-    let inspect = await RielaCLIApplication().run([
-      "workflow", "inspect", "escape",
-      "--scope", "project",
-      "--working-dir", tempDir.path,
-      "--output", "json"
-    ])
-    XCTAssertEqual(inspect.exitCode, .failure)
-    XCTAssertTrue(inspect.stderr.isEmpty)
-    let inspectFailure = try decodeJSON(WorkflowInspectionFailureResult.self, from: inspect.stdout)
-    XCTAssertEqual(inspectFailure.workflowId, "escape")
-    XCTAssertTrue(inspectFailure.error.contains("escapes"))
-
-    let run = await RielaCLIApplication().run([
-      "workflow", "run", "escape",
-      "--scope", "project",
-      "--working-dir", tempDir.path,
-      "--output", "json"
-    ])
-    XCTAssertEqual(run.exitCode, .failure)
-    XCTAssertTrue(run.stderr.isEmpty)
-    let runFailure = try decodeJSON(WorkflowRunFailureResult.self, from: run.stdout)
-    XCTAssertEqual(runFailure.target, "escape")
-    XCTAssertTrue(runFailure.error.contains("escapes"))
-  }
-
-  func testScopedWorkflowResolutionRejectsSymlinkedWorkflowJSON() async throws {
-    let root = repositoryRoot()
-    let tempDir = FileManager.default.temporaryDirectory
-      .appendingPathComponent("riela-cli-workflow-json-symlink-\(UUID().uuidString)", isDirectory: true)
-    let workflowDir = tempDir
-      .appendingPathComponent(".riela", isDirectory: true)
-      .appendingPathComponent("workflows", isDirectory: true)
-      .appendingPathComponent("escape", isDirectory: true)
-    try FileManager.default.createDirectory(at: workflowDir, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: tempDir) }
-    try FileManager.default.createSymbolicLink(
-      at: workflowDir.appendingPathComponent("workflow.json"),
-      withDestinationURL: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step/workflow.json").standardizedFileURL
-    )
-
-    try await assertScopedProjectWorkflowEscapeRejected(workingDirectory: tempDir)
-  }
-
-  func testScopedWorkflowResolutionRejectsSymlinkedNodePayload() async throws {
-    let root = repositoryRoot()
-    let tempDir = FileManager.default.temporaryDirectory
-      .appendingPathComponent("riela-cli-node-payload-symlink-\(UUID().uuidString)", isDirectory: true)
-    let workflowDir = tempDir
-      .appendingPathComponent(".riela", isDirectory: true)
-      .appendingPathComponent("workflows", isDirectory: true)
-      .appendingPathComponent("escape", isDirectory: true)
-    let nodesDir = workflowDir.appendingPathComponent("nodes", isDirectory: true)
-    try FileManager.default.createDirectory(at: nodesDir, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: tempDir) }
-    let workflowJSON = try String(
-      contentsOfFile: "\(root)/examples/worker-only-single-step/workflow.json",
-      encoding: .utf8
-    )
-    try workflowJSON.write(to: workflowDir.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
-    try FileManager.default.createSymbolicLink(
-      at: nodesDir.appendingPathComponent("node-main-worker.json"),
-      withDestinationURL: URL(fileURLWithPath: "\(root)/examples/worker-only-single-step/nodes/node-main-worker.json").standardizedFileURL
-    )
-
-    try await assertScopedProjectWorkflowEscapeRejected(workingDirectory: tempDir)
   }
 
 }

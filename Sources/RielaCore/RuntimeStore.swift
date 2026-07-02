@@ -129,6 +129,7 @@ public struct WorkflowStepExecutionUpdateInput: Equatable, Sendable {
   public var adapterOutput: WorkflowAdapterOutputMetadata?
   public var failureReason: String?
   public var completesRootWithoutOutput: Bool
+  public var currentStepId: String?
 
   public init(
     sessionId: String,
@@ -137,7 +138,8 @@ public struct WorkflowStepExecutionUpdateInput: Equatable, Sendable {
     acceptedOutput: WorkflowAcceptedOutputMetadata? = nil,
     adapterOutput: WorkflowAdapterOutputMetadata? = nil,
     failureReason: String? = nil,
-    completesRootWithoutOutput: Bool = false
+    completesRootWithoutOutput: Bool = false,
+    currentStepId: String? = nil
   ) {
     self.sessionId = sessionId
     self.executionId = executionId
@@ -146,6 +148,7 @@ public struct WorkflowStepExecutionUpdateInput: Equatable, Sendable {
     self.adapterOutput = adapterOutput
     self.failureReason = failureReason
     self.completesRootWithoutOutput = completesRootWithoutOutput
+    self.currentStepId = currentStepId
   }
 }
 
@@ -199,6 +202,18 @@ public struct WorkflowStepBackendEventInput: Equatable, Sendable {
   }
 }
 
+public struct WorkflowBackendEventReceipt: Equatable, Sendable {
+  public var executionId: String
+  public var sequence: Int?
+  public var at: Date?
+
+  public init(executionId: String, sequence: Int?, at: Date?) {
+    self.executionId = executionId
+    self.sequence = sequence
+    self.at = at
+  }
+}
+
 public struct WorkflowMessageAppendInput: Equatable, Sendable {
   public var workflowExecutionId: String
   public var fromStepId: String?
@@ -245,10 +260,22 @@ public protocol WorkflowRuntimeStore: Sendable {
   func updateStepExecution(_ input: WorkflowStepExecutionUpdateInput) async throws -> WorkflowStepExecution
   func markSessionFailed(_ input: WorkflowSessionFailureInput) async throws -> WorkflowSession
   func recordStepBackendEvent(_ input: WorkflowStepBackendEventInput) async throws -> WorkflowStepExecution
+  func recordStepBackendEventReceipt(_ input: WorkflowStepBackendEventInput) async throws -> WorkflowBackendEventReceipt
   func appendWorkflowMessage(_ input: WorkflowMessageAppendInput) async throws -> WorkflowMessageRecord
   func appendWorkflowMessages(_ inputs: [WorkflowMessageAppendInput]) async throws -> [WorkflowMessageRecord]
   func listMessages(for sessionId: String, toStepId: String?) async throws -> [WorkflowMessageRecord]
   func loadSession(id: String) async throws -> WorkflowSession?
+}
+
+public extension WorkflowRuntimeStore {
+  func recordStepBackendEventReceipt(_ input: WorkflowStepBackendEventInput) async throws -> WorkflowBackendEventReceipt {
+    let execution = try await recordStepBackendEvent(input)
+    return WorkflowBackendEventReceipt(
+      executionId: execution.executionId,
+      sequence: execution.backendEventCount,
+      at: execution.lastBackendEventAt
+    )
+  }
 }
 
 public struct WorkflowResolvedMessageInput: Codable, Equatable, Sendable {
@@ -385,6 +412,7 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
   private let idGenerator: any WorkflowRuntimeIDGenerating
   private let appendFailurePredicate: AppendFailurePredicate?
   private var sessions: [String: WorkflowSession] = [:]
+  private var executionLiveTails: [String: WorkflowExecutionLiveTail] = [:]
   private var messagesBySession: [String: [WorkflowMessageRecord]] = [:]
   private var createdOrder = 0
 
@@ -400,7 +428,7 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
 
   public func seedSession(_ session: WorkflowSession) {
     idGenerator.noteExistingSessionId(session.sessionId, workflowId: session.workflowId)
-    sessions[session.sessionId] = session
+    sessions[session.sessionId] = detachingBackendLiveTails(from: session)
     if messagesBySession[session.sessionId] == nil {
       messagesBySession[session.sessionId] = []
     }
@@ -418,10 +446,11 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
   }
 
   public func latestSession(workflowId: String) -> WorkflowSession? {
-    sessions.values
+    let latest = sessions.values
       .filter { $0.workflowId == workflowId }
       .sorted { $0.createdAt < $1.createdAt }
       .last
+    return latest.map(projectBackendLiveTails(on:))
   }
 
   public func createSession(_ input: WorkflowSessionCreateInput) async throws -> WorkflowSession {
@@ -503,8 +532,12 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     case .completed, .running, .skipped:
       session.status = .running
     }
+    if let currentStepId = input.currentStepId {
+      session.currentStepId = currentStepId
+    }
+    session.executions[index] = execution.withoutBackendLiveTail()
     sessions[input.sessionId] = session
-    return execution
+    return projectBackendLiveTail(on: execution)
   }
 
   public func markSessionFailed(_ input: WorkflowSessionFailureInput) async throws -> WorkflowSession {
@@ -526,40 +559,61 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
       return failedExecution
     }
     sessions[input.sessionId] = session
-    return session
+    return projectBackendLiveTails(on: session)
   }
 
   public func recordStepBackendEvent(_ input: WorkflowStepBackendEventInput) async throws -> WorkflowStepExecution {
-    guard var session = sessions[input.sessionId] else {
+    _ = try recordStepBackendEventReceiptLocked(input)
+    guard let session = sessions[input.sessionId],
+          let index = session.executions.firstIndex(where: { $0.executionId == input.executionId }) else {
+      throw WorkflowRuntimeStoreError.stepExecutionNotFound(input.executionId)
+    }
+    return projectBackendLiveTail(on: session.executions[index])
+  }
+
+  public func recordStepBackendEventReceipt(_ input: WorkflowStepBackendEventInput) async throws -> WorkflowBackendEventReceipt {
+    try recordStepBackendEventReceiptLocked(input)
+  }
+
+  private func recordStepBackendEventReceiptLocked(_ input: WorkflowStepBackendEventInput) throws -> WorkflowBackendEventReceipt {
+    guard let session = sessions[input.sessionId] else {
       throw WorkflowRuntimeStoreError.sessionNotFound(input.sessionId)
     }
     guard let index = session.executions.firstIndex(where: { $0.executionId == input.executionId }) else {
       throw WorkflowRuntimeStoreError.stepExecutionNotFound(input.executionId)
     }
-    guard session.executions[index].status == .running else {
-      return session.executions[index]
+    let execution = projectBackendLiveTail(on: session.executions[index])
+    guard execution.status == .running else {
+      return WorkflowBackendEventReceipt(
+        executionId: execution.executionId,
+        sequence: execution.backendEventCount,
+        at: execution.lastBackendEventAt
+      )
     }
 
     let date = input.at ?? clock.now()
-    let sequence = input.sequence ?? ((session.executions[index].backendEventCount ?? 0) + 1)
-    var execution = session.executions[index]
-    execution.lastBackendEventAt = date
-    execution.lastBackendEventType = input.eventType
-    execution.backendEventCount = sequence
-    appendRecentBackendEvent(to: &execution, input: input, sequence: sequence, date: date)
-    updateStreamedResponseText(on: &execution, input: input)
-    session.executions[index] = execution
-    sessions[input.sessionId] = session
-    return execution
+    var liveTail = executionLiveTails[input.executionId] ?? WorkflowExecutionLiveTail(execution: execution)
+    let sequence = input.sequence ?? ((liveTail.backendEventCount ?? 0) + 1)
+    liveTail.lastBackendEventAt = date
+    liveTail.lastBackendEventType = input.eventType
+    liveTail.backendEventCount = sequence
+    appendRecentBackendEvent(to: &liveTail, input: input, sequence: sequence, date: date)
+    updateStreamedResponseText(on: &liveTail, input: input)
+    executionLiveTails[input.executionId] = liveTail
+    return WorkflowBackendEventReceipt(
+      executionId: input.executionId,
+      sequence: sequence,
+      at: date
+    )
   }
 
   private func appendRecentBackendEvent(
-    to execution: inout WorkflowStepExecution,
+    to liveTail: inout WorkflowExecutionLiveTail,
     input: WorkflowStepBackendEventInput,
     sequence: Int,
     date: Date
   ) {
-    var events = execution.recentBackendEvents ?? []
+    var events = liveTail.recentBackendEvents ?? []
     events.append(WorkflowBackendEventRecord(
       sequence: sequence,
       at: date,
@@ -571,28 +625,33 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     if events.count > 100 {
       events.removeFirst(events.count - 100)
     }
-    execution.recentBackendEvents = events
+    liveTail.recentBackendEvents = events
   }
 
   private func updateStreamedResponseText(
-    on execution: inout WorkflowStepExecution,
+    on liveTail: inout WorkflowExecutionLiveTail,
     input: WorkflowStepBackendEventInput
   ) {
     guard input.channel == .assistant else {
       return
     }
     if let snapshot = input.contentSnapshot {
-      execution.streamedResponseText = cappedStreamedResponseText(snapshot)
+      liveTail.streamedResponseText = cappedStreamedResponseText(snapshot)
       return
     }
     guard let delta = input.contentDelta else {
       return
     }
-    execution.streamedResponseText = cappedStreamedResponseText((execution.streamedResponseText ?? "") + delta)
+    liveTail.streamedResponseText = cappedStreamedResponseText(
+      appending: delta,
+      to: liveTail.streamedResponseText
+    )
   }
 
+  private var streamedResponseTextByteCap: Int { 32 * 1024 }
+
   private func cappedStreamedResponseText(_ text: String) -> String {
-    let cap = 32 * 1024
+    let cap = streamedResponseTextByteCap
     guard text.utf8.count > cap else {
       return text
     }
@@ -601,14 +660,34 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     return byteBoundPrefix(text, limit: prefixCap) + byteBoundSuffix(text, limit: suffixCap)
   }
 
+  private func cappedStreamedResponseText(appending delta: String, to current: String?) -> String {
+    guard let current, !current.isEmpty else {
+      return cappedStreamedResponseText(delta)
+    }
+    let cap = streamedResponseTextByteCap
+    guard current.utf8.count + delta.utf8.count > cap else {
+      return current + delta
+    }
+    guard current.utf8.count >= cap else {
+      return cappedStreamedResponseText(current + delta)
+    }
+    let prefixCap = cap / 2
+    let suffixCap = cap - prefixCap
+    return byteBoundPrefix(current, limit: prefixCap)
+      + byteBoundSuffix(byteBoundSuffix(current, limit: suffixCap) + delta, limit: suffixCap)
+  }
+
   private func byteBoundPrefix(_ text: String, limit: Int) -> String {
     var prefix = ""
     prefix.reserveCapacity(limit)
+    var bytes = 0
     for character in text {
-      guard prefix.utf8.count + String(character).utf8.count <= limit else {
+      let characterBytes = String(character).utf8.count
+      guard bytes + characterBytes <= limit else {
         break
       }
       prefix.append(character)
+      bytes += characterBytes
     }
     return prefix
   }
@@ -675,7 +754,6 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     }
     messagesBySession[firstInput.workflowExecutionId, default: []].append(contentsOf: records)
     if var session = sessions[firstInput.workflowExecutionId] {
-      session.currentStepId = records.first?.toStepId
       session.updatedAt = records.last?.createdAt ?? session.updatedAt
       sessions[firstInput.workflowExecutionId] = session
     }
@@ -694,7 +772,75 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
   }
 
   public func loadSession(id: String) async throws -> WorkflowSession? {
-    sessions[id]
+    sessions[id].map(projectBackendLiveTails(on:))
+  }
+
+  private func detachingBackendLiveTails(from session: WorkflowSession) -> WorkflowSession {
+    var detached = session
+    detached.executions = session.executions.map { execution in
+      let liveTail = WorkflowExecutionLiveTail(execution: execution)
+      if !liveTail.isEmpty {
+        executionLiveTails[execution.executionId] = liveTail
+      }
+      return execution.withoutBackendLiveTail()
+    }
+    return detached
+  }
+
+  private func projectBackendLiveTails(on session: WorkflowSession) -> WorkflowSession {
+    var projected = session
+    projected.executions = session.executions.map(projectBackendLiveTail(on:))
+    return projected
+  }
+
+  private func projectBackendLiveTail(on execution: WorkflowStepExecution) -> WorkflowStepExecution {
+    executionLiveTails[execution.executionId]?.applying(to: execution) ?? execution
+  }
+}
+
+private struct WorkflowExecutionLiveTail: Sendable {
+  var lastBackendEventAt: Date?
+  var lastBackendEventType: String?
+  var backendEventCount: Int?
+  var recentBackendEvents: [WorkflowBackendEventRecord]?
+  var streamedResponseText: String?
+
+  init(execution: WorkflowStepExecution) {
+    self.lastBackendEventAt = execution.lastBackendEventAt
+    self.lastBackendEventType = execution.lastBackendEventType
+    self.backendEventCount = execution.backendEventCount
+    self.recentBackendEvents = execution.recentBackendEvents
+    self.streamedResponseText = execution.streamedResponseText
+  }
+
+  var isEmpty: Bool {
+    lastBackendEventAt == nil
+      && lastBackendEventType == nil
+      && backendEventCount == nil
+      && recentBackendEvents == nil
+      && streamedResponseText == nil
+  }
+
+  func applying(to execution: WorkflowStepExecution) -> WorkflowStepExecution {
+    var projected = execution
+    projected.lastBackendEventAt = lastBackendEventAt
+    projected.lastBackendEventType = lastBackendEventType
+    projected.backendEventCount = backendEventCount
+    projected.recentBackendEvents = recentBackendEvents
+    projected.streamedResponseText = streamedResponseText
+    return projected
+  }
+}
+
+private extension WorkflowStepExecution {
+  func withoutBackendLiveTail() -> WorkflowStepExecution {
+    var execution = self
+    execution.lastBackendEventAt = nil
+    execution.lastBackendEventType = nil
+    execution.backendEventCount = nil
+    execution.recentBackendEvents = nil
+    execution.streamedResponseText = nil
+    return execution
   }
 }
 

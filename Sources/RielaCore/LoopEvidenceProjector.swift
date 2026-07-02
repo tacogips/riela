@@ -332,10 +332,14 @@ private func stringValue(_ value: JSONValue?) -> String? {
 }
 
 private func intValue(_ value: JSONValue?) -> Int? {
-  guard case let .number(value)? = value else {
+  switch value {
+  case .integer(let value):
+    return Int(value)
+  case .number(let value):
+    return Int(value)
+  default:
     return nil
   }
-  return Int(value)
 }
 
 private func boolValue(_ value: JSONValue?) -> Bool? {

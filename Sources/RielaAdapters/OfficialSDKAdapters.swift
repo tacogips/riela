@@ -497,36 +497,21 @@ private func retryOfficialSDKRequest<T: Sendable>(
   sensitiveValues: [String],
   operation: @Sendable @escaping () async throws -> T
 ) async throws -> T {
-  var attempt = 1
-  while true {
-    do {
-      return try await runWithDeadline(deadline, timeoutMessage: timeoutMessage, operation: operation)
-    } catch {
-      let normalized = normalizeOfficialSDKFailure(
-        error,
-        timeoutMessage: timeoutMessage,
-        fallbackFailureMessage: fallbackFailureMessage,
-        sensitiveValues: sensitiveValues
-      )
-      if attempt >= policy.maxAttempts || !isRetryableOfficialSDKFailure(normalized) || deadlineHasPassed(deadline) {
-        throw normalized
-      }
-    }
-
-    attempt += 1
-    do {
-      try await runWithDeadline(deadline, timeoutMessage: timeoutMessage) {
-        try await Task.sleep(for: policy.retryDelay)
-      }
-    } catch {
-      throw normalizeOfficialSDKFailure(
+  try await executeWithRetry(
+    policy: policy,
+    deadline: deadline,
+    operation: {
+      try await runWithDeadline(deadline, timeoutMessage: timeoutMessage, operation: operation)
+    },
+    normalizeError: { error in
+      normalizeOfficialSDKFailure(
         error,
         timeoutMessage: timeoutMessage,
         fallbackFailureMessage: fallbackFailureMessage,
         sensitiveValues: sensitiveValues
       )
     }
-  }
+  )
 }
 
 private func runWithDeadline<T: Sendable>(
@@ -578,17 +563,6 @@ private func normalizeOfficialSDKFailure(
     normalized.code,
     redactOfficialSDKSensitiveText(normalized.message, sensitiveValues: sensitiveValues)
   )
-}
-
-private func isRetryableOfficialSDKFailure(_ error: AdapterExecutionError) -> Bool {
-  error.code == .providerError || error.code == .timeout
-}
-
-private func deadlineHasPassed(_ deadline: Date?) -> Bool {
-  guard let deadline else {
-    return false
-  }
-  return deadline <= Date()
 }
 
 private func redactOfficialSDKSensitiveText(_ text: String, sensitiveValues: [String]) -> String {

@@ -538,10 +538,10 @@ private func stringValue(_ value: JSONValue?) -> String? {
 }
 
 private func intValue(_ value: JSONValue?) -> Int? {
-  guard case let .number(number)? = value, number.isFinite else {
+  guard let int64 = value?.asInt64 else {
     return nil
   }
-  return Int(number)
+  return Int(exactly: int64)
 }
 
 private extension Calendar {

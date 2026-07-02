@@ -340,7 +340,7 @@ public struct DefaultWorkflowOutputValidator: WorkflowOutputValidating {
     if case let .string(stringValue) = value, let reason = validateString(stringValue, schema: schema, path: path) {
       return reason
     }
-    if case let .number(numberValue) = value, let reason = validateNumber(numberValue, schema: schema, path: path) {
+    if let numberValue = value.asDouble, let reason = validateNumber(numberValue, schema: schema, path: path) {
       return reason
     }
     if case let .array(arrayValue) = value, let reason = validateArray(arrayValue, schema: schema, path: path) {
@@ -510,10 +510,7 @@ private extension JSONValue {
   }
 
   var numberValue: Double? {
-    guard case let .number(value) = self else {
-      return nil
-    }
-    return value
+    asDouble
   }
 
   var objectValue: JSONObject? {
@@ -525,10 +522,14 @@ private extension JSONValue {
 
   func matchesSchemaType(_ type: String) -> Bool {
     switch (type, self) {
-    case ("null", .null), ("boolean", .bool), ("number", .number), ("string", .string), ("array", .array), ("object", .object):
+    case ("null", .null), ("boolean", .bool), ("string", .string), ("array", .array), ("object", .object):
+      return true
+    case ("number", .integer), ("number", .number):
+      return true
+    case ("integer", .integer):
       return true
     case ("integer", .number(let value)):
-      return value.rounded() == value
+      return value.isFinite && value.rounded(.towardZero) == value
     default:
       return false
     }

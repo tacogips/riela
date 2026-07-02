@@ -1,6 +1,6 @@
 import Foundation
 import RielaCore
-import SQLite3
+import RielaSQLite
 
 public struct PersistedCLIWorkflowSession: Codable, Equatable, Sendable {
   public var workflowName: String
@@ -74,9 +74,6 @@ public struct CLIWorkflowSessionStore: Sendable {
     }
     try FileManager.default.createDirectory(atPath: rootDirectory, withIntermediateDirectories: true)
     let db = try openDatabase()
-    defer {
-      sqlite3_close(db)
-    }
     try ensureSchema(db)
     try upsertRecord(db, record)
   }
@@ -92,20 +89,72 @@ public struct CLIWorkflowSessionStore: Sendable {
       throw CLIWorkflowSessionStoreError.invalidSessionId(record.session.sessionId)
     }
     try FileManager.default.createDirectory(atPath: rootDirectory, withIntermediateDirectories: true)
-    let db = try openDatabase()
-    defer {
-      sqlite3_close(db)
+    let db = try openPersistenceDatabase()
+    let runtimeStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: rootDirectory))
+    try prepareRuntimePersistenceSchemas(in: db, runtimeStore: runtimeStore)
+    try save(record, runtimeSnapshot: snapshot, in: db, runtimeStore: runtimeStore)
+  }
+
+  public func save(
+    _ record: PersistedCLIWorkflowSession,
+    runtimeSnapshot snapshot: WorkflowRuntimePersistenceSnapshot,
+    appendingWorkflowMessages messages: [WorkflowMessageRecord]
+  ) throws {
+    guard record.session.sessionId == snapshot.session.sessionId else {
+      throw CLIWorkflowSessionStoreError.invalidSessionId(snapshot.session.sessionId)
     }
-    try execute(db, "BEGIN IMMEDIATE")
-    do {
-      try ensureSchema(db)
-      try upsertRecord(db, record)
-      try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: rootDirectory))
-        .save(snapshot, in: db)
-      try execute(db, "COMMIT")
-    } catch {
-      try? execute(db, "ROLLBACK")
-      throw error
+    guard isSafeSessionId(record.session.sessionId) else {
+      throw CLIWorkflowSessionStoreError.invalidSessionId(record.session.sessionId)
+    }
+    try FileManager.default.createDirectory(atPath: rootDirectory, withIntermediateDirectories: true)
+    let db = try openPersistenceDatabase()
+    let runtimeStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: rootDirectory))
+    try prepareRuntimePersistenceSchemas(in: db, runtimeStore: runtimeStore)
+    try save(
+      record,
+      runtimeSnapshot: snapshot,
+      appendingWorkflowMessages: messages,
+      in: db,
+      runtimeStore: runtimeStore
+    )
+  }
+
+  func openPersistenceDatabase(readOnly: Bool = false) throws -> SQLiteDatabase {
+    try openDatabase(readOnly: readOnly)
+  }
+
+  func prepareRuntimePersistenceSchemas(
+    in db: SQLiteDatabase,
+    runtimeStore: SQLiteWorkflowRuntimePersistenceStore
+  ) throws {
+    try ensureSchema(db)
+    try runtimeStore.prepareSchema(in: db)
+  }
+
+  func save(
+    _ record: PersistedCLIWorkflowSession,
+    runtimeSnapshot snapshot: WorkflowRuntimePersistenceSnapshot,
+    in db: SQLiteDatabase,
+    runtimeStore: SQLiteWorkflowRuntimePersistenceStore
+  ) throws {
+    try validate(record: record, snapshot: snapshot)
+    try db.transaction { database in
+      try upsertRecord(database, record)
+      try runtimeStore.save(snapshot, in: database)
+    }
+  }
+
+  func save(
+    _ record: PersistedCLIWorkflowSession,
+    runtimeSnapshot snapshot: WorkflowRuntimePersistenceSnapshot,
+    appendingWorkflowMessages messages: [WorkflowMessageRecord],
+    in db: SQLiteDatabase,
+    runtimeStore: SQLiteWorkflowRuntimePersistenceStore
+  ) throws {
+    try validate(record: record, snapshot: snapshot)
+    try db.transaction { database in
+      try upsertRecord(database, record)
+      try runtimeStore.save(snapshot, appendingWorkflowMessages: messages, in: database)
     }
   }
 
@@ -117,18 +166,16 @@ public struct CLIWorkflowSessionStore: Sendable {
       throw CLIWorkflowSessionStoreError.notFound("session not found: \(sessionId)")
     }
     let db = try openDatabase(readOnly: true)
-    defer {
-      sqlite3_close(db)
-    }
     guard try tableExists(db, name: "cli_workflow_sessions") else {
       throw CLIWorkflowSessionStoreError.notFound("session not found: \(sessionId)")
     }
-    let rows = try queryRows(
-      db,
-      sql: "SELECT json(record_json) AS record_json FROM cli_workflow_sessions WHERE session_id = ? LIMIT 1",
+    let rows = try mapSQLiteError {
+      try db.query(
+        "SELECT json(record_json) AS record_json FROM cli_workflow_sessions WHERE session_id = ? LIMIT 1",
       bindings: [.text(sessionId)]
-    )
-    guard let recordText = rows.first?["record_json"] ?? nil else {
+      )
+    }
+    guard let recordText = rows.first?["record_json"] else {
       throw CLIWorkflowSessionStoreError.notFound("session not found: \(sessionId)")
     }
     return try decodeRecord(recordText)
@@ -139,18 +186,13 @@ public struct CLIWorkflowSessionStore: Sendable {
       return []
     }
     let db = try openDatabase(readOnly: true)
-    defer {
-      sqlite3_close(db)
-    }
     guard try tableExists(db, name: "cli_workflow_sessions") else {
       return []
     }
-    return try queryRows(
-      db,
-      sql: "SELECT json(record_json) AS record_json FROM cli_workflow_sessions ORDER BY session_id",
-      bindings: []
-    ).compactMap { row in
-      guard let recordText = row["record_json"] ?? nil else {
+    return try mapSQLiteError {
+      try db.query("SELECT json(record_json) AS record_json FROM cli_workflow_sessions ORDER BY session_id")
+    }.compactMap { row in
+      guard let recordText = row["record_json"] else {
         return nil
       }
       return try decodeRecord(recordText)
@@ -168,27 +210,32 @@ public struct CLIWorkflowSessionStore: Sendable {
     Self.defaultDatabasePath(rootDirectory: rootDirectory)
   }
 
-  private func openDatabase(readOnly: Bool = false) throws -> OpaquePointer? {
-    let directory = URL(fileURLWithPath: databasePath).deletingLastPathComponent()
-    if !readOnly {
-      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  private func validate(
+    record: PersistedCLIWorkflowSession,
+    snapshot: WorkflowRuntimePersistenceSnapshot
+  ) throws {
+    guard record.session.sessionId == snapshot.session.sessionId else {
+      throw CLIWorkflowSessionStoreError.invalidSessionId(snapshot.session.sessionId)
     }
-    var db: OpaquePointer?
-    let flags = readOnly ? SQLITE_OPEN_READONLY : SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE
-    guard sqlite3_open_v2(databasePath, &db, flags, nil) == SQLITE_OK, let opened = db else {
-      let message = db.map(sqliteErrorMessage) ?? "sqlite open failed"
-      if let db {
-        sqlite3_close(db)
-      }
-      throw CLIWorkflowSessionStoreError.sqliteFailed("failed to open sqlite database at \(databasePath): \(message)")
+    guard isSafeSessionId(record.session.sessionId) else {
+      throw CLIWorkflowSessionStoreError.invalidSessionId(record.session.sessionId)
     }
-    return opened
   }
 
-  private func ensureSchema(_ db: OpaquePointer?) throws {
-    try ensureJSONBAvailable(db)
-    try execute(
-      db,
+  private func openDatabase(readOnly: Bool = false) throws -> SQLiteDatabase {
+    try mapSQLiteError {
+      try SQLiteDatabase.open(
+        path: databasePath,
+        mode: readOnly ? .readOnly : .readWriteCreate,
+        options: readOnly ? .readOnlyDefault : .writableDefault
+      )
+    }
+  }
+
+  private func ensureSchema(_ db: SQLiteDatabase) throws {
+    try mapSQLiteError {
+      try db.requireJSONBAvailable()
+      try db.execute(
       """
       CREATE TABLE IF NOT EXISTS cli_workflow_sessions (
         session_id TEXT PRIMARY KEY,
@@ -199,33 +246,20 @@ public struct CLIWorkflowSessionStore: Sendable {
         updated_at TEXT NOT NULL
       )
       """
-    )
-    try execute(db, "CREATE INDEX IF NOT EXISTS idx_cli_workflow_sessions_updated ON cli_workflow_sessions (updated_at DESC, session_id)")
-  }
-
-  private func ensureJSONBAvailable(_ db: OpaquePointer?) throws {
-    let rows = try queryRows(
-      db,
-      sql: "SELECT typeof(jsonb('{}')) AS storage_type, json_valid(jsonb('{}'), 8) AS valid_jsonb",
-      bindings: []
-    )
-    guard rows.first?["storage_type"] == "blob", rows.first?["valid_jsonb"] == "1" else {
-      throw CLIWorkflowSessionStoreError.sqliteFailed("sqlite JSONB support is unavailable")
+      )
+      try db.execute("CREATE INDEX IF NOT EXISTS idx_cli_workflow_sessions_updated ON cli_workflow_sessions (updated_at DESC, session_id)")
     }
   }
 
-  private func tableExists(_ db: OpaquePointer?, name: String) throws -> Bool {
-    let rows = try queryRows(
-      db,
-      sql: "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
-      bindings: [.text(name)]
-    )
-    return rows.first?["present"] != nil
+  private func tableExists(_ db: SQLiteDatabase, name: String) throws -> Bool {
+    try mapSQLiteError {
+      try db.tableExists(name)
+    }
   }
 
-  private func upsertRecord(_ db: OpaquePointer?, _ record: PersistedCLIWorkflowSession) throws {
-    try execute(
-      db,
+  private func upsertRecord(_ db: SQLiteDatabase, _ record: PersistedCLIWorkflowSession) throws {
+    try mapSQLiteError {
+      try db.execute(
       """
       INSERT INTO cli_workflow_sessions (
         session_id, workflow_name, workflow_id, status, record_json, updated_at
@@ -245,70 +279,7 @@ public struct CLIWorkflowSessionStore: Sendable {
         .text(try jsonString(record)),
         .text(Self.dateString(record.session.updatedAt))
       ]
-    )
-  }
-
-  private func execute(_ db: OpaquePointer?, _ sql: String, bindings: [CLISessionSQLiteBinding] = []) throws {
-    var statement: OpaquePointer?
-    guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
-      throw CLIWorkflowSessionStoreError.sqliteFailed(sqliteErrorMessage(db))
-    }
-    defer {
-      sqlite3_finalize(statement)
-    }
-    try bind(statement, bindings)
-    guard sqlite3_step(statement) == SQLITE_DONE else {
-      throw CLIWorkflowSessionStoreError.sqliteFailed(sqliteErrorMessage(db))
-    }
-  }
-
-  private func queryRows(_ db: OpaquePointer?, sql: String, bindings: [CLISessionSQLiteBinding]) throws -> [[String: String?]] {
-    var statement: OpaquePointer?
-    guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
-      throw CLIWorkflowSessionStoreError.sqliteFailed(sqliteErrorMessage(db))
-    }
-    defer {
-      sqlite3_finalize(statement)
-    }
-    try bind(statement, bindings)
-    var rows: [[String: String?]] = []
-    while true {
-      let result = sqlite3_step(statement)
-      if result == SQLITE_DONE {
-        return rows
-      }
-      if result == SQLITE_ROW {
-        var row: [String: String?] = [:]
-        for index in 0..<sqlite3_column_count(statement) {
-          guard let name = sqlite3_column_name(statement, index) else {
-            continue
-          }
-          if sqlite3_column_type(statement, index) == SQLITE_NULL {
-            row[String(cString: name)] = nil
-          } else if let text = sqlite3_column_text(statement, index) {
-            row[String(cString: name)] = String(cString: text)
-          } else {
-            row[String(cString: name)] = nil
-          }
-        }
-        rows.append(row)
-        continue
-      }
-      throw CLIWorkflowSessionStoreError.sqliteFailed(sqliteErrorMessage(db))
-    }
-  }
-
-  private func bind(_ statement: OpaquePointer?, _ bindings: [CLISessionSQLiteBinding]) throws {
-    for (offset, binding) in bindings.enumerated() {
-      let index = Int32(offset + 1)
-      let result: Int32
-      switch binding {
-      case .text(let value):
-        result = sqlite3_bind_text(statement, index, value, -1, sqliteTransientDestructor)
-      }
-      guard result == SQLITE_OK else {
-        throw CLIWorkflowSessionStoreError.sqliteFailed("sqlite bind failed at parameter \(index)")
-      }
+      )
     }
   }
 
@@ -360,15 +331,10 @@ func seedRuntimeStoreFromPersistedCLIState(
   }
 }
 
-private enum CLISessionSQLiteBinding {
-  case text(String)
-}
-
-private let sqliteTransientDestructor = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-
-private func sqliteErrorMessage(_ db: OpaquePointer?) -> String {
-  guard let message = sqlite3_errmsg(db) else {
-    return "unknown sqlite error"
+private func mapSQLiteError<T>(_ body: () throws -> T) throws -> T {
+  do {
+    return try body()
+  } catch let error as SQLiteError {
+    throw CLIWorkflowSessionStoreError.sqliteFailed(error.message)
   }
-  return String(cString: message)
 }

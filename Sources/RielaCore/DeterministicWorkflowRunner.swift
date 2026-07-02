@@ -53,77 +53,6 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   }
 }
 
-public enum WorkflowRunEventType: String, Codable, Equatable, Sendable {
-  case sessionStarted = "session_started"
-  case stepStarted = "step_started"
-  case backendEvent = "backend_event"
-  case stepCompleted = "step_completed"
-  case sessionCompleted = "session_completed"
-}
-
-public struct WorkflowRunEvent: Codable, Equatable, Sendable {
-  public var type: WorkflowRunEventType
-  public var workflowId: String
-  public var sessionId: String
-  public var status: WorkflowSessionStatus?
-  public var currentStepId: String?
-  public var stepId: String?
-  public var nodeId: String?
-  public var executionId: String?
-  public var backendEventType: String?
-  public var backendEventChannel: String?
-  public var backendEventContent: String?
-  public var backendEventIsDelta: Bool?
-  public var backendEventSequence: Int?
-  public var backendToolName: String?
-  public var backendEventUsage: JSONObject?
-  public var exitCode: Int32?
-  public var nodeExecutions: Int?
-  public var transitions: Int?
-
-  public init(
-    type: WorkflowRunEventType,
-    workflowId: String,
-    sessionId: String,
-    status: WorkflowSessionStatus? = nil,
-    currentStepId: String? = nil,
-    stepId: String? = nil,
-    nodeId: String? = nil,
-    executionId: String? = nil,
-    backendEventType: String? = nil,
-    backendEventChannel: String? = nil,
-    backendEventContent: String? = nil,
-    backendEventIsDelta: Bool? = nil,
-    backendEventSequence: Int? = nil,
-    backendToolName: String? = nil,
-    backendEventUsage: JSONObject? = nil,
-    exitCode: Int32? = nil,
-    nodeExecutions: Int? = nil,
-    transitions: Int? = nil
-  ) {
-    self.type = type
-    self.workflowId = workflowId
-    self.sessionId = sessionId
-    self.status = status
-    self.currentStepId = currentStepId
-    self.stepId = stepId
-    self.nodeId = nodeId
-    self.executionId = executionId
-    self.backendEventType = backendEventType
-    self.backendEventChannel = backendEventChannel
-    self.backendEventContent = backendEventContent
-    self.backendEventIsDelta = backendEventIsDelta
-    self.backendEventSequence = backendEventSequence
-    self.backendToolName = backendToolName
-    self.backendEventUsage = backendEventUsage
-    self.exitCode = exitCode
-    self.nodeExecutions = nodeExecutions
-    self.transitions = transitions
-  }
-}
-
-public typealias WorkflowRunEventHandler = @Sendable (WorkflowRunEvent) async -> Void
-
 public struct WorkflowRunResult: Codable, Equatable, Sendable {
   public var workflowId: String
   public var session: WorkflowSession
@@ -210,7 +139,12 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     if let diagnostic = diagnostics.first(where: { $0.severity == .error }) {
       throw DeterministicWorkflowRunnerError.invalidWorkflow("\(diagnostic.path): \(diagnostic.message)")
     }
+    let capabilityGaps = Self.unsupportedFeatures(in: request.workflow, maxConcurrency: request.maxConcurrency)
+    if let gap = capabilityGaps.first {
+      throw DeterministicWorkflowRunnerError.invalidWorkflow("\(gap.path): \(gap.message)")
+    }
     try enforceRequiredLoopPolicyPreflight(request)
+    let executionPlan = WorkflowExecutionPlan(workflow: request.workflow)
 
     do {
       try WorkflowSessionEntryValidation.validateMutuallyExclusiveSessionEntryModes(
@@ -306,10 +240,10 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       if visitedSteps > maxSteps {
         throw DeterministicWorkflowRunnerError.maxStepsExceeded(maxSteps)
       }
-      guard let step = effectiveRequest.workflow.steps.first(where: { $0.id == stepId }) else {
+      guard let step = executionPlan.step(id: stepId) else {
         throw DeterministicWorkflowRunnerError.missingStep(stepId)
       }
-      guard let registryNode = effectiveRequest.workflow.nodeRegistry.first(where: { $0.id == step.nodeId }) else {
+      guard let registryNode = executionPlan.registryNode(id: step.nodeId) else {
         throw DeterministicWorkflowRunnerError.missingNode(step.nodeId)
       }
       let executionIndex = (executionCounts[step.id] ?? 0) + 1
@@ -330,7 +264,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           publishedTransitions: publishedTransitions,
           handler: effectiveRequest.eventHandler
         )
-        currentStepId = publishResult.publishedMessages.first?.toStepId
+        currentStepId = publishResult.nextStepId
         continue
       }
       let publishResult = try await executeNodeAndRecordMemory(
@@ -353,7 +287,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         publishedTransitions: publishedTransitions,
         handler: effectiveRequest.eventHandler
       )
-      currentStepId = publishResult.publishedMessages.first?.toStepId
+      currentStepId = publishResult.nextStepId
     }
 
     guard let loadedSession = try await store.loadSession(id: session.sessionId) else {
@@ -549,22 +483,17 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
   ) async throws -> WorkflowPublicationResult {
     guard let stdioNodeExecutor else {
       let adapterFailure = AdapterExecutionError(.providerError, "missing stdio-node executor for '\(kind.rawValue)' node '\(step.nodeId)'")
-      _ = try? await publisher.publishAcceptedOutput(
-        WorkflowPublicationRequest(
-          sessionId: sessionId,
-          stepId: step.id,
-          nodeId: step.nodeId,
-          attempt: executionIndex,
-          adapterFailure: adapterFailure,
-          transitions: transitions,
-          publishesRootOutput: transitions.isEmpty
-        )
+      try await publishFailureAndThrow(
+        adapterFailure,
+        sessionId: sessionId,
+        step: step,
+        attempt: executionIndex,
+        transitions: transitions
       )
-      throw adapterFailure
     }
 
     do {
-      let execution = try await recordStepStartedExecution(
+      let startedExecution = try await recordStepStartedExecution(
         workflowId: workflow.workflowId,
         sessionId: sessionId,
         step: step,
@@ -572,6 +501,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         backend: payload.executionBackend,
         handler: request.eventHandler
       )
+      let execution = startedExecution.execution
       let availableMemories = effectiveNodeMemories(workflow: workflow, step: step, payload: payload)
       let result = try await stdioNodeExecutor.execute(
         WorkflowStdioNodeExecutionInput(
@@ -591,27 +521,23 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         context: adapterExecutionContext(
           deadline: deadline(for: step, request: request),
           workflowId: workflow.workflowId,
-          sessionId: sessionId,
           step: step,
           execution: execution,
+          eventContext: startedExecution.backendEventContext,
           handler: request.eventHandler
         )
       )
+      let routingReconciler = workflowRoutingReconciler(workflow: workflow, step: step)
       if let payload = result.payload {
-        let candidate = try normalizeRuntimeInlineCandidate(payload)
+        let candidate = try normalizeRuntimeInlineCandidate(payload, routingReconciler: routingReconciler)
         if let adapterFailure = multiplePublishableTransitionFailure(transitions: transitions, candidate: candidate) {
-          _ = try? await publisher.publishAcceptedOutput(
-            WorkflowPublicationRequest(
-              sessionId: sessionId,
-              stepId: step.id,
-              nodeId: step.nodeId,
-              attempt: executionIndex,
-              adapterFailure: adapterFailure,
-              transitions: transitions,
-              publishesRootOutput: transitions.isEmpty
-            )
+          try await publishFailureAndThrow(
+            adapterFailure,
+            sessionId: sessionId,
+            step: step,
+            attempt: executionIndex,
+            transitions: transitions
           )
-          throw adapterFailure
         }
       }
       return try await publisher.publishAcceptedOutput(
@@ -620,43 +546,35 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           stepId: step.id,
           nodeId: step.nodeId,
           attempt: executionIndex,
-          inlineCandidate: result.payload,
+          body: result.payload.map(WorkflowPublicationBody.inlineCandidate) ?? .none,
           outputContract: workflowOutputContract(from: payload.output),
+          routingReconciler: routingReconciler,
           transitions: transitions,
           publishesRootOutput: transitions.isEmpty,
           allowsNoOutput: result.payload == nil
         )
       )
     } catch let adapterFailure as AdapterExecutionError {
-      _ = try? await publisher.publishAcceptedOutput(
-        WorkflowPublicationRequest(
-          sessionId: sessionId,
-          stepId: step.id,
-          nodeId: step.nodeId,
-          attempt: executionIndex,
-          adapterFailure: adapterFailure,
-          transitions: transitions,
-          publishesRootOutput: transitions.isEmpty
-        )
+      try await publishFailureAndThrow(
+        adapterFailure,
+        sessionId: sessionId,
+        step: step,
+        attempt: executionIndex,
+        transitions: transitions
       )
-      throw adapterFailure
     } catch {
       if isWorkflowRunCancellation(error) {
         throw error
       }
       let adapterFailure = AdapterExecutionError(.providerError, String(describing: error))
-      _ = try? await publisher.publishAcceptedOutput(
-        WorkflowPublicationRequest(
-          sessionId: sessionId,
-          stepId: step.id,
-          nodeId: step.nodeId,
-          attempt: executionIndex,
-          adapterFailure: adapterFailure,
-          transitions: transitions,
-          publishesRootOutput: transitions.isEmpty
-        )
+      try await publishFailureAndThrow(
+        adapterFailure,
+        sessionId: sessionId,
+        step: step,
+        attempt: executionIndex,
+        transitions: transitions,
+        throwing: error
       )
-      throw error
     }
   }
 
@@ -672,7 +590,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     let maxAttempts = maxValidationAttempts(from: basePayload.output)
     var lastValidationError: Error?
     for attempt in 1...maxAttempts {
-      let execution = try await recordStepStartedExecution(
+      let startedExecution = try await recordStepStartedExecution(
         workflowId: request.workflow.workflowId,
         sessionId: sessionId,
         step: step,
@@ -680,6 +598,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         backend: basePayload.executionBackend,
         handler: request.eventHandler
       )
+      let execution = startedExecution.execution
       var attemptInput = adapterInput
       attemptInput.executionIndex = executionIndex
       attemptInput.output = basePayload.output == nil
@@ -692,77 +611,59 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           context: adapterExecutionContext(
             deadline: deadline(for: step, request: request),
             workflowId: request.workflow.workflowId,
-            sessionId: sessionId,
             step: step,
             execution: execution,
+            eventContext: startedExecution.backendEventContext,
             handler: request.eventHandler
           )
         )
       } catch let adapterFailure as AdapterExecutionError {
-        _ = try? await publisher.publishAcceptedOutput(
-          WorkflowPublicationRequest(
-            sessionId: sessionId,
-            stepId: step.id,
-            nodeId: step.nodeId,
-            attempt: attempt,
-            backend: basePayload.executionBackend,
-            adapterFailure: adapterFailure,
-            transitions: transitions,
-            publishesRootOutput: transitions.isEmpty
-          )
+        try await publishFailureAndThrow(
+          adapterFailure,
+          sessionId: sessionId,
+          step: step,
+          attempt: attempt,
+          backend: basePayload.executionBackend,
+          transitions: transitions
         )
-        throw adapterFailure
       } catch {
         if isWorkflowRunCancellation(error) {
           throw error
         }
         let adapterFailure = AdapterExecutionError(.providerError, String(describing: error))
-        _ = try? await publisher.publishAcceptedOutput(
-          WorkflowPublicationRequest(
-            sessionId: sessionId,
-            stepId: step.id,
-            nodeId: step.nodeId,
-            attempt: attempt,
-            backend: basePayload.executionBackend,
-            adapterFailure: adapterFailure,
-            transitions: transitions,
-            publishesRootOutput: transitions.isEmpty
-          )
+        try await publishFailureAndThrow(
+          adapterFailure,
+          sessionId: sessionId,
+          step: step,
+          attempt: attempt,
+          backend: basePayload.executionBackend,
+          transitions: transitions,
+          throwing: error
         )
-        throw error
       }
       let candidate: RuntimeOutputCandidate
+      let routingReconciler = workflowRoutingReconciler(workflow: request.workflow, step: step)
       do {
-        candidate = try normalizeRuntimeAdapterOutput(adapterOutput)
+        candidate = try normalizeRuntimeAdapterOutput(adapterOutput, routingReconciler: routingReconciler)
       } catch let adapterFailure as AdapterExecutionError {
-        _ = try? await publisher.publishAcceptedOutput(
-          WorkflowPublicationRequest(
-            sessionId: sessionId,
-            stepId: step.id,
-            nodeId: step.nodeId,
-            attempt: attempt,
-            backend: basePayload.executionBackend,
-            adapterFailure: adapterFailure,
-            transitions: transitions,
-            publishesRootOutput: transitions.isEmpty
-          )
+        try await publishFailureAndThrow(
+          adapterFailure,
+          sessionId: sessionId,
+          step: step,
+          attempt: attempt,
+          backend: basePayload.executionBackend,
+          transitions: transitions
         )
-        throw adapterFailure
       }
       if let adapterFailure = multiplePublishableTransitionFailure(transitions: transitions, candidate: candidate) {
-        _ = try? await publisher.publishAcceptedOutput(
-          WorkflowPublicationRequest(
-            sessionId: sessionId,
-            stepId: step.id,
-            nodeId: step.nodeId,
-            attempt: attempt,
-            backend: basePayload.executionBackend,
-            adapterFailure: adapterFailure,
-            transitions: transitions,
-            publishesRootOutput: transitions.isEmpty
-          )
+        try await publishFailureAndThrow(
+          adapterFailure,
+          sessionId: sessionId,
+          step: step,
+          attempt: attempt,
+          backend: basePayload.executionBackend,
+          transitions: transitions
         )
-        throw adapterFailure
       }
       do {
         return try await publisher.publishAcceptedOutput(
@@ -772,8 +673,9 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
             nodeId: step.nodeId,
             attempt: attempt,
             backend: basePayload.executionBackend,
-            adapterOutput: adapterOutput,
+            body: .adapterOutput(adapterOutput),
             outputContract: workflowOutputContract(from: basePayload.output),
+            routingReconciler: routingReconciler,
             transitions: transitions,
             publishesRootOutput: transitions.isEmpty
           )
@@ -814,35 +716,25 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       )
     } catch let projectionError as WorkflowAddonAttachmentProjectionError {
       let adapterFailure = projectionError.adapterError
-      _ = try? await publisher.publishAcceptedOutput(
-        WorkflowPublicationRequest(
-          sessionId: sessionId,
-          stepId: step.id,
-          nodeId: step.nodeId,
-          attempt: executionIndex,
-          adapterFailure: adapterFailure,
-          transitions: transitions,
-          publishesRootOutput: transitions.isEmpty
-        )
+      try await publishFailureAndThrow(
+        adapterFailure,
+        sessionId: sessionId,
+        step: step,
+        attempt: executionIndex,
+        transitions: transitions
       )
-      throw adapterFailure
     } catch {
       if isWorkflowRunCancellation(error) {
         throw error
       }
       let adapterFailure = AdapterExecutionError(.policyBlocked, "native_attachment_projection_failed: \(String(describing: error))")
-      _ = try? await publisher.publishAcceptedOutput(
-        WorkflowPublicationRequest(
-          sessionId: sessionId,
-          stepId: step.id,
-          nodeId: step.nodeId,
-          attempt: executionIndex,
-          adapterFailure: adapterFailure,
-          transitions: transitions,
-          publishesRootOutput: transitions.isEmpty
-        )
+      try await publishFailureAndThrow(
+        adapterFailure,
+        sessionId: sessionId,
+        step: step,
+        attempt: executionIndex,
+        transitions: transitions
       )
-      throw adapterFailure
     }
 
     let addonInput = WorkflowAddonExecutionInput(
@@ -856,18 +748,13 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     )
     guard let addonResolver else {
       let adapterFailure = AdapterExecutionError(.providerError, "missing add-on resolver for '\(addon.name)'")
-      _ = try? await publisher.publishAcceptedOutput(
-        WorkflowPublicationRequest(
-          sessionId: sessionId,
-          stepId: step.id,
-          nodeId: step.nodeId,
-          attempt: executionIndex,
-          adapterFailure: adapterFailure,
-          transitions: transitions,
-          publishesRootOutput: transitions.isEmpty
-        )
+      try await publishFailureAndThrow(
+        adapterFailure,
+        sessionId: sessionId,
+        step: step,
+        attempt: executionIndex,
+        transitions: transitions
       )
-      throw adapterFailure
     }
 
     let adapterOutput: AdapterExecutionOutput
@@ -885,52 +772,39 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         context: AdapterExecutionContext(deadline: deadline(for: step, request: request))
       )
     } catch let adapterFailure as AdapterExecutionError {
-      _ = try? await publisher.publishAcceptedOutput(
-        WorkflowPublicationRequest(
-          sessionId: sessionId,
-          stepId: step.id,
-          nodeId: step.nodeId,
-          attempt: executionIndex,
-          adapterFailure: adapterFailure,
-          transitions: transitions,
-          publishesRootOutput: transitions.isEmpty
-        )
+      try await publishFailureAndThrow(
+        adapterFailure,
+        sessionId: sessionId,
+        step: step,
+        attempt: executionIndex,
+        transitions: transitions
       )
-      throw adapterFailure
     } catch {
       if isWorkflowRunCancellation(error) {
         throw error
       }
       let adapterFailure = AdapterExecutionError(.providerError, String(describing: error))
-      _ = try? await publisher.publishAcceptedOutput(
-        WorkflowPublicationRequest(
-          sessionId: sessionId,
-          stepId: step.id,
-          nodeId: step.nodeId,
-          attempt: executionIndex,
-          adapterFailure: adapterFailure,
-          transitions: transitions,
-          publishesRootOutput: transitions.isEmpty
-        )
+      try await publishFailureAndThrow(
+        adapterFailure,
+        sessionId: sessionId,
+        step: step,
+        attempt: executionIndex,
+        transitions: transitions,
+        throwing: error
       )
-      throw error
     }
 
-    let candidate = try normalizeRuntimeAdapterOutput(adapterOutput)
+    let routingReconciler = workflowRoutingReconciler(workflow: workflow, step: step)
+    let candidate = try normalizeRuntimeAdapterOutput(adapterOutput, routingReconciler: routingReconciler)
     if let adapterFailure = multiplePublishableTransitionFailure(transitions: transitions, candidate: candidate) {
-      _ = try? await publisher.publishAcceptedOutput(
-        WorkflowPublicationRequest(
-          sessionId: sessionId,
-          stepId: step.id,
-          nodeId: step.nodeId,
-          attempt: executionIndex,
-          adapterFailure: adapterFailure,
-          adapterOutput: adapterOutput,
-          transitions: transitions,
-          publishesRootOutput: transitions.isEmpty
-        )
+      try await publishFailureAndThrow(
+        adapterFailure,
+        sessionId: sessionId,
+        step: step,
+        attempt: executionIndex,
+        adapterOutput: adapterOutput,
+        transitions: transitions
       )
-      throw adapterFailure
     }
     return try await publisher.publishAcceptedOutput(
       WorkflowPublicationRequest(
@@ -938,7 +812,8 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         stepId: step.id,
         nodeId: step.nodeId,
         attempt: executionIndex,
-        adapterOutput: adapterOutput,
+        body: .adapterOutput(adapterOutput),
+        routingReconciler: routingReconciler,
         transitions: transitions,
         publishesRootOutput: transitions.isEmpty
       )

@@ -399,6 +399,19 @@ public enum CursorCLICLICommandExecutor {
     if values["id"] == nil, positional.count > 0 { values["id"] = .string(positional[0]) }
     if values["prompt"] == nil, let prompt = flags.value("--prompt") { values["prompt"] = .string(prompt) }
     if values["prompt"] == nil, positional.count > 1 { values["prompt"] = .string(positional[1]) }
+    if values["position"] == nil, let position = flags.value("--position").flatMap(Int.init) {
+      values["position"] = .number(Double(position))
+    }
+    if values["position"] == nil, let position = inlineIntValue(name: "position", in: positional) {
+      values["position"] = .number(Double(position))
+    }
+  }
+
+  private static func inlineIntValue(name: String, in arguments: [String]) -> Int? {
+    let prefix = "\(name)="
+    return arguments
+      .first { $0.hasPrefix(prefix) }
+      .flatMap { Int($0.dropFirst(prefix.count)) }
   }
 
   private static func applyQueueMoveLegacyValues(flags: CLIFlagArguments, positional: [String], values: inout JSONObject) {
@@ -829,6 +842,7 @@ public enum CursorCLICLICommandExecutor {
       "--executable-name",
       "--from",
       "--to",
+      "--position",
       "--mode",
       "--status",
       "--name",

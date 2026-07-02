@@ -82,7 +82,8 @@ public struct ScopedParityCommandRunner: Sendable {
             "agentSessionId=\(parsedHook.context.agentSessionId)"
           ]
         )
-        return try render(result, options: options) { result in result.records.joined(separator: "\n") + "\n" }
+        let rendered = try render(result, options: options) { result in result.records.joined(separator: "\n") + "\n" }
+        return rendered.withHookInferenceWarning(from: parsedHook.context)
       case .events:
         let result = try await eventResult(options: options, parsed: parsed)
         return try render(result, options: options) { result in result.records.joined(separator: "\n") + "\n" }
@@ -102,6 +103,27 @@ public struct ScopedParityCommandRunner: Sendable {
     } catch {
       return failure("\(error)", output: command.options.output, options: command.options)
     }
+  }
+}
+
+private extension CLICommandResult {
+  func withHookInferenceWarning(from context: HookContext) -> CLICommandResult {
+    guard !context.inferredFields.isEmpty else {
+      return self
+    }
+    return CLICommandResult(
+      exitCode: exitCode,
+      stdout: stdout,
+      stderr: stderr.appendingHookWarning(
+        "warning: hook context inferred fields: \(context.inferredFields.sorted().joined(separator: ","))"
+      )
+    )
+  }
+}
+
+private extension String {
+  func appendingHookWarning(_ warning: String) -> String {
+    isEmpty ? warning : "\(self)\n\(warning)"
   }
 }
 

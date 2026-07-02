@@ -1,6 +1,25 @@
+import Foundation
 import XCTest
 @testable import RielaAdapters
 @testable import RielaCore
+
+private final class RetryAttemptRecorder: @unchecked Sendable {
+  private let queue = DispatchQueue(label: "riela.adapter-utilities-test-retry-attempts")
+  private var count = 0
+
+  func increment() -> Int {
+    queue.sync {
+      count += 1
+      return count
+    }
+  }
+
+  func value() -> Int {
+    queue.sync {
+      count
+    }
+  }
+}
 
 final class AdapterUtilitiesTests: XCTestCase {
   func testRetryPolicyClampsAttemptsAndDelay() {
@@ -8,6 +27,92 @@ final class AdapterUtilitiesTests: XCTestCase {
 
     XCTAssertEqual(policy.maxAttempts, 1)
     XCTAssertEqual(policy.retryDelay, .zero)
+  }
+
+  func testExecuteWithRetryRetriesProviderFailuresBeforeDeadline() async throws {
+    let attempts = RetryAttemptRecorder()
+
+    let output: String = try await executeWithRetry(
+      policy: RetryPolicy(maxAttempts: 2, retryDelay: .zero),
+      deadline: Date(timeIntervalSince1970: 200),
+      now: { Date(timeIntervalSince1970: 100) },
+      operation: {
+        if attempts.increment() == 1 {
+          throw AdapterExecutionError(.providerError, "temporary")
+        }
+        return "ok"
+      },
+      normalizeError: { normalizeAdapterFailure($0, fallbackMessage: "adapter failed") }
+    )
+
+    XCTAssertEqual(output, "ok")
+    XCTAssertEqual(attempts.value(), 2)
+  }
+
+  func testExecuteWithRetrySkipsProviderRetryWhenDeadlineCannotCoverDelay() async {
+    let attempts = RetryAttemptRecorder()
+
+    do {
+      let _: String = try await executeWithRetry(
+        policy: RetryPolicy(maxAttempts: 3, retryDelay: .milliseconds(100)),
+        deadline: Date(timeIntervalSince1970: 100.05),
+        now: { Date(timeIntervalSince1970: 100) },
+        operation: {
+          _ = attempts.increment()
+          throw AdapterExecutionError(.providerError, "temporary")
+        },
+        normalizeError: { normalizeAdapterFailure($0, fallbackMessage: "adapter failed") }
+      )
+      XCTFail("Expected provider error")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .providerError)
+      XCTAssertEqual(error.message, "temporary")
+      XCTAssertEqual(attempts.value(), 1)
+    } catch {
+      XCTFail("Unexpected error: \(error)")
+    }
+  }
+
+  func testExecuteWithRetryDoesNotRetryTimeoutWhenDeadlineIsSet() async {
+    let attempts = RetryAttemptRecorder()
+
+    do {
+      let _: String = try await executeWithRetry(
+        policy: RetryPolicy(maxAttempts: 3, retryDelay: .zero),
+        deadline: Date(timeIntervalSince1970: 200),
+        now: { Date(timeIntervalSince1970: 100) },
+        operation: {
+          _ = attempts.increment()
+          throw AdapterExecutionError(.timeout, "timed out")
+        },
+        normalizeError: { normalizeAdapterFailure($0, fallbackMessage: "adapter failed") }
+      )
+      XCTFail("Expected timeout")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .timeout)
+      XCTAssertEqual(error.message, "timed out")
+      XCTAssertEqual(attempts.value(), 1)
+    } catch {
+      XCTFail("Unexpected error: \(error)")
+    }
+  }
+
+  func testExecuteWithRetryStillRetriesTimeoutWithoutDeadline() async throws {
+    let attempts = RetryAttemptRecorder()
+
+    let output: String = try await executeWithRetry(
+      policy: RetryPolicy(maxAttempts: 2, retryDelay: .zero),
+      operation: {
+        if attempts.increment() == 1 {
+          throw AdapterExecutionError(.timeout, "timed out")
+        }
+        return "ok"
+      },
+      normalizeError: { normalizeAdapterFailure($0, fallbackMessage: "adapter failed") }
+    )
+
+    XCTAssertEqual(output, "ok")
+    XCTAssertEqual(attempts.value(), 2)
   }
 
   func testBuildCombinedPromptTextPreservesSystemPromptBoundary() {
@@ -95,7 +200,7 @@ final class AdapterUtilitiesTests: XCTestCase {
     XCTAssertEqual(businessPayload.payload, ["status": .string("ok")])
   }
 
-  func testOutputContractEnvelopeReconcilesGoalReviewAlwaysAgainstPayloadRouting() throws {
+  func testOutputContractEnvelopeDoesNotApplyLoopRoutingByDefault() throws {
     let envelope = try normalizeOutputContractEnvelope(
       [
         "when": .object(["always": .bool(true)]),
@@ -108,7 +213,26 @@ final class AdapterUtilitiesTests: XCTestCase {
       source: "goal-review"
     )
 
+    XCTAssertEqual(envelope.when, ["always": true])
+    XCTAssertEqual(envelope.routingDiagnostics, [])
+  }
+
+  func testLoopCompletionReviewReconcilerCanBeAppliedExplicitly() throws {
+    let envelope = try normalizeOutputContractEnvelope(
+      [
+        "when": .object(["always": .bool(true)]),
+        "payload": .object([
+          "accepted": .bool(false),
+          "goalAchieved": .bool(false),
+          "decision": .string("needs_work")
+        ])
+      ],
+      source: "goal-review",
+      routingReconciler: reconcileCompletionReviewRouting
+    )
+
     XCTAssertEqual(envelope.when, ["needs_replan": false, "needs_work": true])
+    XCTAssertEqual(envelope.routingDiagnostics.count, 1)
   }
 
   func testOutputContractEnvelopeRequiresBooleanWhenObjectPayloadAndBooleanCompletionPassed() {

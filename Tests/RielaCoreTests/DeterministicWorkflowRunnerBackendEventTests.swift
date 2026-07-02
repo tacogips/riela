@@ -22,10 +22,38 @@ final class DeterministicWorkflowRunnerBackendEventTests: XCTestCase {
     let event = try JSONDecoder().decode(WorkflowRunEvent.self, from: data)
 
     XCTAssertEqual(event.type, .backendEvent)
+    guard case .backendEvent(_, _, let payload) = event else {
+      return XCTFail("expected backend event payload")
+    }
     XCTAssertEqual(event.backendEventType, "turn.started")
+    XCTAssertEqual(payload.backendEventType, "turn.started")
     XCTAssertNil(event.backendEventChannel)
     XCTAssertNil(event.backendEventContent)
     XCTAssertNil(event.backendEventSequence)
+  }
+
+  func testWorkflowRunEventInitializerDropsIrrelevantFieldsForEventType() throws {
+    let event = WorkflowRunEvent(
+      type: .sessionStarted,
+      workflowId: "wf",
+      sessionId: "session",
+      stepId: "step",
+      backendEventType: "turn.started",
+      exitCode: 1,
+      nodeExecutions: 2,
+      transitions: 3
+    )
+
+    guard case .sessionStarted(let session) = event else {
+      return XCTFail("expected session started event")
+    }
+    XCTAssertEqual(session.workflowId, "wf")
+    XCTAssertEqual(session.sessionId, "session")
+    XCTAssertNil(event.stepId)
+    XCTAssertNil(event.backendEventType)
+    XCTAssertNil(event.exitCode)
+    XCTAssertNil(event.nodeExecutions)
+    XCTAssertNil(event.transitions)
   }
 
   func testWorkflowRunEventEncodesEnrichedBackendEventFields() throws {
@@ -99,6 +127,7 @@ final class DeterministicWorkflowRunnerBackendEventTests: XCTestCase {
         event.backendEventChannel == "assistant" &&
         event.backendEventContent == "streamed text" &&
         event.backendEventSequence == 1 &&
+        event.nodeExecutions == 1 &&
         event.backendEventUsage?["output_tokens"] == .number(3)
     })
   }

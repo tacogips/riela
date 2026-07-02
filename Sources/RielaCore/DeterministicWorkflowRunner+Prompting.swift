@@ -165,7 +165,7 @@ extension DeterministicWorkflowRunner {
     }
     return AdapterExecutionError(
       .invalidOutput,
-      "multiple direct transitions are not supported by the Swift TASK-007 sequential runner"
+      "multiple direct transitions are not supported by this sequential runner"
     )
   }
 

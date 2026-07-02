@@ -514,8 +514,7 @@ final class RielaExampleParityTests: XCTestCase {
       let payload = try decoder.decode(WorkflowRunResult.self, from: Data(result.stdout.utf8))
       XCTAssertEqual(payload.status, .completed, eventId)
       XCTAssertEqual(payload.rootOutput?["summaryAction"], .string(expectedAction), eventId)
-      if case let .number(summaryRecordId)? = payload.rootOutput?["summaryRecordId"],
-        let exact = Int64(exactly: summaryRecordId) {
+      if let exact = payload.rootOutput?["summaryRecordId"]?.asInt64 {
         summaryRecordIds.append(exact)
       } else {
         XCTFail("\(eventId): missing summaryRecordId")
@@ -795,10 +794,10 @@ final class RielaExampleParityTests: XCTestCase {
   }
 
   private func jsonNumber(_ value: JSONValue?) -> Int? {
-    guard case let .number(number)? = value, number.rounded() == number else {
+    guard let int64 = value?.asInt64 else {
       return nil
     }
-    return Int(number)
+    return Int(exactly: int64)
   }
 
   private func objectPayload(_ value: MemoryJSONValue) -> [String: MemoryJSONValue]? {

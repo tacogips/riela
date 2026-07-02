@@ -531,10 +531,10 @@ private func requiredString(_ value: JSONValue?, field: String) throws -> String
 }
 
 private func requiredInt(_ value: JSONValue?, field: String) throws -> Int {
-  guard case let .number(number)? = value else {
+  guard let int64 = value?.asInt64, let value = Int(exactly: int64) else {
     throw CLIUsageError("\(field) is missing or not a number")
   }
-  return Int(number)
+  return value
 }
 
 private func requiredArrayCount(_ value: JSONValue?, field: String) throws -> Int {

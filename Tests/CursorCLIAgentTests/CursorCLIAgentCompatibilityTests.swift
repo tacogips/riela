@@ -234,6 +234,36 @@ final class CursorCLIAgentCompatibilityTests: XCTestCase {
     XCTAssertEqual(manager.prune(), 1)
   }
 
+  func testProcessManagerStreamReturnsBeforeCompletionAndYieldsLiveLines() throws {
+    let temp = try makeTemporaryDirectory()
+    addTeardownBlock {
+      try? FileManager.default.removeItem(at: temp)
+    }
+    let fakeCursor = temp.appendingPathComponent("fake-cursor-live-stream.sh")
+    try """
+      #!/bin/sh
+      set -eu
+      printf '{"timestamp":"2025-05-07T17:24:23.000Z","type":"event_msg","payload":{"type":"AgentMessage","message":"first"}}\\n'
+      sleep 1
+      printf '{"timestamp":"2025-05-07T17:24:24.000Z","type":"turn_complete","payload":{"type":"TurnComplete"}}\\n'
+      """
+      .write(to: fakeCursor, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeCursor.path)
+    let manager = CursorCLIProcessManager(executableName: fakeCursor.path)
+    let startedAt = Date()
+    let stream = manager.spawnExecStream(prompt: "hello")
+
+    XCTAssertEqual(manager.get(id: stream.process.id)?.status, .running)
+    let first = stream.lines.next(timeout: 1.0)
+    XCTAssertEqual(first?.type, "event_msg")
+    XCTAssertLessThan(Date().timeIntervalSince(startedAt), 0.9)
+    XCTAssertEqual(manager.get(id: stream.process.id)?.status, .running)
+    XCTAssertEqual(stream.waitForCompletion(), 0)
+    XCTAssertEqual(stream.collectLines().map { $0.type }, ["event_msg", "turn_complete"])
+    XCTAssertEqual(manager.get(id: stream.process.id)?.status, .exited)
+    XCTAssertEqual(manager.prune(), 1)
+  }
+
   func testTokenPersistenceUsesLegacyCursorTokensAndSha256Hashes() throws {
     let config = try makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: config) }

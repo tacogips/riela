@@ -9,6 +9,8 @@ let package = Package(
   ],
   products: [
     .library(name: "RielaCore", targets: ["RielaCore"]),
+    .library(name: "RielaSQLite", targets: ["RielaSQLite"]),
+    .library(name: "AgentRuntimeKit", targets: ["AgentRuntimeKit"]),
     .library(name: "RielaJavaScript", targets: ["RielaJavaScript"]),
     .library(name: "RielaAddons", targets: ["RielaAddons"]),
     .library(name: "RielaAdapters", targets: ["RielaAdapters"]),
@@ -42,12 +44,15 @@ let package = Package(
     .target(
       name: "RielaCore",
       dependencies: [
+        "RielaSQLite",
         "RielaObservability",
         "RielaJavaScript",
         .product(name: "Crypto", package: "swift-crypto"),
         .product(name: "RielaMemory", package: "RielaMemory")
       ]
     ),
+    .target(name: "RielaSQLite"),
+    .target(name: "AgentRuntimeKit"),
     .target(name: "RielaObservability"),
     .target(
       name: "RielaAddons",
@@ -75,6 +80,7 @@ let package = Package(
     .target(
       name: "CodexAgent",
       dependencies: [
+        "AgentRuntimeKit",
         "RielaCore",
         "RielaAdapters",
         .product(name: "Crypto", package: "swift-crypto")
@@ -84,6 +90,7 @@ let package = Package(
     .target(
       name: "ClaudeCodeAgent",
       dependencies: [
+        "AgentRuntimeKit",
         "RielaCore",
         "RielaAdapters",
         .product(name: "Crypto", package: "swift-crypto")
@@ -93,6 +100,7 @@ let package = Package(
     .target(
       name: "CursorCLIAgent",
       dependencies: [
+        "AgentRuntimeKit",
         "RielaCore",
         "RielaAdapters",
         .product(name: "Crypto", package: "swift-crypto")
@@ -107,6 +115,7 @@ let package = Package(
       name: "RielaCLI",
       dependencies: [
         "RielaCore",
+        "RielaSQLite",
         .product(name: "RielaMemory", package: "RielaMemory"),
         "RielaAdapters",
         "RielaAddons",
@@ -143,6 +152,8 @@ let package = Package(
         .product(name: "RielaMemory", package: "RielaMemory")
       ]
     ),
+    .testTarget(name: "RielaSQLiteTests", dependencies: ["RielaSQLite"]),
+    .testTarget(name: "AgentRuntimeKitTests", dependencies: ["AgentRuntimeKit"]),
     .testTarget(name: "RielaJavaScriptTests", dependencies: ["RielaJavaScript"]),
     .testTarget(name: "RielaAddonsTests", dependencies: ["RielaCore", "RielaAddons"]),
     .testTarget(name: "RielaAdaptersTests", dependencies: ["RielaCore", "RielaAdapters"]),

@@ -142,6 +142,115 @@ scalability hazard of the streaming feature.
    (`WorkflowBackendEventReceipt`: sequence + at) so the emit path never sees
    the full session.
 
+### F1/F2 issue-resolution slice (2026-07-02)
+
+The first implementation slice for the issue "Improve runtime hot paths from
+core/add-on review findings" deliberately lands only the compatibility-safe
+part of F1 and the narrow F2 reduction that follows from it. The slice is a
+runtime hot-path guard, not the full live-tail storage redesign described
+above.
+
+**Behavior boundary**:
+
+1. `WorkflowRunCommand` must continue to forward every `WorkflowRunEvent` to
+   streamed JSONL output, including every `backend_event`, with the existing
+   flattened wire keys and optional streaming fields intact.
+2. Full live-snapshot persistence is restricted to lifecycle events that are
+   expected to change user-visible session state:
+   `session_started`, `step_started`, `step_completed`, and
+   `session_completed`.
+3. `backend_event` is explicitly non-persisting in the live snapshot path.
+   This removes the per-delta CLI persistence work that made F1 quadratic
+   under streaming while leaving the event stream itself unchanged.
+4. Final persisted snapshots remain produced through the existing completion
+   path. The slice must not drop final `recentBackendEvents`,
+   `streamedResponseText`, status, message, or node-execution data from the
+   stored session record.
+5. `RuntimeStore` public session projections and `WorkflowRunEvent` JSON
+   encoding remain compatible.
+6. A follow-up F2 hot-path refinement keeps the existing `streamedResponseText`
+   projection but avoids reconstructing an already capped assistant transcript
+   from scratch for each delta. Once the 32 KiB head+tail projection is at the
+   cap, appends preserve the stored head and recompute the suffix from only the
+   stored tail plus the new delta. This keeps the public head+tail behavior
+   intact while bounding per-delta text work after the cap is reached.
+7. The in-memory runtime store now keeps backend live-tail fields in an
+   internal execution-live-tail table keyed by `executionId` instead of
+   mutating the stored `WorkflowSession.executions` array on every
+   `backend_event`. `loadSession`, `latestSession`, and returned executions
+   project those fields back into the existing public `WorkflowStepExecution`
+   shape, preserving API and JSON compatibility while moving the hot-path
+   writes toward the F2 live-tail split.
+8. Live snapshot persistence now tracks the highest successfully persisted
+   `WorkflowMessageRecord.createdOrder` per session in
+   `WorkflowRunLivePersistenceState`. Lifecycle-event live saves update the
+   session snapshot while upserting only message rows after that watermark;
+   terminal/final saves keep the full replace path for compatibility with
+   flows that rewrite history.
+9. `WorkflowRunLivePersistenceState` now keeps one writable SQLite connection
+   for the run's configured session store. The connection prepares CLI/runtime
+   schemas once, then lifecycle-event live saves reuse it for the shared
+   session/runtime transaction. Final saves still use the normal completion
+   path.
+10. The backend-event hot path now has a lightweight
+    `WorkflowBackendEventReceipt` containing only `executionId`, sequence, and
+    timestamp. `InMemoryWorkflowRuntimeStore` returns this receipt directly
+    from its live-tail table, and `DeterministicWorkflowRunner` uses it to
+    emit `backend_event` records without asking the store for a projected
+    `WorkflowStepExecution` on each delta. The legacy
+    `recordStepBackendEvent` projection remains available for compatibility.
+
+**Data flow after this slice**:
+
+1. The runner records backend-event data in `RuntimeStore` as it does today.
+2. The runner emits a `WorkflowRunEvent(type: .backendEvent, ...)`.
+3. The runner enriches the event from `WorkflowBackendEventReceipt` rather
+   than a full projected execution.
+4. The CLI JSONL recorder writes that event to the live stream.
+5. The live-persistence filter rejects the event for full snapshot writes.
+6. The next lifecycle event persists the session snapshot with whatever
+   backend-event live-tail state the store currently exposes and upserts only
+   message rows not previously persisted by a successful live save.
+7. Those lifecycle live saves reuse the run's live persistence SQLite
+   connection rather than opening a fresh handle each time.
+8. The terminal final-save path persists the canonical final snapshot through
+   the existing full replace path.
+
+**Validation**:
+
+- Add a focused CLI regression that proves a `backend_event` emission reaches
+  JSONL handling but does not call the live full-snapshot persistence path.
+- `WorkflowCommandLivePersistenceEventTests.testBackendRunEventBurstDoesNotTriggerLiveSnapshotPersistence`
+  covers a 10k `backend_event` burst, proving every event still reaches JSONL
+  while live snapshot persistence triggers zero times.
+- Keep lifecycle coverage for `session_started`, `step_started`,
+  `step_completed`, and `session_completed` triggering live persistence.
+- Run `swift test --filter WorkflowCommandLivePersistenceTests`.
+- Run `swift test --filter RuntimeStoreTests`.
+- Run `swiftlint lint` when SwiftLint is available in the environment.
+- `RuntimeStoreTests.testRecordStepBackendEventAppendsDeltasToCappedStreamedResponseText`
+  covers the capped-transcript delta append path, preserving the original head,
+  retaining the newest tail, and keeping the 32 KiB projection bound.
+- `RuntimeStoreTests.testBackendLiveTailProjectsAfterStepCompletionAndLatestSessionLookup`
+  covers the internal live-tail projection after terminal step updates and
+  through `latestSession(workflowId:)`, preventing projected backend fields
+  from being lost outside the hot path.
+- `RuntimeStoreTests.testRecordStepBackendEventReceiptAvoidsReturningProjectedExecutionPayload`
+  covers the lightweight receipt path and verifies public session reads still
+  project the live-tail fields for callers that need them.
+- `SQLiteWorkflowMessageLogTests.testSQLiteRuntimePersistenceCanAppendMessagesWithoutReplacingExistingRows`
+  covers the live-style snapshot save that upserts new message rows without
+  deleting previously persisted rows.
+- `SQLiteWorkflowMessageLogTests.testWorkflowMessageLogUpsertRefreshesPayloadIndexRows`
+  covers payload-index replacement for upserted message rows.
+- `WorkflowCommandLivePersistenceEventTests.testLivePersistenceStateTracksOnlySuccessfullyPersistedMessages`
+  covers the per-session live-persistence message watermark and proves failed
+  live saves do not advance it.
+- `WorkflowCommandLivePersistenceEventTests.testLivePersistenceStateReusesConnectionAcrossSnapshotSaves`
+  covers two live saves through one configured session store and proves the
+  actor opens only one SQLite connection while preserving incremental message
+  persistence.
+
 ### F3 (P1) `WorkflowRunEvent` is a flat bag of 17 optionals — the event contract cannot grow safely
 
 **Location**: `Sources/RielaCore/DeterministicWorkflowRunner.swift:56-125`.
@@ -179,6 +288,40 @@ public enum WorkflowRunEvent: Sendable, Equatable {
 - `emitRunEvent`/`telemetryAttributes` in
   `DeterministicWorkflowRunner+Events.swift` become a single
   `switch`, deleting the per-event builder duplication.
+
+### F3 issue-resolution slice (2026-07-02)
+
+`WorkflowRunEvent` has been converted from a mutable flat struct into an
+associated-value enum while preserving the existing flattened JSON contract.
+The public `WorkflowRunEventType` raw values and legacy
+`WorkflowRunEvent(type:workflowId:sessionId:...)` initializer remain available
+for compatibility with existing emitters and tests.
+
+**Behavior boundary**:
+
+1. Encoding and decoding continue to use the same top-level keys:
+   `type`, `workflowId`, `sessionId`, `status`, `currentStepId`, step fields,
+   backend-event fields, completion fields, `nodeExecutions`, and
+   `transitions`.
+2. Existing read sites can still use `event.type`, `event.workflowId`,
+   `event.backendEventType`, `event.nodeExecutions`, and the other previous
+   field names through read-only computed properties.
+3. The enum cases now separate session, step, backend-event, step-completion,
+   and session-completion payloads so unrelated fields are no longer retained
+   on the wrong event type.
+4. Mutable field assignment on `WorkflowRunEvent` is intentionally not
+   preserved. Tests and callers should construct the intended event case or use
+   the compatibility initializer.
+5. No wire migration is required for persisted JSONL output or existing
+   `backend_event` consumers.
+
+**Validation**:
+
+- `DeterministicWorkflowRunnerBackendEventTests` covers legacy backend-event
+  JSON decoding, enriched backend-event encoding, enum payload extraction, and
+  irrelevant-field dropping for a session event.
+- `WorkflowCommandLivePersistenceEventTests` confirms the CLI live persistence
+  filter and JSONL recorder still work through the compatibility properties.
 
 ### F4 (P1) Ten near-identical failure-publication blocks in the runner, all swallowing publish errors
 
@@ -233,6 +376,49 @@ func publishFailureAndThrow(
   case none }` so ambiguity is unrepresentable and
   `runtimeCandidate(from:)`'s manual source counting disappears.
 
+### F4 issue-resolution slice (2026-07-02)
+
+The runner failure-publication duplication has been reduced and
+`WorkflowPublicationRequest` now uses a single `WorkflowPublicationBody` enum
+for mutually exclusive publication inputs. The implementation adds
+`DeterministicWorkflowRunner.publishFailureAndThrow(...)` in a focused
+extension file, routes the stdio, agent, and add-on failure paths through it,
+and removes the runtime candidate-source counting that previously allowed
+ambiguous request construction.
+
+**Behavior boundary**:
+
+1. The helper publishes the failed execution with the same `sessionId`,
+   `stepId`, `nodeId`, attempt, backend, adapter output, transitions, and
+   root-output flag values that the previous inline blocks used.
+2. The expected `AdapterExecutionError` rethrow from
+   `InMemoryWorkflowOutputPublisher` is treated as the successful failure
+   publication path. It is not logged as a publication error.
+3. If publication itself fails with another error, the helper records
+   `riela.workflow.publish.failure` telemetry with bounded identifying
+   attributes, then throws the original adapter failure or the original
+   non-adapter error exactly as the old call site did.
+4. Cancellation remains outside this helper and still bypasses failure
+   publication so interrupted runs keep the existing cancellation handling.
+5. `WorkflowPublicationBody` models failure, adapter output, inline candidate,
+   candidate path, and no-output cases directly. A request can no longer carry
+   both `adapterOutput` and `candidatePath`, or a candidate path without its
+   reservation.
+6. Candidate-path finalization is now keyed off the `.candidatePath` body case,
+   so staging cleanup remains coupled to the only case that owns a reservation.
+
+**Validation**:
+
+- `swift test --filter RunnerFailurePublicationTests`
+  proves a publication failure is no longer invisible and that the original
+  adapter failure still wins error flow.
+- `swift test --filter RuntimePublicationTests` covers every publication body
+  case, including failure bodies carrying adapter-output metadata.
+- `swift test --filter RuntimeOutputCandidateTests` preserves candidate path
+  reservation mismatch rejection.
+- Existing runner failure tests continue to prove adapter failures record
+  failed executions without messages through the default publisher.
+
 ### F5 (P2) Three brand-cloned agent adapter packages (~30k lines) triple every fix
 
 **Location**: `Sources/ClaudeCodeAgent` (25 files / 10.3k lines),
@@ -281,6 +467,132 @@ This is the highest-leverage maintainability change in the codebase: it
 removes ~15–18k duplicated lines and makes "add a fourth agent backend" a
 descriptor + one adapter file.
 
+**Issue resolution slice (2026-07-02)**:
+
+- Added a shared `AgentRuntimeKit` target and moved the duplicated
+  `ProcessIO` mechanics into `AgentProcessOutputBuffers` and
+  `AgentManagedProcess`.
+- Moved the duplicated `RolloutWatcher` mechanics into
+  `AgentRolloutWatcher`, centralizing watched-file offsets, session-directory
+  discovery, rollout-file recursion, unreadable-file errors, truncation
+  handling, and complete/trailing line parsing.
+- `CodexAgent`, `ClaudeCodeAgent`, and `CursorCLIAgent` now depend on
+  `AgentRuntimeKit`. Their `*ProcessIO.swift` files retain provider-local
+  wrapper names (`ProcessOutputBuffers`, `Managed*Process`) but only provide
+  the provider-specific rollout parser and execution-result factory.
+- Their `*RolloutWatcher.swift` files now retain provider-local public event
+  types and `sessionsWatchDir(...)` APIs while delegating generic file watching
+  and event discovery to `AgentRolloutWatcher`.
+- Moved the duplicated `SessionSQLiteIndex` raw SQLite reading and row
+  normalization into `AgentSessionSQLiteSupport` and
+  `AgentSessionSQLiteRecord` in `AgentRuntimeKit`. The provider
+  `*SessionSQLiteIndex.swift` files now only open provider-specific state paths,
+  apply provider query/filter/sort types, and map normalized records into
+  provider session/source/git models.
+- Moved the duplicated operational JSON file-store and ISO8601 "now" helper
+  into `AgentJSONFileStore` and `agentRuntimeISO8601Now()` in
+  `AgentRuntimeKit`. Provider names (`CodexJSONStore`,
+  `ClaudeCodeJSONStore`, `CursorCLIJSONStore`, and the local timestamp helper
+  functions) remain as source-compatible shims.
+- Moved the duplicated process stream cursor and completion-wait cache into
+  `AgentRolloutLineStream` and `AgentProcessCompletion` in
+  `AgentRuntimeKit`. Provider names (`CodexRolloutLineStream`,
+  `ClaudeCodeRolloutLineStream`, `CursorCLIRolloutLineStream`, and the
+  matching `*ProcessCompletion` names) remain as source-compatible aliases.
+- Moved the duplicated live execution stream result wrapper into
+  `AgentExecStreamResult<RolloutLine>` in `AgentRuntimeKit`. Provider names
+  (`CodexExecStreamResult`, `ClaudeCodeExecStreamResult`, and
+  `CursorCLIExecStreamResult`) remain as source-compatible aliases while the
+  wait/collect behavior is implemented once.
+- Moved the duplicated process public contract types into
+  `AgentProcessStatus`, `AgentProcessRecord`, and `AgentProcessExecution` in
+  `AgentRuntimeKit`. Provider names (`CodexProcessRecord`,
+  `ClaudeCodeProcessExecution`, `CursorCLIProcessStatus`, etc.) remain as
+  source-compatible aliases while process-manager internals now share the same
+  status vocabulary and record/execution shape.
+- Moved duplicated process-manager registry bookkeeping into
+  `AgentProcessRegistry<Managed>` in `AgentRuntimeKit`, including virtual PID
+  allocation for injected executors, list/get ordering, kill/write-input state
+  transitions, kill-all marking, pruning, finish/exit-code updates, and managed
+  process removal.
+- Moved duplicated managed-process launch plumbing into
+  `AgentManagedProcessLauncher` in `AgentRuntimeKit`, including `/usr/bin/env`
+  process construction, cwd/environment assignment, pipe wiring, start-drain
+  sequencing, optional initial stdin write/close, running-record creation, and
+  failed-start record/managed-result creation.
+- Moved the remaining process-manager supervisor flow into
+  `AgentProcessSupervisor<Managed>` in `AgentRuntimeKit`, including injected
+  executor record lifecycle, run/start/stream orchestration, kill/write/list
+  facades, managed-process completion cleanup, and stream wrapping. Provider
+  managers now primarily map provider options into command arguments,
+  environment, cwd, and provider-specific managed-process factories.
+- Moved duplicated running-session state handling into
+  `AgentRunningSessionState<RolloutLine>` in `AgentRuntimeKit`, including
+  thread-safe session-id refresh, live message merging, resume backfill,
+  stable line deduplication hooks, stream chunking hooks, completion caching,
+  cancellation, and terminal result metadata. Provider running-session classes
+  now retain only read-only session API shape, provider-specific session-id
+  extraction, and result type mapping.
+- Live stdout/stderr draining, stdout line buffering, partial-line handling,
+  blocking `nextLine`, failed-start closed streams, process termination,
+  waiting, and execution collection now have one implementation instead of
+  three brand-cloned copies.
+- This is intentionally a staged F5 extraction. The larger `AgentRuntimeKit`
+  plan still needs follow-up slices for the higher-level operational store
+  repositories and process-manager/provider descriptor consolidation.
+
+**Validation**:
+
+- `AgentRuntimeKitTests` covers parsed stdout buffering, trailing-line parsing,
+  timeout behavior, failed managed-process execution, managed-process launcher
+  stdin handoff, and failed-start launch records.
+- `AgentRolloutWatcherTests` covers complete/trailing rollout-line parsing,
+  recursive rollout-file discovery, close semantics, and new-session events in
+  the shared watcher.
+- `AgentSessionSQLiteSupportTests` covers opening the shared `threads`
+  database, rejecting incomplete rows, parsing date formats, normalizing
+  optional fields, fallback titles, unknown CLI versions, and git metadata.
+- `AgentOperationalSupportTests` covers default loading, atomic directory
+  creation, pretty sorted JSON saves, and reloads through `AgentJSONFileStore`.
+- `AgentProcessStreamsTests` covers stream cursor advancement, snapshots,
+  cached process completion waits, and shared live execution stream-result
+  wait/collect behavior.
+- `AgentProcessContractsTests` covers the shared process status, record, and
+  execution contracts used by all three provider aliases.
+- `AgentProcessRegistryTests` covers shared virtual process creation,
+  input tracking, finish/exit-code updates, managed-process lookup for
+  termination, kill-all marking, and pruning.
+- `AgentProcessSupervisorTests` covers injected-executor run lifecycle and
+  stream wrapping through the shared supervisor.
+- `AgentRunningSessionStateTests` covers shared running-session live message
+  merging, session-id refresh, resume backfill, terminal result metadata, and
+  cancellation result behavior.
+- `CodexAgentCompatibilityTests.testProcessManagerStreamReturnsBeforeCompletionAndYieldsLiveLines`
+  covers the Codex wrapper through a real process-backed live stream.
+- `ClaudeCodeAgentCompatibilityTests.testProcessManagerStreamReturnsBeforeCompletionAndYieldsLiveLines`
+  covers the Claude wrapper through a real process-backed live stream.
+- `CursorCLIAgentCompatibilityTests.testProcessManagerStreamReturnsBeforeCompletionAndYieldsLiveLines`
+  covers the Cursor wrapper through a real process-backed live stream.
+- `CodexAgentSessionIndexCompatibilityTests.testRolloutWatcherEmitsCompleteLines`,
+  `ClaudeCodeSessionIndexCompatibilityTests.testRolloutWatcherEmitsCompleteLines`,
+  and `CursorCLISessionIndexCompatibilityTests.testRolloutWatcherEmitsCompleteLines`
+  cover provider wrapper event mapping and provider-specific session watch
+  roots.
+- `CodexAgentSessionIndexCompatibilityTests.testSessionIndexMergesSQLiteAndRolloutsWithRolloutMetadataPrecedence`,
+  `ClaudeCodeSessionIndexCompatibilityTests.testSessionIndexUsesRolloutMetadataBeforeStaleSQLiteRows`,
+  and `CursorCLISessionIndexCompatibilityTests.testSessionIndexUsesRolloutMetadataBeforeStaleSQLiteRows`
+  cover provider-specific session mapping and SQLite/rollout precedence after
+  the shared session-index reader extraction.
+- `CodexAgentCompatibilityTests.testPersistentQueueAndBookmarkRepositoriesMirrorReferenceConfigFiles`,
+  `ClaudeCodeAgentCompatibilityTests.testTokenPersistenceUsesLegacyCcaTokensAndSha256Hashes`,
+  and `CursorCLIAgentCompatibilityTests.testTokenPersistenceUsesLegacyCursorTokensAndSha256Hashes`
+  cover provider persistence through the public JSON-store shims.
+- `CodexAgentCompatibilityTests.testProcessManagerRunAgentAndOperationalStores`,
+  `ClaudeCodeAgentCompatibilityTests.testProcessManagerExecutesInjectedRunnerAndRecordsLifecycle`,
+  and `CursorCLIAgentCompatibilityTests.testProcessManagerExecutesInjectedRunnerAndRecordsLifecycle`
+  cover provider process lifecycle behavior through the public process
+  record/execution aliases.
+
 ### F6 (P2) Three hand-rolled SQLite stacks with divergent error enums and per-call connections
 
 **Location**: `Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift`,
@@ -325,6 +637,36 @@ struct SQLiteError: Error { let code: Int32; let message: String; let sql: Strin
   of plumbing and gain consistent locking behavior. The F5 extraction reuses
   the same kernel for the agent session indexes.
 
+**Issue resolution (2026-07-02)**:
+
+- Added a shared `RielaSQLite` target with `SQLiteDatabase`, `SQLiteValue`,
+  `SQLiteRow`, and `SQLiteError`. The kernel owns connection lifetime,
+  centralizes execute/query/bind/transaction behavior, applies
+  `journal_mode=WAL` and `busy_timeout=3000` for writable opens, and probes
+  JSONB support on open.
+- `SQLiteWorkflowRuntimePersistenceStore`, `SQLiteWorkflowMessageLog`, and
+  `CLIWorkflowSessionStore` now use `RielaSQLite` for open/query/execute/bind
+  plumbing. Each store still maps kernel errors into its existing domain error
+  enum, preserving call-site error handling.
+- The CLI combined session/runtime save path still uses one shared database
+  object and one transaction, so the prior atomicity between the CLI session
+  record, runtime snapshot, and message log is preserved without passing raw
+  SQLite handles across store-local helper stacks.
+- The prior F8 hygiene slice remains intact: schema preparation still runs
+  before caller transactions, runtime snapshot hydration still reuses the
+  already-open database object for message loading, and JSONB payloads are
+  still encoded once before binding.
+
+**Validation**:
+
+- `SQLiteDatabaseTests` covers WAL mode, busy timeout, JSONB probing,
+  execute/query bindings, and rollback behavior in the shared kernel.
+- `SQLiteWorkflowMessageLogTests` covers runtime/message-log persistence,
+  JSONB payload storage, migration of the runtime snapshot table, and load-all
+  message hydration through the shared database object.
+- `WorkflowCommandLivePersistenceTests` covers the CLI shared transaction path
+  after `CLIWorkflowSessionStore` moved to `RielaSQLite`.
+
 ### F7 (P2) Loop-engineering workflow semantics are hardcoded inside the generic adapter contract layer
 
 **Location**: `Sources/RielaCore/AdapterContracts.swift:233-311`
@@ -362,6 +704,34 @@ parsing *policy*, not contract.
    clearly named as heuristics) or into `RuntimeOutputValidation.swift`
    which is their only consumer family.
 
+**Issue resolution (2026-07-02)**:
+
+- Generic `normalizeOutputContractEnvelope` no longer applies loop-completion
+  routing by default. It accepts an explicit `OutputContractRoutingReconciler`
+  hook and otherwise preserves the adapter-returned `when` map exactly.
+- Loop-specific `goalAchieved`/`decision` routing now lives in
+  `LoopCompletionReviewRouting.swift`, outside `AdapterContracts.swift`.
+- `DeterministicWorkflowRunner` supplies that reconciler only for workflow loop
+  gate steps (`workflow.loop` plus `step.loop.gateId` or `step.loop.role ==
+  "gate"`), so ordinary user workflows that happen to return `decision` or
+  `goalAchieved` are no longer silently rewritten.
+- `WorkflowAcceptedOutputMetadata.routingDiagnostics` records reconciliation
+  notes on accepted outputs and decodes older snapshots with an empty list.
+- JSON object extraction heuristics moved to `RuntimeOutputExtraction.swift`,
+  leaving `AdapterContracts.swift` focused on neutral adapter contract types
+  and envelope normalization.
+
+**Validation**:
+
+- `AdapterUtilitiesTests.testOutputContractEnvelopeDoesNotApplyLoopRoutingByDefault`
+  covers the neutral adapter contract boundary.
+- `AdapterUtilitiesTests.testLoopCompletionReviewReconcilerCanBeAppliedExplicitly`
+  covers explicit loop routing reconciliation and diagnostics.
+- `RuntimePublicationTests.testPublicationRecordsExplicitLoopRoutingReconciliationDiagnostic`
+  covers persisted accepted-output diagnostics.
+- `WorkflowRunnerLoopPolicyTests.testLoopGateStepReconcilesCompletionReviewRouting`
+  covers runner opt-in only on loop gate steps.
+
 ### F8 (P3) Persistence-store hygiene: DDL in transactions, duplicated encoding, formatter allocation
 
 **Location**: `Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift`.
@@ -381,6 +751,32 @@ migrations on open; bind encoded JSON once into a local; make the ISO8601
 formatter a `static let`; give `snapshot(from:)` access to the already-open
 handle for message loading (`listMessages(in db:)` variant, which
 `SQLiteWorkflowMessageLog` already has internally for writes).
+
+**Issue resolution (2026-07-02)**:
+
+- Runtime persistence schema setup now runs through `prepareSchema(in:)` before
+  the store-owned `BEGIN IMMEDIATE` transaction. The CLI combined
+  session/runtime save path also prepares both CLI and runtime schemas before
+  starting its shared transaction.
+- `save(_:in:)` now assumes schema has been prepared by the caller and no
+  longer performs runtime DDL inside a caller transaction.
+- Snapshot upsert encodes `rootOutput` and `loopEvidence` once each and binds
+  the resulting optional JSON text directly through `jsonb(?)`.
+- Runtime `load`/`loadAll` pass the already-open SQLite handle into
+  `SQLiteWorkflowMessageLog.listMessages(..., in:)`, removing the per-session
+  message-log store/open path for runtime snapshot hydration.
+- Runtime/message-log date rendering now uses a shared locked ISO8601 formatter
+  wrapper instead of allocating `ISO8601DateFormatter` for every row.
+
+**Validation**:
+
+- `SQLiteWorkflowMessageLogTests.testSQLiteRuntimePersistenceRoundTripsLoopEvidenceAndMigratesExistingDatabase`
+  covers schema migration and JSONB loop-evidence persistence.
+- `SQLiteWorkflowMessageLogTests.testSQLiteRuntimePersistenceLoadAllReturnsMessagesFromRuntimeDatabase`
+  covers `loadAll` snapshot hydration with per-session messages from the
+  runtime database handle.
+- `WorkflowCommandLivePersistenceTests` covers the CLI shared transaction path
+  that persists both session records and runtime snapshots.
 
 ### F9 (P2) `maxConcurrency` and fanout/cross-workflow transitions are accepted but not implemented — failures surface only at runtime
 
@@ -418,6 +814,41 @@ mean nothing to users.
 3. Replace `TASK-00x` strings with feature-named messages; the task ids can
    stay in code comments if useful.
 
+### F9 issue-resolution slice (2026-07-02)
+
+The first F9 implementation slice adds a shared runtime capability check and
+uses it before a deterministic run creates a session. The slice also exposes
+the same capability gaps through `workflow validate` diagnostics and stops
+accepting `--max-concurrency` as a silently ignored run option.
+
+**Behavior boundary**:
+
+1. `DeterministicWorkflowRunner.unsupportedFeatures(in:maxConcurrency:)`
+   returns `WorkflowRuntimeCapabilityGap` values with stable diagnostic paths
+   and user-facing feature messages.
+2. Runner preflight now rejects reserved `maxConcurrency` and unconditional
+   reachable fanout, cross-workflow-without-resume, and resume-without-
+   cross-workflow transitions before session creation.
+3. Conditional fanout/cross-workflow branches remain allowed at static
+   preflight so existing workflows with inactive feature branches can still run.
+   If such a branch becomes publishable, the runtime fallback still fails
+   closed, now without internal `TASK-00x` wording.
+4. `workflow validate` appends capability-gap diagnostics so unsupported
+   runner features can be detected without starting a run.
+5. CLI parsing rejects `--max-concurrency` with a reserved-for-fanout message.
+   The DTO/request field remains for wire compatibility, but local CLI users
+   can no longer pass a value that would be ignored.
+
+**Validation**:
+
+- `WorkflowRunnerCapabilityPreflightTests` covers unsupported transition and
+  `maxConcurrency` preflight before session creation.
+- `WorkflowCommandTests.testWorkflowValidateReportsRuntimeCapabilityGaps`
+  covers static validate diagnostics for fanout.
+- `CommandParsingTests` covers reserved `--max-concurrency` rejection.
+- Publisher and command-node fallback tests retain fail-closed behavior with
+  feature-named messages instead of task ids.
+
 ### F10 (P2) Runner step loop does linear scans per iteration and duplicates the routing decision with the store
 
 **Location**: `Sources/RielaCore/DeterministicWorkflowRunner.swift:304-357`,
@@ -447,6 +878,32 @@ sites can diverge.
    `appendWorkflowMessages` (the store should record, not route) — the
    publisher already updates the execution and can set `currentStepId`
    explicitly via the existing update input.
+
+### F10 issue-resolution slice (2026-07-02)
+
+The first F10 implementation slice removes the duplicate route decision from
+the deterministic runner and in-memory runtime store.
+
+**Behavior boundary**:
+
+1. `WorkflowExecutionPlan` builds step and registry-node lookup maps once for
+   a run, and `DeterministicWorkflowRunner.run` uses those maps instead of
+   repeated linear `first(where:)` scans.
+2. `WorkflowPublicationResult.nextStepId` is now the route result consumed by
+   the runner. It is computed by `InMemoryWorkflowOutputPublisher`, next to
+   transition evaluation.
+3. `InMemoryWorkflowRuntimeStore.appendWorkflowMessages` no longer mutates
+   `session.currentStepId`; appending messages records delivery only.
+4. `WorkflowStepExecutionUpdateInput.currentStepId` lets the publisher
+   explicitly advance the session route after messages are successfully
+   appended.
+
+**Validation**:
+
+- `RuntimeStoreTests` now asserts direct message append preserves the
+  session's current step.
+- `RuntimePublicationTests` now asserts publication returns `nextStepId` and
+  updates the session current step through the publisher-owned route.
 
 ### F11 (P2) Observability: exporter payload is not OTLP, spans have fabricated durations, buffers are unbounded, flush is best-effort-invisible
 
@@ -496,6 +953,43 @@ sites can diverge.
    `riela.telemetry.export.failed` self-log) on first failure and on
    recovery.
 
+### F11 issue-resolution slice (2026-07-02)
+
+The first F11 implementation slice replaces the default custom telemetry
+payload with OTLP/HTTP JSON, makes workflow spans use real runtime timestamps,
+and bounds exporter memory.
+
+**Behavior boundary**:
+
+1. `OTLPRielaTelemetryExporter` now emits standard OTLP JSON roots:
+   `resourceSpans`, `resourceLogs`, and `resourceMetrics` for the three
+   signal endpoints. The previous custom `{serviceName, surface, records}`
+   envelope remains available only behind `RIELA_OTEL_LEGACY_PAYLOAD=1`.
+2. Exported resources include `service.name`, `riela.surface`, configured
+   resource attributes, and dropped-record counters when buffers overflow.
+3. Trace exports honor an incoming `traceparent` from
+   `RielaTelemetryConfiguration.fromEnvironment`, using its trace id and
+   parent span id while generating a fresh span id per exported span.
+4. Exporter buffers are capped by `maxBufferRecords` (default 2,048,
+   overridable by `RIELA_OTEL_MAX_BUFFER_RECORDS`) and drop oldest records
+   with counters rather than growing without bound.
+5. An auto-flush task starts on first buffered record and flushes every 10
+   seconds by default; tests can disable it by passing `autoFlushInterval: nil`.
+6. Export failures are no longer silent: non-2xx responses, URLSession errors,
+   and timeout races increment a consecutive-failure counter and emit a single
+   stderr warning on first failure, plus a recovery warning after success.
+7. Workflow step spans use `WorkflowStepExecution.createdAt/updatedAt`, and
+   workflow run spans use `WorkflowSession.createdAt/updatedAt`; completion
+   span durations are no longer fabricated from a completion-time `Date()`.
+
+**Validation**:
+
+- `WorkflowObservabilityTests` now checks standard OTLP payload roots,
+  redaction, resource attributes, parent trace propagation, bounded buffers,
+  dropped-record counters, timeout behavior, and workflow span timing.
+- Existing server/events telemetry call sites continue compiling against the
+  same `RielaTelemetry` protocol and `RielaTelemetrySpan` model.
+
 ### F12 (P2) `LocalAgentProcess` stdin handling can block the calling thread indefinitely or crash on a dead child
 
 **Location**: `Sources/RielaAdapters/LocalAgentProcess.swift:697-699` (stdin
@@ -539,6 +1033,40 @@ and duplicated in spirit inside each agent package's `ProcessManager`
    (`AgentAdapterTests`, `AgentAdapterStreamingTests`) already specify the
    contract (deadline → SIGTERM → 1 s → SIGKILL, group signaling first).
 
+### F12 issue-resolution slice (2026-07-02)
+
+The first F12 implementation slice lands the immediate stdin hardening without
+changing the public `LocalAgentProcessRunning` API or the process supervision
+state machine.
+
+**Behavior boundary**:
+
+1. `FoundationLocalAgentProcessRunner` no longer writes the complete stdin
+   prompt synchronously on the task thread. It dispatches a utility-queue
+   `LocalProcessStdinWriter` after spawn setup completes.
+2. The writer uses POSIX `write(2)` in bounded chunks and closes the stdin
+   descriptor when it finishes, preserving EOF behavior for children that read
+   from stdin.
+3. `SIGPIPE` is suppressed for stdin writes (`F_SETNOSIGPIPE` on Darwin,
+   `SIG_IGN` elsewhere), so a child that exits or closes stdin cannot crash
+   the parent process through `NSFileHandleOperationException` or SIGPIPE.
+4. `EINTR` is retried, while `EPIPE` and `EBADF` are treated as benign
+   terminal write outcomes. The child process exit status remains the
+   authority for adapter success or failure.
+5. Timeout and cancellation still close process pipes and terminate the
+   process group through the existing `LocalProcessCancellationState` and
+   `LocalProcessHandle` flow. The structural actor-based process supervisor
+   remains deferred to the F5/AgentRuntimeKit extraction.
+
+**Validation**:
+
+- `AgentAdapterTests.testFoundationRunnerWritesLargeStdinInChunks` verifies a
+  prompt larger than the usual pipe buffer is delivered to a stdin-reading
+  child.
+- `AgentAdapterTests.testFoundationRunnerTreatsClosedStdinPipeAsBenign`
+  verifies a large prompt sent to an immediately exiting child does not block,
+  throw, or crash.
+
 ### F13 (P3) `executeWithRetry` in `AdapterUtilities` ignores deadlines
 
 **Location**: `Sources/RielaAdapters/AdapterUtilities.swift:80-103`; contrast
@@ -555,6 +1083,24 @@ two implementations should not diverge.
 retry (rethrow) when `deadline <= now + retryDelay`, and do not retry
 `.timeout` when a deadline is set (the deadline *is* the budget). Migrate
 `OfficialSDKAdapters` to the shared helper and delete its private copy.
+
+**Issue resolution**:
+
+- `executeWithRetry` now accepts an optional deadline and injected clock,
+  normalizes terminal failures through the supplied normalizer, refuses to retry
+  `.timeout` when a deadline is present, and skips provider retries that cannot
+  complete their retry delay before the deadline.
+- `OfficialSDKAdapters` now delegates retry decisions to the shared helper while
+  retaining `runWithDeadline` to cap each individual SDK attempt.
+
+**Validation**:
+
+- `AdapterUtilitiesTests` covers deadline-aware provider retry, deadline-based
+  retry suppression, timeout suppression when a deadline exists, and preserved
+  timeout retry behavior without a deadline.
+- `OfficialSDKAdapterTests.testOfficialSDKAdapterSkipsRetryWhenDeadlineCannotCoverDelay`
+  verifies the migrated SDK path does not start a retry that would exceed the
+  node deadline and still redacts provider failure text.
 
 ### F14 (P3) GraphQL schema SDL and DTOs are dual-maintained; server "routes" GraphQL by echoing it
 
@@ -591,6 +1137,30 @@ framework for this):
    non-comment token rather than raw `hasPrefix` (a leading comment or
    shorthand-with-directive currently classifies as `unknown`).
 
+**Issue resolution**:
+
+- `DeterministicServerRouteHandler` now rejects non-string `operationName`
+  values and rejects a supplied operation name that is absent from the parsed
+  query's named operations.
+- GraphQL envelope failures still expose the existing top-level `error`, and
+  now also include a GraphQL-shaped `graphql.errors[].message` payload.
+- GraphQL telemetry operation-type classification now tokenizes the query and
+  skips whitespace, commas, comments, and string literals before reading the
+  operation token, so leading comments no longer hide mutations/subscriptions.
+- `GraphQLContractsTests` now parses the SDL type/input field sets and compares
+  them with field keys emitted by the corresponding Swift DTO/request types, so
+  schema/DTO drift fails in CI.
+
+**Validation**:
+
+- `GraphQLContractsTests.testSchemaContractFieldSetsMatchEncodedDTOs` covers the
+  SDL/DTO drift guard for the runtime GraphQL DTOs and input request models.
+- `ServerContractsTests.testGraphQLRouteRejectsMissingAndNonObjectBodies`
+  covers bad `operationName` shapes and missing named operations.
+- `ServerContractsTests.testGraphQLRouteRecordsRedactedTelemetryWithoutQueriesVariablesOrHeaders`
+  covers comment-prefixed mutation classification without leaking query,
+  variables, or headers into telemetry.
+
 ### F15 (P3) `HookContext` decoding silently defaults `vendor` to `.codex` and `eventName` to `"unknown"`
 
 **Location**: `Sources/RielaHook/HookContracts.swift` (`init(from:)`).
@@ -607,6 +1177,23 @@ warning when `inferredFields` is non-empty. Alternatively make `vendor`
 required and map legacy payloads at the single call site that needs it;
 choose based on whether pre-`vendor` payload producers still exist (git
 history suggests they do — keep lenient+tagged).
+
+**Issue resolution**:
+
+- `HookContext` now carries `inferredFields: Set<String>`, populated with
+  `vendor` and/or `eventName` when decode falls back to `.codex` or
+  `"unknown"`.
+- `HookContext.encode(to:)` omits `inferredFields` when empty and emits a
+  deterministic sorted array when fallback provenance exists.
+- The hook CLI path now appends a one-line stderr warning when a parsed hook
+  context contains inferred fields, while preserving existing stdout rendering.
+
+**Validation**:
+
+- `HookContractsTests.testHookContextDecodesPreTask006MinimalShapeWithDefaults`
+  covers legacy decode compatibility and inferred-field round-trip encoding.
+- `HookContractsTests.testHookContextOmitsInferredFieldsWhenExplicit` covers
+  explicit vendor/event contexts omitting the field from encoded JSON.
 
 ### F16 (P3) `JSONValue` numbers are `Double`-only — 64-bit ids silently lose precision
 
@@ -629,6 +1216,29 @@ decides int vs double explicitly). If the sweep is deemed too invasive now,
 minimally document the 2^53 limit on the type and add a validation
 diagnostic when an event-source mapping routes a >2^53 number.
 
+**Issue resolution**:
+
+- `JSONValue` now includes `case integer(Int64)`, decodes `Int64` before
+  `Double`, and re-encodes integers as plain JSON numbers so 64-bit event ids
+  can round-trip without `Double` precision loss.
+- `JSONValue.asInt64` and `JSONValue.asDouble` expose explicit numeric access
+  at call sites, and equality between `.integer` and `.number` only
+  interoperates when the integer is exactly representable as a `Double`.
+- Exhaustive switch sites now make an explicit integer decision: template and
+  event rendering print exact integers, Foundation bridging uses `Int64`,
+  text extractors continue treating integers as non-text, and memory/SQLite
+  compatibility paths convert to existing numeric representations at their
+  current boundaries.
+
+**Validation**:
+
+- `JSONValueTests.testDecodesAndReencodesLargeIntegersLosslessly` covers
+  lossless `Int64.max` JSON decode/re-encode.
+- `JSONValueTests.testIntegerAndNumberEqualityOnlyInteroperatesWhenExactlyRepresentable`
+  covers the `.integer`/`.number` compatibility boundary.
+- `EventInputNormalizationTests` verifies event dry-run input normalization
+  continues compiling and running through integer-aware template handling.
+
 ### F17 (P3) Terminology drift: `sessionId` vs `workflowExecutionId`
 
 **Location**: `WorkflowSession.sessionId` vs
@@ -648,6 +1258,30 @@ opportunistically: new APIs use it exclusively; existing `Codable` keys stay
 stable; Swift property renames go through deprecated computed-property
 shims (`@available(*, deprecated, renamed:)`). Record the decision in
 `design-riela-workflow-internals.md` glossary.
+
+**Issue resolution (2026-07-02)**:
+
+- `WorkflowSession.workflowExecutionId` now aliases the existing `sessionId`
+  storage without changing persisted `Codable` keys.
+- `GraphQLWorkflowSessionDTO` and the SDL expose `workflowExecutionId` while
+  preserving the legacy `sessionId` field for clients.
+- `GraphQLInspectSessionRequest`/`GraphQLContinueSessionRequest` expose
+  Swift-side `workflowExecutionId` aliases without changing input wire shapes.
+- `design-riela-workflow-internals.md` records `workflowExecutionId` as the
+  canonical runtime identity term and documents `sessionId` as compatibility
+  spelling.
+
+**Validation**:
+
+- `RuntimeSessionTests.testWorkflowSessionWorkflowExecutionIdAliasesSessionId`
+  covers the core model alias.
+- `GraphQLContractsTests.testProjectsRuntimeSessionAndMessagesIntoStableDTOs`
+  covers output projection parity between `sessionId` and
+  `workflowExecutionId`.
+- `GraphQLContractsTests.testLegacyGraphQLSessionRequestsExposeWorkflowExecutionIdAliasWithoutWireDrift`
+  covers request aliases and unchanged input encoding.
+- `GraphQLContractsTests.testSchemaContractFieldSetsMatchEncodedDTOs` keeps the
+  GraphQL SDL and DTO field sets in sync.
 
 ---
 

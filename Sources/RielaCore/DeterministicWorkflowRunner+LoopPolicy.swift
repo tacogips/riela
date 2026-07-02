@@ -22,4 +22,17 @@ extension DeterministicWorkflowRunner {
     let evidence = loopPolicyEvaluator.preflight(workflow: workflow, nodePayloads: request.nodePayloads)
     return loopPolicyEvaluator.evaluateStep(step: step, node: payload, workflowPolicy: evidence.effective)
   }
+
+  func workflowRoutingReconciler(
+    workflow: WorkflowDefinition,
+    step: WorkflowStepRef
+  ) -> OutputContractRoutingReconciler? {
+    guard workflow.loop != nil else {
+      return nil
+    }
+    guard step.loop?.gateId != nil || step.loop?.role == "gate" else {
+      return nil
+    }
+    return reconcileCompletionReviewRouting
+  }
 }

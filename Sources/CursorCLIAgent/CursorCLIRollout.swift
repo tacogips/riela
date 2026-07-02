@@ -509,7 +509,7 @@ private func outputText(from value: JSONValue?) -> String? {
     return text.isEmpty ? nil : text
   case let .object(object):
     return outputText(from: object["content"])
-  case .null, .bool, .number:
+  case .null, .bool, .integer, .number:
     return nil
   }
 }

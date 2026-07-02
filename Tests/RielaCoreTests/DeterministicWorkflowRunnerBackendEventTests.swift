@@ -159,7 +159,7 @@ final class DeterministicWorkflowRunnerBackendEventTests: XCTestCase {
   func testAgentSilenceMonitorEmitsWarningEvent() async throws {
     let recorder = WorkflowRunEventRecorder()
     let runner = DeterministicWorkflowRunner(
-      adapter: SleepingAdapter(delayNanoseconds: 60_000_000)
+      adapter: HeartbeatThenSleepingAdapter(delayNanoseconds: 60_000_000)
     )
 
     _ = try await runner.run(DeterministicWorkflowRunRequest(
@@ -178,6 +178,26 @@ final class DeterministicWorkflowRunnerBackendEventTests: XCTestCase {
     XCTAssertEqual(warning.nodeId, "node")
     XCTAssertGreaterThanOrEqual(try XCTUnwrap(warning.silentForMs), 10)
     XCTAssertEqual(warning.silenceThresholdMs, 10)
+  }
+
+  func testAgentSilenceMonitorDoesNotWarnBeforeFirstBackendEvent() async throws {
+    let recorder = WorkflowRunEventRecorder()
+    let runner = DeterministicWorkflowRunner(
+      adapter: SleepingAdapter(delayNanoseconds: 60_000_000)
+    )
+
+    _ = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: backendEventWorkflow(),
+      nodePayloads: ["node": backendEventPayload()],
+      agentSilenceWarningMs: 10,
+      agentSilenceMonitorIntervalMs: 5,
+      eventHandler: { event in
+        await recorder.append(event)
+      }
+    ))
+
+    let events = await recorder.events()
+    XCTAssertFalse(events.contains { $0.type == .silenceWarning })
   }
 
   func testOutputProjectionPublishesLatestInputPayloadWithoutAdapterCall() async throws {
@@ -263,6 +283,30 @@ private actor SleepingAdapter: NodeAdapter {
   }
 
   func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    try await Task.sleep(nanoseconds: delayNanoseconds)
+    return AdapterExecutionOutput(
+      provider: "test",
+      model: input.node.model,
+      promptText: input.promptText,
+      completionPassed: true,
+      payload: ["status": .string("ok")]
+    )
+  }
+}
+
+private actor HeartbeatThenSleepingAdapter: NodeAdapter {
+  var delayNanoseconds: UInt64
+
+  init(delayNanoseconds: UInt64) {
+    self.delayNanoseconds = delayNanoseconds
+  }
+
+  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    await context.backendEventHandler?(AdapterBackendEvent(
+      provider: input.node.executionBackend?.rawValue ?? "test",
+      eventType: "turn.started",
+      channel: .lifecycle
+    ))
     try await Task.sleep(nanoseconds: delayNanoseconds)
     return AdapterExecutionOutput(
       provider: "test",

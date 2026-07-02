@@ -116,6 +116,16 @@ final class CommandParsingTests: XCTestCase {
       XCTFail("expected run command")
     }
 
+    let runWithSilenceWarningsDisabled = try parser.parse([
+      "workflow", "run", "demo",
+      "--agent-silence-warning-ms", "0"
+    ])
+    if case let .workflow(.run(options)) = runWithSilenceWarningsDisabled {
+      XCTAssertEqual(options.agentSilenceWarningMs, 0)
+    } else {
+      XCTFail("expected run command")
+    }
+
     let supervisedRun = try parser.parse([
       "workflow", "run", "demo",
       "--auto-improve",

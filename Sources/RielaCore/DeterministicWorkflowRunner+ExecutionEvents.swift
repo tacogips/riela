@@ -122,7 +122,9 @@ extension DeterministicWorkflowRunner {
               runningExecution.status == .running else {
           return
         }
-        let lastSignalAt = runningExecution.lastBackendEventAt ?? runningExecution.updatedAt
+        guard let lastSignalAt = runningExecution.lastBackendEventAt else {
+          continue
+        }
         let silentForMs = Int(Date().timeIntervalSince(lastSignalAt) * 1_000)
         guard silentForMs >= thresholdMs else {
           continue

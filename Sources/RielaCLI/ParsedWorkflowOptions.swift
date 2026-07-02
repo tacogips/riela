@@ -175,7 +175,7 @@ struct ParsedWorkflowOptions {
       timeoutMs = try positiveInt(token, readOptionValue(token, tokens: tokens, index: &index))
     case "--agent-silence-warning-ms":
       try requireRunOption(token, allowRunOptions: allowRunOptions)
-      agentSilenceWarningMs = try positiveInt(token, readOptionValue(token, tokens: tokens, index: &index))
+      agentSilenceWarningMs = try nonNegativeInt(token, readOptionValue(token, tokens: tokens, index: &index))
     case "--agent-silence-monitor-interval-ms":
       try requireRunOption(token, allowRunOptions: allowRunOptions)
       agentSilenceMonitorIntervalMs = try positiveInt(token, readOptionValue(token, tokens: tokens, index: &index))

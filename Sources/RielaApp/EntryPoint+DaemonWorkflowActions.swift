@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import Foundation
+import RielaAppSupport
 
 extension RielaApp {
   func revealDaemonWorkflowSource(identity: String) {
@@ -29,7 +30,7 @@ extension RielaApp {
     }
     viewerWindowController?.show(
       workflowDirectory: candidate.workflowDirectory,
-      sessionStoreRoot: nil,
+      sessionStoreRoot: RielaAppDaemonWorkflowRuntime.defaultSessionStoreRootPath,
       currentDirectory: preference.workingDirectory ?? candidate.workingDirectory,
       environmentVariablesSummary: "\(preference.environmentVariables.count) inline",
       workflowVariablesSummary: "\(preference.defaultVariables.count) values",
@@ -70,6 +71,20 @@ extension RielaApp {
       }
     )
     status = "Opened viewer: \(candidate.displayName)"
+    refreshDaemonWorkflowWindow()
+  }
+
+  func openWorkflowSourceViewer(sourceId: String) {
+    guard let source = daemonWorkflowSources.first(where: { $0.id == sourceId || $0.sourceIdentity == sourceId }) else {
+      status = "Workflow source could not be found"
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    selectedWorkflow = .directDirectory(source.workflowDirectory, identifier: source.workflowId)
+    selectedWorkingDirectory = source.workingDirectory
+    selectedSessionStoreRoot = RielaAppDaemonWorkflowRuntime.defaultSessionStoreRootPath
+    openViewer()
+    status = "Opened viewer: \(source.displayName)"
     refreshDaemonWorkflowWindow()
   }
 

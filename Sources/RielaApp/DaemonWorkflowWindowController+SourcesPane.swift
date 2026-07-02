@@ -172,7 +172,9 @@ extension DaemonWorkflowWindowController {
     let filteredSources = filteredWorkflowSources(sources)
     let selectedSourceId = filteredSources.contains { $0.id == selectedWorkflowSourceId } ? selectedWorkflowSourceId : nil
     let scrollView = workflowSourceListScrollView(sources: filteredSources, selectedSourceId: selectedSourceId)
-    let emptyText = workflowSources.isEmpty ? "No workflow sources." : "No workflow sources match the current filter."
+    let emptyText = workflowSources.isEmpty
+      ? "No workflow sources in this profile. Import a folder, package, or GitHub URL with the buttons above."
+      : "No workflow sources match the current filter."
     let emptyLabel = NSTextField(labelWithString: emptyText)
     emptyLabel.textColor = .secondaryLabelColor
     emptyLabel.alignment = .center
@@ -245,6 +247,7 @@ extension DaemonWorkflowWindowController {
       summaryLabel: summaryLabel,
       documentStack: settingsDocumentStack(views: [
         workflowSourceSummarySection(source),
+        workflowSourceActionsSection(),
         graphPane
       ])
     )
@@ -303,6 +306,16 @@ extension DaemonWorkflowWindowController {
       settingRow(title: "Location", valueLabel: locationLabel, action: nil),
       settingRow(title: "Event Sources", valueLabel: eventLabel, action: nil),
       settingRow(title: "Environment", valueLabel: environmentLabel, action: nil)
+    ])
+  }
+
+  private func workflowSourceActionsSection() -> RielaAppSettingsSectionView {
+    rielaAppSettingsSection(rows: [
+      actionRow(
+        title: "Open in Viewer",
+        detail: "Inspect sessions, logs, and node structure for this workflow source.",
+        action: #selector(openSelectedWorkflowSourceViewer)
+      )
     ])
   }
 

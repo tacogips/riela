@@ -34,6 +34,10 @@ extension DaemonWorkflowWindowController {
       showInstancesList()
       return
     }
+    if isShowingInstanceDetail, instanceDetailPane == .removalConfirmation {
+      showInstanceDetailOverview()
+      return
+    }
     if isShowingInstanceDetail, instanceDetailPane != .overview {
       showInstanceDetailOverview()
       return
@@ -59,8 +63,6 @@ extension DaemonWorkflowWindowController {
     }
     showInstancesPane()
   }
-
-  @objc func goForward() {}
 
   @objc func showInstancesPane() {
     activeSidebarPane = .instances
@@ -110,7 +112,6 @@ extension DaemonWorkflowWindowController {
       || isShowingInstanceDetail
       || isShowingWorkflowSourceDetail
       || activeSidebarPane != .instances
-    navigationForwardButton.isEnabled = false
   }
 
   func updateSidebarSelection() {

@@ -80,8 +80,8 @@ final class RielaAppSettingsEditorNavigationTests: XCTestCase {
     XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "Environment Variables", in: root)).accessibilityPerformPress())
     controller.window?.layoutIfNeeded()
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Effective Configured Environment" })
-    XCTAssertTrue(textViews(in: root).contains { $0.string.contains("DUPLICATE_TOKEN=inline-value (inline override)") })
-    XCTAssertTrue(textViews(in: root).contains { $0.string.contains("FILE_ONLY=file-value (.env)") })
+    XCTAssertTrue(textViews(in: root).contains { $0.string.contains("DUPLICATE_TOKEN=•••••••• (inline override)") })
+    XCTAssertTrue(textViews(in: root).contains { $0.string.contains("FILE_ONLY=•••••••• (.env)") })
     XCTAssertTrue(textViews(in: root).contains { $0.string.contains("DUPLICATE_TOKEN=inline-value") })
 
     controller.cancelConfigurationEditor()
@@ -93,9 +93,10 @@ final class RielaAppSettingsEditorNavigationTests: XCTestCase {
     controller.cancelConfigurationEditor()
     XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "Event Sources", in: root)).accessibilityPerformPress())
     controller.window?.layoutIfNeeded()
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Source JSON" })
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Binding JSON" })
-    XCTAssertTrue(textViews(in: root).contains { $0.string.contains(#""workflowName" : "chat""#) })
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Source ID" })
+    XCTAssertTrue(visibleTextFields(in: root).contains {
+      $0.stringValue.contains("event input")
+    })
   }
 
   func testAssistantSidebarPaneShowsOnlyVendorAndModelSettingsAtRuntime() throws {

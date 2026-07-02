@@ -750,6 +750,16 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
     EventSourceKind(rawValue: rawKind).supportsLiveEventServe
   }
 
+  public static func daemonSourceKinds() -> [String] {
+    [
+      EventSourceKind.discordGateway,
+      .slackGateway,
+      .telegramGateway
+    ]
+    .filter(\.supportsLiveEventServe)
+    .map(\.rawValue)
+  }
+
   private static func uniqueProjectRoots(_ roots: [URL]) -> [URL] {
     var seen = Set<String>()
     var unique: [URL] = []
@@ -932,6 +942,10 @@ public final class RielaAppDaemonWorkflowRuntime {
   }
 
   private func defaultSessionStoreRoot() -> String {
+    Self.defaultSessionStoreRootPath
+  }
+
+  public static var defaultSessionStoreRootPath: String {
     URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
       .appendingPathComponent(".riela/sessions", isDirectory: true)
       .path

@@ -14,6 +14,11 @@ extension DaemonWorkflowWindowController {
       detail: "Choose a workflow source for this saved instance.",
       action: #selector(relinkSelectedSource)
     )
+    let openViewerRow = actionRow(
+      title: "Open in Viewer",
+      detail: "Inspect sessions, logs, and node structure for this instance.",
+      action: #selector(openSelectedInstanceViewer)
+    )
     let startRow = actionRow(
       title: "Start",
       detail: "Run this instance and include it in future app launches.",
@@ -37,6 +42,7 @@ extension DaemonWorkflowWindowController {
     detailMissingSourceValueLabel.lineBreakMode = .byTruncatingMiddle
     detailMissingSourceValueLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     let missingSourceRow = settingRow(title: "Workflow", valueLabel: detailMissingSourceValueLabel, action: nil)
+    let statusRow = settingRow(title: "Status", valueLabel: detailStatusValueLabel, action: nil)
     let nameRow = settingRow(title: "Name", valueLabel: detailNameValueLabel, action: #selector(renameSelectedWorkflow))
     let environmentRow = settingRow(
       title: ".env File",
@@ -65,6 +71,7 @@ extension DaemonWorkflowWindowController {
     )
     workflowSettingRow = workflowRow
     missingSourceSettingRow = missingSourceRow
+    statusSettingRow = statusRow
     nameSettingRow = nameRow
     environmentSettingRow = environmentRow
     inlineEnvironmentSettingRow = inlineEnvironmentRow
@@ -72,6 +79,7 @@ extension DaemonWorkflowWindowController {
     variablesSettingRow = variablesRow
     eventSourcesSettingRow = eventSourcesRow
     relinkSourceActionRow = relinkRow
+    openViewerActionRow = openViewerRow
     startInstanceActionRow = startRow
     stopInstanceActionRow = stopRow
     restartInstanceActionRow = restartRow
@@ -82,6 +90,7 @@ extension DaemonWorkflowWindowController {
       action: #selector(removeSelectedInstance)
     )
     let settingsSection = rielaAppSettingsSection(rows: [
+      statusRow,
       workflowRow,
       missingSourceRow,
       nameRow,
@@ -92,6 +101,7 @@ extension DaemonWorkflowWindowController {
       eventSourcesRow
     ])
     let actionsSection = rielaAppSettingsSection(rows: [
+      openViewerRow,
       relinkRow,
       startRow,
       stopRow,
@@ -111,6 +121,40 @@ extension DaemonWorkflowWindowController {
       summaryLabel: detailSummaryLabel,
       documentStack: stack
     )
+  }
+
+  func buildInstanceRemovalConfirmationView(_ row: ConfiguredWorkflowInstanceRow) -> NSView {
+    let summaryLabel = NSTextField(labelWithString: "Confirm Removal")
+    summaryLabel.textColor = .secondaryLabelColor
+    summaryLabel.lineBreakMode = .byTruncatingTail
+    let scopeValue = NSTextField(
+      labelWithString: "Removes only this instance from profile \(row.profileName.rawValue). The workflow source is not deleted."
+    )
+    scopeValue.lineBreakMode = .byWordWrapping
+    scopeValue.maximumNumberOfLines = 3
+    var messageRows = [
+      settingRow(title: "Scope", valueLabel: scopeValue, action: nil)
+    ]
+    if row.state == .running || row.state == .starting || row.state == .reloading {
+      let runningValue = NSTextField(labelWithString: "This instance is running and will be stopped.")
+      messageRows.append(settingRow(title: "Status", valueLabel: runningValue, action: nil))
+    }
+    let cancelRow = actionRow(
+      title: "Cancel",
+      detail: "Return to this instance without removing it.",
+      action: #selector(cancelRemoveSelectedInstance)
+    )
+    let removeRow = actionRow(
+      title: "Remove Instance",
+      detail: "Remove this instance. The workflow source is unchanged.",
+      style: .destructive,
+      action: #selector(confirmRemoveSelectedInstance)
+    )
+    let stack = settingsDocumentStack(views: [
+      rielaAppSettingsSection(rows: messageRows),
+      rielaAppSettingsSection(rows: [cancelRow, removeRow])
+    ])
+    return overviewPane(title: row.instanceName, summaryLabel: summaryLabel, documentStack: stack)
   }
 
   private func detailHeaderRow(label: NSTextField) -> NSStackView {

@@ -11,19 +11,23 @@ final class DaemonWorkflowInstanceListView: NSView {
     static let footerHorizontalInset: CGFloat = 12
     static let emptyLabelWidth: CGFloat = 360
     static let emptyLabelHeight: CGFloat = 44
+    static let emptyGuideWidth: CGFloat = 460
+    static let emptyGuideHeight: CGFloat = 160
   }
 
   let header: NSView
   let scrollView: NSScrollView
   let footer: NSView
   let emptyLabel: NSTextField
+  let emptyGuideView: NSView?
   private let scrollBackgroundView = NSView()
 
-  init(header: NSView, scrollView: NSScrollView, footer: NSView, emptyLabel: NSTextField) {
+  init(header: NSView, scrollView: NSScrollView, footer: NSView, emptyLabel: NSTextField, emptyGuideView: NSView? = nil) {
     self.header = header
     self.scrollView = scrollView
     self.footer = footer
     self.emptyLabel = emptyLabel
+    self.emptyGuideView = emptyGuideView
     super.init(frame: .zero)
     scrollBackgroundView.wantsLayer = true
     scrollBackgroundView.layer?.cornerRadius = 14
@@ -34,6 +38,9 @@ final class DaemonWorkflowInstanceListView: NSView {
     addSubview(scrollView)
     addSubview(footer)
     addSubview(emptyLabel)
+    if let emptyGuideView {
+      addSubview(emptyGuideView)
+    }
   }
 
   @available(*, unavailable)
@@ -82,6 +89,15 @@ final class DaemonWorkflowInstanceListView: NSView {
       width: emptyWidth,
       height: Layout.emptyLabelHeight
     )
+    if let emptyGuideView {
+      let guideWidth = min(Layout.emptyGuideWidth, max(0, scrollView.bounds.width - 32))
+      emptyGuideView.frame = NSRect(
+        x: scrollView.frame.minX + max(16, (scrollView.bounds.width - guideWidth) / 2),
+        y: scrollView.frame.minY + max(0, (scrollView.bounds.height - Layout.emptyGuideHeight) / 2),
+        width: guideWidth,
+        height: Layout.emptyGuideHeight
+      )
+    }
   }
 
   private func preferredPanelHeight(defaultHeight: CGFloat) -> CGFloat {
@@ -303,6 +319,7 @@ extension DaemonWorkflowWindowController {
     let header = NSStackView(views: [
       label,
       headerSpacer,
+      instanceSearchField,
       profilePopup,
       refreshButton
     ])
@@ -325,7 +342,8 @@ extension DaemonWorkflowWindowController {
       header: header,
       scrollView: scroll,
       footer: footer,
-      emptyLabel: emptyInstancesLabel
+      emptyLabel: emptyInstancesLabel,
+      emptyGuideView: emptyInstancesGuideView
     )
   }
 
@@ -437,6 +455,9 @@ extension DaemonWorkflowWindowController {
     let profile = "Profile \(row.profileName.rawValue)"
     guard row.candidate != nil else {
       return rielaAppMetadataText([profile, row.workflowName, "Missing source", row.sourceIdentity])
+    }
+    if row.state == .failed, !row.stateDetail.isEmpty {
+      return rielaAppMetadataText([profile, row.workflowName, row.stateDetail])
     }
     return rielaAppMetadataText([profile, row.workflowName])
   }

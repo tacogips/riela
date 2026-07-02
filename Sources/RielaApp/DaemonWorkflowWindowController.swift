@@ -103,6 +103,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
     case inlineEnvironment
     case workflowVariables
     case eventSources
+    case removalConfirmation
   }
 
   struct ConfiguredWorkflowInstanceRow {
@@ -116,6 +117,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
     var workflowName: String
     var hasMissingRequiredEnvironment: Bool
     var state: InstanceState
+    var stateDetail: String
   }
 
   struct WorkflowSourceOption {
@@ -128,11 +130,11 @@ final class DaemonWorkflowWindowController: NSWindowController,
 
   let instanceTable = NSTableView()
   let profilePopup = NSPopUpButton()
+  let instanceSearchField = NSSearchField()
   let addListButton = NSButton(title: "", target: nil, action: nil)
   let addProfileButton = NSButton(title: "", target: nil, action: nil)
   let refreshButton = NSButton(title: "", target: nil, action: nil)
   let navigationBackButton = NSButton(title: "", target: nil, action: nil)
-  let navigationForwardButton = NSButton(title: "", target: nil, action: nil)
   let navigationTitleLabel = NSTextField(labelWithString: "Instances")
   let sidebarInstancesButton = NSButton(title: "Instances", target: nil, action: nil)
   let sidebarSourcesButton = NSButton(title: "Workflow Sources", target: nil, action: nil)
@@ -155,8 +157,11 @@ final class DaemonWorkflowWindowController: NSWindowController,
   let emptyInstancesLabel = NSTextField(
     labelWithString: "No instances. Press + to select a workflow and create one."
   )
+  let emptyInstancesGuideView = DaemonWorkflowEmptyStateView()
+  let statusBannerView = RielaAppStatusBannerView()
   let detailTitleLabel = NSTextField(labelWithString: "")
   let detailSummaryLabel = NSTextField(labelWithString: "")
+  let detailStatusValueLabel = NSTextField(labelWithString: "")
   let detailNameValueLabel = NSTextField(labelWithString: "")
   let detailWorkflowValueLabel = NSTextField(labelWithString: "")
   let detailEnvironmentValueLabel = NSTextField(labelWithString: "")
@@ -177,6 +182,9 @@ final class DaemonWorkflowWindowController: NSWindowController,
   private let onRelinkInstance: (String, String) -> Void
   private let onRenameWorkflow: (String) -> Void
   private let onRemoveInstance: (String) -> Void
+  private let onOpenViewer: (String) -> Void
+  private let onOpenWorkflowSourceViewer: (String) -> Void
+  let defaultInstanceId: (String) -> String
   private let onStartInstance: (String) -> Void
   private let onStopInstance: (String) -> Void
   private let onRestartInstance: (String) -> Void
@@ -195,12 +203,12 @@ final class DaemonWorkflowWindowController: NSWindowController,
 
   private static let allProfilesMenuTitle = "All Profiles"
 
-  private var candidates: [RielaAppDaemonWorkflowCandidate] = []
+  var candidates: [RielaAppDaemonWorkflowCandidate] = []
   var workflowSources: [RielaAppDaemonWorkflowCandidate] = []
   var profileWorkflowSources: [RielaAppProfileName: [RielaAppDaemonWorkflowCandidate]] = [:]
   var profileInstances: [RielaAppProfiledWorkflowInstance] = []
   var state = RielaAppDaemonWorkflowState()
-  private var snapshots: [String: RielaAppDaemonWorkflowRuntime.RuntimeSnapshot] = [:]
+  var snapshots: [String: RielaAppDaemonWorkflowRuntime.RuntimeSnapshot] = [:]
   var profileName = RielaAppProfileName.default
   var profileNames: [RielaAppProfileName] = [.default]
   var profileFilterName: RielaAppProfileName? = .default
@@ -210,9 +218,11 @@ final class DaemonWorkflowWindowController: NSWindowController,
   private var profileControlsFingerprint = ""
   weak var activeAddInstanceWindow: NSWindow?
   var pendingAddInstanceSheetAction: AddInstanceSheetAction?
+  var activeAddInstancePathTargets: [AnyObject] = []
+  var activeConfigurationEditorTargets: [AnyObject] = []
   private var isUpdatingTableSelection = false
-  private var cachedInstanceRows: [ConfiguredWorkflowInstanceRow] = []
-  private var instanceRowsFingerprint = ""
+  var cachedInstanceRows: [ConfiguredWorkflowInstanceRow] = []
+  var instanceRowsFingerprint = ""
   var renderedAssistantSettings: RielaAppAssistantSettings?
   var instancesListView: NSView?
   weak var contentHost: DaemonWorkflowWindowContentHostView?
@@ -228,6 +238,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
   var sourcesOverviewFingerprint: String?
   weak var workflowSettingRow: NSView?
   weak var missingSourceSettingRow: NSView?
+  weak var statusSettingRow: NSView?
   weak var nameSettingRow: NSView?
   weak var environmentSettingRow: NSView?
   weak var inlineEnvironmentSettingRow: NSView?
@@ -235,6 +246,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
   weak var variablesSettingRow: NSView?
   weak var eventSourcesSettingRow: NSView?
   weak var relinkSourceActionRow: NSView?
+  weak var openViewerActionRow: NSView?
   weak var startInstanceActionRow: NSView?
   weak var stopInstanceActionRow: NSView?
   weak var restartInstanceActionRow: NSView?
@@ -243,6 +255,11 @@ final class DaemonWorkflowWindowController: NSWindowController,
   var workflowVariablesTextView: NSTextView?
   var eventSourceTextView: NSTextView?
   var eventBindingTextView: NSTextView?
+  var eventSourceModeControl: NSSegmentedControl?
+  var eventSourceKindPopup: NSPopUpButton?
+  var eventSourceIdField: NSTextField?
+  weak var eventSourceFormView: NSView?
+  weak var eventSourceJSONView: NSView?
   var assistantAssistanceTextView: NSTextView?
   var assistantTranscriptTextView: NSTextView?
   weak var assistantTranscriptScrollView: NSScrollView?
@@ -262,6 +279,11 @@ final class DaemonWorkflowWindowController: NSWindowController,
   var activeSidebarPane: SidebarPane = .instances
   var selectedWorkflowSourceId: String?
   var workflowSourceFilterText = ""
+  var instanceFilterText = ""
+  var rawInstanceRowsCount = 0
+  private var lastStatusMessageSequence: Int?
+  private var dismissedStatusMessageSequence: Int?
+  private var statusDismissTimer: Timer?
 
   enum SidebarPane {
     case instances
@@ -282,6 +304,9 @@ final class DaemonWorkflowWindowController: NSWindowController,
     onRelinkInstance: @escaping (String, String) -> Void,
     onRenameWorkflow: @escaping (String) -> Void,
     onRemoveInstance: @escaping (String) -> Void,
+    onOpenViewer: @escaping (String) -> Void = { _ in },
+    onOpenWorkflowSourceViewer: @escaping (String) -> Void = { _ in },
+    defaultInstanceId: @escaping (String) -> String = { _ in "" },
     onStartInstance: @escaping (String) -> Void,
     onStopInstance: @escaping (String) -> Void,
     onRestartInstance: @escaping (String) -> Void,
@@ -309,6 +334,9 @@ final class DaemonWorkflowWindowController: NSWindowController,
     self.onRelinkInstance = onRelinkInstance
     self.onRenameWorkflow = onRenameWorkflow
     self.onRemoveInstance = onRemoveInstance
+    self.onOpenViewer = onOpenViewer
+    self.onOpenWorkflowSourceViewer = onOpenWorkflowSourceViewer
+    self.defaultInstanceId = defaultInstanceId
     self.onStartInstance = onStartInstance
     self.onStopInstance = onStopInstance
     self.onRestartInstance = onRestartInstance
@@ -353,6 +381,35 @@ final class DaemonWorkflowWindowController: NSWindowController,
     assistantAssistance: String,
     statusMessage: String
   ) {
+    let sequencedMessage = statusMessage.isEmpty
+      ? nil
+      : SequencedRielaAppStatusMessage(sequence: 0, message: .classified(statusMessage))
+    update(
+      profileName: profileName,
+      profileNames: profileNames,
+      candidates: candidates,
+      workflowSources: workflowSources,
+      profileWorkflowSources: profileWorkflowSources,
+      profileInstances: profileInstances,
+      state: state,
+      snapshots: snapshots,
+      assistantAssistance: assistantAssistance,
+      statusMessage: sequencedMessage
+    )
+  }
+
+  func update(
+    profileName: RielaAppProfileName,
+    profileNames: [RielaAppProfileName],
+    candidates: [RielaAppDaemonWorkflowCandidate],
+    workflowSources: [RielaAppDaemonWorkflowCandidate],
+    profileWorkflowSources: [RielaAppProfileName: [RielaAppDaemonWorkflowCandidate]] = [:],
+    profileInstances: [RielaAppProfiledWorkflowInstance] = [],
+    state: RielaAppDaemonWorkflowState,
+    snapshots: [String: RielaAppDaemonWorkflowRuntime.RuntimeSnapshot],
+    assistantAssistance: String,
+    statusMessage: SequencedRielaAppStatusMessage?
+  ) {
     let didChangeProfile = self.profileName != profileName
     self.profileName = profileName
     self.profileNames = profileNames
@@ -365,6 +422,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
     if activeSidebarPane != .assistant {
       assistantAssistanceTextView?.string = assistantAssistance
     }
+    updateStatusBanner(statusMessage)
     if didChangeProfile {
       profileFilterName = profileName
     }
@@ -390,7 +448,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
     if rowsChanged || didChangeProfile {
       instanceTable.reloadData()
     }
-    emptyInstancesLabel.isHidden = !instanceRows.isEmpty
+    updateInstancesEmptyStateVisibility()
     if isShowingAddInstanceSelection {
       showAddInstanceSelectionPane()
     }
@@ -417,6 +475,61 @@ extension DaemonWorkflowWindowController {
     onRefresh()
   }
 
+  @objc func instanceSearchChanged() {
+    instanceFilterText = instanceSearchField.stringValue
+    let rowsChanged = rebuildInstanceRows()
+    if rowsChanged {
+      instanceTable.reloadData()
+    }
+    updateInstancesEmptyStateVisibility()
+    restoreSelection()
+    updateInstanceDetail()
+    window?.makeFirstResponder(instanceSearchField)
+  }
+
+  func updateInstancesEmptyStateVisibility() {
+    emptyInstancesGuideView.isHidden = rawInstanceRowsCount != 0
+    emptyInstancesLabel.stringValue = rawInstanceRowsCount == 0
+      ? ""
+      : "No instances match the current filter."
+    emptyInstancesLabel.isHidden = rawInstanceRowsCount == 0 || !instanceRows.isEmpty
+  }
+
+  private func updateStatusBanner(_ sequencedMessage: SequencedRielaAppStatusMessage?) {
+    guard let sequencedMessage else {
+      statusBannerView.isHidden = true
+      settingsRootView?.needsLayout = true
+      return
+    }
+    guard sequencedMessage.sequence != lastStatusMessageSequence else {
+      return
+    }
+    lastStatusMessageSequence = sequencedMessage.sequence
+    guard dismissedStatusMessageSequence != sequencedMessage.sequence else {
+      return
+    }
+    statusDismissTimer?.invalidate()
+    statusBannerView.configure(message: sequencedMessage.message)
+    statusBannerView.isHidden = false
+    settingsRootView?.needsLayout = true
+    guard sequencedMessage.message.severity == .info else {
+      return
+    }
+    statusDismissTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) { [weak self] _ in
+      Task { @MainActor [weak self] in
+        self?.dismissStatusBanner()
+      }
+    }
+  }
+
+  func dismissStatusBanner() {
+    dismissedStatusMessageSequence = lastStatusMessageSequence
+    statusDismissTimer?.invalidate()
+    statusDismissTimer = nil
+    statusBannerView.isHidden = true
+    settingsRootView?.needsLayout = true
+  }
+
   @objc func openProfilesFromSidebar() {
     showProfilesPane()
   }
@@ -431,7 +544,7 @@ extension DaemonWorkflowWindowController {
       _ = rebuildInstanceRows()
       updateProfileControls()
       instanceTable.reloadData()
-      emptyInstancesLabel.isHidden = !instanceRows.isEmpty
+      updateInstancesEmptyStateVisibility()
       restoreSelection()
       updateInstanceDetail()
       return
@@ -475,10 +588,33 @@ extension DaemonWorkflowWindowController {
   }
 
   @objc func removeSelectedInstance() {
+    showInstanceRemovalConfirmation()
+  }
+
+  @objc func confirmRemoveSelectedInstance() {
     guard let identity = selectedRow()?.id else {
       return
     }
     onRemoveInstance(identity)
+    showInstancesList()
+  }
+
+  @objc func cancelRemoveSelectedInstance() {
+    showInstanceDetailOverview()
+  }
+
+  @objc func openSelectedInstanceViewer() {
+    guard let row = selectedRow(), row.state != .needsSource else {
+      return
+    }
+    onOpenViewer(row.id)
+  }
+
+  @objc func openSelectedWorkflowSourceViewer() {
+    guard let selectedWorkflowSourceId else {
+      return
+    }
+    onOpenWorkflowSourceViewer(selectedWorkflowSourceId)
   }
 
   @objc func startSelectedInstance() {
@@ -629,6 +765,7 @@ extension DaemonWorkflowWindowController {
       row.state.rawValue,
       "Profile \(row.profileName.rawValue)"
     ])
+    detailStatusValueLabel.stringValue = stateStatusText(for: row)
     detailNameValueLabel.stringValue = row.instanceName
     detailWorkflowValueLabel.stringValue = rielaAppMetadataText([
       "Profile \(row.profileName.rawValue)",
@@ -637,7 +774,9 @@ extension DaemonWorkflowWindowController {
     detailMissingSourceValueLabel.stringValue = rielaAppMetadataText(["Missing source", row.sourceIdentity])
     if let candidate = row.candidate {
       updateWorkflowGraph(candidate: candidate)
-      detailEnvironmentValueLabel.stringValue = environmentSummary(candidate)
+      detailEnvironmentValueLabel.stringValue = row.hasMissingRequiredEnvironment
+        ? environmentColumnStatus(candidate)
+        : environmentSummary(candidate)
       detailInlineEnvironmentValueLabel.stringValue = "\(row.preference.environmentVariables.count) values"
       detailWorkingDirectoryValueLabel.stringValue = row.preference.workingDirectory ?? candidate.workingDirectory
       detailVariablesValueLabel.stringValue = "\(row.preference.defaultVariables.count) values"
@@ -654,6 +793,13 @@ extension DaemonWorkflowWindowController {
     updateDetailActions(for: row.state)
   }
 
+  private func stateStatusText(for row: ConfiguredWorkflowInstanceRow) -> String {
+    guard !row.stateDetail.isEmpty else {
+      return row.state.rawValue
+    }
+    return "\(row.state.rawValue) - \(row.stateDetail)"
+  }
+
   private func updateWorkflowGraph(candidate: RielaAppDaemonWorkflowCandidate) {
     do {
       workflowGraphPaneView.update(model: try DaemonWorkflowGraphModel.load(workflowDirectory: candidate.workflowDirectory))
@@ -665,6 +811,7 @@ extension DaemonWorkflowWindowController {
   private func updateDetailRowAccessibilityValues() {
     workflowSettingRow?.setAccessibilityValue(detailWorkflowValueLabel.stringValue)
     missingSourceSettingRow?.setAccessibilityValue(detailMissingSourceValueLabel.stringValue)
+    statusSettingRow?.setAccessibilityValue(detailStatusValueLabel.stringValue)
     nameSettingRow?.setAccessibilityValue(detailNameValueLabel.stringValue)
     environmentSettingRow?.setAccessibilityValue(detailEnvironmentValueLabel.stringValue)
     inlineEnvironmentSettingRow?.setAccessibilityValue(detailInlineEnvironmentValueLabel.stringValue)
@@ -677,6 +824,7 @@ extension DaemonWorkflowWindowController {
     let needsSource = state == .needsSource
     workflowSettingRow?.isHidden = needsSource
     missingSourceSettingRow?.isHidden = !needsSource
+    statusSettingRow?.isHidden = needsSource
     nameSettingRow?.isHidden = needsSource
     environmentSettingRow?.isHidden = needsSource
     inlineEnvironmentSettingRow?.isHidden = needsSource
@@ -684,6 +832,7 @@ extension DaemonWorkflowWindowController {
     variablesSettingRow?.isHidden = needsSource
     eventSourcesSettingRow?.isHidden = needsSource
     relinkSourceActionRow?.isHidden = !needsSource
+    openViewerActionRow?.isHidden = needsSource
     startInstanceActionRow?.isHidden = !showsStartAction(for: state)
     stopInstanceActionRow?.isHidden = !showsStopAction(for: state)
     restartInstanceActionRow?.isHidden = !showsRestartAction(for: state)
@@ -695,6 +844,24 @@ extension DaemonWorkflowWindowController {
     instanceDetailPane = .overview
     updateInstanceDetail()
     showContentPane(instanceDetailView)
+    updateNavigationState()
+    updateSidebarSelection()
+  }
+
+  func showInstanceRemovalConfirmation() {
+    guard let row = selectedRow() else {
+      return
+    }
+    isShowingAddInstanceSelection = false
+    isShowingWorkflowSourceDetail = false
+    instanceDetailPane = .removalConfirmation
+    instanceDetailView?.removeFromSuperview()
+    let detail = buildInstanceRemovalConfirmationView(row)
+    detail.translatesAutoresizingMaskIntoConstraints = true
+    detail.isHidden = false
+    instanceDetailView = detail
+    showContentPane(detail)
+    navigationTitleLabel.stringValue = row.instanceName
     updateNavigationState()
     updateSidebarSelection()
   }
@@ -779,131 +946,6 @@ extension DaemonWorkflowWindowController {
     return true
   }
 
-  var instanceRows: [ConfiguredWorkflowInstanceRow] {
-    cachedInstanceRows
-  }
-
-  @discardableResult
-  private func rebuildInstanceRows() -> Bool {
-    let rows = makeInstanceRows()
-    let fingerprint = instanceRowsFingerprint(for: rows)
-    let changed = fingerprint != instanceRowsFingerprint
-    cachedInstanceRows = rows
-    instanceRowsFingerprint = fingerprint
-    return changed
-  }
-
-  private func makeInstanceRows() -> [ConfiguredWorkflowInstanceRow] {
-    if !profileInstances.isEmpty {
-      return profiledInstanceRows()
-    }
-    let allCandidates = candidates + workflowSources
-    let candidatesById = Dictionary(allCandidates.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-    let candidatesBySourceIdentity = Dictionary(
-      allCandidates.map { ($0.sourceIdentity, $0) },
-      uniquingKeysWith: { first, _ in first }
-    )
-    return state.preferences
-      .sorted { lhs, rhs in lhs.key.localizedCaseInsensitiveCompare(rhs.key) == .orderedAscending }
-      .map { identity, preference in
-        let storedIdentity = preference.identity.isEmpty ? identity : preference.identity
-        let sourceIdentity = preference.sourceIdentity ?? storedIdentity
-        let sourceCandidate = candidatesById[sourceIdentity] ?? candidatesBySourceIdentity[sourceIdentity]
-        let directCandidate = candidatesById[storedIdentity]
-        let candidate = directCandidate ?? sourceCandidate?.managedInstance(
-          identity: storedIdentity,
-          displayName: preference.displayName
-        )
-        let instanceName = preference.displayName?.isEmpty == false
-          ? preference.displayName ?? storedIdentity
-          : candidate?.displayName ?? storedIdentity
-        return ConfiguredWorkflowInstanceRow(
-          id: storedIdentity,
-          profileName: profileName,
-          localIdentity: storedIdentity,
-          preference: preference,
-          candidate: candidate,
-          sourceIdentity: sourceIdentity,
-          instanceName: instanceName,
-          workflowName: sourceCandidate?.displayName ?? candidate?.workflowId ?? "Missing source",
-          hasMissingRequiredEnvironment: candidate.map(hasMissingRequiredEnvironment) ?? false,
-          state: instanceState(identity: storedIdentity, hasSource: candidate != nil)
-        )
-      }
-  }
-
-  private func instanceRowsFingerprint(for rows: [ConfiguredWorkflowInstanceRow]) -> String {
-    rows.map { row in
-      [
-        row.id,
-        row.profileName.rawValue,
-        row.localIdentity,
-        row.sourceIdentity,
-        row.instanceName,
-        row.workflowName,
-        String(row.hasMissingRequiredEnvironment),
-        row.state.rawValue,
-        row.preference.environmentFilePath ?? "",
-        row.preference.workingDirectory ?? "",
-        String(row.preference.environmentVariables.count),
-        String(row.preference.defaultVariables.count),
-        row.candidate?.eventSourceSummary ?? ""
-      ].joined(separator: "\u{1f}")
-    }.joined(separator: "\u{1e}")
-  }
-
-  private func profiledInstanceRows() -> [ConfiguredWorkflowInstanceRow] {
-    profileInstances
-      .filter { profileFilterName == nil || $0.profileName == profileFilterName }
-      .sorted { lhs, rhs in
-        let profileCompare = lhs.profileName.rawValue.localizedCaseInsensitiveCompare(rhs.profileName.rawValue)
-        if profileCompare != .orderedSame {
-          return profileCompare == .orderedAscending
-        }
-        return lhs.instance.displayName.localizedCaseInsensitiveCompare(rhs.instance.displayName) == .orderedAscending
-      }
-      .map { profiledInstance in
-        let instance = profiledInstance.instance
-        let runtimeCandidate = profiledInstance.runtimeCandidate
-        return ConfiguredWorkflowInstanceRow(
-          id: profiledInstance.id,
-          profileName: profiledInstance.profileName,
-          localIdentity: instance.identity,
-          preference: instance.preference,
-          candidate: runtimeCandidate,
-          sourceIdentity: instance.sourceIdentity,
-          instanceName: instance.displayName,
-          workflowName: instance.source.displayName,
-          hasMissingRequiredEnvironment: hasMissingRequiredEnvironment(runtimeCandidate),
-          state: instanceState(identity: profiledInstance.id, hasSource: true)
-        )
-      }
-  }
-
-  private func hasMissingRequiredEnvironment(_ candidate: RielaAppDaemonWorkflowCandidate) -> Bool {
-    environmentColumnStatus(candidate).hasPrefix("Missing ")
-  }
-
-  private func instanceState(identity: String, hasSource: Bool) -> InstanceState {
-    guard hasSource else {
-      return .needsSource
-    }
-    switch snapshots[identity]?.status {
-    case .running:
-      return .running
-    case .starting:
-      return .starting
-    case .reloading:
-      return .reloading
-    case .stopping:
-      return .stopping
-    case .failed:
-      return .failed
-    case .stopped, nil:
-      return .stopped
-    }
-  }
-
   func workflowSourceOptions() -> [WorkflowSourceOption] {
     workflowSourceOptions(profileName: profileName)
   }
@@ -947,6 +989,8 @@ extension DaemonWorkflowWindowController {
   }
 
   func windowWillClose(_ notification: Notification) {
+    statusDismissTimer?.invalidate()
+    statusDismissTimer = nil
     onWindowWillClose()
   }
 }

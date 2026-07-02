@@ -31,6 +31,45 @@ final class WorkflowSourceSelectionTarget: NSObject {
 }
 
 @MainActor
+private final class AddInstancePathFieldTarget: NSObject, NSTextFieldDelegate {
+  let field: NSTextField
+  let caption = NSTextField(labelWithString: "")
+  private let choosesDirectories: Bool
+
+  init(field: NSTextField, choosesDirectories: Bool) {
+    self.field = field
+    self.choosesDirectories = choosesDirectories
+    super.init()
+    field.delegate = self
+    caption.textColor = .systemRed
+    caption.font = .systemFont(ofSize: 11)
+    caption.isHidden = true
+  }
+
+  func controlTextDidChange(_ obj: Notification) {
+    updateCaption()
+  }
+
+  @objc func browse() {
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = !choosesDirectories
+    panel.canChooseDirectories = choosesDirectories
+    panel.allowsMultipleSelection = false
+    guard panel.runModal() == .OK, let url = panel.url else {
+      return
+    }
+    field.stringValue = url.path
+    updateCaption()
+  }
+
+  private func updateCaption() {
+    let path = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    caption.isHidden = path.isEmpty || FileManager.default.fileExists(atPath: path)
+    caption.stringValue = caption.isHidden ? "" : "File not found"
+  }
+}
+
+@MainActor
 final class WorkflowSourceSelectionRowTarget: NSObject {
   private weak var selectionTarget: WorkflowSourceSelectionTarget?
   private let index: Int
@@ -211,10 +250,23 @@ extension DaemonWorkflowWindowController {
       rebuildInlineAddInstanceSelectionForSearch()
       return
     }
+    if let searchField = notification.object as? NSSearchField,
+      isShowingAddInstanceSelection {
+      inlineAddInstanceSearchField.stringValue = searchField.stringValue
+      rebuildInlineAddInstanceSelectionForSearch()
+      return
+    }
     if notification.object as? NSSearchField === workflowSourceSearchField,
       activeSidebarPane == .sources,
       !isShowingWorkflowSourceDetail {
       rebuildSourcesOverviewViewForSearch()
+      return
+    }
+    if notification.object as? NSSearchField === instanceSearchField,
+      activeSidebarPane == .instances,
+      !isShowingInstanceDetail,
+      !isShowingAddInstanceSelection {
+      instanceSearchChanged()
     }
   }
 
@@ -433,8 +485,9 @@ extension DaemonWorkflowWindowController {
   }
 
   private func promptForInstanceParameters(sourceOption option: WorkflowSourceOption) -> DaemonWorkflowAddInstanceRequest? {
+    let generatedId = defaultInstanceId(option.sourceIdentity)
     let idField = NSTextField(string: "")
-    idField.placeholderString = "instance-id"
+    idField.placeholderString = generatedId.isEmpty ? "instance-id" : generatedId
     let nameField = NSTextField(string: option.candidate.displayName)
     nameField.placeholderString = "Display name"
     let envField = NSTextField(string: "")
@@ -442,9 +495,12 @@ extension DaemonWorkflowWindowController {
     let directoryField = NSTextField(string: option.candidate.workingDirectory)
     directoryField.placeholderString = "Optional working directory"
     [idField, nameField, envField, directoryField].forEach(configureAddInstanceTextField)
-    let startCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+    let envTarget = AddInstancePathFieldTarget(field: envField, choosesDirectories: false)
+    let directoryTarget = AddInstancePathFieldTarget(field: directoryField, choosesDirectories: true)
+    activeAddInstancePathTargets = [envTarget, directoryTarget]
+    let startCheckbox = NSButton(checkboxWithTitle: "Start immediately", target: nil, action: nil)
     startCheckbox.state = .on
-    startCheckbox.setAccessibilityLabel("Start")
+    startCheckbox.setAccessibilityLabel("Start immediately")
     startCheckbox.setAccessibilityHelp("Start this instance immediately after creating it.")
     startCheckbox.setContentHuggingPriority(.required, for: .horizontal)
     let parameterTitle = NSTextField(labelWithString: "Configure Instance")
@@ -453,16 +509,37 @@ extension DaemonWorkflowWindowController {
     let workflowValue = NSTextField(labelWithString: option.title)
     workflowValue.lineBreakMode = .byTruncatingMiddle
     workflowValue.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    let helperLabel = NSTextField(
+      labelWithString: generatedId.isEmpty ? "Leave empty to use a generated instance ID." : "Leave empty to use \(generatedId)."
+    )
+    helperLabel.textColor = .secondaryLabelColor
+    helperLabel.font = .systemFont(ofSize: 11)
+    let idStack = NSStackView(views: [idField, helperLabel])
+    idStack.orientation = .vertical
+    idStack.alignment = .width
+    idStack.spacing = 4
+    let envStack = pathFieldStack(field: envField, target: envTarget)
+    let directoryStack = pathFieldStack(field: directoryField, target: directoryTarget)
+    var rows: [NSView] = [
+      addInstanceValueRow(title: "Workflow", valueLabel: workflowValue)
+    ]
+    if !option.candidate.requiredEnvironment.isEmpty {
+      let required = option.candidate.requiredEnvironment.map(\.name).sorted().joined(separator: ", ")
+      let requiredLabel = NSTextField(labelWithString: required)
+      requiredLabel.lineBreakMode = .byTruncatingMiddle
+      requiredLabel.toolTip = required
+      rows.append(addInstanceValueRow(title: "Required Env", valueLabel: requiredLabel))
+    }
+    rows.append(contentsOf: [
+      addInstanceFieldRow(title: "Instance ID", control: idStack),
+      addInstanceFieldRow(title: "Display Name", control: nameField),
+      addInstanceFieldRow(title: ".env File", control: envStack),
+      addInstanceFieldRow(title: "Working Directory", control: directoryStack),
+      addInstanceToggleRow(title: "Start", checkbox: startCheckbox)
+    ])
     let stack = AddInstancePromptViewFactory().scrollingParameterStack(
       title: parameterTitle,
-      rows: [
-        addInstanceValueRow(title: "Workflow", valueLabel: workflowValue),
-        addInstanceFieldRow(title: "Instance ID", control: idField),
-        addInstanceFieldRow(title: "Display Name", control: nameField),
-        addInstanceFieldRow(title: ".env File", control: envField),
-        addInstanceFieldRow(title: "Working Directory", control: directoryField),
-        addInstanceToggleRow(title: "Start", checkbox: startCheckbox)
-      ]
+      rows: rows
     )
 
     let response = runAddInstancePromptWindow(
@@ -474,13 +551,14 @@ extension DaemonWorkflowWindowController {
       initialFirstResponder: idField
     )
     guard response == .OK else {
+      activeAddInstancePathTargets = []
       return nil
     }
     let rawIdentity = idField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
     let displayName = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
     let envPath = envField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
     let workingDirectory = directoryField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-    return DaemonWorkflowAddInstanceRequest(
+    let request = DaemonWorkflowAddInstanceRequest(
       sourceIdentity: option.sourceIdentity,
       identity: rawIdentity,
       displayName: displayName.isEmpty ? nil : displayName,
@@ -488,6 +566,22 @@ extension DaemonWorkflowWindowController {
       workingDirectory: workingDirectory.isEmpty ? nil : workingDirectory,
       startsImmediately: startCheckbox.state == .on
     )
+    activeAddInstancePathTargets = []
+    return request
+  }
+
+  private func pathFieldStack(field: NSTextField, target: AddInstancePathFieldTarget) -> NSStackView {
+    let browseButton = NSButton(title: "Browse...", target: target, action: #selector(target.browse))
+    browseButton.bezelStyle = .rounded
+    let row = NSStackView(views: [field, browseButton])
+    row.orientation = .horizontal
+    row.alignment = .centerY
+    row.spacing = 8
+    let stack = NSStackView(views: [row, target.caption])
+    stack.orientation = .vertical
+    stack.alignment = .width
+    stack.spacing = 4
+    return stack
   }
 
   @discardableResult

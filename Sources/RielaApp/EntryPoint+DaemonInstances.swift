@@ -446,7 +446,7 @@ extension RielaApp {
     RielaAppSettingsEditorWindowController.editMultiline(title: title, message: message, value: value)
   }
 
-  private func uniqueDaemonInstanceId(for candidate: RielaAppDaemonWorkflowCandidate) -> String {
+  func uniqueDaemonInstanceId(for candidate: RielaAppDaemonWorkflowCandidate) -> String {
     let base = sanitizedDaemonInstanceId("\(candidate.sourceIdentity)-instance")
     var candidateId = base
     var suffix = 2

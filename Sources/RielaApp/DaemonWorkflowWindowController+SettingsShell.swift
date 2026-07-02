@@ -29,6 +29,8 @@ final class DaemonWorkflowSettingsRootView: NSView {
     static let sidebarCornerRadius: CGFloat = 22
     static let contentGutter: CGFloat = 28
     static let toolbarHeight: CGFloat = 72
+    static let bannerHeight: CGFloat = 36
+    static let bannerSpacing: CGFloat = 8
     static let assistantExpandedHeight: CGFloat = 176
     static let assistantFoldedHeight: CGFloat = 42
     static let assistantBottomInset: CGFloat = 14
@@ -37,6 +39,7 @@ final class DaemonWorkflowSettingsRootView: NSView {
 
   let sidebar = NSVisualEffectView()
   let toolbar = NSView()
+  let statusBannerHost = NSView()
   let contentHost = DaemonWorkflowWindowContentHostView()
   let assistantPanelHost = NSView()
   var assistantPanelCollapsed = false
@@ -59,6 +62,7 @@ final class DaemonWorkflowSettingsRootView: NSView {
     updateBackgroundColor()
     addSubview(sidebar)
     addSubview(toolbar)
+    addSubview(statusBannerHost)
     addSubview(contentHost)
     addSubview(assistantPanelHost)
   }
@@ -95,11 +99,19 @@ final class DaemonWorkflowSettingsRootView: NSView {
       width: contentBodyWidth,
       height: Layout.toolbarHeight
     )
-    contentHost.frame = NSRect(
+    let bannerHeight = statusBannerHost.subviews.contains { !$0.isHidden } ? Layout.bannerHeight : 0
+    let bannerSpacing = bannerHeight > 0 ? Layout.bannerSpacing : 0
+    statusBannerHost.frame = NSRect(
       x: contentX + Layout.contentGutter,
       y: Layout.toolbarHeight,
       width: contentBodyWidth,
-      height: max(0, assistantY - Layout.toolbarHeight - Layout.contentAssistantSpacing)
+      height: bannerHeight
+    )
+    contentHost.frame = NSRect(
+      x: contentX + Layout.contentGutter,
+      y: Layout.toolbarHeight + bannerHeight + bannerSpacing,
+      width: contentBodyWidth,
+      height: max(0, assistantY - Layout.toolbarHeight - bannerHeight - bannerSpacing - Layout.contentAssistantSpacing)
     )
     assistantPanelHost.frame = NSRect(
       x: contentX + Layout.contentGutter,
@@ -113,11 +125,15 @@ final class DaemonWorkflowSettingsRootView: NSView {
     for subview in toolbar.subviews {
       subview.frame = toolbar.bounds
     }
+    for subview in statusBannerHost.subviews {
+      subview.frame = statusBannerHost.bounds
+    }
     for subview in assistantPanelHost.subviews {
       subview.frame = assistantPanelHost.bounds
     }
     sidebar.layoutSubtreeIfNeeded()
     toolbar.layoutSubtreeIfNeeded()
+    statusBannerHost.layoutSubtreeIfNeeded()
     contentHost.needsLayout = true
     assistantPanelHost.layoutSubtreeIfNeeded()
   }
@@ -148,7 +164,12 @@ extension DaemonWorkflowWindowController {
     configureNavigationControls()
     root.sidebar.addSubview(buildSidebar())
     root.toolbar.addSubview(buildNavigationToolbar())
+    root.statusBannerHost.addSubview(statusBannerView)
     root.assistantPanelHost.addSubview(buildAssistantPanel())
+    statusBannerView.isHidden = true
+    statusBannerView.onDismiss = { [weak self] in
+      self?.dismissStatusBanner()
+    }
 
     profilePopup.target = self
     profilePopup.action = #selector(profilePopupChanged)
@@ -161,6 +182,14 @@ extension DaemonWorkflowWindowController {
     refreshButton.bezelStyle = .toolbar
     refreshButton.toolTip = "Refresh instances"
     refreshButton.setAccessibilityLabel("Refresh Instances")
+    instanceSearchField.placeholderString = "Filter instances"
+    instanceSearchField.target = self
+    instanceSearchField.delegate = self
+    instanceSearchField.sendsSearchStringImmediately = true
+    instanceSearchField.controlSize = .large
+    instanceSearchField.setAccessibilityLabel("Filter Instances")
+    instanceSearchField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    instanceSearchField.action = #selector(instanceSearchChanged)
     addListButton.target = self
     addListButton.action = #selector(addListButtonPressed)
     addListButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)
@@ -179,12 +208,21 @@ extension DaemonWorkflowWindowController {
     emptyInstancesLabel.maximumNumberOfLines = 2
     emptyInstancesLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     emptyInstancesLabel.setAccessibilityLabel("No instances. Press Add Instance to select a workflow and create one.")
+    emptyInstancesGuideView.onViewWorkflowSources = { [weak self] in
+      self?.showSourcesPane()
+    }
+    emptyInstancesGuideView.onCreateInstance = { [weak self] in
+      self?.showAddInstanceSelectionPane()
+    }
+    emptyInstancesGuideView.translatesAutoresizingMaskIntoConstraints = true
+    emptyInstancesGuideView.autoresizingMask = []
     profilePopup.toolTip = "Switch profiles or manage profiles."
     configureAssistantControls()
     detailSummaryLabel.textColor = .secondaryLabelColor
     detailSummaryLabel.lineBreakMode = .byTruncatingTail
     for label in [
       detailTitleLabel,
+      detailStatusValueLabel,
       detailNameValueLabel,
       detailWorkflowValueLabel,
       detailEnvironmentValueLabel,
@@ -222,19 +260,14 @@ extension DaemonWorkflowWindowController {
 
   private func configureNavigationControls() {
     configureToolbarButton(navigationBackButton, symbolName: "chevron.left", accessibilityLabel: "Back")
-    configureToolbarButton(navigationForwardButton, symbolName: "chevron.right", accessibilityLabel: "Forward")
     navigationBackButton.target = self
     navigationBackButton.action = #selector(goBack)
-    navigationForwardButton.target = self
-    navigationForwardButton.action = #selector(goForward)
     navigationTitleLabel.font = .systemFont(ofSize: 24, weight: .bold)
     navigationTitleLabel.lineBreakMode = .byTruncatingTail
   }
 
   private func buildNavigationToolbar() -> NSView {
-    let separator = NSBox()
-    separator.boxType = .separator
-    let navGroup = NSStackView(views: [navigationBackButton, separator, navigationForwardButton])
+    let navGroup = NSStackView(views: [navigationBackButton])
     navGroup.orientation = .horizontal
     navGroup.alignment = .centerY
     navGroup.spacing = 8
@@ -244,7 +277,6 @@ extension DaemonWorkflowWindowController {
     navGroup.layer?.borderColor = NSColor.separatorColor.cgColor
     navGroup.layer?.borderWidth = 1
     navGroup.translatesAutoresizingMaskIntoConstraints = false
-    separator.heightAnchor.constraint(equalToConstant: 22).isActive = true
 
     let stack = NSStackView(views: [navGroup, navigationTitleLabel])
     stack.orientation = .horizontal

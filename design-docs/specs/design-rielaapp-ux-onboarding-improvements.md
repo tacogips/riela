@@ -1,6 +1,6 @@
 # RielaApp UX and New-User Onboarding Improvements
 
-Status: draft
+Status: issue-resolution design draft, updated from runtime intake `comm-000535`
 
 This design proposes user-facing improvements to RielaApp so that everyday
 operations are easier for existing users and the app is understandable to a
@@ -20,6 +20,34 @@ This design builds on and does not revert
 Source/Instance mental model, the single instance list, and the ban on
 `active`/`enabled`/`available` vocabulary in user-facing text all remain in
 force.
+
+## Intake and Workflow Boundary
+
+This design update is the Step 2 design document for
+`codex-design-and-implement-review-loop-session-877`. The authoritative intake
+is runtime communication `comm-000535`; no GitHub issue URL, repository, issue
+number, or issue body was supplied. The issue reference for implementation and
+review is therefore the runtime issue reference from
+`workflowExecutionId=codex-design-and-implement-review-loop-session-877`,
+`communicationId=comm-000534`.
+
+Implementation mode is `issue-resolution`. Feature fanout is intentionally not
+used because the current Swift workflow runner does not support fanout
+transitions. F1 through F8 are treated as one dependent implementation path
+with sequential design, implementation, review, and improvement passes. Later
+steps may still stage commits or patches internally, but review should judge
+the combined Source/Instance onboarding behavior rather than independent
+feature branches.
+
+The Codex-agent reference materials for this issue are:
+
+- `<codex-attachment>/pasted-text-1.txt`
+- `design-docs/specs/design-rielaapp-ux-onboarding-improvements.md`
+- `design-docs/specs/design-rielaapp-workflow-instances.md`
+
+No Cursor-specific behavior is introduced by this design. Any future Cursor or
+Codex-agent integration behavior must remain behind adapter modules and must
+not leak adapter-specific vocabulary into RielaApp's Source/Instance UI.
 
 ## Problem
 
@@ -164,8 +192,14 @@ All new copy in this design uses only these two nouns plus "profile".
 
 ## Proposed Changes
 
-The changes are grouped F1–F8 in priority order. F1–F3 are the highest-value
-fixes; F4–F8 are independent and can land in any order after them.
+The changes are grouped F1-F8 as one sequential, dependent implementation
+path. Implementers should complete and review them in order because later
+items intentionally reuse behavior or UI affordances introduced earlier:
+F4 depends on F1's banner for bootstrap feedback, F5 depends on the
+Source/Instance flow clarified by F4, F6 and F7 build on the configuration
+surfaces improved by F5, and F8 polishes the combined window behavior after
+the earlier states exist. This is not a feature-fanout plan; Step 4 should
+plan one ordered implementation path rather than independent feature branches.
 
 ---
 
@@ -350,7 +384,7 @@ Mirror the profile removal pattern exactly
 #### 4a. Instances empty state becomes a guided card
 
 Replace the single `emptyInstancesLabel` with an empty-state view shown in the
-same position (hidden whenever `instanceRows` is non-empty):
+same position only when the unfiltered/raw instance count is zero:
 
 ```
 Set up your first instance
@@ -370,10 +404,11 @@ Set up your first instance
   numbered rows, horizontal button stack), placed and sized by
   `DaemonWorkflowInstanceListView.layout()` where `emptyLabel` sits today
   (widen the reserved empty frame from 44pt to fitting height).
-- The view renders from static copy; no per-profile state. It appears any
-  time the filtered instance list is empty (new profile, "All Profiles" with
-  none configured), which is correct guidance in all those cases, not only
-  first launch.
+- The view renders from static copy; no per-profile state. It appears when
+  there are no configured instances in the current raw list before applying
+  the F8 search filter (new profile, "All Profiles" with none configured).
+  It does not appear for a zero-result search/filter when instances still
+  exist; F8 owns that filtered-empty message.
 
 #### 4b. Sources empty state
 
@@ -390,17 +425,23 @@ so the very first window open explains why sources are already populated.
 
 #### Acceptance criteria
 
-- Fresh profile: instances pane shows the guided card; both buttons navigate
-  correctly.
-- Card disappears as soon as one instance exists and reappears if all are
+- Fresh profile or "All Profiles" with zero raw instances: instances pane
+  shows the guided card; both buttons navigate correctly.
+- Card disappears as soon as one raw instance exists and reappears if all are
   removed.
+- If the raw instance count is non-zero but the F8 search filter matches zero
+  rows, the guided card stays hidden and the filtered-empty message appears
+  instead.
 
 #### Tests
 
 - Empty-state test in the style of `RielaAppWorkflowViewerEmptyStateTests`:
-  guided view hidden/shown against row counts; button actions call the
-  navigation selectors (verifiable via pane state flags
-  `activeSidebarPane`/`isShowingAddInstanceSelection`).
+  guided view hidden/shown against raw row counts, not filtered row counts;
+  button actions call the navigation selectors (verifiable via pane state
+  flags `activeSidebarPane`/`isShowingAddInstanceSelection`).
+- Filter-empty test: one or more raw instances plus a search with zero matches
+  shows `No instances match the current filter.` and keeps the guided card
+  hidden.
 
 ---
 
@@ -545,9 +586,11 @@ In `effectiveEnvironmentView(values:)`
   `cachedInstanceRows` by instance name, workflow name, profile, and state
   string — same matching options as `filteredWorkflowSources`
   (case/diacritic-insensitive substring). Filter text is part of the rows
-  fingerprint. The empty-filter state shows `No instances match the current
-  filter.` (distinct from the F4 guided card, which appears only when there
-  are no instances at all).
+  fingerprint. The renderer must keep two counts: raw instances before
+  filtering and visible rows after filtering. When raw count is zero, F4's
+  guided card is shown. When raw count is non-zero and visible row count is
+  zero, the filtered-empty state shows `No instances match the current
+  filter.` and the F4 guided card remains hidden.
 - **Actionable missing-env warning**: the warning triangle in
   `makeInstanceRowView` remains, and the instance detail `.env File` row
   additionally gets a leading warning icon and its value label shows
@@ -567,6 +610,8 @@ In `effectiveEnvironmentView(values:)`
 
 - Filter test: rows filtered by each searchable component; fingerprint
   changes with filter text.
+- Filter-empty test: raw count non-zero plus zero visible rows shows only the
+  filtered-empty message, while raw count zero shows only the F4 guided card.
 - Layout tests updated for the removed forward button (adjust
   `RielaAppControllerLayoutTests` expectations).
 - Menu test: failed instances appear in the status menu summary lines,
@@ -589,13 +634,20 @@ Vocabulary rules:
 
 | Phase | Items | Rationale |
 |-------|-------|-----------|
-| 1 | F1, F2, F3 | Feedback, diagnosis, and safety; each independently shippable, F2/F3 read better with F1's banner present |
-| 2 | F4, F5 | New-user path end to end |
-| 3 | F6, F7, F8 | Advanced-surface quality and polish |
+| 1 | F1 | Establish the typed in-window feedback channel that later bootstrap, refresh, and error surfaces reuse. |
+| 2 | F2 | Add runtime detail and viewer access after F1 so failed-start diagnostics have a visible feedback path. |
+| 3 | F3 | Add the destructive-action confirmation once the detail pane can reliably explain instance state. |
+| 4 | F4 | Add the guided empty state after the base Source/Instance and feedback behavior is stable. |
+| 5 | F5 | Improve Configure Instance after F4 defines the Source -> Instance -> Configure -> Start path. |
+| 6 | F6 | Add guided event-source registration on top of the upgraded configuration patterns from F5. |
+| 7 | F7 | Mask effective environment values after the environment/configuration surfaces are in their final shape. |
+| 8 | F8 | Remove dead navigation and add filter, refresh, missing-env, and status-menu polish after all earlier states exist. |
 
-Every item is independently revertible; none migrates data. F1 introduces the
-only cross-cutting type (`RielaAppStatusMessage`) and should land first since
-F4c and F8 reference it.
+None of the phases migrates data. Rollback should treat this as one ordered
+path: if a later phase needs to be reverted, preserve or adjust the earlier
+phase contracts it depends on rather than treating F1-F8 as parallel feature
+work. F1 introduces the only cross-cutting type
+(`RielaAppStatusMessage`) and must land first since F4c and F8 reference it.
 
 ## Compatibility
 
@@ -623,3 +675,65 @@ F4c and F8 reference it.
   on every refresh tick; if menu rebuild cost becomes visible with many
   instances, cap the summary computation with the existing fingerprint
   technique.
+
+## Issue-to-Design Mapping
+
+| Intake signal | Design location | Required review evidence |
+|---------------|-----------------|--------------------------|
+| F1 status banner shows info/error outcomes in-window; errors persist until dismissed; refresh timer does not resurrect dismissed messages. | F1 in-window status banner; `RielaAppStatusMessage`; controller sequence handling. | `swift test --filter RielaAppStatusMessage`, layout coverage for banner hidden/visible/persistent states, and RielaApp screenshot of duplicate-ID error. |
+| F2 failed instance rows/detail panes show `RuntimeSnapshot.detail`; Open in Viewer is reachable; session-store root behavior is corrected. | F2 runtime detail rows, detail Status row, `onOpenViewer`, `defaultSessionStoreRootPath`. | `swift test --filter RielaAppWorkflowViewer`, row/fingerprint tests, and screenshot showing failed detail text plus Open in Viewer. |
+| F3 removing an instance requires a two-step confirmation consistent with profile removal. | F3 `InstanceDetailPane.removalConfirmation`; back/cancel/confirm behavior. | `swift test --filter RielaAppSettingsEditorNavigationTests` or successor instance-navigation test, plus screenshot of confirmation pane. |
+| F4 empty states guide Source -> Instance -> Configure -> Start and expose useful navigation actions. | F4 guided instances empty state and sources empty copy. | `swift test --filter RielaAppWorkflowViewerEmptyStateTests` or successor empty-state tests, plus screenshot of fresh-profile instances pane. |
+| F5 Configure Instance form has Browse controls, generated ID preview, and required environment visibility/validation. | F5 Configure Instance form upgrades. | `swift test --filter RielaAppAddInstanceLayoutTests` and `swift test --filter RielaAppPromptAccessoryTests`, plus screenshot of Configure Instance with required env and Browse controls. |
+| F6 event source setup provides guided kind-specific forms and preserves raw JSON as advanced mode. | F6 segmented Form/JSON event-source editor and `daemonSourceKinds()`. | `swift test --filter DaemonWorkflowSupportTests` or focused `daemonSourceKinds` test, editor JSON round-trip test, plus screenshot of Form and JSON modes. |
+| F7 effective environment values are masked by default with explicit Show Values opt-in. | F7 masked effective environment display and unpersisted Show Values toggle. | Masking formatter unit test, `swift test --filter RielaAppEnvironmentFileStoreTests` where relevant, and screenshot of masked and opt-in unmasked states using non-secret fixture values. |
+| F8 forward navigation dead control is removed; instance filtering, missing-env actions, refresh feedback, and status-menu failure visibility are polished. | F8 navigation cleanup, filter, missing-env row action, refresh banner, status-menu failed-instance lines. | `swift test --filter RielaAppControllerLayoutTests`, status menu tests, filter tests, and screenshots of filtered empty result and failed-instance menu summary. |
+
+## Verification Plan
+
+Implementation review should run the narrow tests for changed support and
+AppKit surfaces first, then the broader Swift suite if the changes compile
+cleanly:
+
+```bash
+swift test --filter RielaAppSupportTests
+swift test --filter RielaAppControllerLayoutTests
+swift test --filter RielaAppAddInstanceLayoutTests
+swift test --filter RielaAppPromptAccessoryTests
+swift test --filter RielaAppWorkflowViewerEmptyStateTests
+swift test --filter RielaAppWorkflowViewerVocabularyTests
+swift test
+git diff --check
+```
+
+RielaApp UI verification must capture screenshots for every changed window or
+sheet: the instances window with an info banner, an error banner, failed row
+detail, removal confirmation, guided empty state, Configure Instance, event
+source Form mode, event source JSON mode, masked environment values, filtered
+instances, and status-menu failed-instance visibility. Screenshots are review
+evidence only; scratch outputs must stay under repository-root `tmp/` and must
+not be added to git.
+
+## Review Feedback Status
+
+Step 2 self-review feedback `comm-000537` reported one mid-severity ambiguity:
+F4 described the guided empty state as appearing whenever the filtered instance
+list is empty, while F8 reserved filtered zero-result states for `No instances
+match the current filter.` This update resolves that finding by defining raw
+instance count zero as the only condition for the F4 guided card and raw count
+non-zero plus visible filtered count zero as the F8 filtered-empty condition.
+F4 and F8 acceptance criteria and tests now require those separate states.
+
+Step 2 self-review feedback `comm-000539` reported one mid-severity conflict:
+the intake boundary said F1-F8 are one dependent sequential implementation
+path with no feature fanout, while Proposed Changes and Implementation Phasing
+still described later items as parallelizable. This update resolves that
+finding by making Proposed Changes and Implementation Phasing explicitly
+sequential from F1 through F8 and by removing parallel-implementation
+language.
+
+No Step 3 design-review or Step 5 implementation-plan-review feedback for
+`codex-design-and-implement-review-loop-session-877` was present in the local
+runtime records inspected during this Step 2 update. If later review feedback
+arrives, high and mid findings must be resolved in this document before
+implementation proceeds.

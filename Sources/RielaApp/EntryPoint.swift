@@ -22,7 +22,14 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   var selectedWorkflow: WorkflowServeSelection?
   var selectedWorkingDirectory = FileManager.default.currentDirectoryPath
   var selectedSessionStoreRoot: String?
-  var status = "Ready"
+  var status = "Ready" {
+    didSet {
+      statusMessageSequence += 1
+      statusMessage = RielaAppStatusMessage.classified(status)
+    }
+  }
+  var statusMessage: RielaAppStatusMessage?
+  var statusMessageSequence = 0
   var daemonProfileName = RielaAppProfileName.default
   var daemonState = RielaAppDaemonWorkflowState()
   var daemonInstances: [WorkflowInstance] = []
@@ -113,6 +120,8 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       daemonWindowController = DaemonWorkflowWindowController(
         onRefresh: { [weak self] in
           self?.refreshDaemonWorkflowWindow()
+          self?.status = "Refreshed."
+          self?.refreshDaemonWorkflowWindow(refreshesInstanceCache: false)
         },
         onSelectProfile: { [weak self] profileName in
           self?.switchDaemonProfile(to: profileName)
@@ -143,6 +152,20 @@ final class RielaApp: NSObject, NSApplicationDelegate {
         },
         onRemoveInstance: { [weak self] identity in
           self?.removeDaemonWorkflowInstance(identity: identity)
+        },
+        onOpenViewer: { [weak self] identity in
+          self?.openDaemonWorkflowViewer(identity: identity)
+        },
+        onOpenWorkflowSourceViewer: { [weak self] sourceId in
+          self?.openWorkflowSourceViewer(sourceId: sourceId)
+        },
+        defaultInstanceId: { [weak self] sourceIdentity in
+          guard let self,
+            let source = self.daemonWorkflowSources.first(where: { $0.id == sourceIdentity })
+          else {
+            return ""
+          }
+          return self.uniqueDaemonInstanceId(for: source)
         },
         onStartInstance: { [weak self] identity in
           self?.startDaemonWorkflowInstance(identity: identity)
@@ -466,7 +489,9 @@ final class RielaApp: NSObject, NSApplicationDelegate {
         ($0, daemonRuntime.snapshot(for: $0))
       }),
       assistantAssistance: daemonState.assistant.assistance,
-      statusMessage: status
+      statusMessage: statusMessage.map {
+        SequencedRielaAppStatusMessage(sequence: statusMessageSequence, message: $0)
+      }
     )
     rebuildMenu()
   }
@@ -802,7 +827,7 @@ extension RielaApp {
     )
     let result = try bootstrapper.bootstrapIfNeeded()
     if !result.installedPackageNames.isEmpty {
-      status = "Added starter workflows to profile \(daemonProfileName.rawValue)"
+      status = "Added starter workflows to Workflow Sources."
     }
   }
 

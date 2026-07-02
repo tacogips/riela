@@ -26,6 +26,9 @@ extension RielaApp {
     menu.addItem(supplementaryMenuItem(
       rielaAppMetadataText(["Instances \(daemonSummary())", "Profile \(daemonProfileName.rawValue)"])
     ))
+    for line in failedDaemonInstanceMenuLines() {
+      menu.addItem(supplementaryMenuItem(line))
+    }
     menu.addItem(.separator())
     menu.addItem(menuItem("Quit", action: #selector(quitFromStatusMenu)))
     statusItem.menu = menu
@@ -50,6 +53,20 @@ extension RielaApp {
     item.target = self
     item.isEnabled = enabled
     return item
+  }
+
+  private func failedDaemonInstanceMenuLines() -> [String] {
+    let failed = daemonProfileInstances.compactMap { profiledInstance -> String? in
+      let snapshot = daemonRuntime.snapshot(for: profiledInstance.id)
+      guard snapshot.status == .failed else {
+        return nil
+      }
+      return "Warning: \(profiledInstance.instance.displayName): Failed"
+    }
+    guard failed.count > 3 else {
+      return failed
+    }
+    return Array(failed.prefix(3)) + ["+\(failed.count - 3) more failing"]
   }
 
   @objc private func quitFromStatusMenu() {

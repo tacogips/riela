@@ -9,6 +9,7 @@ extension DaemonWorkflowWindowController {
       return
     }
     instanceDetailPane = .inlineEnvironment
+    activeConfigurationEditorTargets = []
     let textView = configurationTextView(text: environmentText(from: row.preference.environmentVariables))
     inlineEnvironmentTextView = textView
     showConfigurationEditor(
@@ -16,7 +17,11 @@ extension DaemonWorkflowWindowController {
       message: "Inline values override matching values from the selected .env file.",
       bodyViews: [
         effectiveEnvironmentView(values: configuredEnvironmentValues(candidate)),
-        labeledEditor(title: "Inline Environment", textView: textView)
+        labeledEditor(
+          title: "Inline Environment",
+          caption: "Values entered here are stored in this profile's instance state on disk.",
+          textView: textView
+        )
       ],
       primaryTitle: "Save",
       primaryAction: #selector(saveInlineEnvironmentEditor)
@@ -28,6 +33,7 @@ extension DaemonWorkflowWindowController {
       return
     }
     instanceDetailPane = .workflowVariables
+    activeConfigurationEditorTargets = []
     let textView = configurationTextView(text: workflowVariablesText(from: row.preference.defaultVariables))
     workflowVariablesTextView = textView
     showConfigurationEditor(
@@ -46,17 +52,52 @@ extension DaemonWorkflowWindowController {
       return
     }
     instanceDetailPane = .eventSources
+    activeConfigurationEditorTargets = []
     let sourceTextView = configurationTextView(text: eventSourceTemplate(for: candidate))
     let bindingTextView = configurationTextView(text: eventBindingTemplate(for: candidate, sourceId: defaultEventSourceId(for: candidate)))
     eventSourceTextView = sourceTextView
     eventBindingTextView = bindingTextView
+    let modeControl = NSSegmentedControl(labels: ["Form", "JSON"], trackingMode: .selectOne, target: self, action: #selector(eventSourceModeChanged))
+    modeControl.selectedSegment = 0
+    eventSourceModeControl = modeControl
+    let kindPopup = NSPopUpButton()
+    kindPopup.addItems(withTitles: RielaAppDaemonWorkflowDiscovery.daemonSourceKinds())
+    kindPopup.selectItem(withTitle: "telegram-gateway")
+    eventSourceKindPopup = kindPopup
+    let sourceIdField = NSTextField(string: defaultEventSourceId(for: candidate))
+    sourceIdField.bezelStyle = .roundedBezel
+    eventSourceIdField = sourceIdField
+    let hint = NSTextField(labelWithString: "telegram-gateway receives Telegram messages; requires TELEGRAM_BOT_TOKEN in this instance's environment.")
+    hint.textColor = .secondaryLabelColor
+    hint.lineBreakMode = .byWordWrapping
+    hint.maximumNumberOfLines = 2
+    let formRows = NSStackView(views: [
+      settingsTextRow(title: "Kind", value: kindPopup),
+      settingsTextRow(title: "Source ID", value: sourceIdField),
+      hint,
+      NSTextField(labelWithString: "The event's payload is passed to the workflow as event input.")
+    ])
+    formRows.orientation = .vertical
+    formRows.alignment = .width
+    formRows.spacing = 8
+    eventSourceFormView = formRows
+    let jsonStack = NSStackView(views: [
+      labeledEditor(title: "Source JSON", textView: sourceTextView),
+      labeledEditor(title: "Binding JSON", textView: bindingTextView)
+    ])
+    jsonStack.orientation = .vertical
+    jsonStack.alignment = .width
+    jsonStack.spacing = 12
+    jsonStack.isHidden = true
+    eventSourceJSONView = jsonStack
     showConfigurationEditor(
       title: "Event Sources",
       message: "Register a source and binding under this workflow's .riela-events directory.",
       bodyViews: [
+        modeControl,
         eventSourceSummaryView(candidate: candidate),
-        labeledEditor(title: "Source JSON", textView: sourceTextView),
-        labeledEditor(title: "Binding JSON", textView: bindingTextView)
+        formRows,
+        jsonStack
       ],
       primaryTitle: "Register",
       primaryAction: #selector(saveEventSourceEditor)
@@ -64,6 +105,7 @@ extension DaemonWorkflowWindowController {
   }
 
   @objc func cancelConfigurationEditor() {
+    activeConfigurationEditorTargets = []
     showInstanceDetailOverview()
   }
 
@@ -75,6 +117,7 @@ extension DaemonWorkflowWindowController {
       showEditorError(error)
       return
     }
+    activeConfigurationEditorTargets = []
     showInstanceDetailOverview()
   }
 
@@ -86,13 +129,14 @@ extension DaemonWorkflowWindowController {
       showEditorError(error)
       return
     }
+    activeConfigurationEditorTargets = []
     showInstanceDetailOverview()
   }
 
   @objc func saveEventSourceEditor() {
     guard let identity = selectedRowForEditor()?.id,
-      let sourceJSON = eventSourceTextView?.string,
-      let bindingJSON = eventBindingTextView?.string
+      let sourceJSON = currentEventSourceJSON(),
+      let bindingJSON = currentEventBindingJSON()
     else {
       return
     }
@@ -100,7 +144,20 @@ extension DaemonWorkflowWindowController {
       showEditorError(error)
       return
     }
+    activeConfigurationEditorTargets = []
     showInstanceDetailOverview()
+  }
+
+  @objc func eventSourceModeChanged() {
+    guard let modeControl = eventSourceModeControl else {
+      return
+    }
+    let usesJSON = modeControl.selectedSegment == 1
+    if usesJSON {
+      syncEventSourceJSONFromForm()
+    }
+    eventSourceFormView?.isHidden = usesJSON
+    eventSourceJSONView?.isHidden = !usesJSON
   }
 
   private func selectedRowForEditor() -> ConfiguredWorkflowInstanceRow? {
@@ -215,7 +272,7 @@ extension DaemonWorkflowWindowController {
     return container
   }
 
-  private func labeledEditor(title: String, textView: NSTextView) -> NSView {
+  private func labeledEditor(title: String, caption: String? = nil, textView: NSTextView) -> NSView {
     let titleLabel = NSTextField(labelWithString: title)
     titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
     let scroll = NSScrollView()
@@ -225,7 +282,16 @@ extension DaemonWorkflowWindowController {
     scroll.translatesAutoresizingMaskIntoConstraints = false
     rielaAppConfigureGroupedTextScroll(scroll)
     scroll.heightAnchor.constraint(equalToConstant: 190).isActive = true
-    let stack = NSStackView(views: [titleLabel, scroll])
+    var views: [NSView] = [titleLabel, scroll]
+    if let caption {
+      let captionLabel = NSTextField(labelWithString: caption)
+      captionLabel.textColor = .secondaryLabelColor
+      captionLabel.font = .systemFont(ofSize: 11)
+      captionLabel.lineBreakMode = .byWordWrapping
+      captionLabel.maximumNumberOfLines = 2
+      views.append(captionLabel)
+    }
+    let stack = NSStackView(views: views)
     stack.orientation = .vertical
     stack.alignment = .width
     stack.spacing = 6
@@ -246,14 +312,13 @@ extension DaemonWorkflowWindowController {
   private func effectiveEnvironmentView(values: [RielaAppConfiguredEnvironmentValue]) -> NSView {
     let title = NSTextField(labelWithString: "Effective Configured Environment")
     title.font = .systemFont(ofSize: 13, weight: .medium)
-    let text = values.isEmpty
-      ? "No .env or inline environment values are configured."
-      : values
-        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        .map { "\($0.name)=\($0.value) (\($0.source))" }
-        .joined(separator: "\n")
-    let textView = configurationTextView(text: text)
+    let textView = configurationTextView(text: RielaAppEnvironmentValueFormatter.text(values: values, revealsValues: false))
     textView.isEditable = false
+    let showValues = NSButton(checkboxWithTitle: "Show Values", target: nil, action: nil)
+    let target = EnvironmentRevealToggleTarget(textView: textView, values: values, checkbox: showValues)
+    showValues.target = target
+    showValues.action = #selector(target.toggle)
+    activeConfigurationEditorTargets.append(target)
     let scroll = NSScrollView()
     scroll.documentView = textView
     scroll.hasVerticalScroller = true
@@ -261,7 +326,7 @@ extension DaemonWorkflowWindowController {
     scroll.translatesAutoresizingMaskIntoConstraints = false
     rielaAppConfigureGroupedTextScroll(scroll)
     scroll.heightAnchor.constraint(equalToConstant: 130).isActive = true
-    let stack = NSStackView(views: [title, scroll])
+    let stack = NSStackView(views: [title, showValues, scroll])
     stack.orientation = .vertical
     stack.alignment = .width
     stack.spacing = 6
@@ -283,7 +348,7 @@ extension DaemonWorkflowWindowController {
     return rows
   }
 
-  private func settingsTextRow(title: String, value: NSTextField) -> NSView {
+  private func settingsTextRow(title: String, value: NSView) -> NSView {
     value.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     let row = RielaAppSettingsRow(views: [rielaAppSettingsTitleLabel(title, maxWidth: 130), value])
     row.orientation = .horizontal
@@ -345,6 +410,50 @@ extension DaemonWorkflowWindowController {
         "mode": "event-input"
       ]
     ])
+  }
+
+  private func currentEventSourceJSON() -> String? {
+    guard eventSourceModeControl?.selectedSegment != 1 else {
+      return eventSourceTextView?.string
+    }
+    return eventSourceJSONFromForm()
+  }
+
+  private func currentEventBindingJSON() -> String? {
+    guard eventSourceModeControl?.selectedSegment != 1 else {
+      return eventBindingTextView?.string
+    }
+    return eventBindingJSONFromForm()
+  }
+
+  private func syncEventSourceJSONFromForm() {
+    eventSourceTextView?.string = eventSourceJSONFromForm() ?? "{}"
+    eventBindingTextView?.string = eventBindingJSONFromForm() ?? "{}"
+  }
+
+  private func eventSourceJSONFromForm() -> String? {
+    guard let sourceId = eventSourceIdField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
+      !sourceId.isEmpty
+    else {
+      return nil
+    }
+    let kind = eventSourceKindPopup?.selectedItem?.title ?? RielaAppDaemonWorkflowDiscovery.daemonSourceKinds().first ?? ""
+    let provider = kind.replacingOccurrences(of: "-gateway", with: "")
+    return prettyJSONText([
+      "id": sourceId,
+      "kind": kind,
+      "provider": provider
+    ])
+  }
+
+  private func eventBindingJSONFromForm() -> String? {
+    guard let row = selectedRowForEditor(), let candidate = row.candidate,
+      let sourceId = eventSourceIdField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
+      !sourceId.isEmpty
+    else {
+      return nil
+    }
+    return eventBindingTemplate(for: candidate, sourceId: sourceId)
   }
 
   private func prettyJSONText(_ object: Any) -> String {

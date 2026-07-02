@@ -40,12 +40,16 @@ public struct CursorCLIAgentCommandBuilder: LocalAgentCommandBuilding {
     if let resolvedMode, resolvedMode != .default {
       arguments.append(contentsOf: ["--mode", resolvedMode.rawValue])
     }
+    if let sandbox = input.node.agentSandbox {
+      arguments.append(contentsOf: ["--sandbox", sandbox.rawValue])
+    }
 
     for imagePath in resolveAdapterImagePaths(input) {
       arguments.append(contentsOf: ["--image", imagePath])
     }
 
     arguments.append(contentsOf: additionalArguments)
+    arguments.append(contentsOf: agentToolPolicyArguments(input.node.agentToolPolicy, backend: .cursorCliAgent))
     arguments.append(contentsOf: stringArray(input.node.variables["cursorAdditionalArgs"]))
     arguments.append(contentsOf: ["--", buildCombinedPromptText(promptText: input.promptText, systemPromptText: input.systemPromptText)])
 

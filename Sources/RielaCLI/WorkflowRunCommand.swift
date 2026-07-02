@@ -120,6 +120,8 @@ public struct WorkflowRunCommand: Sendable {
         maxLoopIterations: options.maxLoopIterations,
         defaultTimeoutMs: options.defaultTimeoutMs,
         timeoutMs: options.timeoutMs,
+        agentSilenceWarningMs: options.agentSilenceWarningMs,
+        agentSilenceMonitorIntervalMs: options.agentSilenceMonitorIntervalMs,
         eventHandler: runEventHandler
       )
       if options.autoImprove {

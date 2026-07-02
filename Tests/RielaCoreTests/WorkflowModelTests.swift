@@ -386,6 +386,33 @@ final class WorkflowModelTests: XCTestCase {
     XCTAssertEqual(roundTrip.agentEnvironment, payload.agentEnvironment)
   }
 
+  func testAgentNodePayloadDecodesSandboxAndToolPolicy() throws {
+    let data = Data("""
+      {
+        "id": "output",
+        "executionBackend": "codex-agent",
+        "model": "gpt-5",
+        "agentSandbox": "read-only",
+        "agentToolPolicy": {
+          "mode": "backend-arguments",
+          "additionalArguments": ["--disable", "shell"],
+          "codexArguments": ["--config", "tools.web_search=false"]
+        },
+        "output": {
+          "projection": { "kind": "latest-input-payload" }
+        }
+      }
+      """.utf8)
+
+    let payload = try JSONDecoder().decode(AgentNodePayload.self, from: data)
+
+    XCTAssertEqual(payload.agentSandbox, .readOnly)
+    XCTAssertEqual(payload.agentToolPolicy?.mode, .backendArguments)
+    XCTAssertEqual(payload.agentToolPolicy?.additionalArguments, ["--disable", "shell"])
+    XCTAssertEqual(payload.agentToolPolicy?.codexArguments, ["--config", "tools.web_search=false"])
+    XCTAssertEqual(payload.output?.projection?.kind, .latestInputPayload)
+  }
+
   func testAgentNodePayloadDefaultsMissingModelFreezeToFalse() throws {
     let frozen = Data("""
       {

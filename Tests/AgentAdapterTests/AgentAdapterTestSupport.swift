@@ -64,6 +64,21 @@ final class RecordingRunner: LocalAgentProcessRunning, @unchecked Sendable {
   }
 }
 
+extension Array where Element == String {
+  func containsSubsequence(_ subsequence: [String]) -> Bool {
+    guard !subsequence.isEmpty, subsequence.count <= count else {
+      return false
+    }
+    return indices.contains { startIndex in
+      let subsequenceEndIndex = index(startIndex, offsetBy: subsequence.count, limitedBy: self.endIndex)
+      guard let subsequenceEndIndex else {
+        return false
+      }
+      return Array(self[startIndex..<subsequenceEndIndex]) == subsequence
+    }
+  }
+}
+
 actor BackendEventRecorder {
   private var events: [AdapterBackendEvent] = []
 

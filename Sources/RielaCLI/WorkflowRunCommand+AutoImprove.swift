@@ -417,6 +417,8 @@ private extension WorkflowRunCommand {
       rerunFromSessionId: sourceSessionId,
       rerunFromStepId: targetStepId,
       memoryRootDirectory: base.memoryRootDirectory,
+      agentSilenceWarningMs: options.agentSilenceWarningMs,
+      agentSilenceMonitorIntervalMs: options.agentSilenceMonitorIntervalMs,
       eventHandler: base.eventHandler
     )
   }

@@ -16,6 +16,8 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   public var rerunFromStepId: String?
   public var resumeSessionId: String?
   public var memoryRootDirectory: String?
+  public var agentSilenceWarningMs: Int?
+  public var agentSilenceMonitorIntervalMs: Int
   public var eventHandler: WorkflowRunEventHandler?
 
   public init(
@@ -33,6 +35,8 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     rerunFromStepId: String? = nil,
     resumeSessionId: String? = nil,
     memoryRootDirectory: String? = nil,
+    agentSilenceWarningMs: Int? = nil,
+    agentSilenceMonitorIntervalMs: Int = 1_000,
     eventHandler: WorkflowRunEventHandler? = nil
   ) {
     self.workflow = workflow
@@ -49,6 +53,8 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     self.rerunFromStepId = rerunFromStepId
     self.resumeSessionId = resumeSessionId
     self.memoryRootDirectory = memoryRootDirectory
+    self.agentSilenceWarningMs = agentSilenceWarningMs
+    self.agentSilenceMonitorIntervalMs = agentSilenceMonitorIntervalMs
     self.eventHandler = eventHandler
   }
 }
@@ -333,6 +339,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       if let basePayload {
         publishResult = try await executePayloadNodeAndRecordMemory(
           basePayload: basePayload,
+          registryNode: registryNode,
           request: request,
           session: session,
           step: step,
@@ -395,6 +402,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
 
   private func executePayloadNodeAndRecordMemory(
     basePayload: AgentNodePayload,
+    registryNode: WorkflowNodeRegistryRef,
     request: DeterministicWorkflowRunRequest,
     session: WorkflowSession,
     step: WorkflowStepRef,
@@ -411,6 +419,20 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       executionIndex: executionIndex,
       resolvedInput: resolvedInput
     )
+    if let projection = basePayload.output?.projection {
+      return try await executeOutputProjectionAndPublish(
+        projection: projection,
+        registryNode: registryNode,
+        payload: basePayload,
+        sessionId: session.sessionId,
+        workflow: request.workflow,
+        step: step,
+        resolvedInputPayload: resolvedInput.payload,
+        transitions: transitions,
+        request: request,
+        executionIndex: executionIndex
+      )
+    }
     if let stdioNodeKind = workflowStdioNodeExecutionKind(for: basePayload) {
       var executionPayload = basePayload
       executionPayload.id = step.id
@@ -467,6 +489,67 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       transitions: transitions,
       request: request,
       executionIndex: executionIndex
+    )
+  }
+
+  private func executeOutputProjectionAndPublish(
+    projection: WorkflowOutputProjection,
+    registryNode: WorkflowNodeRegistryRef,
+    payload: AgentNodePayload,
+    sessionId: String,
+    workflow: WorkflowDefinition,
+    step: WorkflowStepRef,
+    resolvedInputPayload: JSONObject,
+    transitions: [WorkflowStepTransition],
+    request: DeterministicWorkflowRunRequest,
+    executionIndex: Int
+  ) async throws -> WorkflowPublicationResult {
+    guard registryNode.kind == .output else {
+      let adapterFailure = AdapterExecutionError(.invalidOutput, "output projection is only supported for kind: output nodes")
+      try await publishFailureAndThrow(
+        adapterFailure,
+        sessionId: sessionId,
+        step: step,
+        attempt: executionIndex,
+        transitions: transitions
+      )
+    }
+    _ = try await recordStepStartedExecution(
+      workflowId: workflow.workflowId,
+      sessionId: sessionId,
+      step: step,
+      attempt: executionIndex,
+      backend: payload.executionBackend,
+      handler: request.eventHandler
+    )
+    let projectedPayload = try outputProjectionPayload(
+      projection,
+      resolvedInputPayload: resolvedInputPayload
+    )
+    let routingReconciler = workflowRoutingReconciler(workflow: workflow, step: step)
+    let candidate = try normalizeRuntimeInlineCandidate(projectedPayload, routingReconciler: routingReconciler)
+    if let adapterFailure = multiplePublishableTransitionFailure(transitions: transitions, candidate: candidate) {
+      try await publishFailureAndThrow(
+        adapterFailure,
+        sessionId: sessionId,
+        step: step,
+        attempt: executionIndex,
+        transitions: transitions
+      )
+    }
+    return try await publisher.publishAcceptedOutput(
+      WorkflowPublicationRequest(
+        sessionId: sessionId,
+        stepId: step.id,
+        nodeId: step.nodeId,
+        attempt: executionIndex,
+        backend: payload.executionBackend,
+        body: .inlineCandidate(projectedPayload),
+        outputContract: workflowOutputContract(from: payload.output),
+        routingReconciler: routingReconciler,
+        transitions: transitions,
+        publishesRootOutput: transitions.isEmpty
+      )
     )
   }
 
@@ -606,16 +689,27 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         : AdapterOutputAttemptContext(maxValidationAttempts: maxAttempts, attempt: attempt)
       let adapterOutput: AdapterExecutionOutput
       do {
+        let context = adapterExecutionContext(
+          deadline: deadline(for: step, request: request),
+          workflowId: request.workflow.workflowId,
+          step: step,
+          execution: execution,
+          eventContext: startedExecution.backendEventContext,
+          handler: request.eventHandler
+        )
+        let silenceMonitor = startAgentSilenceMonitorIfNeeded(
+          request: request,
+          workflowId: request.workflow.workflowId,
+          step: step,
+          execution: execution,
+          eventContext: startedExecution.backendEventContext
+        )
+        defer {
+          silenceMonitor?.cancel()
+        }
         adapterOutput = try await adapter.execute(
           attemptInput,
-          context: adapterExecutionContext(
-            deadline: deadline(for: step, request: request),
-            workflowId: request.workflow.workflowId,
-            step: step,
-            execution: execution,
-            eventContext: startedExecution.backendEventContext,
-            handler: request.eventHandler
-          )
+          context: context
         )
       } catch let adapterFailure as AdapterExecutionError {
         try await publishFailureAndThrow(

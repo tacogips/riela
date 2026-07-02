@@ -104,6 +104,33 @@ extension DeterministicWorkflowRunner {
     )
   }
 
+  func emitSilenceWarningEvent(
+    workflowId: String,
+    eventContext: WorkflowBackendEventEmissionContext,
+    step: WorkflowStepRef,
+    executionId: String,
+    silentForMs: Int,
+    thresholdMs: Int,
+    handler: WorkflowRunEventHandler?
+  ) async {
+    await emitRunEvent(
+      .init(
+        type: .silenceWarning,
+        workflowId: workflowId,
+        sessionId: eventContext.sessionId,
+        status: eventContext.status,
+        currentStepId: eventContext.currentStepId,
+        stepId: step.id,
+        nodeId: step.nodeId,
+        executionId: executionId,
+        silentForMs: silentForMs,
+        silenceThresholdMs: thresholdMs,
+        nodeExecutions: eventContext.nodeExecutions
+      ),
+      handler: handler
+    )
+  }
+
   func emitSessionCompletedEvent(result: WorkflowRunResult, handler: WorkflowRunEventHandler?) async {
     let event = WorkflowRunEvent(
       type: .sessionCompleted,
@@ -140,6 +167,8 @@ extension DeterministicWorkflowRunner {
       await telemetry.recordLog(RielaTelemetryLog(name: "riela.workflow.step.start", attributes: attributes))
     case .backendEvent:
       await telemetry.recordLog(RielaTelemetryLog(name: "riela.workflow.backend.event", attributes: attributes))
+    case .silenceWarning:
+      await telemetry.recordLog(RielaTelemetryLog(name: "riela.workflow.silence.warning", attributes: attributes))
     case .stepCompleted:
       break
     case .sessionCompleted:
@@ -168,7 +197,7 @@ extension DeterministicWorkflowRunner {
         attributes: attributes
       ))
       await telemetry.recordMetric(RielaTelemetryMetric(name: "riela.workflow.run.complete.count", value: 1, attributes: attributes))
-    case .sessionStarted, .stepStarted, .backendEvent:
+    case .sessionStarted, .stepStarted, .backendEvent, .silenceWarning:
       break
     }
   }
@@ -205,6 +234,12 @@ extension DeterministicWorkflowRunner {
     }
     if let backendEventChannel = event.backendEventChannel {
       attributes["backend.event.channel"] = backendEventChannel
+    }
+    if let silentForMs = event.silentForMs {
+      attributes["backend.silent_for_ms"] = String(silentForMs)
+    }
+    if let silenceThresholdMs = event.silenceThresholdMs {
+      attributes["backend.silence_threshold_ms"] = String(silenceThresholdMs)
     }
     return attributes
   }

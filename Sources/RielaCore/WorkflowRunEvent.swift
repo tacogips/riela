@@ -4,6 +4,7 @@ public enum WorkflowRunEventType: String, Codable, Equatable, Sendable {
   case sessionStarted = "session_started"
   case stepStarted = "step_started"
   case backendEvent = "backend_event"
+  case silenceWarning = "silence_warning"
   case stepCompleted = "step_completed"
   case sessionCompleted = "session_completed"
 }
@@ -82,6 +83,16 @@ public struct StepCompletionPayload: Codable, Equatable, Sendable {
   }
 }
 
+public struct SilenceWarningPayload: Codable, Equatable, Sendable {
+  public var silentForMs: Int
+  public var silenceThresholdMs: Int
+
+  public init(silentForMs: Int, silenceThresholdMs: Int) {
+    self.silentForMs = silentForMs
+    self.silenceThresholdMs = silenceThresholdMs
+  }
+}
+
 public struct SessionCompletionPayload: Codable, Equatable, Sendable {
   public var exitCode: Int32?
   public var nodeExecutions: Int?
@@ -102,6 +113,7 @@ public enum WorkflowRunEvent: Equatable, Sendable {
   case sessionStarted(SessionEnvelope)
   case stepStarted(SessionEnvelope, StepEnvelope)
   case backendEvent(SessionEnvelope, StepEnvelope, BackendEventPayload)
+  case silenceWarning(SessionEnvelope, StepEnvelope, SilenceWarningPayload)
   case stepCompleted(SessionEnvelope, StepEnvelope, StepCompletionPayload)
   case sessionCompleted(SessionEnvelope, SessionCompletionPayload)
 
@@ -121,6 +133,8 @@ public enum WorkflowRunEvent: Equatable, Sendable {
     backendEventSequence: Int? = nil,
     backendToolName: String? = nil,
     backendEventUsage: JSONObject? = nil,
+    silentForMs: Int? = nil,
+    silenceThresholdMs: Int? = nil,
     exitCode: Int32? = nil,
     nodeExecutions: Int? = nil,
     transitions: Int? = nil
@@ -156,6 +170,15 @@ public enum WorkflowRunEvent: Equatable, Sendable {
           backendEventUsage: backendEventUsage
         )
       )
+    case .silenceWarning:
+      self = .silenceWarning(
+        session,
+        step,
+        SilenceWarningPayload(
+          silentForMs: silentForMs ?? 0,
+          silenceThresholdMs: silenceThresholdMs ?? 0
+        )
+      )
     case .stepCompleted:
       self = .stepCompleted(session, step, StepCompletionPayload(transitions: transitions))
     case .sessionCompleted:
@@ -180,6 +203,8 @@ public extension WorkflowRunEvent {
       .stepStarted
     case .backendEvent:
       .backendEvent
+    case .silenceWarning:
+      .silenceWarning
     case .stepCompleted:
       .stepCompleted
     case .sessionCompleted:
@@ -251,6 +276,8 @@ public extension WorkflowRunEvent {
     switch self {
     case let .stepStarted(_, step), let .backendEvent(_, step, _), let .stepCompleted(_, step, _):
       step.nodeExecutions
+    case let .silenceWarning(_, step, _):
+      step.nodeExecutions
     case let .sessionCompleted(_, payload):
       payload.nodeExecutions
     case .sessionStarted:
@@ -264,7 +291,7 @@ public extension WorkflowRunEvent {
       payload.transitions
     case let .sessionCompleted(_, payload):
       payload.transitions
-    case .sessionStarted, .stepStarted, .backendEvent:
+    case .sessionStarted, .stepStarted, .backendEvent, .silenceWarning:
       nil
     }
   }
@@ -274,6 +301,7 @@ public extension WorkflowRunEvent {
     case let .sessionStarted(session),
          let .stepStarted(session, _),
          let .backendEvent(session, _, _),
+         let .silenceWarning(session, _, _),
          let .stepCompleted(session, _, _),
          let .sessionCompleted(session, _):
       session
@@ -282,7 +310,10 @@ public extension WorkflowRunEvent {
 
   private var step: StepEnvelope? {
     switch self {
-    case let .stepStarted(_, step), let .backendEvent(_, step, _), let .stepCompleted(_, step, _):
+    case let .stepStarted(_, step),
+         let .backendEvent(_, step, _),
+         let .silenceWarning(_, step, _),
+         let .stepCompleted(_, step, _):
       step
     case .sessionStarted, .sessionCompleted:
       nil
@@ -293,7 +324,7 @@ public extension WorkflowRunEvent {
     switch self {
     case let .backendEvent(_, _, payload):
       payload
-    case .sessionStarted, .stepStarted, .stepCompleted, .sessionCompleted:
+    case .sessionStarted, .stepStarted, .silenceWarning, .stepCompleted, .sessionCompleted:
       nil
     }
   }
@@ -302,7 +333,24 @@ public extension WorkflowRunEvent {
     switch self {
     case let .sessionCompleted(_, payload):
       payload
-    case .sessionStarted, .stepStarted, .backendEvent, .stepCompleted:
+    case .sessionStarted, .stepStarted, .backendEvent, .silenceWarning, .stepCompleted:
+      nil
+    }
+  }
+
+  var silentForMs: Int? {
+    silenceWarningPayload?.silentForMs
+  }
+
+  var silenceThresholdMs: Int? {
+    silenceWarningPayload?.silenceThresholdMs
+  }
+
+  private var silenceWarningPayload: SilenceWarningPayload? {
+    switch self {
+    case let .silenceWarning(_, _, payload):
+      payload
+    case .sessionStarted, .stepStarted, .backendEvent, .stepCompleted, .sessionCompleted:
       nil
     }
   }
@@ -325,6 +373,8 @@ extension WorkflowRunEvent: Codable {
     case backendEventSequence
     case backendToolName
     case backendEventUsage
+    case silentForMs
+    case silenceThresholdMs
     case exitCode
     case nodeExecutions
     case transitions
@@ -348,6 +398,8 @@ extension WorkflowRunEvent: Codable {
       backendEventSequence: try container.decodeIfPresent(Int.self, forKey: .backendEventSequence),
       backendToolName: try container.decodeIfPresent(String.self, forKey: .backendToolName),
       backendEventUsage: try container.decodeIfPresent(JSONObject.self, forKey: .backendEventUsage),
+      silentForMs: try container.decodeIfPresent(Int.self, forKey: .silentForMs),
+      silenceThresholdMs: try container.decodeIfPresent(Int.self, forKey: .silenceThresholdMs),
       exitCode: try container.decodeIfPresent(Int32.self, forKey: .exitCode),
       nodeExecutions: try container.decodeIfPresent(Int.self, forKey: .nodeExecutions),
       transitions: try container.decodeIfPresent(Int.self, forKey: .transitions)
@@ -371,6 +423,8 @@ extension WorkflowRunEvent: Codable {
     try container.encodeIfPresent(backendEventSequence, forKey: .backendEventSequence)
     try container.encodeIfPresent(backendToolName, forKey: .backendToolName)
     try container.encodeIfPresent(backendEventUsage, forKey: .backendEventUsage)
+    try container.encodeIfPresent(silentForMs, forKey: .silentForMs)
+    try container.encodeIfPresent(silenceThresholdMs, forKey: .silenceThresholdMs)
     try container.encodeIfPresent(exitCode, forKey: .exitCode)
     try container.encodeIfPresent(nodeExecutions, forKey: .nodeExecutions)
     try container.encodeIfPresent(transitions, forKey: .transitions)

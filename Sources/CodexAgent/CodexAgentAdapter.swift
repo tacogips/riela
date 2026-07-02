@@ -27,9 +27,12 @@ public struct CodexAgentCommandBuilder: LocalAgentCommandBuilding {
     let promptText = buildCombinedPromptText(promptText: input.promptText, systemPromptText: input.systemPromptText)
     let processOptions = CodexProcessOptions(
       model: input.node.model,
+      sandbox: input.node.agentSandbox?.rawValue,
       images: imagePaths,
       configOverrides: configOverrides,
-      additionalArguments: additionalArguments + stringArray(input.node.variables["codexAdditionalArgs"])
+      additionalArguments: additionalArguments
+        + agentToolPolicyArguments(input.node.agentToolPolicy, backend: .codexAgent)
+        + stringArray(input.node.variables["codexAdditionalArgs"])
     )
     let arguments = [executableName] + CodexProcessCommandBuilder.buildExecArguments(
       prompt: "-",

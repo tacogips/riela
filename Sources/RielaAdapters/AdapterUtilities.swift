@@ -86,6 +86,22 @@ public func rethrowIfCancellation(_ error: Error) throws {
   }
 }
 
+public func agentToolPolicyArguments(_ policy: AgentToolPolicy?, backend: CliAgentBackend) -> [String] {
+  guard let policy else {
+    return []
+  }
+  let backendSpecific: [String]
+  switch backend {
+  case .codexAgent:
+    backendSpecific = policy.codexArguments
+  case .claudeCodeAgent:
+    backendSpecific = policy.claudeArguments
+  case .cursorCliAgent:
+    backendSpecific = policy.cursorArguments
+  }
+  return policy.additionalArguments + backendSpecific
+}
+
 public func executeWithRetry<T: Sendable>(
   policy: RetryPolicy,
   deadline: Date? = nil,

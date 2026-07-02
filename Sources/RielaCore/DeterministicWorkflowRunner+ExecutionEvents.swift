@@ -94,4 +94,55 @@ extension DeterministicWorkflowRunner {
       )
     }
   }
+
+  func startAgentSilenceMonitorIfNeeded(
+    request: DeterministicWorkflowRunRequest,
+    workflowId: String,
+    step: WorkflowStepRef,
+    execution: WorkflowStepExecution,
+    eventContext: WorkflowBackendEventEmissionContext
+  ) -> Task<Void, Never>? {
+    guard execution.backend?.cliAgentBackend != nil,
+          let thresholdMs = request.agentSilenceWarningMs,
+          thresholdMs > 0,
+          request.agentSilenceMonitorIntervalMs > 0,
+          request.eventHandler != nil else {
+      return nil
+    }
+    return Task {
+      while !Task.isCancelled {
+        do {
+          try await Task.sleep(nanoseconds: UInt64(request.agentSilenceMonitorIntervalMs) * 1_000_000)
+        } catch {
+          return
+        }
+        guard !Task.isCancelled,
+              let current = try? await store.loadSession(id: eventContext.sessionId),
+              let runningExecution = current.executions.last(where: { $0.executionId == execution.executionId }),
+              runningExecution.status == .running else {
+          return
+        }
+        let lastSignalAt = runningExecution.lastBackendEventAt ?? runningExecution.updatedAt
+        let silentForMs = Int(Date().timeIntervalSince(lastSignalAt) * 1_000)
+        guard silentForMs >= thresholdMs else {
+          continue
+        }
+        await emitSilenceWarningEvent(
+          workflowId: workflowId,
+          eventContext: WorkflowBackendEventEmissionContext(
+            sessionId: current.sessionId,
+            status: current.status,
+            currentStepId: current.currentStepId,
+            nodeExecutions: current.executions.count
+          ),
+          step: step,
+          executionId: execution.executionId,
+          silentForMs: silentForMs,
+          thresholdMs: thresholdMs,
+          handler: request.eventHandler
+        )
+        return
+      }
+    }
+  }
 }

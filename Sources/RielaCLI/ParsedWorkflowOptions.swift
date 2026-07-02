@@ -14,6 +14,8 @@ struct ParsedWorkflowOptions {
   var maxLoopIterations: Int?
   var defaultTimeoutMs: Int?
   var timeoutMs: Int?
+  var agentSilenceWarningMs: Int? = 120_000
+  var agentSilenceMonitorIntervalMs = 1_000
   var artifactRoot: String?
   var sessionStore: String?
   var workingDirectory: String?
@@ -171,6 +173,12 @@ struct ParsedWorkflowOptions {
     case "--timeout-ms":
       try requireRunOption(token, allowRunOptions: allowRunOptions)
       timeoutMs = try positiveInt(token, readOptionValue(token, tokens: tokens, index: &index))
+    case "--agent-silence-warning-ms":
+      try requireRunOption(token, allowRunOptions: allowRunOptions)
+      agentSilenceWarningMs = try positiveInt(token, readOptionValue(token, tokens: tokens, index: &index))
+    case "--agent-silence-monitor-interval-ms":
+      try requireRunOption(token, allowRunOptions: allowRunOptions)
+      agentSilenceMonitorIntervalMs = try positiveInt(token, readOptionValue(token, tokens: tokens, index: &index))
     default:
       return false
     }

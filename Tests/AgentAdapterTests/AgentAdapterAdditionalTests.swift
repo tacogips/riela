@@ -8,6 +8,67 @@ import XCTest
 @testable import RielaCore
 
 extension AgentAdapterTests {
+  func testPerNodeAgentSandboxAndToolPolicyReachCodexCommand() async throws {
+    let runner = RecordingRunner(output: "done")
+    let adapter = CodexAgentAdapter(runner: runner, authPreflight: false)
+
+    _ = try await adapter.execute(
+      input(
+        backend: .codexAgent,
+        agentSandbox: .readOnly,
+        agentToolPolicy: AgentToolPolicy(
+          additionalArguments: ["--disable", "shell"],
+          codexArguments: ["--config", "tools.web_search=false"]
+        )
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    let runs = await runner.runs()
+    let args = try XCTUnwrap(runs.last?.configuration.arguments)
+    XCTAssertTrue(args.containsSubsequence(["--sandbox", "read-only"]))
+    XCTAssertTrue(args.containsSubsequence(["--disable", "shell"]))
+    XCTAssertTrue(args.containsSubsequence(["--config", "tools.web_search=false"]))
+  }
+
+  func testPerNodeAgentSandboxAndToolPolicyReachClaudeCommand() async throws {
+    let runner = RecordingRunner(output: "done")
+    let adapter = ClaudeCodeAgentAdapter(runner: runner, authPreflight: false)
+
+    _ = try await adapter.execute(
+      input(
+        backend: .claudeCodeAgent,
+        agentSandbox: .readOnly,
+        agentToolPolicy: AgentToolPolicy(claudeArguments: ["--disallowedTools", "Bash,Read"])
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    let runs = await runner.runs()
+    let args = try XCTUnwrap(runs.last?.configuration.arguments)
+    XCTAssertTrue(args.containsSubsequence(["--permission-mode", "plan"]))
+    XCTAssertTrue(args.containsSubsequence(["--disallowedTools", "Bash,Read"]))
+  }
+
+  func testPerNodeAgentSandboxAndToolPolicyReachCursorCommand() async throws {
+    let runner = RecordingRunner(output: "done")
+    let adapter = CursorCLIAgentAdapter(runner: runner, authPreflight: false)
+
+    _ = try await adapter.execute(
+      input(
+        backend: .cursorCliAgent,
+        agentSandbox: .workspaceWrite,
+        agentToolPolicy: AgentToolPolicy(cursorArguments: ["--disable-tool", "shell"])
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    let runs = await runner.runs()
+    let args = try XCTUnwrap(runs.last?.configuration.arguments)
+    XCTAssertTrue(args.containsSubsequence(["--sandbox", "workspace-write"]))
+    XCTAssertTrue(args.containsSubsequence(["--disable-tool", "shell"]))
+  }
+
   func testAgentAdaptersReportBackendEventsFromStreamJSONStdout() async throws {
     let recorder = BackendEventRecorder()
     let context = AdapterExecutionContext { event in
@@ -955,7 +1016,9 @@ extension AgentAdapterTests {
     variables: JSONObject = [:],
     arguments: JSONObject = [:],
     mergedVariables: JSONObject = [:],
-    agentEnvironment: [String: String] = [:]
+    agentEnvironment: [String: String] = [:],
+    agentSandbox: AgentSandboxMode? = nil,
+    agentToolPolicy: AgentToolPolicy? = nil
   ) -> AdapterExecutionInput {
     AdapterExecutionInput(
       node: AgentNodePayload(
@@ -964,6 +1027,8 @@ extension AgentAdapterTests {
         model: model,
         effort: effort,
         workingDirectory: workingDirectory,
+        agentSandbox: agentSandbox,
+        agentToolPolicy: agentToolPolicy,
         variables: variables,
         output: output
       ),

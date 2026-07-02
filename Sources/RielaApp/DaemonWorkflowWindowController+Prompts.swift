@@ -181,6 +181,7 @@ extension DaemonWorkflowWindowController {
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = true
     isShowingProfileDetail = false
+    isShowingWorkflowSourceDetail = false
     instanceDetailPane = .overview
     let selectionView = buildInlineAddInstanceSelectionView(options: workflowSourceOptions())
     selectionView.translatesAutoresizingMaskIntoConstraints = true
@@ -205,11 +206,16 @@ extension DaemonWorkflowWindowController {
   }
 
   func controlTextDidChange(_ notification: Notification) {
-    guard notification.object as? NSSearchField === inlineAddInstanceSearchField,
-      isShowingAddInstanceSelection else {
+    if notification.object as? NSSearchField === inlineAddInstanceSearchField,
+      isShowingAddInstanceSelection {
+      rebuildInlineAddInstanceSelectionForSearch()
       return
     }
-    rebuildInlineAddInstanceSelectionForSearch()
+    if notification.object as? NSSearchField === workflowSourceSearchField,
+      activeSidebarPane == .sources,
+      !isShowingWorkflowSourceDetail {
+      rebuildSourcesOverviewViewForSearch()
+    }
   }
 
   private func buildInlineAddInstanceSelectionView(options: [WorkflowSourceOption]) -> NSView {

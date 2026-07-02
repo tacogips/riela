@@ -29,6 +29,55 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     XCTAssertTrue(allSubviews(of: RielaAppSettingsRow.self, in: sections[1]).allSatisfy(\.isGroupedSettingsRow))
   }
 
+  func testInstanceDetailShowsReadOnlyWorkflowGraphCanvasAtRuntime() throws {
+    let scratch = try scratchRoot(name: "riela-app-workflow-graph-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: scratch) }
+    let workflowDirectory = scratch.appendingPathComponent("graph-demo", isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+    try writeGraphWorkflowFixture(to: workflowDirectory)
+    let controller = configuredInstanceDetailController(workflowDirectory: workflowDirectory.path)
+
+    let root = try XCTUnwrap(controller.window?.contentView)
+    let table = try XCTUnwrap(firstSubview(of: NSTableView.self, in: root))
+    controller.tableClicked(table)
+    controller.window?.layoutIfNeeded()
+
+    let graphPane = try XCTUnwrap(visibleSubviews(of: DaemonWorkflowGraphPaneView.self, in: root).first)
+    graphPane.layoutSubtreeIfNeeded()
+    let graphImageData = try renderedPNGData(for: graphPane)
+    XCTAssertGreaterThan(graphImageData.count, 6_000)
+    if let snapshotPath = ProcessInfo.processInfo.environment["RIELAAPP_WORKFLOW_GRAPH_SNAPSHOT_PATH"] {
+      try graphImageData.write(to: URL(fileURLWithPath: snapshotPath))
+    }
+    XCTAssertEqual(graphPane.summaryLabel.stringValue, "3 nodes, 2 transitions")
+    XCTAssertEqual(graphPane.canvasView.model?.nodes.map(\.id), ["start", "review", "finish"])
+    XCTAssertTrue(graphPane.canvasView.model?.edges.contains {
+      $0.from == "start" && $0.to == "review" && $0.label == "accepted"
+    } ?? false)
+    XCTAssertTrue(graphPane.scrollView.hasHorizontalScroller)
+    XCTAssertTrue(graphPane.scrollView.hasVerticalScroller)
+
+    let canvas = graphPane.canvasView
+    canvas.frame.size = canvas.contentSize(minVisibleSize: NSSize(width: 420, height: 220))
+    guard let event = NSEvent.mouseEvent(
+      with: .leftMouseDown,
+      location: canvas.convert(NSPoint(x: 42, y: 42), to: nil),
+      modifierFlags: [],
+      timestamp: 0,
+      windowNumber: controller.window?.windowNumber ?? 0,
+      context: nil,
+      eventNumber: 1,
+      clickCount: 1,
+      pressure: 1
+    ) else {
+      return XCTFail("expected mouse event")
+    }
+    canvas.mouseDown(with: event)
+
+    XCTAssertEqual(canvas.selectedNodeIdForTesting, "start")
+    XCTAssertTrue(canvas.hasNodePopoverForTesting)
+  }
+
   func testInstanceDetailDoesNotShowInlineBackButtonAtRuntime() throws {
     let controller = configuredInstanceDetailController()
 
@@ -149,13 +198,13 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
 
     controller.showSourcesPane()
     window.layoutIfNeeded()
-    var overview = try XCTUnwrap(visibleSubviews(of: DaemonWorkflowOverviewPaneView.self, in: root).first)
-    overview.layoutSubtreeIfNeeded()
-    XCTAssertEqual(overview.header.frame.minY, 0, accuracy: 0.1)
-    XCTAssertEqual(overview.header.frame.height, 28, accuracy: 0.1)
-    XCTAssertEqual(overview.contentView.frame.minY, 40, accuracy: 0.1)
-    XCTAssertEqual((overview.contentView as? NSScrollView)?.hasVerticalScroller, false)
-    XCTAssertEqual(visibleSubviews(of: RielaAppSettingsSectionView.self, in: overview).count, 1)
+    let sourcesPane = try XCTUnwrap(visibleSubviews(of: DaemonWorkflowSourcesPaneView.self, in: root).first)
+    sourcesPane.layoutSubtreeIfNeeded()
+    XCTAssertEqual(sourcesPane.header.frame.minY, 0, accuracy: 0.1)
+    XCTAssertEqual(sourcesPane.header.frame.height, 72, accuracy: 0.1)
+    XCTAssertEqual(sourcesPane.listScrollView.frame.minY, 84, accuracy: 0.1)
+    XCTAssertEqual(sourcesPane.listScrollView.frame.width, sourcesPane.bounds.width, accuracy: 0.1)
+    XCTAssertEqual(sourcesPane.listScrollView.layer?.cornerRadius, 14)
 
     controller.showProfilesPane()
     window.layoutIfNeeded()
@@ -169,7 +218,7 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
 
     controller.showAssistantPane()
     window.layoutIfNeeded()
-    overview = try XCTUnwrap(visibleSubviews(of: DaemonWorkflowOverviewPaneView.self, in: root).first)
+    let overview = try XCTUnwrap(visibleSubviews(of: DaemonWorkflowOverviewPaneView.self, in: root).first)
     overview.layoutSubtreeIfNeeded()
     XCTAssertEqual(overview.contentView.frame.minY, 40, accuracy: 0.1)
   }
@@ -181,9 +230,14 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     controller.showSourcesPane()
     controller.window?.layoutIfNeeded()
     var sections = visibleSubviews(of: RielaAppSettingsSectionView.self, in: root)
-    XCTAssertEqual(sections.count, 1)
-    XCTAssertEqual(allSubviews(of: RielaAppSettingsRow.self, in: sections[0]).count, 2)
-    XCTAssertTrue(allSubviews(of: RielaAppSettingsRow.self, in: sections[0]).allSatisfy(\.isGroupedSettingsRow))
+    XCTAssertEqual(sections.count, 0)
+    let fileImportAccessibilityLabel = "Import Package File or Directory"
+    XCTAssertTrue(visibleSubviews(of: NSButton.self, in: root).contains {
+      $0.accessibilityLabel() == fileImportAccessibilityLabel
+    })
+    XCTAssertTrue(visibleSubviews(of: NSButton.self, in: root).contains {
+      $0.accessibilityLabel() == "Import from URL"
+    })
 
     controller.showProfilesPane()
     controller.window?.layoutIfNeeded()
@@ -198,24 +252,98 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     XCTAssertEqual(allSubviews(of: RielaAppSettingsRow.self, in: sections[0]).count, 2)
   }
 
-  func testSidebarOverviewActionRowsUseInstanceListTypographyAtRuntime() throws {
+  func testSourcesPaneUsesButtonsForImportActionsAtRuntime() throws {
     let controller = makeController()
     let root = try XCTUnwrap(controller.window?.contentView)
 
     controller.showSourcesPane()
     controller.window?.layoutIfNeeded()
 
-    let titleLabel = try XCTUnwrap(
-      visibleSubviews(of: NSTextField.self, in: root)
-        .first { $0.stringValue == "Import Package File or Directory" }
+    let fileImportAccessibilityLabel = "Import Package File or Directory"
+    let fileButton = try XCTUnwrap(
+      visibleSubviews(of: NSButton.self, in: root)
+        .first { $0.accessibilityLabel() == fileImportAccessibilityLabel }
     )
-    let detailLabel = try XCTUnwrap(
-      visibleSubviews(of: NSTextField.self, in: root)
-        .first { $0.stringValue == "Add a workflow directory, package directory, .rielapkg, or .zip archive." }
+    let urlButton = try XCTUnwrap(
+      visibleSubviews(of: NSButton.self, in: root)
+        .first { $0.accessibilityLabel() == "Import from URL" }
     )
 
-    XCTAssertEqual(titleLabel.font?.pointSize, 14)
-    XCTAssertEqual(detailLabel.font?.pointSize, 11)
+    XCTAssertEqual(fileButton.title, "Import File/Directory")
+    XCTAssertEqual(urlButton.title, "Import URL")
+    XCTAssertFalse(visibleSubviews(of: RielaAppSelectableSettingsRow.self, in: root).contains {
+      $0.accessibilityLabel() == fileImportAccessibilityLabel || $0.accessibilityLabel() == "Import from URL"
+    })
+  }
+
+  func testSourcesPaneFiltersWorkflowListByPartialTextAtRuntime() throws {
+    let controller = configuredInstanceListController()
+    let root = try XCTUnwrap(controller.window?.contentView)
+
+    controller.showSourcesPane()
+    controller.window?.layoutIfNeeded()
+
+    let searchField = try XCTUnwrap(visibleSubviews(of: NSSearchField.self, in: root).first)
+    XCTAssertEqual(searchField.accessibilityLabel(), "Filter Workflow Sources")
+    XCTAssertNotNil(selectableRow(accessibilityLabel: "Daily Summary", in: root))
+
+    searchField.stringValue = "daily"
+    controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+    controller.window?.layoutIfNeeded()
+    XCTAssertEqual(controller.workflowSourceFilterText, "daily")
+    XCTAssertNotNil(selectableRow(accessibilityLabel: "Daily Summary", in: root))
+
+    searchField.stringValue = "does-not-match"
+    controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+    controller.window?.layoutIfNeeded()
+    XCTAssertNil(selectableRow(accessibilityLabel: "Daily Summary", in: root))
+    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains {
+      $0.stringValue == "No workflow sources match the current filter."
+    })
+  }
+
+  func testSourcesPaneOpensWorkflowSourceDetailWithGraphAtRuntime() throws {
+    let scratch = try scratchRoot(name: "riela-app-sources-graph-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: scratch) }
+    let workflowDirectory = scratch.appendingPathComponent("graph-demo", isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+    try writeGraphWorkflowFixture(to: workflowDirectory)
+    let controller = configuredInstanceListController(workflowDirectory: workflowDirectory.path)
+    let root = try XCTUnwrap(controller.window?.contentView)
+
+    controller.showSourcesPane()
+    controller.window?.layoutIfNeeded()
+
+    let sourcesPane = try XCTUnwrap(visibleSubviews(of: DaemonWorkflowSourcesPaneView.self, in: root).first)
+    sourcesPane.layoutSubtreeIfNeeded()
+    let sourceRow = try XCTUnwrap(selectableRow(accessibilityLabel: "Daily Summary", in: root))
+    XCTAssertFalse(sourceRow.isSettingsRowSelected)
+    XCTAssertTrue(sourcesPane.emptyLabel.isHidden)
+    XCTAssertTrue(visibleSubviews(of: DaemonWorkflowGraphPaneView.self, in: root).isEmpty)
+
+    XCTAssertTrue(sourceRow.accessibilityPerformPress())
+    controller.window?.layoutIfNeeded()
+
+    XCTAssertTrue(controller.isShowingWorkflowSourceDetail)
+    XCTAssertEqual(controller.selectedWorkflowSourceId, "user-workflow:daily-summary")
+    XCTAssertTrue(controller.workflowSourceDetailView?.isHidden == false)
+    XCTAssertTrue(controller.sourcesOverviewView?.isHidden == true)
+
+    let graphPane = try XCTUnwrap(visibleSubviews(of: DaemonWorkflowGraphPaneView.self, in: root).first)
+    graphPane.layoutSubtreeIfNeeded()
+    XCTAssertEqual(graphPane.summaryLabel.stringValue, "3 nodes, 2 transitions")
+    XCTAssertEqual(graphPane.canvasView.model?.nodes.map(\.id), ["start", "review", "finish"])
+    XCTAssertTrue(graphPane.canvasView.model?.edges.contains {
+      $0.from == "start" && $0.to == "review" && $0.label == "accepted"
+    } ?? false)
+    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains { $0.stringValue == workflowDirectory.path })
+
+    controller.goBack()
+    controller.window?.layoutIfNeeded()
+    XCTAssertFalse(controller.isShowingWorkflowSourceDetail)
+    XCTAssertTrue(controller.sourcesOverviewView?.isHidden == false)
+    let selectedSourceRow = try XCTUnwrap(selectableRow(accessibilityLabel: "Daily Summary", in: root))
+    XCTAssertTrue(selectedSourceRow.isSettingsRowSelected)
   }
 
   func testProfilesPaneShowsProfileListBeforeProfileActionsAtRuntime() throws {
@@ -346,20 +474,20 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     )
   }
 
-  private func configuredInstanceDetailController() -> DaemonWorkflowWindowController {
-    let controller = configuredInstanceListController()
+  private func configuredInstanceDetailController(workflowDirectory: String = "workflows/daily-summary") -> DaemonWorkflowWindowController {
+    let controller = configuredInstanceListController(workflowDirectory: workflowDirectory)
     controller.selectCandidate(identity: "morning-summary")
     return controller
   }
 
-  private func configuredInstanceListController() -> DaemonWorkflowWindowController {
+  private func configuredInstanceListController(workflowDirectory: String = "workflows/daily-summary") -> DaemonWorkflowWindowController {
     let controller = makeController()
     let source = RielaAppDaemonWorkflowCandidate(
       id: "user-workflow:daily-summary",
       workflowId: "daily-summary",
       displayName: "Daily Summary",
       sourceDescription: "user workflow",
-      workflowDirectory: "workflows/daily-summary",
+      workflowDirectory: workflowDirectory,
       workingDirectory: "workflows",
       eventRoot: nil,
       eventSources: []
@@ -383,6 +511,78 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
       statusMessage: ""
     )
     return controller
+  }
+
+  private func writeGraphWorkflowFixture(to workflowDirectory: URL) throws {
+    let workflowJSON = """
+    {
+      "workflowId": "graph-demo",
+      "description": "A workflow graph fixture.",
+      "defaults": {
+        "nodeTimeoutMs": 1000,
+        "maxLoopIterations": 1
+      },
+      "entryStepId": "start",
+      "nodes": [
+        { "id": "start-node", "addon": { "name": "test/start" } },
+        { "id": "review-node", "addon": { "name": "test/review" } },
+        { "id": "finish-node", "addon": { "name": "test/finish" } }
+      ],
+      "steps": [
+        {
+          "id": "start",
+          "nodeId": "start-node",
+          "description": "Collect the initial workflow input.",
+          "role": "manager",
+          "transitions": [
+            { "toStepId": "review", "label": "accepted" }
+          ]
+        },
+        {
+          "id": "review",
+          "nodeId": "review-node",
+          "description": "Review the collected input.",
+          "role": "worker",
+          "transitions": [
+            { "toStepId": "finish" }
+          ]
+        },
+        {
+          "id": "finish",
+          "nodeId": "finish-node",
+          "description": "Publish the final output.",
+          "role": "worker"
+        }
+      ]
+    }
+    """
+    try workflowJSON.write(
+      to: workflowDirectory.appendingPathComponent("workflow.json"),
+      atomically: true,
+      encoding: .utf8
+    )
+  }
+
+  private func scratchRoot(name: String) throws -> URL {
+    let root = try repositoryRoot().appendingPathComponent("tmp", isDirectory: true)
+    let scratch = root.appendingPathComponent(name, isDirectory: true)
+    try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+    return scratch
+  }
+
+  private func repositoryRoot() throws -> URL {
+    var current = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+    while current.path != "/" {
+      if FileManager.default.fileExists(atPath: current.appendingPathComponent("Package.swift").path) {
+        return current
+      }
+      current.deleteLastPathComponent()
+    }
+    throw NSError(
+      domain: "RielaAppSettingsSectionLayoutTests",
+      code: 1,
+      userInfo: [NSLocalizedDescriptionKey: "Package.swift not found"]
+    )
   }
 
   private func renderedPNGData(for view: NSView) throws -> Data {

@@ -10,6 +10,7 @@ extension DaemonWorkflowWindowController {
       addInstanceSelectionView,
       configurationEditorView,
       sourcesOverviewView,
+      workflowSourceDetailView,
       assistantOverviewView,
       profilesOverviewView,
       profileDetailView
@@ -41,6 +42,10 @@ extension DaemonWorkflowWindowController {
       showInstancesList()
       return
     }
+    if isShowingWorkflowSourceDetail {
+      showSourcesPane()
+      return
+    }
     if isShowingProfileDetail, profileDetailMode == .removalConfirmation, let selectedProfileDetailName {
       showProfileDetail(selectedProfileDetailName)
       return
@@ -64,9 +69,11 @@ extension DaemonWorkflowWindowController {
 
   @objc func showSourcesPane() {
     activeSidebarPane = .sources
+    rebuildSourcesOverviewView()
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = false
     isShowingProfileDetail = false
+    isShowingWorkflowSourceDetail = false
     showContentPane(sourcesOverviewView)
     navigationTitleLabel.stringValue = "Workflow Sources"
     updateNavigationState()
@@ -79,6 +86,7 @@ extension DaemonWorkflowWindowController {
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = false
     isShowingProfileDetail = false
+    isShowingWorkflowSourceDetail = false
     showContentPane(profilesOverviewView)
     navigationTitleLabel.stringValue = "Profiles"
     updateNavigationState()
@@ -90,6 +98,7 @@ extension DaemonWorkflowWindowController {
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = false
     isShowingProfileDetail = false
+    isShowingWorkflowSourceDetail = false
     showContentPane(assistantOverviewView)
     navigationTitleLabel.stringValue = "Assistant"
     updateNavigationState()
@@ -97,7 +106,10 @@ extension DaemonWorkflowWindowController {
   }
 
   func updateNavigationState() {
-    navigationBackButton.isEnabled = isShowingAddInstanceSelection || isShowingInstanceDetail || activeSidebarPane != .instances
+    navigationBackButton.isEnabled = isShowingAddInstanceSelection
+      || isShowingInstanceDetail
+      || isShowingWorkflowSourceDetail
+      || activeSidebarPane != .instances
     navigationForwardButton.isEnabled = false
   }
 

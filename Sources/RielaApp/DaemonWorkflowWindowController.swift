@@ -139,6 +139,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
   let sidebarAssistantButton = NSButton(title: "Assistant", target: nil, action: nil)
   let sidebarProfilesButton = NSButton(title: "Profiles", target: nil, action: nil)
   let sourcesSummaryLabel = NSTextField(labelWithString: "")
+  let workflowSourceSearchField = NSSearchField()
   let assistantSummaryLabel = NSTextField(labelWithString: "")
   let assistantSaveStatusLabel = NSTextField(labelWithString: "")
   let assistantPanelTitleLabel = NSTextField(labelWithString: "Riela Assistant")
@@ -164,6 +165,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
   let detailVariablesValueLabel = NSTextField(labelWithString: "")
   let detailEventSourcesValueLabel = NSTextField(labelWithString: "")
   let detailMissingSourceValueLabel = NSTextField(labelWithString: "")
+  let workflowGraphPaneView = DaemonWorkflowGraphPaneView()
   private let onRefresh: () -> Void
   let onSelectProfile: (String) -> Void
   let onCreateProfile: (String) -> RielaAppProfileName?
@@ -218,10 +220,12 @@ final class DaemonWorkflowWindowController: NSWindowController,
   var addInstanceSelectionView: NSView?
   var configurationEditorView: NSView?
   var sourcesOverviewView: NSView?
+  var workflowSourceDetailView: NSView?
   var assistantOverviewView: NSView?
   var profilesOverviewView: NSView?
   var profileDetailView: NSView?
   var profilesOverviewFingerprint: String?
+  var sourcesOverviewFingerprint: String?
   weak var workflowSettingRow: NSView?
   weak var missingSourceSettingRow: NSView?
   weak var nameSettingRow: NSView?
@@ -252,9 +256,12 @@ final class DaemonWorkflowWindowController: NSWindowController,
   var isShowingInstanceDetail = false
   var isShowingAddInstanceSelection = false
   var isShowingProfileDetail = false
+  var isShowingWorkflowSourceDetail = false
   var selectedProfileDetailName: RielaAppProfileName?
   var profileDetailMode: ProfileDetailMode = .overview
   var activeSidebarPane: SidebarPane = .instances
+  var selectedWorkflowSourceId: String?
+  var workflowSourceFilterText = ""
 
   enum SidebarPane {
     case instances
@@ -366,6 +373,10 @@ final class DaemonWorkflowWindowController: NSWindowController,
     }
     let rowsChanged = rebuildInstanceRows()
     updateProfileControls()
+    rebuildSourcesOverviewView()
+    if isShowingWorkflowSourceDetail {
+      showWorkflowSourceDetail()
+    }
     rebuildProfilesOverviewView()
     updateOverviewSummaries()
     updateAssistantPanel()
@@ -545,6 +556,7 @@ extension DaemonWorkflowWindowController {
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = false
     isShowingProfileDetail = false
+    isShowingWorkflowSourceDetail = false
     instanceDetailPane = .overview
     showContentPane(instancesListView)
     navigationTitleLabel.stringValue = "Instances"
@@ -560,6 +572,7 @@ extension DaemonWorkflowWindowController {
     isShowingInstanceDetail = true
     isShowingAddInstanceSelection = false
     isShowingProfileDetail = false
+    isShowingWorkflowSourceDetail = false
     instanceDetailPane = .overview
     updateInstanceDetail()
     showContentPane(instanceDetailView)
@@ -623,12 +636,14 @@ extension DaemonWorkflowWindowController {
     ])
     detailMissingSourceValueLabel.stringValue = rielaAppMetadataText(["Missing source", row.sourceIdentity])
     if let candidate = row.candidate {
+      updateWorkflowGraph(candidate: candidate)
       detailEnvironmentValueLabel.stringValue = environmentSummary(candidate)
       detailInlineEnvironmentValueLabel.stringValue = "\(row.preference.environmentVariables.count) values"
       detailWorkingDirectoryValueLabel.stringValue = row.preference.workingDirectory ?? candidate.workingDirectory
       detailVariablesValueLabel.stringValue = "\(row.preference.defaultVariables.count) values"
       detailEventSourcesValueLabel.stringValue = candidate.eventSourceSummary
     } else {
+      workflowGraphPaneView.showUnavailable("Workflow source is missing")
       detailEnvironmentValueLabel.stringValue = "Needs source"
       detailInlineEnvironmentValueLabel.stringValue = "\(row.preference.environmentVariables.count) values"
       detailWorkingDirectoryValueLabel.stringValue = row.preference.workingDirectory ?? "Needs source"
@@ -637,6 +652,14 @@ extension DaemonWorkflowWindowController {
     }
     updateDetailRowAccessibilityValues()
     updateDetailActions(for: row.state)
+  }
+
+  private func updateWorkflowGraph(candidate: RielaAppDaemonWorkflowCandidate) {
+    do {
+      workflowGraphPaneView.update(model: try DaemonWorkflowGraphModel.load(workflowDirectory: candidate.workflowDirectory))
+    } catch {
+      workflowGraphPaneView.showUnavailable("Workflow graph unavailable: \(error)")
+    }
   }
 
   private func updateDetailRowAccessibilityValues() {
@@ -668,6 +691,7 @@ extension DaemonWorkflowWindowController {
 
   func showInstanceDetailOverview() {
     isShowingAddInstanceSelection = false
+    isShowingWorkflowSourceDetail = false
     instanceDetailPane = .overview
     updateInstanceDetail()
     showContentPane(instanceDetailView)

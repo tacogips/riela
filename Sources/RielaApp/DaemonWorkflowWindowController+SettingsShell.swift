@@ -313,30 +313,6 @@ extension DaemonWorkflowWindowController {
     return container
   }
 
-  private func buildSourcesOverviewView() -> NSView {
-    sourcesSummaryLabel.textColor = .secondaryLabelColor
-    sourcesSummaryLabel.lineBreakMode = .byTruncatingTail
-    let importRow = actionRow(
-      title: ImportSourceCopy.fileOrDirectoryTitle,
-      detail: ImportSourceCopy.fileOrDirectoryDetail,
-      action: #selector(addDirectory)
-    )
-    let importURLRow = actionRow(
-      title: "Import from URL",
-      detail: "Add a workflow or package directory from a GitHub URL.",
-      action: #selector(addURL)
-    )
-    let actionSection = rielaAppSettingsSection(rows: [importRow, importURLRow])
-    let stack = settingsDocumentStack(views: [
-      actionSection
-    ])
-    return overviewPane(
-      title: "Workflow Sources",
-      summaryLabel: sourcesSummaryLabel,
-      documentStack: stack
-    )
-  }
-
   private func buildProfilesOverviewView() -> NSView {
     profilesSummaryLabel.textColor = .secondaryLabelColor
     profilesSummaryLabel.lineBreakMode = .byTruncatingTail
@@ -436,6 +412,7 @@ extension DaemonWorkflowWindowController {
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = false
     isShowingProfileDetail = true
+    isShowingWorkflowSourceDetail = false
     selectedProfileDetailName = profileName
     profileDetailMode = mode
     profileDetailView?.removeFromSuperview()
@@ -622,7 +599,7 @@ extension DaemonWorkflowWindowController {
     return DaemonWorkflowOverviewPaneView(header: header, contentView: scroll)
   }
 
-  private func settingsScrollView(documentStack stack: NSStackView, topInset: CGFloat = 10) -> NSScrollView {
+  func settingsScrollView(documentStack stack: NSStackView, topInset: CGFloat = 10) -> NSScrollView {
     let document = FlippedDocumentView()
     document.translatesAutoresizingMaskIntoConstraints = false
     document.addSubview(stack)

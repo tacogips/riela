@@ -100,6 +100,7 @@ extension DaemonWorkflowWindowController {
     ])
 
     let stack = settingsDocumentStack(views: [
+      workflowGraphPaneView,
       settingsTitleRow,
       settingsSection,
       actionsTitleRow,

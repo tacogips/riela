@@ -146,7 +146,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       throw DeterministicWorkflowRunnerError.invalidWorkflow("\(diagnostic.path): \(diagnostic.message)")
     }
     let capabilityGaps = Self.unsupportedFeatures(in: request.workflow, maxConcurrency: request.maxConcurrency)
-    if let gap = capabilityGaps.first {
+    if let gap = capabilityGaps.first(where: { $0.severity == .error }) {
       throw DeterministicWorkflowRunnerError.invalidWorkflow("\(gap.path): \(gap.message)")
     }
     try enforceRequiredLoopPolicyPreflight(request)

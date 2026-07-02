@@ -295,12 +295,52 @@ final class RuntimeStoreTests: XCTestCase {
     XCTAssertEqual(completed.status, .completed)
     XCTAssertEqual(completed.backendEventCount, 1)
     XCTAssertEqual(completed.streamedResponseText, "live")
+    let liveTailCount = await store.executionLiveTailCountForTesting()
+    XCTAssertEqual(liveTailCount, 0)
     let maybeLoaded = try await store.loadSession(id: session.sessionId)
     let loaded = try XCTUnwrap(maybeLoaded)
     XCTAssertEqual(loaded.executions.first?.status, .completed)
     XCTAssertEqual(loaded.executions.first?.streamedResponseText, "live")
     let latest = await store.latestSession(workflowId: "wf")
     XCTAssertEqual(latest?.executions.first?.streamedResponseText, "live")
+  }
+
+  func testMarkSessionFailedFoldsRunningExecutionLiveTailIntoStoredSession() async throws {
+    let store = InMemoryWorkflowRuntimeStore(clock: FixedWorkflowRuntimeClock(Date(timeIntervalSince1970: 100)))
+    let session = try await store.createSession(WorkflowSessionCreateInput(workflowId: "wf", entryStepId: "start"))
+    let execution = try await store.recordStepExecution(
+      WorkflowStepExecutionRecordInput(
+        sessionId: session.sessionId,
+        stepId: "start",
+        nodeId: "node-start",
+        attempt: 1,
+        backend: .codexAgent
+      )
+    )
+    _ = try await store.recordStepBackendEventReceipt(
+      WorkflowStepBackendEventInput(
+        sessionId: session.sessionId,
+        executionId: execution.executionId,
+        eventType: "assistant",
+        channel: .assistant,
+        contentSnapshot: "live"
+      )
+    )
+    let liveTailCountAfterEvent = await store.executionLiveTailCountForTesting()
+    XCTAssertEqual(liveTailCountAfterEvent, 1)
+
+    let failed = try await store.markSessionFailed(WorkflowSessionFailureInput(
+      sessionId: session.sessionId,
+      reason: "boom"
+    ))
+
+    let liveTailCountAfterFailure = await store.executionLiveTailCountForTesting()
+    XCTAssertEqual(liveTailCountAfterFailure, 0)
+    XCTAssertEqual(failed.executions.first?.status, .failed)
+    XCTAssertEqual(failed.executions.first?.streamedResponseText, "live")
+    let maybeLoaded = try await store.loadSession(id: session.sessionId)
+    let loaded = try XCTUnwrap(maybeLoaded)
+    XCTAssertEqual(loaded.executions.first?.streamedResponseText, "live")
   }
 
   func testRecordStepBackendEventAppendsAssistantDeltasAndLifecycleCount() async throws {

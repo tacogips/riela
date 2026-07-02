@@ -492,8 +492,5 @@ private func boolValue(_ value: JSONValue?) -> Bool? {
 }
 
 private func numberValue(_ value: JSONValue?) -> Double? {
-  guard case let .number(value) = value else {
-    return nil
-  }
-  return value
+  value?.asDouble
 }

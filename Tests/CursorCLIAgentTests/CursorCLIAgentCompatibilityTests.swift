@@ -168,6 +168,26 @@ final class CursorCLIAgentCompatibilityTests: XCTestCase {
     try probes.forEach { try $0.probe() }
   }
 
+  func testDecodedIntegralExecCommandEndReportsErrors() throws {
+    var normalizer = CursorCLIAgentEventNormalizer()
+    let chunk = try decodedJSONObject("""
+      {
+        "type": "event_msg",
+        "payload": {
+          "type": "ExecCommandEnd",
+          "command": ["false"],
+          "exit_code": 1,
+          "aggregated_output": "failed"
+        }
+      }
+      """)
+
+    let event = try XCTUnwrap(normalizer.normalize(chunk).first)
+
+    XCTAssertEqual(event.type, "tool.result")
+    XCTAssertEqual(event.payload["isError"], .bool(true))
+  }
+
   func testCursorProcessBuilderMatchesLegacyCliShape() {
     let args = CursorCLIProcessCommandBuilder.buildExecArguments(
       prompt: "fix bug",

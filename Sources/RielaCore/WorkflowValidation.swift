@@ -37,6 +37,16 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
 
   public func validate(_ workflow: WorkflowDefinition) -> [WorkflowValidationDiagnostic] {
     var diagnostics: [WorkflowValidationDiagnostic] = []
+    validateUniqueIds(
+      workflow.nodeRegistry.map(\.id),
+      collectionPath: "workflow.nodes",
+      diagnostics: &diagnostics
+    )
+    validateUniqueIds(
+      workflow.steps.map(\.id),
+      collectionPath: "workflow.steps",
+      diagnostics: &diagnostics
+    )
     let registryIds = Set(workflow.nodeRegistry.map(\.id))
     let stepIds = Set(workflow.steps.map(\.id))
 
@@ -84,6 +94,26 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
     }
 
     return diagnostics
+  }
+}
+
+private func validateUniqueIds(
+  _ ids: [String],
+  collectionPath: String,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  var seen: Set<String> = []
+  var duplicateIds: Set<String> = []
+  for id in ids where !id.isEmpty {
+    if !seen.insert(id).inserted {
+      duplicateIds.insert(id)
+    }
+  }
+  guard !duplicateIds.isEmpty else {
+    return
+  }
+  for (index, id) in ids.enumerated() where duplicateIds.contains(id) {
+    diagnostics.append(error("\(collectionPath)[\(index)].id", "must be unique across \(collectionPath)[]"))
   }
 }
 

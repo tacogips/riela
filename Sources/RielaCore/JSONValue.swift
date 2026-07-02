@@ -1,5 +1,7 @@
 import Foundation
 
+/// A JSON value model that canonicalizes integral decoded numbers to
+/// `.integer`, so `1.0` may re-encode as `1`.
 public enum JSONValue: Codable, Equatable, Sendable {
   private static let maxExactlyRepresentableIntegerAsDouble: Int64 = 9_007_199_254_740_992
 

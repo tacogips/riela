@@ -60,6 +60,30 @@ final class WorkflowModelTests: XCTestCase {
     XCTAssertEqual(workflow.nodes.first?.inputFilters?.first?.kind, .telegram)
   }
 
+  func testDefaultWorkflowValidatorRejectsDuplicateProgrammaticStepAndNodeIds() {
+    let workflow = WorkflowDefinition(
+      workflowId: "duplicate-programmatic",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
+      entryStepId: "step",
+      nodeRegistry: [
+        WorkflowNodeRegistryRef(id: "node", nodeFile: "nodes/one.json"),
+        WorkflowNodeRegistryRef(id: "node", nodeFile: "nodes/two.json")
+      ],
+      steps: [
+        WorkflowStepRef(id: "step", nodeId: "node"),
+        WorkflowStepRef(id: "step", nodeId: "node")
+      ],
+      nodes: [WorkflowNodeRef(id: "node", nodeFile: "nodes/one.json")]
+    )
+
+    let diagnostics = DefaultWorkflowValidator().validate(workflow)
+
+    XCTAssertTrue(diagnostics.contains(error("workflow.nodes[0].id", "must be unique across workflow.nodes[]")))
+    XCTAssertTrue(diagnostics.contains(error("workflow.nodes[1].id", "must be unique across workflow.nodes[]")))
+    XCTAssertTrue(diagnostics.contains(error("workflow.steps[0].id", "must be unique across workflow.steps[]")))
+    XCTAssertTrue(diagnostics.contains(error("workflow.steps[1].id", "must be unique across workflow.steps[]")))
+  }
+
   func testWorkflowValidationRejectsUnsupportedNodeInputFilterKind() throws {
     let data = Data("""
       {

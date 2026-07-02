@@ -76,6 +76,26 @@ final class ClaudeCodeAgentCompatibilityTests: XCTestCase {
     XCTAssertEqual(manager.prune(), 1)
   }
 
+  func testDecodedIntegralExecCommandEndReportsErrors() throws {
+    var normalizer = ClaudeCodeAgentEventNormalizer()
+    let chunk = try decodedJSONObject("""
+      {
+        "type": "event_msg",
+        "payload": {
+          "type": "ExecCommandEnd",
+          "command": ["false"],
+          "exit_code": 1,
+          "aggregated_output": "failed"
+        }
+      }
+      """)
+
+    let event = try XCTUnwrap(normalizer.normalize(chunk).first)
+
+    XCTAssertEqual(event.type, "tool.result")
+    XCTAssertEqual(event.payload["isError"], .bool(true))
+  }
+
   func testProcessManagerStreamReturnsBeforeCompletionAndYieldsLiveLines() throws {
     let temp = try makeTemporaryDirectory()
     addTeardownBlock {

@@ -535,9 +535,16 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     if let currentStepId = input.currentStepId {
       session.currentStepId = currentStepId
     }
-    session.executions[index] = execution.withoutBackendLiveTail()
+    let returnedExecution: WorkflowStepExecution
+    if execution.status.isTerminal {
+      returnedExecution = finalizeBackendLiveTail(on: execution)
+      session.executions[index] = returnedExecution
+    } else {
+      session.executions[index] = execution.withoutBackendLiveTail()
+      returnedExecution = projectBackendLiveTail(on: execution)
+    }
     sessions[input.sessionId] = session
-    return projectBackendLiveTail(on: execution)
+    return returnedExecution
   }
 
   public func markSessionFailed(_ input: WorkflowSessionFailureInput) async throws -> WorkflowSession {
@@ -556,7 +563,7 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
       failedExecution.status = .failed
       failedExecution.failureReason = input.reason
       failedExecution.updatedAt = date
-      return failedExecution
+      return finalizeBackendLiveTail(on: failedExecution)
     }
     sessions[input.sessionId] = session
     return projectBackendLiveTails(on: session)
@@ -775,6 +782,10 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     sessions[id].map(projectBackendLiveTails(on:))
   }
 
+  func executionLiveTailCountForTesting() -> Int {
+    executionLiveTails.count
+  }
+
   private func detachingBackendLiveTails(from session: WorkflowSession) -> WorkflowSession {
     var detached = session
     detached.executions = session.executions.map { execution in
@@ -795,6 +806,23 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
 
   private func projectBackendLiveTail(on execution: WorkflowStepExecution) -> WorkflowStepExecution {
     executionLiveTails[execution.executionId]?.applying(to: execution) ?? execution
+  }
+
+  private func finalizeBackendLiveTail(on execution: WorkflowStepExecution) -> WorkflowStepExecution {
+    let finalized = projectBackendLiveTail(on: execution)
+    executionLiveTails.removeValue(forKey: execution.executionId)
+    return finalized
+  }
+}
+
+private extension WorkflowStepExecutionStatus {
+  var isTerminal: Bool {
+    switch self {
+    case .completed, .failed, .skipped:
+      return true
+    case .running:
+      return false
+    }
   }
 }
 

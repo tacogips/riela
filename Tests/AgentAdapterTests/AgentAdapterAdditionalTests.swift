@@ -30,6 +30,8 @@ extension AgentAdapterTests {
     let events = await recorder.recordedEvents()
     XCTAssertEqual(events.map(\.provider), ["codex-agent", "codex-agent", "claude-code-agent", "cursor-cli-agent", "cursor-cli-agent"])
     XCTAssertEqual(events.map(\.eventType), ["turn.started", "assistant.snapshot", "assistant", "session.thinking", "result"])
+    XCTAssertEqual(events.map(\.channel), [.lifecycle, .assistant, nil, .lifecycle, .lifecycle])
+    XCTAssertEqual(events[1].contentSnapshot, "done")
   }
 
   func testAgentAdaptersIgnoreNonJSONAndStderrForBackendEvents() async throws {

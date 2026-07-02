@@ -64,7 +64,8 @@ public struct CursorCLIAgentCommandBuilder: LocalAgentCommandBuilding {
       ),
       stdin: "",
       normalizeStdout: normalizeCursorStreamJSONStdout,
-      backendEventType: cursorBackendEventType
+      backendEventType: cursorBackendEventType,
+      classifyBackendEvent: classifyCursorBackendEvent
     )
   }
 }
@@ -312,6 +313,39 @@ private func cursorBackendEventType(_ line: String) -> String? {
     return nil
   }
   return stringValue(object["type"]) ?? "json-event"
+}
+
+private func classifyCursorBackendEvent(_ line: String) -> AdapterBackendEvent? {
+  guard
+    let data = line.data(using: .utf8),
+    let decoded = try? JSONDecoder().decode(JSONValue.self, from: data),
+    case let .object(object) = decoded,
+    isCursorJSONEvent(object)
+  else {
+    return nil
+  }
+  let eventType = stringValue(object["type"]) ?? "json-event"
+  if eventType == "thinking", stringValue(object["subtype"]) == "delta" {
+    return AdapterBackendEvent(
+      provider: CliAgentBackend.cursorCliAgent.rawValue,
+      eventType: eventType,
+      channel: .thinking,
+      contentDelta: stringValue(object["text"]),
+      isDelta: true
+    )
+  }
+  if let assistantText = cursorAssistantText(from: object) {
+    return AdapterBackendEvent(
+      provider: CliAgentBackend.cursorCliAgent.rawValue,
+      eventType: eventType,
+      channel: .assistant,
+      contentSnapshot: assistantText
+    )
+  }
+  if eventType == "result", let usage = objectValue(object["usage"]) {
+    return AdapterBackendEvent(provider: CliAgentBackend.cursorCliAgent.rawValue, eventType: eventType, channel: .usage, usage: usage)
+  }
+  return AdapterBackendEvent(provider: CliAgentBackend.cursorCliAgent.rawValue, eventType: eventType, channel: .lifecycle)
 }
 
 private func isCursorJSONEvent(_ object: JSONObject) -> Bool {

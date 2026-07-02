@@ -54,6 +54,9 @@ public struct WorkflowStepExecution: Codable, Equatable, Sendable {
   public var failureReason: String?
   public var lastBackendEventAt: Date?
   public var lastBackendEventType: String?
+  public var backendEventCount: Int?
+  public var recentBackendEvents: [WorkflowBackendEventRecord]?
+  public var streamedResponseText: String?
   public var createdAt: Date
   public var updatedAt: Date
 
@@ -69,6 +72,9 @@ public struct WorkflowStepExecution: Codable, Equatable, Sendable {
     failureReason: String? = nil,
     lastBackendEventAt: Date? = nil,
     lastBackendEventType: String? = nil,
+    backendEventCount: Int? = nil,
+    recentBackendEvents: [WorkflowBackendEventRecord]? = nil,
+    streamedResponseText: String? = nil,
     createdAt: Date,
     updatedAt: Date
   ) {
@@ -83,8 +89,36 @@ public struct WorkflowStepExecution: Codable, Equatable, Sendable {
     self.failureReason = failureReason
     self.lastBackendEventAt = lastBackendEventAt
     self.lastBackendEventType = lastBackendEventType
+    self.backendEventCount = backendEventCount
+    self.recentBackendEvents = recentBackendEvents
+    self.streamedResponseText = streamedResponseText
     self.createdAt = createdAt
     self.updatedAt = updatedAt
+  }
+}
+
+public struct WorkflowBackendEventRecord: Codable, Equatable, Sendable {
+  public var sequence: Int
+  public var at: Date
+  public var eventType: String
+  public var channel: AdapterBackendEventChannel?
+  public var content: String?
+  public var toolName: String?
+
+  public init(
+    sequence: Int,
+    at: Date,
+    eventType: String,
+    channel: AdapterBackendEventChannel? = nil,
+    content: String? = nil,
+    toolName: String? = nil
+  ) {
+    self.sequence = sequence
+    self.at = at
+    self.eventType = eventType
+    self.channel = channel
+    self.content = content
+    self.toolName = toolName
   }
 }
 

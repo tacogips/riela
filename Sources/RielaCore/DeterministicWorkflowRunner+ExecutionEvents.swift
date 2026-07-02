@@ -47,19 +47,30 @@ extension DeterministicWorkflowRunner {
         WorkflowStepBackendEventInput(
           sessionId: sessionId,
           executionId: execution.executionId,
-          eventType: backendEvent.eventType
+          eventType: backendEvent.eventType,
+          channel: backendEvent.channel,
+          contentDelta: backendEvent.contentDelta,
+          contentSnapshot: backendEvent.contentSnapshot,
+          isDelta: backendEvent.isDelta,
+          toolName: backendEvent.toolName,
+          usage: backendEvent.usage,
+          sequence: nil,
+          at: backendEvent.at
         )
       )
       guard let updatedExecution,
             let updatedSession = try? await self.store.loadSession(id: sessionId) else {
         return
       }
+      var enrichedEvent = backendEvent
+      enrichedEvent.sequence = updatedExecution.backendEventCount
+      enrichedEvent.at = updatedExecution.lastBackendEventAt
       await self.emitBackendEvent(
         workflowId: workflowId,
         session: updatedSession,
         step: step,
         execution: updatedExecution,
-        backendEvent: backendEvent,
+        backendEvent: enrichedEvent,
         handler: handler
       )
     }

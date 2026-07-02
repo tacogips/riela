@@ -51,13 +51,48 @@ public struct AdapterExecutionInput: Codable, Equatable, Sendable {
   }
 }
 
+public enum AdapterBackendEventChannel: String, Codable, Equatable, Sendable {
+  case lifecycle
+  case assistant
+  case thinking
+  case tool
+  case usage
+}
+
 public struct AdapterBackendEvent: Equatable, Sendable {
   public var provider: String
   public var eventType: String
+  public var channel: AdapterBackendEventChannel?
+  public var contentDelta: String?
+  public var contentSnapshot: String?
+  public var isDelta: Bool
+  public var toolName: String?
+  public var usage: JSONObject?
+  public var sequence: Int?
+  public var at: Date?
 
-  public init(provider: String, eventType: String) {
+  public init(
+    provider: String,
+    eventType: String,
+    channel: AdapterBackendEventChannel? = nil,
+    contentDelta: String? = nil,
+    contentSnapshot: String? = nil,
+    isDelta: Bool = false,
+    toolName: String? = nil,
+    usage: JSONObject? = nil,
+    sequence: Int? = nil,
+    at: Date? = nil
+  ) {
     self.provider = provider
     self.eventType = eventType
+    self.channel = channel
+    self.contentDelta = contentDelta
+    self.contentSnapshot = contentSnapshot
+    self.isDelta = isDelta
+    self.toolName = toolName
+    self.usage = usage
+    self.sequence = sequence
+    self.at = at
   }
 }
 

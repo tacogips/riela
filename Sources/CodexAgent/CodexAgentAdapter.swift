@@ -52,7 +52,8 @@ public struct CodexAgentCommandBuilder: LocalAgentCommandBuilding {
       ),
       stdin: promptText,
       normalizeStdout: normalizeCodexExecJSONStdout,
-      backendEventType: codexBackendEventType
+      backendEventType: codexBackendEventType,
+      classifyBackendEvent: classifyCodexBackendEvent
     )
   }
 }
@@ -226,6 +227,73 @@ private func codexBackendEventType(_ line: String) -> String? {
     return nil
   }
   return stringValue(object["type"]) ?? "json-event"
+}
+
+private func classifyCodexBackendEvent(_ line: String) -> AdapterBackendEvent? {
+  guard
+    let data = line.data(using: .utf8),
+    let decoded = try? JSONDecoder().decode(JSONValue.self, from: data),
+    case let .object(object) = decoded,
+    isCodexJSONEvent(object)
+  else {
+    return nil
+  }
+  let eventType = stringValue(object["type"]) ?? "json-event"
+  if eventType == "turn.completed", let usage = objectValue(object["usage"]) {
+    return AdapterBackendEvent(provider: CliAgentBackend.codexAgent.rawValue, eventType: eventType, channel: .usage, usage: usage)
+  }
+  if let classified = classifyCodexContentEvent(object: object, eventType: eventType) {
+    return classified
+  }
+  return AdapterBackendEvent(provider: CliAgentBackend.codexAgent.rawValue, eventType: eventType, channel: .lifecycle)
+}
+
+private func classifyCodexContentEvent(object: JSONObject, eventType: String) -> AdapterBackendEvent? {
+  if eventType == "assistant.snapshot", let content = stringValue(object["content"]) {
+    return AdapterBackendEvent(
+      provider: CliAgentBackend.codexAgent.rawValue,
+      eventType: eventType,
+      channel: .assistant,
+      contentSnapshot: content
+    )
+  }
+  if eventType == "item.completed", let item = objectValue(object["item"]) {
+    switch stringValue(item["type"]) {
+    case "agent_message":
+      return AdapterBackendEvent(
+        provider: CliAgentBackend.codexAgent.rawValue,
+        eventType: eventType,
+        channel: .assistant,
+        contentSnapshot: stringValue(item["text"])
+      )
+    case "reasoning":
+      return AdapterBackendEvent(
+        provider: CliAgentBackend.codexAgent.rawValue,
+        eventType: eventType,
+        channel: .thinking,
+        contentSnapshot: stringValue(item["text"]) ?? outputText(from: item["content"])
+      )
+    case "command_execution", "tool_call":
+      return AdapterBackendEvent(
+        provider: CliAgentBackend.codexAgent.rawValue,
+        eventType: eventType,
+        channel: .tool,
+        contentSnapshot: stringValue(item["text"]) ?? stringValue(item["status"]),
+        toolName: stringValue(item["name"]) ?? stringValue(item["tool_name"])
+      )
+    default:
+      break
+    }
+  }
+  if let content = codexAssistantContent(from: object) {
+    return AdapterBackendEvent(
+      provider: CliAgentBackend.codexAgent.rawValue,
+      eventType: eventType,
+      channel: .assistant,
+      contentSnapshot: content
+    )
+  }
+  return nil
 }
 
 private func codexAssistantContent(from object: JSONObject) -> String? {

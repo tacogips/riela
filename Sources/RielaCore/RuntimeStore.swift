@@ -163,11 +163,39 @@ public struct WorkflowStepBackendEventInput: Equatable, Sendable {
   public var sessionId: String
   public var executionId: String
   public var eventType: String
+  public var channel: AdapterBackendEventChannel?
+  public var contentDelta: String?
+  public var contentSnapshot: String?
+  public var isDelta: Bool
+  public var toolName: String?
+  public var usage: JSONObject?
+  public var sequence: Int?
+  public var at: Date?
 
-  public init(sessionId: String, executionId: String, eventType: String) {
+  public init(
+    sessionId: String,
+    executionId: String,
+    eventType: String,
+    channel: AdapterBackendEventChannel? = nil,
+    contentDelta: String? = nil,
+    contentSnapshot: String? = nil,
+    isDelta: Bool = false,
+    toolName: String? = nil,
+    usage: JSONObject? = nil,
+    sequence: Int? = nil,
+    at: Date? = nil
+  ) {
     self.sessionId = sessionId
     self.executionId = executionId
     self.eventType = eventType
+    self.channel = channel
+    self.contentDelta = contentDelta
+    self.contentSnapshot = contentSnapshot
+    self.isDelta = isDelta
+    self.toolName = toolName
+    self.usage = usage
+    self.sequence = sequence
+    self.at = at
   }
 }
 
@@ -512,13 +540,92 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
       return session.executions[index]
     }
 
-    let date = clock.now()
+    let date = input.at ?? clock.now()
+    let sequence = input.sequence ?? ((session.executions[index].backendEventCount ?? 0) + 1)
     var execution = session.executions[index]
     execution.lastBackendEventAt = date
     execution.lastBackendEventType = input.eventType
+    execution.backendEventCount = sequence
+    appendRecentBackendEvent(to: &execution, input: input, sequence: sequence, date: date)
+    updateStreamedResponseText(on: &execution, input: input)
     session.executions[index] = execution
     sessions[input.sessionId] = session
     return execution
+  }
+
+  private func appendRecentBackendEvent(
+    to execution: inout WorkflowStepExecution,
+    input: WorkflowStepBackendEventInput,
+    sequence: Int,
+    date: Date
+  ) {
+    var events = execution.recentBackendEvents ?? []
+    events.append(WorkflowBackendEventRecord(
+      sequence: sequence,
+      at: date,
+      eventType: input.eventType,
+      channel: input.channel,
+      content: input.contentSnapshot ?? input.contentDelta,
+      toolName: input.toolName
+    ))
+    if events.count > 100 {
+      events.removeFirst(events.count - 100)
+    }
+    execution.recentBackendEvents = events
+  }
+
+  private func updateStreamedResponseText(
+    on execution: inout WorkflowStepExecution,
+    input: WorkflowStepBackendEventInput
+  ) {
+    guard input.channel == .assistant else {
+      return
+    }
+    if let snapshot = input.contentSnapshot {
+      execution.streamedResponseText = cappedStreamedResponseText(snapshot)
+      return
+    }
+    guard let delta = input.contentDelta else {
+      return
+    }
+    execution.streamedResponseText = cappedStreamedResponseText((execution.streamedResponseText ?? "") + delta)
+  }
+
+  private func cappedStreamedResponseText(_ text: String) -> String {
+    let cap = 32 * 1024
+    guard text.utf8.count > cap else {
+      return text
+    }
+    let prefixCap = cap / 2
+    let suffixCap = cap - prefixCap
+    return byteBoundPrefix(text, limit: prefixCap) + byteBoundSuffix(text, limit: suffixCap)
+  }
+
+  private func byteBoundPrefix(_ text: String, limit: Int) -> String {
+    var prefix = ""
+    prefix.reserveCapacity(limit)
+    for character in text {
+      guard prefix.utf8.count + String(character).utf8.count <= limit else {
+        break
+      }
+      prefix.append(character)
+    }
+    return prefix
+  }
+
+  private func byteBoundSuffix(_ text: String, limit: Int) -> String {
+    var suffixCharacters: [Character] = []
+    suffixCharacters.reserveCapacity(limit)
+    var bytes = 0
+    for character in text.reversed() {
+      let characterBytes = String(character).utf8.count
+      guard bytes + characterBytes <= limit else {
+        break
+      }
+      suffixCharacters.append(character)
+      bytes += characterBytes
+    }
+    return String(suffixCharacters.reversed())
   }
 
   public func appendWorkflowMessage(_ input: WorkflowMessageAppendInput) async throws -> WorkflowMessageRecord {

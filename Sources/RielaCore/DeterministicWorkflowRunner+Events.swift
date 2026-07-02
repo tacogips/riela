@@ -86,6 +86,12 @@ extension DeterministicWorkflowRunner {
         nodeId: step.nodeId,
         executionId: execution.executionId,
         backendEventType: backendEvent.eventType,
+        backendEventChannel: backendEvent.channel?.rawValue,
+        backendEventContent: backendEvent.contentSnapshot ?? backendEvent.contentDelta,
+        backendEventIsDelta: backendEvent.channel == nil ? nil : backendEvent.isDelta,
+        backendEventSequence: backendEvent.sequence,
+        backendToolName: backendEvent.toolName,
+        backendEventUsage: backendEvent.usage,
         nodeExecutions: session.executions.count
       ),
       handler: handler
@@ -174,6 +180,9 @@ extension DeterministicWorkflowRunner {
     }
     if let backendEventType = event.backendEventType {
       attributes["backend.event.type"] = backendEventType
+    }
+    if let backendEventChannel = event.backendEventChannel {
+      attributes["backend.event.channel"] = backendEventChannel
     }
     return attributes
   }

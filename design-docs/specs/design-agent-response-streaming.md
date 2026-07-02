@@ -12,10 +12,28 @@ stream, `riela session progress`, RielaApp viewers, and auto-improve stall
 detection — can see *that* the agent is alive, but never *what* it is saying
 while it runs.
 
-This document designs response streaming: surfacing agent output content
-(assistant text, thinking, tool activity, usage) incrementally while a node
-executes, end to end from the child process pipe to the CLI JSONL stream, the
-runtime store, session artifacts, and the GraphQL/viewer surfaces.
+This document defines the Phase 1 issue-resolution slice for response
+streaming: surfacing CLI agent output content (assistant text, thinking, tool
+activity, usage) incrementally while a node executes, from the child process
+pipe to live `WorkflowRunEvent` JSONL and runtime-store live-tail fields. It
+also records the explicit boundaries for later read surfaces so Phase 1 does
+not fan out into unrelated UI, GraphQL, log-follow, artifact-tail, or Claude
+output-format work.
+
+## Issue-Resolution Scope (Phase 1 Only)
+
+The current implementation pass is limited to Phase 1 from the rollout plan:
+additive backend-event contracts, codex/cursor content classifiers, a
+non-blocking local process bridge, `WorkflowRunEvent` JSONL enrichment, runtime
+store live-tail fields, and focused tests. It intentionally does not migrate
+Claude to stream-json, add GraphQL polling, add RielaApp panes, add
+`session logs --follow`, print live lines in text output mode, or make unrelated
+RielaApp UX changes.
+
+The only JSONL surface in scope for Phase 1 is the existing live
+`riela workflow run --output jsonl` stream. Full-fidelity
+`backend-events.jsonl` artifacts and post-hoc log-following are later read
+surface work.
 
 ## Current Architecture (verified 2026-07-02)
 
@@ -75,49 +93,60 @@ build `stream-json` / `--json` invocations and have rollout watchers
 (`CodexSessionWatchSubscription`) — but the workflow adapter path does not use
 them.
 
-### Gaps this design closes
+### Gaps and Phase 1 closure
 
-- G1. Backend events carry no content — only a type string.
+- G1. Backend events carry no content — only a type string. Phase 1 closes this
+  for `codex-agent` and `cursor-cli-agent` by adding optional content fields.
 - G2. `claude-code-agent` emits zero backend events (text output format), so
   it has no heartbeat either, despite
-  `workflowAutoImproveBackendSupportsHeartbeat` claiming heartbeat support
-  for it.
-- G3. The runtime store keeps only the *last* event type/timestamp; there is
-  no live tail for `session progress`, the viewer, or GraphQL.
+  `workflowAutoImproveBackendSupportsHeartbeat` claiming heartbeat support for
+  it. Phase 1 documents this as a deferred Phase 2 migration and does not
+  change Claude invocation or final-result extraction.
+- G3. The runtime store keeps only the *last* event type/timestamp. Phase 1
+  adds bounded live-tail data to the store, but `session progress`, viewer,
+  GraphQL, and artifact readers remain later read-surface work.
 - G4. The per-event bridge in `LocalAgentCommandAdapter.outputEventHandler`
   blocks the pipe-reader thread with a `DispatchSemaphore` around an async
   store write for *every* line. Acceptable at 4 events/run; hostile at
-  token-delta rates (cursor emits dozens of events per second).
-- G5. No content-bearing streaming surface exists for library/GraphQL/app
-  consumers; RielaApp shows only `lastBackendEventType`.
+  token-delta rates (cursor emits dozens of events per second). Phase 1
+  replaces this with a non-blocking ordered async bridge.
+- G5. No content-bearing streaming surface exists for consumers. Phase 1
+  exposes only the existing live `riela workflow run --output jsonl` surface
+  and runtime-store fields; library, GraphQL, app, and post-hoc log surfaces
+  are deferred.
 
 ## Goals
 
 - Stream agent response content (assistant text, thinking, tool activity,
-  usage, lifecycle) per executing node, live, for all three CLI agent
-  backends.
+  usage, lifecycle) per executing node, live. Phase 1 ships this for
+  `codex-agent` and `cursor-cli-agent`; `claude-code-agent` is a later isolated
+  migration because it requires changing CLI output format and final-response
+  normalization.
 - Preserve the existing completion contract: `normalizeStdout` over the full
   buffered stdout remains the source of truth for
   `AdapterExecutionOutput`. Streaming is additive observability; a stream
   consumer crash or missed event must never change run results.
 - Keep `WorkflowRunEvent` and the persisted session record schemas
   backward-compatible (new optional fields only).
-- Bound memory and event volume: delta coalescing, per-execution ring buffer,
-  size-capped artifact log.
+- Bound memory and event volume: delta coalescing, a bounded async bridge, a
+  per-execution runtime-store ring buffer, and capped assistant tail text.
 - Redact sensitive environment values from streamed content with the existing
   `redactAdapterSensitiveText` machinery before anything leaves the adapter.
 
 ## Non-Goals
 
-- Real GraphQL subscriptions / SSE / WebSocket transport. The deterministic
-  request/response server (`DeterministicServerRouteHandler`) stays as-is; we
-  add a cursor-based polling query instead. Push transport can layer on later.
+- GraphQL subscriptions, SSE, WebSocket transport, or cursor-based polling
+  queries. The deterministic request/response server
+  (`DeterministicServerRouteHandler`) stays as-is in Phase 1.
 - Streaming for `official/*-sdk` backends (OpenAI/Anthropic/Gemini/Cursor SDK
   adapters use buffered `URLSession` requests; SSE support there is a separate
   effort).
 - Interactive mid-run input to the agent (that is the manager control plane's
   job).
 - Changing mock-scenario or stdio node executor behavior.
+- For the current Phase 1 issue-resolution pass: Claude stream-json migration,
+  GraphQL polling, viewer panes, `session logs --follow`, text-mode live lines,
+  and unrelated RielaApp UX changes.
 
 ## Design
 
@@ -165,7 +194,8 @@ public struct LocalAgentCommand: Sendable {
 
 Each agent target adds a `classify<Backend>BackendEvent(_ line: String)`
 function next to its existing `<backend>BackendEventType`, reusing the same
-JSON parsing:
+JSON parsing. Phase 1 implements the codex and cursor classifiers only; the
+Claude classifier remains documented here as the Phase 2 contract boundary.
 
 - **codex-agent** (`Sources/CodexAgent/CodexAgentAdapter.swift`)
   - `item.completed` with `item.type == "agent_message"` →
@@ -178,7 +208,10 @@ JSON parsing:
   - Codex does not emit token deltas from `exec --json`; item-level snapshots
     are the granularity we stream. No CLI flag change needed.
 
-- **claude-code-agent** (`Sources/ClaudeCodeAgent/ClaudeCodeAgentAdapter.swift`)
+- **Deferred claude-code-agent boundary (Phase 2, not in this request)**
+  (`Sources/ClaudeCodeAgent/ClaudeCodeAgentAdapter.swift`)
+  - Phase 1 intentionally keeps the existing `--output-format text` workflow
+    adapter behavior and existing final-response normalization.
   - **Builder change**: `--output-format text` →
     `--output-format stream-json --verbose`, plus
     `--include-partial-messages` gated by a node variable
@@ -250,7 +283,8 @@ Properties:
 flushes when (a) accumulated delta ≥ 256 UTF-8 bytes, (b) 250 ms elapsed since
 first absorbed delta, or (c) a different-channel/non-delta event arrives.
 This turns cursor's per-token firehose into ~4 events/second worst case while
-keeping codex/claude item-level events untouched.
+keeping codex item-level events untouched. Claude item/message streaming stays
+outside Phase 1.
 
 **Redaction**: `contentDelta` / `contentSnapshot` pass through
 `redactAdapterSensitiveText(_, additionalSensitiveValues:
@@ -274,7 +308,8 @@ yield. Content is also truncated to 16 KiB per event.
 
   `WorkflowBackendEventRecord` is a small Codable struct
   (`sequence`, `at`, `eventType`, `channel`, `content`, `toolName`).
-  All optional → persisted session JSON stays decodable both directions.
+  The execution-level fields are optional, so persisted session JSON stays
+  decodable both directions.
 - `InMemoryWorkflowRuntimeStore.recordStepBackendEvent` appends to the ring
   (dropping oldest beyond cap), bumps count, and updates
   `streamedResponseText` for `.assistant` channel events (snapshot replaces;
@@ -282,13 +317,12 @@ yield. Content is also truncated to 16 KiB per event.
 - Lifecycle-only events (no content) keep today's cheap path — timestamp +
   type only — so heartbeat cost does not grow.
 
-**Full-fidelity artifact**: when the run has an artifact root
-(`--artifact-root` / server artifact layout), the runner appends every
-enriched backend event as one JSONL line to
-`<artifacts>/<sessionId>/<executionId>/backend-events.jsonl`, size-capped at
-8 MiB per execution (stop writing + record a truncation marker line). The
-in-store ring is for live UIs; the artifact is for post-hoc debugging and
-`riela-troubleshooting` flows.
+**Deferred full-fidelity artifact contract**: a later read-surface phase may
+append every enriched backend event as one JSONL line to
+`<artifacts>/<sessionId>/<executionId>/backend-events.jsonl` when the run has
+an artifact root (`--artifact-root` / server artifact layout), size-capped at
+8 MiB per execution with a truncation marker. Phase 1 does not write or expose
+that artifact; the in-store ring is the only retained live-tail data.
 
 ### 5. `WorkflowRunEvent` enrichment (CLI JSONL surface)
 
@@ -318,27 +352,33 @@ agent text with **no CLI changes**:
 Consumers that ignore unknown fields (the documented JSONL contract) are
 unaffected.
 
-Text output mode (`--output text`) additionally gains a lightweight live
-line — `[step main-worker] assistant: <first 120 chars…>` — written through
-the same recorder hook; this is a small, isolated change in the text renderer
-and can ship in a later phase.
+Text output mode (`--output text`) remains unchanged in Phase 1. A later phase
+can add a lightweight live line through the same recorder hook, for example
+`[step main-worker] assistant: <first 120 chars...>`.
 
 ### 6. Volume and cost controls
 
 - Delta coalescing (§3): ≤ ~4 content events/sec per execution.
-- `--include-partial-messages` for claude is **opt-in** per node
-  (`variables.claudeStreamPartialMessages: true`); default granularity is
-  message-level `assistant` events, which are cheap and still much better
-  than today's nothing.
+- Claude partial-message streaming is deferred with the Phase 2
+  `stream-json` migration. When added, `--include-partial-messages` should be
+  opt-in per node (`variables.claudeStreamPartialMessages: true`) so default
+  granularity stays message-level.
 - Node-level opt-out: `variables.streamBackendContent: false` downgrades the
   classifier to type-only events (today's behavior) for that node — useful
   for nodes whose output is sensitive or enormous.
-- Telemetry: `riela.workflow.backend.event` log records gain a `channel`
-  attribute; content is **never** put into telemetry attributes.
+- Telemetry remains content-free. If backend-event log records later add a
+  `channel` attribute, streamed content must still never be put into telemetry
+  attributes.
 
 ### 7. Read surfaces
 
-- **`riela session progress`** (`SessionCommands.swift`): running-execution
+Phase 1 exposes only the enriched live `WorkflowRunEvent` JSONL stream and the
+runtime-store fields needed by future readers. The following surfaces are
+deferred so the first implementation slice stays inside adapter, runner/store,
+and CLI JSONL boundaries:
+
+- **`riela session progress`** (`SessionCommands.swift`): a later phase can
+  make running-execution
   rows add `backendEventCount`, last `channel`, and the tail of
   `streamedResponseText` (last ~200 chars). Gives "what is the agent saying
   right now" from any shell.
@@ -347,7 +387,7 @@ and can ship in a later phase.
   the same watcher pattern as `CodexRolloutWatcher` (poll + offset), so users
   can attach to an already-running session they didn't start with `--output
   jsonl`.
-- **GraphQL** (`RielaGraphQL`): add a cursor-paged query to
+- **GraphQL** (`RielaGraphQL`): a later phase can add a cursor-paged query to
   `GraphQLRuntimeSnapshotQueryService`:
 
   ```graphql
@@ -361,7 +401,7 @@ and can ship in a later phase.
   evicted from the ring, the response sets `truncated: true` and points at
   the artifact path.
 - **RielaApp / RielaViewer**: `WorkflowViewer` snapshot rows already carry
-  `lastBackendEventType`; extend the snapshot model with
+  `lastBackendEventType`; a later phase can extend the snapshot model with
   `streamedResponseTail` and `backendEventCount`, and let the existing
   refresh path (manual refresh button today) render a live "Agent output"
   pane. A timer-based auto-refresh while a session is `running` is a small
@@ -371,23 +411,31 @@ and can ship in a later phase.
 
 - **Unit — classifiers**: fixture lines captured from the real CLIs (the
   verified shapes above become test fixtures) → expected
-  `AdapterBackendEvent`s. Include malformed JSON, non-event JSON, huge lines
-  (truncation), and lines containing a sensitive env value (redaction).
+  `AdapterBackendEvent`s. Include malformed JSON, non-event JSON, unknown
+  event types, assistant/thinking/tool/usage/lifecycle records, and final
+  stdout normalizer invariants for codex/cursor.
 - **Unit — coalescer**: burst of 500 one-token deltas → bounded flush count,
   byte-exact reassembly, channel-switch flush.
-- **Unit — normalizers**: new `normalizeClaudeStreamJSONStdout` gets the same
-  table-driven treatment as the codex/cursor normalizers in
-  `AgentAdapterTests`, including the "not stream-json → return text
-  unchanged" invariant so `--output-format` overrides via
-  `claudeAdditionalArgs` don't break the final result.
+- **Unit — Phase 2 Claude normalizer (deferred)**: when
+  `normalizeClaudeStreamJSONStdout` is added, it gets the same table-driven
+  treatment as the codex/cursor normalizers in `AgentAdapterTests`, including
+  the "not stream-json -> return text unchanged" invariant so
+  `--output-format` overrides via `claudeAdditionalArgs` don't break the final
+  result.
 - **Integration — `LocalAgentCommandAdapter`**: scripted
   `LocalAgentProcessEventStreaming` mock runner that replays fixture lines
   with delays; assert event ordering, that the last backend event lands
   before `execute` returns, and that a slow `backendEventHandler` cannot
-  stall the (mock) reader.
-- **Integration — runner/store**: run a mock-scenario-less fake adapter
-  emitting N events; assert ring cap, `backendEventCount`,
-  `streamedResponseText` assembly, and JSONL artifact contents.
+  stall the (mock) reader. Bridge coverage owns redaction, truncation, and
+  `variables.streamBackendContent: false`.
+- **Integration — runner/store (Phase 1)**: run a mock-scenario-less fake
+  adapter emitting N events; assert ring cap, `backendEventCount`,
+  `streamedResponseText` assembly, and enriched live `WorkflowRunEvent` JSONL
+  fields. Do not assert `backend-events.jsonl` artifact contents in Phase 1.
+- **Integration — artifact log (later read-surface phase)**: once
+  `backend-events.jsonl` is implemented, assert artifact append ordering, size
+  cap/truncation marker behavior, and post-hoc tail/read behavior separately
+  from Phase 1 runner/store coverage.
 - **CLI e2e (manual/verify skill)**: `riela workflow run
   examples/worker-only-single-step ... --output jsonl` against real codex
   shows `backendEventContent` lines arriving before `step_completed`

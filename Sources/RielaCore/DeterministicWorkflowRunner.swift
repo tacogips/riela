@@ -71,6 +71,12 @@ public struct WorkflowRunEvent: Codable, Equatable, Sendable {
   public var nodeId: String?
   public var executionId: String?
   public var backendEventType: String?
+  public var backendEventChannel: String?
+  public var backendEventContent: String?
+  public var backendEventIsDelta: Bool?
+  public var backendEventSequence: Int?
+  public var backendToolName: String?
+  public var backendEventUsage: JSONObject?
   public var exitCode: Int32?
   public var nodeExecutions: Int?
   public var transitions: Int?
@@ -85,6 +91,12 @@ public struct WorkflowRunEvent: Codable, Equatable, Sendable {
     nodeId: String? = nil,
     executionId: String? = nil,
     backendEventType: String? = nil,
+    backendEventChannel: String? = nil,
+    backendEventContent: String? = nil,
+    backendEventIsDelta: Bool? = nil,
+    backendEventSequence: Int? = nil,
+    backendToolName: String? = nil,
+    backendEventUsage: JSONObject? = nil,
     exitCode: Int32? = nil,
     nodeExecutions: Int? = nil,
     transitions: Int? = nil
@@ -98,6 +110,12 @@ public struct WorkflowRunEvent: Codable, Equatable, Sendable {
     self.nodeId = nodeId
     self.executionId = executionId
     self.backendEventType = backendEventType
+    self.backendEventChannel = backendEventChannel
+    self.backendEventContent = backendEventContent
+    self.backendEventIsDelta = backendEventIsDelta
+    self.backendEventSequence = backendEventSequence
+    self.backendToolName = backendToolName
+    self.backendEventUsage = backendEventUsage
     self.exitCode = exitCode
     self.nodeExecutions = nodeExecutions
     self.transitions = transitions

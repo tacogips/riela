@@ -23,10 +23,22 @@ struct StaticAdapter: NodeAdapter {
 }
 
 struct BackendEventEmittingAdapter: NodeAdapter {
-  var eventType: String
+  var event: AdapterBackendEvent
+
+  init(event: AdapterBackendEvent) {
+    self.event = event
+  }
+
+  init(eventType: String) {
+    self.event = AdapterBackendEvent(provider: "test", eventType: eventType)
+  }
 
   func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
-    await context.backendEventHandler?(AdapterBackendEvent(provider: input.node.executionBackend?.rawValue ?? "test", eventType: eventType))
+    var emitted = event
+    if emitted.provider.isEmpty {
+      emitted.provider = input.node.executionBackend?.rawValue ?? "test"
+    }
+    await context.backendEventHandler?(emitted)
     return AdapterExecutionOutput(
       provider: "test",
       model: input.node.model,

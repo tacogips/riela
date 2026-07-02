@@ -1,6 +1,6 @@
 # RielaApp UX and New-User Onboarding Improvements
 
-Status: issue-resolution design draft, updated from runtime intake `comm-000535`
+Status: issue-resolution design draft, updated from runtime intake `comm-000002`
 
 This design proposes user-facing improvements to RielaApp so that everyday
 operations are easier for existing users and the app is understandable to a
@@ -24,12 +24,13 @@ force.
 ## Intake and Workflow Boundary
 
 This design update is the Step 2 design document for
-`codex-design-and-implement-review-loop-session-877`. The authoritative intake
-is runtime communication `comm-000535`; no GitHub issue URL, repository, issue
+`codex-design-and-implement-review-loop-session-1`. The authoritative intake is
+runtime communication `comm-000002`; no GitHub issue URL, repository, issue
 number, or issue body was supplied. The issue reference for implementation and
 review is therefore the runtime issue reference from
-`workflowExecutionId=codex-design-and-implement-review-loop-session-877`,
-`communicationId=comm-000534`.
+`workflowExecutionId=codex-design-and-implement-review-loop-session-1`,
+`communicationId=comm-000001`, candidate implementation commit `98ab091`, and
+branch `rielaapp-ux-onboarding-improvements`.
 
 Implementation mode is `issue-resolution`. Feature fanout is intentionally not
 used because the current Swift workflow runner does not support fanout
@@ -43,7 +44,7 @@ The Codex-agent reference materials for this issue are:
 
 - `<codex-attachment>/pasted-text-1.txt`
 - `design-docs/specs/design-rielaapp-ux-onboarding-improvements.md`
-- `design-docs/specs/design-rielaapp-workflow-instances.md`
+- `impl-plans/active/rielaapp-ux-onboarding-improvements.md`
 
 No Cursor-specific behavior is introduced by this design. Any future Cursor or
 Codex-agent integration behavior must remain behind adapter modules and must
@@ -696,14 +697,12 @@ AppKit surfaces first, then the broader Swift suite if the changes compile
 cleanly:
 
 ```bash
-swift test --filter RielaAppSupportTests
-swift test --filter RielaAppControllerLayoutTests
-swift test --filter RielaAppAddInstanceLayoutTests
-swift test --filter RielaAppPromptAccessoryTests
-swift test --filter RielaAppWorkflowViewerEmptyStateTests
-swift test --filter RielaAppWorkflowViewerVocabularyTests
-swift test
+swift build --product RielaApp
+swiftlint lint --quiet
 git diff --check
+swift test --filter RielaAppUXOnboardingControllerTests
+swift test --filter 'RielaAppUXOnboardingControllerTests|RielaAppStatusMessageTests|RielaAppEnvironmentValueFormatterTests|RielaAppControllerLayoutTests|RielaAppAddInstanceLayoutTests|RielaAppPromptAccessoryTests|RielaAppWorkflowViewerEmptyStateTests|RielaAppWorkflowViewerVocabularyTests|RielaAppSettingsEditorNavigationTests|DaemonWorkflowSupportTests'
+swift test
 ```
 
 RielaApp UI verification must capture screenshots for every changed window or
@@ -732,8 +731,8 @@ finding by making Proposed Changes and Implementation Phasing explicitly
 sequential from F1 through F8 and by removing parallel-implementation
 language.
 
-No Step 3 design-review or Step 5 implementation-plan-review feedback for
-`codex-design-and-implement-review-loop-session-877` was present in the local
-runtime records inspected during this Step 2 update. If later review feedback
-arrives, high and mid findings must be resolved in this document before
-implementation proceeds.
+The current Step 2 rerun intake (`comm-000002`) asks to audit the existing
+candidate implementation on branch `rielaapp-ux-onboarding-improvements` at
+commit `98ab091`; it did not include new Step 3 design-review or Step 5
+implementation-plan-review findings. If later review feedback arrives, high and
+mid findings must be resolved in this document before implementation proceeds.

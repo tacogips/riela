@@ -202,6 +202,29 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     XCTAssertFalse(savedJSON.contains("enabledAtLaunch"))
   }
 
+  func testStoreQuarantinesCorruptStateBeforeReturningEmptyState() throws {
+    let root = try temporaryHome()
+    let stateURL = root.appendingPathComponent("state/daemon-workflows.json")
+    let store = RielaAppDaemonWorkflowStore(stateURL: stateURL)
+    try FileManager.default.createDirectory(at: stateURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try "{ not valid json".write(to: stateURL, atomically: true, encoding: .utf8)
+    let quarantineURL = RielaAppDaemonWorkflowStore.corruptStateQuarantineURL(for: stateURL)
+
+    let result = store.loadResult()
+    let state = result.state
+
+    XCTAssertEqual(state, RielaAppDaemonWorkflowState())
+    XCTAssertEqual(result.quarantinedStateURL, quarantineURL)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: stateURL.path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: quarantineURL.path))
+    XCTAssertEqual(try String(contentsOf: quarantineURL, encoding: .utf8), "{ not valid json")
+
+    try store.save(state)
+
+    XCTAssertTrue(FileManager.default.fileExists(atPath: stateURL.path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: quarantineURL.path))
+  }
+
   func testDefaultPreferenceIsUnavailableAndInactive() {
     let state = RielaAppDaemonWorkflowState()
 

@@ -39,6 +39,9 @@ extension DaemonWorkflowWindowController {
       return
     }
     if isShowingInstanceDetail, instanceDetailPane != .overview {
+      guard dismissConfigurationEditorOrWarn() else {
+        return
+      }
       showInstanceDetailOverview()
       return
     }

@@ -64,7 +64,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
     daemonDiscovery = RielaAppDaemonWorkflowDiscovery(homeDirectory: appHomeDirectory, projectRoot: launchOptions.projectRoot)
     daemonStore = makeDaemonStore(profileName: daemonProfileName)
-    daemonState = daemonStore.load()
+    daemonState = loadDaemonStateReportingCorruption(profileName: daemonProfileName)
     refreshDaemonInstanceCache()
     Task {
       await telemetry.recordLog(RielaTelemetryLog(
@@ -513,8 +513,10 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     Task { @MainActor in
       daemonProfileName = profileName
       daemonStore = makeDaemonStore(profileName: profileName)
-      daemonState = daemonStore.load()
-      status = daemonProfileStatus(rawProfileName: rawProfileName, profileName: profileName)
+      daemonState = loadDaemonStateReportingCorruption(
+        profileName: profileName,
+        fallbackStatus: daemonProfileStatus(rawProfileName: rawProfileName, profileName: profileName)
+      )
       refreshDaemonWorkflowWindow()
       if shouldAutostartDaemonWorkflows() {
         await startEnabledDaemonWorkflows()
@@ -843,6 +845,19 @@ extension RielaApp {
       legacyStateURLs: profileName == .default ? legacyStateURLs : [],
       profileName: profileName
     )
+  }
+
+  private func loadDaemonStateReportingCorruption(
+    profileName: RielaAppProfileName,
+    fallbackStatus: String? = nil
+  ) -> RielaAppDaemonWorkflowState {
+    let result = daemonStore.loadResult()
+    if let quarantinedStateURL = result.quarantinedStateURL {
+      status = "Recovered corrupt instance state for profile \(profileName.rawValue); moved it to \(quarantinedStateURL.lastPathComponent)."
+    } else if let fallbackStatus {
+      status = fallbackStatus
+    }
+    return result.state
   }
 
   private func configuredHomeDirectory() -> URL {

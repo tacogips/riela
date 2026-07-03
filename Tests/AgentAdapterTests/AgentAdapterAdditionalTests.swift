@@ -205,7 +205,7 @@ extension AgentAdapterTests {
       XCTFail("Expected policy-blocked codex preflight timeout")
     } catch let error as AdapterExecutionError {
       XCTAssertEqual(error.code, .policyBlocked)
-      XCTAssertTrue(error.message.contains("authentication is unavailable"))
+      XCTAssertTrue(error.message.contains("CLI is unavailable"))
       XCTAssertTrue(error.message.contains("timed out"))
     }
 

@@ -201,6 +201,7 @@ public struct WorkflowInspectionSummary: Codable, Equatable, Sendable {
   public var crossWorkflowDispatchIds: [String]
   public var counts: WorkflowInspectionCounts
   public var defaults: WorkflowDefaults
+  public var defaultMaxSteps: Int
   public var callable: WorkflowCallableInspection
   public var addonSourceSummaries: [String]
   public var nativeBundleAddons: [NativeBundleAddonInspection]
@@ -371,6 +372,7 @@ public struct WorkflowInspectCommand: Sendable {
         crossWorkflowDispatches: crossWorkflowIds.count
       ),
       defaults: workflow.defaults,
+      defaultMaxSteps: defaultMaxSteps(for: workflow),
       callable: callable,
       addonSourceSummaries: addonSummaries,
       nativeBundleAddons: nativeBundleAddons,
@@ -482,7 +484,8 @@ public struct WorkflowInspectCommand: Sendable {
       "entryStepId: \(summary.entryStepId)",
       "steps: \(summary.stepIds.joined(separator: ", "))",
       "nodes: \(summary.nodeRegistryIds.joined(separator: ", "))",
-      "counts: steps=\(summary.counts.steps) nodes=\(summary.counts.nodes) crossWorkflowDispatches=\(summary.counts.crossWorkflowDispatches)"
+      "counts: steps=\(summary.counts.steps) nodes=\(summary.counts.nodes) crossWorkflowDispatches=\(summary.counts.crossWorkflowDispatches)",
+      "defaultMaxSteps: \(summary.defaultMaxSteps)"
     ]
     if let manager = summary.managerStepId {
       lines.append("managerStepId: \(manager)")
@@ -514,6 +517,10 @@ public struct WorkflowInspectCommand: Sendable {
       })
     }
     return lines.joined(separator: "\n") + "\n"
+  }
+
+  private func defaultMaxSteps(for workflow: WorkflowDefinition) -> Int {
+    max(1, workflow.steps.count + workflow.defaults.maxLoopIterations)
   }
 
   private func renderLoopText(_ loop: WorkflowLoopInspectionSummary) -> String {

@@ -22,112 +22,10 @@ final class FlippedDocumentView: NSView {
 final class DaemonWorkflowWindowController: NSWindowController,
   NSSearchFieldDelegate,
   NSTextFieldDelegate,
+  NSTextViewDelegate,
   NSTableViewDataSource,
   NSTableViewDelegate,
   NSWindowDelegate {
-  enum Column {
-    static let instance = NSUserInterfaceItemIdentifier("instance")
-  }
-
-  enum InstanceState: String {
-    case running = "Running"
-    case starting = "Starting"
-    case reloading = "Reloading"
-    case stopping = "Stopping"
-    case stopped = "Stopped"
-    case failed = "Failed"
-    case needsSource = "Needs Source"
-
-    var sortOrder: Int {
-      switch self {
-      case .failed: 0
-      case .needsSource: 1
-      case .starting, .reloading, .stopping: 2
-      case .running: 3
-      case .stopped: 4
-      }
-    }
-  }
-
-  enum DetailActionStyle {
-    case normal
-    case destructive
-
-    var titleColor: NSColor {
-      switch self {
-      case .normal:
-        .labelColor
-      case .destructive:
-        .systemRed
-      }
-    }
-  }
-
-  enum AddInstanceSheetAction {
-    case importWorkflowOrPackageFromFile
-    case importWorkflowOrPackageFromURL
-  }
-
-  enum ProfileDetailMode: Equatable {
-    case overview
-    case removalConfirmation
-  }
-
-  enum ImportSourceCopy {
-    static let fileOrDirectoryTitle = "Import Package File or Directory"
-    static let fileOrDirectoryDetail = "Add a workflow directory, package directory, .rielapkg, or .zip archive."
-  }
-
-  enum SourceActionContext {
-    case addInstance
-    case relink
-
-    var importDetail: String {
-      switch self {
-      case .addInstance:
-        "Import a workflow directory, package directory, or package file, then return to instance creation."
-      case .relink:
-        "Import a workflow directory, package directory, or package file, then return to relink this instance."
-      }
-    }
-  }
-
-  enum WorkflowSourceSelection {
-    case selected(WorkflowSourceOption)
-    case retry
-    case cancelled
-  }
-
-  enum InstanceDetailPane {
-    case overview
-    case inlineEnvironment
-    case workflowVariables
-    case eventSources
-    case removalConfirmation
-  }
-
-  struct ConfiguredWorkflowInstanceRow {
-    var id: String
-    var profileName: RielaAppProfileName
-    var localIdentity: String
-    var preference: RielaAppDaemonWorkflowPreference
-    var candidate: RielaAppDaemonWorkflowCandidate?
-    var sourceIdentity: String
-    var instanceName: String
-    var workflowName: String
-    var hasMissingRequiredEnvironment: Bool
-    var state: InstanceState
-    var stateDetail: String
-  }
-
-  struct WorkflowSourceOption {
-    var sourceIdentity: String
-    var candidate: RielaAppDaemonWorkflowCandidate
-    var title: String
-    var environmentStatus: String
-    var location: String
-  }
-
   let instanceTable = NSTableView()
   let profilePopup = NSPopUpButton()
   let instanceSearchField = NSSearchField()
@@ -159,8 +57,10 @@ final class DaemonWorkflowWindowController: NSWindowController,
   )
   let emptyInstancesGuideView = DaemonWorkflowEmptyStateView()
   let statusBannerView = RielaAppStatusBannerView()
+  private let statusMessageHistoryLimit = 8
   let detailTitleLabel = NSTextField(labelWithString: "")
   let detailSummaryLabel = NSTextField(labelWithString: "")
+  let detailStatusProgressIndicator = NSProgressIndicator()
   let detailStatusValueLabel = NSTextField(labelWithString: "")
   let detailNameValueLabel = NSTextField(labelWithString: "")
   let detailWorkflowValueLabel = NSTextField(labelWithString: "")
@@ -260,6 +160,8 @@ final class DaemonWorkflowWindowController: NSWindowController,
   var eventSourceIdField: NSTextField?
   weak var eventSourceFormView: NSView?
   weak var eventSourceJSONView: NSView?
+  var configurationEditorInitialSignature: String?
+  var configurationEditorDiscardArmed = false
   var assistantAssistanceTextView: NSTextView?
   var assistantTranscriptTextView: NSTextView?
   weak var assistantTranscriptScrollView: NSScrollView?
@@ -281,6 +183,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
   var workflowSourceFilterText = ""
   var instanceFilterText = ""
   var rawInstanceRowsCount = 0
+  private(set) var statusMessageHistory: [SequencedRielaAppStatusMessage] = []
   private var lastStatusMessageSequence: Int?
   private var dismissedStatusMessageSequence: Int?
   private var statusDismissTimer: Timer?
@@ -505,11 +408,12 @@ extension DaemonWorkflowWindowController {
       return
     }
     lastStatusMessageSequence = sequencedMessage.sequence
+    appendStatusMessageHistory(sequencedMessage)
     guard dismissedStatusMessageSequence != sequencedMessage.sequence else {
       return
     }
     statusDismissTimer?.invalidate()
-    statusBannerView.configure(message: sequencedMessage.message)
+    statusBannerView.configure(message: sequencedMessage.message, history: statusMessageHistory.map(\.message))
     statusBannerView.isHidden = false
     settingsRootView?.needsLayout = true
     guard sequencedMessage.message.severity == .info else {
@@ -528,6 +432,12 @@ extension DaemonWorkflowWindowController {
     statusDismissTimer = nil
     statusBannerView.isHidden = true
     settingsRootView?.needsLayout = true
+  }
+
+  private func appendStatusMessageHistory(_ sequencedMessage: SequencedRielaAppStatusMessage) {
+    statusMessageHistory.removeAll { $0.sequence == sequencedMessage.sequence }
+    statusMessageHistory.append(sequencedMessage)
+    statusMessageHistory = Array(statusMessageHistory.suffix(statusMessageHistoryLimit))
   }
 
   @objc func openProfilesFromSidebar() {
@@ -567,12 +477,14 @@ extension DaemonWorkflowWindowController {
     guard let row = selectedRow() else {
       return
     }
+    var retryMessage: String?
     while true {
-      switch promptForRelinkSourceOption(workflowSourceOptions(profileName: row.profileName)) {
+      switch promptForRelinkSourceOption(workflowSourceOptions(profileName: row.profileName), retryMessage: retryMessage) {
       case let .selected(option):
         onRelinkInstance(row.id, option.sourceIdentity)
         return
-      case .retry:
+      case let .retry(message):
+        retryMessage = message
         continue
       case .cancelled:
         return
@@ -766,6 +678,7 @@ extension DaemonWorkflowWindowController {
       "Profile \(row.profileName.rawValue)"
     ])
     detailStatusValueLabel.stringValue = stateStatusText(for: row)
+    updateDetailStatusIndicator(for: row.state)
     detailNameValueLabel.stringValue = row.instanceName
     detailWorkflowValueLabel.stringValue = rielaAppMetadataText([
       "Profile \(row.profileName.rawValue)",
@@ -798,6 +711,15 @@ extension DaemonWorkflowWindowController {
       return row.state.rawValue
     }
     return "\(row.state.rawValue) - \(row.stateDetail)"
+  }
+
+  private func updateDetailStatusIndicator(for state: InstanceState) {
+    detailStatusProgressIndicator.isHidden = !state.isTransitional
+    if state.isTransitional {
+      detailStatusProgressIndicator.startAnimation(nil)
+    } else {
+      detailStatusProgressIndicator.stopAnimation(nil)
+    }
   }
 
   private func updateWorkflowGraph(candidate: RielaAppDaemonWorkflowCandidate) {

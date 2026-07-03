@@ -51,6 +51,8 @@ public enum PackageHelpScope: String, Codable, Sendable {
 public enum SessionCommand: Equatable, Sendable {
   case rerun(SessionRerunOptions)
   case resume(SessionResumeOptions)
+  case list(CLICommandOptions)
+  case latest(CLICommandOptions)
   case progress(CLICommandOptions)
   case health(CLICommandOptions)
   case status(CLICommandOptions)
@@ -505,84 +507,6 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     arguments.isEmpty || (arguments.count == 1 && (isHelpOption(arguments[0]) || arguments[0] == "help"))
   }
 
-  private func parseSession(_ arguments: [String]) throws -> RielaCommand {
-    guard let subcommand = arguments.first else {
-      throw CLIUsageError("session command requires a subcommand")
-    }
-    switch subcommand {
-    case "rerun":
-      guard arguments.count >= 3, !arguments[1].hasPrefix("--"), !arguments[2].hasPrefix("--") else {
-        throw CLIUsageError("usage: riela session rerun <session-id> <step-id> [options]")
-      }
-      let optionTokens = Array(arguments.dropFirst(3))
-      let parsed = try ParsedWorkflowOptions(optionTokens, allowRunOptions: true)
-      if parsed.endpoint != nil || parsed.fromRegistry {
-        throw CLIUsageError("remote session commands are not supported by the local CLI runner")
-      }
-      let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
-      return .session(.rerun(SessionRerunOptions(
-        sessionId: arguments[1],
-        stepId: arguments[2],
-        output: parsed.output,
-        scope: parsed.scope,
-        workflowDefinitionDir: parsed.workflowDefinitionDir,
-        workingDirectory: workingDirectory,
-        mockScenarioPath: parsed.mockScenarioPath,
-        sessionStore: parsed.sessionStore,
-        nestedSuperviser: parsed.nestedSuperviser
-      )))
-    case "resume":
-      guard arguments.count >= 2, !arguments[1].hasPrefix("--") else {
-        throw CLIUsageError("usage: riela session resume <session-id> [options]")
-      }
-      let optionTokens = Array(arguments.dropFirst(2))
-      let parsed = try ParsedWorkflowOptions(optionTokens, allowRunOptions: true)
-      if parsed.endpoint != nil || parsed.fromRegistry {
-        throw CLIUsageError("remote session commands are not supported by the local CLI runner")
-      }
-      let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
-      return .session(.resume(SessionResumeOptions(
-        sessionId: arguments[1],
-        output: parsed.output,
-        scope: parsed.scope,
-        workflowDefinitionDir: parsed.workflowDefinitionDir,
-        workingDirectory: workingDirectory,
-        mockScenarioPath: parsed.mockScenarioPath,
-        sessionStore: parsed.sessionStore
-      )))
-    case "progress":
-      return .session(.progress(try parseSessionGeneric(subcommand: subcommand, arguments: arguments)))
-    case "health":
-      return .session(.health(try parseSessionGeneric(subcommand: subcommand, arguments: arguments)))
-    case "status":
-      return .session(.status(try parseSessionGeneric(subcommand: subcommand, arguments: arguments)))
-    case "continue":
-      return .session(.continueSession(try parseSessionGeneric(subcommand: subcommand, arguments: arguments)))
-    case "step-runs":
-      return .session(.stepRuns(try parseSessionGeneric(subcommand: subcommand, arguments: arguments)))
-    case "export":
-      return .session(.export(try parseSessionGeneric(subcommand: subcommand, arguments: arguments)))
-    case "logs":
-      return .session(.logs(try parseSessionGeneric(subcommand: subcommand, arguments: arguments)))
-    default:
-      throw CLIUsageError("unsupported session subcommand '\(subcommand)'")
-    }
-  }
-
-  private func parseSessionGeneric(subcommand: String, arguments: [String]) throws -> CLICommandOptions {
-    let target = arguments.count >= 2 && !arguments[1].hasPrefix("--") ? arguments[1] : nil
-    let optionStart = target == nil ? 1 : 2
-    if target == nil {
-      throw CLIUsageError("session \(subcommand) requires a session id")
-    }
-    return try parseGeneric(
-      scope: "session",
-      command: subcommand,
-      target: target,
-      arguments: Array(arguments.dropFirst(optionStart))
-    )
-  }
-
   private func parseLoop(_ arguments: [String]) throws -> LoopCommand {
     guard let subcommand = arguments.first else {
       throw CLIUsageError("loop command requires a subcommand")
@@ -868,18 +792,6 @@ public struct RielaArgumentParser: CLIArgumentParsing {
         arguments: Array(arguments.dropFirst(optionStart))
       )
     )
-  }
-
-  private func parseGeneric(
-    scope: String,
-    command: String?,
-    target: String? = nil,
-    arguments: [String],
-    allowTableOutput: Bool = false,
-    defaultOutput: WorkflowOutputFormat = .jsonl
-  ) throws -> CLICommandOptions {
-    let output = try parseOutputOnly(arguments, allowTableOutput: allowTableOutput, defaultOutput: defaultOutput)
-    return CLICommandOptions(scope: scope, command: command, target: target, arguments: arguments, output: output)
   }
 
   private func parseValidate(target: String, tokens: [String]) throws -> WorkflowValidateOptions {

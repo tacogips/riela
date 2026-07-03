@@ -5,20 +5,21 @@ import RielaCore
 import RielaViewer
 
 @MainActor
-final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDataSource, NSOutlineViewDelegate {
+final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDataSource, NSOutlineViewDelegate, NSWindowDelegate {
   private enum Layout {
     static let initialWindowSize = NSSize(width: 640, height: 560)
-    static let minimumWindowSize = NSSize(width: 420, height: 380)
+    static let minimumWindowSize = NSSize(width: 560, height: 380)
     static let sidebarWidth: CGFloat = 180
     static let assistantExpandedHeight: CGFloat = 176
     static let assistantFoldedHeight: CGFloat = 42
+    static let liveRefreshInterval: TimeInterval = 2
   }
 
   let loader = WorkflowViewerLoader()
   let outlineView = NSOutlineView()
   private let sessionPopup = NSPopUpButton()
   private let templatePopup = NSPopUpButton()
-  private let workflowTitleLabel = NSTextField(labelWithString: "Choose Workflow")
+  private let workflowTitleLabel = NSTextField(labelWithString: "Select Workflow")
   let workflowSubtitleLabel = NSTextField(labelWithString: "")
   let currentDirectoryLabel = NSTextField(labelWithString: "-")
   let environmentVariablesLabel = NSTextField(labelWithString: "-")
@@ -29,6 +30,11 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
   private let detailTextView = NSTextView()
   private let logTextView = NSTextView()
   private let structureTextView = NSTextView()
+  let workflowGraphPaneView = DaemonWorkflowGraphPaneView()
+  let managerResponseBanner = NSStackView()
+  let managerResponseLabel = NSTextField(labelWithString: "")
+  let managerResponseStatusLabel = NSTextField(labelWithString: "")
+  let managerRespondButton = NSButton(title: "Respond", target: nil, action: nil)
   private let modelPopup = NSPopUpButton()
   private let backendPopup = NSPopUpButton()
   private let effortPopup = NSPopUpButton()
@@ -46,6 +52,7 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
   let assistantAvailabilityLabel = NSTextField(labelWithString: "")
   let assistantContextLabel = NSTextField(labelWithString: "")
   let assistantFoldButton = NSButton(title: "", target: nil, action: nil)
+  let assistantClearButton = NSButton(title: "", target: nil, action: nil)
   let assistantPromptField = NSTextField(string: "")
   let assistantSendButton = NSButton(title: "", target: nil, action: nil)
   var assistantTranscriptTextView: NSTextView?
@@ -75,10 +82,16 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
   var onSetWorkingDirectory: (() -> String?)?
   var onSetEnvironmentVariables: (() -> String?)?
   var onSetWorkflowVariables: (() -> String?)?
+  var onSendManagerMessage: ((String, String, String, String) -> String?)?
   var assistantProfileName = RielaAppProfileName.default
   var assistantSettings = RielaAppAssistantSettings()
   var onSaveAssistantSettings: ((RielaAppAssistantSettings) -> String?)?
   var onSubmitAssistantMessage: ((String, String?) -> Void)?
+  private var liveRefreshTask: Task<Void, Never>?
+
+  var hasLiveRefreshTimerForTesting: Bool {
+    liveRefreshTask != nil
+  }
 
   init() {
     let window = NSWindow(
@@ -90,7 +103,12 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     window.title = "Riela Workflow Viewer"
     window.minSize = Layout.minimumWindowSize
     super.init(window: window)
+    window.delegate = self
     buildContent(in: window)
+  }
+
+  deinit {
+    liveRefreshTask?.cancel()
   }
 
   required init?(coder: NSCoder) {
@@ -108,6 +126,7 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     onSetWorkingDirectory: (() -> String?)? = nil,
     onSetEnvironmentVariables: (() -> String?)? = nil,
     onSetWorkflowVariables: (() -> String?)? = nil,
+    onSendManagerMessage: ((String, String, String, String) -> String?)? = nil,
     assistantProfileName: RielaAppProfileName = .default,
     assistantSettings: RielaAppAssistantSettings = RielaAppAssistantSettings(),
     onSaveAssistantSettings: ((RielaAppAssistantSettings) -> String?)? = nil,
@@ -126,6 +145,7 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     self.onSetWorkingDirectory = onSetWorkingDirectory
     self.onSetEnvironmentVariables = onSetEnvironmentVariables
     self.onSetWorkflowVariables = onSetWorkflowVariables
+    self.onSendManagerMessage = onSendManagerMessage
     self.assistantProfileName = assistantProfileName
     self.assistantSettings = assistantSettings
     self.onSaveAssistantSettings = onSaveAssistantSettings
@@ -135,6 +155,7 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     updateVariableLabels()
     updateAssistantPanel()
     refresh()
+    startLiveRefreshTimer()
     showWindow(nil)
     window?.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
@@ -196,9 +217,9 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     configureIconButton(clearNodePatchButton, symbolName: "trash", accessibilityLabel: "Clear Node Patch")
     let modelOverrideRow = workflowViewerControlRow(title: "Model", views: [modelPopup])
     let backendOverrideRow = workflowViewerControlRow(title: "Backend", views: [backendPopup])
-    let effortOverrideRow = workflowViewerControlRow(title: "Effort", views: [effortPopup])
+    let effortOverrideRow = workflowViewerControlRow(title: "Reasoning Effort", views: [effortPopup])
     let nodePatchOverrideRow = workflowViewerControlRow(
-      title: "Node Patch",
+      title: "Runtime Overrides",
       views: [saveNodePatchButton, clearNodePatchButton]
     )
     self.modelOverrideRow = modelOverrideRow
@@ -277,6 +298,8 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     let detailScroll = scrollView(for: detailTextView)
     let logScroll = scrollView(for: logTextView)
     let structureScroll = scrollView(for: structureTextView)
+    let graphView = graphTabView()
+    let managerResponseView = managerResponseBarView()
 
     templateTextView.isEditable = false
     templateTextView.isRichText = false
@@ -301,6 +324,7 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     rielaAppConfigureGroupedTextScroll(templateScroll)
 
     let editStack = NSStackView(views: [
+      managerResponseView,
       detailScroll,
       templateRow,
       templateScroll
@@ -323,8 +347,9 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
 
     let tabView = NSTabView()
     tabView.translatesAutoresizingMaskIntoConstraints = false
-    tabView.addTabViewItem(tabItem(label: "Edit", view: editStack))
+    tabView.addTabViewItem(tabItem(label: "Overview", view: editStack))
     tabView.addTabViewItem(tabItem(label: "Variables", view: variablesStack))
+    tabView.addTabViewItem(tabItem(label: "Graph", view: graphView))
     tabView.addTabViewItem(tabItem(label: "Run Log", view: logScroll))
     tabView.addTabViewItem(tabItem(label: "Structure", view: structureScroll))
 
@@ -344,6 +369,34 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
 
   @objc private func refreshButtonPressed() {
     refresh()
+  }
+
+  func windowWillClose(_ notification: Notification) {
+    stopLiveRefreshTimer()
+  }
+
+  private func startLiveRefreshTimer() {
+    guard liveRefreshTask == nil else {
+      return
+    }
+    liveRefreshTask = Task { @MainActor [weak self] in
+      while !Task.isCancelled {
+        do {
+          try await Task.sleep(nanoseconds: UInt64(Layout.liveRefreshInterval * 1_000_000_000))
+        } catch {
+          break
+        }
+        guard !Task.isCancelled else {
+          break
+        }
+        self?.refresh()
+      }
+    }
+  }
+
+  private func stopLiveRefreshTimer() {
+    liveRefreshTask?.cancel()
+    liveRefreshTask = nil
   }
 
   @objc private func templateSelectionChanged() {
@@ -469,7 +522,7 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     }
   }
 
-  private func refresh() {
+  func refresh() {
     guard let workflowDirectory else {
       return
     }
@@ -482,6 +535,7 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
       ))
       state = loaded
       selectedNodeId = selectedNodeId ?? loaded.workflow.entryStepId
+      updateGraphPane(for: loaded)
       updateSessionPopup(for: loaded)
       outlineView.reloadData()
       expandAll()
@@ -492,13 +546,19 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
       setDetailText("\(error)")
       setLogText("")
       setStructureText("")
+      updateManagerResponseControls(state: nil, session: nil)
+      workflowGraphPaneView.showUnavailable("\(error)")
     }
+  }
+
+  private func updateGraphPane(for state: WorkflowViewerState) {
+    workflowGraphPaneView.update(model: DaemonWorkflowGraphModel(workflow: state.workflow))
   }
 
   private func updateSessionPopup(for state: WorkflowViewerState?) {
     sessionPopup.removeAllItems()
     guard let state, !state.sessions.isEmpty else {
-      sessionPopup.addItem(withTitle: "No Runs")
+      sessionPopup.addItem(withTitle: "No Sessions")
       sessionPopup.isEnabled = false
       return
     }
@@ -509,11 +569,12 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
 
   func updateDetails() {
     guard let state else {
-      workflowTitleLabel.stringValue = "Choose Workflow"
+      workflowTitleLabel.stringValue = "Select Workflow"
       setViewerMessage("")
       setDetailText("")
       setLogText("")
       setStructureText("")
+      updateManagerResponseControls(state: nil, session: nil)
       updateTemplateControls(for: nil)
       updateNodePatchControls(for: nil)
       return
@@ -521,6 +582,7 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     let session = selectedSession(in: state)
     workflowTitleLabel.stringValue = state.workflow.workflowId
     setViewerMessage(sessionSummary(state: state, session: session))
+    updateManagerResponseControls(state: state, session: session)
     guard let selectedNodeId else {
       setDetailText(workflowOverview(state: state))
       setLogText(renderRunLog(state: state, selectedStepId: nil, session: session).joined(separator: "\n"))
@@ -544,14 +606,14 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
           "Model \(configuration.model)",
           "Freeze \(configuration.modelFreeze ? "On" : "Off")",
           "Backend \(configuration.executionBackend?.rawValue ?? "-")",
-          "Effort \(configuration.effort?.rawValue ?? "-")"
+          "Reasoning Effort \(configuration.effort?.rawValue ?? "-")"
         ]))
         if let patch = nodePatches[node.nodeId], !patch.isEmpty {
           lines.append("Patch")
           lines.append(rielaAppMetadataText([
             "Model \(patch.model ?? "-")",
             "Backend \(patch.executionBackend?.rawValue ?? "-")",
-            "Effort \(patch.effort?.rawValue ?? "-")"
+            "Reasoning Effort \(patch.effort?.rawValue ?? "-")"
           ]))
         }
       }

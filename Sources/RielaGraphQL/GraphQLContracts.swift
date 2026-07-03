@@ -262,6 +262,10 @@ public struct GraphQLWorkflowSessionDTO: Codable, Equatable, Sendable {
   public var workflowExecutionId: String
   public var status: String
   public var currentStepId: String?
+  public var lastCompletedStepId: String?
+  public var failureReason: String?
+  public var failureKind: String?
+  public var stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic?
   public var stepExecutions: [GraphQLStepExecutionDTO]
   public var communications: [GraphQLCommunicationDTO]
   public var hookEvents: [GraphQLHookEventDTO]
@@ -279,6 +283,10 @@ public struct GraphQLWorkflowSessionDTO: Codable, Equatable, Sendable {
     workflowExecutionId: String? = nil,
     status: String,
     currentStepId: String? = nil,
+    lastCompletedStepId: String? = nil,
+    failureReason: String? = nil,
+    failureKind: String? = nil,
+    stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic? = nil,
     stepExecutions: [GraphQLStepExecutionDTO] = [],
     communications: [GraphQLCommunicationDTO] = [],
     hookEvents: [GraphQLHookEventDTO] = [],
@@ -295,6 +303,10 @@ public struct GraphQLWorkflowSessionDTO: Codable, Equatable, Sendable {
     self.workflowExecutionId = workflowExecutionId ?? sessionId
     self.status = status
     self.currentStepId = currentStepId
+    self.lastCompletedStepId = lastCompletedStepId
+    self.failureReason = failureReason
+    self.failureKind = failureKind
+    self.stepBudgetDiagnostic = stepBudgetDiagnostic
     self.stepExecutions = stepExecutions
     self.communications = communications
     self.hookEvents = hookEvents
@@ -305,6 +317,37 @@ public struct GraphQLWorkflowSessionDTO: Codable, Equatable, Sendable {
     self.loopEvidence = loopEvidence
     self.loopGates = loopGates
     self.loopRecovery = loopRecovery
+  }
+}
+
+public struct GraphQLWorkflowSessionSummaryDTO: Codable, Equatable, Sendable {
+  public var sessionId: String
+  public var workflowName: String
+  public var status: String
+  public var failureKind: String?
+  public var currentStepId: String?
+  public var executionCount: Int
+  public var updatedAt: Date
+  public var sessionStore: String?
+
+  public init(
+    sessionId: String,
+    workflowName: String,
+    status: String,
+    failureKind: String? = nil,
+    currentStepId: String? = nil,
+    executionCount: Int,
+    updatedAt: Date,
+    sessionStore: String? = nil
+  ) {
+    self.sessionId = sessionId
+    self.workflowName = workflowName
+    self.status = status
+    self.failureKind = failureKind
+    self.currentStepId = currentStepId
+    self.executionCount = executionCount
+    self.updatedAt = updatedAt
+    self.sessionStore = sessionStore
   }
 }
 
@@ -320,6 +363,18 @@ public struct GraphQLInspectSessionRequest: Codable, Equatable, Sendable {
   public init(workflowId: String, sessionId: String) {
     self.workflowId = workflowId
     self.sessionId = sessionId
+  }
+}
+
+public struct GraphQLWorkflowSessionsRequest: Codable, Equatable, Sendable {
+  public var workflowName: String?
+  public var status: String?
+  public var limit: Int?
+
+  public init(workflowName: String? = nil, status: String? = nil, limit: Int? = nil) {
+    self.workflowName = workflowName
+    self.status = status
+    self.limit = limit
   }
 }
 
@@ -545,8 +600,22 @@ public struct GraphQLLoopEvidenceResult: Codable, Equatable, Sendable {
   }
 }
 
+public struct GraphQLWorkflowSessionsResult: Codable, Equatable, Sendable {
+  public var result: GraphQLControlPlaneResult
+  public var sessions: [GraphQLWorkflowSessionSummaryDTO]
+
+  public init(
+    result: GraphQLControlPlaneResult,
+    sessions: [GraphQLWorkflowSessionSummaryDTO] = []
+  ) {
+    self.result = result
+    self.sessions = sessions
+  }
+}
+
 public protocol GraphQLControlPlaneServicing: Sendable {
   func inspectSession(_ request: GraphQLInspectSessionRequest) async -> GraphQLInspectSessionResult
+  func workflowSessions(_ request: GraphQLWorkflowSessionsRequest) async -> GraphQLWorkflowSessionsResult
   func loopEvidence(_ request: GraphQLLoopEvidenceRequest) async -> GraphQLLoopEvidenceResult
   func continueSession(_ request: GraphQLContinueSessionRequest) async -> GraphQLControlPlaneResult
   func managerSession(_ request: GraphQLManagerSessionLookupRequest) async -> GraphQLManagerSessionViewDTO?
@@ -556,6 +625,16 @@ public protocol GraphQLControlPlaneServicing: Sendable {
 }
 
 public extension GraphQLControlPlaneServicing {
+  func workflowSessions(_ request: GraphQLWorkflowSessionsRequest) async -> GraphQLWorkflowSessionsResult {
+    GraphQLWorkflowSessionsResult(
+      result: GraphQLControlPlaneResult(
+        accepted: false,
+        status: GraphQLLoopEvidenceQueryStatus.error.rawValue,
+        diagnostics: ["workflow session discovery is not available from this service"]
+      )
+    )
+  }
+
   func loopEvidence(_ request: GraphQLLoopEvidenceRequest) async -> GraphQLLoopEvidenceResult {
     let inspected = await inspectSession(request)
     guard inspected.result.accepted, let session = inspected.session else {
@@ -666,6 +745,10 @@ public enum GraphQLContractProjector {
     workflowExecutionId: String!
     status: String!
     currentStepId: String
+    lastCompletedStepId: String
+    failureReason: String
+    failureKind: String
+    stepBudgetDiagnostic: StepBudgetDiagnostic
     stepExecutions: [StepExecution!]!
     communications: [Communication!]!
     hookEvents: [HookEvent!]!
@@ -676,6 +759,31 @@ public enum GraphQLContractProjector {
     loopEvidence: LoopEvidenceSummary
     loopGates: [LoopGateResult!]!
     loopRecovery: LoopRecoveryLineage
+  }
+  type StepBudgetDiagnostic {
+    stepBudget: Int!
+    executionCount: Int!
+    maxLoopIterations: Int!
+    budgetSource: String!
+    perStepExecutionCounts: JSON!
+    dominantCycleStepIds: [String!]
+    dominantCycleRepeatCount: Int
+    perStepRevisitCap: Int
+    projectedCapExceededStepIds: [String!]
+    openReviewFindingCount: Int!
+    unscheduledStepId: String
+    suggestedMaxSteps: Int
+    suggestedRemediation: String
+  }
+  type WorkflowSessionSummary {
+    sessionId: String!
+    workflowName: String!
+    status: String!
+    failureKind: String
+    currentStepId: String
+    executionCount: Int!
+    updatedAt: String!
+    sessionStore: String
   }
   type StepExecution { executionId: String!, stepId: String!, nodeId: String!, attempt: Int!, backend: String, status: String!, failureReason: String }
   type Communication { communicationId: String!, fromStepId: String, toStepId: String, lifecycleStatus: String!, deliveryKind: String!, createdOrder: Int! }
@@ -690,6 +798,7 @@ public enum GraphQLContractProjector {
   input RetryCommunicationDeliveryInput { workflowId: String!, workflowExecutionId: String!, communicationId: String!, reason: String, idempotencyKey: String, managerSessionId: String }
   type Query {
     workflowSession(workflowId: String!, sessionId: String!): WorkflowSession
+    workflowSessions(workflowName: String, status: String, limit: Int): [WorkflowSessionSummary!]!
     loopEvidence(workflowId: String!, sessionId: String!): LoopEvidenceSummary
     managerSession(managerSessionId: String): ManagerSessionView
   }
@@ -717,6 +826,10 @@ public enum GraphQLContractProjector {
       workflowExecutionId: session.workflowExecutionId,
       status: session.status.rawValue,
       currentStepId: session.currentStepId,
+      lastCompletedStepId: session.executions.last { $0.status == .completed || $0.status == .skipped }?.stepId,
+      failureReason: session.failureReason,
+      failureKind: session.failureKind?.rawValue,
+      stepBudgetDiagnostic: session.stepBudgetDiagnostic,
       stepExecutions: session.executions.map {
         .init(
           executionId: $0.executionId,
@@ -766,6 +879,23 @@ public enum GraphQLContractProjector {
       logs: logs,
       llmSessionMessages: llmSessionMessages,
       loopEvidence: snapshot.loopEvidence
+    )
+  }
+
+  public static func projectSessionSummary(
+    session: WorkflowSession,
+    workflowName: String,
+    sessionStore: String? = nil
+  ) -> GraphQLWorkflowSessionSummaryDTO {
+    GraphQLWorkflowSessionSummaryDTO(
+      sessionId: session.sessionId,
+      workflowName: workflowName,
+      status: session.status.rawValue,
+      failureKind: session.failureKind?.rawValue,
+      currentStepId: session.currentStepId,
+      executionCount: session.executions.count,
+      updatedAt: session.updatedAt,
+      sessionStore: sessionStore
     )
   }
 

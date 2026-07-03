@@ -44,6 +44,8 @@ public struct SessionResumeOptions: Equatable, Sendable {
   public var workingDirectory: String
   public var mockScenarioPath: String?
   public var sessionStore: String?
+  public var maxSteps: Int?
+  public var variables: String?
 
   public init(
     sessionId: String,
@@ -52,7 +54,9 @@ public struct SessionResumeOptions: Equatable, Sendable {
     workflowDefinitionDir: String? = nil,
     workingDirectory: String = FileManager.default.currentDirectoryPath,
     mockScenarioPath: String? = nil,
-    sessionStore: String? = nil
+    sessionStore: String? = nil,
+    maxSteps: Int? = nil,
+    variables: String? = nil
   ) {
     self.sessionId = sessionId
     self.output = output
@@ -61,6 +65,8 @@ public struct SessionResumeOptions: Equatable, Sendable {
     self.workingDirectory = workingDirectory
     self.mockScenarioPath = mockScenarioPath
     self.sessionStore = sessionStore
+    self.maxSteps = maxSteps
+    self.variables = variables
   }
 }
 
@@ -87,11 +93,186 @@ public struct SessionCommandFailureResult: Codable, Equatable, Sendable {
   public var exitCode: Int32
 }
 
+public struct SessionDiscoveryRow: Codable, Equatable, Sendable {
+  public var sessionId: String
+  public var workflowName: String
+  public var status: WorkflowSessionStatus
+  public var failureKind: WorkflowSessionFailureKind?
+  public var currentStepId: String?
+  public var executionCount: Int
+  public var updatedAt: Date
+  public var sessionStore: String
+
+  public init(record: PersistedCLIWorkflowSession, sessionStore: String) {
+    self.sessionId = record.session.sessionId
+    self.workflowName = record.workflowName
+    self.status = record.session.status
+    self.failureKind = record.session.failureKind
+    self.currentStepId = record.session.currentStepId
+    self.executionCount = record.session.executions.count
+    self.updatedAt = record.session.updatedAt
+    self.sessionStore = sessionStore
+  }
+}
+
+public struct SessionDiscoveryCommand: Sendable {
+  public init() {}
+
+  public func run(_ options: CLICommandOptions) -> CLICommandResult {
+    do {
+      let parsed = try parseOptions(options.arguments)
+      if options.command == "latest", parsed.workflowName == nil {
+        throw CLIUsageError("session latest requires --workflow <name>")
+      }
+      let storeRoot = CLIWorkflowSessionStore.resolveRootDirectory(
+        sessionStore: parsed.sessionStore,
+        scope: parsed.scope,
+        workingDirectory: parsed.workingDirectory
+      )
+      let limit = options.command == "latest" ? 1 : parsed.limit
+      let rows = try CLIWorkflowSessionStore(rootDirectory: storeRoot)
+        .list(workflowName: parsed.workflowName, status: parsed.status, limit: limit)
+        .map { SessionDiscoveryRow(record: $0, sessionStore: storeRoot) }
+      if options.command == "latest" {
+        guard let latest = rows.first else {
+          return failure(output: options.output, error: "session not found", exitCode: .failure)
+        }
+        return renderLatest(latest, output: options.output)
+      }
+      return renderList(rows, output: options.output)
+    } catch let error as CLIUsageError {
+      return CLICommandResult(exitCode: .usage, stderr: error.message)
+    } catch {
+      return failure(output: options.output, error: "\(error)", exitCode: .failure)
+    }
+  }
+
+  private struct ParsedOptions {
+    var workflowName: String?
+    var status: WorkflowSessionStatus?
+    var limit: Int = 10
+    var scope: WorkflowScope = .auto
+    var workingDirectory: String = FileManager.default.currentDirectoryPath
+    var sessionStore: String?
+  }
+
+  private func parseOptions(_ arguments: [String]) throws -> ParsedOptions {
+    var parsed = ParsedOptions()
+    var index = 0
+    while index < arguments.count {
+      let token = arguments[index]
+      switch token {
+      case "--workflow":
+        parsed.workflowName = try value(after: token, at: index, in: arguments)
+        index += 2
+      case "--status":
+        let raw = try value(after: token, at: index, in: arguments)
+        guard let status = WorkflowSessionStatus(rawValue: raw) else {
+          throw CLIUsageError("invalid --status value; expected created, running, completed, or failed")
+        }
+        parsed.status = status
+        index += 2
+      case "--limit":
+        let raw = try value(after: token, at: index, in: arguments)
+        guard let limit = Int(raw), limit > 0 else {
+          throw CLIUsageError("--limit requires a positive integer")
+        }
+        parsed.limit = min(limit, 100)
+        index += 2
+      case "--scope":
+        let raw = try value(after: token, at: index, in: arguments)
+        guard let scope = WorkflowScope(rawValue: raw), scope != .direct else {
+          throw CLIUsageError("invalid --scope value; expected auto, project, or user")
+        }
+        parsed.scope = scope
+        index += 2
+      case "--working-dir", "--working-directory":
+        parsed.workingDirectory = try value(after: token, at: index, in: arguments)
+        index += 2
+      case "--session-store":
+        parsed.sessionStore = try value(after: token, at: index, in: arguments)
+        index += 2
+      case "--output":
+        index += 2
+      default:
+        if token.hasPrefix("--output=") {
+          index += 1
+        } else {
+          throw CLIUsageError("unsupported session \(token) option")
+        }
+      }
+    }
+    return parsed
+  }
+
+  private func value(after option: String, at index: Int, in arguments: [String]) throws -> String {
+    guard index + 1 < arguments.count else {
+      throw CLIUsageError("\(option) requires a value")
+    }
+    return arguments[index + 1]
+  }
+
+  private func renderList(_ rows: [SessionDiscoveryRow], output: WorkflowOutputFormat) -> CLICommandResult {
+    switch output {
+    case .json, .jsonl:
+      return CLICommandResult(exitCode: .success, stdout: (try? jsonString(rows)) ?? "[]\n")
+    case .text, .table:
+      let lines = rows.map { row in
+        [
+          row.sessionId,
+          row.workflowName,
+          row.status.rawValue,
+          row.failureKind?.rawValue ?? "-",
+          row.currentStepId ?? "-",
+          String(row.executionCount),
+          iso8601String(row.updatedAt),
+          row.sessionStore
+        ].joined(separator: "\t")
+      }
+      return CLICommandResult(exitCode: .success, stdout: lines.joined(separator: "\n") + (lines.isEmpty ? "" : "\n"))
+    }
+  }
+
+  private func renderLatest(_ row: SessionDiscoveryRow, output: WorkflowOutputFormat) -> CLICommandResult {
+    switch output {
+    case .json, .jsonl:
+      return CLICommandResult(exitCode: .success, stdout: (try? jsonString(row)) ?? "{}\n")
+    case .text, .table:
+      return CLICommandResult(
+        exitCode: .success,
+        stdout: """
+        sessionId: \(row.sessionId)
+        workflow: \(row.workflowName)
+        status: \(row.status.rawValue)
+        failureKind: \(row.failureKind?.rawValue ?? "-")
+        currentStepId: \(row.currentStepId ?? "-")
+        executionCount: \(row.executionCount)
+        updatedAt: \(iso8601String(row.updatedAt))
+        sessionStore: \(row.sessionStore)
+
+        """
+      )
+    }
+  }
+
+  private func failure(output: WorkflowOutputFormat, error: String, exitCode: CLIExitCode) -> CLICommandResult {
+    guard output.isStructured else {
+      return CLICommandResult(exitCode: exitCode, stderr: error)
+    }
+    let payload = SessionCommandFailureResult(sessionId: "", error: error, exitCode: exitCode.rawValue)
+    return CLICommandResult(exitCode: exitCode, stdout: (try? jsonString(payload)) ?? "")
+  }
+}
+
 public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
   public var sessionId: String
   public var workflowName: String
   public var status: WorkflowSessionStatus
   public var currentStepId: String?
+  public var lastCompletedStepId: String?
+  public var failureReason: String?
+  public var failureKind: WorkflowSessionFailureKind?
+  public var stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic?
   public var activeStepId: String?
   public var activeExecutionId: String?
   public var activeBackend: NodeExecutionBackend?
@@ -112,6 +293,10 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
     workflowName: String,
     status: WorkflowSessionStatus,
     currentStepId: String?,
+    lastCompletedStepId: String? = nil,
+    failureReason: String? = nil,
+    failureKind: WorkflowSessionFailureKind? = nil,
+    stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic? = nil,
     activeStepId: String? = nil,
     activeExecutionId: String? = nil,
     activeBackend: NodeExecutionBackend? = nil,
@@ -131,6 +316,10 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
     self.workflowName = workflowName
     self.status = status
     self.currentStepId = currentStepId
+    self.lastCompletedStepId = lastCompletedStepId
+    self.failureReason = failureReason
+    self.failureKind = failureKind
+    self.stepBudgetDiagnostic = stepBudgetDiagnostic
     self.activeStepId = activeStepId
     self.activeExecutionId = activeExecutionId
     self.activeBackend = activeBackend
@@ -231,11 +420,16 @@ public struct SessionInspectionCommand: Sendable {
     let loopEvidence = snapshot.loopEvidence.map(LoopEvidenceSummary.init)
     let runningExecutions = snapshot.session.executions.filter { $0.status == .running }
     let activeExecution = runningExecutions.last
+    let lastCompletedStepId = snapshot.session.executions.last { $0.status == .completed || $0.status == .skipped }?.stepId
     let result = SessionInspectionCommandResult(
       sessionId: snapshot.session.sessionId,
       workflowName: snapshot.session.workflowId,
       status: snapshot.session.status,
       currentStepId: snapshot.session.currentStepId,
+      lastCompletedStepId: lastCompletedStepId,
+      failureReason: snapshot.session.failureReason,
+      failureKind: snapshot.session.failureKind,
+      stepBudgetDiagnostic: snapshot.session.stepBudgetDiagnostic,
       activeStepId: activeExecution?.stepId,
       activeExecutionId: activeExecution?.executionId,
       activeBackend: activeExecution?.backend,
@@ -260,6 +454,9 @@ public struct SessionInspectionCommand: Sendable {
         "workflow: \(result.workflowName)",
         "status: \(result.status.rawValue)",
         "currentStepId: \(result.currentStepId ?? "-")",
+        "lastCompletedStepId: \(result.lastCompletedStepId ?? "-")",
+        "failureKind: \(result.failureKind?.rawValue ?? "-")",
+        "failureReason: \(result.failureReason ?? "-")",
         "activeStepId: \(result.activeStepId ?? "-")",
         "activeExecutionId: \(result.activeExecutionId ?? "-")",
         "activeBackend: \(result.activeBackend?.rawValue ?? "-")",
@@ -278,6 +475,20 @@ public struct SessionInspectionCommand: Sendable {
         lines.append(
           "loopEvidence: gates=\(loopEvidence.gateCount) accepted=\(loopEvidence.acceptedGateCount) rejected=\(loopEvidence.rejectedGateCount) blockingFindings=\(loopEvidence.blockingFindingCount)"
         )
+      }
+      if let diagnostic = result.stepBudgetDiagnostic {
+        lines.append("stepBudget: \(diagnostic.stepBudget)")
+        if let cycleStepIds = diagnostic.dominantCycleStepIds, let repeatCount = diagnostic.dominantCycleRepeatCount {
+          lines.append("dominantCycle: \(cycleStepIds.joined(separator: " -> ")) (x\(repeatCount))")
+        }
+        if let perStepRevisitCap = diagnostic.perStepRevisitCap {
+          lines.append("perStepRevisitCap: \(perStepRevisitCap)")
+        }
+        if let exceededStepIds = diagnostic.projectedCapExceededStepIds, !exceededStepIds.isEmpty {
+          lines.append("projectedCapExceededStepIds: \(exceededStepIds.joined(separator: ","))")
+        }
+        lines.append("unscheduledStepId: \(diagnostic.unscheduledStepId ?? "-")")
+        lines.append("suggestedRemediation: \(diagnostic.suggestedRemediation ?? "-")")
       }
       if command == "logs" {
         lines.append(contentsOf: snapshot.session.executions.compactMap { execution in
@@ -359,10 +570,12 @@ public struct SessionRerunCommand: Sendable {
       let runtimeStore = InMemoryWorkflowRuntimeStore()
       try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: storeRoot)
       let runner = DeterministicWorkflowRunner(store: runtimeStore, adapter: adapter, stdioNodeExecutor: LocalWorkflowStdioNodeExecutor())
+      let variables = persisted.runtimeVariables ?? [:]
       let result = try await runner.run(
         DeterministicWorkflowRunRequest(
           workflow: bundle.workflow,
           nodePayloads: bundle.nodePayloads,
+          variables: variables,
           rerunFromSessionId: persisted.session.sessionId,
           rerunFromStepId: options.stepId
         )
@@ -379,7 +592,8 @@ public struct SessionRerunCommand: Sendable {
           workflowName: persisted.workflowName,
           session: result.session,
           resolution: resolution,
-          mockScenarioPath: options.mockScenarioPath ?? persisted.mockScenarioPath
+          mockScenarioPath: options.mockScenarioPath ?? persisted.mockScenarioPath,
+          runtimeVariables: variables
         ),
         runtimeSnapshot: WorkflowRuntimePersistenceProjector.snapshot(
           session: result.session,
@@ -465,6 +679,13 @@ public struct SessionResumeCommand: Sendable {
         workingDirectory: options.workingDirectory
       )
       let persisted = loaded.record
+      if blocksResume(persisted.session) {
+        return resumeFailure(
+          options: options,
+          exitCode: .failure,
+          error: nonBudgetFailureResumeMessage(session: persisted.session)
+        )
+      }
       let storeRoot = CLIWorkflowSessionResolution.saveStoreRoot(
         sessionStore: options.sessionStore,
         scope: options.scope,
@@ -485,13 +706,39 @@ public struct SessionResumeCommand: Sendable {
       let runtimeStore = InMemoryWorkflowRuntimeStore()
       try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: storeRoot)
       let runner = DeterministicWorkflowRunner(store: runtimeStore, adapter: adapter, stdioNodeExecutor: LocalWorkflowStdioNodeExecutor())
-      let result = try await runner.run(
-        DeterministicWorkflowRunRequest(
-          workflow: bundle.workflow,
-          nodePayloads: bundle.nodePayloads,
-          resumeSessionId: persisted.session.sessionId
+      let effectiveMockScenarioPath = options.mockScenarioPath ?? persisted.mockScenarioPath
+      let variables = try resumeRuntimeVariables(options: options, persisted: persisted)
+      let result: WorkflowRunResult
+      do {
+        result = try await runner.run(
+          DeterministicWorkflowRunRequest(
+            workflow: bundle.workflow,
+            nodePayloads: bundle.nodePayloads,
+            variables: variables,
+            maxSteps: options.maxSteps,
+            resumeSessionId: persisted.session.sessionId
+          )
         )
-      )
+      } catch {
+        do {
+          try await persistFailedResumeSnapshot(
+            persisted: persisted,
+            resolution: resolution,
+            mockScenarioPath: effectiveMockScenarioPath,
+            storeRoot: storeRoot,
+            runtimeStore: runtimeStore,
+            bundle: bundle,
+            runtimeVariables: variables
+          )
+        } catch let persistenceError {
+          return resumeFailure(
+            options: options,
+            exitCode: .failure,
+            error: "\(error); failed to persist failed resume snapshot: \(persistenceError)"
+          )
+        }
+        throw error
+      }
       let workflowMessages = try await runtimeStore.listMessages(for: result.session.sessionId, toStepId: nil)
       let loopEvidence = projectLoopEvidence(
         session: result.session,
@@ -504,7 +751,8 @@ public struct SessionResumeCommand: Sendable {
           workflowName: persisted.workflowName,
           session: result.session,
           resolution: resolution,
-          mockScenarioPath: options.mockScenarioPath ?? persisted.mockScenarioPath
+          mockScenarioPath: effectiveMockScenarioPath,
+          runtimeVariables: variables
         ),
         runtimeSnapshot: WorkflowRuntimePersistenceProjector.snapshot(
           session: result.session,
@@ -520,6 +768,48 @@ public struct SessionResumeCommand: Sendable {
     } catch {
       return resumeFailure(options: options, exitCode: .failure, error: "\(error)")
     }
+  }
+
+  private func persistFailedResumeSnapshot(
+    persisted: PersistedCLIWorkflowSession,
+    resolution: WorkflowResolutionOptions,
+    mockScenarioPath: String?,
+    storeRoot: String,
+    runtimeStore: InMemoryWorkflowRuntimeStore,
+    bundle: ResolvedWorkflowBundle,
+    runtimeVariables: JSONObject
+  ) async throws {
+    guard let session = try await runtimeStore.loadSession(id: persisted.session.sessionId) else {
+      return
+    }
+    let workflowMessages = try await runtimeStore.listMessages(for: session.sessionId, toStepId: nil)
+    let recovery = LoopRecoveryLineage(
+      entryMode: .resume,
+      sourceSessionId: persisted.session.sessionId,
+      parentSessionId: persisted.session.sessionId,
+      reason: "resume existing session",
+      inputReusePolicy: "existing-session"
+    )
+    let loopEvidence = projectLoopEvidence(
+      session: session,
+      workflowMessages: workflowMessages,
+      bundle: bundle,
+      recovery: recovery
+    )
+    try CLIWorkflowSessionStore(rootDirectory: storeRoot).save(
+      PersistedCLIWorkflowSession(
+        workflowName: persisted.workflowName,
+        session: session,
+        resolution: resolution,
+        mockScenarioPath: mockScenarioPath,
+        runtimeVariables: runtimeVariables
+      ),
+      runtimeSnapshot: WorkflowRuntimePersistenceProjector.snapshot(
+        session: session,
+        workflowMessages: workflowMessages,
+        loopEvidence: loopEvidence
+      )
+    )
   }
 
   private func renderResumeSuccess(options: SessionResumeOptions, result: WorkflowRunResult) -> CLICommandResult {
@@ -556,6 +846,30 @@ public struct SessionResumeCommand: Sendable {
     let payload = SessionCommandFailureResult(sessionId: options.sessionId, error: error, exitCode: exitCode.rawValue)
     let stdout = (try? jsonString(payload)) ?? ""
     return CLICommandResult(exitCode: exitCode, stdout: stdout + (stdout.hasSuffix("\n") ? "" : "\n"))
+  }
+
+  private func blocksResume(_ session: WorkflowSession) -> Bool {
+    session.status == .failed && session.failureKind != .maxStepsExceeded
+  }
+
+  private func nonBudgetFailureResumeMessage(session: WorkflowSession) -> String {
+    let failureKind = session.failureKind?.rawValue ?? "unknown"
+    let rerunStepId = session.currentStepId ?? session.entryStepId
+    return """
+    session \(session.sessionId) failed with failureKind \(failureKind) and cannot be resumed; use \
+    `riela session rerun \(session.sessionId) \(rerunStepId)` to rerun from a step, or inspect with \
+    `riela session progress \(session.sessionId)`.
+    """
+  }
+
+  private func resumeRuntimeVariables(
+    options: SessionResumeOptions,
+    persisted: PersistedCLIWorkflowSession
+  ) throws -> JSONObject {
+    if let variablesReference = options.variables {
+      return try JSONReferenceLoader().object(from: variablesReference, workingDirectory: options.workingDirectory)
+    }
+    return persisted.runtimeVariables ?? [:]
   }
 }
 

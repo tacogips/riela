@@ -258,6 +258,7 @@ extension WorkflowCommandTests {
     ])
     XCTAssertEqual(inspect.exitCode, .success)
     let inspectSummary = try decodeJSON(WorkflowInspectionSummary.self, from: inspect.stdout)
+    XCTAssertEqual(inspectSummary.defaultMaxSteps, 5)
     let inspectLoop = try XCTUnwrap(inspectSummary.loop)
     XCTAssertEqual(inspectLoop.kind, "design-implement-review")
     XCTAssertTrue(inspectLoop.required)
@@ -295,6 +296,7 @@ extension WorkflowCommandTests {
     XCTAssertEqual(usage.exitCode, .success)
     let usageSummary = try decodeJSON(WorkflowInspectionSummary.self, from: usage.stdout)
     XCTAssertEqual(usageSummary.loop, inspectSummary.loop)
+    XCTAssertEqual(usageSummary.defaultMaxSteps, 5)
 
     let text = await app.run([
       "workflow", "inspect", "loop-summary",
@@ -302,6 +304,7 @@ extension WorkflowCommandTests {
       "--output", "text"
     ])
     XCTAssertEqual(text.exitCode, .success)
+    XCTAssertTrue(text.stdout.contains("defaultMaxSteps: 5"))
     XCTAssertTrue(text.stdout.contains("loop: required=true kind=design-implement-review gates=1 stepMetadata=2 artifactRootPolicy=runtime-owned"))
   }
 
@@ -375,7 +378,10 @@ extension WorkflowCommandTests {
     let run = try decodeJSON(WorkflowRunResult.self, from: result.stdout)
     XCTAssertEqual(run.status, .completed)
     XCTAssertEqual(run.session.executions.first?.adapterOutput?.provider, "codex-agent")
-    XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("exec --json"), true)
+    let recordedInvocations = try String(contentsOf: marker, encoding: .utf8)
+      .split(separator: "\n")
+      .map(String.init)
+    XCTAssertTrue(recordedInvocations.contains { $0.hasPrefix("exec --json") })
   }
 
   func testProjectScopeCodexDesignIntakePromptIncludesWorkflowRunVariables() async throws {
@@ -470,7 +476,7 @@ extension WorkflowCommandTests {
       contentsOf: promptDirectory.appendingPathComponent("prompt-2.txt"),
       encoding: .utf8
     )
-    XCTAssertTrue(intakePrompt.contains("Runtime variables visible to this run:"))
+    XCTAssertTrue(intakePrompt.contains("Runtime variables are available under `runtimeVariables`"))
     XCTAssertTrue(intakePrompt.contains(#""requestedBehavior":"Review project input visibility""#))
     XCTAssertTrue(intakePrompt.contains(#""targetFeatureArea":"RielaApp Instances window performance""#))
     XCTAssertTrue(intakePrompt.contains(#""codexAgentReferences":["Sources/RielaApp/EntryPoint.swift"]"#))

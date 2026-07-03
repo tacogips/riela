@@ -14,6 +14,66 @@ public enum WorkflowStepExecutionStatus: String, Codable, Sendable {
   case failed
 }
 
+public enum WorkflowSessionFailureKind: String, Codable, Equatable, Sendable {
+  case maxStepsExceeded
+  case cancelled
+  case adapterFailure
+  case policyBlocked
+  case nodeTimeout
+  case internalFailure = "internal"
+}
+
+public enum WorkflowStepBudgetSource: String, Codable, Equatable, Sendable {
+  case commandLine = "command-line"
+  case computedDefault = "computed-default"
+}
+
+public struct WorkflowStepBudgetDiagnostic: Codable, Equatable, Sendable {
+  public var stepBudget: Int
+  public var executionCount: Int
+  public var maxLoopIterations: Int
+  public var budgetSource: WorkflowStepBudgetSource
+  public var perStepExecutionCounts: [String: Int]
+  public var dominantCycleStepIds: [String]?
+  public var dominantCycleRepeatCount: Int?
+  public var perStepRevisitCap: Int?
+  public var projectedCapExceededStepIds: [String]?
+  public var openReviewFindingCount: Int
+  public var unscheduledStepId: String?
+  public var suggestedMaxSteps: Int?
+  public var suggestedRemediation: String?
+
+  public init(
+    stepBudget: Int,
+    executionCount: Int,
+    maxLoopIterations: Int,
+    budgetSource: WorkflowStepBudgetSource,
+    perStepExecutionCounts: [String: Int] = [:],
+    dominantCycleStepIds: [String]? = nil,
+    dominantCycleRepeatCount: Int? = nil,
+    perStepRevisitCap: Int? = nil,
+    projectedCapExceededStepIds: [String]? = nil,
+    openReviewFindingCount: Int = 0,
+    unscheduledStepId: String? = nil,
+    suggestedMaxSteps: Int? = nil,
+    suggestedRemediation: String? = nil
+  ) {
+    self.stepBudget = stepBudget
+    self.executionCount = executionCount
+    self.maxLoopIterations = maxLoopIterations
+    self.budgetSource = budgetSource
+    self.perStepExecutionCounts = perStepExecutionCounts
+    self.dominantCycleStepIds = dominantCycleStepIds
+    self.dominantCycleRepeatCount = dominantCycleRepeatCount
+    self.perStepRevisitCap = perStepRevisitCap
+    self.projectedCapExceededStepIds = projectedCapExceededStepIds
+    self.openReviewFindingCount = openReviewFindingCount
+    self.unscheduledStepId = unscheduledStepId
+    self.suggestedMaxSteps = suggestedMaxSteps
+    self.suggestedRemediation = suggestedRemediation
+  }
+}
+
 public struct WorkflowAcceptedOutputMetadata: Codable, Equatable, Sendable {
   private enum CodingKeys: String, CodingKey {
     case payload
@@ -170,6 +230,10 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     case executions
     case fanoutGroups
     case reviewFindings
+    case failureReason
+    case failureKind
+    case failedAt
+    case stepBudgetDiagnostic
   }
 
   public var workflowId: String
@@ -182,6 +246,10 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
   public var executions: [WorkflowStepExecution]
   public var fanoutGroups: [WorkflowFanoutGroupRecord]?
   public var reviewFindings: [WorkflowReviewFinding]
+  public var failureReason: String?
+  public var failureKind: WorkflowSessionFailureKind?
+  public var failedAt: Date?
+  public var stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic?
 
   public var workflowExecutionId: String {
     get { sessionId }
@@ -198,7 +266,11 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     updatedAt: Date,
     executions: [WorkflowStepExecution] = [],
     fanoutGroups: [WorkflowFanoutGroupRecord]? = nil,
-    reviewFindings: [WorkflowReviewFinding] = []
+    reviewFindings: [WorkflowReviewFinding] = [],
+    failureReason: String? = nil,
+    failureKind: WorkflowSessionFailureKind? = nil,
+    failedAt: Date? = nil,
+    stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic? = nil
   ) {
     self.workflowId = workflowId
     self.sessionId = sessionId
@@ -210,6 +282,10 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     self.executions = executions
     self.fanoutGroups = fanoutGroups
     self.reviewFindings = reviewFindings
+    self.failureReason = failureReason
+    self.failureKind = failureKind
+    self.failedAt = failedAt
+    self.stepBudgetDiagnostic = stepBudgetDiagnostic
   }
 
   public init(from decoder: Decoder) throws {
@@ -224,6 +300,10 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     self.executions = try container.decodeIfPresent([WorkflowStepExecution].self, forKey: .executions) ?? []
     self.fanoutGroups = try container.decodeIfPresent([WorkflowFanoutGroupRecord].self, forKey: .fanoutGroups)
     self.reviewFindings = try container.decodeIfPresent([WorkflowReviewFinding].self, forKey: .reviewFindings) ?? []
+    self.failureReason = try container.decodeIfPresent(String.self, forKey: .failureReason)
+    self.failureKind = try container.decodeIfPresent(WorkflowSessionFailureKind.self, forKey: .failureKind)
+    self.failedAt = try container.decodeIfPresent(Date.self, forKey: .failedAt)
+    self.stepBudgetDiagnostic = try container.decodeIfPresent(WorkflowStepBudgetDiagnostic.self, forKey: .stepBudgetDiagnostic)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -238,6 +318,10 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     try container.encode(executions, forKey: .executions)
     try container.encodeIfPresent(fanoutGroups, forKey: .fanoutGroups)
     try container.encode(reviewFindings, forKey: .reviewFindings)
+    try container.encodeIfPresent(failureReason, forKey: .failureReason)
+    try container.encodeIfPresent(failureKind, forKey: .failureKind)
+    try container.encodeIfPresent(failedAt, forKey: .failedAt)
+    try container.encodeIfPresent(stepBudgetDiagnostic, forKey: .stepBudgetDiagnostic)
   }
 }
 

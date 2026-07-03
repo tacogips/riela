@@ -7,17 +7,20 @@ public struct PersistedCLIWorkflowSession: Codable, Equatable, Sendable {
   public var session: WorkflowSession
   public var resolution: WorkflowResolutionOptions
   public var mockScenarioPath: String?
+  public var runtimeVariables: JSONObject?
 
   public init(
     workflowName: String,
     session: WorkflowSession,
     resolution: WorkflowResolutionOptions,
-    mockScenarioPath: String? = nil
+    mockScenarioPath: String? = nil,
+    runtimeVariables: JSONObject? = nil
   ) {
     self.workflowName = workflowName
     self.session = session
     self.resolution = resolution
     self.mockScenarioPath = mockScenarioPath
+    self.runtimeVariables = runtimeVariables
   }
 }
 
@@ -199,6 +202,48 @@ public struct CLIWorkflowSessionStore: Sendable {
     }
   }
 
+  public func list(
+    workflowName: String? = nil,
+    status: WorkflowSessionStatus? = nil,
+    limit: Int = 10
+  ) throws -> [PersistedCLIWorkflowSession] {
+    guard FileManager.default.fileExists(atPath: databasePath) else {
+      return []
+    }
+    let db = try openDatabase(readOnly: true)
+    guard try tableExists(db, name: "cli_workflow_sessions") else {
+      return []
+    }
+    let boundedLimit = max(1, min(limit, 100))
+    var predicates: [String] = []
+    var bindings: [SQLiteValue] = []
+    if let workflowName {
+      predicates.append("workflow_name = ?")
+      bindings.append(.text(workflowName))
+    }
+    if let status {
+      predicates.append("status = ?")
+      bindings.append(.text(status.rawValue))
+    }
+    let whereClause = predicates.isEmpty ? "" : " WHERE " + predicates.joined(separator: " AND ")
+    bindings.append(.int(Int64(boundedLimit)))
+    let sql = """
+    SELECT json(record_json) AS record_json
+    FROM cli_workflow_sessions
+    \(whereClause)
+    ORDER BY updated_at DESC, session_id
+    LIMIT ?
+    """
+    return try mapSQLiteError {
+      try db.query(sql, bindings: bindings)
+    }.compactMap { row in
+      guard let recordText = row["record_json"] else {
+        return nil
+      }
+      return try decodeRecord(recordText)
+    }
+  }
+
   private func isSafeSessionId(_ sessionId: String) -> Bool {
     guard !sessionId.isEmpty, !sessionId.contains("/"), !sessionId.contains("..") else {
       return false
@@ -248,6 +293,7 @@ public struct CLIWorkflowSessionStore: Sendable {
       """
       )
       try db.execute("CREATE INDEX IF NOT EXISTS idx_cli_workflow_sessions_updated ON cli_workflow_sessions (updated_at DESC, session_id)")
+      try db.execute("CREATE INDEX IF NOT EXISTS idx_cli_workflow_sessions_workflow_status_updated ON cli_workflow_sessions (workflow_name, status, updated_at DESC)")
     }
   }
 

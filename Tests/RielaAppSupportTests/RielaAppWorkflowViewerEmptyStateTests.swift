@@ -12,7 +12,7 @@ final class RielaAppWorkflowViewerEmptyStateTests: XCTestCase {
     let root = try XCTUnwrap(controller.window?.contentView)
     let visibleTexts = Set(visibleTextFields(in: root).map(\.stringValue))
 
-    XCTAssertTrue(visibleTexts.contains("Choose Workflow"))
+    XCTAssertTrue(visibleTexts.contains("Select Workflow"))
     XCTAssertFalse(visibleTexts.contains("No workflow loaded"))
   }
 
@@ -67,10 +67,10 @@ final class RielaAppWorkflowViewerEmptyStateTests: XCTestCase {
     let root = try XCTUnwrap(controller.window?.contentView)
     let popups = allSubviews(of: NSPopUpButton.self, in: root)
     XCTAssertTrue(popups.contains { popup in
-      (0..<popup.numberOfItems).contains { popup.itemTitle(at: $0) == "No Runs" }
+      (0..<popup.numberOfItems).contains { popup.itemTitle(at: $0) == "No Sessions" }
     })
     XCTAssertFalse(popups.contains { popup in
-      (0..<popup.numberOfItems).contains { popup.itemTitle(at: $0) == "No sessions" }
+      (0..<popup.numberOfItems).contains { popup.itemTitle(at: $0) == "No Runs" }
     })
   }
 

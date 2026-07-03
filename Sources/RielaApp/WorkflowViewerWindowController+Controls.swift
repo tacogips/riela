@@ -41,7 +41,7 @@ extension WorkflowViewerWindowController {
   }
 
   func workflowViewerControlRow(title: String, views: [NSView]) -> RielaAppSettingsRow {
-    let titleLabel = rielaAppSettingsTitleLabel(title, maxWidth: 86)
+    let titleLabel = rielaAppSettingsTitleLabel(title, maxWidth: 120)
     for view in views {
       if let popup = view as? NSPopUpButton {
         popup.setAccessibilityLabel(title)

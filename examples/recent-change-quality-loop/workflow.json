@@ -2,7 +2,7 @@
   "workflowId": "recent-change-quality-loop",
   "description": "Review code changes introduced within a configurable recent time window, including uncommitted changes, and delegate any blocking findings into the design-and-implement workflow before re-reviewing until no high or mid findings remain.",
   "defaults": {
-    "maxLoopIterations": 6,
+    "maxLoopIterations": 22,
     "nodeTimeoutMs": 3600000,
     "supervision": {
       "monitorIntervalMs": 15000,

@@ -82,8 +82,8 @@ final class AgentAdapterTests: XCTestCase {
     )
 
     let runs = await runner.runs()
+    XCTAssertEqual(runs.prefix(2).map(\.configuration.arguments), [["codex-dev", "--version"], ["codex-dev", "login", "status"]])
     let preflightRun = try XCTUnwrap(runs.first)
-    XCTAssertEqual(preflightRun.configuration.arguments, ["codex-dev", "login", "status"])
     XCTAssertEqual(preflightRun.configuration.environment["RIELA_AGENT_BACKEND"], "codex-agent")
     XCTAssertEqual(preflightRun.configuration.environment["CODEX_HOME"], "/tmp/codex-home")
     let run = try XCTUnwrap(runs.last)
@@ -675,6 +675,7 @@ final class AgentAdapterTests: XCTestCase {
 
   func testNodeAgentEnvironmentIsUsedByCliAuthPreflightAndExecution() async throws {
     let runner = SequencedRunner([
+      LocalAgentProcessResult(stdout: "0.1.0", stderr: "", terminationStatus: 0),
       LocalAgentProcessResult(stdout: "Logged in", stderr: "", terminationStatus: 0),
       LocalAgentProcessResult(stdout: "done", stderr: "", terminationStatus: 0)
     ])
@@ -688,13 +689,15 @@ final class AgentAdapterTests: XCTestCase {
     )
 
     let runs = await runner.runs()
-    XCTAssertEqual(runs.count, 2)
+    XCTAssertEqual(runs.count, 3)
     XCTAssertEqual(runs[0].configuration.environment["OPENAI_BASE_URL"], "https://node-router.test/v1")
     XCTAssertEqual(runs[1].configuration.environment["OPENAI_BASE_URL"], "https://node-router.test/v1")
+    XCTAssertEqual(runs[2].configuration.environment["OPENAI_BASE_URL"], "https://node-router.test/v1")
   }
 
   func testCodexDefaultAuthPreflightMapsLoginFailureToPolicyBlockedBeforeCommand() async throws {
     let runner = SequencedRunner([
+      LocalAgentProcessResult(stdout: "0.1.0", stderr: "", terminationStatus: 0),
       LocalAgentProcessResult(stdout: "", stderr: "not logged in", terminationStatus: 1),
       LocalAgentProcessResult(stdout: "should not run", stderr: "", terminationStatus: 0)
     ])
@@ -709,8 +712,27 @@ final class AgentAdapterTests: XCTestCase {
     }
 
     let runs = await runner.runs()
-    XCTAssertEqual(runs.map(\.configuration.arguments), [["codex", "login", "status"]])
+    XCTAssertEqual(runs.map(\.configuration.arguments), [["codex", "--version"], ["codex", "login", "status"]])
     XCTAssertEqual(runs.first?.configuration.environment["CODEX_HOME"], "/tmp/codex-home")
+  }
+
+  func testCodexDefaultPreflightMapsUnavailableCliBeforeAuth() async throws {
+    let runner = SequencedRunner([
+      LocalAgentProcessResult(stdout: "", stderr: "env: codex: No such file or directory", terminationStatus: 127)
+    ])
+    let adapter = CodexAgentAdapter(runner: runner)
+
+    do {
+      _ = try await adapter.execute(input(backend: .codexAgent), context: AdapterExecutionContext())
+      XCTFail("Expected policy-blocked codex CLI preflight failure")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .policyBlocked)
+      XCTAssertTrue(error.message.contains("CLI is unavailable"))
+      XCTAssertFalse(error.message.contains("authentication is unavailable"))
+    }
+
+    let runs = await runner.runs()
+    XCTAssertEqual(runs.map(\.configuration.arguments), [["codex", "--version"]])
   }
 
   func testClaudeDefaultPreflightMapsUnavailableCliAndAuthToPolicyBlockedBeforeCommand() async throws {

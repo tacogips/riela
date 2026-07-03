@@ -289,7 +289,8 @@ public struct WorkflowPackageCommandRunner: Sendable {
         workflowName: workflowDirectory.lastPathComponent,
         session: result.session,
         resolution: persistedResolution,
-        mockScenarioPath: parsed.mockScenarioPath
+        mockScenarioPath: parsed.mockScenarioPath,
+        runtimeVariables: variables
       ),
       runtimeSnapshot: WorkflowRuntimePersistenceProjector.snapshot(session: result.session, workflowMessages: workflowMessages)
     )

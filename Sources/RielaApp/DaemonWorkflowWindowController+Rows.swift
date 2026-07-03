@@ -208,6 +208,27 @@ final class DaemonWorkflowOverviewPaneView: NSView {
 }
 
 extension DaemonWorkflowWindowController {
+  func settingsSectionCaption(_ title: String) -> NSView {
+    let label = NSTextField(labelWithString: title)
+    label.font = .systemFont(ofSize: 11, weight: .semibold)
+    label.textColor = .secondaryLabelColor
+    label.alignment = .left
+    label.lineBreakMode = .byTruncatingTail
+    label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    let spacer = NSView()
+    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    let row = NSStackView(views: [label, spacer])
+    row.orientation = .horizontal
+    row.alignment = .firstBaseline
+    row.spacing = 8
+    row.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
+    row.setContentHuggingPriority(.required, for: .vertical)
+    row.setAccessibilityElement(true)
+    row.setAccessibilityRole(.staticText)
+    row.setAccessibilityLabel(title)
+    return row
+  }
+
   func settingRow(
     title: String,
     valueLabel: NSTextField,
@@ -391,11 +412,7 @@ extension DaemonWorkflowWindowController {
     textStack.alignment = .leading
     textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-    let stateIcon = NSImageView(
-      image: NSImage(systemSymbolName: stateSymbolName(for: row.state), accessibilityDescription: nil) ?? NSImage()
-    )
-    stateIcon.contentTintColor = stateColor(for: row.state)
-    stateIcon.setAccessibilityElement(false)
+    let stateIcon = stateIndicatorView(for: row.state)
     let state = NSTextField(labelWithString: row.state.rawValue)
     state.font = .systemFont(ofSize: 12, weight: .medium)
     state.textColor = stateColor(for: row.state)
@@ -514,6 +531,41 @@ extension DaemonWorkflowWindowController {
     case .stopped:
       "pause.circle.fill"
     }
+  }
+
+  private func stateIndicatorView(for state: InstanceState) -> NSView {
+    guard state.isTransitional else {
+      let stateIcon = NSImageView(
+        image: NSImage(systemSymbolName: stateSymbolName(for: state), accessibilityDescription: nil) ?? NSImage()
+      )
+      stateIcon.translatesAutoresizingMaskIntoConstraints = false
+      stateIcon.contentTintColor = stateColor(for: state)
+      stateIcon.setAccessibilityElement(false)
+      NSLayoutConstraint.activate([
+        stateIcon.widthAnchor.constraint(equalToConstant: 15),
+        stateIcon.heightAnchor.constraint(equalToConstant: 15)
+      ])
+      return stateIcon
+    }
+
+    let indicator = NSProgressIndicator()
+    configureInstanceStateProgressIndicator(indicator, accessibilityLabel: "\(state.rawValue) instance progress")
+    indicator.startAnimation(nil)
+    return indicator
+  }
+
+  func configureInstanceStateProgressIndicator(_ indicator: NSProgressIndicator, accessibilityLabel: String) {
+    indicator.style = .spinning
+    indicator.isIndeterminate = true
+    indicator.controlSize = .small
+    indicator.isDisplayedWhenStopped = false
+    indicator.translatesAutoresizingMaskIntoConstraints = false
+    indicator.setAccessibilityElement(true)
+    indicator.setAccessibilityLabel(accessibilityLabel)
+    NSLayoutConstraint.activate([
+      indicator.widthAnchor.constraint(equalToConstant: 15),
+      indicator.heightAnchor.constraint(equalToConstant: 15)
+    ])
   }
 }
 

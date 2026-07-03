@@ -13,6 +13,7 @@ final class RielaAppSettingsEditorWindowController: NSWindowController {
   private final class Target: NSObject {
     weak var window: NSWindow?
     var result: Result = .cancelled
+    var shouldCancel: (() -> Bool)?
 
     @objc func confirm() {
       result = .confirmed
@@ -20,6 +21,9 @@ final class RielaAppSettingsEditorWindowController: NSWindowController {
     }
 
     @objc func cancel() {
+      guard shouldCancel?() ?? true else {
+        return
+      }
       result = .cancelled
       stop()
     }
@@ -54,14 +58,34 @@ final class RielaAppSettingsEditorWindowController: NSWindowController {
     scrollView.hasVerticalScroller = true
     scrollView.translatesAutoresizingMaskIntoConstraints = false
     rielaAppConfigureGroupedTextScroll(scrollView)
+    let statusLabel = NSTextField(labelWithString: "")
+    statusLabel.textColor = .systemRed
+    statusLabel.lineBreakMode = .byWordWrapping
+    statusLabel.maximumNumberOfLines = 2
+    let editorStack = NSStackView(views: [statusLabel, scrollView])
+    editorStack.orientation = .vertical
+    editorStack.alignment = .width
+    editorStack.spacing = 8
 
     let controller = RielaAppSettingsEditorWindowController(
       title: title,
       message: message,
-      content: scrollView,
+      content: editorStack,
       contentSize: NSSize(width: 560, height: 360),
       primaryTitle: "Done"
     )
+    var discardArmed = false
+    controller.target.shouldCancel = {
+      guard textView.string != value else {
+        return true
+      }
+      guard discardArmed else {
+        discardArmed = true
+        statusLabel.stringValue = "Unsaved changes. Press Cancel again to discard them, or Done to keep your edits."
+        return false
+      }
+      return true
+    }
     guard controller.runModal() == .confirmed else {
       return nil
     }

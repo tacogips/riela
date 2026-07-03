@@ -5,9 +5,16 @@ import AppKit
 import RielaCore
 import XCTest
 
+private struct CapturedEventSourceRegistration {
+  var identity: String
+  var sourceJSON: String
+  var bindingJSON: String
+}
+
 @MainActor
 final class RielaAppSettingsEditorNavigationTests: XCTestCase {
   func testInstanceDetailRowsNavigateToInlineConfigurationEditorsAtRuntime() throws {
+    var capturedEventSourceRegistration: CapturedEventSourceRegistration?
     let controller = DaemonWorkflowWindowController(
       onRefresh: {},
       onSelectProfile: { _ in },
@@ -27,7 +34,14 @@ final class RielaAppSettingsEditorNavigationTests: XCTestCase {
       onSetWorkingDirectory: { _ in },
       onSaveEnvironmentVariables: { _, _ in nil },
       onSaveWorkflowVariables: { _, _ in nil },
-      onRegisterEventSource: { _, _, _ in nil },
+      onRegisterEventSource: { identity, sourceJSON, bindingJSON in
+        capturedEventSourceRegistration = CapturedEventSourceRegistration(
+          identity: identity,
+          sourceJSON: sourceJSON,
+          bindingJSON: bindingJSON
+        )
+        return nil
+      },
       configuredEnvironmentValues: { _ in [
         RielaAppConfiguredEnvironmentValue(
           name: "DUPLICATE_TOKEN",
@@ -55,6 +69,8 @@ final class RielaAppSettingsEditorNavigationTests: XCTestCase {
     state.preferences["chat-instance"] = RielaAppDaemonWorkflowPreference(
       identity: "chat-instance",
       sourceIdentity: source.id,
+      available: true,
+      active: true,
       environmentFilePath: "/workflows/chat/demo.env",
       environmentVariables: ["DUPLICATE_TOKEN": "inline-value"],
       defaultVariables: ["persona": .string("yuki")]
@@ -79,24 +95,67 @@ final class RielaAppSettingsEditorNavigationTests: XCTestCase {
 
     XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "Environment Variables", in: root)).accessibilityPerformPress())
     controller.window?.layoutIfNeeded()
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Variable Settings" })
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Current Lines" })
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Effective Configured Environment" })
+    XCTAssertTrue(visibleTextFields(in: root).contains {
+      $0.stringValue.contains("Saving while this instance is active restarts its workflow process.")
+    })
+    XCTAssertTrue(visibleButtons(in: root).contains { $0.title == "Save & Restart Instance" })
     XCTAssertTrue(textViews(in: root).contains { $0.string.contains("DUPLICATE_TOKEN=•••••••• (inline override)") })
     XCTAssertTrue(textViews(in: root).contains { $0.string.contains("FILE_ONLY=•••••••• (.env)") })
     XCTAssertTrue(textViews(in: root).contains { $0.string.contains("DUPLICATE_TOKEN=inline-value") })
 
+    controller.inlineEnvironmentTextView?.string.append("\nNEW_TOKEN=value")
+    controller.cancelConfigurationEditor()
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue.contains("Unsaved changes") })
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Environment Variables" })
+
     controller.cancelConfigurationEditor()
     XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "Workflow Variables", in: root)).accessibilityPerformPress())
     controller.window?.layoutIfNeeded()
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Variable Settings" })
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Current Lines" })
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Effective Workflow Variables" })
+    XCTAssertTrue(visibleButtons(in: root).contains { $0.title == "Save & Restart Instance" })
     XCTAssertTrue(textViews(in: root).contains { $0.string.contains("persona=yuki") })
 
-    controller.cancelConfigurationEditor()
+    controller.workflowVariablesTextView?.string.append("\nmode=test")
+    controller.goBack()
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue.contains("Unsaved changes") })
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Workflow Variables" })
+    controller.goBack()
+
     XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "Event Sources", in: root)).accessibilityPerformPress())
     controller.window?.layoutIfNeeded()
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Source ID" })
+    XCTAssertTrue(visibleButtons(in: root).contains { $0.title == "Register & Restart Instance" })
     XCTAssertTrue(visibleTextFields(in: root).contains {
       $0.stringValue.contains("event input")
     })
+
+    controller.eventSourceIdField?.stringValue = "telegram-main"
+    controller.cancelConfigurationEditor()
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue.contains("Unsaved changes") })
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Event Sources" })
+    controller.eventSourceIdField?.stringValue = "telegram-main-updated"
+    controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.eventSourceIdField))
+    controller.cancelConfigurationEditor()
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue.contains("Unsaved changes") })
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Event Sources" })
+    controller.eventSourceIdField?.stringValue = "telegram-main"
+    controller.eventSourceModeControl?.selectedSegment = 1
+    controller.eventSourceModeChanged()
+    controller.window?.layoutIfNeeded()
+    XCTAssertEqual(controller.eventSourceFormView?.isHidden, true)
+    XCTAssertEqual(controller.eventSourceJSONView?.isHidden, false)
+    XCTAssertTrue(textViews(in: root).contains { $0.string.contains(#""id" : "telegram-main""#) })
+    XCTAssertTrue(textViews(in: root).contains { $0.string.contains(#""sourceId" : "telegram-main""#) })
+
+    controller.saveEventSourceEditor()
+    XCTAssertEqual(capturedEventSourceRegistration?.identity, "chat-instance")
+    XCTAssertTrue(capturedEventSourceRegistration?.sourceJSON.contains(#""kind" : "telegram-gateway""#) == true)
+    XCTAssertTrue(capturedEventSourceRegistration?.bindingJSON.contains(#""workflowName" : "chat""#) == true)
   }
 
   func testAssistantSidebarPaneShowsOnlyVendorAndModelSettingsAtRuntime() throws {
@@ -150,7 +209,7 @@ final class RielaAppSettingsEditorNavigationTests: XCTestCase {
     controller.window?.layoutIfNeeded()
 
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Assistant" })
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "25 characters configured" })
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Custom guidance configured" })
     XCTAssertFalse(textViews(in: root).contains { $0.string.contains("Use short direct answers.") })
     XCTAssertNil(selectableRow(accessibilityLabel: "Save Assistance", in: root))
     XCTAssertFalse(controller.assistantSettingsVendorPopup.itemTitles.contains("Automatic"))
@@ -294,6 +353,11 @@ final class RielaAppSettingsEditorNavigationTests: XCTestCase {
     controller.showSourcesPane()
     controller.window?.layoutIfNeeded()
     XCTAssertEqual(controller.assistantPromptField.hasHiddenAncestor, false)
+    let assistantHost = try XCTUnwrap(controller.settingsRootView?.assistantPanelHost)
+    let promptFrame = controller.assistantPromptField.convert(controller.assistantPromptField.bounds, to: assistantHost)
+    let foldFrame = controller.assistantFoldButton.convert(controller.assistantFoldButton.bounds, to: assistantHost)
+    XCTAssertGreaterThanOrEqual(promptFrame.width, 420)
+    XCTAssertGreaterThanOrEqual(foldFrame.maxX, assistantHost.bounds.width - 60)
 
     controller.assistantPromptField.stringValue = "Create a second workflow instance"
     controller.sendAssistantMessage()
@@ -360,6 +424,10 @@ final class RielaAppSettingsEditorNavigationTests: XCTestCase {
 
   private func visibleTextFields(in root: NSView) -> [NSTextField] {
     allSubviews(of: NSTextField.self, in: root).filter { !$0.hasHiddenAncestor }
+  }
+
+  private func visibleButtons(in root: NSView) -> [NSButton] {
+    allSubviews(of: NSButton.self, in: root).filter { !$0.hasHiddenAncestor }
   }
 
   private func textViews(in root: NSView) -> [NSTextView] {

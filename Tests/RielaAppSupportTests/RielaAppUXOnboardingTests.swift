@@ -59,6 +59,46 @@ final class RielaAppUXOnboardingControllerTests: XCTestCase {
     XCTAssertFalse(visibleButtons(in: root).contains { $0.accessibilityLabel() == "Forward" })
   }
 
+  func testStatusBannerKeepsRecentMessageHistoryAtRuntime() throws {
+    let controller = makeController()
+    controller.update(
+      profileName: .default,
+      profileNames: [.default],
+      candidates: [],
+      workflowSources: [],
+      state: RielaAppDaemonWorkflowState(),
+      snapshots: [:],
+      assistantAssistance: "",
+      statusMessage: SequencedRielaAppStatusMessage(
+        sequence: 1,
+        message: .classified("Created instance demo")
+      )
+    )
+    controller.update(
+      profileName: .default,
+      profileNames: [.default],
+      candidates: [],
+      workflowSources: [],
+      state: RielaAppDaemonWorkflowState(),
+      snapshots: [:],
+      assistantAssistance: "",
+      statusMessage: SequencedRielaAppStatusMessage(
+        sequence: 2,
+        message: .classified("Failed to import URL")
+      )
+    )
+
+    let root = try XCTUnwrap(controller.window?.contentView)
+    controller.window?.layoutIfNeeded()
+
+    XCTAssertEqual(controller.statusMessageHistory.map(\.message.text), [
+      "Created instance demo",
+      "Failed to import URL"
+    ])
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Failed to import URL" })
+    XCTAssertTrue(visibleButtons(in: root).contains { $0.accessibilityLabel() == "Show Status History" })
+  }
+
   func testEmptyInstanceGuideAndFilteredEmptyStateUseSeparateMessages() throws {
     let controller = makeController()
     controller.update(
@@ -76,6 +116,12 @@ final class RielaAppUXOnboardingControllerTests: XCTestCase {
 
     XCTAssertFalse(controller.emptyInstancesGuideView.isHidden)
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Set up your first instance" })
+    XCTAssertTrue(visibleTextFields(in: root).contains {
+      $0.stringValue.contains("Workflow sources are workflow or package folders you can run.")
+    })
+    XCTAssertTrue(visibleTextFields(in: root).contains {
+      $0.stringValue.contains("Starter workflows can require secrets; check Required Environment before starting.")
+    })
     try XCTUnwrap(visibleButtons(in: root).first { $0.title == "View Workflow Sources" }).performClick(nil)
     XCTAssertEqual(controller.activeSidebarPane, .sources)
 

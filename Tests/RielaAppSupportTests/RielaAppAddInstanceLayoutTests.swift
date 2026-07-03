@@ -55,7 +55,10 @@ final class RielaAppAddInstanceLayoutTests: XCTestCase {
       workflowDirectory: "/workflows/daily-summary",
       workingDirectory: "/workflows",
       eventRoot: nil,
-      eventSources: []
+      eventSources: [],
+      requiredEnvironment: [
+        RielaAppEnvRequirement(name: "OPENAI_API_KEY", description: nil, secret: true)
+      ]
     )
     controller.update(
       profileName: .default,
@@ -79,6 +82,9 @@ final class RielaAppAddInstanceLayoutTests: XCTestCase {
     XCTAssertEqual(controller.addInstanceSelectionView?.isHidden, false)
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Choose Workflow" })
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Daily Summary" })
+    XCTAssertTrue(visibleTextFields(in: root).contains {
+      $0.stringValue.contains("1 required environment variable")
+    })
 
     controller.goBack()
     controller.window?.layoutIfNeeded()

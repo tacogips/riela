@@ -374,6 +374,8 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     XCTAssertTrue(graphPane.canvasView.model?.edges.contains {
       $0.from == "start" && $0.to == "review" && $0.label == "accepted"
     } ?? false)
+    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains { $0.stringValue == "Source Settings" })
+    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains { $0.stringValue == "Manage Source" })
     XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains { $0.stringValue == workflowDirectory.path })
 
     controller.goBack()

@@ -7,9 +7,11 @@ final class DaemonWorkflowEmptyStateView: NSView {
 
   private let titleLabel = NSTextField(labelWithString: "Set up your first instance")
   private let stepsLabel = NSTextField(labelWithString: [
-    "1  Riela ships with starter workflows - find them under Workflow Sources, or import your own.",
-    "2  Press + to create an instance from a source.",
-    "3  Give it a name, point it at a .env file if needed, and start it."
+    "1  Workflow sources are workflow or package folders you can run.",
+    "2  Instances are saved runs of a source with their own settings.",
+    "3  Profiles keep separate groups of sources and instances.",
+    "4  Starter workflows can require secrets; check Required Environment before starting.",
+    "5  Add a .env file when a workflow needs KEY=value secrets."
   ].joined(separator: "\n"))
   private let sourcesButton = NSButton(title: "View Workflow Sources", target: nil, action: nil)
   private let createButton = NSButton(title: "Create Instance", target: nil, action: nil)
@@ -20,7 +22,7 @@ final class DaemonWorkflowEmptyStateView: NSView {
     titleLabel.alignment = .center
     stepsLabel.textColor = .secondaryLabelColor
     stepsLabel.lineBreakMode = .byWordWrapping
-    stepsLabel.maximumNumberOfLines = 5
+    stepsLabel.maximumNumberOfLines = 7
     stepsLabel.alignment = .left
     sourcesButton.bezelStyle = .rounded
     createButton.bezelStyle = .rounded
@@ -49,20 +51,20 @@ final class DaemonWorkflowEmptyStateView: NSView {
   override func layout() {
     super.layout()
     titleLabel.frame = NSRect(x: 0, y: 0, width: bounds.width, height: 24)
-    stepsLabel.frame = NSRect(x: 0, y: 34, width: bounds.width, height: 74)
+    stepsLabel.frame = NSRect(x: 0, y: 34, width: bounds.width, height: 112)
     let buttonWidth: CGFloat = 160
     let totalWidth = buttonWidth * 2 + 10
     sourcesButton.frame = NSRect(
       x: max(0, (bounds.width - totalWidth) / 2),
-      y: 122,
+      y: 160,
       width: buttonWidth,
       height: 30
     )
-    createButton.frame = NSRect(x: sourcesButton.frame.maxX + 10, y: 122, width: buttonWidth, height: 30)
+    createButton.frame = NSRect(x: sourcesButton.frame.maxX + 10, y: 160, width: buttonWidth, height: 30)
   }
 
   override var fittingSize: NSSize {
-    NSSize(width: 420, height: 160)
+    NSSize(width: 460, height: 198)
   }
 
   @objc private func viewWorkflowSources() {

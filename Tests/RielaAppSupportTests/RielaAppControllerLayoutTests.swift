@@ -6,6 +6,13 @@ import RielaCore
 import RielaViewer
 import XCTest
 
+private struct CapturedManagerMessage {
+  var workflowId: String
+  var sessionId: String
+  var stepId: String
+  var message: String
+}
+
 @MainActor
 final class RielaAppControllerLayoutTests: XCTestCase {
   func testWorkflowInstanceListHeaderAndRowsStayPinnedToTopAtRuntime() throws {
@@ -202,6 +209,66 @@ final class RielaAppControllerLayoutTests: XCTestCase {
     XCTAssertTrue(visibleTexts.contains("Morning Summary"))
   }
 
+  func testTransitionalInstanceStateShowsNativeProgressIndicatorsAtRuntime() throws {
+    let controller = makeController()
+    let source = RielaAppDaemonWorkflowCandidate(
+      id: "user-workflow:daily-summary",
+      workflowId: "daily-summary",
+      displayName: "Daily Summary",
+      sourceDescription: "user workflow",
+      workflowDirectory: "/workflows/daily-summary",
+      workingDirectory: "/workflows",
+      eventRoot: nil,
+      eventSources: []
+    )
+    var state = RielaAppDaemonWorkflowState()
+    state.preferences["morning-summary"] = RielaAppDaemonWorkflowPreference(
+      identity: "morning-summary",
+      sourceIdentity: source.id,
+      displayName: "Morning Summary",
+      available: true,
+      active: true
+    )
+
+    controller.update(
+      profileName: .default,
+      profileNames: [.default],
+      candidates: [source],
+      workflowSources: [source],
+      state: state,
+      snapshots: [
+        "morning-summary": RielaAppDaemonWorkflowRuntime.RuntimeSnapshot(
+          status: .starting,
+          detail: "Preparing event sources"
+        )
+      ],
+      assistantAssistance: "",
+      statusMessage: ""
+    )
+
+    let root = try XCTUnwrap(controller.window?.contentView)
+    let window = try XCTUnwrap(controller.window)
+    window.setFrame(NSRect(x: 0, y: 0, width: 920, height: 640), display: false)
+    window.layoutIfNeeded()
+    let table = try XCTUnwrap(firstSubview(of: NSTableView.self, in: root))
+    let cell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true))
+    let listIndicator = try XCTUnwrap(allSubviews(of: NSProgressIndicator.self, in: cell).first)
+    XCTAssertEqual(listIndicator.accessibilityLabel(), "Starting instance progress")
+    XCTAssertTrue(listIndicator.isIndeterminate)
+    XCTAssertFalse(listIndicator.hasHiddenAncestor)
+
+    controller.selectCandidate(identity: "morning-summary")
+    controller.tableClicked(table)
+    controller.window?.layoutIfNeeded()
+
+    let detailIndicator = try XCTUnwrap(allSubviews(of: NSProgressIndicator.self, in: root).first {
+      $0.accessibilityLabel() == "Instance status progress"
+    })
+    XCTAssertTrue(detailIndicator.isIndeterminate)
+    XCTAssertFalse(detailIndicator.hasHiddenAncestor)
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Starting - Preparing event sources" })
+  }
+
   func testProfileRowsAreAccessibleChoicesAtRuntime() throws {
     let controller = ProfileSelectWindowController(
       onSelectProfile: { _ in },
@@ -321,43 +388,85 @@ final class RielaAppControllerLayoutTests: XCTestCase {
       workflowSession(
         id: "controls",
         stepId: "first",
-        updatedAt: Date(timeIntervalSince1970: 3)
+        updatedAt: Date(timeIntervalSince1970: 3),
+        workflowId: "viewer-controls"
       )
     ], runtimeRoot: runtimeRoot)
 
+    var managerMessageRequest: CapturedManagerMessage?
     let controller = WorkflowViewerWindowController()
     controller.show(
       workflowDirectory: workflowDirectory.path,
-      sessionStoreRoot: sessionStoreRoot.path
+      sessionStoreRoot: sessionStoreRoot.path,
+      onSendManagerMessage: { workflowId, sessionId, stepId, message in
+        managerMessageRequest = CapturedManagerMessage(
+          workflowId: workflowId,
+          sessionId: sessionId,
+          stepId: stepId,
+          message: message
+        )
+        return nil
+      }
     )
     let window = try XCTUnwrap(controller.window)
     window.layoutIfNeeded()
-    XCTAssertEqual(window.minSize, NSSize(width: 420, height: 380))
+    XCTAssertEqual(window.minSize, NSSize(width: 560, height: 380))
     XCTAssertEqual(window.frame.size.width, 640, accuracy: 0.1)
     let root = try XCTUnwrap(controller.window?.contentView)
     let splitView = try XCTUnwrap(firstSubview(of: NSSplitView.self, in: root))
     XCTAssertEqual(splitView.subviews.first?.frame.size.width ?? 0, 180, accuracy: 2)
     let tabView = try XCTUnwrap(firstSubview(of: NSTabView.self, in: root))
+    XCTAssertEqual(tabView.tabViewItems.map(\.label), ["Overview", "Variables", "Graph", "Run Log", "Structure"])
     XCTAssertEqual(tabView.contentCompressionResistancePriority(for: .vertical), .defaultLow)
     XCTAssertFalse(hasHeightConstraint(tabView, relation: .greaterThanOrEqual, constant: 300))
     let preferredHeight = try XCTUnwrap(heightConstraint(tabView, relation: .equal, constant: 300))
     XCTAssertEqual(preferredHeight.priority, .defaultLow)
     let editPopupLabels = Set(visiblePopUpButtons(in: root).compactMap { $0.accessibilityLabel() })
     XCTAssertTrue(editPopupLabels.isSuperset(of: ["Session", "Template"]))
+    let respondButton = try XCTUnwrap(button(accessibilityLabel: "Respond to Workflow Run", in: root))
+    XCTAssertTrue(respondButton.isEnabled)
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Awaiting response at first" })
+    controller.submitManagerResponse(" Continue now ")
+    XCTAssertEqual(managerMessageRequest?.workflowId, "viewer-controls")
+    XCTAssertEqual(managerMessageRequest?.sessionId, "controls")
+    XCTAssertEqual(managerMessageRequest?.stepId, "first")
+    XCTAssertEqual(managerMessageRequest?.message, "Continue now")
+    XCTAssertEqual(controller.managerResponseStatusLabel.stringValue, "Response sent.")
+
+    try selectTab(named: "Graph", in: tabView)
+    controller.window?.layoutIfNeeded()
+    let graphPane = try XCTUnwrap(firstSubview(of: DaemonWorkflowGraphPaneView.self, in: root))
+    XCTAssertFalse(graphPane.hasHiddenAncestor)
+    XCTAssertEqual(graphPane.accessibilityLabel(), "Workflow Graph")
+    XCTAssertEqual(graphPane.canvasView.model?.workflowId, "viewer-controls")
+    let graphTexts = visibleTextFields(in: root).map(\.stringValue)
+    XCTAssertTrue(graphTexts.contains("Graph"))
+    XCTAssertTrue(graphTexts.contains { $0.hasPrefix("Legend:") })
+    let zoomInButton = try XCTUnwrap(button(accessibilityLabel: "Zoom In Graph", in: root))
+    let zoomOutButton = try XCTUnwrap(button(accessibilityLabel: "Zoom Out Graph", in: root))
+    let resetZoomButton = try XCTUnwrap(button(accessibilityLabel: "Reset Graph Zoom", in: root))
+    XCTAssertEqual(zoomInButton.title, "")
+    XCTAssertEqual(zoomOutButton.title, "")
+    XCTAssertEqual(resetZoomButton.title, "")
+    let initialZoom = graphPane.canvasView.zoomScale
+    zoomInButton.performClick(nil)
+    XCTAssertGreaterThan(graphPane.canvasView.zoomScale, initialZoom)
+    resetZoomButton.performClick(nil)
+    XCTAssertEqual(graphPane.canvasView.zoomScale, 1, accuracy: 0.01)
 
     try selectTab(named: "Variables", in: tabView)
     controller.window?.layoutIfNeeded()
 
     let visibleTexts = Set(visibleTextFields(in: root).map(\.stringValue))
-    XCTAssertTrue(visibleTexts.contains("Node Patch"))
+    XCTAssertTrue(visibleTexts.contains("Runtime Overrides"))
     XCTAssertFalse(visibleTexts.contains("Actions"))
     let variablesPopupLabels = Set(visiblePopUpButtons(in: root).compactMap { $0.accessibilityLabel() })
-    XCTAssertTrue(variablesPopupLabels.isSuperset(of: ["Session", "Model", "Backend", "Effort"]))
+    XCTAssertTrue(variablesPopupLabels.isSuperset(of: ["Session", "Model", "Backend", "Reasoning Effort"]))
     let modelOverrideRow = try XCTUnwrap(settingsGroupRow(accessibilityLabel: "Model", in: root))
     XCTAssertEqual(modelOverrideRow.alphaValue, 0.55, accuracy: 0.01)
     XCTAssertFalse(modelOverrideRow.isAccessibilityEnabled())
     XCTAssertFalse(modelOverrideRow.accessibilityHelp()?.isEmpty ?? true)
-    let nodePatchOverrideRow = try XCTUnwrap(settingsGroupRow(accessibilityLabel: "Node Patch", in: root))
+    let nodePatchOverrideRow = try XCTUnwrap(settingsGroupRow(accessibilityLabel: "Runtime Overrides", in: root))
     XCTAssertEqual(nodePatchOverrideRow.alphaValue, 0.55, accuracy: 0.01)
     XCTAssertFalse(nodePatchOverrideRow.isAccessibilityEnabled())
     XCTAssertFalse(nodePatchOverrideRow.accessibilityHelp()?.isEmpty ?? true)
@@ -642,7 +751,9 @@ final class RielaAppControllerLayoutTests: XCTestCase {
   func testSharedFlippedDocumentViewKeepsScrollContentTopAnchored() {
     XCTAssertTrue(FlippedDocumentView().isFlipped)
   }
+}
 
+private extension RielaAppControllerLayoutTests {
   private func makeController() -> DaemonWorkflowWindowController {
     DaemonWorkflowWindowController(
       onRefresh: {},
@@ -808,34 +919,6 @@ final class RielaAppControllerLayoutTests: XCTestCase {
     try encoder.encode(node).write(to: url)
   }
 
-  private func workflowSession(id: String, stepId: String, updatedAt: Date) -> WorkflowSession {
-    WorkflowSession(
-      workflowId: "viewer-select",
-      sessionId: id,
-      status: .running,
-      entryStepId: "first",
-      currentStepId: stepId,
-      createdAt: updatedAt,
-      updatedAt: updatedAt,
-      executions: [WorkflowStepExecution(
-        executionId: "exec-\(id)",
-        stepId: stepId,
-        nodeId: stepId,
-        attempt: 1,
-        status: .running,
-        createdAt: updatedAt,
-        updatedAt: updatedAt
-      )]
-    )
-  }
-
-  private func saveSessions(_ sessions: [WorkflowSession], runtimeRoot: URL) throws {
-    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot.path)
-    for session in sessions {
-      try store.save(WorkflowRuntimePersistenceSnapshot(session: session))
-    }
-  }
-
   private func scratchRoot(name: String) throws -> URL {
     let root = try repositoryRoot().appendingPathComponent("tmp", isDirectory: true)
     let scratch = root.appendingPathComponent(name, isDirectory: true)
@@ -856,6 +939,41 @@ final class RielaAppControllerLayoutTests: XCTestCase {
       code: 1,
       userInfo: [NSLocalizedDescriptionKey: "Package.swift not found"]
     )
+  }
+}
+
+private extension RielaAppControllerLayoutTests {
+  func workflowSession(
+    id: String,
+    stepId: String,
+    updatedAt: Date,
+    workflowId: String = "viewer-select"
+  ) -> WorkflowSession {
+    WorkflowSession(
+      workflowId: workflowId,
+      sessionId: id,
+      status: .running,
+      entryStepId: "first",
+      currentStepId: stepId,
+      createdAt: updatedAt,
+      updatedAt: updatedAt,
+      executions: [WorkflowStepExecution(
+        executionId: "exec-\(id)",
+        stepId: stepId,
+        nodeId: stepId,
+        attempt: 1,
+        status: .running,
+        createdAt: updatedAt,
+        updatedAt: updatedAt
+      )]
+    )
+  }
+
+  func saveSessions(_ sessions: [WorkflowSession], runtimeRoot: URL) throws {
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot.path)
+    for session in sessions {
+      try store.save(WorkflowRuntimePersistenceSnapshot(session: session))
+    }
   }
 }
 

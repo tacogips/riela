@@ -246,9 +246,11 @@ extension DaemonWorkflowWindowController {
       title: source.displayName,
       summaryLabel: summaryLabel,
       documentStack: settingsDocumentStack(views: [
+        graphPane,
+        settingsSectionCaption("Source Settings"),
         workflowSourceSummarySection(source),
-        workflowSourceActionsSection(),
-        graphPane
+        settingsSectionCaption("Manage Source"),
+        workflowSourceActionsSection()
       ])
     )
   }

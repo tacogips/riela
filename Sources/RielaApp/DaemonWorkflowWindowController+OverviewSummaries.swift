@@ -8,7 +8,7 @@ extension DaemonWorkflowWindowController {
     let assistance = state.assistant.normalizedAssistance
     assistantSummaryLabel.stringValue = assistance.isEmpty
       ? "No assistance configured"
-      : "\(assistance.count) characters configured"
+      : "Custom guidance configured"
     let profileCount = profileNames.count
     profilesSummaryLabel.stringValue = profileCount == 1 ? "1 profile" : "\(profileCount) profiles"
   }

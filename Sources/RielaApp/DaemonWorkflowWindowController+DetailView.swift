@@ -3,12 +3,6 @@ import AppKit
 
 extension DaemonWorkflowWindowController {
   func buildInstanceDetailView() -> NSView {
-    let settingsTitle = NSTextField(labelWithString: "Current Settings")
-    settingsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
-    let actionsTitle = NSTextField(labelWithString: "Manage Instance")
-    actionsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
-    let settingsTitleRow = detailHeaderRow(label: settingsTitle)
-    let actionsTitleRow = detailHeaderRow(label: actionsTitle)
     let relinkRow = actionRow(
       title: "Relink Source",
       detail: "Choose a workflow source for this saved instance.",
@@ -42,7 +36,7 @@ extension DaemonWorkflowWindowController {
     detailMissingSourceValueLabel.lineBreakMode = .byTruncatingMiddle
     detailMissingSourceValueLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     let missingSourceRow = settingRow(title: "Workflow", valueLabel: detailMissingSourceValueLabel, action: nil)
-    let statusRow = settingRow(title: "Status", valueLabel: detailStatusValueLabel, action: nil)
+    let statusRow = makeStatusSettingRow()
     let nameRow = settingRow(title: "Name", valueLabel: detailNameValueLabel, action: #selector(renameSelectedWorkflow))
     let environmentRow = settingRow(
       title: ".env File",
@@ -111,9 +105,9 @@ extension DaemonWorkflowWindowController {
 
     let stack = settingsDocumentStack(views: [
       workflowGraphPaneView,
-      settingsTitleRow,
+      settingsSectionCaption("Current Settings"),
       settingsSection,
-      actionsTitleRow,
+      settingsSectionCaption("Manage Instance"),
       actionsSection
     ])
     return overviewPane(
@@ -157,17 +151,26 @@ extension DaemonWorkflowWindowController {
     return overviewPane(title: row.instanceName, summaryLabel: summaryLabel, documentStack: stack)
   }
 
-  private func detailHeaderRow(label: NSTextField) -> NSStackView {
-    label.alignment = .left
-    label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+  private func makeStatusSettingRow() -> NSStackView {
+    let titleLabel = rielaAppSettingsTitleLabel("Status", maxWidth: 130)
+    detailStatusValueLabel.textColor = .labelColor
+    detailStatusValueLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     let spacer = NSView()
     spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    let row = NSStackView(views: [label, spacer])
+    let row = RielaAppSettingsRow(views: [
+      titleLabel,
+      detailStatusProgressIndicator,
+      detailStatusValueLabel,
+      spacer
+    ])
     row.orientation = .horizontal
-    row.alignment = .firstBaseline
     row.spacing = 8
-    row.setContentHuggingPriority(.required, for: .vertical)
-    return row
+    row.alignment = .centerY
+    row.setAccessibilityElement(true)
+    row.setAccessibilityRole(.group)
+    row.setAccessibilityLabel("Status")
+    row.setAccessibilityValue(detailStatusValueLabel.stringValue)
+    return rielaAppSettingsRow(row)
   }
 }
 #endif

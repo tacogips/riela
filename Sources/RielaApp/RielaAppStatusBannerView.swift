@@ -7,7 +7,9 @@ final class RielaAppStatusBannerView: NSView {
 
   private let iconView = NSImageView()
   private let messageLabel = NSTextField(labelWithString: "")
+  private let historyButton = NSButton(title: "", target: nil, action: nil)
   private let closeButton = NSButton(title: "", target: nil, action: nil)
+  private var history: [RielaAppStatusMessage] = []
 
   override init(frame frameRect: NSRect) {
     super.init(frame: frameRect)
@@ -17,6 +19,12 @@ final class RielaAppStatusBannerView: NSView {
     messageLabel.lineBreakMode = .byTruncatingTail
     messageLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     iconView.setAccessibilityElement(false)
+    historyButton.image = NSImage(systemSymbolName: "clock.arrow.circlepath", accessibilityDescription: nil)
+    historyButton.bezelStyle = .toolbar
+    historyButton.target = self
+    historyButton.action = #selector(showHistoryMenu)
+    historyButton.toolTip = "Show status history"
+    historyButton.setAccessibilityLabel("Show Status History")
     closeButton.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: nil)
     closeButton.bezelStyle = .toolbar
     closeButton.target = self
@@ -25,6 +33,7 @@ final class RielaAppStatusBannerView: NSView {
     closeButton.setAccessibilityLabel("Dismiss Status Message")
     addSubview(iconView)
     addSubview(messageLabel)
+    addSubview(historyButton)
     addSubview(closeButton)
   }
 
@@ -42,16 +51,21 @@ final class RielaAppStatusBannerView: NSView {
     let inset: CGFloat = 10
     iconView.frame = NSRect(x: inset, y: 10, width: 16, height: 16)
     closeButton.frame = NSRect(x: bounds.maxX - 34, y: 4, width: 28, height: 28)
+    let historyMaxX = closeButton.isHidden ? bounds.maxX - 6 : closeButton.frame.minX
+    historyButton.frame = NSRect(x: historyMaxX - 28, y: 4, width: 28, height: 28)
+    let trailingControlX = historyButton.isHidden ? historyMaxX : historyButton.frame.minX
     messageLabel.frame = NSRect(
       x: iconView.frame.maxX + 8,
       y: 8,
-      width: max(0, closeButton.frame.minX - iconView.frame.maxX - 16),
+      width: max(0, trailingControlX - iconView.frame.maxX - 16),
       height: 20
     )
   }
 
-  func configure(message: RielaAppStatusMessage) {
+  func configure(message: RielaAppStatusMessage, history: [RielaAppStatusMessage] = []) {
+    self.history = history
     messageLabel.stringValue = message.text
+    historyButton.isHidden = history.count < 2
     switch message.severity {
     case .info:
       iconView.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil)
@@ -75,6 +89,22 @@ final class RielaAppStatusBannerView: NSView {
 
   @objc private func dismiss() {
     onDismiss?()
+  }
+
+  @objc private func showHistoryMenu() {
+    let menu = NSMenu()
+    for message in history.reversed() {
+      let item = NSMenuItem(title: message.text, action: nil, keyEquivalent: "")
+      item.isEnabled = false
+      switch message.severity {
+      case .info:
+        item.image = NSImage(systemSymbolName: "checkmark.circle", accessibilityDescription: nil)
+      case .error:
+        item.image = NSImage(systemSymbolName: "exclamationmark.circle", accessibilityDescription: nil)
+      }
+      menu.addItem(item)
+    }
+    menu.popUp(positioning: nil, at: NSPoint(x: 0, y: historyButton.bounds.maxY + 2), in: historyButton)
   }
 }
 #endif

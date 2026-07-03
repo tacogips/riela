@@ -133,6 +133,10 @@ public struct RielaAppAssistantSettings: Codable, Equatable, Sendable {
       messages.removeFirst(messages.count - Self.maximumStoredMessages)
     }
   }
+
+  public mutating func clearMessages() {
+    messages.removeAll()
+  }
 }
 
 public enum RielaAppAssistantMessageRole: String, Codable, Equatable, Sendable {

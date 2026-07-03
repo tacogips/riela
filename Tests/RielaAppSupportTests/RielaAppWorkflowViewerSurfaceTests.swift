@@ -59,6 +59,61 @@ final class RielaAppWorkflowViewerSurfaceTests: XCTestCase {
     XCTAssertEqual(controller.assistantTranscriptScrollView?.isHidden, true)
   }
 
+  func testWorkflowViewerMinimumWidthKeepsAssistantUsableAtRuntime() throws {
+    let controller = WorkflowViewerWindowController()
+    controller.show(
+      workflowDirectory: "/workflows/demo",
+      sessionStoreRoot: nil,
+      assistantSettings: RielaAppAssistantSettings(
+        messages: [RielaAppAssistantMessage(role: .assistant, content: "Ready.")]
+      )
+    )
+    let window = try XCTUnwrap(controller.window)
+    window.setFrame(NSRect(origin: .zero, size: window.minSize), display: false)
+    window.layoutIfNeeded()
+
+    XCTAssertEqual(window.minSize, NSSize(width: 560, height: 380))
+    XCTAssertGreaterThanOrEqual(controller.assistantPanelHost.frame.width, 536)
+    XCTAssertGreaterThanOrEqual(controller.assistantPromptField.frame.width, 420)
+    let titleFrame = controller.assistantPanelTitleLabel.convert(
+      controller.assistantPanelTitleLabel.bounds,
+      to: controller.assistantPanelHost
+    )
+    let foldFrame = controller.assistantFoldButton.convert(
+      controller.assistantFoldButton.bounds,
+      to: controller.assistantPanelHost
+    )
+    XCTAssertLessThan(titleFrame.minX, foldFrame.minX)
+    XCTAssertGreaterThanOrEqual(foldFrame.maxX, controller.assistantPanelHost.bounds.width - 60)
+  }
+
+  func testWorkflowViewerAssistantClearButtonReflectsPersistedMessages() throws {
+    let controller = WorkflowViewerWindowController()
+    controller.show(
+      workflowDirectory: "/workflows/demo",
+      sessionStoreRoot: nil,
+      assistantSettings: RielaAppAssistantSettings(
+        messages: [RielaAppAssistantMessage(role: .assistant, content: "Old context.")]
+      ),
+      onSaveAssistantSettings: { _ in nil }
+    )
+    controller.window?.layoutIfNeeded()
+
+    let root = try XCTUnwrap(controller.window?.contentView)
+    let clearButton = try XCTUnwrap(
+      allSubviews(of: NSButton.self, in: root).first { $0.accessibilityLabel() == "Clear Assistant History" }
+    )
+
+    XCTAssertTrue(clearButton.isEnabled)
+
+    controller.updateAssistantPanel(
+      settings: RielaAppAssistantSettings(messages: []),
+      profileName: RielaAppProfileName("work")
+    )
+
+    XCTAssertFalse(clearButton.isEnabled)
+  }
+
   private func assertVisibleTextScrollsAreGrouped(in root: NSView, minimumCount: Int) throws {
     let scrolls = allSubviews(of: NSScrollView.self, in: root).filter { scroll in
       !hasHiddenAncestor(scroll) && scroll.documentView is NSTextView

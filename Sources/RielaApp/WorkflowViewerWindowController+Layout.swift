@@ -22,6 +22,8 @@ extension WorkflowViewerWindowController {
       rootStack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
       rootStack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
       rootStack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+      splitView.widthAnchor.constraint(equalTo: rootStack.widthAnchor),
+      assistantPanelHost.widthAnchor.constraint(equalTo: rootStack.widthAnchor),
       splitView.heightAnchor.constraint(greaterThanOrEqualToConstant: 240),
       assistantPanel.topAnchor.constraint(equalTo: assistantPanelHost.topAnchor),
       assistantPanel.leadingAnchor.constraint(equalTo: assistantPanelHost.leadingAnchor, constant: 12),
@@ -67,6 +69,53 @@ extension WorkflowViewerWindowController {
     item.label = label
     item.view = view
     return item
+  }
+
+  func graphTabView() -> NSView {
+    let container = NSView()
+    workflowGraphPaneView.translatesAutoresizingMaskIntoConstraints = false
+    container.addSubview(workflowGraphPaneView)
+    NSLayoutConstraint.activate([
+      workflowGraphPaneView.topAnchor.constraint(equalTo: container.topAnchor),
+      workflowGraphPaneView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+      workflowGraphPaneView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+      workflowGraphPaneView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+    ])
+    return container
+  }
+
+  func managerResponseBarView() -> NSView {
+    managerResponseBanner.orientation = .horizontal
+    managerResponseBanner.alignment = .centerY
+    managerResponseBanner.spacing = 8
+    managerResponseBanner.edgeInsets = NSEdgeInsets(top: 8, left: 10, bottom: 8, right: 10)
+    managerResponseBanner.wantsLayer = true
+    managerResponseBanner.layer?.cornerRadius = 8
+    managerResponseBanner.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.12).cgColor
+    managerResponseBanner.isHidden = true
+    managerResponseBanner.translatesAutoresizingMaskIntoConstraints = false
+
+    managerResponseLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+    managerResponseLabel.textColor = .labelColor
+    managerResponseLabel.lineBreakMode = .byTruncatingMiddle
+    managerResponseLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    managerResponseStatusLabel.font = .systemFont(ofSize: 11)
+    managerResponseStatusLabel.textColor = .secondaryLabelColor
+    managerResponseStatusLabel.lineBreakMode = .byTruncatingTail
+    managerResponseStatusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+    managerRespondButton.target = self
+    managerRespondButton.action = #selector(respondToManager)
+    managerRespondButton.bezelStyle = .rounded
+    managerRespondButton.setAccessibilityLabel("Respond to Workflow Run")
+
+    let spacer = NSView()
+    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    managerResponseBanner.addArrangedSubview(managerResponseLabel)
+    managerResponseBanner.addArrangedSubview(managerResponseStatusLabel)
+    managerResponseBanner.addArrangedSubview(spacer)
+    managerResponseBanner.addArrangedSubview(managerRespondButton)
+    return managerResponseBanner
   }
 
   func applyPreferredHeight(_ height: CGFloat, to view: NSView) {

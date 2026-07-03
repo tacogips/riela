@@ -30,6 +30,7 @@ extension RielaApp {
       menu.addItem(supplementaryMenuItem(line))
     }
     menu.addItem(.separator())
+    menu.addItem(menuItem("About Riela", action: #selector(showAboutPanel)))
     menu.addItem(menuItem("Quit", action: #selector(quitFromStatusMenu)))
     statusItem.menu = menu
   }
@@ -67,6 +68,10 @@ extension RielaApp {
       return failed
     }
     return Array(failed.prefix(3)) + ["+\(failed.count - 3) more failing"]
+  }
+
+  @objc private func showAboutPanel() {
+    NSApplication.shared.orderFrontStandardAboutPanel(nil)
   }
 
   @objc private func quitFromStatusMenu() {

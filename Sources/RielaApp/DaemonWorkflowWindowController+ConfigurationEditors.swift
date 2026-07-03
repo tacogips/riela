@@ -12,18 +12,26 @@ extension DaemonWorkflowWindowController {
     activeConfigurationEditorTargets = []
     let textView = configurationTextView(text: environmentText(from: row.preference.environmentVariables))
     inlineEnvironmentTextView = textView
+    resetConfigurationEditorDirtyState()
     showConfigurationEditor(
       title: "Environment Variables",
-      message: "Inline values override matching values from the selected .env file.",
+      message: configurationEditorMessage(
+        "Inline values override matching values from the selected .env file.",
+        row: row
+      ),
       bodyViews: [
         effectiveEnvironmentView(values: configuredEnvironmentValues(candidate)),
-        labeledEditor(
-          title: "Inline Environment",
-          caption: "Values entered here are stored in this profile's instance state on disk.",
+        lineEditorSection(
+          title: "Variable Settings",
+          currentLinesTitle: "Current Lines",
+          currentLines: lineCountText(textView.string),
+          editorTitle: "Inline Environment",
+          caption: "Use KEY=value lines. Values entered here are stored in this profile's instance state on disk.",
+          placeholder: "OPENAI_API_KEY=...\nDISCORD_BOT_TOKEN=...",
           textView: textView
         )
       ],
-      primaryTitle: "Save",
+      primaryTitle: configurationEditorPrimaryTitle(defaultTitle: "Save", row: row),
       primaryAction: #selector(saveInlineEnvironmentEditor)
     )
   }
@@ -36,13 +44,25 @@ extension DaemonWorkflowWindowController {
     activeConfigurationEditorTargets = []
     let textView = configurationTextView(text: workflowVariablesText(from: row.preference.defaultVariables))
     workflowVariablesTextView = textView
+    resetConfigurationEditorDirtyState()
     showConfigurationEditor(
       title: "Workflow Variables",
-      message: "These values are passed as the final default variables for this instance.",
+      message: configurationEditorMessage(
+        "These values are passed as the final default variables for this instance.",
+        row: row
+      ),
       bodyViews: [
-        labeledEditor(title: "Effective Workflow Variables", textView: textView)
+        lineEditorSection(
+          title: "Variable Settings",
+          currentLinesTitle: "Current Lines",
+          currentLines: lineCountText(textView.string),
+          editorTitle: "Effective Workflow Variables",
+          caption: "Use KEY=value for strings or KEY:={\"json\":true} for JSON values.",
+          placeholder: "topic=release notes\nlimits:={\"max\":5}",
+          textView: textView
+        )
       ],
-      primaryTitle: "Save",
+      primaryTitle: configurationEditorPrimaryTitle(defaultTitle: "Save", row: row),
       primaryAction: #selector(saveWorkflowVariablesEditor)
     )
   }
@@ -63,9 +83,12 @@ extension DaemonWorkflowWindowController {
     let kindPopup = NSPopUpButton()
     kindPopup.addItems(withTitles: RielaAppDaemonWorkflowDiscovery.daemonSourceKinds())
     kindPopup.selectItem(withTitle: "telegram-gateway")
+    kindPopup.target = self
+    kindPopup.action = #selector(eventSourceFormValueChanged)
     eventSourceKindPopup = kindPopup
     let sourceIdField = NSTextField(string: defaultEventSourceId(for: candidate))
     sourceIdField.bezelStyle = .roundedBezel
+    sourceIdField.delegate = self
     eventSourceIdField = sourceIdField
     let hint = NSTextField(labelWithString: "telegram-gateway receives Telegram messages; requires TELEGRAM_BOT_TOKEN in this instance's environment.")
     hint.textColor = .secondaryLabelColor
@@ -90,21 +113,28 @@ extension DaemonWorkflowWindowController {
     jsonStack.spacing = 12
     jsonStack.isHidden = true
     eventSourceJSONView = jsonStack
+    resetConfigurationEditorDirtyState()
     showConfigurationEditor(
       title: "Event Sources",
-      message: "Register a source and binding under this workflow's .riela-events directory.",
+      message: configurationEditorMessage(
+        "Register a source and binding under this workflow's .riela-events directory.",
+        row: row
+      ),
       bodyViews: [
         modeControl,
         eventSourceSummaryView(candidate: candidate),
         formRows,
         jsonStack
       ],
-      primaryTitle: "Register",
+      primaryTitle: configurationEditorPrimaryTitle(defaultTitle: "Register", row: row),
       primaryAction: #selector(saveEventSourceEditor)
     )
   }
 
   @objc func cancelConfigurationEditor() {
+    guard dismissConfigurationEditorOrWarn() else {
+      return
+    }
     activeConfigurationEditorTargets = []
     showInstanceDetailOverview()
   }
@@ -117,6 +147,7 @@ extension DaemonWorkflowWindowController {
       showEditorError(error)
       return
     }
+    clearConfigurationEditorDirtyState()
     activeConfigurationEditorTargets = []
     showInstanceDetailOverview()
   }
@@ -129,6 +160,7 @@ extension DaemonWorkflowWindowController {
       showEditorError(error)
       return
     }
+    clearConfigurationEditorDirtyState()
     activeConfigurationEditorTargets = []
     showInstanceDetailOverview()
   }
@@ -144,6 +176,7 @@ extension DaemonWorkflowWindowController {
       showEditorError(error)
       return
     }
+    clearConfigurationEditorDirtyState()
     activeConfigurationEditorTargets = []
     showInstanceDetailOverview()
   }
@@ -156,8 +189,26 @@ extension DaemonWorkflowWindowController {
     if usesJSON {
       syncEventSourceJSONFromForm()
     }
+    configurationEditorDiscardArmed = false
     eventSourceFormView?.isHidden = usesJSON
     eventSourceJSONView?.isHidden = !usesJSON
+  }
+
+  @objc func eventSourceFormValueChanged() {
+    configurationEditorDiscardArmed = false
+  }
+
+  func textDidChange(_ notification: Notification) {
+    guard let textView = notification.object as? NSTextView else {
+      return
+    }
+    if textView === inlineEnvironmentTextView {
+      configurationEditorDiscardArmed = false
+      showLiveLineValidation(for: textView.string, allowsJSONAssignment: false)
+    } else if textView === workflowVariablesTextView {
+      configurationEditorDiscardArmed = false
+      showLiveLineValidation(for: textView.string, allowsJSONAssignment: true)
+    }
   }
 
   private func selectedRowForEditor() -> ConfiguredWorkflowInstanceRow? {
@@ -170,6 +221,69 @@ extension DaemonWorkflowWindowController {
       return nil
     }
     return rows[row]
+  }
+
+  private func configurationEditorMessage(_ message: String, row: ConfiguredWorkflowInstanceRow) -> String {
+    guard row.preference.available, row.preference.active else {
+      return message
+    }
+    return "\(message) Saving while this instance is active restarts its workflow process."
+  }
+
+  private func configurationEditorPrimaryTitle(defaultTitle: String, row: ConfiguredWorkflowInstanceRow) -> String {
+    guard row.preference.available, row.preference.active else {
+      return defaultTitle
+    }
+    return "\(defaultTitle) & Restart Instance"
+  }
+
+  func dismissConfigurationEditorOrWarn() -> Bool {
+    guard configurationEditorHasUnsavedChanges() else {
+      clearConfigurationEditorDirtyState()
+      return true
+    }
+    guard configurationEditorDiscardArmed else {
+      configurationEditorDiscardArmed = true
+      configurationEditorStatusLabel?.textColor = .systemRed
+      configurationEditorStatusLabel?.stringValue =
+        "Unsaved changes. Press again to discard them, or save to keep your edits."
+      return false
+    }
+    clearConfigurationEditorDirtyState()
+    return true
+  }
+
+  private func resetConfigurationEditorDirtyState() {
+    configurationEditorInitialSignature = currentConfigurationEditorSignature()
+    configurationEditorDiscardArmed = false
+  }
+
+  private func clearConfigurationEditorDirtyState() {
+    configurationEditorInitialSignature = nil
+    configurationEditorDiscardArmed = false
+  }
+
+  private func configurationEditorHasUnsavedChanges() -> Bool {
+    guard let configurationEditorInitialSignature else {
+      return false
+    }
+    return currentConfigurationEditorSignature() != configurationEditorInitialSignature
+  }
+
+  private func currentConfigurationEditorSignature() -> String? {
+    switch instanceDetailPane {
+    case .inlineEnvironment:
+      inlineEnvironmentTextView?.string
+    case .workflowVariables:
+      workflowVariablesTextView?.string
+    case .eventSources:
+      [
+        currentEventSourceJSON() ?? "",
+        currentEventBindingJSON() ?? ""
+      ].joined(separator: "\n---binding---\n")
+    case .overview, .removalConfirmation:
+      nil
+    }
   }
 
   private func showConfigurationEditor(
@@ -298,15 +412,85 @@ extension DaemonWorkflowWindowController {
     return stack
   }
 
+  private func lineEditorSection(
+    title: String,
+    currentLinesTitle: String,
+    currentLines: String,
+    editorTitle: String,
+    caption: String,
+    placeholder: String,
+    textView: NSTextView
+  ) -> NSView {
+    let currentLinesLabel = NSTextField(labelWithString: currentLines)
+    currentLinesLabel.lineBreakMode = .byTruncatingTail
+    let placeholderLabel = NSTextField(labelWithString: placeholder)
+    placeholderLabel.textColor = .placeholderTextColor
+    placeholderLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+    placeholderLabel.lineBreakMode = .byWordWrapping
+    placeholderLabel.maximumNumberOfLines = 3
+    placeholderLabel.isHidden = !textView.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    let editor = labeledEditor(title: editorTitle, caption: caption, textView: textView)
+    let section = rielaAppSettingsSection(rows: [
+      settingRow(title: currentLinesTitle, valueLabel: currentLinesLabel, action: nil)
+    ])
+    let stack = NSStackView(views: [
+      settingsSectionCaption(title),
+      section,
+      placeholderLabel,
+      editor
+    ])
+    stack.orientation = .vertical
+    stack.alignment = .width
+    stack.spacing = 8
+    return stack
+  }
+
   private func configurationTextView(text: String) -> NSTextView {
-    let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 520, height: 190))
+    let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 190))
     textView.isRichText = false
     textView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
     textView.textColor = .labelColor
     textView.backgroundColor = .controlBackgroundColor
     textView.drawsBackground = true
     textView.string = text
+    textView.minSize = NSSize(width: 0, height: 0)
+    textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+    textView.isHorizontallyResizable = false
+    textView.isVerticallyResizable = true
+    textView.autoresizingMask = [.width]
+    textView.delegate = self
     return textView
+  }
+
+  private func lineCountText(_ text: String) -> String {
+    let count = text
+      .split(whereSeparator: \.isNewline)
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+      .count
+    return count == 1 ? "1 line" : "\(count) lines"
+  }
+
+  private func showLiveLineValidation(for text: String, allowsJSONAssignment: Bool) {
+    let lines = text
+      .split(whereSeparator: \.isNewline)
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    let invalidLineNumber = lines.firstIndex { line in
+        guard !line.isEmpty else {
+          return false
+        }
+        if allowsJSONAssignment, line.contains(":=") {
+          return false
+        }
+        return !line.contains("=")
+      }
+      .map { $0 + 1 }
+    if let invalidLineNumber {
+      configurationEditorStatusLabel?.textColor = .systemRed
+      configurationEditorStatusLabel?.stringValue = "Check line \(invalidLineNumber): use KEY=value."
+    } else {
+      configurationEditorStatusLabel?.stringValue = ""
+    }
   }
 
   private func effectiveEnvironmentView(values: [RielaAppConfiguredEnvironmentValue]) -> NSView {

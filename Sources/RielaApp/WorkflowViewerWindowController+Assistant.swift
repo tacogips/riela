@@ -13,7 +13,7 @@ extension WorkflowViewerWindowController {
     configureAssistantControls()
     let container = NSView()
     RielaAssistantMiniChatStyle.configurePanelContainer(container)
-    RielaAssistantMiniChatStyle.configureHeaderLabels(
+    let titleStack = RielaAssistantMiniChatStyle.makeTitleStack(
       title: assistantPanelTitleLabel,
       availability: assistantAvailabilityLabel,
       context: assistantContextLabel
@@ -26,44 +26,18 @@ extension WorkflowViewerWindowController {
     RielaAssistantMiniChatStyle.configureTranscriptScroll(transcriptScroll, transcript: transcript)
     assistantTranscriptScrollView = transcriptScroll
 
-    let titleStack = NSStackView(views: [
-      assistantPanelTitleLabel,
-      assistantAvailabilityLabel,
-      assistantContextLabel
-    ])
-    titleStack.orientation = .vertical
-    titleStack.alignment = .leading
-    titleStack.spacing = 1
-    titleStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-    let controls = NSStackView(views: [
-      titleStack,
+    let controls = RielaAssistantMiniChatStyle.makeHeaderStack(titleStack: titleStack, trailingControls: [
+      assistantClearButton,
       assistantFoldButton
     ])
-    controls.orientation = .horizontal
-    controls.alignment = .centerY
-    controls.spacing = 8
-    controls.translatesAutoresizingMaskIntoConstraints = false
-    let input = NSStackView(views: [assistantPromptField, assistantSendButton])
-    RielaAssistantMiniChatStyle.configureInputStack(input)
+    let input = RielaAssistantMiniChatStyle.makeInputStack(
+      promptField: assistantPromptField,
+      sendButton: assistantSendButton
+    )
     assistantInputStackView = input
-    assistantPromptField.heightAnchor.constraint(equalToConstant: 26).isActive = true
-    assistantSendButton.widthAnchor.constraint(equalToConstant: 30).isActive = true
-    assistantSendButton.heightAnchor.constraint(equalToConstant: 30).isActive = true
 
-    let panelStack = NSStackView(views: [controls, transcriptScroll, input])
-    panelStack.orientation = .vertical
-    panelStack.alignment = .width
-    panelStack.spacing = 8
-    panelStack.translatesAutoresizingMaskIntoConstraints = false
-    container.addSubview(panelStack)
-    NSLayoutConstraint.activate([
-      panelStack.topAnchor.constraint(equalTo: container.topAnchor, constant: RielaAssistantMiniChatStyle.verticalInset),
-      panelStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: RielaAssistantMiniChatStyle.horizontalInset),
-      panelStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -RielaAssistantMiniChatStyle.horizontalInset),
-      panelStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -RielaAssistantMiniChatStyle.verticalInset),
-      input.heightAnchor.constraint(equalToConstant: RielaAssistantMiniChatStyle.inputHeight)
-    ])
+    let panelStack = RielaAssistantMiniChatStyle.makePanelStack(header: controls, transcriptScroll: transcriptScroll, input: input)
+    RielaAssistantMiniChatStyle.installPanelStack(panelStack, input: input, in: container)
     return container
   }
 
@@ -89,6 +63,8 @@ extension WorkflowViewerWindowController {
     )
     assistantFoldButton.toolTip = settings.isFolded ? "Open assistant" : "Fold assistant"
     assistantFoldButton.setAccessibilityLabel(settings.isFolded ? "Open Assistant" : "Fold Assistant")
+    assistantClearButton.isEnabled = !settings.messages.isEmpty
+    assistantClearButton.isHidden = settings.isFolded
     assistantAvailabilityLabel.stringValue = ""
     assistantPanelHeightConstraint?.constant = settings.isFolded
       ? AssistantLayout.foldedHeight
@@ -99,6 +75,24 @@ extension WorkflowViewerWindowController {
   @objc func toggleAssistantFolded() {
     var settings = assistantSettings
     settings.isFolded.toggle()
+    saveAssistantSettings(settings)
+  }
+
+  @objc func clearAssistantMessages() {
+    guard !assistantSettings.messages.isEmpty else {
+      return
+    }
+    let alert = NSAlert()
+    alert.messageText = "Clear Assistant History?"
+    alert.informativeText = "This removes the saved assistant transcript for this profile."
+    alert.alertStyle = .warning
+    alert.addButton(withTitle: "Clear")
+    alert.addButton(withTitle: "Cancel")
+    guard alert.runModal() == .alertFirstButtonReturn else {
+      return
+    }
+    var settings = assistantSettings
+    settings.clearMessages()
     saveAssistantSettings(settings)
   }
 
@@ -115,6 +109,14 @@ extension WorkflowViewerWindowController {
     assistantFoldButton.target = self
     assistantFoldButton.action = #selector(toggleAssistantFolded)
     RielaAssistantMiniChatStyle.configureFoldButton(assistantFoldButton)
+
+    assistantClearButton.target = self
+    assistantClearButton.action = #selector(clearAssistantMessages)
+    assistantClearButton.image = NSImage(systemSymbolName: "trash", accessibilityDescription: nil)
+    assistantClearButton.bezelStyle = .toolbar
+    assistantClearButton.isBordered = false
+    assistantClearButton.toolTip = "Clear assistant history"
+    assistantClearButton.setAccessibilityLabel("Clear Assistant History")
 
     assistantPromptField.target = self
     assistantPromptField.action = #selector(sendAssistantMessage)

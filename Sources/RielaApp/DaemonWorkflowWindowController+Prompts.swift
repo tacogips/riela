@@ -2,196 +2,6 @@
 import AppKit
 import RielaAppSupport
 
-@MainActor
-final class WorkflowSourceSelectionTarget: NSObject {
-  private var checkmarks: [NSImageView] = []
-  private var rowTargets: [WorkflowSourceSelectionRowTarget] = []
-  private let onConfirm: (() -> Void)?
-  private(set) var selectedIndex = 0
-
-  init(onConfirm: (() -> Void)? = nil) {
-    self.onConfirm = onConfirm
-  }
-
-  func attach(checkmarks: [NSImageView], rowTargets: [WorkflowSourceSelectionRowTarget]) {
-    self.checkmarks = checkmarks
-    self.rowTargets = rowTargets
-    updateSelection(index: selectedIndex)
-  }
-
-  func updateSelection(index: Int, confirm: Bool = false) {
-    selectedIndex = max(0, min(index, checkmarks.count - 1))
-    for (checkmarkIndex, checkmark) in checkmarks.enumerated() {
-      checkmark.isHidden = checkmarkIndex != selectedIndex
-    }
-    if confirm {
-      onConfirm?()
-    }
-  }
-}
-
-@MainActor
-private final class AddInstancePathFieldTarget: NSObject, NSTextFieldDelegate {
-  let field: NSTextField
-  let caption = NSTextField(labelWithString: "")
-  private let choosesDirectories: Bool
-
-  init(field: NSTextField, choosesDirectories: Bool) {
-    self.field = field
-    self.choosesDirectories = choosesDirectories
-    super.init()
-    field.delegate = self
-    caption.textColor = .systemRed
-    caption.font = .systemFont(ofSize: 11)
-    caption.isHidden = true
-  }
-
-  func controlTextDidChange(_ obj: Notification) {
-    updateCaption()
-  }
-
-  @objc func browse() {
-    let panel = NSOpenPanel()
-    panel.canChooseFiles = !choosesDirectories
-    panel.canChooseDirectories = choosesDirectories
-    panel.allowsMultipleSelection = false
-    guard panel.runModal() == .OK, let url = panel.url else {
-      return
-    }
-    field.stringValue = url.path
-    updateCaption()
-  }
-
-  private func updateCaption() {
-    let path = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-    caption.isHidden = path.isEmpty || FileManager.default.fileExists(atPath: path)
-    caption.stringValue = caption.isHidden ? "" : "File not found"
-  }
-}
-
-@MainActor
-final class WorkflowSourceSelectionRowTarget: NSObject {
-  private weak var selectionTarget: WorkflowSourceSelectionTarget?
-  private let index: Int
-
-  init(selectionTarget: WorkflowSourceSelectionTarget, index: Int) {
-    self.selectionTarget = selectionTarget
-    self.index = index
-  }
-
-  @objc func select() {
-    selectionTarget?.updateSelection(index: index, confirm: true)
-  }
-}
-
-@MainActor
-private struct WorkflowSourceOptionRow {
-  var row: NSStackView
-  var checkmark: NSImageView
-  var rowTarget: WorkflowSourceSelectionRowTarget
-}
-
-@MainActor
-enum AddInstancePromptLayout {
-  static let windowWidth: CGFloat = 560
-  static let relinkSize = NSSize(width: windowWidth, height: 360)
-  static let workflowSelectionSize = NSSize(width: windowWidth, height: 500)
-  static let parameterSize = NSSize(width: windowWidth, height: 440)
-  static let parameterRowsPreferredHeight: CGFloat = 280
-}
-
-@MainActor
-private final class AddInstancePromptModalTarget: NSObject, NSWindowDelegate {
-  weak var window: NSWindow?
-  private var hasStoppedModal = false
-
-  @objc func confirm() {
-    stop(with: .OK)
-  }
-
-  @objc func cancel() {
-    stop(with: .cancel)
-  }
-
-  func windowWillClose(_ notification: Notification) {
-    stop(with: .cancel)
-  }
-
-  private func stop(with response: NSApplication.ModalResponse) {
-    guard !hasStoppedModal else {
-      return
-    }
-    hasStoppedModal = true
-    window?.orderOut(nil)
-    NSApp.stopModal(withCode: response)
-  }
-}
-
-@MainActor
-struct AddInstancePromptViewFactory {
-  func accessoryStack(views: [NSView], size: NSSize) -> NSStackView {
-    let stack = NSStackView(views: views)
-    stack.orientation = .vertical
-    stack.alignment = .leading
-    stack.spacing = 10
-    stack.frame = NSRect(origin: .zero, size: size)
-    stack.widthAnchor.constraint(lessThanOrEqualToConstant: size.width).isActive = true
-    return stack
-  }
-
-  func scrollingParameterStack(title: NSTextField, rows: [NSView]) -> NSStackView {
-    let rowsStack = NSStackView(views: rows)
-    rowsStack.orientation = .vertical
-    rowsStack.alignment = .width
-    rowsStack.spacing = 8
-    rowsStack.translatesAutoresizingMaskIntoConstraints = false
-
-    let document = FlippedDocumentView()
-    document.translatesAutoresizingMaskIntoConstraints = false
-    document.addSubview(rowsStack)
-
-    let scroll = NSScrollView()
-    scroll.documentView = document
-    scroll.hasVerticalScroller = true
-    scroll.hasHorizontalScroller = false
-    scroll.borderType = .noBorder
-    scroll.translatesAutoresizingMaskIntoConstraints = false
-    scroll.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
-    let preferredHeight = scroll.heightAnchor.constraint(equalToConstant: AddInstancePromptLayout.parameterRowsPreferredHeight)
-    preferredHeight.priority = .defaultLow
-    preferredHeight.isActive = true
-
-    NSLayoutConstraint.activate([
-      rowsStack.leadingAnchor.constraint(equalTo: document.leadingAnchor),
-      rowsStack.trailingAnchor.constraint(equalTo: document.trailingAnchor),
-      rowsStack.topAnchor.constraint(equalTo: document.topAnchor),
-      rowsStack.bottomAnchor.constraint(equalTo: document.bottomAnchor),
-      rowsStack.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor)
-    ])
-
-    return accessoryStack(
-      views: [title, scroll],
-      size: AddInstancePromptLayout.parameterSize
-    )
-  }
-
-  func emptyWorkflowSelectionStack(message: String, sourceActions: NSView, size: NSSize) -> NSStackView {
-    let emptyLabel = NSTextField(labelWithString: message)
-    emptyLabel.textColor = .secondaryLabelColor
-    emptyLabel.alignment = .center
-    emptyLabel.lineBreakMode = .byWordWrapping
-    emptyLabel.maximumNumberOfLines = 2
-    emptyLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    emptyLabel.setAccessibilityLabel(message)
-
-    let sourceActionsTitle = NSTextField(labelWithString: "Manage Sources")
-    sourceActionsTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
-    sourceActionsTitle.alignment = .left
-
-    return accessoryStack(views: [emptyLabel, sourceActionsTitle, sourceActions], size: size)
-  }
-}
-
 extension DaemonWorkflowWindowController {
   @objc func addDirectory() {
     onAddDirectory()
@@ -245,6 +55,10 @@ extension DaemonWorkflowWindowController {
   }
 
   func controlTextDidChange(_ notification: Notification) {
+    if notification.object as? NSTextField === eventSourceIdField {
+      eventSourceFormValueChanged()
+      return
+    }
     if notification.object as? NSSearchField === inlineAddInstanceSearchField,
       isShowingAddInstanceSelection {
       rebuildInlineAddInstanceSelectionForSearch()
@@ -363,6 +177,7 @@ extension DaemonWorkflowWindowController {
       option.candidate.displayName,
       option.candidate.workflowId,
       option.candidate.sourceDescription,
+      requiredEnvironmentSummary(for: option.candidate),
       option.environmentStatus,
       option.location
     ].joined(separator: " ")
@@ -394,7 +209,7 @@ extension DaemonWorkflowWindowController {
       ),
       actionRow(
         title: "Import from URL",
-        detail: "Add a workflow or package directory from a GitHub URL.",
+        detail: "Add a workflow or package directory from a GitHub tree URL.",
         action: #selector(addURL)
       )
     ])
@@ -437,10 +252,14 @@ extension DaemonWorkflowWindowController {
     return scroll
   }
 
-  func promptForRelinkSourceOption(_ options: [WorkflowSourceOption]) -> WorkflowSourceSelection {
+  func promptForRelinkSourceOption(
+    _ options: [WorkflowSourceOption],
+    retryMessage: String? = nil
+  ) -> WorkflowSourceSelection {
     guard !options.isEmpty else {
+      let emptyMessage = retryMessage ?? "No workflows. Import a workflow or package source."
       let stack = AddInstancePromptViewFactory().emptyWorkflowSelectionStack(
-        message: "No workflows. Import a workflow or package source.",
+        message: emptyMessage,
         sourceActions: sourceActionStack(context: .relink),
         size: AddInstancePromptLayout.relinkSize
       )
@@ -452,8 +271,8 @@ extension DaemonWorkflowWindowController {
         contentSize: AddInstancePromptLayout.relinkSize,
         primaryTitle: nil
       )
-      if handlePendingAddInstanceSheetAction() {
-        return .retry
+      if let action = handlePendingAddInstanceSheetAction() {
+        return .retry(relinkRetryMessage(for: action))
       }
       return .cancelled
     }
@@ -462,10 +281,19 @@ extension DaemonWorkflowWindowController {
       self.activeAddInstanceWindow?.orderOut(nil)
       NSApp.stopModal(withCode: .OK)
     }
+    var views: [NSView] = []
+    if let retryMessage {
+      let messageLabel = NSTextField(labelWithString: retryMessage)
+      messageLabel.textColor = .secondaryLabelColor
+      messageLabel.font = .systemFont(ofSize: NSFont.systemFontSize)
+      messageLabel.lineBreakMode = .byWordWrapping
+      messageLabel.maximumNumberOfLines = 2
+      messageLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+      views.append(messageLabel)
+    }
+    views.append(sourceSelection.stack)
     let stack = AddInstancePromptViewFactory().accessoryStack(
-      views: [
-        sourceSelection.stack
-      ],
+      views: views,
       size: AddInstancePromptLayout.relinkSize
     )
 
@@ -486,22 +314,22 @@ extension DaemonWorkflowWindowController {
 
   private func promptForInstanceParameters(sourceOption option: WorkflowSourceOption) -> DaemonWorkflowAddInstanceRequest? {
     let generatedId = defaultInstanceId(option.sourceIdentity)
-    let idField = NSTextField(string: "")
-    idField.placeholderString = generatedId.isEmpty ? "instance-id" : generatedId
+    let idField = NSTextField(string: generatedId)
+    idField.placeholderString = "instance-id"
     let nameField = NSTextField(string: option.candidate.displayName)
     nameField.placeholderString = "Display name"
     let envField = NSTextField(string: "")
-    envField.placeholderString = "Optional .env path"
+    envField.placeholderString = "Optional /path/to/.env"
     let directoryField = NSTextField(string: option.candidate.workingDirectory)
     directoryField.placeholderString = "Optional working directory"
     [idField, nameField, envField, directoryField].forEach(configureAddInstanceTextField)
     let envTarget = AddInstancePathFieldTarget(field: envField, choosesDirectories: false)
     let directoryTarget = AddInstancePathFieldTarget(field: directoryField, choosesDirectories: true)
     activeAddInstancePathTargets = [envTarget, directoryTarget]
-    let startCheckbox = NSButton(checkboxWithTitle: "Start immediately", target: nil, action: nil)
+    let startCheckbox = NSButton(checkboxWithTitle: "Start immediately after creating", target: nil, action: nil)
     startCheckbox.state = .on
     startCheckbox.setAccessibilityLabel("Start immediately")
-    startCheckbox.setAccessibilityHelp("Start this instance immediately after creating it.")
+    startCheckbox.setAccessibilityHelp("Create the instance and start its workflow process immediately.")
     startCheckbox.setContentHuggingPriority(.required, for: .horizontal)
     let parameterTitle = NSTextField(labelWithString: "Configure Instance")
     parameterTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
@@ -510,7 +338,9 @@ extension DaemonWorkflowWindowController {
     workflowValue.lineBreakMode = .byTruncatingMiddle
     workflowValue.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     let helperLabel = NSTextField(
-      labelWithString: generatedId.isEmpty ? "Leave empty to use a generated instance ID." : "Leave empty to use \(generatedId)."
+      labelWithString: generatedId.isEmpty
+        ? "Use a stable lowercase ID for this instance."
+        : "Generated from the source name. Edit it before creating if needed."
     )
     helperLabel.textColor = .secondaryLabelColor
     helperLabel.font = .systemFont(ofSize: 11)
@@ -524,11 +354,12 @@ extension DaemonWorkflowWindowController {
       addInstanceValueRow(title: "Workflow", valueLabel: workflowValue)
     ]
     if !option.candidate.requiredEnvironment.isEmpty {
-      let required = option.candidate.requiredEnvironment.map(\.name).sorted().joined(separator: ", ")
+      let required = requiredEnvironmentChecklistText(for: option.candidate)
       let requiredLabel = NSTextField(labelWithString: required)
-      requiredLabel.lineBreakMode = .byTruncatingMiddle
+      requiredLabel.lineBreakMode = .byWordWrapping
+      requiredLabel.maximumNumberOfLines = 6
       requiredLabel.toolTip = required
-      rows.append(addInstanceValueRow(title: "Required Env", valueLabel: requiredLabel))
+      rows.append(addInstanceValueRow(title: "Required Environment", valueLabel: requiredLabel))
     }
     rows.append(contentsOf: [
       addInstanceFieldRow(title: "Instance ID", control: idStack),
@@ -585,9 +416,9 @@ extension DaemonWorkflowWindowController {
   }
 
   @discardableResult
-  private func handlePendingAddInstanceSheetAction() -> Bool {
+  private func handlePendingAddInstanceSheetAction() -> AddInstanceSheetAction? {
     guard let pendingAddInstanceSheetAction else {
-      return false
+      return nil
     }
     self.pendingAddInstanceSheetAction = nil
     switch pendingAddInstanceSheetAction {
@@ -596,7 +427,16 @@ extension DaemonWorkflowWindowController {
     case .importWorkflowOrPackageFromURL:
       addURL()
     }
-    return true
+    return pendingAddInstanceSheetAction
+  }
+
+  private func relinkRetryMessage(for action: AddInstanceSheetAction) -> String {
+    switch action {
+    case .importWorkflowOrPackageFromFile:
+      return "Imported source. Select it below to relink this instance."
+    case .importWorkflowOrPackageFromURL:
+      return "Import requested. When the source appears below, select it to relink this instance."
+    }
   }
 
   @objc private func importWorkflowOrPackageFromAddInstanceSheet() {
@@ -646,12 +486,22 @@ extension DaemonWorkflowWindowController {
   private func addInstanceToggleRow(title: String, checkbox: NSButton) -> NSStackView {
     let titleLabel = rielaAppSettingsTitleLabel(title, maxWidth: 145)
     titleLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+    let helperLabel = NSTextField(labelWithString: "Turn this off to configure secrets or paths before any process starts.")
+    helperLabel.textColor = .secondaryLabelColor
+    helperLabel.font = .systemFont(ofSize: 11)
+    helperLabel.lineBreakMode = .byWordWrapping
+    helperLabel.maximumNumberOfLines = 2
+    let checkboxStack = NSStackView(views: [checkbox, helperLabel])
+    checkboxStack.orientation = .vertical
+    checkboxStack.alignment = .leading
+    checkboxStack.spacing = 4
+    checkboxStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     let spacer = NSView()
     spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    let row = RielaAppSettingsRow(views: [titleLabel, spacer, checkbox])
+    let row = RielaAppSettingsRow(views: [titleLabel, spacer, checkboxStack])
     row.orientation = .horizontal
     row.spacing = 8
-    row.alignment = .centerY
+    row.alignment = .firstBaseline
     return rielaAppSettingsRow(row)
   }
 
@@ -661,10 +511,10 @@ extension DaemonWorkflowWindowController {
     configurePromptTextField(field)
     let response = runAddInstancePromptWindow(
       title: "Import from URL",
-      message: "Enter a GitHub workflow or package directory URL.",
-      content: promptFieldStack(title: "URL", control: field),
+      message: "Enter a GitHub tree URL for a workflow or package directory. Other hosts are not supported yet.",
+      content: promptFieldStack(title: "GitHub URL", control: field),
       contentSize: NSSize(width: 468, height: 190),
-      primaryTitle: "Import",
+      primaryTitle: "Import GitHub URL",
       initialFirstResponder: field
     )
     guard response == .OK else {
@@ -839,7 +689,7 @@ extension DaemonWorkflowWindowController {
       ),
       actionRow(
         title: "Import from URL",
-        detail: "Add a workflow or package directory from a GitHub URL.",
+        detail: "Add a workflow or package directory from a GitHub tree URL.",
         action: #selector(importWorkflowOrPackageFromURLFromAddInstanceSheet)
       )
     ])
@@ -905,7 +755,11 @@ extension DaemonWorkflowWindowController {
     titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
     titleLabel.lineBreakMode = .byTruncatingTail
     let detailLabel = NSTextField(
-      labelWithString: rielaAppMetadataText([option.candidate.sourceDescription, option.environmentStatus])
+      labelWithString: rielaAppMetadataText([
+        option.candidate.sourceDescription,
+        requiredEnvironmentSummary(for: option.candidate),
+        option.environmentStatus
+      ])
     )
     detailLabel.font = .systemFont(ofSize: 11)
     detailLabel.textColor = .secondaryLabelColor
@@ -943,6 +797,34 @@ extension DaemonWorkflowWindowController {
       checkmark: checkmark,
       rowTarget: rowTarget
     )
+  }
+
+  private func requiredEnvironmentSummary(for candidate: RielaAppDaemonWorkflowCandidate) -> String {
+    let count = candidate.requiredEnvironment.count
+    switch count {
+    case 0:
+      return "No required environment"
+    case 1:
+      return "1 required environment variable"
+    default:
+      return "\(count) required environment variables"
+    }
+  }
+
+  private func requiredEnvironmentChecklistText(for candidate: RielaAppDaemonWorkflowCandidate) -> String {
+    let configuredValues = configuredEnvironmentValues(candidate)
+    return candidate.requiredEnvironment
+      .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+      .map { requirement in
+        if let value = configuredValues.first(where: {
+          $0.name == requirement.name &&
+            !$0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) {
+          return "\(requirement.name): Set from \(value.source)"
+        }
+        return "\(requirement.name): Missing"
+      }
+      .joined(separator: "\n")
   }
 }
 

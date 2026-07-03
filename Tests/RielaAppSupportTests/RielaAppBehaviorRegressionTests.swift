@@ -287,6 +287,8 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     XCTAssertEqual(menu?.items.first?.title, "Instances...")
     XCTAssertEqual(menu?.items.first?.target as? RielaApp, app)
     XCTAssertTrue(menu?.items.contains { $0.title == "Launch on Login" } == true)
+    let aboutItem = try XCTUnwrap(menu?.items.first { $0.title == "About Riela" })
+    XCTAssertEqual(aboutItem.target as? RielaApp, app)
     XCTAssertFalse(menu?.items.contains { $0.title.hasPrefix("Status:") } == true)
     XCTAssertFalse(menu?.items.contains { $0.title.hasPrefix("Profile:") } == true)
     XCTAssertFalse(menu?.items.contains { $0.title.hasPrefix("Instances:") } == true)
@@ -406,8 +408,9 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     )
     let root = try XCTUnwrap(controller.window?.contentView)
     let tabView = try XCTUnwrap(firstSubview(of: NSTabView.self, in: root))
-    XCTAssertEqual(tabView.tabViewItems.map(\.label), ["Edit", "Variables", "Run Log", "Structure"])
-    XCTAssertEqual(controller.window?.minSize, NSSize(width: 420, height: 380))
+    XCTAssertEqual(tabView.tabViewItems.map(\.label), ["Overview", "Variables", "Graph", "Run Log", "Structure"])
+    XCTAssertTrue(controller.hasLiveRefreshTimerForTesting)
+    XCTAssertEqual(controller.window?.minSize, NSSize(width: 560, height: 380))
 
     let popUpLabels = Set(visiblePopUpButtons(in: root).compactMap { $0.accessibilityLabel() })
     XCTAssertTrue(popUpLabels.contains("Session"))
@@ -419,6 +422,9 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     XCTAssertEqual(currentDirectoryRow.accessibilityRole(), .button)
     XCTAssertEqual(currentDirectoryRow.accessibilityHelp(), "Change Current Directory")
     XCTAssertTrue(currentDirectoryRow.rielaAccessibilityEnabled)
+
+    controller.windowWillClose(Notification(name: NSWindow.willCloseNotification, object: controller.window))
+    XCTAssertFalse(controller.hasLiveRefreshTimerForTesting)
   }
 
   func testWorkflowViewerTreeRowsExposeStateAndPressActionAtRuntime() throws {

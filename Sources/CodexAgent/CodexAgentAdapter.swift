@@ -132,6 +132,32 @@ private func runCodexDefaultAuthPreflight(
   )
   let sensitiveValues = sensitiveAdapterEnvironmentValues(preflightEnvironment)
   let preflightDeadline = defaultAgentPreflightDeadline(existingDeadline: deadline, timeout: defaultCodexAuthPreflightTimeout)
+  let version: LocalAgentProcessResult
+  do {
+    version = try await runner.run(
+      configuration: LocalAgentProcessConfiguration(
+        executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+        arguments: [executableName, "--version"],
+        environment: preflightEnvironment,
+        workingDirectoryURL: input.node.workingDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) }
+      ),
+      stdin: "",
+      deadline: preflightDeadline
+    )
+  } catch let error as CancellationError {
+    throw error
+  } catch {
+    throw AdapterExecutionError(
+      .policyBlocked,
+      "codex-agent CLI is unavailable: \(agentPreflightErrorDetail(error, fallback: "codex command timed out", additionalSensitiveValues: sensitiveValues))"
+    )
+  }
+  if version.terminationStatus != 0 {
+    throw AdapterExecutionError(
+      .policyBlocked,
+      "codex-agent CLI is unavailable: \(compactAgentReadinessMessage([version.stderr, version.stdout].joined(separator: "\n"), fallback: "codex command is unavailable", additionalSensitiveValues: sensitiveValues))"
+    )
+  }
   let result: LocalAgentProcessResult
   do {
     result = try await runner.run(

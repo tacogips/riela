@@ -218,6 +218,7 @@ extension DaemonWorkflowWindowController {
     emptyInstancesGuideView.autoresizingMask = []
     profilePopup.toolTip = "Switch profiles or manage profiles."
     configureAssistantControls()
+    configureInstanceStateProgressIndicator(detailStatusProgressIndicator, accessibilityLabel: "Instance status progress")
     detailSummaryLabel.textColor = .secondaryLabelColor
     detailSummaryLabel.lineBreakMode = .byTruncatingTail
     for label in [
@@ -698,7 +699,7 @@ extension DaemonWorkflowWindowController {
   private func buildAssistantPanel() -> NSView {
     let container = NSView()
     RielaAssistantMiniChatStyle.configurePanelContainer(container)
-    RielaAssistantMiniChatStyle.configureHeaderLabels(
+    let titleStack = RielaAssistantMiniChatStyle.makeTitleStack(
       title: assistantPanelTitleLabel,
       availability: assistantAvailabilityLabel,
       context: assistantContextLabel
@@ -711,45 +712,18 @@ extension DaemonWorkflowWindowController {
     RielaAssistantMiniChatStyle.configureTranscriptScroll(transcriptScroll, transcript: transcript)
     assistantTranscriptScrollView = transcriptScroll
 
-    let titleStack = NSStackView(views: [
-      assistantPanelTitleLabel,
-      assistantAvailabilityLabel,
-      assistantContextLabel
-    ])
-    titleStack.orientation = .vertical
-    titleStack.alignment = .leading
-    titleStack.spacing = 1
-    titleStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-    let controls = NSStackView(views: [
-      titleStack,
+    let controls = RielaAssistantMiniChatStyle.makeHeaderStack(titleStack: titleStack, trailingControls: [
       assistantFoldButton
     ])
-    controls.orientation = .horizontal
-    controls.alignment = .centerY
-    controls.spacing = 8
-    controls.translatesAutoresizingMaskIntoConstraints = false
 
-    let input = NSStackView(views: [assistantPromptField, assistantSendButton])
-    RielaAssistantMiniChatStyle.configureInputStack(input)
+    let input = RielaAssistantMiniChatStyle.makeInputStack(
+      promptField: assistantPromptField,
+      sendButton: assistantSendButton
+    )
     assistantInputStackView = input
-    assistantPromptField.heightAnchor.constraint(equalToConstant: 26).isActive = true
-    assistantSendButton.widthAnchor.constraint(equalToConstant: 30).isActive = true
-    assistantSendButton.heightAnchor.constraint(equalToConstant: 30).isActive = true
 
-    let panelStack = NSStackView(views: [controls, transcriptScroll, input])
-    panelStack.orientation = .vertical
-    panelStack.alignment = .width
-    panelStack.spacing = 8
-    panelStack.translatesAutoresizingMaskIntoConstraints = false
-    container.addSubview(panelStack)
-    NSLayoutConstraint.activate([
-      panelStack.topAnchor.constraint(equalTo: container.topAnchor, constant: RielaAssistantMiniChatStyle.verticalInset),
-      panelStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: RielaAssistantMiniChatStyle.horizontalInset),
-      panelStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -RielaAssistantMiniChatStyle.horizontalInset),
-      panelStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -RielaAssistantMiniChatStyle.verticalInset),
-      input.heightAnchor.constraint(equalToConstant: RielaAssistantMiniChatStyle.inputHeight)
-    ])
+    let panelStack = RielaAssistantMiniChatStyle.makePanelStack(header: controls, transcriptScroll: transcriptScroll, input: input)
+    RielaAssistantMiniChatStyle.installPanelStack(panelStack, input: input, in: container)
     return container
   }
 

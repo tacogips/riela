@@ -643,16 +643,14 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
       return
     }
     if let snapshot = input.contentSnapshot {
-      liveTail.setStreamedResponseText(snapshot, byteCap: streamedResponseTextByteCap)
+      liveTail.setStreamedResponseText(snapshot, byteCap: WorkflowStreamedResponseText.byteCap)
       return
     }
     guard let delta = input.contentDelta else {
       return
     }
-    liveTail.appendStreamedResponseText(delta, byteCap: streamedResponseTextByteCap)
+    liveTail.appendStreamedResponseText(delta, byteCap: WorkflowStreamedResponseText.byteCap)
   }
-
-  private var streamedResponseTextByteCap: Int { 32 * 1024 }
 
   public func appendWorkflowMessage(_ input: WorkflowMessageAppendInput) async throws -> WorkflowMessageRecord {
     let records = try await appendWorkflowMessages([input])
@@ -729,6 +727,9 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
   private func detachingBackendLiveTails(from session: WorkflowSession) -> WorkflowSession {
     var detached = session
     detached.executions = session.executions.map { execution in
+      guard execution.status == .running else {
+        return execution
+      }
       let liveTail = WorkflowExecutionLiveTail(execution: execution)
       if !liveTail.isEmpty {
         executionLiveTails[execution.executionId] = liveTail
@@ -755,6 +756,10 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
   }
 }
 
+private enum WorkflowStreamedResponseText {
+  static let byteCap = 32 * 1024
+}
+
 private extension WorkflowStepExecutionStatus {
   var isTerminal: Bool {
     switch self {
@@ -779,7 +784,7 @@ private struct WorkflowExecutionLiveTail: Sendable {
     self.backendEventCount = execution.backendEventCount
     self.recentBackendEvents = execution.recentBackendEvents
     self.streamedResponseTextBuffer = execution.streamedResponseText.map {
-      StreamedResponseTextBuffer(text: $0, byteCap: 32 * 1024)
+      StreamedResponseTextBuffer(text: $0, byteCap: WorkflowStreamedResponseText.byteCap)
     }
   }
 
@@ -807,7 +812,7 @@ private struct WorkflowExecutionLiveTail: Sendable {
     projected.lastBackendEventType = lastBackendEventType
     projected.backendEventCount = backendEventCount
     projected.recentBackendEvents = recentBackendEvents
-    projected.streamedResponseText = streamedResponseTextBuffer?.stringValue(byteCap: 32 * 1024)
+    projected.streamedResponseText = streamedResponseTextBuffer?.stringValue(byteCap: WorkflowStreamedResponseText.byteCap)
     return projected
   }
 }

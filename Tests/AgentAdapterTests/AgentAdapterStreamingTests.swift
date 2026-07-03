@@ -83,8 +83,31 @@ extension AgentAdapterTests {
       #"{"type":"thinking","subtype":"delta","text":"x"}"#
     }.joined(separator: "\n")
 
-    _ = try await CursorCLIAgentAdapter(
+    let adapter = LocalAgentCommandAdapter(
+      commandBuilder: CursorCLIAgentCommandBuilder(),
       runner: StreamingRecordingRunner(output: lines),
+      backendEventCoalescingTimeThreshold: 2.0
+    )
+
+    _ = try await adapter.execute(
+      input(backend: .cursorCliAgent),
+      context: AdapterExecutionContext { event in
+        await recorder.append(event)
+      }
+    )
+
+    let events = await recorder.recordedEvents()
+    XCTAssertEqual(events.map(\.channel), [.thinking, .thinking])
+    XCTAssertEqual(events.compactMap(\.contentDelta).joined(), String(repeating: "x", count: 300))
+  }
+
+  func testThinkingDeltasUseProductionCoalescingLatencyByDefault() async throws {
+    let recorder = BackendEventRecorder()
+    let lines = Array(repeating: #"{"type":"thinking","subtype":"delta","text":"x"}"#, count: 3)
+      .joined(separator: "\n")
+
+    _ = try await CursorCLIAgentAdapter(
+      runner: DelayedStreamingRecordingRunner(output: lines, delay: 0.3),
       authPreflight: false
     ).execute(
       input(backend: .cursorCliAgent),
@@ -95,7 +118,7 @@ extension AgentAdapterTests {
 
     let events = await recorder.recordedEvents()
     XCTAssertEqual(events.map(\.channel), [.thinking, .thinking])
-    XCTAssertEqual(events.compactMap(\.contentDelta).joined(), String(repeating: "x", count: 300))
+    XCTAssertEqual(events.map(\.contentDelta), ["xx", "x"])
   }
 
   func testStreamBackendContentFalseFallsBackToTypeOnlyEvents() async throws {
@@ -183,5 +206,32 @@ private final class TimedStreamingReplayRunner: LocalAgentProcessRunning, LocalA
 
   func replayElapsed() async -> TimeInterval? {
     await store.replayElapsed()
+  }
+}
+
+private final class DelayedStreamingRecordingRunner: LocalAgentProcessRunning, LocalAgentProcessEventStreaming, @unchecked Sendable {
+  private let output: String
+  private let delay: TimeInterval
+
+  init(output: String, delay: TimeInterval) {
+    self.output = output
+    self.delay = delay
+  }
+
+  func run(configuration: LocalAgentProcessConfiguration, stdin: String, deadline: Date?) async throws -> LocalAgentProcessResult {
+    try await run(configuration: configuration, stdin: stdin, deadline: deadline, outputEventHandler: nil)
+  }
+
+  func run(
+    configuration _: LocalAgentProcessConfiguration,
+    stdin _: String,
+    deadline _: Date?,
+    outputEventHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
+  ) async throws -> LocalAgentProcessResult {
+    for line in output.split(whereSeparator: \.isNewline).map(String.init) {
+      outputEventHandler?(LocalAgentProcessOutputEvent(stream: .stdout, line: line))
+      try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+    }
+    return LocalAgentProcessResult(stdout: output, stderr: "", terminationStatus: 0)
   }
 }

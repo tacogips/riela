@@ -763,13 +763,16 @@ public struct FoundationLocalAgentProcessRunner: LocalAgentProcessRunning, Local
 public struct LocalAgentCommandAdapter: NodeAdapter {
   public var commandBuilder: any LocalAgentCommandBuilding
   public var runner: any LocalAgentProcessRunning
+  public var backendEventCoalescingTimeThreshold: TimeInterval
 
   public init(
     commandBuilder: any LocalAgentCommandBuilding,
-    runner: any LocalAgentProcessRunning = FoundationLocalAgentProcessRunner()
+    runner: any LocalAgentProcessRunning = FoundationLocalAgentProcessRunner(),
+    backendEventCoalescingTimeThreshold: TimeInterval = 0.25
   ) {
     self.commandBuilder = commandBuilder
     self.runner = runner
+    self.backendEventCoalescingTimeThreshold = backendEventCoalescingTimeThreshold
   }
 
   public func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
@@ -779,7 +782,8 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
       let eventBridge = makeBackendEventBridge(
         command: command,
         context: context,
-        streamContent: backendContentStreamingEnabled(input.node.variables["streamBackendContent"])
+        streamContent: backendContentStreamingEnabled(input.node.variables["streamBackendContent"]),
+        coalescingTimeThreshold: backendEventCoalescingTimeThreshold
       )
       do {
         result = try await streamingRunner.run(
@@ -821,7 +825,8 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
   private func makeBackendEventBridge(
     command: LocalAgentCommand,
     context: AdapterExecutionContext,
-    streamContent: Bool
+    streamContent: Bool,
+    coalescingTimeThreshold: TimeInterval
   ) -> BackendEventBridge {
     guard let backendEventHandler = context.backendEventHandler else {
       return BackendEventBridge(handler: nil, finish: {}, waitForCompletion: {})
@@ -836,7 +841,7 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
         await backendEventHandler(event)
       }
     }
-    let coalescer = BackendEventCoalescer()
+    let coalescer = BackendEventCoalescer(timeThreshold: coalescingTimeThreshold)
     let handler: @Sendable (LocalAgentProcessOutputEvent) -> Void = { outputEvent in
       guard outputEvent.stream == .stdout else {
         return
@@ -906,10 +911,14 @@ private final class BackendEventCoalescer: @unchecked Sendable {
 
   private let lock = NSLock()
   private let byteThreshold = 256
-  private let timeThreshold: TimeInterval = 2.0
+  private let timeThreshold: TimeInterval
   private var pending: AdapterBackendEvent?
   private var pendingKey: PendingKey?
   private var pendingStartedAt: Date?
+
+  init(timeThreshold: TimeInterval = 0.25) {
+    self.timeThreshold = timeThreshold
+  }
 
   func absorb(_ event: AdapterBackendEvent) -> [AdapterBackendEvent] {
     lock.lock()

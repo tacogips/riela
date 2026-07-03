@@ -1537,6 +1537,150 @@ Validation run after this audit:
 
 ---
 
+## Third-Pass Review (commits `aa1830a`, `fe76f60`, `2892a02`, 2026-07-03)
+
+An independent third review pass verified the R1–R7 remediation commits.
+Build is clean and the full suite (964 tests) passes. All seven findings are
+confirmed fixed as claimed by the audit table above — spot checks below —
+but the remediation introduced one behavioral regression (S1) and left one
+narrow residual of R3 (S2). S1 should be fixed before streaming ships to
+interactive consumers.
+
+### Independent verification of R1–R7 (confirmed)
+
+- **R1**: all four flagged helpers now delegate to `asDouble`/`asInt64`;
+  the repo-wide sweep for `case let .number` leaves only exhaustive
+  switches that handle `.integer` and helpers typed against RielaMemory's
+  `MemoryJSONValue` (a different enum without an `.integer` case — correctly
+  out of scope). New decode-path tests (`decodedJSONObject` helper,
+  `testDecodedIntegralExecCommandEndReportsErrors` ×3 providers, GraphQL
+  `--variables '{"limit":3}'` assertion) close the fixture-realism gap.
+- **R2**: `DefaultWorkflowValidator` gained `validateUniqueIds` for both
+  collections; all three dictionary builds use first-value uniquing.
+- **R3**: terminal `updateStepExecution` and `markSessionFailed` fold the
+  tail into the stored execution and `removeValue` the side-table entry;
+  tests assert the count drains to zero. Residual: S2.
+- **R4**: labeled unsupported transitions produce `.warning` gaps; the
+  runner throws only on `.error` severity, `workflow validate` surfaces
+  both.
+- **R5**: `AgentUsageStats` (612 lines) extracted to `AgentRuntimeKit`;
+  per-provider wrappers are 40 lines each. `AgentRuntimeKit` now depends on
+  `RielaSQLite` and `AgentSessionSQLiteSupport` uses `SQLiteDatabase`
+  (replacing the previous `/usr/bin/sqlite3` process spawning — a bonus
+  robustness fix). Remaining `SessionSQLiteIndex` clones are 59 lines each;
+  acceptable.
+- **R6**: canonicalization documented on the type.
+- **R7**: `StreamedResponseTextBuffer` keeps head/tail as byte arrays with
+  an uncapped fast path; post-cap appends touch only `suffixBytes` plus the
+  delta and repair UTF-8 continuation bytes on lazy materialization.
+  (`removeFirst(_:)` on the suffix array is O(suffixCap) worst case per
+  flush, but the suffix is ≤16 KiB and deltas arrive pre-coalesced — within
+  the "bounded" intent of R7.)
+
+### S1 (P2) `BackendEventCoalescer` time threshold raised 0.25 s → 2.0 s to stabilize a test — an 8× live-latency regression that contradicts the streaming spec
+
+**Location**: `Sources/RielaAdapters/LocalAgentProcess.swift:909`
+(`timeThreshold: TimeInterval = 2.0`, changed in `2892a02`);
+spec contract at `design-agent-response-streaming.md` §3 ("flushes when …
+(b) **250 ms** elapsed since first absorbed delta", "§6 … ≤ ~4 content
+events/sec").
+
+**Problem**: the third-pass audit note in this document admits the change
+was made so "fast synthetic Cursor thinking streams are not split by the
+time threshold" in
+`testCursorThinkingDeltasAreCoalescedBeforeBackendEventHandler` (the test
+feeds 300 one-byte deltas and asserts exactly 2 events — byte-threshold
+splits only). Changing the production constant to make a timing-sensitive
+test deterministic:
+
+1. **Regresses live streaming latency**: content trickling slower than
+   256 bytes per window now surfaces up to 2 s late (the flush check runs
+   only when the next delta arrives, so a slow token stream is paced at the
+   threshold). The entire point of the streaming feature is sub-second
+   visibility of agent output.
+2. **Silently diverges from the design spec**, which still promises 250 ms
+   / ~4 events/sec in two places. Nobody reading the spec will predict 2 s
+   behavior.
+3. Leaves the test still timing-dependent in principle — a sufficiently
+   slow CI machine could still cross 2 s mid-burst.
+
+**Improvement design**: make the threshold injectable —
+`BackendEventCoalescer(byteThreshold: Int = 256, timeThreshold: TimeInterval = 0.25)`
+— restore the production default to 0.25 s, and have the streaming tests
+construct the adapter with a large (or infinite) time threshold, or inject
+a fixed clock, so the test asserts byte-threshold behavior without touching
+the shipped constant. Update the spec if a different production value is
+ever chosen deliberately.
+
+### S2 (P3) R3 residual: seeded terminal executions still park live tails in the side table forever
+
+**Location**: `Sources/RielaCore/RuntimeStore.swift:729-739`
+(`detachingBackendLiveTails`), called from `seedSession` at :431.
+
+**Problem**: `detachingBackendLiveTails` moves tail fields into
+`executionLiveTails` for **every** seeded execution regardless of status.
+The R3 cleanup (`finalizeBackendLiveTail`) runs only inside
+`updateStepExecution`/`markSessionFailed`, which are never called again for
+an already-terminal execution — so seeded completed/failed executions with
+`streamedResponseText` occupy the side table for the store's lifetime. The
+CLI seeds *all* persisted sessions at every run
+(`seedRuntimeStoreFromPersistedCLIState` → `loadAll()`), so the table holds
+one entry per historical streamed execution, up to ~32 KiB each. Bounded
+per process for the CLI, unbounded accumulation only for embedders that
+seed repeatedly; either way the entries are pure dead weight.
+
+**Improvement design**: in `detachingBackendLiveTails`, detach only
+executions with `status == .running`; terminal executions keep their tail
+fields inline (the projection path already returns executions without a
+side-table entry unchanged, so reads are identical). One-line status guard
+plus a seeding test asserting `executionLiveTailCountForTesting() == 0`
+after seeding a completed session.
+
+### S3 (P3) Streamed-text byte cap duplicated as a magic number
+
+**Location**: `Sources/RielaCore/RuntimeStore.swift` — the store's
+`streamedResponseTextByteCap` property, the `32 * 1024` literal in
+`WorkflowExecutionLiveTail.init(execution:)`, and the `byteCap: 32 * 1024`
+at the projection site (`applying(to:)` path, :810).
+
+**Problem**: three copies of the constant; if the cap is ever tuned, the
+buffer init and projection will silently disagree with the store property
+(e.g., re-capping seeded text at a stale size).
+
+**Improvement design**: single
+`enum WorkflowStreamedResponseText { static let byteCap = 32 * 1024 }` (or
+a static on `StreamedResponseTextBuffer`) referenced from all three sites.
+
+### Third-pass conclusion
+
+The R1 correctness regression, the R2 crash vector, and the R3 leak are
+genuinely fixed with regression tests. The follow-up implementation below
+also closes S1-S3.
+
+### Third-pass follow-up implementation (2026-07-03)
+
+- **S1 resolved**: `LocalAgentCommandAdapter` now exposes an injectable
+  backend-event coalescing time threshold with a production default of
+  `0.25` seconds. The byte-threshold coalescing test injects `2.0` seconds,
+  and a new streaming test verifies the production default splits delayed
+  Cursor thinking deltas at the 250 ms latency target.
+- **S2 resolved**: `detachingBackendLiveTails` now detaches only running
+  executions. Terminal seeded executions keep their live-tail fields inline,
+  and the new seed-session regression test verifies only the running
+  execution occupies the side table.
+- **S3 resolved**: streamed response text capping now uses the single
+  `WorkflowStreamedResponseText.byteCap` constant across live-tail updates,
+  seeding, and projection.
+
+Validation after the follow-up:
+
+- `swift test --filter AgentAdapterTests`
+- `swift test --filter RuntimeStoreTests`
+- `xcrun swiftlint` (Xcode toolchain, 0 violations)
+- `swift test` (966 tests, 0 failures)
+
+---
+
 ## What Was Reviewed And Found Sound
 
 Worth recording so future reviews don't re-litigate:

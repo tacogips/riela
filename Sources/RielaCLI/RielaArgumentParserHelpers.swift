@@ -18,7 +18,7 @@ func parseOutputOnly(
         throw CLIUsageError("invalid --output value '\(tokens[index + 1])'; expected text, json, jsonl, or table")
       }
       if value == .table && !allowTableOutput {
-        throw CLIUsageError("`--output table` is only supported for workflow list, workflow status, package search, and package list")
+        throw CLIUsageError("`--output table` is only supported for workflow list, workflow status, session list, session latest, package search, and package list")
       }
       output = value
       index += 2
@@ -30,7 +30,7 @@ func parseOutputOnly(
         throw CLIUsageError("invalid --output value '\(raw)'; expected text, json, jsonl, or table")
       }
       if value == .table && !allowTableOutput {
-        throw CLIUsageError("`--output table` is only supported for workflow list, workflow status, package search, and package list")
+        throw CLIUsageError("`--output table` is only supported for workflow list, workflow status, session list, session latest, package search, and package list")
       }
       output = value
     }
@@ -51,7 +51,7 @@ func parseOutputValue(_ raw: String, allowTableOutput: Bool) throws -> WorkflowO
     throw CLIUsageError("invalid --output value '\(raw)'; expected text, json, jsonl, or table")
   }
   if value == .table && !allowTableOutput {
-    throw CLIUsageError("`--output table` is only supported for workflow list, workflow status, package search, and package list")
+    throw CLIUsageError("`--output table` is only supported for workflow list, workflow status, session list, session latest, package search, and package list")
   }
   return value
 }

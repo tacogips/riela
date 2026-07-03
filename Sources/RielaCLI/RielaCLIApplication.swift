@@ -15,6 +15,7 @@ public struct RielaCLIApplication: Sendable {
   public var workflowCatalogCommand: WorkflowCatalogCommand
   public var sessionRerunCommand: SessionRerunCommand
   public var sessionResumeCommand: SessionResumeCommand
+  public var sessionDiscoveryCommand: SessionDiscoveryCommand
   public var sessionInspectionCommand: SessionInspectionCommand
   public var workflowScaffoldCommand: WorkflowScaffoldCommand
   public var packageCommandRunner: WorkflowPackageCommandRunner
@@ -32,6 +33,7 @@ public struct RielaCLIApplication: Sendable {
     workflowCatalogCommand: WorkflowCatalogCommand = WorkflowCatalogCommand(),
     sessionRerunCommand: SessionRerunCommand = SessionRerunCommand(),
     sessionResumeCommand: SessionResumeCommand = SessionResumeCommand(),
+    sessionDiscoveryCommand: SessionDiscoveryCommand = SessionDiscoveryCommand(),
     sessionInspectionCommand: SessionInspectionCommand = SessionInspectionCommand(),
     workflowScaffoldCommand: WorkflowScaffoldCommand = WorkflowScaffoldCommand(),
     packageCommandRunner: WorkflowPackageCommandRunner = WorkflowPackageCommandRunner(),
@@ -48,6 +50,7 @@ public struct RielaCLIApplication: Sendable {
     self.workflowCatalogCommand = workflowCatalogCommand
     self.sessionRerunCommand = sessionRerunCommand
     self.sessionResumeCommand = sessionResumeCommand
+    self.sessionDiscoveryCommand = sessionDiscoveryCommand
     self.sessionInspectionCommand = sessionInspectionCommand
     self.workflowScaffoldCommand = workflowScaffoldCommand
     self.packageCommandRunner = packageCommandRunner
@@ -103,24 +106,8 @@ public struct RielaCLIApplication: Sendable {
         return workflowScaffoldCommand.selfImprove(options)
       case let .workflow(.package(command)):
         return await packageCommandRunner.run(command)
-      case let .session(.rerun(options)):
-        return await sessionRerunCommand.run(options)
-      case let .session(.resume(options)):
-        return await sessionResumeCommand.run(options)
-      case let .session(.progress(options)):
-        return sessionInspectionCommand.run(options)
-      case let .session(.health(options)):
-        return sessionInspectionCommand.run(options)
-      case let .session(.status(options)):
-        return sessionInspectionCommand.run(options)
-      case let .session(.continueSession(options)):
-        return await sessionContinueCommand.run(options)
-      case let .session(.stepRuns(options)):
-        return sessionInspectionCommand.run(options)
-      case let .session(.export(options)):
-        return sessionInspectionCommand.run(options)
-      case let .session(.logs(options)):
-        return sessionInspectionCommand.run(options)
+      case let .session(command):
+        return await runSession(command)
       case let .loop(command):
         return await loopCommandRunner.run(command)
       case let .package(command):
@@ -134,6 +121,22 @@ public struct RielaCLIApplication: Sendable {
       return renderParserFailure(arguments: arguments, error: error)
     } catch {
       return CLICommandResult(exitCode: .failure, stderr: "\(error)")
+    }
+  }
+
+  private func runSession(_ command: SessionCommand) async -> CLICommandResult {
+    switch command {
+    case let .rerun(options):
+      return await sessionRerunCommand.run(options)
+    case let .resume(options):
+      return await sessionResumeCommand.run(options)
+    case let .list(options), let .latest(options):
+      return sessionDiscoveryCommand.run(options)
+    case let .progress(options), let .health(options), let .status(options),
+         let .stepRuns(options), let .export(options), let .logs(options):
+      return sessionInspectionCommand.run(options)
+    case let .continueSession(options):
+      return await sessionContinueCommand.run(options)
     }
   }
 
@@ -278,7 +281,9 @@ Usage:
   riela memory load|search <memory-id> --workflow-id <workflow> [--match <regex>] [--tag <tag>] [--related-id <id>] [--limit 30] [--memory-root <dir>]
   riela memory metadata|tags|related-ids <memory-id> [--limit 30] [--offset 0] [--sort value-asc|value-desc] [--memory-root <dir>]
   riela session rerun <session-id> <step-id> [--scope project|user|auto] [--output jsonl|json|text]
-  riela session resume <session-id> [--scope project|user|auto] [--output jsonl|json|text]
+  riela session resume <session-id> [--max-steps <n>] [--scope project|user|auto] [--output jsonl|json|text]
+  riela session list [--workflow <name>] [--status created|running|completed|failed] [--limit 10] [--scope project|user|auto] [--output jsonl|json|text|table]
+  riela session latest --workflow <name> [--scope project|user|auto] [--output jsonl|json|text|table]
   riela session progress|health|status|continue|step-runs|export|logs [session-id] [options]
   riela loop status|evidence|gates <session-id> [--session-store <dir>] [--output jsonl|json|text]
   riela loop recover <session-id> --from-step <step-id> [--session-store <dir>] [--output jsonl|json|text]

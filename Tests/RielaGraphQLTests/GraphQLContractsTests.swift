@@ -165,6 +165,52 @@ final class GraphQLContractsTests: XCTestCase {
     XCTAssertEqual(result.recovery?.entryMode, "rerun")
   }
 
+  func testRuntimeSnapshotQueryServiceListsFilteredSessionSummaries() async {
+    let snapshots = [
+      WorkflowRuntimePersistenceSnapshot(
+        session: workflowSession(
+          workflowId: "workflow-a",
+          sessionId: "session-old",
+          status: .failed,
+          date: Date(timeIntervalSince1970: 10),
+          failureKind: .adapterFailure
+        )
+      ),
+      WorkflowRuntimePersistenceSnapshot(
+        session: workflowSession(
+          workflowId: "workflow-b",
+          sessionId: "session-other",
+          status: .failed,
+          date: Date(timeIntervalSince1970: 30),
+          failureKind: .maxStepsExceeded
+        )
+      ),
+      WorkflowRuntimePersistenceSnapshot(
+        session: workflowSession(
+          workflowId: "workflow-a",
+          sessionId: "session-new",
+          status: .failed,
+          date: Date(timeIntervalSince1970: 50),
+          failureKind: .maxStepsExceeded
+        )
+      )
+    ]
+    let service = GraphQLRuntimeSnapshotQueryService(
+      loadSnapshot: { _ in snapshots[0] },
+      loadSnapshots: { snapshots },
+      sessionStore: "/tmp/session-store"
+    )
+
+    let result = await service.workflowSessions(.init(workflowName: "workflow-a", status: "failed", limit: 1))
+
+    XCTAssertTrue(result.result.accepted)
+    XCTAssertEqual(result.result.status, GraphQLLoopEvidenceQueryStatus.found.rawValue)
+    XCTAssertEqual(result.sessions.map(\.sessionId), ["session-new"])
+    XCTAssertEqual(result.sessions.first?.workflowName, "workflow-a")
+    XCTAssertEqual(result.sessions.first?.failureKind, "maxStepsExceeded")
+    XCTAssertEqual(result.sessions.first?.sessionStore, "/tmp/session-store")
+  }
+
   func testRuntimeSnapshotQueryServiceDistinguishesMissingSession() async {
     let service = GraphQLRuntimeSnapshotQueryService { sessionId in
       throw WorkflowRuntimePersistenceStoreError.notFound(sessionId)
@@ -213,6 +259,7 @@ final class GraphQLContractsTests: XCTestCase {
       "loopRecovery: LoopRecoveryLineage",
       "workflowExecutionId: String!",
       "loopEvidence(workflowId: String!, sessionId: String!): LoopEvidenceSummary",
+      "workflowSessions(workflowName: String, status: String, limit: Int): [WorkflowSessionSummary!]!",
       "createdOrder: Int!",
       "failureReason: String",
       "input ContinueSessionInput { workflowId: String!, sessionId: String!, input: JSONObject! }",
@@ -315,6 +362,23 @@ final class GraphQLContractsTests: XCTestCase {
         sessionId: "session-a",
         status: "running",
         currentStepId: "step-a",
+        lastCompletedStepId: "step-a",
+        failureReason: "maxStepsExceeded(2)",
+        failureKind: "maxStepsExceeded",
+        stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic(
+          stepBudget: 2,
+          executionCount: 2,
+          maxLoopIterations: 1,
+          budgetSource: .computedDefault,
+          dominantCycleStepIds: ["step-a", "step-b"],
+          dominantCycleRepeatCount: 2,
+          perStepRevisitCap: 2,
+          projectedCapExceededStepIds: ["step-a"],
+          openReviewFindingCount: 0,
+          unscheduledStepId: "step-b",
+          suggestedMaxSteps: 4,
+          suggestedRemediation: "session resume session-a --max-steps 4"
+        ),
         stepExecutions: [.init(executionId: "exec-a", stepId: "step-a", nodeId: "node-a", attempt: 1, backend: "codex-agent", status: "completed", failureReason: "none")],
         communications: [.init(communicationId: "comm-a", fromStepId: "step-a", toStepId: "step-b", lifecycleStatus: "delivered", deliveryKind: "direct", createdOrder: 1)],
         hookEvents: [.init(vendor: "codex", eventName: "PostToolUse", agentSessionId: "agent-session", payloadHash: "hash")],
@@ -325,6 +389,30 @@ final class GraphQLContractsTests: XCTestCase {
         loopEvidence: loopEvidence,
         loopGates: [loopGate],
         loopRecovery: loopRecovery
+      )),
+      "StepBudgetDiagnostic": try encodedFieldNames(WorkflowStepBudgetDiagnostic(
+        stepBudget: 2,
+        executionCount: 2,
+        maxLoopIterations: 1,
+        budgetSource: .computedDefault,
+        dominantCycleStepIds: ["step-a", "step-b"],
+        dominantCycleRepeatCount: 2,
+        perStepRevisitCap: 2,
+        projectedCapExceededStepIds: ["step-a"],
+        openReviewFindingCount: 0,
+        unscheduledStepId: "step-b",
+        suggestedMaxSteps: 4,
+        suggestedRemediation: "session resume session-a --max-steps 4"
+      )),
+      "WorkflowSessionSummary": try encodedFieldNames(GraphQLWorkflowSessionSummaryDTO(
+        sessionId: "session-a",
+        workflowName: "workflow-a",
+        status: "failed",
+        failureKind: "maxStepsExceeded",
+        currentStepId: "step-b",
+        executionCount: 2,
+        updatedAt: Date(timeIntervalSince1970: 1),
+        sessionStore: "/tmp/sessions"
       )),
       "StepExecution": try encodedFieldNames(GraphQLStepExecutionDTO(executionId: "exec-a", stepId: "step-a", nodeId: "node-a", attempt: 1, backend: "codex-agent", status: "completed", failureReason: "none")),
       "Communication": try encodedFieldNames(GraphQLCommunicationDTO(communicationId: "comm-a", fromStepId: "step-a", toStepId: "step-b", lifecycleStatus: "delivered", deliveryKind: "direct", createdOrder: 1)),
@@ -490,15 +578,22 @@ final class GraphQLContractsTests: XCTestCase {
     })
   }
 
-  private func workflowSession(workflowId: String, sessionId: String, date: Date) -> WorkflowSession {
+  private func workflowSession(
+    workflowId: String,
+    sessionId: String,
+    status: WorkflowSessionStatus = .completed,
+    date: Date,
+    failureKind: WorkflowSessionFailureKind? = nil
+  ) -> WorkflowSession {
     WorkflowSession(
       workflowId: workflowId,
       sessionId: sessionId,
-      status: .completed,
+      status: status,
       entryStepId: "step-1",
       currentStepId: nil,
       createdAt: date,
-      updatedAt: date
+      updatedAt: date,
+      failureKind: failureKind
     )
   }
 

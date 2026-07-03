@@ -166,6 +166,8 @@ public struct WorkflowRunFailureResult: Codable, Equatable, Sendable {
   public var sessionId: String?
   public var sessionStore: String?
   public var persistedSession: Bool?
+  public var failureKind: WorkflowSessionFailureKind?
+  public var stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic?
   public var diagnostics: [String]?
   public var childExitCode: Int32?
   public var terminationSignal: Int32?
@@ -179,6 +181,8 @@ public struct WorkflowRunFailureResult: Codable, Equatable, Sendable {
     sessionId: String? = nil,
     sessionStore: String? = nil,
     persistedSession: Bool? = nil,
+    failureKind: WorkflowSessionFailureKind? = nil,
+    stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic? = nil,
     diagnostics: [String]? = nil,
     childExitCode: Int32? = nil,
     terminationSignal: Int32? = nil
@@ -191,6 +195,8 @@ public struct WorkflowRunFailureResult: Codable, Equatable, Sendable {
     self.sessionId = sessionId
     self.sessionStore = sessionStore
     self.persistedSession = persistedSession
+    self.failureKind = failureKind
+    self.stepBudgetDiagnostic = stepBudgetDiagnostic
     self.diagnostics = diagnostics
     self.childExitCode = childExitCode
     self.terminationSignal = terminationSignal
@@ -206,6 +212,31 @@ public struct WorkflowRunResultRecord: Codable, Equatable, Sendable {
   public init(type: String = "run_result", result: WorkflowRunResult) {
     self.type = type
     self.result = result
+  }
+}
+
+public struct WorkflowRunContextRecord: Codable, Equatable, Sendable {
+  public var type: String
+  public var sessionId: String
+  public var workflowName: String
+  public var sessionStore: String
+  public var scope: WorkflowScope
+  public var artifactRoot: String?
+
+  public init(
+    type: String = "run_context",
+    sessionId: String,
+    workflowName: String,
+    sessionStore: String,
+    scope: WorkflowScope,
+    artifactRoot: String? = nil
+  ) {
+    self.type = type
+    self.sessionId = sessionId
+    self.workflowName = workflowName
+    self.sessionStore = sessionStore
+    self.scope = scope
+    self.artifactRoot = artifactRoot
   }
 }
 

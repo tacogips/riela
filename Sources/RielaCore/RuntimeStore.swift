@@ -155,10 +155,22 @@ public struct WorkflowStepExecutionUpdateInput: Equatable, Sendable {
 public struct WorkflowSessionFailureInput: Equatable, Sendable {
   public var sessionId: String
   public var reason: String
+  public var failureKind: WorkflowSessionFailureKind?
+  public var failedAt: Date?
+  public var stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic?
 
-  public init(sessionId: String, reason: String) {
+  public init(
+    sessionId: String,
+    reason: String,
+    failureKind: WorkflowSessionFailureKind? = nil,
+    failedAt: Date? = nil,
+    stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic? = nil
+  ) {
     self.sessionId = sessionId
     self.reason = reason
+    self.failureKind = failureKind
+    self.failedAt = failedAt
+    self.stepBudgetDiagnostic = stepBudgetDiagnostic
   }
 }
 
@@ -488,6 +500,10 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     session.status = .running
     session.currentStepId = input.stepId
     session.updatedAt = date
+    session.failureReason = nil
+    session.failureKind = nil
+    session.failedAt = nil
+    session.stepBudgetDiagnostic = nil
     session.executions.append(execution)
     sessions[input.sessionId] = session
     return execution
@@ -555,6 +571,10 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     let date = clock.now()
     session.status = .failed
     session.updatedAt = date
+    session.failureReason = input.reason
+    session.failureKind = input.failureKind
+    session.failedAt = input.failedAt ?? date
+    session.stepBudgetDiagnostic = input.stepBudgetDiagnostic
     session.executions = session.executions.map { execution in
       guard execution.status == .running else {
         return execution

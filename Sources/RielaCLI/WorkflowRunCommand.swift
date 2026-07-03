@@ -30,6 +30,7 @@ public struct WorkflowRunCommand: Sendable {
 
   public func run(_ options: WorkflowRunOptions) async -> CLICommandResult {
     var livePersistenceState: WorkflowRunLivePersistenceState?
+    let jsonlRecorder = options.output == .jsonl ? WorkflowRunJSONLRecorder(writer: jsonlRecordWriter) : nil
     do {
       try rejectUnsupportedRunOptions(options)
       if let endpoint = options.endpoint {
@@ -87,7 +88,6 @@ public struct WorkflowRunCommand: Sendable {
         bundle: bundle,
         fromRegistry: options.fromRegistry
       )
-      let jsonlRecorder = options.output == .jsonl ? WorkflowRunJSONLRecorder(writer: jsonlRecordWriter) : nil
       let persistenceState = WorkflowRunLivePersistenceState()
       await persistenceState.configure(storeRoot: storeRoot)
       livePersistenceState = persistenceState
@@ -109,6 +109,16 @@ public struct WorkflowRunCommand: Sendable {
         }
         if let jsonlRecorder {
           await jsonlRecorder.append(event)
+          if event.type == .sessionStarted {
+            let context = WorkflowRunContextRecord(
+              sessionId: event.sessionId,
+              workflowName: persistedIdentity.workflowName,
+              sessionStore: storeRoot,
+              scope: persistedIdentity.resolution.scope,
+              artifactRoot: options.artifactRoot
+            )
+            await jsonlRecorder.append((try? jsonString(context)) ?? #"{"type":"run_context_encode_failed"}"# + "\n")
+          }
         }
       }
       let initialRequest = DeterministicWorkflowRunRequest(
@@ -189,9 +199,21 @@ public struct WorkflowRunCommand: Sendable {
         stdout: try await renderRunResult(finalResult, output: options.output, jsonlRecorder: jsonlRecorder)
       )
     } catch let error as CLIUsageError {
-      return await renderRunFailure(options: options, exitCode: .usage, error: error.message, state: livePersistenceState)
+      return await renderRunFailure(
+        options: options,
+        exitCode: .usage,
+        error: error.message,
+        state: livePersistenceState,
+        jsonlRecorder: jsonlRecorder
+      )
     } catch {
-      return await renderRunFailure(options: options, exitCode: .failure, error: "\(error)", state: livePersistenceState)
+      return await renderRunFailure(
+        options: options,
+        exitCode: .failure,
+        error: "\(error)",
+        state: livePersistenceState,
+        jsonlRecorder: jsonlRecorder
+      )
     }
   }
 
@@ -245,7 +267,8 @@ public struct WorkflowRunCommand: Sendable {
             workflowName: workflowName,
             session: session,
             resolution: resolution,
-            mockScenarioPath: options.mockScenarioPath
+            mockScenarioPath: options.mockScenarioPath,
+            runtimeVariables: variables
           ),
           runtimeSnapshot: snapshot,
           workflowMessages: workflowMessages,
@@ -343,7 +366,8 @@ public struct WorkflowRunCommand: Sendable {
         workflowName: workflowName,
         session: result.session,
         resolution: persistedResolution,
-        mockScenarioPath: options.mockScenarioPath
+        mockScenarioPath: options.mockScenarioPath,
+        runtimeVariables: variables
       ),
       runtimeSnapshot: snapshot
     )
@@ -615,13 +639,18 @@ public struct WorkflowRunCommand: Sendable {
     options: WorkflowRunOptions,
     exitCode: CLIExitCode,
     error: String,
-    state: WorkflowRunLivePersistenceState?
+    state: WorkflowRunLivePersistenceState?,
+    jsonlRecorder: WorkflowRunJSONLRecorder?
   ) async -> CLICommandResult {
     guard options.output.isStructured else {
       return CLICommandResult(exitCode: exitCode, stderr: error)
     }
     let persistence = await state?.snapshot()
     let termination = workflowRunTerminationDiagnostic(from: error)
+    let failedSnapshot = workflowRunFailureSnapshot(
+      sessionId: persistence?.latestSessionId,
+      storeRoot: persistence?.storeRoot
+    )
     let result = WorkflowRunFailureResult(
       target: options.target,
       exitCode: exitCode.rawValue,
@@ -629,12 +658,31 @@ public struct WorkflowRunCommand: Sendable {
       sessionId: persistence?.latestSessionId,
       sessionStore: persistence?.storeRoot,
       persistedSession: persistence?.persistedSession,
+      failureKind: failedSnapshot?.session.failureKind,
+      stepBudgetDiagnostic: failedSnapshot?.session.stepBudgetDiagnostic,
       diagnostics: persistence?.diagnostics.isEmpty == false ? persistence?.diagnostics : nil,
       childExitCode: termination.childExitCode,
       terminationSignal: termination.terminationSignal
     )
     let stdout = (try? jsonString(result)) ?? #"{"error":"failed to encode run failure","exitCode":1,"status":"failed","target":"workflow run"}"# + "\n"
+    if options.output == .jsonl, let jsonlRecorder {
+      await jsonlRecorder.append(stdout)
+      return CLICommandResult(exitCode: exitCode, stdout: await jsonlRecorder.bufferedOutput())
+    }
     return CLICommandResult(exitCode: exitCode, stdout: stdout)
+  }
+
+  private func workflowRunFailureSnapshot(
+    sessionId: String?,
+    storeRoot: String?
+  ) -> WorkflowRuntimePersistenceSnapshot? {
+    guard let sessionId, let storeRoot else {
+      return nil
+    }
+    let store = SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot)
+    )
+    return try? store.load(sessionId: sessionId)
   }
 }
 

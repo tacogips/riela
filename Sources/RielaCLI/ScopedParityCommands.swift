@@ -448,7 +448,8 @@ fileprivate extension ScopedParityCommandRunner {
           workflowName: persisted.record.workflowName,
           session: result.session,
           resolution: persistedResolution,
-          mockScenarioPath: parsed.mockScenarioPath
+          mockScenarioPath: parsed.mockScenarioPath,
+          runtimeVariables: variables
         ),
         runtimeSnapshot: WorkflowRuntimePersistenceProjector.snapshot(session: result.session, workflowMessages: workflowMessages)
       )

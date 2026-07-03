@@ -140,6 +140,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
 
   public func run(_ request: DeterministicWorkflowRunRequest) async throws -> WorkflowRunResult {
     var interruptedSessionId: String?
+    var pendingStepBudgetDiagnostic: WorkflowStepBudgetDiagnostic?
     do {
     let diagnostics = DefaultWorkflowValidator().validate(request.workflow)
     if let diagnostic = diagnostics.first(where: { $0.severity == .error }) {
@@ -175,7 +176,8 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         throw DeterministicWorkflowRunnerError.resumeValidation("session workflow does not match command workflow")
       }
       let resumeLineage = resumeRecoveryLineage(sourceSessionId: resumeSessionId)
-      if existing.status == .completed || existing.status == .failed {
+      let canResumeBudgetFailure = existing.status == .failed && existing.failureKind == .maxStepsExceeded
+      if existing.status == .completed || (existing.status == .failed && !canResumeBudgetFailure) {
         let terminalResult = WorkflowRunResult(
           workflowId: request.workflow.workflowId,
           session: existing,
@@ -239,11 +241,21 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     var rootOutput: JSONObject?
     var executionCounts: [String: Int] = [:]
     let maxLoopIterations = effectiveRequest.maxLoopIterations ?? effectiveRequest.workflow.defaults.maxLoopIterations
+    let maxStepsSource: WorkflowStepBudgetSource = effectiveRequest.maxSteps == nil ? .computedDefault : .commandLine
     let maxSteps = effectiveRequest.maxSteps ?? max(1, effectiveRequest.workflow.steps.count + maxLoopIterations)
 
     while let stepId = currentStepId {
       visitedSteps += 1
       if visitedSteps > maxSteps {
+        pendingStepBudgetDiagnostic = stepBudgetDiagnostic(
+          session: session,
+          stepBudget: maxSteps,
+          executionCount: maxSteps,
+          maxLoopIterations: maxLoopIterations,
+          budgetSource: maxStepsSource,
+          executionCounts: executionCounts,
+          unscheduledStepId: stepId
+        )
         throw DeterministicWorkflowRunnerError.maxStepsExceeded(maxSteps)
       }
       guard let step = executionPlan.step(id: stepId) else {
@@ -310,8 +322,13 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     await emitSessionCompletedEvent(result: completedResult, handler: effectiveRequest.eventHandler)
     return completedResult
     } catch {
-      if isWorkflowRunCancellation(error), let interruptedSessionId {
-        await markInterruptedSessionFailed(sessionId: interruptedSessionId, request: request)
+      if let interruptedSessionId {
+        await finalizeInterruptedSessionFailed(
+          sessionId: interruptedSessionId,
+          request: request,
+          error: error,
+          stepBudgetDiagnostic: pendingStepBudgetDiagnostic
+        )
       }
       throw error
     }
@@ -782,136 +799,6 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       }
     }
     throw lastValidationError ?? WorkflowPublicationError.validationRejected("output validation rejected candidate")
-  }
-
-  private func executeAddonAndPublish(
-    addon: WorkflowNodeAddonRef,
-    session: WorkflowSession,
-    sessionId: String,
-    workflow: WorkflowDefinition,
-    step: WorkflowStepRef,
-    resolvedInputPayload: JSONObject,
-    transitions: [WorkflowStepTransition],
-    request: DeterministicWorkflowRunRequest,
-    executionIndex: Int
-  ) async throws -> WorkflowPublicationResult {
-    let attachments: [String: WorkflowAddonAttachmentValue]
-    do {
-      attachments = try await attachmentProjector.project(
-        WorkflowAddonAttachmentProjectionRequest(
-          workflowId: workflow.workflowId,
-          sessionId: sessionId,
-          stepId: step.id,
-          nodeId: step.nodeId,
-          addon: addon,
-          preprojectedAttachments: request.addonAttachments,
-          descriptors: request.addonAttachmentDescriptors
-        )
-      )
-    } catch let projectionError as WorkflowAddonAttachmentProjectionError {
-      let adapterFailure = projectionError.adapterError
-      try await publishFailureAndThrow(
-        adapterFailure,
-        sessionId: sessionId,
-        step: step,
-        attempt: executionIndex,
-        transitions: transitions
-      )
-    } catch {
-      if isWorkflowRunCancellation(error) {
-        throw error
-      }
-      let adapterFailure = AdapterExecutionError(.policyBlocked, "native_attachment_projection_failed: \(String(describing: error))")
-      try await publishFailureAndThrow(
-        adapterFailure,
-        sessionId: sessionId,
-        step: step,
-        attempt: executionIndex,
-        transitions: transitions
-      )
-    }
-
-    let addonInput = WorkflowAddonExecutionInput(
-      workflowId: workflow.workflowId,
-      stepId: step.id,
-      nodeId: step.nodeId,
-      addon: addon,
-      variables: request.variables,
-      resolvedInputPayload: workflowAddonResolvedInputPayload(resolvedInputPayload, session: session),
-      attachments: attachments
-    )
-    guard let addonResolver else {
-      let adapterFailure = AdapterExecutionError(.providerError, "missing add-on resolver for '\(addon.name)'")
-      try await publishFailureAndThrow(
-        adapterFailure,
-        sessionId: sessionId,
-        step: step,
-        attempt: executionIndex,
-        transitions: transitions
-      )
-    }
-
-    let adapterOutput: AdapterExecutionOutput
-    do {
-      _ = try await recordStepStartedExecution(
-        workflowId: workflow.workflowId,
-        sessionId: sessionId,
-        step: step,
-        attempt: executionIndex,
-        backend: nil,
-        handler: request.eventHandler
-      )
-      adapterOutput = try await addonResolver.execute(
-        addonInput,
-        context: AdapterExecutionContext(deadline: deadline(for: step, request: request))
-      )
-    } catch let adapterFailure as AdapterExecutionError {
-      try await publishFailureAndThrow(
-        adapterFailure,
-        sessionId: sessionId,
-        step: step,
-        attempt: executionIndex,
-        transitions: transitions
-      )
-    } catch {
-      if isWorkflowRunCancellation(error) {
-        throw error
-      }
-      let adapterFailure = AdapterExecutionError(.providerError, String(describing: error))
-      try await publishFailureAndThrow(
-        adapterFailure,
-        sessionId: sessionId,
-        step: step,
-        attempt: executionIndex,
-        transitions: transitions,
-        throwing: error
-      )
-    }
-
-    let routingReconciler = workflowRoutingReconciler(workflow: workflow, step: step)
-    let candidate = try normalizeRuntimeAdapterOutput(adapterOutput, routingReconciler: routingReconciler)
-    if let adapterFailure = multiplePublishableTransitionFailure(transitions: transitions, candidate: candidate) {
-      try await publishFailureAndThrow(
-        adapterFailure,
-        sessionId: sessionId,
-        step: step,
-        attempt: executionIndex,
-        adapterOutput: adapterOutput,
-        transitions: transitions
-      )
-    }
-    return try await publisher.publishAcceptedOutput(
-      WorkflowPublicationRequest(
-        sessionId: sessionId,
-        stepId: step.id,
-        nodeId: step.nodeId,
-        attempt: executionIndex,
-        body: .adapterOutput(adapterOutput),
-        routingReconciler: routingReconciler,
-        transitions: transitions,
-        publishesRootOutput: transitions.isEmpty
-      )
-    )
   }
 
 }

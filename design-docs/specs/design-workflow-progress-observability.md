@@ -238,6 +238,46 @@ scope so a second terminal can immediately run `session progress`.
   `maxLoopIterations` to 22 (effective budget 28 = six cycles) or document
   `--max-steps 28` in its usage text.
 
+## Acceptance Traceability
+
+The implementation review for this design is complete only when these Step 1
+signals are all represented by code, tests, or an explicit limitation:
+
+| Signal | Design owner |
+|---|---|
+| Terminal in-runner failures persist as failed sessions and emit terminal `session_completed` events. | P0-1 |
+| `failureKind` metadata is stored and surfaced in progress/list/latest/run output where applicable. | P0-1, P0-2, P0-3 |
+| `stepBudgetDiagnostic` includes dominant-cycle evidence and projected per-step cap classification. | P1-4 |
+| JSONL workflow run output includes `run_context` with session discovery context. | P1-6 |
+| Session list/latest discovery works for persisted sessions, including failed `maxStepsExceeded` sessions. | P0-3 |
+| Session resume supports `maxStepsExceeded` recovery while preserving terminal short-circuit for other failed kinds. | P1-5 |
+| `maxStepsExceeded` resume preserves the persisted `runtimeVariables` unless the caller explicitly overrides variables through supported resume inputs. | P1-5 |
+| `workflow inspect`/`usage` surfaces `defaultMaxSteps`. | P1-4 |
+| GraphQL contracts expose CLI/runtime-parity session inspection and discovery fields for failure metadata, diagnostics, and compact rows. | P0-2, P0-3 |
+| Installed `riela-workflow-run` and `riela-troubleshooting` guidance steers long runs to JSONL and unknown-id triage to `session latest`. | P1-6 |
+| `examples/recent-change-quality-loop/workflow.json` yields `defaultMaxSteps: 28`; with six workflow steps this means `maxLoopIterations: 22` under the current additive budget formula. | P1-4, P1-6 |
+| Relevant CLI/core/GraphQL tests pass. | Implementation plan phases 2-5 |
+| Swift lint and build verification are run or limitations are explicitly reported. | Validation |
+
+## Agent Reference Boundaries
+
+The local files listed by the intake are behavioral and structural references:
+`Sources/RielaCore/DeterministicWorkflowRunner.swift`,
+`Sources/RielaCLI/SessionCommands.swift`,
+`Sources/RielaCLI/CLIWorkflowSessionStore.swift`,
+`Sources/RielaCLI/WorkflowRunCommand.swift`, and
+`Tests/RielaCLITests/WorkflowCommandSessionDiscoveryTests.swift`.
+They are not a license to copy behavior blindly across agents.
+
+Riela workflow progress observability is owned by the workflow runtime,
+session store, CLI projections, and GraphQL contracts. Codex-agent and
+Cursor-agent process details remain isolated behind their adapter modules.
+This design intentionally does not add Cursor-specific session discovery or
+resume semantics to the workflow core. Cursor CLI behavior may inspire row
+shape, GraphQL parity, and operational vocabulary, but workflow persistence
+continues to use `WorkflowSession`, `CLIWorkflowSessionStore`, and workflow
+failure kinds as the canonical model.
+
 ## Proposed Fixes
 
 ### P0-1 — Persist terminal failure for all in-runner failure paths
@@ -329,8 +369,14 @@ included in `WorkflowRunFailureResult`):
 - `stepBudget`, `executionCount`, `maxLoopIterations`, and whether the
   budget came from `--max-steps` or the computed default;
 - per-step revisit counts (from `executionCounts`) and the dominant cycle
-  when detectable, e.g. `step1-review -> step2-exit-gate -> step3-handoff ->
-  step4-post-handoff (x3)`;
+  when detectable. The persisted shape should be structured, not only a
+  display string: `dominantCycleStepIds` plus
+  `dominantCycleRepeatCount`, e.g. `step1-review -> step2-exit-gate ->
+  step3-handoff -> step4-post-handoff (x3)`;
+- projected per-step cap classification fields:
+  `perStepRevisitCap` and `projectedCapExceededStepIds`. These indicate
+  where a future per-step interpretation of `maxLoopIterations` would have
+  fired, without changing enforcement in this release;
 - open review-finding count;
 - the unscheduled next step;
 - a suggested remediation: `session resume <id> --max-steps <n>` with `n`
@@ -357,6 +403,9 @@ running.
 - Add `--max-steps <n>` to `SessionResumeOptions` and plumb it into the
   resume request. Without it, resume uses the computed default (which is
   what accidental resume grants today, F6).
+- Preserve the persisted session `runtimeVariables` on resume so recovery
+  continues the same workflow input and source context; only explicit
+  supported resume inputs may replace them.
 - All other failed kinds keep the terminal short-circuit; `session rerun
   <id> <step-id>` remains their documented recovery path.
 
@@ -371,7 +420,11 @@ running.
   match what `riela-package` already says — long runs use `--output jsonl`;
   `--output json` is final-only; start triage with `session progress`,
   escalate to `session status`; once P0-3 lands, start with `session
-  latest --workflow ...` when the id is unknown.
+  latest --workflow ...` when the id is unknown. For this repository, the
+  design is satisfied by updating the installed skill guidance at
+  `<codex-home>/skills/riela-workflow-run/SKILL.md` and
+  `<codex-home>/skills/riela-troubleshooting/SKILL.md`; package-local
+  copies remain a follow-up only if a future packaging step requires them.
 
 ### P2-7 — Watch/attach: defer to the cancellation/orphan design
 
@@ -458,9 +511,16 @@ parallel with 2-3.
 ## Validation
 
 - `swift build` and the targeted test suites per phase
-  (`RielaCoreTests.DeterministicWorkflowRunnerTests`, RielaCLITests session
-  and workflow-run suites, RielaGraphQLTests).
+  (`RielaCoreTests.DeterministicWorkflowRunnerTests`,
+  `RielaCLITests.WorkflowCommandSessionDiscoveryTests`,
+  `RielaCLITests.WorkflowCommandInspectionTests`,
+  `RielaCLITests.WorkflowCommandTests`, and
+  `RielaGraphQLTests.GraphQLContractsTests`). Broaden to
+  `RielaCoreTests`, `RielaCLITests`, and `RielaGraphQLTests` for final
+  handoff when runtime permits.
 - Manual re-check of the incident shape: run the packaged loop with a mock
   scenario that keeps one finding open, confirm `session progress` reports
   `failed` + diagnostic, then `session resume --max-steps 28` completes.
-- `git diff --check` and the pre-commit safety checks before committing.
+- `swiftlint`, `git diff --check`, and pre-commit safety checks before
+  committing. If any command is unavailable or exposes unrelated pre-existing
+  failures, record the command, result, and owner explicitly in the handoff.

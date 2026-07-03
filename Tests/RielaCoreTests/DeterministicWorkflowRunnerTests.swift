@@ -7,17 +7,25 @@ import RielaMemory
 final class DeterministicWorkflowRunnerTests: XCTestCase {
   func testAdapterFailureRecordsFailedExecutionWithoutMessages() async throws {
     let store = InMemoryWorkflowRuntimeStore()
+    let recorder = WorkflowRunEventRecorder()
     let runner = DeterministicWorkflowRunner(store: store, adapter: FailingAdapter())
 
-    await XCTAssertThrowsErrorAsync(try await runner.run(request()))
+    await XCTAssertThrowsErrorAsync(try await runner.run(request(eventHandler: { event in
+      await recorder.append(event)
+    })))
 
     let maybeSession = await store.loadSessionForTest(id: "runner-session-1")
     let session = try XCTUnwrap(maybeSession)
     XCTAssertEqual(session.status, .failed)
+    XCTAssertEqual(session.failureKind, .adapterFailure)
+    XCTAssertEqual(session.failureReason, "provider_error: forced failure")
     XCTAssertEqual(session.executions.count, 1)
     XCTAssertEqual(session.executions.first?.status, .failed)
     let messages = try await store.listMessages(for: session.sessionId, toStepId: nil)
     XCTAssertEqual(messages, [])
+    let events = await recorder.events()
+    XCTAssertEqual(events.last?.type, .sessionCompleted)
+    XCTAssertEqual(events.last?.status, .failed)
   }
 
   func testCancellationMarksRunningSessionFailedAndEmitsTerminalEvent() async throws {
@@ -37,6 +45,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
     let maybeSession = await store.loadSessionForTest(id: "runner-session-1")
     let session = try XCTUnwrap(maybeSession)
     XCTAssertEqual(session.status, .failed)
+    XCTAssertEqual(session.failureKind, .cancelled)
     XCTAssertEqual(session.executions.count, 1)
     XCTAssertEqual(session.executions.first?.status, .failed)
     XCTAssertEqual(session.executions.first?.failureReason, "workflow run cancelled")
@@ -71,6 +80,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
     let maybeSession = await store.loadSessionForTest(id: "rerun-runner-session-1")
     let session = try XCTUnwrap(maybeSession)
     XCTAssertEqual(session.status, .failed)
+    XCTAssertEqual(session.failureKind, .cancelled)
     XCTAssertEqual(session.executions.count, 1)
     XCTAssertEqual(session.executions.first?.status, .completed)
     let messages = try await store.listMessages(for: session.sessionId, toStepId: nil)
@@ -544,20 +554,158 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
   }
 
   func testMaxLoopIterationsBoundsDeterministicRun() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    let recorder = WorkflowRunEventRecorder()
     let loopingWorkflow = workflow(
       defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 10),
       transitions: [WorkflowStepTransition(toStepId: "step")]
     )
-    let runner = DeterministicWorkflowRunner(adapter: StaticAdapter(output: output()))
+    let runner = DeterministicWorkflowRunner(store: store, adapter: StaticAdapter(output: output()))
 
     do {
-      _ = try await runner.run(request(workflow: loopingWorkflow, maxLoopIterations: 1))
+      _ = try await runner.run(request(
+        workflow: loopingWorkflow,
+        maxLoopIterations: 1,
+        eventHandler: { event in
+          await recorder.append(event)
+        }
+      ))
       XCTFail("expected maxStepsExceeded")
     } catch DeterministicWorkflowRunnerError.maxStepsExceeded(let maxSteps) {
       XCTAssertEqual(maxSteps, 2)
     } catch {
       XCTFail("unexpected error: \(error)")
     }
+
+    let maybeSession = await store.loadSessionForTest(id: "runner-session-1")
+    let session = try XCTUnwrap(maybeSession)
+    XCTAssertEqual(session.status, .failed)
+    XCTAssertEqual(session.failureKind, .maxStepsExceeded)
+    XCTAssertEqual(session.failureReason, "maxStepsExceeded(2)")
+    XCTAssertEqual(session.stepBudgetDiagnostic?.stepBudget, 2)
+    XCTAssertEqual(session.stepBudgetDiagnostic?.executionCount, 2)
+    XCTAssertEqual(session.stepBudgetDiagnostic?.perStepExecutionCounts, ["step": 2])
+    XCTAssertEqual(session.stepBudgetDiagnostic?.dominantCycleStepIds, ["step"])
+    XCTAssertEqual(session.stepBudgetDiagnostic?.dominantCycleRepeatCount, 3)
+    XCTAssertEqual(session.stepBudgetDiagnostic?.perStepRevisitCap, 2)
+    XCTAssertEqual(session.stepBudgetDiagnostic?.projectedCapExceededStepIds, ["step"])
+    XCTAssertEqual(session.stepBudgetDiagnostic?.unscheduledStepId, "step")
+
+    let events = await recorder.events()
+    XCTAssertEqual(events.last?.type, .sessionCompleted)
+    XCTAssertEqual(events.last?.status, .failed)
+  }
+
+  func testResumeAllowsBudgetFailedSessionWithRaisedBudget() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    let workflow = twoStepWorkflow()
+    let runner = DeterministicWorkflowRunner(
+      store: store,
+      adapter: StepCapturingAdapter(outputsByStep: [
+        "step-a": output(payload: ["status": .string("first")]),
+        "step-b": output(payload: ["status": .string("second")])
+      ])
+    )
+
+    do {
+      _ = try await runner.run(DeterministicWorkflowRunRequest(
+        workflow: workflow,
+        nodePayloads: nodePayloads(for: workflow),
+        maxSteps: 1
+      ))
+      XCTFail("expected maxStepsExceeded")
+    } catch DeterministicWorkflowRunnerError.maxStepsExceeded(let maxSteps) {
+      XCTAssertEqual(maxSteps, 1)
+    } catch {
+      XCTFail("unexpected error: \(error)")
+    }
+
+    let maybeFailed = await store.loadSessionForTest(id: "rerun-runner-session-1")
+    let failed = try XCTUnwrap(maybeFailed)
+    XCTAssertEqual(failed.status, .failed)
+    XCTAssertEqual(failed.failureKind, .maxStepsExceeded)
+    XCTAssertEqual(failed.currentStepId, "step-b")
+
+    let resumed = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: workflow,
+      nodePayloads: nodePayloads(for: workflow),
+      maxSteps: 1,
+      resumeSessionId: failed.sessionId
+    ))
+
+    XCTAssertEqual(resumed.session.sessionId, failed.sessionId)
+    XCTAssertEqual(resumed.session.status, .completed)
+    XCTAssertNil(resumed.session.failureKind)
+    XCTAssertEqual(resumed.session.executions.map(\.stepId), ["step-a", "step-b"])
+  }
+
+  func testResumePreStepFailureOverwritesPreviousBudgetFailureMetadata() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    let workflow = twoStepWorkflow()
+    let runner = DeterministicWorkflowRunner(
+      store: store,
+      adapter: StepCapturingAdapter(outputsByStep: [
+        "step-a": output(payload: ["status": .string("first")]),
+        "step-b": output(payload: ["status": .string("second")])
+      ])
+    )
+
+    do {
+      _ = try await runner.run(DeterministicWorkflowRunRequest(
+        workflow: workflow,
+        nodePayloads: nodePayloads(for: workflow),
+        maxSteps: 1
+      ))
+      XCTFail("expected maxStepsExceeded")
+    } catch DeterministicWorkflowRunnerError.maxStepsExceeded {
+    } catch {
+      XCTFail("unexpected error: \(error)")
+    }
+
+    let maybeFailed = await store.loadSessionForTest(id: "rerun-runner-session-1")
+    let failed = try XCTUnwrap(maybeFailed)
+    XCTAssertEqual(failed.failureKind, .maxStepsExceeded)
+    XCTAssertNotNil(failed.stepBudgetDiagnostic)
+
+    let cancellingResumeRunner = DeterministicWorkflowRunner(
+      store: store,
+      adapter: StepCapturingAdapter(outputsByStep: [
+        "step-a": output(payload: ["status": .string("first")]),
+        "step-b": output(payload: ["status": .string("second")])
+      ]),
+      inputResolver: StepCancellingInputResolver(cancelledStepId: "step-b")
+    )
+
+    do {
+      _ = try await cancellingResumeRunner.run(DeterministicWorkflowRunRequest(
+        workflow: workflow,
+        nodePayloads: nodePayloads(for: workflow),
+        maxSteps: 3,
+        resumeSessionId: failed.sessionId
+      ))
+      XCTFail("expected cancellation")
+    } catch is CancellationError {
+    } catch {
+      XCTFail("unexpected error: \(error)")
+    }
+
+    let maybeOverwritten = await store.loadSessionForTest(id: failed.sessionId)
+    let overwritten = try XCTUnwrap(maybeOverwritten)
+    XCTAssertEqual(overwritten.status, .failed)
+    XCTAssertEqual(overwritten.failureKind, .cancelled)
+    XCTAssertEqual(overwritten.failureReason, "workflow run cancelled")
+    XCTAssertNil(overwritten.stepBudgetDiagnostic)
+
+    let terminalResume = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: workflow,
+      nodePayloads: nodePayloads(for: workflow),
+      maxSteps: 3,
+      resumeSessionId: failed.sessionId
+    ))
+
+    XCTAssertEqual(terminalResume.status, .failed)
+    XCTAssertEqual(terminalResume.exitCode, 1)
+    XCTAssertEqual(terminalResume.session.failureKind, .cancelled)
   }
 
   func testRerunCreatesNewSessionStartingAtRequestedStep() async throws {

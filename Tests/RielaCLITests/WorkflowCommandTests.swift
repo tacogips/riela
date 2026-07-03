@@ -5,6 +5,7 @@ import RielaMemory
 import XCTest
 @testable import RielaCLI
 
+// swiftlint:disable:next type_body_length
 final class WorkflowCommandTests: XCTestCase {
   func testTopLevelHelpReturnsSuccessfulSmokeOutput() async {
     let result = await RielaCLIApplication().run(["--help"])
@@ -75,14 +76,20 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertEqual(run.exitCode, .success)
     XCTAssertTrue(run.stderr.isEmpty)
     let lines = run.stdout.split(separator: "\n").map(String.init)
-    XCTAssertEqual(lines.count, 5)
+    XCTAssertEqual(lines.count, 6)
 
     let first = try decodeJSON(WorkflowRunEvent.self, from: lines[0])
     XCTAssertEqual(first.type, .sessionStarted)
     XCTAssertEqual(first.workflowId, "worker-only-single-step")
     XCTAssertTrue(first.sessionId.hasPrefix("worker-only-single-step-session-"))
 
-    let final = try decodeJSON(WorkflowRunResultRecord.self, from: lines[4])
+    let context = try decodeJSON(WorkflowRunContextRecord.self, from: lines[1])
+    XCTAssertEqual(context.type, "run_context")
+    XCTAssertEqual(context.sessionId, first.sessionId)
+    XCTAssertEqual(context.workflowName, "worker-only-single-step")
+    XCTAssertFalse(context.sessionStore.isEmpty)
+
+    let final = try decodeJSON(WorkflowRunResultRecord.self, from: lines[5])
     XCTAssertEqual(final.type, "run_result")
     XCTAssertEqual(final.result.status, .completed)
     XCTAssertEqual(final.result.rootOutput?["status"], .string("ready"))
@@ -111,7 +118,7 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertTrue(run.stdout.isEmpty)
     XCTAssertTrue(run.stderr.isEmpty)
     XCTAssertTrue(probe.persistedAtSessionStart())
-    XCTAssertEqual(probe.lines().count, 5)
+    XCTAssertEqual(probe.lines().count, 6)
     let canonicalDatabasePath = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(
       rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStore.path)
     )
@@ -119,6 +126,43 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertTrue(FileManager.default.fileExists(atPath: canonicalDatabasePath))
     XCTAssertFalse(FileManager.default.fileExists(atPath: sessionStore.appendingPathComponent("cli-workflow-sessions.sqlite").path))
     XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: sessionStore.path).allSatisfy { !$0.hasSuffix(".json") })
+  }
+
+  func testWorkflowRunJSONLFailureIncludesBufferedProgressRecords() async throws {
+    let root = repositoryRoot()
+    let sessionStore = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-jsonl-buffered-failure-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: sessionStore) }
+
+    let run = await RielaCLIApplication().run([
+      "workflow", "run", "recent-change-quality-loop",
+      "--workflow-definition-dir", "\(root)/examples",
+      "--mock-scenario", "\(root)/examples/recent-change-quality-loop/mock-scenario.json",
+      "--session-store", sessionStore.path,
+      "--max-steps", "1",
+      "--output", "jsonl"
+    ])
+
+    XCTAssertEqual(run.exitCode, .failure)
+    XCTAssertTrue(run.stderr.isEmpty)
+    let lines = run.stdout.split(separator: "\n").map(String.init)
+    XCTAssertGreaterThanOrEqual(lines.count, 4)
+
+    let first = try decodeJSON(WorkflowRunEvent.self, from: lines[0])
+    XCTAssertEqual(first.type, .sessionStarted)
+    XCTAssertEqual(first.workflowId, "recent-change-quality-loop")
+
+    let context = try decodeJSON(WorkflowRunContextRecord.self, from: lines[1])
+    XCTAssertEqual(context.type, "run_context")
+    XCTAssertEqual(context.sessionId, first.sessionId)
+    XCTAssertEqual(context.workflowName, "recent-change-quality-loop")
+    XCTAssertEqual(context.sessionStore, sessionStore.path)
+
+    XCTAssertTrue(lines.contains { $0.contains(#""type":"session_completed""#) })
+    let failure = try decodeJSON(WorkflowRunFailureResult.self, from: lines[lines.count - 1])
+    XCTAssertEqual(failure.sessionId, first.sessionId)
+    XCTAssertEqual(failure.failureKind, .maxStepsExceeded)
+    XCTAssertEqual(failure.stepBudgetDiagnostic?.stepBudget, 1)
   }
 
   func testUsageSupportsAddonSmokeWorkflow() async throws {

@@ -3,6 +3,21 @@ import RielaAdapters
 import RielaCore
 
 private let defaultCodexAuthPreflightTimeout: TimeInterval = 5
+private let codexJSONEventTypes: Set<String> = [
+  "session_meta",
+  "thread.started",
+  "turn.started",
+  "turn.completed",
+  "item.started",
+  "item.updated",
+  "item.completed",
+  "event_msg",
+  "response_item",
+  "assistant.snapshot",
+  "session.started",
+  "session.error"
+]
+private let codexItemEventTypes: Set<String> = ["item.started", "item.updated", "item.completed"]
 
 public struct CodexAgentCommandBuilder: LocalAgentCommandBuilding {
   public var executableName: String
@@ -32,6 +47,7 @@ public struct CodexAgentCommandBuilder: LocalAgentCommandBuilding {
       configOverrides: configOverrides,
       additionalArguments: additionalArguments
         + agentToolPolicyArguments(input.node.agentToolPolicy, backend: .codexAgent)
+        + codexUnifiedExecArguments(input.node.variables["codexUnifiedExec"])
         + stringArray(input.node.variables["codexAdditionalArgs"])
     )
     let arguments = [executableName] + CodexProcessCommandBuilder.buildExecArguments(
@@ -203,6 +219,20 @@ private func stringArray(_ value: JSONValue?) -> [String] {
   }
 }
 
+private func boolValue(_ value: JSONValue?) -> Bool? {
+  guard case let .bool(value) = value else {
+    return nil
+  }
+  return value
+}
+
+private func codexUnifiedExecArguments(_ value: JSONValue?) -> [String] {
+  guard boolValue(value) == false else {
+    return []
+  }
+  return ["--disable", "unified_exec"]
+}
+
 public func normalizeCodexExecJSONStdout(_ text: String) -> String {
   let lines = text
     .split(whereSeparator: \.isNewline)
@@ -242,12 +272,10 @@ public func normalizeCodexExecJSONStdout(_ text: String) -> String {
 }
 
 private func isCodexJSONEvent(_ object: JSONObject) -> Bool {
-  switch stringValue(object["type"]) {
-  case "session_meta", "thread.started", "turn.started", "turn.completed", "item.completed", "event_msg", "response_item", "assistant.snapshot", "session.started", "session.error":
-    return true
-  default:
+  guard let type = stringValue(object["type"]) else {
     return false
   }
+  return codexJSONEventTypes.contains(type)
 }
 
 private func codexBackendEventType(_ line: String) -> String? {
@@ -290,9 +318,12 @@ private func classifyCodexContentEvent(object: JSONObject, eventType: String) ->
       contentSnapshot: content
     )
   }
-  if eventType == "item.completed", let item = objectValue(object["item"]) {
+  if isCodexItemEvent(eventType), let item = objectValue(object["item"]) {
     switch stringValue(item["type"]) {
     case "agent_message":
+      guard eventType == "item.completed" else {
+        return nil
+      }
       return AdapterBackendEvent(
         provider: CliAgentBackend.codexAgent.rawValue,
         eventType: eventType,
@@ -300,6 +331,9 @@ private func classifyCodexContentEvent(object: JSONObject, eventType: String) ->
         contentSnapshot: stringValue(item["text"])
       )
     case "reasoning":
+      guard eventType == "item.completed" else {
+        return nil
+      }
       return AdapterBackendEvent(
         provider: CliAgentBackend.codexAgent.rawValue,
         eventType: eventType,
@@ -311,11 +345,11 @@ private func classifyCodexContentEvent(object: JSONObject, eventType: String) ->
         provider: CliAgentBackend.codexAgent.rawValue,
         eventType: eventType,
         channel: .tool,
-        contentSnapshot: stringValue(item["text"]) ?? stringValue(item["status"]),
-        toolName: stringValue(item["name"]) ?? stringValue(item["tool_name"])
+        contentSnapshot: codexToolContentSnapshot(from: item),
+        toolName: codexToolName(from: item)
       )
     default:
-      break
+      return nil
     }
   }
   if let content = codexAssistantContent(from: object) {
@@ -327,6 +361,23 @@ private func classifyCodexContentEvent(object: JSONObject, eventType: String) ->
     )
   }
   return nil
+}
+
+private func isCodexItemEvent(_ eventType: String) -> Bool {
+  codexItemEventTypes.contains(eventType)
+}
+
+private func codexToolContentSnapshot(from item: JSONObject) -> String? {
+  stringValue(item["command"])
+    ?? stringValue(item["text"])
+    ?? outputText(from: item["content"])
+    ?? stringValue(item["status"])
+}
+
+private func codexToolName(from item: JSONObject) -> String? {
+  stringValue(item["name"])
+    ?? stringValue(item["tool_name"])
+    ?? stringValue(item["type"])
 }
 
 private func codexAssistantContent(from object: JSONObject) -> String? {

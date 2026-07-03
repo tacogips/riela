@@ -775,6 +775,14 @@ Current backend values:
 
 For `agent` nodes, `model` must be a provider or backend-specific model name. Do not put CLI-wrapper identifiers such as `codex-agent`, `claude-code-agent`, `tacogips/codex-agent`, or `tacogips/claude-code-agent` in `model`.
 
+Codex-specific node variables:
+
+- `codexAdditionalArgs`: array of strings appended to the generated `codex exec`
+  argv for advanced backend flags
+- `codexUnifiedExec`: optional boolean; `false` appends
+  `--disable unified_exec` for workflows that need completed command events
+  while Codex unified exec observability is degraded
+
 ### `modelFreeze`
 
 `modelFreeze` is an optional boolean on authored node payloads. Omitted values

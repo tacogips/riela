@@ -391,7 +391,9 @@ func workflowRunHelpText(target: String?) -> String {
     --stall-timeout-ms is opt-in. CLI agent and official SDK backends are not
     treated as stalled from missing session heartbeats, because a long LLM
     inference and a provider-side stall are not distinguishable from local
-    session records alone.
+    session records alone. Agent silence warnings are observability hints, not
+    cancellation decisions. For codex-agent command observability issues, set
+    node variables.codexUnifiedExec to false to pass --disable unified_exec.
 
   Remote options:
     --endpoint <url>

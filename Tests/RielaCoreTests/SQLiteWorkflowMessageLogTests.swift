@@ -143,6 +143,139 @@ final class SQLiteWorkflowMessageLogTests: XCTestCase {
     XCTAssertEqual(storage, ["blob", "1", "accepted"])
   }
 
+  func testSQLiteRuntimePersistenceLoadAllReturnsMessagesFromRuntimeDatabase() throws {
+    let root = temporaryDirectory()
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+
+    let firstSession = WorkflowSession(
+      workflowId: "wf",
+      sessionId: "session-a",
+      status: .completed,
+      entryStepId: "start",
+      createdAt: date,
+      updatedAt: date.addingTimeInterval(1)
+    )
+    let secondSession = WorkflowSession(
+      workflowId: "wf",
+      sessionId: "session-b",
+      status: .completed,
+      entryStepId: "start",
+      createdAt: date,
+      updatedAt: date
+    )
+    try store.save(WorkflowRuntimePersistenceSnapshot(
+      session: firstSession,
+      workflowMessages: [message(sessionId: firstSession.sessionId, communicationId: "comm-a", createdAt: date)]
+    ))
+    try store.save(WorkflowRuntimePersistenceSnapshot(
+      session: secondSession,
+      workflowMessages: [message(sessionId: secondSession.sessionId, communicationId: "comm-b", createdAt: date)]
+    ))
+
+    let snapshots = try store.loadAll()
+
+    XCTAssertEqual(snapshots.map(\.session.sessionId), ["session-a", "session-b"])
+    XCTAssertEqual(snapshots.map { $0.workflowMessages.map(\.communicationId) }, [["comm-a"], ["comm-b"]])
+  }
+
+  func testSQLiteRuntimePersistenceCanAppendMessagesWithoutReplacingExistingRows() throws {
+    let root = temporaryDirectory()
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    let session = WorkflowSession(
+      workflowId: "wf",
+      sessionId: "session-append",
+      status: .running,
+      entryStepId: "start",
+      createdAt: date,
+      updatedAt: date
+    )
+    let first = message(
+      sessionId: session.sessionId,
+      communicationId: "comm-a",
+      createdOrder: 1,
+      createdAt: date
+    )
+    let second = message(
+      sessionId: session.sessionId,
+      communicationId: "comm-b",
+      createdOrder: 2,
+      createdAt: date.addingTimeInterval(1)
+    )
+
+    try store.save(WorkflowRuntimePersistenceSnapshot(session: session, workflowMessages: [first]))
+    var updatedSession = session
+    updatedSession.updatedAt = date.addingTimeInterval(1)
+    try store.save(
+      WorkflowRuntimePersistenceSnapshot(session: updatedSession, workflowMessages: [first, second]),
+      appendingWorkflowMessages: [second]
+    )
+
+    XCTAssertEqual(
+      try store.load(sessionId: session.sessionId).workflowMessages.map(\.communicationId),
+      ["comm-a", "comm-b"]
+    )
+  }
+
+  func testWorkflowMessageLogUpsertRefreshesPayloadIndexRows() throws {
+    let root = temporaryDirectory()
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let dbPath = SQLiteWorkflowMessageLog.defaultDatabasePath(rootDirectory: root.path)
+    let log = SQLiteWorkflowMessageLog(databasePath: dbPath)
+    let original = message(
+      sessionId: "session-upsert",
+      communicationId: "comm-a",
+      payload: ["status": .string("old")],
+      createdAt: date
+    )
+    let updated = message(
+      sessionId: "session-upsert",
+      communicationId: "comm-a",
+      payload: ["status": .string("new")],
+      createdAt: date
+    )
+
+    try log.upsertMessages([original])
+    try log.upsertMessages([updated])
+
+    XCTAssertEqual(
+      try log.listMessages(
+        workflowExecutionId: "session-upsert",
+        payloadScalarFilter: .init(key: "status", value: .string("old"))
+      ),
+      []
+    )
+    XCTAssertEqual(
+      try log.listMessages(
+        workflowExecutionId: "session-upsert",
+        payloadScalarFilter: .init(key: "status", value: .string("new"))
+      ),
+      [updated]
+    )
+  }
+
+  private func message(
+    sessionId: String,
+    communicationId: String,
+    payload: JSONObject = ["status": .string("ok")],
+    createdOrder: Int = 1,
+    createdAt: Date
+  ) -> WorkflowMessageRecord {
+    WorkflowMessageRecord(
+      communicationId: communicationId,
+      workflowExecutionId: sessionId,
+      fromStepId: "start",
+      toStepId: "worker",
+      sourceStepExecutionId: "exec-start",
+      transitionCondition: "always",
+      payload: payload,
+      lifecycleStatus: .delivered,
+      createdOrder: createdOrder,
+      createdAt: createdAt
+    )
+  }
+
   func testWorkflowMessageLogRejectsPlainTextJSONColumns() throws {
     let dbPath = temporaryDirectory().appendingPathComponent("runtime-message-log.sqlite").path
     try SQLiteWorkflowMessageLog(databasePath: dbPath).replaceMessages(for: "session-jsonb", with: [])

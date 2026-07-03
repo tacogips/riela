@@ -635,6 +635,8 @@ final class EventDryRunTests: XCTestCase {
       inputMapping: .init(mode: .template, template: .object([
         "text": .string("{{ event.input.text }}"),
         "file": .string("{{ event.input.files.0 }}"),
+        "messageId": .string("{{ event.input.messageId }}"),
+        "messageIdText": .string("id={{ event.input.messageId }}"),
         "summary": .string("{{ source.kind }}:{{ binding.id }}"),
         "workflow": .string("{{ binding.workflowName }}"),
         "nested": .array([.string("{{ event.input.text }}")])
@@ -649,6 +651,7 @@ final class EventDryRunTests: XCTestCase {
       receivedAt: Date(timeIntervalSince1970: 1),
       input: [
         "text": .string("hello"),
+        "messageId": .integer(9_223_372_036_854_775_807),
         "files": .array([.object(["path": .string("docs/readme.md")])])
       ]
     )
@@ -658,6 +661,8 @@ final class EventDryRunTests: XCTestCase {
     XCTAssertTrue(result.accepted)
     XCTAssertEqual(result.triggers.first?.input["text"], .string("hello"))
     XCTAssertEqual(result.triggers.first?.input["file"], .object(["path": .string("docs/readme.md")]))
+    XCTAssertEqual(result.triggers.first?.input["messageId"], .integer(9_223_372_036_854_775_807))
+    XCTAssertEqual(result.triggers.first?.input["messageIdText"], .string("id=9223372036854775807"))
     XCTAssertEqual(result.triggers.first?.input["summary"], .string("webhook:bind-a"))
     XCTAssertEqual(result.triggers.first?.input["workflow"], .string("workflow-a"))
     XCTAssertEqual(result.triggers.first?.input["nested"], .array([.string("hello")]))

@@ -18,7 +18,23 @@ extension WorkflowRunCommand {
     var supervisedAttempts = 0
     var pendingRemediationIndex: Int?
 
+    func cancelledResult() async -> WorkflowRunResult {
+      await cancelledSupervisionResult(
+        workflow: workflow,
+        runtimeStore: runtimeStore,
+        current: current,
+        attempts: supervisedAttempts,
+        policy: options.autoImprovePolicy,
+        incidents: incidents,
+        remediations: remediations,
+        pendingRemediationIndex: pendingRemediationIndex
+      )
+    }
+
     while supervisedAttempts < options.autoImprovePolicy.maxSupervisedAttempts {
+      if Task.isCancelled {
+        return await cancelledResult()
+      }
       supervisedAttempts += 1
       let outcome: SupervisedAttemptOutcome
       do {
@@ -29,6 +45,8 @@ extension WorkflowRunCommand {
           runtimeStore: runtimeStore,
           policy: options.autoImprovePolicy
         )
+      } catch is CancellationError {
+        return await cancelledResult()
       } catch {
         guard let failedSession = await runtimeStore.latestSession(workflowId: workflow.workflowId) else {
           throw error
@@ -41,6 +59,9 @@ extension WorkflowRunCommand {
         fillPendingRemediationTarget(pendingRemediationIndex, targetSessionId: result.session.sessionId, remediations: &remediations)
         pendingRemediationIndex = nil
         current = result
+        if Task.isCancelled {
+          return await cancelledResult()
+        }
         guard result.status == .failed,
               supervisedAttempts < options.autoImprovePolicy.maxSupervisedAttempts else {
           return result.withSupervision(supervisionRecord(
@@ -73,6 +94,9 @@ extension WorkflowRunCommand {
           remediations: &remediations
         )
         pendingRemediationIndex = remediations.indices.last
+        if Task.isCancelled {
+          return await cancelledResult()
+        }
         currentRequest = rerunRequest(
           base: initialRequest,
           workflow: workflow,
@@ -101,6 +125,9 @@ extension WorkflowRunCommand {
 
         let failedResult = failedRunResult(workflow: workflow, session: failedSession)
         current = failedResult
+        if Task.isCancelled {
+          return await cancelledResult()
+        }
         guard supervisedAttempts < options.autoImprovePolicy.maxSupervisedAttempts else {
           return failedResult.withSupervision(supervisionRecord(
             status: "failed",
@@ -120,6 +147,9 @@ extension WorkflowRunCommand {
           remediations: &remediations
         )
         pendingRemediationIndex = remediations.indices.last
+        if Task.isCancelled {
+          return await cancelledResult()
+        }
         currentRequest = rerunRequest(
           base: initialRequest,
           workflow: workflow,
@@ -280,6 +310,55 @@ private extension WorkflowRunCommand {
     )
   }
 
+  func cancelledSupervisionResult(
+    workflow: WorkflowDefinition,
+    runtimeStore: InMemoryWorkflowRuntimeStore,
+    current: WorkflowRunResult?,
+    attempts: Int,
+    policy: WorkflowAutoImprovePolicy,
+    incidents: [JSONValue],
+    remediations: [JSONValue],
+    pendingRemediationIndex: Int?
+  ) async -> WorkflowRunResult {
+    var remediations = remediations
+    let observedLatestSession = await runtimeStore.latestSession(workflowId: workflow.workflowId)
+    let latestSession: WorkflowSession?
+    if let observedLatestSession, observedLatestSession.status == .running {
+      latestSession = try? await runtimeStore.markSessionFailed(WorkflowSessionFailureInput(
+        sessionId: observedLatestSession.sessionId,
+        reason: "workflow supervision cancelled"
+      ))
+    } else {
+      latestSession = observedLatestSession
+    }
+    if let latestSession {
+      fillPendingRemediationTarget(
+        pendingRemediationIndex,
+        targetSessionId: latestSession.sessionId,
+        remediations: &remediations
+      )
+    }
+    let fallbackSession = latestSession ?? WorkflowSession(
+      workflowId: workflow.workflowId,
+      sessionId: "\(workflow.workflowId)-cancelled-supervision",
+      status: .failed,
+      entryStepId: workflow.entryStepId,
+      createdAt: Date(),
+      updatedAt: Date()
+    )
+    let result = latestSession.map { failedRunResult(workflow: workflow, session: $0) }
+      ?? current
+      ?? failedRunResult(workflow: workflow, session: fallbackSession)
+    return result.withSupervision(supervisionRecord(
+      status: "cancelled",
+      policy: policy,
+      targetSessionId: result.session.sessionId,
+      attempts: attempts,
+      incidents: incidents,
+      remediations: remediations
+    ))
+  }
+
   func appendRerunRemediation(
     incidentId: String,
     sourceSessionId: String,
@@ -335,6 +414,8 @@ private extension WorkflowRunCommand {
       rerunFromSessionId: sourceSessionId,
       rerunFromStepId: targetStepId,
       memoryRootDirectory: base.memoryRootDirectory,
+      agentSilenceWarningMs: options.agentSilenceWarningMs,
+      agentSilenceMonitorIntervalMs: options.agentSilenceMonitorIntervalMs,
       eventHandler: base.eventHandler
     )
   }

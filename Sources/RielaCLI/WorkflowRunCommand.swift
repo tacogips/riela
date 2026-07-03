@@ -93,18 +93,20 @@ public struct WorkflowRunCommand: Sendable {
       livePersistenceState = persistenceState
       let persistenceBundle = bundle
       let runEventHandler: WorkflowRunEventHandler = { event in
-        await persistLiveSessionRecordIfPresent(
-          sessionId: event.sessionId,
-          workflowName: persistedIdentity.workflowName,
-          resolution: persistedIdentity.resolution,
-          storeRoot: storeRoot,
-          bundle: persistenceBundle,
-          variables: variables,
-          runtimeStore: runtimeStore,
-          options: options,
-          recorder: jsonlRecorder,
-          state: persistenceState
-        )
+        if workflowRunEventTriggersLiveSessionPersistence(event) {
+          await persistLiveSessionRecordIfPresent(
+            sessionId: event.sessionId,
+            workflowName: persistedIdentity.workflowName,
+            resolution: persistedIdentity.resolution,
+            storeRoot: storeRoot,
+            bundle: persistenceBundle,
+            variables: variables,
+            runtimeStore: runtimeStore,
+            options: options,
+            recorder: jsonlRecorder,
+            state: persistenceState
+          )
+        }
         if let jsonlRecorder {
           await jsonlRecorder.append(event)
         }
@@ -118,6 +120,8 @@ public struct WorkflowRunCommand: Sendable {
         maxLoopIterations: options.maxLoopIterations,
         defaultTimeoutMs: options.defaultTimeoutMs,
         timeoutMs: options.timeoutMs,
+        agentSilenceWarningMs: options.agentSilenceWarningMs,
+        agentSilenceMonitorIntervalMs: options.agentSilenceMonitorIntervalMs,
         eventHandler: runEventHandler
       )
       if options.autoImprove {
@@ -223,17 +227,31 @@ public struct WorkflowRunCommand: Sendable {
         return
       }
       let workflowMessages = try await runtimeStore.listMessages(for: sessionId, toStepId: nil)
-      try persistSessionRecord(
-        workflowName: workflowName,
-        resolution: resolution,
+      let snapshot = runtimeSnapshot(
         session: session,
         workflowMessages: workflowMessages,
         bundle: bundle,
-        variables: variables,
-        storeRoot: storeRoot,
-        options: options
+        variables: variables
       )
-      await state.recordSuccess(sessionId: sessionId)
+      let artifactRoot = options.artifactRoot.map {
+        absoluteURL(
+          $0,
+          relativeTo: URL(fileURLWithPath: options.workingDirectory, isDirectory: true)
+        ).path
+      }
+      try await state.persistLiveSnapshot(
+        WorkflowRunLivePersistenceSaveInput(
+          persistedSession: PersistedCLIWorkflowSession(
+            workflowName: workflowName,
+            session: session,
+            resolution: resolution,
+            mockScenarioPath: options.mockScenarioPath
+          ),
+          runtimeSnapshot: snapshot,
+          workflowMessages: workflowMessages,
+          artifactRoot: artifactRoot
+        )
+      )
     } catch {
       await state.recordFailure(sessionId: sessionId, error: "\(error)")
       if let recorder {
@@ -340,39 +358,6 @@ public struct WorkflowRunCommand: Sendable {
         workflowName: workflowName,
         supervision: supervision
       )
-    }
-  }
-
-  private func persistSessionRecord(
-    workflowName: String,
-    resolution: WorkflowResolutionOptions,
-    session: WorkflowSession,
-    workflowMessages: [WorkflowMessageRecord],
-    bundle: ResolvedWorkflowBundle,
-    variables: JSONObject,
-    storeRoot: String,
-    options: WorkflowRunOptions,
-    loopEvidence: LoopEvidenceManifest? = nil
-  ) throws {
-    let snapshot = runtimeSnapshot(
-      session: session,
-      workflowMessages: workflowMessages,
-      bundle: bundle,
-      variables: variables,
-      loopEvidence: loopEvidence
-    )
-    try CLIWorkflowSessionStore(rootDirectory: storeRoot).save(
-      PersistedCLIWorkflowSession(
-        workflowName: workflowName,
-        session: session,
-        resolution: resolution,
-        mockScenarioPath: options.mockScenarioPath
-      ),
-      runtimeSnapshot: snapshot
-    )
-    if let artifactRoot = options.artifactRoot {
-      let artifactURL = absoluteURL(artifactRoot, relativeTo: URL(fileURLWithPath: options.workingDirectory, isDirectory: true))
-      try FileWorkflowRuntimePersistenceStore(rootDirectory: artifactURL.path).save(snapshot)
     }
   }
 

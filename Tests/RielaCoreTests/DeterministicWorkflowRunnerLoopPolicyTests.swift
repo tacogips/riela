@@ -110,6 +110,57 @@ final class WorkflowRunnerLoopPolicyTests: XCTestCase {
     XCTAssertTrue(input.policy?.denials.contains { $0.policy == "process.allowedBackends" } ?? false)
     XCTAssertTrue(input.policy?.denials.contains { $0.policy == "process.nestedCodex" } ?? false)
   }
+
+  func testLoopGateStepReconcilesCompletionReviewRouting() async throws {
+    let runner = DeterministicWorkflowRunner(
+      store: InMemoryWorkflowRuntimeStore(),
+      adapter: StaticAdapter(output: AdapterExecutionOutput(
+        provider: "test",
+        model: "gpt-5.5",
+        promptText: "prompt",
+        completionPassed: true,
+        when: ["always": true],
+        payload: [
+          "decision": .string("needs_work"),
+          "goalAchieved": .bool(false)
+        ]
+      ))
+    )
+    let workflow = WorkflowDefinition(
+      workflowId: "runner-loop-policy",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
+      entryStepId: "review",
+      nodeRegistry: [WorkflowNodeRegistryRef(id: "review-node", nodeFile: "nodes/review.json")],
+      steps: [
+        WorkflowStepRef(
+          id: "review",
+          nodeId: "review-node",
+          role: .worker,
+          transitions: [
+            WorkflowStepTransition(toStepId: "rework", label: "needs_work"),
+            WorkflowStepTransition(toStepId: "done", label: "accepted")
+          ],
+          loop: WorkflowStepLoopMetadata(role: "gate", gateId: "implementation-review")
+        ),
+        WorkflowStepRef(id: "rework", nodeId: "review-node", role: .worker),
+        WorkflowStepRef(id: "done", nodeId: "review-node", role: .worker)
+      ],
+      nodes: [WorkflowNodeRef(id: "review-node", nodeFile: "nodes/review.json")],
+      loop: WorkflowLoopMetadata(
+        gates: [
+          LoopGateDeclaration(id: "implementation-review", stepId: "review", required: true)
+        ]
+      )
+    )
+
+    let result = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: workflow,
+      nodePayloads: ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5")]
+    ))
+
+    XCTAssertEqual(result.session.executions.first?.acceptedOutput?.when, ["needs_replan": false, "needs_work": true])
+    XCTAssertEqual(result.session.executions.first?.acceptedOutput?.routingDiagnostics.count, 1)
+  }
 }
 
 private actor CountingAdapter: NodeAdapter {

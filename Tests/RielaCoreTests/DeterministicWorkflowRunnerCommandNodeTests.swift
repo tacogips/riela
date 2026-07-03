@@ -73,7 +73,7 @@ extension DeterministicWorkflowRunnerTests {
     XCTAssertEqual(session.status, .failed)
     XCTAssertEqual(
       session.executions.first?.failureReason,
-      "invalid_output: multiple direct transitions are not supported by the Swift TASK-007 sequential runner"
+      "invalid_output: multiple direct transitions are not supported by this sequential runner"
     )
     let messages = try await store.listMessages(for: session.sessionId, toStepId: nil)
     XCTAssertEqual(messages, [])

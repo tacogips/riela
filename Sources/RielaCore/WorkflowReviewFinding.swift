@@ -160,10 +160,10 @@ public enum WorkflowReviewFindingExtractor {
   }
 
   private static func intValue(_ value: JSONValue?) -> Int? {
-    guard case let .number(value)? = value else {
+    guard let int64 = value?.asInt64 else {
       return nil
     }
-    return Int(value)
+    return Int(exactly: int64)
   }
 }
 

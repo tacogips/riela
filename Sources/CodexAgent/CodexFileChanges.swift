@@ -447,14 +447,11 @@ private func stringArrayValue(_ value: JSONValue?) -> [String]? {
 }
 
 private func numberValue(_ value: JSONValue?) -> Double? {
-  guard case let .number(number) = value else {
-    return nil
-  }
-  return number
+  value?.asDouble
 }
 
 func codexJSONInt(_ value: JSONValue?) -> Int? {
-  guard let number = numberValue(value) else {
+  guard let number = value?.asInt64 else {
     return nil
   }
   return Int(number)

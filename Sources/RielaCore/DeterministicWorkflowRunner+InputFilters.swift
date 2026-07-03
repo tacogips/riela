@@ -52,7 +52,7 @@ extension DeterministicWorkflowRunner {
         stepId: step.id,
         nodeId: step.nodeId,
         attempt: executionIndex,
-        inlineCandidate: skippedInputFilterCandidatePayload,
+        body: .inlineCandidate(skippedInputFilterCandidatePayload),
         transitions: selectedTransitions,
         successfulExecutionStatus: .skipped,
         completesRootWithoutOutput: selectedTransitions.isEmpty

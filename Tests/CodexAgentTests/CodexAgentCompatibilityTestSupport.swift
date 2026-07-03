@@ -151,10 +151,12 @@ func jsonArray(_ value: JSONValue?) -> [JSONValue]? {
 }
 
 func jsonNumber(_ value: JSONValue?) -> Double? {
-  if case let .number(number)? = value {
-    return number
-  }
-  return nil
+  value?.asDouble
+}
+
+func decodedJSONObject(_ text: String) throws -> JSONObject {
+  let value = try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
+  return try XCTUnwrap(jsonObject(value))
 }
 
 func createExecutable(directory: URL, name: String, body: String) throws -> URL {

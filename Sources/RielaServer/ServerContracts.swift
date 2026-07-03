@@ -157,10 +157,13 @@ public struct DeterministicServerRouteHandler: ServerRouteHandling {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         operationName = trimmed.isEmpty ? nil : trimmed
       default:
-        operationName = nil
+        return .failure("graphql operationName must be a string when present")
       }
     } else {
       operationName = nil
+    }
+    if let operationName, !graphqlNamedOperationNames(in: query).contains(operationName) {
+      return .failure("graphql operationName '\(operationName)' was not found in query")
     }
     return .success(.init(query: query, variables: variables, operationName: operationName))
   }
@@ -168,7 +171,12 @@ public struct DeterministicServerRouteHandler: ServerRouteHandling {
   private func routeGraphQL(_ request: ServerRequestEnvelope, context: ServerRequestContext) -> ServerResponseDescriptor {
     switch parseGraphQLEnvelope(request) {
     case let .failure(message):
-      return .init(status: 400, body: ["error": .string(message)])
+      return .init(status: 400, body: [
+        "error": .string(message),
+        "graphql": .object([
+          "errors": .array([.object(["message": .string(message)])])
+        ])
+      ])
     case let .success(envelope):
       return .init(status: 200, body: [
         "graphql": .object([
@@ -231,17 +239,122 @@ private extension DeterministicServerRouteHandler {
     guard case let .success(envelope) = parseGraphQLEnvelope(request) else {
       return "unknown"
     }
-    let trimmed = envelope.query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    if trimmed.hasPrefix("mutation") {
+    guard let firstToken = graphqlTokens(in: envelope.query).first?.lowercased() else {
+      return "unknown"
+    }
+    if firstToken == "mutation" {
       return "mutation"
     }
-    if trimmed.hasPrefix("subscription") {
+    if firstToken == "subscription" {
       return "subscription"
     }
-    if trimmed.hasPrefix("query") || trimmed.hasPrefix("{") {
+    if firstToken == "query" || firstToken == "{" {
       return "query"
     }
     return "unknown"
+  }
+
+  func graphqlNamedOperationNames(in query: String) -> Set<String> {
+    let tokens = graphqlTokens(in: query)
+    var names = Set<String>()
+    for index in tokens.indices {
+      guard ["query", "mutation", "subscription"].contains(tokens[index].lowercased()) else {
+        continue
+      }
+      let nameIndex = tokens.index(after: index)
+      guard nameIndex < tokens.endIndex, isGraphQLName(tokens[nameIndex]) else {
+        continue
+      }
+      names.insert(tokens[nameIndex])
+    }
+    return names
+  }
+
+  func graphqlTokens(in query: String) -> [String] {
+    let scalars = Array(query.unicodeScalars)
+    var index = 0
+    var tokens: [String] = []
+    while index < scalars.count {
+      let scalar = scalars[index]
+      if isGraphQLIgnored(scalar) {
+        index += 1
+      } else if scalar == "#" {
+        skipGraphQLComment(scalars, index: &index)
+      } else if scalar == "\"" {
+        skipGraphQLString(scalars, index: &index)
+      } else if isGraphQLNameStart(scalar) {
+        tokens.append(readGraphQLName(scalars, index: &index))
+      } else {
+        tokens.append(String(scalar))
+        index += 1
+      }
+    }
+    return tokens
+  }
+
+  func skipGraphQLComment(_ scalars: [UnicodeScalar], index: inout Int) {
+    while index < scalars.count, scalars[index] != "\n", scalars[index] != "\r" {
+      index += 1
+    }
+  }
+
+  func skipGraphQLString(_ scalars: [UnicodeScalar], index: inout Int) {
+    if scalars[safe: index + 1] == "\"", scalars[safe: index + 2] == "\"" {
+      index += 3
+      while index < scalars.count {
+        if scalars[safe: index] == "\"", scalars[safe: index + 1] == "\"", scalars[safe: index + 2] == "\"" {
+          index += 3
+          return
+        }
+        index += 1
+      }
+      return
+    }
+    index += 1
+    while index < scalars.count {
+      if scalars[index] == "\\" {
+        index += 2
+      } else if scalars[index] == "\"" {
+        index += 1
+        return
+      } else {
+        index += 1
+      }
+    }
+  }
+
+  func readGraphQLName(_ scalars: [UnicodeScalar], index: inout Int) -> String {
+    let start = index
+    index += 1
+    while index < scalars.count, isGraphQLNameContinue(scalars[index]) {
+      index += 1
+    }
+    return String(String.UnicodeScalarView(scalars[start..<index]))
+  }
+
+  func isGraphQLName(_ token: String) -> Bool {
+    guard let first = token.unicodeScalars.first, isGraphQLNameStart(first) else {
+      return false
+    }
+    return token.unicodeScalars.dropFirst().allSatisfy(isGraphQLNameContinue)
+  }
+
+  func isGraphQLIgnored(_ scalar: UnicodeScalar) -> Bool {
+    scalar == "," || scalar.properties.isWhitespace
+  }
+
+  func isGraphQLNameStart(_ scalar: UnicodeScalar) -> Bool {
+    scalar == "_" || (65...90).contains(scalar.value) || (97...122).contains(scalar.value)
+  }
+
+  func isGraphQLNameContinue(_ scalar: UnicodeScalar) -> Bool {
+    isGraphQLNameStart(scalar) || (48...57).contains(scalar.value)
+  }
+}
+
+private extension Collection {
+  subscript(safe index: Index) -> Element? {
+    indices.contains(index) ? self[index] : nil
   }
 }
 

@@ -100,14 +100,28 @@ final class CommandParsingTests: XCTestCase {
       "--variables", #"{"topic":"swift"}"#,
       "--mock-scenario", "./scenario.json",
       "--max-steps", "2",
+      "--agent-silence-warning-ms", "5000",
+      "--agent-silence-monitor-interval-ms", "250",
       "--output", "json"
     ])
     if case let .workflow(.run(options)) = run {
       XCTAssertEqual(options.variables, #"{"topic":"swift"}"#)
       XCTAssertEqual(options.mockScenarioPath, "./scenario.json")
       XCTAssertEqual(options.maxSteps, 2)
+      XCTAssertEqual(options.agentSilenceWarningMs, 5000)
+      XCTAssertEqual(options.agentSilenceMonitorIntervalMs, 250)
       XCTAssertEqual(options.output, .json)
       XCTAssertFalse(options.autoImprove)
+    } else {
+      XCTFail("expected run command")
+    }
+
+    let runWithSilenceWarningsDisabled = try parser.parse([
+      "workflow", "run", "demo",
+      "--agent-silence-warning-ms", "0"
+    ])
+    if case let .workflow(.run(options)) = runWithSilenceWarningsDisabled {
+      XCTAssertEqual(options.agentSilenceWarningMs, 0)
     } else {
       XCTFail("expected run command")
     }
@@ -223,8 +237,7 @@ final class CommandParsingTests: XCTestCase {
       "workflow", "run", "@scope/scoped-flow", "--endpoint", "http://localhost:4000/graphql",
       "--auth-token", "explicit-token",
       "--auth-token-env", "RIELA_REMOTE_TOKEN",
-      "--from-registry",
-      "--max-concurrency", "4"
+      "--from-registry"
     ])
 
     if case let .workflow(.run(options)) = command {
@@ -233,9 +246,20 @@ final class CommandParsingTests: XCTestCase {
       XCTAssertEqual(options.authToken, "explicit-token")
       XCTAssertEqual(options.authTokenEnv, "RIELA_REMOTE_TOKEN")
       XCTAssertTrue(options.fromRegistry)
-      XCTAssertEqual(options.maxConcurrency, 4)
+      XCTAssertNil(options.maxConcurrency)
     } else {
       XCTFail("expected workflow run command")
+    }
+  }
+
+  func testRejectsReservedMaxConcurrencyOption() {
+    XCTAssertThrowsError(try RielaArgumentParser().parse([
+      "workflow", "run", "demo", "--max-concurrency", "4"
+    ])) { error in
+      XCTAssertEqual(
+        (error as? CLIUsageError)?.message,
+        "--max-concurrency is reserved for fanout execution and is not supported yet"
+      )
     }
   }
 
@@ -243,13 +267,19 @@ final class CommandParsingTests: XCTestCase {
     XCTAssertThrowsError(try RielaArgumentParser().parse([
       "workflow", "validate", "demo", "--endpoint", "http://localhost:4000/graphql"
     ])) { error in
-      XCTAssertEqual((error as? CLIUsageError)?.message, "Swift TASK-007 supports local workflow validate only")
+      XCTAssertEqual(
+        (error as? CLIUsageError)?.message,
+        "remote workflow validate is not supported by the local CLI runner"
+      )
     }
 
     XCTAssertThrowsError(try RielaArgumentParser().parse([
       "workflow", "inspect", "demo", "--from-registry"
     ])) { error in
-      XCTAssertEqual((error as? CLIUsageError)?.message, "Swift TASK-007 supports local workflow inspect only")
+      XCTAssertEqual(
+        (error as? CLIUsageError)?.message,
+        "remote workflow inspect is not supported by the local CLI runner"
+      )
     }
   }
 

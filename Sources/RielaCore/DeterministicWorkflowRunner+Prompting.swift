@@ -165,7 +165,7 @@ extension DeterministicWorkflowRunner {
     }
     return AdapterExecutionError(
       .invalidOutput,
-      "multiple direct transitions are not supported by the Swift TASK-007 sequential runner"
+      "multiple direct transitions are not supported by this sequential runner"
     )
   }
 
@@ -175,5 +175,24 @@ extension DeterministicWorkflowRunner {
       return nil
     }
     return Date(timeIntervalSinceNow: Double(timeoutMs) / 1000)
+  }
+
+  func outputProjectionPayload(
+    _ projection: WorkflowOutputProjection,
+    resolvedInputPayload: JSONObject
+  ) throws -> JSONObject {
+    switch projection.kind {
+    case .latestInputPayload:
+      return latestInputPayload(in: resolvedInputPayload) ?? resolvedInputPayload
+    }
+  }
+
+  private func latestInputPayload(in payload: JSONObject) -> JSONObject? {
+    guard case let .object(rielaInput)? = payload["_rielaInput"],
+          case let .object(latest)? = rielaInput["latest"],
+          case let .object(latestPayload)? = latest["payload"] else {
+      return nil
+    }
+    return latestPayload
   }
 }

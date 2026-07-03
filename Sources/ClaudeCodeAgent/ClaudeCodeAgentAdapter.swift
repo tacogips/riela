@@ -37,7 +37,9 @@ public struct ClaudeCodeAgentCommandBuilder: LocalAgentCommandBuilding {
       arguments.append(contentsOf: ["--effort", effort.rawValue])
     }
 
-    let resolvedPermissionMode = permissionMode ?? stringValue(input.node.variables["claudePermissionMode"]).flatMap(ClaudeCodePermissionMode.init(rawValue:))
+    let resolvedPermissionMode = permissionMode
+      ?? claudePermissionMode(for: input.node.agentSandbox)
+      ?? stringValue(input.node.variables["claudePermissionMode"]).flatMap(ClaudeCodePermissionMode.init(rawValue:))
     if let resolvedPermissionMode {
       arguments.append(contentsOf: ["--permission-mode", resolvedPermissionMode.rawValue])
     }
@@ -50,6 +52,7 @@ public struct ClaudeCodeAgentCommandBuilder: LocalAgentCommandBuilding {
     }
 
     arguments.append(contentsOf: additionalArguments)
+    arguments.append(contentsOf: agentToolPolicyArguments(input.node.agentToolPolicy, backend: .claudeCodeAgent))
     arguments.append(contentsOf: stringArray(input.node.variables["claudeAdditionalArgs"]))
 
     let environment = mergedAgentProcessEnvironment(
@@ -72,6 +75,19 @@ public struct ClaudeCodeAgentCommandBuilder: LocalAgentCommandBuilding {
       ),
       backendEventType: claudeBackendEventType
     )
+  }
+}
+
+private func claudePermissionMode(for sandbox: AgentSandboxMode?) -> ClaudeCodePermissionMode? {
+  switch sandbox {
+  case .readOnly:
+    .plan
+  case .workspaceWrite:
+    .acceptEdits
+  case .dangerFullAccess:
+    .bypassPermissions
+  case nil:
+    nil
   }
 }
 
@@ -113,6 +129,8 @@ public struct ClaudeCodeAgentAdapter: NodeAdapter {
       if let checkAuthPreflight {
         do {
           try await checkAuthPreflight(input)
+        } catch let error as CancellationError {
+          throw error
         } catch let error as AdapterExecutionError {
           throw error
         } catch {
@@ -158,6 +176,8 @@ private func runClaudeDefaultAuthPreflight(
       stdin: "",
       deadline: versionDeadline
     )
+  } catch let error as CancellationError {
+    throw error
   } catch {
     throw AdapterExecutionError(
       .policyBlocked,
@@ -184,6 +204,8 @@ private func runClaudeDefaultAuthPreflight(
       stdin: "",
       deadline: authDeadline
     )
+  } catch let error as CancellationError {
+    throw error
   } catch {
     throw AdapterExecutionError(
       .policyBlocked,

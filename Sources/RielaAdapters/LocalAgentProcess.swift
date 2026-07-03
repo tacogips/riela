@@ -34,19 +34,22 @@ public struct LocalAgentCommand: Sendable {
   public var stdin: String
   public var normalizeStdout: @Sendable (String) -> String
   public var backendEventType: @Sendable (String) -> String?
+  public var classifyBackendEvent: (@Sendable (String) -> AdapterBackendEvent?)?
 
   public init(
     provider: String,
     configuration: LocalAgentProcessConfiguration,
     stdin: String,
     normalizeStdout: @escaping @Sendable (String) -> String = { $0 },
-    backendEventType: @escaping @Sendable (String) -> String? = { _ in nil }
+    backendEventType: @escaping @Sendable (String) -> String? = { _ in nil },
+    classifyBackendEvent: (@Sendable (String) -> AdapterBackendEvent?)? = nil
   ) {
     self.provider = provider
     self.configuration = configuration
     self.stdin = stdin
     self.normalizeStdout = normalizeStdout
     self.backendEventType = backendEventType
+    self.classifyBackendEvent = classifyBackendEvent
   }
 }
 
@@ -210,6 +213,38 @@ private final class LocalProcessPipes: @unchecked Sendable {
     try? outputPipe.fileHandleForReading.close()
     try? errorPipe.fileHandleForWriting.close()
     try? errorPipe.fileHandleForReading.close()
+  }
+}
+
+private struct LocalProcessStdinWriter: Sendable {
+  var fileDescriptor: Int32
+  var stdin: String
+
+  func writeAndClose() {
+    disableSigpipeForStdin(fileDescriptor)
+    let data = Data(stdin.utf8)
+    data.withUnsafeBytes { buffer in
+      guard let baseAddress = buffer.baseAddress else {
+        return
+      }
+      var written = 0
+      while written < buffer.count {
+        let byteCount = min(16_384, buffer.count - written)
+        let result = write(fileDescriptor, baseAddress.advanced(by: written), byteCount)
+        if result > 0 {
+          written += result
+          continue
+        }
+        if result == -1 && errno == EINTR {
+          continue
+        }
+        if result == -1 && (errno == EPIPE || errno == EBADF) {
+          break
+        }
+        break
+      }
+    }
+    _ = close(fileDescriptor)
   }
 }
 
@@ -504,6 +539,14 @@ private func localProcessTimeoutError() -> AdapterExecutionError {
   AdapterExecutionError(.timeout, "local agent process exceeded deadline and was terminated")
 }
 
+private func disableSigpipeForStdin(_ fileDescriptor: Int32) {
+  #if canImport(Darwin)
+  _ = fcntl(fileDescriptor, F_SETNOSIGPIPE, 1)
+  #else
+  _ = signal(SIGPIPE, SIG_IGN)
+  #endif
+}
+
 private func spawnProcess(
   configuration: LocalAgentProcessConfiguration,
   inputReadDescriptor: Int32,
@@ -692,8 +735,13 @@ public struct FoundationLocalAgentProcessRunner: LocalAgentProcessRunning, Local
             completion.setDeadlineWorkItem(workItem)
             DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay, execute: workItem)
           }
-          inputPipe.fileHandleForWriting.write(Data(stdin.utf8))
-          try inputPipe.fileHandleForWriting.close()
+          let stdinWriter = LocalProcessStdinWriter(
+            fileDescriptor: inputPipe.fileHandleForWriting.fileDescriptor,
+            stdin: stdin
+          )
+          DispatchQueue.global(qos: .utility).async {
+            stdinWriter.writeAndClose()
+          }
         } catch {
           pipes.closeForFailureOrTimeout()
           processHandle.terminateGroupOrProcess()
@@ -728,12 +776,25 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
     let command = try commandBuilder.buildCommand(for: input)
     let result: LocalAgentProcessResult
     if let streamingRunner = runner as? any LocalAgentProcessEventStreaming {
-      result = try await streamingRunner.run(
-        configuration: command.configuration,
-        stdin: command.stdin,
-        deadline: context.deadline,
-        outputEventHandler: outputEventHandler(command: command, context: context)
+      let eventBridge = makeBackendEventBridge(
+        command: command,
+        context: context,
+        streamContent: backendContentStreamingEnabled(input.node.variables["streamBackendContent"])
       )
+      do {
+        result = try await streamingRunner.run(
+          configuration: command.configuration,
+          stdin: command.stdin,
+          deadline: context.deadline,
+          outputEventHandler: eventBridge.handler
+        )
+        eventBridge.finish()
+        await eventBridge.waitForCompletion()
+      } catch {
+        eventBridge.finish()
+        await eventBridge.waitForCompletion()
+        throw error
+      }
     } else {
       result = try await runner.run(configuration: command.configuration, stdin: command.stdin, deadline: context.deadline)
     }
@@ -757,25 +818,52 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
     )
   }
 
-  private func outputEventHandler(
+  private func makeBackendEventBridge(
     command: LocalAgentCommand,
-    context: AdapterExecutionContext
-  ) -> (@Sendable (LocalAgentProcessOutputEvent) -> Void)? {
+    context: AdapterExecutionContext,
+    streamContent: Bool
+  ) -> BackendEventBridge {
     guard let backendEventHandler = context.backendEventHandler else {
-      return nil
+      return BackendEventBridge(handler: nil, finish: {}, waitForCompletion: {})
     }
-    return { outputEvent in
-      guard outputEvent.stream == .stdout,
-            let eventType = command.backendEventType(outputEvent.line) else {
+    let sensitiveValues = sensitiveAdapterEnvironmentValues(command.configuration.environment)
+    let (eventStream, continuation) = AsyncStream.makeStream(
+      of: AdapterBackendEvent.self,
+      bufferingPolicy: .bufferingNewest(512)
+    )
+    let consumer = Task {
+      for await event in eventStream {
+        await backendEventHandler(event)
+      }
+    }
+    let coalescer = BackendEventCoalescer()
+    let handler: @Sendable (LocalAgentProcessOutputEvent) -> Void = { outputEvent in
+      guard outputEvent.stream == .stdout else {
         return
       }
-      let semaphore = DispatchSemaphore(value: 0)
-      Task {
-        await backendEventHandler(AdapterBackendEvent(provider: command.provider, eventType: eventType))
-        semaphore.signal()
+      let classified = streamContent ? command.classifyBackendEvent?(outputEvent.line) : nil
+      guard var event = classified ?? fallbackBackendEvent(command: command, line: outputEvent.line) else {
+        return
       }
-      semaphore.wait()
+      if event.provider.isEmpty {
+        event.provider = command.provider
+      }
+      event.contentDelta = sanitizedBackendEventContent(event.contentDelta, sensitiveValues: sensitiveValues)
+      event.contentSnapshot = sanitizedBackendEventContent(event.contentSnapshot, sensitiveValues: sensitiveValues)
+      for output in coalescer.absorb(event) {
+        continuation.yield(output)
+      }
     }
+    return BackendEventBridge(
+      handler: handler,
+      finish: {
+        for output in coalescer.finish() {
+          continuation.yield(output)
+        }
+        continuation.finish()
+      },
+      waitForCompletion: { await consumer.value }
+    )
   }
 
   private func normalizeAgentOutput(
@@ -801,4 +889,101 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
     let parsed = try parseJSONObjectCandidate(text, source: source)
     return try normalizeOutputContractEnvelope(parsed, source: source)
   }
+}
+
+private struct BackendEventBridge: Sendable {
+  var handler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
+  var finish: @Sendable () -> Void
+  var waitForCompletion: @Sendable () async -> Void
+}
+
+private final class BackendEventCoalescer: @unchecked Sendable {
+  private struct PendingKey: Equatable {
+    var provider: String
+    var eventType: String
+    var channel: AdapterBackendEventChannel?
+  }
+
+  private let lock = NSLock()
+  private let byteThreshold = 256
+  private let timeThreshold: TimeInterval = 2.0
+  private var pending: AdapterBackendEvent?
+  private var pendingKey: PendingKey?
+  private var pendingStartedAt: Date?
+
+  func absorb(_ event: AdapterBackendEvent) -> [AdapterBackendEvent] {
+    lock.lock()
+    defer { lock.unlock() }
+
+    guard event.isDelta, let delta = event.contentDelta, event.channel != nil else {
+      return flushLocked() + [event]
+    }
+
+    let key = PendingKey(provider: event.provider, eventType: event.eventType, channel: event.channel)
+    guard var current = pending, pendingKey == key else {
+      let flushed = flushLocked()
+      pending = event
+      pendingKey = key
+      pendingStartedAt = Date()
+      return flushed
+    }
+
+    current.contentDelta = (current.contentDelta ?? "") + delta
+    pending = current
+    let startedAt = pendingStartedAt ?? Date()
+    if (current.contentDelta ?? "").utf8.count >= byteThreshold || Date().timeIntervalSince(startedAt) >= timeThreshold {
+      return flushLocked()
+    }
+    return []
+  }
+
+  func finish() -> [AdapterBackendEvent] {
+    lock.lock()
+    defer { lock.unlock() }
+    return flushLocked()
+  }
+
+  private func flushLocked() -> [AdapterBackendEvent] {
+    guard let event = pending else {
+      return []
+    }
+    pending = nil
+    pendingKey = nil
+    pendingStartedAt = nil
+    return [event]
+  }
+}
+
+private func fallbackBackendEvent(command: LocalAgentCommand, line: String) -> AdapterBackendEvent? {
+  guard let eventType = command.backendEventType(line) else {
+    return nil
+  }
+  return AdapterBackendEvent(provider: command.provider, eventType: eventType)
+}
+
+private func sanitizedBackendEventContent(_ text: String?, sensitiveValues: [String]) -> String? {
+  guard let text else {
+    return nil
+  }
+  let redacted = redactAdapterSensitiveText(text, additionalSensitiveValues: sensitiveValues)
+  let cap = 16 * 1024
+  guard redacted.utf8.count > cap else {
+    return redacted
+  }
+  var prefix = ""
+  prefix.reserveCapacity(cap)
+  for character in redacted {
+    guard prefix.utf8.count + String(character).utf8.count <= cap else {
+      break
+    }
+    prefix.append(character)
+  }
+  return prefix
+}
+
+private func backendContentStreamingEnabled(_ value: JSONValue?) -> Bool {
+  guard case let .bool(enabled) = value else {
+    return true
+  }
+  return enabled
 }

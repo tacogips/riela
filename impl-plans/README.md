@@ -26,6 +26,7 @@ impl-plans/
 
 | Plan | Status | Design Reference |
 | ---- | ------ | ---------------- |
+| `active/agent-response-streaming` | Implemented | `design-agent-response-streaming#phase-1` |
 | `active/rielaapp-ux-onboarding-improvements` | Implemented; RielaApp verification passed | `design-rielaapp-ux-onboarding-improvements` |
 | `active/package-checkout-content-digest-metadata` | In Progress | `architecture#workflow-checkout-boundary` |
 | `active/swift-cli-runtime-parity-gap-closure` | Active; Swift parity follow-through | `design-swift-cli-runtime-parity-gap-closure` |

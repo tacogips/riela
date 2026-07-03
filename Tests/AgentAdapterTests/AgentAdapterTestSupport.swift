@@ -64,6 +64,21 @@ final class RecordingRunner: LocalAgentProcessRunning, @unchecked Sendable {
   }
 }
 
+extension Array where Element == String {
+  func containsSubsequence(_ subsequence: [String]) -> Bool {
+    guard !subsequence.isEmpty, subsequence.count <= count else {
+      return false
+    }
+    return indices.contains { startIndex in
+      let subsequenceEndIndex = index(startIndex, offsetBy: subsequence.count, limitedBy: self.endIndex)
+      guard let subsequenceEndIndex else {
+        return false
+      }
+      return Array(self[startIndex..<subsequenceEndIndex]) == subsequence
+    }
+  }
+}
+
 actor BackendEventRecorder {
   private var events: [AdapterBackendEvent] = []
 
@@ -147,6 +162,7 @@ final class SequencedRunner: LocalAgentProcessRunning, @unchecked Sendable {
 enum ProcessRunOutcome: Sendable {
   case result(LocalAgentProcessResult)
   case error(AdapterExecutionError)
+  case cancellation
 }
 
 actor OutcomeRunnerStore {
@@ -167,6 +183,8 @@ actor OutcomeRunnerStore {
       return result
     case let .error(error):
       throw error
+    case .cancellation:
+      throw CancellationError()
     }
   }
 

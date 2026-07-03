@@ -41,6 +41,8 @@ final class GraphQLContractsTests: XCTestCase {
     )
 
     XCTAssertEqual(dto.workflowId, "workflow-a")
+    XCTAssertEqual(dto.sessionId, "session-a")
+    XCTAssertEqual(dto.workflowExecutionId, "session-a")
     XCTAssertEqual(dto.stepExecutions.first?.backend, "codex-agent")
     XCTAssertEqual(dto.communications.first?.lifecycleStatus, "delivered")
     XCTAssertEqual(dto.hookEvents.first?.eventName, "PostToolUse")
@@ -209,6 +211,7 @@ final class GraphQLContractsTests: XCTestCase {
       "loopEvidence: LoopEvidenceSummary",
       "loopGates: [LoopGateResult!]!",
       "loopRecovery: LoopRecoveryLineage",
+      "workflowExecutionId: String!",
       "loopEvidence(workflowId: String!, sessionId: String!): LoopEvidenceSummary",
       "createdOrder: Int!",
       "failureReason: String",
@@ -226,6 +229,142 @@ final class GraphQLContractsTests: XCTestCase {
     }
     XCTAssertFalse(schema.contains("continueSession(workflowId: String!, sessionId: String!)"))
     XCTAssertFalse(schema.contains("managerRuntimeId"))
+  }
+
+  func testSchemaContractFieldSetsMatchEncodedDTOs() throws {
+    let date = Date(timeIntervalSince1970: 2_000)
+    let severityCounts = LoopFindingSeverityCounts(high: 1, medium: 2, low: 3, informational: 4)
+    let finding = LoopBlockingFinding(
+      id: "finding-a",
+      severity: "high",
+      filePath: "Sources/File.swift",
+      line: 12,
+      message: "fix",
+      evidenceRefs: ["finding.json"]
+    )
+    let risk = LoopResidualRisk(
+      severity: "medium",
+      message: "watch",
+      evidenceRefs: ["risk.json"],
+      owner: "runtime",
+      accepted: true
+    )
+    let gate = LoopGateResult(
+      gateId: "gate-a",
+      stepId: "step-a",
+      stepExecutionId: "exec-a",
+      decision: .needsWork,
+      severityCounts: severityCounts,
+      blockingFindings: [finding],
+      evidenceRefs: ["gate.json"],
+      rerunPolicy: "always",
+      residualRisks: [risk],
+      acceptedAt: date,
+      diagnostics: ["diag"]
+    )
+    let recovery = LoopRecoveryLineage(
+      entryMode: .retry,
+      sourceSessionId: "source-session",
+      sourceStepId: "source-step",
+      sourceStepExecutionId: "source-exec",
+      parentSessionId: "parent-session",
+      childSessionIds: ["child-session"],
+      reason: "operator",
+      inputReusePolicy: "accepted-output",
+      preservedFailureEvidenceRefs: ["failure.json"]
+    )
+    let loopEvidence = GraphQLLoopEvidenceSummaryDTO(
+      summary: LoopEvidenceSummary(manifest: loopEvidenceManifest(workflowId: "workflow-a", sessionId: "session-a", date: date))
+    )
+    let loopGate = GraphQLLoopGateResultDTO(gate: gate)
+    let loopRecovery = GraphQLLoopRecoveryLineageDTO(lineage: recovery)
+    let expectedFieldsBySchemaType: [String: Set<String>] = [
+      "ControlPlaneResult": try encodedFieldNames(GraphQLControlPlaneResult(accepted: true, status: "ok", diagnostics: ["ready"])),
+      "ManagerIntentSummary": try encodedFieldNames(GraphQLManagerIntentSummaryDTO(kind: "retry-step", targetId: "step-a", reason: "operator")),
+      "ManagerSessionView": try encodedFieldNames(GraphQLManagerSessionViewDTO(session: .object(["id": .string("s")]), messages: .array([]))),
+      "SendManagerMessagePayload": try encodedFieldNames(GraphQLSendManagerMessagePayload(
+        accepted: true,
+        managerMessageId: "message-a",
+        parsedIntent: [.init(kind: "retry-step", targetId: "step-a", reason: "operator")],
+        createdCommunicationIds: ["comm-a"],
+        queuedNodeIds: ["step-a"],
+        rejectionReason: "none",
+        workflowId: "workflow-a",
+        workflowExecutionId: "session-a",
+        managerSessionId: "manager-session"
+      )),
+      "ReplayCommunicationPayload": try encodedFieldNames(GraphQLReplayCommunicationPayload(
+        sourceCommunicationId: "comm-a",
+        workflowExecutionId: "session-a",
+        replayedCommunicationId: "comm-b",
+        status: "queued"
+      )),
+      "RetryCommunicationDeliveryPayload": try encodedFieldNames(GraphQLRetryCommunicationDeliveryPayload(
+        communicationId: "comm-a",
+        activeDeliveryAttemptId: "attempt-a",
+        status: "queued"
+      )),
+      "LoopEvidenceSummary": try encodedFieldNames(loopEvidence),
+      "LoopFindingSeverityCounts": try encodedFieldNames(GraphQLLoopFindingSeverityCountsDTO(counts: severityCounts)),
+      "LoopBlockingFinding": try encodedFieldNames(GraphQLLoopBlockingFindingDTO(finding: finding)),
+      "LoopResidualRisk": try encodedFieldNames(GraphQLLoopResidualRiskDTO(risk: risk)),
+      "LoopGateResult": try encodedFieldNames(loopGate),
+      "LoopRecoveryLineage": try encodedFieldNames(loopRecovery),
+      "WorkflowSession": try encodedFieldNames(GraphQLWorkflowSessionDTO(
+        workflowId: "workflow-a",
+        sessionId: "session-a",
+        status: "running",
+        currentStepId: "step-a",
+        stepExecutions: [.init(executionId: "exec-a", stepId: "step-a", nodeId: "node-a", attempt: 1, backend: "codex-agent", status: "completed", failureReason: "none")],
+        communications: [.init(communicationId: "comm-a", fromStepId: "step-a", toStepId: "step-b", lifecycleStatus: "delivered", deliveryKind: "direct", createdOrder: 1)],
+        hookEvents: [.init(vendor: "codex", eventName: "PostToolUse", agentSessionId: "agent-session", payloadHash: "hash")],
+        eventReceipts: [.init(sourceId: "source-a", eventId: "event-a", status: "received")],
+        replyDispatches: [.init(sourceId: "source-a", provider: "telegram", payload: ["text": .string("ok")])],
+        logs: [.init(level: "info", message: "ready")],
+        llmSessionMessages: [.init(role: "assistant", content: "done")],
+        loopEvidence: loopEvidence,
+        loopGates: [loopGate],
+        loopRecovery: loopRecovery
+      )),
+      "StepExecution": try encodedFieldNames(GraphQLStepExecutionDTO(executionId: "exec-a", stepId: "step-a", nodeId: "node-a", attempt: 1, backend: "codex-agent", status: "completed", failureReason: "none")),
+      "Communication": try encodedFieldNames(GraphQLCommunicationDTO(communicationId: "comm-a", fromStepId: "step-a", toStepId: "step-b", lifecycleStatus: "delivered", deliveryKind: "direct", createdOrder: 1)),
+      "HookEvent": try encodedFieldNames(GraphQLHookEventDTO(vendor: "codex", eventName: "PostToolUse", agentSessionId: "agent-session", payloadHash: "hash")),
+      "EventReceipt": try encodedFieldNames(GraphQLEventReceiptDTO(sourceId: "source-a", eventId: "event-a", status: "received")),
+      "ReplyDispatch": try encodedFieldNames(GraphQLReplyDispatchDTO(sourceId: "source-a", provider: "telegram", payload: ["text": .string("ok")])),
+      "LogEntry": try encodedFieldNames(GraphQLLogEntryDTO(level: "info", message: "ready")),
+      "LLMSessionMessage": try encodedFieldNames(GraphQLLLMSessionMessageDTO(role: "assistant", content: "done")),
+      "ContinueSessionInput": try encodedFieldNames(GraphQLContinueSessionRequest(workflowId: "workflow-a", sessionId: "session-a", input: ["ok": .bool(true)])),
+      "SendManagerMessageInput": try encodedFieldNames(GraphQLSendManagerMessageRequest(
+        workflowId: "workflow-a",
+        workflowExecutionId: "session-a",
+        message: "retry",
+        actions: .object(["retryStepIds": .array([.string("step-a")])]),
+        attachments: .array([.object(["path": .string("artifact.txt")])]),
+        idempotencyKey: "idem-a",
+        managerSessionId: "manager-session",
+        managerNodeExecId: "manager-node-exec"
+      )),
+      "ReplayCommunicationInput": try encodedFieldNames(GraphQLReplayCommunicationRequest(
+        workflowId: "workflow-a",
+        workflowExecutionId: "session-a",
+        communicationId: "comm-a",
+        reason: "retry",
+        idempotencyKey: "idem-b",
+        managerSessionId: "manager-session"
+      )),
+      "RetryCommunicationDeliveryInput": try encodedFieldNames(GraphQLRetryCommunicationDeliveryRequest(
+        workflowId: "workflow-a",
+        workflowExecutionId: "session-a",
+        communicationId: "comm-a",
+        reason: "retry",
+        idempotencyKey: "idem-c",
+        managerSessionId: "manager-session"
+      ))
+    ]
+
+    for (schemaType, encodedFields) in expectedFieldsBySchemaType {
+      XCTAssertEqual(try schemaFieldNames(schemaType), encodedFields, "schema drift for \(schemaType)")
+    }
   }
 
   func testManagerControlRequestsPreserveInputShapeAndIdempotency() throws {
@@ -259,6 +398,26 @@ final class GraphQLContractsTests: XCTestCase {
     XCTAssertEqual(replayObject["communicationId"], .string("comm-1"))
     XCTAssertEqual(replayObject["idempotencyKey"], .string("idem-replay"))
     XCTAssertNil(sendObject["communicationId"])
+  }
+
+  func testLegacyGraphQLSessionRequestsExposeWorkflowExecutionIdAliasWithoutWireDrift() throws {
+    var inspect = GraphQLInspectSessionRequest(workflowId: "workflow-a", sessionId: "session-a")
+    var continuing = GraphQLContinueSessionRequest(
+      workflowId: "workflow-a",
+      sessionId: "session-a",
+      input: ["ok": .bool(true)]
+    )
+
+    XCTAssertEqual(inspect.workflowExecutionId, "session-a")
+    XCTAssertEqual(continuing.workflowExecutionId, "session-a")
+
+    inspect.workflowExecutionId = "session-b"
+    continuing.workflowExecutionId = "session-b"
+
+    XCTAssertEqual(inspect.sessionId, "session-b")
+    XCTAssertEqual(continuing.sessionId, "session-b")
+    XCTAssertEqual(try encodedFieldNames(inspect), ["workflowId", "sessionId"])
+    XCTAssertEqual(try encodedFieldNames(continuing), ["workflowId", "sessionId", "input"])
   }
 
   func testManagerControlPayloadsExposeResultFields() {
@@ -297,6 +456,38 @@ final class GraphQLContractsTests: XCTestCase {
       return [:]
     }
     return object
+  }
+
+  private func encodedFieldNames<T: Encodable>(_ value: T) throws -> Set<String> {
+    Set(try encodedObject(value).keys)
+  }
+
+  private func schemaFieldNames(_ typeName: String) throws -> Set<String> {
+    let schema = GraphQLContractProjector.schemaContract
+    let pattern = #"(?:type|input)\s+\#(typeName)\s*\{([^}]*)\}"#
+    let expression = try NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators])
+    let range = NSRange(schema.startIndex..<schema.endIndex, in: schema)
+    guard let match = expression.firstMatch(in: schema, range: range),
+      let bodyRange = Range(match.range(at: 1), in: schema) else {
+      XCTFail("missing schema type \(typeName)")
+      return []
+    }
+    let body = String(schema[bodyRange])
+    return try parseSchemaFieldNames(body)
+  }
+
+  private func parseSchemaFieldNames(_ body: String) throws -> Set<String> {
+    let expression = try NSRegularExpression(
+      pattern: #"\b([A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^)]*\))?\s*:"#,
+      options: []
+    )
+    let range = NSRange(body.startIndex..<body.endIndex, in: body)
+    return Set(expression.matches(in: body, range: range).compactMap { match in
+      guard let fieldRange = Range(match.range(at: 1), in: body) else {
+        return nil
+      }
+      return String(body[fieldRange])
+    })
   }
 
   private func workflowSession(workflowId: String, sessionId: String, date: Date) -> WorkflowSession {

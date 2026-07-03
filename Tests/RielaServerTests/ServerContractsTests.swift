@@ -102,11 +102,29 @@ final class ServerContractsTests: XCTestCase {
       .init(method: "POST", path: "/graphql", body: Data(#"{"query":"query EmptyOp { ok }","operationName":"   "}"#.utf8)),
       context: .init()
     )
+    let nonStringOperationName = await handler.route(
+      .init(method: "POST", path: "/graphql", body: Data(#"{"query":"query Op { ok }","operationName":1}"#.utf8)),
+      context: .init()
+    )
+    let missingNamedOperation = await handler.route(
+      .init(method: "POST", path: "/graphql", body: Data(#"{"query":"query Present { ok }","operationName":"Missing"}"#.utf8)),
+      context: .init()
+    )
 
     XCTAssertEqual(missing.status, 400)
     XCTAssertEqual(nonObject.status, 400)
     XCTAssertEqual(nonObjectVariables.status, 400)
     XCTAssertEqual(whitespaceQuery.status, 400)
+    XCTAssertEqual(nonStringOperationName.status, 400)
+    XCTAssertEqual(missingNamedOperation.status, 400)
+    XCTAssertEqual(nonStringOperationName.body["error"], .string("graphql operationName must be a string when present"))
+    guard case let .object(graphqlError)? = missingNamedOperation.body["graphql"] else {
+      return XCTFail("expected structured graphql error")
+    }
+    XCTAssertEqual(
+      graphqlError["errors"],
+      .array([.object(["message": .string("graphql operationName 'Missing' was not found in query")])])
+    )
     XCTAssertEqual(emptyOperationName.status, 200)
     guard case let .object(graphql)? = emptyOperationName.body["graphql"] else {
       return XCTFail("expected graphql body")
@@ -142,7 +160,7 @@ final class ServerContractsTests: XCTestCase {
   func testGraphQLRouteRecordsRedactedTelemetryWithoutQueriesVariablesOrHeaders() async throws {
     let telemetry = InMemoryRielaTelemetry()
     let handler = DeterministicServerRouteHandler(telemetry: telemetry)
-    let body = Data(#"{"query":"mutation RunWorkflow($token:String){ run(token:$token) }","variables":{"token":"secret-token"},"operationName":"RunWorkflow"}"#.utf8)
+    let body = Data(##"{"query":"# leading comment\nmutation RunWorkflow($token:String){ run(token:$token) }","variables":{"token":"secret-token"},"operationName":"RunWorkflow"}"##.utf8)
 
     let response = await handler.route(
       .init(

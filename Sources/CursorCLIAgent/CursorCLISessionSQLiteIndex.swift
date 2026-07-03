@@ -1,5 +1,5 @@
 import Foundation
-import RielaAdapters
+import AgentRuntimeKit
 
 public enum CursorCLISessionSQLiteIndex {
   private static let sessionSQLiteSeparator = "|||riela-cursorCLI-sqlite|||"
@@ -16,9 +16,12 @@ public enum CursorCLISessionSQLiteIndex {
     guard let dbPath = openCursorCLIDb(cursorCLIHome: cursorCLIHome) else {
       return nil
     }
-    let rows = selectRows(dbPath: dbPath)
+    let records = AgentSessionSQLiteSupport.listThreadRecords(
+      dbPath: dbPath,
+      separator: sessionSQLiteSeparator
+    )
     let sessions = CursorCLISessionQuery.sorted(
-      rows.compactMap(rowToSession).filter { CursorCLISessionQuery.matches($0, options: options) },
+      records.map(recordToSession).filter { CursorCLISessionQuery.matches($0, options: options) },
       options: options
     )
     let total = sessions.count
@@ -34,39 +37,22 @@ public enum CursorCLISessionSQLiteIndex {
     listSessionsSqlite(cursorCLIHome: cursorCLIHome, options: CursorCLISessionListOptions(cursorCLIHome: cursorCLIHome, cwd: cwd, limit: 1, sortBy: "updatedAt")).map(\.sessions.first) ?? nil
   }
 
-  private static func selectRows(dbPath: String) -> [[String: String]] {
-    AgentSessionSQLiteSupport.selectThreadRows(dbPath: dbPath, separator: sessionSQLiteSeparator)
-  }
-
-  private static func rowToSession(_ row: [String: String]) -> CursorCLISession? {
-    guard
-      let id = AgentSessionSQLiteSupport.nonEmpty(row["id"]),
-      let rolloutPath = AgentSessionSQLiteSupport.nonEmpty(row["rollout_path"]),
-      let createdAt = AgentSessionSQLiteSupport.nonEmpty(row["created_at"]).flatMap(AgentSessionSQLiteSupport.sqliteDate),
-      let updatedAt = AgentSessionSQLiteSupport.nonEmpty(row["updated_at"]).flatMap(AgentSessionSQLiteSupport.sqliteDate),
-      let cwd = AgentSessionSQLiteSupport.nonEmpty(row["cwd"])
-    else {
-      return nil
+  private static func recordToSession(_ record: AgentSessionSQLiteRecord) -> CursorCLISession {
+    let git = record.git.map {
+      CursorCLISessionGit(sha: $0.sha, branch: $0.branch, originURL: $0.originURL)
     }
-    let git = [row["git_sha"], row["git_branch"], row["git_origin_url"]].contains { AgentSessionSQLiteSupport.nonEmpty($0) != nil }
-      ? CursorCLISessionGit(
-        sha: AgentSessionSQLiteSupport.nonEmpty(row["git_sha"]),
-        branch: AgentSessionSQLiteSupport.nonEmpty(row["git_branch"]),
-        originURL: AgentSessionSQLiteSupport.nonEmpty(row["git_origin_url"])
-      )
-      : nil
     return CursorCLISession(
-      id: id,
-      rolloutPath: rolloutPath,
-      createdAt: createdAt,
-      updatedAt: updatedAt,
-      source: CursorCLISessionSource(rawValue: row["source"] ?? "") ?? .unknown,
-      modelProvider: AgentSessionSQLiteSupport.nonEmpty(row["model_provider"]),
-      cwd: cwd,
-      cliVersion: AgentSessionSQLiteSupport.nonEmpty(row["cli_version"]) ?? "unknown",
-      title: AgentSessionSQLiteSupport.nonEmpty(row["title"]) ?? AgentSessionSQLiteSupport.nonEmpty(row["first_user_message"]) ?? id,
-      firstUserMessage: AgentSessionSQLiteSupport.nonEmpty(row["first_user_message"]),
-      archivedAt: AgentSessionSQLiteSupport.nonEmpty(row["archived_at"]).flatMap(AgentSessionSQLiteSupport.sqliteDate),
+      id: record.id,
+      rolloutPath: record.rolloutPath,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+      source: CursorCLISessionSource(rawValue: record.source) ?? .unknown,
+      modelProvider: record.modelProvider,
+      cwd: record.cwd,
+      cliVersion: record.cliVersion,
+      title: record.title,
+      firstUserMessage: record.firstUserMessage,
+      archivedAt: record.archivedAt,
       git: git
     )
   }

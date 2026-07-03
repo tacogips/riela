@@ -1,9 +1,19 @@
 import Foundation
+import RielaCore
+import RielaSQLite
+
+struct WorkflowRunLivePersistenceSaveInput: Sendable {
+  var persistedSession: PersistedCLIWorkflowSession
+  var runtimeSnapshot: WorkflowRuntimePersistenceSnapshot
+  var workflowMessages: [WorkflowMessageRecord]
+  var artifactRoot: String?
+}
 
 struct WorkflowRunLivePersistenceSnapshot: Sendable {
   var latestSessionId: String?
   var storeRoot: String?
   var persistedSession: Bool?
+  var connectionOpenCount: Int
   var diagnostics: [String]
 }
 
@@ -11,15 +21,56 @@ actor WorkflowRunLivePersistenceState {
   private var latestSessionId: String?
   private var storeRoot: String?
   private var persistedSessionIds: Set<String> = []
+  private var lastPersistedMessageOrderBySessionId: [String: Int] = [:]
+  private var connection: WorkflowRunLivePersistenceConnection?
+  private var connectionOpenCount = 0
   private var diagnostics: [String] = []
 
   func configure(storeRoot: String) {
+    if self.storeRoot != storeRoot {
+      connection = nil
+    }
     self.storeRoot = storeRoot
   }
 
-  func recordSuccess(sessionId: String) {
+  func pendingMessages(
+    sessionId: String,
+    from messages: [WorkflowMessageRecord]
+  ) -> [WorkflowMessageRecord] {
+    let lastPersistedOrder = lastPersistedMessageOrderBySessionId[sessionId] ?? 0
+    return messages.filter { $0.workflowExecutionId == sessionId && $0.createdOrder > lastPersistedOrder }
+  }
+
+  func recordSuccess(sessionId: String, persistedMessages: [WorkflowMessageRecord] = []) {
     latestSessionId = sessionId
     persistedSessionIds.insert(sessionId)
+    guard let highestOrder = persistedMessages.map(\.createdOrder).max() else {
+      return
+    }
+    lastPersistedMessageOrderBySessionId[sessionId] = max(
+      lastPersistedMessageOrderBySessionId[sessionId] ?? 0,
+      highestOrder
+    )
+  }
+
+  func persistLiveSnapshot(_ input: WorkflowRunLivePersistenceSaveInput) throws {
+    let sessionId = input.persistedSession.session.sessionId
+    guard let storeRoot else {
+      throw CLIWorkflowSessionStoreError.io("live session persistence store root is not configured")
+    }
+    let pendingMessages = pendingMessages(sessionId: sessionId, from: input.workflowMessages)
+    try liveConnection(storeRoot: storeRoot).save(
+      input.persistedSession,
+      runtimeSnapshot: input.runtimeSnapshot,
+      appendingWorkflowMessages: pendingMessages
+    )
+    if let artifactRoot = input.artifactRoot {
+      try FileWorkflowRuntimePersistenceStore(rootDirectory: artifactRoot).save(
+        input.runtimeSnapshot,
+        appendingWorkflowMessages: pendingMessages
+      )
+    }
+    recordSuccess(sessionId: sessionId, persistedMessages: pendingMessages)
   }
 
   func recordFailure(sessionId: String, error: String) {
@@ -32,6 +83,7 @@ actor WorkflowRunLivePersistenceState {
       latestSessionId: latestSessionId,
       storeRoot: storeRoot,
       persistedSession: latestSessionId.map { persistedSessionIds.contains($0) },
+      connectionOpenCount: connectionOpenCount,
       diagnostics: diagnostics
     )
   }
@@ -41,6 +93,54 @@ actor WorkflowRunLivePersistenceState {
     if diagnostics.count > 5 {
       diagnostics.removeFirst(diagnostics.count - 5)
     }
+  }
+
+  private func liveConnection(storeRoot: String) throws -> WorkflowRunLivePersistenceConnection {
+    if let connection {
+      return connection
+    }
+    let connection = try WorkflowRunLivePersistenceConnection(storeRoot: storeRoot)
+    self.connection = connection
+    connectionOpenCount += 1
+    return connection
+  }
+}
+
+private final class WorkflowRunLivePersistenceConnection: @unchecked Sendable {
+  private let sessionStore: CLIWorkflowSessionStore
+  private let runtimeStore: SQLiteWorkflowRuntimePersistenceStore
+  private let database: SQLiteDatabase
+
+  init(storeRoot: String) throws {
+    sessionStore = CLIWorkflowSessionStore(rootDirectory: storeRoot)
+    runtimeStore = SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot)
+    )
+    database = try sessionStore.openPersistenceDatabase()
+    try sessionStore.prepareRuntimePersistenceSchemas(in: database, runtimeStore: runtimeStore)
+  }
+
+  func save(
+    _ record: PersistedCLIWorkflowSession,
+    runtimeSnapshot snapshot: WorkflowRuntimePersistenceSnapshot,
+    appendingWorkflowMessages messages: [WorkflowMessageRecord]
+  ) throws {
+    try sessionStore.save(
+      record,
+      runtimeSnapshot: snapshot,
+      appendingWorkflowMessages: messages,
+      in: database,
+      runtimeStore: runtimeStore
+    )
+  }
+}
+
+func workflowRunEventTriggersLiveSessionPersistence(_ event: WorkflowRunEvent) -> Bool {
+  switch event.type {
+  case .sessionStarted, .stepStarted, .silenceWarning, .stepCompleted, .sessionCompleted:
+    return true
+  case .backendEvent:
+    return false
   }
 }
 

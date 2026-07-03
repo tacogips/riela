@@ -110,7 +110,7 @@ func renderJSONTemplates(_ value: JSONValue, variables: JSONObject) -> JSONValue
     return .array(values.map { renderJSONTemplates($0, variables: variables) })
   case let .object(object):
     return .object(object.mapValues { renderJSONTemplates($0, variables: variables) })
-  case .null, .bool, .number:
+  case .null, .bool, .integer, .number:
     return value
   }
 }
@@ -130,10 +130,10 @@ func boolValue(_ value: JSONValue?) -> Bool? {
 }
 
 func intValue(_ value: JSONValue?) -> Int? {
-  guard case let .number(value) = value else {
+  guard let int64 = value?.asInt64 else {
     return nil
   }
-  return Int(value)
+  return Int(exactly: int64)
 }
 
 func optionalNodeScope(config: JSONObject, variables: JSONObject) -> String? {
@@ -277,7 +277,7 @@ func int64Value(_ value: JSONValue?, fieldName: String) throws -> Int64? {
   guard let value else {
     return nil
   }
-  guard case let .number(number) = value, let id = Int64(exactly: number), id > 0 else {
+  guard let id = value.asInt64, id > 0 else {
     throw AdapterExecutionError(.policyBlocked, "\(fieldName) must be a positive integer record id")
   }
   return id
@@ -458,6 +458,8 @@ func memoryJSONValue(from value: JSONValue) throws -> MemoryJSONValue {
     return .null
   case let .bool(value):
     return .bool(value)
+  case let .integer(value):
+    return .number(Double(value))
   case let .number(value):
     return .number(value)
   case let .string(value):

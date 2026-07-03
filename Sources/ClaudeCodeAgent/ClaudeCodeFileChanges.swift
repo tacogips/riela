@@ -386,14 +386,11 @@ func claudeCodeStringArrayValue(_ value: JSONValue?) -> [String]? {
 }
 
 func claudeCodeNumberValue(_ value: JSONValue?) -> Double? {
-  guard case let .number(number) = value else {
-    return nil
-  }
-  return number
+  value?.asDouble
 }
 
 func claudeCodeIntValue(_ value: JSONValue?) -> Int? {
-  guard let number = claudeCodeNumberValue(value) else {
+  guard let number = value?.asInt64 else {
     return nil
   }
   return Int(number)

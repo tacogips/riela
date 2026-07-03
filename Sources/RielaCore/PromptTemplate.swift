@@ -47,6 +47,8 @@ private func formatTemplateValue(_ value: JSONValue) -> String {
     return value
   case let .bool(value):
     return value ? "true" : "false"
+  case let .integer(value):
+    return String(value)
   case let .number(value):
     return formatTemplateNumber(value)
   case .array, .object:
@@ -130,6 +132,8 @@ private func renderCompactJSON(_ value: JSONValue) -> String {
     return renderJSONString(value)
   case let .bool(value):
     return value ? "true" : "false"
+  case let .integer(value):
+    return String(value)
   case let .number(value):
     return formatTemplateNumber(value)
   case let .array(values):

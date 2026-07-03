@@ -1,117 +1,20 @@
+import AgentRuntimeKit
 import Foundation
 import RielaCore
 
-public enum ClaudeCodeProcessStatus: String, Equatable, Sendable {
-  case running
-  case exited
-  case killed
-}
-
-public struct ClaudeCodeProcessRecord: Equatable, Sendable {
-  public var id: String
-  public var pid: Int32
-  public var command: String
-  public var prompt: String
-  public var startedAt: String
-  public var status: ClaudeCodeProcessStatus
-  public var exitCode: Int32?
-  public var arguments: [String]
-  public var input: [String]
-
-  public init(id: String, pid: Int32, command: String, prompt: String, startedAt: String, status: ClaudeCodeProcessStatus, exitCode: Int32? = nil, arguments: [String] = [], input: [String] = []) {
-    self.id = id
-    self.pid = pid
-    self.command = command
-    self.prompt = prompt
-    self.startedAt = startedAt
-    self.status = status
-    self.exitCode = exitCode
-    self.arguments = arguments
-    self.input = input
-  }
-}
-
-public struct ClaudeCodeProcessExecution: Equatable, Sendable {
-  public var stdout: String
-  public var stderr: String
-  public var exitCode: Int32
-
-  public init(stdout: String = "", stderr: String = "", exitCode: Int32 = 0) {
-    self.stdout = stdout
-    self.stderr = stderr
-    self.exitCode = exitCode
-  }
-}
-
-public struct ClaudeCodeExecStreamResult: Sendable {
-  public var process: ClaudeCodeProcessRecord
-  public var lines: ClaudeCodeRolloutLineStream
-  public var completion: ClaudeCodeProcessCompletion
-
-  public func collectLines() -> [ClaudeCodeRolloutLine] {
-    completion.wait()
-    return lines.snapshot()
-  }
-
-  public func waitForCompletion() -> Int32 {
-    completion.wait()
-  }
-}
-
-public final class ClaudeCodeRolloutLineStream: @unchecked Sendable {
-  private let buffers: ProcessOutputBuffers
-  private var cursor = 0
-
-  fileprivate init(buffers: ProcessOutputBuffers) {
-    self.buffers = buffers
-  }
-
-  public func next(timeout: TimeInterval? = nil) -> ClaudeCodeRolloutLine? {
-    buffers.nextLine(after: &cursor, timeout: timeout)
-  }
-
-  public func snapshot() -> [ClaudeCodeRolloutLine] {
-    buffers.lines()
-  }
-}
-
-public final class ClaudeCodeProcessCompletion: @unchecked Sendable {
-  private let lock = NSLock()
-  private let waitClosure: () -> Int32
-  private var cachedExitCode: Int32?
-
-  fileprivate init(_ waitClosure: @escaping () -> Int32) {
-    self.waitClosure = waitClosure
-  }
-
-  @discardableResult
-  public func wait() -> Int32 {
-    lock.lock()
-    if let cachedExitCode {
-      lock.unlock()
-      return cachedExitCode
-    }
-    lock.unlock()
-    let exitCode = waitClosure()
-    lock.lock()
-    cachedExitCode = exitCode
-    lock.unlock()
-    return exitCode
-  }
-}
+public typealias ClaudeCodeProcessStatus = AgentProcessStatus
+public typealias ClaudeCodeProcessRecord = AgentProcessRecord
+public typealias ClaudeCodeProcessExecution = AgentProcessExecution
+public typealias ClaudeCodeExecStreamResult = AgentExecStreamResult<ClaudeCodeRolloutLine>
+public typealias ClaudeCodeRolloutLineStream = AgentRolloutLineStream<ClaudeCodeRolloutLine>
+public typealias ClaudeCodeProcessCompletion = AgentProcessCompletion
 
 public final class ClaudeCodeProcessManager: @unchecked Sendable {
   public typealias Executor = @Sendable ([String], String, [String: String]) -> ClaudeCodeProcessExecution
-  private let lock = NSLock()
-  private let executableName: String
-  private let executor: Executor?
-  private var records: [String: ClaudeCodeProcessRecord] = [:]
-  private var managedProcesses: [String: ManagedClaudeCodeProcess] = [:]
-  private var nextPid: Int32 = 10_000
+  private let supervisor: AgentProcessSupervisor<ManagedClaudeCodeProcess>
 
   public init(executableName: String = "claude", executor: Executor? = nil) {
-    self.executableName = executableName
-    self.executor = executor
+    self.supervisor = AgentProcessSupervisor(executableName: executableName, executor: executor)
   }
 
   public func spawnExec(prompt: String, options: ClaudeCodeProcessOptions = ClaudeCodeProcessOptions()) -> (process: ClaudeCodeProcessRecord, result: ClaudeCodeProcessExecution) {
@@ -124,10 +27,15 @@ public final class ClaudeCodeProcessManager: @unchecked Sendable {
 
   public func spawnResumeProcess(sessionId: String, prompt: String? = nil, options: ClaudeCodeProcessOptions = ClaudeCodeProcessOptions()) -> ClaudeCodeProcessRecord {
     let arguments = ClaudeCodeProcessCommandBuilder.buildResumeArguments(sessionId: sessionId, prompt: prompt, options: options)
-    if executor != nil {
-      return startExecutorProcess(prompt: prompt ?? "", arguments: arguments, options: options)
-    }
-    return startManagedProcess(prompt: prompt ?? "", arguments: arguments, options: options, closeInputAfterPrompt: false).process
+    return supervisor.startProcess(
+      prompt: prompt ?? "",
+      arguments: arguments,
+      environment: Self.environment(options),
+      cwd: options.cwd,
+      closeInputAfterPrompt: false,
+      makeManaged: Self.makeManaged,
+      makeFailedManaged: Self.makeFailedManaged
+    )
   }
 
   public func spawnFork(sessionId: String, nthMessage: Int? = nil, options: ClaudeCodeProcessOptions = ClaudeCodeProcessOptions()) -> (process: ClaudeCodeProcessRecord, result: ClaudeCodeProcessExecution) {
@@ -136,10 +44,15 @@ public final class ClaudeCodeProcessManager: @unchecked Sendable {
 
   public func spawnForkProcess(sessionId: String, nthMessage: Int? = nil, options: ClaudeCodeProcessOptions = ClaudeCodeProcessOptions()) -> ClaudeCodeProcessRecord {
     let arguments = ClaudeCodeProcessCommandBuilder.buildForkArguments(sessionId: sessionId, nthMessage: nthMessage, options: options)
-    if executor != nil {
-      return startExecutorProcess(prompt: "", arguments: arguments, options: options)
-    }
-    return startManagedProcess(prompt: "", arguments: arguments, options: options, closeInputAfterPrompt: false).process
+    return supervisor.startProcess(
+      prompt: "",
+      arguments: arguments,
+      environment: Self.environment(options),
+      cwd: options.cwd,
+      closeInputAfterPrompt: false,
+      makeManaged: Self.makeManaged,
+      makeFailedManaged: Self.makeFailedManaged
+    )
   }
 
   public func spawnExecStream(prompt: String, options: ClaudeCodeProcessOptions = ClaudeCodeProcessOptions()) -> ClaudeCodeExecStreamResult {
@@ -151,226 +64,68 @@ public final class ClaudeCodeProcessManager: @unchecked Sendable {
   }
 
   public func list() -> [ClaudeCodeProcessRecord] {
-    lock.lock()
-    defer { lock.unlock() }
-    return records.values.sorted { $0.startedAt < $1.startedAt }
+    supervisor.list()
   }
 
   public func get(id: String) -> ClaudeCodeProcessRecord? {
-    lock.lock()
-    defer { lock.unlock() }
-    return records[id]
+    supervisor.get(id: id)
   }
 
   public func kill(id: String) -> Bool {
-    lock.lock()
-    guard var record = records[id], record.status == .running else {
-      lock.unlock()
-      return false
-    }
-    let managed = managedProcesses[id]
-    record.status = .killed
-    records[id] = record
-    lock.unlock()
-    managed?.terminate()
-    return true
+    supervisor.kill(id: id)
   }
 
   public func writeInput(id: String, text: String) -> Bool {
-    lock.lock()
-    guard var record = records[id], record.status == .running else {
-      lock.unlock()
-      return false
-    }
-    let managed = managedProcesses[id]
-    record.input.append(text)
-    records[id] = record
-    lock.unlock()
-    return managed?.write(text) ?? false
+    supervisor.writeInput(id: id, text: text)
   }
 
   public func killAll() {
-    lock.lock()
-    let running = managedProcesses.filter { id, _ in records[id]?.status == .running }.map(\.value)
-    records = records.mapValues { record in
-      var next = record
-      if next.status == .running {
-        next.status = .killed
-      }
-      return next
-    }
-    lock.unlock()
-    running.forEach { $0.terminate() }
+    supervisor.killAll()
   }
 
   @discardableResult
   public func prune() -> Int {
-    lock.lock()
-    let before = records.count
-    records = records.filter { $0.value.status == .running }
-    let removed = before - records.count
-    lock.unlock()
-    return removed
+    supervisor.prune()
   }
 
   private func run(prompt: String, arguments: [String], options: ClaudeCodeProcessOptions) -> (process: ClaudeCodeProcessRecord, result: ClaudeCodeProcessExecution) {
-    let allArguments = [executableName] + arguments
-    let environment = ClaudeCodeProcessCommandBuilder.buildEnvironment(options: options)
-    guard let executor else {
-      let started = startManagedProcess(prompt: prompt, arguments: arguments, options: options, closeInputAfterPrompt: true)
-      started.managed.waitUntilExit()
-      let result = started.managed.execution()
-      lock.lock()
-      var record = records[started.process.id] ?? started.process
-      if record.status == .running {
-        record.status = .exited
-      }
-      record.exitCode = result.exitCode
-      records[record.id] = record
-      lock.unlock()
-      removeManagedProcess(id: record.id)
-      return (record, result)
-    }
-    lock.lock()
-    let id = UUID().uuidString
-    let pid = nextPid
-    nextPid += 1
-    let startedAt = ISO8601DateFormatter().string(from: Date())
-    var record = ClaudeCodeProcessRecord(id: id, pid: pid, command: allArguments.joined(separator: " "), prompt: prompt, startedAt: startedAt, status: .running, arguments: allArguments)
-    records[id] = record
-    lock.unlock()
-
-    let result = executor(allArguments, prompt, environment)
-    lock.lock()
-    record.status = .exited
-    record.exitCode = result.exitCode
-    records[id] = record
-    lock.unlock()
-    return (record, result)
-  }
-
-  private func startExecutorProcess(prompt: String, arguments: [String], options: ClaudeCodeProcessOptions) -> ClaudeCodeProcessRecord {
-    let allArguments = [executableName] + arguments
-    _ = ClaudeCodeProcessCommandBuilder.buildEnvironment(options: options)
-    lock.lock()
-    let id = UUID().uuidString
-    let pid = nextPid
-    nextPid += 1
-    let startedAt = ISO8601DateFormatter().string(from: Date())
-    let record = ClaudeCodeProcessRecord(id: id, pid: pid, command: allArguments.joined(separator: " "), prompt: prompt, startedAt: startedAt, status: .running, arguments: allArguments)
-    records[id] = record
-    lock.unlock()
-    return record
-  }
-
-  private func stream(prompt: String, arguments: [String], options: ClaudeCodeProcessOptions) -> ClaudeCodeExecStreamResult {
-    if executor != nil {
-      let executed = run(prompt: prompt, arguments: arguments, options: options)
-      let buffers = ProcessOutputBuffers()
-      buffers.appendStdout(Data(executed.result.stdout.utf8))
-      buffers.appendStderr(Data(executed.result.stderr.utf8))
-      buffers.finishStdout()
-      return ClaudeCodeExecStreamResult(
-        process: executed.process,
-        lines: ClaudeCodeRolloutLineStream(buffers: buffers),
-        completion: ClaudeCodeProcessCompletion { executed.result.exitCode }
-      )
-    }
-
-    let started = startManagedProcess(prompt: prompt, arguments: arguments, options: options, closeInputAfterPrompt: true)
-    return ClaudeCodeExecStreamResult(
-      process: started.process,
-      lines: ClaudeCodeRolloutLineStream(buffers: started.managed.outputBuffers),
-      completion: ClaudeCodeProcessCompletion { [weak self, managed = started.managed, processId = started.process.id] in
-        managed.waitUntilExit()
-        let result = managed.execution()
-        self?.finishManagedProcess(id: processId, exitCode: result.exitCode)
-        self?.removeManagedProcess(id: processId)
-        return result.exitCode
-      }
+    supervisor.run(
+      prompt: prompt,
+      arguments: arguments,
+      environment: Self.environment(options),
+      cwd: options.cwd,
+      makeManaged: Self.makeManaged,
+      makeFailedManaged: Self.makeFailedManaged
     )
   }
 
-  private func startManagedProcess(prompt: String, arguments: [String], options: ClaudeCodeProcessOptions, closeInputAfterPrompt: Bool) -> (process: ClaudeCodeProcessRecord, managed: ManagedClaudeCodeProcess) {
-    let allArguments = [executableName] + arguments
-    let environment = ClaudeCodeProcessCommandBuilder.buildEnvironment(options: options)
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-    process.arguments = allArguments
-    process.environment = environment
-    if let cwd = options.cwd {
-      process.currentDirectoryURL = URL(fileURLWithPath: cwd, isDirectory: true)
-    }
-
-    let outputPipe = Pipe()
-    let errorPipe = Pipe()
-    let inputPipe = Pipe()
-    process.standardOutput = outputPipe
-    process.standardError = errorPipe
-    process.standardInput = inputPipe
-
-    let id = UUID().uuidString
-    let startedAt = ISO8601DateFormatter().string(from: Date())
-    let outputBuffers = ProcessOutputBuffers()
-
-    do {
-      try process.run()
-      let record = ClaudeCodeProcessRecord(id: id, pid: process.processIdentifier, command: allArguments.joined(separator: " "), prompt: prompt, startedAt: startedAt, status: .running, arguments: allArguments)
-      let managed = ManagedClaudeCodeProcess(process: process, input: inputPipe.fileHandleForWriting, output: outputPipe.fileHandleForReading, error: errorPipe.fileHandleForReading, outputBuffers: outputBuffers)
-      managed.startDraining()
-      if closeInputAfterPrompt {
-        managed.closeInput()
-      }
-      lock.lock()
-      records[id] = record
-      managedProcesses[id] = managed
-      lock.unlock()
-      process.terminationHandler = { [weak self] process in
-        self?.finishManagedProcess(id: id, exitCode: process.terminationStatus)
-      }
-      return (record, managed)
-    } catch {
-      let record = ClaudeCodeProcessRecord(id: id, pid: -1, command: allArguments.joined(separator: " "), prompt: prompt, startedAt: startedAt, status: .exited, exitCode: 127, arguments: allArguments)
-      let managed = ManagedClaudeCodeProcess(failedExecution: ClaudeCodeProcessExecution(stdout: "", stderr: error.localizedDescription, exitCode: 127))
-      lock.lock()
-      records[id] = record
-      lock.unlock()
-      return (record, managed)
-    }
+  private func stream(prompt: String, arguments: [String], options: ClaudeCodeProcessOptions) -> ClaudeCodeExecStreamResult {
+    supervisor.stream(
+      prompt: prompt,
+      arguments: arguments,
+      environment: Self.environment(options),
+      cwd: options.cwd,
+      makeOutputBuffers: { ProcessOutputBuffers() },
+      makeManaged: Self.makeManaged,
+      makeFailedManaged: Self.makeFailedManaged
+    )
   }
 
-  private func finishManagedProcess(id: String, exitCode: Int32) {
-    lock.lock()
-    guard var record = records[id] else {
-      lock.unlock()
-      return
-    }
-    if record.status == .running {
-      record.status = .exited
-    }
-    record.exitCode = exitCode
-    records[id] = record
-    lock.unlock()
+  private static func environment(_ options: ClaudeCodeProcessOptions) -> [String: String] {
+    ClaudeCodeProcessCommandBuilder.buildEnvironment(options: options)
   }
 
-  private func removeManagedProcess(id: String) {
-    lock.lock()
-    managedProcesses.removeValue(forKey: id)
-    lock.unlock()
+  private static func makeManaged(process: Process, input: FileHandle, output: FileHandle, error: FileHandle) -> ManagedClaudeCodeProcess {
+    ManagedClaudeCodeProcess(process: process, input: input, output: output, error: error)
+  }
+
+  private static func makeFailedManaged(_ error: Error) -> ManagedClaudeCodeProcess {
+    ManagedClaudeCodeProcess(failedExecution: ClaudeCodeProcessExecution(stdout: "", stderr: error.localizedDescription, exitCode: 127))
   }
 }
 
 public final class ClaudeCodeProcessRunningSession: ClaudeCodeRunningSession, @unchecked Sendable {
-  private let lock = NSLock()
-  private var currentSessionId: String
-  private let processRecord: ClaudeCodeProcessRecord
-  private let streamResult: ClaudeCodeExecStreamResult
-  private let existingLines: [ClaudeCodeRolloutLine]
-  private let streamGranularity: String
-  private let resumeCapture: ClaudeCodeResumeRolloutCapture?
-  private let terminateProcess: () -> Bool
-  private var collectedLines: [ClaudeCodeRolloutLine]?
-  private var closed = false
+  private let state: AgentRunningSessionState<ClaudeCodeRolloutLine>
 
   fileprivate init(
     sessionId: String,
@@ -379,32 +134,38 @@ public final class ClaudeCodeProcessRunningSession: ClaudeCodeRunningSession, @u
     existingLines: [ClaudeCodeRolloutLine] = [],
     streamGranularity: String = "event",
     resumeCapture: ClaudeCodeResumeRolloutCapture? = nil,
-    terminateProcess: @escaping () -> Bool = { false }
+    terminateProcess: @escaping @Sendable () -> Bool = { false }
   ) {
-    self.currentSessionId = sessionId
-    self.processRecord = processRecord
-    self.streamResult = streamResult
-    self.existingLines = existingLines
-    self.streamGranularity = streamGranularity
-    self.resumeCapture = resumeCapture
-    self.terminateProcess = terminateProcess
+    let resumeBackfill: AgentRunningSessionState<ClaudeCodeRolloutLine>.ResumeBackfill?
+    if let resumeCapture {
+      resumeBackfill = { includeFinalBackfill in
+        resumeCapture.flush(includeFinalBackfill: includeFinalBackfill)
+      }
+    } else {
+      resumeBackfill = nil
+    }
+    self.state = AgentRunningSessionState(
+      sessionId: sessionId,
+      processRecord: processRecord,
+      streamResult: streamResult,
+      existingLines: existingLines,
+      streamGranularity: streamGranularity,
+      resumeBackfill: resumeBackfill,
+      terminateProcess: terminateProcess,
+      sessionIdResolver: { lines in Self.sessionId(from: lines) },
+      lineDeduplicator: { lines in lines.deduplicatingStableRolloutLines() },
+      streamChunker: { lines, granularity, sessionId in
+        lines.streamChunks(granularity: granularity, sessionId: sessionId)
+      }
+    )
   }
 
   public var sessionId: String {
-    lock.lock()
-    defer { lock.unlock() }
-    return currentSessionId
+    state.sessionId
   }
 
   public func getState() -> [String: String] {
-    let sessionId = refreshSessionId(from: streamLines(includeFinalRolloutBackfill: false))
-    lock.lock()
-    defer { lock.unlock() }
-    return [
-      "sessionId": sessionId,
-      "processId": processRecord.id,
-      "status": closed ? "completed" : "running"
-    ]
+    state.getState()
   }
 
   public func pushMessage(_ message: ClaudeCodeRolloutLine) throws {
@@ -412,62 +173,15 @@ public final class ClaudeCodeProcessRunningSession: ClaudeCodeRunningSession, @u
   }
 
   public func messages() -> [ClaudeCodeRolloutLine] {
-    lock.lock()
-    if let collectedLines {
-      lock.unlock()
-      return collectedLines
-    }
-    lock.unlock()
-    let mergedLines = streamLines(includeFinalRolloutBackfill: false)
-    let sessionId = refreshSessionId(from: mergedLines)
-    return mergedLines.streamChunks(granularity: streamGranularity, sessionId: sessionId)
+    state.messages()
   }
 
   public func waitForCompletion() -> ClaudeCodeSessionResult {
-    let exitCode = streamResult.waitForCompletion()
-    let mergedLines = streamLines(includeFinalRolloutBackfill: true)
-    let sessionId = refreshSessionId(from: mergedLines)
-    let lines = mergedLines.streamChunks(granularity: streamGranularity, sessionId: sessionId)
-    lock.lock()
-    collectedLines = lines
-    closed = true
-    lock.unlock()
-    let now = ISO8601DateFormatter().string(from: Date())
-    return ClaudeCodeSessionResult(success: exitCode == 0, exitCode: exitCode, startedAt: processRecord.startedAt, completedAt: now, messageCount: mergedLines.count)
+    ClaudeCodeSessionResult(state.waitForCompletion())
   }
 
   public func cancel() -> ClaudeCodeSessionResult {
-    _ = terminateProcess()
-    _ = streamResult.waitForCompletion()
-    let mergedLines = streamLines(includeFinalRolloutBackfill: true)
-    let sessionId = refreshSessionId(from: mergedLines)
-    let lines = mergedLines.streamChunks(granularity: streamGranularity, sessionId: sessionId)
-    lock.lock()
-    collectedLines = lines
-    closed = true
-    lock.unlock()
-    let now = ISO8601DateFormatter().string(from: Date())
-    return ClaudeCodeSessionResult(success: false, exitCode: 130, startedAt: processRecord.startedAt, completedAt: now, messageCount: mergedLines.count)
-  }
-
-  private func streamLines(includeFinalRolloutBackfill: Bool) -> [ClaudeCodeRolloutLine] {
-    var lines = existingLines + streamResult.lines.snapshot()
-    if let resumeCapture {
-      lines.append(contentsOf: resumeCapture.flush(includeFinalBackfill: includeFinalRolloutBackfill))
-    }
-    return lines.deduplicatingStableRolloutLines()
-  }
-
-  @discardableResult
-  private func refreshSessionId(from lines: [ClaudeCodeRolloutLine]) -> String {
-    let resolved = Self.sessionId(from: lines)
-    lock.lock()
-    if let resolved {
-      currentSessionId = resolved
-    }
-    let value = currentSessionId
-    lock.unlock()
-    return value
+    ClaudeCodeSessionResult(state.cancel())
   }
 
   private static func sessionId(from lines: [ClaudeCodeRolloutLine]) -> String? {
@@ -483,6 +197,18 @@ public final class ClaudeCodeProcessRunningSession: ClaudeCodeRunningSession, @u
       }
     }
     return nil
+  }
+}
+
+private extension ClaudeCodeSessionResult {
+  init(_ completion: AgentRunningSessionCompletion<ClaudeCodeRolloutLine>) {
+    self.init(
+      success: completion.success,
+      exitCode: completion.exitCode,
+      startedAt: completion.startedAt,
+      completedAt: completion.completedAt,
+      messageCount: completion.messageCount
+    )
   }
 }
 

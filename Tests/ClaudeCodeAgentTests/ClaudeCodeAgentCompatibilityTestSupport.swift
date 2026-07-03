@@ -134,6 +134,16 @@ func testDate(_ text: String) throws -> Date {
   try XCTUnwrap(ISO8601DateFormatter().date(from: text))
 }
 
+func decodedJSONObject(_ text: String) throws -> JSONObject {
+  let value = try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
+  switch value {
+  case let .object(object):
+    return object
+  default:
+    return try XCTUnwrap(nil as JSONObject?)
+  }
+}
+
 func claudeRolloutLine(_ timestamp: String, _ type: String, _ payload: JSONValue) -> String {
   let object = JSONValue.object([
     "timestamp": .string(timestamp),

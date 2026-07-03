@@ -4,6 +4,7 @@ import CryptoKit
 import Crypto
 #endif
 import Foundation
+import AgentRuntimeKit
 
 public enum ClaudeCodeBookmarkType: String, Equatable, Codable, Sendable {
   case session
@@ -338,7 +339,7 @@ public enum ClaudeCodeBookmarkPersistence {
 }
 
 func claudeCodeOperationalNow() -> String {
-  ISO8601DateFormatter().string(from: Date())
+  agentRuntimeISO8601Now()
 }
 
 public struct ClaudeCodeTokenMetadata: Equatable, Codable, Sendable {
@@ -653,28 +654,7 @@ public enum ClaudeCodeTokenPersistence {
   }
 }
 
-public struct ClaudeCodeJSONStore<Value: Codable & Sendable>: Sendable {
-  public var url: URL
-
-  public init(url: URL) {
-    self.url = url
-  }
-
-  public func load(default defaultValue: Value) throws -> Value {
-    guard FileManager.default.fileExists(atPath: url.path) else {
-      return defaultValue
-    }
-    let data = try Data(contentsOf: url)
-    return try JSONDecoder().decode(Value.self, from: data)
-  }
-
-  public func save(_ value: Value) throws {
-    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    try encoder.encode(value).write(to: url, options: [.atomic])
-  }
-}
+public typealias ClaudeCodeJSONStore<Value: Codable & Sendable> = AgentJSONFileStore<Value>
 
 public enum ClaudeCodeOperationalError: Error, Equatable {
   case invalidBookmark

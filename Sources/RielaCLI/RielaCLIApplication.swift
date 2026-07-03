@@ -368,7 +368,7 @@ func workflowRunHelpText(target: String?) -> String {
     --session-store <path>         Persist CLI session records under this store.
     --artifact-root <path>         Write runtime artifacts under this root.
     --max-steps <n>
-    --max-concurrency <n>
+    --max-concurrency <n>          Reserved for fanout execution; not supported yet.
     --max-loop-iterations <n>
     --default-timeout-ms <n>
     --timeout-ms <n>
@@ -376,6 +376,10 @@ func workflowRunHelpText(target: String?) -> String {
     --max-supervised-attempts <n>  Maximum auto-improve attempts.
     --monitor-interval-ms <n>      Polling interval for explicit stall detection.
     --stall-timeout-ms <n>         Enable stall detection for local non-agent executions.
+    --agent-silence-warning-ms <n> Emit a warning event when an agent backend is silent this long.
+                                   Use 0 to disable. Defaults to 120000.
+    --agent-silence-monitor-interval-ms <n>
+                                   Polling interval for agent silence warnings. Defaults to 1000.
     --output jsonl|json|text       Defaults to jsonl. Prefer jsonl for agents/LLMs; json is legacy and emits only after completion.
 
   Stall detection:

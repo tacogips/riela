@@ -546,18 +546,18 @@ final class WorkflowInputFilterRunnerTests: XCTestCase {
     let unsupportedTransitions: [(WorkflowStepTransition, String)] = [
       (
         WorkflowStepTransition(toStepId: "child-start", toWorkflowId: "child-workflow"),
-        "cross-workflow transitions are not supported by the Swift TASK-005 in-memory publisher"
+        "step 'yui' uses cross-workflow transitions, which this runner does not support yet"
       ),
       (
         WorkflowStepTransition(toStepId: "next", resumeStepId: "resume"),
-        "resume-step transitions are not supported by the Swift TASK-005 in-memory publisher"
+        "step 'yui' uses resume-step transitions, which this runner does not support yet"
       ),
       (
         WorkflowStepTransition(
           toStepId: "fanout-start",
           fanout: WorkflowStepFanout(groupId: "group", itemsFrom: "/items", joinStepId: "join")
         ),
-        "fanout transitions are not supported by the Swift TASK-005 in-memory publisher"
+        "step 'yui' uses fanout transitions, which this runner does not support yet"
       )
     ]
 
@@ -606,19 +606,12 @@ final class WorkflowInputFilterRunnerTests: XCTestCase {
           variables: inputFilterTelegramVariables(text: "hello @mika")
         ))
         XCTFail("expected unsupported transition failure")
-      } catch WorkflowPublicationError.unsupportedTransition(let actualReason) {
-        XCTAssertEqual(actualReason, reason)
+      } catch DeterministicWorkflowRunnerError.invalidWorkflow(let actualReason) {
+        XCTAssertTrue(actualReason.contains(reason), actualReason)
       }
 
       let latestSession = await store.latestSession(workflowId: "telegram-filtered")
-      let session = try XCTUnwrap(latestSession)
-      let execution = try XCTUnwrap(session.executions.first)
-      let messages = try await store.listMessages(for: session.sessionId, toStepId: nil)
-      XCTAssertEqual(session.status, .failed)
-      XCTAssertEqual(execution.status, .failed)
-      XCTAssertNil(execution.acceptedOutput)
-      XCTAssertEqual(execution.failureReason, reason)
-      XCTAssertEqual(messages, [])
+      XCTAssertNil(latestSession)
     }
   }
 }

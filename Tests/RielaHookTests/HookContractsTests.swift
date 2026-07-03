@@ -12,6 +12,26 @@ final class HookContractsTests: XCTestCase {
     XCTAssertEqual(context.agentBackend, "codex")
     XCTAssertEqual(context.workingDirectory, "")
     XCTAssertEqual(context.backendMetadata, [:])
+    XCTAssertEqual(context.inferredFields, ["eventName", "vendor"])
+
+    let encoded = try encodedObject(context)
+    XCTAssertEqual(encoded["inferredFields"], .array([.string("eventName"), .string("vendor")]))
+  }
+
+  func testHookContextOmitsInferredFieldsWhenExplicit() throws {
+    let context = HookContext(
+      vendor: .claudeCode,
+      eventName: "PostToolUse",
+      agentSessionId: "session-a",
+      workingDirectory: "/tmp/project"
+    )
+    let encoded = try encodedObject(context)
+    let decoded = try JSONDecoder().decode(HookContext.self, from: try JSONEncoder().encode(context))
+
+    XCTAssertEqual(decoded.inferredFields, [])
+    XCTAssertNil(encoded["inferredFields"])
+    XCTAssertEqual(encoded["vendor"], .string("claude-code"))
+    XCTAssertEqual(encoded["eventName"], .string("PostToolUse"))
   }
 
   func testHookPayloadParsingNormalizesKnownEventsAndValidatesFields() throws {
@@ -185,5 +205,13 @@ final class HookContractsTests: XCTestCase {
       env: [:],
       controls: .init(recording: .auto)
     ))
+  }
+
+  private func encodedObject<T: Encodable>(_ value: T) throws -> JSONObject {
+    let data = try JSONEncoder().encode(value)
+    guard case let .object(object) = try JSONDecoder().decode(JSONValue.self, from: data) else {
+      return [:]
+    }
+    return object
   }
 }

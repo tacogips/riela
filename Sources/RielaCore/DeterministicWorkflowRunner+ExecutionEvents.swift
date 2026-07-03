@@ -1,5 +1,17 @@
 import Foundation
 
+struct WorkflowStepStartedExecutionRecord: Sendable {
+  var execution: WorkflowStepExecution
+  var backendEventContext: WorkflowBackendEventEmissionContext
+}
+
+struct WorkflowBackendEventEmissionContext: Sendable {
+  var sessionId: String
+  var status: WorkflowSessionStatus
+  var currentStepId: String?
+  var nodeExecutions: Int
+}
+
 extension DeterministicWorkflowRunner {
   func recordStepStartedExecution(
     workflowId: String,
@@ -8,7 +20,7 @@ extension DeterministicWorkflowRunner {
     attempt: Int,
     backend: NodeExecutionBackend?,
     handler: WorkflowRunEventHandler?
-  ) async throws -> WorkflowStepExecution {
+  ) async throws -> WorkflowStepStartedExecutionRecord {
     let execution = try await store.recordStepExecution(
       WorkflowStepExecutionRecordInput(
         sessionId: sessionId,
@@ -28,40 +40,111 @@ extension DeterministicWorkflowRunner {
       execution: execution,
       handler: handler
     )
-    return execution
+    return WorkflowStepStartedExecutionRecord(
+      execution: execution,
+      backendEventContext: WorkflowBackendEventEmissionContext(
+        sessionId: updatedSession.sessionId,
+        status: updatedSession.status,
+        currentStepId: updatedSession.currentStepId,
+        nodeExecutions: updatedSession.executions.count
+      )
+    )
   }
 
   func adapterExecutionContext(
     deadline: Date?,
     workflowId: String,
-    sessionId: String,
     step: WorkflowStepRef,
     execution: WorkflowStepExecution,
+    eventContext: WorkflowBackendEventEmissionContext,
     handler: WorkflowRunEventHandler?
   ) -> AdapterExecutionContext {
     AdapterExecutionContext(deadline: deadline) { backendEvent in
       guard !backendEvent.eventType.isEmpty else {
         return
       }
-      let updatedExecution = try? await self.store.recordStepBackendEvent(
+      let receipt = try? await self.store.recordStepBackendEventReceipt(
         WorkflowStepBackendEventInput(
-          sessionId: sessionId,
+          sessionId: eventContext.sessionId,
           executionId: execution.executionId,
-          eventType: backendEvent.eventType
+          eventType: backendEvent.eventType,
+          channel: backendEvent.channel,
+          contentDelta: backendEvent.contentDelta,
+          contentSnapshot: backendEvent.contentSnapshot,
+          isDelta: backendEvent.isDelta,
+          toolName: backendEvent.toolName,
+          usage: backendEvent.usage,
+          sequence: nil,
+          at: backendEvent.at
         )
       )
-      guard let updatedExecution,
-            let updatedSession = try? await self.store.loadSession(id: sessionId) else {
+      guard let receipt else {
         return
       }
+      var enrichedEvent = backendEvent
+      enrichedEvent.sequence = receipt.sequence
+      enrichedEvent.at = receipt.at
       await self.emitBackendEvent(
         workflowId: workflowId,
-        session: updatedSession,
+        eventContext: eventContext,
         step: step,
-        execution: updatedExecution,
-        backendEvent: backendEvent,
+        executionId: receipt.executionId,
+        backendEvent: enrichedEvent,
         handler: handler
       )
+    }
+  }
+
+  func startAgentSilenceMonitorIfNeeded(
+    request: DeterministicWorkflowRunRequest,
+    workflowId: String,
+    step: WorkflowStepRef,
+    execution: WorkflowStepExecution,
+    eventContext: WorkflowBackendEventEmissionContext
+  ) -> Task<Void, Never>? {
+    guard execution.backend?.cliAgentBackend != nil,
+          let thresholdMs = request.agentSilenceWarningMs,
+          thresholdMs > 0,
+          request.agentSilenceMonitorIntervalMs > 0,
+          request.eventHandler != nil else {
+      return nil
+    }
+    return Task {
+      while !Task.isCancelled {
+        do {
+          try await Task.sleep(nanoseconds: UInt64(request.agentSilenceMonitorIntervalMs) * 1_000_000)
+        } catch {
+          return
+        }
+        guard !Task.isCancelled,
+              let current = try? await store.loadSession(id: eventContext.sessionId),
+              let runningExecution = current.executions.last(where: { $0.executionId == execution.executionId }),
+              runningExecution.status == .running else {
+          return
+        }
+        guard let lastSignalAt = runningExecution.lastBackendEventAt else {
+          continue
+        }
+        let silentForMs = Int(Date().timeIntervalSince(lastSignalAt) * 1_000)
+        guard silentForMs >= thresholdMs else {
+          continue
+        }
+        await emitSilenceWarningEvent(
+          workflowId: workflowId,
+          eventContext: WorkflowBackendEventEmissionContext(
+            sessionId: current.sessionId,
+            status: current.status,
+            currentStepId: current.currentStepId,
+            nodeExecutions: current.executions.count
+          ),
+          step: step,
+          executionId: execution.executionId,
+          silentForMs: silentForMs,
+          thresholdMs: thresholdMs,
+          handler: request.eventHandler
+        )
+        return
+      }
     }
   }
 }

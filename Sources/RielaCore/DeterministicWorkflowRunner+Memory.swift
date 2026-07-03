@@ -343,7 +343,7 @@ private func sanitizedNodeMemoryValue(_ value: JSONValue, depth: Int = 0) -> JSO
       }
     }
     return .object(sanitized)
-  case .null, .bool, .number:
+  case .null, .bool, .integer, .number:
     return value
   }
 }
@@ -377,6 +377,8 @@ private func memoryJSONValue(from value: JSONValue) -> MemoryJSONValue {
     return .null
   case let .bool(value):
     return .bool(value)
+  case let .integer(value):
+    return .number(Double(value))
   case let .number(value):
     return .number(value)
   case let .string(value):

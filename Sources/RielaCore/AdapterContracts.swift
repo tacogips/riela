@@ -51,13 +51,48 @@ public struct AdapterExecutionInput: Codable, Equatable, Sendable {
   }
 }
 
+public enum AdapterBackendEventChannel: String, Codable, Equatable, Sendable {
+  case lifecycle
+  case assistant
+  case thinking
+  case tool
+  case usage
+}
+
 public struct AdapterBackendEvent: Equatable, Sendable {
   public var provider: String
   public var eventType: String
+  public var channel: AdapterBackendEventChannel?
+  public var contentDelta: String?
+  public var contentSnapshot: String?
+  public var isDelta: Bool
+  public var toolName: String?
+  public var usage: JSONObject?
+  public var sequence: Int?
+  public var at: Date?
 
-  public init(provider: String, eventType: String) {
+  public init(
+    provider: String,
+    eventType: String,
+    channel: AdapterBackendEventChannel? = nil,
+    contentDelta: String? = nil,
+    contentSnapshot: String? = nil,
+    isDelta: Bool = false,
+    toolName: String? = nil,
+    usage: JSONObject? = nil,
+    sequence: Int? = nil,
+    at: Date? = nil
+  ) {
     self.provider = provider
     self.eventType = eventType
+    self.channel = channel
+    self.contentDelta = contentDelta
+    self.contentSnapshot = contentSnapshot
+    self.isDelta = isDelta
+    self.toolName = toolName
+    self.usage = usage
+    self.sequence = sequence
+    self.at = at
   }
 }
 
@@ -121,50 +156,51 @@ public struct OutputContractEnvelopeNormalization: Equatable, Sendable {
   public var when: [String: Bool]
   public var payload: JSONObject
   public var usedEnvelope: Bool
+  public var routingDiagnostics: [String]
 
   public init(
     completionPassed: Bool,
     when: [String: Bool],
     payload: JSONObject,
-    usedEnvelope: Bool
+    usedEnvelope: Bool,
+    routingDiagnostics: [String] = []
   ) {
     self.completionPassed = completionPassed
     self.when = when
     self.payload = payload
     self.usedEnvelope = usedEnvelope
+    self.routingDiagnostics = routingDiagnostics
   }
 }
 
-public func parseJSONObjectCandidate(_ text: String, source: String) throws -> JSONObject {
-  let candidate = extractJSONObjectCandidateText(text)
-  guard let data = candidate.data(using: .utf8) else {
-    throw AdapterExecutionError(.invalidOutput, "\(source) must return a JSON object: text is not UTF-8")
-  }
+public struct OutputContractRoutingReconciliation: Equatable, Sendable {
+  public var when: [String: Bool]
+  public var diagnostics: [String]
 
-  let decoded: JSONValue
-  do {
-    decoded = try JSONDecoder().decode(JSONValue.self, from: data)
-  } catch {
-    throw AdapterExecutionError(.invalidOutput, "\(source) must return a JSON object: \(error.localizedDescription)")
+  public init(when: [String: Bool], diagnostics: [String] = []) {
+    self.when = when
+    self.diagnostics = diagnostics
   }
-
-  guard case let .object(object) = decoded else {
-    throw AdapterExecutionError(.invalidOutput, "\(source) must return a top-level JSON object")
-  }
-  return object
 }
+
+public typealias OutputContractRoutingReconciler =
+  @Sendable (_ when: [String: Bool], _ payload: JSONObject) -> OutputContractRoutingReconciliation
 
 public func normalizeOutputContractEnvelope(
   _ value: JSONObject,
   source: String,
-  defaults: (completionPassed: Bool, when: [String: Bool]) = (true, ["always": true])
+  defaults: (completionPassed: Bool, when: [String: Bool]) = (true, ["always": true]),
+  routingReconciler: OutputContractRoutingReconciler? = nil
 ) throws -> OutputContractEnvelopeNormalization {
   guard let whenValue = value["when"] else {
+    let reconciled = routingReconciler?(defaults.when, value)
+      ?? OutputContractRoutingReconciliation(when: defaults.when)
     return OutputContractEnvelopeNormalization(
       completionPassed: defaults.completionPassed,
-      when: defaults.when,
+      when: reconciled.when,
       payload: value,
-      usedEnvelope: false
+      usedEnvelope: false,
+      routingDiagnostics: reconciled.diagnostics
     )
   }
 
@@ -186,93 +222,15 @@ public func normalizeOutputContractEnvelope(
     completionPassed = defaults.completionPassed
   }
 
-  let reconciled = reconcileCompletionReviewRouting(when: when, payload: payload)
+  let reconciled = routingReconciler?(when, payload)
+    ?? OutputContractRoutingReconciliation(when: when)
   return OutputContractEnvelopeNormalization(
     completionPassed: completionPassed,
     when: reconciled.when,
     payload: payload,
-    usedEnvelope: true
+    usedEnvelope: true,
+    routingDiagnostics: reconciled.diagnostics
   )
-}
-
-public struct CompletionReviewRoutingReconciliation: Equatable, Sendable {
-  public var when: [String: Bool]
-  public var reconciled: Bool
-
-  public init(when: [String: Bool], reconciled: Bool) {
-    self.when = when
-    self.reconciled = reconciled
-  }
-}
-
-public func reconcileCompletionReviewRouting(
-  when: [String: Bool],
-  payload: JSONObject
-) -> CompletionReviewRoutingReconciliation {
-  guard isCompletionReviewPayload(payload) else {
-    return CompletionReviewRoutingReconciliation(when: when, reconciled: false)
-  }
-
-  let expected = expectedGoalCompletionRouting(from: payload)
-  let expectedWhen: [String: Bool] = [
-    "needs_replan": expected.needsReplan,
-    "needs_work": expected.needsWork
-  ]
-  if when == expectedWhen {
-    return CompletionReviewRoutingReconciliation(when: when, reconciled: false)
-  }
-
-  let alwaysOverridesRouting = when["always"] == true && (expected.needsReplan || expected.needsWork)
-  let contradictsPayload =
-    when["needs_replan"] != expected.needsReplan || when["needs_work"] != expected.needsWork
-  guard alwaysOverridesRouting || contradictsPayload else {
-    return CompletionReviewRoutingReconciliation(when: when, reconciled: false)
-  }
-
-  return CompletionReviewRoutingReconciliation(when: expectedWhen, reconciled: true)
-}
-
-private func isCompletionReviewPayload(_ payload: JSONObject) -> Bool {
-  if payload["goalAchieved"] != nil {
-    return true
-  }
-  if case let .string(decision)? = payload["decision"] {
-    return ["needs_work", "needs_replan", "accepted"].contains(decision)
-  }
-  return false
-}
-
-private func expectedGoalCompletionRouting(from payload: JSONObject) -> (needsReplan: Bool, needsWork: Bool) {
-  let decision: String?
-  if case let .string(value)? = payload["decision"] {
-    decision = value
-  } else {
-    decision = nil
-  }
-
-  let goalAchieved: Bool?
-  if case let .bool(value)? = payload["goalAchieved"] {
-    goalAchieved = value
-  } else {
-    goalAchieved = nil
-  }
-
-  switch decision {
-  case "needs_replan":
-    return (true, false)
-  case "needs_work":
-    return (false, true)
-  case "accepted":
-    if goalAchieved == false {
-      return (false, true)
-    }
-    return (false, false)
-  default:
-    if goalAchieved == false {
-      return (false, true)
-    }
-    return (false, false)
-  }
 }
 
 private func booleanMap(from value: JSONValue) -> [String: Bool]? {
@@ -287,107 +245,4 @@ private func booleanMap(from value: JSONValue) -> [String: Bool]? {
     map[key] = boolValue
   }
   return map
-}
-
-private func extractJSONObjectCandidateText(_ text: String) -> String {
-  let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-  if trimmed.isEmpty {
-    return trimmed
-  }
-  if isCompleteJSON(trimmed) {
-    return trimmed
-  }
-  if trimmed.hasPrefix("{"), let candidate = extractBalancedJSONObject(from: trimmed, start: trimmed.startIndex) {
-    return candidate
-  }
-  if let fenced = extractFirstFencedJSONBlock(from: trimmed) {
-    return fenced
-  }
-  if let embedded = findFirstJSONObjectCandidate(in: trimmed) {
-    return embedded
-  }
-  return trimmed
-}
-
-private func isCompleteJSON(_ text: String) -> Bool {
-  guard let data = text.data(using: .utf8) else {
-    return false
-  }
-  return (try? JSONSerialization.jsonObject(with: data)) != nil
-}
-
-private func extractFirstFencedJSONBlock(from text: String) -> String? {
-  let pattern = #"```(?:json)?\s*([\s\S]*?)\s*```"#
-  guard let regex = try? NSRegularExpression(pattern: pattern) else {
-    return nil
-  }
-  let range = NSRange(text.startIndex..<text.endIndex, in: text)
-  guard
-    let match = regex.firstMatch(in: text, range: range),
-    let contentRange = Range(match.range(at: 1), in: text)
-  else {
-    return nil
-  }
-  return String(text[contentRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-}
-
-private func findFirstJSONObjectCandidate(in text: String) -> String? {
-  var searchIndex = text.startIndex
-  while searchIndex < text.endIndex {
-    guard let objectStart = text[searchIndex...].firstIndex(of: "{") else {
-      return nil
-    }
-    if let candidate = extractBalancedJSONObject(from: text, start: objectStart), isJSONObjectText(candidate) {
-      return candidate
-    }
-    searchIndex = text.index(after: objectStart)
-  }
-  return nil
-}
-
-private func isJSONObjectText(_ text: String) -> Bool {
-  guard let data = text.data(using: .utf8) else {
-    return false
-  }
-  guard let value = try? JSONSerialization.jsonObject(with: data) else {
-    return false
-  }
-  return value is [String: Any]
-}
-
-private func extractBalancedJSONObject(from text: String, start: String.Index) -> String? {
-  var depth = 0
-  var inString = false
-  var escaped = false
-  var index = start
-
-  while index < text.endIndex {
-    let character = text[index]
-
-    if inString {
-      if escaped {
-        escaped = false
-      } else if character == "\\" {
-        escaped = true
-      } else if character == "\"" {
-        inString = false
-      }
-      index = text.index(after: index)
-      continue
-    }
-
-    if character == "\"" {
-      inString = true
-    } else if character == "{" {
-      depth += 1
-    } else if character == "}" {
-      depth -= 1
-      if depth == 0 {
-        return String(text[start...index])
-      }
-    }
-    index = text.index(after: index)
-  }
-
-  return nil
 }

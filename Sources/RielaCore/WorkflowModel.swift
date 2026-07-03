@@ -63,6 +63,67 @@ public enum NodeSessionMode: String, Codable, Sendable {
   case reuse
 }
 
+public enum AgentSandboxMode: String, Codable, CaseIterable, Hashable, Sendable {
+  case readOnly = "read-only"
+  case workspaceWrite = "workspace-write"
+  case dangerFullAccess = "danger-full-access"
+}
+
+public enum AgentToolPolicyMode: String, Codable, CaseIterable, Hashable, Sendable {
+  case backendDefault = "backend-default"
+  case backendArguments = "backend-arguments"
+}
+
+public struct AgentToolPolicy: Codable, Equatable, Sendable {
+  public var mode: AgentToolPolicyMode?
+  public var additionalArguments: [String]
+  public var codexArguments: [String]
+  public var claudeArguments: [String]
+  public var cursorArguments: [String]
+
+  public init(
+    mode: AgentToolPolicyMode? = nil,
+    additionalArguments: [String] = [],
+    codexArguments: [String] = [],
+    claudeArguments: [String] = [],
+    cursorArguments: [String] = []
+  ) {
+    self.mode = mode
+    self.additionalArguments = additionalArguments
+    self.codexArguments = codexArguments
+    self.claudeArguments = claudeArguments
+    self.cursorArguments = cursorArguments
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case mode
+    case additionalArguments
+    case codexArguments
+    case claudeArguments
+    case cursorArguments
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      mode: try container.decodeIfPresent(AgentToolPolicyMode.self, forKey: .mode),
+      additionalArguments: try container.decodeIfPresent([String].self, forKey: .additionalArguments) ?? [],
+      codexArguments: try container.decodeIfPresent([String].self, forKey: .codexArguments) ?? [],
+      claudeArguments: try container.decodeIfPresent([String].self, forKey: .claudeArguments) ?? [],
+      cursorArguments: try container.decodeIfPresent([String].self, forKey: .cursorArguments) ?? []
+    )
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encodeIfPresent(mode, forKey: .mode)
+    try container.encode(additionalArguments, forKey: .additionalArguments)
+    try container.encode(codexArguments, forKey: .codexArguments)
+    try container.encode(claudeArguments, forKey: .claudeArguments)
+    try container.encode(cursorArguments, forKey: .cursorArguments)
+  }
+}
+
 public struct WorkflowDefaults: Codable, Equatable, Sendable {
   public var nodeTimeoutMs: Int
   public var maxLoopIterations: Int
@@ -726,6 +787,8 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
   public var workingDirectory: String?
   public var command: WorkflowCommandExecution?
   public var container: WorkflowContainerExecution?
+  public var agentSandbox: AgentSandboxMode?
+  public var agentToolPolicy: AgentToolPolicy?
   public var agentEnvironment: [String: AgentEnvironmentBinding]
   public var systemPromptTemplate: String?
   public var systemPromptTemplateFile: String?
@@ -751,6 +814,8 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     workingDirectory: String? = nil,
     command: WorkflowCommandExecution? = nil,
     container: WorkflowContainerExecution? = nil,
+    agentSandbox: AgentSandboxMode? = nil,
+    agentToolPolicy: AgentToolPolicy? = nil,
     agentEnvironment: [String: AgentEnvironmentBinding] = [:],
     systemPromptTemplate: String? = nil,
     systemPromptTemplateFile: String? = nil,
@@ -775,6 +840,8 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     self.workingDirectory = workingDirectory
     self.command = command
     self.container = container
+    self.agentSandbox = agentSandbox
+    self.agentToolPolicy = agentToolPolicy
     self.agentEnvironment = agentEnvironment
     self.systemPromptTemplate = systemPromptTemplate
     self.systemPromptTemplateFile = systemPromptTemplateFile
@@ -801,6 +868,8 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     case workingDirectory
     case command
     case container
+    case agentSandbox
+    case agentToolPolicy
     case agentEnvironment
     case systemPromptTemplate
     case systemPromptTemplateFile
@@ -828,6 +897,8 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     self.workingDirectory = try container.decodeIfPresent(String.self, forKey: .workingDirectory)
     self.command = try container.decodeIfPresent(WorkflowCommandExecution.self, forKey: .command)
     self.container = try container.decodeIfPresent(WorkflowContainerExecution.self, forKey: .container)
+    self.agentSandbox = try container.decodeIfPresent(AgentSandboxMode.self, forKey: .agentSandbox)
+    self.agentToolPolicy = try container.decodeIfPresent(AgentToolPolicy.self, forKey: .agentToolPolicy)
     self.agentEnvironment = try container.decodeIfPresent(
       [String: AgentEnvironmentBinding].self,
       forKey: .agentEnvironment
@@ -902,11 +973,30 @@ public struct NodeOutputContract: Codable, Equatable, Sendable {
   public var description: String?
   public var jsonSchema: JSONObject?
   public var maxValidationAttempts: Int?
+  public var projection: WorkflowOutputProjection?
 
-  public init(description: String? = nil, jsonSchema: JSONObject? = nil, maxValidationAttempts: Int? = nil) {
+  public init(
+    description: String? = nil,
+    jsonSchema: JSONObject? = nil,
+    maxValidationAttempts: Int? = nil,
+    projection: WorkflowOutputProjection? = nil
+  ) {
     self.description = description
     self.jsonSchema = jsonSchema
     self.maxValidationAttempts = maxValidationAttempts
+    self.projection = projection
+  }
+}
+
+public enum WorkflowOutputProjectionKind: String, Codable, CaseIterable, Hashable, Sendable {
+  case latestInputPayload = "latest-input-payload"
+}
+
+public struct WorkflowOutputProjection: Codable, Equatable, Sendable {
+  public var kind: WorkflowOutputProjectionKind
+
+  public init(kind: WorkflowOutputProjectionKind) {
+    self.kind = kind
   }
 }
 

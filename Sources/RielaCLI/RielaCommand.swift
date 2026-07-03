@@ -252,6 +252,8 @@ public struct WorkflowRunOptions: Equatable, Sendable {
   public var maxLoopIterations: Int?
   public var defaultTimeoutMs: Int?
   public var timeoutMs: Int?
+  public var agentSilenceWarningMs: Int?
+  public var agentSilenceMonitorIntervalMs: Int
   public var artifactRoot: String?
   public var sessionStore: String?
   public var workingDirectory: String
@@ -274,6 +276,8 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     maxLoopIterations: Int? = nil,
     defaultTimeoutMs: Int? = nil,
     timeoutMs: Int? = nil,
+    agentSilenceWarningMs: Int? = 120_000,
+    agentSilenceMonitorIntervalMs: Int = 1_000,
     artifactRoot: String? = nil,
     sessionStore: String? = nil,
     workingDirectory: String = FileManager.default.currentDirectoryPath,
@@ -295,6 +299,8 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     self.maxLoopIterations = maxLoopIterations
     self.defaultTimeoutMs = defaultTimeoutMs
     self.timeoutMs = timeoutMs
+    self.agentSilenceWarningMs = agentSilenceWarningMs
+    self.agentSilenceMonitorIntervalMs = agentSilenceMonitorIntervalMs
     self.artifactRoot = artifactRoot
     self.sessionStore = sessionStore
     self.workingDirectory = workingDirectory
@@ -511,7 +517,7 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       let optionTokens = Array(arguments.dropFirst(3))
       let parsed = try ParsedWorkflowOptions(optionTokens, allowRunOptions: true)
       if parsed.endpoint != nil || parsed.fromRegistry {
-        throw CLIUsageError("Swift TASK-007 supports local session commands only")
+        throw CLIUsageError("remote session commands are not supported by the local CLI runner")
       }
       let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
       return .session(.rerun(SessionRerunOptions(
@@ -532,7 +538,7 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       let optionTokens = Array(arguments.dropFirst(2))
       let parsed = try ParsedWorkflowOptions(optionTokens, allowRunOptions: true)
       if parsed.endpoint != nil || parsed.fromRegistry {
-        throw CLIUsageError("Swift TASK-007 supports local session commands only")
+        throw CLIUsageError("remote session commands are not supported by the local CLI runner")
       }
       let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
       return .session(.resume(SessionResumeOptions(
@@ -936,6 +942,8 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       maxLoopIterations: parsed.maxLoopIterations,
       defaultTimeoutMs: parsed.defaultTimeoutMs,
       timeoutMs: parsed.timeoutMs,
+      agentSilenceWarningMs: parsed.agentSilenceWarningMs,
+      agentSilenceMonitorIntervalMs: parsed.agentSilenceMonitorIntervalMs,
       artifactRoot: parsed.artifactRoot,
       sessionStore: parsed.sessionStore,
       workingDirectory: resolution.workingDirectory,
@@ -950,7 +958,7 @@ public struct RielaArgumentParser: CLIArgumentParsing {
 
   private func rejectRemoteResolutionOptions(_ parsed: ParsedWorkflowOptions, subcommand: String) throws {
     if parsed.endpoint != nil || parsed.fromRegistry {
-      throw CLIUsageError("Swift TASK-007 supports local workflow \(subcommand) only")
+      throw CLIUsageError("remote workflow \(subcommand) is not supported by the local CLI runner")
     }
   }
 

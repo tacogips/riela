@@ -102,7 +102,7 @@ private func memoryFileReferences(from value: JSONValue?, variables: JSONObject)
       return try memoryFileReference(from: object, variables: variables, index: index)
     case .null:
       return nil
-    case .bool, .number, .array:
+    case .bool, .integer, .number, .array:
       throw AdapterExecutionError(.policyBlocked, "memory files[\(index)] must be a string path or object")
     }
   }
@@ -170,7 +170,7 @@ private func memoryFileInt64(_ value: JSONValue?, fieldName: String) throws -> I
   guard let value else {
     return nil
   }
-  guard case let .number(number) = value, let id = Int64(exactly: number), id > 0 else {
+  guard let id = value.asInt64, id > 0 else {
     throw AdapterExecutionError(.policyBlocked, "\(fieldName) must be a positive integer")
   }
   return id

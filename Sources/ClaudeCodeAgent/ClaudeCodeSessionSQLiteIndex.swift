@@ -1,5 +1,5 @@
 import Foundation
-import RielaAdapters
+import AgentRuntimeKit
 
 public enum ClaudeCodeSessionSQLiteIndex {
   private static let sessionSQLiteSeparator = "|||riela-claudeCode-sqlite|||"
@@ -16,9 +16,12 @@ public enum ClaudeCodeSessionSQLiteIndex {
     guard let dbPath = openClaudeCodeDb(claudeCodeHome: claudeCodeHome) else {
       return nil
     }
-    let rows = selectRows(dbPath: dbPath)
+    let records = AgentSessionSQLiteSupport.listThreadRecords(
+      dbPath: dbPath,
+      separator: sessionSQLiteSeparator
+    )
     let sessions = ClaudeCodeSessionQuery.sorted(
-      rows.compactMap(rowToSession).filter { ClaudeCodeSessionQuery.matches($0, options: options) },
+      records.map(recordToSession).filter { ClaudeCodeSessionQuery.matches($0, options: options) },
       options: options
     )
     let total = sessions.count
@@ -34,39 +37,22 @@ public enum ClaudeCodeSessionSQLiteIndex {
     listSessionsSqlite(claudeCodeHome: claudeCodeHome, options: ClaudeCodeSessionListOptions(claudeCodeHome: claudeCodeHome, cwd: cwd, limit: 1, sortBy: "updatedAt")).map(\.sessions.first) ?? nil
   }
 
-  private static func selectRows(dbPath: String) -> [[String: String]] {
-    AgentSessionSQLiteSupport.selectThreadRows(dbPath: dbPath, separator: sessionSQLiteSeparator)
-  }
-
-  private static func rowToSession(_ row: [String: String]) -> ClaudeCodeSession? {
-    guard
-      let id = AgentSessionSQLiteSupport.nonEmpty(row["id"]),
-      let rolloutPath = AgentSessionSQLiteSupport.nonEmpty(row["rollout_path"]),
-      let createdAt = AgentSessionSQLiteSupport.nonEmpty(row["created_at"]).flatMap(AgentSessionSQLiteSupport.sqliteDate),
-      let updatedAt = AgentSessionSQLiteSupport.nonEmpty(row["updated_at"]).flatMap(AgentSessionSQLiteSupport.sqliteDate),
-      let cwd = AgentSessionSQLiteSupport.nonEmpty(row["cwd"])
-    else {
-      return nil
+  private static func recordToSession(_ record: AgentSessionSQLiteRecord) -> ClaudeCodeSession {
+    let git = record.git.map {
+      ClaudeCodeSessionGit(sha: $0.sha, branch: $0.branch, originURL: $0.originURL)
     }
-    let git = [row["git_sha"], row["git_branch"], row["git_origin_url"]].contains { AgentSessionSQLiteSupport.nonEmpty($0) != nil }
-      ? ClaudeCodeSessionGit(
-        sha: AgentSessionSQLiteSupport.nonEmpty(row["git_sha"]),
-        branch: AgentSessionSQLiteSupport.nonEmpty(row["git_branch"]),
-        originURL: AgentSessionSQLiteSupport.nonEmpty(row["git_origin_url"])
-      )
-      : nil
     return ClaudeCodeSession(
-      id: id,
-      rolloutPath: rolloutPath,
-      createdAt: createdAt,
-      updatedAt: updatedAt,
-      source: ClaudeCodeSessionSource(rawValue: row["source"] ?? "") ?? .unknown,
-      modelProvider: AgentSessionSQLiteSupport.nonEmpty(row["model_provider"]),
-      cwd: cwd,
-      cliVersion: AgentSessionSQLiteSupport.nonEmpty(row["cli_version"]) ?? "unknown",
-      title: AgentSessionSQLiteSupport.nonEmpty(row["title"]) ?? AgentSessionSQLiteSupport.nonEmpty(row["first_user_message"]) ?? id,
-      firstUserMessage: AgentSessionSQLiteSupport.nonEmpty(row["first_user_message"]),
-      archivedAt: AgentSessionSQLiteSupport.nonEmpty(row["archived_at"]).flatMap(AgentSessionSQLiteSupport.sqliteDate),
+      id: record.id,
+      rolloutPath: record.rolloutPath,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+      source: ClaudeCodeSessionSource(rawValue: record.source) ?? .unknown,
+      modelProvider: record.modelProvider,
+      cwd: record.cwd,
+      cliVersion: record.cliVersion,
+      title: record.title,
+      firstUserMessage: record.firstUserMessage,
+      archivedAt: record.archivedAt,
       git: git
     )
   }

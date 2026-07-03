@@ -1,17 +1,22 @@
 import Foundation
 
+public enum WorkflowPublicationBody: Equatable, Sendable {
+  case failure(AdapterExecutionError, adapterOutput: AdapterExecutionOutput? = nil)
+  case adapterOutput(AdapterExecutionOutput)
+  case inlineCandidate(JSONObject)
+  case candidatePath(URL, RuntimeCandidatePathReservation)
+  case none
+}
+
 public struct WorkflowPublicationRequest: Sendable {
   public var sessionId: String
   public var stepId: String
   public var nodeId: String
   public var attempt: Int
   public var backend: NodeExecutionBackend?
-  public var adapterFailure: AdapterExecutionError?
-  public var adapterOutput: AdapterExecutionOutput?
-  public var inlineCandidate: JSONObject?
-  public var candidatePath: URL?
-  public var candidatePathReservation: RuntimeCandidatePathReservation?
+  public var body: WorkflowPublicationBody
   public var outputContract: WorkflowOutputContract?
+  public var routingReconciler: OutputContractRoutingReconciler?
   public var transitions: [WorkflowStepTransition]
   public var publishesRootOutput: Bool
   public var successfulExecutionStatus: WorkflowStepExecutionStatus
@@ -24,12 +29,9 @@ public struct WorkflowPublicationRequest: Sendable {
     nodeId: String,
     attempt: Int,
     backend: NodeExecutionBackend? = nil,
-    adapterFailure: AdapterExecutionError? = nil,
-    adapterOutput: AdapterExecutionOutput? = nil,
-    inlineCandidate: JSONObject? = nil,
-    candidatePath: URL? = nil,
-    candidatePathReservation: RuntimeCandidatePathReservation? = nil,
+    body: WorkflowPublicationBody = .none,
     outputContract: WorkflowOutputContract? = nil,
+    routingReconciler: OutputContractRoutingReconciler? = nil,
     transitions: [WorkflowStepTransition] = [],
     publishesRootOutput: Bool = false,
     successfulExecutionStatus: WorkflowStepExecutionStatus = .completed,
@@ -41,12 +43,9 @@ public struct WorkflowPublicationRequest: Sendable {
     self.nodeId = nodeId
     self.attempt = attempt
     self.backend = backend
-    self.adapterFailure = adapterFailure
-    self.adapterOutput = adapterOutput
-    self.inlineCandidate = inlineCandidate
-    self.candidatePath = candidatePath
-    self.candidatePathReservation = candidatePathReservation
+    self.body = body
     self.outputContract = outputContract
+    self.routingReconciler = routingReconciler
     self.transitions = transitions
     self.publishesRootOutput = publishesRootOutput
     self.successfulExecutionStatus = successfulExecutionStatus
@@ -59,27 +58,26 @@ public struct WorkflowPublicationResult: Equatable, Sendable {
   public var session: WorkflowSession
   public var stepExecution: WorkflowStepExecution
   public var publishedMessages: [WorkflowMessageRecord]
+  public var nextStepId: String?
   public var rootOutput: JSONObject?
 
   public init(
     session: WorkflowSession,
     stepExecution: WorkflowStepExecution,
     publishedMessages: [WorkflowMessageRecord],
+    nextStepId: String? = nil,
     rootOutput: JSONObject? = nil
   ) {
     self.session = session
     self.stepExecution = stepExecution
     self.publishedMessages = publishedMessages
+    self.nextStepId = nextStepId
     self.rootOutput = rootOutput
   }
 }
 
 public enum WorkflowPublicationError: Error, Equatable, Sendable {
   case noCandidateOutput
-  case candidatePathRequiresReservation
-  // swiftlint:disable:next identifier_name
-  case candidatePathReservationRequiresCandidatePath
-  case ambiguousCandidateSources([String])
   case unsupportedTransition(String)
   case validationRejected(String)
 }
@@ -126,7 +124,7 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
         )
       )
     }
-    let adapterOutputMetadata = request.adapterOutput.map {
+    let adapterOutputMetadata = request.adapterOutputMetadataSource.map {
       WorkflowAdapterOutputMetadata(
         provider: $0.provider,
         model: $0.model,
@@ -134,7 +132,7 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
         when: $0.when
       )
     }
-    if let adapterFailure = request.adapterFailure {
+    if case let .failure(adapterFailure, _) = request.body {
       _ = try await store.updateStepExecution(
         WorkflowStepExecutionUpdateInput(
           sessionId: request.sessionId,
@@ -148,7 +146,7 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       throw adapterFailure
     }
 
-    if request.allowsNoOutput && candidateSources(from: request).isEmpty {
+    if request.allowsNoOutput && request.body == .none {
       do {
         try await finalizeCandidatePathIfNeeded(for: request)
       } catch {
@@ -179,6 +177,7 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
         session: session,
         stepExecution: completedExecution,
         publishedMessages: [],
+        nextStepId: nil,
         rootOutput: nil
       )
     }
@@ -245,21 +244,13 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
     }
 
     let publishesRootOutput = request.publishesRootOutput || (!request.transitions.isEmpty && publishableTransitions.isEmpty)
+    let nextStepId = self.nextStepId(from: publishableTransitions)
     let acceptedOutput = WorkflowAcceptedOutputMetadata(
       payload: payload,
       when: candidate.when,
       isRootOutput: publishesRootOutput,
-      acceptedAt: clock.now()
-    )
-    var completedExecution = try await store.updateStepExecution(
-      WorkflowStepExecutionUpdateInput(
-        sessionId: request.sessionId,
-        executionId: recordedExecution.executionId,
-        status: request.successfulExecutionStatus,
-        acceptedOutput: acceptedOutput,
-        adapterOutput: adapterOutputMetadata,
-        completesRootWithoutOutput: request.completesRootWithoutOutput
-      )
+      acceptedAt: clock.now(),
+      routingDiagnostics: candidate.routingDiagnostics
     )
 
     let messageInputs = publishableTransitions
@@ -270,7 +261,7 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
           toStepId: transition.resumeStepId ?? transition.toStepId,
           routingScope: .workflow,
           deliveryKind: .direct,
-          sourceStepExecutionId: completedExecution.executionId,
+          sourceStepExecutionId: recordedExecution.executionId,
           transitionCondition: transition.label,
           payload: payload
         )
@@ -279,7 +270,7 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
     do {
       publishedMessages = try await store.appendWorkflowMessages(messageInputs)
     } catch {
-      completedExecution = try await store.updateStepExecution(
+      _ = try await store.updateStepExecution(
         WorkflowStepExecutionUpdateInput(
           sessionId: request.sessionId,
           executionId: recordedExecution.executionId,
@@ -291,6 +282,17 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       )
       throw error
     }
+    let completedExecution = try await store.updateStepExecution(
+      WorkflowStepExecutionUpdateInput(
+        sessionId: request.sessionId,
+        executionId: recordedExecution.executionId,
+        status: request.successfulExecutionStatus,
+        acceptedOutput: acceptedOutput,
+        adapterOutput: adapterOutputMetadata,
+        completesRootWithoutOutput: request.completesRootWithoutOutput,
+        currentStepId: nextStepId
+      )
+    )
 
     guard let session = try await store.loadSession(id: request.sessionId) else {
       throw WorkflowRuntimeStoreError.sessionNotFound(request.sessionId)
@@ -299,6 +301,7 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       session: session,
       stepExecution: completedExecution,
       publishedMessages: publishedMessages,
+      nextStepId: nextStepId,
       rootOutput: publishesRootOutput ? payload : nil
     )
   }
@@ -316,23 +319,14 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
   }
 
   private func runtimeCandidate(from request: WorkflowPublicationRequest) async throws -> RuntimeOutputCandidate {
-    let sources = candidateSources(from: request)
-    if sources.count > 1 {
-      throw WorkflowPublicationError.ambiguousCandidateSources(sources)
-    }
-    if request.candidatePathReservation != nil, request.candidatePath == nil {
-      throw WorkflowPublicationError.candidatePathReservationRequiresCandidatePath
-    }
-    if let adapterOutput = request.adapterOutput {
-      return try normalizeRuntimeAdapterOutput(adapterOutput)
-    }
-    if let inlineCandidate = request.inlineCandidate {
-      return try normalizeRuntimeInlineCandidate(inlineCandidate)
-    }
-    if let candidatePath = request.candidatePath {
-      guard let reservation = request.candidatePathReservation else {
-        throw WorkflowPublicationError.candidatePathRequiresReservation
-      }
+    switch request.body {
+    case .failure:
+      throw WorkflowPublicationError.noCandidateOutput
+    case let .adapterOutput(adapterOutput):
+      return try normalizeRuntimeAdapterOutput(adapterOutput, routingReconciler: request.routingReconciler)
+    case let .inlineCandidate(inlineCandidate):
+      return try normalizeRuntimeInlineCandidate(inlineCandidate, routingReconciler: request.routingReconciler)
+    case let .candidatePath(candidatePath, reservation):
       guard candidatePath.standardizedFileURL == reservation.candidatePath.standardizedFileURL else {
         throw RuntimeOutputCandidateError.candidatePathDoesNotMatchReservation(candidatePath.path)
       }
@@ -340,28 +334,16 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
         from: candidatePath,
         stagingDirectory: reservation.stagingDirectory,
         attemptStartedAt: reservation.attemptStartedAt,
-        requiresObjectPayload: request.outputContract?.requiredObject ?? false
+        requiresObjectPayload: request.outputContract?.requiredObject ?? false,
+        routingReconciler: request.routingReconciler
       )
+    case .none:
+      throw WorkflowPublicationError.noCandidateOutput
     }
-    throw WorkflowPublicationError.noCandidateOutput
-  }
-
-  private func candidateSources(from request: WorkflowPublicationRequest) -> [String] {
-    var sources: [String] = []
-    if request.adapterOutput != nil {
-      sources.append("adapterOutput")
-    }
-    if request.inlineCandidate != nil {
-      sources.append("inlineCandidate")
-    }
-    if request.candidatePath != nil {
-      sources.append("candidatePath")
-    }
-    return sources
   }
 
   private func finalizeCandidatePathIfNeeded(for request: WorkflowPublicationRequest) async throws {
-    guard let reservation = request.candidatePathReservation else {
+    guard case let .candidatePath(_, reservation) = request.body else {
       return
     }
     if let candidatePathFinalizer {
@@ -389,16 +371,33 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
   private func unsupportedTransitionReason(in transitions: [WorkflowStepTransition]) -> String? {
     for transition in transitions {
       if transition.toWorkflowId != nil && transition.resumeStepId == nil {
-        return "cross-workflow transitions are not supported by the Swift TASK-005 in-memory publisher"
+        return "cross-workflow transitions are not supported by this in-memory publisher"
       }
       if transition.toWorkflowId == nil && transition.resumeStepId != nil {
-        return "resume-step transitions are not supported by the Swift TASK-005 in-memory publisher"
+        return "resume-step transitions are not supported by this in-memory publisher"
       }
       if transition.fanout != nil {
-        return "fanout transitions are not supported by the Swift TASK-005 in-memory publisher"
+        return "fanout transitions are not supported by this in-memory publisher"
       }
     }
     return nil
+  }
+
+  private func nextStepId(from publishableTransitions: [WorkflowStepTransition]) -> String? {
+    publishableTransitions.first.map { $0.resumeStepId ?? $0.toStepId }
+  }
+}
+
+private extension WorkflowPublicationRequest {
+  var adapterOutputMetadataSource: AdapterExecutionOutput? {
+    switch body {
+    case let .failure(_, adapterOutput):
+      adapterOutput
+    case let .adapterOutput(adapterOutput):
+      adapterOutput
+    case .inlineCandidate, .candidatePath, .none:
+      nil
+    }
   }
 }
 

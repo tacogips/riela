@@ -1,117 +1,20 @@
+import AgentRuntimeKit
 import Foundation
 import RielaCore
 
-public enum CursorCLIProcessStatus: String, Equatable, Sendable {
-  case running
-  case exited
-  case killed
-}
-
-public struct CursorCLIProcessRecord: Equatable, Sendable {
-  public var id: String
-  public var pid: Int32
-  public var command: String
-  public var prompt: String
-  public var startedAt: String
-  public var status: CursorCLIProcessStatus
-  public var exitCode: Int32?
-  public var arguments: [String]
-  public var input: [String]
-
-  public init(id: String, pid: Int32, command: String, prompt: String, startedAt: String, status: CursorCLIProcessStatus, exitCode: Int32? = nil, arguments: [String] = [], input: [String] = []) {
-    self.id = id
-    self.pid = pid
-    self.command = command
-    self.prompt = prompt
-    self.startedAt = startedAt
-    self.status = status
-    self.exitCode = exitCode
-    self.arguments = arguments
-    self.input = input
-  }
-}
-
-public struct CursorCLIProcessExecution: Equatable, Sendable {
-  public var stdout: String
-  public var stderr: String
-  public var exitCode: Int32
-
-  public init(stdout: String = "", stderr: String = "", exitCode: Int32 = 0) {
-    self.stdout = stdout
-    self.stderr = stderr
-    self.exitCode = exitCode
-  }
-}
-
-public struct CursorCLIExecStreamResult: Sendable {
-  public var process: CursorCLIProcessRecord
-  public var lines: CursorCLIRolloutLineStream
-  public var completion: CursorCLIProcessCompletion
-
-  public func collectLines() -> [CursorCLIRolloutLine] {
-    completion.wait()
-    return lines.snapshot()
-  }
-
-  public func waitForCompletion() -> Int32 {
-    completion.wait()
-  }
-}
-
-public final class CursorCLIRolloutLineStream: @unchecked Sendable {
-  private let buffers: ProcessOutputBuffers
-  private var cursor = 0
-
-  fileprivate init(buffers: ProcessOutputBuffers) {
-    self.buffers = buffers
-  }
-
-  public func next(timeout: TimeInterval? = nil) -> CursorCLIRolloutLine? {
-    buffers.nextLine(after: &cursor, timeout: timeout)
-  }
-
-  public func snapshot() -> [CursorCLIRolloutLine] {
-    buffers.lines()
-  }
-}
-
-public final class CursorCLIProcessCompletion: @unchecked Sendable {
-  private let lock = NSLock()
-  private let waitClosure: () -> Int32
-  private var cachedExitCode: Int32?
-
-  fileprivate init(_ waitClosure: @escaping () -> Int32) {
-    self.waitClosure = waitClosure
-  }
-
-  @discardableResult
-  public func wait() -> Int32 {
-    lock.lock()
-    if let cachedExitCode {
-      lock.unlock()
-      return cachedExitCode
-    }
-    lock.unlock()
-    let exitCode = waitClosure()
-    lock.lock()
-    cachedExitCode = exitCode
-    lock.unlock()
-    return exitCode
-  }
-}
+public typealias CursorCLIProcessStatus = AgentProcessStatus
+public typealias CursorCLIProcessRecord = AgentProcessRecord
+public typealias CursorCLIProcessExecution = AgentProcessExecution
+public typealias CursorCLIExecStreamResult = AgentExecStreamResult<CursorCLIRolloutLine>
+public typealias CursorCLIRolloutLineStream = AgentRolloutLineStream<CursorCLIRolloutLine>
+public typealias CursorCLIProcessCompletion = AgentProcessCompletion
 
 public final class CursorCLIProcessManager: @unchecked Sendable {
   public typealias Executor = @Sendable ([String], String, [String: String]) -> CursorCLIProcessExecution
-  private let lock = NSLock()
-  private let executableName: String
-  private let executor: Executor?
-  private var records: [String: CursorCLIProcessRecord] = [:]
-  private var managedProcesses: [String: ManagedCursorCLIProcess] = [:]
-  private var nextPid: Int32 = 10_000
+  private let supervisor: AgentProcessSupervisor<ManagedCursorCLIProcess>
 
   public init(executableName: String = "cursor-agent", executor: Executor? = nil) {
-    self.executableName = executableName
-    self.executor = executor
+    self.supervisor = AgentProcessSupervisor(executableName: executableName, executor: executor)
   }
 
   public func spawnExec(prompt: String, options: CursorCLIProcessOptions = CursorCLIProcessOptions()) -> (process: CursorCLIProcessRecord, result: CursorCLIProcessExecution) {
@@ -124,10 +27,15 @@ public final class CursorCLIProcessManager: @unchecked Sendable {
 
   public func spawnResumeProcess(sessionId: String, prompt: String? = nil, options: CursorCLIProcessOptions = CursorCLIProcessOptions()) -> CursorCLIProcessRecord {
     let arguments = CursorCLIProcessCommandBuilder.buildResumeArguments(sessionId: sessionId, prompt: prompt, options: options)
-    if executor != nil {
-      return startExecutorProcess(prompt: prompt ?? "", arguments: arguments, options: options)
-    }
-    return startManagedProcess(prompt: prompt ?? "", arguments: arguments, options: options, closeInputAfterPrompt: false).process
+    return supervisor.startProcess(
+      prompt: prompt ?? "",
+      arguments: arguments,
+      environment: Self.environment(options),
+      cwd: options.cwd,
+      closeInputAfterPrompt: false,
+      makeManaged: Self.makeManaged,
+      makeFailedManaged: Self.makeFailedManaged
+    )
   }
 
   public func spawnFork(sessionId: String, nthMessage: Int? = nil, options: CursorCLIProcessOptions = CursorCLIProcessOptions()) -> (process: CursorCLIProcessRecord, result: CursorCLIProcessExecution) {
@@ -136,10 +44,15 @@ public final class CursorCLIProcessManager: @unchecked Sendable {
 
   public func spawnForkProcess(sessionId: String, nthMessage: Int? = nil, options: CursorCLIProcessOptions = CursorCLIProcessOptions()) -> CursorCLIProcessRecord {
     let arguments = CursorCLIProcessCommandBuilder.buildForkArguments(sessionId: sessionId, nthMessage: nthMessage, options: options)
-    if executor != nil {
-      return startExecutorProcess(prompt: "", arguments: arguments, options: options)
-    }
-    return startManagedProcess(prompt: "", arguments: arguments, options: options, closeInputAfterPrompt: false).process
+    return supervisor.startProcess(
+      prompt: "",
+      arguments: arguments,
+      environment: Self.environment(options),
+      cwd: options.cwd,
+      closeInputAfterPrompt: false,
+      makeManaged: Self.makeManaged,
+      makeFailedManaged: Self.makeFailedManaged
+    )
   }
 
   public func spawnExecStream(prompt: String, options: CursorCLIProcessOptions = CursorCLIProcessOptions()) -> CursorCLIExecStreamResult {
@@ -151,226 +64,68 @@ public final class CursorCLIProcessManager: @unchecked Sendable {
   }
 
   public func list() -> [CursorCLIProcessRecord] {
-    lock.lock()
-    defer { lock.unlock() }
-    return records.values.sorted { $0.startedAt < $1.startedAt }
+    supervisor.list()
   }
 
   public func get(id: String) -> CursorCLIProcessRecord? {
-    lock.lock()
-    defer { lock.unlock() }
-    return records[id]
+    supervisor.get(id: id)
   }
 
   public func kill(id: String) -> Bool {
-    lock.lock()
-    guard var record = records[id], record.status == .running else {
-      lock.unlock()
-      return false
-    }
-    let managed = managedProcesses[id]
-    record.status = .killed
-    records[id] = record
-    lock.unlock()
-    managed?.terminate()
-    return true
+    supervisor.kill(id: id)
   }
 
   public func writeInput(id: String, text: String) -> Bool {
-    lock.lock()
-    guard var record = records[id], record.status == .running else {
-      lock.unlock()
-      return false
-    }
-    let managed = managedProcesses[id]
-    record.input.append(text)
-    records[id] = record
-    lock.unlock()
-    return managed?.write(text) ?? false
+    supervisor.writeInput(id: id, text: text)
   }
 
   public func killAll() {
-    lock.lock()
-    let running = managedProcesses.filter { id, _ in records[id]?.status == .running }.map(\.value)
-    records = records.mapValues { record in
-      var next = record
-      if next.status == .running {
-        next.status = .killed
-      }
-      return next
-    }
-    lock.unlock()
-    running.forEach { $0.terminate() }
+    supervisor.killAll()
   }
 
   @discardableResult
   public func prune() -> Int {
-    lock.lock()
-    let before = records.count
-    records = records.filter { $0.value.status == .running }
-    let removed = before - records.count
-    lock.unlock()
-    return removed
+    supervisor.prune()
   }
 
   private func run(prompt: String, arguments: [String], options: CursorCLIProcessOptions) -> (process: CursorCLIProcessRecord, result: CursorCLIProcessExecution) {
-    let allArguments = [executableName] + arguments
-    let environment = CursorCLIProcessCommandBuilder.buildEnvironment(options: options)
-    guard let executor else {
-      let started = startManagedProcess(prompt: prompt, arguments: arguments, options: options, closeInputAfterPrompt: true)
-      started.managed.waitUntilExit()
-      let result = started.managed.execution()
-      lock.lock()
-      var record = records[started.process.id] ?? started.process
-      if record.status == .running {
-        record.status = .exited
-      }
-      record.exitCode = result.exitCode
-      records[record.id] = record
-      lock.unlock()
-      removeManagedProcess(id: record.id)
-      return (record, result)
-    }
-    lock.lock()
-    let id = UUID().uuidString
-    let pid = nextPid
-    nextPid += 1
-    let startedAt = ISO8601DateFormatter().string(from: Date())
-    var record = CursorCLIProcessRecord(id: id, pid: pid, command: allArguments.joined(separator: " "), prompt: prompt, startedAt: startedAt, status: .running, arguments: allArguments)
-    records[id] = record
-    lock.unlock()
-
-    let result = executor(allArguments, prompt, environment)
-    lock.lock()
-    record.status = .exited
-    record.exitCode = result.exitCode
-    records[id] = record
-    lock.unlock()
-    return (record, result)
-  }
-
-  private func startExecutorProcess(prompt: String, arguments: [String], options: CursorCLIProcessOptions) -> CursorCLIProcessRecord {
-    let allArguments = [executableName] + arguments
-    _ = CursorCLIProcessCommandBuilder.buildEnvironment(options: options)
-    lock.lock()
-    let id = UUID().uuidString
-    let pid = nextPid
-    nextPid += 1
-    let startedAt = ISO8601DateFormatter().string(from: Date())
-    let record = CursorCLIProcessRecord(id: id, pid: pid, command: allArguments.joined(separator: " "), prompt: prompt, startedAt: startedAt, status: .running, arguments: allArguments)
-    records[id] = record
-    lock.unlock()
-    return record
-  }
-
-  private func stream(prompt: String, arguments: [String], options: CursorCLIProcessOptions) -> CursorCLIExecStreamResult {
-    if executor != nil {
-      let executed = run(prompt: prompt, arguments: arguments, options: options)
-      let buffers = ProcessOutputBuffers()
-      buffers.appendStdout(Data(executed.result.stdout.utf8))
-      buffers.appendStderr(Data(executed.result.stderr.utf8))
-      buffers.finishStdout()
-      return CursorCLIExecStreamResult(
-        process: executed.process,
-        lines: CursorCLIRolloutLineStream(buffers: buffers),
-        completion: CursorCLIProcessCompletion { executed.result.exitCode }
-      )
-    }
-
-    let started = startManagedProcess(prompt: prompt, arguments: arguments, options: options, closeInputAfterPrompt: true)
-    return CursorCLIExecStreamResult(
-      process: started.process,
-      lines: CursorCLIRolloutLineStream(buffers: started.managed.outputBuffers),
-      completion: CursorCLIProcessCompletion { [weak self, managed = started.managed, processId = started.process.id] in
-        managed.waitUntilExit()
-        let result = managed.execution()
-        self?.finishManagedProcess(id: processId, exitCode: result.exitCode)
-        self?.removeManagedProcess(id: processId)
-        return result.exitCode
-      }
+    supervisor.run(
+      prompt: prompt,
+      arguments: arguments,
+      environment: Self.environment(options),
+      cwd: options.cwd,
+      makeManaged: Self.makeManaged,
+      makeFailedManaged: Self.makeFailedManaged
     )
   }
 
-  private func startManagedProcess(prompt: String, arguments: [String], options: CursorCLIProcessOptions, closeInputAfterPrompt: Bool) -> (process: CursorCLIProcessRecord, managed: ManagedCursorCLIProcess) {
-    let allArguments = [executableName] + arguments
-    let environment = CursorCLIProcessCommandBuilder.buildEnvironment(options: options)
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-    process.arguments = allArguments
-    process.environment = environment
-    if let cwd = options.cwd {
-      process.currentDirectoryURL = URL(fileURLWithPath: cwd, isDirectory: true)
-    }
-
-    let outputPipe = Pipe()
-    let errorPipe = Pipe()
-    let inputPipe = Pipe()
-    process.standardOutput = outputPipe
-    process.standardError = errorPipe
-    process.standardInput = inputPipe
-
-    let id = UUID().uuidString
-    let startedAt = ISO8601DateFormatter().string(from: Date())
-    let outputBuffers = ProcessOutputBuffers()
-
-    do {
-      try process.run()
-      let record = CursorCLIProcessRecord(id: id, pid: process.processIdentifier, command: allArguments.joined(separator: " "), prompt: prompt, startedAt: startedAt, status: .running, arguments: allArguments)
-      let managed = ManagedCursorCLIProcess(process: process, input: inputPipe.fileHandleForWriting, output: outputPipe.fileHandleForReading, error: errorPipe.fileHandleForReading, outputBuffers: outputBuffers)
-      managed.startDraining()
-      if closeInputAfterPrompt {
-        managed.closeInput()
-      }
-      lock.lock()
-      records[id] = record
-      managedProcesses[id] = managed
-      lock.unlock()
-      process.terminationHandler = { [weak self] process in
-        self?.finishManagedProcess(id: id, exitCode: process.terminationStatus)
-      }
-      return (record, managed)
-    } catch {
-      let record = CursorCLIProcessRecord(id: id, pid: -1, command: allArguments.joined(separator: " "), prompt: prompt, startedAt: startedAt, status: .exited, exitCode: 127, arguments: allArguments)
-      let managed = ManagedCursorCLIProcess(failedExecution: CursorCLIProcessExecution(stdout: "", stderr: error.localizedDescription, exitCode: 127))
-      lock.lock()
-      records[id] = record
-      lock.unlock()
-      return (record, managed)
-    }
+  private func stream(prompt: String, arguments: [String], options: CursorCLIProcessOptions) -> CursorCLIExecStreamResult {
+    supervisor.stream(
+      prompt: prompt,
+      arguments: arguments,
+      environment: Self.environment(options),
+      cwd: options.cwd,
+      makeOutputBuffers: { ProcessOutputBuffers() },
+      makeManaged: Self.makeManaged,
+      makeFailedManaged: Self.makeFailedManaged
+    )
   }
 
-  private func finishManagedProcess(id: String, exitCode: Int32) {
-    lock.lock()
-    guard var record = records[id] else {
-      lock.unlock()
-      return
-    }
-    if record.status == .running {
-      record.status = .exited
-    }
-    record.exitCode = exitCode
-    records[id] = record
-    lock.unlock()
+  private static func environment(_ options: CursorCLIProcessOptions) -> [String: String] {
+    CursorCLIProcessCommandBuilder.buildEnvironment(options: options)
   }
 
-  private func removeManagedProcess(id: String) {
-    lock.lock()
-    managedProcesses.removeValue(forKey: id)
-    lock.unlock()
+  private static func makeManaged(process: Process, input: FileHandle, output: FileHandle, error: FileHandle) -> ManagedCursorCLIProcess {
+    ManagedCursorCLIProcess(process: process, input: input, output: output, error: error)
+  }
+
+  private static func makeFailedManaged(_ error: Error) -> ManagedCursorCLIProcess {
+    ManagedCursorCLIProcess(failedExecution: CursorCLIProcessExecution(stdout: "", stderr: error.localizedDescription, exitCode: 127))
   }
 }
 
 public final class CursorCLIProcessRunningSession: CursorCLIRunningSession, @unchecked Sendable {
-  private let lock = NSLock()
-  private var currentSessionId: String
-  private let processRecord: CursorCLIProcessRecord
-  private let streamResult: CursorCLIExecStreamResult
-  private let existingLines: [CursorCLIRolloutLine]
-  private let streamGranularity: String
-  private let resumeCapture: CursorCLIResumeRolloutCapture?
-  private let terminateProcess: () -> Bool
-  private var collectedLines: [CursorCLIRolloutLine]?
-  private var closed = false
+  private let state: AgentRunningSessionState<CursorCLIRolloutLine>
 
   fileprivate init(
     sessionId: String,
@@ -379,32 +134,38 @@ public final class CursorCLIProcessRunningSession: CursorCLIRunningSession, @unc
     existingLines: [CursorCLIRolloutLine] = [],
     streamGranularity: String = "event",
     resumeCapture: CursorCLIResumeRolloutCapture? = nil,
-    terminateProcess: @escaping () -> Bool = { false }
+    terminateProcess: @escaping @Sendable () -> Bool = { false }
   ) {
-    self.currentSessionId = sessionId
-    self.processRecord = processRecord
-    self.streamResult = streamResult
-    self.existingLines = existingLines
-    self.streamGranularity = streamGranularity
-    self.resumeCapture = resumeCapture
-    self.terminateProcess = terminateProcess
+    let resumeBackfill: AgentRunningSessionState<CursorCLIRolloutLine>.ResumeBackfill?
+    if let resumeCapture {
+      resumeBackfill = { includeFinalBackfill in
+        resumeCapture.flush(includeFinalBackfill: includeFinalBackfill)
+      }
+    } else {
+      resumeBackfill = nil
+    }
+    self.state = AgentRunningSessionState(
+      sessionId: sessionId,
+      processRecord: processRecord,
+      streamResult: streamResult,
+      existingLines: existingLines,
+      streamGranularity: streamGranularity,
+      resumeBackfill: resumeBackfill,
+      terminateProcess: terminateProcess,
+      sessionIdResolver: { lines in Self.sessionId(from: lines) },
+      lineDeduplicator: { lines in lines.deduplicatingStableRolloutLines() },
+      streamChunker: { lines, granularity, sessionId in
+        lines.streamChunks(granularity: granularity, sessionId: sessionId)
+      }
+    )
   }
 
   public var sessionId: String {
-    lock.lock()
-    defer { lock.unlock() }
-    return currentSessionId
+    state.sessionId
   }
 
   public func getState() -> [String: String] {
-    let sessionId = refreshSessionId(from: streamLines(includeFinalRolloutBackfill: false))
-    lock.lock()
-    defer { lock.unlock() }
-    return [
-      "sessionId": sessionId,
-      "processId": processRecord.id,
-      "status": closed ? "completed" : "running"
-    ]
+    state.getState()
   }
 
   public func pushMessage(_ message: CursorCLIRolloutLine) throws {
@@ -412,62 +173,15 @@ public final class CursorCLIProcessRunningSession: CursorCLIRunningSession, @unc
   }
 
   public func messages() -> [CursorCLIRolloutLine] {
-    lock.lock()
-    if let collectedLines {
-      lock.unlock()
-      return collectedLines
-    }
-    lock.unlock()
-    let mergedLines = streamLines(includeFinalRolloutBackfill: false)
-    let sessionId = refreshSessionId(from: mergedLines)
-    return mergedLines.streamChunks(granularity: streamGranularity, sessionId: sessionId)
+    state.messages()
   }
 
   public func waitForCompletion() -> CursorCLISessionResult {
-    let exitCode = streamResult.waitForCompletion()
-    let mergedLines = streamLines(includeFinalRolloutBackfill: true)
-    let sessionId = refreshSessionId(from: mergedLines)
-    let lines = mergedLines.streamChunks(granularity: streamGranularity, sessionId: sessionId)
-    lock.lock()
-    collectedLines = lines
-    closed = true
-    lock.unlock()
-    let now = ISO8601DateFormatter().string(from: Date())
-    return CursorCLISessionResult(success: exitCode == 0, exitCode: exitCode, startedAt: processRecord.startedAt, completedAt: now, messageCount: mergedLines.count)
+    CursorCLISessionResult(state.waitForCompletion())
   }
 
   public func cancel() -> CursorCLISessionResult {
-    _ = terminateProcess()
-    _ = streamResult.waitForCompletion()
-    let mergedLines = streamLines(includeFinalRolloutBackfill: true)
-    let sessionId = refreshSessionId(from: mergedLines)
-    let lines = mergedLines.streamChunks(granularity: streamGranularity, sessionId: sessionId)
-    lock.lock()
-    collectedLines = lines
-    closed = true
-    lock.unlock()
-    let now = ISO8601DateFormatter().string(from: Date())
-    return CursorCLISessionResult(success: false, exitCode: 130, startedAt: processRecord.startedAt, completedAt: now, messageCount: mergedLines.count)
-  }
-
-  private func streamLines(includeFinalRolloutBackfill: Bool) -> [CursorCLIRolloutLine] {
-    var lines = existingLines + streamResult.lines.snapshot()
-    if let resumeCapture {
-      lines.append(contentsOf: resumeCapture.flush(includeFinalBackfill: includeFinalRolloutBackfill))
-    }
-    return lines.deduplicatingStableRolloutLines()
-  }
-
-  @discardableResult
-  private func refreshSessionId(from lines: [CursorCLIRolloutLine]) -> String {
-    let resolved = Self.sessionId(from: lines)
-    lock.lock()
-    if let resolved {
-      currentSessionId = resolved
-    }
-    let value = currentSessionId
-    lock.unlock()
-    return value
+    CursorCLISessionResult(state.cancel())
   }
 
   private static func sessionId(from lines: [CursorCLIRolloutLine]) -> String? {
@@ -483,6 +197,18 @@ public final class CursorCLIProcessRunningSession: CursorCLIRunningSession, @unc
       }
     }
     return nil
+  }
+}
+
+private extension CursorCLISessionResult {
+  init(_ completion: AgentRunningSessionCompletion<CursorCLIRolloutLine>) {
+    self.init(
+      success: completion.success,
+      exitCode: completion.exitCode,
+      startedAt: completion.startedAt,
+      completedAt: completion.completedAt,
+      messageCount: completion.messageCount
+    )
   }
 }
 

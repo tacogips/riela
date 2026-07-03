@@ -108,6 +108,26 @@ final class CodexAgentCompatibilityTests: XCTestCase {
     XCTAssertNil(parseRolloutLine(#"{"type":"unknown"}"#))
   }
 
+  func testDecodedIntegralExecCommandEndReportsErrors() throws {
+    var normalizer = CodexAgentEventNormalizer()
+    let chunk = try decodedJSONObject("""
+      {
+        "type": "event_msg",
+        "payload": {
+          "type": "ExecCommandEnd",
+          "command": ["false"],
+          "exit_code": 1,
+          "aggregated_output": "failed"
+        }
+      }
+      """)
+
+    let event = try XCTUnwrap(normalizer.normalize(chunk).first)
+
+    XCTAssertEqual(event.type, "tool.result")
+    XCTAssertEqual(event.payload["isError"], .bool(true))
+  }
+
   func testReadRolloutSessionMessagesAndSystemInjectedFiltering() throws {
     let root = try makeTemporaryDirectory()
     addTeardownBlock {
@@ -640,6 +660,7 @@ final class CodexAgentCompatibilityTests: XCTestCase {
 
   func testGraphQLVariablesFileChangesAndTranscriptSearchBudgets() throws {
     XCTAssertEqual(try CodexGraphQLCommandExecutor.parseVariables(#"{"id":"session-1","limit":5}"#)["id"], .string("session-1"))
+    XCTAssertEqual(codexJSONInt(try CodexGraphQLCommandExecutor.parseVariables(#"{"limit":3}"#)["limit"]), 3)
     XCTAssertThrowsError(try CodexGraphQLCommandExecutor.parseVariables(#"["not-object"]"#)) { error in
       XCTAssertEqual(error as? CodexGraphQLError, .variablesMustBeObject)
     }
@@ -679,7 +700,7 @@ final class CodexAgentCompatibilityTests: XCTestCase {
       timestamp: "now",
       type: "event_msg",
       payload: .object([
-        "exit_code": .number(1),
+        "exit_code": .integer(1),
         "file_changes": .array([
           .object(["path": .string("FAILED.md"), "operation": .string("modified"), "source": .string("shell")])
         ])

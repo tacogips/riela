@@ -290,10 +290,7 @@ func gmailNonEmptyString(_ value: JSONValue?) -> String? {
 }
 
 func gmailNumber(_ value: JSONValue?) -> Double? {
-  guard case let .number(value)? = value else {
-    return nil
-  }
-  return value
+  value?.asDouble
 }
 
 extension JSONValue {

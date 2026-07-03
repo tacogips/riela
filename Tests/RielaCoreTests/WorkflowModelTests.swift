@@ -60,6 +60,30 @@ final class WorkflowModelTests: XCTestCase {
     XCTAssertEqual(workflow.nodes.first?.inputFilters?.first?.kind, .telegram)
   }
 
+  func testDefaultWorkflowValidatorRejectsDuplicateProgrammaticStepAndNodeIds() {
+    let workflow = WorkflowDefinition(
+      workflowId: "duplicate-programmatic",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
+      entryStepId: "step",
+      nodeRegistry: [
+        WorkflowNodeRegistryRef(id: "node", nodeFile: "nodes/one.json"),
+        WorkflowNodeRegistryRef(id: "node", nodeFile: "nodes/two.json")
+      ],
+      steps: [
+        WorkflowStepRef(id: "step", nodeId: "node"),
+        WorkflowStepRef(id: "step", nodeId: "node")
+      ],
+      nodes: [WorkflowNodeRef(id: "node", nodeFile: "nodes/one.json")]
+    )
+
+    let diagnostics = DefaultWorkflowValidator().validate(workflow)
+
+    XCTAssertTrue(diagnostics.contains(error("workflow.nodes[0].id", "must be unique across workflow.nodes[]")))
+    XCTAssertTrue(diagnostics.contains(error("workflow.nodes[1].id", "must be unique across workflow.nodes[]")))
+    XCTAssertTrue(diagnostics.contains(error("workflow.steps[0].id", "must be unique across workflow.steps[]")))
+    XCTAssertTrue(diagnostics.contains(error("workflow.steps[1].id", "must be unique across workflow.steps[]")))
+  }
+
   func testWorkflowValidationRejectsUnsupportedNodeInputFilterKind() throws {
     let data = Data("""
       {
@@ -384,6 +408,33 @@ final class WorkflowModelTests: XCTestCase {
     let encoded = try JSONEncoder().encode(payload)
     let roundTrip = try JSONDecoder().decode(AgentNodePayload.self, from: encoded)
     XCTAssertEqual(roundTrip.agentEnvironment, payload.agentEnvironment)
+  }
+
+  func testAgentNodePayloadDecodesSandboxAndToolPolicy() throws {
+    let data = Data("""
+      {
+        "id": "output",
+        "executionBackend": "codex-agent",
+        "model": "gpt-5",
+        "agentSandbox": "read-only",
+        "agentToolPolicy": {
+          "mode": "backend-arguments",
+          "additionalArguments": ["--disable", "shell"],
+          "codexArguments": ["--config", "tools.web_search=false"]
+        },
+        "output": {
+          "projection": { "kind": "latest-input-payload" }
+        }
+      }
+      """.utf8)
+
+    let payload = try JSONDecoder().decode(AgentNodePayload.self, from: data)
+
+    XCTAssertEqual(payload.agentSandbox, .readOnly)
+    XCTAssertEqual(payload.agentToolPolicy?.mode, .backendArguments)
+    XCTAssertEqual(payload.agentToolPolicy?.additionalArguments, ["--disable", "shell"])
+    XCTAssertEqual(payload.agentToolPolicy?.codexArguments, ["--config", "tools.web_search=false"])
+    XCTAssertEqual(payload.output?.projection?.kind, .latestInputPayload)
   }
 
   func testAgentNodePayloadDefaultsMissingModelFreezeToFalse() throws {

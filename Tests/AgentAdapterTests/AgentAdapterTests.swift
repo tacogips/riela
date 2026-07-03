@@ -798,4 +798,72 @@ final class AgentAdapterTests: XCTestCase {
     )
     XCTAssertEqual(runs.map { $0.configuration.environment["CURSOR_CONFIG_DIR"] }, ["/tmp/cursor-home", "/tmp/cursor-home"])
   }
+
+  func testInjectedAuthPreflightRethrowsCancellation() async {
+    await assertThrowsCancellation {
+      _ = try await CodexAgentAdapter(
+        runner: CapturingRunner(output: "unused"),
+        checkAuthPreflight: { _ in throw CancellationError() }
+      ).execute(input(backend: .codexAgent), context: AdapterExecutionContext())
+    }
+
+    await assertThrowsCancellation {
+      _ = try await ClaudeCodeAgentAdapter(
+        runner: CapturingRunner(output: "unused"),
+        checkAuthPreflight: { _ in throw CancellationError() }
+      ).execute(input(backend: .claudeCodeAgent), context: AdapterExecutionContext())
+    }
+
+    await assertThrowsCancellation {
+      _ = try await CursorCLIAgentAdapter(
+        runner: CapturingRunner(output: "unused"),
+        checkAuthPreflight: { _ in throw CancellationError() }
+      ).execute(input(backend: .cursorCliAgent), context: AdapterExecutionContext())
+    }
+  }
+
+  func testDefaultAuthPreflightRethrowsCancellation() async {
+    await assertThrowsCancellation {
+      _ = try await CodexAgentAdapter(runner: OutcomeRunner([.cancellation]))
+        .execute(input(backend: .codexAgent), context: AdapterExecutionContext())
+    }
+
+    await assertThrowsCancellation {
+      _ = try await ClaudeCodeAgentAdapter(runner: OutcomeRunner([.cancellation]))
+        .execute(input(backend: .claudeCodeAgent), context: AdapterExecutionContext())
+    }
+
+    await assertThrowsCancellation {
+      _ = try await ClaudeCodeAgentAdapter(runner: OutcomeRunner([
+        .result(LocalAgentProcessResult(stdout: "2.1.86", stderr: "", terminationStatus: 0)),
+        .cancellation
+      ])).execute(input(backend: .claudeCodeAgent), context: AdapterExecutionContext())
+    }
+
+    await assertThrowsCancellation {
+      _ = try await CursorCLIAgentAdapter(runner: OutcomeRunner([.cancellation]))
+        .execute(input(backend: .cursorCliAgent), context: AdapterExecutionContext())
+    }
+
+    await assertThrowsCancellation {
+      _ = try await CursorCLIAgentAdapter(runner: OutcomeRunner([
+        .result(LocalAgentProcessResult(stdout: "0.45.0", stderr: "", terminationStatus: 0)),
+        .cancellation
+      ])).execute(input(backend: .cursorCliAgent), context: AdapterExecutionContext())
+    }
+  }
+
+  private func assertThrowsCancellation(
+    _ operation: () async throws -> Void,
+    file: StaticString = #filePath,
+    line: UInt = #line
+  ) async {
+    do {
+      try await operation()
+      XCTFail("Expected cancellation", file: file, line: line)
+    } catch is CancellationError {
+    } catch {
+      XCTFail("Expected cancellation, got \(error)", file: file, line: line)
+    }
+  }
 }

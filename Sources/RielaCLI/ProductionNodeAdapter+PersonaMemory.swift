@@ -678,10 +678,10 @@ private func personaMemoryBool(_ value: JSONValue?) -> Bool? {
 }
 
 private func personaMemoryInt(_ value: JSONValue?) -> Int? {
-  guard case let .number(number)? = value, number.rounded() == number else {
+  guard let int64 = value?.asInt64 else {
     return nil
   }
-  return Int(number)
+  return Int(exactly: int64)
 }
 
 private func currentPersonaMemoryTimestamp() -> String {

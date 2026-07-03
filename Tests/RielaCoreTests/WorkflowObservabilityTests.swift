@@ -25,7 +25,10 @@ final class WorkflowObservabilityTests: XCTestCase {
         "RIELA_OTEL_ENDPOINT": "http://collector.test:4318",
         "RIELA_OTEL_SERVICE_NAME": "custom-riela",
         "RIELA_OTEL_RESOURCE_ATTRIBUTES": "deployment.environment=test,profile=default",
-        "RIELA_OTEL_LOGS_ENABLED": "false"
+        "RIELA_OTEL_LOGS_ENABLED": "false",
+        "RIELA_OTEL_MAX_BUFFER_RECORDS": "17",
+        "RIELA_OTEL_LEGACY_PAYLOAD": "true",
+        "traceparent": "00-11111111111111111111111111111111-2222222222222222-01"
       ],
       surface: .app
     )
@@ -36,6 +39,9 @@ final class WorkflowObservabilityTests: XCTestCase {
     XCTAssertEqual(enabled.resourceAttributes["deployment.environment"], "test")
     XCTAssertFalse(enabled.enabledSignals.contains(.logs))
     XCTAssertTrue(enabled.enabledSignals.contains(.traces))
+    XCTAssertEqual(enabled.maxBufferRecords, 17)
+    XCTAssertTrue(enabled.legacyPayload)
+    XCTAssertEqual(enabled.traceContext?.traceparent, "00-11111111111111111111111111111111-2222222222222222-01")
   }
 
   func testTelemetryRedactorRedactsSecretLikeAttributes() {
@@ -87,7 +93,12 @@ final class WorkflowObservabilityTests: XCTestCase {
     XCTAssertTrue(spans.contains { $0.name == "riela.workflow.step" })
     XCTAssertTrue(metrics.contains { $0.name == "riela.workflow.run.complete.count" })
     XCTAssertTrue(metrics.contains { $0.name == "riela.workflow.step.count" })
-    XCTAssertEqual(spans.first { $0.name == "riela.workflow.run" }?.attributes["workflow.id"], "telemetry-workflow")
+    let runSpan = try XCTUnwrap(spans.first { $0.name == "riela.workflow.run" })
+    let stepSpan = try XCTUnwrap(spans.first { $0.name == "riela.workflow.step" })
+    XCTAssertEqual(runSpan.attributes["workflow.id"], "telemetry-workflow")
+    XCTAssertLessThanOrEqual(runSpan.startedAt, stepSpan.startedAt)
+    XCTAssertLessThanOrEqual(stepSpan.startedAt, stepSpan.endedAt)
+    XCTAssertLessThanOrEqual(runSpan.startedAt, runSpan.endedAt)
   }
 
   func testOTLPExporterSendsRedactedSignalsToCollectorEndpoints() async throws {
@@ -99,7 +110,9 @@ final class WorkflowObservabilityTests: XCTestCase {
       surface: .cli,
       serviceName: "riela-test",
       endpoint: try XCTUnwrap(URL(string: "http://collector.test:4318")),
-      resourceAttributes: ["deployment.environment": "test"]
+      resourceAttributes: ["deployment.environment": "test"],
+      traceContext: RielaTraceContext(traceparent: "00-11111111111111111111111111111111-2222222222222222-01"),
+      autoFlushInterval: nil
     ))
 
     await telemetry.recordSpan(RielaTelemetrySpan(
@@ -124,12 +137,57 @@ final class WorkflowObservabilityTests: XCTestCase {
     XCTAssertEqual(Set(requests.map(\.path)), Set(["/v1/traces", "/v1/logs", "/v1/metrics"]))
     XCTAssertEqual(requests.count, 3)
     for request in requests {
-      XCTAssertEqual(request.body["serviceName"] as? String, "riela-test")
-      XCTAssertEqual(request.body["surface"] as? String, "cli")
       let bodyText = String(data: try JSONSerialization.data(withJSONObject: request.body, options: [.sortedKeys]), encoding: .utf8)
       XCTAssertFalse(bodyText?.contains("secret-token") == true)
       XCTAssertFalse(bodyText?.contains("raw prompt") == true)
     }
+    let traceRequest = try XCTUnwrap(requests.first { $0.path == "/v1/traces" })
+    let resourceSpans = try XCTUnwrap(traceRequest.body["resourceSpans"] as? [[String: Any]])
+    let traceResource = try XCTUnwrap(resourceSpans.first?["resource"] as? [String: Any])
+    XCTAssertEqual(otlpAttribute("service.name", in: traceResource), "riela-test")
+    XCTAssertEqual(otlpAttribute("riela.surface", in: traceResource), "cli")
+    XCTAssertEqual(otlpAttribute("deployment.environment", in: traceResource), "test")
+    let scopeSpans = try XCTUnwrap(resourceSpans.first?["scopeSpans"] as? [[String: Any]])
+    let spans = try XCTUnwrap(scopeSpans.first?["spans"] as? [[String: Any]])
+    let span = try XCTUnwrap(spans.first)
+    XCTAssertEqual(span["traceId"] as? String, "11111111111111111111111111111111")
+    XCTAssertEqual(span["parentSpanId"] as? String, "2222222222222222")
+    XCTAssertNotNil(span["startTimeUnixNano"] as? String)
+    XCTAssertNotNil(span["endTimeUnixNano"] as? String)
+
+    let logRequest = try XCTUnwrap(requests.first { $0.path == "/v1/logs" })
+    XCTAssertNotNil(logRequest.body["resourceLogs"])
+    let metricRequest = try XCTUnwrap(requests.first { $0.path == "/v1/metrics" })
+    XCTAssertNotNil(metricRequest.body["resourceMetrics"])
+  }
+
+  func testOTLPExporterBoundsBuffersAndReportsDroppedRecords() async throws {
+    RecordingOTLPURLProtocol.reset()
+    URLProtocol.registerClass(RecordingOTLPURLProtocol.self)
+    defer { URLProtocol.unregisterClass(RecordingOTLPURLProtocol.self) }
+    let telemetry = RielaTelemetryFactory.make(configuration: RielaTelemetryConfiguration(
+      enabled: true,
+      surface: .cli,
+      serviceName: "riela-test",
+      endpoint: try XCTUnwrap(URL(string: "http://collector.test:4318")),
+      enabledSignals: [.logs],
+      maxBufferRecords: 2,
+      autoFlushInterval: nil
+    ))
+
+    await telemetry.recordLog(RielaTelemetryLog(name: "log-1"))
+    await telemetry.recordLog(RielaTelemetryLog(name: "log-2"))
+    await telemetry.recordLog(RielaTelemetryLog(name: "log-3"))
+    await telemetry.flush(timeout: .seconds(1))
+
+    let request = try XCTUnwrap(RecordingOTLPURLProtocol.requests().first)
+    let resourceLogs = try XCTUnwrap(request.body["resourceLogs"] as? [[String: Any]])
+    let resource = try XCTUnwrap(resourceLogs.first?["resource"] as? [String: Any])
+    XCTAssertEqual(otlpAttribute("riela.telemetry.dropped.logs", in: resource), "1")
+    let scopeLogs = try XCTUnwrap(resourceLogs.first?["scopeLogs"] as? [[String: Any]])
+    let records = try XCTUnwrap(scopeLogs.first?["logRecords"] as? [[String: Any]])
+    let names = records.compactMap { (($0["body"] as? [String: Any])?["stringValue"] as? String) }
+    XCTAssertEqual(names, ["log-2", "log-3"])
   }
 
   func testOTLPExporterFlushHonorsTimeoutWhenCollectorDoesNotRespond() async throws {
@@ -142,7 +200,8 @@ final class WorkflowObservabilityTests: XCTestCase {
       serviceName: "riela-test",
       endpoint: try XCTUnwrap(URL(string: "http://collector.test:4318")),
       resourceAttributes: [:],
-      enabledSignals: [.traces]
+      enabledSignals: [.traces],
+      autoFlushInterval: nil
     ))
 
     await telemetry.recordSpan(RielaTelemetrySpan(
@@ -159,6 +218,14 @@ final class WorkflowObservabilityTests: XCTestCase {
     XCTAssertEqual(HangingOTLPURLProtocol.startedRequestCount(), 1)
     XCTAssertLessThan(elapsed, .seconds(1))
   }
+}
+
+private func otlpAttribute(_ key: String, in owner: [String: Any]) -> String? {
+  guard let attributes = owner["attributes"] as? [[String: Any]] else {
+    return nil
+  }
+  let attribute = attributes.first { $0["key"] as? String == key }
+  return (attribute?["value"] as? [String: Any])?["stringValue"] as? String
 }
 
 private struct RecordedOTLPRequest {

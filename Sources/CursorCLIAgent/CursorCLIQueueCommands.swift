@@ -438,14 +438,11 @@ func cursorOperationStringArrayValue(_ value: JSONValue?) -> [String]? {
 }
 
 func cursorOperationNumberValue(_ value: JSONValue?) -> Double? {
-  guard case let .number(number) = value else {
-    return nil
-  }
-  return number
+  value?.asDouble
 }
 
 func cursorOperationIntValue(_ value: JSONValue?) -> Int? {
-  guard let number = cursorOperationNumberValue(value) else {
+  guard let number = value?.asInt64 else {
     return nil
   }
   return Int(number)

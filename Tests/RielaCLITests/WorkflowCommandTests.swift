@@ -230,8 +230,7 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertTrue(FileManager.default.fileExists(atPath: savedFilePath))
     XCTAssertEqual(savedPayload["text"], .string("Yui, remember the routing test"))
     XCTAssertEqual(savedPayload["conversationId"], .string("chat-1"))
-    guard case let .number(savedRecordIdNumber)? = savedRecord["recordId"],
-      let savedRecordId = Int64(exactly: savedRecordIdNumber) else {
+    guard let savedRecordId = savedRecord["recordId"]?.asInt64 else {
       return XCTFail("memory-save record id was not returned")
     }
 

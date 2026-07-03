@@ -174,7 +174,7 @@ final class LoopEvidenceProjectorTests: XCTestCase {
   func testProjectorRejectsAcceptedRequiredGateWhenHighFindingsExceedPolicy() throws {
     let manifest = try projectManifest(gatePayload: [
       "decision": .string("accepted"),
-      "severityCounts": .object(["high": .number(1), "medium": .number(0)])
+      "severityCounts": .object(["high": .integer(1), "medium": .integer(0)])
     ])
 
     let gate = try XCTUnwrap(manifest.gates.first)

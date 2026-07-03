@@ -303,10 +303,7 @@ private func stringArray(_ value: JSONValue?) -> [String] {
 }
 
 private func int64(_ value: JSONValue?) -> Int64? {
-  guard case let .number(number)? = value else {
-    return nil
-  }
-  return Int64(exactly: number)
+  value?.asInt64
 }
 
 private func jsonObject(_ value: JSONValue?) -> JSONObject {

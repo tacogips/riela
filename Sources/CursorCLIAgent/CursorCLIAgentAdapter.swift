@@ -40,12 +40,16 @@ public struct CursorCLIAgentCommandBuilder: LocalAgentCommandBuilding {
     if let resolvedMode, resolvedMode != .default {
       arguments.append(contentsOf: ["--mode", resolvedMode.rawValue])
     }
+    if let sandbox = input.node.agentSandbox {
+      arguments.append(contentsOf: ["--sandbox", sandbox.rawValue])
+    }
 
     for imagePath in resolveAdapterImagePaths(input) {
       arguments.append(contentsOf: ["--image", imagePath])
     }
 
     arguments.append(contentsOf: additionalArguments)
+    arguments.append(contentsOf: agentToolPolicyArguments(input.node.agentToolPolicy, backend: .cursorCliAgent))
     arguments.append(contentsOf: stringArray(input.node.variables["cursorAdditionalArgs"]))
     arguments.append(contentsOf: ["--", buildCombinedPromptText(promptText: input.promptText, systemPromptText: input.systemPromptText)])
 
@@ -64,7 +68,8 @@ public struct CursorCLIAgentCommandBuilder: LocalAgentCommandBuilding {
       ),
       stdin: "",
       normalizeStdout: normalizeCursorStreamJSONStdout,
-      backendEventType: cursorBackendEventType
+      backendEventType: cursorBackendEventType,
+      classifyBackendEvent: classifyCursorBackendEvent
     )
   }
 }
@@ -107,6 +112,8 @@ public struct CursorCLIAgentAdapter: NodeAdapter {
       if let checkAuthPreflight {
         do {
           try await checkAuthPreflight(input)
+        } catch let error as CancellationError {
+          throw error
         } catch let error as AdapterExecutionError {
           throw error
         } catch {
@@ -152,6 +159,8 @@ private func runCursorDefaultAuthPreflight(
       stdin: "",
       deadline: versionDeadline
     )
+  } catch let error as CancellationError {
+    throw error
   } catch {
     throw AdapterExecutionError(
       .policyBlocked,
@@ -192,6 +201,8 @@ private func runCursorDefaultAuthPreflight(
       stdin: "",
       deadline: modelDeadline
     )
+  } catch let error as CancellationError {
+    throw error
   } catch {
     throw AdapterExecutionError(
       .policyBlocked,
@@ -314,6 +325,39 @@ private func cursorBackendEventType(_ line: String) -> String? {
   return stringValue(object["type"]) ?? "json-event"
 }
 
+private func classifyCursorBackendEvent(_ line: String) -> AdapterBackendEvent? {
+  guard
+    let data = line.data(using: .utf8),
+    let decoded = try? JSONDecoder().decode(JSONValue.self, from: data),
+    case let .object(object) = decoded,
+    isCursorJSONEvent(object)
+  else {
+    return nil
+  }
+  let eventType = stringValue(object["type"]) ?? "json-event"
+  if eventType == "thinking", stringValue(object["subtype"]) == "delta" {
+    return AdapterBackendEvent(
+      provider: CliAgentBackend.cursorCliAgent.rawValue,
+      eventType: eventType,
+      channel: .thinking,
+      contentDelta: stringValue(object["text"]),
+      isDelta: true
+    )
+  }
+  if let assistantText = cursorAssistantText(from: object) {
+    return AdapterBackendEvent(
+      provider: CliAgentBackend.cursorCliAgent.rawValue,
+      eventType: eventType,
+      channel: .assistant,
+      contentSnapshot: assistantText
+    )
+  }
+  if eventType == "result", let usage = objectValue(object["usage"]) {
+    return AdapterBackendEvent(provider: CliAgentBackend.cursorCliAgent.rawValue, eventType: eventType, channel: .usage, usage: usage)
+  }
+  return AdapterBackendEvent(provider: CliAgentBackend.cursorCliAgent.rawValue, eventType: eventType, channel: .lifecycle)
+}
+
 private func isCursorJSONEvent(_ object: JSONObject) -> Bool {
   switch stringValue(object["type"]) {
   case "session.started", "session.pending", "session.materialized", "session.user_message", "session.thinking", "session.assistant_message", "session.completed", "session.error",
@@ -363,7 +407,7 @@ private func cursorMessageContentText(from value: JSONValue?) -> String? {
     return text.isEmpty ? nil : text
   case let .object(object):
     return cursorMessageContentText(from: object["content"])
-  case .null, .bool, .number:
+  case .null, .bool, .integer, .number:
     return nil
   }
 }

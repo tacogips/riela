@@ -578,10 +578,7 @@ private func string(_ value: JSONValue?) -> String? {
 }
 
 private func numberValue(_ value: JSONValue?) -> Double? {
-  guard case let .number(value)? = value else {
-    return nil
-  }
-  return value
+  value?.asDouble
 }
 
 private extension JSONValue {

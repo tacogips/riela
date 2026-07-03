@@ -185,8 +185,7 @@ final class RuntimeOutputCandidateTests: XCTestCase {
           stepId: "start",
           nodeId: "node-start",
           attempt: 1,
-          candidatePath: alternatePath,
-          candidatePathReservation: reservation,
+          body: .candidatePath(alternatePath, reservation),
           transitions: [WorkflowStepTransition(toStepId: "next")]
         )
       )

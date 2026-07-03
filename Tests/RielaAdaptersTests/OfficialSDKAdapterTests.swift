@@ -919,3 +919,33 @@ final class OfficialSDKAdapterTests: XCTestCase {
     return object
   }
 }
+
+extension OfficialSDKAdapterTests {
+  func testOfficialSDKAdapterSkipsRetryWhenDeadlineCannotCoverDelay() async throws {
+    let secret = openAITestKey()
+    let executor = RecordingOfficialSDKExecutor(outcomes: [
+      .failure(AdapterExecutionError(.providerError, "Authorization: Bearer \(secret)")),
+      .success(OfficialSDKResponse(body: .object(["output_text": .string("late ok")])))
+    ])
+    let adapter = OpenAiSDKAdapter(
+      configuration: OfficialSDKAdapterConfiguration(
+        apiKeyEnv: "TEST_OPENAI_KEY",
+        retryPolicy: RetryPolicy(maxAttempts: 2, retryDelay: .milliseconds(100)),
+        environment: ["TEST_OPENAI_KEY": secret],
+        requestExecutor: executor
+      )
+    )
+
+    do {
+      _ = try await adapter.execute(
+        openAIInput(),
+        context: AdapterExecutionContext(deadline: Date(timeIntervalSinceNow: 0.05))
+      )
+      XCTFail("Expected provider error")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .providerError)
+      XCTAssertFalse(error.message.contains(secret))
+      XCTAssertEqual(executor.requests().count, 1)
+    }
+  }
+}

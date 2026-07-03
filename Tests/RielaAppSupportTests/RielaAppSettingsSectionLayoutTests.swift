@@ -78,6 +78,44 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     XCTAssertTrue(canvas.hasNodePopoverForTesting)
   }
 
+  func testWorkflowGraphUsesAuthoredStructureWhenRuntimeValidationFails() throws {
+    let scratch = try scratchRoot(name: "riela-app-workflow-graph-validation-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: scratch) }
+    let workflowDirectory = scratch.appendingPathComponent("graph-runtime-diagnostic", isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+    try writeGraphRuntimeDiagnosticWorkflowFixture(to: workflowDirectory)
+
+    let model = try DaemonWorkflowGraphModel.load(workflowDirectory: workflowDirectory.path)
+
+    XCTAssertEqual(model.summary, "2 nodes, 1 transitions")
+    XCTAssertEqual(model.nodes.map(\.id), ["save-memory", "reply"])
+    XCTAssertEqual(model.edges, [DaemonWorkflowGraphModel.Edge(from: "save-memory", to: "reply", label: nil)])
+  }
+
+  func testWorkflowGraphRejectsDuplicateStepIdsWhenRuntimeValidationFails() throws {
+    let scratch = try scratchRoot(name: "riela-app-workflow-graph-duplicate-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: scratch) }
+    let workflowDirectory = scratch.appendingPathComponent("graph-duplicate-step", isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+    try writeGraphDuplicateStepWorkflowFixture(to: workflowDirectory)
+
+    XCTAssertThrowsError(try DaemonWorkflowGraphModel.load(workflowDirectory: workflowDirectory.path)) { error in
+      XCTAssertTrue(String(describing: error).contains("step id 'repeat' must be unique"))
+    }
+  }
+
+  func testWorkflowGraphRejectsEmptyStepIdsWhenRuntimeValidationFails() throws {
+    let scratch = try scratchRoot(name: "riela-app-workflow-graph-empty-step-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: scratch) }
+    let workflowDirectory = scratch.appendingPathComponent("graph-empty-step", isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+    try writeGraphEmptyStepWorkflowFixture(to: workflowDirectory)
+
+    XCTAssertThrowsError(try DaemonWorkflowGraphModel.load(workflowDirectory: workflowDirectory.path)) { error in
+      XCTAssertTrue(String(describing: error).contains("workflow.steps[0].id: must be a non-empty string"))
+    }
+  }
+
   func testInstanceDetailDoesNotShowInlineBackButtonAtRuntime() throws {
     let controller = configuredInstanceDetailController()
 
@@ -552,6 +590,136 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
           "nodeId": "finish-node",
           "description": "Publish the final output.",
           "role": "worker"
+        }
+      ]
+    }
+    """
+    try workflowJSON.write(
+      to: workflowDirectory.appendingPathComponent("workflow.json"),
+      atomically: true,
+      encoding: .utf8
+    )
+  }
+
+  private func writeGraphRuntimeDiagnosticWorkflowFixture(to workflowDirectory: URL) throws {
+    let workflowJSON = """
+    {
+      "workflowId": "graph-runtime-diagnostic",
+      "description": "A workflow whose graph is inspectable even when runtime validation reports diagnostics.",
+      "defaults": {
+        "nodeTimeoutMs": 1000,
+        "maxLoopIterations": 1
+      },
+      "entryStepId": "save-memory",
+      "nodes": [
+        {
+          "id": "save-memory",
+          "addon": {
+            "name": "riela/memory-save",
+            "version": "1",
+            "config": {
+              "memoryId": "missing-memory",
+              "payloadSource": "event"
+            }
+          }
+        },
+        {
+          "id": "reply",
+          "addon": {
+            "name": "riela/codex-sdk-worker",
+            "version": "1",
+            "config": {
+              "model": "gpt-5-nano",
+              "promptTemplate": "Reply briefly."
+            }
+          }
+        }
+      ],
+      "steps": [
+        {
+          "id": "save-memory",
+          "nodeId": "save-memory",
+          "role": "worker",
+          "transitions": [
+            { "toStepId": "reply" }
+          ]
+        },
+        {
+          "id": "reply",
+          "nodeId": "reply",
+          "role": "worker"
+        }
+      ]
+    }
+    """
+    try workflowJSON.write(
+      to: workflowDirectory.appendingPathComponent("workflow.json"),
+      atomically: true,
+      encoding: .utf8
+    )
+  }
+
+  private func writeGraphDuplicateStepWorkflowFixture(to workflowDirectory: URL) throws {
+    let workflowJSON = """
+    {
+      "workflowId": "graph-duplicate-step",
+      "description": "A malformed workflow graph fixture with duplicate authored step ids.",
+      "defaults": {
+        "nodeTimeoutMs": 1000,
+        "maxLoopIterations": 1
+      },
+      "entryStepId": "repeat",
+      "nodes": [
+        { "id": "first", "addon": { "name": "test/first" } },
+        { "id": "second", "addon": { "name": "test/second" } }
+      ],
+      "steps": [
+        {
+          "id": "repeat",
+          "nodeId": "first",
+          "transitions": [
+            { "toStepId": "repeat" }
+          ]
+        },
+        {
+          "id": "repeat",
+          "nodeId": "second"
+        }
+      ]
+    }
+    """
+    try workflowJSON.write(
+      to: workflowDirectory.appendingPathComponent("workflow.json"),
+      atomically: true,
+      encoding: .utf8
+    )
+  }
+
+  private func writeGraphEmptyStepWorkflowFixture(to workflowDirectory: URL) throws {
+    let workflowJSON = """
+    {
+      "workflowId": "graph-empty-step",
+      "description": "A malformed workflow graph fixture with empty authored step ids.",
+      "defaults": {
+        "nodeTimeoutMs": 1000,
+        "maxLoopIterations": 1
+      },
+      "entryStepId": "start",
+      "nodes": [
+        { "id": "start", "addon": { "name": "test/start" } },
+        { "id": "finish", "addon": { "name": "test/finish" } }
+      ],
+      "steps": [
+        {
+          "id": "",
+          "nodeId": "start",
+          "transitions": [
+            { "toStepId": "finish" }
+          ]
+        },
+        {
+          "id": "",
+          "nodeId": "finish"
         }
       ]
     }

@@ -24,11 +24,43 @@ struct DaemonWorkflowGraphModel: Equatable {
   var edges: [Edge]
 
   init(workflow: WorkflowDefinition) {
-    workflowId = workflow.workflowId
-    let depths = Self.depths(for: workflow)
-    let edges = Self.edges(for: workflow)
+    self.init(
+      workflowId: workflow.workflowId,
+      entryStepId: workflow.entryStepId,
+      steps: workflow.steps
+    )
+  }
+
+  init(authoredWorkflow: AuthoredWorkflowJSON) throws {
+    let steps = authoredWorkflow.steps ?? authoredWorkflow.nodes.map { WorkflowStepRef(id: $0.id, nodeId: $0.id) }
+    guard !authoredWorkflow.workflowId.isEmpty else {
+      throw DaemonWorkflowGraphLoadError.invalidWorkflow("workflow.workflowId: must be a non-empty string")
+    }
+    guard let entryStepId = authoredWorkflow.entryStepId ?? steps.first?.id, !entryStepId.isEmpty else {
+      throw DaemonWorkflowGraphLoadError.invalidWorkflow("workflow.entryStepId: must be a non-empty string")
+    }
+    guard !steps.isEmpty else {
+      throw DaemonWorkflowGraphLoadError.invalidWorkflow("workflow.steps: must contain at least one step")
+    }
+    if let emptyStepIndex = Self.firstEmptyStepIndex(in: steps) {
+      throw DaemonWorkflowGraphLoadError.invalidWorkflow("workflow.steps[\(emptyStepIndex)].id: must be a non-empty string")
+    }
+    if let duplicateStepId = Self.firstDuplicateStepId(in: steps) {
+      throw DaemonWorkflowGraphLoadError.invalidWorkflow("workflow.steps: step id '\(duplicateStepId)' must be unique")
+    }
+    self.init(
+      workflowId: authoredWorkflow.workflowId,
+      entryStepId: entryStepId,
+      steps: steps
+    )
+  }
+
+  private init(workflowId: String, entryStepId: String, steps: [WorkflowStepRef]) {
+    self.workflowId = workflowId
+    let depths = Self.depths(entryStepId: entryStepId, steps: steps)
+    let edges = Self.edges(steps: steps)
     let outgoingByStepId = Dictionary(grouping: edges, by: \.from)
-    nodes = workflow.steps.map { step in
+    nodes = steps.map { step in
       let outgoing = outgoingByStepId[step.id] ?? []
       return Node(
         id: step.id,
@@ -43,6 +75,18 @@ struct DaemonWorkflowGraphModel: Equatable {
     self.edges = edges
   }
 
+  private static func firstEmptyStepIndex(in steps: [WorkflowStepRef]) -> Int? {
+    steps.firstIndex { $0.id.isEmpty }
+  }
+
+  private static func firstDuplicateStepId(in steps: [WorkflowStepRef]) -> String? {
+    var seenStepIds = Set<String>()
+    for step in steps where !seenStepIds.insert(step.id).inserted {
+      return step.id
+    }
+    return nil
+  }
+
   var summary: String {
     "\(nodes.count) nodes, \(edges.count) transitions"
   }
@@ -54,15 +98,18 @@ struct DaemonWorkflowGraphModel: Equatable {
     if let workflow = validation.workflow {
       return DaemonWorkflowGraphModel(workflow: workflow)
     }
+    if let authoredWorkflow = try? JSONDecoder().decode(AuthoredWorkflowJSON.self, from: data) {
+      return try DaemonWorkflowGraphModel(authoredWorkflow: authoredWorkflow)
+    }
     let messages = validation.diagnostics.map { "\($0.path): \($0.message)" }.joined(separator: "; ")
     throw DaemonWorkflowGraphLoadError.invalidWorkflow(messages)
   }
 
-  private static func depths(for workflow: WorkflowDefinition) -> [String: Int] {
-    let stepById = Dictionary(uniqueKeysWithValues: workflow.steps.map { ($0.id, $0) })
+  private static func depths(entryStepId: String, steps: [WorkflowStepRef]) -> [String: Int] {
+    let stepById = Dictionary(uniqueKeysWithValues: steps.map { ($0.id, $0) })
     var result: [String: Int] = [:]
-    assignDepths(startingAt: workflow.entryStepId, depth: 0, stepById: stepById, result: &result)
-    for step in workflow.steps where result[step.id] == nil {
+    assignDepths(startingAt: entryStepId, depth: 0, stepById: stepById, result: &result)
+    for step in steps where result[step.id] == nil {
       let nextDepth = (result.values.max() ?? -1) + 1
       assignDepths(startingAt: step.id, depth: nextDepth, stepById: stepById, result: &result)
     }
@@ -87,10 +134,10 @@ struct DaemonWorkflowGraphModel: Equatable {
     }
   }
 
-  private static func edges(for workflow: WorkflowDefinition) -> [Edge] {
-    let stepIds = Set(workflow.steps.map(\.id))
+  private static func edges(steps: [WorkflowStepRef]) -> [Edge] {
+    let stepIds = Set(steps.map(\.id))
     var result: [Edge] = []
-    for step in workflow.steps {
+    for step in steps {
       for transition in step.transitions ?? [] {
         if stepIds.contains(transition.toStepId) {
           result.append(Edge(from: step.id, to: transition.toStepId, label: transitionLabel(transition)))
@@ -102,8 +149,8 @@ struct DaemonWorkflowGraphModel: Equatable {
         }
       }
     }
-    if result.isEmpty, workflow.steps.count > 1 {
-      result = zip(workflow.steps, workflow.steps.dropFirst()).map { previous, next in
+    if result.isEmpty, steps.count > 1 {
+      result = zip(steps, steps.dropFirst()).map { previous, next in
         Edge(from: previous.id, to: next.id, label: nil)
       }
     }

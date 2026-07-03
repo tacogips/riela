@@ -631,7 +631,7 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
             "name": "riela/codex-sdk-worker",
             "version": "1",
             "config": {
-              "model": "gpt-5-nano",
+              "model": "gpt-5-mini",
               "promptTemplate": "Reply briefly."
             }
           }

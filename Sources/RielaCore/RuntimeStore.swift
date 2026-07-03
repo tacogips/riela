@@ -643,76 +643,16 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
       return
     }
     if let snapshot = input.contentSnapshot {
-      liveTail.streamedResponseText = cappedStreamedResponseText(snapshot)
+      liveTail.setStreamedResponseText(snapshot, byteCap: streamedResponseTextByteCap)
       return
     }
     guard let delta = input.contentDelta else {
       return
     }
-    liveTail.streamedResponseText = cappedStreamedResponseText(
-      appending: delta,
-      to: liveTail.streamedResponseText
-    )
+    liveTail.appendStreamedResponseText(delta, byteCap: streamedResponseTextByteCap)
   }
 
   private var streamedResponseTextByteCap: Int { 32 * 1024 }
-
-  private func cappedStreamedResponseText(_ text: String) -> String {
-    let cap = streamedResponseTextByteCap
-    guard text.utf8.count > cap else {
-      return text
-    }
-    let prefixCap = cap / 2
-    let suffixCap = cap - prefixCap
-    return byteBoundPrefix(text, limit: prefixCap) + byteBoundSuffix(text, limit: suffixCap)
-  }
-
-  private func cappedStreamedResponseText(appending delta: String, to current: String?) -> String {
-    guard let current, !current.isEmpty else {
-      return cappedStreamedResponseText(delta)
-    }
-    let cap = streamedResponseTextByteCap
-    guard current.utf8.count + delta.utf8.count > cap else {
-      return current + delta
-    }
-    guard current.utf8.count >= cap else {
-      return cappedStreamedResponseText(current + delta)
-    }
-    let prefixCap = cap / 2
-    let suffixCap = cap - prefixCap
-    return byteBoundPrefix(current, limit: prefixCap)
-      + byteBoundSuffix(byteBoundSuffix(current, limit: suffixCap) + delta, limit: suffixCap)
-  }
-
-  private func byteBoundPrefix(_ text: String, limit: Int) -> String {
-    var prefix = ""
-    prefix.reserveCapacity(limit)
-    var bytes = 0
-    for character in text {
-      let characterBytes = String(character).utf8.count
-      guard bytes + characterBytes <= limit else {
-        break
-      }
-      prefix.append(character)
-      bytes += characterBytes
-    }
-    return prefix
-  }
-
-  private func byteBoundSuffix(_ text: String, limit: Int) -> String {
-    var suffixCharacters: [Character] = []
-    suffixCharacters.reserveCapacity(limit)
-    var bytes = 0
-    for character in text.reversed() {
-      let characterBytes = String(character).utf8.count
-      guard bytes + characterBytes <= limit else {
-        break
-      }
-      suffixCharacters.append(character)
-      bytes += characterBytes
-    }
-    return String(suffixCharacters.reversed())
-  }
 
   public func appendWorkflowMessage(_ input: WorkflowMessageAppendInput) async throws -> WorkflowMessageRecord {
     let records = try await appendWorkflowMessages([input])
@@ -831,14 +771,16 @@ private struct WorkflowExecutionLiveTail: Sendable {
   var lastBackendEventType: String?
   var backendEventCount: Int?
   var recentBackendEvents: [WorkflowBackendEventRecord]?
-  var streamedResponseText: String?
+  var streamedResponseTextBuffer: StreamedResponseTextBuffer?
 
   init(execution: WorkflowStepExecution) {
     self.lastBackendEventAt = execution.lastBackendEventAt
     self.lastBackendEventType = execution.lastBackendEventType
     self.backendEventCount = execution.backendEventCount
     self.recentBackendEvents = execution.recentBackendEvents
-    self.streamedResponseText = execution.streamedResponseText
+    self.streamedResponseTextBuffer = execution.streamedResponseText.map {
+      StreamedResponseTextBuffer(text: $0, byteCap: 32 * 1024)
+    }
   }
 
   var isEmpty: Bool {
@@ -846,7 +788,17 @@ private struct WorkflowExecutionLiveTail: Sendable {
       && lastBackendEventType == nil
       && backendEventCount == nil
       && recentBackendEvents == nil
-      && streamedResponseText == nil
+      && streamedResponseTextBuffer == nil
+  }
+
+  mutating func setStreamedResponseText(_ text: String, byteCap: Int) {
+    streamedResponseTextBuffer = StreamedResponseTextBuffer(text: text, byteCap: byteCap)
+  }
+
+  mutating func appendStreamedResponseText(_ delta: String, byteCap: Int) {
+    var buffer = streamedResponseTextBuffer ?? StreamedResponseTextBuffer(byteCap: byteCap)
+    buffer.append(delta, byteCap: byteCap)
+    streamedResponseTextBuffer = buffer
   }
 
   func applying(to execution: WorkflowStepExecution) -> WorkflowStepExecution {
@@ -855,8 +807,130 @@ private struct WorkflowExecutionLiveTail: Sendable {
     projected.lastBackendEventType = lastBackendEventType
     projected.backendEventCount = backendEventCount
     projected.recentBackendEvents = recentBackendEvents
-    projected.streamedResponseText = streamedResponseText
+    projected.streamedResponseText = streamedResponseTextBuffer?.stringValue(byteCap: 32 * 1024)
     return projected
+  }
+}
+
+private struct StreamedResponseTextBuffer: Sendable {
+  private var uncappedText: String?
+  private var prefixBytes: [UInt8] = []
+  private var suffixBytes: [UInt8] = []
+
+  init(byteCap: Int) {
+    uncappedText = ""
+    prefixBytes.reserveCapacity(byteCap / 2)
+    suffixBytes.reserveCapacity(byteCap - (byteCap / 2))
+  }
+
+  init(text: String, byteCap: Int) {
+    self.init(byteCap: byteCap)
+    set(text, byteCap: byteCap)
+  }
+
+  mutating func set(_ text: String, byteCap: Int) {
+    guard text.utf8.count > byteCap else {
+      uncappedText = text
+      prefixBytes.removeAll(keepingCapacity: true)
+      suffixBytes.removeAll(keepingCapacity: true)
+      return
+    }
+    uncappedText = nil
+    let prefixCap = byteCap / 2
+    let suffixCap = byteCap - prefixCap
+    prefixBytes = Self.prefixBytes(from: text, limit: prefixCap)
+    suffixBytes = Self.suffixBytes(from: text, limit: suffixCap)
+  }
+
+  mutating func append(_ delta: String, byteCap: Int) {
+    guard !delta.isEmpty else {
+      return
+    }
+    if let current = uncappedText {
+      guard current.utf8.count + delta.utf8.count > byteCap else {
+        uncappedText = current + delta
+        return
+      }
+      set(current + delta, byteCap: byteCap)
+      return
+    }
+
+    let prefixCap = byteCap / 2
+    let suffixCap = byteCap - prefixCap
+    if prefixBytes.isEmpty {
+      prefixBytes.reserveCapacity(prefixCap)
+    }
+    suffixBytes.append(contentsOf: delta.utf8)
+    if suffixBytes.count > suffixCap {
+      suffixBytes.removeFirst(suffixBytes.count - suffixCap)
+    }
+  }
+
+  func stringValue(byteCap: Int) -> String {
+    if let uncappedText {
+      return uncappedText
+    }
+    let value = Self.utf8String(from: prefixBytes)
+      + Self.utf8String(from: Self.dropLeadingContinuationBytes(suffixBytes))
+    guard value.utf8.count > byteCap else {
+      return value
+    }
+    return Self.byteBoundPrefix(value, limit: byteCap)
+  }
+
+  private static func prefixBytes(from text: String, limit: Int) -> [UInt8] {
+    var output: [UInt8] = []
+    output.reserveCapacity(limit)
+    for character in text {
+      let bytes = character.utf8
+      guard output.count + bytes.count <= limit else {
+        break
+      }
+      output.append(contentsOf: bytes)
+    }
+    return output
+  }
+
+  private static func suffixBytes(from text: String, limit: Int) -> [UInt8] {
+    var chunks: [[UInt8]] = []
+    chunks.reserveCapacity(limit)
+    var bytes = 0
+    for character in text.reversed() {
+      let characterBytes = Array(character.utf8)
+      guard bytes + characterBytes.count <= limit else {
+        break
+      }
+      chunks.append(characterBytes)
+      bytes += characterBytes.count
+    }
+    return chunks.reversed().flatMap { $0 }
+  }
+
+  private static func dropLeadingContinuationBytes(_ bytes: [UInt8]) -> [UInt8] {
+    var index = bytes.startIndex
+    while index < bytes.endIndex, bytes[index] & 0b1100_0000 == 0b1000_0000 {
+      index = bytes.index(after: index)
+    }
+    return Array(bytes[index...])
+  }
+
+  private static func utf8String(from bytes: [UInt8]) -> String {
+    String(data: Data(bytes), encoding: .utf8) ?? ""
+  }
+
+  private static func byteBoundPrefix(_ text: String, limit: Int) -> String {
+    var prefix = ""
+    prefix.reserveCapacity(limit)
+    var bytes = 0
+    for character in text {
+      let characterBytes = character.utf8.count
+      guard bytes + characterBytes <= limit else {
+        break
+      }
+      prefix.append(character)
+      bytes += characterBytes
+    }
+    return prefix
   }
 }
 

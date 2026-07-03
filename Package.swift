@@ -52,7 +52,7 @@ let package = Package(
       ]
     ),
     .target(name: "RielaSQLite"),
-    .target(name: "AgentRuntimeKit"),
+    .target(name: "AgentRuntimeKit", dependencies: ["RielaCore", "RielaSQLite"]),
     .target(name: "RielaObservability"),
     .target(
       name: "RielaAddons",
@@ -153,7 +153,7 @@ let package = Package(
       ]
     ),
     .testTarget(name: "RielaSQLiteTests", dependencies: ["RielaSQLite"]),
-    .testTarget(name: "AgentRuntimeKitTests", dependencies: ["AgentRuntimeKit"]),
+    .testTarget(name: "AgentRuntimeKitTests", dependencies: ["AgentRuntimeKit", "RielaCore"]),
     .testTarget(name: "RielaJavaScriptTests", dependencies: ["RielaJavaScript"]),
     .testTarget(name: "RielaAddonsTests", dependencies: ["RielaCore", "RielaAddons"]),
     .testTarget(name: "RielaAdaptersTests", dependencies: ["RielaCore", "RielaAdapters"]),

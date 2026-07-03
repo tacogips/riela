@@ -1,4 +1,5 @@
 import Foundation
+import RielaSQLite
 
 public struct AgentSessionSQLiteGit: Equatable, Sendable {
   public var sha: String?
@@ -76,13 +77,10 @@ public enum AgentSessionSQLiteSupport {
     "git_origin_url"
   ]
 
-  private static let sqliteExecutablePath = "/usr/bin/sqlite3"
-  private static let threadsTableProbeSQL = "SELECT name FROM sqlite_master WHERE type='table' AND name='threads' LIMIT 1;"
-
   public static func openThreadsDatabase(at path: String) -> String? {
     guard
       FileManager.default.fileExists(atPath: path),
-      sqliteQuery(dbPath: path, sql: threadsTableProbeSQL)?.contains("threads") == true
+      (try? openReadOnlyDatabase(at: path).tableExists("threads")) == true
     else {
       return nil
     }
@@ -94,16 +92,13 @@ public enum AgentSessionSQLiteSupport {
   }
 
   public static func selectThreadRows(dbPath: String, separator: String) -> [[String: String]] {
-    let selectedColumns = threadColumns
-      .map { "ifnull(\($0),'')" }
-      .joined(separator: " || '\(separator)' || ")
-    let sql = "SELECT \(selectedColumns) FROM threads;"
-    guard let output = sqliteQuery(dbPath: dbPath, sql: sql) else {
+    guard let rows = try? queryThreadRows(dbPath: dbPath) else {
       return []
     }
-    return output.split(separator: "\n", omittingEmptySubsequences: true).map { line in
-      let values = String(line).components(separatedBy: separator)
-      return Dictionary(uniqueKeysWithValues: zip(threadColumns, values))
+    return rows.map { row in
+      Dictionary(uniqueKeysWithValues: threadColumns.map { column in
+        (column, row.string(column))
+      })
     }
   }
 
@@ -120,22 +115,19 @@ public enum AgentSessionSQLiteSupport {
     return fractional.date(from: text) ?? ISO8601DateFormatter().date(from: text)
   }
 
-  private static func sqliteQuery(dbPath: String, sql: String) -> String? {
-    let process = Process()
-    let output = Pipe()
-    process.executableURL = URL(fileURLWithPath: sqliteExecutablePath)
-    process.arguments = ["-readonly", dbPath, sql]
-    process.standardOutput = output
-    process.standardError = Pipe()
-    do {
-      try process.run()
-      process.waitUntilExit()
-    } catch {
-      return nil
-    }
-    guard process.terminationStatus == 0 else {
-      return nil
-    }
-    return String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)
+  private static func queryThreadRows(dbPath: String) throws -> [SQLiteRow] {
+    let db = try openReadOnlyDatabase(at: dbPath)
+    let selectedColumns = threadColumns
+      .map { "ifnull(\($0),'') AS \($0)" }
+      .joined(separator: ", ")
+    return try db.query("SELECT \(selectedColumns) FROM threads")
+  }
+
+  private static func openReadOnlyDatabase(at path: String) throws -> SQLiteDatabase {
+    try SQLiteDatabase.open(
+      path: path,
+      mode: .readOnly,
+      options: SQLiteOpenOptions(enableWAL: false, busyTimeoutMilliseconds: 3_000, requireJSONB: false)
+    )
   }
 }

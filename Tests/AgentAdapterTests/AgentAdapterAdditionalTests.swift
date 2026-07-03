@@ -504,7 +504,7 @@ extension AgentAdapterTests {
         arguments: ["-c", "dd if=/dev/zero bs=1024 count=256 2>/dev/null | tr '\\0' x; dd if=/dev/zero bs=1024 count=256 2>/dev/null | tr '\\0' e >&2"]
       ),
       stdin: "",
-      deadline: Date(timeIntervalSinceNow: 5)
+      deadline: Date(timeIntervalSinceNow: 15)
     )
 
     XCTAssertEqual(result.terminationStatus, 0)

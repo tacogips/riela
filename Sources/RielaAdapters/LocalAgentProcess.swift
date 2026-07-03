@@ -906,7 +906,7 @@ private final class BackendEventCoalescer: @unchecked Sendable {
 
   private let lock = NSLock()
   private let byteThreshold = 256
-  private let timeThreshold: TimeInterval = 0.25
+  private let timeThreshold: TimeInterval = 2.0
   private var pending: AdapterBackendEvent?
   private var pendingKey: PendingKey?
   private var pendingStartedAt: Date?

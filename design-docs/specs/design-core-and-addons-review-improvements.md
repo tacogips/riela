@@ -1285,6 +1285,258 @@ shims (`@available(*, deprecated, renamed:)`). Record the decision in
 
 ---
 
+## Re-Review After Remediation (commit `dcb16c6`, 2026-07-02 second pass)
+
+A second review pass was performed against the remediation commit
+`dcb16c6` ("Address runtime review findings"). Build is clean and the full
+suite (940 tests) passes. This section records the verification status of
+F1–F17 and the new findings (R1–R7) discovered in the remediation code
+itself. R1 is a behavioral regression introduced by the F16 fix and should
+be treated as the top follow-up priority.
+
+### Verification status of F1–F17
+
+| finding | status | notes |
+|---|---|---|
+| F1 | resolved (slice) | `backend_event` no longer persists; lifecycle-only snapshot saves; per-run connection reuse (`WorkflowRunLivePersistenceConnection`); incremental message append via `lastPersistedMessageOrderBySessionId`. Debounced live-tail flush intentionally deferred (documented in slice). |
+| F2 | resolved (slice) | Live tail moved to store-internal `executionLiveTails` keyed by executionId; receipt path (`recordStepBackendEventReceipt`) avoids per-delta session copies; capping now preserves the stored head and reworks only tail+delta. Residuals: R3 (tail-table growth), R7 (per-delta cost is O(cap), not O(delta)). |
+| F3 | resolved | `WorkflowRunEvent` is now an enum with `SessionEnvelope`/`StepEnvelope`/payload structs; custom Codable keeps the flat wire keys; accessor shims preserve source compatibility. |
+| F4 | resolved | `publishFailureAndThrow` used at all 14 sites; zero `try? await publisher` remain in the runner; publish failures logged via `riela.workflow.publish.failure`; `WorkflowPublicationBody` enum makes candidate sources mutually exclusive. |
+| F5 | partially resolved | `AgentRuntimeKit` extracted; ProcessIO 190→74, RolloutWatcher 137→55, ProcessManager 594→301 lines per brand. Remaining clones: see R5. |
+| F6 | resolved | `RielaSQLite` kernel with WAL + busy_timeout 3 s adopted by all three stores; single error type; JSONB probe per open. |
+| F7 | resolved | Reconciliation moved to `LoopCompletionReviewRouting.swift`, applied only when `workflow.loop != nil` and the step is a gate; rewrites recorded in `WorkflowAcceptedOutputMetadata.routingDiagnostics` (wire-compatible optional key); extraction heuristics moved to `RuntimeOutputExtraction.swift`. |
+| F8 | resolved | Cached ISO8601 formatter (`LockedISO8601DateFormatter`); JSON encoded once per bind; schema prepared once per connection. |
+| F9 | mostly resolved | `unsupportedFeatures` preflight in `run()` and `workflow validate`; `maxConcurrency` rejected as a capability gap; `TASK-00x` strings removed. Residual: R4 (labeled transitions skipped by preflight). |
+| F10 | resolved | `WorkflowExecutionPlan` dictionaries; `nextStepId` computed by the publisher only; `appendWorkflowMessages` no longer writes `currentStepId`. New risk introduced by the dictionaries: R2. |
+| F11 | resolved | Real OTLP JSON (`resourceSpans[].scopeSpans[].spans[]` with trace/span ids honoring propagated parent context); span timing from `execution.createdAt` / `session.createdAt`; buffers bounded (2 048, env-tunable) with dropped counts; 10 s auto-flush; one-shot failure warning + recovery notice on stderr. |
+| F12 | resolved (hardening) | Chunked POSIX `write` on a utility queue, `F_SETNOSIGPIPE`/`SIG_IGN`, EPIPE treated as benign. Structural supervisor rewrite still pending with F5 phase 5 (expected). |
+| F13 | resolved | `executeWithRetry` takes `deadline`; retry skipped when the budget cannot fit another attempt; `OfficialSDKAdapters` delegates to the shared helper. |
+| F14 | resolved | `testSchemaContractFieldSetsMatchEncodedDTOs` gates SDL↔DTO drift; operation type parsed from the first non-comment token. |
+| F15 | resolved | Lenient decode now tags `inferredFields`; hook CLI prints a warning when non-empty. |
+| F16 | resolved with regression | `.integer(Int64)` added with cross-case equality and `asDouble`/`asInt64`; switch-based sites compiler-forced to handle it. Guard-case sites silently missed — see R1. |
+| F17 | resolved (decision) | Canonical-term decision recorded in `design-riela-workflow-internals.md` glossary. |
+
+### R1 (P1) `.integer` decode regression: guard-case `.number` parsers silently drop integral JSON numbers
+
+**Location**:
+`Sources/CodexAgent/CodexAgentProcess.swift:494` (`numberValue`),
+`Sources/ClaudeCodeAgent/ClaudeCodeAgentProcess.swift:445` (`numberValue`),
+`Sources/CursorCLIAgent/CursorCLIAgentProcess.swift:506` (`numberValue`),
+`Sources/CodexAgent/CodexFileChanges.swift:449` (`numberValue`, feeding
+`codexJSONInt` at :456).
+
+**Problem**: the F16 change makes `JSONDecoder` produce `.integer` for every
+integral JSON number — including `1.0` (verified: `1`, `1.0`, and
+`9007199254740993` all decode as `.integer`; only true fractions decode as
+`.number`). Exhaustive `switch` statements were compiler-forced to add the
+new case, but `guard case let .number(value) = value` compiles unchanged and
+now returns `nil` for what used to match. The four helpers above are exactly
+such sites, and they parse **decoded** JSON (rollout files, session files,
+`--variables` JSON), so the regression is real:
+
+1. `ExecCommandEnd` normalization in all three agent processes computes
+   `isError: exitCode.map { $0 != 0 } ?? false` — with `exit_code: 1`
+   decoding as `.integer(1)`, `numberValue` returns `nil` and a **failing
+   command is reported as `isError: false`** in `tool.result` events.
+2. `CodexFileChanges.isSuccessfulToolResult` checks
+   `numberValue(payload["exit_code"])` before falling back to `status` —
+   a failed command with `exit_code: 1` and no `status` field is now
+   classified successful, so its file changes are wrongly indexed.
+3. `codexJSONInt` backs the Codex GraphQL executor's integer variables
+   (`limit`, `offset`, `from`, `to`, `maxConcurrent`, `resultExitCode`,
+   `nthMessage`). Variables supplied as JSON via `--variables` decode as
+   `.integer` and are **silently ignored**, falling back to defaults.
+
+The inconsistency is the F5 clone-drift failure mode in action: the sibling
+helpers `claudeCodeNumberValue` (`ClaudeCodeFileChanges.swift:388`) and
+`cursorOperationNumberValue` (`CursorCLIQueueCommands.swift:440`) *were*
+fixed to handle both cases, so Claude/Cursor file-change filtering is
+correct while their `AgentProcess` normalizers and everything Codex-side is
+not.
+
+**Why tests missed it**: every fixture constructs payloads with
+`.number(0)` / `.number(1)` enum literals (e.g.
+`Tests/CodexAgentTests/CodexAgentCompatibilityTests.swift:142,682`) instead
+of decoding JSON text, so the production decode representation (`.integer`)
+is never exercised.
+
+**Improvement design**:
+
+1. Replace the four guard-case helpers with `value?.asDouble` (the accessor
+   added by F16 exists precisely for this). Prefer deleting the local
+   helpers; if kept for call-site clarity, implement them as
+   `value?.asDouble`.
+2. Add one shared `jsonInt(_: JSONValue?) -> Int?` in `AgentRuntimeKit`
+   (via `asInt64`) and migrate `codexJSONInt` / `claudeCodeIntValue` /
+   cursor equivalents to it, removing three near-copies.
+3. Sweep guard: `grep -rn 'case let \.number' Sources --include='*.swift'`
+   must only hit sites that also handle `.integer` (or that operate on
+   non-RielaCore JSON types such as `MemoryJSONValue`). Encode this as a CI
+   lint or a unit test over the known helper functions.
+4. Fixture realism: route agent-package test fixtures through
+   `JSONDecoder().decode(JSONValue.self, from:)` (a tiny
+   `jsonFixture(_: String)` helper) so decode-representation changes are
+   caught. At minimum add regressions: `ExecCommandEnd` with
+   `{"exit_code": 1}` JSON text must yield `isError: true`; a Codex GraphQL
+   call with `--variables '{"limit": 3}'` must honor the limit.
+
+### R2 (P2) `WorkflowExecutionPlan` and preflight trap on duplicate step/node ids from programmatic workflows
+
+**Location**: `Sources/RielaCore/WorkflowExecutionPlan.swift:6-7`,
+`Sources/RielaCore/WorkflowRuntimeCapabilityGap.swift:59` — all three use
+`Dictionary(uniqueKeysWithValues:)`, which **fatalErrors** on duplicate keys.
+
+**Problem**: duplicate step/node id detection lives only in the authored-JSON
+validator (`validateTypedAuthoredWorkflow`,
+`WorkflowValidation.swift:186,229`). `DefaultWorkflowValidator.validate` —
+the check the runner performs at the top of `run()` — does not flag
+duplicates. A `WorkflowDefinition` constructed programmatically through the
+library API (the `riela-workflow-reference` integration path) with a
+duplicated step id previously ran with first-match semantics
+(`first(where:)`); it now crashes the host process before any
+`DeterministicWorkflowRunnerError` can be thrown. `unsupportedFeatures`'s
+`reachableSteps` traps the same way, and it is also called from
+`workflow validate`.
+
+**Improvement design**: add duplicate step-id and node-id error diagnostics
+to `DefaultWorkflowValidator.validate` (cheap set pass, mirroring the
+authored validator), and build the dictionaries with
+`Dictionary(_, uniquingKeysWith: { first, _ in first })` as defense in depth
+so no input can trap the runtime. One unit test each for the runner and
+`unsupportedFeatures` with a duplicated id.
+
+### R3 (P2) `executionLiveTails` grows without bound in long-lived stores
+
+**Location**: `Sources/RielaCore/RuntimeStore.swift:415,595-603,783`.
+
+**Problem**: entries are inserted per execution (backend events, and
+`detachingBackendLiveTails` during `seedSession`) and never removed — the
+table has no `removeValue` call. The tail must outlive the execution today
+because `updateStepExecution` strips tail fields from the stored session
+(`withoutBackendLiveTail`) and every read re-projects them. For the CLI's
+per-run store this is bounded; for a long-lived
+`InMemoryWorkflowRuntimeStore` (serve/app surfaces, or any embedder that
+seeds many sessions) it accumulates up to 32 KiB text + 100 event records
+per execution forever.
+
+**Improvement design**: on terminal `updateStepExecution` (`completed`,
+`failed`, `skipped`), fold the live tail *into* the stored execution (the
+inverse of today: apply `projectBackendLiveTail` before storing) and delete
+the `executionLiveTails` entry; `markSessionFailed` does the same for the
+executions it fails. Reads of running executions keep the projection path;
+completed executions carry their own tail. This also removes the subtle
+invariant that final-snapshot fidelity depends on the side table surviving
+until persistence runs.
+
+### R4 (P3) Capability preflight skips labeled transitions — labeled fanout/cross-workflow still fail mid-run
+
+**Location**: `Sources/RielaCore/WorkflowRuntimeCapabilityGap.swift:33-35`
+(`if let label = transition.label, !label.isEmpty { continue }`).
+
+**Problem**: the preflight ignores transitions with a non-empty label,
+presumably to avoid rejecting workflows whose unsupported branch may never
+fire. But the publisher's `unsupportedTransitionReason` evaluates
+*publishable* transitions after label evaluation, so a labeled fanout or
+cross-workflow transition whose condition fires still fails the session
+mid-run — the exact failure mode F9 set out to eliminate, now limited to
+the conditional case.
+
+**Improvement design**: flag labeled unsupported transitions as
+`severity: .warning` in `workflow validate` output ("branch 'x' uses
+fanout, which will fail at runtime if selected") while keeping the hard
+preflight error for unconditional ones. Alternatively (stricter, simpler):
+treat any reachable unsupported transition as an error regardless of label
+— a workflow whose branch can never fire should not declare it.
+
+### R5 (P3) Remaining agent-package duplication after the AgentRuntimeKit extraction
+
+**Measurements** (brand-normalized diff, post-`dcb16c6`):
+
+| pair | lines | differing |
+|---|---|---|
+| Codex vs Cursor `UsageStats` | 564 each | 12 |
+| Codex vs Cursor `SessionSQLiteIndex` | 59 each | 22 |
+| ClaudeCode vs Codex `ProcessIO` (residual wrapper) | 74/77 | 9 |
+| Codex vs Cursor `ProcessManager` (residual wrapper) | 301/287 | 30 |
+
+`UsageStats` is now the largest near-identical clone (564 lines × 3 brands,
+~12 differing lines). `Operations`, `OperationalStores`, and the GraphQL
+command executors have genuinely diverged per provider and are reasonable
+to leave. Also noted: `AgentRuntimeKit` declares no dependency on
+`RielaSQLite` (`Package.swift:55`), so the per-agent `SessionSQLiteIndex`
+files keep their own SQLite plumbing.
+
+**Improvement design**: extract `UsageStats` into `AgentRuntimeKit`
+parameterized by the provider descriptor (the differing lines are naming
+and paths), and let `AgentRuntimeKit` depend on `RielaSQLite` so the
+session-index plumbing collapses too. Keep the residual thin wrappers —
+they are the intended shape.
+
+### R6 (P3) `JSONValue` round-trip canonicalizes `1.0` to `1`
+
+**Location**: `Sources/RielaCore/JSONValue.swift` decode order (Int64 tried
+before Double).
+
+**Problem**: `{"v": 1.0}` decodes as `.integer(1)` and re-encodes as `1`.
+Numerically equal, and cross-case `==` handles comparison, but byte-level
+golden-file comparisons or external consumers diffing re-encoded JSON will
+see representation churn on integral doubles.
+
+**Improvement design**: document the canonicalization as intended behavior
+in the type's doc comment and in the compatibility notes (recorded here);
+ensure golden tests compare decoded values, not bytes. No code change
+recommended — preserving `1.0` would require a dedicated case and is not
+worth the churn.
+
+### R7 (P3) Post-cap streamed-text appends are O(cap) per delta, not O(delta)
+
+**Location**: `Sources/RielaCore/RuntimeStore.swift:663-678`
+(`cappedStreamedResponseText(appending:to:)`).
+
+**Problem** (residual of F2, acknowledged trade-off): once at the 32 KiB
+cap, each delta re-walks the stored 16 KiB prefix (`byteBoundPrefix`) and
+re-derives the suffix from tail+delta — bounded (~48 KiB character walk per
+delta) but repeated for every delta. The F2 design's byte-ring
+representation (amortized O(delta) append, lazy String materialization)
+remains the target if streaming profiles show this path hot; not urgent
+since the work is strictly bounded.
+
+### Follow-up priority
+
+R1 first (correctness regression, small diff), then R2 (crash vector for
+library consumers) and R3 (leak in long-lived surfaces). R4–R7 are
+batchable with the existing phase 5/6 work.
+
+### Final remediation audit (2026-07-03)
+
+The current worktree was rechecked against R1–R7 after the follow-up fixes.
+
+| finding | status | evidence |
+|---|---|---|
+| R1 | resolved | Agent process/file-change helpers now use `JSONValue.asDouble` / `asInt64`; decoded integral `ExecCommandEnd` tests pass for Codex, Claude Code, and Cursor CLI; Codex GraphQL `--variables '{"limit":3}'` honors the integer. A source sweep for `case let .number` leaves only sites that also handle `.integer` first or operate on `MemoryJSONValue`. |
+| R2 | resolved | `DefaultWorkflowValidator` rejects duplicate programmatic step/node ids, and `WorkflowExecutionPlan` / `unsupportedFeatures` build lookup dictionaries with first-value uniquing instead of `Dictionary(uniqueKeysWithValues:)` traps. |
+| R3 | resolved | Terminal `updateStepExecution` and `markSessionFailed` fold live-tail state back into stored executions and remove the `executionLiveTails` entry; `RuntimeStoreTests` assert the testing count returns to zero. |
+| R4 | resolved | Labeled unsupported transitions are reported as warning capability gaps instead of being skipped, while unconditional unsupported transitions remain hard preflight errors. |
+| R5 | resolved (slice) | `AgentUsageStats` moved into `AgentRuntimeKit`, shrinking each provider `*UsageStats.swift` wrapper to 40 lines while preserving public provider type names and functions. `AgentRuntimeKit` now depends on `RielaSQLite`, and `AgentSessionSQLiteSupport` uses `SQLiteDatabase` instead of invoking `/usr/bin/sqlite3`. |
+| R6 | resolved (documentation) | `JSONValue` documents that integral decoded numbers canonicalize to `.integer`, so `1.0` may re-encode as `1`; no code change was recommended by the finding. |
+| R7 | resolved (bounded hot path) | Running backend live tails now store streamed assistant text in an internal byte head/tail buffer. Once capped, appends update only the suffix bytes plus the new delta and materialize the public `String` lazily on projection, preserving the public 32 KiB head+tail behavior. |
+
+During full-suite verification, `BackendEventCoalescer` was also adjusted so
+fast synthetic Cursor thinking streams are not split by the time threshold
+before the byte threshold is exercised.
+
+Validation run after this audit:
+
+- `swift build`
+- `swift test --filter 'AgentUsageStatsTests|RuntimeStoreTests|CodexAgentCompatibilityUsageStatsTests|AgentSessionSQLiteSupportTests|CodexAgentSessionIndexCompatibilityTests|ClaudeCodeSessionIndexCompatibilityTests|CursorCLISessionIndexCompatibilityTests'`
+- `swift test --filter 'CodexAgentCompatibilityTests/testDecodedIntegralExecCommandEndReportsErrors|ClaudeCodeAgentCompatibilityTests/testDecodedIntegralExecCommandEndReportsErrors|CursorCLIAgentCompatibilityTests/testDecodedIntegralExecCommandEndReportsErrors|CodexAgentCompatibilityTests/testGraphQLVariablesFileChangesAndTranscriptSearchBudgets|WorkflowRunnerCapabilityPreflightTests|WorkflowModelTests/testDefaultWorkflowValidatorRejectsDuplicateProgrammaticStepAndNodeIds|JSONValueTests'`
+- `/usr/bin/xcrun swiftlint`
+- `swift test --filter 'AgentAdapterTests/testCursorThinkingDeltasAreCoalescedBeforeBackendEventHandler'`
+- `swift test --filter 'AgentAdapterTests/testFoundationRunnerDrainsLargeOutput'`
+- `swift test` (964 tests, 0 failures)
+
+---
+
 ## What Was Reviewed And Found Sound
 
 Worth recording so future reviews don't re-litigate:

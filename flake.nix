@@ -29,8 +29,6 @@
           in
           {
             inherit developerDir;
-            toolchainIdentifier = "com.apple.dt.toolchain.XcodeDefault";
-            sdkRoot = "${developerDir}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk";
             toolchainBin = "${developerDir}/Toolchains/XcodeDefault.xctoolchain/usr/bin";
           };
         runtimePackages =
@@ -89,7 +87,7 @@
 
         checks.pre-commit-check = preCommitCheck;
 
-        devShells.default = pkgs.mkShell {
+        devShells.default = pkgs.mkShellNoCC {
           packages = devPackages;
 
           shellHook = ''
@@ -97,9 +95,12 @@
             export RIELA_ARTIFACT_DIR="$HOME/.riela/dev/riela-artifact"
             ${preCommitCheck.shellHook}
             ${lib.optionalString pkgs.stdenv.isDarwin ''
+              # Keep Xcode build settings selected by Xcode/xcodebuild, not by
+              # Nix stdenv or an already-active parent shell.
+              unset CC CXX LD SDKROOT TOOLCHAINS
+              unset MACOSX_DEPLOYMENT_TARGET IPHONEOS_DEPLOYMENT_TARGET
+              unset TVOS_DEPLOYMENT_TARGET WATCHOS_DEPLOYMENT_TARGET
               export DEVELOPER_DIR="${xcodeToolchain.developerDir}"
-              export SDKROOT="${xcodeToolchain.sdkRoot}"
-              export TOOLCHAINS="${xcodeToolchain.toolchainIdentifier}"
               export PATH="${xcodeToolchain.toolchainBin}:$PATH"
             ''}
 

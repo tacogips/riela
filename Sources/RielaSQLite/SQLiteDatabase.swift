@@ -1,5 +1,9 @@
 import Foundation
+#if os(Linux)
+import CRielaSQLite3
+#else
 import SQLite3
+#endif
 
 public enum SQLiteOpenMode: Sendable {
   case readOnly

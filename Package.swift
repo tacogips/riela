@@ -51,7 +51,19 @@ let package = Package(
         .product(name: "RielaMemory", package: "RielaMemory")
       ]
     ),
-    .target(name: "RielaSQLite"),
+    .target(
+      name: "RielaSQLite",
+      dependencies: [
+        .target(name: "CRielaSQLite3", condition: .when(platforms: [.linux]))
+      ]
+    ),
+    .systemLibrary(
+      name: "CRielaSQLite3",
+      providers: [
+        .apt(["libsqlite3-dev"]),
+        .brew(["sqlite"])
+      ]
+    ),
     .target(name: "AgentRuntimeKit", dependencies: ["RielaCore", "RielaSQLite"]),
     .target(name: "RielaObservability"),
     .target(

@@ -11,7 +11,7 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum ExampleCatalog {
     static let directoryName = "examples"
-    static let expectedMockScenarioCount = 31
+    static let expectedMockScenarioCount = 32
     static let expectedNodeMockScenarioCount = 0
   }
 
@@ -685,6 +685,7 @@ final class RielaExampleParityTests: XCTestCase {
       "gemini-ocr-worker",
       "gemini-sdk-worker",
       "gmail-latest-mail-digest-telegram",
+      "loop-engineer-quality-loop",
       "matrix-agent-trio-chat",
       "matrix-chat-reply",
       "node-combinations-showcase",

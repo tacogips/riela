@@ -1,0 +1,12 @@
+{
+  "id": "loop-exit-gate",
+  "description": "Decide whether another loop engineering pass is needed before final review.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/loop-exit-gate.md",
+  "variables": {},
+  "output": {
+    "description": "Return adapter JSON with when.needs_iteration true only when probe evidence is incomplete."
+  }
+}

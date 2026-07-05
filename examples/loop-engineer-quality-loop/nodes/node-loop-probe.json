@@ -1,0 +1,12 @@
+{
+  "id": "loop-probe",
+  "description": "Run or simulate the loop probe and summarize observed evidence.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/loop-probe.md",
+  "variables": {},
+  "output": {
+    "description": "Return probe status, metrics, verification, and missing evidence."
+  }
+}

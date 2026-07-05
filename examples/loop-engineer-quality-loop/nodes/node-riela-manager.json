@@ -1,0 +1,37 @@
+{
+  "id": "riela-manager",
+  "description": "Coordinate the loop engineer quality workflow.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/riela-manager.md",
+  "variables": {},
+  "input": {
+    "description": "Workflow arguments for a loop engineering pass.",
+    "jsonSchema": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "loopSymptom": {
+          "type": "string",
+          "description": "Observed loop failure or flaky behavior to stabilize."
+        },
+        "targetPaths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Optional repository-relative paths to prioritize."
+        },
+        "acceptanceTarget": {
+          "type": "string",
+          "description": "Operator-supplied acceptance target for the loop engineer review gate."
+        }
+      }
+    }
+  },
+  "output": {
+    "description": "Return routing context for the loop engineer workflow."
+  }
+}

@@ -57,6 +57,8 @@ final class NoteWorkflowExampleTests: XCTestCase {
   func testPDFIngestWorkflowCreatesImportedNotebookPages() async throws {
     let noteRoot = try makeNoteWorkflowRoot()
     defer { try? FileManager.default.removeItem(atPath: noteRoot) }
+    let sourcePDF = URL(fileURLWithPath: noteRoot, isDirectory: true).appendingPathComponent("source.pdf")
+    try Data("mock source pdf bytes".utf8).write(to: sourcePDF)
 
     let result = try await runWorkflow(
       "note-pdf-ingest",
@@ -64,7 +66,7 @@ final class NoteWorkflowExampleTests: XCTestCase {
         "noteRoot": .string(noteRoot),
         "workflowInput": .object([
           "title": .string("Imported PDF"),
-          "sourceDocumentRef": .string("file:///tmp/source.pdf")
+          "sourceDocumentRef": .string(sourcePDF.absoluteString)
         ])
       ]
     )

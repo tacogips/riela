@@ -17,7 +17,7 @@ Expected result: the workflow is valid.
 riela workflow run note-pdf-ingest \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/note-pdf-ingest/mock-scenario.json \
-  --variables '{"noteRoot":"<tmp-note-root>","workflowInput":{"title":"Imported PDF","sourceDocumentRef":"file:///tmp/source.pdf"}}' \
+  --variables '{"noteRoot":"<tmp-note-root>","workflowInput":{"title":"Imported PDF","sourceDocumentRef":"file:///<absolute-tmp-note-root>/source.pdf"}}' \
   --output json
 ```
 

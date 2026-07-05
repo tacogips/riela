@@ -1,0 +1,12 @@
+{
+  "id": "workflow-output",
+  "description": "Summarize the accepted loop engineer result.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/workflow-output.md",
+  "variables": {},
+  "output": {
+    "description": "Return final loop map, instrumentation, verification, gate outcome, changed files, and residual risks."
+  }
+}

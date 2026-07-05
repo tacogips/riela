@@ -1,0 +1,12 @@
+{
+  "id": "instrumentation-plan",
+  "description": "Define instrumentation and deterministic probes for the next loop pass.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/instrumentation-plan.md",
+  "variables": {},
+  "output": {
+    "description": "Return counters, traces, logs, and regression probes that make the loop observable."
+  }
+}

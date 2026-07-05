@@ -34,11 +34,14 @@ extension RielaExampleParityTests {
         "trigger": .string("note-created")
       ])
     case "note-pdf-ingest":
+      try FileManager.default.createDirectory(at: noteRoot, withIntermediateDirectories: true)
+      let sourcePDF = noteRoot.appendingPathComponent("source.pdf")
+      try Data("mock source pdf bytes".utf8).write(to: sourcePDF)
       return try noteExampleJSON([
         "noteRoot": .string(noteRoot.path),
         "workflowInput": .object([
           "title": .string("Imported PDF"),
-          "sourceDocumentRef": .string("file:///tmp/source.pdf")
+          "sourceDocumentRef": .string(sourcePDF.absoluteString)
         ])
       ])
     case "note-quick-memo":

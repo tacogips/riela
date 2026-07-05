@@ -1,0 +1,248 @@
+{
+  "workflowId": "loop-engineer-quality-loop",
+  "description": "Loop engineer focused workflow that maps a failing automation loop, instruments the next pass, probes the loop with deterministic evidence, and exits only after a required loop review gate accepts the result.",
+  "defaults": {
+    "maxLoopIterations": 12,
+    "nodeTimeoutMs": 3600000,
+    "supervision": {
+      "monitorIntervalMs": 15000,
+      "stallTimeoutMs": 300000
+    }
+  },
+  "prompts": {
+    "rielaPromptTemplate": "Coordinate {{workflowId}} for a loop engineer. Start with intake, produce a loop map, add instrumentation, probe the loop, then use the exit gate to repeat planning when evidence is incomplete. Run the final loop-review gate only after the exit gate reports no more iteration is needed.",
+    "workerSystemPromptTemplate": "Return concise business JSON only. Preserve loop map, instrumentation, probe evidence, gate decisions, verification, changed files, and residual risks explicitly."
+  },
+  "managerStepId": "riela-manager",
+  "entryStepId": "riela-manager",
+  "loop": {
+    "kind": "loop-engineer-quality",
+    "required": true,
+    "description": "Loop engineer acceptance policy for workflows that must prove loop boundaries, telemetry, exit criteria, and regression coverage.",
+    "evidence": {
+      "required": true,
+      "artifactRootPolicy": "runtime-owned",
+      "requiredSections": [
+        "loopMap",
+        "instrumentation",
+        "verification",
+        "gate"
+      ]
+    },
+    "policies": {
+      "mutation": {
+        "allowedWriteRoots": [
+          "Sources",
+          "Tests",
+          "examples",
+          "impl-plans",
+          "tmp"
+        ],
+        "scratchRoot": "tmp",
+        "commit": "deny",
+        "push": "deny"
+      },
+      "process": {
+        "nestedRiela": "deny",
+        "nestedCodex": "deny",
+        "allowedBackends": [
+          "codex-agent"
+        ],
+        "requiredWorkerModel": "gpt-5.5"
+      },
+      "network": {
+        "mode": "inherit-command"
+      },
+      "redaction": {
+        "secretPolicy": "summary-only",
+        "storeRawStdout": false,
+        "storeRawStderr": false
+      }
+    },
+    "gates": [
+      {
+        "id": "loop-engineer-review",
+        "stepId": "loop-review",
+        "required": true,
+        "acceptWhen": {
+          "decision": "accepted",
+          "maxHighFindings": 0,
+          "maxMediumFindings": 0
+        }
+      }
+    ],
+    "recovery": {
+      "resume": "preserve-session",
+      "rerun": "new-child-session",
+      "retry": "same-communication-or-step-attempt"
+    },
+    "implementationPlan": {
+      "required": false,
+      "pathPattern": "impl-plans/active/*.md"
+    }
+  },
+  "nodes": [
+    {
+      "id": "riela-manager",
+      "nodeFile": "nodes/node-riela-manager.json"
+    },
+    {
+      "id": "loop-intake",
+      "nodeFile": "nodes/node-loop-intake.json"
+    },
+    {
+      "id": "loop-plan",
+      "nodeFile": "nodes/node-loop-plan.json"
+    },
+    {
+      "id": "instrumentation-plan",
+      "nodeFile": "nodes/node-instrumentation-plan.json"
+    },
+    {
+      "id": "loop-probe",
+      "nodeFile": "nodes/node-loop-probe.json"
+    },
+    {
+      "id": "loop-exit-gate",
+      "nodeFile": "nodes/node-loop-exit-gate.json"
+    },
+    {
+      "id": "loop-review",
+      "nodeFile": "nodes/node-loop-review.json"
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "riela-manager",
+      "nodeId": "riela-manager",
+      "description": "Start the loop engineer workflow and preserve operator constraints.",
+      "role": "manager",
+      "transitions": [
+        {
+          "toStepId": "loop-intake"
+        }
+      ]
+    },
+    {
+      "id": "loop-intake",
+      "nodeId": "loop-intake",
+      "description": "Capture the loop symptom, current evidence, and acceptance target.",
+      "role": "worker",
+      "loop": {
+        "role": "worker",
+        "evidenceTags": [
+          "loop-symptom",
+          "operator-constraints"
+        ]
+      },
+      "transitions": [
+        {
+          "toStepId": "loop-plan"
+        }
+      ]
+    },
+    {
+      "id": "loop-plan",
+      "nodeId": "loop-plan",
+      "description": "Map the loop boundary, state transitions, failure mode, and proposed next pass.",
+      "role": "worker",
+      "loop": {
+        "role": "worker",
+        "evidenceTags": [
+          "loop-map",
+          "iteration-plan"
+        ],
+        "recordsChangedFiles": true
+      },
+      "transitions": [
+        {
+          "toStepId": "instrumentation-plan"
+        }
+      ]
+    },
+    {
+      "id": "instrumentation-plan",
+      "nodeId": "instrumentation-plan",
+      "description": "Define counters, traces, and regression probes needed to make the next loop pass observable.",
+      "role": "worker",
+      "loop": {
+        "role": "worker",
+        "evidenceTags": [
+          "instrumentation",
+          "verification-plan"
+        ]
+      },
+      "transitions": [
+        {
+          "toStepId": "loop-probe"
+        }
+      ]
+    },
+    {
+      "id": "loop-probe",
+      "nodeId": "loop-probe",
+      "description": "Run or simulate the instrumented probe and summarize the loop pass evidence.",
+      "role": "worker",
+      "loop": {
+        "role": "worker",
+        "evidenceTags": [
+          "probe",
+          "verification"
+        ],
+        "recordsVerification": true
+      },
+      "transitions": [
+        {
+          "toStepId": "loop-exit-gate"
+        }
+      ]
+    },
+    {
+      "id": "loop-exit-gate",
+      "nodeId": "loop-exit-gate",
+      "description": "Repeat planning when the probe evidence is incomplete; otherwise route to the required loop review gate.",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "loop-plan",
+          "label": "needs_iteration"
+        },
+        {
+          "toStepId": "loop-review",
+          "label": "!(needs_iteration)"
+        }
+      ]
+    },
+    {
+      "id": "loop-review",
+      "nodeId": "loop-review",
+      "description": "Required loop engineer review gate for exit criteria, observability, and regression evidence.",
+      "role": "worker",
+      "loop": {
+        "role": "gate",
+        "gateId": "loop-engineer-review",
+        "evidenceTags": [
+          "gate",
+          "loop-review"
+        ],
+        "recordsVerification": true
+      },
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "description": "Publish the accepted loop engineer handoff with evidence and residual risks.",
+      "role": "worker"
+    }
+  ]
+}

@@ -156,6 +156,33 @@ Live execution note:
   execution can also create commits and push them through that delegated
   workflow
 
+### `loop-engineer-quality-loop`
+
+Loop engineer focused workflow for making a repeated automation pass observable
+and reviewable:
+
+- captures the loop symptom and acceptance target
+- maps entry, repeated step, progress state, and exit condition
+- defines counters, trace fields, and regression probes for the next pass
+- repeats planning once when the probe shows missing exit-path evidence
+- finishes through a required `workflow.loop` review gate that records loop
+  evidence with no blocking findings
+
+Validate it:
+
+```bash
+riela workflow validate loop-engineer-quality-loop --workflow-definition-dir ./examples
+```
+
+Run it with the bundled deterministic scenario:
+
+```bash
+riela workflow run loop-engineer-quality-loop \
+  --workflow-definition-dir ./examples \
+  --mock-scenario ./examples/loop-engineer-quality-loop/mock-scenario.json \
+  --output json
+```
+
 ### `required-loop-gate-failure`
 
 Minimal required-loop fail-closed reference:

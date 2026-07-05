@@ -1,0 +1,404 @@
+import Foundation
+import RielaNote
+
+public struct RielaNoteDetail: Equatable, Sendable {
+  public var note: Note
+  public var comments: [NoteComment]
+  public var links: [NoteLink]
+  public var linkedNotesById: [String: Note]
+  public var files: [NoteFileAttachment]
+
+  public init(
+    note: Note,
+    comments: [NoteComment] = [],
+    links: [NoteLink] = [],
+    linkedNotesById: [String: Note] = [:],
+    files: [NoteFileAttachment] = []
+  ) {
+    self.note = note
+    self.comments = comments
+    self.links = links
+    self.linkedNotesById = linkedNotesById
+    self.files = files
+  }
+}
+
+public struct RielaNoteResolvedFile: Equatable, Sendable {
+  public var file: FileRecord
+  public var data: Data
+
+  public init(file: FileRecord, data: Data) {
+    self.file = file
+    self.data = data
+  }
+}
+
+public enum RielaNoteUIClientCapabilityError: Error, Equatable, Sendable {
+  case currentNotebookNoteCreationUnsupported
+}
+
+public protocol RielaNoteUIClient: Sendable {
+  var defaultConfigWorkflowRoot: String { get }
+  var noteStoreChangeObservationURLs: [URL] { get }
+
+  func listNotebooks(limit: Int, offset: Int) async throws -> [Notebook]
+  func listNotes(notebookId: String, limit: Int, offset: Int) async throws -> [Note]
+  func listTags() async throws -> [Tag]
+  func listTagClasses() async throws -> [TagClass]
+  func createUserMemo(bodyMarkdown: String) async throws -> RielaNoteDetail
+  func createNote(inNotebook notebookId: String, bodyMarkdown: String) async throws -> RielaNoteDetail
+  func searchNotes(
+    query: String,
+    tagFilter: [String],
+    classFilter: [String],
+    limit: Int,
+    offset: Int
+  ) async throws -> [NoteSearchResult]
+  func noteDetail(noteId: String) async throws -> RielaNoteDetail
+  func firstNote(inNotebook notebookId: String) async throws -> RielaNoteDetail?
+  func resolveFile(fileId: String) async throws -> RielaNoteResolvedFile
+  func updateNoteBody(noteId: String, bodyMarkdown: String) async throws -> RielaNoteDetail
+  func applyTag(noteId: String, tagName: String, classId: String?) async throws -> RielaNoteDetail
+  func removeTag(noteId: String, tagName: String) async throws -> RielaNoteDetail
+  func addComment(noteId: String, bodyMarkdown: String) async throws -> RielaNoteDetail
+  func linkNote(noteId: String, targetNoteId: String, linkKind: String) async throws -> RielaNoteDetail
+  func answerNoteAgentTurn(message: String, limit: Int) async throws -> RielaNoteAgentTurn
+  func saveNoteAgentConversation(
+    title: String,
+    turns: [RielaNoteAgentTurn]
+  ) async throws -> RielaNoteAgentConversationSaveResult
+  func appendNoteAgentTurn(
+    notebookId: String,
+    turn: RielaNoteAgentTurn
+  ) async throws -> RielaNoteAgentConversationSaveResult
+  func proposeNoteConfigAgentChange(message: String) async throws -> RielaNoteConfigAgentProposal
+  func applyNoteConfigAgentProposal(
+    _ proposal: RielaNoteConfigAgentProposal,
+    workflowRoot: String
+  ) async throws -> RielaNoteConfigAgentApplyResult
+}
+
+public extension RielaNoteUIClient {
+  var noteStoreChangeObservationURLs: [URL] {
+    []
+  }
+
+  func listTagClasses() async throws -> [TagClass] {
+    []
+  }
+
+  func createNote(inNotebook notebookId: String, bodyMarkdown: String) async throws -> RielaNoteDetail {
+    throw RielaNoteUIClientCapabilityError.currentNotebookNoteCreationUnsupported
+  }
+}
+
+public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
+  private let service: NoteService
+  private let s3Profiles: [S3StorageProfile]
+  private let s3HTTPClient: any S3HTTPClient
+
+  public init(
+    service: NoteService,
+    s3Profiles: [S3StorageProfile] = [],
+    s3HTTPClient: any S3HTTPClient = URLSessionS3HTTPClient()
+  ) {
+    self.service = service
+    self.s3Profiles = s3Profiles
+    self.s3HTTPClient = s3HTTPClient
+  }
+
+  public func listNotebooks(limit: Int, offset: Int) async throws -> [Notebook] {
+    try service.listNotebooks(limit: limit, offset: offset)
+  }
+
+  public func listNotes(notebookId: String, limit: Int, offset: Int) async throws -> [Note] {
+    try service.listNotes(notebookId: notebookId, limit: limit, offset: offset)
+  }
+
+  public func listTags() async throws -> [Tag] {
+    try service.listTags()
+  }
+
+  public func listTagClasses() async throws -> [TagClass] {
+    try service.listTagClasses()
+  }
+
+  public func createUserMemo(bodyMarkdown: String) async throws -> RielaNoteDetail {
+    let note = try service.createNote(
+      notebookTitle: "User Memo",
+      bodyMarkdown: bodyMarkdown,
+      tags: [NoteTagInput(name: "user-memo", classId: "topic")],
+      provenance: .human,
+      assignedBy: "riela-note-ui"
+    )
+    return try detail(noteId: note.noteId)
+  }
+
+  public func createNote(inNotebook notebookId: String, bodyMarkdown: String) async throws -> RielaNoteDetail {
+    let note = try service.createNote(
+      notebookId: notebookId,
+      bodyMarkdown: bodyMarkdown,
+      tags: [NoteTagInput(name: "user-memo", classId: "topic")],
+      provenance: .human,
+      assignedBy: "riela-note-ui"
+    )
+    return try detail(noteId: note.noteId)
+  }
+
+  public var defaultConfigWorkflowRoot: String {
+    URL(fileURLWithPath: service.driver.databasePath)
+      .deletingLastPathComponent()
+      .appendingPathComponent("workflows", isDirectory: true)
+      .path
+  }
+
+  public var noteStoreChangeObservationURLs: [URL] {
+    let databaseURL = URL(fileURLWithPath: service.driver.databasePath)
+    return [
+      databaseURL,
+      URL(fileURLWithPath: "\(service.driver.databasePath)-wal"),
+      URL(fileURLWithPath: "\(service.driver.databasePath)-shm")
+    ]
+  }
+
+  public func searchNotes(
+    query: String,
+    tagFilter: [String],
+    classFilter: [String],
+    limit: Int,
+    offset: Int
+  ) async throws -> [NoteSearchResult] {
+    try service.searchNotes(query: query, tagFilter: tagFilter, classFilter: classFilter, limit: limit, offset: offset)
+  }
+
+  public func noteDetail(noteId: String) async throws -> RielaNoteDetail {
+    try detail(noteId: noteId)
+  }
+
+  public func firstNote(inNotebook notebookId: String) async throws -> RielaNoteDetail? {
+    guard let note = try service.listNotes(notebookId: notebookId, limit: 1).first else {
+      return nil
+    }
+    return try detail(noteId: note.noteId)
+  }
+
+  public func resolveFile(fileId: String) async throws -> RielaNoteResolvedFile {
+    let record = try service.getFileRecord(fileId: fileId)
+    let data: Data
+    if let asyncS3HTTPClient = s3HTTPClient as? any AsyncS3HTTPClient {
+      data = try await service.resolveFileContent(
+        fileId: fileId,
+        s3Profiles: s3Profiles,
+        httpClient: asyncS3HTTPClient
+      )
+    } else {
+      data = try service.resolveFileContent(fileId: fileId, s3Profiles: s3Profiles, httpClient: s3HTTPClient)
+    }
+    return RielaNoteResolvedFile(file: record, data: data)
+  }
+
+  public func updateNoteBody(noteId: String, bodyMarkdown: String) async throws -> RielaNoteDetail {
+    _ = try service.updateNoteBody(noteId: noteId, bodyMarkdown: bodyMarkdown)
+    return try detail(noteId: noteId)
+  }
+
+  public func applyTag(noteId: String, tagName: String, classId: String?) async throws -> RielaNoteDetail {
+    _ = try service.applyTags(
+      noteId: noteId,
+      tags: [NoteTagInput(name: tagName, classId: classId)],
+      provenance: .human,
+      assignedBy: "riela-note-ui"
+    )
+    return try detail(noteId: noteId)
+  }
+
+  public func removeTag(noteId: String, tagName: String) async throws -> RielaNoteDetail {
+    _ = try service.removeTag(noteId: noteId, tagName: tagName, removedBy: .human)
+    return try detail(noteId: noteId)
+  }
+
+  public func addComment(noteId: String, bodyMarkdown: String) async throws -> RielaNoteDetail {
+    _ = try service.addComment(noteId: noteId, bodyMarkdown: bodyMarkdown, author: "user")
+    return try detail(noteId: noteId)
+  }
+
+  public func linkNote(noteId: String, targetNoteId: String, linkKind: String) async throws -> RielaNoteDetail {
+    _ = try service.linkNotes(from: noteId, to: targetNoteId, linkKind: linkKind, provenance: .human)
+    return try detail(noteId: noteId)
+  }
+
+  public func answerNoteAgentTurn(message: String, limit: Int) async throws -> RielaNoteAgentTurn {
+    let results = try service.searchNotes(query: message, tagFilter: [], classFilter: [], limit: limit)
+    let citations = results.map { result in
+      RielaNoteAgentCitation(
+        noteId: result.note.noteId,
+        title: result.note.title,
+        snippet: result.snippet
+      )
+    }
+    return RielaNoteAgentTurn(
+      userMarkdown: message,
+      assistantMarkdown: noteAgentAnswer(message: message, citations: citations),
+      citations: citations
+    )
+  }
+
+  public func saveNoteAgentConversation(
+    title: String,
+    turns: [RielaNoteAgentTurn]
+  ) async throws -> RielaNoteAgentConversationSaveResult {
+    let saved = try service.saveConversation(
+      title: title,
+      transcript: turns.map(noteConversationTurn),
+      assignedBy: "riela-note-agent"
+    )
+    return RielaNoteAgentConversationSaveResult(
+      notebookId: saved.notebook.notebookId,
+      noteIds: saved.notes.map(\.noteId)
+    )
+  }
+
+  public func appendNoteAgentTurn(
+    notebookId: String,
+    turn: RielaNoteAgentTurn
+  ) async throws -> RielaNoteAgentConversationSaveResult {
+    let note = try service.appendConversationTurn(
+      notebookId: notebookId,
+      turn: noteConversationTurn(turn),
+      assignedBy: "riela-note-agent"
+    )
+    return RielaNoteAgentConversationSaveResult(notebookId: notebookId, noteIds: [note.noteId])
+  }
+
+  public func proposeNoteConfigAgentChange(message: String) async throws -> RielaNoteConfigAgentProposal {
+    let slug = noteConfigSlug(from: message)
+    let label = noteConfigLabel(from: message)
+    let tagClass = RielaNoteConfigTagClassDraft(
+      classId: slug,
+      label: label,
+      description: "Defined by the Riela Note config agent."
+    )
+    let tag = RielaNoteConfigTagDraft(name: slug, classId: slug)
+    let workflowId = "note-ingest-\(slug)"
+    return RielaNoteConfigAgentProposal(
+      requestMarkdown: message,
+      assistantMarkdown: """
+      Proposed configuration change:
+      - define tag class `\(slug)`
+      - bind tag `\(slug)` to that class
+      - route matching note-created events through `note-auto-tagging`
+      - scaffold ingestion workflow `\(workflowId)`
+      """,
+      tagClass: tagClass,
+      tag: tag,
+      autoAction: RielaNoteConfigAutoActionDraft(
+        actionId: "config-agent-auto-tagging-\(slug)",
+        trigger: NoteAutoActionTrigger.noteCreated.rawValue,
+        workflowId: NoteStoreSchema.autoTaggingWorkflowId,
+        filterJSON: #"{"noteTags":["\#(slug)"]}"#,
+        enabled: true,
+        position: 10
+      ),
+      ingestionWorkflow: RielaNoteConfigIngestionWorkflowDraft(workflowId: workflowId)
+    )
+  }
+
+  public func applyNoteConfigAgentProposal(
+    _ proposal: RielaNoteConfigAgentProposal,
+    workflowRoot: String
+  ) async throws -> RielaNoteConfigAgentApplyResult {
+    let tagClass = try service.defineTagClass(
+      classId: proposal.tagClass.classId,
+      label: proposal.tagClass.label,
+      description: proposal.tagClass.description
+    )
+    let tag = try service.defineTag(name: proposal.tag.name, classId: proposal.tag.classId)
+    let trigger = NoteAutoActionTrigger(rawValue: proposal.autoAction.trigger) ?? .noteCreated
+    let autoAction = try service.configureAutoAction(
+      actionId: proposal.autoAction.actionId,
+      trigger: trigger,
+      workflowId: proposal.autoAction.workflowId,
+      filterJSON: proposal.autoAction.filterJSON,
+      enabled: proposal.autoAction.enabled,
+      position: proposal.autoAction.position
+    )
+    let scaffold = try NoteIngestionWorkflowScaffolder().scaffold(
+      workflowRoot: workflowRoot,
+      workflowId: proposal.ingestionWorkflow.workflowId,
+      notebookKindTag: proposal.ingestionWorkflow.notebookKindTag
+    )
+    return RielaNoteConfigAgentApplyResult(
+      tagClass: tagClass,
+      tag: tag,
+      autoAction: autoAction,
+      workflowScaffold: scaffold
+    )
+  }
+
+  private func detail(noteId: String) throws -> RielaNoteDetail {
+    let note = try service.getNote(noteId)
+    let links = try service.listLinks(noteId: noteId)
+    return try RielaNoteDetail(
+      note: note,
+      comments: service.listComments(noteId: noteId),
+      links: links,
+      linkedNotesById: linkedNotesById(for: noteId, links: links),
+      files: service.listFiles(noteId: noteId)
+    )
+  }
+
+  private func linkedNotesById(for noteId: String, links: [NoteLink]) throws -> [String: Note] {
+    var linkedNotes: [String: Note] = [:]
+    for linkedNoteId in Set(links.map { $0.counterpartNoteId(for: noteId) }) {
+      linkedNotes[linkedNoteId] = try service.getNote(linkedNoteId)
+    }
+    return linkedNotes
+  }
+
+  private func noteConversationTurn(_ turn: RielaNoteAgentTurn) -> NoteConversationTurn {
+    NoteConversationTurn(
+      userMarkdown: turn.userMarkdown,
+      assistantMarkdown: turn.assistantMarkdown,
+      sourceNoteIds: turn.citations.map(\.noteId)
+    )
+  }
+
+  private func noteAgentAnswer(message: String, citations: [RielaNoteAgentCitation]) -> String {
+    guard !citations.isEmpty else {
+      return "No matching Riela Note source was found for: \(message)"
+    }
+    let sourceList = citations.prefix(3).enumerated().map { index, citation in
+      let title = citation.title ?? citation.noteId
+      let snippet = citation.snippet?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      guard !snippet.isEmpty else {
+        return "\(index + 1). \(title) [\(citation.noteId)]"
+      }
+      return "\(index + 1). \(title) [\(citation.noteId)]\n   \(snippet)"
+    }.joined(separator: "\n")
+    return """
+    I found \(citations.count) relevant note source(s) for "\(message)".
+
+    \(sourceList)
+    """
+  }
+
+  private func noteConfigSlug(from message: String) -> String {
+    let scalars = message.lowercased().unicodeScalars.map { scalar -> Character in
+      CharacterSet.alphanumerics.contains(scalar) ? Character(scalar) : "-"
+    }
+    let collapsed = String(scalars).split(separator: "-").prefix(4).joined(separator: "-")
+    return collapsed.isEmpty ? "config-agent-topic" : String(collapsed.prefix(48))
+  }
+
+  private func noteConfigLabel(from message: String) -> String {
+    let firstLine = message.split(separator: "\n").first.map(String.init) ?? message
+    let trimmed = firstLine.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? "Config Agent Topic" : String(trimmed.prefix(80))
+  }
+}
+
+private extension NoteLink {
+  func counterpartNoteId(for noteId: String) -> String {
+    fromNoteId == noteId ? toNoteId : fromNoteId
+  }
+}

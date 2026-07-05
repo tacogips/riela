@@ -45,7 +45,7 @@ extension DeterministicWorkflowRunner {
         return .policyBlocked
       case .timeout:
         return .nodeTimeout
-      case .providerError, .invalidOutput:
+      case .providerError, .invalidInput, .invalidOutput:
         return .adapterFailure
       }
     }

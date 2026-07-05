@@ -1,0 +1,63 @@
+{
+  "workflowId": "note-auto-tagging",
+  "description": "Classify a note body into AI-managed tags and apply them back to the triggering note.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "prompts": {
+    "workerSystemPromptTemplate": "Return concise JSON only. Preserve note ids exactly and do not remove human-authored tags."
+  },
+  "entryStepId": "classify-tags",
+  "nodes": [
+    {
+      "id": "classify-tags",
+      "nodeFile": "nodes/node-classify-tags.json"
+    },
+    {
+      "id": "apply-tags",
+      "addon": {
+        "name": "riela/note-tag-apply",
+        "version": "1",
+        "config": {
+          "noteRoot": "{{noteRoot}}",
+          "noteId": "{{noteId}}",
+          "provenance": "ai",
+          "assignedBy": "note-auto-tagging"
+        }
+      }
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "classify-tags",
+      "nodeId": "classify-tags",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "apply-tags"
+        }
+      ]
+    },
+    {
+      "id": "apply-tags",
+      "nodeId": "apply-tags",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

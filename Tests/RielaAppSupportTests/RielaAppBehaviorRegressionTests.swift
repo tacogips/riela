@@ -245,8 +245,9 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     XCTAssertEqual(runtime.snapshot(for: defaultInstance.id).status, .running)
     XCTAssertEqual(runtime.snapshot(for: workInstance.id).status, .running)
 
-    await runtime.stop(identity: defaultInstance.id)
-    await runtime.stop(identity: workInstance.id)
+    await runtime.stopAll()
+    XCTAssertEqual(runtime.snapshot(for: defaultInstance.id).status, .stopped)
+    XCTAssertEqual(runtime.snapshot(for: workInstance.id).status, .stopped)
   }
 
   func testStatusMenuUsesCompactSummaryItemsAtRuntime() throws {

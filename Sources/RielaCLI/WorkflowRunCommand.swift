@@ -403,7 +403,8 @@ public struct WorkflowRunCommand: Sendable {
     return WorkflowRuntimePersistenceProjector.snapshot(
       session: session,
       workflowMessages: workflowMessages,
-      loopEvidence: projectedLoopEvidence
+      loopEvidence: projectedLoopEvidence,
+      loopMetadata: bundle.workflow.loop
     )
   }
 

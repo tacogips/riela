@@ -232,6 +232,9 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     if input.addon.name == "riela/time-signal" {
       return try executeTimeSignal(input)
     }
+    if let noteAddon = BuiltinNoteAddon(rawValue: input.addon.name) {
+      return try await executeNoteAddon(input, operation: noteAddon)
+    }
     if let memoryAddon = BuiltinMemoryAddon(rawValue: input.addon.name) {
       return try executeMemoryAddon(input, operation: memoryAddon)
     }

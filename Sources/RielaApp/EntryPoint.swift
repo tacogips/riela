@@ -42,6 +42,9 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   private var daemonStatusRefreshTimer: Timer?
   var daemonWindowController: DaemonWorkflowWindowController?
   var viewerWindowController: WorkflowViewerWindowController?
+  var noteWindowController: NoteWindowController?
+  var noteSettingsWindowController: NoteSettingsWindowController?
+  private var terminationShutdownStarted = false
 
   static func main() {
     let app = NSApplication.shared
@@ -83,6 +86,12 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     importDaemonSourcesIfRequested()
     openInitialViewerIfRequested()
     openInitialWorkflowsIfRequested()
+    if launchOptions.opensNotes {
+      openNotes()
+    }
+    if launchOptions.opensNoteSettings {
+      openNoteSettings()
+    }
     if shouldAutostartDaemonWorkflows() {
       autostartDaemonWorkflows()
     } else {
@@ -90,12 +99,27 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
   }
 
-  func applicationWillTerminate(_ notification: Notification) {
+  func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    guard !terminationShutdownStarted else {
+      return .terminateNow
+    }
+    terminationShutdownStarted = true
     daemonStatusRefreshTimer?.invalidate()
     daemonStatusRefreshTimer = nil
     Task {
+      let stopped = await stopDaemonRuntimeForTermination()
+      if !stopped {
+        logDaemon("daemon workflow shutdown timed out during app termination")
+      }
       await telemetry.flush(timeout: .seconds(2))
+      sender.reply(toApplicationShouldTerminate: true)
     }
+    return .terminateLater
+  }
+
+  func applicationWillTerminate(_ notification: Notification) {
+    daemonStatusRefreshTimer?.invalidate()
+    daemonStatusRefreshTimer = nil
   }
 
   @objc func selectWorkflow() {
@@ -320,7 +344,8 @@ final class RielaApp: NSObject, NSApplicationDelegate {
         }
         await daemonRuntime.start(
           resolved.candidate,
-          configuration: daemonRuntimeConfiguration(for: resolved.candidate, preference: resolved.preference)
+          configuration: daemonRuntimeConfiguration(for: resolved.candidate, preference: resolved.preference),
+          server: daemonServerConfiguration(profileName: daemonProfileName)
         )
       }
       refreshDaemonWorkflowWindow()
@@ -349,6 +374,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       do {
         let state = try await controller.start(WorkflowServeStartRequest(
           selection: selectedWorkflow,
+          server: daemonServerConfiguration(profileName: daemonProfileName),
           workingDirectory: selectedWorkingDirectory
         ))
         apply(state)
@@ -417,13 +443,15 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
   }
 
-  private func promoteToRegularApplication() {
+  func promoteToRegularApplication() {
     NSApp.setActivationPolicy(.regular)
   }
 
-  private func restoreAccessoryActivationPolicyIfNoAppWindows() {
+  func restoreAccessoryActivationPolicyIfNoAppWindows() {
     guard daemonWindowController?.window?.isVisible != true,
-      viewerWindowController?.window?.isVisible != true
+      viewerWindowController?.window?.isVisible != true,
+      noteWindowController?.window?.isVisible != true,
+      noteSettingsWindowController?.window?.isVisible != true
     else {
       return
     }
@@ -466,7 +494,8 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       }
       await daemonRuntime.start(
         candidate,
-        configuration: daemonRuntimeConfiguration(for: candidate, preference: preference)
+        configuration: daemonRuntimeConfiguration(for: candidate, preference: preference),
+        server: daemonServerConfiguration(profileName: profiledInstance.profileName)
       )
       let snapshot = daemonRuntime.snapshot(for: candidate.id)
       logDaemon("start candidate=\(candidate.id) status=\(snapshot.status.rawValue) detail=\(snapshot.detail)")
@@ -891,6 +920,42 @@ extension RielaApp {
       status = state.diagnostics.first?.message ?? "Failed"
     }
     rebuildMenu()
+  }
+}
+
+private extension RielaApp {
+  func stopDaemonRuntimeForTermination(timeoutNanoseconds: UInt64 = 5_000_000_000) async -> Bool {
+    let progress = RielaAppShutdownProgress()
+    let stopTask = Task { [daemonRuntime] in
+      await daemonRuntime.stopAll()
+      await progress.finish()
+    }
+    let sleepInterval: UInt64 = 100_000_000
+    var elapsed: UInt64 = 0
+    while elapsed < timeoutNanoseconds {
+      if await progress.isFinished {
+        return true
+      }
+      try? await Task.sleep(nanoseconds: min(sleepInterval, timeoutNanoseconds - elapsed))
+      elapsed += sleepInterval
+    }
+    if await progress.isFinished {
+      return true
+    }
+    stopTask.cancel()
+    return false
+  }
+}
+
+private actor RielaAppShutdownProgress {
+  private var finished = false
+
+  var isFinished: Bool {
+    finished
+  }
+
+  func finish() {
+    finished = true
   }
 }
 

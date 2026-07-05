@@ -440,6 +440,7 @@ extension WorkflowCommandTests {
     let result = await RielaCLIApplication().run([
       "workflow", "run", workflowJSON,
       "--mock-scenario", scenarioURL.path,
+      "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
       "--output", "json"
     ])
 

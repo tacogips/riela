@@ -109,21 +109,39 @@ struct DefaultEventLiveServer: EventLiveServing {
     let maximumEvents = parsed.limit
     repeat {
       for source in telegramSources {
-        processedEvents += try await pollTelegramSource(source, config: liveConfig, eventRoot: eventRoot, parsed: parsed)
+        processedEvents += await pollSourceSafely(
+          eventRoot: eventRoot,
+          sourceId: source.id,
+          sourceKind: "telegram"
+        ) {
+          try await pollTelegramSource(source, config: liveConfig, eventRoot: eventRoot, parsed: parsed)
+        }
         if let maximumEvents, processedEvents >= maximumEvents {
           await recordEventsServeCompletion(startedAt: startedAt, processedEvents: processedEvents)
           return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
         }
       }
       for source in discordSources {
-        processedEvents += try await pollDiscordSource(source, config: liveConfig, eventRoot: eventRoot, parsed: parsed)
+        processedEvents += await pollSourceSafely(
+          eventRoot: eventRoot,
+          sourceId: source.id,
+          sourceKind: "discord"
+        ) {
+          try await pollDiscordSource(source, config: liveConfig, eventRoot: eventRoot, parsed: parsed)
+        }
         if let maximumEvents, processedEvents >= maximumEvents {
           await recordEventsServeCompletion(startedAt: startedAt, processedEvents: processedEvents)
           return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
         }
       }
       for source in slackSources {
-        processedEvents += try await pollSlackSource(source, config: liveConfig, eventRoot: eventRoot, parsed: parsed)
+        processedEvents += await pollSourceSafely(
+          eventRoot: eventRoot,
+          sourceId: source.id,
+          sourceKind: "slack"
+        ) {
+          try await pollSlackSource(source, config: liveConfig, eventRoot: eventRoot, parsed: parsed)
+        }
         if let maximumEvents, processedEvents >= maximumEvents {
           await recordEventsServeCompletion(startedAt: startedAt, processedEvents: processedEvents)
           return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
@@ -156,6 +174,37 @@ struct DefaultEventLiveServer: EventLiveServing {
       attributes: attributes
     ))
     await telemetry.flush(timeout: .seconds(2))
+  }
+
+  private func pollSourceSafely(
+    eventRoot: URL,
+    sourceId: String,
+    sourceKind: String,
+    poll: () async throws -> Int
+  ) async -> Int {
+    do {
+      return try await poll()
+    } catch {
+      let message = String(describing: error)
+      try? writeServeRecord(
+        eventRoot: eventRoot,
+        status: "ready",
+        detail: message,
+        lastIgnoredReason: "\(sourceKind)-poll-failed",
+        lastEnvelopeSourceId: sourceId,
+        lastDiagnosticCodes: "event_source_poll_failed"
+      )
+      await telemetry.recordLog(RielaTelemetryLog(
+        name: "riela.events.source.poll.failed",
+        attributes: [
+          "runtime.surface": "events-serve",
+          "event.source.id": sourceId,
+          "event.source.kind": sourceKind,
+          "error": message
+        ]
+      ))
+      return 0
+    }
   }
 
   private func pollTelegramSource(

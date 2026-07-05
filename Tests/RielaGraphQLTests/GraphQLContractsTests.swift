@@ -278,6 +278,18 @@ final class GraphQLContractsTests: XCTestCase {
     XCTAssertFalse(schema.contains("managerRuntimeId"))
   }
 
+  func testNoteGraphQLProjectionFieldsMatchSchemaContract() throws {
+    for (typeName, projectionFields) in noteGraphQLSelectionFields {
+      let schemaFields = try schemaFieldNames(typeName)
+
+      XCTAssertEqual(
+        Set(projectionFields.keys),
+        schemaFields,
+        "\(typeName) projection fields must match the GraphQL schema contract"
+      )
+    }
+  }
+
   func testSchemaContractFieldSetsMatchEncodedDTOs() throws {
     let date = Date(timeIntervalSince1970: 2_000)
     let severityCounts = LoopFindingSeverityCounts(high: 1, medium: 2, low: 3, informational: 4)

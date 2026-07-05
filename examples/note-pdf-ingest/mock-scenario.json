@@ -1,0 +1,34 @@
+{
+  "extract-pages": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "status": "ready",
+      "pages": [
+        {
+          "title": "Page 1",
+          "bodyMarkdown": "# Imported PDF Page 1\n\nAlpha OCR text.",
+          "tags": [
+            {
+              "name": "imported",
+              "classId": "source"
+            }
+          ]
+        },
+        {
+          "title": "Page 2",
+          "bodyMarkdown": "# Imported PDF Page 2\n\nBeta OCR text.",
+          "tags": [
+            {
+              "name": "imported",
+              "classId": "source"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

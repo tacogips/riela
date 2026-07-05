@@ -1,0 +1,96 @@
+{
+  "workflowId": "note-youtube-transcript",
+  "description": "Turn a YouTube transcript into a note and attach the related video file.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "prompts": {
+    "workerSystemPromptTemplate": "Return concise JSON only. Preserve source URL and transcript text."
+  },
+  "entryStepId": "extract-transcript",
+  "nodes": [
+    {
+      "id": "extract-transcript",
+      "nodeFile": "nodes/node-extract-transcript.json"
+    },
+    {
+      "id": "create-note",
+      "addon": {
+        "name": "riela/note-create",
+        "version": "1",
+        "config": {
+          "noteRoot": "{{noteRoot}}",
+          "bodyMarkdown": "{{bodyMarkdown}}",
+          "notebookKindTag": "notebook-kind:imported-material",
+          "notebookTitle": "{{workflowInput.title}}",
+          "provenance": "system",
+          "assignedBy": "note-youtube-transcript",
+          "tags": [
+            {
+              "name": "youtube",
+              "classId": "source"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "attach-video",
+      "addon": {
+        "name": "riela/note-attach-file",
+        "version": "1",
+        "config": {
+          "noteRoot": "{{noteRoot}}",
+          "noteId": "{{noteId}}",
+          "role": "related",
+          "mediaType": "video/mp4",
+          "filename": "youtube-video.mp4",
+          "filePath": "{{workflowInput.videoFilePath}}"
+        }
+      }
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "extract-transcript",
+      "nodeId": "extract-transcript",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "create-note"
+        }
+      ]
+    },
+    {
+      "id": "create-note",
+      "nodeId": "create-note",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "attach-video"
+        }
+      ]
+    },
+    {
+      "id": "attach-video",
+      "nodeId": "attach-video",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

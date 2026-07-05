@@ -42,6 +42,27 @@ final class AddonExecutionContractsTests: XCTestCase {
     XCTAssertFalse(encoded.contains("WorkflowRuntimeStore"))
   }
 
+  func testBuiltinCatalogContainsNoteAddons() {
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/note-create", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/notebook-ingest-pages", version: nil))
+    XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/note-create", version: "2"))
+    XCTAssertEqual(
+      RielaBuiltinAddonCatalog.noteAddons.map(\.name),
+      [
+        "riela/note-create",
+        "riela/note-update",
+        "riela/note-get",
+        "riela/note-search",
+        "riela/note-tag-apply",
+        "riela/note-attach-file",
+        "riela/note-graphql-document",
+        "riela/note-comment-add",
+        "riela/notebook-ingest-pages",
+        "riela/note-conversation-save"
+      ]
+    )
+  }
+
   func testAllowedBuiltinNamesDoNotAuthorizePackageAddons() async {
     let input = AddonExecutionInput(
       addonName: "chat-reply",

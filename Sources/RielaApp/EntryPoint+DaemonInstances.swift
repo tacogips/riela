@@ -53,7 +53,8 @@ extension RielaApp {
     Task { @MainActor in
       await daemonRuntime.start(
         resolved.candidate,
-        configuration: daemonRuntimeConfiguration(for: resolved.candidate, preference: resolved.preference)
+        configuration: daemonRuntimeConfiguration(for: resolved.candidate, preference: resolved.preference),
+        server: daemonServerConfiguration(profileName: resolved.profileName)
       )
       status = "Started \(resolved.candidate.displayName)"
       refreshDaemonWorkflowWindow()
@@ -80,7 +81,8 @@ extension RielaApp {
     Task { @MainActor in
       await daemonRuntime.start(
         resolved.candidate,
-        configuration: daemonRuntimeConfiguration(for: resolved.candidate, preference: preference)
+        configuration: daemonRuntimeConfiguration(for: resolved.candidate, preference: preference),
+        server: daemonServerConfiguration(profileName: resolved.profileName)
       )
       status = "Started \(resolved.candidate.displayName)"
       refreshDaemonWorkflowWindow()
@@ -130,7 +132,8 @@ extension RielaApp {
       await daemonRuntime.stop(identity: resolved.runtimeIdentity)
       await daemonRuntime.start(
         resolved.candidate,
-        configuration: daemonRuntimeConfiguration(for: resolved.candidate, preference: preference)
+        configuration: daemonRuntimeConfiguration(for: resolved.candidate, preference: preference),
+        server: daemonServerConfiguration(profileName: resolved.profileName)
       )
       status = "Restarted \(resolved.candidate.displayName)"
       refreshDaemonWorkflowWindow()
@@ -307,7 +310,8 @@ extension RielaApp {
       if shouldRestart, let renamed = resolveDaemonWorkflowInstance(identity: renamedIdentity) {
         await daemonRuntime.start(
           renamed.candidate,
-          configuration: daemonRuntimeConfiguration(for: renamed.candidate, preference: preference)
+          configuration: daemonRuntimeConfiguration(for: renamed.candidate, preference: preference),
+          server: daemonServerConfiguration(profileName: resolved.profileName)
         )
         refreshDaemonWorkflowWindow()
       }

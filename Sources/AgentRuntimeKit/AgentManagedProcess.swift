@@ -12,11 +12,10 @@ open class AgentProcessOutputBuffers<RolloutLine>: @unchecked Sendable {
   public typealias RolloutLineParser = @Sendable (String) -> RolloutLine?
 
   private let condition = NSCondition()
-  private let outputDecoder: AgentProcessOutputDecoder
   private let rolloutLineParser: RolloutLineParser
   private var stdoutData = Data()
   private var stderrData = Data()
-  private var stdoutPartial = ""
+  private var stdoutLineSplitter = AgentJSONLByteLineSplitter()
   private var parsedLines: [RolloutLine] = []
   private var stdoutClosed = false
 
@@ -24,15 +23,16 @@ open class AgentProcessOutputBuffers<RolloutLine>: @unchecked Sendable {
     outputDecoder: @escaping AgentProcessOutputDecoder = decodeAgentProcessOutput,
     rolloutLineParser: @escaping RolloutLineParser
   ) {
-    self.outputDecoder = outputDecoder
+    _ = outputDecoder
     self.rolloutLineParser = rolloutLineParser
   }
 
   public func appendStdout(_ data: Data) {
     condition.lock()
     stdoutData.append(data)
-    stdoutPartial += outputDecoder(data)
-    drainCompleteStdoutLines()
+    for rawLine in stdoutLineSplitter.feed(data) {
+      appendParsedLine(rawLine)
+    }
     condition.broadcast()
     condition.unlock()
   }
@@ -45,11 +45,9 @@ open class AgentProcessOutputBuffers<RolloutLine>: @unchecked Sendable {
 
   public func finishStdout() {
     condition.lock()
-    if !stdoutPartial.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-       let line = rolloutLineParser(stdoutPartial) {
-      parsedLines.append(line)
+    if let line = stdoutLineSplitter.flush() {
+      appendParsedLine(line)
     }
-    stdoutPartial = ""
     stdoutClosed = true
     condition.broadcast()
     condition.unlock()
@@ -94,17 +92,12 @@ open class AgentProcessOutputBuffers<RolloutLine>: @unchecked Sendable {
     return line
   }
 
-  private func drainCompleteStdoutLines() {
-    while let newline = stdoutPartial.firstIndex(of: "\n") {
-      let rawLine = String(stdoutPartial[..<newline])
-      stdoutPartial.removeSubrange(stdoutPartial.startIndex...newline)
-      if rawLine.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        continue
-      }
-      if let line = rolloutLineParser(rawLine) {
-        parsedLines.append(line)
-      }
+  private func appendParsedLine(_ rawLine: String) {
+    guard !rawLine.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          let line = rolloutLineParser(rawLine) else {
+      return
     }
+    parsedLines.append(line)
   }
 }
 
@@ -117,6 +110,7 @@ public final class AgentManagedProcess<Execution, RolloutLine>: @unchecked Senda
   private let output: FileHandle?
   private let error: FileHandle?
   private let outputGroup = DispatchGroup()
+  private let signalController: AgentProcessSignalController
   private let failedExecution: Execution?
   private let executionFactory: ExecutionFactory
   public let outputBuffers: OutputBuffers
@@ -133,6 +127,7 @@ public final class AgentManagedProcess<Execution, RolloutLine>: @unchecked Senda
     self.input = input
     self.output = output
     self.error = error
+    self.signalController = AgentProcessSignalController(process: process)
     self.outputBuffers = outputBuffers
     self.failedExecution = nil
     self.executionFactory = executionFactory
@@ -147,6 +142,7 @@ public final class AgentManagedProcess<Execution, RolloutLine>: @unchecked Senda
     self.input = nil
     self.output = nil
     self.error = nil
+    self.signalController = AgentProcessSignalController(process: nil)
     self.outputBuffers = outputBuffers
     self.outputBuffers.finishStdout()
     self.failedExecution = failedExecution
@@ -202,11 +198,13 @@ public final class AgentManagedProcess<Execution, RolloutLine>: @unchecked Senda
   }
 
   public func terminate() {
-    process?.terminate()
+    closeInput()
+    _ = signalController.terminateAndScheduleKill(after: 1)
   }
 
   public func waitUntilExit() {
     process?.waitUntilExit()
+    signalController.markExited()
     outputGroup.wait()
   }
 

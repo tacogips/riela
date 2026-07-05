@@ -21,6 +21,9 @@ final class WorkflowCommandTests: XCTestCase {
 
   func testValidateInspectAndDeterministicRunWorkerFixture() async throws {
     let root = repositoryRoot()
+    let sessionStore = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-worker-fixture-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: sessionStore) }
     let app = RielaCLIApplication()
 
     let validate = await app.run([
@@ -53,6 +56,7 @@ final class WorkflowCommandTests: XCTestCase {
       "--workflow-definition-dir", "\(root)/examples",
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
       "--variables", #"{"workflowInput":{"request":"noop reproduction for CLI variables handling"}}"#,
+      "--session-store", sessionStore.path,
       "--output", "json"
     ])
     XCTAssertEqual(run.exitCode, .success)
@@ -66,11 +70,15 @@ final class WorkflowCommandTests: XCTestCase {
 
   func testWorkflowRunDefaultsToJSONLEventsWithImmediateSessionRecord() async throws {
     let root = repositoryRoot()
+    let sessionStore = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-jsonl-default-session-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: sessionStore) }
     let run = await RielaCLIApplication().run([
       "workflow", "run", "worker-only-single-step",
       "--workflow-definition-dir", "\(root)/examples",
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
-      "--variables", #"{"workflowInput":{"request":"noop reproduction for CLI variables handling"}}"#
+      "--variables", #"{"workflowInput":{"request":"noop reproduction for CLI variables handling"}}"#,
+      "--session-store", sessionStore.path
     ])
 
     XCTAssertEqual(run.exitCode, .success)
@@ -87,7 +95,7 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertEqual(context.type, "run_context")
     XCTAssertEqual(context.sessionId, first.sessionId)
     XCTAssertEqual(context.workflowName, "worker-only-single-step")
-    XCTAssertFalse(context.sessionStore.isEmpty)
+    XCTAssertEqual(context.sessionStore, sessionStore.path)
 
     let final = try decodeJSON(WorkflowRunResultRecord.self, from: lines[5])
     XCTAssertEqual(final.type, "run_result")

@@ -2,6 +2,7 @@ import Foundation
 
 public enum AdapterExecutionErrorCode: String, Codable, Sendable {
   case providerError = "provider_error"
+  case invalidInput = "invalid_input"
   case policyBlocked = "policy_blocked"
   case timeout
   case invalidOutput = "invalid_output"

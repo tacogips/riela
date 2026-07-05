@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 import RielaMemory
 @testable import RielaCLI
@@ -218,6 +219,73 @@ final class CommandParsingTests: XCTestCase {
     )
   }
 
+  func testParsesLoopListAndHistoryCommands() throws {
+    let parser = RielaArgumentParser()
+    let list = try parser.parse([
+      "loop", "list",
+      "--workflow", "wf",
+      "--status", "active",
+      "--gate-decision", "needs_work",
+      "--limit", "5",
+      "--output", "table"
+    ])
+    XCTAssertEqual(
+      list,
+      .loop(LoopCommand(
+        kind: .list,
+        options: CLICommandOptions(
+          scope: "loop",
+          command: "list",
+          arguments: [
+            "--workflow", "wf",
+            "--status", "active",
+            "--gate-decision", "needs_work",
+            "--limit", "5",
+            "--output", "table"
+          ],
+          output: .table
+        )
+      ))
+    )
+
+    let history = try parser.parse(["loop", "history", "wf", "--limit", "3", "--output", "json"])
+    XCTAssertEqual(
+      history,
+      .loop(LoopCommand(
+        kind: .history,
+        options: CLICommandOptions(
+          scope: "loop",
+          command: "history",
+          target: "wf",
+          arguments: ["--limit", "3", "--output", "json"],
+          output: .json
+        )
+      ))
+    )
+  }
+
+  func testParsesLoopRecoverFromGateCommand() throws {
+    let command = try RielaArgumentParser().parse([
+      "loop", "recover", "session-1",
+      "--from-gate", "implementation-review",
+      "--session-store", "./sessions",
+      "--output", "json"
+    ])
+    XCTAssertEqual(
+      command,
+      .loop(LoopCommand(
+        kind: .recover,
+        options: CLICommandOptions(
+          scope: "loop",
+          command: "recover",
+          target: "session-1",
+          arguments: ["--from-gate", "implementation-review", "--session-store", "./sessions", "--output", "json"],
+          output: .json
+        )
+      ))
+    )
+  }
+
   func testRejectsInvalidAutoImprovePolicy() {
     XCTAssertThrowsError(try RielaArgumentParser().parse([
       "workflow", "run", "demo",
@@ -281,6 +349,28 @@ final class CommandParsingTests: XCTestCase {
         "remote workflow inspect is not supported by the local CLI runner"
       )
     }
+  }
+
+  func testServeNoteAPIUsesConfiguredNoteRootAndRegistrationRoute() async throws {
+    let noteRoot = try scratchRoot(name: "serve-note-api-\(UUID().uuidString)")
+      .appendingPathComponent("note", isDirectory: true)
+    let result = await RielaCLIApplication().run([
+      "serve", "--note-api",
+      "--note-root", noteRoot.path,
+      "--host", "127.0.0.1",
+      "--port", "9876",
+      "--output", "json"
+    ])
+
+    XCTAssertEqual(result.exitCode, .success, result.stderr)
+    let scoped = try decodeJSON(ScopedParityCommandResult.self, from: result.stdout)
+    XCTAssertEqual(scoped.status, "ok")
+    XCTAssertTrue(scoped.records.contains("status=200"))
+    let bodyRecord = try XCTUnwrap(scoped.records.first { $0.hasPrefix("body=") })
+    XCTAssertTrue(bodyRecord.contains("http://127.0.0.1:9876"))
+    XCTAssertTrue(bodyRecord.contains(noteRoot.path))
+    XCTAssertTrue(bodyRecord.contains("registrationURL"))
+    XCTAssertTrue(bodyRecord.contains("/note/register?code="))
   }
 
   func testParsesDeclaredRielaCommandSurfaceForDeletionGate() throws {
@@ -363,6 +453,28 @@ final class CommandParsingTests: XCTestCase {
         command: "replay",
         target: "source-1",
         arguments: ["--event-root", "tmp/events"]
+      )))
+    )
+    XCTAssertEqual(
+      try parser.parse([
+        "graphql", "execute",
+        "--query", "query Notes { notes { value { noteId } } }",
+        "--variables", #"{"limit":1}"#,
+        "--note-root", "tmp/note",
+        "--operation-name", "Notes",
+        "--output", "json"
+      ]),
+      .scoped(ScopedCommand(kind: .graphql, options: CLICommandOptions(
+        scope: "graphql",
+        command: "execute",
+        arguments: [
+          "--query", "query Notes { notes { value { noteId } } }",
+          "--variables", #"{"limit":1}"#,
+          "--note-root", "tmp/note",
+          "--operation-name", "Notes",
+          "--output", "json"
+        ],
+        output: .json
       )))
     )
     XCTAssertEqual(
@@ -572,5 +684,17 @@ final class CommandParsingTests: XCTestCase {
     } else {
       XCTFail("expected package validate command")
     }
+  }
+
+  private func scratchRoot(name: String) throws -> URL {
+    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+      .appendingPathComponent("tmp", isDirectory: true)
+      .appendingPathComponent(name, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    return root
+  }
+
+  private func decodeJSON<T: Decodable>(_ type: T.Type, from stdout: String) throws -> T {
+    try JSONDecoder().decode(T.self, from: Data(stdout.utf8))
   }
 }

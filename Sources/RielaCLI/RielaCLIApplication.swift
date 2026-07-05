@@ -20,6 +20,7 @@ public struct RielaCLIApplication: Sendable {
   public var workflowScaffoldCommand: WorkflowScaffoldCommand
   public var packageCommandRunner: WorkflowPackageCommandRunner
   public var memoryCommandRunner: MemoryCommandRunner
+  public var noteCommandRunner: NoteCommandRunner
   public var loopCommandRunner: LoopCommandRunner
   public var sessionContinueCommand: SessionContinueCommand
   public var scopedCommandRunner: ScopedParityCommandRunner
@@ -38,6 +39,7 @@ public struct RielaCLIApplication: Sendable {
     workflowScaffoldCommand: WorkflowScaffoldCommand = WorkflowScaffoldCommand(),
     packageCommandRunner: WorkflowPackageCommandRunner = WorkflowPackageCommandRunner(),
     memoryCommandRunner: MemoryCommandRunner = MemoryCommandRunner(),
+    noteCommandRunner: NoteCommandRunner = NoteCommandRunner(),
     loopCommandRunner: LoopCommandRunner = LoopCommandRunner(),
     sessionContinueCommand: SessionContinueCommand = SessionContinueCommand(),
     scopedCommandRunner: ScopedParityCommandRunner = ScopedParityCommandRunner()
@@ -55,6 +57,7 @@ public struct RielaCLIApplication: Sendable {
     self.workflowScaffoldCommand = workflowScaffoldCommand
     self.packageCommandRunner = packageCommandRunner
     self.memoryCommandRunner = memoryCommandRunner
+    self.noteCommandRunner = noteCommandRunner
     self.loopCommandRunner = loopCommandRunner
     self.sessionContinueCommand = sessionContinueCommand
     self.scopedCommandRunner = scopedCommandRunner
@@ -114,6 +117,8 @@ public struct RielaCLIApplication: Sendable {
         return await packageCommandRunner.run(command)
       case let .memory(command):
         return memoryCommandRunner.run(command)
+      case let .note(command):
+        return await noteCommandRunner.run(command)
       case let .scoped(command):
         return await scopedCommandRunner.run(command)
       }
@@ -280,13 +285,22 @@ Usage:
   riela memory update <memory-id> --workflow-id <workflow> --record-id <id> --payload-json <json> [--tag <tag>] [--related-id <id>] [--file <path>|--clear-files] [--memory-root <dir>]
   riela memory load|search <memory-id> --workflow-id <workflow> [--match <regex>] [--tag <tag>] [--related-id <id>] [--limit 30] [--memory-root <dir>]
   riela memory metadata|tags|related-ids <memory-id> [--limit 30] [--offset 0] [--sort value-asc|value-desc] [--memory-root <dir>]
+  riela note add --body <markdown> [--tag <tag>] [--notebook-id <id>] [--note-root <dir>] [--output json|text]
+  riela note edit|show|delete|tag|comment|attach|readonly <note-id> [options]
+  riela note list|search [query] [--tag <tag>] [--limit 50] [--note-root <dir>] [--output json|text|table]
+  riela note notebook list|create|show|delete [target] [--note-root <dir>] [--output json|text|table]
+  riela note storage migrate <file-id|--all> --s3-endpoint <url> --s3-region <region> --s3-bucket <bucket> [--output json|text]
+  riela note client register|list|revoke [target] [--direct] [--note-root <dir>] [--output json|text|table]
+  riela serve --note-api [--note-root <dir>] [--host <host>] [--port <port>]
   riela session rerun <session-id> <step-id> [--scope project|user|auto] [--output jsonl|json|text]
   riela session resume <session-id> [--max-steps <n>] [--scope project|user|auto] [--output jsonl|json|text]
   riela session list [--workflow <name>] [--status created|running|completed|failed] [--limit 10] [--scope project|user|auto] [--output jsonl|json|text|table]
   riela session latest --workflow <name> [--scope project|user|auto] [--output jsonl|json|text|table]
   riela session progress|health|status|continue|step-runs|export|logs [session-id] [options]
   riela loop status|evidence|gates <session-id> [--session-store <dir>] [--output jsonl|json|text]
-  riela loop recover <session-id> --from-step <step-id> [--session-store <dir>] [--output jsonl|json|text]
+  riela loop list [--workflow <name>] [--status active|created|running|completed|failed] [--gate-decision accepted|rejected|needs_work|skipped] [--limit 50] [--session-store <dir>] [--output jsonl|json|text|table]
+  riela loop history <workflow> [--status active|created|running|completed|failed] [--gate-decision accepted|rejected|needs_work|skipped] [--limit 50] [--session-store <dir>] [--output jsonl|json|text|table]
+  riela loop recover <session-id> --from-step <step-id>|--from-gate <gate-id> [--session-store <dir>] [--output jsonl|json|text]
   riela graphql|gql|hook|events|serve|call-step|workflow-call [command] [target] [options]
 
 Output defaults to JSONL for machine-readable commands. Prefer --output jsonl

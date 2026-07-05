@@ -712,8 +712,10 @@ public final class RielaAppDaemonWorkflowRuntime {
   private struct RunningWorkflow {
     var candidate: RielaAppDaemonWorkflowCandidate
     var configuration: WorkflowServeRuntimeConfiguration
+    var server: RielaServerConfiguration
     var controller: WorkflowServingController
     var snapshot: RuntimeSnapshot
+    var endpoint: String?
     var monitorTask: Task<Void, Never>?
   }
 
@@ -732,11 +734,24 @@ public final class RielaAppDaemonWorkflowRuntime {
     runningWorkflows[identity]?.snapshot ?? RuntimeSnapshot(status: .stopped, detail: "Inactive")
   }
 
+  public func noteAPIEndpoint(noteRoot: String) -> String? {
+    let standardizedNoteRoot = URL(fileURLWithPath: noteRoot, isDirectory: true).standardizedFileURL.path
+    return runningWorkflows.values.first { running in
+      guard running.snapshot.status == .running,
+            running.server.noteAPIEnabled,
+            let servedNoteRoot = running.server.noteRoot else {
+        return false
+      }
+      return URL(fileURLWithPath: servedNoteRoot, isDirectory: true).standardizedFileURL.path == standardizedNoteRoot
+    }?.endpoint
+  }
+
   public func start(
     _ candidate: RielaAppDaemonWorkflowCandidate,
     inheritedEnvironment: [String: String] = [:],
     defaultVariables: JSONObject = [:],
-    nodePatch: JSONObject? = nil
+    nodePatch: JSONObject? = nil,
+    server: RielaServerConfiguration = RielaServerConfiguration()
   ) async {
     if runningWorkflows[candidate.id]?.snapshot.status == .running {
       return
@@ -749,13 +764,15 @@ public final class RielaAppDaemonWorkflowRuntime {
         defaultVariables: defaultVariables,
         nodePatch: nodePatch
       ),
+      server: server,
       monitorTask: nil
     )
     scheduleMonitorIfNeeded(for: candidate.id)
   }
   public func start(
     _ candidate: RielaAppDaemonWorkflowCandidate,
-    configuration: WorkflowServeRuntimeConfiguration
+    configuration: WorkflowServeRuntimeConfiguration,
+    server: RielaServerConfiguration = RielaServerConfiguration()
   ) async {
     if runningWorkflows[candidate.id]?.snapshot.status == .running {
       return
@@ -764,7 +781,7 @@ public final class RielaAppDaemonWorkflowRuntime {
     if runtimeConfiguration.workingDirectory == nil {
       runtimeConfiguration.workingDirectory = candidate.workingDirectory
     }
-    await startController(candidate, configuration: runtimeConfiguration, monitorTask: nil)
+    await startController(candidate, configuration: runtimeConfiguration, server: server, monitorTask: nil)
     scheduleMonitorIfNeeded(for: candidate.id)
   }
   public func refresh(identity: String) async {
@@ -773,6 +790,7 @@ public final class RielaAppDaemonWorkflowRuntime {
     }
     let state = await running.controller.currentState()
     runningWorkflows[identity]?.snapshot = snapshot(from: state)
+    runningWorkflows[identity]?.endpoint = state.generation?.endpoint
     guard shouldRestart(state) else {
       return
     }
@@ -780,6 +798,7 @@ public final class RielaAppDaemonWorkflowRuntime {
     await startController(
       running.candidate,
       configuration: running.configuration,
+      server: running.server,
       monitorTask: running.monitorTask
     )
   }
@@ -787,30 +806,37 @@ public final class RielaAppDaemonWorkflowRuntime {
   private func startController(
     _ candidate: RielaAppDaemonWorkflowCandidate,
     configuration: WorkflowServeRuntimeConfiguration,
+    server: RielaServerConfiguration,
     monitorTask: Task<Void, Never>?
   ) async {
     let controller = WorkflowServingController(dependencies: WorkflowServingDependencies(
       eventSourceFactory: eventSourceFactory
     ))
+    var server = server
+    server.port = Self.port(for: candidate.id)
     runningWorkflows[candidate.id] = RunningWorkflow(
       candidate: candidate,
       configuration: configuration,
+      server: server,
       controller: controller,
       snapshot: RuntimeSnapshot(status: .starting, detail: "Starting"),
+      endpoint: nil,
       monitorTask: monitorTask
     )
     do {
       let state = try await controller.start(WorkflowServeStartRequest(
         selection: candidate.serveSelection,
-        server: RielaServerConfiguration(port: Self.port(for: candidate.id)),
+        server: server,
         configuration: configuration,
         sessionStoreRoot: defaultSessionStoreRoot(),
         eventRoot: candidate.eventRoot,
         startsEventSources: candidate.startsEventSources
       ))
       runningWorkflows[candidate.id]?.snapshot = snapshot(from: state)
+      runningWorkflows[candidate.id]?.endpoint = state.generation?.endpoint
     } catch {
       runningWorkflows[candidate.id]?.snapshot = RuntimeSnapshot(status: .failed, detail: "\(error)")
+      runningWorkflows[candidate.id]?.endpoint = nil
     }
   }
 
@@ -822,11 +848,19 @@ public final class RielaAppDaemonWorkflowRuntime {
     do {
       let state = try await running.controller.stop()
       runningWorkflows[identity]?.snapshot = snapshot(from: state)
+      runningWorkflows[identity]?.endpoint = nil
     } catch {
       runningWorkflows[identity]?.snapshot = RuntimeSnapshot(status: .failed, detail: "\(error)")
+      runningWorkflows[identity]?.endpoint = nil
       return
     }
     runningWorkflows.removeValue(forKey: identity)
+  }
+
+  public func stopAll() async {
+    for identity in Array(runningWorkflows.keys) {
+      await stop(identity: identity)
+    }
   }
 
   private func scheduleMonitorIfNeeded(for identity: String) {

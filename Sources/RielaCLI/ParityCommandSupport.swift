@@ -38,6 +38,13 @@ struct ParsedParityOptions: Sendable {
   var packageID: String?
   var branch: String?
   var localPath: String?
+  var noteAPIEnabled = false
+  var host: String?
+  var port: Int?
+  var noteRoot: String?
+  var graphQLQuery: String?
+  var graphQLQueryFile: String?
+  var graphQLOperationName: String?
 
   init(_ arguments: [String]) throws {
     var index = 0
@@ -61,6 +68,14 @@ struct ParsedParityOptions: Sendable {
         continue
       }
       if try parseEventAndPackageOption(token, value: value) {
+        index = valueIndex + 1
+        continue
+      }
+      if try parseServeOption(token, value: value) {
+        index = valueIndex + 1
+        continue
+      }
+      if try parseGraphQLDocumentOption(token, value: value) {
         index = valueIndex + 1
         continue
       }
@@ -162,6 +177,39 @@ struct ParsedParityOptions: Sendable {
       localPath = try value()
     case "--output":
       _ = try value()
+    default:
+      return false
+    }
+    return true
+  }
+
+  private mutating func parseServeOption(_ token: String, value: () throws -> String) throws -> Bool {
+    switch token {
+    case "--note-api":
+      noteAPIEnabled = true
+    case "--host":
+      host = try value()
+    case "--port":
+      guard let parsed = Int(try value()), (1...65_535).contains(parsed) else {
+        throw CLIUsageError("--port requires an integer from 1 through 65535")
+      }
+      port = parsed
+    case "--note-root":
+      noteRoot = (try value() as NSString).expandingTildeInPath
+    default:
+      return false
+    }
+    return true
+  }
+
+  private mutating func parseGraphQLDocumentOption(_ token: String, value: () throws -> String) throws -> Bool {
+    switch token {
+    case "--query", "--document":
+      graphQLQuery = try value()
+    case "--query-file", "--document-file":
+      graphQLQueryFile = try value()
+    case "--operation-name":
+      graphQLOperationName = try value()
     default:
       return false
     }

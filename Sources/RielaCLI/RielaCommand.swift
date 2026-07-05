@@ -40,6 +40,7 @@ public enum RielaCommand: Equatable, Sendable {
   case loop(LoopCommand)
   case package(PackageCommand)
   case memory(MemoryCommand)
+  case note(NoteCommand)
   case scoped(ScopedCommand)
 }
 
@@ -82,6 +83,8 @@ public enum LoopCommandKind: String, Codable, Sendable {
   case evidence
   case gates
   case recover
+  case list
+  case history
 }
 
 public struct LoopCommand: Equatable, Sendable {
@@ -89,6 +92,32 @@ public struct LoopCommand: Equatable, Sendable {
   public var options: CLICommandOptions
 
   public init(kind: LoopCommandKind, options: CLICommandOptions) {
+    self.kind = kind
+    self.options = options
+  }
+}
+
+public enum NoteCommandKind: String, Codable, Sendable {
+  case add
+  case edit
+  case delete
+  case show
+  case list
+  case search
+  case tag
+  case comment
+  case attach
+  case readonly
+  case notebook
+  case storage
+  case client
+}
+
+public struct NoteCommand: Equatable, Sendable {
+  public var kind: NoteCommandKind
+  public var options: CLICommandOptions
+
+  public init(kind: NoteCommandKind, options: CLICommandOptions) {
     self.kind = kind
     self.options = options
   }
@@ -418,6 +447,9 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     if arguments.first == "memory" {
       return .memory(try parseMemory(Array(arguments.dropFirst())))
     }
+    if arguments.first == "note" {
+      return .note(try parseNote(Array(arguments.dropFirst())))
+    }
     if arguments.first == "session" {
       return try parseSession(Array(arguments.dropFirst()))
     }
@@ -425,7 +457,7 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       return .loop(try parseLoop(Array(arguments.dropFirst())))
     }
     guard arguments.first == "workflow" else {
-      throw CLIUsageError("expected 'workflow', 'package', 'memory', 'session', 'loop', 'graphql', 'gql', 'hook', 'events', 'serve', or 'call-step' command")
+      throw CLIUsageError("expected 'workflow', 'package', 'memory', 'note', 'session', 'loop', 'graphql', 'gql', 'hook', 'events', 'serve', or 'call-step' command")
     }
     guard arguments.count >= 2 else {
       throw CLIUsageError("workflow command requires a subcommand and workflow name")
@@ -514,7 +546,21 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     guard let kind = LoopCommandKind(rawValue: subcommand) else {
       throw CLIUsageError("unsupported loop subcommand '\(subcommand)'")
     }
+    if kind == .list {
+      return LoopCommand(
+        kind: kind,
+        options: try parseGeneric(
+          scope: "loop",
+          command: subcommand,
+          arguments: Array(arguments.dropFirst()),
+          allowTableOutput: true
+        )
+      )
+    }
     guard arguments.count >= 2, !arguments[1].hasPrefix("--") else {
+      if kind == .history {
+        throw CLIUsageError("loop history requires a workflow id")
+      }
       throw CLIUsageError("loop \(subcommand) requires a session id")
     }
     return LoopCommand(
@@ -523,7 +569,8 @@ public struct RielaArgumentParser: CLIArgumentParsing {
         scope: "loop",
         command: subcommand,
         target: arguments[1],
-        arguments: Array(arguments.dropFirst(2))
+        arguments: Array(arguments.dropFirst(2)),
+        allowTableOutput: kind == .history
       )
     )
   }
@@ -639,6 +686,45 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       break
     }
     return MemoryCommand(kind: kind, options: options)
+  }
+
+  private func parseNote(_ arguments: [String]) throws -> NoteCommand {
+    guard let subcommand = arguments.first else {
+      throw CLIUsageError("note command requires a subcommand")
+    }
+    guard let kind = NoteCommandKind(rawValue: subcommand) else {
+      throw CLIUsageError("unsupported note subcommand '\(subcommand)'")
+    }
+    if kind == .notebook || kind == .storage || kind == .client {
+      guard arguments.count >= 2, !arguments[1].hasPrefix("--") else {
+        throw CLIUsageError("note \(subcommand) requires a subcommand")
+      }
+      let action = arguments[1]
+      return NoteCommand(
+        kind: kind,
+        options: try parseGeneric(
+          scope: "note",
+          command: subcommand,
+          target: action,
+          arguments: Array(arguments.dropFirst(2)),
+          allowTableOutput: (kind == .notebook || kind == .client) && action == "list",
+          defaultOutput: .text
+        )
+      )
+    }
+    let target = arguments.count >= 2 && !arguments[1].hasPrefix("--") ? arguments[1] : nil
+    let optionStart = target == nil ? 1 : 2
+    return NoteCommand(
+      kind: kind,
+      options: try parseGeneric(
+        scope: "note",
+        command: subcommand,
+        target: target,
+        arguments: Array(arguments.dropFirst(optionStart)),
+        allowTableOutput: kind == .list || kind == .search,
+        defaultOutput: .text
+      )
+    )
   }
 
   private func parseMemoryOptions(memoryId: String, tokens: [String]) throws -> MemoryCommandOptions {

@@ -310,10 +310,14 @@ extension WorkflowCommandTests {
 
   func testRunAcceptsTemporaryWorkflowJSONFileTarget() async throws {
     let root = repositoryRoot()
+    let sessionStore = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-temp-workflow-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: sessionStore) }
     let app = RielaCLIApplication()
     let result = await app.run([
       "workflow", "run", "\(root)/examples/temporary-workflow/temp-workflow.json",
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+      "--session-store", sessionStore.path,
       "--output", "json"
     ])
 
@@ -331,6 +335,7 @@ extension WorkflowCommandTests {
     let nodesDirectory = workflowDirectory.appendingPathComponent("nodes", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: root) }
     try FileManager.default.createDirectory(at: nodesDirectory, withIntermediateDirectories: true)
+    let sessionStore = root.appendingPathComponent("sessions", isDirectory: true)
     try """
     {
       "workflowId": "codex-dispatch",
@@ -371,6 +376,7 @@ extension WorkflowCommandTests {
     let result = await RielaCLIApplication().run([
       "workflow", "run", "codex-dispatch",
       "--workflow-definition-dir", root.path,
+      "--session-store", sessionStore.path,
       "--output", "json"
     ])
 
@@ -490,12 +496,14 @@ extension WorkflowCommandTests {
     try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: tempDir) }
     let artifactRoot = tempDir.appendingPathComponent("artifacts", isDirectory: true)
+    let sessionStore = tempDir.appendingPathComponent("sessions", isDirectory: true)
 
     let result = await RielaCLIApplication().run([
       "workflow", "run", "worker-only-single-step",
       "--workflow-definition-dir", "\(root)/examples",
       "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
       "--artifact-root", artifactRoot.path,
+      "--session-store", sessionStore.path,
       "--output", "json"
     ])
 
@@ -526,6 +534,64 @@ extension WorkflowCommandTests {
     ])
     XCTAssertEqual(firstRun.exitCode, .success, firstRun.stderr)
     let first = try decodeJSON(WorkflowRunResult.self, from: firstRun.stdout)
+    let runtimeStore = SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStore)
+    )
+    var firstSnapshot = try runtimeStore.load(sessionId: first.session.sessionId)
+    let loopEvidenceDate = first.session.updatedAt
+    firstSnapshot.loopEvidence = LoopEvidenceManifest(
+      schemaVersion: 1,
+      manifestId: "loop-evidence-\(first.session.sessionId)",
+      workflowId: first.session.workflowId,
+      sessionId: first.session.sessionId,
+      workflowSource: LoopWorkflowSource(scope: "project", kind: "workflow-directory", mutable: true),
+      policy: LoopPolicyEvidence(),
+      gates: [
+        LoopGateResult(
+          gateId: "implementation-review",
+          stepId: "main-worker",
+          stepExecutionId: "main-worker-exec",
+          decision: .accepted
+        )
+      ],
+      redaction: LoopRedactionSummary(policyName: "summary-only", status: "clean"),
+      createdAt: loopEvidenceDate,
+      updatedAt: loopEvidenceDate
+    )
+    try runtimeStore.save(firstSnapshot)
+
+    let loopList = await app.run([
+      "loop", "list",
+      "--workflow", "worker-only-single-step",
+      "--gate-decision", "accepted",
+      "--session-store", sessionStore,
+      "--output", "json"
+    ])
+    XCTAssertEqual(loopList.exitCode, .success, loopList.stderr)
+    let listPayload = try decodeJSON(LoopSessionOverviewCommandResult.self, from: loopList.stdout)
+    XCTAssertEqual(listPayload.sessions.map(\.sessionId), [first.session.sessionId])
+    XCTAssertEqual(listPayload.sessions.first?.lastGateDecision, "accepted")
+
+    let loopListJSONL = await app.run([
+      "loop", "list",
+      "--workflow", "worker-only-single-step",
+      "--gate-decision", "accepted",
+      "--session-store", sessionStore,
+      "--output", "jsonl"
+    ])
+    XCTAssertEqual(loopListJSONL.exitCode, .success, loopListJSONL.stderr)
+    let jsonlLines = loopListJSONL.stdout.split(separator: "\n")
+    XCTAssertEqual(jsonlLines.count, 1, loopListJSONL.stdout)
+    let jsonlOverview = try decodeJSON(LoopSessionOverview.self, from: String(jsonlLines[0]))
+    XCTAssertEqual(jsonlOverview.sessionId, first.session.sessionId)
+
+    let loopHistory = await app.run([
+      "loop", "history", "worker-only-single-step",
+      "--session-store", sessionStore,
+      "--output", "table"
+    ])
+    XCTAssertEqual(loopHistory.exitCode, .success, loopHistory.stderr)
+    XCTAssertTrue(loopHistory.stdout.contains(first.session.sessionId), loopHistory.stdout)
 
     let rerun = await app.run([
       "session", "rerun", first.session.sessionId, "main-worker",
@@ -557,9 +623,19 @@ extension WorkflowCommandTests {
     XCTAssertEqual(secondPayload.rerunFromStepId, "main-worker")
     XCTAssertNotEqual(secondPayload.sessionId, payload.sessionId)
     XCTAssertEqual(secondPayload.recovery?.entryMode, .rerun)
-    let runtimeStore = SQLiteWorkflowRuntimePersistenceStore(
-      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStore)
-    )
+    let loopRecoverFromGate = await app.run([
+      "loop", "recover", first.session.sessionId,
+      "--from-gate", "implementation-review",
+      "--workflow-definition-dir", "\(root)/examples",
+      "--mock-scenario", "\(root)/examples/worker-only-single-step/mock-scenario.json",
+      "--session-store", sessionStore,
+      "--output", "json"
+    ])
+    XCTAssertEqual(loopRecoverFromGate.exitCode, .success, loopRecoverFromGate.stderr)
+    let gatePayload = try decodeJSON(SessionRerunCommandResult.self, from: loopRecoverFromGate.stdout)
+    XCTAssertEqual(gatePayload.sourceSessionId, first.session.sessionId)
+    XCTAssertEqual(gatePayload.rerunFromStepId, "main-worker")
+    XCTAssertEqual(gatePayload.recovery?.entryMode, .rerun)
     for sessionId in [payload.sessionId, secondPayload.sessionId] {
       XCTAssertEqual(try runtimeStore.load(sessionId: sessionId).session.sessionId, sessionId)
       XCTAssertFalse(FileManager.default.fileExists(atPath: URL(fileURLWithPath: sessionStore, isDirectory: true)

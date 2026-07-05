@@ -1,0 +1,12 @@
+{
+  "id": "plan-config-change",
+  "description": "Propose note configuration mutations and workflow-authoring actions.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/plan-config-change.md",
+  "variables": {},
+  "output": {
+    "description": "Return tagClass, tag, autoAction, and ingestionWorkflow drafts suitable for GraphQL mutations and workflow scaffolding."
+  }
+}

@@ -227,10 +227,10 @@ private func boolValue(_ value: JSONValue?) -> Bool? {
 }
 
 private func codexUnifiedExecArguments(_ value: JSONValue?) -> [String] {
-  guard boolValue(value) == false else {
-    return []
+  guard boolValue(value) == true else {
+    return ["--disable", "unified_exec"]
   }
-  return ["--disable", "unified_exec"]
+  return []
 }
 
 public func normalizeCodexExecJSONStdout(_ text: String) -> String {

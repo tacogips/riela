@@ -170,6 +170,71 @@ final class CLIWorkflowSessionResolutionTests: XCTestCase {
     XCTAssertEqual(loaded.record.session.sessionId, projectSession.sessionId)
   }
 
+  func testLoadPersistedSessionContinuesPastProjectStoreFailureWhenScopeAuto() throws {
+    let base = try makeTempDir()
+    let projectRoot = base.appendingPathComponent("project", isDirectory: true)
+    let userRoot = base.appendingPathComponent("home", isDirectory: true)
+    let projectSessions = projectRoot.appendingPathComponent(".riela/sessions", isDirectory: true)
+    let userSessions = userRoot.appendingPathComponent(".riela/sessions", isDirectory: true)
+    try FileManager.default.createDirectory(at: projectSessions, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: userSessions, withIntermediateDirectories: true)
+    try writeCorruptSessionDatabase(rootDirectory: projectSessions.path)
+
+    let session = WorkflowSession(
+      workflowId: "cursor-cli-goal",
+      sessionId: "sess-user-after-project-failure",
+      entryStepId: "work",
+      createdAt: Date(),
+      updatedAt: Date()
+    )
+    try CLIWorkflowSessionStore(rootDirectory: userSessions.path).save(
+      PersistedCLIWorkflowSession(
+        workflowName: "cursor-cli-goal",
+        session: session,
+        resolution: WorkflowResolutionOptions(workflowName: "cursor-cli-goal", scope: .user, workingDirectory: projectRoot.path)
+      )
+    )
+
+    let loaded = try CLIWorkflowSessionResolution.loadPersistedSession(
+      sessionId: session.sessionId,
+      sessionStore: nil,
+      scope: .auto,
+      workingDirectory: projectRoot.path,
+      environment: ["HOME": userRoot.path]
+    )
+
+    XCTAssertEqual(loaded.storeRoot, userSessions.path)
+    XCTAssertEqual(loaded.record.session.sessionId, session.sessionId)
+  }
+
+  func testLoadPersistedSessionReportsEachStoreWhenScopeAutoFails() throws {
+    let base = try makeTempDir()
+    let projectRoot = base.appendingPathComponent("project", isDirectory: true)
+    let userRoot = base.appendingPathComponent("home", isDirectory: true)
+    let projectSessions = projectRoot.appendingPathComponent(".riela/sessions", isDirectory: true)
+    try FileManager.default.createDirectory(at: projectSessions, withIntermediateDirectories: true)
+    try writeCorruptSessionDatabase(rootDirectory: projectSessions.path)
+
+    do {
+      _ = try CLIWorkflowSessionResolution.loadPersistedSession(
+        sessionId: "missing-session",
+        sessionStore: nil,
+        scope: .auto,
+        workingDirectory: projectRoot.path,
+        environment: ["HOME": userRoot.path]
+      )
+      XCTFail("missing session lookup should fail")
+    } catch let error as CLIWorkflowSessionStoreError {
+      guard case let .sqliteFailed(message) = error else {
+        return XCTFail("expected sqliteFailed, got \(error)")
+      }
+      XCTAssertTrue(message.contains(projectSessions.path), message)
+      XCTAssertTrue(message.contains(userRoot.appendingPathComponent(".riela/sessions", isDirectory: true).path), message)
+      XCTAssertTrue(message.contains("not a database") || message.contains("file is not a database"), message)
+      XCTAssertTrue(message.contains("session not found: missing-session"), message)
+    }
+  }
+
   private var tempRoots: [URL] = []
 
   override func tearDown() {
@@ -186,5 +251,15 @@ final class CLIWorkflowSessionResolutionTests: XCTestCase {
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     tempRoots.append(url)
     return url
+  }
+
+  private func writeCorruptSessionDatabase(rootDirectory: String) throws {
+    let databasePath = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: rootDirectory)
+    let databaseURL = URL(fileURLWithPath: databasePath)
+    try FileManager.default.createDirectory(
+      at: databaseURL.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try "not a sqlite database".write(to: databaseURL, atomically: true, encoding: .utf8)
   }
 }

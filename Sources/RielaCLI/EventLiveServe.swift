@@ -40,6 +40,18 @@ struct EventResolvedAttachmentInputs: Equatable, Sendable {
   static let empty = EventResolvedAttachmentInputs(attachments: [], imagePaths: [], attachmentText: "")
 }
 
+struct EventLiveSourcePollFailure: Error, CustomStringConvertible, Sendable {
+  var underlyingDescription: String
+
+  init(_ error: Error) {
+    self.underlyingDescription = String(describing: error)
+  }
+
+  var description: String {
+    underlyingDescription
+  }
+}
+
 struct DefaultEventLiveServer: EventLiveServing {
   var telegramAPI: any TelegramGatewayAPI
   var discordAPI: any DiscordGatewayAPI
@@ -109,7 +121,7 @@ struct DefaultEventLiveServer: EventLiveServing {
     let maximumEvents = parsed.limit
     repeat {
       for source in telegramSources {
-        processedEvents += await pollSourceSafely(
+        processedEvents += try await pollSourceSafely(
           eventRoot: eventRoot,
           sourceId: source.id,
           sourceKind: "telegram"
@@ -122,7 +134,7 @@ struct DefaultEventLiveServer: EventLiveServing {
         }
       }
       for source in discordSources {
-        processedEvents += await pollSourceSafely(
+        processedEvents += try await pollSourceSafely(
           eventRoot: eventRoot,
           sourceId: source.id,
           sourceKind: "discord"
@@ -135,7 +147,7 @@ struct DefaultEventLiveServer: EventLiveServing {
         }
       }
       for source in slackSources {
-        processedEvents += await pollSourceSafely(
+        processedEvents += try await pollSourceSafely(
           eventRoot: eventRoot,
           sourceId: source.id,
           sourceKind: "slack"
@@ -181,11 +193,11 @@ struct DefaultEventLiveServer: EventLiveServing {
     sourceId: String,
     sourceKind: String,
     poll: () async throws -> Int
-  ) async -> Int {
+  ) async throws -> Int {
     do {
       return try await poll()
-    } catch {
-      let message = String(describing: error)
+    } catch let error as EventLiveSourcePollFailure {
+      let message = error.description
       try? writeServeRecord(
         eventRoot: eventRoot,
         status: "ready",
@@ -220,12 +232,17 @@ struct DefaultEventLiveServer: EventLiveServing {
     for target in targets {
       let offsetStore = TelegramOffsetStore(eventRoot: eventRoot, source: source, targetId: target.id)
       let offset = try offsetStore.loadOffset()
-      let updates = try await telegramAPI.getUpdates(request: TelegramGetUpdatesRequest(
-        token: target.token,
-        offset: offset,
-        timeoutSeconds: pollingTimeoutSeconds(for: target, source: source),
-        limit: parsed.limit ?? source.polling.limit
-      ))
+      let updates: [TelegramUpdate]
+      do {
+        updates = try await telegramAPI.getUpdates(request: TelegramGetUpdatesRequest(
+          token: target.token,
+          offset: offset,
+          timeoutSeconds: pollingTimeoutSeconds(for: target, source: source),
+          limit: parsed.limit ?? source.polling.limit
+        ))
+      } catch {
+        throw EventLiveSourcePollFailure(error)
+      }
       try? writeServeRecord(
         eventRoot: eventRoot,
         status: "ready",

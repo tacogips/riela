@@ -25,12 +25,17 @@ extension DefaultEventLiveServer {
     for channelId in channelIds {
       let offsetStore = DiscordMessageOffsetStore(eventRoot: eventRoot, source: source, channelId: channelId)
       let afterMessageId = try offsetStore.loadLastMessageId()
-      let messages = try await discordAPI.getMessages(request: DiscordGetMessagesRequest(
-        token: token,
-        channelId: channelId,
-        afterMessageId: afterMessageId,
-        limit: parsed.limit ?? source.polling.limit
-      ))
+      let messages: [DiscordMessage]
+      do {
+        messages = try await discordAPI.getMessages(request: DiscordGetMessagesRequest(
+          token: token,
+          channelId: channelId,
+          afterMessageId: afterMessageId,
+          limit: parsed.limit ?? source.polling.limit
+        ))
+      } catch {
+        throw EventLiveSourcePollFailure(error)
+      }
       try? writeServeRecord(
         eventRoot: eventRoot,
         status: "ready",

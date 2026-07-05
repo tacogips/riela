@@ -61,9 +61,45 @@ final class SQLiteDatabaseTests: XCTestCase {
     XCTAssertEqual(rows.map { $0["value"] }, ["1"])
   }
 
+  func testReadOnlyOpenCanReadIdleWALDatabaseWithoutShmSidecar() throws {
+    let path = temporaryDatabasePath()
+    do {
+      let database = try SQLiteDatabase.open(path: path)
+      try database.execute("CREATE TABLE records (id TEXT PRIMARY KEY, value INTEGER NOT NULL)")
+      try database.execute("INSERT INTO records (id, value) VALUES ('one', 1)")
+      _ = try database.query("PRAGMA wal_checkpoint(TRUNCATE)")
+    }
+    removeSQLiteSidecars(for: path)
+
+    let readDatabase = try SQLiteDatabase.open(path: path, mode: .readOnly, options: .readOnlyDefault)
+    let rows = try readDatabase.query("SELECT id, value FROM records")
+
+    XCTAssertEqual(rows.first?["id"], "one")
+    XCTAssertEqual(rows.first?["value"], "1")
+  }
+
+  func testStatementErrorsIncludeDatabasePath() throws {
+    let path = temporaryDatabasePath()
+    let database = try SQLiteDatabase.open(path: path)
+
+    do {
+      _ = try database.query("SELECT value FROM missing_table")
+      XCTFail("missing table query should fail")
+    } catch let error as SQLiteError {
+      XCTAssertTrue(error.message.contains(path), error.message)
+      XCTAssertTrue(error.message.contains("no such table"), error.message)
+    }
+  }
+
   private func temporaryDatabasePath() -> String {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("riela-sqlite-tests-\(UUID().uuidString)", isDirectory: true)
     return root.appendingPathComponent("database.sqlite").path
+  }
+
+  private func removeSQLiteSidecars(for path: String) {
+    for suffix in ["-shm", "-wal"] {
+      try? FileManager.default.removeItem(atPath: path + suffix)
+    }
   }
 }

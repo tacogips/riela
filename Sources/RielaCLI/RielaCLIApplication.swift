@@ -406,8 +406,9 @@ func workflowRunHelpText(target: String?) -> String {
     treated as stalled from missing session heartbeats, because a long LLM
     inference and a provider-side stall are not distinguishable from local
     session records alone. Agent silence warnings are observability hints, not
-    cancellation decisions. For codex-agent command observability issues, set
-    node variables.codexUnifiedExec to false to pass --disable unified_exec.
+    cancellation decisions. codex-agent disables unified_exec by default for
+    command observability; set node variables.codexUnifiedExec to true only when
+    a workflow explicitly needs Codex unified exec shell-state persistence.
 
   Remote options:
     --endpoint <url>

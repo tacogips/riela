@@ -779,9 +779,10 @@ Codex-specific node variables:
 
 - `codexAdditionalArgs`: array of strings appended to the generated `codex exec`
   argv for advanced backend flags
-- `codexUnifiedExec`: optional boolean; `false` appends
-  `--disable unified_exec` for workflows that need completed command events
-  while Codex unified exec observability is degraded
+- `codexUnifiedExec`: optional boolean; omitted or `false` appends
+  `--disable unified_exec` so codex-agent records completed command events
+  reliably. `true` opts back in to Codex unified exec for workflows that
+  explicitly need shell-state persistence across commands.
 
 ### `modelFreeze`
 

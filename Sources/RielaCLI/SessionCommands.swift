@@ -279,6 +279,7 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
   public var activeExecutionUpdatedAt: Date?
   public var activeBackendEventAt: Date?
   public var activeBackendEventType: String?
+  public var backendSilentForMs: Int?
   public var activeSilentForMs: Int?
   public var executionCount: Int
   public var executions: [WorkflowStepExecution]
@@ -303,6 +304,7 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
     activeExecutionUpdatedAt: Date? = nil,
     activeBackendEventAt: Date? = nil,
     activeBackendEventType: String? = nil,
+    backendSilentForMs: Int? = nil,
     activeSilentForMs: Int? = nil,
     executionCount: Int,
     executions: [WorkflowStepExecution],
@@ -326,6 +328,7 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
     self.activeExecutionUpdatedAt = activeExecutionUpdatedAt
     self.activeBackendEventAt = activeBackendEventAt
     self.activeBackendEventType = activeBackendEventType
+    self.backendSilentForMs = backendSilentForMs
     self.activeSilentForMs = activeSilentForMs
     self.executionCount = executionCount
     self.executions = executions
@@ -436,6 +439,7 @@ public struct SessionInspectionCommand: Sendable {
       activeExecutionUpdatedAt: activeExecution?.updatedAt,
       activeBackendEventAt: activeExecution?.lastBackendEventAt,
       activeBackendEventType: activeExecution?.lastBackendEventType,
+      backendSilentForMs: activeExecution.flatMap(backendSilentForMs),
       activeSilentForMs: activeExecution.flatMap(activeSilentForMs),
       executionCount: snapshot.session.executions.count,
       executions: executionRows(for: command, allExecutions: snapshot.session.executions, runningExecutions: runningExecutions),
@@ -463,6 +467,7 @@ public struct SessionInspectionCommand: Sendable {
         "activeExecutionUpdatedAt: \(result.activeExecutionUpdatedAt.map(iso8601String) ?? "-")",
         "activeBackendEventAt: \(result.activeBackendEventAt.map(iso8601String) ?? "-")",
         "activeBackendEventType: \(result.activeBackendEventType ?? "-")",
+        "backendSilentForMs: \(result.backendSilentForMs.map(String.init) ?? "-")",
         "activeSilentForMs: \(result.activeSilentForMs.map(String.init) ?? "-")",
         "executionCount: \(result.executionCount)",
         "reviewFindingCount: \(result.reviewFindingCount)",
@@ -519,6 +524,13 @@ public struct SessionInspectionCommand: Sendable {
       return nil
     }
     let lastSignalAt = execution.lastBackendEventAt ?? execution.updatedAt
+    return max(0, Int(Date().timeIntervalSince(lastSignalAt) * 1_000))
+  }
+
+  private func backendSilentForMs(_ execution: WorkflowStepExecution) -> Int? {
+    guard execution.status == .running, let lastSignalAt = execution.lastBackendEventAt else {
+      return nil
+    }
     return max(0, Int(Date().timeIntervalSince(lastSignalAt) * 1_000))
   }
 }

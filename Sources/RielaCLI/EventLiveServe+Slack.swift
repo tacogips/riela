@@ -19,12 +19,17 @@ extension DefaultEventLiveServer {
     for channelId in channelIds {
       let offsetStore = SlackMessageOffsetStore(eventRoot: eventRoot, source: source, channelId: channelId)
       let oldestTimestamp = try offsetStore.loadLastTimestamp()
-      let messages = try await slackAPI.getMessages(request: SlackGetMessagesRequest(
-        token: token,
-        channelId: channelId,
-        oldestTimestamp: oldestTimestamp,
-        limit: parsed.limit ?? source.polling.limit
-      ))
+      let messages: [SlackMessage]
+      do {
+        messages = try await slackAPI.getMessages(request: SlackGetMessagesRequest(
+          token: token,
+          channelId: channelId,
+          oldestTimestamp: oldestTimestamp,
+          limit: parsed.limit ?? source.polling.limit
+        ))
+      } catch {
+        throw EventLiveSourcePollFailure(error)
+      }
       try? writeServeRecord(
         eventRoot: eventRoot,
         status: "ready",

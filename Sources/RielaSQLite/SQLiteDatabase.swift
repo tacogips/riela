@@ -115,18 +115,28 @@ public final class SQLiteDatabase: @unchecked Sendable {
     mode: SQLiteOpenMode = .readWriteCreate,
     options: SQLiteOpenOptions = .writableDefault
   ) throws -> SQLiteDatabase {
-    if case .readWriteCreate = mode {
-      let directory = URL(fileURLWithPath: path).deletingLastPathComponent()
-      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    }
-    var db: OpaquePointer?
-    let flags: Int32
     switch mode {
     case .readOnly:
-      flags = SQLITE_OPEN_READONLY
+      do {
+        let database = try openConfiguredDatabase(path: path, flags: SQLITE_OPEN_READONLY, options: options)
+        try database.verifyUsableReadConnection()
+        return database
+      } catch let error as SQLiteError where shouldFallbackToReadWriteOpen(path: path, error: error) {
+        return try openConfiguredDatabase(path: path, flags: SQLITE_OPEN_READWRITE, options: options)
+      }
     case .readWriteCreate:
-      flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE
+      let directory = URL(fileURLWithPath: path).deletingLastPathComponent()
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      return try openConfiguredDatabase(path: path, flags: SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, options: options)
     }
+  }
+
+  private static func openConfiguredDatabase(
+    path: String,
+    flags: Int32,
+    options: SQLiteOpenOptions
+  ) throws -> SQLiteDatabase {
+    var db: OpaquePointer?
     guard sqlite3_open_v2(path, &db, flags, nil) == SQLITE_OK, let opened = db else {
       let message = db.map(errorMessage) ?? "sqlite open failed"
       let code = db.map(sqlite3_errcode)
@@ -142,6 +152,15 @@ public final class SQLiteDatabase: @unchecked Sendable {
     let database = SQLiteDatabase(path: path, handle: opened, ownsHandle: true)
     try database.configure(options)
     return database
+  }
+
+  private static func shouldFallbackToReadWriteOpen(path: String, error: SQLiteError) -> Bool {
+    guard error.code == SQLITE_CANTOPEN,
+          FileManager.default.fileExists(atPath: path),
+          FileManager.default.isWritableFile(atPath: path) else {
+      return false
+    }
+    return true
   }
 
   public static func borrowing(_ handle: OpaquePointer?, path: String? = nil) -> SQLiteDatabase {
@@ -281,6 +300,10 @@ public final class SQLiteDatabase: @unchecked Sendable {
     }
   }
 
+  private func verifyUsableReadConnection() throws {
+    _ = try query("PRAGMA schema_version")
+  }
+
   private func bind(_ bindings: [SQLiteValue], to statement: OpaquePointer?) throws {
     for (offset, binding) in bindings.enumerated() {
       let index = Int32(offset + 1)
@@ -299,7 +322,7 @@ public final class SQLiteDatabase: @unchecked Sendable {
         throw SQLiteError(
           operation: .bind,
           code: result,
-          message: "sqlite bind failed at parameter \(index)"
+          message: messageWithPath("sqlite bind failed at parameter \(index)")
         )
       }
     }
@@ -327,9 +350,16 @@ public final class SQLiteDatabase: @unchecked Sendable {
     SQLiteError(
       operation: operation,
       code: sqlite3_errcode(handle),
-      message: Self.errorMessage(handle),
+      message: messageWithPath(Self.errorMessage(handle)),
       sql: sql
     )
+  }
+
+  private func messageWithPath(_ message: String) -> String {
+    guard let path, !message.contains(path) else {
+      return message
+    }
+    return "\(path): \(message)"
   }
 
   private static func errorMessage(_ handle: OpaquePointer?) -> String {

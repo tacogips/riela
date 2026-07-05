@@ -180,6 +180,31 @@ final class DeterministicWorkflowRunnerBackendEventTests: XCTestCase {
     XCTAssertEqual(warning.silenceThresholdMs, 10)
   }
 
+  func testAgentSilenceMonitorRepeatsWarningEventAcrossSustainedSilence() async throws {
+    let recorder = WorkflowRunEventRecorder()
+    let runner = DeterministicWorkflowRunner(
+      adapter: HeartbeatThenSleepingAdapter(delayNanoseconds: 80_000_000)
+    )
+
+    _ = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: backendEventWorkflow(),
+      nodePayloads: ["node": backendEventPayload()],
+      agentSilenceWarningMs: 10,
+      agentSilenceMonitorIntervalMs: 5,
+      eventHandler: { event in
+        await recorder.append(event)
+      }
+    ))
+
+    let events = await recorder.events()
+    let warnings = events.filter { $0.type == .silenceWarning }
+    XCTAssertGreaterThanOrEqual(warnings.count, 2)
+    XCTAssertTrue(warnings.allSatisfy { $0.stepId == "step" && $0.nodeId == "node" })
+    let silentDurations = warnings.compactMap(\.silentForMs)
+    XCTAssertEqual(silentDurations.count, warnings.count)
+    XCTAssertGreaterThanOrEqual(silentDurations.last ?? 0, silentDurations.first ?? 0)
+  }
+
   func testAgentSilenceMonitorDoesNotWarnBeforeFirstBackendEvent() async throws {
     let recorder = WorkflowRunEventRecorder()
     let runner = DeterministicWorkflowRunner(

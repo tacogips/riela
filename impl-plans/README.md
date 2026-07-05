@@ -27,6 +27,7 @@ impl-plans/
 | Plan | Status | Design Reference |
 | ---- | ------ | ---------------- |
 | `active/agent-response-streaming` | Implemented | `design-agent-response-streaming#phase-1` |
+| `active/codex-unified-exec-stall-followup` | Implemented; focused tests and CLI WAL/status repro passed | `design-codex-unified-exec-stall-followup` |
 | `active/loop-engineering-application-gap-closure` | Planning; first-line tool slices have landed separately | `design-loop-engineering-application-gap-closure` |
 | `active/loop-engineering-first-line-tool` | In Progress; module 8 self-evolution versioning remaining | `design-loop-engineering-first-line-tool-detail` |
 | `active/rielaapp-ux-onboarding-improvements` | Implemented; RielaApp verification passed | `design-rielaapp-ux-onboarding-improvements` |

@@ -58,7 +58,7 @@ enum CLIWorkflowSessionResolution {
       return LoadedPersistedCLIWorkflowSession(record: record, storeRoot: storeRoot)
     }
 
-    var lastError: CLIWorkflowSessionStoreError?
+    var outcomes: [SessionStoreSearchOutcome] = []
     for searchScope in sessionStoreSearchScopes(for: scope) {
       let storeRoot = CLIWorkflowSessionStore.resolveRootDirectory(
         sessionStore: nil,
@@ -70,14 +70,14 @@ enum CLIWorkflowSessionResolution {
         let record = try CLIWorkflowSessionStore(rootDirectory: storeRoot).load(sessionId: sessionId)
         return LoadedPersistedCLIWorkflowSession(record: record, storeRoot: storeRoot)
       } catch let error as CLIWorkflowSessionStoreError {
-        if case .notFound = error {
-          lastError = error
-          continue
-        }
-        throw error
+        outcomes.append(SessionStoreSearchOutcome(scope: searchScope, storeRoot: storeRoot, error: error))
+        continue
       }
     }
-    throw lastError ?? CLIWorkflowSessionStoreError.notFound("session not found: \(sessionId)")
+    if outcomes.contains(where: \.isStoreFailure) {
+      throw CLIWorkflowSessionStoreError.sqliteFailed(searchFailureMessage(sessionId: sessionId, outcomes: outcomes))
+    }
+    throw CLIWorkflowSessionStoreError.notFound(searchFailureMessage(sessionId: sessionId, outcomes: outcomes))
   }
 
   static func saveStoreRoot(
@@ -119,6 +119,37 @@ enum CLIWorkflowSessionResolution {
       return [.user]
     case .project, .direct:
       return [.project]
+    }
+  }
+
+  private static func searchFailureMessage(sessionId: String, outcomes: [SessionStoreSearchOutcome]) -> String {
+    let details = outcomes.map { "\($0.scope.rawValue) store \($0.storeRoot): \($0.errorDescription)" }
+      .joined(separator: "; ")
+    guard !details.isEmpty else {
+      return "session not found: \(sessionId)"
+    }
+    return "session not found: \(sessionId); searched stores: \(details)"
+  }
+}
+
+private struct SessionStoreSearchOutcome: Sendable {
+  var scope: WorkflowScope
+  var storeRoot: String
+  var error: CLIWorkflowSessionStoreError
+
+  var isStoreFailure: Bool {
+    if case .notFound = error {
+      return false
+    }
+    return true
+  }
+
+  var errorDescription: String {
+    switch error {
+    case let .invalidSessionId(value):
+      return "invalid session id: \(value)"
+    case let .notFound(message), let .io(message), let .sqliteFailed(message):
+      return message
     }
   }
 }

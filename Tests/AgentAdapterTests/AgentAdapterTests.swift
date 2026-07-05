@@ -92,7 +92,8 @@ final class AgentAdapterTests: XCTestCase {
       run.configuration.arguments,
       [
         "codex-dev", "exec", "--json", "--model", "model", "-c", #"model_reasoning_effort="high""#,
-        "--sandbox", "workspace-write", "--dangerously-bypass-approvals-and-sandbox", "--image",
+        "--sandbox", "workspace-write", "--disable", "unified_exec",
+        "--dangerously-bypass-approvals-and-sandbox", "--image",
         "/tmp/screenshot.png", "--image", "/tmp/duplicate.png", "--image", "/tmp/nested.png",
         "--image", "/tmp/source.png", "--image", "/tmp/argument.png", "--", "-"
       ]

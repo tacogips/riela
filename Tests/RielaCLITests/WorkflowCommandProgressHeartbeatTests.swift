@@ -51,6 +51,7 @@ extension WorkflowCommandLivePersistenceTests {
     XCTAssertEqual(progress.activeBackend, NodeExecutionBackend.codexAgent)
     XCTAssertEqual(progress.activeBackendEventAt, heartbeatAt)
     XCTAssertEqual(progress.activeBackendEventType, "turn.started")
+    XCTAssertNotNil(progress.backendSilentForMs)
     XCTAssertNotNil(progress.activeSilentForMs)
     XCTAssertEqual(progress.executions.first?.lastBackendEventAt, heartbeatAt)
 
@@ -62,6 +63,7 @@ extension WorkflowCommandLivePersistenceTests {
     XCTAssertEqual(textResult.exitCode, .success, textResult.stderr + textResult.stdout)
     XCTAssertTrue(textResult.stdout.contains("activeBackendEventType: turn.started"))
     XCTAssertTrue(textResult.stdout.contains("activeBackendEventAt: 2023-11-14T22:13:30Z"))
+    XCTAssertTrue(textResult.stdout.contains("backendSilentForMs: "))
     XCTAssertTrue(textResult.stdout.contains("activeSilentForMs: "))
   }
 

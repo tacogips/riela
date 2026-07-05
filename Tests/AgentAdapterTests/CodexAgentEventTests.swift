@@ -112,4 +112,37 @@ extension AgentAdapterTests {
     XCTAssertTrue(args.containsSubsequence(["--disable", "unified_exec"]))
     XCTAssertTrue(args.containsSubsequence(["--disable", "unified_exec", "--skip-git-repo-check"]))
   }
+
+  func testCodexUnifiedExecDefaultsToDisableArgument() async throws {
+    let runner = RecordingRunner(output: "done")
+
+    _ = try await CodexAgentAdapter(runner: runner, authPreflight: false).execute(
+      input(backend: .codexAgent),
+      context: AdapterExecutionContext()
+    )
+
+    let runs = await runner.runs()
+    let args = try XCTUnwrap(runs.last?.configuration.arguments)
+    XCTAssertTrue(args.containsSubsequence(["--disable", "unified_exec"]))
+  }
+
+  func testCodexUnifiedExecTrueOptsBackIn() async throws {
+    let runner = RecordingRunner(output: "done")
+
+    _ = try await CodexAgentAdapter(runner: runner, authPreflight: false).execute(
+      input(
+        backend: .codexAgent,
+        variables: [
+          "codexUnifiedExec": .bool(true),
+          "codexAdditionalArgs": .array([.string("--skip-git-repo-check")])
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    let runs = await runner.runs()
+    let args = try XCTUnwrap(runs.last?.configuration.arguments)
+    XCTAssertFalse(args.containsSubsequence(["--disable", "unified_exec"]))
+    XCTAssertTrue(args.contains("--skip-git-repo-check"))
+  }
 }

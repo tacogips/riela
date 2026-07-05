@@ -110,6 +110,8 @@ extension DeterministicWorkflowRunner {
       return nil
     }
     return Task {
+      var warningSignalAt: Date?
+      var lastWarningSilentForMs = 0
       while !Task.isCancelled {
         do {
           try await Task.sleep(nanoseconds: UInt64(request.agentSilenceMonitorIntervalMs) * 1_000_000)
@@ -125,8 +127,15 @@ extension DeterministicWorkflowRunner {
         guard let lastSignalAt = runningExecution.lastBackendEventAt else {
           continue
         }
+        if warningSignalAt != lastSignalAt {
+          warningSignalAt = lastSignalAt
+          lastWarningSilentForMs = 0
+        }
         let silentForMs = Int(Date().timeIntervalSince(lastSignalAt) * 1_000)
         guard silentForMs >= thresholdMs else {
+          continue
+        }
+        guard silentForMs - lastWarningSilentForMs >= thresholdMs else {
           continue
         }
         await emitSilenceWarningEvent(
@@ -143,7 +152,7 @@ extension DeterministicWorkflowRunner {
           thresholdMs: thresholdMs,
           handler: request.eventHandler
         )
-        return
+        lastWarningSilentForMs = silentForMs
       }
     }
   }

@@ -11,6 +11,7 @@ final class WorkflowRunHelpTests: XCTestCase {
     XCTAssertTrue(result.stdout.contains("for automation, agents, and LLM-driven tool use"))
     XCTAssertTrue(result.stdout.contains("Use --output json only when a"))
     XCTAssertTrue(result.stdout.contains("legacy caller explicitly requires"))
+    XCTAssertTrue(result.stdout.contains("riela serve --note-api [--note-root <dir>] [--host <host>] [--port <port>]"))
   }
 
   func testWorkflowRunHelpDocumentsVariablesAndSessionStartOutput() async {

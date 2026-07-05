@@ -1,10 +1,21 @@
 import Foundation
+import RielaGraphQL
+import RielaNote
 import RielaObservability
 import XCTest
 @testable import RielaCore
 @testable import RielaServer
 
 final class ServerContractsTests: XCTestCase {
+  func testServerConfigurationDefaultsKeepNoteAPIDisabledOnLocalhost() {
+    let configuration = RielaServerConfiguration()
+
+    XCTAssertEqual(configuration.host, "127.0.0.1")
+    XCTAssertEqual(configuration.port, 8787)
+    XCTAssertFalse(configuration.noteAPIEnabled)
+    XCTAssertNil(configuration.noteRoot)
+  }
+
   func testWorkflowServeStartRequestEncodesRuntimeConfigurationAsSinglePayload() throws {
     let request = WorkflowServeStartRequest(
       selection: .directDirectory("/workflows/demo", identifier: "demo"),
@@ -48,6 +59,25 @@ final class ServerContractsTests: XCTestCase {
     XCTAssertEqual(request.nodePatch?["worker"], .object(["model": .string("gpt-5-mini")]))
   }
 
+  func testWorkflowServeStartRequestDecodesLegacyPartialServerObject() throws {
+    let data = Data("""
+    {
+      "selection": {"kind": "scoped-name", "identifier": "demo", "scope": "auto"},
+      "server": {
+        "host": "0.0.0.0"
+      }
+    }
+    """.utf8)
+
+    let request = try JSONDecoder().decode(WorkflowServeStartRequest.self, from: data)
+
+    XCTAssertEqual(request.server.host, "0.0.0.0")
+    XCTAssertEqual(request.server.port, 8787)
+    XCTAssertFalse(request.server.noteAPIEnabled)
+    XCTAssertNil(request.server.noteRoot)
+    XCTAssertEqual(request.server.noteS3Profiles, [])
+  }
+
   func testGraphQLRouteValidatesEnvelopeAndPropagatesContext() async throws {
     let body = Data(#"{"query":"  query Test { workflowSession }  ","variables":null,"operationName":"  Test  "}"#.utf8)
     let request = ServerRequestEnvelope(
@@ -77,12 +107,192 @@ final class ServerContractsTests: XCTestCase {
     XCTAssertEqual(graphql["query"], .string("query Test { workflowSession }"))
     XCTAssertEqual(graphql["variables"], .object([:]))
     XCTAssertEqual(graphql["operationName"], .string("Test"))
+    guard case let .string(schema)? = graphql["schema"] else {
+      return XCTFail("expected schema string")
+    }
+    XCTAssertTrue(schema.contains("createNote(input: CreateNoteInput!)"))
+    XCTAssertTrue(schema.contains("searchNotes(query: String!"))
     guard case let .object(contextObject)? = response.body["context"] else {
       return XCTFail("expected context body")
     }
     XCTAssertEqual(contextObject["bearerTokenPresent"], .bool(true))
     XCTAssertEqual(contextObject["managerSessionId"], .string("manager-session"))
     XCTAssertEqual(contextObject["sanitizedEnvironmentKeys"], .array([.string("KEEP")]))
+  }
+
+  func testGraphQLRouteExecutesNoteDocumentsWhenExecutorIsConfigured() async throws {
+    let handler = DeterministicServerRouteHandler(
+      graphQLExecutor: try makeNoteGraphQLDocumentExecutor(),
+      allowUnauthenticatedNoteAPI: true
+    )
+    let createBody = Data(#"""
+    {
+      "query": "mutation CreateNote($input: CreateNoteInput!) { createNote(input: $input) { result { accepted status } note { noteId title } } }",
+      "variables": {
+        "input": {
+          "bodyMarkdown": "# Server Note\n\nRoute executor body",
+          "tags": [{"name": "server-doc"}]
+        }
+      },
+      "operationName": "CreateNote"
+    }
+    """#.utf8)
+
+    let create = await handler.route(
+      .init(method: "POST", path: "/graphql", body: createBody),
+      context: .init()
+    )
+
+    XCTAssertEqual(create.status, 200)
+    let created = try graphQLPayload(create.body, field: "createNote")
+    XCTAssertEqual(try resultObject(created)["accepted"], .bool(true))
+    let noteId = try stringValue(
+      try objectValue(created["note"], field: "createNote.note")["noteId"],
+      field: "note.noteId"
+    )
+
+    let searchBody = Data(#"""
+    {
+      "query": "query SearchNotes($query: String!, $tagFilter: [String!]) { searchNotes(query: $query, tagFilter: $tagFilter) { result { accepted status } value { note { noteId } } } }",
+      "variables": {
+        "query": "Route",
+        "tagFilter": ["server-doc"]
+      },
+      "operationName": "SearchNotes"
+    }
+    """#.utf8)
+    let search = await handler.route(
+      .init(method: "POST", path: "/graphql", body: searchBody),
+      context: .init()
+    )
+
+    XCTAssertEqual(search.status, 200)
+    let searchPayload = try graphQLPayload(search.body, field: "searchNotes")
+    XCTAssertEqual(try resultObject(searchPayload)["accepted"], .bool(true))
+    let values = try arrayValue(searchPayload["value"], field: "searchNotes.value")
+    guard !values.isEmpty else {
+      return XCTFail("expected at least one search result")
+    }
+    let firstNote = try objectValue(try objectValue(values[0], field: "search result")["note"], field: "search result.note")
+    XCTAssertEqual(firstNote["noteId"], .string(noteId))
+
+    let readOnlyBody = Data("""
+    {
+      "query": "mutation Lock($noteId: String!, $readOnly: Boolean!) { setNoteReadOnly(noteId: $noteId, readOnly: $readOnly) { result { accepted status } note { readOnly } } }",
+      "variables": {
+        "noteId": "\(noteId)",
+        "readOnly": true
+      },
+      "operationName": "Lock"
+    }
+    """.utf8)
+    let readOnly = await handler.route(
+      .init(method: "POST", path: "/graphql", body: readOnlyBody),
+      context: .init()
+    )
+    XCTAssertEqual(readOnly.status, 200)
+    XCTAssertEqual(try resultObject(try graphQLPayload(readOnly.body, field: "setNoteReadOnly"))["accepted"], .bool(true))
+
+    let rejectedUpdateBody = Data("""
+    {
+      "query": "mutation Update($input: UpdateNoteInput!) { updateNote(input: $input) { result { accepted status diagnostics } note { noteId } } }",
+      "variables": {
+        "input": {
+          "noteId": "\(noteId)",
+          "bodyMarkdown": "# Changed"
+        }
+      },
+      "operationName": "Update"
+    }
+    """.utf8)
+    let rejectedUpdate = await handler.route(
+      .init(method: "POST", path: "/graphql", body: rejectedUpdateBody),
+      context: .init()
+    )
+    XCTAssertEqual(rejectedUpdate.status, 200)
+    let updateResult = try resultObject(try graphQLPayload(rejectedUpdate.body, field: "updateNote"))
+    XCTAssertEqual(updateResult["accepted"], .bool(false))
+    XCTAssertEqual(updateResult["status"], .string("rejected"))
+    XCTAssertFalse(try arrayValue(updateResult["diagnostics"], field: "update diagnostics").isEmpty)
+  }
+
+  func testGraphQLRouteRejectsUnsupportedExecutorOperationsWithoutDebugEcho() async throws {
+    let handler = DeterministicServerRouteHandler(
+      graphQLExecutor: try makeNoteGraphQLDocumentExecutor(),
+      allowUnauthenticatedNoteAPI: true
+    )
+    let body = Data(#"{"query":"query Unknown { workflowSession { sessionId } }"}"#.utf8)
+
+    let response = await handler.route(
+      .init(method: "POST", path: "/graphql", body: body),
+      context: .init(inheritedEnvironment: ["SECRET_ENV_NAME": "redacted"])
+    )
+
+    XCTAssertEqual(response.status, 400)
+    guard case let .object(graphql)? = response.body["graphql"] else {
+      return XCTFail("expected graphql body")
+    }
+    XCTAssertNotNil(graphql["errors"])
+    XCTAssertNil(graphql["schema"])
+    XCTAssertNil(response.body["context"])
+  }
+
+  func testGraphQLRouteRejectsNoteDocumentsWhenAuthenticatorIsMissing() async throws {
+    let handler = DeterministicServerRouteHandler(graphQLExecutor: try makeNoteGraphQLDocumentExecutor())
+    let body = Data(#"""
+    {
+      "query": "mutation CreateNote($input: CreateNoteInput!) { createNote(input: $input) { result { accepted status } } }",
+      "variables": {
+        "input": {
+          "bodyMarkdown": "# Server Note\n\nUnauthenticated body"
+        }
+      },
+      "operationName": "CreateNote"
+    }
+    """#.utf8)
+
+    let response = await handler.route(
+      .init(method: "POST", path: "/graphql", body: body),
+      context: .init()
+    )
+
+    XCTAssertEqual(response.status, 503)
+    XCTAssertEqual(response.body["error"], .string("note API authentication is not configured"))
+  }
+
+  func testGraphQLRouteRejectsMultiOperationNoteMutationByResolvedOperationName() async throws {
+    let handler = DeterministicServerRouteHandler(graphQLExecutor: try makeNoteGraphQLDocumentExecutor())
+    let body = Data(#"""
+    {
+      "query": "query Safe { workflowSession } mutation Evil { deleteNote(noteId: \"note-1\") { accepted status } }",
+      "operationName": "Evil"
+    }
+    """#.utf8)
+
+    let response = await handler.route(
+      .init(method: "POST", path: "/graphql", body: body),
+      context: .init()
+    )
+
+    XCTAssertEqual(response.status, 503)
+    XCTAssertEqual(response.body["error"], .string("note API authentication is not configured"))
+  }
+
+  func testGraphQLRouteRejectsAmbiguousMultiOperationNoteDocumentWithoutOperationName() async throws {
+    let handler = DeterministicServerRouteHandler(graphQLExecutor: try makeNoteGraphQLDocumentExecutor())
+    let body = Data(#"""
+    {
+      "query": "query Safe { workflowSession } mutation Evil { deleteNote(noteId: \"note-1\") { accepted status } }"
+    }
+    """#.utf8)
+
+    let response = await handler.route(
+      .init(method: "POST", path: "/graphql", body: body),
+      context: .init()
+    )
+
+    XCTAssertEqual(response.status, 503)
+    XCTAssertEqual(response.body["error"], .string("note API authentication is not configured"))
   }
 
   func testGraphQLRouteRejectsMissingAndNonObjectBodies() async {
@@ -130,6 +340,22 @@ final class ServerContractsTests: XCTestCase {
       return XCTFail("expected graphql body")
     }
     XCTAssertEqual(graphql["operationName"], .null)
+  }
+
+  func testGraphQLRouteRejectsOversizedQueryBeforeParsingOperations() async throws {
+    let handler = DeterministicServerRouteHandler()
+    let oversizedQuery = "query Oversized { " +
+      String(repeating: "field ", count: NoteGraphQLDocumentLimits.maximumDocumentUTF8Bytes / 6 + 1) +
+      "}"
+    let body = try JSONEncoder().encode(JSONValue.object(["query": .string(oversizedQuery)]))
+
+    let response = await handler.route(
+      .init(method: "POST", path: "/graphql", body: body),
+      context: .init()
+    )
+
+    XCTAssertEqual(response.status, 400)
+    XCTAssertEqual(response.body["error"], .string("graphql query exceeds the maximum supported size"))
   }
 
   func testGraphQLRouteHandlesDuplicateMixedCaseHeadersDeterministically() async {
@@ -192,5 +418,48 @@ final class ServerContractsTests: XCTestCase {
     XCTAssertEqual(health.body["status"], .string("ok"))
     XCTAssertEqual(unsupportedMethod.status, 405)
     XCTAssertEqual(missing.status, 404)
+  }
+
+  private func makeNoteGraphQLDocumentExecutor(function: String = #function) throws -> NoteGraphQLDocumentExecutor {
+    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+      .appendingPathComponent("tmp/RielaServerTests", isDirectory: true)
+      .appendingPathComponent(function.replacingOccurrences(of: "()", with: ""), isDirectory: true)
+      .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: root.path))
+    return NoteGraphQLDocumentExecutor(service: GraphQLNoteGraphQLService(service: service))
+  }
+
+  private func graphQLPayload(_ body: JSONObject, field: String) throws -> JSONObject {
+    let data = try objectValue(body["data"], field: "data")
+    return try objectValue(data[field], field: field)
+  }
+
+  private func resultObject(_ payload: JSONObject) throws -> JSONObject {
+    try objectValue(payload["result"], field: "result")
+  }
+
+  private func objectValue(_ value: JSONValue?, field: String) throws -> JSONObject {
+    guard case let .object(object)? = value else {
+      XCTFail("expected \(field) object")
+      return [:]
+    }
+    return object
+  }
+
+  private func arrayValue(_ value: JSONValue?, field: String) throws -> [JSONValue] {
+    guard case let .array(array)? = value else {
+      XCTFail("expected \(field) array")
+      return []
+    }
+    return array
+  }
+
+  private func stringValue(_ value: JSONValue?, field: String) throws -> String {
+    guard case let .string(string)? = value else {
+      XCTFail("expected \(field) string")
+      return ""
+    }
+    return string
   }
 }

@@ -77,9 +77,20 @@ public protocol ServerRouteHandling: Sendable {
 
 public struct DeterministicServerRouteHandler: ServerRouteHandling {
   public var telemetry: any RielaTelemetry
+  public var graphQLExecutor: (any GraphQLDocumentExecuting)?
+  public var noteAPIAuthenticator: (any NoteAPIAuthenticating)?
+  public var allowUnauthenticatedNoteAPI: Bool
 
-  public init(telemetry: any RielaTelemetry = NoOpRielaTelemetry()) {
+  public init(
+    telemetry: any RielaTelemetry = NoOpRielaTelemetry(),
+    graphQLExecutor: (any GraphQLDocumentExecuting)? = nil,
+    noteAPIAuthenticator: (any NoteAPIAuthenticating)? = nil,
+    allowUnauthenticatedNoteAPI: Bool = false
+  ) {
     self.telemetry = telemetry
+    self.graphQLExecutor = graphQLExecutor
+    self.noteAPIAuthenticator = noteAPIAuthenticator
+    self.allowUnauthenticatedNoteAPI = allowUnauthenticatedNoteAPI
   }
 
   public func route(_ request: ServerRequestEnvelope, context: ServerRequestContext) async -> ServerResponseDescriptor {
@@ -100,8 +111,12 @@ public struct DeterministicServerRouteHandler: ServerRouteHandling {
         "status": .string("ok")
       ])
     case ("POST", "/graphql"):
-      response = routeGraphQL(request, context: contextWithHeaders)
-    case (_, "/"), (_, "/overview"), (_, "/healthz"), (_, "/graphql"):
+      response = await routeGraphQL(request, context: contextWithHeaders)
+    case ("GET", "/note/register"):
+      response = await routeNoteRegistrationChallenge(request, context: contextWithHeaders)
+    case ("POST", "/note/register"):
+      response = await routeNoteRegistration(request, context: contextWithHeaders)
+    case (_, "/"), (_, "/overview"), (_, "/healthz"), (_, "/graphql"), (_, "/note/register"):
       response = .init(status: 405, body: [
         "error": .string("unsupported method"),
         "method": .string(normalizedMethod),
@@ -136,6 +151,9 @@ public struct DeterministicServerRouteHandler: ServerRouteHandling {
     guard !query.isEmpty else {
       return .failure("graphql request body must include a non-empty query string")
     }
+    guard query.utf8.count <= NoteGraphQLDocumentLimits.maximumDocumentUTF8Bytes else {
+      return .failure("graphql query exceeds the maximum supported size")
+    }
     let variables: JSONObject
     if let rawVariables = object["variables"] {
       if case .null = rawVariables {
@@ -162,13 +180,13 @@ public struct DeterministicServerRouteHandler: ServerRouteHandling {
     } else {
       operationName = nil
     }
-    if let operationName, !graphqlNamedOperationNames(in: query).contains(operationName) {
+    if let operationName, !noteGraphQLNamedOperationNames(in: query).contains(operationName) {
       return .failure("graphql operationName '\(operationName)' was not found in query")
     }
     return .success(.init(query: query, variables: variables, operationName: operationName))
   }
 
-  private func routeGraphQL(_ request: ServerRequestEnvelope, context: ServerRequestContext) -> ServerResponseDescriptor {
+  private func routeGraphQL(_ request: ServerRequestEnvelope, context: ServerRequestContext) async -> ServerResponseDescriptor {
     switch parseGraphQLEnvelope(request) {
     case let .failure(message):
       return .init(status: 400, body: [
@@ -178,6 +196,35 @@ public struct DeterministicServerRouteHandler: ServerRouteHandling {
         ])
       ])
     case let .success(envelope):
+      var authenticatedNoteAPIClient: NoteAPIAuthenticatedClient?
+      if graphQLExecutor != nil, noteGraphQLRequiresAuthentication(
+        in: envelope.query,
+        operationName: envelope.operationName
+      ) {
+        if let noteAPIAuthenticator {
+          switch await noteAPIAuthenticator.authenticate(request: request, context: context) {
+          case let .accepted(client):
+            authenticatedNoteAPIClient = client
+          case let .rejected(response):
+            return response
+          }
+        } else if !allowUnauthenticatedNoteAPI {
+          return noteAPIUnavailableResponse("note API authentication is not configured")
+        }
+      }
+      if let graphQLExecutor {
+        let executed = await graphQLExecutor.execute(GraphQLDocumentRequest(
+          query: envelope.query,
+          variables: envelope.variables,
+          operationName: envelope.operationName,
+          environment: context.sanitizedEnvironment,
+          authenticatedClientId: authenticatedNoteAPIClient?.clientId
+        ))
+        if executed.handled {
+          return .init(status: executed.status, body: executed.body)
+        }
+        return graphQLExecutionErrorResponse(message: "unsupported GraphQL operation")
+      }
       return .init(status: 200, body: [
         "graphql": .object([
           "delegated": .bool(true),
@@ -193,6 +240,39 @@ public struct DeterministicServerRouteHandler: ServerRouteHandling {
         ])
       ])
     }
+  }
+
+  private func graphQLExecutionErrorResponse(message: String) -> ServerResponseDescriptor {
+    .init(status: 400, body: [
+      "error": .string(message),
+      "graphql": .object([
+        "errors": .array([.object(["message": .string(message)])])
+      ])
+    ])
+  }
+
+  private func routeNoteRegistration(
+    _ request: ServerRequestEnvelope,
+    context: ServerRequestContext
+  ) async -> ServerResponseDescriptor {
+    guard let registrar = noteAPIAuthenticator as? NoteAPIClientRegistering else {
+      return .init(status: 404, body: [
+        "error": .string("note API registration is not enabled")
+      ])
+    }
+    return await registrar.redeemRegistrationCode(request: request, context: context)
+  }
+
+  private func routeNoteRegistrationChallenge(
+    _ request: ServerRequestEnvelope,
+    context: ServerRequestContext
+  ) async -> ServerResponseDescriptor {
+    guard let registrar = noteAPIAuthenticator as? NoteAPIClientRegistering else {
+      return .init(status: 404, body: [
+        "error": .string("note API registration is not enabled")
+      ])
+    }
+    return await registrar.createRegistrationChallenge(request: request, context: context)
   }
 }
 
@@ -239,122 +319,7 @@ private extension DeterministicServerRouteHandler {
     guard case let .success(envelope) = parseGraphQLEnvelope(request) else {
       return "unknown"
     }
-    guard let firstToken = graphqlTokens(in: envelope.query).first?.lowercased() else {
-      return "unknown"
-    }
-    if firstToken == "mutation" {
-      return "mutation"
-    }
-    if firstToken == "subscription" {
-      return "subscription"
-    }
-    if firstToken == "query" || firstToken == "{" {
-      return "query"
-    }
-    return "unknown"
-  }
-
-  func graphqlNamedOperationNames(in query: String) -> Set<String> {
-    let tokens = graphqlTokens(in: query)
-    var names = Set<String>()
-    for index in tokens.indices {
-      guard ["query", "mutation", "subscription"].contains(tokens[index].lowercased()) else {
-        continue
-      }
-      let nameIndex = tokens.index(after: index)
-      guard nameIndex < tokens.endIndex, isGraphQLName(tokens[nameIndex]) else {
-        continue
-      }
-      names.insert(tokens[nameIndex])
-    }
-    return names
-  }
-
-  func graphqlTokens(in query: String) -> [String] {
-    let scalars = Array(query.unicodeScalars)
-    var index = 0
-    var tokens: [String] = []
-    while index < scalars.count {
-      let scalar = scalars[index]
-      if isGraphQLIgnored(scalar) {
-        index += 1
-      } else if scalar == "#" {
-        skipGraphQLComment(scalars, index: &index)
-      } else if scalar == "\"" {
-        skipGraphQLString(scalars, index: &index)
-      } else if isGraphQLNameStart(scalar) {
-        tokens.append(readGraphQLName(scalars, index: &index))
-      } else {
-        tokens.append(String(scalar))
-        index += 1
-      }
-    }
-    return tokens
-  }
-
-  func skipGraphQLComment(_ scalars: [UnicodeScalar], index: inout Int) {
-    while index < scalars.count, scalars[index] != "\n", scalars[index] != "\r" {
-      index += 1
-    }
-  }
-
-  func skipGraphQLString(_ scalars: [UnicodeScalar], index: inout Int) {
-    if scalars[safe: index + 1] == "\"", scalars[safe: index + 2] == "\"" {
-      index += 3
-      while index < scalars.count {
-        if scalars[safe: index] == "\"", scalars[safe: index + 1] == "\"", scalars[safe: index + 2] == "\"" {
-          index += 3
-          return
-        }
-        index += 1
-      }
-      return
-    }
-    index += 1
-    while index < scalars.count {
-      if scalars[index] == "\\" {
-        index += 2
-      } else if scalars[index] == "\"" {
-        index += 1
-        return
-      } else {
-        index += 1
-      }
-    }
-  }
-
-  func readGraphQLName(_ scalars: [UnicodeScalar], index: inout Int) -> String {
-    let start = index
-    index += 1
-    while index < scalars.count, isGraphQLNameContinue(scalars[index]) {
-      index += 1
-    }
-    return String(String.UnicodeScalarView(scalars[start..<index]))
-  }
-
-  func isGraphQLName(_ token: String) -> Bool {
-    guard let first = token.unicodeScalars.first, isGraphQLNameStart(first) else {
-      return false
-    }
-    return token.unicodeScalars.dropFirst().allSatisfy(isGraphQLNameContinue)
-  }
-
-  func isGraphQLIgnored(_ scalar: UnicodeScalar) -> Bool {
-    scalar == "," || scalar.properties.isWhitespace
-  }
-
-  func isGraphQLNameStart(_ scalar: UnicodeScalar) -> Bool {
-    scalar == "_" || (65...90).contains(scalar.value) || (97...122).contains(scalar.value)
-  }
-
-  func isGraphQLNameContinue(_ scalar: UnicodeScalar) -> Bool {
-    isGraphQLNameStart(scalar) || (48...57).contains(scalar.value)
-  }
-}
-
-private extension Collection {
-  subscript(safe index: Index) -> Element? {
-    indices.contains(index) ? self[index] : nil
+    return noteGraphQLOperationTypeName(in: envelope.query, operationName: envelope.operationName)
   }
 }
 

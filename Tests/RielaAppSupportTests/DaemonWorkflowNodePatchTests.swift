@@ -427,7 +427,8 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
         inheritedEnvironment: ["RIELA_APP_TEST_TOKEN": "runtime-token"],
         defaultVariables: ["persona": .string("assistant-a")],
         nodePatch: ["worker": .object(["model": .string("gpt-5-mini")])]
-      )
+      ),
+      server: RielaServerConfiguration(noteAPIEnabled: true, noteRoot: root.path)
     )
     factory.markLatestExited()
 
@@ -440,6 +441,8 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
     XCTAssertEqual(factory.requests.last?.inheritedEnvironment["RIELA_APP_TEST_TOKEN"], "runtime-token")
     XCTAssertEqual(factory.requests.last?.defaultVariables["persona"], .string("assistant-a"))
     XCTAssertEqual(factory.requests.last?.nodePatch?["worker"], .object(["model": .string("gpt-5-mini")]))
+    XCTAssertEqual(factory.requests.last?.server.noteAPIEnabled, true)
+    XCTAssertEqual(factory.requests.last?.server.noteRoot, root.path)
     await runtime.stop(identity: candidate.id)
   }
 

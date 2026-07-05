@@ -117,6 +117,17 @@ extension RielaApp {
     return configuration
   }
 
+  func daemonServerConfiguration(profileName: RielaAppProfileName? = nil) -> RielaServerConfiguration {
+    let profileName = profileName ?? daemonProfileName
+    let noteRoot = noteRootURL(profileName: profileName)
+    let settings = RielaAppNoteSettingsStore(noteRoot: noteRoot).load()
+    return RielaServerConfiguration(
+      noteAPIEnabled: settings.exposesNoteAPI,
+      noteRoot: noteRoot.path,
+      noteS3Profiles: settings.s3Profiles.map(\.serverConfiguration)
+    )
+  }
+
   private enum EnvironmentFileAction {
     case choose
     case clear
@@ -318,6 +329,21 @@ extension RielaApp {
 
   private func isSupportedEnvironmentFile(_ url: URL) -> Bool {
     url.lastPathComponent == ".env" || url.pathExtension == "env"
+  }
+}
+
+private extension RielaAppNoteS3ProfileSettings {
+  var serverConfiguration: RielaServerS3StorageProfileConfiguration {
+    RielaServerS3StorageProfileConfiguration(
+      name: name,
+      endpoint: endpoint,
+      region: region,
+      bucket: bucket,
+      accessKeyIdEnv: accessKeyIdEnv,
+      secretAccessKeyEnv: secretAccessKeyEnv,
+      sessionTokenEnv: sessionTokenEnv,
+      keyPrefix: keyPrefix
+    )
   }
 }
 #endif

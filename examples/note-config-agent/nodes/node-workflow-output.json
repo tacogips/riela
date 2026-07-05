@@ -1,0 +1,15 @@
+{
+  "id": "workflow-output",
+  "description": "Project the config-agent proposal as the workflow root output.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplate": "Project the latest config-agent proposal payload.",
+  "variables": {},
+  "output": {
+    "description": "Latest config-agent proposal payload.",
+    "projection": {
+      "kind": "latest-input-payload"
+    }
+  }
+}

@@ -598,7 +598,8 @@ public struct SessionRerunCommand: Sendable {
         runtimeSnapshot: WorkflowRuntimePersistenceProjector.snapshot(
           session: result.session,
           workflowMessages: workflowMessages,
-          loopEvidence: loopEvidence
+          loopEvidence: loopEvidence,
+          loopMetadata: bundle.workflow.loop
         )
       )
       return renderRerunSuccess(options: options, result: result)
@@ -757,7 +758,8 @@ public struct SessionResumeCommand: Sendable {
         runtimeSnapshot: WorkflowRuntimePersistenceProjector.snapshot(
           session: result.session,
           workflowMessages: workflowMessages,
-          loopEvidence: loopEvidence
+          loopEvidence: loopEvidence,
+          loopMetadata: bundle.workflow.loop
         )
       )
       return renderResumeSuccess(options: options, result: result)
@@ -807,7 +809,8 @@ public struct SessionResumeCommand: Sendable {
       runtimeSnapshot: WorkflowRuntimePersistenceProjector.snapshot(
         session: session,
         workflowMessages: workflowMessages,
-        loopEvidence: loopEvidence
+        loopEvidence: loopEvidence,
+        loopMetadata: bundle.workflow.loop
       )
     )
   }

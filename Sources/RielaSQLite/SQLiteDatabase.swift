@@ -12,17 +12,23 @@ public enum SQLiteOpenMode: Sendable {
 
 public struct SQLiteOpenOptions: Sendable {
   public var enableWAL: Bool
+  public var enableForeignKeys: Bool
   public var busyTimeoutMilliseconds: Int32?
   public var requireJSONB: Bool
+  public var requireFTS5: Bool
 
   public init(
     enableWAL: Bool = true,
+    enableForeignKeys: Bool = true,
     busyTimeoutMilliseconds: Int32? = 3_000,
-    requireJSONB: Bool = true
+    requireJSONB: Bool = true,
+    requireFTS5: Bool = false
   ) {
     self.enableWAL = enableWAL
+    self.enableForeignKeys = enableForeignKeys
     self.busyTimeoutMilliseconds = busyTimeoutMilliseconds
     self.requireJSONB = requireJSONB
+    self.requireFTS5 = requireFTS5
   }
 
   public static let writableDefault = SQLiteOpenOptions()
@@ -35,6 +41,7 @@ public enum SQLiteErrorOperation: String, Sendable {
   case query
   case bind
   case jsonBUnavailable
+  case fts5Unavailable
 }
 
 public struct SQLiteError: Error, Equatable, Sendable {
@@ -157,6 +164,11 @@ public final class SQLiteDatabase: @unchecked Sendable {
   }
 
   public func execute(_ sql: String, bindings: [SQLiteValue] = []) throws {
+    _ = try executeAndReturnChangedRowCount(sql, bindings: bindings)
+  }
+
+  @discardableResult
+  public func executeAndReturnChangedRowCount(_ sql: String, bindings: [SQLiteValue] = []) throws -> Int {
     var statement: OpaquePointer?
     guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK else {
       throw sqliteError(operation: .execute, sql: sql)
@@ -168,6 +180,7 @@ public final class SQLiteDatabase: @unchecked Sendable {
     guard sqlite3_step(statement) == SQLITE_DONE else {
       throw sqliteError(operation: .execute, sql: sql)
     }
+    return Int(sqlite3_changes(handle))
   }
 
   public func query(_ sql: String, bindings: [SQLiteValue] = []) throws -> [SQLiteRow] {
@@ -205,12 +218,44 @@ public final class SQLiteDatabase: @unchecked Sendable {
     }
   }
 
+  public func requireFTS5Available() throws {
+    do {
+      try runFTS5Probe(createSQL: "CREATE VIRTUAL TABLE %@ USING fts5(value)")
+    } catch let error as SQLiteError {
+      throw SQLiteError(
+        operation: .fts5Unavailable,
+        code: error.code,
+        message: "sqlite FTS5 support is unavailable: \(error.message)"
+      )
+    }
+  }
+
+  public func requireFTS5TrigramAvailable() throws {
+    do {
+      try runFTS5Probe(createSQL: "CREATE VIRTUAL TABLE %@ USING fts5(value, tokenize='trigram')")
+    } catch let error as SQLiteError {
+      throw SQLiteError(
+        operation: .fts5Unavailable,
+        code: error.code,
+        message: "sqlite FTS5 trigram tokenizer support is unavailable: \(error.message)"
+      )
+    }
+  }
+
   public func tableExists(_ name: String) throws -> Bool {
     let rows = try query(
       "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
       bindings: [.text(name)]
     )
     return rows.first?["present"] != nil
+  }
+
+  private func runFTS5Probe(createSQL: String) throws {
+    let tableName = "temp.riela_fts5_probe_\(UUID().uuidString.replacingOccurrences(of: "-", with: "_"))"
+    defer {
+      try? execute("DROP TABLE IF EXISTS \(tableName)")
+    }
+    try execute(String(format: createSQL, tableName))
   }
 
   public func tableColumnNames(_ tableName: String) throws -> Set<String> {
@@ -222,11 +267,17 @@ public final class SQLiteDatabase: @unchecked Sendable {
     if let busyTimeoutMilliseconds = options.busyTimeoutMilliseconds {
       sqlite3_busy_timeout(handle, busyTimeoutMilliseconds)
     }
+    if options.enableForeignKeys {
+      try execute("PRAGMA foreign_keys=ON")
+    }
     if options.enableWAL {
       _ = try query("PRAGMA journal_mode=WAL")
     }
     if options.requireJSONB {
       try requireJSONBAvailable()
+    }
+    if options.requireFTS5 {
+      try requireFTS5Available()
     }
   }
 

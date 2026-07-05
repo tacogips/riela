@@ -1,0 +1,85 @@
+let graphQLNoteSchemaContract = """
+type NoteTag { tagId: String!, name: String!, classId: String, isSystem: Boolean!, createdAt: String! }
+type NoteTagClass { classId: String!, label: String!, description: String, isSystem: Boolean!, createdAt: String! }
+type NoteTagAssignment { tag: NoteTag!, provenance: String!, assignedBy: String, deletable: Boolean!, createdAt: String! }
+type Notebook { notebookId: String!, title: String!, createdAt: String!, updatedAt: String!, metaJSON: String, tags: [NoteTagAssignment!]!, firstNotePreview: String, noteCount: Int }
+type Note { noteId: String!, notebookId: String!, noteNumber: Int!, title: String, bodyMarkdown: String!, readOnly: Boolean!, createdAt: String!, updatedAt: String!, metaJSON: String, tags: [NoteTagAssignment!]! }
+type NoteFile {
+  fileId: String!
+  storageKind: String!
+  localPath: String
+  s3Profile: String
+  s3Bucket: String
+  s3Key: String
+  mediaType: String!
+  byteSize: Int!
+  sha256: String!
+  originalFilename: String
+  createdAt: String!
+  migratedAt: String
+}
+type NoteFileAttachment { noteId: String!, file: NoteFile!, role: String!, position: Int! }
+type NoteComment { commentId: String!, noteId: String!, bodyMarkdown: String!, author: String!, createdAt: String! }
+type NoteLink { fromNoteId: String!, toNoteId: String!, linkKind: String!, provenance: String!, createdAt: String! }
+type NoteSearchResult { note: Note!, snippet: String!, rank: Float!, matchedTags: [NoteTag!]! }
+type NoteAutoAction { actionId: String!, trigger: String!, workflowId: String!, filterJSON: String, enabled: Boolean!, position: Int!, createdAt: String! }
+type NoteWorkflowScaffoldFile { relativePath: String!, path: String! }
+type NoteWorkflowScaffold { workflowId: String!, workflowRoot: String!, workflowPath: String!, files: [NoteWorkflowScaffoldFile!]! }
+type NoteQueryPayload { result: ControlPlaneResult!, value: Note }
+type NotebookQueryPayload { result: ControlPlaneResult!, value: Notebook }
+type NotebooksQueryPayload { result: ControlPlaneResult!, value: [Notebook!] }
+type NotesQueryPayload { result: ControlPlaneResult!, value: [Note!] }
+type NoteSearchQueryPayload { result: ControlPlaneResult!, value: [NoteSearchResult!] }
+type NoteTagsQueryPayload { result: ControlPlaneResult!, value: [NoteTag!] }
+type NoteTagClassesQueryPayload { result: ControlPlaneResult!, value: [NoteTagClass!] }
+type NoteFileQueryPayload { result: ControlPlaneResult!, value: NoteFile }
+type NoteAutoActionsQueryPayload { result: ControlPlaneResult!, value: [NoteAutoAction!] }
+input NoteTagInput { name: String!, classId: String }
+input CreateNoteInput {
+  notebookId: String
+  notebookTitle: String
+  title: String
+  bodyMarkdown: String!
+  readOnly: Boolean
+  tags: [NoteTagInput!]
+  provenance: String
+  assignedBy: String
+  metaJSON: String
+  originatingActionId: String
+}
+input CreateNotebookInput { title: String!, kindTagName: String, metaJSON: String, originatingActionId: String }
+input DefineNoteTagClassInput { classId: String!, label: String!, description: String }
+input DefineNoteTagInput { name: String!, classId: String }
+input ScaffoldNoteIngestionWorkflowInput { workflowRoot: String!, workflowId: String!, notebookKindTag: String, assignedBy: String }
+input UpdateNoteInput { noteId: String!, bodyMarkdown: String!, originatingActionId: String }
+input ApplyNoteTagsInput { noteId: String!, tags: [NoteTagInput!]!, provenance: String, assignedBy: String }
+input ApplyNotebookTagsInput { notebookId: String!, tags: [String!]!, provenance: String, assignedBy: String }
+input AddNoteCommentInput { noteId: String!, bodyMarkdown: String!, author: String }
+input LinkNotesInput { fromNoteId: String!, toNoteId: String!, linkKind: String, provenance: String }
+input AttachNoteFileInput { noteId: String!, contentBase64: String!, role: String, mediaType: String!, originalFilename: String, position: Int }
+input ConfigureNoteAutoActionInput { actionId: String!, trigger: String!, workflowId: String!, filterJSON: String, enabled: Boolean, position: Int }
+input NoteConversationTurnInput { userMarkdown: String!, assistantMarkdown: String!, sourceNoteIds: [String!] }
+input SaveNoteConversationInput { title: String!, transcript: [NoteConversationTurnInput!]!, assignedBy: String }
+input MigrateNoteFileStorageInput {
+  fileId: String!
+  s3ProfileName: String!
+}
+input MigrateAllNoteFilesInput {
+  s3ProfileName: String!
+}
+type NoteFileMigrationFailure { fileId: String!, message: String! }
+type NoteFileMigrationPayload { result: ControlPlaneResult!, migrated: [NoteFile!]!, failures: [NoteFileMigrationFailure!]! }
+type NoteMutationPayload {
+  result: ControlPlaneResult!
+  note: Note
+  notebook: Notebook
+  notes: [Note!]!
+  tag: NoteTag
+  tagClass: NoteTagClass
+  file: NoteFile
+  comment: NoteComment
+  link: NoteLink
+  autoAction: NoteAutoAction
+  workflowScaffold: NoteWorkflowScaffold
+}
+"""

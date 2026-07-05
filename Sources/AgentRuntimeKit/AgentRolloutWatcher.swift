@@ -115,37 +115,42 @@ public final class AgentRolloutWatcher<RolloutLine>: @unchecked Sendable where R
 
   private func flushFileEvents(path: String, offset: UInt64) -> [AgentRolloutWatcherEvent<RolloutLine>] {
     let url = URL(fileURLWithPath: path)
-    guard let data = try? Data(contentsOf: url) else {
+    guard let fileSize = try? FileManager.default.attributesOfItem(atPath: path)[.size] as? UInt64,
+          let handle = try? FileHandle(forReadingFrom: url) else {
       return [.error(path: path, message: "rollout file is not readable")]
     }
-    guard UInt64(data.count) >= offset else {
-      updateOffset(path: path, offset: UInt64(data.count))
+    defer { try? handle.close() }
+    guard fileSize >= offset else {
+      updateOffset(path: path, offset: fileSize)
       return []
     }
+    do {
+      try handle.seek(toOffset: offset)
+    } catch {
+      return [.error(path: path, message: "rollout file is not seekable")]
+    }
+    let appended = handle.readDataToEndOfFile()
+    let readEndOffset = offset + UInt64(appended.count)
 
     var events: [AgentRolloutWatcherEvent<RolloutLine>] = []
-    let appended = data.dropFirst(Int(offset))
-    var nextOffset = offset
-    if let text = String(data: appended, encoding: .utf8) {
-      var trailingStart = text.startIndex
-      if let lastNewline = text.lastIndex(of: "\n") {
-        let completeText = String(text[..<text.index(after: lastNewline)])
-        for rawLine in completeText.split(separator: "\n", omittingEmptySubsequences: true) {
-          if let line = rolloutLineParser(String(rawLine)) {
-            events.append(.line(path: path, line: line))
-          }
-        }
-        nextOffset = offset + UInt64(completeText.utf8.count)
-        trailingStart = text.index(after: lastNewline)
+    var splitter = AgentJSONLByteLineSplitter()
+    for rawLine in splitter.feed(appended) {
+      if let line = rolloutLineParser(rawLine) {
+        events.append(.line(path: path, line: line))
       }
-      let trailing = String(text[trailingStart...])
+    }
+    let trailingByteCount = splitter.pendingByteCount
+    if let trailing = splitter.flush(allowLossyUTF8: false) {
       if !trailing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
          let line = rolloutLineParser(trailing) {
         events.append(.line(path: path, line: line))
-        nextOffset = UInt64(data.count)
+        updateOffset(path: path, offset: readEndOffset)
+      } else {
+        updateOffset(path: path, offset: readEndOffset - UInt64(trailingByteCount))
       }
+    } else {
+      updateOffset(path: path, offset: readEndOffset - UInt64(splitter.pendingByteCount))
     }
-    updateOffset(path: path, offset: nextOffset)
     return events
   }
 

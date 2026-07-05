@@ -662,6 +662,7 @@ public enum GraphQLContractProjector {
   public static let schemaContract = """
   scalar JSON
   scalar JSONObject
+  \(graphQLNoteSchemaContract)
   type ControlPlaneResult { accepted: Boolean!, status: String!, diagnostics: [String!]! }
   type ManagerIntentSummary { kind: String!, targetId: String, reason: String }
   type ManagerSessionView { session: JSON!, messages: JSON! }
@@ -797,12 +798,42 @@ public enum GraphQLContractProjector {
   input ReplayCommunicationInput { workflowId: String!, workflowExecutionId: String!, communicationId: String!, reason: String, idempotencyKey: String, managerSessionId: String }
   input RetryCommunicationDeliveryInput { workflowId: String!, workflowExecutionId: String!, communicationId: String!, reason: String, idempotencyKey: String, managerSessionId: String }
   type Query {
+    note(noteId: String!): NoteQueryPayload!
+    notebook(notebookId: String!): NotebookQueryPayload!
+    notebooks(limit: Int, offset: Int, tagFilter: [String!]): NotebooksQueryPayload!
+    notes(limit: Int, offset: Int, notebookId: String, tagFilter: [String!]): NotesQueryPayload!
+    searchNotes(query: String!, tagFilter: [String!], classFilter: [String!], limit: Int, offset: Int): NoteSearchQueryPayload!
+    tags: NoteTagsQueryPayload!
+    tagClasses: NoteTagClassesQueryPayload!
+    noteFile(fileId: String!): NoteFileQueryPayload!
+    autoActions: NoteAutoActionsQueryPayload!
     workflowSession(workflowId: String!, sessionId: String!): WorkflowSession
     workflowSessions(workflowName: String, status: String, limit: Int): [WorkflowSessionSummary!]!
     loopEvidence(workflowId: String!, sessionId: String!): LoopEvidenceSummary
     managerSession(managerSessionId: String): ManagerSessionView
   }
   type Mutation {
+    createNote(input: CreateNoteInput!): NoteMutationPayload!
+    createNotebook(input: CreateNotebookInput!): NoteMutationPayload!
+    defineNoteTagClass(input: DefineNoteTagClassInput!): NoteMutationPayload!
+    defineNoteTag(input: DefineNoteTagInput!): NoteMutationPayload!
+    scaffoldNoteIngestionWorkflow(input: ScaffoldNoteIngestionWorkflowInput!): NoteMutationPayload!
+    updateNote(input: UpdateNoteInput!): NoteMutationPayload!
+    deleteNote(noteId: String!): ControlPlaneResult!
+    deleteNotebook(notebookId: String!): ControlPlaneResult!
+    applyNotebookTags(input: ApplyNotebookTagsInput!): NoteMutationPayload!
+    removeNotebookTag(notebookId: String!, tagName: String!, provenance: String): NoteMutationPayload!
+    setNoteReadOnly(noteId: String!, readOnly: Boolean!): NoteMutationPayload!
+    applyNoteTags(input: ApplyNoteTagsInput!): NoteMutationPayload!
+    removeNoteTag(noteId: String!, tagName: String!, provenance: String): NoteMutationPayload!
+    addNoteComment(input: AddNoteCommentInput!): NoteMutationPayload!
+    linkNotes(input: LinkNotesInput!): NoteMutationPayload!
+    attachNoteFile(input: AttachNoteFileInput!): NoteMutationPayload!
+    configureNoteAutoAction(input: ConfigureNoteAutoActionInput!): NoteMutationPayload!
+    deleteNoteAutoAction(actionId: String!): ControlPlaneResult!
+    saveNoteConversation(input: SaveNoteConversationInput!): NoteMutationPayload!
+    migrateNoteFileStorage(input: MigrateNoteFileStorageInput!): NoteFileMigrationPayload!
+    migrateAllNoteFiles(input: MigrateAllNoteFilesInput!): NoteFileMigrationPayload!
     continueSession(input: ContinueSessionInput!): ControlPlaneResult!
     sendManagerMessage(input: SendManagerMessageInput!): SendManagerMessagePayload!
     replayCommunication(input: ReplayCommunicationInput!): ReplayCommunicationPayload!

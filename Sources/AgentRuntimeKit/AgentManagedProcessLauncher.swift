@@ -9,6 +9,19 @@ public protocol AgentManagedProcessControl: AnyObject, Sendable {
   func waitUntilExit()
 }
 
+public extension AgentManagedProcessControl {
+  @discardableResult
+  func waitUntilExit(timeout: TimeInterval) -> Bool {
+    let group = DispatchGroup()
+    group.enter()
+    DispatchQueue.global(qos: .utility).async {
+      self.waitUntilExit()
+      group.leave()
+    }
+    return group.wait(timeout: .now() + timeout) == .success
+  }
+}
+
 extension AgentManagedProcess: AgentManagedProcessControl {}
 
 public protocol AgentManagedProcessRuntime: AgentManagedProcessControl {

@@ -55,6 +55,14 @@ public struct RielaAppLaunchOptions: Equatable, Sendable {
     arguments.contains("--open-workflows")
   }
 
+  public var opensNotes: Bool {
+    arguments.contains("--open-notes")
+  }
+
+  public var opensNoteSettings: Bool {
+    arguments.contains("--open-note-settings")
+  }
+
   public var autostartsDaemonWorkflows: Bool {
     !arguments.contains("--no-autostart-daemons")
   }

@@ -12,7 +12,9 @@ final class RielaAppLaunchOptionsTests: XCTestCase {
         "--import-workflow-or-package", "archives/demo.rielapkg",
         "--import-workflow-or-package=workflows/local-demo",
         "--open-viewer", "workflows/view-demo",
-        "--session-store-root", "sessions/view-demo"
+        "--session-store-root", "sessions/view-demo",
+        "--open-notes",
+        "--open-note-settings"
       ],
       environment: [:],
       workingDirectory: "/tmp/riela-launch"
@@ -29,6 +31,8 @@ final class RielaAppLaunchOptionsTests: XCTestCase {
       workflowPath: "/tmp/riela-launch/workflows/view-demo",
       sessionStoreRoot: "/tmp/riela-launch/sessions/view-demo"
     ))
+    XCTAssertTrue(options.opensNotes)
+    XCTAssertTrue(options.opensNoteSettings)
   }
 
   func testEnvironmentPathFallbacksResolveAgainstLaunchWorkingDirectory() {

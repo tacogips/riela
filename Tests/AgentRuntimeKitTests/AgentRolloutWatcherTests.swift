@@ -22,6 +22,45 @@ final class AgentRolloutWatcherTests: XCTestCase {
     XCTAssertEqual(watcher.flush().compactMap(lineValue), ["event:partial"])
   }
 
+  func testRolloutWatcherDoesNotAdvancePastPartialUTF8Scalar() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let rollout = root.appendingPathComponent("rollout-utf8.jsonl")
+    try Data().write(to: rollout)
+    let watcher = AgentRolloutWatcher<String> { line in
+      line.hasPrefix("event:") ? line : nil
+    }
+    watcher.watchFile(path: rollout.path, startOffset: 0)
+    let line = Data("event:東京\n".utf8)
+    let splitInsideFirstCJKScalar = "event:".utf8.count + 1
+
+    try Data(line.prefix(splitInsideFirstCJKScalar)).write(to: rollout)
+    XCTAssertEqual(watcher.flush(), [])
+
+    try line.write(to: rollout)
+    XCTAssertEqual(watcher.flush().compactMap(lineValue), ["event:東京"])
+  }
+
+  func testRolloutWatcherDoesNotAdvancePastUTF8ValidPartialLineRejectedByParser() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let rollout = root.appendingPathComponent("rollout-partial-json.jsonl")
+    try Data().write(to: rollout)
+    let watcher = AgentRolloutWatcher<String> { line in
+      line.hasPrefix(#"{"event":"#) && line.hasSuffix("}") ? line : nil
+    }
+    watcher.watchFile(path: rollout.path, startOffset: 0)
+
+    try Data(#"{"event":"partial""#.utf8).write(to: rollout)
+    XCTAssertEqual(watcher.flush(), [])
+
+    let handle = try FileHandle(forWritingTo: rollout)
+    defer { try? handle.close() }
+    try handle.seekToEnd()
+    try handle.write(contentsOf: Data(#"}"#.utf8))
+    XCTAssertEqual(watcher.flush().compactMap(lineValue), [#"{"event":"partial"}"#])
+  }
+
   func testRolloutWatcherDiscoversNewRolloutFilesAndStops() throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }

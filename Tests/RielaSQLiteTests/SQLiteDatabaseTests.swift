@@ -7,12 +7,37 @@ final class SQLiteDatabaseTests: XCTestCase {
     let database = try SQLiteDatabase.open(path: temporaryDatabasePath())
 
     let journalMode = try database.query("PRAGMA journal_mode").first?["journal_mode"]
+    let foreignKeys = try database.query("PRAGMA foreign_keys").first?["foreign_keys"]
     let busyTimeout = try database.query("PRAGMA busy_timeout").first?["timeout"]
     let jsonStorage = try database.query("SELECT typeof(jsonb('{}')) AS storage_type").first?["storage_type"]
 
     XCTAssertEqual(journalMode, "wal")
+    XCTAssertEqual(foreignKeys, "1")
     XCTAssertEqual(busyTimeout, "3000")
     XCTAssertEqual(jsonStorage, "blob")
+  }
+
+  func testForeignKeysCanBeDisabledForCompatibility() throws {
+    let database = try SQLiteDatabase.open(
+      path: temporaryDatabasePath(),
+      options: SQLiteOpenOptions(enableForeignKeys: false)
+    )
+
+    let foreignKeys = try database.query("PRAGMA foreign_keys").first?["foreign_keys"]
+
+    XCTAssertEqual(foreignKeys, "0")
+  }
+
+  func testFTS5CapabilityProbesDoNotLeaveTempTables() throws {
+    let database = try SQLiteDatabase.open(path: temporaryDatabasePath())
+
+    try database.requireFTS5Available()
+    try database.requireFTS5TrigramAvailable()
+
+    let probeTables = try database.query(
+      "SELECT name FROM sqlite_temp_master WHERE type = 'table' AND name LIKE 'riela_fts5_probe_%'"
+    )
+    XCTAssertEqual(probeTables, [])
   }
 
   func testExecuteQueryBindingsAndTransactionRollback() throws {

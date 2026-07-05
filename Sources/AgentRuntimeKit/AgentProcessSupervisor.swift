@@ -51,6 +51,7 @@ public final class AgentProcessSupervisor<Managed: AgentManagedProcessRuntime>: 
     environment: [String: String],
     cwd: String?,
     initialInput: String? = nil,
+    timeout: TimeInterval? = nil,
     makeManaged: @escaping ManagedFactory,
     makeFailedManaged: @escaping (Error) -> Managed
   ) -> (process: AgentProcessRecord, result: AgentProcessExecution) {
@@ -66,7 +67,7 @@ public final class AgentProcessSupervisor<Managed: AgentManagedProcessRuntime>: 
         makeManaged: makeManaged,
         makeFailedManaged: makeFailedManaged
       )
-      started.managed.waitUntilExit()
+      waitForManagedProcess(started.managed, timeout: timeout)
       let result = started.managed.execution()
       let record = registry.finish(id: started.process.id, exitCode: result.exitCode) ?? started.process
       registry.removeManagedProcess(id: record.id)
@@ -110,6 +111,7 @@ public final class AgentProcessSupervisor<Managed: AgentManagedProcessRuntime>: 
     environment: [String: String],
     cwd: String?,
     initialInput: String? = nil,
+    timeout: TimeInterval? = nil,
     makeOutputBuffers: () -> AgentProcessOutputBuffers<RolloutLine>,
     makeManaged: @escaping ManagedFactory,
     makeFailedManaged: @escaping (Error) -> Managed
@@ -121,6 +123,7 @@ public final class AgentProcessSupervisor<Managed: AgentManagedProcessRuntime>: 
         environment: environment,
         cwd: cwd,
         initialInput: initialInput,
+        timeout: timeout,
         makeManaged: makeManaged,
         makeFailedManaged: makeFailedManaged
       )
@@ -149,7 +152,11 @@ public final class AgentProcessSupervisor<Managed: AgentManagedProcessRuntime>: 
       process: started.process,
       lines: AgentRolloutLineStream(buffers: started.managed.agentOutputBuffers),
       completion: AgentProcessCompletion { [weak self, managed = started.managed, processId = started.process.id] in
-        managed.waitUntilExit()
+        if let self {
+          self.waitForManagedProcess(managed, timeout: timeout)
+        } else {
+          managed.waitUntilExit()
+        }
         let result = managed.execution()
         self?.registry.finish(id: processId, exitCode: result.exitCode)
         self?.registry.removeManagedProcess(id: processId)
@@ -187,5 +194,16 @@ public final class AgentProcessSupervisor<Managed: AgentManagedProcessRuntime>: 
       registry.store(record: launched.record)
     }
     return (launched.record, launched.managed)
+  }
+
+  private func waitForManagedProcess(_ managed: Managed, timeout: TimeInterval?) {
+    guard let timeout else {
+      managed.waitUntilExit()
+      return
+    }
+    if !managed.waitUntilExit(timeout: timeout) {
+      managed.terminate()
+      managed.waitUntilExit()
+    }
   }
 }

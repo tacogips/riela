@@ -27,7 +27,10 @@ impl-plans/
 | Plan | Status | Design Reference |
 | ---- | ------ | ---------------- |
 | `active/agent-response-streaming` | Implemented | `design-agent-response-streaming#phase-1` |
+| `active/loop-engineering-application-gap-closure` | Planning; first-line tool slices have landed separately | `design-loop-engineering-application-gap-closure` |
+| `active/loop-engineering-first-line-tool` | In Progress; module 8 self-evolution versioning remaining | `design-loop-engineering-first-line-tool-detail` |
 | `active/rielaapp-ux-onboarding-improvements` | Implemented; RielaApp verification passed | `design-rielaapp-ux-onboarding-improvements` |
+| `active/riela-note` | Partially implemented; local note GraphQL/UI/add-ons shipped, remote socket and real libsql sync remain follow-ups | `design-riela-note` |
 | `active/package-checkout-content-digest-metadata` | In Progress | `architecture#workflow-checkout-boundary` |
 | `active/swift-cli-runtime-parity-gap-closure` | Active; Swift parity follow-through | `design-swift-cli-runtime-parity-gap-closure` |
 | `active/workflow-progress-observability` | Implemented; completion-audit verified | `design-workflow-progress-observability` |

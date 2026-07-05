@@ -3,8 +3,10 @@ import RielaMemory
 @testable import RielaCore
 
 struct FailingAdapter: NodeAdapter {
+  var error: AdapterExecutionError = AdapterExecutionError(.providerError, "forced failure")
+
   func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
-    throw AdapterExecutionError(.providerError, "forced failure")
+    throw error
   }
 }
 

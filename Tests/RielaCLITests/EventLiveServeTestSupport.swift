@@ -96,6 +96,26 @@ actor FakeTelegramGatewayAPI: TelegramGatewayAPI {
   }
 }
 
+struct FailingTelegramGatewayAPI: TelegramGatewayAPI {
+  var message: String
+
+  func getUpdates(request: TelegramGetUpdatesRequest) async throws -> [TelegramUpdate] {
+    throw CLIUsageError(message)
+  }
+
+  func getFile(request: TelegramGetFileRequest) async throws -> TelegramFile {
+    throw CLIUsageError(message)
+  }
+
+  func downloadFile(request: TelegramDownloadFileRequest) async throws -> Data {
+    throw CLIUsageError(message)
+  }
+
+  func sendMessage(request: TelegramSendMessageRequest) async throws {
+    throw CLIUsageError(message)
+  }
+}
+
 actor FakeDiscordGatewayAPI: DiscordGatewayAPI {
   private var queuedMessages: [DiscordMessage]
   private var attachmentDataByURL: [String: Data]

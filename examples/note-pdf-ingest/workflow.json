@@ -1,0 +1,63 @@
+{
+  "workflowId": "note-pdf-ingest",
+  "description": "Convert OCR/page extraction output into an imported-material notebook.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "prompts": {
+    "workerSystemPromptTemplate": "Return concise JSON only. Preserve page order and source document references."
+  },
+  "entryStepId": "extract-pages",
+  "nodes": [
+    {
+      "id": "extract-pages",
+      "nodeFile": "nodes/node-extract-pages.json"
+    },
+    {
+      "id": "ingest-pages",
+      "addon": {
+        "name": "riela/notebook-ingest-pages",
+        "version": "1",
+        "config": {
+          "noteRoot": "{{noteRoot}}",
+          "notebookTitle": "{{workflowInput.title}}",
+          "sourceDocumentRef": "{{workflowInput.sourceDocumentRef}}",
+          "notebookKindTag": "notebook-kind:imported-material"
+        }
+      }
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "extract-pages",
+      "nodeId": "extract-pages",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "ingest-pages"
+        }
+      ]
+    },
+    {
+      "id": "ingest-pages",
+      "nodeId": "ingest-pages",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

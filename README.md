@@ -54,6 +54,58 @@ interactive package creation and import flows. Use `--output json` only when a
 legacy caller explicitly needs a single non-streaming JSON document after
 completion.
 
+## Riela Note
+
+Riela Note is the local notebook and note store for markdown notes, provenance
+aware tags, comments, links, file attachments, search, and workflow-backed note
+automation. The CLI stores notes under `~/.riela/note` by default; set
+`RIELA_NOTE_ROOT` or pass `--note-root <dir>` to use an isolated store.
+RielaApp uses the active profile's note root under
+`~/.riela/profiles/<profile>/note/`.
+
+Common local commands:
+
+```bash
+riela note add --body '# Idea\n\nShip the small version first.' --tag idea
+riela note list --limit 20 --output table
+riela note search "small version" --tag idea
+riela note show <note-id> --output text
+riela note edit <note-id> --body-file ./updated.md
+riela note tag <note-id> --add shipped --remove idea
+riela note comment <note-id> --body "Reviewed."
+riela note attach <note-id> ./diagram.png --role related
+riela note readonly <note-id> --on
+riela note delete <note-id>
+```
+
+Notebook, file-storage, and API-client management are in the same command
+family:
+
+```bash
+riela note notebook create "Project notes"
+riela note notebook list --output table
+riela note storage migrate --all --to s3 --profile archive \
+  --s3-endpoint https://s3.example.com --s3-region us-east-1 --s3-bucket notes
+riela note client register "iPad" --output json
+riela note client list --output table
+riela note client revoke <client-id>
+```
+
+`riela note` executes note operations through the note GraphQL service against
+the local store, so the CLI, built-in note add-ons, RielaNoteUI, and server note
+surface share the same `NoteService` write path. Example workflow bundles live
+under `examples/note-quick-memo`, `examples/note-pdf-ingest`,
+`examples/note-youtube-transcript`, `examples/note-auto-tagging`,
+`examples/note-agent`, and `examples/note-config-agent`.
+
+The remote note API transport is not shipped yet. `riela note` and the built-in
+note add-ons execute note GraphQL documents in-process against the local store.
+`riela serve --note-api` currently prepares the note API configuration used by
+the serving layer, but it does not bind a network socket or expose a remote URL.
+Until a real listener lands, use `riela note client register --direct` for local
+administrative token creation only; do not treat generated registration
+challenge URLs as reachable remote endpoints.
+
 ## Install
 
 On macOS, install the Homebrew formula when you want only the `riela` command

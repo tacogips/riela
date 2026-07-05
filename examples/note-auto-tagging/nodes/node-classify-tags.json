@@ -1,0 +1,12 @@
+{
+  "id": "classify-tags",
+  "description": "Propose AI tags for a note-created or note-updated auto-action event.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/classify-tags.md",
+  "variables": {},
+  "output": {
+    "description": "Return tags as an array of strings or tag objects accepted by riela/note-tag-apply."
+  }
+}

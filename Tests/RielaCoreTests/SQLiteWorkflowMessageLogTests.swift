@@ -143,6 +143,245 @@ final class SQLiteWorkflowMessageLogTests: XCTestCase {
     XCTAssertEqual(storage, ["blob", "1", "accepted"])
   }
 
+  func testSQLiteRuntimePersistenceSaveSkipsUndecodableLegacySummaryRows() throws {
+    let root = temporaryDirectory()
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let dbPath = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
+    let setup = runSQLite(
+      dbPath,
+      """
+      CREATE TABLE workflow_runtime_snapshots (
+        workflow_execution_id TEXT PRIMARY KEY,
+        session_json BLOB NOT NULL CHECK (json_valid(session_json, 8)),
+        root_output_json BLOB CHECK (root_output_json IS NULL OR json_valid(root_output_json, 8)),
+        diagnostics_json BLOB NOT NULL CHECK (json_valid(diagnostics_json, 8)),
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO workflow_runtime_snapshots (
+        workflow_execution_id, session_json, root_output_json, diagnostics_json, updated_at
+      ) VALUES (
+        'poisoned-legacy',
+        jsonb('{"workflowId":"wf","sessionId":"poisoned-legacy","status":"removed-status","entryStepId":"start","createdAt":"2023-11-14T22:13:20Z","updatedAt":"2023-11-14T22:13:20Z","executions":[]}'),
+        NULL,
+        jsonb('[]'),
+        '2023-11-14T22:13:20Z'
+      )
+      """
+    )
+    XCTAssertEqual(setup.exitCode, 0, setup.stderr)
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let session = WorkflowSession(
+      workflowId: "wf",
+      sessionId: "healthy-session",
+      status: .completed,
+      entryStepId: "start",
+      createdAt: date,
+      updatedAt: date
+    )
+
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    try store.save(WorkflowRuntimePersistenceSnapshot(session: session))
+
+    let rows = runSQLite(
+      dbPath,
+      """
+      SELECT workflow_execution_id, COALESCE(workflow_id, 'NULL')
+      FROM workflow_runtime_snapshots
+      ORDER BY workflow_execution_id
+      """
+    )
+    XCTAssertEqual(rows.exitCode, 0, rows.stderr)
+    XCTAssertEqual(
+      rows.stdout.trimmingCharacters(in: .whitespacesAndNewlines),
+      "healthy-session|wf\npoisoned-legacy|NULL"
+    )
+  }
+
+  func testSQLiteRuntimePersistenceLoadsSessionOverviewsFromSummaryColumns() throws {
+    let root = temporaryDirectory()
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    let firstSession = WorkflowSession(
+      workflowId: "wf",
+      sessionId: "session-loop-a",
+      status: .completed,
+      entryStepId: "review",
+      createdAt: date,
+      updatedAt: date.addingTimeInterval(10)
+    )
+    let secondSession = WorkflowSession(
+      workflowId: "wf",
+      sessionId: "session-loop-b",
+      status: .running,
+      entryStepId: "review",
+      createdAt: date,
+      updatedAt: date
+    )
+    try store.save(WorkflowRuntimePersistenceSnapshot(
+      session: firstSession,
+      loopEvidence: manifest(sessionId: firstSession.sessionId, workflowId: "wf", decision: .accepted, date: date)
+    ))
+    try store.save(WorkflowRuntimePersistenceSnapshot(
+      session: secondSession,
+      loopEvidence: manifest(sessionId: secondSession.sessionId, workflowId: "wf", decision: .rejected, date: date)
+    ))
+
+    let accepted = try store.loadSessionOverviews(.init(
+      workflowId: "wf",
+      sessionStatus: "completed",
+      lastGateDecision: "accepted",
+      limit: 10
+    ))
+
+    XCTAssertEqual(accepted.map(\.sessionId), ["session-loop-a"])
+    XCTAssertEqual(accepted.first?.loopEvidenceRecorded, true)
+    XCTAssertEqual(accepted.first?.gateSummary?.accepted, 1)
+    XCTAssertEqual(accepted.first?.blockingFindingCount, 0)
+
+    let active = try store.loadSessionOverviews(.init(workflowId: "wf", sessionStatus: "active", limit: 10))
+    XCTAssertEqual(active.map(\.sessionId), ["session-loop-b"])
+  }
+
+  func testSQLiteRuntimePersistenceCurrentSchemaOverviewDoesNotDecodeBlobFallback() throws {
+    let root = temporaryDirectory()
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    let session = WorkflowSession(
+      workflowId: "wf",
+      sessionId: "session-summary-only",
+      status: .completed,
+      entryStepId: "review",
+      createdAt: date,
+      updatedAt: date
+    )
+    try store.save(WorkflowRuntimePersistenceSnapshot(
+      session: session,
+      loopEvidence: manifest(sessionId: session.sessionId, workflowId: "wf", decision: .accepted, date: date)
+    ))
+    let dbPath = SQLiteWorkflowMessageLog.defaultDatabasePath(rootDirectory: root.path)
+    let poisonBlobs = runSQLite(
+      dbPath,
+      """
+      UPDATE workflow_runtime_snapshots
+      SET session_json = jsonb('{"poisoned":true}'),
+        loop_evidence_json = jsonb('{"poisoned":true}')
+      WHERE workflow_execution_id = 'session-summary-only'
+      """
+    )
+    XCTAssertEqual(poisonBlobs.exitCode, 0, poisonBlobs.stderr)
+
+    let overviews = try store.loadSessionOverviews(.init(workflowId: "wf", limit: 10))
+
+    XCTAssertEqual(overviews.map(\.sessionId), ["session-summary-only"])
+    XCTAssertEqual(overviews.first?.workflowId, "wf")
+    XCTAssertEqual(overviews.first?.lastGateDecision, "accepted")
+  }
+
+  func testSQLiteRuntimePersistenceOverviewFiltersAfterWindowLimit() throws {
+    let root = temporaryDirectory()
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    let acceptedSession = WorkflowSession(
+      workflowId: "wf",
+      sessionId: "session-loop-accepted",
+      status: .completed,
+      entryStepId: "review",
+      createdAt: date,
+      updatedAt: date
+    )
+    try store.save(WorkflowRuntimePersistenceSnapshot(
+      session: acceptedSession,
+      loopEvidence: manifest(sessionId: acceptedSession.sessionId, workflowId: "wf", decision: .accepted, date: date)
+    ))
+    for index in 0..<201 {
+      let session = WorkflowSession(
+        workflowId: "wf",
+        sessionId: "session-loop-rejected-\(index)",
+        status: .completed,
+        entryStepId: "review",
+        createdAt: date,
+        updatedAt: date.addingTimeInterval(TimeInterval(index + 1))
+      )
+      try store.save(WorkflowRuntimePersistenceSnapshot(
+        session: session,
+        loopEvidence: manifest(sessionId: session.sessionId, workflowId: "wf", decision: .rejected, date: date)
+      ))
+    }
+
+    let accepted = try store.loadSessionOverviews(.init(
+      workflowId: "wf",
+      sessionStatus: "completed",
+      lastGateDecision: "accepted",
+      limit: 1
+    ))
+
+    XCTAssertEqual(accepted.map(\.sessionId), ["session-loop-accepted"])
+  }
+
+  func testSQLiteRuntimePersistenceFreezesLoopSummaryWithAuthoredMetadata() throws {
+    let root = temporaryDirectory()
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    let session = WorkflowSession(
+      workflowId: "wf",
+      sessionId: "session-loop-metadata",
+      status: .completed,
+      entryStepId: "review",
+      createdAt: date,
+      updatedAt: date
+    )
+    let metadata = WorkflowLoopMetadata(
+      kind: "issue-resolution",
+      required: true,
+      gates: [LoopGateDeclaration(id: "implementation-review", stepId: "review", required: true)]
+    )
+
+    try store.save(WorkflowRuntimePersistenceSnapshot(
+      session: session,
+      loopEvidence: manifest(sessionId: session.sessionId, workflowId: "wf", decision: .accepted, date: date),
+      loopMetadata: metadata
+    ))
+
+    let dbPath = SQLiteWorkflowMessageLog.defaultDatabasePath(rootDirectory: root.path)
+    let summary = try sqliteColumns(
+      dbPath,
+      """
+      SELECT json_extract(loop_summary_json, '$.loopKind'),
+        json_extract(loop_summary_json, '$.loopRequired'),
+        json_extract(loop_summary_json, '$.gateOutcomes[0].required')
+      FROM workflow_runtime_snapshots
+      WHERE workflow_execution_id = 'session-loop-metadata'
+      """
+    )
+    XCTAssertEqual(summary, ["issue-resolution", "1", "1"])
+
+    let overviews = try store.loadSessionOverviews(.init(workflowId: "wf", limit: 10))
+    XCTAssertEqual(overviews.first?.loopKind, "issue-resolution")
+    XCTAssertEqual(overviews.first?.loopRequired, true)
+  }
+
+  func testSQLiteRuntimePersistenceOverviewProjectsRowsWithoutLoopEvidence() throws {
+    let root = temporaryDirectory()
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    let session = WorkflowSession(
+      workflowId: "wf",
+      sessionId: "session-no-loop",
+      status: .completed,
+      entryStepId: "start",
+      createdAt: date,
+      updatedAt: date
+    )
+
+    try store.save(WorkflowRuntimePersistenceSnapshot(session: session))
+    let overviews = try store.loadSessionOverviews(.init(workflowId: "wf", limit: 10))
+
+    XCTAssertEqual(overviews.count, 1)
+    XCTAssertEqual(overviews.first?.sessionId, "session-no-loop")
+    XCTAssertEqual(overviews.first?.loopEvidenceRecorded, false)
+    XCTAssertNil(overviews.first?.lastGateDecision)
+  }
+
   func testSQLiteRuntimePersistenceLoadAllReturnsMessagesFromRuntimeDatabase() throws {
     let root = temporaryDirectory()
     let date = Date(timeIntervalSince1970: 1_700_000_000)
@@ -317,6 +556,28 @@ final class SQLiteWorkflowMessageLogTests: XCTestCase {
 
   private func temporaryDirectory() -> URL {
     FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+  }
+
+  private func manifest(
+    sessionId: String,
+    workflowId: String,
+    decision: LoopGateDecision,
+    date: Date
+  ) -> LoopEvidenceManifest {
+    LoopEvidenceManifest(
+      schemaVersion: 1,
+      manifestId: "loop-evidence-\(sessionId)",
+      workflowId: workflowId,
+      sessionId: sessionId,
+      workflowSource: LoopWorkflowSource(scope: "project", kind: "workflow-directory", mutable: true),
+      policy: LoopPolicyEvidence(),
+      gates: [
+        LoopGateResult(gateId: "implementation-review", stepId: "review", stepExecutionId: "review-exec", decision: decision)
+      ],
+      redaction: LoopRedactionSummary(policyName: "summary-only", status: "clean"),
+      createdAt: date,
+      updatedAt: date
+    )
   }
 
   private func sqliteColumns(_ dbPath: String, _ sql: String) throws -> [String] {

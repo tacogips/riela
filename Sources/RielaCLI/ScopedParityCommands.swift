@@ -65,7 +65,7 @@ public struct ScopedParityCommandRunner: Sendable {
       case .callStep, .workflowCall:
         return await callStep(options: options, parsed: parsed)
       case .graphql, .gql:
-        let result = try graphqlResult(kind: command.kind, options: options, parsed: parsed)
+        let result = try await graphqlResult(kind: command.kind, options: options, parsed: parsed)
         return try render(result, options: options) { result in result.records.joined(separator: "\n") + "\n" }
       case .hook:
         let vendor = try hookVendor(options.command ?? "codex")
@@ -128,12 +128,14 @@ private extension String {
 }
 
 fileprivate extension ScopedParityCommandRunner {
-  private func graphqlResult(kind: ScopedCommandKind, options: CLICommandOptions, parsed: ParsedParityOptions) throws -> ScopedParityCommandResult {
+  private func graphqlResult(kind: ScopedCommandKind, options: CLICommandOptions, parsed: ParsedParityOptions) async throws -> ScopedParityCommandResult {
     let action = options.command ?? "schema"
     let records: [String]
     switch action {
     case "schema":
       records = [GraphQLContractProjector.schemaContract]
+    case "execute", "document", "note-document":
+      records = [try await noteGraphQLDocumentRecord(options: options, parsed: parsed, action: action)]
     case "session", "inspect-session", "workflow-session":
       let snapshot = try loadRuntimeSnapshot(sessionId: options.target, parsed: parsed, action: action)
       let projected = GraphQLContractProjector.project(
@@ -292,37 +294,6 @@ fileprivate extension ScopedParityCommandRunner {
       throw CLIUsageError("graphql \(action) requires a persisted step execution")
     }
     return execution
-  }
-
-  private func serverResponse(options: CLICommandOptions, parsed: ParsedParityOptions) async throws -> ServerResponseDescriptor {
-    let action = options.command ?? "status"
-    let handler = DeterministicServerRouteHandler()
-    switch action {
-    case "status", "health":
-      return await handler.route(ServerRequestEnvelope(method: "GET", path: "/healthz"), context: serverContext(parsed: parsed))
-    case "overview":
-      return await handler.route(ServerRequestEnvelope(method: "GET", path: "/overview"), context: serverContext(parsed: parsed))
-    case "graphql":
-      let bodyObject: JSONObject
-      if let target = options.target {
-        bodyObject = try JSONReferenceLoader().object(from: target, workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath)
-      } else {
-        bodyObject = ["query": .string(GraphQLContractProjector.schemaContract), "variables": .object([:])]
-      }
-      let body = try JSONEncoder().encode(JSONValue.object(bodyObject))
-      return await handler.route(ServerRequestEnvelope(method: "POST", path: "/graphql", body: body), context: serverContext(parsed: parsed))
-    default:
-      let route = options.target ?? action
-      let response = await DeterministicServerRouteHandler().route(
-        ServerRequestEnvelope(method: "GET", path: route.hasPrefix("/") ? route : "/\(route)"),
-        context: serverContext(parsed: parsed)
-      )
-      return response
-    }
-  }
-
-  private func serverContext(parsed: ParsedParityOptions) -> ServerRequestContext {
-    ServerRequestContext(inheritedEnvironment: parsed.sessionStore.map { ["RIELA_MANAGER_SESSION_ID": $0] } ?? [:])
   }
 
   private func callStep(options: CLICommandOptions, parsed: ParsedParityOptions) async -> CLICommandResult {

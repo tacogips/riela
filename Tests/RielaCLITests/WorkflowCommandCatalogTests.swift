@@ -70,6 +70,7 @@ extension WorkflowCommandTests {
       ]
     }
     """.write(to: workflowDir.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+    let sessionStore = tempDir.appendingPathComponent("sessions", isDirectory: true)
 
     let validate = await RielaCLIApplication().run([
       "workflow", "validate", "addon-demo",
@@ -89,6 +90,7 @@ extension WorkflowCommandTests {
     let run = await RielaCLIApplication().run([
       "workflow", "run", "addon-demo",
       "--workflow-definition-dir", tempDir.path,
+      "--session-store", sessionStore.path,
       "--output", "json"
     ])
     XCTAssertEqual(run.exitCode, .failure)

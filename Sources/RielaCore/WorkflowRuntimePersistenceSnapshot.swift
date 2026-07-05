@@ -6,19 +6,22 @@ public struct WorkflowRuntimePersistenceSnapshot: Codable, Equatable, Sendable {
   public var rootOutput: JSONObject?
   public var diagnostics: [String]
   public var loopEvidence: LoopEvidenceManifest?
+  public var loopMetadata: WorkflowLoopMetadata?
 
   public init(
     session: WorkflowSession,
     workflowMessages: [WorkflowMessageRecord] = [],
     rootOutput: JSONObject? = nil,
     diagnostics: [String] = [],
-    loopEvidence: LoopEvidenceManifest? = nil
+    loopEvidence: LoopEvidenceManifest? = nil,
+    loopMetadata: WorkflowLoopMetadata? = nil
   ) {
     self.session = session
     self.workflowMessages = workflowMessages
     self.rootOutput = rootOutput
     self.diagnostics = diagnostics
     self.loopEvidence = loopEvidence
+    self.loopMetadata = loopMetadata
   }
 }
 
@@ -26,7 +29,8 @@ public enum WorkflowRuntimePersistenceProjector {
   public static func snapshot(
     session: WorkflowSession,
     workflowMessages: [WorkflowMessageRecord] = [],
-    loopEvidence: LoopEvidenceManifest? = nil
+    loopEvidence: LoopEvidenceManifest? = nil,
+    loopMetadata: WorkflowLoopMetadata? = nil
   ) -> WorkflowRuntimePersistenceSnapshot {
     let rootOutput = session.executions.last(where: { $0.acceptedOutput?.isRootOutput == true })?.acceptedOutput?.payload
     return WorkflowRuntimePersistenceSnapshot(
@@ -34,7 +38,8 @@ public enum WorkflowRuntimePersistenceProjector {
       workflowMessages: workflowMessages.sorted { $0.createdOrder < $1.createdOrder },
       rootOutput: rootOutput,
       diagnostics: diagnostics(session: session, workflowMessages: workflowMessages),
-      loopEvidence: loopEvidence
+      loopEvidence: loopEvidence,
+      loopMetadata: loopMetadata
     )
   }
 

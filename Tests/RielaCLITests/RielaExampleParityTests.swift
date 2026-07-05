@@ -11,7 +11,7 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum ExampleCatalog {
     static let directoryName = "examples"
-    static let expectedMockScenarioCount = 25
+    static let expectedMockScenarioCount = 31
     static let expectedNodeMockScenarioCount = 0
   }
 
@@ -33,6 +33,10 @@ final class RielaExampleParityTests: XCTestCase {
     static let telegramAgentTrioChatWorkflowName = "telegram-agent-trio-chat"
     static let telegramSDKTrioChatWorkflowName = "telegram-sdk-trio-chat"
     static let requiredLoopGateFailureWorkflowName = "required-loop-gate-failure"
+    static let noteAutoTaggingWorkflowName = "note-auto-tagging"
+    static let notePDFIngestWorkflowName = "note-pdf-ingest"
+    static let noteQuickMemoWorkflowName = "note-quick-memo"
+    static let noteYouTubeTranscriptWorkflowName = "note-youtube-transcript"
   }
 
   private enum NodeRuntime {
@@ -257,6 +261,9 @@ final class RielaExampleParityTests: XCTestCase {
             memoryRoot: memoryRoot.path
           )
         ])
+      }
+      if let variables = try noteExampleVariables(workflowName: workflowName, root: root) {
+        arguments.append(contentsOf: ["--variables", variables])
       }
       let result = await app.run(arguments)
 
@@ -681,6 +688,12 @@ final class RielaExampleParityTests: XCTestCase {
       "matrix-agent-trio-chat",
       "matrix-chat-reply",
       "node-combinations-showcase",
+      "note-agent",
+      "note-auto-tagging",
+      "note-config-agent",
+      "note-pdf-ingest",
+      "note-quick-memo",
+      "note-youtube-transcript",
       "recent-change-quality-loop",
       "required-loop-gate-failure",
       "riela-default-workflow-supervisor",

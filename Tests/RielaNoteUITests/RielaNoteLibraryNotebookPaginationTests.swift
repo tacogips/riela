@@ -48,7 +48,7 @@ final class RielaNoteLibraryNotebookPaginationTests: XCTestCase {
     XCTAssertEqual(viewModel.selectedNotebookId, "notebook-3")
     XCTAssertTrue(viewModel.notebooks.contains(where: { $0.notebookId == "notebook-3" }))
     XCTAssertEqual(viewModel.selectedNote?.notebookId, "notebook-3")
-    XCTAssertEqual(viewModel.selectedNote?.bodyMarkdown, "# Later Notebook\n\nDraft")
+    XCTAssertEqual(viewModel.selectedNote?.bodyMarkdown, "Draft")
     XCTAssertEqual(Array(client.listNotebookRequests.suffix(2)), [
       NotebookListRequest(limit: 3, offset: 0),
       NotebookListRequest(limit: 3, offset: 2)

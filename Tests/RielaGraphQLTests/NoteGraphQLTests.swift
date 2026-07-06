@@ -51,6 +51,10 @@ final class NoteGraphQLTests: XCTestCase {
     )
     XCTAssertTrue(attachment.result.accepted)
     XCTAssertEqual(attachment.file?.mediaType, "text/plain")
+    let fileId = try XCTUnwrap(attachment.file?.fileId)
+    let roundTripFile = await service.noteFile(fileId: fileId)
+    XCTAssertEqual(roundTripFile.value, attachment.file)
+    XCTAssertEqual(try service.service.listFiles(noteId: citedNoteId).first?.file.fileId, fileId)
 
     let oversizedBase64Length = ((InlineWorkflowAddonAttachmentProjector.maxAttachmentBytes + 3) / 3) * 4 + 4
     let oversizedAttachment = await service.attachFile(
@@ -687,7 +691,9 @@ final class NoteGraphQLTests: XCTestCase {
     let schema = GraphQLContractProjector.schemaContract
 
     XCTAssertTrue(schema.contains("type Note "))
-    XCTAssertTrue(schema.contains("notebooks(limit: Int, offset: Int, tagFilter: [String!]): NotebooksQueryPayload!"))
+    XCTAssertTrue(schema.contains(
+      "notebooks(limit: Int, offset: Int, tagFilter: [String!], sort: String, createdAfter: String, createdBefore: String)"
+    ))
     XCTAssertTrue(schema.contains("notes(limit: Int, offset: Int, notebookId: String, tagFilter: [String!]): NotesQueryPayload!"))
     XCTAssertTrue(schema.contains("tags: NoteTagsQueryPayload!"))
     XCTAssertTrue(schema.contains("tagClasses: NoteTagClassesQueryPayload!"))
@@ -701,7 +707,10 @@ final class NoteGraphQLTests: XCTestCase {
     XCTAssertTrue(schema.contains("input ApplyNotebookTagsInput"))
     XCTAssertTrue(schema.contains("applyNotebookTags(input: ApplyNotebookTagsInput!)"))
     XCTAssertTrue(schema.contains("removeNotebookTag(notebookId: String!, tagName: String!, provenance: String)"))
-    XCTAssertTrue(schema.contains("searchNotes(query: String!, tagFilter: [String!], classFilter: [String!], limit: Int, offset: Int)"))
+    XCTAssertTrue(schema.contains(
+      "searchNotes(query: String!, tagFilter: [String!], classFilter: [String!], sort: String, createdAfter: String, createdBefore: String, includeLinked: Boolean, limit: Int, offset: Int)"
+    ))
+    XCTAssertTrue(schema.contains("proposeNoteLinks(noteId: String!, limit: Int)"))
     XCTAssertTrue(schema.contains("configureNoteAutoAction(input: ConfigureNoteAutoActionInput!)"))
     XCTAssertTrue(schema.contains("deleteNoteAutoAction(actionId: String!)"))
     XCTAssertTrue(schema.contains("saveNoteConversation(input: SaveNoteConversationInput!)"))
@@ -717,6 +726,7 @@ final class NoteGraphQLTests: XCTestCase {
       "notebooks",
       "notes",
       "searchNotes",
+      "proposeNoteLinks",
       "tags",
       "tagClasses",
       "noteFile",

@@ -27,6 +27,59 @@ final class NoteFileStoreTests: NoteTestCase {
     XCTAssertEqual(try service.listFiles(noteId: note.noteId), [attachment])
   }
 
+  func testAttachNoteFileDirectlyToS3WithoutMigration() throws {
+    let service = try makeService()
+    let note = try service.createNote(bodyMarkdown: "# Direct S3\nBody")
+    let data = Data("direct s3 attachment".utf8)
+    let client = InMemoryS3HTTPClient()
+
+    let attachment = try service.attachFile(
+      noteId: note.noteId,
+      data: data,
+      mediaType: "text/plain",
+      originalFilename: "direct.txt",
+      s3Profile: testS3Profile(),
+      httpClient: client
+    )
+
+    XCTAssertEqual(attachment.file.storageKind, .s3)
+    XCTAssertNil(attachment.file.localPath)
+    XCTAssertEqual(attachment.file.s3Profile, "test-s3")
+    XCTAssertEqual(try client.object(path: "/notes/riela/\(attachment.file.fileId)"), data)
+    XCTAssertEqual(try service.listFiles(noteId: note.noteId), [attachment])
+    XCTAssertEqual(
+      try service.resolveFileContent(fileId: attachment.file.fileId, s3Profiles: [testS3Profile()], httpClient: client),
+      data
+    )
+    XCTAssertEqual(client.requests().map(\.method), ["PUT", "GET"])
+  }
+
+  func testListNoteFilesOrdersByPositionWithinRole() throws {
+    let service = try makeService()
+    let note = try service.createNote(bodyMarkdown: "# Ordered Files\nBody")
+    let last = try service.attachFile(
+      noteId: note.noteId,
+      data: Data("last".utf8),
+      role: .related,
+      mediaType: "text/plain",
+      originalFilename: "last.txt",
+      position: 20
+    )
+    let first = try service.attachFile(
+      noteId: note.noteId,
+      data: Data("first".utf8),
+      role: .related,
+      mediaType: "text/plain",
+      originalFilename: "first.txt",
+      position: 10
+    )
+
+    XCTAssertEqual(try service.listFiles(noteId: note.noteId).map(\.file.fileId), [
+      first.file.fileId,
+      last.file.fileId
+    ])
+  }
+
   func testNotebookSourceDocumentAttachment() throws {
     let service = try makeService()
     let notebook = try service.createNotebook(

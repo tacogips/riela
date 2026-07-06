@@ -3,18 +3,10 @@ import RielaNote
 import XCTest
 
 final class RielaNoteDraftMarkdownTests: XCTestCase {
-  func testDraftMarkdownUsesFallbackTitleForEmptyDraft() {
-    XCTAssertEqual(
-      rielaNoteDraftMarkdown(title: "  ", fallbackTitle: "Untitled Note", body: " \n "),
-      "# Untitled Note\n\n"
-    )
-  }
-
-  func testDraftMarkdownIncludesTrimmedBody() {
-    XCTAssertEqual(
-      rielaNoteDraftMarkdown(title: " Reading Notes ", fallbackTitle: "Untitled Note", body: "\nFirst pass.\n"),
-      "# Reading Notes\n\nFirst pass."
-    )
+  func testTitleDerivationUsesHeadingOrFirstLineWithoutRewritingBody() {
+    XCTAssertEqual(NoteTitleDerivation.title(from: "### Reading Notes\n\nFirst pass."), "Reading Notes")
+    XCTAssertEqual(NoteTitleDerivation.title(from: "- First pass without heading"), "First pass without heading")
+    XCTAssertNil(NoteTitleDerivation.title(from: " \n "))
   }
 
   func testBodyDraftStateKeepsUnsavedDraftWhenTogglingPreview() {

@@ -16,7 +16,7 @@ final class RielaNoteCurrentNotebookCreationTests: XCTestCase {
     XCTAssertEqual(fixture.client.createdNotebookNotes.count, 1)
     XCTAssertEqual(viewModel.selectedNotebookId, "notebook-1")
     XCTAssertEqual(viewModel.selectedNote?.noteId, "note-current-1")
-    XCTAssertEqual(viewModel.selectedNote?.bodyMarkdown, "# Untitled Note\n\n")
+    XCTAssertEqual(viewModel.selectedNote?.bodyMarkdown, "")
     XCTAssertEqual(viewModel.selectedNote?.tags.map(\.tag.name), ["user-memo"])
     XCTAssertEqual(viewModel.notebookNotes.map(\.noteId), ["note-1", "note-2", "note-current-1"])
     XCTAssertFalse(viewModel.isSearching)
@@ -31,7 +31,7 @@ final class RielaNoteCurrentNotebookCreationTests: XCTestCase {
     await viewModel.createNoteInSelectedNotebook(title: "Decision Log", body: "Capture the first draft.")
 
     XCTAssertEqual(fixture.client.createdNotebookNotes.count, 1)
-    XCTAssertEqual(viewModel.selectedNote?.bodyMarkdown, "# Decision Log\n\nCapture the first draft.")
+    XCTAssertEqual(viewModel.selectedNote?.bodyMarkdown, "Capture the first draft.")
     XCTAssertEqual(viewModel.selectedNote?.tags.map(\.tag.name), ["user-memo"])
     XCTAssertEqual(viewModel.state, .loaded)
   }

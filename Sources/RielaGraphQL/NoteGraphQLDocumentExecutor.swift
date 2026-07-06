@@ -125,7 +125,10 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
       return try await encodedJSONValue(service.notebooks(
         limit: boundedLimit(try optionalInt("limit", variables: variables), defaultValue: 50),
         offset: boundedOffset(try optionalInt("offset", variables: variables)),
-        tagFilter: try optionalStringArray("tagFilter", variables: variables) ?? []
+        tagFilter: try optionalStringArray("tagFilter", variables: variables) ?? [],
+        sort: try optionalString("sort", variables: variables),
+        createdAfter: try optionalString("createdAfter", variables: variables),
+        createdBefore: try optionalString("createdBefore", variables: variables)
       ))
     case "notes":
       return try await encodedJSONValue(service.notes(
@@ -139,8 +142,17 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
         query: requiredString("query", variables: variables),
         tagFilter: try optionalStringArray("tagFilter", variables: variables) ?? [],
         classFilter: try optionalStringArray("classFilter", variables: variables) ?? [],
+        sort: try optionalString("sort", variables: variables),
+        createdAfter: try optionalString("createdAfter", variables: variables),
+        createdBefore: try optionalString("createdBefore", variables: variables),
+        includeLinked: try optionalBool("includeLinked", variables: variables) ?? false,
         limit: boundedLimit(try optionalInt("limit", variables: variables), defaultValue: 20),
         offset: boundedOffset(try optionalInt("offset", variables: variables))
+      ))
+    case "proposeNoteLinks":
+      return try await encodedJSONValue(service.proposeNoteLinks(
+        noteId: requiredString("noteId", variables: variables),
+        limit: boundedLimit(try optionalInt("limit", variables: variables), defaultValue: 8)
       ))
     case "tags":
       return try await encodedJSONValue(service.tags())
@@ -372,6 +384,7 @@ let supportedNoteGraphQLFields: Set<String> = [
   "notebooks",
   "notes",
   "searchNotes",
+  "proposeNoteLinks",
   "tags",
   "tagClasses",
   "noteFile",
@@ -405,6 +418,7 @@ private let noteGraphQLQueryFields: Set<String> = [
   "notebooks",
   "notes",
   "searchNotes",
+  "proposeNoteLinks",
   "tags",
   "tagClasses",
   "noteFile",
@@ -515,6 +529,7 @@ private let noteGraphQLRootSelectionTypes: [String: String] = [
   "notebooks": "NotebooksQueryPayload",
   "notes": "NotesQueryPayload",
   "searchNotes": "NoteSearchQueryPayload",
+  "proposeNoteLinks": "NoteLinkProposalQueryPayload",
   "tags": "NoteTagsQueryPayload",
   "tagClasses": "NoteTagClassesQueryPayload",
   "noteFile": "NoteFileQueryPayload",
@@ -537,6 +552,7 @@ let noteGraphQLSelectionFields: [String: [String: String?]] = [
   "NotebooksQueryPayload": noteGraphQLQueryPayloadFields(valueType: "Notebook"),
   "NotesQueryPayload": noteGraphQLQueryPayloadFields(valueType: "Note"),
   "NoteSearchQueryPayload": noteGraphQLQueryPayloadFields(valueType: "NoteSearchResult"),
+  "NoteLinkProposalQueryPayload": noteGraphQLQueryPayloadFields(valueType: "NoteLinkProposal"),
   "NoteTagsQueryPayload": noteGraphQLQueryPayloadFields(valueType: "NoteTag"),
   "NoteTagClassesQueryPayload": noteGraphQLQueryPayloadFields(valueType: "NoteTagClass"),
   "NoteFileQueryPayload": noteGraphQLQueryPayloadFields(valueType: "NoteFile"),
@@ -634,7 +650,15 @@ let noteGraphQLSelectionFields: [String: [String: String?]] = [
     "note": "Note",
     "snippet": nil,
     "rank": nil,
-    "matchedTags": "NoteTag"
+    "matchedTags": "NoteTag",
+    "isLinkedNeighbor": nil
+  ],
+  "NoteLinkProposal": [
+    "targetNote": "Note",
+    "targetNoteId": nil,
+    "linkKind": nil,
+    "reason": nil,
+    "source": nil
   ],
   "NoteAutoAction": [
     "actionId": nil,
@@ -733,6 +757,16 @@ private func requiredBool(_ key: String, variables: JSONObject) throws -> Bool {
     throw NoteGraphQLDocumentExecutorError.missingVariable(key)
   }
   return value
+}
+
+private func optionalBool(_ key: String, variables: JSONObject) throws -> Bool? {
+  guard let value = variables[key], value != .null else {
+    return nil
+  }
+  guard case let .bool(bool) = value else {
+    throw NoteGraphQLDocumentExecutorError.invalidVariable("\(key) must be a boolean")
+  }
+  return bool
 }
 
 private func optionalInt(_ key: String, variables: JSONObject) throws -> Int? {

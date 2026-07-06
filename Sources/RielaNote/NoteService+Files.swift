@@ -111,6 +111,62 @@ public extension NoteService {
   }
 
   @discardableResult
+  func attachFile(
+    noteId: String,
+    data: Data,
+    role: NoteFileRole = .related,
+    mediaType: String,
+    originalFilename: String? = nil,
+    position: Int = 0,
+    s3Profile: S3StorageProfile,
+    httpClient: any S3HTTPClient = URLSessionS3HTTPClient()
+  ) throws -> NoteFileAttachment {
+    let fileStore = S3NoteFileStore(profile: s3Profile, httpClient: httpClient)
+    let fileId = makeNoteId(prefix: "file")
+    try driver.withDatabase { database in
+      _ = try requireNote(noteId, in: database)
+    }
+    let stored = try fileStore.store(data: data, fileId: fileId)
+    do {
+      return try driver.withDatabase { database in
+        try database.transaction { db in
+          _ = try requireNote(noteId, in: db)
+          let record = try insertFileRecord(
+            fileId: fileId,
+            stored: stored,
+            mediaType: mediaType,
+            originalFilename: originalFilename,
+            in: db
+          )
+          try db.execute(
+            """
+            INSERT INTO note_files (note_id, file_id, role, position)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(note_id, file_id, role) DO UPDATE SET
+              position = excluded.position
+            """,
+            bindings: [
+              .text(noteId),
+              .text(fileId),
+              .text(role.rawValue),
+              .int(Int64(position))
+            ]
+          )
+          return NoteFileAttachment(noteId: noteId, file: record, role: role, position: position)
+        }
+      }
+    } catch {
+      try? fileStore.delete(record: storedFileRecord(
+        fileId: fileId,
+        stored: stored,
+        mediaType: mediaType,
+        originalFilename: originalFilename
+      ))
+      throw error
+    }
+  }
+
+  @discardableResult
   func attachNotebookFile(
     notebookId: String,
     data: Data,

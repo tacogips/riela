@@ -289,7 +289,14 @@ public struct NoteService: Sendable {
     return result.ingestResult
   }
 
-  public func listNotebooks(limit: Int = 50, offset: Int = 0, tagFilter: [String] = []) throws -> [Notebook] {
+  public func listNotebooks(
+    limit: Int = 50,
+    offset: Int = 0,
+    tagFilter: [String] = [],
+    sort: NoteListSort = .createdAtDesc,
+    createdAfter: String? = nil,
+    createdBefore: String? = nil
+  ) throws -> [Notebook] {
     try driver.withDatabase { database in
       var predicates: [String] = []
       var bindings: [SQLiteValue] = []
@@ -307,6 +314,13 @@ public struct NoteService: Sendable {
         )
         bindings.append(contentsOf: tagFilter.map(SQLiteValue.text))
       }
+      appendCreatedAtPredicates(
+        alias: "notebooks",
+        createdAfter: createdAfter,
+        createdBefore: createdBefore,
+        predicates: &predicates,
+        bindings: &bindings
+      )
       let whereClause = predicates.isEmpty ? "" : "WHERE \(predicates.joined(separator: " AND "))"
       bindings.append(.int(Int64(limit)))
       bindings.append(.int(Int64(offset)))
@@ -316,7 +330,7 @@ public struct NoteService: Sendable {
           CASE WHEN meta_json IS NULL THEN NULL ELSE json(meta_json) END AS meta_json
         FROM notebooks
         \(whereClause)
-        ORDER BY created_at DESC, notebook_id
+        ORDER BY \(notebookSortOrderClause(alias: "notebooks", sort: sort))
         LIMIT ? OFFSET ?
         """,
         bindings: bindings
@@ -595,6 +609,10 @@ public struct NoteService: Sendable {
     query: String,
     tagFilter: [String] = [],
     classFilter: [String] = [],
+    sort: NoteListSort = .createdAtDesc,
+    createdAfter: String? = nil,
+    createdBefore: String? = nil,
+    includeLinked: Bool = false,
     limit: Int = 20,
     offset: Int = 0
   ) throws -> [NoteSearchResult] {
@@ -603,6 +621,10 @@ public struct NoteService: Sendable {
         query: query,
         tagFilter: tagFilter,
         classFilter: classFilter,
+        sort: sort,
+        createdAfter: createdAfter,
+        createdBefore: createdBefore,
+        includeLinked: includeLinked,
         limit: limit,
         offset: offset,
         in: database

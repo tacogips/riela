@@ -1,0 +1,83 @@
+{
+  "workflowId": "note-link-extract",
+  "description": "Suggest related Riela Note links for a subject note and return reviewable proposals.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "prompts": {
+    "workerSystemPromptTemplate": "Return concise JSON only. Preserve note ids exactly and only propose genuinely related notes."
+  },
+  "entryStepId": "get-subject-note",
+  "nodes": [
+    {
+      "id": "get-subject-note",
+      "addon": {
+        "name": "riela/note-get",
+        "version": "1",
+        "config": {
+          "noteRoot": "{{noteRoot}}",
+          "noteId": "{{workflowInput.noteId}}"
+        }
+      }
+    },
+    {
+      "id": "search-candidates",
+      "addon": {
+        "name": "riela/note-search",
+        "version": "1",
+        "config": {
+          "noteRoot": "{{noteRoot}}",
+          "query": "{{workflowInput.query}}",
+          "limit": "{{workflowInput.limit}}"
+        }
+      }
+    },
+    {
+      "id": "select-link-proposals",
+      "nodeFile": "nodes/node-select-link-proposals.json"
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "get-subject-note",
+      "nodeId": "get-subject-note",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "search-candidates"
+        }
+      ]
+    },
+    {
+      "id": "search-candidates",
+      "nodeId": "search-candidates",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "select-link-proposals"
+        }
+      ]
+    },
+    {
+      "id": "select-link-proposals",
+      "nodeId": "select-link-proposals",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

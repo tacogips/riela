@@ -179,12 +179,30 @@ public struct GraphQLNoteSearchResultDTO: Codable, Equatable, Sendable {
   public var snippet: String
   public var rank: Double
   public var matchedTags: [GraphQLNoteTagDTO]
+  public var isLinkedNeighbor: Bool
 
   public init(result: NoteSearchResult) {
     note = GraphQLNoteDTO(note: result.note)
     snippet = result.snippet
     rank = result.rank
     matchedTags = result.matchedTags.map(GraphQLNoteTagDTO.init)
+    isLinkedNeighbor = result.isLinkedNeighbor
+  }
+}
+
+public struct GraphQLNoteLinkProposalDTO: Codable, Equatable, Sendable {
+  public var targetNote: GraphQLNoteDTO
+  public var targetNoteId: String
+  public var linkKind: String
+  public var reason: String
+  public var source: String
+
+  public init(proposal: NoteLinkProposal) {
+    targetNote = GraphQLNoteDTO(note: proposal.targetNote)
+    targetNoteId = proposal.targetNote.noteId
+    linkKind = proposal.linkKind
+    reason = proposal.reason
+    source = proposal.source
   }
 }
 

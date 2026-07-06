@@ -35,14 +35,29 @@ final class NoteServiceTests: NoteTestCase {
     XCTAssertEqual(try service.listNotebooks().first?.title, "Explicit Title")
   }
 
-  func testUpdateNoteBodyPreservesExplicitTitleWhenUpdatedBodyHasNoHeading() throws {
+  func testUpdateNoteBodyDerivesTitleFromFirstLineWhenUpdatedBodyHasNoHeading() throws {
     let service = try makeService()
     let note = try service.createNote(title: "Explicit Title", bodyMarkdown: "Body without a heading")
 
     let updated = try service.updateNoteBody(noteId: note.noteId, bodyMarkdown: "Changed body without a heading")
 
-    XCTAssertEqual(updated.title, "Explicit Title")
+    XCTAssertEqual(updated.title, "Changed body without a heading")
     XCTAssertEqual(updated.bodyMarkdown, "Changed body without a heading")
+  }
+
+  func testTitleDerivationSupportsHeadingLevelsFirstLineMarkersAndCap() throws {
+    let service = try makeService()
+    let h3 = try service.createNote(bodyMarkdown: "### Deep Heading\nBody")
+    let list = try service.createNote(bodyMarkdown: "- List marker title\nBody")
+    let longLine = String(repeating: "a", count: NoteTitleDerivation.fallbackTitleLimit + 10)
+    let capped = try service.createNote(bodyMarkdown: "\(longLine)\nBody")
+    let empty = try service.createNote(notebookTitle: "Fallback Notebook", bodyMarkdown: " \n ")
+
+    XCTAssertEqual(h3.title, "Deep Heading")
+    XCTAssertEqual(list.title, "List marker title")
+    XCTAssertEqual(capped.title, String(longLine.prefix(NoteTitleDerivation.fallbackTitleLimit)))
+    XCTAssertNil(empty.title)
+    XCTAssertEqual(try service.getNotebook(empty.notebookId).title, "Fallback Notebook")
   }
 
   func testNoteTimestampsUseFractionalISO8601() throws {
@@ -133,6 +148,41 @@ final class NoteServiceTests: NoteTestCase {
       try service.searchNotes(query: "Paged", limit: 2, offset: 2).map(\.note.noteId),
       Array(allResults.dropFirst(2))
     )
+  }
+
+  func testSearchSupportsSortDateAndLinkedExpansion() throws {
+    let service = try makeService()
+    let direct = try service.createNote(bodyMarkdown: "# Alpha\n\nShared planning term")
+    let neighbor = try service.createNote(bodyMarkdown: "# Neighbor\n\nNo matching text")
+    let unrelated = try service.createNote(bodyMarkdown: "# Unrelated\n\nShared planning term")
+    _ = try service.linkNotes(from: direct.noteId, to: neighbor.noteId)
+
+    let withoutLinked = try service.searchNotes(query: "planning", includeLinked: false, limit: 10)
+    XCTAssertTrue(withoutLinked.map(\.note.noteId).contains(direct.noteId))
+    XCTAssertFalse(withoutLinked.map(\.note.noteId).contains(neighbor.noteId))
+
+    let withLinked = try service.searchNotes(query: "planning", includeLinked: true, limit: 10)
+    XCTAssertTrue(withLinked.map(\.note.noteId).contains(neighbor.noteId))
+    XCTAssertEqual(withLinked.first { $0.note.noteId == neighbor.noteId }?.isLinkedNeighbor, true)
+    XCTAssertEqual(
+      try service.searchNotes(query: "planning", sort: .title, limit: 10).map(\.note.noteId).prefix(2),
+      [direct.noteId, unrelated.noteId]
+    )
+    XCTAssertTrue(try service.searchNotes(query: "", createdAfter: "2999-01-01T00:00:00.000Z").isEmpty)
+  }
+
+  func testProposeLinksExcludesExistingLinksAndSelf() throws {
+    let service = try makeService()
+    let subject = try service.createNote(bodyMarkdown: "# Subject\n\nProject roadmap planning")
+    let candidate = try service.createNote(bodyMarkdown: "# Candidate\n\nRoadmap planning notes")
+    let existing = try service.createNote(bodyMarkdown: "# Existing\n\nProject roadmap planning")
+    _ = try service.linkNotes(from: subject.noteId, to: existing.noteId)
+
+    let proposals = try service.proposeLinks(noteId: subject.noteId)
+
+    XCTAssertEqual(proposals.map(\.targetNote.noteId), [candidate.noteId])
+    XCTAssertEqual(proposals.first?.linkKind, "related")
+    XCTAssertEqual(proposals.first?.source, "deterministic")
   }
 
   func testSearchDoesNotBackfillPartialFTSPageWithTextLikeScan() throws {

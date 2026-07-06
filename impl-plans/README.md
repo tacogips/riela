@@ -32,6 +32,7 @@ impl-plans/
 | `active/loop-engineering-first-line-tool` | In Progress; module 8 self-evolution versioning remaining | `design-loop-engineering-first-line-tool-detail` |
 | `active/rielaapp-ux-onboarding-improvements` | Implemented; RielaApp verification passed | `design-rielaapp-ux-onboarding-improvements` |
 | `active/riela-note` | Partially implemented; local note GraphQL/UI/add-ons shipped, remote socket and real libsql sync remain follow-ups | `design-riela-note` |
+| `active/riela-note-ui-refinements` | Implemented; post-review follow-ups pending (TASK-012–018, incl. critical SDL fix) | `design-riela-note-ui-refinements` |
 | `active/package-checkout-content-digest-metadata` | In Progress | `architecture#workflow-checkout-boundary` |
 | `active/swift-cli-runtime-parity-gap-closure` | Active; Swift parity follow-through | `design-swift-cli-runtime-parity-gap-closure` |
 | `active/workflow-progress-observability` | Implemented; completion-audit verified | `design-workflow-progress-observability` |

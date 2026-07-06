@@ -21,7 +21,8 @@ type NoteFile {
 type NoteFileAttachment { noteId: String!, file: NoteFile!, role: String!, position: Int! }
 type NoteComment { commentId: String!, noteId: String!, bodyMarkdown: String!, author: String!, createdAt: String! }
 type NoteLink { fromNoteId: String!, toNoteId: String!, linkKind: String!, provenance: String!, createdAt: String! }
-type NoteSearchResult { note: Note!, snippet: String!, rank: Float!, matchedTags: [NoteTag!]! }
+type NoteSearchResult { note: Note!, snippet: String!, rank: Float!, matchedTags: [NoteTag!]!, isLinkedNeighbor: Boolean! }
+type NoteLinkProposal { targetNote: Note!, targetNoteId: String!, linkKind: String!, reason: String!, source: String! }
 type NoteAutoAction { actionId: String!, trigger: String!, workflowId: String!, filterJSON: String, enabled: Boolean!, position: Int!, createdAt: String! }
 type NoteWorkflowScaffoldFile { relativePath: String!, path: String! }
 type NoteWorkflowScaffold { workflowId: String!, workflowRoot: String!, workflowPath: String!, files: [NoteWorkflowScaffoldFile!]! }
@@ -30,6 +31,7 @@ type NotebookQueryPayload { result: ControlPlaneResult!, value: Notebook }
 type NotebooksQueryPayload { result: ControlPlaneResult!, value: [Notebook!] }
 type NotesQueryPayload { result: ControlPlaneResult!, value: [Note!] }
 type NoteSearchQueryPayload { result: ControlPlaneResult!, value: [NoteSearchResult!] }
+type NoteLinkProposalQueryPayload { result: ControlPlaneResult!, value: [NoteLinkProposal!] }
 type NoteTagsQueryPayload { result: ControlPlaneResult!, value: [NoteTag!] }
 type NoteTagClassesQueryPayload { result: ControlPlaneResult!, value: [NoteTagClass!] }
 type NoteFileQueryPayload { result: ControlPlaneResult!, value: NoteFile }
@@ -81,5 +83,17 @@ type NoteMutationPayload {
   link: NoteLink
   autoAction: NoteAutoAction
   workflowScaffold: NoteWorkflowScaffold
+}
+type Query {
+  note(noteId: String!): NoteQueryPayload!
+  notebook(notebookId: String!): NotebookQueryPayload!
+  notebooks(limit: Int, offset: Int, tagFilter: [String!], sort: String, createdAfter: String, createdBefore: String): NotebooksQueryPayload!
+  notes(limit: Int, offset: Int, notebookId: String, tagFilter: [String!]): NotesQueryPayload!
+  searchNotes(query: String!, tagFilter: [String!], classFilter: [String!], sort: String, createdAfter: String, createdBefore: String, includeLinked: Boolean, limit: Int, offset: Int): NoteSearchQueryPayload!
+  proposeNoteLinks(noteId: String!, limit: Int): NoteLinkProposalQueryPayload!
+  tags: NoteTagsQueryPayload!
+  tagClasses: NoteTagClassesQueryPayload!
+  noteFile(fileId: String!): NoteFileQueryPayload!
+  autoActions: NoteAutoActionsQueryPayload!
 }
 """

@@ -12,6 +12,10 @@ func searchNotesInDatabase(
   query: String,
   tagFilter: [String],
   classFilter: [String],
+  sort: NoteListSort,
+  createdAfter: String?,
+  createdBefore: String?,
+  includeLinked: Bool,
   limit: Int,
   offset: Int,
   in database: SQLiteDatabase
@@ -26,10 +30,16 @@ func searchNotesInDatabase(
     let results = try searchNotesByFilters(
       tagFilter: tagFilter,
       classFilter: classFilter,
+      sort: sort,
+      createdAfter: createdAfter,
+      createdBefore: createdBefore,
       limit: fetchLimit,
       in: database
     )
-    return Array(results.dropFirst(requestedOffset).prefix(requestedLimit))
+    let expanded = try includeLinked
+      ? appendLinkedNeighborResults(to: results, query: query, limit: fetchLimit, in: database)
+      : results
+    return Array(expanded.dropFirst(requestedOffset).prefix(requestedLimit))
   }
   var sql = """
     SELECT m.note_id, bm25(note_fts) AS rank
@@ -39,6 +49,13 @@ func searchNotesInDatabase(
     WHERE note_fts MATCH ?
     """
   var bindings: [SQLiteValue] = [.text(matchQuery)]
+  appendCreatedAtPredicates(
+    alias: "n",
+    createdAfter: createdAfter,
+    createdBefore: createdBefore,
+    sql: &sql,
+    bindings: &bindings
+  )
   if !tagFilter.isEmpty {
     sql += """
 
@@ -65,7 +82,7 @@ func searchNotesInDatabase(
       """
     bindings.append(contentsOf: classFilter.map(SQLiteValue.text))
   }
-  sql += " ORDER BY rank, n.created_at DESC LIMIT ?"
+  sql += " ORDER BY rank, \(noteSortOrderClause(alias: "n", sort: sort)) LIMIT ?"
   bindings.append(.int(Int64(fetchLimit)))
 
   let rows = try database.query(sql, bindings: bindings)
@@ -91,12 +108,18 @@ func searchNotesInDatabase(
       tagFilter: tagFilter,
       classFilter: classFilter,
       excludedNoteIds: Set(results.map(\.note.noteId)),
+      sort: sort,
+      createdAfter: createdAfter,
+      createdBefore: createdBefore,
       limit: fetchLimit - results.count,
       in: database
     )
     results.append(contentsOf: fallback)
   }
-  return Array(results.dropFirst(requestedOffset).prefix(requestedLimit))
+  let expanded = try includeLinked
+    ? appendLinkedNeighborResults(to: results, query: query, limit: fetchLimit, in: database)
+    : results
+  return Array(expanded.dropFirst(requestedOffset).prefix(requestedLimit))
 }
 
 private func shouldRunTextLikeFallback(query: String, ftsResultCount: Int) -> Bool {
@@ -106,10 +129,13 @@ private func shouldRunTextLikeFallback(query: String, ftsResultCount: Int) -> Bo
 private func searchNotesByFilters(
   tagFilter: [String],
   classFilter: [String],
+  sort: NoteListSort,
+  createdAfter: String?,
+  createdBefore: String?,
   limit: Int,
   in database: SQLiteDatabase
 ) throws -> [NoteSearchResult] {
-  guard !tagFilter.isEmpty || !classFilter.isEmpty else {
+  guard !tagFilter.isEmpty || !classFilter.isEmpty || createdAfter != nil || createdBefore != nil else {
     return []
   }
   var predicates: [String] = []
@@ -142,13 +168,20 @@ private func searchNotesByFilters(
     )
     bindings.append(contentsOf: classFilter.map(SQLiteValue.text))
   }
+  appendCreatedAtPredicates(
+    alias: "n",
+    createdAfter: createdAfter,
+    createdBefore: createdBefore,
+    predicates: &predicates,
+    bindings: &bindings
+  )
   bindings.append(.int(Int64(limit)))
   let rows = try database.query(
     """
     SELECT n.note_id
     FROM notes n
     WHERE \(predicates.joined(separator: " AND "))
-    ORDER BY n.created_at DESC, n.note_id
+    ORDER BY \(noteSortOrderClause(alias: "n", sort: sort))
     LIMIT ?
     """,
     bindings: bindings
@@ -175,6 +208,9 @@ private func searchNotesByTextLike(
   tagFilter: [String],
   classFilter: [String],
   excludedNoteIds: Set<String>,
+  sort: NoteListSort,
+  createdAfter: String?,
+  createdBefore: String?,
   limit: Int,
   in database: SQLiteDatabase
 ) throws -> [NoteSearchResult] {
@@ -231,13 +267,20 @@ private func searchNotesByTextLike(
     )
     bindings.append(contentsOf: classFilter.map(SQLiteValue.text))
   }
+  appendCreatedAtPredicates(
+    alias: "n",
+    createdAfter: createdAfter,
+    createdBefore: createdBefore,
+    predicates: &predicates,
+    bindings: &bindings
+  )
   bindings.append(.int(Int64(limit)))
   let rows = try database.query(
     """
     SELECT n.note_id
     FROM notes n
     WHERE \(predicates.joined(separator: " AND "))
-    ORDER BY n.created_at DESC, n.note_id
+    ORDER BY \(noteSortOrderClause(alias: "n", sort: sort))
     LIMIT ?
     """,
     bindings: bindings
@@ -256,6 +299,112 @@ private func searchNotesByTextLike(
       rank: 1,
       matchedTags: note.tags.map(\.tag)
     )
+  }
+}
+
+private func appendLinkedNeighborResults(
+  to directResults: [NoteSearchResult],
+  query: String,
+  limit: Int,
+  in database: SQLiteDatabase
+) throws -> [NoteSearchResult] {
+  guard !directResults.isEmpty, limit > directResults.count else {
+    return directResults
+  }
+  let directNoteIds = directResults.map(\.note.noteId)
+  let existingNoteIds = Set(directNoteIds)
+  let rows = try database.query(
+    """
+    SELECT DISTINCT
+      CASE
+        WHEN from_note_id IN (\(placeholders(count: directNoteIds.count))) THEN to_note_id
+        ELSE from_note_id
+      END AS note_id
+    FROM note_links
+    WHERE from_note_id IN (\(placeholders(count: directNoteIds.count)))
+       OR to_note_id IN (\(placeholders(count: directNoteIds.count)))
+    ORDER BY note_id
+    LIMIT ?
+    """,
+    bindings: directNoteIds.map(SQLiteValue.text)
+      + directNoteIds.map(SQLiteValue.text)
+      + directNoteIds.map(SQLiteValue.text)
+      + [.int(Int64(limit - directResults.count))]
+  )
+  let neighborIds = rows.compactMap { $0["note_id"] }.filter { !existingNoteIds.contains($0) }
+  let notesById = try requireNotes(neighborIds, in: database)
+  let neighbors = neighborIds.compactMap { noteId -> NoteSearchResult? in
+    guard let note = notesById[noteId] else {
+      return nil
+    }
+    return NoteSearchResult(
+      note: note,
+      snippet: snippet(from: note.bodyMarkdown, query: query),
+      rank: 10,
+      matchedTags: note.tags.map(\.tag),
+      isLinkedNeighbor: true
+    )
+  }
+  return directResults + neighbors
+}
+
+func noteSortOrderClause(alias: String, sort: NoteListSort) -> String {
+  switch sort {
+  case .createdAtDesc:
+    return "\(alias).created_at DESC, \(alias).note_id"
+  case .createdAtAsc:
+    return "\(alias).created_at ASC, \(alias).note_id"
+  case .updatedAtDesc:
+    return "\(alias).updated_at DESC, \(alias).note_id"
+  case .title:
+    return "lower(coalesce(\(alias).title, \(alias).note_id)) ASC, \(alias).note_id"
+  }
+}
+
+func notebookSortOrderClause(alias: String, sort: NoteListSort) -> String {
+  switch sort {
+  case .createdAtDesc:
+    return "\(alias).created_at DESC, \(alias).notebook_id"
+  case .createdAtAsc:
+    return "\(alias).created_at ASC, \(alias).notebook_id"
+  case .updatedAtDesc:
+    return "\(alias).updated_at DESC, \(alias).notebook_id"
+  case .title:
+    return "lower(\(alias).title) ASC, \(alias).notebook_id"
+  }
+}
+
+func appendCreatedAtPredicates(
+  alias: String,
+  createdAfter: String?,
+  createdBefore: String?,
+  predicates: inout [String],
+  bindings: inout [SQLiteValue]
+) {
+  if let createdAfter {
+    predicates.append("\(alias).created_at >= ?")
+    bindings.append(.text(createdAfter))
+  }
+  if let createdBefore {
+    predicates.append("\(alias).created_at <= ?")
+    bindings.append(.text(createdBefore))
+  }
+}
+
+private func appendCreatedAtPredicates(
+  alias: String,
+  createdAfter: String?,
+  createdBefore: String?,
+  sql: inout String,
+  bindings: inout [SQLiteValue]
+) {
+  if let createdAfter {
+    sql += "\n  AND \(alias).created_at >= ?"
+    bindings.append(.text(createdAfter))
+  }
+  if let createdBefore {
+    sql += "\n  AND \(alias).created_at <= ?"
+    bindings.append(.text(createdBefore))
   }
 }
 

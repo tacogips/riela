@@ -10,24 +10,31 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
   let noteRoot: URL
   let profileName: RielaAppProfileName
   let s3Profiles: [S3StorageProfile]
+  private let onOpenSettings: () -> Void
   private let onWindowWillClose: () -> Void
 
   init(
     noteRoot: URL,
     profileName: RielaAppProfileName,
     environment: [String: String] = ProcessInfo.processInfo.environment,
+    onOpenSettings: @escaping () -> Void = {},
     onWindowWillClose: @escaping () -> Void = {}
   ) throws {
     self.noteRoot = noteRoot
     self.profileName = profileName
     let noteSettings = RielaAppNoteSettingsStore(noteRoot: noteRoot).load()
     self.s3Profiles = try RielaAppNoteS3ProfileResolver().profiles(settings: noteSettings, environment: environment)
+    self.onOpenSettings = onOpenSettings
     self.onWindowWillClose = onWindowWillClose
 
     try FileManager.default.createDirectory(at: noteRoot, withIntermediateDirectories: true)
     let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot.path))
-    let client = NoteServiceRielaNoteUIClient(service: service, s3Profiles: s3Profiles)
-    let hostingController = NSHostingController(rootView: RielaNoteRootView(client: client))
+    let client = NoteServiceRielaNoteUIClient(
+      service: service,
+      s3Profiles: s3Profiles,
+      linkProposalProvider: RielaWorkflowNoteLinkProposalProvider.defaultProvider(environment: environment)
+    )
+    let hostingController = NSHostingController(rootView: RielaNoteRootView(client: client, onOpenSettings: onOpenSettings))
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 1120, height: 740),
       styleMask: [.titled, .closable, .miniaturizable, .resizable],

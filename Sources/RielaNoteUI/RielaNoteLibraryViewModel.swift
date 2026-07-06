@@ -32,8 +32,11 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   @Published public private(set) var hasMoreNotebookNotes = false
   @Published public private(set) var hasMoreSearchResults = false
   @Published public private(set) var linkTargetSearchNotes: [Note] = []
+  @Published public private(set) var linkProposals: [NoteLinkProposal] = []
+  @Published public private(set) var isLinkProposalLoading = false
   @Published public private(set) var isLinkTargetSearchLoading = false
   @Published public private(set) var isSourceImageLoading = false
+  @Published public var filter = RielaNoteListFilter()
   @Published public var searchText = ""
   @Published public var sourceImageZoom = 1.0
   @Published public var contentMode: NoteContentMode = .text
@@ -99,7 +102,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   }
 
   public var hasSearchFilters: Bool {
-    !selectedSearchTagNames.isEmpty || !selectedSearchClassIds.isEmpty
+    !selectedSearchTagNames.isEmpty || !selectedSearchClassIds.isEmpty || filter.createdRange != .any
   }
 
   public var selectedNote: Note? {
@@ -272,6 +275,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   public func clearSearchFilters() async {
     selectedSearchTagNames = []
     selectedSearchClassIds = []
+    filter = RielaNoteListFilter(sort: filter.sort)
     await performSearch(selectFirstResult: false)
   }
 
@@ -288,6 +292,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
         query: normalizedQuery,
         tagFilter: [],
         classFilter: [],
+        filter: RielaNoteListFilter(),
         limit: linkTargetSearchLimit,
         offset: 0
       )
@@ -405,9 +410,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   public func createUserMemo(title: String = "Untitled Memo", body: String = "") async {
     state = .loading
     do {
-      let detail = try await client.createUserMemo(
-        bodyMarkdown: rielaNoteDraftMarkdown(title: title, fallbackTitle: "Untitled Memo", body: body)
-      )
+      let detail = try await client.createUserMemo(bodyMarkdown: body)
       searchText = ""
       searchResults = []
       searchResultsOffset = 0
@@ -438,10 +441,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     }
     state = .loading
     do {
-      let detail = try await client.createNote(
-        inNotebook: notebookId,
-        bodyMarkdown: rielaNoteDraftMarkdown(title: title, fallbackTitle: "Untitled Note", body: body)
-      )
+      let detail = try await client.createNote(inNotebook: notebookId, bodyMarkdown: body)
       searchText = ""
       searchResults = []
       searchResultsOffset = 0
@@ -602,28 +602,6 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     }
   }
 
-  public func linkSelectedNote(to targetNoteId: String, kind: String = "related") async {
-    guard let noteId = selectedDetail?.note.noteId else {
-      return
-    }
-    let normalizedTarget = targetNoteId.trimmingCharacters(in: .whitespacesAndNewlines)
-    let normalizedKind = kind.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !normalizedTarget.isEmpty else {
-      return
-    }
-    state = .loading
-    do {
-      selectedDetail = try await client.linkNote(
-        noteId: noteId,
-        targetNoteId: normalizedTarget,
-        linkKind: normalizedKind.isEmpty ? "related" : normalizedKind
-      )
-      state = .loaded
-    } catch {
-      state = .failed(String(describing: error))
-    }
-  }
-
   public func selectPreviousNote() async {
     await selectAdjacentNote(delta: -1)
   }
@@ -656,6 +634,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
         query: query,
         tagFilter: selectedSearchTagNames.sorted(),
         classFilter: selectedSearchClassIds.sorted(),
+        filter: filter,
         limit: searchPageSize + 1,
         offset: searchResultsOffset
       )
@@ -698,14 +677,14 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   }
 
   private func loadNotebooksFirstPage() async throws {
-    let page = try await client.listNotebooks(limit: notebookPageSize + 1, offset: 0)
+    let page = try await client.listNotebooks(limit: notebookPageSize + 1, offset: 0, filter: filter)
     notebooks = Array(page.prefix(notebookPageSize))
     notebooksOffset = notebooks.count
     hasMoreNotebooks = page.count > notebookPageSize
   }
 
   private func appendNotebooksPage() async throws {
-    let page = try await client.listNotebooks(limit: notebookPageSize + 1, offset: notebooksOffset)
+    let page = try await client.listNotebooks(limit: notebookPageSize + 1, offset: notebooksOffset, filter: filter)
     let visiblePage = Array(page.prefix(notebookPageSize))
     let existingNotebookIds = Set(notebooks.map(\.notebookId))
     notebooks.append(contentsOf: visiblePage.filter { !existingNotebookIds.contains($0.notebookId) })
@@ -728,6 +707,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
       query: query,
       tagFilter: tagFilter,
       classFilter: classFilter,
+      filter: filter,
       limit: searchPageSize + 1,
       offset: 0
     )
@@ -756,6 +736,14 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
       && searchText.trimmingCharacters(in: .whitespacesAndNewlines) == query
       && selectedSearchTagNames.sorted() == tagFilter
       && selectedSearchClassIds.sorted() == classFilter
+  }
+
+  private func reloadForFilterChange() async {
+    if isSearching {
+      await performSearch(selectFirstResult: false)
+    } else {
+      await refresh()
+    }
   }
 
   @discardableResult
@@ -881,6 +869,95 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   }
 }
 
+extension RielaNoteLibraryViewModel {
+  public func linkSelectedNote(to targetNoteId: String, kind: String = "related") async {
+    guard let noteId = selectedDetail?.note.noteId else {
+      return
+    }
+    let normalizedTarget = targetNoteId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedKind = kind.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedTarget.isEmpty else {
+      return
+    }
+    state = .loading
+    do {
+      selectedDetail = try await client.linkNote(
+        noteId: noteId,
+        targetNoteId: normalizedTarget,
+        linkKind: normalizedKind.isEmpty ? "related" : normalizedKind
+      )
+      state = .loaded
+    } catch {
+      state = .failed(String(describing: error))
+    }
+  }
+
+  public func updateSort(_ sort: NoteListSort) async {
+    filter.sort = sort
+    await reloadForFilterChange()
+  }
+
+  public func updateCreatedRange(_ range: RielaNoteListFilter.CreatedRange) async {
+    filter.createdRange = range
+    await reloadForFilterChange()
+  }
+
+  public func updateIncludeLinked(_ includeLinked: Bool) async {
+    filter.includeLinked = includeLinked
+    await performSearch(selectFirstResult: false)
+  }
+
+  public func updateCustomCreatedAfter(_ value: String) async {
+    filter.customCreatedAfter = value
+    await reloadForFilterChange()
+  }
+
+  public func updateCustomCreatedBefore(_ value: String) async {
+    filter.customCreatedBefore = value
+    await reloadForFilterChange()
+  }
+
+  public func proposeLinksForSelectedNote() async {
+    guard let noteId = selectedDetail?.note.noteId else {
+      return
+    }
+    isLinkProposalLoading = true
+    defer {
+      isLinkProposalLoading = false
+    }
+    do {
+      linkProposals = try await client.proposeNoteLinks(noteId: noteId)
+    } catch {
+      state = .failed(String(describing: error))
+      linkProposals = []
+    }
+  }
+
+  public func clearLinkProposals() {
+    linkProposals = []
+    isLinkProposalLoading = false
+  }
+
+  public func acceptLinkProposal(_ proposal: NoteLinkProposal) async {
+    guard let noteId = selectedDetail?.note.noteId else {
+      return
+    }
+    state = .loading
+    do {
+      selectedDetail = try await client.linkNote(
+        noteId: noteId,
+        targetNoteId: proposal.targetNote.noteId,
+        linkKind: proposal.linkKind,
+        provenance: .ai
+      )
+      linkProposals.removeAll { $0.targetNote.noteId == proposal.targetNote.noteId && $0.linkKind == proposal.linkKind }
+      state = .loaded
+    } catch {
+      state = .failed(String(describing: error))
+    }
+  }
+}
+
 private extension RielaNoteLibraryViewModel {
   func prefetchFile(_ fileId: String) async {
     do {
@@ -974,14 +1051,4 @@ private extension RielaNoteLibraryViewModel {
   private func byteCountText(_ byteSize: Int64) -> String {
     byteSize == 1 ? "1 byte" : "\(byteSize) bytes"
   }
-}
-
-func rielaNoteDraftMarkdown(title: String, fallbackTitle: String, body: String) -> String {
-  let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-  let heading = trimmedTitle.isEmpty ? fallbackTitle : trimmedTitle
-  let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
-  guard !trimmedBody.isEmpty else {
-    return "# \(heading)\n\n"
-  }
-  return "# \(heading)\n\n\(trimmedBody)"
 }

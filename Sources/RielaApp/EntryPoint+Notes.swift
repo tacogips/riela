@@ -18,6 +18,9 @@ extension RielaApp {
         noteWindowController = try NoteWindowController(
           noteRoot: noteRootURL(profileName: daemonProfileName),
           profileName: daemonProfileName,
+          onOpenSettings: { [weak self] in
+            self?.openNoteSettings()
+          },
           onWindowWillClose: { [weak self] in
             self?.noteWindowController = nil
             self?.restoreAccessoryActivationPolicyIfNoAppWindows()

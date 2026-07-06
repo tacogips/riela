@@ -812,20 +812,7 @@ private func noteFileRole(_ value: String?) -> NoteFileRole? {
 }
 
 private func noteTitleFallback(from bodyMarkdown: String) -> String {
-  guard let firstLine = bodyMarkdown.split(separator: "\n").first(where: {
-    !$0.trimmingCharacters(in: .whitespaces).isEmpty
-  }) else {
-    return "Untitled"
-  }
-  let title = String(firstLine).trimmingCharacters(in: .whitespaces)
-  guard let headingRange = title.range(
-    of: #"^#{1,6}\s+"#,
-    options: .regularExpression
-  ) else {
-    return title
-  }
-  let headingTitle = title[headingRange.upperBound...].trimmingCharacters(in: .whitespaces)
-  return headingTitle.isEmpty ? "Untitled" : headingTitle
+  NoteTitleDerivation.fallbackTitle(from: bodyMarkdown)
 }
 
 private func notebookJSON(_ notebook: Notebook) -> JSONValue {

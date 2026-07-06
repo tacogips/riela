@@ -1,0 +1,10 @@
+{
+  "input": {
+    "noteId": "note-subject",
+    "query": "project planning",
+    "limit": 10
+  },
+  "expected": {
+    "proposals": []
+  }
+}

@@ -4,13 +4,16 @@ import SwiftUI
 public struct RielaNoteNotebookListView: View {
   @ObservedObject private var viewModel: RielaNoteLibraryViewModel
   @State private var isSearchPresented = false
-  @State private var creationDestination: RielaNoteCreationDestination?
-  @State private var creationDraftTitle = ""
-  @State private var creationDraftBody = ""
+  private let onCreate: (RielaNoteCreationDestination) -> Void
   private let onOpenNote: (String) -> Void
 
-  public init(viewModel: RielaNoteLibraryViewModel, onOpenNote: @escaping (String) -> Void = { _ in }) {
+  public init(
+    viewModel: RielaNoteLibraryViewModel,
+    onCreate: @escaping (RielaNoteCreationDestination) -> Void = { _ in },
+    onOpenNote: @escaping (String) -> Void = { _ in }
+  ) {
     self.viewModel = viewModel
+    self.onCreate = onCreate
     self.onOpenNote = onOpenNote
   }
 
@@ -60,7 +63,7 @@ public struct RielaNoteNotebookListView: View {
       }
       ToolbarItem {
         Button {
-          presentCreation(.selectedNotebook)
+          onCreate(.selectedNotebook)
         } label: {
           Label("New note", systemImage: "doc.badge.plus")
         }
@@ -70,7 +73,7 @@ public struct RielaNoteNotebookListView: View {
       }
       ToolbarItem {
         Button {
-          presentCreation(.memo)
+          onCreate(.memo)
         } label: {
           Label("New memo", systemImage: "square.and.pencil")
         }
@@ -78,17 +81,11 @@ public struct RielaNoteNotebookListView: View {
         .keyboardShortcut("n", modifiers: .command)
       }
     }
-    .sheet(item: $creationDestination) { destination in
-      RielaNoteCreationSheet(
-        destination: destination,
-        title: $creationDraftTitle,
-        bodyText: $creationDraftBody,
-        onCancel: {
-          creationDestination = nil
-        },
-        onCreate: {
-          createDraft(destination)
-        }
+    .overlay(alignment: .bottomTrailing) {
+      RielaNoteQuickCreateButton(
+        canCreateInNotebook: viewModel.canCreateNoteInSelectedNotebook,
+        onCreateMemo: { onCreate(.memo) },
+        onCreateInNotebook: { onCreate(.selectedNotebook) }
       )
     }
     .overlay {
@@ -164,7 +161,6 @@ public struct RielaNoteNotebookListView: View {
 
   private var searchResults: some View {
     Section {
-      searchFilters
       ForEach(viewModel.searchResults, id: \.note.noteId) { result in
         RielaNoteSearchResultRow(
           result: result,
@@ -188,56 +184,6 @@ public struct RielaNoteNotebookListView: View {
     }
   }
 
-  @ViewBuilder
-  private var searchFilters: some View {
-    if !viewModel.availableSearchTags.isEmpty || !viewModel.availableSearchTagClasses.isEmpty {
-      ScrollView(.horizontal) {
-        HStack(spacing: 6) {
-          ForEach(viewModel.availableSearchTagClasses, id: \.classId) { tagClass in
-            Button {
-              Task {
-                await viewModel.toggleSearchClass(tagClass.classId)
-              }
-            } label: {
-              Label(
-                tagClass.label,
-                systemImage: viewModel.selectedSearchClassIds.contains(tagClass.classId) ? "checkmark.circle" : "square.grid.2x2"
-              )
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .help("Filter by \(tagClass.label)")
-          }
-          ForEach(viewModel.availableSearchTags, id: \.tagId) { tag in
-            Button {
-              Task {
-                await viewModel.toggleSearchTag(tag.name)
-              }
-            } label: {
-              Label(tag.name, systemImage: viewModel.selectedSearchTagNames.contains(tag.name) ? "checkmark" : "tag")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-          }
-          if viewModel.hasSearchFilters {
-            Button {
-              Task {
-                await viewModel.clearSearchFilters()
-              }
-            } label: {
-              Image(systemName: "xmark.circle")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .help("Clear filters")
-          }
-        }
-        .padding(.vertical, 2)
-      }
-      .scrollIndicators(.hidden)
-    }
-  }
-
   private func open(_ noteId: String) {
     Task {
       await viewModel.selectNote(noteId)
@@ -245,90 +191,6 @@ public struct RielaNoteNotebookListView: View {
     }
   }
 
-  private func presentCreation(_ destination: RielaNoteCreationDestination) {
-    creationDraftTitle = ""
-    creationDraftBody = ""
-    creationDestination = destination
-  }
-
-  private func createDraft(_ destination: RielaNoteCreationDestination) {
-    let title = creationDraftTitle
-    let body = creationDraftBody
-    creationDestination = nil
-    Task {
-      switch destination {
-      case .memo:
-        await viewModel.createUserMemo(title: title, body: body)
-      case .selectedNotebook:
-        await viewModel.createNoteInSelectedNotebook(title: title, body: body)
-      }
-    }
-  }
-}
-
-private enum RielaNoteCreationDestination: String, Identifiable {
-  case memo
-  case selectedNotebook
-
-  var id: String {
-    rawValue
-  }
-
-  var title: String {
-    switch self {
-    case .memo:
-      return "New memo"
-    case .selectedNotebook:
-      return "New note"
-    }
-  }
-
-  var createLabel: String {
-    switch self {
-    case .memo:
-      return "Create memo"
-    case .selectedNotebook:
-      return "Create note"
-    }
-  }
-}
-
-private struct RielaNoteCreationSheet: View {
-  let destination: RielaNoteCreationDestination
-  @Binding var title: String
-  @Binding var bodyText: String
-  let onCancel: () -> Void
-  let onCreate: () -> Void
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Text(destination.title)
-        .font(.headline)
-      TextField("Title", text: $title)
-        .textFieldStyle(.roundedBorder)
-      Text("Body")
-        .font(.caption)
-        .foregroundStyle(.secondary)
-      TextEditor(text: $bodyText)
-        .font(.body)
-        .frame(minHeight: 160)
-        .overlay {
-          RoundedRectangle(cornerRadius: 6)
-            .stroke(Color.secondary.opacity(0.25))
-        }
-      HStack {
-        Spacer()
-        Button("Cancel", action: onCancel)
-        Button(action: onCreate) {
-          Label(destination.createLabel, systemImage: "checkmark")
-        }
-        .keyboardShortcut(.defaultAction)
-      }
-    }
-    .padding(16)
-    .frame(width: 420)
-    .frame(minHeight: 300)
-  }
 }
 
 struct RielaNoteNotebookRow: View {
@@ -387,6 +249,11 @@ struct RielaNoteSearchResultRow: View {
           .font(.subheadline)
           .foregroundStyle(.secondary)
           .lineLimit(3)
+        if result.isLinkedNeighbor {
+          Label("Linked", systemImage: "link")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
         RielaNoteTagChipRow(tags: result.note.tags)
       }
       Spacer(minLength: 8)

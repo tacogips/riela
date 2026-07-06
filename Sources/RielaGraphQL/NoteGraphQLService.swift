@@ -36,10 +36,20 @@ public struct GraphQLNoteGraphQLService: Sendable {
   public func notebooks(
     limit: Int = 50,
     offset: Int = 0,
-    tagFilter: [String] = []
+    tagFilter: [String] = [],
+    sort: String? = nil,
+    createdAfter: String? = nil,
+    createdBefore: String? = nil
   ) async -> GraphQLNoteQueryResult<[GraphQLNotebookDTO]> {
     noteResult {
-      try service.listNotebooks(limit: limit, offset: offset, tagFilter: tagFilter).map(GraphQLNotebookDTO.init)
+      try service.listNotebooks(
+        limit: limit,
+        offset: offset,
+        tagFilter: tagFilter,
+        sort: try graphQLNoteListSort(sort),
+        createdAfter: createdAfter,
+        createdBefore: createdBefore
+      ).map(GraphQLNotebookDTO.init)
     }
   }
 
@@ -63,6 +73,10 @@ public struct GraphQLNoteGraphQLService: Sendable {
     query: String,
     tagFilter: [String] = [],
     classFilter: [String] = [],
+    sort: String? = nil,
+    createdAfter: String? = nil,
+    createdBefore: String? = nil,
+    includeLinked: Bool = false,
     limit: Int = 20,
     offset: Int = 0
   ) async -> GraphQLNoteQueryResult<[GraphQLNoteSearchResultDTO]> {
@@ -71,9 +85,22 @@ public struct GraphQLNoteGraphQLService: Sendable {
         query: query,
         tagFilter: tagFilter,
         classFilter: classFilter,
+        sort: try graphQLNoteListSort(sort),
+        createdAfter: createdAfter,
+        createdBefore: createdBefore,
+        includeLinked: includeLinked,
         limit: limit,
         offset: offset
       ).map(GraphQLNoteSearchResultDTO.init)
+    }
+  }
+
+  public func proposeNoteLinks(
+    noteId: String,
+    limit: Int = 8
+  ) async -> GraphQLNoteQueryResult<[GraphQLNoteLinkProposalDTO]> {
+    noteResult {
+      try service.proposeLinks(noteId: noteId, limit: limit).map(GraphQLNoteLinkProposalDTO.init)
     }
   }
 
@@ -385,6 +412,16 @@ private func graphQLNoteProvenance(_ rawValue: String) throws -> NoteProvenance 
     throw GraphQLNoteServiceError.invalidRequest("unsupported note provenance: \(rawValue)")
   }
   return provenance
+}
+
+private func graphQLNoteListSort(_ rawValue: String?) throws -> NoteListSort {
+  guard let rawValue else {
+    return .createdAtDesc
+  }
+  guard let sort = NoteListSort(rawValue: rawValue) else {
+    throw GraphQLNoteServiceError.invalidRequest("unsupported note sort: \(rawValue)")
+  }
+  return sort
 }
 
 private func noteResult<Value>(

@@ -295,6 +295,27 @@ public struct NoteLink: Equatable, Sendable {
   }
 }
 
+public enum NoteListSort: String, Codable, Equatable, Sendable, CaseIterable {
+  case createdAtDesc
+  case createdAtAsc
+  case updatedAtDesc
+  case title
+}
+
+public struct NoteLinkProposal: Equatable, Sendable {
+  public var targetNote: Note
+  public var linkKind: String
+  public var reason: String
+  public var source: String
+
+  public init(targetNote: Note, linkKind: String = "related", reason: String, source: String = "deterministic") {
+    self.targetNote = targetNote
+    self.linkKind = linkKind
+    self.reason = reason
+    self.source = source
+  }
+}
+
 public struct AutoAction: Codable, Equatable, Sendable {
   public var actionId: String
   public var trigger: NoteAutoActionTrigger
@@ -387,12 +408,20 @@ public struct NoteSearchResult: Equatable, Sendable {
   public var snippet: String
   public var rank: Double
   public var matchedTags: [Tag]
+  public var isLinkedNeighbor: Bool
 
-  public init(note: Note, snippet: String, rank: Double, matchedTags: [Tag]) {
+  public init(
+    note: Note,
+    snippet: String,
+    rank: Double,
+    matchedTags: [Tag],
+    isLinkedNeighbor: Bool = false
+  ) {
     self.note = note
     self.snippet = snippet
     self.rank = rank
     self.matchedTags = matchedTags
+    self.isLinkedNeighbor = isLinkedNeighbor
   }
 }
 

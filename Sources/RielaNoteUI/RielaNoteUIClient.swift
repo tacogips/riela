@@ -37,11 +37,42 @@ public enum RielaNoteUIClientCapabilityError: Error, Equatable, Sendable {
   case currentNotebookNoteCreationUnsupported
 }
 
+public struct RielaNoteListFilter: Equatable, Sendable {
+  public enum CreatedRange: String, Equatable, Sendable, CaseIterable {
+    case any
+    case today
+    case last7Days
+    case last30Days
+    case custom
+  }
+
+  public var sort: NoteListSort
+  public var createdRange: CreatedRange
+  public var includeLinked: Bool
+  public var customCreatedAfter: String
+  public var customCreatedBefore: String
+
+  public init(
+    sort: NoteListSort = .createdAtDesc,
+    createdRange: CreatedRange = .any,
+    includeLinked: Bool = false,
+    customCreatedAfter: String = "",
+    customCreatedBefore: String = ""
+  ) {
+    self.sort = sort
+    self.createdRange = createdRange
+    self.includeLinked = includeLinked
+    self.customCreatedAfter = customCreatedAfter
+    self.customCreatedBefore = customCreatedBefore
+  }
+}
+
 public protocol RielaNoteUIClient: Sendable {
   var defaultConfigWorkflowRoot: String { get }
   var noteStoreChangeObservationURLs: [URL] { get }
 
   func listNotebooks(limit: Int, offset: Int) async throws -> [Notebook]
+  func listNotebooks(limit: Int, offset: Int, filter: RielaNoteListFilter) async throws -> [Notebook]
   func listNotes(notebookId: String, limit: Int, offset: Int) async throws -> [Note]
   func listTags() async throws -> [Tag]
   func listTagClasses() async throws -> [TagClass]
@@ -54,6 +85,14 @@ public protocol RielaNoteUIClient: Sendable {
     limit: Int,
     offset: Int
   ) async throws -> [NoteSearchResult]
+  func searchNotes(
+    query: String,
+    tagFilter: [String],
+    classFilter: [String],
+    filter: RielaNoteListFilter,
+    limit: Int,
+    offset: Int
+  ) async throws -> [NoteSearchResult]
   func noteDetail(noteId: String) async throws -> RielaNoteDetail
   func firstNote(inNotebook notebookId: String) async throws -> RielaNoteDetail?
   func resolveFile(fileId: String) async throws -> RielaNoteResolvedFile
@@ -62,6 +101,13 @@ public protocol RielaNoteUIClient: Sendable {
   func removeTag(noteId: String, tagName: String) async throws -> RielaNoteDetail
   func addComment(noteId: String, bodyMarkdown: String) async throws -> RielaNoteDetail
   func linkNote(noteId: String, targetNoteId: String, linkKind: String) async throws -> RielaNoteDetail
+  func linkNote(
+    noteId: String,
+    targetNoteId: String,
+    linkKind: String,
+    provenance: NoteProvenance
+  ) async throws -> RielaNoteDetail
+  func proposeNoteLinks(noteId: String) async throws -> [NoteLinkProposal]
   func answerNoteAgentTurn(message: String, limit: Int) async throws -> RielaNoteAgentTurn
   func saveNoteAgentConversation(
     title: String,
@@ -90,25 +136,101 @@ public extension RielaNoteUIClient {
   func createNote(inNotebook notebookId: String, bodyMarkdown: String) async throws -> RielaNoteDetail {
     throw RielaNoteUIClientCapabilityError.currentNotebookNoteCreationUnsupported
   }
+
+  func listNotebooks(limit: Int, offset: Int, filter: RielaNoteListFilter) async throws -> [Notebook] {
+    try await listNotebooks(limit: limit, offset: offset)
+  }
+
+  func searchNotes(
+    query: String,
+    tagFilter: [String],
+    classFilter: [String],
+    filter: RielaNoteListFilter,
+    limit: Int,
+    offset: Int
+  ) async throws -> [NoteSearchResult] {
+    try await searchNotes(query: query, tagFilter: tagFilter, classFilter: classFilter, limit: limit, offset: offset)
+  }
+
+  func linkNote(
+    noteId: String,
+    targetNoteId: String,
+    linkKind: String,
+    provenance: NoteProvenance
+  ) async throws -> RielaNoteDetail {
+    try await linkNote(noteId: noteId, targetNoteId: targetNoteId, linkKind: linkKind)
+  }
+
+  func proposeNoteLinks(noteId: String) async throws -> [NoteLinkProposal] {
+    []
+  }
+}
+
+public extension RielaNoteListFilter {
+  var createdAfter: String? {
+    guard createdRange != .any else {
+      return nil
+    }
+    let calendar = Calendar(identifier: .gregorian)
+    let now = Date()
+    let startDate: Date
+    switch createdRange {
+    case .any:
+      return nil
+    case .custom:
+      let trimmed = customCreatedAfter.trimmingCharacters(in: .whitespacesAndNewlines)
+      return trimmed.isEmpty ? nil : trimmed
+    case .today:
+      startDate = calendar.startOfDay(for: now)
+    case .last7Days:
+      startDate = calendar.date(byAdding: .day, value: -7, to: now) ?? now
+    case .last30Days:
+      startDate = calendar.date(byAdding: .day, value: -30, to: now) ?? now
+    }
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.string(from: startDate)
+  }
+
+  var createdBefore: String? {
+    guard createdRange == .custom else {
+      return nil
+    }
+    let trimmed = customCreatedBefore.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
+  }
 }
 
 public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
   private let service: NoteService
   private let s3Profiles: [S3StorageProfile]
   private let s3HTTPClient: any S3HTTPClient
+  private let linkProposalProvider: (any RielaNoteLinkProposalProviding)?
 
   public init(
     service: NoteService,
     s3Profiles: [S3StorageProfile] = [],
-    s3HTTPClient: any S3HTTPClient = URLSessionS3HTTPClient()
+    s3HTTPClient: any S3HTTPClient = URLSessionS3HTTPClient(),
+    linkProposalProvider: (any RielaNoteLinkProposalProviding)? = nil
   ) {
     self.service = service
     self.s3Profiles = s3Profiles
     self.s3HTTPClient = s3HTTPClient
+    self.linkProposalProvider = linkProposalProvider
   }
 
   public func listNotebooks(limit: Int, offset: Int) async throws -> [Notebook] {
     try service.listNotebooks(limit: limit, offset: offset)
+  }
+
+  public func listNotebooks(limit: Int, offset: Int, filter: RielaNoteListFilter) async throws -> [Notebook] {
+    try service.listNotebooks(
+      limit: limit,
+      offset: offset,
+      sort: filter.sort,
+      createdAfter: filter.createdAfter,
+      createdBefore: filter.createdBefore
+    )
   }
 
   public func listNotes(notebookId: String, limit: Int, offset: Int) async throws -> [Note] {
@@ -171,6 +293,27 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
     try service.searchNotes(query: query, tagFilter: tagFilter, classFilter: classFilter, limit: limit, offset: offset)
   }
 
+  public func searchNotes(
+    query: String,
+    tagFilter: [String],
+    classFilter: [String],
+    filter: RielaNoteListFilter,
+    limit: Int,
+    offset: Int
+  ) async throws -> [NoteSearchResult] {
+    try service.searchNotes(
+      query: query,
+      tagFilter: tagFilter,
+      classFilter: classFilter,
+      sort: filter.sort,
+      createdAfter: filter.createdAfter,
+      createdBefore: filter.createdBefore,
+      includeLinked: filter.includeLinked,
+      limit: limit,
+      offset: offset
+    )
+  }
+
   public func noteDetail(noteId: String) async throws -> RielaNoteDetail {
     try detail(noteId: noteId)
   }
@@ -225,6 +368,25 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
   public func linkNote(noteId: String, targetNoteId: String, linkKind: String) async throws -> RielaNoteDetail {
     _ = try service.linkNotes(from: noteId, to: targetNoteId, linkKind: linkKind, provenance: .human)
     return try detail(noteId: noteId)
+  }
+
+  public func linkNote(
+    noteId: String,
+    targetNoteId: String,
+    linkKind: String,
+    provenance: NoteProvenance
+  ) async throws -> RielaNoteDetail {
+    _ = try service.linkNotes(from: noteId, to: targetNoteId, linkKind: linkKind, provenance: provenance)
+    return try detail(noteId: noteId)
+  }
+
+  public func proposeNoteLinks(noteId: String) async throws -> [NoteLinkProposal] {
+    if let linkProposalProvider,
+       let workflowProposals = try? await workflowNoteLinkProposals(noteId: noteId, provider: linkProposalProvider),
+       !workflowProposals.isEmpty {
+      return workflowProposals
+    }
+    return try service.proposeLinks(noteId: noteId)
   }
 
   public func answerNoteAgentTurn(message: String, limit: Int) async throws -> RielaNoteAgentTurn {
@@ -355,6 +517,34 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
     return linkedNotes
   }
 
+  private func workflowNoteLinkProposals(
+    noteId: String,
+    provider: any RielaNoteLinkProposalProviding
+  ) async throws -> [NoteLinkProposal] {
+    let note = try service.getNote(noteId)
+    let drafts = try await provider.proposeLinkDrafts(
+      noteId: noteId,
+      noteRoot: service.noteRootPath(),
+      query: noteLinkProposalQuery(from: note.bodyMarkdown),
+      limit: 8
+    )
+    let links = try service.listLinks(noteId: noteId)
+    let excludedNoteIds = Set(links.map { $0.counterpartNoteId(for: noteId) } + [noteId])
+    var seenNoteIds = excludedNoteIds
+    var proposals: [NoteLinkProposal] = []
+    for draft in drafts where seenNoteIds.insert(draft.targetNoteId).inserted {
+      proposals.append(NoteLinkProposal(
+        targetNote: try service.getNote(draft.targetNoteId),
+        linkKind: draft.linkKind.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "related" : draft.linkKind,
+        reason: draft.reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+          ? "Suggested by note-link-extract."
+          : draft.reason,
+        source: "workflow"
+      ))
+    }
+    return proposals
+  }
+
   private func noteConversationTurn(_ turn: RielaNoteAgentTurn) -> NoteConversationTurn {
     NoteConversationTurn(
       userMarkdown: turn.userMarkdown,
@@ -395,6 +585,34 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
     let trimmed = firstLine.trimmingCharacters(in: .whitespacesAndNewlines)
     return trimmed.isEmpty ? "Config Agent Topic" : String(trimmed.prefix(80))
   }
+}
+
+private func noteLinkProposalQuery(from bodyMarkdown: String) -> String {
+  var seen = Set<String>()
+  var terms: [String] = []
+  var current = String.UnicodeScalarView()
+  func flushCurrentTerm() {
+    let term = String(current).trimmingCharacters(in: .whitespacesAndNewlines)
+    current.removeAll(keepingCapacity: true)
+    guard term.count >= 4, seen.insert(term.lowercased()).inserted else {
+      return
+    }
+    terms.append(term)
+  }
+  for scalar in bodyMarkdown.unicodeScalars {
+    if CharacterSet.alphanumerics.contains(scalar) {
+      current.append(scalar)
+    } else {
+      flushCurrentTerm()
+    }
+    if terms.count >= 6 {
+      break
+    }
+  }
+  if terms.count < 6 {
+    flushCurrentTerm()
+  }
+  return terms.joined(separator: " ")
 }
 
 private extension NoteLink {

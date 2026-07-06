@@ -17,7 +17,6 @@ extension RielaApp {
     let menu = NSMenu()
     menu.addItem(menuItem("Instances...", action: #selector(openDaemonInstances)))
     menu.addItem(menuItem("Notes...", action: #selector(openNotes)))
-    menu.addItem(menuItem("Note Settings...", action: #selector(openNoteSettings)))
     let launchAtLoginItem = menuItem("Launch on Login", action: #selector(toggleLaunchAtLogin))
     launchAtLoginItem.state = launchAtLogin.isEnabled ? .on : .off
     menu.addItem(launchAtLoginItem)

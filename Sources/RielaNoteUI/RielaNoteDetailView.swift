@@ -6,8 +6,12 @@ public struct RielaNoteDetailView: View {
   @State private var bodyDraft = RielaNoteBodyDraftState()
   @State private var draftTagName = ""
   @State private var draftCommentMarkdown = ""
-  @State private var draftLinkTargetNoteId = ""
-  @State private var draftLinkKind = "related"
+  @State private var isAddLinkPresented = false
+  @State private var isLinkProposalPresented = false
+  @State private var isTagsExpanded = false
+  @State private var isLinksExpanded = true
+  @State private var isCommentsExpanded = false
+  @State private var isFilesExpanded = false
 
   public init(viewModel: RielaNoteLibraryViewModel) {
     self.viewModel = viewModel
@@ -27,11 +31,7 @@ public struct RielaNoteDetailView: View {
               .pickerStyle(.segmented)
             }
             content(detail)
-            if !detail.files.isEmpty {
-              fileStrip(detail.files)
-            }
-            links(detail)
-            comments(detail.comments)
+            metadata(detail)
           }
           .padding()
           .frame(maxWidth: 880, alignment: .leading)
@@ -39,6 +39,20 @@ public struct RielaNoteDetailView: View {
         .navigationTitle(detail.note.title ?? "Note")
         .onChange(of: detail.note.noteId) { _, _ in
           resetEditingState()
+        }
+        .sheet(isPresented: $isAddLinkPresented) {
+          RielaNoteLinkSearchSheet(
+            viewModel: viewModel,
+            detail: detail,
+            onCancel: { isAddLinkPresented = false },
+            onLinked: { isAddLinkPresented = false }
+          )
+        }
+        .sheet(isPresented: $isLinkProposalPresented) {
+          RielaNoteLinkProposalSheet(viewModel: viewModel) {
+            isLinkProposalPresented = false
+            viewModel.clearLinkProposals()
+          }
         }
       } else {
         ContentUnavailableView("No note selected", systemImage: "note.text")
@@ -84,7 +98,6 @@ public struct RielaNoteDetailView: View {
       .font(.caption)
       .foregroundStyle(.secondary)
       notePager
-      tagEditor(note)
     }
   }
 
@@ -130,9 +143,9 @@ public struct RielaNoteDetailView: View {
     } else {
       switch viewModel.contentMode {
       case .text:
-        RielaNoteMarkdownText(markdown: bodyDraft.previewBodyMarkdown(for: detail.note))
+        RielaNoteMarkdownBodyView(markdown: bodyDraft.previewBodyMarkdown(for: detail.note))
           .font(.body)
-          .lineSpacing(4)
+          .padding(.vertical, 4)
       case .sourceImage:
         VStack(alignment: .leading, spacing: 10) {
           sourceImageToolbar
@@ -146,6 +159,40 @@ public struct RielaNoteDetailView: View {
         }
       }
     }
+  }
+
+  private func metadata(_ detail: RielaNoteDetail) -> some View {
+    VStack(alignment: .leading, spacing: 10) {
+      DisclosureGroup(isExpanded: $isTagsExpanded) {
+        tagEditor(detail.note)
+          .padding(.top, 8)
+      } label: {
+        metadataLabel("Tags", count: detail.note.tags.count, systemImage: "tag")
+      }
+      DisclosureGroup(isExpanded: $isLinksExpanded) {
+        links(detail)
+          .padding(.top, 8)
+      } label: {
+        metadataLabel("Links", count: detail.links.count, systemImage: "link")
+      }
+      DisclosureGroup(isExpanded: $isCommentsExpanded) {
+        comments(detail.comments)
+          .padding(.top, 8)
+      } label: {
+        metadataLabel("Comments", count: detail.comments.count, systemImage: "text.bubble")
+      }
+      DisclosureGroup(isExpanded: $isFilesExpanded) {
+        fileStrip(detail.files)
+          .padding(.top, 8)
+      } label: {
+        metadataLabel("Files", count: detail.files.count, systemImage: "paperclip")
+      }
+    }
+  }
+
+  private func metadataLabel(_ title: String, count: Int, systemImage: String) -> some View {
+    Label("\(title) (\(count))", systemImage: systemImage)
+      .font(.headline)
   }
 
   private var sourceImageToolbar: some View {
@@ -225,28 +272,32 @@ public struct RielaNoteDetailView: View {
 
   private func fileStrip(_ files: [NoteFileAttachment]) -> some View {
     VStack(alignment: .leading, spacing: 8) {
-      Text("Files")
-        .font(.headline)
-      ScrollView(.horizontal) {
-        HStack(spacing: 8) {
-          ForEach(files, id: \.file.fileId) { attachment in
-            Button {
-              Task {
-                await viewModel.selectFileAttachment(attachment)
+      if files.isEmpty {
+        Text("No files")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      } else {
+        ScrollView(.horizontal) {
+          HStack(spacing: 8) {
+            ForEach(files, id: \.file.fileId) { attachment in
+              Button {
+                Task {
+                  await viewModel.selectFileAttachment(attachment)
+                }
+              } label: {
+                Label(
+                  attachment.file.originalFilename ?? attachment.file.fileId,
+                  systemImage: iconName(for: attachment)
+                )
               }
-            } label: {
-              Label(
-                attachment.file.originalFilename ?? attachment.file.fileId,
-                systemImage: iconName(for: attachment)
-              )
+              .buttonStyle(.bordered)
+              .controlSize(.small)
+              .help("Resolve file")
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .help("Resolve file")
           }
         }
+        .scrollIndicators(.hidden)
       }
-      .scrollIndicators(.hidden)
       if let status = viewModel.selectedResolvedFileStatusText,
          let file = viewModel.selectedResolvedFile?.file {
         HStack(spacing: 8) {
@@ -263,8 +314,6 @@ public struct RielaNoteDetailView: View {
 
   private func links(_ detail: RielaNoteDetail) -> some View {
     VStack(alignment: .leading, spacing: 8) {
-      Text("Links")
-        .font(.headline)
       if !detail.links.isEmpty {
         ForEach(detail.links, id: \.stableId) { link in
           let targetNoteId = link.counterpartNoteId(for: detail.note.noteId)
@@ -283,53 +332,26 @@ public struct RielaNoteDetailView: View {
           .foregroundStyle(.secondary)
           .help("Open linked note")
         }
+      } else {
+        Text("No links")
+          .font(.caption)
+          .foregroundStyle(.secondary)
       }
       HStack(spacing: 8) {
-        TextField("Target note ID", text: $draftLinkTargetNoteId)
-          .textFieldStyle(.roundedBorder)
-        let targetSuggestions = rielaNoteLinkTargetSuggestions(
-          candidateNotes: viewModel.notebookNotes
-            + viewModel.searchResults.map(\.note)
-            + viewModel.linkTargetSearchNotes
-            + Array(detail.linkedNotesById.values),
-          currentNoteId: detail.note.noteId,
-          existingLinks: detail.links,
-          query: draftLinkTargetNoteId
-        )
-        Menu {
-          ForEach(targetSuggestions, id: \.noteId) { note in
-            Button(rielaNoteLinkTargetSuggestionLabel(note)) {
-              draftLinkTargetNoteId = note.noteId
-            }
-          }
-        } label: {
-          Image(systemName: "magnifyingglass")
-        }
-        .disabled(targetSuggestions.isEmpty)
-        .help("Find target note")
-        if viewModel.isLinkTargetSearchLoading {
-          ProgressView()
-            .controlSize(.small)
-        }
-        TextField("Kind", text: $draftLinkKind)
-          .textFieldStyle(.roundedBorder)
-          .frame(width: 120)
         Button {
-          let targetNoteId = draftLinkTargetNoteId
-          let linkKind = draftLinkKind
-          Task {
-            await viewModel.linkSelectedNote(to: targetNoteId, kind: linkKind)
-            draftLinkTargetNoteId = ""
-          }
+          isAddLinkPresented = true
         } label: {
           Label("Add link", systemImage: "link.badge.plus")
         }
-        .disabled(draftLinkTargetNoteId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-      }
-      .onChange(of: draftLinkTargetNoteId) { _, query in
-        Task {
-          await viewModel.updateLinkTargetSearchText(query, currentNoteId: detail.note.noteId)
+        Button {
+          isLinkProposalPresented = true
+          Task {
+            await viewModel.proposeLinksForSelectedNote()
+          }
+        } label: {
+          Label("Extract links (AI)", systemImage: "sparkles")
         }
+        .disabled(viewModel.isLinkProposalLoading)
       }
     }
   }
@@ -337,7 +359,8 @@ public struct RielaNoteDetailView: View {
   private func comments(_ comments: [NoteComment]) -> some View {
     VStack(alignment: .leading, spacing: 10) {
       Text("Comments")
-        .font(.headline)
+        .font(.subheadline)
+        .fontWeight(.semibold)
       if !comments.isEmpty {
         ForEach(comments, id: \.commentId) { comment in
           VStack(alignment: .leading, spacing: 4) {
@@ -354,6 +377,10 @@ public struct RielaNoteDetailView: View {
           }
           .padding(.vertical, 4)
         }
+      } else {
+        Text("No comments")
+          .font(.caption)
+          .foregroundStyle(.secondary)
       }
       TextEditor(text: $draftCommentMarkdown)
         .font(.body)
@@ -460,9 +487,8 @@ public struct RielaNoteDetailView: View {
     bodyDraft.reset()
     draftTagName = ""
     draftCommentMarkdown = ""
-    draftLinkTargetNoteId = ""
     viewModel.clearLinkTargetSearch()
-    draftLinkKind = "related"
+    viewModel.clearLinkProposals()
   }
 }
 

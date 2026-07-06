@@ -157,11 +157,7 @@ func validateNotebookIngestPageNumbers(_ pages: [NotePageDraft]) throws {
 }
 
 func noteTitle(from bodyMarkdown: String) -> String? {
-  for line in bodyMarkdown.split(separator: "\n", omittingEmptySubsequences: false) where line.hasPrefix("# ") {
-    let title = line.dropFirst(2).trimmingCharacters(in: .whitespacesAndNewlines)
-    return title.isEmpty ? nil : title
-  }
-  return nil
+  NoteTitleDerivation.title(from: bodyMarkdown)
 }
 
 func makeNoteId(prefix: String) -> String {

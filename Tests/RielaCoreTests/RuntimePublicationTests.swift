@@ -433,10 +433,10 @@ final class RuntimePublicationTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: reservation.stagingDirectory.path))
   }
 
-  func testCrossWorkflowTransitionWithResumeStepPublishesResumeMessage() async throws {
+  func testCrossWorkflowTransitionWithResumeStepPublishesResumeMessageWhenSimulationEnabled() async throws {
     let store = InMemoryWorkflowRuntimeStore(clock: FixedWorkflowRuntimeClock(Date(timeIntervalSince1970: 300)))
     let session = try await store.createSession(WorkflowSessionCreateInput(workflowId: "wf", entryStepId: "start"))
-    let publisher = InMemoryWorkflowOutputPublisher(store: store)
+    let publisher = InMemoryWorkflowOutputPublisher(store: store, simulatesCrossWorkflowDispatch: true)
 
     _ = try await publisher.publishAcceptedOutput(
       WorkflowPublicationRequest(
@@ -458,6 +458,10 @@ final class RuntimePublicationTests: XCTestCase {
     let unsupportedTransitions: [(WorkflowStepTransition, String)] = [
       (
         WorkflowStepTransition(toStepId: "child-start", toWorkflowId: "child-workflow"),
+        "cross-workflow transitions are not supported by this in-memory publisher"
+      ),
+      (
+        WorkflowStepTransition(toStepId: "child-start", toWorkflowId: "child-workflow", resumeStepId: "resume"),
         "cross-workflow transitions are not supported by this in-memory publisher"
       ),
       (

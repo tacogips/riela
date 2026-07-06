@@ -94,19 +94,22 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
   public var candidatePathReader: any CandidatePathReading
   public var candidatePathFinalizer: RuntimeCandidatePathFinalizer?
   public var clock: any WorkflowRuntimeClock
+  public var simulatesCrossWorkflowDispatch: Bool
 
   public init(
     store: any WorkflowRuntimeStore,
     validator: any WorkflowOutputValidating = DefaultWorkflowOutputValidator(),
     candidatePathReader: any CandidatePathReading = DefaultCandidatePathReader(),
     candidatePathFinalizer: RuntimeCandidatePathFinalizer? = nil,
-    clock: any WorkflowRuntimeClock = SystemWorkflowRuntimeClock()
+    clock: any WorkflowRuntimeClock = SystemWorkflowRuntimeClock(),
+    simulatesCrossWorkflowDispatch: Bool = false
   ) {
     self.store = store
     self.validator = validator
     self.candidatePathReader = candidatePathReader
     self.candidatePathFinalizer = candidatePathFinalizer
     self.clock = clock
+    self.simulatesCrossWorkflowDispatch = simulatesCrossWorkflowDispatch
   }
 
   public func publishAcceptedOutput(_ request: WorkflowPublicationRequest) async throws -> WorkflowPublicationResult {
@@ -381,6 +384,9 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
   private func unsupportedTransitionReason(in transitions: [WorkflowStepTransition]) -> String? {
     for transition in transitions {
       if transition.toWorkflowId != nil && transition.resumeStepId == nil {
+        return "cross-workflow transitions are not supported by this in-memory publisher"
+      }
+      if transition.toWorkflowId != nil && !simulatesCrossWorkflowDispatch {
         return "cross-workflow transitions are not supported by this in-memory publisher"
       }
       if transition.toWorkflowId == nil && transition.resumeStepId != nil {

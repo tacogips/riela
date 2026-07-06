@@ -11,6 +11,10 @@ final class WorkflowRunnerCapabilityPreflightTests: XCTestCase {
         "step 'step' uses cross-workflow transitions, which this runner does not support yet"
       ),
       (
+        WorkflowStepTransition(toStepId: "child", toWorkflowId: "child-workflow", resumeStepId: "resume"),
+        "step 'step' uses cross-workflow dispatch, which live runs do not support yet; only mock-scenario runs simulate the callee through the resume step"
+      ),
+      (
         WorkflowStepTransition(toStepId: "step", resumeStepId: "resume"),
         "step 'step' uses resume-step transitions, which this runner does not support yet"
       ),
@@ -54,6 +58,61 @@ final class WorkflowRunnerCapabilityPreflightTests: XCTestCase {
       diagnostics.first?.message,
       "step 'step' uses cross-workflow transitions, which this runner does not support yet"
     )
+  }
+
+  func testCrossWorkflowDispatchGapReportsWarningForValidation() {
+    let workflow = workflow(transitions: [
+      WorkflowStepTransition(toStepId: "child", toWorkflowId: "child-workflow", resumeStepId: "resume")
+    ])
+
+    let diagnostics = DeterministicWorkflowRunner.unsupportedFeatures(in: workflow).map(\.diagnostic)
+
+    XCTAssertEqual(diagnostics.count, 1)
+    XCTAssertEqual(diagnostics.first?.severity, .warning)
+    XCTAssertEqual(diagnostics.first?.path, "workflow.steps.step.transitions.toWorkflowId")
+  }
+
+  func testCrossWorkflowDispatchSimulationRunnerPassesPreflightAndResumesLocally() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    let workflow = WorkflowDefinition(
+      workflowId: "runner",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
+      entryStepId: "step",
+      nodeRegistry: [
+        WorkflowNodeRegistryRef(id: "node", nodeFile: "nodes/node.json"),
+        WorkflowNodeRegistryRef(id: "resume-node", nodeFile: "nodes/resume-node.json")
+      ],
+      steps: [
+        WorkflowStepRef(
+          id: "step",
+          nodeId: "node",
+          transitions: [
+            WorkflowStepTransition(toStepId: "child", toWorkflowId: "child-workflow", resumeStepId: "resume")
+          ]
+        ),
+        WorkflowStepRef(id: "resume", nodeId: "resume-node")
+      ],
+      nodes: [
+        WorkflowNodeRef(id: "step", nodeFile: "nodes/node.json"),
+        WorkflowNodeRef(id: "resume", nodeFile: "nodes/resume-node.json")
+      ]
+    )
+    let runner = DeterministicWorkflowRunner(
+      store: store,
+      adapter: StaticAdapter(output: output()),
+      simulatesCrossWorkflowDispatch: true
+    )
+
+    let result = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: workflow,
+      nodePayloads: [
+        "node": payload(),
+        "resume-node": AgentNodePayload(id: "resume-node", executionBackend: .codexAgent, model: "gpt-5.5")
+      ]
+    ))
+
+    XCTAssertEqual(result.exitCode, 0)
+    XCTAssertEqual(result.session.executions.map(\.stepId), ["step", "resume"])
   }
 
   func testRuntimeCapabilityGapDecodesLegacyPayloadAsErrorSeverity() throws {

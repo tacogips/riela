@@ -113,6 +113,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
   public var inputFilterLogger: any WorkflowInputFilterLogging
   public var loopPolicyEvaluator: any LoopPolicyEvaluating
   public var telemetry: any RielaTelemetry
+  public var simulatesCrossWorkflowDispatch: Bool
 
   public init(
     store: (any WorkflowRuntimeStore)? = nil,
@@ -125,7 +126,8 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     inputFilterEvaluator: WorkflowInputFilterEvaluator = WorkflowInputFilterEvaluator(),
     inputFilterLogger: any WorkflowInputFilterLogging = StandardErrorWorkflowInputFilterLogger(),
     loopPolicyEvaluator: any LoopPolicyEvaluating = DefaultLoopPolicyEvaluator(),
-    telemetry: any RielaTelemetry = NoOpRielaTelemetry()
+    telemetry: any RielaTelemetry = NoOpRielaTelemetry(),
+    simulatesCrossWorkflowDispatch: Bool = false
   ) {
     let resolvedStore = store ?? InMemoryWorkflowRuntimeStore()
     self.store = resolvedStore
@@ -133,12 +135,16 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     self.addonResolver = addonResolver
     self.attachmentProjector = attachmentProjector
     self.stdioNodeExecutor = stdioNodeExecutor
-    self.publisher = publisher ?? InMemoryWorkflowOutputPublisher(store: resolvedStore)
+    self.publisher = publisher ?? InMemoryWorkflowOutputPublisher(
+      store: resolvedStore,
+      simulatesCrossWorkflowDispatch: simulatesCrossWorkflowDispatch
+    )
     self.inputResolver = inputResolver
     self.inputFilterEvaluator = inputFilterEvaluator
     self.inputFilterLogger = inputFilterLogger
     self.loopPolicyEvaluator = loopPolicyEvaluator
     self.telemetry = telemetry
+    self.simulatesCrossWorkflowDispatch = simulatesCrossWorkflowDispatch
   }
 
   public func run(_ request: DeterministicWorkflowRunRequest) async throws -> WorkflowRunResult {
@@ -151,6 +157,10 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     }
     let capabilityGaps = Self.unsupportedFeatures(in: request.workflow, maxConcurrency: request.maxConcurrency)
     if let gap = capabilityGaps.first(where: { $0.severity == .error }) {
+      throw DeterministicWorkflowRunnerError.invalidWorkflow("\(gap.path): \(gap.message)")
+    }
+    if !simulatesCrossWorkflowDispatch,
+       let gap = capabilityGaps.first(where: { $0.path.hasSuffix(".transitions.toWorkflowId") }) {
       throw DeterministicWorkflowRunnerError.invalidWorkflow("\(gap.path): \(gap.message)")
     }
     try enforceRequiredLoopPolicyPreflight(request)

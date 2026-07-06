@@ -623,7 +623,12 @@ public struct SessionRerunCommand: Sendable {
       )
       let runtimeStore = InMemoryWorkflowRuntimeStore()
       try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: storeRoot)
-      let runner = DeterministicWorkflowRunner(store: runtimeStore, adapter: adapter, stdioNodeExecutor: LocalWorkflowStdioNodeExecutor())
+      let runner = DeterministicWorkflowRunner(
+        store: runtimeStore,
+        adapter: adapter,
+        stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(),
+        simulatesCrossWorkflowDispatch: (options.mockScenarioPath ?? persisted.mockScenarioPath) != nil
+      )
       let variables = instanceResolution.effectiveInstance?.configuration.defaultVariables
         ?? persisted.runtimeVariables
         ?? [:]
@@ -829,7 +834,12 @@ public struct SessionResumeCommand: Sendable {
       )
       let runtimeStore = InMemoryWorkflowRuntimeStore()
       try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: storeRoot)
-      let runner = DeterministicWorkflowRunner(store: runtimeStore, adapter: adapter, stdioNodeExecutor: LocalWorkflowStdioNodeExecutor())
+      let runner = DeterministicWorkflowRunner(
+        store: runtimeStore,
+        adapter: adapter,
+        stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(),
+        simulatesCrossWorkflowDispatch: (options.mockScenarioPath ?? persisted.mockScenarioPath) != nil
+      )
       let effectiveMockScenarioPath = options.mockScenarioPath ?? persisted.mockScenarioPath
       let variables = try resumeRuntimeVariables(options: options, persisted: persisted)
       let result: WorkflowRunResult

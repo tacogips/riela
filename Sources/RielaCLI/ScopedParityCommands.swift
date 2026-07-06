@@ -401,7 +401,8 @@ fileprivate extension ScopedParityCommandRunner {
       let runner = DeterministicWorkflowRunner(
         store: runtimeStore,
         adapter: adapter,
-        stdioNodeExecutor: LocalWorkflowStdioNodeExecutor()
+        stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(),
+        simulatesCrossWorkflowDispatch: parsed.mockScenarioPath != nil
       )
       let result = try await runner.run(
         DeterministicWorkflowRunRequest(

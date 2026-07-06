@@ -92,7 +92,8 @@ public struct WorkflowRunCommand: Sendable {
         adapter: adapter,
         addonResolver: addonResolver,
         stdioNodeExecutor: stdioNodeExecutor,
-        telemetry: telemetry
+        telemetry: telemetry,
+        simulatesCrossWorkflowDispatch: options.mockScenarioPath != nil
       )
       let persistedIdentity = persistenceIdentity(
         requestedResolution: resolution,

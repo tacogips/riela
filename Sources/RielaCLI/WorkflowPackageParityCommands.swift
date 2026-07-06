@@ -524,7 +524,8 @@ public struct WorkflowPackageCommandRunner: Sendable {
     let result = try await DeterministicWorkflowRunner(
       store: runtimeStore,
       adapter: adapter,
-      stdioNodeExecutor: LocalWorkflowStdioNodeExecutor()
+      stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(),
+      simulatesCrossWorkflowDispatch: parsed.mockScenarioPath != nil
     ).run(DeterministicWorkflowRunRequest(workflow: bundle.workflow, nodePayloads: bundle.nodePayloads, variables: variables))
     let workflowMessages = try await runtimeStore.listMessages(for: result.session.sessionId, toStepId: nil)
     try CLIWorkflowSessionStore(rootDirectory: storeRoot).save(

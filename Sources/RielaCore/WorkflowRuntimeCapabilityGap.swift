@@ -63,6 +63,13 @@ public extension DeterministicWorkflowRunner {
             message: "step '\(step.id)' uses cross-workflow transitions, which this runner does not support yet"
           ))
         }
+        if transition.toWorkflowId != nil && transition.resumeStepId != nil {
+          gaps.append(WorkflowRuntimeCapabilityGap(
+            severity: .warning,
+            path: "workflow.steps.\(step.id).transitions.toWorkflowId",
+            message: "step '\(step.id)' uses cross-workflow dispatch, which live runs do not support yet; only mock-scenario runs simulate the callee through the resume step"
+          ))
+        }
         if transition.toWorkflowId == nil && transition.resumeStepId != nil {
           gaps.append(WorkflowRuntimeCapabilityGap(
             severity: severity,

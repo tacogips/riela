@@ -4,7 +4,7 @@ public enum NoteTitleDerivation {
   public static let fallbackTitleLimit = 120
 
   public static func title(from bodyMarkdown: String) -> String? {
-    let lines = bodyMarkdown.split(separator: "\n", omittingEmptySubsequences: false)
+    let lines = scannableLines(in: bodyMarkdown)
     if let headingTitle = lines.compactMap(markdownHeadingTitle).first {
       return headingTitle
     }
@@ -15,7 +15,10 @@ public enum NoteTitleDerivation {
     title(from: bodyMarkdown) ?? defaultTitle
   }
 
-  private static func markdownHeadingTitle(_ line: Substring) -> String? {
+  private static func markdownHeadingTitle(_ line: String) -> String? {
+    guard leadingSpaceCount(in: line) <= 3 else {
+      return nil
+    }
     let trimmed = line.trimmingCharacters(in: .whitespaces)
     var hashCount = 0
     for character in trimmed {
@@ -29,12 +32,16 @@ public enum NoteTitleDerivation {
     else {
       return nil
     }
-    let title = trimmed.dropFirst(hashCount).trimmingCharacters(in: .whitespacesAndNewlines)
+    let rawTitle = trimmed.dropFirst(hashCount).trimmingCharacters(in: .whitespacesAndNewlines)
+    let title = strippingClosingATXHashes(from: rawTitle)
     return cappedTitle(title)
   }
 
-  private static func firstLineTitle(_ line: Substring) -> String? {
-    var title = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
+  private static func firstLineTitle(_ line: String) -> String? {
+    guard leadingSpaceCount(in: line) < 4 else {
+      return nil
+    }
+    var title = line.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !title.isEmpty else {
       return nil
     }
@@ -53,7 +60,7 @@ public enum NoteTitleDerivation {
       with: "",
       options: .regularExpression
     )
-    title = title.trimmingCharacters(in: CharacterSet(charactersIn: "#*_`[]()").union(.whitespacesAndNewlines))
+    title = strippingClosingATXHashes(from: title)
     return cappedTitle(title)
   }
 
@@ -63,5 +70,82 @@ public enum NoteTitleDerivation {
       return nil
     }
     return String(normalized.prefix(fallbackTitleLimit))
+  }
+
+  private static func scannableLines(in bodyMarkdown: String) -> [String] {
+    var lines: [String] = []
+    var fence: MarkdownFence?
+    for line in bodyMarkdown.components(separatedBy: .newlines) {
+      if let activeFence = fence {
+        if activeFence.isClosed(by: line) {
+          fence = nil
+        }
+        continue
+      }
+      if let openingFence = MarkdownFence(openingLine: line) {
+        fence = openingFence
+        continue
+      }
+      lines.append(line)
+    }
+    return lines
+  }
+
+  private static func strippingClosingATXHashes(from title: String) -> String {
+    title.replacingOccurrences(
+      of: #"\s+#+\s*$"#,
+      with: "",
+      options: .regularExpression
+    )
+  }
+
+  private static func leadingSpaceCount(in line: String) -> Int {
+    var count = 0
+    for character in line {
+      guard character == " " else {
+        break
+      }
+      count += 1
+    }
+    return count
+  }
+}
+
+private struct MarkdownFence {
+  var marker: Character
+  var count: Int
+
+  init?(openingLine: String) {
+    guard NoteTitleDerivation.leadingSpaceCountForFence(in: openingLine) <= 3 else {
+      return nil
+    }
+    let trimmed = openingLine.trimmingCharacters(in: .whitespaces)
+    guard let first = trimmed.first, first == "`" || first == "~" else {
+      return nil
+    }
+    let markerCount = trimmed.prefix { $0 == first }.count
+    guard markerCount >= 3 else {
+      return nil
+    }
+    marker = first
+    count = markerCount
+  }
+
+  func isClosed(by line: String) -> Bool {
+    guard NoteTitleDerivation.leadingSpaceCountForFence(in: line) <= 3 else {
+      return false
+    }
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    let markerCount = trimmed.prefix { $0 == marker }.count
+    guard markerCount >= count else {
+      return false
+    }
+    return trimmed.dropFirst(markerCount).trimmingCharacters(in: .whitespaces).isEmpty
+  }
+}
+
+extension NoteTitleDerivation {
+  fileprivate static func leadingSpaceCountForFence(in line: String) -> Int {
+    leadingSpaceCount(in: line)
   }
 }

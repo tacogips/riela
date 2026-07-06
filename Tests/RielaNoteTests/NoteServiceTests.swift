@@ -60,6 +60,19 @@ final class NoteServiceTests: NoteTestCase {
     XCTAssertEqual(try service.getNotebook(empty.notebookId).title, "Fallback Notebook")
   }
 
+  func testTitleDerivationSkipsFencesIndentedCodeAndPreservesInlineMarkup() throws {
+    XCTAssertEqual(
+      NoteTitleDerivation.title(from: "intro\n```bash\n# install deps\n```\n# Real Title"),
+      "Real Title"
+    )
+    XCTAssertEqual(NoteTitleDerivation.title(from: "    # indented code\nActual title"), "Actual title")
+    XCTAssertEqual(NoteTitleDerivation.title(from: "# Title ##\nBody"), "Title")
+    XCTAssertEqual(NoteTitleDerivation.title(from: "**Bold** first line\nBody"), "**Bold** first line")
+    XCTAssertEqual(NoteTitleDerivation.title(from: "[Link](https://example.test)\nBody"), "[Link](https://example.test)")
+    XCTAssertEqual(NoteTitleDerivation.title(from: "```swift\nlet title = 1\n```\n日本語のタイトル"), "日本語のタイトル")
+    XCTAssertEqual(NoteTitleDerivation.title(from: "### 見出し ##\r\nBody"), "見出し")
+  }
+
   func testNoteTimestampsUseFractionalISO8601() throws {
     let service = try makeService()
 
@@ -164,11 +177,41 @@ final class NoteServiceTests: NoteTestCase {
     let withLinked = try service.searchNotes(query: "planning", includeLinked: true, limit: 10)
     XCTAssertTrue(withLinked.map(\.note.noteId).contains(neighbor.noteId))
     XCTAssertEqual(withLinked.first { $0.note.noteId == neighbor.noteId }?.isLinkedNeighbor, true)
+    XCTAssertTrue(try service.searchNotes(query: "", createdAfter: "2000-01-01", createdBefore: "2999-12-31").contains {
+      $0.note.noteId == direct.noteId
+    })
     XCTAssertEqual(
       try service.searchNotes(query: "planning", sort: .title, limit: 10).map(\.note.noteId).prefix(2),
       [direct.noteId, unrelated.noteId]
     )
     XCTAssertTrue(try service.searchNotes(query: "", createdAfter: "2999-01-01T00:00:00.000Z").isEmpty)
+  }
+
+  func testLinkedSearchExcludesDirectHitsBeforeNeighborLimitAndAppliesFilters() throws {
+    let service = try makeService()
+    let direct = try service.createNote(
+      bodyMarkdown: "# Direct\n\nplanning",
+      tags: [NoteTagInput(name: "keep", classId: "topic")]
+    )
+    let directLinkedToDirect = try service.createNote(bodyMarkdown: "# Also Direct\n\nplanning")
+    let filteredNeighbor = try service.createNote(
+      bodyMarkdown: "# Filtered Neighbor\n\ncontext",
+      tags: [NoteTagInput(name: "keep", classId: "topic")]
+    )
+    let excludedNeighbor = try service.createNote(bodyMarkdown: "# Excluded Neighbor\n\ncontext")
+    _ = try service.linkNotes(from: direct.noteId, to: directLinkedToDirect.noteId)
+    _ = try service.linkNotes(from: direct.noteId, to: filteredNeighbor.noteId)
+    _ = try service.linkNotes(from: direct.noteId, to: excludedNeighbor.noteId)
+
+    let results = try service.searchNotes(
+      query: "planning",
+      tagFilter: ["keep"],
+      includeLinked: true,
+      limit: 2
+    )
+
+    XCTAssertEqual(results.map(\.note.noteId), [direct.noteId, filteredNeighbor.noteId])
+    XCTAssertEqual(results.last?.isLinkedNeighbor, true)
   }
 
   func testProposeLinksExcludesExistingLinksAndSelf() throws {

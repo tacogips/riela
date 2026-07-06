@@ -21,7 +21,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   @Published public private(set) var availableSearchTags: [Tag] = []
   @Published public private(set) var availableSearchTagClasses: [TagClass] = []
   @Published public private(set) var searchResults: [NoteSearchResult] = []
-  @Published public private(set) var selectedDetail: RielaNoteDetail?
+  @Published public internal(set) var selectedDetail: RielaNoteDetail?
   @Published public private(set) var resolvedSourceImage: RielaNoteResolvedFile?
   @Published public private(set) var decodedSourceImage: RielaNoteDecodedSourceImage?
   @Published public private(set) var selectedResolvedFile: RielaNoteResolvedFile?
@@ -31,16 +31,15 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   @Published public private(set) var hasMoreNotebooks = false
   @Published public private(set) var hasMoreNotebookNotes = false
   @Published public private(set) var hasMoreSearchResults = false
-  @Published public private(set) var linkTargetSearchNotes: [Note] = []
-  @Published public private(set) var linkProposals: [NoteLinkProposal] = []
-  @Published public private(set) var isLinkProposalLoading = false
-  @Published public private(set) var isLinkTargetSearchLoading = false
+  @Published public internal(set) var linkProposals: [NoteLinkProposal] = []
+  @Published public internal(set) var linkProposalError: String?
+  @Published public internal(set) var isLinkProposalLoading = false
   @Published public private(set) var isSourceImageLoading = false
   @Published public var filter = RielaNoteListFilter()
   @Published public var searchText = ""
   @Published public var sourceImageZoom = 1.0
   @Published public var contentMode: NoteContentMode = .text
-  @Published public private(set) var state: LoadState = .idle
+  @Published public internal(set) var state: LoadState = .idle
 
   public static let sourceImageMinimumZoom = 0.5
   public static let sourceImageMaximumZoom = 3.0
@@ -59,9 +58,9 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   private var decodedSourceImageCache: [String: RielaNoteDecodedSourceImage] = [:]
   private var decodedSourceImageCacheOrder: [String] = []
   private var notebookContentModes: [String: NoteContentMode] = [:]
-  private var linkTargetSearchQuery = ""
   private var searchGeneration = 0
   private var selectionGeneration = 0
+  var linkProposalGeneration = 0
 
   private var notebookPageSize: Int {
     max(notebookLimit, 1)
@@ -73,10 +72,6 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
 
   private var searchPageSize: Int {
     max(searchLimit, 1)
-  }
-
-  private var linkTargetSearchLimit: Int {
-    min(searchPageSize, 10)
   }
 
   public init(
@@ -102,7 +97,10 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   }
 
   public var hasSearchFilters: Bool {
-    !selectedSearchTagNames.isEmpty || !selectedSearchClassIds.isEmpty || filter.createdRange != .any
+    !selectedSearchTagNames.isEmpty
+      || !selectedSearchClassIds.isEmpty
+      || filter.createdRange != .any
+      || filter.includeLinked
   }
 
   public var selectedNote: Note? {
@@ -279,43 +277,6 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     await performSearch(selectFirstResult: false)
   }
 
-  public func updateLinkTargetSearchText(_ query: String, currentNoteId: String) async {
-    let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    linkTargetSearchQuery = normalizedQuery
-    guard !normalizedQuery.isEmpty else {
-      clearLinkTargetSearch()
-      return
-    }
-    isLinkTargetSearchLoading = true
-    do {
-      let results = try await client.searchNotes(
-        query: normalizedQuery,
-        tagFilter: [],
-        classFilter: [],
-        filter: RielaNoteListFilter(),
-        limit: linkTargetSearchLimit,
-        offset: 0
-      )
-      guard linkTargetSearchQuery == normalizedQuery else {
-        return
-      }
-      linkTargetSearchNotes = results.map(\.note).filter { $0.noteId != currentNoteId }
-      isLinkTargetSearchLoading = false
-    } catch {
-      guard linkTargetSearchQuery == normalizedQuery else {
-        return
-      }
-      linkTargetSearchNotes = []
-      isLinkTargetSearchLoading = false
-    }
-  }
-
-  public func clearLinkTargetSearch() {
-    linkTargetSearchQuery = ""
-    linkTargetSearchNotes = []
-    isLinkTargetSearchLoading = false
-  }
-
   private func performSearch(selectFirstResult: Bool) async {
     let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !query.isEmpty || hasSearchFilters else {
@@ -407,7 +368,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     }
   }
 
-  public func createUserMemo(title: String = "Untitled Memo", body: String = "") async {
+  public func createUserMemo(body: String = "") async {
     state = .loading
     do {
       let detail = try await client.createUserMemo(bodyMarkdown: body)
@@ -417,6 +378,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
       hasMoreSearchResults = false
       selectedSearchTagNames = []
       selectedSearchClassIds = []
+      filter = RielaNoteListFilter(sort: filter.sort)
       selectedDetail = detail
       selectedNotebookId = detail.note.notebookId
       try await loadNotebooksFirstPage()
@@ -435,7 +397,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     }
   }
 
-  public func createNoteInSelectedNotebook(title: String = "Untitled Note", body: String = "") async {
+  public func createNoteInSelectedNotebook(body: String = "") async {
     guard let notebookId = selectedNotebookId else {
       return
     }
@@ -448,6 +410,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
       hasMoreSearchResults = false
       selectedSearchTagNames = []
       selectedSearchClassIds = []
+      filter = RielaNoteListFilter(sort: filter.sort)
       selectedDetail = detail
       selectedNotebookId = detail.note.notebookId
       try await loadNotebooksFirstPage()
@@ -749,6 +712,10 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   @discardableResult
   private func advanceSelectionGeneration() -> Int {
     selectionGeneration += 1
+    linkProposalGeneration += 1
+    linkProposals = []
+    linkProposalError = nil
+    isLinkProposalLoading = false
     return selectionGeneration
   }
 
@@ -884,7 +851,7 @@ extension RielaNoteLibraryViewModel {
       selectedDetail = try await client.linkNote(
         noteId: noteId,
         targetNoteId: normalizedTarget,
-        linkKind: normalizedKind.isEmpty ? "related" : normalizedKind
+        linkKind: rielaNoteAllowedLinkKind(normalizedKind)
       )
       state = .loaded
     } catch {
@@ -909,53 +876,20 @@ extension RielaNoteLibraryViewModel {
 
   public func updateCustomCreatedAfter(_ value: String) async {
     filter.customCreatedAfter = value
+    guard rielaNoteCreatedBoundInputIsValid(value) else {
+      return
+    }
     await reloadForFilterChange()
   }
 
   public func updateCustomCreatedBefore(_ value: String) async {
     filter.customCreatedBefore = value
+    guard rielaNoteCreatedBoundInputIsValid(value) else {
+      return
+    }
     await reloadForFilterChange()
   }
 
-  public func proposeLinksForSelectedNote() async {
-    guard let noteId = selectedDetail?.note.noteId else {
-      return
-    }
-    isLinkProposalLoading = true
-    defer {
-      isLinkProposalLoading = false
-    }
-    do {
-      linkProposals = try await client.proposeNoteLinks(noteId: noteId)
-    } catch {
-      state = .failed(String(describing: error))
-      linkProposals = []
-    }
-  }
-
-  public func clearLinkProposals() {
-    linkProposals = []
-    isLinkProposalLoading = false
-  }
-
-  public func acceptLinkProposal(_ proposal: NoteLinkProposal) async {
-    guard let noteId = selectedDetail?.note.noteId else {
-      return
-    }
-    state = .loading
-    do {
-      selectedDetail = try await client.linkNote(
-        noteId: noteId,
-        targetNoteId: proposal.targetNote.noteId,
-        linkKind: proposal.linkKind,
-        provenance: .ai
-      )
-      linkProposals.removeAll { $0.targetNote.noteId == proposal.targetNote.noteId && $0.linkKind == proposal.linkKind }
-      state = .loaded
-    } catch {
-      state = .failed(String(describing: error))
-    }
-  }
 }
 
 private extension RielaNoteLibraryViewModel {

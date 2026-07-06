@@ -691,8 +691,9 @@ final class NoteGraphQLTests: XCTestCase {
     let schema = GraphQLContractProjector.schemaContract
 
     XCTAssertTrue(schema.contains("type Note "))
+    XCTAssertTrue(schema.contains("enum NoteListSort { createdAtDesc createdAtAsc updatedAtDesc title }"))
     XCTAssertTrue(schema.contains(
-      "notebooks(limit: Int, offset: Int, tagFilter: [String!], sort: String, createdAfter: String, createdBefore: String)"
+      "notebooks(limit: Int, offset: Int, tagFilter: [String!], sort: NoteListSort, createdAfter: String, createdBefore: String)"
     ))
     XCTAssertTrue(schema.contains("notes(limit: Int, offset: Int, notebookId: String, tagFilter: [String!]): NotesQueryPayload!"))
     XCTAssertTrue(schema.contains("tags: NoteTagsQueryPayload!"))
@@ -708,7 +709,7 @@ final class NoteGraphQLTests: XCTestCase {
     XCTAssertTrue(schema.contains("applyNotebookTags(input: ApplyNotebookTagsInput!)"))
     XCTAssertTrue(schema.contains("removeNotebookTag(notebookId: String!, tagName: String!, provenance: String)"))
     XCTAssertTrue(schema.contains(
-      "searchNotes(query: String!, tagFilter: [String!], classFilter: [String!], sort: String, createdAfter: String, createdBefore: String, includeLinked: Boolean, limit: Int, offset: Int)"
+      "searchNotes(query: String!, tagFilter: [String!], classFilter: [String!], sort: NoteListSort, createdAfter: String, createdBefore: String, includeLinked: Boolean, limit: Int, offset: Int)"
     ))
     XCTAssertTrue(schema.contains("proposeNoteLinks(noteId: String!, limit: Int)"))
     XCTAssertTrue(schema.contains("configureNoteAutoAction(input: ConfigureNoteAutoActionInput!)"))
@@ -901,6 +902,7 @@ final class NoteGraphQLTests: XCTestCase {
     XCTAssertEqual(deleteActionPayload["accepted"], .bool(true))
   }
 }
+
 // swiftlint:enable type_body_length
 
 private func testGraphQLS3Profile() -> S3StorageProfile {

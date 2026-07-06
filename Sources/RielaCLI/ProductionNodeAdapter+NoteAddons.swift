@@ -180,6 +180,7 @@ private func createNote(_ context: NoteAddonContext) throws -> JSONObject {
 }
 
 private func updateNote(_ context: NoteAddonContext) throws -> JSONObject {
+  // riela/note-update re-derives the stored title from the new body.
   let note = try context.service.updateNoteBody(
     noteId: try context.requiredString("noteId", fieldName: "noteId"),
     bodyMarkdown: try context.requiredString("bodyMarkdown", "body", "markdown", "text", fieldName: "bodyMarkdown"),

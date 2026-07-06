@@ -26,6 +26,7 @@ type NoteLinkProposal { targetNote: Note!, targetNoteId: String!, linkKind: Stri
 type NoteAutoAction { actionId: String!, trigger: String!, workflowId: String!, filterJSON: String, enabled: Boolean!, position: Int!, createdAt: String! }
 type NoteWorkflowScaffoldFile { relativePath: String!, path: String! }
 type NoteWorkflowScaffold { workflowId: String!, workflowRoot: String!, workflowPath: String!, files: [NoteWorkflowScaffoldFile!]! }
+enum NoteListSort { createdAtDesc createdAtAsc updatedAtDesc title }
 type NoteQueryPayload { result: ControlPlaneResult!, value: Note }
 type NotebookQueryPayload { result: ControlPlaneResult!, value: Notebook }
 type NotebooksQueryPayload { result: ControlPlaneResult!, value: [Notebook!] }
@@ -53,6 +54,7 @@ input CreateNotebookInput { title: String!, kindTagName: String, metaJSON: Strin
 input DefineNoteTagClassInput { classId: String!, label: String!, description: String }
 input DefineNoteTagInput { name: String!, classId: String }
 input ScaffoldNoteIngestionWorkflowInput { workflowRoot: String!, workflowId: String!, notebookKindTag: String, assignedBy: String }
+# updateNote re-derives the stored title from bodyMarkdown, replacing any previously explicit title.
 input UpdateNoteInput { noteId: String!, bodyMarkdown: String!, originatingActionId: String }
 input ApplyNoteTagsInput { noteId: String!, tags: [NoteTagInput!]!, provenance: String, assignedBy: String }
 input ApplyNotebookTagsInput { notebookId: String!, tags: [String!]!, provenance: String, assignedBy: String }
@@ -83,17 +85,5 @@ type NoteMutationPayload {
   link: NoteLink
   autoAction: NoteAutoAction
   workflowScaffold: NoteWorkflowScaffold
-}
-type Query {
-  note(noteId: String!): NoteQueryPayload!
-  notebook(notebookId: String!): NotebookQueryPayload!
-  notebooks(limit: Int, offset: Int, tagFilter: [String!], sort: String, createdAfter: String, createdBefore: String): NotebooksQueryPayload!
-  notes(limit: Int, offset: Int, notebookId: String, tagFilter: [String!]): NotesQueryPayload!
-  searchNotes(query: String!, tagFilter: [String!], classFilter: [String!], sort: String, createdAfter: String, createdBefore: String, includeLinked: Boolean, limit: Int, offset: Int): NoteSearchQueryPayload!
-  proposeNoteLinks(noteId: String!, limit: Int): NoteLinkProposalQueryPayload!
-  tags: NoteTagsQueryPayload!
-  tagClasses: NoteTagClassesQueryPayload!
-  noteFile(fileId: String!): NoteFileQueryPayload!
-  autoActions: NoteAutoActionsQueryPayload!
 }
 """

@@ -1,10 +1,34 @@
 {
-  "input": {
-    "noteId": "note-subject",
-    "query": "project planning",
-    "limit": 10
+  "select-link-proposals": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "proposals": [
+        {
+          "targetNoteId": "note-candidate",
+          "linkKind": "related",
+          "reason": "Shares the same project planning context."
+        }
+      ]
+    }
   },
-  "expected": {
-    "proposals": []
+  "workflow-output": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "proposals": [
+        {
+          "targetNoteId": "note-candidate",
+          "linkKind": "related",
+          "reason": "Shares the same project planning context."
+        }
+      ]
+    }
   }
 }

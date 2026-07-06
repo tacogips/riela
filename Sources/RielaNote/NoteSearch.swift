@@ -37,7 +37,17 @@ func searchNotesInDatabase(
       in: database
     )
     let expanded = try includeLinked
-      ? appendLinkedNeighborResults(to: results, query: query, limit: fetchLimit, in: database)
+      ? appendLinkedNeighborResults(
+          to: results,
+          query: query,
+          tagFilter: tagFilter,
+          classFilter: classFilter,
+          sort: sort,
+          createdAfter: createdAfter,
+          createdBefore: createdBefore,
+          limit: fetchLimit,
+          in: database
+        )
       : results
     return Array(expanded.dropFirst(requestedOffset).prefix(requestedLimit))
   }
@@ -117,7 +127,17 @@ func searchNotesInDatabase(
     results.append(contentsOf: fallback)
   }
   let expanded = try includeLinked
-    ? appendLinkedNeighborResults(to: results, query: query, limit: fetchLimit, in: database)
+    ? appendLinkedNeighborResults(
+        to: results,
+        query: query,
+        tagFilter: tagFilter,
+        classFilter: classFilter,
+        sort: sort,
+        createdAfter: createdAfter,
+        createdBefore: createdBefore,
+        limit: fetchLimit,
+        in: database
+      )
     : results
   return Array(expanded.dropFirst(requestedOffset).prefix(requestedLimit))
 }
@@ -305,6 +325,11 @@ private func searchNotesByTextLike(
 private func appendLinkedNeighborResults(
   to directResults: [NoteSearchResult],
   query: String,
+  tagFilter: [String],
+  classFilter: [String],
+  sort: NoteListSort,
+  createdAfter: String?,
+  createdBefore: String?,
   limit: Int,
   in database: SQLiteDatabase
 ) throws -> [NoteSearchResult] {
@@ -312,26 +337,46 @@ private func appendLinkedNeighborResults(
     return directResults
   }
   let directNoteIds = directResults.map(\.note.noteId)
-  let existingNoteIds = Set(directNoteIds)
+  var predicates: [String] = [
+    "linked.note_id NOT IN (\(placeholders(count: directNoteIds.count)))"
+  ]
+  var bindings = directNoteIds.map(SQLiteValue.text) + directNoteIds.map(SQLiteValue.text)
+  bindings.append(contentsOf: directNoteIds.map(SQLiteValue.text))
+  appendCreatedAtPredicates(
+    alias: "n",
+    createdAfter: createdAfter,
+    createdBefore: createdBefore,
+    predicates: &predicates,
+    bindings: &bindings
+  )
+  appendTagPredicates(
+    alias: "n",
+    tagFilter: tagFilter,
+    classFilter: classFilter,
+    predicates: &predicates,
+    bindings: &bindings
+  )
+  bindings.append(.int(Int64(limit - directResults.count)))
   let rows = try database.query(
     """
-    SELECT DISTINCT
-      CASE
-        WHEN from_note_id IN (\(placeholders(count: directNoteIds.count))) THEN to_note_id
-        ELSE from_note_id
-      END AS note_id
-    FROM note_links
-    WHERE from_note_id IN (\(placeholders(count: directNoteIds.count)))
-       OR to_note_id IN (\(placeholders(count: directNoteIds.count)))
-    ORDER BY note_id
+    SELECT linked.note_id
+    FROM (
+      SELECT to_note_id AS note_id
+      FROM note_links
+      WHERE from_note_id IN (\(placeholders(count: directNoteIds.count)))
+      UNION
+      SELECT from_note_id AS note_id
+      FROM note_links
+      WHERE to_note_id IN (\(placeholders(count: directNoteIds.count)))
+    ) linked
+    INNER JOIN notes n ON n.note_id = linked.note_id
+    WHERE \(predicates.joined(separator: " AND "))
+    ORDER BY \(noteSortOrderClause(alias: "n", sort: sort))
     LIMIT ?
     """,
-    bindings: directNoteIds.map(SQLiteValue.text)
-      + directNoteIds.map(SQLiteValue.text)
-      + directNoteIds.map(SQLiteValue.text)
-      + [.int(Int64(limit - directResults.count))]
+    bindings: bindings
   )
-  let neighborIds = rows.compactMap { $0["note_id"] }.filter { !existingNoteIds.contains($0) }
+  let neighborIds = rows.compactMap { $0["note_id"] }
   let notesById = try requireNotes(neighborIds, in: database)
   let neighbors = neighborIds.compactMap { noteId -> NoteSearchResult? in
     guard let note = notesById[noteId] else {
@@ -374,6 +419,43 @@ func notebookSortOrderClause(alias: String, sort: NoteListSort) -> String {
   }
 }
 
+private func appendTagPredicates(
+  alias: String,
+  tagFilter: [String],
+  classFilter: [String],
+  predicates: inout [String],
+  bindings: inout [SQLiteValue]
+) {
+  if !tagFilter.isEmpty {
+    predicates.append(
+      """
+      EXISTS (
+        SELECT 1
+        FROM note_tags nt
+        INNER JOIN tags t ON t.tag_id = nt.tag_id
+        WHERE nt.note_id = \(alias).note_id
+          AND t.name IN (\(placeholders(count: tagFilter.count)))
+      )
+      """
+    )
+    bindings.append(contentsOf: tagFilter.map(SQLiteValue.text))
+  }
+  if !classFilter.isEmpty {
+    predicates.append(
+      """
+      EXISTS (
+        SELECT 1
+        FROM note_tags nt
+        INNER JOIN tags t ON t.tag_id = nt.tag_id
+        WHERE nt.note_id = \(alias).note_id
+          AND t.class_id IN (\(placeholders(count: classFilter.count)))
+      )
+      """
+    )
+    bindings.append(contentsOf: classFilter.map(SQLiteValue.text))
+  }
+}
+
 func appendCreatedAtPredicates(
   alias: String,
   createdAfter: String?,
@@ -381,14 +463,36 @@ func appendCreatedAtPredicates(
   predicates: inout [String],
   bindings: inout [SQLiteValue]
 ) {
-  if let createdAfter {
+  if let createdAfter = normalizedCreatedAfter(createdAfter) {
     predicates.append("\(alias).created_at >= ?")
     bindings.append(.text(createdAfter))
   }
-  if let createdBefore {
+  if let createdBefore = normalizedCreatedBefore(createdBefore) {
     predicates.append("\(alias).created_at <= ?")
     bindings.append(.text(createdBefore))
   }
+}
+
+private func normalizedCreatedAfter(_ value: String?) -> String? {
+  normalizedDateBound(value, suffix: "T00:00:00.000Z")
+}
+
+private func normalizedCreatedBefore(_ value: String?) -> String? {
+  normalizedDateBound(value, suffix: "T23:59:59.999Z")
+}
+
+private func normalizedDateBound(_ value: String?, suffix: String) -> String? {
+  guard let value else {
+    return nil
+  }
+  let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+  guard !trimmed.isEmpty else {
+    return nil
+  }
+  if trimmed.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil {
+    return trimmed + suffix
+  }
+  return trimmed
 }
 
 private func appendCreatedAtPredicates(
@@ -398,11 +502,11 @@ private func appendCreatedAtPredicates(
   sql: inout String,
   bindings: inout [SQLiteValue]
 ) {
-  if let createdAfter {
+  if let createdAfter = normalizedCreatedAfter(createdAfter) {
     sql += "\n  AND \(alias).created_at >= ?"
     bindings.append(.text(createdAfter))
   }
-  if let createdBefore {
+  if let createdBefore = normalizedCreatedBefore(createdBefore) {
     sql += "\n  AND \(alias).created_at <= ?"
     bindings.append(.text(createdBefore))
   }

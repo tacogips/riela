@@ -84,6 +84,7 @@ extension RielaExampleParityTests {
         "noteRoot": .string(noteRoot.path),
         "workflowInput": .object([
           "noteId": .string(subject.noteId),
+          "subjectBodyMarkdown": .string(subject.bodyMarkdown),
           "query": .string("project planning launch"),
           "limit": .number(10)
         ])

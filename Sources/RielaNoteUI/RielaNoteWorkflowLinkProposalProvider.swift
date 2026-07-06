@@ -1,4 +1,5 @@
 import Foundation
+import RielaNote
 
 public struct RielaNoteLinkProposalDraft: Codable, Equatable, Sendable {
   public var targetNoteId: String
@@ -17,19 +18,24 @@ public protocol RielaNoteLinkProposalProviding: Sendable {
     -> [RielaNoteLinkProposalDraft]
 }
 
+#if os(macOS)
 public struct RielaWorkflowNoteLinkProposalProvider: RielaNoteLinkProposalProviding {
+  public static let defaultDeadlineSeconds: TimeInterval = 60
   public var workflowDefinitionDirectory: String
   public var executablePath: String?
   public var environment: [String: String]
+  public var deadlineSeconds: TimeInterval
 
   public init(
     workflowDefinitionDirectory: String,
     executablePath: String? = nil,
-    environment: [String: String] = ProcessInfo.processInfo.environment
+    environment: [String: String] = ProcessInfo.processInfo.environment,
+    deadlineSeconds: TimeInterval = Self.defaultDeadlineSeconds
   ) {
     self.workflowDefinitionDirectory = workflowDefinitionDirectory
     self.executablePath = executablePath
     self.environment = environment
+    self.deadlineSeconds = deadlineSeconds
   }
 
   public func proposeLinkDrafts(
@@ -38,17 +44,24 @@ public struct RielaWorkflowNoteLinkProposalProvider: RielaNoteLinkProposalProvid
     query: String,
     limit: Int
   ) async throws -> [RielaNoteLinkProposalDraft] {
-    try await Task.detached {
-      try runNoteLinkExtractWorkflow(
+    let processBox = RielaWorkflowProcessBox()
+    return try await withTaskCancellationHandler {
+      try await Task.detached {
+        try runNoteLinkExtractWorkflow(
         executablePath: resolvedRielaExecutablePath(executablePath, environment: environment),
         workflowDefinitionDirectory: workflowDefinitionDirectory,
         noteId: noteId,
         noteRoot: noteRoot,
         query: query,
         limit: limit,
-        environment: environment
-      )
-    }.value
+        environment: environment,
+        deadlineSeconds: deadlineSeconds,
+        processBox: processBox
+        )
+      }.value
+    } onCancel: {
+      processBox.terminate()
+    }
   }
 
   public static func defaultProvider(
@@ -93,8 +106,11 @@ private func runNoteLinkExtractWorkflow(
   noteRoot: String,
   query: String,
   limit: Int,
-  environment: [String: String]
+  environment: [String: String],
+  deadlineSeconds: TimeInterval,
+  processBox: RielaWorkflowProcessBox
 ) throws -> [RielaNoteLinkProposalDraft] {
+  let subjectNote = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot)).getNote(noteId)
   let process = Process()
   let executableArguments: [String]
   if executablePath == "/usr/bin/env" {
@@ -104,7 +120,8 @@ private func runNoteLinkExtractWorkflow(
       noteId: noteId,
       noteRoot: noteRoot,
       query: query,
-      limit: limit
+      limit: limit,
+      subjectBodyMarkdown: subjectNote.bodyMarkdown
     )
   } else {
     process.executableURL = URL(fileURLWithPath: executablePath)
@@ -113,7 +130,8 @@ private func runNoteLinkExtractWorkflow(
       noteId: noteId,
       noteRoot: noteRoot,
       query: query,
-      limit: limit
+      limit: limit,
+      subjectBodyMarkdown: subjectNote.bodyMarkdown
     )
   }
   process.arguments = executableArguments
@@ -122,10 +140,33 @@ private func runNoteLinkExtractWorkflow(
   let errorPipe = Pipe()
   process.standardOutput = outputPipe
   process.standardError = errorPipe
+  let outputDrain = RielaWorkflowPipeDrain(pipe: outputPipe, label: "riela.note-link-extract.stdout")
+  let errorDrain = RielaWorkflowPipeDrain(pipe: errorPipe, label: "riela.note-link-extract.stderr")
+  let drainGroup = DispatchGroup()
   try process.run()
-  process.waitUntilExit()
-  let output = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-  let error = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+  processBox.set(process)
+  defer {
+    processBox.clear(process)
+  }
+  outputDrain.start(group: drainGroup)
+  errorDrain.start(group: drainGroup)
+  let deadline = Date().addingTimeInterval(max(1, deadlineSeconds))
+  while process.isRunning {
+    if Task.isCancelled {
+      process.terminate()
+      drainGroup.wait()
+      throw CancellationError()
+    }
+    if Date() >= deadline {
+      process.terminate()
+      drainGroup.wait()
+      throw RielaWorkflowNoteLinkProposalError.timedOut
+    }
+    Thread.sleep(forTimeInterval: 0.05)
+  }
+  drainGroup.wait()
+  let output = outputDrain.stringValue()
+  let error = errorDrain.stringValue()
   guard process.terminationStatus == 0 else {
     throw RielaWorkflowNoteLinkProposalError.workflowFailed(error.trimmingCharacters(in: .whitespacesAndNewlines))
   }
@@ -140,12 +181,14 @@ private func noteLinkExtractArguments(
   noteId: String,
   noteRoot: String,
   query: String,
-  limit: Int
+  limit: Int,
+  subjectBodyMarkdown: String
 ) -> [String] {
   let variables: [String: Any] = [
     "noteRoot": noteRoot,
     "workflowInput": [
       "noteId": noteId,
+      "subjectBodyMarkdown": subjectBodyMarkdown,
       "query": query,
       "limit": limit
     ]
@@ -216,4 +259,64 @@ private func defaultWorkflowDirectoryCandidates(environment: [String: String]) -
 public enum RielaWorkflowNoteLinkProposalError: Error, Equatable, Sendable {
   case workflowFailed(String)
   case invalidOutput
+  case timedOut
 }
+
+private final class RielaWorkflowProcessBox: @unchecked Sendable {
+  private let lock = NSLock()
+  private var process: Process?
+
+  func set(_ process: Process) {
+    lock.lock()
+    self.process = process
+    lock.unlock()
+  }
+
+  func clear(_ process: Process) {
+    lock.lock()
+    if self.process === process {
+      self.process = nil
+    }
+    lock.unlock()
+  }
+
+  func terminate() {
+    lock.lock()
+    let process = self.process
+    lock.unlock()
+    if process?.isRunning == true {
+      process?.terminate()
+    }
+  }
+}
+
+private final class RielaWorkflowPipeDrain: @unchecked Sendable {
+  private let pipe: Pipe
+  private let queue: DispatchQueue
+  private let lock = NSLock()
+  private var data = Data()
+
+  init(pipe: Pipe, label: String) {
+    self.pipe = pipe
+    queue = DispatchQueue(label: label)
+  }
+
+  func start(group: DispatchGroup) {
+    group.enter()
+    queue.async { [self] in
+      let drained = pipe.fileHandleForReading.readDataToEndOfFile()
+      lock.lock()
+      data = drained
+      lock.unlock()
+      group.leave()
+    }
+  }
+
+  func stringValue() -> String {
+    lock.lock()
+    let data = data
+    lock.unlock()
+    return String(data: data, encoding: .utf8) ?? ""
+  }
+}
+#endif

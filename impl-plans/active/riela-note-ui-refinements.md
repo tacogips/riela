@@ -1,9 +1,9 @@
 # Riela Note UI Refinements Implementation Plan
 
-**Status**: Implemented; post-review follow-ups pending (TASK-012–018)
+**Status**: Implemented; post-review follow-ups completed (TASK-012–018)
 **Design Reference**: design-docs/specs/design-riela-note-ui-refinements.md
 **Created**: 2026-07-06
-**Last Updated**: 2026-07-06 (post-implementation review)
+**Last Updated**: 2026-07-06 (post-review follow-ups completed)
 
 ---
 
@@ -291,7 +291,7 @@ Source: design doc "Post-Implementation Review (2026-07-06)" section
 tests pass; the items below are the review's required fixes.
 
 ### TASK-012: Single `type Query` in published SDL + execution tests (F-C1)
-**Status**: NOT_STARTED
+**Status**: COMPLETED
 **Depends On**: —
 **Priority**: Critical — the current published SDL is invalid GraphQL.
 **Deliverables**:
@@ -309,15 +309,15 @@ tests pass; the items below are the review's required fixes.
   accepted `sort` values on the args.
 
 **Checklist**:
-- [ ] One `type Query` in emitted SDL (`riela graphql schema`)
-- [ ] One-Query/one-Mutation regression test
-- [ ] Execution tests for new args + proposeNoteLinks
-- [ ] Sort values discoverable in SDL
+- [x] One `type Query` in emitted SDL (`riela graphql schema`)
+- [x] One-Query/one-Mutation regression test
+- [x] Execution tests for new args + proposeNoteLinks
+- [x] Sort values discoverable in SDL
 
 ---
 
 ### TASK-013: Link-proposal provider hardening and re-home (F-M1, F-M2, F-M6)
-**Status**: NOT_STARTED
+**Status**: COMPLETED
 **Depends On**: —
 **Deliverables**:
 - Move the `Process`-backed
@@ -341,16 +341,16 @@ tests pass; the items below are the review's required fixes.
   `/usr/bin/env riela` PATH caveat or resolve via settings.
 
 **Checklist**:
-- [ ] RielaNoteUI iOS-compilable again (no unconditional `Process`)
-- [ ] No pipe deadlock; timeout + cancellation enforced
-- [ ] Per-draft resolution; errors surfaced; fallback only when
+- [x] RielaNoteUI iOS-compilable again (no unconditional `Process`)
+- [x] No pipe deadlock; timeout + cancellation enforced
+- [x] Per-draft resolution; errors surfaced; fallback only when
       unconfigured; source badge + preview in sheet
-- [ ] linkKind allowlist on accept
+- [x] linkKind allowlist on accept
 
 ---
 
 ### TASK-014: note-link-extract workflow correctness (F-M3, F-M4)
-**Status**: NOT_STARTED
+**Status**: COMPLETED
 **Depends On**: —
 **Deliverables**:
 - `examples/note-link-extract/workflow.json` — fan-in
@@ -366,14 +366,14 @@ tests pass; the items below are the review's required fixes.
   assertions); wire into the mock-scenario test that TASK-007 claimed.
 
 **Checklist**:
-- [ ] Subject note id/body reaches the selection agent
-- [ ] Mock scenario actually mocks the agent nodes
-- [ ] Deterministic run documented and asserted
+- [x] Subject note id/body reaches the selection agent
+- [x] Mock scenario actually mocks the agent nodes
+- [x] Deterministic run documented and asserted
 
 ---
 
 ### TASK-015: UI async-state correctness (F-M5, F-M7, F-M9 + UI minors)
-**Status**: NOT_STARTED
+**Status**: COMPLETED
 **Depends On**: —
 **Deliverables**:
 - `RielaNoteLibraryViewModel.proposeLinksForSelectedNote` (`:920-934`):
@@ -397,17 +397,17 @@ tests pass; the items below are the review's required fixes.
   overlay on `state == .loaded`.
 
 **Checklist**:
-- [ ] Proposal race fixed (guarded by note id/generation)
-- [ ] Link sheet stale-async bugs fixed
-- [ ] Post-create visibility with active date filter
-- [ ] includeLinked in hasSearchFilters; debounced single search path
-- [ ] Compose double-save guard; composer dismissal
-- [ ] Sheet-local errors; no "No Results" flash while loading
+- [x] Proposal race fixed (guarded by note id/generation)
+- [x] Link sheet stale-async bugs fixed
+- [x] Post-create visibility with active date filter
+- [x] includeLinked in hasSearchFilters; debounced single search path
+- [x] Compose double-save guard; composer dismissal
+- [x] Sheet-local errors; no "No Results" flash while loading
 
 ---
 
 ### TASK-016: Title derivation robustness (F-M8 + minors)
-**Status**: NOT_STARTED
+**Status**: COMPLETED
 **Depends On**: —
 **Deliverables**:
 - `Sources/RielaNote/NoteTitleDerivation.swift` — fence-aware scanning
@@ -424,14 +424,14 @@ tests pass; the items below are the review's required fixes.
   re-derivation overwrites explicitly-set titles.
 
 **Checklist**:
-- [ ] Fence-aware derivation + CommonMark heading rules
-- [ ] Marker-stripping fixes with tests
-- [ ] Title-overwrite behavior documented
+- [x] Fence-aware derivation + CommonMark heading rules
+- [x] Marker-stripping fixes with tests
+- [x] Title-overwrite behavior documented
 
 ---
 
 ### TASK-017: Search semantics — decide, tighten, document (backend minors)
-**Status**: NOT_STARTED
+**Status**: COMPLETED
 **Depends On**: TASK-012 (SDL doc placement)
 **Deliverables**:
 - Decide rank-vs-sort precedence on the FTS path
@@ -450,15 +450,15 @@ tests pass; the items below are the review's required fixes.
   neighbor undercount regression, date-only bounds).
 
 **Checklist**:
-- [ ] Rank/sort precedence decided, consistent, documented
-- [ ] Neighbor LIMIT/filter/sort tightened or documented
-- [ ] Date-bound normalization or documentation
-- [ ] Tests for the above
+- [x] Rank/sort precedence decided, consistent, documented
+- [x] Neighbor LIMIT/filter/sort tightened or documented
+- [x] Date-bound normalization or documentation
+- [x] Tests for the above
 
 ---
 
 ### TASK-018: Renderer & detail polish, dead code, missing tests (UI minors)
-**Status**: NOT_STARTED
+**Status**: COMPLETED
 **Depends On**: —
 **Deliverables**:
 - `RielaNoteMarkdownBodyView.swift` — closing fence must not accept an
@@ -480,11 +480,11 @@ tests pass; the items below are the review's required fixes.
   760×520 / 520×420 frames).
 
 **Checklist**:
-- [ ] Fence/quote/list rendering fixes + block parser tests
-- [ ] Comments newline-preserving; D5 count-based collapse
-- [ ] FAB inset/animation/accessibility
-- [ ] Dead code removed; tests migrated
-- [ ] Sheets fit compact widths
+- [x] Fence/quote/list rendering fixes + block parser tests
+- [x] Comments newline-preserving; D5 count-based collapse
+- [x] FAB inset/animation/accessibility
+- [x] Dead code removed; tests migrated
+- [x] Sheets fit compact widths
 
 ---
 
@@ -523,13 +523,54 @@ tests pass; the items below are the review's required fixes.
 - [x] R9 gaps closed (direct S3 attach, ordering, GraphQL round-trip)
 - [x] `RielaNoteUI` compiles without AppKit imports
 - [x] GraphQL/CLI parity maintained for new options and proposals
-- [ ] Post-review follow-ups TASK-012–018 closed (F-C1 SDL validity,
+- [x] Post-review follow-ups TASK-012–018 closed (F-C1 SDL validity,
       provider hardening/re-home, workflow correctness, UI async
       races, title-derivation fences, search semantics, polish)
-- [ ] Published SDL parses as valid GraphQL (single `type Query`)
-- [ ] `RielaNoteUI` compiles for iOS (no unconditional `Process`)
+- [x] Published SDL parses as valid GraphQL (single `type Query`)
+- [x] `RielaNoteUI` compiles for iOS (no unconditional `Process`)
 
 ## Progress Log
+
+### Session: 2026-07-06 (post-review follow-ups)
+**Tasks Completed**: TASK-012 through TASK-018 implemented and verified.
+**Result**: Published SDL now has one root query/mutation definition and
+uses `NoteListSort`; execution-level GraphQL tests cover the new note
+args, proposal query, and invalid sort rejection. Workflow-backed link
+proposals are guarded for macOS `Process`, drain pipes concurrently,
+honor timeout/cancellation, surface provider errors, and keep fallback
+only for unconfigured providers. The note-link-extract mock scenario now
+passes subject note id/body into selection and has executable validation
+instructions. UI async races, filter reset behavior, compact sheet
+states, title derivation fences, linked-search semantics, markdown block
+rendering, FAB placement, and dead inline-link code were closed.
+**Verification**: `swift test --filter 'RielaNoteTests|RielaNoteUITests|NoteGraphQL'`;
+`swift test --filter 'RielaNoteUITests|NoteGraphQLFollowUpTests|NoteServiceTests'`;
+`swift build --product RielaApp`; `riela workflow validate
+note-link-extract --workflow-definition-dir ./examples`; mock workflow
+run for `note-link-extract`; `riela graphql schema` root-definition
+count; SwiftLint; `git diff --check`; current debug RielaApp executable
+screenshot at `tmp/riela-note-followups-ui/screenshots/notes-window-after-empty-state-fix.png`.
+**Blockers**: None.
+
+### Session: 2026-07-06 (re-review of commit 7d4f509)
+**Tasks Completed**: Re-review requested after presumed fixes.
+**Result**: No fixes have landed. Commit `7d4f509` ("Refine Riela note
+UI and link workflows", 15:12 JST) is byte-identical to the reviewed
+working tree (`git diff HEAD` empty; key files last modified
+09:16–09:46, before the review). Spot-reverified on the committed
+code: F-C1 still reproduces (`riela graphql schema` emits two
+`type Query` blocks — **invalid SDL is now committed on main**);
+`Process()` remains unguarded in RielaNoteUI with read-after-wait pipe
+handling and no timeout/cancellation (F-M1/F-M2);
+`proposeLinksForSelectedNote` still lacks a note-id guard (F-M5);
+`mock-scenario.json` still uses the non-loader `input`/`expected`
+format (F-M4); `NoteTitleDerivation` still has no fence awareness
+(F-M8). No fix commits exist on any branch/worktree
+(`git log --all --since` / `git worktree list` checked).
+**Blockers**: TASK-012 (invalid published SDL) is now shipped on main
+HEAD — fix before any release/tag.
+**Notes**: TASK-012–018 remain NOT_STARTED; findings list unchanged,
+no new findings (no new code to review).
 
 ### Session: 2026-07-06 (post-implementation review)
 **Tasks Completed**: Three-dimension review (backend / UI / GraphQL+

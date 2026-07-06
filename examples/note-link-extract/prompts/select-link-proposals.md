@@ -1,5 +1,12 @@
-Review the subject note from `get-subject-note` and candidate search results
-from `search-candidates`.
+Review the subject note and candidate search results from `search-candidates`.
+
+Subject note id: `{{workflowInput.noteId}}`
+
+Subject note body:
+
+```markdown
+{{workflowInput.subjectBodyMarkdown}}
+```
 
 Return JSON only:
 

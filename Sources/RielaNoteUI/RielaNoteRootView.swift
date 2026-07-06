@@ -135,12 +135,20 @@ public struct RielaNoteRootView: View {
       NavigationSplitView {
         RielaNoteFilterPane(viewModel: viewModel)
           .navigationTitle("Filters")
+          .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360)
           .toolbar {
             settingsToolbarItem
           }
       } content: {
-        RielaNoteNotebookListView(viewModel: viewModel, onCreate: openCompose)
+        RielaNoteNotebookListView(
+          viewModel: viewModel,
+          onCreate: openCompose,
+          onOpenNote: { _ in
+            composeDestination = nil
+          }
+        )
           .navigationTitle("Notes")
+          .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 460)
       } detail: {
         if let composeDestination {
           composeView(composeDestination)

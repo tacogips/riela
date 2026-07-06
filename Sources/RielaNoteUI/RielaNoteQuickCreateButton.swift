@@ -33,6 +33,7 @@ struct RielaNoteQuickCreateButton: View {
       }
       .buttonStyle(.borderedProminent)
       .clipShape(Circle())
+      .accessibilityLabel("New note")
       .help("New memo")
       .contextMenu {
         Button("New memo", action: onCreateMemo)
@@ -42,8 +43,9 @@ struct RielaNoteQuickCreateButton: View {
       }
     }
     .onHover { hovering in
-      isExpanded = hovering
+      withAnimation(.easeInOut(duration: 0.16)) {
+        isExpanded = hovering
+      }
     }
-    .padding()
   }
 }

@@ -800,9 +800,10 @@ public enum GraphQLContractProjector {
   type Query {
     note(noteId: String!): NoteQueryPayload!
     notebook(notebookId: String!): NotebookQueryPayload!
-    notebooks(limit: Int, offset: Int, tagFilter: [String!], sort: String, createdAfter: String, createdBefore: String): NotebooksQueryPayload!
+    notebooks(limit: Int, offset: Int, tagFilter: [String!], sort: NoteListSort, createdAfter: String, createdBefore: String): NotebooksQueryPayload!
     notes(limit: Int, offset: Int, notebookId: String, tagFilter: [String!]): NotesQueryPayload!
-    searchNotes(query: String!, tagFilter: [String!], classFilter: [String!], sort: String, createdAfter: String, createdBefore: String, includeLinked: Boolean, limit: Int, offset: Int): NoteSearchQueryPayload!
+    # Direct full-text hits are ranked first; sort orders filter-only and linked-neighbor groups.
+    searchNotes(query: String!, tagFilter: [String!], classFilter: [String!], sort: NoteListSort, createdAfter: String, createdBefore: String, includeLinked: Boolean, limit: Int, offset: Int): NoteSearchQueryPayload!
     proposeNoteLinks(noteId: String!, limit: Int): NoteLinkProposalQueryPayload!
     tags: NoteTagsQueryPayload!
     tagClasses: NoteTagClassesQueryPayload!

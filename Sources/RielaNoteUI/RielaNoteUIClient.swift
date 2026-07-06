@@ -201,7 +201,32 @@ public extension RielaNoteListFilter {
   }
 }
 
+func rielaNoteAllowedLinkKind(_ rawValue: String) -> String {
+  let normalized = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+  switch normalized {
+  case "related", "source-citation":
+    return normalized
+  default:
+    return "related"
+  }
+}
+
+func rielaNoteCreatedBoundInputIsValid(_ rawValue: String) -> Bool {
+  let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+  guard !trimmed.isEmpty else {
+    return true
+  }
+  if trimmed.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil {
+    return true
+  }
+  let internetFormatter = ISO8601DateFormatter()
+  let fractionalFormatter = ISO8601DateFormatter()
+  fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+  return internetFormatter.date(from: trimmed) != nil || fractionalFormatter.date(from: trimmed) != nil
+}
+
 public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
+  private static let linkProposalLimit = 8
   private let service: NoteService
   private let s3Profiles: [S3StorageProfile]
   private let s3HTTPClient: any S3HTTPClient
@@ -381,12 +406,14 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
   }
 
   public func proposeNoteLinks(noteId: String) async throws -> [NoteLinkProposal] {
-    if let linkProposalProvider,
-       let workflowProposals = try? await workflowNoteLinkProposals(noteId: noteId, provider: linkProposalProvider),
-       !workflowProposals.isEmpty {
-      return workflowProposals
+    if let linkProposalProvider {
+      return try await workflowNoteLinkProposals(
+        noteId: noteId,
+        provider: linkProposalProvider,
+        limit: Self.linkProposalLimit
+      )
     }
-    return try service.proposeLinks(noteId: noteId)
+    return try service.proposeLinks(noteId: noteId, limit: Self.linkProposalLimit)
   }
 
   public func answerNoteAgentTurn(message: String, limit: Int) async throws -> RielaNoteAgentTurn {
@@ -519,23 +546,27 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
 
   private func workflowNoteLinkProposals(
     noteId: String,
-    provider: any RielaNoteLinkProposalProviding
+    provider: any RielaNoteLinkProposalProviding,
+    limit: Int
   ) async throws -> [NoteLinkProposal] {
     let note = try service.getNote(noteId)
     let drafts = try await provider.proposeLinkDrafts(
       noteId: noteId,
       noteRoot: service.noteRootPath(),
       query: noteLinkProposalQuery(from: note.bodyMarkdown),
-      limit: 8
+      limit: limit
     )
     let links = try service.listLinks(noteId: noteId)
     let excludedNoteIds = Set(links.map { $0.counterpartNoteId(for: noteId) } + [noteId])
     var seenNoteIds = excludedNoteIds
     var proposals: [NoteLinkProposal] = []
-    for draft in drafts where seenNoteIds.insert(draft.targetNoteId).inserted {
+    for draft in drafts.prefix(limit) where seenNoteIds.insert(draft.targetNoteId).inserted {
+      guard let targetNote = try? service.getNote(draft.targetNoteId) else {
+        continue
+      }
       proposals.append(NoteLinkProposal(
-        targetNote: try service.getNote(draft.targetNoteId),
-        linkKind: draft.linkKind.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "related" : draft.linkKind,
+        targetNote: targetNote,
+        linkKind: rielaNoteAllowedLinkKind(draft.linkKind),
         reason: draft.reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
           ? "Suggested by note-link-extract."
           : draft.reason,

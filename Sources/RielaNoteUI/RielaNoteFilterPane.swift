@@ -11,9 +11,10 @@ public struct RielaNoteFilterPane: View {
   public var body: some View {
     Form {
       Section("Search") {
-        TextField("Search notes", text: searchTextBinding)
+        TextField("Search notes", text: searchTextBinding, prompt: Text("Search notes"))
           .textFieldStyle(.roundedBorder)
-        Toggle("Also associated to matches", isOn: includeLinkedBinding)
+          .labelsHidden()
+        Toggle("Include linked notes", isOn: includeLinkedBinding)
       }
       Section("Sort") {
         Picker("Sort", selection: sortBinding) {
@@ -22,10 +23,10 @@ public struct RielaNoteFilterPane: View {
           Text("Updated").tag(NoteListSort.updatedAtDesc)
           Text("Title").tag(NoteListSort.title)
         }
-        .pickerStyle(.segmented)
+        .pickerStyle(.menu)
       }
       Section("Created") {
-        Picker("Created", selection: createdRangeBinding) {
+        Picker("Range", selection: createdRangeBinding) {
           Text("Any").tag(RielaNoteListFilter.CreatedRange.any)
           Text("Today").tag(RielaNoteListFilter.CreatedRange.today)
           Text("7 days").tag(RielaNoteListFilter.CreatedRange.last7Days)

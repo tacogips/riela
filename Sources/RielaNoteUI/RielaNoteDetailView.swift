@@ -9,7 +9,7 @@ public struct RielaNoteDetailView: View {
   @State private var isAddLinkPresented = false
   @State private var isLinkProposalPresented = false
   @State private var isTagsExpanded = false
-  @State private var isLinksExpanded = true
+  @State private var isLinksExpanded = false
   @State private var isCommentsExpanded = false
   @State private var isFilesExpanded = false
 
@@ -37,8 +37,12 @@ public struct RielaNoteDetailView: View {
           .frame(maxWidth: 880, alignment: .leading)
         }
         .navigationTitle(detail.note.title ?? "Note")
+        .onAppear {
+          applyDefaultMetadataExpansion(for: detail)
+        }
         .onChange(of: detail.note.noteId) { _, _ in
           resetEditingState()
+          applyDefaultMetadataExpansion(for: detail)
         }
         .sheet(isPresented: $isAddLinkPresented) {
           RielaNoteLinkSearchSheet(
@@ -55,9 +59,24 @@ public struct RielaNoteDetailView: View {
           }
         }
       } else {
-        ContentUnavailableView("No note selected", systemImage: "note.text")
+        emptySelection
       }
     }
+  }
+
+  private var emptySelection: some View {
+    VStack(spacing: 12) {
+      Image(systemName: "note.text")
+        .font(.system(size: 28, weight: .semibold))
+        .foregroundStyle(.secondary)
+      Text("No note")
+        .font(.headline)
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+        .foregroundStyle(.secondary)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .padding(12)
   }
 
   private var contentModeBinding: Binding<RielaNoteLibraryViewModel.NoteContentMode> {
@@ -358,9 +377,6 @@ public struct RielaNoteDetailView: View {
 
   private func comments(_ comments: [NoteComment]) -> some View {
     VStack(alignment: .leading, spacing: 10) {
-      Text("Comments")
-        .font(.subheadline)
-        .fontWeight(.semibold)
       if !comments.isEmpty {
         ForEach(comments, id: \.commentId) { comment in
           VStack(alignment: .leading, spacing: 4) {
@@ -372,7 +388,7 @@ public struct RielaNoteDetailView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
-            RielaNoteMarkdownText(markdown: comment.bodyMarkdown)
+            RielaNoteMarkdownBodyView(markdown: comment.bodyMarkdown)
               .font(.subheadline)
           }
           .padding(.vertical, 4)
@@ -487,8 +503,14 @@ public struct RielaNoteDetailView: View {
     bodyDraft.reset()
     draftTagName = ""
     draftCommentMarkdown = ""
-    viewModel.clearLinkTargetSearch()
     viewModel.clearLinkProposals()
+  }
+
+  private func applyDefaultMetadataExpansion(for detail: RielaNoteDetail) {
+    isTagsExpanded = (1...4).contains(detail.note.tags.count)
+    isLinksExpanded = (1...4).contains(detail.links.count)
+    isCommentsExpanded = (1...3).contains(detail.comments.count)
+    isFilesExpanded = (1...4).contains(detail.files.count)
   }
 }
 
@@ -542,39 +564,6 @@ func rielaNoteTagSuggestions(
     .sorted { lhs, rhs in
       lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
     }
-}
-
-func rielaNoteLinkTargetSuggestions(
-  candidateNotes: [Note],
-  currentNoteId: String,
-  existingLinks: [NoteLink],
-  query: String
-) -> [Note] {
-  let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-  let linkedNoteIds = Set(existingLinks.map { $0.counterpartNoteId(for: currentNoteId) })
-  var seenNoteIds: Set<String> = []
-  return candidateNotes
-    .filter { note in
-      guard note.noteId != currentNoteId, !linkedNoteIds.contains(note.noteId), seenNoteIds.insert(note.noteId).inserted else {
-        return false
-      }
-      guard !normalizedQuery.isEmpty else {
-        return true
-      }
-      return note.noteId.lowercased().contains(normalizedQuery)
-        || (note.title?.lowercased().contains(normalizedQuery) == true)
-    }
-    .sorted { lhs, rhs in
-      rielaNoteLinkTargetSuggestionLabel(lhs).localizedStandardCompare(rielaNoteLinkTargetSuggestionLabel(rhs))
-        == .orderedAscending
-    }
-}
-
-func rielaNoteLinkTargetSuggestionLabel(_ note: Note) -> String {
-  if let title = note.title, !title.isEmpty {
-    return "\(title) (\(note.noteId))"
-  }
-  return note.noteId
 }
 
 func rielaNoteLinkIconName(_ linkKind: String) -> String {

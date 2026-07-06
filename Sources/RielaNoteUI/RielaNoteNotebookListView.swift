@@ -81,12 +81,14 @@ public struct RielaNoteNotebookListView: View {
         .keyboardShortcut("n", modifiers: .command)
       }
     }
-    .overlay(alignment: .bottomTrailing) {
+    .safeAreaInset(edge: .bottom, alignment: .trailing) {
       RielaNoteQuickCreateButton(
         canCreateInNotebook: viewModel.canCreateNoteInSelectedNotebook,
         onCreateMemo: { onCreate(.memo) },
         onCreateInNotebook: { onCreate(.selectedNotebook) }
       )
+      .padding(.trailing, 16)
+      .padding(.bottom, 12)
     }
     .overlay {
       if case let .failed(message) = viewModel.state {

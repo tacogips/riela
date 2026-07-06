@@ -33,4 +33,50 @@ final class RielaNoteDraftMarkdownTests: XCTestCase {
     XCTAssertTrue(state.isEditingBody)
     XCTAssertEqual(state.draftBodyMarkdown, "Unsaved body")
   }
+
+  func testMarkdownBlockParserPreservesBlocksAndStripsDisplayMarkers() {
+    let blocks = RielaNoteMarkdownBlock.parse(
+      """
+      # Heading ##
+
+      first line
+      second line
+
+      - item one
+      - item two
+
+      > quoted
+      > text
+
+      ```swift
+      let value = "# not heading"
+      ``` info
+      still code
+      ```
+      """
+    )
+
+    XCTAssertEqual(blocks[0], RielaNoteMarkdownBlock(kind: .heading(level: 1), text: "Heading"))
+    XCTAssertEqual(blocks[1], RielaNoteMarkdownBlock(kind: .paragraph, text: "first line\nsecond line"))
+    XCTAssertEqual(blocks[2], RielaNoteMarkdownBlock(kind: .list, text: "item one\nitem two"))
+    XCTAssertEqual(blocks[3], RielaNoteMarkdownBlock(kind: .quote, text: "quoted\ntext"))
+    XCTAssertEqual(
+      blocks[4],
+      RielaNoteMarkdownBlock(kind: .code, text: "let value = \"# not heading\"\n``` info\nstill code")
+    )
+  }
+
+  func testMarkdownBlockParserKeepsUnclosedFenceAsCode() {
+    let blocks = RielaNoteMarkdownBlock.parse(
+      """
+      intro
+
+      ~~~
+      code
+      """
+    )
+
+    XCTAssertEqual(blocks.map(\.kind), [.paragraph, .code])
+    XCTAssertEqual(blocks.last?.text, "code")
+  }
 }

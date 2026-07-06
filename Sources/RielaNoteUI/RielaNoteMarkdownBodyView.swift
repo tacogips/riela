@@ -77,32 +77,33 @@ struct RielaNoteMarkdownBlock: Equatable {
     var blocks: [RielaNoteMarkdownBlock] = []
     var paragraph: [String] = []
     var code: [String] = []
-    var isInCode = false
+    var codeFence: MarkdownCodeFence?
 
     func flushParagraph() {
       guard !paragraph.isEmpty else {
         return
       }
       let text = paragraph.joined(separator: "\n")
-      blocks.append(RielaNoteMarkdownBlock(kind: paragraphKind(for: text), text: text))
+      let kind = paragraphKind(for: text)
+      blocks.append(RielaNoteMarkdownBlock(kind: kind, text: displayText(text, for: kind)))
       paragraph.removeAll()
     }
 
     for rawLine in markdown.components(separatedBy: .newlines) {
       let line = rawLine.trimmingCharacters(in: .whitespaces)
-      if line.hasPrefix("```") {
-        if isInCode {
+      if let activeFence = codeFence {
+        if activeFence.isClosed(by: rawLine) {
           blocks.append(RielaNoteMarkdownBlock(kind: .code, text: code.joined(separator: "\n")))
           code.removeAll()
-          isInCode = false
-        } else {
-          flushParagraph()
-          isInCode = true
+          codeFence = nil
+          continue
         }
+        code.append(rawLine)
         continue
       }
-      if isInCode {
-        code.append(rawLine)
+      if let openingFence = MarkdownCodeFence(openingLine: rawLine) {
+        flushParagraph()
+        codeFence = openingFence
         continue
       }
       if line.isEmpty {
@@ -121,7 +122,7 @@ struct RielaNoteMarkdownBlock: Equatable {
       }
       paragraph.append(rawLine)
     }
-    if isInCode {
+    if codeFence != nil {
       blocks.append(RielaNoteMarkdownBlock(kind: .code, text: code.joined(separator: "\n")))
     }
     flushParagraph()
@@ -129,6 +130,9 @@ struct RielaNoteMarkdownBlock: Equatable {
   }
 
   private static func headingBlock(from line: String) -> RielaNoteMarkdownBlock? {
+    guard leadingSpaceCount(in: line) <= 3 else {
+      return nil
+    }
     let trimmed = line.trimmingCharacters(in: .whitespaces)
     var count = 0
     for character in trimmed {
@@ -142,7 +146,7 @@ struct RielaNoteMarkdownBlock: Equatable {
     }
     return RielaNoteMarkdownBlock(
       kind: .heading(level: count),
-      text: String(trimmed.dropFirst(count)).trimmingCharacters(in: .whitespaces)
+      text: stripClosingATXHashes(String(trimmed.dropFirst(count)).trimmingCharacters(in: .whitespaces))
     )
   }
 
@@ -159,5 +163,83 @@ struct RielaNoteMarkdownBlock: Equatable {
 
   private static func isRule(_ line: String) -> Bool {
     line.range(of: #"^([-*_])\s*(\1\s*){2,}$"#, options: .regularExpression) != nil
+  }
+
+  private static func displayText(_ text: String, for kind: Kind) -> String {
+    switch kind {
+    case .quote:
+      return text.components(separatedBy: .newlines)
+        .map {
+          $0.replacingOccurrences(of: #"^\s{0,3}>\s?"#, with: "", options: .regularExpression)
+        }
+        .joined(separator: "\n")
+    case .list:
+      return text.components(separatedBy: .newlines)
+        .map {
+          $0.replacingOccurrences(of: #"^\s{0,3}([-+*]|\d+[.)])\s+"#, with: "", options: .regularExpression)
+        }
+        .joined(separator: "\n")
+    default:
+      return text
+    }
+  }
+
+  private static func stripClosingATXHashes(_ text: String) -> String {
+    text.replacingOccurrences(of: #"\s+#+\s*$"#, with: "", options: .regularExpression)
+  }
+
+  private static func leadingSpaceCount(in line: String) -> Int {
+    var count = 0
+    for character in line {
+      guard character == " " else {
+        break
+      }
+      count += 1
+    }
+    return count
+  }
+}
+
+private struct MarkdownCodeFence {
+  var marker: Character
+  var count: Int
+
+  init?(openingLine: String) {
+    guard Self.leadingSpaceCount(in: openingLine) <= 3 else {
+      return nil
+    }
+    let trimmed = openingLine.trimmingCharacters(in: .whitespaces)
+    guard let first = trimmed.first, first == "`" || first == "~" else {
+      return nil
+    }
+    let markerCount = trimmed.prefix { $0 == first }.count
+    guard markerCount >= 3 else {
+      return nil
+    }
+    marker = first
+    count = markerCount
+  }
+
+  func isClosed(by line: String) -> Bool {
+    guard Self.leadingSpaceCount(in: line) <= 3 else {
+      return false
+    }
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    let markerCount = trimmed.prefix { $0 == marker }.count
+    guard markerCount >= count else {
+      return false
+    }
+    return trimmed.dropFirst(markerCount).trimmingCharacters(in: .whitespaces).isEmpty
+  }
+
+  private static func leadingSpaceCount(in line: String) -> Int {
+    var count = 0
+    for character in line {
+      guard character == " " else {
+        break
+      }
+      count += 1
+    }
+    return count
   }
 }

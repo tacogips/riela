@@ -34,6 +34,7 @@ public struct RielaNoteComposeView: View {
   let onCancel: () -> Void
   let onSave: (String) -> Void
   @State private var bodyMarkdown = ""
+  @State private var isSaving = false
   @FocusState private var isEditorFocused: Bool
 
   public init(
@@ -61,12 +62,16 @@ public struct RielaNoteComposeView: View {
         Spacer()
         Button("Cancel", action: onCancel)
         Button {
+          guard !isSaving else {
+            return
+          }
+          isSaving = true
           onSave(bodyMarkdown)
         } label: {
           Label("Save", systemImage: "checkmark")
         }
         .buttonStyle(.borderedProminent)
-        .disabled(bodyMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .disabled(isSaving || bodyMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         .keyboardShortcut(.return, modifiers: .command)
       }
     }

@@ -38,7 +38,8 @@ final class WorkflowRunHelpTests: XCTestCase {
     XCTAssertTrue(result.stdout.contains("init <workflow-or-package-dir>"))
     XCTAssertTrue(result.stdout.contains("pack <package-dir>"))
     XCTAssertTrue(result.stdout.contains("validate <package-dir|archive.rielapkg|archive.zip>"))
-    XCTAssertTrue(result.stdout.contains("install <package-name|package-dir|archive.rielapkg|archive.zip>"))
+    XCTAssertTrue(result.stdout.contains("install [package-name|package-dir|archive.rielapkg|archive.zip]"))
+    XCTAssertTrue(result.stdout.contains("ci [package-name]"))
     XCTAssertTrue(result.stdout.contains("run|temp-run <package-name|package-dir|archive.rielapkg|archive.zip>"))
     XCTAssertTrue(result.stdout.contains("Package init:"))
     XCTAssertTrue(result.stdout.contains("content-derived checksum"))
@@ -49,6 +50,9 @@ final class WorkflowRunHelpTests: XCTestCase {
     XCTAssertTrue(result.stdout.contains("checksumAlgorithm"))
     XCTAssertTrue(result.stdout.contains("md5"))
     XCTAssertTrue(result.stdout.contains("A .rielapkg or .zip is a portable package archive"))
+    XCTAssertTrue(result.stdout.contains("Lockfile installs:"))
+    XCTAssertTrue(result.stdout.contains("riela-lock.json"))
+    XCTAssertTrue(result.stdout.contains("archive sha256 pins"))
     XCTAssertTrue(result.stdout.contains("RielaApp can import the same package folder, .rielapkg, or .zip"))
     XCTAssertTrue(result.stdout.contains("--import-workflow-or-package <path>"))
     XCTAssertTrue(result.stdout.contains("--import-workflow-or-package <path> --open-workflows"))
@@ -64,5 +68,6 @@ final class WorkflowRunHelpTests: XCTestCase {
     XCTAssertTrue(result.stdout.contains("riela workflow package pack <package-dir>"))
     XCTAssertTrue(result.stdout.contains("riela workflow package init <workflow-or-package-dir>"))
     XCTAssertTrue(result.stdout.contains("riela workflow package install"))
+    XCTAssertTrue(result.stdout.contains("riela workflow package ci"))
   }
 }

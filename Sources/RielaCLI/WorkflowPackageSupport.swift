@@ -227,13 +227,15 @@ func preflightSkillProjections(_ projections: [PackageSkillProjectionPlan], over
 func installSkillProjections(
   _ projections: [PackageSkillProjectionPlan],
   installedPackageRoot: URL,
-  overwrite: Bool
+  overwrite: Bool,
+  recordCreated: (URL) -> Void = { _ in }
 ) throws {
   for projection in projections {
     let source = installedPackageRoot.appendingPathComponent(projection.sourcePath)
     guard FileManager.default.fileExists(atPath: source.path) else {
       throw CLIUsageError("installed skill source missing: \(source.path)")
     }
+    let destinationExisted = FileManager.default.fileExists(atPath: projection.destination.path)
     if FileManager.default.fileExists(atPath: projection.destination.path) {
       guard overwrite else {
         throw CLIUsageError("skill projection already exists: \(projection.destination.path); pass --overwrite to replace it")
@@ -242,6 +244,9 @@ func installSkillProjections(
     }
     try FileManager.default.createDirectory(at: projection.destination.deletingLastPathComponent(), withIntermediateDirectories: true)
     try FileManager.default.copyItem(at: source, to: projection.destination)
+    if !destinationExisted {
+      recordCreated(projection.destination)
+    }
   }
 }
 
@@ -304,6 +309,62 @@ func packageManifestURLs(in root: URL) throws -> [URL] {
     }
   }
   return manifests.sorted { $0.path < $1.path }
+}
+
+func workflowPackageSummary(
+  manifest: WorkflowPackageManifest,
+  packageDirectory: URL,
+  valid: Bool,
+  issues: [WorkflowPackageValidationIssue]
+) -> WorkflowPackageSummary {
+  WorkflowPackageSummary(
+    name: manifest.name,
+    version: manifest.version,
+    kind: manifest.kind,
+    title: manifest.title ?? manifest.workflow?.title,
+    description: manifest.description ?? manifest.workflow?.description,
+    tags: manifest.tags,
+    backends: packageSummaryBackends(manifest),
+    workflowIds: packageSummaryWorkflowIds(manifest: manifest, packageDirectory: packageDirectory),
+    addons: packageSummaryAddons(manifest),
+    requiredEnvironment: manifest.environmentVariables.filter(\.required),
+    packageDirectory: packageDirectory.path,
+    workflowDirectory: manifest.workflowDirectory,
+    valid: valid,
+    issues: issues
+  )
+}
+
+private func packageSummaryAddons(_ manifest: WorkflowPackageManifest) -> [WorkflowPackageAddonSummary]? {
+  guard !manifest.nodeAddons.isEmpty else {
+    return nil
+  }
+  return manifest.nodeAddons.map { addon in
+    WorkflowPackageAddonSummary(
+      name: addon.name,
+      version: addon.version,
+      sourcePath: addon.sourcePath,
+      executionKind: addon.execution?.kind,
+      contentDigest: addon.contentDigest
+    )
+  }
+}
+
+private func packageSummaryBackends(_ manifest: WorkflowPackageManifest) -> [String] {
+  var seen = Set<String>()
+  let values = manifest.backends + (manifest.workflow?.backends ?? []) + manifest.workflows.flatMap(\.backends)
+  return values.filter { seen.insert($0.lowercased()).inserted }
+}
+
+private func packageSummaryWorkflowIds(manifest: WorkflowPackageManifest, packageDirectory: URL) -> [String] {
+  let workflowDirectories = [manifest.workflowDirectory].compactMap { $0 }.filter { !$0.isEmpty }
+  guard !workflowDirectories.isEmpty else {
+    return [packageDirectory.lastPathComponent]
+  }
+  var seen = Set<String>()
+  return workflowDirectories.map { path in
+    path == "." ? packageDirectory.lastPathComponent : URL(fileURLWithPath: path).lastPathComponent
+  }.filter { seen.insert($0).inserted }
 }
 
 func packageFilesystemKey(_ packageName: String) -> String {
@@ -388,6 +449,21 @@ func renderPackage(_ result: WorkflowPackageCommandResult, output: WorkflowOutpu
   case .text:
     return CLICommandResult(exitCode: .success, stdout: humanReadablePackageResult(result))
   case .table:
+    if result.command == PackageCommandKind.search.rawValue {
+      let rows = result.packages.map {
+        [
+          $0.name,
+          ($0.workflowIds ?? []).joined(separator: ",").nilIfEmpty ?? "-",
+          packageRegistryLabel($0),
+          $0.tags.isEmpty ? "-" : $0.tags.joined(separator: ","),
+          $0.description ?? $0.title ?? "-"
+        ].joined(separator: "\t")
+      }
+      return CLICommandResult(
+        exitCode: .success,
+        stdout: (["PACKAGE\tWORKFLOW\tREGISTRY\tTAGS\tSUMMARY"] + rows).joined(separator: "\n") + "\n"
+      )
+    }
     let rows = result.packages.map {
       [
         $0.name,
@@ -401,6 +477,33 @@ func renderPackage(_ result: WorkflowPackageCommandResult, output: WorkflowOutpu
   }
 }
 
+func packageMessageWithContainerSetupHint(
+  _ message: String,
+  packages: [WorkflowPackageSummary],
+  environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment()
+) -> String {
+  guard packageNeedsContainerSetupHint(packages: packages, environment: environment) else {
+    return message
+  }
+  return message + "; container runtime missing for container add-ons, run `riela setup container --yes` or set RIELA_CONTAINER_RUNTIME"
+}
+
+private func packageNeedsContainerSetupHint(
+  packages: [WorkflowPackageSummary],
+  environment: [String: String]
+) -> Bool {
+  let hasContainerAddon = packages.contains { package in
+    package.addons?.contains { addon in
+      addon.executionKind == .container
+    } == true
+  }
+  guard hasContainerAddon else {
+    return false
+  }
+  let discovery = ContainerRuntimeDiscovery(environment: environment)
+  return discovery.configuredDriver() == nil && discovery.selectedAvailableDriver() == nil
+}
+
 private func humanReadablePackageResult(_ result: WorkflowPackageCommandResult) -> String {
   var lines = [result.message]
   let commandPrefix = result.scope == "workflow package" ? "riela workflow package" : "riela package"
@@ -412,10 +515,22 @@ private func humanReadablePackageResult(_ result: WorkflowPackageCommandResult) 
     if let workflowDirectory = package.workflowDirectory {
       lines.append("Workflow: \(workflowDirectory)")
     }
+    if let addons = package.addons, !addons.isEmpty {
+      lines.append("Add-ons: \(addons.map { "\($0.name)@\($0.version)" }.joined(separator: ", "))")
+    }
+    if let requiredEnvironment = package.requiredEnvironment, !requiredEnvironment.isEmpty {
+      lines.append("Environment:")
+      for requirement in requiredEnvironment {
+        let secret = requirement.secret ? " secret" : ""
+        let description = requirement.description.map { " - \($0)" } ?? ""
+        lines.append("  - \(requirement.name)\(secret)\(description)")
+      }
+    }
     if result.command == PackageCommandKind.validate.rawValue,
       let input = result.destinationDirectory ?? result.target {
       lines.append("Input: \(input)")
     } else if result.command != PackageCommandKind.install.rawValue,
+      result.command != PackageCommandKind.ci.rawValue,
       result.command != PackageCommandKind.checkout.rawValue {
       lines.append("Source: \(package.packageDirectory)")
     }
@@ -439,6 +554,21 @@ private func humanReadablePackageResult(_ result: WorkflowPackageCommandResult) 
   return lines.joined(separator: "\n") + "\n"
 }
 
+private func packageRegistryLabel(_ package: WorkflowPackageSummary) -> String {
+  let path = URL(fileURLWithPath: package.packageDirectory).standardizedFileURL.path
+  guard let markerRange = path.range(of: "/packages/") else {
+    return "-"
+  }
+  let prefix = String(path[..<markerRange.lowerBound])
+  return URL(fileURLWithPath: prefix).lastPathComponent.nilIfEmpty ?? "-"
+}
+
+private extension String {
+  var nilIfEmpty: String? {
+    isEmpty ? nil : self
+  }
+}
+
 private func destinationLabel(for command: String) -> String {
   switch command {
   case PackageCommandKind.initialize.rawValue:
@@ -447,6 +577,8 @@ private func destinationLabel(for command: String) -> String {
     return "Archive"
   case PackageCommandKind.install.rawValue:
     return "Installed"
+  case PackageCommandKind.ci.rawValue:
+    return "Lockfile"
   case PackageCommandKind.publish.rawValue:
     return "Registry record"
   default:

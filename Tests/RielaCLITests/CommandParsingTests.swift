@@ -14,8 +14,10 @@ final class CommandParsingTests: XCTestCase {
     XCTAssertEqual(try RielaArgumentParser().parse(["package", "--help"]), .packageHelp(.package))
     XCTAssertEqual(try RielaArgumentParser().parse(["package", "-h"]), .packageHelp(.package))
     XCTAssertEqual(try RielaArgumentParser().parse(["package", "help"]), .packageHelp(.package))
+    XCTAssertEqual(try RielaArgumentParser().parse(["package", "install", "--help"]), .packageHelp(.package))
     XCTAssertEqual(try RielaArgumentParser().parse(["workflow", "package"]), .packageHelp(.workflowPackage))
     XCTAssertEqual(try RielaArgumentParser().parse(["workflow", "package", "--help"]), .packageHelp(.workflowPackage))
+    XCTAssertEqual(try RielaArgumentParser().parse(["workflow", "package", "search", "-h"]), .packageHelp(.workflowPackage))
     XCTAssertEqual(
       try RielaArgumentParser().parse(["package", "init", "demo", "--package-name", "demo-package"]),
       .package(PackageCommand(kind: .initialize, options: CLICommandOptions(
@@ -37,6 +39,36 @@ final class CommandParsingTests: XCTestCase {
     )
   }
 
+  func testParsesPackageInstallLockedMode() throws {
+    XCTAssertEqual(
+      try RielaArgumentParser().parse([
+        "package", "install", "--locked",
+        "--working-dir", "/tmp/riela-project",
+        "--output", "json"
+      ]),
+      .package(PackageCommand(kind: .install, options: CLICommandOptions(
+        scope: "package",
+        command: "install",
+        arguments: ["--locked", "--working-dir", "/tmp/riela-project", "--output", "json"],
+        output: .json
+      )))
+    )
+    XCTAssertEqual(
+      try RielaArgumentParser().parse([
+        "package", "install", "demo-addon",
+        "--locked",
+        "--output", "json"
+      ]),
+      .package(PackageCommand(kind: .install, options: CLICommandOptions(
+        scope: "package",
+        command: "install",
+        target: "demo-addon",
+        arguments: ["--locked", "--output", "json"],
+        output: .json
+      )))
+    )
+  }
+
   func testParsesWorkflowRunHelp() throws {
     XCTAssertEqual(
       try RielaArgumentParser().parse(["workflow", "run", "demo", "--help"]),
@@ -45,6 +77,39 @@ final class CommandParsingTests: XCTestCase {
     XCTAssertEqual(
       try RielaArgumentParser().parse(["workflow", "run", "--help"]),
       .workflow(.runHelp(nil))
+    )
+  }
+
+  func testParsesRrunAsNodeRunAlias() throws {
+    XCTAssertEqual(
+      try RielaArgumentParser().parse([
+        "rrun", "tacogips/pdf-render",
+        "--variables", #"{"pdfPath":"/tmp/report.pdf"}"#,
+        "--output", "json"
+      ]),
+      .node(NodeCommand(kind: .run, options: CLICommandOptions(
+        scope: "node",
+        command: "run",
+        target: "tacogips/pdf-render",
+        arguments: ["--variables", #"{"pdfPath":"/tmp/report.pdf"}"#, "--output", "json"],
+        output: .json
+      )))
+    )
+  }
+
+  func testParsesNodeList() throws {
+    XCTAssertEqual(
+      try RielaArgumentParser().parse([
+        "node", "list",
+        "--scope", "project",
+        "--output", "table"
+      ]),
+      .node(NodeCommand(kind: .list, options: CLICommandOptions(
+        scope: "node",
+        command: "list",
+        arguments: ["--scope", "project", "--output", "table"],
+        output: .table
+      )))
     )
   }
 

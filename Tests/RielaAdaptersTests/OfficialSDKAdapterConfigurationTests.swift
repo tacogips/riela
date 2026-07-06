@@ -262,4 +262,32 @@ extension OfficialSDKAdapterTests {
 
     XCTAssertEqual(output.payload["text"], .string("compatible provider text"))
   }
+
+  func testOfficialSDKRelaxedParsingEnvironmentAcceptsStringUsageTokens() async throws {
+    let transport = RecordingOfficialSDKHTTPTransport(responses: [
+      try httpResponse([
+        "output_text": .string("env relaxed"),
+        "usage": .object([
+          "input_tokens": .string("12"),
+          "output_tokens": .string("4"),
+          "total_tokens": .string("16")
+        ])
+      ])
+    ])
+    let adapter = OpenAiSDKAdapter(
+      configuration: OfficialSDKAdapterConfiguration(
+        apiKeyEnv: "TEST_OPENAI_KEY",
+        environment: [
+          "TEST_OPENAI_KEY": openAITestKey(),
+          "RIELA_OFFICIAL_SDK_RELAXED_PARSING": "yes"
+        ],
+        httpTransport: transport
+      )
+    )
+
+    let output = try await adapter.execute(openAIInput(), context: AdapterExecutionContext())
+
+    XCTAssertEqual(output.payload["text"], .string("env relaxed"))
+    XCTAssertEqual(output.usage?.totalTokens, 16)
+  }
 }

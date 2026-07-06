@@ -180,6 +180,9 @@ final class RielaApp: NSObject, NSApplicationDelegate {
         onOpenViewer: { [weak self] identity in
           self?.openDaemonWorkflowViewer(identity: identity)
         },
+        onOpenExecutionLog: { [weak self] identity in
+          self?.openDaemonWorkflowViewer(identity: identity, openTimeline: true)
+        },
         onOpenWorkflowSourceViewer: { [weak self] sourceId in
           self?.openWorkflowSourceViewer(sourceId: sourceId)
         },

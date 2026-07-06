@@ -98,10 +98,16 @@ public final class MonotonicWorkflowRuntimeIDGenerator: WorkflowRuntimeIDGenerat
 public struct WorkflowSessionCreateInput: Equatable, Sendable {
   public var workflowId: String
   public var entryStepId: String
+  public var effectiveInstance: EffectiveWorkflowInstance?
 
-  public init(workflowId: String, entryStepId: String) {
+  public init(
+    workflowId: String,
+    entryStepId: String,
+    effectiveInstance: EffectiveWorkflowInstance? = nil
+  ) {
     self.workflowId = workflowId
     self.entryStepId = entryStepId
+    self.effectiveInstance = effectiveInstance
   }
 }
 
@@ -478,7 +484,11 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
       entryStepId: input.entryStepId,
       currentStepId: input.entryStepId,
       createdAt: date,
-      updatedAt: date
+      updatedAt: date,
+      instanceIdentity: input.effectiveInstance?.identity,
+      instanceKind: input.effectiveInstance?.kind.rawValue,
+      instanceBaseIdentity: input.effectiveInstance?.baseIdentity,
+      instanceConfiguration: input.effectiveInstance?.configurationJSONObject
     )
     sessions[sessionId] = session
     messagesBySession[sessionId] = []

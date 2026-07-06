@@ -94,6 +94,46 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
     XCTAssertEqual(decoded.nodePatches["worker"]?.model, "gpt-5-mini")
   }
 
+  func testWorkflowStateDecodesLegacyV1DaemonWorkflowsJSONLosslessly() throws {
+    let data = Data("""
+    {
+      "version": 1,
+      "preferences": {
+        "telegram-persona-a": {
+          "identity": "telegram-persona-a",
+          "sourceIdentity": "user-workflow:telegram-bot",
+          "displayName": "Telegram Persona A",
+          "available": true,
+          "active": true,
+          "environmentFilePath": "/secrets/persona-a.env",
+          "environmentVariables": {"PERSONA": "assistant-a"},
+          "defaultVariables": {"persona": "assistant-a"},
+          "nodePatches": {"worker": {"model": "gpt-5-mini"}}
+        }
+      },
+      "workflowDirectories": ["/workflows/telegram-bot"],
+      "projectDirectories": ["/projects/chat"]
+    }
+    """.utf8)
+
+    let decoded = try JSONDecoder().decode(RielaAppDaemonWorkflowState.self, from: data)
+    let preference = try XCTUnwrap(decoded.preferences["telegram-persona-a"])
+
+    XCTAssertEqual(decoded.version, 1)
+    XCTAssertEqual(decoded.workflowDirectories, ["/workflows/telegram-bot"])
+    XCTAssertEqual(decoded.projectDirectories, ["/projects/chat"])
+    XCTAssertEqual(preference.identity, "telegram-persona-a")
+    XCTAssertEqual(preference.sourceIdentity, "user-workflow:telegram-bot")
+    XCTAssertEqual(preference.environmentFilePath, "/secrets/persona-a.env")
+    XCTAssertEqual(preference.environmentVariables["PERSONA"], "assistant-a")
+    XCTAssertEqual(preference.defaultVariables["persona"], .string("assistant-a"))
+    XCTAssertEqual(preference.nodePatches["worker"]?.model, "gpt-5-mini")
+
+    let encoded = try JSONEncoder().encode(decoded)
+    let redecoded = try JSONDecoder().decode(RielaAppDaemonWorkflowState.self, from: encoded)
+    XCTAssertEqual(redecoded, decoded)
+  }
+
   func testWorkflowStateStoresAssistantAssistance() throws {
     let state = RielaAppDaemonWorkflowState(
       assistant: RielaAppAssistantSettings(
@@ -446,6 +486,36 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
     await runtime.stop(identity: candidate.id)
   }
 
+  @MainActor
+  func testRuntimeFailsStartWhenInstancePatchChangesFrozenModel() async throws {
+    let root = try temporaryHome()
+    let workflowDirectory = root.appendingPathComponent(".riela/workflows/frozen-workflow", isDirectory: true)
+    try writeModelFrozenWorkflow(id: "frozen-workflow", to: workflowDirectory)
+    let runtime = RielaAppDaemonWorkflowRuntime(eventSourceFactory: NodePatchRestartFactory())
+    let candidate = RielaAppDaemonWorkflowCandidate(
+      id: "user-workflow:frozen-workflow",
+      workflowId: "frozen-workflow",
+      displayName: "frozen-workflow",
+      sourceDescription: "user workflow",
+      workflowDirectory: workflowDirectory.path,
+      workingDirectory: workflowDirectory.deletingLastPathComponent().path,
+      eventRoot: nil,
+      eventSources: []
+    )
+
+    await runtime.start(
+      candidate,
+      configuration: WorkflowServeRuntimeConfiguration(
+        workingDirectory: root.path,
+        nodePatch: ["worker": .object(["model": .string("gpt-5-mini")])]
+      )
+    )
+
+    let snapshot = runtime.snapshot(for: candidate.id)
+    XCTAssertEqual(snapshot.status, .failed)
+    XCTAssertTrue(snapshot.detail.contains("modelChangeFrozen") || snapshot.detail.contains("modelFreeze"), snapshot.detail)
+  }
+
   private func temporaryHome() throws -> URL {
     let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
       .appendingPathComponent("riela-app-node-patch-tests-\(UUID().uuidString)", isDirectory: true)
@@ -477,6 +547,48 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
       ]
     }
     """.write(to: directory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+  }
+
+  private func writeModelFrozenWorkflow(id: String, to directory: URL) throws {
+    try FileManager.default.createDirectory(
+      at: directory.appendingPathComponent("nodes", isDirectory: true),
+      withIntermediateDirectories: true
+    )
+    try """
+    {
+      "workflowId": "\(id)",
+      "defaults": {
+        "nodeTimeoutMs": 1000,
+        "maxLoopIterations": 1
+      },
+      "entryStepId": "worker",
+      "nodes": [
+        {
+          "id": "worker",
+          "nodeFile": "nodes/worker.node.json"
+        }
+      ],
+      "steps": [
+        {
+          "id": "worker",
+          "nodeId": "worker",
+          "role": "worker"
+        }
+      ]
+    }
+    """.write(to: directory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+    try """
+    {
+      "id": "worker",
+      "model": "gpt-5",
+      "modelFreeze": true,
+      "promptTemplate": "Reply"
+    }
+    """.write(
+      to: directory.appendingPathComponent("nodes/worker.node.json"),
+      atomically: true,
+      encoding: .utf8
+    )
   }
 }
 

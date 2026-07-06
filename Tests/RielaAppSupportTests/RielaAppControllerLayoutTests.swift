@@ -416,7 +416,7 @@ final class RielaAppControllerLayoutTests: XCTestCase {
     let splitView = try XCTUnwrap(firstSubview(of: NSSplitView.self, in: root))
     XCTAssertEqual(splitView.subviews.first?.frame.size.width ?? 0, 180, accuracy: 2)
     let tabView = try XCTUnwrap(firstSubview(of: NSTabView.self, in: root))
-    XCTAssertEqual(tabView.tabViewItems.map(\.label), ["Overview", "Variables", "Graph", "Run Log", "Structure"])
+    XCTAssertEqual(tabView.tabViewItems.map(\.label), ["Overview", "Variables", "Graph", "Timeline", "Run Log", "Structure"])
     XCTAssertEqual(tabView.contentCompressionResistancePriority(for: .vertical), .defaultLow)
     XCTAssertFalse(hasHeightConstraint(tabView, relation: .greaterThanOrEqual, constant: 300))
     let preferredHeight = try XCTUnwrap(heightConstraint(tabView, relation: .equal, constant: 300))

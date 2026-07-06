@@ -25,8 +25,11 @@ func addonVariables(for input: WorkflowAddonExecutionInput) -> JSONObject {
   return variables
 }
 
-func environmentValue(_ key: String) -> String? {
-  guard let value = CLIRuntimeEnvironment.mergedProcessEnvironment()[key], !value.isEmpty else {
+func environmentValue(
+  _ key: String,
+  environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment()
+) -> String? {
+  guard let value = environment[key], !value.isEmpty else {
     return nil
   }
   return value

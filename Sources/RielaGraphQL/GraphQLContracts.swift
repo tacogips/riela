@@ -266,6 +266,10 @@ public struct GraphQLWorkflowSessionDTO: Codable, Equatable, Sendable {
   public var failureReason: String?
   public var failureKind: String?
   public var stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic?
+  public var instanceIdentity: String?
+  public var instanceKind: String?
+  public var instanceBaseIdentity: String?
+  public var instanceConfiguration: JSONObject?
   public var stepExecutions: [GraphQLStepExecutionDTO]
   public var communications: [GraphQLCommunicationDTO]
   public var hookEvents: [GraphQLHookEventDTO]
@@ -287,6 +291,10 @@ public struct GraphQLWorkflowSessionDTO: Codable, Equatable, Sendable {
     failureReason: String? = nil,
     failureKind: String? = nil,
     stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic? = nil,
+    instanceIdentity: String? = nil,
+    instanceKind: String? = nil,
+    instanceBaseIdentity: String? = nil,
+    instanceConfiguration: JSONObject? = nil,
     stepExecutions: [GraphQLStepExecutionDTO] = [],
     communications: [GraphQLCommunicationDTO] = [],
     hookEvents: [GraphQLHookEventDTO] = [],
@@ -307,6 +315,10 @@ public struct GraphQLWorkflowSessionDTO: Codable, Equatable, Sendable {
     self.failureReason = failureReason
     self.failureKind = failureKind
     self.stepBudgetDiagnostic = stepBudgetDiagnostic
+    self.instanceIdentity = instanceIdentity
+    self.instanceKind = instanceKind
+    self.instanceBaseIdentity = instanceBaseIdentity
+    self.instanceConfiguration = instanceConfiguration
     self.stepExecutions = stepExecutions
     self.communications = communications
     self.hookEvents = hookEvents
@@ -326,6 +338,8 @@ public struct GraphQLWorkflowSessionSummaryDTO: Codable, Equatable, Sendable {
   public var status: String
   public var failureKind: String?
   public var currentStepId: String?
+  public var instanceIdentity: String?
+  public var instanceKind: String?
   public var executionCount: Int
   public var updatedAt: Date
   public var sessionStore: String?
@@ -336,6 +350,8 @@ public struct GraphQLWorkflowSessionSummaryDTO: Codable, Equatable, Sendable {
     status: String,
     failureKind: String? = nil,
     currentStepId: String? = nil,
+    instanceIdentity: String? = nil,
+    instanceKind: String? = nil,
     executionCount: Int,
     updatedAt: Date,
     sessionStore: String? = nil
@@ -345,6 +361,8 @@ public struct GraphQLWorkflowSessionSummaryDTO: Codable, Equatable, Sendable {
     self.status = status
     self.failureKind = failureKind
     self.currentStepId = currentStepId
+    self.instanceIdentity = instanceIdentity
+    self.instanceKind = instanceKind
     self.executionCount = executionCount
     self.updatedAt = updatedAt
     self.sessionStore = sessionStore
@@ -613,6 +631,78 @@ public struct GraphQLWorkflowSessionsResult: Codable, Equatable, Sendable {
   }
 }
 
+public struct GraphQLWorkflowInstanceDTO: Codable, Equatable, Sendable {
+  public var identity: String
+  public var workflowId: String
+  public var sourceIdentity: String?
+  public var displayName: String?
+  public var configuration: JSONObject
+
+  public init(instance: WorkflowInstanceDefinition) {
+    self.identity = instance.identity
+    self.workflowId = instance.workflowId
+    self.sourceIdentity = instance.sourceIdentity
+    self.displayName = instance.displayName
+    self.configuration = EffectiveWorkflowInstance(
+      identity: instance.identity,
+      kind: .named,
+      configuration: instance.configuration
+    ).configurationJSONObject
+  }
+}
+
+public struct GraphQLWorkflowInstanceInput: Codable, Equatable, Sendable {
+  public var identity: String
+  public var workflowId: String
+  public var sourceIdentity: String?
+  public var displayName: String?
+  public var configuration: WorkflowInstanceConfiguration
+
+  public init(
+    identity: String,
+    workflowId: String,
+    sourceIdentity: String? = nil,
+    displayName: String? = nil,
+    configuration: WorkflowInstanceConfiguration = WorkflowInstanceConfiguration()
+  ) {
+    self.identity = identity
+    self.workflowId = workflowId
+    self.sourceIdentity = sourceIdentity
+    self.displayName = displayName
+    self.configuration = configuration
+  }
+
+  public var definition: WorkflowInstanceDefinition {
+    WorkflowInstanceDefinition(
+      identity: identity,
+      workflowId: workflowId,
+      sourceIdentity: sourceIdentity,
+      displayName: displayName,
+      configuration: configuration
+    )
+  }
+}
+
+public struct GraphQLWorkflowInstanceQueryResult<Value: Codable & Equatable & Sendable>: Codable, Equatable, Sendable {
+  public var result: GraphQLControlPlaneResult
+  public var value: Value?
+
+  public init(result: GraphQLControlPlaneResult, value: Value? = nil) {
+    self.result = result
+    self.value = value
+  }
+}
+
+public struct GraphQLWorkflowInstanceMutationResult: Codable, Equatable, Sendable {
+  public var result: GraphQLControlPlaneResult
+  public var instance: GraphQLWorkflowInstanceDTO?
+
+  public init(result: GraphQLControlPlaneResult, instance: GraphQLWorkflowInstanceDTO? = nil) {
+    self.result = result
+    self.instance = instance
+  }
+}
+
 public protocol GraphQLControlPlaneServicing: Sendable {
   func inspectSession(_ request: GraphQLInspectSessionRequest) async -> GraphQLInspectSessionResult
   func workflowSessions(_ request: GraphQLWorkflowSessionsRequest) async -> GraphQLWorkflowSessionsResult
@@ -750,6 +840,10 @@ public enum GraphQLContractProjector {
     failureReason: String
     failureKind: String
     stepBudgetDiagnostic: StepBudgetDiagnostic
+    instanceIdentity: String
+    instanceKind: String
+    instanceBaseIdentity: String
+    instanceConfiguration: JSONObject
     stepExecutions: [StepExecution!]!
     communications: [Communication!]!
     hookEvents: [HookEvent!]!
@@ -782,9 +876,30 @@ public enum GraphQLContractProjector {
     status: String!
     failureKind: String
     currentStepId: String
+    instanceIdentity: String
+    instanceKind: String
     executionCount: Int!
     updatedAt: String!
     sessionStore: String
+  }
+  type WorkflowInstance {
+    identity: String!
+    workflowId: String!
+    sourceIdentity: String
+    displayName: String
+    configuration: JSONObject!
+  }
+  type WorkflowInstanceQueryPayload {
+    result: ControlPlaneResult!
+    value: WorkflowInstance
+  }
+  type WorkflowInstancesQueryPayload {
+    result: ControlPlaneResult!
+    value: [WorkflowInstance!]
+  }
+  type WorkflowInstanceMutationPayload {
+    result: ControlPlaneResult!
+    instance: WorkflowInstance
   }
   type StepExecution { executionId: String!, stepId: String!, nodeId: String!, attempt: Int!, backend: String, status: String!, failureReason: String }
   type Communication { communicationId: String!, fromStepId: String, toStepId: String, lifecycleStatus: String!, deliveryKind: String!, createdOrder: Int! }
@@ -797,6 +912,7 @@ public enum GraphQLContractProjector {
   input SendManagerMessageInput { workflowId: String!, workflowExecutionId: String!, message: String, actions: JSON, attachments: JSON, idempotencyKey: String, managerSessionId: String, managerNodeExecId: String }
   input ReplayCommunicationInput { workflowId: String!, workflowExecutionId: String!, communicationId: String!, reason: String, idempotencyKey: String, managerSessionId: String }
   input RetryCommunicationDeliveryInput { workflowId: String!, workflowExecutionId: String!, communicationId: String!, reason: String, idempotencyKey: String, managerSessionId: String }
+  input WorkflowInstanceInput { identity: String!, workflowId: String!, sourceIdentity: String, displayName: String, configuration: JSONObject }
   type Query {
     note(noteId: String!): NoteQueryPayload!
     notebook(notebookId: String!): NotebookQueryPayload!
@@ -809,6 +925,8 @@ public enum GraphQLContractProjector {
     tagClasses: NoteTagClassesQueryPayload!
     noteFile(fileId: String!): NoteFileQueryPayload!
     autoActions: NoteAutoActionsQueryPayload!
+    workflowInstances(workflowId: String): WorkflowInstancesQueryPayload!
+    workflowInstance(identity: String!, workflowId: String): WorkflowInstanceQueryPayload!
     workflowSession(workflowId: String!, sessionId: String!): WorkflowSession
     workflowSessions(workflowName: String, status: String, limit: Int): [WorkflowSessionSummary!]!
     loopEvidence(workflowId: String!, sessionId: String!): LoopEvidenceSummary
@@ -836,6 +954,9 @@ public enum GraphQLContractProjector {
     saveNoteConversation(input: SaveNoteConversationInput!): NoteMutationPayload!
     migrateNoteFileStorage(input: MigrateNoteFileStorageInput!): NoteFileMigrationPayload!
     migrateAllNoteFiles(input: MigrateAllNoteFilesInput!): NoteFileMigrationPayload!
+    createWorkflowInstance(input: WorkflowInstanceInput!): WorkflowInstanceMutationPayload!
+    updateWorkflowInstance(input: WorkflowInstanceInput!): WorkflowInstanceMutationPayload!
+    deleteWorkflowInstance(identity: String!, workflowId: String): WorkflowInstanceMutationPayload!
     continueSession(input: ContinueSessionInput!): ControlPlaneResult!
     sendManagerMessage(input: SendManagerMessageInput!): SendManagerMessagePayload!
     replayCommunication(input: ReplayCommunicationInput!): ReplayCommunicationPayload!
@@ -863,6 +984,10 @@ public enum GraphQLContractProjector {
       failureReason: session.failureReason,
       failureKind: session.failureKind?.rawValue,
       stepBudgetDiagnostic: session.stepBudgetDiagnostic,
+      instanceIdentity: session.instanceIdentity,
+      instanceKind: session.instanceKind,
+      instanceBaseIdentity: session.instanceBaseIdentity,
+      instanceConfiguration: session.instanceConfiguration,
       stepExecutions: session.executions.map {
         .init(
           executionId: $0.executionId,
@@ -926,6 +1051,8 @@ public enum GraphQLContractProjector {
       status: session.status.rawValue,
       failureKind: session.failureKind?.rawValue,
       currentStepId: session.currentStepId,
+      instanceIdentity: session.instanceIdentity,
+      instanceKind: session.instanceKind,
       executionCount: session.executions.count,
       updatedAt: session.updatedAt,
       sessionStore: sessionStore

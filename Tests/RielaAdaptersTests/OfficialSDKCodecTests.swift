@@ -71,6 +71,40 @@ final class OfficialSDKCodecTests: XCTestCase {
     XCTAssertEqual(response.text, "")
   }
 
+  func testOpenAICodecMapsStatusToStopReason() throws {
+    let response = try decodeOfficialSDKResponse(
+      provider: OpenAiSDKAdapter.provider,
+      raw: .object([
+        "output_text": .string("done"),
+        "status": .string("completed")
+      ]),
+      options: []
+    )
+
+    XCTAssertEqual(response.stopReason, "completed")
+  }
+
+  func testRelaxedParsingAcceptsStringEncodedUsageTokens() throws {
+    let response = try decodeOfficialSDKResponse(
+      provider: OpenAiSDKAdapter.provider,
+      raw: .object([
+        "output_text": .string("usage"),
+        "usage": .object([
+          "input_tokens": .string("12"),
+          "output_tokens": .string("7"),
+          "total_tokens": .string("19"),
+          "input_tokens_details": .object(["cached_tokens": .string("3")])
+        ])
+      ]),
+      options: .relaxed
+    )
+
+    XCTAssertEqual(response.usage?.inputTokens, 12)
+    XCTAssertEqual(response.usage?.outputTokens, 7)
+    XCTAssertEqual(response.usage?.totalTokens, 19)
+    XCTAssertEqual(response.usage?.cacheReadInputTokens, 3)
+  }
+
   func testAnthropicCodecDecodesTextAndUsage() throws {
     let response = try decodeOfficialSDKResponse(
       provider: AnthropicSDKAdapter.provider,

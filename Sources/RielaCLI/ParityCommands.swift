@@ -36,6 +36,7 @@ public struct WorkflowPackageCommandResult: Codable, Equatable, Sendable {
   public var command: String
   public var target: String?
   public var packages: [WorkflowPackageSummary]
+  public var dependencies: [WorkflowPackageSummary]?
   public var destinationDirectory: String?
   public var dryRun: Bool
   public var message: String
@@ -46,11 +47,100 @@ public struct WorkflowPackageSummary: Codable, Equatable, Sendable {
   public var name: String
   public var version: String?
   public var kind: WorkflowPackageKind
+  public var title: String?
+  public var description: String?
   public var tags: [String]
+  public var backends: [String]?
+  public var workflowIds: [String]?
+  public var addons: [WorkflowPackageAddonSummary]?
+  public var requiredEnvironment: [WorkflowPackageEnvironmentVariable]?
+  public var previousVersion: String?
+  public var previousChecksum: String?
+  public var installState: String?
+  public var updateState: String?
+  public var matchMetadata: WorkflowPackageMatchMetadata?
+  public var cacheMetadata: WorkflowPackageCacheMetadata?
   public var packageDirectory: String
   public var workflowDirectory: String?
   public var valid: Bool
   public var issues: [WorkflowPackageValidationIssue]
+
+  public init(
+    name: String,
+    version: String? = nil,
+    kind: WorkflowPackageKind,
+    title: String? = nil,
+    description: String? = nil,
+    tags: [String],
+    backends: [String]? = nil,
+    workflowIds: [String]? = nil,
+    addons: [WorkflowPackageAddonSummary]? = nil,
+    requiredEnvironment: [WorkflowPackageEnvironmentVariable]? = nil,
+    previousVersion: String? = nil,
+    previousChecksum: String? = nil,
+    installState: String? = nil,
+    updateState: String? = nil,
+    matchMetadata: WorkflowPackageMatchMetadata? = nil,
+    cacheMetadata: WorkflowPackageCacheMetadata? = nil,
+    packageDirectory: String,
+    workflowDirectory: String? = nil,
+    valid: Bool,
+    issues: [WorkflowPackageValidationIssue]
+  ) {
+    self.name = name
+    self.version = version
+    self.kind = kind
+    self.title = title
+    self.description = description
+    self.tags = tags
+    self.backends = backends
+    self.workflowIds = workflowIds
+    self.addons = addons
+    self.requiredEnvironment = requiredEnvironment
+    self.previousVersion = previousVersion
+    self.previousChecksum = previousChecksum
+    self.installState = installState
+    self.updateState = updateState
+    self.matchMetadata = matchMetadata
+    self.cacheMetadata = cacheMetadata
+    self.packageDirectory = packageDirectory
+    self.workflowDirectory = workflowDirectory
+    self.valid = valid
+    self.issues = issues
+  }
+}
+
+public struct WorkflowPackageAddonSummary: Codable, Equatable, Sendable {
+  public var name: String
+  public var version: String
+  public var sourcePath: String?
+  public var executionKind: WorkflowPackageAddonExecutionKind?
+  public var contentDigest: String?
+
+  public init(
+    name: String,
+    version: String,
+    sourcePath: String? = nil,
+    executionKind: WorkflowPackageAddonExecutionKind? = nil,
+    contentDigest: String? = nil
+  ) {
+    self.name = name
+    self.version = version
+    self.sourcePath = sourcePath
+    self.executionKind = executionKind
+    self.contentDigest = contentDigest
+  }
+}
+
+public struct WorkflowPackageMatchMetadata: Codable, Equatable, Sendable {
+  public var query: String?
+  public var fields: [String]
+}
+
+public struct WorkflowPackageCacheMetadata: Codable, Equatable, Sendable {
+  public var root: String
+  public var source: String
+  public var exists: Bool
 }
 
 public struct WorkflowPackageRegistryConfig: Codable, Equatable, Sendable {

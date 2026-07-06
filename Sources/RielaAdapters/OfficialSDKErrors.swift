@@ -69,6 +69,9 @@ func decodeOfficialSDKAPIError(
 }
 
 private func officialSDKErrorEnvelope(provider: String, value: JSONValue) -> (type: String?, message: String)? {
+  if case let .array(values) = value {
+    return values.lazy.compactMap { officialSDKErrorEnvelope(provider: provider, value: $0) }.first
+  }
   guard case let .object(object) = value else {
     return nil
   }

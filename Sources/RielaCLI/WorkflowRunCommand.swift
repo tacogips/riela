@@ -41,41 +41,52 @@ public struct WorkflowRunCommand: Sendable {
         workingDirectory: options.workingDirectory
       )
       var bundle = try resolveRunBundle(options: options, resolution: resolution)
-      if let patch = options.nodePatch {
-        bundle.nodePayloads = try patchApplier.applyNodePatch(
-          jsonLoader.object(from: patch, workingDirectory: options.workingDirectory),
-          to: bundle.nodePayloads
+      let variables = try parseVariables(options.variables, workingDirectory: options.workingDirectory)
+      let instanceResolution = try resolveEffectiveInstance(
+        options: options,
+        workflowId: bundle.workflow.workflowId,
+        variables: variables,
+        nodePayloads: bundle.nodePayloads
+      )
+      bundle.nodePayloads = instanceResolution.nodePayloads
+      if let saveInstance = options.saveInstance {
+        try saveEffectiveInstance(
+          identity: saveInstance,
+          workflowId: bundle.workflow.workflowId,
+          sourceIdentity: persistenceIdentity(
+            requestedResolution: resolution,
+            bundle: bundle,
+            fromRegistry: options.fromRegistry
+          ).workflowName,
+          effectiveInstance: instanceResolution.instance,
+          options: options
         )
       }
-      let variables = try parseVariables(options.variables, workingDirectory: options.workingDirectory)
+      let effectiveVariables = instanceResolution.instance.configuration.defaultVariables
+      let runWorkingDirectory = effectiveRunWorkingDirectory(options: options, instance: instanceResolution.instance)
+      let runEnvironment = try effectiveRunEnvironment(
+        configuration: instanceResolution.instance.configuration,
+        workingDirectory: runWorkingDirectory
+      )
       let adapter = try makeScenarioBackedNodeAdapter(
         scenarioPath: options.mockScenarioPath,
-        workingDirectory: options.workingDirectory,
-        autoImprove: options.autoImprove
+        workingDirectory: runWorkingDirectory,
+        autoImprove: options.autoImprove,
+        environment: runEnvironment
       )
       let stdioNodeExecutor = try makeScenarioBackedStdioNodeExecutor(
         scenarioPath: options.mockScenarioPath,
-        workingDirectory: options.workingDirectory
+        workingDirectory: runWorkingDirectory
       )
-      let addonResolver = try makeScenarioBackedAddonResolver(
+      let addonResolver = try await makeScenarioBackedAddonResolver(
         scenarioPath: options.mockScenarioPath,
-        workingDirectory: options.workingDirectory
+        workingDirectory: runWorkingDirectory,
+        environment: runEnvironment
       )
-      let persistedResolution = CLIWorkflowSessionResolution.resolutionForPersistence(
-        resolution: resolution,
-        resolvedSourceScope: bundle.sourceScope
-      )
-      let storeRoot = CLIWorkflowSessionStore.resolveRootDirectory(
-        sessionStore: options.sessionStore,
-        scope: persistedResolution.scope,
-        workingDirectory: options.workingDirectory
-      )
+      let storeRoot = storeRootForRun(options: options, resolution: resolution, resolvedSourceScope: bundle.sourceScope)
       let runtimeStore = InMemoryWorkflowRuntimeStore()
       try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: storeRoot)
-      let telemetry = RielaTelemetryFactory.make(configuration: .fromEnvironment(
-        CLIRuntimeEnvironment.mergedProcessEnvironment(),
-        surface: .cli
-      ))
+      let telemetry = makeTelemetry(environment: runEnvironment)
       let runner = DeterministicWorkflowRunner(
         store: runtimeStore,
         adapter: adapter,
@@ -100,7 +111,7 @@ public struct WorkflowRunCommand: Sendable {
             resolution: persistedIdentity.resolution,
             storeRoot: storeRoot,
             bundle: persistenceBundle,
-            variables: variables,
+            variables: effectiveVariables,
             runtimeStore: runtimeStore,
             options: options,
             recorder: jsonlRecorder,
@@ -124,7 +135,7 @@ public struct WorkflowRunCommand: Sendable {
       let initialRequest = DeterministicWorkflowRunRequest(
         workflow: bundle.workflow,
         nodePayloads: bundle.nodePayloads,
-        variables: variables,
+        variables: effectiveVariables,
         maxSteps: options.maxSteps,
         maxConcurrency: options.maxConcurrency,
         maxLoopIterations: options.maxLoopIterations,
@@ -132,6 +143,7 @@ public struct WorkflowRunCommand: Sendable {
         timeoutMs: options.timeoutMs,
         agentSilenceWarningMs: options.agentSilenceWarningMs,
         agentSilenceMonitorIntervalMs: options.agentSilenceMonitorIntervalMs,
+        effectiveInstance: instanceResolution.instance,
         eventHandler: runEventHandler
       )
       if options.autoImprove {
@@ -140,7 +152,7 @@ public struct WorkflowRunCommand: Sendable {
           runner: runner,
           workflow: bundle.workflow,
           nodePayloads: bundle.nodePayloads,
-          variables: variables,
+          variables: effectiveVariables,
           options: options,
           runtimeStore: runtimeStore
         )
@@ -149,7 +161,7 @@ public struct WorkflowRunCommand: Sendable {
           session: finalResult.session,
           workflowMessages: workflowMessages,
           bundle: bundle,
-          variables: variables,
+          variables: effectiveVariables,
           recovery: finalResult.recovery
         )
         finalResult.loopEvidence = loopEvidence.map(LoopEvidenceSummary.init)
@@ -161,11 +173,11 @@ public struct WorkflowRunCommand: Sendable {
           result: finalResult,
           workflowMessages: workflowMessages,
           bundle: bundle,
-          variables: variables,
+          variables: effectiveVariables,
           options: options,
           loopEvidence: loopEvidence
         )
-        await telemetry.flush(timeout: .seconds(2))
+        await telemetry.flush(timeout: Duration.seconds(2))
         return CLICommandResult(
           exitCode: CLIExitCode(rawValue: finalResult.exitCode) ?? .failure,
           stdout: try await renderRunResult(finalResult, output: options.output, jsonlRecorder: jsonlRecorder)
@@ -177,7 +189,7 @@ public struct WorkflowRunCommand: Sendable {
         session: finalResult.session,
         workflowMessages: workflowMessages,
         bundle: bundle,
-        variables: variables,
+        variables: effectiveVariables,
         recovery: finalResult.recovery
       )
       finalResult.loopEvidence = loopEvidence.map(LoopEvidenceSummary.init)
@@ -189,11 +201,11 @@ public struct WorkflowRunCommand: Sendable {
         result: finalResult,
         workflowMessages: workflowMessages,
         bundle: bundle,
-        variables: variables,
+        variables: effectiveVariables,
         options: options,
         loopEvidence: loopEvidence
       )
-      await telemetry.flush(timeout: .seconds(2))
+      await telemetry.flush(timeout: Duration.seconds(2))
       return CLICommandResult(
         exitCode: CLIExitCode(rawValue: finalResult.exitCode) ?? .failure,
         stdout: try await renderRunResult(finalResult, output: options.output, jsonlRecorder: jsonlRecorder)
@@ -300,6 +312,7 @@ public struct WorkflowRunCommand: Sendable {
     let managerSessionId = nonEmptyString(environment["RIELA_MANAGER_SESSION_ID"])
     let request = WorkflowRemoteRunRequest(
       workflowName: options.target,
+      instanceIdentity: options.instance,
       runtimeVariables: variables,
       nodePatch: nodePatch,
       autoImprove: options.autoImprove,
@@ -327,10 +340,127 @@ public struct WorkflowRunCommand: Sendable {
     return try jsonLoader.object(from: reference, workingDirectory: workingDirectory)
   }
 
+  private func makeTelemetry(environment: [String: String]) -> any RielaTelemetry {
+    RielaTelemetryFactory.make(configuration: .fromEnvironment(environment, surface: .cli))
+  }
+
+  private func resolveEffectiveInstance(
+    options: WorkflowRunOptions,
+    workflowId: String,
+    variables: JSONObject,
+    nodePayloads: [String: AgentNodePayload]
+  ) throws -> (instance: EffectiveWorkflowInstance, nodePayloads: [String: AgentNodePayload]) {
+    let runNodePatch = try parsedNodePatch(options.nodePatch, workingDirectory: options.workingDirectory)
+    let base = try baseInstance(options: options, workflowId: workflowId)
+    return try WorkflowInstanceResolver.resolve(
+      workflowId: workflowId,
+      base: base,
+      runVariables: variables,
+      runNodePatch: runNodePatch,
+      nodePayloads: nodePayloads
+    )
+  }
+
+  private func parsedNodePatch(
+    _ reference: String?,
+    workingDirectory: String
+  ) throws -> [String: WorkflowInstanceNodePatch] {
+    guard let reference else {
+      return [:]
+    }
+    return try WorkflowInstanceResolver.nodePatches(
+      from: jsonLoader.object(from: reference, workingDirectory: workingDirectory)
+    )
+  }
+
+  private func baseInstance(
+    options: WorkflowRunOptions,
+    workflowId: String
+  ) throws -> WorkflowInstanceDefinition? {
+    guard let identity = nonEmptyString(options.instance),
+          identity != WorkflowInstanceIdentity.defaultIdentity else {
+      return nil
+    }
+    let stores = ScopedWorkflowInstanceStore(workingDirectory: options.workingDirectory)
+    guard let resolved = try stores.find(
+      identity: identity,
+      workflowId: workflowId,
+      scope: options.instanceScope
+    ) else {
+      throw WorkflowInstanceStoreError.notFound(identity)
+    }
+    return resolved.1
+  }
+
+  private func saveEffectiveInstance(
+    identity: String,
+    workflowId: String,
+    sourceIdentity: String?,
+    effectiveInstance: EffectiveWorkflowInstance,
+    options: WorkflowRunOptions
+  ) throws {
+    let scope = options.instanceScope ?? .project
+    let stores = ScopedWorkflowInstanceStore(workingDirectory: options.workingDirectory)
+    let instance = WorkflowInstanceDefinition(
+      identity: identity,
+      workflowId: workflowId,
+      sourceIdentity: sourceIdentity,
+      configuration: effectiveInstance.configuration
+    )
+    try stores.save(instance, scope: scope)
+  }
+
+  private func effectiveRunWorkingDirectory(
+    options: WorkflowRunOptions,
+    instance: EffectiveWorkflowInstance
+  ) -> String {
+    guard !options.explicitWorkingDirectory,
+          let workingDirectory = instance.configuration.normalizedWorkingDirectory else {
+      return options.workingDirectory
+    }
+    return workingDirectory
+  }
+
+  private func effectiveRunEnvironment(
+    configuration: WorkflowInstanceConfiguration,
+    workingDirectory: String
+  ) throws -> [String: String] {
+    var environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
+    if let environmentFilePath = configuration.environmentFilePath?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !environmentFilePath.isEmpty {
+      let environmentFileURL = absoluteURL(
+        environmentFilePath,
+        relativeTo: URL(fileURLWithPath: workingDirectory, isDirectory: true)
+      )
+      environment.merge(try parseEnvironmentFile(environmentFileURL)) { _, fileValue in fileValue }
+    }
+    environment.merge(configuration.environmentVariables) { _, instanceValue in instanceValue }
+    return environment
+  }
+
   private func rejectUnsupportedRunOptions(_ options: WorkflowRunOptions) throws {
     if options.fromRegistry && isTemporaryWorkflowRunTarget(options.target, workingDirectory: options.workingDirectory) {
       throw CLIUsageError("temporary workflow JSON cannot be combined with --from-registry")
     }
+    if options.endpoint != nil && options.saveInstance != nil {
+      throw CLIUsageError("--save-instance is local-only and cannot be combined with --endpoint")
+    }
+  }
+
+  private func storeRootForRun(
+    options: WorkflowRunOptions,
+    resolution: WorkflowResolutionOptions,
+    resolvedSourceScope: WorkflowScope
+  ) -> String {
+    let persistedResolution = CLIWorkflowSessionResolution.resolutionForPersistence(
+      resolution: resolution,
+      resolvedSourceScope: resolvedSourceScope
+    )
+    return CLIWorkflowSessionStore.resolveRootDirectory(
+      sessionStore: options.sessionStore,
+      scope: persistedResolution.scope,
+      workingDirectory: options.workingDirectory
+    )
   }
 
   private func persistSessionRecord(
@@ -713,4 +843,46 @@ private func workflowRunPath(_ child: URL, isContainedIn parent: URL) -> Bool {
   let parentPath = parent.standardizedFileURL.path
   let childPath = child.standardizedFileURL.path
   return childPath == parentPath || childPath.hasPrefix(parentPath + "/")
+}
+
+private func parseEnvironmentFile(_ url: URL) throws -> [String: String] {
+  guard FileManager.default.fileExists(atPath: url.path) else {
+    throw CLIUsageError("instance environment file not found: \(url.path)")
+  }
+  let contents = try String(contentsOf: url, encoding: .utf8)
+  var values: [String: String] = [:]
+  for rawLine in contents.components(separatedBy: .newlines) {
+    let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !line.isEmpty, !line.hasPrefix("#") else {
+      continue
+    }
+    let assignment = line.hasPrefix("export ")
+      ? String(line.dropFirst("export ".count)).trimmingCharacters(in: .whitespaces)
+      : line
+    guard let separator = assignment.firstIndex(of: "=") else {
+      continue
+    }
+    let key = assignment[..<separator].trimmingCharacters(in: .whitespaces)
+    guard isValidEnvironmentVariableName(String(key)) else {
+      continue
+    }
+    let value = assignment[assignment.index(after: separator)...].trimmingCharacters(in: .whitespaces)
+    values[String(key)] = unquotedEnvironmentValue(String(value))
+  }
+  return values
+}
+
+private func isValidEnvironmentVariableName(_ name: String) -> Bool {
+  name.range(of: #"^[A-Za-z_][A-Za-z0-9_]*$"#, options: .regularExpression) != nil
+}
+
+private func unquotedEnvironmentValue(_ value: String) -> String {
+  guard value.count >= 2,
+        let first = value.first,
+        let last = value.last,
+        (first == "\"" && last == "\"") || (first == "'" && last == "'") else {
+    return value
+  }
+  return String(value.dropFirst().dropLast())
+    .replacingOccurrences(of: "'\\''", with: "'")
 }

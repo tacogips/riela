@@ -623,10 +623,15 @@ final class WorkflowCommandTests: XCTestCase {
 
   func testBuiltinSDKWorkerExecutesInjectedLiveAdapter() async throws {
     let harness = RecordingSDKAddonHarness()
+    let usage = AdapterUsage(inputTokens: 21, outputTokens: 8, totalTokens: 29)
     let output = try await BuiltinWorkflowAddonResolver(
       environment: ["CURSOR_API_KEY": "cursor-secret"],
       cursorAdapterFactory: { _ in
-        return await harness.makeAdapter(provider: "cursor-cli-agent", text: "最近はいい感じ。短く試せる形で返すね。")
+        return await harness.makeAdapter(
+          provider: "cursor-cli-agent",
+          text: "最近はいい感じ。短く試せる形で返すね。",
+          usage: usage
+        )
       }
     ).execute(
       WorkflowAddonExecutionInput(
@@ -660,6 +665,7 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertEqual(output.payload["replyText"], .string("最近はいい感じ。短く試せる形で返すね。"))
     XCTAssertEqual(output.payload["liveExecution"], .bool(true))
     XCTAssertNil(output.payload["inputFilterSkipped"])
+    XCTAssertEqual(output.usage, usage)
 
     let inputs = await harness.recordedInputs()
     let input = try XCTUnwrap(inputs.first)
@@ -669,7 +675,7 @@ final class WorkflowCommandTests: XCTestCase {
 
   func testScenarioBackedAddonResolverUsesMockResponseBeforeFallback() async throws {
     let root = repositoryRoot()
-    let resolver = try makeScenarioBackedAddonResolver(
+    let resolver = try await makeScenarioBackedAddonResolver(
       scenarioPath: "\(root)/examples/telegram-sdk-trio-chat/mock-scenario.json",
       workingDirectory: root
     )

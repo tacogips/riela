@@ -178,6 +178,26 @@ final class AdapterUtilitiesTests: XCTestCase {
     XCTAssertEqual(attempts.value(), 2)
   }
 
+  func testExecuteWithRetryCapsRetryAfterAtMaxDelay() async throws {
+    let attempts = RetryAttemptRecorder()
+
+    let output: String = try await executeWithRetry(
+      policy: RetryPolicy(maxAttempts: 2, retryDelay: .seconds(30), maxDelay: .milliseconds(1)),
+      deadline: Date(timeIntervalSince1970: 100.005),
+      now: { Date(timeIntervalSince1970: 100) },
+      operation: {
+        if attempts.increment() == 1 {
+          throw AdapterExecutionError(.providerError, "rate limited", retryAfter: .seconds(60))
+        }
+        return "ok"
+      },
+      normalizeError: { normalizeAdapterFailure($0, fallbackMessage: "adapter failed") }
+    )
+
+    XCTAssertEqual(output, "ok")
+    XCTAssertEqual(attempts.value(), 2)
+  }
+
   func testExecuteWithRetryAppliesFullJitterDelay() async throws {
     let attempts = RetryAttemptRecorder()
 

@@ -18,6 +18,7 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
   let loader = WorkflowViewerLoader()
   let outlineView = NSOutlineView()
   private let sessionPopup = NSPopUpButton()
+  private let viewerModeControl = NSSegmentedControl(labels: ["Outline", "Timeline"], trackingMode: .selectOne, target: nil, action: nil)
   private let templatePopup = NSPopUpButton()
   private let workflowTitleLabel = NSTextField(labelWithString: "Select Workflow")
   let workflowSubtitleLabel = NSTextField(labelWithString: "")
@@ -31,6 +32,13 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
   private let logTextView = NSTextView()
   private let structureTextView = NSTextView()
   let workflowGraphPaneView = DaemonWorkflowGraphPaneView()
+  lazy var workflowTimelinePaneView = WorkflowExecutionTimelinePaneView(
+    dateFormatter: timelineDateFormatter,
+    durationFormatter: { [weak self] duration in
+      self?.timelineDuration(duration) ?? (duration.map { String(format: "%.2fs", max(0, $0)) } ?? "running")
+    }
+  )
+  private weak var contentTabView: NSTabView?
   let managerResponseBanner = NSStackView()
   let managerResponseLabel = NSTextField(labelWithString: "")
   let managerResponseStatusLabel = NSTextField(labelWithString: "")
@@ -130,7 +138,8 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     assistantProfileName: RielaAppProfileName = .default,
     assistantSettings: RielaAppAssistantSettings = RielaAppAssistantSettings(),
     onSaveAssistantSettings: ((RielaAppAssistantSettings) -> String?)? = nil,
-    onSubmitAssistantMessage: ((String, String?) -> Void)? = nil
+    onSubmitAssistantMessage: ((String, String?) -> Void)? = nil,
+    openTimeline: Bool = false
   ) {
     if self.workflowDirectory != workflowDirectory {
       selectedNodeId = nil
@@ -155,7 +164,9 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     updateVariableLabels()
     updateAssistantPanel()
     refresh()
-    startLiveRefreshTimer()
+    if openTimeline {
+      selectTimelineMode()
+    }
     showWindow(nil)
     window?.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
@@ -204,7 +215,11 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     sessionPopup.target = self
     sessionPopup.action = #selector(sessionSelectionChanged)
     configureCompactPopup(sessionPopup, maximumWidth: 260)
-    let sessionRow = workflowViewerControlRow(title: "Session", views: [sessionPopup, refreshButton])
+    viewerModeControl.selectedSegment = 0
+    viewerModeControl.target = self
+    viewerModeControl.action = #selector(viewerModeChanged)
+    viewerModeControl.setAccessibilityLabel("Viewer Mode")
+    let sessionRow = workflowViewerControlRow(title: "Session", views: [sessionPopup, refreshButton, viewerModeControl])
 
     configureCompactPopup(modelPopup, maximumWidth: 220)
     configureCompactPopup(backendPopup, maximumWidth: 180)
@@ -299,6 +314,7 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     let logScroll = scrollView(for: logTextView)
     let structureScroll = scrollView(for: structureTextView)
     let graphView = graphTabView()
+    let timelineView = timelineTabView()
     let managerResponseView = managerResponseBarView()
 
     templateTextView.isEditable = false
@@ -346,10 +362,12 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     variablesStack.translatesAutoresizingMaskIntoConstraints = false
 
     let tabView = NSTabView()
+    contentTabView = tabView
     tabView.translatesAutoresizingMaskIntoConstraints = false
     tabView.addTabViewItem(tabItem(label: "Overview", view: editStack))
     tabView.addTabViewItem(tabItem(label: "Variables", view: variablesStack))
     tabView.addTabViewItem(tabItem(label: "Graph", view: graphView))
+    tabView.addTabViewItem(tabItem(label: "Timeline", view: timelineView))
     tabView.addTabViewItem(tabItem(label: "Run Log", view: logScroll))
     tabView.addTabViewItem(tabItem(label: "Structure", view: structureScroll))
 
@@ -517,6 +535,7 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
       outlineView.reloadData()
       expandAll()
       updateDetails()
+      updateLiveRefreshTimer()
     } catch {
       setViewerMessage("Failed to switch session: \(error)")
     }
@@ -536,10 +555,12 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
       state = loaded
       selectedNodeId = selectedNodeId ?? loaded.workflow.entryStepId
       updateGraphPane(for: loaded)
+      updateTimelinePane(for: loaded)
       updateSessionPopup(for: loaded)
       outlineView.reloadData()
       expandAll()
       updateDetails()
+      updateLiveRefreshTimer()
     } catch {
       workflowTitleLabel.stringValue = "Unable to load workflow"
       setViewerMessage("\(error)")
@@ -548,6 +569,8 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
       setStructureText("")
       updateManagerResponseControls(state: nil, session: nil)
       workflowGraphPaneView.showUnavailable("\(error)")
+      workflowTimelinePaneView.showUnavailable("\(error)")
+      updateLiveRefreshTimer()
     }
   }
 
@@ -646,46 +669,6 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     setDetailText(lines.joined(separator: "\n"))
     setLogText(renderRunLog(state: state, selectedStepId: selectedNodeId, session: session).joined(separator: "\n"))
     setStructureText(renderWorkflowStructure(state: state).joined(separator: "\n"))
-  }
-
-  private func setDetailText(_ text: String) {
-    detailTextView.textStorage?.setAttributedString(NSAttributedString(
-      string: text,
-      attributes: [
-        .font: detailFont,
-        .foregroundColor: detailTextColor,
-        .backgroundColor: detailBackgroundColor
-      ]
-    ))
-  }
-
-  private func setLogText(_ text: String) {
-    logTextView.textStorage?.setAttributedString(NSAttributedString(
-      string: text,
-      attributes: [
-        .font: detailFont,
-        .foregroundColor: detailTextColor,
-        .backgroundColor: detailBackgroundColor
-      ]
-    ))
-  }
-
-  private func setStructureText(_ text: String) {
-    structureTextView.textStorage?.setAttributedString(NSAttributedString(
-      string: text,
-      attributes: [
-        .font: detailFont,
-        .foregroundColor: detailTextColor,
-        .backgroundColor: detailBackgroundColor
-      ]
-    ))
-  }
-
-  private func setTemplateText(_ text: String) {
-    templateTextView.textStorage?.setAttributedString(NSAttributedString(
-      string: text,
-      attributes: [.font: templateFont]
-    ))
   }
 
   private func updateNodePatchControls(for node: WorkflowViewerNode?) {
@@ -861,6 +844,78 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     }
   }
 
+}
+
+extension WorkflowViewerWindowController {
+  @objc func viewerModeChanged() {
+    guard let contentTabView else {
+      return
+    }
+    let targetLabel = viewerModeControl.selectedSegment == 1 ? "Timeline" : "Run Log"
+    if let item = contentTabView.tabViewItems.first(where: { $0.label == targetLabel }) {
+      contentTabView.selectTabViewItem(item)
+    }
+    updateLiveRefreshTimer()
+  }
+
+  func selectTimelineMode() {
+    viewerModeControl.selectedSegment = 1
+    viewerModeChanged()
+  }
+
+  func updateTimelinePane(for state: WorkflowViewerState) {
+    workflowTimelinePaneView.update(state: state)
+  }
+
+  func updateLiveRefreshTimer() {
+    guard let state,
+      selectedSession(in: state)?.status == .running
+    else {
+      stopLiveRefreshTimer()
+      return
+    }
+    startLiveRefreshTimer()
+  }
+
+  func setDetailText(_ text: String) {
+    detailTextView.textStorage?.setAttributedString(NSAttributedString(
+      string: text,
+      attributes: [
+        .font: detailFont,
+        .foregroundColor: detailTextColor,
+        .backgroundColor: detailBackgroundColor
+      ]
+    ))
+  }
+
+  func setLogText(_ text: String) {
+    logTextView.textStorage?.setAttributedString(NSAttributedString(
+      string: text,
+      attributes: [
+        .font: detailFont,
+        .foregroundColor: detailTextColor,
+        .backgroundColor: detailBackgroundColor
+      ]
+    ))
+  }
+
+  func setStructureText(_ text: String) {
+    structureTextView.textStorage?.setAttributedString(NSAttributedString(
+      string: text,
+      attributes: [
+        .font: detailFont,
+        .foregroundColor: detailTextColor,
+        .backgroundColor: detailBackgroundColor
+      ]
+    ))
+  }
+
+  func setTemplateText(_ text: String) {
+    templateTextView.textStorage?.setAttributedString(NSAttributedString(
+      string: text,
+      attributes: [.font: templateFont]
+    ))
+  }
 }
 
 #endif

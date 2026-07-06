@@ -34,6 +34,7 @@ impl-plans/
 | `active/riela-note` | Partially implemented; local note GraphQL/UI/add-ons shipped, remote socket and real libsql sync remain follow-ups | `design-riela-note` |
 | `active/riela-note-ui-refinements` | Implemented; post-review follow-ups pending (TASK-012–018, incl. critical SDL fix) | `design-riela-note-ui-refinements` |
 | `active/official-sdk-adapter-improvements` | Implemented; full Swift test, focused SDK suites, live Anthropic streaming verification, and Riela review passed | `design-official-sdk-adapter-improvements` |
+| `active/official-sdk-adapter-review-improvements` | Planning; fixes for the 2026-07-06 adversarial review of commit 76ed0cb (5 major findings) | `design-official-sdk-adapter-review-improvements` |
 | `active/package-checkout-content-digest-metadata` | In Progress | `architecture#workflow-checkout-boundary` |
 | `active/swift-cli-runtime-parity-gap-closure` | Active; Swift parity follow-through | `design-swift-cli-runtime-parity-gap-closure` |
 | `active/workflow-progress-observability` | Implemented; completion-audit verified | `design-workflow-progress-observability` |
@@ -41,6 +42,9 @@ impl-plans/
 | `active/workflow-package-publish` | In Progress | `design-workflow-package-publish#workflow-package-publish` |
 | `active/workflow-package-registry` | In Progress | `design-workflow-package-registry#workflow-package-registry` |
 | `active/workflow-package-registry-migration` | In Progress | `design-workflow-package-migration` |
+| `active/package-manager-ux-gap-closure` | Planning; gaps reproduced against riela 0.1.17 during the 2026-07-06 riela-packages audit | `design-package-manager-ux-gap-closure` |
+| `active/rielaapp-instance-execution-timeline` | Planning | `design-rielaapp-instance-execution-timeline` |
+| `active/workflow-instance-unification` | In Progress; Core resolver, project/user CLI instances, run/rerun provenance, GraphQL instance contracts, and examples landed; App preflight/listing remain | `design-workflow-instance-unification` |
 
 ## Recently Completed
 

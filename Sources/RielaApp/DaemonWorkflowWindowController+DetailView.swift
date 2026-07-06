@@ -13,6 +13,11 @@ extension DaemonWorkflowWindowController {
       detail: "Inspect sessions, logs, and node structure for this instance.",
       action: #selector(openSelectedInstanceViewer)
     )
+    let executionLogRow = actionRow(
+      title: "View Execution Log",
+      detail: "Open the latest session timeline with node bars, transitions, logs, inbox, and outbox.",
+      action: #selector(openSelectedInstanceExecutionLog)
+    )
     let startRow = actionRow(
       title: "Start",
       detail: "Run this instance and include it in future app launches.",
@@ -74,6 +79,7 @@ extension DaemonWorkflowWindowController {
     eventSourcesSettingRow = eventSourcesRow
     relinkSourceActionRow = relinkRow
     openViewerActionRow = openViewerRow
+    openExecutionLogActionRow = executionLogRow
     startInstanceActionRow = startRow
     stopInstanceActionRow = stopRow
     restartInstanceActionRow = restartRow
@@ -96,6 +102,7 @@ extension DaemonWorkflowWindowController {
     ])
     let actionsSection = rielaAppSettingsSection(rows: [
       openViewerRow,
+      executionLogRow,
       relinkRow,
       startRow,
       stopRow,

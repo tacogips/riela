@@ -252,6 +252,7 @@ public struct WorkflowRemoteRunResultRecord: Codable, Equatable, Sendable {
 
 public struct WorkflowRemoteRunRequest: Codable, Equatable, Sendable {
   public var workflowName: String
+  public var instanceIdentity: String?
   public var runtimeVariables: JSONObject
   public var nodePatch: JSONObject?
   public var autoImprove: Bool
@@ -267,6 +268,7 @@ public struct WorkflowRemoteRunRequest: Codable, Equatable, Sendable {
 
   public init(
     workflowName: String,
+    instanceIdentity: String? = nil,
     runtimeVariables: JSONObject = [:],
     nodePatch: JSONObject? = nil,
     autoImprove: Bool = false,
@@ -281,6 +283,7 @@ public struct WorkflowRemoteRunRequest: Codable, Equatable, Sendable {
     managerSessionId: String? = nil
   ) {
     self.workflowName = workflowName
+    self.instanceIdentity = instanceIdentity
     self.runtimeVariables = runtimeVariables
     self.nodePatch = nodePatch
     self.autoImprove = autoImprove
@@ -463,6 +466,9 @@ private func remoteRunInputObject(_ request: WorkflowRemoteRunRequest) -> JSONOb
     "workflowName": .string(request.workflowName),
     "runtimeVariables": .object(request.runtimeVariables)
   ]
+  if let instanceIdentity = request.instanceIdentity {
+    input["instanceIdentity"] = .string(instanceIdentity)
+  }
   if request.autoImprove {
     input["autoImprove"] = .object(remoteAutoImprovePolicyInput(request.autoImprovePolicy))
   }

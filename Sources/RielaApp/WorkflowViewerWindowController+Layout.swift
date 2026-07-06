@@ -84,6 +84,19 @@ extension WorkflowViewerWindowController {
     return container
   }
 
+  func timelineTabView() -> NSView {
+    let container = NSView()
+    workflowTimelinePaneView.translatesAutoresizingMaskIntoConstraints = false
+    container.addSubview(workflowTimelinePaneView)
+    NSLayoutConstraint.activate([
+      workflowTimelinePaneView.topAnchor.constraint(equalTo: container.topAnchor),
+      workflowTimelinePaneView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+      workflowTimelinePaneView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+      workflowTimelinePaneView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+    ])
+    return container
+  }
+
   func managerResponseBarView() -> NSView {
     managerResponseBanner.orientation = .horizontal
     managerResponseBanner.alignment = .centerY

@@ -83,6 +83,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
   private let onRenameWorkflow: (String) -> Void
   private let onRemoveInstance: (String) -> Void
   private let onOpenViewer: (String) -> Void
+  private let onOpenExecutionLog: (String) -> Void
   private let onOpenWorkflowSourceViewer: (String) -> Void
   let defaultInstanceId: (String) -> String
   private let onStartInstance: (String) -> Void
@@ -147,6 +148,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
   weak var eventSourcesSettingRow: NSView?
   weak var relinkSourceActionRow: NSView?
   weak var openViewerActionRow: NSView?
+  weak var openExecutionLogActionRow: NSView?
   weak var startInstanceActionRow: NSView?
   weak var stopInstanceActionRow: NSView?
   weak var restartInstanceActionRow: NSView?
@@ -208,6 +210,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
     onRenameWorkflow: @escaping (String) -> Void,
     onRemoveInstance: @escaping (String) -> Void,
     onOpenViewer: @escaping (String) -> Void = { _ in },
+    onOpenExecutionLog: @escaping (String) -> Void = { _ in },
     onOpenWorkflowSourceViewer: @escaping (String) -> Void = { _ in },
     defaultInstanceId: @escaping (String) -> String = { _ in "" },
     onStartInstance: @escaping (String) -> Void,
@@ -238,6 +241,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
     self.onRenameWorkflow = onRenameWorkflow
     self.onRemoveInstance = onRemoveInstance
     self.onOpenViewer = onOpenViewer
+    self.onOpenExecutionLog = onOpenExecutionLog
     self.onOpenWorkflowSourceViewer = onOpenWorkflowSourceViewer
     self.defaultInstanceId = defaultInstanceId
     self.onStartInstance = onStartInstance
@@ -522,6 +526,13 @@ extension DaemonWorkflowWindowController {
     onOpenViewer(row.id)
   }
 
+  @objc func openSelectedInstanceExecutionLog() {
+    guard let row = selectedRow(), row.state != .needsSource else {
+      return
+    }
+    onOpenExecutionLog(row.id)
+  }
+
   @objc func openSelectedWorkflowSourceViewer() {
     guard let selectedWorkflowSourceId else {
       return
@@ -755,6 +766,7 @@ extension DaemonWorkflowWindowController {
     eventSourcesSettingRow?.isHidden = needsSource
     relinkSourceActionRow?.isHidden = !needsSource
     openViewerActionRow?.isHidden = needsSource
+    openExecutionLogActionRow?.isHidden = needsSource
     startInstanceActionRow?.isHidden = !showsStartAction(for: state)
     stopInstanceActionRow?.isHidden = !showsStopAction(for: state)
     restartInstanceActionRow?.isHidden = !showsRestartAction(for: state)

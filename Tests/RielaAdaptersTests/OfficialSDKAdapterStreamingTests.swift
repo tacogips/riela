@@ -236,6 +236,223 @@ extension OfficialSDKAdapterTests {
     XCTAssertEqual(events.events().first?.contentDelta, "partial")
   }
 
+  func testStreamingHTTPRetryAfterFailureFallsBackToBlockingRequest() async throws {
+    let stream = streamingResponse(
+      chunks: [
+        #"{"error":{"type":"rate_limit_error","message":"slow down"}}"#
+      ],
+      statusCode: 429,
+      headers: ["Retry-After": "0.001"]
+    )
+    let streamingTransport = RecordingOfficialSDKStreamingTransport(responses: [.success(stream)])
+    let httpTransport = RecordingOfficialSDKHTTPTransport(responses: [
+      try httpResponse(["output_text": .string("blocking after stream throttle")])
+    ])
+    let adapter = OpenAiSDKAdapter(
+      configuration: OfficialSDKAdapterConfiguration(
+        apiKeyEnv: "TEST_OPENAI_KEY",
+        environment: ["TEST_OPENAI_KEY": openAITestKey()],
+        httpTransport: httpTransport,
+        streamingTransport: streamingTransport
+      )
+    )
+
+    let output = try await adapter.execute(openAIInput(), context: AdapterExecutionContext())
+
+    XCTAssertEqual(output.payload["text"], .string("blocking after stream throttle"))
+    XCTAssertEqual(streamingTransport.requests().count, 1)
+    XCTAssertEqual(httpTransport.requests().count, 1)
+  }
+
+  func testStreamingOutputContractValidationDoesNotFallbackToBlockingRequest() async throws {
+    let stream = streamingResponse(chunks: [
+      #"data: {"type":"response.output_text.delta","delta":"not-json"}\n\n"#
+    ])
+    let streamingTransport = RecordingOfficialSDKStreamingTransport(responses: [.success(stream)])
+    let httpTransport = RecordingOfficialSDKHTTPTransport(responses: [
+      try httpResponse(["output_text": .string("must not be used")])
+    ])
+    let adapter = OpenAiSDKAdapter(
+      configuration: OfficialSDKAdapterConfiguration(
+        apiKeyEnv: "TEST_OPENAI_KEY",
+        environment: ["TEST_OPENAI_KEY": openAITestKey()],
+        httpTransport: httpTransport,
+        streamingTransport: streamingTransport
+      )
+    )
+
+    do {
+      _ = try await adapter.execute(
+        openAIInput(output: NodeOutputContract(description: "business JSON")),
+        context: AdapterExecutionContext()
+      )
+      XCTFail("Expected output-contract validation failure")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .invalidOutput)
+      XCTAssertEqual(streamingTransport.requests().count, 1)
+      XCTAssertTrue(httpTransport.requests().isEmpty)
+    }
+  }
+
+  func testStreamingFallbackSuppressesDuplicateUsageEvent() async throws {
+    let stream = streamingResponse(chunks: [
+      #"data: {"type":"response.completed","response":{"output_text":"stream","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}}\n\n"#
+    ], terminalError: AdapterExecutionError(.providerError, "stream interrupted"))
+    let streamingTransport = RecordingOfficialSDKStreamingTransport(responses: [.success(stream)])
+    let httpTransport = RecordingOfficialSDKHTTPTransport(responses: [
+      try httpResponse([
+        "output_text": .string("blocking fallback"),
+        "usage": .object(["input_tokens": .integer(4), "output_tokens": .integer(5), "total_tokens": .integer(9)])
+      ])
+    ])
+    let events = BackendEventRecorder()
+    let adapter = OpenAiSDKAdapter(
+      configuration: OfficialSDKAdapterConfiguration(
+        apiKeyEnv: "TEST_OPENAI_KEY",
+        environment: ["TEST_OPENAI_KEY": openAITestKey()],
+        httpTransport: httpTransport,
+        streamingTransport: streamingTransport
+      )
+    )
+
+    let output = try await adapter.execute(
+      openAIInput(),
+      context: AdapterExecutionContext(backendEventHandler: { event in events.append(event) })
+    )
+
+    XCTAssertEqual(output.payload["text"], .string("blocking fallback"))
+    XCTAssertEqual(events.events().filter { $0.channel == .usage }.count, 1)
+    XCTAssertEqual(events.events().first { $0.channel == .usage }?.usage?["total_tokens"], .integer(3))
+  }
+
+  func testOpenAIFlatStreamErrorDoesNotFallbackToBlockingRequest() async throws {
+    let stream = streamingResponse(chunks: [
+      #"event: error\ndata: {"type":"error","code":"rate_limit_exceeded","message":"flat failure"}\n\n"#
+    ])
+    let streamingTransport = RecordingOfficialSDKStreamingTransport(responses: [.success(stream)])
+    let httpTransport = RecordingOfficialSDKHTTPTransport(responses: [
+      try httpResponse(["output_text": .string("must not be used")])
+    ])
+    let adapter = OpenAiSDKAdapter(
+      configuration: OfficialSDKAdapterConfiguration(
+        apiKeyEnv: "TEST_OPENAI_KEY",
+        environment: ["TEST_OPENAI_KEY": openAITestKey()],
+        httpTransport: httpTransport,
+        streamingTransport: streamingTransport
+      )
+    )
+
+    do {
+      _ = try await adapter.execute(openAIInput(), context: AdapterExecutionContext())
+      XCTFail("Expected flat stream error")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .providerError)
+      XCTAssertEqual(error.isRetryable, false)
+      XCTAssertTrue(error.message.contains("flat failure"))
+      XCTAssertTrue(httpTransport.requests().isEmpty)
+    }
+  }
+
+  func testAnthropicStreamingJoinsMultipleTextBlocksWithNewlines() async throws {
+    let stream = streamingResponse(chunks: [
+      #"event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n"#,
+      #"event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"first"}}\n\n"#,
+      #"event: content_block_start\ndata: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}\n\n"#,
+      #"event: content_block_delta\ndata: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"second"}}\n\n"#
+    ])
+    let transport = RecordingOfficialSDKStreamingTransport(responses: [.success(stream)])
+    let adapter = AnthropicSDKAdapter(
+      configuration: AnthropicSDKAdapterConfiguration(
+        officialSDK: OfficialSDKAdapterConfiguration(
+          apiKeyEnv: "TEST_ANTHROPIC_KEY",
+          environment: ["TEST_ANTHROPIC_KEY": anthropicTestKey()],
+          streamingTransport: transport
+        )
+      )
+    )
+
+    let output = try await adapter.execute(anthropicInput(), context: AdapterExecutionContext())
+
+    XCTAssertEqual(output.payload["text"], .string("first\nsecond"))
+  }
+
+  func testProcessStreamingKillSwitchWinsOverConfigurationAndNodeEnvironment() async throws {
+    let oldValue = getenv("RIELA_OFFICIAL_SDK_STREAMING").map { String(cString: $0) }
+    setenv("RIELA_OFFICIAL_SDK_STREAMING", "off", 1)
+    defer {
+      if let oldValue {
+        setenv("RIELA_OFFICIAL_SDK_STREAMING", oldValue, 1)
+      } else {
+        unsetenv("RIELA_OFFICIAL_SDK_STREAMING")
+      }
+    }
+    let streamingTransport = RecordingOfficialSDKStreamingTransport(responses: [
+      .failure(AdapterExecutionError(.providerError, "stream should be disabled"))
+    ])
+    let httpTransport = RecordingOfficialSDKHTTPTransport(responses: [
+      try httpResponse(["output_text": .string("operator disabled")])
+    ])
+    let adapter = OpenAiSDKAdapter(
+      configuration: OfficialSDKAdapterConfiguration(
+        apiKeyEnv: "TEST_OPENAI_KEY",
+        environment: [
+          "TEST_OPENAI_KEY": openAITestKey(),
+          "RIELA_OFFICIAL_SDK_STREAMING": "on"
+        ],
+        httpTransport: httpTransport,
+        streamingTransport: streamingTransport
+      )
+    )
+
+    let output = try await adapter.execute(
+      openAIInput(agentEnvironment: ["RIELA_OFFICIAL_SDK_STREAMING": "on"]),
+      context: AdapterExecutionContext()
+    )
+
+    XCTAssertEqual(output.payload["text"], .string("operator disabled"))
+    XCTAssertTrue(streamingTransport.requests().isEmpty)
+    XCTAssertEqual(httpTransport.requests().count, 1)
+  }
+
+  func testCancellationDuringStreamingThrowsCancellationAndDoesNotFallback() async throws {
+    var continuation: AsyncThrowingStream<Data, Error>.Continuation?
+    let stream = OfficialSDKStreamingHTTPResponse(
+      statusCode: 200,
+      body: AsyncThrowingStream { streamContinuation in
+        continuation = streamContinuation
+        streamContinuation.yield(Data(#"data: {"type":"response.output_text.delta","delta":"partial"}\n\n"#.replacingOccurrences(of: "\\n", with: "\n").utf8))
+      }
+    )
+    let streamingTransport = RecordingOfficialSDKStreamingTransport(responses: [.success(stream)])
+    let httpTransport = RecordingOfficialSDKHTTPTransport(responses: [
+      try httpResponse(["output_text": .string("must not be used")])
+    ])
+    let adapter = OpenAiSDKAdapter(
+      configuration: OfficialSDKAdapterConfiguration(
+        apiKeyEnv: "TEST_OPENAI_KEY",
+        environment: ["TEST_OPENAI_KEY": openAITestKey()],
+        httpTransport: httpTransport,
+        streamingTransport: streamingTransport
+      )
+    )
+    let input = openAIInput()
+
+    let task = Task {
+      try await adapter.execute(input, context: AdapterExecutionContext())
+    }
+    try await Task.sleep(for: .milliseconds(10))
+    task.cancel()
+    continuation?.finish()
+
+    do {
+      _ = try await task.value
+      XCTFail("Expected cancellation")
+    } catch is CancellationError {
+      XCTAssertEqual(streamingTransport.requests().count, 1)
+      XCTAssertTrue(httpTransport.requests().isEmpty)
+    }
+  }
+
   func testProviderStreamErrorDoesNotFallbackToBlockingRequest() async throws {
     let stream = streamingResponse(chunks: [
       #"data: {"type":"response.failed","response":{"error":{"message":"model rejected request"}}}\n\n"#
@@ -281,6 +498,31 @@ extension OfficialSDKAdapterTests {
     let output = try await adapter.execute(openAIInput(), context: AdapterExecutionContext())
 
     XCTAssertEqual(output.payload["text"], .string("rewritten"))
+  }
+
+  func testStreamingDeltaRedactsConfiguredAPIKeyValue() async throws {
+    let secret = openAITestKey()
+    let stream = streamingResponse(chunks: [
+      #"data: {"type":"response.output_text.delta","delta":"token sk-test-123456"}\n\n"#
+    ])
+    let transport = RecordingOfficialSDKStreamingTransport(responses: [.success(stream)])
+    let events = BackendEventRecorder()
+    let adapter = OpenAiSDKAdapter(
+      configuration: OfficialSDKAdapterConfiguration(
+        apiKeyEnv: "TEST_OPENAI_KEY",
+        environment: ["TEST_OPENAI_KEY": secret],
+        streamingTransport: transport
+      )
+    )
+
+    _ = try await adapter.execute(
+      openAIInput(),
+      context: AdapterExecutionContext(backendEventHandler: { event in events.append(event) })
+    )
+
+    let delta = try XCTUnwrap(events.events().first?.contentDelta)
+    XCTAssertFalse(delta.contains(secret))
+    XCTAssertTrue(delta.contains("redacted"))
   }
 
   private func streamingResponse(

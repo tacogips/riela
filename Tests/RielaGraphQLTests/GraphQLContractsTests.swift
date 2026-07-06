@@ -211,6 +211,33 @@ final class GraphQLContractsTests: XCTestCase {
     XCTAssertEqual(result.sessions.first?.sessionStore, "/tmp/session-store")
   }
 
+  func testWorkflowInstanceGraphQLServiceListsSavesAndDeletesInstances() async throws {
+    let store = TestWorkflowInstanceStore()
+    let service = GraphQLWorkflowInstanceService(store: store)
+    let input = GraphQLWorkflowInstanceInput(
+      identity: "prod",
+      workflowId: "workflow-a",
+      displayName: "Production",
+      configuration: WorkflowInstanceConfiguration(defaultVariables: ["request": .string("go")])
+    )
+
+    let created = await service.createWorkflowInstance(input)
+    XCTAssertTrue(created.result.accepted, created.result.diagnostics.joined(separator: "\n"))
+    XCTAssertEqual(created.instance?.identity, "prod")
+
+    let listed = await service.workflowInstances(workflowId: "workflow-a")
+    XCTAssertEqual(listed.value?.map(\.identity), ["prod"])
+    XCTAssertEqual(listed.value?.first?.configuration["defaultVariables"], .object(["request": .string("go")]))
+
+    let found = await service.workflowInstance(identity: "prod", workflowId: "workflow-a")
+    XCTAssertEqual(found.value?.displayName, "Production")
+
+    let deleted = await service.deleteWorkflowInstance(identity: "prod", workflowId: "workflow-a")
+    XCTAssertTrue(deleted.result.accepted, deleted.result.diagnostics.joined(separator: "\n"))
+    let missing = await service.workflowInstance(identity: "prod", workflowId: "workflow-a")
+    XCTAssertEqual(missing.result.status, GraphQLLoopEvidenceQueryStatus.notFound.rawValue)
+  }
+
   func testRuntimeSnapshotQueryServiceDistinguishesMissingSession() async {
     let service = GraphQLRuntimeSnapshotQueryService { sessionId in
       throw WorkflowRuntimePersistenceStoreError.notFound(sessionId)
@@ -258,6 +285,16 @@ final class GraphQLContractsTests: XCTestCase {
       "loopGates: [LoopGateResult!]!",
       "loopRecovery: LoopRecoveryLineage",
       "workflowExecutionId: String!",
+      "type WorkflowInstance",
+      "type WorkflowInstanceQueryPayload",
+      "type WorkflowInstancesQueryPayload",
+      "type WorkflowInstanceMutationPayload",
+      "input WorkflowInstanceInput { identity: String!, workflowId: String!, sourceIdentity: String, displayName: String, configuration: JSONObject }",
+      "workflowInstances(workflowId: String): WorkflowInstancesQueryPayload!",
+      "workflowInstance(identity: String!, workflowId: String): WorkflowInstanceQueryPayload!",
+      "createWorkflowInstance(input: WorkflowInstanceInput!): WorkflowInstanceMutationPayload!",
+      "updateWorkflowInstance(input: WorkflowInstanceInput!): WorkflowInstanceMutationPayload!",
+      "deleteWorkflowInstance(identity: String!, workflowId: String): WorkflowInstanceMutationPayload!",
       "loopEvidence(workflowId: String!, sessionId: String!): LoopEvidenceSummary",
       "workflowSessions(workflowName: String, status: String, limit: Int): [WorkflowSessionSummary!]!",
       "createdOrder: Int!",
@@ -391,6 +428,10 @@ final class GraphQLContractsTests: XCTestCase {
           suggestedMaxSteps: 4,
           suggestedRemediation: "session resume session-a --max-steps 4"
         ),
+        instanceIdentity: "prod",
+        instanceKind: "named",
+        instanceBaseIdentity: "default",
+        instanceConfiguration: ["defaultVariables": .object(["request": .string("ok")])],
         stepExecutions: [.init(executionId: "exec-a", stepId: "step-a", nodeId: "node-a", attempt: 1, backend: "codex-agent", status: "completed", failureReason: "none")],
         communications: [.init(communicationId: "comm-a", fromStepId: "step-a", toStepId: "step-b", lifecycleStatus: "delivered", deliveryKind: "direct", createdOrder: 1)],
         hookEvents: [.init(vendor: "codex", eventName: "PostToolUse", agentSessionId: "agent-session", payloadHash: "hash")],
@@ -422,6 +463,8 @@ final class GraphQLContractsTests: XCTestCase {
         status: "failed",
         failureKind: "maxStepsExceeded",
         currentStepId: "step-b",
+        instanceIdentity: "prod",
+        instanceKind: "named",
         executionCount: 2,
         updatedAt: Date(timeIntervalSince1970: 1),
         sessionStore: "/tmp/sessions"
@@ -459,6 +502,41 @@ final class GraphQLContractsTests: XCTestCase {
         reason: "retry",
         idempotencyKey: "idem-c",
         managerSessionId: "manager-session"
+      ))
+    ]
+
+    for (schemaType, encodedFields) in expectedFieldsBySchemaType {
+      XCTAssertEqual(try schemaFieldNames(schemaType), encodedFields, "schema drift for \(schemaType)")
+    }
+  }
+
+  func testWorkflowInstanceSchemaFieldSetsMatchEncodedDTOs() throws {
+    let expectedFieldsBySchemaType: [String: Set<String>] = [
+      "WorkflowInstance": try encodedFieldNames(GraphQLWorkflowInstanceDTO(instance: WorkflowInstanceDefinition(
+        identity: "prod",
+        workflowId: "workflow-a",
+        sourceIdentity: "worker-only-single-step",
+        displayName: "Production",
+        configuration: WorkflowInstanceConfiguration(defaultVariables: ["request": .string("ok")])
+      ))),
+      "WorkflowInstanceInput": try encodedFieldNames(GraphQLWorkflowInstanceInput(
+        identity: "prod",
+        workflowId: "workflow-a",
+        sourceIdentity: "worker-only-single-step",
+        displayName: "Production",
+        configuration: WorkflowInstanceConfiguration(defaultVariables: ["request": .string("ok")])
+      )),
+      "WorkflowInstanceQueryPayload": try encodedFieldNames(GraphQLWorkflowInstanceQueryResult(
+        result: GraphQLControlPlaneResult(accepted: true, status: "found"),
+        value: GraphQLWorkflowInstanceDTO(instance: WorkflowInstanceDefinition(identity: "prod", workflowId: "workflow-a"))
+      )),
+      "WorkflowInstancesQueryPayload": try encodedFieldNames(GraphQLWorkflowInstanceQueryResult(
+        result: GraphQLControlPlaneResult(accepted: true, status: "found"),
+        value: [GraphQLWorkflowInstanceDTO(instance: WorkflowInstanceDefinition(identity: "prod", workflowId: "workflow-a"))]
+      )),
+      "WorkflowInstanceMutationPayload": try encodedFieldNames(GraphQLWorkflowInstanceMutationResult(
+        result: GraphQLControlPlaneResult(accepted: true, status: "found"),
+        instance: GraphQLWorkflowInstanceDTO(instance: WorkflowInstanceDefinition(identity: "prod", workflowId: "workflow-a"))
       ))
     ]
 
@@ -641,5 +719,49 @@ final class GraphQLContractsTests: XCTestCase {
       createdAt: date,
       updatedAt: date
     )
+  }
+}
+
+private final class TestWorkflowInstanceStore: WorkflowInstanceStoring, @unchecked Sendable {
+  private let lock = NSLock()
+  private var instances: [WorkflowInstanceDefinition] = []
+
+  func list(workflowId: String?) throws -> [WorkflowInstanceDefinition] {
+    lock.withLock {
+      instances
+        .filter { workflowId == nil || $0.workflowId == workflowId }
+        .sorted { lhs, rhs in
+          if lhs.workflowId == rhs.workflowId {
+            return lhs.identity < rhs.identity
+          }
+          return lhs.workflowId < rhs.workflowId
+        }
+    }
+  }
+
+  func find(identity: String, workflowId: String?) throws -> WorkflowInstanceDefinition? {
+    try list(workflowId: workflowId).first { $0.identity == identity }
+  }
+
+  func save(_ instance: WorkflowInstanceDefinition) throws {
+    lock.withLock {
+      if let index = instances.firstIndex(where: {
+        $0.identity == instance.identity && $0.workflowId == instance.workflowId
+      }) {
+        instances[index] = instance
+      } else {
+        instances.append(instance)
+      }
+    }
+  }
+
+  func remove(identity: String, workflowId: String?) throws {
+    try lock.withLock {
+      let matches = instances.filter { $0.identity == identity && (workflowId == nil || $0.workflowId == workflowId) }
+      guard matches.count == 1 else {
+        throw WorkflowInstanceStoreError.notFound(identity)
+      }
+      instances.removeAll { $0.identity == matches[0].identity && $0.workflowId == matches[0].workflowId }
+    }
   }
 }

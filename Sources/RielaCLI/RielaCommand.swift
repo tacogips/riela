@@ -39,8 +39,12 @@ public enum RielaCommand: Equatable, Sendable {
   case session(SessionCommand)
   case loop(LoopCommand)
   case package(PackageCommand)
+  case node(NodeCommand)
+  case setup(CLICommandOptions)
   case memory(MemoryCommand)
   case note(NoteCommand)
+  case instance(CLICommandOptions)
+  case doctor(CLICommandOptions)
   case scoped(ScopedCommand)
 }
 
@@ -147,6 +151,7 @@ public enum PackageCommandKind: String, Codable, Sendable {
   case list
   case status
   case install
+  case ci
   case update
   case remove
   case checkout
@@ -164,6 +169,23 @@ public struct PackageCommand: Equatable, Sendable {
   public var options: CLICommandOptions
 
   public init(kind: PackageCommandKind, options: CLICommandOptions) {
+    self.kind = kind
+    self.options = options
+  }
+}
+
+public enum NodeCommandKind: String, Codable, Sendable {
+  case search
+  case list
+  case install
+  case run
+}
+
+public struct NodeCommand: Equatable, Sendable {
+  public var kind: NodeCommandKind
+  public var options: CLICommandOptions
+
+  public init(kind: NodeCommandKind, options: CLICommandOptions) {
     self.kind = kind
     self.options = options
   }
@@ -276,6 +298,9 @@ public struct WorkflowRunOptions: Equatable, Sendable {
   public var resolution: WorkflowResolutionOptions?
   public var variables: String?
   public var nodePatch: String?
+  public var instance: String?
+  public var instanceScope: WorkflowInstanceScope?
+  public var saveInstance: String?
   public var mockScenarioPath: String?
   public var output: WorkflowOutputFormat
   public var maxSteps: Int?
@@ -288,6 +313,7 @@ public struct WorkflowRunOptions: Equatable, Sendable {
   public var artifactRoot: String?
   public var sessionStore: String?
   public var workingDirectory: String
+  public var explicitWorkingDirectory: Bool
   public var endpoint: String?
   public var authToken: String?
   public var authTokenEnv: String?
@@ -300,6 +326,9 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     resolution: WorkflowResolutionOptions? = nil,
     variables: String? = nil,
     nodePatch: String? = nil,
+    instance: String? = nil,
+    instanceScope: WorkflowInstanceScope? = nil,
+    saveInstance: String? = nil,
     mockScenarioPath: String? = nil,
     output: WorkflowOutputFormat = .jsonl,
     maxSteps: Int? = nil,
@@ -312,6 +341,7 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     artifactRoot: String? = nil,
     sessionStore: String? = nil,
     workingDirectory: String = FileManager.default.currentDirectoryPath,
+    explicitWorkingDirectory: Bool = false,
     endpoint: String? = nil,
     authToken: String? = nil,
     authTokenEnv: String? = nil,
@@ -323,6 +353,9 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     self.resolution = resolution
     self.variables = variables
     self.nodePatch = nodePatch
+    self.instance = instance
+    self.instanceScope = instanceScope
+    self.saveInstance = saveInstance
     self.mockScenarioPath = mockScenarioPath
     self.output = output
     self.maxSteps = maxSteps
@@ -335,6 +368,7 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     self.artifactRoot = artifactRoot
     self.sessionStore = sessionStore
     self.workingDirectory = workingDirectory
+    self.explicitWorkingDirectory = explicitWorkingDirectory
     self.endpoint = endpoint
     self.authToken = authToken
     self.authTokenEnv = authTokenEnv
@@ -434,30 +468,11 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     if arguments.isEmpty || arguments == ["--version"] || arguments == ["version"] {
       return .version
     }
-    if let scopedKind = ScopedCommandKind(rawValue: arguments[0]) {
-      return .scoped(try parseScoped(kind: scopedKind, arguments: Array(arguments.dropFirst())))
-    }
-    if arguments.first == "package" {
-      let packageArguments = Array(arguments.dropFirst())
-      if isPackageHelpRequest(packageArguments) {
-        return .packageHelp(.package)
-      }
-      return .package(try parsePackage(scope: "package", arguments: packageArguments))
-    }
-    if arguments.first == "memory" {
-      return .memory(try parseMemory(Array(arguments.dropFirst())))
-    }
-    if arguments.first == "note" {
-      return .note(try parseNote(Array(arguments.dropFirst())))
-    }
-    if arguments.first == "session" {
-      return try parseSession(Array(arguments.dropFirst()))
-    }
-    if arguments.first == "loop" {
-      return .loop(try parseLoop(Array(arguments.dropFirst())))
+    if let command = try parseTopLevelCommand(arguments) {
+      return command
     }
     guard arguments.first == "workflow" else {
-      throw CLIUsageError("expected 'workflow', 'package', 'memory', 'note', 'session', 'loop', 'graphql', 'gql', 'hook', 'events', 'serve', or 'call-step' command")
+      throw CLIUsageError("expected 'workflow', 'package', 'node', 'rrun', 'setup', 'memory', 'note', 'instance', 'doctor', 'session', 'loop', 'graphql', 'gql', 'hook', 'events', 'serve', or 'call-step' command")
     }
     guard arguments.count >= 2 else {
       throw CLIUsageError("workflow command requires a subcommand and workflow name")
@@ -465,6 +480,9 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     if arguments[1] == "package" {
       let packageArguments = Array(arguments.dropFirst(2))
       if isPackageHelpRequest(packageArguments) {
+        return .packageHelp(.workflowPackage)
+      }
+      if isPackageSubcommandHelpRequest(packageArguments) {
         return .packageHelp(.workflowPackage)
       }
       return .workflow(.package(try parsePackage(scope: "workflow package", arguments: packageArguments)))
@@ -535,8 +553,59 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     token == "--help" || token == "-h"
   }
 
+  private func parseTopLevelCommand(_ arguments: [String]) throws -> RielaCommand? {
+    if let scopedKind = ScopedCommandKind(rawValue: arguments[0]) {
+      return .scoped(try parseScoped(kind: scopedKind, arguments: Array(arguments.dropFirst())))
+    }
+    if arguments.first == "package" {
+      let packageArguments = Array(arguments.dropFirst())
+      if isPackageHelpRequest(packageArguments) || isPackageSubcommandHelpRequest(packageArguments) {
+        return .packageHelp(.package)
+      }
+      return .package(try parsePackage(scope: "package", arguments: packageArguments))
+    }
+    if arguments.first == "node" {
+      return .node(try parseNode(Array(arguments.dropFirst())))
+    }
+    if arguments.first == "rrun" {
+      return .node(try parseRrun(Array(arguments.dropFirst())))
+    }
+    if arguments.first == "setup" {
+      return .setup(try parseSetup(Array(arguments.dropFirst())))
+    }
+    if arguments.first == "memory" {
+      return .memory(try parseMemory(Array(arguments.dropFirst())))
+    }
+    if arguments.first == "note" {
+      return .note(try parseNote(Array(arguments.dropFirst())))
+    }
+    if arguments.first == "instance" {
+      return .instance(try parseInstance(Array(arguments.dropFirst())))
+    }
+    if arguments.first == "doctor" {
+      return .doctor(try parseGeneric(
+        scope: "doctor",
+        command: "doctor",
+        arguments: Array(arguments.dropFirst()),
+        allowTableOutput: false,
+        defaultOutput: .text
+      ))
+    }
+    if arguments.first == "session" {
+      return try parseSession(Array(arguments.dropFirst()))
+    }
+    if arguments.first == "loop" {
+      return .loop(try parseLoop(Array(arguments.dropFirst())))
+    }
+    return nil
+  }
+
   private func isPackageHelpRequest(_ arguments: [String]) -> Bool {
     arguments.isEmpty || (arguments.count == 1 && (isHelpOption(arguments[0]) || arguments[0] == "help"))
+  }
+
+  private func isPackageSubcommandHelpRequest(_ arguments: [String]) -> Bool {
+    arguments.count >= 2 && arguments.dropFirst().contains(where: isHelpOption)
   }
 
   private func parseLoop(_ arguments: [String]) throws -> LoopCommand {
@@ -645,6 +714,83 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       defaultOutput: .text
     )
     return PackageCommand(kind: kind, options: options)
+  }
+
+  private func parseNode(_ arguments: [String]) throws -> NodeCommand {
+    guard let subcommand = arguments.first else {
+      throw CLIUsageError("node command requires a subcommand")
+    }
+    guard let kind = NodeCommandKind(rawValue: subcommand) else {
+      throw CLIUsageError("unsupported node subcommand '\(subcommand)'")
+    }
+    let target = arguments.count >= 2 && !arguments[1].hasPrefix("--") ? arguments[1] : nil
+    if kind != .search, kind != .list, target == nil {
+      throw CLIUsageError("node \(subcommand) requires an add-on or package name")
+    }
+    let optionStart = target == nil ? 1 : 2
+    let options = try parseGeneric(
+      scope: "node",
+      command: subcommand,
+      target: target,
+      arguments: Array(arguments.dropFirst(optionStart)),
+      allowTableOutput: kind == .search || kind == .list,
+      defaultOutput: kind == .run ? .json : .text
+    )
+    return NodeCommand(kind: kind, options: options)
+  }
+
+  private func parseRrun(_ arguments: [String]) throws -> NodeCommand {
+    guard let target = arguments.first, !target.hasPrefix("--") else {
+      throw CLIUsageError("rrun requires an add-on name")
+    }
+    let options = try parseGeneric(
+      scope: "node",
+      command: NodeCommandKind.run.rawValue,
+      target: target,
+      arguments: Array(arguments.dropFirst()),
+      allowTableOutput: false,
+      defaultOutput: .json
+    )
+    return NodeCommand(kind: .run, options: options)
+  }
+
+  private func parseSetup(_ arguments: [String]) throws -> CLICommandOptions {
+    guard let subcommand = arguments.first else {
+      throw CLIUsageError("setup command requires a subcommand")
+    }
+    guard subcommand == "container" else {
+      throw CLIUsageError("unsupported setup subcommand '\(subcommand)'")
+    }
+    return try parseGeneric(
+      scope: "setup",
+      command: subcommand,
+      arguments: Array(arguments.dropFirst()),
+      allowTableOutput: false,
+      defaultOutput: .text
+    )
+  }
+
+  private func parseInstance(_ arguments: [String]) throws -> CLICommandOptions {
+    guard let subcommand = arguments.first else {
+      throw CLIUsageError("instance command requires a subcommand")
+    }
+    let supported = Set(["list", "show", "create", "update", "remove"])
+    guard supported.contains(subcommand) else {
+      throw CLIUsageError("unsupported instance subcommand '\(subcommand)'")
+    }
+    let target = arguments.count >= 2 && !arguments[1].hasPrefix("--") ? arguments[1] : nil
+    if subcommand != "list", target == nil {
+      throw CLIUsageError("instance \(subcommand) requires an instance identity")
+    }
+    let optionStart = target == nil ? 1 : 2
+    return try parseGeneric(
+      scope: "instance",
+      command: subcommand,
+      target: target,
+      arguments: Array(arguments.dropFirst(optionStart)),
+      allowTableOutput: subcommand == "list",
+      defaultOutput: subcommand == "list" ? .table : .json
+    )
   }
 
   private func parseMemory(_ arguments: [String]) throws -> MemoryCommand {
@@ -933,6 +1079,9 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       resolution: resolution,
       variables: parsed.variables,
       nodePatch: parsed.nodePatch,
+      instance: parsed.instance,
+      instanceScope: parsed.instanceScope,
+      saveInstance: parsed.saveInstance,
       mockScenarioPath: parsed.mockScenarioPath,
       output: parsed.output,
       maxSteps: parsed.maxSteps,
@@ -945,6 +1094,7 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       artifactRoot: parsed.artifactRoot,
       sessionStore: parsed.sessionStore,
       workingDirectory: resolution.workingDirectory,
+      explicitWorkingDirectory: parsed.workingDirectory != nil,
       endpoint: parsed.endpoint,
       authToken: parsed.authToken,
       authTokenEnv: parsed.authTokenEnv,

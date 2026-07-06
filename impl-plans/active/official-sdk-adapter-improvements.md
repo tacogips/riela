@@ -140,17 +140,17 @@ public struct RetryPolicy: Equatable, Sendable {
 
 ```swift
 // Sources/RielaCore/AdapterContracts.swift — additive
-public struct AdapterExecutionOutput { ... public var usage: OfficialSDKUsage? }
-// Sources/RielaCore/WorkflowModel.swift (step execution record) — additive
-public struct WorkflowStepExecution { ... public var usage: OfficialSDKUsage? }
+public struct AdapterExecutionOutput { ... public var usage: AdapterUsage? }
+// Sources/RielaCore/RuntimeSession.swift (step execution record) — additive
+public struct WorkflowStepExecution { ... public var usage: AdapterUsage? }
 ```
 
-Note: `OfficialSDKUsage` must live in RielaCore (not RielaAdapters) to avoid a
+Note: `AdapterUsage` must live in RielaCore (not RielaAdapters) to avoid a
 dependency inversion — place the type in RielaCore and re-export/typealias in
 RielaAdapters.
 
 **Checklist**:
-- [x] `OfficialSDKUsage` hosted in RielaCore as `AdapterUsage`
+- [x] `AdapterUsage` hosted in RielaCore as `AdapterUsage`
 - [x] `AdapterExecutionOutput.usage` additive field
 - [x] `WorkflowStepExecution.usage` additive-optional field; session JSON round-trips both directions
 - [x] Runner records adapter output usage onto the step execution
@@ -173,8 +173,8 @@ public struct ServerSentEvent: Equatable, Sendable {
 }
 
 public final class ServerSentEventsParser {
-    public func feed(_ chunk: Data) -> [ServerSentEvent]
-    public func finish() -> [ServerSentEvent]
+    public func feed(_ chunk: Data) throws -> [ServerSentEvent]
+    public func finish() throws -> [ServerSentEvent]
 }
 ```
 
@@ -287,6 +287,7 @@ public struct OfficialSDKAdapterConfiguration {
 | Module | File Path | Status | Tests |
 |--------|-----------|--------|-------|
 | Provider codecs + parsing options | `Sources/RielaAdapters/OfficialSDKCodecs.swift` | DONE | Response codec + usage + relaxed parsing + canonical request golden tests |
+| Request building | `Sources/RielaAdapters/OfficialSDKHTTPRequestBuilding.swift` | DONE | Canonical request golden tests |
 | Error envelopes + classification | `Sources/RielaAdapters/OfficialSDKErrors.swift` | DONE | Focused HTTP failure/retry/redaction tests |
 | Retry backoff/jitter | `Sources/RielaAdapters/AdapterUtilities.swift` | DONE | Retry semantics tests + request timeout propagation tests |
 | Usage plumbing (core contracts) | `Sources/RielaCore/AdapterContracts.swift`, `Sources/RielaCore/RuntimeSession.swift` | DONE | Adapter usage-event tests + runtime publication test |

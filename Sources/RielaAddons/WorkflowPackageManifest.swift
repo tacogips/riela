@@ -120,6 +120,8 @@ public struct WorkflowPackageAddonExecutionDescriptor: Codable, Equatable, Senda
   public var kind: WorkflowPackageAddonExecutionKind
   public var entrypoint: String?
   public var containerfilePath: String?
+  public var image: String?
+  public var imageDigest: String?
   public var abiVersion: Int?
   public var bundleIdentifier: String?
   public var codeSignatureRequirement: String?
@@ -129,6 +131,8 @@ public struct WorkflowPackageAddonExecutionDescriptor: Codable, Equatable, Senda
     kind: WorkflowPackageAddonExecutionKind,
     entrypoint: String? = nil,
     containerfilePath: String? = nil,
+    image: String? = nil,
+    imageDigest: String? = nil,
     abiVersion: Int? = nil,
     bundleIdentifier: String? = nil,
     codeSignatureRequirement: String? = nil,
@@ -137,6 +141,8 @@ public struct WorkflowPackageAddonExecutionDescriptor: Codable, Equatable, Senda
     self.kind = kind
     self.entrypoint = entrypoint
     self.containerfilePath = containerfilePath
+    self.image = image
+    self.imageDigest = imageDigest
     self.abiVersion = abiVersion
     self.bundleIdentifier = bundleIdentifier
     self.codeSignatureRequirement = codeSignatureRequirement
@@ -147,6 +153,8 @@ public struct WorkflowPackageAddonExecutionDescriptor: Codable, Equatable, Senda
     case kind
     case entrypoint
     case containerfilePath
+    case image
+    case imageDigest
     case abiVersion
     case bundleIdentifier
     case codeSignatureRequirement
@@ -159,6 +167,8 @@ public struct WorkflowPackageAddonExecutionDescriptor: Codable, Equatable, Senda
     self.kind = try container.decode(WorkflowPackageAddonExecutionKind.self, forKey: .kind)
     self.entrypoint = try container.decodeIfPresent(String.self, forKey: .entrypoint)
     self.containerfilePath = try container.decodeIfPresent(String.self, forKey: .containerfilePath)
+    self.image = try container.decodeIfPresent(String.self, forKey: .image)
+    self.imageDigest = try container.decodeIfPresent(String.self, forKey: .imageDigest)
     self.abiVersion = try container.decodeIfPresent(Int.self, forKey: .abiVersion)
     self.bundleIdentifier = try container.decodeIfPresent(String.self, forKey: .bundleIdentifier)
     self.codeSignatureRequirement = try container.decodeIfPresent(String.self, forKey: .codeSignatureRequirement)
@@ -910,10 +920,18 @@ public enum WorkflowPackageManifestValidator {
   ) {
     validateAddonArtifactPath(execution.entrypoint, path: "addons[\(index)].execution.entrypoint", into: &issues)
     validateAddonArtifactPath(execution.containerfilePath, path: "addons[\(index)].execution.containerfilePath", into: &issues)
+    validateContainerImageReference(execution.image, path: "addons[\(index)].execution.image", into: &issues)
+    if let imageDigest = execution.imageDigest, !isSha256Digest(imageDigest) {
+      issues.append(.init(
+        code: "INVALID_MANIFEST",
+        path: "addons[\(index)].execution.imageDigest",
+        message: "imageDigest must be sha256:<64 lowercase hex>"
+      ))
+    }
 
     switch execution.kind {
     case .declarative:
-      if execution.entrypoint != nil || execution.containerfilePath != nil {
+      if execution.entrypoint != nil || execution.containerfilePath != nil || execution.image != nil || execution.imageDigest != nil {
         issues.append(.init(
           code: "INVALID_MANIFEST",
           path: "addons[\(index)].execution",
@@ -923,13 +941,27 @@ public enum WorkflowPackageManifestValidator {
       if execution.abiVersion != nil || execution.bundleIdentifier != nil || execution.codeSignatureRequirement != nil {
         issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].execution", message: "declarative execution must not declare native-bundle metadata"))
       }
-    case .container, .localCommand:
+    case .container:
+      if execution.entrypoint == nil && execution.containerfilePath == nil && execution.image == nil {
+        issues.append(.init(
+          code: "INVALID_MANIFEST",
+          path: "addons[\(index)].execution",
+          message: "container execution must declare an entrypoint, containerfilePath, or image"
+        ))
+      }
+      if execution.abiVersion != nil || execution.bundleIdentifier != nil || execution.codeSignatureRequirement != nil {
+        issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].execution", message: "container and local-command execution must not declare native-bundle metadata"))
+      }
+    case .localCommand:
       if execution.entrypoint == nil && execution.containerfilePath == nil {
         issues.append(.init(
           code: "INVALID_MANIFEST",
           path: "addons[\(index)].execution",
-          message: "executable add-on execution must declare an entrypoint or containerfilePath"
+          message: "local-command execution must declare an entrypoint or containerfilePath"
         ))
+      }
+      if execution.image != nil || execution.imageDigest != nil {
+        issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].execution", message: "local-command execution must not declare container image metadata"))
       }
       if execution.abiVersion != nil || execution.bundleIdentifier != nil || execution.codeSignatureRequirement != nil {
         issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].execution", message: "container and local-command execution must not declare native-bundle metadata"))
@@ -945,6 +977,9 @@ public enum WorkflowPackageManifestValidator {
       if execution.containerfilePath != nil {
         issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].execution.containerfilePath", message: "native-bundle execution must not declare containerfilePath"))
       }
+      if execution.image != nil || execution.imageDigest != nil {
+        issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].execution", message: "native-bundle execution must not declare container image metadata"))
+      }
       if execution.abiVersion != 1 {
         issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].execution.abiVersion", message: "native-bundle execution requires abiVersion 1"))
       }
@@ -956,6 +991,19 @@ public enum WorkflowPackageManifestValidator {
         codeSignatureRequirement.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].execution.codeSignatureRequirement", message: "codeSignatureRequirement must be non-empty when present"))
       }
+    }
+  }
+
+  private static func validateContainerImageReference(
+    _ value: String?,
+    path: String,
+    into issues: inout [WorkflowPackageValidationIssue]
+  ) {
+    guard let value else {
+      return
+    }
+    if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || value.rangeOfCharacter(from: .whitespacesAndNewlines) != nil {
+      issues.append(.init(code: "INVALID_MANIFEST", path: path, message: "container image must be non-empty and must not contain whitespace"))
     }
   }
 

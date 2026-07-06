@@ -8,6 +8,9 @@ struct ParsedWorkflowOptions {
   var structure = false
   var variables: String?
   var nodePatch: String?
+  var instance: String?
+  var instanceScope: WorkflowInstanceScope?
+  var saveInstance: String?
   var mockScenarioPath: String?
   var maxSteps: Int?
   var maxConcurrency: Int?
@@ -125,6 +128,19 @@ struct ParsedWorkflowOptions {
     case "--variables":
       try requireRunOption(token, allowRunOptions: allowRunOptions)
       variables = try readOptionValue(token, tokens: tokens, index: &index)
+    case "--instance":
+      try requireRunOption(token, allowRunOptions: allowRunOptions)
+      instance = try readOptionValue(token, tokens: tokens, index: &index)
+    case "--instance-scope":
+      try requireRunOption(token, allowRunOptions: allowRunOptions)
+      let raw = try readOptionValue(token, tokens: tokens, index: &index)
+      guard let scope = WorkflowInstanceScope(rawValue: raw), scope != .all else {
+        throw CLIUsageError("invalid --instance-scope value '\(raw)'; expected project or user")
+      }
+      instanceScope = scope
+    case "--save-instance":
+      try requireRunOption(token, allowRunOptions: allowRunOptions)
+      saveInstance = try readOptionValue(token, tokens: tokens, index: &index)
     case "--mock-scenario":
       try requireRunOption(token, allowRunOptions: allowRunOptions)
       mockScenarioPath = try readOptionValue(token, tokens: tokens, index: &index)

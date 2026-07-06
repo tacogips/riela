@@ -329,6 +329,79 @@ final class WorkflowPackageManifestTests: XCTestCase {
     XCTAssertTrue(issues.contains { $0.path == "addons[1].execution" && $0.message.contains("must not declare executable artifacts") })
   }
 
+  func testContainerAddonManifestDecodesPrebuiltImageMetadata() throws {
+    let digest = "sha256:\(String(repeating: "a", count: 64))"
+    let data = Data("""
+    {
+      "name": "container-addon-package",
+      "version": "1.0.0",
+      "kind": "node-addon",
+      "description": "Container add-on package",
+      "tags": [],
+      "registry": "default",
+      "checksum": "abc123",
+      "checksumAlgorithm": "md5",
+      "addons": [{
+        "name": "container-runner",
+        "version": "1.0.0",
+        "sourcePath": "addons/container-runner",
+        "contentDigest": "\(digest)",
+        "capabilities": [{"name": "network.egress", "reason": "calls external API"}],
+        "execution": {
+          "kind": "container",
+          "image": "ghcr.io/example/container-runner",
+          "imageDigest": "\(digest)",
+          "runtimeHints": ["ffmpeg"]
+        }
+      }]
+    }
+    """.utf8)
+
+    let manifest = try JSONDecoder().decode(WorkflowPackageManifest.self, from: data)
+    let execution = try XCTUnwrap(manifest.nodeAddons.first?.execution)
+
+    XCTAssertEqual(execution.kind, .container)
+    XCTAssertEqual(execution.image, "ghcr.io/example/container-runner")
+    XCTAssertEqual(execution.imageDigest, digest)
+    XCTAssertEqual(execution.runtimeHints, ["ffmpeg"])
+    XCTAssertEqual(WorkflowPackageManifestValidator.validate(manifest), [])
+  }
+
+  func testContainerAddonManifestRejectsUnsafeImageMetadata() {
+    let manifest = validManifest(nodeAddons: [
+      .init(
+        name: "container-runner",
+        version: "1.0.0",
+        sourcePath: "addons/container-runner",
+        execution: .init(
+          kind: .container,
+          image: "ghcr.io/example/bad image",
+          imageDigest: "sha256:ABC"
+        ),
+        capabilities: [.init(name: "network.egress", reason: "calls external API")],
+        contentDigest: "sha256:\(String(repeating: "b", count: 64))"
+      ),
+      .init(
+        name: "local-runner",
+        version: "1.0.0",
+        sourcePath: "addons/local-runner",
+        execution: .init(
+          kind: .localCommand,
+          entrypoint: "run.sh",
+          image: "ghcr.io/example/local-runner"
+        ),
+        capabilities: [.init(name: "process.spawn", reason: "runs package command")],
+        contentDigest: "sha256:\(String(repeating: "c", count: 64))"
+      )
+    ])
+
+    let issues = WorkflowPackageManifestValidator.validate(manifest)
+
+    XCTAssertTrue(issues.contains { $0.path == "addons[0].execution.image" })
+    XCTAssertTrue(issues.contains { $0.path == "addons[0].execution.imageDigest" })
+    XCTAssertTrue(issues.contains { $0.path == "addons[1].execution" && $0.message.contains("container image metadata") })
+  }
+
   func testNativeBundleManifestDecodesAndValidatesRequiredMetadata() throws {
     let data = Data("""
     {

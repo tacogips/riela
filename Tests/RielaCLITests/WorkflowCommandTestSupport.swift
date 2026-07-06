@@ -73,8 +73,8 @@ struct RecordingGeminiAddonAdapter: NodeAdapter {
 actor RecordingSDKAddonHarness {
   private var inputs: [AdapterExecutionInput] = []
 
-  func makeAdapter(provider: String, text: String) -> any NodeAdapter {
-    RecordingSDKAddonAdapter(harness: self, provider: provider, text: text)
+  func makeAdapter(provider: String, text: String, usage: AdapterUsage? = nil) -> any NodeAdapter {
+    RecordingSDKAddonAdapter(harness: self, provider: provider, text: text, usage: usage)
   }
 
   func record(_ input: AdapterExecutionInput) {
@@ -90,6 +90,7 @@ struct RecordingSDKAddonAdapter: NodeAdapter {
   let harness: RecordingSDKAddonHarness
   let provider: String
   let text: String
+  let usage: AdapterUsage?
 
   func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
     await harness.record(input)
@@ -98,7 +99,8 @@ struct RecordingSDKAddonAdapter: NodeAdapter {
       model: input.node.model,
       promptText: input.promptText,
       completionPassed: true,
-      payload: ["text": .string(text)]
+      payload: ["text": .string(text)],
+      usage: usage
     )
   }
 }

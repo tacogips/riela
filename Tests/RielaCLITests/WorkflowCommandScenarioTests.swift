@@ -62,6 +62,12 @@ extension WorkflowCommandTests {
     XCTAssertEqual(listed.packages.map(\.name), ["@scope/scoped-flow"])
     XCTAssertEqual(listed.packages.first?.valid, true)
 
+    let registryRoot = tempDir.appendingPathComponent("registry", isDirectory: true)
+    let registryPackage = registryRoot
+      .appendingPathComponent("packages/@scope/scoped-flow", isDirectory: true)
+    try FileManager.default.createDirectory(at: registryPackage.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try FileManager.default.copyItem(at: packageSource, to: registryPackage)
+
     for command in ["run", "temp-run"] {
       let result = await app.run([
         "package", command, "@scope/scoped-flow",
@@ -78,6 +84,7 @@ extension WorkflowCommandTests {
     let update = await app.run([
       "package", "update", "@scope/scoped-flow",
       "--working-dir", tempDir.path,
+      "--local-path", registryRoot.path,
       "--output", "json"
     ])
     XCTAssertEqual(update.exitCode, .success, update.stderr)

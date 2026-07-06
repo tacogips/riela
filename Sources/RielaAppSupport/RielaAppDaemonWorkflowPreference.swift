@@ -133,45 +133,10 @@ public struct RielaAppDaemonWorkflowPreference: Codable, Equatable, Sendable {
   }
 }
 
-public struct RielaAppDaemonWorkflowConfiguration: Codable, Equatable, Sendable {
-  public var workingDirectory: String?
-  public var environmentFilePath: String?
-  public var environmentVariables: [String: String]
-  public var defaultVariables: JSONObject
-  public var nodePatches: [String: RielaAppDaemonWorkflowNodePatch]
+public typealias RielaAppDaemonWorkflowConfiguration = WorkflowInstanceConfiguration
+public typealias RielaAppDaemonWorkflowNodePatch = WorkflowInstanceNodePatch
 
-  public init(
-    workingDirectory: String? = nil,
-    environmentFilePath: String? = nil,
-    environmentVariables: [String: String] = [:],
-    defaultVariables: JSONObject = [:],
-    nodePatches: [String: RielaAppDaemonWorkflowNodePatch] = [:]
-  ) {
-    self.workingDirectory = workingDirectory
-    self.environmentFilePath = environmentFilePath
-    self.environmentVariables = environmentVariables
-    self.defaultVariables = defaultVariables
-    self.nodePatches = nodePatches
-  }
-
-  public var isEmpty: Bool {
-    normalizedWorkingDirectory == nil
-      && environmentFilePath == nil
-      && environmentVariables.isEmpty
-      && defaultVariables.isEmpty
-      && nodePatches.values.allSatisfy(\.isEmpty)
-  }
-
-  public var nodePatchJSONObject: JSONObject? {
-    let entries = nodePatches
-      .filter { !$0.value.isEmpty }
-      .map { ($0.key, JSONValue.object($0.value.jsonObject)) }
-    guard !entries.isEmpty else {
-      return nil
-    }
-    return Dictionary(uniqueKeysWithValues: entries)
-  }
-
+public extension WorkflowInstanceConfiguration {
   public func serveConfiguration(inheritedEnvironment: [String: String]) -> WorkflowServeRuntimeConfiguration {
     WorkflowServeRuntimeConfiguration(
       workingDirectory: normalizedWorkingDirectory,
@@ -179,55 +144,6 @@ public struct RielaAppDaemonWorkflowConfiguration: Codable, Equatable, Sendable 
       defaultVariables: defaultVariables,
       nodePatch: nodePatchJSONObject
     )
-  }
-
-  private var normalizedWorkingDirectory: String? {
-    guard let workingDirectory = workingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines),
-          !workingDirectory.isEmpty else {
-      return nil
-    }
-    return workingDirectory
-  }
-}
-
-public struct RielaAppDaemonWorkflowNodePatch: Codable, Equatable, Sendable {
-  public var executionBackend: NodeExecutionBackend?
-  public var model: String?
-  public var effort: NodeReasoningEffort?
-
-  public init(
-    executionBackend: NodeExecutionBackend? = nil,
-    model: String? = nil,
-    effort: NodeReasoningEffort? = nil
-  ) {
-    self.executionBackend = executionBackend
-    self.model = model
-    self.effort = effort
-  }
-
-  public var isEmpty: Bool {
-    executionBackend == nil && normalizedModel == nil && effort == nil
-  }
-
-  public var jsonObject: JSONObject {
-    var object: JSONObject = [:]
-    if let executionBackend {
-      object["executionBackend"] = .string(executionBackend.rawValue)
-    }
-    if let normalizedModel {
-      object["model"] = .string(normalizedModel)
-    }
-    if let effort {
-      object["effort"] = .string(effort.rawValue)
-    }
-    return object
-  }
-
-  private var normalizedModel: String? {
-    guard let model = model?.trimmingCharacters(in: .whitespacesAndNewlines), !model.isEmpty else {
-      return nil
-    }
-    return model
   }
 }
 #endif

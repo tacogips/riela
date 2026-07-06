@@ -17,7 +17,7 @@ extension RielaApp {
     refreshDaemonWorkflowWindow()
   }
 
-  func openDaemonWorkflowViewer(identity: String) {
+  func openDaemonWorkflowViewer(identity: String, openTimeline: Bool = false) {
     guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
       status = "Instance could not be found"
       refreshDaemonWorkflowWindow()
@@ -68,9 +68,10 @@ extension RielaApp {
       },
       onSubmitAssistantMessage: { [weak self] message, workingDirectory in
         self?.submitAssistantMessage(message, workingDirectory: workingDirectory)
-      }
+      },
+      openTimeline: openTimeline
     )
-    status = "Opened viewer: \(candidate.displayName)"
+    status = openTimeline ? "Opened execution log: \(candidate.displayName)" : "Opened viewer: \(candidate.displayName)"
     refreshDaemonWorkflowWindow()
   }
 

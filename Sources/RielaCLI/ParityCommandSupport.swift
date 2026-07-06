@@ -15,6 +15,8 @@ struct ParsedParityOptions: Sendable {
   var destination: String?
   var overwrite = false
   var dryRun = false
+  var check = false
+  var locked = false
   var variables: String?
   var nodePatch: String?
   var mockScenarioPath: String?
@@ -34,6 +36,11 @@ struct ParsedParityOptions: Sendable {
   var reason: String?
   var registry: String?
   var registryURL: String?
+  var packageTags: [String] = []
+  var packageBackends: [String] = []
+  var refresh = false
+  var noDependencies = false
+  var all = false
   var packageName: String?
   var packageID: String?
   var branch: String?
@@ -115,6 +122,10 @@ struct ParsedParityOptions: Sendable {
       overwrite = true
     case "--dry-run":
       dryRun = true
+    case "--check":
+      check = true
+    case "--locked":
+      locked = true
     case "--variables":
       variables = try value()
     case "--node-patch":
@@ -161,6 +172,16 @@ struct ParsedParityOptions: Sendable {
         throw CLIUsageError("--limit requires a positive integer")
       }
       limit = parsed
+    case "--tag":
+      packageTags.append(try value())
+    case "--backend":
+      packageBackends.append(try value())
+    case "--refresh":
+      refresh = true
+    case "--no-dependencies":
+      noDependencies = true
+    case "--all":
+      all = true
     case "--reason":
       reason = try value()
     case "--registry":

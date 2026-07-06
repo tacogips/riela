@@ -38,10 +38,12 @@ into the contracts that document already shipped (`AdapterBackendEvent`
 channels, the runner-side coalescer/ring-buffer, `WorkflowRunEvent`
 enrichment), so no new runner or store surface is required.
 
-## Current Review Slice (2026-07-06)
+## Review Follow-Up Slice (2026-07-06)
 
-This workflow run reviews the current uncommitted implementation slice rather
-than the full design. The slice is design-consistent when these boundaries hold:
+The initial implementation landed in commit `76ed0cb` and a follow-up
+adversarial review found streaming, fallback, codec, environment-toggle, and
+test-coverage defects. The corrected implementation remains design-consistent
+when these boundaries hold:
 
 - `ServerSentEventsParser` stays a provider-agnostic RielaAdapters primitive:
   it strips a leading UTF-8 BOM, accepts CRLF/CR/LF line endings, ignores
@@ -61,17 +63,24 @@ than the full design. The slice is design-consistent when these boundaries hold:
   `retryAfter` are optional so non-SDK callers retain existing code-based retry
   behavior. Official SDK non-retryable 4xx responses stop retry immediately;
   408, 409, 429, 5xx, and transport failures remain retryable; `Retry-After`
-  takes precedence over exponential backoff and jitter within the deadline.
+  is capped by `RetryPolicy.maxDelay` and the deadline.
 - Cursor remains a blocking official-SDK job adapter in this slice. Cursor has
   no SSE streaming contract, no usage payload unless a future provider response
   adds one, and only generic error-envelope fallback. Cursor-specific behavior
   stays isolated in adapter response extraction and request-building modules;
   no `cursor-cli-agent` or `codex-agent` behavior changes are part of this
   work.
-- Review verification for this slice is the focused set already run by the
-  workflow input: `swift test --filter
-  'OfficialSDKAdapterTests|AdapterUtilitiesTests|ServerSentEventsParserTests|RuntimePublicationTests|RuntimeSessionTests|RuntimeStoreTests'`,
-  `xcrun swiftlint`, and `git diff --check`.
+- Streaming fallback is observational only: stream transport failures may fall
+  back to one blocking attempt, but output-contract validation failures,
+  policy failures, and cancellation do not trigger a second provider call.
+- Operator controls win over node configuration: process-level
+  `RIELA_OFFICIAL_SDK_STREAMING=off` disables streaming even if adapter or node
+  environment values say otherwise.
+- Accepted behavior deviations from the pre-codec implementation are
+  intentional: empty OpenAI `output_text` falls through to segmented output,
+  1xx/3xx HTTP responses are non-retryable provider errors, and injected
+  request executors bypass HTTP middleware/header/timeout construction for
+  deterministic tests.
 
 ## Reference: MacPaw/OpenAI feature inventory (what we borrow)
 
@@ -206,7 +215,7 @@ public struct OfficialSDKParsingOptions: OptionSet, Sendable {
 
 public struct OfficialSDKDecodedResponse: Sendable {
   public var text: String
-  public var usage: OfficialSDKUsage?
+  public var usage: AdapterUsage?
   public var stopReason: String?
   public var raw: JSONValue        // preserved for output-contract handling
 }
@@ -238,7 +247,7 @@ helpers are replaced by codec calls covered directly by
 Usage normalization:
 
 ```swift
-public struct OfficialSDKUsage: Codable, Equatable, Sendable {
+public struct AdapterUsage: Codable, Equatable, Sendable {
   public var inputTokens: Int?
   public var outputTokens: Int?
   public var totalTokens: Int?
@@ -333,12 +342,12 @@ Blocking path: after decode, the adapter
 // Sources/RielaCore/AdapterContracts.swift — additive
 public struct AdapterExecutionOutput {
   ...
-  public var usage: OfficialSDKUsage?   // nil for adapters that don't report
+  public var usage: AdapterUsage?   // nil for adapters that don't report
 }
 ```
 
 The runner persists it on the step execution record
-(`WorkflowStepExecution.usage: OfficialSDKUsage?`, additive-optional so
+(`WorkflowStepExecution.usage: AdapterUsage?`, additive-optional so
 existing session JSON round-trips). This closes the "usage payloads dropped at
 persistence" gap that the loop-engineering work depends on; that plan consumes
 the field, this plan produces it.
@@ -363,8 +372,8 @@ public struct ServerSentEvent: Equatable, Sendable {
 }
 
 public final class ServerSentEventsParser {
-  public func feed(_ chunk: Data) -> [ServerSentEvent]
-  public func finish() -> [ServerSentEvent]   // flush trailing event without blank line
+  public func feed(_ chunk: Data) throws -> [ServerSentEvent]
+  public func finish() throws -> [ServerSentEvent]   // flush trailing event without blank line
 }
 ```
 

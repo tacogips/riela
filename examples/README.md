@@ -22,6 +22,8 @@ tests may still construct legacy fixtures under explicit non-strict validation.
   the foreach lane in `node-combinations-showcase`)
 - node payload files live under `nodes/` by default
 - grouped lane payloads may live under `workflows/*/nodes/`
+- `worker-only-single-step/EXPECTED_RESULTS.md` includes a named-instance demo
+  that runs the same workflow with two saved execution configurations
 
 ## Split Document Index
 

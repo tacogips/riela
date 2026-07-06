@@ -1,7 +1,7 @@
 import Foundation
 import RielaMemory
 
-private let tableOutputSupportMessage = "`--output table` is only supported for workflow list, workflow status, session list, session latest, package search, package list, note list, note search, and note notebook list"
+private let tableOutputSupportMessage = "`--output table` is only supported for workflow list, workflow status, session list, session latest, package search, package list, node search, node list, note list, note search, and note notebook list"
 
 func parseOutputOnly(
   _ tokens: [String],

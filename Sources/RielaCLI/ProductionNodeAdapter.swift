@@ -3,26 +3,29 @@ import CodexAgent
 import CursorCLIAgent
 import Foundation
 import RielaAdapters
+import RielaAddons
 import RielaCore
 import RielaMemory
 
-func makeProductionNodeAdapter() -> any NodeAdapter {
+func makeProductionNodeAdapter(
+  environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment()
+) -> any NodeAdapter {
   DispatchingNodeAdapter(
     configuration: DispatchingNodeAdapterConfiguration(
       registry: [
         .codexAgent: {
           CodexAgentAdapter(
-            executableName: environmentValue("RIELA_CODEX_AGENT_EXECUTABLE") ?? "codex"
+            executableName: environmentValue("RIELA_CODEX_AGENT_EXECUTABLE", environment: environment) ?? "codex"
           )
         },
         .claudeCodeAgent: {
           ClaudeCodeAgentAdapter(
-            executableName: environmentValue("RIELA_CLAUDE_CODE_AGENT_EXECUTABLE") ?? "claude"
+            executableName: environmentValue("RIELA_CLAUDE_CODE_AGENT_EXECUTABLE", environment: environment) ?? "claude"
           )
         },
         .cursorCliAgent: {
           CursorCLIAgentAdapter(
-            executableName: environmentValue("RIELA_CURSOR_CLI_AGENT_EXECUTABLE") ?? "cursor-agent"
+            executableName: environmentValue("RIELA_CURSOR_CLI_AGENT_EXECUTABLE", environment: environment) ?? "cursor-agent"
           )
         }
       ]
@@ -33,10 +36,11 @@ func makeProductionNodeAdapter() -> any NodeAdapter {
 func makeScenarioBackedNodeAdapter(
   scenarioPath: String?,
   workingDirectory: String,
-  autoImprove: Bool = false
+  autoImprove: Bool = false,
+  environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment()
 ) throws -> any NodeAdapter {
   guard let scenarioPath else {
-    return makeProductionNodeAdapter()
+    return makeProductionNodeAdapter(environment: environment)
   }
   let fallback = DeterministicLocalNodeAdapter()
   let scenario = try WorkflowMockScenarioLoader().loadScenario(at: absoluteURL(
@@ -65,9 +69,11 @@ func makeScenarioBackedStdioNodeExecutor(
 
 func makeScenarioBackedAddonResolver(
   scenarioPath: String?,
-  workingDirectory: String
-) throws -> any WorkflowAddonResolving {
-  let fallback = BuiltinWorkflowAddonResolver()
+  workingDirectory: String,
+  environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment()
+) async throws -> any WorkflowAddonResolving {
+  let workingDirectoryURL = URL(fileURLWithPath: workingDirectory, isDirectory: true)
+  let fallback = try await makeProductionAddonResolver(workingDirectory: workingDirectoryURL, environment: environment)
   guard let scenarioPath else {
     return fallback
   }
@@ -76,6 +82,90 @@ func makeScenarioBackedAddonResolver(
     relativeTo: URL(fileURLWithPath: workingDirectory)
   ).path)
   return ScenarioWorkflowAddonResolver(scenario: scenario, fallback: fallback)
+}
+
+func makeProductionAddonResolver(
+  workingDirectory: URL,
+  environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment()
+) async throws -> any WorkflowAddonResolving {
+  let builtin = BuiltinWorkflowAddonResolver(environment: environment)
+  let registrations = try await installedContainerAddonRegistrations(workingDirectory: workingDirectory)
+  guard !registrations.isEmpty else {
+    return builtin
+  }
+  let container = ContainerWorkflowAddonResolver(
+    registrations: registrations,
+    workingDirectory: workingDirectory,
+    environment: environment
+  )
+  return CompositeWorkflowAddonResolver(primary: builtin, fallback: container)
+}
+
+func installedContainerAddonRegistrations(workingDirectory: URL) async throws -> [ContainerAddonRegistration] {
+  let loader = FileWorkflowPackageManifestLoader()
+  let parsed = try ParsedParityOptions(["--scope", "auto", "--working-dir", workingDirectory.path])
+  var registrations: [ContainerAddonRegistration] = []
+  var seen = Set<String>()
+  for root in packageRoots(parsed: parsed, workingDirectory: workingDirectory)
+    where FileManager.default.fileExists(atPath: root.path) {
+    for manifestURL in try packageManifestURLs(in: root) {
+      let packageRoot = manifestURL.deletingLastPathComponent()
+      let manifest = try await loader.loadManifest(from: manifestURL)
+      appendContainerAddonRegistrations(
+        manifest: manifest,
+        packageRoot: packageRoot,
+        registrations: &registrations,
+        seen: &seen
+      )
+    }
+  }
+  for manifestURL in try sharedAddonManifestURLs() {
+    let packageRoot = manifestURL.deletingLastPathComponent()
+    let manifest = try await loader.loadManifest(from: manifestURL)
+    appendContainerAddonRegistrations(
+      manifest: manifest,
+      packageRoot: packageRoot,
+      registrations: &registrations,
+      seen: &seen
+    )
+  }
+  return registrations
+}
+
+private func appendContainerAddonRegistrations(
+  manifest: WorkflowPackageManifest,
+  packageRoot: URL,
+  registrations: inout [ContainerAddonRegistration],
+  seen: inout Set<String>
+) {
+  for addon in manifest.nodeAddons {
+    guard addon.execution?.kind == .container,
+      let contentDigest = addon.contentDigest
+    else {
+      continue
+    }
+    let execution = addon.execution
+    guard execution?.image != nil || execution?.containerfilePath != nil else {
+      continue
+    }
+    let identity = "\(addon.name)\u{0}\(addon.version)\u{0}\(contentDigest)"
+    guard seen.insert(identity).inserted else {
+      continue
+    }
+    registrations.append(ContainerAddonRegistration(
+      packageName: manifest.name,
+      addonName: addon.name,
+      version: addon.version,
+      packageRoot: packageRoot,
+      addonRoot: packageRoot.appendingPathComponent(addon.sourcePath, isDirectory: true).standardizedFileURL,
+      entrypoint: execution?.entrypoint,
+      containerfilePath: execution?.containerfilePath,
+      image: execution?.image,
+      imageDigest: execution?.imageDigest,
+      contentDigest: contentDigest,
+      capabilities: addon.capabilities
+    ))
+  }
 }
 
 actor ScenarioWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
@@ -310,7 +400,8 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       promptText: output.promptText,
       completionPassed: output.completionPassed,
       when: output.when,
-      payload: payload
+      payload: payload,
+      usage: output.usage
     )
   }
 

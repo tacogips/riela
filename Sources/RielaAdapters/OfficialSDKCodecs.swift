@@ -41,6 +41,7 @@ func decodeOfficialSDKResponse(
   raw: JSONValue,
   options: OfficialSDKParsingOptions
 ) throws -> OfficialSDKDecodedResponse {
+  let raw = options.contains(.relaxed) ? relaxedOfficialSDKRaw(provider: provider, raw: raw) : raw
   let data = try JSONEncoder().encode(raw)
   switch provider {
   case OpenAiSDKAdapter.provider:
@@ -111,7 +112,7 @@ struct OpenAIResponsesResponse: Decodable {
     case outputText = "output_text"
     case output
     case usage
-    case stopReason = "stop_reason"
+    case stopReason = "status"
   }
 
   func outputTextValue(options: OfficialSDKParsingOptions) -> String {
@@ -326,5 +327,126 @@ struct CursorAgent: Decodable {
       url
     ].compactMap { $0 }
     return summary.isEmpty ? "" : summary.joined(separator: "\n")
+  }
+}
+
+private func relaxedOfficialSDKRaw(provider: String, raw: JSONValue) -> JSONValue {
+  switch provider {
+  case OpenAiSDKAdapter.provider:
+    return relaxedOpenAIRaw(raw)
+  case AnthropicSDKAdapter.provider:
+    return relaxedAnthropicRaw(raw)
+  case GeminiSDKAdapter.provider:
+    return relaxedGeminiRaw(raw)
+  default:
+    return raw
+  }
+}
+
+private func relaxedOpenAIRaw(_ raw: JSONValue) -> JSONValue {
+  guard case var .object(object) = raw else {
+    return raw
+  }
+  if let usage = object["usage"] {
+    object["usage"] = relaxedIntegerFields(
+      usage,
+      keys: ["input_tokens", "output_tokens", "total_tokens", "cached_tokens"]
+    )
+  }
+  if let output = object["output"] {
+    object["output"] = relaxedOpenAIOutput(output)
+  }
+  return .object(object)
+}
+
+private func relaxedOpenAIOutput(_ value: JSONValue) -> JSONValue {
+  guard case let .array(items) = value else {
+    return value
+  }
+  return .array(items.map { item in
+    guard case var .object(object) = item else {
+      return item
+    }
+    if let content = object["content"] {
+      object["content"] = relaxedOpenAIContentArray(content)
+    }
+    return .object(object)
+  })
+}
+
+private func relaxedOpenAIContentArray(_ value: JSONValue) -> JSONValue {
+  guard case let .array(entries) = value else {
+    return value
+  }
+  return .array(entries.compactMap { entry in
+    guard case var .object(object) = entry else {
+      return entry
+    }
+    if let type = object["type"], case .string = type {
+      return .object(object)
+    }
+    if object["type"] == nil || object["type"] == .null {
+      return .object(object)
+    }
+    object["type"] = .string("__unknown__")
+    return .object(object)
+  })
+}
+
+private func relaxedAnthropicRaw(_ raw: JSONValue) -> JSONValue {
+  guard case var .object(object) = raw else {
+    return raw
+  }
+  if let usage = object["usage"] {
+    object["usage"] = relaxedIntegerFields(
+      usage,
+      keys: ["input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"]
+    )
+  }
+  return .object(object)
+}
+
+private func relaxedGeminiRaw(_ raw: JSONValue) -> JSONValue {
+  guard case var .object(object) = raw else {
+    return raw
+  }
+  if let usage = object["usageMetadata"] {
+    object["usageMetadata"] = relaxedIntegerFields(
+      usage,
+      keys: ["promptTokenCount", "candidatesTokenCount", "totalTokenCount"]
+    )
+  }
+  return .object(object)
+}
+
+private func relaxedIntegerFields(_ value: JSONValue, keys: Set<String>) -> JSONValue {
+  switch value {
+  case let .object(object):
+    var normalized: JSONObject = [:]
+    for (key, fieldValue) in object {
+      if keys.contains(key), let integer = relaxedInteger(fieldValue) {
+        normalized[key] = .integer(integer)
+      } else {
+        normalized[key] = relaxedIntegerFields(fieldValue, keys: keys)
+      }
+    }
+    return .object(normalized)
+  case let .array(values):
+    return .array(values.map { relaxedIntegerFields($0, keys: keys) })
+  case .null, .bool, .integer, .number, .string:
+    return value
+  }
+}
+
+private func relaxedInteger(_ value: JSONValue) -> Int64? {
+  switch value {
+  case let .integer(integer):
+    return integer
+  case let .number(number) where number.isFinite && number.rounded(.towardZero) == number:
+    return Int64(exactly: number)
+  case let .string(text):
+    return Int64(text.trimmingCharacters(in: .whitespacesAndNewlines))
+  case .null, .bool, .number, .array, .object:
+    return nil
   }
 }

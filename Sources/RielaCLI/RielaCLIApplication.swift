@@ -19,8 +19,12 @@ public struct RielaCLIApplication: Sendable {
   public var sessionInspectionCommand: SessionInspectionCommand
   public var workflowScaffoldCommand: WorkflowScaffoldCommand
   public var packageCommandRunner: WorkflowPackageCommandRunner
+  public var nodeCommandRunner: NodeCommandRunner
+  public var setupContainerCommand: SetupContainerCommand
   public var memoryCommandRunner: MemoryCommandRunner
   public var noteCommandRunner: NoteCommandRunner
+  public var instanceCommandRunner: InstanceCommandRunner
+  public var doctorCommand: DoctorCommand
   public var loopCommandRunner: LoopCommandRunner
   public var sessionContinueCommand: SessionContinueCommand
   public var scopedCommandRunner: ScopedParityCommandRunner
@@ -38,8 +42,12 @@ public struct RielaCLIApplication: Sendable {
     sessionInspectionCommand: SessionInspectionCommand = SessionInspectionCommand(),
     workflowScaffoldCommand: WorkflowScaffoldCommand = WorkflowScaffoldCommand(),
     packageCommandRunner: WorkflowPackageCommandRunner = WorkflowPackageCommandRunner(),
+    nodeCommandRunner: NodeCommandRunner = NodeCommandRunner(),
+    setupContainerCommand: SetupContainerCommand = SetupContainerCommand(),
     memoryCommandRunner: MemoryCommandRunner = MemoryCommandRunner(),
     noteCommandRunner: NoteCommandRunner = NoteCommandRunner(),
+    instanceCommandRunner: InstanceCommandRunner = InstanceCommandRunner(),
+    doctorCommand: DoctorCommand = DoctorCommand(),
     loopCommandRunner: LoopCommandRunner = LoopCommandRunner(),
     sessionContinueCommand: SessionContinueCommand = SessionContinueCommand(),
     scopedCommandRunner: ScopedParityCommandRunner = ScopedParityCommandRunner()
@@ -56,8 +64,12 @@ public struct RielaCLIApplication: Sendable {
     self.sessionInspectionCommand = sessionInspectionCommand
     self.workflowScaffoldCommand = workflowScaffoldCommand
     self.packageCommandRunner = packageCommandRunner
+    self.nodeCommandRunner = nodeCommandRunner
+    self.setupContainerCommand = setupContainerCommand
     self.memoryCommandRunner = memoryCommandRunner
     self.noteCommandRunner = noteCommandRunner
+    self.instanceCommandRunner = instanceCommandRunner
+    self.doctorCommand = doctorCommand
     self.loopCommandRunner = loopCommandRunner
     self.sessionContinueCommand = sessionContinueCommand
     self.scopedCommandRunner = scopedCommandRunner
@@ -115,10 +127,18 @@ public struct RielaCLIApplication: Sendable {
         return await loopCommandRunner.run(command)
       case let .package(command):
         return await packageCommandRunner.run(command)
+      case let .node(command):
+        return await nodeCommandRunner.run(command)
+      case let .setup(options):
+        return await setupContainerCommand.run(options)
       case let .memory(command):
         return memoryCommandRunner.run(command)
       case let .note(command):
         return await noteCommandRunner.run(command)
+      case let .instance(options):
+        return instanceCommandRunner.run(options)
+      case let .doctor(options):
+        return await doctorCommand.run(options)
       case let .scoped(command):
         return await scopedCommandRunner.run(command)
       }
@@ -278,9 +298,17 @@ Usage:
   riela workflow list|status [--output jsonl|json|text|table]
   riela workflow manifest validate <manifest-path> [--output jsonl|json|text]
   riela workflow checkout|create|self-improve <workflow> [options]
-  riela workflow package <search|list|status|install|update|remove|checkout|init|validate|pack|publish> [options]
-  riela workflow run <workflow> [--variables <json|@file>] [--mock-scenario <path>] [--auto-improve] [--output jsonl|json|text]
-  riela package <search|list|status|install|update|remove|checkout|init|validate|pack|publish> [options]
+  riela workflow package <search|list|status|install|ci|update|remove|checkout|init|validate|pack|publish> [options]
+  riela workflow run <workflow> [--variables <json|@file>] [--instance <name>] [--mock-scenario <path>] [--auto-improve] [--output jsonl|json|text]
+  riela instance list|show|create|update|remove [identity] [--workflow <id>] [--scope project|user|all] [--output json|jsonl|text|table]
+  riela doctor [--scope project|user|auto] [--working-dir <dir>] [--output json|text]
+  riela package <search|list|status|install|ci|update|remove|checkout|init|validate|pack|publish> [options]
+  riela node search [query] [--scope project|user|auto] [--registry default] [--refresh] [--output json|text|table]
+  riela node list [query] [--scope project|user|auto] [--registry default] [--refresh] [--output json|text|table]
+  riela node install <addon-or-package> [--scope project|user] [--registry default] [--source <path>] [--output json|text]
+  riela node run <addon-name> [--variables <json|@file>] [--mock-scenario <path>] [--output json|text]
+  riela rrun <addon-name> [--variables <json|@file>] [--mock-scenario <path>] [--output json|text]
+  riela setup container [--yes] [--dry-run] [--print-script] [--open-installer] [--output json|text]
   riela memory save <memory-id> --workflow-id <workflow> --payload-json <json> [--node-id <node>] [--tag <tag>] [--related-id <id>] [--file <path>] [--memory-root <dir>]
   riela memory update <memory-id> --workflow-id <workflow> --record-id <id> --payload-json <json> [--tag <tag>] [--related-id <id>] [--file <path>|--clear-files] [--memory-root <dir>]
   riela memory load|search <memory-id> --workflow-id <workflow> [--match <regex>] [--tag <tag>] [--related-id <id>] [--limit 30] [--memory-root <dir>]
@@ -322,15 +350,28 @@ func packageHelpText(scope: PackageHelpScope) -> String {
     \(commandPrefix) init <workflow-or-package-dir> [--package-name <name>] [--workflow-definition-dir <relative-path>] [--overwrite] [--output jsonl|json|text]
     \(commandPrefix) pack <package-dir> [--destination <path>] [--overwrite] [--output jsonl|json|text]
     \(commandPrefix) validate <package-dir|archive.rielapkg|archive.zip> [--output jsonl|json|text]
-    \(commandPrefix) install <package-name|package-dir|archive.rielapkg|archive.zip> [--source <path>] [--scope project|user] [--overwrite] [--output jsonl|json|text]
-    \(commandPrefix) list|search|status [package-name] [--scope project|user|auto] [--output jsonl|json|text|table]
+    \(commandPrefix) install [package-name|package-dir|archive.rielapkg|archive.zip] [--source <path>] [--locked] [--scope project|user] [--overwrite] [--output jsonl|json|text]
+    \(commandPrefix) ci [package-name] [--scope project|user] [--working-dir <dir>] [--output jsonl|json|text]
+    \(commandPrefix) list|search|status [package-name] [--scope project|user|auto] [--tag <tag>] [--backend <backend>] [--limit <n>] [--output jsonl|json|text|table]
     \(commandPrefix) run|temp-run <package-name|package-dir|archive.rielapkg|archive.zip> [--mock-scenario <path>] [--output jsonl|json|text]
-    \(commandPrefix) registry add|list [options]
+    \(commandPrefix) registry add|list|sync|index [options]
 
   Package archives:
     A .rielapkg or .zip is a portable package archive containing riela-package.json
     and its workflow files. Create one with pack, validate the archive, then install
     it into the project or user package catalog.
+
+  Registry index:
+    registry index <registry-root> writes registry-index.json from packages/* manifests
+    for GitHub-hosted distributed registry search. Use --destination <path> to
+    write elsewhere, --registry <id> and --registry-url <url> to stamp metadata.
+    Use --check in CI to fail when the checked-in registry-index.json is stale.
+
+  Lockfile installs:
+    install writes riela-lock.json with package checksums, integrity metadata,
+    archive sha256 pins, and add-on content digests. install with no package,
+    install --locked, and ci reinstall locked packages from that file and verify
+    locked archive digests before installing.
 
   Output:
     Package commands default to human-readable text. Pass --output json or
@@ -362,6 +403,7 @@ func packageHelpText(scope: PackageHelpScope) -> String {
     \(commandPrefix) pack ./my-package
     \(commandPrefix) validate ./my-package.rielapkg
     \(commandPrefix) install ./my-package.rielapkg --scope project
+    \(commandPrefix) ci --scope project
     riela workflow run my-package --scope project --output jsonl
 
   """
@@ -377,6 +419,9 @@ func workflowRunHelpText(target: String?) -> String {
 
   Input options:
     --variables <json|@file>       Runtime variables JSON object or a JSON file reference.
+    --instance <name>              Run a saved workflow instance. Defaults to the implicit default instance.
+    --instance-scope project|user  Restrict instance lookup to one persistence scope.
+    --save-instance <name>         Save the materialized temporary instance before the local run.
     --mock-scenario <path>         Deterministic mock responses for local verification.
     --node-patch <json|@file>      Patch node payloads before running.
     --workflow-definition-dir <dir>

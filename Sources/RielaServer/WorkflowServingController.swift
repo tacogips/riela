@@ -317,6 +317,12 @@ public struct DefaultWorkflowServeResolver: WorkflowServeResolving {
           selection: request.selection
         ))
       }
+      try preflightNodePatchIfNeeded(
+        request.nodePatch,
+        workflow: workflow,
+        workflowDirectory: URL(fileURLWithPath: directory, isDirectory: true),
+        selection: request.selection
+      )
       return WorkflowServeResolvedWorkflow(
         workflowId: workflow.workflowId,
         selectedIdentity: workflow.workflowId,
@@ -363,6 +369,63 @@ public struct DefaultWorkflowServeResolver: WorkflowServeResolving {
 
   private func isSafeIdentifier(_ value: String) -> Bool {
     !value.isEmpty && !value.contains("..") && !value.contains("/") && !value.contains("\\")
+  }
+
+  private func preflightNodePatchIfNeeded(
+    _ nodePatch: JSONObject?,
+    workflow: WorkflowDefinition,
+    workflowDirectory: URL,
+    selection: WorkflowServeSelection
+  ) throws {
+    guard let nodePatch, !nodePatch.isEmpty else {
+      return
+    }
+    let nodePayloads = try loadNodePayloads(workflow: workflow, workflowDirectory: workflowDirectory, selection: selection)
+    guard !nodePayloads.isEmpty else {
+      return
+    }
+    do {
+      let patches = try WorkflowInstanceResolver.nodePatches(from: nodePatch)
+      _ = try WorkflowInstanceResolver.resolve(
+        workflowId: workflow.workflowId,
+        base: nil,
+        runNodePatch: patches,
+        nodePayloads: nodePayloads
+      )
+    } catch {
+      throw WorkflowServeError.validationFailed(WorkflowServeDiagnostics(
+        code: "workflow_instance_patch_invalid",
+        message: "\(error)",
+        selection: selection
+      ))
+    }
+  }
+
+  private func loadNodePayloads(
+    workflow: WorkflowDefinition,
+    workflowDirectory: URL,
+    selection: WorkflowServeSelection
+  ) throws -> [String: AgentNodePayload] {
+    var payloads: [String: AgentNodePayload] = [:]
+    for node in workflow.nodeRegistry {
+      guard let nodeFile = node.nodeFile else {
+        continue
+      }
+      let payloadURL = workflowDirectory.appendingPathComponent(nodeFile)
+      guard FileManager.default.fileExists(atPath: payloadURL.path) else {
+        continue
+      }
+      do {
+        payloads[node.id] = try JSONDecoder().decode(AgentNodePayload.self, from: Data(contentsOf: payloadURL))
+      } catch {
+        throw WorkflowServeError.validationFailed(WorkflowServeDiagnostics(
+          code: "workflow_node_payload_invalid",
+          message: "failed to decode node payload '\(nodeFile)': \(error)",
+          selection: selection
+        ))
+      }
+    }
+    return payloads
   }
 }
 

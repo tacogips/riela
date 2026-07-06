@@ -336,44 +336,12 @@ public struct DefaultWorkflowNodePatchApplier: WorkflowNodePatchApplying {
   public init() {}
 
   public func applyNodePatch(_ patch: JSONObject, to nodePayloads: [String: AgentNodePayload]) throws -> [String: AgentNodePayload] {
-    var patched = nodePayloads
-    for key in patch.keys.sorted() {
-      guard case let .object(nodePatch)? = patch[key] else {
-        throw NodePatchError.nodePatchMustBeObject(key)
-      }
-      guard var payload = patched[key] else {
-        throw NodePatchError.unknownNodeId(key)
-      }
-      for field in nodePatch.keys.sorted() {
-        guard Set(["executionBackend", "model", "effort"]).contains(field) else {
-          throw NodePatchError.unsupportedField(field)
-        }
-        switch field {
-        case "executionBackend":
-          guard let raw = nodePatch[field]?.stringValue, let backend = NodeExecutionBackend(rawValue: raw) else {
-            throw NodePatchError.invalidFieldValue(field)
-          }
-          payload.executionBackend = backend
-        case "model":
-          guard let model = nodePatch[field]?.stringValue, !model.isEmpty else {
-            throw NodePatchError.invalidFieldValue(field)
-          }
-          guard !payload.modelFreeze || model == payload.model else {
-            throw NodePatchError.modelChangeFrozen(key)
-          }
-          payload.model = model
-        case "effort":
-          guard let raw = nodePatch[field]?.stringValue, let effort = NodeReasoningEffort(rawValue: raw) else {
-            throw NodePatchError.invalidFieldValue(field)
-          }
-          payload.effort = effort
-        default:
-          break
-        }
-      }
-      patched[key] = payload
+    do {
+      let patches = try WorkflowInstanceResolver.nodePatches(from: patch)
+      return try WorkflowInstanceResolver.applyNodePatches(patches, to: nodePayloads)
+    } catch let error as WorkflowInstanceResolutionError {
+      throw NodePatchError(error)
     }
-    return patched
   }
 }
 
@@ -383,6 +351,21 @@ public enum NodePatchError: Error, Equatable, Sendable {
   case unsupportedField(String)
   case invalidFieldValue(String)
   case modelChangeFrozen(String)
+
+  init(_ error: WorkflowInstanceResolutionError) {
+    switch error {
+    case let .nodePatchMustBeObject(nodeId):
+      self = .nodePatchMustBeObject(nodeId)
+    case let .unknownNodeId(nodeId):
+      self = .unknownNodeId(nodeId)
+    case let .unsupportedField(field):
+      self = .unsupportedField(field)
+    case let .invalidFieldValue(field):
+      self = .invalidFieldValue(field)
+    case let .modelChangeFrozen(nodeId):
+      self = .modelChangeFrozen(nodeId)
+    }
+  }
 }
 
 public struct JSONReferenceLoader: Sendable {

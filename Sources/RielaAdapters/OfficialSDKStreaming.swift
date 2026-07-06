@@ -35,24 +35,18 @@ public struct URLSessionOfficialSDKStreamingTransport: OfficialSDKStreamingHTTPT
       result[key] = String(describing: entry.value)
     }
     let stream = AsyncThrowingStream<Data, Error> { continuation in
-      Task {
+      let task = Task {
         do {
-          var buffer = Data()
-          buffer.reserveCapacity(1024)
           for try await byte in bytes {
-            buffer.append(byte)
-            if buffer.count >= 1024 {
-              continuation.yield(buffer)
-              buffer.removeAll(keepingCapacity: true)
-            }
-          }
-          if !buffer.isEmpty {
-            continuation.yield(buffer)
+            continuation.yield(Data([byte]))
           }
           continuation.finish()
         } catch {
           continuation.finish(throwing: error)
         }
+      }
+      continuation.onTermination = { _ in
+        task.cancel()
       }
     }
     return OfficialSDKStreamingHTTPResponse(statusCode: httpResponse.statusCode, headers: headers, body: stream)
@@ -95,7 +89,10 @@ func executeOfficialSDKStream(
     let chunk = configuration.middlewares.reduce(rawChunk) { current, middleware in
       middleware.interceptStreamChunk(current)
     }
-    for event in parser.feed(chunk) {
+    for event in try parser.feed(chunk) {
+      guard shouldInterpretOfficialSDKStreamEvent(event) else {
+        continue
+      }
       try await emitOfficialSDKStreamEvents(
         try interpreter.interpret(event),
         context: context,
@@ -103,13 +100,17 @@ func executeOfficialSDKStream(
       )
     }
   }
-  for event in parser.finish() {
+  for event in try parser.finish() {
+    guard shouldInterpretOfficialSDKStreamEvent(event) else {
+      continue
+    }
     try await emitOfficialSDKStreamEvents(
       try interpreter.interpret(event),
       context: context,
       sensitiveValues: [request.apiKey]
     )
   }
+  try Task.checkCancellation()
   return try interpreter.finalize()
 }
 
@@ -172,13 +173,10 @@ private struct OpenAIResponsesStreamInterpreter: OfficialSDKStreamInterpreting {
   var usage: AdapterUsage?
 
   mutating func interpret(_ event: ServerSentEvent) throws -> [AdapterBackendEvent] {
-    guard event.data != "[DONE]" else {
-      return []
-    }
     let raw = try decodeStreamJSON(event.data)
     try throwIfStreamError(provider: OpenAiSDKAdapter.provider, raw: raw, eventType: event.event)
     guard case let .object(object) = raw else {
-      return [lifecycleEvent(provider: OpenAiSDKAdapter.provider, eventType: event.event ?? "message", raw: raw)]
+      return [lifecycleEvent(provider: OpenAiSDKAdapter.provider, eventType: event.event ?? "message")]
     }
     let type = streamString(object["type"]) ?? event.event ?? "message"
     switch type {
@@ -209,7 +207,7 @@ private struct OpenAIResponsesStreamInterpreter: OfficialSDKStreamInterpreting {
     case "response.failed":
       throw AdapterExecutionError(.providerError, streamErrorMessage(provider: OpenAiSDKAdapter.provider, raw: raw), isRetryable: false)
     default:
-      return [lifecycleEvent(provider: OpenAiSDKAdapter.provider, eventType: type, raw: raw)]
+      return [lifecycleEvent(provider: OpenAiSDKAdapter.provider, eventType: type)]
     }
   }
 
@@ -225,6 +223,7 @@ private struct OpenAIResponsesStreamInterpreter: OfficialSDKStreamInterpreting {
 }
 
 private struct AnthropicMessagesStreamInterpreter: OfficialSDKStreamInterpreting {
+  var textBlocks: [[String]] = []
   var textSegments: [String] = []
   var thinkingSegments: [String] = []
   var inputTokens: Int?
@@ -239,7 +238,7 @@ private struct AnthropicMessagesStreamInterpreter: OfficialSDKStreamInterpreting
     try throwIfStreamError(provider: AnthropicSDKAdapter.provider, raw: raw, eventType: event.event)
     lastRaw = raw
     guard case let .object(object) = raw else {
-      return [lifecycleEvent(provider: AnthropicSDKAdapter.provider, eventType: event.event ?? "message", raw: raw)]
+      return [lifecycleEvent(provider: AnthropicSDKAdapter.provider, eventType: event.event ?? "message")]
     }
     let type = streamString(object["type"]) ?? event.event ?? "message"
     switch type {
@@ -247,13 +246,26 @@ private struct AnthropicMessagesStreamInterpreter: OfficialSDKStreamInterpreting
       if let usage = nestedObject(object["message"], key: "usage") {
         mergeAnthropicUsage(usage)
       }
-      return [lifecycleEvent(provider: AnthropicSDKAdapter.provider, eventType: type, raw: raw)]
+      return [lifecycleEvent(provider: AnthropicSDKAdapter.provider, eventType: type)]
+    case "content_block_start":
+      if let contentBlock = nestedObject(object["content_block"], key: "content_block"),
+         streamString(contentBlock["type"]) == "text" {
+        textBlocks.append([])
+      } else if let contentBlock = nestedObject(raw, key: "content_block"),
+                streamString(contentBlock["type"]) == "text" {
+        textBlocks.append([])
+      }
+      return [lifecycleEvent(provider: AnthropicSDKAdapter.provider, eventType: type)]
     case "content_block_delta":
       guard let delta = nestedObject(raw, key: "delta"),
             let deltaType = streamString(delta["type"]) else {
         return []
       }
       if deltaType == "text_delta", let text = streamString(delta["text"]), !text.isEmpty {
+        if textBlocks.isEmpty {
+          textBlocks.append([])
+        }
+        textBlocks[textBlocks.count - 1].append(text)
         textSegments.append(text)
         return [AdapterBackendEvent(
           provider: AnthropicSDKAdapter.provider,
@@ -273,7 +285,7 @@ private struct AnthropicMessagesStreamInterpreter: OfficialSDKStreamInterpreting
           isDelta: true
         )]
       }
-      return [lifecycleEvent(provider: AnthropicSDKAdapter.provider, eventType: type, raw: raw)]
+      return [lifecycleEvent(provider: AnthropicSDKAdapter.provider, eventType: type)]
     case "message_delta":
       if let usage = nestedObject(raw, key: "usage") {
         mergeAnthropicUsage(usage)
@@ -284,12 +296,13 @@ private struct AnthropicMessagesStreamInterpreter: OfficialSDKStreamInterpreting
       }
       return []
     default:
-      return [lifecycleEvent(provider: AnthropicSDKAdapter.provider, eventType: type, raw: raw)]
+      return [lifecycleEvent(provider: AnthropicSDKAdapter.provider, eventType: type)]
     }
   }
 
   func finalize() throws -> OfficialSDKDecodedResponse {
-    OfficialSDKDecodedResponse(text: textSegments.joined(), usage: adapterUsage(raw: nil), raw: lastRaw)
+    let text = textBlocks.isEmpty ? textSegments.joined() : textBlocks.map { $0.joined() }.joined(separator: "\n")
+    return OfficialSDKDecodedResponse(text: text, usage: adapterUsage(raw: nil), raw: lastRaw)
   }
 
   private mutating func mergeAnthropicUsage(_ usage: JSONObject) {
@@ -341,7 +354,7 @@ private struct GeminiStreamInterpreter: OfficialSDKStreamInterpreting {
       events.append(usageEvent(provider: GeminiSDKAdapter.provider, eventType: event.event ?? "message", usage: usage))
     }
     if events.isEmpty {
-      events.append(lifecycleEvent(provider: GeminiSDKAdapter.provider, eventType: event.event ?? "message", raw: raw))
+      events.append(lifecycleEvent(provider: GeminiSDKAdapter.provider, eventType: event.event ?? "message"))
     }
     return events
   }
@@ -358,7 +371,7 @@ private struct GenericOfficialSDKStreamInterpreter: OfficialSDKStreamInterpretin
   mutating func interpret(_ event: ServerSentEvent) throws -> [AdapterBackendEvent] {
     let raw = try decodeStreamJSON(event.data)
     lastRaw = raw
-    return [lifecycleEvent(provider: provider, eventType: event.event ?? "message", raw: raw)]
+    return [lifecycleEvent(provider: provider, eventType: event.event ?? "message")]
   }
 
   func finalize() throws -> OfficialSDKDecodedResponse {
@@ -373,12 +386,24 @@ private func decodeStreamJSON(_ data: String) throws -> JSONValue {
   return try JSONDecoder().decode(JSONValue.self, from: bytes)
 }
 
+private func shouldInterpretOfficialSDKStreamEvent(_ event: ServerSentEvent) -> Bool {
+  let data = event.data.trimmingCharacters(in: .whitespacesAndNewlines)
+  return !data.isEmpty && data != "[DONE]"
+}
+
 private func throwIfStreamError(provider: String, raw: JSONValue, eventType: String?) throws {
   guard case let .object(object) = raw else {
     return
   }
-  if object["error"] != nil || eventType == "error" {
-    throw AdapterExecutionError(.providerError, streamErrorMessage(provider: provider, raw: raw), isRetryable: false)
+  let flatErrorType = streamString(object["type"]) == "error"
+  let hasErrorObject = object["error"].map { $0 != .null } ?? false
+  if hasErrorObject || flatErrorType || eventType == "error" {
+    let errorType = streamErrorType(raw)
+    throw AdapterExecutionError(
+      .providerError,
+      streamErrorMessage(provider: provider, raw: raw),
+      isRetryable: streamErrorIsRetryable(errorType)
+    )
   }
 }
 
@@ -387,17 +412,36 @@ private func streamErrorMessage(provider: String, raw: JSONValue) -> String {
      let message = streamString(error["message"]) ?? streamString(error["type"]) ?? streamString(error["status"]) {
     return "\(provider) stream error: \(message)"
   }
+  if let message = streamString(nestedValue(raw, path: ["message"])) {
+    return "\(provider) stream error: \(message)"
+  }
   if let message = streamString(nestedValue(raw, path: ["response", "error", "message"])) {
     return "\(provider) stream error: \(message)"
   }
   return "\(provider) stream error"
 }
 
+private func streamErrorType(_ raw: JSONValue) -> String? {
+  if let error = nestedObject(raw, key: "error") {
+    return streamString(error["type"]) ?? streamString(error["status"]) ?? streamString(error["code"])
+  }
+  return streamString(nestedValue(raw, path: ["type"]))
+    ?? streamString(nestedValue(raw, path: ["response", "error", "type"]))
+    ?? streamString(nestedValue(raw, path: ["response", "error", "code"]))
+}
+
+private func streamErrorIsRetryable(_ type: String?) -> Bool {
+  guard let type = type?.lowercased() else {
+    return false
+  }
+  return ["overloaded_error", "rate_limit_error", "api_error"].contains(type)
+}
+
 private func usageEvent(provider: String, eventType: String, usage: AdapterUsage) -> AdapterBackendEvent {
   AdapterBackendEvent(provider: provider, eventType: eventType, channel: .usage, usage: usage.eventPayload)
 }
 
-private func lifecycleEvent(provider: String, eventType: String, raw: JSONValue) -> AdapterBackendEvent {
+private func lifecycleEvent(provider: String, eventType: String) -> AdapterBackendEvent {
   AdapterBackendEvent(provider: provider, eventType: eventType, channel: .lifecycle)
 }
 

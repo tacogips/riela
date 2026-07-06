@@ -18,6 +18,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   public var memoryRootDirectory: String?
   public var agentSilenceWarningMs: Int?
   public var agentSilenceMonitorIntervalMs: Int
+  public var effectiveInstance: EffectiveWorkflowInstance?
   public var eventHandler: WorkflowRunEventHandler?
 
   public init(
@@ -37,6 +38,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     memoryRootDirectory: String? = nil,
     agentSilenceWarningMs: Int? = nil,
     agentSilenceMonitorIntervalMs: Int = 1_000,
+    effectiveInstance: EffectiveWorkflowInstance? = nil,
     eventHandler: WorkflowRunEventHandler? = nil
   ) {
     self.workflow = workflow
@@ -55,6 +57,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     self.memoryRootDirectory = memoryRootDirectory
     self.agentSilenceWarningMs = agentSilenceWarningMs
     self.agentSilenceMonitorIntervalMs = agentSilenceMonitorIntervalMs
+    self.effectiveInstance = effectiveInstance
     self.eventHandler = eventHandler
   }
 }
@@ -210,7 +213,11 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         throw DeterministicWorkflowRunnerError.rerunValidation(errorMessage(error))
       }
       session = try await store.createSession(
-        WorkflowSessionCreateInput(workflowId: request.workflow.workflowId, entryStepId: entryStepId)
+        WorkflowSessionCreateInput(
+          workflowId: request.workflow.workflowId,
+          entryStepId: entryStepId,
+          effectiveInstance: request.effectiveInstance
+        )
       )
       for (key, value) in WorkflowReviewFindingReplayContext.variables(
         from: sourceSession.reviewFindings,
@@ -227,7 +234,11 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     } else {
       entryStepId = request.workflow.entryStepId
       session = try await store.createSession(
-        WorkflowSessionCreateInput(workflowId: request.workflow.workflowId, entryStepId: entryStepId)
+        WorkflowSessionCreateInput(
+          workflowId: request.workflow.workflowId,
+          entryStepId: entryStepId,
+          effectiveInstance: request.effectiveInstance
+        )
       )
       currentStepId = entryStepId
       recoveryLineage = runRecoveryLineage()

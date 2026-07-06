@@ -79,6 +79,22 @@ public struct SessionRerunCommandResult: Codable, Equatable, Sendable {
   public var recovery: LoopRecoveryLineage?
 }
 
+private struct SessionRerunInstanceResolution {
+  var effectiveInstance: EffectiveWorkflowInstance?
+  var nodePayloads: [String: AgentNodePayload]
+  var warning: String?
+
+  init(
+    effectiveInstance: EffectiveWorkflowInstance? = nil,
+    nodePayloads: [String: AgentNodePayload],
+    warning: String? = nil
+  ) {
+    self.effectiveInstance = effectiveInstance
+    self.nodePayloads = nodePayloads
+    self.warning = warning
+  }
+}
+
 public struct SessionResumeCommandResult: Codable, Equatable, Sendable {
   public var sourceSessionId: String?
   public var sessionId: String
@@ -273,6 +289,10 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
   public var failureReason: String?
   public var failureKind: WorkflowSessionFailureKind?
   public var stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic?
+  public var instanceIdentity: String?
+  public var instanceKind: String?
+  public var instanceBaseIdentity: String?
+  public var instanceConfiguration: JSONObject?
   public var activeStepId: String?
   public var activeExecutionId: String?
   public var activeBackend: NodeExecutionBackend?
@@ -298,6 +318,10 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
     failureReason: String? = nil,
     failureKind: WorkflowSessionFailureKind? = nil,
     stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic? = nil,
+    instanceIdentity: String? = nil,
+    instanceKind: String? = nil,
+    instanceBaseIdentity: String? = nil,
+    instanceConfiguration: JSONObject? = nil,
     activeStepId: String? = nil,
     activeExecutionId: String? = nil,
     activeBackend: NodeExecutionBackend? = nil,
@@ -322,6 +346,10 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
     self.failureReason = failureReason
     self.failureKind = failureKind
     self.stepBudgetDiagnostic = stepBudgetDiagnostic
+    self.instanceIdentity = instanceIdentity
+    self.instanceKind = instanceKind
+    self.instanceBaseIdentity = instanceBaseIdentity
+    self.instanceConfiguration = instanceConfiguration
     self.activeStepId = activeStepId
     self.activeExecutionId = activeExecutionId
     self.activeBackend = activeBackend
@@ -433,6 +461,10 @@ public struct SessionInspectionCommand: Sendable {
       failureReason: snapshot.session.failureReason,
       failureKind: snapshot.session.failureKind,
       stepBudgetDiagnostic: snapshot.session.stepBudgetDiagnostic,
+      instanceIdentity: snapshot.session.instanceIdentity,
+      instanceKind: snapshot.session.instanceKind,
+      instanceBaseIdentity: snapshot.session.instanceBaseIdentity,
+      instanceConfiguration: snapshot.session.instanceConfiguration,
       activeStepId: activeExecution?.stepId,
       activeExecutionId: activeExecution?.executionId,
       activeBackend: activeExecution?.backend,
@@ -461,6 +493,9 @@ public struct SessionInspectionCommand: Sendable {
         "lastCompletedStepId: \(result.lastCompletedStepId ?? "-")",
         "failureKind: \(result.failureKind?.rawValue ?? "-")",
         "failureReason: \(result.failureReason ?? "-")",
+        "instanceIdentity: \(result.instanceIdentity ?? "-")",
+        "instanceKind: \(result.instanceKind ?? "-")",
+        "instanceBaseIdentity: \(result.instanceBaseIdentity ?? "-")",
         "activeStepId: \(result.activeStepId ?? "-")",
         "activeExecutionId: \(result.activeExecutionId ?? "-")",
         "activeBackend: \(result.activeBackend?.rawValue ?? "-")",
@@ -574,7 +609,14 @@ public struct SessionRerunCommand: Sendable {
         loadedFromStoreRoot: loaded.storeRoot
       )
       let resolution = mergedResolution(persisted: persisted, options: options)
-      let bundle = try resolver.resolve(resolution)
+      var bundle = try resolver.resolve(resolution)
+      let instanceResolution = try resolveRerunInstance(
+        persisted: persisted,
+        workflowId: bundle.workflow.workflowId,
+        workingDirectory: options.workingDirectory,
+        nodePayloads: bundle.nodePayloads
+      )
+      bundle.nodePayloads = instanceResolution.nodePayloads
       let adapter = try makeAdapter(
         mockScenarioPath: options.mockScenarioPath ?? persisted.mockScenarioPath,
         workingDirectory: options.workingDirectory
@@ -582,14 +624,17 @@ public struct SessionRerunCommand: Sendable {
       let runtimeStore = InMemoryWorkflowRuntimeStore()
       try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: storeRoot)
       let runner = DeterministicWorkflowRunner(store: runtimeStore, adapter: adapter, stdioNodeExecutor: LocalWorkflowStdioNodeExecutor())
-      let variables = persisted.runtimeVariables ?? [:]
+      let variables = instanceResolution.effectiveInstance?.configuration.defaultVariables
+        ?? persisted.runtimeVariables
+        ?? [:]
       let result = try await runner.run(
         DeterministicWorkflowRunRequest(
           workflow: bundle.workflow,
           nodePayloads: bundle.nodePayloads,
           variables: variables,
           rerunFromSessionId: persisted.session.sessionId,
-          rerunFromStepId: options.stepId
+          rerunFromStepId: options.stepId,
+          effectiveInstance: instanceResolution.effectiveInstance
         )
       )
       let workflowMessages = try await runtimeStore.listMessages(for: result.session.sessionId, toStepId: nil)
@@ -614,7 +659,7 @@ public struct SessionRerunCommand: Sendable {
           loopMetadata: bundle.workflow.loop
         )
       )
-      return renderRerunSuccess(options: options, result: result)
+      return renderRerunSuccess(options: options, result: result, warning: instanceResolution.warning)
     } catch let error as CLIWorkflowSessionStoreError {
       return failure(options: options, exitCode: .failure, error: "\(error)")
     } catch let error as DeterministicWorkflowRunnerError {
@@ -624,7 +669,11 @@ public struct SessionRerunCommand: Sendable {
     }
   }
 
-  private func renderRerunSuccess(options: SessionRerunOptions, result: WorkflowRunResult) -> CLICommandResult {
+  private func renderRerunSuccess(
+    options: SessionRerunOptions,
+    result: WorkflowRunResult,
+    warning: String?
+  ) -> CLICommandResult {
     let exitCode = CLIExitCode(rawValue: result.exitCode) ?? .failure
     switch options.output {
     case .json, .jsonl:
@@ -637,11 +686,17 @@ public struct SessionRerunCommand: Sendable {
         recovery: result.recovery
       )
       let stdout = (try? jsonString(payload)) ?? ""
-      return CLICommandResult(exitCode: exitCode, stdout: stdout + (stdout.hasSuffix("\n") ? "" : "\n"))
+      return CLICommandResult(
+        exitCode: exitCode,
+        stdout: stdout + (stdout.hasSuffix("\n") ? "" : "\n"),
+        stderr: warning.map { "\($0)\n" } ?? ""
+      )
     case .text, .table:
+      let warningLine = warning.map { "warning: \($0)\n" } ?? ""
       return CLICommandResult(
         exitCode: exitCode,
         stdout: """
+        \(warningLine)\
         sourceSessionId: \(options.sessionId)
         rerun session: \(result.session.sessionId)
         rerunFromStepId: \(options.stepId)
@@ -673,6 +728,62 @@ public struct SessionRerunCommand: Sendable {
 
   private func makeAdapter(mockScenarioPath: String?, workingDirectory: String) throws -> any NodeAdapter {
     try makeSessionNodeAdapter(mockScenarioPath: mockScenarioPath, workingDirectory: workingDirectory)
+  }
+
+  private func resolveRerunInstance(
+    persisted: PersistedCLIWorkflowSession,
+    workflowId: String,
+    workingDirectory: String,
+    nodePayloads: [String: AgentNodePayload]
+  ) throws -> SessionRerunInstanceResolution {
+    guard let identity = persisted.session.instanceIdentity else {
+      return SessionRerunInstanceResolution(nodePayloads: nodePayloads)
+    }
+    let snapshot = try persisted.session.instanceConfiguration.map(decodeInstanceConfiguration)
+    if identity == WorkflowInstanceIdentity.defaultIdentity {
+      let configuration = snapshot ?? WorkflowInstanceConfiguration()
+      let patchedPayloads = try WorkflowInstanceResolver.applyNodePatches(configuration.nodePatches, to: nodePayloads)
+      return SessionRerunInstanceResolution(
+        effectiveInstance: EffectiveWorkflowInstance(identity: identity, kind: .default, configuration: configuration),
+        nodePayloads: patchedPayloads
+      )
+    }
+
+    let stores = ScopedWorkflowInstanceStore(workingDirectory: workingDirectory)
+    let stored = try stores.find(identity: identity, workflowId: workflowId)?.1
+    if let stored, snapshot.map({ stored.configuration == $0 }) ?? true {
+      let resolved = try WorkflowInstanceResolver.resolve(
+        workflowId: workflowId,
+        base: stored,
+        nodePayloads: nodePayloads
+      )
+      return SessionRerunInstanceResolution(
+        effectiveInstance: resolved.instance,
+        nodePayloads: resolved.nodePayloads
+      )
+    }
+    guard let snapshot else {
+      throw WorkflowInstanceStoreError.notFound(identity)
+    }
+    let kind = WorkflowInstanceKind(rawValue: persisted.session.instanceKind ?? "") ?? .named
+    let patchedPayloads = try WorkflowInstanceResolver.applyNodePatches(snapshot.nodePatches, to: nodePayloads)
+    let effective = EffectiveWorkflowInstance(
+      identity: identity,
+      kind: kind,
+      baseIdentity: persisted.session.instanceBaseIdentity,
+      configuration: snapshot
+    )
+    let reason = stored == nil ? "not found" : "changed since the source session"
+    return SessionRerunInstanceResolution(
+      effectiveInstance: effective,
+      nodePayloads: patchedPayloads,
+      warning: "workflow instance '\(identity)' \(reason); rerun used the source session snapshot"
+    )
+  }
+
+  private func decodeInstanceConfiguration(_ object: JSONObject) throws -> WorkflowInstanceConfiguration {
+    let data = try JSONEncoder().encode(object)
+    return try JSONDecoder().decode(WorkflowInstanceConfiguration.self, from: data)
   }
 }
 

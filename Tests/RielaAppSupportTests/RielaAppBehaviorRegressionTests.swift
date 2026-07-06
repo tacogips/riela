@@ -409,7 +409,7 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     )
     let root = try XCTUnwrap(controller.window?.contentView)
     let tabView = try XCTUnwrap(firstSubview(of: NSTabView.self, in: root))
-    XCTAssertEqual(tabView.tabViewItems.map(\.label), ["Overview", "Variables", "Graph", "Run Log", "Structure"])
+    XCTAssertEqual(tabView.tabViewItems.map(\.label), ["Overview", "Variables", "Graph", "Timeline", "Run Log", "Structure"])
     XCTAssertTrue(controller.hasLiveRefreshTimerForTesting)
     XCTAssertEqual(controller.window?.minSize, NSSize(width: 560, height: 380))
 

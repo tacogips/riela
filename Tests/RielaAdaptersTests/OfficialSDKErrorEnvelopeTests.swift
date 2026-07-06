@@ -44,6 +44,23 @@ final class OfficialSDKErrorEnvelopeTests: XCTestCase {
     XCTAssertNotNil(error.retryAfter)
   }
 
+  func testRetryAfterHTTPDateHeaderDecodesFutureDelay() throws {
+    let error = decodeOfficialSDKAPIError(
+      provider: OpenAiSDKAdapter.provider,
+      statusCode: 429,
+      headers: ["Retry-After": "Wed, 31 Dec 2099 23:59:59 GMT"],
+      body: try errorBody([
+        "error": .object([
+          "type": .string("rate_limit_error"),
+          "message": .string("retry later")
+        ])
+      ]),
+      sensitiveValues: []
+    )
+
+    XCTAssertGreaterThan(error.retryAfter ?? .zero, .zero)
+  }
+
   func testGeminiErrorEnvelopeDecodesArrayShape() throws {
     let error = decodeOfficialSDKAPIError(
       provider: GeminiSDKAdapter.provider,
@@ -63,6 +80,28 @@ final class OfficialSDKErrorEnvelopeTests: XCTestCase {
     XCTAssertEqual(error.type, "PERMISSION_DENIED")
     XCTAssertEqual(error.message, "forbidden")
     XCTAssertEqual(error.classification, .nonRetryable)
+  }
+
+  func testGeminiErrorEnvelopeDecodesTopLevelArrayShape() throws {
+    let body = try JSONEncoder().encode(JSONValue.array([
+      .object([
+        "error": .object([
+          "status": .string("RESOURCE_EXHAUSTED"),
+          "message": .string("quota")
+        ])
+      ])
+    ]))
+    let error = decodeOfficialSDKAPIError(
+      provider: GeminiSDKAdapter.provider,
+      statusCode: 429,
+      headers: [:],
+      body: body,
+      sensitiveValues: []
+    )
+
+    XCTAssertEqual(error.type, "RESOURCE_EXHAUSTED")
+    XCTAssertEqual(error.message, "quota")
+    XCTAssertEqual(error.classification, .retryable)
   }
 
   func testGenericErrorEnvelopeRedactsSensitiveValues() throws {

@@ -283,7 +283,7 @@ public struct URLSessionOfficialSDKRequestExecutor: OfficialSDKRequestExecuting 
       .adapterError
     }
 
-    let decoded = try decodeOfficialSDKResponse(
+    let decoded = try decodeOfficialSDKResponseForAdapter(
       provider: request.provider,
       data: response.body,
       options: parsingOptions
@@ -506,32 +506,102 @@ private func executeOfficialSDKRequest(
   fallbackFailureMessage: String
 ) async throws -> AdapterExecutionOutput {
   let parsingOptions = effectiveOfficialSDKParsingOptions(configuration: configuration, input: adapterInput, request: request)
+  let usageEmissionTracker = OfficialSDKUsageEmissionTracker()
+  let streamingContext = AdapterExecutionContext(
+    deadline: context.deadline,
+    backendEventHandler: { event in
+      if event.channel == .usage {
+        usageEmissionTracker.markEmitted()
+      }
+      await context.backendEventHandler?(event)
+    }
+  )
+  let decoded: OfficialSDKDecodedResponse
+  let usage: AdapterUsage?
   if shouldStreamOfficialSDKResponse(configuration: configuration, input: adapterInput, request: request),
      let streamingTransport = effectiveOfficialSDKStreamingTransport(configuration) {
     do {
-      let streamed = try await executeOfficialSDKStreamingRequest(
-        adapterInput: adapterInput,
-        context: context,
+      decoded = try await executeOfficialSDKStreamingRequest(
+        context: streamingContext,
         configuration: configuration,
         request: request,
         streamingTransport: streamingTransport,
         parsingOptions: parsingOptions,
-        responseLabel: responseLabel,
         timeoutMessage: timeoutMessage,
         fallbackFailureMessage: fallbackFailureMessage
       )
-      return streamed
+      usage = nil
     } catch is CancellationError {
-      throw AdapterExecutionError(.timeout, timeoutMessage)
+      throw CancellationError()
     } catch let error as AdapterExecutionError where error.isRetryable == false {
       throw error
     } catch {
+      if let adapterError = error as? AdapterExecutionError,
+         let retryAfter = adapterError.retryAfter {
+        try await sleepBeforeOfficialSDKFallback(retryAfter: retryAfter, deadline: context.deadline)
+      }
       // Streamed deltas are observational only. If the stream fails, retry once
       // through the blocking path so the final adapter output contract remains
       // identical to pre-streaming behavior.
+      let response = try await executeOfficialSDKBlockingRequest(
+        context: context,
+        configuration: configuration,
+        request: request,
+        parsingOptions: parsingOptions,
+        retryPolicy: RetryPolicy(maxAttempts: 1, retryDelay: .zero),
+        timeoutMessage: timeoutMessage,
+        fallbackFailureMessage: fallbackFailureMessage
+      )
+      decoded = response.decoded
+      usage = response.usage
     }
+  } else {
+    let response = try await executeOfficialSDKBlockingRequest(
+      context: context,
+      configuration: configuration,
+      request: request,
+      parsingOptions: parsingOptions,
+      retryPolicy: configuration.retryPolicy,
+      timeoutMessage: timeoutMessage,
+      fallbackFailureMessage: fallbackFailureMessage
+    )
+    decoded = response.decoded
+    usage = response.usage
   }
 
+  let effectiveUsage = usage ?? decoded.usage
+  if let effectiveUsage, !usageEmissionTracker.didEmitUsage() {
+    await context.backendEventHandler?(AdapterBackendEvent(
+      provider: request.provider,
+      eventType: "response.usage",
+      channel: .usage,
+      usage: effectiveUsage.eventPayload
+    ))
+  }
+
+  return try makeOfficialSDKAdapterOutput(
+    adapterInput: adapterInput,
+    request: request,
+    decoded: decoded,
+    usage: effectiveUsage,
+    responseLabel: responseLabel
+  )
+}
+
+private struct OfficialSDKBlockingResponse: Sendable {
+  var decoded: OfficialSDKDecodedResponse
+  var usage: AdapterUsage?
+}
+
+private func executeOfficialSDKBlockingRequest(
+  context: AdapterExecutionContext,
+  configuration: OfficialSDKAdapterConfiguration,
+  request: OfficialSDKRequest,
+  parsingOptions: OfficialSDKParsingOptions,
+  retryPolicy: RetryPolicy,
+  timeoutMessage: String,
+  fallbackFailureMessage: String
+) async throws -> OfficialSDKBlockingResponse {
   let executor = configuration.requestExecutor ?? URLSessionOfficialSDKRequestExecutor(
     transport: configuration.httpTransport ?? URLSessionOfficialSDKHTTPTransport(),
     customHeaders: configuration.customHeaders,
@@ -540,7 +610,7 @@ private func executeOfficialSDKRequest(
     parsingOptions: parsingOptions
   )
   let response = try await retryOfficialSDKRequest(
-    policy: configuration.retryPolicy,
+    policy: retryPolicy,
     deadline: context.deadline,
     timeoutMessage: timeoutMessage,
     fallbackFailureMessage: fallbackFailureMessage,
@@ -549,20 +619,21 @@ private func executeOfficialSDKRequest(
     try await executor.executeSDKRequest(request, context: context)
   }
 
-  let decoded = try decodeOfficialSDKResponse(
+  let decoded = try decodeOfficialSDKResponseForAdapter(
     provider: request.provider,
     raw: response.body,
     options: parsingOptions
   )
-  let usage = response.usage ?? decoded.usage
-  if let usage {
-    await context.backendEventHandler?(AdapterBackendEvent(
-      provider: request.provider,
-      eventType: "response.usage",
-      channel: .usage,
-      usage: usage.eventPayload
-    ))
-  }
+  return OfficialSDKBlockingResponse(decoded: decoded, usage: response.usage)
+}
+
+private func makeOfficialSDKAdapterOutput(
+  adapterInput: AdapterExecutionInput,
+  request: OfficialSDKRequest,
+  decoded: OfficialSDKDecodedResponse,
+  usage: AdapterUsage?,
+  responseLabel: String
+) throws -> AdapterExecutionOutput {
   let normalized: OutputContractEnvelopeNormalization
   if adapterInput.node.output == nil {
     normalized = OutputContractEnvelopeNormalization(
@@ -590,17 +661,15 @@ private func executeOfficialSDKRequest(
 }
 
 private func executeOfficialSDKStreamingRequest(
-  adapterInput: AdapterExecutionInput,
   context: AdapterExecutionContext,
   configuration: OfficialSDKAdapterConfiguration,
   request: OfficialSDKRequest,
   streamingTransport: any OfficialSDKStreamingHTTPTransporting,
   parsingOptions: OfficialSDKParsingOptions,
-  responseLabel: String,
   timeoutMessage: String,
   fallbackFailureMessage: String
-) async throws -> AdapterExecutionOutput {
-  let decoded = try await retryOfficialSDKRequest(
+) async throws -> OfficialSDKDecodedResponse {
+  try await retryOfficialSDKRequest(
     policy: RetryPolicy(maxAttempts: 1, retryDelay: .zero),
     deadline: context.deadline,
     timeoutMessage: timeoutMessage,
@@ -615,30 +684,6 @@ private func executeOfficialSDKStreamingRequest(
       parsingOptions: parsingOptions
     )
   }
-  let normalized: OutputContractEnvelopeNormalization
-  if adapterInput.node.output == nil {
-    normalized = OutputContractEnvelopeNormalization(
-      completionPassed: true,
-      when: ["always": true],
-      payload: normalizeTextBusinessPayload(decoded.text),
-      usedEnvelope: false
-    )
-  } else {
-    normalized = try normalizeOutputContractEnvelope(
-      parseJSONObjectCandidate(decoded.text, source: responseLabel),
-      source: responseLabel
-    )
-  }
-
-  return AdapterExecutionOutput(
-    provider: request.provider,
-    model: adapterInput.node.model,
-    promptText: adapterInput.promptText,
-    completionPassed: normalized.completionPassed,
-    when: normalized.when,
-    payload: normalized.payload,
-    usage: decoded.usage
-  )
 }
 
 private func shouldStreamOfficialSDKResponse(
@@ -654,9 +699,11 @@ private func shouldStreamOfficialSDKResponse(
         ) != false else {
     return false
   }
-  let environment = (configuration.environment ?? ProcessInfo.processInfo.environment)
-    .merging(input.agentEnvironment) { _, nodeValue in nodeValue }
-  return environment["RIELA_OFFICIAL_SDK_STREAMING"]?.lowercased() != "off"
+  if isOfficialSDKToggleDisabled(ProcessInfo.processInfo.environment["RIELA_OFFICIAL_SDK_STREAMING"]) {
+    return false
+  }
+  let environment = mergedOfficialSDKEnvironment(configuration: configuration, input: input)
+  return !isOfficialSDKToggleDisabled(environment["RIELA_OFFICIAL_SDK_STREAMING"])
 }
 
 private func effectiveOfficialSDKStreamingTransport(
@@ -677,10 +724,11 @@ private func effectiveOfficialSDKParsingOptions(
   request: OfficialSDKRequest
 ) -> OfficialSDKParsingOptions {
   var options = configuration.parsingOptions
+  let environment = mergedOfficialSDKEnvironment(configuration: configuration, input: input)
   if firstBool(
     input.mergedVariables["officialSDKRelaxedParsing"],
     input.node.variables["officialSDKRelaxedParsing"],
-    input.agentEnvironment["RIELA_OFFICIAL_SDK_RELAXED_PARSING"].map(JSONValue.string)
+    environment["RIELA_OFFICIAL_SDK_RELAXED_PARSING"].map(JSONValue.string)
   ) == true {
     options.insert(.relaxed)
   }
@@ -690,6 +738,45 @@ private func effectiveOfficialSDKParsingOptions(
     options.insert(.relaxed)
   }
   return options
+}
+
+private func mergedOfficialSDKEnvironment(
+  configuration: OfficialSDKAdapterConfiguration,
+  input: AdapterExecutionInput
+) -> [String: String] {
+  ProcessInfo.processInfo.environment
+    .merging(configuration.environment ?? [:]) { _, configuredValue in configuredValue }
+    .merging(input.agentEnvironment) { _, nodeValue in nodeValue }
+}
+
+private func isOfficialSDKToggleDisabled(_ value: String?) -> Bool {
+  guard let value else {
+    return false
+  }
+  switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+  case "off", "false", "0", "no":
+    return true
+  default:
+    return false
+  }
+}
+
+private final class OfficialSDKUsageEmissionTracker: @unchecked Sendable {
+  private let lock = NSLock()
+  private var emitted = false
+
+  func markEmitted() {
+    lock.lock()
+    emitted = true
+    lock.unlock()
+  }
+
+  func didEmitUsage() -> Bool {
+    lock.lock()
+    let emitted = emitted
+    lock.unlock()
+    return emitted
+  }
 }
 
 private func retryOfficialSDKRequest<T: Sendable>(
@@ -770,6 +857,61 @@ private func normalizeOfficialSDKFailure(
   return AdapterExecutionError(
     normalized.code,
     redactOfficialSDKSensitiveText(normalized.message, sensitiveValues: sensitiveValues)
+  )
+}
+
+private func decodeOfficialSDKResponseForAdapter(
+  provider: String,
+  data: Data,
+  options: OfficialSDKParsingOptions
+) throws -> OfficialSDKDecodedResponse {
+  do {
+    return try decodeOfficialSDKResponse(provider: provider, data: data, options: options)
+  } catch let error as AdapterExecutionError {
+    throw error
+  } catch {
+    throw AdapterExecutionError(
+      .invalidOutput,
+      "official SDK \(provider) response did not match expected schema",
+      isRetryable: false
+    )
+  }
+}
+
+private func decodeOfficialSDKResponseForAdapter(
+  provider: String,
+  raw: JSONValue,
+  options: OfficialSDKParsingOptions
+) throws -> OfficialSDKDecodedResponse {
+  do {
+    return try decodeOfficialSDKResponse(provider: provider, raw: raw, options: options)
+  } catch let error as AdapterExecutionError {
+    throw error
+  } catch {
+    throw AdapterExecutionError(
+      .invalidOutput,
+      "official SDK \(provider) response did not match expected schema",
+      isRetryable: false
+    )
+  }
+}
+
+private func sleepBeforeOfficialSDKFallback(retryAfter: Duration, deadline: Date?) async throws {
+  guard retryAfter > .zero else {
+    return
+  }
+  if let deadline,
+     deadline <= Date().addingTimeInterval(timeInterval(forOfficialSDKDuration: retryAfter)) {
+    throw AdapterExecutionError(.providerError, "official SDK stream retry-after exceeds deadline", isRetryable: true, retryAfter: retryAfter)
+  }
+  try await Task.sleep(for: retryAfter)
+}
+
+private func timeInterval(forOfficialSDKDuration duration: Duration) -> TimeInterval {
+  let components = duration.components
+  return max(
+    0,
+    TimeInterval(components.seconds) + TimeInterval(components.attoseconds) / 1_000_000_000_000_000_000
   )
 }
 
@@ -892,7 +1034,14 @@ private func boolValue(_ value: JSONValue?) -> Bool? {
   case let .bool(flag):
     flag
   case let .string(text):
-    Bool(text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+    switch text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "true", "1", "yes", "on":
+      true
+    case "false", "0", "no", "off":
+      false
+    default:
+      nil
+    }
   default:
     nil
   }

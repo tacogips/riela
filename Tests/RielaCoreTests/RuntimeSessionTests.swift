@@ -113,6 +113,27 @@ final class RuntimeSessionTests: XCTestCase {
     XCTAssertNil(session.executions.first?.lastBackendEventType)
   }
 
+  func testWorkflowStepExecutionDecodesLegacyJSONWithoutUsage() throws {
+    let data = Data(
+      """
+      {
+        "executionId": "exec-legacy",
+        "stepId": "step-1",
+        "nodeId": "node-1",
+        "attempt": 1,
+        "status": "completed",
+        "createdAt": 700000000,
+        "updatedAt": 700000001
+      }
+      """.utf8
+    )
+
+    let execution = try JSONDecoder().decode(WorkflowStepExecution.self, from: data)
+
+    XCTAssertEqual(execution.executionId, "exec-legacy")
+    XCTAssertNil(execution.usage)
+  }
+
   func testWorkflowSessionWorkflowExecutionIdAliasesSessionId() {
     let date = Date(timeIntervalSince1970: 1_700_000_000)
     var session = WorkflowSession(
@@ -129,5 +150,28 @@ final class RuntimeSessionTests: XCTestCase {
 
     XCTAssertEqual(session.sessionId, "session-b")
     XCTAssertEqual(session.workflowExecutionId, "session-b")
+  }
+
+  func testWorkflowSessionDecodesLegacyJSONWithoutInstanceFields() throws {
+    let data = Data(
+      """
+      {
+        "workflowId": "workflow-a",
+        "sessionId": "session-a",
+        "status": "completed",
+        "entryStepId": "step-1",
+        "createdAt": 700000000,
+        "updatedAt": 700000001,
+        "executions": []
+      }
+      """.utf8
+    )
+
+    let session = try JSONDecoder().decode(WorkflowSession.self, from: data)
+
+    XCTAssertNil(session.instanceIdentity)
+    XCTAssertNil(session.instanceKind)
+    XCTAssertNil(session.instanceBaseIdentity)
+    XCTAssertNil(session.instanceConfiguration)
   }
 }

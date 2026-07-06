@@ -6,6 +6,20 @@ extension WorkflowPackageCommandRunner {
   struct ResolvedPackageSource {
     var directory: URL
     var temporaryRoot: URL?
+    var archiveURL: URL?
+    var sourceReference: String?
+
+    init(
+      directory: URL,
+      temporaryRoot: URL?,
+      archiveURL: URL? = nil,
+      sourceReference: String? = nil
+    ) {
+      self.directory = directory
+      self.temporaryRoot = temporaryRoot
+      self.archiveURL = archiveURL
+      self.sourceReference = sourceReference
+    }
   }
 
   struct PackageValidation {
@@ -148,13 +162,9 @@ extension WorkflowPackageCommandRunner {
     let loader = FileWorkflowPackageManifestLoader()
     let manifest = try await loader.loadManifest(from: manifestURL)
     let issues = await loader.validate(manifest, packageRoot: packageDirectory, verifiesChecksum: true)
-    return WorkflowPackageSummary(
-      name: manifest.name,
-      version: manifest.version,
-      kind: manifest.kind,
-      tags: manifest.tags,
-      packageDirectory: packageDirectory.path,
-      workflowDirectory: manifest.workflowDirectory,
+    return workflowPackageSummary(
+      manifest: manifest,
+      packageDirectory: packageDirectory,
       valid: issues.isEmpty,
       issues: issues
     )
@@ -216,6 +226,9 @@ extension WorkflowPackageCommandRunner {
       guard WorkflowPackageManifestValidator.isSafePackageName(target) else {
         throw CLIUsageError("invalid package name '\(target)'")
       }
+      if allowRegistry, parsed.refresh {
+        try await refreshRegistryIndexes(parsed: parsed, workingDirectory: workingDirectory)
+      }
       if !allowRegistry {
         let installedDirectory = try packageDirectory(target: target, parsed: parsed)
         if FileManager.default.fileExists(atPath: installedDirectory.path) {
@@ -225,6 +238,20 @@ extension WorkflowPackageCommandRunner {
       if allowRegistry,
         let registrySource = try await registryPackageSource(named: target, parsed: parsed, workingDirectory: workingDirectory) {
         return ResolvedPackageSource(directory: registrySource, temporaryRoot: nil)
+      }
+      if allowRegistry,
+        let archiveSource = try await registryPackageArchiveSource(
+          named: target,
+          parsed: parsed,
+          workingDirectory: workingDirectory
+        ) {
+        return try await materializedRegistryArchiveSource(archiveSource, workingDirectory: workingDirectory)
+      }
+      if allowRegistry {
+        let searched = try packageRegistryCandidateRootPaths(parsed: parsed, workingDirectory: workingDirectory)
+        throw CLIUsageError(
+          "package install could not resolve package '\(target)'; searched registry roots: \(searched.joined(separator: ", "))"
+        )
       }
     }
     let command = allowRegistry ? "install" : "validate"
@@ -236,15 +263,53 @@ extension WorkflowPackageCommandRunner {
     if WorkflowPackageArchiveManager.isPackageArchive(sourceURL) {
       let temporaryRoot = temporaryPackageExtractionRoot(workingDirectory: workingDirectory)
       let packageRoot = try WorkflowPackageArchiveManager().extractArchive(sourceURL, to: temporaryRoot)
-      return ResolvedPackageSource(directory: packageRoot, temporaryRoot: temporaryRoot)
+      return ResolvedPackageSource(directory: packageRoot, temporaryRoot: temporaryRoot, archiveURL: sourceURL)
     }
     return ResolvedPackageSource(directory: sourceURL, temporaryRoot: nil)
+  }
+
+  func materializedRegistryArchiveSource(
+    _ source: RegistryArchiveSource,
+    workingDirectory: URL
+  ) async throws -> ResolvedPackageSource {
+    let temporaryRoot = temporaryPackageExtractionRoot(workingDirectory: workingDirectory)
+    let downloadRoot = temporaryRoot.appendingPathComponent("archive", isDirectory: true)
+    let extractionRoot = temporaryRoot.appendingPathComponent("extract", isDirectory: true)
+    try FileManager.default.createDirectory(at: downloadRoot, withIntermediateDirectories: true)
+    let archiveURL = try await downloadRegistryArchive(source.archiveURL, into: downloadRoot)
+    let actualDigest = try sha256Digest(for: archiveURL)
+    guard actualDigest == source.archiveSHA256 else {
+      throw CLIUsageError(
+        "registry package '\(source.packageName)' archiveSHA256 mismatch: expected \(source.archiveSHA256), got \(actualDigest)"
+      )
+    }
+    let packageRoot = try WorkflowPackageArchiveManager().extractArchive(archiveURL, to: extractionRoot)
+    return ResolvedPackageSource(
+      directory: packageRoot,
+      temporaryRoot: temporaryRoot,
+      archiveURL: archiveURL,
+      sourceReference: source.archiveURL.absoluteString
+    )
   }
 
   func temporaryPackageExtractionRoot(workingDirectory: URL) -> URL {
     workingDirectory
       .appendingPathComponent(".riela/tmp/rielapkg", isDirectory: true)
       .appendingPathComponent(UUID().uuidString, isDirectory: true)
+  }
+
+  private func downloadRegistryArchive(_ sourceURL: URL, into temporaryRoot: URL) async throws -> URL {
+    let destination = temporaryRoot.appendingPathComponent(sourceURL.lastPathComponent)
+    if sourceURL.isFileURL {
+      try FileManager.default.copyItem(at: sourceURL, to: destination)
+      return destination
+    }
+    let (downloadedURL, response) = try await URLSession.shared.download(from: sourceURL)
+    if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+      throw CLIUsageError("package archive download failed with HTTP \(http.statusCode): \(sourceURL.absoluteString)")
+    }
+    try FileManager.default.moveItem(at: downloadedURL, to: destination)
+    return destination
   }
 
   private func validatePackageResultSource(

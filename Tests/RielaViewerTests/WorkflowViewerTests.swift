@@ -178,6 +178,15 @@ final class WorkflowViewerTests: XCTestCase {
           nodeId: "input",
           attempt: 1,
           status: .completed,
+          backendEventCount: 2,
+          recentBackendEvents: [
+            WorkflowBackendEventRecord(
+              sequence: 2,
+              at: now,
+              eventType: "response.delta",
+              content: "hello"
+            )
+          ],
           createdAt: now,
           updatedAt: now
         ),
@@ -228,9 +237,15 @@ final class WorkflowViewerTests: XCTestCase {
     XCTAssertEqual(state.selectedSessionId, "viewer-demo-session-1")
     XCTAssertEqual(state.sessions.first?.status, .running)
     XCTAssertEqual(state.timeline.map(\.stepId), ["input", "worker"])
+    XCTAssertEqual(state.timeline.first?.executionId, "exec-input")
+    XCTAssertEqual(state.timeline.first?.backendEventTotalCount, 2)
+    XCTAssertEqual(state.timeline.first?.backendEvents.map(\.eventType), ["response.delta"])
     XCTAssertEqual(state.timeline.map(\.status), [.completed, .running])
     XCTAssertEqual(state.timeline.first?.duration, 0)
     XCTAssertNil(state.timeline.last?.duration)
+    XCTAssertEqual(state.messages.map(\.id), ["comm-1", "comm-2"])
+    XCTAssertEqual(state.messages.first?.sourceStepExecutionId, "exec-input")
+    XCTAssertEqual(state.messages.first?.payloadJSON.contains("\"answer\""), true)
     XCTAssertEqual(state.nodes.first?.id, "input")
     XCTAssertEqual(state.nodes.first?.state, .completed)
     XCTAssertEqual(state.nodes.first?.children.first?.id, "worker")

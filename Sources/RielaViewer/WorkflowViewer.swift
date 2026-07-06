@@ -179,90 +179,6 @@ public struct WorkflowViewerTemplateFile: Codable, Equatable, Hashable, Identifi
   }
 }
 
-public struct WorkflowViewerMessage: Codable, Equatable, Identifiable, Sendable {
-  public var id: String
-  public var direction: WorkflowViewerMessageDirection
-  public var fromStepId: String?
-  public var toStepId: String?
-  public var status: WorkflowMessageLifecycleStatus
-  public var payloadPreview: String
-  public var artifactRefs: [String]
-
-  public init(
-    id: String,
-    direction: WorkflowViewerMessageDirection,
-    fromStepId: String?,
-    toStepId: String?,
-    status: WorkflowMessageLifecycleStatus,
-    payloadPreview: String,
-    artifactRefs: [String] = []
-  ) {
-    self.id = id
-    self.direction = direction
-    self.fromStepId = fromStepId
-    self.toStepId = toStepId
-    self.status = status
-    self.payloadPreview = payloadPreview
-    self.artifactRefs = artifactRefs
-  }
-}
-
-public struct WorkflowViewerNodeMessages: Codable, Equatable, Sendable {
-  public var stepId: String
-  public var inbox: [WorkflowViewerMessage]
-  public var outbox: [WorkflowViewerMessage]
-
-  public init(stepId: String, inbox: [WorkflowViewerMessage] = [], outbox: [WorkflowViewerMessage] = []) {
-    self.stepId = stepId
-    self.inbox = inbox
-    self.outbox = outbox
-  }
-}
-
-public struct WorkflowViewerTimelineEntry: Codable, Equatable, Identifiable, Sendable {
-  public var id: String
-  public var stepId: String
-  public var nodeId: String
-  public var attempt: Int
-  public var status: WorkflowStepExecutionStatus
-  public var backend: NodeExecutionBackend?
-  public var startedAt: Date
-  public var endedAt: Date?
-  public var lastBackendEventAt: Date?
-  public var lastBackendEventType: String?
-  public var failureReason: String?
-
-  public init(
-    id: String,
-    stepId: String,
-    nodeId: String,
-    attempt: Int,
-    status: WorkflowStepExecutionStatus,
-    backend: NodeExecutionBackend? = nil,
-    startedAt: Date,
-    endedAt: Date? = nil,
-    lastBackendEventAt: Date? = nil,
-    lastBackendEventType: String? = nil,
-    failureReason: String? = nil
-  ) {
-    self.id = id
-    self.stepId = stepId
-    self.nodeId = nodeId
-    self.attempt = attempt
-    self.status = status
-    self.backend = backend
-    self.startedAt = startedAt
-    self.endedAt = endedAt
-    self.lastBackendEventAt = lastBackendEventAt
-    self.lastBackendEventType = lastBackendEventType
-    self.failureReason = failureReason
-  }
-
-  public var duration: TimeInterval? {
-    endedAt.map { $0.timeIntervalSince(startedAt) }
-  }
-}
-
 public struct WorkflowViewerState: Codable, Equatable, Sendable {
   public var workflow: WorkflowDefinition
   public var workflowDirectory: String
@@ -272,6 +188,7 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
   public var sessions: [WorkflowViewerSessionSummary]
   public var nodes: [WorkflowViewerNode]
   public var timeline: [WorkflowViewerTimelineEntry]
+  public var messages: [WorkflowViewerMessage]
   public var diagnostics: [String]
 
   public init(
@@ -283,6 +200,7 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
     sessions: [WorkflowViewerSessionSummary],
     nodes: [WorkflowViewerNode],
     timeline: [WorkflowViewerTimelineEntry] = [],
+    messages: [WorkflowViewerMessage] = [],
     diagnostics: [String] = []
   ) {
     self.workflow = workflow
@@ -293,6 +211,7 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
     self.sessions = sessions
     self.nodes = nodes
     self.timeline = timeline
+    self.messages = messages
     self.diagnostics = diagnostics
   }
 
@@ -314,6 +233,7 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
     case sessions
     case nodes
     case timeline
+    case messages
     case diagnostics
   }
 
@@ -327,6 +247,7 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
     sessions = try container.decode([WorkflowViewerSessionSummary].self, forKey: .sessions)
     nodes = try container.decode([WorkflowViewerNode].self, forKey: .nodes)
     timeline = try container.decode([WorkflowViewerTimelineEntry].self, forKey: .timeline)
+    messages = try container.decodeIfPresent([WorkflowViewerMessage].self, forKey: .messages) ?? []
     diagnostics = try container.decodeIfPresent([String].self, forKey: .diagnostics) ?? []
   }
 }
@@ -400,6 +321,7 @@ public struct WorkflowViewerLoader: Sendable {
       sessions: summaries,
       nodes: buildTree(workflow: workflow, workflowDirectory: workflowDirectory, selectedSession: selectedSnapshot?.session),
       timeline: selectedSnapshot.map { timelineEntries(from: $0.session) } ?? [],
+      messages: selectedSnapshot.map { messages(from: $0.workflowMessages) } ?? [],
       diagnostics: diagnostics
     )
   }
@@ -475,9 +397,17 @@ public struct WorkflowViewerLoader: Sendable {
           endedAt: execution.status == .running ? nil : execution.updatedAt,
           lastBackendEventAt: execution.lastBackendEventAt,
           lastBackendEventType: execution.lastBackendEventType,
+          backendEventTotalCount: execution.backendEventCount,
+          backendEvents: (execution.recentBackendEvents ?? []).map(viewerBackendEvent),
           failureReason: execution.failureReason
         )
       }
+  }
+
+  private func messages(from records: [WorkflowMessageRecord]) -> [WorkflowViewerMessage] {
+    records
+      .sorted { $0.createdOrder < $1.createdOrder }
+      .map { viewerMessage($0, direction: .outbox) }
   }
 
   private func loadSnapshots(sessionStoreRoot: String) throws -> [WorkflowRuntimePersistenceSnapshot] {
@@ -840,27 +770,50 @@ public struct WorkflowViewerLoader: Sendable {
   }
 
   private func viewerMessage(_ message: WorkflowMessageRecord, direction: WorkflowViewerMessageDirection) -> WorkflowViewerMessage {
-    WorkflowViewerMessage(
+    let payloadJSON = prettyJSON(message.payload)
+    return WorkflowViewerMessage(
       id: message.communicationId,
       direction: direction,
       fromStepId: message.fromStepId,
       toStepId: message.toStepId,
+      sourceStepExecutionId: message.sourceStepExecutionId,
+      transitionCondition: message.transitionCondition,
       status: message.lifecycleStatus,
       payloadPreview: preview(message.payload),
-      artifactRefs: message.artifactRefs
+      payloadJSON: payloadJSON,
+      artifactRefs: message.artifactRefs,
+      deliveryKind: message.deliveryKind,
+      createdOrder: message.createdOrder,
+      createdAt: message.createdAt
+    )
+  }
+
+  private func viewerBackendEvent(_ event: WorkflowBackendEventRecord) -> WorkflowViewerBackendEvent {
+    WorkflowViewerBackendEvent(
+      sequence: event.sequence,
+      at: event.at,
+      eventType: event.eventType,
+      channel: event.channel,
+      content: event.content,
+      toolName: event.toolName
     )
   }
 
   private func preview(_ object: JSONObject) -> String {
+    let rendered = prettyJSON(object)
+    if rendered.count > 1_200 {
+      return String(rendered.prefix(1_200)) + "..."
+    }
+    return rendered
+  }
+
+  private func prettyJSON(_ object: JSONObject) -> String {
     let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     guard let data = try? encoder.encode(JSONValue.object(object)),
       let rendered = String(data: data, encoding: .utf8)
     else {
       return "{}"
-    }
-    if rendered.count > 1_200 {
-      return String(rendered.prefix(1_200)) + "..."
     }
     return rendered
   }

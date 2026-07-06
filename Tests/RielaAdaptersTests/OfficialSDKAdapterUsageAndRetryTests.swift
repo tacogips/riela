@@ -219,4 +219,31 @@ extension OfficialSDKAdapterTests {
       XCTAssertEqual(executor.requests().count, 1)
     }
   }
+
+  func testInjectedExecutorMalformedBodyFailsTypedWithoutRetry() async throws {
+    let executor = RecordingOfficialSDKExecutor(outcomes: [
+      .success(OfficialSDKResponse(body: .object([
+        "output_text": .string("ok"),
+        "usage": .object(["input_tokens": .string("bad")])
+      ])))
+    ])
+    let adapter = OpenAiSDKAdapter(
+      configuration: OfficialSDKAdapterConfiguration(
+        apiKeyEnv: "TEST_OPENAI_KEY",
+        retryPolicy: RetryPolicy(maxAttempts: 3, retryDelay: .zero),
+        environment: ["TEST_OPENAI_KEY": openAITestKey()],
+        requestExecutor: executor
+      )
+    )
+
+    do {
+      _ = try await adapter.execute(openAIInput(), context: AdapterExecutionContext())
+      XCTFail("Expected malformed response failure")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .invalidOutput)
+      XCTAssertEqual(error.isRetryable, false)
+      XCTAssertFalse(error.message.contains("DecodingError"))
+      XCTAssertEqual(executor.requests().count, 1)
+    }
+  }
 }

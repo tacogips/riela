@@ -168,6 +168,128 @@ public struct GraphQLRuntimeSnapshotQueryService: Sendable {
   }
 }
 
+public struct GraphQLWorkflowInstanceService: Sendable {
+  public var store: any WorkflowInstanceStoring
+
+  public init(store: any WorkflowInstanceStoring) {
+    self.store = store
+  }
+
+  public func workflowInstances(
+    workflowId: String? = nil
+  ) async -> GraphQLWorkflowInstanceQueryResult<[GraphQLWorkflowInstanceDTO]> {
+    do {
+      let instances = try store.list(workflowId: workflowId).map(GraphQLWorkflowInstanceDTO.init)
+      return GraphQLWorkflowInstanceQueryResult(
+        result: GraphQLControlPlaneResult(accepted: true, status: GraphQLLoopEvidenceQueryStatus.found.rawValue),
+        value: instances
+      )
+    } catch {
+      return instanceQueryFailure(error)
+    }
+  }
+
+  public func workflowInstance(
+    identity: String,
+    workflowId: String? = nil
+  ) async -> GraphQLWorkflowInstanceQueryResult<GraphQLWorkflowInstanceDTO> {
+    do {
+      guard let instance = try store.find(identity: identity, workflowId: workflowId) else {
+        return GraphQLWorkflowInstanceQueryResult(
+          result: GraphQLControlPlaneResult(
+            accepted: false,
+            status: GraphQLLoopEvidenceQueryStatus.notFound.rawValue,
+            diagnostics: ["workflow instance not found: \(identity)"]
+          )
+        )
+      }
+      return GraphQLWorkflowInstanceQueryResult(
+        result: GraphQLControlPlaneResult(accepted: true, status: GraphQLLoopEvidenceQueryStatus.found.rawValue),
+        value: GraphQLWorkflowInstanceDTO(instance: instance)
+      )
+    } catch {
+      return instanceQueryFailure(error)
+    }
+  }
+
+  public func createWorkflowInstance(
+    _ input: GraphQLWorkflowInstanceInput
+  ) async -> GraphQLWorkflowInstanceMutationResult {
+    await saveWorkflowInstance(input)
+  }
+
+  public func updateWorkflowInstance(
+    _ input: GraphQLWorkflowInstanceInput
+  ) async -> GraphQLWorkflowInstanceMutationResult {
+    await saveWorkflowInstance(input)
+  }
+
+  public func deleteWorkflowInstance(
+    identity: String,
+    workflowId: String? = nil
+  ) async -> GraphQLWorkflowInstanceMutationResult {
+    do {
+      let existing = try store.find(identity: identity, workflowId: workflowId)
+      try store.remove(identity: identity, workflowId: workflowId)
+      return GraphQLWorkflowInstanceMutationResult(
+        result: GraphQLControlPlaneResult(accepted: true, status: GraphQLLoopEvidenceQueryStatus.found.rawValue),
+        instance: existing.map(GraphQLWorkflowInstanceDTO.init)
+      )
+    } catch WorkflowInstanceStoreError.notFound {
+      return GraphQLWorkflowInstanceMutationResult(
+        result: GraphQLControlPlaneResult(
+          accepted: false,
+          status: GraphQLLoopEvidenceQueryStatus.notFound.rawValue,
+          diagnostics: ["workflow instance not found: \(identity)"]
+        )
+      )
+    } catch {
+      return GraphQLWorkflowInstanceMutationResult(result: instanceControlPlaneFailure(error))
+    }
+  }
+
+  private func saveWorkflowInstance(
+    _ input: GraphQLWorkflowInstanceInput
+  ) async -> GraphQLWorkflowInstanceMutationResult {
+    do {
+      let definition = input.definition
+      try store.save(definition)
+      return GraphQLWorkflowInstanceMutationResult(
+        result: GraphQLControlPlaneResult(accepted: true, status: GraphQLLoopEvidenceQueryStatus.found.rawValue),
+        instance: GraphQLWorkflowInstanceDTO(instance: definition)
+      )
+    } catch {
+      return GraphQLWorkflowInstanceMutationResult(result: instanceControlPlaneFailure(error))
+    }
+  }
+
+  private func instanceQueryFailure<Value: Codable & Equatable & Sendable>(
+    _ error: Error
+  ) -> GraphQLWorkflowInstanceQueryResult<Value> {
+    GraphQLWorkflowInstanceQueryResult(result: instanceControlPlaneFailure(error))
+  }
+
+  private func instanceControlPlaneFailure(_ error: Error) -> GraphQLControlPlaneResult {
+    let status: String
+    switch error {
+    case WorkflowInstanceStoreError.invalidIdentity,
+         WorkflowInstanceStoreError.ambiguousIdentity,
+         WorkflowInstanceStoreError.unsupportedScope,
+         WorkflowInstanceStoreError.duplicateIdentity:
+      status = GraphQLLoopEvidenceQueryStatus.invalidRequest.rawValue
+    case WorkflowInstanceStoreError.notFound:
+      status = GraphQLLoopEvidenceQueryStatus.notFound.rawValue
+    default:
+      status = GraphQLLoopEvidenceQueryStatus.error.rawValue
+    }
+    return GraphQLControlPlaneResult(
+      accepted: false,
+      status: status,
+      diagnostics: [String(describing: error)]
+    )
+  }
+}
+
 private enum GraphQLRuntimeSnapshotQueryError: Error {
   case invalidStatus(String)
 }

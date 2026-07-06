@@ -169,7 +169,7 @@ private func retryDelay(
   randomUnitInterval: @Sendable () -> Double
 ) -> Duration {
   if let retryAfter = error.retryAfter, retryAfter > .zero {
-    return retryAfter
+    return min(retryAfter, policy.maxDelay)
   }
 
   let multiplier = pow(policy.backoffMultiplier, Double(max(0, attempt - 1)))

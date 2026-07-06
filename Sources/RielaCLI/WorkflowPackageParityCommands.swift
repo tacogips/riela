@@ -10,22 +10,66 @@ import RielaServer
 private let defaultWorkflowPackageRegistryId = "default"
 private let defaultWorkflowPackageRegistryURL = "https://github.com/tacogips/riela-packages"
 private let defaultWorkflowPackageRegistryBranch = "main"
+private let defaultWorkflowPackageRegistryReleaseTag = "registry-packages"
 private let defaultWorkflowPackageRegistryTimestamp = "2026-06-18T00:00:00Z"
 
+// swiftlint:disable:next type_body_length
 public struct WorkflowPackageCommandRunner: Sendable {
+  private struct PackageSummaryRoot {
+    var url: URL
+    var source: String
+  }
+
+  private struct RegistryIndex: Decodable {
+    var packages: [RegistryIndexPackage]
+  }
+
+  private struct RegistryIndexPackage: Decodable {
+    var name: String
+    var directory: String
+    var archiveURL: String?
+    var archiveSHA256: String?
+    var version: String?
+    var kind: WorkflowPackageKind?
+    var title: String?
+    var description: String?
+    var tags: [String]?
+    var workflow: RegistryIndexWorkflow?
+    var backends: [String]?
+    var requiredEnvironment: [WorkflowPackageEnvironmentVariable]?
+    var addons: [RegistryIndexAddon]?
+  }
+
+  private struct RegistryIndexAddon: Decodable {
+    var name: String
+    var version: String
+    var sourcePath: String?
+    var contentDigest: String?
+    var execution: WorkflowPackageAddonExecutionDescriptor?
+  }
+
+  private struct RegistryIndexWorkflow: Decodable {
+    var directory: String?
+  }
+
   public init() {}
 
   public func run(_ command: PackageCommand) async -> CLICommandResult {
     let options = command.options
     do {
       if command.kind == .registry {
-        return try registryCommand(options: options)
+        return try await registryCommand(options: options)
       }
       let parsed = try ParsedParityOptions(options.arguments)
       switch command.kind {
       case .search, .list, .status:
         let packages = try await packageSummaries(options: options, parsed: parsed)
-        let filtered = filter(packages, target: options.target, command: command.kind)
+        let filtered = filteredPackages(
+          packages,
+          target: options.target,
+          command: command.kind,
+          parsed: parsed
+        )
         let result = WorkflowPackageCommandResult(
           scope: options.scope,
           command: command.kind.rawValue,
@@ -40,34 +84,42 @@ public struct WorkflowPackageCommandRunner: Sendable {
       case .registry:
         throw CLIUsageError("unreachable package registry command")
       case .install, .checkout:
+        let shouldReplayLockfile = parsed.locked
+          || (command.kind == .install && options.target == nil && parsed.source == nil)
+        if shouldReplayLockfile {
+          guard command.kind == .install else {
+            throw CLIUsageError("package \(command.kind.rawValue) does not support --locked")
+          }
+          return try await runLockedInstall(command: command, parsed: parsed)
+        }
         let installation = try await installPackage(target: options.target, parsed: parsed)
         let result = WorkflowPackageCommandResult(
           scope: options.scope,
           command: command.kind.rawValue,
           target: options.target,
           packages: [installation.summary],
+          dependencies: installation.dependencies,
           destinationDirectory: installation.destination.path,
           dryRun: parsed.dryRun,
-          message: parsed.dryRun ? "package \(command.kind.rawValue) dry run" : "package \(command.kind.rawValue) completed",
+          message: packageMessageWithContainerSetupHint(
+            parsed.dryRun ? "package \(command.kind.rawValue) dry run" : "package \(command.kind.rawValue) completed",
+            packages: [installation.summary]
+          ),
           runSessionId: nil
         )
         return try renderPackage(result, output: options.output)
+      case .ci:
+        return try await runLockedInstall(command: command, parsed: parsed)
       case .update:
-        guard let target = options.target, !target.isEmpty else {
-          throw CLIUsageError("\(options.scope) update requires a package name")
-        }
-        let packages = try await packageSummaries(options: options, parsed: parsed).filter { $0.name == target }
-        guard !packages.isEmpty else {
-          throw CLIUsageError("installed package not found: \(target)")
-        }
+        let packages = try await updatePackages(target: options.target, parsed: parsed)
         let result = WorkflowPackageCommandResult(
           scope: options.scope,
           command: command.kind.rawValue,
-          target: target,
+          target: options.target,
           packages: packages,
           destinationDirectory: nil,
           dryRun: parsed.dryRun,
-          message: "package update checked \(target)",
+          message: "package update completed",
           runSessionId: nil
         )
         return try renderPackage(result, output: options.output)
@@ -165,17 +217,24 @@ public struct WorkflowPackageCommandRunner: Sendable {
     }
   }
 
-  private func registryCommand(options: CLICommandOptions) throws -> CLICommandResult {
+  private func registryCommand(options: CLICommandOptions) async throws -> CLICommandResult {
     guard let action = options.target else {
-      throw CLIUsageError("package registry supports: add, list")
+      throw CLIUsageError("package registry supports: add, list, sync, index")
     }
     let registryId: String?
     let optionArguments: [String]
-    if action == "add", let first = options.arguments.first, !first.hasPrefix("--") {
+    let registryIndexRoot: String?
+    if action == "index", let first = options.arguments.first, !first.hasPrefix("--") {
+      registryId = nil
+      registryIndexRoot = first
+      optionArguments = Array(options.arguments.dropFirst())
+    } else if ["add", "sync"].contains(action), let first = options.arguments.first, !first.hasPrefix("--") {
       registryId = first
+      registryIndexRoot = nil
       optionArguments = Array(options.arguments.dropFirst())
     } else {
       registryId = nil
+      registryIndexRoot = nil
       optionArguments = options.arguments
     }
     let parsed = try ParsedParityOptions(optionArguments)
@@ -183,6 +242,12 @@ public struct WorkflowPackageCommandRunner: Sendable {
     case "list":
       let config = try loadRegistryConfig(parsed: parsed)
       return try renderRegistryConfig(config, output: options.output)
+    case "sync":
+      let config = try loadRegistryConfig(parsed: parsed)
+      let synced = try syncRegistry(config: config, registryId: registryId, parsed: parsed)
+      return CLICommandResult(exitCode: .success, stdout: "synced package registry: \(synced.id)\npath: \(synced.localPath ?? "")\n")
+    case "index":
+      return try await generateRegistryIndex(registryRoot: registryIndexRoot, parsed: parsed, output: options.output)
     case "add":
       guard let registryId, !registryId.isEmpty, let registryURL = parsed.registryURL, !registryURL.isEmpty else {
         throw CLIUsageError("package registry add requires <id> and --registry-url <url>")
@@ -190,7 +255,185 @@ public struct WorkflowPackageCommandRunner: Sendable {
       let config = try registerRegistry(id: registryId, url: registryURL, parsed: parsed)
       return try renderRegistryConfig(config, output: options.output, text: "registered package registry: \(registryId)\n")
     default:
-      throw CLIUsageError("package registry supports: add, list")
+      throw CLIUsageError("package registry supports: add, list, sync, index")
+    }
+  }
+
+  private func runLockedInstall(command: PackageCommand, parsed: ParsedParityOptions) async throws -> CLICommandResult {
+    let installation = try await installLockedPackages(target: command.options.target, parsed: parsed)
+    let result = WorkflowPackageCommandResult(
+      scope: command.options.scope,
+      command: command.kind.rawValue,
+      target: command.options.target,
+      packages: installation.packages,
+      dependencies: installation.dependencies,
+      destinationDirectory: installation.lockfile.path,
+      dryRun: parsed.dryRun,
+      message: packageMessageWithContainerSetupHint(
+        parsed.dryRun
+          ? "package \(command.kind.rawValue) locked dry run"
+          : "package \(command.kind.rawValue) locked completed",
+        packages: installation.packages
+      ),
+      runSessionId: nil
+    )
+    return try renderPackage(result, output: command.options.output)
+  }
+
+  private func generateRegistryIndex(
+    registryRoot rawRegistryRoot: String?,
+    parsed: ParsedParityOptions,
+    output: WorkflowOutputFormat
+  ) async throws -> CLICommandResult {
+    let workingDirectory = URL(
+      fileURLWithPath: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath,
+      isDirectory: true
+    )
+    let registryRoot = absoluteURL(
+      rawRegistryRoot ?? parsed.localPath ?? parsed.source ?? ".",
+      relativeTo: workingDirectory
+    )
+    let destination = absoluteURL(
+      parsed.destination ?? registryRoot.appendingPathComponent("registry-index.json").path,
+      relativeTo: workingDirectory
+    )
+    let generator = WorkflowPackageRegistryIndexGenerator()
+    let index = try await generator.generate(
+      registryRoot: registryRoot,
+      registryId: parsed.registry ?? defaultWorkflowPackageRegistryId,
+      registryURL: parsed.registryURL
+    )
+    let result = try generator.write(
+      index,
+      to: destination,
+      registryRoot: registryRoot,
+      dryRun: parsed.dryRun,
+      check: parsed.check
+    )
+    return try generator.render(result, output: output)
+  }
+
+  private func syncRegistry(
+    config: WorkflowPackageRegistryConfig,
+    registryId: String?,
+    parsed: ParsedParityOptions
+  ) throws -> WorkflowPackageRegistryEntry {
+    let selected = registryId.flatMap { id in
+      config.registries.first { $0.id == id }
+    } ?? config.registries.first { $0.id == config.defaultRegistryId } ?? config.registries.first
+    guard var registry = selected else {
+      throw CLIUsageError("package registry not found")
+    }
+    let destination = managedRegistryCacheRoot(id: registry.id)
+    try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+    if FileManager.default.fileExists(atPath: destination.appendingPathComponent(".git").path) {
+      try runRegistryGit(["-C", destination.path, "pull", "--ff-only"])
+    } else {
+      if FileManager.default.fileExists(atPath: destination.path) {
+        try FileManager.default.removeItem(at: destination)
+      }
+      try runRegistryGit(["clone", "--branch", registry.defaultBranch, registry.url, destination.path])
+    }
+    registry.localPath = destination.path
+    var updated = config
+    if let index = updated.registries.firstIndex(where: { $0.id == registry.id }) {
+      updated.registries[index].localPath = destination.path
+    }
+    try saveRegistryConfig(updated, parsed: parsed)
+    return registry
+  }
+
+  func refreshRegistryIndexes(parsed: ParsedParityOptions, workingDirectory: URL) async throws {
+    let registries = try selectedPackageRegistries(parsed: parsed, workingDirectory: workingDirectory)
+    guard !registries.isEmpty else {
+      return
+    }
+    var failures: [String] = []
+    for registry in registries {
+      do {
+        try await fetchRegistryIndex(registry: registry)
+      } catch {
+        do {
+          let config = try loadRegistryConfig(parsed: parsed)
+          _ = try syncRegistry(config: config, registryId: registry.id, parsed: parsed)
+        } catch {
+          failures.append("\(registry.id): \(packageCommandErrorDescription(error))")
+        }
+      }
+    }
+    if !failures.isEmpty {
+      throw CLIUsageError("package registry refresh failed: \(failures.joined(separator: "; "))")
+    }
+  }
+
+  private func fetchRegistryIndex(registry: WorkflowPackageRegistryEntry) async throws {
+    let indexURL = try registryIndexDownloadURL(registry: registry)
+    var request = URLRequest(url: indexURL)
+    request.httpMethod = "GET"
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    let (data, response) = try await URLSession.shared.data(for: request)
+    guard let http = response as? HTTPURLResponse else {
+      throw CLIUsageError("registry index fetch failed: invalid response from \(indexURL.absoluteString)")
+    }
+    guard (200..<300).contains(http.statusCode) else {
+      throw CLIUsageError("registry index fetch failed: HTTP \(http.statusCode) from \(indexURL.absoluteString)")
+    }
+    _ = try JSONDecoder().decode(RegistryIndex.self, from: data)
+    let destination = managedRegistryCacheRoot(id: registry.id).appendingPathComponent("registry-index.json")
+    try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try data.write(to: destination, options: .atomic)
+  }
+
+  private func registryIndexDownloadURL(registry: WorkflowPackageRegistryEntry) throws -> URL {
+    guard let registryURL = URL(string: registry.url),
+      registryURL.scheme == "https",
+      registryURL.host == "github.com" else {
+      throw CLIUsageError("registry URL must be https://github.com/<owner>/<repo>")
+    }
+    let components = registryURL.pathComponents.filter { $0 != "/" }
+    guard components.count == 2 else {
+      throw CLIUsageError("registry URL must be https://github.com/<owner>/<repo>")
+    }
+    if registry.url == defaultWorkflowPackageRegistryURL
+      && registry.defaultBranch == defaultWorkflowPackageRegistryBranch {
+      var releaseComponents = URLComponents()
+      releaseComponents.scheme = "https"
+      releaseComponents.host = "github.com"
+      releaseComponents.path = "/\(components[0])/\(components[1])/releases/download/\(defaultWorkflowPackageRegistryReleaseTag)/registry-index.json"
+      guard let indexURL = releaseComponents.url else {
+        throw CLIUsageError("registry index URL could not be built for \(registry.url)")
+      }
+      return indexURL
+    }
+    var urlComponents = URLComponents()
+    urlComponents.scheme = "https"
+    urlComponents.host = "raw.githubusercontent.com"
+    urlComponents.path = "/\(components[0])/\(components[1])/\(registry.defaultBranch)/registry-index.json"
+    guard let indexURL = urlComponents.url else {
+      throw CLIUsageError("registry index URL could not be built for \(registry.url)")
+    }
+    return indexURL
+  }
+
+  private func managedRegistryCacheRoot(id: String) -> URL {
+    URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
+      .appendingPathComponent(".riela/registries", isDirectory: true)
+      .appendingPathComponent(packageFilesystemKey(id), isDirectory: true)
+  }
+
+  private func runRegistryGit(_ arguments: [String]) throws {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    process.arguments = ["git"] + arguments
+    let output = Pipe()
+    process.standardOutput = output
+    process.standardError = output
+    try process.run()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else {
+      let data = output.fileHandleForReading.readDataToEndOfFile()
+      let message = String(data: data, encoding: .utf8) ?? "git failed"
+      throw CLIUsageError("package registry sync failed: \(message.trimmingCharacters(in: .whitespacesAndNewlines))")
     }
   }
 
@@ -546,15 +789,11 @@ public struct WorkflowPackageCommandRunner: Sendable {
   }
 
   private func defaultRegistryEntry(parsed: ParsedParityOptions) -> WorkflowPackageRegistryEntry {
-    let workingDirectory = URL(
-      fileURLWithPath: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath,
-      isDirectory: true
-    )
     return WorkflowPackageRegistryEntry(
       id: defaultWorkflowPackageRegistryId,
       url: defaultWorkflowPackageRegistryURL,
       defaultBranch: defaultWorkflowPackageRegistryBranch,
-      localPath: "\(workingDirectory.standardizedFileURL.path)-packages",
+      localPath: managedRegistryCacheRoot(id: defaultWorkflowPackageRegistryId).path,
       registeredAt: defaultWorkflowPackageRegistryTimestamp,
       updatedAt: defaultWorkflowPackageRegistryTimestamp
     )
@@ -602,31 +841,53 @@ public struct WorkflowPackageCommandRunner: Sendable {
 
   private func packageSummaries(options: CLICommandOptions, parsed: ParsedParityOptions) async throws -> [WorkflowPackageSummary] {
     let workingDirectory = URL(fileURLWithPath: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath, isDirectory: true)
+    if parsed.refresh {
+      try await refreshRegistryIndexes(parsed: parsed, workingDirectory: workingDirectory)
+    }
     let roots = try packageSummaryRoots(parsed: parsed, workingDirectory: workingDirectory)
     let loader = FileWorkflowPackageManifestLoader()
     var summaries: [WorkflowPackageSummary] = []
-    for root in roots where FileManager.default.fileExists(atPath: root.path) {
-      for manifestURL in try packageManifestURLs(in: root) {
+    var existingRoots = roots.filter { packageSummaryRootExists($0) }
+    if options.command == PackageCommandKind.search.rawValue,
+      existingRoots.isEmpty,
+      parsed.localPath == nil {
+      try await refreshRegistryIndexes(parsed: parsed, workingDirectory: workingDirectory)
+      existingRoots = roots.filter { packageSummaryRootExists($0) }
+    }
+    if options.command == PackageCommandKind.search.rawValue, existingRoots.isEmpty {
+      throw CLIUsageError(
+        "no package roots found; searched: \(roots.map(\.url.path).joined(separator: ", ")); "
+          + "run `riela package registry sync` or pass --local-path <registry-checkout>"
+      )
+    }
+    for root in roots where packageSummaryRootExists(root) {
+      if let indexSummaries = try packageSummariesFromRegistryIndex(root: root) {
+        summaries.append(contentsOf: indexSummaries)
+        continue
+      }
+      guard FileManager.default.fileExists(atPath: root.url.path) else {
+        continue
+      }
+      for manifestURL in try packageManifestURLs(in: root.url) {
         let url = manifestURL.deletingLastPathComponent()
         do {
           let manifest = try await loader.loadManifest(from: manifestURL)
           let issues = await loader.validate(manifest, packageRoot: url)
-          summaries.append(WorkflowPackageSummary(
-            name: manifest.name,
-            version: manifest.version,
-            kind: manifest.kind,
-            tags: manifest.tags,
-            packageDirectory: url.path,
-            workflowDirectory: manifest.workflowDirectory,
+          var summary = workflowPackageSummary(
+            manifest: manifest,
+            packageDirectory: url,
             valid: issues.isEmpty,
             issues: issues
-          ))
+          )
+          summary.cacheMetadata = WorkflowPackageCacheMetadata(root: root.url.path, source: root.source, exists: true)
+          summaries.append(summary)
         } catch {
           summaries.append(WorkflowPackageSummary(
             name: inferredPackageName(from: url),
             version: nil,
             kind: .workflow,
             tags: [],
+            cacheMetadata: WorkflowPackageCacheMetadata(root: root.url.path, source: root.source, exists: true),
             packageDirectory: url.path,
             workflowDirectory: nil,
             valid: false,
@@ -641,22 +902,136 @@ public struct WorkflowPackageCommandRunner: Sendable {
         }
       }
     }
+    if options.command == PackageCommandKind.search.rawValue, summaries.isEmpty, !existingRoots.isEmpty {
+      throw CLIUsageError("no package manifests found; searched existing roots: \(existingRoots.map(\.url.path).joined(separator: ", "))")
+    }
     return summaries.sorted { $0.name == $1.name ? $0.packageDirectory < $1.packageDirectory : $0.name < $1.name }
   }
 
-  private func filter(_ packages: [WorkflowPackageSummary], target: String?, command: PackageCommandKind) -> [WorkflowPackageSummary] {
+  private func packageSummaryRootExists(_ root: PackageSummaryRoot) -> Bool {
+    FileManager.default.fileExists(atPath: root.url.path)
+      || FileManager.default.fileExists(atPath: registryIndexURL(for: root).path)
+  }
+
+  private func registryIndexURL(for root: PackageSummaryRoot) -> URL {
+    root.url.deletingLastPathComponent().appendingPathComponent("registry-index.json")
+  }
+
+  private func packageSummariesFromRegistryIndex(root: PackageSummaryRoot) throws -> [WorkflowPackageSummary]? {
+    let indexURL = registryIndexURL(for: root)
+    guard FileManager.default.fileExists(atPath: indexURL.path) else {
+      return nil
+    }
+    let index: RegistryIndex
+    do {
+      index = try JSONDecoder().decode(RegistryIndex.self, from: Data(contentsOf: indexURL))
+    } catch {
+      throw CLIUsageError("registry index validation failed: \(indexURL.path): \(error)")
+    }
+    return index.packages.map { package in
+      let packageDirectory = root.url.deletingLastPathComponent().appendingPathComponent(package.directory)
+      return WorkflowPackageSummary(
+        name: package.name,
+        version: package.version,
+        kind: package.kind ?? .workflow,
+        title: package.title,
+        description: package.description,
+        tags: package.tags ?? [],
+        backends: package.backends ?? [],
+        workflowIds: package.workflow?.directory.map { [URL(fileURLWithPath: $0).lastPathComponent] },
+        addons: package.addons?.map { addon in
+          WorkflowPackageAddonSummary(
+            name: addon.name,
+            version: addon.version,
+            sourcePath: addon.sourcePath,
+            executionKind: addon.execution?.kind,
+            contentDigest: addon.contentDigest
+          )
+        },
+        requiredEnvironment: package.requiredEnvironment,
+        cacheMetadata: WorkflowPackageCacheMetadata(root: root.url.path, source: root.source, exists: true),
+        packageDirectory: packageDirectory.path,
+        workflowDirectory: package.workflow?.directory,
+        valid: true,
+        issues: []
+      )
+    }
+  }
+
+  private func filteredPackages(
+    _ packages: [WorkflowPackageSummary],
+    target: String?,
+    command: PackageCommandKind,
+    parsed: ParsedParityOptions
+  ) -> [WorkflowPackageSummary] {
+    var filtered = packages
+    if !parsed.packageTags.isEmpty {
+      let tags = Set(parsed.packageTags.map { $0.lowercased() })
+      filtered = filtered.filter { package in
+        !tags.isDisjoint(with: package.tags.map { $0.lowercased() })
+      }
+    }
+    if !parsed.packageBackends.isEmpty {
+      let backends = Set(parsed.packageBackends.map { $0.lowercased() })
+      filtered = filtered.filter { package in
+        !backends.isDisjoint(with: (package.backends ?? []).map { $0.lowercased() })
+      }
+    }
     guard let target, !target.isEmpty else {
-      return packages
+      return limitedPackages(filtered, limit: parsed.limit)
     }
     switch command {
     case .search:
-      return packages.filter { package in
-        package.name.localizedCaseInsensitiveContains(target)
-          || package.tags.contains { $0.localizedCaseInsensitiveContains(target) }
+      filtered = filtered.compactMap { package in
+        let fields = matchingPackageSearchFields(package, query: target)
+        guard !fields.isEmpty else {
+          return nil
+        }
+        var matched = package
+        matched.matchMetadata = WorkflowPackageMatchMetadata(query: target, fields: fields)
+        return matched
       }
     default:
-      return packages.filter { $0.name == target }
+      filtered = filtered.filter { $0.name == target }
     }
+    return limitedPackages(filtered, limit: parsed.limit)
+  }
+
+  private func packageSearchFields(_ package: WorkflowPackageSummary) -> [String] {
+    [
+      [package.name, package.title, package.description].compactMap { $0 },
+      package.tags,
+      package.backends ?? [],
+      package.workflowIds ?? [],
+      package.addons?.flatMap { [$0.name, $0.executionKind?.rawValue].compactMap { $0 } } ?? []
+    ].flatMap { $0 }
+  }
+
+  private func matchingPackageSearchFields(_ package: WorkflowPackageSummary, query: String) -> [String] {
+    let fieldValues: [(String, [String])] = [
+      ("name", [package.name]),
+      ("title", [package.title].compactMap { $0 }),
+      ("description", [package.description].compactMap { $0 }),
+      ("tags", package.tags),
+      ("backends", package.backends ?? []),
+      ("workflowIds", package.workflowIds ?? []),
+      ("addons", package.addons?.map(\.name) ?? []),
+      ("addonExecution", package.addons?.compactMap { $0.executionKind?.rawValue } ?? [])
+    ]
+    return fieldValues.compactMap { field, values in
+      values.contains { $0.localizedCaseInsensitiveContains(query) } ? field : nil
+    }
+  }
+
+  private func limitedPackages(_ packages: [WorkflowPackageSummary], limit: Int?) -> [WorkflowPackageSummary] {
+    guard let limit else {
+      return packages
+    }
+    return Array(packages.prefix(limit))
+  }
+
+  func packageSummariesForNodeCommand(options: CLICommandOptions, parsed: ParsedParityOptions) async throws -> [WorkflowPackageSummary] {
+    try await packageSummaries(options: options, parsed: parsed)
   }
 
   func registryPackageSource(
@@ -691,7 +1066,13 @@ public struct WorkflowPackageCommandRunner: Sendable {
     return nil
   }
 
-  private func selectedPackageRegistries(
+  func packageRegistryCandidateRootPaths(parsed: ParsedParityOptions, workingDirectory: URL) throws -> [String] {
+    try selectedPackageRegistries(parsed: parsed, workingDirectory: workingDirectory)
+      .flatMap { registryPackageRoots(registry: $0, parsed: parsed, workingDirectory: workingDirectory) }
+      .map(\.url.path)
+  }
+
+  func selectedPackageRegistries(
     parsed: ParsedParityOptions,
     workingDirectory: URL
   ) throws -> [WorkflowPackageRegistryEntry] {
@@ -745,25 +1126,57 @@ public struct WorkflowPackageCommandRunner: Sendable {
     return config.registries
   }
 
-  private func packageSummaryRoots(parsed: ParsedParityOptions, workingDirectory: URL) throws -> [URL] {
+  private func packageSummaryRoots(parsed: ParsedParityOptions, workingDirectory: URL) throws -> [PackageSummaryRoot] {
+    let installedRoots = packageRoots(parsed: parsed, workingDirectory: workingDirectory).map {
+      PackageSummaryRoot(url: $0, source: "installed")
+    }
     let registryRoots = try selectedPackageRegistries(parsed: parsed, workingDirectory: workingDirectory)
-      .compactMap(\.localPath)
-      .map { absoluteURL($0, relativeTo: workingDirectory).appendingPathComponent("packages", isDirectory: true) }
-    return uniquePackageRoots(packageRoots(parsed: parsed, workingDirectory: workingDirectory) + registryRoots)
+      .flatMap { registry in
+        registryPackageRoots(registry: registry, parsed: parsed, workingDirectory: workingDirectory)
+      }
+    return uniquePackageRoots(installedRoots + registryRoots)
   }
 
-  private func uniquePackageRoots(_ urls: [URL]) -> [URL] {
+  private func registryPackageRoots(
+    registry: WorkflowPackageRegistryEntry,
+    parsed: ParsedParityOptions,
+    workingDirectory: URL
+  ) -> [PackageSummaryRoot] {
+    if let localPath = parsed.localPath {
+      return [registryPackagesRoot(localPath, relativeTo: workingDirectory, source: "flag")]
+    }
+    var roots: [PackageSummaryRoot] = []
+    if let localPath = registry.localPath {
+      roots.append(registryPackagesRoot(localPath, relativeTo: workingDirectory, source: "configured"))
+    }
+    roots.append(PackageSummaryRoot(
+      url: URL(fileURLWithPath: "\(workingDirectory.path)-packages", isDirectory: true)
+        .appendingPathComponent("packages", isDirectory: true),
+      source: "sibling"
+    ))
+    roots.append(PackageSummaryRoot(
+      url: managedRegistryCacheRoot(id: registry.id).appendingPathComponent("packages", isDirectory: true),
+      source: "managed"
+    ))
+    return uniquePackageRoots(roots)
+  }
+  private func registryPackagesRoot(_ localPath: String, relativeTo workingDirectory: URL, source: String) -> PackageSummaryRoot {
+    PackageSummaryRoot(
+      url: absoluteURL(localPath, relativeTo: workingDirectory).appendingPathComponent("packages", isDirectory: true),
+      source: source
+    )
+  }
+  private func uniquePackageRoots(_ roots: [PackageSummaryRoot]) -> [PackageSummaryRoot] {
     var seen = Set<String>()
-    var result: [URL] = []
-    for url in urls {
-      let path = url.standardizedFileURL.path
+    var result: [PackageSummaryRoot] = []
+    for root in roots {
+      let path = root.url.standardizedFileURL.path
       if seen.insert(path).inserted {
-        result.append(url)
+        result.append(root)
       }
     }
     return result
   }
-
   private func inferredPackageName(from packageDirectory: URL) -> String {
     let name = packageDirectory.lastPathComponent
     let scope = packageDirectory.deletingLastPathComponent().lastPathComponent
@@ -772,7 +1185,6 @@ public struct WorkflowPackageCommandRunner: Sendable {
     }
     return name
   }
-
   private func removePackage(target: String?, parsed: ParsedParityOptions) throws -> URL {
     guard let target, !target.isEmpty else {
       throw CLIUsageError("package remove requires a package name")
@@ -791,6 +1203,11 @@ public struct WorkflowPackageCommandRunner: Sendable {
     }
     if !parsed.dryRun {
       try FileManager.default.removeItem(at: destination)
+      try removeWorkflowPackageLockEntry(
+        packageName: target,
+        parsed: parsed,
+        workingDirectory: workingDirectory
+      )
     }
     return destination
   }

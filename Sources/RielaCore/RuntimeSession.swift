@@ -237,6 +237,10 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     case failureKind
     case failedAt
     case stepBudgetDiagnostic
+    case instanceIdentity
+    case instanceKind
+    case instanceBaseIdentity
+    case instanceConfiguration
   }
 
   public var workflowId: String
@@ -253,6 +257,10 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
   public var failureKind: WorkflowSessionFailureKind?
   public var failedAt: Date?
   public var stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic?
+  public var instanceIdentity: String?
+  public var instanceKind: String?
+  public var instanceBaseIdentity: String?
+  public var instanceConfiguration: JSONObject?
 
   public var workflowExecutionId: String {
     get { sessionId }
@@ -273,7 +281,11 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     failureReason: String? = nil,
     failureKind: WorkflowSessionFailureKind? = nil,
     failedAt: Date? = nil,
-    stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic? = nil
+    stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic? = nil,
+    instanceIdentity: String? = nil,
+    instanceKind: String? = nil,
+    instanceBaseIdentity: String? = nil,
+    instanceConfiguration: JSONObject? = nil
   ) {
     self.workflowId = workflowId
     self.sessionId = sessionId
@@ -289,6 +301,10 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     self.failureKind = failureKind
     self.failedAt = failedAt
     self.stepBudgetDiagnostic = stepBudgetDiagnostic
+    self.instanceIdentity = instanceIdentity
+    self.instanceKind = instanceKind
+    self.instanceBaseIdentity = instanceBaseIdentity
+    self.instanceConfiguration = instanceConfiguration
   }
 
   public init(from decoder: Decoder) throws {
@@ -307,6 +323,10 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     self.failureKind = try container.decodeIfPresent(WorkflowSessionFailureKind.self, forKey: .failureKind)
     self.failedAt = try container.decodeIfPresent(Date.self, forKey: .failedAt)
     self.stepBudgetDiagnostic = try container.decodeIfPresent(WorkflowStepBudgetDiagnostic.self, forKey: .stepBudgetDiagnostic)
+    self.instanceIdentity = try container.decodeIfPresent(String.self, forKey: .instanceIdentity)
+    self.instanceKind = try container.decodeIfPresent(String.self, forKey: .instanceKind)
+    self.instanceBaseIdentity = try container.decodeIfPresent(String.self, forKey: .instanceBaseIdentity)
+    self.instanceConfiguration = try container.decodeIfPresent(JSONObject.self, forKey: .instanceConfiguration)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -325,6 +345,10 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     try container.encodeIfPresent(failureKind, forKey: .failureKind)
     try container.encodeIfPresent(failedAt, forKey: .failedAt)
     try container.encodeIfPresent(stepBudgetDiagnostic, forKey: .stepBudgetDiagnostic)
+    try container.encodeIfPresent(instanceIdentity, forKey: .instanceIdentity)
+    try container.encodeIfPresent(instanceKind, forKey: .instanceKind)
+    try container.encodeIfPresent(instanceBaseIdentity, forKey: .instanceBaseIdentity)
+    try container.encodeIfPresent(instanceConfiguration, forKey: .instanceConfiguration)
   }
 }
 

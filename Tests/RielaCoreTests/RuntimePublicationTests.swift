@@ -7,6 +7,12 @@ final class RuntimePublicationTests: XCTestCase {
     let store = InMemoryWorkflowRuntimeStore(clock: FixedWorkflowRuntimeClock(date))
     let session = try await store.createSession(WorkflowSessionCreateInput(workflowId: "wf", entryStepId: "start"))
     let publisher = InMemoryWorkflowOutputPublisher(store: store, clock: FixedWorkflowRuntimeClock(date))
+    let usage = AdapterUsage(
+      inputTokens: 12,
+      outputTokens: 8,
+      totalTokens: 20,
+      providerRaw: ["input_tokens": .integer(12), "output_tokens": .integer(8), "total_tokens": .integer(20)]
+    )
 
     let result = try await publisher.publishAcceptedOutput(
       WorkflowPublicationRequest(
@@ -21,7 +27,8 @@ final class RuntimePublicationTests: XCTestCase {
           promptText: "prompt",
           completionPassed: true,
           when: ["next": true],
-          payload: ["answer": .string("ok")]
+          payload: ["answer": .string("ok")],
+          usage: usage
         )),
         outputContract: WorkflowOutputContract(requiredObject: true),
         transitions: [WorkflowStepTransition(toStepId: "next", label: "next")]
@@ -31,6 +38,7 @@ final class RuntimePublicationTests: XCTestCase {
     XCTAssertEqual(result.stepExecution.status, .completed)
     XCTAssertEqual(result.stepExecution.acceptedOutput?.payload, ["answer": .string("ok")])
     XCTAssertEqual(result.stepExecution.adapterOutput?.provider, "codex-agent")
+    XCTAssertEqual(result.stepExecution.usage, usage)
     XCTAssertEqual(result.publishedMessages.map(\.communicationId), ["comm-000001"])
     XCTAssertEqual(result.publishedMessages.first?.sourceStepExecutionId, result.stepExecution.executionId)
     XCTAssertEqual(result.publishedMessages.first?.payload, ["answer": .string("ok")])

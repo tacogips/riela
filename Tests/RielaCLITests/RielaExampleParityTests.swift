@@ -11,7 +11,7 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum ExampleCatalog {
     static let directoryName = "examples"
-    static let expectedMockScenarioCount = 32
+    static let expectedMockScenarioCount = 33
     static let expectedNodeMockScenarioCount = 0
   }
 
@@ -692,6 +692,7 @@ final class RielaExampleParityTests: XCTestCase {
       "note-agent",
       "note-auto-tagging",
       "note-config-agent",
+      "note-link-extract",
       "note-pdf-ingest",
       "note-quick-memo",
       "note-youtube-transcript",

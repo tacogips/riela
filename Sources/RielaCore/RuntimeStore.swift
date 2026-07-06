@@ -128,6 +128,7 @@ public struct WorkflowStepExecutionUpdateInput: Equatable, Sendable {
   public var acceptedOutput: WorkflowAcceptedOutputMetadata?
   public var adapterOutput: WorkflowAdapterOutputMetadata?
   public var failureReason: String?
+  public var usage: AdapterUsage?
   public var completesRootWithoutOutput: Bool
   public var currentStepId: String?
 
@@ -138,6 +139,7 @@ public struct WorkflowStepExecutionUpdateInput: Equatable, Sendable {
     acceptedOutput: WorkflowAcceptedOutputMetadata? = nil,
     adapterOutput: WorkflowAdapterOutputMetadata? = nil,
     failureReason: String? = nil,
+    usage: AdapterUsage? = nil,
     completesRootWithoutOutput: Bool = false,
     currentStepId: String? = nil
   ) {
@@ -147,6 +149,7 @@ public struct WorkflowStepExecutionUpdateInput: Equatable, Sendable {
     self.acceptedOutput = acceptedOutput
     self.adapterOutput = adapterOutput
     self.failureReason = failureReason
+    self.usage = usage
     self.completesRootWithoutOutput = completesRootWithoutOutput
     self.currentStepId = currentStepId
   }
@@ -523,6 +526,7 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     execution.acceptedOutput = input.acceptedOutput
     execution.adapterOutput = input.adapterOutput ?? execution.adapterOutput
     execution.failureReason = input.failureReason
+    execution.usage = input.usage ?? execution.usage
     execution.updatedAt = date
     if let acceptedOutput = input.acceptedOutput {
       let extractedFindings = WorkflowReviewFindingExtractor.extract(

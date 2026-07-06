@@ -115,6 +115,112 @@ final class AdapterUtilitiesTests: XCTestCase {
     XCTAssertEqual(attempts.value(), 2)
   }
 
+  func testExecuteWithRetryHonorsRetryAfterBeforePolicyDelay() async throws {
+    let attempts = RetryAttemptRecorder()
+
+    let output: String = try await executeWithRetry(
+      policy: RetryPolicy(maxAttempts: 2, retryDelay: .seconds(30)),
+      deadline: Date(timeIntervalSince1970: 100.05),
+      now: { Date(timeIntervalSince1970: 100) },
+      operation: {
+        if attempts.increment() == 1 {
+          throw AdapterExecutionError(.providerError, "rate limited", retryAfter: .milliseconds(1))
+        }
+        return "ok"
+      },
+      normalizeError: { normalizeAdapterFailure($0, fallbackMessage: "adapter failed") }
+    )
+
+    XCTAssertEqual(output, "ok")
+    XCTAssertEqual(attempts.value(), 2)
+  }
+
+  func testExecuteWithRetryAppliesBackoffMultiplierToLaterAttempts() async {
+    let attempts = RetryAttemptRecorder()
+
+    do {
+      let _: String = try await executeWithRetry(
+        policy: RetryPolicy(maxAttempts: 3, retryDelay: .milliseconds(1), backoffMultiplier: 10),
+        deadline: Date(timeIntervalSince1970: 100.005),
+        now: { Date(timeIntervalSince1970: 100) },
+        operation: {
+          _ = attempts.increment()
+          throw AdapterExecutionError(.providerError, "temporary")
+        },
+        normalizeError: { normalizeAdapterFailure($0, fallbackMessage: "adapter failed") }
+      )
+      XCTFail("Expected provider error")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .providerError)
+      XCTAssertEqual(attempts.value(), 2)
+    } catch {
+      XCTFail("Unexpected error: \(error)")
+    }
+  }
+
+  func testExecuteWithRetryCapsDelayAtMaxDelay() async throws {
+    let attempts = RetryAttemptRecorder()
+
+    let output: String = try await executeWithRetry(
+      policy: RetryPolicy(maxAttempts: 2, retryDelay: .seconds(10), maxDelay: .milliseconds(1)),
+      deadline: Date(timeIntervalSince1970: 100.005),
+      now: { Date(timeIntervalSince1970: 100) },
+      operation: {
+        if attempts.increment() == 1 {
+          throw AdapterExecutionError(.providerError, "temporary")
+        }
+        return "ok"
+      },
+      normalizeError: { normalizeAdapterFailure($0, fallbackMessage: "adapter failed") }
+    )
+
+    XCTAssertEqual(output, "ok")
+    XCTAssertEqual(attempts.value(), 2)
+  }
+
+  func testExecuteWithRetryAppliesFullJitterDelay() async throws {
+    let attempts = RetryAttemptRecorder()
+
+    let output: String = try await executeWithRetry(
+      policy: RetryPolicy(maxAttempts: 2, retryDelay: .seconds(10), useJitter: true),
+      deadline: Date(timeIntervalSince1970: 100.005),
+      now: { Date(timeIntervalSince1970: 100) },
+      randomUnitInterval: { 0 },
+      operation: {
+        if attempts.increment() == 1 {
+          throw AdapterExecutionError(.providerError, "temporary")
+        }
+        return "ok"
+      },
+      normalizeError: { normalizeAdapterFailure($0, fallbackMessage: "adapter failed") }
+    )
+
+    XCTAssertEqual(output, "ok")
+    XCTAssertEqual(attempts.value(), 2)
+  }
+
+  func testExecuteWithRetrySkipsErrorsMarkedNonRetryable() async {
+    let attempts = RetryAttemptRecorder()
+
+    do {
+      let _: String = try await executeWithRetry(
+        policy: RetryPolicy(maxAttempts: 3, retryDelay: .zero),
+        operation: {
+          _ = attempts.increment()
+          throw AdapterExecutionError(.providerError, "bad request", isRetryable: false)
+        },
+        normalizeError: { normalizeAdapterFailure($0, fallbackMessage: "adapter failed") }
+      )
+      XCTFail("Expected provider error")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .providerError)
+      XCTAssertEqual(error.isRetryable, false)
+      XCTAssertEqual(attempts.value(), 1)
+    } catch {
+      XCTFail("Unexpected error: \(error)")
+    }
+  }
+
   func testExecuteWithRetryRethrowsCancellationWithoutNormalizing() async {
     let attempts = RetryAttemptRecorder()
 

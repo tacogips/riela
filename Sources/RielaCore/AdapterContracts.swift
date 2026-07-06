@@ -11,10 +11,67 @@ public enum AdapterExecutionErrorCode: String, Codable, Sendable {
 public struct AdapterExecutionError: Error, Equatable, Sendable {
   public var code: AdapterExecutionErrorCode
   public var message: String
+  public var isRetryable: Bool?
+  public var retryAfter: Duration?
 
-  public init(_ code: AdapterExecutionErrorCode, _ message: String) {
+  public init(
+    _ code: AdapterExecutionErrorCode,
+    _ message: String,
+    isRetryable: Bool? = nil,
+    retryAfter: Duration? = nil
+  ) {
     self.code = code
     self.message = message
+    self.isRetryable = isRetryable
+    self.retryAfter = retryAfter
+  }
+}
+
+public struct AdapterUsage: Codable, Equatable, Sendable {
+  public var inputTokens: Int?
+  public var outputTokens: Int?
+  public var totalTokens: Int?
+  public var cacheReadInputTokens: Int?
+  public var cacheCreationInputTokens: Int?
+  public var providerRaw: JSONObject
+
+  public init(
+    inputTokens: Int? = nil,
+    outputTokens: Int? = nil,
+    totalTokens: Int? = nil,
+    cacheReadInputTokens: Int? = nil,
+    cacheCreationInputTokens: Int? = nil,
+    providerRaw: JSONObject = [:]
+  ) {
+    self.inputTokens = inputTokens
+    self.outputTokens = outputTokens
+    self.totalTokens = totalTokens
+    self.cacheReadInputTokens = cacheReadInputTokens
+    self.cacheCreationInputTokens = cacheCreationInputTokens
+    self.providerRaw = providerRaw
+  }
+
+  public var eventPayload: JSONObject {
+    var payload: JSONObject = [:]
+    if let inputTokens {
+      payload["input_tokens"] = .integer(Int64(inputTokens))
+    }
+    if let outputTokens {
+      payload["output_tokens"] = .integer(Int64(outputTokens))
+    }
+    if let totalTokens {
+      payload["total_tokens"] = .integer(Int64(totalTokens))
+    }
+    if let cacheReadInputTokens {
+      payload["cache_read_input_tokens"] = .integer(Int64(cacheReadInputTokens))
+    }
+    if let cacheCreationInputTokens {
+      payload["cache_creation_input_tokens"] = .integer(Int64(cacheCreationInputTokens))
+    }
+    if !providerRaw.isEmpty {
+      payload["provider_raw"] = .object(providerRaw)
+    }
+    return payload
   }
 }
 
@@ -126,6 +183,7 @@ public struct AdapterExecutionOutput: Codable, Equatable, Sendable {
   public var completionPassed: Bool
   public var when: [String: Bool]
   public var payload: JSONObject
+  public var usage: AdapterUsage?
 
   public init(
     provider: String,
@@ -133,7 +191,8 @@ public struct AdapterExecutionOutput: Codable, Equatable, Sendable {
     promptText: String,
     completionPassed: Bool,
     when: [String: Bool] = ["always": true],
-    payload: JSONObject
+    payload: JSONObject,
+    usage: AdapterUsage? = nil
   ) {
     self.provider = provider
     self.model = model
@@ -141,6 +200,7 @@ public struct AdapterExecutionOutput: Codable, Equatable, Sendable {
     self.completionPassed = completionPassed
     self.when = when
     self.payload = payload
+    self.usage = usage
   }
 }
 

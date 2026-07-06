@@ -153,6 +153,7 @@ public struct WorkflowStepExecution: Codable, Equatable, Sendable {
   public var backendEventCount: Int?
   public var recentBackendEvents: [WorkflowBackendEventRecord]?
   public var streamedResponseText: String?
+  public var usage: AdapterUsage?
   public var createdAt: Date
   public var updatedAt: Date
 
@@ -171,6 +172,7 @@ public struct WorkflowStepExecution: Codable, Equatable, Sendable {
     backendEventCount: Int? = nil,
     recentBackendEvents: [WorkflowBackendEventRecord]? = nil,
     streamedResponseText: String? = nil,
+    usage: AdapterUsage? = nil,
     createdAt: Date,
     updatedAt: Date
   ) {
@@ -188,6 +190,7 @@ public struct WorkflowStepExecution: Codable, Equatable, Sendable {
     self.backendEventCount = backendEventCount
     self.recentBackendEvents = recentBackendEvents
     self.streamedResponseText = streamedResponseText
+    self.usage = usage
     self.createdAt = createdAt
     self.updatedAt = updatedAt
   }

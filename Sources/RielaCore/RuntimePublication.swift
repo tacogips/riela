@@ -132,6 +132,7 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
         when: $0.when
       )
     }
+    let adapterUsage = request.adapterOutputMetadataSource?.usage
     if case let .failure(adapterFailure, _) = request.body {
       _ = try await store.updateStepExecution(
         WorkflowStepExecutionUpdateInput(
@@ -139,7 +140,8 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
           executionId: recordedExecution.executionId,
           status: .failed,
           adapterOutput: adapterOutputMetadata,
-          failureReason: "\(adapterFailure.code.rawValue): \(adapterFailure.message)"
+          failureReason: "\(adapterFailure.code.rawValue): \(adapterFailure.message)",
+          usage: adapterUsage
         )
       )
       try? await finalizeCandidatePathIfNeeded(for: request)
@@ -156,7 +158,8 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
             executionId: recordedExecution.executionId,
             status: .failed,
             adapterOutput: adapterOutputMetadata,
-            failureReason: String(describing: error)
+            failureReason: String(describing: error),
+            usage: adapterUsage
           )
         )
         throw error
@@ -167,6 +170,7 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
           executionId: recordedExecution.executionId,
           status: request.successfulExecutionStatus,
           adapterOutput: adapterOutputMetadata,
+          usage: adapterUsage,
           completesRootWithoutOutput: request.publishesRootOutput || request.completesRootWithoutOutput
         )
       )
@@ -193,7 +197,8 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
           executionId: recordedExecution.executionId,
           status: .failed,
           adapterOutput: adapterOutputMetadata,
-          failureReason: String(describing: error)
+          failureReason: String(describing: error),
+          usage: adapterUsage
         )
       )
       throw error
@@ -207,7 +212,8 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
           executionId: recordedExecution.executionId,
           status: .failed,
           adapterOutput: adapterOutputMetadata,
-          failureReason: String(describing: error)
+          failureReason: String(describing: error),
+          usage: adapterUsage
         )
       )
       throw error
@@ -222,7 +228,8 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
           executionId: recordedExecution.executionId,
           status: .failed,
           adapterOutput: adapterOutputMetadata,
-          failureReason: reason
+          failureReason: reason,
+          usage: adapterUsage
         )
       )
       let session = try await store.loadSession(id: request.sessionId)
@@ -237,7 +244,8 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
           executionId: recordedExecution.executionId,
           status: .failed,
           adapterOutput: adapterOutputMetadata,
-          failureReason: reason
+          failureReason: reason,
+          usage: adapterUsage
         )
       )
       throw WorkflowPublicationError.unsupportedTransition(reason)
@@ -277,7 +285,8 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
           status: .failed,
           acceptedOutput: nil,
           adapterOutput: adapterOutputMetadata,
-          failureReason: String(describing: error)
+          failureReason: String(describing: error),
+          usage: adapterUsage
         )
       )
       throw error
@@ -289,6 +298,7 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
         status: request.successfulExecutionStatus,
         acceptedOutput: acceptedOutput,
         adapterOutput: adapterOutputMetadata,
+        usage: adapterUsage,
         completesRootWithoutOutput: request.completesRootWithoutOutput,
         currentStepId: nextStepId
       )

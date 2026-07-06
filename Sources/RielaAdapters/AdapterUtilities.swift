@@ -4,10 +4,22 @@ import RielaCore
 public struct RetryPolicy: Equatable, Sendable {
   public var maxAttempts: Int
   public var retryDelay: Duration
+  public var backoffMultiplier: Double
+  public var maxDelay: Duration
+  public var useJitter: Bool
 
-  public init(maxAttempts: Int = 2, retryDelay: Duration = .milliseconds(50)) {
+  public init(
+    maxAttempts: Int = 2,
+    retryDelay: Duration = .milliseconds(50),
+    backoffMultiplier: Double = 1.0,
+    maxDelay: Duration = .seconds(30),
+    useJitter: Bool = false
+  ) {
     self.maxAttempts = max(1, maxAttempts)
     self.retryDelay = retryDelay < .zero ? .zero : retryDelay
+    self.backoffMultiplier = backoffMultiplier.isFinite ? max(1.0, backoffMultiplier) : 1.0
+    self.maxDelay = maxDelay < .zero ? .zero : maxDelay
+    self.useJitter = useJitter
   }
 }
 
@@ -106,6 +118,7 @@ public func executeWithRetry<T: Sendable>(
   policy: RetryPolicy,
   deadline: Date? = nil,
   now: @Sendable () -> Date = { Date() },
+  randomUnitInterval: @Sendable () -> Double = { Double.random(in: 0...1) },
   operation: @Sendable () async throws -> T,
   normalizeError: @Sendable (Error) -> AdapterExecutionError
 ) async throws -> T {
@@ -116,13 +129,13 @@ public func executeWithRetry<T: Sendable>(
     } catch {
       try rethrowIfCancellation(error)
       let normalized = normalizeError(error)
-      if !shouldRetryAdapterFailure(normalized, attempt: attempt, policy: policy, deadline: deadline, now: now()) {
+      let retryDelay = retryDelay(for: normalized, attempt: attempt, policy: policy, randomUnitInterval: randomUnitInterval)
+      if !shouldRetryAdapterFailure(normalized, attempt: attempt, policy: policy, delay: retryDelay, deadline: deadline, now: now()) {
         throw normalized
       }
+      attempt += 1
+      try await Task.sleep(for: retryDelay)
     }
-
-    attempt += 1
-    try await Task.sleep(for: policy.retryDelay)
   }
 }
 
@@ -130,9 +143,13 @@ private func shouldRetryAdapterFailure(
   _ error: AdapterExecutionError,
   attempt: Int,
   policy: RetryPolicy,
+  delay: Duration,
   deadline: Date?,
   now: Date
 ) -> Bool {
+  if error.isRetryable == false {
+    return false
+  }
   guard attempt < policy.maxAttempts, error.code == .providerError || error.code == .timeout else {
     return false
   }
@@ -142,7 +159,24 @@ private func shouldRetryAdapterFailure(
   guard error.code != .timeout else {
     return false
   }
-  return deadline > now.addingTimeInterval(timeInterval(for: policy.retryDelay))
+  return deadline > now.addingTimeInterval(timeInterval(for: delay))
+}
+
+private func retryDelay(
+  for error: AdapterExecutionError,
+  attempt: Int,
+  policy: RetryPolicy,
+  randomUnitInterval: @Sendable () -> Double
+) -> Duration {
+  if let retryAfter = error.retryAfter, retryAfter > .zero {
+    return retryAfter
+  }
+
+  let multiplier = pow(policy.backoffMultiplier, Double(max(0, attempt - 1)))
+  let baseSeconds = timeInterval(for: policy.retryDelay) * multiplier
+  let cappedSeconds = min(baseSeconds, timeInterval(for: policy.maxDelay))
+  let delaySeconds = policy.useJitter ? cappedSeconds * min(1, max(0, randomUnitInterval())) : cappedSeconds
+  return duration(for: delaySeconds)
 }
 
 private func timeInterval(for duration: Duration) -> TimeInterval {
@@ -152,9 +186,24 @@ private func timeInterval(for duration: Duration) -> TimeInterval {
   return max(0, seconds + fractionalSeconds)
 }
 
+private func duration(for timeInterval: TimeInterval) -> Duration {
+  guard timeInterval > 0, timeInterval.isFinite else {
+    return .zero
+  }
+  let seconds = Int64(timeInterval.rounded(.towardZero))
+  let fractional = timeInterval - TimeInterval(seconds)
+  let attoseconds = Int64((fractional * 1_000_000_000_000_000_000).rounded())
+  return Duration(secondsComponent: seconds, attosecondsComponent: attoseconds)
+}
+
 public func normalizeAdapterFailure(_ error: Error, fallbackMessage: String) -> AdapterExecutionError {
   if let error = error as? AdapterExecutionError {
-    return AdapterExecutionError(error.code, redactAdapterSensitiveText(error.message))
+    return AdapterExecutionError(
+      error.code,
+      redactAdapterSensitiveText(error.message),
+      isRetryable: error.isRetryable,
+      retryAfter: error.retryAfter
+    )
   }
   let message = error.localizedDescription.isEmpty ? fallbackMessage : error.localizedDescription
   return AdapterExecutionError(.providerError, redactAdapterSensitiveText(message))

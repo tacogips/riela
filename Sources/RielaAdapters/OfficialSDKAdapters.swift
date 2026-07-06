@@ -5,20 +5,37 @@ import FoundationNetworking
 import RielaCore
 
 public struct OfficialSDKAdapterConfiguration: Sendable {
+  public static let defaultRetryPolicy = RetryPolicy(
+    maxAttempts: 3,
+    retryDelay: .milliseconds(500),
+    backoffMultiplier: 2.0,
+    useJitter: true
+  )
+
   public var apiKeyEnv: String?
   public var baseURL: URL?
   public var retryPolicy: RetryPolicy
   public var environment: [String: String]?
   public var requestExecutor: (any OfficialSDKRequestExecuting)?
   public var httpTransport: (any OfficialSDKHTTPTransporting)?
+  public var customHeaders: [String: String]
+  public var timeout: Duration?
+  public var middlewares: [any OfficialSDKMiddleware]
+  public var parsingOptions: OfficialSDKParsingOptions
+  public var streamingTransport: (any OfficialSDKStreamingHTTPTransporting)?
 
   public init(
     apiKeyEnv: String? = nil,
     baseURL: URL? = nil,
-    retryPolicy: RetryPolicy = RetryPolicy(),
+    retryPolicy: RetryPolicy = OfficialSDKAdapterConfiguration.defaultRetryPolicy,
     environment: [String: String]? = nil,
     requestExecutor: (any OfficialSDKRequestExecuting)? = nil,
-    httpTransport: (any OfficialSDKHTTPTransporting)? = nil
+    httpTransport: (any OfficialSDKHTTPTransporting)? = nil,
+    customHeaders: [String: String] = [:],
+    timeout: Duration? = nil,
+    middlewares: [any OfficialSDKMiddleware] = [],
+    parsingOptions: OfficialSDKParsingOptions = [],
+    streamingTransport: (any OfficialSDKStreamingHTTPTransporting)? = nil
   ) {
     self.apiKeyEnv = apiKeyEnv
     self.baseURL = baseURL
@@ -26,6 +43,11 @@ public struct OfficialSDKAdapterConfiguration: Sendable {
     self.environment = environment
     self.requestExecutor = requestExecutor
     self.httpTransport = httpTransport
+    self.customHeaders = customHeaders
+    self.timeout = timeout
+    self.middlewares = middlewares
+    self.parsingOptions = parsingOptions
+    self.streamingTransport = streamingTransport
   }
 }
 
@@ -184,19 +206,23 @@ public struct CursorAgentRequest: Equatable, Sendable {
 
 public struct OfficialSDKResponse: Equatable, Sendable {
   public var body: JSONValue
+  public var usage: AdapterUsage?
 
-  public init(body: JSONValue) {
+  public init(body: JSONValue, usage: AdapterUsage? = nil) {
     self.body = body
+    self.usage = usage
   }
 }
 
 public struct OfficialSDKHTTPResponse: Equatable, Sendable {
   public var statusCode: Int
   public var body: Data
+  public var headers: [String: String]
 
-  public init(statusCode: Int, body: Data) {
+  public init(statusCode: Int, body: Data, headers: [String: String] = [:]) {
     self.statusCode = statusCode
     self.body = body
+    self.headers = headers
   }
 }
 
@@ -208,30 +234,64 @@ public struct URLSessionOfficialSDKHTTPTransport: OfficialSDKHTTPTransporting {
     guard let httpResponse = response as? HTTPURLResponse else {
       throw AdapterExecutionError(.providerError, "official SDK request did not return an HTTP response")
     }
-    return OfficialSDKHTTPResponse(statusCode: httpResponse.statusCode, body: data)
+    let headers = httpResponse.allHeaderFields.reduce(into: [String: String]()) { result, entry in
+      guard let key = entry.key as? String else {
+        return
+      }
+      result[key] = String(describing: entry.value)
+    }
+    return OfficialSDKHTTPResponse(statusCode: httpResponse.statusCode, body: data, headers: headers)
   }
 }
 
 public struct URLSessionOfficialSDKRequestExecutor: OfficialSDKRequestExecuting {
   public var transport: any OfficialSDKHTTPTransporting
+  public var customHeaders: [String: String]
+  public var timeout: Duration?
+  public var middlewares: [any OfficialSDKMiddleware]
+  public var parsingOptions: OfficialSDKParsingOptions
 
-  public init(transport: any OfficialSDKHTTPTransporting = URLSessionOfficialSDKHTTPTransport()) {
+  public init(
+    transport: any OfficialSDKHTTPTransporting = URLSessionOfficialSDKHTTPTransport(),
+    customHeaders: [String: String] = [:],
+    timeout: Duration? = nil,
+    middlewares: [any OfficialSDKMiddleware] = [],
+    parsingOptions: OfficialSDKParsingOptions = []
+  ) {
     self.transport = transport
+    self.customHeaders = customHeaders
+    self.timeout = timeout
+    self.middlewares = middlewares
+    self.parsingOptions = parsingOptions
   }
 
   public func executeSDKRequest(_ request: OfficialSDKRequest, context: AdapterExecutionContext) async throws -> OfficialSDKResponse {
-    let urlRequest = try makeURLRequest(for: request)
-    let response = try await transport.data(for: urlRequest)
+    let urlRequest = applyOfficialSDKRequestMiddleware(
+      try makeURLRequest(for: request, context: context, customHeaders: customHeaders, timeout: timeout),
+      middlewares: middlewares
+    )
+    let rawResponse = try await transport.data(for: urlRequest)
+    let response = applyOfficialSDKResponseMiddleware(rawResponse, request: urlRequest, middlewares: middlewares)
     guard (200...299).contains(response.statusCode) else {
-      let detail = String(data: response.body, encoding: .utf8) ?? ""
-      throw AdapterExecutionError(
-        .providerError,
-        "\(request.provider) request failed with HTTP \(response.statusCode): \(redactOfficialSDKSensitiveText(detail, sensitiveValues: [request.apiKey]))"
+      throw decodeOfficialSDKAPIError(
+        provider: request.provider,
+        statusCode: response.statusCode,
+        headers: response.headers,
+        body: response.body,
+        sensitiveValues: [request.apiKey]
       )
+      .adapterError
     }
 
-    let decoded = try JSONDecoder().decode(JSONValue.self, from: response.body)
-    return OfficialSDKResponse(body: decoded)
+    let decoded = try decodeOfficialSDKResponse(
+      provider: request.provider,
+      data: response.body,
+      options: parsingOptions
+    )
+    return OfficialSDKResponse(
+      body: decoded.raw,
+      usage: decoded.usage
+    )
   }
 }
 
@@ -270,8 +330,7 @@ public struct OpenAiSDKAdapter: NodeAdapter {
       request: request,
       responseLabel: "official OpenAI SDK response",
       timeoutMessage: "official OpenAI SDK request aborted",
-      fallbackFailureMessage: "unknown OpenAI SDK failure",
-      extractText: extractOpenAIText
+      fallbackFailureMessage: "unknown OpenAI SDK failure"
     )
   }
 }
@@ -311,8 +370,7 @@ public struct AnthropicSDKAdapter: NodeAdapter {
       request: request,
       responseLabel: "official Anthropic SDK response",
       timeoutMessage: "official Anthropic SDK request aborted",
-      fallbackFailureMessage: "unknown Anthropic SDK failure",
-      extractText: extractAnthropicText
+      fallbackFailureMessage: "unknown Anthropic SDK failure"
     )
   }
 }
@@ -352,8 +410,7 @@ public struct GeminiSDKAdapter: NodeAdapter {
       request: request,
       responseLabel: "official Gemini SDK response",
       timeoutMessage: "official Gemini SDK request aborted",
-      fallbackFailureMessage: "unknown Gemini SDK failure",
-      extractText: extractGeminiText
+      fallbackFailureMessage: "unknown Gemini SDK failure"
     )
   }
 }
@@ -386,8 +443,7 @@ public struct CursorSDKAdapter: NodeAdapter {
       request: request,
       responseLabel: "official Cursor SDK response",
       timeoutMessage: "official Cursor SDK request aborted",
-      fallbackFailureMessage: "unknown Cursor SDK failure",
-      extractText: extractCursorAgentText
+      fallbackFailureMessage: "unknown Cursor SDK failure"
     )
   }
 }
@@ -447,11 +503,41 @@ private func executeOfficialSDKRequest(
   request: OfficialSDKRequest,
   responseLabel: String,
   timeoutMessage: String,
-  fallbackFailureMessage: String,
-  extractText: @Sendable @escaping (JSONValue) -> String
+  fallbackFailureMessage: String
 ) async throws -> AdapterExecutionOutput {
+  let parsingOptions = effectiveOfficialSDKParsingOptions(configuration: configuration, input: adapterInput, request: request)
+  if shouldStreamOfficialSDKResponse(configuration: configuration, input: adapterInput, request: request),
+     let streamingTransport = effectiveOfficialSDKStreamingTransport(configuration) {
+    do {
+      let streamed = try await executeOfficialSDKStreamingRequest(
+        adapterInput: adapterInput,
+        context: context,
+        configuration: configuration,
+        request: request,
+        streamingTransport: streamingTransport,
+        parsingOptions: parsingOptions,
+        responseLabel: responseLabel,
+        timeoutMessage: timeoutMessage,
+        fallbackFailureMessage: fallbackFailureMessage
+      )
+      return streamed
+    } catch is CancellationError {
+      throw AdapterExecutionError(.timeout, timeoutMessage)
+    } catch let error as AdapterExecutionError where error.isRetryable == false {
+      throw error
+    } catch {
+      // Streamed deltas are observational only. If the stream fails, retry once
+      // through the blocking path so the final adapter output contract remains
+      // identical to pre-streaming behavior.
+    }
+  }
+
   let executor = configuration.requestExecutor ?? URLSessionOfficialSDKRequestExecutor(
-    transport: configuration.httpTransport ?? URLSessionOfficialSDKHTTPTransport()
+    transport: configuration.httpTransport ?? URLSessionOfficialSDKHTTPTransport(),
+    customHeaders: configuration.customHeaders,
+    timeout: configuration.timeout,
+    middlewares: configuration.middlewares,
+    parsingOptions: parsingOptions
   )
   let response = try await retryOfficialSDKRequest(
     policy: configuration.retryPolicy,
@@ -463,18 +549,31 @@ private func executeOfficialSDKRequest(
     try await executor.executeSDKRequest(request, context: context)
   }
 
-  let text = extractText(response.body)
+  let decoded = try decodeOfficialSDKResponse(
+    provider: request.provider,
+    raw: response.body,
+    options: parsingOptions
+  )
+  let usage = response.usage ?? decoded.usage
+  if let usage {
+    await context.backendEventHandler?(AdapterBackendEvent(
+      provider: request.provider,
+      eventType: "response.usage",
+      channel: .usage,
+      usage: usage.eventPayload
+    ))
+  }
   let normalized: OutputContractEnvelopeNormalization
   if adapterInput.node.output == nil {
     normalized = OutputContractEnvelopeNormalization(
       completionPassed: true,
       when: ["always": true],
-      payload: normalizeTextBusinessPayload(text),
+      payload: normalizeTextBusinessPayload(decoded.text),
       usedEnvelope: false
     )
   } else {
     normalized = try normalizeOutputContractEnvelope(
-      parseJSONObjectCandidate(text, source: responseLabel),
+      parseJSONObjectCandidate(decoded.text, source: responseLabel),
       source: responseLabel
     )
   }
@@ -485,8 +584,112 @@ private func executeOfficialSDKRequest(
     promptText: adapterInput.promptText,
     completionPassed: normalized.completionPassed,
     when: normalized.when,
-    payload: normalized.payload
+    payload: normalized.payload,
+    usage: usage
   )
+}
+
+private func executeOfficialSDKStreamingRequest(
+  adapterInput: AdapterExecutionInput,
+  context: AdapterExecutionContext,
+  configuration: OfficialSDKAdapterConfiguration,
+  request: OfficialSDKRequest,
+  streamingTransport: any OfficialSDKStreamingHTTPTransporting,
+  parsingOptions: OfficialSDKParsingOptions,
+  responseLabel: String,
+  timeoutMessage: String,
+  fallbackFailureMessage: String
+) async throws -> AdapterExecutionOutput {
+  let decoded = try await retryOfficialSDKRequest(
+    policy: RetryPolicy(maxAttempts: 1, retryDelay: .zero),
+    deadline: context.deadline,
+    timeoutMessage: timeoutMessage,
+    fallbackFailureMessage: fallbackFailureMessage,
+    sensitiveValues: [request.apiKey]
+  ) {
+    try await executeOfficialSDKStream(
+      request: request,
+      context: context,
+      configuration: configuration,
+      transport: streamingTransport,
+      parsingOptions: parsingOptions
+    )
+  }
+  let normalized: OutputContractEnvelopeNormalization
+  if adapterInput.node.output == nil {
+    normalized = OutputContractEnvelopeNormalization(
+      completionPassed: true,
+      when: ["always": true],
+      payload: normalizeTextBusinessPayload(decoded.text),
+      usedEnvelope: false
+    )
+  } else {
+    normalized = try normalizeOutputContractEnvelope(
+      parseJSONObjectCandidate(decoded.text, source: responseLabel),
+      source: responseLabel
+    )
+  }
+
+  return AdapterExecutionOutput(
+    provider: request.provider,
+    model: adapterInput.node.model,
+    promptText: adapterInput.promptText,
+    completionPassed: normalized.completionPassed,
+    when: normalized.when,
+    payload: normalized.payload,
+    usage: decoded.usage
+  )
+}
+
+private func shouldStreamOfficialSDKResponse(
+  configuration: OfficialSDKAdapterConfiguration,
+  input: AdapterExecutionInput,
+  request: OfficialSDKRequest
+) -> Bool {
+  guard effectiveOfficialSDKStreamingTransport(configuration) != nil,
+        request.provider != CursorSDKAdapter.provider,
+        firstBool(
+          input.mergedVariables["streamBackendContent"],
+          input.node.variables["streamBackendContent"]
+        ) != false else {
+    return false
+  }
+  let environment = (configuration.environment ?? ProcessInfo.processInfo.environment)
+    .merging(input.agentEnvironment) { _, nodeValue in nodeValue }
+  return environment["RIELA_OFFICIAL_SDK_STREAMING"]?.lowercased() != "off"
+}
+
+private func effectiveOfficialSDKStreamingTransport(
+  _ configuration: OfficialSDKAdapterConfiguration
+) -> (any OfficialSDKStreamingHTTPTransporting)? {
+  if let streamingTransport = configuration.streamingTransport {
+    return streamingTransport
+  }
+  guard configuration.requestExecutor == nil, configuration.httpTransport == nil else {
+    return nil
+  }
+  return URLSessionOfficialSDKStreamingTransport()
+}
+
+private func effectiveOfficialSDKParsingOptions(
+  configuration: OfficialSDKAdapterConfiguration,
+  input: AdapterExecutionInput,
+  request: OfficialSDKRequest
+) -> OfficialSDKParsingOptions {
+  var options = configuration.parsingOptions
+  if firstBool(
+    input.mergedVariables["officialSDKRelaxedParsing"],
+    input.node.variables["officialSDKRelaxedParsing"],
+    input.agentEnvironment["RIELA_OFFICIAL_SDK_RELAXED_PARSING"].map(JSONValue.string)
+  ) == true {
+    options.insert(.relaxed)
+  }
+  if request.provider == OpenAiSDKAdapter.provider,
+     let host = request.baseURL?.host?.lowercased(),
+     host != "api.openai.com" {
+    options.insert(.relaxed)
+  }
+  return options
 }
 
 private func retryOfficialSDKRequest<T: Sendable>(
@@ -553,7 +756,12 @@ private func normalizeOfficialSDKFailure(
 ) -> AdapterExecutionError {
   if let adapterError = error as? AdapterExecutionError {
     let message = adapterError.code == .timeout ? timeoutMessage : adapterError.message
-    return AdapterExecutionError(adapterError.code, redactOfficialSDKSensitiveText(message, sensitiveValues: sensitiveValues))
+    return AdapterExecutionError(
+      adapterError.code,
+      redactOfficialSDKSensitiveText(message, sensitiveValues: sensitiveValues),
+      isRetryable: adapterError.isRetryable,
+      retryAfter: adapterError.retryAfter
+    )
   }
   if error is CancellationError {
     return AdapterExecutionError(.timeout, timeoutMessage)
@@ -565,270 +773,12 @@ private func normalizeOfficialSDKFailure(
   )
 }
 
-private func redactOfficialSDKSensitiveText(_ text: String, sensitiveValues: [String]) -> String {
+func redactOfficialSDKSensitiveText(_ text: String, sensitiveValues: [String]) -> String {
   var redacted = redactAdapterSensitiveText(text)
   for value in sensitiveValues where !value.isEmpty {
     redacted = redacted.replacingOccurrences(of: value, with: "<redacted>")
   }
   return redacted
-}
-
-private func makeURLRequest(for request: OfficialSDKRequest) throws -> URLRequest {
-  let endpoint: URL
-  var body: JSONObject
-  var headers: [String: String]
-
-  switch request.body {
-  case let .openAIResponses(openAIRequest):
-    endpoint = officialSDKEndpoint(baseURL: request.baseURL, defaultBaseURL: "https://api.openai.com/v1", pathComponents: ["responses"])
-    body = [
-      "model": .string(openAIRequest.model),
-      "input": openAIInputValue(openAIRequest)
-    ]
-    if let instructions = openAIRequest.instructions {
-      body["instructions"] = .string(instructions)
-    }
-    headers = [
-      "Authorization": "Bearer \(request.apiKey)",
-      "Content-Type": "application/json"
-    ]
-  case let .anthropicMessages(anthropicRequest):
-    endpoint = officialSDKEndpoint(baseURL: request.baseURL, defaultBaseURL: "https://api.anthropic.com", pathComponents: ["v1", "messages"])
-    body = [
-      "model": .string(anthropicRequest.model),
-      "max_tokens": .number(Double(anthropicRequest.maxTokens)),
-      "messages": .array(anthropicRequest.messages.map { message in
-        .object([
-          "role": .string(message.role),
-          "content": .string(message.content)
-        ])
-      })
-    ]
-    if let system = anthropicRequest.system {
-      body["system"] = .string(system)
-    }
-    headers = [
-      "x-api-key": request.apiKey,
-      "anthropic-version": "2023-06-01",
-      "Content-Type": "application/json"
-    ]
-  case let .geminiGenerateContent(geminiRequest):
-    endpoint = geminiGenerateContentEndpoint(baseURL: request.baseURL, model: geminiRequest.model)
-    let parts = geminiRequest.inlineDataParts.map { part in
-      JSONValue.object([
-        "inline_data": .object([
-          "mime_type": .string(part.mimeType),
-          "data": .string(part.dataBase64)
-        ])
-      ])
-    } + [
-      .object(["text": .string(geminiRequest.input)])
-    ]
-    body = [
-      "contents": .array([
-        .object([
-          "role": .string("user"),
-          "parts": .array(parts)
-        ])
-      ])
-    ]
-    if let system = geminiRequest.system {
-      body["systemInstruction"] = .object([
-        "parts": .array([
-          .object(["text": .string(system)])
-        ])
-      ])
-    }
-    headers = [
-      "x-goog-api-key": request.apiKey,
-      "Content-Type": "application/json"
-    ]
-  case let .cursorCreateAgent(cursorRequest):
-    endpoint = officialSDKEndpoint(baseURL: request.baseURL, defaultBaseURL: "https://api.cursor.com/v1", pathComponents: ["agents"])
-    body = [
-      "prompt": .object(["text": .string(cursorRequest.prompt)]),
-      "model": .object(["id": .string(cursorRequest.model)])
-    ]
-    if let repositoryURL = cursorRequest.repositoryURL {
-      var repo: JSONObject = ["url": .string(repositoryURL)]
-      if let startingRef = cursorRequest.startingRef {
-        repo["startingRef"] = .string(startingRef)
-      }
-      body["repos"] = .array([.object(repo)])
-    }
-    if let workOnCurrentBranch = cursorRequest.workOnCurrentBranch {
-      body["workOnCurrentBranch"] = .bool(workOnCurrentBranch)
-    }
-    if let autoCreatePR = cursorRequest.autoCreatePR {
-      body["autoCreatePR"] = .bool(autoCreatePR)
-    }
-    headers = [
-      "Authorization": "Basic \(Data("\(request.apiKey):".utf8).base64EncodedString())",
-      "Content-Type": "application/json"
-    ]
-  }
-
-  var urlRequest = URLRequest(url: endpoint)
-  urlRequest.httpMethod = "POST"
-  for (key, value) in headers {
-    urlRequest.setValue(value, forHTTPHeaderField: key)
-  }
-  urlRequest.httpBody = try JSONEncoder().encode(JSONValue.object(body))
-  return urlRequest
-}
-
-private func openAIInputValue(_ request: OpenAIResponsesRequest) -> JSONValue {
-  guard !request.imageInputs.isEmpty else {
-    return .string(request.input)
-  }
-
-  var content: [JSONValue] = [
-    .object([
-      "type": .string("input_text"),
-      "text": .string(request.input)
-    ])
-  ]
-  content += request.imageInputs.map { image in
-    .object([
-      "type": .string("input_image"),
-      "image_url": .string(image.dataURL)
-    ])
-  }
-
-  return .array([
-    .object([
-      "role": .string("user"),
-      "content": .array(content)
-    ])
-  ])
-}
-
-private func geminiGenerateContentEndpoint(baseURL: URL?, model: String) -> URL {
-  let base = officialSDKEndpoint(
-    baseURL: baseURL,
-    defaultBaseURL: "https://generativelanguage.googleapis.com",
-    pathComponents: ["v1beta"]
-  )
-  let normalizedModel = model.hasPrefix("models/") ? String(model.dropFirst("models/".count)) : model
-  let baseString = base.absoluteString.hasSuffix("/") ? String(base.absoluteString.dropLast()) : base.absoluteString
-  return URL(string: "\(baseString)/models/\(normalizedModel):generateContent")!
-}
-
-private func officialSDKEndpoint(baseURL: URL?, defaultBaseURL: String, pathComponents: [String]) -> URL {
-  let base = baseURL ?? URL(string: defaultBaseURL)!
-  let existingPathComponents = base.pathComponents.filter { $0 != "/" }
-  if existingPathComponents.suffix(pathComponents.count) == pathComponents {
-    return base
-  }
-  let missingPathComponents: ArraySlice<String>
-  if pathComponents.count > 1,
-     existingPathComponents.suffix(pathComponents.count - 1) == pathComponents.dropLast() {
-    missingPathComponents = pathComponents.suffix(1)
-  } else {
-    missingPathComponents = pathComponents[...]
-  }
-  return missingPathComponents.reduce(base) { url, component in
-    url.appendingPathComponent(component)
-  }
-}
-
-private func extractOpenAIText(_ response: JSONValue) -> String {
-  guard case let .object(object) = response else {
-    return ""
-  }
-  if let outputText = stringValue(object["output_text"]) {
-    return outputText
-  }
-  guard case let .array(output) = object["output"] else {
-    return ""
-  }
-
-  let segments = output.flatMap { item -> [String] in
-    guard case let .object(itemObject) = item, case let .array(content) = itemObject["content"] else {
-      return []
-    }
-    return content.compactMap { entry -> String? in
-      guard
-        case let .object(entryObject) = entry,
-        stringValue(entryObject["type"]) == "output_text",
-        let text = stringValue(entryObject["text"]),
-        !text.isEmpty
-      else {
-        return nil
-      }
-      return text
-    }
-  }
-
-  return segments.joined(separator: "\n")
-}
-
-private func extractAnthropicText(_ response: JSONValue) -> String {
-  guard case let .object(object) = response, case let .array(content) = object["content"] else {
-    return ""
-  }
-
-  let segments = content.compactMap { entry -> String? in
-    guard
-      case let .object(entryObject) = entry,
-      stringValue(entryObject["type"]) == "text",
-      let text = stringValue(entryObject["text"]),
-      !text.isEmpty
-    else {
-      return nil
-    }
-    return text
-  }
-
-  return segments.joined(separator: "\n")
-}
-
-private func extractGeminiText(_ response: JSONValue) -> String {
-  guard case let .object(object) = response, case let .array(candidates) = object["candidates"] else {
-    return ""
-  }
-
-  let segments = candidates.flatMap { candidate -> [String] in
-    guard
-      case let .object(candidateObject) = candidate,
-      case let .object(content) = candidateObject["content"],
-      case let .array(parts) = content["parts"]
-    else {
-      return []
-    }
-    return parts.compactMap { part -> String? in
-      guard
-        case let .object(partObject) = part,
-        let text = stringValue(partObject["text"]),
-        !text.isEmpty
-      else {
-        return nil
-      }
-      return text
-    }
-  }
-
-  return segments.joined(separator: "\n")
-}
-
-private func extractCursorAgentText(_ response: JSONValue) -> String {
-  guard case let .object(object) = response else {
-    return ""
-  }
-  if let result = stringValue(object["result"]), !result.isEmpty {
-    return result
-  }
-  let id = stringValue(object["id"])
-  let status = stringValue(object["status"])
-  let url = stringValue(object["url"])
-  let latestRunId = stringValue(object["latestRunId"])
-  let summary = [
-    id.map { "Cursor agent \($0)" },
-    status.map { "status: \($0)" },
-    latestRunId.map { "latest run: \($0)" },
-    url
-  ].compactMap { $0 }
-  return summary.isEmpty ? "" : summary.joined(separator: "\n")
 }
 
 private func cursorAgentRequest(from input: AdapterExecutionInput) -> CursorAgentRequest {
@@ -922,7 +872,7 @@ private func nonEmptyStringValue(_ value: JSONValue?) -> String? {
   return text
 }
 
-private func stringValue(_ value: JSONValue?) -> String? {
+func stringValue(_ value: JSONValue?) -> String? {
   guard case let .string(text) = value else {
     return nil
   }

@@ -3,7 +3,7 @@ import XCTest
 @testable import RielaAdapters
 @testable import RielaCore
 
-private final class RecordingOfficialSDKExecutor: OfficialSDKRequestExecuting, @unchecked Sendable {
+final class RecordingOfficialSDKExecutor: OfficialSDKRequestExecuting, @unchecked Sendable {
   private let queue = DispatchQueue(label: "riela.official-sdk-test-executor")
   private var outcomes: [Result<OfficialSDKResponse, Error>]
   private var capturedRequests: [OfficialSDKRequest] = []
@@ -40,7 +40,7 @@ private final class RecordingOfficialSDKExecutor: OfficialSDKRequestExecuting, @
   }
 }
 
-private final class RecordingOfficialSDKHTTPTransport: OfficialSDKHTTPTransporting, @unchecked Sendable {
+final class RecordingOfficialSDKHTTPTransport: OfficialSDKHTTPTransporting, @unchecked Sendable {
   private let queue = DispatchQueue(label: "riela.official-sdk-http-test-transport")
   private var capturedRequests: [URLRequest] = []
   private var responses: [OfficialSDKHTTPResponse]
@@ -61,6 +61,23 @@ private final class RecordingOfficialSDKHTTPTransport: OfficialSDKHTTPTransporti
   func requests() -> [URLRequest] {
     queue.sync {
       capturedRequests
+    }
+  }
+}
+
+final class BackendEventRecorder: @unchecked Sendable {
+  private let queue = DispatchQueue(label: "riela.official-sdk-test-backend-events")
+  private var recordedEvents: [AdapterBackendEvent] = []
+
+  func append(_ event: AdapterBackendEvent) {
+    queue.sync {
+      recordedEvents.append(event)
+    }
+  }
+
+  func events() -> [AdapterBackendEvent] {
+    queue.sync {
+      recordedEvents
     }
   }
 }
@@ -824,7 +841,7 @@ final class OfficialSDKAdapterTests: XCTestCase {
     XCTAssertEqual(geminiTransport.requests().count, 1)
   }
 
-  private func openAIInput(
+  func openAIInput(
     systemPromptText: String? = nil,
     output: NodeOutputContract? = nil,
     mergedVariables: JSONObject = [:],
@@ -839,7 +856,7 @@ final class OfficialSDKAdapterTests: XCTestCase {
     )
   }
 
-  private func anthropicInput(
+  func anthropicInput(
     systemPromptText: String? = nil,
     agentEnvironment: [String: String] = [:]
   ) -> AdapterExecutionInput {
@@ -851,7 +868,7 @@ final class OfficialSDKAdapterTests: XCTestCase {
     )
   }
 
-  private func geminiInput(
+  func geminiInput(
     systemPromptText: String? = nil,
     mergedVariables: JSONObject = [:]
   ) -> AdapterExecutionInput {
@@ -863,7 +880,7 @@ final class OfficialSDKAdapterTests: XCTestCase {
     )
   }
 
-  private func cursorSDKInput(
+  func cursorSDKInput(
     systemPromptText: String? = nil,
     agentEnvironment: [String: String] = [:]
   ) -> AdapterExecutionInput {
@@ -875,7 +892,7 @@ final class OfficialSDKAdapterTests: XCTestCase {
     )
   }
 
-  private func temporaryImageFile(extension pathExtension: String, bytes: Data) throws -> URL {
+  func temporaryImageFile(extension pathExtension: String, bytes: Data) throws -> URL {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("riela-official-sdk-tests-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -884,32 +901,36 @@ final class OfficialSDKAdapterTests: XCTestCase {
     return url
   }
 
-  private func openAITestKey() -> String {
+  func openAITestKey() -> String {
     ["sk", "test", "123456"].joined(separator: "-")
   }
 
-  private func anthropicTestKey() -> String {
+  func anthropicTestKey() -> String {
     ["anthropic", "test", "123456"].joined(separator: "-")
   }
 
-  private func geminiTestKey() -> String {
+  func geminiTestKey() -> String {
     ["gemini", "test", "123456"].joined(separator: "-")
   }
 
-  private func googleTestKey() -> String {
+  func googleTestKey() -> String {
     ["google", "test", "123456"].joined(separator: "-")
   }
 
-  private func cursorTestKey() -> String {
+  func cursorTestKey() -> String {
     ["cursor", "test", "123456"].joined(separator: "-")
   }
 
-  private func httpResponse(_ object: JSONObject, statusCode: Int = 200) throws -> OfficialSDKHTTPResponse {
+  func httpResponse(
+    _ object: JSONObject,
+    statusCode: Int = 200,
+    headers: [String: String] = [:]
+  ) throws -> OfficialSDKHTTPResponse {
     let body = try JSONEncoder().encode(JSONValue.object(object))
-    return OfficialSDKHTTPResponse(statusCode: statusCode, body: body)
+    return OfficialSDKHTTPResponse(statusCode: statusCode, body: body, headers: headers)
   }
 
-  private func requestJSONObject(_ request: URLRequest) throws -> JSONObject {
+  func requestJSONObject(_ request: URLRequest) throws -> JSONObject {
     let data = try XCTUnwrap(request.httpBody)
     let value = try JSONDecoder().decode(JSONValue.self, from: data)
     guard case let .object(object) = value else {
@@ -917,35 +938,5 @@ final class OfficialSDKAdapterTests: XCTestCase {
       return [:]
     }
     return object
-  }
-}
-
-extension OfficialSDKAdapterTests {
-  func testOfficialSDKAdapterSkipsRetryWhenDeadlineCannotCoverDelay() async throws {
-    let secret = openAITestKey()
-    let executor = RecordingOfficialSDKExecutor(outcomes: [
-      .failure(AdapterExecutionError(.providerError, "Authorization: Bearer \(secret)")),
-      .success(OfficialSDKResponse(body: .object(["output_text": .string("late ok")])))
-    ])
-    let adapter = OpenAiSDKAdapter(
-      configuration: OfficialSDKAdapterConfiguration(
-        apiKeyEnv: "TEST_OPENAI_KEY",
-        retryPolicy: RetryPolicy(maxAttempts: 2, retryDelay: .milliseconds(100)),
-        environment: ["TEST_OPENAI_KEY": secret],
-        requestExecutor: executor
-      )
-    )
-
-    do {
-      _ = try await adapter.execute(
-        openAIInput(),
-        context: AdapterExecutionContext(deadline: Date(timeIntervalSinceNow: 0.05))
-      )
-      XCTFail("Expected provider error")
-    } catch let error as AdapterExecutionError {
-      XCTAssertEqual(error.code, .providerError)
-      XCTAssertFalse(error.message.contains(secret))
-      XCTAssertEqual(executor.requests().count, 1)
-    }
   }
 }

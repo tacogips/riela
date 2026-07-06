@@ -72,6 +72,22 @@ extension RielaExampleParityTests {
           "workflowRoot": .string(noteRoot.appendingPathComponent("workflows", isDirectory: true).path)
         ])
       ])
+    case "note-link-extract":
+      let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot.path))
+      let subject = try service.createNote(
+        bodyMarkdown: "# Project planning\n\nCoordinate launch milestones and planning risks."
+      )
+      _ = try service.createNote(
+        bodyMarkdown: "# Launch milestones\n\nRelated project planning notes for the launch checklist."
+      )
+      return try noteExampleJSON([
+        "noteRoot": .string(noteRoot.path),
+        "workflowInput": .object([
+          "noteId": .string(subject.noteId),
+          "query": .string("project planning launch"),
+          "limit": .number(10)
+        ])
+      ])
     default:
       return nil
     }

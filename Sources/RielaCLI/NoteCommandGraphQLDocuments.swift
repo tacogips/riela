@@ -119,6 +119,7 @@ enum NoteCommandGraphQLDocuments {
         snippet
         rank
         matchedTags { \(tag) }
+        isLinkedNeighbor
       }
       result { \(controlResult) }
     }

@@ -1,0 +1,17 @@
+{
+  "id": "main-worker",
+  "executionBackend": "claude-code-agent",
+  "model": "claude-haiku-4-5",
+  "modelFreeze": false,
+  "agentSandbox": "read-only",
+  "agentEnvironment": {
+    "RIELA_SANDBOX_SEATBELT": {
+      "value": "auto"
+    }
+  },
+  "promptTemplateFile": "prompts/main-worker.md",
+  "variables": {},
+  "output": {
+    "description": "Return a concise JSON summary confirming the inspection ran without writing to the repository."
+  }
+}

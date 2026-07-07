@@ -11,7 +11,7 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum ExampleCatalog {
     static let directoryName = "examples"
-    static let expectedMockScenarioCount = 33
+    static let expectedMockScenarioCount = 35
     static let expectedNodeMockScenarioCount = 0
   }
 
@@ -667,6 +667,9 @@ final class RielaExampleParityTests: XCTestCase {
 
   private func rielaExampleWorkflowNames() -> [String] {
     [
+      "apple-note-create",
+      "apple-note-read",
+      "apple-notes-list",
       "chat-event-attachment-judgement",
       "chat-memory-raw-and-daily-summary",
       "chat-reply-webhook",
@@ -692,6 +695,7 @@ final class RielaExampleParityTests: XCTestCase {
       "note-agent",
       "note-auto-tagging",
       "note-config-agent",
+      "note-edit-rewrite",
       "note-link-extract",
       "note-pdf-ingest",
       "note-quick-memo",
@@ -701,6 +705,7 @@ final class RielaExampleParityTests: XCTestCase {
       "riela-default-workflow-supervisor",
       "same-node-session-echo",
       "scheduled-sleep",
+      "seatbelt-sandboxed-worker",
       "shared-agent-trio-personas",
       "slack-agent-trio-chat",
       "slack-codex-chat",

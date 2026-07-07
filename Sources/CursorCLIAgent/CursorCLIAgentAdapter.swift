@@ -58,13 +58,21 @@ public struct CursorCLIAgentCommandBuilder: LocalAgentCommandBuilding {
       input: input,
       provider: provider
     )
+    let workingDirectoryURL = input.node.workingDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) }
+    let sandboxPolicy = try resolveSeatbeltSandboxPolicy(
+      builderEnvironment: environment,
+      agentSandbox: input.node.agentSandbox,
+      workingDirectory: workingDirectoryURL,
+      stateRoots: cursorSeatbeltStateRoots
+    )
     return LocalAgentCommand(
       provider: provider,
       configuration: LocalAgentProcessConfiguration(
         executableURL: URL(fileURLWithPath: "/usr/bin/env"),
         arguments: arguments,
         environment: environment,
-        workingDirectoryURL: input.node.workingDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) }
+        workingDirectoryURL: workingDirectoryURL,
+        sandboxPolicy: sandboxPolicy
       ),
       stdin: "",
       normalizeStdout: normalizeCursorStreamJSONStdout,
@@ -73,6 +81,13 @@ public struct CursorCLIAgentCommandBuilder: LocalAgentCommandBuilding {
     )
   }
 }
+
+// Writable roots the cursor-agent CLI needs for session state even under a
+// read-only sandbox; expanded/canonicalized by the profile generator.
+private let cursorSeatbeltStateRoots = [
+  "~/.cursor",
+  "~/Library/Application Support/Cursor"
+]
 
 public struct CursorCLIAgentAdapter: NodeAdapter {
   private let adapter: LocalAgentCommandAdapter

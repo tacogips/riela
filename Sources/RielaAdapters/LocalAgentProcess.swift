@@ -12,19 +12,22 @@ public struct LocalAgentProcessConfiguration: Equatable, Sendable {
   public var environment: [String: String]
   public var unsetEnvironmentKeys: Set<String>
   public var workingDirectoryURL: URL?
+  public var sandboxPolicy: LocalProcessSandboxPolicy?
 
   public init(
     executableURL: URL,
     arguments: [String] = [],
     environment: [String: String] = [:],
     unsetEnvironmentKeys: Set<String> = [],
-    workingDirectoryURL: URL? = nil
+    workingDirectoryURL: URL? = nil,
+    sandboxPolicy: LocalProcessSandboxPolicy? = nil
   ) {
     self.executableURL = executableURL
     self.arguments = arguments
     self.environment = environment
     self.unsetEnvironmentKeys = unsetEnvironmentKeys
     self.workingDirectoryURL = workingDirectoryURL
+    self.sandboxPolicy = sandboxPolicy
   }
 }
 
@@ -639,6 +642,7 @@ public struct FoundationLocalAgentProcessRunner: LocalAgentProcessRunning, Local
     deadline: Date? = nil,
     outputEventHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
   ) async throws -> LocalAgentProcessResult {
+    let effectiveConfiguration = try seatbeltInvocation(for: configuration) ?? configuration
     let cancellationState = LocalProcessCancellationState()
     return try await withTaskCancellationHandler {
       try await withCheckedThrowingContinuation { continuation in
@@ -678,7 +682,7 @@ public struct FoundationLocalAgentProcessRunner: LocalAgentProcessRunning, Local
 
         do {
           let processId = try spawnProcess(
-            configuration: configuration,
+            configuration: effectiveConfiguration,
             inputReadDescriptor: inputPipe.fileHandleForReading.fileDescriptor,
             inputWriteDescriptor: inputPipe.fileHandleForWriting.fileDescriptor,
             outputReadDescriptor: outputPipe.fileHandleForReading.fileDescriptor,

@@ -1,0 +1,15 @@
+{
+  "main-worker": {
+    "provider": "scenario-mock",
+    "model": "claude-haiku-4-5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "workingDirectory": "/mock/workspace",
+      "topLevelEntries": ["Sources", "Tests", "examples", "README.md"],
+      "writesAttempted": false,
+      "summary": "Read-only inspection completed under the Seatbelt sandbox without any write attempts."
+    }
+  }
+}

@@ -60,13 +60,21 @@ public struct ClaudeCodeAgentCommandBuilder: LocalAgentCommandBuilding {
       input: input,
       provider: provider
     )
+    let workingDirectoryURL = input.node.workingDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) }
+    let sandboxPolicy = try resolveSeatbeltSandboxPolicy(
+      builderEnvironment: environment,
+      agentSandbox: input.node.agentSandbox,
+      workingDirectory: workingDirectoryURL,
+      stateRoots: claudeSeatbeltStateRoots
+    )
     return LocalAgentCommand(
       provider: provider,
       configuration: LocalAgentProcessConfiguration(
         executableURL: URL(fileURLWithPath: "/usr/bin/env"),
         arguments: arguments,
         environment: environment,
-        workingDirectoryURL: input.node.workingDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) }
+        workingDirectoryURL: workingDirectoryURL,
+        sandboxPolicy: sandboxPolicy
       ),
       stdin: buildClaudePrompt(
         prompt: input.promptText,
@@ -77,6 +85,15 @@ public struct ClaudeCodeAgentCommandBuilder: LocalAgentCommandBuilding {
     )
   }
 }
+
+// Writable roots the claude CLI needs for session state and caches even under a
+// read-only sandbox; kept conservative and expanded/canonicalized by the profile
+// generator.
+private let claudeSeatbeltStateRoots = [
+  "~/.claude",
+  "~/.claude.json",
+  "~/Library/Caches/claude-cli-nodejs"
+]
 
 private func claudePermissionMode(for sandbox: AgentSandboxMode?) -> ClaudeCodePermissionMode? {
   switch sandbox {

@@ -1,0 +1,41 @@
+{
+  "workflowId": "apple-clock-alarms-list",
+  "description": "List Apple Clock alarms through the external apple-gateway CLI and publish the structured result.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "entryStepId": "list-clock-alarms",
+  "nodes": [
+    {
+      "id": "list-clock-alarms",
+      "addon": {
+        "name": "riela/apple-clock-alarms-list",
+        "version": "1",
+        "config": {}
+      }
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "list-clock-alarms",
+      "nodeId": "list-clock-alarms",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

@@ -68,6 +68,11 @@ final class AddonExecutionContractsTests: XCTestCase {
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/event-update", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/event-delete", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/event-alarms-set", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-clock-alarms-list", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-clock-alarm-create", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-clock-alarm-toggle", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-clock-alarm-update", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-clock-alarm-delete", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/note-create", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/notebook-ingest-pages", version: nil))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/note-create", version: "2"))
@@ -92,7 +97,12 @@ final class AddonExecutionContractsTests: XCTestCase {
         "riela/event-create",
         "riela/event-update",
         "riela/event-delete",
-        "riela/event-alarms-set"
+        "riela/event-alarms-set",
+        "riela/apple-clock-alarms-list",
+        "riela/apple-clock-alarm-create",
+        "riela/apple-clock-alarm-toggle",
+        "riela/apple-clock-alarm-update",
+        "riela/apple-clock-alarm-delete"
       ]
     )
     XCTAssertEqual(

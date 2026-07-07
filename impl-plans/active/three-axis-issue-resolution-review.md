@@ -395,6 +395,36 @@ list but not the expected list.
 still needs a separate owner decision; it was not changed in this scoped
 self-review correction.
 
+### Session: 2026-07-07 Step 6 Adversarial Review Correction
+
+**Tasks Completed**: Addressed Step 7 adversarial mid-severity finding from
+`comm-000750` by preserving terminal resume idempotency before live
+cross-workflow target preflight.
+**Files Changed**:
+- `Sources/RielaCore/DeterministicWorkflowRunner.swift`
+- `Tests/RielaCoreTests/DeterministicWorkflowRunnerCrossWorkflowDispatchTests.swift`
+- `impl-plans/active/three-axis-issue-resolution-review.md`
+
+**Findings Classified**:
+- `TIR-008` fixed: resuming an already completed caller session now returns the
+  terminal result before resolving current live cross-workflow callees, so a
+  removed or renamed callee cannot turn an idempotent terminal resume into an
+  `invalidWorkflow` failure. Non-terminal resume, rerun, and new sessions still
+  preflight cross-workflow targets before execution or session creation.
+
+**Verification Commands**:
+- `git diff --check --exit-code`
+- `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build`
+- `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter DeterministicWorkflowRunnerCrossWorkflowDispatchTests/testTerminalResumeDoesNotPreflightMissingCallee`
+- `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter DeterministicWorkflowRunnerCrossWorkflowDispatchTests`
+- `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/xcrun swiftlint`
+
+**Verification Result**: Pending in this corrective pass.
+**Blockers**: None.
+**Residual Risks**: Full `swift test` still has the known unrelated
+`apple-notifications` example parity failure reported in the previous Step 6
+handoff unless separately fixed.
+
 ## Related Plans
 
 - **Depends On**: `design-docs/specs/design-core-and-addons-review-improvements.md`

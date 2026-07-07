@@ -27,7 +27,12 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/event-create", version: "1"),
     .init(name: "riela/event-update", version: "1"),
     .init(name: "riela/event-delete", version: "1"),
-    .init(name: "riela/event-alarms-set", version: "1")
+    .init(name: "riela/event-alarms-set", version: "1"),
+    .init(name: "riela/apple-clock-alarms-list", version: "1"),
+    .init(name: "riela/apple-clock-alarm-create", version: "1"),
+    .init(name: "riela/apple-clock-alarm-toggle", version: "1"),
+    .init(name: "riela/apple-clock-alarm-update", version: "1"),
+    .init(name: "riela/apple-clock-alarm-delete", version: "1")
   ]
 
   public static let appleReminderReadAddons: [RielaAddonDescriptor] = [

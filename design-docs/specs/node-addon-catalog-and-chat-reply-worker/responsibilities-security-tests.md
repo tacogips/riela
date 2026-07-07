@@ -123,3 +123,14 @@ The implementation should cover:
   provider error envelopes; invalid output; timeout handling; rejected
   `addon.env`; unsupported versions; and read-only workflow validation without
   live Apple Calendar access
+
+- Apple Clock Alarm add-on tests accept the built-in ids
+  `riela/apple-clock-alarms-list`, `riela/apple-clock-alarm-create`,
+  `riela/apple-clock-alarm-toggle`, `riela/apple-clock-alarm-update`, and
+  `riela/apple-clock-alarm-delete`; cover list/create/toggle/update/delete with
+  fake executables; assert mutation values travel through `--variables`; cover
+  missing Shortcuts bridge and macOS 26+ gating as policy-blocked outcomes; and
+  prove binary precedence, rejected `addon.env`, timeout handling, malformed
+  envelopes, generic provider errors, provider result warnings, validation
+  errors, and secret environment stripping without live Apple or Shortcuts
+  access

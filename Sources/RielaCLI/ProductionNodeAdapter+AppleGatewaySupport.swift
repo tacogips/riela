@@ -22,9 +22,19 @@ struct AppleGatewayProcessRunner {
 
   var runtimeEnvironment: [String: String]
 
-  func run(executablePath: String, arguments: [String], deadline: Date?) throws -> AppleGatewayProcessOutput {
+  func run(
+    executablePath: String,
+    arguments: [String],
+    deadline: Date?,
+    allowNonzeroExit: Bool = false
+  ) throws -> AppleGatewayProcessOutput {
     #if canImport(Darwin) || canImport(Glibc)
-    return try runInIsolatedProcessGroup(executablePath: executablePath, arguments: arguments, deadline: deadline)
+    return try runInIsolatedProcessGroup(
+      executablePath: executablePath,
+      arguments: arguments,
+      deadline: deadline,
+      allowNonzeroExit: allowNonzeroExit
+    )
     #else
     let process = Process()
     process.executableURL = URL(fileURLWithPath: executablePath)
@@ -72,11 +82,11 @@ struct AppleGatewayProcessRunner {
     )
     let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
     let stderr = String(data: stderrData, encoding: .utf8) ?? ""
-    guard process.terminationStatus == 0 else {
+    guard process.terminationStatus == 0 || allowNonzeroExit else {
       let detail = appleGatewayCompactText(stderr.isEmpty ? stdout : stderr)
       throw AdapterExecutionError(.providerError, "apple-gateway failed with exit code \(process.terminationStatus): \(detail)")
     }
-    return AppleGatewayProcessOutput(stdout: stdout, stderr: stderr)
+    return AppleGatewayProcessOutput(stdout: stdout, stderr: stderr, terminationStatus: process.terminationStatus)
     #endif
   }
 
@@ -95,7 +105,8 @@ struct AppleGatewayProcessRunner {
   private func runInIsolatedProcessGroup(
     executablePath: String,
     arguments: [String],
-    deadline: Date?
+    deadline: Date?,
+    allowNonzeroExit: Bool = false
   ) throws -> AppleGatewayProcessOutput {
     let outputPipe = Pipe()
     let errorPipe = Pipe()
@@ -138,11 +149,11 @@ struct AppleGatewayProcessRunner {
     let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
     let stderr = String(data: stderrData, encoding: .utf8) ?? ""
     let terminationStatus = termination.exitStatus()
-    guard terminationStatus == 0 else {
+    guard terminationStatus == 0 || allowNonzeroExit else {
       let detail = appleGatewayCompactText(stderr.isEmpty ? stdout : stderr)
       throw AdapterExecutionError(.providerError, "apple-gateway failed with exit code \(terminationStatus): \(detail)")
     }
-    return AppleGatewayProcessOutput(stdout: stdout, stderr: stderr)
+    return AppleGatewayProcessOutput(stdout: stdout, stderr: stderr, terminationStatus: terminationStatus)
   }
   #endif
 
@@ -472,6 +483,13 @@ final class AppleGatewayPipeDrain: @unchecked Sendable {
 struct AppleGatewayProcessOutput {
   var stdout: String
   var stderr: String
+  var terminationStatus: Int32
+
+  init(stdout: String, stderr: String, terminationStatus: Int32 = 0) {
+    self.stdout = stdout
+    self.stderr = stderr
+    self.terminationStatus = terminationStatus
+  }
 }
 
 struct AppleGatewayGraphQLEnvelope {

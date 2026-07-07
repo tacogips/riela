@@ -178,7 +178,6 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
        let gap = capabilityGaps.first(where: { $0.path.hasSuffix(".transitions.toWorkflowId") }) {
       throw DeterministicWorkflowRunnerError.invalidWorkflow("\(gap.path): \(gap.message)")
     }
-    try await validateCrossWorkflowDispatchTargets(in: request.workflow)
     try enforceRequiredLoopPolicyPreflight(request)
     let executionPlan = WorkflowExecutionPlan(workflow: request.workflow)
 
@@ -218,6 +217,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         await emitSessionCompletedEvent(result: terminalResult, handler: request.eventHandler)
         return terminalResult
       }
+      try await validateCrossWorkflowDispatchTargets(in: request.workflow)
       session = existing
       currentStepId = existing.currentStepId ?? existing.entryStepId
       entryStepId = existing.entryStepId
@@ -238,6 +238,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       } catch let error as WorkflowSessionEntryValidationError {
         throw DeterministicWorkflowRunnerError.rerunValidation(errorMessage(error))
       }
+      try await validateCrossWorkflowDispatchTargets(in: request.workflow)
       session = try await store.createSession(
         WorkflowSessionCreateInput(
           workflowId: request.workflow.workflowId,
@@ -259,6 +260,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       )
     } else {
       entryStepId = request.workflow.entryStepId
+      try await validateCrossWorkflowDispatchTargets(in: request.workflow)
       session = try await store.createSession(
         WorkflowSessionCreateInput(
           workflowId: request.workflow.workflowId,

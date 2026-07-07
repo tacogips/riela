@@ -1692,3 +1692,214 @@ The `examples/apple-calendar-fetch` bundle must remain read-only. It may list
 calendars and fetch events, but must not create, update, delete, move, or alter
 alarms. Live Apple Calendar access is not required for tests or validation.
 
+
+## Built-in `riela/apple-clock-alarm-*`
+
+### Purpose
+
+The Apple Clock Alarms add-ons expose the `apple-gateway` Clock alarms domain
+as five fixed-shape worker add-ons:
+
+- `riela/apple-clock-alarms-list`: list existing alarms
+- `riela/apple-clock-alarm-create`: create an alarm
+- `riela/apple-clock-alarm-toggle`: enable or disable an alarm
+- `riela/apple-clock-alarm-update`: update an alarm's time, label, or repeat
+  days
+- `riela/apple-clock-alarm-delete`: delete an alarm
+
+Each operation has its own add-on id and version `1`. Workflow authors cannot
+provide arbitrary GraphQL; every add-on runs exactly one operation through the
+shared local CLI gateway rules. The list add-on is read-only. The create,
+toggle, update, and delete add-ons are mutation-capable and must be documented
+as operational actions that can change the user's Clock data.
+
+Version `1` invokes the local `apple-gateway` binary with separate process
+arguments:
+
+```bash
+apple-gateway graphql --query <fixed-document>
+apple-gateway graphql --query <fixed-document> --variables <json>
+```
+
+The list operation uses only `--query`. Mutation inputs are sent through the
+`--variables` JSON argument and are never interpolated into the GraphQL
+document. If `apple-gateway` rejects `--variables` or exits nonzero after a
+mutation request, Riela fails closed and does not issue a second mutation
+attempt. Confirmation of upstream `graphql --variables` support remains tracked in
+`design-docs/user-qa/qa-apple-clock-alarm-gateway-confirmations.md`.
+
+### Authored Example
+
+The shipped example must be read-only and list alarms:
+
+```json
+{
+  "id": "list-clock-alarms",
+  "role": "worker",
+  "addon": {
+    "name": "riela/apple-clock-alarms-list",
+    "version": "1",
+    "config": {},
+    "inputs": {}
+  }
+}
+```
+
+Mutation add-ons are documented as explicit opt-in snippets only:
+
+```json
+{ "name": "riela/apple-clock-alarm-create", "version": "1" }
+{ "name": "riela/apple-clock-alarm-toggle", "version": "1" }
+{ "name": "riela/apple-clock-alarm-update", "version": "1" }
+{ "name": "riela/apple-clock-alarm-delete", "version": "1" }
+```
+
+### Configuration, Inputs, and Outputs
+
+```typescript
+interface AppleClockAlarmAddonConfig {
+  readonly binaryPath?: string;
+}
+```
+
+Inputs:
+
+- `riela/apple-clock-alarms-list`: no operation inputs
+- `riela/apple-clock-alarm-create`: required `time` in `HH:mm` 24-hour format,
+  optional `label`, optional `repeatDays`
+- `riela/apple-clock-alarm-toggle`: required `label`, optional `enabled`
+- `riela/apple-clock-alarm-update`: required `label`, optional `time`, optional
+  `newLabel`, optional `repeatDays`
+- `riela/apple-clock-alarm-delete`: required `label`
+
+Defaults:
+
+- `binaryPath`: `APPLE_GATEWAY_BIN`, then `apple-gateway` resolved through
+  `PATH`
+- `repeatDays`: omitted unless authored
+- `enabled`: omitted unless authored so the upstream gateway can apply its
+  operation default
+
+`repeatDays` accepts either a JSON string array or a comma-separated string.
+Tokens are trimmed, uppercased, and validated against the fixed GraphQL enum set
+`MONDAY`, `TUESDAY`, `WEDNESDAY`, `THURSDAY`, `FRIDAY`, `SATURDAY`, and
+`SUNDAY` before the subprocess is launched.
+
+List output:
+
+- `payload.clockAlarms`: array of alarms with `id`, `label`, `time`,
+  `isEnabled`, and `repeatDays`
+- `payload.alarmCount`
+- `replyText`
+- `appleGateway.binary`, `appleGateway.requestId`, and bounded
+  `appleGateway.rawData`
+- `when.always: true` and `when.has_alarms`
+
+Mutation output:
+
+- `payload.clockAlarm`: the returned alarm object when present
+- `payload.result.success`
+- `payload.result.warning`
+- `replyText`
+- `appleGateway.binary`, `appleGateway.requestId`, and bounded
+  `appleGateway.rawData`
+- `when.always: true` and `when.succeeded` derived from
+  `payload.result.success`
+
+### Execution Behavior
+
+All five add-ons:
+
+1. reject unsupported versions and any authored `addon.env`
+2. render supported config and input fields with the normal node template
+   context
+3. resolve the executable from literal `config.binaryPath`, then
+   `APPLE_GATEWAY_BIN`, then `PATH`; `binaryPath` is never sourced from
+   workflow input, upstream payloads, or `addon.inputs`
+4. run the fixed `apple-gateway graphql` command with separate process
+   arguments and no shell interpolation
+5. parse JSON stdout as a GraphQL envelope, preserving `extensions.requestId`
+6. publish bounded process provenance, including the resolved binary source and
+   host OS version, without forwarding or exposing secret-like environment
+   values
+
+Operation-specific GraphQL:
+
+- list runs fixed query `clockAlarms { id label time isEnabled repeatDays }`
+- create runs fixed mutation `createClockAlarm(input: $input)`
+- toggle runs fixed mutation `toggleClockAlarm(input: $input)`
+- update runs fixed mutation `updateClockAlarm(input: $input)`
+- delete runs fixed mutation `deleteClockAlarm(input: $input)`
+
+### Shortcuts Bridge and macOS Requirements
+
+All five operations depend on the `apple-gateway` Shortcuts Clock bridge and the
+`shortcutsClockBridge` permission. Operators must install the required
+Shortcuts from `apple-gateway`'s `packaging/shortcuts` directory:
+
+- `apple-gateway-get-alarms`
+- `apple-gateway-create-alarm`
+- `apple-gateway-toggle-alarm`
+- `apple-gateway-update-alarm`
+- `apple-gateway-delete-alarm`
+
+The example README must tell operators to verify readiness with
+`apple-gateway permissions status --json`. Missing bridge failures are surfaced
+as policy-blocked errors that name the missing shortcut family and the
+`packaging/shortcuts` installation step.
+
+`riela/apple-clock-alarm-update` and `riela/apple-clock-alarm-delete` require
+macOS 26 or newer. The upstream `apple-gateway` owns OS-version enforcement so
+Riela does not duplicate host-version policy. When the gateway reports an
+unsupported OS envelope, these add-ons map it to a policy-blocked error that
+states the operation requires macOS 26+.
+
+### Validation and Error Rules
+
+- version `1` only
+- `addon.env` is rejected
+- missing or non-executable binary maps to policy blocked
+- missing required inputs, invalid `time`, invalid weekday tokens, and non-bool
+  `enabled` map to policy blocked
+- process start failure, non-zero process exit, generic GraphQL `errors`, and
+  `ClockAlarmResult.success == false` with a warning map to provider error
+- GraphQL errors classified as a missing Shortcuts bridge map to policy blocked
+  and mention the required alarm Shortcuts installation path
+- GraphQL errors classified as OS-version gating for update or delete map to
+  policy blocked and mention macOS 26+
+- malformed JSON, missing GraphQL `data`, missing expected operation fields, or
+  unexpected result shape maps to invalid output
+- deadline expiry terminates the subprocess process group and maps to timeout
+
+The error classifier prefers upstream `errors[].extensions.code` values such as
+`SHORTCUT_BRIDGE_MISSING` and `UNSUPPORTED_OS_VERSION` when present, then falls
+back to bounded case-insensitive message token matching. Provider messages and
+extension codes are preserved as diagnostics, but secret-like environment
+values and full ambient process environments are never included in node output.
+The exact missing Shortcuts bridge envelope, unsupported macOS envelope, and
+Clock time format are intentionally held in
+`design-docs/user-qa/qa-apple-clock-alarm-gateway-confirmations.md` until local
+upstream behavior is confirmed; implementation should update fake fixtures and
+classifier tokens from that evidence.
+
+### Security and Rollout Notes
+
+The implementation must reuse the shared `apple-gateway` subprocess bridge used
+by `riela/apple-notes-list` and the Apple Notes CRUD add-ons. Process
+invocation, pipe draining, timeout cleanup, binary resolution, and environment
+allowlisting should live in one shared support path rather than being copied
+into Clock-specific executors.
+
+Tests must use fake `apple-gateway` executables only. The required matrix covers
+list, create, toggle, update, and delete success paths; fixed query and
+`--variables` argument construction; missing Shortcuts bridge; macOS 26+
+gating for update and delete; validation failures; provider errors; malformed
+output; timeout; executable precedence; `binaryPath` not being sourced from
+inputs or upstream payloads; and stripping secret-like runtime environment
+variables.
+
+Only the read-only `examples/apple-clock-alarms-list` bundle should be shipped
+as a runnable default example. Mutation operations can appear in catalog
+documentation and tests, but default examples must not delete, overwrite, or
+toggle user Clock data.
+

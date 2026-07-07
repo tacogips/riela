@@ -63,6 +63,41 @@ final class DeterministicWorkflowRunnerCrossWorkflowDispatchTests: XCTestCase {
     XCTAssertTrue(calleeSessionEvents.contains { $0.type == .sessionCompleted })
   }
 
+  func testTerminalResumeDoesNotPreflightMissingCallee() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    let completingRunner = DeterministicWorkflowRunner(
+      store: store,
+      adapter: VariableRecordingAdapter(outputsByStep: [
+        "dispatch": output(payload: ["handoff": .string("outbound-request")]),
+        "callee-entry": output(payload: ["calleeResult": .string("done")]),
+        "resume": output(payload: ["status": .string("applied")])
+      ]),
+      calleeResolver: StaticCalleeResolver(callees: [calleeFixture()])
+    )
+    let completed = try await completingRunner.run(DeterministicWorkflowRunRequest(
+      workflow: callerWorkflow(),
+      nodePayloads: callerNodePayloads()
+    ))
+    XCTAssertEqual(completed.status, .completed)
+
+    let resumeRunner = DeterministicWorkflowRunner(
+      store: store,
+      adapter: VariableRecordingAdapter(outputsByStep: [:]),
+      calleeResolver: StaticCalleeResolver(callees: [])
+    )
+    let resumed = try await resumeRunner.run(DeterministicWorkflowRunRequest(
+      workflow: callerWorkflow(),
+      nodePayloads: callerNodePayloads(),
+      resumeSessionId: completed.session.sessionId
+    ))
+
+    XCTAssertEqual(resumed.status, .completed)
+    XCTAssertEqual(resumed.exitCode, 0)
+    XCTAssertEqual(resumed.transitions, 0)
+    XCTAssertEqual(resumed.session.sessionId, completed.session.sessionId)
+    XCTAssertEqual(resumed.session.executions.map(\.stepId), ["dispatch", "resume"])
+  }
+
   func testLiveDispatchCalleeFailurePropagatesToParent() async throws {
     let store = InMemoryWorkflowRuntimeStore()
     let adapter = VariableRecordingAdapter(

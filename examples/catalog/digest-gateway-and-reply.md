@@ -1,5 +1,48 @@
 # Examples: Digest, Gateway, and Reply Examples
 
+### `apple-notes-list`
+
+Read-only Apple Notes gateway example:
+
+- uses the built-in `riela/apple-notes-list` add-on
+- invokes a locally installed `apple-gateway` executable through
+  `apple-gateway graphql --query <query>`
+- resolves the executable from literal `addon.config.binaryPath`,
+  `APPLE_GATEWAY_BIN`, then `PATH`
+- rejects `addon.env`; credentials and secret-like process environment values
+  are not forwarded to the gateway subprocess
+- publishes `appleNotes.accounts`, `appleNotes.folders`, `appleNotes.notes`,
+  `appleNotes.pageInfo`, `appleNotes.totalCount`, and the upstream request id
+
+Validate it:
+
+```bash
+riela workflow validate apple-notes-list --workflow-definition-dir ./examples
+```
+
+### `apple-notifications`
+
+Apple Notifications gateway example:
+
+- demonstrates `riela/apple-notification-post` and
+  `riela/apple-notifications-dismiss`
+- posts one demo notification through AppleGatewayNotifier.app, then dismisses
+  only the returned `postedNotificationId`
+- never uses dismiss-all in the shipped example
+- uses the same literal binary resolution order as the Notes add-on:
+  `addon.config.binaryPath`, `APPLE_GATEWAY_BIN`, then `PATH`
+- rejects `addon.env`; the runtime invokes `apple-gateway` with separate
+  `graphql`, `--query`, and `<mutation>` arguments and no shell interpolation
+- requires AppleGatewayNotifier.app authorization for posting; `SYSTEM_DB`
+  notification reads through `riela/apple-notifications-list` require Full Disk
+  Access for the apple-gateway host process
+
+Validate it without posting a notification:
+
+```bash
+riela workflow validate apple-notifications --workflow-definition-dir ./examples
+```
+
 ### `x-follower-ai-business-digest`
 
 Hourly X follower-post digest for Telegram:

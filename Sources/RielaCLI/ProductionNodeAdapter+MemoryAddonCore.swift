@@ -96,11 +96,7 @@ func renderAddonInputs(_ inputs: JSONObject?, variables: JSONObject) -> JSONObje
   }
   var rendered: JSONObject = [:]
   for (key, value) in inputs {
-    if case let .string(template) = value {
-      rendered[key] = .string(renderPromptTemplate(template, variables: variables))
-    } else {
-      rendered[key] = value
-    }
+    rendered[key] = renderJSONTemplates(value, variables: variables)
   }
   return rendered
 }

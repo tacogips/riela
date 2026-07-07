@@ -49,10 +49,14 @@ final class AddonExecutionContractsTests: XCTestCase {
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-note-update-body", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-note-delete", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-note-move", version: nil))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-notifications-list", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-notification-post", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-notifications-dismiss", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/note-create", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/notebook-ingest-pages", version: nil))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/note-create", version: "2"))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/apple-note-get", version: "2"))
+    XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/apple-notification-post", version: "2"))
     XCTAssertEqual(
       RielaBuiltinAddonCatalog.appleGatewayAddons.map(\.name),
       [
@@ -61,7 +65,10 @@ final class AddonExecutionContractsTests: XCTestCase {
         "riela/apple-note-create",
         "riela/apple-note-update-body",
         "riela/apple-note-delete",
-        "riela/apple-note-move"
+        "riela/apple-note-move",
+        "riela/apple-notifications-list",
+        "riela/apple-notification-post",
+        "riela/apple-notifications-dismiss"
       ]
     )
     XCTAssertEqual(

@@ -325,6 +325,15 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     if input.addon.name == "riela/apple-notes-list" {
       return try executeAppleNotesList(input, context: context)
     }
+    if input.addon.name == "riela/apple-notifications-list" {
+      return try executeAppleNotificationsList(input, context: context)
+    }
+    if input.addon.name == "riela/apple-notification-post" {
+      return try executeAppleNotificationPost(input, context: context)
+    }
+    if input.addon.name == "riela/apple-notifications-dismiss" {
+      return try executeAppleNotificationsDismiss(input, context: context)
+    }
     if [
       "riela/apple-note-get",
       "riela/apple-note-create",

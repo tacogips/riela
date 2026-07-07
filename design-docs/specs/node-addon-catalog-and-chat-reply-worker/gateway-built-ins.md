@@ -146,6 +146,303 @@ Validation and error rules:
 - non-zero process exit and GraphQL `errors` map to provider error
 - malformed JSON or missing GraphQL `data` maps to invalid output
 
+## Built-in `riela/apple-notifications-list`
+
+### Purpose
+
+`riela/apple-notifications-list` runs a read-only Apple Notifications GraphQL
+query through a locally installed `apple-gateway` CLI. It is intended for
+workflow nodes that need to inspect delivered notifications without vendoring
+`apple-gateway` source or giving workflow authors arbitrary process execution.
+
+The add-on is worker-only and resolves to a native add-on payload with
+`nodeType: "addon"`. Version `1` always invokes:
+
+```bash
+apple-gateway graphql --query <rendered-query>
+```
+
+Only this notifications add-on is read-only. The post and dismiss add-ons below
+are mutation-capable and must be reviewed as side-effecting operations.
+
+### Authored Example
+
+```json
+{
+  "id": "list-apple-notifications",
+  "role": "worker",
+  "addon": {
+    "name": "riela/apple-notifications-list",
+    "version": "1",
+    "config": {
+      "source": "GATEWAY_HELPER",
+      "first": 25
+    },
+    "inputs": {
+      "appBundleId": "{{workflowInput.appBundleId}}",
+      "deliveredAfter": "{{workflowInput.deliveredAfter}}"
+    }
+  }
+}
+```
+
+### Configuration
+
+```typescript
+interface AppleNotificationsListAddonConfig {
+  readonly binaryPath?: string;
+  readonly source?: "GATEWAY_HELPER" | "SYSTEM_DB";
+  readonly appBundleId?: string;
+  readonly deliveredAfter?: string;
+  readonly deliveredBefore?: string;
+  readonly first?: number;
+  readonly after?: string;
+}
+```
+
+Defaults:
+
+- `binaryPath`: `APPLE_GATEWAY_BIN`, then `apple-gateway` resolved through
+  `PATH`
+- `first`: `25`
+
+Execution behavior:
+
+1. render supported filter values and `addon.inputs` with the normal node
+   template context
+2. resolve the executable from literal `config.binaryPath`, then
+   `APPLE_GATEWAY_BIN`, then `PATH`; `binaryPath` is never sourced from
+   workflow input, upstream payloads, or `addon.inputs`
+3. validate `source` as an enum and inline it as an unquoted GraphQL enum value
+4. run `apple-gateway graphql --query <rendered-query>` with separate process
+   arguments, no shell interpolation, and a minimal child environment allowlist
+5. parse JSON stdout into `appleNotifications.notifications`,
+   `appleNotifications.pageInfo`, `appleNotifications.totalCount`, and
+   `appleNotifications.requestId`
+6. expose `notificationCount`, `replyText`, and bounded process provenance
+   under `appleGateway.binary`
+
+The fixed selection includes `id`, `source`, `appBundleId`, `title`,
+`subtitle`, `body`, and `deliveredAt`. Edge cursors are merged onto returned
+notification nodes for downstream paging.
+
+Validation and error rules:
+
+- version `1` only
+- `addon.env` is rejected; the executable fallback reads `APPLE_GATEWAY_BIN`
+  from the runtime environment directly
+- ambient runtime environment values such as provider API keys, GitHub tokens,
+  and Riela secrets are not forwarded to the `apple-gateway` subprocess
+- `source` must be `GATEWAY_HELPER` or `SYSTEM_DB`
+- `first` must be between `1` and `100`
+- missing or non-executable binary maps to policy blocked
+- non-zero process exit and GraphQL `errors` map to provider error
+- malformed JSON, missing GraphQL `data`, or missing notification connection
+  data maps to invalid output
+- deadline expiry terminates the subprocess and maps to timeout
+
+## Built-in `riela/apple-notification-post`
+
+### Purpose
+
+`riela/apple-notification-post` posts one notification through the
+AppleGatewayNotifier.app helper via `apple-gateway`. It supports notification
+actions, optional reply capture, bounded wait time, and gateway fallback
+behavior. It is intentionally separate from the read-only list add-on so a
+workflow node that can inspect notifications cannot become a mutation by
+changing input data.
+
+The add-on is worker-only and resolves to a native add-on payload with
+`nodeType: "addon"`. Version `1` always invokes:
+
+```bash
+apple-gateway graphql --query <rendered-mutation>
+```
+
+### Authored Example
+
+```json
+{
+  "id": "post-demo-notification",
+  "role": "worker",
+  "addon": {
+    "name": "riela/apple-notification-post",
+    "version": "1",
+    "config": {
+      "title": "Riela demo notification",
+      "body": "This notification will be dismissed by the next workflow node.",
+      "allowFallback": true,
+      "waitSeconds": 0
+    }
+  }
+}
+```
+
+### Configuration
+
+```typescript
+interface AppleNotificationPostAddonConfig {
+  readonly binaryPath?: string;
+  readonly title?: string;
+  readonly subtitle?: string;
+  readonly body?: string;
+  readonly sound?: boolean;
+  readonly actions?: string[];
+  readonly allowReply?: boolean;
+  readonly waitSeconds?: number;
+  readonly allowFallback?: boolean;
+}
+```
+
+Defaults:
+
+- `binaryPath`: `APPLE_GATEWAY_BIN`, then `apple-gateway` resolved through
+  `PATH`
+- `sound`, `allowReply`, and `allowFallback`: omitted unless configured
+- `waitSeconds`: omitted unless configured; configured values must be `0...300`
+
+Execution behavior:
+
+1. reject unsupported versions and any authored `addon.env`
+2. render `title`, `subtitle`, `body`, and each `actions` value from config and
+   `addon.inputs`
+3. require `title` to resolve to a non-empty string
+4. resolve the executable from literal `config.binaryPath`, then
+   `APPLE_GATEWAY_BIN`, then `PATH`
+5. build a fixed `postNotification(input:)` mutation with values encoded as
+   GraphQL literals using the shared `appleGatewayGraphQLString` helper
+6. run `apple-gateway graphql --query <rendered-mutation>` with separate
+   process arguments and no shell interpolation
+7. parse `data.postNotification` into `appleNotification.posted` with `id`,
+   `delivered`, `usedFallback`, and optional `activation { kind actionLabel
+   replyText }`
+8. expose top-level `postedNotificationId` for a downstream dismiss node and
+   `when.always`, `when.delivered`, and `when.used_fallback`
+
+Validation and error rules:
+
+- version `1` only
+- `addon.env` is rejected
+- `title` is required after rendering
+- `actions`, when present, must be a string array after rendering
+- `waitSeconds` must be between `0` and `300`
+- missing or non-executable binary maps to policy blocked
+- non-zero process exit and GraphQL `errors` map to provider error
+- malformed JSON, missing GraphQL `data`, or missing
+  `data.postNotification` maps to invalid output
+- deadline expiry terminates the subprocess and maps to timeout; this matters
+  when `waitSeconds` asks the helper to wait for an action or reply
+
+## Built-in `riela/apple-notifications-dismiss`
+
+### Purpose
+
+`riela/apple-notifications-dismiss` dismisses notifications through
+`apple-gateway`. It supports exactly two explicit modes: dismiss the supplied
+notification ids, or dismiss all gateway notifications. Workflows must select
+one mode only. The shipped example must dismiss only the id returned by its own
+`riela/apple-notification-post` node and must never use dismiss-all.
+
+The add-on is worker-only and resolves to a native add-on payload with
+`nodeType: "addon"`. Version `1` always invokes:
+
+```bash
+apple-gateway graphql --query <rendered-mutation>
+```
+
+### Authored Example
+
+```json
+{
+  "id": "dismiss-posted-notification",
+  "role": "worker",
+  "addon": {
+    "name": "riela/apple-notifications-dismiss",
+    "version": "1",
+    "inputs": {
+      "ids": ["{{_rielaInput.latest.payload.postedNotificationId}}"]
+    }
+  }
+}
+```
+
+### Configuration
+
+```typescript
+interface AppleNotificationsDismissAddonConfig {
+  readonly binaryPath?: string;
+  readonly ids?: string[];
+  readonly all?: boolean;
+}
+```
+
+Defaults:
+
+- `binaryPath`: `APPLE_GATEWAY_BIN`, then `apple-gateway` resolved through
+  `PATH`
+- no default dismiss mode; `ids` or `all: true` must be authored
+
+Execution behavior:
+
+1. reject unsupported versions and any authored `addon.env`
+2. render configured and input `ids` values with the normal node template
+   context
+3. require exactly one resolved mode: a non-empty `ids` array or `all: true`
+4. resolve the executable from literal `config.binaryPath`, then
+   `APPLE_GATEWAY_BIN`, then `PATH`
+5. build either `dismissNotifications(ids:)` or
+   `dismissAllGatewayNotifications` as a fixed mutation with values encoded as
+   GraphQL literals
+6. run `apple-gateway graphql --query <rendered-mutation>` with separate
+   process arguments and no shell interpolation
+7. parse the mutation result into `appleNotifications.dismissedCount`,
+   `appleNotifications.mode`, and `appleNotifications.requestId`
+8. expose top-level `dismissedCount` and `replyText`
+
+Validation and error rules:
+
+- version `1` only
+- `addon.env` is rejected
+- neither mode, both modes, or an empty `ids` array maps to policy blocked
+- missing or non-executable binary maps to policy blocked
+- non-zero process exit and GraphQL `errors` map to provider error
+- malformed JSON, missing GraphQL `data`, or missing mutation result object maps
+  to invalid output
+- deadline expiry terminates the subprocess and maps to timeout
+
+### Apple Notifications Helper and Permissions
+
+Notifications add-ons reuse the same shared local CLI gateway rules as
+`riela/apple-notes-list`: process invocation is centralized in the
+apple-gateway bridge, arguments are passed without shell interpolation, and the
+binary is resolved from literal `addon.config.binaryPath`,
+`APPLE_GATEWAY_BIN`, then `PATH`.
+
+`riela/apple-notification-post` depends on AppleGatewayNotifier.app. The first
+post on a macOS host may trigger the helper's notification authorization prompt.
+Operational setup should be checked with:
+
+```bash
+apple-gateway permissions status --json
+```
+
+The relevant permission states are `notificationsHelper` for helper
+availability/authorization and `notificationDbFullDiskAccess` for
+`SYSTEM_DB` reads. Helper failures and Full Disk Access failures remain
+provider errors so workflow policy does not change based on advisory text.
+When upstream error text mentions `notifier`, `AppleGatewayNotifier`, or
+`helper`, the adapter should append guidance to install and authorize
+AppleGatewayNotifier.app and run the permissions status command. When upstream
+error text mentions `full disk access` or `notification DB`, the adapter should
+append guidance to grant Full Disk Access to the apple-gateway host for
+`SYSTEM_DB` notification reads.
+
+Tests must use fake `apple-gateway` executables only. Required coverage includes
+query, post, dismiss-by-id, dismiss-all, action/reply/wait input construction,
+binary precedence, minimal child environment forwarding, rejected `addon.env`,
+unsupported versions, malformed or missing data, non-zero exits, helper
+unavailable guidance, Full Disk Access guidance, and timeout behavior.
+
 ## Built-in `riela/apple-note-*`
 
 ### Purpose

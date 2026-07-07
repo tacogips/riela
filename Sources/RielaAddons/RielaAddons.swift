@@ -17,7 +17,10 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/apple-note-create", version: "1"),
     .init(name: "riela/apple-note-update-body", version: "1"),
     .init(name: "riela/apple-note-delete", version: "1"),
-    .init(name: "riela/apple-note-move", version: "1")
+    .init(name: "riela/apple-note-move", version: "1"),
+    .init(name: "riela/apple-notifications-list", version: "1"),
+    .init(name: "riela/apple-notification-post", version: "1"),
+    .init(name: "riela/apple-notifications-dismiss", version: "1")
   ]
 
   public static let noteAddons: [RielaAddonDescriptor] = [

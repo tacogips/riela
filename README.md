@@ -143,6 +143,38 @@ Until a real listener lands, use `riela note client register --direct` for local
 administrative token creation only; do not treat generated registration
 challenge URLs as reachable remote endpoints.
 
+## Apple Gateway Add-Ons
+
+Riela includes built-in worker add-ons for local Apple integrations through an
+external `apple-gateway` executable. The runtime invokes `apple-gateway` with
+separate process arguments and does not vendor the gateway source. Executable
+resolution is `addon.config.binaryPath`, then `APPLE_GATEWAY_BIN`, then `PATH`;
+these add-ons reject authored `addon.env` and forward only the minimal process
+environment required by the shared gateway bridge.
+
+Current Apple gateway add-ons include `riela/apple-notes-list`,
+`riela/apple-notifications-list`, `riela/apple-notification-post`, and
+`riela/apple-notifications-dismiss`. Notification listing is read-only.
+Notification posting uses AppleGatewayNotifier.app and may require the macOS
+notification authorization prompt. Reading notifications from `SYSTEM_DB`
+requires Full Disk Access for the apple-gateway host process.
+
+Use the bundled examples to validate authoring without copying workflows into
+`./.riela`:
+
+```bash
+riela workflow validate apple-notes-list --workflow-definition-dir examples
+riela workflow validate apple-notifications --workflow-definition-dir examples
+```
+
+`examples/apple-notifications` posts one demo notification and then dismisses
+only the returned `postedNotificationId`; it never uses dismiss-all. Check local
+gateway permissions before live notification runs:
+
+```bash
+apple-gateway permissions status --json
+```
+
 ## Install
 
 On macOS, install the Homebrew formula when you want only the `riela` command

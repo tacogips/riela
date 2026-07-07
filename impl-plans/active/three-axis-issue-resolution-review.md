@@ -419,7 +419,11 @@ cross-workflow target preflight.
 - `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter DeterministicWorkflowRunnerCrossWorkflowDispatchTests`
 - `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/xcrun swiftlint`
 
-**Verification Result**: Pending in this corrective pass.
+**Verification Result**: `swift build` completed and
+`swift test --filter DeterministicWorkflowRunnerCrossWorkflowDispatchTests`
+passed all 13 tests including
+`testTerminalResumeDoesNotPreflightMissingCallee` (run 2026-07-07 20:11 after
+the corrective-pass changes landed on `main` via `2b1d404`/`58420c1`).
 **Blockers**: None.
 **Residual Risks**: Full `swift test` still has the known unrelated
 `apple-notifications` example parity failure reported in the previous Step 6

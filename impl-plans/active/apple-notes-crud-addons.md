@@ -1,8 +1,8 @@
 # Apple Notes CRUD Add-ons Implementation Plan
 
-**Status**: Implemented after Step 7 review rerun
+**Status**: Ready for focused hardening implementation after Step 3 design review `comm-000724`
 **Workflow Mode**: issue-resolution
-**Issue Reference**: not applicable; workflow input did not include a GitHub issue
+**Issue Reference**: Finish apple-gateway Notes CRUD add-ons: close outstanding review/adversarial hardening findings
 **Design Reference**: design-docs/specs/node-addon-catalog-and-chat-reply-worker/gateway-built-ins.md#built-in-rielaapple-note-
 **Created**: 2026-07-07
 **Last Updated**: 2026-07-07
@@ -16,54 +16,199 @@
 - `design-docs/specs/node-addon-catalog-and-chat-reply-worker/responsibilities-security-tests.md`
 - `design-docs/user-qa/qa-apple-notes-crud-gateway-confirmations.md`
 
-Step 3 accepted the design in communication `comm-000650` with decision
-`accepted_for_implementation_planning`. This plan treats the accepted design-doc
-update as the source of truth. There are no Codex-agent references and no Cursor
-CLI behavior mapping obligations for this work.
+Step 3 accepted the latest design in communication `comm-000724` with decision
+`accepted`. This plan treats the accepted design-doc update as the source of
+truth and supersedes the older broad implementation plan for the next
+implementation step.
+
+Codex agent trace:
+- `codex-design-and-implement-review-loop-session-1152`
 
 ### Summary
 
-Extend the existing `riela/apple-notes-list` Apple Gateway integration with five
-fixed-operation built-in add-ons:
+The Apple Notes CRUD add-ons are already implemented in the working tree. The
+next implementation step must not redesign or rewrite them from scratch. It
+must close exactly the accepted hardening findings from `comm-000724`:
 
-- `riela/apple-note-get`
-- `riela/apple-note-create`
-- `riela/apple-note-update-body`
-- `riela/apple-note-delete`
-- `riela/apple-note-move`
-
-The implementation must reuse the existing apple-gateway subprocess bridge,
-send user-controlled values only through GraphQL variables, materialize large
-note bodies through `apple-gateway file download`, and keep examples safe by
-shipping only read and create bundles.
+- file materialization parent validation must be side-effect-free on reject
+  paths, reject symlink components, and enforce resolved-path boundaries before
+  any directory creation
+- note parsing must return `when.has_note = false` for null or missing
+  `data.note`, while present non-object note values remain invalid output
+- timeout cleanup must terminate the apple-gateway process group and
+  descendants, with destructive mutation add-on coverage
 
 ### Scope
 
 **Included**:
-- Extract shared Apple Gateway subprocess support from
-  `Sources/RielaCLI/ProductionNodeAdapter+AppleGatewayAddons.swift`.
-- Refactor `riela/apple-notes-list` onto the shared support without behavior
-  changes.
-- Implement the five CRUD add-on executors in a new responsibility-focused
-  Swift file.
-- Register all five add-ons in catalog and dispatch surfaces.
-- Add fake-executable unit tests covering success, validation, provider error,
-  invalid output, timeout, and variables-only data transport.
-- Add `examples/apple-note-read/` and `examples/apple-note-create/`.
-- Keep catalog docs aligned if implementation discovers a confirmed upstream
-  detail that narrows the accepted design.
+- Focused edits to
+  `Sources/RielaCLI/ProductionNodeAdapter+AppleGatewaySupport.swift`,
+  `Sources/RielaCLI/ProductionNodeAdapter+AppleNotesCrudAddons.swift`, and
+  `Tests/RielaCLITests/AppleNotesCrudAddonTests.swift`.
+- Documentation progress updates in this plan only when implementation or
+  verification changes the status.
+- Verification commands listed by the accepted review.
 
 **Excluded**:
-- Vendoring or copying `apple-gateway` sources into this repository.
-- Requiring live Apple Notes access or macOS automation permissions in tests.
-- Shipping runnable delete, move, or update example bundles.
+- Reworking catalog shape, add-on ids, example strategy, or GraphQL operation
+  design that Step 3 already accepted.
+- Touching unrelated working-tree changes.
 - Modifying the pre-existing dirty files
   `Sources/RielaApp/WorkflowExecutionTimelinePaneView.swift` and
   `Tests/RielaViewerTests/WorkflowExecutionTimelineLayoutTests.swift`.
 
 ---
 
-## Task Breakdown
+## Current Hardening Task Breakdown
+
+### HARDEN-001: Side-effect-free body materialization root validation
+
+**Status**: PLANNED
+**Write Scope**:
+- `Sources/RielaCLI/ProductionNodeAdapter+AppleGatewaySupport.swift`
+- `Tests/RielaCLITests/AppleNotesCrudAddonTests.swift`
+
+**Tasks**:
+- [ ] Inspect existing `AppleGatewayFileDownloader` root validation and
+  materialization directory creation order.
+- [ ] Before `mkdir`, walk every existing parent component of `downloadDir` /
+  `RIELA_APPLE_NOTES_DOWNLOAD_ROOT`, resolve real paths, reject symlink
+  components, and ensure the resolved path remains under the allowed private
+  runtime root.
+- [ ] Ensure rejected paths create no new directory or file-system side effect.
+- [ ] Preserve existing successful materialization behavior, local-path
+  boundary checks, owner-private permissions, and provider-error mapping for
+  bad download envelopes.
+- [ ] Add fake-executable/filesystem coverage for an intermediate-symlink
+  `downloadDir`, including an assertion that no outside directory is created.
+
+**Deliverables**:
+- Hardened materialization path validator with no `mkdir` on reject paths.
+- Regression test proving intermediate symlink rejection and no outside
+  directory creation.
+
+### HARDEN-002: Note parsing distinction for absent/null vs malformed notes
+
+**Status**: PLANNED
+**Write Scope**:
+- `Sources/RielaCLI/ProductionNodeAdapter+AppleNotesCrudAddons.swift`
+- `Tests/RielaCLITests/AppleNotesCrudAddonTests.swift`
+
+**Tasks**:
+- [ ] Inspect `riela/apple-note-get` parsing of `data.note`.
+- [ ] Change null or missing `data.note` to a successful output with
+  `when.has_note = false` and no malformed-output error.
+- [ ] Keep present non-object `data.note` values mapped to
+  `AdapterExecutionError.invalidOutput`.
+- [ ] Add fake-executable coverage for a non-object note value.
+- [ ] Preserve existing success, materialization, and GraphQL error behavior.
+
+**Deliverables**:
+- Explicit absent/null-note handling in get output.
+- Regression test for malformed present non-object note output.
+
+### HARDEN-003: Process-tree timeout cleanup for destructive mutations
+
+**Status**: PLANNED
+**Write Scope**:
+- `Sources/RielaCLI/ProductionNodeAdapter+AppleGatewaySupport.swift`
+- `Tests/RielaCLITests/AppleNotesCrudAddonTests.swift`
+
+**Tasks**:
+- [ ] Inspect existing timeout cleanup in `AppleGatewayProcessRunner`.
+- [ ] Ensure the apple-gateway subprocess is launched in a process group where
+  supported and timeout cleanup terminates the group, then escalates if needed.
+- [ ] Ensure descendant processes that inherit stdout/stderr cannot outlive the
+  adapter call or keep pipe drains open indefinitely.
+- [ ] Add fake-executable coverage for a destructive mutation add-on
+  (`delete`, `move`, or `update-body`) that spawns a descendant past deadline.
+- [ ] Assert the descendant is terminated on timeout, not merely that the
+  adapter returns promptly.
+- [ ] Preserve existing timeout error mapping as `.timeout`.
+
+**Deliverables**:
+- Process-group and descendant-aware timeout cleanup.
+- Regression test proving descendant termination for a destructive mutation
+  timeout path.
+
+### HARDEN-004: Verification, progress log, and safety audit
+
+**Status**: PLANNED
+**Write Scope**:
+- `impl-plans/active/apple-notes-crud-addons.md`
+
+**Tasks**:
+- [ ] Run all required verification commands.
+- [ ] Record pass/fail results and any known pre-existing unrelated dirty files
+  in the progress log.
+- [ ] Confirm no hardcoded `/Users/taco/...apple-gateway` source paths in
+  committed source surfaces.
+- [ ] Confirm `Sources/RielaApp/WorkflowExecutionTimelinePaneView.swift` and
+  `Tests/RielaViewerTests/WorkflowExecutionTimelineLayoutTests.swift` remain
+  untouched.
+
+**Deliverables**:
+- Progress-log entry with exact commands and outcomes.
+- Clean handoff evidence for Step 5 review.
+
+## Current Dependencies
+
+| Task | Depends On | Reason |
+| ---- | ---------- | ------ |
+| HARDEN-001 | Step 3 accepted design `comm-000724` | Implements accepted materialization hardening |
+| HARDEN-002 | Step 3 accepted design `comm-000724` | Implements accepted note parsing behavior |
+| HARDEN-003 | Step 3 accepted design `comm-000724` | Implements accepted timeout hardening |
+| HARDEN-004 | HARDEN-001 through HARDEN-003 | Verification must run after code and tests are updated |
+
+## Current Parallelizable Tasks
+
+| Task | Can Run In Parallel With | Reason |
+| ---- | ------------------------ | ------ |
+| HARDEN-001 test design | HARDEN-002 parser/test edits | File materialization and note parsing contracts are separate code paths; avoid simultaneous writes to the same test file |
+| HARDEN-003 support-code inspection | HARDEN-002 parser implementation | Timeout support inspection and CRUD note parsing have disjoint source files |
+
+Do not parallelize final edits to `Tests/RielaCLITests/AppleNotesCrudAddonTests.swift`.
+The hardening tests share helpers and should be reconciled in one pass before
+verification.
+
+## Current Verification
+
+Required commands:
+
+```bash
+swift test --filter AppleNotesCrud
+swift test --filter AppleGateway
+swift test --filter AddonExecutionContractsTests
+swift build
+riela workflow validate apple-note-read --workflow-definition-dir examples
+riela workflow validate apple-note-create --workflow-definition-dir examples
+git status --short
+rg -n "/Users/taco/.+apple-gateway"
+```
+
+Expected verification notes:
+- New hardening regressions fail before the fix and pass after the fix where
+  feasible to demonstrate coverage.
+- No live Apple Notes access or macOS automation permission is required.
+- Validation of example bundles remains offline.
+- Unrelated dirty files remain untouched.
+
+## Current Completion Criteria
+
+- [ ] Materialization root validation rejects intermediate symlinks and
+  out-of-root resolved paths before directory creation.
+- [ ] Rejected materialization paths leave no outside directory side effects.
+- [ ] `apple-note-get` returns `when.has_note = false` for missing or null
+  `data.note`.
+- [ ] Present non-object `data.note` maps to `.invalidOutput`.
+- [ ] Timeout cleanup terminates apple-gateway descendants for destructive
+  mutation add-ons.
+- [ ] Required filtered Swift tests, build, workflow validations, status audit,
+  and hardcoded-path audit pass or have documented residual risk.
+- [ ] Step 5 reviewers can trace each fix to `comm-000724`, the accepted
+  design-doc files, and `codex-design-and-implement-review-loop-session-1152`.
+
+## Historical Full Implementation Task Breakdown
 
 ### TASK-001: Confirm Upstream CLI Details
 
@@ -292,11 +437,26 @@ Expected verification notes:
 - [x] `riela/apple-notes-list` still passes its Apple Gateway regression tests
   after support extraction.
 - [x] CRUD executors use fixed GraphQL documents and variables-only transport.
+- [x] Resolved workflow input text is not rendered as a template a second time;
+  literal `{{...}}` note titles and bodies are preserved in GraphQL variables.
+- [x] Required title, note id, folder id, and body non-empty validation fails
+  closed when the resolved value is whitespace-only, while non-blank values are
+  sent to GraphQL variables verbatim.
 - [x] `riela/apple-note-get` materializes body files through download keys into
   a private runtime directory and returns local paths.
 - [x] `riela/apple-note-get` fails closed with `.providerError` when
   `materializeBody` requests a download key but `apple-gateway file download`
   returns no local-path mapping for that key.
+- [x] `riela/apple-note-get` validates materialized `localPath` values are
+  inside the requested `outputRoot` and exist before publishing them.
+- [x] `riela/apple-note-get` resolves materialized output roots and local paths
+  through real paths, rejects symlink output roots, and rejects symlink or
+  non-regular downloaded files before publishing local paths.
+- [x] `riela/apple-note-get` creates new materialization roots with `0700`
+  permissions and rejects existing download roots that are not current-user
+  owned and owner-private.
+- [x] Apple Gateway timeout cleanup is bounded when a subprocess descendant
+  keeps stdout or stderr pipes open after the parent is terminated.
 - [x] Fake-executable tests cover the accepted success and failure matrix.
 - [x] Safe read/create examples validate.
 - [x] Catalog docs and QA notes match the final implemented behavior.
@@ -304,6 +464,25 @@ Expected verification notes:
   log.
 
 ## Progress Log
+
+### Session: 2026-07-07 Step 4 Hardening Plan `comm-000724`
+
+**Tasks Completed**: Revised the active implementation plan for the accepted
+Step 3 design review.
+**Tasks In Progress**: HARDEN-001 through HARDEN-004 are planned for the next
+implementation step.
+**Blockers**: None.
+**Notes**:
+- Plan source of truth is the accepted design review payload from `comm-000724`
+  and the reviewed design docs listed above.
+- The plan intentionally keeps the prior Apple Notes CRUD implementation
+  intact and scopes the next implementation step to the three accepted
+  hardening findings only.
+- Step 5 review feedback is not present in the runtime variables for this
+  rerun, so no Step 5 high or mid findings required additional plan changes.
+- Progress-log expectation for the implementation step: append exact command
+  results for the filtered Swift tests, build, example validations, dirty-file
+  audit, and hardcoded-path audit before handoff.
 
 ### Session: 2026-07-07
 
@@ -384,6 +563,196 @@ audit, and hardcoded-path audit.
   `Sources/RielaApp/WorkflowExecutionTimelinePaneView.swift` and
   `Tests/RielaViewerTests/WorkflowExecutionTimelineLayoutTests.swift` remain
   outside this fix.
+
+### Session: 2026-07-07 Step 6 Review Rerun `comm-000659`
+
+**Tasks Completed**: Addressed both mid-severity Step 7 findings from
+communication `comm-000659`.
+**Tasks In Progress**: None.
+**Blockers**: None.
+**Notes**:
+- Fixed Apple Notes CRUD string resolution so values already resolved from
+  `addon.inputs` / workflow input are passed into GraphQL variables verbatim.
+  Only authored config templates are rendered by the CRUD executor.
+- Added fake-executable regression
+  `testAppleNoteCrudResolvedUserTextIsNotTemplatedTwice` for note title/body
+  values containing literal `{{...}}`.
+- Fixed `AppleGatewayFileDownloader` to standardize returned `localPath`
+  values, reject paths outside the requested download root, and reject paths
+  that do not exist before publishing `bodyFile.localPath` /
+  `body.materializedPath`.
+- Added fake-executable regression
+  `testAppleNoteGetMaterializeValidatesDownloadedLocalPath` for outside-root
+  and missing-file envelopes.
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter AppleNotesCrud`
+  (13 tests).
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter AppleGateway`
+  (11 tests).
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter AddonExecutionContractsTests`
+  (5 tests).
+- PASS targeted SwiftLint:
+  `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/xcrun swiftlint lint Sources/RielaCLI/ProductionNodeAdapter+AppleGatewaySupport.swift Sources/RielaCLI/ProductionNodeAdapter+AppleNotesCrudAddons.swift Tests/RielaCLITests/AppleNotesCrudAddonTests.swift`.
+- NOTE full SwiftLint was run with the same Xcode-toolchain environment. It
+  still reports only pre-existing warnings in
+  `Sources/RielaCLI/RielaArgumentParserHelpers.swift` and
+  `Sources/RielaCLI/WorkflowPackageParityCommands.swift`.
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build`.
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift run riela workflow validate apple-note-read --workflow-definition-dir examples`.
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift run riela workflow validate apple-note-create --workflow-definition-dir examples`.
+- PASS `git diff --check`.
+- PASS `rg -n "/Users/.+apple-gateway" Sources Tests examples design-docs impl-plans`;
+  hits remain limited to implementation-plan documentation.
+- PASS `wc -l Sources/RielaCLI/ProductionNodeAdapter+AppleGatewaySupport.swift Sources/RielaCLI/ProductionNodeAdapter+AppleNotesCrudAddons.swift Tests/RielaCLITests/AppleNotesCrudAddonTests.swift`;
+  touched Swift files are under 1000 lines.
+- PASS `git status --short`; unrelated untracked note-edit-agent-ui design /
+  implementation-plan files remain outside this fix.
+
+### Session: 2026-07-07 Step 6 Review Rerun `comm-000663`
+
+**Tasks Completed**: Addressed the mid-severity Step 7 finding from
+communication `comm-000663`.
+**Tasks In Progress**: None.
+**Blockers**: None.
+**Notes**:
+- Fixed Apple Notes CRUD validation so required strings and body-presence
+  checks fail closed when the resolved value trims to empty, while preserving
+  non-blank resolved values verbatim in GraphQL variables.
+- Added fake-executable regression
+  `testAppleNoteCrudRejectsWhitespaceOnlyRequiredInputs` covering whitespace-only
+  create title/body, update body, get/delete `noteId`, and move `folderId`.
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter AppleNotesCrud`
+  (14 tests).
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter AppleGateway`
+  (11 tests).
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter AddonExecutionContractsTests`
+  (5 tests).
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build`.
+- PASS targeted SwiftLint:
+  `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/xcrun swiftlint lint Sources/RielaCLI/ProductionNodeAdapter+AppleNotesCrudAddons.swift Tests/RielaCLITests/AppleNotesCrudAddonTests.swift`.
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift run riela workflow validate apple-note-read --workflow-definition-dir examples`.
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift run riela workflow validate apple-note-create --workflow-definition-dir examples`.
+- PASS `git diff --check`.
+- PASS `rg -n "/Users/.+apple-gateway" Sources Tests examples design-docs impl-plans`;
+  hits are limited to implementation-plan command text.
+- PASS `wc -l Sources/RielaCLI/ProductionNodeAdapter+AppleNotesCrudAddons.swift Tests/RielaCLITests/AppleNotesCrudAddonTests.swift`;
+  touched Swift files are under 1000 lines.
+- PASS `git status --short`; unrelated note UI dirty files remain outside this
+  fix.
+
+### Session: 2026-07-07 Step 6 Adversarial Review Rerun `comm-000668`
+
+**Tasks Completed**: Addressed both mid-severity Step 7 adversarial findings
+from communication `comm-000668`.
+**Tasks In Progress**: None.
+**Blockers**: None.
+**Notes**:
+- Hardened `AppleGatewayFileDownloader` so body materialization validates an
+  output root by real path, rejects symlink output roots, compares downloaded
+  real paths against the real output root, and rejects symlink or non-regular
+  downloaded files before publishing `bodyFile.localPath` /
+  `body.materializedPath`.
+- Hardened `AppleGatewayProcessRunner` timeout cleanup by replacing blocking
+  `readDataToEndOfFile` drains with cancellable pipe drains and bounded pipe
+  waits on timeout, so a subprocess descendant inheriting stdout/stderr cannot
+  keep workflow cancellation blocked indefinitely.
+- Added fake-executable regression
+  `testAppleNoteGetMaterializeRejectsSymlinkRootsAndFiles` for symlink
+  download roots and symlink downloaded files.
+- Added fake-executable regression coverage in
+  `testAppleNoteCrudMapsBinaryTimeoutEnvAndVersionFailures` for a timed-out
+  parent process with a background child holding stdout open.
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter AppleNotesCrud`
+  (15 tests).
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter AppleGateway`
+  (11 tests; rerun after an initial transient compile failure from unrelated
+  dirty `Tests/AgentAdapterTests/SeatbeltSandboxWiringTests.swift` state).
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter AddonExecutionContractsTests`
+  (5 tests).
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build`.
+- PASS targeted SwiftLint:
+  `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/xcrun swiftlint lint Sources/RielaCLI/ProductionNodeAdapter+AppleGatewaySupport.swift Tests/RielaCLITests/AppleNotesCrudAddonTests.swift`.
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift run riela workflow validate apple-note-read --workflow-definition-dir examples`.
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift run riela workflow validate apple-note-create --workflow-definition-dir examples`.
+- PASS `git diff --check`.
+- PASS `rg -n "/Users/.+apple-gateway" Sources Tests examples design-docs impl-plans`;
+  hits are limited to implementation-plan command text.
+- PASS `wc -l Sources/RielaCLI/ProductionNodeAdapter+AppleGatewaySupport.swift Sources/RielaCLI/ProductionNodeAdapter+AppleNotesCrudAddons.swift Tests/RielaCLITests/AppleNotesCrudAddonTests.swift`;
+  touched Swift files are under 1000 lines.
+- PASS `git status --short`; unrelated note UI, agent adapter, and seatbelt
+  dirty files remain outside this fix.
+
+### Session: 2026-07-07 Step 6 Adversarial Review Rerun `comm-000673`
+
+**Tasks Completed**: Addressed the mid-severity Step 7 adversarial finding from
+communication `comm-000673`.
+**Tasks In Progress**: None.
+**Blockers**: None.
+**Notes**:
+- Hardened `AppleGatewayFileDownloader` materialization root validation so
+  existing roots must be current-user owned directories with no group/other
+  permission bits before invoking `apple-gateway file download`.
+- New materialization roots are created with `0700` permissions and rechecked
+  after creation; shared `/tmp` and `/var/tmp` descendants must have an
+  owner-private first directory boundary instead of relying on a shared temp
+  prefix alone.
+- Added fake-executable/filesystem regression
+  `testAppleNoteGetMaterializeRejectsPublicRootsAndAcceptsOwnerPrivateRoot`
+  covering world-readable, world-writable, and owner-private roots.
+- Updated materialization tests to create explicit owner-private download roots
+  instead of relying on host umask defaults.
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter AppleNotesCrud`
+  (16 tests).
+- PASS targeted SwiftLint:
+  `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/xcrun swiftlint lint Sources/RielaCLI/ProductionNodeAdapter+AppleGatewaySupport.swift Tests/RielaCLITests/AppleNotesCrudAddonTests.swift`.
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build`.
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter AppleGateway`
+  (11 tests; rerun after an initial transient compile failure while unrelated
+  dirty `Sources/RielaCLI/SessionCommands.swift` work was incomplete).
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter AddonExecutionContractsTests`
+  (5 tests; rerun after the same transient unrelated dirty-source state).
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift run riela workflow validate apple-note-read --workflow-definition-dir examples`.
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift run riela workflow validate apple-note-create --workflow-definition-dir examples`.
+- PASS `git diff --check`.
+- PASS `rg -n "/Users/.+apple-gateway" Sources Tests examples design-docs impl-plans`;
+  hits are limited to implementation-plan command text.
+- PASS `wc -l Sources/RielaCLI/ProductionNodeAdapter+AppleGatewaySupport.swift Sources/RielaCLI/ProductionNodeAdapter+AppleNotesCrudAddons.swift Tests/RielaCLITests/AppleNotesCrudAddonTests.swift`;
+  touched Swift files are under 1000 lines.
+- PASS `git status --short`; unrelated dirty files remain outside this fix.
+
+### Session: 2026-07-07 Step 6 Adversarial Review Rerun `comm-000678`
+
+**Tasks Completed**: Addressed the mid-severity Step 7 adversarial finding from
+communication `comm-000678`.
+**Tasks In Progress**: None.
+**Blockers**: None.
+**Notes**:
+- Hardened `AppleGatewayProcessRunner` so apple-gateway is spawned in an
+  isolated POSIX session/process group on Darwin and timeout cleanup sends TERM
+  then KILL to the process group before returning.
+- Added timeout cleanup fallback that snapshots and kills descendant PIDs during
+  timeout cleanup, covering wrappers that leave destructive child processes
+  outside the immediate parent lifecycle.
+- Added fake-executable regression coverage in
+  `testAppleNoteCrudMapsBinaryTimeoutEnvAndVersionFailures` for a timed-out
+  destructive delete add-on whose descendant attempts to write a mutation marker
+  after the adapter deadline.
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter AppleNotesCrud`
+  (16 tests).
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter AppleGateway`
+  (11 tests).
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter AddonExecutionContractsTests`
+  (5 tests).
+- PASS targeted SwiftLint:
+  `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/xcrun swiftlint lint Sources/RielaCLI/ProductionNodeAdapter+AppleGatewaySupport.swift Tests/RielaCLITests/AppleNotesCrudAddonTests.swift`.
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build`.
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift run riela workflow validate apple-note-read --workflow-definition-dir examples`.
+- PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift run riela workflow validate apple-note-create --workflow-definition-dir examples`.
+- PASS `git diff --check`.
+- PASS `rg -n "/Users/.+apple-gateway" Sources Tests examples design-docs impl-plans`;
+  hits are limited to implementation-plan command text.
+- PASS `wc -l Sources/RielaCLI/ProductionNodeAdapter+AppleGatewaySupport.swift Sources/RielaCLI/ProductionNodeAdapter+AppleNotesCrudAddons.swift Tests/RielaCLITests/AppleNotesCrudAddonTests.swift`;
+  touched Swift files are under 1000 lines.
+- PASS `git status --short`; unrelated dirty files remain outside this fix.
 
 ## Related Plans
 

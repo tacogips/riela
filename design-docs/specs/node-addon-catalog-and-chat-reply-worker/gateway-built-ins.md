@@ -309,6 +309,11 @@ Runs fixed query `note(noteId: $noteId)`. Selected fields include id, account,
 folder, name, snippet, protection/share flags, timestamps, and optional
 plaintext, HTML body, `bodyFile`, and attachments based on config flags.
 
+If `data.note` is null or missing, the add-on succeeds with no `appleNote`
+object and `when.has_note: false`. If `data.note` is present but is not an
+object, the gateway output is malformed and maps to invalid output rather than
+being treated as "not found".
+
 #### `riela/apple-note-create`
 
 Runs fixed mutation `createNote(input: $input)`. The input object contains
@@ -347,6 +352,13 @@ execution fails before launch. A successful download records the local path in
 `appleNote.bodyFile.localPath` and `appleNote.body.materializedPath`. A note
 without `bodyFile.downloadKey` is still a successful small-body read.
 
+Download-root validation is side-effect-free until every existing parent
+component has been checked. The runtime must resolve existing parent
+components, reject symlink components, reject resolved paths outside the allowed
+private runtime roots, and only then create missing descendants below the
+validated root. A rejected `downloadDir` must not create the requested directory
+or any outside directory reached through an intermediate symlink.
+
 Open upstream confirmations for the exact file download stdout envelope and
 locked-note / permission-denied GraphQL error shapes are tracked in
 `design-docs/user-qa/qa-apple-notes-crud-gateway-confirmations.md`. Until those
@@ -364,9 +376,12 @@ should preserve both `errors[].message` and `errors[].extensions`.
 - non-zero process exit and file-download failures map to provider error
 - GraphQL `errors` map to provider error and preserve upstream messages and
   extension codes such as `NOTE_LOCKED` or permission-denied details
-- malformed or non-UTF8 JSON, missing GraphQL `data`, or a missing expected
-  mutation field maps to invalid output
-- deadline expiry terminates the subprocess and maps to timeout
+- malformed or non-UTF8 JSON, missing GraphQL `data`, a present non-object
+  `data.note`, or a missing expected mutation field maps to invalid output
+- for get, null or missing `data.note` is a successful not-found result with
+  `when.has_note: false`
+- deadline expiry terminates the subprocess process group, including descendant
+  processes, and maps to timeout
 
 ### Security and Rollout Notes
 
@@ -382,6 +397,12 @@ executable binary, non-zero exit, malformed JSON, timeout, rejected
 `addon.env`, unsupported version, and variables-not-injected. The injection test
 must prove user text containing quotes, braces, or newlines appears only in
 `--variables`, not in `--query`.
+
+Post-review hardening coverage is required for three edge cases: intermediate
+symlink `downloadDir` rejection with no directory creation side effects,
+non-object `data.note` rejection as invalid output while null or missing notes
+remain `has_note: false`, and timeout cleanup that proves descendant processes
+cannot survive destructive mutation add-on calls.
 
 The read example may default to `materializeBody: false`. The create example is
 allowed because it only creates a new note. Delete, move, and update should

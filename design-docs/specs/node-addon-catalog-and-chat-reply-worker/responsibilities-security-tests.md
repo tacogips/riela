@@ -99,6 +99,11 @@ The implementation should cover:
   rejected `addon.env`, timeout handling, malformed envelopes, missing mutation
   fields, `NOTE_LOCKED`, and permission-denied errors without live Apple app
   access
+- Apple Notes CRUD hardening tests cover intermediate-symlink `downloadDir`
+  rejection with no outside directory creation, null or missing notes returning
+  `when.has_note: false` while non-object notes map to invalid output, and
+  timeout cleanup that terminates descendant processes spawned by destructive
+  mutation add-ons
 
 ## References
 

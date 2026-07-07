@@ -190,8 +190,11 @@ private struct AppleNotesCrudEngine {
   ) throws -> AdapterExecutionOutput {
     var payload = commonPayload(input: input, resolvedBinary: resolvedBinary, envelope: envelope)
     guard case var .object(note)? = envelope.data["note"] else {
-      payload["appleNote"] = envelope.data["note"] ?? .null
-      return output(input: input, when: ["always": true, "has_note": false], payload: payload)
+      if envelope.data["note"] == nil || envelope.data["note"] == .null {
+        payload["appleNote"] = envelope.data["note"] ?? .null
+        return output(input: input, when: ["always": true, "has_note": false], payload: payload)
+      }
+      throw AdapterExecutionError(.invalidOutput, "\(input.addon.name) GraphQL data.note must be an object or null")
     }
     if try bool("materializeBody", config: config, defaultValue: false),
       let bodyFile = objectValue(note["bodyFile"]),
@@ -269,7 +272,7 @@ private struct AppleNotesCrudEngine {
     config: JSONObject,
     variables: JSONObject
   ) throws -> String {
-    guard let value = string(key, config: config, variables: variables) else {
+    guard let value = nonBlankString(key, config: config, variables: variables) else {
       throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) \(key) is required")
     }
     return value
@@ -294,24 +297,33 @@ private struct AppleNotesCrudEngine {
     variables: JSONObject
   ) -> Bool {
     var hasBody = false
-    if let bodyHtml = string("bodyHtml", config: config, variables: variables) {
+    if let bodyHtml = nonBlankString("bodyHtml", config: config, variables: variables) {
       object["bodyHtml"] = .string(bodyHtml)
       hasBody = true
     }
-    if let bodyText = string("bodyText", config: config, variables: variables) {
+    if let bodyText = nonBlankString("bodyText", config: config, variables: variables) {
       object["bodyText"] = .string(bodyText)
       hasBody = true
     }
     return hasBody
   }
 
-  private func string(_ key: String, config: JSONObject, variables: JSONObject) -> String? {
-    let value = nonEmptyString(variables[key]) ?? nonEmptyString(config[key])
-    guard let value else {
+  private func nonBlankString(_ key: String, config: JSONObject, variables: JSONObject) -> String? {
+    guard let value = string(key, config: config, variables: variables) else {
       return nil
     }
-    let rendered = renderPromptTemplate(value, variables: variables).trimmingCharacters(in: .whitespacesAndNewlines)
-    return rendered.isEmpty ? nil : rendered
+    return value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : value
+  }
+
+  private func string(_ key: String, config: JSONObject, variables: JSONObject) -> String? {
+    if let value = nonEmptyString(variables[key]) {
+      return value
+    }
+    if let template = nonEmptyString(config[key]) {
+      let rendered = renderPromptTemplate(template, variables: variables).trimmingCharacters(in: .whitespacesAndNewlines)
+      return rendered.isEmpty ? nil : rendered
+    }
+    return nil
   }
 
   private func bool(_ key: String, config: JSONObject, defaultValue: Bool) throws -> Bool {

@@ -7,6 +7,7 @@ import Glibc
 #endif
 
 struct AppleGatewayProcessRunner {
+  private static let pipeCloseGraceInterval: TimeInterval = 0.25
   private static let childEnvironmentAllowlist = [
     "HOME",
     "LANG",
@@ -22,6 +23,9 @@ struct AppleGatewayProcessRunner {
   var runtimeEnvironment: [String: String]
 
   func run(executablePath: String, arguments: [String], deadline: Date?) throws -> AppleGatewayProcessOutput {
+    #if canImport(Darwin) || canImport(Glibc)
+    return try runInIsolatedProcessGroup(executablePath: executablePath, arguments: arguments, deadline: deadline)
+    #else
     let process = Process()
     process.executableURL = URL(fileURLWithPath: executablePath)
     process.arguments = arguments
@@ -49,18 +53,31 @@ struct AppleGatewayProcessRunner {
     )
     if !waitForAppleGatewayProcess(process, termination: termination, until: deadline) {
       terminateAppleGatewayProcess(process, termination: termination)
-      _ = stdoutDrain.waitForData()
-      _ = stderrDrain.waitForData()
+      stdoutDrain.cancel()
+      stderrDrain.cancel()
+      _ = stdoutDrain.waitForData(timeout: .now() + 1)
+      _ = stderrDrain.waitForData(timeout: .now() + 1)
       throw AdapterExecutionError(.timeout, "apple-gateway exceeded deadline and was terminated")
     }
     process.terminationHandler = nil
-    let stdout = String(data: stdoutDrain.waitForData(), encoding: .utf8) ?? ""
-    let stderr = String(data: stderrDrain.waitForData(), encoding: .utf8) ?? ""
+    let stdoutData = try collectPipeDataAfterTermination(
+      stdoutDrain,
+      deadline: deadline,
+      streamName: "stdout"
+    )
+    let stderrData = try collectPipeDataAfterTermination(
+      stderrDrain,
+      deadline: deadline,
+      streamName: "stderr"
+    )
+    let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
+    let stderr = String(data: stderrData, encoding: .utf8) ?? ""
     guard process.terminationStatus == 0 else {
       let detail = appleGatewayCompactText(stderr.isEmpty ? stdout : stderr)
       throw AdapterExecutionError(.providerError, "apple-gateway failed with exit code \(process.terminationStatus): \(detail)")
     }
     return AppleGatewayProcessOutput(stdout: stdout, stderr: stderr)
+    #endif
   }
 
   private func sanitizedChildEnvironment() -> [String: String] {
@@ -72,6 +89,75 @@ struct AppleGatewayProcessRunner {
       childEnvironment[name] = value
     }
     return childEnvironment
+  }
+
+  #if canImport(Darwin) || canImport(Glibc)
+  private func runInIsolatedProcessGroup(
+    executablePath: String,
+    arguments: [String],
+    deadline: Date?
+  ) throws -> AppleGatewayProcessOutput {
+    let outputPipe = Pipe()
+    let errorPipe = Pipe()
+    let pid = try spawnProcessGroup(
+      executablePath: executablePath,
+      arguments: arguments,
+      environment: sanitizedChildEnvironment(),
+      stdoutPipe: outputPipe,
+      stderrPipe: errorPipe
+    )
+    outputPipe.fileHandleForWriting.closeFile()
+    errorPipe.fileHandleForWriting.closeFile()
+    let termination = AppleGatewayProcessTermination(pid: pid)
+    let stdoutDrain = AppleGatewayPipeDrain(
+      handle: outputPipe.fileHandleForReading,
+      label: "riela.apple-gateway.stdout"
+    )
+    let stderrDrain = AppleGatewayPipeDrain(
+      handle: errorPipe.fileHandleForReading,
+      label: "riela.apple-gateway.stderr"
+    )
+    if !termination.wait(until: deadline) {
+      terminateAppleGatewayProcessGroup(pid: pid, termination: termination)
+      stdoutDrain.cancel()
+      stderrDrain.cancel()
+      _ = stdoutDrain.waitForData(timeout: .now() + 1)
+      _ = stderrDrain.waitForData(timeout: .now() + 1)
+      throw AdapterExecutionError(.timeout, "apple-gateway exceeded deadline and was terminated")
+    }
+    let stdoutData = try collectPipeDataAfterTermination(
+      stdoutDrain,
+      deadline: deadline,
+      streamName: "stdout"
+    )
+    let stderrData = try collectPipeDataAfterTermination(
+      stderrDrain,
+      deadline: deadline,
+      streamName: "stderr"
+    )
+    let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
+    let stderr = String(data: stderrData, encoding: .utf8) ?? ""
+    let terminationStatus = termination.exitStatus()
+    guard terminationStatus == 0 else {
+      let detail = appleGatewayCompactText(stderr.isEmpty ? stdout : stderr)
+      throw AdapterExecutionError(.providerError, "apple-gateway failed with exit code \(terminationStatus): \(detail)")
+    }
+    return AppleGatewayProcessOutput(stdout: stdout, stderr: stderr)
+  }
+  #endif
+
+  private func collectPipeDataAfterTermination(
+    _ drain: AppleGatewayPipeDrain,
+    deadline: Date?,
+    streamName: String
+  ) throws -> Data {
+    if let deadline {
+      return try drain.waitForDataOrTimeout(deadline: deadline, streamName: streamName)
+    }
+    if let data = drain.waitForData(timeout: .now() + Self.pipeCloseGraceInterval) {
+      return data
+    }
+    return drain.cancelAndReturnData()
   }
 }
 
@@ -106,30 +192,280 @@ func terminateAppleGatewayProcess(_ process: Process, termination: DispatchSemap
     _ = kill(process.processIdentifier, SIGKILL)
   }
   #endif
-  termination.wait()
+  _ = termination.wait(timeout: .now() + 1)
 }
 
-final class AppleGatewayPipeDrain: @unchecked Sendable {
-  private let group = DispatchGroup()
-  private let lock = NSLock()
-  private var data = Data()
+#if canImport(Darwin) || canImport(Glibc)
+private func spawnProcessGroup(
+  executablePath: String,
+  arguments: [String],
+  environment: [String: String],
+  stdoutPipe: Pipe,
+  stderrPipe: Pipe
+) throws -> pid_t {
+  var fileActions: posix_spawn_file_actions_t?
+  var attributes: posix_spawnattr_t?
+  posix_spawn_file_actions_init(&fileActions)
+  posix_spawnattr_init(&attributes)
+  defer {
+    posix_spawn_file_actions_destroy(&fileActions)
+    posix_spawnattr_destroy(&attributes)
+  }
+  try appleGatewaySpawnCheck(
+    posix_spawn_file_actions_adddup2(&fileActions, stdoutPipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO),
+    operation: "prepare stdout pipe"
+  )
+  try appleGatewaySpawnCheck(
+    posix_spawn_file_actions_adddup2(&fileActions, stderrPipe.fileHandleForWriting.fileDescriptor, STDERR_FILENO),
+    operation: "prepare stderr pipe"
+  )
+  try appleGatewaySpawnCheck(
+    posix_spawn_file_actions_addclose(&fileActions, stdoutPipe.fileHandleForReading.fileDescriptor),
+    operation: "close child stdout read pipe"
+  )
+  try appleGatewaySpawnCheck(
+    posix_spawn_file_actions_addclose(&fileActions, stderrPipe.fileHandleForReading.fileDescriptor),
+    operation: "close child stderr read pipe"
+  )
+  #if canImport(Darwin)
+  let flags = Int16(POSIX_SPAWN_SETSID)
+  try appleGatewaySpawnCheck(posix_spawnattr_setflags(&attributes, flags), operation: "set session flag")
+  #else
+  let flags = Int16(POSIX_SPAWN_SETPGROUP)
+  try appleGatewaySpawnCheck(posix_spawnattr_setflags(&attributes, flags), operation: "set process-group flag")
+  try appleGatewaySpawnCheck(posix_spawnattr_setpgroup(&attributes, 0), operation: "set process group")
+  #endif
 
-  init(handle: FileHandle, label: String) {
-    group.enter()
-    DispatchQueue(label: label).async {
-      let drained = handle.readDataToEndOfFile()
-      self.lock.lock()
-      self.data = drained
-      self.lock.unlock()
-      self.group.leave()
+  var pid = pid_t()
+  let argv = [executablePath] + arguments
+  let envp = environment
+    .sorted { $0.key < $1.key }
+    .map { "\($0.key)=\($0.value)" }
+  let result = executablePath.withCString { pathPointer in
+    withAppleGatewayCStringArray(argv) { argvPointer in
+      withAppleGatewayCStringArray(envp) { envpPointer in
+        posix_spawn(&pid, pathPointer, &fileActions, &attributes, argvPointer, envpPointer)
+      }
+    }
+  }
+  if result != 0 {
+    throw AdapterExecutionError(
+      .providerError,
+      "apple-gateway failed to start: \(String(cString: strerror(result)))"
+    )
+  }
+  return pid
+}
+
+private func appleGatewaySpawnCheck(_ result: Int32, operation: String) throws {
+  guard result == 0 else {
+    throw AdapterExecutionError(
+      .providerError,
+      "apple-gateway failed to \(operation): \(String(cString: strerror(result)))"
+    )
+  }
+}
+
+private func withAppleGatewayCStringArray<T>(_ strings: [String], _ body: (UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>) throws -> T) rethrows -> T {
+  var cStrings = strings.map { strdup($0) }
+  cStrings.append(nil)
+  defer {
+    for string in cStrings {
+      free(string)
+    }
+  }
+  return try cStrings.withUnsafeMutableBufferPointer { buffer in
+    try body(buffer.baseAddress!)
+  }
+}
+
+private func terminateAppleGatewayProcessGroup(pid: pid_t, termination: AppleGatewayProcessTermination) {
+  let descendants = appleGatewayDescendantPIDs(of: pid)
+  let processGroup = getpgid(pid)
+  let groupToTerminate = processGroup > 0 ? processGroup : pid
+  terminateAppleGatewayPIDs(descendants, signal: SIGTERM)
+  _ = kill(-groupToTerminate, SIGTERM)
+  terminateAppleGatewayPIDs(appleGatewayDescendantPIDs(of: pid) + descendants, signal: SIGKILL)
+  _ = kill(-groupToTerminate, SIGKILL)
+  guard !termination.wait(timeout: .now() + 1) else {
+    return
+  }
+  _ = termination.wait(timeout: .now() + 1)
+}
+
+private func terminateAppleGatewayPIDs(_ pids: [pid_t], signal: Int32) {
+  for pid in Set(pids) where pid > 0 {
+    _ = kill(pid, signal)
+  }
+}
+
+private func appleGatewayDescendantPIDs(of rootPID: pid_t) -> [pid_t] {
+  let process = Process()
+  process.executableURL = URL(fileURLWithPath: "/bin/ps")
+  process.arguments = ["-axo", "pid=,ppid="]
+  let pipe = Pipe()
+  process.standardOutput = pipe
+  process.standardError = Pipe()
+  do {
+    try process.run()
+  } catch {
+    return []
+  }
+  process.waitUntilExit()
+  let data = pipe.fileHandleForReading.readDataToEndOfFile()
+  guard let output = String(data: data, encoding: .utf8) else {
+    return []
+  }
+  var childrenByParent: [pid_t: [pid_t]] = [:]
+  for line in output.split(whereSeparator: \.isNewline) {
+    let fields = line.split(whereSeparator: \.isWhitespace)
+    guard fields.count >= 2,
+      let pid = pid_t(fields[0]),
+      let parent = pid_t(fields[1])
+    else {
+      continue
+    }
+    childrenByParent[parent, default: []].append(pid)
+  }
+  var descendants: [pid_t] = []
+  var stack = childrenByParent[rootPID] ?? []
+  while let pid = stack.popLast() {
+    descendants.append(pid)
+    stack.append(contentsOf: childrenByParent[pid] ?? [])
+  }
+  return descendants
+}
+
+private final class AppleGatewayProcessTermination: @unchecked Sendable {
+  private let completion = DispatchSemaphore(value: 0)
+  private let lock = NSLock()
+  private let pid: pid_t
+  private var status: Int32?
+
+  init(pid: pid_t) {
+    self.pid = pid
+    DispatchQueue.global(qos: .utility).async { [weak self] in
+      self?.waitForExit()
     }
   }
 
-  func waitForData() -> Data {
-    group.wait()
+  func wait(until deadline: Date?) -> Bool {
+    guard let deadline else {
+      completion.wait()
+      return true
+    }
+    let remaining = deadline.timeIntervalSinceNow
+    guard remaining > 0 else {
+      return false
+    }
+    return wait(timeout: .now() + remaining)
+  }
+
+  func wait(timeout: DispatchTime) -> Bool {
+    completion.wait(timeout: timeout) == .success
+  }
+
+  func exitStatus() -> Int32 {
+    lock.lock()
+    let rawStatus = status ?? 1
+    lock.unlock()
+    if rawStatus & 0x7f == 0 {
+      return (rawStatus >> 8) & 0xff
+    }
+    return 128 + (rawStatus & 0x7f)
+  }
+
+  private func waitForExit() {
+    var rawStatus: Int32 = 0
+    while waitpid(pid, &rawStatus, 0) == -1 {
+      guard errno == EINTR else {
+        rawStatus = 1
+        break
+      }
+    }
+    lock.lock()
+    status = rawStatus
+    lock.unlock()
+    completion.signal()
+  }
+}
+#endif
+
+final class AppleGatewayPipeDrain: @unchecked Sendable {
+  private let handle: FileHandle
+  private let lock = NSLock()
+  private let completion = DispatchSemaphore(value: 0)
+  private var data = Data()
+  private var completed = false
+
+  init(handle: FileHandle, label: String) {
+    _ = label
+    self.handle = handle
+    handle.readabilityHandler = { [weak self] readableHandle in
+      let chunk = readableHandle.availableData
+      self?.record(chunk)
+    }
+  }
+
+  func waitForData(timeout: DispatchTime? = nil) -> Data? {
+    if let timeout {
+      guard completion.wait(timeout: timeout) == .success else {
+        return nil
+      }
+    } else {
+      completion.wait()
+    }
     lock.lock()
     defer { lock.unlock() }
     return data
+  }
+
+  func waitForDataOrTimeout(deadline: Date?, streamName: String) throws -> Data {
+    if let deadline {
+      let remaining = deadline.timeIntervalSinceNow
+      guard remaining > 0,
+        let data = waitForData(timeout: .now() + remaining)
+      else {
+        cancel()
+        throw AdapterExecutionError(.timeout, "apple-gateway \(streamName) pipe did not close before deadline")
+      }
+      return data
+    }
+    return waitForData() ?? Data()
+  }
+
+  func cancel() {
+    completeIfNeeded()
+    handle.readabilityHandler = nil
+    handle.closeFile()
+  }
+
+  func cancelAndReturnData() -> Data {
+    cancel()
+    return waitForData() ?? Data()
+  }
+
+  private func record(_ chunk: Data) {
+    guard !chunk.isEmpty else {
+      completeIfNeeded()
+      return
+    }
+    lock.lock()
+    if !completed {
+      data.append(chunk)
+    }
+    lock.unlock()
+  }
+
+  private func completeIfNeeded() {
+    lock.lock()
+    let shouldSignal = !completed
+    completed = true
+    lock.unlock()
+    if shouldSignal {
+      handle.readabilityHandler = nil
+      completion.signal()
+    }
   }
 }
 
@@ -227,6 +563,8 @@ struct AppleGatewayBinaryResolver {
 }
 
 struct AppleGatewayFileDownloader {
+  private static let ownerOnlyDirectoryPermissions = 0o700
+  private static let groupOrOtherPermissionBits = 0o077
   private static let privateRelativePrefixes = [
     ".riela-data/",
     ".riela-artifact/",
@@ -238,7 +576,20 @@ struct AppleGatewayFileDownloader {
   private static let privateAbsolutePrefixes = [
     "/tmp/",
     "/var/tmp/",
-    "/var/folders/"
+    "/var/folders/",
+    "/private/tmp/",
+    "/private/var/tmp/",
+    "/private/var/folders/"
+  ]
+  private static let sharedTemporaryRoots = [
+    "/tmp",
+    "/var/tmp",
+    "/private/tmp",
+    "/private/var/tmp"
+  ]
+  private static let allowedSystemSymlinkComponents = [
+    "/tmp",
+    "/var"
   ]
 
   var runner: AppleGatewayProcessRunner
@@ -246,13 +597,17 @@ struct AppleGatewayFileDownloader {
   var currentDirectory: URL
 
   func download(keys: [String], outputRoot: String, deadline: Date?) throws -> [String: String] {
-    try assertPrivateRuntimeDirectory(outputRoot, label: "RIELA_APPLE_NOTES_DOWNLOAD_ROOT")
+    let validatedOutputRoot = try validatedPrivateRuntimeDirectory(
+      outputRoot,
+      label: "RIELA_APPLE_NOTES_DOWNLOAD_ROOT"
+    )
     guard !keys.isEmpty else {
       return [:]
     }
     let output = try runner.run(
       executablePath: resolvedBinary.path,
-      arguments: ["file", "download"] + keys.flatMap { ["--key", $0] } + ["--output-dir", outputRoot],
+      arguments: ["file", "download"] + keys.flatMap { ["--key", $0] }
+        + ["--output-dir", validatedOutputRoot.path],
       deadline: deadline
     )
     guard let data = output.stdout.data(using: .utf8),
@@ -260,7 +615,11 @@ struct AppleGatewayFileDownloader {
     else {
       throw AdapterExecutionError(.providerError, "apple-gateway file download returned invalid JSON")
     }
-    let downloaded = downloadedLocalPaths(from: decoded, requestedKeys: keys)
+    let downloaded = try downloadedLocalPaths(
+      from: decoded,
+      requestedKeys: keys,
+      outputRoot: validatedOutputRoot
+    )
     let missingKeys = keys.filter { downloaded[$0] == nil }
     guard missingKeys.isEmpty else {
       throw AdapterExecutionError(
@@ -271,7 +630,11 @@ struct AppleGatewayFileDownloader {
     return downloaded
   }
 
-  private func downloadedLocalPaths(from decoded: JSONValue, requestedKeys: [String]) -> [String: String] {
+  private func downloadedLocalPaths(
+    from decoded: JSONValue,
+    requestedKeys: [String],
+    outputRoot: AppleGatewayValidatedOutputRoot
+  ) throws -> [String: String] {
     let requested = Set(requestedKeys)
     let object = objectValue(decoded)
     let files = appleGatewayArray(object?["files"]) + appleGatewayArray(object?["downloads"])
@@ -285,22 +648,184 @@ struct AppleGatewayFileDownloader {
       }
       let key = nonEmptyString(file["downloadKey"]) ?? nonEmptyString(file["key"])
       if let key, requested.contains(key) {
-        result[key] = localPath
+        result[key] = try validatedDownloadedLocalPath(localPath, outputRoot: outputRoot.realPath)
       }
     }
     return result
   }
 
-  private func assertPrivateRuntimeDirectory(_ path: String, label: String) throws {
-    let resolved = URL(fileURLWithPath: path, relativeTo: currentDirectory).standardizedFileURL.path
-    let cwd = currentDirectory.standardizedFileURL.path
-    let relative = resolved.hasPrefix(cwd + "/") ? String(resolved.dropFirst(cwd.count + 1)) : ""
-    let allowed = Self.privateRelativePrefixes.contains { relative.hasPrefix($0) }
-      || Self.privateAbsolutePrefixes.contains { resolved.hasPrefix($0) }
-    guard allowed else {
+  private func validatedDownloadedLocalPath(_ path: String, outputRoot: String) throws -> String {
+    let localURL = URL(fileURLWithPath: path, relativeTo: currentDirectory)
+      .standardizedFileURL
+    if isSymbolicLink(localURL) {
+      throw AdapterExecutionError(
+        .providerError,
+        "apple-gateway file download returned a symbolic link local path: \(path)"
+      )
+    }
+    let resolvedPath = localURL
+      .resolvingSymlinksInPath()
+      .standardizedFileURL
+      .path
+    let insideRoot = resolvedPath == outputRoot || resolvedPath.hasPrefix(outputRoot + "/")
+    guard insideRoot else {
+      throw AdapterExecutionError(
+        .providerError,
+        "apple-gateway file download returned a local path outside outputRoot: \(path)"
+      )
+    }
+    guard FileManager.default.fileExists(atPath: resolvedPath) else {
+      throw AdapterExecutionError(
+        .providerError,
+        "apple-gateway file download returned a local path that does not exist: \(path)"
+      )
+    }
+    guard let type = try? FileManager.default.attributesOfItem(atPath: resolvedPath)[.type] as? FileAttributeType,
+      type == .typeRegular
+    else {
+      throw AdapterExecutionError(
+        .providerError,
+        "apple-gateway file download returned a non-regular local path: \(path)"
+      )
+    }
+    return resolvedPath
+  }
+
+  private func validatedPrivateRuntimeDirectory(
+    _ path: String,
+    label: String
+  ) throws -> AppleGatewayValidatedOutputRoot {
+    let url = URL(fileURLWithPath: path, relativeTo: currentDirectory).standardizedFileURL
+    guard isPrivateRuntimePath(url.path) else {
       throw AdapterExecutionError(.policyBlocked, "\(label) must point to an ignored/private runtime path, got \(path)")
     }
+    try validateNoExistingSymbolicLinkComponents(url, label: label, originalPath: path)
+    let existedBefore = FileManager.default.fileExists(atPath: url.path)
+    if existedBefore {
+      if isSymbolicLink(url) {
+        throw AdapterExecutionError(.policyBlocked, "\(label) must not be a symbolic link: \(path)")
+      }
+      try validateOwnerPrivateDirectory(url, label: label, originalPath: path)
+    }
+    do {
+      try FileManager.default.createDirectory(
+        at: url,
+        withIntermediateDirectories: true,
+        attributes: [.posixPermissions: Self.ownerOnlyDirectoryPermissions]
+      )
+    } catch {
+      throw AdapterExecutionError(.policyBlocked, "\(label) could not be created: \(path)")
+    }
+    if isSymbolicLink(url) {
+      throw AdapterExecutionError(.policyBlocked, "\(label) must not be a symbolic link: \(path)")
+    }
+    let realURL = url.resolvingSymlinksInPath().standardizedFileURL
+    guard isPrivateRuntimePath(realURL.path) else {
+      throw AdapterExecutionError(.policyBlocked, "\(label) resolves outside ignored/private runtime paths: \(path)")
+    }
+    if !existedBefore {
+      do {
+        try FileManager.default.setAttributes(
+          [.posixPermissions: Self.ownerOnlyDirectoryPermissions],
+          ofItemAtPath: realURL.path
+        )
+      } catch {
+        throw AdapterExecutionError(.policyBlocked, "\(label) could not be made owner-private: \(path)")
+      }
+    }
+    try validateOwnerPrivateDirectory(realURL, label: label, originalPath: path)
+    try validateSharedTemporaryBoundary(realURL, label: label, originalPath: path)
+    return AppleGatewayValidatedOutputRoot(path: url.path, realPath: realURL.path)
   }
+
+  private func validateNoExistingSymbolicLinkComponents(
+    _ url: URL,
+    label: String,
+    originalPath: String
+  ) throws {
+    var currentURL = URL(fileURLWithPath: "/", isDirectory: true)
+    for component in url.pathComponents.dropFirst() {
+      currentURL.appendPathComponent(component, isDirectory: true)
+      guard FileManager.default.fileExists(atPath: currentURL.path) else {
+        return
+      }
+      if isSymbolicLink(currentURL), !Self.allowedSystemSymlinkComponents.contains(currentURL.path) {
+        throw AdapterExecutionError(
+          .policyBlocked,
+          "\(label) must not contain a symbolic link component: \(originalPath)"
+        )
+      }
+    }
+  }
+
+  private func validateOwnerPrivateDirectory(
+    _ url: URL,
+    label: String,
+    originalPath: String
+  ) throws {
+    let attributes: [FileAttributeKey: Any]
+    do {
+      attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+    } catch {
+      throw AdapterExecutionError(.policyBlocked, "\(label) could not be inspected: \(originalPath)")
+    }
+    guard let type = attributes[.type] as? FileAttributeType,
+      type == .typeDirectory
+    else {
+      throw AdapterExecutionError(.policyBlocked, "\(label) must point to a directory: \(originalPath)")
+    }
+    #if canImport(Darwin) || canImport(Glibc)
+    if let owner = attributes[.ownerAccountID] as? NSNumber,
+      owner.uint32Value != getuid() {
+      throw AdapterExecutionError(.policyBlocked, "\(label) must be owned by the current user: \(originalPath)")
+    }
+    #endif
+    guard let permissions = attributes[.posixPermissions] as? NSNumber,
+      permissions.intValue & Self.groupOrOtherPermissionBits == 0
+    else {
+      throw AdapterExecutionError(
+        .policyBlocked,
+        "\(label) must be owner-private with no group/other permissions: \(originalPath)"
+      )
+    }
+  }
+
+  private func validateSharedTemporaryBoundary(
+    _ realURL: URL,
+    label: String,
+    originalPath: String
+  ) throws {
+    let realPath = realURL.path
+    guard let sharedRoot = Self.sharedTemporaryRoots.first(where: { sharedRoot in
+      realPath == sharedRoot || realPath.hasPrefix(sharedRoot + "/")
+    }) else {
+      return
+    }
+    let suffix = realPath.dropFirst(sharedRoot.count).drop(while: { $0 == "/" })
+    guard let firstComponent = suffix.split(separator: "/").first else {
+      throw AdapterExecutionError(.policyBlocked, "\(label) must not use a shared temporary root directly: \(originalPath)")
+    }
+    let boundaryURL = URL(fileURLWithPath: sharedRoot)
+      .appendingPathComponent(String(firstComponent), isDirectory: true)
+      .standardizedFileURL
+    try validateOwnerPrivateDirectory(boundaryURL, label: label, originalPath: originalPath)
+  }
+
+  private func isPrivateRuntimePath(_ path: String) -> Bool {
+    let cwd = currentDirectory.resolvingSymlinksInPath().standardizedFileURL.path
+    let relative = path.hasPrefix(cwd + "/") ? String(path.dropFirst(cwd.count + 1)) : ""
+    return Self.privateRelativePrefixes.contains { relative.hasPrefix($0) }
+      || Self.privateAbsolutePrefixes.contains { path.hasPrefix($0) }
+  }
+
+  private func isSymbolicLink(_ url: URL) -> Bool {
+    (try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)) != nil
+  }
+}
+
+private struct AppleGatewayValidatedOutputRoot {
+  var path: String
+  var realPath: String
 }
 
 func appleGatewayArray(_ value: JSONValue?) -> [JSONValue] {

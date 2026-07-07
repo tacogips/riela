@@ -26,7 +26,7 @@ final class AppleNotesCrudAddonTests: XCTestCase {
     let fake = try CrudFakeAppleGateway(mode: "get-body-file")
     defer { fake.cleanup() }
     let downloadRoot = fake.rootURL.appendingPathComponent("downloads", isDirectory: true)
-    try FileManager.default.createDirectory(at: downloadRoot, withIntermediateDirectories: true)
+    try createCrudTestDirectory(downloadRoot, permissions: 0o700)
 
     let output = try await runAppleNoteAddon(
       "riela/apple-note-get",
@@ -53,7 +53,7 @@ final class AppleNotesCrudAddonTests: XCTestCase {
     let fake = try CrudFakeAppleGateway(mode: "get-body-file-missing-download-mapping")
     defer { fake.cleanup() }
     let downloadRoot = fake.rootURL.appendingPathComponent("downloads", isDirectory: true)
-    try FileManager.default.createDirectory(at: downloadRoot, withIntermediateDirectories: true)
+    try createCrudTestDirectory(downloadRoot, permissions: 0o700)
 
     try await assertAppleNoteFailure(
       "riela/apple-note-get",
@@ -66,6 +66,149 @@ final class AppleNotesCrudAddonTests: XCTestCase {
       code: .providerError,
       messageContains: "body-key"
     )
+  }
+
+  func testAppleNoteGetMaterializeValidatesDownloadedLocalPath() async throws {
+    let outsideFake = try CrudFakeAppleGateway(mode: "get-body-file-outside-download-root")
+    let missingFake = try CrudFakeAppleGateway(mode: "get-body-file-missing-downloaded-file")
+    defer {
+      outsideFake.cleanup()
+      missingFake.cleanup()
+    }
+    let outsideDownloadRoot = outsideFake.rootURL.appendingPathComponent("downloads", isDirectory: true)
+    let missingDownloadRoot = missingFake.rootURL.appendingPathComponent("downloads", isDirectory: true)
+    try createCrudTestDirectory(outsideDownloadRoot, permissions: 0o700)
+    try createCrudTestDirectory(missingDownloadRoot, permissions: 0o700)
+
+    try await assertAppleNoteFailure(
+      "riela/apple-note-get",
+      config: [
+        "binaryPath": .string(outsideFake.executableURL.path),
+        "materializeBody": .bool(true),
+        "downloadDir": .string(outsideDownloadRoot.path)
+      ],
+      inputs: ["noteId": .string("note-large")],
+      code: .providerError,
+      messageContains: "outside outputRoot"
+    )
+    try await assertAppleNoteFailure(
+      "riela/apple-note-get",
+      config: [
+        "binaryPath": .string(missingFake.executableURL.path),
+        "materializeBody": .bool(true),
+        "downloadDir": .string(missingDownloadRoot.path)
+      ],
+      inputs: ["noteId": .string("note-large")],
+      code: .providerError,
+      messageContains: "does not exist"
+    )
+  }
+
+  func testAppleNoteGetMaterializeRejectsSymlinkRootsAndFiles() async throws {
+    let rootSymlinkFake = try CrudFakeAppleGateway(mode: "get-body-file")
+    let fileSymlinkFake = try CrudFakeAppleGateway(mode: "get-body-file-symlink-downloaded-file")
+    defer {
+      rootSymlinkFake.cleanup()
+      fileSymlinkFake.cleanup()
+    }
+    let realDownloadRoot = rootSymlinkFake.rootURL.appendingPathComponent("real-downloads", isDirectory: true)
+    let symlinkDownloadRoot = rootSymlinkFake.rootURL.appendingPathComponent("download-link", isDirectory: true)
+    let fileSymlinkDownloadRoot = fileSymlinkFake.rootURL.appendingPathComponent("downloads", isDirectory: true)
+    try createCrudTestDirectory(realDownloadRoot, permissions: 0o700)
+    try FileManager.default.createSymbolicLink(at: symlinkDownloadRoot, withDestinationURL: realDownloadRoot)
+    try createCrudTestDirectory(fileSymlinkDownloadRoot, permissions: 0o700)
+
+    try await assertAppleNoteFailure(
+      "riela/apple-note-get",
+      config: [
+        "binaryPath": .string(rootSymlinkFake.executableURL.path),
+        "materializeBody": .bool(true),
+        "downloadDir": .string(symlinkDownloadRoot.path)
+      ],
+      inputs: ["noteId": .string("note-large")],
+      code: .policyBlocked,
+      messageContains: "symbolic link"
+    )
+    try await assertAppleNoteFailure(
+      "riela/apple-note-get",
+      config: [
+        "binaryPath": .string(fileSymlinkFake.executableURL.path),
+        "materializeBody": .bool(true),
+        "downloadDir": .string(fileSymlinkDownloadRoot.path)
+      ],
+      inputs: ["noteId": .string("note-large")],
+      code: .providerError,
+      messageContains: "symbolic link local path"
+    )
+  }
+
+  func testAppleNoteGetMaterializeRejectsSymlinkAncestorBeforeCreate() async throws {
+    let fake = try CrudFakeAppleGateway(mode: "get-body-file")
+    defer { fake.cleanup() }
+    let realParent = fake.rootURL.appendingPathComponent("real-parent", isDirectory: true)
+    let symlinkParent = fake.rootURL.appendingPathComponent("symlink-parent", isDirectory: true)
+    let nestedDownloadRoot = symlinkParent.appendingPathComponent("downloads", isDirectory: true)
+    try createCrudTestDirectory(realParent, permissions: 0o700)
+    try FileManager.default.createSymbolicLink(at: symlinkParent, withDestinationURL: realParent)
+
+    try await assertAppleNoteFailure(
+      "riela/apple-note-get",
+      config: [
+        "binaryPath": .string(fake.executableURL.path),
+        "materializeBody": .bool(true),
+        "downloadDir": .string(nestedDownloadRoot.path)
+      ],
+      inputs: ["noteId": .string("note-large")],
+      code: .policyBlocked,
+      messageContains: "symbolic link component"
+    )
+    XCTAssertFalse(FileManager.default.fileExists(atPath: realParent.appendingPathComponent("downloads").path))
+  }
+
+  func testAppleNoteGetMaterializeRejectsPublicRootsAndAcceptsOwnerPrivateRoot() async throws {
+    let fake = try CrudFakeAppleGateway(mode: "get-body-file")
+    defer { fake.cleanup() }
+    let worldReadableRoot = fake.rootURL.appendingPathComponent("world-readable-downloads", isDirectory: true)
+    let worldWritableRoot = fake.rootURL.appendingPathComponent("world-writable-downloads", isDirectory: true)
+    let ownerPrivateRoot = fake.rootURL.appendingPathComponent("owner-private-downloads", isDirectory: true)
+    try createCrudTestDirectory(worldReadableRoot, permissions: 0o755)
+    try createCrudTestDirectory(worldWritableRoot, permissions: 0o777)
+    try createCrudTestDirectory(ownerPrivateRoot, permissions: 0o700)
+
+    try await assertAppleNoteFailure(
+      "riela/apple-note-get",
+      config: [
+        "binaryPath": .string(fake.executableURL.path),
+        "materializeBody": .bool(true),
+        "downloadDir": .string(worldReadableRoot.path)
+      ],
+      inputs: ["noteId": .string("note-large")],
+      code: .policyBlocked,
+      messageContains: "owner-private"
+    )
+    try await assertAppleNoteFailure(
+      "riela/apple-note-get",
+      config: [
+        "binaryPath": .string(fake.executableURL.path),
+        "materializeBody": .bool(true),
+        "downloadDir": .string(worldWritableRoot.path)
+      ],
+      inputs: ["noteId": .string("note-large")],
+      code: .policyBlocked,
+      messageContains: "owner-private"
+    )
+
+    let output = try await runAppleNoteAddon(
+      "riela/apple-note-get",
+      config: [
+        "binaryPath": .string(fake.executableURL.path),
+        "materializeBody": .bool(true),
+        "downloadDir": .string(ownerPrivateRoot.path)
+      ],
+      inputs: ["noteId": .string("note-large")]
+    )
+    let note = try XCTUnwrap(crudTestObject(output.payload["appleNote"]))
+    XCTAssertNotNil(crudTestObject(note["body"])?.getString("materializedPath"))
   }
 
   func testAppleNoteGetMaterializeWithoutRootFailsPolicyBlocked() async throws {
@@ -106,6 +249,55 @@ final class AppleNotesCrudAddonTests: XCTestCase {
       inputs: ["bodyText": .string("hello")],
       code: .policyBlocked,
       messageContains: "title is required"
+    )
+  }
+
+  func testAppleNoteCrudRejectsWhitespaceOnlyRequiredInputs() async throws {
+    let fake = try CrudFakeAppleGateway(mode: "create")
+    defer { fake.cleanup() }
+    let config: JSONObject = ["binaryPath": .string(fake.executableURL.path)]
+
+    try await assertAppleNoteFailure(
+      "riela/apple-note-create",
+      config: config,
+      inputs: ["title": .string(" \n\t "), "bodyText": .string("body")],
+      code: .policyBlocked,
+      messageContains: "title is required"
+    )
+    try await assertAppleNoteFailure(
+      "riela/apple-note-create",
+      config: config,
+      inputs: ["title": .string("title"), "bodyText": .string(" \n\t ")],
+      code: .policyBlocked,
+      messageContains: "requires bodyHtml or bodyText"
+    )
+    try await assertAppleNoteFailure(
+      "riela/apple-note-update-body",
+      config: config,
+      inputs: ["noteId": .string("note-1"), "bodyHtml": .string(" \n\t ")],
+      code: .policyBlocked,
+      messageContains: "requires bodyHtml or bodyText"
+    )
+    try await assertAppleNoteFailure(
+      "riela/apple-note-get",
+      config: config,
+      inputs: ["noteId": .string(" \n\t ")],
+      code: .policyBlocked,
+      messageContains: "noteId is required"
+    )
+    try await assertAppleNoteFailure(
+      "riela/apple-note-delete",
+      config: config,
+      inputs: ["noteId": .string(" \n\t ")],
+      code: .policyBlocked,
+      messageContains: "noteId is required"
+    )
+    try await assertAppleNoteFailure(
+      "riela/apple-note-move",
+      config: config,
+      inputs: ["noteId": .string("note-1"), "folderId": .string(" \n\t ")],
+      code: .policyBlocked,
+      messageContains: "folderId is required"
     )
   }
 
@@ -188,10 +380,12 @@ final class AppleNotesCrudAddonTests: XCTestCase {
     let nonzeroFake = try CrudFakeAppleGateway(mode: "nonzero")
     let malformedFake = try CrudFakeAppleGateway(mode: "malformed")
     let missingMutationFake = try CrudFakeAppleGateway(mode: "missing-mutation")
+    let nonObjectNoteFake = try CrudFakeAppleGateway(mode: "get-nonobject-note")
     defer {
       nonzeroFake.cleanup()
       malformedFake.cleanup()
       missingMutationFake.cleanup()
+      nonObjectNoteFake.cleanup()
     }
 
     try await assertAppleNoteFailure(
@@ -215,6 +409,13 @@ final class AppleNotesCrudAddonTests: XCTestCase {
       code: .invalidOutput,
       messageContains: "data.createNote is missing"
     )
+    try await assertAppleNoteFailure(
+      "riela/apple-note-get",
+      config: ["binaryPath": .string(nonObjectNoteFake.executableURL.path)],
+      inputs: ["noteId": .string("note-1")],
+      code: .invalidOutput,
+      messageContains: "data.note must be an object or null"
+    )
   }
 
   func testAppleNoteCrudMapsBinaryTimeoutEnvAndVersionFailures() async throws {
@@ -234,7 +435,15 @@ final class AppleNotesCrudAddonTests: XCTestCase {
     )
 
     let sleepFake = try CrudFakeAppleGateway(mode: "sleep")
-    defer { sleepFake.cleanup() }
+    let childStdoutFake = try CrudFakeAppleGateway(mode: "timeout-child-holds-stdout")
+    let childStdoutAfterExitFake = try CrudFakeAppleGateway(mode: "child-holds-stdout-after-success")
+    let childMutationFake = try CrudFakeAppleGateway(mode: "timeout-child-writes-marker")
+    defer {
+      sleepFake.cleanup()
+      childStdoutFake.cleanup()
+      childStdoutAfterExitFake.cleanup()
+      childMutationFake.cleanup()
+    }
     let startedAt = Date()
     try await assertAppleNoteFailure(
       "riela/apple-note-get",
@@ -245,6 +454,37 @@ final class AppleNotesCrudAddonTests: XCTestCase {
       context: AdapterExecutionContext(deadline: Date().addingTimeInterval(0.1))
     )
     XCTAssertLessThan(Date().timeIntervalSince(startedAt), 2)
+
+    let inheritedPipeStartedAt = Date()
+    try await assertAppleNoteFailure(
+      "riela/apple-note-get",
+      config: ["binaryPath": .string(childStdoutFake.executableURL.path)],
+      inputs: ["noteId": .string("note-1")],
+      code: .timeout,
+      messageContains: "deadline",
+      context: AdapterExecutionContext(deadline: Date().addingTimeInterval(0.1))
+    )
+    XCTAssertLessThan(Date().timeIntervalSince(inheritedPipeStartedAt), 2)
+
+    let inheritedPipeNoDeadlineStartedAt = Date()
+    let inheritedPipeOutput = try await runAppleNoteAddon(
+      "riela/apple-note-get",
+      config: ["binaryPath": .string(childStdoutAfterExitFake.executableURL.path)],
+      inputs: ["noteId": .string("note-1")]
+    )
+    XCTAssertEqual(inheritedPipeOutput.when["has_note"], true)
+    XCTAssertLessThan(Date().timeIntervalSince(inheritedPipeNoDeadlineStartedAt), 2)
+
+    try await assertAppleNoteFailure(
+      "riela/apple-note-delete",
+      config: ["binaryPath": .string(childMutationFake.executableURL.path)],
+      inputs: ["noteId": .string("note-1")],
+      code: .timeout,
+      messageContains: "deadline",
+      context: AdapterExecutionContext(deadline: Date().addingTimeInterval(0.1))
+    )
+    try await Task.sleep(nanoseconds: 700_000_000)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: childMutationFake.descendantMarkerURL.path))
 
     try await assertAppleNoteFailure(
       "riela/apple-note-get",
@@ -282,6 +522,32 @@ final class AppleNotesCrudAddonTests: XCTestCase {
     XCTAssertTrue(variables.contains(#""title":"quote \" brace } newline\nsentinel""#))
   }
 
+  func testAppleNoteCrudResolvedUserTextIsNotTemplatedTwice() async throws {
+    let fake = try CrudFakeAppleGateway(mode: "create")
+    defer { fake.cleanup() }
+
+    _ = try await runAppleNoteAddon(
+      "riela/apple-note-create",
+      config: ["binaryPath": .string(fake.executableURL.path)],
+      inputs: [
+        "title": .string("{{workflowTitle}}"),
+        "bodyText": .string("{{workflowBody}}")
+      ],
+      resolvedInputPayload: [
+        "workflowTitle": .string("Keep literal {{doNotExpandTitle}}"),
+        "workflowBody": .string("Body literal {{doNotExpandBody}}"),
+        "doNotExpandTitle": .string("expanded-title"),
+        "doNotExpandBody": .string("expanded-body")
+      ]
+    )
+
+    let variables = try String(contentsOf: fake.variablesLogURL)
+    XCTAssertTrue(variables.contains(#""title":"Keep literal {{doNotExpandTitle}}""#), variables)
+    XCTAssertTrue(variables.contains(#""bodyText":"Body literal {{doNotExpandBody}}""#), variables)
+    XCTAssertFalse(variables.contains("expanded-title"), variables)
+    XCTAssertFalse(variables.contains("expanded-body"), variables)
+  }
+
   private func runAppleNoteAddon(
     _ addonName: String,
     version: String = "1",
@@ -289,6 +555,7 @@ final class AppleNotesCrudAddonTests: XCTestCase {
     inputs: JSONObject = [:],
     env: JSONObject? = nil,
     environment: [String: String] = [:],
+    resolvedInputPayload: JSONObject = [:],
     context: AdapterExecutionContext = AdapterExecutionContext()
   ) async throws -> AdapterExecutionOutput {
     try await BuiltinWorkflowAddonResolver(environment: environment).execute(
@@ -304,7 +571,7 @@ final class AppleNotesCrudAddonTests: XCTestCase {
           inputs: inputs
         ),
         variables: [:],
-        resolvedInputPayload: [:]
+        resolvedInputPayload: resolvedInputPayload
       ),
       context: context
     )
@@ -344,6 +611,7 @@ private struct CrudFakeAppleGateway {
   var argumentLogURL: URL
   var queryLogURL: URL
   var variablesLogURL: URL
+  var descendantMarkerURL: URL
 
   init(mode: String) throws {
     rootURL = FileManager.default.temporaryDirectory
@@ -353,6 +621,7 @@ private struct CrudFakeAppleGateway {
     argumentLogURL = rootURL.appendingPathComponent("args.log")
     queryLogURL = rootURL.appendingPathComponent("query.graphql")
     variablesLogURL = rootURL.appendingPathComponent("variables.json")
+    descendantMarkerURL = rootURL.appendingPathComponent("descendant-marker")
     try FileManager.default.createDirectory(at: binURL, withIntermediateDirectories: true)
     try script(mode: mode).write(to: executableURL, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executableURL.path)
@@ -395,6 +664,25 @@ private struct CrudFakeAppleGateway {
       printf "large body" > "$local_path"
       if [ "\(mode)" = "get-body-file-missing-download-mapping" ]; then
         printf '{"files":[{"downloadKey":"other-key","localPath":"%s","byteSize":10}]}\\n' "$local_path"
+        exit 0
+      fi
+      if [ "\(mode)" = "get-body-file-outside-download-root" ]; then
+        outside_path="\(rootURL.path)/outside-body.txt"
+        printf "large body" > "$outside_path"
+        printf '{"files":[{"downloadKey":"%s","localPath":"%s","byteSize":10}]}\\n' "$key" "$outside_path"
+        exit 0
+      fi
+      if [ "\(mode)" = "get-body-file-missing-downloaded-file" ]; then
+        missing_path="$output_dir/missing-body.txt"
+        printf '{"files":[{"downloadKey":"%s","localPath":"%s","byteSize":10}]}\\n' "$key" "$missing_path"
+        exit 0
+      fi
+      if [ "\(mode)" = "get-body-file-symlink-downloaded-file" ]; then
+        outside_path="\(rootURL.path)/outside-symlink-body.txt"
+        printf "large body" > "$outside_path"
+        rm -f "$local_path"
+        ln -s "$outside_path" "$local_path"
+        printf '{"files":[{"downloadKey":"%s","localPath":"%s","byteSize":10}]}\\n' "$key" "$local_path"
         exit 0
       fi
       printf '{"files":[{"downloadKey":"%s","localPath":"%s","byteSize":10}]}\\n' "$key" "$local_path"
@@ -442,7 +730,7 @@ private struct CrudFakeAppleGateway {
     }
     JSON
         ;;
-      get-body-file)
+      get-body-file|get-body-file-missing-download-mapping|get-body-file-outside-download-root|get-body-file-missing-downloaded-file|get-body-file-symlink-downloaded-file)
         /bin/cat <<'JSON'
     {
       "data": {
@@ -460,27 +748,6 @@ private struct CrudFakeAppleGateway {
         }
       },
       "extensions": {"requestId": "crud-get-body"}
-    }
-    JSON
-        ;;
-      get-body-file-missing-download-mapping)
-        /bin/cat <<'JSON'
-    {
-      "data": {
-        "note": {
-          "id": "note-large",
-          "accountId": "account-1",
-          "folderId": "folder-1",
-          "name": "Large",
-          "snippet": "large",
-          "bodyFile": {"downloadKey": "body-key", "kind": "html", "byteSize": 1000},
-          "isPasswordProtected": false,
-          "isShared": false,
-          "creationDate": "2026-07-07T00:00:00Z",
-          "modificationDate": "2026-07-07T01:00:00Z"
-        }
-      },
-      "extensions": {"requestId": "crud-get-body-missing-download"}
     }
     JSON
         ;;
@@ -533,12 +800,60 @@ private struct CrudFakeAppleGateway {
       missing-mutation)
         printf '{"data":{},"extensions":{"requestId":"missing"}}\\n'
         ;;
+      get-nonobject-note)
+        printf '{"data":{"note":"malformed"},"extensions":{"requestId":"bad-note"}}\\n'
+        ;;
       sleep)
+        sleep 5
+        ;;
+      timeout-child-holds-stdout)
+        (sleep 5) &
+        sleep 5
+        ;;
+    \(childStdoutAfterSuccessCase())
+      timeout-child-writes-marker)
+        (sleep 0.4; printf "mutated-after-timeout" > "\(descendantMarkerURL.path)") &
         sleep 5
         ;;
     esac
     """
   }
+
+  private func childStdoutAfterSuccessCase() -> String {
+    """
+      child-holds-stdout-after-success)
+        (sleep 5) &
+        /bin/cat <<'JSON'
+    {
+      "data": {
+        "note": {
+          "id": "note-1",
+          "accountId": "account-1",
+          "folderId": "folder-1",
+          "name": "Project",
+          "snippet": "plain",
+          "plaintext": "plain body",
+          "isPasswordProtected": false,
+          "isShared": false,
+          "creationDate": "2026-07-07T00:00:00Z",
+          "modificationDate": "2026-07-07T01:00:00Z"
+        }
+      },
+      "extensions": {"requestId": "crud-get-child-stdout"}
+    }
+    JSON
+        ;;
+    """
+  }
+}
+
+private func createCrudTestDirectory(_ url: URL, permissions: Int) throws {
+  try FileManager.default.createDirectory(
+    at: url,
+    withIntermediateDirectories: true,
+    attributes: [.posixPermissions: permissions]
+  )
+  try FileManager.default.setAttributes([.posixPermissions: permissions], ofItemAtPath: url.path)
 }
 
 private extension JSONObject {

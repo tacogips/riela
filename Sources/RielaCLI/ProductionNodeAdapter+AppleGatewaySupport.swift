@@ -28,6 +28,23 @@ struct AppleGatewayProcessRunner {
     deadline: Date?,
     allowNonzeroExit: Bool = false
   ) throws -> AppleGatewayProcessOutput {
+    let output = try runData(
+      executablePath: executablePath,
+      arguments: arguments,
+      deadline: deadline,
+      allowNonzeroExit: allowNonzeroExit
+    )
+    let stdout = String(data: output.stdoutData, encoding: .utf8) ?? ""
+    let stderr = String(data: output.stderrData, encoding: .utf8) ?? ""
+    return AppleGatewayProcessOutput(stdout: stdout, stderr: stderr, terminationStatus: output.terminationStatus)
+  }
+
+  func runData(
+    executablePath: String,
+    arguments: [String],
+    deadline: Date?,
+    allowNonzeroExit: Bool = false
+  ) throws -> AppleGatewayProcessDataOutput {
     #if canImport(Darwin) || canImport(Glibc)
     return try runInIsolatedProcessGroup(
       executablePath: executablePath,
@@ -86,7 +103,11 @@ struct AppleGatewayProcessRunner {
       let detail = appleGatewayCompactText(stderr.isEmpty ? stdout : stderr)
       throw AdapterExecutionError(.providerError, "apple-gateway failed with exit code \(process.terminationStatus): \(detail)")
     }
-    return AppleGatewayProcessOutput(stdout: stdout, stderr: stderr, terminationStatus: process.terminationStatus)
+    return AppleGatewayProcessDataOutput(
+      stdoutData: stdoutData,
+      stderrData: stderrData,
+      terminationStatus: process.terminationStatus
+    )
     #endif
   }
 
@@ -107,7 +128,7 @@ struct AppleGatewayProcessRunner {
     arguments: [String],
     deadline: Date?,
     allowNonzeroExit: Bool = false
-  ) throws -> AppleGatewayProcessOutput {
+  ) throws -> AppleGatewayProcessDataOutput {
     let outputPipe = Pipe()
     let errorPipe = Pipe()
     let pid = try spawnProcessGroup(
@@ -153,7 +174,11 @@ struct AppleGatewayProcessRunner {
       let detail = appleGatewayCompactText(stderr.isEmpty ? stdout : stderr)
       throw AdapterExecutionError(.providerError, "apple-gateway failed with exit code \(terminationStatus): \(detail)")
     }
-    return AppleGatewayProcessOutput(stdout: stdout, stderr: stderr, terminationStatus: terminationStatus)
+    return AppleGatewayProcessDataOutput(
+      stdoutData: stdoutData,
+      stderrData: stderrData,
+      terminationStatus: terminationStatus
+    )
   }
   #endif
 
@@ -490,6 +515,12 @@ struct AppleGatewayProcessOutput {
     self.stderr = stderr
     self.terminationStatus = terminationStatus
   }
+}
+
+struct AppleGatewayProcessDataOutput {
+  var stdoutData: Data
+  var stderrData: Data
+  var terminationStatus: Int32
 }
 
 struct AppleGatewayGraphQLEnvelope {

@@ -44,6 +44,8 @@ final class AddonExecutionContractsTests: XCTestCase {
 
   func testBuiltinCatalogContainsNoteAddons() {
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-notes-list", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-mail-list", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-mail-message", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-note-get", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-note-create", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-note-update-body", version: "1"))
@@ -90,6 +92,8 @@ final class AddonExecutionContractsTests: XCTestCase {
       RielaBuiltinAddonCatalog.appleGatewayAddons.map(\.name),
       [
         "riela/apple-notes-list",
+        "riela/apple-mail-list",
+        "riela/apple-mail-message",
         "riela/apple-note-get",
         "riela/apple-note-create",
         "riela/apple-note-update-body",

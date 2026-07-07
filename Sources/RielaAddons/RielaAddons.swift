@@ -13,6 +13,8 @@ public struct RielaAddonDescriptor: Codable, Equatable, Sendable {
 public enum RielaBuiltinAddonCatalog {
   public static let appleGatewayAddons: [RielaAddonDescriptor] = [
     .init(name: "riela/apple-notes-list", version: "1"),
+    .init(name: "riela/apple-mail-list", version: "1"),
+    .init(name: "riela/apple-mail-message", version: "1"),
     .init(name: "riela/apple-note-get", version: "1"),
     .init(name: "riela/apple-note-create", version: "1"),
     .init(name: "riela/apple-note-update-body", version: "1"),

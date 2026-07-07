@@ -77,7 +77,8 @@ The implementation should cover:
   both mail-gateway add-ons, `riela/apple-notes-list`, and the Apple Notes CRUD
   add-ons `riela/apple-note-get`, `riela/apple-note-create`,
   `riela/apple-note-update-body`, `riela/apple-note-delete`, and
-  `riela/apple-note-move`
+  `riela/apple-note-move`, plus the Apple Mail read add-ons
+  `riela/apple-mail-list` and `riela/apple-mail-message`
 - loader materializes an effective payload with the authored node id
 - workflow save/edit preserves the authored `addon` reference
 - chat reply worker renders text from upstream output
@@ -104,6 +105,24 @@ The implementation should cover:
   `when.has_note: false` while non-object notes map to invalid output, and
   timeout cleanup that terminates descendant processes spawned by destructive
   mutation add-ons
+- Apple Mail add-on tests cover account, mailbox, message list, and message get
+  operations with fake executables; fixed GraphQL operation dispatch and query
+  rendering; local `apple-gateway` binary precedence; rejected
+  `addon.env`; child environment filtering; Full Disk Access denial mapping;
+  provider errors; malformed output; missing binary; timeout handling; soft
+  not-found message results; download-key materialization; byte-limit skips; and
+  traversal-resistant filename sanitization without live Mail access or Full
+  Disk Access
+- Apple Mail add-on tests prove materialization flags and `maxDownloadBytes` are
+  config-only controls that workflow variables, rendered inputs, resolved input
+  payloads, and upstream payload values cannot enable or relax. Tests also cover
+  malformed `files`, selected body descriptors, attachment containers, and
+  attachment descriptors mapping to invalid output.
+- Apple Mail materialization must always use Riela-chosen destinations under a
+  validated download root. Gateway filenames are metadata only and must not be
+  allowed to escape the root through `..`, path separators, control characters,
+  symlinks, or equivalent traversal tricks. Provider secrets are not forwarded
+  to the `apple-gateway` subprocess.
 
 ## References
 

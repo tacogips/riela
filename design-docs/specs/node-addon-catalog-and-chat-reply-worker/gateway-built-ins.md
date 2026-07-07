@@ -919,7 +919,7 @@ All nine add-ons:
    and alarm entries before spawning a process
 4. resolve the executable from literal `config.binaryPath`, then
    `APPLE_GATEWAY_BIN`, then `PATH`
-5. run `apple-gateway graphql --query <fixed-document> --variables <json>` with
+5. run `apple-gateway graphql --query <rendered-query>` with
    separate process arguments and no shell interpolation
 6. parse JSON stdout as a GraphQL envelope, preserving `extensions.requestId`
 7. publish the common native add-on output envelope and the
@@ -979,6 +979,297 @@ precedence, rejected `addon.env`, and unsupported version.
 The default example under `examples/apple-reminders-list/` must be read-only and
 validate offline. Workflows that use mutation add-ons should be authored as
 explicit opt-in examples or user workflows, not as the default shipped example.
+
+## Relationship Between Local Apple Mail and Container Mail Add-ons
+
+`riela/apple-mail-list` and `riela/apple-mail-message` are local-CLI add-ons
+for the signed-in macOS Mail app. They invoke a locally installed
+`apple-gateway` process, require macOS Full Disk Access, reject `addon.env`, and
+are read-only from Mail's perspective.
+
+`riela/mail-gateway-read` and `riela/mail-gateway` remain container-backed
+IMAP/SMTP add-ons. They use Docker-compatible runners, receive mail account
+credentials through explicit `addon.env` mappings, and the non-read variant can
+send mail. The two families are intentionally separate so workflows cannot turn
+a local Apple Mail read node into a credentialed container mail sender by
+changing config.
+
+## Built-in `riela/apple-mail-list`
+
+### Purpose
+
+`riela/apple-mail-list` runs one read-only Apple Mail GraphQL query through a
+locally installed `apple-gateway` CLI. It is intended for workflow nodes that
+need account, mailbox, and message metadata from the local macOS Mail app
+without fetching large body or attachment bytes.
+
+The add-on is worker-only and resolves to a native add-on payload with
+`nodeType: "addon"`. Version `1` invokes:
+
+```bash
+apple-gateway graphql --query <rendered-query>
+```
+
+The fixed document reads:
+
+- `permissions { mailFullDiskAccess }`
+- `mailAccounts { id name kind }`
+- `mailboxes(accountId:) { id accountId name path totalCount unreadCount }`
+- `mailMessages(input: MailSearchInput!)` metadata, pagination, recipients,
+  flags, snippets, and file descriptors containing `downloadKey`, `kind`,
+  `filename`, `mimeType`, and `byteSize`
+
+No body or attachment bytes are materialized by this add-on.
+
+### Authored Example
+
+The shipped `examples/apple-mail-list/` bundle must stay read-only and validate
+without a live Mail database or Full Disk Access:
+
+```json
+{
+  "id": "list-apple-mail",
+  "role": "worker",
+  "addon": {
+    "name": "riela/apple-mail-list",
+    "version": "1",
+    "config": {
+      "first": 25
+    },
+    "inputs": {
+      "accountId": "{{workflowInput.accountId}}",
+      "mailboxId": "{{workflowInput.mailboxId}}",
+      "query": "{{workflowInput.query}}",
+      "unreadOnly": "{{workflowInput.unreadOnly}}",
+      "flaggedOnly": "{{workflowInput.flaggedOnly}}",
+      "after": "{{workflowInput.after}}"
+    }
+  }
+}
+```
+
+### Configuration and Inputs
+
+```typescript
+interface AppleMailListAddonConfig {
+  readonly binaryPath?: string;
+  readonly accountId?: string;
+  readonly mailboxId?: string;
+  readonly query?: string;
+  readonly from?: string;
+  readonly to?: string;
+  readonly subject?: string;
+  readonly receivedAfter?: string;
+  readonly receivedBefore?: string;
+  readonly unreadOnly?: boolean;
+  readonly flaggedOnly?: boolean;
+  readonly first?: number;
+  readonly after?: string;
+}
+```
+
+Inputs use the same operation field names as config, except `binaryPath` is
+ignored from inputs. Config values provide defaults; rendered `addon.inputs`
+values provide per-run filters.
+
+Defaults:
+
+- `binaryPath`: literal `addon.config.binaryPath`, then
+  `APPLE_GATEWAY_BIN`, then `apple-gateway` resolved through `PATH`
+- `first`: `25`, bounded to `1...100`
+- optional filters are omitted when unset or blank
+
+Execution behavior:
+
+1. reject unsupported versions and any authored `addon.env`
+2. render supported config and input fields with the normal node template
+   context
+3. validate scalar filter types, booleans, and pagination bounds before
+   spawning a process
+4. resolve the executable from literal `config.binaryPath`, then
+   `APPLE_GATEWAY_BIN`, then `PATH`; `binaryPath` is never sourced from
+   workflow input, upstream payloads, or `addon.inputs`
+5. run `apple-gateway graphql --query <rendered-query>` with separate process
+   arguments and no shell interpolation
+6. parse JSON stdout as a GraphQL envelope and preserve `extensions.requestId`
+7. publish `appleMail.accounts`, `appleMail.mailboxes`,
+   `appleMail.messages`, `appleMail.pageInfo`, `appleMail.totalCount`,
+   `appleMail.permissions.mailFullDiskAccess`, and
+   `appleGateway.binary`
+
+### Validation and Error Rules
+
+- version `1` only
+- `addon.env` is rejected
+- missing or non-executable binary maps to policy blocked
+- invalid `first` and malformed booleans map to policy blocked before launch
+- `permissions.mailFullDiskAccess` values `DENIED`, `NOT_DETERMINED`, or
+  `UNKNOWN` map to policy blocked with guidance to grant Full Disk Access in
+  System Settings > Privacy & Security
+- GraphQL errors or stderr text that mention Full Disk Access, FDA, TCC,
+  Mail permission, or database access denial map to policy blocked
+- non-Full-Disk-Access GraphQL `errors` and non-zero process exits map to
+  provider error
+- malformed JSON, missing GraphQL `data`, or missing expected Mail fields map
+  to invalid output
+- deadline expiry terminates the subprocess and maps to timeout
+
+## Built-in `riela/apple-mail-message`
+
+### Purpose
+
+`riela/apple-mail-message` retrieves one Mail message by id through
+`apple-gateway` and can materialize selected body and attachment files from
+gateway download keys into a Riela-controlled directory. It is read-only with
+respect to Mail data: it does not send, mutate, delete, or mark messages.
+
+Version `1` invokes the same fixed GraphQL transport as
+`riela/apple-mail-list`:
+
+```bash
+apple-gateway graphql --query <rendered-query>
+```
+
+The fixed document reads `permissions { mailFullDiskAccess }` and
+`mailMessage(messageId:)` with the same message metadata and file descriptor
+shape as the list add-on.
+
+### Authored Example
+
+`riela/apple-mail-message` may appear in user-authored workflows that need local
+message body or attachment paths. It is not used by the default read-only list
+example:
+
+```json
+{
+  "id": "get-apple-mail-message",
+  "role": "worker",
+  "addon": {
+    "name": "riela/apple-mail-message",
+    "version": "1",
+    "config": {
+      "materializeBodyText": true,
+      "materializeAttachments": false
+    },
+    "inputs": {
+      "messageId": "{{workflowInput.messageId}}"
+    }
+  }
+}
+```
+
+### Configuration and Inputs
+
+```typescript
+interface AppleMailMessageAddonConfig {
+  readonly binaryPath?: string;
+  readonly messageId?: string;
+  readonly materializeBodyText?: boolean;
+  readonly materializeBodyHtml?: boolean;
+  readonly materializeRawSource?: boolean;
+  readonly materializeAttachments?: boolean;
+  readonly maxDownloadBytes?: number;
+  readonly downloadDir?: string;
+}
+```
+
+Inputs may provide `messageId` only. `binaryPath`, `downloadDir`,
+`materializeBodyText`, `materializeBodyHtml`, `materializeRawSource`,
+`materializeAttachments`, and `maxDownloadBytes` are authored controls and are
+never read from `addon.inputs`, workflow input, or upstream payloads.
+
+Defaults:
+
+- `messageId`: required from config or rendered inputs
+- `materializeBodyText`: `true`
+- `materializeBodyHtml`: `false`
+- `materializeRawSource`: `false`
+- `materializeAttachments`: `false`
+- `maxDownloadBytes`: `26214400`
+- `downloadDir`: literal `config.downloadDir`, then
+  `APPLE_GATEWAY_DOWNLOAD_DIR`, then a Riela-owned temp directory under
+  `<TMPDIR>/riela-apple-mail/<workflowId>/<nodeId>/<messageId>/`
+
+Execution behavior:
+
+1. reject unsupported versions and any authored `addon.env`
+2. validate and render only `messageId`; validate materialization flags and byte
+   limit from config only; read `downloadDir` only as literal config or
+   environment fallback and never from rendered inputs or upstream payloads
+3. resolve the executable from literal `config.binaryPath`, then
+   `APPLE_GATEWAY_BIN`, then `PATH`
+4. run `apple-gateway graphql --query <rendered-query>` with
+   separate process arguments and no shell interpolation
+5. if `data.mailMessage` is present and null, publish
+   `appleMail.message = null`, `appleMail.found = false`, and
+   `completionPassed = true`
+6. when a message is found, validate `files` and selected descriptor containers,
+   select descriptors according to materialization flags, and skip descriptors
+   whose declared `byteSize` exceeds `maxDownloadBytes`
+7. for each selected descriptor, invoke the fixed file download subcommand with
+   separate arguments:
+
+```bash
+apple-gateway file download --key <download-key>
+```
+
+8. compare the actual stdout byte count to `maxDownloadBytes` before writing;
+   underreported or missing provider `byteSize` values cannot bypass the cap
+9. write downloaded bytes to a Riela-chosen leaf path under the download root;
+   gateway-provided filenames are sanitized by stripping path separators,
+   traversal markers, and control characters, with a deterministic fallback such
+   as `<kind>-<index>`
+10. publish `appleMail.message`, `appleMail.found`,
+   `appleMail.materialized[]`, `appleMail.skippedDownloads[]`,
+   `appleMail.downloadRoot`, `appleMail.permissions.mailFullDiskAccess`, and
+   `appleGateway.binary`
+
+The unresolved upstream contract for `apple-gateway file download` is tracked in
+`design-docs/user-qa/qa-apple-mail-gateway-file-download.md`. Until confirmed,
+implementation should prefer raw stdout bytes for the fake-executable contract.
+If the real gateway requires an explicit output directory rather than stdout
+bytes, Riela still chooses and validates the destination and passes that
+Riela-controlled path to the gateway. The gateway never chooses the final local
+path.
+
+### Validation and Error Rules
+
+- version `1` only
+- `addon.env` is rejected
+- missing `messageId`, invalid flags, invalid byte limit, missing binary, or
+  non-executable binary maps to policy blocked
+- `permissions.mailFullDiskAccess` values `DENIED`, `NOT_DETERMINED`, or
+  `UNKNOWN` map to policy blocked with Full Disk Access guidance
+- Full-Disk-Access markers in GraphQL errors, stderr, or file download failures
+  map to policy blocked
+- `data.mailMessage` present as `null` is a successful not-found result
+- missing `data.mailMessage` key maps to invalid output
+- non-Full-Disk-Access GraphQL errors, non-zero GraphQL exits, and non-zero file
+  download exits map to provider error
+- malformed JSON, missing GraphQL `data`, non-object message values,
+  non-object `files`, non-object selected body descriptors, non-array
+  `attachments` when attachment materialization is enabled, or non-object
+  attachment descriptors map to invalid output
+- sanitized materialized paths must remain under the chosen download root; path
+  traversal attempts map to policy blocked before bytes are written
+- actual downloaded stdout bytes larger than `maxDownloadBytes` are skipped
+  before writing even when `byteSize` is absent or underreported
+- deadline expiry terminates the subprocess and maps to timeout
+
+### Security and Rollout Notes
+
+Implementation must reuse the internal `apple-gateway` subprocess bridge used
+by `riela/apple-notes-list`; process invocation, binary resolution, child
+environment filtering, timeout handling, and stdout capture must not be
+duplicated in the Mail implementation.
+
+Tests must use fake `apple-gateway` executables only. Required coverage includes
+account, mailbox, message list, and message get success paths; fixed GraphQL
+query rendering; download-key materialization; filename
+sanitization; byte-limit skip behavior; Full Disk Access denial mapping;
+binary precedence; rejected `addon.env`; child environment filtering;
+provider errors; malformed output; missing binary; and timeout handling without
+live Mail access or Full Disk Access.
 
 ## Built-in `riela/x-gateway-read`
 

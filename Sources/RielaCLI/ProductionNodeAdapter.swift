@@ -325,6 +325,9 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     if input.addon.name == "riela/apple-notes-list" {
       return try executeAppleNotesList(input, context: context)
     }
+    if input.addon.name == "riela/apple-mail-list" || input.addon.name == "riela/apple-mail-message" {
+      return try executeAppleMailAddon(input, context: context)
+    }
     if input.addon.name == "riela/apple-notifications-list" {
       return try executeAppleNotificationsList(input, context: context)
     }

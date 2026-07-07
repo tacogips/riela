@@ -1,0 +1,56 @@
+{
+  "workflowId": "apple-mail-list",
+  "description": "List local Apple Mail accounts, mailboxes, and recent message metadata through the external apple-gateway CLI.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "entryStepId": "list-apple-mail",
+  "nodes": [
+    {
+      "id": "list-apple-mail",
+      "addon": {
+        "name": "riela/apple-mail-list",
+        "version": "1",
+        "config": {
+          "first": 25
+        },
+        "inputs": {
+          "accountId": "{{workflowInput.accountId}}",
+          "mailboxId": "{{workflowInput.mailboxId}}",
+          "query": "{{workflowInput.query}}",
+          "from": "{{workflowInput.from}}",
+          "to": "{{workflowInput.to}}",
+          "subject": "{{workflowInput.subject}}",
+          "receivedAfter": "{{workflowInput.receivedAfter}}",
+          "receivedBefore": "{{workflowInput.receivedBefore}}",
+          "unreadOnly": "{{workflowInput.unreadOnly}}",
+          "flaggedOnly": "{{workflowInput.flaggedOnly}}",
+          "after": "{{workflowInput.after}}"
+        }
+      }
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "list-apple-mail",
+      "nodeId": "list-apple-mail",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

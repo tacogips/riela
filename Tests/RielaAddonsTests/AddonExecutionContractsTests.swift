@@ -52,11 +52,21 @@ final class AddonExecutionContractsTests: XCTestCase {
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-notifications-list", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-notification-post", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-notifications-dismiss", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-reminder-lists", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-reminders-list", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-reminder-get", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-reminder-list-create", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-reminder-create", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-reminder-update", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-reminder-delete", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-reminder-complete", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-reminder-alarms-set", version: nil))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/note-create", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/notebook-ingest-pages", version: nil))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/note-create", version: "2"))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/apple-note-get", version: "2"))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/apple-notification-post", version: "2"))
+    XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/apple-reminder-create", version: "2"))
     XCTAssertEqual(
       RielaBuiltinAddonCatalog.appleGatewayAddons.map(\.name),
       [
@@ -69,6 +79,25 @@ final class AddonExecutionContractsTests: XCTestCase {
         "riela/apple-notifications-list",
         "riela/apple-notification-post",
         "riela/apple-notifications-dismiss"
+      ]
+    )
+    XCTAssertEqual(
+      RielaBuiltinAddonCatalog.appleReminderReadAddons.map(\.name),
+      [
+        "riela/apple-reminder-lists",
+        "riela/apple-reminders-list",
+        "riela/apple-reminder-get"
+      ]
+    )
+    XCTAssertEqual(
+      RielaBuiltinAddonCatalog.appleReminderMutationAddons.map(\.name),
+      [
+        "riela/apple-reminder-list-create",
+        "riela/apple-reminder-create",
+        "riela/apple-reminder-update",
+        "riela/apple-reminder-delete",
+        "riela/apple-reminder-complete",
+        "riela/apple-reminder-alarms-set"
       ]
     )
     XCTAssertEqual(

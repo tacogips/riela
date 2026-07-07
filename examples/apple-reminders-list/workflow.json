@@ -1,0 +1,67 @@
+{
+  "workflowId": "apple-reminders-list",
+  "description": "List Apple Reminders lists and open reminders through the external apple-gateway CLI.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "entryStepId": "list-reminder-lists",
+  "nodes": [
+    {
+      "id": "list-reminder-lists",
+      "addon": {
+        "name": "riela/apple-reminder-lists",
+        "version": "1",
+        "config": {},
+        "inputs": {}
+      }
+    },
+    {
+      "id": "list-open-reminders",
+      "addon": {
+        "name": "riela/apple-reminders-list",
+        "version": "1",
+        "config": {
+          "status": "INCOMPLETE",
+          "first": 25
+        },
+        "inputs": {
+          "listIds": "{{workflowInput.listIds}}",
+          "query": "{{workflowInput.query}}"
+        }
+      }
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "list-reminder-lists",
+      "nodeId": "list-reminder-lists",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "list-open-reminders"
+        }
+      ]
+    },
+    {
+      "id": "list-open-reminders",
+      "nodeId": "list-open-reminders",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

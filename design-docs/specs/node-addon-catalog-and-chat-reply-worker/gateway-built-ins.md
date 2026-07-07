@@ -706,6 +706,280 @@ allowed because it only creates a new note. Delete, move, and update should
 appear only in documentation snippets unless a future example is explicitly
 designed as opt-in destructive.
 
+## Built-in `riela/apple-reminder-*`
+
+### Purpose
+
+The Apple Reminders add-ons expose fixed-operation Reminders GraphQL operations
+through a locally installed `apple-gateway` CLI. The operation split is part of
+the security contract: a workflow node authored for a read operation cannot be
+changed into a mutation by changing config, inputs, or upstream payload data.
+
+Read add-ons:
+
+- `riela/apple-reminder-lists`: read reminder lists through `reminderLists`
+- `riela/apple-reminders-list`: search reminders through
+  `reminders(input: ReminderSearchInput!)`
+- `riela/apple-reminder-get`: read one reminder through `reminder(reminderId:)`
+
+Mutation add-ons:
+
+- `riela/apple-reminder-list-create`: create a reminder list through
+  `createReminderList(input:)`
+- `riela/apple-reminder-create`: create a reminder through
+  `createReminder(input:)`
+- `riela/apple-reminder-update`: sparsely update a reminder through
+  `updateReminder(input:)`
+- `riela/apple-reminder-delete`: delete a reminder through
+  `deleteReminder(reminderId:)`
+- `riela/apple-reminder-complete`: set completion state through
+  `setReminderCompleted(reminderId:, completed:)`
+- `riela/apple-reminder-alarms-set`: replace reminder alarms through
+  `setReminderAlarms(reminderId:, alarms:)`
+
+Each add-on has version `1`, uses the shared local CLI gateway rules, reuses the
+same `apple-gateway` binary resolver and process runner as the Apple Notes
+add-ons, and does not vendor `apple-gateway`.
+
+Version `1` always invokes GraphQL with a fixed document and typed variables:
+
+```bash
+apple-gateway graphql --query <fixed-document> --variables <json>
+```
+
+Reminder ids, list ids, search text, titles, notes, URLs, dates, priority,
+completion state, and alarms travel only in the `--variables` JSON argument. The
+GraphQL document is never built by interpolating workflow-controlled values.
+
+### Authored Example
+
+The shipped example must stay read-only. It may list reminder lists and open
+reminders, but it must not use mutation add-ons:
+
+```json
+{
+  "id": "list-open-reminders",
+  "role": "worker",
+  "addon": {
+    "name": "riela/apple-reminders-list",
+    "version": "1",
+    "config": {
+      "status": "INCOMPLETE",
+      "first": 25
+    },
+    "inputs": {
+      "listIds": "{{workflowInput.listIds}}",
+      "query": "{{workflowInput.query}}"
+    }
+  }
+}
+```
+
+Mutation add-ons are documented as explicit opt-in snippets only:
+
+```json
+{ "name": "riela/apple-reminder-list-create", "version": "1" }
+{ "name": "riela/apple-reminder-create", "version": "1" }
+{ "name": "riela/apple-reminder-update", "version": "1" }
+{ "name": "riela/apple-reminder-delete", "version": "1" }
+{ "name": "riela/apple-reminder-complete", "version": "1" }
+{ "name": "riela/apple-reminder-alarms-set", "version": "1" }
+```
+
+### Configuration and Inputs
+
+All add-ons accept optional literal `config.binaryPath`. The executable
+resolution order is:
+
+1. literal `addon.config.binaryPath`
+2. `APPLE_GATEWAY_BIN` from the runtime environment
+3. `apple-gateway` resolved through `PATH`
+
+`binaryPath` is never read from `addon.inputs`, workflow input, or upstream
+payloads.
+
+```typescript
+interface AppleReminderListsAddonConfig {
+  readonly binaryPath?: string;
+}
+
+interface AppleRemindersListAddonConfig {
+  readonly binaryPath?: string;
+  readonly listIds?: readonly string[];
+  readonly status?: "ALL" | "INCOMPLETE" | "COMPLETED";
+  readonly dueAfter?: string;
+  readonly dueBefore?: string;
+  readonly query?: string;
+  readonly first?: number;
+  readonly after?: string;
+}
+
+interface AppleReminderGetAddonConfig {
+  readonly binaryPath?: string;
+  readonly reminderId?: string;
+}
+
+interface AppleReminderListCreateAddonConfig {
+  readonly binaryPath?: string;
+  readonly title?: string;
+  readonly sourceTitle?: string;
+  readonly colorHex?: string;
+}
+
+interface AppleReminderCreateAddonConfig {
+  readonly binaryPath?: string;
+  readonly title?: string;
+  readonly listId?: string;
+  readonly notes?: string;
+  readonly url?: string;
+  readonly priority?: number;
+  readonly startDate?: string;
+  readonly dueDate?: string;
+  readonly dueDateHasTime?: boolean;
+  readonly alarms?: readonly AppleReminderAlarmInput[];
+}
+
+interface AppleReminderUpdateAddonConfig {
+  readonly binaryPath?: string;
+  readonly reminderId?: string;
+  readonly title?: string;
+  readonly listId?: string;
+  readonly notes?: string;
+  readonly url?: string;
+  readonly priority?: number;
+  readonly startDate?: string;
+  readonly dueDate?: string;
+  readonly dueDateHasTime?: boolean;
+  readonly alarms?: readonly AppleReminderAlarmInput[];
+}
+
+interface AppleReminderDeleteAddonConfig {
+  readonly binaryPath?: string;
+  readonly reminderId?: string;
+}
+
+interface AppleReminderCompleteAddonConfig {
+  readonly binaryPath?: string;
+  readonly reminderId?: string;
+  readonly completed?: boolean;
+}
+
+interface AppleReminderAlarmsSetAddonConfig {
+  readonly binaryPath?: string;
+  readonly reminderId?: string;
+  readonly alarms?: readonly AppleReminderAlarmInput[];
+}
+
+interface AppleReminderAlarmInput {
+  readonly relativeOffsetSeconds?: number;
+  readonly absoluteDate?: string;
+}
+```
+
+Inputs use the same field names as config, except `binaryPath` is intentionally
+ignored from inputs. Config values provide defaults; rendered `addon.inputs`
+values provide per-run values for operation fields.
+
+Operation-specific rules:
+
+- `riela/apple-reminder-lists`: no operation inputs
+- `riela/apple-reminders-list`: `listIds` defaults to `[]`; `status` defaults
+  to `INCOMPLETE`; `first` defaults to `25` and must be `1...100`; `dueAfter`,
+  `dueBefore`, `query`, and `after` are optional
+- `riela/apple-reminder-get`: `reminderId` is required
+- `riela/apple-reminder-list-create`: non-empty `title` is required;
+  `sourceTitle` and `colorHex` are optional
+- `riela/apple-reminder-create`: non-empty `title` is required; `priority`
+  defaults to `0` and must be `0...9`; `dueDateHasTime` is omitted unless
+  explicitly configured or provided as an input so `apple-gateway` applies its
+  create default; `listId`, `notes`, `url`, `startDate`, `dueDate`, and `alarms`
+  are optional
+- `riela/apple-reminder-update`: `reminderId` is required; all update fields are
+  optional and unset keys are omitted so the update is sparse
+- `riela/apple-reminder-delete`: `reminderId` is required
+- `riela/apple-reminder-complete`: `reminderId` is required; `completed`
+  defaults to `true`
+- `riela/apple-reminder-alarms-set`: `reminderId` is required; `alarms` is
+  required and may be an empty array to clear alarms
+
+Alarm entries must be objects with at least one recognized key. Recognized keys
+are `relativeOffsetSeconds` as an integer and `absoluteDate` as a DateTime
+string. Malformed alarm arrays fail before the subprocess is launched.
+
+`recurrenceRules` is intentionally omitted from create and update version `1`.
+
+### Execution Behavior
+
+All nine add-ons:
+
+1. reject unsupported versions and any authored `addon.env`
+2. render supported config and input fields with the normal node template
+   context
+3. validate required fields, enums, scalar types, priorities, pagination limits,
+   and alarm entries before spawning a process
+4. resolve the executable from literal `config.binaryPath`, then
+   `APPLE_GATEWAY_BIN`, then `PATH`
+5. run `apple-gateway graphql --query <fixed-document> --variables <json>` with
+   separate process arguments and no shell interpolation
+6. parse JSON stdout as a GraphQL envelope, preserving `extensions.requestId`
+7. publish the common native add-on output envelope and the
+   operation-specific `appleReminders` payload
+
+Common output envelope for all nine add-ons:
+
+- `provider`: `"apple-gateway"`
+- `model`: the authored add-on name
+- `completionPassed`: `true`
+- `status`, `addon`, and `stepId`
+- `appleGateway.binary`, `appleGateway.requestId`, and
+  `appleGateway.rawData`
+- `appleReminders`: the operation-specific Reminders payload
+
+Operation-specific output:
+
+- reminder-lists: `appleReminders.lists`, `listCount`
+- reminders-list: `appleReminders.reminders`, `pageInfo`, `totalCount`,
+  `reminderCount`; `when.has_reminders`
+- reminder-get: `appleReminders.reminder`, `found`; a null reminder is a
+  successful not-found result
+- reminder-list-create: `appleReminders.list`
+- reminder-create: `appleReminders.reminder`
+- reminder-update: `appleReminders.reminder`
+- reminder-delete: `appleReminders.deleted.reminderId`,
+  `appleReminders.deleted.success`
+- reminder-complete: `appleReminders.reminder`
+- reminder-alarms-set: `appleReminders.reminder`
+
+### Validation and Error Rules
+
+- version `1` only
+- `addon.env` is rejected
+- missing or non-executable binary maps to policy blocked
+- required input missing, malformed arrays, invalid enum values, invalid
+  priority, invalid `first`, and invalid alarm entries map to policy blocked
+- non-zero process exit maps to provider error
+- GraphQL `errors` map to provider error
+- `deleteReminder.success == false` maps to provider error
+- malformed JSON, missing GraphQL `data`, or a missing expected
+  operation-specific data field maps to invalid output
+- deadline expiry terminates the subprocess and maps to timeout
+
+### Security and Rollout Notes
+
+The implementation must extract or reuse shared `apple-gateway` support before
+adding the Reminders executor. Process invocation logic must not be duplicated
+between Notes and Reminders add-ons.
+
+Tests must use fake `apple-gateway` executables only. The required matrix covers
+success paths for list/search/get, list creation, create/update/delete,
+completion, alarm setting, and error mapping for GraphQL errors, non-zero exit,
+malformed output, missing data, missing binary, deadline expiry, binary
+precedence, rejected `addon.env`, and unsupported version.
+
+The default example under `examples/apple-reminders-list/` must be read-only and
+validate offline. Workflows that use mutation add-ons should be authored as
+explicit opt-in examples or user workflows, not as the default shipped example.
+
 ## Built-in `riela/x-gateway-read`
 
 ### Purpose

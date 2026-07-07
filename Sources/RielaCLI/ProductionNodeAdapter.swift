@@ -343,6 +343,9 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     ].contains(input.addon.name) {
       return try executeAppleNotesCrud(input, context: context)
     }
+    if BuiltinAppleReminderAddon(rawValue: input.addon.name) != nil {
+      return try executeAppleReminderAddon(input, context: context)
+    }
     if let noteAddon = BuiltinNoteAddon(rawValue: input.addon.name) {
       return try await executeNoteAddon(input, operation: noteAddon)
     }

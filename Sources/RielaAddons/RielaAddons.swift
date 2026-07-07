@@ -23,6 +23,21 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/apple-notifications-dismiss", version: "1")
   ]
 
+  public static let appleReminderReadAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/apple-reminder-lists", version: "1"),
+    .init(name: "riela/apple-reminders-list", version: "1"),
+    .init(name: "riela/apple-reminder-get", version: "1")
+  ]
+
+  public static let appleReminderMutationAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/apple-reminder-list-create", version: "1"),
+    .init(name: "riela/apple-reminder-create", version: "1"),
+    .init(name: "riela/apple-reminder-update", version: "1"),
+    .init(name: "riela/apple-reminder-delete", version: "1"),
+    .init(name: "riela/apple-reminder-complete", version: "1"),
+    .init(name: "riela/apple-reminder-alarms-set", version: "1")
+  ]
+
   public static let noteAddons: [RielaAddonDescriptor] = [
     .init(name: "riela/note-create", version: "1"),
     .init(name: "riela/note-update", version: "1"),
@@ -36,7 +51,10 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/note-conversation-save", version: "1")
   ]
 
-  public static let all: [RielaAddonDescriptor] = appleGatewayAddons + noteAddons
+  public static let all: [RielaAddonDescriptor] = appleGatewayAddons
+    + appleReminderReadAddons
+    + appleReminderMutationAddons
+    + noteAddons
 
   public static func descriptor(named name: String) -> RielaAddonDescriptor? {
     all.first { $0.name == name }

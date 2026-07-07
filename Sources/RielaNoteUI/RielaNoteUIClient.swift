@@ -35,6 +35,7 @@ public struct RielaNoteResolvedFile: Equatable, Sendable {
 
 public enum RielaNoteUIClientCapabilityError: Error, Equatable, Sendable {
   case currentNotebookNoteCreationUnsupported
+  case commentPromotionUnsupported
 }
 
 public struct RielaNoteListFilter: Equatable, Sendable {
@@ -100,6 +101,8 @@ public protocol RielaNoteUIClient: Sendable {
   func applyTag(noteId: String, tagName: String, classId: String?) async throws -> RielaNoteDetail
   func removeTag(noteId: String, tagName: String) async throws -> RielaNoteDetail
   func addComment(noteId: String, bodyMarkdown: String) async throws -> RielaNoteDetail
+  func addComment(noteId: String, bodyMarkdown: String, author: String) async throws -> RielaNoteDetail
+  func promoteCommentToNotebook(noteId: String, commentId: String) async throws -> RielaNoteDetail
   func linkNote(noteId: String, targetNoteId: String, linkKind: String) async throws -> RielaNoteDetail
   func linkNote(
     noteId: String,
@@ -116,6 +119,14 @@ public protocol RielaNoteUIClient: Sendable {
     selectionStart: Int?,
     selectionEnd: Int?
   ) async throws -> RielaNoteEditRewriteDraft
+  func answerNoteSelectionQuestion(
+    noteId: String,
+    question: String,
+    bodyMarkdown: String,
+    selectedText: String,
+    selectionStart: Int,
+    selectionEnd: Int
+  ) async throws -> RielaNoteSelectionAnswerDraft
   func answerNoteAgentTurn(message: String, limit: Int) async throws -> RielaNoteAgentTurn
   func saveNoteAgentConversation(
     title: String,
@@ -182,6 +193,25 @@ public extension RielaNoteUIClient {
     selectionEnd: Int?
   ) async throws -> RielaNoteEditRewriteDraft {
     throw RielaNoteEditRewriteError.notConfigured
+  }
+
+  func answerNoteSelectionQuestion(
+    noteId: String,
+    question: String,
+    bodyMarkdown: String,
+    selectedText: String,
+    selectionStart: Int,
+    selectionEnd: Int
+  ) async throws -> RielaNoteSelectionAnswerDraft {
+    throw RielaNoteSelectionQuestionError.notConfigured
+  }
+
+  func addComment(noteId: String, bodyMarkdown: String, author: String) async throws -> RielaNoteDetail {
+    try await addComment(noteId: noteId, bodyMarkdown: bodyMarkdown)
+  }
+
+  func promoteCommentToNotebook(noteId: String, commentId: String) async throws -> RielaNoteDetail {
+    throw RielaNoteUIClientCapabilityError.commentPromotionUnsupported
   }
 }
 
@@ -251,19 +281,22 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
   private let s3HTTPClient: any S3HTTPClient
   private let linkProposalProvider: (any RielaNoteLinkProposalProviding)?
   private let editRewriteProvider: (any RielaNoteEditRewriteProviding)?
+  private let selectionQuestionProvider: (any RielaNoteSelectionQuestionProviding)?
 
   public init(
     service: NoteService,
     s3Profiles: [S3StorageProfile] = [],
     s3HTTPClient: any S3HTTPClient = URLSessionS3HTTPClient(),
     linkProposalProvider: (any RielaNoteLinkProposalProviding)? = nil,
-    editRewriteProvider: (any RielaNoteEditRewriteProviding)? = nil
+    editRewriteProvider: (any RielaNoteEditRewriteProviding)? = nil,
+    selectionQuestionProvider: (any RielaNoteSelectionQuestionProviding)? = nil
   ) {
     self.service = service
     self.s3Profiles = s3Profiles
     self.s3HTTPClient = s3HTTPClient
     self.linkProposalProvider = linkProposalProvider
     self.editRewriteProvider = editRewriteProvider
+    self.selectionQuestionProvider = selectionQuestionProvider
   }
 
   public func listNotebooks(limit: Int, offset: Int) async throws -> [Notebook] {
@@ -408,7 +441,16 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
   }
 
   public func addComment(noteId: String, bodyMarkdown: String) async throws -> RielaNoteDetail {
-    _ = try service.addComment(noteId: noteId, bodyMarkdown: bodyMarkdown, author: "user")
+    try await addComment(noteId: noteId, bodyMarkdown: bodyMarkdown, author: "user")
+  }
+
+  public func addComment(noteId: String, bodyMarkdown: String, author: String) async throws -> RielaNoteDetail {
+    _ = try service.addComment(noteId: noteId, bodyMarkdown: bodyMarkdown, author: author)
+    return try detail(noteId: noteId)
+  }
+
+  public func promoteCommentToNotebook(noteId: String, commentId: String) async throws -> RielaNoteDetail {
+    _ = try service.promoteCommentToNotebook(noteId: noteId, commentId: commentId)
     return try detail(noteId: noteId)
   }
 
@@ -453,6 +495,28 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
       noteId: noteId,
       noteRoot: service.noteRootPath(),
       instruction: instruction,
+      bodyMarkdown: bodyMarkdown,
+      selectedText: selectedText,
+      selectionStart: selectionStart,
+      selectionEnd: selectionEnd
+    )
+  }
+
+  public func answerNoteSelectionQuestion(
+    noteId: String,
+    question: String,
+    bodyMarkdown: String,
+    selectedText: String,
+    selectionStart: Int,
+    selectionEnd: Int
+  ) async throws -> RielaNoteSelectionAnswerDraft {
+    guard let selectionQuestionProvider else {
+      throw RielaNoteSelectionQuestionError.notConfigured
+    }
+    return try await selectionQuestionProvider.answerQuestion(
+      noteId: noteId,
+      noteRoot: service.noteRootPath(),
+      question: question,
       bodyMarkdown: bodyMarkdown,
       selectedText: selectedText,
       selectionStart: selectionStart,

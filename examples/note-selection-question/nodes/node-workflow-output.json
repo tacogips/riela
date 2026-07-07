@@ -1,0 +1,15 @@
+{
+  "id": "workflow-output",
+  "description": "Project the selection answer payload as workflow output.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplate": "Project the latest note selection answer payload.",
+  "variables": {},
+  "output": {
+    "description": "Latest note selection answer payload.",
+    "projection": {
+      "kind": "latest-input-payload"
+    }
+  }
+}

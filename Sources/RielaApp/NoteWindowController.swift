@@ -36,6 +36,10 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
       editRewriteProvider: RielaWorkflowNoteEditRewriteProvider.defaultProvider(
         environment: environment,
         allowEnvironmentOverrides: true
+      ),
+      selectionQuestionProvider: RielaWorkflowNoteSelectionQuestionProvider.defaultProvider(
+        environment: environment,
+        allowEnvironmentOverrides: true
       )
     )
     let hostingController = NSHostingController(rootView: RielaNoteRootView(client: client, onOpenSettings: onOpenSettings))

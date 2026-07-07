@@ -1,0 +1,12 @@
+{
+  "id": "answer-selection-question",
+  "description": "Answer a user question about a selected markdown range of a note.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/answer-selection-question.md",
+  "variables": {},
+  "output": {
+    "description": "Return { answerMarkdown, summary }."
+  }
+}

@@ -89,3 +89,34 @@ public func rielaNoteDisplayedMarkdown(
 ) -> String {
   isEditing ? draftMarkdown : noteMarkdown
 }
+
+/// Composes the agent-authored comment persisted for a selection question:
+/// the selected text quoted as a markdown blockquote (per-line `> `, truncated to
+/// 400 characters with an ellipsis marker), followed by `**Q:**` and `**A:**` sections.
+public func rielaNoteSelectionQACommentMarkdown(
+  selectedText: String,
+  question: String,
+  answerMarkdown: String
+) -> String {
+  let truncatedSelection = rielaNoteTruncatedSelection(selectedText, limit: 400)
+  let quotedSelection = truncatedSelection
+    .split(separator: "\n", omittingEmptySubsequences: false)
+    .map { line in line.isEmpty ? ">" : "> \(line)" }
+    .joined(separator: "\n")
+  let trimmedQuestion = question.trimmingCharacters(in: .whitespacesAndNewlines)
+  let trimmedAnswer = answerMarkdown.trimmingCharacters(in: .whitespacesAndNewlines)
+  return """
+  \(quotedSelection)
+
+  **Q:** \(trimmedQuestion)
+
+  **A:** \(trimmedAnswer)
+  """
+}
+
+private func rielaNoteTruncatedSelection(_ selectedText: String, limit: Int) -> String {
+  guard limit > 0, selectedText.count > limit else {
+    return selectedText
+  }
+  return String(selectedText.prefix(limit)) + "…"
+}

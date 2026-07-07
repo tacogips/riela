@@ -37,6 +37,11 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   @Published public internal(set) var editRewriteError: String?
   @Published public internal(set) var editRewriteSummary: String?
   @Published public internal(set) var isEditRewriteLoading = false
+  @Published public internal(set) var selectionQuestionError: String?
+  @Published public internal(set) var isSelectionQuestionLoading = false
+  @Published public internal(set) var didSaveSelectionQuestionComment = false
+  @Published public internal(set) var commentPromotionError: String?
+  @Published public internal(set) var isCommentPromotionLoading = false
   @Published public private(set) var isSourceImageLoading = false
   @Published public var filter = RielaNoteListFilter()
   @Published public var searchText = ""
@@ -66,6 +71,8 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   private var selectionGeneration = 0
   var linkProposalGeneration = 0
   var editRewriteGeneration = 0
+  var selectionQuestionGeneration = 0
+  var commentPromotionGeneration = 0
 
   private var notebookPageSize: Int {
     max(notebookLimit, 1)
@@ -719,12 +726,19 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     selectionGeneration += 1
     linkProposalGeneration += 1
     editRewriteGeneration += 1
+    selectionQuestionGeneration += 1
+    commentPromotionGeneration += 1
     linkProposals = []
     linkProposalError = nil
     isLinkProposalLoading = false
     editRewriteError = nil
     editRewriteSummary = nil
     isEditRewriteLoading = false
+    selectionQuestionError = nil
+    isSelectionQuestionLoading = false
+    didSaveSelectionQuestionComment = false
+    commentPromotionError = nil
+    isCommentPromotionLoading = false
     return selectionGeneration
   }
 

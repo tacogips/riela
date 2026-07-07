@@ -197,96 +197,213 @@ public struct NoteService: Sendable {
     try validateNotebookIngestPageNumbers(pages)
     let result = try driver.withDatabase { database in
       try database.transaction { db in
-        let now = NoteStoreClock.system.now()
-        let notebookId = makeNoteId(prefix: "notebook")
-        try db.execute(
-          """
-          INSERT INTO notebooks (notebook_id, title, created_at, updated_at, meta_json)
-          VALUES (?, ?, ?, ?, jsonb(?))
-          """,
-          bindings: [
-            .text(notebookId),
-            .text(title),
-            .text(now),
-            .text(now),
-            .optionalText(metaJSON)
-          ]
-        )
-        if let kindTagName {
-          try ensureNotebookKindTag(kindTagName, in: db)
-          try applyNotebookTag(
-            notebookId: notebookId,
-            tagName: kindTagName,
-            provenance: .system,
-            assignedBy: "riela-note",
-            deletable: false,
-            in: db
-          )
-        }
-
-        var notes: [Note] = []
-        for (index, page) in pages.enumerated() {
-          let noteNumber = page.noteNumber ?? index + 1
-          let noteId = makeNoteId(prefix: "note")
-          let noteTitle = noteTitle(from: page.bodyMarkdown)
-          try db.execute(
-            """
-            INSERT INTO notes (
-              note_id, notebook_id, note_number, title, body_markdown,
-              read_only, created_at, updated_at, meta_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, jsonb(?))
-            """,
-            bindings: [
-              .text(noteId),
-              .text(notebookId),
-              .int(Int64(noteNumber)),
-              .optionalText(noteTitle),
-              .text(page.bodyMarkdown),
-              .int(page.readOnly ? 1 : 0),
-              .text(now),
-              .text(now),
-              .optionalText(page.metaJSON)
-            ]
-          )
-          for tag in page.tags {
-            try applyTag(
-              noteId: noteId,
-              tag: tag,
-              provenance: provenance,
-              assignedBy: assignedBy,
-              deletable: true,
-              in: db
-            )
-          }
-          try refreshFTS(noteId: noteId, previous: nil, in: db)
-          notes.append(try requireNote(noteId, in: db))
-        }
-        let ingestResult = NotebookIngestResult(notebook: try requireNotebook(notebookId, in: db), notes: notes)
-        var dispatches = try enqueueAutoActions(
-          for: NoteAutoActionEvent(
-            trigger: .notebookCreated,
-            notebookId: ingestResult.notebook.notebookId,
-            originatingActionId: originatingActionId
-          ),
+        try insertNotebookWithNotes(
+          title: title,
+          kindTagName: kindTagName,
+          metaJSON: metaJSON,
+          pages: pages,
+          provenance: provenance,
+          assignedBy: assignedBy,
+          originatingActionId: originatingActionId,
           in: db
         )
-        for note in ingestResult.notes {
-          dispatches.append(contentsOf: try enqueueAutoActions(
-            for: NoteAutoActionEvent(
-              trigger: .noteCreated,
-              notebookId: ingestResult.notebook.notebookId,
-              noteId: note.noteId,
-              noteBodyMarkdown: note.bodyMarkdown,
-              originatingActionId: originatingActionId
-            ),
-            in: db
-          ))
-        }
-        return (ingestResult: ingestResult, dispatches: dispatches)
       }
     }
     dispatchQueuedAutoActions(result.dispatches)
     return result.ingestResult
+  }
+
+  /// Inserts a notebook plus its notes against an already-open transaction `db`.
+  ///
+  /// This is the shared body extracted from `createNotebookWithNotes` (byte-for-byte
+  /// behavior preserved). Callers that need to compose the notebook/note inserts with
+  /// additional writes in the *same* transaction (e.g. `promoteCommentToNotebook`
+  /// inlining a `note_links` INSERT) call this helper directly and dispatch the returned
+  /// auto-actions after the transaction commits. Never open a nested transaction here.
+  private func insertNotebookWithNotes(
+    title: String,
+    kindTagName: String?,
+    metaJSON: String?,
+    pages: [NotePageDraft],
+    provenance: NoteProvenance,
+    assignedBy: String?,
+    originatingActionId: String?,
+    in db: SQLiteDatabase
+  ) throws -> (ingestResult: NotebookIngestResult, dispatches: [QueuedAutoActionDispatch]) {
+    let now = NoteStoreClock.system.now()
+    let notebookId = makeNoteId(prefix: "notebook")
+    try db.execute(
+      """
+      INSERT INTO notebooks (notebook_id, title, created_at, updated_at, meta_json)
+      VALUES (?, ?, ?, ?, jsonb(?))
+      """,
+      bindings: [
+        .text(notebookId),
+        .text(title),
+        .text(now),
+        .text(now),
+        .optionalText(metaJSON)
+      ]
+    )
+    if let kindTagName {
+      try ensureNotebookKindTag(kindTagName, in: db)
+      try applyNotebookTag(
+        notebookId: notebookId,
+        tagName: kindTagName,
+        provenance: .system,
+        assignedBy: "riela-note",
+        deletable: false,
+        in: db
+      )
+    }
+
+    var notes: [Note] = []
+    for (index, page) in pages.enumerated() {
+      let noteNumber = page.noteNumber ?? index + 1
+      let noteId = makeNoteId(prefix: "note")
+      let noteTitle = noteTitle(from: page.bodyMarkdown)
+      try db.execute(
+        """
+        INSERT INTO notes (
+          note_id, notebook_id, note_number, title, body_markdown,
+          read_only, created_at, updated_at, meta_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, jsonb(?))
+        """,
+        bindings: [
+          .text(noteId),
+          .text(notebookId),
+          .int(Int64(noteNumber)),
+          .optionalText(noteTitle),
+          .text(page.bodyMarkdown),
+          .int(page.readOnly ? 1 : 0),
+          .text(now),
+          .text(now),
+          .optionalText(page.metaJSON)
+        ]
+      )
+      for tag in page.tags {
+        try applyTag(
+          noteId: noteId,
+          tag: tag,
+          provenance: provenance,
+          assignedBy: assignedBy,
+          deletable: true,
+          in: db
+        )
+      }
+      try refreshFTS(noteId: noteId, previous: nil, in: db)
+      notes.append(try requireNote(noteId, in: db))
+    }
+    let ingestResult = NotebookIngestResult(notebook: try requireNotebook(notebookId, in: db), notes: notes)
+    var dispatches = try enqueueAutoActions(
+      for: NoteAutoActionEvent(
+        trigger: .notebookCreated,
+        notebookId: ingestResult.notebook.notebookId,
+        originatingActionId: originatingActionId
+      ),
+      in: db
+    )
+    for note in ingestResult.notes {
+      dispatches.append(contentsOf: try enqueueAutoActions(
+        for: NoteAutoActionEvent(
+          trigger: .noteCreated,
+          notebookId: ingestResult.notebook.notebookId,
+          noteId: note.noteId,
+          noteBodyMarkdown: note.bodyMarkdown,
+          originatingActionId: originatingActionId
+        ),
+        in: db
+      ))
+    }
+    return (ingestResult: ingestResult, dispatches: dispatches)
+  }
+
+  /// Promotes a note comment into a freshly created notebook whose first note carries the
+  /// comment body, linking the source note to that new note — all in ONE transaction.
+  ///
+  /// The notebook/note inserts reuse `insertNotebookWithNotes(…, in: db)` and the
+  /// `note_links` row is inlined (copied from `linkNotes`) against the same `db`, so a
+  /// partial failure rolls the whole promotion back (SR-001). The two self-transacting
+  /// public methods (`createNotebookWithNotes`, `linkNotes`) are intentionally NOT composed.
+  @discardableResult
+  public func promoteCommentToNotebook(
+    noteId: String,
+    commentId: String,
+    notebookTitle: String? = nil,
+    linkKind: String = "related",
+    provenance: NoteProvenance = .human,
+    assignedBy: String? = "riela-note-ui"
+  ) throws -> (notebook: Notebook, note: Note) {
+    let result = try driver.withDatabase { database in
+      try database.transaction { db -> (notebook: Notebook, note: Note, dispatches: [QueuedAutoActionDispatch]) in
+        _ = try requireNote(noteId, in: db)
+        let commentRows = try db.query(
+          """
+          SELECT body_markdown
+          FROM note_comments
+          WHERE comment_id = ? AND note_id = ?
+          LIMIT 1
+          """,
+          bindings: [.text(commentId), .text(noteId)]
+        )
+        guard let commentRow = commentRows.first,
+              let commentBody = commentRow["body_markdown"] else {
+          throw NoteServiceError.invalidInput("comment \(commentId) does not belong to note \(noteId)")
+        }
+        let resolvedTitle = promoteCommentNotebookTitle(explicit: notebookTitle, commentBody: commentBody)
+        let inserted = try insertNotebookWithNotes(
+          title: resolvedTitle,
+          kindTagName: nil,
+          metaJSON: nil,
+          pages: [NotePageDraft(bodyMarkdown: commentBody, readOnly: false)],
+          provenance: provenance,
+          assignedBy: assignedBy,
+          originatingActionId: nil,
+          in: db
+        )
+        guard let newNote = inserted.ingestResult.notes.first else {
+          throw NoteServiceError.invalidInput("promote produced no note for comment \(commentId)")
+        }
+        // Inlined from `linkNotes` (NoteService+Relations.swift) so the link is written in
+        // the SAME transaction as the notebook/note inserts. Keep the ON CONFLICT upsert
+        // guards verbatim.
+        let now = NoteStoreClock.system.now()
+        try db.execute(
+          """
+          INSERT INTO note_links (
+            from_note_id, to_note_id, link_kind, provenance, created_at
+          ) VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(from_note_id, to_note_id, link_kind) DO UPDATE SET
+            provenance = CASE
+              WHEN note_links.provenance IN ('human', 'system')
+                AND excluded.provenance = 'ai'
+                THEN note_links.provenance
+              ELSE excluded.provenance
+            END,
+            created_at = CASE
+              WHEN note_links.provenance IN ('human', 'system')
+                AND excluded.provenance = 'ai'
+                THEN note_links.created_at
+              ELSE excluded.created_at
+            END
+          """,
+          bindings: [
+            .text(noteId),
+            .text(newNote.noteId),
+            .text(linkKind),
+            .text(provenance.rawValue),
+            .text(now)
+          ]
+        )
+        return (
+          notebook: inserted.ingestResult.notebook,
+          note: newNote,
+          dispatches: inserted.dispatches
+        )
+      }
+    }
+    dispatchQueuedAutoActions(result.dispatches)
+    return (notebook: result.notebook, note: result.note)
   }
 
   public func listNotebooks(
@@ -631,6 +748,17 @@ public struct NoteService: Sendable {
       )
     }
   }
+}
+
+/// Resolves the title for a comment-promoted notebook: an explicit non-empty title wins,
+/// otherwise the shared note-title heuristic on the comment body, falling back to
+/// "Comment notebook". The result is capped at 120 characters.
+func promoteCommentNotebookTitle(explicit: String?, commentBody: String) -> String {
+  let trimmedExplicit = explicit?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+  let base = trimmedExplicit.isEmpty
+    ? (noteTitle(from: commentBody) ?? "Comment notebook")
+    : trimmedExplicit
+  return String(base.prefix(120))
 }
 
 private func ensureNotebookKindTag(_ tagName: String, in database: SQLiteDatabase) throws {

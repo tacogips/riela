@@ -321,6 +321,173 @@ final class WorkflowInstanceCommandTests: XCTestCase {
     )
   }
 
+  func testSessionRerunPreservesRunNodePatchBackend() async throws {
+    let root = repositoryRootURL()
+    let tempRoot = root.appendingPathComponent("tmp/workflow-node-patch-rerun-\(UUID().uuidString)", isDirectory: true)
+    let sessionStore = tempRoot.appendingPathComponent("sessions", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+    let app = RielaCLIApplication()
+    let examples = root.appendingPathComponent("examples", isDirectory: true).path
+    let scenario = root.appendingPathComponent("examples/worker-only-single-step/mock-scenario.json").path
+
+    let firstRun = await app.run([
+      "workflow", "run", "worker-only-single-step",
+      "--workflow-definition-dir", examples,
+      "--mock-scenario", scenario,
+      "--working-dir", tempRoot.path,
+      "--session-store", sessionStore.path,
+      "--node-patch", #"{"main-worker":{"executionBackend":"claude-code-agent"}}"#,
+      "--output", "json"
+    ])
+    XCTAssertEqual(firstRun.exitCode, CLIExitCode.success, firstRun.stderr + firstRun.stdout)
+    let first = try decode(WorkflowRunResult.self, from: firstRun.stdout)
+    XCTAssertEqual(first.session.instanceKind, "temporary")
+    XCTAssertEqual(first.session.executions.map(\.backend), [.claudeCodeAgent])
+
+    let rerun = await app.run([
+      "session", "rerun", first.session.sessionId, "main-worker",
+      "--workflow-definition-dir", examples,
+      "--mock-scenario", scenario,
+      "--working-dir", tempRoot.path,
+      "--session-store", sessionStore.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(rerun.exitCode, CLIExitCode.success, rerun.stderr + rerun.stdout)
+    let payload = try decode(SessionRerunCommandResult.self, from: rerun.stdout)
+
+    let status = await app.run([
+      "session", "status", payload.sessionId,
+      "--session-store", sessionStore.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(status.exitCode, CLIExitCode.success, status.stderr + status.stdout)
+    let inspection = try decode(SessionInspectionCommandResult.self, from: status.stdout)
+    XCTAssertEqual(inspection.instanceKind, "temporary")
+    XCTAssertEqual(
+      inspection.instanceConfiguration?["nodePatches"],
+      .object(["main-worker": .object(["executionBackend": .string("claude-code-agent")])])
+    )
+    XCTAssertEqual(
+      inspection.executions.map(\.backend),
+      [.claudeCodeAgent],
+      "session rerun must reuse the source session's --node-patch backend (tacogips/riela#33)"
+    )
+  }
+
+  func testSessionResumePreservesRunNodePatchBackend() async throws {
+    let root = repositoryRootURL()
+    let tempRoot = root.appendingPathComponent("tmp/workflow-node-patch-resume-\(UUID().uuidString)", isDirectory: true)
+    let sessionStore = tempRoot.appendingPathComponent("sessions", isDirectory: true)
+    let workflowRoot = tempRoot.appendingPathComponent("workflows", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+    try writeTwoStepWorkerWorkflow(workflowRoot: workflowRoot)
+    let scenario = workflowRoot.appendingPathComponent("two-step-worker/mock-scenario.json").path
+    let app = RielaCLIApplication()
+
+    let firstRun = await app.run([
+      "workflow", "run", "two-step-worker",
+      "--workflow-definition-dir", workflowRoot.path,
+      "--mock-scenario", scenario,
+      "--working-dir", tempRoot.path,
+      "--session-store", sessionStore.path,
+      "--node-patch", #"{"second-worker":{"executionBackend":"claude-code-agent"}}"#,
+      "--max-steps", "1",
+      "--output", "json"
+    ])
+    XCTAssertEqual(firstRun.exitCode, CLIExitCode.failure, firstRun.stderr + firstRun.stdout)
+    let failure = try decode(WorkflowRunFailureResult.self, from: firstRun.stdout)
+    XCTAssertEqual(failure.failureKind, .maxStepsExceeded)
+    let sessionId = try XCTUnwrap(failure.sessionId)
+
+    let resume = await app.run([
+      "session", "resume", sessionId,
+      "--workflow-definition-dir", workflowRoot.path,
+      "--mock-scenario", scenario,
+      "--working-dir", tempRoot.path,
+      "--session-store", sessionStore.path,
+      "--max-steps", "4",
+      "--output", "json"
+    ])
+    XCTAssertEqual(resume.exitCode, CLIExitCode.success, resume.stderr + resume.stdout)
+    let resumePayload = try decode(SessionResumeCommandResult.self, from: resume.stdout)
+    XCTAssertEqual(resumePayload.status, .completed)
+
+    let status = await app.run([
+      "session", "status", sessionId,
+      "--session-store", sessionStore.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(status.exitCode, CLIExitCode.success, status.stderr + status.stdout)
+    let inspection = try decode(SessionInspectionCommandResult.self, from: status.stdout)
+    let secondWorkerBackends = inspection.executions.filter { $0.stepId == "second-worker" }.map(\.backend)
+    XCTAssertEqual(
+      secondWorkerBackends,
+      [.claudeCodeAgent],
+      "session resume must reuse the source session's --node-patch backend (tacogips/riela#33)"
+    )
+  }
+
+  private func writeTwoStepWorkerWorkflow(workflowRoot: URL) throws {
+    let workflowDirectory = workflowRoot.appendingPathComponent("two-step-worker", isDirectory: true)
+    let nodesDirectory = workflowDirectory.appendingPathComponent("nodes", isDirectory: true)
+    let promptsDirectory = workflowDirectory.appendingPathComponent("prompts", isDirectory: true)
+    try FileManager.default.createDirectory(at: nodesDirectory, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: promptsDirectory, withIntermediateDirectories: true)
+    try """
+    {
+      "workflowId": "two-step-worker",
+      "defaults": { "maxLoopIterations": 3, "nodeTimeoutMs": 10000 },
+      "entryStepId": "first-worker",
+      "nodes": [
+        { "id": "first-worker", "nodeFile": "nodes/node-first-worker.json" },
+        { "id": "second-worker", "nodeFile": "nodes/node-second-worker.json" }
+      ],
+      "steps": [
+        {
+          "id": "first-worker",
+          "nodeId": "first-worker",
+          "role": "worker",
+          "transitions": [{ "toStepId": "second-worker" }]
+        },
+        { "id": "second-worker", "nodeId": "second-worker", "role": "worker" }
+      ]
+    }
+    """.write(to: workflowDirectory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+    for nodeId in ["first-worker", "second-worker"] {
+      try """
+      {
+        "id": "\(nodeId)",
+        "executionBackend": "codex-agent",
+        "model": "gpt-5.3-codex-spark",
+        "promptTemplateFile": "prompts/worker.md",
+        "variables": {},
+        "output": { "description": "Return a concise completion summary as business JSON." }
+      }
+      """.write(to: nodesDirectory.appendingPathComponent("node-\(nodeId).json"), atomically: true, encoding: .utf8)
+    }
+    try """
+    Complete the assigned workflow step for {{workflowId}}.
+
+    Summarize the completion result as business JSON only.
+    """.write(to: promptsDirectory.appendingPathComponent("worker.md"), atomically: true, encoding: .utf8)
+    try """
+    {
+      "first-worker": {
+        "provider": "scenario-mock",
+        "model": "gpt-5.3-codex-spark",
+        "when": { "always": true },
+        "payload": { "status": "first done" }
+      },
+      "second-worker": {
+        "provider": "scenario-mock",
+        "model": "gpt-5.3-codex-spark",
+        "when": { "always": true },
+        "payload": { "status": "second done" }
+      }
+    }
+    """.write(to: workflowDirectory.appendingPathComponent("mock-scenario.json"), atomically: true, encoding: .utf8)
+  }
+
   private func decode<T: Decodable>(_ type: T.Type, from stdout: String) throws -> T {
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601

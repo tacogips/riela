@@ -2,135 +2,6 @@ import Foundation
 import RielaAdapters
 import RielaCore
 
-public struct SessionRerunOptions: Equatable, Sendable {
-  public var sessionId: String
-  public var stepId: String
-  public var output: WorkflowOutputFormat
-  public var scope: WorkflowScope
-  public var workflowDefinitionDir: String?
-  public var workingDirectory: String
-  public var mockScenarioPath: String?
-  public var sessionStore: String?
-  public var nestedSuperviser: Bool
-
-  public init(
-    sessionId: String,
-    stepId: String,
-    output: WorkflowOutputFormat = .jsonl,
-    scope: WorkflowScope = .auto,
-    workflowDefinitionDir: String? = nil,
-    workingDirectory: String = FileManager.default.currentDirectoryPath,
-    mockScenarioPath: String? = nil,
-    sessionStore: String? = nil,
-    nestedSuperviser: Bool = false
-  ) {
-    self.sessionId = sessionId
-    self.stepId = stepId
-    self.output = output
-    self.scope = scope
-    self.workflowDefinitionDir = workflowDefinitionDir
-    self.workingDirectory = workingDirectory
-    self.mockScenarioPath = mockScenarioPath
-    self.sessionStore = sessionStore
-    self.nestedSuperviser = nestedSuperviser
-  }
-}
-
-public struct SessionResumeOptions: Equatable, Sendable {
-  public var sessionId: String
-  public var output: WorkflowOutputFormat
-  public var scope: WorkflowScope
-  public var workflowDefinitionDir: String?
-  public var workingDirectory: String
-  public var mockScenarioPath: String?
-  public var sessionStore: String?
-  public var maxSteps: Int?
-  public var variables: String?
-
-  public init(
-    sessionId: String,
-    output: WorkflowOutputFormat = .jsonl,
-    scope: WorkflowScope = .auto,
-    workflowDefinitionDir: String? = nil,
-    workingDirectory: String = FileManager.default.currentDirectoryPath,
-    mockScenarioPath: String? = nil,
-    sessionStore: String? = nil,
-    maxSteps: Int? = nil,
-    variables: String? = nil
-  ) {
-    self.sessionId = sessionId
-    self.output = output
-    self.scope = scope
-    self.workflowDefinitionDir = workflowDefinitionDir
-    self.workingDirectory = workingDirectory
-    self.mockScenarioPath = mockScenarioPath
-    self.sessionStore = sessionStore
-    self.maxSteps = maxSteps
-    self.variables = variables
-  }
-}
-
-public struct SessionRerunCommandResult: Codable, Equatable, Sendable {
-  public var sourceSessionId: String
-  public var sessionId: String
-  public var status: WorkflowSessionStatus
-  public var rerunFromStepId: String
-  public var exitCode: Int32
-  public var recovery: LoopRecoveryLineage?
-}
-
-private struct SessionRerunInstanceResolution {
-  var effectiveInstance: EffectiveWorkflowInstance?
-  var nodePayloads: [String: AgentNodePayload]
-  var warning: String?
-
-  init(
-    effectiveInstance: EffectiveWorkflowInstance? = nil,
-    nodePayloads: [String: AgentNodePayload],
-    warning: String? = nil
-  ) {
-    self.effectiveInstance = effectiveInstance
-    self.nodePayloads = nodePayloads
-    self.warning = warning
-  }
-}
-
-public struct SessionResumeCommandResult: Codable, Equatable, Sendable {
-  public var sourceSessionId: String?
-  public var sessionId: String
-  public var status: WorkflowSessionStatus
-  public var exitCode: Int32
-  public var recovery: LoopRecoveryLineage?
-}
-
-public struct SessionCommandFailureResult: Codable, Equatable, Sendable {
-  public var sessionId: String
-  public var error: String
-  public var exitCode: Int32
-}
-
-public struct SessionDiscoveryRow: Codable, Equatable, Sendable {
-  public var sessionId: String
-  public var workflowName: String
-  public var status: WorkflowSessionStatus
-  public var failureKind: WorkflowSessionFailureKind?
-  public var currentStepId: String?
-  public var executionCount: Int
-  public var updatedAt: Date
-  public var sessionStore: String
-
-  public init(record: PersistedCLIWorkflowSession, sessionStore: String) {
-    self.sessionId = record.session.sessionId
-    self.workflowName = record.workflowName
-    self.status = record.session.status
-    self.failureKind = record.session.failureKind
-    self.currentStepId = record.session.currentStepId
-    self.executionCount = record.session.executions.count
-    self.updatedAt = record.session.updatedAt
-    self.sessionStore = sessionStore
-  }
-}
-
 public struct SessionDiscoveryCommand: Sendable {
   public init() {}
 
@@ -740,55 +611,14 @@ public struct SessionRerunCommand: Sendable {
     workflowId: String,
     workingDirectory: String,
     nodePayloads: [String: AgentNodePayload]
-  ) throws -> SessionRerunInstanceResolution {
-    guard let identity = persisted.session.instanceIdentity else {
-      return SessionRerunInstanceResolution(nodePayloads: nodePayloads)
-    }
-    let snapshot = try persisted.session.instanceConfiguration.map(decodeInstanceConfiguration)
-    if identity == WorkflowInstanceIdentity.defaultIdentity {
-      let configuration = snapshot ?? WorkflowInstanceConfiguration()
-      let patchedPayloads = try WorkflowInstanceResolver.applyNodePatches(configuration.nodePatches, to: nodePayloads)
-      return SessionRerunInstanceResolution(
-        effectiveInstance: EffectiveWorkflowInstance(identity: identity, kind: .default, configuration: configuration),
-        nodePayloads: patchedPayloads
-      )
-    }
-
-    let stores = ScopedWorkflowInstanceStore(workingDirectory: workingDirectory)
-    let stored = try stores.find(identity: identity, workflowId: workflowId)?.1
-    if let stored, snapshot.map({ stored.configuration == $0 }) ?? true {
-      let resolved = try WorkflowInstanceResolver.resolve(
-        workflowId: workflowId,
-        base: stored,
-        nodePayloads: nodePayloads
-      )
-      return SessionRerunInstanceResolution(
-        effectiveInstance: resolved.instance,
-        nodePayloads: resolved.nodePayloads
-      )
-    }
-    guard let snapshot else {
-      throw WorkflowInstanceStoreError.notFound(identity)
-    }
-    let kind = WorkflowInstanceKind(rawValue: persisted.session.instanceKind ?? "") ?? .named
-    let patchedPayloads = try WorkflowInstanceResolver.applyNodePatches(snapshot.nodePatches, to: nodePayloads)
-    let effective = EffectiveWorkflowInstance(
-      identity: identity,
-      kind: kind,
-      baseIdentity: persisted.session.instanceBaseIdentity,
-      configuration: snapshot
+  ) throws -> SessionInstanceResolution {
+    try resolvePersistedSessionInstance(
+      persisted: persisted,
+      workflowId: workflowId,
+      workingDirectory: workingDirectory,
+      nodePayloads: nodePayloads,
+      commandName: "rerun"
     )
-    let reason = stored == nil ? "not found" : "changed since the source session"
-    return SessionRerunInstanceResolution(
-      effectiveInstance: effective,
-      nodePayloads: patchedPayloads,
-      warning: "workflow instance '\(identity)' \(reason); rerun used the source session snapshot"
-    )
-  }
-
-  private func decodeInstanceConfiguration(_ object: JSONObject) throws -> WorkflowInstanceConfiguration {
-    let data = try JSONEncoder().encode(object)
-    return try JSONDecoder().decode(WorkflowInstanceConfiguration.self, from: data)
   }
 }
 
@@ -827,7 +657,15 @@ public struct SessionResumeCommand: Sendable {
         workflowDefinitionDir: options.workflowDefinitionDir,
         workingDirectory: options.workingDirectory
       )
-      let bundle = try resolver.resolve(resolution)
+      var bundle = try resolver.resolve(resolution)
+      let instanceResolution = try resolvePersistedSessionInstance(
+        persisted: persisted,
+        workflowId: bundle.workflow.workflowId,
+        workingDirectory: options.workingDirectory,
+        nodePayloads: bundle.nodePayloads,
+        commandName: "resume"
+      )
+      bundle.nodePayloads = instanceResolution.nodePayloads
       let adapter = try makeSessionNodeAdapter(
         mockScenarioPath: options.mockScenarioPath ?? persisted.mockScenarioPath,
         workingDirectory: options.workingDirectory
@@ -895,7 +733,7 @@ public struct SessionResumeCommand: Sendable {
           loopMetadata: bundle.workflow.loop
         )
       )
-      return renderResumeSuccess(options: options, result: result)
+      return renderResumeSuccess(options: options, result: result, warning: instanceResolution.warning)
     } catch let error as CLIWorkflowSessionStoreError {
       return resumeFailure(options: options, exitCode: .failure, error: "\(error)")
     } catch let error as DeterministicWorkflowRunnerError {
@@ -948,7 +786,11 @@ public struct SessionResumeCommand: Sendable {
     )
   }
 
-  private func renderResumeSuccess(options: SessionResumeOptions, result: WorkflowRunResult) -> CLICommandResult {
+  private func renderResumeSuccess(
+    options: SessionResumeOptions,
+    result: WorkflowRunResult,
+    warning: String?
+  ) -> CLICommandResult {
     let exitCode = CLIExitCode(rawValue: result.exitCode) ?? .failure
     switch options.output {
     case .json, .jsonl:
@@ -960,11 +802,17 @@ public struct SessionResumeCommand: Sendable {
         recovery: result.recovery
       )
       let stdout = (try? jsonString(payload)) ?? ""
-      return CLICommandResult(exitCode: exitCode, stdout: stdout + (stdout.hasSuffix("\n") ? "" : "\n"))
+      return CLICommandResult(
+        exitCode: exitCode,
+        stdout: stdout + (stdout.hasSuffix("\n") ? "" : "\n"),
+        stderr: warning.map { "\($0)\n" } ?? ""
+      )
     case .text, .table:
+      let warningLine = warning.map { "warning: \($0)\n" } ?? ""
       return CLICommandResult(
         exitCode: exitCode,
         stdout: """
+        \(warningLine)\
         sourceSessionId: \(options.sessionId)
         session resumed: \(result.session.sessionId)
         recovery: \(result.recovery?.entryMode.rawValue ?? "none")

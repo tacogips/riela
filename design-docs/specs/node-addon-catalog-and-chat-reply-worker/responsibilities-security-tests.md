@@ -74,7 +74,7 @@ The implementation should cover:
 - validation rejects workflow-local node payload files that author runtime-only
   `nodeType: "addon"` instead of using `workflow.json.nodes[].addon`
 - validation accepts the built-in agent worker add-ons, both x-gateway add-ons,
-  and both mail-gateway add-ons
+  both mail-gateway add-ons, and `riela/apple-notes-list`
 - loader materializes an effective payload with the authored node id
 - workflow save/edit preserves the authored `addon` reference
 - chat reply worker renders text from upstream output
@@ -83,6 +83,13 @@ The implementation should cover:
 - chat reply worker emits `intent-only` or `dry-run` output when configured
 - reply dispatch is idempotent across node retry/resume
 - provider-specific adapter code stays outside `src/workflow/`
+- local CLI gateway add-on tests use fake executables and cover argument
+  construction, executable resolution precedence, provider error envelopes,
+  malformed JSON, non-zero exits, and missing binary behavior without live
+  Apple app access
+- local CLI gateway add-on tests prove executable selection cannot be driven by
+  workflow input, upstream payloads, or `addon.inputs`, and that secret-like
+  runtime environment variables are not forwarded to fake executables
 
 ## References
 

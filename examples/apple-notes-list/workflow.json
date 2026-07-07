@@ -1,0 +1,55 @@
+{
+  "workflowId": "apple-notes-list",
+  "description": "List Apple Notes through the external apple-gateway CLI and publish the structured result.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "entryStepId": "list-apple-notes",
+  "nodes": [
+    {
+      "id": "list-apple-notes",
+      "addon": {
+        "name": "riela/apple-notes-list",
+        "version": "1",
+        "config": {
+          "first": 25,
+          "includePlaintext": false,
+          "includeBodyHtml": false,
+          "includeBodyFiles": false,
+          "includeAttachments": false
+        },
+        "inputs": {
+          "accountId": "{{workflowInput.accountId}}",
+          "folderId": "{{workflowInput.folderId}}",
+          "query": "{{workflowInput.query}}",
+          "modifiedAfter": "{{workflowInput.modifiedAfter}}",
+          "modifiedBefore": "{{workflowInput.modifiedBefore}}",
+          "after": "{{workflowInput.after}}"
+        }
+      }
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "list-apple-notes",
+      "nodeId": "list-apple-notes",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

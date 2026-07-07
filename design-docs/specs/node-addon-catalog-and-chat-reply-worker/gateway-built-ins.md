@@ -14,6 +14,138 @@ All gateway add-ons use the same container runner contract:
   process is launched
 - when both fields are omitted, execution defaults to `docker`
 
+## Shared Local CLI Gateway Rules
+
+Gateway add-ons that bridge to a locally installed CLI use a narrower process
+contract than container-backed add-ons:
+
+- the runtime invokes a fixed subcommand and fixed argument shape; workflow
+  authors cannot provide an arbitrary command line
+- `binaryPath`, when provided in `addon.config`, is an explicit executable
+  override and takes precedence over environment and `PATH` lookup; it is read
+  as a literal `addon.config` value and is not rendered from workflow input,
+  upstream payloads, or `addon.inputs`
+- the add-on may define one environment fallback for the executable path; if it
+  is unset or empty, the runtime resolves the default executable name through
+  `PATH`
+- no shell interpolation is used; each process argument is passed as a separate
+  argument to the subprocess runner
+- the child process receives only a minimal environment allowlist needed for
+  local process lookup and macOS automation context, not the full ambient
+  runtime environment
+- stdout must be valid JSON in the upstream gateway GraphQL envelope
+- stderr and process status are captured as diagnostics, but successful node
+  output is derived from parsed stdout rather than stderr text
+
+## Built-in `riela/apple-notes-list`
+
+### Purpose
+
+`riela/apple-notes-list` runs a read-only Apple Notes GraphQL query through a
+locally installed `apple-gateway` CLI. It is intended for workflow nodes that
+need to inspect Apple Notes without vendoring `apple-gateway` source or giving
+workflow authors arbitrary process execution.
+
+The add-on is worker-only and resolves to a native add-on payload with
+`nodeType: "addon"`. Version `1` always invokes:
+
+```bash
+apple-gateway graphql --query <rendered-query>
+```
+
+The confirmed upstream envelope is a GraphQL JSON object such as:
+
+```json
+{
+  "data": {
+    "permissions": {
+      "notesAutomation": "NOT_DETERMINED"
+    }
+  },
+  "extensions": {
+    "requestId": "4024CD0C-FF60-4FF5-9150-B53C5AF1EBDF"
+  }
+}
+```
+
+### Authored Example
+
+```json
+{
+  "id": "list-apple-notes",
+  "role": "worker",
+  "addon": {
+    "name": "riela/apple-notes-list",
+    "version": "1",
+    "config": {
+      "first": 25,
+      "includePlaintext": false,
+      "includeBodyHtml": false,
+      "includeBodyFiles": false,
+      "includeAttachments": false
+    },
+    "inputs": {
+      "accountId": "{{workflowInput.accountId}}",
+      "folderId": "{{workflowInput.folderId}}",
+      "query": "{{workflowInput.query}}"
+    }
+  }
+}
+```
+
+### Configuration
+
+```typescript
+interface AppleNotesListAddonConfig {
+  readonly binaryPath?: string;
+  readonly first?: number;
+  readonly accountId?: string;
+  readonly folderId?: string;
+  readonly query?: string;
+  readonly modifiedAfter?: string;
+  readonly modifiedBefore?: string;
+  readonly after?: string;
+  readonly includePlaintext?: boolean;
+  readonly includeBodyHtml?: boolean;
+  readonly includeBodyFiles?: boolean;
+  readonly includeAttachments?: boolean;
+}
+```
+
+Defaults:
+
+- `binaryPath`: `APPLE_GATEWAY_BIN`, then `apple-gateway` resolved through
+  `PATH`
+- `first`: `25`
+- include flags: `false`
+
+Execution behavior:
+
+1. render supported filter values and `addon.inputs` with the normal node
+   template context
+2. resolve the executable from literal `config.binaryPath`, then
+   `APPLE_GATEWAY_BIN`, then `PATH`; `binaryPath` is never sourced from
+   workflow input, upstream payloads, or `addon.inputs`
+3. run `apple-gateway graphql --query <rendered-query>` with separate process
+   arguments, no shell interpolation, and a minimal child environment allowlist
+4. parse JSON stdout into `appleNotes.accounts`, `appleNotes.folders`,
+   `appleNotes.notes`, `appleNotes.pageInfo`, `appleNotes.totalCount`, and
+   `appleNotes.requestId`
+5. expose bounded process provenance under `appleGateway.binary`
+
+Validation and error rules:
+
+- version `1` only
+- `addon.env` is rejected; the executable fallback reads `APPLE_GATEWAY_BIN`
+  from the runtime environment directly
+- ambient runtime environment values such as provider API keys, GitHub tokens,
+  and Riela secrets are not forwarded to the `apple-gateway` subprocess
+- `first` must be between `1` and `100`
+- include flags must be booleans
+- missing or non-executable binary maps to policy blocked
+- non-zero process exit and GraphQL `errors` map to provider error
+- malformed JSON or missing GraphQL `data` maps to invalid output
+
 ## Built-in `riela/x-gateway-read`
 
 ### Purpose

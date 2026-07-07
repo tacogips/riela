@@ -11,6 +11,10 @@ public struct RielaAddonDescriptor: Codable, Equatable, Sendable {
 }
 
 public enum RielaBuiltinAddonCatalog {
+  public static let appleGatewayAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/apple-notes-list", version: "1")
+  ]
+
   public static let noteAddons: [RielaAddonDescriptor] = [
     .init(name: "riela/note-create", version: "1"),
     .init(name: "riela/note-update", version: "1"),
@@ -24,7 +28,7 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/note-conversation-save", version: "1")
   ]
 
-  public static let all: [RielaAddonDescriptor] = noteAddons
+  public static let all: [RielaAddonDescriptor] = appleGatewayAddons + noteAddons
 
   public static func descriptor(named name: String) -> RielaAddonDescriptor? {
     all.first { $0.name == name }

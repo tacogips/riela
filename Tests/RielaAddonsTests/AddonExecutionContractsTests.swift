@@ -43,9 +43,16 @@ final class AddonExecutionContractsTests: XCTestCase {
   }
 
   func testBuiltinCatalogContainsNoteAddons() {
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-notes-list", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/note-create", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/notebook-ingest-pages", version: nil))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/note-create", version: "2"))
+    XCTAssertEqual(
+      RielaBuiltinAddonCatalog.appleGatewayAddons.map(\.name),
+      [
+        "riela/apple-notes-list"
+      ]
+    )
     XCTAssertEqual(
       RielaBuiltinAddonCatalog.noteAddons.map(\.name),
       [

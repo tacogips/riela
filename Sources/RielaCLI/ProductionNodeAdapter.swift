@@ -322,6 +322,9 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     if input.addon.name == "riela/time-signal" {
       return try executeTimeSignal(input)
     }
+    if input.addon.name == "riela/apple-notes-list" {
+      return try executeAppleNotesList(input, context: context)
+    }
     if let noteAddon = BuiltinNoteAddon(rawValue: input.addon.name) {
       return try await executeNoteAddon(input, operation: noteAddon)
     }

@@ -50,6 +50,8 @@ impl-plans/
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `riela-note-selection-qa-comments` | 2026-07-07 | `design-riela-note-selection-qa-comments` |
+| `riela-note-edit-agent-ui` | 2026-07-07 | `design-riela-note-edit-agent-ui` |
 | `codex-agent-swift-migration-adversarial-fix` | 2026-06-17 | `design-swift-native-migration#codexagent-blocking-adversarial-fix-design` |
 | `typescript-deletion-readiness-completion` | 2026-06-16 | `design-swift-native-migration#deletion-readiness-completion-pass` |
 | `boundary-addon-source-tree-loading` | 2026-06-16 | `design-workflow-json#built-in-add-on-package-boundary` |

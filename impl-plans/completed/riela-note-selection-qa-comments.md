@@ -1,6 +1,6 @@
 # Riela Note Selection Q&A Comments Implementation Plan
 
-**Status**: Implemented (Step 6)
+**Status**: Completed (Step 8; all TASK-001..TASK-006 DONE, Step 7 accepted)
 **Design Reference**: design-docs/specs/design-riela-note-selection-qa-comments.md
 **Created**: 2026-07-07
 **Last Updated**: 2026-07-07

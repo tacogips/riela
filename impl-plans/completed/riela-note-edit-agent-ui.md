@@ -1,7 +1,8 @@
 # Riela Note Edit Agent UI Implementation Plan
 
-**Status**: Implemented and verified (Step 6, 2026-07-07) — candidate
-adversarially re-verified, all TASK-001..TASK-007 checklists confirmed
+**Status**: Completed (2026-07-07) — implemented and verified (Step 6),
+candidate adversarially re-verified, all TASK-001..TASK-007 checklists
+confirmed; archived to impl-plans/completed at Step 8
 **Design Reference**: design-docs/specs/design-riela-note-edit-agent-ui.md
 **Created**: 2026-07-07
 **Last Updated**: 2026-07-07 (Step 4 revision: reset trust on candidate,

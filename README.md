@@ -96,7 +96,44 @@ the local store, so the CLI, built-in note add-ons, RielaNoteUI, and server note
 surface share the same `NoteService` write path. Example workflow bundles live
 under `examples/note-quick-memo`, `examples/note-pdf-ingest`,
 `examples/note-youtube-transcript`, `examples/note-auto-tagging`,
-`examples/note-agent`, and `examples/note-config-agent`.
+`examples/note-agent`, `examples/note-config-agent`,
+`examples/note-link-extract`, `examples/note-edit-rewrite`, and
+`examples/note-selection-question`.
+
+In the RielaApp Notes window, the note detail pane carries a header action row:
+an **Edit** control at the top-left and **copy**, **download**, and **expand**
+buttons at the top-right (copy/download/expand stay available on read-only
+notes; only the Edit control is hidden). Pressing Edit enables manual markdown
+editing and reveals an **"Ask for changes"** agent pill. Submitting the pill
+asks the edit agent to rewrite the note; on macOS you can also select text in
+the body and press **⌘K** (or the floating "Ask for changes ⌘K" chip) to scope
+the request to that selection, falling back to whole-note scope when the
+selection is no longer valid. Agent rewrites land only in the edit draft for
+review — nothing is persisted until you Save. The pill is backed by the
+sequential `examples/note-edit-rewrite` workflow (`riela workflow run
+note-edit-rewrite`), wired into RielaApp via
+`RIELA_NOTE_EDIT_REWRITE_WORKFLOW_DIR` /
+`RIELA_NOTE_EDIT_REWRITE_RIELA_EXECUTABLE` overrides; when no
+`note-edit-rewrite` workflow is found the pill surfaces an
+"edit agent is not configured" error instead of editing the draft.
+
+While editing, the floating selection chip row also offers an
+**"Ask question ⇧⌘K"** action next to "Ask for changes". With body text
+selected it arms question mode on the top pill (separate from the rewrite
+pathway): submitting sends the question plus the selected text to a new
+selection-question pathway backed by the sequential
+`examples/note-selection-question` workflow (`riela workflow run
+note-selection-question`), wired into RielaApp via
+`RIELA_NOTE_SELECTION_QUESTION_WORKFLOW_DIR` /
+`RIELA_NOTE_SELECTION_QUESTION_RIELA_EXECUTABLE` overrides. A successful
+answer is auto-saved as a `note-agent`-authored comment (blockquoted
+selection + question + answer), the Comments section expands, and the pill
+shows a transient "Saved as comment" caption; the note body/draft is never
+modified, and failures persist nothing. Each comment gains a
+**"Create notebook"** action that promotes it in one transaction into a new
+notebook whose first note carries the comment body and links the source note
+to that new note (`related`, human provenance), surfacing the link in the
+detail Links section. The Agent tab query pathway is unchanged.
 
 The remote note API transport is not shipped yet. `riela note` and the built-in
 note add-ons execute note GraphQL documents in-process against the local store.

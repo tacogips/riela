@@ -73,6 +73,13 @@ final class AddonExecutionContractsTests: XCTestCase {
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-clock-alarm-toggle", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-clock-alarm-update", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-clock-alarm-delete", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-gateway-graphql", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-gateway-schema", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-gateway-permissions-status", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-gateway-permissions-request", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-gateway-config-validate", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-gateway-file-download", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-gateway-cache-prune", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/note-create", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/notebook-ingest-pages", version: nil))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/note-create", version: "2"))
@@ -103,6 +110,18 @@ final class AddonExecutionContractsTests: XCTestCase {
         "riela/apple-clock-alarm-toggle",
         "riela/apple-clock-alarm-update",
         "riela/apple-clock-alarm-delete"
+      ]
+    )
+    XCTAssertEqual(
+      RielaBuiltinAddonCatalog.appleGatewayAdminAddons.map(\.name),
+      [
+        "riela/apple-gateway-graphql",
+        "riela/apple-gateway-schema",
+        "riela/apple-gateway-permissions-status",
+        "riela/apple-gateway-permissions-request",
+        "riela/apple-gateway-config-validate",
+        "riela/apple-gateway-file-download",
+        "riela/apple-gateway-cache-prune"
       ]
     )
     XCTAssertEqual(

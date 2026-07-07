@@ -352,6 +352,9 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     if AppleClockAlarmOperation(addonName: input.addon.name) != nil {
       return try executeAppleClockAlarm(input, context: context)
     }
+    if let appleGatewayAdminAddon = BuiltinAppleGatewayAdminAddon(rawValue: input.addon.name) {
+      return try executeAppleGatewayAdmin(input, operation: appleGatewayAdminAddon, context: context)
+    }
     if let noteAddon = BuiltinNoteAddon(rawValue: input.addon.name) {
       return try await executeNoteAddon(input, operation: noteAddon)
     }

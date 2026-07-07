@@ -496,6 +496,7 @@ struct AppleGatewayGraphQLEnvelope {
   var data: JSONObject
   var errors: [String]
   var requestId: String?
+  var extensions: JSONObject
 
   init(stdout: String, addonName: String) throws {
     guard let bytes = stdout.data(using: .utf8) else {
@@ -511,7 +512,8 @@ struct AppleGatewayGraphQLEnvelope {
       throw AdapterExecutionError(.invalidOutput, "\(addonName) stdout must be a GraphQL JSON object")
     }
     self.errors = appleGatewayErrors(envelope["errors"])
-    self.requestId = objectValue(envelope["extensions"]).flatMap { nonEmptyString($0["requestId"]) }
+    self.extensions = objectValue(envelope["extensions"]) ?? [:]
+    self.requestId = nonEmptyString(extensions["requestId"])
     if !errors.isEmpty {
       self.data = [:]
       return

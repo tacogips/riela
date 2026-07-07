@@ -63,9 +63,20 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/note-conversation-save", version: "1")
   ]
 
+  public static let appleGatewayAdminAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/apple-gateway-graphql", version: "1"),
+    .init(name: "riela/apple-gateway-schema", version: "1"),
+    .init(name: "riela/apple-gateway-permissions-status", version: "1"),
+    .init(name: "riela/apple-gateway-permissions-request", version: "1"),
+    .init(name: "riela/apple-gateway-config-validate", version: "1"),
+    .init(name: "riela/apple-gateway-file-download", version: "1"),
+    .init(name: "riela/apple-gateway-cache-prune", version: "1")
+  ]
+
   public static let all: [RielaAddonDescriptor] = appleGatewayAddons
     + appleReminderReadAddons
     + appleReminderMutationAddons
+    + appleGatewayAdminAddons
     + noteAddons
 
   public static func descriptor(named name: String) -> RielaAddonDescriptor? {

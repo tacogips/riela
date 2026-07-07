@@ -1903,3 +1903,379 @@ as a runnable default example. Mutation operations can appear in catalog
 documentation and tests, but default examples must not delete, overwrite, or
 toggle user Clock data.
 
+
+## Built-in `riela/apple-gateway-*` Admin CLI Add-ons
+
+### Purpose
+
+The apple-gateway admin add-ons expose fixed `apple-gateway` CLI subcommands
+without giving workflow authors arbitrary process execution. They are
+worker-only, version `1`, and use one add-on id per operation so the catalog can
+mark read-only, state-changing, disk-writing, and unrestricted operations
+independently:
+
+- `riela/apple-gateway-graphql`: unrestricted GraphQL passthrough and catch-all
+  escape hatch for gateway capabilities without a dedicated add-on
+- `riela/apple-gateway-schema`: read-only schema printing
+- `riela/apple-gateway-permissions-status`: read-only permission status
+- `riela/apple-gateway-permissions-request`: STATE-CHANGING OS permission
+  request prompt
+- `riela/apple-gateway-config-validate`: read-only config validation
+- `riela/apple-gateway-file-download`: writes files to the local filesystem
+- `riela/apple-gateway-cache-prune`: STATE-CHANGING cache deletion
+
+All seven add-ons reuse the same local CLI gateway rules as
+`riela/apple-notes-list`: process invocation is centralized in the
+apple-gateway bridge, arguments are passed as separate argv elements with no
+shell interpolation, `addon.env` is rejected, and the executable resolves from
+literal `addon.config.binaryPath`, then `APPLE_GATEWAY_BIN`, then `PATH`.
+`binaryPath` is never rendered from workflow input, upstream payloads, or
+`addon.inputs`.
+
+Every successful payload carries `status`, `addon`, `stepId`, and
+`appleGateway.binary` with the resolved executable path and source. Deadline
+expiry terminates the subprocess and maps to timeout.
+
+### Admin Add-on Inputs and Precedence
+
+For all seven admin add-ons, supported `addon.inputs` fields are rendered with
+the normal node template context and override or supplement matching
+`addon.config` fields. `binaryPath` is the only exception: it is config-only,
+read literally from `addon.config.binaryPath`, and is never sourced from
+`addon.inputs`, workflow variables, workflow input, or upstream payloads.
+
+Supported `addon.inputs` fields by add-on:
+
+- `riela/apple-gateway-graphql`: `config`, `configPath`, `query`,
+  `queryFile`, `variables`, `variablesFile`
+- `riela/apple-gateway-schema`: `role`
+- `riela/apple-gateway-permissions-status`: no operation inputs
+- `riela/apple-gateway-permissions-request`: `domain`
+- `riela/apple-gateway-config-validate`: `config`, `configPath`
+- `riela/apple-gateway-file-download`: `keys`, `outputDir`
+- `riela/apple-gateway-cache-prune`: `all`
+
+When both `config` and `configPath` are present, `configPath` is the effective
+config path. When both `query` and `queryFile` are present,
+`queryFile` is the effective query source. When both `variables` and
+`variablesFile` are present, `variablesFile` is the effective variables source.
+
+### `riela/apple-gateway-graphql`
+
+The GraphQL passthrough add-on invokes:
+
+```bash
+apple-gateway [--config <path>] graphql (--query <text> | --query-file <path>) [--variables <json> | --variables-file <path>]
+```
+
+It is intentionally unrestricted and can forward arbitrary documents, including
+mutations. It is the documented catch-all escape hatch when no narrower built-in
+add-on exists, so workflows using it need the same review as direct
+apple-gateway GraphQL access.
+
+Authored example:
+
+```json
+{
+  "id": "gateway-query",
+  "role": "worker",
+  "addon": {
+    "name": "riela/apple-gateway-graphql",
+    "version": "1",
+    "config": {
+      "query": "{ noteAccounts { id name isDefault } }"
+    }
+  }
+}
+```
+
+Configuration and inputs:
+
+```typescript
+interface AppleGatewayGraphQLAddonConfig {
+  readonly binaryPath?: string;
+  readonly config?: string;
+  readonly configPath?: string;
+  readonly query?: string;
+  readonly queryFile?: string;
+  readonly variables?: Record<string, unknown> | string;
+  readonly variablesFile?: string;
+}
+```
+
+Inputs and precedence:
+
+- supported `addon.inputs` fields: `config`, `configPath`, `query`,
+  `queryFile`, `variables`, `variablesFile`
+- `binaryPath` is config-only and cannot be supplied through inputs, variables,
+  workflow input, or upstream payloads
+- `configPath` takes precedence over `config`; the effective path is prepended
+  before `graphql`
+- `queryFile` takes precedence over `query`
+- `variablesFile` takes precedence over `variables`
+- `variables` accepts a JSON object compact-serialized to `--variables` or a
+  rendered JSON string passed as `--variables`
+
+Outputs:
+
+- parses the upstream GraphQL envelope
+- non-empty `errors` maps to provider error
+- publishes `appleGateway.data`, `appleGateway.extensions`,
+  `appleGateway.requestId`, and top-level `replyText`
+
+Validation and error rules:
+
+- version `1` only
+- at least one query source is required; missing both `query` and `queryFile`
+  maps to policy blocked
+- when both query sources are present, `queryFile` takes precedence over
+  `query`
+- `variablesFile` takes precedence over `variables`
+- malformed JSON or missing GraphQL `data` maps to invalid output
+- non-zero process exit maps to provider error
+
+### `riela/apple-gateway-schema`
+
+The schema add-on invokes:
+
+```bash
+apple-gateway schema print [--role full|reader]
+```
+
+It is read-only.
+
+Configuration:
+
+```typescript
+interface AppleGatewaySchemaAddonConfig {
+  readonly binaryPath?: string;
+  readonly role?: "full" | "reader";
+}
+```
+
+Inputs and precedence:
+
+- supported `addon.inputs` field: `role`
+- `binaryPath` is config-only and cannot be supplied through inputs, variables,
+  workflow input, or upstream payloads
+- `addon.inputs.role`, when present, overrides `addon.config.role`
+
+Outputs:
+
+- publishes `appleGateway.role`, `appleGateway.schemaSDL`, and
+  `appleGateway.byteCount`
+
+Validation and error rules:
+
+- version `1` only
+- `role`, when present, must be `full` or `reader`
+- empty stdout maps to invalid output
+- non-zero process exit maps to provider error
+
+### `riela/apple-gateway-permissions-status`
+
+The permissions status add-on invokes:
+
+```bash
+apple-gateway permissions status --json
+```
+
+It is read-only and intended for examples and operational readiness checks.
+
+Configuration:
+
+```typescript
+interface AppleGatewayPermissionsStatusAddonConfig {
+  readonly binaryPath?: string;
+}
+```
+
+Inputs and precedence:
+
+- supported `addon.inputs` fields: none
+- `binaryPath` is config-only and cannot be supplied through inputs, variables,
+  workflow input, or upstream payloads
+
+Outputs:
+
+- decodes stdout as a JSON object
+- publishes `appleGateway.permissions`
+
+Validation and error rules:
+
+- version `1` only
+- non-JSON or non-object stdout maps to invalid output
+- non-zero process exit maps to provider error
+
+### `riela/apple-gateway-permissions-request`
+
+The permissions request add-on invokes:
+
+```bash
+apple-gateway permissions request --domain <calendar|reminders|notes|notifications>
+```
+
+It is STATE-CHANGING because it can drive macOS TCC permission prompts. It must
+not be used by the read-only example bundle.
+
+Configuration:
+
+```typescript
+interface AppleGatewayPermissionsRequestAddonConfig {
+  readonly binaryPath?: string;
+  readonly domain?: "calendar" | "reminders" | "notes" | "notifications";
+}
+```
+
+Inputs and precedence:
+
+- supported `addon.inputs` field: `domain`
+- `binaryPath` is config-only and cannot be supplied through inputs, variables,
+  workflow input, or upstream payloads
+- `addon.inputs.domain`, when present, overrides `addon.config.domain`
+
+Outputs:
+
+- publishes `appleGateway.domain`
+- publishes `appleGateway.result` as decoded JSON when stdout is JSON, otherwise
+  bounded raw stdout
+
+Validation and error rules:
+
+- version `1` only
+- `domain` is required and must be one of the allowed domains
+- non-zero process exit maps to provider error
+
+### `riela/apple-gateway-config-validate`
+
+The config validate add-on invokes:
+
+```bash
+apple-gateway config validate [--config <path>]
+```
+
+It is read-only.
+
+Configuration:
+
+```typescript
+interface AppleGatewayConfigValidateAddonConfig {
+  readonly binaryPath?: string;
+  readonly config?: string;
+  readonly configPath?: string;
+}
+```
+
+Inputs and precedence:
+
+- supported `addon.inputs` fields: `config`, `configPath`
+- `binaryPath` is config-only and cannot be supplied through inputs, variables,
+  workflow input, or upstream payloads
+- `configPath` takes precedence over `config`
+
+Outputs:
+
+- exit `0` publishes `appleGateway.valid: true`
+- publishes optional `appleGateway.configPath` and bounded
+  `appleGateway.output`
+
+Validation and error rules:
+
+- version `1` only
+- non-zero process exit maps to provider error and carries bounded stderr
+
+### `riela/apple-gateway-file-download`
+
+The file download add-on invokes:
+
+```bash
+apple-gateway file download --key <key> [--key <key> ...] [--output-dir <dir>]
+```
+
+It writes files to the local filesystem. Callers must choose an explicit,
+reviewed output location when they do not want apple-gateway defaults.
+
+Configuration:
+
+```typescript
+interface AppleGatewayFileDownloadAddonConfig {
+  readonly binaryPath?: string;
+  readonly keys?: string[];
+  readonly outputDir?: string;
+}
+```
+
+Inputs and precedence:
+
+- supported `addon.inputs` fields: `keys`, `outputDir`
+- `binaryPath` is config-only and cannot be supplied through inputs, variables,
+  workflow input, or upstream payloads
+- `addon.inputs.keys`, when present, overrides `addon.config.keys`
+- `addon.inputs.outputDir`, when present, overrides `addon.config.outputDir`
+
+Outputs:
+
+- publishes `appleGateway.keys` and optional `appleGateway.outputDir`
+- publishes `appleGateway.result` as a decoded JSON manifest when stdout is
+  JSON, otherwise bounded raw stdout
+
+Validation and error rules:
+
+- version `1` only
+- at least one key is required
+- each `keys` entry and `outputDir`, when present, is template-rendered
+- non-zero process exit maps to provider error
+
+### `riela/apple-gateway-cache-prune`
+
+The cache prune add-on invokes:
+
+```bash
+apple-gateway cache prune [--all]
+```
+
+It is STATE-CHANGING because it deletes apple-gateway cache data.
+
+Configuration:
+
+```typescript
+interface AppleGatewayCachePruneAddonConfig {
+  readonly binaryPath?: string;
+  readonly all?: boolean;
+}
+```
+
+Inputs and precedence:
+
+- supported `addon.inputs` field: `all`
+- `binaryPath` is config-only and cannot be supplied through inputs, variables,
+  workflow input, or upstream payloads
+- `addon.inputs.all`, when present, overrides `addon.config.all`
+
+Outputs:
+
+- publishes `appleGateway.all`
+- publishes `appleGateway.result` as decoded JSON when stdout is JSON, otherwise
+  bounded raw stdout
+
+Validation and error rules:
+
+- version `1` only
+- `all`, when present, must be boolean
+- non-zero process exit maps to provider error
+
+### Admin CLI Test and Example Requirements
+
+Tests must use fake `apple-gateway` executables only. Required coverage includes
+argv construction for every subcommand, config-to-env-to-`PATH` binary
+precedence, proof that `binaryPath` cannot be sourced from inputs, upstream
+payloads, or variables, rejected `addon.env`, minimal child environment
+forwarding, unsupported versions, timeout handling, output parsing, malformed
+output, non-zero exits, and operation-specific validation errors.
+
+The `examples/apple-gateway-admin` bundle must stay read-only: it may call
+`riela/apple-gateway-permissions-status` and
+`riela/apple-gateway-graphql` with a read-only query, but must not use
+`riela/apple-gateway-permissions-request`,
+`riela/apple-gateway-file-download`, or `riela/apple-gateway-cache-prune`.
+

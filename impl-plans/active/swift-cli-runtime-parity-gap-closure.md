@@ -212,6 +212,28 @@ Progress logging expectations:
   repaired from legacy CLI session records before rendering progress, health,
   status, logs, step-runs, or export.
 
+**Progress 2026-07-07** (issue #34 live cross-workflow dispatch):
+
+- Implemented live cross-workflow dispatch in `DeterministicWorkflowRunner`:
+  a `toWorkflowId` + `toStepId` + `resumeStepId` transition now resolves the
+  callee through a new `WorkflowCalleeResolving` seam, runs the callee to
+  completion in a child session in the same runtime store, and delivers the
+  callee root output (plus a `_rielaCrossWorkflow` provenance object) as the
+  inbound workflow message to the caller's resume step. The outbound handoff
+  is no longer echoed to the resume step in live runs.
+- Callee failures propagate loudly as
+  `DeterministicWorkflowRunnerError.crossWorkflowDispatchFailed`; a dispatch
+  depth guard (8) stops workflow-call cycles. Runs without a resolver still
+  fail loudly at preflight; mock-scenario simulation behavior is unchanged.
+- Wired `FileSystemWorkflowCalleeResolver` (caller resolution context first,
+  then project/user scope and installed packages) into `workflow run`,
+  `session resume`, and `session rerun`; `workflow validate` no longer reports
+  a capability gap for the supported dispatch shape.
+- Added `examples/workflow-call-live-echo` +
+  `examples/workflow-call-live-echo-callee` command-node smoke fixtures plus
+  `DeterministicWorkflowRunnerCrossWorkflowDispatchTests` and
+  `WorkflowCommandCrossWorkflowDispatchTests`.
+
 ## TASK-004: Local Agent And Official Adapter Parity
 
 **Status**: Implemented; accepted review complete, deletion gate evidence pending

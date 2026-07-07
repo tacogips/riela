@@ -462,7 +462,7 @@ final class RuntimePublicationTests: XCTestCase {
       ),
       (
         WorkflowStepTransition(toStepId: "child-start", toWorkflowId: "child-workflow", resumeStepId: "resume"),
-        "cross-workflow transitions are not supported by this in-memory publisher"
+        "cross-workflow dispatch requires a callee workflow resolver; live runs without one cannot dispatch 'child-workflow'"
       ),
       (
         WorkflowStepTransition(toStepId: "next", resumeStepId: "resume"),

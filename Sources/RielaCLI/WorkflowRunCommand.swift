@@ -93,7 +93,8 @@ public struct WorkflowRunCommand: Sendable {
         addonResolver: addonResolver,
         stdioNodeExecutor: stdioNodeExecutor,
         telemetry: telemetry,
-        simulatesCrossWorkflowDispatch: options.mockScenarioPath != nil
+        simulatesCrossWorkflowDispatch: options.mockScenarioPath != nil,
+        calleeResolver: FileSystemWorkflowCalleeResolver(resolver: resolver, baseResolution: resolution)
       )
       let persistedIdentity = persistenceIdentity(
         requestedResolution: resolution,
@@ -106,10 +107,21 @@ public struct WorkflowRunCommand: Sendable {
       let persistenceBundle = bundle
       let runEventHandler: WorkflowRunEventHandler = { event in
         if workflowRunEventTriggersLiveSessionPersistence(event) {
+          // Cross-workflow callee sessions share the runtime store and event
+          // stream; persist them under the callee workflow identity so they
+          // stay inspectable and resumable on their own.
+          let isCalleeSession = event.workflowId != persistenceBundle.workflow.workflowId
           await persistLiveSessionRecordIfPresent(
             sessionId: event.sessionId,
-            workflowName: persistedIdentity.workflowName,
-            resolution: persistedIdentity.resolution,
+            workflowName: isCalleeSession ? event.workflowId : persistedIdentity.workflowName,
+            resolution: isCalleeSession
+              ? WorkflowResolutionOptions(
+                workflowName: event.workflowId,
+                scope: persistedIdentity.resolution.scope,
+                workflowDefinitionDir: persistedIdentity.resolution.workflowDefinitionDir,
+                workingDirectory: persistedIdentity.resolution.workingDirectory
+              )
+              : persistedIdentity.resolution,
             storeRoot: storeRoot,
             bundle: persistenceBundle,
             variables: effectiveVariables,
@@ -121,7 +133,7 @@ public struct WorkflowRunCommand: Sendable {
         }
         if let jsonlRecorder {
           await jsonlRecorder.append(event)
-          if event.type == .sessionStarted {
+          if event.type == .sessionStarted && event.workflowId == persistenceBundle.workflow.workflowId {
             let context = WorkflowRunContextRecord(
               sessionId: event.sessionId,
               workflowName: persistedIdentity.workflowName,

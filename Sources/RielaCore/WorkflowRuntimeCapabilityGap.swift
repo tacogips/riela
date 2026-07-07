@@ -36,7 +36,8 @@ public struct WorkflowRuntimeCapabilityGap: Codable, Equatable, Sendable {
 public extension DeterministicWorkflowRunner {
   static func unsupportedFeatures(
     in workflow: WorkflowDefinition,
-    maxConcurrency: Int? = nil
+    maxConcurrency: Int? = nil,
+    supportsCrossWorkflowDispatch: Bool = false
   ) -> [WorkflowRuntimeCapabilityGap] {
     var gaps: [WorkflowRuntimeCapabilityGap] = []
     if maxConcurrency != nil {
@@ -63,11 +64,11 @@ public extension DeterministicWorkflowRunner {
             message: "step '\(step.id)' uses cross-workflow transitions, which this runner does not support yet"
           ))
         }
-        if transition.toWorkflowId != nil && transition.resumeStepId != nil {
+        if transition.toWorkflowId != nil && transition.resumeStepId != nil && !supportsCrossWorkflowDispatch {
           gaps.append(WorkflowRuntimeCapabilityGap(
             severity: .warning,
             path: "workflow.steps.\(step.id).transitions.toWorkflowId",
-            message: "step '\(step.id)' uses cross-workflow dispatch, which live runs do not support yet; only mock-scenario runs simulate the callee through the resume step"
+            message: "step '\(step.id)' uses cross-workflow dispatch, but this run has no callee workflow resolver wired; wire a resolver for live dispatch or use a mock scenario to simulate the callee through the resume step"
           ))
         }
         if transition.toWorkflowId == nil && transition.resumeStepId != nil {

@@ -1,0 +1,22 @@
+{
+  "workflowId": "workflow-call-live-echo-callee",
+  "description": "Worker-only echo callee used by workflow-call-live-echo to verify live cross-workflow dispatch without an agent backend.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "entryStepId": "echo-worker",
+  "nodes": [
+    {
+      "id": "echo-worker",
+      "nodeFile": "nodes/node-echo-worker.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "echo-worker",
+      "nodeId": "echo-worker",
+      "role": "worker"
+    }
+  ]
+}

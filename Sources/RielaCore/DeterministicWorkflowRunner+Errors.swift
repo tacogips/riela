@@ -9,6 +9,7 @@ public enum DeterministicWorkflowRunnerError: Error, Equatable, Sendable {
   case maxStepsExceeded(Int)
   case rerunValidation(String)
   case resumeValidation(String)
+  case crossWorkflowDispatchFailed(workflowId: String, reason: String)
 }
 
 func errorMessage(_ error: WorkflowSessionEntryValidationError) -> String {

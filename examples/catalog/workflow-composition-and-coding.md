@@ -71,6 +71,28 @@ riela workflow run workflow-call-review-target \
   --output json
 ```
 
+### `workflow-call-live-echo` and `workflow-call-live-echo-callee`
+
+Live cross-workflow dispatch smoke pair that needs **no** mock scenario and no
+agent backend:
+
+- both bundles use only command nodes (`/bin/sh` echoes), so `workflow run`
+  executes fully live
+- `workflow-call-live-echo` authors a `toWorkflowId` + `toStepId` +
+  `resumeStepId` transition on `produce-request`; the runner dispatches
+  `workflow-call-live-echo-callee` in a child session and delivers the callee
+  root output to `apply-result`
+- the callee echoes the caller handoff back through `{{handoff}}` templating,
+  so the caller root output proves end-to-end delivery
+
+Run it live:
+
+```bash
+riela workflow run workflow-call-live-echo \
+  --workflow-definition-dir ./examples \
+  --output json
+```
+
 ### `design-and-implement-review-loop`
 
 Real development workflow sample adapted from the project-local workflow catalog:

@@ -54,25 +54,56 @@ public struct WorkflowPublicationRequest: Sendable {
   }
 }
 
+/// Instruction produced when a live run selects a cross-workflow transition:
+/// the runner must dispatch the callee workflow and, once it completes,
+/// deliver the callee root output to `resumeStepId` in the caller session.
+public struct WorkflowCrossWorkflowDispatchDirective: Equatable, Sendable {
+  public var workflowId: String
+  public var calleeEntryStepId: String
+  public var resumeStepId: String
+  public var transitionLabel: String?
+  public var handoffPayload: JSONObject
+  public var sourceStepExecutionId: String
+
+  public init(
+    workflowId: String,
+    calleeEntryStepId: String,
+    resumeStepId: String,
+    transitionLabel: String? = nil,
+    handoffPayload: JSONObject,
+    sourceStepExecutionId: String
+  ) {
+    self.workflowId = workflowId
+    self.calleeEntryStepId = calleeEntryStepId
+    self.resumeStepId = resumeStepId
+    self.transitionLabel = transitionLabel
+    self.handoffPayload = handoffPayload
+    self.sourceStepExecutionId = sourceStepExecutionId
+  }
+}
+
 public struct WorkflowPublicationResult: Equatable, Sendable {
   public var session: WorkflowSession
   public var stepExecution: WorkflowStepExecution
   public var publishedMessages: [WorkflowMessageRecord]
   public var nextStepId: String?
   public var rootOutput: JSONObject?
+  public var crossWorkflowDispatch: WorkflowCrossWorkflowDispatchDirective?
 
   public init(
     session: WorkflowSession,
     stepExecution: WorkflowStepExecution,
     publishedMessages: [WorkflowMessageRecord],
     nextStepId: String? = nil,
-    rootOutput: JSONObject? = nil
+    rootOutput: JSONObject? = nil,
+    crossWorkflowDispatch: WorkflowCrossWorkflowDispatchDirective? = nil
   ) {
     self.session = session
     self.stepExecution = stepExecution
     self.publishedMessages = publishedMessages
     self.nextStepId = nextStepId
     self.rootOutput = rootOutput
+    self.crossWorkflowDispatch = crossWorkflowDispatch
   }
 }
 
@@ -95,6 +126,7 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
   public var candidatePathFinalizer: RuntimeCandidatePathFinalizer?
   public var clock: any WorkflowRuntimeClock
   public var simulatesCrossWorkflowDispatch: Bool
+  public var supportsLiveCrossWorkflowDispatch: Bool
 
   public init(
     store: any WorkflowRuntimeStore,
@@ -102,7 +134,8 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
     candidatePathReader: any CandidatePathReading = DefaultCandidatePathReader(),
     candidatePathFinalizer: RuntimeCandidatePathFinalizer? = nil,
     clock: any WorkflowRuntimeClock = SystemWorkflowRuntimeClock(),
-    simulatesCrossWorkflowDispatch: Bool = false
+    simulatesCrossWorkflowDispatch: Bool = false,
+    supportsLiveCrossWorkflowDispatch: Bool = false
   ) {
     self.store = store
     self.validator = validator
@@ -110,6 +143,7 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
     self.candidatePathFinalizer = candidatePathFinalizer
     self.clock = clock
     self.simulatesCrossWorkflowDispatch = simulatesCrossWorkflowDispatch
+    self.supportsLiveCrossWorkflowDispatch = supportsLiveCrossWorkflowDispatch
   }
 
   public func publishAcceptedOutput(_ request: WorkflowPublicationRequest) async throws -> WorkflowPublicationResult {
@@ -264,7 +298,17 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       routingDiagnostics: candidate.routingDiagnostics
     )
 
+    // Live cross-workflow dispatch: the handoff payload must not be echoed to
+    // the caller's resume step; the runner dispatches the callee and delivers
+    // the callee root output to the resume step instead.
+    let liveDispatch = liveCrossWorkflowDispatchDirective(
+      in: publishableTransitions,
+      handoffPayload: payload,
+      sourceStepExecutionId: recordedExecution.executionId
+    )
+
     let messageInputs = publishableTransitions
+      .filter { !isLiveCrossWorkflowDispatchTransition($0) }
       .map { transition in
         WorkflowMessageAppendInput(
           workflowExecutionId: request.sessionId,
@@ -315,7 +359,8 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       stepExecution: completedExecution,
       publishedMessages: publishedMessages,
       nextStepId: nextStepId,
-      rootOutput: publishesRootOutput ? payload : nil
+      rootOutput: publishesRootOutput ? payload : nil,
+      crossWorkflowDispatch: liveDispatch
     )
   }
 
@@ -386,8 +431,8 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       if transition.toWorkflowId != nil && transition.resumeStepId == nil {
         return "cross-workflow transitions are not supported by this in-memory publisher"
       }
-      if transition.toWorkflowId != nil && !simulatesCrossWorkflowDispatch {
-        return "cross-workflow transitions are not supported by this in-memory publisher"
+      if transition.toWorkflowId != nil && !simulatesCrossWorkflowDispatch && !supportsLiveCrossWorkflowDispatch {
+        return "cross-workflow dispatch requires a callee workflow resolver; live runs without one cannot dispatch '\(transition.toWorkflowId ?? "")'"
       }
       if transition.toWorkflowId == nil && transition.resumeStepId != nil {
         return "resume-step transitions are not supported by this in-memory publisher"
@@ -401,6 +446,33 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
 
   private func nextStepId(from publishableTransitions: [WorkflowStepTransition]) -> String? {
     publishableTransitions.first.map { $0.resumeStepId ?? $0.toStepId }
+  }
+
+  private func isLiveCrossWorkflowDispatchTransition(_ transition: WorkflowStepTransition) -> Bool {
+    !simulatesCrossWorkflowDispatch &&
+      supportsLiveCrossWorkflowDispatch &&
+      transition.toWorkflowId != nil &&
+      transition.resumeStepId != nil
+  }
+
+  private func liveCrossWorkflowDispatchDirective(
+    in publishableTransitions: [WorkflowStepTransition],
+    handoffPayload: JSONObject,
+    sourceStepExecutionId: String
+  ) -> WorkflowCrossWorkflowDispatchDirective? {
+    guard let transition = publishableTransitions.first(where: { isLiveCrossWorkflowDispatchTransition($0) }),
+          let toWorkflowId = transition.toWorkflowId,
+          let resumeStepId = transition.resumeStepId else {
+      return nil
+    }
+    return WorkflowCrossWorkflowDispatchDirective(
+      workflowId: toWorkflowId,
+      calleeEntryStepId: transition.toStepId,
+      resumeStepId: resumeStepId,
+      transitionLabel: transition.label,
+      handoffPayload: handoffPayload,
+      sourceStepExecutionId: sourceStepExecutionId
+    )
   }
 }
 

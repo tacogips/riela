@@ -20,6 +20,10 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   public var agentSilenceMonitorIntervalMs: Int
   public var effectiveInstance: EffectiveWorkflowInstance?
   public var eventHandler: WorkflowRunEventHandler?
+  /// Nesting depth of live cross-workflow dispatch. Top-level runs are 0;
+  /// each dispatched callee run increments it so runaway workflow-call cycles
+  /// fail loudly instead of recursing without bound.
+  public var crossWorkflowDispatchDepth: Int
 
   public init(
     workflow: WorkflowDefinition,
@@ -39,7 +43,8 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     agentSilenceWarningMs: Int? = nil,
     agentSilenceMonitorIntervalMs: Int = 1_000,
     effectiveInstance: EffectiveWorkflowInstance? = nil,
-    eventHandler: WorkflowRunEventHandler? = nil
+    eventHandler: WorkflowRunEventHandler? = nil,
+    crossWorkflowDispatchDepth: Int = 0
   ) {
     self.workflow = workflow
     self.nodePayloads = nodePayloads
@@ -59,6 +64,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     self.agentSilenceMonitorIntervalMs = agentSilenceMonitorIntervalMs
     self.effectiveInstance = effectiveInstance
     self.eventHandler = eventHandler
+    self.crossWorkflowDispatchDepth = crossWorkflowDispatchDepth
   }
 }
 
@@ -114,6 +120,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
   public var loopPolicyEvaluator: any LoopPolicyEvaluating
   public var telemetry: any RielaTelemetry
   public var simulatesCrossWorkflowDispatch: Bool
+  public var calleeResolver: (any WorkflowCalleeResolving)?
 
   public init(
     store: (any WorkflowRuntimeStore)? = nil,
@@ -127,7 +134,8 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     inputFilterLogger: any WorkflowInputFilterLogging = StandardErrorWorkflowInputFilterLogger(),
     loopPolicyEvaluator: any LoopPolicyEvaluating = DefaultLoopPolicyEvaluator(),
     telemetry: any RielaTelemetry = NoOpRielaTelemetry(),
-    simulatesCrossWorkflowDispatch: Bool = false
+    simulatesCrossWorkflowDispatch: Bool = false,
+    calleeResolver: (any WorkflowCalleeResolving)? = nil
   ) {
     let resolvedStore = store ?? InMemoryWorkflowRuntimeStore()
     self.store = resolvedStore
@@ -137,7 +145,8 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     self.stdioNodeExecutor = stdioNodeExecutor
     self.publisher = publisher ?? InMemoryWorkflowOutputPublisher(
       store: resolvedStore,
-      simulatesCrossWorkflowDispatch: simulatesCrossWorkflowDispatch
+      simulatesCrossWorkflowDispatch: simulatesCrossWorkflowDispatch,
+      supportsLiveCrossWorkflowDispatch: calleeResolver != nil
     )
     self.inputResolver = inputResolver
     self.inputFilterEvaluator = inputFilterEvaluator
@@ -145,6 +154,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     self.loopPolicyEvaluator = loopPolicyEvaluator
     self.telemetry = telemetry
     self.simulatesCrossWorkflowDispatch = simulatesCrossWorkflowDispatch
+    self.calleeResolver = calleeResolver
   }
 
   public func run(_ request: DeterministicWorkflowRunRequest) async throws -> WorkflowRunResult {
@@ -155,11 +165,16 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     if let diagnostic = diagnostics.first(where: { $0.severity == .error }) {
       throw DeterministicWorkflowRunnerError.invalidWorkflow("\(diagnostic.path): \(diagnostic.message)")
     }
-    let capabilityGaps = Self.unsupportedFeatures(in: request.workflow, maxConcurrency: request.maxConcurrency)
+    let supportsCrossWorkflowDispatch = simulatesCrossWorkflowDispatch || calleeResolver != nil
+    let capabilityGaps = Self.unsupportedFeatures(
+      in: request.workflow,
+      maxConcurrency: request.maxConcurrency,
+      supportsCrossWorkflowDispatch: supportsCrossWorkflowDispatch
+    )
     if let gap = capabilityGaps.first(where: { $0.severity == .error }) {
       throw DeterministicWorkflowRunnerError.invalidWorkflow("\(gap.path): \(gap.message)")
     }
-    if !simulatesCrossWorkflowDispatch,
+    if !supportsCrossWorkflowDispatch,
        let gap = capabilityGaps.first(where: { $0.path.hasSuffix(".transitions.toWorkflowId") }) {
       throw DeterministicWorkflowRunnerError.invalidWorkflow("\(gap.path): \(gap.message)")
     }
@@ -303,6 +318,15 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           publishedTransitions: publishedTransitions,
           handler: effectiveRequest.eventHandler
         )
+        if let dispatch = publishResult.crossWorkflowDispatch {
+          try await dispatchCrossWorkflowCallee(
+            directive: dispatch,
+            parentSessionId: session.sessionId,
+            parentStepId: step.id,
+            request: effectiveRequest
+          )
+          publishedTransitions += 1
+        }
         currentStepId = publishResult.nextStepId
         continue
       }
@@ -326,6 +350,15 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         publishedTransitions: publishedTransitions,
         handler: effectiveRequest.eventHandler
       )
+      if let dispatch = publishResult.crossWorkflowDispatch {
+        try await dispatchCrossWorkflowCallee(
+          directive: dispatch,
+          parentSessionId: session.sessionId,
+          parentStepId: step.id,
+          request: effectiveRequest
+        )
+        publishedTransitions += 1
+      }
       currentStepId = publishResult.nextStepId
     }
 

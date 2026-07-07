@@ -11,7 +11,7 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum ExampleCatalog {
     static let directoryName = "examples"
-    static let expectedMockScenarioCount = 35
+    static let expectedMockScenarioCount = 36
     static let expectedNodeMockScenarioCount = 0
   }
 
@@ -699,6 +699,7 @@ final class RielaExampleParityTests: XCTestCase {
       "note-link-extract",
       "note-pdf-ingest",
       "note-quick-memo",
+      "note-selection-question",
       "note-youtube-transcript",
       "recent-change-quality-loop",
       "required-loop-gate-failure",
@@ -715,6 +716,8 @@ final class RielaExampleParityTests: XCTestCase {
       "telegram-agent-trio-time-signal",
       "telegram-sdk-trio-chat",
       "worker-only-single-step",
+      "workflow-call-live-echo",
+      "workflow-call-live-echo-callee",
       "workflow-call-review-target",
       "workflow-call-simple",
       "x-follower-ai-business-digest"

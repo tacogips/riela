@@ -498,7 +498,8 @@ public struct SessionRerunCommand: Sendable {
         store: runtimeStore,
         adapter: adapter,
         stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(),
-        simulatesCrossWorkflowDispatch: (options.mockScenarioPath ?? persisted.mockScenarioPath) != nil
+        simulatesCrossWorkflowDispatch: (options.mockScenarioPath ?? persisted.mockScenarioPath) != nil,
+        calleeResolver: FileSystemWorkflowCalleeResolver(resolver: resolver, baseResolution: resolution)
       )
       let variables = instanceResolution.effectiveInstance?.configuration.defaultVariables
         ?? persisted.runtimeVariables
@@ -676,7 +677,8 @@ public struct SessionResumeCommand: Sendable {
         store: runtimeStore,
         adapter: adapter,
         stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(),
-        simulatesCrossWorkflowDispatch: (options.mockScenarioPath ?? persisted.mockScenarioPath) != nil
+        simulatesCrossWorkflowDispatch: (options.mockScenarioPath ?? persisted.mockScenarioPath) != nil,
+        calleeResolver: FileSystemWorkflowCalleeResolver(resolver: resolver, baseResolution: resolution)
       )
       let effectiveMockScenarioPath = options.mockScenarioPath ?? persisted.mockScenarioPath
       let variables = try resumeRuntimeVariables(options: options, persisted: persisted)

@@ -12,7 +12,7 @@ final class WorkflowRunnerCapabilityPreflightTests: XCTestCase {
       ),
       (
         WorkflowStepTransition(toStepId: "child", toWorkflowId: "child-workflow", resumeStepId: "resume"),
-        "step 'step' uses cross-workflow dispatch, which live runs do not support yet; only mock-scenario runs simulate the callee through the resume step"
+        "step 'step' uses cross-workflow dispatch, but this run has no callee workflow resolver wired"
       ),
       (
         WorkflowStepTransition(toStepId: "step", resumeStepId: "resume"),

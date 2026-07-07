@@ -487,6 +487,30 @@ re-run), addressing Step 5 accepted feedback (comm-000692):
   `RielaNoteEditRewriteProviding.proposeRewrite(...)` matches D4 including
   `noteRoot`; JSONL parse path proven by TASK-001/TASK-007 as above.
 
+## Step 7 Rerun — Example Parity (F1) Resolution
+
+- Step 7 finding F1 (`RielaExampleParityTests` desync) is RESOLVED at
+  current HEAD `e1ae308`. At my task's commit `31f07fc` in isolation the
+  parity test was red (`expectedMockScenarioCount=33`, no
+  `note-edit-rewrite` in `rielaExampleWorkflowNames()`), because adding
+  `examples/note-edit-rewrite/mock-scenario.json` bumps the disk count.
+- Per the feedback's permitted second option, the parity update was
+  carried by the concurrent/owning session's commit `e1ae308`, which set
+  `expectedMockScenarioCount=35` and added `note-edit-rewrite` (line 698)
+  alongside its own `apple-note-*`/`seatbelt-sandboxed-worker` names.
+  This session did NOT touch the parity test or any apple-notes/seatbelt
+  files (constraint honored); `Tests/RielaCLITests/RielaExampleParityTests.swift`
+  is committed/clean in the working tree.
+- Disk-vs-expected discrepancy from the earlier review is gone: 35
+  `mock-scenario.json` files on disk == `expectedMockScenarioCount=35`.
+  The transient `34` seen mid-review was the concurrent session's
+  in-progress edit; it finalized at 35.
+- Verification (this rerun): `swift test --filter RielaExampleParityTests`
+  → PASS (9 tests, 0 failures), no "input file was modified during the
+  build" blockage this run. `swift run riela workflow validate
+  note-edit-rewrite --workflow-definition-dir examples` → `valid:true`,
+  no diagnostics.
+
 ## Codex Reference Trace
 
 - `codexAgentReferences`: none supplied by Step 3.

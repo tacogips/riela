@@ -77,6 +77,49 @@ final class WorkflowExecutionTimelineLayoutTests: XCTestCase {
     XCTAssertEqual(layout.connectors.map { "\($0.fromEntryId)->\($0.toEntryId)" }, ["one->two", "two->three"])
   }
 
+  func testTimelineEntryGanttLogSummaryUsesLatestBackendEventContent() {
+    let origin = Date(timeIntervalSince1970: 500)
+    let entry = WorkflowViewerTimelineEntry(
+      id: "exec-log",
+      stepId: "worker",
+      nodeId: "worker",
+      attempt: 1,
+      status: .completed,
+      startedAt: origin,
+      endedAt: origin.addingTimeInterval(1),
+      backendEvents: [
+        WorkflowViewerBackendEvent(sequence: 1, at: origin, eventType: "response.started", content: "starting"),
+        WorkflowViewerBackendEvent(
+          sequence: 2,
+          at: origin.addingTimeInterval(1),
+          eventType: "response.delta",
+          content: "  final\nanswer\tfrom backend  "
+        )
+      ]
+    )
+
+    XCTAssertEqual(entry.ganttLogSummary(), "final answer from backend")
+  }
+
+  func testTimelineEntryGanttLogSummaryPrefersFailureAndTruncates() {
+    let origin = Date(timeIntervalSince1970: 600)
+    let entry = WorkflowViewerTimelineEntry(
+      id: "exec-failed",
+      stepId: "worker",
+      nodeId: "worker",
+      attempt: 1,
+      status: .failed,
+      startedAt: origin,
+      endedAt: origin.addingTimeInterval(1),
+      backendEvents: [
+        WorkflowViewerBackendEvent(sequence: 1, at: origin, eventType: "response.delta", content: "backend text")
+      ],
+      failureReason: "the provider returned a very long error message"
+    )
+
+    XCTAssertEqual(entry.ganttLogSummary(maxLength: 24), "Failure: the provider...")
+  }
+
   private func entry(
     id: String,
     stepId: String,

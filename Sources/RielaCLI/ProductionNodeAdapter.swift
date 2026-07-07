@@ -325,6 +325,15 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     if input.addon.name == "riela/apple-notes-list" {
       return try executeAppleNotesList(input, context: context)
     }
+    if [
+      "riela/apple-note-get",
+      "riela/apple-note-create",
+      "riela/apple-note-update-body",
+      "riela/apple-note-delete",
+      "riela/apple-note-move"
+    ].contains(input.addon.name) {
+      return try executeAppleNotesCrud(input, context: context)
+    }
     if let noteAddon = BuiltinNoteAddon(rawValue: input.addon.name) {
       return try await executeNoteAddon(input, operation: noteAddon)
     }

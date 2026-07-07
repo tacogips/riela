@@ -1,10 +1,5 @@
 import Foundation
 import RielaCore
-#if canImport(Darwin)
-import Darwin
-#elseif canImport(Glibc)
-import Glibc
-#endif
 
 extension BuiltinWorkflowAddonResolver {
   func executeAppleNotesList(
@@ -20,7 +15,11 @@ extension BuiltinWorkflowAddonResolver {
 
     let listContext = try AppleNotesListContext(input: input, environment: environment)
     let query = try listContext.graphQLQuery()
-    let resolvedBinary = try listContext.resolvedBinary()
+    let resolvedBinary = try AppleGatewayBinaryResolver(
+      addonName: input.addon.name,
+      config: input.addon.config ?? [:],
+      environment: environment
+    ).resolvedBinary()
     let processOutput = try AppleGatewayProcessRunner(runtimeEnvironment: environment).run(
       executablePath: resolvedBinary.path,
       arguments: ["graphql", "--query", query],
@@ -73,21 +72,17 @@ extension BuiltinWorkflowAddonResolver {
 }
 
 private struct AppleNotesListContext {
-  private static let executableName = "apple-gateway"
-  private static let executableEnvironmentName = "APPLE_GATEWAY_BIN"
   private static let defaultFirst = 25
   private static let maxFirst = 100
 
   var input: WorkflowAddonExecutionInput
   var config: JSONObject
   var variables: JSONObject
-  var environment: [String: String]
 
   init(input: WorkflowAddonExecutionInput, environment: [String: String]) throws {
     self.input = input
     self.config = input.addon.config ?? [:]
     self.variables = addonVariables(for: input)
-    self.environment = environment
     _ = try first()
     _ = try bool("includePlaintext", defaultValue: false)
     _ = try bool("includeBodyHtml", defaultValue: false)
@@ -126,36 +121,6 @@ private struct AppleNotesListContext {
       }
     }
     """
-  }
-
-  func resolvedBinary() throws -> AppleGatewayResolvedBinary {
-    if let configured = configuredBinaryPath() {
-      guard let path = resolveExecutable(configured, searchPath: executableSearchPath(environment: environment)) else {
-        throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) config.binaryPath is not executable: \(configured)")
-      }
-      return AppleGatewayResolvedBinary(path: path, source: .config)
-    }
-    if let envPath = environmentValue(Self.executableEnvironmentName, environment: environment) {
-      guard let path = resolveExecutable(envPath, searchPath: executableSearchPath(environment: environment)) else {
-        throw AdapterExecutionError(.policyBlocked, "\(Self.executableEnvironmentName) is not executable: \(envPath)")
-      }
-      return AppleGatewayResolvedBinary(path: path, source: .environment)
-    }
-    guard let path = resolveExecutable(Self.executableName, searchPath: executableSearchPath(environment: environment)) else {
-      throw AdapterExecutionError(
-        .policyBlocked,
-        "\(input.addon.name) requires apple-gateway; set config.binaryPath, \(Self.executableEnvironmentName), or PATH"
-      )
-    }
-    return AppleGatewayResolvedBinary(path: path, source: .path)
-  }
-
-  private func configuredBinaryPath() -> String? {
-    guard let configured = nonEmptyString(config["binaryPath"]) else {
-      return nil
-    }
-    let trimmed = configured.trimmingCharacters(in: .whitespacesAndNewlines)
-    return trimmed.isEmpty ? nil : trimmed
   }
 
   private func notesInputLiteral() throws -> String {
@@ -242,169 +207,6 @@ private struct AppleNotesListContext {
   }
 }
 
-private struct AppleGatewayProcessRunner {
-  private static let childEnvironmentAllowlist = [
-    "HOME",
-    "LANG",
-    "LC_ALL",
-    "LC_CTYPE",
-    "LOGNAME",
-    "PATH",
-    "TMPDIR",
-    "USER",
-    "__CF_USER_TEXT_ENCODING"
-  ]
-
-  var runtimeEnvironment: [String: String]
-
-  func run(executablePath: String, arguments: [String], deadline: Date?) throws -> AppleGatewayProcessOutput {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: executablePath)
-    process.arguments = arguments
-    process.environment = sanitizedChildEnvironment()
-    let outputPipe = Pipe()
-    let errorPipe = Pipe()
-    process.standardOutput = outputPipe
-    process.standardError = errorPipe
-    let termination = DispatchSemaphore(value: 0)
-    process.terminationHandler = { _ in
-      termination.signal()
-    }
-    do {
-      try process.run()
-    } catch {
-      throw AdapterExecutionError(.providerError, "apple-gateway failed to start: \(error.localizedDescription)")
-    }
-    let stdoutDrain = AppleGatewayPipeDrain(
-      handle: outputPipe.fileHandleForReading,
-      label: "riela.apple-gateway.stdout"
-    )
-    let stderrDrain = AppleGatewayPipeDrain(
-      handle: errorPipe.fileHandleForReading,
-      label: "riela.apple-gateway.stderr"
-    )
-    if !waitForAppleGatewayProcess(process, termination: termination, until: deadline) {
-      terminateAppleGatewayProcess(process, termination: termination)
-      _ = stdoutDrain.waitForData()
-      _ = stderrDrain.waitForData()
-      throw AdapterExecutionError(.timeout, "apple-gateway exceeded deadline and was terminated")
-    }
-    process.terminationHandler = nil
-    let stdout = String(data: stdoutDrain.waitForData(), encoding: .utf8) ?? ""
-    let stderr = String(data: stderrDrain.waitForData(), encoding: .utf8) ?? ""
-    guard process.terminationStatus == 0 else {
-      let detail = appleGatewayCompactText(stderr.isEmpty ? stdout : stderr)
-      throw AdapterExecutionError(.providerError, "apple-gateway failed with exit code \(process.terminationStatus): \(detail)")
-    }
-    return AppleGatewayProcessOutput(stdout: stdout, stderr: stderr)
-  }
-
-  private func sanitizedChildEnvironment() -> [String: String] {
-    var childEnvironment: [String: String] = [:]
-    for name in Self.childEnvironmentAllowlist {
-      guard let value = runtimeEnvironment[name], !value.isEmpty else {
-        continue
-      }
-      childEnvironment[name] = value
-    }
-    return childEnvironment
-  }
-}
-
-private func waitForAppleGatewayProcess(
-  _ process: Process,
-  termination: DispatchSemaphore,
-  until deadline: Date?
-) -> Bool {
-  guard process.isRunning else {
-    return true
-  }
-  guard let deadline else {
-    termination.wait()
-    return true
-  }
-  let remaining = deadline.timeIntervalSinceNow
-  guard remaining > 0 else {
-    return false
-  }
-  return termination.wait(timeout: .now() + remaining) == .success
-}
-
-private func terminateAppleGatewayProcess(_ process: Process, termination: DispatchSemaphore) {
-  if process.isRunning {
-    process.terminate()
-  }
-  guard termination.wait(timeout: .now() + 1) == .timedOut else {
-    return
-  }
-  #if canImport(Darwin) || canImport(Glibc)
-  if process.isRunning {
-    _ = kill(process.processIdentifier, SIGKILL)
-  }
-  #endif
-  termination.wait()
-}
-
-private final class AppleGatewayPipeDrain: @unchecked Sendable {
-  private let group = DispatchGroup()
-  private let lock = NSLock()
-  private var data = Data()
-
-  init(handle: FileHandle, label: String) {
-    group.enter()
-    DispatchQueue(label: label).async {
-      let drained = handle.readDataToEndOfFile()
-      self.lock.lock()
-      self.data = drained
-      self.lock.unlock()
-      self.group.leave()
-    }
-  }
-
-  func waitForData() -> Data {
-    group.wait()
-    lock.lock()
-    defer { lock.unlock() }
-    return data
-  }
-}
-
-private struct AppleGatewayProcessOutput {
-  var stdout: String
-  var stderr: String
-}
-
-private struct AppleGatewayGraphQLEnvelope {
-  var data: JSONObject
-  var errors: [String]
-  var requestId: String?
-
-  init(stdout: String, addonName: String) throws {
-    guard let bytes = stdout.data(using: .utf8) else {
-      throw AdapterExecutionError(.invalidOutput, "\(addonName) stdout was not UTF-8")
-    }
-    let decoded: JSONValue
-    do {
-      decoded = try JSONDecoder().decode(JSONValue.self, from: bytes)
-    } catch {
-      throw AdapterExecutionError(.invalidOutput, "\(addonName) stdout was not valid JSON: \(error.localizedDescription)")
-    }
-    guard case let .object(envelope) = decoded else {
-      throw AdapterExecutionError(.invalidOutput, "\(addonName) stdout must be a GraphQL JSON object")
-    }
-    self.errors = appleGatewayErrors(envelope["errors"])
-    self.requestId = objectValue(envelope["extensions"]).flatMap { nonEmptyString($0["requestId"]) }
-    if !errors.isEmpty {
-      self.data = [:]
-      return
-    }
-    guard case let .object(data)? = envelope["data"] else {
-      throw AdapterExecutionError(.invalidOutput, "\(addonName) GraphQL data is missing")
-    }
-    self.data = data
-  }
-}
-
 private struct AppleGatewayNotesPayload {
   var accounts: [JSONValue]
   var folders: [JSONValue]
@@ -443,17 +245,6 @@ private struct AppleGatewayNotesPayload {
   }
 }
 
-private struct AppleGatewayResolvedBinary {
-  var path: String
-  var source: AppleGatewayBinarySource
-}
-
-private enum AppleGatewayBinarySource: String {
-  case config
-  case environment
-  case path
-}
-
 private func appleGatewayNote(fromEdge value: JSONValue, index: Int, addonName: String) throws -> JSONObject {
   guard case let .object(edge) = value else {
     throw AdapterExecutionError(
@@ -471,59 +262,4 @@ private func appleGatewayNote(fromEdge value: JSONValue, index: Int, addonName: 
     node["cursor"] = .string(cursor)
   }
   return node
-}
-
-private func appleGatewayRequiredArray(_ value: JSONValue?, field: String) throws -> [JSONValue] {
-  guard case let .array(values)? = value else {
-    throw AdapterExecutionError(.invalidOutput, "\(field) must be an array")
-  }
-  return values
-}
-
-private func appleGatewayRequiredObject(_ value: JSONValue?, field: String) throws -> JSONObject {
-  guard case let .object(object)? = value else {
-    throw AdapterExecutionError(.invalidOutput, "\(field) must be an object")
-  }
-  return object
-}
-
-private func appleGatewayRequiredNumber(_ value: JSONValue?, field: String) throws -> JSONValue {
-  guard let value, value.asDouble != nil else {
-    throw AdapterExecutionError(.invalidOutput, "\(field) must be numeric")
-  }
-  return value
-}
-
-private func appleGatewayArray(_ value: JSONValue?) -> [JSONValue] {
-  guard case let .array(values)? = value else {
-    return []
-  }
-  return values
-}
-
-private func appleGatewayErrors(_ value: JSONValue?) -> [String] {
-  appleGatewayArray(value).map { error in
-    if case let .object(object) = error,
-      let message = nonEmptyString(object["message"]) {
-      return message
-    }
-    return error.compactJSONStringOrEmpty()
-  }.filter { !$0.isEmpty }
-}
-
-private func appleGatewayGraphQLString(_ value: String) -> String {
-  let data = (try? JSONEncoder().encode(value)) ?? Data("\"\(value)\"".utf8)
-  return String(data: data, encoding: .utf8) ?? "\"\""
-}
-
-private func appleGatewayCompactText(_ value: String, maxLength: Int = 600) -> String {
-  let compact = value
-    .split(whereSeparator: \.isNewline)
-    .joined(separator: " ")
-    .trimmingCharacters(in: .whitespacesAndNewlines)
-  guard compact.count > maxLength else {
-    return compact
-  }
-  let endIndex = compact.index(compact.startIndex, offsetBy: maxLength)
-  return String(compact[..<endIndex]) + "..."
 }

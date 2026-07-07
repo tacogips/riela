@@ -71,7 +71,7 @@ final class WorkflowExecutionTimelinePaneView: NSView {
     )
     summaryLabel.stringValue = state.timeline.isEmpty
       ? "No executions"
-      : "\(layout.rows.count) rows, \(layout.bars.count) executions, \(layout.connectors.count) transitions"
+      : "\(layout.rows.count) rows, \(layout.bars.count) log boxes, \(state.timeline.reduce(0) { $0 + $1.backendEvents.count }) recent events"
     statusLabel.isHidden = !state.timeline.isEmpty
     statusLabel.stringValue = state.sessions.isEmpty ? "No executions recorded yet for this instance." : "No node executions recorded."
     refreshCanvasSize()
@@ -242,7 +242,7 @@ final class WorkflowExecutionTimelinePaneView: NSView {
 private final class WorkflowExecutionTimelineGutterView: NSView {
   private enum Layout {
     static let headerHeight: CGFloat = 28
-    static let rowHeight: CGFloat = 44
+    static let rowHeight: CGFloat = 58
   }
 
   var layoutModel = WorkflowExecutionTimelineLayout(entries: [], now: Date()) {
@@ -309,11 +309,10 @@ private final class WorkflowExecutionTimelineGutterView: NSView {
 private final class WorkflowExecutionTimelineCanvasView: NSView {
   private enum Layout {
     static let headerHeight: CGFloat = 28
-    static let rowHeight: CGFloat = 44
+    static let rowHeight: CGFloat = 58
     static let chartInsetX: CGFloat = 18
-    static let barHeight: CGFloat = 18
-    static let minimumBarWidth: CGFloat = 3
-    static let arrowSize: CGFloat = 6
+    static let barHeight: CGFloat = 34
+    static let minimumBarWidth: CGFloat = 96
   }
 
   var zoomScale: CGFloat = 1 {
@@ -368,9 +367,6 @@ private final class WorkflowExecutionTimelineCanvasView: NSView {
       return
     }
     drawAxis()
-    for connector in layoutModel.connectors {
-      draw(connector: connector)
-    }
     for bar in layoutModel.bars {
       draw(bar: bar)
     }
@@ -449,80 +445,58 @@ private final class WorkflowExecutionTimelineCanvasView: NSView {
     }
   }
 
-  private func draw(connector: WorkflowExecutionTimelineLayout.Connector) {
-    guard let from = layoutModel.bars.first(where: { $0.entryId == connector.fromEntryId }),
-      let to = layoutModel.bars.first(where: { $0.entryId == connector.toEntryId })
-    else {
-      return
-    }
-    let fromFrame = barFrame(from)
-    let toFrame = barFrame(to)
-    let start = NSPoint(x: fromFrame.maxX, y: fromFrame.midY)
-    let end = NSPoint(x: toFrame.minX, y: toFrame.midY)
-    let path = NSBezierPath()
-    let offset = max(24, abs(end.x - start.x) * 0.35)
-    path.move(to: start)
-    path.curve(
-      to: end,
-      controlPoint1: NSPoint(x: start.x + offset, y: start.y),
-      controlPoint2: NSPoint(x: end.x - offset, y: end.y)
-    )
-    path.lineWidth = 1.1
-    NSColor.secondaryLabelColor.withAlphaComponent(0.38).setStroke()
-    path.stroke()
-    drawArrowHead(at: end, from: NSPoint(x: end.x - 10, y: end.y))
-  }
-
-  private func drawArrowHead(at tip: NSPoint, from previous: NSPoint) {
-    let angle = atan2(tip.y - previous.y, tip.x - previous.x)
-    let first = NSPoint(
-      x: tip.x - Layout.arrowSize * cos(angle - .pi / 6),
-      y: tip.y - Layout.arrowSize * sin(angle - .pi / 6)
-    )
-    let second = NSPoint(
-      x: tip.x - Layout.arrowSize * cos(angle + .pi / 6),
-      y: tip.y - Layout.arrowSize * sin(angle + .pi / 6)
-    )
-    let path = NSBezierPath()
-    path.move(to: tip)
-    path.line(to: first)
-    path.line(to: second)
-    path.close()
-    NSColor.secondaryLabelColor.withAlphaComponent(0.45).setFill()
-    path.fill()
-  }
-
   private func draw(bar: WorkflowExecutionTimelineLayout.Bar) {
     let frame = barFrame(bar)
-    let path = NSBezierPath(roundedRect: frame, xRadius: 5, yRadius: 5)
-    statusColor(bar.status).setFill()
+    let fillColor = statusColor(bar.status).withAlphaComponent(0.14)
+    let strokeColor = statusColor(bar.status).withAlphaComponent(0.86)
+    let path = NSBezierPath(rect: frame)
+    fillColor.setFill()
     path.fill()
+    strokeColor.setStroke()
+    path.lineWidth = 1
+    path.stroke()
+    strokeColor.setFill()
+    NSRect(x: frame.minX, y: frame.minY, width: 4, height: frame.height).fill()
     if selectedEntryId == bar.entryId {
       NSColor.controlAccentColor.setStroke()
       path.lineWidth = 2
       path.stroke()
     }
-    let label = barLabel(bar)
-    guard frame.width > 36, !label.isEmpty else {
+    let labels = barLabels(bar)
+    guard frame.width > 44, !labels.title.isEmpty else {
       return
     }
-    let attributes: [NSAttributedString.Key: Any] = [
+    let titleAttributes: [NSAttributedString.Key: Any] = [
       .font: NSFont.systemFont(ofSize: 10, weight: .semibold),
-      .foregroundColor: NSColor.white
+      .foregroundColor: NSColor.labelColor
     ]
-    label.draw(
-      with: frame.insetBy(dx: 6, dy: 2),
+    let detailAttributes: [NSAttributedString.Key: Any] = [
+      .font: NSFont.systemFont(ofSize: 9),
+      .foregroundColor: NSColor.secondaryLabelColor
+    ]
+    labels.title.draw(
+      with: NSRect(x: frame.minX + 9, y: frame.minY + 4, width: frame.width - 14, height: 13),
       options: [.truncatesLastVisibleLine],
-      attributes: attributes
+      attributes: titleAttributes
+    )
+    labels.detail.draw(
+      with: NSRect(x: frame.minX + 9, y: frame.minY + 19, width: frame.width - 14, height: 12),
+      options: [.truncatesLastVisibleLine],
+      attributes: detailAttributes
     )
   }
 
-  private func barLabel(_ bar: WorkflowExecutionTimelineLayout.Bar) -> String {
+  private func barLabels(_ bar: WorkflowExecutionTimelineLayout.Bar) -> (title: String, detail: String) {
     guard let entry = entriesById[bar.entryId] else {
-      return ""
+      return ("", "")
     }
-    let attempt = entry.attempt > 1 ? " x\(entry.attempt)" : ""
-    return "\(durationFormatter?(entry.duration) ?? "")\(attempt)"
+    let attempt = entry.attempt > 1 ? " attempt \(entry.attempt)" : ""
+    let duration = durationFormatter?(entry.duration) ?? ""
+    let status = entry.status.rawValue.replacingOccurrences(of: "_", with: " ")
+    return (
+      entry.ganttLogSummary(maxLength: 88),
+      [status, duration, attempt.trimmingCharacters(in: .whitespaces)].filter { !$0.isEmpty }.joined(separator: "  ")
+    )
   }
 
   private func statusColor(_ status: WorkflowStepExecutionStatus) -> NSColor {

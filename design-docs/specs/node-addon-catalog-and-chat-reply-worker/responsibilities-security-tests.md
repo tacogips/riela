@@ -74,7 +74,10 @@ The implementation should cover:
 - validation rejects workflow-local node payload files that author runtime-only
   `nodeType: "addon"` instead of using `workflow.json.nodes[].addon`
 - validation accepts the built-in agent worker add-ons, both x-gateway add-ons,
-  both mail-gateway add-ons, and `riela/apple-notes-list`
+  both mail-gateway add-ons, `riela/apple-notes-list`, and the Apple Notes CRUD
+  add-ons `riela/apple-note-get`, `riela/apple-note-create`,
+  `riela/apple-note-update-body`, `riela/apple-note-delete`, and
+  `riela/apple-note-move`
 - loader materializes an effective payload with the authored node id
 - workflow save/edit preserves the authored `addon` reference
 - chat reply worker renders text from upstream output
@@ -90,6 +93,12 @@ The implementation should cover:
 - local CLI gateway add-on tests prove executable selection cannot be driven by
   workflow input, upstream payloads, or `addon.inputs`, and that secret-like
   runtime environment variables are not forwarded to fake executables
+- Apple Notes CRUD add-on tests cover fixed GraphQL operation dispatch,
+  `--variables` transport for user-controlled values, bodyFile materialization
+  through a private download root, mutation output flags, unsupported versions,
+  rejected `addon.env`, timeout handling, malformed envelopes, missing mutation
+  fields, `NOTE_LOCKED`, and permission-denied errors without live Apple app
+  access
 
 ## References
 

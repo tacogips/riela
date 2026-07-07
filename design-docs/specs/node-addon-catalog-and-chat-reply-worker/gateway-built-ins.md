@@ -146,6 +146,248 @@ Validation and error rules:
 - non-zero process exit and GraphQL `errors` map to provider error
 - malformed JSON or missing GraphQL `data` maps to invalid output
 
+## Built-in `riela/apple-note-*`
+
+### Purpose
+
+The Apple Notes CRUD add-ons extend the read-only list integration with
+fixed-operation Notes add-ons:
+
+- `riela/apple-note-get`: read one note by `noteId`
+- `riela/apple-note-create`: create a note
+- `riela/apple-note-update-body`: replace or append to a note body
+- `riela/apple-note-delete`: delete a note
+- `riela/apple-note-move`: move a note to another folder
+
+Each operation has its own add-on id and version `1`. Reads and mutations are
+intentionally split so a workflow node granted `riela/apple-note-get` cannot be
+changed into a destructive operation through config or input data. All five
+add-ons use the shared local CLI gateway rules, reuse the same apple-gateway
+binary resolver as `riela/apple-notes-list`, and do not vendor
+`apple-gateway`.
+
+Version `1` always invokes GraphQL with a fixed document and typed variables:
+
+```bash
+apple-gateway graphql --query <fixed-document> --variables <json>
+```
+
+User text, note ids, folder ids, and mutation inputs travel only in the
+`--variables` JSON argument. The GraphQL document is never built by
+interpolating user-controlled values.
+
+### Authored Examples
+
+Read one note:
+
+```json
+{
+  "id": "get-apple-note",
+  "role": "worker",
+  "addon": {
+    "name": "riela/apple-note-get",
+    "version": "1",
+    "config": {
+      "includePlaintext": true,
+      "materializeBody": false
+    },
+    "inputs": {
+      "noteId": "{{workflowInput.noteId}}"
+    }
+  }
+}
+```
+
+Create one note:
+
+```json
+{
+  "id": "create-apple-note",
+  "role": "worker",
+  "addon": {
+    "name": "riela/apple-note-create",
+    "version": "1",
+    "inputs": {
+      "title": "{{workflowInput.title}}",
+      "bodyText": "{{workflowInput.bodyText}}",
+      "folderId": "{{workflowInput.folderId}}"
+    }
+  }
+}
+```
+
+Mutation add-ons other than create are documented as snippets only and should
+not be shipped as runnable default examples:
+
+```json
+{ "name": "riela/apple-note-update-body", "version": "1" }
+{ "name": "riela/apple-note-delete", "version": "1" }
+{ "name": "riela/apple-note-move", "version": "1" }
+```
+
+### Configuration and Inputs
+
+```typescript
+interface AppleNoteGetAddonConfig {
+  readonly binaryPath?: string;
+  readonly includePlaintext?: boolean;
+  readonly includeBodyHtml?: boolean;
+  readonly includeBodyFile?: boolean;
+  readonly includeAttachments?: boolean;
+  readonly materializeBody?: boolean;
+  readonly downloadDir?: string;
+}
+
+interface AppleNoteCreateAddonConfig {
+  readonly binaryPath?: string;
+}
+
+interface AppleNoteUpdateBodyAddonConfig {
+  readonly binaryPath?: string;
+  readonly mode?: "REPLACE" | "APPEND";
+}
+
+interface AppleNoteDeleteAddonConfig {
+  readonly binaryPath?: string;
+}
+
+interface AppleNoteMoveAddonConfig {
+  readonly binaryPath?: string;
+}
+```
+
+Inputs:
+
+- `riela/apple-note-get`: `noteId`
+- `riela/apple-note-create`: optional `accountId`, optional `folderId`,
+  required `title`, and at least one of `bodyHtml` or `bodyText`
+- `riela/apple-note-update-body`: `noteId`, optional `mode`, and at least one
+  of `bodyHtml` or `bodyText`; input `mode` overrides config `mode` when
+  provided
+- `riela/apple-note-delete`: `noteId`
+- `riela/apple-note-move`: `noteId`, `folderId`
+
+Defaults:
+
+- `binaryPath`: `APPLE_GATEWAY_BIN`, then `apple-gateway` resolved through
+  `PATH`
+- `includePlaintext`: `true`
+- `includeBodyHtml`: `false`
+- `includeBodyFile`: `false`
+- `includeAttachments`: `false`
+- `materializeBody`: `false`
+- update mode: `REPLACE`
+- `downloadDir`: unset; materialization must use a valid private runtime
+  directory from config or `RIELA_APPLE_NOTES_DOWNLOAD_ROOT`
+
+### Execution Behavior
+
+All five add-ons:
+
+1. reject unsupported versions and any authored `addon.env`
+2. render supported config and input fields with the normal node template
+   context
+3. resolve the executable from literal `config.binaryPath`, then
+   `APPLE_GATEWAY_BIN`, then `PATH`
+4. run `apple-gateway graphql --query <fixed-document> --variables <json>` with
+   separate process arguments and no shell interpolation
+5. parse JSON stdout as a GraphQL envelope, preserving `extensions.requestId`
+6. publish `status`, `addon`, `stepId`, `appleGateway.binary`,
+   `appleGateway.requestId`, and `appleGateway.rawData`
+
+Operation-specific output:
+
+- get: `appleNote`; `when.has_note`
+- create: `appleNote`, `created: true`; `when.created`
+- update-body: `appleNote`, `updated: true`; `when.updated`
+- delete: `deleteResult.success`, `deleted`; `when.deleted`
+- move: `appleNote`, `moved: true`; `when.moved`
+
+#### `riela/apple-note-get`
+
+Runs fixed query `note(noteId: $noteId)`. Selected fields include id, account,
+folder, name, snippet, protection/share flags, timestamps, and optional
+plaintext, HTML body, `bodyFile`, and attachments based on config flags.
+
+#### `riela/apple-note-create`
+
+Runs fixed mutation `createNote(input: $input)`. The input object contains
+optional account/folder ids, required title, and body fields. The output returns
+created note identity and timestamps plus `created: true`.
+
+#### `riela/apple-note-update-body`
+
+Runs fixed mutation `updateNoteBody(input: $input)`. Mode is `REPLACE` or
+`APPEND`; body HTML or body text is required. The output returns updated note
+identity, snippet, modification date, and `updated: true`.
+
+#### `riela/apple-note-delete`
+
+Runs fixed mutation `deleteNote(noteId: $noteId)`. The output exposes
+`deleteResult.success` and derives `deleted` from that boolean.
+
+#### `riela/apple-note-move`
+
+Runs fixed mutation `moveNote(noteId: $noteId, folderId: $folderId)`. The output
+returns moved note identity, updated folder id, modification date, and
+`moved: true`.
+
+The get add-on selects note fields from fixed include flags. When
+`materializeBody` is true, the runtime also requests `bodyFile` and, when the
+gateway returns `bodyFile.downloadKey`, invokes:
+
+```bash
+apple-gateway file download --key <download-key> --output-dir <root>
+```
+
+The downloader uses the same process runner and binary resolution boundary as
+GraphQL. The output root must be a private runtime directory supplied by
+literal `config.downloadDir` or by `RIELA_APPLE_NOTES_DOWNLOAD_ROOT`; otherwise
+execution fails before launch. A successful download records the local path in
+`appleNote.bodyFile.localPath` and `appleNote.body.materializedPath`. A note
+without `bodyFile.downloadKey` is still a successful small-body read.
+
+Open upstream confirmations for the exact file download stdout envelope and
+locked-note / permission-denied GraphQL error shapes are tracked in
+`design-docs/user-qa/qa-apple-notes-crud-gateway-confirmations.md`. Until those
+are answered, implementation should parse file-download output tolerantly while
+requiring an explicit download-key to local-path mapping, and provider errors
+should preserve both `errors[].message` and `errors[].extensions`.
+
+### Validation and Error Rules
+
+- version `1` only
+- `addon.env` is rejected
+- missing or non-executable binary maps to policy blocked
+- required input missing, empty create title, empty create/update body, invalid
+  update mode, or invalid materialization root maps to policy blocked
+- non-zero process exit and file-download failures map to provider error
+- GraphQL `errors` map to provider error and preserve upstream messages and
+  extension codes such as `NOTE_LOCKED` or permission-denied details
+- malformed or non-UTF8 JSON, missing GraphQL `data`, or a missing expected
+  mutation field maps to invalid output
+- deadline expiry terminates the subprocess and maps to timeout
+
+### Security and Rollout Notes
+
+The implementation should extract the shared `apple-gateway` support used by
+`riela/apple-notes-list` into an internal support module before adding CRUD
+executors. Process invocation logic must not be duplicated across list, get,
+create, update, delete, and move.
+
+Tests must use fake `apple-gateway` executables only. The required matrix covers
+success paths for get/materialize/create/update replace/update append/delete/
+move and failures for `NOTE_LOCKED`, permission denial, missing or non-
+executable binary, non-zero exit, malformed JSON, timeout, rejected
+`addon.env`, unsupported version, and variables-not-injected. The injection test
+must prove user text containing quotes, braces, or newlines appears only in
+`--variables`, not in `--query`.
+
+The read example may default to `materializeBody: false`. The create example is
+allowed because it only creates a new note. Delete, move, and update should
+appear only in documentation snippets unless a future example is explicitly
+designed as opt-in destructive.
+
 ## Built-in `riela/x-gateway-read`
 
 ### Purpose

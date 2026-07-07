@@ -44,13 +44,24 @@ final class AddonExecutionContractsTests: XCTestCase {
 
   func testBuiltinCatalogContainsNoteAddons() {
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-notes-list", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-note-get", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-note-create", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-note-update-body", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-note-delete", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-note-move", version: nil))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/note-create", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/notebook-ingest-pages", version: nil))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/note-create", version: "2"))
+    XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/apple-note-get", version: "2"))
     XCTAssertEqual(
       RielaBuiltinAddonCatalog.appleGatewayAddons.map(\.name),
       [
-        "riela/apple-notes-list"
+        "riela/apple-notes-list",
+        "riela/apple-note-get",
+        "riela/apple-note-create",
+        "riela/apple-note-update-body",
+        "riela/apple-note-delete",
+        "riela/apple-note-move"
       ]
     )
     XCTAssertEqual(

@@ -35,10 +35,11 @@ public struct WorkflowValidateCommand: Sendable {
       }
       let diagnostics = bundle.diagnostics +
         DefaultWorkflowValidator().validate(bundle.workflow) +
-        DeterministicWorkflowRunner.unsupportedFeatures(
-          in: bundle.workflow,
-          supportsCrossWorkflowDispatch: true
-        ).map(\.diagnostic)
+        (await runtimeCapabilityDiagnostics(
+          bundle: bundle,
+          resolution: options.resolution,
+          resolver: resolver
+        ))
       let nodeResults = options.executable
         ? try await preflight.preflight(
           bundle.workflow,
@@ -209,6 +210,7 @@ public struct WorkflowInspectionSummary: Codable, Equatable, Sendable {
   public var addonSourceSummaries: [String]
   public var nativeBundleAddons: [NativeBundleAddonInspection]
   public var runtimeReadinessDescriptors: [String]
+  public var runtimeCapabilityGaps: [WorkflowValidationDiagnostic]
   public var loop: WorkflowLoopInspectionSummary?
 }
 
@@ -276,6 +278,72 @@ func nativeBundleAddonInspections(
   }
 }
 
+func runtimeCapabilityDiagnostics(
+  bundle: ResolvedWorkflowBundle,
+  resolution: WorkflowResolutionOptions,
+  resolver: any WorkflowBundleResolving
+) async -> [WorkflowValidationDiagnostic] {
+  var diagnostics = DeterministicWorkflowRunner.unsupportedFeatures(
+    in: bundle.workflow,
+    supportsCrossWorkflowDispatch: true
+  ).map(\.diagnostic)
+  diagnostics.append(contentsOf: await crossWorkflowCalleeResolutionDiagnostics(
+    workflow: bundle.workflow,
+    resolution: resolution,
+    resolver: resolver
+  ))
+  return diagnostics
+}
+
+private func crossWorkflowCalleeResolutionDiagnostics(
+  workflow: WorkflowDefinition,
+  resolution: WorkflowResolutionOptions,
+  resolver: any WorkflowBundleResolving
+) async -> [WorkflowValidationDiagnostic] {
+  let references = DeterministicWorkflowRunner.crossWorkflowDispatchReferences(in: workflow)
+  guard !references.isEmpty else {
+    return []
+  }
+  let callerStepIds = Set(workflow.steps.map(\.id))
+  let calleeResolver = FileSystemWorkflowCalleeResolver(resolver: resolver, baseResolution: resolution)
+  var diagnostics: [WorkflowValidationDiagnostic] = []
+  for reference in references {
+    if !callerStepIds.contains(reference.resumeStepId) {
+      diagnostics.append(WorkflowValidationDiagnostic(
+        severity: .error,
+        path: reference.resumeStepPath,
+        message: "step '\(reference.stepId)' resumes at step '\(reference.resumeStepId)' in workflow '\(workflow.workflowId)', but that caller resume step does not exist"
+      ))
+    }
+    let callee: ResolvedWorkflowCallee
+    do {
+      callee = try await calleeResolver.resolveCallee(workflowId: reference.workflowId)
+    } catch {
+      diagnostics.append(WorkflowValidationDiagnostic(
+        severity: .error,
+        path: reference.path,
+        message: "step '\(reference.stepId)' references cross-workflow callee '\(reference.workflowId)', but it could not be resolved: \(workflowResolutionErrorDescription(error))"
+      ))
+      continue
+    }
+    if callee.workflow.workflowId != reference.workflowId {
+      diagnostics.append(WorkflowValidationDiagnostic(
+        severity: .error,
+        path: reference.path,
+        message: "step '\(reference.stepId)' references cross-workflow callee '\(reference.workflowId)', but resolver returned workflowId '\(callee.workflow.workflowId)'"
+      ))
+    }
+    if !callee.workflow.steps.contains(where: { $0.id == reference.calleeEntryStepId }) {
+      diagnostics.append(WorkflowValidationDiagnostic(
+        severity: .error,
+        path: reference.path,
+        message: "step '\(reference.stepId)' dispatches to step '\(reference.calleeEntryStepId)' in workflow '\(reference.workflowId)', but that callee step does not exist"
+      ))
+    }
+  }
+  return diagnostics
+}
+
 public struct WorkflowInspectionFailureResult: Codable, Equatable, Sendable {
   public var workflowId: String
   public var sourceScope: WorkflowScope?
@@ -308,10 +376,10 @@ public struct WorkflowInspectCommand: Sendable {
     self.resolver = resolver
   }
 
-  public func run(_ options: WorkflowInspectOptions) -> CLICommandResult {
+  public func run(_ options: WorkflowInspectOptions) async -> CLICommandResult {
     do {
       let bundle = try resolver.resolve(options.resolution)
-      let summary = buildSummary(bundle)
+      let summary = await buildSummary(bundle, resolution: options.resolution)
       if options.output.isStructured {
         return CLICommandResult(exitCode: .success, stdout: try jsonString(summary))
       }
@@ -332,7 +400,10 @@ public struct WorkflowInspectCommand: Sendable {
     }
   }
 
-  private func buildSummary(_ bundle: ResolvedWorkflowBundle) -> WorkflowInspectionSummary {
+  private func buildSummary(
+    _ bundle: ResolvedWorkflowBundle,
+    resolution: WorkflowResolutionOptions
+  ) async -> WorkflowInspectionSummary {
     let workflow = bundle.workflow
     let crossWorkflowIds = workflow.steps.flatMap { step in
       (step.transitions ?? []).compactMap { transition in
@@ -354,6 +425,11 @@ public struct WorkflowInspectCommand: Sendable {
       return "\(node.id):\(payload.executionBackend?.rawValue ?? "deterministic-local")"
     }
     let callable = buildCallableInspection(workflow, nodePayloads: bundle.nodePayloads)
+    let capabilityGaps = await runtimeCapabilityDiagnostics(
+      bundle: bundle,
+      resolution: resolution,
+      resolver: resolver
+    )
     return WorkflowInspectionSummary(
       workflowId: workflow.workflowId,
       sourceScope: bundle.sourceScope,
@@ -380,6 +456,7 @@ public struct WorkflowInspectCommand: Sendable {
       addonSourceSummaries: addonSummaries,
       nativeBundleAddons: nativeBundleAddons,
       runtimeReadinessDescriptors: readiness,
+      runtimeCapabilityGaps: capabilityGaps,
       loop: buildLoopInspection(workflow)
     )
   }
@@ -519,6 +596,9 @@ public struct WorkflowInspectCommand: Sendable {
         "nativeBundle: \($0.nodeId): \($0.addon) \($0.bundleIdentifier) abi=\($0.abiVersion) cache=\($0.cacheStatus)"
       })
     }
+    lines.append(contentsOf: summary.runtimeCapabilityGaps.map {
+      "\($0.severity.rawValue): \($0.path): \($0.message)"
+    })
     return lines.joined(separator: "\n") + "\n"
   }
 

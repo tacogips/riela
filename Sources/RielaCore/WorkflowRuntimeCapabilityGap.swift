@@ -33,7 +33,54 @@ public struct WorkflowRuntimeCapabilityGap: Codable, Equatable, Sendable {
   }
 }
 
+public struct WorkflowCrossWorkflowDispatchReference: Equatable, Sendable {
+  public var stepId: String
+  public var workflowId: String
+  public var calleeEntryStepId: String
+  public var resumeStepId: String
+  public var path: String
+
+  public var resumeStepPath: String {
+    "workflow.steps.\(stepId).transitions.resumeStepId"
+  }
+
+  public init(
+    stepId: String,
+    workflowId: String,
+    calleeEntryStepId: String,
+    resumeStepId: String,
+    path: String
+  ) {
+    self.stepId = stepId
+    self.workflowId = workflowId
+    self.calleeEntryStepId = calleeEntryStepId
+    self.resumeStepId = resumeStepId
+    self.path = path
+  }
+}
+
 public extension DeterministicWorkflowRunner {
+  static func crossWorkflowDispatchReferences(in workflow: WorkflowDefinition) -> [WorkflowCrossWorkflowDispatchReference] {
+    let reachableStepIds = reachableSteps(in: workflow)
+    return workflow.steps
+      .filter { reachableStepIds.contains($0.id) }
+      .flatMap { step in
+        (step.transitions ?? []).compactMap { transition -> WorkflowCrossWorkflowDispatchReference? in
+          guard let workflowId = transition.toWorkflowId,
+                let resumeStepId = transition.resumeStepId else {
+            return nil
+          }
+          return WorkflowCrossWorkflowDispatchReference(
+            stepId: step.id,
+            workflowId: workflowId,
+            calleeEntryStepId: transition.toStepId,
+            resumeStepId: resumeStepId,
+            path: "workflow.steps.\(step.id).transitions.toWorkflowId"
+          )
+        }
+      }
+  }
+
   static func unsupportedFeatures(
     in workflow: WorkflowDefinition,
     maxConcurrency: Int? = nil,
@@ -94,6 +141,8 @@ public extension DeterministicWorkflowRunner {
       for transition in step.transitions ?? [] {
         if transition.toWorkflowId == nil {
           stack.append(transition.toStepId)
+        } else if let resumeStepId = transition.resumeStepId {
+          stack.append(resumeStepId)
         }
         if let joinStepId = transition.fanout?.joinStepId {
           stack.append(joinStepId)

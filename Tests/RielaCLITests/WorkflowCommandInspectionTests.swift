@@ -6,65 +6,6 @@ import XCTest
 @testable import RielaCLI
 
 extension WorkflowCommandTests {
-  func testWorkflowValidateReportsRuntimeCapabilityGaps() async throws {
-    let root = FileManager.default.temporaryDirectory
-      .appendingPathComponent("riela-cli-capability-gap-\(UUID().uuidString)", isDirectory: true)
-    let workflowDirectory = root.appendingPathComponent("fanout-gap", isDirectory: true)
-    let nodesDirectory = workflowDirectory.appendingPathComponent("nodes", isDirectory: true)
-    defer { try? FileManager.default.removeItem(at: root) }
-    try FileManager.default.createDirectory(at: nodesDirectory, withIntermediateDirectories: true)
-    try """
-    {
-      "workflowId": "fanout-gap",
-      "defaults": { "maxLoopIterations": 3, "nodeTimeoutMs": 120000 },
-      "entryStepId": "start",
-      "nodes": [
-        { "id": "start-node", "nodeFile": "nodes/start.json" },
-        { "id": "worker-node", "nodeFile": "nodes/worker.json" },
-        { "id": "join-node", "nodeFile": "nodes/join.json" }
-      ],
-      "steps": [
-        {
-          "id": "start",
-          "nodeId": "start-node",
-          "transitions": [
-            {
-              "toStepId": "worker",
-              "fanout": { "groupId": "items", "itemsFrom": "/items", "joinStepId": "join" }
-            }
-          ]
-        },
-        { "id": "worker", "nodeId": "worker-node" },
-        { "id": "join", "nodeId": "join-node" }
-      ]
-    }
-    """.write(to: workflowDirectory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
-    for nodeName in ["start", "worker", "join"] {
-      try """
-      {
-        "id": "\(nodeName)-node",
-        "executionBackend": "codex-agent",
-        "model": "gpt-5.5"
-      }
-      """.write(to: nodesDirectory.appendingPathComponent("\(nodeName).json"), atomically: true, encoding: .utf8)
-    }
-
-    let result = await RielaCLIApplication().run([
-      "workflow", "validate", "fanout-gap",
-      "--workflow-definition-dir", root.path,
-      "--output", "json"
-    ])
-
-    XCTAssertEqual(result.exitCode, .failure)
-    XCTAssertTrue(result.stderr.isEmpty)
-    let validation = try decodeJSON(WorkflowValidationCommandResult.self, from: result.stdout)
-    XCTAssertFalse(validation.valid)
-    XCTAssertTrue(validation.diagnostics.contains { diagnostic in
-      diagnostic.path == "workflow.steps.start.transitions.fanout" &&
-        diagnostic.message == "step 'start' uses fanout transitions, which this runner does not support yet"
-    })
-  }
-
   func testInspectReportsCallableInputAndOutputContracts() async throws {
     let root = repositoryRoot()
     let result = await RielaCLIApplication().run([

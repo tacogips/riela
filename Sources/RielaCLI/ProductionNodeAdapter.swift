@@ -346,6 +346,9 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     if BuiltinAppleReminderAddon(rawValue: input.addon.name) != nil {
       return try executeAppleReminderAddon(input, context: context)
     }
+    if let calendarAddon = BuiltinCalendarAddon(rawValue: input.addon.name) {
+      return try executeCalendarAddon(input, operation: calendarAddon, context: context)
+    }
     if let noteAddon = BuiltinNoteAddon(rawValue: input.addon.name) {
       return try await executeNoteAddon(input, operation: noteAddon)
     }

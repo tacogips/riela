@@ -100,9 +100,9 @@ public struct RielaCLIApplication: Sendable {
       case let .workflow(.validate(options)):
         return await validateCommand.run(options)
       case let .workflow(.inspect(options)):
-        return inspectCommand.run(options)
+        return await inspectCommand.run(options)
       case let .workflow(.usage(options)):
-        return inspectCommand.run(options)
+        return await inspectCommand.run(options)
       case let .workflow(.runHelp(target)):
         return CLICommandResult(exitCode: .success, stdout: workflowRunHelpText(target: target))
       case let .workflow(.run(options)):

@@ -178,6 +178,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
        let gap = capabilityGaps.first(where: { $0.path.hasSuffix(".transitions.toWorkflowId") }) {
       throw DeterministicWorkflowRunnerError.invalidWorkflow("\(gap.path): \(gap.message)")
     }
+    try await validateCrossWorkflowDispatchTargets(in: request.workflow)
     try enforceRequiredLoopPolicyPreflight(request)
     let executionPlan = WorkflowExecutionPlan(workflow: request.workflow)
 
@@ -385,6 +386,42 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         )
       }
       throw error
+    }
+  }
+
+  private func validateCrossWorkflowDispatchTargets(in workflow: WorkflowDefinition) async throws {
+    guard !simulatesCrossWorkflowDispatch, let calleeResolver else {
+      return
+    }
+    let callerStepIds = Set(workflow.steps.map(\.id))
+    for reference in Self.crossWorkflowDispatchReferences(in: workflow) {
+      guard callerStepIds.contains(reference.resumeStepId) else {
+        throw DeterministicWorkflowRunnerError.invalidWorkflow(
+          "\(reference.resumeStepPath): step '\(reference.stepId)' resumes at step " +
+            "'\(reference.resumeStepId)' in workflow '\(workflow.workflowId)', but that caller resume step does not exist"
+        )
+      }
+      let callee: ResolvedWorkflowCallee
+      do {
+        callee = try await calleeResolver.resolveCallee(workflowId: reference.workflowId)
+      } catch {
+        throw DeterministicWorkflowRunnerError.invalidWorkflow(
+          "\(reference.path): step '\(reference.stepId)' references cross-workflow callee " +
+            "'\(reference.workflowId)', but it could not be resolved before running: \(String(describing: error))"
+        )
+      }
+      guard callee.workflow.workflowId == reference.workflowId else {
+        throw DeterministicWorkflowRunnerError.invalidWorkflow(
+          "\(reference.path): step '\(reference.stepId)' references cross-workflow callee " +
+            "'\(reference.workflowId)', but resolver returned workflowId '\(callee.workflow.workflowId)'"
+        )
+      }
+      guard callee.workflow.steps.contains(where: { $0.id == reference.calleeEntryStepId }) else {
+        throw DeterministicWorkflowRunnerError.invalidWorkflow(
+          "\(reference.path): step '\(reference.stepId)' dispatches to step " +
+            "'\(reference.calleeEntryStepId)' in workflow '\(reference.workflowId)', but that callee step does not exist"
+        )
+      }
     }
   }
 

@@ -1,0 +1,70 @@
+{
+  "workflowId": "apple-calendar-fetch",
+  "description": "List Apple Calendar calendars and fetch upcoming events through the external apple-gateway CLI.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "entryStepId": "list-calendars",
+  "nodes": [
+    {
+      "id": "list-calendars",
+      "addon": {
+        "name": "riela/calendar-list",
+        "version": "1",
+        "config": {
+          "entityType": "EVENT"
+        }
+      }
+    },
+    {
+      "id": "fetch-events",
+      "addon": {
+        "name": "riela/event-search",
+        "version": "1",
+        "config": {
+          "first": 25
+        },
+        "inputs": {
+          "calendarIds": "{{workflowInput.calendarIds}}",
+          "startDate": "{{workflowInput.startDate}}",
+          "endDate": "{{workflowInput.endDate}}",
+          "query": "{{workflowInput.query}}",
+          "after": "{{workflowInput.after}}"
+        }
+      }
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "list-calendars",
+      "nodeId": "list-calendars",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "fetch-events"
+        }
+      ]
+    },
+    {
+      "id": "fetch-events",
+      "nodeId": "fetch-events",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

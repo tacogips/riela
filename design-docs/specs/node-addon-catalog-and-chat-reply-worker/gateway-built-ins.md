@@ -1421,3 +1421,274 @@ Failure rules:
 - an invalid rendered message fails the node
 - duplicate dispatch for the same idempotency key must return the original
   dispatch result when the adapter can determine it
+
+## Built-in `riela/calendar-*` and `riela/event-*`
+
+### Purpose
+
+The Apple Calendar add-ons expose the Calendar domain of a locally installed
+`apple-gateway` CLI as seven fixed worker-only built-ins:
+
+- `riela/calendar-list`: list calendars
+- `riela/event-search`: search events in explicit calendars
+- `riela/event-get`: read one event, including an optional occurrence date
+- `riela/event-create`: create an event
+- `riela/event-update`: update an event or recurrence span
+- `riela/event-delete`: delete an event or recurrence span
+- `riela/event-alarms-set`: replace event alarms or recurrence-span alarms
+
+Each operation has its own add-on id and version `1`. Reads and mutations are
+split by id so a read-only workflow cannot be changed into a destructive
+Calendar operation through config, inputs, or upstream payload data. All seven
+add-ons use the shared local CLI gateway rules, reuse the same apple-gateway
+process runner and binary resolver as the Notes add-ons, and do not vendor
+`apple-gateway`.
+
+Version `1` always invokes GraphQL with a fixed document and typed variables:
+
+```bash
+apple-gateway graphql --query <fixed-document> --variables <json>
+```
+
+Calendar ids, event ids, text fields, recurrence `span`, `occurrenceDate`,
+alarms, and recurrence rules travel only in the `--variables` JSON argument.
+The GraphQL document is never built by interpolating user-controlled values.
+
+### Authored Examples
+
+The shipped runnable example should be read-only: list calendars, then fetch
+upcoming events from explicit `workflowInput.calendarIds`.
+
+```json
+{
+  "id": "list-calendars",
+  "role": "worker",
+  "addon": {
+    "name": "riela/calendar-list",
+    "version": "1",
+    "config": {
+      "entityType": "EVENT"
+    }
+  }
+}
+```
+
+```json
+{
+  "id": "fetch-events",
+  "role": "worker",
+  "addon": {
+    "name": "riela/event-search",
+    "version": "1",
+    "config": {
+      "first": 25
+    },
+    "inputs": {
+      "calendarIds": "{{workflowInput.calendarIds}}",
+      "startDate": "{{workflowInput.startDate}}",
+      "endDate": "{{workflowInput.endDate}}"
+    }
+  }
+}
+```
+
+Mutation add-ons are cataloged and tested, but should appear only as
+documentation snippets unless a future example is explicitly designed as
+opt-in mutating:
+
+```json
+{ "name": "riela/event-create", "version": "1" }
+{ "name": "riela/event-update", "version": "1" }
+{ "name": "riela/event-delete", "version": "1" }
+{ "name": "riela/event-alarms-set", "version": "1" }
+```
+
+### Configuration and Inputs
+
+Common rules:
+
+- `binaryPath` is config-only, literal, and resolved before
+  `APPLE_GATEWAY_BIN`, then `PATH`
+- `binaryPath` is never rendered from workflow input, upstream payloads, or
+  `addon.inputs`
+- `addon.config` is literal and is not rendered with the template context
+- supported `addon.inputs` fields are rendered once with the normal node
+  template context, then merged over `addon.config` before variables JSON is
+  produced
+- `addon.inputs` values override same-named config values; arbitrary runtime
+  variables and `resolvedInputPayload` keys are ignored unless the add-on
+  author explicitly binds them through `addon.inputs`
+- rendered input string scalars are treated as literal values after the first
+  render; structured arrays and objects pass through as JSON values
+- `addon.env` is rejected for all seven Calendar add-ons
+
+```typescript
+interface CalendarListAddonConfig {
+  readonly binaryPath?: string;
+  readonly entityType?: "EVENT" | "REMINDER";
+}
+
+interface EventSearchAddonConfig {
+  readonly binaryPath?: string;
+  readonly calendarIds?: string[];
+  readonly startDate?: string;
+  readonly endDate?: string;
+  readonly query?: string;
+  readonly first?: number;
+  readonly after?: string;
+}
+
+interface EventGetAddonConfig {
+  readonly binaryPath?: string;
+  readonly eventId?: string;
+  readonly occurrenceDate?: string;
+}
+
+interface EventCreateAddonConfig {
+  readonly binaryPath?: string;
+  readonly calendarId?: string;
+  readonly title?: string;
+  readonly startDate?: string;
+  readonly endDate?: string;
+  readonly isAllDay?: boolean;
+  readonly notes?: string;
+  readonly location?: string;
+  readonly url?: string;
+  readonly timeZone?: string;
+  readonly availability?: EventAvailability;
+  readonly alarms?: AlarmInput[];
+  readonly recurrenceRules?: RecurrenceRuleInput[];
+}
+
+interface EventUpdateAddonConfig {
+  readonly binaryPath?: string;
+  readonly eventId?: string;
+  readonly span?: RecurrenceSpan;
+  readonly occurrenceDate?: string;
+  readonly title?: string;
+  readonly startDate?: string;
+  readonly endDate?: string;
+  readonly isAllDay?: boolean;
+  readonly notes?: string;
+  readonly location?: string;
+  readonly url?: string;
+  readonly timeZone?: string;
+  readonly availability?: EventAvailability;
+  readonly calendarId?: string;
+  readonly alarms?: AlarmInput[];
+  readonly recurrenceRules?: RecurrenceRuleInput[];
+}
+
+interface EventDeleteAddonConfig {
+  readonly binaryPath?: string;
+  readonly eventId?: string;
+  readonly span?: RecurrenceSpan;
+  readonly occurrenceDate?: string;
+}
+
+interface EventAlarmsSetAddonConfig {
+  readonly binaryPath?: string;
+  readonly eventId?: string;
+  readonly alarms?: AlarmInput[];
+  readonly span?: RecurrenceSpan;
+  readonly occurrenceDate?: string;
+}
+```
+
+`EventAvailability` accepts `NOT_SUPPORTED`, `BUSY`, `FREE`, `TENTATIVE`, and
+`UNAVAILABLE`. `RecurrenceSpan` accepts `THIS_EVENT` and `FUTURE_EVENTS`.
+`AlarmInput` accepts `relativeOffsetSeconds` or `absoluteDate`. Recurrence-rule
+objects are forwarded as typed variables after enum and JSON-shape validation.
+
+Defaults:
+
+- `binaryPath`: `APPLE_GATEWAY_BIN`, then `apple-gateway` resolved through
+  `PATH`
+- `calendar-list.entityType`: `EVENT`
+- `event-search.first`: `25`, bounded to `1...100`
+- `event-create.isAllDay`: `false`
+- `event-update.span`, `event-delete.span`, and `event-alarms-set.span`:
+  `THIS_EVENT`
+
+### Execution Behavior
+
+All seven add-ons:
+
+1. reject unsupported versions and any authored `addon.env`
+2. merge literal `addon.config` with rendered `addon.inputs` only, with
+   `addon.inputs` overriding config and unrelated runtime variables ignored
+3. resolve the executable from literal `config.binaryPath`, then
+   `APPLE_GATEWAY_BIN`, then `PATH`
+4. run `apple-gateway graphql --query <fixed-document> --variables <json>` with
+   separate process arguments and no shell interpolation
+5. parse JSON stdout as a GraphQL envelope, preserving `extensions.requestId`
+6. publish `status`, `addon`, `stepId`, `appleGateway.binary`,
+   `appleGateway.requestId`, and `appleGateway.rawData`
+
+Fixed operation fields:
+
+- `calendar-list`: `calendars(entityType:)`
+- `event-search`: `events(input:)`
+- `event-get`: `event(eventId:, occurrenceDate:)`
+- `event-create`: `createEvent(input:)`
+- `event-update`: `updateEvent(input:)`
+- `event-delete`: `deleteEvent(eventId:, span:, occurrenceDate:)`
+- `event-alarms-set`: `setEventAlarms(eventId:, alarms:, span:, occurrenceDate:)`
+
+Calendar output:
+
+- `calendar-list`: `appleCalendar.calendars`, `calendarCount`
+- `event-search`: `appleCalendar.events`, `pageInfo`, `totalCount`
+- `event-get`: `appleCalendar.event`; `when.has_event`
+- `event-create`: `appleCalendar.event`; `when.has_event`, `when.created`
+- `event-update`: `appleCalendar.event`; `when.has_event`, `when.updated`
+- `event-delete`: `appleCalendar.deleteResult`, `deleted`; `when.deleted`
+- `event-alarms-set`: `appleCalendar.event`; `when.has_event`, `when.alarms_set`
+
+Event selections should include identity, calendar id, title, notes, location,
+URL, all-day flag, start/end dates, time zone, status, availability, organizer,
+attendees, alarms, recurrence rules, recurring/detached flags, occurrence date,
+creation date, and last modified date. Search wraps selected events in cursor
+edges and preserves page info.
+
+### Validation and Error Rules
+
+- version `1` only
+- `addon.env` is rejected
+- `calendarIds` is required and non-empty for event search
+- `eventId` is required for get, update, delete, and alarms-set
+- `title`, `startDate`, and `endDate` are required for create
+- `alarms` is required for alarms-set; an empty array is allowed to clear alarms
+- `entityType`, `availability`, recurrence frequency values, and `span` must be
+  known enum values
+- `event-search.first` must be between `1` and `100`
+- missing or non-executable binary maps to policy blocked
+- required input missing or invalid enum/value maps to policy blocked
+- non-zero process exit maps to provider error
+- GraphQL `errors` map to provider error and preserve upstream messages and
+  extension codes
+- malformed or non-UTF8 JSON, missing GraphQL `data`, or a missing expected
+  operation field maps to invalid output
+- `event-delete` requires `data.deleteEvent.success` to be a boolean; missing
+  or non-boolean values map to invalid output
+- deadline expiry terminates the subprocess and maps to timeout
+
+### Security and Rollout Notes
+
+Implementation reuses the existing internal `apple-gateway` support file used
+by `riela/apple-notes-list` and the Notes CRUD add-ons, then adds Calendar read
+and mutation executors split by responsibility. Process invocation logic must
+not be duplicated across Notes and Calendar.
+
+Tests must use fake `apple-gateway` executables only. The required matrix covers
+argument shape, variables JSON, config-over-env-over-`PATH` binary precedence,
+runtime environment filtering, provider errors, non-zero exits, malformed JSON,
+missing data, timeout, rejected `addon.env`, unsupported versions, and
+operation-specific validation. The injection test must prove user-controlled
+event text, ids, alarms, and recurrence data appear only in `--variables`, not
+in `--query`.
+
+The `examples/apple-calendar-fetch` bundle must remain read-only. It may list
+calendars and fetch events, but must not create, update, delete, move, or alter
+alarms. Live Apple Calendar access is not required for tests or validation.
+

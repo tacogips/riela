@@ -111,3 +111,15 @@ The implementation should cover:
 - `design-docs/specs/design-node-execution-inbox-contract.md`
 - `design-docs/specs/design-node-output-contract.md`
 - `design-docs/specs/design-workflow-json.md`
+
+- validation accepts the Apple Calendar built-ins `riela/calendar-list`,
+  `riela/event-search`, `riela/event-get`, `riela/event-create`,
+  `riela/event-update`, `riela/event-delete`, and
+  `riela/event-alarms-set`, all at version `1`
+- Apple Calendar add-on tests cover fixed GraphQL operation dispatch,
+  `--variables` transport for calendar ids, event ids, recurrence span,
+  occurrence date, alarms, recurrence rules, and event text; binary precedence;
+  fake child environment filtering; required-field and enum validation;
+  provider error envelopes; invalid output; timeout handling; rejected
+  `addon.env`; unsupported versions; and read-only workflow validation without
+  live Apple Calendar access

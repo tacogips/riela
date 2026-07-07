@@ -133,14 +133,13 @@ final class DeterministicWorkflowRunnerCrossWorkflowDispatchTests: XCTestCase {
         nodePayloads: callerNodePayloads()
       ))
       XCTFail("expected unresolvable callee failure")
-    } catch let DeterministicWorkflowRunnerError.crossWorkflowDispatchFailed(workflowId, reason) {
-      XCTAssertEqual(workflowId, "callee")
-      XCTAssertTrue(reason.contains("failed to resolve callee workflow"), reason)
+    } catch DeterministicWorkflowRunnerError.invalidWorkflow(let message) {
+      XCTAssertTrue(message.contains("workflow.steps.dispatch.transitions.toWorkflowId"), message)
+      XCTAssertTrue(message.contains("could not be resolved before running"), message)
     }
 
-    let parentSessionLoaded = await store.latestSession(workflowId: "caller")
-    let parentSession = try XCTUnwrap(parentSessionLoaded)
-    XCTAssertEqual(parentSession.status, .failed)
+    let parentSession = await store.latestSession(workflowId: "caller")
+    XCTAssertNil(parentSession, "callee resolution preflight failure must not create a parent session")
   }
 
   func testLiveDispatchRejectsCalleeEntryStepMissingFromCallee() async throws {
@@ -162,10 +161,73 @@ final class DeterministicWorkflowRunnerCrossWorkflowDispatchTests: XCTestCase {
         nodePayloads: callerNodePayloads()
       ))
       XCTFail("expected missing callee entry step failure")
-    } catch let DeterministicWorkflowRunnerError.crossWorkflowDispatchFailed(workflowId, reason) {
-      XCTAssertEqual(workflowId, "callee")
-      XCTAssertTrue(reason.contains("has no step 'callee-entry'"), reason)
+    } catch DeterministicWorkflowRunnerError.invalidWorkflow(let message) {
+      XCTAssertTrue(message.contains("workflow.steps.dispatch.transitions.toWorkflowId"), message)
+      XCTAssertTrue(message.contains("callee-entry"), message)
+      XCTAssertTrue(message.contains("callee step does not exist"), message)
     }
+    let parentSession = await store.latestSession(workflowId: "caller")
+    XCTAssertNil(parentSession, "callee entry preflight failure must not create a parent session")
+  }
+
+  func testLiveDispatchRejectsMissingCallerResumeStepBeforeSessionCreation() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    var workflow = callerWorkflow()
+    workflow.steps.removeAll { $0.id == "resume" }
+    let runner = DeterministicWorkflowRunner(
+      store: store,
+      adapter: VariableRecordingAdapter(outputsByStep: [
+        "dispatch": output(payload: ["handoff": .string("outbound-request")])
+      ]),
+      calleeResolver: StaticCalleeResolver(callees: [calleeFixture()])
+    )
+
+    do {
+      _ = try await runner.run(DeterministicWorkflowRunRequest(
+        workflow: workflow,
+        nodePayloads: callerNodePayloads()
+      ))
+      XCTFail("expected missing caller resume step failure")
+    } catch DeterministicWorkflowRunnerError.invalidWorkflow(let message) {
+      XCTAssertTrue(message.contains("workflow.steps.dispatch.transitions.resumeStepId"), message)
+      XCTAssertTrue(message.contains("resume"), message)
+      XCTAssertTrue(message.contains("caller resume step does not exist"), message)
+    }
+
+    let parentSession = await store.latestSession(workflowId: "caller")
+    XCTAssertNil(parentSession, "caller resume preflight failure must not create a parent session")
+    let calleeSession = await store.latestSession(workflowId: "callee")
+    XCTAssertNil(calleeSession, "caller resume preflight failure must not create a callee session")
+  }
+
+  func testLiveDispatchPreflightsDispatchTargetsReachableOnlyThroughResumeStep() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    let runner = DeterministicWorkflowRunner(
+      store: store,
+      adapter: VariableRecordingAdapter(outputsByStep: [
+        "dispatch": output(payload: ["handoff": .string("outbound-request")]),
+        "callee-entry": output(payload: ["calleeResult": .string("done")]),
+        "resume": output(payload: ["status": .string("applied")])
+      ]),
+      calleeResolver: StaticCalleeResolver(callees: [calleeFixture()])
+    )
+
+    do {
+      _ = try await runner.run(DeterministicWorkflowRunRequest(
+        workflow: callerWorkflowWithSecondDispatchFromResume(),
+        nodePayloads: callerNodePayloadsWithFinalStep()
+      ))
+      XCTFail("expected second dispatch preflight failure")
+    } catch DeterministicWorkflowRunnerError.invalidWorkflow(let message) {
+      XCTAssertTrue(message.contains("workflow.steps.resume.transitions.toWorkflowId"), message)
+      XCTAssertTrue(message.contains("second-callee"), message)
+      XCTAssertTrue(message.contains("could not be resolved before running"), message)
+    }
+
+    let parentSession = await store.latestSession(workflowId: "caller")
+    XCTAssertNil(parentSession, "resume-step dispatch preflight failure must not create a parent session")
+    let calleeSession = await store.latestSession(workflowId: "callee")
+    XCTAssertNil(calleeSession, "resume-step dispatch preflight failure must not create a callee session")
   }
 
   func testLiveDispatchDepthGuardStopsWorkflowCallCycles() async throws {
@@ -250,6 +312,32 @@ final class DeterministicWorkflowRunnerCrossWorkflowDispatchTests: XCTestCase {
     XCTAssertNil(calleeSession, "mock-scenario runs keep simulating the callee")
   }
 
+  func testMissingLiveCalleeFailsBeforeParentSessionCreation() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    let runner = DeterministicWorkflowRunner(
+      store: store,
+      adapter: VariableRecordingAdapter(outputsByStep: [
+        "dispatch": output(payload: ["handoff": .string("outbound-request")])
+      ]),
+      calleeResolver: FailingCalleeResolver()
+    )
+
+    do {
+      _ = try await runner.run(DeterministicWorkflowRunRequest(
+        workflow: callerWorkflow(),
+        nodePayloads: callerNodePayloads()
+      ))
+      XCTFail("expected missing callee preflight failure")
+    } catch DeterministicWorkflowRunnerError.invalidWorkflow(let message) {
+      XCTAssertTrue(message.contains("workflow.steps.dispatch.transitions.toWorkflowId"), message)
+      XCTAssertTrue(message.contains("callee"), message)
+      XCTAssertTrue(message.contains("could not be resolved before running"), message)
+    }
+
+    let parentSession = await store.latestSession(workflowId: "caller")
+    XCTAssertNil(parentSession)
+  }
+
   func testCapabilityGapDroppedForDispatchShapeWhenResolverIsSupported() {
     let gaps = DeterministicWorkflowRunner.unsupportedFeatures(
       in: callerWorkflow(),
@@ -302,6 +390,59 @@ final class DeterministicWorkflowRunnerCrossWorkflowDispatchTests: XCTestCase {
     ]
   }
 
+  private func callerWorkflowWithSecondDispatchFromResume() -> WorkflowDefinition {
+    WorkflowDefinition(
+      workflowId: "caller",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
+      entryStepId: "dispatch",
+      nodeRegistry: [
+        WorkflowNodeRegistryRef(id: "dispatch-node", nodeFile: "nodes/dispatch.json"),
+        WorkflowNodeRegistryRef(id: "resume-node", nodeFile: "nodes/resume.json"),
+        WorkflowNodeRegistryRef(id: "final-node", nodeFile: "nodes/final.json")
+      ],
+      steps: [
+        WorkflowStepRef(
+          id: "dispatch",
+          nodeId: "dispatch-node",
+          transitions: [
+            WorkflowStepTransition(
+              toStepId: "callee-entry",
+              toWorkflowId: "callee",
+              resumeStepId: "resume"
+            )
+          ]
+        ),
+        WorkflowStepRef(
+          id: "resume",
+          nodeId: "resume-node",
+          transitions: [
+            WorkflowStepTransition(
+              toStepId: "second-entry",
+              toWorkflowId: "second-callee",
+              resumeStepId: "final"
+            )
+          ]
+        ),
+        WorkflowStepRef(id: "final", nodeId: "final-node")
+      ],
+      nodes: [
+        WorkflowNodeRef(id: "dispatch", nodeFile: "nodes/dispatch.json"),
+        WorkflowNodeRef(id: "resume", nodeFile: "nodes/resume.json"),
+        WorkflowNodeRef(id: "final", nodeFile: "nodes/final.json")
+      ]
+    )
+  }
+
+  private func callerNodePayloadsWithFinalStep() -> [String: AgentNodePayload] {
+    var payloads = callerNodePayloads()
+    payloads["final-node"] = AgentNodePayload(
+      id: "final-node",
+      executionBackend: .codexAgent,
+      model: "gpt-5.5"
+    )
+    return payloads
+  }
+
   private func calleeFixture() -> ResolvedWorkflowCallee {
     ResolvedWorkflowCallee(
       workflow: WorkflowDefinition(
@@ -317,6 +458,14 @@ final class DeterministicWorkflowRunnerCrossWorkflowDispatchTests: XCTestCase {
       ]
     )
   }
+
+  private struct FailingCalleeResolver: WorkflowCalleeResolving {
+    func resolveCallee(workflowId: String) async throws -> ResolvedWorkflowCallee {
+      throw WorkflowResolutionFailure()
+    }
+  }
+
+  private struct WorkflowResolutionFailure: Error {}
 
   private func output(payload: JSONObject) -> AdapterExecutionOutput {
     AdapterExecutionOutput(

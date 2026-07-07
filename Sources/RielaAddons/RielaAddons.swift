@@ -20,7 +20,14 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/apple-note-move", version: "1"),
     .init(name: "riela/apple-notifications-list", version: "1"),
     .init(name: "riela/apple-notification-post", version: "1"),
-    .init(name: "riela/apple-notifications-dismiss", version: "1")
+    .init(name: "riela/apple-notifications-dismiss", version: "1"),
+    .init(name: "riela/calendar-list", version: "1"),
+    .init(name: "riela/event-search", version: "1"),
+    .init(name: "riela/event-get", version: "1"),
+    .init(name: "riela/event-create", version: "1"),
+    .init(name: "riela/event-update", version: "1"),
+    .init(name: "riela/event-delete", version: "1"),
+    .init(name: "riela/event-alarms-set", version: "1")
   ]
 
   public static let appleReminderReadAddons: [RielaAddonDescriptor] = [

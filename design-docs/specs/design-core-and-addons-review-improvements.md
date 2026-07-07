@@ -1535,6 +1535,73 @@ Validation run after this audit:
 - `swift test --filter 'AgentAdapterTests/testFoundationRunnerDrainsLargeOutput'`
 - `swift test` (964 tests, 0 failures)
 
+### Three-axis issue-resolution review slice (2026-07-07)
+
+This slice covers the single-feature review request for specification
+consistency, implementation quality, and UI/CLI behavior. It deliberately
+stays in one sequential workflow path because current live execution does not
+support feature fanout.
+
+**Intake and user-QA baseline**:
+
+- Issue reference baseline is `tacogips/riela` at `main@ef4dc27`.
+- No GitHub issue URL or issue number was provided with the workflow input.
+- No codex-agent reference input was provided; adapter comparisons remain
+  repository-local unless later review receives an explicit reference.
+- Fixed, deferred, and refuted implementation findings remain to be produced
+  by later inspection steps with file-and-line evidence.
+- Unresolved intake notes are tracked in
+  `design-docs/user-qa/three-axis-issue-resolution-review.md`.
+
+**Behavior boundary**:
+
+1. Specification findings compare `README.md`, `design-docs/`, and published
+   workflow/package claims against the Swift runtime behavior in `Sources/*`.
+   Unsupported live capabilities are documented as capability gaps, not as
+   implemented behavior.
+2. Authored workflow schema may describe cross-workflow dispatch
+   (`toWorkflowId` plus `resumeStepId`) and fanout, but the Swift live runner
+   must fail closed before side effects when it cannot execute those shapes.
+   `workflow validate` and `workflow inspect` should surface the same
+   capability-gap diagnostics that live runs enforce.
+3. Mock-scenario simulation of cross-workflow dispatch is allowed to diverge
+   from live execution only when the surface explicitly labels the behavior as
+   mock-only and does not imply production readiness.
+4. Implementation-quality findings require file-and-line evidence and a
+   reproducible failure or contract mismatch before code changes are made.
+   Speculative defects are retained as residual risks rather than patched.
+5. UI and CLI findings focus on misleading output, broken state transitions,
+   and missing diagnostics. CLI JSON fields remain additive-only; existing
+   field names and backend ids (`codex-agent`, `claude-code-agent`,
+   `cursor-cli-agent`) are compatibility contracts.
+
+**Review data flow**:
+
+1. Establish the runtime contract from model validation, capability preflight,
+   publication routing, CLI command output, persistence stores, adapter
+   boundaries, GraphQL/session control surfaces, and UI state projections.
+2. For each candidate defect, classify it as `fixed`, `deferred`, or
+   `refuted` with source evidence. A `fixed` decision requires a minimal,
+   focused code diff and targeted verification. A `deferred` decision records
+   why it is out of scope or lower priority. A `refuted` decision records the
+   source evidence showing current behavior is correct.
+3. Prioritize high-impact correctness defects where the product can silently
+   lose results, misroute workflow execution, hide unsupported runtime
+   capabilities, corrupt persisted state, or present stale/misleading UI/CLI
+   state.
+
+**Validation and rollout gates**:
+
+- `swift build` must pass after fixes.
+- Run targeted `swift test --filter <ChangedModuleTests>` for each changed
+  module.
+- Attempt full `swift test` when feasible; if omitted or interrupted, report
+  the reason and residual risk.
+- Run representative `riela workflow validate` / `riela workflow inspect`
+  commands for workflow-schema or capability-diagnostic changes.
+- Keep throwaway logs, repro inputs, and evidence artifacts under repository
+  `tmp/`.
+
 ---
 
 ## Third-Pass Review (commits `aa1830a`, `fe76f60`, `2892a02`, 2026-07-03)

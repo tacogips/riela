@@ -61,6 +61,13 @@ final class AddonExecutionContractsTests: XCTestCase {
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-reminder-delete", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-reminder-complete", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-reminder-alarms-set", version: nil))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/calendar-list", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/event-search", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/event-get", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/event-create", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/event-update", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/event-delete", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/event-alarms-set", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/note-create", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/notebook-ingest-pages", version: nil))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/note-create", version: "2"))
@@ -78,7 +85,14 @@ final class AddonExecutionContractsTests: XCTestCase {
         "riela/apple-note-move",
         "riela/apple-notifications-list",
         "riela/apple-notification-post",
-        "riela/apple-notifications-dismiss"
+        "riela/apple-notifications-dismiss",
+        "riela/calendar-list",
+        "riela/event-search",
+        "riela/event-get",
+        "riela/event-create",
+        "riela/event-update",
+        "riela/event-delete",
+        "riela/event-alarms-set"
       ]
     )
     XCTAssertEqual(

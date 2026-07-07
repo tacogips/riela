@@ -43,6 +43,32 @@ Validate it without posting a notification:
 riela workflow validate apple-notifications --workflow-definition-dir ./examples
 ```
 
+### `apple-gateway-packaging-plan`
+
+Read-only Apple Gateway packaging-plan example:
+
+- documents the accepted packaging coverage: no
+  `riela/apple-gateway-packaging-*` built-in add-on, no resolver/catalog
+  registration, and no Apple Gateway process-runner changes
+- uses a command node with `scripts/mock-task-jsonl.sh` to emit exactly one
+  JSON object line for a representative `task build:homebrew-cask -- --dry-run`
+  plan
+- validates without a real Apple Gateway checkout, `task`, Apple app access,
+  Apple signing credentials, or a macOS keychain identity
+- fails closed when `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, or
+  `APPLE_TEAM_ID` is inherited by the mock command environment
+- keeps signed/notarized Cask builds and release publishing as human-run shell
+  commands outside Riela so credentials live only in the operator's
+  kinko-managed shell and macOS keychain
+- treats GitHub Actions such as gitleaks and Linux amd64 builds as CI-only
+  reference coverage, not local Riela execution
+
+Validate it:
+
+```bash
+riela workflow validate apple-gateway-packaging-plan --workflow-definition-dir ./examples
+```
+
 ### `x-follower-ai-business-digest`
 
 Hourly X follower-post digest for Telegram:

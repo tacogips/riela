@@ -50,6 +50,7 @@ impl-plans/
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apple-gateway-packaging-plan` | 2026-07-07 | `gateway-built-ins#packaging-coverage-decision` |
 | `riela-note-selection-qa-comments` | 2026-07-07 | `design-riela-note-selection-qa-comments` |
 | `riela-note-edit-agent-ui` | 2026-07-07 | `design-riela-note-edit-agent-ui` |
 | `apple-notifications-addons` | 2026-07-07 | `design-docs/specs/node-addon-catalog-and-chat-reply-worker/gateway-built-ins.md` |

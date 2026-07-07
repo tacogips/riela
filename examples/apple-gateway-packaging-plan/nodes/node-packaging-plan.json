@@ -1,0 +1,22 @@
+{
+  "id": "packaging-plan",
+  "description": "Run a deterministic read-only mock for the Apple Gateway Homebrew Cask dry-run packaging plan.",
+  "modelFreeze": false,
+  "nodeType": "command",
+  "variables": {
+    "appleGatewayCheckout": "{{workflowInput.appleGatewayCheckout}}"
+  },
+  "command": {
+    "scriptPath": "scripts/mock-task-jsonl.sh",
+    "argvTemplate": [
+      "build:homebrew-cask",
+      "--",
+      "--dry-run"
+    ],
+    "envTemplate": {},
+    "workingDirectory": "scripts"
+  },
+  "output": {
+    "description": "Homebrew Cask dry-run packaging plan with no credentials and no publish side effects."
+  }
+}

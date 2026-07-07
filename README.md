@@ -159,12 +159,22 @@ Notification posting uses AppleGatewayNotifier.app and may require the macOS
 notification authorization prompt. Reading notifications from `SYSTEM_DB`
 requires Full Disk Access for the apple-gateway host process.
 
+Apple Gateway packaging is intentionally not a built-in add-on. Packaging uses
+repository `task` targets and human-readable build output rather than the
+shared `apple-gateway graphql` JSON envelope. Use command-node recipes for
+read-only dry-run plans, and keep signed/notarized Cask builds and release
+publishing as human-run shell commands outside Riela so Apple signing
+credentials stay only in the operator's kinko-managed environment and macOS
+keychain. The deterministic reference bundle is
+`examples/apple-gateway-packaging-plan`.
+
 Use the bundled examples to validate authoring without copying workflows into
 `./.riela`:
 
 ```bash
 riela workflow validate apple-notes-list --workflow-definition-dir examples
 riela workflow validate apple-notifications --workflow-definition-dir examples
+riela workflow validate apple-gateway-packaging-plan --workflow-definition-dir examples
 ```
 
 `examples/apple-notifications` posts one demo notification and then dismisses

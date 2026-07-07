@@ -2279,3 +2279,204 @@ The `examples/apple-gateway-admin` bundle must stay read-only: it may call
 `riela/apple-gateway-permissions-request`,
 `riela/apple-gateway-file-download`, or `riela/apple-gateway-cache-prune`.
 
+## Packaging Coverage Decision
+
+Apple Gateway packaging remains documentation-only Riela coverage. No new
+built-in add-on id is accepted for packaging, and no resolver, catalog,
+execution-contract, or `AppleGatewayProcessRunner` changes are required.
+
+| Packaging item | Accepted shape | Rationale |
+| --- | --- | --- |
+| Dry-run packaging plan (`task build:homebrew -- --dry-run`, `task build:homebrew-cask -- --dry-run`) | Command-node recipe through a JSONL wrapper plus one read-only example bundle | Credential-free and read-only, but raw `task` output is human-oriented `key: value` plan text. A command node must invoke a wrapper/mock that captures the raw output and emits one JSON object on stdout. |
+| Formula archive build (`task build:homebrew`) | Command-node recipe through a JSONL wrapper, documented for human or CI use | Builds and stages archives with unstructured process output and no Apple signing credentials. It is project build tooling, not a runtime gateway capability, so stdout must be normalized by the wrapper before Riela consumes it. |
+| Signed/notarized cask and release (`task build:homebrew-cask`, `task release:homebrew-cask-local`) | Documentation-only human-run commands outside Riela | Requires local Apple signing credentials, notarization, a keychain identity, and release publishing side effects. |
+| GitHub Actions (`gitleaks.yml`, `linux-amd64-build.yml`) | Reference note only | These run in GitHub-hosted CI, not as local Riela behavior. Local analogs are `task lint` and `task build`. |
+
+Packaging tasks are repository build and release tooling. They run `task` or
+repo scripts and produce build logs or plan text. They do not satisfy the shared
+local CLI gateway contract above, which is intentionally limited to fixed
+`apple-gateway graphql` invocations with separate process arguments and valid
+GraphQL JSON stdout. They also cannot be executed as raw Riela command nodes:
+command-node stdout is parsed as JSONL and may contain at most one JSON object
+record. The accepted Riela shape is therefore a command node that invokes a
+small wrapper or deterministic mock. The wrapper runs the underlying `task`
+target, captures raw stdout/stderr internally, redacts credential-looking
+values, and emits exactly one JSON object on stdout with fields such as
+`target`, `dryRun`, `exitCode`, `planText`, `stdoutSummary`, and
+`sideEffects`. Raw `task ...` invocations remain shell documentation, not
+copy-paste Riela node payloads.
+
+The rejected alternative is a `riela/apple-gateway-packaging-plan` built-in
+add-on wrapping a whitelist of dry-run task targets. That shape would not reuse
+the shared Apple Gateway bridge: it would resolve `task` rather than
+`apple-gateway`, require checkout-directory configuration instead of
+`binaryPath`, and parse unstructured `key: value` output rather than the
+GraphQL envelope. The marginal safety improvement over a command node does not
+justify a divergent bridge or a new catalog id.
+
+### Signing Credentials Never Enter Riela
+
+Real Homebrew Cask build and release commands require
+`APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID`,
+plus a Developer ID Application identity installed in the local macOS keychain.
+The evidence is in `scripts/build-homebrew-cask-release.sh`, where dry-run
+`print_plan` emits the required environment names but real `build_target` calls
+`require_env` for those values before codesigning and notarization, and in
+`scripts/release-homebrew-cask-local.sh`, which documents the same environment
+and keychain requirements before invoking the cask build and release upload.
+
+Those credential values must live only in the user's kinko-managed shell
+environment and macOS keychain. They must never be copied into workflow JSON,
+add-on config, node inputs, example files, or logs. Human-run signed cask and
+release commands stay outside Riela:
+
+```bash
+kinko exec --env APPLE_SIGNING_IDENTITY,APPLE_ID,APPLE_PASSWORD,APPLE_TEAM_ID -- \
+  task build:homebrew-cask -- darwin-arm64 darwin-x64
+
+kinko exec --env APPLE_SIGNING_IDENTITY,APPLE_ID,APPLE_PASSWORD,APPLE_TEAM_ID -- \
+  task release:homebrew-cask-local -- v<version>
+```
+
+Dry-run packaging plans and formula archive builds do not need Apple signing
+credentials. The dry-run cask path reaches `print_plan` instead of the real
+signing/notarization path, and formula archive builds do not use Apple
+notarization credentials. However, local command execution currently inherits
+the Riela process environment and merges explicit node environment over it. If
+Riela itself is launched inside a kinko shell, Apple credential variables can be
+present in the command child environment even when the node JSON does not name
+them. Operators must run Riela packaging-plan workflows outside any
+credential-bearing kinko shell. The wrapper used by real command-node recipes
+must also fail closed or invoke `task` through an environment scrubber that
+removes `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, and
+`APPLE_TEAM_ID` before the task process starts. Authors must never place those
+values in workflow JSON, node inputs, add-on config, or logs.
+
+### Command-node Recipe: Dry-run Packaging Plan
+
+This is the accepted automatable shape. It is read-only and does not publish,
+delete, overwrite, sign, notarize, upload, or require live Apple app access.
+The real checkout path is a workflow input, not a committed absolute path.
+
+```json
+{
+  "id": "packaging-plan",
+  "nodeType": "command",
+  "variables": {
+    "appleGatewayCheckout": "{{workflowInput.appleGatewayCheckout}}"
+  },
+  "command": {
+    "scriptPath": "scripts/task-jsonl-wrapper.sh",
+    "argvTemplate": [
+      "{{workflowInput.appleGatewayCheckout}}",
+      "build:homebrew-cask",
+      "--",
+      "--dry-run"
+    ],
+    "envTemplate": {},
+    "workingDirectory": "scripts"
+  },
+  "output": {
+    "description": "Homebrew cask dry-run plan: targets, versions, artifact names; no credentials, no publish."
+  }
+}
+```
+
+`task-jsonl-wrapper.sh` is workflow-owned glue, not a new built-in add-on. It
+is resolved from the workflow bundle's `scripts/` directory, not from the
+external Apple Gateway checkout. The checkout path is passed as the first
+rendered argument. The wrapper must validate that path before use, reject empty
+or non-directory values, avoid shell interpolation, scrub
+`APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID`
+from the child environment, `cd` to the validated checkout itself, run `task`
+with the remaining arguments, capture raw human-readable output, and print one
+JSON object line. Use `["{{workflowInput.appleGatewayCheckout}}",
+"build:homebrew", "--", "--dry-run"]` for the formula dry-run plan when that
+target supports dry-run output in the selected checkout.
+
+The checked-in example bundle should default to a mock command node, using
+`scriptPath`/`argvTemplate`/`envTemplate` authoring aliases like
+`examples/node-combinations-showcase`, so `riela workflow validate
+apple-gateway-packaging-plan --workflow-definition-dir examples` does not
+require a real checkout, `task`, Apple app access, or credentials. The mock
+script must emit one JSON object line containing the representative plan text;
+printing the raw plan block directly to stdout is invalid for command-node
+execution. Successful validation of the mock bundle proves only the documented
+bundle shape and JSONL contract; it does not prove the real Apple Gateway
+checkout recipe until a wrapper-shaped command is smoke-tested with a real
+checkout path.
+
+### Command-node Recipe: Formula Archive Build
+
+Formula archive builds are allowed as a command-node recipe for human or CI use
+when the caller intentionally wants to compile and stage artifacts. They remain
+outside the Apple Gateway built-in catalog.
+
+```json
+{
+  "id": "formula-archive-build",
+  "nodeType": "command",
+  "variables": {
+    "appleGatewayCheckout": "{{workflowInput.appleGatewayCheckout}}"
+  },
+  "command": {
+    "scriptPath": "scripts/task-jsonl-wrapper.sh",
+    "argvTemplate": [
+      "{{workflowInput.appleGatewayCheckout}}",
+      "build:homebrew"
+    ],
+    "envTemplate": {},
+    "workingDirectory": "scripts"
+  },
+  "output": {
+    "description": "Homebrew formula archive build output, including built archive paths and checksums."
+  }
+}
+```
+
+As with the dry-run plan, the wrapper owns stdout normalization. The underlying
+`task build:homebrew` output may include progress text, `built <archive>` lines,
+and checksums, but Riela receives only the wrapper's single JSONL record. Do not
+replace the wrapper-owned `scriptPath` with a checkout-relative executable, and
+do not put `{{workflowInput.appleGatewayCheckout}}` in `command.workingDirectory`;
+Riela does not render that field at command execution time.
+
+### Command-node Recipe: Signed Cask and Release
+
+Signed/notarized Cask builds and release publishing must not be automated as a
+Riela workflow node. They require local signing material, notarization
+credentials, GitHub release/tap side effects, and human review. Keep them as
+explicit local shell commands run by the release operator inside a kinko shell,
+as shown in the credential section above.
+
+### GitHub Actions
+
+GitHub Actions coverage is out of scope for local Riela execution.
+`gitleaks.yml` scans secrets on push and pull request using GitHub-provided
+execution context, and `linux-amd64-build.yml` builds a Linux amd64 binary on
+`main` without local Apple credentials. Riela should not invoke those workflows
+locally; local checks should use direct project commands such as `task lint` and
+`task build`.
+
+### Rollout and Validation
+
+The rollout is documentation plus one read-only example bundle:
+
+1. Keep this catalog decision as the source of truth for packaging coverage.
+2. Add `examples/apple-gateway-packaging-plan/` as a deterministic mock dry-run
+   workflow that emits a single JSONL object and can validate without checkout
+   access, `task`, Apple app permissions, or credentials.
+3. Do not add a `riela/apple-gateway-packaging-*` built-in id.
+4. Do not modify `BuiltinWorkflowAddonResolver`, `RielaBuiltinAddonCatalog`,
+   add-on execution-contract tests, or the shared Apple Gateway process runner.
+
+Required verification for the implementation step:
+
+```bash
+riela workflow validate apple-gateway-packaging-plan --workflow-definition-dir examples
+swift build
+git status --short
+```
+
+No Swift source should change, but `swift build` remains part of implementation
+verification because the issue acceptance criteria requires it.

@@ -191,9 +191,11 @@ public struct RielaNoteDetailView: View {
         Image(systemName: "pencil")
           .foregroundStyle(.secondary)
         if let armedSelectionRange,
-           let selectedText = rielaNoteSelectedText(in: bodyDraft.draftBodyMarkdown, range: armedSelectionRange) {
+           rielaNoteSelectedText(in: bodyDraft.draftBodyMarkdown, range: armedSelectionRange) != nil {
           HStack(spacing: 4) {
-            Text("Selection \(selectedText.count)")
+            // Report the UTF-16 length to match the selectionStart/selectionEnd
+            // offsets actually sent to the workflow (NSRange is UTF-16-based).
+            Text("Selection \(armedSelectionRange.length)")
               .font(.caption2)
             Button {
               self.armedSelectionRange = nil

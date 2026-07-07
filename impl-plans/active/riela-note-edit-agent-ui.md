@@ -357,6 +357,35 @@ owner coordinates the `RielaNoteDetailView` edit-body/pill integration.
 
 ## Progress Log
 
+2026-07-07 (Step 6 rerun — addressing Step 7 review comm-000698):
+
+- F1 (mid, `RielaNoteWorkflowProviderSupport.swift:136`): widened
+  `rielaWorkflowSanitizedEnvironment` with a `modelAuthKeys` allowlist so
+  model-auth / agent-discovery vars survive sanitization
+  (OPENAI_API_KEY, OPENAI_BASE_URL, ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL,
+  CLAUDE_API_KEY, CLAUDE_CONFIG_DIR, CURSOR_API_KEY, CURSOR_AUTH_TOKEN,
+  CURSOR_BASE_URL, CURSOR_CONFIG_DIR, GEMINI_API_KEY, GEMINI_BASE_URL,
+  GOOGLE_API_KEY, CODEX_HOME, RIELA_CODEX_AGENT_EXECUTABLE,
+  RIELA_CLAUDE_CODE_AGENT_EXECUTABLE, RIELA_CURSOR_CLI_AGENT_EXECUTABLE).
+  Both note-edit-rewrite and note-link-extract subprocesses now retain
+  the credentials their `executionBackend:codex-agent` node needs; only
+  genuinely unrelated/sensitive host vars are still dropped. Added
+  provider-level test `testWorkflowProviderPreservesModelAuthEnvironment`
+  asserting the full set survives, and updated
+  `testWorkflowProviderSanitizesInheritedEnvironment` (which previously
+  asserted OPENAI_API_KEY was dropped) to assert only non-auth secrets
+  (AWS_*, GITHUB_TOKEN) are dropped.
+- F2 (mid, `RielaNoteWorkflowLinkProposalProvider.swift:138`): the
+  link-provider env-scrub is intentional; with F1 it is now
+  credential-preserving, so the functional regression (stripped API
+  credentials) is resolved. Documented the previously under-disclosed
+  env-forwarding behavior change and its rationale in the Deviation notes
+  above (full-forward → credential-preserving sanitized env).
+- F3 (low, `RielaNoteDetailView.swift:196`): selection badge now reports
+  `armedSelectionRange.length` (UTF-16 units) to match the
+  selectionStart/selectionEnd offsets sent to the workflow, instead of
+  the Character `selectedText.count`.
+
 2026-07-07 (Step 6 implementation ownership — full issue resolution):
 
 - Adversarially re-verified every TASK-001..TASK-007 checklist item
@@ -386,6 +415,25 @@ owner coordinates the `RielaNoteDetailView` edit-body/pill integration.
   overrides only implicitly (default `allowEnvironmentOverrides: false`);
   the edit-rewrite provider is wired with `allowEnvironmentOverrides:
   true` for its documented env overrides.
+- Deviation note (environment forwarding — Step 7 review comm-000698 F2):
+  `RielaWorkflowNoteLinkProposalProvider` previously forwarded the full
+  inherited environment verbatim (`process.environment = environment`).
+  As part of the shared-helper extraction it now forwards
+  `rielaWorkflowSanitizedEnvironment(...)` — the same scrub the
+  edit-rewrite provider uses — intentionally, so both note subprocesses
+  drop genuinely unrelated/sensitive host vars. Rationale: both providers
+  spawn `riela workflow run` whose node is `executionBackend:codex-agent`,
+  and the inner codex process derives its env from this parent; forwarding
+  the entire host environment into a spawned agent subprocess is broader
+  than the feature needs. The scrub is credential-preserving: the
+  allowlist explicitly retains model-auth / agent-discovery vars
+  (OPENAI_API_KEY, ANTHROPIC_API_KEY, CLAUDE_API_KEY, CURSOR_API_KEY and
+  siblings, CODEX_HOME, RIELA_*_AGENT_EXECUTABLE, provider BASE_URL/CONFIG
+  vars), so env-based codex auth for note-link-extract and
+  note-edit-rewrite continues to work. Only non-auth host vars (e.g.
+  AWS_*, GITHUB_TOKEN) are dropped. This preserves the observable
+  link-provider behavior for the supported env-key auth path while
+  narrowing the forwarded surface; the CLI command contract is unchanged.
 
 2026-07-07 (Step 4 impl-plan revision):
 

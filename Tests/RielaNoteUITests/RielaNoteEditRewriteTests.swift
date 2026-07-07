@@ -276,7 +276,8 @@ final class RielaNoteEditRewriteTests: XCTestCase {
   func testWorkflowProviderSanitizesInheritedEnvironment() {
     let sanitized = rielaWorkflowSanitizedEnvironment(from: [
       "AWS_ACCESS_KEY_ID": "secret",
-      "OPENAI_API_KEY": "secret",
+      "AWS_SECRET_ACCESS_KEY": "secret",
+      "GITHUB_TOKEN": "secret",
       "RIELA_APP_RIELA_EXECUTABLE": "/tmp/riela",
       "PATH": "/usr/bin",
       "HOME": "/Users/test",
@@ -286,9 +287,42 @@ final class RielaNoteEditRewriteTests: XCTestCase {
     XCTAssertEqual(sanitized["PATH"], "/usr/bin")
     XCTAssertEqual(sanitized["HOME"], "/Users/test")
     XCTAssertEqual(sanitized["LC_CTYPE"], "UTF-8")
+    // Genuinely unrelated/sensitive vars are still dropped.
     XCTAssertNil(sanitized["AWS_ACCESS_KEY_ID"])
-    XCTAssertNil(sanitized["OPENAI_API_KEY"])
+    XCTAssertNil(sanitized["AWS_SECRET_ACCESS_KEY"])
+    XCTAssertNil(sanitized["GITHUB_TOKEN"])
     XCTAssertNil(sanitized["RIELA_APP_RIELA_EXECUTABLE"])
+  }
+
+  func testWorkflowProviderPreservesModelAuthEnvironment() {
+    // The spawned `riela workflow run` forwards these to its codex-agent node,
+    // whose inner codex process derives env-based auth from this scrubbed
+    // parent. They must survive sanitization for env-key users, or real
+    // rewrites/link-proposals fail with workflowFailed.
+    let modelAuthEnvironment = [
+      "OPENAI_API_KEY": "openai",
+      "OPENAI_BASE_URL": "https://openai.example",
+      "ANTHROPIC_API_KEY": "anthropic",
+      "ANTHROPIC_BASE_URL": "https://anthropic.example",
+      "CLAUDE_API_KEY": "claude",
+      "CLAUDE_CONFIG_DIR": "/Users/test/.claude",
+      "CURSOR_API_KEY": "cursor",
+      "CURSOR_AUTH_TOKEN": "cursor-token",
+      "CURSOR_BASE_URL": "https://cursor.example",
+      "CURSOR_CONFIG_DIR": "/Users/test/.cursor",
+      "GEMINI_API_KEY": "gemini",
+      "GEMINI_BASE_URL": "https://gemini.example",
+      "GOOGLE_API_KEY": "google",
+      "CODEX_HOME": "/Users/test/.codex",
+      "RIELA_CODEX_AGENT_EXECUTABLE": "/usr/local/bin/codex",
+      "RIELA_CLAUDE_CODE_AGENT_EXECUTABLE": "/usr/local/bin/claude",
+      "RIELA_CURSOR_CLI_AGENT_EXECUTABLE": "/usr/local/bin/cursor-agent"
+    ]
+    let sanitized = rielaWorkflowSanitizedEnvironment(from: modelAuthEnvironment)
+
+    for (key, value) in modelAuthEnvironment {
+      XCTAssertEqual(sanitized[key], value, "expected model-auth var \(key) to survive sanitization")
+    }
   }
 
   func testWorkflowProviderRejectsPathAndCurrentWorkingDirectoryFallbacks() throws {

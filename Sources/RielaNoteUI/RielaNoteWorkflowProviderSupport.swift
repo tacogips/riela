@@ -145,8 +145,35 @@ func rielaWorkflowSanitizedEnvironment(from environment: [String: String]) -> [S
     "USER",
     "XPC_SERVICE_NAME"
   ]
+  // Model-auth / agent-discovery variables that the spawned `riela workflow
+  // run` forwards to its executionBackend:codex-agent node. The inner codex
+  // process derives its environment from this scrubbed parent, and env-based
+  // auth (OPENAI_API_KEY, ANTHROPIC_API_KEY/CLAUDE_API_KEY, CURSOR_API_KEY,
+  // custom CODEX_HOME, …) is a first-class supported path. Dropping these
+  // breaks real rewrites/link-proposals for env-key users, so they must
+  // survive sanitization while genuinely unrelated/sensitive vars are still
+  // dropped.
+  let modelAuthKeys: Set<String> = [
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_BASE_URL",
+    "CLAUDE_API_KEY",
+    "CLAUDE_CONFIG_DIR",
+    "CURSOR_API_KEY",
+    "CURSOR_AUTH_TOKEN",
+    "CURSOR_BASE_URL",
+    "CURSOR_CONFIG_DIR",
+    "GEMINI_API_KEY",
+    "GEMINI_BASE_URL",
+    "GOOGLE_API_KEY",
+    "CODEX_HOME",
+    "RIELA_CODEX_AGENT_EXECUTABLE",
+    "RIELA_CLAUDE_CODE_AGENT_EXECUTABLE",
+    "RIELA_CURSOR_CLI_AGENT_EXECUTABLE"
+  ]
   for (key, value) in environment {
-    if exactKeys.contains(key) || key.hasPrefix("LC_") {
+    if exactKeys.contains(key) || modelAuthKeys.contains(key) || key.hasPrefix("LC_") {
       sanitized[key] = value
     }
   }

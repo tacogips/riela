@@ -1,0 +1,40 @@
+{
+  "workflowId": "note-edit-rewrite",
+  "description": "Rewrite a Riela Note body or selected body range according to a user instruction.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "prompts": {
+    "workerSystemPromptTemplate": "Return concise JSON only. Preserve markdown intent and follow selection-scope rules exactly."
+  },
+  "entryStepId": "rewrite-note-body",
+  "nodes": [
+    {
+      "id": "rewrite-note-body",
+      "nodeFile": "nodes/node-rewrite-note-body.json"
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "rewrite-note-body",
+      "nodeId": "rewrite-note-body",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

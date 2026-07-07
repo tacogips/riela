@@ -1,0 +1,24 @@
+{
+  "rewrite-note-body": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "rewrittenMarkdown": "# Project Plan\n\n- Clarified next milestone.\n- Confirmed owner.",
+      "summary": "Clarified the project plan and owner."
+    }
+  },
+  "workflow-output": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "rewrittenMarkdown": "# Project Plan\n\n- Clarified next milestone.\n- Confirmed owner.",
+      "summary": "Clarified the project plan and owner."
+    }
+  }
+}

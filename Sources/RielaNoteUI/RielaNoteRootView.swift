@@ -11,6 +11,7 @@ public struct RielaNoteRootView: View {
   @State private var composeDestination: RielaNoteCreationDestination?
   @State private var isFilterSheetPresented = false
   @State private var didRunInitialLoad = false
+  @State private var regularColumnVisibility: NavigationSplitViewVisibility = .all
   @State private var noteStoreChangeWatcher: RielaNoteStoreChangeWatcher?
   private let onOpenSettings: (() -> Void)?
 
@@ -132,7 +133,7 @@ public struct RielaNoteRootView: View {
         }
       }
     } else {
-      NavigationSplitView {
+      NavigationSplitView(columnVisibility: regularColumnVisibilityBinding) {
         RielaNoteFilterPane(viewModel: viewModel)
           .navigationTitle("Filters")
           .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360)
@@ -208,6 +209,15 @@ public struct RielaNoteRootView: View {
       return nil
     }
     return viewModel.notebooks.first { $0.notebookId == selectedNotebookId }?.title
+  }
+
+  private var regularColumnVisibilityBinding: Binding<NavigationSplitViewVisibility> {
+    Binding {
+      viewModel.isDetailExpanded ? .detailOnly : regularColumnVisibility
+    } set: { visibility in
+      regularColumnVisibility = visibility
+      viewModel.isDetailExpanded = visibility == .detailOnly
+    }
   }
 
   private func startNoteStoreChangeWatcher() {

@@ -25,17 +25,20 @@ public struct RielaWorkflowNoteLinkProposalProvider: RielaNoteLinkProposalProvid
   public var executablePath: String?
   public var environment: [String: String]
   public var deadlineSeconds: TimeInterval
+  public var allowEnvironmentOverrides: Bool
 
   public init(
     workflowDefinitionDirectory: String,
     executablePath: String? = nil,
     environment: [String: String] = ProcessInfo.processInfo.environment,
-    deadlineSeconds: TimeInterval = Self.defaultDeadlineSeconds
+    deadlineSeconds: TimeInterval = Self.defaultDeadlineSeconds,
+    allowEnvironmentOverrides: Bool = false
   ) {
     self.workflowDefinitionDirectory = workflowDefinitionDirectory
     self.executablePath = executablePath
     self.environment = environment
     self.deadlineSeconds = deadlineSeconds
+    self.allowEnvironmentOverrides = allowEnvironmentOverrides
   }
 
   public func proposeLinkDrafts(
@@ -47,16 +50,23 @@ public struct RielaWorkflowNoteLinkProposalProvider: RielaNoteLinkProposalProvid
     let processBox = RielaWorkflowProcessBox()
     return try await withTaskCancellationHandler {
       try await Task.detached {
-        try runNoteLinkExtractWorkflow(
-        executablePath: resolvedRielaExecutablePath(executablePath, environment: environment),
-        workflowDefinitionDirectory: workflowDefinitionDirectory,
-        noteId: noteId,
-        noteRoot: noteRoot,
-        query: query,
-        limit: limit,
-        environment: environment,
-        deadlineSeconds: deadlineSeconds,
-        processBox: processBox
+        guard let resolvedExecutablePath = resolvedRielaExecutablePath(
+          executablePath,
+          environment: environment,
+          allowEnvironmentOverrides: allowEnvironmentOverrides
+        ) else {
+          throw RielaWorkflowNoteLinkProposalError.notConfigured
+        }
+        return try runNoteLinkExtractWorkflow(
+          executablePath: resolvedExecutablePath,
+          workflowDefinitionDirectory: workflowDefinitionDirectory,
+          noteId: noteId,
+          noteRoot: noteRoot,
+          query: query,
+          limit: limit,
+          environment: rielaWorkflowSanitizedEnvironment(from: environment),
+          deadlineSeconds: deadlineSeconds,
+          processBox: processBox
         )
       }.value
     } onCancel: {
@@ -66,9 +76,21 @@ public struct RielaWorkflowNoteLinkProposalProvider: RielaNoteLinkProposalProvid
 
   public static func defaultProvider(
     environment: [String: String] = ProcessInfo.processInfo.environment,
-    fileManager: FileManager = .default
+    fileManager: FileManager = .default,
+    allowEnvironmentOverrides: Bool = false
   ) -> RielaWorkflowNoteLinkProposalProvider? {
-    let candidates = defaultWorkflowDirectoryCandidates(environment: environment)
+    let candidates = defaultWorkflowDirectoryCandidates(
+      environment: environment,
+      workflowDirectoryEnvironmentName: "RIELA_NOTE_LINK_EXTRACT_WORKFLOW_DIR",
+      allowEnvironmentOverrides: allowEnvironmentOverrides
+    )
+    guard let executablePath = resolvedRielaExecutablePath(
+      environment["RIELA_NOTE_LINK_EXTRACT_RIELA_EXECUTABLE"],
+      environment: environment,
+      allowEnvironmentOverrides: allowEnvironmentOverrides
+    ) else {
+      return nil
+    }
     guard let workflowDirectory = candidates.first(where: { candidate in
       var isDirectory: ObjCBool = false
       let path = URL(fileURLWithPath: candidate, isDirectory: true)
@@ -81,18 +103,11 @@ public struct RielaWorkflowNoteLinkProposalProvider: RielaNoteLinkProposalProvid
     }
     return RielaWorkflowNoteLinkProposalProvider(
       workflowDefinitionDirectory: workflowDirectory,
-      executablePath: environment["RIELA_NOTE_LINK_EXTRACT_RIELA_EXECUTABLE"],
-      environment: environment
+      executablePath: executablePath,
+      environment: environment,
+      allowEnvironmentOverrides: allowEnvironmentOverrides
     )
   }
-}
-
-private struct RielaWorkflowRunResultEnvelope: Decodable {
-  var result: RielaWorkflowRunResult
-}
-
-private struct RielaWorkflowRunResult: Decodable {
-  var rootOutput: RielaWorkflowRootOutput?
 }
 
 private struct RielaWorkflowRootOutput: Decodable {
@@ -112,29 +127,15 @@ private func runNoteLinkExtractWorkflow(
 ) throws -> [RielaNoteLinkProposalDraft] {
   let subjectNote = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot)).getNote(noteId)
   let process = Process()
-  let executableArguments: [String]
-  if executablePath == "/usr/bin/env" {
-    process.executableURL = URL(fileURLWithPath: executablePath)
-    executableArguments = ["riela"] + noteLinkExtractArguments(
-      workflowDefinitionDirectory: workflowDefinitionDirectory,
-      noteId: noteId,
-      noteRoot: noteRoot,
-      query: query,
-      limit: limit,
-      subjectBodyMarkdown: subjectNote.bodyMarkdown
-    )
-  } else {
-    process.executableURL = URL(fileURLWithPath: executablePath)
-    executableArguments = noteLinkExtractArguments(
-      workflowDefinitionDirectory: workflowDefinitionDirectory,
-      noteId: noteId,
-      noteRoot: noteRoot,
-      query: query,
-      limit: limit,
-      subjectBodyMarkdown: subjectNote.bodyMarkdown
-    )
-  }
-  process.arguments = executableArguments
+  process.executableURL = URL(fileURLWithPath: executablePath)
+  process.arguments = noteLinkExtractArguments(
+    workflowDefinitionDirectory: workflowDefinitionDirectory,
+    noteId: noteId,
+    noteRoot: noteRoot,
+    query: query,
+    limit: limit,
+    subjectBodyMarkdown: subjectNote.bodyMarkdown
+  )
   process.environment = environment
   let outputPipe = Pipe()
   let errorPipe = Pipe()
@@ -153,18 +154,18 @@ private func runNoteLinkExtractWorkflow(
   let deadline = Date().addingTimeInterval(max(1, deadlineSeconds))
   while process.isRunning {
     if Task.isCancelled {
-      process.terminate()
-      drainGroup.wait()
+      process.terminateWithEscalation()
+      rielaWorkflowWaitForDrain(drainGroup, drains: [outputDrain, errorDrain])
       throw CancellationError()
     }
     if Date() >= deadline {
-      process.terminate()
-      drainGroup.wait()
+      process.terminateWithEscalation()
+      rielaWorkflowWaitForDrain(drainGroup, drains: [outputDrain, errorDrain])
       throw RielaWorkflowNoteLinkProposalError.timedOut
     }
     Thread.sleep(forTimeInterval: 0.05)
   }
-  drainGroup.wait()
+  rielaWorkflowWaitForDrain(drainGroup, drains: [outputDrain, errorDrain])
   let output = outputDrain.stringValue()
   let error = errorDrain.stringValue()
   guard process.terminationStatus == 0 else {
@@ -209,114 +210,13 @@ private func noteLinkExtractArguments(
 }
 
 private func parseNoteLinkExtractProposals(from output: String) -> [RielaNoteLinkProposalDraft]? {
-  let decoder = JSONDecoder()
-  for line in output.split(separator: "\n").reversed() {
-    guard let data = line.data(using: .utf8),
-          let envelope = try? decoder.decode(RielaWorkflowRunResultEnvelope.self, from: data),
-          let proposals = envelope.result.rootOutput?.proposals else {
-      continue
-    }
-    return proposals
-  }
-  return nil
-}
-
-private func resolvedRielaExecutablePath(_ configuredPath: String?, environment: [String: String]) -> String {
-  if let configuredPath, FileManager.default.isExecutableFile(atPath: configuredPath) {
-    return configuredPath
-  }
-  if let environmentPath = environment["RIELA_APP_RIELA_EXECUTABLE"],
-     FileManager.default.isExecutableFile(atPath: environmentPath) {
-    return environmentPath
-  }
-  if let sibling = Bundle.main.executableURL?
-    .deletingLastPathComponent()
-    .appendingPathComponent("riela")
-    .path,
-    FileManager.default.isExecutableFile(atPath: sibling) {
-    return sibling
-  }
-  return "/usr/bin/env"
-}
-
-private func defaultWorkflowDirectoryCandidates(environment: [String: String]) -> [String] {
-  var candidates: [String] = []
-  if let configured = environment["RIELA_NOTE_LINK_EXTRACT_WORKFLOW_DIR"]?.trimmingCharacters(in: .whitespacesAndNewlines),
-     !configured.isEmpty {
-    candidates.append(configured)
-  }
-  if let resource = Bundle.main.resourceURL?.appendingPathComponent("examples", isDirectory: true).path {
-    candidates.append(resource)
-  }
-  candidates.append(
-    URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
-      .appendingPathComponent("examples", isDirectory: true)
-      .path
-  )
-  return candidates
+  rielaWorkflowRunRootOutput(from: output, as: RielaWorkflowRootOutput.self)?.proposals
 }
 
 public enum RielaWorkflowNoteLinkProposalError: Error, Equatable, Sendable {
+  case notConfigured
   case workflowFailed(String)
   case invalidOutput
   case timedOut
-}
-
-private final class RielaWorkflowProcessBox: @unchecked Sendable {
-  private let lock = NSLock()
-  private var process: Process?
-
-  func set(_ process: Process) {
-    lock.lock()
-    self.process = process
-    lock.unlock()
-  }
-
-  func clear(_ process: Process) {
-    lock.lock()
-    if self.process === process {
-      self.process = nil
-    }
-    lock.unlock()
-  }
-
-  func terminate() {
-    lock.lock()
-    let process = self.process
-    lock.unlock()
-    if process?.isRunning == true {
-      process?.terminate()
-    }
-  }
-}
-
-private final class RielaWorkflowPipeDrain: @unchecked Sendable {
-  private let pipe: Pipe
-  private let queue: DispatchQueue
-  private let lock = NSLock()
-  private var data = Data()
-
-  init(pipe: Pipe, label: String) {
-    self.pipe = pipe
-    queue = DispatchQueue(label: label)
-  }
-
-  func start(group: DispatchGroup) {
-    group.enter()
-    queue.async { [self] in
-      let drained = pipe.fileHandleForReading.readDataToEndOfFile()
-      lock.lock()
-      data = drained
-      lock.unlock()
-      group.leave()
-    }
-  }
-
-  func stringValue() -> String {
-    lock.lock()
-    let data = data
-    lock.unlock()
-    return String(data: data, encoding: .utf8) ?? ""
-  }
 }
 #endif

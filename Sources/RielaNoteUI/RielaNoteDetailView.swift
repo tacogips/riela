@@ -1,9 +1,23 @@
 import RielaNote
 import SwiftUI
 
+#if os(macOS)
+import AppKit
+#elseif os(iOS)
+import UIKit
+#endif
+
 public struct RielaNoteDetailView: View {
+  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @ObservedObject private var viewModel: RielaNoteLibraryViewModel
   @State private var bodyDraft = RielaNoteBodyDraftState()
+  @State private var rewriteInstruction = ""
+  @State private var selectedBodyRange = NSRange(location: 0, length: 0)
+  @State private var armedSelectionRange: NSRange?
+  @State private var copiedFeedbackVisible = false
+  @State private var isMarkdownExportPresented = false
+  @State private var markdownExportDocument = RielaNoteMarkdownFileDocument(markdown: "")
+  @State private var markdownExportFilename = "note.md"
   @State private var draftTagName = ""
   @State private var draftCommentMarkdown = ""
   @State private var isAddLinkPresented = false
@@ -12,6 +26,7 @@ public struct RielaNoteDetailView: View {
   @State private var isLinksExpanded = false
   @State private var isCommentsExpanded = false
   @State private var isFilesExpanded = false
+  @FocusState private var isRewriteFieldFocused: Bool
 
   public init(viewModel: RielaNoteLibraryViewModel) {
     self.viewModel = viewModel
@@ -58,6 +73,12 @@ public struct RielaNoteDetailView: View {
             viewModel.clearLinkProposals()
           }
         }
+        .fileExporter(
+          isPresented: $isMarkdownExportPresented,
+          document: markdownExportDocument,
+          contentType: rielaNoteMarkdownContentType,
+          defaultFilename: markdownExportFilename
+        ) { _ in }
       } else {
         emptySelection
       }
@@ -91,6 +112,7 @@ public struct RielaNoteDetailView: View {
 
   private func header(_ note: Note) -> some View {
     VStack(alignment: .leading, spacing: 10) {
+      actionRow(note)
       HStack(alignment: .firstTextBaseline, spacing: 8) {
         Text(note.title ?? note.noteId)
           .font(.title2)
@@ -100,15 +122,6 @@ public struct RielaNoteDetailView: View {
           Image(systemName: "lock.fill")
             .foregroundStyle(.secondary)
         }
-        Spacer(minLength: 12)
-        if !note.readOnly {
-          Button {
-            bodyDraft.toggle(noteId: note.noteId, bodyMarkdown: note.bodyMarkdown)
-          } label: {
-            Label(bodyDraft.isEditingBody ? "Preview" : "Edit", systemImage: bodyDraft.isEditingBody ? "doc.text" : "pencil")
-          }
-          .buttonStyle(.bordered)
-        }
       }
       HStack(spacing: 8) {
         Label("#\(note.noteNumber)", systemImage: "number")
@@ -117,6 +130,116 @@ public struct RielaNoteDetailView: View {
       .font(.caption)
       .foregroundStyle(.secondary)
       notePager
+    }
+  }
+
+  private func actionRow(_ note: Note) -> some View {
+    HStack(alignment: .top, spacing: 8) {
+      if !note.readOnly {
+        editControl(note)
+      }
+      Spacer(minLength: 12)
+      HStack(spacing: 8) {
+        Button {
+          copyDisplayedMarkdown(for: note)
+        } label: {
+          Image(systemName: copiedFeedbackVisible ? "checkmark" : "doc.on.doc")
+        }
+        .help("Copy markdown")
+        Button {
+          exportDisplayedMarkdown(for: note)
+        } label: {
+          Image(systemName: "square.and.arrow.down")
+        }
+        .help("Download markdown")
+        if horizontalSizeClass != .compact {
+          Button {
+            viewModel.isDetailExpanded.toggle()
+          } label: {
+            Image(
+              systemName: viewModel.isDetailExpanded
+                ? "arrow.down.right.and.arrow.up.left"
+                : "arrow.up.left.and.arrow.down.right"
+            )
+          }
+          .help(viewModel.isDetailExpanded ? "Restore columns" : "Expand detail")
+        }
+      }
+      .buttonStyle(.borderless)
+      .controlSize(.small)
+    }
+  }
+
+  @ViewBuilder
+  private func editControl(_ note: Note) -> some View {
+    if bodyDraft.isEditingBody {
+      rewritePill(note)
+    } else {
+      Button {
+        startEditing(note)
+      } label: {
+        Label("Edit", systemImage: "pencil")
+      }
+      .buttonStyle(.bordered)
+      .controlSize(.small)
+    }
+  }
+
+  private func rewritePill(_ note: Note) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 8) {
+        Image(systemName: "pencil")
+          .foregroundStyle(.secondary)
+        if let armedSelectionRange,
+           let selectedText = rielaNoteSelectedText(in: bodyDraft.draftBodyMarkdown, range: armedSelectionRange) {
+          HStack(spacing: 4) {
+            Text("Selection \(selectedText.count)")
+              .font(.caption2)
+            Button {
+              self.armedSelectionRange = nil
+            } label: {
+              Image(systemName: "xmark.circle.fill")
+            }
+            .buttonStyle(.plain)
+          }
+          .padding(.horizontal, 6)
+          .padding(.vertical, 3)
+          .background(.secondary.opacity(0.14), in: Capsule())
+        }
+        TextField("Ask for changes", text: $rewriteInstruction)
+          .textFieldStyle(.plain)
+          .frame(minWidth: 180, maxWidth: 320)
+          .focused($isRewriteFieldFocused)
+          .onSubmit {
+            submitRewrite(for: note)
+          }
+        Button {
+          submitRewrite(for: note)
+        } label: {
+          if viewModel.isEditRewriteLoading {
+            ProgressView()
+              .controlSize(.small)
+          } else {
+            Image(systemName: "arrow.up.circle.fill")
+          }
+        }
+        .buttonStyle(.plain)
+        .disabled(rewriteInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+          || viewModel.isEditRewriteLoading)
+        .help("Submit changes")
+      }
+      .padding(.horizontal, 10)
+      .padding(.vertical, 7)
+      .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+      if let error = viewModel.editRewriteError {
+        Text(error)
+          .font(.caption)
+          .foregroundStyle(.red)
+      } else if let summary = viewModel.editRewriteSummary {
+        Text(summary)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
     }
   }
 
@@ -263,11 +386,23 @@ public struct RielaNoteDetailView: View {
 
   private func bodyEditor(_ note: Note) -> some View {
     VStack(alignment: .leading, spacing: 10) {
-      TextEditor(text: $bodyDraft.draftBodyMarkdown)
-        .font(.body.monospaced())
-        .frame(minHeight: 320)
-        .padding(8)
-        .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+      ZStack(alignment: .topLeading) {
+        RielaNoteSelectableTextEditor(text: $bodyDraft.draftBodyMarkdown, selectedRange: $selectedBodyRange)
+          .font(.body.monospaced())
+          .frame(minHeight: 320)
+          .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        if rielaNoteRewriteRangeIsValid(selectedBodyRange, in: bodyDraft.draftBodyMarkdown) {
+          Button {
+            armSelectionScope()
+          } label: {
+            Label("Ask for changes Cmd-K", systemImage: "pencil")
+          }
+          .keyboardShortcut("k", modifiers: .command)
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+          .padding(10)
+        }
+      }
       HStack {
         Spacer()
         Button("Cancel") {
@@ -501,9 +636,114 @@ public struct RielaNoteDetailView: View {
 
   private func resetEditingState() {
     bodyDraft.reset()
+    rewriteInstruction = ""
+    selectedBodyRange = NSRange(location: 0, length: 0)
+    armedSelectionRange = nil
     draftTagName = ""
     draftCommentMarkdown = ""
+    viewModel.clearEditRewriteState()
     viewModel.clearLinkProposals()
+  }
+
+  private func startEditing(_ note: Note) {
+    bodyDraft.toggle(noteId: note.noteId, bodyMarkdown: note.bodyMarkdown)
+    rewriteInstruction = ""
+    selectedBodyRange = NSRange(location: 0, length: 0)
+    armedSelectionRange = nil
+    viewModel.clearEditRewriteState()
+    isRewriteFieldFocused = true
+  }
+
+  private func armSelectionScope() {
+    guard rielaNoteRewriteRangeIsValid(selectedBodyRange, in: bodyDraft.draftBodyMarkdown) else {
+      armedSelectionRange = nil
+      return
+    }
+    armedSelectionRange = selectedBodyRange
+    isRewriteFieldFocused = true
+  }
+
+  private func submitRewrite(for note: Note) {
+    let instruction = rewriteInstruction.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !instruction.isEmpty else {
+      return
+    }
+    let currentDraft = bodyDraft.draftBodyMarkdown
+    let activeRange = armedSelectionRange.flatMap { range -> NSRange? in
+      rielaNoteRewriteRangeIsValid(range, in: currentDraft) ? range : nil
+    }
+    let selectedText = activeRange.flatMap { rielaNoteSelectedText(in: currentDraft, range: $0) }
+    let submittedDraft = currentDraft
+    let submittedRange = activeRange
+    let submittedSelectedText = selectedText
+    Task {
+      let rewrite = await viewModel.proposeBodyRewrite(
+        instruction: instruction,
+        draftBodyMarkdown: submittedDraft,
+        selectedText: selectedText,
+        selectionStart: activeRange?.location,
+        selectionEnd: activeRange.map { $0.location + $0.length }
+      )
+      guard bodyDraft.isEditingBody,
+            bodyDraft.editingNoteId == note.noteId,
+            let rewrite else {
+        return
+      }
+      guard rielaNoteRewriteResultIsFresh(
+        currentDraft: bodyDraft.draftBodyMarkdown,
+        submittedDraft: submittedDraft,
+        submittedRange: submittedRange,
+        submittedSelectedText: submittedSelectedText
+      ) else {
+        viewModel.markEditRewriteResultStale()
+        return
+      }
+      if let activeRange = submittedRange,
+         let updated = rielaNoteApplyingRewrite(
+           draft: bodyDraft.draftBodyMarkdown,
+           range: activeRange,
+           replacement: rewrite.rewrittenMarkdown
+         ) {
+        bodyDraft.draftBodyMarkdown = updated
+        let insertedRange = NSRange(location: activeRange.location, length: rewrite.rewrittenMarkdown.utf16.count)
+        selectedBodyRange = insertedRange
+        armedSelectionRange = insertedRange
+      } else {
+        bodyDraft.draftBodyMarkdown = rewrite.rewrittenMarkdown
+        selectedBodyRange = NSRange(location: 0, length: 0)
+        armedSelectionRange = nil
+      }
+      rewriteInstruction = ""
+    }
+  }
+
+  private func displayedMarkdown(for note: Note) -> String {
+    rielaNoteDisplayedMarkdown(
+      noteMarkdown: note.bodyMarkdown,
+      draftMarkdown: bodyDraft.previewBodyMarkdown(for: note),
+      isEditing: bodyDraft.isEditingBody && bodyDraft.editingNoteId == note.noteId
+    )
+  }
+
+  private func copyDisplayedMarkdown(for note: Note) {
+    let markdown = displayedMarkdown(for: note)
+    #if os(macOS)
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(markdown, forType: .string)
+    #elseif os(iOS)
+    UIPasteboard.general.string = markdown
+    #endif
+    copiedFeedbackVisible = true
+    Task { @MainActor in
+      try? await Task.sleep(nanoseconds: 1_500_000_000)
+      copiedFeedbackVisible = false
+    }
+  }
+
+  private func exportDisplayedMarkdown(for note: Note) {
+    markdownExportDocument = RielaNoteMarkdownFileDocument(markdown: displayedMarkdown(for: note))
+    markdownExportFilename = rielaNoteExportFilename(title: note.title, noteId: note.noteId)
+    isMarkdownExportPresented = true
   }
 
   private func applyDefaultMetadataExpansion(for detail: RielaNoteDetail) {

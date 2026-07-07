@@ -34,11 +34,15 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   @Published public internal(set) var linkProposals: [NoteLinkProposal] = []
   @Published public internal(set) var linkProposalError: String?
   @Published public internal(set) var isLinkProposalLoading = false
+  @Published public internal(set) var editRewriteError: String?
+  @Published public internal(set) var editRewriteSummary: String?
+  @Published public internal(set) var isEditRewriteLoading = false
   @Published public private(set) var isSourceImageLoading = false
   @Published public var filter = RielaNoteListFilter()
   @Published public var searchText = ""
   @Published public var sourceImageZoom = 1.0
   @Published public var contentMode: NoteContentMode = .text
+  @Published public var isDetailExpanded = false
   @Published public internal(set) var state: LoadState = .idle
 
   public static let sourceImageMinimumZoom = 0.5
@@ -61,6 +65,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   private var searchGeneration = 0
   private var selectionGeneration = 0
   var linkProposalGeneration = 0
+  var editRewriteGeneration = 0
 
   private var notebookPageSize: Int {
     max(notebookLimit, 1)
@@ -713,9 +718,13 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   private func advanceSelectionGeneration() -> Int {
     selectionGeneration += 1
     linkProposalGeneration += 1
+    editRewriteGeneration += 1
     linkProposals = []
     linkProposalError = nil
     isLinkProposalLoading = false
+    editRewriteError = nil
+    editRewriteSummary = nil
+    isEditRewriteLoading = false
     return selectionGeneration
   }
 

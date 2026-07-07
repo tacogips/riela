@@ -108,6 +108,14 @@ public protocol RielaNoteUIClient: Sendable {
     provenance: NoteProvenance
   ) async throws -> RielaNoteDetail
   func proposeNoteLinks(noteId: String) async throws -> [NoteLinkProposal]
+  func proposeNoteBodyRewrite(
+    noteId: String,
+    instruction: String,
+    bodyMarkdown: String,
+    selectedText: String?,
+    selectionStart: Int?,
+    selectionEnd: Int?
+  ) async throws -> RielaNoteEditRewriteDraft
   func answerNoteAgentTurn(message: String, limit: Int) async throws -> RielaNoteAgentTurn
   func saveNoteAgentConversation(
     title: String,
@@ -163,6 +171,17 @@ public extension RielaNoteUIClient {
 
   func proposeNoteLinks(noteId: String) async throws -> [NoteLinkProposal] {
     []
+  }
+
+  func proposeNoteBodyRewrite(
+    noteId: String,
+    instruction: String,
+    bodyMarkdown: String,
+    selectedText: String?,
+    selectionStart: Int?,
+    selectionEnd: Int?
+  ) async throws -> RielaNoteEditRewriteDraft {
+    throw RielaNoteEditRewriteError.notConfigured
   }
 }
 
@@ -231,17 +250,20 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
   private let s3Profiles: [S3StorageProfile]
   private let s3HTTPClient: any S3HTTPClient
   private let linkProposalProvider: (any RielaNoteLinkProposalProviding)?
+  private let editRewriteProvider: (any RielaNoteEditRewriteProviding)?
 
   public init(
     service: NoteService,
     s3Profiles: [S3StorageProfile] = [],
     s3HTTPClient: any S3HTTPClient = URLSessionS3HTTPClient(),
-    linkProposalProvider: (any RielaNoteLinkProposalProviding)? = nil
+    linkProposalProvider: (any RielaNoteLinkProposalProviding)? = nil,
+    editRewriteProvider: (any RielaNoteEditRewriteProviding)? = nil
   ) {
     self.service = service
     self.s3Profiles = s3Profiles
     self.s3HTTPClient = s3HTTPClient
     self.linkProposalProvider = linkProposalProvider
+    self.editRewriteProvider = editRewriteProvider
   }
 
   public func listNotebooks(limit: Int, offset: Int) async throws -> [Notebook] {
@@ -414,6 +436,28 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
       )
     }
     return try service.proposeLinks(noteId: noteId, limit: Self.linkProposalLimit)
+  }
+
+  public func proposeNoteBodyRewrite(
+    noteId: String,
+    instruction: String,
+    bodyMarkdown: String,
+    selectedText: String?,
+    selectionStart: Int?,
+    selectionEnd: Int?
+  ) async throws -> RielaNoteEditRewriteDraft {
+    guard let editRewriteProvider else {
+      throw RielaNoteEditRewriteError.notConfigured
+    }
+    return try await editRewriteProvider.proposeRewrite(
+      noteId: noteId,
+      noteRoot: service.noteRootPath(),
+      instruction: instruction,
+      bodyMarkdown: bodyMarkdown,
+      selectedText: selectedText,
+      selectionStart: selectionStart,
+      selectionEnd: selectionEnd
+    )
   }
 
   public func answerNoteAgentTurn(message: String, limit: Int) async throws -> RielaNoteAgentTurn {

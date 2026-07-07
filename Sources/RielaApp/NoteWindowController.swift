@@ -32,7 +32,11 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
     let client = NoteServiceRielaNoteUIClient(
       service: service,
       s3Profiles: s3Profiles,
-      linkProposalProvider: RielaWorkflowNoteLinkProposalProvider.defaultProvider(environment: environment)
+      linkProposalProvider: RielaWorkflowNoteLinkProposalProvider.defaultProvider(environment: environment),
+      editRewriteProvider: RielaWorkflowNoteEditRewriteProvider.defaultProvider(
+        environment: environment,
+        allowEnvironmentOverrides: true
+      )
     )
     let hostingController = NSHostingController(rootView: RielaNoteRootView(client: client, onOpenSettings: onOpenSettings))
     let window = NSWindow(

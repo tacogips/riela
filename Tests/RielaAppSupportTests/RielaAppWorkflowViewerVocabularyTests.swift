@@ -21,6 +21,20 @@ final class RielaAppWorkflowViewerVocabularyTests: XCTestCase {
     XCTAssertFalse(controller.sessionTitle(summary).contains("Active"))
   }
 
+  func testViewerShowsProcessStageForKnownProcessingSteps() {
+    let controller = WorkflowViewerWindowController()
+    let summary = WorkflowViewerSessionSummary(
+      sessionId: "session-1",
+      workflowId: "workflow-1",
+      status: .running,
+      currentStepId: "ocr-pages",
+      activeStepIds: ["ocr-pages"],
+      updatedAt: Date(timeIntervalSince1970: 0)
+    )
+
+    XCTAssertEqual(controller.sessionTitle(summary), "session-1, Running, OCR in progress")
+  }
+
   func testViewerMapsActiveRuntimeStateToRunningForDisplay() {
     let controller = WorkflowViewerWindowController()
 

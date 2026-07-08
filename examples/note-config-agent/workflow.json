@@ -87,6 +87,7 @@
               "workflowRoot": "{{workflowInput.workflowRoot}}",
               "workflowId": "{{ingestionWorkflow.workflowId}}",
               "notebookKindTag": "{{ingestionWorkflow.notebookKindTag}}",
+              "translationEnabled": "{{ingestionWorkflow.translationEnabled}}",
               "assignedBy": "note-config-agent"
             }
           }

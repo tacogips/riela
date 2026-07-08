@@ -205,7 +205,11 @@ let package = Package(
     .testTarget(name: "AgentRuntimeKitTests", dependencies: ["AgentRuntimeKit", "RielaCore"]),
     .testTarget(name: "RielaJavaScriptTests", dependencies: ["RielaJavaScript"]),
     .testTarget(name: "RielaAddonsTests", dependencies: ["RielaCore", "RielaAddons"]),
-    .testTarget(name: "RielaAdaptersTests", dependencies: ["RielaCore", "RielaAdapters"]),
+    .testTarget(
+      name: "RielaAdaptersTests",
+      dependencies: ["RielaCore", "RielaAdapters"],
+      resources: [.process("Resources")]
+    ),
     .testTarget(name: "RielaEventsTests", dependencies: ["RielaCore", "RielaEvents"]),
     .testTarget(name: "RielaHookTests", dependencies: ["RielaCore", "RielaHook"]),
     .testTarget(name: "RielaGraphQLTests", dependencies: ["RielaCore", "RielaGraphQL", "RielaNote"]),

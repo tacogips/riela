@@ -131,12 +131,20 @@ public struct AnthropicMessagesRequest: Equatable, Sendable {
   public var maxTokens: Int
   public var system: String?
   public var messages: [AnthropicMessage]
+  public var imageInputs: [AnthropicImageInput]
 
-  public init(model: String, maxTokens: Int, system: String? = nil, messages: [AnthropicMessage]) {
+  public init(
+    model: String,
+    maxTokens: Int,
+    system: String? = nil,
+    messages: [AnthropicMessage],
+    imageInputs: [AnthropicImageInput] = []
+  ) {
     self.model = model
     self.maxTokens = max(1, maxTokens)
     self.system = system
     self.messages = messages
+    self.imageInputs = imageInputs
   }
 }
 
@@ -147,6 +155,16 @@ public struct AnthropicMessage: Equatable, Sendable {
   public init(role: String, content: String) {
     self.role = role
     self.content = content
+  }
+}
+
+public struct AnthropicImageInput: Equatable, Sendable {
+  public var mimeType: String
+  public var dataBase64: String
+
+  public init(mimeType: String, dataBase64: String) {
+    self.mimeType = mimeType
+    self.dataBase64 = dataBase64
   }
 }
 
@@ -358,7 +376,8 @@ public struct AnthropicSDKAdapter: NodeAdapter {
           model: input.node.model,
           maxTokens: configuration.maxTokens,
           system: input.systemPromptText,
-          messages: [AnthropicMessage(role: "user", content: input.promptText)]
+          messages: [AnthropicMessage(role: "user", content: input.promptText)],
+          imageInputs: try anthropicImageInputs(from: input)
         )
       )
     )
@@ -398,7 +417,7 @@ public struct GeminiSDKAdapter: NodeAdapter {
           model: input.node.model,
           input: input.promptText,
           system: input.systemPromptText,
-          inlineDataParts: try geminiInlineDataParts(from: input)
+          inlineDataParts: try geminiInlineDataParts(from: input) + geminiInlineDataPartsFromImagePaths(input)
         )
       )
     )
@@ -950,99 +969,4 @@ private func cursorAgentRequest(from input: AdapterExecutionInput) -> CursorAgen
       input.agentEnvironment["CURSOR_AUTO_CREATE_PR"].map(JSONValue.string)
     )
   )
-}
-
-private func geminiInlineDataParts(from input: AdapterExecutionInput) throws -> [GeminiInlineDataPart] {
-  let value = input.mergedVariables["geminiInlineDataParts"] ?? input.node.variables["geminiInlineDataParts"]
-  guard let value, value != .null else {
-    return []
-  }
-  guard case let .array(parts) = value else {
-    throw AdapterExecutionError(.policyBlocked, "geminiInlineDataParts must be an array")
-  }
-  return try parts.enumerated().map { index, part in
-    guard case let .object(object) = part else {
-      throw AdapterExecutionError(.policyBlocked, "geminiInlineDataParts[\(index)] must be an object")
-    }
-    guard let mimeType = nonEmptyStringValue(object["mimeType"]) else {
-      throw AdapterExecutionError(.policyBlocked, "geminiInlineDataParts[\(index)].mimeType is required")
-    }
-    guard let dataBase64 = nonEmptyStringValue(object["dataBase64"] ?? object["data"]) else {
-      throw AdapterExecutionError(.policyBlocked, "geminiInlineDataParts[\(index)].dataBase64 is required")
-    }
-    return GeminiInlineDataPart(mimeType: mimeType, dataBase64: dataBase64)
-  }
-}
-
-private func openAIImageInputs(from input: AdapterExecutionInput) throws -> [OpenAIImageInput] {
-  try resolveAdapterImagePaths(input).map { path in
-    let url = URL(fileURLWithPath: path)
-    let data: Data
-    do {
-      data = try Data(contentsOf: url)
-    } catch {
-      throw AdapterExecutionError(.policyBlocked, "failed to read OpenAI image attachment at \(path)")
-    }
-    return OpenAIImageInput(
-      mimeType: openAIImageMimeType(for: url),
-      dataBase64: data.base64EncodedString()
-    )
-  }
-}
-
-private func openAIImageMimeType(for url: URL) -> String {
-  switch url.pathExtension.lowercased() {
-  case "gif":
-    return "image/gif"
-  case "heic":
-    return "image/heic"
-  case "jpeg", "jpg":
-    return "image/jpeg"
-  case "png":
-    return "image/png"
-  case "webp":
-    return "image/webp"
-  default:
-    return "application/octet-stream"
-  }
-}
-
-private func nonEmptyStringValue(_ value: JSONValue?) -> String? {
-  guard case let .string(text) = value, !text.isEmpty else {
-    return nil
-  }
-  return text
-}
-
-func stringValue(_ value: JSONValue?) -> String? {
-  guard case let .string(text) = value else {
-    return nil
-  }
-  return text
-}
-
-private func firstNonEmptyString(_ values: JSONValue?...) -> String? {
-  values.compactMap(nonEmptyStringValue).first
-}
-
-private func firstBool(_ values: JSONValue?...) -> Bool? {
-  values.compactMap(boolValue).first
-}
-
-private func boolValue(_ value: JSONValue?) -> Bool? {
-  switch value {
-  case let .bool(flag):
-    flag
-  case let .string(text):
-    switch text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-    case "true", "1", "yes", "on":
-      true
-    case "false", "0", "no", "off":
-      false
-    default:
-      nil
-    }
-  default:
-    nil
-  }
 }

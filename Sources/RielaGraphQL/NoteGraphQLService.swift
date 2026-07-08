@@ -184,7 +184,8 @@ public struct GraphQLNoteGraphQLService: Sendable {
         workflowRoot: input.workflowRoot,
         workflowId: input.workflowId,
         notebookKindTag: input.notebookKindTag ?? "notebook-kind:imported-material",
-        assignedBy: input.assignedBy ?? "note-config-agent"
+        assignedBy: input.assignedBy ?? "note-config-agent",
+        translationEnabled: input.translationEnabled ?? false
       )
       return .init(result: .ok, workflowScaffold: GraphQLNoteWorkflowScaffoldDTO(result: scaffold))
     }

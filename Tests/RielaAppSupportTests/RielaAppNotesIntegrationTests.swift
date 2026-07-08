@@ -156,9 +156,18 @@ final class RielaAppNotesIntegrationTests: XCTestCase {
     let controller = try NoteSettingsWindowController(noteRoot: noteRoot, profileName: .default)
 
     XCTAssertFalse(controller.settingsStore.load().exposesNoteAPI)
+    XCTAssertEqual(controller.settingsStore.load().normalizedTranslationTargetLanguage, "English")
 
-    try controller.settingsStore.save(RielaAppNoteSettings(exposesNoteAPI: true))
+    try controller.settingsStore.save(RielaAppNoteSettings(
+      exposesNoteAPI: true,
+      defaultTranslationTargetLanguage: "Japanese"
+    ))
     XCTAssertTrue(controller.settingsStore.load().exposesNoteAPI)
+    XCTAssertEqual(controller.settingsStore.load().normalizedTranslationTargetLanguage, "Japanese")
+
+    controller.setDefaultTranslationTargetLanguage(" French ")
+    try controller.saveTranslationSettingsFromEditor()
+    XCTAssertEqual(controller.settingsStore.load().defaultTranslationTargetLanguage, "French")
 
     let client = try controller.service.registerAPIClient(displayName: "Local test", bearerToken: "secret-token")
     XCTAssertEqual(try controller.service.listAPIClients().map(\.displayName), ["Local test"])

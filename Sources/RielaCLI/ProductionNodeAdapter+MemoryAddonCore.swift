@@ -104,6 +104,9 @@ func renderAddonInputs(_ inputs: JSONObject?, variables: JSONObject) -> JSONObje
 func renderJSONTemplates(_ value: JSONValue, variables: JSONObject) -> JSONValue {
   switch value {
   case let .string(template):
+    if let exactValue = exactTemplateValue(template, variables: variables) {
+      return exactValue
+    }
     return .string(renderPromptTemplate(template, variables: variables))
   case let .array(values):
     return .array(values.map { renderJSONTemplates($0, variables: variables) })
@@ -112,6 +115,37 @@ func renderJSONTemplates(_ value: JSONValue, variables: JSONObject) -> JSONValue
   case .null, .bool, .integer, .number:
     return value
   }
+}
+
+private func exactTemplateValue(_ template: String, variables: JSONObject) -> JSONValue? {
+  let pattern = #"^\s*\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}\s*$"#
+  guard
+    let regex = try? NSRegularExpression(pattern: pattern),
+    let match = regex.firstMatch(
+      in: template,
+      range: NSRange(template.startIndex..<template.endIndex, in: template)
+    ),
+    let pathRange = Range(match.range(at: 1), in: template)
+  else {
+    return nil
+  }
+  return lookupTemplatePath(String(template[pathRange]), in: variables)
+}
+
+private func lookupTemplatePath(_ path: String, in variables: JSONObject) -> JSONValue? {
+  let keys = path.split(separator: ".").map(String.init).filter { !$0.isEmpty }
+  guard !keys.isEmpty else {
+    return nil
+  }
+
+  var current: JSONValue? = .object(variables)
+  for key in keys {
+    guard case let .object(object) = current else {
+      return nil
+    }
+    current = object[key]
+  }
+  return current
 }
 
 func nonEmptyString(_ value: JSONValue?) -> String? {

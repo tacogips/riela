@@ -156,6 +156,7 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
   public var workflowName: String
   public var status: WorkflowSessionStatus
   public var currentStepId: String?
+  public var currentStage: String?
   public var lastCompletedStepId: String?
   public var failureReason: String?
   public var failureKind: WorkflowSessionFailureKind?
@@ -165,6 +166,7 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
   public var instanceBaseIdentity: String?
   public var instanceConfiguration: JSONObject?
   public var activeStepId: String?
+  public var activeStage: String?
   public var activeExecutionId: String?
   public var activeBackend: NodeExecutionBackend?
   public var activeExecutionUpdatedAt: Date?
@@ -185,6 +187,7 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
     workflowName: String,
     status: WorkflowSessionStatus,
     currentStepId: String?,
+    currentStage: String? = nil,
     lastCompletedStepId: String? = nil,
     failureReason: String? = nil,
     failureKind: WorkflowSessionFailureKind? = nil,
@@ -194,6 +197,7 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
     instanceBaseIdentity: String? = nil,
     instanceConfiguration: JSONObject? = nil,
     activeStepId: String? = nil,
+    activeStage: String? = nil,
     activeExecutionId: String? = nil,
     activeBackend: NodeExecutionBackend? = nil,
     activeExecutionUpdatedAt: Date? = nil,
@@ -213,6 +217,7 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
     self.workflowName = workflowName
     self.status = status
     self.currentStepId = currentStepId
+    self.currentStage = currentStage
     self.lastCompletedStepId = lastCompletedStepId
     self.failureReason = failureReason
     self.failureKind = failureKind
@@ -222,6 +227,7 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
     self.instanceBaseIdentity = instanceBaseIdentity
     self.instanceConfiguration = instanceConfiguration
     self.activeStepId = activeStepId
+    self.activeStage = activeStage
     self.activeExecutionId = activeExecutionId
     self.activeBackend = activeBackend
     self.activeExecutionUpdatedAt = activeExecutionUpdatedAt
@@ -328,6 +334,7 @@ public struct SessionInspectionCommand: Sendable {
       workflowName: snapshot.session.workflowId,
       status: snapshot.session.status,
       currentStepId: snapshot.session.currentStepId,
+      currentStage: Self.stageDescription(for: snapshot.session.currentStepId),
       lastCompletedStepId: lastCompletedStepId,
       failureReason: snapshot.session.failureReason,
       failureKind: snapshot.session.failureKind,
@@ -337,6 +344,7 @@ public struct SessionInspectionCommand: Sendable {
       instanceBaseIdentity: snapshot.session.instanceBaseIdentity,
       instanceConfiguration: snapshot.session.instanceConfiguration,
       activeStepId: activeExecution?.stepId,
+      activeStage: Self.stageDescription(for: activeExecution?.stepId),
       activeExecutionId: activeExecution?.executionId,
       activeBackend: activeExecution?.backend,
       activeExecutionUpdatedAt: activeExecution?.updatedAt,
@@ -361,6 +369,7 @@ public struct SessionInspectionCommand: Sendable {
         "workflow: \(result.workflowName)",
         "status: \(result.status.rawValue)",
         "currentStepId: \(result.currentStepId ?? "-")",
+        "currentStage: \(result.currentStage ?? "-")",
         "lastCompletedStepId: \(result.lastCompletedStepId ?? "-")",
         "failureKind: \(result.failureKind?.rawValue ?? "-")",
         "failureReason: \(result.failureReason ?? "-")",
@@ -368,6 +377,7 @@ public struct SessionInspectionCommand: Sendable {
         "instanceKind: \(result.instanceKind ?? "-")",
         "instanceBaseIdentity: \(result.instanceBaseIdentity ?? "-")",
         "activeStepId: \(result.activeStepId ?? "-")",
+        "activeStage: \(result.activeStage ?? "-")",
         "activeExecutionId: \(result.activeExecutionId ?? "-")",
         "activeBackend: \(result.activeBackend?.rawValue ?? "-")",
         "activeExecutionUpdatedAt: \(result.activeExecutionUpdatedAt.map(iso8601String) ?? "-")",
@@ -408,6 +418,23 @@ public struct SessionInspectionCommand: Sendable {
       }
       return CLICommandResult(exitCode: .success, stdout: lines.joined(separator: "\n") + "\n")
     }
+  }
+
+  private static func stageDescription(for stepId: String?) -> String? {
+    guard let stepId else {
+      return nil
+    }
+    let normalized = stepId.lowercased()
+    if normalized.contains("ocr") {
+      return "OCR in progress"
+    }
+    if normalized.contains("translate") || normalized.contains("translation") {
+      return "Translation in progress"
+    }
+    if normalized.contains("ingest") || normalized.contains("note-create") || normalized.contains("create-note") {
+      return "Note creation in progress"
+    }
+    return nil
   }
 
   private func executionRows(

@@ -26,7 +26,8 @@
       },
       "ingestionWorkflow": {
         "workflowId": "note-ingest-business-idea",
-        "notebookKindTag": "notebook-kind:imported-material"
+        "notebookKindTag": "notebook-kind:imported-material",
+        "translationEnabled": false
       }
     }
   }

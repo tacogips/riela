@@ -361,17 +361,20 @@ public struct GraphQLScaffoldNoteWorkflowInput: Codable, Equatable, Sendable {
   public var workflowId: String
   public var notebookKindTag: String?
   public var assignedBy: String?
+  public var translationEnabled: Bool?
 
   public init(
     workflowRoot: String,
     workflowId: String,
     notebookKindTag: String? = nil,
-    assignedBy: String? = nil
+    assignedBy: String? = nil,
+    translationEnabled: Bool? = nil
   ) {
     self.workflowRoot = workflowRoot
     self.workflowId = workflowId
     self.notebookKindTag = notebookKindTag
     self.assignedBy = assignedBy
+    self.translationEnabled = translationEnabled
   }
 }
 

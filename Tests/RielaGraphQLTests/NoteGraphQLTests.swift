@@ -119,13 +119,23 @@ final class NoteGraphQLTests: XCTestCase {
     let tag = await service.defineTag(GraphQLDefineNoteTagInput(name: "business-idea", classId: "business-idea"))
     let scaffold = await service.scaffoldIngestionWorkflow(GraphQLScaffoldNoteWorkflowInput(
       workflowRoot: workflowRoot,
-      workflowId: "note-ingest-business-idea"
+      workflowId: "note-ingest-business-idea",
+      translationEnabled: true
     ))
 
     XCTAssertEqual(tagClass.tagClass?.classId, "business-idea")
     XCTAssertEqual(tag.tag?.classId, "business-idea")
     XCTAssertEqual(scaffold.workflowScaffold?.workflowId, "note-ingest-business-idea")
     XCTAssertTrue(FileManager.default.fileExists(atPath: scaffold.workflowScaffold?.workflowPath ?? ""))
+    let workflowPath = try XCTUnwrap(scaffold.workflowScaffold?.workflowPath)
+    let workflowURL = URL(fileURLWithPath: workflowPath)
+    let bundleURL = workflowURL.deletingLastPathComponent()
+    XCTAssertTrue(FileManager.default.fileExists(atPath: bundleURL.appendingPathComponent("prompts/ocr-pages.md").path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: bundleURL.appendingPathComponent("prompts/translate-pages.md").path))
+    let ocrNodeData = try Data(contentsOf: bundleURL.appendingPathComponent("nodes/node-ocr-pages.json"))
+    let ocrNode = try XCTUnwrap(JSONSerialization.jsonObject(with: ocrNodeData) as? [String: Any])
+    let variables = try XCTUnwrap(ocrNode["variables"] as? [String: Any])
+    XCTAssertEqual(variables["translationEnabledDefault"] as? Bool, true)
   }
 
   func testNoteGraphQLServiceFiltersNotebooksByTag() async throws {

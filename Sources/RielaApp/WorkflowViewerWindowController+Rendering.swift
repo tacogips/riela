@@ -132,8 +132,30 @@ extension WorkflowViewerWindowController {
     rielaAppMetadataText([
       summary.sessionId,
       workflowViewerStateText(summary.status.rawValue),
-      summary.activeStepIds.isEmpty ? "" : "Current Step \(summary.activeStepIds.joined(separator: ","))"
+      workflowViewerStageText(for: summary.activeStepIds)
     ])
+  }
+
+  func workflowViewerStageText(for stepIds: [String]) -> String {
+    let stageLabels = stepIds.compactMap(workflowViewerStageLabel)
+    if !stageLabels.isEmpty {
+      return stageLabels.joined(separator: ", ")
+    }
+    return stepIds.isEmpty ? "" : "Current Step \(stepIds.joined(separator: ","))"
+  }
+
+  private func workflowViewerStageLabel(for stepId: String) -> String? {
+    let normalized = stepId.lowercased()
+    if normalized.contains("ocr") {
+      return "OCR in progress"
+    }
+    if normalized.contains("translate") || normalized.contains("translation") {
+      return "Translation in progress"
+    }
+    if normalized.contains("ingest") || normalized.contains("note-create") || normalized.contains("create-note") {
+      return "Note creation in progress"
+    }
+    return nil
   }
 
   func workflowViewerStateText(_ rawValue: String) -> String {

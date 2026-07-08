@@ -12,14 +12,13 @@ final class OfficialSDKLiveOCRTranslationTests: XCTestCase {
       timeout: .seconds(60)
     ))
 
-    let output = try await adapter.execute(
-      input(
-        backend: .officialOpenAISDK,
-        model: environmentValue("RIELA_LIVE_OPENAI_OCR_MODEL") ?? "gpt-5",
-        promptText: ocrTranslationPrompt(sourceLanguage: "Japanese", targetLanguage: "English"),
-        imageName: "japanese_meeting"
-      ),
-      context: AdapterExecutionContext(deadline: Date(timeIntervalSinceNow: 90))
+    let output = try await executeOCRThenTranslate(
+      adapter: adapter,
+      backend: .officialOpenAISDK,
+      model: environmentValue("RIELA_LIVE_OPENAI_OCR_MODEL") ?? "gpt-5",
+      imageName: "japanese_meeting",
+      sourceLanguage: "Japanese",
+      targetLanguage: "English"
     )
 
     assertOCRTranslation(
@@ -38,14 +37,13 @@ final class OfficialSDKLiveOCRTranslationTests: XCTestCase {
       timeout: .seconds(60)
     ))
 
-    let output = try await adapter.execute(
-      input(
-        backend: .officialOpenAISDK,
-        model: environmentValue("RIELA_LIVE_OPENAI_OCR_MODEL") ?? "gpt-5",
-        promptText: ocrTranslationPrompt(sourceLanguage: "English", targetLanguage: "Japanese"),
-        imageName: "english_library"
-      ),
-      context: AdapterExecutionContext(deadline: Date(timeIntervalSinceNow: 90))
+    let output = try await executeOCRThenTranslate(
+      adapter: adapter,
+      backend: .officialOpenAISDK,
+      model: environmentValue("RIELA_LIVE_OPENAI_OCR_MODEL") ?? "gpt-5",
+      imageName: "english_library",
+      sourceLanguage: "English",
+      targetLanguage: "Japanese"
     )
 
     assertOCRTranslation(
@@ -69,14 +67,13 @@ final class OfficialSDKLiveOCRTranslationTests: XCTestCase {
 
     let output: AdapterExecutionOutput
     do {
-      output = try await adapter.execute(
-        input(
-          backend: .officialAnthropicSDK,
-          model: environmentValue("RIELA_LIVE_ANTHROPIC_OCR_MODEL") ?? "claude-sonnet-4-5",
-          promptText: ocrTranslationPrompt(sourceLanguage: "English", targetLanguage: "Japanese"),
-          imageName: "english_library"
-        ),
-        context: AdapterExecutionContext(deadline: Date(timeIntervalSinceNow: 90))
+      output = try await executeOCRThenTranslate(
+        adapter: adapter,
+        backend: .officialAnthropicSDK,
+        model: environmentValue("RIELA_LIVE_ANTHROPIC_OCR_MODEL") ?? "claude-sonnet-4-5",
+        imageName: "english_library",
+        sourceLanguage: "English",
+        targetLanguage: "Japanese"
       )
     } catch let error as AdapterExecutionError where isProviderAccountUnavailable(error) {
       throw XCTSkip("Anthropic API is reachable but unavailable for live OCR translation: \(error.message)")
@@ -100,14 +97,13 @@ final class OfficialSDKLiveOCRTranslationTests: XCTestCase {
       timeout: .seconds(60)
     ))
 
-    let output = try await adapter.execute(
-      input(
-        backend: .officialGeminiSDK,
-        model: environmentValue("RIELA_LIVE_GEMINI_OCR_MODEL") ?? "gemini-3.5-flash",
-        promptText: ocrTranslationPrompt(sourceLanguage: "Simplified Chinese", targetLanguage: "English"),
-        imageName: "chinese_ticket"
-      ),
-      context: AdapterExecutionContext(deadline: Date(timeIntervalSinceNow: 90))
+    let output = try await executeOCRThenTranslate(
+      adapter: adapter,
+      backend: .officialGeminiSDK,
+      model: environmentValue("RIELA_LIVE_GEMINI_OCR_MODEL") ?? "gemini-3.5-flash",
+      imageName: "chinese_ticket",
+      sourceLanguage: "Simplified Chinese",
+      targetLanguage: "English"
     )
 
     assertOCRTranslation(
@@ -118,13 +114,60 @@ final class OfficialSDKLiveOCRTranslationTests: XCTestCase {
     )
   }
 
-  private func ocrTranslationPrompt(sourceLanguage: String, targetLanguage: String) -> String {
+  private func executeOCRThenTranslate(
+    adapter: any NodeAdapter,
+    backend: NodeExecutionBackend,
+    model: String,
+    imageName: String,
+    sourceLanguage: String,
+    targetLanguage: String,
+    file: StaticString = #filePath,
+    line: UInt = #line
+  ) async throws -> AdapterExecutionOutput {
+    let ocrOutput = try await adapter.execute(
+      input(
+        backend: backend,
+        model: model,
+        promptText: ocrPrompt(sourceLanguage: sourceLanguage),
+        imageName: imageName
+      ),
+      context: AdapterExecutionContext(deadline: Date(timeIntervalSinceNow: 90))
+    )
+    let ocrText = try outputText(ocrOutput, file: file, line: line)
+    XCTAssertFalse(ocrText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, file: file, line: line)
+
+    return try await adapter.execute(
+      input(
+        backend: backend,
+        model: model,
+        promptText: translationPrompt(
+          sourceLanguage: sourceLanguage,
+          targetLanguage: targetLanguage,
+          ocrText: ocrText
+        )
+      ),
+      context: AdapterExecutionContext(deadline: Date(timeIntervalSinceNow: 90))
+    )
+  }
+
+  private func ocrPrompt(sourceLanguage: String) -> String {
     """
-    OCR the attached image and translate the visible \(sourceLanguage) sentence to \(targetLanguage).
-    Return exactly two lines, keeping the OCR text and translation side by side as labeled plain text.
+    OCR the attached image.
+    Return only the exact visible \(sourceLanguage) text.
+    Do not translate.
+    """
+  }
+
+  private func translationPrompt(sourceLanguage: String, targetLanguage: String, ocrText: String) -> String {
+    """
+    Translate this \(sourceLanguage) OCR text to \(targetLanguage).
+    Return exactly two lines, keeping the original OCR text and translation side by side as labeled plain text.
     Example:
     OCR: Bonjour.
     Translation: Hello.
+
+    OCR text:
+    \(ocrText)
     """
   }
 
@@ -132,12 +175,16 @@ final class OfficialSDKLiveOCRTranslationTests: XCTestCase {
     backend: NodeExecutionBackend,
     model: String,
     promptText: String,
-    imageName: String
+    imageName: String? = nil
   ) throws -> AdapterExecutionInput {
-    AdapterExecutionInput(
+    var mergedVariables: JSONObject = [:]
+    if let imageName {
+      mergedVariables["imagePaths"] = .array([.string(try fixtureURL(imageName).path)])
+    }
+    return AdapterExecutionInput(
       node: AgentNodePayload(id: "live-ocr-translation", executionBackend: backend, model: model),
       promptText: promptText,
-      mergedVariables: ["imagePaths": .array([.string(try fixtureURL(imageName).path)])]
+      mergedVariables: mergedVariables
     )
   }
 
@@ -180,6 +227,18 @@ final class OfficialSDKLiveOCRTranslationTests: XCTestCase {
       || normalized.contains("billing")
       || normalized.contains("insufficient_quota")
       || normalized.contains("quota")
+  }
+
+  private func outputText(
+    _ output: AdapterExecutionOutput,
+    file: StaticString = #filePath,
+    line: UInt = #line
+  ) throws -> String {
+    guard case let .string(text) = output.payload["text"] else {
+      XCTFail("Expected text payload, got \(String(describing: output.payload["text"]))", file: file, line: line)
+      throw AdapterExecutionError(.invalidOutput, "expected text payload")
+    }
+    return text
   }
 
   private func assertOCRTranslation(

@@ -37,6 +37,39 @@ contract than container-backed add-ons:
 - stderr and process status are captured as diagnostics, but successful node
   output is derived from parsed stdout rather than stderr text
 
+## Apple Gateway Review Hardening Boundaries
+
+The Apple Gateway built-ins are reviewed as one cohesive local-CLI surface:
+shared support, Notes, Mail, Reminders, Calendar read/write, Clock alarms,
+Notifications, Admin commands, tests, and `examples/apple-*`. A hardening pass
+must preserve the existing public add-on ids, versions, workflow input/output
+shapes, and domain separation unless a confirmed defect cannot be fixed without
+a documented contract change.
+
+The review boundary is behavior-first:
+
+- subprocess execution must continue to use fixed subcommands with separate
+  argv elements and no shell interpolation
+- executable selection must remain literal config, then the documented
+  environment fallback, then `PATH`; workflow inputs and upstream payloads must
+  not choose the binary
+- file materialization must keep Riela-owned destination roots and sanitized
+  leaf names; gateway-provided filenames are metadata only
+- GraphQL query and mutation operations must keep fixed documents or validated
+  variables rather than accepting arbitrary command fragments
+- process output parsing must reject malformed JSON, missing required data, and
+  ambiguous download mappings instead of inventing partial success
+- non-zero exits, GraphQL errors, permission failures, missing helper bridges,
+  unsupported host capabilities, and timeouts must map to the existing error
+  classes consistently across Apple domains
+- tests must use fake `apple-gateway` executables and deterministic fixtures,
+  not live Apple app access, TCC state, or a locally installed gateway
+
+Rollout is limited to in-scope Apple Gateway files and examples. Findings whose
+correct fix requires changing shared adapter behavior outside the Apple Gateway
+source files must be recorded as follow-up TODOs rather than folded into this
+pass.
+
 ## Built-in `riela/apple-notes-list`
 
 ### Purpose

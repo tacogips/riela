@@ -8,14 +8,22 @@ import RielaServer
 
 struct RielaAppNoteSettings: Codable, Equatable, Sendable {
   var exposesNoteAPI: Bool
+  var defaultTranslationTargetLanguage: String
   var s3Profiles: [RielaAppNoteS3ProfileSettings]
 
   init(
     exposesNoteAPI: Bool = false,
+    defaultTranslationTargetLanguage: String = "English",
     s3Profiles: [RielaAppNoteS3ProfileSettings] = []
   ) {
     self.exposesNoteAPI = exposesNoteAPI
+    self.defaultTranslationTargetLanguage = defaultTranslationTargetLanguage
     self.s3Profiles = s3Profiles
+  }
+
+  var normalizedTranslationTargetLanguage: String {
+    let trimmed = defaultTranslationTargetLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? "English" : trimmed
   }
 }
 
@@ -98,6 +106,7 @@ final class NoteSettingsWindowController: NSWindowController, NSWindowDelegate {
 
   private let onWindowWillClose: () -> Void
   private let apiExposureCheckbox = NSButton(checkboxWithTitle: "Expose Note API", target: nil, action: nil)
+  private let translationTargetLanguageField = NSTextField(string: "")
   private let s3ProfileNameField = NSTextField(string: "")
   private let s3EndpointField = NSTextField(string: "")
   private let s3RegionField = NSTextField(string: "")
@@ -171,6 +180,17 @@ final class NoteSettingsWindowController: NSWindowController, NSWindowDelegate {
     apiExposureCheckbox.toolTip = "Allow the Riela note API to be exposed for this profile when the app serves it."
     apiExposureCheckbox.setAccessibilityLabel("Expose Note API")
 
+    translationTargetLanguageField.placeholderString = "English"
+    translationTargetLanguageField.setAccessibilityLabel("Default translation target language")
+    translationTargetLanguageField.toolTip = "Default target language used by the note detail translate button."
+    let saveTranslationButton = NSButton(
+      title: "Save",
+      target: self,
+      action: #selector(saveTranslationSettings)
+    )
+    saveTranslationButton.bezelStyle = .rounded
+    saveTranslationButton.toolTip = "Save the default note translation target language."
+
     configureS3ProfileFields()
 
     let s3SaveButton = NSButton(title: "Save Profile", target: self, action: #selector(saveS3Profile))
@@ -203,6 +223,15 @@ final class NoteSettingsWindowController: NSWindowController, NSWindowDelegate {
     apiRow.orientation = .horizontal
     apiRow.alignment = .centerY
     apiRow.spacing = 8
+
+    let translationRow = RielaAppSettingsRow(views: [
+      rielaAppSettingsTitleLabel("Translate To", maxWidth: 110),
+      translationTargetLanguageField,
+      saveTranslationButton
+    ])
+    translationRow.orientation = .horizontal
+    translationRow.alignment = .centerY
+    translationRow.spacing = 8
 
     let s3Header = NSStackView(views: [
       sectionTitle("S3 Storage Profile"),
@@ -259,6 +288,7 @@ final class NoteSettingsWindowController: NSWindowController, NSWindowDelegate {
       titleRow,
       rielaAppSettingsRow(rootRow),
       rielaAppSettingsRow(apiRow),
+      rielaAppSettingsRow(translationRow),
       s3Header,
       rielaAppSettingsRow(s3ProfileRow),
       clientsHeader,
@@ -284,6 +314,7 @@ final class NoteSettingsWindowController: NSWindowController, NSWindowDelegate {
   private func reload(status: String? = nil) {
     let settings = settingsStore.load()
     apiExposureCheckbox.state = settings.exposesNoteAPI ? .on : .off
+    translationTargetLanguageField.stringValue = settings.normalizedTranslationTargetLanguage
     populateS3ProfileFields(from: settings.s3Profiles.first)
     rebuildClientRows()
     statusLabel.stringValue = status ?? "API exposure is opt-in per profile. Client tokens are shown only when registered."
@@ -346,6 +377,25 @@ final class NoteSettingsWindowController: NSWindowController, NSWindowDelegate {
     } catch {
       reload(status: "Failed to save settings: \(error.localizedDescription)")
     }
+  }
+
+  @objc private func saveTranslationSettings() {
+    do {
+      try saveTranslationSettingsFromEditor()
+    } catch {
+      reload(status: "Failed to save translation settings: \(error.localizedDescription)")
+    }
+  }
+
+  func saveTranslationSettingsFromEditor() throws {
+    var settings = settingsStore.load()
+    settings.defaultTranslationTargetLanguage = trimmed(translationTargetLanguageField)
+    try settingsStore.save(settings)
+    reload(status: "Default translation target saved: \(settings.normalizedTranslationTargetLanguage).")
+  }
+
+  func setDefaultTranslationTargetLanguage(_ language: String) {
+    translationTargetLanguageField.stringValue = language
   }
 
   @objc private func saveS3Profile() {

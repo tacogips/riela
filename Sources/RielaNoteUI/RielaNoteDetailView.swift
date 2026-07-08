@@ -11,10 +11,6 @@ public struct RielaNoteDetailView: View {
   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @ObservedObject private var viewModel: RielaNoteLibraryViewModel
   @State private var bodyDraft = RielaNoteBodyDraftState()
-  @State private var rewriteInstruction = ""
-  @State private var selectedBodyRange = NSRange(location: 0, length: 0)
-  @State private var armedSelectionRange: NSRange?
-  @State private var isSelectionQuestionMode = false
   @State private var copiedFeedbackVisible = false
   @State private var isMarkdownExportPresented = false
   @State private var markdownExportDocument = RielaNoteMarkdownFileDocument(markdown: "")
@@ -27,7 +23,6 @@ public struct RielaNoteDetailView: View {
   @State private var isLinksExpanded = false
   @State private var isCommentsExpanded = false
   @State private var isFilesExpanded = false
-  @FocusState private var isRewriteFieldFocused: Bool
 
   public init(viewModel: RielaNoteLibraryViewModel) {
     self.viewModel = viewModel
@@ -138,6 +133,7 @@ public struct RielaNoteDetailView: View {
     HStack(alignment: .top, spacing: 8) {
       if !note.readOnly {
         editControl(note)
+        translationControl(note)
       }
       Spacer(minLength: 12)
       HStack(spacing: 8) {
@@ -171,11 +167,51 @@ public struct RielaNoteDetailView: View {
     }
   }
 
+  private func translationControl(_ note: Note) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 6) {
+        TextField("Target", text: $viewModel.translationTargetLanguage)
+          .textFieldStyle(.roundedBorder)
+          .frame(width: 110)
+          .disabled(viewModel.isTranslateNoteLoading || bodyDraft.isEditingBody)
+          .help("Translation target language")
+        Button {
+          Task {
+            await viewModel.translateSelectedNote()
+          }
+        } label: {
+          if viewModel.isTranslateNoteLoading {
+            ProgressView()
+              .controlSize(.small)
+          } else {
+            Label("Translate note", systemImage: "translate")
+          }
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .disabled(
+          viewModel.translationTargetLanguage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || viewModel.isTranslateNoteLoading
+            || bodyDraft.isEditingBody
+            || note.readOnly
+        )
+        .help("Translate the whole note")
+      }
+      if let error = viewModel.translateNoteError {
+        Text(error)
+          .font(.caption)
+          .foregroundStyle(.red)
+      } else if let summary = viewModel.translateNoteSummary {
+        Text(summary)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+    }
+  }
+
   @ViewBuilder
   private func editControl(_ note: Note) -> some View {
-    if bodyDraft.isEditingBody {
-      rewritePill(note)
-    } else {
+    if !bodyDraft.isEditingBody {
       Button {
         startEditing(note)
       } label: {
@@ -183,93 +219,6 @@ public struct RielaNoteDetailView: View {
       }
       .buttonStyle(.bordered)
       .controlSize(.small)
-    }
-  }
-
-  private func rewritePill(_ note: Note) -> some View {
-    let isLoading = isSelectionQuestionMode
-      ? viewModel.isSelectionQuestionLoading
-      : viewModel.isEditRewriteLoading
-    return VStack(alignment: .leading, spacing: 4) {
-      HStack(spacing: 8) {
-        Image(systemName: isSelectionQuestionMode ? "questionmark.circle" : "pencil")
-          .foregroundStyle(.secondary)
-        if let armedSelectionRange,
-           rielaNoteSelectedText(in: bodyDraft.draftBodyMarkdown, range: armedSelectionRange) != nil {
-          HStack(spacing: 4) {
-            // Report the UTF-16 length to match the selectionStart/selectionEnd
-            // offsets actually sent to the workflow (NSRange is UTF-16-based).
-            Text("Selection \(armedSelectionRange.length)")
-              .font(.caption2)
-            Button {
-              self.armedSelectionRange = nil
-              // Clearing the badge returns the pill to rewrite mode (D1).
-              isSelectionQuestionMode = false
-            } label: {
-              Image(systemName: "xmark.circle.fill")
-            }
-            .buttonStyle(.plain)
-          }
-          .padding(.horizontal, 6)
-          .padding(.vertical, 3)
-          .background(.secondary.opacity(0.14), in: Capsule())
-        }
-        TextField(isSelectionQuestionMode ? "Ask about selection" : "Ask for changes", text: $rewriteInstruction)
-          .textFieldStyle(.plain)
-          .frame(minWidth: 180, maxWidth: 320)
-          .focused($isRewriteFieldFocused)
-          .onSubmit {
-            submitPill(for: note)
-          }
-        Button {
-          submitPill(for: note)
-        } label: {
-          if isLoading {
-            ProgressView()
-              .controlSize(.small)
-          } else {
-            Image(systemName: "arrow.up.circle.fill")
-          }
-        }
-        .buttonStyle(.plain)
-        .disabled(rewriteInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading)
-        .help(isSelectionQuestionMode ? "Ask about selection" : "Submit changes")
-      }
-      .padding(.horizontal, 10)
-      .padding(.vertical, 7)
-      .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-      pillCaption
-    }
-  }
-
-  @ViewBuilder
-  private var pillCaption: some View {
-    if isSelectionQuestionMode {
-      if let error = viewModel.selectionQuestionError {
-        Text(error)
-          .font(.caption)
-          .foregroundStyle(.red)
-      } else if viewModel.didSaveSelectionQuestionComment {
-        Text("Saved as comment")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-    } else if let error = viewModel.editRewriteError {
-      Text(error)
-        .font(.caption)
-        .foregroundStyle(.red)
-    } else if let summary = viewModel.editRewriteSummary {
-      Text(summary)
-        .font(.caption)
-        .foregroundStyle(.secondary)
-    }
-  }
-
-  private func submitPill(for note: Note) {
-    if isSelectionQuestionMode {
-      submitSelectionQuestion(for: note)
-    } else {
-      submitRewrite(for: note)
     }
   }
 
@@ -416,31 +365,11 @@ public struct RielaNoteDetailView: View {
 
   private func bodyEditor(_ note: Note) -> some View {
     VStack(alignment: .leading, spacing: 10) {
-      ZStack(alignment: .topLeading) {
-        RielaNoteSelectableTextEditor(text: $bodyDraft.draftBodyMarkdown, selectedRange: $selectedBodyRange)
-          .font(.body.monospaced())
-          .frame(minHeight: 320)
-          .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-        if rielaNoteRewriteRangeIsValid(selectedBodyRange, in: bodyDraft.draftBodyMarkdown) {
-          HStack(spacing: 6) {
-            Button {
-              armSelectionScope()
-            } label: {
-              Label("Ask for changes Cmd-K", systemImage: "pencil")
-            }
-            .keyboardShortcut("k", modifiers: .command)
-            Button {
-              armSelectionQuestionScope()
-            } label: {
-              Label("Ask question ⇧⌘K", systemImage: "questionmark.circle")
-            }
-            .keyboardShortcut("k", modifiers: [.command, .shift])
-          }
-          .buttonStyle(.bordered)
-          .controlSize(.small)
-          .padding(10)
-        }
-      }
+      TextEditor(text: $bodyDraft.draftBodyMarkdown)
+        .font(.body.monospaced())
+        .frame(minHeight: 320)
+        .padding(8)
+        .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
       HStack {
         Spacer()
         Button("Cancel") {
@@ -689,135 +618,14 @@ public struct RielaNoteDetailView: View {
 
   private func resetEditingState() {
     bodyDraft.reset()
-    rewriteInstruction = ""
-    selectedBodyRange = NSRange(location: 0, length: 0)
-    armedSelectionRange = nil
-    isSelectionQuestionMode = false
     draftTagName = ""
     draftCommentMarkdown = ""
-    viewModel.clearEditRewriteState()
-    viewModel.clearSelectionQAState()
+    viewModel.clearTranslateNoteState()
     viewModel.clearLinkProposals()
   }
 
   private func startEditing(_ note: Note) {
     bodyDraft.toggle(noteId: note.noteId, bodyMarkdown: note.bodyMarkdown)
-    rewriteInstruction = ""
-    selectedBodyRange = NSRange(location: 0, length: 0)
-    armedSelectionRange = nil
-    isSelectionQuestionMode = false
-    viewModel.clearEditRewriteState()
-    viewModel.clearSelectionQAState()
-    isRewriteFieldFocused = true
-  }
-
-  private func armSelectionScope() {
-    guard rielaNoteRewriteRangeIsValid(selectedBodyRange, in: bodyDraft.draftBodyMarkdown) else {
-      armedSelectionRange = nil
-      return
-    }
-    armedSelectionRange = selectedBodyRange
-    isSelectionQuestionMode = false
-    isRewriteFieldFocused = true
-  }
-
-  private func armSelectionQuestionScope() {
-    guard rielaNoteRewriteRangeIsValid(selectedBodyRange, in: bodyDraft.draftBodyMarkdown) else {
-      armedSelectionRange = nil
-      isSelectionQuestionMode = false
-      return
-    }
-    armedSelectionRange = selectedBodyRange
-    isSelectionQuestionMode = true
-    viewModel.clearSelectionQAState()
-    isRewriteFieldFocused = true
-  }
-
-  private func submitSelectionQuestion(for note: Note) {
-    let question = rewriteInstruction.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !question.isEmpty else {
-      return
-    }
-    let currentDraft = bodyDraft.draftBodyMarkdown
-    // A question requires a still-valid, non-empty selection — no whole-note fallback (D1).
-    guard let activeRange = armedSelectionRange,
-          rielaNoteRewriteRangeIsValid(activeRange, in: currentDraft),
-          let selectedText = rielaNoteSelectedText(in: currentDraft, range: activeRange) else {
-      viewModel.markSelectionQuestionSelectionStale()
-      return
-    }
-    Task {
-      let saved = await viewModel.askSelectionQuestion(
-        question: question,
-        draftBodyMarkdown: currentDraft,
-        selectedText: selectedText,
-        selectionStart: activeRange.location,
-        selectionEnd: activeRange.location + activeRange.length
-      )
-      guard bodyDraft.isEditingBody, bodyDraft.editingNoteId == note.noteId else {
-        return
-      }
-      if saved {
-        rewriteInstruction = ""
-        armedSelectionRange = nil
-        isSelectionQuestionMode = false
-        isCommentsExpanded = true
-      }
-    }
-  }
-
-  private func submitRewrite(for note: Note) {
-    let instruction = rewriteInstruction.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !instruction.isEmpty else {
-      return
-    }
-    let currentDraft = bodyDraft.draftBodyMarkdown
-    let activeRange = armedSelectionRange.flatMap { range -> NSRange? in
-      rielaNoteRewriteRangeIsValid(range, in: currentDraft) ? range : nil
-    }
-    let selectedText = activeRange.flatMap { rielaNoteSelectedText(in: currentDraft, range: $0) }
-    let submittedDraft = currentDraft
-    let submittedRange = activeRange
-    let submittedSelectedText = selectedText
-    Task {
-      let rewrite = await viewModel.proposeBodyRewrite(
-        instruction: instruction,
-        draftBodyMarkdown: submittedDraft,
-        selectedText: selectedText,
-        selectionStart: activeRange?.location,
-        selectionEnd: activeRange.map { $0.location + $0.length }
-      )
-      guard bodyDraft.isEditingBody,
-            bodyDraft.editingNoteId == note.noteId,
-            let rewrite else {
-        return
-      }
-      guard rielaNoteRewriteResultIsFresh(
-        currentDraft: bodyDraft.draftBodyMarkdown,
-        submittedDraft: submittedDraft,
-        submittedRange: submittedRange,
-        submittedSelectedText: submittedSelectedText
-      ) else {
-        viewModel.markEditRewriteResultStale()
-        return
-      }
-      if let activeRange = submittedRange,
-         let updated = rielaNoteApplyingRewrite(
-           draft: bodyDraft.draftBodyMarkdown,
-           range: activeRange,
-           replacement: rewrite.rewrittenMarkdown
-         ) {
-        bodyDraft.draftBodyMarkdown = updated
-        let insertedRange = NSRange(location: activeRange.location, length: rewrite.rewrittenMarkdown.utf16.count)
-        selectedBodyRange = insertedRange
-        armedSelectionRange = insertedRange
-      } else {
-        bodyDraft.draftBodyMarkdown = rewrite.rewrittenMarkdown
-        selectedBodyRange = NSRange(location: 0, length: 0)
-        armedSelectionRange = nil
-      }
-      rewriteInstruction = ""
-    }
   }
 
   private func promoteComment(_ commentId: String) {

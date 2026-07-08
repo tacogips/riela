@@ -50,7 +50,7 @@ final class AppleNotesCrudAddonTests: XCTestCase {
   }
 
   func testAppleNoteGetMaterializeFailsWhenDownloadKeyMappingIsMissing() async throws {
-    let fake = try CrudFakeAppleGateway(mode: "get-body-file-missing-download-mapping")
+    let fake = try CrudFakeAppleGateway(mode: "get-body-file-missing-map")
     defer { fake.cleanup() }
     let downloadRoot = fake.rootURL.appendingPathComponent("downloads", isDirectory: true)
     try createCrudTestDirectory(downloadRoot, permissions: 0o700)
@@ -65,6 +65,43 @@ final class AppleNotesCrudAddonTests: XCTestCase {
       inputs: ["noteId": .string("note-large")],
       code: .providerError,
       messageContains: "body-key"
+    )
+  }
+
+  func testAppleNoteGetMaterializeRejectsAmbiguousDownloadMappings() async throws {
+    let duplicateFake = try CrudFakeAppleGateway(mode: "get-body-file-duplicate-mapping")
+    let missingKeyFake = try CrudFakeAppleGateway(mode: "get-body-file-missing-key")
+    defer {
+      duplicateFake.cleanup()
+      missingKeyFake.cleanup()
+    }
+
+    let duplicateDownloadRoot = duplicateFake.rootURL.appendingPathComponent("downloads", isDirectory: true)
+    let missingKeyDownloadRoot = missingKeyFake.rootURL.appendingPathComponent("downloads", isDirectory: true)
+    try createCrudTestDirectory(duplicateDownloadRoot, permissions: 0o700)
+    try createCrudTestDirectory(missingKeyDownloadRoot, permissions: 0o700)
+
+    try await assertAppleNoteFailure(
+      "riela/apple-note-get",
+      config: [
+        "binaryPath": .string(duplicateFake.executableURL.path),
+        "materializeBody": .bool(true),
+        "downloadDir": .string(duplicateDownloadRoot.path)
+      ],
+      inputs: ["noteId": .string("note-large")],
+      code: .providerError,
+      messageContains: "multiple local paths"
+    )
+    try await assertAppleNoteFailure(
+      "riela/apple-note-get",
+      config: [
+        "binaryPath": .string(missingKeyFake.executableURL.path),
+        "materializeBody": .bool(true),
+        "downloadDir": .string(missingKeyDownloadRoot.path)
+      ],
+      inputs: ["noteId": .string("note-large")],
+      code: .providerError,
+      messageContains: "without a downloadKey"
     )
   }
 
@@ -662,8 +699,18 @@ private struct CrudFakeAppleGateway {
       mkdir -p "$output_dir"
       local_path="$output_dir/body.txt"
       printf "large body" > "$local_path"
-      if [ "\(mode)" = "get-body-file-missing-download-mapping" ]; then
+      if [ "\(mode)" = "get-body-file-missing-map" ]; then
         printf '{"files":[{"downloadKey":"other-key","localPath":"%s","byteSize":10}]}\\n' "$local_path"
+        exit 0
+      fi
+      if [ "\(mode)" = "get-body-file-duplicate-mapping" ]; then
+        second_path="$output_dir/body-duplicate.txt"
+        printf "large body duplicate" > "$second_path"
+        printf '{"files":[{"downloadKey":"%s","localPath":"%s","byteSize":10},{"downloadKey":"%s","localPath":"%s","byteSize":20}]}\\n' "$key" "$local_path" "$key" "$second_path"
+        exit 0
+      fi
+      if [ "\(mode)" = "get-body-file-missing-key" ]; then
+        printf '{"files":[{"localPath":"%s","byteSize":10}]}\\n' "$local_path"
         exit 0
       fi
       if [ "\(mode)" = "get-body-file-outside-download-root" ]; then
@@ -730,7 +777,7 @@ private struct CrudFakeAppleGateway {
     }
     JSON
         ;;
-      get-body-file|get-body-file-missing-download-mapping|get-body-file-outside-download-root|get-body-file-missing-downloaded-file|get-body-file-symlink-downloaded-file)
+      get-body-file|get-body-file-missing-map|get-body-file-duplicate-mapping|get-body-file-missing-key|get-body-file-outside-download-root|get-body-file-missing-downloaded-file|get-body-file-symlink-downloaded-file)
         /bin/cat <<'JSON'
     {
       "data": {

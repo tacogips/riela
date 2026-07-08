@@ -203,6 +203,52 @@ final class AppleMailAddonTests: XCTestCase {
     XCTAssertFalse(downloadLog.contains("attachment-big"))
   }
 
+  func testAppleMailMessageAcceptsPrivateRuntimeDownloadDir() async throws {
+    let fake = try FakeAppleMailGateway(mode: "message-success", requestId: "runtime-root")
+    let downloadRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+      .appendingPathComponent("tmp/.riela-data/apple-mail-addon-\(UUID().uuidString)", isDirectory: true)
+    defer {
+      fake.cleanup()
+      try? FileManager.default.removeItem(at: downloadRoot)
+    }
+
+    let output = try await runAppleMail(
+      name: "riela/apple-mail-message",
+      config: [
+        "binaryPath": .string(fake.executableURL.path),
+        "messageId": .string("message-1"),
+        "downloadDir": .string(downloadRoot.path)
+      ]
+    )
+
+    let appleMail = try XCTUnwrap(testObject(output.payload["appleMail"]))
+    let materialized = try XCTUnwrap(testArray(appleMail["materialized"]))
+    XCTAssertEqual(materialized.count, 1)
+    let entry = try XCTUnwrap(testObject(materialized.first))
+    let localPath = try XCTUnwrap(testString(entry["localPath"]))
+    XCTAssertTrue(localPath.hasPrefix(downloadRoot.path + "/"))
+    XCTAssertEqual(try String(contentsOfFile: localPath), "downloaded-body-key")
+  }
+
+  func testAppleMailMessageRejectsOwnerPrivateNonRuntimeDownloadDir() async throws {
+    let fake = try FakeAppleMailGateway(mode: "message-success", requestId: "non-runtime-root")
+    defer { fake.cleanup() }
+
+    let ownerPrivateNonRuntimeRoot = FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent(".ssh", isDirectory: true)
+    try await assertMailFailure(
+      name: "riela/apple-mail-message",
+      config: [
+        "binaryPath": .string(fake.executableURL.path),
+        "messageId": .string("message-1"),
+        "downloadDir": .string(ownerPrivateNonRuntimeRoot.path)
+      ],
+      code: .policyBlocked,
+      messageContains: "ignored/private runtime path"
+    )
+    XCTAssertFalse(FileManager.default.fileExists(atPath: fake.downloadLogURL.path))
+  }
+
   func testAppleMailMessageChecksActualDownloadedBytesBeforeWriting() async throws {
     for mode in ["message-underreported-download", "message-missing-byte-size-download"] {
       let fake = try FakeAppleMailGateway(mode: mode, requestId: "req-\(mode)")

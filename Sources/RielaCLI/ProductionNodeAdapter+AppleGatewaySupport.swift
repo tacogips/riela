@@ -681,6 +681,10 @@ struct AppleGatewayFileDownloader {
     return downloaded
   }
 
+  func validatedOutputRootPath(_ path: String, label: String) throws -> String {
+    try validatedPrivateRuntimeDirectory(path, label: label).path
+  }
+
   private func downloadedLocalPaths(
     from decoded: JSONValue,
     requestedKeys: [String],
@@ -697,10 +701,22 @@ struct AppleGatewayFileDownloader {
       else {
         continue
       }
-      let key = nonEmptyString(file["downloadKey"]) ?? nonEmptyString(file["key"])
-      if let key, requested.contains(key) {
-        result[key] = try validatedDownloadedLocalPath(localPath, outputRoot: outputRoot.realPath)
+      guard let key = nonEmptyString(file["downloadKey"]) ?? nonEmptyString(file["key"]) else {
+        throw AdapterExecutionError(
+          .providerError,
+          "apple-gateway file download returned a local path without a downloadKey"
+        )
       }
+      guard requested.contains(key) else {
+        continue
+      }
+      guard result[key] == nil else {
+        throw AdapterExecutionError(
+          .providerError,
+          "apple-gateway file download returned multiple local paths for downloadKey: \(key)"
+        )
+      }
+      result[key] = try validatedDownloadedLocalPath(localPath, outputRoot: outputRoot.realPath)
     }
     return result
   }

@@ -339,12 +339,13 @@ final class AppleGatewayAdminAddonTests: XCTestCase {
       messageContains: "upstream denied"
     )
 
+    let adminDownloadRoot = fileFake.rootURL.appendingPathComponent("tmp/admin-downloads", isDirectory: true)
     let fileOutput = try await runAdminAddon(
       "riela/apple-gateway-file-download",
       config: [
         "binaryPath": .string(fileFake.executableURL.path),
         "keys": .array([.string("k1"), .string("k2")]),
-        "outputDir": .string("/tmp/apple-gateway-downloads")
+        "outputDir": .string(adminDownloadRoot.path)
       ]
     )
     XCTAssertEqual(try fileFake.arguments(), [
@@ -355,7 +356,7 @@ final class AppleGatewayAdminAddonTests: XCTestCase {
       "--key",
       "k2",
       "--output-dir",
-      "/tmp/apple-gateway-downloads"
+      adminDownloadRoot.path
     ])
     XCTAssertEqual(adminGatewayObject(fileOutput)?["keys"], .array([.string("k1"), .string("k2")]))
 
@@ -373,6 +374,16 @@ final class AppleGatewayAdminAddonTests: XCTestCase {
       config: ["binaryPath": .string(fileFake.executableURL.path), "keys": .array([])],
       code: .policyBlocked,
       messageContains: "requires at least one key"
+    )
+    try await assertAdminFailure(
+      "riela/apple-gateway-file-download",
+      config: [
+        "binaryPath": .string(fileFake.executableURL.path),
+        "keys": .array([.string("k1")]),
+        "outputDir": .string("public-downloads")
+      ],
+      code: .policyBlocked,
+      messageContains: "ignored/private runtime path"
     )
 
     let cacheOutput = try await runAdminAddon(

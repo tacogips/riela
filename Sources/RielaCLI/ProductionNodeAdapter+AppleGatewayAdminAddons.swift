@@ -24,7 +24,10 @@ extension BuiltinWorkflowAddonResolver {
       throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) does not support addon.env")
     }
 
-    let adminContext = AppleGatewayAdminContext(input: input)
+    let adminContext = AppleGatewayAdminContext(
+      input: input,
+      currentDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+    )
     let resolvedBinary = try AppleGatewayBinaryResolver(
       addonName: input.addon.name,
       config: input.addon.config ?? [:],
@@ -52,9 +55,11 @@ private struct AppleGatewayAdminContext {
   var baseVariables: JSONObject
   var renderedInputs: JSONObject
   var variables: JSONObject
+  var currentDirectory: URL
 
-  init(input: WorkflowAddonExecutionInput) {
+  init(input: WorkflowAddonExecutionInput, currentDirectory: URL) {
     self.input = input
+    self.currentDirectory = currentDirectory
     self.config = input.addon.config ?? [:]
     var base = input.variables
     for (key, value) in input.resolvedInputPayload {
@@ -212,7 +217,13 @@ private struct AppleGatewayAdminContext {
       arguments += ["--key", key]
     }
     if let outputDir = stringValue("outputDir") {
-      arguments += ["--output-dir", outputDir]
+      let validator = AppleGatewayFileDownloader(
+        runner: AppleGatewayProcessRunner(runtimeEnvironment: [:]),
+        resolvedBinary: AppleGatewayResolvedBinary(path: "", source: .config),
+        currentDirectory: currentDirectory
+      )
+      let validatedOutputDir = try validator.validatedOutputRootPath(outputDir, label: "outputDir")
+      arguments += ["--output-dir", validatedOutputDir]
     }
     return arguments
   }

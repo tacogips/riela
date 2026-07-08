@@ -1,10 +1,5 @@
 import Foundation
 import RielaCore
-#if canImport(Darwin)
-import Darwin
-#elseif canImport(Glibc)
-import Glibc
-#endif
 
 extension BuiltinWorkflowAddonResolver {
   func executeAppleMailAddon(
@@ -25,9 +20,6 @@ private struct AppleMailAddonEngine {
   private static let defaultFirst = 25
   private static let maxFirst = 100
   private static let defaultMaxDownloadBytes = 25 * 1_024 * 1_024
-  private static let ownerOnlyDirectoryPermissions = 0o700
-  private static let groupOrOtherPermissionBits = 0o077
-  private static let allowedSystemSymlinkComponents = ["/tmp", "/var"]
 
   var environment: [String: String]
   var currentDirectory: URL
@@ -511,16 +503,13 @@ private struct AppleMailAddonEngine {
     let env = environmentValue("APPLE_GATEWAY_DOWNLOAD_DIR", environment: environment)
     let basePath = configured?.isEmpty == false ? configured : env
     let rawPath = basePath ?? defaultDownloadRoot(input: input, variables: variables).path
-    let url = URL(fileURLWithPath: rawPath, relativeTo: currentDirectory).standardizedFileURL
-    try validateNoSymlinkComponents(url, label: "downloadDir")
-    try FileManager.default.createDirectory(
-      at: url,
-      withIntermediateDirectories: true,
-      attributes: [.posixPermissions: Self.ownerOnlyDirectoryPermissions]
+    let validator = AppleGatewayFileDownloader(
+      runner: AppleGatewayProcessRunner(runtimeEnvironment: environment),
+      resolvedBinary: AppleGatewayResolvedBinary(path: "", source: .config),
+      currentDirectory: currentDirectory
     )
-    let resolved = url.resolvingSymlinksInPath().standardizedFileURL
-    try validateOwnerPrivateDirectory(resolved, label: "downloadDir")
-    return resolved
+    let validatedPath = try validator.validatedOutputRootPath(rawPath, label: "downloadDir")
+    return URL(fileURLWithPath: validatedPath, isDirectory: true).standardizedFileURL
   }
 
   private func defaultDownloadRoot(input: WorkflowAddonExecutionInput, variables: JSONObject) -> URL {
@@ -532,40 +521,6 @@ private struct AppleMailAddonEngine {
       .appendingPathComponent(sanitizedFilename(input.workflowId, fallback: "workflow"), isDirectory: true)
       .appendingPathComponent(sanitizedFilename(input.nodeId, fallback: "node"), isDirectory: true)
       .appendingPathComponent(safeMessageId, isDirectory: true)
-  }
-
-  private func validateNoSymlinkComponents(_ url: URL, label: String) throws {
-    var currentURL = URL(fileURLWithPath: "/", isDirectory: true)
-    for component in url.pathComponents.dropFirst() {
-      currentURL.appendPathComponent(component, isDirectory: true)
-      guard FileManager.default.fileExists(atPath: currentURL.path) else {
-        return
-      }
-      if isSymbolicLink(currentURL), !Self.allowedSystemSymlinkComponents.contains(currentURL.path) {
-        throw AdapterExecutionError(.policyBlocked, "\(label) must not contain a symbolic link component: \(url.path)")
-      }
-    }
-  }
-
-  private func validateOwnerPrivateDirectory(_ url: URL, label: String) throws {
-    let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-    guard let type = attributes[.type] as? FileAttributeType, type == .typeDirectory else {
-      throw AdapterExecutionError(.policyBlocked, "\(label) must point to a directory: \(url.path)")
-    }
-    #if canImport(Darwin) || canImport(Glibc)
-    if let owner = attributes[.ownerAccountID] as? NSNumber, owner.uint32Value != getuid() {
-      throw AdapterExecutionError(.policyBlocked, "\(label) must be owned by the current user: \(url.path)")
-    }
-    #endif
-    guard let permissions = attributes[.posixPermissions] as? NSNumber,
-      permissions.intValue & Self.groupOrOtherPermissionBits == 0
-    else {
-      throw AdapterExecutionError(.policyBlocked, "\(label) must be owner-private: \(url.path)")
-    }
-  }
-
-  private func isSymbolicLink(_ url: URL) -> Bool {
-    (try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)) != nil
   }
 
   private func requiredString(

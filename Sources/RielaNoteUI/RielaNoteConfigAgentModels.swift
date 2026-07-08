@@ -51,13 +51,16 @@ public struct RielaNoteConfigAutoActionDraft: Codable, Equatable, Sendable {
 public struct RielaNoteConfigIngestionWorkflowDraft: Codable, Equatable, Sendable {
   public var workflowId: String
   public var notebookKindTag: String
+  public var translationEnabled: Bool
 
   public init(
     workflowId: String,
-    notebookKindTag: String = "notebook-kind:imported-material"
+    notebookKindTag: String = "notebook-kind:imported-material",
+    translationEnabled: Bool = false
   ) {
     self.workflowId = workflowId
     self.notebookKindTag = notebookKindTag
+    self.translationEnabled = translationEnabled
   }
 }
 

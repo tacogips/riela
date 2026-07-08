@@ -23,7 +23,8 @@ Plan a configuration change for Riela Note. Return JSON only:
   },
   "ingestionWorkflow": {
     "workflowId": "note-ingest-lowercase-dash-id",
-    "notebookKindTag": "notebook-kind:imported-material"
+    "notebookKindTag": "notebook-kind:imported-material",
+    "translationEnabled": false
   }
 }
 
@@ -31,4 +32,5 @@ Rules:
 - This step proposes changes only; later workflow steps apply them.
 - Tag class and tag changes are applied through note GraphQL mutations.
 - Ingestion workflow changes are applied through the note GraphQL scaffold surface.
+- Set `ingestionWorkflow.translationEnabled` to false unless the user explicitly asks imported OCR text to be translated.
 - Auto-actions are applied through the note GraphQL `configureNoteAutoAction` mutation.

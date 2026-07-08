@@ -58,6 +58,48 @@ final class RielaNoteEditRewriteTests: XCTestCase {
     XCTAssertFalse(viewModel.isEditRewriteLoading)
   }
 
+  func testViewModelTranslatesWholeSelectedNoteAndUpdatesDetail() async throws {
+    let client = RewriteTestClient()
+    client.rewriteDraft = RielaNoteEditRewriteDraft(
+      rewrittenMarkdown: "# ページ1\n\n本文",
+      summary: "Translated to Japanese."
+    )
+    let viewModel = RielaNoteLibraryViewModel(client: client, translationTargetLanguage: "Japanese")
+
+    await viewModel.selectNote("note-1")
+    await viewModel.translateSelectedNote()
+
+    XCTAssertEqual(viewModel.selectedDetail?.note.bodyMarkdown, "# ページ1\n\n本文")
+    XCTAssertEqual(viewModel.translateNoteSummary, "Translated to Japanese.")
+    XCTAssertNil(viewModel.translateNoteError)
+    XCTAssertFalse(viewModel.isTranslateNoteLoading)
+    XCTAssertEqual(client.rewriteRequests, [
+      RewriteTestClient.RewriteRequest(
+        noteId: "note-1",
+        instruction: rielaNoteTranslateWholeNoteInstruction(targetLanguage: "Japanese"),
+        bodyMarkdown: "# Page One\n\nBody",
+        selectedText: nil,
+        selectionStart: nil,
+        selectionEnd: nil
+      )
+    ])
+  }
+
+  func testViewModelTranslateUsesConfiguredDefaultAndSurfacesNotConfigured() async throws {
+    let client = RewriteTestClient()
+    client.rewriteError = RielaNoteEditRewriteError.notConfigured
+    let viewModel = RielaNoteLibraryViewModel(client: client, translationTargetLanguage: " French ")
+
+    await viewModel.selectNote("note-1")
+    await viewModel.translateSelectedNote()
+
+    XCTAssertEqual(viewModel.translationTargetLanguage, "French")
+    XCTAssertEqual(viewModel.translateNoteError, "Translation is not configured.")
+    XCTAssertNil(viewModel.translateNoteSummary)
+    XCTAssertFalse(viewModel.isTranslateNoteLoading)
+    XCTAssertEqual(client.rewriteRequests.first?.instruction, rielaNoteTranslateWholeNoteInstruction(targetLanguage: "French"))
+  }
+
   func testViewModelDropsStaleBodyRewriteAfterNoteSwitch() async throws {
     let client = RewriteTestClient()
     client.rewriteDelayNanoseconds = 50_000_000

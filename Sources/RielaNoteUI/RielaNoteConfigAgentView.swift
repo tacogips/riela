@@ -94,6 +94,7 @@ struct RielaNoteConfigProposalView: View {
       row("Tag", proposal.tag.name)
       row("Action", proposal.autoAction.actionId)
       row("Workflow", proposal.ingestionWorkflow.workflowId)
+      row("Translation", proposal.ingestionWorkflow.translationEnabled ? "Enabled" : "Disabled")
     }
     .font(.caption)
   }

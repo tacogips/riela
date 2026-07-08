@@ -858,12 +858,14 @@ final class OfficialSDKAdapterTests: XCTestCase {
 
   func anthropicInput(
     systemPromptText: String? = nil,
+    mergedVariables: JSONObject = [:],
     agentEnvironment: [String: String] = [:]
   ) -> AdapterExecutionInput {
     AdapterExecutionInput(
       node: AgentNodePayload(id: "worker", executionBackend: .officialAnthropicSDK, model: "claude-sonnet-4-5"),
       promptText: "hello",
       systemPromptText: systemPromptText,
+      mergedVariables: mergedVariables,
       agentEnvironment: agentEnvironment
     )
   }

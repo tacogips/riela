@@ -667,9 +667,16 @@ final class RielaExampleParityTests: XCTestCase {
 
   private func rielaExampleWorkflowNames() -> [String] {
     [
+      "apple-calendar-fetch",
+      "apple-clock-alarms-list",
+      "apple-gateway-admin",
+      "apple-gateway-packaging-plan",
+      "apple-mail-list",
       "apple-note-create",
       "apple-note-read",
       "apple-notes-list",
+      "apple-notifications",
+      "apple-reminders-list",
       "chat-event-attachment-judgement",
       "chat-memory-raw-and-daily-summary",
       "chat-reply-webhook",

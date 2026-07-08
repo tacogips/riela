@@ -419,6 +419,55 @@ final class NoteAddonTests: XCTestCase {
     XCTAssertEqual(tagClass["classId"], .string("business-idea"))
   }
 
+  func testNoteGraphQLDocumentAddonPreservesTemplatedBooleanVariables() async throws {
+    let noteRoot = try makeNoteAddonRoot()
+    defer {
+      try? FileManager.default.removeItem(atPath: noteRoot)
+    }
+    let workflowRoot = URL(fileURLWithPath: noteRoot, isDirectory: true)
+      .appendingPathComponent("workflows", isDirectory: true)
+      .path
+    let resolver = BuiltinWorkflowAddonResolver(environment: ["RIELA_NOTE_ROOT": noteRoot])
+
+    let output = try await resolver.execute(
+      noteInput(
+        name: "riela/note-graphql-document",
+        config: [
+          "query": .string("""
+          mutation Scaffold($input: ScaffoldNoteIngestionWorkflowInput!) {
+            scaffoldNoteIngestionWorkflow(input: $input) {
+              result { accepted status }
+              workflowScaffold { workflowPath }
+            }
+          }
+          """),
+          "variables": .object([
+            "input": .object([
+              "workflowRoot": .string(workflowRoot),
+              "workflowId": .string("note-ingest-templated-translation"),
+              "translationEnabled": .string("{{workflowInput.translationEnabled}}")
+            ])
+          ]),
+          "operationName": .string("Scaffold")
+        ],
+        variables: [
+          "workflowInput": .object(["translationEnabled": .bool(true)])
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    let workflowScaffold = try objectValue(output.payload["workflowScaffold"])
+    let workflowPath = try stringValue(workflowScaffold["workflowPath"], field: "workflowPath")
+    let nodeURL = URL(fileURLWithPath: workflowPath)
+      .deletingLastPathComponent()
+      .appendingPathComponent("nodes/node-ocr-pages.json")
+    let nodeData = try Data(contentsOf: nodeURL)
+    let node = try XCTUnwrap(JSONSerialization.jsonObject(with: nodeData) as? [String: Any])
+    let variables = try XCTUnwrap(node["variables"] as? [String: Any])
+    XCTAssertEqual(variables["translationEnabledDefault"] as? Bool, true)
+  }
+
   func testNoteTagApplyCannotForgeHumanOrSystemProvenance() async throws {
     let noteRoot = try makeNoteAddonRoot()
     defer {

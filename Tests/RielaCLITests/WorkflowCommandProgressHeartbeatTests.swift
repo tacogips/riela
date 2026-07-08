@@ -16,15 +16,15 @@ extension WorkflowCommandLivePersistenceTests {
       workflowId: "heartbeat-workflow",
       sessionId: "heartbeat-session",
       status: .running,
-      entryStepId: "agent-step",
-      currentStepId: "agent-step",
+      entryStepId: "ocr-pages",
+      currentStepId: "ocr-pages",
       createdAt: now,
       updatedAt: now,
       executions: [
         WorkflowStepExecution(
-          executionId: "agent-step-attempt-1-exec-1",
-          stepId: "agent-step",
-          nodeId: "agent-node",
+          executionId: "ocr-pages-attempt-1-exec-1",
+          stepId: "ocr-pages",
+          nodeId: "ocr-node",
           attempt: 1,
           backend: .codexAgent,
           status: .running,
@@ -48,6 +48,8 @@ extension WorkflowCommandLivePersistenceTests {
     ])
     XCTAssertEqual(jsonResult.exitCode, .success, jsonResult.stderr + jsonResult.stdout)
     let progress = try decodeProgressJSON(from: jsonResult.stdout)
+    XCTAssertEqual(progress.currentStage, "OCR in progress")
+    XCTAssertEqual(progress.activeStage, "OCR in progress")
     XCTAssertEqual(progress.activeBackend, NodeExecutionBackend.codexAgent)
     XCTAssertEqual(progress.activeBackendEventAt, heartbeatAt)
     XCTAssertEqual(progress.activeBackendEventType, "turn.started")
@@ -62,6 +64,8 @@ extension WorkflowCommandLivePersistenceTests {
     ])
     XCTAssertEqual(textResult.exitCode, .success, textResult.stderr + textResult.stdout)
     XCTAssertTrue(textResult.stdout.contains("activeBackendEventType: turn.started"))
+    XCTAssertTrue(textResult.stdout.contains("currentStage: OCR in progress"))
+    XCTAssertTrue(textResult.stdout.contains("activeStage: OCR in progress"))
     XCTAssertTrue(textResult.stdout.contains("activeBackendEventAt: 2023-11-14T22:13:30Z"))
     XCTAssertTrue(textResult.stdout.contains("backendSilentForMs: "))
     XCTAssertTrue(textResult.stdout.contains("activeSilentForMs: "))

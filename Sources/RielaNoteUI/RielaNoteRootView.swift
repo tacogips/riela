@@ -16,7 +16,10 @@ public struct RielaNoteRootView: View {
   private let onOpenSettings: (() -> Void)?
 
   public init(client: any RielaNoteUIClient, onOpenSettings: (() -> Void)? = nil) {
-    _viewModel = StateObject(wrappedValue: RielaNoteLibraryViewModel(client: client))
+    _viewModel = StateObject(wrappedValue: RielaNoteLibraryViewModel(
+      client: client,
+      translationTargetLanguage: client.defaultTranslationTargetLanguage
+    ))
     _agentViewModel = StateObject(wrappedValue: RielaNoteAgentViewModel(client: client))
     _configAgentViewModel = StateObject(wrappedValue: RielaNoteConfigAgentViewModel(client: client))
     self.onOpenSettings = onOpenSettings

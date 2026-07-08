@@ -338,15 +338,78 @@ final class NoteServiceTests: NoteTestCase {
 
     XCTAssertEqual(scaffold.workflowId, "note-ingest-business-idea")
     XCTAssertEqual(scaffold.files.map(\.relativePath).sorted(), [
+      "nodes/node-ocr-pages.json",
+      "nodes/node-translate-pages.json",
       "nodes/node-workflow-output.json",
+      "prompts/ocr-pages.md",
+      "prompts/translate-pages.md",
       "workflow.json"
     ])
     XCTAssertTrue(FileManager.default.fileExists(atPath: scaffold.workflowPath))
     let workflowData = try Data(contentsOf: URL(fileURLWithPath: scaffold.workflowPath))
     let workflow = try XCTUnwrap(JSONSerialization.jsonObject(with: workflowData) as? [String: Any])
+    XCTAssertEqual(workflow["entryStepId"] as? String, "ocr-pages")
     let nodes = try XCTUnwrap(workflow["nodes"] as? [[String: Any]])
-    let addon = try XCTUnwrap(nodes.first?["addon"] as? [String: Any])
+    XCTAssertEqual(nodes.compactMap { $0["id"] as? String }, [
+      "ocr-pages",
+      "translate-pages",
+      "ingest-pages",
+      "workflow-output"
+    ])
+    let ingestNode = try XCTUnwrap(nodes.first { $0["id"] as? String == "ingest-pages" })
+    let addon = try XCTUnwrap(ingestNode["addon"] as? [String: Any])
     XCTAssertEqual(addon["name"] as? String, "riela/notebook-ingest-pages")
+    let addonConfig = try XCTUnwrap(addon["config"] as? [String: Any])
+    XCTAssertEqual(addonConfig["translationEnabled"] as? Bool, false)
+
+    let steps = try XCTUnwrap(workflow["steps"] as? [[String: Any]])
+    XCTAssertEqual(steps.compactMap { $0["id"] as? String }, [
+      "ocr-pages",
+      "translate-pages",
+      "ingest-pages",
+      "workflow-output"
+    ])
+    let ocrStep = try XCTUnwrap(steps.first { $0["id"] as? String == "ocr-pages" })
+    let transitions = try XCTUnwrap(ocrStep["transitions"] as? [[String: Any]])
+    XCTAssertEqual(transitions.compactMap { $0["label"] as? String }, ["needs_translation", "!(needs_translation)"])
+
+    let ocrNodeURL = root.appendingPathComponent("note-ingest-business-idea/nodes/node-ocr-pages.json")
+    let ocrNodeData = try Data(contentsOf: ocrNodeURL)
+    let ocrNode = try XCTUnwrap(JSONSerialization.jsonObject(with: ocrNodeData) as? [String: Any])
+    let ocrVariables = try XCTUnwrap(ocrNode["variables"] as? [String: Any])
+    XCTAssertEqual(ocrVariables["translationEnabledDefault"] as? Bool, false)
+
+    let translatePrompt = try String(
+      contentsOf: root.appendingPathComponent("note-ingest-business-idea/prompts/translate-pages.md"),
+      encoding: .utf8
+    )
+    XCTAssertTrue(translatePrompt.contains("Do not inspect images or redo OCR"))
+    XCTAssertTrue(translatePrompt.contains("OCR:"))
+    XCTAssertTrue(translatePrompt.contains("Translation:"))
+  }
+
+  func testScaffoldIngestionWorkflowCanDefaultTranslationOn() throws {
+    let root = URL(fileURLWithPath: try makeNoteRoot(function: #function), isDirectory: true)
+      .appendingPathComponent("workflows", isDirectory: true)
+    let scaffold = try NoteIngestionWorkflowScaffolder().scaffold(
+      workflowRoot: root.path,
+      workflowId: "note-ingest-translate",
+      translationEnabled: true
+    )
+
+    let workflowData = try Data(contentsOf: URL(fileURLWithPath: scaffold.workflowPath))
+    let workflow = try XCTUnwrap(JSONSerialization.jsonObject(with: workflowData) as? [String: Any])
+    let nodes = try XCTUnwrap(workflow["nodes"] as? [[String: Any]])
+    let ingestNode = try XCTUnwrap(nodes.first { $0["id"] as? String == "ingest-pages" })
+    let addon = try XCTUnwrap(ingestNode["addon"] as? [String: Any])
+    let addonConfig = try XCTUnwrap(addon["config"] as? [String: Any])
+    XCTAssertEqual(addonConfig["translationEnabled"] as? Bool, true)
+
+    let ocrNodeURL = root.appendingPathComponent("note-ingest-translate/nodes/node-ocr-pages.json")
+    let ocrNodeData = try Data(contentsOf: ocrNodeURL)
+    let ocrNode = try XCTUnwrap(JSONSerialization.jsonObject(with: ocrNodeData) as? [String: Any])
+    let variables = try XCTUnwrap(ocrNode["variables"] as? [String: Any])
+    XCTAssertEqual(variables["translationEnabledDefault"] as? Bool, true)
   }
 
   func testNotebookKindTagsAreNonDeletableSystemTags() throws {

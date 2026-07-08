@@ -48,7 +48,7 @@ func makeURLRequest(
       "messages": .array(anthropicRequest.messages.map { message in
         .object([
           "role": .string(message.role),
-          "content": .string(message.content)
+          "content": anthropicContentValue(message: message, imageInputs: anthropicRequest.imageInputs)
         ])
       })
     ]
@@ -214,6 +214,29 @@ private func openAIInputValue(_ request: OpenAIResponsesRequest) -> JSONValue {
     .object([
       "role": .string("user"),
       "content": .array(content)
+    ])
+  ])
+}
+
+private func anthropicContentValue(message: AnthropicMessage, imageInputs: [AnthropicImageInput]) -> JSONValue {
+  guard !imageInputs.isEmpty else {
+    return .string(message.content)
+  }
+
+  let imageBlocks = imageInputs.map { image in
+    JSONValue.object([
+      "type": .string("image"),
+      "source": .object([
+        "type": .string("base64"),
+        "media_type": .string(image.mimeType),
+        "data": .string(image.dataBase64)
+      ])
+    ])
+  }
+  return .array(imageBlocks + [
+    .object([
+      "type": .string("text"),
+      "text": .string(message.content)
     ])
   ])
 }

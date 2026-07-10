@@ -27,6 +27,7 @@ public struct LoopFindingFingerprint: Hashable, Codable, Sendable {
 
 struct LoopGatePayloadParser: Sendable {
   var stepGateIdsByStepId: [String: String]
+  var gateStepIds: Set<String>
   var requiredGatesById: [String: LoopGateDeclaration]
 
   func result(from payload: JSONObject, execution: WorkflowStepExecution) -> LoopGateResult {
@@ -53,9 +54,10 @@ struct LoopGatePayloadParser: Sendable {
       return result(from: loopGate, execution: execution)
     }
     guard execution.status == .skipped,
-          let gateId = stepGateIdsByStepId[execution.stepId] else {
+          gateStepIds.contains(execution.stepId) else {
       return nil
     }
+    let gateId = stepGateIdsByStepId[execution.stepId] ?? execution.stepId
     return normalized(LoopGateResult(
       gateId: gateId,
       stepId: execution.stepId,
@@ -129,6 +131,9 @@ func loopGateParser(workflow: WorkflowDefinition) -> LoopGatePayloadParser {
         return nil
       }
       return (step.id, gateId)
+    }),
+    gateStepIds: Set(workflow.steps.compactMap { step in
+      step.loop?.gateId != nil || step.loop?.role == "gate" ? step.id : nil
     }),
     requiredGatesById: Dictionary(uniqueKeysWithValues: (workflow.loop?.gates ?? []).compactMap { gate in
       gate.required ? (gate.id, gate) : nil

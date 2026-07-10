@@ -594,6 +594,14 @@ with three medium findings.
 rejected → skipped → rejected, and policy-synthesized fingerprints, plus a
 projector test for id-less findings. The focused runner and projector suites
 passed (21 tests, 0 failures).
+
+**Second Review Fix**: The first rerun confirmed the three findings above but
+found one remaining medium edge case: role-only gate steps without explicit
+`gateId` were omitted when skipped. The shared parser now tracks all gate step
+ids and uses the step id as the same fallback key used by structured gate
+payloads. Added runner and projector regression coverage for role-only skipped
+gates. The focused runner and projector suites passed (23 tests, 0 failures),
+and focused SwiftLint passed with zero violations.
 - `swift test` was started twice and progressed through broad CLI/adapter
   suites without failures. The second run was logged under
   `tmp/loop-convergence-verification/swift-test.log` and stopped for several

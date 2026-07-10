@@ -304,6 +304,41 @@ final class LoopEvidenceProjectorTests: XCTestCase {
     XCTAssertEqual(LoopFindingFingerprint.make(from: finding).key, "message:Sources/A.swift\u{0}id-less finding")
   }
 
+  func testProjectorCountsRoleOnlySkippedGateVisit() throws {
+    let roleOnlyLoop = WorkflowLoopMetadata(
+      required: false,
+      convergence: LoopConvergenceDeclaration(maxRepeatedFindingRounds: 2)
+    )
+    var roleOnlyWorkflow = workflow(loop: roleOnlyLoop)
+    roleOnlyWorkflow.steps[0].loop = WorkflowStepLoopMetadata(role: "gate")
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let skipped = WorkflowStepExecution(
+      executionId: "review-skipped",
+      stepId: "review",
+      nodeId: "review-node",
+      attempt: 1,
+      status: .skipped,
+      acceptedOutput: WorkflowAcceptedOutputMetadata(
+        payload: ["inputFilterSkipped": .bool(true)],
+        when: ["input_filter_skipped": true],
+        acceptedAt: date
+      ),
+      createdAt: date,
+      updatedAt: date
+    )
+
+    let manifest = try XCTUnwrap(DefaultLoopEvidenceProjector().project(
+      LoopEvidenceProjectionInput(
+        workflow: roleOnlyWorkflow,
+        session: session(executions: [skipped]),
+        workflowSource: workflowSource()
+      )
+    ))
+
+    XCTAssertEqual(manifest.convergence?.gateVisitCounts, ["review": 1])
+    XCTAssertEqual(manifest.gates.first?.decision, .skipped)
+  }
+
   private func workflow(loop: WorkflowLoopMetadata? = loopMetadata()) -> WorkflowDefinition {
     WorkflowDefinition(
       workflowId: "wf",

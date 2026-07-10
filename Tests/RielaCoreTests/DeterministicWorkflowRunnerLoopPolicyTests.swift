@@ -304,6 +304,44 @@ final class WorkflowRunnerLoopPolicyTests: XCTestCase {
     XCTAssertEqual(result.session.executions.map(\.status), [.completed, .skipped, .completed, .completed])
   }
 
+  func testRoleOnlySkippedGateVisitResetsConvergenceReplay() throws {
+    let workflow = WorkflowDefinition(
+      workflowId: "runner-role-only-gate-skip",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
+      entryStepId: "review",
+      nodeRegistry: [WorkflowNodeRegistryRef(id: "review-node", nodeFile: "nodes/review.json")],
+      steps: [
+        WorkflowStepRef(
+          id: "review",
+          nodeId: "review-node",
+          loop: WorkflowStepLoopMetadata(role: "gate")
+        )
+      ],
+      nodes: [],
+      loop: WorkflowLoopMetadata(
+        convergence: LoopConvergenceDeclaration(maxRepeatedFindingRounds: 2)
+      )
+    )
+    let parser = loopGateParser(workflow: workflow)
+    let executions = [
+      Self.roleOnlyGateExecution(id: "review-1", status: .completed, decision: "needs_work"),
+      Self.roleOnlyGateExecution(id: "review-2", status: .skipped, decision: nil),
+      Self.roleOnlyGateExecution(id: "review-3", status: .completed, decision: "needs_work")
+    ]
+    let results = try executions.map { execution in
+      try XCTUnwrap(parser.result(from: execution))
+    }
+    var tracker = LoopConvergenceTracker(declaration: LoopConvergenceDeclaration(maxRepeatedFindingRounds: 2))
+    let checks = results.map { result in
+      tracker.recordGateVisit(gateId: result.gateId, decision: result.decision, findings: result.blockingFindings)
+    }
+
+    XCTAssertEqual(results.map(\.gateId), ["review", "review", "review"])
+    XCTAssertEqual(results.map(\.decision), [.needsWork, .skipped, .needsWork])
+    XCTAssertNil(checks.last?.violation)
+    XCTAssertEqual(checks.last?.repeatedRounds, 1)
+  }
+
   func testRequiredGatePolicyFindingsDriveRunnerFingerprint() async throws {
     let runner = DeterministicWorkflowRunner(
       store: InMemoryWorkflowRuntimeStore(),
@@ -446,6 +484,43 @@ private extension WorkflowRunnerLoopPolicyTests {
           "blockingFindings": .array([])
         ])
       ]
+    )
+  }
+
+  static func roleOnlyGateExecution(
+    id: String,
+    status: WorkflowStepExecutionStatus,
+    decision: String?
+  ) -> WorkflowStepExecution {
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let payload: JSONObject
+    if let decision {
+      payload = [
+        "loopGate": .object([
+          "decision": .string(decision),
+          "blockingFindings": .array([.object([
+            "id": .string("same"),
+            "severity": .string("high"),
+            "message": .string("same finding")
+          ])])
+        ])
+      ]
+    } else {
+      payload = ["inputFilterSkipped": .bool(true)]
+    }
+    return WorkflowStepExecution(
+      executionId: id,
+      stepId: "review",
+      nodeId: "review-node",
+      attempt: 1,
+      status: status,
+      acceptedOutput: WorkflowAcceptedOutputMetadata(
+        payload: payload,
+        when: decision == nil ? ["input_filter_skipped": true] : ["always": true],
+        acceptedAt: date
+      ),
+      createdAt: date,
+      updatedAt: date
     )
   }
 

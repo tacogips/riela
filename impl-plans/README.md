@@ -28,7 +28,9 @@ impl-plans/
 | ---- | ------ | ---------------- |
 | `active/agent-response-streaming` | Implemented | `design-agent-response-streaming#phase-1` |
 | `active/codex-unified-exec-stall-followup` | Implemented; focused tests and CLI WAL/status repro passed | `design-codex-unified-exec-stall-followup` |
+| `active/hermes-inspired-capabilities` | Planning; design approved pending adoption-set confirmation, no code written | `design-hermes-inspired-capabilities` |
 | `active/loop-engineering-application-gap-closure` | Planning; first-line tool slices have landed separately | `design-loop-engineering-application-gap-closure` |
+| `active/loop-engineering-convergence-and-operations` | Planning; LB1 convergence guard is the controlling pass, LB2–LB6 roadmap | `design-loop-engineering-convergence-and-operations` |
 | `active/loop-engineering-first-line-tool` | In Progress; module 8 self-evolution versioning remaining | `design-loop-engineering-first-line-tool-detail` |
 | `active/rielaapp-ux-onboarding-improvements` | Implemented; RielaApp verification passed | `design-rielaapp-ux-onboarding-improvements` |
 | `active/riela-note` | Partially implemented; local note GraphQL/UI/add-ons shipped, remote socket and real libsql sync remain follow-ups | `design-riela-note` |

@@ -197,6 +197,7 @@ final class WorkflowRunnerLoopPolicyTests: XCTestCase {
       adapter: SequenceAdapter(outputs: [
         Self.gateOutput(decision: "needs_work", findingId: "same"),
         Self.gateOutput(decision: "needs_work", findingId: "same"),
+        Self.gateOutput(decision: "needs_work", findingId: "same"),
         Self.gateOutput(decision: "accepted", findingId: "resolved")
       ])
     )
@@ -208,7 +209,7 @@ final class WorkflowRunnerLoopPolicyTests: XCTestCase {
     let result = try await runner.run(DeterministicWorkflowRunRequest(
       workflow: workflow,
       nodePayloads: ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5")],
-      maxSteps: 4,
+      maxSteps: 5,
       eventHandler: { event in await recorder.append(event) }
     ))
 

@@ -3,8 +3,7 @@ extension DeterministicWorkflowRunner {
     var violation: LoopConvergenceViolation
 
     var description: String {
-      "loop convergence stalled at gate '\(violation.gateId)' with \(violation.gateVisits) visits and " +
-        "\(violation.repeatedRounds) repeated finding rounds"
+      violation.diagnostic
     }
   }
 

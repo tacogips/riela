@@ -38,6 +38,23 @@ public struct WorkflowSessionFailureKind: RawRepresentable, Codable, Equatable, 
   public static let nodeTimeout = WorkflowSessionFailureKind(rawValue: "nodeTimeout")
   public static let internalFailure = WorkflowSessionFailureKind(rawValue: "internal")
   public static let loopNotConverging = WorkflowSessionFailureKind(rawValue: "loopNotConverging")
+
+  public var compatibilityDiagnostic: String? {
+    guard !Self.knownRawValues.contains(rawValue) else {
+      return nil
+    }
+    return "workflow session preserves unknown failure kind '\(rawValue)'"
+  }
+
+  private static let knownRawValues: Set<String> = [
+    maxStepsExceeded.rawValue,
+    cancelled.rawValue,
+    adapterFailure.rawValue,
+    policyBlocked.rawValue,
+    nodeTimeout.rawValue,
+    internalFailure.rawValue,
+    loopNotConverging.rawValue
+  ]
 }
 
 public enum WorkflowStepBudgetSource: String, Codable, Equatable, Sendable {

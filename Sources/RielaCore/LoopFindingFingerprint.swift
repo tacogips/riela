@@ -8,6 +8,7 @@ public struct LoopFindingFingerprint: Hashable, Codable, Sendable {
   }
 
   public static func make(from finding: LoopBlockingFinding) -> LoopFindingFingerprint {
+    // LA3's LoopEvidenceDiffer must consume this identity instead of defining a parallel matcher.
     if !finding.id.isEmpty && !finding.id.hasPrefix("gate-policy-") {
       return LoopFindingFingerprint(key: "id:\(finding.id)")
     }

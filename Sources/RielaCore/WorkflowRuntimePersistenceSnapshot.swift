@@ -8,6 +8,15 @@ public struct WorkflowRuntimePersistenceSnapshot: Codable, Equatable, Sendable {
   public var loopEvidence: LoopEvidenceManifest?
   public var loopMetadata: WorkflowLoopMetadata?
 
+  private enum CodingKeys: String, CodingKey {
+    case session
+    case workflowMessages
+    case rootOutput
+    case diagnostics
+    case loopEvidence
+    case loopMetadata
+  }
+
   public init(
     session: WorkflowSession,
     workflowMessages: [WorkflowMessageRecord] = [],
@@ -22,6 +31,20 @@ public struct WorkflowRuntimePersistenceSnapshot: Codable, Equatable, Sendable {
     self.diagnostics = diagnostics
     self.loopEvidence = loopEvidence
     self.loopMetadata = loopMetadata
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    session = try container.decode(WorkflowSession.self, forKey: .session)
+    workflowMessages = try container.decodeIfPresent([WorkflowMessageRecord].self, forKey: .workflowMessages) ?? []
+    rootOutput = try container.decodeIfPresent(JSONObject.self, forKey: .rootOutput)
+    diagnostics = try container.decodeIfPresent([String].self, forKey: .diagnostics) ?? []
+    loopEvidence = try container.decodeIfPresent(LoopEvidenceManifest.self, forKey: .loopEvidence)
+    loopMetadata = try container.decodeIfPresent(WorkflowLoopMetadata.self, forKey: .loopMetadata)
+    if let diagnostic = session.failureKind?.compatibilityDiagnostic,
+       !diagnostics.contains(diagnostic) {
+      diagnostics.append(diagnostic)
+    }
   }
 }
 

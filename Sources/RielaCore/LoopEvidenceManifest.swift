@@ -74,14 +74,46 @@ public struct LoopEvidenceManifest: Codable, Equatable, Sendable {
 }
 
 public struct LoopConvergenceEvidence: Codable, Equatable, Sendable {
-  public var status: String
-  public var failureKind: String?
+  public var gateVisitCounts: [String: Int]
+  public var stallDetected: Bool
+  public var stalledGateId: String?
+  public var repeatedRounds: Int?
+  public var action: String?
   public var diagnostics: [String]
 
-  public init(status: String, failureKind: String? = nil, diagnostics: [String] = []) {
-    self.status = status
-    self.failureKind = failureKind
+  public init(
+    gateVisitCounts: [String: Int] = [:],
+    stallDetected: Bool = false,
+    stalledGateId: String? = nil,
+    repeatedRounds: Int? = nil,
+    action: String? = nil,
+    diagnostics: [String] = []
+  ) {
+    self.gateVisitCounts = gateVisitCounts
+    self.stallDetected = stallDetected
+    self.stalledGateId = stalledGateId
+    self.repeatedRounds = repeatedRounds
+    self.action = action
     self.diagnostics = diagnostics
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case gateVisitCounts
+    case stallDetected
+    case stalledGateId
+    case repeatedRounds
+    case action
+    case diagnostics
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    gateVisitCounts = try container.decodeIfPresent([String: Int].self, forKey: .gateVisitCounts) ?? [:]
+    stallDetected = try container.decodeIfPresent(Bool.self, forKey: .stallDetected) ?? false
+    stalledGateId = try container.decodeIfPresent(String.self, forKey: .stalledGateId)
+    repeatedRounds = try container.decodeIfPresent(Int.self, forKey: .repeatedRounds)
+    action = try container.decodeIfPresent(String.self, forKey: .action)
+    diagnostics = try container.decodeIfPresent([String].self, forKey: .diagnostics) ?? []
   }
 }
 

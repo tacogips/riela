@@ -23,6 +23,17 @@ final class LoopConvergenceTrackerTests: XCTestCase {
     XCTAssertEqual(check.repeatedRounds, 1)
   }
 
+  func testSkippedVisitResetsRepeatedFindingRounds() {
+    var tracker = LoopConvergenceTracker(declaration: LoopConvergenceDeclaration(maxRepeatedFindingRounds: 2))
+
+    _ = tracker.recordGateVisit(gateId: "review", decision: .rejected, findings: [finding("a")])
+    _ = tracker.recordGateVisit(gateId: "review", decision: .skipped, findings: [])
+    let check = tracker.recordGateVisit(gateId: "review", decision: .rejected, findings: [finding("a")])
+
+    XCTAssertNil(check.violation)
+    XCTAssertEqual(check.repeatedRounds, 1)
+  }
+
   func testChangedFindingsResetRepeatedFindingRounds() {
     var tracker = LoopConvergenceTracker(declaration: LoopConvergenceDeclaration(maxRepeatedFindingRounds: 2))
 
@@ -41,6 +52,18 @@ final class LoopConvergenceTrackerTests: XCTestCase {
     let check = tracker.recordGateVisit(gateId: "review", decision: .rejected, findings: [finding("c")])
 
     XCTAssertEqual(check.violation?.kind, .gateVisitsExceeded)
+  }
+
+  func testWarnStyleTrackingReportsOnlyFirstViolationForGate() {
+    var tracker = LoopConvergenceTracker(declaration: LoopConvergenceDeclaration(maxRepeatedFindingRounds: 2))
+
+    _ = tracker.recordGateVisit(gateId: "review", decision: .rejected, findings: [finding("a")])
+    let firstStall = tracker.recordGateVisit(gateId: "review", decision: .rejected, findings: [finding("a")])
+    let continuedStall = tracker.recordGateVisit(gateId: "review", decision: .rejected, findings: [finding("a")])
+
+    XCTAssertNotNil(firstStall.violation)
+    XCTAssertNil(continuedStall.violation)
+    XCTAssertEqual(continuedStall.repeatedRounds, 3)
   }
 
   private func finding(_ id: String) -> LoopBlockingFinding {

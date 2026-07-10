@@ -45,6 +45,7 @@ public struct DefaultLoopEvidenceProjector: LoopEvidenceProjecting {
 
     let artifactRefs = artifactRefs(from: input.workflowMessages)
     let projectedGateResults = input.workflow.loop.map { gateResults(from: input, loop: $0) } ?? []
+    let projectedConvergence = convergenceProjection(from: input)
     let updatedAt = input.session.executions.map(\.updatedAt).max() ?? input.session.updatedAt
     let evidenceTagsByStepId = Dictionary(uniqueKeysWithValues: input.workflow.steps.map { ($0.id, $0.loop?.evidenceTags ?? []) })
 
@@ -59,7 +60,7 @@ public struct DefaultLoopEvidenceProjector: LoopEvidenceProjecting {
       worktree: nil,
       policy: input.policy,
       recovery: input.recovery,
-      convergence: convergenceEvidence(from: input.session),
+      convergence: projectedConvergence.evidence,
       steps: input.session.executions.map { execution in
         LoopStepEvidence(
           stepId: execution.stepId,
@@ -79,7 +80,7 @@ public struct DefaultLoopEvidenceProjector: LoopEvidenceProjecting {
       commands: [],
       verification: [],
       implementationPlans: [],
-      residualRisks: [],
+      residualRisks: projectedConvergence.residualRisks,
       redaction: redactionSummary(loop: input.workflow.loop),
       createdAt: input.session.createdAt,
       updatedAt: updatedAt
@@ -100,15 +101,47 @@ public struct DefaultLoopEvidenceProjector: LoopEvidenceProjecting {
     )
   }
 
-  private func convergenceEvidence(from session: WorkflowSession) -> LoopConvergenceEvidence? {
-    guard session.failureKind == .loopNotConverging else {
-      return nil
+  private func convergenceProjection(from input: LoopEvidenceProjectionInput) -> (
+    evidence: LoopConvergenceEvidence?, residualRisks: [LoopResidualRisk]
+  ) {
+    guard let declaration = input.workflow.loop?.convergence else {
+      return (nil, [])
     }
-    return LoopConvergenceEvidence(
-      status: "failed",
-      failureKind: session.failureKind?.rawValue,
-      diagnostics: [session.failureReason].compactMap { $0 }
+    var tracker = LoopConvergenceTracker(declaration: declaration)
+    let parser = loopGateParser(workflow: input.workflow)
+    var gateVisitCounts: [String: Int] = [:]
+    var violation: LoopConvergenceViolation?
+    for execution in input.session.executions {
+      guard let output = execution.acceptedOutput?.payload,
+            case let .object(loopGate)? = output["loopGate"] else {
+        continue
+      }
+      let result = parser.result(from: loopGate, execution: execution)
+      let check = tracker.recordGateVisit(
+        gateId: result.gateId,
+        decision: result.decision,
+        findings: result.blockingFindings
+      )
+      gateVisitCounts[result.gateId] = check.gateVisits
+      violation = violation ?? check.violation
+    }
+    let evidence = LoopConvergenceEvidence(
+      gateVisitCounts: gateVisitCounts,
+      stallDetected: violation != nil,
+      stalledGateId: violation?.gateId,
+      repeatedRounds: violation?.repeatedRounds,
+      action: violation == nil ? nil : declaration.onStall.rawValue,
+      diagnostics: [violation?.diagnostic].compactMap { $0 }
     )
+    guard declaration.onStall == .warn, let violation else {
+      return (evidence, [])
+    }
+    return (evidence, [LoopResidualRisk(
+      severity: "high",
+      message: violation.diagnostic,
+      owner: "loop-convergence-guard",
+      accepted: true
+    )])
   }
 
   private func gateResults(from input: LoopEvidenceProjectionInput, loop: WorkflowLoopMetadata) -> [LoopGateResult] {

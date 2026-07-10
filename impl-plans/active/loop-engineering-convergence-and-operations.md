@@ -136,7 +136,7 @@ the Progress Log before handoff.
 
 #### `Sources/RielaCore/LoopFindingFingerprint.swift`
 
-**Status**: NOT_STARTED
+**Status**: DONE
 
 ```swift
 public struct LoopFindingFingerprint: Hashable, Codable, Sendable {
@@ -150,19 +150,19 @@ public struct LoopFindingFingerprint: Hashable, Codable, Sendable {
 
 **Checklist**:
 
-- [ ] Deterministic fingerprint per design S9 (id preference, synthesized-id
+- [x] Deterministic fingerprint per design S9 (id preference, synthesized-id
   exclusion, whitespace normalization, line/severity excluded).
-- [ ] Extract the projector's `loopGate` payload parsing
+- [x] Extract the projector's `loopGate` payload parsing
   (`gateResult(from:execution:stepGateIdsByStepId:)` and its helpers) into
   a shared internal helper both the projector and the tracker call.
-- [ ] Fixture tests: id preference, synthesized-id fallback, whitespace
+- [x] Fixture tests: id preference, synthesized-id fallback, whitespace
   variants collapse equal, path-less findings, line drift ignored.
-- [ ] Note in doc comments that LA3 `LoopEvidenceDiffer` must consume this
+- [x] Note in doc comments that LA3 `LoopEvidenceDiffer` must consume this
   same identity when it lands.
 
 #### `Sources/RielaCore/LoopEngineeringModels.swift` + `WorkflowLoopValidation.swift`
 
-**Status**: NOT_STARTED
+**Status**: DONE
 
 ```swift
 public struct LoopConvergenceDeclaration: Codable, Equatable, Sendable {
@@ -174,31 +174,31 @@ public struct LoopConvergenceDeclaration: Codable, Equatable, Sendable {
 
 **Checklist**:
 
-- [ ] Optional `convergence` on `WorkflowLoopMetadata`; defaulted decoding.
-- [ ] Validation: positive values; at least one bound present; `onStall` in
+- [x] Optional `convergence` on `WorkflowLoopMetadata`; defaulted decoding.
+- [x] Validation: positive values; at least one bound present; `onStall` in
   {fail, warn}; `warn` invalid when `loop.required == true`.
-- [ ] Raw validation accepts the new key; absent metadata keeps existing
+- [x] Raw validation accepts the new key; absent metadata keeps existing
   workflows valid (regression test).
 
 #### `Sources/RielaCore/RuntimeSession.swift` (tolerant failure-kind decoding)
 
-**Status**: NOT_STARTED
+**Status**: DONE
 
 **Checklist**:
 
-- [ ] Check LA2 status first: if tolerant decoding landed, only add
+- [x] Check LA2 status first: if tolerant decoding landed, only add
   `loopNotConverging`; otherwise build tolerant decoding here (unknown
   persisted raw values decode to a preserved `other(String)`-style
   representation with a diagnostic; encoding round-trips the original raw
   value) and note it in the LA2 plan.
-- [ ] Add `loopNotConverging` case.
-- [ ] Snapshot decode tests: unknown raw value survives, diagnostic
+- [x] Add `loopNotConverging` case.
+- [x] Snapshot decode tests: unknown raw value survives, diagnostic
   emitted, whole-snapshot decode no longer fails; new case round-trips.
-- [ ] Document the old-binary limitation (same wording as LA2).
+- [x] Document the old-binary limitation (same wording as LA2).
 
 #### `Sources/RielaCore/LoopConvergenceTracker.swift` + runner integration
 
-**Status**: NOT_STARTED
+**Status**: DONE
 
 ```swift
 public struct LoopConvergenceTracker: Sendable {
@@ -218,40 +218,40 @@ public struct LoopConvergenceTracker: Sendable {
 
 **Checklist**:
 
-- [ ] Per-gate visit counts, last fingerprint set, consecutive
+- [x] Per-gate visit counts, last fingerprint set, consecutive
   identical-rejection round counter; accepted/skipped or changed set
   resets the counter; only `rejected`/`needs_work` visits count toward
   repeats.
-- [ ] Feed the tracker at the gate-step routing-reconciler seam
+- [x] Feed the tracker at the gate-step routing-reconciler seam
   (`workflowRoutingReconciler` in
   `DeterministicWorkflowRunner+LoopPolicy.swift:26`, which already fires
   once per gate visit with the completion payload), using the shared parser
   from LB1.1; enforcement decision taken before dispatching the next step.
-- [ ] `onStall == "fail"`: deterministic session failure with
+- [x] `onStall == "fail"`: deterministic session failure with
   `loopNotConverging` and a diagnostic naming gate id, visit count,
   repeated rounds, bounded fingerprint listing; reuse existing
   cancellation paths (no orphaned agent processes).
-- [ ] `onStall == "warn"`: residual risk + diagnostic, run continues,
+- [x] `onStall == "warn"`: residual risk + diagnostic, run continues,
   counter keeps accumulating (warn fires once per gate, then diagnostics
   only — no warn spam loop).
-- [ ] `loop_stall` case on `WorkflowRunEventType` + live-persistence event
+- [x] `loop_stall` case on `WorkflowRunEventType` + live-persistence event
   switch update (additive JSONL contract change, in migration notes).
-- [ ] Runner tests: stall at exactly N rounds, reset on accepted visit,
+- [x] Runner tests: stall at exactly N rounds, reset on accepted visit,
   reset on changed findings, `maxGateVisits` backstop with mutating
   findings, warn mode, convergence-less workflows unaffected.
 
 #### `Sources/RielaCore/LoopEvidenceManifest.swift` + `LoopEvidenceProjector.swift` (evidence)
 
-**Status**: NOT_STARTED
+**Status**: DONE
 
 **Checklist**:
 
-- [ ] Optional `convergence: LoopConvergenceEvidence` (design S9 shape) on
+- [x] Optional `convergence: LoopConvergenceEvidence` (design S9 shape) on
   the manifest with defaulted decoding.
-- [ ] Projector consumes tracker output at the existing projection points
+- [x] Projector consumes tracker output at the existing projection points
   (live and final persistence), same pattern LA2 specifies for the cost
   accumulator.
-- [ ] Legacy snapshots project `convergence: nil`; deterministic encoding
+- [x] Legacy snapshots project `convergence: nil`; deterministic encoding
   tests.
 
 ### 2. LB2 — Baseline And Regression Verdict
@@ -400,11 +400,11 @@ inputs recorded in the change report. Depends on LA3 (stats) and LA5
 
 | Module | File Path | Status | Tests |
 |--------|-----------|--------|-------|
-| Fingerprint + shared parsing | `Sources/RielaCore/LoopFindingFingerprint.swift`, `LoopEvidenceProjector.swift` | NOT_STARTED | planned |
-| Convergence metadata + validation | `Sources/RielaCore/LoopEngineeringModels.swift`, `WorkflowLoopValidation.swift` | NOT_STARTED | planned |
-| Tolerant failure-kind decoding | `Sources/RielaCore/RuntimeSession.swift` | NOT_STARTED | planned |
-| Convergence tracker + runner | `Sources/RielaCore/LoopConvergenceTracker.swift`, `DeterministicWorkflowRunner*.swift`, `WorkflowRunEvent.swift` | NOT_STARTED | planned |
-| Convergence evidence | `Sources/RielaCore/LoopEvidenceManifest.swift`, `LoopEvidenceProjector.swift` | NOT_STARTED | planned |
+| Fingerprint + shared parsing | `Sources/RielaCore/LoopFindingFingerprint.swift`, `LoopEvidenceProjector.swift` | DONE | focused tests passed |
+| Convergence metadata + validation | `Sources/RielaCore/LoopEngineeringModels.swift`, `WorkflowLoopValidation.swift` | DONE | focused tests passed |
+| Tolerant failure-kind decoding | `Sources/RielaCore/RuntimeSession.swift` | DONE | focused tests passed |
+| Convergence tracker + runner | `Sources/RielaCore/LoopConvergenceTracker.swift`, `DeterministicWorkflowRunner*.swift`, `WorkflowRunEvent.swift` | DONE | focused tests passed |
+| Convergence evidence | `Sources/RielaCore/LoopEvidenceManifest.swift`, `LoopEvidenceProjector.swift` | DONE | focused tests passed |
 | Baseline table + API | `Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift` | NOT_STARTED | planned |
 | Regression verdict core | `Sources/RielaCore/LoopRegressionVerdict.swift` | NOT_STARTED | planned |
 | Baseline/regress CLI | `Sources/RielaCLI/LoopBaselineCommands.swift` | NOT_STARTED | planned |
@@ -458,7 +458,7 @@ inputs recorded in the change report. Depends on LA3 (stats) and LA5
 
 ## Completion Criteria
 
-- [ ] LB1 completion criteria (above) all hold.
+- [x] LB1 completion criteria (above) all hold.
 - [ ] `loop baseline set/show/clear` and `loop regress` behave per S10 with
   exit codes 0/3/4/1 pinned by contract tests; `loop diff --baseline`
   resolves the same pair.
@@ -548,6 +548,30 @@ and runner fail/warn behavior.
   `testLoadPersistedSessionPrefersProjectStoreWhenBothExist`.
 - `swiftlint` exited 0; it reported existing warning-level findings plus a
   new synthesized-initializer warning that was fixed.
+
+### Session: 2026-07-10 LB1 self-review
+
+**Findings Fixed**: The initial implementation emitted `loop_stall` for warn
+mode but did not project the required residual risk, could emit the same warn
+on every subsequent identical gate visit, and projected only a minimal failure
+summary instead of the S9 convergence evidence shape. It also preserved unknown
+failure-kind values without adding the compatibility diagnostic to decoded
+runtime snapshots, and left the LB1 module table/checklists stale.
+
+**Improvements**: Project convergence state deterministically from gate
+history, including per-gate visit counts, the first stall, action, bounded
+fingerprints, and an accepted high residual risk for warn mode. Suppress repeat
+stall events per gate while continuing to count rounds. Add skipped-reset,
+single-warn, warn-evidence, residual-risk, and unknown-failure diagnostic tests;
+update LB1 status to DONE.
+
+**Verification**:
+
+- Focused convergence, runner, evidence, and runtime-session suites passed (31
+  tests, 0 failures).
+- Full `swift test` passed (1,614 tests, 4 skipped, 0 failures).
+- `swiftlint` exited 0 with 11 pre-existing warnings and no new violations.
+- `git diff --check` passed.
 - `swift test` was started twice and progressed through broad CLI/adapter
   suites without failures. The second run was logged under
   `tmp/loop-convergence-verification/swift-test.log` and stopped for several

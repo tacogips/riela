@@ -196,6 +196,32 @@ final class RuntimeSessionTests: XCTestCase {
     XCTAssertEqual(session.failureKind?.rawValue, "futureFailureKind")
   }
 
+  func testRuntimeSnapshotReportsUnknownFailureKindDiagnostic() throws {
+    let data = Data(
+      """
+      {
+        "session": {
+          "workflowId": "workflow-a",
+          "sessionId": "session-a",
+          "status": "failed",
+          "entryStepId": "step-1",
+          "failureKind": "futureFailureKind",
+          "createdAt": 700000000,
+          "updatedAt": 700000001,
+          "executions": []
+        },
+        "workflowMessages": [],
+        "diagnostics": []
+      }
+      """.utf8
+    )
+
+    let snapshot = try JSONDecoder().decode(WorkflowRuntimePersistenceSnapshot.self, from: data)
+
+    XCTAssertEqual(snapshot.session.failureKind?.rawValue, "futureFailureKind")
+    XCTAssertEqual(snapshot.diagnostics, ["workflow session preserves unknown failure kind 'futureFailureKind'"])
+  }
+
   func testLoopNotConvergingFailureKindRoundTrips() throws {
     let date = Date(timeIntervalSince1970: 1_700_000_000)
     let session = WorkflowSession(

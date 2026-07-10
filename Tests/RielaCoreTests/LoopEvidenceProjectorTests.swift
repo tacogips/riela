@@ -253,6 +253,37 @@ final class LoopEvidenceProjectorTests: XCTestCase {
     XCTAssertEqual(gate.blockingFindings, [])
   }
 
+  func testProjectorRecordsWarnStallConvergenceEvidenceAndResidualRisk() throws {
+    let convergenceLoop = WorkflowLoopMetadata(
+      kind: "design-implement-review",
+      required: false,
+      convergence: LoopConvergenceDeclaration(maxRepeatedFindingRounds: 2, onStall: .warn),
+      gates: [LoopGateDeclaration(id: "implementation-review", stepId: "review", required: false)]
+    )
+    let executions = [
+      gateExecution(id: "review-exec-1", decision: "needs_work", findingId: "same"),
+      gateExecution(id: "review-exec-2", decision: "needs_work", findingId: "same")
+    ]
+
+    let manifest = try XCTUnwrap(DefaultLoopEvidenceProjector().project(
+      LoopEvidenceProjectionInput(
+        workflow: workflow(loop: convergenceLoop),
+        session: session(executions: executions),
+        workflowSource: workflowSource()
+      )
+    ))
+
+    XCTAssertEqual(manifest.convergence?.gateVisitCounts, ["implementation-review": 2])
+    XCTAssertEqual(manifest.convergence?.stallDetected, true)
+    XCTAssertEqual(manifest.convergence?.stalledGateId, "implementation-review")
+    XCTAssertEqual(manifest.convergence?.repeatedRounds, 2)
+    XCTAssertEqual(manifest.convergence?.action, "warn")
+    XCTAssertTrue(manifest.convergence?.diagnostics.first?.contains("id:same") == true)
+    XCTAssertEqual(manifest.residualRisks.count, 1)
+    XCTAssertEqual(manifest.residualRisks.first?.owner, "loop-convergence-guard")
+    XCTAssertEqual(manifest.residualRisks.first?.accepted, true)
+  }
+
   private func workflow(loop: WorkflowLoopMetadata? = loopMetadata()) -> WorkflowDefinition {
     WorkflowDefinition(
       workflowId: "wf",
@@ -303,6 +334,37 @@ final class LoopEvidenceProjectorTests: XCTestCase {
 
   private func workflowSource() -> LoopWorkflowSource {
     LoopWorkflowSource(scope: "project", kind: "workflow-directory", workflowDirectory: ".riela/workflows/wf", mutable: true)
+  }
+
+  private func gateExecution(id: String, decision: String, findingId: String) -> WorkflowStepExecution {
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    return WorkflowStepExecution(
+      executionId: id,
+      stepId: "review",
+      nodeId: "review-node",
+      attempt: 1,
+      backend: .codexAgent,
+      status: .completed,
+      acceptedOutput: WorkflowAcceptedOutputMetadata(
+        payload: [
+          "loopGate": .object([
+            "gateId": .string("implementation-review"),
+            "decision": .string(decision),
+            "blockingFindings": .array([
+              .object([
+                "id": .string(findingId),
+                "severity": .string("high"),
+                "message": .string("same finding")
+              ])
+            ])
+          ])
+        ],
+        when: ["always": true],
+        acceptedAt: date
+      ),
+      createdAt: date,
+      updatedAt: date
+    )
   }
 
   private func projectManifest(

@@ -30,6 +30,13 @@ public struct LoopConvergenceViolation: Codable, Equatable, Sendable {
     self.repeatedRounds = repeatedRounds
     self.fingerprints = fingerprints
   }
+
+  public var diagnostic: String {
+    let fingerprintSummary = fingerprints.prefix(8).map(\.key).joined(separator: ", ")
+    let suffix = fingerprintSummary.isEmpty ? "" : "; fingerprints: [\(fingerprintSummary)]"
+    return "loop convergence stalled at gate '\(gateId)' with \(gateVisits) visits and " +
+      "\(repeatedRounds) repeated finding rounds\(suffix)"
+  }
 }
 
 public struct LoopConvergenceCheck: Equatable, Sendable {
@@ -69,39 +76,37 @@ public struct LoopConvergenceTracker: Sendable {
       state.lastRejectedFingerprints = nil
     }
 
-    states[gateId] = state
-
     let sortedFingerprints = fingerprints.sorted { $0.key < $1.key }
-    if let maxGateVisits = declaration.maxGateVisits, state.visitCount > maxGateVisits {
-      return LoopConvergenceCheck(
-        gateVisits: state.visitCount,
-        repeatedRounds: state.repeatedRounds,
-        violation: LoopConvergenceViolation(
+    var violation: LoopConvergenceViolation?
+    if !state.stallDetected,
+       let maxGateVisits = declaration.maxGateVisits,
+       state.visitCount > maxGateVisits {
+      violation = LoopConvergenceViolation(
           kind: .gateVisitsExceeded,
           gateId: gateId,
           gateVisits: state.visitCount,
           repeatedRounds: state.repeatedRounds,
           fingerprints: sortedFingerprints
-        )
       )
-    }
-
-    if let maxRepeatedFindingRounds = declaration.maxRepeatedFindingRounds,
-       state.repeatedRounds >= maxRepeatedFindingRounds {
-      return LoopConvergenceCheck(
-        gateVisits: state.visitCount,
-        repeatedRounds: state.repeatedRounds,
-        violation: LoopConvergenceViolation(
+    } else if !state.stallDetected,
+              let maxRepeatedFindingRounds = declaration.maxRepeatedFindingRounds,
+              state.repeatedRounds >= maxRepeatedFindingRounds {
+      violation = LoopConvergenceViolation(
           kind: .repeatedFindingsStall,
           gateId: gateId,
           gateVisits: state.visitCount,
           repeatedRounds: state.repeatedRounds,
           fingerprints: sortedFingerprints
-        )
       )
     }
 
-    return LoopConvergenceCheck(gateVisits: state.visitCount, repeatedRounds: state.repeatedRounds)
+    state.stallDetected = state.stallDetected || violation != nil
+    states[gateId] = state
+    return LoopConvergenceCheck(
+      gateVisits: state.visitCount,
+      repeatedRounds: state.repeatedRounds,
+      violation: violation
+    )
   }
 }
 
@@ -109,4 +114,5 @@ private struct GateState: Sendable {
   var visitCount = 0
   var lastRejectedFingerprints: Set<LoopFindingFingerprint>?
   var repeatedRounds = 0
+  var stallDetected = false
 }

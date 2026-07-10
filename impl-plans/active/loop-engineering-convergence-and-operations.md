@@ -602,16 +602,22 @@ ids and uses the step id as the same fallback key used by structured gate
 payloads. Added runner and projector regression coverage for role-only skipped
 gates. The focused runner and projector suites passed (23 tests, 0 failures),
 and focused SwiftLint passed with zero violations.
-- `swift test` was started twice and progressed through broad CLI/adapter
-  suites without failures. The second run was logged under
-  `tmp/loop-convergence-verification/swift-test.log` and stopped for several
-  minutes at `CLIWorkflowSessionResolutionTests`; it was interrupted after
-  the corresponding filtered suite passed independently. Focused LB1,
-  persistence, and stopped-suite filtered tests above are the current
-  verification evidence.
 
-**Tasks In Progress**: Re-run full `swift test` when practical. LB2-LB6
-remain explicitly out of scope for this pass.
+**Final Review Result**: A third Riela adversarial-review run accepted commit
+`151750c` with no high- or medium-severity findings. It confirmed the shared
+parser behavior for id-less findings, explicit and role-only skipped visits,
+and required-gate policy normalization. The reviewer retained two low risks:
+role-only skipped replay is covered through parser/tracker/projector tests
+rather than a dedicated async runner input-filter test, and ordinary CLI
+thrown-run persistence still relies on the pre-existing live
+event/finalization path.
+
+- Final full `swift test` passed (1,620 tests, 4 skipped, 0 failures).
+- Final `swiftlint lint --quiet` exited 0 with 11 pre-existing warnings and no
+  new violations in the LB1 files.
+
+**Tasks In Progress**: None for LB1. LB2-LB6 remain explicitly out of scope
+for this pass.
 **Blockers**: None.
 **Notes**: The self-review pass fixed `loop_stall` emission to use the
 runner's telemetry-aware event path, removed obsolete projector-local parser

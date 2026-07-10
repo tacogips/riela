@@ -137,7 +137,7 @@ private final class WorkflowRunLivePersistenceConnection: @unchecked Sendable {
 
 func workflowRunEventTriggersLiveSessionPersistence(_ event: WorkflowRunEvent) -> Bool {
   switch event.type {
-  case .sessionStarted, .stepStarted, .silenceWarning, .stepCompleted, .sessionCompleted:
+  case .sessionStarted, .stepStarted, .silenceWarning, .loopStall, .stepCompleted, .sessionCompleted:
     return true
   case .backendEvent:
     return false

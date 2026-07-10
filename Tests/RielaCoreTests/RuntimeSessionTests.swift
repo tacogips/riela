@@ -174,4 +174,43 @@ final class RuntimeSessionTests: XCTestCase {
     XCTAssertNil(session.instanceBaseIdentity)
     XCTAssertNil(session.instanceConfiguration)
   }
+
+  func testWorkflowSessionFailureKindDecodesUnknownRawValueTolerantly() throws {
+    let data = Data(
+      """
+      {
+        "workflowId": "workflow-a",
+        "sessionId": "session-a",
+        "status": "failed",
+        "entryStepId": "step-1",
+        "createdAt": 700000000,
+        "updatedAt": 700000001,
+        "executions": [],
+        "failureKind": "futureFailureKind"
+      }
+      """.utf8
+    )
+
+    let session = try JSONDecoder().decode(WorkflowSession.self, from: data)
+
+    XCTAssertEqual(session.failureKind?.rawValue, "futureFailureKind")
+  }
+
+  func testLoopNotConvergingFailureKindRoundTrips() throws {
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let session = WorkflowSession(
+      workflowId: "workflow-a",
+      sessionId: "session-a",
+      status: .failed,
+      entryStepId: "step-1",
+      createdAt: date,
+      updatedAt: date,
+      failureKind: .loopNotConverging
+    )
+
+    let decoded = try JSONDecoder().decode(WorkflowSession.self, from: JSONEncoder().encode(session))
+
+    XCTAssertEqual(decoded.failureKind, .loopNotConverging)
+    XCTAssertEqual(decoded.failureKind?.rawValue, "loopNotConverging")
+  }
 }

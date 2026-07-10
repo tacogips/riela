@@ -149,7 +149,7 @@ extension DeterministicWorkflowRunner {
     )
   }
 
-  private func emitRunEvent(_ event: WorkflowRunEvent, handler: WorkflowRunEventHandler?) async {
+  func emitRunEvent(_ event: WorkflowRunEvent, handler: WorkflowRunEventHandler?) async {
     await recordNonCompletionTelemetry(for: event)
     guard let handler else {
       return
@@ -169,6 +169,8 @@ extension DeterministicWorkflowRunner {
       await telemetry.recordLog(RielaTelemetryLog(name: "riela.workflow.backend.event", attributes: attributes))
     case .silenceWarning:
       await telemetry.recordLog(RielaTelemetryLog(name: "riela.workflow.silence.warning", attributes: attributes))
+    case .loopStall:
+      await telemetry.recordLog(RielaTelemetryLog(name: "riela.workflow.loop.stall", severity: "WARNING", attributes: attributes))
     case .stepCompleted:
       break
     case .sessionCompleted:
@@ -197,7 +199,7 @@ extension DeterministicWorkflowRunner {
         attributes: attributes
       ))
       await telemetry.recordMetric(RielaTelemetryMetric(name: "riela.workflow.run.complete.count", value: 1, attributes: attributes))
-    case .sessionStarted, .stepStarted, .backendEvent, .silenceWarning:
+    case .sessionStarted, .stepStarted, .backendEvent, .silenceWarning, .loopStall:
       break
     }
   }

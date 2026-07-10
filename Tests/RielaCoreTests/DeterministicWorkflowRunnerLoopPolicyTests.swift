@@ -161,6 +161,61 @@ final class WorkflowRunnerLoopPolicyTests: XCTestCase {
     XCTAssertEqual(result.session.executions.first?.acceptedOutput?.when, ["needs_replan": false, "needs_work": true])
     XCTAssertEqual(result.session.executions.first?.acceptedOutput?.routingDiagnostics.count, 1)
   }
+
+  func testLoopConvergenceFailsOnRepeatedIdenticalFindings() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    let runner = DeterministicWorkflowRunner(
+      store: store,
+      adapter: SequenceAdapter(outputs: [
+        Self.gateOutput(decision: "needs_work", findingId: "same"),
+        Self.gateOutput(decision: "needs_work", findingId: "same")
+      ])
+    )
+    let workflow = Self.convergenceWorkflow(convergence: LoopConvergenceDeclaration(maxRepeatedFindingRounds: 2))
+
+    do {
+      _ = try await runner.run(DeterministicWorkflowRunRequest(
+        workflow: workflow,
+        nodePayloads: ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5")],
+        maxSteps: 4
+      ))
+      XCTFail("expected loop convergence failure")
+    } catch let error as DeterministicWorkflowRunner.LoopConvergenceError {
+      XCTAssertEqual(error.violation.kind, .repeatedFindingsStall)
+    }
+
+    let latestSession = await store.latestSession(workflowId: "runner-loop-convergence")
+    let session = try XCTUnwrap(latestSession)
+    XCTAssertEqual(session.status, .failed)
+    XCTAssertEqual(session.failureKind, .loopNotConverging)
+  }
+
+  func testLoopConvergenceWarnEmitsLoopStallAndContinues() async throws {
+    let recorder = WorkflowRunEventRecorder()
+    let runner = DeterministicWorkflowRunner(
+      store: InMemoryWorkflowRuntimeStore(),
+      adapter: SequenceAdapter(outputs: [
+        Self.gateOutput(decision: "needs_work", findingId: "same"),
+        Self.gateOutput(decision: "needs_work", findingId: "same"),
+        Self.gateOutput(decision: "accepted", findingId: "resolved")
+      ])
+    )
+    let workflow = Self.convergenceWorkflow(convergence: LoopConvergenceDeclaration(
+      maxRepeatedFindingRounds: 2,
+      onStall: .warn
+    ))
+
+    let result = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: workflow,
+      nodePayloads: ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5")],
+      maxSteps: 4,
+      eventHandler: { event in await recorder.append(event) }
+    ))
+
+    XCTAssertEqual(result.session.status, WorkflowSessionStatus.completed)
+    let events = await recorder.events()
+    XCTAssertEqual(events.filter { $0.type == .loopStall }.count, 1)
+  }
 }
 
 private actor CountingAdapter: NodeAdapter {
@@ -195,5 +250,71 @@ private actor CapturingPolicyStdioExecutor: WorkflowStdioNodeExecuting {
 
   func capturedInput() -> WorkflowStdioNodeExecutionInput? {
     input
+  }
+}
+
+private actor SequenceAdapter: NodeAdapter {
+  private var outputs: [AdapterExecutionOutput]
+
+  init(outputs: [AdapterExecutionOutput]) {
+    self.outputs = outputs
+  }
+
+  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    guard !outputs.isEmpty else {
+      return WorkflowRunnerLoopPolicyTests.gateOutput(decision: "accepted", findingId: "default")
+    }
+    return outputs.removeFirst()
+  }
+}
+
+private extension WorkflowRunnerLoopPolicyTests {
+  static func gateOutput(decision: String, findingId: String) -> AdapterExecutionOutput {
+    AdapterExecutionOutput(
+      provider: "test",
+      model: "gpt-5.5",
+      promptText: "prompt",
+      completionPassed: true,
+      when: ["always": true],
+      payload: [
+        "decision": .string(decision),
+        "loopGate": .object([
+          "gateId": .string("implementation-review"),
+          "decision": .string(decision),
+          "blockingFindings": .array([
+            .object([
+              "id": .string(findingId),
+              "severity": .string("high"),
+              "filePath": .string("Sources/A.swift"),
+              "message": .string("same message")
+            ])
+          ])
+        ])
+      ]
+    )
+  }
+
+  static func convergenceWorkflow(convergence: LoopConvergenceDeclaration) -> WorkflowDefinition {
+    WorkflowDefinition(
+      workflowId: "runner-loop-convergence",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
+      entryStepId: "review",
+      nodeRegistry: [WorkflowNodeRegistryRef(id: "review-node", nodeFile: "nodes/review.json")],
+      steps: [
+        WorkflowStepRef(
+          id: "review",
+          nodeId: "review-node",
+          role: .worker,
+          transitions: [WorkflowStepTransition(toStepId: "review", label: "needs_work")],
+          loop: WorkflowStepLoopMetadata(role: "gate", gateId: "implementation-review")
+        )
+      ],
+      nodes: [WorkflowNodeRef(id: "review-node", nodeFile: "nodes/review.json")],
+      loop: WorkflowLoopMetadata(
+        required: false,
+        convergence: convergence,
+        gates: [LoopGateDeclaration(id: "implementation-review", stepId: "review", required: false)]
+      )
+    )
   }
 }

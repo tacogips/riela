@@ -59,6 +59,7 @@ public struct DefaultLoopEvidenceProjector: LoopEvidenceProjecting {
       worktree: nil,
       policy: input.policy,
       recovery: input.recovery,
+      convergence: convergenceEvidence(from: input.session),
       steps: input.session.executions.map { execution in
         LoopStepEvidence(
           stepId: execution.stepId,
@@ -99,20 +100,26 @@ public struct DefaultLoopEvidenceProjector: LoopEvidenceProjecting {
     )
   }
 
+  private func convergenceEvidence(from session: WorkflowSession) -> LoopConvergenceEvidence? {
+    guard session.failureKind == .loopNotConverging else {
+      return nil
+    }
+    return LoopConvergenceEvidence(
+      status: "failed",
+      failureKind: session.failureKind?.rawValue,
+      diagnostics: [session.failureReason].compactMap { $0 }
+    )
+  }
+
   private func gateResults(from input: LoopEvidenceProjectionInput, loop: WorkflowLoopMetadata) -> [LoopGateResult] {
     let gatesById = Dictionary(uniqueKeysWithValues: loop.gates.map { ($0.id, $0) })
-    let stepGateIdsByStepId = Dictionary(uniqueKeysWithValues: input.workflow.steps.compactMap { step -> (String, String)? in
-      guard let gateId = step.loop?.gateId else {
-        return nil
-      }
-      return (step.id, gateId)
-    })
+    let parser = loopGateParser(workflow: input.workflow)
     var results: [LoopGateResult] = input.session.executions.compactMap { execution in
       guard let output = execution.acceptedOutput?.payload,
             case let .object(loopGate)? = output["loopGate"] else {
         return nil
       }
-      let result = gateResult(from: loopGate, execution: execution, stepGateIdsByStepId: stepGateIdsByStepId)
+      let result = parser.result(from: loopGate, execution: execution)
       guard let gate = gatesById[result.gateId], gate.required else {
         return result
       }
@@ -124,29 +131,6 @@ public struct DefaultLoopEvidenceProjector: LoopEvidenceProjecting {
       results.append(missingRequiredGateResult(gate: gate))
     }
     return results
-  }
-
-  private func gateResult(
-    from payload: JSONObject,
-    execution: WorkflowStepExecution,
-    stepGateIdsByStepId: [String: String]
-  ) -> LoopGateResult {
-    let decision = stringValue(payload["decision"]).flatMap(LoopGateDecision.init(rawValue:)) ?? .needsWork
-    let evidenceRefs = stringArray(payload["evidenceRefs"])
-    let residualRisks = residualRiskArray(payload["residualRisks"])
-    return LoopGateResult(
-      gateId: stringValue(payload["gateId"]) ?? stepGateIdsByStepId[execution.stepId] ?? execution.stepId,
-      stepId: stringValue(payload["stepId"]) ?? execution.stepId,
-      stepExecutionId: stringValue(payload["stepExecutionId"]) ?? execution.executionId,
-      decision: decision,
-      severityCounts: severityCounts(payload["severityCounts"]),
-      blockingFindings: blockingFindings(payload["blockingFindings"]),
-      evidenceRefs: evidenceRefs,
-      rerunPolicy: stringValue(payload["rerunPolicy"]),
-      residualRisks: residualRisks,
-      acceptedAt: decision == .accepted ? execution.acceptedOutput?.acceptedAt : nil,
-      diagnostics: stringArray(payload["diagnostics"])
-    )
   }
 
   private func enforceAcceptancePolicy(
@@ -261,90 +245,4 @@ private func acceptedOutputSummary(_ payload: JSONObject?) -> String? {
     return nil
   }
   return summary.count > 500 ? String(summary.prefix(497)) + "..." : summary
-}
-
-private func severityCounts(_ value: JSONValue?) -> LoopFindingSeverityCounts {
-  guard case let .object(object)? = value else {
-    return LoopFindingSeverityCounts()
-  }
-  return LoopFindingSeverityCounts(
-    high: intValue(object["high"]) ?? 0,
-    medium: intValue(object["medium"]) ?? 0,
-    low: intValue(object["low"]) ?? 0,
-    informational: intValue(object["informational"]) ?? 0
-  )
-}
-
-private func blockingFindings(_ value: JSONValue?) -> [LoopBlockingFinding] {
-  guard case let .array(values)? = value else {
-    return []
-  }
-  return values.compactMap { value in
-    guard case let .object(object) = value,
-          let id = stringValue(object["id"]),
-          let severity = stringValue(object["severity"]),
-          let message = stringValue(object["message"]) else {
-      return nil
-    }
-    return LoopBlockingFinding(
-      id: id,
-      severity: severity,
-      filePath: stringValue(object["filePath"]),
-      line: intValue(object["line"]),
-      message: message,
-      evidenceRefs: stringArray(object["evidenceRefs"])
-    )
-  }
-}
-
-private func residualRiskArray(_ value: JSONValue?) -> [LoopResidualRisk] {
-  guard case let .array(values)? = value else {
-    return []
-  }
-  return values.compactMap { value in
-    guard case let .object(object) = value,
-          let severity = stringValue(object["severity"]),
-          let message = stringValue(object["message"]) else {
-      return nil
-    }
-    return LoopResidualRisk(
-      severity: severity,
-      message: message,
-      evidenceRefs: stringArray(object["evidenceRefs"]),
-      owner: stringValue(object["owner"]),
-      accepted: boolValue(object["accepted"]) ?? false
-    )
-  }
-}
-
-private func stringArray(_ value: JSONValue?) -> [String] {
-  guard case let .array(values)? = value else {
-    return []
-  }
-  return values.compactMap(stringValue)
-}
-
-private func stringValue(_ value: JSONValue?) -> String? {
-  guard case let .string(value)? = value else {
-    return nil
-  }
-  return value
-}
-
-private func intValue(_ value: JSONValue?) -> Int? {
-  switch value {
-  case .integer(let value):
-    return Int(value)
-  case .number(let value):
-    return Int(value)
-  default:
-    return nil
-  }
-}
-
-private func boolValue(_ value: JSONValue?) -> Bool? {
-  guard case let .bool(value)? = value else {
-    return nil
-  }
-  return value
 }

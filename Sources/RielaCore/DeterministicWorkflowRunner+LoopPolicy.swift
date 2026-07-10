@@ -1,4 +1,13 @@
 extension DeterministicWorkflowRunner {
+  struct LoopConvergenceError: Error, Equatable, Sendable, CustomStringConvertible {
+    var violation: LoopConvergenceViolation
+
+    var description: String {
+      "loop convergence stalled at gate '\(violation.gateId)' with \(violation.gateVisits) visits and " +
+        "\(violation.repeatedRounds) repeated finding rounds"
+    }
+  }
+
   func enforceRequiredLoopPolicyPreflight(_ request: DeterministicWorkflowRunRequest) throws {
     guard request.workflow.loop?.required == true else {
       return
@@ -34,5 +43,82 @@ extension DeterministicWorkflowRunner {
       return nil
     }
     return reconcileCompletionReviewRouting
+  }
+
+  func enforceLoopConvergenceIfNeeded(
+    publishResult: WorkflowPublicationResult,
+    workflow: WorkflowDefinition,
+    step: WorkflowStepRef,
+    request: DeterministicWorkflowRunRequest
+  ) async throws {
+    guard let convergence = workflow.loop?.convergence,
+          step.loop?.gateId != nil || step.loop?.role == "gate",
+          let payload = publishResult.stepExecution.acceptedOutput?.payload,
+          case .object = payload["loopGate"] else {
+      return
+    }
+
+    var tracker = LoopConvergenceTracker(declaration: convergence)
+    let parser = loopGateParser(workflow: workflow)
+    var currentCheck: LoopConvergenceCheck?
+    for execution in publishResult.session.executions {
+      guard let output = execution.acceptedOutput?.payload,
+            case let .object(loopGate)? = output["loopGate"] else {
+        continue
+      }
+      let result = parser.result(from: loopGate, execution: execution)
+      let check = tracker.recordGateVisit(
+        gateId: result.gateId,
+        decision: result.decision,
+        findings: result.blockingFindings
+      )
+      if execution.executionId == publishResult.stepExecution.executionId {
+        currentCheck = check
+      }
+    }
+
+    guard let violation = currentCheck?.violation else {
+      return
+    }
+
+    await emitRunEvent(loopStallEvent(
+      workflowId: workflow.workflowId,
+      session: publishResult.session,
+      step: step,
+      execution: publishResult.stepExecution,
+      violation: violation,
+      action: convergence.onStall
+    ), handler: request.eventHandler)
+
+    if convergence.onStall == .fail {
+      throw LoopConvergenceError(violation: violation)
+    }
+  }
+
+  private func loopStallEvent(
+    workflowId: String,
+    session: WorkflowSession,
+    step: WorkflowStepRef,
+    execution: WorkflowStepExecution,
+    violation: LoopConvergenceViolation,
+    action: LoopConvergenceStallAction
+  ) -> WorkflowRunEvent {
+    WorkflowRunEvent(
+      type: .loopStall,
+      workflowId: workflowId,
+      sessionId: session.sessionId,
+      status: session.status,
+      currentStepId: session.currentStepId,
+      stepId: step.id,
+      nodeId: step.nodeId,
+      executionId: execution.executionId,
+      loopStallGateId: violation.gateId,
+      loopStallViolationKind: violation.kind.rawValue,
+      loopStallAction: action.rawValue,
+      loopStallGateVisits: violation.gateVisits,
+      loopStallRepeatedRounds: violation.repeatedRounds,
+      loopStallFingerprints: violation.fingerprints.map(\.key),
+      nodeExecutions: session.executions.count
+    )
   }
 }

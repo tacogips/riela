@@ -11,6 +11,7 @@ public struct LoopEvidenceManifest: Codable, Equatable, Sendable {
   public var worktree: LoopWorktreeSummary?
   public var policy: LoopPolicyEvidence
   public var recovery: LoopRecoveryLineage?
+  public var convergence: LoopConvergenceEvidence?
   public var steps: [LoopStepEvidence]
   public var gates: [LoopGateResult]
   public var artifacts: [LoopArtifactRef]
@@ -34,6 +35,7 @@ public struct LoopEvidenceManifest: Codable, Equatable, Sendable {
     worktree: LoopWorktreeSummary? = nil,
     policy: LoopPolicyEvidence,
     recovery: LoopRecoveryLineage? = nil,
+    convergence: LoopConvergenceEvidence? = nil,
     steps: [LoopStepEvidence] = [],
     gates: [LoopGateResult] = [],
     artifacts: [LoopArtifactRef] = [],
@@ -56,6 +58,7 @@ public struct LoopEvidenceManifest: Codable, Equatable, Sendable {
     self.worktree = worktree
     self.policy = policy
     self.recovery = recovery
+    self.convergence = convergence
     self.steps = steps
     self.gates = gates
     self.artifacts = artifacts
@@ -67,6 +70,18 @@ public struct LoopEvidenceManifest: Codable, Equatable, Sendable {
     self.redaction = redaction
     self.createdAt = createdAt
     self.updatedAt = updatedAt
+  }
+}
+
+public struct LoopConvergenceEvidence: Codable, Equatable, Sendable {
+  public var status: String
+  public var failureKind: String?
+  public var diagnostics: [String]
+
+  public init(status: String, failureKind: String? = nil, diagnostics: [String] = []) {
+    self.status = status
+    self.failureKind = failureKind
+    self.diagnostics = diagnostics
   }
 }
 

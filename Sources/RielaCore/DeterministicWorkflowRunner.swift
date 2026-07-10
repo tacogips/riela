@@ -312,6 +312,12 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         sessionId: session.sessionId, step: step, transitions: transitions, executionIndex: executionIndex
       ) {
         session = publishResult.session
+        try await enforceLoopConvergenceIfNeeded(
+          publishResult: publishResult,
+          workflow: effectiveRequest.workflow,
+          step: step,
+          request: effectiveRequest
+        )
         publishedTransitions += publishResult.publishedMessages.count
         await emitStepCompletedEvent(
           workflowId: effectiveRequest.workflow.workflowId,
@@ -343,6 +349,12 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         executionIndex: executionIndex
       )
       session = publishResult.session
+      try await enforceLoopConvergenceIfNeeded(
+        publishResult: publishResult,
+        workflow: effectiveRequest.workflow,
+        step: step,
+        request: effectiveRequest
+      )
       publishedTransitions += publishResult.publishedMessages.count
       rootOutput = publishResult.rootOutput ?? rootOutput
       await emitStepCompletedEvent(

@@ -39,6 +39,9 @@ extension DeterministicWorkflowRunner {
     if case DeterministicWorkflowRunnerError.maxStepsExceeded = error {
       return .maxStepsExceeded
     }
+    if error is DeterministicWorkflowRunner.LoopConvergenceError {
+      return .loopNotConverging
+    }
     if let adapterError = error as? AdapterExecutionError {
       switch adapterError.code {
       case .policyBlocked:
@@ -58,6 +61,9 @@ extension DeterministicWorkflowRunner {
     }
     if let adapterError = error as? AdapterExecutionError {
       return "\(adapterError.code.rawValue): \(adapterError.message)"
+    }
+    if let convergenceError = error as? DeterministicWorkflowRunner.LoopConvergenceError {
+      return convergenceError.description
     }
     return String(describing: error)
   }

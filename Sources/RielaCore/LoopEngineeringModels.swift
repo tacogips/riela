@@ -6,6 +6,7 @@ public struct WorkflowLoopMetadata: Codable, Equatable, Sendable {
   public var description: String?
   public var evidence: LoopEvidenceRequirements?
   public var policies: LoopPolicyDeclaration?
+  public var convergence: LoopConvergenceDeclaration?
   public var gates: [LoopGateDeclaration]
   public var recovery: LoopRecoveryDeclaration?
   public var implementationPlan: LoopImplementationPlanRequirement?
@@ -16,6 +17,7 @@ public struct WorkflowLoopMetadata: Codable, Equatable, Sendable {
     case description
     case evidence
     case policies
+    case convergence
     case gates
     case recovery
     case implementationPlan
@@ -27,6 +29,7 @@ public struct WorkflowLoopMetadata: Codable, Equatable, Sendable {
     description: String? = nil,
     evidence: LoopEvidenceRequirements? = nil,
     policies: LoopPolicyDeclaration? = nil,
+    convergence: LoopConvergenceDeclaration? = nil,
     gates: [LoopGateDeclaration] = [],
     recovery: LoopRecoveryDeclaration? = nil,
     implementationPlan: LoopImplementationPlanRequirement? = nil
@@ -36,6 +39,7 @@ public struct WorkflowLoopMetadata: Codable, Equatable, Sendable {
     self.description = description
     self.evidence = evidence
     self.policies = policies
+    self.convergence = convergence
     self.gates = gates
     self.recovery = recovery
     self.implementationPlan = implementationPlan
@@ -48,9 +52,39 @@ public struct WorkflowLoopMetadata: Codable, Equatable, Sendable {
     self.description = try container.decodeIfPresent(String.self, forKey: .description)
     self.evidence = try container.decodeIfPresent(LoopEvidenceRequirements.self, forKey: .evidence)
     self.policies = try container.decodeIfPresent(LoopPolicyDeclaration.self, forKey: .policies)
+    self.convergence = try container.decodeIfPresent(LoopConvergenceDeclaration.self, forKey: .convergence)
     self.gates = try container.decodeIfPresent([LoopGateDeclaration].self, forKey: .gates) ?? []
     self.recovery = try container.decodeIfPresent(LoopRecoveryDeclaration.self, forKey: .recovery)
     self.implementationPlan = try container.decodeIfPresent(LoopImplementationPlanRequirement.self, forKey: .implementationPlan)
+  }
+}
+
+public struct LoopConvergenceDeclaration: Codable, Equatable, Sendable {
+  public var maxGateVisits: Int?
+  public var maxRepeatedFindingRounds: Int?
+  public var onStall: LoopConvergenceStallAction
+
+  private enum CodingKeys: String, CodingKey {
+    case maxGateVisits
+    case maxRepeatedFindingRounds
+    case onStall
+  }
+
+  public init(
+    maxGateVisits: Int? = nil,
+    maxRepeatedFindingRounds: Int? = nil,
+    onStall: LoopConvergenceStallAction = .fail
+  ) {
+    self.maxGateVisits = maxGateVisits
+    self.maxRepeatedFindingRounds = maxRepeatedFindingRounds
+    self.onStall = onStall
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.maxGateVisits = try container.decodeIfPresent(Int.self, forKey: .maxGateVisits)
+    self.maxRepeatedFindingRounds = try container.decodeIfPresent(Int.self, forKey: .maxRepeatedFindingRounds)
+    self.onStall = try container.decodeIfPresent(LoopConvergenceStallAction.self, forKey: .onStall) ?? .fail
   }
 }
 

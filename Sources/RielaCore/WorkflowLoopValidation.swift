@@ -5,6 +5,7 @@ private let loopGateDecisionValues: Set<String> = ["accepted", "rejected", "need
 private let loopPromptPolicyValues: Set<String> = ["allow", "deny", "prompt"]
 private let loopNetworkModeValues: Set<String> = ["allow", "deny", "inherit-command"]
 private let loopArtifactRootPolicyValues: Set<String> = ["runtime-owned"]
+private let loopConvergenceOnStallValues: Set<String> = ["fail", "warn"]
 
 func validateTypedLoopMetadata(
   _ loop: WorkflowLoopMetadata?,
@@ -87,6 +88,10 @@ func validateTypedLoopMetadata(
     )
   }
 
+  if let convergence = loop.convergence {
+    validateTypedLoopConvergence(convergence, loopRequired: loop.required, diagnostics: &diagnostics)
+  }
+
   var seenGateIds: Set<String> = []
   for (index, gate) in loop.gates.enumerated() {
     let path = "workflow.loop.gates[\(index)]"
@@ -150,6 +155,7 @@ func validateRawLoopMetadata(
 
   validateRawLoopEvidence(loop["evidence"], diagnostics: &diagnostics)
   validateRawLoopPolicies(loop["policies"], diagnostics: &diagnostics)
+  validateRawLoopConvergence(loop["convergence"], loopRequired: loop["required"] as? Bool == true, diagnostics: &diagnostics)
   validateRawLoopGates(loop["gates"], stepIds: stepIds, diagnostics: &diagnostics)
   validateRawLoopImplementationPlan(loop["implementationPlan"], diagnostics: &diagnostics)
 }
@@ -227,6 +233,79 @@ private func validateRawLoopPolicies(_ raw: Any?, diagnostics: inout [WorkflowVa
       path: "workflow.loop.policies.network.mode",
       diagnostics: &diagnostics
     )
+  }
+}
+
+private func validateTypedLoopConvergence(
+  _ convergence: LoopConvergenceDeclaration,
+  loopRequired: Bool,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  if convergence.maxGateVisits == nil && convergence.maxRepeatedFindingRounds == nil {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.convergence",
+      "must define maxGateVisits or maxRepeatedFindingRounds"
+    ))
+  }
+  if let maxGateVisits = convergence.maxGateVisits, maxGateVisits <= 0 {
+    diagnostics.append(loopValidationError("workflow.loop.convergence.maxGateVisits", "must be a positive integer"))
+  }
+  if let maxRepeatedFindingRounds = convergence.maxRepeatedFindingRounds, maxRepeatedFindingRounds <= 0 {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.convergence.maxRepeatedFindingRounds",
+      "must be a positive integer"
+    ))
+  }
+  if convergence.onStall == .warn && loopRequired {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.convergence.onStall",
+      "warn is invalid when workflow.loop.required is true"
+    ))
+  }
+}
+
+private func validateRawLoopConvergence(
+  _ raw: Any?,
+  loopRequired: Bool,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let raw else {
+    return
+  }
+  guard let convergence = raw as? [String: Any] else {
+    diagnostics.append(loopValidationError("workflow.loop.convergence", "must be an object when provided"))
+    return
+  }
+
+  let hasMaxGateVisits = convergence["maxGateVisits"] != nil
+  let hasMaxRepeatedFindingRounds = convergence["maxRepeatedFindingRounds"] != nil
+  if !hasMaxGateVisits && !hasMaxRepeatedFindingRounds {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.convergence",
+      "must define maxGateVisits or maxRepeatedFindingRounds"
+    ))
+  }
+  validatePositiveRawInteger(
+    convergence["maxGateVisits"],
+    path: "workflow.loop.convergence.maxGateVisits",
+    diagnostics: &diagnostics
+  )
+  validatePositiveRawInteger(
+    convergence["maxRepeatedFindingRounds"],
+    path: "workflow.loop.convergence.maxRepeatedFindingRounds",
+    diagnostics: &diagnostics
+  )
+  validateAllowedRawString(
+    convergence["onStall"],
+    allowed: loopConvergenceOnStallValues,
+    path: "workflow.loop.convergence.onStall",
+    diagnostics: &diagnostics
+  )
+  if convergence["onStall"] as? String == "warn" && loopRequired {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.convergence.onStall",
+      "warn is invalid when workflow.loop.required is true"
+    ))
   }
 }
 
@@ -415,6 +494,24 @@ private func validateNonNegativeInteger(
     number.intValue >= 0
   else {
     diagnostics.append(loopValidationError(path, "must be a non-negative integer"))
+    return
+  }
+}
+
+private func validatePositiveRawInteger(
+  _ value: Any?,
+  path: String,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let value else {
+    return
+  }
+  guard let number = value as? NSNumber,
+    !isLoopValidationBooleanNumber(number),
+    floor(number.doubleValue) == number.doubleValue,
+    number.intValue > 0
+  else {
+    diagnostics.append(loopValidationError(path, "must be a positive integer"))
     return
   }
 }

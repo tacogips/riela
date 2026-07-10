@@ -1,9 +1,9 @@
 # Loop Engineering Convergence And Operations Hardening Implementation Plan
 
-**Status**: Planning
+**Status**: LB1 implemented, verification in progress
 **Design Reference**: `design-docs/specs/design-loop-engineering-convergence-and-operations.md`
 **Created**: 2026-07-08
-**Last Updated**: 2026-07-08
+**Last Updated**: 2026-07-10
 
 ---
 
@@ -516,6 +516,53 @@ incident is recorded in `design-incomplete-work-inventory.md` section 6.
 LB1.3 tolerant decoding must check LA2 status at start (build-or-consume).
 **Notes**: No workflows were run and no Swift sources were modified during
 this authoring step.
+
+### Session: 2026-07-10 LB1 implementation
+
+**Tasks Completed**: Created branch `issue-39-loop-convergence-guard` and ran
+`codex-design-and-implement-review-loop` through Riela for issue #39 intake
+(`codex-design-and-implement-review-loop-session-1157`, intentionally stopped
+at `--max-steps 2`). Implemented LB1 convergence metadata and validation,
+shared `loopGate` payload parsing, `LoopFindingFingerprint`,
+`LoopConvergenceTracker`, tolerant `WorkflowSessionFailureKind` raw decoding
+with `loopNotConverging`, `loop_stall` workflow run events, live-persistence
+event triggering, runner enforcement at gate publication boundaries, and a
+minimal `LoopConvergenceEvidence` manifest section for non-converging
+failures. Added focused tests for fingerprinting, convergence tracking,
+metadata validation, tolerant failure-kind decoding, projector compatibility,
+and runner fail/warn behavior.
+
+**Verification**:
+
+- `swift test --filter LoopFindingFingerprintTests` passed.
+- `swift test --filter LoopConvergenceTrackerTests` passed.
+- `swift test --filter WorkflowLoopValidationTests` passed.
+- `swift test --filter RuntimeSessionTests` passed.
+- `swift test --filter WorkflowRunnerLoopPolicyTests` passed.
+- `swift test --filter LoopEvidenceProjectorTests` passed.
+- `swift test --filter SQLiteWorkflowMessageLogTests` passed.
+- `swift test --filter AutoActionTests` passed after the first full-suite
+  run appeared to stop near that area.
+- `swift test --filter CLIWorkflowSessionResolutionTests` passed after the
+  second full-suite run stopped at
+  `testLoadPersistedSessionPrefersProjectStoreWhenBothExist`.
+- `swiftlint` exited 0; it reported existing warning-level findings plus a
+  new synthesized-initializer warning that was fixed.
+- `swift test` was started twice and progressed through broad CLI/adapter
+  suites without failures. The second run was logged under
+  `tmp/loop-convergence-verification/swift-test.log` and stopped for several
+  minutes at `CLIWorkflowSessionResolutionTests`; it was interrupted after
+  the corresponding filtered suite passed independently. Focused LB1,
+  persistence, and stopped-suite filtered tests above are the current
+  verification evidence.
+
+**Tasks In Progress**: Re-run full `swift test` when practical. LB2-LB6
+remain explicitly out of scope for this pass.
+**Blockers**: None.
+**Notes**: The self-review pass fixed `loop_stall` emission to use the
+runner's telemetry-aware event path, removed obsolete projector-local parser
+helpers after extracting shared parsing, and corrected `maxGateVisits` to
+fire only when the next visit exceeds the configured bound.
 
 ## Related Plans
 

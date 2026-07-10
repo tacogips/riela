@@ -51,21 +51,20 @@ extension DeterministicWorkflowRunner {
     request: DeterministicWorkflowRunRequest
   ) async throws {
     guard let convergence = workflow.loop?.convergence,
-          step.loop?.gateId != nil || step.loop?.role == "gate",
-          let payload = publishResult.stepExecution.acceptedOutput?.payload,
-          case .object = payload["loopGate"] else {
+          step.loop?.gateId != nil || step.loop?.role == "gate" else {
       return
     }
 
     var tracker = LoopConvergenceTracker(declaration: convergence)
     let parser = loopGateParser(workflow: workflow)
+    guard parser.result(from: publishResult.stepExecution) != nil else {
+      return
+    }
     var currentCheck: LoopConvergenceCheck?
     for execution in publishResult.session.executions {
-      guard let output = execution.acceptedOutput?.payload,
-            case let .object(loopGate)? = output["loopGate"] else {
+      guard let result = parser.result(from: execution) else {
         continue
       }
-      let result = parser.result(from: loopGate, execution: execution)
       let check = tracker.recordGateVisit(
         gateId: result.gateId,
         decision: result.decision,

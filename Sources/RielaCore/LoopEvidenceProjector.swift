@@ -112,11 +112,9 @@ public struct DefaultLoopEvidenceProjector: LoopEvidenceProjecting {
     var gateVisitCounts: [String: Int] = [:]
     var violation: LoopConvergenceViolation?
     for execution in input.session.executions {
-      guard let output = execution.acceptedOutput?.payload,
-            case let .object(loopGate)? = output["loopGate"] else {
+      guard let result = parser.result(from: execution) else {
         continue
       }
-      let result = parser.result(from: loopGate, execution: execution)
       let check = tracker.recordGateVisit(
         gateId: result.gateId,
         decision: result.decision,
@@ -145,18 +143,9 @@ public struct DefaultLoopEvidenceProjector: LoopEvidenceProjecting {
   }
 
   private func gateResults(from input: LoopEvidenceProjectionInput, loop: WorkflowLoopMetadata) -> [LoopGateResult] {
-    let gatesById = Dictionary(uniqueKeysWithValues: loop.gates.map { ($0.id, $0) })
     let parser = loopGateParser(workflow: input.workflow)
     var results: [LoopGateResult] = input.session.executions.compactMap { execution in
-      guard let output = execution.acceptedOutput?.payload,
-            case let .object(loopGate)? = output["loopGate"] else {
-        return nil
-      }
-      let result = parser.result(from: loopGate, execution: execution)
-      guard let gate = gatesById[result.gateId], gate.required else {
-        return result
-      }
-      return enforceAcceptancePolicy(gate.acceptWhen, gate: gate, result: result)
+      parser.result(from: execution)
     }
 
     let resultGateIds = Set(results.map(\.gateId))
@@ -164,62 +153,6 @@ public struct DefaultLoopEvidenceProjector: LoopEvidenceProjecting {
       results.append(missingRequiredGateResult(gate: gate))
     }
     return results
-  }
-
-  private func enforceAcceptancePolicy(
-    _ policy: LoopGateAcceptancePolicy,
-    gate: LoopGateDeclaration,
-    result: LoopGateResult
-  ) -> LoopGateResult {
-    let violations = acceptanceViolations(policy: policy, gate: gate, result: result)
-    guard !violations.isEmpty else {
-      return result
-    }
-
-    var blocked = result
-    if blocked.decision == .accepted {
-      blocked.decision = .rejected
-      blocked.acceptedAt = nil
-    }
-    blocked.blockingFindings.append(contentsOf: violations.map { violation in
-      LoopBlockingFinding(
-        id: "gate-policy-\(gate.id)-\(violation.id)",
-        severity: violation.severity,
-        message: violation.message
-      )
-    })
-    blocked.diagnostics.append(contentsOf: violations.map(\.message))
-    return blocked
-  }
-
-  private func acceptanceViolations(
-    policy: LoopGateAcceptancePolicy,
-    gate: LoopGateDeclaration,
-    result: LoopGateResult
-  ) -> [LoopGateAcceptanceViolation] {
-    var violations: [LoopGateAcceptanceViolation] = []
-    if let expectedDecision = policy.decision, result.decision != expectedDecision {
-      violations.append(LoopGateAcceptanceViolation(
-        id: "decision",
-        severity: "high",
-        message: "required loop gate '\(gate.id)' expected decision \(expectedDecision.rawValue) but got \(result.decision.rawValue)"
-      ))
-    }
-    if let maxHighFindings = policy.maxHighFindings, result.severityCounts.high > maxHighFindings {
-      violations.append(LoopGateAcceptanceViolation(
-        id: "max-high-findings",
-        severity: "high",
-        message: "required loop gate '\(gate.id)' has \(result.severityCounts.high) high findings; maximum is \(maxHighFindings)"
-      ))
-    }
-    if let maxMediumFindings = policy.maxMediumFindings, result.severityCounts.medium > maxMediumFindings {
-      violations.append(LoopGateAcceptanceViolation(
-        id: "max-medium-findings",
-        severity: "medium",
-        message: "required loop gate '\(gate.id)' has \(result.severityCounts.medium) medium findings; maximum is \(maxMediumFindings)"
-      ))
-    }
-    return violations
   }
 
   private func missingRequiredGateResult(gate: LoopGateDeclaration) -> LoopGateResult {
@@ -239,12 +172,6 @@ public struct DefaultLoopEvidenceProjector: LoopEvidenceProjecting {
       diagnostics: ["required loop gate '\(gate.id)' was missing from accepted outputs"]
     )
   }
-}
-
-private struct LoopGateAcceptanceViolation {
-  var id: String
-  var severity: String
-  var message: String
 }
 
 private func artifactRefs(from messages: [WorkflowMessageRecord]) -> [LoopArtifactRef] {

@@ -572,6 +572,28 @@ update LB1 status to DONE.
 - Full `swift test` passed (1,614 tests, 4 skipped, 0 failures).
 - `swiftlint` exited 0 with 11 pre-existing warnings and no new violations.
 - `git diff --check` passed.
+
+### Session: 2026-07-10 LB1 Riela adversarial review
+
+**Review Evidence**: Ran a one-node temporary Riela workflow using the
+`codex-agent` backend and the packaged Step 7 adversarial-review contract.
+Session `issue-39-lb1-adversarial-review-session-1` rejected the implementation
+with three medium findings.
+
+**Findings Fixed**:
+
+- Preserve id-less blocking findings so `(filePath, message)` fallback
+  fingerprints work instead of collapsing distinct findings to an empty set.
+- Replay skipped gate executions as `.skipped` visits so they reset repeated
+  rejection tracking in both runner enforcement and evidence projection.
+- Apply required-gate acceptance policy in the shared parser before both
+  convergence tracking and evidence projection, preventing raw\/projected gate
+  disagreement.
+
+**Regression Verification**: Added runner tests for changed id-less findings,
+rejected → skipped → rejected, and policy-synthesized fingerprints, plus a
+projector test for id-less findings. The focused runner and projector suites
+passed (21 tests, 0 failures).
 - `swift test` was started twice and progressed through broad CLI/adapter
   suites without failures. The second run was logged under
   `tmp/loop-convergence-verification/swift-test.log` and stopped for several

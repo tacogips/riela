@@ -284,6 +284,26 @@ final class LoopEvidenceProjectorTests: XCTestCase {
     XCTAssertEqual(manifest.residualRisks.first?.accepted, true)
   }
 
+  func testProjectorPreservesIdlessFindingForFallbackFingerprinting() throws {
+    let manifest = try projectManifest(gatePayload: [
+      "decision": .string("needs_work"),
+      "blockingFindings": .array([
+        .object([
+          "severity": .string("high"),
+          "filePath": .string("Sources/A.swift"),
+          "message": .string("id-less finding")
+        ])
+      ])
+    ])
+
+    let finding = try XCTUnwrap(manifest.gates.first?.blockingFindings.first {
+      $0.message == "id-less finding"
+    })
+    XCTAssertEqual(finding.id, "")
+    XCTAssertEqual(finding.filePath, "Sources/A.swift")
+    XCTAssertEqual(LoopFindingFingerprint.make(from: finding).key, "message:Sources/A.swift\u{0}id-less finding")
+  }
+
   private func workflow(loop: WorkflowLoopMetadata? = loopMetadata()) -> WorkflowDefinition {
     WorkflowDefinition(
       workflowId: "wf",

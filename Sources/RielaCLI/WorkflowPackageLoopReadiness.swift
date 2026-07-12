@@ -5,7 +5,14 @@ func packageLoopReadinessIssues(for loop: WorkflowLoopMetadata?) -> [WorkflowPac
   guard let loop, loop.required else {
     return []
   }
+  return packageLoopReadinessIssues(evaluating: loop)
+}
 
+/// Ungated variant for `loop promote`'s advisory mode: evaluates every
+/// readiness check regardless of `loop.required` so optional-loop workflows
+/// get a truthful report instead of a trivially empty one. The caller labels
+/// the resulting issues enforced/advisory.
+func packageLoopReadinessIssues(evaluating loop: WorkflowLoopMetadata) -> [WorkflowPackageValidationIssue] {
   var issues: [WorkflowPackageValidationIssue] = []
   if loop.evidence?.required != true {
     issues.append(packageLoopReadinessIssue("workflow.loop.evidence.required", "required loop packages must require evidence"))
@@ -70,4 +77,24 @@ private func appendProcessPolicyReadinessIssues(
 
 private func packageLoopReadinessIssue(_ path: String, _ message: String) -> WorkflowPackageValidationIssue {
   WorkflowPackageValidationIssue(code: "LOOP_READINESS", path: path, message: message)
+}
+
+/// Portability warning (design S12): `command` notification channels
+/// reference machine-local scripts, so packaged workflows are flagged;
+/// webhook channels stay portable by construction (env-name indirection).
+/// Advisory only — it never gates package validity.
+func packageLoopNotificationWarnings(for loop: WorkflowLoopMetadata?) -> [WorkflowPackageValidationIssue] {
+  guard let channels = loop?.notifications?.channels else {
+    return []
+  }
+  return channels.enumerated().compactMap { index, channel in
+    guard channel.type == "command" else {
+      return nil
+    }
+    return WorkflowPackageValidationIssue(
+      code: "LOOP_NOTIFICATION_PORTABILITY",
+      path: "workflow.loop.notifications.channels[\(index)]",
+      message: "command notification channels are not portable in packaged workflows; prefer webhook channels"
+    )
+  }
 }

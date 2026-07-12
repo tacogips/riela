@@ -166,6 +166,115 @@ public struct GraphQLRuntimeSnapshotQueryService: Sendable {
       recovery: session.loopRecovery
     )
   }
+
+  /// Loop session overviews, projected from the same persisted snapshots the CLI
+  /// reads (no GraphQL-only computation). Newest first, bounded by `limit`.
+  public func loopSessions(
+    workflowId: String? = nil,
+    status: String? = nil,
+    limit: Int? = nil
+  ) async -> GraphQLLoopSessionsResult {
+    do {
+      let snapshots: [WorkflowRuntimePersistenceSnapshot] = try loadSnapshots()
+      var overviews: [LoopSessionOverview] = snapshots.map(Self.overview(from:))
+      if let workflowId {
+        overviews = overviews.filter { $0.workflowId == workflowId }
+      }
+      if let status {
+        overviews = overviews.filter { $0.sessionStatus == status }
+      }
+      overviews = Self.newestFirst(overviews)
+      if let limit { overviews = Array(overviews.prefix(max(0, limit))) }
+      return GraphQLLoopSessionsResult(
+        result: GraphQLControlPlaneResult(accepted: true, status: GraphQLLoopEvidenceQueryStatus.found.rawValue),
+        sessions: overviews.map(GraphQLLoopSessionOverviewDTO.init)
+      )
+    } catch {
+      return GraphQLLoopSessionsResult(result: GraphQLControlPlaneResult(
+        accepted: false,
+        status: GraphQLLoopEvidenceQueryStatus.error.rawValue,
+        diagnostics: [String(describing: error)]
+      ))
+    }
+  }
+
+  /// Bounded-window loop statistics for a workflow, aggregated from the same
+  /// persisted overviews the CLI uses.
+  public func loopWorkflowStats(workflowId: String, limit: Int? = nil) async -> GraphQLLoopWorkflowStatsResult {
+    do {
+      let snapshots: [WorkflowRuntimePersistenceSnapshot] = try loadSnapshots()
+      let allOverviews: [LoopSessionOverview] = snapshots.map(Self.overview(from:))
+      let overviews = Self.newestFirst(allOverviews.filter { $0.workflowId == workflowId })
+      let stats = LoopWorkflowStats.aggregate(
+        workflowId: workflowId,
+        overviews: overviews,
+        limit: limit ?? 50
+      )
+      return GraphQLLoopWorkflowStatsResult(
+        result: GraphQLControlPlaneResult(accepted: true, status: GraphQLLoopEvidenceQueryStatus.found.rawValue),
+        stats: GraphQLLoopWorkflowStatsDTO(stats: stats)
+      )
+    } catch {
+      return GraphQLLoopWorkflowStatsResult(result: GraphQLControlPlaneResult(
+        accepted: false,
+        status: GraphQLLoopEvidenceQueryStatus.error.rawValue,
+        diagnostics: [String(describing: error)]
+      ))
+    }
+  }
+
+  /// Evidence-level diff of two sessions' persisted manifests.
+  public func loopEvidenceDiff(
+    baseSessionId: String,
+    targetSessionId: String
+  ) async -> GraphQLLoopEvidenceDiffResult {
+    do {
+      guard let base = try loadSnapshot(baseSessionId).loopEvidence else {
+        return Self.diffMissingEvidence(baseSessionId)
+      }
+      guard let target = try loadSnapshot(targetSessionId).loopEvidence else {
+        return Self.diffMissingEvidence(targetSessionId)
+      }
+      let diff = LoopEvidenceDiffer.diff(base: base, target: target)
+      return GraphQLLoopEvidenceDiffResult(
+        result: GraphQLControlPlaneResult(accepted: true, status: GraphQLLoopEvidenceQueryStatus.found.rawValue),
+        diff: GraphQLLoopEvidenceDiffDTO(diff: diff)
+      )
+    } catch WorkflowRuntimePersistenceStoreError.notFound(let sessionId) {
+      return GraphQLLoopEvidenceDiffResult(result: GraphQLControlPlaneResult(
+        accepted: false,
+        status: GraphQLLoopEvidenceQueryStatus.notFound.rawValue,
+        diagnostics: ["runtime snapshot not found: \(sessionId)"]
+      ))
+    } catch {
+      return GraphQLLoopEvidenceDiffResult(result: GraphQLControlPlaneResult(
+        accepted: false,
+        status: GraphQLLoopEvidenceQueryStatus.error.rawValue,
+        diagnostics: [String(describing: error)]
+      ))
+    }
+  }
+
+  private static func diffMissingEvidence(_ sessionId: String) -> GraphQLLoopEvidenceDiffResult {
+    GraphQLLoopEvidenceDiffResult(result: GraphQLControlPlaneResult(
+      accepted: false,
+      status: GraphQLLoopEvidenceQueryStatus.noEvidence.rawValue,
+      diagnostics: ["loop evidence not found for session \(sessionId)"]
+    ))
+  }
+
+  private static func newestFirst(_ overviews: [LoopSessionOverview]) -> [LoopSessionOverview] {
+    overviews.sorted { lhs, rhs in
+      lhs.updatedAt == rhs.updatedAt ? lhs.sessionId < rhs.sessionId : lhs.updatedAt > rhs.updatedAt
+    }
+  }
+
+  private static func overview(from snapshot: WorkflowRuntimePersistenceSnapshot) -> LoopSessionOverview {
+    let summary = snapshot.loopEvidence.map {
+      LoopSessionSummary.make(manifest: $0, loopMetadata: snapshot.loopMetadata)
+    }
+    return LoopSessionOverview.make(session: snapshot.session, summary: summary)
+  }
 }
 
 public struct GraphQLWorkflowInstanceService: Sendable {

@@ -48,6 +48,7 @@ public struct WorkflowPackageCommandResult: Codable, Equatable, Sendable {
   public var dryRun: Bool
   public var message: String
   public var runSessionId: String?
+  public var preInstallCheck: WorkflowPackagePreInstallCheckResult?
 }
 
 public struct WorkflowPackageSummary: Codable, Equatable, Sendable {

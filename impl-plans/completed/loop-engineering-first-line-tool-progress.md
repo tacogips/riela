@@ -2,6 +2,59 @@
 
 ## Progress Log
 
+### Session: 2026-07-12 10:30
+
+**Tasks Completed**: Closed the interrupted round-eight Section 8 hardening. Two
+real defects were diagnosed and fixed in the private-history-artifact code path
+that the round-eight adversarial suite exercised. First, the private directory's
+descriptor-relative enumeration helpers (`enumerate` and `childNames` in
+`WorkflowHistoryPrivateDirectory`) opened a `dup` of the pinned directory
+descriptor and drove it with `fdopendir`. Because `dup` shares the underlying
+open file description — including its read offset — any prior read-to-EOF of the
+pinned descriptor left every subsequent enumeration seeing an empty directory.
+Cleanup (`makeMutableAndRemoveContents`) therefore removed nothing and
+`unlinkat(AT_REMOVEDIR)` failed with `ENOTEMPTY`, surfacing as "unable to remove
+private workflow history artifact"; immutability verification also observed a
+false-empty topology. Both helpers now `rewinddir` the stream so enumeration
+always starts at the beginning. Second, `WorkflowRuntimeGateEvidenceStore.publish`
+probed for an existing entry with `entryType` — which walks the `gate-results`
+parent through pinned descriptors — before `ensureDirectory` had created it, so
+the first publish of any workflow failed closed with "linked or non-directory
+component". `publish` now ensures the containing directory before the
+idempotency probe, leaving the `.childDirectory` swap-detection hook ordering
+intact.
+
+**Files Changed**: `Sources/RielaCLI/WorkflowHistoryPrivateDirectory.swift`
+(rewinddir in both enumeration helpers; one closure-parameter-position cleanup)
+and `Sources/RielaCLI/WorkflowRuntimeGateEvidenceStore.swift` (ensure-directory
+ordering). No test files were changed; the round-eight suites were already
+authored. All unrelated dirty changes remain preserved.
+
+**Verification**: `WorkflowRound8AdversarialTests` passed all 19 tests (was 15
+failing through the shared cleanup path). `WorkflowSelfImproveVersioningTests`
+passed all 6 (was 3+ failing). The exact-final-tree Section 8 focused aggregate
+(round7/round8 adversarial, history/transaction/versioning/staged-verification/
+audit-retry/secure-read/shared-node/history-models suites) passed 104 tests with
+0 unexpected failures. Full `swift test` on the final tree passed 1,733 tests
+with 4 skips and 0 unexpected failures in 390 s (the 2 reported "failures" are
+`XCTExpectFailure` markers). Strict scoped SwiftLint on the changed files reports
+no `closure_parameter_position` violations; the remaining repo-wide `type_name`
+notes on `WorkflowHistoryArtifactConstructionBoundary` predate this work, appear
+five times across the tree, and SwiftLint is not wired into Taskfile/pre-commit.
+`git diff --check` passed. Independent read-only adversarial re-review of the two
+fixes found zero high/medium findings: `rewinddir` only resets the shared read
+offset and preserves every `O_NOFOLLOW`/`fstatat(AT_SYMLINK_NOFOLLOW)`/`S_IFMT`
+TOCTOU check; the publish reorder keeps the `.childDirectory` hook immediately
+before `atomicWrite`, and swap detection still fails closed
+(`testRuntimeGateConstructionRejectsParentSwap`/`...LeafSwapBeforeVerification`
+pass).
+
+**Tasks In Progress**: None for round-eight Section 8. Broader loop-plan
+bookkeeping (README status, archive disposition) is tracked separately and is
+not gated on Section 8.
+
+**Blockers**: None.
+
 ### Session: 2026-07-11 23:30
 
 **Tasks Completed**: Reopened every prior Section 8 claim for round seven and

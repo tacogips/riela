@@ -179,6 +179,11 @@ public struct LoopSessionOverview: Codable, Equatable, Sendable {
   public var entryMode: String?
   public var sourceSessionId: String?
   public var cost: LoopCostSummary?
+  /// Frozen per-gate outcomes (with requiredness) carried through from the
+  /// session summary. Optional for legacy overviews; consumers treat nil as
+  /// empty. Enables faithful `loop stats` aggregation ("all *required* gates
+  /// accepted") without re-reading workflow definitions.
+  public var gateOutcomes: [LoopGateOutcome]?
   public var possiblyStale: Bool
   public var createdAt: Date
   public var updatedAt: Date
@@ -196,6 +201,7 @@ public struct LoopSessionOverview: Codable, Equatable, Sendable {
     entryMode: String? = nil,
     sourceSessionId: String? = nil,
     cost: LoopCostSummary? = nil,
+    gateOutcomes: [LoopGateOutcome]? = nil,
     possiblyStale: Bool = false,
     createdAt: Date,
     updatedAt: Date
@@ -212,6 +218,7 @@ public struct LoopSessionOverview: Codable, Equatable, Sendable {
     self.entryMode = entryMode
     self.sourceSessionId = sourceSessionId
     self.cost = cost
+    self.gateOutcomes = gateOutcomes
     self.possiblyStale = possiblyStale
     self.createdAt = createdAt
     self.updatedAt = updatedAt
@@ -272,6 +279,7 @@ public struct LoopSessionOverview: Codable, Equatable, Sendable {
       entryMode: summary?.entryMode,
       sourceSessionId: summary?.sourceSessionId,
       cost: summary?.cost,
+      gateOutcomes: summary?.gateOutcomes,
       possiblyStale: sessionStatus == WorkflowSessionStatus.running.rawValue
         && now.timeIntervalSince(updatedAt) > staleInterval,
       createdAt: createdAt,

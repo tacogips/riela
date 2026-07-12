@@ -17,6 +17,10 @@ public struct MockNodeResponse: Codable, Equatable, Sendable {
   public var when: [String: Bool]?
   public var payload: JSONObject?
   public var fail: Bool?
+  /// Optional token-usage payload (e.g. `{"input_tokens": 100, "output_tokens": 40,
+  /// "total_tokens": 140}`). When present, the adapter emits a `usage` backend
+  /// event before returning so cost/budget accumulation paths are testable.
+  public var usage: JSONObject?
 
   public init(
     provider: String? = nil,
@@ -25,7 +29,8 @@ public struct MockNodeResponse: Codable, Equatable, Sendable {
     completionPassed: Bool? = nil,
     when: [String: Bool]? = nil,
     payload: JSONObject? = nil,
-    fail: Bool? = nil
+    fail: Bool? = nil,
+    usage: JSONObject? = nil
   ) {
     self.provider = provider
     self.model = model
@@ -34,6 +39,7 @@ public struct MockNodeResponse: Codable, Equatable, Sendable {
     self.when = when
     self.payload = payload
     self.fail = fail
+    self.usage = usage
   }
 }
 
@@ -82,6 +88,14 @@ public actor ScenarioNodeAdapter: NodeAdapter {
     let response = sequence.isEmpty ? MockNodeResponse() : sequence[min(sequenceIndex - 1, sequence.count - 1)]
     if response.fail == true {
       throw AdapterExecutionError(.providerError, "scenario forced failure for node '\(input.node.id)'")
+    }
+    if let usage = response.usage {
+      await context.backendEventHandler?(AdapterBackendEvent(
+        provider: response.provider ?? "scenario-mock",
+        eventType: "usage",
+        channel: .usage,
+        usage: usage
+      ))
     }
     return AdapterExecutionOutput(
       provider: response.provider ?? "scenario-mock",

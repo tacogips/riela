@@ -44,6 +44,10 @@ struct ParsedParityOptions: Sendable {
   var all = false
   var packageName: String?
   var packageID: String?
+  var createPR = false
+  var prBase: String?
+  var preInstallCheck: WorkflowPackagePreInstallMode?
+  var preInstallCheckContainer: WorkflowPackageContainerRuntimeRequest?
   var branch: String?
   var localPath: String?
   var noteAPIEnabled = false
@@ -211,6 +215,22 @@ struct ParsedParityOptions: Sendable {
       packageName = try value()
     case "--package-id":
       packageID = try value()
+    case "--create-pr":
+      createPR = true
+    case "--pr-base":
+      prBase = try value()
+    case "--pre-install-check":
+      let raw = try value()
+      guard let mode = WorkflowPackagePreInstallMode(rawValue: raw) else {
+        throw CLIUsageError("--pre-install-check requires one of: off, warn, reject")
+      }
+      preInstallCheck = mode
+    case "--pre-install-check-container":
+      let raw = try value()
+      guard let runtime = WorkflowPackageContainerRuntimeRequest(rawValue: raw) else {
+        throw CLIUsageError("--pre-install-check-container requires one of: off, docker, podman, auto")
+      }
+      preInstallCheckContainer = runtime
     case "--branch":
       branch = try value()
     case "--local-path", "--registry-local-path":

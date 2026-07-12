@@ -15,6 +15,11 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   public var rerunFromSessionId: String?
   public var rerunFromStepId: String?
   public var resumeSessionId: String?
+  /// Recovery lineage recorded on the source session's evidence manifest,
+  /// supplied by callers that can read persisted manifests (the CLI). Rerun
+  /// entries derive `rootSessionId`/`attemptNumber` from it; absent lineage is
+  /// treated as attempt one.
+  public var sourceRecoveryLineage: LoopRecoveryLineage?
   public var memoryRootDirectory: String?
   public var agentSilenceWarningMs: Int?
   public var agentSilenceMonitorIntervalMs: Int
@@ -39,6 +44,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     rerunFromSessionId: String? = nil,
     rerunFromStepId: String? = nil,
     resumeSessionId: String? = nil,
+    sourceRecoveryLineage: LoopRecoveryLineage? = nil,
     memoryRootDirectory: String? = nil,
     agentSilenceWarningMs: Int? = nil,
     agentSilenceMonitorIntervalMs: Int = 1_000,
@@ -59,6 +65,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     self.rerunFromSessionId = rerunFromSessionId
     self.rerunFromStepId = rerunFromStepId
     self.resumeSessionId = resumeSessionId
+    self.sourceRecoveryLineage = sourceRecoveryLineage
     self.memoryRootDirectory = memoryRootDirectory
     self.agentSilenceWarningMs = agentSilenceWarningMs
     self.agentSilenceMonitorIntervalMs = agentSilenceMonitorIntervalMs
@@ -192,89 +199,25 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     }
     var effectiveRequest = request
 
-    let entryStepId: String
-    var session: WorkflowSession
-    var currentStepId: String?
-    let recoveryLineage: LoopRecoveryLineage
-    if let resumeSessionId = request.resumeSessionId {
-      guard let existing = try await store.loadSession(id: resumeSessionId) else {
-        throw DeterministicWorkflowRunnerError.resumeValidation("resume session not found: \(resumeSessionId)")
-      }
-      guard existing.workflowId == request.workflow.workflowId else {
-        throw DeterministicWorkflowRunnerError.resumeValidation("session workflow does not match command workflow")
-      }
-      let resumeLineage = resumeRecoveryLineage(sourceSessionId: resumeSessionId)
-      let canResumeBudgetFailure = existing.status == .failed && existing.failureKind == .maxStepsExceeded
-      if existing.status == .completed || (existing.status == .failed && !canResumeBudgetFailure) {
-        let terminalResult = WorkflowRunResult(
-          workflowId: request.workflow.workflowId,
-          session: existing,
-          rootOutput: terminalRootOutput(from: existing),
-          exitCode: existing.status == .completed ? 0 : 1,
-          transitions: 0,
-          recovery: resumeLineage
-        )
-        await emitSessionCompletedEvent(result: terminalResult, handler: request.eventHandler)
-        return terminalResult
-      }
-      try await validateCrossWorkflowDispatchTargets(in: request.workflow)
-      session = existing
-      currentStepId = existing.currentStepId ?? existing.entryStepId
-      entryStepId = existing.entryStepId
-      recoveryLineage = resumeLineage
-    } else if let rerunFromSessionId = request.rerunFromSessionId {
-      guard let sourceSession = try await store.loadSession(id: rerunFromSessionId) else {
-        throw DeterministicWorkflowRunnerError.rerunValidation("source session not found: \(rerunFromSessionId)")
-      }
-      guard sourceSession.workflowId == request.workflow.workflowId else {
-        throw DeterministicWorkflowRunnerError.rerunValidation("source session workflow does not match command workflow")
-      }
-      do {
-        entryStepId = try WorkflowSessionEntryValidation.validateRerunTarget(
-          workflow: request.workflow,
-          sourceSession: sourceSession,
-          rerunStepId: request.rerunFromStepId
-        )
-      } catch let error as WorkflowSessionEntryValidationError {
-        throw DeterministicWorkflowRunnerError.rerunValidation(errorMessage(error))
-      }
-      try await validateCrossWorkflowDispatchTargets(in: request.workflow)
-      session = try await store.createSession(
-        WorkflowSessionCreateInput(
-          workflowId: request.workflow.workflowId,
-          entryStepId: entryStepId,
-          effectiveInstance: request.effectiveInstance
-        )
-      )
-      for (key, value) in WorkflowReviewFindingReplayContext.variables(
-        from: sourceSession.reviewFindings,
-        targetStepId: entryStepId
-      ) {
-        effectiveRequest.variables[key] = value
-      }
-      currentStepId = entryStepId
-      recoveryLineage = rerunRecoveryLineage(
-        sourceSession: sourceSession,
-        sourceStepId: entryStepId,
-        childSessionId: session.sessionId
-      )
-    } else {
-      entryStepId = request.workflow.entryStepId
-      try await validateCrossWorkflowDispatchTargets(in: request.workflow)
-      session = try await store.createSession(
-        WorkflowSessionCreateInput(
-          workflowId: request.workflow.workflowId,
-          entryStepId: entryStepId,
-          effectiveInstance: request.effectiveInstance
-        )
-      )
-      currentStepId = entryStepId
-      recoveryLineage = runRecoveryLineage()
+    let entryContext: SessionEntryContext
+    switch try await resolveSessionEntry(request) {
+    case let .terminal(result):
+      return result
+    case let .proceed(context):
+      entryContext = context
+    }
+    var session = entryContext.session
+    var currentStepId = entryContext.currentStepId
+    let recoveryLineage = entryContext.recoveryLineage
+    for (key, value) in entryContext.variableOverrides {
+      effectiveRequest.variables[key] = value
     }
 
     interruptedSessionId = session.sessionId
+    try enforceLoopSessionAttempts(lineage: recoveryLineage, workflow: effectiveRequest.workflow)
     await emitSessionStartedEvent(workflowId: effectiveRequest.workflow.workflowId, session: session, handler: effectiveRequest.eventHandler)
 
+    var loopBudgetEventEmitted = false
     var visitedSteps = 0
     var publishedTransitions = 0
     var rootOutput: JSONObject?
@@ -297,6 +240,15 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         )
         throw DeterministicWorkflowRunnerError.maxStepsExceeded(maxSteps)
       }
+      // Step-boundary budget check: accumulated cost/wall-clock from completed
+      // steps is evaluated before the next step is dispatched.
+      try await enforceLoopBudgetAtStepBoundary(
+        visitedSteps: visitedSteps,
+        sessionId: session.sessionId,
+        workflow: effectiveRequest.workflow,
+        eventHandler: effectiveRequest.eventHandler,
+        budgetEventEmitted: &loopBudgetEventEmitted
+      )
       guard let step = executionPlan.step(id: stepId) else {
         throw DeterministicWorkflowRunnerError.missingStep(stepId)
       }
@@ -403,7 +355,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     }
   }
 
-  private func validateCrossWorkflowDispatchTargets(in workflow: WorkflowDefinition) async throws {
+  func validateCrossWorkflowDispatchTargets(in workflow: WorkflowDefinition) async throws {
     guard !simulatesCrossWorkflowDispatch, let calleeResolver else {
       return
     }

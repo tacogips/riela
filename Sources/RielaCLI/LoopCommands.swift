@@ -34,6 +34,14 @@ public struct LoopCommandFailureResult: Codable, Equatable, Sendable {
   public var exitCode: Int32
 }
 
+public struct LoopGatesCheckResult: Codable, Equatable, Sendable {
+  public var sessionId: String
+  public var verdict: String
+  public var requiredGates: [String]
+  public var failingGates: [String]
+  public var exitCode: Int32
+}
+
 public struct LoopCommandRunner: Sendable {
   public var sessionRerunCommand: SessionRerunCommand
 
@@ -42,11 +50,72 @@ public struct LoopCommandRunner: Sendable {
   }
 
   public func run(_ command: LoopCommand) async -> CLICommandResult {
-    if command.kind == .list || command.kind == .history {
+    if command.kind == .start {
+      return await LoopStartCommand().run(command.options)
+    }
+    if command.kind == .promote {
+      return await LoopPromoteCommand().run(command.options)
+    }
+    if command.kind == .baseline {
+      return runBaseline(command)
+    }
+    if command.kind == .regress {
+      return runRegress(command)
+    }
+    if command.kind == .list || command.kind == .history || command.kind == .stats {
       do {
         let parsed = try parseOverviewOptions(command)
         let overviews = try loadOverviews(parsed)
+        if command.kind == .stats {
+          let stats = LoopWorkflowStats.aggregate(
+            workflowId: parsed.workflowId ?? "",
+            overviews: overviews,
+            limit: parsed.limit
+          )
+          return try renderStats(stats, output: command.options.output)
+        }
         return try renderOverviews(overviews, output: command.options.output)
+      } catch let error as CLIUsageError {
+        return CLICommandResult(exitCode: .usage, stderr: error.message)
+      } catch {
+        if command.options.output.isStructured {
+          let payload = LoopCommandFailureResult(
+            sessionId: command.options.target ?? "",
+            command: command.kind.rawValue,
+            error: "\(error)",
+            exitCode: CLIExitCode.failure.rawValue
+          )
+          return CLICommandResult(exitCode: .failure, stdout: (try? jsonString(payload)) ?? "")
+        }
+        return CLICommandResult(exitCode: .failure, stderr: "\(error)")
+      }
+    }
+    if command.kind == .gates, command.options.arguments.contains("--check") {
+      guard let sessionId = command.options.target, !sessionId.isEmpty else {
+        return CLICommandResult(exitCode: .usage, stderr: "loop gates --check requires a session id")
+      }
+      do {
+        return try runGatesCheck(command, sessionId: sessionId)
+      } catch let error as CLIUsageError {
+        return CLICommandResult(exitCode: .usage, stderr: error.message)
+      } catch {
+        // Operational error is exit 1, distinct from the gate-check verdict codes.
+        let payload = LoopGatesCheckResult(
+          sessionId: sessionId,
+          verdict: "error",
+          requiredGates: [],
+          failingGates: [],
+          exitCode: CLIExitCode.failure.rawValue
+        )
+        return CLICommandResult(exitCode: .failure, stdout: (try? jsonString(payload)) ?? "", stderr: "\(error)")
+      }
+    }
+    if command.kind == .diff || command.kind == .findings {
+      do {
+        if command.kind == .diff, command.options.arguments.first == "--baseline" {
+          return try runBaselineDiff(command)
+        }
+        return command.kind == .diff ? try runDiff(command) : try runFindings(command)
       } catch let error as CLIUsageError {
         return CLICommandResult(exitCode: .usage, stderr: error.message)
       } catch {
@@ -88,13 +157,13 @@ public struct LoopCommandRunner: Sendable {
     }
   }
 
-  private struct ParsedOptions {
+  struct ParsedOptions {
     var scope: WorkflowScope
     var workingDirectory: String
     var sessionStore: String?
   }
 
-  private struct ParsedOverviewOptions {
+  struct ParsedOverviewOptions {
     var scope: WorkflowScope
     var workingDirectory: String
     var sessionStore: String?
@@ -104,12 +173,12 @@ public struct LoopCommandRunner: Sendable {
     var limit: Int
   }
 
-  private struct RenderSnapshot {
+  struct RenderSnapshot {
     var snapshot: WorkflowRuntimePersistenceSnapshot
     var loopEvidenceRecorded: Bool
   }
 
-  private func parseInspectionOptions(_ arguments: [String]) throws -> ParsedOptions {
+  func parseInspectionOptions(_ arguments: [String]) throws -> ParsedOptions {
     var scope = WorkflowScope.auto
     var workingDirectory = FileManager.default.currentDirectoryPath
     var sessionStore: String?
@@ -226,11 +295,11 @@ public struct LoopCommandRunner: Sendable {
     )
   }
 
-  private func parseOverviewOptions(_ command: LoopCommand) throws -> ParsedOverviewOptions {
+  func parseOverviewOptions(_ command: LoopCommand) throws -> ParsedOverviewOptions {
     var scope = WorkflowScope.auto
     var workingDirectory = FileManager.default.currentDirectoryPath
     var sessionStore: String?
-    var workflowId = command.kind == .history ? command.options.target : nil
+    var workflowId = (command.kind == .history || command.kind == .stats) ? command.options.target : nil
     var status: String?
     var gateDecision: String?
     var limit = 50
@@ -273,8 +342,8 @@ public struct LoopCommandRunner: Sendable {
         }
       }
     }
-    if command.kind == .history, workflowId == nil {
-      throw CLIUsageError("loop history requires a workflow id")
+    if command.kind == .history || command.kind == .stats, workflowId == nil {
+      throw CLIUsageError("loop \(command.kind.rawValue) requires a workflow id")
     }
     return ParsedOverviewOptions(
       scope: scope,
@@ -304,7 +373,7 @@ public struct LoopCommandRunner: Sendable {
     return value
   }
 
-  private func readRequiredOption(_ token: String, arguments: [String], index: inout Int) throws -> String {
+  func readRequiredOption(_ token: String, arguments: [String], index: inout Int) throws -> String {
     guard index + 1 < arguments.count, !arguments[index + 1].hasPrefix("--") else {
       throw CLIUsageError("\(token) requires a value")
     }
@@ -312,7 +381,7 @@ public struct LoopCommandRunner: Sendable {
     return arguments[index - 1]
   }
 
-  private func loadOverviews(_ parsed: ParsedOverviewOptions) throws -> [LoopSessionOverview] {
+  func loadOverviews(_ parsed: ParsedOverviewOptions) throws -> [LoopSessionOverview] {
     let filter = SQLiteWorkflowRuntimePersistenceStore.LoopSessionOverviewFilter(
       workflowId: parsed.workflowId,
       sessionStatus: parsed.status,
@@ -420,7 +489,7 @@ public struct LoopCommandRunner: Sendable {
       return try renderGates(snapshot: snapshot, loopEvidenceRecorded: loopEvidenceRecorded, output: output)
     case .recover:
       throw CLIUsageError("loop recover must be handled before rendering")
-    case .list, .history:
+    case .list, .history, .stats, .diff, .findings, .start, .promote, .baseline, .regress:
       throw CLIUsageError("loop \(kind.rawValue) must be handled before session rendering")
     }
   }
@@ -439,12 +508,13 @@ public struct LoopCommandRunner: Sendable {
           "status: \(overview.sessionStatus)",
           "lastGateDecision: \(overview.lastGateDecision ?? "none")",
           "blockingFindings: \(overview.blockingFindingCount.map(String.init) ?? "not-recorded")",
+          "cost: \(Self.costCell(overview.cost))",
           "updatedAt: \(overview.updatedAt)"
         ].joined(separator: "\n")
       }
       return CLICommandResult(exitCode: .success, stdout: lines.joined(separator: "\n\n") + (lines.isEmpty ? "" : "\n"))
     case .table:
-      var lines = ["SESSION\tWORKFLOW\tSTATUS\tLAST_GATE\tBLOCKING\tUPDATED\tSTALE"]
+      var lines = ["SESSION\tWORKFLOW\tSTATUS\tLAST_GATE\tBLOCKING\tCOST\tUPDATED\tSTALE"]
       lines.append(contentsOf: overviews.map { overview in
         [
           overview.sessionId,
@@ -452,6 +522,7 @@ public struct LoopCommandRunner: Sendable {
           overview.sessionStatus,
           overview.lastGateDecision ?? "-",
           overview.blockingFindingCount.map(String.init) ?? "-",
+          Self.costCell(overview.cost),
           String(describing: overview.updatedAt),
           overview.possiblyStale ? "true" : "false"
         ].joined(separator: "\t")
@@ -460,7 +531,224 @@ public struct LoopCommandRunner: Sendable {
     }
   }
 
-  private func snapshotForRendering(
+  private func runFindings(_ command: LoopCommand) throws -> CLICommandResult {
+    guard let sessionId = command.options.target, !sessionId.isEmpty else {
+      throw CLIUsageError("loop findings requires a session id")
+    }
+    var gateId: String?
+    var format = "json"
+    var scope = WorkflowScope.auto
+    var workingDirectory = FileManager.default.currentDirectoryPath
+    var sessionStore: String?
+    let args = command.options.arguments
+    var index = 0
+    while index < args.count {
+      let token = args[index]
+      switch token {
+      case "--gate":
+        gateId = try readRequiredOption(token, arguments: args, index: &index)
+      case "--format":
+        let value = try readRequiredOption(token, arguments: args, index: &index)
+        guard value == "sarif" || value == "json" else {
+          throw CLIUsageError("invalid --format value '\(value)'; expected sarif or json")
+        }
+        format = value
+      case "--scope":
+        let raw = try readRequiredOption(token, arguments: args, index: &index)
+        guard let value = WorkflowScope(rawValue: raw), value != .direct else {
+          throw CLIUsageError("invalid --scope value '\(raw)'; expected auto, project, or user")
+        }
+        scope = value
+      case "--working-dir", "--working-directory":
+        workingDirectory = try readRequiredOption(token, arguments: args, index: &index)
+      case "--session-store":
+        sessionStore = try readRequiredOption(token, arguments: args, index: &index)
+      case "--output":
+        _ = try readRequiredOption(token, arguments: args, index: &index)
+      default:
+        throw CLIUsageError("unsupported loop findings option '\(token)'")
+      }
+    }
+    let parsed = ParsedOptions(scope: scope, workingDirectory: workingDirectory, sessionStore: sessionStore)
+    let rendered = try snapshotForRendering(kind: .gates, sessionId: sessionId, parsed: parsed)
+    guard let manifest = rendered.snapshot.loopEvidence else {
+      throw CLIUsageError("session '\(sessionId)' has no loop evidence")
+    }
+    if format == "sarif" {
+      let sarif = LoopFindingsSARIFExporter.sarif(manifest: manifest, gateId: gateId)
+      return CLICommandResult(exitCode: .success, stdout: try jsonString(JSONValue.object(sarif)))
+    }
+    let findings = LoopFindingsSARIFExporter.findings(manifest: manifest, gateId: gateId)
+    return CLICommandResult(exitCode: .success, stdout: try jsonString(findings))
+  }
+
+  private func runGatesCheck(_ command: LoopCommand, sessionId: String) throws -> CLICommandResult {
+    let parsed = try parseInspectionOptions(command.options.arguments.filter { $0 != "--check" })
+    let loaded = try CLIWorkflowSessionResolution.loadPersistedSession(
+      sessionId: sessionId,
+      sessionStore: parsed.sessionStore,
+      scope: parsed.scope,
+      workingDirectory: parsed.workingDirectory
+    )
+    let store = SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: loaded.storeRoot)
+    )
+    let snapshot = try store.load(sessionId: sessionId)
+    // "no loop evidence recorded" is evaluated against persisted evidence only —
+    // CI must not pass on a projected-on-read manifest.
+    guard let manifest = snapshot.loopEvidence else {
+      let result = LoopGatesCheckResult(
+        sessionId: sessionId,
+        verdict: "no-loop-evidence",
+        requiredGates: [],
+        failingGates: [],
+        exitCode: CLIExitCode.noLoopEvidence.rawValue
+      )
+      return CLICommandResult(exitCode: .noLoopEvidence, stdout: try jsonString(result))
+    }
+    let resolution = CLIWorkflowSessionResolution.effectiveResolution(
+      persisted: loaded.record,
+      scope: parsed.scope,
+      workflowDefinitionDir: nil,
+      workingDirectory: parsed.workingDirectory
+    )
+    let bundle = try FileSystemWorkflowBundleResolver().resolve(resolution)
+    let requiredGateIds = (bundle.workflow.loop?.gates ?? [])
+      .filter(\.required)
+      .map(\.id)
+      .sorted()
+    let evaluation = Self.evaluateRequiredGates(requiredGateIds: requiredGateIds, gates: manifest.gates)
+    let exitCode: CLIExitCode = evaluation.allAccepted ? .success : .gateCheckFailed
+    let result = LoopGatesCheckResult(
+      sessionId: sessionId,
+      verdict: evaluation.allAccepted ? "accepted" : "failed",
+      requiredGates: requiredGateIds,
+      failingGates: evaluation.failing,
+      exitCode: exitCode.rawValue
+    )
+    return CLICommandResult(exitCode: exitCode, stdout: try jsonString(result))
+  }
+
+  /// Evaluates required gates against the final gate results (latest visit per
+  /// gateId). A required gate fails when it is missing, its final decision is
+  /// not `accepted`, or it carries blocking findings.
+  static func evaluateRequiredGates(
+    requiredGateIds: [String],
+    gates: [LoopGateResult]
+  ) -> (failing: [String], allAccepted: Bool) {
+    let latest = Dictionary(gates.map { ($0.gateId, $0) }, uniquingKeysWith: { _, next in next })
+    var failing: [String] = []
+    for gateId in requiredGateIds {
+      guard let gate = latest[gateId] else {
+        failing.append(gateId)
+        continue
+      }
+      if gate.decision != .accepted || !gate.blockingFindings.isEmpty {
+        failing.append(gateId)
+      }
+    }
+    return (failing.sorted(), failing.isEmpty)
+  }
+
+  private func runDiff(_ command: LoopCommand) throws -> CLICommandResult {
+    guard let sessionA = command.options.target, !sessionA.isEmpty else {
+      throw CLIUsageError("loop diff requires two session ids: loop diff <session-a> <session-b>")
+    }
+    guard let sessionB = command.options.arguments.first, !sessionB.hasPrefix("--"), !sessionB.isEmpty else {
+      throw CLIUsageError("loop diff requires a second session id: loop diff <session-a> <session-b>")
+    }
+    let parsed = try parseInspectionOptions(Array(command.options.arguments.dropFirst()))
+    let base = try loadDiffManifest(sessionId: sessionA, parsed: parsed)
+    let target = try loadDiffManifest(sessionId: sessionB, parsed: parsed)
+    let diff = LoopEvidenceDiffer.diff(base: base, target: target)
+    switch command.options.output {
+    case .json, .jsonl:
+      return CLICommandResult(exitCode: .success, stdout: try jsonString(diff))
+    case .text, .table:
+      return CLICommandResult(exitCode: .success, stdout: Self.diffTextLines(diff).joined(separator: "\n") + "\n")
+    }
+  }
+
+  func loadDiffManifest(sessionId: String, parsed: ParsedOptions) throws -> LoopEvidenceManifest {
+    let rendered = try snapshotForRendering(kind: .evidence, sessionId: sessionId, parsed: parsed)
+    guard let manifest = rendered.snapshot.loopEvidence else {
+      throw CLIUsageError("session '\(sessionId)' has no loop evidence to diff")
+    }
+    return manifest
+  }
+
+  /// Compact human-readable summary of an evidence diff. Counts rather than full
+  /// payloads; `--output json` returns the full `LoopEvidenceDiff`.
+  static func diffTextLines(_ diff: LoopEvidenceDiff) -> [String] {
+    var lines = [
+      "base: \(diff.baseSessionId)",
+      "target: \(diff.targetSessionId)",
+      "sameWorkflow: \(diff.sameWorkflow)",
+      "workflowDefinitionDigestChanged: \(diff.workflowDefinitionDigestChanged.map(String.init) ?? "unknown")",
+      "gateChanges: \(diff.gateChanges.count)",
+      "blockingFindingsAdded: \(diff.blockingFindingsAdded.count)",
+      "blockingFindingsResolved: \(diff.blockingFindingsResolved.count)",
+      "changedFilesAdded: \(diff.changedFilesAdded.count)",
+      "changedFilesRemoved: \(diff.changedFilesRemoved.count)",
+      "verificationChanges: \(diff.verificationChanges.count)",
+      "residualRisksAdded: \(diff.residualRiskDelta.added.count)",
+      "residualRisksResolved: \(diff.residualRiskDelta.resolved.count)"
+    ]
+    if let cost = diff.costDelta {
+      lines.append("costTotalTokensDelta: \(cost.totalTokensDelta.map(String.init) ?? "n/a")")
+    }
+    for diagnostic in diff.diagnostics {
+      lines.append("diagnostic: \(diagnostic)")
+    }
+    return lines
+  }
+
+  private func renderStats(_ stats: LoopWorkflowStats, output: WorkflowOutputFormat) throws -> CLICommandResult {
+    switch output {
+    case .json, .jsonl:
+      return CLICommandResult(exitCode: .success, stdout: try jsonString(stats))
+    case .text, .table:
+      return CLICommandResult(exitCode: .success, stdout: Self.statsTextLines(stats).joined(separator: "\n") + "\n")
+    }
+  }
+
+  /// Human-readable stats lines. Absent means/last-accepted render explicitly
+  /// rather than as zero.
+  static func statsTextLines(_ stats: LoopWorkflowStats) -> [String] {
+    var lines = [
+      "workflow: \(stats.workflowId)",
+      "windowRuns: \(stats.windowRuns)",
+      "completedRuns: \(stats.completedRuns)",
+      "failedRuns: \(stats.failedRuns)",
+      "acceptedRuns: \(stats.acceptedRuns)",
+      "rerunCount: \(stats.rerunCount)",
+      "meanDurationMs: \(stats.meanDurationMs.map(String.init) ?? "not-recorded")",
+      "meanTotalTokens: \(stats.meanTotalTokens.map(String.init) ?? "not-recorded")",
+      "lastAcceptedSessionId: \(stats.lastAcceptedSessionId ?? "none")"
+    ]
+    let gateFailures = stats.gateFailureCounts.sorted { $0.key < $1.key }
+      .map { "\($0.key)=\($0.value)" }
+      .joined(separator: " ")
+    lines.append("gateFailures: \(gateFailures.isEmpty ? "none" : gateFailures)")
+    for diagnostic in stats.diagnostics {
+      lines.append("diagnostic: \(diagnostic)")
+    }
+    return lines
+  }
+
+  /// Renders a cost summary for list/history columns. Absent cost renders as
+  /// `not-recorded` (never zero); a run that recorded steps but no usage renders
+  /// as `no-usage`; partial totals are flagged.
+  static func costCell(_ cost: LoopCostSummary?) -> String {
+    guard let cost else { return "not-recorded" }
+    var parts: [String] = []
+    if let total = cost.totalTokens { parts.append("\(total)tok") }
+    if let duration = cost.totalDurationMs { parts.append("\(duration)ms") }
+    if parts.isEmpty { parts.append("no-usage") }
+    return parts.joined(separator: " ") + (cost.isPartial ? " (partial)" : "")
+  }
+
+  func snapshotForRendering(
     kind: LoopCommandKind,
     sessionId: String,
     parsed: ParsedOptions
@@ -530,6 +818,7 @@ public struct LoopCommandRunner: Sendable {
         lines.append("gates: \(summary.gateCount)")
         lines.append("acceptedGates: \(summary.acceptedGateCount)")
         lines.append("blockingFindings: \(summary.blockingFindingCount)")
+        lines.append("cost: \(Self.costCell(summary.cost))")
       }
       return CLICommandResult(exitCode: .success, stdout: lines.joined(separator: "\n") + "\n")
     }

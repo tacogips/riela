@@ -9,6 +9,11 @@ public enum CLIExitCode: Int32, Codable, Equatable, Sendable {
   case success = 0
   case failure = 1
   case usage = 2
+  /// A required loop gate is rejected/needs-work/missing or carries blocking
+  /// findings (`loop gates --check`). Distinct from operational failure (1).
+  case gateCheckFailed = 3
+  /// No loop evidence was recorded for the session (`loop gates --check`).
+  case noLoopEvidence = 4
 }
 
 public enum WorkflowOutputFormat: String, Codable, Sendable {
@@ -119,6 +124,13 @@ public enum LoopCommandKind: String, Codable, Sendable {
   case recover
   case list
   case history
+  case stats
+  case diff
+  case findings
+  case start
+  case promote
+  case baseline
+  case regress
 }
 
 public struct LoopCommand: Equatable, Sendable {
@@ -659,9 +671,55 @@ public struct RielaArgumentParser: CLIArgumentParsing {
         )
       )
     }
+    if kind == .baseline {
+      guard arguments.count >= 3, ["set", "show", "clear"].contains(arguments[1]), !arguments[2].hasPrefix("--") else {
+        throw CLIUsageError(
+          "usage: riela loop baseline set|show|clear <workflow> [<session-id>] [--note <text>] [--force]"
+        )
+      }
+      return LoopCommand(
+        kind: kind,
+        options: try parseGeneric(
+          scope: "loop",
+          command: "baseline",
+          target: arguments[2],
+          arguments: [arguments[1]] + Array(arguments.dropFirst(3))
+        )
+      )
+    }
+    if kind == .diff, arguments.count >= 2, arguments[1] == "--baseline" {
+      guard arguments.count >= 3, !arguments[2].hasPrefix("--") else {
+        throw CLIUsageError("loop diff --baseline requires a workflow id")
+      }
+      return LoopCommand(
+        kind: kind,
+        options: try parseGeneric(
+          scope: "loop",
+          command: "diff",
+          target: arguments[2],
+          arguments: ["--baseline"] + Array(arguments.dropFirst(3))
+        )
+      )
+    }
+    if kind == .diff {
+      guard arguments.count >= 3, !arguments[1].hasPrefix("--"), !arguments[2].hasPrefix("--") else {
+        throw CLIUsageError("loop diff requires two session ids: loop diff <session-a> <session-b>")
+      }
+      // session-a is the target; session-b leads the remaining args and is
+      // recovered in the command runner (the loop parser threads one target).
+      return LoopCommand(
+        kind: kind,
+        options: try parseGeneric(
+          scope: "loop",
+          command: subcommand,
+          target: arguments[1],
+          arguments: Array(arguments.dropFirst(2))
+        )
+      )
+    }
     guard arguments.count >= 2, !arguments[1].hasPrefix("--") else {
-      if kind == .history {
-        throw CLIUsageError("loop history requires a workflow id")
+      if kind == .history || kind == .stats || kind == .start || kind == .promote || kind == .regress {
+        throw CLIUsageError("loop \(subcommand) requires a workflow id")
       }
       throw CLIUsageError("loop \(subcommand) requires a session id")
     }

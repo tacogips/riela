@@ -8,6 +8,224 @@
 
 **Status**: handover inventory complete; implementation workflows intentionally stopped at the user's request
 
+## 0-bis. Progress update — 2026-07-12 second session (program closure)
+
+A second working session (Claude Fable 5 directly, per the user's directive to
+implement without Codex) closed the remaining implementation workstreams. Net
+effect: **every W1–W10 implementation obligation is completed or explicitly
+deferred with owner and trigger; the active-plan unchecked count dropped from
+262 (snapshot) to 9, all nine being explicitly accepted deferrals.**
+
+**Completed this session:**
+
+- **W2 — COMPLETE (LA1a–LA4).** Finished the remaining slices: `loop start`
+  (policy panel emitted as a CLI `loop_policy` record before
+  `session_started`; `--var` collection; `--isolate` reserved/rejected) and
+  `loop promote` (advisory readiness with enforced/advisory labeling via new
+  ungated readiness/promotion validators); LA2 budget step-boundary
+  enforcement in the runner (`budget_exceeded` event type + payload wired
+  through telemetry and live persistence, warn-mode residual-risk + budget
+  policy-decision projection, `maxSessionAttempts` enforced from additive
+  `LoopRecoveryLineage.rootSessionId`/`attemptNumber` threaded from persisted
+  manifests through rerun/resume); secondary usage persistence confirmed on
+  `WorkflowBackendEventRecord` with eviction-honesty tests. LA5/LA6 remain
+  outline-only phases, explicitly deferred in the plan. Evidence:
+  `DeterministicWorkflowRunnerBudgetTests` (18), `LoopStartPromoteCommandTests`
+  (14), `LoopCostAccumulatorTests` (10), plan updated per-box.
+- **W3 — COMPLETE (LB1–LB4).** LB2 baselines (`loop_baselines` table +
+  set/show/clear, `LoopRegressionClassifier` consuming W2's
+  `LoopEvidenceDiffer`, `loop baseline`/`loop regress`/`loop diff --baseline`
+  with pinned 0/3/4/1 exit codes); LB3 concurrency guard
+  (`loop_concurrency_leases` single-transaction acquire with 600 s stale
+  takeover, heartbeat/bind/release riding `upsertSnapshot`, shared preflight
+  in `workflow run` — which `loop start` and event-serve delegate to — plus
+  resume/rerun re-acquire, busy fail/skip records); LB4 outcome notifications
+  (`LoopOutcomeClassifier`, export-safe schema-versioned payload, webhook env
+  indirection + command channel with 5 s timeout and one retry, dispatch after
+  terminal persistence recorded as session diagnostics, packaged
+  command-channel portability warning). LB5/LB6 explicitly deferred. Evidence:
+  56 focused LB tests green; plan updated per-box.
+- **W1 — COMPLETE.** Terminal Codex tool-child recovery implemented directly
+  (not via the prepared workflow): `AgentToolChildRecovery` core in
+  AgentRuntimeKit (correlation record, pure classifier, CAS incident tracker,
+  ownership-validated TERM/grace/KILL cleanup coordinator, fail-closed
+  recovery decider), real cross-platform process probing
+  (`/proc` on Linux, sysctl on Darwin) with a real-zombie integration test,
+  codex event parsing + per-invocation monitor, adapter wiring through a new
+  `LocalAgentProcessSpawnObserving` runner capability, policy via codex node
+  variables (documented in `design-workflow-json.md`). 25 new tests; plan
+  moved to `completed/`.
+- **W0 regression — found and fixed.** The full suite exposed a real TOCTOU
+  bypass the round-8 acceptance missed: `WorkflowHistoryPinnedRoot.
+  relativePath(for:)` canonicalized child paths with `realpath`, silently
+  resolving a swapped `gate-results` symlink *before* the O_NOFOLLOW
+  descriptor walk when the symlink target stayed inside the root
+  (`testRuntimeGateConstructionRejectsParentSwap` failed deterministically).
+  Fixed by resolving only the root-prefix spelling and keeping below-root
+  components verbatim (`rootAnchoredPath`); all 19 adversarial + 6 versioning
+  tests green.
+- **W4 — closed with explicit deferrals.** `apple-notes-crud-addons` fully
+  complete offline (HARDEN-001/002/003 implemented + fake-executable tests;
+  moved to `completed/`); mail/clock plans reconciled per-box with evidence;
+  the seven remaining boxes are live QA explicitly deferred (owner: next
+  session with `apple-gateway` installed; trigger: `which apple-gateway`
+  succeeds).
+- **W5 — COMPLETE.** The five stale-TypeScript plans were reconciled per-box
+  (Swift evidence / superseded-not-carried / genuine gap), and both genuine
+  gaps were then implemented: publish git transport (injectable git/PR
+  adapters — clone/remote-URL verify, dirty-worktree refusal, push-permission
+  probe, `--create-pr`/`--pr-base`, real md5 checksum + normalized manifest,
+  backend hints from node payloads) and the opt-in pre-install security check
+  (`--pre-install-check off|warn|reject` static scanner with
+  redacted findings, fail-before-install rollback, docker/podman/auto
+  no-network container command builder). All five plans now in `completed/`
+  (digest plan closed via an independent review with zero high/medium).
+- **W6 — implemented.** RielaApp instance execution timeline (viewer data
+  enrichment through `WorkflowViewerLoader`, layout, AppKit pane, detail
+  popover, integration, instance entry point) with deterministic unit tests
+  for completed/live/loop-heavy/legacy/never-run shapes; all 15 design boxes
+  closed; interactive visual verification is the one explicitly deferred box
+  (plus its dependent archive-move box).
+- **W7 — archived** with TASK-002/TASK-005 recorded as accepted deferrals.
+- **W8 — riela-note** prose follow-ups converted to three explicit accepted
+  deferrals (libsql sync, remote listener, vector/RAG) with owner + trigger.
+- **W9 — deferral recorded**: TypeScript deletion gate awaits a fresh
+  independent adversarial review acceptance (owner/trigger recorded in-plan).
+- **W10 — owning plan created**: `impl-plans/active/
+  workflow-runtime-fanout-capabilities.md` now owns live fanout,
+  `run.maxConcurrency`, and cross-workflow/resume + callee-resolver
+  validation (planning-only, explicit deferral).
+- **W11 — deferral recorded** on the Hermes plan (owner: the user; trigger:
+  adoption-set confirmation); its stale self-evolution note corrected.
+- **W12 — reconciled.** Release/cask, live OCR credits, and branch deletion
+  remain external deferrals (unchanged owners). The riela-packages
+  `codex-design-and-implement-review-loop` budget concern was **verified as a
+  non-issue** under the current Swift runtime: with no `--max-steps` the
+  runner computes `maxSteps = steps.count + maxLoopIterations = 21 + 3 = 24`,
+  so the review loop is bounded by default and no package edit is needed.
+- **W5 publish isolation fix.** The full-suite run surfaced a real
+  cross-test-contamination defect the W5 agent introduced: publish wrote a
+  normalized `riela-package.json` at the registry-cache *package-key root*,
+  which made `package list`'s manifest scan treat the default registry's
+  managed cache (`$HOME/.riela/registries/default/packages`) as containing
+  installed packages — leaking published packages into unrelated `package
+  list`/tag/scoped tests through global state. Fixed by writing the normalized
+  manifest INSIDE the staged `workflow/` copy (which checkout reads) instead
+  of the key root; publish suite + the three affected command tests green, and
+  the tests no longer populate the global cache.
+- **W13 — README rebuilt** from the actual plan files (active table now 10
+  plans; completed table extended).
+
+**Program state after this session:**
+
+- Active plans: 10 — three hosting only explicit deferrals
+  (apple-mail 3, apple-clock 4, rielaapp-timeline 2), five prose/decision/
+  external plans with recorded deferrals (riela-note, hermes, distributed
+  registry, swift parity deletion gate, fanout capabilities planning), and
+  the two loop plans whose final acceptance boxes close with the full-suite
+  run below.
+- Final verification on the exact final tree: full `swift test` (see
+  Verification note below), strict SwiftLint clean on every file changed this
+  session, `git diff --check` clean.
+- No Riela workflow, agent child, monitor task, or test fixture left running.
+
+## 0. Progress update — 2026-07-12 session
+
+A working session advanced and reconciled several workstreams. Net effect: the
+critical-path blocker (W0) is closed, three workstreams are verified/reconciled,
+and the checkbox picture is materially corrected (W5 is stale TypeScript, not
+72 items of Swift work; much of W4 is implemented-and-tested but live-QA-blocked).
+
+**Completed this session:**
+
+- **W0 — DONE.** Diagnosed and fixed two real defects behind the round-eight
+  failures. (1) `WorkflowHistoryPrivateDirectory` enumeration helpers drove
+  `fdopendir` over a `dup` of the pinned descriptor; `dup` shares the open file
+  description's read offset, so post-EOF re-enumeration saw an empty directory —
+  cleanup removed nothing and `unlinkat(AT_REMOVEDIR)` failed `ENOTEMPTY`, and
+  immutability verification saw a false-empty topology. Fixed with `rewinddir`
+  in both helpers. (2) `WorkflowRuntimeGateEvidenceStore.publish` probed
+  `entryType` (which walks the `gate-results` parent through pinned descriptors)
+  before `ensureDirectory` created it, so first publish failed closed. Fixed by
+  ensuring the directory first. Result: all 19 `WorkflowRound8AdversarialTests`
+  and all 6 `WorkflowSelfImproveVersioningTests` pass; Section 8 focused
+  aggregate 104 tests / 0 unexpected; full `swift test` 1,733 tests, 4 skips,
+  0 unexpected failures; `git diff --check` clean; changed-file lint clean.
+  Independent re-review of the two fixes: zero high/medium (TOCTOU checks
+  preserved; swap-detection hook ordering preserved). Section 8 plan/progress
+  status reconciled to "round-8 accepted".
+- **W7 — verification closed.** Ran all prescribed commands (RielaServerTests
+  30/0, RielaEventsTests 29/0, RielaApp builds, import-isolation clean, build
+  script present). Reconciled the "Ready" vs module-status contradiction: in-scope
+  work is complete + verified; TASK-002 PARTIAL and TASK-005 (full CLI serve
+  delegation) DEFERRED are intentionally out of scope. The two "remaining checks"
+  map to those deferrals.
+- **W3 — LB1 verified.** Convergence guard suites 32/0; status updated to
+  "LB1 accepted". LB2–LB6 remain; LB2 is blocked on W2 diff/stat contracts.
+- **W13 — README index rebuilt from the actual plan files**, with per-plan
+  unchecked counts and workstream tags. After a per-plan read-through, **15
+  implemented+verified plans with zero open checkboxes were moved to
+  `completed/`** (`installed-package-workflow-resolution` plus the 14 archive
+  candidates: apple-calendar/notes-list/reminders/gateway-admin add-ons,
+  macos-workflow-viewer, node-input-filters, official-sdk-adapter-improvements +
+  review-improvements, package-manager-ux-gap-closure, riela-note-ui-refinements,
+  riela-seatbelt-sandbox, rielaapp-ux-onboarding-improvements,
+  three-axis-issue-resolution-review, workflow-progress-observability). The
+  stale "ready for implementation" header on `apple-gateway-admin-addons` (all 51
+  boxes checked, source + 9 tests present) was corrected before the move. The
+  now-complete `loop-engineering-first-line-tool` plan (all 9 modules DONE,
+  Section 8 accepted) was also moved with its progress log (retained as W0
+  evidence), so **16 plans total were archived**. Active plan count dropped
+  34 → 18; all moved plans' tests are green in the 1,753-test full suite.
+- **W2 — real feature work landed and verified** (see §0 W2 note below).
+
+**Scope corrections (change the 262 count):**
+
+- **W5 (all 5 package plans) is stale TypeScript.** The plans target the removed
+  `packages/riela/src/...` tree; their ~72 unchecked boxes reference `.ts` files
+  that no longer exist and are **not actionable Swift work**. The package
+  registry/cache/search/checkout/publish/digest features are reimplemented in
+  Swift (`Sources/RielaCLI/WorkflowPackage*.swift`) and covered by RielaCLITests
+  (`WorkflowPackageRegistryIndexTests` + 26 package tests green). Each plan now
+  carries a "Superseded by the Swift migration" banner. The genuine remaining W5
+  task is a Swift-native gap analysis, not implementing the TS checklists.
+- **W4 (Apple gateway) is implemented in Swift and tested**
+  (`ProductionNodeAdapter+AppleMailAddons.swift`, shared `…+AppleGatewaySupport`,
+  Clock/Notes siblings; `AppleMail/NotesCrud/ClockAlarmAddonTests` = 42 tests
+  green). The bulk of the 79 unchecked items are **live QA that requires the
+  external `apple-gateway` CLI**, which is **not installed in this environment**
+  (`which apple-gateway` → not found). apple-notes-crud additionally has genuine
+  Swift filesystem-hardening items that can proceed offline. Each W4 plan now
+  documents this blocker.
+
+**W2 — started and advancing (offline Swift, verified per slice):**
+- LA2 cost value types: `Sources/RielaCore/LoopCostEvidence.swift` (`LoopCostEvidence`,
+  `LoopCostSummary.make(from:)`); manifest `costs`/`costSummary` via a faithful
+  hand-written `Codable` (empty costs omitted → byte-identical legacy serialization).
+- LA2 budget declaration: `LoopBudgetDeclaration` + `WorkflowLoopMetadata.budget` +
+  typed/raw validation.
+- LA3 diff contract: `Sources/RielaCore/LoopEvidenceDiff.swift`
+  (`LoopEvidenceDiff` + pure `LoopEvidenceDiffer.diff`) — **this is the shared diff
+  contract W3 LB2 consumes; now published.**
+- 26 new tests; full `swift test` grew 1,733 → 1,753 with 0 unexpected failures
+  throughout; strict lint clean on every changed file.
+
+Remaining W2: LA2 runner-side usage accumulator + budget enforcement
+(`DeterministicWorkflowRunner+Cost/Budget.swift`; adds
+`WorkflowSessionFailureKind.budgetExceeded` with tolerant decode and a
+`budget_exceeded` event — the invasive central-runner slice); LA3
+`LoopWorkflowStats` (an input-contract gap is documented in the plan — it needs a
+paired overview+summary loader), CLI `loop diff/stats`, GraphQL DTOs/queries; LA4
+CI verdict/SARIF.
+
+**Genuinely remaining Swift implementation (all Swift, no TS):**
+W1 (12, Codex tool-child recovery — needs the prepared `codex-tool-reap-recovery`
+Riela/Opus workflow), W2 runner-side LA2 + rest of LA3 + LA4, W4 code-only subset +
+live QA when `apple-gateway` is available, W6 (5 + 15 design, RielaApp timeline —
+needs UI visual verification), W3 LB2–LB6 (30, now unblocked on the diff contract
+but still pending the rest of W2's stats/CLI surface). These remain multi-session
+feature builds.
+
 ## 1. Executive handoff
 
 The `riela` worktree is intentionally dirty and contains several distinct bodies of work. Do not clean, reset, stage, commit, or broadly rewrite it. The sibling `riela-packages` worktree is clean at this snapshot. No Riela workflow, Claude process, or Codex implementation worker remains active.

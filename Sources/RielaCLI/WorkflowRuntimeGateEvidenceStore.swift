@@ -39,6 +39,10 @@ struct WorkflowRuntimeGateEvidenceStore: Sendable {
     try validate(evidence)
     let url = evidenceURL(evidence.resultId)
     let pinned = try WorkflowHistoryPinnedRoot(root)
+    // Ensure the containing directory exists before probing for an existing
+    // entry; `entryType` walks the parent through pinned descriptors and would
+    // otherwise fail when `gate-results` has not been created yet.
+    try pinned.ensureDirectory(url.deletingLastPathComponent())
     if try pinned.entryType(url) != nil {
       guard try load(evidence.resultId) == evidence else {
         throw CLIUsageError("existing runtime gate evidence does not match the finalized review")
@@ -47,7 +51,6 @@ struct WorkflowRuntimeGateEvidenceStore: Sendable {
     }
     let bytes = try WorkflowHistoryCanonicalCoding.encode(evidence)
     let sidecar = WorkflowHistorySecurePersistence.digestSidecar(for: url)
-    try pinned.ensureDirectory(url.deletingLastPathComponent())
     try constructionHook(.childDirectory)
     try pinned.atomicWrite(bytes, to: url, overwrite: false)
     try pinned.atomicWrite(

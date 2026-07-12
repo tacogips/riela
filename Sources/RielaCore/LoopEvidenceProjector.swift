@@ -9,6 +9,12 @@ public struct LoopEvidenceProjectionInput: Sendable {
   public var recovery: LoopRecoveryLineage?
   public var policy: LoopPolicyEvidence
   public var includeWorkflowWithoutLoopMetadata: Bool
+  /// Per-step cost evidence from the runner's live usage accumulator. The
+  /// projector consumes this directly; it never re-reads persisted event rows
+  /// (which drop the usage payload). Empty for pre-existing sessions and for
+  /// runs where no usage was observed, in which case cost renders as not
+  /// recorded rather than zero.
+  public var costs: [LoopCostEvidence]
 
   public init(
     workflow: WorkflowDefinition,
@@ -18,7 +24,8 @@ public struct LoopEvidenceProjectionInput: Sendable {
     variables: JSONObject = [:],
     recovery: LoopRecoveryLineage? = nil,
     policy: LoopPolicyEvidence = LoopPolicyEvidence(),
-    includeWorkflowWithoutLoopMetadata: Bool = false
+    includeWorkflowWithoutLoopMetadata: Bool = false,
+    costs: [LoopCostEvidence] = []
   ) {
     self.workflow = workflow
     self.session = session
@@ -28,6 +35,7 @@ public struct LoopEvidenceProjectionInput: Sendable {
     self.recovery = recovery
     self.policy = policy
     self.includeWorkflowWithoutLoopMetadata = includeWorkflowWithoutLoopMetadata
+    self.costs = costs
   }
 }
 
@@ -44,9 +52,15 @@ public struct DefaultLoopEvidenceProjector: LoopEvidenceProjecting {
     }
 
     let artifactRefs = artifactRefs(from: input.workflowMessages)
+    // Prefer explicit accumulator output; otherwise recover cost from the
+    // session's executions' recorded backend-event usage.
+    let costs = input.costs.isEmpty
+      ? LoopCostAccumulator.evidence(from: input.session.executions)
+      : input.costs
     let projectedGateResults = input.workflow.loop.map { gateResults(from: input, loop: $0) } ?? []
     let projectedConvergence = convergenceProjection(from: input)
     let updatedAt = input.session.executions.map(\.updatedAt).max() ?? input.session.updatedAt
+    let budgetProjection = budgetProjection(from: input, costs: costs, now: updatedAt)
     let evidenceTagsByStepId = Dictionary(uniqueKeysWithValues: input.workflow.steps.map { ($0.id, $0.loop?.evidenceTags ?? []) })
 
     return LoopEvidenceManifest(
@@ -58,9 +72,11 @@ public struct DefaultLoopEvidenceProjector: LoopEvidenceProjecting {
       workflowDefinitionDigest: nil,
       variablesDigest: nil,
       worktree: nil,
-      policy: input.policy,
+      policy: mergedPolicy(input.policy, budgetDecision: budgetProjection.decision),
       recovery: input.recovery,
       convergence: projectedConvergence.evidence,
+      costs: costs,
+      costSummary: costs.isEmpty ? nil : LoopCostSummary.make(from: costs),
       steps: input.session.executions.map { execution in
         LoopStepEvidence(
           stepId: execution.stepId,
@@ -80,11 +96,81 @@ public struct DefaultLoopEvidenceProjector: LoopEvidenceProjecting {
       commands: [],
       verification: [],
       implementationPlans: [],
-      residualRisks: projectedConvergence.residualRisks,
+      residualRisks: projectedConvergence.residualRisks + budgetProjection.residualRisks,
       redaction: redactionSummary(loop: input.workflow.loop),
       createdAt: input.session.createdAt,
       updatedAt: updatedAt
     )
+  }
+
+  /// Projects the declared loop budget into evidence: a policy decision that
+  /// records consumption against the declared bounds, plus an accepted
+  /// residual risk when a warn-mode budget was exceeded. Evaluation is
+  /// deterministic — wall-clock uses the session's persisted timestamps, and
+  /// a session failed with `budgetExceeded` always records the fail decision
+  /// even when re-evaluation from persisted rows cannot reproduce the live
+  /// reading.
+  private func budgetProjection(
+    from input: LoopEvidenceProjectionInput,
+    costs: [LoopCostEvidence],
+    now: Date
+  ) -> (decision: LoopPolicyDecision?, residualRisks: [LoopResidualRisk]) {
+    guard let budget = input.workflow.loop?.budget else {
+      return (nil, [])
+    }
+    let violation = DeterministicWorkflowRunner.loopBudgetViolationDetails(
+      budget: budget, session: input.session, now: now
+    )
+    let consumedTokens = LoopCostSummary.make(from: costs).totalTokens.map(String.init) ?? "unrecorded"
+    let bounds = [
+      budget.maxTotalTokens.map { "maxTotalTokens=\($0)" },
+      budget.maxWallClockMs.map { "maxWallClockMs=\($0)" },
+      budget.maxSessionAttempts.map { "maxSessionAttempts=\($0)" }
+    ].compactMap { $0 }.joined(separator: ", ")
+    if input.session.failureKind == .budgetExceeded {
+      return (LoopPolicyDecision(
+        id: "loop-budget",
+        policy: "budget",
+        decision: "exceeded-fail",
+        reason: violation?.diagnostic
+          ?? "session failed with budgetExceeded (consumed \(consumedTokens) tokens; declared \(bounds))"
+      ), [])
+    }
+    guard let violation else {
+      return (LoopPolicyDecision(
+        id: "loop-budget",
+        policy: "budget",
+        decision: "within-budget",
+        reason: "consumed \(consumedTokens) tokens; declared \(bounds)"
+      ), [])
+    }
+    let decision = LoopPolicyDecision(
+      id: "loop-budget",
+      policy: "budget",
+      decision: budget.onExceeded == "warn" ? "exceeded-warn" : "exceeded-fail",
+      reason: violation.diagnostic
+    )
+    guard budget.onExceeded == "warn" else {
+      return (decision, [])
+    }
+    return (decision, [LoopResidualRisk(
+      severity: "medium",
+      message: violation.diagnostic,
+      owner: "loop-budget",
+      accepted: true
+    )])
+  }
+
+  private func mergedPolicy(
+    _ policy: LoopPolicyEvidence,
+    budgetDecision: LoopPolicyDecision?
+  ) -> LoopPolicyEvidence {
+    guard let budgetDecision else {
+      return policy
+    }
+    var merged = policy
+    merged.decisions.append(budgetDecision)
+    return merged
   }
 
   private func redactionSummary(loop: WorkflowLoopMetadata?) -> LoopRedactionSummary {

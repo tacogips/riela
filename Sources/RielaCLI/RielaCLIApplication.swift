@@ -338,6 +338,8 @@ Usage:
   riela loop list [--workflow <name>] [--status active|created|running|completed|failed] [--gate-decision accepted|rejected|needs_work|skipped] [--limit 50] [--session-store <dir>] [--output jsonl|json|text|table]
   riela loop history <workflow> [--status active|created|running|completed|failed] [--gate-decision accepted|rejected|needs_work|skipped] [--limit 50] [--session-store <dir>] [--output jsonl|json|text|table]
   riela loop recover <session-id> --from-step <step-id>|--from-gate <gate-id> [--session-store <dir>] [--output jsonl|json|text]
+  riela loop start <workflow> [--var k=v ...] [workflow run options] [--output jsonl|json|text]
+  riela loop promote <workflow> [--scope project|user|auto] [--workflow-definition-dir <dir>] [--output jsonl|json|text]
   riela graphql|gql|hook|events|serve|call-step|workflow-call [command] [target] [options]
 
 Output defaults to JSONL for machine-readable commands. Prefer --output jsonl
@@ -359,9 +361,10 @@ func packageHelpText(scope: PackageHelpScope) -> String {
     \(commandPrefix) init <workflow-or-package-dir> [--package-name <name>] [--workflow-definition-dir <relative-path>] [--overwrite] [--output jsonl|json|text]
     \(commandPrefix) pack <package-dir> [--destination <path>] [--overwrite] [--output jsonl|json|text]
     \(commandPrefix) validate <package-dir|archive.rielapkg|archive.zip> [--output jsonl|json|text]
-    \(commandPrefix) install [package-name|package-dir|archive.rielapkg|archive.zip] [--source <path>] [--locked] [--scope project|user] [--overwrite] [--output jsonl|json|text]
+    \(commandPrefix) install [package-name|package-dir|archive.rielapkg|archive.zip] [--source <path>] [--locked] [--scope project|user] [--overwrite] [--pre-install-check off|warn|reject] [--output jsonl|json|text]
     \(commandPrefix) ci [package-name] [--scope project|user] [--working-dir <dir>] [--output jsonl|json|text]
     \(commandPrefix) list|search|status [package-name] [--scope project|user|auto] [--tag <tag>] [--backend <backend>] [--limit <n>] [--output jsonl|json|text|table]
+    \(commandPrefix) publish <workflow-dir> [--package-id <id>] [--registry <id|url>] [--registry-local-path <path>] [--branch <branch>] [--create-pr] [--pr-base <branch>] [--yes] [--dry-run] [--output jsonl|json|text]
     \(commandPrefix) run|temp-run <package-name|package-dir|archive.rielapkg|archive.zip> [--mock-scenario <path>] [--output jsonl|json|text]
     \(commandPrefix) registry add|list|sync|index [options]
 
@@ -381,6 +384,23 @@ func packageHelpText(scope: PackageHelpScope) -> String {
     archive sha256 pins, and add-on content digests. install with no package,
     install --locked, and ci reinstall locked packages from that file and verify
     locked archive digests before installing.
+
+  Pre-install checks:
+    --pre-install-check warn|reject opts into an offline static content scan of
+    the staged package before any file is installed. warn reports findings and
+    proceeds; reject blocks install on high/critical findings and leaves nothing
+    written. --pre-install-check-container docker|podman|auto adds an optional
+    no-network container inspection (read-only mount, no privileged mode, secret
+    env filtered); it degrades to a diagnostic when no runtime is present.
+    Finding excerpts are redacted and never contain full secret values.
+
+  Publish:
+    publish computes a real md5 checksum over the staged workflow, writes a
+    normalized riela-package.json, and derives backend hints from node payloads.
+    With a git registry checkout it verifies the remote, refuses a dirty
+    worktree, then pushes directly (permission-probed) or opens a pull request
+    with --create-pr (--pr-base selects the base branch). --dry-run mutates
+    nothing.
 
   Output:
     Package commands default to human-readable text. Pass --output json or

@@ -6,6 +6,10 @@ private let loopPromptPolicyValues: Set<String> = ["allow", "deny", "prompt"]
 private let loopNetworkModeValues: Set<String> = ["allow", "deny", "inherit-command"]
 private let loopArtifactRootPolicyValues: Set<String> = ["runtime-owned"]
 private let loopConvergenceOnStallValues: Set<String> = ["fail", "warn"]
+private let loopBudgetOnExceededValues: Set<String> = ["fail", "warn"]
+private let loopConcurrencyOnBusyValues: Set<String> = ["fail", "skip"]
+private let loopNotificationOutcomeValues: Set<String> = Set(LoopOutcome.allCases.map(\.rawValue))
+private let loopNotificationChannelTypes: Set<String> = ["webhook", "command"]
 
 func validateTypedLoopMetadata(
   _ loop: WorkflowLoopMetadata?,
@@ -90,6 +94,18 @@ func validateTypedLoopMetadata(
 
   if let convergence = loop.convergence {
     validateTypedLoopConvergence(convergence, loopRequired: loop.required, diagnostics: &diagnostics)
+  }
+
+  if let budget = loop.budget {
+    validateTypedLoopBudget(budget, loopRequired: loop.required, diagnostics: &diagnostics)
+  }
+
+  if let concurrency = loop.concurrency {
+    validateTypedLoopConcurrency(concurrency, diagnostics: &diagnostics)
+  }
+
+  if let notifications = loop.notifications {
+    validateTypedLoopNotifications(notifications, diagnostics: &diagnostics)
   }
 
   var seenGateIds: Set<String> = []
@@ -177,6 +193,9 @@ func validateRawLoopMetadata(
   validateRawLoopEvidence(loop["evidence"], diagnostics: &diagnostics)
   validateRawLoopPolicies(loop["policies"], diagnostics: &diagnostics)
   validateRawLoopConvergence(loop["convergence"], loopRequired: loop["required"] as? Bool == true, diagnostics: &diagnostics)
+  validateRawLoopBudget(loop["budget"], loopRequired: loop["required"] as? Bool == true, diagnostics: &diagnostics)
+  validateRawLoopConcurrency(loop["concurrency"], diagnostics: &diagnostics)
+  validateRawLoopNotifications(loop["notifications"], diagnostics: &diagnostics)
   validateRawLoopGates(loop["gates"], stepIds: stepIds, diagnostics: &diagnostics)
   validateRawLoopImplementationPlan(loop["implementationPlan"], diagnostics: &diagnostics)
 }
@@ -325,6 +344,218 @@ private func validateRawLoopConvergence(
   if convergence["onStall"] as? String == "warn" && loopRequired {
     diagnostics.append(loopValidationError(
       "workflow.loop.convergence.onStall",
+      "warn is invalid when workflow.loop.required is true"
+    ))
+  }
+}
+
+private func validateTypedLoopBudget(
+  _ budget: LoopBudgetDeclaration,
+  loopRequired: Bool,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  if budget.maxTotalTokens == nil && budget.maxWallClockMs == nil && budget.maxSessionAttempts == nil {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.budget",
+      "must define maxTotalTokens, maxWallClockMs, or maxSessionAttempts"
+    ))
+  }
+  if let maxTotalTokens = budget.maxTotalTokens, maxTotalTokens <= 0 {
+    diagnostics.append(loopValidationError("workflow.loop.budget.maxTotalTokens", "must be a positive integer"))
+  }
+  if let maxWallClockMs = budget.maxWallClockMs, maxWallClockMs <= 0 {
+    diagnostics.append(loopValidationError("workflow.loop.budget.maxWallClockMs", "must be a positive integer"))
+  }
+  if let maxSessionAttempts = budget.maxSessionAttempts, maxSessionAttempts <= 0 {
+    diagnostics.append(loopValidationError("workflow.loop.budget.maxSessionAttempts", "must be a positive integer"))
+  }
+  if !loopBudgetOnExceededValues.contains(budget.onExceeded) {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.budget.onExceeded",
+      "must be one of: \(loopBudgetOnExceededValues.sorted().joined(separator: ", "))"
+    ))
+  }
+  if budget.onExceeded == "warn" && loopRequired {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.budget.onExceeded",
+      "warn is invalid when workflow.loop.required is true"
+    ))
+  }
+}
+
+private func validateTypedLoopConcurrency(
+  _ concurrency: LoopConcurrencyDeclaration,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  if concurrency.maxActive != 1 {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.concurrency.maxActive",
+      "must be 1 (single-lease MVP; N>1 pools are not yet supported)"
+    ))
+  }
+  if !loopConcurrencyOnBusyValues.contains(concurrency.onBusy) {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.concurrency.onBusy",
+      "must be one of: \(loopConcurrencyOnBusyValues.sorted().joined(separator: ", "))"
+    ))
+  }
+}
+
+private func validateRawLoopConcurrency(
+  _ raw: Any?,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let raw else {
+    return
+  }
+  guard let concurrency = raw as? [String: Any] else {
+    diagnostics.append(loopValidationError("workflow.loop.concurrency", "must be an object when provided"))
+    return
+  }
+  if let maxActive = concurrency["maxActive"] {
+    if (maxActive as? Int) != 1 {
+      diagnostics.append(loopValidationError(
+        "workflow.loop.concurrency.maxActive",
+        "must be 1 (single-lease MVP; N>1 pools are not yet supported)"
+      ))
+    }
+  }
+  validateAllowedRawString(
+    concurrency["onBusy"],
+    allowed: loopConcurrencyOnBusyValues,
+    path: "workflow.loop.concurrency.onBusy",
+    diagnostics: &diagnostics
+  )
+}
+
+private func validateTypedLoopNotifications(
+  _ notifications: LoopNotificationDeclaration,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  for (index, outcome) in notifications.on.enumerated() where !loopNotificationOutcomeValues.contains(outcome) {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.notifications.on[\(index)]",
+      "must be one of: \(loopNotificationOutcomeValues.sorted().joined(separator: ", "))"
+    ))
+  }
+  for (index, channel) in notifications.channels.enumerated() {
+    let path = "workflow.loop.notifications.channels[\(index)]"
+    if !loopNotificationChannelTypes.contains(channel.type) {
+      diagnostics.append(loopValidationError(
+        "\(path).type",
+        "must be one of: \(loopNotificationChannelTypes.sorted().joined(separator: ", "))"
+      ))
+      continue
+    }
+    if channel.type == "webhook", channel.urlEnv?.isEmpty != false {
+      diagnostics.append(loopValidationError("\(path).urlEnv", "webhook channels must name a URL environment variable"))
+    }
+    if channel.type == "command", channel.argv.isEmpty || channel.argv.contains(where: { $0.isEmpty }) {
+      diagnostics.append(loopValidationError("\(path).argv", "command channels must declare a non-empty argv"))
+    }
+  }
+}
+
+private func validateRawLoopNotifications(
+  _ raw: Any?,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let raw else {
+    return
+  }
+  guard let notifications = raw as? [String: Any] else {
+    diagnostics.append(loopValidationError("workflow.loop.notifications", "must be an object when provided"))
+    return
+  }
+  if let on = notifications["on"] {
+    guard let outcomes = on as? [Any] else {
+      diagnostics.append(loopValidationError("workflow.loop.notifications.on", "must be an array when provided"))
+      return
+    }
+    for (index, outcome) in outcomes.enumerated()
+    where !(outcome is String) || !loopNotificationOutcomeValues.contains(outcome as? String ?? "") {
+      diagnostics.append(loopValidationError(
+        "workflow.loop.notifications.on[\(index)]",
+        "must be one of: \(loopNotificationOutcomeValues.sorted().joined(separator: ", "))"
+      ))
+    }
+  }
+  guard let channels = notifications["channels"] else {
+    return
+  }
+  guard let channelList = channels as? [Any] else {
+    diagnostics.append(loopValidationError("workflow.loop.notifications.channels", "must be an array when provided"))
+    return
+  }
+  for (index, rawChannel) in channelList.enumerated() {
+    let path = "workflow.loop.notifications.channels[\(index)]"
+    guard let channel = rawChannel as? [String: Any] else {
+      diagnostics.append(loopValidationError(path, "must be an object"))
+      continue
+    }
+    let type = channel["type"] as? String ?? ""
+    if !loopNotificationChannelTypes.contains(type) {
+      diagnostics.append(loopValidationError(
+        "\(path).type",
+        "must be one of: \(loopNotificationChannelTypes.sorted().joined(separator: ", "))"
+      ))
+      continue
+    }
+    if type == "webhook", (channel["urlEnv"] as? String)?.isEmpty != false {
+      diagnostics.append(loopValidationError("\(path).urlEnv", "webhook channels must name a URL environment variable"))
+    }
+    if type == "command" {
+      let argv = channel["argv"] as? [String] ?? []
+      if argv.isEmpty || argv.contains(where: \.isEmpty) {
+        diagnostics.append(loopValidationError("\(path).argv", "command channels must declare a non-empty argv"))
+      }
+    }
+  }
+}
+
+private func validateRawLoopBudget(
+  _ raw: Any?,
+  loopRequired: Bool,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let raw else {
+    return
+  }
+  guard let budget = raw as? [String: Any] else {
+    diagnostics.append(loopValidationError("workflow.loop.budget", "must be an object when provided"))
+    return
+  }
+
+  if budget["maxTotalTokens"] == nil && budget["maxWallClockMs"] == nil && budget["maxSessionAttempts"] == nil {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.budget",
+      "must define maxTotalTokens, maxWallClockMs, or maxSessionAttempts"
+    ))
+  }
+  validatePositiveRawInteger(
+    budget["maxTotalTokens"],
+    path: "workflow.loop.budget.maxTotalTokens",
+    diagnostics: &diagnostics
+  )
+  validatePositiveRawInteger(
+    budget["maxWallClockMs"],
+    path: "workflow.loop.budget.maxWallClockMs",
+    diagnostics: &diagnostics
+  )
+  validatePositiveRawInteger(
+    budget["maxSessionAttempts"],
+    path: "workflow.loop.budget.maxSessionAttempts",
+    diagnostics: &diagnostics
+  )
+  validateAllowedRawString(
+    budget["onExceeded"],
+    allowed: loopBudgetOnExceededValues,
+    path: "workflow.loop.budget.onExceeded",
+    diagnostics: &diagnostics
+  )
+  if budget["onExceeded"] as? String == "warn" && loopRequired {
+    diagnostics.append(loopValidationError(
+      "workflow.loop.budget.onExceeded",
       "warn is invalid when workflow.loop.required is true"
     ))
   }

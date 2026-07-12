@@ -1,6 +1,40 @@
 # Workflow Package Registry Implementation Plan
 
-**Status**: In Progress
+**Status**: COMPLETE via Swift migration (reconciled and closed 2026-07-12). This plan and its checklist (`packages/riela/src/workflow/packages/*.ts` interfaces) targeted the removed TypeScript tree. The registry/cache/search/index functionality is reimplemented in Swift (`Sources/RielaCLI/WorkflowPackageRegistryIndexGenerator.swift`, `WorkflowPackageSupport.swift`, `WorkflowPackageParityCommands.swift`) with `WorkflowPackageRegistryIndexTests` green. The four previously-unchecked TypeScript boxes were resolved via the Swift-native gap analysis below: invalid-package refresh diagnostics are covered by `packageSummaries` (skip + `INVALID_MANIFEST` path/code); the sqlite seam and post-publish cache-refresh hook are TS-infrastructure concepts with no Swift equivalent (Swift uses JSON/filesystem and an explicit idempotent `package registry index` command). Zero genuine Swift gaps. Do not implement against the TypeScript checklist.
+
+## Swift-native gap analysis (2026-07-12)
+
+The five sibling package plans were reconciled together. This plan's four
+unchecked boxes resolve as follows against the Swift implementation:
+
+- **Invalid-package refresh diagnostics (search path): COVERED.**
+  `WorkflowPackageCommandRunner.packageSummaries`
+  (`Sources/RielaCLI/WorkflowPackageParityCommands.swift`) catches per-package
+  manifest validation failures, keeps enumerating the remaining packages, and
+  emits a `WorkflowPackageSummary(valid: false, ...)` whose
+  `WorkflowPackageValidationIssue` carries the skipped package directory path and
+  the `INVALID_MANIFEST` code. Valid packages are never hidden by an invalid
+  sibling. `WorkflowPackageRegistryIndexGenerator.generate` intentionally
+  hard-fails on an invalid manifest because a *published* index must be
+  internally consistent — a different, correct policy for the publish path than
+  for the search path.
+- **SQLite cache seam: INTENTIONALLY NOT CARRIED OVER.** The Swift package
+  cache/index is JSON/filesystem-only. There is no sqlite request path, so there
+  is nothing to "fail explicitly"; the requirement was TS-plan
+  infrastructure-specific.
+- **Post-publish cache refresh hook input contracts: INTENTIONALLY NOT CARRIED
+  OVER (operator note below).** The Swift model has no separate persistent
+  search cache to invalidate — search reads the registry manifests or a
+  generated `registry-index.json` directly. Instead of an implicit post-publish
+  hook, index refresh is an explicit, idempotent, verifiable operation:
+  `riela package registry index <registry-root>` regenerates
+  `registry-index.json` deterministically (with `--check` to fail on staleness
+  and `--dry-run` to preview). **Operator note:** after a publish that adds or
+  changes a package manifest, run `riela package registry index <root>` (or CI
+  `... --check`) to keep the index current. This is a documentation/runbook
+  item, not missing code.
+
+No genuine Swift gaps remain for this plan.
 **Design Reference**: design-docs/specs/design-workflow-package-registry.md#workflow-package-registry
 **Created**: 2026-05-27
 **Last Updated**: 2026-05-27
@@ -179,8 +213,8 @@ export interface WorkflowPackageCacheBackend {
 - [x] Store JSON cache under `~/.riela/workflow-packages/cache/`.
 - [x] Encode registry ids, registry URLs, branch names, and source paths before using them as cache path segments.
 - [x] Key records by registry URL, branch, package source path, and checksum.
-- [ ] Return invalid package refresh diagnostics with skipped package path and validation code.
-- [x] Fail explicitly when sqlite is requested but unsupported, unless sqlite parity is implemented behind the shared interface.
+- [x] Return invalid package refresh diagnostics with skipped package path and validation code. Superseded by the Swift migration: `WorkflowPackageCommandRunner.packageSummaries` (`Sources/RielaCLI/WorkflowPackageParityCommands.swift`) skips a package whose manifest fails validation and emits a `WorkflowPackageSummary` with `valid: false` and a `WorkflowPackageValidationIssue` carrying the package directory path plus the `INVALID_MANIFEST` code, so valid packages remain discoverable. (Note: `WorkflowPackageRegistryIndexGenerator.generate` deliberately hard-fails on an invalid manifest because a published index must be internally consistent; the tolerant skip-and-diagnose behavior lives on the search/summary path, which is where this requirement applies.)
+- [x] Fail explicitly when sqlite is requested but unsupported, unless sqlite parity is implemented behind the shared interface. Superseded and intentionally not carried over: the Swift package cache/index layer is JSON/filesystem-only; there is no sqlite backend seam and no user-facing sqlite request path to fail. SQLite in the Swift tree is only used by `SQLiteWorkflowRuntimePersistenceStore` for runtime event persistence, unrelated to package search.
 - [x] Unit test cache miss, stale refresh overwrite, branch isolation, checksum keying, encoded path round trip, and JSON record round trip.
 
 ### 5. Search Matching
@@ -244,7 +278,7 @@ export interface WorkflowPackagePublishMetadataInput {
 - [x] Extend checkout registry records with optional package provenance fields.
 - [x] Provide package checksum verification helper that compares selected package metadata against staged package content before catalog mutation.
 - [x] Provide publish metadata preparation that creates or normalizes manifests and recomputes checksums.
-- [ ] Provide post-publish cache refresh hook input contracts.
+- [x] Provide post-publish cache refresh hook input contracts. Superseded and intentionally not carried over: the Swift model has no separate persistent search cache with a hook input-contract type. Search reads registry manifests / a generated `registry-index.json` directly (no cache-invalidation layer to hook). Index freshness is instead an explicit, idempotent operation — `riela package registry index <root>` (`WorkflowPackageRegistryIndexGenerator.write`, with `--check`/`--dry-run` modes) — rather than an implicit post-publish hook. See the Swift-native gap analysis section for the operator note.
 - [x] Unit test backward-compatible checkout records, package provenance writing, checksum mismatch failure, and publish metadata normalization.
 
 ### 7. Public Exports And Documentation
@@ -331,7 +365,7 @@ export interface WorkflowPackageRegistryFeatureSurface {
 - [x] JSON cache stores records under `~/.riela/workflow-packages/cache/`.
 - [x] Cache keys include registry URL, branch, package source path, and checksum.
 - [x] Cache filesystem paths use encoded segments and round-trip through cache metadata.
-- [ ] Invalid package refresh diagnostics include skipped package path and validation code.
+- [x] Invalid package refresh diagnostics include skipped package path and validation code. Superseded by the Swift migration: `WorkflowPackageCommandRunner.packageSummaries` (`WorkflowPackageParityCommands.swift`) skips invalid manifests and returns a summary carrying the package directory path and the `INVALID_MANIFEST` validation code while keeping valid packages discoverable.
 
 ### TASK-005: Search API And Matching
 
@@ -418,7 +452,7 @@ bunx tsc --noEmit
 - [x] JSON cache backend works under `~/.riela/workflow-packages/cache/`.
 - [x] Cache path encoding works for branch names such as `feature/workflow-packages`.
 - [x] Optional sqlite cache support has a stable backend seam or is explicitly deferred without changing cache record contracts.
-- [ ] Search refresh reports skipped invalid package records with path and validation code.
+- [x] Search refresh reports skipped invalid package records with path and validation code. Superseded by the Swift migration: `WorkflowPackageCommandRunner.packageSummaries` skips invalid manifests and returns diagnostics (package path + `INVALID_MANIFEST` code) so valid packages remain visible.
 - [x] Search helpers return checkout-ready source metadata and support tag/backend filters.
 - [x] Checkout provenance accepts package fields without breaking existing checkout records.
 - [x] Checkout verifies selected package checksums against staged content before catalog mutation.
@@ -463,6 +497,21 @@ bunx tsc --noEmit
 **Tasks In Progress**: Invalid-package refresh diagnostics, full sqlite parity, and a separated publish metadata helper remain explicit follow-up work rather than stale NOT_STARTED/BLOCKED entries.
 **Blockers**: Full repository Biome remains blocked by unrelated pre-existing diagnostics.
 **Notes**: This revision updates plan tracking only; no TypeScript behavior changed.
+
+### Session: 2026-07-12 Swift-native reconciliation
+
+**Tasks Completed**: Resolved all four remaining unchecked boxes against the
+Swift implementation (see "Swift-native gap analysis (2026-07-12)"). Invalid-
+package refresh diagnostics map to `packageSummaries` skip + `INVALID_MANIFEST`
+diagnostics; sqlite seam and post-publish cache-refresh hook are TS-specific
+with no Swift equivalent (Swift uses JSON/filesystem + an explicit idempotent
+`package registry index` command). Zero genuine Swift gaps.
+
+**Verification**: `swift test --filter 'Package'` — 92 tests, 0 failures
+(includes `WorkflowPackageRegistryIndexTests`,
+`testPackageRegistryIndexCommandGeneratesDeterministicSearchableIndex`).
+
+**Notes**: Plan is complete via supersession; moved to `impl-plans/completed/`.
 
 ## Related Plans
 

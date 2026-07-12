@@ -1,6 +1,12 @@
 # Distributed Registry And Container Node Roadmap Implementation Plan
 
-**Status**: Implemented foundation; release publication pending external CI
+**Status**: Implemented foundation; release publication pending external CI.
+**Remaining items are explicitly accepted external deferrals** (2026-07-12):
+release publication and cask update require external CI/release credentials —
+owner: repository maintainer with release access; trigger: next release
+window (ship a Homebrew cask newer than 0.1.17 so distributed binaries include
+live cross-workflow dispatch). No further local engineering work is open in
+this plan.
 **Design Reference**:
 `design-docs/specs/design-distributed-registry-container-node-roadmap.md`
 **Created**: 2026-07-07

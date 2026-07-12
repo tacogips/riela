@@ -1,6 +1,6 @@
 # Workflow Instance Unification Implementation Plan
 
-**Status**: Completed
+**Status**: Completed and archived 2026-07-12. All 49 boxes checked; latest session records "Tasks In Progress: None / Blockers: None" with live CLI run/export and remote CLI HTTP transport verification. The App profile-scope listing and daemon-start preflight follow-ups were completed in the final slice. The only residual item is packaged-skill (`riela-workflow-run`) guidance, which lives in the sibling `riela-packages` registry (out of this repo) — routed there, not tracked as open work here.
 **Design Reference**: design-docs/specs/design-workflow-instance-unification.md
 **Created**: 2026-07-07
 **Last Updated**: 2026-07-07

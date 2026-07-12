@@ -1,7 +1,13 @@
 # Hermes-Inspired Capabilities Implementation Plan
 
 **Status**: Planning; design approved pending adoption-set confirmation. No code
-written.
+written. **Explicitly deferred pending a user/product decision** (owner: the
+user; trigger: confirmation of the H-A…H-E adoption set — this is a genuine
+product decision, not an engineering blocker to unrelated work). Note
+(2026-07-12 correction): workflow self-evolution versioning is no longer
+"NOT_STARTED" — Section 8 of `loop-engineering-first-line-tool` is implemented
+and accepted (plan now in `impl-plans/completed/`); Phase H-A should build on
+that landed substrate rather than treating it as green-field.
 **Design Reference**: `design-docs/specs/design-hermes-inspired-capabilities.md`
 **Workflow Mode**: feature-intake
 **Issue Reference**: #38 (tracking); #40 (H-A), #41 (H-B), #42 (H-C), #43 (H-D), #44 (H-E)
@@ -22,7 +28,7 @@ each scope. This plan enumerates deliverables and interfaces only — no code.
 - Design: `design-docs/specs/design-hermes-inspired-capabilities.md`
 - Existing gap the plan closes: `design-docs/specs/design-incomplete-work-inventory.md` §1 (fan-out), §2 (self-evolution versioning)
 - Loop evidence substrate: `Sources/RielaCore/LoopEvidenceManifest.swift`, `LoopEngineeringModels.swift`, `LoopGateResult`
-- Self-evolution TODO: `impl-plans/active/loop-engineering-first-line-tool.md` §8
+- Self-evolution substrate (implemented + accepted): `impl-plans/completed/loop-engineering-first-line-tool.md` §8
 - Memory substrate: `Packages/RielaMemory/Sources/RielaMemory/{RielaMemory,MemoryModels}.swift`; `Sources/RielaCLI/ProductionNodeAdapter+{PersonaMemory,ChatMemory,MemoryAddonCore}.swift`
 - Fan-out data model: `Sources/RielaCore/WorkflowModel.swift` (`WorkflowStepFanout`, `fanoutConcurrency`, `WorkflowFanoutWriteOwnership`, `WorkflowFanoutResultOrder`, `WorkflowFanoutFailurePolicy`); `Sources/RielaCore/WorkflowRuntimeCapabilityGap.swift`
 - Backend enum: `Sources/RielaCore/WorkflowModel.swift` (`NodeExecutionBackend`, `NodeType.container`); `design-docs/specs/design-distributed-registry-container-node-roadmap.md`; `design-riela-seatbelt-sandbox.md`
@@ -57,8 +63,8 @@ H-E depends only on the existing cron source. No phase blocks another.
 
 ### Phase H-A — Evidence-gated workflow self-evolution (P0)
 
-Implements the `NOT_STARTED` "Workflow Self-Evolution Versioning"
-(`loop-engineering-first-line-tool.md` §8).
+Builds on the implemented-and-accepted "Workflow Self-Evolution Versioning"
+(`impl-plans/completed/loop-engineering-first-line-tool.md` §8).
 
 - **A1. Distillation step.** A runner capability that, on loop convergence,
   reads the `LoopEvidenceManifest` and emits a candidate reusable artifact

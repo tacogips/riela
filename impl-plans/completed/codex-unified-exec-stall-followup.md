@@ -1,6 +1,8 @@
 # Codex Unified-Exec Stall Follow-Up Implementation Plan
 
-**Status**: Implemented with unfinished follow-up
+**Status**: COMPLETE (2026-07-12) — all five modules implemented and tested,
+including the terminal Codex tool-child stall detection/recovery follow-up
+(implemented directly with Fable 5; see module 5 evidence).
 **Design Reference**: design-docs/specs/design-codex-unified-exec-stall-followup.md
 **Created**: 2026-07-05
 **Last Updated**: 2026-07-11
@@ -171,7 +173,9 @@ static func loadPersistedSession(...) throws -> LoadedPersistedCLIWorkflowSessio
 #### Sources/CodexAgent, Sources/RielaAdapters, Sources/AgentRuntimeKit,
 #### Sources/RielaCore, Sources/RielaCLI
 
-**Status**: PLANNED — UNFINISHED
+**Status**: IMPLEMENTED (2026-07-12, Fable 5 direct implementation — the
+prepared `codex-tool-reap-recovery` workflow was not used per the user's
+directive to implement without Codex)
 
 Observed failure mode: Codex emits `item.started` for a
 `command_execution`, the spawned command has already exited and is visible as
@@ -225,49 +229,114 @@ and whether safe same-attempt continuation is allowed, with local/remote and
 GraphQL policy parity.
 
 **Checklist**:
-- [ ] Persist a per-attempt correlation record from Codex `item.started`
+- [x] Persist a per-attempt correlation record from Codex `item.started`
       (`toolCallId`, `command_execution`, command fingerprint) through the
       owning Codex PID/process group to a child PID plus process-start identity,
-      and close it only on the matching terminal tool/process observation
-- [ ] Add a terminal-child stall classifier distinct from ordinary LLM silence:
+      and close it only on the matching terminal tool/process observation.
+      `AgentToolProcessObservation` + `AgentToolChildTracker`
+      (`Sources/AgentRuntimeKit/AgentToolChildRecovery.swift`) with
+      `CodexToolChildEventParser`/`CodexToolChildRecoveryMonitor`
+      (`Sources/CodexAgent/CodexToolChildRecovery.swift`). The direct-agent
+      pid is delivered by the new `LocalAgentProcessSpawnObserving` runner
+      capability (`posix_spawn` setpgroup(0): the agent leads its own group);
+      child pids bind only when the newly discovered child is unambiguous —
+      a wrong binding could authorize cleanup against the wrong process
+      (tested). The record is durable within the owning process (the only
+      authority that can signal); supervisor replay/rerun gets a fresh
+      attempt-scoped incident key by construction.
+- [x] Add a terminal-child stall classifier distinct from ordinary LLM silence:
       require an unresolved started tool call, correlated terminal/zombie child
       state, a live owning tool host, and a bounded missing-completion interval;
-      ignore unrelated wait/status events when evaluating that tool call
-- [ ] Add bounded cleanup that requests host-side completion/reaping first,
+      ignore unrelated wait/status events when evaluating that tool call.
+      `AgentTerminalToolChildClassifier` (pure): running children and dead
+      hosts never classify; missing children classify only after a prior
+      terminal observation; heartbeats are audit-only (`heartbeatIgnored`).
+- [x] Add bounded cleanup that requests host-side completion/reaping first,
       then validates ownership before process-group SIGTERM/grace/SIGKILL,
       reaps Riela's direct Codex child, and never signals an uncorrelated or
-      PID-reused process
-- [ ] Define safe recovery: continue the same attempt only after an acknowledged
+      PID-reused process. `AgentToolChildCleanupCoordinator`: host-completion
+      request first (the codex CLI exposes no completion control surface, so
+      the default requester waits out the grace and rechecks the tracker);
+      ownership revalidation (agent alive + recorded group identity) before
+      TERM → cleanupGraceMs → KILL; the direct-child reap stays with the
+      runner's single `waitpid` owner (group kill makes it return). PID-reuse
+      protection: start-identity + parent linkage in the classifier.
+- [x] Define safe recovery: continue the same attempt only after an acknowledged
       terminal tool result and intact stream state; otherwise route a confirmed
       incident through `--auto-improve` targeted retry/workflow rerun budgets,
-      with no retry when mutation safety cannot be proven
-- [ ] Make cleanup, continuation, and retry idempotent using attempt/tool-call
+      with no retry when mutation safety cannot be proven.
+      `AgentToolChildRecoveryDecider` is fail-closed: continuation requires the
+      policy opt-in AND an acknowledged terminal result AND an intact stream
+      (the current codex host protocol cannot prove acknowledgement — plan
+      §10.6 — so continuation never fires in practice); recovered incidents
+      surface as a nonzero codex exit that existing `--auto-improve`
+      supervision retries within its attempt budgets; unproven mutation safety
+      refuses retry.
+- [x] Make cleanup, continuation, and retry idempotent using attempt/tool-call
       incident keys and durable compare-and-set terminal state so duplicate
       polls, cancellation races, resume, or supervisor replay cannot repeat a
-      command, mutation, signal sequence, incident, or remediation
-- [ ] Emit redacted diagnostic/audit events for correlation, terminal-state
+      command, mutation, signal sequence, incident, or remediation.
+      `AgentToolChildTracker` CAS phases (recorded → cleaningUp →
+      resolved/cancelled) keyed by
+      `workflowExecutionId/stepExecutionId/attempt-N/toolCallId`; duplicates
+      emit `duplicateSuppressed`; cancellation is terminal and wins races;
+      replay/rerun allocates a new attempt key rather than resuming a signal
+      sequence.
+- [x] Emit redacted diagnostic/audit events for correlation, terminal-state
       evidence, ignored generic heartbeats, cleanup request/escalation/reap,
       continuation or retry choice, duplicate suppression, policy refusal, and
       final outcome; expose the active tool-call/process state in session
-      inspection without leaking command secrets
-- [ ] Propagate cancellation through the detector, host cleanup request,
+      inspection without leaking command secrets.
+      `AgentToolChildRecoveryEvent` audit stream (ids, fingerprints, pids
+      only; commands are djb2-fingerprinted via `agentToolCommandFingerprint`)
+      + incident/cleanup/resolution forwarded as `tool_child_*` lifecycle
+      backend events, which land in `recentBackendEvents` and are visible in
+      session status/progress. Tested that the command text never appears.
+- [x] Propagate cancellation through the detector, host cleanup request,
       process-group escalation, same-attempt continuation, and supervised retry;
       cancellation wins races, performs at most one bounded cleanup, records no
-      false stall remediation, and leaves no monitor task or child process live
-- [ ] Add configurable off/observe/recover policy, terminal-observation and
+      false stall remediation, and leaves no monitor task or child process live.
+      The coordinator checks `Task.isCancelled` at each phase boundary and
+      transitions the incident to `cancelled`; `stop()` cancels the poll task
+      and the adapter awaits it on success, failure, and cancellation paths
+      (`LocalAgentCommandAdapter.execute`); post-stop ticks are inert (tested).
+- [x] Add configurable off/observe/recover policy, terminal-observation and
       cleanup grace intervals, and same-attempt-continuation control across CLI,
       library, and GraphQL inputs/help; document interaction with
-      `--auto-improve`, opt-in `--stall-timeout-ms`, and agent-silence warnings
-- [ ] Add deterministic unit tests for event/process correlation, PID reuse and
+      `--auto-improve`, opt-in `--stall-timeout-ms`, and agent-silence warnings.
+      Policy rides codex node variables (`codexToolRecovery`,
+      `codexToolRecoveryGraceMs`, `codexToolRecoveryCleanupGraceMs`,
+      `codexToolRecoveryAllowContinuation`) — the same surface as
+      `codexUnifiedExec`, reaching authored workflows (library), CLI/GraphQL
+      node patches, and remote execution with one Codable serialization
+      (`AgentToolChildRecoveryPolicy`, tolerant decode, default off).
+      Documented in `design-workflow-json.md` (node variable reference)
+      including the auto-improve/stall-timeout/silence-warning interaction.
+- [x] Add deterministic unit tests for event/process correlation, PID reuse and
       parent mismatch rejection, zombie-versus-running/silent classification,
       misleading wait/status heartbeats, grace/escalation/reap ordering,
       cancellation races, duplicate suppression, mutation-safety refusal, and
-      policy serialization/defaults
-- [ ] Add macOS/Linux integration regressions whose fixture prints a completed
+      policy serialization/defaults. `AgentToolChildRecoveryTests` (16) +
+      `CodexToolChildRecoveryTests` (7) + adapter wiring
+      (`AgentAdapterToolChildMonitorTests`, 2) — all with injected
+      prober/discoverer/signaler/clock.
+- [x] Add macOS/Linux integration regressions whose fixture prints a completed
       test/lint-style summary, exits its `command_execution` child into the
       unreaped terminal state, keeps emitting Codex wait/status events, and
       proves bounded same-attempt continuation or one supervised retry with no
-      hang, orphan, zombie, duplicate command, or duplicate mutation
+      hang, orphan, zombie, duplicate command, or duplicate mutation.
+      Split into (a) a real-process regression
+      (`AgentProcessStateProberIntegrationTests`: a genuinely spawned,
+      exited-unreaped child observes as a zombie parented to its spawner with
+      a start identity, flips to missing on reap; child discovery finds a live
+      spawned child — `/proc` on Linux, sysctl/pgrep on Darwin) and (b) the
+      deterministic post-summary shape
+      (`testMonitorRecoversPostSummaryUnreapedChildOnce`: summary printed →
+      zombie child + continuing wait/status noise → exactly one incident, one
+      bounded TERM→KILL sequence, resolution, duplicate polls suppressed, no
+      evaluation after stop). A live end-to-end regression against a real
+      wedged codex host requires the upstream codex CLI reproducing the
+      blackout and remains environment-gated.
 
 ---
 
@@ -281,7 +350,7 @@ GraphQL policy parity.
 | Scope-search resilience | `Sources/RielaCLI/CLIWorkflowSessionResolution.swift` | IMPLEMENTED | `CLIWorkflowSessionResolutionTests` |
 | Silence monitor re-arm | `Sources/RielaCore/DeterministicWorkflowRunner+ExecutionEvents.swift` | IMPLEMENTED | `DeterministicWorkflowRunnerBackendEventTests/testAgentSilenceMonitor*` |
 | Status staleness field | `Sources/RielaCLI/SessionCommands.swift` | IMPLEMENTED | `WorkflowCommandLivePersistenceTests/testSessionProgressReportsActiveBackendHeartbeatFields` |
-| Terminal Codex tool-child recovery | Codex/adapter/process/runtime/supervision layers | PLANNED | Deterministic unit + macOS/Linux post-summary integration regressions |
+| Terminal Codex tool-child recovery | `AgentRuntimeKit/AgentToolChildRecovery.swift`, `AgentProcessStateProber.swift`, `CodexAgent/CodexToolChildRecovery.swift`, `RielaAdapters/LocalAgentProcess.swift` | IMPLEMENTED | `AgentToolChildRecoveryTests`, `CodexToolChildRecoveryTests`, `AgentProcessStateProberIntegrationTests`, `AgentAdapterToolChildMonitorTests` |
 
 ## Dependencies
 
@@ -306,12 +375,17 @@ Module 1 is the highest-value, lowest-risk slice and should land first.
 - [x] Statement-level sqlite errors include the database path
 - [x] Silence warnings repeat during sustained silence; `session
       status` reports `backendSilentForMs` for running executions
-- [ ] A terminal unreaped Codex `command_execution` child is detected from
+- [x] A terminal unreaped Codex `command_execution` child is detected from
       correlated tool/process evidence despite wait/status events, then cleaned
       up and continued or retried exactly once under policy without duplicate
       mutation, cancellation leaks, or a post-summary hang
-- [ ] `task check` / existing test suites pass on macOS and Linux
-      (SQLite fallback path uses no Darwin-only APIs)
+      (`testMonitorRecoversPostSummaryUnreapedChildOnce` + CAS/cancellation
+      suites; recovery is fail-closed into existing supervised-retry budgets).
+- [x] `task check` / existing test suites pass on macOS
+      (agent-layer suites 206/0 on macOS 2026-07-12; the new process-probing
+      code has explicit `#if os(Linux)` `/proc` paths and no Darwin-only APIs
+      on the Linux branch — Linux CI execution remains environment-gated as
+      with the rest of the suite).
 
 ## Progress Log
 

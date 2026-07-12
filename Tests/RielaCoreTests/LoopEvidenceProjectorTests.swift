@@ -14,6 +14,81 @@ final class LoopEvidenceProjectorTests: XCTestCase {
     XCTAssertNil(manifest)
   }
 
+  func testProjectorConsumesAccumulatorCostEvidence() throws {
+    let costs = [
+      LoopCostEvidence(stepExecutionId: "worker-exec-1", backend: "codex", inputTokens: 100, outputTokens: 40, totalTokens: 140),
+      LoopCostEvidence(stepExecutionId: "review-exec-1", diagnostics: ["no usage events recorded for step"])
+    ]
+
+    let manifest = try XCTUnwrap(DefaultLoopEvidenceProjector().project(
+      LoopEvidenceProjectionInput(
+        workflow: workflow(loop: nil),
+        session: session(executions: []),
+        workflowSource: workflowSource(),
+        includeWorkflowWithoutLoopMetadata: true,
+        costs: costs
+      )
+    ))
+
+    XCTAssertEqual(manifest.costs, costs)
+    XCTAssertEqual(manifest.costSummary?.totalTokens, 140)
+    XCTAssertEqual(manifest.costSummary?.stepsWithUsage, 1)
+    XCTAssertEqual(manifest.costSummary?.stepsWithoutUsage, 1)
+    XCTAssertEqual(manifest.costSummary?.isPartial, true)
+  }
+
+  func testProjectorDerivesCostFromExecutionBackendEvents() throws {
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let execution = WorkflowStepExecution(
+      executionId: "worker-exec-1",
+      stepId: "review",
+      nodeId: "review-node",
+      attempt: 1,
+      backend: .codexAgent,
+      status: .completed,
+      adapterOutput: WorkflowAdapterOutputMetadata(provider: "codex-agent", model: "gpt-5.5", completionPassed: true, when: ["always": true]),
+      recentBackendEvents: [
+        WorkflowBackendEventRecord(
+          sequence: 1,
+          at: date,
+          eventType: "usage",
+          channel: .usage,
+          usage: ["input_tokens": .integer(100), "output_tokens": .integer(40), "total_tokens": .integer(140)]
+        )
+      ],
+      createdAt: date,
+      updatedAt: date
+    )
+
+    // No explicit input.costs → projector recovers cost from the execution.
+    let manifest = try XCTUnwrap(DefaultLoopEvidenceProjector().project(
+      LoopEvidenceProjectionInput(
+        workflow: workflow(loop: nil),
+        session: session(executions: [execution]),
+        workflowSource: workflowSource(),
+        includeWorkflowWithoutLoopMetadata: true
+      )
+    ))
+
+    XCTAssertEqual(manifest.costs.map(\.stepExecutionId), ["worker-exec-1"])
+    XCTAssertEqual(manifest.costSummary?.totalTokens, 140)
+    XCTAssertEqual(manifest.costSummary?.stepsWithUsage, 1)
+  }
+
+  func testProjectorRendersAbsentCostAsNotRecorded() throws {
+    let manifest = try XCTUnwrap(DefaultLoopEvidenceProjector().project(
+      LoopEvidenceProjectionInput(
+        workflow: workflow(loop: nil),
+        session: session(executions: []),
+        workflowSource: workflowSource(),
+        includeWorkflowWithoutLoopMetadata: true
+      )
+    ))
+
+    XCTAssertEqual(manifest.costs, [])
+    XCTAssertNil(manifest.costSummary)
+  }
+
   func testProjectorCanExplicitlyProjectRuntimeEvidenceWithoutLoopMetadata() throws {
     let date = Date(timeIntervalSince1970: 1_700_000_000)
     let execution = WorkflowStepExecution(

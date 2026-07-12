@@ -1,11 +1,38 @@
 # Apple Clock Alarm Add-ons Implementation Plan
 
-**Status**: Completed; Step 7 adversarial revision addressed after `comm-000036`
+**Status**: Completed (Swift add-on + tests); 4 remaining checkboxes are live-QA blocked on `apple-gateway` and accepted as deferred (reconciled 2026-07-12). The Clock alarm add-ons are implemented (`Sources/RielaCLI/ProductionNodeAdapter+AppleClockAlarmAddons.swift`, shared `…+AppleGatewaySupport.swift`) and covered by `AppleClockAlarmAddonTests` (9 tests green in the 42-test Apple add-on run on 2026-07-12). The 4 open TASK-001 items require running the external `apple-gateway graphql` CLI against live macOS Clock/Shortcuts to capture exact envelopes and confirm the accepted `time` format; `apple-gateway` is not installed here (`which apple-gateway` → not found), so this QA must run on a host that has it. See the Deferred Live QA section below for owner and trigger.
 **Workflow Mode**: issue-resolution
 **Issue Reference**: Add apple-gateway Clock Alarms builtin add-ons and a read-only example; no GitHub issue URL or repository-plus-number was provided
 **Design Reference**: design-docs/specs/node-addon-catalog-and-chat-reply-worker/gateway-built-ins.md#built-in-rielaapple-clock-alarm-
 **Created**: 2026-07-07
 **Last Updated**: 2026-07-07
+
+---
+
+## Deferred Live QA
+
+The remaining unchecked boxes in TASK-001 require the external `apple-gateway`
+CLI running against live macOS Clock/Shortcuts to capture exact upstream
+envelopes and confirm the accepted `time` format. That CLI is not installed in
+this environment (`which apple-gateway` → not found on 2026-07-12), so these
+items cannot be executed here and are accepted as deferred.
+
+- **Owner**: next session run on a host with `apple-gateway` installed.
+- **Trigger**: `which apple-gateway` succeeds.
+- **Deferred boxes** (all in TASK-001): confirm Clock mutations accept variables
+  for `createClockAlarm`/`toggleClockAlarm`/`updateClockAlarm`/`deleteClockAlarm`;
+  capture the exact missing-Shortcuts-bridge GraphQL envelopes for the
+  read path and at least one mutation shortcut; capture the exact unsupported
+  macOS envelopes for `updateClockAlarm` and `deleteClockAlarm`; confirm the
+  accepted Clock alarm `time` format including whether strict `HH:mm` is
+  required.
+
+All offline-verifiable behavior for these envelopes is already covered by
+deterministic fake-executable tests in `AppleClockAlarmAddonTests`
+(`testMissingShortcutAndMacOSVersionEnvelopesArePolicyBlocked`,
+`testInputValidationFailuresArePolicyBlocked`,
+`testMutationsPassInputVariablesAndParseResultAlarm`); the deferred items
+confirm the real upstream shapes against those assumptions.
 
 ---
 
@@ -79,12 +106,24 @@ nonzero after receiving a mutation request.
   not found, so `graphql --help` could not be run in this session.
 - [ ] Confirm Clock mutations accept variables for `createClockAlarm`,
   `toggleClockAlarm`, `updateClockAlarm`, and `deleteClockAlarm`.
+  DEFERRED (accepted): live QA blocked on absent `apple-gateway` CLI in this
+  environment; owner: next session with apple-gateway installed; trigger:
+  `which apple-gateway` succeeds.
 - [ ] Capture exact missing Shortcuts bridge GraphQL envelopes for the
   `apple-gateway-get-alarms` read path and at least one mutation shortcut.
+  DEFERRED (accepted): live QA blocked on absent `apple-gateway` CLI in this
+  environment; owner: next session with apple-gateway installed; trigger:
+  `which apple-gateway` succeeds.
 - [ ] Capture exact unsupported macOS envelopes for `updateClockAlarm` and
   `deleteClockAlarm`.
+  DEFERRED (accepted): live QA blocked on absent `apple-gateway` CLI in this
+  environment; owner: next session with apple-gateway installed; trigger:
+  `which apple-gateway` succeeds.
 - [ ] Confirm the accepted Clock alarm `time` format, including whether strict
   `HH:mm` is required.
+  DEFERRED (accepted): live QA blocked on absent `apple-gateway` CLI in this
+  environment; owner: next session with apple-gateway installed; trigger:
+  `which apple-gateway` succeeds.
 - [x] If `--variables` is unavailable or fails after the mutation process has
   been invoked, fail closed without a second mutation attempt.
 

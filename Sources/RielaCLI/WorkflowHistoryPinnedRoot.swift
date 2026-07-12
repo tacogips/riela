@@ -50,7 +50,12 @@ final class WorkflowHistoryPinnedRoot: @unchecked Sendable {
     if standardized.path.hasPrefix(url.path + "/") || standardized.path == url.path {
       candidate = standardized.path
     } else {
-      candidate = try Self.canonicalPotentialPath(child).path
+      // The child is spelled through a different (symlinked) ancestor of the
+      // root. Canonicalize only the root-prefix portion and keep every
+      // component below the root verbatim: resolving the full path here
+      // (realpath) would silently follow a swapped child symlink before the
+      // O_NOFOLLOW descriptor walk could reject it.
+      candidate = try Self.rootAnchoredPath(standardized, canonicalRoot: url.path)
     }
     guard candidate != url.path, candidate.hasPrefix(url.path + "/") else {
       if candidate == url.path { return "" }
@@ -266,6 +271,33 @@ final class WorkflowHistoryPinnedRoot: @unchecked Sendable {
         offset += count
       }
     }
+  }
+
+  /// Finds the ancestor of `input` whose canonical path is the pinned root
+  /// and re-anchors the remaining components verbatim. Components below the
+  /// root are never symlink-resolved — the descriptor walk verifies each of
+  /// them with O_NOFOLLOW instead.
+  private static func rootAnchoredPath(_ input: URL, canonicalRoot: String) throws -> String {
+    var prefix = input
+    var suffix: [String] = []
+    while true {
+      if let resolvedPointer = realpath(prefix.path, nil) {
+        let resolved = String(cString: resolvedPointer)
+        free(resolvedPointer)
+        if resolved == canonicalRoot {
+          guard !suffix.isEmpty else {
+            return canonicalRoot
+          }
+          return canonicalRoot + "/" + suffix.reversed().joined(separator: "/")
+        }
+      }
+      if prefix.path == "/" {
+        break
+      }
+      suffix.append(prefix.lastPathComponent)
+      prefix.deleteLastPathComponent()
+    }
+    throw CLIUsageError("workflow history path escapes selected root")
   }
 
   private static func canonicalPotentialPath(_ input: URL) throws -> URL {

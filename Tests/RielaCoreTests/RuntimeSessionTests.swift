@@ -239,4 +239,24 @@ final class RuntimeSessionTests: XCTestCase {
     XCTAssertEqual(decoded.failureKind, .loopNotConverging)
     XCTAssertEqual(decoded.failureKind?.rawValue, "loopNotConverging")
   }
+
+  func testBudgetExceededFailureKindRoundTripsAndIsKnown() throws {
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let session = WorkflowSession(
+      workflowId: "workflow-a",
+      sessionId: "session-a",
+      status: .failed,
+      entryStepId: "step-1",
+      createdAt: date,
+      updatedAt: date,
+      failureKind: .budgetExceeded
+    )
+
+    let decoded = try JSONDecoder().decode(WorkflowSession.self, from: JSONEncoder().encode(session))
+
+    XCTAssertEqual(decoded.failureKind, .budgetExceeded)
+    XCTAssertEqual(decoded.failureKind?.rawValue, "budgetExceeded")
+    // Known kind → no compatibility diagnostic.
+    XCTAssertNil(decoded.failureKind?.compatibilityDiagnostic)
+  }
 }

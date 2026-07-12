@@ -1,9 +1,18 @@
 # Loop Engineering Convergence And Operations Hardening Implementation Plan
 
-**Status**: LB1 implemented, verification in progress
+**Status**: LB1–LB4 implemented and verified 2026-07-12 (LB1: 32 focused
+convergence tests, commits 61ae72d…4a6e595; LB2 baselines/regression, LB3
+concurrency guard, and LB4 outcome notifications landed in the same-day
+follow-up pass — 33 focused LB2–LB4 tests green, consuming W2's
+`LoopEvidenceDiffer` contract as planned). LB5 (trend/flakiness) and LB6
+(retrospective/self-improve rationale) remain outline-only later phases —
+explicitly deferred: owner = next loop-engineering session; trigger = LA5
+lesson store landing (LB6) / demand for trend analytics (LB5); module specs
+are authored at phase start per the plan's own convention, so they carry no
+checkboxes.
 **Design Reference**: `design-docs/specs/design-loop-engineering-convergence-and-operations.md`
 **Created**: 2026-07-08
-**Last Updated**: 2026-07-10
+**Last Updated**: 2026-07-12
 
 ---
 
@@ -258,122 +267,183 @@ public struct LoopConvergenceTracker: Sendable {
 
 #### `Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift` (`loop_baselines`)
 
-**Status**: NOT_STARTED
+**Status**: DONE (2026-07-12)
 
 **Checklist**:
 
-- [ ] `loop_baselines` table (workflow_id PK, session_id, set_at, note) via
+- [x] `loop_baselines` table (workflow_id PK, session_id, set_at, note) via
   the existing migration pattern; `CREATE TABLE IF NOT EXISTS` on writable
-  open; read paths treat a missing table as "no baseline".
-- [ ] `setLoopBaseline` / `loadLoopBaseline` / `clearLoopBaseline`; writes
-  only from explicit commands; reads stay read-only.
+  open; read paths treat a missing table as "no baseline" (missing database
+  and missing table both return nil; asserted in tests).
+- [x] `setLoopBaseline` / `loadLoopBaseline` / `clearLoopBaseline`; writes
+  only from explicit commands; reads stay read-only (`loadLoopBaseline`
+  opens read-only and probes `sqlite_master` before querying). Tests:
+  `LoopRegressionVerdictTests` baseline round-trip + missing-table cases.
 
 #### `Sources/RielaCore/LoopRegressionVerdict.swift`
 
-**Status**: NOT_STARTED
+**Status**: DONE (2026-07-12)
 
 **Checklist**:
 
-- [ ] Classify regressions from a `LoopEvidenceDiff` per design S10:
+- [x] Classify regressions from a `LoopEvidenceDiff` per design S10:
   required-gate decision downgrade, `blockingFindingsAdded` on required
-  gates, verification pass→fail flips.
-- [ ] Pure function over two manifests + diff; exhaustive fixtures
-  including empty diff and missing-gate cases.
-- [ ] Cross-plan rule: consumes LA3's `LoopEvidenceDiffer`; if LA3 has not
-  landed, implement the differ core here exactly per gap-closure S4 and
-  mark the LA3 module COMPLETE_VIA_LB2 in that plan.
+  gates, verification pass→fail flips. `LoopRegressionClassifier.verdict`
+  evaluates the latest visit per gate (the `gates --check` rule), matches
+  findings by `(filePath, message)` with line drift tolerated, and flags
+  verification flips from the diff's `argvSummary`-matched changes.
+- [x] Pure function over two manifests + diff; exhaustive fixtures
+  including empty diff and missing-gate cases. `LoopRegressionVerdictTests`
+  (13 tests): identical/no-regression, downgrade, missing-in-target,
+  optional-gate immunity, non-accepted-baseline immunity, findings added,
+  line-drift tolerance, verification flip both directions, latest-visit
+  rule, Codable round-trip, and the baseline-store cases.
+- [x] Cross-plan rule: consumes LA3's `LoopEvidenceDiffer` (landed 2026-07-12
+  in W2) — no duplicate differ was implemented.
 
 #### `Sources/RielaCLI/LoopBaselineCommands.swift`
 
-**Status**: NOT_STARTED
+**Status**: DONE (2026-07-12)
 
 **Checklist**:
 
-- [ ] Parse and run `loop baseline set/show/clear` (set validates evidence
+- [x] Parse and run `loop baseline set/show/clear` (set validates evidence
   + required-gate acceptance; `--force` recorded in note and diagnostics).
-- [ ] Parse and run `loop regress <workflow> [--session <id>]`; target
+  Requiredness resolves like `gates --check` (persisted resolution →
+  authored `loop.gates`), since SQLite snapshots do not rehydrate
+  `loopMetadata`. Smoke: set on a rejected-gate session refuses with the
+  failing gate named; `--force` records the override in note+diagnostics.
+- [x] Parse and run `loop regress <workflow> [--session <id>]`; target
   defaults to newest completed session with evidence via
-  `loadSessionOverviews`; exit codes 0/3/4/1 pinned by contract tests.
-- [ ] `loop diff --baseline <workflow> [--session <id>]` sugar.
-- [ ] JSONL/JSON/text rendering; read paths never mutate snapshots.
+  `loadSessionOverviews`; exit codes 0/3/4/1 pinned by contract tests
+  (`LoopBaselineCommandTests.testRegressExitCodesArePinned` +
+  missing-baseline exit-4 case; smoke: no-target → 4, self-diff → 0).
+- [x] `loop diff --baseline <workflow> [--session <id>]` sugar (resolves the
+  same pair, delegates to the ordinary diff rendering; parse + smoke).
+- [x] JSONL/JSON/text rendering; read paths never mutate snapshots (only
+  `setLoopBaseline`/`clearLoopBaseline` write, on explicit commands).
 
 ### 3. LB3 — Concurrency Guard
 
 #### `Sources/RielaCore/LoopEngineeringModels.swift` + `WorkflowLoopValidation.swift` (concurrency)
 
-**Status**: NOT_STARTED
+**Status**: DONE (2026-07-12)
 
 **Checklist**:
 
-- [ ] Optional `concurrency` (`maxActive`, `onBusy`) on
+- [x] Optional `concurrency` (`maxActive`, `onBusy`) on
   `WorkflowLoopMetadata`; validation: `maxActive == 1` in the MVP,
-  `onBusy` in {fail, skip}.
+  `onBusy` in {fail, skip}. `LoopConcurrencyDeclaration` (tolerant decode
+  with defaults 1/"fail") + typed and raw validation. Tests:
+  `WorkflowLoopValidationTests` accept/defaults/invalid concurrency cases.
 
 #### `Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift` (`loop_concurrency_leases`)
 
-**Status**: NOT_STARTED
+**Status**: DONE (2026-07-12)
 
 **Checklist**:
 
-- [ ] Lease table per design S11; single-transaction acquire with
+- [x] Lease table per design S11; single-transaction acquire with
   staleness takeover (600 s default, shared with the `possiblyStale`
   threshold); heartbeat refreshed inside the existing single save-path
   helper for the lease-holding session; release at terminal persistence.
-- [ ] Consistency regression: heartbeat and summary-column writes ride the
-  same helper (extend the LA1a summary-consistency test pattern).
+  `acquireLoopConcurrencyLease` (insert-or-stale-takeover in one writable
+  transaction, takeover reported to the caller for diagnostics),
+  `loadLoopConcurrencyLease` (read-only; missing table = no lease),
+  `releaseLoopConcurrencyLease` (holder-scoped). Preflight acquires with a
+  `pending:<uuid>` placeholder; the first snapshot save binds it to the real
+  session id.
+- [x] Consistency regression: heartbeat and summary-column writes ride the
+  same helper — `touchLoopConcurrencyLease` runs inside `upsertSnapshot`
+  (bind + heartbeat on live saves, delete on terminal saves). Tests:
+  `LoopConcurrencyLeaseTests` (7): acquire/busy, stale takeover with
+  previous holder recorded, bind + heartbeat via save path, terminal
+  completed/failed release, no cross-session steal, holder-scoped release,
+  missing-table reads.
 
 #### Run-entry preflight (`Sources/RielaCLI/WorkflowRunCommand.swift`, `EventLiveServe.swift`)
 
-**Status**: NOT_STARTED
+**Status**: DONE (2026-07-12)
 
 **Checklist**:
 
-- [ ] Shared preflight helper invoked by `workflow run`, event-serve
+- [x] Shared preflight helper invoked by `workflow run`, event-serve
   execution, and (when LA1b lands) `loop start`; applies only when
   `loop.concurrency` is declared; resume/rerun re-acquire under the same
-  rules.
-- [ ] `fail`: non-zero exit with typed `loop_concurrency_busy` record
+  rules. `loopConcurrencyPreflight` (`LoopConcurrencyPreflight.swift`) is
+  called from `WorkflowRunCommand.run` — which `loop start` and the
+  event-serve `CLIEventWorkflowRunner` both delegate to — and from
+  `SessionResumeCommand`/`SessionRerunCommand` (re-acquire; still-pending
+  leases release via `defer`, bound leases at terminal persistence).
+- [x] `fail`: non-zero exit with typed `loop_concurrency_busy` record
   naming holder session id and last heartbeat; no session created.
-- [ ] `skip`: exit 0 with `loop_concurrency_skipped` record; event-serve
-  logs the skip on the event receipt.
-- [ ] Advisory-guard limitations documented on the command surfaces.
-- [ ] Tests: busy fail, busy skip, stale takeover with diagnostic, release
+- [x] `skip`: exit 0 with `loop_concurrency_skipped` record; event-serve
+  surfaces the skip on the event receipt (`CLIEventWorkflowRunner` detects
+  the typed record and records it as the receipt outcome instead of a
+  decode failure).
+- [x] Advisory-guard limitations documented on the command surfaces
+  (doc comments on the preflight: different data roots see different lease
+  tables; a paused-but-alive process can lose its lease to staleness
+  takeover; auto-improve retry attempts after the first bound session
+  re-run without a held lease).
+- [x] Tests: busy fail, busy skip, stale takeover with diagnostic, release
   on completion and failure, crash simulation (no release) expiring via
-  staleness.
+  staleness. `LoopConcurrencyPreflightTests` (4) + `LoopConcurrencyLeaseTests`
+  (7; crash simulation = acquire with no release, expires at 601 s).
 
 ### 4. LB4 — Outcome Notifications
 
 #### `Sources/RielaCore/LoopOutcomeNotification.swift`
 
-**Status**: NOT_STARTED
+**Status**: DONE (2026-07-12)
 
 **Checklist**:
 
-- [ ] `notifications` metadata (`on`, `channels`) + validation (known
+- [x] `notifications` metadata (`on`, `channels`) + validation (known
   outcomes; webhook requires `urlEnv`; command requires non-empty argv).
-- [ ] Outcome classification (accepted/rejected/stalled/failed) from
-  terminal snapshot + manifest per design S12.
-- [ ] Schema-versioned export-safe payload (ids, counts, decisions,
+  `LoopNotificationDeclaration`/`LoopNotificationChannelDeclaration` on
+  `WorkflowLoopMetadata` (tolerant decode) + typed and raw validation of
+  outcome names, channel types, webhook `urlEnv`, and command argv.
+- [x] Outcome classification (accepted/rejected/stalled/failed) from
+  terminal snapshot + manifest per design S12 (`LoopOutcomeClassifier`:
+  latest-visit-per-gate acceptance; `loopNotConverging` → stalled;
+  non-terminal → nil).
+- [x] Schema-versioned export-safe payload (ids, counts, decisions,
   timestamps only) with an encoding test asserting the absence of message,
-  path, and variable content.
+  path, and variable content (`LoopNotificationDispatcherTests.testPayloadIsExportSafe`
+  asserts no `message`/`filePath` keys and no finding text/path values).
 
 #### `Sources/RielaCLI/LoopNotificationDispatcher.swift`
 
-**Status**: NOT_STARTED
+**Status**: DONE (2026-07-12)
 
 **Checklist**:
 
-- [ ] Dispatch after terminal persistence from the owning process (run
+- [x] Dispatch after terminal persistence from the owning process (run
   command, event-serve); bounded timeout (5 s default), one retry,
   best-effort — never changes session outcome or command exit code.
-- [ ] `webhook`: POST JSON, URL/bearer from named env vars (missing env →
+  `WorkflowRunCommand.dispatchLoopNotificationsAfterTerminalPersistence`
+  runs after `persistSessionRecord` on both the plain and auto-improve
+  paths (event-serve delegates to the run command); `dispatchIfDeclared`
+  never throws.
+- [x] `webhook`: POST JSON, URL/bearer from named env vars (missing env →
   skipped with diagnostic); `command`: argv with payload on stdin,
-  workflow-relative resolution, bounded output capture.
-- [ ] Every attempt/delivery/skip/failure recorded as session diagnostics;
+  workflow-relative resolution, bounded output capture (stdout/stderr
+  discarded to the null device; exit status recorded; process timeout with
+  TERM).
+- [x] Every attempt/delivery/skip/failure recorded as session diagnostics
+  (appended to the persisted snapshot's diagnostics after dispatch);
   nothing written into the evidence manifest.
-- [ ] Package validation warns on `command` channels in packaged workflows.
-- [ ] Tests: outcome mapping, env indirection, timeout, retry-once,
+- [x] Package validation warns on `command` channels in packaged workflows
+  (`packageLoopNotificationWarnings`, advisory `LOOP_NOTIFICATION_PORTABILITY`
+  issues on publish summaries; never gates validity).
+- [x] Tests: outcome mapping, env indirection, timeout, retry-once,
   dispatch failure leaves session outcome untouched.
+  `LoopNotificationDispatcherTests` (9, with injected transport/command
+  runner): outcome matrix, export-safe payload, delivery + bearer env,
+  missing-env skip, retry-once success, exhausted-retries diagnostics-only,
+  command stdin payload + 5 s timeout + workflow-relative fallback,
+  undeclared outcome no-op, packaged command-channel warning.
 
 ---
 
@@ -405,14 +475,14 @@ inputs recorded in the change report. Depends on LA3 (stats) and LA5
 | Tolerant failure-kind decoding | `Sources/RielaCore/RuntimeSession.swift` | DONE | focused tests passed |
 | Convergence tracker + runner | `Sources/RielaCore/LoopConvergenceTracker.swift`, `DeterministicWorkflowRunner*.swift`, `WorkflowRunEvent.swift` | DONE | focused tests passed |
 | Convergence evidence | `Sources/RielaCore/LoopEvidenceManifest.swift`, `LoopEvidenceProjector.swift` | DONE | focused tests passed |
-| Baseline table + API | `Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift` | NOT_STARTED | planned |
-| Regression verdict core | `Sources/RielaCore/LoopRegressionVerdict.swift` | NOT_STARTED | planned |
-| Baseline/regress CLI | `Sources/RielaCLI/LoopBaselineCommands.swift` | NOT_STARTED | planned |
-| Concurrency metadata | `Sources/RielaCore/LoopEngineeringModels.swift`, `WorkflowLoopValidation.swift` | NOT_STARTED | planned |
-| Lease table + save-path wiring | `Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift` | NOT_STARTED | planned |
-| Run-entry preflight | `Sources/RielaCLI/WorkflowRunCommand.swift`, `EventLiveServe.swift` | NOT_STARTED | planned |
-| Notification models | `Sources/RielaCore/LoopOutcomeNotification.swift` | NOT_STARTED | planned |
-| Notification dispatcher | `Sources/RielaCLI/LoopNotificationDispatcher.swift` | NOT_STARTED | planned |
+| Baseline table + API | `Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift` | DONE | `LoopRegressionVerdictTests` |
+| Regression verdict core | `Sources/RielaCore/LoopRegressionVerdict.swift` | DONE | `LoopRegressionVerdictTests` |
+| Baseline/regress CLI | `Sources/RielaCLI/LoopBaselineCommands.swift` | DONE | `LoopBaselineCommandTests` |
+| Concurrency metadata | `Sources/RielaCore/LoopEngineeringModels.swift`, `WorkflowLoopValidation.swift` | DONE | `WorkflowLoopValidationTests` |
+| Lease table + save-path wiring | `Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift` | DONE | `LoopConcurrencyLeaseTests` |
+| Run-entry preflight | `Sources/RielaCLI/WorkflowRunCommand.swift` (+`LoopConcurrencyPreflight.swift`, `SessionCommands.swift`, `EventLiveServe.swift`) | DONE | `LoopConcurrencyPreflightTests` |
+| Notification models | `Sources/RielaCore/LoopOutcomeNotification.swift` | DONE | `LoopNotificationDispatcherTests` |
+| Notification dispatcher | `Sources/RielaCLI/LoopNotificationDispatcher.swift` | DONE | `LoopNotificationDispatcherTests` |
 
 ## Dependencies
 
@@ -459,19 +529,28 @@ inputs recorded in the change report. Depends on LA3 (stats) and LA5
 ## Completion Criteria
 
 - [x] LB1 completion criteria (above) all hold.
-- [ ] `loop baseline set/show/clear` and `loop regress` behave per S10 with
+- [x] `loop baseline set/show/clear` and `loop regress` behave per S10 with
   exit codes 0/3/4/1 pinned by contract tests; `loop diff --baseline`
-  resolves the same pair.
-- [ ] Declaring `loop.concurrency` prevents a duplicate run through the same
+  resolves the same pair. (`LoopBaselineCommandTests` +
+  `LoopRegressionVerdictTests`; CLI smoke on `loop-ci-gate-check`.)
+- [x] Declaring `loop.concurrency` prevents a duplicate run through the same
   store with `fail` and `skip` semantics; stale leases are taken over with
   a diagnostic; leases release on terminal persistence.
-- [ ] Declared notification channels fire on terminal outcomes with
+  (`LoopConcurrencyLeaseTests` + `LoopConcurrencyPreflightTests`.)
+- [x] Declared notification channels fire on terminal outcomes with
   export-safe payloads; dispatch failure never alters session outcome.
-- [ ] All schema changes are additive; pre-existing snapshots, workflows,
+  (`LoopNotificationDispatcherTests`; dispatch is fire-and-forget after
+  terminal persistence and never throws.)
+- [x] All schema changes are additive; pre-existing snapshots, workflows,
   and stores decode and behave unchanged; new tables are created lazily on
-  writable opens.
-- [ ] Full `swift test` passes; `swiftlint` clean apart from pre-existing
-  warnings.
+  writable opens. (`loop_baselines`/`loop_concurrency_leases` are
+  CREATE TABLE IF NOT EXISTS on writable operations only; read paths probe
+  `sqlite_master` and treat missing tables as empty; loop metadata additions
+  are optional with tolerant decode — validation tests cover defaults.)
+- [x] Full `swift test` passes; `swiftlint` clean apart from pre-existing
+  warnings. Verified 2026-07-12 on the final tree: full `swift test` =
+  1,916 tests, 4 skips, 0 failures (0 unexpected); strict SwiftLint clean on
+  every file changed this session; `git diff --check` clean.
 
 ## Migration And Backward-Compatibility Notes
 
@@ -495,6 +574,25 @@ inputs recorded in the change report. Depends on LA3 (stats) and LA5
   defaulted decoding.
 
 ## Progress Log
+
+### Session: 2026-07-12 LB1 verification confirmed
+
+**Tasks Completed**: Re-ran the LB1 convergence verification suites on the
+current tree to confirm the DONE status is truthful after the round-8 Section 8
+fixes landed in the same worktree. `LoopFindingFingerprintTests`,
+`WorkflowLoopValidationTests`, `LoopEngineeringModelsTests`,
+`LoopConvergenceTrackerTests`, `DeterministicWorkflowRunnerLoopPolicyTests`, and
+`LoopEvidenceProjectorTests` passed together with 32 tests and 0 failures. Full
+`swift test` on the same tree passed 1,733 tests with 4 skips and 0 unexpected
+failures. LB1 is implemented, verified, and accepted.
+
+**Tasks In Progress**: None for LB1. LB2 (baseline/regression) is intentionally
+held pending W2's `LoopEvidenceDiffer`/workflow-statistics contracts so no
+duplicate diff/stat types are introduced; LB3 (concurrency lease) and LB4
+(outcome notifications) remain NOT_STARTED; LB5–LB6 remain outline-only.
+
+**Blockers**: LB2 depends on W2 (loop application gap closure) publishing stable
+typed diff/statistics contracts.
 
 ### Session: 2026-07-08 plan creation
 

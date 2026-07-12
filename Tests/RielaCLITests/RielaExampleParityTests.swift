@@ -695,6 +695,7 @@ final class RielaExampleParityTests: XCTestCase {
       "gemini-ocr-worker",
       "gemini-sdk-worker",
       "gmail-latest-mail-digest-telegram",
+      "loop-ci-gate-check",
       "loop-engineer-quality-loop",
       "matrix-agent-trio-chat",
       "matrix-chat-reply",

@@ -783,6 +783,26 @@ Codex-specific node variables:
   `--disable unified_exec` so codex-agent records completed command events
   reliably. `true` opts back in to Codex unified exec for workflows that
   explicitly need shell-state persistence across commands.
+- `codexToolRecovery`: optional string, `off` (default) | `observe` |
+  `recover`. Enables terminal tool-child stall handling for codex-agent
+  nodes: a started `command_execution` whose child process is terminal
+  (zombie/vanished) while the codex host stays alive and never publishes the
+  completion is classified as an incident. `observe` records redacted
+  incident diagnostics in the backend event stream; `recover` additionally
+  requests host-side completion, then performs a bounded ownership-validated
+  process-group SIGTERM → grace → SIGKILL cleanup so supervision
+  (`--auto-improve`) can retry within existing budgets. Generic wait/status
+  heartbeats and agent-silence warnings never create terminal-child evidence.
+- `codexToolRecoveryGraceMs`: optional positive integer (default `30000`);
+  how long a correlated terminal child may miss its host completion before
+  it classifies as an incident.
+- `codexToolRecoveryCleanupGraceMs`: optional positive integer (default
+  `5000`); grace between the cleanup SIGTERM and SIGKILL escalation.
+- `codexToolRecoveryAllowContinuation`: optional boolean (default `false`);
+  same-attempt continuation opt-in. Even when `true`, continuation requires
+  an acknowledged terminal tool result and an intact stream — which the
+  current codex host protocol cannot prove — so recovery stays fail-closed
+  and routes confirmed incidents through supervised retry/rerun.
 
 ### `modelFreeze`
 

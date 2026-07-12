@@ -5,6 +5,7 @@ struct WorkflowPackageInstallation {
   var destination: URL
   var summary: WorkflowPackageSummary
   var dependencies: [WorkflowPackageSummary] = []
+  var preInstallCheck: WorkflowPackagePreInstallCheckResult?
 }
 
 struct WorkflowPackageLockedInstallation {
@@ -189,6 +190,18 @@ extension WorkflowPackageCommandRunner {
     if let expectedLockEntry {
       try validateLockedManifest(manifest, matches: expectedLockEntry)
     }
+    // Opt-in static content scan of the staged package, after integrity/bundle
+    // validation and before any destination or lock write. In reject mode a
+    // blocking finding throws here so the install transaction rolls back and
+    // nothing is written.
+    var preInstallCheckResult: WorkflowPackagePreInstallCheckResult?
+    if !isDependency, let mode = parsed.preInstallCheck, mode != .off {
+      preInstallCheckResult = try preInstallChecker.check(
+        packageDirectory: sourceURL,
+        mode: mode,
+        container: parsed.preInstallCheckContainer ?? .off
+      )
+    }
     let destinationName = try installDestinationPackageName(
       target: target,
       parsed: parsed,
@@ -239,7 +252,12 @@ extension WorkflowPackageCommandRunner {
     )
     summary.installState = parsed.dryRun ? "would-install" : "installed"
     if parsed.dryRun {
-      return WorkflowPackageInstallation(destination: destination, summary: summary, dependencies: dependencies)
+      return WorkflowPackageInstallation(
+        destination: destination,
+        summary: summary,
+        dependencies: dependencies,
+        preInstallCheck: preInstallCheckResult
+      )
     }
     let destinationExisted = FileManager.default.fileExists(atPath: destination.path)
     if destinationExisted {
@@ -272,7 +290,12 @@ extension WorkflowPackageCommandRunner {
       archiveURL: resolvedSource.archiveURL
     )
     transaction.recordLockEntry(lockEntry)
-    return WorkflowPackageInstallation(destination: destination, summary: summary, dependencies: dependencies)
+    return WorkflowPackageInstallation(
+      destination: destination,
+      summary: summary,
+      dependencies: dependencies,
+      preInstallCheck: preInstallCheckResult
+    )
   }
 
   private func installPackageDependencies(

@@ -38,6 +38,7 @@ public struct WorkflowSessionFailureKind: RawRepresentable, Codable, Equatable, 
   public static let nodeTimeout = WorkflowSessionFailureKind(rawValue: "nodeTimeout")
   public static let internalFailure = WorkflowSessionFailureKind(rawValue: "internal")
   public static let loopNotConverging = WorkflowSessionFailureKind(rawValue: "loopNotConverging")
+  public static let budgetExceeded = WorkflowSessionFailureKind(rawValue: "budgetExceeded")
 
   public var compatibilityDiagnostic: String? {
     guard !Self.knownRawValues.contains(rawValue) else {
@@ -53,7 +54,8 @@ public struct WorkflowSessionFailureKind: RawRepresentable, Codable, Equatable, 
     policyBlocked.rawValue,
     nodeTimeout.rawValue,
     internalFailure.rawValue,
-    loopNotConverging.rawValue
+    loopNotConverging.rawValue,
+    budgetExceeded.rawValue
   ]
 }
 

@@ -1,9 +1,9 @@
 # Loop Engineering First-Line Tool Implementation Plan
 
-**Status**: In Progress
+**Status**: COMPLETED — all nine modules DONE; Section 8 round-8 adversarial suite green and independently accepted 2026-07-12; zero unchecked boxes. Moved to `completed/` on 2026-07-12 with its progress log retained as W0 evidence.
 **Design Reference**: `design-docs/specs/design-loop-engineering-first-line-tool-detail.md`
 **Created**: 2026-06-25
-**Last Updated**: 2026-07-11
+**Last Updated**: 2026-07-12
 
 ---
 
@@ -483,7 +483,7 @@ public struct WorkflowPackageLoopMetadata: Codable, Equatable, Sendable {
 
 ### 8. Workflow Self-Evolution Versioning
 
-**Status**: IMPLEMENTED — ROUND 7 ADVERSARIAL FINDINGS RESOLVED
+**Status**: IMPLEMENTED — ROUND 8 ADVERSARIAL SUITE GREEN AND ACCEPTED (2026-07-12)
 
 **Source of truth**:
 
@@ -874,7 +874,7 @@ Validation coverage lives in
 | GraphQL DTOs and query service | `Sources/RielaGraphQL/GraphQLContracts.swift`, `Sources/RielaGraphQL/RielaGraphQL.swift` | DONE | `GraphQLContractsTests` |
 | Package manifest metadata | `Sources/RielaAddons/WorkflowPackageManifest.swift`, `Sources/RielaAddons/WorkflowPackagePromotionArtifacts.swift` | DONE | `WorkflowPackageManifestTests` |
 | Package publish readiness | `Sources/RielaCLI/WorkflowPackageParityCommands.swift`, `Sources/RielaCLI/WorkflowPackageLoopReadiness.swift` | DONE | `WorkflowCommandTests` |
-| Workflow self-evolution versioning | `Sources/RielaCore/WorkflowHistoryModels.swift`, `Sources/RielaCLI/WorkflowSelfImproveVersioning.swift`, `Sources/RielaCLI/WorkflowVersionCommands.swift` | IMPLEMENTED — ROUND 7 REVIEW FINDINGS RESOLVED | focused model, immutable-generation, exact-topology, preflight-attempt, transaction, self-improve, version-command, recovery-matrix, audit-failure, staged-mock, and special-file tests |
+| Workflow self-evolution versioning | `Sources/RielaCore/WorkflowHistoryModels.swift`, `Sources/RielaCLI/WorkflowSelfImproveVersioning.swift`, `Sources/RielaCLI/WorkflowVersionCommands.swift` | IMPLEMENTED — ROUND 8 ADVERSARIAL SUITE GREEN (2026-07-12) | focused model, immutable-generation, exact-topology, preflight-attempt, transaction, self-improve, version-command, recovery-matrix, audit-failure, staged-mock, special-file, and round-8 cleanup/enumeration tests |
 
 ## Dependencies
 

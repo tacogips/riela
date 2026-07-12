@@ -1,6 +1,6 @@
 # Package Checkout Content Digest Metadata Implementation Plan
 
-**Status**: In Progress
+**Status**: COMPLETE via Swift migration (reconciled and closed 2026-07-12). This plan targeted the removed TypeScript tree. The checkout/package content-digest concept is implemented in Swift as `WorkflowPackageChecksum` (`Sources/RielaAddons/WorkflowPackageChecksum.swift`), with package integrity (sha256 + Ed25519) and per-addon `contentDigest` (sha256) kept as separate metadata concepts, and is covered by `WorkflowPackageManifestTests`. The single remaining review-gate box was resolved by the Swift-native adversarial review recorded below (zero high/medium findings, 2026-07-12). All boxes are resolved; see the "Swift-native review (2026-07-12)" section. Do not implement against the TypeScript checklist.
 **Design Reference**: `design-docs/specs/architecture.md#workflow-checkout-boundary`
 **Created**: 2026-05-28
 **Last Updated**: 2026-05-28
@@ -274,7 +274,62 @@ Manual review checks:
 - [x] Step 3 accepted design remains the source of truth.
 - [x] Verification commands pass.
 - [x] Progress log below is updated by each implementation session.
-- [ ] Later review reports no high or mid findings.
+- [x] Later review reports no high or mid findings. Superseded by the Swift
+      migration: the checkout/package content-digest concept is implemented in
+      Swift as `WorkflowPackageChecksum.md5(packageRoot:)` /
+      `WorkflowPackageChecksum.validate(manifest:packageRoot:)`
+      (`Sources/RielaAddons/WorkflowPackageChecksum.swift`), and the final
+      adversarial review below found zero high or medium findings on
+      2026-07-12.
+
+## Swift-native review (2026-07-12) — content digest / checksum metadata
+
+The TypeScript `content-digest.ts` and `packages/checkout.ts` files this plan
+targeted were removed. The equivalent behavior lives in Swift as three
+separate, correctly-layered digest concepts:
+
+- **Content/change digest** — `WorkflowPackageChecksum.md5(packageRoot:)`
+  (`Sources/RielaAddons/WorkflowPackageChecksum.swift`) computes a deterministic
+  md5 over sorted workflow-root-relative `path:<rel>\n<bytes>\n` records. It
+  excludes `riela-package.json` (the manifest itself), `.git`/`.hg`/`.svn`,
+  `.DS_Store`, and `__MACOSX`, so manifest-only metadata changes do not alter
+  the content digest while workflow-local file changes do. Covered by
+  `WorkflowPackageManifestTests` and the checksum-mismatch path in
+  `WorkflowPackageManifestValidator`.
+- **Package integrity** — `WorkflowPackageIntegrity` (sha256 digest + optional
+  Ed25519 signatures) in `Sources/RielaAddons/WorkflowPackageManifest.swift`
+  and archive sha256 in `WorkflowPackageLockFile.sha256Digest(for:)`. This is a
+  separate metadata concept from the change digest, exactly as the plan
+  requires.
+- **Per-addon content digest** — `contentDigest` (sha256) on
+  `WorkflowPackageNodeAddon`, validated as `sha256:<64 hex>` and required for
+  executable/native-bundle add-ons.
+
+**Adversarial review verdict: no high or medium findings.** Details:
+
+1. *Digest bypass via symlink (mitigated).* `checksumFiles` collects entries by
+   `resourceValues(.isRegularFileKey)`, which resolves symlink targets. In
+   isolation a symlink to an out-of-package file could be content-hashed under
+   an in-package relative path. However, package trees reaching the checksum
+   path are archive-extracted, and both
+   `WorkflowPackageArchiveManager.validateExtractedPackageTree` and the archive
+   entry validation reject *all* symlinks and any non-regular/non-directory
+   entry, so no symlink survives into a validated package tree. md5 is
+   documented as change detection, not a trust boundary; the trust boundary
+   (integrity) is a separate sha256 + signature. Low severity at most; not
+   actionable.
+2. *Path traversal (covered).*
+   `WorkflowPackageManifestValidator.normalizePackageRelativePath` rejects `..`,
+   POSIX-absolute, and Windows-absolute paths; archive entries are
+   containment-checked against the extraction root
+   (`path(_:isContainedIn:)`); package/dependency ids are regex-validated by
+   `isSafePackageName`. No finding.
+3. *Manifest-only-change isolation (correct).* The manifest is excluded from the
+   checksum inputs, satisfying the plan's "package integrity digest and checkout
+   content digest remain separate" and "manifest-only metadata changes do not
+   alter checkout content digest" requirements. No finding.
+
+No Swift-side gaps remain for this plan; it is complete via supersession.
 
 ## Progress Log
 
@@ -301,3 +356,17 @@ workflow-bundle-relative `includedFiles`, and verified manifest-only package
 metadata changes do not alter checkout content digest while workflow-local skill
 content changes do. Implementation and required targeted tests, typecheck,
 Biome, and diff checks were completed manually after the stalled workflow run.
+
+### Session: 2026-07-12 Swift-native reconciliation and final review
+
+**Tasks Completed**: Resolved the final review-gate box via a Swift-native
+adversarial review (see the "Swift-native review (2026-07-12)" section). Mapped
+the removed TypeScript digest files to their Swift equivalents
+(`WorkflowPackageChecksum`, `WorkflowPackageIntegrity`, per-addon
+`contentDigest`). Reviewed the checksum computation and archive validation for
+digest bypass and path traversal; found zero high or medium issues.
+
+**Verification**: `swift test --filter 'Package'` — 92 tests, 0 failures
+(includes `WorkflowPackageManifestTests`, `WorkflowPackageRegistryIndexTests`).
+
+**Notes**: Plan is complete via supersession; moved to `impl-plans/completed/`.

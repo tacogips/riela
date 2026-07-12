@@ -19,6 +19,32 @@ extension WorkflowPackageManifestValidator {
     guard loop.promotionReady else {
       return
     }
+    appendPromotionReadinessIssues(loop, into: &issues)
+  }
+
+  /// Ungated variant for advisory promotion reporting (`loop promote`):
+  /// evaluates the promotion-ready manifest requirements regardless of
+  /// `promotionReady`. Absent loop metadata reports a single issue rather
+  /// than pretending the package is promotable.
+  public static func loopPromotionReadinessIssues(
+    _ loop: WorkflowPackageLoopMetadata?
+  ) -> [WorkflowPackageValidationIssue] {
+    guard let loop else {
+      return [.init(
+        code: "LOOP_PROMOTION",
+        path: "loop",
+        message: "package manifest declares no loop metadata"
+      )]
+    }
+    var issues: [WorkflowPackageValidationIssue] = []
+    appendPromotionReadinessIssues(loop, into: &issues)
+    return issues
+  }
+
+  private static func appendPromotionReadinessIssues(
+    _ loop: WorkflowPackageLoopMetadata,
+    into issues: inout [WorkflowPackageValidationIssue]
+  ) {
     if !loop.usageContract {
       issues.append(.init(
         code: "INVALID_MANIFEST",

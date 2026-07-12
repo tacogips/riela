@@ -246,6 +246,7 @@ final class WorkflowViewerTests: XCTestCase {
     XCTAssertEqual(state.messages.map(\.id), ["comm-1", "comm-2"])
     XCTAssertEqual(state.messages.first?.sourceStepExecutionId, "exec-input")
     XCTAssertEqual(state.messages.first?.payloadJSON.contains("\"answer\""), true)
+    XCTAssertTrue(state.messageLogAvailable)
     XCTAssertEqual(state.nodes.first?.id, "input")
     XCTAssertEqual(state.nodes.first?.state, .completed)
     XCTAssertEqual(state.nodes.first?.children.first?.id, "worker")
@@ -259,6 +260,65 @@ final class WorkflowViewerTests: XCTestCase {
     XCTAssertEqual(workerMessages.inbox.map(\.id), ["comm-1"])
     XCTAssertEqual(workerMessages.outbox.map(\.id), ["comm-2"])
     XCTAssertTrue(workerMessages.inbox.first?.payloadPreview.contains("hello") == true)
+  }
+
+  func testViewerLoadsSessionWithoutMessagesKeepsMessageLogAvailable() throws {
+    let temp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+      .appendingPathComponent("riela-viewer-nomsg-\(UUID().uuidString)", isDirectory: true)
+    let workflowDirectory = temp.appendingPathComponent("workflows/demo", isDirectory: true)
+    let sessionStoreRoot = temp.appendingPathComponent(".riela/sessions", isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: sessionStoreRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temp) }
+
+    let workflow = WorkflowDefinition(
+      workflowId: "viewer-nomsg",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 1_000, maxLoopIterations: 3),
+      entryStepId: "input",
+      nodeRegistry: [WorkflowNodeRegistryRef(id: "input")],
+      steps: [WorkflowStepRef(id: "input", nodeId: "input", role: .worker)],
+      nodes: [WorkflowNodeRef(id: "input", nodeFile: "nodes/input.json")]
+    )
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try encoder.encode(workflow).write(to: workflowDirectory.appendingPathComponent("workflow.json"))
+
+    let now = Date(timeIntervalSince1970: 20)
+    let session = WorkflowSession(
+      workflowId: "viewer-nomsg",
+      sessionId: "viewer-nomsg-session-1",
+      status: .completed,
+      entryStepId: "input",
+      currentStepId: nil,
+      createdAt: now,
+      updatedAt: now.addingTimeInterval(1),
+      executions: [
+        WorkflowStepExecution(
+          executionId: "exec-input",
+          stepId: "input",
+          nodeId: "input",
+          attempt: 1,
+          status: .completed,
+          createdAt: now,
+          updatedAt: now.addingTimeInterval(1)
+        )
+      ]
+    )
+    try SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: sessionStoreRoot.appendingPathComponent("runtime-records", isDirectory: true).path
+    ).save(WorkflowRuntimePersistenceSnapshot(session: session, workflowMessages: []))
+
+    let loader = WorkflowViewerLoader()
+    let state = try loader.load(WorkflowViewerLoadRequest(
+      workflowDirectory: workflowDirectory.path,
+      sessionStoreRoot: sessionStoreRoot.path
+    ))
+
+    // A loaded session with no recorded messages is a real empty state, not an
+    // unavailable log: bars still render and the log stays flagged available.
+    XCTAssertEqual(state.timeline.map(\.stepId), ["input"])
+    XCTAssertTrue(state.messages.isEmpty)
+    XCTAssertTrue(state.messageLogAvailable)
   }
 
   func testViewerCanSelectSpecificPersistedSession() throws {

@@ -1,6 +1,6 @@
 # Apple Gateway Admin Add-ons Implementation Plan
 
-**Status**: Revised after Step 4 self-review `comm-000010`; ready for implementation
+**Status**: Implemented and verified (reconciled 2026-07-12). All 51 checklist boxes are checked, `ProductionNodeAdapter+AppleGatewayAdminAddons.swift` is present, and `AppleGatewayAdminAddonTests` (9 tests) pass in the full suite. The prior "ready for implementation" header was stale — implementation landed after that self-review.
 **Workflow Mode**: issue-resolution
 **Issue Reference**: Add apple-gateway CLI/Admin builtin add-ons and an example
 **Design Reference**: design-docs/specs/node-addon-catalog-and-chat-reply-worker/gateway-built-ins.md#built-in-rielaapple-gateway--admin-cli-add-ons

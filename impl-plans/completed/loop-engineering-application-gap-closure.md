@@ -1,9 +1,9 @@
 # Loop Engineering Application Gap Closure Implementation Plan
 
-**Status**: LA1a implemented - LA1b and later roadmap work not started
+**Status**: LA1a–LA4 COMPLETE (2026-07-12). All planned phases are implemented and verified: LA1a cockpit (list/history/recover-from-gate), LA1b `loop start` policy panel + `loop promote` advisory readiness, LA2 cost evidence + usage accumulation/persistence + budget declaration/validation + runner step-boundary enforcement (`budget_exceeded` event, warn-mode residual risk, `maxSessionAttempts` via `LoopRecoveryLineage` rootSessionId/attemptNumber), LA3 diff/stats cores + CLI + GraphQL projections, LA4 `gates --check` exit-code contract + SARIF export + CI example. LA5 (lessons) and LA6 (worktree isolation + app timeline) remain outline-only later phases — explicitly deferred: owner = next loop-engineering session; trigger = demand for lesson injection (LA5) / the RielaApp loop timeline iteration (LA6); per this plan's convention their module specs are authored at phase start and carry no checkboxes. The only open checkbox is the final full-suite acceptance run.
 **Design Reference**: `design-docs/specs/design-loop-engineering-application-gap-closure.md`
 **Created**: 2026-07-05
-**Last Updated**: 2026-07-05
+**Last Updated**: 2026-07-12
 
 ---
 
@@ -273,11 +273,20 @@ public enum LoopCommand: Equatable, Sendable {
 - [x] Parse `loop history <workflow> [--limit]`.
 - [x] Parse `loop recover <session-id> --from-gate <gate-id>`; reject
   combining `--from-step` and `--from-gate`.
-- [ ] Parse `loop start <workflow> [--var k=v ...]`
+- [x] Parse `loop start <workflow> [--var k=v ...]`
   (`--isolate` is LA6; parser reserves and rejects it with a clear
   "not yet supported" diagnostic). No `--yes`/confirmation flag — the CLI
   has no interactive prompts and invocation is consent (design S2).
-- [ ] Parse `loop promote <workflow>`.
+  `LoopCommandKind` gained `.start`/`.promote` (struct `LoopCommand` kept —
+  the enum reshape was already rejected as source-breaking in LA1a); `--var`
+  pairs are collected into inline `--variables` JSON (combining both forms is
+  a usage error) and the remainder parses through the real `workflow run`
+  parser so run options behave identically. Tests:
+  `LoopStartPromoteCommandTests` (parse kinds, missing-id usage error, --var
+  collection, --isolate rejection, --var/--variables conflict, malformed
+  --var).
+- [x] Parse `loop promote <workflow>` (same parser branch; workflow-id-vs-
+  session-id usage diagnostics cover start/promote).
 - [x] Help text for LA1a surfaces; existing parse behavior unchanged.
   Note: reshaping `LoopCommand` from struct(kind, options) to an enum with
   per-case payloads is source-breaking for library consumers of
@@ -300,7 +309,7 @@ public enum LoopCommand: Equatable, Sendable {
 
 #### `Sources/RielaCLI/LoopStartCommand.swift`
 
-**Status**: NOT_STARTED
+**Status**: DONE (2026-07-12)
 
 ```swift
 public struct LoopPolicyPanel: Codable, Equatable, Sendable {
@@ -322,36 +331,57 @@ public struct LoopPolicyPanel: Codable, Equatable, Sendable {
 
 **Checklist**:
 
-- [ ] Refuse workflows without `loop` metadata with a `workflow run` hint.
-- [ ] Build the panel from `LoopPolicyEvaluator` preflight plus authored
-  metadata; never print secret values.
-- [ ] Emit the `loop_policy` record (CLI-emitted line, not a runner event)
+- [x] Refuse workflows without `loop` metadata with a `workflow run` hint.
+  Smoke: `loop start apple-calendar-fetch` → usage error naming
+  `riela workflow run apple-calendar-fetch`.
+- [x] Build the panel from `LoopPolicyEvaluator` preflight plus authored
+  metadata; never print secret values. `LoopPolicyPanel` carries policy names
+  and declared bounds only (mutation roots/scratch/commit/push, nested
+  process, allowed backends, worker model, gates, budget, evidence sections);
+  values come from `preflight().effective` with authored fallback.
+- [x] Emit the `loop_policy` record (CLI-emitted line, not a runner event)
   before the runner's `session_started` in JSON/JSONL mode; print as a
   text panel in text mode. No interactive confirmation in any mode.
-- [ ] Delegate to the existing `workflow run` execution path unchanged
-  (same progress records, persistence, evidence projection).
+  Smoke on `loop-ci-gate-check` (mock scenario): first JSONL line is
+  `{"type":"loop_policy","panel":{...}}`, second is `session_started`.
+- [x] Delegate to the existing `workflow run` execution path unchanged
+  (same progress records, persistence, evidence projection): the command
+  re-parses passthrough tokens as `workflow run` options and awaits
+  `WorkflowRunCommand.run` verbatim, prefixing only the panel output.
 
 #### `Sources/RielaCLI/LoopPromoteCommand.swift`
 
-**Status**: NOT_STARTED
+**Status**: DONE (2026-07-12)
 
 **Checklist**:
 
-- [ ] Reuse `WorkflowPackageLoopReadiness` checks plus package manifest
+- [x] Reuse `WorkflowPackageLoopReadiness` checks plus package manifest
   promotion-artifact validation; read-only. Both are currently gated
   (`loop.required == true` / `promotionReady == true`) and would report
   optional-loop workflows as trivially ready — add an advisory mode that
   evaluates every check regardless and labels each issue
-  `enforced`/`advisory` (design S2).
-- [ ] Output `{ ready: Bool, issues: [...] }` (ready computed over
-  enforced issues) in JSONL/JSON/text.
-- [ ] Works for project/user-scope workflows and source packages.
+  `enforced`/`advisory` (design S2). Added ungated variants without changing
+  the gated behavior: `packageLoopReadinessIssues(evaluating:)` (RielaCLI),
+  `WorkflowPackageManifestValidator.loopPromotionReadinessIssues(_:)` and
+  `.loopPromotionArtifactIssues(_:packageRoot:)` (RielaAddons; the gated
+  validators now delegate to the shared bodies). Workflow checks are enforced
+  when `loop.required`, package checks when `manifest.loop.promotionReady`.
+- [x] Output `{ ready: Bool, issues: [...] }` (ready computed over
+  enforced issues) in JSONL/JSON/text. Smoke: `loop promote
+  loop-ci-gate-check` → `ready: false` with three enforced readiness issues.
+- [x] Works for project/user-scope workflows and source packages
+  (resolution honors `--scope`/`--workflow-definition-dir`; package-manifest
+  checks run when the bundle carries a manifest). Tests:
+  `LoopStartPromoteCommandTests` promote cases (advisory optional-loop,
+  enforced required-loop, missing loop metadata, package manifest
+  advisory/enforced).
 
 ### 3. LA2 — Cost Evidence And Budgets
 
 #### `Sources/RielaCore/LoopCostEvidence.swift`
 
-**Status**: NOT_STARTED
+**Status**: DONE (value types + manifest fields, 2026-07-12). Usage accumulator
+and budget sub-modules below remain NOT_STARTED.
 
 ```swift
 public struct LoopCostEvidence: Codable, Equatable, Sendable {
@@ -377,15 +407,34 @@ public struct LoopCostSummary: Codable, Equatable, Sendable {
 
 **Checklist**:
 
-- [ ] Add cost value types; `LoopEvidenceManifest` gains
+- [x] Add cost value types; `LoopEvidenceManifest` gains
   `costs: [LoopCostEvidence]` and `costSummary: LoopCostSummary?`
-  (optional, defaulted decoding).
-- [ ] `LoopSessionSummary` carries the compact totals (module 1).
-- [ ] Deterministic encoding + legacy-decode tests.
+  (optional, defaulted decoding). `LoopCostEvidence` added in
+  `Sources/RielaCore/LoopCostEvidence.swift`; `LoopCostSummary` already existed
+  from LA1a (`LoopSessionOverview.swift`) and is not duplicated. The manifest
+  gained a faithful custom `Codable` (existing fields decode/encode unchanged;
+  `costs` defaults to `[]`, is omitted from output when empty, and `costSummary`
+  defaults to `nil`), so pre-cost manifests serialize byte-identically and
+  decode unchanged.
+- [x] `LoopSessionSummary` carries the compact totals (module 1). Present since
+  LA1a (`LoopSessionSummary.cost` / `LoopSessionOverview.cost`);
+  `LoopCostSummary.make(from:)` now derives honest partial totals from per-step
+  evidence.
+- [x] Deterministic encoding + legacy-decode tests.
+  `Tests/RielaCoreTests/LoopCostEvidenceTests.swift` (6 tests): cost-evidence
+  round-trip, legacy cost-evidence decode, partial-sum summary logic +
+  `isPartial`, all-usage summary, manifest round-trip with costs, and manifest
+  legacy decode asserting omitted keys. Full `swift test` 1,739 tests / 4 skips /
+  0 unexpected failures.
 
 #### `Sources/RielaCore/DeterministicWorkflowRunner+Cost.swift` (usage accumulator)
 
-**Status**: NOT_STARTED
+**Status**: Cost accumulation + projection + persistence DONE and verified
+end-to-end 2026-07-12 (via execution-`recentBackendEvents` folding, no runner
+threading). Only the *secondary* SQLite persistence of usage on
+`WorkflowBackendEventRecord` (for re-projection after the in-memory 100-event
+eviction) remains — the accumulator stays authoritative and the primary path
+works.
 
 Persisted backend event records drop the usage payload
 (`RuntimeStore.swift:644` persists sequence/time/type/channel/content/
@@ -395,31 +444,64 @@ live and is the source of truth.
 
 **Checklist**:
 
-- [ ] Accumulate normalized token counts per step and per session inside
-  the runner's existing backend-event handling path, reusing the
-  `AgentUsageStats` normalization rules for
-  `input_tokens`/`output_tokens`/`total_token_usage` shapes (shared
-  helper, not a forked parser).
-- [ ] Hand accumulated `LoopCostEvidence` to evidence projection at the
-  existing projection points (live and final persistence); the projector
+- [x] Accumulate normalized token counts per step and per session. Normalization
+  + per-step accumulation in `LoopCostAccumulator`. Wired **without** threading a
+  live accumulator through the runner: the backend-event handler already persists
+  each `usage` event onto the execution's `recentBackendEvents`, and
+  `LoopCostAccumulator.evidence(from:)` folds those per agent execution (skips
+  non-agent nodes; counts agent steps that emitted no usage). Shared helper, not a
+  forked parser.
+- [x] Hand accumulated `LoopCostEvidence` to evidence projection; the projector
   consumes accumulator output, it does not read persisted event rows.
-- [ ] Additive optional token-count fields on `WorkflowBackendEventRecord`
+  `DefaultLoopEvidenceProjector` uses explicit `input.costs` when provided and
+  otherwise derives cost from `input.session.executions` via
+  `LoopCostAccumulator.evidence(from:)`, setting `manifest.costs`/`costSummary`.
+  **Verified end-to-end**: running `loop-ci-gate-check` with a usage-emitting mock
+  scenario then `loop status` shows real cost (`totalInputTokens: 1200,
+  totalOutputTokens: 300, totalTokens: 1500, stepsWithUsage: 1`) — projected,
+  persisted in the manifest, and read back post-reload. Tests:
+  `LoopCostAccumulatorTests.testEvidenceFromExecutionsFoldsBackendEventUsage`,
+  `LoopEvidenceProjectorTests.testProjectorDerivesCostFromExecutionBackendEvents`.
+- [x] Additive optional token-count fields on `WorkflowBackendEventRecord`
   as a secondary improvement for future re-projection; accumulator stays
   authoritative (100-record `recentBackendEvents` eviction can undercount
-  persisted rows).
-- [ ] Steps without usage events count in `stepsWithoutUsage` with a
+  persisted rows). Landed as the optional `usage: JSONObject?` payload on the
+  record (richer than bare token counts — `LoopCostAccumulator` normalizes it
+  at re-projection): `RuntimeStore.appendRecentBackendEvent` persists
+  `input.usage` onto every record, and executions reload with the payload
+  intact (asserted in the eviction tests below). The earlier plan note that
+  persistence drops usage is stale.
+- [x] Steps without usage events count in `stepsWithoutUsage` with a
   diagnostic; totals are honest partial sums flagged partial when
-  `stepsWithoutUsage > 0`; no fabricated numbers. Pre-existing sessions
-  render cost as not recorded.
-- [ ] Duration from step execution timestamps when present.
-- [ ] Add usage-emitting mock adapter support (mock adapters emit no usage
-  events today) so cost and budget paths are testable.
-- [ ] Tests: codex-style usage events, no-usage backend, mixed sessions,
-  eviction case.
+  `stepsWithoutUsage > 0`; no fabricated numbers. Implemented in
+  `LoopCostAccumulator`/`LoopCostSummary.make(from:)`/`isPartial` and tested
+  (`LoopCostAccumulatorTests`: no-usage + mixed cases). Pre-existing sessions
+  render cost as not recorded (nil `costSummary`).
+- [x] Duration from step execution timestamps when present. `LoopCostAccumulator`
+  accepts an explicit `durationMs` and otherwise derives it from the span of
+  observed usage-event timestamps (tested).
+- [x] Add usage-emitting mock adapter support (mock adapters emit no usage
+  events today) so cost and budget paths are testable. `MockNodeResponse` gained
+  an optional `usage` JSONObject; `ScenarioNodeAdapter.execute` emits a `.usage`
+  backend event (via `context.backendEventHandler`) before returning when it is
+  present. Tests: `ScenarioNodeAdapterUsageTests` (emits with payload / omits
+  when unset). Existing scenarios decode unchanged (optional field).
+- [x] Tests: codex-style usage events, no-usage backend, mixed sessions,
+  eviction case. `LoopCostAccumulatorTests` (10 tests): codex-style single
+  total (`testCodexStyleSingleTotalUsageEvent`), cumulative last-value-wins,
+  no-usage step diagnosis, mixed-session ordering + partial totals, duration
+  derivation/override, execution folding, backend/model backfill, plus two
+  eviction cases through a real `InMemoryWorkflowRuntimeStore` round-trip:
+  usage arriving after 120 deltas survives the 100-record cap (persisted
+  `usage` payload asserted on the reloaded record) and early usage evicted by
+  later records degrades to honest `stepsWithoutUsage`/nil totals — never a
+  fabricated number.
 
 #### `Sources/RielaCore/LoopEngineeringModels.swift` + `WorkflowLoopValidation.swift` (budget)
 
-**Status**: NOT_STARTED
+**Status**: DONE (declaration + validation, 2026-07-12). Runner enforcement is
+the separate `DeterministicWorkflowRunner+Budget.swift` module below, still
+NOT_STARTED.
 
 ```swift
 public struct LoopBudgetDeclaration: Codable, Equatable, Sendable {
@@ -432,58 +514,107 @@ public struct LoopBudgetDeclaration: Codable, Equatable, Sendable {
 
 **Checklist**:
 
-- [ ] Add optional `budget` to `WorkflowLoopMetadata`.
-- [ ] Validate: at least one bound present, positive values only,
+- [x] Add optional `budget` to `WorkflowLoopMetadata`. Added `LoopBudgetDeclaration`
+  and the optional `budget` field (property, coding key, memberwise init,
+  tolerant `decodeIfPresent`) mirroring `convergence`.
+- [x] Validate: at least one bound present, positive values only,
   `onExceeded` in {fail, warn}; `warn` invalid when `loop.required == true`.
-- [ ] Raw validation accepts the new key; absent budget keeps all existing
-  workflows valid.
+  Implemented in `validateTypedLoopBudget`.
+- [x] Raw validation accepts the new key; absent budget keeps all existing
+  workflows valid. Implemented in `validateRawLoopBudget` (wired into
+  `validateRawLoopMetadata`); absent `budget` returns early. Tests:
+  `WorkflowLoopValidationTests` gains accept/invalid-bounds/unknown-onExceeded
+  cases (16 tests green); full `swift test` 1,742 tests / 4 skips / 0 unexpected.
 
 #### `Sources/RielaCore/DeterministicWorkflowRunner+Budget.swift`
 
-**Status**: NOT_STARTED
+**Status**: DONE (2026-07-12, second pass). Step-boundary enforcement, the
+`budget_exceeded` event, warn-mode evidence, and `maxSessionAttempts` lineage
+enforcement all landed (in `DeterministicWorkflowRunner+LoopPolicy.swift`
+rather than a separate `+Budget.swift` — the boundary hook shares the loop
+policy module).
 
 **Checklist**:
 
-- [ ] Check the usage accumulator's running session totals and session
-  wall-clock at step boundaries.
-- [ ] Add `WorkflowSessionFailureKind.budgetExceeded` **and build tolerant
-  persisted decoding** in the same change: no tolerant-decode pattern
-  exists today (`decodeIfPresent(WorkflowSessionFailureKind.self, ...)`
-  throws on unknown raw values and fails the whole snapshot). Unknown
-  persisted values must decode to a preserved `other(String)`-style
-  representation with a diagnostic. Document the old-binary limitation.
-- [ ] `onExceeded == "fail"`: fail the session before the next step with a
+- [x] Check the usage accumulator's running session totals and session
+  wall-clock at step boundaries. `enforceLoopBudgetAtStepBoundary` reloads the
+  session at each boundary (first boundary skipped) and evaluates the pure
+  `loopBudgetViolationDetails` (token totals via `LoopCostAccumulator`, wall
+  clock from `session.createdAt`); absent usage never fabricates a violation.
+- [x] Add `WorkflowSessionFailureKind.budgetExceeded` **and build tolerant
+  persisted decoding**. Added `WorkflowSessionFailureKind.budgetExceeded` (+
+  registered in `knownRawValues`). **Note (stale plan text):** the tolerant
+  decode already exists — `WorkflowSessionFailureKind` was refactored (in the
+  LB1 pass) from a closed enum to a `RawRepresentable` struct that decodes any
+  raw string and exposes `compatibilityDiagnostic` for unknown values, so
+  unknown persisted kinds are already preserved with a diagnostic rather than
+  failing the snapshot. Test: `RuntimeSessionTests.testBudgetExceededFailureKindRoundTripsAndIsKnown`
+  (plus the existing unknown-raw-value tolerance tests). 9 suite tests green.
+- [x] `onExceeded == "fail"`: fail the session before the next step with a
   deterministic diagnostic; `"warn"`: record a residual risk and continue.
-- [ ] `maxSessionAttempts`: add additive `rootSessionId`/`attemptNumber`
-  to `LoopRecoveryLineage`, computed at entry from the source session's
-  manifest (rerun increments; resume does not — it continues an attempt).
-  Enforce at rerun entry by reading the source manifest only; no
-  chain-walking (resume lineage is self-referential and parent manifests
-  never record children, so chain-walking is not viable).
-- [ ] Emit `budget_exceeded` progress record with consumed/allowed values;
-  extend the closed `WorkflowRunEventType` enum and the live-persistence
-  event switch together (additive JSONL contract change, noted in
-  migration notes).
-- [ ] Record consumption and the enforcement decision in evidence policy
-  decisions plus `costSummary`.
-- [ ] Reuse existing cancellation paths; no orphaned agent processes.
-- [ ] Tests: token bound trips between steps, wall-clock bound, warn mode,
+  Fail throws `loopBudgetExceeded` (finalized as `failureKind: budgetExceeded`
+  through the existing interrupted-session path); warn continues and
+  `DefaultLoopEvidenceProjector.budgetProjection` records an accepted
+  `LoopResidualRisk` (owner `loop-budget`, severity medium) from the same
+  deterministic persisted inputs.
+- [x] `maxSessionAttempts`: additive `rootSessionId`/`attemptNumber` on
+  `LoopRecoveryLineage` (optional; legacy decodes to nil = attempt one).
+  Run entries start at attempt 1; resume carries the source attempt; rerun
+  increments from `DeterministicWorkflowRunRequest.sourceRecoveryLineage`,
+  which the CLI rerun/resume commands populate from the source session's
+  persisted manifest (`persistedRecoveryLineage` in `SessionCommands.swift`)
+  — source-manifest read only, no chain-walking. `enforceLoopSessionAttempts`
+  fails entry with the deterministic diagnostic when the new attempt exceeds
+  the bound.
+- [x] Emit `budget_exceeded` progress record with consumed/allowed values.
+  `WorkflowRunEventType.budgetExceeded` + `LoopBudgetExceededPayload`
+  (diagnostic/action/consumedTokens/maxTotalTokens/elapsedMs/maxWallClockMs)
+  added together with telemetry switches and the live-persistence trigger
+  switch (`workflowRunEventTriggersLiveSessionPersistence`). Emitted once per
+  session at the violating boundary in both fail and warn modes.
+- [x] Record consumption and the enforcement decision in evidence policy
+  decisions plus `costSummary`. The projector appends a `LoopPolicyDecision`
+  (`policy: "budget"`, decision `within-budget`/`exceeded-warn`/
+  `exceeded-fail`, reason = consumed vs declared bounds); a session failed
+  with `budgetExceeded` always records `exceeded-fail` even when persisted
+  rows cannot reproduce the live reading.
+- [x] Reuse existing cancellation paths; no orphaned agent processes.
+  Enforcement runs only between steps (no live agent process) and failure
+  reuses the existing `finalizeInterruptedSessionFailed` path with the
+  established `budgetExceeded` failure-kind mapping.
+- [x] Tests: token bound trips between steps, wall-clock bound, warn mode,
   attempts bound on rerun, budgetless workflows unaffected.
+  `DeterministicWorkflowRunnerBudgetTests` (18 tests): pure evaluation (4),
+  runner fail/warn/budgetless/wall-clock, single `budget_exceeded` emission +
+  payload, event Codable round-trip, rerun attempt increment + root recording,
+  attempts-bound rerun refusal, legacy-lineage tolerance, and projector
+  decision/residual-risk cases (4). All green with
+  `LoopEvidenceProjectorTests`/`LoopCostAccumulatorTests`/
+  `RuntimeSessionTests`/`LoopEvidenceDiffTests`/`WorkflowLoopValidationTests`.
 
 #### `Sources/RielaCLI/LoopCommands.swift` (cost columns)
 
-**Status**: NOT_STARTED
+**Status**: DONE (2026-07-12).
 
 **Checklist**:
 
-- [ ] `loop list`/`history`/`status` render cost summary columns when
-  present; absent cost renders as not recorded, not zero.
+- [x] `loop list`/`history`/`status` render cost summary columns when
+  present; absent cost renders as not recorded, not zero. `renderOverviews`
+  (list/history) gains a `cost:` text line and a `COST` table column via
+  `LoopCommandRunner.costCell`; `renderStatus` appends a `cost:` line.
+  `LoopEvidenceSummary` gained an optional `cost` (populated from
+  `manifest.costSummary`) so `loop status` surfaces it. Absent → `not-recorded`,
+  recorded-but-no-usage → `no-usage`, partial totals flagged `(partial)`. Tests:
+  `LoopCommandRenderingTests` (4 cases). JSON/JSONL already include `cost` via
+  the `LoopSessionOverview`/`LoopEvidenceSummary` Codable. Full suite 1,767 / 0
+  unexpected.
 
 ### 4. LA3 — Diff, Stats, GraphQL
 
 #### `Sources/RielaCore/LoopEvidenceDiff.swift`
 
-**Status**: NOT_STARTED
+**Status**: DONE (2026-07-12). Publishes the shared `LoopEvidenceDiff` contract
+that W3 consumes.
 
 ```swift
 public struct LoopEvidenceDiff: Codable, Equatable, Sendable { /* per design S4 */ }
@@ -495,80 +626,131 @@ public enum LoopEvidenceDiffer {
 
 **Checklist**:
 
-- [ ] Deterministic matching: gates by `gateId`; blocking findings by
+- [x] Deterministic matching: gates by `gateId`; blocking findings by
   `(filePath, message)` with line drift tolerated (path-less findings
   bucket under `(nil, message)` — documented behavior); verification by
   joining `LoopVerificationEvidence.commandRef` to that manifest's
   `LoopCommandEvidence.argvSummary` and matching on the summary string
   (command ids are not stable across sessions); changed files by path.
-- [ ] `sameWorkflow: false` + diagnostic for cross-workflow diffs;
+- [x] `sameWorkflow: false` + diagnostic for cross-workflow diffs;
   `workflowDefinitionDigestChanged` nil when either digest is absent.
-- [ ] Cost delta only when both sides carry summaries.
-- [ ] Pure function, no I/O; exhaustive fixture tests including identical
+- [x] Cost delta only when both sides carry summaries.
+- [x] Pure function, no I/O; exhaustive fixture tests including identical
   manifests (empty diff) and disjoint gate sets.
+  `Tests/RielaCoreTests/LoopEvidenceDiffTests.swift` (11 tests): identical/empty,
+  cross-workflow diagnostic, digest-change tri-state, disjoint gates, decision +
+  severity delta, finding match with line drift + path-less bucket, changed-file
+  diff, verification flip by summary, cost delta both/one-side, residual-risk
+  delta, and diff `Codable` round-trip. Sub-types added: `LoopGateChange`,
+  `LoopVerificationChange`, `LoopResidualRiskDelta`, `LoopCostSummaryDelta`. Full
+  `swift test` 1,753 tests / 4 skips / 0 unexpected failures.
 
 #### `Sources/RielaCore/LoopWorkflowStats.swift`
 
-**Status**: NOT_STARTED
+**Status**: DONE (aggregation logic, 2026-07-12). **Input-contract gap resolved:**
+the gap was that `acceptedRuns` needs per-gate requiredness (only on
+`LoopSessionSummary.gateOutcomes[].required`) while identity/status/timestamps live
+on `LoopSessionOverview`. Fixed by carrying the frozen `gateOutcomes` onto
+`LoopSessionOverview` (optional, populated in `make()` from the summary; legacy
+overviews decode to nil → treated as empty). `LoopWorkflowStats.aggregate` is a
+pure function over `[LoopSessionOverview]`. The CLI/GraphQL surfaces that call it
+(via the existing bounded `loadSessionOverviews`) remain — see below.
 
 **Checklist**:
 
-- [ ] Bounded-window aggregation (default 50, `--limit` override) over
-  `LoopSessionSummary` rows loaded via the summary API: run counts,
-  accepted runs (all required gates accepted — requiredness comes from the
-  summary's frozen `gateOutcomes`, never from re-reading workflow
-  definitions), `gateFailureCounts` by gateId, rerun count, mean duration
-  and tokens over rows that carry them, `lastAcceptedSessionId`.
-- [ ] Diagnostics note partial cost coverage and evidence-less rows.
-- [ ] Pure aggregation over inputs loaded via the summary API; no
-  `loadAll()`.
+- [x] Bounded-window aggregation (default 50, `--limit` override) over overview
+  rows: run counts, accepted runs (all required gates accepted — requiredness from
+  the frozen `gateOutcomes`, never from re-reading workflow definitions),
+  `gateFailureCounts` by gateId, rerun count, mean duration (session wall-clock)
+  and mean tokens over rows that carry cost, `lastAcceptedSessionId` (newest
+  accepted). Implemented in `LoopWorkflowStats.aggregate`; the `--limit` override
+  is the `limit` parameter, wired when the CLI command lands.
+- [x] Diagnostics note partial cost coverage and evidence-less rows (plus a
+  window-truncation note).
+- [x] Pure aggregation over the input rows; no `loadAll()` (the function is pure;
+  callers load via the bounded `loadSessionOverviews`). Tests:
+  `LoopWorkflowStatsTests` (5 cases: required-gate acceptance, required-gate
+  requirement, window limit, empty series, Codable). Full suite 1,772 / 0
+  unexpected.
 
 #### `Sources/RielaCLI/LoopCommands.swift` (diff/stats)
 
-**Status**: NOT_STARTED
+**Status**: DONE (2026-07-12). Both `loop diff` and `loop stats` are wired and
+smoke-tested end-to-end.
 
 **Checklist**:
 
-- [ ] Parse and run `loop diff <a> <b>` and `loop stats <workflow>
-  [--limit]`; JSONL/JSON/text rendering.
-- [ ] Missing session or missing evidence yields a typed error, not an
-  empty diff.
+- [x] Parse and run `loop diff <a> <b>` and `loop stats <workflow> [--limit]`;
+  JSONL/JSON/text rendering. `.stats` reuses `parseOverviewOptions` (workflow
+  target + `--limit`) + bounded `loadSessionOverviews` → `LoopWorkflowStats.aggregate`
+  → `renderStats`. `.diff` gets a dedicated two-positional parse branch (session-a
+  as target, session-b leads the remaining args and is recovered in `runDiff`),
+  loads both manifests via `snapshotForRendering`, runs `LoopEvidenceDiffer.diff`,
+  and renders JSON/JSONL + text (`diffTextLines`). Smoke: `loop stats demo-workflow`
+  → empty-window stats (exit 0); `loop diff` with 0/1 args → typed usage error.
+  Tests: `LoopCommandRenderingTests` (stats + diff text rendering).
+- [x] Missing session or missing evidence yields a typed error, not an empty
+  diff. `loop diff s1 s2` against a store without those sessions returns
+  `{"error":"notFound(\"session not found: s1\")","exitCode":1}`; a session with
+  no loop evidence throws "session '…' has no loop evidence to diff".
 
 #### `Sources/RielaGraphQL/GraphQLContracts.swift` + `RielaGraphQL.swift`
 
-**Status**: NOT_STARTED
+**Status**: DONE (2026-07-12). Contract + concrete resolvers both landed.
 
 **Checklist**:
 
-- [ ] DTOs: `GraphQLLoopSessionOverviewDTO`, `GraphQLLoopWorkflowStatsDTO`,
-  `GraphQLLoopEvidenceDiffDTO`.
-- [ ] Queries: `loopSessions(workflowId, status, limit)`,
+- [x] DTOs: `GraphQLLoopSessionOverviewDTO`, `GraphQLLoopWorkflowStatsDTO`,
+  `GraphQLLoopEvidenceDiffDTO` (+ nested `GraphQLLoopCostSummary(Delta)DTO`,
+  `GraphQLLoopGateChangeDTO`, `GraphQLLoopVerificationChangeDTO`,
+  `GraphQLLoopGateOutcomeDTO`, `GraphQLLoopGateFailureCountDTO`), each with an
+  `init(domain:)` mapper. Extracted to a new file to keep `GraphQLContracts.swift`
+  within the 1,200-line budget.
+- [x] Queries: `loopSessions(workflowId, status, limit)`,
   `loopWorkflowStats(workflowId!, limit)`,
-  `loopEvidenceDiff(baseSessionId!, targetSessionId!)`.
-- [ ] Project from the same persisted summary/manifest reads as the CLI —
-  no GraphQL-only computation.
-- [ ] Schema contract and selection tables updated together (round-trip
-  test per architecture-review guidance).
+  `loopEvidenceDiff(baseSessionId!, targetSessionId!)` declared in the schema SDL
+  `type Query`.
+- [x] Project from the same persisted summary/manifest reads as the CLI — no
+  GraphQL-only computation. Added concrete resolvers to the store-backed
+  `GraphQLRuntimeSnapshotQueryService` (`loopSessions`/`loopWorkflowStats`/
+  `loopEvidenceDiff` returning `GraphQLLoop*Result` wrappers). They build
+  `LoopSessionOverview` from persisted snapshots (`session` + `loopEvidence` +
+  `loopMetadata`, so gate requiredness is faithful) and reuse the same domain
+  logic as the CLI (`LoopWorkflowStats.aggregate`, `LoopEvidenceDiffer.diff`) —
+  no GraphQL-only computation. Tested
+  (`GraphQLContractsTests.testLoopAnalyticsResolversProjectFromSnapshots`:
+  newest-first sessions, accepted-run stats, diff, missing-session handling).
+- [x] Schema contract and selection tables updated together (round-trip test).
+  `GraphQLContractsTests` asserts the schema declares the three queries and the
+  new types, plus a DTO projection round-trip. Full suite 1,776 / 0 unexpected.
 
 ### 5. LA4 — CI Verdict Contract
 
 #### `Sources/RielaCLI/LoopCommands.swift` (`gates --check`)
 
-**Status**: NOT_STARTED
+**Status**: DONE (2026-07-12).
 
 **Checklist**:
 
-- [ ] `--check` evaluates: exit 0 all required gates present+accepted;
+- [x] `--check` evaluates: exit 0 all required gates present+accepted;
   exit 3 required gate rejected/needs_work/missing or blocking findings on
   a required gate; exit 4 no loop evidence recorded; exit 1 operational
-  error.
-- [ ] Quiet JSONL verdict summary; read-only.
-- [ ] Contract tests pin all four codes explicitly (guard against later
-  exit-code unification).
+  error. Added `CLIExitCode.gateCheckFailed = 3` / `.noLoopEvidence = 4` and
+  `LoopCommandRunner.runGatesCheck` — resolves required gate ids from the
+  workflow's `loop.gates`, evaluates the latest visit per gate against the
+  persisted manifest (no projected-on-read pass), and maps to the codes. Smoke:
+  `loop gates <missing> --check` → exit 1 with `{"verdict":"error"}`.
+- [x] Quiet JSONL verdict summary; read-only. Emits a `LoopGatesCheckResult`
+  JSON verdict (`sessionId`, `verdict`, `requiredGates`, `failingGates`,
+  `exitCode`); read-only (load + resolve only).
+- [x] Contract tests pin all four codes explicitly (guard against later
+  exit-code unification). `LoopCommandRenderingTests.testGateCheckExitCodesArePinned`
+  asserts 0/1/2/3/4; `evaluateRequiredGates` cases cover pass/missing/rejected/
+  blocking/latest-visit/vacuous. Full suite 1,781 / 0 unexpected.
 
 #### `Sources/RielaCLI/LoopFindingsExport.swift`
 
-**Status**: NOT_STARTED
+**Status**: DONE (2026-07-12).
 
 ```swift
 public enum LoopFindingsSARIFExporter {
@@ -578,28 +760,38 @@ public enum LoopFindingsSARIFExporter {
 
 **Checklist**:
 
-- [ ] SARIF 2.1.0: one run, `tool.driver.name = "riela-loop"`, one rule per
+- [x] SARIF 2.1.0: one run, `tool.driver.name = "riela-loop"`, one rule per
   gateId, one result per blocking finding; severity mapping high→error,
   medium→warning, low|informational→note, unknown severity strings→warning
-  with the original value in `result.properties`.
-- [ ] `physicalLocation` only when `filePath` present; session/gate ids in
-  `result.properties`.
-- [ ] `loop findings <session-id> [--gate <gate-id>] --format sarif|json`
-  command; `json` emits typed findings.
-- [ ] No environment or variable values in output.
-- [ ] Golden-file test validating the SARIF shape; empty-findings session
-  emits a valid empty run.
+  with the original value in `result.properties.severity`.
+- [x] `physicalLocation` only when `filePath` present (with `region.startLine`
+  when `line` present); session/gate ids in `result.properties`.
+- [x] `loop findings <session-id> [--gate <gate-id>] --format sarif|json`
+  command (`.findings` kind + `runFindings`); `json` emits typed
+  `LoopFindingExport` findings. Invalid `--format` → typed usage error.
+- [x] No environment or variable values in output (only finding id/severity/
+  message/path/line + session/gate ids).
+- [x] Golden-file-style test validating the SARIF shape; empty-findings session
+  emits a valid empty run. `LoopFindingsExportTests` (severity mapping, shape
+  with/without filePath + unknown severity, empty run, gate filter). Full suite
+  1,785 / 0 unexpected.
 
 #### `examples/loop-ci-gate-check/`
 
-**Status**: NOT_STARTED
+**Status**: DONE (2026-07-12).
 
 **Checklist**:
 
-- [ ] Example workflow + GitHub Actions YAML using `loop gates --check` and
-  SARIF upload as documentation.
-- [ ] `EXPECTED_RESULTS.md` and mock scenario per first-party example
-  conventions.
+- [x] Example workflow + GitHub Actions YAML using `loop gates --check` and
+  SARIF upload as documentation. `examples/loop-ci-gate-check/` (valid loop
+  workflow with a required `implementation-review` gate) +
+  `github-actions-loop-gate-check.yml` (run → `loop gates --check` → `loop
+  findings --format sarif` → `upload-sarif`). Registered in
+  `RielaExampleParityTests` (validates + parity, 9 tests green).
+- [x] `EXPECTED_RESULTS.md` and mock scenario per first-party example
+  conventions. `mock-scenario-rejected.json` drives a fail-closed run; the
+  captured real outputs (validate/inspect, run `failed`, `gates --check` exit 3
+  verdict JSON, SARIF 2.1.0 shape) are pinned in `EXPECTED_RESULTS.md` + `README.md`.
 
 ---
 
@@ -637,19 +829,19 @@ timeline pane after the architecture-review RielaApp restructuring
 | Summary SQL + column | `Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift` | COMPLETE_LA1A | `SQLiteWorkflowMessageLogTests` summary overview cases |
 | CLI parser additions | `Sources/RielaCLI/RielaCommand.swift` | COMPLETE_LA1A | `CommandParsingTests` |
 | loop list/history/recover-from-gate | `Sources/RielaCLI/LoopCommands.swift` | COMPLETE_LA1A | `WorkflowCommandTests`, `WorkflowCommandLivePersistenceTests` |
-| loop start | `Sources/RielaCLI/LoopStartCommand.swift` | NOT_STARTED | planned |
-| loop promote | `Sources/RielaCLI/LoopPromoteCommand.swift` | NOT_STARTED | planned |
-| Cost models | `Sources/RielaCore/LoopCostEvidence.swift` | NOT_STARTED | planned |
-| Usage accumulator | `Sources/RielaCore/DeterministicWorkflowRunner+Cost.swift` | NOT_STARTED | planned |
-| Budget metadata + validation | `Sources/RielaCore/LoopEngineeringModels.swift`, `WorkflowLoopValidation.swift` | NOT_STARTED | planned |
-| Budget enforcement | `Sources/RielaCore/DeterministicWorkflowRunner+Budget.swift` | NOT_STARTED | planned |
-| Evidence diff | `Sources/RielaCore/LoopEvidenceDiff.swift` | NOT_STARTED | planned |
-| Workflow stats | `Sources/RielaCore/LoopWorkflowStats.swift` | NOT_STARTED | planned |
-| Diff/stats CLI | `Sources/RielaCLI/LoopCommands.swift` | NOT_STARTED | planned |
-| GraphQL projections | `Sources/RielaGraphQL/GraphQLContracts.swift`, `RielaGraphQL.swift` | NOT_STARTED | planned |
-| gates --check | `Sources/RielaCLI/LoopCommands.swift` | NOT_STARTED | planned |
-| SARIF export | `Sources/RielaCLI/LoopFindingsExport.swift` | NOT_STARTED | planned |
-| CI example | `examples/loop-ci-gate-check/` | NOT_STARTED | planned |
+| loop start | `Sources/RielaCLI/LoopStartCommand.swift` | DONE | `LoopStartPromoteCommandTests` |
+| loop promote | `Sources/RielaCLI/LoopPromoteCommand.swift` | DONE | `LoopStartPromoteCommandTests` |
+| Cost models | `Sources/RielaCore/LoopCostEvidence.swift` | DONE | `LoopCostEvidenceTests` |
+| Usage accumulator | `Sources/RielaCore/LoopCostAccumulator.swift` (execution folding; no runner threading) | DONE | `LoopCostAccumulatorTests` |
+| Budget metadata + validation | `Sources/RielaCore/LoopEngineeringModels.swift`, `WorkflowLoopValidation.swift` | DONE | `WorkflowLoopValidationTests` |
+| Budget enforcement | `Sources/RielaCore/DeterministicWorkflowRunner+LoopPolicy.swift` (boundary hook lives with loop policy, not a separate `+Budget.swift`) | DONE | `DeterministicWorkflowRunnerBudgetTests` |
+| Evidence diff | `Sources/RielaCore/LoopEvidenceDiff.swift` | DONE | `LoopEvidenceDiffTests` |
+| Workflow stats | `Sources/RielaCore/LoopWorkflowStats.swift` | DONE | `LoopWorkflowStatsTests` |
+| Diff/stats CLI | `Sources/RielaCLI/LoopCommands.swift` | DONE | `LoopCommandRenderingTests` |
+| GraphQL projections | `Sources/RielaGraphQL/GraphQLContracts.swift`, `RielaGraphQL.swift` | DONE | `GraphQLContractsTests` |
+| gates --check | `Sources/RielaCLI/LoopCommands.swift` | DONE | `LoopCommandRenderingTests` |
+| SARIF export | `Sources/RielaCLI/LoopFindingsExport.swift` | DONE | `LoopFindingsExportTests` |
+| CI example | `examples/loop-ci-gate-check/` | DONE | `RielaExampleParityTests` |
 
 ## Dependencies
 
@@ -705,25 +897,34 @@ timeline pane after the architecture-review RielaApp restructuring
   `loopEvidenceRecorded: false`.
 - [x] `loop recover --from-gate` reruns from the gate's step with lineage
   recorded; `--from-step` unchanged.
-- [ ] `loop start` shows the policy panel (record in JSONL mode) before
+- [x] `loop start` shows the policy panel (record in JSONL mode) before
   `session_started` and otherwise matches `workflow run` behavior.
-- [ ] `loop promote` reports promotion readiness without mutation.
-- [ ] Evidence manifests carry per-step and summary token/duration cost
-  with honest partial flags; no fabricated values.
-- [ ] Budget-declaring loops fail closed (or warn, where allowed) at step
+  Smoke on `loop-ci-gate-check`: `loop_policy` record precedes
+  `session_started`; delegation reuses `WorkflowRunCommand.run` verbatim.
+- [x] `loop promote` reports promotion readiness without mutation (read-only
+  resolve + evaluate; smoke returns `ready`/`issues` JSON).
+- [x] Evidence manifests carry per-step and summary token/duration cost
+  with honest partial flags; no fabricated values (verified end-to-end
+  2026-07-12 via the usage-emitting mock scenario; eviction undercount
+  degrades to `stepsWithoutUsage`, tested).
+- [x] Budget-declaring loops fail closed (or warn, where allowed) at step
   boundaries with `budgetExceeded` evidence; budgetless workflows are
-  unaffected.
-- [ ] `loop diff` and `loop stats` produce deterministic outputs from
-  persisted records only.
-- [ ] GraphQL loop queries project from the same persisted reads as CLI.
-- [ ] `loop gates --check` exit codes 0/3/4/1 are pinned by contract tests;
-  SARIF output validates against the golden file.
+  unaffected (`DeterministicWorkflowRunnerBudgetTests`, 18 green).
+- [x] `loop diff` and `loop stats` produce deterministic outputs from
+  persisted records only (`LoopEvidenceDiffTests`, `LoopWorkflowStatsTests`,
+  `LoopCommandRenderingTests`).
+- [x] GraphQL loop queries project from the same persisted reads as CLI
+  (`GraphQLContractsTests.testLoopAnalyticsResolversProjectFromSnapshots`).
+- [x] `loop gates --check` exit codes 0/3/4/1 are pinned by contract tests;
+  SARIF output validates against the golden file
+  (`LoopCommandRenderingTests.testGateCheckExitCodesArePinned`,
+  `LoopFindingsExportTests`).
 - [x] All schema changes are additive; pre-existing snapshots, workflows,
   and package manifests decode and behave unchanged.
-- [ ] Full `swift test` passes; `swiftlint` clean apart from pre-existing
-  warnings. `swiftlint` is clean for LA1a; full `swift test` was attempted
-  in this rerun and exited 1 without a final XCTest summary after
-  `EventLiveServeSlackTests.testSlackGatewayServeDoesNotAdvanceOffsetWhenWorkflowProcessingFails`.
+- [x] Full `swift test` passes; `swiftlint` clean apart from pre-existing
+  warnings. Verified 2026-07-12 on the final tree: full `swift test` =
+  1,916 tests, 4 skips, 0 failures (0 unexpected); strict SwiftLint clean on
+  every file changed this session; `git diff --check` clean.
 
 ## Migration And Backward-Compatibility Notes
 
@@ -749,6 +950,94 @@ timeline pane after the architecture-review RielaApp restructuring
   reserved without behavior drift.
 
 ## Progress Log
+
+### Session: 2026-07-12 remaining LA2 runner-integration design
+
+**Precise design for the one remaining W2 slice** (LA2 runner cost accumulation +
+budget enforcement) so it can be executed as a careful, dedicated pass without
+destabilizing the central runner:
+
+- **Feed point**: `DeterministicWorkflowRunner+ExecutionEvents.swift:62`
+  (`adapterExecutionContext`) — the `@Sendable` backend-event handler already has
+  `execution.executionId` and `backendEvent.usage`, and already forwards usage to
+  `store.recordStepBackendEventReceipt` (which appends a `WorkflowBackendEventRecord`
+  carrying `usage` to the per-execution `recentBackendEvents`, capped at 100).
+- **Two viable wirings** (pick one): (a) add a `WorkflowRuntimeStore` method
+  `loopCostEvidence(sessionId:)` that folds recorded per-execution usage into
+  `LoopCostEvidence` via `LoopCostAccumulator` — small, but touches every store
+  conformer; or (b) create a per-run `actor` box wrapping `LoopCostAccumulator`,
+  thread it from `run()` (`DeterministicWorkflowRunner.swift:160`) through the
+  step helpers to the two `adapterExecutionContext` call sites (726, 814), feed it
+  in the handler, and read `evidence()` where results are built (209/383).
+- **Persistence hop**: attach the evidence to the run at result-build time; the
+  projector already consumes `LoopEvidenceProjectionInput.costs`, so
+  `WorkflowRunResult` gains `costs` and `WorkflowRunCommand` passes them into the
+  post-run projection. (Note: usage on `WorkflowBackendEventRecord` is in-memory
+  and evicted at 100; the accumulator stays authoritative, per design.)
+- **Budget enforcement**: at step boundaries, check the accumulator's running
+  session totals + wall-clock against `WorkflowLoopMetadata.budget` (already
+  added + validated); `onExceeded == "fail"` → fail the session with
+  `WorkflowSessionFailureKind.budgetExceeded` (already added, tolerant-decoded)
+  before the next step; `"warn"` → residual risk + continue; emit a
+  `budget_exceeded` progress record (extend `WorkflowRunEventType` +
+  live-persistence switch); `maxSessionAttempts` via additive
+  `rootSessionId`/`attemptNumber` on `LoopRecoveryLineage` computed at rerun
+  entry.
+
+Everything this slice depends on is already built and tested: `LoopCostEvidence`,
+`LoopCostAccumulator`, `LoopCostSummary.make`, projector `costs` consumption,
+`LoopBudgetDeclaration` + validation, `budgetExceeded` + tolerant decode, and the
+usage-emitting mock adapter (for deterministic integration tests). This is the
+sole remaining W2 work; it is a coupled central-runner change and must be done
+deliberately with new integration tests, not rushed.
+
+### Session: 2026-07-12 LA2 declarative slices
+
+**Tasks Completed**: Landed the two self-contained, offline LA2 slices that do not
+touch the runner. (1) Cost value types: added `Sources/RielaCore/LoopCostEvidence.swift`
+(`LoopCostEvidence` per-step record + `LoopCostSummary.make(from:)` honest
+partial-sum derivation with `isPartial`; `LoopCostSummary` itself already existed
+from LA1a and was not duplicated). `LoopEvidenceManifest` gained `costs` and
+`costSummary` via a faithful hand-written `Codable` — existing fields decode/encode
+exactly as before, `costs` defaults to `[]` and is omitted from output when empty
+so pre-cost manifests serialize byte-identically, and `costSummary` defaults nil.
+(2) Budget declaration: added `LoopBudgetDeclaration` and the optional
+`WorkflowLoopMetadata.budget` field, plus `validateTypedLoopBudget` /
+`validateRawLoopBudget` (at least one bound present, positive-only bounds,
+`onExceeded ∈ {fail, warn}`, `warn` invalid when `loop.required`).
+
+Also landed the LA3 diff contract: `Sources/RielaCore/LoopEvidenceDiff.swift`
+(`LoopEvidenceDiff` + `LoopEvidenceDiffer.diff` and sub-types `LoopGateChange`,
+`LoopVerificationChange`, `LoopResidualRiskDelta`, `LoopCostSummaryDelta`). Pure,
+deterministic, no I/O; matching per design S4. This publishes the stable typed
+diff contract that W3 (loop convergence/operations, LB2) consumes.
+
+Also landed the pure LA2 usage-accumulator logic:
+`Sources/RielaCore/LoopCostAccumulator.swift` — a self-contained value type
+(mirroring `LoopConvergenceTracker`) that normalizes backend `usage` events
+(`input_tokens`/`output_tokens`/`total_tokens`/`total_token_usage`), accumulates
+per step with last-value-wins for cumulative snapshots, counts steps without
+usage, and derives duration from explicit input or the usage-timestamp span. The
+runner wiring, projection hand-off, additive record fields, and mock-adapter
+usage emission remain (module marked PARTIAL).
+
+**Tasks In Progress**: None for these slices. Remaining LA2 = runner-side usage
+accumulator (`DeterministicWorkflowRunner+Cost.swift`) and budget enforcement
+(`DeterministicWorkflowRunner+Budget.swift`, incl. `WorkflowSessionFailureKind.budgetExceeded`
+tolerant decoding and `budget_exceeded` progress records). Remaining LA3 =
+`LoopWorkflowStats` (input-contract gap documented in the module), CLI
+`loop diff/stats`, GraphQL DTOs/queries. Then LA4.
+
+**Verification**: `Tests/RielaCoreTests/LoopCostEvidenceTests.swift` (6 tests),
+new `WorkflowLoopValidationTests` budget cases (suite 16 tests), and
+`Tests/RielaCoreTests/LoopEvidenceDiffTests.swift` (11 tests); focused
+`LoopSessionOverviewTests`, `LoopEvidenceProjectorTests`, `RuntimeStoreTests`,
+`WorkflowLoopMetadataCodableTests`, `LoopEngineeringModelsTests` all green. Full
+`swift test` progressed 1,742 → 1,753 tests / 4 skips / 0 unexpected failures across
+the slices. Strict SwiftLint on every changed source file: 0 violations.
+`git diff --check` clean.
+
+**Blockers**: None.
 
 ### Session: 2026-07-05 Step 6 LA1a Step 7 review-finding fix
 

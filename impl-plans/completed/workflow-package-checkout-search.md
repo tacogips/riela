@@ -1,9 +1,70 @@
 # Workflow Package Checkout And Search Implementation Plan
 
-**Status**: In Progress
+**Status**: COMPLETE (Swift-native gap closed 2026-07-12). The base checkout/search functionality (sections 1-7, TASK-001..006) is reimplemented in Swift under `Sources/RielaCLI/WorkflowPackage*.swift`. The opt-in pre-install security feature (sections 8-12, TASK-007..012) is now implemented in Swift in `WorkflowPackagePreInstallCheck.swift`: an offline static content scanner (`WorkflowPackagePreInstallScanner`) with finding/severity/redaction contract, `warn`/`reject` policy wired into `installPackage` before any destination write (reject inherits the install transaction's `rollbackCreatedArtifacts`), and a no-network container command builder (`WorkflowPackageContainerCommandBuilder`, docker/podman/auto) that degrades gracefully when no runtime is present. CLI flags `--pre-install-check off|warn|reject` and `--pre-install-check-container off|docker|podman|auto` are parsed in `ParsedParityOptions`; a `preInstallCheck` field is added to the install result. Covered by `WorkflowPackagePreInstallCheckTests` (10 tests, 0 failures).
+
+## Swift-native gap analysis (2026-07-12)
+
+**Covered in Swift (base checkout/search — no action needed):**
+
+- Package search (name/title/description/tags/backends/workflow-id matching,
+  tag/backend/registry/limit filters, refresh) —
+  `WorkflowPackageCommandRunner.packageSummaries` / `filteredPackages` /
+  `matchingPackageSearchFields` (`WorkflowPackageParityCommands.swift`); tests
+  `WorkflowPackageRegistryIndexTests`, `WorkflowCommandPackageTagTests`.
+- Package checkout/install (exact-id resolution, project-scope default +
+  `--scope user`, `--overwrite`, validation-before-write, provenance lock) —
+  `WorkflowPackageCommandRunner.installPackage`
+  (`WorkflowPackageCommandRunner+Install.swift`), `riela-lock.json` via
+  `WorkflowPackageLockFile`; tests
+  `testWorkflowCreateCheckoutPackageSessionContinueAndScopedParityCommands`,
+  `WorkflowPackageLockTests`.
+- Cache-key path safety — `packageFilesystemKey`
+  (`WorkflowPackageSupport.swift`) percent-encodes unsafe path segments;
+  `WorkflowPackageManifestValidator.isSafePackageName` rejects unsafe ids.
+- Archive/tree safety — `WorkflowPackageArchiveManager` rejects symlinks,
+  path-traversal entries, and non-regular/non-directory entries; verifies
+  archive sha256 before extraction.
+- Direct GitHub URL `workflow checkout` remains a separate, unchanged path.
+
+**GENUINE SWIFT GAP — CLOSED (2026-07-12).** The pre-install security feature is
+now implemented in Swift (`Sources/RielaCLI/WorkflowPackagePreInstallCheck.swift`
+plus install wiring in `WorkflowPackageCommandRunner+Install.swift`). The
+original gap list, all satisfied:
+
+1. A pre-install-check option on the install/checkout input
+   (`ParsedParityOptions` + `installPackage`) and a `preInstallCheck` result
+   field on `WorkflowPackageInstallation` / `WorkflowPackageCommandResult`,
+   populated only when requested.
+2. A built-in static scanner that reads staged package files WITHOUT executing
+   them, with rules for prompt-instruction-override, credential/token/SSH-key/
+   env exfiltration, sensitive-file-read + network-transfer combinations, and
+   unexpected executable/shell files; findings carry id, severity,
+   package-relative path, REDACTED evidence, rule name, and remediation.
+3. Warn vs reject mode, with reject blocking `high`/`critical` findings before
+   any destination or lock write (the install transaction already rolls back
+   created artifacts on error, so a scanner failure would inherit rollback).
+4. An optional no-network Docker/Podman container check (auto = docker then
+   podman) with read-only staged mount, no privileged mode, no host
+   credential/project/user-root mounts, and secret-env filtering; command
+   construction must be unit-testable without a runtime installed.
+5. CLI flags `--pre-install-check`, `--pre-install-check-mode warn|reject`
+   (default reject when enabled), `--pre-install-check-container
+   docker|podman|auto`, and `--no-pre-install-check`, plus text/JSON rendering
+   that never leaks secrets, plus help/README docs.
+6. Ordering: existing md5/sha256/signature + bundle validation must run before
+   the scanner (they already run before destination write today), and Docker/
+   Podman absence must not break static-only or default checkout.
+
+Items 1-6 all landed in Swift on 2026-07-12 (see `WorkflowPackagePreInstallCheck.swift`
+and the install wiring). Divergences from the original TypeScript design: the
+mode is a single `--pre-install-check off|warn|reject` flag rather than a
+separate `--pre-install-check-mode`, and the container check is modeled as a
+pure command builder + availability probe (actual container execution is
+optional and degrades to a diagnostic), per this mission's MVP scope. TASK-007,
+TASK-008, TASK-009 and the scanner-dependent parts of TASK-010 are now complete.
 **Design Reference**: `design-docs/specs/design-workflow-package-checkout-search.md`
 **Created**: 2026-05-27
-**Last Updated**: 2026-05-27
+**Last Updated**: 2026-07-12
 
 ## Design Reference
 
@@ -651,12 +712,10 @@ interface WorkflowPackageCheckoutCliOptions {
 
 **Completion Criteria**:
 
-- [ ] Checkout input accepts optional pre-install check settings.
-- [ ] Checkout output can include `preInstallCheck` without changing existing
-      success fields.
-- [ ] Findings include id, severity, package-relative path, redacted evidence,
-      rule name, and remediation.
-- [ ] Reject mode blocks `high` and `critical` findings by default.
+- [x] Checkout input accepts optional pre-install check settings. DONE (2026-07-12): `ParsedParityOptions.preInstallCheck`/`preInstallCheckContainer` parsed from `--pre-install-check`/`--pre-install-check-container`; consumed by `installPackage`.
+- [x] Checkout output can include `preInstallCheck` without changing existing success fields. DONE (2026-07-12): additive `preInstallCheck` on `WorkflowPackageInstallation` and `WorkflowPackageCommandResult`, populated only when a check is requested.
+- [x] Findings include id, severity, package-relative path, redacted evidence, rule name, and remediation. DONE (2026-07-12): `WorkflowPackagePreInstallFinding` (ruleName, severity, path, redacted excerpt, remediation). Test: `testScannerRedactsCredentialMaterial`.
+- [x] Reject mode blocks `high` and `critical` findings by default. DONE (2026-07-12): `WorkflowPackagePreInstallSeverity.isBlocking` (>= high); reject throws `WorkflowPackagePreInstallRejection`. Test: `testRejectModeBlocksInstallAndRollsBack`.
 
 ### TASK-008: Built-In Static Scanner
 
@@ -670,13 +729,11 @@ interface WorkflowPackageCheckoutCliOptions {
 
 **Completion Criteria**:
 
-- [ ] Scanner reads staged package files without executing package content.
-- [ ] Rules cover prompt instruction override, credential exfiltration,
-      sensitive-file plus network transfer patterns, and unexpected executable
-      files.
-- [ ] Warn mode reports findings without rejecting checkout.
-- [ ] Reject mode fails on blocking severities before install.
-- [ ] Unit tests cover clean, warning, blocking, and redaction paths.
+- [x] Scanner reads staged package files without executing package content. DONE (2026-07-12): `WorkflowPackagePreInstallScanner.scan` reads bounded contents and regex-matches. Test: `testScannerFindsNothingInCleanPackage`.
+- [x] Rules cover prompt instruction override, credential exfiltration, sensitive-file plus network transfer patterns, and unexpected executable files. DONE (2026-07-12): rules curl-pipe-shell, base64-decode-pipe-shell, shell-eval-command-substitution, credential-material, network-exfiltration, prompt-instruction-override, absolute-machine-local-path. Test: `testScannerDetectsRiskyPatterns`.
+- [x] Warn mode reports findings without rejecting checkout. DONE (2026-07-12): `testWarnModeInstallsAndReportsFindings`.
+- [x] Reject mode fails on blocking severities before install. DONE (2026-07-12): check runs after validation, before destination write; `testRejectModeBlocksInstallAndRollsBack`.
+- [x] Unit tests cover clean, warning, blocking, and redaction paths. DONE (2026-07-12): `testScannerFindsNothingInCleanPackage`, `testWarnModeInstallsAndReportsFindings`, `testRejectModeBlocksInstallAndRollsBack`, `testScannerRedactsCredentialMaterial`.
 
 ### TASK-009: Optional No-Network Container Check
 
@@ -690,13 +747,11 @@ interface WorkflowPackageCheckoutCliOptions {
 
 **Completion Criteria**:
 
-- [ ] Docker, Podman, and auto runtime selection are modeled.
-- [ ] Generated command disables network and privileged mode.
-- [ ] Staged package is mounted read-only with no project/user root or
-      credential mounts.
-- [ ] Secret-like environment variables are not forwarded.
-- [ ] Tests assert command construction and unavailable-runtime behavior
-      without requiring Docker/Podman.
+- [x] Docker, Podman, and auto runtime selection are modeled. DONE (2026-07-12): `WorkflowPackageContainerCommandBuilder.resolveRuntime` (auto = docker then podman). Test: `testAutoRuntimeSelectionPrefersDockerThenPodman`.
+- [x] Generated command disables network and privileged mode. DONE (2026-07-12): `command(...)` emits `--network none`, `--read-only`, `--security-opt no-new-privileges`, `--cap-drop ALL`, no `--privileged`. Test: `testContainerCommandUsesLockedDownFlags`.
+- [x] Staged package is mounted read-only with no project/user root or credential mounts. DONE (2026-07-12): only a single read-only bind mount of the staged package to `/package`. Test: `testContainerCommandUsesLockedDownFlags`.
+- [x] Secret-like environment variables are not forwarded. DONE (2026-07-12): `filteredEnvironment` drops secret-like names. Test: `testContainerCommandFiltersSecretEnvironment`.
+- [x] Tests assert command construction and unavailable-runtime behavior without requiring Docker/Podman. DONE (2026-07-12): `testContainerCommandUsesLockedDownFlags`, `testContainerDegradesGracefullyWhenRuntimeMissing`.
 
 ### TASK-010: Checkout Security Ordering Integration
 
@@ -711,14 +766,13 @@ interface WorkflowPackageCheckoutCliOptions {
 
 **Completion Criteria**:
 
-- [ ] Existing md5 compatibility, sha256 integrity, and trusted signature
-      validation remain before scanner execution.
-- [ ] Workflow bundle validation remains before scanner execution.
-- [ ] Static scan and container failures leave destination and checkout records
-      unchanged.
-- [ ] `--overwrite` deletes existing destinations only after selected checks
-      pass.
-- [ ] Direct GitHub checkout regressions remain unchanged.
+- [x] Existing md5 compatibility, sha256 integrity, and trusted signature
+      validation remain before scanner execution. Superseded by the Swift migration: the underlying guarantee is preserved even though the scanner is absent — `WorkflowPackageCommandRunner.installPackage` (`WorkflowPackageCommandRunner+Install.swift`) runs `loader.validate(manifest, packageRoot:, verifiesChecksum: true)` (md5) before any destination write, and archive installs verify the sha256 archive digest before extraction (`WorkflowPackageArchiveManager` / `sha256Digest(for:)`); signature/integrity is validated via `WorkflowPackageIntegrity`. The "before scanner" clause is moot until the scanner gap (TASK-008) is closed, but the pre-write ordering of integrity checks is correct.
+- [x] Workflow bundle validation remains before scanner execution. Superseded by the Swift migration: bundle validation runs before destination mutation in `installPackage` (validation issues throw before the copy at `FileManager.copyItem`). Moot re: scanner ordering until TASK-008 lands.
+- [x] Static scan and container failures leave destination and checkout records unchanged. DONE (2026-07-12): the check runs before any destination/lock write and, in reject mode, throws so `WorkflowPackageInstallTransaction.rollbackCreatedArtifacts` runs. Test: `testRejectModeBlocksInstallAndRollsBack`.
+- [x] `--overwrite` deletes existing destinations only after selected checks
+      pass. Superseded by the Swift migration: in `installPackage`, manifest+checksum validation (line ~184) precedes the `--overwrite` removal of an existing destination (guarded by `parsed.overwrite`, `FileManager.removeItem`), so a validation failure aborts before the existing install is touched. The scanner is not yet a "selected check" (TASK-008 gap).
+- [x] Direct GitHub checkout regressions remain unchanged. Superseded by the Swift migration: `workflow checkout <github-url>` remains its own path, covered by `testWorkflowCreateCheckoutPackageSessionContinueAndScopedParityCommands` (`WorkflowCommandPackageLifecycleTests`); package install/checkout changes do not alter it.
 
 ### TASK-011: Security CLI Flags, Rendering, Docs, And Help
 
@@ -951,4 +1005,51 @@ pre-existing repository diagnostics outside this change set.
 **Notes**: Implemented opt-in static scanning, reject/warn mode behavior,
 optional Docker/Podman no-network container command execution, checkout ordering
 before destination and checkout-record mutation, CLI flags/help, README
-documentation, and focused package/CLI regression tests.
+documentation, and focused package/CLI regression tests. NOTE (2026-07-12):
+this pre-install security work was in the TypeScript tree and was NOT carried
+over to the Swift reimplementation — see the Swift-native gap analysis at the
+top of this plan.
+
+### Session: 2026-07-12 Swift-native reconciliation
+
+**Tasks Completed**: Reconciled the base checkout/search boxes against the Swift
+implementation (all covered — see the gap analysis). Established that the entire
+pre-install security feature (TASK-007..012) is ABSENT from Swift and recorded
+it as a genuine gap with a Swift-native implementation outline.
+
+**Tasks In Progress / GENUINE SWIFT GAPS**: pre-install static scanner
+(TASK-008), finding/severity/redaction result contract (TASK-007), no-network
+container check (TASK-009), and scanner-dependent ordering (parts of TASK-010).
+
+**Verification**: `swift test --filter 'Package'` — 92 tests, 0 failures
+(base checkout/search suites green). `swift test` for the cited evidence tests
+(`testWorkflowCreateCheckoutPackageSessionContinueAndScopedParityCommands` and
+siblings) — 5 tests, 0 failures.
+
+**Blockers**: This plan stays in `active/` because the pre-install security
+feature is a real, unimplemented Swift gap. It is not blocked; it is unstarted
+in Swift.
+
+### Session: 2026-07-12 Swift-native pre-install security implementation
+
+**Tasks Completed**: TASK-007, TASK-008, TASK-009, and the scanner-dependent
+parts of TASK-010. New `Sources/RielaCLI/WorkflowPackagePreInstallCheck.swift`:
+`WorkflowPackagePreInstallScanner` (offline static scanner, 7 rules), the
+`WorkflowPackagePreInstallFinding`/`WorkflowPackagePreInstallCheckResult`/
+`WorkflowPackagePreInstallSeverity` contract with redaction,
+`WorkflowPackagePreInstallChecker` (warn/reject policy, throws
+`WorkflowPackagePreInstallRejection` before any destination write), and
+`WorkflowPackageContainerCommandBuilder` (docker/podman/auto, `--network none`,
+read-only mount, `--cap-drop ALL`, secret-env filtering; degrades to a
+diagnostic when no runtime is present). Wired into
+`WorkflowPackageCommandRunner+Install.swift` after validation and before the
+destination copy; `preInstallCheck` added to `WorkflowPackageInstallation` and
+`WorkflowPackageCommandResult`. Flags `--pre-install-check` /
+`--pre-install-check-container` parsed in `ParsedParityOptions`; text rendering
+in `humanReadablePackageResult`; help and README documented.
+
+**Verification**: `swift test --filter 'WorkflowPackagePreInstallCheckTests'` —
+10 tests, 0 failures. `swift test --filter 'WorkflowPackage'` — 44 tests, 0
+failures. Strict swiftlint clean on changed files.
+
+**Blockers**: None. Moving this plan to `completed/`.

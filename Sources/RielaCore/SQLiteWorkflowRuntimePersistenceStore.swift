@@ -1,6 +1,22 @@
 import Foundation
 import RielaSQLite
 
+/// Accepted-baseline row for a workflow's loop (design S10). One baseline per
+/// workflow id in the MVP.
+public struct LoopBaseline: Codable, Equatable, Sendable {
+  public var workflowId: String
+  public var sessionId: String
+  public var setAt: Date
+  public var note: String?
+
+  public init(workflowId: String, sessionId: String, setAt: Date, note: String? = nil) {
+    self.workflowId = workflowId
+    self.sessionId = sessionId
+    self.setAt = setAt
+    self.note = note
+  }
+}
+
 public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   public var rootDirectory: String
 
@@ -220,6 +236,281 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     return overviews
   }
 
+  // MARK: - Loop baselines (design S10)
+
+  /// Sets or replaces the accepted baseline for a workflow. Writes happen only
+  /// through the explicit `loop baseline` commands; the table is created
+  /// lazily on this writable open.
+  public func setLoopBaseline(_ baseline: LoopBaseline) throws {
+    guard isSafeId(baseline.sessionId) else {
+      throw WorkflowRuntimePersistenceStoreError.invalidSessionId(baseline.sessionId)
+    }
+    let db = try openDatabase()
+    try ensureLoopBaselineSchema(db)
+    try mapSQLiteError {
+      try db.execute(
+        """
+        INSERT INTO loop_baselines (workflow_id, session_id, set_at, note)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(workflow_id) DO UPDATE SET
+          session_id = excluded.session_id,
+          set_at = excluded.set_at,
+          note = excluded.note
+        """,
+        bindings: [
+          .text(baseline.workflowId),
+          .text(baseline.sessionId),
+          .text(Self.dateString(baseline.setAt)),
+          .optionalText(baseline.note)
+        ]
+      )
+    }
+  }
+
+  /// Reads the baseline for a workflow on a read-only connection. A missing
+  /// database or missing table means "no baseline", never an error.
+  public func loadLoopBaseline(workflowId: String) throws -> LoopBaseline? {
+    guard FileManager.default.fileExists(atPath: Self.defaultDatabasePath(rootDirectory: rootDirectory)) else {
+      return nil
+    }
+    let db = try openDatabase(readOnly: true)
+    guard try loopBaselineTableExists(db) else {
+      return nil
+    }
+    let rows = try mapSQLiteError {
+      try db.query(
+        "SELECT workflow_id, session_id, set_at, note FROM loop_baselines WHERE workflow_id = ? LIMIT 1",
+        bindings: [.text(workflowId)]
+      )
+    }
+    guard let row = rows.first,
+          let sessionId = row["session_id"],
+          let setAtText = row["set_at"],
+          let setAt = Self.date(from: setAtText) else {
+      return nil
+    }
+    return LoopBaseline(
+      workflowId: workflowId,
+      sessionId: sessionId,
+      setAt: setAt,
+      note: row["note"]
+    )
+  }
+
+  /// Removes the baseline for a workflow. Returns whether a baseline existed.
+  @discardableResult
+  public func clearLoopBaseline(workflowId: String) throws -> Bool {
+    let db = try openDatabase()
+    try ensureLoopBaselineSchema(db)
+    let existed = try mapSQLiteError {
+      try db.query(
+        "SELECT workflow_id FROM loop_baselines WHERE workflow_id = ? LIMIT 1",
+        bindings: [.text(workflowId)]
+      )
+    }.isEmpty == false
+    try mapSQLiteError {
+      try db.execute("DELETE FROM loop_baselines WHERE workflow_id = ?", bindings: [.text(workflowId)])
+    }
+    return existed
+  }
+
+  private func ensureLoopBaselineSchema(_ db: SQLiteDatabase) throws {
+    try mapSQLiteError {
+      try db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS loop_baselines (
+          workflow_id TEXT PRIMARY KEY,
+          session_id  TEXT NOT NULL,
+          set_at      TEXT NOT NULL,
+          note        TEXT
+        )
+        """
+      )
+    }
+  }
+
+  private func loopBaselineTableExists(_ db: SQLiteDatabase) throws -> Bool {
+    try mapSQLiteError {
+      try db.query(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'loop_baselines' LIMIT 1",
+        bindings: []
+      )
+    }.isEmpty == false
+  }
+
+  // MARK: - Loop concurrency leases (design S11)
+
+  /// How a lease-acquire attempt resolved.
+  public enum LoopLeaseAcquisition: Equatable, Sendable {
+    /// Lease granted. `takenOverFrom` names the stale holder's session id
+    /// when the acquire replaced an expired lease (recorded as a diagnostic
+    /// on the new run).
+    case acquired(takenOverFrom: String?)
+    /// A fresh lease is held by another run.
+    case busy(holderSessionId: String, heartbeatAt: Date)
+  }
+
+  /// Acquires the single per-workflow lease in one writable transaction:
+  /// insert, or replace an existing row only when its heartbeat is older than
+  /// `staleAfterSeconds` (default 600 — the `possiblyStale` threshold).
+  public func acquireLoopConcurrencyLease(
+    workflowId: String,
+    holder: String,
+    now: Date = Date(),
+    staleAfterSeconds: TimeInterval = 600
+  ) throws -> LoopLeaseAcquisition {
+    let db = try openDatabase()
+    try ensureLoopLeaseSchema(db)
+    var acquisition = LoopLeaseAcquisition.acquired(takenOverFrom: nil)
+    try mapSQLiteError {
+      try db.transaction { database in
+        let rows = try database.query(
+          "SELECT session_id, heartbeat_at FROM loop_concurrency_leases WHERE workflow_id = ? LIMIT 1",
+          bindings: [.text(workflowId)]
+        )
+        if let row = rows.first,
+           let holderSessionId = row["session_id"],
+           let heartbeatText = row["heartbeat_at"],
+           let heartbeatAt = Self.date(from: heartbeatText) {
+          if now.timeIntervalSince(heartbeatAt) < staleAfterSeconds {
+            acquisition = .busy(holderSessionId: holderSessionId, heartbeatAt: heartbeatAt)
+            return
+          }
+          acquisition = .acquired(takenOverFrom: holderSessionId)
+        }
+        try database.execute(
+          """
+          INSERT INTO loop_concurrency_leases (workflow_id, session_id, acquired_at, heartbeat_at)
+          VALUES (?, ?, ?, ?)
+          ON CONFLICT(workflow_id) DO UPDATE SET
+            session_id = excluded.session_id,
+            acquired_at = excluded.acquired_at,
+            heartbeat_at = excluded.heartbeat_at
+          """,
+          bindings: [
+            .text(workflowId),
+            .text(holder),
+            .text(Self.dateString(now)),
+            .text(Self.dateString(now))
+          ]
+        )
+      }
+    }
+    return acquisition
+  }
+
+  /// Current lease row for a workflow.
+  public struct LoopConcurrencyLease: Equatable, Sendable {
+    public var sessionId: String
+    public var acquiredAt: Date
+    public var heartbeatAt: Date
+
+    public init(sessionId: String, acquiredAt: Date, heartbeatAt: Date) {
+      self.sessionId = sessionId
+      self.acquiredAt = acquiredAt
+      self.heartbeatAt = heartbeatAt
+    }
+  }
+
+  /// Reads the current lease row (read-only; missing database/table → nil).
+  public func loadLoopConcurrencyLease(workflowId: String) throws -> LoopConcurrencyLease? {
+    guard FileManager.default.fileExists(atPath: Self.defaultDatabasePath(rootDirectory: rootDirectory)) else {
+      return nil
+    }
+    let db = try openDatabase(readOnly: true)
+    guard try loopLeaseTableExists(db) else {
+      return nil
+    }
+    let rows = try mapSQLiteError {
+      try db.query(
+        "SELECT session_id, acquired_at, heartbeat_at FROM loop_concurrency_leases WHERE workflow_id = ? LIMIT 1",
+        bindings: [.text(workflowId)]
+      )
+    }
+    guard let row = rows.first,
+          let sessionId = row["session_id"],
+          let acquiredAt = row["acquired_at"].flatMap(Self.date(from:)),
+          let heartbeatAt = row["heartbeat_at"].flatMap(Self.date(from:)) else {
+      return nil
+    }
+    return LoopConcurrencyLease(sessionId: sessionId, acquiredAt: acquiredAt, heartbeatAt: heartbeatAt)
+  }
+
+  /// Releases the lease when held by `holder` (a placeholder token or the
+  /// bound session id). Crashed processes never call this; their rows expire
+  /// via the staleness takeover in `acquireLoopConcurrencyLease`.
+  public func releaseLoopConcurrencyLease(workflowId: String, holder: String) throws {
+    let db = try openDatabase()
+    try ensureLoopLeaseSchema(db)
+    try mapSQLiteError {
+      try db.execute(
+        "DELETE FROM loop_concurrency_leases WHERE workflow_id = ? AND session_id = ?",
+        bindings: [.text(workflowId), .text(holder)]
+      )
+    }
+  }
+
+  /// Heartbeat/bind/release ride the single snapshot save path (the same
+  /// "derived writes happen in one helper" rule the summary columns follow):
+  /// a pending placeholder lease binds to the first session saved for the
+  /// workflow, live saves refresh the heartbeat, and terminal saves release
+  /// the lease. No new timers, no background thread.
+  private func touchLoopConcurrencyLease(_ db: SQLiteDatabase, _ snapshot: WorkflowRuntimePersistenceSnapshot) throws {
+    guard try loopLeaseTableExists(db) else {
+      return
+    }
+    let sessionId = snapshot.session.sessionId
+    let workflowId = snapshot.session.workflowId
+    let isTerminal = snapshot.session.status == .completed || snapshot.session.status == .failed
+    if isTerminal {
+      try db.execute(
+        """
+        DELETE FROM loop_concurrency_leases
+        WHERE workflow_id = ? AND (session_id = ? OR session_id LIKE 'pending:%')
+        """,
+        bindings: [.text(workflowId), .text(sessionId)]
+      )
+      return
+    }
+    try db.execute(
+      """
+      UPDATE loop_concurrency_leases
+      SET session_id = ?, heartbeat_at = ?
+      WHERE workflow_id = ? AND (session_id = ? OR session_id LIKE 'pending:%')
+      """,
+      bindings: [
+        .text(sessionId),
+        .text(Self.dateString(snapshot.session.updatedAt)),
+        .text(workflowId),
+        .text(sessionId)
+      ]
+    )
+  }
+
+  private func ensureLoopLeaseSchema(_ db: SQLiteDatabase) throws {
+    try mapSQLiteError {
+      try db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS loop_concurrency_leases (
+          workflow_id  TEXT PRIMARY KEY,
+          session_id   TEXT NOT NULL,
+          acquired_at  TEXT NOT NULL,
+          heartbeat_at TEXT NOT NULL
+        )
+        """
+      )
+    }
+  }
+
+  private func loopLeaseTableExists(_ db: SQLiteDatabase) throws -> Bool {
+    try mapSQLiteError {
+      try db.query(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'loop_concurrency_leases' LIMIT 1",
+        bindings: []
+      )
+    }.isEmpty == false
+  }
+
   private func openDatabase(readOnly: Bool = false) throws -> SQLiteDatabase {
     let databasePath = Self.defaultDatabasePath(rootDirectory: rootDirectory)
     return try mapSQLiteError {
@@ -319,6 +610,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
         .text(Self.dateString(snapshot.session.updatedAt))
       ]
       )
+      try touchLoopConcurrencyLease(db, snapshot)
     }
   }
 

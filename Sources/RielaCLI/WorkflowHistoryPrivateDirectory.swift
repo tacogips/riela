@@ -114,8 +114,7 @@ final class WorkflowHistoryPrivateDirectory {
   func verifyTopology(files: Set<String>, directories: Set<String>, requireNonWritable: Bool) throws {
     var actualFiles: Set<String> = []
     var actualDirectories: Set<String> = []
-    try enumerate(descriptor: descriptor, prefix: "", requireNonWritable: requireNonWritable) {
-      path, type in
+    try enumerate(descriptor: descriptor, prefix: "", requireNonWritable: requireNonWritable) { path, type in
       if type == S_IFDIR { actualDirectories.insert(path) } else { actualFiles.insert(path) }
     }
     guard actualFiles == files, actualDirectories == directories else {
@@ -210,6 +209,10 @@ final class WorkflowHistoryPrivateDirectory {
       throw CLIUsageError("unable to enumerate private workflow history artifact")
     }
     defer { closedir(directory) }
+    // `dup` shares the open file description (and its read offset) with `source`.
+    // If `source` has already been read to EOF, this stream would otherwise see no
+    // entries; rewind so enumeration always starts at the beginning.
+    rewinddir(directory)
     var names: [String] = []
     while let entry = readdir(directory) {
       let name = withUnsafePointer(to: entry.pointee.d_name) {
@@ -303,6 +306,10 @@ final class WorkflowHistoryPrivateDirectory {
       throw CLIUsageError("unable to enumerate private workflow history directory")
     }
     defer { closedir(directory) }
+    // `dup` shares the open file description (and its read offset) with `source`.
+    // If `source` has already been read to EOF, this stream would otherwise see no
+    // entries; rewind so enumeration always starts at the beginning.
+    rewinddir(directory)
     var names: [String] = []
     while let entry = readdir(directory) {
       let name = withUnsafePointer(to: entry.pointee.d_name) {

@@ -8,6 +8,7 @@ final class WorkflowExecutionDetailPopover {
   static func make(
     entry: WorkflowViewerTimelineEntry,
     messages: [WorkflowViewerMessage],
+    messageLogAvailable: Bool,
     dateFormatter: DateFormatter,
     durationFormatter: @escaping (TimeInterval?) -> String
   ) -> NSPopover {
@@ -18,6 +19,7 @@ final class WorkflowExecutionDetailPopover {
     controller.view = DetailView(
       entry: entry,
       messages: messages,
+      messageLogAvailable: messageLogAvailable,
       dateFormatter: dateFormatter,
       durationFormatter: durationFormatter
     )
@@ -29,6 +31,7 @@ final class WorkflowExecutionDetailPopover {
 private final class DetailView: NSView {
   private let entry: WorkflowViewerTimelineEntry
   private let messages: [WorkflowViewerMessage]
+  private let messageLogAvailable: Bool
   private let dateFormatter: DateFormatter
   private let durationFormatter: (TimeInterval?) -> String
   private let segmentedControl = NSSegmentedControl(labels: ["Log", "Inbox", "Outbox"], trackingMode: .selectOne, target: nil, action: nil)
@@ -37,11 +40,13 @@ private final class DetailView: NSView {
   init(
     entry: WorkflowViewerTimelineEntry,
     messages: [WorkflowViewerMessage],
+    messageLogAvailable: Bool,
     dateFormatter: DateFormatter,
     durationFormatter: @escaping (TimeInterval?) -> String
   ) {
     self.entry = entry
     self.messages = messages
+    self.messageLogAvailable = messageLogAvailable
     self.dateFormatter = dateFormatter
     self.durationFormatter = durationFormatter
     super.init(frame: NSRect(x: 0, y: 0, width: 520, height: 430))
@@ -170,6 +175,9 @@ private final class DetailView: NSView {
   }
 
   private func inboxText() -> String {
+    guard messageLogAvailable else {
+      return "Message log unavailable for this session."
+    }
     let inbox = messages
       .filter { $0.toStepId == entry.stepId }
       .sorted { ($0.createdOrder ?? 0, $0.id) < ($1.createdOrder ?? 0, $1.id) }
@@ -177,6 +185,9 @@ private final class DetailView: NSView {
   }
 
   private func outboxText() -> String {
+    guard messageLogAvailable else {
+      return "Message log unavailable for this session."
+    }
     let outbox = messages
       .filter { $0.sourceStepExecutionId == entry.executionId }
       .sorted { ($0.createdOrder ?? 0, $0.id) < ($1.createdOrder ?? 0, $1.id) }

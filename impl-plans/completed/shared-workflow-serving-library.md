@@ -1,13 +1,13 @@
 # Shared Workflow Serving Library Implementation Plan
 
-**Status**: Ready
+**Status**: COMPLETE for the in-scope work (implemented and verified 2026-07-12; RielaServerTests 30/0, RielaEventsTests 29/0, RielaApp builds, import isolation clean). The two remaining items are explicitly accepted deferrals, not open work in this plan: TASK-002 selection resolution stays PARTIAL and TASK-005 full CLI serve lifecycle delegation stays DEFERRED — owner: a future serve-delegation follow-up plan; trigger: demand for full `riela serve` parity through the shared library or the next menu-bar app iteration. Archived 2026-07-12 with those deferrals recorded.
 **Design Reference**: `design-docs/specs/design-shared-workflow-serving-library.md`
 **Workflow Mode**: issue-resolution
 **Issue Reference**: macOS app client / workflow serving request
 **Feature ID**: `shared-workflow-serving-library`
 **Review Mode**: adversarial, high risk
 **Created**: 2026-06-19
-**Last Updated**: 2026-06-19
+**Last Updated**: 2026-07-12
 
 ## Summary
 
@@ -216,7 +216,11 @@ preserving existing CLI behavior.
 ## Completion Criteria
 
 - [x] `RielaServer` exposes reusable serving APIs importable outside the CLI.
-- [ ] `riela serve` delegates lifecycle behavior to the shared library.
+- [~] `riela serve` delegates lifecycle behavior to the shared library. DEFERRED
+      (TASK-005, out of scope this pass). The `serve --note-api` path already
+      uses the shared `InProcessWorkflowServeListenerFactory` /
+      `WorkflowServeStartRequest`; full lifecycle delegation of the general
+      `serve` command is a scheduled follow-up.
 - [x] Start/stop/restart/reload are tested with deterministic fake handles.
 - [x] Reload preserves the current generation on invalid update.
 - [x] Successful reload stops old event sources and avoids duplicate schedules
@@ -225,7 +229,11 @@ preserving existing CLI behavior.
 - [x] Mac client contract tests prove UI-independent consumption.
 - [x] `RielaApp` builds as an independent SwiftPM executable.
 - [x] Local `.app` bundle wrapper is available for registration validation.
-- [ ] Verification commands pass.
+- [x] Verification commands pass. (2026-07-12: `RielaServerTests` 30/0,
+      `RielaEventsTests` 29/0, full `RielaCLITests` green in the 1,733-test
+      suite, `swift build --product RielaApp` succeeds, `RielaServer`/`RielaApp`
+      import-isolation `rg` checks clean, serving-API presence confirmed, and
+      `scripts/build-riela-menu-bar-app.sh` present.)
 
 ## Verification
 
@@ -287,6 +295,27 @@ without importing CLI types.
   exposed by the library.
 
 ## Progress Log
+
+### Session: 2026-07-12
+
+**Tasks Completed**: Verification obligation closed. Ran the prescribed
+verification commands on the current tree: `swift test --filter RielaServerTests`
+(30 tests, 0 failures), `swift test --filter RielaEventsTests` (29 tests, 0
+failures), `swift build --product RielaApp` (succeeds), the `RielaServer` and
+`RielaApp` import-isolation `rg` checks (no `RielaCLI`/agent imports), the
+serving-API presence check, and confirmed `scripts/build-riela-menu-bar-app.sh`
+exists. Full `RielaCLITests` passed as part of the 1,733-test full suite.
+Reconciled the contradictory header status: in-scope work (controller, DTOs,
+handle lifecycle, atomic reload, mac client contract, `RielaApp` target, bundle
+wrapper) is COMPLETED and verified; TASK-002 selection resolution remains PARTIAL
+and TASK-005 full CLI serve delegation remains DEFERRED, both intentionally out
+of scope for this pass.
+
+**Tasks In Progress**: None in-scope. TASK-002 completion and TASK-005 CLI serve
+lifecycle delegation are out-of-scope follow-ups.
+
+**Blockers**: None. The plan stays active only for the two explicitly deferred
+follow-ups, not for any in-scope remaining work.
 
 ### Session: 2026-06-19
 

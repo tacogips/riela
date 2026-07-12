@@ -86,10 +86,20 @@ riela note notebook create "Project notes"
 riela note notebook list --output table
 riela note storage migrate --all --to s3 --profile archive \
   --s3-endpoint https://s3.example.com --s3-region us-east-1 --s3-bucket notes
+riela note storage gc --grace-hours 24
+riela note auto-action retry
 riela note client register "iPad" --output json
 riela note client list --output table
 riela note client revoke <client-id>
 ```
+
+`riela note storage gc` reclaims file rows and blobs no note or notebook
+references anymore and sweeps stray blob/temp files older than the grace
+period (default 24 hours); referenced files still survive note deletion.
+`riela note auto-action retry` reclaims interrupted auto-action dispatches
+whose lease went stale and retries pending ones — dispatch rows are
+lease-owned, so concurrent CLI or app processes never double-run a live
+dispatch.
 
 `riela note` executes note operations through the note GraphQL service against
 the local store, so the CLI, built-in note add-ons, RielaNoteUI, and server note

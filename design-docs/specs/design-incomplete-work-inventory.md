@@ -52,8 +52,45 @@ dispatch to the resume step (see section 6).
   `examples/loop-ci-gate-check/` example.
 - **Workflow self-evolution versioning.**
   `impl-plans/active/loop-engineering-first-line-tool.md` section
-  "8. Workflow Self-Evolution Versioning" is the only remaining NOT_STARTED
-  section of that plan (all other sections DONE).
+  "8. Workflow Self-Evolution Versioning" is implemented with the Step 7
+  round-two through round-seven adversarial findings resolved. The declared
+  required review-gate step and exact execution now bind immutable
+  runtime-owned gate evidence, and apply repeats gate-policy validation.
+  Locked transaction preflight now re-resolves identity, snapshot authority,
+  ownership, and inventories before preparing. Durable operation-specific and
+  transaction audits, exact-byte/digest sidecars, canonical unowned before/
+  after inventories, verified snapshot rollback authority, runtime-owned
+  review finalization, exact `--yes` approval, declaring-directory nested
+  resolution, disjoint history/ownership roots, a canonical-target-derived
+  lock independent of history root, no-follow history/lock
+  operations, fail-closed declaration/enumeration reads, exact embedded and
+  referenced proposal equality, automatic phase-aware recovery before public
+  resolution/version/run operations (including an absent live tree), immutable
+  atomic phase generations with canonical record/sidecar publication and
+  legacy split-write reconciliation, recoverable marker cleanup, pinned-root
+  descriptor-relative no-follow record/sidecar/object publication and reads,
+  complete version provenance, strict staged agent/
+  stdio/add-on scenario verification, and all `committing`/`live_moved` plus
+  durability-boundary recovery rows have deterministic passing coverage. The
+  round-seven hardening makes generation payloads, sidecars, and directories
+  non-writable before publication and verifies their modes on every read;
+  permits verification/diagnostic evolution only through explicit append-only
+  field transitions; descriptor-enumerates exact snapshot/proposal/change-set
+  topology while rejecting FIFOs, sockets, devices, links, and unexpected
+  directories; and publishes a durable no-mutation preflight-attempt record
+  before mutability, lock, transaction, snapshot-authority, and locked-digest
+  checks, including fail-closed audit persistence. The
+  round-five hardening also discovers orphan transaction records under lock,
+  makes recovery failure terminal across auto-scope resolution, pins transitive
+  shared-node dependencies into inventory/digest/snapshot/staging, uses
+  filesystem no-replace immutable directory publication, verifies proposal
+  rereads against inventoried bytes/mode, and requires exact canonical audit
+  retry equality. Independent canonical fixtures and adversarial mismatch,
+  dependency-drift, leaf/ancestor-swap, same-id concurrency,
+  same-target/different-history-root locking, and fallback-refusal tests cover
+  these contracts. The remaining active-plan status is bookkeeping for
+  the broader loop-engineering
+  plan, not a known Section 8 production gap.
 - **RielaApp instance execution timeline.**
   `impl-plans/active/rielaapp-instance-execution-timeline.md` — status
   "Planning", 12 NOT_STARTED tasks; no implementation yet.

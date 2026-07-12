@@ -18,6 +18,7 @@ public struct RielaCLIApplication: Sendable {
   public var sessionDiscoveryCommand: SessionDiscoveryCommand
   public var sessionInspectionCommand: SessionInspectionCommand
   public var workflowScaffoldCommand: WorkflowScaffoldCommand
+  public var workflowVersionCommand: WorkflowVersionCommand
   public var packageCommandRunner: WorkflowPackageCommandRunner
   public var nodeCommandRunner: NodeCommandRunner
   public var setupContainerCommand: SetupContainerCommand
@@ -41,6 +42,7 @@ public struct RielaCLIApplication: Sendable {
     sessionDiscoveryCommand: SessionDiscoveryCommand = SessionDiscoveryCommand(),
     sessionInspectionCommand: SessionInspectionCommand = SessionInspectionCommand(),
     workflowScaffoldCommand: WorkflowScaffoldCommand = WorkflowScaffoldCommand(),
+    workflowVersionCommand: WorkflowVersionCommand = WorkflowVersionCommand(),
     packageCommandRunner: WorkflowPackageCommandRunner = WorkflowPackageCommandRunner(),
     nodeCommandRunner: NodeCommandRunner = NodeCommandRunner(),
     setupContainerCommand: SetupContainerCommand = SetupContainerCommand(),
@@ -63,6 +65,7 @@ public struct RielaCLIApplication: Sendable {
     self.sessionDiscoveryCommand = sessionDiscoveryCommand
     self.sessionInspectionCommand = sessionInspectionCommand
     self.workflowScaffoldCommand = workflowScaffoldCommand
+    self.workflowVersionCommand = workflowVersionCommand
     self.packageCommandRunner = packageCommandRunner
     self.nodeCommandRunner = nodeCommandRunner
     self.setupContainerCommand = setupContainerCommand
@@ -119,6 +122,8 @@ public struct RielaCLIApplication: Sendable {
         return workflowScaffoldCommand.create(options)
       case let .workflow(.selfImprove(options)):
         return workflowScaffoldCommand.selfImprove(options)
+      case let .workflow(.version(options)):
+        return workflowVersionCommand.run(options)
       case let .workflow(.package(command)):
         return await packageCommandRunner.run(command)
       case let .session(command):
@@ -298,6 +303,10 @@ Usage:
   riela workflow list|status [--output jsonl|json|text|table]
   riela workflow manifest validate <manifest-path> [--output jsonl|json|text]
   riela workflow checkout|create|self-improve <workflow> [options]
+  riela workflow versions <workflow> [--output json|text]
+  riela workflow version show <workflow> <snapshot-id> [--output json|text]
+  riela workflow version diff <workflow> <from> <to> [--output json|text]
+  riela workflow restore <workflow> <snapshot-id> [--yes] [--output json|text]
   riela workflow package <search|list|status|install|ci|update|remove|checkout|init|validate|pack|publish> [options]
   riela workflow run <workflow> [--variables <json|@file>] [--instance <name>] [--mock-scenario <path>] [--auto-improve] [--output jsonl|json|text]
   riela instance list|show|create|update|remove [identity] [--workflow <id>] [--scope project|user|all] [--output json|jsonl|text|table]

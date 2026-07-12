@@ -3,7 +3,7 @@
 **Status**: In Progress
 **Design Reference**: `design-docs/specs/design-loop-engineering-first-line-tool-detail.md`
 **Created**: 2026-06-25
-**Last Updated**: 2026-06-25
+**Last Updated**: 2026-07-11
 
 ---
 
@@ -483,60 +483,270 @@ public struct WorkflowPackageLoopMetadata: Codable, Equatable, Sendable {
 
 ### 8. Workflow Self-Evolution Versioning
 
-#### `Sources/RielaCore/WorkflowHistoryModels.swift`
+**Status**: IMPLEMENTED — ROUND 7 ADVERSARIAL FINDINGS RESOLVED
 
-**Status**: NOT STARTED
+**Source of truth**:
 
-Planned models:
+- `design-docs/specs/design-loop-engineering-first-line-tool-detail.md`,
+  especially **Workflow Self-Evolution And Version Safety**, **Bundle Identity,
+  Ownership, And Snapshot Integrity**, **Apply And Restore Transaction
+  Protocol**, **Reviewed Change-Set And Apply Contract**, and **Version Command
+  Contract**.
+- `issueReference`: `null`; no issue mapping is invented.
+- `codexAgentReferences`: `[]`; no Codex-agent or Cursor CLI behavior is being
+  ported. Runtime-owned identity, review binding, validation, history,
+  transaction, mutation, and restore behavior is intentional.
 
-- `WorkflowChangeSet`
-- `WorkflowBundleSnapshotManifest`
-- `WorkflowRestoreRecord`
-- `LoopWorkflowMutationEvidence`
+#### Task 8.1: Core history contracts and canonical persistence
 
-**Checklist**:
+**Write scope**: `Sources/RielaCore/WorkflowHistoryModels.swift`, new focused
+RielaCore history/canonical-coding files, and corresponding
+`Tests/RielaCoreTests` files.
 
-- [ ] Model bundle-wide snapshots with workflow id, source kind, package
-  provenance, workflow contract version, bundle digest, file refs, retention,
-  and redaction status.
-- [ ] Model reviewed change-sets with source session id, reviewer gate,
-  proposed files, rationale, validation evidence, and rejected alternatives.
-- [ ] Model restore records with source snapshot id, dirty-conflict handling,
-  restored files, skipped files, and validation evidence.
-- [ ] Add deterministic Codable tests.
+**Deliverables**:
 
-#### `Sources/RielaCLI/WorkflowSelfImproveVersioning.swift`
+- [x] Add the complete normative contracts for `WorkflowBundleIdentity`,
+  `WorkflowFileOperation`, `WorkflowChangeProposal`,
+  `WorkflowChangeSetReviewEvidence`, `WorkflowChangeSet`,
+  `WorkflowBundleSnapshotFile`, `WorkflowBundleSnapshotManifest`,
+  `WorkflowRestoreRecord`, and `LoopWorkflowMutationEvidence`.
+- [x] Implement the pinned canonical JSON representation, canonical ordering,
+  safe-component/path validation, schema-version rejection, duplicate
+  rejection, enum/outcome validation, and exact persisted-byte integrity
+  checks specified by the design.
+- [x] Implement the distinct content, bundle, proposal, proposal-file,
+  finalized, manifest, audit, and transaction digest inputs without merging
+  their meanings.
+- [x] Preserve decoding of runtime snapshots with absent `workflowMutation`;
+  legacy single-file backups remain display-only and cannot become restore
+  targets.
+- [x] Add deterministic Codable, canonical byte fixture, digest, invalid order,
+  duplicate path/id, unsupported schema, and legacy compatibility tests.
+- [x] Pin independent canonical byte/digest fixtures plus missing-required-field,
+  unknown-enum, Unicode scalar key-order, and digest-input exclusion coverage.
 
-**Status**: NOT STARTED
+#### Task 8.2: Identity, owned-file inventory, proposal, and snapshot stores
 
-**Checklist**:
+**Depends on**: Task 8.1.
 
-- [ ] Upgrade `workflow self-improve --dry-run` to emit a reviewed
-  `WorkflowChangeSet` without mutating sources.
-- [ ] Before `workflow self-improve --yes`, capture a bundle-wide snapshot
-  under `.riela/workflow-history/<workflow-id>/`.
-- [ ] Snapshot `workflow.json`, nodes, prompts, nested bundle-owned workflows,
-  mock scenarios, `EXPECTED_RESULTS.md`, package metadata, and executable bits.
-- [ ] Refuse mutation of immutable installed package workflows unless an
-  explicit overlay/update mode is selected.
-- [ ] Write `LoopWorkflowMutationEvidence` into loop evidence when workflow
-  mutation happens during a loop.
-- [ ] Replace single-file rollback metadata with bundle snapshot ids.
+**Write scope**: new focused files under `Sources/RielaCLI` for workflow
+identity/inventory and history storage, plus corresponding `Tests/RielaCLITests`
+files. Keep `WorkflowSelfImproveVersioning.swift` as orchestration rather than
+allowing it to exceed 1000 lines.
 
-#### `Sources/RielaCLI/WorkflowVersionCommands.swift`
+**Deliverables**:
 
-**Status**: NOT STARTED
+- [x] Resolve and pin project, user, and installed-package identity through the
+  existing workflow resolver, including canonical ownership/package roots,
+  contract version, provenance, and mutability.
+- [x] Discover the deterministic owned-file set, including declared nested
+  workflows, package metadata only inside the ownership root, mock scenarios,
+  `EXPECTED_RESULTS.md`, content metadata, and executable bits; reject missing,
+  duplicate, escaping, symlink-escaping, special, or unowned artifacts.
+- [x] Implement contained history-root selection and the fixed immutable
+  proposal/snapshot layouts. Derive object paths only from validated SHA-256
+  values and reject links, non-regular objects, corrupt bytes, partial records,
+  and unsafe identifiers.
+- [x] Publish proposal and snapshot directories atomically from temporary
+  siblings only after object, byte-count, canonical record, sidecar, bundle
+  digest, fsync, and completeness checks pass. Never overwrite or repair an
+  immutable published id in place.
+- [x] Exclude history storage from the owned bundle and prevent collection of
+  records still referenced by change sets, audits, transactions, or retention.
+- [x] Resolve and pin the transitive supported `nodeRef` dependency graph into
+  bundle inventory/digest, snapshot objects, drift checks, and isolated staged
+  resolution; shared dependencies remain evidence, not restore destinations.
+- [x] Publish immutable snapshot/proposal/change-set directories with a
+  filesystem no-replace rename so concurrent same-id publication cannot
+  overwrite or mix canonical records and sidecars.
+- [x] Pin the canonical history-root descriptor and traverse/create history
+  components with descriptor-relative no-follow operations; publish records,
+  snapshots, proposals, change sets, sidecars, fsyncs, and unlinks through
+  pinned descriptors so ancestor replacement cannot redirect publication.
 
-**Checklist**:
+#### Task 8.3: Recoverable apply/restore directory transaction
 
-- [ ] Add `riela workflow versions <workflow>`.
-- [ ] Add `riela workflow version show <workflow> <snapshot-id>`.
-- [ ] Add `riela workflow version diff <workflow> <from> <to>`.
-- [ ] Add `riela workflow restore <workflow> <snapshot-id> [--yes]`.
-- [ ] Restore only after containment, ownership, package mutability, and dirty
-  destination checks pass.
-- [ ] Add tests for conflict failure, explicit restore approval, package-source
-  immutability, and successful project workflow restore.
+**Depends on**: Tasks 8.1 and 8.2.
+
+**Write scope**: new focused transaction/coordinator files under
+`Sources/RielaCLI` and corresponding focused `Tests/RielaCLITests` files.
+
+**Deliverables**:
+
+- [x] Implement exclusive per-target locking, nonterminal transaction markers,
+  same-filesystem sibling staging/rollback paths, durable phase transitions,
+  fsync boundaries, and refusal by workflow resolution/version/run entry
+  points while a target has a nonterminal marker.
+- [x] Stage the complete ownership root, preserve and inventory unowned regular
+  files, reject unowned symlinks/special files, validate staged owned content,
+  and recheck unowned entries immediately before commit.
+- [x] Implement the ordered `preparing`, `prepared`, `committing`, `live_moved`,
+  `published`, and `committed` protocol and append durable mutation, restore,
+  failure, rollback, and recovery audit records.
+- [x] Implement the design's exhaustive phase-aware recovery matrices exactly;
+  verify identity, inventories, modes, containment, and digests before any
+  recovery rename or deletion, and fail closed on every unspecified or
+  ambiguous state.
+- [x] Treat the pre-operation snapshot as rollback authority; never substitute
+  the sibling rollback tree or legacy single-file backup metadata for it.
+- [x] Invoke phase-aware recovery from the shared workflow resolver before
+  resolution, version inspection/restore, and run operations, using stable
+  target metadata even when the canonical live tree is absent.
+- [x] Keep phase in gap-free immutable transaction generations, each publishing
+  its canonical record and SHA-256 sidecar through one directory rename; select
+  only a complete canonical generation chain and fail closed on ambiguity or
+  tampering. Keep the stable active pointer id-only, retain legacy adjacent
+  monotonic split-write reconciliation, and order terminal cleanup so either
+  the stable marker or active pointer can still drive safe completion.
+- [x] Derive the advisory lock only from canonical ownership target, independent
+  of history root and working directory, and acquire it descriptor-safely before
+  transaction-state resolution or mutation.
+- [x] Under the target lock securely enumerate and validate every durable
+  transaction record, recover a lone orphan record without `active.json`, and
+  fail closed on multiple or pointer-ambiguous nonterminal records.
+- [x] Treat transaction recovery failures as terminal during auto-scope
+  candidate resolution so a corrupt project target cannot retarget to user
+  scope.
+- [x] Require exact deterministic canonical equality for pre-existing
+  transaction/mutation/restore audits, including kind, snapshot/change-set/
+  review bindings, digests, verification, diagnostics, and restored-file sets.
+
+#### Task 8.4: Reviewed self-improve proposal/finalize/apply lifecycle
+
+**Depends on**: Tasks 8.1 through 8.3 and the existing gate/evidence runtime.
+
+**Write scope**: `Sources/RielaCLI/WorkflowSelfImproveVersioning.swift`, focused
+support files under `Sources/RielaCLI`, required loop-evidence integration under
+`Sources/RielaCore`, and corresponding focused tests.
+
+**Deliverables**:
+
+- [x] Make `workflow self-improve --dry-run` a non-mutating proposal phase that
+  durably stores canonical immutable proposal bytes and verified content
+  objects; the proposal contains no review evidence.
+- [x] Bind review to the exact proposal id, proposal digest, and before-bundle
+  digest. Finalize only accepted review evidence into an immutable change set;
+  rejection produces no apply artifact.
+- [x] Make `workflow self-improve --yes` accept only a finalized change-set id
+  and expected finalized digest, reread every persisted artifact/object, and
+  reject identity drift, stale digest/review, broadened operations, dirty
+  conflict, immutable package source, containment failure, or snapshot failure.
+- [x] Capture and verify the complete pre-mutation snapshot, stage only verified
+  proposal objects, run required validation and mock scenarios against staging,
+  then commit through Task 8.3 while preserving reviewed modes and unowned
+  files.
+- [x] Persist `LoopWorkflowMutationEvidence` binding change set, snapshot,
+  transaction, before/after digests, reviewer gate, validation, and truthful
+  outcome. Replace rollback references with snapshot ids.
+- [x] Deny installed-package mutation. A future explicit overlay/update mode
+  must create a distinct mutable target; this task does not add an implicit
+  exception.
+- [x] Derive proposal bytes only after a descriptor-relative no-follow reread
+  exactly matches the inventoried workflow bytes, digest, size, and mode.
+
+#### Task 8.5: Version inspection and restore commands
+
+**Depends on**: Tasks 8.1 through 8.3. May proceed in parallel with Task 8.4
+after the shared APIs from Tasks 8.1 through 8.3 are stable because its write
+scope is disjoint.
+
+**Write scope**: `Sources/RielaCLI/WorkflowVersionCommands.swift`, command parser
+and dispatch integration, and dedicated parser/command tests.
+
+**Deliverables**:
+
+- [x] Add `riela workflow versions <workflow>`, newest complete snapshots first,
+  with stable human output and structured JSON.
+- [x] Add `riela workflow version show <workflow> <snapshot-id>` with full
+  manifest/object integrity verification and mutation/restore references.
+- [x] Add `riela workflow version diff <workflow> <from> <to>`, supporting the
+  explicit `current` token only for a resolved mutable bundle and reporting
+  add/remove/content/mode-only changes without source materialization.
+- [x] Make `riela workflow restore <workflow> <snapshot-id>` a write-free dry
+  run that verifies integrity/identity and reports the exact restore set,
+  conflicts, and required validation.
+- [x] Make `riela workflow restore <workflow> <snapshot-id> --yes` the only
+  mutating form. Recheck identity, containment, ownership, mutability, package
+  source, approval, and dirty conflicts; capture a fresh pre-restore snapshot;
+  stage/validate/commit through Task 8.3; restore executable bits; verify the
+  final digest; and persist a truthful `WorkflowRestoreRecord` referencing both
+  source and pre-restore snapshots.
+- [x] Never prompt for approval, rewrite history, repair malformed snapshots,
+  or claim `restored == true` after a failed restore.
+
+#### Task 8.6: Focused adversarial and success verification
+
+**Depends on**: Tasks 8.1 through 8.5.
+
+**Deliverables**:
+
+- [x] Add success coverage for deterministic model round trips, proposal review
+  and finalization, complete snapshot creation, reviewed project-workflow apply,
+  list/show/diff, dry-run restore, approved restore, executable-bit-only diff
+  and restoration, audit/evidence binding, and interruption recovery.
+- [x] Add negative coverage for lexical traversal, symlink escape, wrong
+  ownership, unsafe ids, immutable package sources, stale identity/review/
+  digest, missing/extra/mutable/corrupt proposal objects, incomplete/corrupt
+  snapshots, the verified same-device sibling staging boundary (without
+  claiming a synthetic cross-device mount test), nonterminal transactions, missing approval,
+  dirty conflicts, validation failure, unowned-file drift, special files, and
+  every fail-closed transaction recovery matrix row.
+- [x] Cover all eight `committing` and all eight `live_moved` path-existence
+  rows, including verified rollback/commit outcomes and fail-closed evidence
+  preservation for every unspecified row.
+- [x] Cover durable audit failure followed by recovery completion, advisory
+  lock crash release with a stale lock pathname, verified pre-operation
+  snapshot mismatch, and configured history-root active-marker refusal.
+- [x] Verify snapshot and proposal exact-file enumeration rejects symbolic
+  links on the original enumerated URL before any canonicalization.
+- [x] Inject interruption after every transaction record, marker, rename,
+  audit, rollback unlink, and marker unlink boundary; recover each state through
+  the public `workflow validate` command surface, including live-absent state.
+- [x] Read history records, digest sidecars, immutable objects, declarations,
+  and inventory content with descriptor-relative `openat(O_NOFOLLOW)` plus
+  `fstat`, and cover deterministic leaf-swap races.
+- [x] Run required staged mock scenarios through agent, stdio, and add-on
+  scenario wiring; reject missing entries and unconsumed required responses.
+- [x] Run SwiftLint and split every modified Swift file over 1000 lines by
+  responsibility before handoff.
+- [x] Assert every durability boundary leaves a terminal record, matching
+  operation/transaction audits, cleared active/stable markers, and no bypass
+  by a second transaction while unresolved.
+- [x] Cover orphan/multiple transaction records, project-to-user fallback
+  refusal, concurrent same-id publication, shared-node mutation/drift/snapshot/
+  staging, secure proposal leaf swap, and adversarial audit-field mismatches.
+- [x] Inject faults between transaction payload and sidecar construction for
+  every durable phase and recover through public validation, including the
+  live-absent rename window; cover same-target/different-history-root lock
+  refusal and deterministic history/target ancestor replacement for records,
+  snapshots, proposals, and locks.
+- [x] Make every transaction generation payload and sidecar non-writable before
+  publication, make the published generation directory non-writable, verify
+  type/mode on every read, and constrain verification/diagnostic evolution
+  field by field without dropping either field from transition comparison.
+- [x] Descriptor-enumerate the complete snapshot, proposal, and finalized
+  change-set topology; require exactly canonical directories/files and reject
+  independent FIFO, Unix-socket, unexpected-directory, link, and device-style
+  entries.
+- [x] Durably publish an idempotent preflight-attempt operation record before
+  mutability, digest, lock, existing-transaction, snapshot-authority, or locked
+  inventory checks; finalize preflight failures without claiming mutation and
+  fail closed when initial or failure-audit persistence fails.
+
+#### Task 8.7: Plan synchronization and progress evidence
+
+**Depends on**: Task 8.6.
+
+**Deliverables**:
+
+- [x] Update each Task 8.1-8.6 checkbox and module status only from verified
+  evidence; do not mark a slice complete because code merely exists.
+- [x] Append dated progress-log entries to
+  `impl-plans/active/loop-engineering-first-line-tool-progress.md` containing
+  changed paths, behavior completed, exact verification commands/results,
+  remaining work, failures, and any accepted divergence from the design.
+- [x] Keep `design-docs/specs/design-incomplete-work-inventory.md` synchronized
+  with the verified implementation state and preserve unrelated worktree edits.
 
 ### 9. Tests
 
@@ -664,7 +874,7 @@ Validation coverage lives in
 | GraphQL DTOs and query service | `Sources/RielaGraphQL/GraphQLContracts.swift`, `Sources/RielaGraphQL/RielaGraphQL.swift` | DONE | `GraphQLContractsTests` |
 | Package manifest metadata | `Sources/RielaAddons/WorkflowPackageManifest.swift`, `Sources/RielaAddons/WorkflowPackagePromotionArtifacts.swift` | DONE | `WorkflowPackageManifestTests` |
 | Package publish readiness | `Sources/RielaCLI/WorkflowPackageParityCommands.swift`, `Sources/RielaCLI/WorkflowPackageLoopReadiness.swift` | DONE | `WorkflowCommandTests` |
-| Workflow self-evolution versioning | `Sources/RielaCore/WorkflowHistoryModels.swift`, `Sources/RielaCLI/WorkflowSelfImproveVersioning.swift`, `Sources/RielaCLI/WorkflowVersionCommands.swift` | NOT STARTED | planned |
+| Workflow self-evolution versioning | `Sources/RielaCore/WorkflowHistoryModels.swift`, `Sources/RielaCLI/WorkflowSelfImproveVersioning.swift`, `Sources/RielaCLI/WorkflowVersionCommands.swift` | IMPLEMENTED — ROUND 7 REVIEW FINDINGS RESOLVED | focused model, immutable-generation, exact-topology, preflight-attempt, transaction, self-improve, version-command, recovery-matrix, audit-failure, staged-mock, and special-file tests |
 
 ## Dependencies
 
@@ -678,7 +888,10 @@ Validation coverage lives in
 | Gate enforcement | Gate model, projector, policy evaluator | Available |
 | Package promotion checks | Workflow loop metadata and package loop metadata | Available |
 | First-party loop template updates | Gate enforcement and usage projection | Available |
-| Workflow self-evolution versioning | Evidence manifest, package mutability metadata, self-improve command surface | Not started |
+| Workflow self-evolution models and storage | Evidence manifest, workflow resolver, package provenance/mutability, canonical SHA-256 support | Implemented |
+| Recoverable bundle transaction | Canonical identity, owned-file inventory, snapshots, filesystem locking/fsync/rename support | Implemented |
+| Reviewed self-improve apply | History models/store, gate evidence, recoverable transaction, existing self-improve command surface | Implemented |
+| Version inspection and restore | History models/store, resolver, snapshot verifier, recoverable transaction | Implemented |
 
 ## Dependency Ordering
 
@@ -692,8 +905,32 @@ Validation coverage lives in
 8. Add policy preflight and required gate enforcement.
 9. Add package promotion readiness checks.
 10. Update first-party workflows only after runtime and tests are stable.
-11. Add workflow self-evolution versioning after evidence manifests and
-    package mutability metadata are stable.
+11. Add canonical workflow history models and compatibility tests.
+12. Add pinned identity, owned-file inventory, proposal/snapshot stores, and
+    integrity tests.
+13. Add the recoverable directory transaction and exhaustive phase recovery
+    tests.
+14. After shared APIs stabilize, implement reviewed self-improve apply and
+    version/restore commands in parallel only where write scopes remain
+    disjoint.
+15. Run the complete success/adversarial matrix, synchronize the inventory and
+    plan, and record exact evidence in the progress log.
+
+## Parallelizable Work
+
+- Task 8.1 is not parallelizable with dependent production work because its
+  canonical contracts and digest rules define every later persisted artifact.
+- After Task 8.1 contracts stabilize, independent test-fixture preparation for
+  model coding and invalid canonical inputs may proceed alongside Task 8.2 only
+  when the files are disjoint.
+- Task 8.3 begins only after Task 8.2 storage/identity APIs stabilize.
+- Tasks 8.4 and 8.5 may proceed in parallel after Task 8.3, provided Task 8.4
+  owns self-improve/evidence files and Task 8.5 owns version-command/parser
+  files; shared support files require serialized ownership.
+- Task 8.6 may partition core model tests, self-improve tests, version-command
+  tests, and transaction recovery tests only when each partition has disjoint
+  test files and does not edit shared fixtures.
+- Task 8.7 is serialized after verification so plan state reflects evidence.
 
 ## Test Plan By Module
 
@@ -708,6 +945,19 @@ Validation coverage lives in
   `swift test --filter WorkflowCommandLivePersistenceTests`
 - GraphQL contract tests: `swift test --filter GraphQLContractsTests`
 - Package command tests: `swift test --filter WorkflowCommandTests`
+- Workflow history model tests:
+  `swift test --filter WorkflowHistoryModelsTests`
+- Workflow self-improve versioning tests:
+  `swift test --filter WorkflowSelfImproveVersioningTests`
+- Workflow version command tests:
+  `swift test --filter WorkflowVersionCommandsTests`
+- Workflow directory transaction/recovery tests:
+  `swift test --filter WorkflowDirectoryTransactionTests`
+- Modified Swift file size check:
+  `git diff --name-only --diff-filter=ACMR -- '*.swift' | xargs -r wc -l`
+- SwiftLint for repository-local configuration: `swiftlint lint --strict`
+- Diff hygiene for the complete Section 8 scope:
+  `git --no-optional-locks diff --no-ext-diff --no-textconv --check`
 - Final acceptance after all slices: `swift test`
 
 Latest validation slice ran focused validation tests, SwiftLint, and the full
@@ -728,8 +978,22 @@ Swift package test suite.
   expected results, gates, and usage contracts.
 - [x] CLI, GraphQL, runtime, and package tests pass.
 - [x] No unrelated dirty worktree changes are reverted.
-- [ ] Workflow self-improve captures bundle-wide snapshots, records reviewed
+- [x] Workflow self-improve captures bundle-wide snapshots, records reviewed
   change-sets, and supports list/show/diff/restore version commands.
+- [x] Canonical history bytes, sidecars, ids, object paths, ownership,
+  containment, file modes, and every specified digest input are deterministic
+  and fail closed when invalid.
+- [x] Dry-run proposal and restore paths perform no source/history mutation
+  except the design-authorized immutable proposal publication for self-improve
+  dry run; restore dry run remains entirely write-free.
+- [x] Apply and restore mutate only mutable non-package targets after exact
+  review/approval binding, complete verified snapshots, staged validation, and
+  recoverable transaction commit.
+- [x] Phase-aware recovery passes every specified normal matrix row and leaves
+  every ambiguous or unverifiable row untouched with auditable diagnostics.
+- [x] Success and negative tests cover all accepted-design cases, SwiftLint is
+  clean, no modified Swift file exceeds 1000 lines, the full Swift suite passes,
+  and the plan/incomplete-work inventory match verified reality.
 
 ## Migration And Backward-Compatibility Notes
 

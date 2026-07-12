@@ -108,6 +108,15 @@ final class WorkflowLoopMetadataCodableTests: XCTestCase {
           "implementationPlan": {
             "required": true,
             "pathPattern": "impl-plans/active/*.md"
+          },
+          "selfEvolution": {
+            "allowed": true,
+            "defaultMode": "propose",
+            "requiresReviewGate": true,
+            "snapshotPolicy": "bundle-before-apply",
+            "historyRoot": ".riela/workflow-history",
+            "immutablePackageMutation": "deny",
+            "requiredVerification": ["workflow validate", "mock-scenario"]
           }
         },
         "nodes": [
@@ -153,6 +162,9 @@ final class WorkflowLoopMetadataCodableTests: XCTestCase {
     XCTAssertEqual(loop.gates.first?.acceptWhen.maxHighFindings, 0)
     XCTAssertEqual(loop.recovery?.rerun, "new-child-session")
     XCTAssertEqual(loop.implementationPlan?.pathPattern, "impl-plans/active/*.md")
+    XCTAssertEqual(loop.selfEvolution?.defaultMode, .propose)
+    XCTAssertEqual(loop.selfEvolution?.snapshotPolicy, .bundleBeforeApply)
+    XCTAssertEqual(loop.selfEvolution?.requiredVerification, [.workflowValidate, .mockScenario])
     XCTAssertEqual(workflow.steps[1].loop?.gateId, "implementation-review")
     XCTAssertEqual(workflow.steps[1].loop?.recordsVerification, true)
   }

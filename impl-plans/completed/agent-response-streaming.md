@@ -1,9 +1,9 @@
 # Agent Response Streaming Implementation Plan
 
-**Status**: Implemented
+**Status**: Completed
 **Design Reference**: `design-docs/specs/design-agent-response-streaming.md`
 **Created**: 2026-07-02
-**Last Updated**: 2026-07-02
+**Last Updated**: 2026-07-11
 **Workflow Mode**: issue-resolution
 **Issue Reference**: none-provided
 
@@ -253,6 +253,97 @@ classification, a non-blocking local process bridge, enriched live
 - Optional manual: `riela workflow run <codex-or-cursor-fixture-workflow> --output jsonl`
   and confirm enriched `backend_event` lines arrive before `step_completed`.
 
+### 7. Accepted-Design Closure: Coalescer Terminal Paths And Usage Compatibility
+
+**Status**: COMPLETED
+
+**Write Scope**:
+
+- `Sources/RielaAdapters/LocalAgentProcess.swift` only if tests expose a
+  contract defect.
+- `Sources/RielaCore/AdapterContracts.swift` and
+  `Sources/RielaCore/DeterministicWorkflowRunner+ExecutionEvents.swift` only
+  if adapter-to-run-event usage propagation tests expose a contract defect.
+- `Sources/RielaCore/WorkflowRunEvent.swift`, `Sources/RielaCore/RuntimeSession.swift`,
+  or `Sources/RielaCore/RuntimeStore.swift` only if compatibility tests expose
+  a contract defect.
+- `Tests/AgentAdapterTests/AgentAdapterStreamingTests.swift`
+- `Tests/RielaCoreTests/DeterministicWorkflowRunnerBackendEventTests.swift`
+- `Tests/RielaCoreTests/RuntimeStoreTests.swift`
+
+**Dependencies**:
+
+- Tasks 1-6 and the Step 3 accepted design revision dated 2026-07-11.
+
+**Deliverables**:
+
+- Deterministic coalescer tests with a controllable clock proving an isolated
+  delta flushes at 250 ms without subsequent output and that a pending delta
+  flushes before every later non-delta event. Cover both a channel switch and
+  a later same-channel snapshot, asserting exact emitted-event order.
+- Success, thrown-error, and cancellation tests proving the final pending
+  delta is drained exactly once before stream completion, with no late timer
+  callback duplication or reordering.
+- Compatibility tests proving old minimal run events and persisted sessions
+  without usage decode, while enriched `backendEventUsage` and
+  `WorkflowBackendEventRecord.usage` round-trip provider-native JSON exactly.
+- Confirmation that usage events do not modify `streamedResponseText` and that
+  Phase 1 does not create a `backend-events.jsonl` artifact.
+- Production changes only for defects demonstrated by the new tests; preserve
+  the accepted buffer, ring, text-cap, final-normalizer, and deferred-surface
+  boundaries. Conditional usage fixes may span every accepted propagation
+  layer (`AdapterBackendEvent` / `WorkflowStepBackendEventInput`, runner event
+  construction, `WorkflowRunEvent`, and runtime-session/store persistence),
+  but must not add a new read surface or otherwise cross Phase 1 boundaries.
+
+**Verification**:
+
+- `swift test --filter AgentAdapterTests`
+- `swift test --filter DeterministicWorkflowRunnerBackendEventTests`
+- `swift test --filter RuntimeStoreTests`
+- `swift build`
+- `git diff --check -- Sources/RielaAdapters/LocalAgentProcess.swift Sources/RielaCore/AdapterContracts.swift Sources/RielaCore/DeterministicWorkflowRunner+ExecutionEvents.swift Sources/RielaCore/WorkflowRunEvent.swift Sources/RielaCore/RuntimeSession.swift Sources/RielaCore/RuntimeStore.swift Tests/AgentAdapterTests/AgentAdapterStreamingTests.swift Tests/RielaCoreTests/DeterministicWorkflowRunnerBackendEventTests.swift Tests/RielaCoreTests/RuntimeStoreTests.swift impl-plans/completed/agent-response-streaming.md`
+
+### 8. Adversarial Remediation: Initial Delta Byte Threshold
+
+**Status**: COMPLETED
+
+**Write Scope**:
+
+- `Sources/RielaAdapters/LocalAgentBackendEventCoalescer.swift`
+- `Tests/AgentAdapterTests/AgentAdapterStreamingTests.swift`
+
+**Dependencies**:
+
+- Task 7 implementation and the accepted design requirement that accumulated
+  delta content flush at `>= 256` UTF-8 bytes.
+- Independent Step 7 adversarial finding at
+  `Sources/RielaAdapters/LocalAgentBackendEventCoalescer.swift:52`.
+
+**Deliverables**:
+
+- After installing the first pending delta, immediately flush it when its
+  `contentDelta` UTF-8 size is exactly 256 bytes or greater; schedule a timer
+  only when the initial delta is smaller than the threshold.
+- Preserve the coalescer lock ordering, timer-generation guards, event order,
+  and finish idempotence established by Task 7.
+- Add deterministic boundary tests for isolated initial deltas of exactly 256
+  bytes and greater than 256 bytes.
+- Assert each boundary event is emitted immediately and exactly once, no live
+  timer remains scheduled, simulated cancelled timer callbacks do not emit a
+  duplicate, and `finish` does not emit a duplicate.
+- Keep documentation unchanged because the accepted design already specifies
+  flushing at accumulated content `>= 256` UTF-8 bytes.
+- Preserve unrelated worktree changes; do not commit or push.
+
+**Verification**:
+
+- `swift test --filter AgentAdapterTests`
+- `swift test --filter AgentAdapterStreamingTests`
+- `git diff --check -- Sources/RielaAdapters/LocalAgentBackendEventCoalescer.swift Tests/AgentAdapterTests/AgentAdapterStreamingTests.swift impl-plans/completed/agent-response-streaming.md`
+- Independent adversarial rereview confirms zero unresolved high- or
+  medium-severity findings.
+
 ---
 
 ## Dependencies
@@ -265,6 +356,8 @@ classification, a non-blocking local process bridge, enriched live
 | Runner And Runtime Store Live Tail | Core Event Contracts | Store input and run events depend on event field shape. |
 | Live JSONL Enrichment | Runner And Runtime Store Live Tail | JSONL events need runner-assigned sequence and enriched input. |
 | Regression And Compatibility Pass | Tasks 1-5 | Final tests must cover integrated behavior. |
+| Accepted-Design Closure | Tasks 1-6 and accepted Step 3 revision | Closes timer/final-drain and usage compatibility requirements added to the accepted design. |
+| Initial Delta Byte Threshold | Task 7 and Step 7 adversarial finding | Corrects the demonstrated initial-delta nonconformance without changing the accepted contract. |
 
 ## Parallelizable Tasks
 
@@ -277,6 +370,11 @@ classification, a non-blocking local process bridge, enriched live
   after Task 1 contract names are settled.
 - Task 5 is not parallelizable with Task 4 because it depends on runner
   sequence assignment and enriched store/run-event input.
+- Task 7 coalescer tests and usage compatibility tests are parallelizable
+  because their production write scopes are disjoint; if either exposes a
+  shared contract defect, remediation must be serialized before verification.
+- Task 8 is not parallelizable: its production and test write scopes overlap,
+  and its focused verification depends on completing both changes together.
 
 ## Completion Criteria
 
@@ -293,6 +391,22 @@ classification, a non-blocking local process bridge, enriched live
 - [x] Final adapter outputs still come from existing full-stdout normalizers.
 - [x] Focused Swift tests pass for adapters, runner backend events, runtime
   store, and observability/event encoding.
+- [x] Timer-driven isolated-delta flushing and pending-delta ordering before
+  every later non-delta event are covered by deterministic tests, including
+  both a channel switch and a same-channel snapshot.
+- [x] Success, error, and cancellation terminal paths drain pending deltas
+  exactly once and cannot be followed by a late timer yield.
+- [x] Usage survives adapter-to-run-event-to-runtime-store propagation,
+  provider-native JSON round-trips, old records without usage still decode,
+  and usage never changes `streamedResponseText`.
+- [x] All Task 7 implementation verification commands pass and the plan
+  status is changed back to `Implemented` after evidence is appended to the
+  progress log.
+- [x] An isolated initial delta of exactly 256 UTF-8 bytes or greater flushes
+  immediately once, leaves no live scheduled timer, and cannot be duplicated
+  by a cancelled timer callback or `finish`.
+- [x] Independent Step 7 adversarial review accepts the implementation with no
+  unresolved high- or medium-severity findings.
 
 ## Progress Log Expectations
 
@@ -365,6 +479,191 @@ threshold.
 read surfaces, `session logs --follow`, text-mode live lines, full-fidelity
 `backend-events.jsonl` reads/tailing, and unrelated RielaApp UX changes remain
 outside Phase 1 by accepted design.
+
+**Blockers**: None.
+
+### Session: 2026-07-11 Step 4 Plan Revision
+
+**Tasks Completed**: Reconciled the active plan with the accepted Step 3
+design revision. Preserved the implemented Phase 1 baseline and added Task 7
+for the newly explicit coalescer terminal-path and usage compatibility
+requirements.
+
+**Tasks In Progress**: None; Task 7 is ready for the implementation step.
+
+**Changed Files**:
+
+- `impl-plans/completed/agent-response-streaming.md`
+
+**Verification**:
+
+- Plan/design consistency and diff hygiene checks are required before Step 4
+  handoff; implementation verification remains pending under Task 7.
+
+**Residual Risks**:
+
+- Existing tests do not yet prove every accepted error/cancellation/timer
+  interleaving.
+- Independent adversarial acceptance remains pending after Task 7.
+
+**Blockers**: None.
+
+### Session: 2026-07-11 Step 5 Feedback Revision
+
+**Tasks Completed**: Revised Task 7 to require deterministic pending-delta
+ordering before every later non-delta event, explicitly including a
+same-channel snapshot, and expanded conditional usage-remediation scope across
+the accepted adapter-contract, runner-event, run-event, and runtime-store
+propagation layers without expanding Phase 1 read surfaces.
+
+**Tasks In Progress**: None; Task 7 remains ready for implementation.
+
+**Changed Files**:
+
+- `impl-plans/completed/agent-response-streaming.md`
+
+**Verification**:
+
+- `git diff --check -- design-docs/specs/design-agent-response-streaming.md impl-plans/completed/agent-response-streaming.md`
+
+**Residual Risks**:
+
+- Task 7 implementation and focused Swift verification remain pending.
+- Independent adversarial acceptance remains pending after implementation.
+
+**Blockers**: None.
+
+### Session: 2026-07-11 Step 6 Task 7 Implementation
+
+**Tasks Completed**: Added timer-driven delta flushing with a cancellable,
+generation-guarded timer; linearized pending-delta ordering against later
+non-delta events; drained pending deltas exactly once on success, thrown error,
+and cancellation; persisted provider-native usage in the bounded runtime-store
+event ring; and added old-record compatibility and usage round-trip tests.
+Moved the coalescer into a responsibility-named source file to keep modified
+Swift source files below the 1000-line maintainability threshold.
+
+**Changed Files**:
+
+- `Sources/RielaAdapters/LocalAgentBackendEventCoalescer.swift`
+- `Sources/RielaAdapters/LocalAgentProcess.swift`
+- `Sources/RielaCore/RuntimeSession.swift`
+- `Sources/RielaCore/RuntimeStore.swift`
+- `Tests/AgentAdapterTests/AgentAdapterStreamingTests.swift`
+- `Tests/RielaCoreTests/DeterministicWorkflowRunnerBackendEventTests.swift`
+- `Tests/RielaCoreTests/RuntimeStoreTests.swift`
+- `impl-plans/completed/agent-response-streaming.md`
+
+**Verification Commands**:
+
+- `swift test --filter AgentAdapterTests` - passed: 117 tests, 0 failures.
+- `swift test --filter DeterministicWorkflowRunnerBackendEventTests` - passed:
+  9 tests, 0 failures.
+- `swift test --filter RuntimeStoreTests` - passed: 22 tests, 0 failures.
+- `swift build` - passed.
+- `/usr/bin/xcrun swiftlint` - passed with 0 serious violations; 11 existing
+  warnings were reported, and the new `RuntimeStoreTests` type-body warning was
+  removed by placing the added tests in a focused extension.
+- `git diff --check` - passed before the final plan progress update and is
+  repeated at handoff.
+
+**Artifact Boundary**: No `backend-events.jsonl` writer or read surface was
+added. Search across the scoped source and tests found no artifact reference.
+
+**Tasks In Progress**: Independent Step 7 adversarial review only.
+
+**Residual Risks**:
+
+- Real codex/cursor CLI smoke verification remains optional and was not run.
+- Independent adversarial acceptance remains pending.
+
+**Blockers**: None.
+
+### Session: 2026-07-11 Step 4 Adversarial Remediation Plan
+
+**Tasks Completed**: Revised the active plan after the independent Step 7
+adversarial review identified one medium-severity implementation
+nonconformance. Added Task 8 for immediate initial-delta flushing at the
+accepted 256-byte boundary, deterministic exact/greater-than boundary tests,
+duplicate-emission safeguards, and mandatory adversarial rereview.
+
+**Tasks In Progress**: None; Task 8 is ready for the implementation step.
+
+**Changed Files**:
+
+- `impl-plans/completed/agent-response-streaming.md`
+
+**Verification**:
+
+- `git diff --check -- design-docs/specs/design-agent-response-streaming.md impl-plans/completed/agent-response-streaming.md`
+
+**Addressed Feedback**:
+
+- The first delta must be checked against the `>= 256` UTF-8 byte threshold
+  before a timer is scheduled.
+- Tests must prove immediate single emission at exactly and above the boundary,
+  no live timer, and no duplicate after cancelled callbacks or `finish`.
+- No documentation update is required because the accepted design already
+  states the correct threshold behavior.
+
+**Residual Risks**:
+
+- Task 8 implementation and focused verification remain pending.
+- Async stream overflow during sustained non-delta bursts and provider event
+  vocabulary drift remain accepted Phase 1 residual risks.
+
+**Blockers**: None.
+
+### Session: 2026-07-11 Task 8 Remediation Completion
+
+**Tasks Completed**: Completed Task 8 by correcting the initial-delta
+coalescing threshold behavior and adding deterministic exact- and
+greater-than-256-byte boundary coverage.
+
+**Changed Files**:
+
+- `Sources/RielaAdapters/LocalAgentBackendEventCoalescer.swift`
+- `Tests/AgentAdapterTests/AgentAdapterStreamingTests.swift`
+- `impl-plans/completed/agent-response-streaming.md`
+
+**Verification**:
+
+- `swift test --filter AgentAdapterTests` - passed: 119 tests, 0 failures.
+- `/usr/bin/xcrun swiftlint` - completed with 0 serious violations.
+- `git diff --check` - passed.
+
+**Tasks In Progress**: Independent adversarial rereview only.
+
+**Residual Risks**:
+
+- Independent adversarial-review acceptance remains pending and its completion
+  criterion remains unchecked until a subsequent independent review accepts.
+
+**Blockers**: None.
+
+### Session: 2026-07-11 Final Acceptance
+
+**Tasks Completed**: Checked the independent Step 7 adversarial-review
+completion criterion and finalized this plan under the repository's completed
+plan convention.
+
+**Final Acceptance**: Riela `codex-adversarial-implementation-review-loop`
+accepted the implementation with zero high-, medium-, or low-severity findings
+and no verification gaps.
+
+**Changed Files**:
+
+- `impl-plans/completed/agent-response-streaming.md`
+- `impl-plans/README.md`
+
+**Verification**:
+
+- Targeted plan status, completion-criterion, acceptance-evidence, and
+  active/completed reference checks passed.
+- `git diff --check` passed.
+
+**Residual Risks**: None for plan acceptance. Phase 1 operational risks remain
+documented below.
 
 **Blockers**: None.
 

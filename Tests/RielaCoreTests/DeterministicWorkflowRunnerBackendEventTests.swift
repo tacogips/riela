@@ -30,6 +30,7 @@ final class DeterministicWorkflowRunnerBackendEventTests: XCTestCase {
     XCTAssertNil(event.backendEventChannel)
     XCTAssertNil(event.backendEventContent)
     XCTAssertNil(event.backendEventSequence)
+    XCTAssertNil(event.backendEventUsage)
   }
 
   func testWorkflowRunEventInitializerDropsIrrelevantFieldsForEventType() throws {
@@ -86,6 +87,9 @@ final class DeterministicWorkflowRunnerBackendEventTests: XCTestCase {
     XCTAssertEqual(object["backendEventSequence"] as? Int, 7)
     XCTAssertEqual(object["backendToolName"] as? String, "shell")
     XCTAssertEqual(usage["output_tokens"] as? Int, 3)
+
+    let decoded = try JSONDecoder().decode(WorkflowRunEvent.self, from: JSONEncoder().encode(event))
+    XCTAssertEqual(decoded.backendEventUsage, ["output_tokens": .number(3)])
   }
 
   func testWorkflowRunEventEncodesSilenceWarningFields() throws {
@@ -143,6 +147,7 @@ final class DeterministicWorkflowRunnerBackendEventTests: XCTestCase {
     XCTAssertEqual(execution.backendEventCount, 1)
     XCTAssertEqual(execution.streamedResponseText, "streamed text")
     XCTAssertEqual(execution.recentBackendEvents?.first?.content, "streamed text")
+    XCTAssertEqual(execution.recentBackendEvents?.first?.usage?["output_tokens"], .number(3))
     let events = await recorder.events()
     XCTAssertTrue(events.contains { event in
       event.type == .backendEvent &&

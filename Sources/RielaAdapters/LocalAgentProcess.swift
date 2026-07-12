@@ -859,16 +859,12 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
       }
       event.contentDelta = sanitizedBackendEventContent(event.contentDelta, sensitiveValues: sensitiveValues)
       event.contentSnapshot = sanitizedBackendEventContent(event.contentSnapshot, sensitiveValues: sensitiveValues)
-      for output in coalescer.absorb(event) {
-        continuation.yield(output)
-      }
+      coalescer.absorb(event) { continuation.yield($0) }
     }
     return BackendEventBridge(
       handler: handler,
       finish: {
-        for output in coalescer.finish() {
-          continuation.yield(output)
-        }
+        coalescer.finish { continuation.yield($0) }
         continuation.finish()
       },
       waitForCompletion: { await consumer.value }
@@ -904,67 +900,6 @@ private struct BackendEventBridge: Sendable {
   var handler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
   var finish: @Sendable () -> Void
   var waitForCompletion: @Sendable () async -> Void
-}
-
-private final class BackendEventCoalescer: @unchecked Sendable {
-  private struct PendingKey: Equatable {
-    var provider: String
-    var eventType: String
-    var channel: AdapterBackendEventChannel?
-  }
-
-  private let lock = NSLock()
-  private let byteThreshold = 256
-  private let timeThreshold: TimeInterval
-  private var pending: AdapterBackendEvent?
-  private var pendingKey: PendingKey?
-  private var pendingStartedAt: Date?
-
-  init(timeThreshold: TimeInterval = 0.25) {
-    self.timeThreshold = timeThreshold
-  }
-
-  func absorb(_ event: AdapterBackendEvent) -> [AdapterBackendEvent] {
-    lock.lock()
-    defer { lock.unlock() }
-
-    guard event.isDelta, let delta = event.contentDelta, event.channel != nil else {
-      return flushLocked() + [event]
-    }
-
-    let key = PendingKey(provider: event.provider, eventType: event.eventType, channel: event.channel)
-    guard var current = pending, pendingKey == key else {
-      let flushed = flushLocked()
-      pending = event
-      pendingKey = key
-      pendingStartedAt = Date()
-      return flushed
-    }
-
-    current.contentDelta = (current.contentDelta ?? "") + delta
-    pending = current
-    let startedAt = pendingStartedAt ?? Date()
-    if (current.contentDelta ?? "").utf8.count >= byteThreshold || Date().timeIntervalSince(startedAt) >= timeThreshold {
-      return flushLocked()
-    }
-    return []
-  }
-
-  func finish() -> [AdapterBackendEvent] {
-    lock.lock()
-    defer { lock.unlock() }
-    return flushLocked()
-  }
-
-  private func flushLocked() -> [AdapterBackendEvent] {
-    guard let event = pending else {
-      return []
-    }
-    pending = nil
-    pendingKey = nil
-    pendingStartedAt = nil
-    return [event]
-  }
 }
 
 private func fallbackBackendEvent(command: LocalAgentCommand, line: String) -> AdapterBackendEvent? {

@@ -14,6 +14,7 @@ struct ParsedParityOptions: Sendable {
   var source: String?
   var destination: String?
   var overwrite = false
+  var exactYes = false
   var dryRun = false
   var check = false
   var locked = false
@@ -52,6 +53,11 @@ struct ParsedParityOptions: Sendable {
   var graphQLQuery: String?
   var graphQLQueryFile: String?
   var graphQLOperationName: String?
+  var changeSetId: String?
+  var expectedDigest: String?
+  var sourceSessionId: String?
+  var proposalId: String?
+  var reviewSessionId: String?
 
   init(_ arguments: [String]) throws {
     var index = 0
@@ -104,6 +110,16 @@ struct ParsedParityOptions: Sendable {
       scope = parsed == .auto ? .project : parsed
     case "--working-dir", "--working-directory":
       workingDirectory = try value()
+    case "--change-set-id":
+      changeSetId = try value()
+    case "--expected-digest":
+      expectedDigest = try value()
+    case "--source-session-id":
+      sourceSessionId = try value()
+    case "--proposal-id":
+      proposalId = try value()
+    case "--review-session-id":
+      reviewSessionId = try value()
     case "--workflow-definition-dir":
       workflowDefinitionDir = try value()
     case "--source", "--from":
@@ -118,8 +134,11 @@ struct ParsedParityOptions: Sendable {
 
   private mutating func parseRuntimeOption(_ token: String, value: () throws -> String) throws -> Bool {
     switch token {
-    case "--overwrite", "--force", "-f", "--yes":
+    case "--overwrite", "--force", "-f":
       overwrite = true
+    case "--yes":
+      overwrite = true
+      exactYes = true
     case "--dry-run":
       dryRun = true
     case "--check":

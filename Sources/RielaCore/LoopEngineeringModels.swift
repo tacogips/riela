@@ -10,6 +10,7 @@ public struct WorkflowLoopMetadata: Codable, Equatable, Sendable {
   public var gates: [LoopGateDeclaration]
   public var recovery: LoopRecoveryDeclaration?
   public var implementationPlan: LoopImplementationPlanRequirement?
+  public var selfEvolution: WorkflowSelfEvolutionDeclaration?
 
   private enum CodingKeys: String, CodingKey {
     case kind
@@ -21,6 +22,7 @@ public struct WorkflowLoopMetadata: Codable, Equatable, Sendable {
     case gates
     case recovery
     case implementationPlan
+    case selfEvolution
   }
 
   public init(
@@ -32,7 +34,8 @@ public struct WorkflowLoopMetadata: Codable, Equatable, Sendable {
     convergence: LoopConvergenceDeclaration? = nil,
     gates: [LoopGateDeclaration] = [],
     recovery: LoopRecoveryDeclaration? = nil,
-    implementationPlan: LoopImplementationPlanRequirement? = nil
+    implementationPlan: LoopImplementationPlanRequirement? = nil,
+    selfEvolution: WorkflowSelfEvolutionDeclaration? = nil
   ) {
     self.kind = kind
     self.required = required
@@ -43,6 +46,7 @@ public struct WorkflowLoopMetadata: Codable, Equatable, Sendable {
     self.gates = gates
     self.recovery = recovery
     self.implementationPlan = implementationPlan
+    self.selfEvolution = selfEvolution
   }
 
   public init(from decoder: Decoder) throws {
@@ -56,6 +60,52 @@ public struct WorkflowLoopMetadata: Codable, Equatable, Sendable {
     self.gates = try container.decodeIfPresent([LoopGateDeclaration].self, forKey: .gates) ?? []
     self.recovery = try container.decodeIfPresent(LoopRecoveryDeclaration.self, forKey: .recovery)
     self.implementationPlan = try container.decodeIfPresent(LoopImplementationPlanRequirement.self, forKey: .implementationPlan)
+    self.selfEvolution = try container.decodeIfPresent(WorkflowSelfEvolutionDeclaration.self, forKey: .selfEvolution)
+  }
+}
+
+public enum WorkflowSelfEvolutionDefaultMode: String, Codable, Equatable, Sendable {
+  case propose
+}
+
+public enum WorkflowSelfEvolutionSnapshotPolicy: String, Codable, Equatable, Sendable {
+  case bundleBeforeApply = "bundle-before-apply"
+}
+
+public enum WorkflowImmutablePackageMutationPolicy: String, Codable, Equatable, Sendable {
+  case deny
+}
+
+public enum WorkflowSelfEvolutionVerification: String, Codable, Equatable, Sendable {
+  case workflowValidate = "workflow validate"
+  case mockScenario = "mock-scenario"
+}
+
+public struct WorkflowSelfEvolutionDeclaration: Codable, Equatable, Sendable {
+  public var allowed: Bool
+  public var defaultMode: WorkflowSelfEvolutionDefaultMode
+  public var requiresReviewGate: Bool
+  public var snapshotPolicy: WorkflowSelfEvolutionSnapshotPolicy
+  public var historyRoot: String
+  public var immutablePackageMutation: WorkflowImmutablePackageMutationPolicy
+  public var requiredVerification: [WorkflowSelfEvolutionVerification]
+
+  public init(
+    allowed: Bool = false,
+    defaultMode: WorkflowSelfEvolutionDefaultMode = .propose,
+    requiresReviewGate: Bool = true,
+    snapshotPolicy: WorkflowSelfEvolutionSnapshotPolicy = .bundleBeforeApply,
+    historyRoot: String = ".riela/workflow-history",
+    immutablePackageMutation: WorkflowImmutablePackageMutationPolicy = .deny,
+    requiredVerification: [WorkflowSelfEvolutionVerification] = [.workflowValidate]
+  ) {
+    self.allowed = allowed
+    self.defaultMode = defaultMode
+    self.requiresReviewGate = requiresReviewGate
+    self.snapshotPolicy = snapshotPolicy
+    self.historyRoot = historyRoot
+    self.immutablePackageMutation = immutablePackageMutation
+    self.requiredVerification = requiredVerification
   }
 }
 

@@ -1,9 +1,9 @@
 # Codex Unified-Exec Stall Follow-Up Implementation Plan
 
-**Status**: Implemented
+**Status**: Implemented with unfinished follow-up
 **Design Reference**: design-docs/specs/design-codex-unified-exec-stall-followup.md
 **Created**: 2026-07-05
-**Last Updated**: 2026-07-05
+**Last Updated**: 2026-07-11
 
 ---
 
@@ -23,12 +23,17 @@ diagnosis-blocking `session status` failure:
    include the database path in statement-level SQLite errors.
 3. Make the agent-silence warning repeat and expose
    `backendSilentForMs` in session status.
+4. Detect and recover from an unreaped terminal Codex
+   `command_execution` child even when wait/status events keep the
+   agent looking active (unfinished follow-up).
 
 ### Scope
 
 **Included**: codex adapter default arguments; SQLite read-open
 fallback; CLI session resolution fallback semantics; silence monitor
-re-arming; session status staleness projection; tests for each.
+re-arming; session status staleness projection; Riela-side detection,
+cleanup, and recovery policy for an unreaped terminal Codex tool child;
+tests for each.
 
 **Excluded**: upstream codex completion-detection fix (tracked as P4 of
 the blackout design doc); GraphQL/RielaApp surface changes beyond the
@@ -161,6 +166,109 @@ static func loadPersistedSession(...) throws -> LoadedPersistedCLIWorkflowSessio
       projection in this plan's included scope
 - [x] CLI test asserting field presence/absence
 
+### 5. Terminal Codex tool-child stall detection and recovery
+
+#### Sources/CodexAgent, Sources/RielaAdapters, Sources/AgentRuntimeKit,
+#### Sources/RielaCore, Sources/RielaCLI
+
+**Status**: PLANNED — UNFINISHED
+
+Observed failure mode: Codex emits `item.started` for a
+`command_execution`, the spawned command has already exited and is visible as
+a zombie, but the Codex tool host does not reap or complete it. Subsequent
+wait/status lifecycle events update `lastBackendEventAt`, so Riela continues to
+classify the agent as active and can hang after the test/lint summary has
+already been printed. This is not ordinary LLM silence: the decisive evidence
+is a started tool call correlated to a terminal child process whose owning host
+has failed to publish or perform terminal cleanup.
+
+Generic heartbeats are insufficient because they prove only that some Codex
+event transport is alive. Poll/wait/status events can continue after the
+command has exited, masking the stuck completion edge; conversely, a quiet LLM
+may be healthy and must not be killed merely for lacking events. Detection must
+therefore keep tool-child liveness separate from backend-event recency and
+agent-silence warnings.
+
+Planned contract:
+
+```swift
+// Illustrative ownership/correlation state, not implemented.
+CodexToolProcessObservation(
+  workflowExecutionId, stepExecutionId, attempt,
+  toolCallId, toolType, commandFingerprint,
+  codexProcessId, childProcessId, childProcessStartIdentity,
+  processGroupId, startedAt, terminalState, terminalObservedAt
+)
+```
+
+`item.started` supplies the stable Codex tool-call id and command identity;
+the adapter/process layer binds that record to the owning Codex invocation,
+attempt, PID/process-group identity, and platform process-start identity before
+acting on terminal-state observations. A PID alone is never sufficient because
+of reuse, and Riela must not claim it can `waitpid` a grandchild owned by the
+Codex tool host. Recovery first asks the owning host to finish/reap the exact
+tool call, then uses a bounded process-group `SIGTERM` → grace period →
+`SIGKILL` path when the host remains wedged, and finally reaps Riela's direct
+Codex child through the shared managed-process completion path.
+
+`--stall-timeout-ms` remains opt-in and supplies the no-progress bound for
+supervised recovery, but the new terminal-child classifier may satisfy the
+evidence side without treating general agent silence as a stall. Under
+`--auto-improve`, a confirmed incident is recorded against the current attempt
+and may continue that same attempt only when the host acknowledges the original
+tool call as terminal and continuation is safe. Otherwise supervision performs
+a bounded targeted retry or workflow rerun subject to existing attempt budgets.
+Agent-silence warnings remain repeated observability hints; they neither create
+terminal-child evidence nor authorize cleanup. Add an explicit policy surface
+for off/observe/recover behavior, terminal-observation grace, cleanup grace,
+and whether safe same-attempt continuation is allowed, with local/remote and
+GraphQL policy parity.
+
+**Checklist**:
+- [ ] Persist a per-attempt correlation record from Codex `item.started`
+      (`toolCallId`, `command_execution`, command fingerprint) through the
+      owning Codex PID/process group to a child PID plus process-start identity,
+      and close it only on the matching terminal tool/process observation
+- [ ] Add a terminal-child stall classifier distinct from ordinary LLM silence:
+      require an unresolved started tool call, correlated terminal/zombie child
+      state, a live owning tool host, and a bounded missing-completion interval;
+      ignore unrelated wait/status events when evaluating that tool call
+- [ ] Add bounded cleanup that requests host-side completion/reaping first,
+      then validates ownership before process-group SIGTERM/grace/SIGKILL,
+      reaps Riela's direct Codex child, and never signals an uncorrelated or
+      PID-reused process
+- [ ] Define safe recovery: continue the same attempt only after an acknowledged
+      terminal tool result and intact stream state; otherwise route a confirmed
+      incident through `--auto-improve` targeted retry/workflow rerun budgets,
+      with no retry when mutation safety cannot be proven
+- [ ] Make cleanup, continuation, and retry idempotent using attempt/tool-call
+      incident keys and durable compare-and-set terminal state so duplicate
+      polls, cancellation races, resume, or supervisor replay cannot repeat a
+      command, mutation, signal sequence, incident, or remediation
+- [ ] Emit redacted diagnostic/audit events for correlation, terminal-state
+      evidence, ignored generic heartbeats, cleanup request/escalation/reap,
+      continuation or retry choice, duplicate suppression, policy refusal, and
+      final outcome; expose the active tool-call/process state in session
+      inspection without leaking command secrets
+- [ ] Propagate cancellation through the detector, host cleanup request,
+      process-group escalation, same-attempt continuation, and supervised retry;
+      cancellation wins races, performs at most one bounded cleanup, records no
+      false stall remediation, and leaves no monitor task or child process live
+- [ ] Add configurable off/observe/recover policy, terminal-observation and
+      cleanup grace intervals, and same-attempt-continuation control across CLI,
+      library, and GraphQL inputs/help; document interaction with
+      `--auto-improve`, opt-in `--stall-timeout-ms`, and agent-silence warnings
+- [ ] Add deterministic unit tests for event/process correlation, PID reuse and
+      parent mismatch rejection, zombie-versus-running/silent classification,
+      misleading wait/status heartbeats, grace/escalation/reap ordering,
+      cancellation races, duplicate suppression, mutation-safety refusal, and
+      policy serialization/defaults
+- [ ] Add macOS/Linux integration regressions whose fixture prints a completed
+      test/lint-style summary, exits its `command_execution` child into the
+      unreaped terminal state, keeps emitting Codex wait/status events, and
+      proves bounded same-attempt continuation or one supervised retry with no
+      hang, orphan, zombie, duplicate command, or duplicate mutation
+
 ---
 
 ## Module Status
@@ -173,6 +281,7 @@ static func loadPersistedSession(...) throws -> LoadedPersistedCLIWorkflowSessio
 | Scope-search resilience | `Sources/RielaCLI/CLIWorkflowSessionResolution.swift` | IMPLEMENTED | `CLIWorkflowSessionResolutionTests` |
 | Silence monitor re-arm | `Sources/RielaCore/DeterministicWorkflowRunner+ExecutionEvents.swift` | IMPLEMENTED | `DeterministicWorkflowRunnerBackendEventTests/testAgentSilenceMonitor*` |
 | Status staleness field | `Sources/RielaCLI/SessionCommands.swift` | IMPLEMENTED | `WorkflowCommandLivePersistenceTests/testSessionProgressReportsActiveBackendHeartbeatFields` |
+| Terminal Codex tool-child recovery | Codex/adapter/process/runtime/supervision layers | PLANNED | Deterministic unit + macOS/Linux post-summary integration regressions |
 
 ## Dependencies
 
@@ -181,6 +290,7 @@ static func loadPersistedSession(...) throws -> LoadedPersistedCLIWorkflowSessio
 | Default flip (module 1) | none — independent | Available |
 | Scope-search resilience (module 3) | Read-open fallback (module 2) for meaningful error text | Available after module 2 |
 | Status staleness (module 4b) | none — independent | Available |
+| Terminal child recovery (module 5) | tool-call/process correlation + shared bounded process cleanup | Unfinished |
 
 Modules 1, 2+3, and 4 are independent slices and can land separately.
 Module 1 is the highest-value, lowest-risk slice and should land first.
@@ -196,6 +306,10 @@ Module 1 is the highest-value, lowest-risk slice and should land first.
 - [x] Statement-level sqlite errors include the database path
 - [x] Silence warnings repeat during sustained silence; `session
       status` reports `backendSilentForMs` for running executions
+- [ ] A terminal unreaped Codex `command_execution` child is detected from
+      correlated tool/process evidence despite wait/status events, then cleaned
+      up and continued or retried exactly once under policy without duplicate
+      mutation, cancellation leaks, or a post-summary hang
 - [ ] `task check` / existing test suites pass on macOS and Linux
       (SQLite fallback path uses no Darwin-only APIs)
 

@@ -11,6 +11,10 @@ Implementation plans bridge design documents (what to build) and actual code (ho
 - Dependency mapping for concurrent execution
 - Progress tracking across sessions
 
+Current cross-plan continuation state, dependency ordering, dirty-worktree
+ownership, and verification evidence are consolidated in
+[`REMAINING-WORK-HANDOVER.md`](REMAINING-WORK-HANDOVER.md).
+
 ## Directory Structure
 
 ```
@@ -26,12 +30,11 @@ impl-plans/
 
 | Plan | Status | Design Reference |
 | ---- | ------ | ---------------- |
-| `active/agent-response-streaming` | Implemented | `design-agent-response-streaming#phase-1` |
 | `active/codex-unified-exec-stall-followup` | Implemented; focused tests and CLI WAL/status repro passed | `design-codex-unified-exec-stall-followup` |
 | `active/hermes-inspired-capabilities` | Planning; design approved pending adoption-set confirmation, no code written | `design-hermes-inspired-capabilities` |
 | `active/loop-engineering-application-gap-closure` | Planning; first-line tool slices have landed separately | `design-loop-engineering-application-gap-closure` |
 | `active/loop-engineering-convergence-and-operations` | Planning; LB1 convergence guard is the controlling pass, LB2–LB6 roadmap | `design-loop-engineering-convergence-and-operations` |
-| `active/loop-engineering-first-line-tool` | In Progress; module 8 self-evolution versioning remaining | `design-loop-engineering-first-line-tool-detail` |
+| `active/loop-engineering-first-line-tool` | In Progress; module 8 implemented with round-seven findings resolved; broader plan bookkeeping remains | `design-loop-engineering-first-line-tool-detail` |
 | `active/rielaapp-ux-onboarding-improvements` | Implemented; RielaApp verification passed | `design-rielaapp-ux-onboarding-improvements` |
 | `active/riela-note` | Partially implemented; local note GraphQL/UI/add-ons shipped, remote socket and real libsql sync remain follow-ups | `design-riela-note` |
 | `active/riela-note-ui-refinements` | Implemented; post-review follow-ups pending (TASK-012–018, incl. critical SDL fix) | `design-riela-note-ui-refinements` |
@@ -52,6 +55,7 @@ impl-plans/
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent-response-streaming` | 2026-07-11 | `design-agent-response-streaming#phase-1` |
 | `apple-gateway-packaging-plan` | 2026-07-07 | `gateway-built-ins#packaging-coverage-decision` |
 | `riela-note-selection-qa-comments` | 2026-07-07 | `design-riela-note-selection-qa-comments` |
 | `riela-note-edit-agent-ui` | 2026-07-07 | `design-riela-note-edit-agent-ui` |

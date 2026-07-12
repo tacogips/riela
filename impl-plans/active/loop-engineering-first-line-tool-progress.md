@@ -2,6 +2,372 @@
 
 ## Progress Log
 
+### Session: 2026-07-11 23:30
+
+**Tasks Completed**: Reopened every prior Section 8 claim for round seven and
+implemented all three reported medium findings. Transaction generations now
+make canonical payloads and digest sidecars non-writable before exclusive
+publication, make each published generation directory non-writable, and verify
+type/mode on every read. Generation transitions preserve immutable fields and
+allow verification evidence and diagnostics to evolve only through explicit
+append-only rules, rejecting rewrite or removal. Snapshot, proposal, and
+finalized change-set reads now descriptor-enumerate the entire topology and
+require exactly the canonical directory/file layout, rejecting unexpected
+directories, FIFOs, Unix sockets, links, and every other special type. Apply
+and restore directory transactions publish a durable canonical preflight
+attempt before mutability, digest, lock, existing-transaction,
+snapshot-authority, and locked-inventory checks; failed preflight records state
+`mutationOccurred=false`, exact retries are idempotent, and either initial or
+failure-audit persistence failure stops before mutation.
+
+**Files Changed**: Production changes are confined to Section 8 history,
+generation, topology, preflight-audit, snapshot/proposal/change-set, and
+transaction coordinator files under `Sources/RielaCLI`; deterministic round
+seven and adjusted prior adversarial coverage under `Tests/RielaCLITests`; and
+the governing design, plan, progress, README, and incomplete-work inventory.
+All unrelated dirty changes, including `codex-unified-exec-stall-followup`,
+remain preserved. Scratch and redirected logs are under
+`tmp/section8-round7/` only.
+
+**Verification**: The new round-seven adversarial suite passed 21 tests with 0
+failures, including generation rewrite/mode/evidence-transition, independent
+snapshot/proposal/change-set FIFO/socket/unexpected-directory, all named
+preflight failure, and audit-write failure cases. The first focused Section 8
+re-audit passed 71 of 73 tests and exposed two intentionally stale adversarial
+expectations (direct rewriting now requires an explicit chmod; a lock failure
+now creates a failed attempt audit); both fixtures were updated to the new
+contract. The exact final-tree Section 8 aggregate then passed 74 tests with 0
+failures. Strict scoped Xcode-toolchain SwiftLint passed 9 touched files with 0
+violations. The transaction coordinator is 967 lines and every touched Swift
+file remains below 1,000 lines. `git --no-optional-locks diff --no-ext-diff
+--no-textconv --check` passed. Final Xcode-toolchain `swift test` passed 1,714
+tests with 4 skipped and 0 failures in 218.573 seconds. All command output was
+redirected under `tmp/section8-round7/`; the known post-summary wait did not
+alter any XCTest or lint result.
+
+**Tasks In Progress**: None for the round-seven Section 8 findings.
+
+**Blockers**: None.
+
+### Session: 2026-07-11 21:47
+
+**Tasks Completed**: Reopened the Section 8 claims for round six and resolved
+all reported findings. Mutable transaction record/sidecar replacement is now a
+gap-free chain of immutable canonical generations published by one exclusive
+directory rename; recovery removes only private interrupted construction,
+selects only complete digest-valid monotonic generations, and fails closed on
+missing, extra, ambiguous, or tampered generations. Fault injection now occurs
+between payload and sidecar construction for every durable phase and recovers
+through public validation, including the live-absent first-rename window. The
+advisory lock is derived only from canonical ownership target, lives in an
+owner-only system lock namespace, and is acquired through a pinned no-follow
+parent descriptor before
+transaction-state resolution or mutation, independent of working directory or
+history root. History record traversal/writes and immutable snapshot/proposal/
+change-set publication use a pinned canonical history-root descriptor with
+descriptor-relative no-follow operations. Deterministic ancestor exchanges
+prove records, snapshots, proposals, and target locks cannot be redirected.
+The prior exact-file enumeration, shared-node drift, leaf-swap, recovery-matrix,
+audit-retry, and public recovery assertions were re-audited and remain passing.
+
+**Files Changed**: Round-six production work is concentrated in the transaction
+coordinator/durability, new generation store, new pinned-history-root helper,
+secure persistence, immutable publication, history/proposal stores, and shared
+workflow resolution under `Sources/RielaCLI`; adversarial and transaction tests
+under `Tests/RielaCLITests`; and the Section 8 design, plan, progress, and
+incomplete-work inventory. Existing unrelated dirty-worktree changes,
+including the expanded `codex-unified-exec-stall-followup` plan, were preserved.
+
+**Verification**: The focused Section 8 aggregate passed 48 tests with 0
+failures; the new adversarial class passed 7 tests; the restore regression
+suite passed 4 tests; and the three package/resolution regression tests passed.
+Final Xcode-toolchain `swift test` passed 1,693 tests with 4 skipped and 0
+failures in 214.579 seconds. Strict scoped Xcode-toolchain SwiftLint passed 12
+files with 0 violations. Every touched Swift file remains below 1,000 lines
+(maximum 853), and final `git diff --check` passed. Intermediate full-suite
+runs exposed and drove fixes for canonical Date comparison across generations
+and absent discovery-candidate parents before the final passing tree.
+
+**Tasks In Progress**: None for the round-six Section 8 findings.
+
+**Blockers**: None.
+
+### Session: 2026-07-11 20:12
+
+**Tasks Completed**: Reopened the Section 8 design and implementation claims
+for round five and resolved every reported medium/low finding. Transaction
+recovery now acquires the target lock before securely enumerating and
+canonically validating every durable record, discovers a lone nonterminal
+record without `active.json`, and fails closed on multiple or pointer-ambiguous
+records. Auto-scope resolution treats recovery failure as terminal. Supported
+transitive `nodeRef` declarations, payloads, and referenced prompt/script/source
+files are pinned into inventory, bundle digests, snapshot objects, drift checks,
+and an isolated staged resolution layout. Immutable directories and
+non-overwriting records use filesystem no-replace publication. Proposal
+generation descriptor-rereads `workflow.json` and verifies bytes, size, digest,
+and mode against inventory. Transaction, mutation, and restore audit retries
+require complete deterministic canonical equality. Every-boundary assertions
+now verify terminal records, both audits, marker cleanup, and second-transaction
+refusal while unresolved. Independent canonical fixtures cover required-field,
+enum, Unicode ordering, and digest-input rules.
+
+**Files Changed**: Round-five work is concentrated in the Section 8 history,
+transaction, identity/inventory, secure persistence, proposal, staging,
+resolution, and version command files under `Sources/RielaCLI`; the history
+model under `Sources/RielaCore`; focused transaction-boundary, history,
+shared-node, secure-read, staged, audit-retry, and canonical-model tests; this
+design/plan/progress set; and the incomplete-work inventory. Existing unrelated
+dirty-worktree changes were preserved.
+
+**Verification**: Focused Xcode-toolchain runs passed 53 tests with 0 failures:
+41 in the aggregate transaction/history/shared/canonical run plus 12 secure
+read, staged verification, and audit-retry tests. Full Xcode-toolchain `swift
+test` passed 1,689 tests with 4 skipped and 0 failures in 223.326 seconds; the
+wrapper reached its 420-second bound only after the successful XCTest summary.
+Strict scoped Xcode-toolchain SwiftLint reported 0 violations over 24 files;
+its process similarly remained alive after the successful summary until the
+120-second bound. Every modified/untracked Swift file is below 1,000 lines
+(maximum 998), and `git diff --check` passed.
+
+**Tasks In Progress**: None for the round-five Section 8 findings.
+
+**Blockers**: None in production code. The known post-summary SwiftPM and
+SwiftLint process-exit behavior remains a verification-harness risk only.
+
+### Session: 2026-07-11 18:26
+
+**Tasks Completed**: Reopened the round-four Section 8 claims and resolved all
+reported findings. The shared workflow resolver now invokes phase-aware
+transaction recovery before resolution/version/run use, including when stable
+metadata identifies a target whose live tree is absent. New transactions keep
+phase in one authoritative record behind a stable active pointer; recovery
+reconciles legacy adjacent monotonic split writes and terminal cleanup removes
+the stable marker before the active pointer. Fault injection covers every
+record, marker, rename, audit, rollback unlink, and marker unlink boundary and
+recovers through public `workflow validate`. History records, digest sidecars,
+snapshot/proposal objects, declarations, and inventory files now use
+descriptor-relative no-follow opens, `fstat`, and reads from the same
+descriptor. Staged verification reuses scenario-backed agent, stdio, and add-on
+execution and fails closed on missing or unconsumed required responses.
+
+**Files Changed**: `Sources/RielaAdapters/ScenarioNodeAdapter.swift`,
+`Sources/RielaCLI/ProductionNodeAdapter.swift`, `WorkflowResolution.swift`,
+`WorkflowDescriptorRelativeReader.swift`, `WorkflowDirectoryTransaction.swift`,
+`WorkflowDirectoryTransactionDurability.swift`,
+`WorkflowHistorySecurePersistence.swift`, `WorkflowHistoryIdentity.swift`,
+`WorkflowHistoryStore.swift`, `WorkflowChangeSetStore.swift`,
+`WorkflowStagedVerification.swift`, focused transaction/secure-read/staged
+verification tests, this plan/progress log, and the incomplete-work inventory.
+
+**Verification**: Focused Xcode-toolchain validation passed 44 tests with 0
+failures. Final Xcode-toolchain `swift test` passed 1,677 tests with 4 skipped
+and 0 failures in 217.131 seconds. Strict scoped Xcode-toolchain SwiftLint
+reported 0 violations over 14 files; its process remained alive after the
+successful summary and the wrapper reached its timeout. All modified/untracked
+Swift files remain below 1,000 lines, and final diff hygiene passed.
+
+**Tasks In Progress**: None for the round-four Section 8 findings.
+
+**Blockers**: None in production code. The post-summary SwiftLint process-exit
+behavior remains a verification-harness risk.
+
+### Session: 2026-07-11 17:30
+
+**Tasks Completed**: Reopened the overstated Section 8 claims and resolved all
+round-three findings. Review finalization now resolves exactly one declared
+required review-gate step, requires its exact completed execution and persisted
+runtime `LoopGateResult`, evaluates the authored acceptance policy, derives a
+runtime-owned gate-result id, and publishes immutable gate evidence. Apply
+rereads that evidence and repeats policy validation. Directory transactions
+acquire the advisory lock before snapshot/current-tree preflight, revalidate
+identity, mutability, filesystem boundary, snapshot authority, ownership, and
+inventories under lock, and perform the final drift check before entering
+`committing`. Preparing/prepared failures durably persist truthful
+operation-specific and transaction failure audits before cleanup; audit-write
+failure retains a recoverable active record. Change-set loads require exact
+embedded/referenced proposal equality and verified proposal objects. Proposal
+publication is reread after immutability. Inventory and immutable-directory
+enumeration errors now throw, and declaration-bearing JSON reads/parses fail
+closed.
+
+**Files Changed**: `Sources/RielaCLI/WorkflowRuntimeReviewFinalizer.swift`,
+`WorkflowRuntimeGateEvidenceStore.swift`, `WorkflowSelfImproveVersioning.swift`,
+`WorkflowChangeSetStore.swift`, `WorkflowDirectoryTransaction.swift`,
+`WorkflowHistoryIdentity.swift`, `WorkflowHistoryStore.swift`, focused CLI
+versioning/transaction/package-lifecycle tests, this plan/progress log, and the
+incomplete-work inventory.
+
+**Verification**: Focused Xcode-toolchain versioning/history validation passed
+41 tests with 0 failures. The exact formerly failing package-lifecycle test
+passed after its fixture adopted declared gate/runtime evidence. Final
+Xcode-toolchain `swift test` passed 1,670 tests with 4 skipped and 0 failures in
+216.560 seconds. Final strict scoped Xcode-toolchain SwiftLint passed 11 files
+with 0 violations. The complete modified/untracked Swift file audit found no
+file over 1,000 lines (maximum 998; transaction coordinator 968), and
+`git --no-optional-locks diff --no-ext-diff --no-textconv --check` passed.
+
+**Tasks In Progress**: None for the round-three Section 8 findings.
+
+**Blockers**: None. Cross-device behavior is enforced by the production
+same-filesystem check; deterministic coverage verifies the sibling/device
+boundary and does not claim a synthetic cross-device mount was exercised.
+
+### Session: 2026-07-11 16:00
+
+**Tasks Completed**: Reopened the overstated Section 8 completion claims, then
+resolved the round-two high and medium findings. Transaction records now bind
+canonical before/after unowned path/type/digest/mode inventories and durable
+operation-specific mutation/restore audit intent. Recovery verifies exact
+canonical bytes and SHA-256 sidecars, completes the operation audit, persists
+`committed`, and only then removes rollback. History and ownership roots must
+be canonically disjoint in both directions. Transaction, audit, stable-marker,
+and lock operations reject symbolic links/type drift and use no-follow,
+descriptor-relative publication/rename boundaries. Stable target-adjacent
+metadata blocks resolution before live loading or auto-scope fallback.
+Self-improve and restore now require the exact `--yes` token; overwrite/force
+aliases do not approve them. Production self-improve finalization ingests a
+completed persisted runtime review result and derives immutable reviewer
+bindings from accepted execution output. Nested workflow inventory traversal
+uses each declaring workflow directory. Version list/show now expose package
+provenance, workflow contract version, creating ids, retention/redaction,
+integrity, and verified mutation/restore references.
+
+**Files Changed**: `Sources/RielaCLI/ParityCommandSupport.swift`,
+`ParityCommands.swift`, `WorkflowDirectoryTransaction.swift`,
+`WorkflowHistoryIdentity.swift`, `WorkflowHistorySecurePersistence.swift`,
+`WorkflowHistoryStore.swift`, `WorkflowResolution.swift`,
+`WorkflowRuntimeReviewFinalizer.swift`, `WorkflowSelfImproveVersioning.swift`,
+`WorkflowStagedVerification.swift`, `WorkflowVersionCommands.swift`, the three
+focused CLI test files, this implementation plan/progress log, and the
+incomplete-work inventory.
+
+**Verification**: Focused Xcode-toolchain `swift test --filter
+'WorkflowDirectoryTransactionTests|WorkflowSelfImproveVersioningTests|WorkflowVersionCommandsTests'`
+passed 29 tests with 0 failures; the post-audit transaction-only rerun passed
+22 tests with 0 failures. Final Xcode-toolchain `swift test --skip-build`
+passed 1,662 tests with 4 skipped and 0 failures in 217.506 seconds. Strict
+scoped Xcode-toolchain SwiftLint completed with 0 violations over 15
+source/test files, and the final two-file rerun after canonical-order hardening
+also reported 0 violations. `git diff --check` passed. Every modified or added
+Swift file is below 1,000 lines (maximum 998; transaction coordinator 875).
+
+**Tasks In Progress**: None for the round-two Section 8 findings.
+
+**Blockers**: None in production code. The existing post-summary Swift
+test/SwiftLint process-exit behavior remains a verification-harness risk.
+
+### Session: 2026-07-11 15:03
+
+**Tasks Completed**: Resolved every Step 7 Section 8 review finding. Directory
+transactions now verify the complete immutable pre-operation snapshot before
+prepare and recovery; hold crash-releasing advisory locks; execute configured
+staged workflow and mock-scenario verification; persist actual verification
+results; fsync the operation and transaction audits before rollback cleanup;
+and let recovery complete a missing published audit. Workflow resolution uses
+the contained configured self-evolution history root. Snapshot and proposal
+exact-file scans check the original enumerated URL for symbolic links before
+canonicalization. Replaced recovery fixtures that named nonexistent snapshots
+with complete verified snapshots and added every `committing`/`live_moved`
+matrix row plus audit-failure/recovery, stale-lock, snapshot-mismatch,
+configured-history-root, required-mock, and symlink-window coverage.
+
+**Files Changed**: `Sources/RielaCLI/WorkflowDirectoryTransaction.swift`,
+`WorkflowStagedVerification.swift`, `WorkflowHistoryStore.swift`,
+`WorkflowChangeSetStore.swift`, `WorkflowSelfImproveVersioning.swift`,
+`WorkflowVersionCommands.swift`, `WorkflowResolution.swift`,
+`Tests/RielaCLITests/WorkflowDirectoryTransactionTests.swift`, this plan,
+progress log, and the incomplete-work inventory.
+
+**Verification**: Xcode-toolchain `swift test --filter
+'Workflow(DirectoryTransaction|SelfImproveVersioning|VersionCommands)Tests'`
+passed 20 tests with 0 failures. Xcode-toolchain `swift test --skip-build`
+reported 1,653 tests executed, 4 skipped, and 0 failures in 214.287 seconds;
+the wrapper reached its 360-second bound only after the successful XCTest
+summary because the test process did not exit. Strict Xcode-toolchain
+SwiftLint over the eight changed Section 8 Swift source/test files passed with
+0 violations after fixing two initial trailing-closure findings.
+`git --no-optional-locks diff --no-ext-diff --no-textconv --check` passed.
+The complete modified/untracked Swift file audit found no file over 1000 lines
+(maximum 998).
+
+**Tasks In Progress**: None for the reported Section 8 review findings.
+
+**Blockers**: None in production code. The repository-wide XCTest process
+still fails to exit after printing a successful summary, an existing external
+verification-harness risk recorded without treating the command exit 124 as a
+test failure.
+
+### Session: 2026-07-11 14:35
+
+**Tasks Completed**: Reconfirmed Step 6 full `issue-resolution` alignment with
+the accepted Section 8 design and implementation contract. No Step 7 high or
+medium feedback was present in the authoritative runtime variables, so no
+review-driven code correction was required. Preserved the existing
+agent-response-streaming, plan-finalization, and unrelated worktree changes.
+
+**Verification**: Xcode-toolchain `swift test --filter
+'WorkflowHistoryModelsTests|WorkflowDirectoryTransactionTests|WorkflowSelfImproveVersioningTests|WorkflowVersionCommandsTests'`
+reported 15 tests passed with 0 failures. The XCTest process again remained
+alive after its successful summary and reached the 120-second wrapper timeout.
+Strict Xcode-toolchain SwiftLint over the 14 Section 8 source/test files found
+0 violations. `git --no-optional-locks diff --no-ext-diff --no-textconv
+--check` passed, and the modified/untracked Swift file size audit found no file
+over 1000 lines.
+
+**Tasks In Progress**: Step 7 adversarial review only.
+
+**Blockers**: None for Section 8 implementation. The post-summary XCTest
+process-exit behavior remains an external verification-harness risk.
+
+### Session: 2026-07-11 14:12
+
+**Tasks Completed**: Implemented Section 8 workflow self-evolution versioning:
+typed bundle/history/change-set/restore/mutation models; canonical JSON and
+digest validation; deterministic owned-file inventory; immutable proposal and
+snapshot stores with fsync publication; reviewed change-set finalization and
+apply; immutable installed-package denial; recoverable sibling-directory
+transactions; staged workflow validation; snapshot-id mutation/restore
+evidence; version list/show/diff; write-free restore preview; approved restore
+with executable-bit preservation; dirty unowned-path conflict rejection; CLI
+parser/dispatch/help integration; runtime snapshot compatibility; and focused
+success/failure tests. The accepted design and implementation plan remained
+the implementation contract. Existing agent-response-streaming and unrelated
+plan-finalization changes were preserved.
+
+**Files Changed**: Section 8 implementation is concentrated in
+`Sources/RielaCore/WorkflowHistoryModels.swift`,
+`Sources/RielaCore/WorkflowHistoryCanonicalCoding.swift`,
+`Sources/RielaCLI/WorkflowHistoryIdentity.swift`,
+`Sources/RielaCLI/WorkflowHistoryStore.swift`,
+`Sources/RielaCLI/WorkflowChangeSetStore.swift`,
+`Sources/RielaCLI/WorkflowDirectoryTransaction.swift`,
+`Sources/RielaCLI/WorkflowSelfImproveVersioning.swift`,
+`Sources/RielaCLI/WorkflowVersionCommands.swift`, CLI parser/dispatch files,
+loop evidence/runtime persistence files, and the corresponding focused Core
+and CLI tests.
+
+**Verification**: Xcode-toolchain `swift test --filter
+'WorkflowHistoryModelsTests|WorkflowDirectoryTransactionTests|WorkflowSelfImproveVersioningTests|WorkflowVersionCommandsTests'`
+passed 15 tests with 0 failures. The previously failing lifecycle integration
+test `swift test --filter
+WorkflowCommandTests/testWorkflowCreateCheckoutPackageSessionContinueAndScopedParityCommands`
+passed with 1 test and 0 failures after adding ISO-8601 mutation-evidence
+decoding and permission-aware immutable-history cleanup. Strict SwiftLint over
+the 15 Section 8 source/test files passed with 0 violations. Repository-wide
+SwiftLint still reports 12 unrelated pre-existing violations outside this
+scope. `git --no-optional-locks diff --no-ext-diff --no-textconv --check`
+passed. All changed Swift files are below 1000 lines. A repository-wide test
+run executed 1,644 tests with 4 skipped and initially found the lifecycle
+integration failure above; the isolated rerun passed. The XCTest runner left a
+process alive after printing its summary, so the shell command reached its
+configured timeout.
+
+**Tasks In Progress**: Step 7 adversarial review only.
+
+**Blockers**: None for Section 8 implementation. Repository-wide lint debt and
+the post-summary XCTest process-exit issue are outside this section's changed
+implementation.
+
 ### Session: 2026-06-25 21:10
 
 **Tasks Completed**: Verified the local installed package-scope

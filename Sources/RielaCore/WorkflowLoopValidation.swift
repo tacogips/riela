@@ -122,6 +122,27 @@ func validateTypedLoopMetadata(
       diagnostics: &diagnostics
     )
   }
+
+  if let selfEvolution = loop.selfEvolution {
+    validateLoopWorkflowRelativePath(
+      selfEvolution.historyRoot,
+      fieldName: "historyRoot",
+      path: "workflow.loop.selfEvolution.historyRoot",
+      diagnostics: &diagnostics
+    )
+    if selfEvolution.allowed, !selfEvolution.requiresReviewGate {
+      diagnostics.append(loopValidationError(
+        "workflow.loop.selfEvolution.requiresReviewGate",
+        "must be true when workflow self-evolution is allowed"
+      ))
+    }
+    if Set(selfEvolution.requiredVerification).count != selfEvolution.requiredVerification.count {
+      diagnostics.append(loopValidationError(
+        "workflow.loop.selfEvolution.requiredVerification",
+        "must not contain duplicate verification requirements"
+      ))
+    }
+  }
 }
 
 func validateTypedStepLoop(

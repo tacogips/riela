@@ -1,0 +1,8 @@
+{
+  "id": "implement",
+  "description": "Implement the approved Riela-side tool-child stall recovery design.",
+  "executionBackend": "claude-code-agent",
+  "model": "claude-opus-4-8",
+  "promptTemplateFile": "prompts/implement.md",
+  "variables": {}
+}

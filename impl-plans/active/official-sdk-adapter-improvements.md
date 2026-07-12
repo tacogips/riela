@@ -370,6 +370,6 @@ implemented here.
 
 ## Related Plans
 
-- **Depends On**: `impl-plans/active/agent-response-streaming.md` (Phase 1 shipped — event pipeline reused)
+- **Depends On**: `impl-plans/completed/agent-response-streaming.md` (Phase 1 shipped — event pipeline reused)
 - **Feeds**: `impl-plans/active/loop-engineering-application-gap-closure.md` (usage persistence)
 - **Next**: design Phase 4 follow-up (provider-native structured output, tool calling, Anthropic vision) — separate plan when scheduled

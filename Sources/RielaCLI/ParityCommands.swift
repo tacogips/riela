@@ -29,6 +29,13 @@ public struct WorkflowSelfImproveCommandResult: Codable, Equatable, Sendable {
   public var backupDirectory: String?
   public var reportPath: String?
   public var report: [String]
+  public var proposalId: String?
+  public var proposalDigest: String?
+  public var changeSetId: String?
+  public var finalizedDigest: String?
+  public var snapshotId: String?
+  public var transactionId: String?
+  public var mutationEvidence: LoopWorkflowMutationEvidence?
 }
 
 public struct WorkflowPackageCommandResult: Codable, Equatable, Sendable {
@@ -278,39 +285,42 @@ public struct WorkflowScaffoldCommand: Sendable {
         workflowDefinitionDir: parsed.workflowDefinitionDir,
         workingDirectory: workingDirectory.path
       ))
-      let report: [String]
-      let backupDirectory: String?
-      let reportPath: String?
-      if parsed.dryRun {
-        backupDirectory = nil
-        reportPath = nil
-        report = [
-          "Swift self-improve dry run completed without mutation.",
-          "dryRun=true",
-          "workflow=\(workflowName)",
-          "workflowDirectory=\(bundle.workflowDirectory)",
-          "steps=\(bundle.workflow.steps.count)"
-        ]
-      } else {
-        guard parsed.overwrite else {
-          throw CLIUsageError("workflow self-improve write mode needs explicit --yes or --force approval")
+      if parsed.proposalId != nil || parsed.reviewSessionId != nil {
+        guard let proposalId = parsed.proposalId, let reviewSessionId = parsed.reviewSessionId else {
+          throw CLIUsageError("workflow self-improve finalization requires --proposal-id and --review-session-id")
         }
-        let mutation = try applySelfImproveMutation(
-          workflowName: workflowName,
-          workflowDirectory: URL(fileURLWithPath: bundle.workflowDirectory, isDirectory: true),
-          workingDirectory: workingDirectory
+        guard !parsed.dryRun, !parsed.exactYes, parsed.changeSetId == nil, parsed.expectedDigest == nil else {
+          throw CLIUsageError("workflow self-improve finalization cannot be combined with proposal or apply options")
+        }
+        let persisted = try CLIWorkflowSessionResolution.loadPersistedSession(
+          sessionId: reviewSessionId,
+          sessionStore: parsed.sessionStore,
+          scope: parsed.scope,
+          workingDirectory: workingDirectory.path
         )
-        backupDirectory = mutation.backupDirectory
-        reportPath = mutation.reportPath
-        report = mutation.report
+        let runtimeStore = SQLiteWorkflowRuntimePersistenceStore(
+          rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: persisted.storeRoot)
+        )
+        let result = try WorkflowSelfImproveVersioning().finalize(
+          workflowName: workflowName,
+          bundle: bundle,
+          workingDirectory: workingDirectory,
+          proposalId: proposalId,
+          runtimeSnapshot: runtimeStore.load(sessionId: reviewSessionId)
+        )
+        return try render(result, options: options) { result in
+          result.report.joined(separator: "\n") + "\n"
+        }
       }
-      let result = WorkflowSelfImproveCommandResult(
+      let result = try WorkflowSelfImproveVersioning().execute(
         workflowName: workflowName,
+        bundle: bundle,
+        workingDirectory: workingDirectory,
         dryRun: parsed.dryRun,
-        mutated: !parsed.dryRun,
-        backupDirectory: backupDirectory,
-        reportPath: reportPath,
-        report: report
+        approved: parsed.exactYes,
+        changeSetId: parsed.changeSetId,
+        expectedDigest: parsed.expectedDigest,
+        sourceSessionId: parsed.sourceSessionId
       )
       return try render(result, options: options) { result in
         result.report.joined(separator: "\n") + "\n"
@@ -320,85 +330,6 @@ public struct WorkflowScaffoldCommand: Sendable {
     } catch {
       return failure("\(error)", output: options.output, options: options)
     }
-  }
-
-  private struct SelfImproveMutationResult {
-    var backupDirectory: String
-    var reportPath: String
-    var report: [String]
-  }
-
-  private func applySelfImproveMutation(
-    workflowName: String,
-    workflowDirectory: URL,
-    workingDirectory: URL
-  ) throws -> SelfImproveMutationResult {
-    let workflowJSON = workflowDirectory.appendingPathComponent("workflow.json")
-    guard FileManager.default.fileExists(atPath: workflowJSON.path) else {
-      throw CLIUsageError("workflow self-improve requires workflow.json at \(workflowJSON.path)")
-    }
-    let stamp = "2026-06-16T00-00-00Z"
-    let backupDirectory = workingDirectory
-      .appendingPathComponent(".riela/self-improve/backups", isDirectory: true)
-      .appendingPathComponent("\(workflowName)-\(stamp)", isDirectory: true)
-    let reportDirectory = workingDirectory.appendingPathComponent(".riela/self-improve/reports", isDirectory: true)
-    let reportURL = reportDirectory.appendingPathComponent("\(workflowName)-\(stamp).json")
-    try FileManager.default.createDirectory(at: backupDirectory, withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(at: reportDirectory, withIntermediateDirectories: true)
-    let backupWorkflow = backupDirectory.appendingPathComponent("workflow.json")
-    if FileManager.default.fileExists(atPath: backupWorkflow.path) {
-      try FileManager.default.removeItem(at: backupWorkflow)
-    }
-    try FileManager.default.copyItem(at: workflowJSON, to: backupWorkflow)
-
-    let data = try Data(contentsOf: workflowJSON)
-    guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-      throw CLIUsageError("workflow self-improve requires workflow.json root object")
-    }
-    let reviewedDescription = "self-improve-reviewed"
-    if let existingDescription = object["description"] as? String, !existingDescription.contains(reviewedDescription) {
-      object["description"] = "\(existingDescription) \(reviewedDescription)"
-    } else if object["description"] == nil {
-      object["description"] = reviewedDescription
-    }
-    object["selfImproveMutation"] = [
-      "mode": "reviewed-patch",
-      "reviewedAt": stamp,
-      "rollbackMetadata": backupWorkflow.path
-    ]
-    let updated = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
-    try updated.write(to: workflowJSON, options: .atomic)
-
-    let markerURL = workflowDirectory.appendingPathComponent(".riela-self-improve-patch.json")
-    try jsonString([
-      "workflowName": .string(workflowName),
-      "mode": .string("reviewed-patch"),
-      "backupWorkflow": .string(backupWorkflow.path),
-      "reportPath": .string(reportURL.path),
-      "rollbackMetadata": .string(backupWorkflow.path)
-    ] as JSONObject).write(to: markerURL, atomically: true, encoding: .utf8)
-    try jsonString([
-      "workflowName": .string(workflowName),
-      "mutated": .bool(true),
-      "mutationMode": .string("reviewed-patch"),
-      "backupDirectory": .string(backupDirectory.path),
-      "rollbackMetadata": .string(backupWorkflow.path),
-      "workflowJSON": .string(workflowJSON.path)
-    ] as JSONObject).write(to: reportURL, atomically: true, encoding: .utf8)
-
-    return SelfImproveMutationResult(
-      backupDirectory: backupDirectory.path,
-      reportPath: reportURL.path,
-      report: [
-        "Swift self-improve write mode applied reviewed patch.",
-        "dryRun=false",
-        "workflow=\(workflowName)",
-        "workflowDirectory=\(workflowDirectory.path)",
-        "backupDirectory=\(backupDirectory.path)",
-        "reportPath=\(reportURL.path)",
-        "rollbackMetadata=\(backupWorkflow.path)"
-      ]
-    )
   }
 
   private func checkoutSource(workflowName: String, checkoutTarget: String, parsed: ParsedParityOptions, workingDirectory: URL) throws -> URL {

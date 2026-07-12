@@ -1,6 +1,12 @@
+import Darwin
 import Foundation
 import RielaAddons
 import RielaCore
+
+private struct WorkflowTransactionResolutionFailure: Error, CustomStringConvertible {
+  var message: String
+  var description: String { message }
+}
 
 public struct ResolvedWorkflowBundle: Equatable, Sendable {
   public var workflow: WorkflowDefinition
@@ -35,10 +41,17 @@ public protocol WorkflowBundleResolving: Sendable {
 }
 
 public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
-  public init() {}
+  private let enforcesTransactionBlock: Bool
+
+  public init(enforcesTransactionBlock: Bool = true) {
+    self.enforcesTransactionBlock = enforcesTransactionBlock
+  }
 
   public func resolve(_ options: WorkflowResolutionOptions) throws -> ResolvedWorkflowBundle {
     let candidates = try candidateDirectories(for: options)
+    if enforcesTransactionBlock {
+      try refuseStableNonterminalTransactions(candidates: candidates)
+    }
     var errors: [String] = []
     for candidate in candidates {
       let resolvedRoot = candidate.rootDirectory.resolvingSymlinksInPath().standardizedFileURL
@@ -53,14 +66,19 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
         continue
       }
       do {
-        return try loadBundle(
+        let bundle = try loadBundle(
           at: resolvedDirectory,
           rootDirectory: candidate.rootDirectory,
           scope: candidate.scope,
           packageManifest: candidate.packageManifest,
           packageDirectory: candidate.packageDirectory
         )
+        if enforcesTransactionBlock {
+          try refuseNonterminalHistoryTransaction(bundle: bundle, options: options)
+        }
+        return bundle
       } catch {
+        if error is WorkflowTransactionResolutionFailure { throw error }
         guard options.scope == .auto else {
           throw error
         }
@@ -69,6 +87,92 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       }
     }
     throw WorkflowResolutionError.notFound(options.workflowName, errors)
+  }
+
+  private func refuseStableNonterminalTransactions(candidates: [CandidateDirectory]) throws {
+    var inspected = Set<String>()
+    for candidate in candidates {
+      let ownershipRoot = (candidate.packageDirectory ?? candidate.directory).standardizedFileURL
+      let marker = WorkflowTransactionStableMetadata.url(forOwnershipRoot: ownershipRoot)
+      guard inspected.insert(marker.path).inserted else { continue }
+      guard try directoryExistsWithoutFollowingLinks(ownershipRoot.deletingLastPathComponent()) else {
+        // No stable marker or canonical-target lock can exist without the
+        // target parent. Missing discovery candidates are handled normally.
+        continue
+      }
+      let provisionalTarget = WorkflowBundleIdentity(
+        workflowId: candidate.directory.lastPathComponent,
+        sourceScope: .direct,
+        sourceKind: candidate.packageDirectory == nil ? .authoredWorkflow : .installedPackage,
+        workflowDirectory: candidate.directory.path,
+        ownershipRoot: ownershipRoot.path,
+        packageDirectory: candidate.packageDirectory?.path,
+        sourceMutable: candidate.packageDirectory == nil
+      )
+      try withWorkflowTargetLock(target: provisionalTarget, owner: "stable-recovery") {
+        var status = stat()
+        guard lstat(marker.path, &status) == 0 else {
+          if errno == ENOENT { return }
+          throw CLIUsageError("unable to inspect stable workflow transaction metadata")
+        }
+        guard (status.st_mode & S_IFMT) == S_IFREG else {
+          throw CLIUsageError("stable workflow transaction metadata is linked or has unexpected type")
+        }
+        let metadata = try WorkflowHistorySecurePersistence.readCanonical(
+          WorkflowTransactionStableMetadata.self,
+          from: marker,
+          historyRoot: marker.deletingLastPathComponent()
+        )
+        guard metadata.schemaVersion == 1,
+              metadata.target.ownershipRoot == ownershipRoot.path,
+              metadata.historyRoot.hasPrefix("/") else {
+          throw CLIUsageError("stable workflow transaction metadata does not match the requested target")
+        }
+        let historyRoot = URL(fileURLWithPath: metadata.historyRoot, isDirectory: true).standardizedFileURL
+        do {
+          guard let recovered = try WorkflowDirectoryTransactionCoordinator().recover(
+            historyRoot: historyRoot,
+            target: metadata.target,
+            lockAlreadyHeld: true
+          ),
+                recovered.transactionId == metadata.transactionId,
+                recovered.target == metadata.target else {
+            throw CLIUsageError("stable workflow transaction metadata did not resolve to its durable transaction")
+          }
+        } catch {
+          throw CLIUsageError("nonterminal directory transaction recovery failed: \(error)")
+        }
+      }
+    }
+  }
+
+  private func refuseNonterminalHistoryTransaction(
+    bundle: ResolvedWorkflowBundle,
+    options: WorkflowResolutionOptions
+  ) throws {
+    guard isSafeScopedWorkflowName(bundle.workflow.workflowId) else { return }
+    let base: URL
+    if bundle.sourceScope == .user {
+      base = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
+    } else {
+      base = URL(fileURLWithPath: options.workingDirectory, isDirectory: true)
+    }
+    let target = try WorkflowHistoryIdentityResolver.identity(for: bundle)
+    let historyRoot = try WorkflowHistoryIdentityResolver.historyRoot(
+      for: target,
+      workingDirectory: base,
+      configuredRoot: bundle.workflow.loop?.selfEvolution?.historyRoot
+    )
+    do {
+      if let recovered = try WorkflowDirectoryTransactionCoordinator().recover(historyRoot: historyRoot, target: target),
+         recovered.target != target {
+        throw CLIUsageError("workflow transaction recovery did not match the resolved target")
+      }
+    } catch {
+      throw WorkflowTransactionResolutionFailure(
+        message: "nonterminal directory transaction recovery failed: \(error)"
+      )
+    }
   }
 
   private struct CandidateDirectory {

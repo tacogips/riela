@@ -18,6 +18,7 @@ public struct LoopEvidenceManifest: Codable, Equatable, Sendable {
   public var changedFiles: [LoopChangedFile]
   public var commands: [LoopCommandEvidence]
   public var verification: [LoopVerificationEvidence]
+  public var workflowMutation: LoopWorkflowMutationEvidence?
   public var implementationPlans: [LoopImplementationPlanRef]
   public var residualRisks: [LoopResidualRisk]
   public var redaction: LoopRedactionSummary
@@ -42,6 +43,7 @@ public struct LoopEvidenceManifest: Codable, Equatable, Sendable {
     changedFiles: [LoopChangedFile] = [],
     commands: [LoopCommandEvidence] = [],
     verification: [LoopVerificationEvidence] = [],
+    workflowMutation: LoopWorkflowMutationEvidence? = nil,
     implementationPlans: [LoopImplementationPlanRef] = [],
     residualRisks: [LoopResidualRisk] = [],
     redaction: LoopRedactionSummary,
@@ -65,6 +67,7 @@ public struct LoopEvidenceManifest: Codable, Equatable, Sendable {
     self.changedFiles = changedFiles
     self.commands = commands
     self.verification = verification
+    self.workflowMutation = workflowMutation
     self.implementationPlans = implementationPlans
     self.residualRisks = residualRisks
     self.redaction = redaction

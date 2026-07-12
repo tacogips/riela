@@ -13,7 +13,7 @@ extension WorkflowCommandTests {
     let tempDir = FileManager.default.temporaryDirectory
       .appendingPathComponent("riela-cli-parity-\(UUID().uuidString)", isDirectory: true)
     let packageSource = tempDir.appendingPathComponent("package-source", isDirectory: true)
-    defer { try? FileManager.default.removeItem(at: tempDir) }
+    defer { removeWorkflowVersioningTestDirectory(tempDir) }
     try FileManager.default.createDirectory(at: packageSource, withIntermediateDirectories: true)
     let app = RielaCLIApplication()
     let create = await app.run([
@@ -378,18 +378,10 @@ extension WorkflowCommandTests {
     let packageInspection = try decodeJSON(SessionInspectionCommandResult.self, from: packageRunStatus.stdout)
     XCTAssertEqual(packageInspection.status, .completed)
 
-    let selfImprove = await app.run([
-      "workflow", "self-improve", "created-flow",
-      "--working-dir", tempDir.path,
-      "--yes",
-      "--output", "json"
-    ])
-    XCTAssertEqual(selfImprove.exitCode, .success, selfImprove.stderr)
-    let selfImproveResult = try decodeJSON(WorkflowSelfImproveCommandResult.self, from: selfImprove.stdout)
+    let selfImproveResult = try await applyReviewedSelfImprove(app: app, workingDirectory: tempDir)
     XCTAssertEqual(selfImproveResult.workflowName, "created-flow")
     XCTAssertEqual(selfImproveResult.dryRun, false)
     XCTAssertEqual(selfImproveResult.mutated, true)
-    XCTAssertTrue(FileManager.default.fileExists(atPath: "\(created.workflowDirectory)/.riela-self-improve-patch.json"))
     XCTAssertTrue(try String(contentsOfFile: "\(created.workflowDirectory)/workflow.json").contains("self-improve-reviewed"))
     XCTAssertTrue(FileManager.default.fileExists(atPath: try XCTUnwrap(selfImproveResult.backupDirectory)))
     XCTAssertTrue(FileManager.default.fileExists(atPath: try XCTUnwrap(selfImproveResult.reportPath)))

@@ -4,6 +4,78 @@ import RielaMemory
 import XCTest
 @testable import RielaCLI
 
+private func rielaExampleWorkflowNames() -> [String] {
+  [
+    "apple-calendar-fetch",
+    "apple-clock-alarms-list",
+    "apple-gateway-admin",
+    "apple-gateway-packaging-plan",
+    "apple-mail-list",
+    "apple-note-create",
+    "apple-note-read",
+    "apple-notes-list",
+    "apple-notifications",
+    "apple-reminders-list",
+    "chat-event-attachment-judgement",
+    "chat-memory-raw-and-daily-summary",
+    "chat-reply-webhook",
+    "chat-supervisor-collaboration",
+    "claude-riela-claude-worker",
+    "claude-riela-codex-coding",
+    "codex-codex-topic-debate",
+    "default-superviser",
+    "design-and-implement-review-loop",
+    "design-and-implement-review-loop-feature-plan",
+    "discord-agent-trio-chat",
+    "discord-codex-chat",
+    "discord-persona-chat",
+    "dispatcher-llm-resolver-stub",
+    "first-four-arithmetic-pipeline",
+    "gemini-ocr-worker",
+    "gemini-sdk-worker",
+    "gmail-latest-mail-digest-telegram",
+    "loop-baseline-regression-ops",
+    "loop-budget-guard",
+    "loop-ci-gate-check",
+    "loop-concurrency-lease",
+    "loop-engineer-quality-loop",
+    "loop-outcome-notifications",
+    "loop-stall-guard",
+    "matrix-agent-trio-chat",
+    "matrix-chat-reply",
+    "node-combinations-showcase",
+    "note-agent",
+    "note-auto-tagging",
+    "note-config-agent",
+    "note-edit-rewrite",
+    "note-link-extract",
+    "note-pdf-ingest",
+    "note-quick-memo",
+    "note-selection-question",
+    "note-youtube-transcript",
+    "recent-change-quality-loop",
+    "required-loop-gate-failure",
+    "riela-default-workflow-supervisor",
+    "same-node-session-echo",
+    "scheduled-sleep",
+    "seatbelt-sandboxed-worker",
+    "shared-agent-trio-personas",
+    "slack-agent-trio-chat",
+    "slack-codex-chat",
+    "subworkflow-chained-simple",
+    "supervised-mock-retry",
+    "telegram-agent-trio-chat",
+    "telegram-agent-trio-time-signal",
+    "telegram-sdk-trio-chat",
+    "worker-only-single-step",
+    "workflow-call-live-echo",
+    "workflow-call-live-echo-callee",
+    "workflow-call-review-target",
+    "workflow-call-simple",
+    "x-follower-ai-business-digest"
+  ]
+}
+
 final class RielaExampleParityTests: XCTestCase {
   private enum RepositoryPackage {
     static let manifestFileName = "Package.swift"
@@ -11,7 +83,7 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum ExampleCatalog {
     static let directoryName = "examples"
-    static let expectedMockScenarioCount = 36
+    static let expectedMockScenarioCount = 37
     static let expectedNodeMockScenarioCount = 0
   }
 
@@ -663,73 +735,6 @@ final class RielaExampleParityTests: XCTestCase {
     XCTAssertEqual(attachment["fileId"], .string("telegram-large-photo"))
     XCTAssertEqual(attachment["width"], .number(1280))
     XCTAssertEqual(attachment["height"], .number(720))
-  }
-
-  private func rielaExampleWorkflowNames() -> [String] {
-    [
-      "apple-calendar-fetch",
-      "apple-clock-alarms-list",
-      "apple-gateway-admin",
-      "apple-gateway-packaging-plan",
-      "apple-mail-list",
-      "apple-note-create",
-      "apple-note-read",
-      "apple-notes-list",
-      "apple-notifications",
-      "apple-reminders-list",
-      "chat-event-attachment-judgement",
-      "chat-memory-raw-and-daily-summary",
-      "chat-reply-webhook",
-      "chat-supervisor-collaboration",
-      "claude-riela-claude-worker",
-      "claude-riela-codex-coding",
-      "codex-codex-topic-debate",
-      "default-superviser",
-      "design-and-implement-review-loop",
-      "design-and-implement-review-loop-feature-plan",
-      "discord-agent-trio-chat",
-      "discord-codex-chat",
-      "discord-persona-chat",
-      "dispatcher-llm-resolver-stub",
-      "first-four-arithmetic-pipeline",
-      "gemini-ocr-worker",
-      "gemini-sdk-worker",
-      "gmail-latest-mail-digest-telegram",
-      "loop-ci-gate-check",
-      "loop-engineer-quality-loop",
-      "matrix-agent-trio-chat",
-      "matrix-chat-reply",
-      "node-combinations-showcase",
-      "note-agent",
-      "note-auto-tagging",
-      "note-config-agent",
-      "note-edit-rewrite",
-      "note-link-extract",
-      "note-pdf-ingest",
-      "note-quick-memo",
-      "note-selection-question",
-      "note-youtube-transcript",
-      "recent-change-quality-loop",
-      "required-loop-gate-failure",
-      "riela-default-workflow-supervisor",
-      "same-node-session-echo",
-      "scheduled-sleep",
-      "seatbelt-sandboxed-worker",
-      "shared-agent-trio-personas",
-      "slack-agent-trio-chat",
-      "slack-codex-chat",
-      "subworkflow-chained-simple",
-      "supervised-mock-retry",
-      "telegram-agent-trio-chat",
-      "telegram-agent-trio-time-signal",
-      "telegram-sdk-trio-chat",
-      "worker-only-single-step",
-      "workflow-call-live-echo",
-      "workflow-call-live-echo-callee",
-      "workflow-call-review-target",
-      "workflow-call-simple",
-      "x-follower-ai-business-digest"
-    ]
   }
 
   private func expectedWorkflowId(for workflowName: String) -> String {

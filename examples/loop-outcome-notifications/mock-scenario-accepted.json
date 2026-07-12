@@ -1,0 +1,24 @@
+{
+  "implementation-review": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "loopGate": {
+        "gateId": "implementation-review",
+        "stepId": "implementation-review",
+        "decision": "accepted",
+        "severityCounts": {
+          "high": 0,
+          "medium": 0
+        },
+        "blockingFindings": [],
+        "evidenceRefs": [
+          "review.json"
+        ]
+      }
+    }
+  }
+}

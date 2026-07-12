@@ -233,6 +233,34 @@ riela workflow run required-loop-gate-failure \
   --output json
 ```
 
+### Loop engineering operations examples
+
+Five focused bundles demonstrate the loop convergence/operations surface, and
+`loop-ci-gate-check` covers CI gating. Each bundle carries its own `README.md`
+and `EXPECTED_RESULTS.md` with the exact commands and stable assertions.
+
+- `loop-stall-guard` — `loop.convergence` repeated-finding stall detection:
+  identical rejected findings for `maxRepeatedFindingRounds` rounds emit a
+  `loop_stall` event and fail the session closed with
+  `failureKind: loopNotConverging`; a second scenario shows that changed
+  findings never false-stall.
+- `loop-budget-guard` — `loop.budget` step-boundary enforcement: an
+  impossible `maxWallClockMs: 1` deterministically emits one
+  `budget_exceeded` event and fails the session with
+  `failureKind: budgetExceeded`.
+- `loop-baseline-regression-ops` — the operations tour: `loop start` (policy
+  panel + `--var`), `loop baseline set|show|clear`, `loop regress` (exit 3 on
+  regression), `loop diff --baseline`, `loop stats`,
+  `loop findings --format json`, and `loop promote` readiness.
+- `loop-outcome-notifications` — `loop.notifications` terminal-outcome
+  dispatch to a workflow-relative command channel (payload on stdin) and an
+  env-indirected webhook channel, with persisted dispatch diagnostics.
+- `loop-concurrency-lease` — `loop.concurrency` advisory single-flight
+  lease: a concurrent run is refused at preflight with a
+  `loop_concurrency_busy` record and no session; includes `run-demo.sh`.
+- `loop-ci-gate-check` — CI gating with `loop gates --check` pinned exit
+  codes and SARIF 2.1.0 export via `loop findings --format sarif`.
+
 ### `subworkflow-chained-simple`
 
 Minimal runnable reference for two sequential grouped lanes in the

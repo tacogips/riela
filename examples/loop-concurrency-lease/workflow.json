@@ -1,0 +1,49 @@
+{
+  "workflowId": "loop-concurrency-lease",
+  "description": "Demonstrates the advisory loop concurrency guard: while one run holds the workflow's lease, a second 'workflow run' (or 'loop start') is refused at preflight with a loop_concurrency_busy record and no session is created.",
+  "defaults": {
+    "maxLoopIterations": 1,
+    "nodeTimeoutMs": 120000
+  },
+  "prompts": {
+    "workerSystemPromptTemplate": "Return concise structured JSON only."
+  },
+  "entryStepId": "hold",
+  "loop": {
+    "kind": "design-implement-review",
+    "required": false,
+    "description": "Example of single-flight loop execution via concurrency leases.",
+    "concurrency": {
+      "maxActive": 1,
+      "onBusy": "fail"
+    }
+  },
+  "nodes": [
+    {
+      "id": "hold",
+      "nodeFile": "nodes/node-hold.json"
+    },
+    {
+      "id": "report",
+      "nodeFile": "nodes/node-report.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "hold",
+      "nodeId": "hold",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "report",
+          "label": "always"
+        }
+      ]
+    },
+    {
+      "id": "report",
+      "nodeId": "report",
+      "role": "worker"
+    }
+  ]
+}

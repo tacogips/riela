@@ -1,13 +1,18 @@
+import Foundation
 import SwiftUI
 
 public struct RielaNoteMarkdownBodyView: View {
-  private let blocks: [RielaNoteMarkdownBlock]
+  private let markdown: String
 
   public init(markdown: String) {
-    blocks = RielaNoteMarkdownBlock.parse(markdown)
+    self.markdown = markdown
   }
 
   public var body: some View {
+    // Parse lazily and via the memo cache: the parse is deferred out of `init`
+    // so a view built but never rendered (e.g. a collapsed comment group) never
+    // parses, and an unchanged body re-render is served from the cache.
+    let blocks = RielaNoteMarkdownBlockCache.shared.blocks(for: markdown)
     LazyVStack(alignment: .leading, spacing: 12) {
       ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
         blockView(block)
@@ -50,6 +55,51 @@ public struct RielaNoteMarkdownBodyView: View {
         .font(.body)
         .lineSpacing(5)
     }
+  }
+}
+
+/// Process-wide memo cache for parsed markdown blocks, keyed on the raw markdown
+/// string. A given body is parsed at most once regardless of how many view
+/// instances request it, so identical re-renders skip the parse entirely.
+final class RielaNoteMarkdownBlockCache: @unchecked Sendable {
+  static let shared = RielaNoteMarkdownBlockCache()
+
+  private let lock = NSLock()
+  private var entries: [String: [RielaNoteMarkdownBlock]] = [:]
+  private var insertionOrder: [String] = []
+  private let capacity: Int
+
+  /// Number of actual `RielaNoteMarkdownBlock.parse` invocations (cache misses).
+  /// Exposed for tests that assert an unchanged body does not re-parse.
+  private(set) var parseCount = 0
+
+  init(capacity: Int = 64) {
+    self.capacity = capacity
+  }
+
+  func blocks(for markdown: String) -> [RielaNoteMarkdownBlock] {
+    lock.lock()
+    defer { lock.unlock() }
+    if let cached = entries[markdown] {
+      return cached
+    }
+    let parsed = RielaNoteMarkdownBlock.parse(markdown)
+    parseCount += 1
+    entries[markdown] = parsed
+    insertionOrder.append(markdown)
+    if insertionOrder.count > capacity {
+      let evicted = insertionOrder.removeFirst()
+      entries[evicted] = nil
+    }
+    return parsed
+  }
+
+  func reset() {
+    lock.lock()
+    defer { lock.unlock() }
+    entries.removeAll()
+    insertionOrder.removeAll()
+    parseCount = 0
   }
 }
 

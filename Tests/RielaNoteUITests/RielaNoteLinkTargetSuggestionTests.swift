@@ -1,3 +1,4 @@
+import Foundation
 import RielaNote
 @testable import RielaNoteUI
 import XCTest
@@ -38,6 +39,22 @@ final class RielaNoteLinkTargetSuggestionTests: XCTestCase {
     XCTAssertEqual(rielaNoteLinkIconName("related"), "link")
   }
 
+  #if os(macOS)
+  func testLinkProposalDefaultProviderHonorsWorkflowDirEnvironmentOverride() throws {
+    let workflowDefinitionDirectory = try makeLinkWorkflowDirectoryFixture(function: #function)
+    let executable = try makeLinkExecutableFixture(function: #function)
+
+    let provider = try XCTUnwrap(RielaWorkflowNoteLinkProposalProvider.defaultProvider(environment: [
+      "RIELA_NOTE_LINK_EXTRACT_WORKFLOW_DIR": workflowDefinitionDirectory,
+      "RIELA_NOTE_LINK_EXTRACT_RIELA_EXECUTABLE": executable
+    ]))
+
+    XCTAssertEqual(provider.workflowDefinitionDirectory, workflowDefinitionDirectory)
+    XCTAssertEqual(provider.executablePath, executable)
+    XCTAssertTrue(provider.allowEnvironmentOverrides)
+  }
+  #endif
+
   private static func note(noteId: String, title: String) -> Note {
     Note(
       noteId: noteId,
@@ -51,3 +68,37 @@ final class RielaNoteLinkTargetSuggestionTests: XCTestCase {
     )
   }
 }
+
+#if os(macOS)
+private func makeLinkWorkflowDirectoryFixture(function: String) throws -> String {
+  let directory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+    .appendingPathComponent("tmp/RielaNoteLinkTargetSuggestionTests", isDirectory: true)
+    .appendingPathComponent(function, isDirectory: true)
+    .appendingPathComponent("examples", isDirectory: true)
+  if FileManager.default.fileExists(atPath: directory.path) {
+    try FileManager.default.removeItem(at: directory)
+  }
+  let workflowDirectory = directory.appendingPathComponent("note-link-extract", isDirectory: true)
+  try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+  try "{}\n".write(
+    to: workflowDirectory.appendingPathComponent("workflow.json"),
+    atomically: true,
+    encoding: .utf8
+  )
+  return directory.path
+}
+
+private func makeLinkExecutableFixture(function: String) throws -> String {
+  let directory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+    .appendingPathComponent("tmp/RielaNoteLinkTargetSuggestionTests", isDirectory: true)
+    .appendingPathComponent("\(function)-executable", isDirectory: true)
+  if FileManager.default.fileExists(atPath: directory.path) {
+    try FileManager.default.removeItem(at: directory)
+  }
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  let executable = directory.appendingPathComponent("riela")
+  try "#!/bin/sh\nexit 0\n".write(to: executable, atomically: true, encoding: .utf8)
+  try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+  return executable.path
+}
+#endif

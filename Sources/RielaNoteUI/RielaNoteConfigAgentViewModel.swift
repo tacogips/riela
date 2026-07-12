@@ -26,9 +26,20 @@ public final class RielaNoteConfigAgentViewModel: ObservableObject {
     !draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && state != .loading
   }
 
+  public var isApplying: Bool {
+    state == .loading
+  }
+
+  public var errorMessage: String? {
+    if case let .failed(message) = state {
+      return message
+    }
+    return nil
+  }
+
   public func submitDraft() async {
     let message = draftMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !message.isEmpty else {
+    guard !message.isEmpty, state != .loading else {
       return
     }
     draftMessage = ""
@@ -37,11 +48,16 @@ public final class RielaNoteConfigAgentViewModel: ObservableObject {
       proposals.append(try await client.proposeNoteConfigAgentChange(message: message))
       state = .loaded
     } catch {
+      // Restore the typed request so a transient failure does not lose it.
+      draftMessage = message
       state = .failed(String(describing: error))
     }
   }
 
   public func applyProposal(id: String) async {
+    guard state != .loading else {
+      return
+    }
     guard let index = proposals.firstIndex(where: { $0.id == id }) else {
       return
     }

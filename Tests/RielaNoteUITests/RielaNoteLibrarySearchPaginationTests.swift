@@ -40,6 +40,21 @@ final class RielaNoteLibrarySearchPaginationTests: XCTestCase {
     ])
     XCTAssertFalse(viewModel.canLoadMoreSearchResults)
     XCTAssertEqual(viewModel.state, .loaded)
+    // Offset invariant: the pagination cursor tracks the actual result count.
+    XCTAssertEqual(viewModel.searchResultsOffsetForTesting, viewModel.searchResults.count)
+  }
+
+  func testSearchLoadMoreDeduplicatesOverlapAndKeepsOffsetAtResultCount() async throws {
+    let client = SearchPaginationClient()
+    let viewModel = RielaNoteLibraryViewModel(client: client, searchLimit: 2)
+    viewModel.searchText = "page"
+
+    await viewModel.submitSearch()
+    // Re-issuing the first-page offset yields overlapping ids; dedup must keep the
+    // offset equal to the deduplicated result count, not the raw fetched count.
+    await viewModel.loadMoreSearchResults()
+
+    XCTAssertEqual(viewModel.searchResultsOffsetForTesting, viewModel.searchResults.count)
   }
 
   func testLoadExposesSearchTagClasses() async throws {

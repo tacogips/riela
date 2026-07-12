@@ -7,6 +7,7 @@ struct ParsedWorkflowOptions {
   var executable = false
   var structure = false
   var variables: String?
+  var variablesFile: String?
   var nodePatch: String?
   var instance: String?
   var instanceScope: WorkflowInstanceScope?
@@ -54,6 +55,20 @@ struct ParsedWorkflowOptions {
     if stallTimeoutMs < monitorIntervalMs {
       throw CLIUsageError("invalid --auto-improve policy: stallTimeoutMs must be greater than or equal to monitorIntervalMs")
     }
+    if variables != nil && variablesFile != nil {
+      throw CLIUsageError("--variables and --variables-file are mutually exclusive")
+    }
+  }
+
+  /// Resolved variables reference for the run. `--variables-file` always names a
+  /// file (never inline JSON) so its value is prefixed with `@` before it reaches
+  /// `JSONReferenceLoader`, which then reads it from disk. `--variables` keeps its
+  /// inline-or-path behavior unchanged.
+  var variablesReference: String? {
+    if let variablesFile {
+      return "@" + variablesFile
+    }
+    return variables
   }
 
   private mutating func consumeOption(
@@ -128,6 +143,9 @@ struct ParsedWorkflowOptions {
     case "--variables":
       try requireRunOption(token, allowRunOptions: allowRunOptions)
       variables = try readOptionValue(token, tokens: tokens, index: &index)
+    case "--variables-file":
+      try requireRunOption(token, allowRunOptions: allowRunOptions)
+      variablesFile = try readOptionValue(token, tokens: tokens, index: &index)
     case "--instance":
       try requireRunOption(token, allowRunOptions: allowRunOptions)
       instance = try readOptionValue(token, tokens: tokens, index: &index)

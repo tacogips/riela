@@ -76,9 +76,10 @@ public struct LibSQLNoteDatabaseSyncPolicy: Equatable, Sendable {
 
 public struct LibSQLNoteDatabaseDriver: NoteDatabaseDriving {
   public var databasePath: String { configuration.path }
-  public var configuration: LibSQLNoteDatabaseConfiguration
-  public var openOptions: SQLiteOpenOptions
-  public var syncPolicy: LibSQLNoteDatabaseSyncPolicy
+  public let configuration: LibSQLNoteDatabaseConfiguration
+  public let openOptions: SQLiteOpenOptions
+  public let syncPolicy: LibSQLNoteDatabaseSyncPolicy
+  private let localConnection: SQLiteNoteDatabaseConnection?
 
   public init(
     noteRoot: String,
@@ -118,6 +119,12 @@ public struct LibSQLNoteDatabaseDriver: NoteDatabaseDriving {
     self.configuration = configuration
     self.openOptions = openOptions
     self.syncPolicy = syncPolicy
+    switch configuration {
+    case let .local(path):
+      localConnection = SQLiteNoteDatabaseConnection(databasePath: path, openOptions: openOptions)
+    case .embeddedReplica:
+      localConnection = nil
+    }
   }
 
   public static func defaultDatabasePath(noteRoot: String) -> String {
@@ -130,8 +137,10 @@ public struct LibSQLNoteDatabaseDriver: NoteDatabaseDriving {
       guard syncPolicy == .disabled else {
         throw LibSQLNoteDatabaseDriverError.syncPolicyRequiresEmbeddedReplica
       }
-      let database = try SQLiteDatabase.open(path: databasePath, options: openOptions)
-      return try body(database)
+      guard let localConnection else {
+        preconditionFailure("local configuration must have a cached connection")
+      }
+      return try localConnection.withDatabase(body)
     case .embeddedReplica:
       throw LibSQLNoteDatabaseDriverError.embeddedReplicaUnavailable(
         "embedded replica mode is disabled until the note database driver can execute SQL through libsql directly"

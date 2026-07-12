@@ -249,9 +249,8 @@ final class RielaNoteEditRewriteTests: XCTestCase {
   }
 
   #if os(macOS)
-  func testWorkflowEditRewriteArgumentsIncludeSelectionFields() throws {
-    let arguments = noteEditRewriteArguments(
-      workflowDefinitionDirectory: "/tmp/examples",
+  func testWorkflowEditRewriteVariablesIncludeSelectionFields() throws {
+    let variables = noteEditRewriteVariables(
       noteId: "note-1",
       noteRoot: "/tmp/notes",
       instruction: "Improve",
@@ -261,16 +260,6 @@ final class RielaNoteEditRewriteTests: XCTestCase {
       selectionEnd: 7
     )
 
-    XCTAssertEqual(arguments.prefix(5), [
-      "workflow",
-      "run",
-      "note-edit-rewrite",
-      "--workflow-definition-dir",
-      "/tmp/examples"
-    ])
-    let variablesIndex = try XCTUnwrap(arguments.firstIndex(of: "--variables"))
-    let variablesData = try XCTUnwrap(arguments[variablesIndex + 1].data(using: .utf8))
-    let variables = try XCTUnwrap(JSONSerialization.jsonObject(with: variablesData) as? [String: Any])
     let workflowInput = try XCTUnwrap(variables["workflowInput"] as? [String: Any])
     XCTAssertEqual(variables["noteRoot"] as? String, "/tmp/notes")
     XCTAssertEqual(workflowInput["noteId"] as? String, "note-1")
@@ -278,6 +267,127 @@ final class RielaNoteEditRewriteTests: XCTestCase {
     XCTAssertEqual(workflowInput["selectedText"] as? String, "Draft")
     XCTAssertEqual(workflowInput["selectionStart"] as? Int, 2)
     XCTAssertEqual(workflowInput["selectionEnd"] as? Int, 7)
+  }
+
+  func testWorkflowRunArgumentsPassVariablesFileAndNoBodyOnArgv() {
+    let arguments = rielaWorkflowRunArguments(
+      workflowName: "note-edit-rewrite",
+      workflowDefinitionDirectory: "/tmp/examples",
+      variablesFilePath: "/tmp/riela-note-workflow/variables.json"
+    )
+
+    XCTAssertEqual(arguments, [
+      "workflow",
+      "run",
+      "note-edit-rewrite",
+      "--workflow-definition-dir",
+      "/tmp/examples",
+      "--variables-file",
+      "/tmp/riela-note-workflow/variables.json",
+      "--output",
+      "jsonl"
+    ])
+    XCTAssertFalse(arguments.contains("--variables"))
+  }
+
+  func testWorkflowEditRewriteLargeBodySucceedsViaVariablesFile() throws {
+    // A body far larger than ARG_MAX must not appear on argv; the workflow reads
+    // it from the variables file instead. A fake `riela` echoes the file's size
+    // as the rewrite so we can confirm the whole body was passed through.
+    let executable = try makeVariablesFileEchoExecutable(function: #function)
+    let hugeBody = String(repeating: "A", count: 4 * 1024 * 1024)
+
+    let draft = try runNoteEditRewriteWorkflow(
+      request: RielaNoteEditRewriteWorkflowRequest(
+        executablePath: executable,
+        workflowDefinitionDirectory: "/tmp/examples",
+        noteId: "note-1",
+        noteRoot: "/tmp/notes",
+        instruction: "Improve",
+        bodyMarkdown: hugeBody,
+        selectedText: nil,
+        selectionStart: nil,
+        selectionEnd: nil,
+        environment: ProcessInfo.processInfo.environment,
+        deadlineSeconds: 30
+      ),
+      processBox: RielaWorkflowProcessBox()
+    )
+
+    XCTAssertTrue(draft.rewrittenMarkdown.contains("bytes="))
+    let reportedBytes = draft.rewrittenMarkdown
+      .components(separatedBy: "bytes=").last
+      .flatMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+    // The variables file JSON must contain the full 4 MB body.
+    XCTAssertNotNil(reportedBytes)
+    XCTAssertGreaterThan(reportedBytes ?? 0, hugeBody.count)
+  }
+
+  func testWorkflowEditRewriteCancelBeforeLaunchSpawnsNoProcess() throws {
+    let executable = try makeProcessMarkerExecutable(function: #function)
+    let markerPath = executable + ".ran"
+    let processBox = RielaWorkflowProcessBox()
+    processBox.terminate() // cancel before the run begins
+
+    XCTAssertThrowsError(try runNoteEditRewriteWorkflow(
+      request: RielaNoteEditRewriteWorkflowRequest(
+        executablePath: executable,
+        workflowDefinitionDirectory: "/tmp/examples",
+        noteId: "note-1",
+        noteRoot: "/tmp/notes",
+        instruction: "Improve",
+        bodyMarkdown: "# Draft",
+        selectedText: nil,
+        selectionStart: nil,
+        selectionEnd: nil,
+        environment: ProcessInfo.processInfo.environment,
+        deadlineSeconds: 30
+      ),
+      processBox: processBox
+    )) { error in
+      XCTAssertTrue(error is CancellationError, "expected CancellationError, got \(error)")
+    }
+    XCTAssertFalse(
+      FileManager.default.fileExists(atPath: markerPath),
+      "cancelled run must not spawn the workflow process"
+    )
+  }
+
+  func testWorkflowEditRewriteCancelMidRunYieldsCancellationError() throws {
+    let executable = try makeSleepingExecutable(function: #function)
+    let processBox = RielaWorkflowProcessBox()
+
+    let runExpectation = expectation(description: "run returns")
+    var caughtError: Error?
+    Thread.detachNewThread {
+      do {
+        _ = try runNoteEditRewriteWorkflow(
+          request: RielaNoteEditRewriteWorkflowRequest(
+            executablePath: executable,
+            workflowDefinitionDirectory: "/tmp/examples",
+            noteId: "note-1",
+            noteRoot: "/tmp/notes",
+            instruction: "Improve",
+            bodyMarkdown: "# Draft",
+            selectedText: nil,
+            selectionStart: nil,
+            selectionEnd: nil,
+            environment: ProcessInfo.processInfo.environment,
+            deadlineSeconds: 30
+          ),
+          processBox: processBox
+        )
+      } catch {
+        caughtError = error
+      }
+      runExpectation.fulfill()
+    }
+    // Let the process launch, then cancel mid-run.
+    Thread.sleep(forTimeInterval: 0.3)
+    processBox.terminate()
+
+    wait(for: [runExpectation], timeout: 10)
+    XCTAssertTrue(caughtError is CancellationError, "expected CancellationError, got \(String(describing: caughtError))")
   }
 
   func testWorkflowEditRewriteParserReadsLastDecodableRootOutputLine() {
@@ -432,6 +542,62 @@ private func makeExecutableFixture(function: String = #function) throws -> Strin
   try "#!/bin/sh\nexit 0\n".write(to: executable, atomically: true, encoding: .utf8)
   try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
   return executable.path
+}
+
+private func makeScriptExecutable(function: String, script: String) throws -> String {
+  let directory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+    .appendingPathComponent("tmp/RielaNoteEditRewriteTests", isDirectory: true)
+    .appendingPathComponent(function, isDirectory: true)
+  if FileManager.default.fileExists(atPath: directory.path) {
+    try FileManager.default.removeItem(at: directory)
+  }
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  let executable = directory.appendingPathComponent("riela")
+  try script.write(to: executable, atomically: true, encoding: .utf8)
+  try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+  return executable.path
+}
+
+// Reads the `--variables-file` argument, reports its byte size, and emits a
+// JSONL run-result line. The body is never on argv, so success proves it was
+// read from the variables file.
+private func makeVariablesFileEchoExecutable(function: String) throws -> String {
+  try makeScriptExecutable(function: function, script: """
+  #!/bin/sh
+  file=""
+  while [ "$#" -gt 0 ]; do
+    if [ "$1" = "--variables-file" ]; then
+      file="$2"
+      shift 2
+      continue
+    fi
+    shift
+  done
+  bytes=$(wc -c < "$file" | tr -d ' ')
+  printf '{"result":{"rootOutput":{"rewrittenMarkdown":"bytes=%s","summary":"echo"}}}\\n' "$bytes"
+  exit 0
+  """)
+}
+
+// Touches a `<executable>.ran` marker file the moment it is invoked, so a test
+// can assert whether the process was ever spawned.
+private func makeProcessMarkerExecutable(function: String) throws -> String {
+  try makeScriptExecutable(function: function, script: """
+  #!/bin/sh
+  : > "$0.ran"
+  printf '{"result":{"rootOutput":{"rewrittenMarkdown":"ran","summary":"ran"}}}\\n'
+  exit 0
+  """)
+}
+
+// Sleeps long enough for a mid-run cancellation to terminate it by signal.
+private func makeSleepingExecutable(function: String) throws -> String {
+  try makeScriptExecutable(function: function, script: """
+  #!/bin/sh
+  sleep 30
+  printf '{"result":{"rootOutput":{"rewrittenMarkdown":"late","summary":"late"}}}\\n'
+  exit 0
+  """)
 }
 #endif
 

@@ -77,7 +77,7 @@ public struct RielaWorkflowNoteLinkProposalProvider: RielaNoteLinkProposalProvid
   public static func defaultProvider(
     environment: [String: String] = ProcessInfo.processInfo.environment,
     fileManager: FileManager = .default,
-    allowEnvironmentOverrides: Bool = false
+    allowEnvironmentOverrides: Bool = true
   ) -> RielaWorkflowNoteLinkProposalProvider? {
     let candidates = defaultWorkflowDirectoryCandidates(
       environment: environment,
@@ -125,16 +125,23 @@ private func runNoteLinkExtractWorkflow(
   deadlineSeconds: TimeInterval,
   processBox: RielaWorkflowProcessBox
 ) throws -> [RielaNoteLinkProposalDraft] {
+  if processBox.isCancelled {
+    throw CancellationError()
+  }
   let subjectNote = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot)).getNote(noteId)
-  let process = Process()
-  process.executableURL = URL(fileURLWithPath: executablePath)
-  process.arguments = noteLinkExtractArguments(
-    workflowDefinitionDirectory: workflowDefinitionDirectory,
+  let variablesFile = try RielaWorkflowVariablesFile(variables: noteLinkExtractVariables(
     noteId: noteId,
     noteRoot: noteRoot,
     query: query,
     limit: limit,
     subjectBodyMarkdown: subjectNote.bodyMarkdown
+  ))
+  let process = Process()
+  process.executableURL = URL(fileURLWithPath: executablePath)
+  process.arguments = rielaWorkflowRunArguments(
+    workflowName: "note-link-extract",
+    workflowDefinitionDirectory: workflowDefinitionDirectory,
+    variablesFilePath: variablesFile.path
   )
   process.environment = environment
   let outputPipe = Pipe()
@@ -144,6 +151,9 @@ private func runNoteLinkExtractWorkflow(
   let outputDrain = RielaWorkflowPipeDrain(pipe: outputPipe, label: "riela.note-link-extract.stdout")
   let errorDrain = RielaWorkflowPipeDrain(pipe: errorPipe, label: "riela.note-link-extract.stderr")
   let drainGroup = DispatchGroup()
+  if processBox.isCancelled {
+    throw CancellationError()
+  }
   try process.run()
   processBox.set(process)
   defer {
@@ -153,7 +163,9 @@ private func runNoteLinkExtractWorkflow(
   errorDrain.start(group: drainGroup)
   let deadline = Date().addingTimeInterval(max(1, deadlineSeconds))
   while process.isRunning {
-    if Task.isCancelled {
+    // Terminate here too: `terminate()` from onCancel can race `processBox.set`
+    // and miss the process, so the loop finishes the kill it started.
+    if processBox.isCancelled {
       process.terminateWithEscalation()
       rielaWorkflowWaitForDrain(drainGroup, drains: [outputDrain, errorDrain])
       throw CancellationError()
@@ -166,6 +178,9 @@ private func runNoteLinkExtractWorkflow(
     Thread.sleep(forTimeInterval: 0.05)
   }
   rielaWorkflowWaitForDrain(drainGroup, drains: [outputDrain, errorDrain])
+  if processBox.isCancelled {
+    throw CancellationError()
+  }
   let output = outputDrain.stringValue()
   let error = errorDrain.stringValue()
   guard process.terminationStatus == 0 else {
@@ -177,15 +192,14 @@ private func runNoteLinkExtractWorkflow(
   return proposals
 }
 
-private func noteLinkExtractArguments(
-  workflowDefinitionDirectory: String,
+func noteLinkExtractVariables(
   noteId: String,
   noteRoot: String,
   query: String,
   limit: Int,
   subjectBodyMarkdown: String
-) -> [String] {
-  let variables: [String: Any] = [
+) -> [String: Any] {
+  [
     "noteRoot": noteRoot,
     "workflowInput": [
       "noteId": noteId,
@@ -193,19 +207,6 @@ private func noteLinkExtractArguments(
       "query": query,
       "limit": limit
     ]
-  ]
-  let variablesData = try? JSONSerialization.data(withJSONObject: variables, options: [.sortedKeys])
-  let variablesJSON = variablesData.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
-  return [
-    "workflow",
-    "run",
-    "note-link-extract",
-    "--workflow-definition-dir",
-    workflowDefinitionDirectory,
-    "--variables",
-    variablesJSON,
-    "--output",
-    "jsonl"
   ]
 }
 

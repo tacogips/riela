@@ -2,6 +2,7 @@ import Foundation
 import RielaCore
 import RielaGraphQL
 import RielaNote
+import RielaNoteDispatch
 import RielaServer
 
 public struct NoteCommandRunner: Sendable {
@@ -36,6 +37,8 @@ public struct NoteCommandRunner: Sendable {
         return try await storage(command.options)
       case .client:
         return try await client(command.options)
+      case .autoAction:
+        return try await autoAction(command.options)
       }
     } catch let error as CLIUsageError {
       return failure(error.message, output: command.options.output)
@@ -508,6 +511,21 @@ public struct NoteCommandRunner: Sendable {
     }
   }
 
+  private func autoAction(_ options: CLICommandOptions) async throws -> CLICommandResult {
+    let parsed = try NoteCommandOptions(options)
+    switch options.target {
+    case "retry":
+      let noteService = try service(parsed)
+      let dispatched = try await noteService.recoverAndRetryAutoActionDispatches()
+      let payload = NoteAutoActionRetryResult(dispatched: dispatched)
+      return try render(payload, output: options.output) { result in
+        "retried \(result.dispatched) pending auto-action dispatch(es)\n"
+      }
+    default:
+      throw CLIUsageError("unsupported note auto-action subcommand '\(options.target ?? "")'")
+    }
+  }
+
   private func registerClient(
     displayName: String,
     noteService: NoteService,
@@ -583,16 +601,18 @@ public struct NoteCommandRunner: Sendable {
     try NoteService(
       driver: SQLiteNoteDatabaseDriver(noteRoot: options.noteRoot),
       autoActionDispatcher: NoteAutoActionWorkflowDispatcher(
-        workingDirectory: options.workingDirectory,
-        noteRoot: options.noteRoot
+        launcher: NoteAutoActionWorkflowCLILauncher(
+          workingDirectory: options.workingDirectory,
+          noteRoot: options.noteRoot
+        )
       ),
       autoActionDiagnosticRecorder: StderrAutoActionFilterDiagnostics()
     )
   }
 
-  private func graphQLExecutor(_ options: NoteCommandOptions) throws -> NoteGraphQLDocumentExecutor {
+  private func graphQLExecutor(_ options: NoteCommandOptions, service: NoteService) -> NoteGraphQLDocumentExecutor {
     NoteGraphQLDocumentExecutor(
-      service: GraphQLNoteGraphQLService(service: try service(options)),
+      service: GraphQLNoteGraphQLService(service: service),
       allowRawS3ProfileInput: true,
       rawS3EnvironmentAllowlist: options.rawS3EnvironmentAllowlist
     )
@@ -604,11 +624,15 @@ public struct NoteCommandRunner: Sendable {
     variables: JSONObject,
     options: NoteCommandOptions
   ) async throws -> T {
-    let response = try await graphQLExecutor(options).execute(GraphQLDocumentRequest(
+    let noteService = try service(options)
+    let response = try await graphQLExecutor(options, service: noteService).execute(GraphQLDocumentRequest(
       query: query,
       variables: variables,
       environment: CLIRuntimeEnvironment.mergedProcessEnvironment()
     ))
+    // Await any auto-action dispatches fired by this document before returning,
+    // so a short-lived CLI process does not exit mid-run.
+    await noteService.drainAutoActionDispatches()
     guard response.handled else {
       throw CLIUsageError("note GraphQL document was not handled: \(field)")
     }
@@ -661,4 +685,8 @@ public struct NoteCommandRunner: Sendable {
     }
     return CLICommandResult(exitCode: .failure, stderr: message)
   }
+}
+
+private struct NoteAutoActionRetryResult: Codable, Equatable, Sendable {
+  var dispatched: Int
 }

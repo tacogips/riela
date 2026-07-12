@@ -30,6 +30,7 @@ extension RielaNoteLibraryViewModel {
         selectionEnd: selectionEnd
       )
       guard isCurrentEditRewrite(generation: generation, noteId: noteId) else {
+        isEditRewriteLoading = false
         return nil
       }
       editRewriteSummary = draft.summary
@@ -37,6 +38,7 @@ extension RielaNoteLibraryViewModel {
       return draft
     } catch {
       guard isCurrentEditRewrite(generation: generation, noteId: noteId) else {
+        isEditRewriteLoading = false
         return nil
       }
       editRewriteError = editRewriteErrorMessage(error)

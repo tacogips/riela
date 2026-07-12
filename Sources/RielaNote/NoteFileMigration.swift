@@ -14,10 +14,19 @@ public struct NoteFileMigrationFailure: Equatable, Sendable {
 public struct NoteFileMigrationResult: Equatable, Sendable {
   public var migrated: [FileRecord]
   public var failures: [NoteFileMigrationFailure]
+  /// Files that migrated durably to S3 but whose stale local blob could not be
+  /// deleted afterward. The migration is a success (the row now points at S3);
+  /// these paths are surfaced as cleanup warnings and reclaimed by a later GC pass.
+  public var cleanupFailures: [NoteFileMigrationFailure]
 
-  public init(migrated: [FileRecord] = [], failures: [NoteFileMigrationFailure] = []) {
+  public init(
+    migrated: [FileRecord] = [],
+    failures: [NoteFileMigrationFailure] = [],
+    cleanupFailures: [NoteFileMigrationFailure] = []
+  ) {
     self.migrated = migrated
     self.failures = failures
+    self.cleanupFailures = cleanupFailures
   }
 }
 

@@ -419,6 +419,7 @@ func workflowRunHelpText(target: String?) -> String {
 
   Input options:
     --variables <json|@file>       Runtime variables JSON object or a JSON file reference.
+    --variables-file <path>        Read runtime variables from a JSON file. Mutually exclusive with --variables.
     --instance <name>              Run a saved workflow instance. Defaults to the implicit default instance.
     --instance-scope project|user  Restrict instance lookup to one persistence scope.
     --save-instance <name>         Save the materialized temporary instance before the local run.

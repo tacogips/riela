@@ -219,6 +219,55 @@ final class NoteStoreSchemaTests: NoteTestCase {
     }
     XCTAssertEqual(try service.searchNotes(query: "日本語検索").map(\.note.noteId), [note.noteId])
   }
+
+  #if RIELA_NOTE_LIBSQL_TESTS
+  func testLibSQLLocalDriverReusesConnectionBetweenOperations() throws {
+    let driver = LibSQLNoteDatabaseDriver(noteRoot: try makeNoteRoot())
+    let firstDatabase = try driver.withDatabase { ObjectIdentifier($0) }
+    let secondDatabase = try driver.withDatabase { ObjectIdentifier($0) }
+
+    XCTAssertEqual(firstDatabase, secondDatabase)
+  }
+
+  func testLibSQLLocalDriverSerializesConcurrentWritesWithSingleProbeCycle() throws {
+    NoteSQLiteCapabilityCache.resetForTesting()
+    defer {
+      NoteSQLiteCapabilityCache.resetForTesting()
+    }
+
+    let driver = LibSQLNoteDatabaseDriver(noteRoot: try makeNoteRoot())
+    let service = try NoteService(driver: driver)
+
+    let writeCount = 24
+    let failures = NSMutableArray()
+    let failuresLock = NSLock()
+
+    DispatchQueue.concurrentPerform(iterations: writeCount) { index in
+      do {
+        _ = try service.createNote(bodyMarkdown: "# Concurrent \(index)\nbody \(index)")
+      } catch {
+        failuresLock.lock()
+        failures.add(String(describing: error))
+        failuresLock.unlock()
+      }
+    }
+
+    XCTAssertEqual(
+      failures.count,
+      0,
+      "concurrent writes through one LibSQL driver must not raise 'database is locked': \(failures)"
+    )
+
+    // A single cached, lock-guarded connection means the capability probe runs
+    // exactly once regardless of how many concurrent operations executed.
+    XCTAssertEqual(NoteSQLiteCapabilityCache.probeRunCountForTesting(), 1)
+
+    let stored = try driver.withDatabase { database in
+      try database.query("SELECT COUNT(*) AS total FROM notes").first?["total"]
+    }
+    XCTAssertEqual(stored, String(writeCount))
+  }
+  #endif
 }
 
 private func schemaVersions(in database: SQLiteDatabase) throws -> [Int] {

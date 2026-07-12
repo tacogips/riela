@@ -27,28 +27,6 @@ struct ParsedNoteGraphQLSelectionField {
   var selections: [ParsedNoteGraphQLSelectionField]
 }
 
-func parseNoteGraphQLRootField(
-  in query: String,
-  operationName: String?,
-  variables: JSONObject,
-  parseArguments: Bool
-) throws -> ParsedNoteGraphQLRootField? {
-  guard let fields = try parseNoteGraphQLRootFields(
-    in: query,
-    operationName: operationName,
-    variables: variables,
-    parseArguments: parseArguments
-  ) else {
-    return nil
-  }
-  guard fields.count <= 1 else {
-    throw NoteGraphQLDocumentExecutorError.invalidSelection(
-      "GraphQL note documents must contain exactly one root selection"
-    )
-  }
-  return fields.first
-}
-
 func parseNoteGraphQLRootFields(
   in query: String,
   operationName: String?,
@@ -103,6 +81,7 @@ func parseNoteGraphQLRootFields(
       let defaultVariables = try parseGraphQLVariableDefinitions(in: query, index: &index)
       operationVariables = defaultVariables.merging(variables) { _, provided in provided }
     }
+    try rejectGraphQLDirectives(in: query, index: &index, reject: parseArguments)
     guard try advanceToGraphQLSelectionSet(in: query, index: &index) else {
       return nil
     }
@@ -244,10 +223,11 @@ private func parseGraphQLRootSelections(
         try skipGraphQLBalanced(in: query, index: &index, open: "(", close: ")")
       }
     }
+    try rejectGraphQLDirectives(in: query, index: &index, reject: parseArguments)
     let selections: [ParsedNoteGraphQLSelectionField]
     skipGraphQLIgnored(in: query, index: &index)
     if index < query.endIndex, query[index] == "{" {
-      selections = try parseGraphQLSelectionSet(in: query, index: &index, depth: 1)
+      selections = try parseGraphQLSelectionSet(in: query, index: &index, depth: 1, rejectDirectives: parseArguments)
     } else {
       selections = []
     }
@@ -265,7 +245,8 @@ private func parseGraphQLRootSelections(
 private func parseGraphQLSelectionSet(
   in query: String,
   index: inout String.Index,
-  depth: Int
+  depth: Int,
+  rejectDirectives: Bool
 ) throws -> [ParsedNoteGraphQLSelectionField] {
   guard index < query.endIndex, query[index] == "{" else {
     return []
@@ -298,11 +279,11 @@ private func parseGraphQLSelectionSet(
       responseKey = first
       fieldName = aliasedFieldName
     }
-    try skipGraphQLSelectionSuffix(in: query, index: &index)
+    try skipGraphQLSelectionSuffix(in: query, index: &index, rejectDirectives: rejectDirectives)
     let nestedSelections: [ParsedNoteGraphQLSelectionField]
     skipGraphQLIgnored(in: query, index: &index)
     if index < query.endIndex, query[index] == "{" {
-      nestedSelections = try parseGraphQLSelectionSet(in: query, index: &index, depth: depth + 1)
+      nestedSelections = try parseGraphQLSelectionSet(in: query, index: &index, depth: depth + 1, rejectDirectives: rejectDirectives)
     } else {
       nestedSelections = []
     }
@@ -315,28 +296,39 @@ private func parseGraphQLSelectionSet(
   throw NoteGraphQLDocumentExecutorError.invalidSelection("GraphQL selection set was not closed")
 }
 
-private func skipGraphQLSelectionSuffix(in query: String, index: inout String.Index) throws {
-  var keepSkipping = true
-  while keepSkipping, index < query.endIndex {
-    keepSkipping = false
+private func skipGraphQLSelectionSuffix(
+  in query: String,
+  index: inout String.Index,
+  rejectDirectives: Bool
+) throws {
+  skipGraphQLIgnored(in: query, index: &index)
+  if index < query.endIndex, query[index] == "(" {
+    try skipGraphQLBalanced(in: query, index: &index, open: "(", close: ")")
+  }
+  try rejectGraphQLDirectives(in: query, index: &index, reject: rejectDirectives)
+}
+
+/// Directives (`@skip`, `@include`, or any other) are not supported by the note
+/// GraphQL surface. During execution (`reject == true`) encountering one is a
+/// parse error at operation, root, and nested levels. During directive-tolerant
+/// scans (route detection / field-name extraction) the directive is skipped so
+/// the note field can still be identified and the execution path can report the
+/// explicit error.
+private func rejectGraphQLDirectives(in query: String, index: inout String.Index, reject: Bool) throws {
+  skipGraphQLIgnored(in: query, index: &index)
+  while index < query.endIndex, query[index] == "@" {
+    if reject {
+      throw NoteGraphQLDocumentExecutorError.invalidSelection("GraphQL directives are not supported")
+    }
+    index = query.index(after: index)
+    guard readGraphQLIdentifier(in: query, index: &index) != nil else {
+      throw NoteGraphQLDocumentExecutorError.invalidSelection("GraphQL directive is missing a name")
+    }
     skipGraphQLIgnored(in: query, index: &index)
     if index < query.endIndex, query[index] == "(" {
       try skipGraphQLBalanced(in: query, index: &index, open: "(", close: ")")
-      keepSkipping = true
     }
     skipGraphQLIgnored(in: query, index: &index)
-    while index < query.endIndex, query[index] == "@" {
-      index = query.index(after: index)
-      guard readGraphQLIdentifier(in: query, index: &index) != nil else {
-        throw NoteGraphQLDocumentExecutorError.invalidSelection("GraphQL directive is missing a name")
-      }
-      skipGraphQLIgnored(in: query, index: &index)
-      if index < query.endIndex, query[index] == "(" {
-        try skipGraphQLBalanced(in: query, index: &index, open: "(", close: ")")
-      }
-      keepSkipping = true
-      skipGraphQLIgnored(in: query, index: &index)
-    }
   }
 }
 

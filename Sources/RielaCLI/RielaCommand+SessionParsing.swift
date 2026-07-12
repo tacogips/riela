@@ -81,7 +81,7 @@ extension RielaArgumentParser {
       mockScenarioPath: parsed.mockScenarioPath,
       sessionStore: parsed.sessionStore,
       maxSteps: parsed.maxSteps,
-      variables: parsed.variables
+      variables: parsed.variablesReference
     )))
   }
 

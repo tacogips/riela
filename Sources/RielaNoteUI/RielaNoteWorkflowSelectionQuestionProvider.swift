@@ -147,9 +147,10 @@ func runNoteSelectionQuestionWorkflow(
   request: RielaNoteSelectionQuestionWorkflowRequest,
   processBox: RielaWorkflowProcessBox
 ) throws -> RielaNoteSelectionAnswerDraft {
-  let process = Process()
-  let workflowArguments = noteSelectionQuestionArguments(
-    workflowDefinitionDirectory: request.workflowDefinitionDirectory,
+  if processBox.isCancelled {
+    throw CancellationError()
+  }
+  let variablesFile = try RielaWorkflowVariablesFile(variables: noteSelectionQuestionVariables(
     noteId: request.noteId,
     noteRoot: request.noteRoot,
     question: request.question,
@@ -157,9 +158,14 @@ func runNoteSelectionQuestionWorkflow(
     selectedText: request.selectedText,
     selectionStart: request.selectionStart,
     selectionEnd: request.selectionEnd
-  )
+  ))
+  let process = Process()
   process.executableURL = URL(fileURLWithPath: request.executablePath)
-  process.arguments = workflowArguments
+  process.arguments = rielaWorkflowRunArguments(
+    workflowName: "note-selection-question",
+    workflowDefinitionDirectory: request.workflowDefinitionDirectory,
+    variablesFilePath: variablesFile.path
+  )
   process.environment = request.environment
   let outputPipe = Pipe()
   let errorPipe = Pipe()
@@ -168,6 +174,9 @@ func runNoteSelectionQuestionWorkflow(
   let outputDrain = RielaWorkflowPipeDrain(pipe: outputPipe, label: "riela.note-selection-question.stdout")
   let errorDrain = RielaWorkflowPipeDrain(pipe: errorPipe, label: "riela.note-selection-question.stderr")
   let drainGroup = DispatchGroup()
+  if processBox.isCancelled {
+    throw CancellationError()
+  }
   try process.run()
   processBox.set(process)
   defer {
@@ -177,7 +186,9 @@ func runNoteSelectionQuestionWorkflow(
   errorDrain.start(group: drainGroup)
   let deadline = Date().addingTimeInterval(max(1, request.deadlineSeconds))
   while process.isRunning {
-    if Task.isCancelled {
+    // Terminate here too: `terminate()` from onCancel can race `processBox.set`
+    // and miss the process, so the loop finishes the kill it started.
+    if processBox.isCancelled {
       process.terminateWithEscalation()
       rielaWorkflowWaitForDrain(drainGroup, drains: [outputDrain, errorDrain])
       throw CancellationError()
@@ -190,6 +201,9 @@ func runNoteSelectionQuestionWorkflow(
     Thread.sleep(forTimeInterval: 0.05)
   }
   rielaWorkflowWaitForDrain(drainGroup, drains: [outputDrain, errorDrain])
+  if processBox.isCancelled {
+    throw CancellationError()
+  }
   let output = outputDrain.stringValue()
   let error = errorDrain.stringValue()
   guard process.terminationStatus == 0 else {
@@ -201,8 +215,7 @@ func runNoteSelectionQuestionWorkflow(
   return draft
 }
 
-func noteSelectionQuestionArguments(
-  workflowDefinitionDirectory: String,
+func noteSelectionQuestionVariables(
   noteId: String,
   noteRoot: String,
   question: String,
@@ -210,31 +223,17 @@ func noteSelectionQuestionArguments(
   selectedText: String,
   selectionStart: Int,
   selectionEnd: Int
-) -> [String] {
-  let workflowInput: [String: Any] = [
-    "noteId": noteId,
-    "bodyMarkdown": bodyMarkdown,
-    "question": question,
-    "selectedText": selectedText,
-    "selectionStart": selectionStart,
-    "selectionEnd": selectionEnd
-  ]
-  let variables: [String: Any] = [
+) -> [String: Any] {
+  [
     "noteRoot": noteRoot,
-    "workflowInput": workflowInput
-  ]
-  let variablesData = try? JSONSerialization.data(withJSONObject: variables, options: [.sortedKeys])
-  let variablesJSON = variablesData.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
-  return [
-    "workflow",
-    "run",
-    "note-selection-question",
-    "--workflow-definition-dir",
-    workflowDefinitionDirectory,
-    "--variables",
-    variablesJSON,
-    "--output",
-    "jsonl"
+    "workflowInput": [
+      "noteId": noteId,
+      "bodyMarkdown": bodyMarkdown,
+      "question": question,
+      "selectedText": selectedText,
+      "selectionStart": selectionStart,
+      "selectionEnd": selectionEnd
+    ]
   ]
 }
 

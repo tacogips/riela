@@ -659,6 +659,16 @@ final class NoteServiceTests: NoteTestCase {
     XCTAssertEqual(links.first?.linkKind, "source-citation")
     XCTAssertEqual(links.first?.provenance, .system)
   }
+
+  func testSearchNotesWithMaxOffsetDoesNotOverflow() throws {
+    let service = try makeService()
+    _ = try service.createNote(bodyMarkdown: "# Overflow\n\nSearchable overflow body")
+
+    // A hostile `offset` at Int.max must not trap the process when combined with
+    // `limit` to compute the fetch window; the query simply returns no page.
+    let results = try service.searchNotes(query: "overflow", limit: 5, offset: Int.max)
+    XCTAssertTrue(results.isEmpty)
+  }
 }
 
 func makeService(function: String = #function) throws -> NoteService {

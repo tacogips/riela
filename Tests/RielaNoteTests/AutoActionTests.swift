@@ -4,11 +4,12 @@ import RielaSQLite
 import XCTest
 
 final class AutoActionTests: NoteTestCase {
-  func testCreateNoteDispatchesSeededNoteCreatedActionAfterCommit() throws {
+  func testCreateNoteDispatchesSeededNoteCreatedActionAfterCommit() async throws {
     let dispatcher = RecordingAutoActionDispatcher()
     let service = try makeService(autoActionDispatcher: dispatcher)
 
     let note = try service.createNote(bodyMarkdown: "# Auto\nBody")
+    await service.drainAutoActionDispatches()
 
     let records = dispatcher.records()
     XCTAssertEqual(records.count, 1)
@@ -23,10 +24,11 @@ final class AutoActionTests: NoteTestCase {
     XCTAssertEqual(attempts.first?.attemptCount, 1)
   }
 
-  func testUpdateNoteSuppressesAllDispatchWhenOriginatingActionIsSet() throws {
+  func testUpdateNoteSuppressesAllDispatchWhenOriginatingActionIsSet() async throws {
     let dispatcher = RecordingAutoActionDispatcher()
     let service = try makeService(autoActionDispatcher: dispatcher)
     let note = try service.createNote(bodyMarkdown: "# Auto\nBody")
+    await service.drainAutoActionDispatches()
     dispatcher.removeAll()
     _ = try service.configureAutoAction(
       actionId: "custom-update",
@@ -40,6 +42,7 @@ final class AutoActionTests: NoteTestCase {
       bodyMarkdown: "# Auto\nChanged",
       originatingActionId: "custom-update"
     )
+    await service.drainAutoActionDispatches()
 
     XCTAssertTrue(dispatcher.records().isEmpty)
   }
@@ -61,7 +64,7 @@ final class AutoActionTests: NoteTestCase {
     }
   }
 
-  func testCreateNoteSuppressesDispatchWhenOriginatingActionIsSet() throws {
+  func testCreateNoteSuppressesDispatchWhenOriginatingActionIsSet() async throws {
     let dispatcher = RecordingAutoActionDispatcher()
     let service = try makeService(autoActionDispatcher: dispatcher)
 
@@ -69,15 +72,30 @@ final class AutoActionTests: NoteTestCase {
       bodyMarkdown: "# Auto\nBody",
       originatingActionId: "workflow-action"
     )
+    await service.drainAutoActionDispatches()
 
     XCTAssertTrue(dispatcher.records().isEmpty)
   }
 
-  func testDispatchFailureDoesNotFailOriginatingWrite() throws {
+  func testEnqueueWithoutDispatcherStillRecordsPendingRow() throws {
+    // With no dispatcher wired, enqueue must still record a pending row so a
+    // later `riela note auto-action retry` (or app tick) can run it.
+    let service = try makeService()
+
+    _ = try service.createNote(bodyMarkdown: "# Pending\nBody")
+
+    let attempts = try service.listAutoActionDispatchAttempts()
+    XCTAssertEqual(attempts.count, 1)
+    XCTAssertEqual(attempts.first?.status, .pending)
+    XCTAssertEqual(attempts.first?.attemptCount, 0)
+  }
+
+  func testDispatchFailureDoesNotFailOriginatingWrite() async throws {
     let dispatcher = RecordingAutoActionDispatcher(shouldThrow: true)
     let service = try makeService(autoActionDispatcher: dispatcher)
 
     let note = try service.createNote(bodyMarkdown: "# Durable\nBody")
+    await service.drainAutoActionDispatches()
 
     XCTAssertEqual(try service.getNote(note.noteId).title, "Durable")
     XCTAssertEqual(dispatcher.records().count, 1)
@@ -88,14 +106,16 @@ final class AutoActionTests: NoteTestCase {
     XCTAssertNotNil(attempts.first?.lastError)
   }
 
-  func testPendingAutoActionDispatchCanBeRetried() throws {
+  func testPendingAutoActionDispatchCanBeRetried() async throws {
     let dispatcher = RecordingAutoActionDispatcher(failuresBeforeSuccess: 1)
     let service = try makeService(autoActionDispatcher: dispatcher)
 
     let note = try service.createNote(bodyMarkdown: "# Retry\nBody")
+    await service.drainAutoActionDispatches()
 
     XCTAssertEqual(try service.listAutoActionDispatchAttempts(status: .pending).count, 1)
     XCTAssertEqual(try service.retryPendingAutoActionDispatches(), 1)
+    await service.drainAutoActionDispatches()
     let attempts = try service.listAutoActionDispatchAttempts()
     XCTAssertEqual(attempts.count, 1)
     XCTAssertEqual(attempts.first?.record.event.noteId, note.noteId)
@@ -105,50 +125,125 @@ final class AutoActionTests: NoteTestCase {
     XCTAssertEqual(dispatcher.records().count, 2)
   }
 
-  func testInFlightAutoActionDispatchCannotBeClaimedAgain() throws {
+  func testInFlightAutoActionDispatchCannotBeClaimedAgain() async throws {
     let dispatcher = DelayedAutoActionDispatcher()
     let service = try makeService(autoActionDispatcher: dispatcher)
 
     _ = try service.createNote(bodyMarkdown: "# In Flight\nBody")
+    await dispatcher.waitForFirstDispatch()
 
     XCTAssertEqual(dispatcher.records().count, 1)
     XCTAssertEqual(try service.listAutoActionDispatchAttempts(status: .inFlight).count, 1)
+    // A fresh in-flight lease is not eligible for retry (still pending-only).
     XCTAssertEqual(try service.retryPendingAutoActionDispatches(), 0)
     XCTAssertEqual(dispatcher.records().count, 1)
 
     dispatcher.completeAll(.succeeded)
+    await service.drainAutoActionDispatches()
 
     let attempts = try service.listAutoActionDispatchAttempts()
     XCTAssertEqual(attempts.first?.status, .dispatched)
     XCTAssertEqual(attempts.first?.attemptCount, 1)
   }
 
-  func testInterruptedInFlightAutoActionDispatchRecoversOnNextServiceInit() throws {
+  func testSecondServiceDoesNotResetOrRerunFreshInFlightRow() async throws {
+    // A second NoteService opened over the same DB must not re-run a live,
+    // freshly in-flight row: recovery is gated on the staleness window.
     let noteRoot = try makeNoteRoot(function: #function)
     let driver = SQLiteNoteDatabaseDriver(noteRoot: noteRoot)
     let delayedDispatcher = DelayedAutoActionDispatcher()
     let service = try NoteService(driver: driver, autoActionDispatcher: delayedDispatcher)
 
-    _ = try service.createNote(bodyMarkdown: "# Interrupted\nBody")
+    _ = try service.createNote(bodyMarkdown: "# Live\nBody")
+    await delayedDispatcher.waitForFirstDispatch()
     XCTAssertEqual(try service.listAutoActionDispatchAttempts(status: .inFlight).count, 1)
 
     let retryDispatcher = RecordingAutoActionDispatcher()
     let recoveredService = try NoteService(driver: driver, autoActionDispatcher: retryDispatcher)
+    // init no longer recovers; an explicit recover with the default 15-min
+    // window leaves the fresh lease alone.
+    _ = try await recoveredService.recoverAndRetryAutoActionDispatches()
 
+    XCTAssertTrue(retryDispatcher.records().isEmpty)
+    XCTAssertEqual(try recoveredService.listAutoActionDispatchAttempts(status: .inFlight).count, 1)
+
+    delayedDispatcher.completeAll(.succeeded)
+    await service.drainAutoActionDispatches()
+  }
+
+  func testExpiredInFlightLeaseIsReclaimedExactlyOnce() async throws {
+    let noteRoot = try makeNoteRoot(function: #function)
+    let driver = SQLiteNoteDatabaseDriver(noteRoot: noteRoot)
+    let delayedDispatcher = DelayedAutoActionDispatcher()
+    let service = try NoteService(driver: driver, autoActionDispatcher: delayedDispatcher)
+
+    _ = try service.createNote(bodyMarkdown: "# Stale\nBody")
+    await delayedDispatcher.waitForFirstDispatch()
+    let dispatchId = try XCTUnwrap(try service.listAutoActionDispatchAttempts(status: .inFlight).first?.dispatchId)
+    ageAutoActionLease(driver: driver, dispatchId: dispatchId, by: -3600)
+
+    let retryDispatcher = RecordingAutoActionDispatcher()
+    let recoveredService = try NoteService(driver: driver, autoActionDispatcher: retryDispatcher)
+
+    // First recover reclaims the stale lease and re-dispatches it once.
+    _ = try await recoveredService.recoverAndRetryAutoActionDispatches()
     XCTAssertEqual(retryDispatcher.records().count, 1)
+    // Second recover finds nothing to reclaim.
+    _ = try await recoveredService.recoverAndRetryAutoActionDispatches()
+    XCTAssertEqual(retryDispatcher.records().count, 1)
+
     let attempts = try recoveredService.listAutoActionDispatchAttempts()
     XCTAssertEqual(attempts.first?.status, .dispatched)
     XCTAssertEqual(attempts.first?.attemptCount, 2)
-    XCTAssertNil(attempts.first?.lastError)
+
+    // The superseded original attempt now completes with a stale lease token.
+    delayedDispatcher.completeAll(.succeeded)
+    await service.drainAutoActionDispatches()
+
+    // Stale-token completion must not overwrite the reclaimed row's state.
+    let final = try recoveredService.listAutoActionDispatchAttempts()
+    XCTAssertEqual(final.count, 1)
+    XCTAssertEqual(final.first?.status, .dispatched)
+    XCTAssertEqual(final.first?.attemptCount, 2)
   }
 
-  func testAutoActionRetryStopsAtMaximumAttempts() throws {
+  func testStaleLeaseCompletionDoesNotMarkReclaimedRowDispatched() async throws {
+    // A failing original attempt whose lease has been reclaimed must not flip
+    // the now-pending row when it eventually records its outcome.
+    let noteRoot = try makeNoteRoot(function: #function)
+    let driver = SQLiteNoteDatabaseDriver(noteRoot: noteRoot)
+    let delayedDispatcher = DelayedAutoActionDispatcher()
+    let service = try NoteService(driver: driver, autoActionDispatcher: delayedDispatcher)
+
+    _ = try service.createNote(bodyMarkdown: "# Superseded\nBody")
+    await delayedDispatcher.waitForFirstDispatch()
+    let dispatchId = try XCTUnwrap(try service.listAutoActionDispatchAttempts(status: .inFlight).first?.dispatchId)
+    ageAutoActionLease(driver: driver, dispatchId: dispatchId, by: -3600)
+
+    // Reclaim to pending only (no dispatcher on the recovering service means no
+    // new attempt is launched), so the row sits pending.
+    let recoveredService = try NoteService(driver: driver)
+    XCTAssertEqual(try recoveredService.recoverInterruptedAutoActionDispatches(), 1)
+    XCTAssertEqual(try recoveredService.listAutoActionDispatchAttempts(status: .pending).count, 1)
+
+    // The original attempt now completes against its stale lease token.
+    delayedDispatcher.completeAll(.succeeded)
+    await service.drainAutoActionDispatches()
+
+    let attempts = try recoveredService.listAutoActionDispatchAttempts()
+    XCTAssertEqual(attempts.first?.status, .pending)
+  }
+
+  func testAutoActionRetryStopsAtMaximumAttempts() async throws {
     let dispatcher = RecordingAutoActionDispatcher(shouldThrow: true)
     let service = try makeService(autoActionDispatcher: dispatcher)
 
     _ = try service.createNote(bodyMarkdown: "# Exhausted\nBody")
+    await service.drainAutoActionDispatches()
     XCTAssertEqual(try service.retryPendingAutoActionDispatches(), 1)
+    await service.drainAutoActionDispatches()
     XCTAssertEqual(try service.retryPendingAutoActionDispatches(), 1)
+    await service.drainAutoActionDispatches()
     XCTAssertEqual(try service.retryPendingAutoActionDispatches(), 0)
 
     let attempts = try service.listAutoActionDispatchAttempts(status: .pending)
@@ -166,7 +261,7 @@ final class AutoActionTests: NoteTestCase {
     XCTAssertTrue(try service.listAutoActions().contains { $0.actionId == "default-ai-tagging-note-updated" })
   }
 
-  func testAutoActionNoteTagFilterRestrictsDispatch() throws {
+  func testAutoActionNoteTagFilterRestrictsDispatch() async throws {
     let dispatcher = RecordingAutoActionDispatcher()
     let service = try makeService(autoActionDispatcher: dispatcher)
     _ = try service.configureAutoAction(
@@ -182,6 +277,7 @@ final class AutoActionTests: NoteTestCase {
       bodyMarkdown: "# Tagged\nBody",
       tags: [NoteTagInput(name: "dispatch-me", classId: "topic")]
     )
+    await service.drainAutoActionDispatches()
 
     XCTAssertEqual(
       dispatcher.records().map(\.action.actionId),
@@ -193,7 +289,7 @@ final class AutoActionTests: NoteTestCase {
     )
   }
 
-  func testAutoActionNotebookKindFilterRestrictsDispatch() throws {
+  func testAutoActionNotebookKindFilterRestrictsDispatch() async throws {
     let dispatcher = RecordingAutoActionDispatcher()
     let service = try makeService(autoActionDispatcher: dispatcher)
     _ = try service.configureAutoAction(
@@ -205,11 +301,12 @@ final class AutoActionTests: NoteTestCase {
 
     _ = try service.createNotebook(title: "Plain")
     _ = try service.createNotebook(title: "Memo", kindTagName: "notebook-kind:user-memo")
+    await service.drainAutoActionDispatches()
 
     XCTAssertEqual(dispatcher.records().map(\.action.actionId), ["memo-kind"])
   }
 
-  func testSaveConversationDispatchesNotebookAndNoteCreatedActions() throws {
+  func testSaveConversationDispatchesNotebookAndNoteCreatedActions() async throws {
     let dispatcher = RecordingAutoActionDispatcher()
     let service = try makeService(autoActionDispatcher: dispatcher)
     _ = try service.configureAutoAction(
@@ -226,6 +323,7 @@ final class AutoActionTests: NoteTestCase {
         NoteConversationTurn(userMarkdown: "Hi", assistantMarkdown: "Hello")
       ]
     )
+    await service.drainAutoActionDispatches()
 
     XCTAssertEqual(
       dispatcher.records().map(\.action.actionId),
@@ -237,25 +335,27 @@ final class AutoActionTests: NoteTestCase {
     XCTAssertEqual(attempts.map(\.status), [.dispatched, .dispatched])
   }
 
-  func testAppendConversationTurnDispatchesNoteCreatedAction() throws {
+  func testAppendConversationTurnDispatchesNoteCreatedAction() async throws {
     let dispatcher = RecordingAutoActionDispatcher()
     let service = try makeService(autoActionDispatcher: dispatcher)
     let saved = try service.saveConversation(
       title: "Agent Conversation",
       transcript: [NoteConversationTurn(userMarkdown: "Hi", assistantMarkdown: "Hello")]
     )
+    await service.drainAutoActionDispatches()
     dispatcher.removeAll()
 
     let appended = try service.appendConversationTurn(
       notebookId: saved.notebook.notebookId,
       turn: NoteConversationTurn(userMarkdown: "Again", assistantMarkdown: "Still here")
     )
+    await service.drainAutoActionDispatches()
 
     XCTAssertEqual(dispatcher.records().map(\.action.actionId), ["default-ai-tagging-note-created"])
     XCTAssertEqual(dispatcher.records().first?.event.noteId, appended.noteId)
   }
 
-  func testConversationWritesSuppressDispatchWhenOriginatingActionIsSet() throws {
+  func testConversationWritesSuppressDispatchWhenOriginatingActionIsSet() async throws {
     let dispatcher = RecordingAutoActionDispatcher()
     let service = try makeService(autoActionDispatcher: dispatcher)
 
@@ -269,6 +369,7 @@ final class AutoActionTests: NoteTestCase {
       turn: NoteConversationTurn(userMarkdown: "Again", assistantMarkdown: "Still here"),
       originatingActionId: "workflow-action"
     )
+    await service.drainAutoActionDispatches()
 
     XCTAssertTrue(dispatcher.records().isEmpty)
     XCTAssertTrue(try service.listAutoActionDispatchAttempts().isEmpty)
@@ -290,7 +391,7 @@ final class AutoActionTests: NoteTestCase {
     }
   }
 
-  func testLegacyMalformedAutoActionFilterDoesNotSuppressOtherDispatches() throws {
+  func testLegacyMalformedAutoActionFilterDoesNotSuppressOtherDispatches() async throws {
     let dispatcher = RecordingAutoActionDispatcher()
     let diagnostics = RecordingNoteAutoActionDiagnostics()
     let service = try makeService(autoActionDispatcher: dispatcher, autoActionDiagnosticRecorder: diagnostics)
@@ -312,6 +413,7 @@ final class AutoActionTests: NoteTestCase {
       bodyMarkdown: "# Tagged\nBody",
       tags: [NoteTagInput(name: "dispatch-me", classId: "topic")]
     )
+    await service.drainAutoActionDispatches()
 
     XCTAssertEqual(
       dispatcher.records().map(\.action.actionId),
@@ -360,6 +462,19 @@ private func insertLegacyAutoAction(
   }
 }
 
+/// Backdates an in-flight lease so recovery treats it as stale.
+private func ageAutoActionLease(driver: NoteDatabaseDriving, dispatchId: String, by seconds: TimeInterval) {
+  let formatter = ISO8601DateFormatter()
+  formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+  let aged = formatter.string(from: Date().addingTimeInterval(seconds))
+  try? driver.withDatabase { database in
+    try database.execute(
+      "UPDATE auto_action_dispatches SET leased_at = ? WHERE dispatch_id = ?",
+      bindings: [.text(aged), .text(dispatchId)]
+    )
+  }
+}
+
 private final class RecordingAutoActionDispatcher: AutoActionDispatching, @unchecked Sendable {
   private let lock = NSLock()
   private var recorded: [AutoActionDispatchRecord] = []
@@ -369,21 +484,22 @@ private final class RecordingAutoActionDispatcher: AutoActionDispatching, @unche
     remainingFailures = shouldThrow ? Int.max : failuresBeforeSuccess
   }
 
-  func dispatch(
-    _ record: AutoActionDispatchRecord,
-    completion: @escaping @Sendable (AutoActionDispatchOutcome) -> Void
-  ) throws {
+  func dispatch(_ record: AutoActionDispatchRecord) async throws -> AutoActionDispatchOutcome {
+    if recordAndShouldThrow(record) {
+      throw NSError(domain: "RecordingAutoActionDispatcher", code: 1)
+    }
+    return .succeeded
+  }
+
+  private func recordAndShouldThrow(_ record: AutoActionDispatchRecord) -> Bool {
     lock.lock()
+    defer { lock.unlock() }
     recorded.append(record)
     let shouldThrow = remainingFailures > 0
     if remainingFailures > 0 {
       remainingFailures -= 1
     }
-    lock.unlock()
-    if shouldThrow {
-      throw NSError(domain: "RecordingAutoActionDispatcher", code: 1)
-    }
-    completion(.succeeded)
+    return shouldThrow
   }
 
   func records() -> [AutoActionDispatchRecord] {
@@ -399,19 +515,27 @@ private final class RecordingAutoActionDispatcher: AutoActionDispatching, @unche
   }
 }
 
+/// Holds each dispatch open until `completeAll` releases it, so tests can
+/// observe the in-flight lease state before the outcome is recorded.
 private final class DelayedAutoActionDispatcher: AutoActionDispatching, @unchecked Sendable {
   private let lock = NSLock()
   private var recorded: [AutoActionDispatchRecord] = []
-  private var completions: [@Sendable (AutoActionDispatchOutcome) -> Void] = []
+  private var gates: [CheckedContinuation<AutoActionDispatchOutcome, Never>] = []
+  private var pendingOutcome: AutoActionDispatchOutcome?
+  private var dispatchWaiters: [CheckedContinuation<Void, Never>] = []
+  private var dispatchCount = 0
 
-  func dispatch(
-    _ record: AutoActionDispatchRecord,
-    completion: @escaping @Sendable (AutoActionDispatchOutcome) -> Void
-  ) throws {
-    lock.lock()
-    recorded.append(record)
-    completions.append(completion)
-    lock.unlock()
+  func dispatch(_ record: AutoActionDispatchRecord) async throws -> AutoActionDispatchOutcome {
+    let (waiters, resolved) = enterDispatch(record)
+    for waiter in waiters {
+      waiter.resume()
+    }
+    if let resolved {
+      return resolved
+    }
+    return await withCheckedContinuation { continuation in
+      appendGate(continuation)
+    }
   }
 
   func records() -> [AutoActionDispatchRecord] {
@@ -420,14 +544,58 @@ private final class DelayedAutoActionDispatcher: AutoActionDispatching, @uncheck
     return recorded
   }
 
-  func completeAll(_ outcome: AutoActionDispatchOutcome) {
-    lock.lock()
-    let pending = completions
-    completions.removeAll()
-    lock.unlock()
-    for completion in pending {
-      completion(outcome)
+  /// Suspends until at least one dispatch has entered `dispatch(_:)`.
+  func waitForFirstDispatch() async {
+    await withCheckedContinuation { continuation in
+      if registerDispatchWaiter(continuation) {
+        continuation.resume()
+      }
     }
+  }
+
+  func completeAll(_ outcome: AutoActionDispatchOutcome) {
+    let pending = takeGates(setting: outcome)
+    for continuation in pending {
+      continuation.resume(returning: outcome)
+    }
+  }
+
+  private func enterDispatch(
+    _ record: AutoActionDispatchRecord
+  ) -> (waiters: [CheckedContinuation<Void, Never>], resolved: AutoActionDispatchOutcome?) {
+    lock.lock()
+    defer { lock.unlock() }
+    recorded.append(record)
+    dispatchCount += 1
+    let waiters = dispatchWaiters
+    dispatchWaiters.removeAll()
+    return (waiters, pendingOutcome)
+  }
+
+  private func appendGate(_ continuation: CheckedContinuation<AutoActionDispatchOutcome, Never>) {
+    lock.lock()
+    defer { lock.unlock() }
+    gates.append(continuation)
+  }
+
+  /// Registers a waiter, returning true if a dispatch has already occurred.
+  private func registerDispatchWaiter(_ continuation: CheckedContinuation<Void, Never>) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    if dispatchCount > 0 {
+      return true
+    }
+    dispatchWaiters.append(continuation)
+    return false
+  }
+
+  private func takeGates(setting outcome: AutoActionDispatchOutcome) -> [CheckedContinuation<AutoActionDispatchOutcome, Never>] {
+    lock.lock()
+    defer { lock.unlock() }
+    let pending = gates
+    gates.removeAll()
+    pendingOutcome = outcome
+    return pending
   }
 }
 

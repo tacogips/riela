@@ -71,6 +71,8 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   private var decodedSourceImageCache: [String: RielaNoteDecodedSourceImage] = [:]
   private var decodedSourceImageCacheOrder: [String] = []
   private var notebookContentModes: [String: NoteContentMode] = [:]
+  private var isLoadingMoreNotebookNotes = false
+  private var isLoadingMoreSearchResults = false
   private var searchGeneration = 0
   private var selectionGeneration = 0
   var linkProposalGeneration = 0
@@ -78,6 +80,16 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   var selectionQuestionGeneration = 0
   var translateNoteGeneration = 0
   var commentPromotionGeneration = 0
+
+  /// Pagination cursor for the selected notebook's note list, exposed for tests that
+  /// assert the offset invariant (offset stays equal to the appended note count).
+  var notebookNotesOffsetForTesting: Int {
+    notebookNotesOffset
+  }
+
+  var searchResultsOffsetForTesting: Int {
+    searchResultsOffset
+  }
 
   private var notebookPageSize: Int {
     max(notebookLimit, 1)
@@ -158,7 +170,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   }
 
   public var canLoadMoreNotebookNotes: Bool {
-    selectedNotebookId != nil && hasMoreNotebookNotes && !isSearching
+    selectedNotebookId != nil && hasMoreNotebookNotes && !isSearching && !isLoadingMoreNotebookNotes
   }
 
   public var canLoadMoreNotebooks: Bool {
@@ -166,7 +178,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   }
 
   public var canLoadMoreSearchResults: Bool {
-    isSearching && hasMoreSearchResults
+    isSearching && hasMoreSearchResults && !isLoadingMoreSearchResults
   }
 
   public var canCreateNoteInSelectedNotebook: Bool {
@@ -185,11 +197,15 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   }
 
   public func load() async {
+    let searchGeneration = searchGeneration
     state = .loading
     do {
       try await loadNotebooksFirstPage()
       availableSearchTags = try await client.listTags()
       availableSearchTagClasses = try await client.listTagClasses()
+      guard isCurrentSearchGeneration(searchGeneration) else {
+        return
+      }
       searchResults = []
       searchResultsOffset = 0
       hasMoreSearchResults = false
@@ -198,6 +214,9 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
         await selectNotebook(first.notebookId)
       }
     } catch {
+      guard isCurrentSearchGeneration(searchGeneration) else {
+        return
+      }
       state = .failed(String(describing: error))
     }
   }
@@ -232,13 +251,13 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
         }
         applySearchResultsPage(page)
       } else if let currentNotebookId {
-        try await loadNotebookNotesFirstPage(notebookId: currentNotebookId)
+        try await loadNotebookNotesFirstPage(notebookId: currentNotebookId, generation: selectionGeneration)
         if let selectedNoteId {
-          try await loadNotebookNotesUntilContains(selectedNoteId)
+          try await loadNotebookNotesUntilContains(selectedNoteId, generation: selectionGeneration)
         }
       } else if let first = notebooks.first {
         self.selectedNotebookId = first.notebookId
-        try await loadNotebookNotesFirstPage(notebookId: first.notebookId)
+        try await loadNotebookNotesFirstPage(notebookId: first.notebookId, generation: selectionGeneration)
       }
       guard self.selectionGeneration == selectionGeneration else {
         state = .loaded
@@ -332,7 +351,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     state = .loading
     do {
       selectedNotebookId = notebookId
-      try await loadNotebookNotesFirstPage(notebookId: notebookId)
+      try await loadNotebookNotesFirstPage(notebookId: notebookId, generation: generation)
       guard isCurrentSelection(generation) else {
         return
       }
@@ -370,8 +389,8 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
       if selectedNotebookId != detailNotebookId || !notebookNotes.contains(where: { $0.noteId == noteId }) {
         let notebookId = detailNotebookId
         selectedNotebookId = notebookId
-        try await loadNotebookNotesFirstPage(notebookId: notebookId)
-        try await loadNotebookNotesUntilContains(noteId)
+        try await loadNotebookNotesFirstPage(notebookId: notebookId, generation: generation)
+        try await loadNotebookNotesUntilContains(noteId, generation: generation)
       }
       guard isCurrentSelection(generation) else {
         return
@@ -393,6 +412,9 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     state = .loading
     do {
       let detail = try await client.createUserMemo(bodyMarkdown: body)
+      // A create makes the new note the current selection; claim the newest
+      // generation so a concurrent selection cannot overwrite it.
+      let generation = advanceSelectionGeneration()
       searchText = ""
       searchResults = []
       searchResultsOffset = 0
@@ -406,7 +428,10 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
       try await loadNotebooksUntilContains(detail.note.notebookId)
       availableSearchTags = try await client.listTags()
       availableSearchTagClasses = try await client.listTagClasses()
-      try await loadNotebookNotesFirstPage(notebookId: detail.note.notebookId)
+      try await loadNotebookNotesFirstPage(notebookId: detail.note.notebookId, generation: generation)
+      guard isCurrentSelection(generation) else {
+        return
+      }
       if !notebookNotes.contains(where: { $0.noteId == detail.note.noteId }) {
         notebookNotes.append(detail.note)
       }
@@ -425,6 +450,9 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     state = .loading
     do {
       let detail = try await client.createNote(inNotebook: notebookId, bodyMarkdown: body)
+      // A create makes the new note the current selection; claim the newest
+      // generation so a concurrent selection cannot overwrite it.
+      let generation = advanceSelectionGeneration()
       searchText = ""
       searchResults = []
       searchResultsOffset = 0
@@ -438,8 +466,11 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
       try await loadNotebooksUntilContains(detail.note.notebookId)
       availableSearchTags = try await client.listTags()
       availableSearchTagClasses = try await client.listTagClasses()
-      try await loadNotebookNotesFirstPage(notebookId: detail.note.notebookId)
-      try await loadNotebookNotesUntilContains(detail.note.noteId)
+      try await loadNotebookNotesFirstPage(notebookId: detail.note.notebookId, generation: generation)
+      try await loadNotebookNotesUntilContains(detail.note.noteId, generation: generation)
+      guard isCurrentSelection(generation) else {
+        return
+      }
       if !notebookNotes.contains(where: { $0.noteId == detail.note.noteId }) {
         notebookNotes.append(detail.note)
       }
@@ -464,7 +495,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     }
     contentMode = .sourceImage
     rememberContentMode(.sourceImage)
-    await resolveSourceImageAttachment(sourcePageImageAttachment)
+    await resolveSourceImageAttachment(sourcePageImageAttachment, generation: selectionGeneration)
   }
 
   public func retrySourceImage() async {
@@ -481,7 +512,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
       decodedSourceImage = nil
     }
     contentMode = .sourceImage
-    await resolveSourceImageAttachment(attachment, useCache: false)
+    await resolveSourceImageAttachment(attachment, generation: selectionGeneration, useCache: false)
   }
 
   public func zoomInSourceImage() {
@@ -499,12 +530,20 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   public func selectFileAttachment(_ attachment: NoteFileAttachment) async {
     if attachment.role == .sourcePageImage || attachment.file.mediaType.hasPrefix("image/") {
       contentMode = .sourceImage
-      await resolveSourceImageAttachment(attachment)
+      await resolveSourceImageAttachment(attachment, generation: selectionGeneration)
       return
     }
+    let generation = selectionGeneration
     do {
-      selectedResolvedFile = try await resolveFile(attachment.file.fileId)
+      let resolved = try await resolveFile(attachment.file.fileId)
+      guard isCurrentSelection(generation) else {
+        return
+      }
+      selectedResolvedFile = resolved
     } catch {
+      guard isCurrentSelection(generation) else {
+        return
+      }
       state = .failed(String(describing: error))
     }
   }
@@ -516,17 +555,24 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     guard expectedNoteId == nil || expectedNoteId == noteId else {
       return
     }
+    let generation = selectionGeneration
     state = .loading
     do {
-      selectedDetail = try await client.updateNoteBody(noteId: noteId, bodyMarkdown: bodyMarkdown)
-      if let index = notebookNotes.firstIndex(where: { $0.noteId == noteId }),
-         let updatedNote = selectedDetail?.note {
-        notebookNotes[index] = updatedNote
+      let detail = try await client.updateNoteBody(noteId: noteId, bodyMarkdown: bodyMarkdown)
+      guard isCurrentSelection(generation) else {
+        return
+      }
+      selectedDetail = detail
+      if let index = notebookNotes.firstIndex(where: { $0.noteId == noteId }) {
+        notebookNotes[index] = detail.note
       }
       clearResolvedFileSelection()
       contentMode = .text
       state = .loaded
     } catch {
+      guard isCurrentSelection(generation) else {
+        return
+      }
       state = .failed(String(describing: error))
     }
   }
@@ -539,6 +585,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     guard !tagName.isEmpty else {
       return
     }
+    let generation = selectionGeneration
     state = .loading
     do {
       let normalizedClassId = classId?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -547,10 +594,17 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
         tagName: tagName,
         classId: normalizedClassId?.isEmpty == true ? nil : normalizedClassId
       )
+      let tags = try await client.listTags()
+      guard isCurrentSelection(generation) else {
+        return
+      }
       replaceSelectedDetail(detail)
-      availableSearchTags = try await client.listTags()
+      availableSearchTags = tags
       state = .loaded
     } catch {
+      guard isCurrentSelection(generation) else {
+        return
+      }
       state = .failed(String(describing: error))
     }
   }
@@ -559,12 +613,19 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     guard let noteId = selectedDetail?.note.noteId else {
       return
     }
+    let generation = selectionGeneration
     state = .loading
     do {
       let detail = try await client.removeTag(noteId: noteId, tagName: name)
+      guard isCurrentSelection(generation) else {
+        return
+      }
       replaceSelectedDetail(detail)
       state = .loaded
     } catch {
+      guard isCurrentSelection(generation) else {
+        return
+      }
       state = .failed(String(describing: error))
     }
   }
@@ -577,11 +638,19 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     guard !commentBody.isEmpty else {
       return
     }
+    let generation = selectionGeneration
     state = .loading
     do {
-      selectedDetail = try await client.addComment(noteId: noteId, bodyMarkdown: commentBody)
+      let detail = try await client.addComment(noteId: noteId, bodyMarkdown: commentBody)
+      guard isCurrentSelection(generation) else {
+        return
+      }
+      selectedDetail = detail
       state = .loaded
     } catch {
+      guard isCurrentSelection(generation) else {
+        return
+      }
       state = .failed(String(describing: error))
     }
   }
@@ -612,23 +681,38 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
       return
     }
     let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    let tagFilter = selectedSearchTagNames.sorted()
+    let classFilter = selectedSearchClassIds.sorted()
+    let generation = searchGeneration
+    isLoadingMoreSearchResults = true
     state = .loading
     do {
       let page = try await client.searchNotes(
         query: query,
-        tagFilter: selectedSearchTagNames.sorted(),
-        classFilter: selectedSearchClassIds.sorted(),
+        tagFilter: tagFilter,
+        classFilter: classFilter,
         filter: filter,
         limit: searchPageSize + 1,
         offset: searchResultsOffset
       )
+      guard isCurrentSearch(generation: generation, query: query, tagFilter: tagFilter, classFilter: classFilter) else {
+        isLoadingMoreSearchResults = false
+        return
+      }
       let visiblePage = Array(page.prefix(searchPageSize))
       let existingNoteIds = Set(searchResults.map(\.note.noteId))
-      searchResults.append(contentsOf: visiblePage.filter { !existingNoteIds.contains($0.note.noteId) })
-      searchResultsOffset += visiblePage.count
+      let appended = visiblePage.filter { !existingNoteIds.contains($0.note.noteId) }
+      searchResults.append(contentsOf: appended)
+      searchResultsOffset += appended.count
       hasMoreSearchResults = page.count > searchPageSize
+      isLoadingMoreSearchResults = false
       state = .loaded
     } catch {
+      guard isCurrentSearch(generation: generation, query: query, tagFilter: tagFilter, classFilter: classFilter) else {
+        isLoadingMoreSearchResults = false
+        return
+      }
+      isLoadingMoreSearchResults = false
       state = .failed(String(describing: error))
     }
   }
@@ -637,11 +721,23 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     guard let notebookId = selectedNotebookId, canLoadMoreNotebookNotes else {
       return
     }
+    let generation = selectionGeneration
+    isLoadingMoreNotebookNotes = true
     state = .loading
     do {
-      try await appendNotebookNotesPage(notebookId: notebookId)
+      try await appendNotebookNotesPage(notebookId: notebookId, generation: generation)
+      guard isCurrentSelection(generation) else {
+        isLoadingMoreNotebookNotes = false
+        return
+      }
+      isLoadingMoreNotebookNotes = false
       state = .loaded
     } catch {
+      guard isCurrentSelection(generation) else {
+        isLoadingMoreNotebookNotes = false
+        return
+      }
+      isLoadingMoreNotebookNotes = false
       state = .failed(String(describing: error))
     }
   }
@@ -710,6 +806,10 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     return searchGeneration
   }
 
+  private func isCurrentSearchGeneration(_ generation: Int) -> Bool {
+    searchGeneration == generation
+  }
+
   private func isCurrentSearch(
     generation: Int,
     query: String,
@@ -755,32 +855,44 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     selectionGeneration == generation
   }
 
-  private func loadNotebookNotesFirstPage(notebookId: String) async throws {
+  private func loadNotebookNotesFirstPage(notebookId: String, generation: Int) async throws {
     let page = try await client.listNotes(notebookId: notebookId, limit: notebookNotePageSize + 1, offset: 0)
+    // Drop a first page fetched for a superseded selection so it never replaces the
+    // list the newer selection has already populated.
+    guard isCurrentSelection(generation), selectedNotebookId == notebookId else {
+      return
+    }
     notebookNotes = Array(page.prefix(notebookNotePageSize))
     notebookNotesOffset = notebookNotes.count
     hasMoreNotebookNotes = page.count > notebookNotePageSize
   }
 
-  private func appendNotebookNotesPage(notebookId: String) async throws {
+  private func appendNotebookNotesPage(notebookId: String, generation: Int) async throws {
+    let requestOffset = notebookNotesOffset
     let page = try await client.listNotes(
       notebookId: notebookId,
       limit: notebookNotePageSize + 1,
-      offset: notebookNotesOffset
+      offset: requestOffset
     )
+    // Drop a page fetched for a superseded selection so it never lands in the new
+    // notebook's list or skews the shared offset.
+    guard isCurrentSelection(generation), selectedNotebookId == notebookId else {
+      return
+    }
     let visiblePage = Array(page.prefix(notebookNotePageSize))
     let existingNoteIds = Set(notebookNotes.map(\.noteId))
-    notebookNotes.append(contentsOf: visiblePage.filter { !existingNoteIds.contains($0.noteId) })
-    notebookNotesOffset += visiblePage.count
+    let appended = visiblePage.filter { !existingNoteIds.contains($0.noteId) }
+    notebookNotes.append(contentsOf: appended)
+    notebookNotesOffset += appended.count
     hasMoreNotebookNotes = page.count > notebookNotePageSize
   }
 
-  private func loadNotebookNotesUntilContains(_ noteId: String) async throws {
+  private func loadNotebookNotesUntilContains(_ noteId: String, generation: Int) async throws {
     while !notebookNotes.contains(where: { $0.noteId == noteId }), hasMoreNotebookNotes {
-      guard let notebookId = selectedNotebookId else {
+      guard let notebookId = selectedNotebookId, isCurrentSelection(generation) else {
         return
       }
-      try await appendNotebookNotesPage(notebookId: notebookId)
+      try await appendNotebookNotesPage(notebookId: notebookId, generation: generation)
     }
   }
 
@@ -800,7 +912,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     }
     if preferredMode == .sourceImage, let sourcePageImageAttachment {
       contentMode = .sourceImage
-      await resolveSourceImageAttachment(sourcePageImageAttachment)
+      await resolveSourceImageAttachment(sourcePageImageAttachment, generation: generation)
     } else {
       contentMode = .text
     }
@@ -816,17 +928,35 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     }
   }
 
-  private func resolveSourceImageAttachment(_ attachment: NoteFileAttachment, useCache: Bool = true) async {
+  private func resolveSourceImageAttachment(
+    _ attachment: NoteFileAttachment,
+    generation: Int,
+    useCache: Bool = true
+  ) async {
     isSourceImageLoading = true
-    defer {
-      isSourceImageLoading = false
-    }
     do {
       let resolved = try await resolveFile(attachment.file.fileId, useCache: useCache)
+      // A stale resolution is dropped whole; the current selection owns isSourceImageLoading.
+      guard isCurrentSelection(generation) else {
+        return
+      }
       resolvedSourceImage = resolved
       selectedResolvedFile = resolved
-      decodedSourceImage = try await decodeSourceImage(resolved, useCache: useCache)
+      // Decode after publishing the resolved file so a decode failure still leaves the
+      // resolved image visible (matching the non-decodable-image behavior).
+      let decoded = try await decodeSourceImage(resolved, useCache: useCache)
+      guard isCurrentSelection(generation) else {
+        return
+      }
+      decodedSourceImage = decoded
+      isSourceImageLoading = false
     } catch {
+      // A stale failure never sets global state = .failed and never clears a newer
+      // selection's loading flag.
+      guard isCurrentSelection(generation) else {
+        return
+      }
+      isSourceImageLoading = false
       state = .failed(String(describing: error))
     }
   }
@@ -878,15 +1008,23 @@ extension RielaNoteLibraryViewModel {
     guard !normalizedTarget.isEmpty else {
       return
     }
+    let generation = selectionGeneration
     state = .loading
     do {
-      selectedDetail = try await client.linkNote(
+      let detail = try await client.linkNote(
         noteId: noteId,
         targetNoteId: normalizedTarget,
         linkKind: rielaNoteAllowedLinkKind(normalizedKind)
       )
+      guard isCurrentSelection(generation) else {
+        return
+      }
+      selectedDetail = detail
       state = .loaded
     } catch {
+      guard isCurrentSelection(generation) else {
+        return
+      }
       state = .failed(String(describing: error))
     }
   }

@@ -147,9 +147,10 @@ func runNoteEditRewriteWorkflow(
   request: RielaNoteEditRewriteWorkflowRequest,
   processBox: RielaWorkflowProcessBox
 ) throws -> RielaNoteEditRewriteDraft {
-  let process = Process()
-  let workflowArguments = noteEditRewriteArguments(
-    workflowDefinitionDirectory: request.workflowDefinitionDirectory,
+  if processBox.isCancelled {
+    throw CancellationError()
+  }
+  let variablesFile = try RielaWorkflowVariablesFile(variables: noteEditRewriteVariables(
     noteId: request.noteId,
     noteRoot: request.noteRoot,
     instruction: request.instruction,
@@ -157,9 +158,14 @@ func runNoteEditRewriteWorkflow(
     selectedText: request.selectedText,
     selectionStart: request.selectionStart,
     selectionEnd: request.selectionEnd
-  )
+  ))
+  let process = Process()
   process.executableURL = URL(fileURLWithPath: request.executablePath)
-  process.arguments = workflowArguments
+  process.arguments = rielaWorkflowRunArguments(
+    workflowName: "note-edit-rewrite",
+    workflowDefinitionDirectory: request.workflowDefinitionDirectory,
+    variablesFilePath: variablesFile.path
+  )
   process.environment = request.environment
   let outputPipe = Pipe()
   let errorPipe = Pipe()
@@ -168,6 +174,9 @@ func runNoteEditRewriteWorkflow(
   let outputDrain = RielaWorkflowPipeDrain(pipe: outputPipe, label: "riela.note-edit-rewrite.stdout")
   let errorDrain = RielaWorkflowPipeDrain(pipe: errorPipe, label: "riela.note-edit-rewrite.stderr")
   let drainGroup = DispatchGroup()
+  if processBox.isCancelled {
+    throw CancellationError()
+  }
   try process.run()
   processBox.set(process)
   defer {
@@ -177,7 +186,9 @@ func runNoteEditRewriteWorkflow(
   errorDrain.start(group: drainGroup)
   let deadline = Date().addingTimeInterval(max(1, request.deadlineSeconds))
   while process.isRunning {
-    if Task.isCancelled {
+    // Terminate here too: `terminate()` from onCancel can race `processBox.set`
+    // and miss the process, so the loop finishes the kill it started.
+    if processBox.isCancelled {
       process.terminateWithEscalation()
       rielaWorkflowWaitForDrain(drainGroup, drains: [outputDrain, errorDrain])
       throw CancellationError()
@@ -190,6 +201,9 @@ func runNoteEditRewriteWorkflow(
     Thread.sleep(forTimeInterval: 0.05)
   }
   rielaWorkflowWaitForDrain(drainGroup, drains: [outputDrain, errorDrain])
+  if processBox.isCancelled {
+    throw CancellationError()
+  }
   let output = outputDrain.stringValue()
   let error = errorDrain.stringValue()
   guard process.terminationStatus == 0 else {
@@ -201,8 +215,7 @@ func runNoteEditRewriteWorkflow(
   return draft
 }
 
-func noteEditRewriteArguments(
-  workflowDefinitionDirectory: String,
+func noteEditRewriteVariables(
   noteId: String,
   noteRoot: String,
   instruction: String,
@@ -210,7 +223,7 @@ func noteEditRewriteArguments(
   selectedText: String?,
   selectionStart: Int?,
   selectionEnd: Int?
-) -> [String] {
+) -> [String: Any] {
   var workflowInput: [String: Any] = [
     "noteId": noteId,
     "bodyMarkdown": bodyMarkdown,
@@ -225,22 +238,9 @@ func noteEditRewriteArguments(
   if let selectionEnd {
     workflowInput["selectionEnd"] = selectionEnd
   }
-  let variables: [String: Any] = [
+  return [
     "noteRoot": noteRoot,
     "workflowInput": workflowInput
-  ]
-  let variablesData = try? JSONSerialization.data(withJSONObject: variables, options: [.sortedKeys])
-  let variablesJSON = variablesData.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
-  return [
-    "workflow",
-    "run",
-    "note-edit-rewrite",
-    "--workflow-definition-dir",
-    workflowDefinitionDirectory,
-    "--variables",
-    variablesJSON,
-    "--output",
-    "jsonl"
   ]
 }
 

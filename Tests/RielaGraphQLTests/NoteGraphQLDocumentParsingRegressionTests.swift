@@ -172,27 +172,10 @@ final class NoteGraphQLParsingRegressionTests: XCTestCase {
     )
   }
 
-  func testRejectsMultipleRootSelectionsAndUnknownEscapes() async throws {
+  func testRejectsUnknownEscapes() async throws {
     let service = try makeNoteGraphQLService()
     let executor = NoteGraphQLDocumentExecutor(service: service)
     _ = try service.service.createNote(bodyMarkdown: "# Existing\n\nBody")
-
-    let multipleRoots = await executor.execute(GraphQLDocumentRequest(
-      query: """
-      query {
-        notes { result { accepted } value { noteId } }
-        tags { result { accepted } value { name } }
-      }
-      """
-    ))
-
-    XCTAssertTrue(multipleRoots.handled)
-    let rootErrors = try arrayValue(multipleRoots.body["errors"], field: "multiple root errors")
-    let rootError = try objectValue(rootErrors.first, field: "multiple root errors[0]")
-    XCTAssertTrue(
-      try stringValue(rootError["message"], field: "multiple root errors[0].message")
-        .contains("exactly one root selection")
-    )
 
     let unknownEscape = await executor.execute(GraphQLDocumentRequest(
       query: #"""

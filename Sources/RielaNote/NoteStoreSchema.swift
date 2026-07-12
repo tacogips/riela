@@ -318,6 +318,7 @@ private let schemaStatements = [
     notebook_id TEXT NOT NULL REFERENCES notebooks(notebook_id),
     note_number INTEGER NOT NULL,
     title TEXT,
+    title_source TEXT NOT NULL DEFAULT 'derived' CHECK (title_source IN ('derived','explicit')),
     body_markdown TEXT NOT NULL,
     read_only INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
@@ -481,6 +482,8 @@ private let autoActionDispatchesTableStatement = """
     event_json BLOB NOT NULL CHECK (json_valid(event_json, 8)),
     status TEXT NOT NULL CHECK (status IN ('pending','in_flight','dispatched')),
     attempt_count INTEGER NOT NULL DEFAULT 0,
+    lease_token TEXT,
+    leased_at TEXT,
     last_error TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL

@@ -2,6 +2,7 @@
 import AppKit
 import RielaAppSupport
 import RielaNote
+import RielaNoteDispatch
 import RielaNoteUI
 import SwiftUI
 
@@ -10,13 +11,16 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
   let noteRoot: URL
   let profileName: RielaAppProfileName
   let s3Profiles: [S3StorageProfile]
+  let service: NoteService
   private let onOpenSettings: () -> Void
   private let onWindowWillClose: () -> Void
+  private let maintenanceTicker: NoteAutoActionMaintenanceTicker?
 
   init(
     noteRoot: URL,
     profileName: RielaAppProfileName,
     environment: [String: String] = ProcessInfo.processInfo.environment,
+    autoActionLauncher: (any NoteAutoActionWorkflowLaunching)? = nil,
     onOpenSettings: @escaping () -> Void = {},
     onWindowWillClose: @escaping () -> Void = {}
   ) throws {
@@ -28,7 +32,14 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
     self.onWindowWillClose = onWindowWillClose
 
     try FileManager.default.createDirectory(at: noteRoot, withIntermediateDirectories: true)
-    let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot.path))
+    let service = try NoteService(
+      driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot.path),
+      autoActionDispatcher: autoActionLauncher.map { NoteAutoActionWorkflowDispatcher(launcher: $0) }
+    )
+    self.service = service
+    self.maintenanceTicker = autoActionLauncher == nil
+      ? nil
+      : NoteAutoActionMaintenanceTicker(service: service)
     let client = NoteServiceRielaNoteUIClient(
       service: service,
       s3Profiles: s3Profiles,
@@ -56,6 +67,9 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
     super.init(window: window)
     window.delegate = self
     window.center()
+    if let maintenanceTicker {
+      Task { await maintenanceTicker.start() }
+    }
   }
 
   required init?(coder: NSCoder) {
@@ -63,6 +77,9 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
   }
 
   func windowWillClose(_ notification: Notification) {
+    if let maintenanceTicker {
+      Task { await maintenanceTicker.stop() }
+    }
     onWindowWillClose()
   }
 }

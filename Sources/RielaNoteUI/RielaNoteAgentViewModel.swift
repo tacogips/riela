@@ -68,7 +68,8 @@ public final class RielaNoteAgentViewModel: ObservableObject {
     } catch {
       // The answer, if any, is already in `turns` and marked unsaved via its
       // empty `persistedNoteIds`; leave the draft cleared and surface the error.
-      state = .failed(String(describing: error))
+      rielaNoteLogUIError("noteAgent.submitDraft", error)
+      state = .failed("Couldn't complete the agent turn. Please try again.")
     }
   }
 
@@ -82,7 +83,8 @@ public final class RielaNoteAgentViewModel: ObservableObject {
       isTemporaryChat = false
       state = .loaded
     } catch {
-      state = .failed(String(describing: error))
+      rielaNoteLogUIError("noteAgent.saveTemporaryConversation", error)
+      state = .failed("Couldn't save the conversation. Please try again.")
     }
   }
 

@@ -50,7 +50,8 @@ public final class RielaNoteConfigAgentViewModel: ObservableObject {
     } catch {
       // Restore the typed request so a transient failure does not lose it.
       draftMessage = message
-      state = .failed(String(describing: error))
+      rielaNoteLogUIError("configAgent.submitDraft", error)
+      state = .failed("Couldn't get a configuration proposal. Please try again.")
     }
   }
 
@@ -70,7 +71,8 @@ public final class RielaNoteConfigAgentViewModel: ObservableObject {
       proposals[index].appliedResult = result
       state = .loaded
     } catch {
-      state = .failed(String(describing: error))
+      rielaNoteLogUIError("configAgent.applyProposal", error)
+      state = .failed("Couldn't apply the configuration proposal. Please try again.")
     }
   }
 }

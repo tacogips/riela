@@ -66,11 +66,20 @@ final class NoteGraphQLVerifiedIdentityTests: XCTestCase {
     XCTAssertEqual(assignedBy, "client:abc123")
   }
 
+  /// A distinctive substring an S3 upload error's description carries (e.g. a
+  /// signed endpoint path). It must never reach a client-visible response body
+  /// through either the `failures` list or the control-plane `diagnostics`.
+  /// Uses no `/` so the assertion is not defeated by JSON forward-slash escaping
+  /// (`\/`); a slashed URL below still confirms the whole raw string is dropped.
+  private static let leakToken = "AKIA-LEAK-TOKEN-ENDPOINT-secret-endpoint"
+  private static let leakSecret = "s3.internal.example/\(leakToken)"
+
   func testMigrateAllNoteFilesFailureDiagnosticsAreRedacted() async throws {
     let service = try makeNoteGraphQLService()
-    // A configured profile whose uploads fail (500) makes every file migration
-    // report a per-file failure; both the failures list and the control-plane
-    // diagnostics must equal the fixed redacted constant, not raw error text.
+    // A configured profile whose uploads fail with an error whose description
+    // carries a secret-looking substring makes every file migration report a
+    // per-file failure; both the failures list and the control-plane diagnostics
+    // must equal the fixed redacted constant, never the raw error text.
     let profile = S3StorageProfile(
       name: "backup",
       endpoint: URL(string: "https://s3.example.test")!,
@@ -81,7 +90,7 @@ final class NoteGraphQLVerifiedIdentityTests: XCTestCase {
     )
     let executor = NoteGraphQLDocumentExecutor(
       service: service,
-      s3HTTPClient: FailingS3HTTPClient(),
+      s3HTTPClient: SecretLeakingS3HTTPClient(secret: Self.leakSecret),
       s3Profiles: [profile]
     )
     let note = try service.service.createNote(bodyMarkdown: "# File\n\nBody")
@@ -117,7 +126,9 @@ final class NoteGraphQLVerifiedIdentityTests: XCTestCase {
     }
 
     let text = responseText(response.body)
-    for leak in ["SELECT", "INSERT", "sqlite", ".db", "/tmp", "no such", "s3.example.test", "secret-key"] {
+    // `leakToken` carries no `/`, so it survives JSON forward-slash escaping and
+    // catches the raw error text leaking into the client-selectable `diagnostics`.
+    for leak in ["SELECT", "INSERT", "sqlite", ".db", "/tmp", "no such", "s3.example.test", "secret-key", Self.leakToken] {
       XCTAssertFalse(text.localizedCaseInsensitiveContains(leak), "leaked '\(leak)': \(text)")
     }
     // The control-plane diagnostics use the same redacted constant per file.
@@ -167,8 +178,17 @@ final class NoteGraphQLVerifiedIdentityTests: XCTestCase {
   }
 }
 
-private struct FailingS3HTTPClient: S3HTTPClient {
+/// Fails every upload by throwing an error whose description embeds a secret
+/// substring, exercising the redaction of raw error text into response bodies.
+private struct SecretLeakingS3HTTPClient: S3HTTPClient {
+  struct UploadError: Error, CustomStringConvertible {
+    let secret: String
+    var description: String { "s3 upload rejected by \(secret)" }
+  }
+
+  let secret: String
+
   func send(_ request: S3HTTPRequest) throws -> S3HTTPResponse {
-    S3HTTPResponse(statusCode: 500, body: Data("<Error>internal</Error>".utf8))
+    throw UploadError(secret: secret)
   }
 }

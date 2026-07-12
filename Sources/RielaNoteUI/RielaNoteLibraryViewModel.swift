@@ -16,6 +16,16 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     case sourceImage
   }
 
+  /// A note/notebook selection deferred behind the discard confirmation because a
+  /// body edit is in progress. Every navigation path routes through
+  /// `requestSelection`, so switching away while editing always confirms first.
+  public enum PendingSelection: Equatable, Sendable {
+    case note(String)
+    case notebook(String)
+    case previousNote
+    case nextNote
+  }
+
   @Published public private(set) var notebooks: [Notebook] = []
   @Published public internal(set) var notebookNotes: [Note] = []
   @Published public private(set) var availableSearchTags: [Tag] = []
@@ -53,6 +63,16 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   @Published public var isDetailExpanded = false
   @Published public var translationTargetLanguage: String
   @Published public internal(set) var state: LoadState = .idle
+
+  /// A selection change that another view (list, links, agent citation, pager)
+  /// requested while a body edit is in progress. Non-nil presents the
+  /// keep-editing / discard confirmation; the deferred change runs only if the
+  /// user chooses Discard. See `requestSelection`.
+  @Published public internal(set) var pendingSelection: PendingSelection?
+
+  /// Mirror of the detail view's body-edit flag, lifted here so list/root views
+  /// can guard navigation without reaching into the detail view's local state.
+  @Published public internal(set) var isEditingBody = false
 
   public static let sourceImageMinimumZoom = 0.5
   public static let sourceImageMaximumZoom = 3.0
@@ -485,6 +505,59 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     return missing.contains(noteId) || missing == noteId
   }
 
+  /// Single entry point for every note/notebook selection change driven by the UI
+  /// (list rows, notebook rows, links section, agent citations, pager). While a
+  /// body edit is in progress the change is stashed and the discard confirmation
+  /// is raised; otherwise it runs immediately. Returns after any immediate
+  /// navigation completes.
+  public func requestSelection(_ selection: PendingSelection) async {
+    guard isEditingBody else {
+      await performSelection(selection)
+      return
+    }
+    pendingSelection = selection
+  }
+
+  /// Confirms a stashed selection (the Discard branch), navigating to
+  /// `selection`. The editing flag is cleared here; the detail view's
+  /// `.onChange(of:noteId)` still performs the draft reset once the new selection
+  /// loads. The caller captures `pendingSelection` synchronously before the
+  /// dialog dismisses, so a concurrent binding-driven `cancelPendingSelection`
+  /// cannot drop the request.
+  public func confirmPendingSelection(_ selection: PendingSelection) async {
+    pendingSelection = nil
+    isEditingBody = false
+    await performSelection(selection)
+  }
+
+  /// Dismisses the confirmation without navigating (the Keep editing branch).
+  public func cancelPendingSelection() {
+    pendingSelection = nil
+  }
+
+  private func performSelection(_ selection: PendingSelection) async {
+    switch selection {
+    case let .note(noteId):
+      await selectNote(noteId)
+    case let .notebook(notebookId):
+      await selectNotebook(notebookId)
+    case .previousNote:
+      await selectPreviousNote()
+    case .nextNote:
+      await selectNextNote()
+    }
+  }
+
+  /// Pushes the detail view's body-edit flag into shared state so other views can
+  /// guard navigation against it. Clearing the flag also drops any stale pending
+  /// confirmation (e.g. the editor was reset by a note switch).
+  public func setEditingBody(_ isEditing: Bool) {
+    isEditingBody = isEditing
+    if !isEditing {
+      pendingSelection = nil
+    }
+  }
+
   public func createUserMemo(body: String = "") async throws {
     // The create call itself must not mutate load state so a failure leaves the
     // list untouched; only the post-create list reload drives `state`.
@@ -871,6 +944,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     linkProposalGeneration += 1
     editRewriteGeneration += 1
     selectionQuestionGeneration += 1
+    translateNoteGeneration += 1
     commentPromotionGeneration += 1
     linkProposals = []
     linkProposalError = nil
@@ -886,8 +960,14 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     return selectionGeneration
   }
 
-  private func isCurrentSelection(_ generation: Int) -> Bool {
+  func isCurrentSelection(_ generation: Int) -> Bool {
     selectionGeneration == generation
+  }
+
+  /// Current selection generation, captured by extension-file mutations so their
+  /// post-`await` selection writes can be dropped when the selection moves on.
+  var selectionGenerationSnapshot: Int {
+    selectionGeneration
   }
 
   private func loadNotebookNotesFirstPage(notebookId: String, generation: Int) async throws {

@@ -79,6 +79,27 @@ final class RielaNoteMutationFailureTests: XCTestCase {
     XCTAssertEqual(viewModel.state, .loaded)
   }
 
+  func testFailedTagRemoveRethrowsAndLeavesStateLoaded() async throws {
+    // FIX-7(a): exercises the previously-unused `failRemoveTag` flag. A failed
+    // tag removal rethrows, leaves the selected note's tags intact (so the view
+    // keeps its draft field), and keeps `state == .loaded`.
+    let fixture = NoteUITestFixture()
+    let client = FailingRielaNoteUIClient(base: fixture.client)
+    let viewModel = RielaNoteLibraryViewModel(client: client)
+    await viewModel.selectNote("note-2")
+    // Add a removable tag first through the (succeeding) base path.
+    try await viewModel.applyTagToSelectedNote(name: "idea")
+    let tagsBefore = viewModel.selectedNote?.tags.map(\.tag.name)
+
+    client.failRemoveTag = true
+    await XCTAssertThrowsErrorAsync(try await viewModel.removeTagFromSelectedNote(name: "idea"))
+
+    // The tag is still present (removal never landed) and state stays loaded.
+    XCTAssertEqual(viewModel.selectedNote?.tags.map(\.tag.name), tagsBefore)
+    XCTAssertTrue(viewModel.selectedNote?.tags.contains { $0.tag.name == "idea" } == true)
+    XCTAssertEqual(viewModel.state, .loaded)
+  }
+
   func testFailedLinkRethrowsAndLeavesStateLoaded() async throws {
     let fixture = NoteUITestFixture()
     let client = FailingRielaNoteUIClient(base: fixture.client)

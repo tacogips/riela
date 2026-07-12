@@ -23,7 +23,7 @@ extension RielaNoteLibraryViewModel {
       guard isCurrentLinkProposal(generation: generation, noteId: noteId) else {
         return
       }
-      linkProposalError = String(describing: error)
+      linkProposalError = rielaNoteLoadFailureMessage(error)
       linkProposals = []
       isLinkProposalLoading = false
     }
@@ -48,13 +48,20 @@ extension RielaNoteLibraryViewModel {
     // A link failure surfaces in the proposal sheet's own error slot; it never
     // poisons the list `LoadState`, which stays `.loaded`.
     linkProposalError = nil
+    let generation = selectionGenerationSnapshot
     do {
-      selectedDetail = try await client.linkNote(
+      let detail = try await client.linkNote(
         noteId: noteId,
         targetNoteId: proposal.targetNote.noteId,
         linkKind: rielaNoteAllowedLinkKind(proposal.linkKind),
         provenance: .ai
       )
+      // Drop the write if the selection moved on while the link was in flight,
+      // matching every other selection-scoped mutation.
+      guard isCurrentSelection(generation) else {
+        return
+      }
+      selectedDetail = detail
       linkProposals.removeAll {
         $0.targetNote.noteId == proposal.targetNote.noteId && $0.linkKind == proposal.linkKind
       }

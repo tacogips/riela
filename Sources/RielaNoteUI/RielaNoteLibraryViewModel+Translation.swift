@@ -70,7 +70,8 @@ extension RielaNoteLibraryViewModel {
     if case RielaNoteEditRewriteError.notConfigured = error {
       return "Translation is not configured."
     }
-    return String(describing: error)
+    rielaNoteLogUIError("translateSelectedNote", error)
+    return "Couldn't translate this note. Please try again."
   }
 }
 

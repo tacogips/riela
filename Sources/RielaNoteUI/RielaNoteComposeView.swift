@@ -32,7 +32,7 @@ public struct RielaNoteComposeView: View {
   let destination: RielaNoteCreationDestination
   let selectedNotebookTitle: String?
   let onCancel: () -> Void
-  let onSave: (String) async -> Bool
+  let onSave: (String) async throws -> Void
   @State private var bodyMarkdown = ""
   @State private var isSaving = false
   @State private var saveError: String?
@@ -42,7 +42,7 @@ public struct RielaNoteComposeView: View {
     destination: RielaNoteCreationDestination,
     selectedNotebookTitle: String? = nil,
     onCancel: @escaping () -> Void,
-    onSave: @escaping (String) async -> Bool
+    onSave: @escaping (String) async throws -> Void
   ) {
     self.destination = destination
     self.selectedNotebookTitle = selectedNotebookTitle
@@ -74,11 +74,13 @@ public struct RielaNoteComposeView: View {
           isSaving = true
           saveError = nil
           Task {
-            let succeeded = await onSave(bodyMarkdown)
-            // On failure keep the compose editor open with the typed body so the
-            // memo text is not lost; only reset the saving flag.
-            if !succeeded {
-              saveError = "The note could not be created. Please try again."
+            do {
+              try await onSave(bodyMarkdown)
+              // Success dismisses via the parent; nothing to reset here.
+            } catch {
+              // On failure keep the compose editor open with the typed body so the
+              // memo text is not lost; surface the mapped reason and reset saving.
+              saveError = rielaNoteMutationErrorMessage(error)
               isSaving = false
             }
           }

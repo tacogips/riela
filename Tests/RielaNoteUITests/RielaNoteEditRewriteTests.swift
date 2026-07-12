@@ -90,6 +90,36 @@ final class RielaNoteEditRewriteTests: XCTestCase {
     ])
   }
 
+  func testTranslateLandsInEditingDraftWithStoreBodyUnchanged() async throws {
+    // FIX-7(b): a completed translation leaves the editor active with the
+    // translated text loaded (via `RielaNoteBodyDraftState.loadProposedDraft`)
+    // while the store body stays untouched until the user saves.
+    let client = RewriteTestClient()
+    client.rewriteDraft = RielaNoteEditRewriteDraft(
+      rewrittenMarkdown: "# ページ1\n\n本文",
+      summary: "Translated to Japanese."
+    )
+    let viewModel = RielaNoteLibraryViewModel(client: client, translationTargetLanguage: "Japanese")
+
+    await viewModel.selectNote("note-1")
+    let originalBody = try XCTUnwrap(viewModel.selectedDetail?.note.bodyMarkdown)
+    let translated = await viewModel.translateSelectedNote()
+    let draft = try XCTUnwrap(translated)
+
+    // Mirror the detail view: load the proposed draft into the body-edit state.
+    var bodyDraft = RielaNoteBodyDraftState()
+    bodyDraft.loadProposedDraft(noteId: "note-1", proposedBodyMarkdown: draft.rewrittenMarkdown)
+
+    XCTAssertTrue(bodyDraft.isEditingBody)
+    XCTAssertEqual(bodyDraft.editingNoteId, "note-1")
+    XCTAssertEqual(bodyDraft.draftBodyMarkdown, "# ページ1\n\n本文")
+    // The editor preview shows the translation; the store body is unchanged and
+    // no persistence happened before Save.
+    XCTAssertEqual(bodyDraft.previewBodyMarkdown(for: viewModel.selectedDetail!.note), "# ページ1\n\n本文")
+    XCTAssertEqual(viewModel.selectedDetail?.note.bodyMarkdown, originalBody)
+    XCTAssertEqual(client.updateNoteBodyCallCount, 0)
+  }
+
   func testViewModelTranslateProvidesDefaultReviewSummaryWhenModelSummaryEmpty() async throws {
     let client = RewriteTestClient()
     client.rewriteDraft = RielaNoteEditRewriteDraft(rewrittenMarkdown: "# ページ1\n\n本文", summary: "  ")
@@ -114,6 +144,31 @@ final class RielaNoteEditRewriteTests: XCTestCase {
     }
     try await Task.sleep(nanoseconds: 5_000_000)
     await viewModel.selectNote("note-2")
+    let draft = await translation.value
+
+    XCTAssertNil(draft)
+    XCTAssertEqual(client.updateNoteBodyCallCount, 0)
+    XCTAssertNil(viewModel.translateNoteSummary)
+    XCTAssertNil(viewModel.translateNoteError)
+    XCTAssertFalse(viewModel.isTranslateNoteLoading)
+  }
+
+  func testViewModelDropsStaleTranslationAfterNoteSwitchedAwayAndBack() async throws {
+    // FIX-5: `advanceSelectionGeneration` now bumps `translateNoteGeneration`, so a
+    // translate started for note-1 is dropped even when the selection returns to
+    // note-1 (A -> B -> A) — the note-id check alone would not have caught this.
+    let client = RewriteTestClient()
+    client.rewriteDelayNanoseconds = 50_000_000
+    client.rewriteDraft = RielaNoteEditRewriteDraft(rewrittenMarkdown: "stale", summary: "Stale")
+    let viewModel = RielaNoteLibraryViewModel(client: client, translationTargetLanguage: "Japanese")
+
+    await viewModel.selectNote("note-1")
+    let translation = Task {
+      await viewModel.translateSelectedNote()
+    }
+    try await Task.sleep(nanoseconds: 5_000_000)
+    await viewModel.selectNote("note-2")
+    await viewModel.selectNote("note-1")
     let draft = await translation.value
 
     XCTAssertNil(draft)

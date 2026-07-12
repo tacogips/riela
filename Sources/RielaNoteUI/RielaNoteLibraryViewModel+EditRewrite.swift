@@ -70,6 +70,7 @@ extension RielaNoteLibraryViewModel {
     if case RielaNoteEditRewriteError.notConfigured = error {
       return "Edit agent is not configured."
     }
-    return String(describing: error)
+    rielaNoteLogUIError("editRewrite", error)
+    return "Couldn't rewrite the draft. Please try again."
   }
 }

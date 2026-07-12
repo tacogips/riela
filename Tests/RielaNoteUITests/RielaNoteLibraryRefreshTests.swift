@@ -188,6 +188,45 @@ final class RielaNoteLibraryRefreshTests: XCTestCase {
     XCTAssertEqual(viewModel.linkProposals.count, 1)
   }
 
+  func testAcceptLinkProposalDropsStaleSelectionWriteAfterSelectionChanges() async throws {
+    // FIX-2: `acceptLinkProposal` captures the selection generation at entry and
+    // drops its `selectedDetail` write when the selection moves on during the
+    // (delayed) link call — matching every other selection-scoped mutation.
+    let fixture = NoteUITestFixture()
+    let viewModel = RielaNoteLibraryViewModel(client: fixture.client)
+    await viewModel.selectNote("note-2")
+    let proposal = NoteLinkProposal(
+      targetNote: fixture.note,
+      linkKind: "related",
+      reason: "related content",
+      source: "ai"
+    )
+    viewModel.linkProposals = [proposal]
+
+    fixture.client.linkNoteDelayNanoseconds = 50_000_000
+    let linkReached = expectation(description: "link call started")
+    var didFulfillLinkReached = false
+    fixture.client.onLinkNoteStart = {
+      guard !didFulfillLinkReached else {
+        return
+      }
+      didFulfillLinkReached = true
+      linkReached.fulfill()
+    }
+
+    let accept = Task {
+      try await viewModel.acceptLinkProposal(proposal)
+    }
+    await fulfillment(of: [linkReached], timeout: 1)
+    // The user switches to note-1 while the link is in flight.
+    await viewModel.selectNote("note-1")
+    try await accept.value
+
+    // The stale write is dropped: the selection stays note-1, not the linked note.
+    XCTAssertEqual(viewModel.selectedNote?.noteId, "note-1")
+    XCTAssertEqual(viewModel.state, .loaded)
+  }
+
   func testRefreshDoesNotRestoreSelectionChangedWhileRefreshIsInFlight() async throws {
     let fixture = NoteUITestFixture()
     let viewModel = RielaNoteLibraryViewModel(client: fixture.client)

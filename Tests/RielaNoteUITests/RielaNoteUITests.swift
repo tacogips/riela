@@ -572,6 +572,8 @@ final class MockRielaNoteUIClient: RielaNoteUIClient, @unchecked Sendable {
   var searchResultsByQuery: [String: [NoteSearchResult]] = [:]
   var noteDetailDelayNanosecondsByNoteId: [String: UInt64] = [:]
   var onNoteDetailStart: ((String) -> Void)?
+  var linkNoteDelayNanoseconds: UInt64?
+  var onLinkNoteStart: (() -> Void)?
 
   var defaultConfigWorkflowRoot: String {
     "tmp/RielaNoteUITests/default-config-workflows"
@@ -788,6 +790,10 @@ final class MockRielaNoteUIClient: RielaNoteUIClient, @unchecked Sendable {
   }
 
   func linkNote(noteId: String, targetNoteId: String, linkKind: String) async throws -> RielaNoteDetail {
+    onLinkNoteStart?()
+    if let linkNoteDelayNanoseconds {
+      try await Task.sleep(nanoseconds: linkNoteDelayNanoseconds)
+    }
     let selected = storedNote(noteId: noteId)
     links.append(NoteLink(
       fromNoteId: noteId,

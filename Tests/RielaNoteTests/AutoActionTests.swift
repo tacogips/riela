@@ -1,5 +1,5 @@
 import Foundation
-import RielaNote
+@testable import RielaNote
 import RielaSQLite
 import XCTest
 
@@ -234,6 +234,90 @@ final class AutoActionTests: NoteTestCase {
     XCTAssertEqual(attempts.first?.status, .pending)
   }
 
+  func testHeartbeatingAttemptIsNotReclaimedPastStalenessWindow() async throws {
+    // A workflow that runs longer than the staleness window keeps its lease
+    // fresh through the heartbeat, so a concurrent recovery reclaims nothing and
+    // never re-dispatches it. Staleness 0.6s → heartbeat every 0.2s.
+    let noteRoot = try makeNoteRoot(function: #function)
+    let driver = SQLiteNoteDatabaseDriver(noteRoot: noteRoot)
+    let staleness: TimeInterval = 0.6
+    let delayedDispatcher = DelayedAutoActionDispatcher()
+    let service = try NoteService(
+      driver: driver,
+      autoActionDispatcher: delayedDispatcher,
+      autoActionDispatchLeaseStaleness: staleness
+    )
+
+    _ = try service.createNote(bodyMarkdown: "# Heartbeat\nBody")
+    await delayedDispatcher.waitForFirstDispatch()
+    let dispatchId = try XCTUnwrap(try service.listAutoActionDispatchAttempts(status: .inFlight).first?.dispatchId)
+    let initialLease = leasedAt(driver: driver, dispatchId: dispatchId)
+
+    // Run well past the staleness window so several heartbeats fire.
+    try await Task.sleep(nanoseconds: UInt64(staleness * 3 * 1_000_000_000))
+
+    // The heartbeat has re-stamped the lease, so recovery with the same window
+    // finds nothing stale and the row is still the live in-flight attempt.
+    let reclaimed = try service.recoverInterruptedAutoActionDispatches(olderThan: staleness)
+    XCTAssertEqual(reclaimed, 0)
+    XCTAssertEqual(try service.listAutoActionDispatchAttempts(status: .inFlight).count, 1)
+    let refreshedLease = leasedAt(driver: driver, dispatchId: dispatchId)
+    XCTAssertNotNil(refreshedLease)
+    XCTAssertNotEqual(refreshedLease, initialLease, "heartbeat should have re-stamped leased_at")
+
+    delayedDispatcher.completeAll(.succeeded)
+    await service.drainAutoActionDispatches()
+    XCTAssertEqual(try service.listAutoActionDispatchAttempts().first?.status, .dispatched)
+  }
+
+  func testDeadAttemptWithoutHeartbeatIsReclaimed() async throws {
+    // A process that died mid-dispatch leaves an in-flight row whose lease is no
+    // longer heartbeated. Once it ages past the window, recovery reclaims it.
+    let noteRoot = try makeNoteRoot(function: #function)
+    let driver = SQLiteNoteDatabaseDriver(noteRoot: noteRoot)
+    let delayedDispatcher = DelayedAutoActionDispatcher()
+    let service = try NoteService(driver: driver, autoActionDispatcher: delayedDispatcher)
+
+    _ = try service.createNote(bodyMarkdown: "# Dead\nBody")
+    await delayedDispatcher.waitForFirstDispatch()
+    let dispatchId = try XCTUnwrap(try service.listAutoActionDispatchAttempts(status: .inFlight).first?.dispatchId)
+
+    // Simulate a dead attempt: no live heartbeat, lease aged past the window.
+    ageAutoActionLease(driver: driver, dispatchId: dispatchId, by: -3600)
+
+    let recoveredService = try NoteService(driver: driver)
+    XCTAssertEqual(try recoveredService.recoverInterruptedAutoActionDispatches(), 1)
+    XCTAssertEqual(try recoveredService.listAutoActionDispatchAttempts(status: .pending).count, 1)
+
+    delayedDispatcher.completeAll(.succeeded)
+    await service.drainAutoActionDispatches()
+  }
+
+  func testHeartbeatWithSupersededLeaseTokenUpdatesNothing() async throws {
+    // A heartbeat is keyed on the lease token, so an attempt whose lease was
+    // reclaimed and re-issued to another attempt cannot refresh the row.
+    let noteRoot = try makeNoteRoot(function: #function)
+    let driver = SQLiteNoteDatabaseDriver(noteRoot: noteRoot)
+    let delayedDispatcher = DelayedAutoActionDispatcher()
+    let service = try NoteService(driver: driver, autoActionDispatcher: delayedDispatcher)
+
+    _ = try service.createNote(bodyMarkdown: "# Superseded\nBody")
+    await delayedDispatcher.waitForFirstDispatch()
+    let dispatchId = try XCTUnwrap(try service.listAutoActionDispatchAttempts(status: .inFlight).first?.dispatchId)
+    let leaseBefore = leasedAt(driver: driver, dispatchId: dispatchId)
+
+    // Renewing with a token this attempt does not own updates nothing.
+    let renewed = try service.renewAutoActionDispatchLease(
+      dispatchId: dispatchId,
+      leaseToken: "auto-action-lease-not-the-current-token"
+    )
+    XCTAssertFalse(renewed)
+    XCTAssertEqual(leasedAt(driver: driver, dispatchId: dispatchId), leaseBefore)
+
+    delayedDispatcher.completeAll(.succeeded)
+    await service.drainAutoActionDispatches()
+  }
+
   func testAutoActionRetryStopsAtMaximumAttempts() async throws {
     let dispatcher = RecordingAutoActionDispatcher(shouldThrow: true)
     let service = try makeService(autoActionDispatcher: dispatcher)
@@ -460,6 +544,17 @@ private func insertLegacyAutoAction(
       ]
     )
   }
+}
+
+/// Reads the current `leased_at` timestamp for a dispatch row, if any.
+private func leasedAt(driver: NoteDatabaseDriving, dispatchId: String) -> String? {
+  let rows = try? driver.withDatabase { database in
+    try database.query(
+      "SELECT leased_at FROM auto_action_dispatches WHERE dispatch_id = ? LIMIT 1",
+      bindings: [.text(dispatchId)]
+    )
+  }
+  return rows?.first?["leased_at"] ?? nil
 }
 
 /// Backdates an in-flight lease so recovery treats it as stale.

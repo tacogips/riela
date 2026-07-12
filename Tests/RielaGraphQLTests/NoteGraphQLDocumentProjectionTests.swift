@@ -67,6 +67,89 @@ final class NoteGraphQLDocumentProjectionTests: XCTestCase {
     )
   }
 
+  func testDocumentExecutorRejectsRootLevelDuplicateResponseKey() async throws {
+    let service = try makeNoteGraphQLService()
+    let executor = NoteGraphQLDocumentExecutor(service: service)
+
+    // Two root selections aliased to the same response key must not silently
+    // overwrite; the executor rejects the document as an invalid selection.
+    let response = await executor.execute(GraphQLDocumentRequest(
+      query: """
+      query Collide {
+        x: tags { value { name } }
+        x: tagClasses { value { label } }
+      }
+      """,
+      operationName: "Collide"
+    ))
+
+    XCTAssertTrue(response.handled)
+    let errors = try arrayValue(response.body["errors"], field: "root collision errors")
+    let error = try objectValue(errors.first, field: "root collision errors[0]")
+    XCTAssertTrue(
+      try stringValue(error["message"], field: "root collision errors[0].message")
+        .contains("duplicate response key 'x'")
+    )
+  }
+
+  func testDocumentExecutorRejectsNestedDuplicateResponseKey() async throws {
+    let service = try makeNoteGraphQLService()
+    let executor = NoteGraphQLDocumentExecutor(service: service)
+    let note = try service.service.createNote(bodyMarkdown: "# Collision\n\nBody")
+
+    // Two nested fields aliased to the same response key collide during
+    // projection and are rejected rather than overwriting one another.
+    let response = await executor.execute(GraphQLDocumentRequest(
+      query: """
+      query Nested($noteId: String!) {
+        note(noteId: $noteId) {
+          value { dup: noteId dup: title }
+        }
+      }
+      """,
+      variables: ["noteId": .string(note.noteId)],
+      operationName: "Nested"
+    ))
+
+    XCTAssertTrue(response.handled)
+    let errors = try arrayValue(response.body["errors"], field: "nested collision errors")
+    let error = try objectValue(errors.first, field: "nested collision errors[0]")
+    XCTAssertTrue(
+      try stringValue(error["message"], field: "nested collision errors[0].message")
+        .contains("duplicate response key 'dup'")
+    )
+  }
+
+  func testDocumentExecutorMergesDistinctResponseKeys() async throws {
+    let service = try makeNoteGraphQLService()
+    let executor = NoteGraphQLDocumentExecutor(service: service)
+    let note = try service.service.createNote(bodyMarkdown: "# Distinct\n\nBody")
+
+    // Distinct response keys (aliased or not, at root and nested levels) still
+    // merge into a single object without error.
+    let response = await executor.execute(GraphQLDocumentRequest(
+      query: """
+      query Distinct($noteId: String!) {
+        first: note(noteId: $noteId) {
+          value { id: noteId heading: title }
+        }
+        second: tags { value { name } }
+      }
+      """,
+      variables: ["noteId": .string(note.noteId)],
+      operationName: "Distinct"
+    ))
+
+    XCTAssertTrue(response.handled)
+    XCTAssertNil(response.body["errors"])
+    let data = try objectValue(response.body["data"], field: "data")
+    let first = try objectValue(data["first"], field: "first")
+    let value = try objectValue(first["value"], field: "first.value")
+    XCTAssertEqual(value["id"], .string(note.noteId))
+    XCTAssertEqual(value["heading"], .string("Distinct"))
+    XCTAssertNotNil(data["second"])
+  }
+
   private func makeNoteGraphQLService(function: String = #function) throws -> GraphQLNoteGraphQLService {
     let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
       .appendingPathComponent("tmp", isDirectory: true)

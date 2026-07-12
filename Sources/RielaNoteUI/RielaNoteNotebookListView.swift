@@ -108,7 +108,7 @@ public struct RielaNoteNotebookListView: View {
       ForEach(viewModel.notebooks, id: \.notebookId) { notebook in
         Button {
           Task {
-            await viewModel.selectNotebook(notebook.notebookId)
+            await viewModel.requestSelection(.notebook(notebook.notebookId))
           }
         } label: {
           RielaNoteNotebookRow(notebook: notebook)
@@ -197,7 +197,12 @@ public struct RielaNoteNotebookListView: View {
 
   private func open(_ noteId: String) {
     Task {
-      await viewModel.selectNote(noteId)
+      await viewModel.requestSelection(.note(noteId))
+      // When a body edit deferred the switch behind the discard confirmation,
+      // don't push the detail route yet; the pending navigation resolves later.
+      guard viewModel.pendingSelection == nil else {
+        return
+      }
       onOpenNote(noteId)
     }
   }

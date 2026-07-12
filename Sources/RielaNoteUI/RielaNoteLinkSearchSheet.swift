@@ -199,7 +199,8 @@ struct RielaNoteLinkSearchSheet: View {
           results = []
           selectedNoteId = nil
           selectedDetail = nil
-          errorText = String(describing: error)
+          rielaNoteLogUIError("linkSearch.search", error)
+          errorText = rielaNoteLoadFailureMessage(error)
           state = .failed
         }
       }
@@ -234,7 +235,8 @@ struct RielaNoteLinkSearchSheet: View {
             return
           }
           selectedDetail = nil
-          errorText = String(describing: error)
+          rielaNoteLogUIError("linkSearch.preview", error)
+          errorText = rielaNoteLoadFailureMessage(error)
         }
       }
     }
@@ -402,7 +404,8 @@ struct RielaNoteLinkProposalSheet: View {
             return
           }
           selectedDetail = nil
-          previewError = String(describing: error)
+          rielaNoteLogUIError("linkSearch.previewSelection", error)
+          previewError = rielaNoteLoadFailureMessage(error)
         }
       }
     }

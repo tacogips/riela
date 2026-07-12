@@ -7,6 +7,18 @@ private let maximumAutoActionDispatchAttempts = 3
 /// and eligible to be reclaimed by the recovery path (15 minutes).
 public let defaultAutoActionDispatchLeaseStaleness: TimeInterval = 15 * 60
 
+/// Interval at which a running dispatch attempt re-stamps its lease, expressed
+/// in nanoseconds. A third of the staleness window keeps the lease comfortably
+/// fresh (two heartbeats are lost before reclamation becomes possible). Returns
+/// 0 for a non-positive staleness, disabling the heartbeat.
+private func autoActionDispatchLeaseHeartbeatIntervalNanos(staleness: TimeInterval) -> UInt64 {
+  let interval = staleness / 3
+  guard interval > 0 else {
+    return 0
+  }
+  return UInt64(interval * 1_000_000_000)
+}
+
 private func autoActionDispatchLeaseCutoff(olderThan staleness: TimeInterval) -> String {
   let formatter = ISO8601DateFormatter()
   formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -362,7 +374,32 @@ extension NoteService {
         continue
       }
       let service = self
+      let staleness = autoActionDispatchLeaseStaleness
       let task = Task<Void, Never> { [autoActionDispatcher] in
+        // Heartbeat the lease for the duration of the attempt so a workflow that
+        // runs longer than the staleness window is not reclaimed and re-dispatched
+        // concurrently. A heartbeat failure (or a superseded lease) never crashes
+        // the attempt; the heartbeat task simply stops updating.
+        let heartbeat = Task<Void, Never> {
+          let intervalNanos = autoActionDispatchLeaseHeartbeatIntervalNanos(staleness: staleness)
+          guard intervalNanos > 0 else {
+            return
+          }
+          while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: intervalNanos)
+            if Task.isCancelled {
+              return
+            }
+            let stillOwned = (try? service.renewAutoActionDispatchLease(
+              dispatchId: dispatch.dispatchId,
+              leaseToken: leaseToken
+            )) ?? false
+            if !stillOwned {
+              return
+            }
+          }
+        }
+        defer { heartbeat.cancel() }
         do {
           let outcome = try await autoActionDispatcher.dispatch(dispatch.record)
           switch outcome {
@@ -387,6 +424,33 @@ extension NoteService {
         }
       }
       autoActionDispatchTasks.register(task)
+    }
+  }
+
+  /// Re-stamps `leased_at` for a still-owned in-flight lease so a long-running
+  /// attempt is not reclaimed by the recovery path mid-run. Keyed on the lease
+  /// token so a superseded attempt (whose lease was already reclaimed and
+  /// re-issued) updates nothing. Returns true when this attempt still owns the
+  /// lease and the timestamp was refreshed.
+  @discardableResult
+  func renewAutoActionDispatchLease(dispatchId: String, leaseToken: String) throws -> Bool {
+    try driver.withDatabase { database in
+      let changedRows = try database.executeAndReturnChangedRowCount(
+        """
+        UPDATE auto_action_dispatches
+        SET leased_at = ?,
+          updated_at = ?
+        WHERE dispatch_id = ? AND status = ? AND lease_token = ?
+        """,
+        bindings: [
+          .text(NoteStoreClock.system.now()),
+          .text(NoteStoreClock.system.now()),
+          .text(dispatchId),
+          .text(AutoActionDispatchStatus.inFlight.rawValue),
+          .text(leaseToken)
+        ]
+      )
+      return changedRows == 1
     }
   }
 }

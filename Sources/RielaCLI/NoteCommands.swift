@@ -642,7 +642,7 @@ public struct NoteCommandRunner: Sendable {
     options: NoteCommandOptions
   ) async throws -> T {
     let noteService = try service(options)
-    let response = try await graphQLExecutor(options, service: noteService).execute(GraphQLDocumentRequest(
+    let response = await graphQLExecutor(options, service: noteService).execute(GraphQLDocumentRequest(
       query: query,
       variables: variables,
       environment: CLIRuntimeEnvironment.mergedProcessEnvironment()

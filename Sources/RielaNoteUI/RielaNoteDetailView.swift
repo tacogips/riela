@@ -64,7 +64,6 @@ public struct RielaNoteDetailView: View {
   @State private var bodyEditError: String?
   @State private var commentError: String?
   @State private var tagError: String?
-  @State private var pendingNavigation: PendingNavigation?
   @FocusState private var isRewriteFieldFocused: Bool
 
   public init(viewModel: RielaNoteLibraryViewModel) {
@@ -124,19 +123,11 @@ public struct RielaNoteDetailView: View {
           contentType: fileExportContentType,
           defaultFilename: fileExportFilename
         ) { _ in }
-        .confirmationDialog(
-          "You have unsaved changes",
-          isPresented: pendingNavigationBinding,
-          titleVisibility: .visible
-        ) {
-          Button("Discard changes", role: .destructive) {
-            performPendingNavigation()
-          }
-          Button("Keep editing", role: .cancel) {
-            pendingNavigation = nil
-          }
-        } message: {
-          Text("Switching notes will discard your edits.")
+        // Keep shared state in sync with the local editor flag so list/root views
+        // can guard navigation and present the discard confirmation (hosted at the
+        // root) even from panes that don't own this draft.
+        .onChange(of: bodyDraft.isEditingBody) { _, isEditing in
+          viewModel.setEditingBody(isEditing)
         }
       } else {
         emptySelection
@@ -362,15 +353,19 @@ public struct RielaNoteDetailView: View {
 
   @ViewBuilder
   private var pillCaption: some View {
-    if isSelectionQuestionMode {
+    if viewModel.didSaveSelectionQuestionComment {
+      // Success feedback survives the mode toggle: `submitSelectionQuestion`
+      // clears `isSelectionQuestionMode` on success, so gating on the mode here
+      // would render this caption for zero frames. It clears with the next
+      // selection question, note switch, or editor reset.
+      Text("Saved as comment")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    } else if isSelectionQuestionMode {
       if let error = viewModel.selectionQuestionError {
         Text(error)
           .font(.caption)
           .foregroundStyle(.red)
-      } else if viewModel.didSaveSelectionQuestionComment {
-        Text("Saved as comment")
-          .font(.caption)
-          .foregroundStyle(.secondary)
       }
     } else if let error = viewModel.editRewriteError {
       Text(error)
@@ -396,7 +391,7 @@ public struct RielaNoteDetailView: View {
     if let position = viewModel.selectedNotePositionText {
       HStack(spacing: 8) {
         Button {
-          navigatePager(.previous)
+          Task { await viewModel.requestSelection(.previousNote) }
         } label: {
           Image(systemName: "chevron.left")
         }
@@ -409,7 +404,7 @@ public struct RielaNoteDetailView: View {
           .monospacedDigit()
           .frame(minWidth: 72)
         Button {
-          navigatePager(.next)
+          Task { await viewModel.requestSelection(.nextNote) }
         } label: {
           Image(systemName: "chevron.right")
         }
@@ -680,7 +675,7 @@ public struct RielaNoteDetailView: View {
           let targetNoteId = link.counterpartNoteId(for: detail.note.noteId)
           Button {
             Task {
-              await viewModel.selectNote(targetNoteId)
+              await viewModel.requestSelection(.note(targetNoteId))
             }
           } label: {
             Label(
@@ -898,48 +893,6 @@ public struct RielaNoteDetailView: View {
     viewModel.clearSelectionQAState()
     viewModel.clearTranslateNoteState()
     viewModel.clearLinkProposals()
-  }
-
-  private var pendingNavigationBinding: Binding<Bool> {
-    Binding {
-      pendingNavigation != nil
-    } set: { presented in
-      if !presented {
-        pendingNavigation = nil
-      }
-    }
-  }
-
-  /// Pager navigation. While editing, a note switch would discard the draft, so
-  /// it is deferred behind a discard/keep-editing confirmation.
-  private func navigatePager(_ direction: PendingNavigation) {
-    guard bodyDraft.isEditingBody else {
-      runPagerNavigation(direction)
-      return
-    }
-    pendingNavigation = direction
-  }
-
-  private func performPendingNavigation() {
-    guard let direction = pendingNavigation else {
-      return
-    }
-    pendingNavigation = nil
-    // Discard the draft first; the note-switch `.onChange` runs the standard
-    // post-confirmation reset once the new note loads.
-    resetEditingState()
-    runPagerNavigation(direction)
-  }
-
-  private func runPagerNavigation(_ direction: PendingNavigation) {
-    Task {
-      switch direction {
-      case .previous:
-        await viewModel.selectPreviousNote()
-      case .next:
-        await viewModel.selectNextNote()
-      }
-    }
   }
 
   private func startEditing(_ note: Note) {
@@ -1172,13 +1125,6 @@ struct RielaNoteBinaryFileDocument: FileDocument {
   func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
     FileWrapper(regularFileWithContents: data)
   }
-}
-
-/// A note-switch requested from the pager while an edit is in progress, deferred
-/// behind the discard confirmation.
-enum PendingNavigation {
-  case previous
-  case next
 }
 
 /// Human-readable message for a failed mutation, surfaced in a view's inline

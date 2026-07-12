@@ -701,6 +701,30 @@ uses a local mirror of the scaffolder rule (`isSafeWorkflowId` not visible from
 RielaNoteUI); prompt templates in examples/note-* gained untrusted-data framing.
 **Blockers**: None
 
+### Session: 2026-07-12 (self-review & improve)
+**Review**: three adversarial reviewers (data/GraphQL/server layer, UI layer,
+design-conformance audit) over commits 7e2ab49+dee9259. All 15 high-severity
+findings from the original register verified fixed; all backend themes
+conformant. Confirmed gaps fixed in the improve pass:
+- HIGH: discard confirmation covered only pager navigation — list/notebook/
+  link/agent-citation note switches silently destroyed an in-progress draft
+- MED: `migrateAllNoteFiles` control-plane `diagnostics` leaked raw error
+  text (bypassed redaction); test strengthened with secret-bearing error
+- MED: dispatch leases never renewed → workflows running past the staleness
+  window were re-dispatched concurrently; added lease heartbeat keyed on
+  `dispatch_id AND lease_token`
+- MED: `acceptLinkProposal` wrote `selectedDetail` post-await without a
+  generation guard (only unguarded mutation of eight)
+- MED: raw `String(describing:)` in UI-facing banners (11 sites) routed
+  through human-readable error mapping
+- MED: "Saved as comment" feedback was cleared before it could render
+- MED: `advanceSelectionGeneration()` did not bump `translateNoteGeneration`
+  (stale translate after A→B→A)
+- MED: compose-view create failure dropped the real error message
+- LOW: duplicate GraphQL response keys silently overwrote (now rejected);
+  missing tests added (removeTag failure path, post-translate editing state)
+**Blockers**: None
+
 ## Related Plans
 
 - **Related**: `impl-plans/active/riela-note-ui-refinements.md` (prior UI

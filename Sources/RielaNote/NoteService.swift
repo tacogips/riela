@@ -13,6 +13,10 @@ public struct NoteService: Sendable {
   public var driver: NoteDatabaseDriving
   public var autoActionDispatcher: AutoActionDispatching?
   public var autoActionDiagnosticRecorder: (any NoteAutoActionFilterDiagnosticRecording)?
+  /// Window after which a live in-flight dispatch lease is treated as stale by
+  /// the recovery path. A running attempt heartbeats its lease on a fraction of
+  /// this window so a long workflow is never reclaimed out from under it.
+  public var autoActionDispatchLeaseStaleness: TimeInterval
   /// Shared registry of background dispatch tasks fired by this service value,
   /// awaited by `drainAutoActionDispatches()`.
   let autoActionDispatchTasks: AutoActionDispatchTaskTracker
@@ -20,11 +24,13 @@ public struct NoteService: Sendable {
   public init(
     driver: NoteDatabaseDriving,
     autoActionDispatcher: AutoActionDispatching? = nil,
-    autoActionDiagnosticRecorder: (any NoteAutoActionFilterDiagnosticRecording)? = nil
+    autoActionDiagnosticRecorder: (any NoteAutoActionFilterDiagnosticRecording)? = nil,
+    autoActionDispatchLeaseStaleness: TimeInterval = defaultAutoActionDispatchLeaseStaleness
   ) throws {
     self.driver = driver
     self.autoActionDispatcher = autoActionDispatcher
     self.autoActionDiagnosticRecorder = autoActionDiagnosticRecorder
+    self.autoActionDispatchLeaseStaleness = autoActionDispatchLeaseStaleness
     self.autoActionDispatchTasks = AutoActionDispatchTaskTracker()
     try NoteStoreSchema.prepare(on: driver)
     // Recovery+retry is no longer run from init; it is an explicit entry point

@@ -99,7 +99,8 @@ extension RielaNoteLibraryViewModel {
         isCommentPromotionLoading = false
         return
       }
-      commentPromotionError = String(describing: error)
+      rielaNoteLogUIError("promoteCommentToNotebook", error)
+      commentPromotionError = rielaNoteMutationErrorMessage(error)
       isCommentPromotionLoading = false
     }
   }
@@ -134,6 +135,7 @@ extension RielaNoteLibraryViewModel {
     if case RielaNoteSelectionQuestionError.notConfigured = error {
       return "Selection question agent is not configured."
     }
-    return String(describing: error)
+    rielaNoteLogUIError("askSelectionQuestion", error)
+    return "Couldn't answer the selection question. Please try again."
   }
 }

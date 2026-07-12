@@ -104,6 +104,9 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
         try validateSelections(rootField.selections, rootFieldName: rootField.fieldName)
         var routedRequest = request
         routedRequest.variables = rootField.arguments
+        guard data[rootField.responseKey] == nil else {
+          throw NoteGraphQLDocumentExecutorError.invalidSelection("duplicate response key '\(rootField.responseKey)'")
+        }
         let value = try await execute(fieldName: rootField.fieldName, request: routedRequest)
         let rootType = noteGraphQLRootSelectionTypes[rootField.fieldName] ?? "NoteMutationPayload"
         data[rootField.responseKey] = try projectGraphQLValue(value, selections: rootField.selections, typeName: rootType)
@@ -563,11 +566,17 @@ private func projectGraphQLValue(
     var projected: JSONObject = [:]
     for selection in selections {
       if selection.fieldName == "__typename" {
+        guard projected[selection.responseKey] == nil else {
+          throw NoteGraphQLDocumentExecutorError.invalidSelection("duplicate response key '\(selection.responseKey)'")
+        }
         projected[selection.responseKey] = .string(typeName)
         continue
       }
       guard let childType = fields[selection.fieldName] else {
         continue
+      }
+      guard projected[selection.responseKey] == nil else {
+        throw NoteGraphQLDocumentExecutorError.invalidSelection("duplicate response key '\(selection.responseKey)'")
       }
       let childValue = object[selection.fieldName] ?? .null
       if let childType {
@@ -771,7 +780,10 @@ private func noteFileMigrationControlResult(_ result: NoteFileMigrationResult) -
   return GraphQLControlPlaneResult(
     accepted: false,
     status: result.migrated.isEmpty ? "failed" : "partial",
-    diagnostics: result.failures.map { "\($0.fileId): \($0.message)" }
+    // Redact per-file diagnostics with the same fixed message as the `failures`
+    // list; `$0.message` is raw `String(describing: error)` and would otherwise
+    // disclose paths, SQL, or S3 endpoints in a client-selectable field.
+    diagnostics: result.failures.map { "\($0.fileId): \(noteFileMigrationFailureMessage)" }
   )
 }
 

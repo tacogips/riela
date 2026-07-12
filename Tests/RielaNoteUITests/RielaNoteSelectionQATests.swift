@@ -251,9 +251,8 @@ final class RielaNoteSelectionQATests: XCTestCase {
   // MARK: - Workflow provider
 
   #if os(macOS)
-  func testWorkflowSelectionQuestionArgumentsIncludeSelectionFields() throws {
-    let arguments = noteSelectionQuestionArguments(
-      workflowDefinitionDirectory: "/tmp/examples",
+  func testWorkflowSelectionQuestionVariablesIncludeSelectionFields() throws {
+    let variables = noteSelectionQuestionVariables(
       noteId: "note-1",
       noteRoot: "/tmp/notes",
       question: "What is this?",
@@ -263,16 +262,6 @@ final class RielaNoteSelectionQATests: XCTestCase {
       selectionEnd: 7
     )
 
-    XCTAssertEqual(arguments.prefix(5), [
-      "workflow",
-      "run",
-      "note-selection-question",
-      "--workflow-definition-dir",
-      "/tmp/examples"
-    ])
-    let variablesIndex = try XCTUnwrap(arguments.firstIndex(of: "--variables"))
-    let variablesData = try XCTUnwrap(arguments[variablesIndex + 1].data(using: .utf8))
-    let variables = try XCTUnwrap(JSONSerialization.jsonObject(with: variablesData) as? [String: Any])
     let workflowInput = try XCTUnwrap(variables["workflowInput"] as? [String: Any])
     XCTAssertEqual(variables["noteRoot"] as? String, "/tmp/notes")
     XCTAssertEqual(workflowInput["noteId"] as? String, "note-1")
@@ -280,6 +269,27 @@ final class RielaNoteSelectionQATests: XCTestCase {
     XCTAssertEqual(workflowInput["selectedText"] as? String, "Draft")
     XCTAssertEqual(workflowInput["selectionStart"] as? Int, 2)
     XCTAssertEqual(workflowInput["selectionEnd"] as? Int, 7)
+  }
+
+  func testWorkflowSelectionQuestionRunArgumentsUseVariablesFile() {
+    let arguments = rielaWorkflowRunArguments(
+      workflowName: "note-selection-question",
+      workflowDefinitionDirectory: "/tmp/examples",
+      variablesFilePath: "/tmp/riela-note-workflow/variables.json"
+    )
+
+    XCTAssertEqual(arguments, [
+      "workflow",
+      "run",
+      "note-selection-question",
+      "--workflow-definition-dir",
+      "/tmp/examples",
+      "--variables-file",
+      "/tmp/riela-note-workflow/variables.json",
+      "--output",
+      "jsonl"
+    ])
+    XCTAssertFalse(arguments.contains("--variables"))
   }
 
   func testWorkflowSelectionAnswerParserReadsLastDecodableRootOutputLine() {

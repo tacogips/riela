@@ -216,6 +216,41 @@ final class CommandParsingTests: XCTestCase {
     }
   }
 
+  func testWorkflowRunVariablesFileHasParityWithVariables() throws {
+    let parser = RielaArgumentParser()
+    let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+      .appendingPathComponent("riela-variables-file-parity-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let inlineJSON = #"{"workflowInput":{"request":"hello"}}"#
+    let variablesFileURL = directory.appendingPathComponent("variables.json")
+    try inlineJSON.write(to: variablesFileURL, atomically: true, encoding: .utf8)
+
+    let fileRun = try parser.parse([
+      "workflow", "run", "demo",
+      "--variables-file", variablesFileURL.path
+    ])
+    guard case let .workflow(.run(fileOptions)) = fileRun else {
+      return XCTFail("expected run command")
+    }
+    // --variables-file always names a file, so it is passed to JSONReferenceLoader
+    // with the `@` file-reference prefix.
+    XCTAssertEqual(fileOptions.variables, "@" + variablesFileURL.path)
+
+    // Loader parity: the file reference decodes to the same object as inline JSON.
+    let loader = JSONReferenceLoader()
+    let fromFile = try loader.object(from: try XCTUnwrap(fileOptions.variables))
+    let fromInline = try loader.object(from: inlineJSON)
+    XCTAssertEqual(fromFile, fromInline)
+
+    // --variables and --variables-file are mutually exclusive.
+    XCTAssertThrowsError(try parser.parse([
+      "workflow", "run", "demo",
+      "--variables", inlineJSON,
+      "--variables-file", variablesFileURL.path
+    ]))
+  }
+
   func testParsesLoopInspectionCommands() throws {
     let parser = RielaArgumentParser()
     let status = try parser.parse([

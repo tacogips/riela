@@ -224,6 +224,69 @@ public struct GraphQLMigrateNoteFileStorageInput: Codable, Equatable, Sendable {
   }
 }
 
+public struct GraphQLReclaimNoteFileStorageInput: Codable, Equatable, Sendable {
+  public var graceHours: Int?
+  public var s3ProfileName: String?
+  public var s3Endpoint: String?
+  public var s3Region: String?
+  public var s3Bucket: String?
+  public var s3AccessKeyIdEnv: String?
+  public var s3SecretAccessKeyEnv: String?
+  public var s3SessionTokenEnv: String?
+  public var s3KeyPrefix: String?
+
+  public init(
+    graceHours: Int? = nil,
+    s3ProfileName: String? = nil,
+    s3Endpoint: String? = nil,
+    s3Region: String? = nil,
+    s3Bucket: String? = nil,
+    s3AccessKeyIdEnv: String? = nil,
+    s3SecretAccessKeyEnv: String? = nil,
+    s3SessionTokenEnv: String? = nil,
+    s3KeyPrefix: String? = nil
+  ) {
+    self.graceHours = graceHours
+    self.s3ProfileName = s3ProfileName
+    self.s3Endpoint = s3Endpoint
+    self.s3Region = s3Region
+    self.s3Bucket = s3Bucket
+    self.s3AccessKeyIdEnv = s3AccessKeyIdEnv
+    self.s3SecretAccessKeyEnv = s3SecretAccessKeyEnv
+    self.s3SessionTokenEnv = s3SessionTokenEnv
+    self.s3KeyPrefix = s3KeyPrefix
+  }
+
+  /// Resolves the S3 profile used to delete orphaned S3 objects, or `nil` when
+  /// no S3 endpoint was supplied (a local-only GC pass).
+  func optionalStorageProfile(
+    allowedProfiles: [S3StorageProfile],
+    environment: [String: String],
+    allowRawInput: Bool,
+    rawEnvironmentAllowlist: Set<String>
+  ) throws -> S3StorageProfile? {
+    guard s3Endpoint != nil || s3ProfileName != nil else {
+      return nil
+    }
+    return try GraphQLMigrateNoteFileStorageInput(
+      fileId: "",
+      s3ProfileName: s3ProfileName,
+      s3Endpoint: s3Endpoint,
+      s3Region: s3Region,
+      s3Bucket: s3Bucket,
+      s3AccessKeyIdEnv: s3AccessKeyIdEnv,
+      s3SecretAccessKeyEnv: s3SecretAccessKeyEnv,
+      s3SessionTokenEnv: s3SessionTokenEnv,
+      s3KeyPrefix: s3KeyPrefix
+    ).storageProfile(
+      allowedProfiles: allowedProfiles,
+      environment: environment,
+      allowRawInput: allowRawInput,
+      rawEnvironmentAllowlist: rawEnvironmentAllowlist
+    )
+  }
+}
+
 public struct GraphQLMigrateAllNoteFilesInput: Codable, Equatable, Sendable {
   public var s3ProfileName: String?
   public var s3Endpoint: String?

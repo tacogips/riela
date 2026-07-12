@@ -1,12 +1,21 @@
 import Foundation
 
 extension RielaNoteLibraryViewModel {
-  public func translateSelectedNote(targetLanguage rawTargetLanguage: String? = nil) async {
+  /// Runs a whole-note translation and returns the proposed draft for the caller
+  /// to load into the body editor for review. The translation is never persisted
+  /// here — the store body is untouched until the user saves through the normal
+  /// Save path (which enforces the `expectedNoteId` version check). A stale
+  /// result (the note was switched while the workflow ran) is dropped, returning
+  /// `nil`.
+  @discardableResult
+  public func translateSelectedNote(targetLanguage rawTargetLanguage: String? = nil) async
+    -> RielaNoteEditRewriteDraft?
+  {
     guard let detail = selectedDetail else {
-      return
+      return nil
     }
     guard !detail.note.readOnly, !isTranslateNoteLoading else {
-      return
+      return nil
     }
     let targetLanguage = rielaNoteNormalizedTranslationTargetLanguage(rawTargetLanguage ?? translationTargetLanguage)
     translationTargetLanguage = targetLanguage
@@ -27,25 +36,22 @@ extension RielaNoteLibraryViewModel {
         selectionEnd: nil
       )
       guard isCurrentTranslation(generation: generation, noteId: noteId) else {
-        return
+        isTranslateNoteLoading = false
+        return nil
       }
-      selectedDetail = try await client.updateNoteBody(noteId: noteId, bodyMarkdown: draft.rewrittenMarkdown)
-      if let index = notebookNotes.firstIndex(where: { $0.noteId == noteId }),
-         let updatedNote = selectedDetail?.note {
-        notebookNotes[index] = updatedNote
-      }
-      clearResolvedFileSelection()
-      contentMode = .text
       let summary = draft.summary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-      translateNoteSummary = summary.isEmpty ? "Translated to \(targetLanguage)." : summary
+      translateNoteSummary = summary.isEmpty ? "Translated to \(targetLanguage). Review and save." : summary
       isTranslateNoteLoading = false
+      return draft
     } catch {
       guard isCurrentTranslation(generation: generation, noteId: noteId) else {
-        return
+        isTranslateNoteLoading = false
+        return nil
       }
       translateNoteError = translateNoteErrorMessage(error)
       translateNoteSummary = nil
       isTranslateNoteLoading = false
+      return nil
     }
   }
 
@@ -64,7 +70,8 @@ extension RielaNoteLibraryViewModel {
     if case RielaNoteEditRewriteError.notConfigured = error {
       return "Translation is not configured."
     }
-    return String(describing: error)
+    rielaNoteLogUIError("translateSelectedNote", error)
+    return "Couldn't translate this note. Please try again."
   }
 }
 

@@ -142,22 +142,50 @@ func nextNoteNumber(notebookId: String, in database: SQLiteDatabase) throws -> I
 }
 
 func validateNotebookIngestPageNumbers(_ pages: [NotePageDraft]) throws {
-  var explicitNumbers = Set<Int>()
-  for page in pages {
-    guard let noteNumber = page.noteNumber else {
-      continue
+  // The effective number of each page is its explicit `noteNumber` or, when
+  // absent, its 1-based position (matching `insertNotebookWithNotes`). A mix of
+  // explicit and positional numbers can collide (e.g. page 1 positional == an
+  // explicit `1` elsewhere), which would otherwise surface as an opaque UNIQUE
+  // constraint error. Compute every effective number and reject collisions,
+  // naming the colliding page positions.
+  var numberToPageIndex: [Int: Int] = [:]
+  for (index, page) in pages.enumerated() {
+    let effectiveNumber = page.noteNumber ?? index + 1
+    guard effectiveNumber > 0 else {
+      throw NoteServiceError.invalidInput(
+        "notebook ingest page \(index + 1) has a non-positive note number \(effectiveNumber)"
+      )
     }
-    guard noteNumber > 0 else {
-      throw NoteServiceError.invalidInput("notebook ingest page numbers must be positive")
+    if let existingIndex = numberToPageIndex[effectiveNumber] {
+      throw NoteServiceError.invalidInput(
+        "notebook ingest pages \(existingIndex + 1) and \(index + 1) collide on note number \(effectiveNumber)"
+      )
     }
-    guard explicitNumbers.insert(noteNumber).inserted else {
-      throw NoteServiceError.invalidInput("notebook ingest page numbers must be unique")
-    }
+    numberToPageIndex[effectiveNumber] = index
   }
 }
 
 func noteTitle(from bodyMarkdown: String) -> String? {
   NoteTitleDerivation.title(from: bodyMarkdown)
+}
+
+/// How a note's stored title was produced. A `.derived` title is re-computed
+/// from the body on every `updateNoteBody`; an `.explicit` title (supplied via
+/// the `title:` argument on create) is preserved across body edits.
+enum NoteTitleSource: String, Sendable {
+  case derived
+  case explicit
+}
+
+func noteTitleSource(noteId: String, in database: SQLiteDatabase) throws -> NoteTitleSource {
+  let rows = try database.query(
+    "SELECT title_source FROM notes WHERE note_id = ? LIMIT 1",
+    bindings: [.text(noteId)]
+  )
+  guard let raw = rows.first?["title_source"], let source = NoteTitleSource(rawValue: raw) else {
+    return .derived
+  }
+  return source
 }
 
 func makeNoteId(prefix: String) -> String {

@@ -18,6 +18,7 @@ public final class RielaNoteAgentViewModel: ObservableObject {
 
   private let client: any RielaNoteUIClient
   private let searchLimit: Int
+  private var isSubmitting = false
 
   public init(client: any RielaNoteUIClient, searchLimit: Int = 5) {
     self.client = client
@@ -44,56 +45,46 @@ public final class RielaNoteAgentViewModel: ObservableObject {
   }
 
   public func submitDraft() async {
+    guard !isSubmitting else {
+      return
+    }
     let message = draftMessage.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !message.isEmpty else {
       return
     }
+    isSubmitting = true
+    defer { isSubmitting = false }
     draftMessage = ""
     state = .loading
     do {
-      var turn = try await client.answerNoteAgentTurn(message: message, limit: searchLimit)
-      if !isTemporaryChat {
-        let result = try await saveOrAppend(turn: turn)
-        turn.persistedNoteIds = result.noteIds
-      }
+      let turn = try await client.answerNoteAgentTurn(message: message, limit: searchLimit)
+      // Show first: the answered turn is visible immediately so a persistence
+      // failure never discards a paid-for answer.
       turns.append(turn)
+      if !isTemporaryChat {
+        try await persistUnsavedTurns()
+      }
       state = .loaded
     } catch {
-      if draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        draftMessage = message
-      }
-      state = .failed(String(describing: error))
+      // The answer, if any, is already in `turns` and marked unsaved via its
+      // empty `persistedNoteIds`; leave the draft cleared and surface the error.
+      rielaNoteLogUIError("noteAgent.submitDraft", error)
+      state = .failed("Couldn't complete the agent turn. Please try again.")
     }
   }
 
   public func saveTemporaryConversation(title: String? = nil) async {
-    let unsavedIndices = unsavedTurnIndices
-    guard !unsavedIndices.isEmpty else {
+    guard hasUnsavedTurns else {
       return
     }
     state = .loading
     do {
-      if let autoSaveNotebookId {
-        try await appendUnsavedTurns(unsavedIndices, notebookId: autoSaveNotebookId)
-      } else {
-        let unsavedTurns = unsavedIndices.map { turns[$0] }
-        let result = try await client.saveNoteAgentConversation(
-          title: title ?? conversationTitle(),
-          turns: unsavedTurns
-        )
-        guard result.noteIds.count == unsavedIndices.count else {
-          throw RielaNoteAgentViewModelError.unexpectedPersistedNoteCount(
-            expected: unsavedIndices.count,
-            actual: result.noteIds.count
-          )
-        }
-        autoSaveNotebookId = result.notebookId
-        assignPersistedNoteIds(result.noteIds, to: unsavedIndices)
-      }
+      try await persistUnsavedTurns(title: title)
       isTemporaryChat = false
       state = .loaded
     } catch {
-      state = .failed(String(describing: error))
+      rielaNoteLogUIError("noteAgent.saveTemporaryConversation", error)
+      state = .failed("Couldn't save the conversation. Please try again.")
     }
   }
 
@@ -105,13 +96,30 @@ public final class RielaNoteAgentViewModel: ObservableObject {
     state = .idle
   }
 
-  private func saveOrAppend(turn: RielaNoteAgentTurn) async throws -> RielaNoteAgentConversationSaveResult {
-    if let autoSaveNotebookId {
-      return try await client.appendNoteAgentTurn(notebookId: autoSaveNotebookId, turn: turn)
+  private func persistUnsavedTurns(title: String? = nil) async throws {
+    let unsavedIndices = unsavedTurnIndices
+    guard !unsavedIndices.isEmpty else {
+      return
     }
-    let result = try await client.saveNoteAgentConversation(title: conversationTitle(firstTurn: turn), turns: [turn])
+    if let autoSaveNotebookId {
+      try await appendUnsavedTurns(unsavedIndices, notebookId: autoSaveNotebookId)
+      return
+    }
+    // First non-temp save persists ALL unsaved turns, not just the newest, so
+    // leaving temp mode never strands earlier turns.
+    let unsavedTurns = unsavedIndices.map { turns[$0] }
+    let result = try await client.saveNoteAgentConversation(
+      title: title ?? conversationTitle(),
+      turns: unsavedTurns
+    )
+    guard result.noteIds.count == unsavedIndices.count else {
+      throw RielaNoteAgentViewModelError.unexpectedPersistedNoteCount(
+        expected: unsavedIndices.count,
+        actual: result.noteIds.count
+      )
+    }
     autoSaveNotebookId = result.notebookId
-    return result
+    assignPersistedNoteIds(result.noteIds, to: unsavedIndices)
   }
 
   private var hasUnsavedTurns: Bool {
@@ -141,8 +149,8 @@ public final class RielaNoteAgentViewModel: ObservableObject {
     }
   }
 
-  private func conversationTitle(firstTurn: RielaNoteAgentTurn? = nil) -> String {
-    let seed = firstTurn?.userMarkdown ?? turns.first?.userMarkdown ?? "Agent conversation"
+  private func conversationTitle() -> String {
+    let seed = turns.first?.userMarkdown ?? "Agent conversation"
     let firstLine = seed.split(separator: "\n").first.map(String.init) ?? seed
     return firstLine.isEmpty ? "Agent conversation" : String(firstLine.prefix(80))
   }

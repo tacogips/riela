@@ -157,6 +157,7 @@ public enum NoteCommandKind: String, Codable, Sendable {
   case notebook
   case storage
   case client
+  case autoAction = "auto-action"
 }
 
 public struct NoteCommand: Equatable, Sendable {
@@ -932,7 +933,7 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     guard let kind = NoteCommandKind(rawValue: subcommand) else {
       throw CLIUsageError("unsupported note subcommand '\(subcommand)'")
     }
-    if kind == .notebook || kind == .storage || kind == .client {
+    if kind == .notebook || kind == .storage || kind == .client || kind == .autoAction {
       guard arguments.count >= 2, !arguments[1].hasPrefix("--") else {
         throw CLIUsageError("note \(subcommand) requires a subcommand")
       }

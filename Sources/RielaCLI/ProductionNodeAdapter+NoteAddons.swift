@@ -2,6 +2,7 @@ import Foundation
 import RielaCore
 import RielaGraphQL
 import RielaNote
+import RielaNoteDispatch
 
 private let noteAddonDefaultMaxAttachmentBytes = InlineWorkflowAddonAttachmentProjector.maxAttachmentBytes
 private let noteAddonDefaultMaxPageCount = 500
@@ -107,7 +108,9 @@ private struct NoteAddonContext {
     noteRoot = (noteRoot as NSString).expandingTildeInPath
     service = try NoteService(
       driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot),
-      autoActionDispatcher: NoteAutoActionWorkflowDispatcher(noteRoot: noteRoot),
+      autoActionDispatcher: NoteAutoActionWorkflowDispatcher(
+        launcher: NoteAutoActionWorkflowCLILauncher(noteRoot: noteRoot)
+      ),
       autoActionDiagnosticRecorder: StderrAutoActionFilterDiagnostics()
     )
   }

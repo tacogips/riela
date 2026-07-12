@@ -1,33 +1,18 @@
 import Foundation
 import RielaCore
 import RielaNote
+import RielaNoteDispatch
 import XCTest
 @testable import RielaCLI
 
-final class NoteAutoActionWorkflowDispatcherTests: XCTestCase {
-  func testDefaultTaskLauncherBlocksCallerUntilOperationCompletes() async {
-    let launcher = NoteAutoActionTaskLauncher()
-    let completed = expectation(description: "background operation completed")
-    let startedAt = Date()
-
-    launcher.launch {
-      try? await Task.sleep(nanoseconds: 100_000_000)
-      completed.fulfill()
-    }
-
-    XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(startedAt), 0.09)
-    await fulfillment(of: [completed], timeout: 0.1)
-  }
-
-  func testDispatchResolvesAndLaunchesWorkflowRunWithNoteEventVariables() async throws {
+final class NoteAutoActionWorkflowCLILauncherTests: XCTestCase {
+  func testLaunchResolvesAndRunsWorkflowRunWithNoteEventVariables() async throws {
     let resolver = RecordingWorkflowBundleResolver()
     let runner = RecordingAutoActionWorkflowRunner(result: CLICommandResult(exitCode: .success))
-    let launcher = CapturingAutoActionTaskLauncher()
     let diagnostics = RecordingAutoActionDiagnostics()
-    let dispatcher = NoteAutoActionWorkflowDispatcher(
+    let launcher = NoteAutoActionWorkflowCLILauncher(
       resolver: resolver,
       runner: runner,
-      taskLauncher: launcher,
       diagnosticRecorder: diagnostics,
       workingDirectory: "/tmp/project",
       maxSteps: 12,
@@ -35,13 +20,9 @@ final class NoteAutoActionWorkflowDispatcherTests: XCTestCase {
       noteRoot: "/tmp/project/.riela/note"
     )
 
-    let outcomes = RecordingAutoActionDispatchOutcomes()
-    try dispatcher.dispatch(record(), completion: outcomes.record)
+    let outcome = try await launcher.launch(record())
     XCTAssertEqual(resolver.options().map(\.workflowName), ["ai-tag-workflow"])
-    XCTAssertEqual(launcher.operationCount(), 1)
-    XCTAssertEqual(outcomes.records(), [])
 
-    await launcher.drain()
     let options = await runner.recordedOptions()
     XCTAssertEqual(options.count, 1)
     XCTAssertEqual(options.first?.target, "ai-tag-workflow")
@@ -68,55 +49,52 @@ final class NoteAutoActionWorkflowDispatcherTests: XCTestCase {
     let event = try objectValue(object["event"])
     XCTAssertEqual(string(event["trigger"]), "note-created")
     XCTAssertEqual(string(event["noteId"]), "note-1")
-    XCTAssertEqual(outcomes.records(), [.succeeded])
+    XCTAssertEqual(outcome, .succeeded)
     XCTAssertTrue(diagnostics.records().isEmpty)
   }
 
-  func testUnresolvedWorkflowSkipsLaunchAndRecordsDiagnostic() throws {
+  func testUnresolvedWorkflowSkipsLaunchAndRecordsDiagnostic() async throws {
     let resolver = RecordingWorkflowBundleResolver(error: WorkflowResolutionError.notFound("missing", ["not installed"]))
     let runner = RecordingAutoActionWorkflowRunner(result: CLICommandResult(exitCode: .success))
-    let launcher = CapturingAutoActionTaskLauncher()
     let diagnostics = RecordingAutoActionDiagnostics()
-    let dispatcher = NoteAutoActionWorkflowDispatcher(
+    let launcher = NoteAutoActionWorkflowCLILauncher(
       resolver: resolver,
       runner: runner,
-      taskLauncher: launcher,
       diagnosticRecorder: diagnostics
     )
 
-    let outcomes = RecordingAutoActionDispatchOutcomes()
-    XCTAssertThrowsError(try dispatcher.dispatch(record(workflowId: "missing"), completion: outcomes.record))
+    do {
+      _ = try await launcher.launch(record(workflowId: "missing"))
+      XCTFail("expected launch to throw for unresolved workflow")
+    } catch {
+      // expected
+    }
 
-    XCTAssertEqual(launcher.operationCount(), 0)
-    XCTAssertEqual(outcomes.records(), [])
+    let options = await runner.recordedOptions()
+    XCTAssertTrue(options.isEmpty)
     XCTAssertEqual(diagnostics.records().map(\.code), [.workflowUnresolved])
     XCTAssertEqual(diagnostics.records().first?.actionId, "auto-action-1")
     XCTAssertEqual(diagnostics.records().first?.workflowId, "missing")
     XCTAssertTrue(diagnostics.records().first?.message.contains("not installed") == true)
   }
 
-  func testWorkflowRunFailureRecordsDiagnosticAndCompletesAsFailed() async throws {
+  func testWorkflowRunFailureRecordsDiagnosticAndReturnsFailed() async throws {
     let resolver = RecordingWorkflowBundleResolver()
     let runner = RecordingAutoActionWorkflowRunner(result: CLICommandResult(exitCode: .failure, stderr: "run failed"))
-    let launcher = CapturingAutoActionTaskLauncher()
     let diagnostics = RecordingAutoActionDiagnostics()
-    let dispatcher = NoteAutoActionWorkflowDispatcher(
+    let launcher = NoteAutoActionWorkflowCLILauncher(
       resolver: resolver,
       runner: runner,
-      taskLauncher: launcher,
       diagnosticRecorder: diagnostics
     )
 
-    let outcomes = RecordingAutoActionDispatchOutcomes()
-    try dispatcher.dispatch(record(), completion: outcomes.record)
+    let outcome = try await launcher.launch(record())
 
-    XCTAssertEqual(launcher.operationCount(), 1)
-    await launcher.drain()
     let options = await runner.recordedOptions()
     XCTAssertEqual(options.count, 1)
     XCTAssertEqual(diagnostics.records().map(\.code), [.workflowRunFailed])
     XCTAssertEqual(diagnostics.records().first?.message, "run failed")
-    XCTAssertEqual(outcomes.records(), [.failed("run failed")])
+    XCTAssertEqual(outcome, .failed("run failed"))
   }
 
   private func record(workflowId: String = "ai-tag-workflow") -> AutoActionDispatchRecord {
@@ -154,7 +132,7 @@ final class NoteAutoActionWorkflowDispatcherTests: XCTestCase {
   }
 }
 
-private final class RecordingWorkflowBundleResolver: WorkflowBundleResolving, @unchecked Sendable {
+final class RecordingWorkflowBundleResolver: WorkflowBundleResolving, @unchecked Sendable {
   private let lock = NSLock()
   private let error: Error?
   private var recordedOptions: [WorkflowResolutionOptions] = []
@@ -198,7 +176,7 @@ private final class RecordingWorkflowBundleResolver: WorkflowBundleResolving, @u
   }
 }
 
-private actor RecordingAutoActionWorkflowRunner: NoteAutoActionWorkflowRunning {
+actor RecordingAutoActionWorkflowRunner: NoteAutoActionWorkflowRunning {
   private let result: CLICommandResult
   private var options: [WorkflowRunOptions] = []
 
@@ -216,39 +194,7 @@ private actor RecordingAutoActionWorkflowRunner: NoteAutoActionWorkflowRunning {
   }
 }
 
-private final class CapturingAutoActionTaskLauncher: NoteAutoActionWorkflowTaskLaunching, @unchecked Sendable {
-  private let lock = NSLock()
-  private var operations: [@Sendable () async -> Void] = []
-
-  func launch(_ operation: @escaping @Sendable () async -> Void) {
-    lock.lock()
-    operations.append(operation)
-    lock.unlock()
-  }
-
-  func drain() async {
-    while let operation = nextOperation() {
-      await operation()
-    }
-  }
-
-  func operationCount() -> Int {
-    lock.lock()
-    defer { lock.unlock() }
-    return operations.count
-  }
-
-  private func nextOperation() -> (@Sendable () async -> Void)? {
-    lock.lock()
-    defer { lock.unlock() }
-    guard !operations.isEmpty else {
-      return nil
-    }
-    return operations.removeFirst()
-  }
-}
-
-private final class RecordingAutoActionDiagnostics: NoteAutoActionDiagnosticRecording, @unchecked Sendable {
+final class RecordingAutoActionDiagnostics: NoteAutoActionDiagnosticRecording, @unchecked Sendable {
   private let lock = NSLock()
   private var diagnostics: [NoteAutoActionWorkflowDiagnostic] = []
 
@@ -262,22 +208,5 @@ private final class RecordingAutoActionDiagnostics: NoteAutoActionDiagnosticReco
     lock.lock()
     defer { lock.unlock() }
     return diagnostics
-  }
-}
-
-private final class RecordingAutoActionDispatchOutcomes: @unchecked Sendable {
-  private let lock = NSLock()
-  private var outcomes: [AutoActionDispatchOutcome] = []
-
-  func record(_ outcome: AutoActionDispatchOutcome) {
-    lock.lock()
-    outcomes.append(outcome)
-    lock.unlock()
-  }
-
-  func records() -> [AutoActionDispatchOutcome] {
-    lock.lock()
-    defer { lock.unlock() }
-    return outcomes
   }
 }

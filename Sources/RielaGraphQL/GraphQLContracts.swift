@@ -1037,6 +1037,7 @@ public enum GraphQLContractProjector {
     saveNoteConversation(input: SaveNoteConversationInput!): NoteMutationPayload!
     migrateNoteFileStorage(input: MigrateNoteFileStorageInput!): NoteFileMigrationPayload!
     migrateAllNoteFiles(input: MigrateAllNoteFilesInput!): NoteFileMigrationPayload!
+    reclaimNoteFileStorage(input: ReclaimNoteFileStorageInput!): NoteFileReclamationPayload!
     createWorkflowInstance(input: WorkflowInstanceInput!): WorkflowInstanceMutationPayload!
     updateWorkflowInstance(input: WorkflowInstanceInput!): WorkflowInstanceMutationPayload!
     deleteWorkflowInstance(identity: String!, workflowId: String): WorkflowInstanceMutationPayload!

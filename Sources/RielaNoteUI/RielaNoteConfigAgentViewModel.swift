@@ -26,9 +26,20 @@ public final class RielaNoteConfigAgentViewModel: ObservableObject {
     !draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && state != .loading
   }
 
+  public var isApplying: Bool {
+    state == .loading
+  }
+
+  public var errorMessage: String? {
+    if case let .failed(message) = state {
+      return message
+    }
+    return nil
+  }
+
   public func submitDraft() async {
     let message = draftMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !message.isEmpty else {
+    guard !message.isEmpty, state != .loading else {
       return
     }
     draftMessage = ""
@@ -37,11 +48,17 @@ public final class RielaNoteConfigAgentViewModel: ObservableObject {
       proposals.append(try await client.proposeNoteConfigAgentChange(message: message))
       state = .loaded
     } catch {
-      state = .failed(String(describing: error))
+      // Restore the typed request so a transient failure does not lose it.
+      draftMessage = message
+      rielaNoteLogUIError("configAgent.submitDraft", error)
+      state = .failed("Couldn't get a configuration proposal. Please try again.")
     }
   }
 
   public func applyProposal(id: String) async {
+    guard state != .loading else {
+      return
+    }
     guard let index = proposals.firstIndex(where: { $0.id == id }) else {
       return
     }
@@ -54,7 +71,8 @@ public final class RielaNoteConfigAgentViewModel: ObservableObject {
       proposals[index].appliedResult = result
       state = .loaded
     } catch {
-      state = .failed(String(describing: error))
+      rielaNoteLogUIError("configAgent.applyProposal", error)
+      state = .failed("Couldn't apply the configuration proposal. Please try again.")
     }
   }
 }

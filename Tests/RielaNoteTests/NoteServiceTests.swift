@@ -35,14 +35,70 @@ final class NoteServiceTests: NoteTestCase {
     XCTAssertEqual(try service.listNotebooks().first?.title, "Explicit Title")
   }
 
-  func testUpdateNoteBodyDerivesTitleFromFirstLineWhenUpdatedBodyHasNoHeading() throws {
+  func testUpdateNoteBodyReDerivesDerivedTitleButPreservesExplicitTitle() throws {
     let service = try makeService()
-    let note = try service.createNote(title: "Explicit Title", bodyMarkdown: "Body without a heading")
 
-    let updated = try service.updateNoteBody(noteId: note.noteId, bodyMarkdown: "Changed body without a heading")
+    // A derived title (no explicit title on create) re-derives from the new body.
+    let derived = try service.createNote(bodyMarkdown: "# Original Heading\nBody")
+    XCTAssertEqual(derived.title, "Original Heading")
+    let derivedUpdated = try service.updateNoteBody(
+      noteId: derived.noteId,
+      bodyMarkdown: "Changed body without a heading"
+    )
+    XCTAssertEqual(derivedUpdated.title, "Changed body without a heading")
+    XCTAssertEqual(derivedUpdated.bodyMarkdown, "Changed body without a heading")
 
-    XCTAssertEqual(updated.title, "Changed body without a heading")
-    XCTAssertEqual(updated.bodyMarkdown, "Changed body without a heading")
+    // An explicit title survives body edits and is never clobbered.
+    let explicit = try service.createNote(title: "Explicit Title", bodyMarkdown: "Body without a heading")
+    let explicitUpdated = try service.updateNoteBody(
+      noteId: explicit.noteId,
+      bodyMarkdown: "# A New Heading In The Body\nMore body"
+    )
+    XCTAssertEqual(explicitUpdated.title, "Explicit Title")
+    XCTAssertEqual(explicitUpdated.bodyMarkdown, "# A New Heading In The Body\nMore body")
+  }
+
+  func testGenericListNotesNotebookFilterMatchesNotebookScopedOrder() throws {
+    let service = try makeService()
+    let ingest = try service.createNotebookWithNotes(
+      title: "Ordered",
+      pages: (1...4).map { NotePageDraft(bodyMarkdown: "# Page \($0)\nbody \($0)", noteNumber: 5 - $0) }
+    )
+    // Explicit descending note numbers: page bodies "Page 1".."Page 4" carry
+    // note_number 4,3,2,1. The generic overload with a notebook filter must sort
+    // by note_number ascending regardless of insertion/creation order.
+    let generic = try service.listNotes(limit: 100, offset: 0, notebookId: ingest.notebook.notebookId)
+    XCTAssertEqual(generic.map(\.noteNumber), [1, 2, 3, 4])
+    XCTAssertEqual(generic.map(\.title), ["Page 4", "Page 3", "Page 2", "Page 1"])
+  }
+
+  func testIngestRejectsImplicitExplicitPageNumberCollision() throws {
+    let service = try makeService()
+    // Page 1 is positional (effective number 1); page 2 explicitly claims 1.
+    XCTAssertThrowsError(
+      try service.createNotebookWithNotes(
+        title: "Colliding",
+        pages: [
+          NotePageDraft(bodyMarkdown: "# First\nbody"),
+          NotePageDraft(bodyMarkdown: "# Second\nbody", noteNumber: 1)
+        ]
+      )
+    ) { error in
+      guard case let NoteServiceError.invalidInput(message) = error else {
+        return XCTFail("expected invalidInput, got \(error)")
+      }
+      XCTAssertTrue(message.contains("1"), "message should name colliding page number: \(message)")
+      XCTAssertTrue(message.contains("2"), "message should name colliding page position: \(message)")
+    }
+  }
+
+  func testSymbolOnlyQueryMatchesViaLikeFallback() throws {
+    let service = try makeService()
+    _ = try service.createNote(bodyMarkdown: "# Arrow Note\nThe flow is A → B and then C")
+    _ = try service.createNote(bodyMarkdown: "# Unrelated\nNothing special here")
+
+    let results = try service.searchNotes(query: "→")
+    XCTAssertEqual(results.map(\.note.title), ["Arrow Note"])
   }
 
   func testTitleDerivationSupportsHeadingLevelsFirstLineMarkersAndCap() throws {
@@ -568,7 +624,11 @@ final class NoteServiceTests: NoteTestCase {
         NotePageDraft(bodyMarkdown: "# Page Two\n\nBeta", noteNumber: 3)
       ]
     )) { error in
-      XCTAssertEqual(error as? NoteServiceError, .invalidInput("notebook ingest page numbers must be unique"))
+      guard case let NoteServiceError.invalidInput(message) = error else {
+        return XCTFail("expected invalidInput, got \(error)")
+      }
+      XCTAssertTrue(message.contains("3"), "message should name the colliding note number: \(message)")
+      XCTAssertTrue(message.contains("1") && message.contains("2"), "message should name colliding pages: \(message)")
     }
 
     XCTAssertTrue(try service.listNotebooks().isEmpty)
@@ -658,6 +718,16 @@ final class NoteServiceTests: NoteTestCase {
     XCTAssertEqual(links.first?.toNoteId, cited.noteId)
     XCTAssertEqual(links.first?.linkKind, "source-citation")
     XCTAssertEqual(links.first?.provenance, .system)
+  }
+
+  func testSearchNotesWithMaxOffsetDoesNotOverflow() throws {
+    let service = try makeService()
+    _ = try service.createNote(bodyMarkdown: "# Overflow\n\nSearchable overflow body")
+
+    // A hostile `offset` at Int.max must not trap the process when combined with
+    // `limit` to compute the fetch window; the query simply returns no page.
+    let results = try service.searchNotes(query: "overflow", limit: 5, offset: Int.max)
+    XCTAssertTrue(results.isEmpty)
   }
 }
 

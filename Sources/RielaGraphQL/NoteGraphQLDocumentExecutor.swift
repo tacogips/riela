@@ -70,48 +70,65 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
   }
 
   public func execute(_ request: GraphQLDocumentRequest) async -> GraphQLDocumentExecutionResponse {
-    let rootField: ParsedNoteGraphQLRootField
+    let rootFields: [ParsedNoteGraphQLRootField]
     do {
-      guard let parsed = try parseNoteGraphQLRootField(
+      guard let parsed = try parseNoteGraphQLRootFields(
         in: request.query,
         operationName: request.operationName,
         variables: request.variables,
         parseArguments: true
-      ) else {
+      ), !parsed.isEmpty else {
         return .notHandled
       }
-      rootField = parsed
+      rootFields = parsed
     } catch {
-      let responseKey = noteGraphQLRootFieldName(in: request.query) ?? "noteGraphQL"
-      return GraphQLDocumentExecutionResponse(
-        handled: true,
-        body: [
-          "data": .object([responseKey: .null]),
-          "errors": .array([.object(["message": .string(graphQLNotePublicDiagnostic(for: error))])])
-        ]
-      )
+      // The document failed to parse. Routing only dispatches note documents to
+      // this executor, so surface the explicit parse error rather than falling
+      // through. Use the note root field as the response key when it can still be
+      // identified by the directive-tolerant scan.
+      let responseKey = noteGraphQLRootFieldName(in: request.query, operationName: request.operationName) ?? "noteGraphQL"
+      return errorResponse(responseKeys: [responseKey], error: error)
     }
-    guard supportedNoteGraphQLFields.contains(rootField.fieldName) else {
+    // This executor owns the document only when every root selection is a note
+    // field. A document with no note fields belongs to another executor.
+    guard rootFields.contains(where: { supportedNoteGraphQLFields.contains($0.fieldName) }) else {
       return .notHandled
     }
     do {
-      try validateOperationType(rootField.operationType, fieldName: rootField.fieldName)
-      try validateSelections(rootField.selections, rootFieldName: rootField.fieldName)
-      var routedRequest = request
-      routedRequest.variables = rootField.arguments
-      let data = try await execute(fieldName: rootField.fieldName, request: routedRequest)
-      let rootType = noteGraphQLRootSelectionTypes[rootField.fieldName] ?? "NoteMutationPayload"
-      let projected = try projectGraphQLValue(data, selections: rootField.selections, typeName: rootType)
-      return GraphQLDocumentExecutionResponse(handled: true, body: ["data": .object([rootField.responseKey: projected])])
+      var data: JSONObject = [:]
+      for rootField in rootFields {
+        guard supportedNoteGraphQLFields.contains(rootField.fieldName) else {
+          throw NoteGraphQLDocumentExecutorError.invalidSelection("unsupported root field '\(rootField.fieldName)'")
+        }
+        try validateOperationType(rootField.operationType, fieldName: rootField.fieldName)
+        try validateSelections(rootField.selections, rootFieldName: rootField.fieldName)
+        var routedRequest = request
+        routedRequest.variables = rootField.arguments
+        guard data[rootField.responseKey] == nil else {
+          throw NoteGraphQLDocumentExecutorError.invalidSelection("duplicate response key '\(rootField.responseKey)'")
+        }
+        let value = try await execute(fieldName: rootField.fieldName, request: routedRequest)
+        let rootType = noteGraphQLRootSelectionTypes[rootField.fieldName] ?? "NoteMutationPayload"
+        data[rootField.responseKey] = try projectGraphQLValue(value, selections: rootField.selections, typeName: rootType)
+      }
+      return GraphQLDocumentExecutionResponse(handled: true, body: ["data": .object(data)])
     } catch {
-      return GraphQLDocumentExecutionResponse(
-        handled: true,
-        body: [
-          "data": .object([rootField.responseKey: .null]),
-          "errors": .array([.object(["message": .string(graphQLNotePublicDiagnostic(for: error))])])
-        ]
-      )
+      return errorResponse(responseKeys: rootFields.map(\.responseKey), error: error)
     }
+  }
+
+  private func errorResponse(responseKeys: [String], error: Error) -> GraphQLDocumentExecutionResponse {
+    var data: JSONObject = [:]
+    for responseKey in responseKeys {
+      data[responseKey] = .null
+    }
+    return GraphQLDocumentExecutionResponse(
+      handled: true,
+      body: [
+        "data": .object(data),
+        "errors": .array([.object(["message": .string(graphQLNotePublicDiagnostic(for: error))])])
+      ]
+    )
   }
 
   private func execute(fieldName: String, request: GraphQLDocumentRequest) async throws -> JSONValue {
@@ -123,8 +140,8 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
       return try await encodedJSONValue(service.notebook(notebookId: requiredString("notebookId", variables: variables)))
     case "notebooks":
       return try await encodedJSONValue(service.notebooks(
-        limit: boundedLimit(try optionalInt("limit", variables: variables), defaultValue: 50),
-        offset: boundedOffset(try optionalInt("offset", variables: variables)),
+        limit: validatedLimit(try optionalInt("limit", variables: variables), defaultValue: 50),
+        offset: validatedOffset(try optionalInt("offset", variables: variables)),
         tagFilter: try optionalStringArray("tagFilter", variables: variables) ?? [],
         sort: try optionalString("sort", variables: variables),
         createdAfter: try optionalString("createdAfter", variables: variables),
@@ -132,8 +149,8 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
       ))
     case "notes":
       return try await encodedJSONValue(service.notes(
-        limit: boundedLimit(try optionalInt("limit", variables: variables), defaultValue: 50),
-        offset: boundedOffset(try optionalInt("offset", variables: variables)),
+        limit: validatedLimit(try optionalInt("limit", variables: variables), defaultValue: 50),
+        offset: validatedOffset(try optionalInt("offset", variables: variables)),
         notebookId: try optionalString("notebookId", variables: variables),
         tagFilter: try optionalStringArray("tagFilter", variables: variables) ?? []
       ))
@@ -146,13 +163,13 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
         createdAfter: try optionalString("createdAfter", variables: variables),
         createdBefore: try optionalString("createdBefore", variables: variables),
         includeLinked: try optionalBool("includeLinked", variables: variables) ?? false,
-        limit: boundedLimit(try optionalInt("limit", variables: variables), defaultValue: 20),
-        offset: boundedOffset(try optionalInt("offset", variables: variables))
+        limit: validatedLimit(try optionalInt("limit", variables: variables), defaultValue: 20),
+        offset: validatedOffset(try optionalInt("offset", variables: variables))
       ))
     case "proposeNoteLinks":
       return try await encodedJSONValue(service.proposeNoteLinks(
         noteId: requiredString("noteId", variables: variables),
-        limit: boundedLimit(try optionalInt("limit", variables: variables), defaultValue: 8)
+        limit: validatedLimit(try optionalInt("limit", variables: variables), defaultValue: 8)
       ))
     case "tags":
       return try await encodedJSONValue(service.tags())
@@ -172,7 +189,7 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
     switch fieldName {
     case "createNote":
       var input: GraphQLCreateNoteInput = try requiredInput("input", variables: variables)
-      input.assignedBy = noteAPIAssignedBy(input.assignedBy, request: request)
+      input.assignedBy = try noteAPIAssignedBy(input.assignedBy, field: "assignedBy", request: request)
       return try await encodedJSONValue(service.createNote(input))
     case "createNotebook":
       return try await encodedJSONValue(service.createNotebook(requiredInput("input", variables: variables)))
@@ -182,7 +199,7 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
       return try await encodedJSONValue(service.defineTag(requiredInput("input", variables: variables)))
     case "scaffoldNoteIngestionWorkflow":
       var input: GraphQLScaffoldNoteWorkflowInput = try requiredInput("input", variables: variables)
-      input.assignedBy = noteAPIAssignedBy(input.assignedBy, request: request)
+      input.assignedBy = try noteAPIAssignedBy(input.assignedBy, field: "assignedBy", request: request)
       return try await encodedJSONValue(service.scaffoldIngestionWorkflow(input))
     case "updateNote":
       let input: GraphQLUpdateNoteInput = try requiredInput("input", variables: variables)
@@ -197,7 +214,7 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
       return try await encodedJSONValue(service.deleteNotebook(notebookId: requiredString("notebookId", variables: variables)))
     case "applyNotebookTags":
       var input: GraphQLApplyNotebookTagsInput = try requiredInput("input", variables: variables)
-      input.assignedBy = noteAPIAssignedBy(input.assignedBy, request: request)
+      input.assignedBy = try noteAPIAssignedBy(input.assignedBy, field: "assignedBy", request: request)
       return try await encodedJSONValue(service.applyNotebookTags(input))
     case "removeNotebookTag":
       return try await encodedJSONValue(service.removeNotebookTag(
@@ -216,7 +233,7 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
         noteId: input.noteId,
         tags: input.tags,
         provenance: input.provenance ?? "ai",
-        assignedBy: noteAPIAssignedBy(input.assignedBy, request: request)
+        assignedBy: try noteAPIAssignedBy(input.assignedBy, field: "assignedBy", request: request)
       ))
     case "removeNoteTag":
       return try await encodedJSONValue(service.removeTag(
@@ -229,7 +246,7 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
       return try await encodedJSONValue(service.addComment(
         noteId: input.noteId,
         bodyMarkdown: input.bodyMarkdown,
-        author: input.author ?? noteAPIAssignedBy(nil, request: request) ?? "user"
+        author: try noteAPIAssignedBy(input.author, field: "author", request: request) ?? "user"
       ))
     case "linkNotes":
       let input: GraphQLLinkNotesInput = try requiredInput("input", variables: variables)
@@ -266,13 +283,13 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
       return try await encodedJSONValue(service.saveConversation(
         title: input.title,
         transcript: input.transcript.map(\.noteTurn),
-        assignedBy: noteAPIAssignedBy(input.assignedBy, request: request),
+        assignedBy: try noteAPIAssignedBy(input.assignedBy, field: "assignedBy", request: request),
         originatingActionId: input.originatingActionId
       ))
     case "migrateNoteFileStorage":
       let input: GraphQLMigrateNoteFileStorageInput = try requiredInput("input", variables: variables)
       do {
-        let migrated = try service.service.migrateFileStorage(
+        let migrated = try service.service.migrateFileStorageOutcome(
           fileId: input.fileId,
           to: try input.storageProfile(
             allowedProfiles: s3Profiles,
@@ -280,11 +297,17 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
             allowRawInput: allowRawS3ProfileInput,
             rawEnvironmentAllowlist: rawS3EnvironmentAllowlist
           ),
-          httpClient: s3HTTPClient
+          httpClient: s3HTTPClient,
+          verifyRemoteRead: false
         )
         return try encodedJSONValue(GraphQLNoteFileMigrationResult(
           result: GraphQLControlPlaneResult(accepted: true, status: "ok"),
-          migrated: [GraphQLNoteFileDTO(file: migrated)]
+          migrated: [GraphQLNoteFileDTO(file: migrated.record)],
+          cleanupFailures: migrated.cleanupFailure.map {
+            [GraphQLNoteFileMigrationFailureDTO(
+              NoteFileMigrationFailure(fileId: $0.fileId, message: noteFileMigrationFailureMessage)
+            )]
+          } ?? []
         ))
       } catch {
         return try encodedJSONValue(GraphQLNoteFileMigrationResult(
@@ -312,9 +335,35 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
         migrated: migrated.migrated.map(GraphQLNoteFileDTO.init),
         failures: migrated.failures.map { failure in
           GraphQLNoteFileMigrationFailureDTO(
-            NoteFileMigrationFailure(fileId: failure.fileId, message: "note file migration failed")
+            NoteFileMigrationFailure(fileId: failure.fileId, message: noteFileMigrationFailureMessage)
+          )
+        },
+        cleanupFailures: migrated.cleanupFailures.map { failure in
+          GraphQLNoteFileMigrationFailureDTO(
+            NoteFileMigrationFailure(fileId: failure.fileId, message: noteFileMigrationFailureMessage)
           )
         }
+      ))
+    case "reclaimNoteFileStorage":
+      let input: GraphQLReclaimNoteFileStorageInput = try requiredInput("input", variables: variables)
+      if let graceHours = input.graceHours, graceHours < 0 {
+        throw NoteGraphQLDocumentExecutorError.invalidVariable("graceHours must not be negative")
+      }
+      let profile = try input.optionalStorageProfile(
+        allowedProfiles: s3Profiles,
+        environment: request.environment,
+        allowRawInput: allowRawS3ProfileInput,
+        rawEnvironmentAllowlist: rawS3EnvironmentAllowlist
+      )
+      let reclaimed = try service.service.reclaimUnreferencedFiles(
+        olderThan: TimeInterval(input.graceHours ?? 24) * 60 * 60,
+        s3Profiles: profile.map { [$0] } ?? [],
+        httpClient: s3HTTPClient
+      )
+      return try encodedJSONValue(GraphQLNoteFileReclamationResult(
+        result: GraphQLControlPlaneResult(accepted: true, status: "ok"),
+        deletedFileIds: reclaimed.deletedFileIds,
+        sweptPaths: reclaimed.sweptPaths
       ))
     default:
       return .null
@@ -322,19 +371,37 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
   }
 }
 
-private func noteAPIAssignedBy(_ explicit: String?, request: GraphQLDocumentRequest) -> String? {
-  explicit ?? request.authenticatedClientId.map { "client:\($0)" }
+/// Resolves the audit-attribution identity (`assignedBy`/`author`) for a note
+/// mutation.
+///
+/// On the authenticated HTTP note API (`authenticatedClientId` non-nil) the
+/// identity is always the bearer-verified `client:<id>`; any explicit value in
+/// the request is rejected so attribution cannot be forged. On the local
+/// operator path (`authenticatedClientId` nil) the explicit value is honored.
+private func noteAPIAssignedBy(
+  _ explicit: String?,
+  field: String,
+  request: GraphQLDocumentRequest
+) throws -> String? {
+  guard let clientId = request.authenticatedClientId else {
+    return explicit
+  }
+  guard explicit == nil else {
+    throw NoteGraphQLDocumentExecutorError.invalidVariable(
+      "\(field) cannot be set by an authenticated note API client"
+    )
+  }
+  return "client:\(clientId)"
 }
 
 public func noteGraphQLRootFieldName(in query: String, operationName: String? = nil) -> String? {
   guard
-    let fieldName = try? parseNoteGraphQLRootField(
+    let fieldName = try? parseNoteGraphQLRootFields(
       in: query,
       operationName: operationName,
       variables: [:],
       parseArguments: false
-    )?.fieldName,
-    supportedNoteGraphQLFields.contains(fieldName)
+    )?.first(where: { supportedNoteGraphQLFields.contains($0.fieldName) })?.fieldName
   else {
     return nil
   }
@@ -409,7 +476,8 @@ let supportedNoteGraphQLFields: Set<String> = [
   "deleteNoteAutoAction",
   "saveNoteConversation",
   "migrateNoteFileStorage",
-  "migrateAllNoteFiles"
+  "migrateAllNoteFiles",
+  "reclaimNoteFileStorage"
 ]
 
 private let noteGraphQLQueryFields: Set<String> = [
@@ -498,11 +566,17 @@ private func projectGraphQLValue(
     var projected: JSONObject = [:]
     for selection in selections {
       if selection.fieldName == "__typename" {
+        guard projected[selection.responseKey] == nil else {
+          throw NoteGraphQLDocumentExecutorError.invalidSelection("duplicate response key '\(selection.responseKey)'")
+        }
         projected[selection.responseKey] = .string(typeName)
         continue
       }
       guard let childType = fields[selection.fieldName] else {
         continue
+      }
+      guard projected[selection.responseKey] == nil else {
+        throw NoteGraphQLDocumentExecutorError.invalidSelection("duplicate response key '\(selection.responseKey)'")
       }
       let childValue = object[selection.fieldName] ?? .null
       if let childType {
@@ -538,7 +612,8 @@ private let noteGraphQLRootSelectionTypes: [String: String] = [
   "deleteNotebook": "ControlPlaneResult",
   "deleteNoteAutoAction": "ControlPlaneResult",
   "migrateNoteFileStorage": "NoteFileMigrationPayload",
-  "migrateAllNoteFiles": "NoteFileMigrationPayload"
+  "migrateAllNoteFiles": "NoteFileMigrationPayload",
+  "reclaimNoteFileStorage": "NoteFileReclamationPayload"
 ]
 
 let noteGraphQLSelectionFields: [String: [String: String?]] = [
@@ -573,7 +648,13 @@ let noteGraphQLSelectionFields: [String: [String: String?]] = [
   "NoteFileMigrationPayload": [
     "result": "ControlPlaneResult",
     "migrated": "NoteFile",
-    "failures": "NoteFileMigrationFailure"
+    "failures": "NoteFileMigrationFailure",
+    "cleanupFailures": "NoteFileMigrationFailure"
+  ],
+  "NoteFileReclamationPayload": [
+    "result": "ControlPlaneResult",
+    "deletedFileIds": nil,
+    "sweptPaths": nil
   ],
   "Note": [
     "noteId": nil,
@@ -699,9 +780,17 @@ private func noteFileMigrationControlResult(_ result: NoteFileMigrationResult) -
   return GraphQLControlPlaneResult(
     accepted: false,
     status: result.migrated.isEmpty ? "failed" : "partial",
-    diagnostics: result.failures.map { "\($0.fileId): \($0.message)" }
+    // Redact per-file diagnostics with the same fixed message as the `failures`
+    // list; `$0.message` is raw `String(describing: error)` and would otherwise
+    // disclose paths, SQL, or S3 endpoints in a client-selectable field.
+    diagnostics: result.failures.map { "\($0.fileId): \(noteFileMigrationFailureMessage)" }
   )
 }
+
+/// Fixed, redacted message reported for every note file migration failure in
+/// the `failures` list so that raw storage errors (paths, SQL, S3 endpoints)
+/// never reach a response body.
+let noteFileMigrationFailureMessage = "note file migration failed"
 
 private func noteFileMigrationControlResult(
   for error: Error,
@@ -749,7 +838,10 @@ private func optionalString(_ key: String, variables: JSONObject) throws -> Stri
   guard case let .string(string) = value else {
     throw NoteGraphQLDocumentExecutorError.invalidVariable("\(key) must be a string")
   }
-  return string.isEmpty ? nil : string
+  guard !string.isEmpty else {
+    throw NoteGraphQLDocumentExecutorError.invalidVariable("\(key) must not be empty")
+  }
+  return string
 }
 
 private func requiredBool(_ key: String, variables: JSONObject) throws -> Bool {
@@ -770,24 +862,53 @@ private func optionalBool(_ key: String, variables: JSONObject) throws -> Bool? 
 }
 
 private func optionalInt(_ key: String, variables: JSONObject) throws -> Int? {
-  if case let .integer(value)? = variables[key] {
-    return Int(value)
-  }
-  guard case let .number(value)? = variables[key] else {
+  guard let value = variables[key], value != .null else {
     return nil
   }
-  guard value.rounded(.towardZero) == value else {
+  switch value {
+  case let .integer(integer):
+    guard let converted = Int(exactly: integer) else {
+      throw NoteGraphQLDocumentExecutorError.invalidVariable("\(key) is out of range")
+    }
+    return converted
+  case let .number(number):
+    guard let converted = Int(exactly: number) else {
+      throw NoteGraphQLDocumentExecutorError.invalidVariable("\(key) must be an integer")
+    }
+    return converted
+  default:
     throw NoteGraphQLDocumentExecutorError.invalidVariable("\(key) must be an integer")
   }
-  return Int(value)
 }
 
-private func boundedLimit(_ value: Int?, defaultValue: Int, maximum: Int = 200) -> Int {
-  min(max(value ?? defaultValue, 1), maximum)
+/// The maximum page size accepted by `limit` on every list/search field.
+/// Mirrored in the SDL contract text (`GraphQLNoteSchemaContract.swift`).
+let noteGraphQLMaximumLimit = 200
+/// The maximum `offset` accepted on every list/search field.
+let noteGraphQLMaximumOffset = 1_000_000
+
+private func validatedLimit(_ value: Int?, defaultValue: Int) throws -> Int {
+  guard let value else {
+    return defaultValue
+  }
+  guard (0...noteGraphQLMaximumLimit).contains(value) else {
+    throw NoteGraphQLDocumentExecutorError.invalidVariable(
+      "limit must be between 0 and \(noteGraphQLMaximumLimit)"
+    )
+  }
+  return value
 }
 
-private func boundedOffset(_ value: Int?) -> Int {
-  max(value ?? 0, 0)
+private func validatedOffset(_ value: Int?) throws -> Int {
+  guard let value else {
+    return 0
+  }
+  guard (0...noteGraphQLMaximumOffset).contains(value) else {
+    throw NoteGraphQLDocumentExecutorError.invalidVariable(
+      "offset must be between 0 and \(noteGraphQLMaximumOffset)"
+    )
+  }
+  return value
 }
 
 private func optionalStringArray(_ key: String, variables: JSONObject) throws -> [String]? {

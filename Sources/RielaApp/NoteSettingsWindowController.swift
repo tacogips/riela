@@ -4,6 +4,7 @@ import CoreImage
 import Foundation
 import RielaAppSupport
 import RielaNote
+import RielaNoteDispatch
 import RielaServer
 
 struct RielaAppNoteSettings: Codable, Equatable, Sendable {
@@ -105,6 +106,7 @@ final class NoteSettingsWindowController: NSWindowController, NSWindowDelegate {
   let registrationBaseURLProvider: @MainActor () -> String?
 
   private let onWindowWillClose: () -> Void
+  private let maintenanceTicker: NoteAutoActionMaintenanceTicker?
   private let apiExposureCheckbox = NSButton(checkboxWithTitle: "Expose Note API", target: nil, action: nil)
   private let translationTargetLanguageField = NSTextField(string: "")
   private let s3ProfileNameField = NSTextField(string: "")
@@ -123,6 +125,7 @@ final class NoteSettingsWindowController: NSWindowController, NSWindowDelegate {
     profileName: RielaAppProfileName,
     registrationBaseURL: String? = nil,
     registrationBaseURLProvider: (@MainActor () -> String?)? = nil,
+    autoActionLauncher: (any NoteAutoActionWorkflowLaunching)? = nil,
     onWindowWillClose: @escaping () -> Void = {}
   ) throws {
     self.noteRoot = noteRoot
@@ -132,7 +135,14 @@ final class NoteSettingsWindowController: NSWindowController, NSWindowDelegate {
     self.onWindowWillClose = onWindowWillClose
 
     try FileManager.default.createDirectory(at: noteRoot, withIntermediateDirectories: true)
-    self.service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot.path))
+    let service = try NoteService(
+      driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot.path),
+      autoActionDispatcher: autoActionLauncher.map { NoteAutoActionWorkflowDispatcher(launcher: $0) }
+    )
+    self.service = service
+    self.maintenanceTicker = autoActionLauncher == nil
+      ? nil
+      : NoteAutoActionMaintenanceTicker(service: service)
     self.registrationAuthenticator = QRClientRegistrationAuthenticator(
       service: service,
       registrationScope: noteRoot.standardizedFileURL.path
@@ -151,6 +161,9 @@ final class NoteSettingsWindowController: NSWindowController, NSWindowDelegate {
     window.contentView = buildContentView()
     window.center()
     reload()
+    if let maintenanceTicker {
+      Task { await maintenanceTicker.start() }
+    }
   }
 
   required init?(coder: NSCoder) {
@@ -158,6 +171,9 @@ final class NoteSettingsWindowController: NSWindowController, NSWindowDelegate {
   }
 
   func windowWillClose(_ notification: Notification) {
+    if let maintenanceTicker {
+      Task { await maintenanceTicker.stop() }
+    }
     onWindowWillClose()
   }
 

@@ -33,7 +33,7 @@ struct RielaNoteQuickCreateButton: View {
       }
       .buttonStyle(.borderedProminent)
       .clipShape(Circle())
-      .accessibilityLabel("New note")
+      .accessibilityLabel("New memo")
       .help("New memo")
       .contextMenu {
         Button("New memo", action: onCreateMemo)

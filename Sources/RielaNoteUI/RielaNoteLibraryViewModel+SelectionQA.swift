@@ -38,6 +38,7 @@ extension RielaNoteLibraryViewModel {
         selectionEnd: selectionEnd
       )
       guard isCurrentSelectionQuestion(generation: generation, noteId: noteId) else {
+        isSelectionQuestionLoading = false
         return false
       }
       let commentMarkdown = rielaNoteSelectionQACommentMarkdown(
@@ -51,6 +52,7 @@ extension RielaNoteLibraryViewModel {
         author: "note-agent"
       )
       guard isCurrentSelectionQuestion(generation: generation, noteId: noteId) else {
+        isSelectionQuestionLoading = false
         return false
       }
       selectedDetail = detail
@@ -59,6 +61,7 @@ extension RielaNoteLibraryViewModel {
       return true
     } catch {
       guard isCurrentSelectionQuestion(generation: generation, noteId: noteId) else {
+        isSelectionQuestionLoading = false
         return false
       }
       selectionQuestionError = selectionQuestionErrorMessage(error)
@@ -84,6 +87,7 @@ extension RielaNoteLibraryViewModel {
     do {
       let detail = try await client.promoteCommentToNotebook(noteId: noteId, commentId: commentId)
       guard isCurrentCommentPromotion(generation: generation, noteId: noteId) else {
+        isCommentPromotionLoading = false
         return
       }
       // Promotion adds a link + new notebook/note but never mutates the source note row,
@@ -92,9 +96,11 @@ extension RielaNoteLibraryViewModel {
       isCommentPromotionLoading = false
     } catch {
       guard isCurrentCommentPromotion(generation: generation, noteId: noteId) else {
+        isCommentPromotionLoading = false
         return
       }
-      commentPromotionError = String(describing: error)
+      rielaNoteLogUIError("promoteCommentToNotebook", error)
+      commentPromotionError = rielaNoteMutationErrorMessage(error)
       isCommentPromotionLoading = false
     }
   }
@@ -129,6 +135,7 @@ extension RielaNoteLibraryViewModel {
     if case RielaNoteSelectionQuestionError.notConfigured = error {
       return "Selection question agent is not configured."
     }
-    return String(describing: error)
+    rielaNoteLogUIError("askSelectionQuestion", error)
+    return "Couldn't answer the selection question. Please try again."
   }
 }

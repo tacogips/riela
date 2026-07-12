@@ -1,3 +1,8 @@
+// Pagination bounds enforced by NoteGraphQLDocumentExecutor for every list and
+// search field (notebooks, notes, searchNotes, proposeNoteLinks): `limit` must
+// be an integer in 0...200 (0 returns an empty list) and `offset` an integer in
+// 0...1_000_000. Any other value (out of range, non-integral, or the wrong
+// type) is rejected with an invalidVariable error rather than silently clamped.
 let graphQLNoteSchemaContract = """
 type NoteTag { tagId: String!, name: String!, classId: String, isSystem: Boolean!, createdAt: String! }
 type NoteTagClass { classId: String!, label: String!, description: String, isSystem: Boolean!, createdAt: String! }
@@ -72,7 +77,12 @@ input MigrateAllNoteFilesInput {
   s3ProfileName: String!
 }
 type NoteFileMigrationFailure { fileId: String!, message: String! }
-type NoteFileMigrationPayload { result: ControlPlaneResult!, migrated: [NoteFile!]!, failures: [NoteFileMigrationFailure!]! }
+type NoteFileMigrationPayload { result: ControlPlaneResult!, migrated: [NoteFile!]!, failures: [NoteFileMigrationFailure!]!, cleanupFailures: [NoteFileMigrationFailure!]! }
+# reclaimNoteFileStorage garbage-collects unreferenced file rows/blobs. graceHours
+# (default 24) keeps blobs and stray temp files younger than that window; s3ProfileName
+# names an allowlisted profile so orphaned S3 objects can be deleted (optional).
+input ReclaimNoteFileStorageInput { graceHours: Int, s3ProfileName: String }
+type NoteFileReclamationPayload { result: ControlPlaneResult!, deletedFileIds: [String!]!, sweptPaths: [String!]! }
 type NoteMutationPayload {
   result: ControlPlaneResult!
   note: Note

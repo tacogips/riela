@@ -2,6 +2,7 @@ import Foundation
 import RielaCore
 import RielaGraphQL
 import RielaNote
+import RielaNoteDispatch
 
 extension ScopedParityCommandRunner {
   func noteGraphQLDocumentRecord(
@@ -21,8 +22,10 @@ extension ScopedParityCommandRunner {
     let noteService = try NoteService(
       driver: SQLiteNoteDatabaseDriver(noteRoot: expandedNoteRoot),
       autoActionDispatcher: NoteAutoActionWorkflowDispatcher(
-        workingDirectory: workingDirectory,
-        noteRoot: expandedNoteRoot
+        launcher: NoteAutoActionWorkflowCLILauncher(
+          workingDirectory: workingDirectory,
+          noteRoot: expandedNoteRoot
+        )
       ),
       autoActionDiagnosticRecorder: StderrAutoActionFilterDiagnostics()
     )

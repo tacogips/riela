@@ -338,6 +338,7 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
   public func createUserMemo(bodyMarkdown: String) async throws -> RielaNoteDetail {
     let note = try service.createNote(
       notebookTitle: "User Memo",
+      notebookKindTagName: "notebook-kind:user-memo",
       bodyMarkdown: bodyMarkdown,
       tags: [NoteTagInput(name: "user-memo", classId: "topic")],
       provenance: .human,
@@ -614,6 +615,15 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
     _ proposal: RielaNoteConfigAgentProposal,
     workflowRoot: String
   ) async throws -> RielaNoteConfigAgentApplyResult {
+    // Validate before mutate: reject an unsafe workflow id up front so the
+    // proposal never commits tag/tag-class/auto-action rows the scaffolder
+    // would then refuse (leaving the store half-configured).
+    let workflowId = proposal.ingestionWorkflow.workflowId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard isSafeConfigWorkflowId(workflowId) else {
+      throw NoteServiceError.invalidInput(
+        "workflow id must contain lowercase letters, numbers, and dashes"
+      )
+    }
     let tagClass = try service.defineTagClass(
       classId: proposal.tagClass.classId,
       label: proposal.tagClass.label,
@@ -723,12 +733,32 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
   }
 
   private func noteConfigSlug(from message: String) -> String {
+    // Restrict to ASCII [a-z0-9-] so the derived slug always satisfies
+    // `isSafeWorkflowId`; non-ASCII input (e.g. Japanese) falls back to the
+    // default slug rather than producing a workflow id the scaffolder rejects.
     let scalars = message.lowercased().unicodeScalars.map { scalar -> Character in
-      CharacterSet.alphanumerics.contains(scalar) ? Character(scalar) : "-"
+      isSafeSlugScalar(scalar) ? Character(scalar) : "-"
     }
     let collapsed = String(scalars).split(separator: "-").prefix(4).joined(separator: "-")
-    return collapsed.isEmpty ? "config-agent-topic" : String(collapsed.prefix(48))
+    return collapsed.isEmpty ? Self.defaultConfigSlug : String(collapsed.prefix(48))
   }
+
+  private func isSafeSlugScalar(_ scalar: Unicode.Scalar) -> Bool {
+    ("a"..."z").contains(scalar) || ("0"..."9").contains(scalar)
+  }
+
+  // Mirrors `NoteIngestionWorkflowScaffolder`'s workflow-id rule so validation
+  // fails identically before any DB write rather than after the scaffold step.
+  private func isSafeConfigWorkflowId(_ workflowId: String) -> Bool {
+    guard workflowId.count >= 2, workflowId.count <= 64 else {
+      return false
+    }
+    return workflowId.unicodeScalars.allSatisfy { scalar in
+      isSafeSlugScalar(scalar) || scalar == "-"
+    }
+  }
+
+  private static let defaultConfigSlug = "config-agent-topic"
 
   private func noteConfigLabel(from message: String) -> String {
     let firstLine = message.split(separator: "\n").first.map(String.init) ?? message

@@ -387,30 +387,36 @@ final class NoteGraphQLTests: XCTestCase {
     XCTAssertEqual(try arrayValue(conversation["notes"], field: "saveNoteConversation.notes").count, 1)
   }
 
-  func testNoteGraphQLDocumentExecutorClampsLimitAndOffset() async throws {
+  func testNoteGraphQLDocumentExecutorRejectsOutOfRangeLimitAndOffset() async throws {
     let service = try makeNoteGraphQLService()
     let executor = NoteGraphQLDocumentExecutor(service: service)
-    for index in 0..<205 {
-      _ = try service.service.createNote(bodyMarkdown: "# Clamp \(index)\n\nClamp body")
-    }
+    _ = try service.service.createNote(bodyMarkdown: "# Bounds\n\nBody")
 
-    let notes = await executor.execute(GraphQLDocumentRequest(
-      query: """
-      query Notes($limit: Int, $offset: Int) {
-        notes(limit: $limit, offset: $offset) { value { noteId } result { accepted } }
-      }
-      """,
-      variables: [
-        "limit": .integer(500),
-        "offset": .integer(-10)
-      ],
+    // Out-of-range limit/offset are rejected with invalidVariable rather than
+    // being silently clamped, so pagination contracts are honored (F22).
+    let overLimit = await executor.execute(GraphQLDocumentRequest(
+      query: "query Notes($limit: Int) { notes(limit: $limit) { value { noteId } result { accepted } } }",
+      variables: ["limit": .integer(500)],
       operationName: "Notes"
     ))
+    XCTAssertTrue(overLimit.handled)
+    let overLimitError = try firstErrorMessage(overLimit)
+    XCTAssertTrue(overLimitError.contains("invalidVariable"), overLimitError)
 
-    XCTAssertTrue(notes.handled)
-    let noteList = try graphQLPayload(notes.body, field: "notes")
-    XCTAssertEqual(try resultObject(noteList)["accepted"], .bool(true))
-    XCTAssertEqual(try arrayValue(noteList["value"], field: "notes.value").count, 200)
+    let negativeOffset = await executor.execute(GraphQLDocumentRequest(
+      query: "query Notes($offset: Int) { notes(offset: $offset) { value { noteId } result { accepted } } }",
+      variables: ["offset": .integer(-10)],
+      operationName: "Notes"
+    ))
+    XCTAssertTrue(negativeOffset.handled)
+    let negativeOffsetError = try firstErrorMessage(negativeOffset)
+    XCTAssertTrue(negativeOffsetError.contains("invalidVariable"), negativeOffsetError)
+  }
+
+  private func firstErrorMessage(_ response: GraphQLDocumentExecutionResponse) throws -> String {
+    let errors = try arrayValue(response.body["errors"], field: "errors")
+    let firstError = try objectValue(errors.first, field: "errors[0]")
+    return try stringValue(firstError["message"], field: "errors[0].message")
   }
 
   func testNoteGraphQLDocumentExecutorRejectsMutationFieldInQueryOperation() async throws {
@@ -764,7 +770,8 @@ final class NoteGraphQLTests: XCTestCase {
       "deleteNoteAutoAction",
       "saveNoteConversation",
       "migrateNoteFileStorage",
-      "migrateAllNoteFiles"
+      "migrateAllNoteFiles",
+      "reclaimNoteFileStorage"
     ]
 
     XCTAssertEqual(supportedNoteGraphQLFields, queryFields.union(mutationFields))

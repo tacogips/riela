@@ -13,20 +13,29 @@ public struct NoteService: Sendable {
   public var driver: NoteDatabaseDriving
   public var autoActionDispatcher: AutoActionDispatching?
   public var autoActionDiagnosticRecorder: (any NoteAutoActionFilterDiagnosticRecording)?
+  /// Window after which a live in-flight dispatch lease is treated as stale by
+  /// the recovery path. A running attempt heartbeats its lease on a fraction of
+  /// this window so a long workflow is never reclaimed out from under it.
+  public var autoActionDispatchLeaseStaleness: TimeInterval
+  /// Shared registry of background dispatch tasks fired by this service value,
+  /// awaited by `drainAutoActionDispatches()`.
+  let autoActionDispatchTasks: AutoActionDispatchTaskTracker
 
   public init(
     driver: NoteDatabaseDriving,
     autoActionDispatcher: AutoActionDispatching? = nil,
-    autoActionDiagnosticRecorder: (any NoteAutoActionFilterDiagnosticRecording)? = nil
+    autoActionDiagnosticRecorder: (any NoteAutoActionFilterDiagnosticRecording)? = nil,
+    autoActionDispatchLeaseStaleness: TimeInterval = defaultAutoActionDispatchLeaseStaleness
   ) throws {
     self.driver = driver
     self.autoActionDispatcher = autoActionDispatcher
     self.autoActionDiagnosticRecorder = autoActionDiagnosticRecorder
+    self.autoActionDispatchLeaseStaleness = autoActionDispatchLeaseStaleness
+    self.autoActionDispatchTasks = AutoActionDispatchTaskTracker()
     try NoteStoreSchema.prepare(on: driver)
-    if autoActionDispatcher != nil {
-      try? recoverInterruptedAutoActionDispatches()
-      _ = try? retryPendingAutoActionDispatches()
-    }
+    // Recovery+retry is no longer run from init; it is an explicit entry point
+    // (`recoverAndRetryAutoActionDispatches`) invoked by the
+    // `riela note auto-action retry` subcommand and the app maintenance tick.
   }
 
   @discardableResult
@@ -84,6 +93,7 @@ public struct NoteService: Sendable {
   public func createNote(
     notebookId requestedNotebookId: String? = nil,
     notebookTitle: String? = nil,
+    notebookKindTagName: String? = nil,
     title: String? = nil,
     bodyMarkdown: String,
     readOnly: Bool = false,
@@ -113,23 +123,36 @@ public struct NoteService: Sendable {
             """,
             bindings: [.text(notebookId), .text(derivedTitle), .text(now), .text(now)]
           )
+          if let notebookKindTagName {
+            try ensureNotebookKindTag(notebookKindTagName, in: db)
+            try applyNotebookTag(
+              notebookId: notebookId,
+              tagName: notebookKindTagName,
+              provenance: .system,
+              assignedBy: "riela-note",
+              deletable: false,
+              in: db
+            )
+          }
         }
 
         let noteNumber = try nextNoteNumber(notebookId: notebookId, in: db)
         let noteId = makeNoteId(prefix: "note")
         let noteTitle = title ?? noteTitle(from: bodyMarkdown)
+        let titleSource: NoteTitleSource = title == nil ? .derived : .explicit
         try db.execute(
           """
           INSERT INTO notes (
-            note_id, notebook_id, note_number, title, body_markdown,
+            note_id, notebook_id, note_number, title, title_source, body_markdown,
             read_only, created_at, updated_at, meta_json
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, jsonb(?))
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, jsonb(?))
           """,
           bindings: [
             .text(noteId),
             .text(notebookId),
             .int(Int64(noteNumber)),
             .optionalText(noteTitle),
+            .text(titleSource.rawValue),
             .text(bodyMarkdown),
             .int(readOnly ? 1 : 0),
             .text(now),
@@ -265,9 +288,9 @@ public struct NoteService: Sendable {
       try db.execute(
         """
         INSERT INTO notes (
-          note_id, notebook_id, note_number, title, body_markdown,
+          note_id, notebook_id, note_number, title, title_source, body_markdown,
           read_only, created_at, updated_at, meta_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, jsonb(?))
+        ) VALUES (?, ?, ?, ?, 'derived', ?, ?, ?, ?, jsonb(?))
         """,
         bindings: [
           .text(noteId),
@@ -520,6 +543,10 @@ public struct NoteService: Sendable {
         bindings.append(contentsOf: tagFilter.map(SQLiteValue.text))
       }
       let whereClause = predicates.isEmpty ? "" : "WHERE \(predicates.joined(separator: " AND "))"
+      // A notebook-scoped listing returns the notebook's pages in their intrinsic
+      // order (note_number); `created_at DESC` is reserved for the cross-notebook
+      // feed, where recency is the only meaningful ordering.
+      let orderClause = notebookId == nil ? "created_at DESC, note_id" : "note_number, note_id"
       bindings.append(.int(Int64(limit)))
       bindings.append(.int(Int64(offset)))
       let rows = try database.query(
@@ -529,7 +556,7 @@ public struct NoteService: Sendable {
           CASE WHEN meta_json IS NULL THEN NULL ELSE json(meta_json) END AS meta_json
         FROM notes
         \(whereClause)
-        ORDER BY created_at DESC, note_id
+        ORDER BY \(orderClause)
         LIMIT ? OFFSET ?
         """,
         bindings: bindings
@@ -552,7 +579,12 @@ public struct NoteService: Sendable {
         }
         let previous = try ftsPayload(noteId: noteId, in: db)
         let now = NoteStoreClock.system.now()
-        let updatedTitle = noteTitle(from: bodyMarkdown) ?? existing.title
+        // Explicit titles (set via the `title` argument on create) are preserved
+        // across body edits; only derived titles are re-derived from the new body.
+        let titleSource = try noteTitleSource(noteId: noteId, in: db)
+        let updatedTitle = titleSource == .explicit
+          ? existing.title
+          : (noteTitle(from: bodyMarkdown) ?? existing.title)
         try db.execute(
           """
           UPDATE notes

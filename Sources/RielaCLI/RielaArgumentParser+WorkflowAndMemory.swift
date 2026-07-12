@@ -231,7 +231,7 @@ extension RielaArgumentParser {
     return WorkflowRunOptions(
       target: target,
       resolution: resolution,
-      variables: parsed.variables,
+      variables: parsed.variablesReference,
       nodePatch: parsed.nodePatch,
       instance: parsed.instance,
       instanceScope: parsed.instanceScope,

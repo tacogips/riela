@@ -432,14 +432,33 @@ public struct GraphQLNoteFileMigrationResult: Codable, Equatable, Sendable {
   public var result: GraphQLControlPlaneResult
   public var migrated: [GraphQLNoteFileDTO]
   public var failures: [GraphQLNoteFileMigrationFailureDTO]
+  public var cleanupFailures: [GraphQLNoteFileMigrationFailureDTO]
 
   public init(
     result: GraphQLControlPlaneResult,
     migrated: [GraphQLNoteFileDTO] = [],
-    failures: [GraphQLNoteFileMigrationFailureDTO] = []
+    failures: [GraphQLNoteFileMigrationFailureDTO] = [],
+    cleanupFailures: [GraphQLNoteFileMigrationFailureDTO] = []
   ) {
     self.result = result
     self.migrated = migrated
     self.failures = failures
+    self.cleanupFailures = cleanupFailures
+  }
+}
+
+public struct GraphQLNoteFileReclamationResult: Codable, Equatable, Sendable {
+  public var result: GraphQLControlPlaneResult
+  public var deletedFileIds: [String]
+  public var sweptPaths: [String]
+
+  public init(
+    result: GraphQLControlPlaneResult,
+    deletedFileIds: [String] = [],
+    sweptPaths: [String] = []
+  ) {
+    self.result = result
+    self.deletedFileIds = deletedFileIds
+    self.sweptPaths = sweptPaths
   }
 }

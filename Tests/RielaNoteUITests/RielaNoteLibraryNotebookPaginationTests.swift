@@ -43,7 +43,7 @@ final class RielaNoteLibraryNotebookPaginationTests: XCTestCase {
     await viewModel.load()
     await viewModel.loadMoreNotebooks()
     await viewModel.selectNotebook("notebook-3")
-    await viewModel.createNoteInSelectedNotebook(body: "Draft")
+    try await viewModel.createNoteInSelectedNotebook(body: "Draft")
 
     XCTAssertEqual(viewModel.selectedNotebookId, "notebook-3")
     XCTAssertTrue(viewModel.notebooks.contains(where: { $0.notebookId == "notebook-3" }))
@@ -53,6 +53,21 @@ final class RielaNoteLibraryNotebookPaginationTests: XCTestCase {
       NotebookListRequest(limit: 3, offset: 0),
       NotebookListRequest(limit: 3, offset: 2)
     ])
+  }
+
+  func testLoadMoreNotebookNotesKeepsOffsetEqualToNoteCount() async throws {
+    let client = NotebookNotesPaginationClient()
+    let viewModel = RielaNoteLibraryViewModel(client: client, notebookNoteLimit: 2)
+
+    await viewModel.selectNotebook("notebook-notes")
+    XCTAssertEqual(viewModel.notebookNotesOffsetForTesting, viewModel.notebookNotes.count)
+    XCTAssertTrue(viewModel.canLoadMoreNotebookNotes)
+
+    await viewModel.loadMoreNotebookNotes()
+
+    // Offset invariant: the shared cursor advances only by the notes actually appended.
+    XCTAssertEqual(viewModel.notebookNotesOffsetForTesting, viewModel.notebookNotes.count)
+    XCTAssertEqual(viewModel.notebookNotes.map(\.noteId), ["n-1", "n-2", "n-3", "n-4"])
   }
 }
 
@@ -147,6 +162,125 @@ private final class NotebookPaginationClient: RielaNoteUIClient, @unchecked Send
       return nil
     }
     return RielaNoteDetail(note: note)
+  }
+
+  func resolveFile(fileId: String) async throws -> RielaNoteResolvedFile {
+    throw NotebookPaginationClientError.unsupported
+  }
+
+  func updateNoteBody(noteId: String, bodyMarkdown: String) async throws -> RielaNoteDetail {
+    throw NotebookPaginationClientError.unsupported
+  }
+
+  func applyTag(noteId: String, tagName: String, classId: String?) async throws -> RielaNoteDetail {
+    throw NotebookPaginationClientError.unsupported
+  }
+
+  func removeTag(noteId: String, tagName: String) async throws -> RielaNoteDetail {
+    throw NotebookPaginationClientError.unsupported
+  }
+
+  func addComment(noteId: String, bodyMarkdown: String) async throws -> RielaNoteDetail {
+    throw NotebookPaginationClientError.unsupported
+  }
+
+  func linkNote(noteId: String, targetNoteId: String, linkKind: String) async throws -> RielaNoteDetail {
+    throw NotebookPaginationClientError.unsupported
+  }
+
+  func answerNoteAgentTurn(message: String, limit: Int) async throws -> RielaNoteAgentTurn {
+    throw NotebookPaginationClientError.unsupported
+  }
+
+  func saveNoteAgentConversation(
+    title: String,
+    turns: [RielaNoteAgentTurn]
+  ) async throws -> RielaNoteAgentConversationSaveResult {
+    throw NotebookPaginationClientError.unsupported
+  }
+
+  func appendNoteAgentTurn(
+    notebookId: String,
+    turn: RielaNoteAgentTurn
+  ) async throws -> RielaNoteAgentConversationSaveResult {
+    throw NotebookPaginationClientError.unsupported
+  }
+
+  func proposeNoteConfigAgentChange(message: String) async throws -> RielaNoteConfigAgentProposal {
+    throw NotebookPaginationClientError.unsupported
+  }
+
+  func applyNoteConfigAgentProposal(
+    _ proposal: RielaNoteConfigAgentProposal,
+    workflowRoot: String
+  ) async throws -> RielaNoteConfigAgentApplyResult {
+    throw NotebookPaginationClientError.unsupported
+  }
+}
+
+private final class NotebookNotesPaginationClient: RielaNoteUIClient, @unchecked Sendable {
+  private let notebook = Notebook(
+    notebookId: "notebook-notes",
+    title: "Notes",
+    createdAt: "2026-07-04T00:00:00Z",
+    updatedAt: "2026-07-04T00:00:00Z"
+  )
+  private let notes: [Note]
+
+  init() {
+    notes = (1...4).map { index in
+      Note(
+        noteId: "n-\(index)",
+        notebookId: "notebook-notes",
+        noteNumber: index,
+        title: "Note \(index)",
+        bodyMarkdown: "# Note \(index)",
+        readOnly: false,
+        createdAt: "2026-07-04T00:00:00Z",
+        updatedAt: "2026-07-04T00:00:00Z"
+      )
+    }
+  }
+
+  var defaultConfigWorkflowRoot: String {
+    "tmp/RielaNoteLibraryNotebookPaginationTests/notes-workflows"
+  }
+
+  func listNotebooks(limit: Int, offset: Int) async throws -> [Notebook] {
+    Array([notebook].dropFirst(offset).prefix(limit))
+  }
+
+  func listNotes(notebookId: String, limit: Int, offset: Int) async throws -> [Note] {
+    Array(notes.dropFirst(offset).prefix(limit))
+  }
+
+  func listTags() async throws -> [Tag] {
+    []
+  }
+
+  func createUserMemo(bodyMarkdown: String) async throws -> RielaNoteDetail {
+    throw NotebookPaginationClientError.unsupported
+  }
+
+  func searchNotes(
+    query: String,
+    tagFilter: [String],
+    classFilter: [String],
+    limit: Int,
+    offset: Int
+  ) async throws -> [NoteSearchResult] {
+    []
+  }
+
+  func noteDetail(noteId: String) async throws -> RielaNoteDetail {
+    guard let note = notes.first(where: { $0.noteId == noteId }) else {
+      throw NotebookPaginationClientError.missingNote
+    }
+    return RielaNoteDetail(note: note)
+  }
+
+  func firstNote(inNotebook notebookId: String) async throws -> RielaNoteDetail? {
+    notes.first.map { RielaNoteDetail(note: $0) }
   }
 
   func resolveFile(fileId: String) async throws -> RielaNoteResolvedFile {

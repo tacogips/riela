@@ -3,6 +3,28 @@ import RielaSQLite
 
 private let maximumAutoActionDispatchAttempts = 3
 
+/// Default window after which an in-flight dispatch lease is treated as stale
+/// and eligible to be reclaimed by the recovery path (15 minutes).
+public let defaultAutoActionDispatchLeaseStaleness: TimeInterval = 15 * 60
+
+/// Interval at which a running dispatch attempt re-stamps its lease, expressed
+/// in nanoseconds. A third of the staleness window keeps the lease comfortably
+/// fresh (two heartbeats are lost before reclamation becomes possible). Returns
+/// 0 for a non-positive staleness, disabling the heartbeat.
+private func autoActionDispatchLeaseHeartbeatIntervalNanos(staleness: TimeInterval) -> UInt64 {
+  let interval = staleness / 3
+  guard interval > 0 else {
+    return 0
+  }
+  return UInt64(interval * 1_000_000_000)
+}
+
+private func autoActionDispatchLeaseCutoff(olderThan staleness: TimeInterval) -> String {
+  let formatter = ISO8601DateFormatter()
+  formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+  return formatter.string(from: Date().addingTimeInterval(-staleness))
+}
+
 public struct NoteAutoActionEvent: Codable, Equatable, Sendable {
   public var trigger: NoteAutoActionTrigger
   public var notebookId: String?
@@ -36,10 +58,11 @@ public struct AutoActionDispatchRecord: Codable, Equatable, Sendable {
 }
 
 public protocol AutoActionDispatching: Sendable {
-  func dispatch(
-    _ record: AutoActionDispatchRecord,
-    completion: @escaping @Sendable (AutoActionDispatchOutcome) -> Void
-  ) throws
+  /// Runs the workflow for a claimed dispatch. Throwing signals the attempt
+  /// could not be launched (e.g. workflow resolution failed); a returned
+  /// `.failed` signals the workflow ran but did not succeed. Both leave the
+  /// lease reclaimable by the recovery path.
+  func dispatch(_ record: AutoActionDispatchRecord) async throws -> AutoActionDispatchOutcome
 }
 
 public enum AutoActionDispatchOutcome: Equatable, Sendable {
@@ -77,6 +100,45 @@ public protocol NoteAutoActionFilterDiagnosticRecording: Sendable {
 struct QueuedAutoActionDispatch: Sendable {
   var dispatchId: String
   var record: AutoActionDispatchRecord
+}
+
+/// Tracks the background tasks spawned by fire-and-record dispatch so that a
+/// caller (a CLI command, an app tick) can `await` their completion before
+/// exiting. Shared by every copy of a `NoteService` value.
+public final class AutoActionDispatchTaskTracker: @unchecked Sendable {
+  private let lock = NSLock()
+  private var inFlight: [Task<Void, Never>] = []
+
+  public init() {}
+
+  func register(_ task: Task<Void, Never>) {
+    lock.lock()
+    inFlight.append(task)
+    lock.unlock()
+  }
+
+  /// Awaits every currently-registered task, then clears the registry.
+  /// Tasks registered while draining are awaited on the next pass so a
+  /// dispatch that enqueues follow-up work still completes.
+  func drain() async {
+    while true {
+      let pending = takePending()
+      if pending.isEmpty {
+        return
+      }
+      for task in pending {
+        await task.value
+      }
+    }
+  }
+
+  private func takePending() -> [Task<Void, Never>] {
+    lock.lock()
+    defer { lock.unlock() }
+    let pending = inFlight
+    inFlight.removeAll()
+    return pending
+  }
 }
 
 public extension NoteService {
@@ -142,18 +204,6 @@ public extension NoteService {
     }
   }
 
-  func dispatchAutoActions(for event: NoteAutoActionEvent) {
-    guard autoActionDispatcher != nil else {
-      return
-    }
-    let queued = (try? driver.withDatabase { database in
-      try database.transaction { db in
-        try enqueueAutoActions(for: event, in: db)
-      }
-    }) ?? []
-    dispatchQueuedAutoActions(queued)
-  }
-
   func listAutoActionDispatchAttempts(
     status: AutoActionDispatchStatus? = nil
   ) throws -> [AutoActionDispatchAttempt] {
@@ -205,25 +255,55 @@ public extension NoteService {
     return queued.count
   }
 
-  func recoverInterruptedAutoActionDispatches() throws {
-    try driver.withDatabase { database in
-      try database.execute(
+  /// Reclaims interrupted dispatches whose lease is older than `staleness`,
+  /// returning them to `pending` so the retry path can pick them up. Fresh
+  /// in-flight rows (a live attempt in another process) are left untouched.
+  @discardableResult
+  func recoverInterruptedAutoActionDispatches(
+    olderThan staleness: TimeInterval = defaultAutoActionDispatchLeaseStaleness
+  ) throws -> Int {
+    let cutoff = autoActionDispatchLeaseCutoff(olderThan: staleness)
+    return try driver.withDatabase { database in
+      try database.executeAndReturnChangedRowCount(
         """
         UPDATE auto_action_dispatches
         SET status = ?,
+          lease_token = NULL,
+          leased_at = NULL,
           last_error = ?,
           updated_at = ?
         WHERE status = ? AND attempt_count < ?
+          AND (leased_at IS NULL OR leased_at < ?)
         """,
         bindings: [
           .text(AutoActionDispatchStatus.pending.rawValue),
           .text("auto-action dispatch was interrupted before completion"),
           .text(NoteStoreClock.system.now()),
           .text(AutoActionDispatchStatus.inFlight.rawValue),
-          .int(Int64(maximumAutoActionDispatchAttempts))
+          .int(Int64(maximumAutoActionDispatchAttempts)),
+          .text(cutoff)
         ]
       )
     }
+  }
+
+  /// Explicit recovery+retry entry point. Reclaims stale leases, dispatches
+  /// pending rows, then awaits the fired background tasks so callers (a CLI
+  /// command, an app maintenance tick) observe completion before returning.
+  @discardableResult
+  func recoverAndRetryAutoActionDispatches(
+    olderThan staleness: TimeInterval = defaultAutoActionDispatchLeaseStaleness,
+    limit: Int = 50
+  ) async throws -> Int {
+    _ = try recoverInterruptedAutoActionDispatches(olderThan: staleness)
+    let count = try retryPendingAutoActionDispatches(limit: limit)
+    await drainAutoActionDispatches()
+    return count
+  }
+
+  /// Awaits every background dispatch task fired by this service value.
+  func drainAutoActionDispatches() async {
+    await autoActionDispatchTasks.drain()
   }
 }
 
@@ -232,7 +312,10 @@ extension NoteService {
     for event: NoteAutoActionEvent,
     in database: SQLiteDatabase
   ) throws -> [QueuedAutoActionDispatch] {
-    guard autoActionDispatcher != nil, event.originatingActionId == nil else {
+    // Pending rows are recorded regardless of whether a dispatcher is wired,
+    // so a later `riela note auto-action retry` (or app tick) can run them.
+    // Workflow-originated writes are still suppressed to avoid dispatch loops.
+    guard event.originatingActionId == nil else {
       return []
     }
     let actions = try matchingAutoActions(for: event, in: database)
@@ -271,26 +354,103 @@ extension NoteService {
     return queued
   }
 
+  /// Fire-and-record: claims each queued row's lease synchronously, then
+  /// spawns a background task that runs the async dispatcher and records the
+  /// outcome keyed on the claimed lease token. The spawned tasks are tracked
+  /// so a caller can drain them before exit; if the process dies first, the
+  /// lease + recovery path owns eventual completion.
   func dispatchQueuedAutoActions(_ queued: [QueuedAutoActionDispatch]) {
     guard let autoActionDispatcher else {
       return
     }
     for dispatch in queued {
+      let leaseToken: String
       do {
-        guard try beginAutoActionDispatchAttempt(dispatchId: dispatch.dispatchId) else {
+        guard let claimed = try beginAutoActionDispatchAttempt(dispatchId: dispatch.dispatchId) else {
           continue
         }
-        try autoActionDispatcher.dispatch(dispatch.record) { outcome in
-          switch outcome {
-          case .succeeded:
-            try? markAutoActionDispatchDispatched(dispatchId: dispatch.dispatchId)
-          case .failed(let message):
-            try? recordAutoActionDispatchFailure(dispatchId: dispatch.dispatchId, error: message)
+        leaseToken = claimed
+      } catch {
+        continue
+      }
+      let service = self
+      let staleness = autoActionDispatchLeaseStaleness
+      let task = Task<Void, Never> { [autoActionDispatcher] in
+        // Heartbeat the lease for the duration of the attempt so a workflow that
+        // runs longer than the staleness window is not reclaimed and re-dispatched
+        // concurrently. A heartbeat failure (or a superseded lease) never crashes
+        // the attempt; the heartbeat task simply stops updating.
+        let heartbeat = Task<Void, Never> {
+          let intervalNanos = autoActionDispatchLeaseHeartbeatIntervalNanos(staleness: staleness)
+          guard intervalNanos > 0 else {
+            return
+          }
+          while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: intervalNanos)
+            if Task.isCancelled {
+              return
+            }
+            let stillOwned = (try? service.renewAutoActionDispatchLease(
+              dispatchId: dispatch.dispatchId,
+              leaseToken: leaseToken
+            )) ?? false
+            if !stillOwned {
+              return
+            }
           }
         }
-      } catch {
-        try? recordAutoActionDispatchFailure(dispatchId: dispatch.dispatchId, error: "\(error)")
+        defer { heartbeat.cancel() }
+        do {
+          let outcome = try await autoActionDispatcher.dispatch(dispatch.record)
+          switch outcome {
+          case .succeeded:
+            try? service.markAutoActionDispatchDispatched(
+              dispatchId: dispatch.dispatchId,
+              leaseToken: leaseToken
+            )
+          case .failed(let message):
+            try? service.recordAutoActionDispatchFailure(
+              dispatchId: dispatch.dispatchId,
+              leaseToken: leaseToken,
+              error: message
+            )
+          }
+        } catch {
+          try? service.recordAutoActionDispatchFailure(
+            dispatchId: dispatch.dispatchId,
+            leaseToken: leaseToken,
+            error: "\(error)"
+          )
+        }
       }
+      autoActionDispatchTasks.register(task)
+    }
+  }
+
+  /// Re-stamps `leased_at` for a still-owned in-flight lease so a long-running
+  /// attempt is not reclaimed by the recovery path mid-run. Keyed on the lease
+  /// token so a superseded attempt (whose lease was already reclaimed and
+  /// re-issued) updates nothing. Returns true when this attempt still owns the
+  /// lease and the timestamp was refreshed.
+  @discardableResult
+  func renewAutoActionDispatchLease(dispatchId: String, leaseToken: String) throws -> Bool {
+    try driver.withDatabase { database in
+      let changedRows = try database.executeAndReturnChangedRowCount(
+        """
+        UPDATE auto_action_dispatches
+        SET leased_at = ?,
+          updated_at = ?
+        WHERE dispatch_id = ? AND status = ? AND lease_token = ?
+        """,
+        bindings: [
+          .text(NoteStoreClock.system.now()),
+          .text(NoteStoreClock.system.now()),
+          .text(dispatchId),
+          .text(AutoActionDispatchStatus.inFlight.rawValue),
+          .text(leaseToken)
+        ]
+      )
+      return changedRows == 1
     }
   }
 }
@@ -332,65 +492,79 @@ private extension NoteService {
     return matching
   }
 
-  func beginAutoActionDispatchAttempt(dispatchId: String) throws -> Bool {
-    try driver.withDatabase { database in
+  /// Atomically claims a pending row: bumps the attempt count, marks it
+  /// in-flight, and stamps a fresh lease token + timestamp. Returns the lease
+  /// token when the claim wins (exactly one caller can), or nil otherwise.
+  func beginAutoActionDispatchAttempt(dispatchId: String) throws -> String? {
+    let leaseToken = makeNoteId(prefix: "auto-action-lease")
+    return try driver.withDatabase { database in
       let changedRows = try database.executeAndReturnChangedRowCount(
         """
         UPDATE auto_action_dispatches
         SET attempt_count = attempt_count + 1,
           status = ?,
+          lease_token = ?,
+          leased_at = ?,
           last_error = NULL,
           updated_at = ?
         WHERE dispatch_id = ? AND status = ? AND attempt_count < ?
         """,
         bindings: [
           .text(AutoActionDispatchStatus.inFlight.rawValue),
+          .text(leaseToken),
+          .text(NoteStoreClock.system.now()),
           .text(NoteStoreClock.system.now()),
           .text(dispatchId),
           .text(AutoActionDispatchStatus.pending.rawValue),
           .int(Int64(maximumAutoActionDispatchAttempts))
         ]
       )
-      return changedRows == 1
+      return changedRows == 1 ? leaseToken : nil
     }
   }
 
-  func recordAutoActionDispatchFailure(dispatchId: String, error: String) throws {
+  func recordAutoActionDispatchFailure(dispatchId: String, leaseToken: String, error: String) throws {
     try driver.withDatabase { database in
       try database.execute(
         """
         UPDATE auto_action_dispatches
         SET status = ?,
+          lease_token = NULL,
+          leased_at = NULL,
           last_error = ?,
           updated_at = ?
-        WHERE dispatch_id = ? AND status = ?
+        WHERE dispatch_id = ? AND status = ? AND lease_token = ?
         """,
         bindings: [
           .text(AutoActionDispatchStatus.pending.rawValue),
           .text(error),
           .text(NoteStoreClock.system.now()),
           .text(dispatchId),
-          .text(AutoActionDispatchStatus.inFlight.rawValue)
+          .text(AutoActionDispatchStatus.inFlight.rawValue),
+          .text(leaseToken)
         ]
       )
     }
   }
 
-  func markAutoActionDispatchDispatched(dispatchId: String) throws {
+  func markAutoActionDispatchDispatched(dispatchId: String, leaseToken: String) throws {
     try driver.withDatabase { database in
       try database.execute(
         """
         UPDATE auto_action_dispatches
         SET status = ?,
+          lease_token = NULL,
+          leased_at = NULL,
           last_error = NULL,
           updated_at = ?
-        WHERE dispatch_id = ? AND status = ?
+        WHERE dispatch_id = ? AND status = ? AND lease_token = ?
         """,
         bindings: [
           .text(AutoActionDispatchStatus.dispatched.rawValue),
           .text(NoteStoreClock.system.now()),
           .text(dispatchId),
-          .text(AutoActionDispatchStatus.inFlight.rawValue)
+          .text(AutoActionDispatchStatus.inFlight.rawValue),
+          .text(leaseToken)
         ]
       )
     }

@@ -11,7 +11,7 @@ final class RielaNoteUITests: XCTestCase {
     let viewModel = RielaNoteLibraryViewModel(client: fixture.client)
     viewModel.searchText = "draft"
 
-    await viewModel.createUserMemo()
+    try await viewModel.createUserMemo()
 
     XCTAssertEqual(fixture.client.createdMemos.count, 1)
     XCTAssertEqual(viewModel.selectedNote?.noteId, "note-user-memo-1")
@@ -83,6 +83,25 @@ final class RielaNoteUITests: XCTestCase {
     XCTAssertEqual(viewModel.searchResults.map(\.note.noteId), ["note-2"])
   }
 
+  func testTogglingIncludeLinkedWithEmptyQueryLeavesNotebookListUntouched() async throws {
+    let fixture = NoteUITestFixture()
+    let viewModel = RielaNoteLibraryViewModel(client: fixture.client)
+
+    await viewModel.load()
+    let notebooksBefore = viewModel.notebooks.map(\.notebookId)
+    let notebookNotesBefore = viewModel.notebookNotes.map(\.noteId)
+
+    // includeLinked is no longer a standalone search filter, so toggling it with
+    // an empty query and no other filters must not enter search mode.
+    await viewModel.updateIncludeLinked(true)
+
+    XCTAssertFalse(viewModel.hasSearchFilters)
+    XCTAssertFalse(viewModel.isSearching)
+    XCTAssertEqual(viewModel.notebooks.map(\.notebookId), notebooksBefore)
+    XCTAssertEqual(viewModel.notebookNotes.map(\.noteId), notebookNotesBefore)
+    XCTAssertEqual(viewModel.state, .loaded)
+  }
+
   func testSourceImageModeResolvesPageImageFile() async throws {
     let fixture = NoteUITestFixture()
     let viewModel = RielaNoteLibraryViewModel(client: fixture.client)
@@ -128,7 +147,7 @@ final class RielaNoteUITests: XCTestCase {
     let viewModel = RielaNoteLibraryViewModel(client: fixture.client)
 
     await viewModel.selectNote("note-2")
-    await viewModel.saveSelectedNoteBody("# Changed\n\nUpdated body")
+    try await viewModel.saveSelectedNoteBody("# Changed\n\nUpdated body")
 
     XCTAssertEqual(viewModel.selectedNote?.noteId, "note-2")
     XCTAssertEqual(viewModel.selectedNote?.bodyMarkdown, "# Changed\n\nUpdated body")
@@ -141,10 +160,10 @@ final class RielaNoteUITests: XCTestCase {
     let viewModel = RielaNoteLibraryViewModel(client: fixture.client)
 
     await viewModel.selectNote("note-2")
-    await viewModel.applyTagToSelectedNote(name: "idea")
-    await viewModel.addCommentToSelectedNote("Looks useful")
-    await viewModel.linkSelectedNote(to: "note-1", kind: "related")
-    await viewModel.removeTagFromSelectedNote(name: "idea")
+    try await viewModel.applyTagToSelectedNote(name: "idea")
+    try await viewModel.addCommentToSelectedNote("Looks useful")
+    try await viewModel.linkSelectedNote(to: "note-1", kind: "related")
+    try await viewModel.removeTagFromSelectedNote(name: "idea")
 
     XCTAssertFalse(viewModel.selectedNote?.tags.contains { $0.tag.name == "idea" } == true)
     XCTAssertEqual(viewModel.selectedDetail?.comments.map(\.bodyMarkdown), ["Looks useful"])
@@ -158,7 +177,7 @@ final class RielaNoteUITests: XCTestCase {
     let viewModel = RielaNoteLibraryViewModel(client: fixture.client)
 
     await viewModel.selectNote("note-2")
-    await viewModel.linkSelectedNote(to: "note-1", kind: "related")
+    try await viewModel.linkSelectedNote(to: "note-1", kind: "related")
     await viewModel.selectNote("note-1")
 
     XCTAssertEqual(viewModel.selectedNote?.title, "Page One")
@@ -171,7 +190,9 @@ final class RielaNoteUITests: XCTestCase {
 
     await viewModel.selectNote("note-1")
     await viewModel.selectNote("note-2")
-    await viewModel.saveSelectedNoteBody("# Page One Draft\n\nWrong target", expectedNoteId: "note-1")
+    await XCTAssertThrowsErrorAsync(
+      try await viewModel.saveSelectedNoteBody("# Page One Draft\n\nWrong target", expectedNoteId: "note-1")
+    )
 
     XCTAssertEqual(viewModel.selectedNote?.noteId, "note-2")
     XCTAssertEqual(viewModel.selectedNote?.bodyMarkdown, "# Ontology\n\nSearch body")
@@ -184,7 +205,7 @@ final class RielaNoteUITests: XCTestCase {
     let viewModel = RielaNoteLibraryViewModel(client: NoteServiceRielaNoteUIClient(service: service))
 
     await viewModel.selectNote(note.noteId)
-    await viewModel.saveSelectedNoteBody("# Saved\n\nChanged body")
+    try await viewModel.saveSelectedNoteBody("# Saved\n\nChanged body")
 
     XCTAssertEqual(viewModel.selectedNote?.bodyMarkdown, "# Saved\n\nChanged body")
     XCTAssertEqual(try service.getNote(note.noteId).title, "Saved")
@@ -551,6 +572,8 @@ final class MockRielaNoteUIClient: RielaNoteUIClient, @unchecked Sendable {
   var searchResultsByQuery: [String: [NoteSearchResult]] = [:]
   var noteDetailDelayNanosecondsByNoteId: [String: UInt64] = [:]
   var onNoteDetailStart: ((String) -> Void)?
+  var linkNoteDelayNanoseconds: UInt64?
+  var onLinkNoteStart: (() -> Void)?
 
   var defaultConfigWorkflowRoot: String {
     "tmp/RielaNoteUITests/default-config-workflows"
@@ -767,6 +790,10 @@ final class MockRielaNoteUIClient: RielaNoteUIClient, @unchecked Sendable {
   }
 
   func linkNote(noteId: String, targetNoteId: String, linkKind: String) async throws -> RielaNoteDetail {
+    onLinkNoteStart?()
+    if let linkNoteDelayNanoseconds {
+      try await Task.sleep(nanoseconds: linkNoteDelayNanoseconds)
+    }
     let selected = storedNote(noteId: noteId)
     links.append(NoteLink(
       fromNoteId: noteId,

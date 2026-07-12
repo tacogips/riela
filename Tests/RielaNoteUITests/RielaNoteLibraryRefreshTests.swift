@@ -146,6 +146,87 @@ final class RielaNoteLibraryRefreshTests: XCTestCase {
     XCTAssertEqual(viewModel.state, .loaded)
   }
 
+  func testRefreshWithExternallyDeletedSelectedNoteDegradesToSelectionChange() async throws {
+    let service = try makeRefreshTestService()
+    let first = try service.createNote(bodyMarkdown: "# First\n\nBody")
+    let second = try service.createNote(notebookId: first.notebookId, bodyMarkdown: "# Second\n\nBody")
+    let viewModel = RielaNoteLibraryViewModel(client: NoteServiceRielaNoteUIClient(service: service))
+
+    await viewModel.selectNote(second.noteId)
+    XCTAssertEqual(viewModel.selectedNote?.noteId, second.noteId)
+
+    // Delete the selected note out from under the UI, as another process would.
+    try service.deleteNote(noteId: second.noteId)
+    await viewModel.refresh()
+
+    // The refresh degrades to a selection change (first available note), not an
+    // error screen.
+    XCTAssertEqual(viewModel.state, .loaded)
+    XCTAssertNotEqual(viewModel.selectedNote?.noteId, second.noteId)
+    XCTAssertEqual(viewModel.selectedNote?.noteId, first.noteId)
+  }
+
+  func testAcceptLinkProposalFailureSetsLinkProposalErrorAndLeavesStateLoaded() async throws {
+    let fixture = NoteUITestFixture()
+    let client = FailingRielaNoteUIClient(base: fixture.client)
+    let viewModel = RielaNoteLibraryViewModel(client: client)
+    await viewModel.selectNote("note-2")
+    let proposal = NoteLinkProposal(
+      targetNote: fixture.note,
+      linkKind: "related",
+      reason: "related content",
+      source: "ai"
+    )
+    viewModel.linkProposals = [proposal]
+
+    client.failLinkNote = true
+    await XCTAssertThrowsErrorAsync(try await viewModel.acceptLinkProposal(proposal))
+
+    XCTAssertNotNil(viewModel.linkProposalError)
+    XCTAssertEqual(viewModel.state, .loaded)
+    // The proposal is not consumed on failure.
+    XCTAssertEqual(viewModel.linkProposals.count, 1)
+  }
+
+  func testAcceptLinkProposalDropsStaleSelectionWriteAfterSelectionChanges() async throws {
+    // FIX-2: `acceptLinkProposal` captures the selection generation at entry and
+    // drops its `selectedDetail` write when the selection moves on during the
+    // (delayed) link call — matching every other selection-scoped mutation.
+    let fixture = NoteUITestFixture()
+    let viewModel = RielaNoteLibraryViewModel(client: fixture.client)
+    await viewModel.selectNote("note-2")
+    let proposal = NoteLinkProposal(
+      targetNote: fixture.note,
+      linkKind: "related",
+      reason: "related content",
+      source: "ai"
+    )
+    viewModel.linkProposals = [proposal]
+
+    fixture.client.linkNoteDelayNanoseconds = 50_000_000
+    let linkReached = expectation(description: "link call started")
+    var didFulfillLinkReached = false
+    fixture.client.onLinkNoteStart = {
+      guard !didFulfillLinkReached else {
+        return
+      }
+      didFulfillLinkReached = true
+      linkReached.fulfill()
+    }
+
+    let accept = Task {
+      try await viewModel.acceptLinkProposal(proposal)
+    }
+    await fulfillment(of: [linkReached], timeout: 1)
+    // The user switches to note-1 while the link is in flight.
+    await viewModel.selectNote("note-1")
+    try await accept.value
+
+    // The stale write is dropped: the selection stays note-1, not the linked note.
+    XCTAssertEqual(viewModel.selectedNote?.noteId, "note-1")
+    XCTAssertEqual(viewModel.state, .loaded)
+  }
+
   func testRefreshDoesNotRestoreSelectionChangedWhileRefreshIsInFlight() async throws {
     let fixture = NoteUITestFixture()
     let viewModel = RielaNoteLibraryViewModel(client: fixture.client)

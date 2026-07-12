@@ -22,20 +22,42 @@ func searchNotesInDatabase(
 ) throws -> [NoteSearchResult] {
   let requestedLimit = max(0, limit)
   let requestedOffset = max(0, offset)
-  let fetchLimit = requestedLimit + requestedOffset
+  // Guard against Int overflow: a hostile `offset` near `Int.max` must not trap
+  // the process when combined with `limit`. Clamp the combined fetch window.
+  let (sum, overflowed) = requestedLimit.addingReportingOverflow(requestedOffset)
+  let fetchLimit = overflowed ? Int.max : sum
   guard fetchLimit > 0 else {
     return []
   }
   guard let matchQuery = ftsMatchQuery(from: query) else {
-    let results = try searchNotesByFilters(
-      tagFilter: tagFilter,
-      classFilter: classFilter,
-      sort: sort,
-      createdAfter: createdAfter,
-      createdBefore: createdBefore,
-      limit: fetchLimit,
-      in: database
-    )
+    // No FTS terms (e.g. a symbol-only query like "→"). When the trimmed query is
+    // non-empty the trigram index can't match it, but a substring LIKE scan still
+    // can, so run the same LIKE fallback used for sub-trigram terms rather than
+    // dropping the query and returning filter-only results.
+    let results: [NoteSearchResult]
+    if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      results = try searchNotesByFilters(
+        tagFilter: tagFilter,
+        classFilter: classFilter,
+        sort: sort,
+        createdAfter: createdAfter,
+        createdBefore: createdBefore,
+        limit: fetchLimit,
+        in: database
+      )
+    } else {
+      results = try searchNotesByTextLike(
+        query: query,
+        tagFilter: tagFilter,
+        classFilter: classFilter,
+        excludedNoteIds: [],
+        sort: sort,
+        createdAfter: createdAfter,
+        createdBefore: createdBefore,
+        limit: fetchLimit,
+        in: database
+      )
+    }
     let expanded = try includeLinked
       ? appendLinkedNeighborResults(
           to: results,

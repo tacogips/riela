@@ -10,11 +10,14 @@ public struct RielaNoteConfigAgentView: View {
   public var body: some View {
     VStack(spacing: 0) {
       workflowRootBar
+      if let errorMessage = viewModel.errorMessage {
+        errorBanner(errorMessage)
+      }
       Divider()
       ScrollView {
         LazyVStack(alignment: .leading, spacing: 14) {
           ForEach(viewModel.proposals) { proposal in
-            RielaNoteConfigProposalView(proposal: proposal) {
+            RielaNoteConfigProposalView(proposal: proposal, isApplying: viewModel.isApplying) {
               Task {
                 await viewModel.applyProposal(id: proposal.id)
               }
@@ -29,6 +32,21 @@ public struct RielaNoteConfigAgentView: View {
       composer
     }
     .navigationTitle("Config")
+  }
+
+  private func errorBanner(_ message: String) -> some View {
+    HStack(spacing: 8) {
+      Label("Config agent error", systemImage: "exclamationmark.triangle")
+        .fontWeight(.semibold)
+      Text(message)
+        .lineLimit(2)
+      Spacer()
+    }
+    .font(.caption)
+    .foregroundStyle(.red)
+    .padding(.horizontal)
+    .padding(.vertical, 8)
+    .background(.red.opacity(0.08))
   }
 
   private var workflowRootBar: some View {
@@ -63,6 +81,7 @@ public struct RielaNoteConfigAgentView: View {
 
 struct RielaNoteConfigProposalView: View {
   var proposal: RielaNoteConfigAgentProposal
+  var isApplying: Bool
   var onApply: () -> Void
 
   var body: some View {
@@ -81,7 +100,7 @@ struct RielaNoteConfigProposalView: View {
           Label("Apply", systemImage: "checkmark")
         }
         .buttonStyle(.borderedProminent)
-        .disabled(proposal.appliedResult != nil)
+        .disabled(proposal.appliedResult != nil || isApplying)
       }
     }
     .padding(12)

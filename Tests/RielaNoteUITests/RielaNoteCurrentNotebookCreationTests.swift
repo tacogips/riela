@@ -11,7 +11,7 @@ final class RielaNoteCurrentNotebookCreationTests: XCTestCase {
     await viewModel.selectNotebook("notebook-1")
     viewModel.searchText = "draft"
 
-    await viewModel.createNoteInSelectedNotebook()
+    try await viewModel.createNoteInSelectedNotebook()
 
     XCTAssertEqual(fixture.client.createdNotebookNotes.count, 1)
     XCTAssertEqual(viewModel.selectedNotebookId, "notebook-1")
@@ -28,7 +28,7 @@ final class RielaNoteCurrentNotebookCreationTests: XCTestCase {
     let viewModel = RielaNoteLibraryViewModel(client: fixture.client)
     await viewModel.selectNotebook("notebook-1")
 
-    await viewModel.createNoteInSelectedNotebook(body: "Capture the first draft.")
+    try await viewModel.createNoteInSelectedNotebook(body: "Capture the first draft.")
 
     XCTAssertEqual(fixture.client.createdNotebookNotes.count, 1)
     XCTAssertEqual(viewModel.selectedNote?.bodyMarkdown, "Capture the first draft.")

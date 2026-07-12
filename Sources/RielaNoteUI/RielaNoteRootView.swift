@@ -54,7 +54,12 @@ public struct RielaNoteRootView: View {
 
       RielaNoteAgentView(viewModel: agentViewModel) { noteId in
         Task {
-          await viewModel.selectNote(noteId)
+          await viewModel.requestSelection(.note(noteId))
+          // A body edit in the library detail defers the switch behind the
+          // discard confirmation; hold the tab/path change until it resolves.
+          guard viewModel.pendingSelection == nil else {
+            return
+          }
           selectedTab = .library
           if horizontalSizeClass == .compact {
             libraryPath = [.detail]
@@ -88,6 +93,53 @@ public struct RielaNoteRootView: View {
     .onDisappear {
       noteStoreChangeWatcher?.stop()
       noteStoreChangeWatcher = nil
+    }
+    // Hosted at the root so a selection change requested from any pane (list,
+    // links, agent citation) while a body edit is in progress confirms before
+    // discarding the draft. Discard runs the deferred navigation; Keep editing
+    // dismisses without navigating.
+    .confirmationDialog(
+      "You have unsaved changes",
+      isPresented: pendingSelectionBinding,
+      titleVisibility: .visible
+    ) {
+      Button("Discard changes", role: .destructive) {
+        // Capture synchronously: dismissing the dialog fires the binding setter,
+        // which would otherwise clear `pendingSelection` before the async confirm
+        // reads it.
+        guard let selection = viewModel.pendingSelection else {
+          return
+        }
+        Task {
+          await viewModel.confirmPendingSelection(selection)
+          finishPendingNavigation()
+        }
+      }
+      Button("Keep editing", role: .cancel) {
+        viewModel.cancelPendingSelection()
+      }
+    } message: {
+      Text("Switching notes will discard your edits.")
+    }
+  }
+
+  private var pendingSelectionBinding: Binding<Bool> {
+    Binding {
+      viewModel.pendingSelection != nil
+    } set: { presented in
+      if !presented, viewModel.pendingSelection != nil {
+        viewModel.cancelPendingSelection()
+      }
+    }
+  }
+
+  /// After a confirmed (discarded) navigation completes, mirror the pane routing
+  /// the immediate paths perform: surface the library detail for the new note.
+  private func finishPendingNavigation() {
+    composeDestination = nil
+    selectedTab = .library
+    if horizontalSizeClass == .compact {
+      libraryPath = [.detail]
     }
   }
 
@@ -193,16 +245,16 @@ public struct RielaNoteRootView: View {
         }
       },
       onSave: { bodyMarkdown in
-        Task {
-          switch destination {
-          case .memo:
-            await viewModel.createUserMemo(body: bodyMarkdown)
-          case .selectedNotebook:
-            await viewModel.createNoteInSelectedNotebook(body: bodyMarkdown)
-          }
-          composeDestination = nil
-          libraryPath = [.detail]
+        // Let the error propagate to the compose view so it can preserve the draft
+        // and render the mapped human-readable reason; only dismiss on success.
+        switch destination {
+        case .memo:
+          try await viewModel.createUserMemo(body: bodyMarkdown)
+        case .selectedNotebook:
+          try await viewModel.createNoteInSelectedNotebook(body: bodyMarkdown)
         }
+        composeDestination = nil
+        libraryPath = [.detail]
       }
     )
   }

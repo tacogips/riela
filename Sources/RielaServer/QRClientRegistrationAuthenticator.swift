@@ -120,7 +120,8 @@ public actor QRClientRegistrationAuthenticator: NoteAPIAuthenticating, NoteAPICl
     } catch let error as NoteAPIRegistrationError {
       return .init(status: error.status, body: ["error": .string(error.message)])
     } catch {
-      return .init(status: 500, body: ["error": .string("\(error)")])
+      logNoteAPIServerError("note client registration failed", error: error)
+      return .init(status: 500, body: ["error": .string("registration failed")])
     }
   }
 
@@ -157,7 +158,8 @@ public actor QRClientRegistrationAuthenticator: NoteAPIAuthenticating, NoteAPICl
       }
       return .accepted(NoteAPIAuthenticatedClient(clientId: client.clientId, displayName: client.displayName))
     } catch {
-      return .rejected(noteAPIUnauthorizedResponse("\(error)"))
+      logNoteAPIServerError("note API authentication failed", error: error)
+      return .rejected(noteAPIUnavailableResponse("note API authentication is unavailable"))
     }
   }
 
@@ -226,6 +228,13 @@ private struct NoteAPIRegistrationRequest: Decodable {
 private struct NoteAPIRegistrationError: Error, Equatable {
   var status: Int
   var message: String
+}
+
+/// Records an internal note API error to the server log only. Underlying error
+/// text (DB paths, SQL, S3 endpoints) must never reach a client response body.
+func logNoteAPIServerError(_ message: String, error: Error) {
+  let line = "[riela-note] \(message): \(error)\n"
+  FileHandle.standardError.write(Data(line.utf8))
 }
 
 private func secureRandomData(byteCount: Int) throws -> Data {

@@ -58,7 +58,7 @@ final class RielaNoteEditRewriteTests: XCTestCase {
     XCTAssertFalse(viewModel.isEditRewriteLoading)
   }
 
-  func testViewModelTranslatesWholeSelectedNoteAndUpdatesDetail() async throws {
+  func testViewModelTranslatesWholeSelectedNoteReturnsDraftWithoutPersisting() async throws {
     let client = RewriteTestClient()
     client.rewriteDraft = RielaNoteEditRewriteDraft(
       rewrittenMarkdown: "# ページ1\n\n本文",
@@ -67,9 +67,14 @@ final class RielaNoteEditRewriteTests: XCTestCase {
     let viewModel = RielaNoteLibraryViewModel(client: client, translationTargetLanguage: "Japanese")
 
     await viewModel.selectNote("note-1")
-    await viewModel.translateSelectedNote()
+    let draft = await viewModel.translateSelectedNote()
 
-    XCTAssertEqual(viewModel.selectedDetail?.note.bodyMarkdown, "# ページ1\n\n本文")
+    // Translation lands in a reviewable draft, not the store body: the returned
+    // draft carries the translated text and the store body is untouched (no
+    // updateNoteBody until the user saves).
+    XCTAssertEqual(draft?.rewrittenMarkdown, "# ページ1\n\n本文")
+    XCTAssertEqual(viewModel.selectedDetail?.note.bodyMarkdown, "# Page One\n\nBody")
+    XCTAssertEqual(client.updateNoteBodyCallCount, 0)
     XCTAssertEqual(viewModel.translateNoteSummary, "Translated to Japanese.")
     XCTAssertNil(viewModel.translateNoteError)
     XCTAssertFalse(viewModel.isTranslateNoteLoading)
@@ -83,6 +88,94 @@ final class RielaNoteEditRewriteTests: XCTestCase {
         selectionEnd: nil
       )
     ])
+  }
+
+  func testTranslateLandsInEditingDraftWithStoreBodyUnchanged() async throws {
+    // FIX-7(b): a completed translation leaves the editor active with the
+    // translated text loaded (via `RielaNoteBodyDraftState.loadProposedDraft`)
+    // while the store body stays untouched until the user saves.
+    let client = RewriteTestClient()
+    client.rewriteDraft = RielaNoteEditRewriteDraft(
+      rewrittenMarkdown: "# ページ1\n\n本文",
+      summary: "Translated to Japanese."
+    )
+    let viewModel = RielaNoteLibraryViewModel(client: client, translationTargetLanguage: "Japanese")
+
+    await viewModel.selectNote("note-1")
+    let originalBody = try XCTUnwrap(viewModel.selectedDetail?.note.bodyMarkdown)
+    let translated = await viewModel.translateSelectedNote()
+    let draft = try XCTUnwrap(translated)
+
+    // Mirror the detail view: load the proposed draft into the body-edit state.
+    var bodyDraft = RielaNoteBodyDraftState()
+    bodyDraft.loadProposedDraft(noteId: "note-1", proposedBodyMarkdown: draft.rewrittenMarkdown)
+
+    XCTAssertTrue(bodyDraft.isEditingBody)
+    XCTAssertEqual(bodyDraft.editingNoteId, "note-1")
+    XCTAssertEqual(bodyDraft.draftBodyMarkdown, "# ページ1\n\n本文")
+    // The editor preview shows the translation; the store body is unchanged and
+    // no persistence happened before Save.
+    XCTAssertEqual(bodyDraft.previewBodyMarkdown(for: viewModel.selectedDetail!.note), "# ページ1\n\n本文")
+    XCTAssertEqual(viewModel.selectedDetail?.note.bodyMarkdown, originalBody)
+    XCTAssertEqual(client.updateNoteBodyCallCount, 0)
+  }
+
+  func testViewModelTranslateProvidesDefaultReviewSummaryWhenModelSummaryEmpty() async throws {
+    let client = RewriteTestClient()
+    client.rewriteDraft = RielaNoteEditRewriteDraft(rewrittenMarkdown: "# ページ1\n\n本文", summary: "  ")
+    let viewModel = RielaNoteLibraryViewModel(client: client, translationTargetLanguage: "Japanese")
+
+    await viewModel.selectNote("note-1")
+    let draft = await viewModel.translateSelectedNote()
+
+    XCTAssertEqual(draft?.rewrittenMarkdown, "# ページ1\n\n本文")
+    XCTAssertEqual(viewModel.translateNoteSummary, "Translated to Japanese. Review and save.")
+  }
+
+  func testViewModelDropsStaleTranslationAfterNoteSwitch() async throws {
+    let client = RewriteTestClient()
+    client.rewriteDelayNanoseconds = 50_000_000
+    client.rewriteDraft = RielaNoteEditRewriteDraft(rewrittenMarkdown: "late", summary: "Late")
+    let viewModel = RielaNoteLibraryViewModel(client: client, translationTargetLanguage: "Japanese")
+
+    await viewModel.selectNote("note-1")
+    let translation = Task {
+      await viewModel.translateSelectedNote()
+    }
+    try await Task.sleep(nanoseconds: 5_000_000)
+    await viewModel.selectNote("note-2")
+    let draft = await translation.value
+
+    XCTAssertNil(draft)
+    XCTAssertEqual(client.updateNoteBodyCallCount, 0)
+    XCTAssertNil(viewModel.translateNoteSummary)
+    XCTAssertNil(viewModel.translateNoteError)
+    XCTAssertFalse(viewModel.isTranslateNoteLoading)
+  }
+
+  func testViewModelDropsStaleTranslationAfterNoteSwitchedAwayAndBack() async throws {
+    // FIX-5: `advanceSelectionGeneration` now bumps `translateNoteGeneration`, so a
+    // translate started for note-1 is dropped even when the selection returns to
+    // note-1 (A -> B -> A) — the note-id check alone would not have caught this.
+    let client = RewriteTestClient()
+    client.rewriteDelayNanoseconds = 50_000_000
+    client.rewriteDraft = RielaNoteEditRewriteDraft(rewrittenMarkdown: "stale", summary: "Stale")
+    let viewModel = RielaNoteLibraryViewModel(client: client, translationTargetLanguage: "Japanese")
+
+    await viewModel.selectNote("note-1")
+    let translation = Task {
+      await viewModel.translateSelectedNote()
+    }
+    try await Task.sleep(nanoseconds: 5_000_000)
+    await viewModel.selectNote("note-2")
+    await viewModel.selectNote("note-1")
+    let draft = await translation.value
+
+    XCTAssertNil(draft)
+    XCTAssertEqual(client.updateNoteBodyCallCount, 0)
+    XCTAssertNil(viewModel.translateNoteSummary)
+    XCTAssertNil(viewModel.translateNoteError)
+    XCTAssertFalse(viewModel.isTranslateNoteLoading)
   }
 
   func testViewModelTranslateUsesConfiguredDefaultAndSurfacesNotConfigured() async throws {
@@ -248,10 +341,28 @@ final class RielaNoteEditRewriteTests: XCTestCase {
     )
   }
 
+  // MARK: - Restored edit-agent UI reachability (TASK-013, F12)
+
+  // The detail view carries the restored edit-agent pill / selection Q&A flow;
+  // constructing it proves the restored SwiftUI body — which references
+  // `proposeBodyRewrite`, `askSelectionQuestion`, and
+  // `RielaNoteSelectableTextEditor` — compiles and is wired to the live
+  // view-model rather than the dead-code state before the snapshot regression.
+  func testDetailViewConstructsWithRestoredEditAgentSurface() async throws {
+    let client = RewriteTestClient()
+    let viewModel = RielaNoteLibraryViewModel(client: client)
+    await viewModel.selectNote("note-2")
+
+    _ = RielaNoteDetailView(viewModel: viewModel)
+    _ = RielaNoteSelectableTextEditor(
+      text: .constant("editor body"),
+      selectedRange: .constant(NSRange(location: 0, length: 0))
+    )
+  }
+
   #if os(macOS)
-  func testWorkflowEditRewriteArgumentsIncludeSelectionFields() throws {
-    let arguments = noteEditRewriteArguments(
-      workflowDefinitionDirectory: "/tmp/examples",
+  func testWorkflowEditRewriteVariablesIncludeSelectionFields() throws {
+    let variables = noteEditRewriteVariables(
       noteId: "note-1",
       noteRoot: "/tmp/notes",
       instruction: "Improve",
@@ -261,16 +372,6 @@ final class RielaNoteEditRewriteTests: XCTestCase {
       selectionEnd: 7
     )
 
-    XCTAssertEqual(arguments.prefix(5), [
-      "workflow",
-      "run",
-      "note-edit-rewrite",
-      "--workflow-definition-dir",
-      "/tmp/examples"
-    ])
-    let variablesIndex = try XCTUnwrap(arguments.firstIndex(of: "--variables"))
-    let variablesData = try XCTUnwrap(arguments[variablesIndex + 1].data(using: .utf8))
-    let variables = try XCTUnwrap(JSONSerialization.jsonObject(with: variablesData) as? [String: Any])
     let workflowInput = try XCTUnwrap(variables["workflowInput"] as? [String: Any])
     XCTAssertEqual(variables["noteRoot"] as? String, "/tmp/notes")
     XCTAssertEqual(workflowInput["noteId"] as? String, "note-1")
@@ -278,6 +379,127 @@ final class RielaNoteEditRewriteTests: XCTestCase {
     XCTAssertEqual(workflowInput["selectedText"] as? String, "Draft")
     XCTAssertEqual(workflowInput["selectionStart"] as? Int, 2)
     XCTAssertEqual(workflowInput["selectionEnd"] as? Int, 7)
+  }
+
+  func testWorkflowRunArgumentsPassVariablesFileAndNoBodyOnArgv() {
+    let arguments = rielaWorkflowRunArguments(
+      workflowName: "note-edit-rewrite",
+      workflowDefinitionDirectory: "/tmp/examples",
+      variablesFilePath: "/tmp/riela-note-workflow/variables.json"
+    )
+
+    XCTAssertEqual(arguments, [
+      "workflow",
+      "run",
+      "note-edit-rewrite",
+      "--workflow-definition-dir",
+      "/tmp/examples",
+      "--variables-file",
+      "/tmp/riela-note-workflow/variables.json",
+      "--output",
+      "jsonl"
+    ])
+    XCTAssertFalse(arguments.contains("--variables"))
+  }
+
+  func testWorkflowEditRewriteLargeBodySucceedsViaVariablesFile() throws {
+    // A body far larger than ARG_MAX must not appear on argv; the workflow reads
+    // it from the variables file instead. A fake `riela` echoes the file's size
+    // as the rewrite so we can confirm the whole body was passed through.
+    let executable = try makeVariablesFileEchoExecutable(function: #function)
+    let hugeBody = String(repeating: "A", count: 4 * 1024 * 1024)
+
+    let draft = try runNoteEditRewriteWorkflow(
+      request: RielaNoteEditRewriteWorkflowRequest(
+        executablePath: executable,
+        workflowDefinitionDirectory: "/tmp/examples",
+        noteId: "note-1",
+        noteRoot: "/tmp/notes",
+        instruction: "Improve",
+        bodyMarkdown: hugeBody,
+        selectedText: nil,
+        selectionStart: nil,
+        selectionEnd: nil,
+        environment: ProcessInfo.processInfo.environment,
+        deadlineSeconds: 30
+      ),
+      processBox: RielaWorkflowProcessBox()
+    )
+
+    XCTAssertTrue(draft.rewrittenMarkdown.contains("bytes="))
+    let reportedBytes = draft.rewrittenMarkdown
+      .components(separatedBy: "bytes=").last
+      .flatMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+    // The variables file JSON must contain the full 4 MB body.
+    XCTAssertNotNil(reportedBytes)
+    XCTAssertGreaterThan(reportedBytes ?? 0, hugeBody.count)
+  }
+
+  func testWorkflowEditRewriteCancelBeforeLaunchSpawnsNoProcess() throws {
+    let executable = try makeProcessMarkerExecutable(function: #function)
+    let markerPath = executable + ".ran"
+    let processBox = RielaWorkflowProcessBox()
+    processBox.terminate() // cancel before the run begins
+
+    XCTAssertThrowsError(try runNoteEditRewriteWorkflow(
+      request: RielaNoteEditRewriteWorkflowRequest(
+        executablePath: executable,
+        workflowDefinitionDirectory: "/tmp/examples",
+        noteId: "note-1",
+        noteRoot: "/tmp/notes",
+        instruction: "Improve",
+        bodyMarkdown: "# Draft",
+        selectedText: nil,
+        selectionStart: nil,
+        selectionEnd: nil,
+        environment: ProcessInfo.processInfo.environment,
+        deadlineSeconds: 30
+      ),
+      processBox: processBox
+    )) { error in
+      XCTAssertTrue(error is CancellationError, "expected CancellationError, got \(error)")
+    }
+    XCTAssertFalse(
+      FileManager.default.fileExists(atPath: markerPath),
+      "cancelled run must not spawn the workflow process"
+    )
+  }
+
+  func testWorkflowEditRewriteCancelMidRunYieldsCancellationError() throws {
+    let executable = try makeSleepingExecutable(function: #function)
+    let processBox = RielaWorkflowProcessBox()
+
+    let runExpectation = expectation(description: "run returns")
+    var caughtError: Error?
+    Thread.detachNewThread {
+      do {
+        _ = try runNoteEditRewriteWorkflow(
+          request: RielaNoteEditRewriteWorkflowRequest(
+            executablePath: executable,
+            workflowDefinitionDirectory: "/tmp/examples",
+            noteId: "note-1",
+            noteRoot: "/tmp/notes",
+            instruction: "Improve",
+            bodyMarkdown: "# Draft",
+            selectedText: nil,
+            selectionStart: nil,
+            selectionEnd: nil,
+            environment: ProcessInfo.processInfo.environment,
+            deadlineSeconds: 30
+          ),
+          processBox: processBox
+        )
+      } catch {
+        caughtError = error
+      }
+      runExpectation.fulfill()
+    }
+    // Let the process launch, then cancel mid-run.
+    Thread.sleep(forTimeInterval: 0.3)
+    processBox.terminate()
+
+    wait(for: [runExpectation], timeout: 10)
+    XCTAssertTrue(caughtError is CancellationError, "expected CancellationError, got \(String(describing: caughtError))")
   }
 
   func testWorkflowEditRewriteParserReadsLastDecodableRootOutputLine() {
@@ -290,6 +512,20 @@ final class RielaNoteEditRewriteTests: XCTestCase {
     let draft = parseNoteEditRewriteDraft(from: output)
 
     XCTAssertEqual(draft, RielaNoteEditRewriteDraft(rewrittenMarkdown: "second", summary: "used"))
+  }
+
+  func testParseNoteEditRewriteDraftRejectsEmptyRewrittenMarkdown() {
+    let output = """
+    {"result":{"rootOutput":{"rewrittenMarkdown":"","summary":"refused"}}}
+    """
+    XCTAssertNil(parseNoteEditRewriteDraft(from: output))
+  }
+
+  func testParseNoteEditRewriteDraftRejectsWhitespaceRewrittenMarkdown() {
+    let output = """
+    {"result":{"rootOutput":{"rewrittenMarkdown":"   \\n\\t ","summary":"refused"}}}
+    """
+    XCTAssertNil(parseNoteEditRewriteDraft(from: output))
   }
 
   func testWorkflowEditRewriteDefaultProviderAcceptsTrustedAbsoluteEnvironmentOverrides() throws {
@@ -433,6 +669,62 @@ private func makeExecutableFixture(function: String = #function) throws -> Strin
   try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
   return executable.path
 }
+
+private func makeScriptExecutable(function: String, script: String) throws -> String {
+  let directory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+    .appendingPathComponent("tmp/RielaNoteEditRewriteTests", isDirectory: true)
+    .appendingPathComponent(function, isDirectory: true)
+  if FileManager.default.fileExists(atPath: directory.path) {
+    try FileManager.default.removeItem(at: directory)
+  }
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  let executable = directory.appendingPathComponent("riela")
+  try script.write(to: executable, atomically: true, encoding: .utf8)
+  try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+  return executable.path
+}
+
+// Reads the `--variables-file` argument, reports its byte size, and emits a
+// JSONL run-result line. The body is never on argv, so success proves it was
+// read from the variables file.
+private func makeVariablesFileEchoExecutable(function: String) throws -> String {
+  try makeScriptExecutable(function: function, script: """
+  #!/bin/sh
+  file=""
+  while [ "$#" -gt 0 ]; do
+    if [ "$1" = "--variables-file" ]; then
+      file="$2"
+      shift 2
+      continue
+    fi
+    shift
+  done
+  bytes=$(wc -c < "$file" | tr -d ' ')
+  printf '{"result":{"rootOutput":{"rewrittenMarkdown":"bytes=%s","summary":"echo"}}}\\n' "$bytes"
+  exit 0
+  """)
+}
+
+// Touches a `<executable>.ran` marker file the moment it is invoked, so a test
+// can assert whether the process was ever spawned.
+private func makeProcessMarkerExecutable(function: String) throws -> String {
+  try makeScriptExecutable(function: function, script: """
+  #!/bin/sh
+  : > "$0.ran"
+  printf '{"result":{"rootOutput":{"rewrittenMarkdown":"ran","summary":"ran"}}}\\n'
+  exit 0
+  """)
+}
+
+// Sleeps long enough for a mid-run cancellation to terminate it by signal.
+private func makeSleepingExecutable(function: String) throws -> String {
+  try makeScriptExecutable(function: function, script: """
+  #!/bin/sh
+  sleep 30
+  printf '{"result":{"rootOutput":{"rewrittenMarkdown":"late","summary":"late"}}}\\n'
+  exit 0
+  """)
+}
 #endif
 
 private enum RewriteTestError: Error {
@@ -453,6 +745,7 @@ private final class RewriteTestClient: RielaNoteUIClient, @unchecked Sendable {
   var rewriteDraft = RielaNoteEditRewriteDraft(rewrittenMarkdown: "# Rewritten\n\nBody", summary: "Rewritten")
   var rewriteError: Error?
   var rewriteDelayNanoseconds: UInt64?
+  var updateNoteBodyCallCount = 0
 
   var defaultConfigWorkflowRoot: String {
     "tmp/RielaNoteEditRewriteTests/default-config-workflows"
@@ -497,7 +790,8 @@ private final class RewriteTestClient: RielaNoteUIClient, @unchecked Sendable {
   }
 
   func updateNoteBody(noteId: String, bodyMarkdown: String) async throws -> RielaNoteDetail {
-    RielaNoteDetail(note: note(noteId: noteId, bodyMarkdown: bodyMarkdown))
+    updateNoteBodyCallCount += 1
+    return RielaNoteDetail(note: note(noteId: noteId, bodyMarkdown: bodyMarkdown))
   }
 
   func applyTag(noteId: String, tagName: String, classId: String?) async throws -> RielaNoteDetail {

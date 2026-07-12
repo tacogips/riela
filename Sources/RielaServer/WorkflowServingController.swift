@@ -518,11 +518,8 @@ public struct InProcessWorkflowServeListenerFactory: WorkflowServeListenerFactor
 }
 
 private struct ServedNoteAPIAutoActionDispatcher: AutoActionDispatching {
-  func dispatch(
-    _ record: AutoActionDispatchRecord,
-    completion: @escaping @Sendable (AutoActionDispatchOutcome) -> Void
-  ) throws {
-    completion(.failed("served note API does not launch auto-action workflows; retry with a workflow dispatcher"))
+  func dispatch(_ record: AutoActionDispatchRecord) async throws -> AutoActionDispatchOutcome {
+    .failed("served note API does not launch auto-action workflows; retry with a workflow dispatcher")
   }
 }
 

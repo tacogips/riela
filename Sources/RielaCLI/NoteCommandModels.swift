@@ -40,6 +40,7 @@ struct NoteCommandOptions {
   var displayName: String?
   var includeRevoked = false
   var migrateAll = false
+  var graceHours: Int?
   var directRegistration = false
   var appendBody = false
   var firstPositional: String?
@@ -205,6 +206,8 @@ struct NoteCommandOptions {
       appendBody = true
     case "--all":
       migrateAll = true
+    case "--grace-hours":
+      graceHours = try nonNegativeInt(token, noteOptionValue(token, tokens: tokens, index: &index))
     case "--to":
       let target = try noteOptionValue(token, tokens: tokens, index: &index)
       guard target == "s3" else {
@@ -336,6 +339,23 @@ struct NoteCommandOptions {
       s3SecretAccessKeyEnv: s3SecretAccessKeyEnv,
       s3SessionTokenEnv: s3SessionTokenEnv,
       s3KeyPrefix: s3KeyPrefix
+    )
+  }
+
+  func reclaimInput() -> GraphQLReclaimNoteFileStorageInput {
+    // S3 profile fields are optional: they are only needed to delete orphaned S3
+    // objects. A local-only GC omits them.
+    let includeS3 = s3Endpoint != nil && s3Region != nil && s3Bucket != nil
+    return GraphQLReclaimNoteFileStorageInput(
+      graceHours: graceHours,
+      s3ProfileName: includeS3 ? s3ProfileName : nil,
+      s3Endpoint: includeS3 ? s3Endpoint : nil,
+      s3Region: includeS3 ? s3Region : nil,
+      s3Bucket: includeS3 ? s3Bucket : nil,
+      s3AccessKeyIdEnv: includeS3 ? s3AccessKeyIdEnv : nil,
+      s3SecretAccessKeyEnv: includeS3 ? s3SecretAccessKeyEnv : nil,
+      s3SessionTokenEnv: includeS3 ? s3SessionTokenEnv : nil,
+      s3KeyPrefix: includeS3 ? s3KeyPrefix : nil
     )
   }
 

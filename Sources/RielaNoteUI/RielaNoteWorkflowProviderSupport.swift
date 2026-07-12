@@ -6,6 +6,7 @@ import Darwin
 final class RielaWorkflowProcessBox: @unchecked Sendable {
   private let lock = NSLock()
   private var process: Process?
+  private var cancelled = false
 
   func set(_ process: Process) {
     lock.lock()
@@ -21,8 +22,18 @@ final class RielaWorkflowProcessBox: @unchecked Sendable {
     lock.unlock()
   }
 
+  /// True once `onCancel` has fired. Checked before launching the process and in
+  /// the poll loop so a cancellation that races `process.run()` still surfaces as
+  /// `CancellationError` and never orphans a workflow child.
+  var isCancelled: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return cancelled
+  }
+
   func terminate() {
     lock.lock()
+    cancelled = true
     let process = self.process
     lock.unlock()
     process?.terminateWithEscalation()
@@ -178,6 +189,60 @@ func rielaWorkflowSanitizedEnvironment(from environment: [String: String]) -> [S
     }
   }
   return sanitized
+}
+
+/// A JSON variables payload written to a private scratch temp file, passed to
+/// `riela workflow run --variables-file`. Note bodies can exceed `ARG_MAX`, so
+/// they are never placed on argv; the file is deleted when this value is
+/// discarded.
+struct RielaWorkflowVariablesFile: Sendable {
+  let path: String
+  private let cleanup: RielaWorkflowFileCleanup
+
+  init(variables: [String: Any]) throws {
+    let data = try JSONSerialization.data(withJSONObject: variables, options: [.sortedKeys])
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-note-workflow", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let fileURL = directory.appendingPathComponent("variables-\(UUID().uuidString).json")
+    try data.write(to: fileURL, options: [.atomic])
+    path = fileURL.path
+    cleanup = RielaWorkflowFileCleanup(path: fileURL.path)
+  }
+}
+
+/// Deletes a scratch file when the last reference is released, so the variables
+/// temp file does not outlive the `riela workflow run` invocation.
+private final class RielaWorkflowFileCleanup: @unchecked Sendable {
+  private let path: String
+
+  init(path: String) {
+    self.path = path
+  }
+
+  deinit {
+    try? FileManager.default.removeItem(atPath: path)
+  }
+}
+
+/// Argv for `riela workflow run <workflow>` that reads its variables from
+/// `variablesFilePath`. No note content is placed on argv.
+func rielaWorkflowRunArguments(
+  workflowName: String,
+  workflowDefinitionDirectory: String,
+  variablesFilePath: String
+) -> [String] {
+  [
+    "workflow",
+    "run",
+    workflowName,
+    "--workflow-definition-dir",
+    workflowDefinitionDirectory,
+    "--variables-file",
+    variablesFilePath,
+    "--output",
+    "jsonl"
+  ]
 }
 
 func rielaWorkflowWaitForDrain(

@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 import RielaCore
 
-enum WorkflowHistoryArtifactConstructionBoundary: Equatable, Sendable {
+enum WorkflowHistoryConstructionBoundary: Equatable, Sendable {
   case childDirectory
   case leafFile
   case beforeVerification

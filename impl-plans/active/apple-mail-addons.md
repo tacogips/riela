@@ -306,7 +306,7 @@ add-ons and bridge regressions.
   Evidence: `examples/apple-mail-list/README.md` covers all of these.
 - [x] Keep committed Swift free of machine-local `/Users/...` paths; README may
   include local-path examples only when clearly illustrative.
-  Evidence: prior-session `/Users/taco` path audits returned no source hits.
+  Evidence: prior-session user-specific path audits returned no source hits.
 
 **Deliverable**: `examples/apple-mail-list` validates offline and gives
 operators enough setup context for read-only local Mail listing.

@@ -368,7 +368,7 @@ private extension WorkflowRound8AdversarialTests {
   func assertLeafSwapFails<T>(
     parent: URL,
     leaf: String,
-    operation: (@escaping @Sendable (WorkflowHistoryArtifactConstructionBoundary) throws -> Void) throws -> T
+    operation: (@escaping @Sendable (WorkflowHistoryConstructionBoundary) throws -> Void) throws -> T
   ) throws {
     let outside = parent.deletingLastPathComponent().appendingPathComponent("outside-\(UUID().uuidString)")
     let hook = OneShotConstructionHook(boundary: .leafFile) {
@@ -474,19 +474,19 @@ private extension WorkflowRound8AdversarialTests {
 
 private final class OneShotConstructionHook: @unchecked Sendable {
   private let lock = NSLock()
-  private let boundary: WorkflowHistoryArtifactConstructionBoundary
+  private let boundary: WorkflowHistoryConstructionBoundary
   private let action: @Sendable () throws -> Void
   private var fired = false
 
   init(
-    boundary: WorkflowHistoryArtifactConstructionBoundary,
+    boundary: WorkflowHistoryConstructionBoundary,
     action: @escaping @Sendable () throws -> Void
   ) {
     self.boundary = boundary
     self.action = action
   }
 
-  func call(_ observed: WorkflowHistoryArtifactConstructionBoundary) throws {
+  func call(_ observed: WorkflowHistoryConstructionBoundary) throws {
     lock.lock()
     let shouldFire = observed == boundary && !fired
     if shouldFire { fired = true }

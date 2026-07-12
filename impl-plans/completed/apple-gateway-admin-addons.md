@@ -234,7 +234,7 @@ tests offline through fake executables.
 - [x] Run required filtered tests, build, workflow validation, path audit, and
   status audit.
 - [x] Record exact pass/fail results in this plan's progress log.
-- [x] Confirm no hardcoded `/Users/taco` apple-gateway paths appear in
+- [x] Confirm no hardcoded user-specific apple-gateway paths appear in
   committed source surfaces.
 - [x] Confirm unrelated dirty timeline files remain untouched.
 
@@ -278,7 +278,7 @@ swift test --filter AppleGateway
 swift test --filter AddonExecutionContractsTests
 swift build
 swift run riela workflow validate apple-gateway-admin --workflow-definition-dir examples
-rg -n "/Users/taco/.+apple-gateway" Sources Tests examples design-docs impl-plans
+rg -n '/Users/[^/]+/.+apple-gateway' Sources Tests examples design-docs impl-plans
 git status --short
 ```
 
@@ -385,7 +385,7 @@ changes beyond the accepted design-doc updates already present.
 - PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build`.
 - PASS `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift run riela workflow validate apple-gateway-admin --workflow-definition-dir examples`;
   validation returned `valid: true` with no diagnostics.
-- PASS `rg -n "/Users/taco/.+apple-gateway" Sources Tests examples design-docs impl-plans`;
+- PASS `rg -n '/Users/[^/]+/.+apple-gateway' Sources Tests examples design-docs impl-plans`;
   matches are implementation-plan audit text only, not source, test, example,
   or design-doc hardcoded binary paths.
 - PASS `git status --short`; observed only issue-scope source/test/example/plan

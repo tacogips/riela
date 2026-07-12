@@ -186,7 +186,7 @@ must close exactly the accepted hardening findings from `comm-000724`:
   Evidence: 2026-07-12 reconciliation entry records the focused-suite result and
   the concurrently-edited unrelated dirty files (`RielaViewer/WorkflowViewer`,
   `RielaCLI` parity/publish files) that churned during the shared build.
-- [x] Confirm no hardcoded `/Users/taco/...apple-gateway` source paths in
+- [x] Confirm no hardcoded user-specific apple-gateway source paths in
   committed source surfaces.
   Evidence: prior sessions' `rg` audits; no such path added by this
   reconciliation (only a fake-executable test mode and plan text were changed).

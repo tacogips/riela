@@ -5,7 +5,7 @@ import RielaCore
 public struct WorkflowChangeSetStore: Sendable {
   public let root: URL
   private let beforePublication: @Sendable () throws -> Void
-  private let constructionHook: @Sendable (WorkflowHistoryArtifactConstructionBoundary) throws -> Void
+  private let constructionHook: @Sendable (WorkflowHistoryConstructionBoundary) throws -> Void
 
   public init(root: URL) {
     self.root = root.standardizedFileURL
@@ -16,7 +16,7 @@ public struct WorkflowChangeSetStore: Sendable {
   init(
     root: URL,
     beforePublication: @escaping @Sendable () throws -> Void,
-    constructionHook: @escaping @Sendable (WorkflowHistoryArtifactConstructionBoundary) throws -> Void = { _ in }
+    constructionHook: @escaping @Sendable (WorkflowHistoryConstructionBoundary) throws -> Void = { _ in }
   ) {
     self.root = root.standardizedFileURL
     self.beforePublication = beforePublication

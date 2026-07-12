@@ -20,7 +20,7 @@ struct WorkflowRuntimeGateEvidence: Codable, Equatable, Sendable {
 
 struct WorkflowRuntimeGateEvidenceStore: Sendable {
   let root: URL
-  private let constructionHook: @Sendable (WorkflowHistoryArtifactConstructionBoundary) throws -> Void
+  private let constructionHook: @Sendable (WorkflowHistoryConstructionBoundary) throws -> Void
 
   init(root: URL) {
     self.root = root
@@ -29,7 +29,7 @@ struct WorkflowRuntimeGateEvidenceStore: Sendable {
 
   init(
     root: URL,
-    constructionHook: @escaping @Sendable (WorkflowHistoryArtifactConstructionBoundary) throws -> Void
+    constructionHook: @escaping @Sendable (WorkflowHistoryConstructionBoundary) throws -> Void
   ) {
     self.root = root
     self.constructionHook = constructionHook

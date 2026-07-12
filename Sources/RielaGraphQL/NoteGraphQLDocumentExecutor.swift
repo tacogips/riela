@@ -286,7 +286,7 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
     case "migrateNoteFileStorage":
       let input: GraphQLMigrateNoteFileStorageInput = try requiredInput("input", variables: variables)
       do {
-        let migrated = try service.service.migrateFileStorage(
+        let migrated = try service.service.migrateFileStorageOutcome(
           fileId: input.fileId,
           to: try input.storageProfile(
             allowedProfiles: s3Profiles,
@@ -294,11 +294,17 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
             allowRawInput: allowRawS3ProfileInput,
             rawEnvironmentAllowlist: rawS3EnvironmentAllowlist
           ),
-          httpClient: s3HTTPClient
+          httpClient: s3HTTPClient,
+          verifyRemoteRead: false
         )
         return try encodedJSONValue(GraphQLNoteFileMigrationResult(
           result: GraphQLControlPlaneResult(accepted: true, status: "ok"),
-          migrated: [GraphQLNoteFileDTO(file: migrated)]
+          migrated: [GraphQLNoteFileDTO(file: migrated.record)],
+          cleanupFailures: migrated.cleanupFailure.map {
+            [GraphQLNoteFileMigrationFailureDTO(
+              NoteFileMigrationFailure(fileId: $0.fileId, message: noteFileMigrationFailureMessage)
+            )]
+          } ?? []
         ))
       } catch {
         return try encodedJSONValue(GraphQLNoteFileMigrationResult(
@@ -328,7 +334,33 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
           GraphQLNoteFileMigrationFailureDTO(
             NoteFileMigrationFailure(fileId: failure.fileId, message: noteFileMigrationFailureMessage)
           )
+        },
+        cleanupFailures: migrated.cleanupFailures.map { failure in
+          GraphQLNoteFileMigrationFailureDTO(
+            NoteFileMigrationFailure(fileId: failure.fileId, message: noteFileMigrationFailureMessage)
+          )
         }
+      ))
+    case "reclaimNoteFileStorage":
+      let input: GraphQLReclaimNoteFileStorageInput = try requiredInput("input", variables: variables)
+      if let graceHours = input.graceHours, graceHours < 0 {
+        throw NoteGraphQLDocumentExecutorError.invalidVariable("graceHours must not be negative")
+      }
+      let profile = try input.optionalStorageProfile(
+        allowedProfiles: s3Profiles,
+        environment: request.environment,
+        allowRawInput: allowRawS3ProfileInput,
+        rawEnvironmentAllowlist: rawS3EnvironmentAllowlist
+      )
+      let reclaimed = try service.service.reclaimUnreferencedFiles(
+        olderThan: TimeInterval(input.graceHours ?? 24) * 60 * 60,
+        s3Profiles: profile.map { [$0] } ?? [],
+        httpClient: s3HTTPClient
+      )
+      return try encodedJSONValue(GraphQLNoteFileReclamationResult(
+        result: GraphQLControlPlaneResult(accepted: true, status: "ok"),
+        deletedFileIds: reclaimed.deletedFileIds,
+        sweptPaths: reclaimed.sweptPaths
       ))
     default:
       return .null
@@ -441,7 +473,8 @@ let supportedNoteGraphQLFields: Set<String> = [
   "deleteNoteAutoAction",
   "saveNoteConversation",
   "migrateNoteFileStorage",
-  "migrateAllNoteFiles"
+  "migrateAllNoteFiles",
+  "reclaimNoteFileStorage"
 ]
 
 private let noteGraphQLQueryFields: Set<String> = [
@@ -570,7 +603,8 @@ private let noteGraphQLRootSelectionTypes: [String: String] = [
   "deleteNotebook": "ControlPlaneResult",
   "deleteNoteAutoAction": "ControlPlaneResult",
   "migrateNoteFileStorage": "NoteFileMigrationPayload",
-  "migrateAllNoteFiles": "NoteFileMigrationPayload"
+  "migrateAllNoteFiles": "NoteFileMigrationPayload",
+  "reclaimNoteFileStorage": "NoteFileReclamationPayload"
 ]
 
 let noteGraphQLSelectionFields: [String: [String: String?]] = [
@@ -605,7 +639,13 @@ let noteGraphQLSelectionFields: [String: [String: String?]] = [
   "NoteFileMigrationPayload": [
     "result": "ControlPlaneResult",
     "migrated": "NoteFile",
-    "failures": "NoteFileMigrationFailure"
+    "failures": "NoteFileMigrationFailure",
+    "cleanupFailures": "NoteFileMigrationFailure"
+  ],
+  "NoteFileReclamationPayload": [
+    "result": "ControlPlaneResult",
+    "deletedFileIds": nil,
+    "sweptPaths": nil
   ],
   "Note": [
     "noteId": nil,

@@ -223,7 +223,7 @@ final class RielaNoteGenerationGuardTests: XCTestCase {
 
     // A slow save on note-1 races a switch to note-2; note-1's result must be dropped.
     client.updateNoteBodyDelayNanoseconds = 60_000_000
-    let save = Task { await viewModel.saveSelectedNoteBody("edited", expectedNoteId: "note-1") }
+    let save = Task { try? await viewModel.saveSelectedNoteBody("edited", expectedNoteId: "note-1") }
     try await Task.sleep(nanoseconds: 5_000_000)
     client.updateNoteBodyDelayNanoseconds = 0
     await viewModel.selectNote("note-2")

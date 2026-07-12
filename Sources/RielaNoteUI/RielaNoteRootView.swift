@@ -193,16 +193,20 @@ public struct RielaNoteRootView: View {
         }
       },
       onSave: { bodyMarkdown in
-        Task {
+        do {
           switch destination {
           case .memo:
-            await viewModel.createUserMemo(body: bodyMarkdown)
+            try await viewModel.createUserMemo(body: bodyMarkdown)
           case .selectedNotebook:
-            await viewModel.createNoteInSelectedNotebook(body: bodyMarkdown)
+            try await viewModel.createNoteInSelectedNotebook(body: bodyMarkdown)
           }
-          composeDestination = nil
-          libraryPath = [.detail]
+        } catch {
+          // Leave the compose view open so the draft is preserved.
+          return false
         }
+        composeDestination = nil
+        libraryPath = [.detail]
+        return true
       }
     )
   }

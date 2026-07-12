@@ -58,7 +58,7 @@ final class RielaNoteEditRewriteTests: XCTestCase {
     XCTAssertFalse(viewModel.isEditRewriteLoading)
   }
 
-  func testViewModelTranslatesWholeSelectedNoteAndUpdatesDetail() async throws {
+  func testViewModelTranslatesWholeSelectedNoteReturnsDraftWithoutPersisting() async throws {
     let client = RewriteTestClient()
     client.rewriteDraft = RielaNoteEditRewriteDraft(
       rewrittenMarkdown: "# ページ1\n\n本文",
@@ -67,9 +67,14 @@ final class RielaNoteEditRewriteTests: XCTestCase {
     let viewModel = RielaNoteLibraryViewModel(client: client, translationTargetLanguage: "Japanese")
 
     await viewModel.selectNote("note-1")
-    await viewModel.translateSelectedNote()
+    let draft = await viewModel.translateSelectedNote()
 
-    XCTAssertEqual(viewModel.selectedDetail?.note.bodyMarkdown, "# ページ1\n\n本文")
+    // Translation lands in a reviewable draft, not the store body: the returned
+    // draft carries the translated text and the store body is untouched (no
+    // updateNoteBody until the user saves).
+    XCTAssertEqual(draft?.rewrittenMarkdown, "# ページ1\n\n本文")
+    XCTAssertEqual(viewModel.selectedDetail?.note.bodyMarkdown, "# Page One\n\nBody")
+    XCTAssertEqual(client.updateNoteBodyCallCount, 0)
     XCTAssertEqual(viewModel.translateNoteSummary, "Translated to Japanese.")
     XCTAssertNil(viewModel.translateNoteError)
     XCTAssertFalse(viewModel.isTranslateNoteLoading)
@@ -83,6 +88,39 @@ final class RielaNoteEditRewriteTests: XCTestCase {
         selectionEnd: nil
       )
     ])
+  }
+
+  func testViewModelTranslateProvidesDefaultReviewSummaryWhenModelSummaryEmpty() async throws {
+    let client = RewriteTestClient()
+    client.rewriteDraft = RielaNoteEditRewriteDraft(rewrittenMarkdown: "# ページ1\n\n本文", summary: "  ")
+    let viewModel = RielaNoteLibraryViewModel(client: client, translationTargetLanguage: "Japanese")
+
+    await viewModel.selectNote("note-1")
+    let draft = await viewModel.translateSelectedNote()
+
+    XCTAssertEqual(draft?.rewrittenMarkdown, "# ページ1\n\n本文")
+    XCTAssertEqual(viewModel.translateNoteSummary, "Translated to Japanese. Review and save.")
+  }
+
+  func testViewModelDropsStaleTranslationAfterNoteSwitch() async throws {
+    let client = RewriteTestClient()
+    client.rewriteDelayNanoseconds = 50_000_000
+    client.rewriteDraft = RielaNoteEditRewriteDraft(rewrittenMarkdown: "late", summary: "Late")
+    let viewModel = RielaNoteLibraryViewModel(client: client, translationTargetLanguage: "Japanese")
+
+    await viewModel.selectNote("note-1")
+    let translation = Task {
+      await viewModel.translateSelectedNote()
+    }
+    try await Task.sleep(nanoseconds: 5_000_000)
+    await viewModel.selectNote("note-2")
+    let draft = await translation.value
+
+    XCTAssertNil(draft)
+    XCTAssertEqual(client.updateNoteBodyCallCount, 0)
+    XCTAssertNil(viewModel.translateNoteSummary)
+    XCTAssertNil(viewModel.translateNoteError)
+    XCTAssertFalse(viewModel.isTranslateNoteLoading)
   }
 
   func testViewModelTranslateUsesConfiguredDefaultAndSurfacesNotConfigured() async throws {
@@ -248,6 +286,25 @@ final class RielaNoteEditRewriteTests: XCTestCase {
     )
   }
 
+  // MARK: - Restored edit-agent UI reachability (TASK-013, F12)
+
+  // The detail view carries the restored edit-agent pill / selection Q&A flow;
+  // constructing it proves the restored SwiftUI body — which references
+  // `proposeBodyRewrite`, `askSelectionQuestion`, and
+  // `RielaNoteSelectableTextEditor` — compiles and is wired to the live
+  // view-model rather than the dead-code state before the snapshot regression.
+  func testDetailViewConstructsWithRestoredEditAgentSurface() async throws {
+    let client = RewriteTestClient()
+    let viewModel = RielaNoteLibraryViewModel(client: client)
+    await viewModel.selectNote("note-2")
+
+    _ = RielaNoteDetailView(viewModel: viewModel)
+    _ = RielaNoteSelectableTextEditor(
+      text: .constant("editor body"),
+      selectedRange: .constant(NSRange(location: 0, length: 0))
+    )
+  }
+
   #if os(macOS)
   func testWorkflowEditRewriteVariablesIncludeSelectionFields() throws {
     let variables = noteEditRewriteVariables(
@@ -400,6 +457,20 @@ final class RielaNoteEditRewriteTests: XCTestCase {
     let draft = parseNoteEditRewriteDraft(from: output)
 
     XCTAssertEqual(draft, RielaNoteEditRewriteDraft(rewrittenMarkdown: "second", summary: "used"))
+  }
+
+  func testParseNoteEditRewriteDraftRejectsEmptyRewrittenMarkdown() {
+    let output = """
+    {"result":{"rootOutput":{"rewrittenMarkdown":"","summary":"refused"}}}
+    """
+    XCTAssertNil(parseNoteEditRewriteDraft(from: output))
+  }
+
+  func testParseNoteEditRewriteDraftRejectsWhitespaceRewrittenMarkdown() {
+    let output = """
+    {"result":{"rootOutput":{"rewrittenMarkdown":"   \\n\\t ","summary":"refused"}}}
+    """
+    XCTAssertNil(parseNoteEditRewriteDraft(from: output))
   }
 
   func testWorkflowEditRewriteDefaultProviderAcceptsTrustedAbsoluteEnvironmentOverrides() throws {
@@ -619,6 +690,7 @@ private final class RewriteTestClient: RielaNoteUIClient, @unchecked Sendable {
   var rewriteDraft = RielaNoteEditRewriteDraft(rewrittenMarkdown: "# Rewritten\n\nBody", summary: "Rewritten")
   var rewriteError: Error?
   var rewriteDelayNanoseconds: UInt64?
+  var updateNoteBodyCallCount = 0
 
   var defaultConfigWorkflowRoot: String {
     "tmp/RielaNoteEditRewriteTests/default-config-workflows"
@@ -663,7 +735,8 @@ private final class RewriteTestClient: RielaNoteUIClient, @unchecked Sendable {
   }
 
   func updateNoteBody(noteId: String, bodyMarkdown: String) async throws -> RielaNoteDetail {
-    RielaNoteDetail(note: note(noteId: noteId, bodyMarkdown: bodyMarkdown))
+    updateNoteBodyCallCount += 1
+    return RielaNoteDetail(note: note(noteId: noteId, bodyMarkdown: bodyMarkdown))
   }
 
   func applyTag(noteId: String, tagName: String, classId: String?) async throws -> RielaNoteDetail {

@@ -133,7 +133,6 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     !selectedSearchTagNames.isEmpty
       || !selectedSearchClassIds.isEmpty
       || filter.createdRange != .any
-      || filter.includeLinked
   }
 
   public var selectedNote: Note? {
@@ -217,7 +216,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
       guard isCurrentSearchGeneration(searchGeneration) else {
         return
       }
-      state = .failed(String(describing: error))
+      state = .failed(rielaNoteLoadFailureMessage(error))
     }
   }
 
@@ -265,7 +264,9 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
       }
       let refreshedDetail: RielaNoteDetail?
       if let selectedNoteId {
-        refreshedDetail = try await client.noteDetail(noteId: selectedNoteId)
+        // A note deleted elsewhere degrades to a selection change, not an error
+        // screen: fall back to the first available note in the list.
+        refreshedDetail = try await refreshedDetailFallingBackOnMissing(selectedNoteId)
       } else if let first = notebookNotes.first {
         refreshedDetail = try await client.noteDetail(noteId: first.noteId)
       } else {
@@ -278,8 +279,70 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
       selectedDetail = refreshedDetail
       await prepareSelectedNoteFiles(preferredMode: preferredMode)
       state = .loaded
+    } catch let error as NoteServiceError where isSelectedNotebookMissing(error, notebookId: currentNotebookId) {
+      // The selected notebook was deleted elsewhere: drop it and reload the
+      // cross-notebook feed rather than failing every refresh into the overlay.
+      await degradeToFirstAvailableNote()
     } catch {
-      state = .failed(String(describing: error))
+      state = .failed(rielaNoteLoadFailureMessage(error))
+    }
+  }
+
+  /// Fetches the selected note's detail, falling back to the first available note
+  /// when the selected note has been deleted elsewhere (`notFound`).
+  private func refreshedDetailFallingBackOnMissing(_ selectedNoteId: String) async throws -> RielaNoteDetail? {
+    do {
+      return try await client.noteDetail(noteId: selectedNoteId)
+    } catch let error as NoteServiceError {
+      guard case let .notFound(missing) = error, missing.contains(selectedNoteId) || missing == selectedNoteId else {
+        throw error
+      }
+      notebookNotes.removeAll { $0.noteId == selectedNoteId }
+      if let first = notebookNotes.first {
+        return try await client.noteDetail(noteId: first.noteId)
+      }
+      return nil
+    }
+  }
+
+  private func isSelectedNotebookMissing(_ error: NoteServiceError, notebookId: String?) -> Bool {
+    guard let notebookId, case let .notFound(missing) = error else {
+      return false
+    }
+    return missing.contains(notebookId) || missing == notebookId
+  }
+
+  /// Clears the stale selection and lands on the first available note, leaving
+  /// `state == .loaded`.
+  private func degradeToFirstAvailableNote() async {
+    let generation = advanceSelectionGeneration()
+    selectedDetail = nil
+    do {
+      try await loadNotebooksFirstPage()
+      if let first = notebooks.first {
+        selectedNotebookId = first.notebookId
+        try await loadNotebookNotesFirstPage(notebookId: first.notebookId, generation: generation)
+        guard isCurrentSelection(generation) else {
+          return
+        }
+        if let firstNote = notebookNotes.first {
+          selectedDetail = try await client.noteDetail(noteId: firstNote.noteId)
+        } else {
+          selectedNotebookId = nil
+        }
+      } else {
+        selectedNotebookId = nil
+      }
+      guard isCurrentSelection(generation) else {
+        return
+      }
+      await prepareSelectedNoteFiles(preferredMode: .text)
+      state = .loaded
+    } catch {
+      guard isCurrentSelection(generation) else {
+        return
+      }
+      state = .failed(rielaNoteLoadFailureMessage(error))
     }
   }
 
@@ -342,7 +405,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
       guard isCurrentSearch(generation: generation, query: query, tagFilter: tagFilter, classFilter: classFilter) else {
         return
       }
-      state = .failed(String(describing: error))
+      state = .failed(rielaNoteLoadFailureMessage(error))
     }
   }
 
@@ -371,7 +434,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
       guard isCurrentSelection(generation) else {
         return
       }
-      state = .failed(String(describing: error))
+      state = .failed(rielaNoteLoadFailureMessage(error))
     }
   }
 
@@ -400,86 +463,94 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
         ?? (previousNotebookId == notebookId ? contentMode : .text)
       await prepareSelectedNoteFiles(preferredMode: preferredMode)
       state = .loaded
+    } catch let error as NoteServiceError where isMissingSelection(error, noteId: noteId) {
+      // The target note was deleted elsewhere: degrade to the first available
+      // note instead of showing an error screen.
+      guard isCurrentSelection(generation) else {
+        return
+      }
+      await degradeToFirstAvailableNote()
     } catch {
       guard isCurrentSelection(generation) else {
         return
       }
-      state = .failed(String(describing: error))
+      state = .failed(rielaNoteLoadFailureMessage(error))
     }
   }
 
-  public func createUserMemo(body: String = "") async {
+  private func isMissingSelection(_ error: NoteServiceError, noteId: String) -> Bool {
+    guard case let .notFound(missing) = error else {
+      return false
+    }
+    return missing.contains(noteId) || missing == noteId
+  }
+
+  public func createUserMemo(body: String = "") async throws {
+    // The create call itself must not mutate load state so a failure leaves the
+    // list untouched; only the post-create list reload drives `state`.
+    let detail = try await client.createUserMemo(bodyMarkdown: body)
     state = .loading
-    do {
-      let detail = try await client.createUserMemo(bodyMarkdown: body)
-      // A create makes the new note the current selection; claim the newest
-      // generation so a concurrent selection cannot overwrite it.
-      let generation = advanceSelectionGeneration()
-      searchText = ""
-      searchResults = []
-      searchResultsOffset = 0
-      hasMoreSearchResults = false
-      selectedSearchTagNames = []
-      selectedSearchClassIds = []
-      filter = RielaNoteListFilter(sort: filter.sort)
-      selectedDetail = detail
-      selectedNotebookId = detail.note.notebookId
-      try await loadNotebooksFirstPage()
-      try await loadNotebooksUntilContains(detail.note.notebookId)
-      availableSearchTags = try await client.listTags()
-      availableSearchTagClasses = try await client.listTagClasses()
-      try await loadNotebookNotesFirstPage(notebookId: detail.note.notebookId, generation: generation)
-      guard isCurrentSelection(generation) else {
-        return
-      }
-      if !notebookNotes.contains(where: { $0.noteId == detail.note.noteId }) {
-        notebookNotes.append(detail.note)
-      }
-      clearResolvedFileSelection()
-      contentMode = .text
-      state = .loaded
-    } catch {
-      state = .failed(String(describing: error))
-    }
-  }
-
-  public func createNoteInSelectedNotebook(body: String = "") async {
-    guard let notebookId = selectedNotebookId else {
+    // A create makes the new note the current selection; claim the newest
+    // generation so a concurrent selection cannot overwrite it.
+    let generation = advanceSelectionGeneration()
+    searchText = ""
+    searchResults = []
+    searchResultsOffset = 0
+    hasMoreSearchResults = false
+    selectedSearchTagNames = []
+    selectedSearchClassIds = []
+    filter = RielaNoteListFilter(sort: filter.sort)
+    selectedDetail = detail
+    selectedNotebookId = detail.note.notebookId
+    try await loadNotebooksFirstPage()
+    try await loadNotebooksUntilContains(detail.note.notebookId)
+    availableSearchTags = try await client.listTags()
+    availableSearchTagClasses = try await client.listTagClasses()
+    try await loadNotebookNotesFirstPage(notebookId: detail.note.notebookId, generation: generation)
+    guard isCurrentSelection(generation) else {
       return
     }
-    state = .loading
-    do {
-      let detail = try await client.createNote(inNotebook: notebookId, bodyMarkdown: body)
-      // A create makes the new note the current selection; claim the newest
-      // generation so a concurrent selection cannot overwrite it.
-      let generation = advanceSelectionGeneration()
-      searchText = ""
-      searchResults = []
-      searchResultsOffset = 0
-      hasMoreSearchResults = false
-      selectedSearchTagNames = []
-      selectedSearchClassIds = []
-      filter = RielaNoteListFilter(sort: filter.sort)
-      selectedDetail = detail
-      selectedNotebookId = detail.note.notebookId
-      try await loadNotebooksFirstPage()
-      try await loadNotebooksUntilContains(detail.note.notebookId)
-      availableSearchTags = try await client.listTags()
-      availableSearchTagClasses = try await client.listTagClasses()
-      try await loadNotebookNotesFirstPage(notebookId: detail.note.notebookId, generation: generation)
-      try await loadNotebookNotesUntilContains(detail.note.noteId, generation: generation)
-      guard isCurrentSelection(generation) else {
-        return
-      }
-      if !notebookNotes.contains(where: { $0.noteId == detail.note.noteId }) {
-        notebookNotes.append(detail.note)
-      }
-      clearResolvedFileSelection()
-      contentMode = .text
-      state = .loaded
-    } catch {
-      state = .failed(String(describing: error))
+    if !notebookNotes.contains(where: { $0.noteId == detail.note.noteId }) {
+      notebookNotes.append(detail.note)
     }
+    clearResolvedFileSelection()
+    contentMode = .text
+    state = .loaded
+  }
+
+  public func createNoteInSelectedNotebook(body: String = "") async throws {
+    guard let notebookId = selectedNotebookId else {
+      throw NoteServiceError.invalidInput("No notebook is selected.")
+    }
+    let detail = try await client.createNote(inNotebook: notebookId, bodyMarkdown: body)
+    state = .loading
+    // A create makes the new note the current selection; claim the newest
+    // generation so a concurrent selection cannot overwrite it.
+    let generation = advanceSelectionGeneration()
+    searchText = ""
+    searchResults = []
+    searchResultsOffset = 0
+    hasMoreSearchResults = false
+    selectedSearchTagNames = []
+    selectedSearchClassIds = []
+    filter = RielaNoteListFilter(sort: filter.sort)
+    selectedDetail = detail
+    selectedNotebookId = detail.note.notebookId
+    try await loadNotebooksFirstPage()
+    try await loadNotebooksUntilContains(detail.note.notebookId)
+    availableSearchTags = try await client.listTags()
+    availableSearchTagClasses = try await client.listTagClasses()
+    try await loadNotebookNotesFirstPage(notebookId: detail.note.notebookId, generation: generation)
+    try await loadNotebookNotesUntilContains(detail.note.noteId, generation: generation)
+    guard isCurrentSelection(generation) else {
+      return
+    }
+    if !notebookNotes.contains(where: { $0.noteId == detail.note.noteId }) {
+      notebookNotes.append(detail.note)
+    }
+    clearResolvedFileSelection()
+    contentMode = .text
+    state = .loaded
   }
 
   public func setContentMode(_ mode: NoteContentMode) async {
@@ -544,115 +615,79 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
       guard isCurrentSelection(generation) else {
         return
       }
-      state = .failed(String(describing: error))
+      state = .failed(rielaNoteLoadFailureMessage(error))
     }
   }
 
-  public func saveSelectedNoteBody(_ bodyMarkdown: String, expectedNoteId: String? = nil) async {
+  public func saveSelectedNoteBody(_ bodyMarkdown: String, expectedNoteId: String? = nil) async throws {
     guard let noteId = selectedDetail?.note.noteId else {
-      return
+      throw NoteServiceError.notFound("No note is selected.")
     }
     guard expectedNoteId == nil || expectedNoteId == noteId else {
-      return
+      throw NoteServiceError.invalidInput("The note changed before the save completed.")
     }
     let generation = selectionGeneration
-    state = .loading
-    do {
-      let detail = try await client.updateNoteBody(noteId: noteId, bodyMarkdown: bodyMarkdown)
-      guard isCurrentSelection(generation) else {
-        return
-      }
-      selectedDetail = detail
-      if let index = notebookNotes.firstIndex(where: { $0.noteId == noteId }) {
-        notebookNotes[index] = detail.note
-      }
-      clearResolvedFileSelection()
-      contentMode = .text
-      state = .loaded
-    } catch {
-      guard isCurrentSelection(generation) else {
-        return
-      }
-      state = .failed(String(describing: error))
+    let detail = try await client.updateNoteBody(noteId: noteId, bodyMarkdown: bodyMarkdown)
+    guard isCurrentSelection(generation) else {
+      return
     }
+    selectedDetail = detail
+    if let index = notebookNotes.firstIndex(where: { $0.noteId == noteId }) {
+      notebookNotes[index] = detail.note
+    }
+    clearResolvedFileSelection()
+    contentMode = .text
   }
 
-  public func applyTagToSelectedNote(name: String, classId: String? = "topic") async {
+  public func applyTagToSelectedNote(name: String, classId: String? = "topic") async throws {
     guard let noteId = selectedDetail?.note.noteId else {
-      return
+      throw NoteServiceError.notFound("No note is selected.")
     }
     let tagName = name.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !tagName.isEmpty else {
-      return
+      throw NoteServiceError.invalidInput("A tag name is required.")
     }
     let generation = selectionGeneration
-    state = .loading
-    do {
-      let normalizedClassId = classId?.trimmingCharacters(in: .whitespacesAndNewlines)
-      let detail = try await client.applyTag(
-        noteId: noteId,
-        tagName: tagName,
-        classId: normalizedClassId?.isEmpty == true ? nil : normalizedClassId
-      )
-      let tags = try await client.listTags()
-      guard isCurrentSelection(generation) else {
-        return
-      }
-      replaceSelectedDetail(detail)
-      availableSearchTags = tags
-      state = .loaded
-    } catch {
-      guard isCurrentSelection(generation) else {
-        return
-      }
-      state = .failed(String(describing: error))
+    let normalizedClassId = classId?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let detail = try await client.applyTag(
+      noteId: noteId,
+      tagName: tagName,
+      classId: normalizedClassId?.isEmpty == true ? nil : normalizedClassId
+    )
+    let tags = try await client.listTags()
+    guard isCurrentSelection(generation) else {
+      return
     }
+    replaceSelectedDetail(detail)
+    availableSearchTags = tags
   }
 
-  public func removeTagFromSelectedNote(name: String) async {
+  public func removeTagFromSelectedNote(name: String) async throws {
     guard let noteId = selectedDetail?.note.noteId else {
-      return
+      throw NoteServiceError.notFound("No note is selected.")
     }
     let generation = selectionGeneration
-    state = .loading
-    do {
-      let detail = try await client.removeTag(noteId: noteId, tagName: name)
-      guard isCurrentSelection(generation) else {
-        return
-      }
-      replaceSelectedDetail(detail)
-      state = .loaded
-    } catch {
-      guard isCurrentSelection(generation) else {
-        return
-      }
-      state = .failed(String(describing: error))
+    let detail = try await client.removeTag(noteId: noteId, tagName: name)
+    guard isCurrentSelection(generation) else {
+      return
     }
+    replaceSelectedDetail(detail)
   }
 
-  public func addCommentToSelectedNote(_ bodyMarkdown: String) async {
+  public func addCommentToSelectedNote(_ bodyMarkdown: String) async throws {
     guard let noteId = selectedDetail?.note.noteId else {
-      return
+      throw NoteServiceError.notFound("No note is selected.")
     }
     let commentBody = bodyMarkdown.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !commentBody.isEmpty else {
-      return
+      throw NoteServiceError.invalidInput("A comment cannot be empty.")
     }
     let generation = selectionGeneration
-    state = .loading
-    do {
-      let detail = try await client.addComment(noteId: noteId, bodyMarkdown: commentBody)
-      guard isCurrentSelection(generation) else {
-        return
-      }
-      selectedDetail = detail
-      state = .loaded
-    } catch {
-      guard isCurrentSelection(generation) else {
-        return
-      }
-      state = .failed(String(describing: error))
+    let detail = try await client.addComment(noteId: noteId, bodyMarkdown: commentBody)
+    guard isCurrentSelection(generation) else {
+      return
     }
+    selectedDetail = detail
   }
 
   public func selectPreviousNote() async {
@@ -672,7 +707,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
       try await appendNotebooksPage()
       state = .loaded
     } catch {
-      state = .failed(String(describing: error))
+      state = .failed(rielaNoteLoadFailureMessage(error))
     }
   }
 
@@ -713,7 +748,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
         return
       }
       isLoadingMoreSearchResults = false
-      state = .failed(String(describing: error))
+      state = .failed(rielaNoteLoadFailureMessage(error))
     }
   }
 
@@ -738,7 +773,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
         return
       }
       isLoadingMoreNotebookNotes = false
-      state = .failed(String(describing: error))
+      state = .failed(rielaNoteLoadFailureMessage(error))
     }
   }
 
@@ -957,7 +992,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
         return
       }
       isSourceImageLoading = false
-      state = .failed(String(describing: error))
+      state = .failed(rielaNoteLoadFailureMessage(error))
     }
   }
 
@@ -999,34 +1034,25 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
 }
 
 extension RielaNoteLibraryViewModel {
-  public func linkSelectedNote(to targetNoteId: String, kind: String = "related") async {
+  public func linkSelectedNote(to targetNoteId: String, kind: String = "related") async throws {
     guard let noteId = selectedDetail?.note.noteId else {
-      return
+      throw NoteServiceError.notFound("No note is selected.")
     }
     let normalizedTarget = targetNoteId.trimmingCharacters(in: .whitespacesAndNewlines)
     let normalizedKind = kind.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalizedTarget.isEmpty else {
-      return
+      throw NoteServiceError.invalidInput("A target note is required.")
     }
     let generation = selectionGeneration
-    state = .loading
-    do {
-      let detail = try await client.linkNote(
-        noteId: noteId,
-        targetNoteId: normalizedTarget,
-        linkKind: rielaNoteAllowedLinkKind(normalizedKind)
-      )
-      guard isCurrentSelection(generation) else {
-        return
-      }
-      selectedDetail = detail
-      state = .loaded
-    } catch {
-      guard isCurrentSelection(generation) else {
-        return
-      }
-      state = .failed(String(describing: error))
+    let detail = try await client.linkNote(
+      noteId: noteId,
+      targetNoteId: normalizedTarget,
+      linkKind: rielaNoteAllowedLinkKind(normalizedKind)
+    )
+    guard isCurrentSelection(generation) else {
+      return
     }
+    selectedDetail = detail
   }
 
   public func updateSort(_ sort: NoteListSort) async {
@@ -1154,5 +1180,28 @@ private extension RielaNoteLibraryViewModel {
 
   private func byteCountText(_ byteSize: Int64) -> String {
     byteSize == 1 ? "1 byte" : "\(byteSize) bytes"
+  }
+}
+
+/// Human-readable message for a list load/selection failure. `NoteServiceError`
+/// cases map to short user-facing text; anything else falls back to a generic
+/// message so raw error descriptions never reach the UI.
+func rielaNoteLoadFailureMessage(_ error: Error) -> String {
+  switch error {
+  case let serviceError as NoteServiceError:
+    switch serviceError {
+    case .notFound:
+      return "That note is no longer available."
+    case .readOnly:
+      return "This note is read-only."
+    case .protectedTag:
+      return "That tag can't be changed."
+    case .invalidInput:
+      return "The request was invalid."
+    case .invalidRow:
+      return "A stored note could not be read."
+    }
+  default:
+    return "Unable to load notes right now."
   }
 }

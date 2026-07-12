@@ -32,16 +32,17 @@ public struct RielaNoteComposeView: View {
   let destination: RielaNoteCreationDestination
   let selectedNotebookTitle: String?
   let onCancel: () -> Void
-  let onSave: (String) -> Void
+  let onSave: (String) async -> Bool
   @State private var bodyMarkdown = ""
   @State private var isSaving = false
+  @State private var saveError: String?
   @FocusState private var isEditorFocused: Bool
 
   public init(
     destination: RielaNoteCreationDestination,
     selectedNotebookTitle: String? = nil,
     onCancel: @escaping () -> Void,
-    onSave: @escaping (String) -> Void
+    onSave: @escaping (String) async -> Bool
   ) {
     self.destination = destination
     self.selectedNotebookTitle = selectedNotebookTitle
@@ -58,6 +59,11 @@ public struct RielaNoteComposeView: View {
         .padding(8)
         .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+      if let saveError {
+        Text(saveError)
+          .font(.caption)
+          .foregroundStyle(.red)
+      }
       HStack {
         Spacer()
         Button("Cancel", action: onCancel)
@@ -66,7 +72,16 @@ public struct RielaNoteComposeView: View {
             return
           }
           isSaving = true
-          onSave(bodyMarkdown)
+          saveError = nil
+          Task {
+            let succeeded = await onSave(bodyMarkdown)
+            // On failure keep the compose editor open with the typed body so the
+            // memo text is not lost; only reset the saving flag.
+            if !succeeded {
+              saveError = "The note could not be created. Please try again."
+              isSaving = false
+            }
+          }
         } label: {
           Label("Save", systemImage: "checkmark")
         }

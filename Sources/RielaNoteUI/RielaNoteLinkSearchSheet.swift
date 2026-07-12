@@ -54,10 +54,16 @@ struct RielaNoteLinkSearchSheet: View {
         Button {
           let targetNoteId = selectedNoteId
           let kind = rielaNoteAllowedLinkKind(linkKind)
+          errorText = nil
           Task {
             if let targetNoteId {
-              await viewModel.linkSelectedNote(to: targetNoteId, kind: kind)
-              onLinked()
+              do {
+                try await viewModel.linkSelectedNote(to: targetNoteId, kind: kind)
+                onLinked()
+              } catch {
+                // Keep the sheet open on failure; only dismiss on success.
+                errorText = rielaNoteMutationErrorMessage(error)
+              }
             }
           }
         } label: {
@@ -336,7 +342,9 @@ struct RielaNoteLinkProposalSheet: View {
         Spacer()
         Button {
           Task {
-            await viewModel.acceptLinkProposal(proposal)
+            // The error surfaces via viewModel.linkProposalError; nothing else to
+            // do on failure since the proposal stays in the list.
+            try? await viewModel.acceptLinkProposal(proposal)
           }
         } label: {
           Label("Accept", systemImage: "checkmark")

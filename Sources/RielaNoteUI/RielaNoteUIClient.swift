@@ -338,6 +338,7 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
   public func createUserMemo(bodyMarkdown: String) async throws -> RielaNoteDetail {
     let note = try service.createNote(
       notebookTitle: "User Memo",
+      notebookKindTagName: "notebook-kind:user-memo",
       bodyMarkdown: bodyMarkdown,
       tags: [NoteTagInput(name: "user-memo", classId: "topic")],
       provenance: .human,

@@ -87,6 +87,7 @@ public struct NoteService: Sendable {
   public func createNote(
     notebookId requestedNotebookId: String? = nil,
     notebookTitle: String? = nil,
+    notebookKindTagName: String? = nil,
     title: String? = nil,
     bodyMarkdown: String,
     readOnly: Bool = false,
@@ -116,6 +117,17 @@ public struct NoteService: Sendable {
             """,
             bindings: [.text(notebookId), .text(derivedTitle), .text(now), .text(now)]
           )
+          if let notebookKindTagName {
+            try ensureNotebookKindTag(notebookKindTagName, in: db)
+            try applyNotebookTag(
+              notebookId: notebookId,
+              tagName: notebookKindTagName,
+              provenance: .system,
+              assignedBy: "riela-note",
+              deletable: false,
+              in: db
+            )
+          }
         }
 
         let noteNumber = try nextNoteNumber(notebookId: notebookId, in: db)

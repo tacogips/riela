@@ -349,6 +349,140 @@ public extension NoteService {
   func noteRootPath() -> String {
     URL(fileURLWithPath: driver.databasePath).deletingLastPathComponent().path
   }
+
+  /// Reclaims file storage that no note/notebook references any more.
+  ///
+  /// Two passes run:
+  /// 1. Every `files` row with no `note_files`/`notebook_files` reference is
+  ///    deleted, and its local/S3 blob is best-effort removed. Rows that are
+  ///    still referenced keep the existing survive-note-deletion semantics.
+  /// 2. The local `files/` tree is swept for stored blobs and leftover
+  ///    `.file-*.tmp-*` temp files that have no corresponding `files` row and
+  ///    whose on-disk modification time is older than `graceInterval` (default
+  ///    24h). The grace window avoids racing an in-flight attach whose row has
+  ///    not yet committed.
+  ///
+  /// The pass is best-effort: an individual blob or S3 delete that fails does not
+  /// abort the sweep; the row is still removed so it is not retried forever.
+  @discardableResult
+  func reclaimUnreferencedFiles(
+    olderThan graceInterval: TimeInterval = 24 * 60 * 60,
+    s3Profiles: [S3StorageProfile] = [],
+    httpClient: S3HTTPClient = URLSessionS3HTTPClient(),
+    now: Date = Date()
+  ) throws -> NoteFileReclamationResult {
+    var result = NoteFileReclamationResult()
+    let localStore = LocalNoteFileStore(noteRoot: noteRootPath())
+
+    // Pass 1: orphaned `files` rows.
+    let orphanedRows = try driver.withDatabase { database in
+      try database.query(
+        """
+        SELECT f.file_id, f.storage_kind, f.local_path, f.s3_profile, f.s3_bucket, f.s3_key,
+          f.media_type, f.byte_size, f.sha256, f.original_filename, f.created_at, f.migrated_at
+        FROM files f
+        WHERE NOT EXISTS (SELECT 1 FROM note_files nf WHERE nf.file_id = f.file_id)
+          AND NOT EXISTS (SELECT 1 FROM notebook_files nbf WHERE nbf.file_id = f.file_id)
+        ORDER BY f.created_at, f.file_id
+        """
+      ).map(fileRecord(from:))
+    }
+    for record in orphanedRows {
+      switch record.storageKind {
+      case .local:
+        try? localStore.delete(record: record)
+      case .s3:
+        if let profileName = record.s3Profile,
+           let profile = s3Profiles.first(where: { $0.name == profileName }) {
+          try? S3NoteFileStore(profile: profile, httpClient: httpClient).delete(record: record)
+        }
+      }
+      try driver.withDatabase { database in
+        try database.execute("DELETE FROM files WHERE file_id = ?", bindings: [.text(record.fileId)])
+      }
+      result.deletedFileIds.append(record.fileId)
+    }
+
+    // Pass 2: sweep the local blob tree for entries with no `files` row.
+    let referencedLocalPaths = Set(try driver.withDatabase { database in
+      try database.query(
+        "SELECT local_path FROM files WHERE storage_kind = 'local' AND local_path IS NOT NULL"
+      ).compactMap { $0["local_path"] }
+    })
+    let cutoff = now.addingTimeInterval(-graceInterval)
+    let filesRoot = URL(fileURLWithPath: noteRootPath(), isDirectory: true)
+      .appendingPathComponent("files", isDirectory: true)
+    result.sweptPaths = sweepUnreferencedLocalBlobs(
+      filesRoot: filesRoot,
+      referencedRelativePaths: referencedLocalPaths,
+      cutoff: cutoff
+    )
+    return result
+  }
+}
+
+public struct NoteFileReclamationResult: Equatable, Sendable {
+  /// `files` rows removed because nothing referenced them.
+  public var deletedFileIds: [String]
+  /// Local blob / temp-file relative paths swept from disk in pass 2.
+  public var sweptPaths: [String]
+
+  public init(deletedFileIds: [String] = [], sweptPaths: [String] = []) {
+    self.deletedFileIds = deletedFileIds
+    self.sweptPaths = sweptPaths
+  }
+}
+
+/// Walks `filesRoot/<shard>/…`, removing stored blobs and `.file-*.tmp-*` temp
+/// files that no `files` row references and whose modification time predates
+/// `cutoff`. Returns the shard-relative paths that were removed.
+private func sweepUnreferencedLocalBlobs(
+  filesRoot: URL,
+  referencedRelativePaths: Set<String>,
+  cutoff: Date
+) -> [String] {
+  let fileManager = FileManager.default
+  guard let shardDirs = try? fileManager.contentsOfDirectory(
+    at: filesRoot,
+    includingPropertiesForKeys: [.isDirectoryKey],
+    options: [.skipsHiddenFiles]
+  ) else {
+    return []
+  }
+  var swept: [String] = []
+  for shardDir in shardDirs {
+    let isDirectory = (try? shardDir.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+    guard isDirectory else {
+      continue
+    }
+    let shardName = shardDir.lastPathComponent
+    guard let entries = try? fileManager.contentsOfDirectory(
+      at: shardDir,
+      includingPropertiesForKeys: [.contentModificationDateKey],
+      options: []
+    ) else {
+      continue
+    }
+    for entry in entries {
+      let name = entry.lastPathComponent
+      let relativePath = "\(shardName)/\(name)"
+      let isTempFile = name.hasPrefix(".") && name.contains(".tmp-")
+      if !isTempFile && referencedRelativePaths.contains(relativePath) {
+        continue
+      }
+      // A temp file is never a durable blob, so it is only kept while young;
+      // stored blobs are kept if referenced (handled above) and otherwise swept.
+      let modifiedAt = (try? entry.resourceValues(forKeys: [.contentModificationDateKey]))?
+        .contentModificationDate ?? Date.distantFuture
+      guard modifiedAt < cutoff else {
+        continue
+      }
+      if (try? fileManager.removeItem(at: entry)) != nil {
+        swept.append(relativePath)
+      }
+    }
+  }
+  return swept
 }
 
 private func insertFileRecord(

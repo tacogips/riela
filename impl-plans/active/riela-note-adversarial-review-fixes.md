@@ -1,6 +1,6 @@
 # Riela Note Adversarial Review Fixes Implementation Plan
 
-**Status**: Planning
+**Status**: Complete
 **Design Reference**: design-docs/specs/design-riela-note-adversarial-review-2026-07-12.md
 **Created**: 2026-07-12
 **Last Updated**: 2026-07-12
@@ -41,7 +41,7 @@ named below are deleted, not shimmed.
 ## Task Breakdown
 
 ### TASK-001: Strict GraphQL argument handling + multi-root execution (T1)
-**Status**: NOT_STARTED
+**Status**: COMPLETE
 **Depends On**: —
 **Findings**: F2 F3 F22 F23 F54 F55 F56
 **Affected files**:
@@ -79,16 +79,16 @@ fields; any directive → explicit error. Update
 `fetchLimit` unit test in `Tests/RielaNoteTests/NoteServiceTests.swift`.
 
 **Checklist**:
-- [ ] Strict `optionalInt`/`optionalString`; silent fallbacks deleted
-- [ ] Bounds validation replaces clamping; SDL documents bounds
-- [ ] Overflow-safe `fetchLimit`
-- [ ] Multi-root execution; directive rejection
-- [ ] `boundedLimit`/`boundedOffset` grep-clean; tests pass
+- [x] Strict `optionalInt`/`optionalString`; silent fallbacks deleted
+- [x] Bounds validation replaces clamping; SDL documents bounds
+- [x] Overflow-safe `fetchLimit`
+- [x] Multi-root execution; directive rejection
+- [x] `boundedLimit`/`boundedOffset` grep-clean; tests pass
 
 ---
 
 ### TASK-002: Auth error redaction + verified identity (T2)
-**Status**: NOT_STARTED
+**Status**: COMPLETE
 **Depends On**: —
 **Findings**: F21 F24 F25 F26
 **Affected files**:
@@ -117,15 +117,15 @@ equal the redacted constant; authenticated
 `assignedBy` persists `client:<verified-id>`.
 
 **Checklist**:
-- [ ] Fixed-message auth/registration bodies; errors logged not echoed
-- [ ] Redacted migration diagnostics
-- [ ] Verified-identity derivation; explicit override rejected when authenticated
-- [ ] Tests pass
+- [x] Fixed-message auth/registration bodies; errors logged not echoed
+- [x] Redacted migration diagnostics
+- [x] Verified-identity derivation; explicit override rejected when authenticated
+- [x] Tests pass
 
 ---
 
 ### TASK-003: Auto-action dispatch leases + async dispatch (T3 core)
-**Status**: NOT_STARTED
+**Status**: COMPLETE
 **Depends On**: —
 **Findings**: F1 F11 F50/F60
 **Affected files**:
@@ -164,17 +164,17 @@ enqueue-with-nil-dispatcher inserts a pending row.
 dispatch and drain-before-exit.
 
 **Checklist**:
-- [ ] Lease columns + atomic claim + staleness-gated recovery
-- [ ] Lease-keyed completion
-- [ ] Recovery out of `init`; `riela note auto-action retry` added
-- [ ] Async dispatch; no `DispatchSemaphore` remains
-- [ ] Always-enqueue; `dispatchAutoActions(for:)` deleted
-- [ ] Tests pass
+- [x] Lease columns + atomic claim + staleness-gated recovery
+- [x] Lease-keyed completion
+- [x] Recovery out of `init`; `riela note auto-action retry` added
+- [x] Async dispatch; no `DispatchSemaphore` remains
+- [x] Always-enqueue; `dispatchAutoActions(for:)` deleted
+- [x] Tests pass
 
 ---
 
 ### TASK-004: App-side auto-action dispatcher wiring (T3 app)
-**Status**: NOT_STARTED
+**Status**: COMPLETE
 **Depends On**: TASK-003
 **Findings**: F15
 **Affected files**:
@@ -196,15 +196,15 @@ wired, launches a workflow run (stub launcher); existing
 `RielaCLITests` dispatcher tests migrate here as appropriate.
 
 **Checklist**:
-- [ ] Dispatcher re-homed to shared target; CLI still builds
-- [ ] Both app window controllers wire the dispatcher
-- [ ] Maintenance tick invokes recovery with lease window
-- [ ] Tests pass
+- [x] Dispatcher re-homed to shared target; CLI still builds
+- [x] Both app window controllers wire the dispatcher
+- [x] Maintenance tick invokes recovery with lease window
+- [x] Tests pass
 
 ---
 
 ### TASK-005: Generation-guarded async UI state (T4)
-**Status**: NOT_STARTED
+**Status**: COMPLETE
 **Depends On**: —
 **Findings**: F4 F5 F27 F28 F29 F37
 **Affected files**:
@@ -240,17 +240,17 @@ load-more single page, stale SelectionQA/EditRewrite leaves
 and `RielaNoteLibrarySearchPaginationTests.swift` for offset invariants.
 
 **Checklist**:
-- [ ] Generation parameter on image resolution; stale results dropped
-- [ ] Load-more guards + reentrancy flags (notebook and search)
-- [ ] `selectNote`/`load()` guards
-- [ ] Guarded mutation `selectedDetail` writes
-- [ ] Loading flags reset on stale returns
-- [ ] Race tests pass
+- [x] Generation parameter on image resolution; stale results dropped
+- [x] Load-more guards + reentrancy flags (notebook and search)
+- [x] `selectNote`/`load()` guards
+- [x] Guarded mutation `selectedDetail` writes
+- [x] Loading flags reset on stale returns
+- [x] Race tests pass
 
 ---
 
 ### TASK-006: Throwing mutations + draft preservation (T5)
-**Status**: NOT_STARTED
+**Status**: COMPLETE
 **Depends On**: —
 **Findings**: F7/F13 F8/F14 F9/F44 F31/F45 F32
 **Affected files**:
@@ -286,15 +286,15 @@ keeps draft strings; failed link never calls `onLinked`; each mutation
 rethrows and leaves `state == .loaded`.
 
 **Checklist**:
-- [ ] All eight mutations throw; guard failures throw
-- [ ] Views preserve drafts and surface inline errors on failure
-- [ ] Pager + shortcuts disabled while editing; discard confirmation
-- [ ] Tests pass
+- [x] All eight mutations throw; guard failures throw
+- [x] Views preserve drafts and surface inline errors on failure
+- [x] Pager + shortcuts disabled while editing; discard confirmation
+- [x] Tests pass
 
 ---
 
 ### TASK-007: Load-state separation + failure degradation (T6)
-**Status**: NOT_STARTED
+**Status**: COMPLETE
 **Depends On**: TASK-006
 **Findings**: F36 F39 F40 F64
 **Affected files**:
@@ -322,16 +322,16 @@ new/nil selection; `acceptLinkProposal` failure sets `linkProposalError`,
 `state = .failed`.
 
 **Checklist**:
-- [ ] `linkProposalError`; mutations never touch `LoadState`
-- [ ] Human-readable load-error mapping
-- [ ] `notFound` degrades to selection change
-- [ ] Loading branch precedes empty state
-- [ ] Tests pass
+- [x] `linkProposalError`; mutations never touch `LoadState`
+- [x] Human-readable load-error mapping
+- [x] `notFound` degrades to selection change
+- [x] Loading branch precedes empty state
+- [x] Tests pass
 
 ---
 
 ### TASK-008: Translation as reviewed draft (T7 UI)
-**Status**: NOT_STARTED
+**Status**: COMPLETE
 **Depends On**: TASK-005, TASK-006
 **Findings**: F6/F10/F43 (+ degenerate-output part of F38 mitigation)
 **Affected files**:
@@ -357,14 +357,14 @@ extend `RielaNoteEditRewriteTests.swift`): translate ends with
 `invalidOutput`; stale translation result dropped.
 
 **Checklist**:
-- [ ] Translation lands in draft; direct persist deleted
-- [ ] Degenerate output rejected
-- [ ] Tests pass
+- [x] Translation lands in draft; direct persist deleted
+- [x] Degenerate output rejected
+- [x] Tests pass
 
 ---
 
 ### TASK-009: Provider execution hygiene (T7 process)
-**Status**: NOT_STARTED
+**Status**: COMPLETE
 **Depends On**: —
 **Findings**: F34 F38 F61 F62
 **Affected files**:
@@ -394,16 +394,16 @@ spawns no process; cancel mid-run yields `CancellationError`;
 `--variables-file` parity with `--variables`.
 
 **Checklist**:
-- [ ] Variables via temp file in all three providers
-- [ ] Untrusted-data prompt framing
-- [ ] Pre-launch + in-loop cancellation; `CancellationError` mapping
-- [ ] Link-provider env parity
-- [ ] Tests pass
+- [x] Variables via temp file in all three providers
+- [x] Untrusted-data prompt framing
+- [x] Pre-launch + in-loop cancellation; `CancellationError` mapping
+- [x] Link-provider env parity
+- [x] Tests pass
 
 ---
 
 ### TASK-010: Agent + config-agent conversation integrity (T8)
-**Status**: NOT_STARTED
+**Status**: COMPLETE
 **Depends On**: —
 **Findings**: F30 F35 F41 F42 F57/F66 F58
 **Affected files**:
@@ -439,17 +439,17 @@ slug; injected scaffold failure leaves no tag/auto-action rows; failed
 submit/apply restores draft and surfaces error; double-apply blocked.
 
 **Checklist**:
-- [ ] Submit reentrancy guard
-- [ ] Show-first-persist-second; unsaved-turn banner
-- [ ] Full-history persist on leaving temp mode
-- [ ] Config-agent error banner, draft restore, apply guard
-- [ ] Slug/workflow-id validation before any DB write
-- [ ] Tests pass
+- [x] Submit reentrancy guard
+- [x] Show-first-persist-second; unsaved-turn banner
+- [x] Full-history persist on leaving temp mode
+- [x] Config-agent error banner, draft restore, apply guard
+- [x] Slug/workflow-id validation before any DB write
+- [x] Tests pass
 
 ---
 
 ### TASK-011: File blob GC + migration result honesty (T9)
-**Status**: NOT_STARTED
+**Status**: COMPLETE
 **Depends On**: —
 **Findings**: F18 F19/F65 F51 F52
 **Affected files**:
@@ -482,15 +482,15 @@ with cleanup warning (rerun skips it); injected DB failure after S3 PUT
 attempts S3 delete and leaves the record `local`.
 
 **Checklist**:
-- [ ] GC service method + sweep with grace period
-- [ ] CLI command + GraphQL mutation
-- [ ] `cleanupFailures` on migration result; S3 compensation
-- [ ] Tests pass
+- [x] GC service method + sweep with grace period
+- [x] CLI command + GraphQL mutation
+- [x] `cleanupFailures` on migration result; S3 compensation
+- [x] Tests pass
 
 ---
 
 ### TASK-012: Store semantics — ordering, titles, ingest, search fallbacks (T10)
-**Status**: NOT_STARTED
+**Status**: COMPLETE
 **Depends On**: —
 **Findings**: F16 F17 F48 F49 F63
 **Affected files**:
@@ -522,17 +522,17 @@ pages in `note_number` order. `Tests/RielaNoteUITests` — toggling
 `includeLinked` with empty query/filters leaves the notebook list untouched.
 
 **Checklist**:
-- [ ] Notebook-scoped ordering delegation
-- [ ] `title_source` column + conditional re-derivation; pinning test rewritten
-- [ ] Page-collision validation
-- [ ] LIKE fallback for symbol-only queries
-- [ ] `includeLinked` no longer a standalone filter
-- [ ] Tests pass
+- [x] Notebook-scoped ordering delegation
+- [x] `title_source` column + conditional re-derivation; pinning test rewritten
+- [x] Page-collision validation
+- [x] LIKE fallback for symbol-only queries
+- [x] `includeLinked` no longer a standalone filter
+- [x] Tests pass
 
 ---
 
 ### TASK-013: Restore the edit-agent + selection Q&A UI (T11, F12)
-**Status**: NOT_STARTED
+**Status**: COMPLETE
 **Depends On**: TASK-006, TASK-008
 **Findings**: F12
 **Affected files**:
@@ -559,15 +559,15 @@ view-level assertion (grep criterion in CI: UI callers of
 `RielaNoteSelectableTextEditor` exist in `Sources/RielaNoteUI`).
 
 **Checklist**:
-- [ ] Agent pill + Cmd-K / Shift-Cmd-K flows restored in edit mode
-- [ ] Reconciled with translation control and draft guards
-- [ ] View-model APIs have UI callers (grep)
-- [ ] Existing edit-rewrite/selection-QA tests still pass
+- [x] Agent pill + Cmd-K / Shift-Cmd-K flows restored in edit mode
+- [x] Reconciled with translation control and draft guards
+- [x] View-model APIs have UI callers (grep)
+- [x] Existing edit-rewrite/selection-QA tests still pass
 
 ---
 
 ### TASK-014: Memo kind tag + non-image attachment open (T11, F46/F47)
-**Status**: NOT_STARTED
+**Status**: COMPLETE
 **Depends On**: —
 **Findings**: F46 F47
 **Affected files**:
@@ -592,14 +592,14 @@ auto-actions. `Tests/RielaNoteUITests` — tapping a non-image attachment
 invokes the open callback with the resolved temp file / offers save.
 
 **Checklist**:
-- [ ] Kind tag on memo-notebook auto-creation
-- [ ] Non-image open + save affordance; RielaNoteUI AppKit-free
-- [ ] Tests pass
+- [x] Kind tag on memo-notebook auto-creation
+- [x] Non-image open + save affordance; RielaNoteUI AppKit-free
+- [x] Tests pass
 
 ---
 
 ### TASK-015: Point fixes — driver parity + UI polish (T12)
-**Status**: NOT_STARTED
+**Status**: COMPLETE
 **Depends On**: —
 **Findings**: F20 F33 F53 F59
 **Affected files**:
@@ -624,11 +624,11 @@ LibSQL section) — concurrent writes through one driver serialize without
 markdown skips the parse.
 
 **Checklist**:
-- [ ] Cached serialized `.local` connection; single probe cycle
-- [ ] Immutable driver path/options
-- [ ] Memoized block parsing
-- [ ] Accessibility label fixed
-- [ ] Tests pass
+- [x] Cached serialized `.local` connection; single probe cycle
+- [x] Immutable driver path/options
+- [x] Memoized block parsing
+- [x] Accessibility label fixed
+- [x] Tests pass
 
 ---
 
@@ -636,21 +636,21 @@ markdown skips the parse.
 
 | Task | Module | Key Files | Status |
 |------|--------|-----------|--------|
-| TASK-001 | Strict GraphQL arguments + multi-root | `NoteGraphQLDocumentExecutor.swift`, `NoteGraphQLDocumentParsing.swift`, `NoteSearch.swift` | NOT_STARTED |
-| TASK-002 | Auth redaction + verified identity | `QRClientRegistrationAuthenticator.swift`, `NoteGraphQLDocumentExecutor.swift` | NOT_STARTED |
-| TASK-003 | Dispatch leases + async dispatch | `AutoActionDispatching.swift`, `NoteStoreSchema.swift`, `NoteAutoActionWorkflowDispatcher.swift` | NOT_STARTED |
-| TASK-004 | App dispatcher wiring | `Sources/RielaNoteDispatch` (new), `NoteWindowController.swift`, `NoteSettingsWindowController.swift` | NOT_STARTED |
-| TASK-005 | Generation-guarded UI state | `RielaNoteLibraryViewModel.swift` (+SelectionQA/+EditRewrite) | NOT_STARTED |
-| TASK-006 | Throwing mutations + draft preservation | `RielaNoteLibraryViewModel.swift`, `RielaNoteDetailView.swift`, `RielaNoteRootView.swift`, `RielaNoteLinkSearchSheet.swift` | NOT_STARTED |
-| TASK-007 | Load-state separation | `RielaNoteLibraryViewModel.swift`, `+LinkProposals.swift`, `RielaNoteNotebookListView.swift` | NOT_STARTED |
-| TASK-008 | Translation as draft | `RielaNoteLibraryViewModel+Translation.swift`, `RielaNoteWorkflowEditRewriteProvider.swift` | NOT_STARTED |
-| TASK-009 | Provider execution hygiene | `RielaNoteWorkflowEditRewriteProvider.swift`, `RielaNoteWorkflowLinkProposalProvider.swift`, CLI run command | NOT_STARTED |
-| TASK-010 | Agent conversation integrity | `RielaNoteAgentViewModel.swift`, `RielaNoteConfigAgentView(Model).swift`, `RielaNoteUIClient.swift` | NOT_STARTED |
-| TASK-011 | Blob GC + migration honesty | `NoteService.swift`, `NoteService+Files.swift`, `NoteFileMigration.swift` | NOT_STARTED |
-| TASK-012 | Store semantics | `NoteService.swift`, `NoteService+Rows.swift`, `NoteSearch.swift`, `NoteStoreSchema.swift` | NOT_STARTED |
-| TASK-013 | Edit-agent UI restore | `RielaNoteDetailView.swift`, `RielaNoteSelectableTextEditor.swift` | NOT_STARTED |
-| TASK-014 | Memo kind tag + attachment open | `RielaNoteUIClient.swift`, `NoteService.swift`, `RielaNoteDetailView.swift` | NOT_STARTED |
-| TASK-015 | Driver parity + UI polish | `LibSQLNoteDatabaseDriver.swift`, `NoteDatabaseDriving.swift`, `RielaNoteMarkdownBodyView.swift`, `RielaNoteQuickCreateButton.swift` | NOT_STARTED |
+| TASK-001 | Strict GraphQL arguments + multi-root | `NoteGraphQLDocumentExecutor.swift`, `NoteGraphQLDocumentParsing.swift`, `NoteSearch.swift` | COMPLETE |
+| TASK-002 | Auth redaction + verified identity | `QRClientRegistrationAuthenticator.swift`, `NoteGraphQLDocumentExecutor.swift` | COMPLETE |
+| TASK-003 | Dispatch leases + async dispatch | `AutoActionDispatching.swift`, `NoteStoreSchema.swift`, `NoteAutoActionWorkflowDispatcher.swift` | COMPLETE |
+| TASK-004 | App dispatcher wiring | `Sources/RielaNoteDispatch` (new), `NoteWindowController.swift`, `NoteSettingsWindowController.swift` | COMPLETE |
+| TASK-005 | Generation-guarded UI state | `RielaNoteLibraryViewModel.swift` (+SelectionQA/+EditRewrite) | COMPLETE |
+| TASK-006 | Throwing mutations + draft preservation | `RielaNoteLibraryViewModel.swift`, `RielaNoteDetailView.swift`, `RielaNoteRootView.swift`, `RielaNoteLinkSearchSheet.swift` | COMPLETE |
+| TASK-007 | Load-state separation | `RielaNoteLibraryViewModel.swift`, `+LinkProposals.swift`, `RielaNoteNotebookListView.swift` | COMPLETE |
+| TASK-008 | Translation as draft | `RielaNoteLibraryViewModel+Translation.swift`, `RielaNoteWorkflowEditRewriteProvider.swift` | COMPLETE |
+| TASK-009 | Provider execution hygiene | `RielaNoteWorkflowEditRewriteProvider.swift`, `RielaNoteWorkflowLinkProposalProvider.swift`, CLI run command | COMPLETE |
+| TASK-010 | Agent conversation integrity | `RielaNoteAgentViewModel.swift`, `RielaNoteConfigAgentView(Model).swift`, `RielaNoteUIClient.swift` | COMPLETE |
+| TASK-011 | Blob GC + migration honesty | `NoteService.swift`, `NoteService+Files.swift`, `NoteFileMigration.swift` | COMPLETE |
+| TASK-012 | Store semantics | `NoteService.swift`, `NoteService+Rows.swift`, `NoteSearch.swift`, `NoteStoreSchema.swift` | COMPLETE |
+| TASK-013 | Edit-agent UI restore | `RielaNoteDetailView.swift`, `RielaNoteSelectableTextEditor.swift` | COMPLETE |
+| TASK-014 | Memo kind tag + attachment open | `RielaNoteUIClient.swift`, `NoteService.swift`, `RielaNoteDetailView.swift` | COMPLETE |
+| TASK-015 | Driver parity + UI polish | `LibSQLNoteDatabaseDriver.swift`, `NoteDatabaseDriving.swift`, `RielaNoteMarkdownBodyView.swift`, `RielaNoteQuickCreateButton.swift` | COMPLETE |
 
 ## Dependencies
 
@@ -664,15 +664,15 @@ markdown skips the parse.
 
 ## Completion Criteria
 
-- [ ] All 15 tasks implemented; `swift build` and `swift test` pass
-- [ ] Design-doc acceptance criteria for T1–T12 verified (including the
+- [x] All 15 tasks implemented; `swift build` and `swift test` pass
+- [x] Design-doc acceptance criteria for T1–T12 verified (including the
       grep criteria: no `boundedLimit`/`boundedOffset`, no
       `dispatchAutoActions(for:)`, no mutation `state = .failed`,
       UI callers of `proposeBodyRewrite`/`askSelectionQuestion`)
-- [ ] No `DispatchSemaphore` in dispatch code; dispatch API is `async`
-- [ ] Note DB recreated cleanly with the new schema (`lease_token`/`leased_at`,
+- [x] No `DispatchSemaphore` in dispatch code; dispatch API is `async`
+- [x] Note DB recreated cleanly with the new schema (`lease_token`/`leased_at`,
       `title_source`); no migration code added
-- [ ] `RielaNoteUI` remains AppKit-free
+- [x] `RielaNoteUI` remains AppKit-free
 
 ## Progress Log
 
@@ -680,6 +680,25 @@ markdown skips the parse.
 **Tasks Completed**: None yet
 **Tasks In Progress**: Plan created from
 design-docs/specs/design-riela-note-adversarial-review-2026-07-12.md
+**Blockers**: None
+
+### Session: 2026-07-12 (implementation)
+**Tasks Completed**: TASK-001 through TASK-015 (all). Implemented in four
+waves of parallel agents with per-file ownership. Full suite: 1687 tests,
+0 failures (4 skipped). Completion-criteria greps verified: no
+`boundedLimit`/`boundedOffset` in the note GraphQL layer, no
+`dispatchAutoActions(for:)`, no `DispatchSemaphore` in dispatch code, no
+mutation writes to `state = .failed` (remaining `.failed` writes are
+load-lifecycle only), UI callers of `proposeBodyRewrite`/
+`askSelectionQuestion`/`RielaNoteSelectableTextEditor` restored, schema has
+`lease_token`/`leased_at` and `title_source` with no migration code.
+**Notable deviations** (recorded per task by the implementing agents):
+`--variables-file` added to `riela workflow run`; dispatcher split along the
+CLI seam into new `RielaNoteDispatch` target with `NoteAutoActionWorkflowLaunching`
+(concrete CLI launcher stays in RielaCLI; app-side concrete launcher deferred —
+app wiring takes an injectable launcher); config-agent workflow-id validation
+uses a local mirror of the scaffolder rule (`isSafeWorkflowId` not visible from
+RielaNoteUI); prompt templates in examples/note-* gained untrusted-data framing.
 **Blockers**: None
 
 ## Related Plans

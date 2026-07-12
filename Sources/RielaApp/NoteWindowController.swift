@@ -54,7 +54,12 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
       ),
       defaultTranslationTargetLanguage: noteSettings.normalizedTranslationTargetLanguage
     )
-    let hostingController = NSHostingController(rootView: RielaNoteRootView(client: client, onOpenSettings: onOpenSettings))
+    let hostingController = NSHostingController(
+      rootView: RielaNoteRootView(client: client, onOpenSettings: onOpenSettings)
+        .environment(\.rielaNoteOpenFile, RielaNoteOpenFileAction { url in
+          NSWorkspace.shared.open(url)
+        })
+    )
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 1120, height: 740),
       styleMask: [.titled, .closable, .miniaturizable, .resizable],

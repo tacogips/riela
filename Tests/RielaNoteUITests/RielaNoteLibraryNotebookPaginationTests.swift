@@ -43,7 +43,7 @@ final class RielaNoteLibraryNotebookPaginationTests: XCTestCase {
     await viewModel.load()
     await viewModel.loadMoreNotebooks()
     await viewModel.selectNotebook("notebook-3")
-    await viewModel.createNoteInSelectedNotebook(body: "Draft")
+    try await viewModel.createNoteInSelectedNotebook(body: "Draft")
 
     XCTAssertEqual(viewModel.selectedNotebookId, "notebook-3")
     XCTAssertTrue(viewModel.notebooks.contains(where: { $0.notebookId == "notebook-3" }))

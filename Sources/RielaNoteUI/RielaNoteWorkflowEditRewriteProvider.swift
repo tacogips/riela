@@ -245,6 +245,14 @@ func noteEditRewriteVariables(
 }
 
 func parseNoteEditRewriteDraft(from output: String) -> RielaNoteEditRewriteDraft? {
-  rielaWorkflowRunRootOutput(from: output, as: RielaNoteEditRewriteDraft.self)
+  guard let draft = rielaWorkflowRunRootOutput(from: output, as: RielaNoteEditRewriteDraft.self) else {
+    return nil
+  }
+  // Reject degenerate output: an empty or whitespace-only rewrite is a refusal
+  // or a broken run, not a valid draft to prefill over the note.
+  guard !draft.rewrittenMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+    return nil
+  }
+  return draft
 }
 #endif

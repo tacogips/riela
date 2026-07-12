@@ -98,6 +98,17 @@ enum NoteCommandGraphQLDocuments {
       result { \(controlResult) }
       migrated { \(file) }
       failures { fileId message }
+      cleanupFailures { fileId message }
+    }
+  }
+  """
+
+  static let reclaimNoteFileStorage = """
+  mutation ReclaimNoteFileStorage($input: ReclaimNoteFileStorageInput!) {
+    reclaimNoteFileStorage(input: $input) {
+      result { \(controlResult) }
+      deletedFileIds
+      sweptPaths
     }
   }
   """

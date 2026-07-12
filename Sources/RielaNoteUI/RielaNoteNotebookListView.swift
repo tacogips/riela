@@ -93,9 +93,11 @@ public struct RielaNoteNotebookListView: View {
     .overlay {
       if case let .failed(message) = viewModel.state {
         ContentUnavailableView("Unable to load notes", systemImage: "exclamationmark.triangle", description: Text(message))
-      } else if !viewModel.isSearching && viewModel.notebooks.isEmpty {
+      } else if viewModel.state == .loading && listIsEmpty {
+        ProgressView()
+      } else if viewModel.state == .loaded && !viewModel.isSearching && viewModel.notebooks.isEmpty {
         ContentUnavailableView("No notes", systemImage: "note.text")
-      } else if viewModel.isSearching && viewModel.searchResults.isEmpty {
+      } else if viewModel.state == .loaded && viewModel.isSearching && viewModel.searchResults.isEmpty {
         ContentUnavailableView.search
       }
     }
@@ -184,6 +186,13 @@ public struct RielaNoteNotebookListView: View {
         }
       }
     }
+  }
+
+  private var listIsEmpty: Bool {
+    if viewModel.isSearching {
+      return viewModel.searchResults.isEmpty
+    }
+    return viewModel.notebooks.isEmpty && viewModel.notebookNotes.isEmpty
   }
 
   private func open(_ noteId: String) {

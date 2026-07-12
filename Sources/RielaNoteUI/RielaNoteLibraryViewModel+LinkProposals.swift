@@ -36,16 +36,18 @@ extension RielaNoteLibraryViewModel {
     isLinkProposalLoading = false
   }
 
-  public func acceptLinkProposal(_ proposal: NoteLinkProposal) async {
+  public func acceptLinkProposal(_ proposal: NoteLinkProposal) async throws {
     guard let noteId = selectedDetail?.note.noteId else {
-      return
+      throw NoteServiceError.notFound("No note is selected.")
     }
     guard linkProposals.contains(where: {
       $0.targetNote.noteId == proposal.targetNote.noteId && $0.linkKind == proposal.linkKind
     }) else {
-      return
+      throw NoteServiceError.invalidInput("That link proposal is no longer available.")
     }
-    state = .loading
+    // A link failure surfaces in the proposal sheet's own error slot; it never
+    // poisons the list `LoadState`, which stays `.loaded`.
+    linkProposalError = nil
     do {
       selectedDetail = try await client.linkNote(
         noteId: noteId,
@@ -56,9 +58,9 @@ extension RielaNoteLibraryViewModel {
       linkProposals.removeAll {
         $0.targetNote.noteId == proposal.targetNote.noteId && $0.linkKind == proposal.linkKind
       }
-      state = .loaded
     } catch {
-      state = .failed(String(describing: error))
+      linkProposalError = rielaNoteLoadFailureMessage(error)
+      throw error
     }
   }
 

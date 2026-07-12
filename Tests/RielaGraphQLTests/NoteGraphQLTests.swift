@@ -770,7 +770,8 @@ final class NoteGraphQLTests: XCTestCase {
       "deleteNoteAutoAction",
       "saveNoteConversation",
       "migrateNoteFileStorage",
-      "migrateAllNoteFiles"
+      "migrateAllNoteFiles",
+      "reclaimNoteFileStorage"
     ]
 
     XCTAssertEqual(supportedNoteGraphQLFields, queryFields.union(mutationFields))

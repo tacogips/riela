@@ -464,7 +464,24 @@ public struct NoteCommandRunner: Sendable {
           lines.append("failed \(result.failures.count) file(s)")
           lines.append(contentsOf: result.failures.map { "\($0.fileId): \($0.message)" })
         }
+        if !result.cleanupFailures.isEmpty {
+          lines.append("cleanup warning for \(result.cleanupFailures.count) file(s)")
+          lines.append(contentsOf: result.cleanupFailures.map { "\($0.fileId): \($0.message)" })
+        }
         return lines.joined(separator: "\n") + "\n"
+      }
+    case "gc":
+      let output: GraphQLNoteFileReclamationResult = try await executeNoteDocument(
+        field: "reclaimNoteFileStorage",
+        query: NoteCommandGraphQLDocuments.reclaimNoteFileStorage,
+        variables: ["input": try jsonValue(parsed.reclaimInput())],
+        options: parsed
+      )
+      return try render(output, accepted: output.result.accepted, options: options) { result in
+        [
+          "reclaimed \(result.deletedFileIds.count) unreferenced file row(s)",
+          "swept \(result.sweptPaths.count) stray blob/temp file(s)"
+        ].joined(separator: "\n") + "\n"
       }
     default:
       throw CLIUsageError("unsupported note storage subcommand '\(options.target ?? "")'")

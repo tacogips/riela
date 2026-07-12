@@ -146,6 +146,48 @@ final class RielaNoteLibraryRefreshTests: XCTestCase {
     XCTAssertEqual(viewModel.state, .loaded)
   }
 
+  func testRefreshWithExternallyDeletedSelectedNoteDegradesToSelectionChange() async throws {
+    let service = try makeRefreshTestService()
+    let first = try service.createNote(bodyMarkdown: "# First\n\nBody")
+    let second = try service.createNote(notebookId: first.notebookId, bodyMarkdown: "# Second\n\nBody")
+    let viewModel = RielaNoteLibraryViewModel(client: NoteServiceRielaNoteUIClient(service: service))
+
+    await viewModel.selectNote(second.noteId)
+    XCTAssertEqual(viewModel.selectedNote?.noteId, second.noteId)
+
+    // Delete the selected note out from under the UI, as another process would.
+    try service.deleteNote(noteId: second.noteId)
+    await viewModel.refresh()
+
+    // The refresh degrades to a selection change (first available note), not an
+    // error screen.
+    XCTAssertEqual(viewModel.state, .loaded)
+    XCTAssertNotEqual(viewModel.selectedNote?.noteId, second.noteId)
+    XCTAssertEqual(viewModel.selectedNote?.noteId, first.noteId)
+  }
+
+  func testAcceptLinkProposalFailureSetsLinkProposalErrorAndLeavesStateLoaded() async throws {
+    let fixture = NoteUITestFixture()
+    let client = FailingRielaNoteUIClient(base: fixture.client)
+    let viewModel = RielaNoteLibraryViewModel(client: client)
+    await viewModel.selectNote("note-2")
+    let proposal = NoteLinkProposal(
+      targetNote: fixture.note,
+      linkKind: "related",
+      reason: "related content",
+      source: "ai"
+    )
+    viewModel.linkProposals = [proposal]
+
+    client.failLinkNote = true
+    await XCTAssertThrowsErrorAsync(try await viewModel.acceptLinkProposal(proposal))
+
+    XCTAssertNotNil(viewModel.linkProposalError)
+    XCTAssertEqual(viewModel.state, .loaded)
+    // The proposal is not consumed on failure.
+    XCTAssertEqual(viewModel.linkProposals.count, 1)
+  }
+
   func testRefreshDoesNotRestoreSelectionChangedWhileRefreshIsInFlight() async throws {
     let fixture = NoteUITestFixture()
     let viewModel = RielaNoteLibraryViewModel(client: fixture.client)

@@ -77,7 +77,12 @@ input MigrateAllNoteFilesInput {
   s3ProfileName: String!
 }
 type NoteFileMigrationFailure { fileId: String!, message: String! }
-type NoteFileMigrationPayload { result: ControlPlaneResult!, migrated: [NoteFile!]!, failures: [NoteFileMigrationFailure!]! }
+type NoteFileMigrationPayload { result: ControlPlaneResult!, migrated: [NoteFile!]!, failures: [NoteFileMigrationFailure!]!, cleanupFailures: [NoteFileMigrationFailure!]! }
+# reclaimNoteFileStorage garbage-collects unreferenced file rows/blobs. graceHours
+# (default 24) keeps blobs and stray temp files younger than that window; s3ProfileName
+# names an allowlisted profile so orphaned S3 objects can be deleted (optional).
+input ReclaimNoteFileStorageInput { graceHours: Int, s3ProfileName: String }
+type NoteFileReclamationPayload { result: ControlPlaneResult!, deletedFileIds: [String!]!, sweptPaths: [String!]! }
 type NoteMutationPayload {
   result: ControlPlaneResult!
   note: Note

@@ -2,6 +2,9 @@ public struct DeterministicLocalNodeAdapter: NodeAdapter {
   public init() {}
 
   public func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    if let sleepOutput = try await SleepNodeExecution.outputIfSleepNode(input) {
+      return sleepOutput
+    }
     var payload: JSONObject = [
       "nodeId": .string(input.node.id),
       "provider": .string("deterministic-local"),

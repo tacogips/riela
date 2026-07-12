@@ -725,9 +725,12 @@ Target execution behavior for this schema:
 
 - `agent`, `command`, `container`, `sleep`, and `user-action` nodes are
   accepted by the validator
-- in full workflow execution, `sleep` nodes register a scheduled continuation
-  event through the shared scheduled event manager instead of blocking or
-  awaiting a long timer in the node executor
+- in full workflow execution, `sleep` nodes pause the node executor for the
+  declared `sleep.durationMs` (cancellation-cooperative, bounded by the step's
+  node timeout) and complete with a deterministic
+  `{provider: "sleep", status: "completed", durationMs}` payload; migrating
+  long pauses to a non-blocking scheduled continuation event through the
+  shared scheduled event manager remains a future target
 - in full workflow execution, `user-action` nodes persist a request artifact,
   mark the session `paused`, and wait for external/user input rather than
   running an agent, command, or container
@@ -738,14 +741,18 @@ Target execution behavior for this schema:
 ### `sleep`
 
 `sleep` is required when `nodeType` is `sleep` and invalid for other node types.
-Sleep nodes are runtime scheduling nodes: they pause the current workflow
-execution and register the continuation in the shared scheduled event pool
-described in `design-docs/specs/design-scheduled-sleep-node-runtime.md`.
+Sleep nodes pause the current workflow execution for `durationMs` inside the
+node executor (implemented behavior; see `examples/scheduled-sleep` and
+`examples/loop-concurrency-lease`). A missing `sleep` object degrades to a 0ms
+no-op pause. Registering the continuation in a shared scheduled event pool
+instead of blocking is a future runtime target.
 
 Rules:
 
 - exactly one wake condition is required for the first implementation
 - `durationMs` must be a positive integer when present
+- the pause runs inside the step attempt, so `durationMs` must stay below the
+  effective node timeout or the step fails on timeout
 - `until`, if supported, must be a timestamp with an explicit timezone or UTC
   offset
 - `promptTemplate`, `promptTemplateFile`, `model`, `executionBackend`,

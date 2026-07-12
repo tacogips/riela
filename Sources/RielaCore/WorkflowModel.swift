@@ -776,6 +776,15 @@ public struct WorkflowContainerExecution: Codable, Equatable, Sendable {
   }
 }
 
+/// Declares how long a `nodeType: "sleep"` node pauses before completing.
+public struct WorkflowSleepExecution: Codable, Equatable, Sendable {
+  public var durationMs: Int
+
+  public init(durationMs: Int) {
+    self.durationMs = durationMs
+  }
+}
+
 public struct AgentNodePayload: Codable, Equatable, Sendable {
   public var id: String
   public var description: String?
@@ -787,6 +796,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
   public var workingDirectory: String?
   public var command: WorkflowCommandExecution?
   public var container: WorkflowContainerExecution?
+  public var sleep: WorkflowSleepExecution?
   public var agentSandbox: AgentSandboxMode?
   public var agentToolPolicy: AgentToolPolicy?
   public var agentEnvironment: [String: AgentEnvironmentBinding]
@@ -814,6 +824,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     workingDirectory: String? = nil,
     command: WorkflowCommandExecution? = nil,
     container: WorkflowContainerExecution? = nil,
+    sleep: WorkflowSleepExecution? = nil,
     agentSandbox: AgentSandboxMode? = nil,
     agentToolPolicy: AgentToolPolicy? = nil,
     agentEnvironment: [String: AgentEnvironmentBinding] = [:],
@@ -840,6 +851,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     self.workingDirectory = workingDirectory
     self.command = command
     self.container = container
+    self.sleep = sleep
     self.agentSandbox = agentSandbox
     self.agentToolPolicy = agentToolPolicy
     self.agentEnvironment = agentEnvironment
@@ -868,6 +880,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     case workingDirectory
     case command
     case container
+    case sleep
     case agentSandbox
     case agentToolPolicy
     case agentEnvironment
@@ -897,6 +910,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     self.workingDirectory = try container.decodeIfPresent(String.self, forKey: .workingDirectory)
     self.command = try container.decodeIfPresent(WorkflowCommandExecution.self, forKey: .command)
     self.container = try container.decodeIfPresent(WorkflowContainerExecution.self, forKey: .container)
+    self.sleep = try container.decodeIfPresent(WorkflowSleepExecution.self, forKey: .sleep)
     self.agentSandbox = try container.decodeIfPresent(AgentSandboxMode.self, forKey: .agentSandbox)
     self.agentToolPolicy = try container.decodeIfPresent(AgentToolPolicy.self, forKey: .agentToolPolicy)
     self.agentEnvironment = try container.decodeIfPresent(

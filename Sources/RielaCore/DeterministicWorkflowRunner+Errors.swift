@@ -7,6 +7,7 @@ public enum DeterministicWorkflowRunnerError: Error, Equatable, Sendable {
   case missingNodePayload(String)
   case missingPromptVariant(String, String)
   case maxStepsExceeded(Int)
+  case loopBudgetExceeded(String)
   case rerunValidation(String)
   case resumeValidation(String)
   case crossWorkflowDispatchFailed(workflowId: String, reason: String)

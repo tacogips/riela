@@ -1,0 +1,12 @@
+{
+  "id": "report",
+  "description": "Reports after the hold completes; mocked in the bundled scenario.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/report.md",
+  "variables": {},
+  "output": {
+    "description": "Return a JSON object with a summary string."
+  }
+}

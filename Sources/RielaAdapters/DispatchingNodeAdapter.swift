@@ -48,6 +48,9 @@ public actor DispatchingNodeAdapter: NodeAdapter {
   }
 
   public func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    if let sleepOutput = try await SleepNodeExecution.outputIfSleepNode(input) {
+      return sleepOutput
+    }
     let backend = try resolveNodeExecutionBackend(input.node)
     let adapter = try await loadAdapter(for: backend)
     return try await adapter.execute(input, context: context)

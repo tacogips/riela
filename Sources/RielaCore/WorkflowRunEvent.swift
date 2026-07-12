@@ -5,6 +5,8 @@ public enum WorkflowRunEventType: String, Codable, Equatable, Sendable {
   case stepStarted = "step_started"
   case backendEvent = "backend_event"
   case silenceWarning = "silence_warning"
+  case loopStall = "loop_stall"
+  case budgetExceeded = "budget_exceeded"
   case stepCompleted = "step_completed"
   case sessionCompleted = "session_completed"
 }
@@ -93,6 +95,56 @@ public struct SilenceWarningPayload: Codable, Equatable, Sendable {
   }
 }
 
+public struct LoopStallPayload: Codable, Equatable, Sendable {
+  public var gateId: String
+  public var violationKind: String
+  public var action: String
+  public var gateVisits: Int
+  public var repeatedRounds: Int
+  public var fingerprints: [String]
+
+  public init(
+    gateId: String,
+    violationKind: String,
+    action: String,
+    gateVisits: Int,
+    repeatedRounds: Int,
+    fingerprints: [String] = []
+  ) {
+    self.gateId = gateId
+    self.violationKind = violationKind
+    self.action = action
+    self.gateVisits = gateVisits
+    self.repeatedRounds = repeatedRounds
+    self.fingerprints = fingerprints
+  }
+}
+
+public struct LoopBudgetExceededPayload: Codable, Equatable, Sendable {
+  public var diagnostic: String
+  public var action: String
+  public var consumedTokens: Int?
+  public var maxTotalTokens: Int?
+  public var elapsedMs: Int?
+  public var maxWallClockMs: Int?
+
+  public init(
+    diagnostic: String,
+    action: String,
+    consumedTokens: Int? = nil,
+    maxTotalTokens: Int? = nil,
+    elapsedMs: Int? = nil,
+    maxWallClockMs: Int? = nil
+  ) {
+    self.diagnostic = diagnostic
+    self.action = action
+    self.consumedTokens = consumedTokens
+    self.maxTotalTokens = maxTotalTokens
+    self.elapsedMs = elapsedMs
+    self.maxWallClockMs = maxWallClockMs
+  }
+}
+
 public struct SessionCompletionPayload: Codable, Equatable, Sendable {
   public var exitCode: Int32?
   public var nodeExecutions: Int?
@@ -114,6 +166,8 @@ public enum WorkflowRunEvent: Equatable, Sendable {
   case stepStarted(SessionEnvelope, StepEnvelope)
   case backendEvent(SessionEnvelope, StepEnvelope, BackendEventPayload)
   case silenceWarning(SessionEnvelope, StepEnvelope, SilenceWarningPayload)
+  case loopStall(SessionEnvelope, StepEnvelope, LoopStallPayload)
+  case budgetExceeded(SessionEnvelope, StepEnvelope, LoopBudgetExceededPayload)
   case stepCompleted(SessionEnvelope, StepEnvelope, StepCompletionPayload)
   case sessionCompleted(SessionEnvelope, SessionCompletionPayload)
 
@@ -135,6 +189,18 @@ public enum WorkflowRunEvent: Equatable, Sendable {
     backendEventUsage: JSONObject? = nil,
     silentForMs: Int? = nil,
     silenceThresholdMs: Int? = nil,
+    loopStallGateId: String? = nil,
+    loopStallViolationKind: String? = nil,
+    loopStallAction: String? = nil,
+    loopStallGateVisits: Int? = nil,
+    loopStallRepeatedRounds: Int? = nil,
+    loopStallFingerprints: [String]? = nil,
+    loopBudgetDiagnostic: String? = nil,
+    loopBudgetAction: String? = nil,
+    loopBudgetConsumedTokens: Int? = nil,
+    loopBudgetMaxTotalTokens: Int? = nil,
+    loopBudgetElapsedMs: Int? = nil,
+    loopBudgetMaxWallClockMs: Int? = nil,
     exitCode: Int32? = nil,
     nodeExecutions: Int? = nil,
     transitions: Int? = nil
@@ -179,6 +245,32 @@ public enum WorkflowRunEvent: Equatable, Sendable {
           silenceThresholdMs: silenceThresholdMs ?? 0
         )
       )
+    case .loopStall:
+      self = .loopStall(
+        session,
+        step,
+        LoopStallPayload(
+          gateId: loopStallGateId ?? "",
+          violationKind: loopStallViolationKind ?? "",
+          action: loopStallAction ?? "",
+          gateVisits: loopStallGateVisits ?? 0,
+          repeatedRounds: loopStallRepeatedRounds ?? 0,
+          fingerprints: loopStallFingerprints ?? []
+        )
+      )
+    case .budgetExceeded:
+      self = .budgetExceeded(
+        session,
+        step,
+        LoopBudgetExceededPayload(
+          diagnostic: loopBudgetDiagnostic ?? "",
+          action: loopBudgetAction ?? "",
+          consumedTokens: loopBudgetConsumedTokens,
+          maxTotalTokens: loopBudgetMaxTotalTokens,
+          elapsedMs: loopBudgetElapsedMs,
+          maxWallClockMs: loopBudgetMaxWallClockMs
+        )
+      )
     case .stepCompleted:
       self = .stepCompleted(session, step, StepCompletionPayload(transitions: transitions))
     case .sessionCompleted:
@@ -205,6 +297,10 @@ public extension WorkflowRunEvent {
       .backendEvent
     case .silenceWarning:
       .silenceWarning
+    case .loopStall:
+      .loopStall
+    case .budgetExceeded:
+      .budgetExceeded
     case .stepCompleted:
       .stepCompleted
     case .sessionCompleted:
@@ -274,9 +370,9 @@ public extension WorkflowRunEvent {
 
   var nodeExecutions: Int? {
     switch self {
-    case let .stepStarted(_, step), let .backendEvent(_, step, _), let .stepCompleted(_, step, _):
+    case let .stepStarted(_, step), let .backendEvent(_, step, _), let .loopStall(_, step, _), let .stepCompleted(_, step, _):
       step.nodeExecutions
-    case let .silenceWarning(_, step, _):
+    case let .silenceWarning(_, step, _), let .budgetExceeded(_, step, _):
       step.nodeExecutions
     case let .sessionCompleted(_, payload):
       payload.nodeExecutions
@@ -291,7 +387,7 @@ public extension WorkflowRunEvent {
       payload.transitions
     case let .sessionCompleted(_, payload):
       payload.transitions
-    case .sessionStarted, .stepStarted, .backendEvent, .silenceWarning:
+    case .sessionStarted, .stepStarted, .backendEvent, .silenceWarning, .loopStall, .budgetExceeded:
       nil
     }
   }
@@ -302,6 +398,8 @@ public extension WorkflowRunEvent {
          let .stepStarted(session, _),
          let .backendEvent(session, _, _),
          let .silenceWarning(session, _, _),
+         let .loopStall(session, _, _),
+         let .budgetExceeded(session, _, _),
          let .stepCompleted(session, _, _),
          let .sessionCompleted(session, _):
       session
@@ -313,6 +411,8 @@ public extension WorkflowRunEvent {
     case let .stepStarted(_, step),
          let .backendEvent(_, step, _),
          let .silenceWarning(_, step, _),
+         let .loopStall(_, step, _),
+         let .budgetExceeded(_, step, _),
          let .stepCompleted(_, step, _):
       step
     case .sessionStarted, .sessionCompleted:
@@ -324,7 +424,7 @@ public extension WorkflowRunEvent {
     switch self {
     case let .backendEvent(_, _, payload):
       payload
-    case .sessionStarted, .stepStarted, .silenceWarning, .stepCompleted, .sessionCompleted:
+    case .sessionStarted, .stepStarted, .silenceWarning, .loopStall, .budgetExceeded, .stepCompleted, .sessionCompleted:
       nil
     }
   }
@@ -333,7 +433,25 @@ public extension WorkflowRunEvent {
     switch self {
     case let .sessionCompleted(_, payload):
       payload
-    case .sessionStarted, .stepStarted, .backendEvent, .silenceWarning, .stepCompleted:
+    case .sessionStarted, .stepStarted, .backendEvent, .silenceWarning, .loopStall, .budgetExceeded, .stepCompleted:
+      nil
+    }
+  }
+
+  private var loopStallPayload: LoopStallPayload? {
+    switch self {
+    case let .loopStall(_, _, payload):
+      payload
+    case .sessionStarted, .stepStarted, .backendEvent, .silenceWarning, .budgetExceeded, .stepCompleted, .sessionCompleted:
+      nil
+    }
+  }
+
+  var loopBudgetPayload: LoopBudgetExceededPayload? {
+    switch self {
+    case let .budgetExceeded(_, _, payload):
+      payload
+    case .sessionStarted, .stepStarted, .backendEvent, .silenceWarning, .loopStall, .stepCompleted, .sessionCompleted:
       nil
     }
   }
@@ -350,7 +468,7 @@ public extension WorkflowRunEvent {
     switch self {
     case let .silenceWarning(_, _, payload):
       payload
-    case .sessionStarted, .stepStarted, .backendEvent, .stepCompleted, .sessionCompleted:
+    case .sessionStarted, .stepStarted, .backendEvent, .loopStall, .budgetExceeded, .stepCompleted, .sessionCompleted:
       nil
     }
   }
@@ -375,6 +493,18 @@ extension WorkflowRunEvent: Codable {
     case backendEventUsage
     case silentForMs
     case silenceThresholdMs
+    case loopStallGateId
+    case loopStallViolationKind
+    case loopStallAction
+    case loopStallGateVisits
+    case loopStallRepeatedRounds
+    case loopStallFingerprints
+    case loopBudgetDiagnostic
+    case loopBudgetAction
+    case loopBudgetConsumedTokens
+    case loopBudgetMaxTotalTokens
+    case loopBudgetElapsedMs
+    case loopBudgetMaxWallClockMs
     case exitCode
     case nodeExecutions
     case transitions
@@ -400,6 +530,18 @@ extension WorkflowRunEvent: Codable {
       backendEventUsage: try container.decodeIfPresent(JSONObject.self, forKey: .backendEventUsage),
       silentForMs: try container.decodeIfPresent(Int.self, forKey: .silentForMs),
       silenceThresholdMs: try container.decodeIfPresent(Int.self, forKey: .silenceThresholdMs),
+      loopStallGateId: try container.decodeIfPresent(String.self, forKey: .loopStallGateId),
+      loopStallViolationKind: try container.decodeIfPresent(String.self, forKey: .loopStallViolationKind),
+      loopStallAction: try container.decodeIfPresent(String.self, forKey: .loopStallAction),
+      loopStallGateVisits: try container.decodeIfPresent(Int.self, forKey: .loopStallGateVisits),
+      loopStallRepeatedRounds: try container.decodeIfPresent(Int.self, forKey: .loopStallRepeatedRounds),
+      loopStallFingerprints: try container.decodeIfPresent([String].self, forKey: .loopStallFingerprints),
+      loopBudgetDiagnostic: try container.decodeIfPresent(String.self, forKey: .loopBudgetDiagnostic),
+      loopBudgetAction: try container.decodeIfPresent(String.self, forKey: .loopBudgetAction),
+      loopBudgetConsumedTokens: try container.decodeIfPresent(Int.self, forKey: .loopBudgetConsumedTokens),
+      loopBudgetMaxTotalTokens: try container.decodeIfPresent(Int.self, forKey: .loopBudgetMaxTotalTokens),
+      loopBudgetElapsedMs: try container.decodeIfPresent(Int.self, forKey: .loopBudgetElapsedMs),
+      loopBudgetMaxWallClockMs: try container.decodeIfPresent(Int.self, forKey: .loopBudgetMaxWallClockMs),
       exitCode: try container.decodeIfPresent(Int32.self, forKey: .exitCode),
       nodeExecutions: try container.decodeIfPresent(Int.self, forKey: .nodeExecutions),
       transitions: try container.decodeIfPresent(Int.self, forKey: .transitions)
@@ -425,6 +567,18 @@ extension WorkflowRunEvent: Codable {
     try container.encodeIfPresent(backendEventUsage, forKey: .backendEventUsage)
     try container.encodeIfPresent(silentForMs, forKey: .silentForMs)
     try container.encodeIfPresent(silenceThresholdMs, forKey: .silenceThresholdMs)
+    try container.encodeIfPresent(loopStallPayload?.gateId, forKey: .loopStallGateId)
+    try container.encodeIfPresent(loopStallPayload?.violationKind, forKey: .loopStallViolationKind)
+    try container.encodeIfPresent(loopStallPayload?.action, forKey: .loopStallAction)
+    try container.encodeIfPresent(loopStallPayload?.gateVisits, forKey: .loopStallGateVisits)
+    try container.encodeIfPresent(loopStallPayload?.repeatedRounds, forKey: .loopStallRepeatedRounds)
+    try container.encodeIfPresent(loopStallPayload?.fingerprints, forKey: .loopStallFingerprints)
+    try container.encodeIfPresent(loopBudgetPayload?.diagnostic, forKey: .loopBudgetDiagnostic)
+    try container.encodeIfPresent(loopBudgetPayload?.action, forKey: .loopBudgetAction)
+    try container.encodeIfPresent(loopBudgetPayload?.consumedTokens, forKey: .loopBudgetConsumedTokens)
+    try container.encodeIfPresent(loopBudgetPayload?.maxTotalTokens, forKey: .loopBudgetMaxTotalTokens)
+    try container.encodeIfPresent(loopBudgetPayload?.elapsedMs, forKey: .loopBudgetElapsedMs)
+    try container.encodeIfPresent(loopBudgetPayload?.maxWallClockMs, forKey: .loopBudgetMaxWallClockMs)
     try container.encodeIfPresent(exitCode, forKey: .exitCode)
     try container.encodeIfPresent(nodeExecutions, forKey: .nodeExecutions)
     try container.encodeIfPresent(transitions, forKey: .transitions)

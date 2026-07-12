@@ -30,6 +30,7 @@ public struct WorkflowRunCommand: Sendable {
 
   public func run(_ options: WorkflowRunOptions) async -> CLICommandResult {
     var livePersistenceState: WorkflowRunLivePersistenceState?
+    var pendingLease: WorkflowRunPendingLease?
     let jsonlRecorder = options.output == .jsonl ? WorkflowRunJSONLRecorder(writer: jsonlRecordWriter) : nil
     do {
       try rejectUnsupportedRunOptions(options)
@@ -84,6 +85,18 @@ public struct WorkflowRunCommand: Sendable {
         environment: runEnvironment
       )
       let storeRoot = storeRootForRun(options: options, resolution: resolution, resolvedSourceScope: bundle.sourceScope)
+      switch try runConcurrencyPreflight(bundle: bundle, storeRoot: storeRoot, options: options) {
+      case let .finish(result):
+        return result
+      case let .proceed(lease, takeoverDiagnostic):
+        pendingLease = lease
+        if let jsonlRecorder, let takeoverDiagnostic {
+          await jsonlRecorder.append(
+            ((try? jsonString(["type": "loop_concurrency_takeover", "detail": takeoverDiagnostic])) ?? "")
+              .trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
+          )
+        }
+      }
       let runtimeStore = InMemoryWorkflowRuntimeStore()
       try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: storeRoot)
       let telemetry = makeTelemetry(environment: runEnvironment)
@@ -169,61 +182,36 @@ public struct WorkflowRunCommand: Sendable {
           options: options,
           runtimeStore: runtimeStore
         )
-        let workflowMessages = try await runtimeStore.listMessages(for: finalResult.session.sessionId, toStepId: nil)
-        let loopEvidence = projectLoopEvidence(
-          session: finalResult.session,
-          workflowMessages: workflowMessages,
-          bundle: bundle,
-          variables: effectiveVariables,
-          recovery: finalResult.recovery
-        )
-        finalResult.loopEvidence = loopEvidence.map(LoopEvidenceSummary.init)
-        applyRequiredLoopGateFailureIfNeeded(&finalResult, loopEvidence: loopEvidence, workflow: bundle.workflow)
-        try persistSessionRecord(
-          workflowName: persistedIdentity.workflowName,
-          resolution: persistedIdentity.resolution,
-          resolvedSourceScope: bundle.sourceScope,
-          result: finalResult,
-          workflowMessages: workflowMessages,
-          bundle: bundle,
-          variables: effectiveVariables,
-          options: options,
-          loopEvidence: loopEvidence
-        )
-        await telemetry.flush(timeout: Duration.seconds(2))
-        return CLICommandResult(
-          exitCode: CLIExitCode(rawValue: finalResult.exitCode) ?? .failure,
-          stdout: try await renderRunResult(finalResult, output: options.output, jsonlRecorder: jsonlRecorder)
+        return try await finalizeRun(
+          &finalResult,
+          context: RunFinalizeContext(
+            runtimeStore: runtimeStore,
+            bundle: bundle,
+            effectiveVariables: effectiveVariables,
+            options: options,
+            persistedIdentity: persistedIdentity,
+            storeRoot: storeRoot,
+            telemetry: telemetry,
+            jsonlRecorder: jsonlRecorder
+          )
         )
       }
       var finalResult = try await runner.run(initialRequest)
-      let workflowMessages = try await runtimeStore.listMessages(for: finalResult.session.sessionId, toStepId: nil)
-      let loopEvidence = projectLoopEvidence(
-        session: finalResult.session,
-        workflowMessages: workflowMessages,
-        bundle: bundle,
-        variables: effectiveVariables,
-        recovery: finalResult.recovery
-      )
-      finalResult.loopEvidence = loopEvidence.map(LoopEvidenceSummary.init)
-      applyRequiredLoopGateFailureIfNeeded(&finalResult, loopEvidence: loopEvidence, workflow: bundle.workflow)
-      try persistSessionRecord(
-        workflowName: persistedIdentity.workflowName,
-        resolution: persistedIdentity.resolution,
-        resolvedSourceScope: bundle.sourceScope,
-        result: finalResult,
-        workflowMessages: workflowMessages,
-        bundle: bundle,
-        variables: effectiveVariables,
-        options: options,
-        loopEvidence: loopEvidence
-      )
-      await telemetry.flush(timeout: Duration.seconds(2))
-      return CLICommandResult(
-        exitCode: CLIExitCode(rawValue: finalResult.exitCode) ?? .failure,
-        stdout: try await renderRunResult(finalResult, output: options.output, jsonlRecorder: jsonlRecorder)
+      return try await finalizeRun(
+        &finalResult,
+        context: RunFinalizeContext(
+          runtimeStore: runtimeStore,
+          bundle: bundle,
+          effectiveVariables: effectiveVariables,
+          options: options,
+          persistedIdentity: persistedIdentity,
+          storeRoot: storeRoot,
+          telemetry: telemetry,
+          jsonlRecorder: jsonlRecorder
+        )
       )
     } catch let error as CLIUsageError {
+      releasePendingLease(pendingLease)
       return await renderRunFailure(
         options: options,
         exitCode: .usage,
@@ -232,6 +220,7 @@ public struct WorkflowRunCommand: Sendable {
         jsonlRecorder: jsonlRecorder
       )
     } catch {
+      releasePendingLease(pendingLease)
       return await renderRunFailure(
         options: options,
         exitCode: .failure,
@@ -898,4 +887,62 @@ private func unquotedEnvironmentValue(_ value: String) -> String {
   }
   return String(value.dropFirst().dropLast())
     .replacingOccurrences(of: "'\\''", with: "'")
+}
+
+/// Shared post-run finalize sequence for the plain and auto-improve paths:
+/// evidence projection, required-gate failure application, terminal
+/// persistence, notification dispatch, telemetry flush, and rendering.
+struct RunFinalizeContext {
+  var runtimeStore: InMemoryWorkflowRuntimeStore
+  var bundle: ResolvedWorkflowBundle
+  var effectiveVariables: JSONObject
+  var options: WorkflowRunOptions
+  var persistedIdentity: (workflowName: String, resolution: WorkflowResolutionOptions)
+  var storeRoot: String
+  var telemetry: any RielaTelemetry
+  var jsonlRecorder: WorkflowRunJSONLRecorder?
+}
+
+extension WorkflowRunCommand {
+  fileprivate func finalizeRun(
+    _ finalResult: inout WorkflowRunResult,
+    context: RunFinalizeContext
+  ) async throws -> CLICommandResult {
+    let workflowMessages = try await context.runtimeStore.listMessages(
+      for: finalResult.session.sessionId,
+      toStepId: nil
+    )
+    let loopEvidence = projectLoopEvidence(
+      session: finalResult.session,
+      workflowMessages: workflowMessages,
+      bundle: context.bundle,
+      variables: context.effectiveVariables,
+      recovery: finalResult.recovery
+    )
+    finalResult.loopEvidence = loopEvidence.map(LoopEvidenceSummary.init)
+    applyRequiredLoopGateFailureIfNeeded(&finalResult, loopEvidence: loopEvidence, workflow: context.bundle.workflow)
+    try persistSessionRecord(
+      workflowName: context.persistedIdentity.workflowName,
+      resolution: context.persistedIdentity.resolution,
+      resolvedSourceScope: context.bundle.sourceScope,
+      result: finalResult,
+      workflowMessages: workflowMessages,
+      bundle: context.bundle,
+      variables: context.effectiveVariables,
+      options: context.options,
+      loopEvidence: loopEvidence
+    )
+    await dispatchLoopNotificationsAfterTerminalPersistence(
+      finalResult: finalResult,
+      loopEvidence: loopEvidence,
+      bundle: context.bundle,
+      options: context.options,
+      storeRoot: context.storeRoot
+    )
+    await context.telemetry.flush(timeout: Duration.seconds(2))
+    return CLICommandResult(
+      exitCode: CLIExitCode(rawValue: finalResult.exitCode) ?? .failure,
+      stdout: try await renderRunResult(finalResult, output: context.options.output, jsonlRecorder: context.jsonlRecorder)
+    )
+  }
 }

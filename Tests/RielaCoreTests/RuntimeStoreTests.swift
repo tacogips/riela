@@ -830,6 +830,79 @@ final class RuntimeStoreTests: XCTestCase {
   }
 }
 
+extension RuntimeStoreTests {
+  func testUsageBackendEventRoundTripsProviderJSONWithoutChangingStreamedResponseText() async throws {
+    let store = InMemoryWorkflowRuntimeStore(clock: FixedWorkflowRuntimeClock(Date(timeIntervalSince1970: 100)))
+    let session = try await store.createSession(WorkflowSessionCreateInput(workflowId: "wf", entryStepId: "start"))
+    let execution = try await store.recordStepExecution(
+      WorkflowStepExecutionRecordInput(
+        sessionId: session.sessionId,
+        stepId: "start",
+        nodeId: "node-start",
+        attempt: 1,
+        backend: .codexAgent
+      )
+    )
+    _ = try await store.recordStepBackendEvent(
+      WorkflowStepBackendEventInput(
+        sessionId: session.sessionId,
+        executionId: execution.executionId,
+        eventType: "assistant",
+        channel: .assistant,
+        contentSnapshot: "stable response"
+      )
+    )
+    let usage: JSONObject = [
+      "input_tokens": .number(11),
+      "cached": .bool(true),
+      "provider_detail": .object([
+        "reasoning_tokens": .number(7),
+        "tier": .string("priority")
+      ])
+    ]
+
+    let updated = try await store.recordStepBackendEvent(
+      WorkflowStepBackendEventInput(
+        sessionId: session.sessionId,
+        executionId: execution.executionId,
+        eventType: "turn.completed",
+        channel: .usage,
+        usage: usage
+      )
+    )
+
+    XCTAssertEqual(updated.streamedResponseText, "stable response")
+    let usageRecord = try XCTUnwrap(updated.recentBackendEvents?.last)
+    XCTAssertEqual(usageRecord.usage, usage)
+    let decoded = try JSONDecoder().decode(
+      WorkflowBackendEventRecord.self,
+      from: JSONEncoder().encode(usageRecord)
+    )
+    XCTAssertEqual(decoded.usage, usage)
+  }
+
+  func testWorkflowBackendEventRecordDecodesLegacyJSONWithoutUsage() throws {
+    let data = Data(
+      """
+      {
+        "sequence": 1,
+        "at": 0,
+        "eventType": "turn.started",
+        "channel": "lifecycle"
+      }
+      """.utf8
+    )
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .secondsSince1970
+
+    let record = try decoder.decode(WorkflowBackendEventRecord.self, from: data)
+
+    XCTAssertEqual(record.sequence, 1)
+    XCTAssertEqual(record.eventType, "turn.started")
+    XCTAssertNil(record.usage)
+  }
+}
+
 private struct StaticWorkflowRuntimeStore: WorkflowRuntimeStore {
   var sessionId: String
   var messages: [WorkflowMessageRecord]

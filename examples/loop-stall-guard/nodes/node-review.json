@@ -1,0 +1,12 @@
+{
+  "id": "review",
+  "description": "Produce the structured review gate result for the convergence stall example.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/review.md",
+  "variables": {},
+  "output": {
+    "description": "Return a loopGate object with decision and blockingFindings, plus a needs_work boolean that routes the self-loop transition."
+  }
+}

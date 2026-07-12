@@ -725,9 +725,12 @@ Target execution behavior for this schema:
 
 - `agent`, `command`, `container`, `sleep`, and `user-action` nodes are
   accepted by the validator
-- in full workflow execution, `sleep` nodes register a scheduled continuation
-  event through the shared scheduled event manager instead of blocking or
-  awaiting a long timer in the node executor
+- in full workflow execution, `sleep` nodes pause the node executor for the
+  declared `sleep.durationMs` (cancellation-cooperative, bounded by the step's
+  node timeout) and complete with a deterministic
+  `{provider: "sleep", status: "completed", durationMs}` payload; migrating
+  long pauses to a non-blocking scheduled continuation event through the
+  shared scheduled event manager remains a future target
 - in full workflow execution, `user-action` nodes persist a request artifact,
   mark the session `paused`, and wait for external/user input rather than
   running an agent, command, or container
@@ -738,14 +741,18 @@ Target execution behavior for this schema:
 ### `sleep`
 
 `sleep` is required when `nodeType` is `sleep` and invalid for other node types.
-Sleep nodes are runtime scheduling nodes: they pause the current workflow
-execution and register the continuation in the shared scheduled event pool
-described in `design-docs/specs/design-scheduled-sleep-node-runtime.md`.
+Sleep nodes pause the current workflow execution for `durationMs` inside the
+node executor (implemented behavior; see `examples/scheduled-sleep` and
+`examples/loop-concurrency-lease`). A missing `sleep` object degrades to a 0ms
+no-op pause. Registering the continuation in a shared scheduled event pool
+instead of blocking is a future runtime target.
 
 Rules:
 
 - exactly one wake condition is required for the first implementation
 - `durationMs` must be a positive integer when present
+- the pause runs inside the step attempt, so `durationMs` must stay below the
+  effective node timeout or the step fails on timeout
 - `until`, if supported, must be a timestamp with an explicit timezone or UTC
   offset
 - `promptTemplate`, `promptTemplateFile`, `model`, `executionBackend`,
@@ -783,6 +790,26 @@ Codex-specific node variables:
   `--disable unified_exec` so codex-agent records completed command events
   reliably. `true` opts back in to Codex unified exec for workflows that
   explicitly need shell-state persistence across commands.
+- `codexToolRecovery`: optional string, `off` (default) | `observe` |
+  `recover`. Enables terminal tool-child stall handling for codex-agent
+  nodes: a started `command_execution` whose child process is terminal
+  (zombie/vanished) while the codex host stays alive and never publishes the
+  completion is classified as an incident. `observe` records redacted
+  incident diagnostics in the backend event stream; `recover` additionally
+  requests host-side completion, then performs a bounded ownership-validated
+  process-group SIGTERM → grace → SIGKILL cleanup so supervision
+  (`--auto-improve`) can retry within existing budgets. Generic wait/status
+  heartbeats and agent-silence warnings never create terminal-child evidence.
+- `codexToolRecoveryGraceMs`: optional positive integer (default `30000`);
+  how long a correlated terminal child may miss its host completion before
+  it classifies as an incident.
+- `codexToolRecoveryCleanupGraceMs`: optional positive integer (default
+  `5000`); grace between the cleanup SIGTERM and SIGKILL escalation.
+- `codexToolRecoveryAllowContinuation`: optional boolean (default `false`);
+  same-attempt continuation opt-in. Even when `true`, continuation requires
+  an acknowledged terminal tool result and an intact stream — which the
+  current codex host protocol cannot prove — so recovery stays fail-closed
+  and routes confirmed incidents through supervised retry/rerun.
 
 ### `modelFreeze`
 

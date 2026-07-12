@@ -14,6 +14,81 @@ final class LoopEvidenceProjectorTests: XCTestCase {
     XCTAssertNil(manifest)
   }
 
+  func testProjectorConsumesAccumulatorCostEvidence() throws {
+    let costs = [
+      LoopCostEvidence(stepExecutionId: "worker-exec-1", backend: "codex", inputTokens: 100, outputTokens: 40, totalTokens: 140),
+      LoopCostEvidence(stepExecutionId: "review-exec-1", diagnostics: ["no usage events recorded for step"])
+    ]
+
+    let manifest = try XCTUnwrap(DefaultLoopEvidenceProjector().project(
+      LoopEvidenceProjectionInput(
+        workflow: workflow(loop: nil),
+        session: session(executions: []),
+        workflowSource: workflowSource(),
+        includeWorkflowWithoutLoopMetadata: true,
+        costs: costs
+      )
+    ))
+
+    XCTAssertEqual(manifest.costs, costs)
+    XCTAssertEqual(manifest.costSummary?.totalTokens, 140)
+    XCTAssertEqual(manifest.costSummary?.stepsWithUsage, 1)
+    XCTAssertEqual(manifest.costSummary?.stepsWithoutUsage, 1)
+    XCTAssertEqual(manifest.costSummary?.isPartial, true)
+  }
+
+  func testProjectorDerivesCostFromExecutionBackendEvents() throws {
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let execution = WorkflowStepExecution(
+      executionId: "worker-exec-1",
+      stepId: "review",
+      nodeId: "review-node",
+      attempt: 1,
+      backend: .codexAgent,
+      status: .completed,
+      adapterOutput: WorkflowAdapterOutputMetadata(provider: "codex-agent", model: "gpt-5.5", completionPassed: true, when: ["always": true]),
+      recentBackendEvents: [
+        WorkflowBackendEventRecord(
+          sequence: 1,
+          at: date,
+          eventType: "usage",
+          channel: .usage,
+          usage: ["input_tokens": .integer(100), "output_tokens": .integer(40), "total_tokens": .integer(140)]
+        )
+      ],
+      createdAt: date,
+      updatedAt: date
+    )
+
+    // No explicit input.costs → projector recovers cost from the execution.
+    let manifest = try XCTUnwrap(DefaultLoopEvidenceProjector().project(
+      LoopEvidenceProjectionInput(
+        workflow: workflow(loop: nil),
+        session: session(executions: [execution]),
+        workflowSource: workflowSource(),
+        includeWorkflowWithoutLoopMetadata: true
+      )
+    ))
+
+    XCTAssertEqual(manifest.costs.map(\.stepExecutionId), ["worker-exec-1"])
+    XCTAssertEqual(manifest.costSummary?.totalTokens, 140)
+    XCTAssertEqual(manifest.costSummary?.stepsWithUsage, 1)
+  }
+
+  func testProjectorRendersAbsentCostAsNotRecorded() throws {
+    let manifest = try XCTUnwrap(DefaultLoopEvidenceProjector().project(
+      LoopEvidenceProjectionInput(
+        workflow: workflow(loop: nil),
+        session: session(executions: []),
+        workflowSource: workflowSource(),
+        includeWorkflowWithoutLoopMetadata: true
+      )
+    ))
+
+    XCTAssertEqual(manifest.costs, [])
+    XCTAssertNil(manifest.costSummary)
+  }
+
   func testProjectorCanExplicitlyProjectRuntimeEvidenceWithoutLoopMetadata() throws {
     let date = Date(timeIntervalSince1970: 1_700_000_000)
     let execution = WorkflowStepExecution(
@@ -253,6 +328,92 @@ final class LoopEvidenceProjectorTests: XCTestCase {
     XCTAssertEqual(gate.blockingFindings, [])
   }
 
+  func testProjectorRecordsWarnStallConvergenceEvidenceAndResidualRisk() throws {
+    let convergenceLoop = WorkflowLoopMetadata(
+      kind: "design-implement-review",
+      required: false,
+      convergence: LoopConvergenceDeclaration(maxRepeatedFindingRounds: 2, onStall: .warn),
+      gates: [LoopGateDeclaration(id: "implementation-review", stepId: "review", required: false)]
+    )
+    let executions = [
+      gateExecution(id: "review-exec-1", decision: "needs_work", findingId: "same"),
+      gateExecution(id: "review-exec-2", decision: "needs_work", findingId: "same")
+    ]
+
+    let manifest = try XCTUnwrap(DefaultLoopEvidenceProjector().project(
+      LoopEvidenceProjectionInput(
+        workflow: workflow(loop: convergenceLoop),
+        session: session(executions: executions),
+        workflowSource: workflowSource()
+      )
+    ))
+
+    XCTAssertEqual(manifest.convergence?.gateVisitCounts, ["implementation-review": 2])
+    XCTAssertEqual(manifest.convergence?.stallDetected, true)
+    XCTAssertEqual(manifest.convergence?.stalledGateId, "implementation-review")
+    XCTAssertEqual(manifest.convergence?.repeatedRounds, 2)
+    XCTAssertEqual(manifest.convergence?.action, "warn")
+    XCTAssertTrue(manifest.convergence?.diagnostics.first?.contains("id:same") == true)
+    XCTAssertEqual(manifest.residualRisks.count, 1)
+    XCTAssertEqual(manifest.residualRisks.first?.owner, "loop-convergence-guard")
+    XCTAssertEqual(manifest.residualRisks.first?.accepted, true)
+  }
+
+  func testProjectorPreservesIdlessFindingForFallbackFingerprinting() throws {
+    let manifest = try projectManifest(gatePayload: [
+      "decision": .string("needs_work"),
+      "blockingFindings": .array([
+        .object([
+          "severity": .string("high"),
+          "filePath": .string("Sources/A.swift"),
+          "message": .string("id-less finding")
+        ])
+      ])
+    ])
+
+    let finding = try XCTUnwrap(manifest.gates.first?.blockingFindings.first {
+      $0.message == "id-less finding"
+    })
+    XCTAssertEqual(finding.id, "")
+    XCTAssertEqual(finding.filePath, "Sources/A.swift")
+    XCTAssertEqual(LoopFindingFingerprint.make(from: finding).key, "message:Sources/A.swift\u{0}id-less finding")
+  }
+
+  func testProjectorCountsRoleOnlySkippedGateVisit() throws {
+    let roleOnlyLoop = WorkflowLoopMetadata(
+      required: false,
+      convergence: LoopConvergenceDeclaration(maxRepeatedFindingRounds: 2)
+    )
+    var roleOnlyWorkflow = workflow(loop: roleOnlyLoop)
+    roleOnlyWorkflow.steps[0].loop = WorkflowStepLoopMetadata(role: "gate")
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let skipped = WorkflowStepExecution(
+      executionId: "review-skipped",
+      stepId: "review",
+      nodeId: "review-node",
+      attempt: 1,
+      status: .skipped,
+      acceptedOutput: WorkflowAcceptedOutputMetadata(
+        payload: ["inputFilterSkipped": .bool(true)],
+        when: ["input_filter_skipped": true],
+        acceptedAt: date
+      ),
+      createdAt: date,
+      updatedAt: date
+    )
+
+    let manifest = try XCTUnwrap(DefaultLoopEvidenceProjector().project(
+      LoopEvidenceProjectionInput(
+        workflow: roleOnlyWorkflow,
+        session: session(executions: [skipped]),
+        workflowSource: workflowSource()
+      )
+    ))
+
+    XCTAssertEqual(manifest.convergence?.gateVisitCounts, ["review": 1])
+    XCTAssertEqual(manifest.gates.first?.decision, .skipped)
+  }
+
   private func workflow(loop: WorkflowLoopMetadata? = loopMetadata()) -> WorkflowDefinition {
     WorkflowDefinition(
       workflowId: "wf",
@@ -303,6 +464,37 @@ final class LoopEvidenceProjectorTests: XCTestCase {
 
   private func workflowSource() -> LoopWorkflowSource {
     LoopWorkflowSource(scope: "project", kind: "workflow-directory", workflowDirectory: ".riela/workflows/wf", mutable: true)
+  }
+
+  private func gateExecution(id: String, decision: String, findingId: String) -> WorkflowStepExecution {
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    return WorkflowStepExecution(
+      executionId: id,
+      stepId: "review",
+      nodeId: "review-node",
+      attempt: 1,
+      backend: .codexAgent,
+      status: .completed,
+      acceptedOutput: WorkflowAcceptedOutputMetadata(
+        payload: [
+          "loopGate": .object([
+            "gateId": .string("implementation-review"),
+            "decision": .string(decision),
+            "blockingFindings": .array([
+              .object([
+                "id": .string(findingId),
+                "severity": .string("high"),
+                "message": .string("same finding")
+              ])
+            ])
+          ])
+        ],
+        when: ["always": true],
+        acceptedAt: date
+      ),
+      createdAt: date,
+      updatedAt: date
+    )
   }
 
   private func projectManifest(

@@ -22,6 +22,31 @@ final class AppleNotesCrudAddonTests: XCTestCase {
     XCTAssertTrue(try String(contentsOf: fake.variablesLogURL).contains(#""noteId":"note-1""#))
   }
 
+  func testAppleNoteGetNullOrMissingNoteReportsHasNoteFalse() async throws {
+    let nullNoteFake = try CrudFakeAppleGateway(mode: "get-null-note")
+    let missingNoteFake = try CrudFakeAppleGateway(mode: "get-missing-note")
+    defer {
+      nullNoteFake.cleanup()
+      missingNoteFake.cleanup()
+    }
+
+    let nullOutput = try await runAppleNoteAddon(
+      "riela/apple-note-get",
+      config: ["binaryPath": .string(nullNoteFake.executableURL.path)],
+      inputs: ["noteId": .string("note-1")]
+    )
+    XCTAssertEqual(nullOutput.when["has_note"], false)
+    XCTAssertEqual(nullOutput.payload["appleNote"], .null)
+
+    let missingOutput = try await runAppleNoteAddon(
+      "riela/apple-note-get",
+      config: ["binaryPath": .string(missingNoteFake.executableURL.path)],
+      inputs: ["noteId": .string("note-1")]
+    )
+    XCTAssertEqual(missingOutput.when["has_note"], false)
+    XCTAssertEqual(missingOutput.payload["appleNote"], .null)
+  }
+
   func testAppleNoteGetMaterializesBodyFileThroughDownloadKey() async throws {
     let fake = try CrudFakeAppleGateway(mode: "get-body-file")
     defer { fake.cleanup() }
@@ -847,6 +872,7 @@ private struct CrudFakeAppleGateway {
       missing-mutation)
         printf '{"data":{},"extensions":{"requestId":"missing"}}\\n'
         ;;
+    \(softNoteCases())
       get-nonobject-note)
         printf '{"data":{"note":"malformed"},"extensions":{"requestId":"bad-note"}}\\n'
         ;;
@@ -863,6 +889,17 @@ private struct CrudFakeAppleGateway {
         sleep 5
         ;;
     esac
+    """
+  }
+
+  private func softNoteCases() -> String {
+    """
+      get-null-note)
+        printf '{"data":{"note":null},"extensions":{"requestId":"null-note"}}\\n'
+        ;;
+      get-missing-note)
+        printf '{"data":{},"extensions":{"requestId":"missing-note"}}\\n'
+        ;;
     """
   }
 

@@ -11,12 +11,16 @@ public struct LoopEvidenceManifest: Codable, Equatable, Sendable {
   public var worktree: LoopWorktreeSummary?
   public var policy: LoopPolicyEvidence
   public var recovery: LoopRecoveryLineage?
+  public var convergence: LoopConvergenceEvidence?
+  public var costs: [LoopCostEvidence]
+  public var costSummary: LoopCostSummary?
   public var steps: [LoopStepEvidence]
   public var gates: [LoopGateResult]
   public var artifacts: [LoopArtifactRef]
   public var changedFiles: [LoopChangedFile]
   public var commands: [LoopCommandEvidence]
   public var verification: [LoopVerificationEvidence]
+  public var workflowMutation: LoopWorkflowMutationEvidence?
   public var implementationPlans: [LoopImplementationPlanRef]
   public var residualRisks: [LoopResidualRisk]
   public var redaction: LoopRedactionSummary
@@ -34,12 +38,16 @@ public struct LoopEvidenceManifest: Codable, Equatable, Sendable {
     worktree: LoopWorktreeSummary? = nil,
     policy: LoopPolicyEvidence,
     recovery: LoopRecoveryLineage? = nil,
+    convergence: LoopConvergenceEvidence? = nil,
+    costs: [LoopCostEvidence] = [],
+    costSummary: LoopCostSummary? = nil,
     steps: [LoopStepEvidence] = [],
     gates: [LoopGateResult] = [],
     artifacts: [LoopArtifactRef] = [],
     changedFiles: [LoopChangedFile] = [],
     commands: [LoopCommandEvidence] = [],
     verification: [LoopVerificationEvidence] = [],
+    workflowMutation: LoopWorkflowMutationEvidence? = nil,
     implementationPlans: [LoopImplementationPlanRef] = [],
     residualRisks: [LoopResidualRisk] = [],
     redaction: LoopRedactionSummary,
@@ -56,17 +64,135 @@ public struct LoopEvidenceManifest: Codable, Equatable, Sendable {
     self.worktree = worktree
     self.policy = policy
     self.recovery = recovery
+    self.convergence = convergence
+    self.costs = costs
+    self.costSummary = costSummary
     self.steps = steps
     self.gates = gates
     self.artifacts = artifacts
     self.changedFiles = changedFiles
     self.commands = commands
     self.verification = verification
+    self.workflowMutation = workflowMutation
     self.implementationPlans = implementationPlans
     self.residualRisks = residualRisks
     self.redaction = redaction
     self.createdAt = createdAt
     self.updatedAt = updatedAt
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case schemaVersion, manifestId, workflowId, sessionId, workflowSource
+    case workflowDefinitionDigest, variablesDigest, worktree, policy, recovery
+    case convergence, costs, costSummary, steps, gates, artifacts, changedFiles
+    case commands, verification, workflowMutation, implementationPlans
+    case residualRisks, redaction, createdAt, updatedAt
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+    manifestId = try container.decode(String.self, forKey: .manifestId)
+    workflowId = try container.decode(String.self, forKey: .workflowId)
+    sessionId = try container.decode(String.self, forKey: .sessionId)
+    workflowSource = try container.decode(LoopWorkflowSource.self, forKey: .workflowSource)
+    workflowDefinitionDigest = try container.decodeIfPresent(String.self, forKey: .workflowDefinitionDigest)
+    variablesDigest = try container.decodeIfPresent(String.self, forKey: .variablesDigest)
+    worktree = try container.decodeIfPresent(LoopWorktreeSummary.self, forKey: .worktree)
+    policy = try container.decode(LoopPolicyEvidence.self, forKey: .policy)
+    recovery = try container.decodeIfPresent(LoopRecoveryLineage.self, forKey: .recovery)
+    convergence = try container.decodeIfPresent(LoopConvergenceEvidence.self, forKey: .convergence)
+    // New in LA2: default to empty/nil so manifests written before cost
+    // evidence existed keep decoding unchanged.
+    costs = try container.decodeIfPresent([LoopCostEvidence].self, forKey: .costs) ?? []
+    costSummary = try container.decodeIfPresent(LoopCostSummary.self, forKey: .costSummary)
+    steps = try container.decode([LoopStepEvidence].self, forKey: .steps)
+    gates = try container.decode([LoopGateResult].self, forKey: .gates)
+    artifacts = try container.decode([LoopArtifactRef].self, forKey: .artifacts)
+    changedFiles = try container.decode([LoopChangedFile].self, forKey: .changedFiles)
+    commands = try container.decode([LoopCommandEvidence].self, forKey: .commands)
+    verification = try container.decode([LoopVerificationEvidence].self, forKey: .verification)
+    workflowMutation = try container.decodeIfPresent(LoopWorkflowMutationEvidence.self, forKey: .workflowMutation)
+    implementationPlans = try container.decode([LoopImplementationPlanRef].self, forKey: .implementationPlans)
+    residualRisks = try container.decode([LoopResidualRisk].self, forKey: .residualRisks)
+    redaction = try container.decode(LoopRedactionSummary.self, forKey: .redaction)
+    createdAt = try container.decode(Date.self, forKey: .createdAt)
+    updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(schemaVersion, forKey: .schemaVersion)
+    try container.encode(manifestId, forKey: .manifestId)
+    try container.encode(workflowId, forKey: .workflowId)
+    try container.encode(sessionId, forKey: .sessionId)
+    try container.encode(workflowSource, forKey: .workflowSource)
+    try container.encodeIfPresent(workflowDefinitionDigest, forKey: .workflowDefinitionDigest)
+    try container.encodeIfPresent(variablesDigest, forKey: .variablesDigest)
+    try container.encodeIfPresent(worktree, forKey: .worktree)
+    try container.encode(policy, forKey: .policy)
+    try container.encodeIfPresent(recovery, forKey: .recovery)
+    try container.encodeIfPresent(convergence, forKey: .convergence)
+    // Omit empty costs so manifests without cost evidence serialize exactly as
+    // before this field was added.
+    if !costs.isEmpty { try container.encode(costs, forKey: .costs) }
+    try container.encodeIfPresent(costSummary, forKey: .costSummary)
+    try container.encode(steps, forKey: .steps)
+    try container.encode(gates, forKey: .gates)
+    try container.encode(artifacts, forKey: .artifacts)
+    try container.encode(changedFiles, forKey: .changedFiles)
+    try container.encode(commands, forKey: .commands)
+    try container.encode(verification, forKey: .verification)
+    try container.encodeIfPresent(workflowMutation, forKey: .workflowMutation)
+    try container.encode(implementationPlans, forKey: .implementationPlans)
+    try container.encode(residualRisks, forKey: .residualRisks)
+    try container.encode(redaction, forKey: .redaction)
+    try container.encode(createdAt, forKey: .createdAt)
+    try container.encode(updatedAt, forKey: .updatedAt)
+  }
+}
+
+public struct LoopConvergenceEvidence: Codable, Equatable, Sendable {
+  public var gateVisitCounts: [String: Int]
+  public var stallDetected: Bool
+  public var stalledGateId: String?
+  public var repeatedRounds: Int?
+  public var action: String?
+  public var diagnostics: [String]
+
+  public init(
+    gateVisitCounts: [String: Int] = [:],
+    stallDetected: Bool = false,
+    stalledGateId: String? = nil,
+    repeatedRounds: Int? = nil,
+    action: String? = nil,
+    diagnostics: [String] = []
+  ) {
+    self.gateVisitCounts = gateVisitCounts
+    self.stallDetected = stallDetected
+    self.stalledGateId = stalledGateId
+    self.repeatedRounds = repeatedRounds
+    self.action = action
+    self.diagnostics = diagnostics
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case gateVisitCounts
+    case stallDetected
+    case stalledGateId
+    case repeatedRounds
+    case action
+    case diagnostics
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    gateVisitCounts = try container.decodeIfPresent([String: Int].self, forKey: .gateVisitCounts) ?? [:]
+    stallDetected = try container.decodeIfPresent(Bool.self, forKey: .stallDetected) ?? false
+    stalledGateId = try container.decodeIfPresent(String.self, forKey: .stalledGateId)
+    repeatedRounds = try container.decodeIfPresent(Int.self, forKey: .repeatedRounds)
+    action = try container.decodeIfPresent(String.self, forKey: .action)
+    diagnostics = try container.decodeIfPresent([String].self, forKey: .diagnostics) ?? []
   }
 }
 
@@ -89,6 +215,7 @@ public struct LoopEvidenceSummary: Codable, Equatable, Sendable {
   public var implementationPlanCount: Int
   public var residualRiskCount: Int
   public var redactionStatus: String
+  public var cost: LoopCostSummary?
   public var updatedAt: Date
 
   public init(
@@ -110,6 +237,7 @@ public struct LoopEvidenceSummary: Codable, Equatable, Sendable {
     implementationPlanCount: Int,
     residualRiskCount: Int,
     redactionStatus: String,
+    cost: LoopCostSummary? = nil,
     updatedAt: Date
   ) {
     self.manifestId = manifestId
@@ -130,6 +258,7 @@ public struct LoopEvidenceSummary: Codable, Equatable, Sendable {
     self.implementationPlanCount = implementationPlanCount
     self.residualRiskCount = residualRiskCount
     self.redactionStatus = redactionStatus
+    self.cost = cost
     self.updatedAt = updatedAt
   }
 
@@ -153,6 +282,7 @@ public struct LoopEvidenceSummary: Codable, Equatable, Sendable {
       implementationPlanCount: manifest.implementationPlans.count,
       residualRiskCount: manifest.residualRisks.count,
       redactionStatus: manifest.redaction.status,
+      cost: manifest.costSummary,
       updatedAt: manifest.updatedAt
     )
   }

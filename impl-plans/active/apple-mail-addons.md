@@ -1,10 +1,31 @@
 # Apple Mail Add-ons Implementation Plan
 
-**Status**: Implemented
+**Status**: Implemented (Swift) + tested; 3 remaining boxes are upstream-download-contract live QA, accepted as deferred (reconciled 2026-07-12). The Mail add-ons are implemented in `Sources/RielaCLI/ProductionNodeAdapter+AppleMailAddons.swift` (+ shared `…+AppleGatewaySupport.swift`) and covered by `AppleMailAddonTests` (15 tests green in the 43-test Apple add-on run on 2026-07-12). On reconciliation, every implementation/verification box was confirmed against an existing Swift symbol and a covering test and checked with evidence. The only unchecked items are the upstream `apple-gateway file download --key` raw-stdout-vs-explicit-output contract confirmation, its contingent (and currently expected-to-be-a-no-op) code change, and closing the file-download QA note after that confirmation — all blocked on the external `apple-gateway` CLI, which is not installed here (`which apple-gateway` → not found). See the Deferred Live QA section below for owner and trigger.
 **Workflow Mode**: issue-resolution
 **Issue Reference**: Add apple-gateway Mail builtin add-ons and an example
 **Created**: 2026-07-07
 **Last Updated**: 2026-07-07
+
+---
+
+## Deferred Live QA
+
+The remaining unchecked boxes concern the upstream `apple-gateway file download
+--key <downloadKey>` transport contract (raw stdout bytes vs. explicit output
+argument) and cannot be executed without the external `apple-gateway` CLI, which
+is not installed in this environment (`which apple-gateway` → not found on
+2026-07-12). The shipped implementation follows the accepted default raw-stdout
+contract, passes only a Riela-validated `--output-dir` destination, and is
+covered deterministically by fake-executable download tests, so no code change
+is expected unless the confirmed upstream contract diverges.
+
+- **Owner**: next session run on a host with `apple-gateway` installed.
+- **Trigger**: `which apple-gateway` succeeds.
+- **Deferred boxes**: Task 1 — confirm the `apple-gateway file download` output
+  contract; Task 1 — apply the contingent implementation change only if the real
+  gateway requires explicit output; Task 8 — close/update the file-download QA
+  note (`design-docs/user-qa/qa-apple-mail-gateway-file-download.md`) after that
+  confirmation.
 
 ---
 
@@ -35,16 +56,29 @@ carried forward as a required implementation checkpoint before finalizing the
 **Write Scope**: none, except this plan's progress log
 
 **Tasks**:
-- [ ] Inspect `Sources/RielaCLI/ProductionNodeAdapter+AppleGatewayAddons.swift`
+- [x] Inspect `Sources/RielaCLI/ProductionNodeAdapter+AppleGatewayAddons.swift`
   and current Apple Notes/Notifications tests before editing shared bridge code.
-- [ ] Confirm the implemented shared runner already supports the accepted
+  Evidence: shared bridge lives in `…+AppleGatewaySupport.swift`; Mail reuses it.
+- [x] Confirm the implemented shared runner already supports the accepted
   binary resolution order: literal `addon.config.binaryPath`, then
   `APPLE_GATEWAY_BIN`, then `PATH`.
+  Evidence: `testAppleMailBinaryResolutionAndEnvironmentFiltering` and
+  `testAppleMailDoesNotResolveBinaryPathFromInputsVariablesOrPayload`.
 - [ ] Confirm whether `apple-gateway file download --key <downloadKey>` returns
   raw stdout bytes or requires an explicit output argument.
+  DEFERRED (accepted): live QA blocked on absent `apple-gateway` CLI in this
+  environment; owner: next session with apple-gateway installed; trigger:
+  `which apple-gateway` succeeds. The shipped implementation follows the accepted
+  default raw-stdout contract and validates its own destination paths; the
+  fake-executable download tests exercise that contract deterministically.
 - [ ] If the real gateway requires explicit output, update the implementation
   approach to pass only a Riela-chosen validated destination and record the
   reason in this plan's progress log and design docs.
+  DEFERRED (accepted): contingent on the upstream confirmation above; live QA
+  blocked on absent `apple-gateway` CLI; owner: next session with apple-gateway
+  installed; trigger: `which apple-gateway` succeeds. Riela already passes only a
+  validated `--output-dir` destination, so no code change is expected unless the
+  upstream contract diverges.
 
 **Deliverable**: A progress-log entry naming the confirmed GraphQL and file
 download command contracts, plus any accepted divergence from the default
@@ -59,15 +93,24 @@ stdout-byte design.
   require fixture updates
 
 **Tasks**:
-- [ ] Promote reusable process runner, binary resolver, GraphQL envelope, JSON
+- [x] Promote reusable process runner, binary resolver, GraphQL envelope, JSON
   accessors, compact diagnostics, and FDA/error-marker helpers to module scope
   where needed by the Mail implementation.
-- [ ] Add or expose a raw `Data` process runner path for file downloads while
+  Evidence: shared helpers in `…+AppleGatewaySupport.swift` used by Mail
+  executor `ProductionNodeAdapter+AppleMailAddons.swift`.
+- [x] Add or expose a raw `Data` process runner path for file downloads while
   preserving the existing UTF-8 GraphQL runner behavior.
-- [ ] Keep process invocation fixed-argument, shell-free, deadline-aware, and
+  Evidence: `runData` byte-count path exercised by
+  `testAppleMailMessageChecksActualDownloadedBytesBeforeWriting`.
+- [x] Keep process invocation fixed-argument, shell-free, deadline-aware, and
   minimal-env-only.
-- [ ] Preserve `riela/apple-notes-list` behavior; run existing Apple Gateway
+  Evidence: `testAppleMailBinaryResolutionAndEnvironmentFiltering` (env
+  filtering) and the timeout branch of
+  `testAppleMailErrorMappingForProviderInvalidOutputMissingBinaryAndTimeout`.
+- [x] Preserve `riela/apple-notes-list` behavior; run existing Apple Gateway
   regression tests after extraction.
+  Evidence: `AppleGateway` suite remains green in the shared build (see prior
+  progress-log entries and the 2026-07-12 focused run).
 
 **Deliverable**: Shared bridge helpers reused by Notes and Mail without
 duplicating subprocess invocation logic.
@@ -81,12 +124,18 @@ duplicating subprocess invocation logic.
 - built-in validation/catalog tests as needed
 
 **Tasks**:
-- [ ] Add `riela/apple-mail-list` version `1` and
+- [x] Add `riela/apple-mail-list` version `1` and
   `riela/apple-mail-message` version `1` to the built-in add-on catalog.
-- [ ] Dispatch both add-on ids from `BuiltinWorkflowAddonResolver` to the new
+  Evidence: `RielaAddons.swift` lines registering both ids at version `1`.
+- [x] Dispatch both add-on ids from `BuiltinWorkflowAddonResolver` to the new
   Mail executor methods.
-- [ ] Reject unsupported versions and any `addon.env` usage with
+  Evidence: `ProductionNodeAdapter.swift` dispatch branch for
+  `riela/apple-mail-list` / `riela/apple-mail-message` → `executeAppleMailAddon`.
+- [x] Reject unsupported versions and any `addon.env` usage with
   `policyBlocked`.
+  Evidence: version rejection covered by `AddonExecutionContractsTests`;
+  `addon.env` rejection is shared Apple-gateway behavior covered across the
+  Apple add-on suites.
 
 **Deliverable**: Both Mail add-ons validate as known worker-only built-ins and
 reach native dispatch.
@@ -99,19 +148,29 @@ reach native dispatch.
 - `Tests/RielaCLITests/AppleMailAddonTests.swift` or the repo-local equivalent
 
 **Tasks**:
-- [ ] Render one read-only GraphQL document for `permissions`,
+- [x] Render one read-only GraphQL document for `permissions`,
   `mailAccounts`, optional `mailboxes(accountId:)`, and
   `mailMessages(input:)`.
-- [ ] Support accepted `MailSearchInput` fields: `accountId`, `mailboxId`,
+  Evidence: `listQuery` in `ProductionNodeAdapter+AppleMailAddons.swift`;
+  construction asserted by `testAppleMailListBuildsQueryAndParsesMetadata`.
+- [x] Support accepted `MailSearchInput` fields: `accountId`, `mailboxId`,
   `query`, `from`, `to`, `subject`, `receivedAfter`, `receivedBefore`,
   `unreadOnly`, `flaggedOnly`, `first`, and `after`.
-- [ ] GraphQL-escape strings, render booleans unquoted, validate `first` as
+  Evidence: `mailSearchInputLiteral`.
+- [x] GraphQL-escape strings, render booleans unquoted, validate `first` as
   `1...100` with default `25`, and omit absent fields.
-- [ ] Parse accounts, mailboxes, message metadata, pageInfo, totalCount,
+  Evidence: `appleGatewayGraphQLString` escaping + `mailSearchInputLiteral`
+  first-range validation; asserted in
+  `testAppleMailListBuildsQueryAndParsesMetadata`.
+- [x] Parse accounts, mailboxes, message metadata, pageInfo, totalCount,
   requestId, permissions, and file descriptors under `appleMail`.
-- [ ] Map Full Disk Access denial or related stderr/GraphQL markers to
+  Evidence: `listOutput` + `mailMessage(fromEdge:...)`; asserted by
+  `testAppleMailListBuildsQueryAndParsesMetadata`.
+- [x] Map Full Disk Access denial or related stderr/GraphQL markers to
   `policyBlocked`; map provider failures, malformed output, and timeouts per
   the accepted design.
+  Evidence: `testAppleMailMapsFullDiskAccessDenialToPolicyBlocked` and
+  `testAppleMailErrorMappingForProviderInvalidOutputMissingBinaryAndTimeout`.
 
 **Deliverable**: `riela/apple-mail-list` returns metadata and download-key
 descriptors without materializing body or attachment bytes.
@@ -126,33 +185,55 @@ descriptors without materializing body or attachment bytes.
 - `Tests/RielaCLITests/AppleMailAddonTests.swift` or split focused test files
 
 **Tasks**:
-- [ ] Require `messageId` from literal config or resolved `addon.inputs`; never
+- [x] Require `messageId` from literal config or resolved `addon.inputs`; never
   source `binaryPath` or `downloadDir` from inputs, variables, or upstream
   payloads.
-- [ ] Query `permissions` and `mailMessage(messageId:)` with the same message
+  Evidence: `testAppleMailMessageSoftNotFoundAndMissingMessageId` (missing
+  messageId) and `testAppleMailDoesNotResolveBinaryPathFromInputsVariablesOrPayload`.
+- [x] Query `permissions` and `mailMessage(messageId:)` with the same message
   fields and file descriptor structure as list.
-- [ ] Treat present-but-null `data.mailMessage` as a successful soft not-found
+  Evidence: `graphQLQuery` reuses `mailMessageSelection`.
+- [x] Treat present-but-null `data.mailMessage` as a successful soft not-found
   result with `when.found = false`; treat absent `mailMessage` key as
   `invalidOutput`.
-- [ ] Implement materialization flags:
+  Evidence: `messageOutput` (returns `found: false` for null, throws
+  `.invalidOutput` for missing key); `testAppleMailMessageSoftNotFoundAndMissingMessageId`.
+- [x] Implement materialization flags:
   `materializeBodyText` default `true`, `materializeBodyHtml` default `false`,
   `materializeRawSource` default `false`, and `materializeAttachments` default
   `false`.
-- [ ] Apply `maxDownloadBytes` per descriptor with default `25 MiB`; skip and
+  Evidence: `selectedDescriptors`; defaults asserted across the materialization
+  tests.
+- [x] Apply `maxDownloadBytes` per descriptor with default `25 MiB`; skip and
   report oversize descriptors.
-- [ ] Resolve download root from literal `config.downloadDir`, then
+  Evidence: `materializeFiles` oversize skip;
+  `testAppleMailMessageMaterializesSelectedFilesAndSkipsOversize` and
+  `testAppleMailMessageChecksActualDownloadedBytesBeforeWriting`.
+- [x] Resolve download root from literal `config.downloadDir`, then
   `APPLE_GATEWAY_DOWNLOAD_DIR`, then
   `<TMPDIR>/riela-apple-mail/<workflowId>/<nodeId>/<messageId>/`.
-- [ ] Validate the download root is Riela-owned, symlink-resistant, and cannot
+  Evidence: `validatedDownloadRoot`;
+  `testAppleMailMessageAcceptsPrivateRuntimeDownloadDir`.
+- [x] Validate the download root is Riela-owned, symlink-resistant, and cannot
   be escaped by intermediate symlinks or sanitized leaf names.
-- [ ] Sanitize gateway filenames by removing path separators, `..`, and control
+  Evidence: shared `validatedPrivateRuntimeDirectory` reuse;
+  `testAppleMailMessageRejectsOwnerPrivateNonRuntimeDownloadDir` and the
+  filename-escape guard in `materializeFiles`.
+- [x] Sanitize gateway filenames by removing path separators, `..`, and control
   characters; use deterministic fallback names when needed.
-- [ ] Invoke the fixed file-download subcommand for each selected
+  Evidence: filename sanitization in `materializeFiles` + escape guard
+  (`sanitized download filename escaped download root`).
+- [x] Invoke the fixed file-download subcommand for each selected
   `downloadKey`, write bytes only under the validated root, and return
   `appleMail.materialized[]`, `appleMail.skippedDownloads[]`, and
   `appleMail.downloadRoot`.
-- [ ] Map file-download FDA failures to `policyBlocked` and other non-zero
+  Evidence: `materializeFiles` returns `materialized`/`skippedDownloads`/
+  `downloadRoot`; asserted by
+  `testAppleMailMessageMaterializesSelectedFilesAndSkipsOversize`.
+- [x] Map file-download FDA failures to `policyBlocked` and other non-zero
   download failures to `providerError`.
+  Evidence: `testAppleMailMessageDownloadFailureMapsToProviderError` and
+  `testAppleMailMapsFullDiskAccessDenialToPolicyBlocked`.
 
 **Deliverable**: `riela/apple-mail-message` can retrieve one message and
 materialize selected files into Riela-controlled local paths.
@@ -165,20 +246,34 @@ materialize selected files into Riela-controlled local paths.
 - temporary fake executables created only under per-test temp directories
 
 **Tasks**:
-- [ ] Cover list success, GraphQL query construction, permissions query,
+- [x] Cover list success, GraphQL query construction, permissions query,
   accounts, mailboxes, messages, pageInfo, totalCount, and descriptor parsing.
-- [ ] Cover config, env, and PATH binary resolution; prove `binaryPath` is not
+  Evidence: `testAppleMailListBuildsQueryAndParsesMetadata`.
+- [x] Cover config, env, and PATH binary resolution; prove `binaryPath` is not
   taken from inputs, workflow variables, or upstream payloads.
-- [ ] Cover child environment filtering and no secret-like env forwarding.
-- [ ] Cover Full Disk Access `DENIED`, `NOT_DETERMINED`, and diagnostic marker
+  Evidence: `testAppleMailBinaryResolutionAndEnvironmentFiltering`,
+  `testAppleMailDoesNotResolveBinaryPathFromInputsVariablesOrPayload`.
+- [x] Cover child environment filtering and no secret-like env forwarding.
+  Evidence: `testAppleMailBinaryResolutionAndEnvironmentFiltering`.
+- [x] Cover Full Disk Access `DENIED`, `NOT_DETERMINED`, and diagnostic marker
   mapping to `policyBlocked`.
-- [ ] Cover GraphQL errors, non-zero process exits, malformed JSON, missing
+  Evidence: `testAppleMailMapsFullDiskAccessDenialToPolicyBlocked`.
+- [x] Cover GraphQL errors, non-zero process exits, malformed JSON, missing
   data, missing binary, non-executable binary, and deadline timeout.
-- [ ] Cover message success, soft not-found, missing `messageId`, selected file
+  Evidence: `testAppleMailErrorMappingForProviderInvalidOutputMissingBinaryAndTimeout`.
+- [x] Cover message success, soft not-found, missing `messageId`, selected file
   materialization, oversize skip, filename sanitization, download-root escape
   resistance, download failure mapping, explicit `downloadDir`, and default temp
   dir creation.
-- [ ] Ensure no test requires live Apple Mail access or Full Disk Access.
+  Evidence: `testAppleMailMessageMaterializesSelectedFilesAndSkipsOversize`,
+  `testAppleMailMessageSoftNotFoundAndMissingMessageId`,
+  `testAppleMailMessageAcceptsPrivateRuntimeDownloadDir`,
+  `testAppleMailMessageChecksActualDownloadedBytesBeforeWriting`,
+  `testAppleMailMessageDownloadFailureMapsToProviderError`,
+  `testAppleMailMessageRejectsMalformedFileDescriptorContainers`.
+- [x] Ensure no test requires live Apple Mail access or Full Disk Access.
+  Evidence: all Mail tests use per-test fake `apple-gateway` executables;
+  suite is green with `apple-gateway` absent (2026-07-12 run).
 
 **Deliverable**: Deterministic fake-executable test coverage for both Mail
 add-ons and bridge regressions.
@@ -194,18 +289,24 @@ add-ons and bridge regressions.
 - example index docs only if the repository already maintains one
 
 **Tasks**:
-- [ ] Model the workflow on the existing Apple local-CLI examples and keep it
+- [x] Model the workflow on the existing Apple local-CLI examples and keep it
   read-only.
-- [ ] Use a worker node with `riela/apple-mail-list` and accepted input mappings
+  Evidence: `examples/apple-mail-list/workflow.json` (read-only list add-on).
+- [x] Use a worker node with `riela/apple-mail-list` and accepted input mappings
   for account, mailbox, query, sender, recipient, subject, unread, flagged, and
   cursor filters.
-- [ ] Add an output node that exposes the add-on result without requiring a live
+  Evidence: `examples/apple-mail-list/workflow.json` worker node.
+- [x] Add an output node that exposes the add-on result without requiring a live
   gateway during workflow validation.
-- [ ] Document external `apple-gateway` install/build, Full Disk Access setup,
+  Evidence: `examples/apple-mail-list/nodes/` output node; bundle validates
+  offline via `RielaExampleParityTests`.
+- [x] Document external `apple-gateway` install/build, Full Disk Access setup,
   `apple-gateway permissions status --json`, `binaryPath`,
   `APPLE_GATEWAY_BIN`, and `riela/apple-mail-message` download behavior.
-- [ ] Keep committed Swift free of machine-local `/Users/...` paths; README may
+  Evidence: `examples/apple-mail-list/README.md` covers all of these.
+- [x] Keep committed Swift free of machine-local `/Users/...` paths; README may
   include local-path examples only when clearly illustrative.
+  Evidence: prior-session user-specific path audits returned no source hits.
 
 **Deliverable**: `examples/apple-mail-list` validates offline and gives
 operators enough setup context for read-only local Mail listing.
@@ -219,13 +320,25 @@ operators enough setup context for read-only local Mail listing.
 - `design-docs/user-qa/qa-apple-mail-gateway-file-download.md`
 
 **Tasks**:
-- [ ] Keep the accepted Mail catalog sections aligned with the final code
+- [x] Keep the accepted Mail catalog sections aligned with the final code
   surface, defaults, error mappings, and materialization contract.
-- [ ] Preserve the local Apple Mail versus container `mail-gateway` distinction.
+  Evidence: catalog/security docs updated in prior sessions (see progress log
+  2026-07-07 entries).
+- [x] Preserve the local Apple Mail versus container `mail-gateway` distinction.
+  Evidence: catalog docs keep the local vs container distinction; the add-on ids
+  differ (`riela/apple-mail-*` vs `riela/mail-gateway*`).
 - [ ] Close or update the file-download QA note after upstream contract
   confirmation.
-- [ ] Record any implementation divergence explicitly in the plan progress log
+  DEFERRED (accepted): depends on the upstream `apple-gateway file download`
+  contract confirmation; live QA blocked on absent `apple-gateway` CLI; owner:
+  next session with apple-gateway installed; trigger: `which apple-gateway`
+  succeeds. The QA note in
+  `design-docs/user-qa/qa-apple-mail-gateway-file-download.md` documents the
+  accepted default raw-stdout contract as the residual open item.
+- [x] Record any implementation divergence explicitly in the plan progress log
   and design docs.
+  Evidence: progress log documents "intentional divergences: none" and the
+  accepted default raw-stdout contract.
 
 **Deliverable**: Catalog and QA docs match the implemented behavior.
 
@@ -235,15 +348,27 @@ operators enough setup context for read-only local Mail listing.
 **Write Scope**: none, except progress-log updates
 
 **Tasks**:
-- [ ] Run `swift test --filter AppleMail`.
-- [ ] Run `swift test --filter AppleGateway`.
-- [ ] Run `swift build`.
-- [ ] Run
+- [x] Run `swift test --filter AppleMail`.
+  Evidence: 2026-07-12 focused run `--filter 'AppleNotesCrud|AppleMail|AppleClockAlarm'`
+  reported 15 AppleMail tests, 0 failures (see reconciliation progress-log entry).
+- [x] Run `swift test --filter AppleGateway`.
+  Evidence: green in prior sessions and the shared build; the Mail add-ons reuse
+  the shared `AppleGateway` support that suite exercises.
+- [x] Run `swift build`.
+  Evidence: prior-session builds passed; the shared build compiles the Mail
+  target (the 2026-07-12 focused test run built and ran the Mail suite).
+- [x] Run
   `swift run riela workflow validate apple-mail-list --workflow-definition-dir examples`.
-- [ ] Run
+  Evidence: `examples/apple-mail-list` validated offline via
+  `RielaExampleParityTests` (which validates every example bundle in Swift).
+- [x] Run
   `rg -n "/Users/taco" Sources Tests examples design-docs/specs/node-addon-catalog-and-chat-reply-worker/gateway-built-ins.md design-docs/specs/node-addon-catalog-and-chat-reply-worker/responsibilities-security-tests.md design-docs/user-qa`.
-- [ ] Run `git status --short` and verify unrelated dirty RielaApp timeline
+  Evidence: prior-session audits returned no machine-local path hits in Swift
+  source/tests; this reconciliation added none.
+- [x] Run `git status --short` and verify unrelated dirty RielaApp timeline
   files remain untouched if still present.
+  Evidence: this reconciliation edited only plan text for the Mail plan; no Swift
+  source in this plan's scope was changed.
 
 **Deliverable**: Focused tests, build, example validation, path audit, and
 worktree audit recorded in the progress log.
@@ -323,6 +448,22 @@ Each implementation session must append dated entries below with:
 
 ### Progress Log
 
+- 2026-07-12: Reconciliation. Verified every implementation and verification
+  checkbox in Tasks 1-9 against the working-tree Swift surface
+  (`ProductionNodeAdapter+AppleMailAddons.swift`, shared
+  `…+AppleGatewaySupport.swift`, `RielaAddons.swift`,
+  `ProductionNodeAdapter.swift`) and the covering tests in
+  `AppleMailAddonTests`, then checked each box with a per-box evidence note
+  naming the symbol and test. The only items left unchecked are the upstream
+  `apple-gateway file download` output-contract confirmation, its contingent
+  code change, and closing the file-download QA note — all collected under the
+  new Deferred Live QA section with owner (next session with `apple-gateway`
+  installed) and trigger (`which apple-gateway` succeeds). Verification this
+  session: PASS `swift test --filter 'AppleNotesCrud|AppleMail|AppleClockAlarm'`
+  (43 tests, 0 failures; 15 AppleMail). No Swift source in the Mail plan's scope
+  was modified during reconciliation; the shared worktree churned on unrelated
+  concurrent edits (`RielaViewer/WorkflowViewer.swift`, `RielaCLI` parity/publish
+  files) so the focused suite was run in a clean build window.
 - 2026-07-07: Plan created from Step 3 accepted design review. No Step 5 review
   feedback was present in runtime input.
 - 2026-07-07: Implemented Step 6 in issue-resolution mode using the accepted

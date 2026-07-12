@@ -61,6 +61,7 @@ public struct CodexAgentCommandBuilder: LocalAgentCommandBuilding {
       input: input,
       provider: provider
     )
+    let recoveryPolicy = codexToolChildRecoveryPolicy(input.node.variables)
     return LocalAgentCommand(
       provider: provider,
       configuration: LocalAgentProcessConfiguration(
@@ -72,7 +73,13 @@ public struct CodexAgentCommandBuilder: LocalAgentCommandBuilding {
       stdin: promptText,
       normalizeStdout: normalizeCodexExecJSONStdout,
       backendEventType: codexBackendEventType,
-      classifyBackendEvent: classifyCodexBackendEvent
+      classifyBackendEvent: classifyCodexBackendEvent,
+      toolChildMonitor: recoveryPolicy.mode == .off ? nil : CodexToolChildRecoveryMonitor(
+        policy: recoveryPolicy,
+        workflowExecutionId: "codex-agent",
+        stepExecutionId: input.node.id,
+        attempt: input.executionIndex
+      )
     )
   }
 }

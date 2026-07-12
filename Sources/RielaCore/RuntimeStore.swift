@@ -661,7 +661,8 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
       eventType: input.eventType,
       channel: input.channel,
       content: input.contentSnapshot ?? input.contentDelta,
-      toolName: input.toolName
+      toolName: input.toolName,
+      usage: input.usage
     ))
     if events.count > 100 {
       events.removeFirst(events.count - 100)

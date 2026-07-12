@@ -1,6 +1,13 @@
 # Swift CLI And Runtime Parity Gap Closure Implementation Plan
 
-**Status**: Active; deletion gate blocked pending accepted review metadata
+**Status**: Active; deletion gate blocked pending accepted review metadata.
+**Explicit deferral record (2026-07-12)**: the accepted implementation is
+present; the only remaining task is the legacy-TypeScript deletion gate, which
+requires a fresh independent adversarial review to be truthfully recorded in
+the readiness metadata before deletion — owner: next independent-review
+session; trigger: an adversarial review run that reports zero high/medium
+findings against the current tree. Do not delete legacy TypeScript before
+that acceptance is recorded.
 **Design Reference**: `design-docs/specs/design-swift-cli-runtime-parity-gap-closure.md`
 **Workflow Mode**: issue-resolution
 **Issue Reference**: Complete Riela Swift migration parity with Rielflow main and agent backends

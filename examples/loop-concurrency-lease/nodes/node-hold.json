@@ -1,0 +1,9 @@
+{
+  "id": "hold",
+  "modelFreeze": false,
+  "nodeType": "sleep",
+  "variables": {},
+  "sleep": {
+    "durationMs": 6000
+  }
+}

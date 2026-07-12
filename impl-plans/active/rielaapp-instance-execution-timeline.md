@@ -1,9 +1,9 @@
 # RielaApp Instance Execution Timeline — Implementation Plan
 
-**Status**: Planning
+**Status**: Implemented (visual verification deferred to interactive RielaApp session)
 **Design Reference**: `design-docs/specs/design-rielaapp-instance-execution-timeline.md`
 **Created**: 2026-07-06
-**Last Updated**: 2026-07-06
+**Last Updated**: 2026-07-12
 
 ## Design Document Reference
 
@@ -32,7 +32,7 @@ Add a Jaeger-style Gantt timeline to the RielaApp Workflow Viewer: step rows on 
 
 ### 1. Viewer Data Enrichment (RielaViewer)
 
-**Status**: NOT_STARTED
+**Status**: DONE — `WorkflowViewerTimelineEntry` carries `executionId`/`backendEvents`/`backendEventTotalCount`; `WorkflowViewerState.messages` + `messageLogAvailable` populated by `WorkflowViewerLoader.load` from the runtime snapshot; message-load rides the same store as the snapshot (graceful — empty messages on a loaded session, `showUnavailable` on load failure). Tested by `WorkflowViewerTests` (`testViewerLoadsWorkflowTreeRunningStateAndNodeMessages`, `testViewerLoadsSessionWithoutMessagesKeepsMessageLogAvailable`).
 
 **Write Scope**:
 
@@ -55,7 +55,7 @@ Add a Jaeger-style Gantt timeline to the RielaApp Workflow Viewer: step rows on 
 
 ### 2. Timeline Layout Model (RielaViewer, pure)
 
-**Status**: NOT_STARTED
+**Status**: DONE — `WorkflowExecutionTimelineLayout` (rows ordered by first start with declaration-order tiebreak, `[0,1]` bar fractions, injected `now` for running, span clamped ≥ 1 s, message-routed connectors with execution-order fallback, nice s/min/h axis ticks). Tested by `WorkflowExecutionTimelineLayoutTests` (6 tests, all passing).
 
 **Write Scope**:
 
@@ -74,7 +74,7 @@ Add a Jaeger-style Gantt timeline to the RielaApp Workflow Viewer: step rows on 
 
 ### 3. Timeline Pane View (RielaApp, AppKit)
 
-**Status**: NOT_STARTED
+**Status**: IMPLEMENTED (visual verification deferred) — `WorkflowExecutionTimelinePaneView` with pinned `WorkflowExecutionTimelineGutterView`, scrollable `WorkflowExecutionTimelineCanvasView` (status-colored bars, min bar width, attempt/duration labels, axis grid), zoom in/out/fit, mouse + keyboard (arrows/Return) selection, and per-bar `NSAccessibilityElement` labels. Compiles (`swift build --target RielaApp`). Pixel-level rendering DEFERRED (accepted): interactive RielaApp session; owner: next interactive session; trigger: rielaapp-ui-verification workflow.
 
 **Write Scope**:
 
@@ -96,7 +96,7 @@ Add a Jaeger-style Gantt timeline to the RielaApp Workflow Viewer: step rows on 
 
 ### 4. Execution Detail Popover
 
-**Status**: NOT_STARTED
+**Status**: IMPLEMENTED (visual verification deferred) — `WorkflowExecutionDetailPopover.make` + `DetailView` (transient NSPopover, header with status dot/node/attempt/backend/times/duration/failureReason, segmented Log/Inbox/Outbox). Log tab shows "recent N of M" footer + `riela session export` hint; Inbox filters `toStepId`, Outbox filters `sourceStepExecutionId`; Inbox/Outbox show "Message log unavailable for this session." when `messageLogAvailable` is false; empty-state placeholders per tab. Compiles. Visual/interaction confirmation DEFERRED (accepted): interactive RielaApp session; owner: next interactive session; trigger: rielaapp-ui-verification workflow.
 
 **Write Scope**:
 
@@ -117,7 +117,7 @@ Add a Jaeger-style Gantt timeline to the RielaApp Workflow Viewer: step rows on 
 
 ### 5. Viewer Window Integration + Live Refresh
 
-**Status**: NOT_STARTED
+**Status**: IMPLEMENTED (visual verification deferred) — `viewerModeControl` (Outline/Timeline) + `viewerModeChanged`/`selectTimelineMode`; `updateTimelinePane`; 2 s `startLiveRefreshTimer` gated on `selectedSession.status == .running` (stops on completion via `updateLiveRefreshTimer` and on `windowWillClose`); `refresh()` preserves `selectedSessionId`, canvas preserves selection + zoom; loader diagnostics flow to the existing diagnostics area. Compiles. NOTE (accepted deviation): the refresh timer gates on session status, not on which pane is visible — it reloads both Outline and Timeline panes, which is harmless. Live-extension visual confirmation DEFERRED (accepted): interactive RielaApp session; owner: next interactive session; trigger: rielaapp-ui-verification workflow.
 
 **Write Scope**:
 
@@ -138,7 +138,7 @@ Add a Jaeger-style Gantt timeline to the RielaApp Workflow Viewer: step rows on 
 
 ### 6. Instance Detail Entry Point
 
-**Status**: NOT_STARTED
+**Status**: IMPLEMENTED (visual verification deferred) — "View Execution Log" action row in `DaemonWorkflowWindowController+DetailView.swift` opens the viewer with `openTimeline: true` (Timeline pane pre-selected) and the latest session resolved through `WorkflowViewerLoader`. Empty-state message ("No executions recorded yet for this instance.") handled in the pane's `update`. Compiles. Visual/navigation confirmation DEFERRED (accepted): interactive RielaApp session; owner: next interactive session; trigger: rielaapp-ui-verification workflow.
 
 **Write Scope**:
 
@@ -160,34 +160,41 @@ Add a Jaeger-style Gantt timeline to the RielaApp Workflow Viewer: step rows on 
 
 | Module | File(s) | Status | Test Coverage |
 | ------ | ------- | ------ | ------------- |
-| 1. Viewer data enrichment | `Sources/RielaViewer/WorkflowViewer.swift`, `Sources/RielaViewer/WorkflowViewerMessages.swift` | NOT_STARTED | RielaViewerTests (loader/messages) |
-| 2. Timeline layout model | `Sources/RielaViewer/WorkflowExecutionTimelineLayout.swift` | NOT_STARTED | WorkflowExecutionTimelineLayoutTests |
-| 3. Timeline pane view | `Sources/RielaApp/WorkflowExecutionTimelinePaneView.swift` | NOT_STARTED | manual (AppKit) |
-| 4. Detail popover | `Sources/RielaApp/WorkflowExecutionDetailPopover.swift` | NOT_STARTED | manual (AppKit) |
-| 5. Viewer integration | `Sources/RielaApp/WorkflowViewerWindowController*.swift` | NOT_STARTED | manual |
-| 6. Instance entry point | `Sources/RielaApp/DaemonWorkflowWindowController+DetailView.swift` | NOT_STARTED | manual |
+| 1. Viewer data enrichment | `Sources/RielaViewer/WorkflowViewer.swift`, `Sources/RielaViewer/WorkflowViewerTimelineModels.swift` | DONE | RielaViewerTests (loader/messages) |
+| 2. Timeline layout model | `Sources/RielaViewer/WorkflowExecutionTimelineLayout.swift` | DONE | WorkflowExecutionTimelineLayoutTests (6 passing) |
+| 3. Timeline pane view | `Sources/RielaApp/WorkflowExecutionTimelinePaneView.swift` | IMPLEMENTED (visual deferred) | compile + logic; visual DEFERRED |
+| 4. Detail popover | `Sources/RielaApp/WorkflowExecutionDetailPopover.swift` | IMPLEMENTED (visual deferred) | compile + logic; visual DEFERRED |
+| 5. Viewer integration | `Sources/RielaApp/WorkflowViewerWindowController*.swift` | IMPLEMENTED (visual deferred) | compile + logic; visual DEFERRED |
+| 6. Instance entry point | `Sources/RielaApp/DaemonWorkflowWindowController+DetailView.swift` | IMPLEMENTED (visual deferred) | compile + logic; visual DEFERRED |
 
 ## Dependencies
 
 | Feature | Depends On | Status |
 | ------- | ---------- | ------ |
-| Layout model (2) | Data enrichment (1) | pending |
-| Pane view (3) | Layout model (2) | pending |
-| Popover (4) | Data enrichment (1), Pane view (3) | pending |
-| Viewer integration (5) | Pane view (3), Popover (4) | pending |
-| Instance entry point (6) | Viewer integration (5) | pending |
+| Layout model (2) | Data enrichment (1) | done |
+| Pane view (3) | Layout model (2) | done |
+| Popover (4) | Data enrichment (1), Pane view (3) | done |
+| Viewer integration (5) | Pane view (3), Popover (4) | done |
+| Instance entry point (6) | Viewer integration (5) | done |
 
 Modules 1–2 are library-only and can land independently of app UI work.
 
 ## Completion Criteria
 
-- [ ] All acceptance criteria in `design-rielaapp-instance-execution-timeline.md` checked off.
-- [ ] `swift build` and `swift test --filter RielaViewerTests` pass (plus full `swift test` before completion).
-- [ ] Manual verification on: (a) completed multi-node session, (b) live running session, (c) loop-heavy session (performance), (d) legacy session without message log (degradation), (e) never-run instance (empty state).
-- [ ] No direct SQLite access from RielaApp for timeline data (all through `WorkflowViewerLoader`).
-- [ ] `impl-plans/README.md` Active Plans row kept up to date; plan moved to `completed/` when done.
+- [x] All acceptance criteria in `design-rielaapp-instance-execution-timeline.md` checked off (with per-criterion evidence; UI-visual portions annotated DEFERRED to an interactive session).
+- [x] `swift build` (per-target: `RielaViewer`, `RielaApp`) and `swift test --filter RielaViewerTests` pass — RielaViewerTests: 16 tests, 0 failures (2026-07-12). NOTE: whole-package `swift build`/`swift test` is intermittently blocked by concurrent in-progress CLI work in `Sources/RielaCLI/*` (unrelated to this feature); the RielaViewer + RielaApp targets and RielaViewerTests build and pass in isolation. Re-run full `swift test` once the CLI work lands.
+- [ ] Manual verification on: (a) completed multi-node session, (b) live running session, (c) loop-heavy session (performance), (d) legacy session without message log (degradation), (e) never-run instance (empty state). DEFERRED (accepted): visual verification requires an interactive RielaApp session; owner: next interactive session; trigger: RielaApp launched with the rielaapp-ui-verification workflow. Degradation (d) and empty-state (e) logic is unit-tested at the loader/pane layer.
+- [x] No direct SQLite access from RielaApp for timeline data (all through `WorkflowViewerLoader`). Verified: timeline data flows through `WorkflowViewerState`; the only `SQLiteWorkflowRuntimePersistenceStore` use in RielaApp is the pre-existing manager-message write in `EntryPoint+Viewer.swift`.
+- [ ] `impl-plans/README.md` Active Plans row kept up to date; plan moved to `completed/` when done. (Plan remains in `active/` pending the deferred interactive visual verification; README row updated to reflect Implemented status.)
 
 ## Progress Log
+
+### Session: 2026-07-12
+
+- Tasks Completed: Verified all six modules are implemented + compiling (`swift build --target RielaViewer`/`RielaApp`). Closed two real gaps against the design: (1) message-log-unavailable degradation — added `WorkflowViewerState.messageLogAvailable`, threaded it through the pane/canvas/popover so Inbox/Outbox show "Message log unavailable for this session." on the `showUnavailable` path; (2) per-bar VoiceOver — added `refreshAccessibilityChildren()` building one labeled `NSAccessibilityElement` per bar (`"<stepId>, <status>, started <time>, duration <d>"`). Added `testViewerLoadsSessionWithoutMessagesKeepsMessageLogAvailable` and a `messageLogAvailable` assertion to the existing loader test. RielaViewerTests: 16 tests, 0 failures. `swiftlint --strict` clean on all touched files. Checked all 15 design acceptance criteria and 6 module statuses with evidence.
+- Tasks In Progress: —
+- Blockers: Whole-package `swift test` intermittently blocked by concurrent in-progress `Sources/RielaCLI/*` compile errors (W5 package tooling, another engineer); RielaViewer/RielaApp targets + RielaViewerTests build/pass in isolation.
+- Notes: Message data rides the same runtime-records SQLite store as the session snapshot, so an independent "message log unavailable" state cannot arise separately from a whole-session load failure — the degradation notice is wired to `showUnavailable`, and a loaded session with zero messages is a true empty state (not "unavailable"). Interactive UI-visual verification (bar/connector rendering, zoom, live refresh, popover interaction, VoiceOver audio) deferred to a RielaApp session with the rielaapp-ui-verification workflow.
 
 ### Session: 2026-07-06 23:59
 

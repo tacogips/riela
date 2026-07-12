@@ -66,6 +66,7 @@ final class WorkflowExecutionTimelinePaneView: NSView {
       layout: layout,
       entries: state.timeline,
       messages: state.messages,
+      messageLogAvailable: state.messageLogAvailable,
       dateFormatter: dateFormatter,
       durationFormatter: durationFormatter
     )
@@ -91,6 +92,7 @@ final class WorkflowExecutionTimelinePaneView: NSView {
       layout: empty,
       entries: [],
       messages: [],
+      messageLogAvailable: false,
       dateFormatter: dateFormatter,
       durationFormatter: durationFormatter
     )
@@ -322,6 +324,7 @@ private final class WorkflowExecutionTimelineCanvasView: NSView {
   private var layoutModel = WorkflowExecutionTimelineLayout(entries: [], now: Date())
   private var entriesById: [String: WorkflowViewerTimelineEntry] = [:]
   private var messages: [WorkflowViewerMessage] = []
+  private var messageLogAvailable = true
   private var dateFormatter: DateFormatter?
   private var durationFormatter: ((TimeInterval?) -> String)?
   private var selectedEntryId: String?
@@ -339,12 +342,14 @@ private final class WorkflowExecutionTimelineCanvasView: NSView {
     layout: WorkflowExecutionTimelineLayout,
     entries: [WorkflowViewerTimelineEntry],
     messages: [WorkflowViewerMessage],
+    messageLogAvailable: Bool,
     dateFormatter: DateFormatter,
     durationFormatter: @escaping (TimeInterval?) -> String
   ) {
     layoutModel = layout
     entriesById = Dictionary(uniqueKeysWithValues: entries.map { ($0.executionId, $0) })
     self.messages = messages
+    self.messageLogAvailable = messageLogAvailable
     self.dateFormatter = dateFormatter
     self.durationFormatter = durationFormatter
     if selectedEntryId.flatMap({ entriesById[$0] }) == nil {
@@ -352,6 +357,7 @@ private final class WorkflowExecutionTimelineCanvasView: NSView {
       popover?.close()
     }
     needsDisplay = true
+    refreshAccessibilityChildren()
   }
 
   func contentSize(minVisibleSize: NSSize) -> NSSize {
@@ -540,11 +546,34 @@ private final class WorkflowExecutionTimelineCanvasView: NSView {
     let next = WorkflowExecutionDetailPopover.make(
       entry: entry,
       messages: messages,
+      messageLogAvailable: messageLogAvailable,
       dateFormatter: dateFormatter,
       durationFormatter: durationFormatter
     )
     popover = next
     next.show(relativeTo: rect, of: self, preferredEdge: .maxY)
+  }
+
+  private func refreshAccessibilityChildren() {
+    let elements: [NSAccessibilityElement] = layoutModel.bars.compactMap { bar in
+      guard let entry = entriesById[bar.entryId] else {
+        return nil
+      }
+      let element = NSAccessibilityElement()
+      element.setAccessibilityRole(.button)
+      element.setAccessibilityParent(self)
+      element.setAccessibilityFrameInParentSpace(barFrame(bar))
+      element.setAccessibilityLabel(accessibilityLabel(for: entry))
+      return element
+    }
+    setAccessibilityChildren(elements.isEmpty ? nil : elements)
+  }
+
+  private func accessibilityLabel(for entry: WorkflowViewerTimelineEntry) -> String {
+    let status = entry.status.rawValue.replacingOccurrences(of: "_", with: " ")
+    let started = dateFormatter?.string(from: entry.startedAt) ?? ""
+    let duration = durationFormatter?(entry.duration) ?? ""
+    return "\(entry.stepId), \(status), started \(started), duration \(duration)"
   }
 }
 #endif

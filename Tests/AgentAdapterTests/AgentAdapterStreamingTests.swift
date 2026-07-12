@@ -117,8 +117,141 @@ extension AgentAdapterTests {
     )
 
     let events = await recorder.recordedEvents()
-    XCTAssertEqual(events.map(\.channel), [.thinking, .thinking])
-    XCTAssertEqual(events.map(\.contentDelta), ["xx", "x"])
+    XCTAssertEqual(events.map(\.channel), [.thinking, .thinking, .thinking])
+    XCTAssertEqual(events.map(\.contentDelta), ["x", "x", "x"])
+  }
+
+  func testCoalescerTimerFlushesIsolatedDeltaWithoutLaterOutput() {
+    let scheduler = ManualBackendEventTimerScheduler()
+    let recorder = LockedBackendEventRecorder()
+    let coalescer = BackendEventCoalescer(
+      timerScheduler: scheduler.schedule(delay:action:)
+    )
+
+    coalescer.absorb(thinkingDelta("isolated")) { recorder.append($0) }
+    XCTAssertEqual(recorder.events, [])
+    XCTAssertEqual(scheduler.scheduledDelays, [0.25])
+
+    scheduler.fireNext()
+
+    XCTAssertEqual(recorder.events.map(\.contentDelta), ["isolated"])
+  }
+
+  func testCoalescerImmediatelyFlushesInitialDeltaAtExactByteThresholdOnce() {
+    assertInitialDeltaImmediatelyFlushesOnce(String(repeating: "x", count: 256))
+  }
+
+  func testCoalescerImmediatelyFlushesInitialDeltaAboveByteThresholdOnce() {
+    assertInitialDeltaImmediatelyFlushesOnce(String(repeating: "é", count: 129))
+  }
+
+  func testCoalescerFlushesPendingDeltaBeforeChannelSwitchAndSameChannelSnapshot() {
+    let scheduler = ManualBackendEventTimerScheduler()
+    let recorder = LockedBackendEventRecorder()
+    let coalescer = BackendEventCoalescer(
+      timerScheduler: scheduler.schedule(delay:action:)
+    )
+
+    coalescer.absorb(thinkingDelta("thinking")) { recorder.append($0) }
+    coalescer.absorb(assistantSnapshot("assistant")) { recorder.append($0) }
+    coalescer.absorb(thinkingDelta("more thinking")) { recorder.append($0) }
+    coalescer.absorb(thinkingSnapshot("snapshot")) { recorder.append($0) }
+
+    XCTAssertEqual(recorder.events.map(\.channel), [.thinking, .assistant, .thinking, .thinking])
+    XCTAssertEqual(
+      recorder.events.map { $0.contentDelta ?? $0.contentSnapshot },
+      ["thinking", "assistant", "more thinking", "snapshot"]
+    )
+  }
+
+  func testCoalescerFinishDrainsPendingDeltaOnceAndRejectsLateTimerYield() {
+    let scheduler = ManualBackendEventTimerScheduler()
+    let recorder = LockedBackendEventRecorder()
+    let coalescer = BackendEventCoalescer(
+      timerScheduler: scheduler.schedule(delay:action:)
+    )
+
+    coalescer.absorb(thinkingDelta("tail")) { recorder.append($0) }
+    coalescer.finish { recorder.append($0) }
+    scheduler.fireAllIncludingCancelled()
+    coalescer.finish { recorder.append($0) }
+
+    XCTAssertEqual(recorder.events.map(\.contentDelta), ["tail"])
+  }
+
+  func testBackendEventBridgeDrainsPendingDeltaOnSuccessAndThrownError() async throws {
+    for mode in [TerminalStreamingRunner.Mode.success, .failure] {
+      let recorder = BackendEventRecorder()
+      let adapter = LocalAgentCommandAdapter(
+        commandBuilder: CursorCLIAgentCommandBuilder(),
+        runner: TerminalStreamingRunner(mode: mode),
+        backendEventCoalescingTimeThreshold: 60
+      )
+
+      do {
+        _ = try await adapter.execute(
+          input(backend: .cursorCliAgent),
+          context: AdapterExecutionContext { event in await recorder.append(event) }
+        )
+        XCTAssertEqual(mode, .success)
+      } catch is TerminalStreamingRunner.Failure {
+        XCTAssertEqual(mode, .failure)
+      }
+
+      let events = await recorder.recordedEvents()
+      XCTAssertEqual(events.map(\.contentDelta), ["tail"])
+    }
+  }
+
+  func testBackendEventBridgeDrainsPendingDeltaOnCancellation() async throws {
+    let recorder = BackendEventRecorder()
+    let runner = TerminalStreamingRunner(mode: .waitForCancellation)
+    let adapter = LocalAgentCommandAdapter(
+      commandBuilder: CursorCLIAgentCommandBuilder(),
+      runner: runner,
+      backendEventCoalescingTimeThreshold: 60
+    )
+    let adapterInput = input(backend: .cursorCliAgent)
+    let task = Task {
+      try await adapter.execute(
+        adapterInput,
+        context: AdapterExecutionContext { event in await recorder.append(event) }
+      )
+    }
+    await runner.waitUntilEventEmitted()
+
+    task.cancel()
+    do {
+      _ = try await task.value
+      XCTFail("expected cancellation")
+    } catch is CancellationError {
+      // Expected.
+    }
+
+    let events = await recorder.recordedEvents()
+    XCTAssertEqual(events.map(\.contentDelta), ["tail"])
+  }
+
+  private func assertInitialDeltaImmediatelyFlushesOnce(
+    _ delta: String,
+    file: StaticString = #filePath,
+    line: UInt = #line
+  ) {
+    let scheduler = ManualBackendEventTimerScheduler()
+    let recorder = LockedBackendEventRecorder()
+    let coalescer = BackendEventCoalescer(
+      timerScheduler: scheduler.schedule(delay:action:)
+    )
+
+    coalescer.absorb(thinkingDelta(delta)) { recorder.append($0) }
+
+    XCTAssertEqual(recorder.events.map(\.contentDelta), [delta], file: file, line: line)
+    XCTAssertEqual(scheduler.scheduledDelays, [], file: file, line: line)
+
+    scheduler.fireAllIncludingCancelled()
+    coalescer.finish { recorder.append($0) }
+
+    XCTAssertEqual(recorder.events.map(\.contentDelta), [delta], file: file, line: line)
   }
 
   func testStreamBackendContentFalseFallsBackToTypeOnlyEvents() async throws {
@@ -163,6 +296,153 @@ extension AgentAdapterTests {
     let maybeReplayElapsed = await runner.replayElapsed()
     let replayElapsed = try XCTUnwrap(maybeReplayElapsed)
     XCTAssertLessThan(replayElapsed, 0.1)
+  }
+}
+
+private func thinkingDelta(_ text: String) -> AdapterBackendEvent {
+  AdapterBackendEvent(
+    provider: "cursor-cli-agent",
+    eventType: "thinking",
+    channel: .thinking,
+    contentDelta: text,
+    isDelta: true
+  )
+}
+
+private func thinkingSnapshot(_ text: String) -> AdapterBackendEvent {
+  AdapterBackendEvent(
+    provider: "cursor-cli-agent",
+    eventType: "thinking",
+    channel: .thinking,
+    contentSnapshot: text
+  )
+}
+
+private func assistantSnapshot(_ text: String) -> AdapterBackendEvent {
+  AdapterBackendEvent(
+    provider: "cursor-cli-agent",
+    eventType: "assistant",
+    channel: .assistant,
+    contentSnapshot: text
+  )
+}
+
+private final class LockedBackendEventRecorder: @unchecked Sendable {
+  private let lock = NSLock()
+  private var storedEvents: [AdapterBackendEvent] = []
+
+  var events: [AdapterBackendEvent] {
+    lock.withLock { storedEvents }
+  }
+
+  func append(_ event: AdapterBackendEvent) {
+    lock.withLock { storedEvents.append(event) }
+  }
+}
+
+private final class ManualBackendEventTimerScheduler: @unchecked Sendable {
+  private struct Entry {
+    var delay: TimeInterval
+    var action: @Sendable () -> Void
+    var isCancelled = false
+  }
+
+  private let lock = NSLock()
+  private var entries: [Entry] = []
+
+  var scheduledDelays: [TimeInterval] {
+    lock.withLock { entries.map(\.delay) }
+  }
+
+  func schedule(
+    delay: TimeInterval,
+    action: @escaping @Sendable () -> Void
+  ) -> BackendEventCoalescer.TimerCancellation {
+    let index = lock.withLock {
+      entries.append(Entry(delay: delay, action: action))
+      return entries.index(before: entries.endIndex)
+    }
+    return { [weak self] in
+      self?.lock.withLock {
+        guard self?.entries.indices.contains(index) == true else {
+          return
+        }
+        self?.entries[index].isCancelled = true
+      }
+    }
+  }
+
+  func fireNext() {
+    let action = lock.withLock { () -> (@Sendable () -> Void)? in
+      guard let index = entries.firstIndex(where: { !$0.isCancelled }) else {
+        return nil
+      }
+      entries[index].isCancelled = true
+      return entries[index].action
+    }
+    action?()
+  }
+
+  func fireAllIncludingCancelled() {
+    let actions = lock.withLock { entries.map(\.action) }
+    actions.forEach { $0() }
+  }
+}
+
+private actor TerminalStreamingRunner: LocalAgentProcessRunning, LocalAgentProcessEventStreaming {
+  enum Mode: Equatable, Sendable {
+    case success
+    case failure
+    case waitForCancellation
+  }
+
+  struct Failure: Error {}
+
+  private let mode: Mode
+  private var emitted = false
+  private var emissionWaiters: [CheckedContinuation<Void, Never>] = []
+
+  init(mode: Mode) {
+    self.mode = mode
+  }
+
+  func run(
+    configuration: LocalAgentProcessConfiguration,
+    stdin: String,
+    deadline: Date?
+  ) async throws -> LocalAgentProcessResult {
+    try await run(configuration: configuration, stdin: stdin, deadline: deadline, outputEventHandler: nil)
+  }
+
+  func run(
+    configuration _: LocalAgentProcessConfiguration,
+    stdin _: String,
+    deadline _: Date?,
+    outputEventHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
+  ) async throws -> LocalAgentProcessResult {
+    let output = #"{"type":"thinking","subtype":"delta","text":"tail"}"#
+    outputEventHandler?(LocalAgentProcessOutputEvent(stream: .stdout, line: output))
+    emitted = true
+    emissionWaiters.forEach { $0.resume() }
+    emissionWaiters.removeAll()
+    switch mode {
+    case .success:
+      return LocalAgentProcessResult(stdout: output, stderr: "", terminationStatus: 0)
+    case .failure:
+      throw Failure()
+    case .waitForCancellation:
+      try await Task.sleep(nanoseconds: 60_000_000_000)
+      return LocalAgentProcessResult(stdout: output, stderr: "", terminationStatus: 0)
+    }
+  }
+
+  func waitUntilEventEmitted() async {
+    guard !emitted else {
+      return
+    }
+    await withCheckedContinuation { continuation in
+      emissionWaiters.append(continuation)
+    }
   }
 }
 

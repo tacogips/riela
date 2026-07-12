@@ -1,0 +1,36 @@
+{
+  "implementation-review": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "loopGate": {
+        "gateId": "implementation-review",
+        "stepId": "implementation-review",
+        "decision": "accepted",
+        "severityCounts": {
+          "high": 1,
+          "medium": 0
+        },
+        "blockingFindings": [
+          {
+            "id": "missing-regression-test",
+            "severity": "high",
+            "message": "The implementation lacks a regression test for the required gate behavior.",
+            "evidenceRefs": [
+              "review.json"
+            ]
+          }
+        ],
+        "evidenceRefs": [
+          "review.json"
+        ],
+        "diagnostics": [
+          "high finding remained"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "id": "plan",
+  "description": "Turn the unreaped Codex tool-child requirements into an implementation-ready contract.",
+  "executionBackend": "claude-code-agent",
+  "model": "claude-opus-4-8",
+  "promptTemplateFile": "prompts/plan.md",
+  "variables": {}
+}

@@ -307,12 +307,96 @@ final class GraphQLContractsTests: XCTestCase {
       "continueSession(input: ContinueSessionInput!): ControlPlaneResult!",
       "sendManagerMessage(input: SendManagerMessageInput!): SendManagerMessagePayload!",
       "replayCommunication(input: ReplayCommunicationInput!): ReplayCommunicationPayload!",
-      "retryCommunicationDelivery(input: RetryCommunicationDeliveryInput!): RetryCommunicationDeliveryPayload!"
+      "retryCommunicationDelivery(input: RetryCommunicationDeliveryInput!): RetryCommunicationDeliveryPayload!",
+      "type LoopSessionOverview",
+      "type LoopWorkflowStats",
+      "type LoopEvidenceDiff",
+      "type LoopCostSummary",
+      "type LoopCostSummaryDelta",
+      "type LoopGateChange",
+      "type LoopVerificationChange",
+      "loopSessions(workflowId: String, status: String, limit: Int): [LoopSessionOverview!]!",
+      "loopWorkflowStats(workflowId: String!, limit: Int): LoopWorkflowStats",
+      "loopEvidenceDiff(baseSessionId: String!, targetSessionId: String!): LoopEvidenceDiff"
     ] {
       XCTAssertTrue(schema.contains(field), "missing schema field: \(field)")
     }
     XCTAssertFalse(schema.contains("continueSession(workflowId: String!, sessionId: String!)"))
     XCTAssertFalse(schema.contains("managerRuntimeId"))
+  }
+
+  func testLoopAnalyticsResolversProjectFromSnapshots() async {
+    let snapshots = [
+      Self.snapshot(sessionId: "s2", status: .failed, gateDecision: .rejected),
+      Self.snapshot(sessionId: "s1", status: .completed, gateDecision: .accepted)
+    ]
+    let service = GraphQLRuntimeSnapshotQueryService(
+      loadSnapshot: { id in
+        guard let match = snapshots.first(where: { $0.session.sessionId == id }) else {
+          throw WorkflowRuntimePersistenceStoreError.notFound(id)
+        }
+        return match
+      },
+      loadSnapshots: { snapshots }
+    )
+
+    let sessions = await service.loopSessions(workflowId: "wf")
+    XCTAssertTrue(sessions.result.accepted)
+    // Newest first: s1 has the later updatedAt.
+    XCTAssertEqual(sessions.sessions.map(\.sessionId), ["s1", "s2"])
+    XCTAssertEqual(sessions.sessions.first?.gateOutcomes.first?.required, true)
+
+    let stats = await service.loopWorkflowStats(workflowId: "wf")
+    XCTAssertTrue(stats.result.accepted)
+    XCTAssertEqual(stats.stats?.windowRuns, 2)
+    XCTAssertEqual(stats.stats?.acceptedRuns, 1) // s1 accepted its required gate
+    XCTAssertEqual(stats.stats?.lastAcceptedSessionId, "s1")
+
+    let diff = await service.loopEvidenceDiff(baseSessionId: "s2", targetSessionId: "s1")
+    XCTAssertTrue(diff.result.accepted)
+    XCTAssertTrue(diff.diff?.sameWorkflow ?? false)
+    XCTAssertEqual(diff.diff?.baseSessionId, "s2")
+
+    let missing = await service.loopEvidenceDiff(baseSessionId: "s2", targetSessionId: "nope")
+    XCTAssertFalse(missing.result.accepted)
+  }
+
+  func testLoopStatsAndDiffDTOsProjectFromDomainTypes() {
+    let stats = LoopWorkflowStats(
+      workflowId: "wf",
+      windowRuns: 2,
+      acceptedRuns: 1,
+      gateFailureCounts: ["review": 2, "style": 1],
+      meanTotalTokens: 150,
+      lastAcceptedSessionId: "s2"
+    )
+    let statsDTO = GraphQLLoopWorkflowStatsDTO(stats: stats)
+    XCTAssertEqual(statsDTO.workflowId, "wf")
+    XCTAssertEqual(statsDTO.acceptedRuns, 1)
+    XCTAssertEqual(statsDTO.meanTotalTokens, 150)
+    // Map is projected as a sorted list for stable GraphQL typing.
+    XCTAssertEqual(statsDTO.gateFailureCounts.map(\.gateId), ["review", "style"])
+    XCTAssertEqual(statsDTO.gateFailureCounts.first?.count, 2)
+
+    let diff = LoopEvidenceDiff(
+      baseSessionId: "a",
+      targetSessionId: "b",
+      sameWorkflow: false,
+      gateChanges: [LoopGateChange(gateId: "g", baseDecision: .rejected, targetDecision: .accepted,
+                                   severityCountsDelta: LoopFindingSeverityCounts(high: -1))],
+      costDelta: LoopCostSummaryDelta(totalTokensDelta: -50),
+      diagnostics: ["cross-workflow diff"]
+    )
+    let diffDTO = GraphQLLoopEvidenceDiffDTO(diff: diff)
+    XCTAssertFalse(diffDTO.sameWorkflow)
+    XCTAssertEqual(diffDTO.gateChanges.first?.baseDecision, "rejected")
+    XCTAssertEqual(diffDTO.gateChanges.first?.severityCountsDelta.high, -1)
+    XCTAssertEqual(diffDTO.costDelta?.totalTokensDelta, -50)
+    XCTAssertEqual(diffDTO.diagnostics, ["cross-workflow diff"])
+
+    // Round-trips through Codable (client contract).
+    XCTAssertNoThrow(try JSONEncoder().encode(statsDTO))
+    XCTAssertNoThrow(try JSONEncoder().encode(diffDTO))
   }
 
   func testNoteGraphQLProjectionFieldsMatchSchemaContract() throws {
@@ -763,5 +847,44 @@ private final class TestWorkflowInstanceStore: WorkflowInstanceStoring, @uncheck
       }
       instances.removeAll { $0.identity == matches[0].identity && $0.workflowId == matches[0].workflowId }
     }
+  }
+}
+
+private extension GraphQLContractsTests {
+  static func snapshot(
+    sessionId: String,
+    status: WorkflowSessionStatus,
+    gateDecision: LoopGateDecision
+  ) -> WorkflowRuntimePersistenceSnapshot {
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let session = WorkflowSession(
+      workflowId: "wf",
+      sessionId: sessionId,
+      status: status,
+      entryStepId: "review",
+      createdAt: date,
+      updatedAt: date.addingTimeInterval(sessionId == "s1" ? 10 : 5)
+    )
+    let manifest = LoopEvidenceManifest(
+      schemaVersion: 1,
+      manifestId: "loop-evidence-\(sessionId)",
+      workflowId: "wf",
+      sessionId: sessionId,
+      workflowSource: LoopWorkflowSource(scope: "project", kind: "workflow-directory", mutable: true),
+      policy: LoopPolicyEvidence(),
+      gates: [LoopGateResult(gateId: "review", stepId: "review", stepExecutionId: "\(sessionId)-exec", decision: gateDecision)],
+      redaction: LoopRedactionSummary(policyName: "summary-only", status: "clean"),
+      createdAt: date,
+      updatedAt: date
+    )
+    let loopMetadata = WorkflowLoopMetadata(
+      required: true,
+      gates: [LoopGateDeclaration(id: "review", stepId: "review", required: true)]
+    )
+    return WorkflowRuntimePersistenceSnapshot(
+      session: session,
+      loopEvidence: manifest,
+      loopMetadata: loopMetadata
+    )
   }
 }

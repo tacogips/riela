@@ -1,0 +1,74 @@
+{
+  "workflowId": "loop-ci-gate-check",
+  "description": "Required loop workflow used to demonstrate CI gate verification with 'loop gates --check' (exit codes) and SARIF export via 'loop findings --format sarif'.",
+  "defaults": {
+    "maxLoopIterations": 1,
+    "nodeTimeoutMs": 120000
+  },
+  "prompts": {
+    "workerSystemPromptTemplate": "Return concise structured review JSON only."
+  },
+  "entryStepId": "implementation-review",
+  "loop": {
+    "kind": "design-implement-review",
+    "required": true,
+    "description": "Example of required loop gate enforcement.",
+    "evidence": {
+      "required": true,
+      "artifactRootPolicy": "runtime-owned",
+      "requiredSections": [
+        "verification",
+        "review"
+      ]
+    },
+    "policies": {
+      "process": {
+        "nestedRiela": "deny",
+        "nestedCodex": "deny",
+        "allowedBackends": [
+          "codex-agent"
+        ],
+        "requiredWorkerModel": "gpt-5.5"
+      },
+      "redaction": {
+        "secretPolicy": "summary-only",
+        "storeRawStdout": false,
+        "storeRawStderr": false
+      }
+    },
+    "gates": [
+      {
+        "id": "implementation-review",
+        "stepId": "implementation-review",
+        "required": true,
+        "acceptWhen": {
+          "decision": "accepted",
+          "maxHighFindings": 0,
+          "maxMediumFindings": 0
+        }
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "id": "implementation-review",
+      "nodeFile": "nodes/node-implementation-review.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "implementation-review",
+      "nodeId": "implementation-review",
+      "role": "worker",
+      "loop": {
+        "role": "gate",
+        "gateId": "implementation-review",
+        "evidenceTags": [
+          "review",
+          "blocking-findings"
+        ],
+        "recordsVerification": true
+      }
+    }
+  ]
+}

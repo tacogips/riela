@@ -1,0 +1,36 @@
+{
+  "implementation-review": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "loopGate": {
+        "gateId": "implementation-review",
+        "stepId": "implementation-review",
+        "decision": "needs_work",
+        "severityCounts": {
+          "high": 1,
+          "medium": 0
+        },
+        "blockingFindings": [
+          {
+            "id": "regressed-error-handling",
+            "severity": "high",
+            "message": "The refactor dropped the timeout error mapping that the baseline run verified.",
+            "evidenceRefs": [
+              "review.json"
+            ]
+          }
+        ],
+        "evidenceRefs": [
+          "review.json"
+        ],
+        "diagnostics": [
+          "high finding introduced after baseline"
+        ]
+      }
+    }
+  }
+}

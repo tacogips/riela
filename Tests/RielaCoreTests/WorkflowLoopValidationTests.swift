@@ -185,4 +185,225 @@ final class WorkflowLoopValidationTests: XCTestCase {
         $0.message == "must be unique across workflow.loop.gates[]"
     })
   }
+
+  func testValidationAcceptsLoopConvergenceMetadata() throws {
+    let data = Data("""
+      {
+        "workflowId": "loop-metadata",
+        "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 3 },
+        "entryStepId": "review",
+        "loop": {
+          "required": false,
+          "convergence": {
+            "maxGateVisits": 6,
+            "maxRepeatedFindingRounds": 2,
+            "onStall": "warn"
+          },
+          "gates": [{ "id": "implementation-review", "stepId": "review" }]
+        },
+        "nodes": [{ "id": "review", "nodeFile": "nodes/review.json" }],
+        "steps": [{ "id": "review", "nodeId": "review", "role": "worker" }]
+      }
+      """.utf8)
+
+    let result = validateAuthoredWorkflowData(data)
+
+    XCTAssertEqual(result.diagnostics.filter { $0.severity == .error }, [])
+    XCTAssertEqual(result.workflow?.loop?.convergence?.maxGateVisits, 6)
+    XCTAssertEqual(result.workflow?.loop?.convergence?.maxRepeatedFindingRounds, 2)
+    XCTAssertEqual(result.workflow?.loop?.convergence?.onStall, .warn)
+  }
+
+  func testValidationRejectsInvalidLoopConvergenceMetadata() throws {
+    let data = Data("""
+      {
+        "workflowId": "loop-metadata",
+        "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 3 },
+        "entryStepId": "review",
+        "loop": {
+          "required": true,
+          "convergence": {
+            "maxGateVisits": 0,
+            "maxRepeatedFindingRounds": -1,
+            "onStall": "warn"
+          },
+          "gates": [{ "id": "implementation-review", "stepId": "review" }]
+        },
+        "nodes": [{ "id": "review", "nodeFile": "nodes/review.json" }],
+        "steps": [{ "id": "review", "nodeId": "review", "role": "worker" }]
+      }
+      """.utf8)
+
+    let errors = validateAuthoredWorkflowData(data).diagnostics.filter { $0.severity == .error }
+
+    XCTAssertTrue(errors.contains { $0.path == "workflow.loop.convergence.maxGateVisits" })
+    XCTAssertTrue(errors.contains { $0.path == "workflow.loop.convergence.maxRepeatedFindingRounds" })
+    XCTAssertTrue(errors.contains { $0.path == "workflow.loop.convergence.onStall" })
+  }
+
+  func testValidationRejectsConvergenceWithoutBounds() throws {
+    let data = Data("""
+      {
+        "workflowId": "loop-metadata",
+        "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 3 },
+        "entryStepId": "review",
+        "loop": {
+          "convergence": {},
+          "gates": [{ "id": "implementation-review", "stepId": "review" }]
+        },
+        "nodes": [{ "id": "review", "nodeFile": "nodes/review.json" }],
+        "steps": [{ "id": "review", "nodeId": "review", "role": "worker" }]
+      }
+      """.utf8)
+
+    let errors = validateAuthoredWorkflowData(data).diagnostics.filter { $0.severity == .error }
+
+    XCTAssertTrue(errors.contains { $0.path == "workflow.loop.convergence" })
+  }
+
+  func testValidationAcceptsLoopBudgetMetadata() throws {
+    let data = Data("""
+      {
+        "workflowId": "loop-metadata",
+        "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 3 },
+        "entryStepId": "review",
+        "loop": {
+          "required": false,
+          "budget": {
+            "maxTotalTokens": 500000,
+            "maxWallClockMs": 3600000,
+            "maxSessionAttempts": 3,
+            "onExceeded": "warn"
+          },
+          "gates": [{ "id": "implementation-review", "stepId": "review" }]
+        },
+        "nodes": [{ "id": "review", "nodeFile": "nodes/review.json" }],
+        "steps": [{ "id": "review", "nodeId": "review", "role": "worker" }]
+      }
+      """.utf8)
+
+    let result = validateAuthoredWorkflowData(data)
+
+    XCTAssertEqual(result.diagnostics.filter { $0.severity == .error }, [])
+    XCTAssertEqual(result.workflow?.loop?.budget?.maxTotalTokens, 500_000)
+    XCTAssertEqual(result.workflow?.loop?.budget?.maxWallClockMs, 3_600_000)
+    XCTAssertEqual(result.workflow?.loop?.budget?.maxSessionAttempts, 3)
+    XCTAssertEqual(result.workflow?.loop?.budget?.onExceeded, "warn")
+  }
+
+  func testValidationRejectsInvalidLoopBudgetMetadata() throws {
+    let data = Data("""
+      {
+        "workflowId": "loop-metadata",
+        "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 3 },
+        "entryStepId": "review",
+        "loop": {
+          "required": true,
+          "budget": {
+            "maxTotalTokens": 0,
+            "maxWallClockMs": -5,
+            "maxSessionAttempts": 0,
+            "onExceeded": "warn"
+          },
+          "gates": [{ "id": "implementation-review", "stepId": "review" }]
+        },
+        "nodes": [{ "id": "review", "nodeFile": "nodes/review.json" }],
+        "steps": [{ "id": "review", "nodeId": "review", "role": "worker" }]
+      }
+      """.utf8)
+
+    let errors = validateAuthoredWorkflowData(data).diagnostics.filter { $0.severity == .error }
+
+    XCTAssertTrue(errors.contains { $0.path == "workflow.loop.budget.maxTotalTokens" })
+    XCTAssertTrue(errors.contains { $0.path == "workflow.loop.budget.maxWallClockMs" })
+    XCTAssertTrue(errors.contains { $0.path == "workflow.loop.budget.maxSessionAttempts" })
+    // `warn` while required is invalid.
+    XCTAssertTrue(errors.contains { $0.path == "workflow.loop.budget.onExceeded" })
+  }
+
+  func testValidationRejectsBudgetWithoutBoundsAndUnknownOnExceeded() throws {
+    let data = Data("""
+      {
+        "workflowId": "loop-metadata",
+        "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 3 },
+        "entryStepId": "review",
+        "loop": {
+          "budget": { "onExceeded": "explode" },
+          "gates": [{ "id": "implementation-review", "stepId": "review" }]
+        },
+        "nodes": [{ "id": "review", "nodeFile": "nodes/review.json" }],
+        "steps": [{ "id": "review", "nodeId": "review", "role": "worker" }]
+      }
+      """.utf8)
+
+    let errors = validateAuthoredWorkflowData(data).diagnostics.filter { $0.severity == .error }
+
+    XCTAssertTrue(errors.contains { $0.path == "workflow.loop.budget" })
+    XCTAssertTrue(errors.contains { $0.path == "workflow.loop.budget.onExceeded" })
+  }
+
+  func testValidationAcceptsLoopConcurrencyMetadata() throws {
+    let data = Data("""
+      {
+        "workflowId": "loop-metadata",
+        "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 3 },
+        "entryStepId": "review",
+        "loop": {
+          "concurrency": { "maxActive": 1, "onBusy": "skip" },
+          "gates": [{ "id": "implementation-review", "stepId": "review" }]
+        },
+        "nodes": [{ "id": "review", "nodeFile": "nodes/review.json" }],
+        "steps": [{ "id": "review", "nodeId": "review", "role": "worker" }]
+      }
+      """.utf8)
+
+    let result = validateAuthoredWorkflowData(data)
+
+    XCTAssertEqual(result.diagnostics.filter { $0.severity == .error }, [])
+    XCTAssertEqual(result.workflow?.loop?.concurrency?.maxActive, 1)
+    XCTAssertEqual(result.workflow?.loop?.concurrency?.onBusy, "skip")
+  }
+
+  func testValidationDefaultsLoopConcurrencyToSingleFail() throws {
+    let data = Data("""
+      {
+        "workflowId": "loop-metadata",
+        "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 3 },
+        "entryStepId": "review",
+        "loop": {
+          "concurrency": {},
+          "gates": [{ "id": "implementation-review", "stepId": "review" }]
+        },
+        "nodes": [{ "id": "review", "nodeFile": "nodes/review.json" }],
+        "steps": [{ "id": "review", "nodeId": "review", "role": "worker" }]
+      }
+      """.utf8)
+
+    let result = validateAuthoredWorkflowData(data)
+
+    XCTAssertEqual(result.diagnostics.filter { $0.severity == .error }, [])
+    XCTAssertEqual(result.workflow?.loop?.concurrency?.maxActive, 1)
+    XCTAssertEqual(result.workflow?.loop?.concurrency?.onBusy, "fail")
+  }
+
+  func testValidationRejectsInvalidLoopConcurrencyMetadata() throws {
+    let data = Data("""
+      {
+        "workflowId": "loop-metadata",
+        "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 3 },
+        "entryStepId": "review",
+        "loop": {
+          "concurrency": { "maxActive": 2, "onBusy": "queue" },
+          "gates": [{ "id": "implementation-review", "stepId": "review" }]
+        },
+        "nodes": [{ "id": "review", "nodeFile": "nodes/review.json" }],
+        "steps": [{ "id": "review", "nodeId": "review", "role": "worker" }]
+      }
+      """.utf8)
+
+    let errors = validateAuthoredWorkflowData(data).diagnostics.filter { $0.severity == .error }
+
+    XCTAssertTrue(errors.contains { $0.path == "workflow.loop.concurrency.maxActive" })
+    XCTAssertTrue(errors.contains { $0.path == "workflow.loop.concurrency.onBusy" })
+  }
 }

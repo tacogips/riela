@@ -14,6 +14,7 @@ struct ParsedParityOptions: Sendable {
   var source: String?
   var destination: String?
   var overwrite = false
+  var exactYes = false
   var dryRun = false
   var check = false
   var locked = false
@@ -43,6 +44,10 @@ struct ParsedParityOptions: Sendable {
   var all = false
   var packageName: String?
   var packageID: String?
+  var createPR = false
+  var prBase: String?
+  var preInstallCheck: WorkflowPackagePreInstallMode?
+  var preInstallCheckContainer: WorkflowPackageContainerRuntimeRequest?
   var branch: String?
   var localPath: String?
   var noteAPIEnabled = false
@@ -52,6 +57,11 @@ struct ParsedParityOptions: Sendable {
   var graphQLQuery: String?
   var graphQLQueryFile: String?
   var graphQLOperationName: String?
+  var changeSetId: String?
+  var expectedDigest: String?
+  var sourceSessionId: String?
+  var proposalId: String?
+  var reviewSessionId: String?
 
   init(_ arguments: [String]) throws {
     var index = 0
@@ -104,6 +114,16 @@ struct ParsedParityOptions: Sendable {
       scope = parsed == .auto ? .project : parsed
     case "--working-dir", "--working-directory":
       workingDirectory = try value()
+    case "--change-set-id":
+      changeSetId = try value()
+    case "--expected-digest":
+      expectedDigest = try value()
+    case "--source-session-id":
+      sourceSessionId = try value()
+    case "--proposal-id":
+      proposalId = try value()
+    case "--review-session-id":
+      reviewSessionId = try value()
     case "--workflow-definition-dir":
       workflowDefinitionDir = try value()
     case "--source", "--from":
@@ -118,8 +138,11 @@ struct ParsedParityOptions: Sendable {
 
   private mutating func parseRuntimeOption(_ token: String, value: () throws -> String) throws -> Bool {
     switch token {
-    case "--overwrite", "--force", "-f", "--yes":
+    case "--overwrite", "--force", "-f":
       overwrite = true
+    case "--yes":
+      overwrite = true
+      exactYes = true
     case "--dry-run":
       dryRun = true
     case "--check":
@@ -192,6 +215,22 @@ struct ParsedParityOptions: Sendable {
       packageName = try value()
     case "--package-id":
       packageID = try value()
+    case "--create-pr":
+      createPR = true
+    case "--pr-base":
+      prBase = try value()
+    case "--pre-install-check":
+      let raw = try value()
+      guard let mode = WorkflowPackagePreInstallMode(rawValue: raw) else {
+        throw CLIUsageError("--pre-install-check requires one of: off, warn, reject")
+      }
+      preInstallCheck = mode
+    case "--pre-install-check-container":
+      let raw = try value()
+      guard let runtime = WorkflowPackageContainerRuntimeRequest(rawValue: raw) else {
+        throw CLIUsageError("--pre-install-check-container requires one of: off, docker, podman, auto")
+      }
+      preInstallCheckContainer = runtime
     case "--branch":
       branch = try value()
     case "--local-path", "--registry-local-path":

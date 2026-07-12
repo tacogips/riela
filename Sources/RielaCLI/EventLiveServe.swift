@@ -594,6 +594,14 @@ struct CLIEventWorkflowRunner: EventWorkflowRunning {
     guard result.exitCode == .success else {
       throw CLIUsageError(result.stderr.isEmpty ? result.stdout : result.stderr)
     }
+    // Advisory loop-concurrency skip (design S11): no session was created;
+    // surface the typed skip record on the event receipt instead of a
+    // decode failure.
+    if result.stdout.contains("\"type\":\"loop_concurrency_skipped\"") {
+      throw CLIUsageError(
+        "loop concurrency skipped: " + result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+      )
+    }
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
     return try decoder.decode(WorkflowRunResult.self, from: Data(result.stdout.utf8))

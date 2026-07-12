@@ -545,6 +545,15 @@ private func humanReadablePackageResult(_ result: WorkflowPackageCommandResult) 
   if let runSessionId = result.runSessionId {
     lines.append("Run session: \(runSessionId)")
   }
+  if let check = result.preInstallCheck {
+    lines.append("Pre-install check (\(check.mode.rawValue)): \(check.success ? "passed" : "blocked"), \(check.findings.count) finding(s)")
+    if let diagnostic = check.containerDiagnostic {
+      lines.append("  container: \(diagnostic)")
+    }
+    for finding in check.findings.prefix(10) {
+      lines.append("  - [\(finding.severity.rawValue)] \(finding.ruleName) (\(finding.path)): \(finding.excerpt)")
+    }
+  }
   if let nextStep = packageNextStep(result, commandPrefix: commandPrefix) {
     lines.append("Next: \(nextStep)")
   }

@@ -35,6 +35,8 @@ impl-plans/
 | `active/rielaapp-ux-onboarding-improvements` | Implemented; RielaApp verification passed | `design-rielaapp-ux-onboarding-improvements` |
 | `active/riela-note` | Partially implemented; local note GraphQL/UI/add-ons shipped, remote socket and real libsql sync remain follow-ups | `design-riela-note` |
 | `active/riela-note-ui-refinements` | Implemented; post-review follow-ups pending (TASK-012–018, incl. critical SDL fix) | `design-riela-note-ui-refinements` |
+| `active/riela-note-adversarial-review-fixes` | Planning; fixes for the 2026-07-12 multi-agent adversarial review (66 confirmed findings, themes T1–T12) | `design-riela-note-adversarial-review-2026-07-12` |
+| `active/riela-note-new-features` | Planning; Anywhere Capture, Entity Pages, Scoped Ask (2026-07-12 persona ideation + judge panel) | `design-riela-note-new-features-2026-07-12` |
 | `active/official-sdk-adapter-improvements` | Implemented; full Swift test, focused SDK suites, live Anthropic streaming verification, and Riela review passed | `design-official-sdk-adapter-improvements` |
 | `active/official-sdk-adapter-review-improvements` | Planning; fixes for the 2026-07-06 adversarial review of commit 76ed0cb (5 major findings) | `design-official-sdk-adapter-review-improvements` |
 | `active/package-checkout-content-digest-metadata` | In Progress | `architecture#workflow-checkout-boundary` |

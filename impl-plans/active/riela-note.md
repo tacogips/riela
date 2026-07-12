@@ -1,6 +1,26 @@
 # Riela Note Implementation Plan
 
-**Status**: Partially implemented
+**Status**: Partially implemented. **Remaining-work reconciliation
+(2026-07-12, W8):** the shipped scope (local note store, CLI/GraphQL/App
+surfaces, note agent with cited answers, auto-action loop) is implemented
+and tested; the prose follow-ups are now enumerated below as explicit
+accepted deferrals so completion stays measurable:
+
+- **DEFERRED** Real libsql embedded-replica/sync execution and parity
+  (TASK-015 is stubbed: driver fails fast for `.embeddedReplica`). Owner:
+  next riela-note session; trigger: Turso/libsql sync becomes a user
+  requirement (gated test recipe recorded at the bottom of this plan).
+- **DEFERRED** Remote note listener/socket and HTTP registration paths
+  beyond the local serve surface. Owner: next riela-note session; trigger:
+  a remote client (second machine / RielaApp remote mode) needs note sync.
+- **DEFERRED** Vector/embedding retrieval, multi-source RAG, and web-search
+  behavior for the note agent (current agent answers from local note
+  retrieval with citations). Owner: next riela-note session; trigger:
+  adoption decision on retrieval quality (relates to the Hermes H-B/H-C
+  decision set).
+
+No other open work remains in this plan; it stays active only as the home
+for these three named deferrals.
 **Design Reference**: design-docs/specs/design-riela-note.md
 **Created**: 2026-07-04
 **Last Updated**: 2026-07-04

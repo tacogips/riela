@@ -189,6 +189,7 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
   public var nodes: [WorkflowViewerNode]
   public var timeline: [WorkflowViewerTimelineEntry]
   public var messages: [WorkflowViewerMessage]
+  public var messageLogAvailable: Bool
   public var diagnostics: [String]
 
   public init(
@@ -201,6 +202,7 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
     nodes: [WorkflowViewerNode],
     timeline: [WorkflowViewerTimelineEntry] = [],
     messages: [WorkflowViewerMessage] = [],
+    messageLogAvailable: Bool = true,
     diagnostics: [String] = []
   ) {
     self.workflow = workflow
@@ -212,6 +214,7 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
     self.nodes = nodes
     self.timeline = timeline
     self.messages = messages
+    self.messageLogAvailable = messageLogAvailable
     self.diagnostics = diagnostics
   }
 
@@ -234,6 +237,7 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
     case nodes
     case timeline
     case messages
+    case messageLogAvailable
     case diagnostics
   }
 
@@ -248,6 +252,7 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
     nodes = try container.decode([WorkflowViewerNode].self, forKey: .nodes)
     timeline = try container.decode([WorkflowViewerTimelineEntry].self, forKey: .timeline)
     messages = try container.decodeIfPresent([WorkflowViewerMessage].self, forKey: .messages) ?? []
+    messageLogAvailable = try container.decodeIfPresent(Bool.self, forKey: .messageLogAvailable) ?? true
     diagnostics = try container.decodeIfPresent([String].self, forKey: .diagnostics) ?? []
   }
 }
@@ -312,6 +317,10 @@ public struct WorkflowViewerLoader: Sendable {
     } ?? snapshots.first
     let summaries = snapshots.map(summary)
     let diagnostics = sessionStoreResolution.diagnostics + (selectedSnapshot?.diagnostics ?? [])
+    // Messages ride the same runtime-records database as the selected snapshot, so the
+    // message log is available whenever a snapshot loaded. Failure to open the store
+    // surfaces through the caller's `showUnavailable` path, which sets this flag false.
+    let messageLogAvailable = selectedSnapshot != nil
     return WorkflowViewerState(
       workflow: workflow,
       workflowDirectory: workflowDirectory,
@@ -322,6 +331,7 @@ public struct WorkflowViewerLoader: Sendable {
       nodes: buildTree(workflow: workflow, workflowDirectory: workflowDirectory, selectedSession: selectedSnapshot?.session),
       timeline: selectedSnapshot.map { timelineEntries(from: $0.session) } ?? [],
       messages: selectedSnapshot.map { messages(from: $0.workflowMessages) } ?? [],
+      messageLogAvailable: messageLogAvailable,
       diagnostics: diagnostics
     )
   }

@@ -1,0 +1,22 @@
+{
+  "plan": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "summary": "Plan drafted; the next step boundary checks the loop budget."
+    }
+  },
+  "summarize": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "summary": "Never reached: the 1ms wall-clock budget is exceeded before dispatch."
+    }
+  }
+}

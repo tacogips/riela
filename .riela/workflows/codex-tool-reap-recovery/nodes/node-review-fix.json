@@ -1,0 +1,8 @@
+{
+  "id": "review-fix",
+  "description": "Adversarially review the implementation and repair every high or medium finding.",
+  "executionBackend": "claude-code-agent",
+  "model": "claude-opus-4-8",
+  "promptTemplateFile": "prompts/review-fix.md",
+  "variables": {}
+}

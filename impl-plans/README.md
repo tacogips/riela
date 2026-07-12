@@ -11,6 +11,10 @@ Implementation plans bridge design documents (what to build) and actual code (ho
 - Dependency mapping for concurrent execution
 - Progress tracking across sessions
 
+Current cross-plan continuation state, dependency ordering, dirty-worktree
+ownership, and verification evidence are consolidated in
+[`REMAINING-WORK-HANDOVER.md`](REMAINING-WORK-HANDOVER.md).
+
 ## Directory Structure
 
 ```
@@ -24,36 +28,98 @@ impl-plans/
 
 ## Active Plans
 
-| Plan | Status | Design Reference |
-| ---- | ------ | ---------------- |
-| `active/agent-response-streaming` | Implemented | `design-agent-response-streaming#phase-1` |
-| `active/codex-unified-exec-stall-followup` | Implemented; focused tests and CLI WAL/status repro passed | `design-codex-unified-exec-stall-followup` |
-| `active/hermes-inspired-capabilities` | Planning; design approved pending adoption-set confirmation, no code written | `design-hermes-inspired-capabilities` |
-| `active/loop-engineering-application-gap-closure` | Planning; first-line tool slices have landed separately | `design-loop-engineering-application-gap-closure` |
-| `active/loop-engineering-convergence-and-operations` | Planning; LB1 convergence guard is the controlling pass, LB2–LB6 roadmap | `design-loop-engineering-convergence-and-operations` |
-| `active/loop-engineering-first-line-tool` | In Progress; module 8 self-evolution versioning remaining | `design-loop-engineering-first-line-tool-detail` |
-| `active/rielaapp-ux-onboarding-improvements` | Implemented; RielaApp verification passed | `design-rielaapp-ux-onboarding-improvements` |
-| `active/riela-note` | Partially implemented; local note GraphQL/UI/add-ons shipped, remote socket and real libsql sync remain follow-ups | `design-riela-note` |
-| `active/riela-note-ui-refinements` | Implemented; post-review follow-ups pending (TASK-012–018, incl. critical SDL fix) | `design-riela-note-ui-refinements` |
-| `active/riela-note-adversarial-review-fixes` | Planning; fixes for the 2026-07-12 multi-agent adversarial review (66 confirmed findings, themes T1–T12) | `design-riela-note-adversarial-review-2026-07-12` |
-| `active/riela-note-new-features` | Planning; Anywhere Capture, Entity Pages, Scoped Ask (2026-07-12 persona ideation + judge panel) | `design-riela-note-new-features-2026-07-12` |
-| `active/official-sdk-adapter-improvements` | Implemented; full Swift test, focused SDK suites, live Anthropic streaming verification, and Riela review passed | `design-official-sdk-adapter-improvements` |
-| `active/official-sdk-adapter-review-improvements` | Planning; fixes for the 2026-07-06 adversarial review of commit 76ed0cb (5 major findings) | `design-official-sdk-adapter-review-improvements` |
-| `active/package-checkout-content-digest-metadata` | In Progress | `architecture#workflow-checkout-boundary` |
-| `active/swift-cli-runtime-parity-gap-closure` | Active; Swift parity follow-through | `design-swift-cli-runtime-parity-gap-closure` |
-| `active/workflow-progress-observability` | Implemented; completion-audit verified | `design-workflow-progress-observability` |
-| `active/workflow-package-checkout-search` | In Progress | `design-workflow-package-checkout-search`, `design-workflow-package-integrity`, `command` |
-| `active/workflow-package-publish` | In Progress | `design-workflow-package-publish#workflow-package-publish` |
-| `active/workflow-package-registry` | In Progress | `design-workflow-package-registry#workflow-package-registry` |
-| `active/workflow-package-registry-migration` | In Progress | `design-workflow-package-migration` |
-| `active/package-manager-ux-gap-closure` | Planning; gaps reproduced against riela 0.1.17 during the 2026-07-06 riela-packages audit | `design-package-manager-ux-gap-closure` |
-| `active/rielaapp-instance-execution-timeline` | Planning | `design-rielaapp-instance-execution-timeline` |
-| `active/workflow-instance-unification` | In Progress; Core resolver, project/user CLI instances, run/rerun provenance, GraphQL instance contracts, and examples landed; App preflight/listing remain | `design-workflow-instance-unification` |
+Status and unchecked-checkbox counts below are reconciled from the actual plan
+files as of 2026-07-12. Workstream tags (W0–W13) map to
+`impl-plans/REMAINING-WORK-HANDOVER.md`. "Unchecked" counts remaining plan
+checkboxes; zero-unchecked plans marked *archive candidate* are complete pending
+only the W13 read-through/move to `completed/`.
+
+**Active implementation work remaining (open checkboxes):**
+
+| Plan | Unchecked | Status | Workstream |
+| ---- | --------: | ------ | ---------- |
+| `active/apple-mail-addons` | 3 | Implemented in Swift + `AppleMailAddonTests` (15) green; every implementation/verification box reconciled+checked with per-box evidence 2026-07-12. The 3 open boxes are the upstream `apple-gateway file download` output-contract confirmation, its contingent code change, and closing the QA note — all **DEFERRED (accepted): live QA blocked on absent `apple-gateway` CLI**; owner: next session with apple-gateway; trigger: `which apple-gateway` succeeds | W4 |
+| `active/apple-clock-alarm-addons` | 4 | Implemented + tested (`AppleClockAlarmAddonTests`, 9 green); all 4 open boxes are TASK-001 **live envelope/time-format QA DEFERRED (accepted): blocked on absent `apple-gateway` CLI**; owner: next session with apple-gateway; trigger: `which apple-gateway` succeeds | W4 |
+| `active/rielaapp-instance-execution-timeline` | 5 | Implemented + unit-tested (RielaViewer data/layout; RielaApp pane/popover/integration/entry-point compile); RielaViewerTests 16/0. Interactive UI-visual verification **DEFERRED** to a RielaApp session with the rielaapp-ui-verification workflow | W6 |
+| `active/riela-note-new-features` | 33 | Planning; Anywhere Capture, Entity Pages, Scoped Ask (2026-07-12 persona ideation + judge panel); no code written | W8 |
+
+**Prose/decision/external plans (kept active, no open checkboxes or non-checkbox scope):**
+
+| Plan | Status | Workstream |
+| ---- | ------ | ---------- |
+| `active/riela-note` | Partially implemented; three explicit accepted deferrals recorded 2026-07-12 (libsql sync, remote listener, vector/RAG) with owner + trigger | W8 |
+| `active/swift-cli-runtime-parity-gap-closure` | Implementation largely present; TypeScript deletion gate blocked on accepted review/adversarial metadata + final evidence | W9 |
+| `active/hermes-inspired-capabilities` | Planning; explicitly deferred pending the user's adoption-set decision (owner: user; trigger: H-A…H-E confirmation). Self-evolution substrate note corrected 2026-07-12 | W11 |
+| `active/distributed-registry-container-node-roadmap` | Foundation implemented; release publication is an explicitly accepted external deferral (owner: maintainer with release access; trigger: next release window) | W12 |
+| `active/workflow-runtime-fanout-capabilities` | Planning; owns the runtime fanout / `run.maxConcurrency` / cross-workflow-resume capability gaps (created 2026-07-12); explicitly deferred (owner: next runtime-capabilities session; trigger: a workflow author needs live fanout) | W10 |
+
+**W5 package plans — superseded by the Swift migration (reconciled 2026-07-12):**
+
+The five package plans below were authored against the removed TypeScript tree
+(`packages/riela/src/...`). On 2026-07-12 all ≈72 unchecked boxes were
+reconciled via a Swift-native gap analysis (evidence: `Sources/RielaCLI/
+WorkflowPackage*.swift`, `WorkflowPackageCommandRunner+*.swift`,
+`Sources/RielaAddons/WorkflowPackage*.swift`, exercised by `RielaCLITests`
+package suites — `swift test --filter 'Package'` = 92 tests, 0 failures). Each
+box was resolved as covered-with-Swift-evidence, superseded-and-not-carried, or
+left as a documented **genuine Swift gap**.
+
+- **Complete via supersession** (0 open boxes, moved to `completed/`):
+  `package-checkout-content-digest-metadata` (checksum/digest review — zero
+  high/medium findings), `workflow-package-registry` (invalid-package
+  diagnostics covered; sqlite/cache-refresh-hook are TS-only), and
+  `workflow-package-registry-migration` (registry evolved past the `project-*`
+  fixture scheme; all capabilities implemented + tested; sibling
+  `../riela-packages` verified clean).
+- **Swift gaps closed and moved to `completed/`** (2 plans, 30 gap boxes, closed
+  2026-07-12): `workflow-package-checkout-search` (opt-in pre-install security
+  feature implemented — static scanner + findings/redaction, warn/reject,
+  no-network container command builder, `--pre-install-check*` flags; 10 tests)
+  and `workflow-package-publish` (git-integrated publish transport implemented —
+  real md5 checksum, normalized manifest, backend hints, clone/remote-URL
+  verification, dirty-worktree refusal, push-permission probe, direct push, and
+  `--create-pr`/`--pr-base` PR mode; 8 tests).
+
+14 implemented+verified plans with zero open checkboxes were moved to
+`completed/` on 2026-07-12 after a per-plan read-through (no open follow-ups; all
+their tests are green in the 1,753-test full suite). `apple-notes-crud-addons`
+was also moved to `completed/` on 2026-07-12 during W4 reconciliation once all
+three accepted hardening findings were confirmed implemented+tested (0 open
+boxes, no deferred live QA). See "Recently Completed" below.
 
 ## Recently Completed
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `riela-note-adversarial-review-fixes` | 2026-07-12 | `design-riela-note-adversarial-review-2026-07-12` |
+| `workflow-package-publish` | 2026-07-12 | `design-workflow-package-publish#workflow-package-publish` |
+| `workflow-package-checkout-search` | 2026-07-12 | `design-workflow-package-checkout-search` |
+| `package-checkout-content-digest-metadata` | 2026-07-12 | `architecture#workflow-checkout-boundary` |
+| `codex-unified-exec-stall-followup` | 2026-07-12 | `design-codex-unified-exec-stall-followup` |
+| `loop-engineering-application-gap-closure` | 2026-07-12 | `design-loop-engineering-application-gap-closure` |
+| `loop-engineering-convergence-and-operations` | 2026-07-12 | `design-loop-engineering-convergence-and-operations` |
+| `shared-workflow-serving-library` | 2026-07-12 | `design-shared-workflow-serving-library` |
+| `workflow-package-registry` | 2026-07-12 | `design-workflow-package-registry#workflow-package-registry` |
+| `workflow-package-registry-migration` | 2026-07-12 | `design-workflow-package-migration` |
+| `workflow-instance-unification` | 2026-07-12 | `design-workflow-instance-unification` |
+| `loop-engineering-first-line-tool` | 2026-07-12 | `design-loop-engineering-first-line-tool-detail` |
+| `installed-package-workflow-resolution` | 2026-07-12 | `design-installed-package-workflow-resolution` |
+| `apple-calendar-addons` | 2026-07-12 | `gateway-built-ins#built-in-rielaapple-calendar-` |
+| `apple-notes-list-addon` | 2026-07-12 | `gateway-built-ins#built-in-rielaapple-notes-list` |
+| `apple-notes-crud-addons` | 2026-07-12 | `gateway-built-ins#built-in-rielaapple-note-` |
+| `apple-reminders-addons` | 2026-07-12 | `gateway-built-ins#built-in-rielaapple-reminders-` |
+| `apple-gateway-admin-addons` | 2026-07-12 | `gateway-built-ins#built-in-rielaapple-gateway--admin-cli-add-ons` |
+| `macos-workflow-viewer` | 2026-07-12 | `design-macos-workflow-viewer` |
+| `node-input-filters` | 2026-07-12 | `design-node-input-filters` |
+| `official-sdk-adapter-improvements` | 2026-07-12 | `design-official-sdk-adapter-improvements` |
+| `official-sdk-adapter-review-improvements` | 2026-07-12 | `design-official-sdk-adapter-review-improvements` |
+| `package-manager-ux-gap-closure` | 2026-07-12 | `design-package-manager-ux-gap-closure` |
+| `riela-note-ui-refinements` | 2026-07-12 | `design-riela-note-ui-refinements` |
+| `riela-seatbelt-sandbox` | 2026-07-12 | `design-riela-seatbelt-sandbox` |
+| `rielaapp-ux-onboarding-improvements` | 2026-07-12 | `design-rielaapp-ux-onboarding-improvements` |
+| `three-axis-issue-resolution-review` | 2026-07-12 | `design-three-axis-issue-resolution-review` |
+| `workflow-progress-observability` | 2026-07-12 | `design-workflow-progress-observability` |
+| `agent-response-streaming` | 2026-07-11 | `design-agent-response-streaming#phase-1` |
 | `apple-gateway-packaging-plan` | 2026-07-07 | `gateway-built-ins#packaging-coverage-decision` |
 | `riela-note-selection-qa-comments` | 2026-07-07 | `design-riela-note-selection-qa-comments` |
 | `riela-note-edit-agent-ui` | 2026-07-07 | `design-riela-note-edit-agent-ui` |

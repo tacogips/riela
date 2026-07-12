@@ -31,6 +31,19 @@ public struct LocalAgentProcessConfiguration: Equatable, Sendable {
   }
 }
 
+/// Backend-specific tool-child liveness monitor (codex terminal-child stall
+/// recovery). The adapter drives its lifecycle: `start` before the process
+/// spawns, `processSpawned` once the direct agent child's pid is known, raw
+/// stdout lines during streaming, and `stop` on completion, failure, or
+/// cancellation — after `stop` returns, no monitor task or signal may remain
+/// live.
+public protocol LocalAgentToolChildMonitoring: Sendable {
+  func start(emitBackendEvent: @escaping @Sendable (AdapterBackendEvent) -> Void)
+  func processSpawned(_ processId: Int32)
+  func observeStdoutLine(_ line: String)
+  func stop() async
+}
+
 public struct LocalAgentCommand: Sendable {
   public var provider: String
   public var configuration: LocalAgentProcessConfiguration
@@ -38,6 +51,8 @@ public struct LocalAgentCommand: Sendable {
   public var normalizeStdout: @Sendable (String) -> String
   public var backendEventType: @Sendable (String) -> String?
   public var classifyBackendEvent: (@Sendable (String) -> AdapterBackendEvent?)?
+  /// Optional terminal tool-child stall monitor (nil = policy off).
+  public var toolChildMonitor: (any LocalAgentToolChildMonitoring)?
 
   public init(
     provider: String,
@@ -45,7 +60,8 @@ public struct LocalAgentCommand: Sendable {
     stdin: String,
     normalizeStdout: @escaping @Sendable (String) -> String = { $0 },
     backendEventType: @escaping @Sendable (String) -> String? = { _ in nil },
-    classifyBackendEvent: (@Sendable (String) -> AdapterBackendEvent?)? = nil
+    classifyBackendEvent: (@Sendable (String) -> AdapterBackendEvent?)? = nil,
+    toolChildMonitor: (any LocalAgentToolChildMonitoring)? = nil
   ) {
     self.provider = provider
     self.configuration = configuration
@@ -53,6 +69,7 @@ public struct LocalAgentCommand: Sendable {
     self.normalizeStdout = normalizeStdout
     self.backendEventType = backendEventType
     self.classifyBackendEvent = classifyBackendEvent
+    self.toolChildMonitor = toolChildMonitor
   }
 }
 
@@ -98,6 +115,19 @@ public protocol LocalAgentProcessEventStreaming: LocalAgentProcessRunning {
     stdin: String,
     deadline: Date?,
     outputEventHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
+  ) async throws -> LocalAgentProcessResult
+}
+
+/// Streaming runners that can additionally report the spawned direct child's
+/// pid, enabling tool-child correlation. Optional capability; runners without
+/// it simply never bind process identities.
+public protocol LocalAgentProcessSpawnObserving: LocalAgentProcessEventStreaming {
+  func run(
+    configuration: LocalAgentProcessConfiguration,
+    stdin: String,
+    deadline: Date?,
+    outputEventHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?,
+    spawnHandler: (@Sendable (Int32) -> Void)?
   ) async throws -> LocalAgentProcessResult
 }
 
@@ -629,7 +659,7 @@ private func terminationStatus(fromWaitStatus status: Int32) -> Int32 {
   return -(status & 0x7f)
 }
 
-public struct FoundationLocalAgentProcessRunner: LocalAgentProcessRunning, LocalAgentProcessEventStreaming {
+public struct FoundationLocalAgentProcessRunner: LocalAgentProcessRunning, LocalAgentProcessEventStreaming, LocalAgentProcessSpawnObserving {
   public init() {}
 
   public func run(configuration: LocalAgentProcessConfiguration, stdin: String, deadline: Date? = nil) async throws -> LocalAgentProcessResult {
@@ -641,6 +671,22 @@ public struct FoundationLocalAgentProcessRunner: LocalAgentProcessRunning, Local
     stdin: String,
     deadline: Date? = nil,
     outputEventHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
+  ) async throws -> LocalAgentProcessResult {
+    try await run(
+      configuration: configuration,
+      stdin: stdin,
+      deadline: deadline,
+      outputEventHandler: outputEventHandler,
+      spawnHandler: nil
+    )
+  }
+
+  public func run(
+    configuration: LocalAgentProcessConfiguration,
+    stdin: String,
+    deadline: Date? = nil,
+    outputEventHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?,
+    spawnHandler: (@Sendable (Int32) -> Void)?
   ) async throws -> LocalAgentProcessResult {
     let effectiveConfiguration = try seatbeltInvocation(for: configuration) ?? configuration
     let cancellationState = LocalProcessCancellationState()
@@ -691,6 +737,7 @@ public struct FoundationLocalAgentProcessRunner: LocalAgentProcessRunning, Local
             errorWriteDescriptor: errorPipe.fileHandleForWriting.fileDescriptor
           )
           processHandle.store(processId: processId)
+          spawnHandler?(Int32(processId))
           cancellationState.configure(processHandle: processHandle, pipes: pipes, completion: completion)
           try? inputPipe.fileHandleForReading.close()
           pipes.closeParentOutputWriters()
@@ -789,16 +836,42 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
         streamContent: backendContentStreamingEnabled(input.node.variables["streamBackendContent"]),
         coalescingTimeThreshold: backendEventCoalescingTimeThreshold
       )
+      let monitor = command.toolChildMonitor
+      monitor?.start(emitBackendEvent: eventBridge.emitInjected)
+      let outputHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
+      if let monitor {
+        let bridgeHandler = eventBridge.handler
+        outputHandler = { outputEvent in
+          if outputEvent.stream == .stdout {
+            monitor.observeStdoutLine(outputEvent.line)
+          }
+          bridgeHandler?(outputEvent)
+        }
+      } else {
+        outputHandler = eventBridge.handler
+      }
       do {
-        result = try await streamingRunner.run(
-          configuration: command.configuration,
-          stdin: command.stdin,
-          deadline: context.deadline,
-          outputEventHandler: eventBridge.handler
-        )
+        if let monitor, let spawnObservingRunner = streamingRunner as? any LocalAgentProcessSpawnObserving {
+          result = try await spawnObservingRunner.run(
+            configuration: command.configuration,
+            stdin: command.stdin,
+            deadline: context.deadline,
+            outputEventHandler: outputHandler,
+            spawnHandler: { monitor.processSpawned($0) }
+          )
+        } else {
+          result = try await streamingRunner.run(
+            configuration: command.configuration,
+            stdin: command.stdin,
+            deadline: context.deadline,
+            outputEventHandler: outputHandler
+          )
+        }
+        await monitor?.stop()
         eventBridge.finish()
         await eventBridge.waitForCompletion()
       } catch {
+        await monitor?.stop()
         eventBridge.finish()
         await eventBridge.waitForCompletion()
         throw error
@@ -833,7 +906,7 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
     coalescingTimeThreshold: TimeInterval
   ) -> BackendEventBridge {
     guard let backendEventHandler = context.backendEventHandler else {
-      return BackendEventBridge(handler: nil, finish: {}, waitForCompletion: {})
+      return BackendEventBridge(handler: nil, emitInjected: { _ in }, finish: {}, waitForCompletion: {})
     }
     let sensitiveValues = sensitiveAdapterEnvironmentValues(command.configuration.environment)
     let (eventStream, continuation) = AsyncStream.makeStream(
@@ -859,16 +932,15 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
       }
       event.contentDelta = sanitizedBackendEventContent(event.contentDelta, sensitiveValues: sensitiveValues)
       event.contentSnapshot = sanitizedBackendEventContent(event.contentSnapshot, sensitiveValues: sensitiveValues)
-      for output in coalescer.absorb(event) {
-        continuation.yield(output)
-      }
+      coalescer.absorb(event) { continuation.yield($0) }
     }
     return BackendEventBridge(
       handler: handler,
+      emitInjected: { event in
+        _ = continuation.yield(event)
+      },
       finish: {
-        for output in coalescer.finish() {
-          continuation.yield(output)
-        }
+        coalescer.finish { continuation.yield($0) }
         continuation.finish()
       },
       waitForCompletion: { await consumer.value }
@@ -902,69 +974,11 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
 
 private struct BackendEventBridge: Sendable {
   var handler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
+  /// Injects a synthesized event (tool-child recovery diagnostics) into the
+  /// same consumer stream as classified stdout events.
+  var emitInjected: @Sendable (AdapterBackendEvent) -> Void
   var finish: @Sendable () -> Void
   var waitForCompletion: @Sendable () async -> Void
-}
-
-private final class BackendEventCoalescer: @unchecked Sendable {
-  private struct PendingKey: Equatable {
-    var provider: String
-    var eventType: String
-    var channel: AdapterBackendEventChannel?
-  }
-
-  private let lock = NSLock()
-  private let byteThreshold = 256
-  private let timeThreshold: TimeInterval
-  private var pending: AdapterBackendEvent?
-  private var pendingKey: PendingKey?
-  private var pendingStartedAt: Date?
-
-  init(timeThreshold: TimeInterval = 0.25) {
-    self.timeThreshold = timeThreshold
-  }
-
-  func absorb(_ event: AdapterBackendEvent) -> [AdapterBackendEvent] {
-    lock.lock()
-    defer { lock.unlock() }
-
-    guard event.isDelta, let delta = event.contentDelta, event.channel != nil else {
-      return flushLocked() + [event]
-    }
-
-    let key = PendingKey(provider: event.provider, eventType: event.eventType, channel: event.channel)
-    guard var current = pending, pendingKey == key else {
-      let flushed = flushLocked()
-      pending = event
-      pendingKey = key
-      pendingStartedAt = Date()
-      return flushed
-    }
-
-    current.contentDelta = (current.contentDelta ?? "") + delta
-    pending = current
-    let startedAt = pendingStartedAt ?? Date()
-    if (current.contentDelta ?? "").utf8.count >= byteThreshold || Date().timeIntervalSince(startedAt) >= timeThreshold {
-      return flushLocked()
-    }
-    return []
-  }
-
-  func finish() -> [AdapterBackendEvent] {
-    lock.lock()
-    defer { lock.unlock() }
-    return flushLocked()
-  }
-
-  private func flushLocked() -> [AdapterBackendEvent] {
-    guard let event = pending else {
-      return []
-    }
-    pending = nil
-    pendingKey = nil
-    pendingStartedAt = nil
-    return [event]
-  }
 }
 
 private func fallbackBackendEvent(command: LocalAgentCommand, line: String) -> AdapterBackendEvent? {

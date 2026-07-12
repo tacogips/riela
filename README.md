@@ -303,6 +303,41 @@ riela package pack ./my-package-source
 If the package source contains multiple workflows, add
 `--workflow-definition-dir workflows/<name>`.
 
+### Optional pre-install security checks
+
+`package install` and `package checkout` accept an opt-in static content scan of
+the staged package before anything is written. It is off by default:
+
+```bash
+riela package install my-package --pre-install-check warn
+riela package install my-package --pre-install-check reject
+```
+
+`warn` reports findings (piped remote-script execution, credential material,
+network exfiltration, prompt-instruction overrides, machine-local paths) and
+still installs. `reject` fails the install on any high/critical finding and
+leaves nothing on disk. Finding excerpts are redacted and never contain full
+secret values. Add `--pre-install-check-container docker|podman|auto` for an
+optional no-network container inspection (read-only mount, no privileged mode,
+secret environment variables filtered); it degrades to a diagnostic when no
+container runtime is available, and static scanning always runs regardless.
+
+### Publishing a workflow to a registry
+
+`package publish <workflow-dir>` computes a real md5 checksum over the staged
+workflow, writes a normalized `riela-package.json`, and derives backend hints
+from the workflow's node payloads. When the target registry has a local git
+checkout, publish verifies the checkout's `origin` remote, refuses a dirty
+worktree, then either pushes directly (after a non-destructive push-permission
+probe) or, with `--create-pr`, opens a pull request (`--pr-base` selects the
+base branch) and reports the `prUrl`. `--dry-run` validates and stages without
+any git mutation.
+
+```bash
+riela package publish ./my-workflow --package-id my-package --registry local --yes
+riela package publish ./my-workflow --package-id my-package --registry local --create-pr --pr-base main --yes
+```
+
 Packages can declare environment variables that must be configured before the
 workflow is useful. Add them to `riela-package.json` with `environmentVariables`;
 RielaApp shows whether each required value is set. The Instances window also

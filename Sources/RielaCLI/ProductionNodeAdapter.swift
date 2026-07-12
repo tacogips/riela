@@ -172,10 +172,16 @@ actor ScenarioWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
   private let scenario: WorkflowMockScenario
   private let fallback: any WorkflowStdioNodeExecuting
   private var counts: [String: Int] = [:]
+  private let requiresScenarioResponse: Bool
 
-  init(scenario: WorkflowMockScenario, fallback: any WorkflowStdioNodeExecuting) {
+  init(
+    scenario: WorkflowMockScenario,
+    fallback: any WorkflowStdioNodeExecuting,
+    requiresScenarioResponse: Bool = false
+  ) {
     self.scenario = scenario
     self.fallback = fallback
+    self.requiresScenarioResponse = requiresScenarioResponse
   }
 
   func execute(
@@ -183,7 +189,13 @@ actor ScenarioWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
     context: AdapterExecutionContext
   ) async throws -> WorkflowStdioNodeExecutionResult {
     guard let sequence = scenario.responses[input.nodeId] else {
+      if requiresScenarioResponse {
+        throw AdapterExecutionError(.invalidOutput, "mock scenario is missing a response for stdio node '\(input.nodeId)'")
+      }
       return try await fallback.execute(input, context: context)
+    }
+    guard !sequence.isEmpty || !requiresScenarioResponse else {
+      throw AdapterExecutionError(.invalidOutput, "mock scenario response sequence is empty for stdio node '\(input.nodeId)'")
     }
     let count = (counts[input.nodeId] ?? 0) + 1
     counts[input.nodeId] = count
@@ -193,21 +205,35 @@ actor ScenarioWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
     }
     return WorkflowStdioNodeExecutionResult(payload: response.payload ?? [:])
   }
+
+  func consumedResponseCounts() -> [String: Int] { counts }
 }
 
 actor ScenarioWorkflowAddonResolver: WorkflowAddonResolving {
   private let scenario: WorkflowMockScenario
   private let fallback: any WorkflowAddonResolving
   private var counts: [String: Int] = [:]
+  private let requiresScenarioResponse: Bool
 
-  init(scenario: WorkflowMockScenario, fallback: any WorkflowAddonResolving) {
+  init(
+    scenario: WorkflowMockScenario,
+    fallback: any WorkflowAddonResolving,
+    requiresScenarioResponse: Bool = false
+  ) {
     self.scenario = scenario
     self.fallback = fallback
+    self.requiresScenarioResponse = requiresScenarioResponse
   }
 
   func execute(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
     guard let sequence = scenario.responses[input.nodeId] else {
+      if requiresScenarioResponse {
+        throw AdapterExecutionError(.invalidOutput, "mock scenario is missing a response for add-on node '\(input.nodeId)'")
+      }
       return try await fallback.execute(input, context: context)
+    }
+    guard !sequence.isEmpty || !requiresScenarioResponse else {
+      throw AdapterExecutionError(.invalidOutput, "mock scenario response sequence is empty for add-on node '\(input.nodeId)'")
     }
     let count = (counts[input.nodeId] ?? 0) + 1
     counts[input.nodeId] = count
@@ -224,6 +250,8 @@ actor ScenarioWorkflowAddonResolver: WorkflowAddonResolving {
       payload: response.payload ?? [:]
     )
   }
+
+  func consumedResponseCounts() -> [String: Int] { counts }
 }
 
 typealias GeminiAddonAdapterFactory = @Sendable (OfficialSDKAdapterConfiguration) async throws -> any NodeAdapter

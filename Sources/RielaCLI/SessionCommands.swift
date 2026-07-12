@@ -519,6 +519,28 @@ public struct SessionRerunCommand: Sendable {
         mockScenarioPath: options.mockScenarioPath ?? persisted.mockScenarioPath,
         workingDirectory: options.workingDirectory
       )
+      // Rerun re-acquires the same advisory per-workflow lease as a fresh run
+      // (design S11); the lease binds to the new session on its first save.
+      var pendingLease: String?
+      switch try loopConcurrencyPreflight(
+        workflow: bundle.workflow,
+        sessionStoreRoot: storeRoot,
+        output: options.output
+      ) {
+      case let .busyFail(result):
+        return result
+      case let .busySkip(result):
+        return result
+      case let .proceed(leaseHolder, _):
+        pendingLease = leaseHolder
+      }
+      defer {
+        releasePendingLoopConcurrencyLease(
+          workflow: bundle.workflow,
+          sessionStoreRoot: storeRoot,
+          leaseHolder: pendingLease
+        )
+      }
       let runtimeStore = InMemoryWorkflowRuntimeStore()
       try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: storeRoot)
       let runner = DeterministicWorkflowRunner(
@@ -538,6 +560,10 @@ public struct SessionRerunCommand: Sendable {
           variables: variables,
           rerunFromSessionId: persisted.session.sessionId,
           rerunFromStepId: options.stepId,
+          sourceRecoveryLineage: persistedRecoveryLineage(
+            sessionId: persisted.session.sessionId,
+            storeRoot: storeRoot
+          ),
           effectiveInstance: instanceResolution.effectiveInstance
         )
       )
@@ -698,6 +724,29 @@ public struct SessionResumeCommand: Sendable {
         mockScenarioPath: options.mockScenarioPath ?? persisted.mockScenarioPath,
         workingDirectory: options.workingDirectory
       )
+      // Resume re-acquires the same advisory per-workflow lease as a fresh
+      // run (design S11); the lease binds to the resumed session on its
+      // first save.
+      var pendingLease: String?
+      switch try loopConcurrencyPreflight(
+        workflow: bundle.workflow,
+        sessionStoreRoot: storeRoot,
+        output: options.output
+      ) {
+      case let .busyFail(result):
+        return result
+      case let .busySkip(result):
+        return result
+      case let .proceed(leaseHolder, _):
+        pendingLease = leaseHolder
+      }
+      defer {
+        releasePendingLoopConcurrencyLease(
+          workflow: bundle.workflow,
+          sessionStoreRoot: storeRoot,
+          leaseHolder: pendingLease
+        )
+      }
       let runtimeStore = InMemoryWorkflowRuntimeStore()
       try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: storeRoot)
       let runner = DeterministicWorkflowRunner(
@@ -717,7 +766,11 @@ public struct SessionResumeCommand: Sendable {
             nodePayloads: bundle.nodePayloads,
             variables: variables,
             maxSteps: options.maxSteps,
-            resumeSessionId: persisted.session.sessionId
+            resumeSessionId: persisted.session.sessionId,
+            sourceRecoveryLineage: persistedRecoveryLineage(
+              sessionId: persisted.session.sessionId,
+              storeRoot: storeRoot
+            )
           )
         )
       } catch {
@@ -884,6 +937,20 @@ public struct SessionResumeCommand: Sendable {
     }
     return persisted.runtimeVariables ?? [:]
   }
+}
+
+/// Reads the recovery lineage persisted on the source session's evidence
+/// manifest so rerun/resume entries can thread `rootSessionId`/`attemptNumber`
+/// (and the runner can enforce `budget.maxSessionAttempts`) without walking
+/// session chains. Absent snapshots or manifests degrade to nil (attempt one).
+private func persistedRecoveryLineage(
+  sessionId: String,
+  storeRoot: String
+) -> LoopRecoveryLineage? {
+  let store = SQLiteWorkflowRuntimePersistenceStore(
+    rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot)
+  )
+  return (try? store.load(sessionId: sessionId))?.loopEvidence?.recovery
 }
 
 private func projectLoopEvidence(

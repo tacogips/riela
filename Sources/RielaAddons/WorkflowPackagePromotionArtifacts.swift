@@ -8,6 +8,18 @@ extension WorkflowPackageManifestValidator {
     guard let loop, loop.promotionReady else {
       return []
     }
+    return loopPromotionArtifactIssues(loop, packageRoot: packageRoot)
+  }
+
+  /// Ungated variant for advisory promotion reporting (`loop promote`):
+  /// checks the declared promotion artifacts regardless of `promotionReady`.
+  public static func loopPromotionArtifactIssues(
+    _ loop: WorkflowPackageLoopMetadata?,
+    packageRoot: URL
+  ) -> [WorkflowPackageValidationIssue] {
+    guard let loop else {
+      return []
+    }
     var issues: [WorkflowPackageValidationIssue] = []
     validatePromotionArtifactFiles(
       loop.requiredMockScenarios,

@@ -9,6 +9,12 @@ public struct LoopEvidenceProjectionInput: Sendable {
   public var recovery: LoopRecoveryLineage?
   public var policy: LoopPolicyEvidence
   public var includeWorkflowWithoutLoopMetadata: Bool
+  /// Per-step cost evidence from the runner's live usage accumulator. The
+  /// projector consumes this directly; it never re-reads persisted event rows
+  /// (which drop the usage payload). Empty for pre-existing sessions and for
+  /// runs where no usage was observed, in which case cost renders as not
+  /// recorded rather than zero.
+  public var costs: [LoopCostEvidence]
 
   public init(
     workflow: WorkflowDefinition,
@@ -18,7 +24,8 @@ public struct LoopEvidenceProjectionInput: Sendable {
     variables: JSONObject = [:],
     recovery: LoopRecoveryLineage? = nil,
     policy: LoopPolicyEvidence = LoopPolicyEvidence(),
-    includeWorkflowWithoutLoopMetadata: Bool = false
+    includeWorkflowWithoutLoopMetadata: Bool = false,
+    costs: [LoopCostEvidence] = []
   ) {
     self.workflow = workflow
     self.session = session
@@ -28,6 +35,7 @@ public struct LoopEvidenceProjectionInput: Sendable {
     self.recovery = recovery
     self.policy = policy
     self.includeWorkflowWithoutLoopMetadata = includeWorkflowWithoutLoopMetadata
+    self.costs = costs
   }
 }
 
@@ -44,8 +52,15 @@ public struct DefaultLoopEvidenceProjector: LoopEvidenceProjecting {
     }
 
     let artifactRefs = artifactRefs(from: input.workflowMessages)
+    // Prefer explicit accumulator output; otherwise recover cost from the
+    // session's executions' recorded backend-event usage.
+    let costs = input.costs.isEmpty
+      ? LoopCostAccumulator.evidence(from: input.session.executions)
+      : input.costs
     let projectedGateResults = input.workflow.loop.map { gateResults(from: input, loop: $0) } ?? []
+    let projectedConvergence = convergenceProjection(from: input)
     let updatedAt = input.session.executions.map(\.updatedAt).max() ?? input.session.updatedAt
+    let budgetProjection = budgetProjection(from: input, costs: costs, now: updatedAt)
     let evidenceTagsByStepId = Dictionary(uniqueKeysWithValues: input.workflow.steps.map { ($0.id, $0.loop?.evidenceTags ?? []) })
 
     return LoopEvidenceManifest(
@@ -57,8 +72,11 @@ public struct DefaultLoopEvidenceProjector: LoopEvidenceProjecting {
       workflowDefinitionDigest: nil,
       variablesDigest: nil,
       worktree: nil,
-      policy: input.policy,
+      policy: mergedPolicy(input.policy, budgetDecision: budgetProjection.decision),
       recovery: input.recovery,
+      convergence: projectedConvergence.evidence,
+      costs: costs,
+      costSummary: costs.isEmpty ? nil : LoopCostSummary.make(from: costs),
       steps: input.session.executions.map { execution in
         LoopStepEvidence(
           stepId: execution.stepId,
@@ -78,11 +96,81 @@ public struct DefaultLoopEvidenceProjector: LoopEvidenceProjecting {
       commands: [],
       verification: [],
       implementationPlans: [],
-      residualRisks: [],
+      residualRisks: projectedConvergence.residualRisks + budgetProjection.residualRisks,
       redaction: redactionSummary(loop: input.workflow.loop),
       createdAt: input.session.createdAt,
       updatedAt: updatedAt
     )
+  }
+
+  /// Projects the declared loop budget into evidence: a policy decision that
+  /// records consumption against the declared bounds, plus an accepted
+  /// residual risk when a warn-mode budget was exceeded. Evaluation is
+  /// deterministic — wall-clock uses the session's persisted timestamps, and
+  /// a session failed with `budgetExceeded` always records the fail decision
+  /// even when re-evaluation from persisted rows cannot reproduce the live
+  /// reading.
+  private func budgetProjection(
+    from input: LoopEvidenceProjectionInput,
+    costs: [LoopCostEvidence],
+    now: Date
+  ) -> (decision: LoopPolicyDecision?, residualRisks: [LoopResidualRisk]) {
+    guard let budget = input.workflow.loop?.budget else {
+      return (nil, [])
+    }
+    let violation = DeterministicWorkflowRunner.loopBudgetViolationDetails(
+      budget: budget, session: input.session, now: now
+    )
+    let consumedTokens = LoopCostSummary.make(from: costs).totalTokens.map(String.init) ?? "unrecorded"
+    let bounds = [
+      budget.maxTotalTokens.map { "maxTotalTokens=\($0)" },
+      budget.maxWallClockMs.map { "maxWallClockMs=\($0)" },
+      budget.maxSessionAttempts.map { "maxSessionAttempts=\($0)" }
+    ].compactMap { $0 }.joined(separator: ", ")
+    if input.session.failureKind == .budgetExceeded {
+      return (LoopPolicyDecision(
+        id: "loop-budget",
+        policy: "budget",
+        decision: "exceeded-fail",
+        reason: violation?.diagnostic
+          ?? "session failed with budgetExceeded (consumed \(consumedTokens) tokens; declared \(bounds))"
+      ), [])
+    }
+    guard let violation else {
+      return (LoopPolicyDecision(
+        id: "loop-budget",
+        policy: "budget",
+        decision: "within-budget",
+        reason: "consumed \(consumedTokens) tokens; declared \(bounds)"
+      ), [])
+    }
+    let decision = LoopPolicyDecision(
+      id: "loop-budget",
+      policy: "budget",
+      decision: budget.onExceeded == "warn" ? "exceeded-warn" : "exceeded-fail",
+      reason: violation.diagnostic
+    )
+    guard budget.onExceeded == "warn" else {
+      return (decision, [])
+    }
+    return (decision, [LoopResidualRisk(
+      severity: "medium",
+      message: violation.diagnostic,
+      owner: "loop-budget",
+      accepted: true
+    )])
+  }
+
+  private func mergedPolicy(
+    _ policy: LoopPolicyEvidence,
+    budgetDecision: LoopPolicyDecision?
+  ) -> LoopPolicyEvidence {
+    guard let budgetDecision else {
+      return policy
+    }
+    var merged = policy
+    merged.decisions.append(budgetDecision)
+    return merged
   }
 
   private func redactionSummary(loop: WorkflowLoopMetadata?) -> LoopRedactionSummary {
@@ -99,24 +187,51 @@ public struct DefaultLoopEvidenceProjector: LoopEvidenceProjecting {
     )
   }
 
+  private func convergenceProjection(from input: LoopEvidenceProjectionInput) -> (
+    evidence: LoopConvergenceEvidence?, residualRisks: [LoopResidualRisk]
+  ) {
+    guard let declaration = input.workflow.loop?.convergence else {
+      return (nil, [])
+    }
+    var tracker = LoopConvergenceTracker(declaration: declaration)
+    let parser = loopGateParser(workflow: input.workflow)
+    var gateVisitCounts: [String: Int] = [:]
+    var violation: LoopConvergenceViolation?
+    for execution in input.session.executions {
+      guard let result = parser.result(from: execution) else {
+        continue
+      }
+      let check = tracker.recordGateVisit(
+        gateId: result.gateId,
+        decision: result.decision,
+        findings: result.blockingFindings
+      )
+      gateVisitCounts[result.gateId] = check.gateVisits
+      violation = violation ?? check.violation
+    }
+    let evidence = LoopConvergenceEvidence(
+      gateVisitCounts: gateVisitCounts,
+      stallDetected: violation != nil,
+      stalledGateId: violation?.gateId,
+      repeatedRounds: violation?.repeatedRounds,
+      action: violation == nil ? nil : declaration.onStall.rawValue,
+      diagnostics: [violation?.diagnostic].compactMap { $0 }
+    )
+    guard declaration.onStall == .warn, let violation else {
+      return (evidence, [])
+    }
+    return (evidence, [LoopResidualRisk(
+      severity: "high",
+      message: violation.diagnostic,
+      owner: "loop-convergence-guard",
+      accepted: true
+    )])
+  }
+
   private func gateResults(from input: LoopEvidenceProjectionInput, loop: WorkflowLoopMetadata) -> [LoopGateResult] {
-    let gatesById = Dictionary(uniqueKeysWithValues: loop.gates.map { ($0.id, $0) })
-    let stepGateIdsByStepId = Dictionary(uniqueKeysWithValues: input.workflow.steps.compactMap { step -> (String, String)? in
-      guard let gateId = step.loop?.gateId else {
-        return nil
-      }
-      return (step.id, gateId)
-    })
+    let parser = loopGateParser(workflow: input.workflow)
     var results: [LoopGateResult] = input.session.executions.compactMap { execution in
-      guard let output = execution.acceptedOutput?.payload,
-            case let .object(loopGate)? = output["loopGate"] else {
-        return nil
-      }
-      let result = gateResult(from: loopGate, execution: execution, stepGateIdsByStepId: stepGateIdsByStepId)
-      guard let gate = gatesById[result.gateId], gate.required else {
-        return result
-      }
-      return enforceAcceptancePolicy(gate.acceptWhen, gate: gate, result: result)
+      parser.result(from: execution)
     }
 
     let resultGateIds = Set(results.map(\.gateId))
@@ -124,85 +239,6 @@ public struct DefaultLoopEvidenceProjector: LoopEvidenceProjecting {
       results.append(missingRequiredGateResult(gate: gate))
     }
     return results
-  }
-
-  private func gateResult(
-    from payload: JSONObject,
-    execution: WorkflowStepExecution,
-    stepGateIdsByStepId: [String: String]
-  ) -> LoopGateResult {
-    let decision = stringValue(payload["decision"]).flatMap(LoopGateDecision.init(rawValue:)) ?? .needsWork
-    let evidenceRefs = stringArray(payload["evidenceRefs"])
-    let residualRisks = residualRiskArray(payload["residualRisks"])
-    return LoopGateResult(
-      gateId: stringValue(payload["gateId"]) ?? stepGateIdsByStepId[execution.stepId] ?? execution.stepId,
-      stepId: stringValue(payload["stepId"]) ?? execution.stepId,
-      stepExecutionId: stringValue(payload["stepExecutionId"]) ?? execution.executionId,
-      decision: decision,
-      severityCounts: severityCounts(payload["severityCounts"]),
-      blockingFindings: blockingFindings(payload["blockingFindings"]),
-      evidenceRefs: evidenceRefs,
-      rerunPolicy: stringValue(payload["rerunPolicy"]),
-      residualRisks: residualRisks,
-      acceptedAt: decision == .accepted ? execution.acceptedOutput?.acceptedAt : nil,
-      diagnostics: stringArray(payload["diagnostics"])
-    )
-  }
-
-  private func enforceAcceptancePolicy(
-    _ policy: LoopGateAcceptancePolicy,
-    gate: LoopGateDeclaration,
-    result: LoopGateResult
-  ) -> LoopGateResult {
-    let violations = acceptanceViolations(policy: policy, gate: gate, result: result)
-    guard !violations.isEmpty else {
-      return result
-    }
-
-    var blocked = result
-    if blocked.decision == .accepted {
-      blocked.decision = .rejected
-      blocked.acceptedAt = nil
-    }
-    blocked.blockingFindings.append(contentsOf: violations.map { violation in
-      LoopBlockingFinding(
-        id: "gate-policy-\(gate.id)-\(violation.id)",
-        severity: violation.severity,
-        message: violation.message
-      )
-    })
-    blocked.diagnostics.append(contentsOf: violations.map(\.message))
-    return blocked
-  }
-
-  private func acceptanceViolations(
-    policy: LoopGateAcceptancePolicy,
-    gate: LoopGateDeclaration,
-    result: LoopGateResult
-  ) -> [LoopGateAcceptanceViolation] {
-    var violations: [LoopGateAcceptanceViolation] = []
-    if let expectedDecision = policy.decision, result.decision != expectedDecision {
-      violations.append(LoopGateAcceptanceViolation(
-        id: "decision",
-        severity: "high",
-        message: "required loop gate '\(gate.id)' expected decision \(expectedDecision.rawValue) but got \(result.decision.rawValue)"
-      ))
-    }
-    if let maxHighFindings = policy.maxHighFindings, result.severityCounts.high > maxHighFindings {
-      violations.append(LoopGateAcceptanceViolation(
-        id: "max-high-findings",
-        severity: "high",
-        message: "required loop gate '\(gate.id)' has \(result.severityCounts.high) high findings; maximum is \(maxHighFindings)"
-      ))
-    }
-    if let maxMediumFindings = policy.maxMediumFindings, result.severityCounts.medium > maxMediumFindings {
-      violations.append(LoopGateAcceptanceViolation(
-        id: "max-medium-findings",
-        severity: "medium",
-        message: "required loop gate '\(gate.id)' has \(result.severityCounts.medium) medium findings; maximum is \(maxMediumFindings)"
-      ))
-    }
-    return violations
   }
 
   private func missingRequiredGateResult(gate: LoopGateDeclaration) -> LoopGateResult {
@@ -222,12 +258,6 @@ public struct DefaultLoopEvidenceProjector: LoopEvidenceProjecting {
       diagnostics: ["required loop gate '\(gate.id)' was missing from accepted outputs"]
     )
   }
-}
-
-private struct LoopGateAcceptanceViolation {
-  var id: String
-  var severity: String
-  var message: String
 }
 
 private func artifactRefs(from messages: [WorkflowMessageRecord]) -> [LoopArtifactRef] {
@@ -261,90 +291,4 @@ private func acceptedOutputSummary(_ payload: JSONObject?) -> String? {
     return nil
   }
   return summary.count > 500 ? String(summary.prefix(497)) + "..." : summary
-}
-
-private func severityCounts(_ value: JSONValue?) -> LoopFindingSeverityCounts {
-  guard case let .object(object)? = value else {
-    return LoopFindingSeverityCounts()
-  }
-  return LoopFindingSeverityCounts(
-    high: intValue(object["high"]) ?? 0,
-    medium: intValue(object["medium"]) ?? 0,
-    low: intValue(object["low"]) ?? 0,
-    informational: intValue(object["informational"]) ?? 0
-  )
-}
-
-private func blockingFindings(_ value: JSONValue?) -> [LoopBlockingFinding] {
-  guard case let .array(values)? = value else {
-    return []
-  }
-  return values.compactMap { value in
-    guard case let .object(object) = value,
-          let id = stringValue(object["id"]),
-          let severity = stringValue(object["severity"]),
-          let message = stringValue(object["message"]) else {
-      return nil
-    }
-    return LoopBlockingFinding(
-      id: id,
-      severity: severity,
-      filePath: stringValue(object["filePath"]),
-      line: intValue(object["line"]),
-      message: message,
-      evidenceRefs: stringArray(object["evidenceRefs"])
-    )
-  }
-}
-
-private func residualRiskArray(_ value: JSONValue?) -> [LoopResidualRisk] {
-  guard case let .array(values)? = value else {
-    return []
-  }
-  return values.compactMap { value in
-    guard case let .object(object) = value,
-          let severity = stringValue(object["severity"]),
-          let message = stringValue(object["message"]) else {
-      return nil
-    }
-    return LoopResidualRisk(
-      severity: severity,
-      message: message,
-      evidenceRefs: stringArray(object["evidenceRefs"]),
-      owner: stringValue(object["owner"]),
-      accepted: boolValue(object["accepted"]) ?? false
-    )
-  }
-}
-
-private func stringArray(_ value: JSONValue?) -> [String] {
-  guard case let .array(values)? = value else {
-    return []
-  }
-  return values.compactMap(stringValue)
-}
-
-private func stringValue(_ value: JSONValue?) -> String? {
-  guard case let .string(value)? = value else {
-    return nil
-  }
-  return value
-}
-
-private func intValue(_ value: JSONValue?) -> Int? {
-  switch value {
-  case .integer(let value):
-    return Int(value)
-  case .number(let value):
-    return Int(value)
-  default:
-    return nil
-  }
-}
-
-private func boolValue(_ value: JSONValue?) -> Bool? {
-  guard case let .bool(value)? = value else {
-    return nil
-  }
-  return value
 }

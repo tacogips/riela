@@ -17,6 +17,10 @@ public struct MockNodeResponse: Codable, Equatable, Sendable {
   public var when: [String: Bool]?
   public var payload: JSONObject?
   public var fail: Bool?
+  /// Optional token-usage payload (e.g. `{"input_tokens": 100, "output_tokens": 40,
+  /// "total_tokens": 140}`). When present, the adapter emits a `usage` backend
+  /// event before returning so cost/budget accumulation paths are testable.
+  public var usage: JSONObject?
 
   public init(
     provider: String? = nil,
@@ -25,7 +29,8 @@ public struct MockNodeResponse: Codable, Equatable, Sendable {
     completionPassed: Bool? = nil,
     when: [String: Bool]? = nil,
     payload: JSONObject? = nil,
-    fail: Bool? = nil
+    fail: Bool? = nil,
+    usage: JSONObject? = nil
   ) {
     self.provider = provider
     self.model = model
@@ -34,6 +39,7 @@ public struct MockNodeResponse: Codable, Equatable, Sendable {
     self.when = when
     self.payload = payload
     self.fail = fail
+    self.usage = usage
   }
 }
 
@@ -54,20 +60,42 @@ public struct WorkflowMockScenarioLoader: MockScenarioLoading {
 public actor ScenarioNodeAdapter: NodeAdapter {
   private let scenario: WorkflowMockScenario
   private let fallback: any NodeAdapter
+  private let requiresScenarioResponse: Bool
+  private var consumedCounts: [String: Int] = [:]
 
-  public init(scenario: WorkflowMockScenario, fallback: any NodeAdapter = DeterministicLocalNodeAdapter()) {
+  public init(
+    scenario: WorkflowMockScenario,
+    fallback: any NodeAdapter = DeterministicLocalNodeAdapter(),
+    requiresScenarioResponse: Bool = false
+  ) {
     self.scenario = scenario
     self.fallback = fallback
+    self.requiresScenarioResponse = requiresScenarioResponse
   }
 
   public func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
     guard let sequence = scenario.responses[input.node.id] else {
+      if requiresScenarioResponse {
+        throw AdapterExecutionError(.invalidOutput, "mock scenario is missing a response for node '\(input.node.id)'")
+      }
       return try await fallback.execute(input, context: context)
     }
+    guard !sequence.isEmpty || !requiresScenarioResponse else {
+      throw AdapterExecutionError(.invalidOutput, "mock scenario response sequence is empty for node '\(input.node.id)'")
+    }
     let sequenceIndex = scenarioSequenceIndex(for: input)
+    consumedCounts[input.node.id] = max(consumedCounts[input.node.id] ?? 0, min(sequenceIndex, sequence.count))
     let response = sequence.isEmpty ? MockNodeResponse() : sequence[min(sequenceIndex - 1, sequence.count - 1)]
     if response.fail == true {
       throw AdapterExecutionError(.providerError, "scenario forced failure for node '\(input.node.id)'")
+    }
+    if let usage = response.usage {
+      await context.backendEventHandler?(AdapterBackendEvent(
+        provider: response.provider ?? "scenario-mock",
+        eventType: "usage",
+        channel: .usage,
+        usage: usage
+      ))
     }
     return AdapterExecutionOutput(
       provider: response.provider ?? "scenario-mock",
@@ -77,6 +105,10 @@ public actor ScenarioNodeAdapter: NodeAdapter {
       when: response.when ?? ["always": true],
       payload: response.payload ?? [:]
     )
+  }
+
+  public func consumedResponseCounts() -> [String: Int] {
+    consumedCounts
   }
 
   private func scenarioSequenceIndex(for input: AdapterExecutionInput) -> Int {

@@ -913,6 +913,86 @@ public enum GraphQLContractProjector {
   input ReplayCommunicationInput { workflowId: String!, workflowExecutionId: String!, communicationId: String!, reason: String, idempotencyKey: String, managerSessionId: String }
   input RetryCommunicationDeliveryInput { workflowId: String!, workflowExecutionId: String!, communicationId: String!, reason: String, idempotencyKey: String, managerSessionId: String }
   input WorkflowInstanceInput { identity: String!, workflowId: String!, sourceIdentity: String, displayName: String, configuration: JSONObject }
+  type LoopCostSummary {
+    totalInputTokens: Int
+    totalOutputTokens: Int
+    totalTokens: Int
+    totalDurationMs: Int
+    stepsWithUsage: Int!
+    stepsWithoutUsage: Int!
+    partial: Boolean!
+  }
+  type LoopCostSummaryDelta {
+    totalInputTokensDelta: Int
+    totalOutputTokensDelta: Int
+    totalTokensDelta: Int
+    totalDurationMsDelta: Int
+  }
+  type LoopGateOutcome {
+    gateId: String!
+    stepId: String!
+    decision: String!
+    required: Boolean
+    blockingFindingCount: Int!
+  }
+  type LoopGateFailureCount { gateId: String!, count: Int! }
+  type LoopGateChange {
+    gateId: String!
+    baseDecision: String
+    targetDecision: String
+    severityCountsDelta: LoopFindingSeverityCounts!
+  }
+  type LoopVerificationChange {
+    commandSummary: String!
+    baseOutcome: String
+    targetOutcome: String
+  }
+  type LoopSessionOverview {
+    workflowId: String!
+    sessionId: String!
+    sessionStatus: String!
+    loopKind: String
+    loopRequired: Boolean
+    loopEvidenceRecorded: Boolean!
+    blockingFindingCount: Int
+    lastGateDecision: String
+    entryMode: String
+    sourceSessionId: String
+    cost: LoopCostSummary
+    gateOutcomes: [LoopGateOutcome!]!
+    possiblyStale: Boolean!
+    createdAt: String!
+    updatedAt: String!
+  }
+  type LoopWorkflowStats {
+    workflowId: String!
+    windowRuns: Int!
+    completedRuns: Int!
+    failedRuns: Int!
+    acceptedRuns: Int!
+    gateFailureCounts: [LoopGateFailureCount!]!
+    rerunCount: Int!
+    meanDurationMs: Int
+    meanTotalTokens: Int
+    lastAcceptedSessionId: String
+    diagnostics: [String!]!
+  }
+  type LoopEvidenceDiff {
+    baseSessionId: String!
+    targetSessionId: String!
+    sameWorkflow: Boolean!
+    workflowDefinitionDigestChanged: Boolean
+    gateChanges: [LoopGateChange!]!
+    blockingFindingsAdded: [LoopBlockingFinding!]!
+    blockingFindingsResolved: [LoopBlockingFinding!]!
+    changedFilesAdded: [String!]!
+    changedFilesRemoved: [String!]!
+    verificationChanges: [LoopVerificationChange!]!
+    residualRisksAdded: [LoopResidualRisk!]!
+    residualRisksResolved: [LoopResidualRisk!]!
+    costDelta: LoopCostSummaryDelta
+    diagnostics: [String!]!
+  }
   type Query {
     note(noteId: String!): NoteQueryPayload!
     notebook(notebookId: String!): NotebookQueryPayload!
@@ -930,6 +1010,9 @@ public enum GraphQLContractProjector {
     workflowSession(workflowId: String!, sessionId: String!): WorkflowSession
     workflowSessions(workflowName: String, status: String, limit: Int): [WorkflowSessionSummary!]!
     loopEvidence(workflowId: String!, sessionId: String!): LoopEvidenceSummary
+    loopSessions(workflowId: String, status: String, limit: Int): [LoopSessionOverview!]!
+    loopWorkflowStats(workflowId: String!, limit: Int): LoopWorkflowStats
+    loopEvidenceDiff(baseSessionId: String!, targetSessionId: String!): LoopEvidenceDiff
     managerSession(managerSessionId: String): ManagerSessionView
   }
   type Mutation {

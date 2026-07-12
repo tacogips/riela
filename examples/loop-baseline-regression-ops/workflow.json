@@ -1,0 +1,85 @@
+{
+  "workflowId": "loop-baseline-regression-ops",
+  "description": "Loop operations tour: start a loop with 'loop start' (policy panel + --var), pin an accepted session as baseline, classify a later regressed session with 'loop regress', and inspect with 'loop diff', 'loop stats', 'loop findings', and 'loop promote'.",
+  "defaults": {
+    "maxLoopIterations": 1,
+    "nodeTimeoutMs": 120000
+  },
+  "prompts": {
+    "workerSystemPromptTemplate": "Return concise structured review JSON only."
+  },
+  "entryStepId": "implementation-review",
+  "loop": {
+    "kind": "design-implement-review",
+    "required": true,
+    "description": "Example loop for baseline/regression operations.",
+    "evidence": {
+      "required": true,
+      "artifactRootPolicy": "runtime-owned",
+      "requiredSections": [
+        "review"
+      ]
+    },
+    "implementationPlan": {
+      "required": true,
+      "pathPattern": "impl-plans/*.md"
+    },
+    "policies": {
+      "mutation": {
+        "allowedWriteRoots": [
+          "Sources"
+        ],
+        "scratchRoot": "tmp/loop-baseline-regression-ops",
+        "commit": "deny",
+        "push": "deny"
+      },
+      "process": {
+        "nestedRiela": "deny",
+        "nestedCodex": "deny",
+        "allowedBackends": [
+          "codex-agent"
+        ],
+        "requiredWorkerModel": "gpt-5.5"
+      },
+      "redaction": {
+        "secretPolicy": "summary-only",
+        "storeRawStdout": false,
+        "storeRawStderr": false
+      }
+    },
+    "gates": [
+      {
+        "id": "implementation-review",
+        "stepId": "implementation-review",
+        "required": true,
+        "acceptWhen": {
+          "decision": "accepted",
+          "maxHighFindings": 0,
+          "maxMediumFindings": 0
+        }
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "id": "implementation-review",
+      "nodeFile": "nodes/node-implementation-review.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "implementation-review",
+      "nodeId": "implementation-review",
+      "role": "worker",
+      "loop": {
+        "role": "gate",
+        "gateId": "implementation-review",
+        "evidenceTags": [
+          "review",
+          "blocking-findings"
+        ],
+        "recordsVerification": true
+      }
+    }
+  ]
+}

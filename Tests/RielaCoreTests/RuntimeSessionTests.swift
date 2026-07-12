@@ -174,4 +174,89 @@ final class RuntimeSessionTests: XCTestCase {
     XCTAssertNil(session.instanceBaseIdentity)
     XCTAssertNil(session.instanceConfiguration)
   }
+
+  func testWorkflowSessionFailureKindDecodesUnknownRawValueTolerantly() throws {
+    let data = Data(
+      """
+      {
+        "workflowId": "workflow-a",
+        "sessionId": "session-a",
+        "status": "failed",
+        "entryStepId": "step-1",
+        "createdAt": 700000000,
+        "updatedAt": 700000001,
+        "executions": [],
+        "failureKind": "futureFailureKind"
+      }
+      """.utf8
+    )
+
+    let session = try JSONDecoder().decode(WorkflowSession.self, from: data)
+
+    XCTAssertEqual(session.failureKind?.rawValue, "futureFailureKind")
+  }
+
+  func testRuntimeSnapshotReportsUnknownFailureKindDiagnostic() throws {
+    let data = Data(
+      """
+      {
+        "session": {
+          "workflowId": "workflow-a",
+          "sessionId": "session-a",
+          "status": "failed",
+          "entryStepId": "step-1",
+          "failureKind": "futureFailureKind",
+          "createdAt": 700000000,
+          "updatedAt": 700000001,
+          "executions": []
+        },
+        "workflowMessages": [],
+        "diagnostics": []
+      }
+      """.utf8
+    )
+
+    let snapshot = try JSONDecoder().decode(WorkflowRuntimePersistenceSnapshot.self, from: data)
+
+    XCTAssertEqual(snapshot.session.failureKind?.rawValue, "futureFailureKind")
+    XCTAssertEqual(snapshot.diagnostics, ["workflow session preserves unknown failure kind 'futureFailureKind'"])
+  }
+
+  func testLoopNotConvergingFailureKindRoundTrips() throws {
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let session = WorkflowSession(
+      workflowId: "workflow-a",
+      sessionId: "session-a",
+      status: .failed,
+      entryStepId: "step-1",
+      createdAt: date,
+      updatedAt: date,
+      failureKind: .loopNotConverging
+    )
+
+    let decoded = try JSONDecoder().decode(WorkflowSession.self, from: JSONEncoder().encode(session))
+
+    XCTAssertEqual(decoded.failureKind, .loopNotConverging)
+    XCTAssertEqual(decoded.failureKind?.rawValue, "loopNotConverging")
+  }
+
+  func testBudgetExceededFailureKindRoundTripsAndIsKnown() throws {
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let session = WorkflowSession(
+      workflowId: "workflow-a",
+      sessionId: "session-a",
+      status: .failed,
+      entryStepId: "step-1",
+      createdAt: date,
+      updatedAt: date,
+      failureKind: .budgetExceeded
+    )
+
+    let decoded = try JSONDecoder().decode(WorkflowSession.self, from: JSONEncoder().encode(session))
+
+    XCTAssertEqual(decoded.failureKind, .budgetExceeded)
+    XCTAssertEqual(decoded.failureKind?.rawValue, "budgetExceeded")
+    // Known kind → no compatibility diagnostic.
+    XCTAssertNil(decoded.failureKind?.compatibilityDiagnostic)
+  }
 }

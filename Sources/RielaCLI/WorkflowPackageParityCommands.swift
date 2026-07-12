@@ -7,9 +7,9 @@ import RielaGraphQL
 import RielaHook
 import RielaServer
 
-private let defaultWorkflowPackageRegistryId = "default"
-private let defaultWorkflowPackageRegistryURL = "https://github.com/tacogips/riela-packages"
-private let defaultWorkflowPackageRegistryBranch = "main"
+let defaultWorkflowPackageRegistryId = "default"
+let defaultWorkflowPackageRegistryURL = "https://github.com/tacogips/riela-packages"
+let defaultWorkflowPackageRegistryBranch = "main"
 private let defaultWorkflowPackageRegistryReleaseTag = "registry-packages"
 private let defaultWorkflowPackageRegistryTimestamp = "2026-06-18T00:00:00Z"
 
@@ -105,7 +105,8 @@ public struct WorkflowPackageCommandRunner: Sendable {
             parsed.dryRun ? "package \(command.kind.rawValue) dry run" : "package \(command.kind.rawValue) completed",
             packages: [installation.summary]
           ),
-          runSessionId: nil
+          runSessionId: nil,
+          preInstallCheck: installation.preInstallCheck
         )
         return try renderPackage(result, output: options.output)
       case .ci:
@@ -573,177 +574,18 @@ public struct WorkflowPackageCommandRunner: Sendable {
     return directory
   }
 
-  private struct PublishedPackageRecord {
-    var summary: WorkflowPackageSummary
-    var registryRecord: URL
-  }
+  /// Injectable git/PR boundary so publish transport is unit-testable. Defaults
+  /// to real subprocess execution; tests replace it with a fake.
+  var publishCommandExecutor: WorkflowPackageCommandExecutor = ProcessWorkflowPackageCommandExecutor()
+  var publishPullRequestAdapterFactory:
+    @Sendable (WorkflowPackageCommandExecutor) -> WorkflowPackagePullRequestAdapter = { executor in
+      GhWorkflowPackagePullRequestAdapter(executor: executor)
+    }
 
-  private struct PublishRegistryResolution {
-    var id: String
-    var url: String
-    var branch: String
-    var localPath: String?
-  }
+  /// Injectable pre-install checker so scanner/container behavior is testable.
+  var preInstallChecker = WorkflowPackagePreInstallChecker()
 
-  private func publishPackage(target: String?, parsed: ParsedParityOptions) async throws -> PublishedPackageRecord {
-    guard let target, !target.isEmpty else {
-      throw CLIUsageError("package publish requires a workflow directory")
-    }
-    guard parsed.dryRun || parsed.overwrite else {
-      throw CLIUsageError("package publish write mode needs explicit --yes or --force approval")
-    }
-    let workingDirectory = URL(fileURLWithPath: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath, isDirectory: true)
-    let workflowDirectory = absoluteURL(target, relativeTo: workingDirectory).standardizedFileURL
-    guard FileManager.default.fileExists(atPath: workflowDirectory.appendingPathComponent("workflow.json").path) else {
-      throw CLIUsageError("package publish workflow directory must contain workflow.json: \(workflowDirectory.path)")
-    }
-    let bundle = try FileSystemWorkflowBundleResolver().resolve(WorkflowResolutionOptions(
-      workflowName: workflowDirectory.lastPathComponent,
-      scope: .direct,
-      workflowDefinitionDir: workflowDirectory.path,
-      workingDirectory: workingDirectory.path
-    ))
-    let packageName = parsed.packageName ?? parsed.packageID ?? bundle.workflow.workflowId
-    guard WorkflowPackageManifestValidator.isSafePackageName(packageName) else {
-      throw CLIUsageError("invalid package name '\(packageName)'")
-    }
-    let registryConfig = try loadRegistryConfig(parsed: parsed)
-    let registry = try resolvePublishRegistry(config: registryConfig, parsed: parsed)
-    let packageKey = packageFilesystemKey(packageName)
-    let registryRoot = workingDirectory.appendingPathComponent(".riela/package-registry", isDirectory: true)
-    let registryRecord = registryRoot.appendingPathComponent("\(packageKey).json")
-    let readinessIssues = packageLoopReadinessIssues(for: bundle.workflow.loop)
-    let summary = WorkflowPackageSummary(
-      name: packageName,
-      version: "0.1.0",
-      kind: .workflow,
-      tags: ["workflow"],
-      packageDirectory: workflowDirectory.path,
-      workflowDirectory: ".",
-      valid: readinessIssues.isEmpty,
-      issues: readinessIssues
-    )
-    if parsed.dryRun {
-      return PublishedPackageRecord(summary: summary, registryRecord: registryRecord)
-    }
-    let cacheRoot = workingDirectory.appendingPathComponent(".riela/package-cache", isDirectory: true)
-    let lockRoot = workingDirectory.appendingPathComponent(".riela/package-locks", isDirectory: true)
-    let skillsRoot = workingDirectory.appendingPathComponent(".riela/skills", isDirectory: true)
-    let nativeEvidenceRoot = workingDirectory.appendingPathComponent(".riela/package-native-addons", isDirectory: true)
-    try FileManager.default.createDirectory(at: registryRoot, withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(at: cacheRoot, withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(at: lockRoot, withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(at: skillsRoot, withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(at: nativeEvidenceRoot, withIntermediateDirectories: true)
-    let cacheRecord = cacheRoot.appendingPathComponent("\(packageKey).json")
-    let lockRecord = lockRoot.appendingPathComponent("\(packageKey).json")
-    let nativeEvidenceRecord = nativeEvidenceRoot.appendingPathComponent("\(packageKey).json")
-    let skillDirectory = skillsRoot.appendingPathComponent(packageKey, isDirectory: true)
-    try FileManager.default.createDirectory(at: skillDirectory, withIntermediateDirectories: true)
-    try jsonString([
-      "packageName": .string(packageName),
-      "packageId": .string(packageName),
-      "workflowName": .string(bundle.workflow.workflowId),
-      "workflowDirectory": .string(workflowDirectory.path),
-      "registry": .string(registry.id),
-      "registryUrl": .string(registry.url),
-      "registryRef": .string(registry.branch),
-      "mode": .string("direct"),
-      "dryRun": .bool(parsed.dryRun)
-    ] as JSONObject).write(to: registryRecord, atomically: true, encoding: .utf8)
-    try jsonString(summary).write(to: cacheRecord, atomically: true, encoding: .utf8)
-    try jsonString([
-      "name": .string(packageName),
-      "version": .string("0.1.0"),
-      "registry": .string(registry.id),
-      "registryUrl": .string(registry.url),
-      "registryRef": .string(registry.branch),
-      "checksum": .string("swift-deterministic-publish-record"),
-      "checksumAlgorithm": .string("swift-deterministic")
-    ] as JSONObject).write(to: lockRecord, atomically: true, encoding: .utf8)
-    try jsonString([
-      "packageName": .string(packageName),
-      "nativeAddonCount": .number(0),
-      "nativeAddonNames": .array([]),
-      "dependencyNativeLockCount": .number(0),
-      "evidence": .string("validated-manifest-native-addon-publish-record")
-    ] as JSONObject).write(to: nativeEvidenceRecord, atomically: true, encoding: .utf8)
-    try """
-    # \(packageName)
-
-    Swift-projected workflow package skill for deterministic local package execution.
-    """.write(to: skillDirectory.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
-    if let registryLocalPath = registry.localPath {
-      let localRegistryRoot = absoluteURL(registryLocalPath, relativeTo: workingDirectory)
-      let packageTarget = localRegistryRoot
-        .appendingPathComponent("packages", isDirectory: true)
-        .appendingPathComponent(packageKey, isDirectory: true)
-      let workflowTarget = packageTarget.appendingPathComponent("workflow", isDirectory: true)
-      try FileManager.default.createDirectory(at: packageTarget, withIntermediateDirectories: true)
-      if FileManager.default.fileExists(atPath: workflowTarget.path) {
-        try FileManager.default.removeItem(at: workflowTarget)
-      }
-      try FileManager.default.copyItem(at: workflowDirectory, to: workflowTarget)
-      let registryIndex = localRegistryRoot.appendingPathComponent("registry", isDirectory: true)
-      try FileManager.default.createDirectory(at: registryIndex, withIntermediateDirectories: true)
-      try jsonString([
-        "packageName": .string(packageName),
-        "workflowName": .string(bundle.workflow.workflowId),
-        "sourcePath": .string("packages/\(packageKey)"),
-        "registryId": .string(registry.id),
-        "registryUrl": .string(registry.url),
-        "sourceBranch": .string(registry.branch)
-      ] as JSONObject).write(to: registryIndex.appendingPathComponent("\(packageKey).json"), atomically: true, encoding: .utf8)
-    }
-    return PublishedPackageRecord(summary: summary, registryRecord: registryRecord)
-  }
-
-  private func resolvePublishRegistry(config: WorkflowPackageRegistryConfig, parsed: ParsedParityOptions) throws -> PublishRegistryResolution {
-    let selector = parsed.registry
-    let selectorIsURL = selector.map(isSupportedRegistryURL) ?? false
-    let explicitURL = parsed.registryURL ?? (selectorIsURL ? selector : nil)
-    if let explicitURL {
-      guard isSupportedRegistryURL(explicitURL) else {
-        throw CLIUsageError("registry URL must be https://github.com/<owner>/<repo>")
-      }
-      let registered = config.registries.first { entry in
-        entry.url == explicitURL || entry.id == selector
-      }
-      return PublishRegistryResolution(
-        id: registered?.id ?? directRegistryId(for: explicitURL),
-        url: explicitURL,
-        branch: parsed.branch ?? registered?.defaultBranch ?? "main",
-        localPath: parsed.localPath ?? registered?.localPath
-      )
-    }
-    if let selector {
-      guard let registered = config.registries.first(where: { $0.id == selector }) else {
-        throw CLIUsageError("package registry not found: \(selector)")
-      }
-      return PublishRegistryResolution(
-        id: registered.id,
-        url: registered.url,
-        branch: parsed.branch ?? registered.defaultBranch,
-        localPath: parsed.localPath ?? registered.localPath
-      )
-    }
-    if let registered = config.registries.first(where: { $0.id == config.defaultRegistryId }) ?? config.registries.first {
-      return PublishRegistryResolution(
-        id: registered.id,
-        url: registered.url,
-        branch: parsed.branch ?? registered.defaultBranch,
-        localPath: parsed.localPath ?? registered.localPath
-      )
-    }
-    return PublishRegistryResolution(
-      id: defaultWorkflowPackageRegistryId,
-      url: defaultWorkflowPackageRegistryURL,
-      branch: parsed.branch ?? defaultWorkflowPackageRegistryBranch,
-      localPath: parsed.localPath
-    )
-  }
-
-  private func loadRegistryConfig(parsed: ParsedParityOptions) throws -> WorkflowPackageRegistryConfig {
+  func loadRegistryConfig(parsed: ParsedParityOptions) throws -> WorkflowPackageRegistryConfig {
     let url = registryConfigURL(parsed: parsed)
     guard FileManager.default.fileExists(atPath: url.path) else {
       return defaultRegistryConfig(parsed: parsed)

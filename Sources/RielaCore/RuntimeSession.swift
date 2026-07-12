@@ -14,13 +14,49 @@ public enum WorkflowStepExecutionStatus: String, Codable, Sendable {
   case failed
 }
 
-public enum WorkflowSessionFailureKind: String, Codable, Equatable, Sendable {
-  case maxStepsExceeded
-  case cancelled
-  case adapterFailure
-  case policyBlocked
-  case nodeTimeout
-  case internalFailure = "internal"
+public struct WorkflowSessionFailureKind: RawRepresentable, Codable, Equatable, Hashable, Sendable {
+  public var rawValue: String
+
+  public init(rawValue: String) {
+    self.rawValue = rawValue
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self.rawValue = try container.decode(String.self)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+
+  public static let maxStepsExceeded = WorkflowSessionFailureKind(rawValue: "maxStepsExceeded")
+  public static let cancelled = WorkflowSessionFailureKind(rawValue: "cancelled")
+  public static let adapterFailure = WorkflowSessionFailureKind(rawValue: "adapterFailure")
+  public static let policyBlocked = WorkflowSessionFailureKind(rawValue: "policyBlocked")
+  public static let nodeTimeout = WorkflowSessionFailureKind(rawValue: "nodeTimeout")
+  public static let internalFailure = WorkflowSessionFailureKind(rawValue: "internal")
+  public static let loopNotConverging = WorkflowSessionFailureKind(rawValue: "loopNotConverging")
+  public static let budgetExceeded = WorkflowSessionFailureKind(rawValue: "budgetExceeded")
+
+  public var compatibilityDiagnostic: String? {
+    guard !Self.knownRawValues.contains(rawValue) else {
+      return nil
+    }
+    return "workflow session preserves unknown failure kind '\(rawValue)'"
+  }
+
+  private static let knownRawValues: Set<String> = [
+    maxStepsExceeded.rawValue,
+    cancelled.rawValue,
+    adapterFailure.rawValue,
+    policyBlocked.rawValue,
+    nodeTimeout.rawValue,
+    internalFailure.rawValue,
+    loopNotConverging.rawValue,
+    budgetExceeded.rawValue
+  ]
 }
 
 public enum WorkflowStepBudgetSource: String, Codable, Equatable, Sendable {
@@ -203,6 +239,7 @@ public struct WorkflowBackendEventRecord: Codable, Equatable, Sendable {
   public var channel: AdapterBackendEventChannel?
   public var content: String?
   public var toolName: String?
+  public var usage: JSONObject?
 
   public init(
     sequence: Int,
@@ -210,7 +247,8 @@ public struct WorkflowBackendEventRecord: Codable, Equatable, Sendable {
     eventType: String,
     channel: AdapterBackendEventChannel? = nil,
     content: String? = nil,
-    toolName: String? = nil
+    toolName: String? = nil,
+    usage: JSONObject? = nil
   ) {
     self.sequence = sequence
     self.at = at
@@ -218,6 +256,7 @@ public struct WorkflowBackendEventRecord: Codable, Equatable, Sendable {
     self.channel = channel
     self.content = content
     self.toolName = toolName
+    self.usage = usage
   }
 }
 

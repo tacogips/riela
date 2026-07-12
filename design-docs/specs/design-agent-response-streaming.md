@@ -256,13 +256,15 @@ let consumer = Task {
     await backendEventHandler(event)   // ordered, off the reader thread
   }
 }
-// outputEventHandler now only classifies + coalesces + yields:
+// outputEventHandler now only classifies + coalesces + yields. The coalescer
+// serializes event absorption and timer callbacks under one lock:
 { outputEvent in
   guard outputEvent.stream == .stdout,
         let event = classify(outputEvent.line) else { return }
-  eventContinuation.yield(coalescer.absorb(event) /* may return nil */)
+  coalescer.absorb(event, yield: eventContinuation.yield)
 }
 // after runner.run returns (or throws):
+coalescer.finish(yield: eventContinuation.yield) // unconditional final drain
 eventContinuation.finish()
 await consumer.value
 ```
@@ -278,13 +280,26 @@ Properties:
   always emitted after the last backend event for that execution (same
   guarantee as today).
 
-**Delta coalescing** lives in front of the continuation: a small
-`BackendEventCoalescer` merges consecutive same-channel delta events and
-flushes when (a) accumulated delta ≥ 256 UTF-8 bytes, (b) 250 ms elapsed since
-first absorbed delta, or (c) a different-channel/non-delta event arrives.
-This turns cursor's per-token firehose into ~4 events/second worst case while
-keeping codex item-level events untouched. Claude item/message streaming stays
-outside Phase 1.
+**Delta coalescing** lives in front of the continuation: a small,
+synchronized `BackendEventCoalescer` merges consecutive same-channel delta
+events and flushes when (a) accumulated delta >= 256 UTF-8 bytes, (b) a timer
+reaches 250 ms after the first absorbed delta, or (c) a
+different-channel/non-delta event arrives. Absorbing the first pending delta
+starts a cancellable timer task; the timer flushes even if no further process
+output arrives. Event absorption, timer firing, and completion drain are
+linearized by the coalescer's lock, so a pending delta is yielded before a
+later non-delta event and can be yielded at most once.
+
+On every success, thrown error, or cancellation exit from `runner.run`, the
+adapter cancels the timer, synchronously drains any pending delta, then calls
+`eventContinuation.finish()` and awaits the consumer. Cancellation does not
+discard an already classified delta. No timer callback may yield after
+`finish()`. This unconditional final flush preserves the last partial response
+even when it arrives immediately before process exit; the timer-driven flush
+makes an isolated delta visible within 250 ms when the child stays alive but
+silent. This turns cursor's per-token firehose into ~4 events/second worst
+case while keeping codex item-level events untouched. Claude item/message
+streaming stays outside Phase 1.
 
 **Redaction**: `contentDelta` / `contentSnapshot` pass through
 `redactAdapterSensitiveText(_, additionalSensitiveValues:
@@ -307,7 +322,10 @@ yield. Content is also truncated to 16 KiB per event.
   ```
 
   `WorkflowBackendEventRecord` is a small Codable struct
-  (`sequence`, `at`, `eventType`, `channel`, `content`, `toolName`).
+  (`sequence`, `at`, `eventType`, `channel`, `content`, `toolName`, `usage`).
+  `usage` retains the provider-native usage object for bounded live-tail and
+  persisted-session readers; it is optional and does not affect
+  `streamedResponseText`.
   The execution-level fields are optional, so persisted session JSON stays
   decodable both directions.
 - `InMemoryWorkflowRuntimeStore.recordStepBackendEvent` appends to the ring
@@ -334,6 +352,7 @@ public var backendEventContent: String?     // coalesced delta or snapshot
 public var backendEventIsDelta: Bool?
 public var backendEventSequence: Int?
 public var backendToolName: String?
+public var backendEventUsage: JSONObject?  // provider-native usage snapshot
 ```
 
 Because `WorkflowRunCommand` already forwards every run event to the live
@@ -351,6 +370,16 @@ agent text with **no CLI changes**:
 `session_started` / `step_*` / `session_completed` event shapes are untouched.
 Consumers that ignore unknown fields (the documented JSONL contract) are
 unaffected.
+
+Usage follows the same Phase 1 path as content: classifier
+`AdapterBackendEvent.usage` -> `WorkflowStepBackendEventInput.usage` ->
+`WorkflowRunEvent.backendEventUsage` for live JSONL and
+`WorkflowBackendEventRecord.usage` in the bounded runtime-store ring. Usage is
+not written to the deferred full-fidelity `backend-events.jsonl` artifact in
+Phase 1 because that artifact itself remains deferred. Session-store JSON
+persists the optional record field through the existing Codable path. A usage
+event has no effect on `streamedResponseText`; provider-native keys are kept
+without normalization so new provider metrics remain forward compatible.
 
 Text output mode (`--output text`) remains unchanged in Phase 1. A later phase
 can add a lightweight live line through the same recorder hook, for example
@@ -414,8 +443,12 @@ and CLI JSONL boundaries:
   `AdapterBackendEvent`s. Include malformed JSON, non-event JSON, unknown
   event types, assistant/thinking/tool/usage/lifecycle records, and final
   stdout normalizer invariants for codex/cursor.
-- **Unit — coalescer**: burst of 500 one-token deltas → bounded flush count,
-  byte-exact reassembly, channel-switch flush.
+- **Unit — coalescer**: burst of 500 one-token deltas -> bounded flush count,
+  byte-exact reassembly, and channel-switch flush. With a controllable clock,
+  assert that one isolated delta followed by silence flushes at 250 ms; a
+  pending delta flushes before a later non-delta event; success, error, and
+  cancellation each perform one final drain before stream completion; and a
+  cancelled timer cannot duplicate or reorder the final delta.
 - **Unit — Phase 2 Claude normalizer (deferred)**: when
   `normalizeClaudeStreamJSONStdout` is added, it gets the same table-driven
   treatment as the codex/cursor normalizers in `AgentAdapterTests`, including
@@ -431,7 +464,11 @@ and CLI JSONL boundaries:
 - **Integration — runner/store (Phase 1)**: run a mock-scenario-less fake
   adapter emitting N events; assert ring cap, `backendEventCount`,
   `streamedResponseText` assembly, and enriched live `WorkflowRunEvent` JSONL
-  fields. Do not assert `backend-events.jsonl` artifact contents in Phase 1.
+  fields, including exact `backendEventUsage` JSONL output and retained
+  `WorkflowBackendEventRecord.usage`. Decode an old minimal run event and old
+  persisted session with no usage field, then round-trip enriched usage to
+  prove additive compatibility. Do not assert `backend-events.jsonl` artifact
+  contents in Phase 1.
 - **Integration — artifact log (later read-surface phase)**: once
   `backend-events.jsonl` is implemented, assert artifact append ordering, size
   cap/truncation marker behavior, and post-hoc tail/read behavior separately
@@ -460,8 +497,11 @@ and CLI JSONL boundaries:
 
 ## Compatibility & Risk Notes
 
-- All schema changes are additive-optional; persisted sessions written by old
-  binaries decode in new binaries and vice versa.
+- All schema changes are additive-optional; new decoders accept persisted
+  sessions and run events written without usage, while compatibility tests
+  require old/unknown-field-tolerant consumers to continue accepting enriched
+  JSONL and session records. Downgrade readers that reject unknown JSON fields
+  are outside the documented compatibility contract.
 - The final-response path is untouched in Phase 1 (codex/cursor normalizers
   unchanged); Phase 2's claude normalizer is the only behavior change to
   result extraction and is covered by table-driven tests plus the defensive

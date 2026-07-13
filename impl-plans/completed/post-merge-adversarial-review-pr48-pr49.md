@@ -226,8 +226,8 @@ cleanly passed or reproduced the prior SwiftPM timeout-after-pass behavior.
   recorded.
 - [x] Exactly one new local commit is created after `f5a26c8`.
 - [x] The new commit contains only the four write-boundary doc/plan paths.
-- [x] Final `git status --short` reviewed; only the pre-existing out-of-scope
-  design-doc diff remains.
+- [x] Final `git status --short` reviewed; the repository was clean after local
+  commit `2e635d9`.
 - [x] No production code or test files are changed.
 - [x] No push to origin occurs; `git ls-remote origin refs/heads/codex/pr48-pr49-post-merge-review-design`
   returns empty output.
@@ -273,6 +273,9 @@ scratch files to git.
   `impl-plans/active/post-merge-adversarial-review-pr48-pr49.md`, and
   `impl-plans/completed/post-merge-adversarial-review-pr48-pr49.md`; created
   local commit `Archive PR 48 49 post-merge review docs` without pushing.
+- 2026-07-14: Step 8 documentation refresh corrected stale design-doc risk
+  wording after accepted adversarial review confirmed the repository was clean
+  following local commit `2e635d9`.
 
 ## Addressed Feedback
 
@@ -281,13 +284,15 @@ scratch files to git.
   `design-docs/specs/design-post-merge-adversarial-review-pr48-pr49.md` diff
   was detected, left unstaged, and reported as a residual risk instead of being
   silently included in the implementation commit.
+- Step 7 accepted the implementation with no high- or mid-severity findings;
+  Step 8 corrected its sole low-severity stale documentation finding.
 
 ## Risks
 
-- `design-docs/specs/design-post-merge-adversarial-review-pr48-pr49.md`
-  remains dirty outside the committed four-path implementation boundary, so
-  repository status is not fully clean even though the local docs/archive commit
-  contains only approved files.
+- The previously observed
+  `design-docs/specs/design-post-merge-adversarial-review-pr48-pr49.md` diff was
+  not included in local commit `2e635d9`; the repository was clean after that
+  commit, whose contents remain limited to the four approved docs/archive paths.
 - The two targeted Swift test filters passed cleanly on this run; the earlier
   timeout-after-pass behavior was not reproduced.
 - Local commit creation staged exactly the four write-boundary paths and did

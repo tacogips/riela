@@ -23,6 +23,12 @@ adapters return candidate outputs only; session ids, step execution ids,
 workflow message ids, output publication, root output selection, continuation,
 resume, rerun, replay, and GraphQL/session DTO projection are runtime-owned.
 
+Workflows may use `nodeType: "sleep"` nodes for deterministic pauses in both
+production and mock-scenario runs. A sleep node pauses for `sleep.durationMs`,
+reports a deterministic `provider: "sleep"` completion payload, treats missing
+or negative durations as zero, clamps extremely large durations before sleeping,
+and remains bounded by the step's node timeout.
+
 Installed workflow packages are local workflow sources. After
 `riela package install <name>`, package-provided workflows appear in
 `riela workflow list` and can be used with ordinary workflow commands such as
@@ -97,9 +103,11 @@ riela note client revoke <client-id>
 references anymore and sweeps stray blob/temp files older than the grace
 period (default 24 hours); referenced files still survive note deletion.
 `riela note auto-action retry` reclaims interrupted auto-action dispatches
-whose lease went stale and retries pending ones — dispatch rows are
-lease-owned, so concurrent CLI or app processes never double-run a live
-dispatch.
+whose lease went stale and retries pending ones; use `--limit <n>` to bound the
+retry batch. The CLI accepts only positive limits, and the programmatic retry
+path treats zero or negative limits as an empty batch, never as an unlimited
+retry. Dispatch rows are lease-owned, so concurrent CLI or app processes never
+double-run a live dispatch.
 
 `riela note` executes note operations through the note GraphQL service against
 the local store, so the CLI, built-in note add-ons, RielaNoteUI, and server note

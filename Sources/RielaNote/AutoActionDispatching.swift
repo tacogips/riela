@@ -231,6 +231,10 @@ public extension NoteService {
     guard autoActionDispatcher != nil else {
       return 0
     }
+    let clampedLimit = max(0, limit)
+    guard clampedLimit > 0 else {
+      return 0
+    }
     let queued = try driver.withDatabase { database in
       try database.query(
         """
@@ -247,7 +251,7 @@ public extension NoteService {
         bindings: [
           .text(AutoActionDispatchStatus.pending.rawValue),
           .int(Int64(maximumAutoActionDispatchAttempts)),
-          .int(Int64(limit))
+          .int(Int64(clampedLimit))
         ]
       ).map { try queuedAutoActionDispatch(from: $0) }
     }

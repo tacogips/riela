@@ -125,6 +125,23 @@ final class AutoActionTests: NoteTestCase {
     XCTAssertEqual(dispatcher.records().count, 2)
   }
 
+  func testRetryPendingAutoActionDispatchesTreatsNegativeLimitAsZero() async throws {
+    let noteRoot = try makeNoteRoot(function: #function)
+    let driver = SQLiteNoteDatabaseDriver(noteRoot: noteRoot)
+    let recordingService = try NoteService(driver: driver)
+    _ = try recordingService.createNote(bodyMarkdown: "# Pending One\nBody")
+    _ = try recordingService.createNote(bodyMarkdown: "# Pending Two\nBody")
+    XCTAssertEqual(try recordingService.listAutoActionDispatchAttempts(status: .pending).count, 2)
+
+    let dispatcher = RecordingAutoActionDispatcher()
+    let retryingService = try NoteService(driver: driver, autoActionDispatcher: dispatcher)
+
+    XCTAssertEqual(try retryingService.retryPendingAutoActionDispatches(limit: -1), 0)
+    await retryingService.drainAutoActionDispatches()
+    XCTAssertTrue(dispatcher.records().isEmpty)
+    XCTAssertEqual(try retryingService.listAutoActionDispatchAttempts(status: .pending).count, 2)
+  }
+
   func testInFlightAutoActionDispatchCannotBeClaimedAgain() async throws {
     let dispatcher = DelayedAutoActionDispatcher()
     let service = try makeService(autoActionDispatcher: dispatcher)

@@ -62,6 +62,12 @@ final class SleepNodeExecutionTests: XCTestCase {
     XCTAssertEqual(output.payload["durationMs"], .integer(0))
   }
 
+  func testSleepDurationNanosecondsClampInsteadOfOverflowing() {
+    XCTAssertEqual(SleepNodeExecution.sleepDurationNanoseconds(durationMs: -1), 0)
+    XCTAssertEqual(SleepNodeExecution.sleepDurationNanoseconds(durationMs: 2), 2_000_000)
+    XCTAssertEqual(SleepNodeExecution.sleepDurationNanoseconds(durationMs: Int.max), UInt64.max)
+  }
+
   func testDeterministicLocalAdapterHonorsSleepNodes() async throws {
     let node = AgentNodePayload(
       id: "hold",

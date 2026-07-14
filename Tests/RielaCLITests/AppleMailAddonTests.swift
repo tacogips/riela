@@ -205,12 +205,9 @@ final class AppleMailAddonTests: XCTestCase {
 
   func testAppleMailMessageAcceptsPrivateRuntimeDownloadDir() async throws {
     let fake = try FakeAppleMailGateway(mode: "message-success", requestId: "runtime-root")
-    let downloadRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+    let downloadRoot = fake.rootURL
       .appendingPathComponent("tmp/.riela-data/apple-mail-addon-\(UUID().uuidString)", isDirectory: true)
-    defer {
-      fake.cleanup()
-      try? FileManager.default.removeItem(at: downloadRoot)
-    }
+    defer { fake.cleanup() }
 
     let output = try await runAppleMail(
       name: "riela/apple-mail-message",

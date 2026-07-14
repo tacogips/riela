@@ -24,16 +24,14 @@ public struct URLSessionOfficialSDKStreamingTransport: OfficialSDKStreamingHTTPT
   public init() {}
 
   public func bytes(for request: URLRequest) async throws -> OfficialSDKStreamingHTTPResponse {
+    #if os(Linux)
+    let (data, response) = try await URLSession.shared.data(for: request)
+    let stream = AsyncThrowingStream<Data, Error> { continuation in
+      continuation.yield(data)
+      continuation.finish()
+    }
+    #else
     let (bytes, response) = try await URLSession.shared.bytes(for: request)
-    guard let httpResponse = response as? HTTPURLResponse else {
-      throw AdapterExecutionError(.providerError, "official SDK stream did not return an HTTP response")
-    }
-    let headers = httpResponse.allHeaderFields.reduce(into: [String: String]()) { result, entry in
-      guard let key = entry.key as? String else {
-        return
-      }
-      result[key] = String(describing: entry.value)
-    }
     let stream = AsyncThrowingStream<Data, Error> { continuation in
       let task = Task {
         do {
@@ -48,6 +46,16 @@ public struct URLSessionOfficialSDKStreamingTransport: OfficialSDKStreamingHTTPT
       continuation.onTermination = { _ in
         task.cancel()
       }
+    }
+    #endif
+    guard let httpResponse = response as? HTTPURLResponse else {
+      throw AdapterExecutionError(.providerError, "official SDK stream did not return an HTTP response")
+    }
+    let headers = httpResponse.allHeaderFields.reduce(into: [String: String]()) { result, entry in
+      guard let key = entry.key as? String else {
+        return
+      }
+      result[key] = String(describing: entry.value)
     }
     return OfficialSDKStreamingHTTPResponse(statusCode: httpResponse.statusCode, headers: headers, body: stream)
   }

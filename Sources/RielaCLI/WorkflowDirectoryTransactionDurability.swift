@@ -1,4 +1,8 @@
+#if canImport(Darwin)
 import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 import Foundation
 import RielaCore
 
@@ -141,7 +145,12 @@ func acquireWorkflowTargetLock(
     throw CLIUsageError("unable to record workflow transaction lock owner")
   }
   try Data(owner.utf8).withUnsafeBytes { bytes in
-    guard Darwin.write(descriptor, bytes.baseAddress, bytes.count) == bytes.count else {
+    #if canImport(Darwin)
+    let written = Darwin.write(descriptor, bytes.baseAddress, bytes.count)
+    #else
+    let written = Glibc.write(descriptor, bytes.baseAddress, bytes.count)
+    #endif
+    guard written == bytes.count else {
       throw CLIUsageError("unable to write workflow transaction lock owner")
     }
   }

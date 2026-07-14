@@ -239,8 +239,13 @@ private func spawnProcessGroup(
   stdoutPipe: Pipe,
   stderrPipe: Pipe
 ) throws -> pid_t {
+  #if canImport(Glibc)
+  var fileActions = posix_spawn_file_actions_t()
+  var attributes = posix_spawnattr_t()
+  #else
   var fileActions: posix_spawn_file_actions_t?
   var attributes: posix_spawnattr_t?
+  #endif
   posix_spawn_file_actions_init(&fileActions)
   posix_spawnattr_init(&attributes)
   defer {

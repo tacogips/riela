@@ -1,4 +1,8 @@
+#if canImport(Darwin)
 import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 import Foundation
 import RielaCore
 
@@ -56,7 +60,11 @@ final class WorkflowHistoryPrivateDirectory {
       var offset = 0
       while offset < raw.count {
         guard let base = raw.baseAddress else { return }
+        #if canImport(Darwin)
         let count = Darwin.write(file, base.advanced(by: offset), raw.count - offset)
+        #else
+        let count = Glibc.write(file, base.advanced(by: offset), raw.count - offset)
+        #endif
         guard count > 0 else { throw CLIUsageError("unable to write private workflow history file") }
         offset += count
       }
@@ -78,7 +86,11 @@ final class WorkflowHistoryPrivateDirectory {
     var result = Data()
     var buffer = [UInt8](repeating: 0, count: 16_384)
     while true {
+      #if canImport(Darwin)
       let count = Darwin.read(file, &buffer, buffer.count)
+      #else
+      let count = Glibc.read(file, &buffer, buffer.count)
+      #endif
       guard count >= 0 else { throw CLIUsageError("unable to read private workflow history file") }
       if count == 0 { break }
       result.append(buffer, count: count)
@@ -143,7 +155,12 @@ final class WorkflowHistoryPrivateDirectory {
     let target = destination.lastPathComponent
     let result = leaf.withCString { source in
       target.withCString { destinationName in
-        renameatx_np(parentDescriptor, source, parentDescriptor, destinationName, UInt32(RENAME_EXCL))
+        workflowHistoryExclusiveRename(
+          oldDirectory: parentDescriptor,
+          oldName: source,
+          newDirectory: parentDescriptor,
+          newName: destinationName
+        )
       }
     }
     guard result == 0 else {

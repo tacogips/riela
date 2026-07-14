@@ -1,4 +1,8 @@
+#if canImport(Darwin)
 import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 import Foundation
 import RielaCore
 
@@ -126,7 +130,11 @@ final class WorkflowHistoryPinnedRoot: @unchecked Sendable {
       var bytes = Data()
       var buffer = [UInt8](repeating: 0, count: 16_384)
       while true {
+        #if canImport(Darwin)
         let count = Darwin.read(file, &buffer, buffer.count)
+        #else
+        let count = Glibc.read(file, &buffer, buffer.count)
+        #endif
         guard count >= 0 else { throw CLIUsageError("unable to read workflow history record") }
         if count == 0 { break }
         bytes.append(buffer, count: count)
@@ -197,7 +205,12 @@ final class WorkflowHistoryPinnedRoot: @unchecked Sendable {
         leaf.withCString { destination in
           overwrite
             ? renameat(parent, source, parent, destination)
-            : renameatx_np(parent, source, parent, destination, UInt32(RENAME_EXCL))
+            : workflowHistoryExclusiveRename(
+              oldDirectory: parent,
+              oldName: source,
+              newDirectory: parent,
+              newName: destination
+            )
         }
       }
       guard result == 0 else {
@@ -233,7 +246,12 @@ final class WorkflowHistoryPinnedRoot: @unchecked Sendable {
     defer { _ = close(parent) }
     let result = source.withCString { sourceName in
       target.withCString { targetName in
-        renameatx_np(parent, sourceName, parent, targetName, UInt32(RENAME_EXCL))
+        workflowHistoryExclusiveRename(
+          oldDirectory: parent,
+          oldName: sourceName,
+          newDirectory: parent,
+          newName: targetName
+        )
       }
     }
     guard result == 0 else {
@@ -266,7 +284,11 @@ final class WorkflowHistoryPinnedRoot: @unchecked Sendable {
       var offset = 0
       while offset < raw.count {
         guard let base = raw.baseAddress else { return }
+        #if canImport(Darwin)
         let count = Darwin.write(descriptor, base.advanced(by: offset), raw.count - offset)
+        #else
+        let count = Glibc.write(descriptor, base.advanced(by: offset), raw.count - offset)
+        #endif
         guard count > 0 else { throw CLIUsageError("unable to write workflow history record") }
         offset += count
       }

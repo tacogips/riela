@@ -287,6 +287,41 @@ scratch files to git.
 - Step 7 accepted the implementation with no high- or mid-severity findings;
   Step 8 corrected its sole low-severity stale documentation finding.
 
+## Re-Review Addendum (2026-07-14)
+
+A follow-up review of this archive found that the original pass fixed the
+sleep-node overflow and negative retry limit but missed sibling instances of
+the same unchecked-numeric-conversion class inside the reviewed PR scope.
+Three additional call sites were hardened:
+
+- `Sources/RielaNote/AutoActionDispatching.swift`
+  (`autoActionDispatchLeaseHeartbeatIntervalNanos`, introduced by PR #49
+  commit `7090a95`): `UInt64(interval * 1_000_000_000)` trapped for a huge or
+  infinite `autoActionDispatchLeaseStaleness`, which is a public settable
+  property on `NoteService` — the same reachability as the fixed `limit`
+  parameter. Now routed through the new clamped `autoActionSleepNanoseconds`
+  helper (non-finite or non-positive → 0, oversized finite → `UInt64.max`).
+- `Sources/RielaNoteDispatch/NoteAutoActionMaintenanceTicker.swift`
+  (`start()`, introduced by PR #49 commit `7e2ab49`):
+  `UInt64(max(interval, 0) * 1_000_000_000)` trapped for huge intervals and
+  for NaN (Swift's `max(NaN, 0)` returns NaN). Now uses the same helper.
+- `Sources/RielaCore/DeterministicWorkflowRunner+ExecutionEvents.swift`
+  (agent silence monitor): `UInt64(intervalMs) * 1_000_000` was the exact
+  expression shape fixed in `SleepNodeExecution` and is reachable via the CLI
+  `--agent-silence-monitor-interval-ms` flag (parsed as any positive Int).
+  Adjacent to but outside the two PRs' file lists; fixed by reusing
+  `SleepNodeExecution.sleepDurationNanoseconds`.
+
+Regression test `testAutoActionSleepNanosecondsClampsInsteadOfTrapping`
+covers the new helper (negative, zero, NaN, normal, infinity, and
+`greatestFiniteMagnitude` inputs; non-finite values disable the sleep rather
+than clamping to `UInt64.max`, since an infinite staleness or tick interval
+means the heartbeat/tick is pointless). `swift build` plus the
+`AutoActionTests` (25), `NoteAutoActionWorkflowDispatchTests` (6),
+`SleepNodeExecutionTests` (6), and
+`DeterministicWorkflowRunnerBackendEventTests` filters all passed with 0
+failures after the change.
+
 ## Risks
 
 - The previously observed

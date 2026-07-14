@@ -125,6 +125,15 @@ final class AutoActionTests: NoteTestCase {
     XCTAssertEqual(dispatcher.records().count, 2)
   }
 
+  func testAutoActionSleepNanosecondsClampsInsteadOfTrapping() {
+    XCTAssertEqual(autoActionSleepNanoseconds(seconds: -1), 0)
+    XCTAssertEqual(autoActionSleepNanoseconds(seconds: 0), 0)
+    XCTAssertEqual(autoActionSleepNanoseconds(seconds: .nan), 0)
+    XCTAssertEqual(autoActionSleepNanoseconds(seconds: 0.25), 250_000_000)
+    XCTAssertEqual(autoActionSleepNanoseconds(seconds: .infinity), 0)
+    XCTAssertEqual(autoActionSleepNanoseconds(seconds: .greatestFiniteMagnitude), UInt64.max)
+  }
+
   func testRetryPendingAutoActionDispatchesTreatsNegativeLimitAsZero() async throws {
     let noteRoot = try makeNoteRoot(function: #function)
     let driver = SQLiteNoteDatabaseDriver(noteRoot: noteRoot)

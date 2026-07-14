@@ -7,16 +7,26 @@ private let maximumAutoActionDispatchAttempts = 3
 /// and eligible to be reclaimed by the recovery path (15 minutes).
 public let defaultAutoActionDispatchLeaseStaleness: TimeInterval = 15 * 60
 
+/// Converts a duration in seconds into nanoseconds for `Task.sleep`, returning
+/// 0 for non-finite or non-positive durations and clamping values beyond
+/// `UInt64.max` instead of trapping.
+public func autoActionSleepNanoseconds(seconds: TimeInterval) -> UInt64 {
+  guard seconds.isFinite, seconds > 0 else {
+    return 0
+  }
+  let nanoseconds = seconds * 1_000_000_000
+  guard nanoseconds < TimeInterval(UInt64.max) else {
+    return UInt64.max
+  }
+  return UInt64(nanoseconds)
+}
+
 /// Interval at which a running dispatch attempt re-stamps its lease, expressed
 /// in nanoseconds. A third of the staleness window keeps the lease comfortably
 /// fresh (two heartbeats are lost before reclamation becomes possible). Returns
 /// 0 for a non-positive staleness, disabling the heartbeat.
 private func autoActionDispatchLeaseHeartbeatIntervalNanos(staleness: TimeInterval) -> UInt64 {
-  let interval = staleness / 3
-  guard interval > 0 else {
-    return 0
-  }
-  return UInt64(interval * 1_000_000_000)
+  autoActionSleepNanoseconds(seconds: staleness / 3)
 }
 
 private func autoActionDispatchLeaseCutoff(olderThan staleness: TimeInterval) -> String {

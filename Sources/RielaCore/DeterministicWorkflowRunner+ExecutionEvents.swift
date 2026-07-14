@@ -114,7 +114,9 @@ extension DeterministicWorkflowRunner {
       var lastWarningSilentForMs = 0
       while !Task.isCancelled {
         do {
-          try await Task.sleep(nanoseconds: UInt64(request.agentSilenceMonitorIntervalMs) * 1_000_000)
+          try await Task.sleep(
+            nanoseconds: SleepNodeExecution.sleepDurationNanoseconds(
+              durationMs: request.agentSilenceMonitorIntervalMs))
         } catch {
           return
         }

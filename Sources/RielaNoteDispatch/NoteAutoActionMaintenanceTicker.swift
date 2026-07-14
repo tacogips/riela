@@ -40,7 +40,7 @@ public actor NoteAutoActionMaintenanceTicker {
     guard loop == nil else {
       return
     }
-    let intervalNanos = UInt64(max(interval, 0) * 1_000_000_000)
+    let intervalNanos = autoActionSleepNanoseconds(seconds: interval)
     loop = Task { [weak self] in
       while !Task.isCancelled {
         guard let self else {

@@ -38,6 +38,9 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   var daemonProfileWorkflowSources: [RielaAppProfileName: [RielaAppDaemonWorkflowCandidate]] = [:]
   var daemonCandidates: [RielaAppDaemonWorkflowCandidate] = []
   var daemonWorkflowSources: [RielaAppDaemonWorkflowCandidate] = []
+  var marketplaceCatalogs: [String: RielaAppWorkflowRepositoryCatalog] = [:]
+  var marketplaceErrors: [String: String] = [:]
+  var marketplaceRefreshingRepositoryIds: Set<String> = []
   var appHomeDirectory = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
   private var daemonStatusRefreshTimer: Timer?
   var daemonWindowController: DaemonWorkflowWindowController?
@@ -161,6 +164,18 @@ final class RielaApp: NSObject, NSApplicationDelegate {
         },
         onAddURL: { [weak self] rawURL in
           self?.addDaemonWorkflowSourceOnlyURL(rawURL)
+        },
+        onAddWorkflowRepository: { [weak self] rawValue in
+          self?.addWorkflowRepository(rawValue: rawValue)
+        },
+        onRemoveWorkflowRepository: { [weak self] repositoryId in
+          self?.removeWorkflowRepository(id: repositoryId)
+        },
+        onRefreshWorkflowRepositories: { [weak self] forceRefresh in
+          self?.refreshWorkflowRepositoryCatalogs(forceRefresh: forceRefresh)
+        },
+        onInstallMarketplaceWorkflow: { [weak self] repositoryId, relativePath in
+          self?.installMarketplaceWorkflow(repositoryId: repositoryId, relativePath: relativePath)
         },
         onAddInstance: { [weak self] request in
           self?.addDaemonWorkflowInstance(request)
@@ -520,6 +535,9 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       snapshots: Dictionary(uniqueKeysWithValues: Set(daemonProfileInstances.map(\.id)).union(daemonCandidates.map(\.id)).map {
         ($0, daemonRuntime.snapshot(for: $0))
       }),
+      marketplaceCatalogs: marketplaceCatalogs,
+      marketplaceErrors: marketplaceErrors,
+      marketplaceRefreshingRepositoryIds: marketplaceRefreshingRepositoryIds,
       assistantAssistance: daemonState.assistant.assistance,
       statusMessage: statusMessage.map {
         SequencedRielaAppStatusMessage(sequence: statusMessageSequence, message: $0)
@@ -683,76 +701,6 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
   }
 
-  private func removeDaemonWorkflowDirectory(identity: String) {
-    guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
-      return
-    }
-    if candidate.isManagedInstance, candidate.id != candidate.sourceIdentity {
-      daemonState.preferences.removeValue(forKey: identity)
-      guard saveDaemonState() else {
-        refreshDaemonWorkflowWindow()
-        return
-      }
-      Task { @MainActor in
-        await daemonRuntime.stop(identity: identity)
-        status = "Removed instance \(identity)"
-        refreshDaemonWorkflowWindow()
-      }
-      return
-    }
-    let previousState = daemonState
-    let candidateURL = URL(fileURLWithPath: candidate.workflowDirectory, isDirectory: true)
-    let removedDescription: String
-    let canRollbackStateOnlyRemoval: Bool
-    if let packageDirectory = candidate.packageDirectory,
-      daemonPackageInstaller.containsInstalledPackageDirectory(URL(fileURLWithPath: packageDirectory, isDirectory: true)) {
-      do {
-        try daemonPackageInstaller.removeInstalledPackageDirectory(URL(fileURLWithPath: packageDirectory, isDirectory: true))
-        removedDescription = "package \(candidate.displayName)"
-        canRollbackStateOnlyRemoval = false
-      } catch {
-        status = "Failed to remove package: \(error.localizedDescription)"
-        refreshDaemonWorkflowWindow()
-        return
-      }
-    } else if daemonWorkflowInstaller.containsInstalledWorkflowDirectory(candidateURL) {
-      do {
-        try daemonWorkflowInstaller.removeInstalledWorkflowDirectory(candidateURL)
-        removedDescription = "workflow source \(candidate.displayName)"
-        canRollbackStateOnlyRemoval = false
-      } catch {
-        status = "Failed to remove workflow: \(error.localizedDescription)"
-        refreshDaemonWorkflowWindow()
-        return
-      }
-    } else if let projectDirectory = daemonState.projectDirectory(containing: candidate.workflowDirectory) {
-      daemonState.removeProjectDirectory(projectDirectory)
-      removedDescription = "project \(URL(fileURLWithPath: projectDirectory, isDirectory: true).lastPathComponent)"
-      canRollbackStateOnlyRemoval = true
-    } else if daemonState.containsWorkflowDirectory(candidate.workflowDirectory) {
-      daemonState.removeWorkflowDirectory(candidate.workflowDirectory)
-      removedDescription = "selected workflow source \(candidate.displayName)"
-      canRollbackStateOnlyRemoval = true
-    } else {
-      status = "Only RielaApp imports and profile project workflow sources can be removed"
-      refreshDaemonWorkflowWindow()
-      return
-    }
-    daemonState.preferences.removeValue(forKey: identity)
-    status = "Removed \(removedDescription) from profile \(daemonProfileName.rawValue)"
-    guard saveDaemonState() else {
-      if canRollbackStateOnlyRemoval {
-        daemonState = previousState
-      }
-      refreshDaemonWorkflowWindow()
-      return
-    }
-    Task { @MainActor in
-      await daemonRuntime.stop(identity: identity)
-      refreshDaemonWorkflowWindow()
-    }
-  }
-
   func updateDaemonPreference(
     identity: String,
     mutate: (inout RielaAppDaemonWorkflowPreference) -> Void
@@ -848,6 +796,76 @@ final class RielaApp: NSObject, NSApplicationDelegate {
 }
 
 extension RielaApp {
+  private func removeDaemonWorkflowDirectory(identity: String) {
+    guard let candidate = daemonCandidates.first(where: { $0.id == identity }) else {
+      return
+    }
+    if candidate.isManagedInstance, candidate.id != candidate.sourceIdentity {
+      daemonState.preferences.removeValue(forKey: identity)
+      guard saveDaemonState() else {
+        refreshDaemonWorkflowWindow()
+        return
+      }
+      Task { @MainActor in
+        await daemonRuntime.stop(identity: identity)
+        status = "Removed instance \(identity)"
+        refreshDaemonWorkflowWindow()
+      }
+      return
+    }
+    let previousState = daemonState
+    let candidateURL = URL(fileURLWithPath: candidate.workflowDirectory, isDirectory: true)
+    let removedDescription: String
+    let canRollbackStateOnlyRemoval: Bool
+    if let packageDirectory = candidate.packageDirectory,
+      daemonPackageInstaller.containsInstalledPackageDirectory(URL(fileURLWithPath: packageDirectory, isDirectory: true)) {
+      do {
+        try daemonPackageInstaller.removeInstalledPackageDirectory(URL(fileURLWithPath: packageDirectory, isDirectory: true))
+        removedDescription = "package \(candidate.displayName)"
+        canRollbackStateOnlyRemoval = false
+      } catch {
+        status = "Failed to remove package: \(error.localizedDescription)"
+        refreshDaemonWorkflowWindow()
+        return
+      }
+    } else if daemonWorkflowInstaller.containsInstalledWorkflowDirectory(candidateURL) {
+      do {
+        try daemonWorkflowInstaller.removeInstalledWorkflowDirectory(candidateURL)
+        removedDescription = "workflow source \(candidate.displayName)"
+        canRollbackStateOnlyRemoval = false
+      } catch {
+        status = "Failed to remove workflow: \(error.localizedDescription)"
+        refreshDaemonWorkflowWindow()
+        return
+      }
+    } else if let projectDirectory = daemonState.projectDirectory(containing: candidate.workflowDirectory) {
+      daemonState.removeProjectDirectory(projectDirectory)
+      removedDescription = "project \(URL(fileURLWithPath: projectDirectory, isDirectory: true).lastPathComponent)"
+      canRollbackStateOnlyRemoval = true
+    } else if daemonState.containsWorkflowDirectory(candidate.workflowDirectory) {
+      daemonState.removeWorkflowDirectory(candidate.workflowDirectory)
+      removedDescription = "selected workflow source \(candidate.displayName)"
+      canRollbackStateOnlyRemoval = true
+    } else {
+      status = "Only RielaApp imports and profile project workflow sources can be removed"
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    daemonState.preferences.removeValue(forKey: identity)
+    status = "Removed \(removedDescription) from profile \(daemonProfileName.rawValue)"
+    guard saveDaemonState() else {
+      if canRollbackStateOnlyRemoval {
+        daemonState = previousState
+      }
+      refreshDaemonWorkflowWindow()
+      return
+    }
+    Task { @MainActor in
+      await daemonRuntime.stop(identity: identity)
+      refreshDaemonWorkflowWindow()
+    }
+  }
+
   private func initialDaemonProfileName() -> RielaAppProfileName {
     launchOptions.profileName ?? profileStore.loadActiveProfileName()
   }

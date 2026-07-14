@@ -36,9 +36,11 @@ final class DaemonWorkflowWindowController: NSWindowController,
   let navigationTitleLabel = NSTextField(labelWithString: "Instances")
   let sidebarInstancesButton = NSButton(title: "Instances", target: nil, action: nil)
   let sidebarSourcesButton = NSButton(title: "Workflow Sources", target: nil, action: nil)
+  let sidebarMarketplaceButton = NSButton(title: "Marketplace", target: nil, action: nil)
   let sidebarAssistantButton = NSButton(title: "Assistant", target: nil, action: nil)
   let sidebarProfilesButton = NSButton(title: "Profiles", target: nil, action: nil)
   let sourcesSummaryLabel = NSTextField(labelWithString: "")
+  let marketplaceSummaryLabel = NSTextField(labelWithString: "")
   let workflowSourceSearchField = NSSearchField()
   let assistantSummaryLabel = NSTextField(labelWithString: "")
   let assistantSaveStatusLabel = NSTextField(labelWithString: "")
@@ -77,6 +79,10 @@ final class DaemonWorkflowWindowController: NSWindowController,
   let onRemoveProfile: (RielaAppProfileName) -> Bool
   let onAddDirectory: () -> Void
   let onAddURL: (String) -> Void
+  let onAddWorkflowRepository: (String) -> Void
+  let onRemoveWorkflowRepository: (String) -> Void
+  let onRefreshWorkflowRepositories: (Bool) -> Void
+  let onInstallMarketplaceWorkflow: (String, String) -> Void
   let onAddInstance: (DaemonWorkflowAddInstanceRequest) -> Void
   private let onRevealSelectedSource: (String) -> Void
   private let onRelinkInstance: (String, String) -> Void
@@ -110,6 +116,9 @@ final class DaemonWorkflowWindowController: NSWindowController,
   var profileInstances: [RielaAppProfiledWorkflowInstance] = []
   var state = RielaAppDaemonWorkflowState()
   var snapshots: [String: RielaAppDaemonWorkflowRuntime.RuntimeSnapshot] = [:]
+  var marketplaceCatalogs: [String: RielaAppWorkflowRepositoryCatalog] = [:]
+  var marketplaceErrors: [String: String] = [:]
+  var marketplaceRefreshingRepositoryIds: Set<String> = []
   var profileName = RielaAppProfileName.default
   var profileNames: [RielaAppProfileName] = [.default]
   var profileFilterName: RielaAppProfileName? = .default
@@ -132,11 +141,13 @@ final class DaemonWorkflowWindowController: NSWindowController,
   var configurationEditorView: NSView?
   var sourcesOverviewView: NSView?
   var workflowSourceDetailView: NSView?
+  var marketplaceOverviewView: NSView?
   var assistantOverviewView: NSView?
   var profilesOverviewView: NSView?
   var profileDetailView: NSView?
   var profilesOverviewFingerprint: String?
   var sourcesOverviewFingerprint: String?
+  var marketplaceOverviewFingerprint: String?
   weak var workflowSettingRow: NSView?
   weak var missingSourceSettingRow: NSView?
   weak var statusSettingRow: NSView?
@@ -193,6 +204,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
   enum SidebarPane {
     case instances
     case sources
+    case marketplace
     case assistant
     case profiles
   }
@@ -204,6 +216,10 @@ final class DaemonWorkflowWindowController: NSWindowController,
     onRemoveProfile: @escaping (RielaAppProfileName) -> Bool,
     onAddDirectory: @escaping () -> Void,
     onAddURL: @escaping (String) -> Void,
+    onAddWorkflowRepository: @escaping (String) -> Void = { _ in },
+    onRemoveWorkflowRepository: @escaping (String) -> Void = { _ in },
+    onRefreshWorkflowRepositories: @escaping (Bool) -> Void = { _ in },
+    onInstallMarketplaceWorkflow: @escaping (String, String) -> Void = { _, _ in },
     onAddInstance: @escaping (DaemonWorkflowAddInstanceRequest) -> Void,
     onRevealSelectedSource: @escaping (String) -> Void,
     onRelinkInstance: @escaping (String, String) -> Void,
@@ -235,6 +251,10 @@ final class DaemonWorkflowWindowController: NSWindowController,
     self.onRemoveProfile = onRemoveProfile
     self.onAddDirectory = onAddDirectory
     self.onAddURL = onAddURL
+    self.onAddWorkflowRepository = onAddWorkflowRepository
+    self.onRemoveWorkflowRepository = onRemoveWorkflowRepository
+    self.onRefreshWorkflowRepositories = onRefreshWorkflowRepositories
+    self.onInstallMarketplaceWorkflow = onInstallMarketplaceWorkflow
     self.onAddInstance = onAddInstance
     self.onRevealSelectedSource = onRevealSelectedSource
     self.onRelinkInstance = onRelinkInstance
@@ -285,6 +305,9 @@ final class DaemonWorkflowWindowController: NSWindowController,
     profileInstances: [RielaAppProfiledWorkflowInstance] = [],
     state: RielaAppDaemonWorkflowState,
     snapshots: [String: RielaAppDaemonWorkflowRuntime.RuntimeSnapshot],
+    marketplaceCatalogs: [String: RielaAppWorkflowRepositoryCatalog] = [:],
+    marketplaceErrors: [String: String] = [:],
+    marketplaceRefreshingRepositoryIds: Set<String> = [],
     assistantAssistance: String,
     statusMessage: String
   ) {
@@ -300,6 +323,9 @@ final class DaemonWorkflowWindowController: NSWindowController,
       profileInstances: profileInstances,
       state: state,
       snapshots: snapshots,
+      marketplaceCatalogs: marketplaceCatalogs,
+      marketplaceErrors: marketplaceErrors,
+      marketplaceRefreshingRepositoryIds: marketplaceRefreshingRepositoryIds,
       assistantAssistance: assistantAssistance,
       statusMessage: sequencedMessage
     )
@@ -314,6 +340,9 @@ final class DaemonWorkflowWindowController: NSWindowController,
     profileInstances: [RielaAppProfiledWorkflowInstance] = [],
     state: RielaAppDaemonWorkflowState,
     snapshots: [String: RielaAppDaemonWorkflowRuntime.RuntimeSnapshot],
+    marketplaceCatalogs: [String: RielaAppWorkflowRepositoryCatalog] = [:],
+    marketplaceErrors: [String: String] = [:],
+    marketplaceRefreshingRepositoryIds: Set<String> = [],
     assistantAssistance: String,
     statusMessage: SequencedRielaAppStatusMessage?
   ) {
@@ -326,6 +355,9 @@ final class DaemonWorkflowWindowController: NSWindowController,
     self.profileInstances = profileInstances
     self.state = state
     self.snapshots = snapshots
+    self.marketplaceCatalogs = marketplaceCatalogs
+    self.marketplaceErrors = marketplaceErrors
+    self.marketplaceRefreshingRepositoryIds = marketplaceRefreshingRepositoryIds
     if activeSidebarPane != .assistant {
       assistantAssistanceTextView?.string = assistantAssistance
     }
@@ -342,6 +374,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
     if isShowingWorkflowSourceDetail {
       showWorkflowSourceDetail()
     }
+    rebuildMarketplaceOverviewView()
     rebuildProfilesOverviewView()
     updateOverviewSummaries()
     updateAssistantPanel()

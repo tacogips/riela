@@ -11,6 +11,7 @@ extension DaemonWorkflowWindowController {
       configurationEditorView,
       sourcesOverviewView,
       workflowSourceDetailView,
+      marketplaceOverviewView,
       assistantOverviewView,
       profilesOverviewView,
       profileDetailView
@@ -85,6 +86,20 @@ extension DaemonWorkflowWindowController {
     updateSidebarSelection()
   }
 
+  @objc func showMarketplacePane() {
+    activeSidebarPane = .marketplace
+    rebuildMarketplaceOverviewView()
+    isShowingInstanceDetail = false
+    isShowingAddInstanceSelection = false
+    isShowingProfileDetail = false
+    isShowingWorkflowSourceDetail = false
+    showContentPane(marketplaceOverviewView)
+    navigationTitleLabel.stringValue = "Marketplace"
+    updateNavigationState()
+    updateSidebarSelection()
+    requestMarketplaceCatalogsIfNeeded()
+  }
+
   @objc func showProfilesPane() {
     activeSidebarPane = .profiles
     rebuildProfilesOverviewView()
@@ -120,6 +135,7 @@ extension DaemonWorkflowWindowController {
   func updateSidebarSelection() {
     updateSidebarButton(sidebarInstancesButton, selected: activeSidebarPane == .instances)
     updateSidebarButton(sidebarSourcesButton, selected: activeSidebarPane == .sources)
+    updateSidebarButton(sidebarMarketplaceButton, selected: activeSidebarPane == .marketplace)
     updateSidebarButton(sidebarAssistantButton, selected: activeSidebarPane == .assistant)
     updateSidebarButton(sidebarProfilesButton, selected: activeSidebarPane == .profiles)
   }

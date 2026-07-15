@@ -9,6 +9,14 @@ extension WorkflowViewerWindowController {
     assistantPanelHost.addSubview(assistantPanel)
     assistantPanelHeightConstraint = assistantPanelHost.heightAnchor.constraint(equalToConstant: 176)
     assistantPanelHeightConstraint?.isActive = true
+    assistantPanelExpandedWidthConstraint = assistantPanel.leadingAnchor.constraint(
+      equalTo: assistantPanelHost.leadingAnchor,
+      constant: 12
+    )
+    assistantPanelFoldedWidthConstraint = assistantPanel.widthAnchor.constraint(
+      equalToConstant: RielaAssistantMiniChatStyle.foldedPanelWidth
+    )
+    assistantPanelExpandedWidthConstraint?.isActive = true
 
     let rootStack = NSStackView(views: [splitView, assistantPanelHost])
     rootStack.orientation = .vertical
@@ -26,7 +34,6 @@ extension WorkflowViewerWindowController {
       assistantPanelHost.widthAnchor.constraint(equalTo: rootStack.widthAnchor),
       splitView.heightAnchor.constraint(greaterThanOrEqualToConstant: 240),
       assistantPanel.topAnchor.constraint(equalTo: assistantPanelHost.topAnchor),
-      assistantPanel.leadingAnchor.constraint(equalTo: assistantPanelHost.leadingAnchor, constant: 12),
       assistantPanel.trailingAnchor.constraint(equalTo: assistantPanelHost.trailingAnchor, constant: -12),
       assistantPanel.bottomAnchor.constraint(equalTo: assistantPanelHost.bottomAnchor)
     ])

@@ -36,15 +36,16 @@ final class DaemonWorkflowWindowController: NSWindowController,
   let navigationTitleLabel = NSTextField(labelWithString: "Instances")
   let sidebarInstancesButton = NSButton(title: "Instances", target: nil, action: nil)
   let sidebarSourcesButton = NSButton(title: "Workflow Sources", target: nil, action: nil)
-  let sidebarMarketplaceButton = NSButton(title: "Marketplace", target: nil, action: nil)
+  let sidebarMarketplaceButton = NSButton(title: "Install Workflow", target: nil, action: nil)
   let sidebarAssistantButton = NSButton(title: "Assistant", target: nil, action: nil)
   let sidebarProfilesButton = NSButton(title: "Profiles", target: nil, action: nil)
   let sourcesSummaryLabel = NSTextField(labelWithString: "")
   let marketplaceSummaryLabel = NSTextField(labelWithString: "")
   let workflowSourceSearchField = NSSearchField()
+  let marketplaceSearchField = NSSearchField()
   let assistantSummaryLabel = NSTextField(labelWithString: "")
   let assistantSaveStatusLabel = NSTextField(labelWithString: "")
-  let assistantPanelTitleLabel = NSTextField(labelWithString: "Riela Assistant")
+  let assistantPanelTitleLabel = NSTextField(labelWithString: "Riela Setup Assistant")
   let assistantAvailabilityLabel = NSTextField(labelWithString: "")
   let assistantSelectionSummaryLabel = NSTextField(labelWithString: "")
   let assistantContextLabel = NSTextField(labelWithString: "")
@@ -142,6 +143,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
   var sourcesOverviewView: NSView?
   var workflowSourceDetailView: NSView?
   var marketplaceOverviewView: NSView?
+  var marketplaceWorkflowDetailView: NSView?
   var assistantOverviewView: NSView?
   var profilesOverviewView: NSView?
   var profileDetailView: NSView?
@@ -189,11 +191,14 @@ final class DaemonWorkflowWindowController: NSWindowController,
   var isShowingAddInstanceSelection = false
   var isShowingProfileDetail = false
   var isShowingWorkflowSourceDetail = false
+  var isShowingMarketplaceWorkflowDetail = false
   var selectedProfileDetailName: RielaAppProfileName?
   var profileDetailMode: ProfileDetailMode = .overview
   var activeSidebarPane: SidebarPane = .instances
   var selectedWorkflowSourceId: String?
+  var selectedMarketplaceWorkflowIdentifier: String?
   var workflowSourceFilterText = ""
+  var marketplaceFilterText = ""
   var instanceFilterText = ""
   var rawInstanceRowsCount = 0
   private(set) var statusMessageHistory: [SequencedRielaAppStatusMessage] = []

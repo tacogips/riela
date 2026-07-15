@@ -1,6 +1,21 @@
 #if os(macOS)
 import AppKit
 import RielaAppSupport
+import RielaCore
+
+private struct MarketplaceWorkflowMetadata: Decodable {
+  var workflowId: String
+  var inheritance: MarketplaceWorkflowInheritance?
+
+  private enum CodingKeys: String, CodingKey {
+    case workflowId
+    case inheritance = "extends"
+  }
+}
+
+private struct MarketplaceWorkflowInheritance: Decodable {
+  var workflowId: String
+}
 
 extension DaemonWorkflowWindowController {
   private static let marketplaceIdentifierSeparator = "\u{1f}"
@@ -8,7 +23,9 @@ extension DaemonWorkflowWindowController {
   func buildMarketplaceOverviewView() -> NSView {
     marketplaceSummaryLabel.textColor = .secondaryLabelColor
     marketplaceSummaryLabel.lineBreakMode = .byTruncatingTail
+    marketplaceSummaryLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
     updateMarketplaceSummary()
+    configureMarketplaceSearchField()
     let listContent = marketplaceListContent()
     return DaemonWorkflowSourcesPaneView(
       header: marketplaceHeader(),
@@ -59,7 +76,7 @@ extension DaemonWorkflowWindowController {
         workflows
       ].joined(separator: "\u{1d}")
     }
-    return ([installedIds] + repositories).joined(separator: "\u{1c}")
+    return ([installedIds, marketplaceFilterText] + repositories).joined(separator: "\u{1c}")
   }
 
   private func marketplaceHeader() -> NSView {
@@ -86,7 +103,7 @@ extension DaemonWorkflowWindowController {
     topRow.orientation = .horizontal
     topRow.spacing = 8
     topRow.alignment = .centerY
-    let stack = NSStackView(views: [topRow])
+    let stack = NSStackView(views: [topRow, marketplaceSearchField])
     stack.orientation = .vertical
     stack.spacing = 8
     stack.alignment = .width
@@ -101,14 +118,41 @@ extension DaemonWorkflowWindowController {
     accessibilityLabel: String,
     action: Selector
   ) -> NSButton {
-    let button = NSButton(title: title, target: self, action: action)
+    let button = NSButton(title: "", target: self, action: action)
     button.bezelStyle = .rounded
     button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
-    button.imagePosition = .imageLeading
+    button.imagePosition = .imageOnly
     button.toolTip = accessibilityLabel
     button.setAccessibilityLabel(accessibilityLabel)
+    button.setAccessibilityHelp(title)
     button.setContentCompressionResistancePriority(.required, for: .horizontal)
     return button
+  }
+
+  private func configureMarketplaceSearchField() {
+    marketplaceSearchField.placeholderString = "Filter marketplace workflows"
+    marketplaceSearchField.target = self
+    marketplaceSearchField.delegate = self
+    marketplaceSearchField.sendsSearchStringImmediately = true
+    marketplaceSearchField.controlSize = .large
+    marketplaceSearchField.stringValue = marketplaceFilterText
+    marketplaceSearchField.setAccessibilityLabel("Filter Marketplace Workflows")
+    marketplaceSearchField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    marketplaceSearchField.frame.size.width = 220
+  }
+
+  func rebuildMarketplaceOverviewViewForSearch() {
+    marketplaceFilterText = marketplaceSearchField.stringValue
+    guard let marketplacePane = marketplaceOverviewView as? DaemonWorkflowSourcesPaneView else {
+      marketplaceOverviewFingerprint = nil
+      rebuildMarketplaceOverviewView()
+      window?.makeFirstResponder(marketplaceSearchField)
+      return
+    }
+    let listContent = marketplaceListContent()
+    marketplacePane.replaceListScrollView(listContent.scrollView, emptyLabel: listContent.emptyLabel)
+    marketplaceOverviewFingerprint = marketplaceOverviewFingerprintValue()
+    window?.makeFirstResponder(marketplaceSearchField)
   }
 
   private func updateMarketplaceSummary() {
@@ -192,8 +236,33 @@ extension DaemonWorkflowWindowController {
     guard !catalog.workflows.isEmpty else {
       return [marketplaceMessageRow("No workflows were found in this repository.")]
     }
-    return catalog.workflows.map { listing in
+    let workflows = filteredMarketplaceWorkflows(catalog.workflows, repository: repository)
+    guard !workflows.isEmpty else {
+      return [marketplaceMessageRow("No workflows in this repository match the current filter.")]
+    }
+    return workflows.map { listing in
       marketplaceWorkflowRow(listing, installed: installedIds.contains(listing.workflowId))
+    }
+  }
+
+  private func filteredMarketplaceWorkflows(
+    _ workflows: [RielaAppRemoteWorkflowListing],
+    repository: RielaAppWorkflowRepositoryReference
+  ) -> [RielaAppRemoteWorkflowListing] {
+    let query = marketplaceFilterText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !query.isEmpty else {
+      return workflows
+    }
+    return workflows.filter { listing in
+      [
+        listing.title,
+        listing.workflowId,
+        listing.summary,
+        listing.packageName ?? "",
+        listing.relativePath,
+        repository.id
+      ].joined(separator: " ")
+        .range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil
     }
   }
 
@@ -219,12 +288,14 @@ extension DaemonWorkflowWindowController {
   ) -> NSView {
     let titleLabel = NSTextField(labelWithString: listing.title)
     titleLabel.font = .systemFont(ofSize: 14, weight: .medium)
-    titleLabel.lineBreakMode = .byTruncatingTail
+    titleLabel.lineBreakMode = .byTruncatingMiddle
+    titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     let detailLabel = NSTextField(labelWithString: marketplaceWorkflowRowDetail(listing))
     detailLabel.textColor = .secondaryLabelColor
     detailLabel.font = .systemFont(ofSize: 11)
     detailLabel.lineBreakMode = .byTruncatingTail
     detailLabel.maximumNumberOfLines = 2
+    detailLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     let labelStack = NSStackView(views: [titleLabel, detailLabel])
     labelStack.orientation = .vertical
     labelStack.alignment = .leading
@@ -247,20 +318,214 @@ extension DaemonWorkflowWindowController {
       : "Install \(listing.workflowId) into this profile"
     installButton.setAccessibilityLabel(installed ? "Installed \(listing.workflowId)" : "Install \(listing.workflowId)")
     installButton.setContentCompressionResistancePriority(.required, for: .horizontal)
-    let row = RielaAppSettingsRow(views: [
+    let row = RielaAppSelectableSettingsRow(views: [
       RielaAppSymbolTileView(symbolName: "shippingbox.fill", backgroundColor: .systemTeal),
       labelStack,
       spacer,
-      installButton
+      installButton,
+      rielaAppDisclosureIndicator()
     ])
+    row.identifier = NSUserInterfaceItemIdentifier(
+      [listing.repositoryId, listing.relativePath].joined(separator: Self.marketplaceIdentifierSeparator)
+    )
     row.orientation = .horizontal
     row.alignment = .centerY
     row.spacing = 10
+    row.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     row.toolTip = listing.summary.isEmpty ? listing.workflowId : listing.summary
-    row.setAccessibilityElement(true)
-    row.setAccessibilityRole(.group)
-    row.setAccessibilityLabel(listing.title)
-    row.setAccessibilityValue(listing.summary)
+    return rielaAppSelectableSettingsRow(
+      row,
+      target: self,
+      action: #selector(openMarketplaceWorkflowDetailFromRow(_:)),
+      accessibilityLabel: listing.title,
+      accessibilityHelp: "Show workflow description and steps"
+    )
+  }
+
+  @objc private func openMarketplaceWorkflowDetailFromRow(_ sender: RielaAppSelectableSettingsRow) {
+    guard let identifier = sender.identifier?.rawValue,
+      let listing = marketplaceListing(identifier: identifier) else {
+      return
+    }
+    selectedMarketplaceWorkflowIdentifier = identifier
+    isShowingMarketplaceWorkflowDetail = true
+    marketplaceWorkflowDetailView?.removeFromSuperview()
+    marketplaceWorkflowDetailView = buildMarketplaceWorkflowDetailView(listing)
+    showContentPane(marketplaceWorkflowDetailView)
+    navigationTitleLabel.stringValue = listing.title
+    updateNavigationState()
+  }
+
+  private func marketplaceListing(identifier: String) -> RielaAppRemoteWorkflowListing? {
+    let parts = identifier.components(separatedBy: Self.marketplaceIdentifierSeparator)
+    guard parts.count == 2 else {
+      return nil
+    }
+    return marketplaceCatalogs[parts[0]]?.workflows.first { $0.relativePath == parts[1] }
+  }
+
+  private func buildMarketplaceWorkflowDetailView(_ listing: RielaAppRemoteWorkflowListing) -> NSView {
+    let summaryLabel = NSTextField(labelWithString: listing.kind == .packageWorkflow ? "Package workflow" : "Workflow")
+    summaryLabel.textColor = .secondaryLabelColor
+    summaryLabel.lineBreakMode = .byTruncatingMiddle
+    var views: [NSView] = [
+      settingsSectionCaption("Description"),
+      rielaAppSettingsSection(rows: [marketplaceDetailTextRow(
+        listing.summary.isEmpty ? "No description provided." : listing.summary
+      )])
+    ]
+    do {
+      let stepSource = try marketplaceStepSource(for: listing)
+      let graphPane = DaemonWorkflowGraphPaneView()
+      graphPane.update(model: try DaemonWorkflowGraphModel.load(
+        workflowDirectory: stepSource.directory.path
+      ))
+      views.append(settingsSectionCaption(stepSource.inheritedWorkflowId.map {
+        "Steps (inherited from \($0))"
+      } ?? "Steps"))
+      views.append(graphPane)
+      views.append(contentsOf: marketplaceStepViews(directory: stepSource.directory))
+    } catch {
+      views.append(settingsSectionCaption("Steps"))
+      views.append(rielaAppSettingsSection(rows: [
+        marketplaceDetailTextRow("Workflow steps are unavailable: \(error)")
+      ]))
+    }
+    views.append(settingsSectionCaption("Install"))
+    views.append(rielaAppSettingsSection(rows: [marketplaceDetailInstallRow(listing)]))
+    return overviewPane(
+      title: listing.title,
+      summaryLabel: summaryLabel,
+      documentStack: settingsDocumentStack(views: views)
+    )
+  }
+
+  private func marketplaceStepSource(
+    for listing: RielaAppRemoteWorkflowListing
+  ) throws -> (directory: URL, inheritedWorkflowId: String?) {
+    let workflowURL = listing.workflowDirectoryURL.appendingPathComponent("workflow.json")
+    guard let data = try? Data(contentsOf: workflowURL),
+      let metadata = try? JSONDecoder().decode(MarketplaceWorkflowMetadata.self, from: data),
+      let inheritedWorkflowId = metadata.inheritance?.workflowId else {
+      return (listing.workflowDirectoryURL, nil)
+    }
+    let repositoryRoot = marketplaceRepositoryRoot(for: listing)
+    guard let inheritedDirectory = marketplaceWorkflowDirectory(
+      workflowId: inheritedWorkflowId,
+      repositoryRoot: repositoryRoot
+    ) else {
+      throw DaemonWorkflowGraphLoadError.invalidWorkflow(
+        "inherited workflow '\(inheritedWorkflowId)' was not found in the repository"
+      )
+    }
+    return (inheritedDirectory, inheritedWorkflowId)
+  }
+
+  private func marketplaceRepositoryRoot(for listing: RielaAppRemoteWorkflowListing) -> URL {
+    listing.relativePath.split(separator: "/").reduce(listing.installSourceURL) { root, _ in
+      root.deletingLastPathComponent()
+    }
+  }
+
+  private func marketplaceWorkflowDirectory(workflowId: String, repositoryRoot: URL) -> URL? {
+    guard let enumerator = FileManager.default.enumerator(
+      at: repositoryRoot,
+      includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
+      options: [.skipsHiddenFiles, .skipsPackageDescendants]
+    ) else {
+      return nil
+    }
+    for case let fileURL as URL in enumerator where fileURL.lastPathComponent == "workflow.json" {
+      guard let values = try? fileURL.resourceValues(forKeys: [.isSymbolicLinkKey]),
+        values.isSymbolicLink != true,
+        let data = try? Data(contentsOf: fileURL),
+        let metadata = try? JSONDecoder().decode(MarketplaceWorkflowMetadata.self, from: data),
+        metadata.workflowId == workflowId else {
+        continue
+      }
+      return fileURL.deletingLastPathComponent()
+    }
+    return nil
+  }
+
+  private func marketplaceStepViews(directory: URL) -> [NSView] {
+    let workflowURL = directory.appendingPathComponent("workflow.json")
+    guard let data = try? Data(contentsOf: workflowURL),
+      let workflow = try? JSONDecoder().decode(AuthoredWorkflowJSON.self, from: data) else {
+      return []
+    }
+    let steps = workflow.steps ?? workflow.nodes.map { WorkflowStepRef(id: $0.id, nodeId: $0.id) }
+    guard !steps.isEmpty else {
+      return []
+    }
+    let rows = steps.map { step in
+      marketplaceStepRow(step)
+    }
+    return [rielaAppSettingsSection(rows: rows)]
+  }
+
+  private func marketplaceStepRow(_ step: WorkflowStepRef) -> NSView {
+    let title = NSTextField(labelWithString: step.id)
+    title.font = .systemFont(ofSize: 13, weight: .medium)
+    title.lineBreakMode = .byTruncatingMiddle
+    let transitionTargets = (step.transitions ?? []).map { transition in
+      transition.toWorkflowId ?? transition.toStepId
+    }
+    let detail = rielaAppMetadataText([
+      step.description,
+      step.role?.rawValue,
+      transitionTargets.isEmpty ? "Final step" : "Next: \(transitionTargets.joined(separator: ", "))"
+    ].compactMap { $0 })
+    let detailLabel = NSTextField(labelWithString: detail)
+    detailLabel.textColor = .secondaryLabelColor
+    detailLabel.font = .systemFont(ofSize: 11)
+    detailLabel.lineBreakMode = .byWordWrapping
+    detailLabel.maximumNumberOfLines = 4
+    let labels = NSStackView(views: [title, detailLabel])
+    labels.orientation = .vertical
+    labels.alignment = .leading
+    labels.spacing = 3
+    labels.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    let row = RielaAppSettingsRow(views: [labels])
+    row.orientation = .vertical
+    row.alignment = .width
+    return rielaAppSettingsRow(row)
+  }
+
+  private func marketplaceDetailTextRow(_ text: String) -> NSView {
+    let label = NSTextField(wrappingLabelWithString: text)
+    label.maximumNumberOfLines = 0
+    label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    let row = RielaAppSettingsRow(views: [label])
+    row.orientation = .vertical
+    row.alignment = .width
+    return rielaAppSettingsRow(row)
+  }
+
+  private func marketplaceDetailInstallRow(_ listing: RielaAppRemoteWorkflowListing) -> NSView {
+    let installed = installedMarketplaceWorkflowIds().contains(listing.workflowId)
+    let button = NSButton(
+      title: installed ? "Installed" : "Install",
+      target: self,
+      action: #selector(installMarketplaceWorkflowFromButton(_:))
+    )
+    button.bezelStyle = .rounded
+    button.isEnabled = !installed
+    button.identifier = NSUserInterfaceItemIdentifier(
+      [listing.repositoryId, listing.relativePath].joined(separator: Self.marketplaceIdentifierSeparator)
+    )
+    button.setAccessibilityLabel(installed ? "Installed \(listing.workflowId)" : "Install \(listing.workflowId)")
+    let label = NSTextField(labelWithString: installed
+      ? "This workflow is installed in the current profile."
+      : "Install this workflow and its required child workflows.")
+    label.textColor = .secondaryLabelColor
+    label.lineBreakMode = .byWordWrapping
+    let spacer = NSView()
+    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    let row = RielaAppSettingsRow(views: [label, spacer, button])
+    row.orientation = .horizontal
+    row.alignment = .centerY
+    row.spacing = 8
     return rielaAppSettingsRow(row)
   }
 

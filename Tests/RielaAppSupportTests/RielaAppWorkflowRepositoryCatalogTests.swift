@@ -89,6 +89,38 @@ final class RielaAppWorkflowRepositoryCatalogTests: XCTestCase {
     XCTAssertEqual(listings.first?.title, "chat-bot")
   }
 
+  func testScanListsOnlyRootWorkflowsWhenPackagesDeclareDependencies() throws {
+    try writeWorkflow(at: "packages/parent/workflows/parent", workflowId: "parent", description: "Parent")
+    try writeWorkflow(at: "packages/child/workflows/child", workflowId: "child", description: "Child")
+    try write(
+      json: #"{"name":"parent","dependencies":["child"]}"#,
+      at: "packages/parent/riela-package.json"
+    )
+    try write(json: #"{"name":"child"}"#, at: "packages/child/riela-package.json")
+
+    let listings = RielaAppWorkflowRepositoryCatalogScanner.scan(
+      repositoryRoot: repositoryRoot,
+      repositoryId: "acme/workflows"
+    )
+
+    XCTAssertEqual(listings.map(\.workflowId), ["parent"])
+  }
+
+  func testScanListsOnlyRootWorkflowsWhenTransitionsCallChildren() throws {
+    try write(
+      json: #"{"workflowId":"parent","steps":[{"transitions":[{"toStepId":"start","toWorkflowId":"child"}]}]}"#,
+      at: "parent/workflow.json"
+    )
+    try writeWorkflow(at: "child", workflowId: "child", description: "Child")
+
+    let listings = RielaAppWorkflowRepositoryCatalogScanner.scan(
+      repositoryRoot: repositoryRoot,
+      repositoryId: "acme/workflows"
+    )
+
+    XCTAssertEqual(listings.map(\.workflowId), ["parent"])
+  }
+
   func testScanSkipsInvalidHiddenAndGitContent() throws {
     try writeWorkflow(at: "good-flow", workflowId: "good-flow", description: "ok")
     try write(json: "not json", at: "broken-flow/workflow.json")

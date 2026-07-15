@@ -1,6 +1,10 @@
 #if os(macOS)
 import Foundation
 
+private enum MinimalDependencyCodingKeys: String, CodingKey {
+  case packageId
+}
+
 public struct RielaAppRemoteWorkflowListing: Equatable, Sendable {
   public enum Kind: Equatable, Sendable {
     case workflowDirectory
@@ -13,6 +17,7 @@ public struct RielaAppRemoteWorkflowListing: Equatable, Sendable {
   public var summary: String
   public var relativePath: String
   public var installSourceURL: URL
+  public var workflowDirectoryURL: URL
   public var kind: Kind
   public var packageName: String?
 
@@ -23,6 +28,7 @@ public struct RielaAppRemoteWorkflowListing: Equatable, Sendable {
     summary: String,
     relativePath: String,
     installSourceURL: URL,
+    workflowDirectoryURL: URL? = nil,
     kind: Kind,
     packageName: String? = nil
   ) {
@@ -32,6 +38,7 @@ public struct RielaAppRemoteWorkflowListing: Equatable, Sendable {
     self.summary = summary
     self.relativePath = relativePath
     self.installSourceURL = installSourceURL
+    self.workflowDirectoryURL = workflowDirectoryURL ?? installSourceURL
     self.kind = kind
     self.packageName = packageName
   }
@@ -55,6 +62,15 @@ public enum RielaAppWorkflowRepositoryCatalogScanner {
   private struct MinimalWorkflow: Decodable {
     var workflowId: String
     var description: String?
+    var steps: [MinimalStep]?
+  }
+
+  private struct MinimalStep: Decodable {
+    var transitions: [MinimalTransition]?
+  }
+
+  private struct MinimalTransition: Decodable {
+    var toWorkflowId: String?
   }
 
   private struct MinimalManifestWorkflow: Decodable {
@@ -68,6 +84,20 @@ public enum RielaAppWorkflowRepositoryCatalogScanner {
     var description: String?
     var workflow: MinimalManifestWorkflow?
     var workflows: [MinimalManifestWorkflow]?
+    var dependencies: [MinimalDependency]?
+  }
+
+  private struct MinimalDependency: Decodable {
+    var packageId: String
+
+    init(from decoder: Decoder) throws {
+      if let packageId = try? decoder.singleValueContainer().decode(String.self) {
+        self.packageId = packageId
+        return
+      }
+      let container = try decoder.container(keyedBy: MinimalDependencyCodingKeys.self)
+      self.packageId = try container.decode(String.self, forKey: .packageId)
+    }
   }
 
   public static func scan(repositoryRoot: URL, repositoryId: String) -> [RielaAppRemoteWorkflowListing] {
@@ -91,11 +121,44 @@ public enum RielaAppWorkflowRepositoryCatalogScanner {
       seen.insert(key)
       listings.append(listing)
     }
-    return listings.sorted {
+    let rootListings = rootWorkflowListings(from: listings)
+    return rootListings.sorted {
       if $0.title.localizedCaseInsensitiveCompare($1.title) != .orderedSame {
         return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
       }
       return $0.relativePath < $1.relativePath
+    }
+  }
+
+  private static func rootWorkflowListings(
+    from listings: [RielaAppRemoteWorkflowListing]
+  ) -> [RielaAppRemoteWorkflowListing] {
+    let listedWorkflowIds = Set(listings.map(\.workflowId))
+    let listedPackageNames = Set(listings.compactMap(\.packageName))
+    let calledWorkflowIds = Set(listings.flatMap { listing in
+      referencedWorkflowIds(in: listing.workflowDirectoryURL)
+    }).intersection(listedWorkflowIds)
+    let dependencyPackageNames = Set(listings.flatMap { listing in
+      guard listing.kind == .packageWorkflow,
+        let manifest = decodeManifest(at: listing.installSourceURL) else {
+        return [String]()
+      }
+      return (manifest.dependencies ?? []).map(\.packageId)
+    }).intersection(listedPackageNames)
+    return listings.filter { listing in
+      !calledWorkflowIds.contains(listing.workflowId)
+        && !dependencyPackageNames.contains(listing.packageName ?? "")
+    }
+  }
+
+  private static func referencedWorkflowIds(in workflowDirectory: URL) -> [String] {
+    let workflowURL = workflowDirectory.appendingPathComponent(workflowFileName)
+    guard let data = try? Data(contentsOf: workflowURL),
+      let workflow = try? JSONDecoder().decode(MinimalWorkflow.self, from: data) else {
+      return []
+    }
+    return (workflow.steps ?? []).flatMap { step in
+      (step.transitions ?? []).compactMap(\.toWorkflowId)
     }
   }
 
@@ -153,6 +216,7 @@ public enum RielaAppWorkflowRepositoryCatalogScanner {
       summary: summary,
       relativePath: relativePath(of: installSource, under: repositoryRoot),
       installSourceURL: installSource,
+      workflowDirectoryURL: workflowDirectory,
       kind: packageRoot == nil ? .workflowDirectory : .packageWorkflow,
       packageName: manifest?.name
     )

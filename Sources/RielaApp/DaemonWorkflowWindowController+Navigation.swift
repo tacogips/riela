@@ -12,6 +12,7 @@ extension DaemonWorkflowWindowController {
       sourcesOverviewView,
       workflowSourceDetailView,
       marketplaceOverviewView,
+      marketplaceWorkflowDetailView,
       assistantOverviewView,
       profilesOverviewView,
       profileDetailView
@@ -54,6 +55,10 @@ extension DaemonWorkflowWindowController {
       showSourcesPane()
       return
     }
+    if isShowingMarketplaceWorkflowDetail {
+      showMarketplacePane()
+      return
+    }
     if isShowingProfileDetail, profileDetailMode == .removalConfirmation, let selectedProfileDetailName {
       showProfileDetail(selectedProfileDetailName)
       return
@@ -80,6 +85,7 @@ extension DaemonWorkflowWindowController {
     isShowingAddInstanceSelection = false
     isShowingProfileDetail = false
     isShowingWorkflowSourceDetail = false
+    isShowingMarketplaceWorkflowDetail = false
     showContentPane(sourcesOverviewView)
     navigationTitleLabel.stringValue = "Workflow Sources"
     updateNavigationState()
@@ -93,8 +99,9 @@ extension DaemonWorkflowWindowController {
     isShowingAddInstanceSelection = false
     isShowingProfileDetail = false
     isShowingWorkflowSourceDetail = false
+    isShowingMarketplaceWorkflowDetail = false
     showContentPane(marketplaceOverviewView)
-    navigationTitleLabel.stringValue = "Marketplace"
+    navigationTitleLabel.stringValue = "Install Workflow"
     updateNavigationState()
     updateSidebarSelection()
     requestMarketplaceCatalogsIfNeeded()
@@ -107,6 +114,7 @@ extension DaemonWorkflowWindowController {
     isShowingAddInstanceSelection = false
     isShowingProfileDetail = false
     isShowingWorkflowSourceDetail = false
+    isShowingMarketplaceWorkflowDetail = false
     showContentPane(profilesOverviewView)
     navigationTitleLabel.stringValue = "Profiles"
     updateNavigationState()
@@ -119,6 +127,7 @@ extension DaemonWorkflowWindowController {
     isShowingAddInstanceSelection = false
     isShowingProfileDetail = false
     isShowingWorkflowSourceDetail = false
+    isShowingMarketplaceWorkflowDetail = false
     showContentPane(assistantOverviewView)
     navigationTitleLabel.stringValue = "Assistant"
     updateNavigationState()
@@ -129,6 +138,7 @@ extension DaemonWorkflowWindowController {
     navigationBackButton.isEnabled = isShowingAddInstanceSelection
       || isShowingInstanceDetail
       || isShowingWorkflowSourceDetail
+      || isShowingMarketplaceWorkflowDetail
       || activeSidebarPane != .instances
   }
 

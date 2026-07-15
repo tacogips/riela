@@ -69,7 +69,7 @@ public struct RielaAppAssistantSettings: Codable, Equatable, Sendable {
     vendor: RielaAppAssistantVendor = RielaAppAssistantVendor.defaultSelectableVendor,
     model: String = "",
     modelsByVendor: [String: String] = [:],
-    isFolded: Bool = false,
+    isFolded: Bool = true,
     messages: [RielaAppAssistantMessage] = []
   ) {
     self.assistance = assistance
@@ -87,7 +87,7 @@ public struct RielaAppAssistantSettings: Codable, Equatable, Sendable {
       ?? RielaAppAssistantVendor.defaultSelectableVendor
     model = try container.decodeIfPresent(String.self, forKey: .model) ?? ""
     modelsByVendor = try container.decodeIfPresent([String: String].self, forKey: .modelsByVendor) ?? [:]
-    isFolded = try container.decodeIfPresent(Bool.self, forKey: .isFolded) ?? false
+    isFolded = try container.decodeIfPresent(Bool.self, forKey: .isFolded) ?? true
     messages = try container.decodeIfPresent([RielaAppAssistantMessage].self, forKey: .messages) ?? []
   }
 

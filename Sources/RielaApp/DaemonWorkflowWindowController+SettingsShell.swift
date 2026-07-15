@@ -129,7 +129,14 @@ final class DaemonWorkflowSettingsRootView: NSView {
       subview.frame = statusBannerHost.bounds
     }
     for subview in assistantPanelHost.subviews {
-      subview.frame = assistantPanelHost.bounds
+      subview.frame = assistantPanelCollapsed
+        ? NSRect(
+          x: max(0, assistantPanelHost.bounds.width - RielaAssistantMiniChatStyle.foldedPanelWidth),
+          y: 0,
+          width: min(RielaAssistantMiniChatStyle.foldedPanelWidth, assistantPanelHost.bounds.width),
+          height: assistantPanelHost.bounds.height
+        )
+        : assistantPanelHost.bounds
     }
     sidebar.layoutSubtreeIfNeeded()
     toolbar.layoutSubtreeIfNeeded()

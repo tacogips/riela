@@ -76,6 +76,11 @@ extension DaemonWorkflowWindowController {
       rebuildSourcesOverviewViewForSearch()
       return
     }
+    if notification.object as? NSSearchField === marketplaceSearchField,
+      activeSidebarPane == .marketplace {
+      rebuildMarketplaceOverviewViewForSearch()
+      return
+    }
     if notification.object as? NSSearchField === instanceSearchField,
       activeSidebarPane == .instances,
       !isShowingInstanceDetail,

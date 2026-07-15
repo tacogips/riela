@@ -57,7 +57,6 @@ extension DaemonWorkflowWindowController {
       return
     }
     let settingsVendor = settings.vendor.settingsSelectableVendor
-    assistantPanelTitleLabel.stringValue = "Riela Assistant"
     assistantContextLabel.stringValue = ""
     populateAssistantVendorPopupIfNeeded()
     assistantSettingsVendorPopup.selectItem(withTitle: settingsVendor.displayName)
@@ -69,12 +68,13 @@ extension DaemonWorkflowWindowController {
     assistantTranscriptTextView?.scrollToEndOfDocument(nil)
     assistantTranscriptScrollView?.isHidden = settings.isFolded
     assistantInputStackView?.isHidden = settings.isFolded
-    assistantFoldButton.image = NSImage(
-      systemSymbolName: settings.isFolded ? "chevron.up" : "chevron.down",
-      accessibilityDescription: nil
+    RielaAssistantMiniChatStyle.updateFoldPresentation(
+      isFolded: settings.isFolded,
+      title: assistantPanelTitleLabel,
+      availability: assistantAvailabilityLabel,
+      context: assistantContextLabel,
+      button: assistantFoldButton
     )
-    assistantFoldButton.toolTip = settings.isFolded ? "Open assistant" : "Fold assistant"
-    assistantFoldButton.setAccessibilityLabel(settings.isFolded ? "Open Assistant" : "Fold Assistant")
     assistantAvailabilityLabel.stringValue = ""
     assistantSelectionSummaryLabel.stringValue = assistantSettingsSummary(for: settings)
     settingsRootView?.assistantPanelCollapsed = settings.isFolded

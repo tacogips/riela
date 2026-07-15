@@ -173,7 +173,12 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
     XCTAssertEqual(decoded.assistant.assistance, "Prefer concise help.")
     XCTAssertEqual(decoded.assistant.vendor, .openAIAPI)
     XCTAssertEqual(decoded.assistant.normalizedModel, RielaAppAssistantVendor.openAIAPI.defaultModel)
+    XCTAssertTrue(decoded.assistant.isFolded)
     XCTAssertEqual(decoded.assistant.messages, [])
+  }
+
+  func testAssistantDefaultsToFoldedSetupHelp() {
+    XCTAssertTrue(RielaAppAssistantSettings().isFolded)
   }
 
   func testStateProjectsMultipleManagedInstancesFromOneSourceWorkflow() {

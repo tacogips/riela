@@ -11,6 +11,7 @@ enum RielaAssistantMiniChatStyle {
   static let inputHeight: CGFloat = 42
   static let promptFieldHeight: CGFloat = 26
   static let sendButtonSize: CGFloat = 30
+  static let foldedPanelWidth: CGFloat = 50
 
   static func configurePanelContainer(_ container: NSView) {
     container.wantsLayer = true
@@ -137,7 +138,7 @@ enum RielaAssistantMiniChatStyle {
   }
 
   static func configurePromptField(_ field: NSTextField) {
-    field.placeholderString = "Ask for follow-up changes"
+    field.placeholderString = "Ask for help with Riela setup"
     field.setAccessibilityLabel("Assistant Message")
     field.isBezeled = false
     field.isBordered = false
@@ -161,6 +162,31 @@ enum RielaAssistantMiniChatStyle {
     button.bezelStyle = .toolbar
     button.isBordered = false
     button.contentTintColor = mutedTextColor
+  }
+
+  static func updateFoldPresentation(
+    isFolded: Bool,
+    title: NSTextField,
+    availability: NSTextField,
+    context: NSTextField,
+    button: NSButton
+  ) {
+    title.stringValue = "Riela Setup Assistant"
+    title.isHidden = isFolded
+    availability.isHidden = isFolded
+    context.isHidden = isFolded
+    button.image = NSImage(
+      systemSymbolName: isFolded ? "wrench.and.screwdriver.fill" : "chevron.down",
+      accessibilityDescription: nil
+    )
+    button.contentTintColor = isFolded ? .controlAccentColor : mutedTextColor
+    button.toolTip = isFolded ? "Help with Riela setup" : "Collapse Riela Setup Assistant"
+    button.setAccessibilityLabel(isFolded ? "Help with Riela setup" : "Collapse Riela Setup Assistant")
+    button.setAccessibilityHelp(
+      isFolded
+        ? "Expands the Riela Setup Assistant."
+        : "Collapses the Riela Setup Assistant into its setup-help icon."
+    )
   }
 
   static func configurePickerControls(vendorPopup: NSPopUpButton, modelField: NSPopUpButton) {

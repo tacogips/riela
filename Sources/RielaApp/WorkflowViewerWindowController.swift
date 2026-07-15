@@ -56,7 +56,7 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
   private let saveTemplateButton = NSButton(title: "", target: nil, action: nil)
   private let reloadTemplateButton = NSButton(title: "", target: nil, action: nil)
   let assistantPanelHost = NSView()
-  let assistantPanelTitleLabel = NSTextField(labelWithString: "Riela Assistant")
+  let assistantPanelTitleLabel = NSTextField(labelWithString: "Riela Setup Assistant")
   let assistantAvailabilityLabel = NSTextField(labelWithString: "")
   let assistantContextLabel = NSTextField(labelWithString: "")
   let assistantFoldButton = NSButton(title: "", target: nil, action: nil)
@@ -67,6 +67,8 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
   weak var assistantTranscriptScrollView: NSScrollView?
   weak var assistantInputStackView: NSStackView?
   var assistantPanelHeightConstraint: NSLayoutConstraint?
+  var assistantPanelExpandedWidthConstraint: NSLayoutConstraint?
+  var assistantPanelFoldedWidthConstraint: NSLayoutConstraint?
   let timelineDateFormatter: DateFormatter = {
     let formatter = DateFormatter()
     formatter.dateStyle = .short

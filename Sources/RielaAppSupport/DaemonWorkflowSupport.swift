@@ -250,6 +250,7 @@ public struct RielaAppDaemonWorkflowState: Codable, Equatable, Sendable {
   public var preferences: [String: RielaAppDaemonWorkflowPreference]
   public var workflowDirectories: [String]
   public var projectDirectories: [String]
+  public var workflowRepositories: [RielaAppWorkflowRepositoryReference]
   public var assistant: RielaAppAssistantSettings
 
   private enum CodingKeys: String, CodingKey {
@@ -257,6 +258,7 @@ public struct RielaAppDaemonWorkflowState: Codable, Equatable, Sendable {
     case preferences
     case workflowDirectories
     case projectDirectories
+    case workflowRepositories
     case assistant
   }
 
@@ -265,12 +267,14 @@ public struct RielaAppDaemonWorkflowState: Codable, Equatable, Sendable {
     preferences: [String: RielaAppDaemonWorkflowPreference] = [:],
     workflowDirectories: [String] = [],
     projectDirectories: [String] = [],
+    workflowRepositories: [RielaAppWorkflowRepositoryReference] = [],
     assistant: RielaAppAssistantSettings = RielaAppAssistantSettings()
   ) {
     self.version = version
     self.preferences = preferences
     self.workflowDirectories = workflowDirectories
     self.projectDirectories = projectDirectories
+    self.workflowRepositories = workflowRepositories
     self.assistant = assistant
   }
 
@@ -293,8 +297,28 @@ public struct RielaAppDaemonWorkflowState: Codable, Equatable, Sendable {
     ) ?? [:]
     workflowDirectories = try container.decodeIfPresent([String].self, forKey: .workflowDirectories) ?? []
     projectDirectories = try container.decodeIfPresent([String].self, forKey: .projectDirectories) ?? []
+    workflowRepositories = try container.decodeIfPresent(
+      [RielaAppWorkflowRepositoryReference].self,
+      forKey: .workflowRepositories
+    ) ?? []
     assistant = try container.decodeIfPresent(RielaAppAssistantSettings.self, forKey: .assistant)
       ?? RielaAppAssistantSettings()
+  }
+
+  public func containsWorkflowRepository(id: String) -> Bool {
+    workflowRepositories.contains { $0.id == id }
+  }
+
+  public mutating func addWorkflowRepository(_ repository: RielaAppWorkflowRepositoryReference) {
+    guard !containsWorkflowRepository(id: repository.id) else {
+      return
+    }
+    workflowRepositories.append(repository)
+    workflowRepositories.sort { $0.id.localizedCaseInsensitiveCompare($1.id) == .orderedAscending }
+  }
+
+  public mutating func removeWorkflowRepository(id: String) {
+    workflowRepositories.removeAll { $0.id == id }
   }
 
   public func containsWorkflowDirectory(_ path: String) -> Bool {

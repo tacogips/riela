@@ -49,7 +49,6 @@ extension WorkflowViewerWindowController {
 
   func updateAssistantPanel() {
     let settings = assistantSettings
-    assistantPanelTitleLabel.stringValue = "Riela Assistant"
     assistantContextLabel.stringValue = ""
     assistantTranscriptTextView?.textStorage?.setAttributedString(
       RielaAssistantMiniChatStyle.transcriptAttributedString(from: settings.messages)
@@ -57,18 +56,21 @@ extension WorkflowViewerWindowController {
     assistantTranscriptTextView?.scrollToEndOfDocument(nil)
     assistantTranscriptScrollView?.isHidden = settings.isFolded
     assistantInputStackView?.isHidden = settings.isFolded
-    assistantFoldButton.image = NSImage(
-      systemSymbolName: settings.isFolded ? "chevron.up" : "chevron.down",
-      accessibilityDescription: nil
+    RielaAssistantMiniChatStyle.updateFoldPresentation(
+      isFolded: settings.isFolded,
+      title: assistantPanelTitleLabel,
+      availability: assistantAvailabilityLabel,
+      context: assistantContextLabel,
+      button: assistantFoldButton
     )
-    assistantFoldButton.toolTip = settings.isFolded ? "Open assistant" : "Fold assistant"
-    assistantFoldButton.setAccessibilityLabel(settings.isFolded ? "Open Assistant" : "Fold Assistant")
     assistantClearButton.isEnabled = !settings.messages.isEmpty
     assistantClearButton.isHidden = settings.isFolded
     assistantAvailabilityLabel.stringValue = ""
     assistantPanelHeightConstraint?.constant = settings.isFolded
       ? AssistantLayout.foldedHeight
       : AssistantLayout.expandedHeight
+    assistantPanelExpandedWidthConstraint?.isActive = !settings.isFolded
+    assistantPanelFoldedWidthConstraint?.isActive = settings.isFolded
     window?.contentView?.layoutSubtreeIfNeeded()
   }
 

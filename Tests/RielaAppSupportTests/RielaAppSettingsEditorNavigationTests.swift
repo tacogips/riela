@@ -327,6 +327,7 @@ final class RielaAppSettingsEditorNavigationTests: XCTestCase {
       assistant: RielaAppAssistantSettings(
         vendor: .openAIAPI,
         model: "gpt-5",
+        isFolded: false,
         messages: [RielaAppAssistantMessage(role: .assistant, content: "Ready.")]
       )
     )

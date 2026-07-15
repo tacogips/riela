@@ -46,7 +46,18 @@ final class RielaAppWorkflowViewerSurfaceTests: XCTestCase {
     controller.window?.layoutIfNeeded()
 
     let root = try XCTUnwrap(controller.window?.contentView)
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Riela Assistant" })
+    XCTAssertEqual(controller.assistantFoldButton.accessibilityLabel(), "Help with Riela setup")
+    XCTAssertEqual(controller.assistantFoldButton.toolTip, "Help with Riela setup")
+    XCTAssertTrue(controller.assistantPanelTitleLabel.isHidden)
+    XCTAssertTrue(controller.assistantTranscriptScrollView?.isHidden == true)
+    XCTAssertEqual(controller.assistantPanelHost.subviews.first?.frame.width, RielaAssistantMiniChatStyle.foldedPanelWidth)
+
+    controller.toggleAssistantFolded()
+    controller.window?.layoutIfNeeded()
+
+    XCTAssertEqual(savedSettings?.isFolded, false)
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Riela Setup Assistant" })
+    XCTAssertEqual(controller.assistantPromptField.placeholderString, "Ask for help with Riela setup")
     XCTAssertTrue(controller.assistantTranscriptTextView?.string.contains("Ready.") == true)
 
     controller.assistantPromptField.stringValue = "Explain this workflow"
@@ -65,6 +76,7 @@ final class RielaAppWorkflowViewerSurfaceTests: XCTestCase {
       workflowDirectory: "/workflows/demo",
       sessionStoreRoot: nil,
       assistantSettings: RielaAppAssistantSettings(
+        isFolded: false,
         messages: [RielaAppAssistantMessage(role: .assistant, content: "Ready.")]
       )
     )

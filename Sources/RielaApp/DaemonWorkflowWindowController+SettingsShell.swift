@@ -129,7 +129,14 @@ final class DaemonWorkflowSettingsRootView: NSView {
       subview.frame = statusBannerHost.bounds
     }
     for subview in assistantPanelHost.subviews {
-      subview.frame = assistantPanelHost.bounds
+      subview.frame = assistantPanelCollapsed
+        ? NSRect(
+          x: max(0, assistantPanelHost.bounds.width - RielaAssistantMiniChatStyle.foldedPanelWidth),
+          y: 0,
+          width: min(RielaAssistantMiniChatStyle.foldedPanelWidth, assistantPanelHost.bounds.width),
+          height: assistantPanelHost.bounds.height
+        )
+        : assistantPanelHost.bounds
     }
     sidebar.layoutSubtreeIfNeeded()
     toolbar.layoutSubtreeIfNeeded()
@@ -297,7 +304,13 @@ extension DaemonWorkflowWindowController {
   }
 
   private func buildSidebar() -> NSView {
-    for button in [sidebarInstancesButton, sidebarSourcesButton, sidebarAssistantButton, sidebarProfilesButton] {
+    for button in [
+      sidebarInstancesButton,
+      sidebarSourcesButton,
+      sidebarMarketplaceButton,
+      sidebarAssistantButton,
+      sidebarProfilesButton
+    ] {
       button.target = self
       button.bezelStyle = .regularSquare
       button.isBordered = false
@@ -311,6 +324,8 @@ extension DaemonWorkflowWindowController {
     sidebarInstancesButton.action = #selector(showInstancesPane)
     sidebarSourcesButton.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
     sidebarSourcesButton.action = #selector(showSourcesPane)
+    sidebarMarketplaceButton.image = NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: nil)
+    sidebarMarketplaceButton.action = #selector(showMarketplacePane)
     sidebarAssistantButton.image = NSImage(systemSymbolName: "bubble.left.and.text.bubble.right", accessibilityDescription: nil)
     sidebarAssistantButton.action = #selector(showAssistantPane)
     sidebarProfilesButton.image = NSImage(systemSymbolName: "person.crop.circle", accessibilityDescription: nil)
@@ -323,6 +338,7 @@ extension DaemonWorkflowWindowController {
       appTitle,
       sidebarInstancesButton,
       sidebarSourcesButton,
+      sidebarMarketplaceButton,
       sidebarAssistantButton,
       sidebarProfilesButton
     ])
@@ -340,6 +356,7 @@ extension DaemonWorkflowWindowController {
       appTitle.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
       sidebarInstancesButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
       sidebarSourcesButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
+      sidebarMarketplaceButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
       sidebarAssistantButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
       sidebarProfilesButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor)
     ])

@@ -191,8 +191,8 @@ extension RielaApp {
 
   private func assistantSystemPrompt(workingDirectory: String) -> String {
     [
-      "You are Riela Assistant inside RielaApp.",
-      "Your primary job is to help users create Riela workflow instances in RielaApp.",
+      "You are the Riela Setup Assistant inside RielaApp.",
+      "Your primary job is to help users set up Riela and create or configure Riela workflow instances in RielaApp.",
       "Only work for the active RielaApp profile named '\(daemonProfileName.rawValue)'.",
       "Treat '\(workingDirectory)' as the only allowed working directory.",
       "Do not suggest or perform file operations outside that directory or this profile's workflow/package state.",

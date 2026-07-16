@@ -29,6 +29,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   /// each dispatched callee run increments it so runaway workflow-call cycles
   /// fail loudly instead of recursing without bound.
   public var crossWorkflowDispatchDepth: Int
+  var stopBeforeStepId: String?
 
   public init(
     workflow: WorkflowDefinition,
@@ -50,7 +51,8 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     agentSilenceMonitorIntervalMs: Int = 1_000,
     effectiveInstance: EffectiveWorkflowInstance? = nil,
     eventHandler: WorkflowRunEventHandler? = nil,
-    crossWorkflowDispatchDepth: Int = 0
+    crossWorkflowDispatchDepth: Int = 0,
+    stopBeforeStepId: String? = nil
   ) {
     self.workflow = workflow
     self.nodePayloads = nodePayloads
@@ -72,6 +74,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     self.effectiveInstance = effectiveInstance
     self.eventHandler = eventHandler
     self.crossWorkflowDispatchDepth = crossWorkflowDispatchDepth
+    self.stopBeforeStepId = stopBeforeStepId
   }
 }
 
@@ -288,6 +291,26 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           )
           publishedTransitions += 1
         }
+        if let dispatch = publishResult.fanoutDispatch {
+          let fanoutJoin = try await dispatchFanout(
+            directive: dispatch,
+            parentSessionId: session.sessionId,
+            parentStepId: step.id,
+            request: effectiveRequest
+          )
+          effectiveRequest.variables["fanoutJoin"] = .object(fanoutJoin)
+          publishedTransitions += 1
+          currentStepId = dispatch.joinStepId
+          continue
+        }
+        if let stoppedRootOutput = try await branchRootOutputIfStoppingBeforeStep(
+          publishResult: publishResult,
+          request: effectiveRequest
+        ) {
+          rootOutput = stoppedRootOutput
+          currentStepId = nil
+          continue
+        }
         currentStepId = publishResult.nextStepId
         continue
       }
@@ -325,6 +348,26 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           request: effectiveRequest
         )
         publishedTransitions += 1
+      }
+      if let dispatch = publishResult.fanoutDispatch {
+        let fanoutJoin = try await dispatchFanout(
+          directive: dispatch,
+          parentSessionId: session.sessionId,
+          parentStepId: step.id,
+          request: effectiveRequest
+        )
+        effectiveRequest.variables["fanoutJoin"] = .object(fanoutJoin)
+        publishedTransitions += 1
+        currentStepId = dispatch.joinStepId
+        continue
+      }
+      if let stoppedRootOutput = try await branchRootOutputIfStoppingBeforeStep(
+        publishResult: publishResult,
+        request: effectiveRequest
+      ) {
+        rootOutput = stoppedRootOutput
+        currentStepId = nil
+        continue
       }
       currentStepId = publishResult.nextStepId
     }

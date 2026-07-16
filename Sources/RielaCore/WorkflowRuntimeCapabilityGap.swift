@@ -87,31 +87,38 @@ public extension DeterministicWorkflowRunner {
     supportsCrossWorkflowDispatch: Bool = false
   ) -> [WorkflowRuntimeCapabilityGap] {
     var gaps: [WorkflowRuntimeCapabilityGap] = []
-    if maxConcurrency != nil {
-      gaps.append(WorkflowRuntimeCapabilityGap(
-        path: "run.maxConcurrency",
-        message: "maxConcurrency is reserved for fanout execution and is not supported yet"
-      ))
-    }
+    _ = maxConcurrency
     let reachableStepIds = reachableSteps(in: workflow)
     for step in workflow.steps where reachableStepIds.contains(step.id) {
       for transition in step.transitions ?? [] {
         let severity: WorkflowValidationSeverity = isLabeledTransition(transition) ? .warning : .error
-        if transition.fanout != nil {
-          gaps.append(WorkflowRuntimeCapabilityGap(
-            severity: severity,
-            path: "workflow.steps.\(step.id).transitions.fanout",
-            message: "step '\(step.id)' uses fanout transitions, which this runner does not support yet"
-          ))
+        if let fanout = transition.fanout {
+          if transition.toWorkflowId != nil && !supportsCrossWorkflowDispatch {
+            gaps.append(WorkflowRuntimeCapabilityGap(
+              severity: severity,
+              path: "workflow.steps.\(step.id).transitions.fanout",
+              message: "step '\(step.id)' uses cross-workflow fanout dispatch, but this run has no callee workflow resolver wired"
+            ))
+          }
+          if fanout.writeOwnership?.mode == .isolatedWorkspace {
+            gaps.append(WorkflowRuntimeCapabilityGap(
+              severity: severity,
+              path: "workflow.steps.\(step.id).transitions.fanout.writeOwnership",
+              message: "step '\(step.id)' uses fanout writeOwnership isolated-workspace, which this runner does not support yet"
+            ))
+          }
         }
-        if transition.toWorkflowId != nil && transition.resumeStepId == nil {
+        if transition.toWorkflowId != nil && transition.resumeStepId == nil && transition.fanout == nil {
           gaps.append(WorkflowRuntimeCapabilityGap(
             severity: severity,
             path: "workflow.steps.\(step.id).transitions.toWorkflowId",
             message: "step '\(step.id)' uses cross-workflow transitions, which this runner does not support yet"
           ))
         }
-        if transition.toWorkflowId != nil && transition.resumeStepId != nil && !supportsCrossWorkflowDispatch {
+        if transition.toWorkflowId != nil &&
+          transition.resumeStepId != nil &&
+          transition.fanout == nil &&
+          !supportsCrossWorkflowDispatch {
           gaps.append(WorkflowRuntimeCapabilityGap(
             severity: .warning,
             path: "workflow.steps.\(step.id).transitions.toWorkflowId",

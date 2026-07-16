@@ -17,13 +17,6 @@ final class WorkflowRunnerCapabilityPreflightTests: XCTestCase {
       (
         WorkflowStepTransition(toStepId: "step", resumeStepId: "resume"),
         "step 'step' uses resume-step transitions, which this runner does not support yet"
-      ),
-      (
-        WorkflowStepTransition(
-          toStepId: "step",
-          fanout: WorkflowStepFanout(groupId: "group", itemsFrom: "/items", joinStepId: "step")
-        ),
-        "step 'step' uses fanout transitions, which this runner does not support yet"
       )
     ]
     for (transition, message) in unsupportedTransitions {
@@ -70,6 +63,53 @@ final class WorkflowRunnerCapabilityPreflightTests: XCTestCase {
     XCTAssertEqual(diagnostics.count, 1)
     XCTAssertEqual(diagnostics.first?.severity, .warning)
     XCTAssertEqual(diagnostics.first?.path, "workflow.steps.step.transitions.toWorkflowId")
+  }
+
+  func testSupportedFanoutDoesNotReportCapabilityGap() {
+    let workflow = workflow(transitions: [
+      WorkflowStepTransition(
+        toStepId: "branch",
+        fanout: WorkflowStepFanout(
+          groupId: "group",
+          itemsFrom: "/items",
+          joinStepId: "join",
+          writeOwnership: WorkflowFanoutWriteOwnership(mode: .readOnly)
+        )
+      )
+    ], extraSteps: [
+      WorkflowStepRef(id: "branch", nodeId: "node", transitions: [WorkflowStepTransition(toStepId: "join")]),
+      WorkflowStepRef(id: "join", nodeId: "node")
+    ])
+
+    let diagnostics = DeterministicWorkflowRunner.unsupportedFeatures(in: workflow, maxConcurrency: 2).map(\.diagnostic)
+
+    XCTAssertEqual(diagnostics, [])
+  }
+
+  func testIsolatedWorkspaceFanoutReportsSpecificCapabilityGap() {
+    let workflow = workflow(transitions: [
+      WorkflowStepTransition(
+        toStepId: "branch",
+        fanout: WorkflowStepFanout(
+          groupId: "group",
+          itemsFrom: "/items",
+          joinStepId: "join",
+          writeOwnership: WorkflowFanoutWriteOwnership(mode: .isolatedWorkspace)
+        )
+      )
+    ], extraSteps: [
+      WorkflowStepRef(id: "branch", nodeId: "node", transitions: [WorkflowStepTransition(toStepId: "join")]),
+      WorkflowStepRef(id: "join", nodeId: "node")
+    ])
+
+    let diagnostics = DeterministicWorkflowRunner.unsupportedFeatures(in: workflow).map(\.diagnostic)
+
+    XCTAssertEqual(diagnostics.count, 1)
+    XCTAssertEqual(diagnostics.first?.path, "workflow.steps.step.transitions.fanout.writeOwnership")
+    XCTAssertEqual(
+      diagnostics.first?.message,
+      "step 'step' uses fanout writeOwnership isolated-workspace, which this runner does not support yet"
+    )
   }
 
   func testCrossWorkflowDispatchSimulationRunnerPassesPreflightAndResumesLocally() async throws {
@@ -171,25 +211,18 @@ final class WorkflowRunnerCapabilityPreflightTests: XCTestCase {
     XCTAssertFalse(DeterministicWorkflowRunner.unsupportedFeatures(in: workflow).isEmpty)
   }
 
-  func testMaxConcurrencyFailsPreflightBeforeSessionCreation() async throws {
+  func testMaxConcurrencyIsAcceptedWithoutPreflightFailure() async throws {
     let store = InMemoryWorkflowRuntimeStore()
     let runner = DeterministicWorkflowRunner(store: store, adapter: StaticAdapter(output: output()))
 
-    do {
-      _ = try await runner.run(DeterministicWorkflowRunRequest(
-        workflow: workflow(),
-        nodePayloads: ["node": payload()],
-        maxConcurrency: 2
-      ))
-      XCTFail("expected preflight failure")
-    } catch DeterministicWorkflowRunnerError.invalidWorkflow(let message) {
-      XCTAssertEqual(
-        message,
-        "run.maxConcurrency: maxConcurrency is reserved for fanout execution and is not supported yet"
-      )
-    }
+    _ = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: workflow(),
+      nodePayloads: ["node": payload()],
+      maxConcurrency: 2
+    ))
+
     let latestSession = await store.latestSession(workflowId: "runner")
-    XCTAssertNil(latestSession)
+    XCTAssertEqual(latestSession?.status, .completed)
   }
 
   private func request(workflow: WorkflowDefinition) -> DeterministicWorkflowRunRequest {
@@ -199,13 +232,16 @@ final class WorkflowRunnerCapabilityPreflightTests: XCTestCase {
     )
   }
 
-  private func workflow(transitions: [WorkflowStepTransition]? = nil) -> WorkflowDefinition {
+  private func workflow(
+    transitions: [WorkflowStepTransition]? = nil,
+    extraSteps: [WorkflowStepRef] = []
+  ) -> WorkflowDefinition {
     WorkflowDefinition(
       workflowId: "runner",
       defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
       entryStepId: "step",
       nodeRegistry: [WorkflowNodeRegistryRef(id: "node", nodeFile: "nodes/node.json")],
-      steps: [WorkflowStepRef(id: "step", nodeId: "node", transitions: transitions)],
+      steps: [WorkflowStepRef(id: "step", nodeId: "node", transitions: transitions)] + extraSteps,
       nodes: [WorkflowNodeRef(id: "step", nodeFile: "nodes/node.json")]
     )
   }

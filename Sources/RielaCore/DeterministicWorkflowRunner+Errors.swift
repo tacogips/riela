@@ -11,6 +11,7 @@ public enum DeterministicWorkflowRunnerError: Error, Equatable, Sendable {
   case rerunValidation(String)
   case resumeValidation(String)
   case crossWorkflowDispatchFailed(workflowId: String, reason: String)
+  case fanoutDispatchFailed(groupId: String, reason: String)
 }
 
 func errorMessage(_ error: WorkflowSessionEntryValidationError) -> String {

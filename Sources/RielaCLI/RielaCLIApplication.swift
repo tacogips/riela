@@ -462,7 +462,7 @@ func workflowRunHelpText(target: String?) -> String {
     --session-store <path>         Persist CLI session records under this store.
     --artifact-root <path>         Write runtime artifacts under this root.
     --max-steps <n>
-    --max-concurrency <n>          Reserved for fanout execution; not supported yet.
+    --max-concurrency <n>          Cap concurrent fanout branch execution.
     --max-loop-iterations <n>
     --default-timeout-ms <n>
     --timeout-ms <n>

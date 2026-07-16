@@ -196,8 +196,7 @@ struct ParsedWorkflowOptions {
       maxSteps = try positiveInt(token, readOptionValue(token, tokens: tokens, index: &index))
     case "--max-concurrency":
       try requireRunOption(token, allowRunOptions: allowRunOptions)
-      _ = try positiveInt(token, readOptionValue(token, tokens: tokens, index: &index))
-      throw CLIUsageError("--max-concurrency is reserved for fanout execution and is not supported yet")
+      maxConcurrency = try positiveInt(token, readOptionValue(token, tokens: tokens, index: &index))
     case "--max-loop-iterations":
       try requireRunOption(token, allowRunOptions: allowRunOptions)
       maxLoopIterations = try positiveInt(token, readOptionValue(token, tokens: tokens, index: &index))

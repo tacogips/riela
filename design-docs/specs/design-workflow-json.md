@@ -170,8 +170,9 @@ Optional:
 - `prompts.rielaPromptTemplate: string`
 - `prompts.workerSystemPromptTemplate: string`
 - `defaults.maxLoopIterations` (defaults to the runtime default when omitted)
-- `defaults.fanoutConcurrency` (defaults to `20` when omitted; per-transition
-  fanout may set a lower or equal effective bound)
+- `defaults.fanoutConcurrency` (legacy/static authoring default only; local
+  live fanout execution uses the `StepTransitionFanout.concurrency` precedence
+  documented below)
 - `defaults.timeoutPolicy`
 - `defaults.containerRuntime` (defaults to the runtime container runner default when omitted)
 - `defaults.selfImprove` (dedicated retrospective self-improve defaults; see
@@ -610,7 +611,11 @@ Rules:
 
 - `itemsFrom` is a JSON Pointer into the source step output payload and must resolve to an array at runtime
 - each source item creates a distinct branch work item, so the same target step may execute once per item without queue dedupe collapsing the branches
-- `concurrency` defaults to `defaults.fanoutConcurrency` or `20` and must stay within the runtime maximum fanout concurrency, including a run-level `maxConcurrency` cap when provided
+- `concurrency` defaults to the source item count when omitted; a run-level
+  `maxConcurrency` value is an optional command-level cap when present and
+  lower than the per-transition-or-item-count bound.
+  `defaults.fanoutConcurrency` is not the local live fanout default for this
+  execution path.
 - `joinStepId` must reference a current-workflow step and is queued once after all required branch work succeeds
 - for cross-workflow fanout, authored `resumeStepId` remains required and must equal `fanout.joinStepId`
 - branch outputs are aggregated in source item order and delivered to the join step through runtime-owned communication artifacts

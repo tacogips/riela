@@ -420,14 +420,15 @@ final class CommandParsingTests: XCTestCase {
     }
   }
 
-  func testRejectsReservedMaxConcurrencyOption() {
-    XCTAssertThrowsError(try RielaArgumentParser().parse([
+  func testParsesMaxConcurrencyOption() throws {
+    let command = try RielaArgumentParser().parse([
       "workflow", "run", "demo", "--max-concurrency", "4"
-    ])) { error in
-      XCTAssertEqual(
-        (error as? CLIUsageError)?.message,
-        "--max-concurrency is reserved for fanout execution and is not supported yet"
-      )
+    ])
+
+    if case let .workflow(.run(options)) = command {
+      XCTAssertEqual(options.maxConcurrency, 4)
+    } else {
+      XCTFail("expected workflow run command")
     }
   }
 

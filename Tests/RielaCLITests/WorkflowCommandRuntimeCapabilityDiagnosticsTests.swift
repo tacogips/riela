@@ -28,7 +28,12 @@ extension WorkflowCommandTests {
           "transitions": [
             {
               "toStepId": "worker",
-              "fanout": { "groupId": "items", "itemsFrom": "/items", "joinStepId": "join" }
+              "fanout": {
+                "groupId": "items",
+                "itemsFrom": "/items",
+                "joinStepId": "join",
+                "writeOwnership": { "mode": "isolated-workspace" }
+              }
             }
           ]
         },
@@ -58,8 +63,8 @@ extension WorkflowCommandTests {
     let validation = try decodeJSON(WorkflowValidationCommandResult.self, from: result.stdout)
     XCTAssertFalse(validation.valid)
     XCTAssertTrue(validation.diagnostics.contains { diagnostic in
-      diagnostic.path == "workflow.steps.start.transitions.fanout" &&
-        diagnostic.message == "step 'start' uses fanout transitions, which this runner does not support yet"
+      diagnostic.path == "workflow.steps.start.transitions.fanout.writeOwnership" &&
+        diagnostic.message == "step 'start' uses fanout writeOwnership isolated-workspace, which this runner does not support yet"
     })
 
     let inspect = await RielaCLIApplication().run([
@@ -72,8 +77,8 @@ extension WorkflowCommandTests {
     XCTAssertTrue(inspect.stderr.isEmpty)
     let summary = try decodeJSON(WorkflowInspectionSummary.self, from: inspect.stdout)
     XCTAssertTrue(summary.runtimeCapabilityGaps.contains { diagnostic in
-      diagnostic.path == "workflow.steps.start.transitions.fanout" &&
-        diagnostic.message == "step 'start' uses fanout transitions, which this runner does not support yet"
+      diagnostic.path == "workflow.steps.start.transitions.fanout.writeOwnership" &&
+        diagnostic.message == "step 'start' uses fanout writeOwnership isolated-workspace, which this runner does not support yet"
     })
   }
 

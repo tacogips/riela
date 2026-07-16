@@ -82,6 +82,58 @@ public struct WorkflowCrossWorkflowDispatchDirective: Equatable, Sendable {
   }
 }
 
+/// Instruction produced when a live run selects a local fanout transition: the
+/// runner must execute the branch sub-paths and deliver the joined result to
+/// `joinStepId`.
+public struct WorkflowFanoutDispatchDirective: Equatable, Sendable {
+  public var groupId: String
+  public var workflowId: String?
+  public var sourceStepId: String
+  public var targetStepId: String
+  public var joinStepId: String
+  public var transitionLabel: String?
+  public var sourceStepExecutionId: String
+  public var itemsFrom: String
+  public var itemVariable: String?
+  public var concurrency: Int?
+  public var failurePolicy: WorkflowFanoutFailurePolicy
+  public var resultOrder: WorkflowFanoutResultOrder
+  public var writeOwnership: WorkflowFanoutWriteOwnership?
+  public var sourcePayload: JSONObject
+
+  public init(
+    groupId: String,
+    workflowId: String? = nil,
+    sourceStepId: String,
+    targetStepId: String,
+    joinStepId: String,
+    transitionLabel: String? = nil,
+    sourceStepExecutionId: String,
+    itemsFrom: String,
+    itemVariable: String? = nil,
+    concurrency: Int? = nil,
+    failurePolicy: WorkflowFanoutFailurePolicy = .failFast,
+    resultOrder: WorkflowFanoutResultOrder = .input,
+    writeOwnership: WorkflowFanoutWriteOwnership? = nil,
+    sourcePayload: JSONObject
+  ) {
+    self.groupId = groupId
+    self.workflowId = workflowId
+    self.sourceStepId = sourceStepId
+    self.targetStepId = targetStepId
+    self.joinStepId = joinStepId
+    self.transitionLabel = transitionLabel
+    self.sourceStepExecutionId = sourceStepExecutionId
+    self.itemsFrom = itemsFrom
+    self.itemVariable = itemVariable
+    self.concurrency = concurrency
+    self.failurePolicy = failurePolicy
+    self.resultOrder = resultOrder
+    self.writeOwnership = writeOwnership
+    self.sourcePayload = sourcePayload
+  }
+}
+
 public struct WorkflowPublicationResult: Equatable, Sendable {
   public var session: WorkflowSession
   public var stepExecution: WorkflowStepExecution
@@ -89,6 +141,7 @@ public struct WorkflowPublicationResult: Equatable, Sendable {
   public var nextStepId: String?
   public var rootOutput: JSONObject?
   public var crossWorkflowDispatch: WorkflowCrossWorkflowDispatchDirective?
+  public var fanoutDispatch: WorkflowFanoutDispatchDirective?
 
   public init(
     session: WorkflowSession,
@@ -96,7 +149,8 @@ public struct WorkflowPublicationResult: Equatable, Sendable {
     publishedMessages: [WorkflowMessageRecord],
     nextStepId: String? = nil,
     rootOutput: JSONObject? = nil,
-    crossWorkflowDispatch: WorkflowCrossWorkflowDispatchDirective? = nil
+    crossWorkflowDispatch: WorkflowCrossWorkflowDispatchDirective? = nil,
+    fanoutDispatch: WorkflowFanoutDispatchDirective? = nil
   ) {
     self.session = session
     self.stepExecution = stepExecution
@@ -104,6 +158,7 @@ public struct WorkflowPublicationResult: Equatable, Sendable {
     self.nextStepId = nextStepId
     self.rootOutput = rootOutput
     self.crossWorkflowDispatch = crossWorkflowDispatch
+    self.fanoutDispatch = fanoutDispatch
   }
 }
 
@@ -306,9 +361,15 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       handoffPayload: payload,
       sourceStepExecutionId: recordedExecution.executionId
     )
+    let fanoutDispatch = liveFanoutDispatchDirective(
+      in: publishableTransitions,
+      sourceStepId: request.stepId,
+      sourcePayload: payload,
+      sourceStepExecutionId: recordedExecution.executionId
+    )
 
     let messageInputs = publishableTransitions
-      .filter { !isLiveCrossWorkflowDispatchTransition($0) }
+      .filter { !isLiveCrossWorkflowDispatchTransition($0) && !isLiveFanoutDispatchTransition($0) }
       .map { transition in
         WorkflowMessageAppendInput(
           workflowExecutionId: request.sessionId,
@@ -360,7 +421,8 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       publishedMessages: publishedMessages,
       nextStepId: nextStepId,
       rootOutput: publishesRootOutput ? payload : nil,
-      crossWorkflowDispatch: liveDispatch
+      crossWorkflowDispatch: liveDispatch,
+      fanoutDispatch: fanoutDispatch
     )
   }
 
@@ -431,14 +493,14 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       if transition.toWorkflowId != nil && transition.resumeStepId == nil {
         return "cross-workflow transitions are not supported by this in-memory publisher"
       }
-      if transition.toWorkflowId != nil && !simulatesCrossWorkflowDispatch && !supportsLiveCrossWorkflowDispatch {
+      if transition.toWorkflowId != nil &&
+        !simulatesCrossWorkflowDispatch &&
+        !supportsLiveCrossWorkflowDispatch &&
+        transition.fanout == nil {
         return "cross-workflow dispatch requires a callee workflow resolver; live runs without one cannot dispatch '\(transition.toWorkflowId ?? "")'"
       }
       if transition.toWorkflowId == nil && transition.resumeStepId != nil {
         return "resume-step transitions are not supported by this in-memory publisher"
-      }
-      if transition.fanout != nil {
-        return "fanout transitions are not supported by this in-memory publisher"
       }
     }
     return nil
@@ -452,7 +514,12 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
     !simulatesCrossWorkflowDispatch &&
       supportsLiveCrossWorkflowDispatch &&
       transition.toWorkflowId != nil &&
-      transition.resumeStepId != nil
+      transition.resumeStepId != nil &&
+      transition.fanout == nil
+  }
+
+  private func isLiveFanoutDispatchTransition(_ transition: WorkflowStepTransition) -> Bool {
+    transition.fanout != nil
   }
 
   private func liveCrossWorkflowDispatchDirective(
@@ -472,6 +539,34 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       transitionLabel: transition.label,
       handoffPayload: handoffPayload,
       sourceStepExecutionId: sourceStepExecutionId
+    )
+  }
+
+  private func liveFanoutDispatchDirective(
+    in publishableTransitions: [WorkflowStepTransition],
+    sourceStepId: String,
+    sourcePayload: JSONObject,
+    sourceStepExecutionId: String
+  ) -> WorkflowFanoutDispatchDirective? {
+    guard let transition = publishableTransitions.first(where: isLiveFanoutDispatchTransition),
+          let fanout = transition.fanout else {
+      return nil
+    }
+    return WorkflowFanoutDispatchDirective(
+      groupId: fanout.groupId,
+      workflowId: transition.toWorkflowId,
+      sourceStepId: sourceStepId,
+      targetStepId: transition.toStepId,
+      joinStepId: fanout.joinStepId,
+      transitionLabel: transition.label,
+      sourceStepExecutionId: sourceStepExecutionId,
+      itemsFrom: fanout.itemsFrom,
+      itemVariable: fanout.itemVariable,
+      concurrency: fanout.concurrency,
+      failurePolicy: fanout.failurePolicy ?? .failFast,
+      resultOrder: fanout.resultOrder ?? .input,
+      writeOwnership: fanout.writeOwnership,
+      sourcePayload: sourcePayload
     )
   }
 }

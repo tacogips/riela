@@ -454,6 +454,59 @@ final class RuntimePublicationTests: XCTestCase {
     XCTAssertEqual(listedMessages.first?.payload, ["answer": .string("ok")])
   }
 
+  func testFanoutTransitionEmitsDispatchDirectiveWithoutWorkflowMessage() async throws {
+    let store = InMemoryWorkflowRuntimeStore(clock: FixedWorkflowRuntimeClock(Date(timeIntervalSince1970: 300)))
+    let session = try await store.createSession(WorkflowSessionCreateInput(workflowId: "wf", entryStepId: "start"))
+    let publisher = InMemoryWorkflowOutputPublisher(store: store)
+
+    let result = try await publisher.publishAcceptedOutput(
+      WorkflowPublicationRequest(
+        sessionId: session.sessionId,
+        stepId: "start",
+        nodeId: "node-start",
+        attempt: 1,
+        body: .inlineCandidate([
+          "payload": .object([
+            "items": .array([.string("a"), .string("b")])
+          ])
+        ]),
+        transitions: [
+          WorkflowStepTransition(
+            toStepId: "fanout-start",
+            label: "always",
+            fanout: WorkflowStepFanout(
+              groupId: "group",
+              itemsFrom: "/payload/items",
+              itemVariable: "item",
+              concurrency: 2,
+              joinStepId: "join",
+              failurePolicy: .collectAll,
+              resultOrder: .input,
+              writeOwnership: WorkflowFanoutWriteOwnership(mode: .readOnly)
+            )
+          )
+        ]
+      )
+    )
+
+    XCTAssertEqual(result.publishedMessages, [])
+    XCTAssertEqual(result.nextStepId, "fanout-start")
+    XCTAssertEqual(result.fanoutDispatch?.groupId, "group")
+    XCTAssertEqual(result.fanoutDispatch?.sourceStepId, "start")
+    XCTAssertEqual(result.fanoutDispatch?.targetStepId, "fanout-start")
+    XCTAssertEqual(result.fanoutDispatch?.joinStepId, "join")
+    XCTAssertEqual(result.fanoutDispatch?.itemsFrom, "/payload/items")
+    XCTAssertEqual(result.fanoutDispatch?.itemVariable, "item")
+    XCTAssertEqual(result.fanoutDispatch?.concurrency, 2)
+    XCTAssertEqual(result.fanoutDispatch?.failurePolicy, .collectAll)
+    XCTAssertEqual(result.fanoutDispatch?.sourcePayload["payload"], .object([
+      "items": .array([.string("a"), .string("b")])
+    ]))
+
+    let listedMessages = try await store.listMessages(for: session.sessionId, toStepId: nil)
+    XCTAssertEqual(listedMessages, [])
+  }
+
   func testUnsupportedTransitionShapesFailBeforeAcceptedOutputAndMessages() async throws {
     let unsupportedTransitions: [(WorkflowStepTransition, String)] = [
       (
@@ -467,13 +520,6 @@ final class RuntimePublicationTests: XCTestCase {
       (
         WorkflowStepTransition(toStepId: "next", resumeStepId: "resume"),
         "resume-step transitions are not supported by this in-memory publisher"
-      ),
-      (
-        WorkflowStepTransition(
-          toStepId: "fanout-start",
-          fanout: WorkflowStepFanout(groupId: "group", itemsFrom: "items", joinStepId: "join")
-        ),
-        "fanout transitions are not supported by this in-memory publisher"
       )
     ]
 

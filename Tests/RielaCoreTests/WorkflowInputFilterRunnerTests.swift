@@ -551,13 +551,6 @@ final class WorkflowInputFilterRunnerTests: XCTestCase {
       (
         WorkflowStepTransition(toStepId: "next", resumeStepId: "resume"),
         "step 'yui' uses resume-step transitions, which this runner does not support yet"
-      ),
-      (
-        WorkflowStepTransition(
-          toStepId: "fanout-start",
-          fanout: WorkflowStepFanout(groupId: "group", itemsFrom: "/items", joinStepId: "join")
-        ),
-        "step 'yui' uses fanout transitions, which this runner does not support yet"
       )
     ]
 

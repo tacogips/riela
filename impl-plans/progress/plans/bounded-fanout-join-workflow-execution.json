@@ -1,1 +1,274 @@
-{"phase":158,"status":"Completed","tasks":{"TASK-001":{"deps":[],"parallelizable":false,"status":"Completed"},"TASK-002":{"deps":["TASK-001"],"parallelizable":false,"status":"Completed"},"TASK-003":{"deps":["TASK-002"],"parallelizable":false,"status":"Completed"},"TASK-004":{"deps":["TASK-002"],"parallelizable":false,"status":"Completed"},"TASK-005":{"deps":["TASK-002","TASK-004"],"parallelizable":false,"status":"Completed"},"TASK-006":{"deps":["TASK-002","TASK-003","TASK-004","TASK-005"],"parallelizable":false,"status":"Completed"}}}
+{
+  "planId": "bounded-fanout-join-workflow-execution",
+  "workflowMode": "issue-resolution",
+  "issueReference": {
+    "currentWorkflowExecutionId": "codex-design-and-implement-review-loop-session-564",
+    "sourceWorkflowExecutionId": "fable-and-improve-session-563",
+    "communicationIds": [
+      "comm-001082",
+      "comm-001084",
+      "comm-001085",
+      "comm-001087"
+    ],
+    "issueUrl": null
+  },
+  "status": "Ready",
+  "phase": "implementation-plan",
+  "designReferences": [
+    "design-docs/specs/design-bounded-fanout-join-workflow-execution.md",
+    "design-docs/specs/design-workflow-json.md"
+  ],
+  "activePlanPath": "impl-plans/active/bounded-fanout-join-workflow-execution.md",
+  "tasks": {
+    "T1": {
+      "title": "Baseline And Contract Audit",
+      "status": "NOT_STARTED",
+      "deps": [
+        "accepted-design"
+      ],
+      "parallelizable": false,
+      "writeScope": [
+        "tmp/bounded-fanout-join-workflow-execution/"
+      ],
+      "deliverables": [
+        "Confirm publisher rejection, runner dispatch sites, runtime-variable prompt path, capability diagnostics, CLI maxConcurrency behavior, model fields, and affected tests.",
+        "Record implementation discoveries in the progress log before code edits."
+      ],
+      "verification": [
+        "git status --short",
+        "rg -n 'fanout|crossWorkflowDispatch|runtimeVariables|maxConcurrency|unsupportedTransition' Sources/RielaCore Sources/RielaCLI Tests/RielaCoreTests"
+      ]
+    },
+    "T2": {
+      "title": "Publisher Directive Surface",
+      "status": "NOT_STARTED",
+      "deps": [
+        "T1"
+      ],
+      "parallelizable": true,
+      "writeScope": [
+        "Sources/RielaCore/RuntimePublication.swift",
+        "Tests/RielaCoreTests/RuntimePublicationTests.swift"
+      ],
+      "deliverables": [
+        "Add WorkflowFanoutDispatchDirective parallel to WorkflowCrossWorkflowDispatchDirective.",
+        "Expose WorkflowPublicationResult.fanoutDispatch.",
+        "Replace supported local fanout rejection with directive emission.",
+        "Keep typed diagnostics for unsupported fanout combinations."
+      ],
+      "verification": [
+        "swift test --filter RuntimePublicationTests"
+      ]
+    },
+    "T3": {
+      "title": "Runner Fanout Dispatch Core",
+      "status": "NOT_STARTED",
+      "deps": [
+        "T1",
+        "T2"
+      ],
+      "parallelizable": false,
+      "writeScope": [
+        "Sources/RielaCore/DeterministicWorkflowRunner+Fanout.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner.swift",
+        "Tests/RielaCoreTests"
+      ],
+      "deliverables": [
+        "Resolve itemsFrom using JSON Pointer and fail actionably for missing or non-array values.",
+        "Run branch sub-paths with bounded structured concurrency using the effective fanout concurrency cap.",
+        "Bind itemVariable per branch, isolate branch session/store state, stop branches before joinStepId, and aggregate records in input order.",
+        "Implement fail-fast cancellation and collect-all aggregation/failure.",
+        "Consume publishResult.fanoutDispatch at both runner dispatch sites."
+      ],
+      "verification": [
+        "swift test --filter RielaCoreTests",
+        "Focused tests for bounded overlap, deterministic input-order aggregation, and fail-fast cancellation"
+      ]
+    },
+    "T4": {
+      "title": "Join Injection And Prompt Variable Path",
+      "status": "NOT_STARTED",
+      "deps": [
+        "T3"
+      ],
+      "parallelizable": false,
+      "writeScope": [
+        "Sources/RielaCore/DeterministicWorkflowRunner+Fanout.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner.swift",
+        "Tests/RielaCoreTests"
+      ],
+      "deliverables": [
+        "Build runtimeVariables.fanoutJoin with fanoutGroupRunId, group/source/target/join identifiers, resultOrder, failurePolicy, and ordered branch records.",
+        "Append one joined workflow message to joinStepId.",
+        "Merge fanoutJoin into effective request variables before executing the join step.",
+        "Continue execution at joinStepId after successful fanout completion."
+      ],
+      "verification": [
+        "Focused test asserting join step reads runtimeVariables.fanoutJoin",
+        "New fanout scenario reaches completed/exitCode 0"
+      ]
+    },
+    "T5": {
+      "title": "Write Ownership And Capability Diagnostics",
+      "status": "NOT_STARTED",
+      "deps": [
+        "T2",
+        "T3"
+      ],
+      "parallelizable": true,
+      "writeScope": [
+        "Sources/RielaCore/WorkflowRuntimeCapabilityGap.swift",
+        "Sources/RielaCLI",
+        "Tests/RielaCoreTests/WorkflowRunnerCapabilityPreflightTests.swift"
+      ],
+      "deliverables": [
+        "Validate read-only and disjoint-paths before branch launch.",
+        "Reject unsafe disjoint path declarations and isolated-workspace with specific diagnostics.",
+        "Remove blanket fanout unsupported gap for supported local fanout.",
+        "Wire run.maxConcurrency as a fanout cap and update CLI help/validation text."
+      ],
+      "verification": [
+        "swift test --filter WorkflowRunnerCapabilityPreflightTests",
+        "CLI help or validation tests covering --max-concurrency, if available"
+      ]
+    },
+    "T6": {
+      "title": "Fixtures And End-To-End Workflow Scenarios",
+      "status": "NOT_STARTED",
+      "deps": [
+        "T3",
+        "T4",
+        "T5"
+      ],
+      "parallelizable": true,
+      "writeScope": [
+        "workflow fixture/scenario files under existing test/example directories",
+        "Tests/RielaCoreTests"
+      ],
+      "deliverables": [
+        "Add deterministic fanout mock scenario completing with exitCode 0.",
+        "Add tests for fanoutJoin ordering, out-of-order stability, bounded concurrency, fail-fast cancellation, collect-all aggregation, publisher directive emission, and capability preflight.",
+        "Preserve existing non-fanout mock scenario counts: 29 nodeExecutions, 28 transitions, exitCode 0.",
+        "Run has_feature_fanout:true path to step5-feature-plan-join without unsupportedTransition."
+      ],
+      "verification": [
+        "riela workflow validate codex-design-and-implement-review-loop",
+        "New fanout mock-scenario command recorded after fixture path is known",
+        "Existing non-fanout mock-scenario command recorded after fixture path is confirmed"
+      ]
+    },
+    "T7": {
+      "title": "Full Verification And Documentation Refresh",
+      "status": "NOT_STARTED",
+      "deps": [
+        "T2",
+        "T3",
+        "T4",
+        "T5",
+        "T6"
+      ],
+      "parallelizable": false,
+      "writeScope": [
+        "impl-plans/active/bounded-fanout-join-workflow-execution.md",
+        "impl-plans/progress/plans/bounded-fanout-join-workflow-execution.json",
+        "design-docs/specs/design-workflow-json.md"
+      ],
+      "deliverables": [
+        "Run and record full verification set.",
+        "Confirm no throwaway artifacts outside tmp/bounded-fanout-join-workflow-execution/.",
+        "Confirm no commit or push unless explicitly requested.",
+        "Refresh documentation only for factual implementation deltas."
+      ],
+      "verification": [
+        "swift build",
+        "swift test",
+        "SwiftLint if configured",
+        "git status --short"
+      ]
+    }
+  },
+  "dependencies": {
+    "T1": [
+      "accepted design review from Step 3"
+    ],
+    "T2": [
+      "T1",
+      "existing cross-workflow directive publication pattern"
+    ],
+    "T3": [
+      "T1",
+      "T2",
+      "existing run recursion and cross-workflow dispatch structure"
+    ],
+    "T4": [
+      "T3",
+      "existing runtime-variable prompt merge path"
+    ],
+    "T5": [
+      "T2",
+      "T3"
+    ],
+    "T6": [
+      "T3",
+      "T4",
+      "T5"
+    ],
+    "T7": [
+      "T2",
+      "T3",
+      "T4",
+      "T5",
+      "T6"
+    ]
+  },
+  "parallelizableTasks": [
+    {
+      "tasks": [
+        "T2",
+        "read-only portions of T5"
+      ],
+      "condition": "after T1; write scopes remain disjoint until capability tests are updated"
+    },
+    {
+      "tasks": [
+        "T6 fixture drafting",
+        "T3 implementation"
+      ],
+      "condition": "after fanout contract is confirmed; fixture execution still depends on T3-T5"
+    }
+  ],
+  "verification": [
+    "git status --short",
+    "rg -n 'fanout|crossWorkflowDispatch|runtimeVariables|maxConcurrency|unsupportedTransition' Sources/RielaCore Sources/RielaCLI Tests/RielaCoreTests",
+    "swift test --filter RuntimePublicationTests",
+    "swift test --filter RielaCoreTests",
+    "swift test --filter WorkflowRunnerCapabilityPreflightTests",
+    "swift build",
+    "swift test",
+    "SwiftLint if configured",
+    "riela workflow validate codex-design-and-implement-review-loop",
+    "new fanout mock scenario command once fixture path is known",
+    "existing non-fanout mock scenario command confirming 29 nodeExecutions, 28 transitions, exitCode 0 once fixture path is confirmed"
+  ],
+  "completionCriteria": [
+    "WorkflowFanoutDispatchDirective is emitted for supported live local fanout.",
+    "DeterministicWorkflowRunner executes fanout branch sub-paths with true bounded concurrency and input-order aggregation.",
+    "runtimeVariables.fanoutJoin reaches joinStepId and includes ordered branch records plus fanoutGroupRunId.",
+    "fail-fast, collect-all, read-only, disjoint-paths, unsupported isolated-workspace, capability diagnostics, and CLI maxConcurrency behavior are tested.",
+    "New fanout scenario completes with exitCode 0.",
+    "Existing non-fanout mock scenario remains 29 nodeExecutions, 28 transitions, exitCode 0.",
+    "Full verification commands and results are recorded in the progress log.",
+    "No scratch artifacts are left outside tmp/bounded-fanout-join-workflow-execution/."
+  ],
+  "progressLogExpectations": [
+    "Append a dated entry before handoff.",
+    "Include completed task ids, files changed, verification commands with pass/fail status, exact scenario commands once known, blockers tied to design sections, and intentional divergences with owner."
+  ],
+  "addressedFeedback": [
+    {
+      "communicationId": "comm-001088",
+      "finding": "Progress tracker marked generic TASK-001..TASK-006 as Completed while the active plan had T1-T7 NOT_STARTED.",
+      "resolution": "Replaced tracker with T1-T7 task ids, dependencies, NOT_STARTED statuses, disjoint parallelization conditions, verification commands, completion criteria, and progress-log expectations aligned to the active plan."
+    }
+  ]
+}

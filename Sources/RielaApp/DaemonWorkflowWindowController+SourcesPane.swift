@@ -87,7 +87,7 @@ extension DaemonWorkflowWindowController {
   private func configureWorkflowSourceSearchField() {
     workflowSourceSearchField.placeholderString = "Filter workflow sources"
     workflowSourceSearchField.target = self
-    workflowSourceSearchField.delegate = self
+    workflowSourceSearchField.action = #selector(workflowSourceSearchChanged)
     workflowSourceSearchField.sendsSearchStringImmediately = true
     workflowSourceSearchField.controlSize = .large
     workflowSourceSearchField.stringValue = workflowSourceFilterText
@@ -121,11 +121,14 @@ extension DaemonWorkflowWindowController {
   }
 
   func rebuildSourcesOverviewViewForSearch() {
+    let wasEditing = workflowSourceSearchField.currentEditor() === window?.firstResponder
     workflowSourceFilterText = workflowSourceSearchField.stringValue
     guard let sourcesPane = sourcesOverviewView as? DaemonWorkflowSourcesPaneView else {
       sourcesOverviewFingerprint = nil
       rebuildSourcesOverviewView()
-      window?.makeFirstResponder(workflowSourceSearchField)
+      if wasEditing {
+        window?.makeFirstResponder(workflowSourceSearchField)
+      }
       return
     }
     let sources = workflowSources.sorted {
@@ -134,7 +137,13 @@ extension DaemonWorkflowWindowController {
     let listContent = workflowSourceListContent(sources: sources)
     sourcesPane.replaceListScrollView(listContent.scrollView, emptyLabel: listContent.emptyLabel)
     sourcesOverviewFingerprint = sourcesOverviewFingerprintValue()
-    window?.makeFirstResponder(workflowSourceSearchField)
+  }
+
+  @objc func workflowSourceSearchChanged() {
+    guard activeSidebarPane == .sources, !isShowingWorkflowSourceDetail else {
+      return
+    }
+    rebuildSourcesOverviewViewForSearch()
   }
 
   private func workflowSourceImportButton(
@@ -271,6 +280,7 @@ extension DaemonWorkflowWindowController {
     isShowingAddInstanceSelection = false
     isShowingProfileDetail = false
     isShowingWorkflowSourceDetail = true
+    isShowingMarketplaceWorkflowDetail = false
     showContentPane(detail)
     navigationTitleLabel.stringValue = source.displayName
     updateNavigationState()

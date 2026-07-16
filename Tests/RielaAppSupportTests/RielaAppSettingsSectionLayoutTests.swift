@@ -323,21 +323,33 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
 
     let searchField = try XCTUnwrap(visibleSubviews(of: NSSearchField.self, in: root).first)
     XCTAssertEqual(searchField.accessibilityLabel(), "Filter Workflow Sources")
+    let window = try XCTUnwrap(controller.window)
+    XCTAssertTrue(window.makeFirstResponder(searchField))
+    XCTAssertTrue(window.firstResponder === searchField.currentEditor())
+    XCTAssertNil(searchField.delegate)
     XCTAssertNotNil(selectableRow(accessibilityLabel: "Daily Summary", in: root))
 
     searchField.stringValue = "daily"
-    controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+    XCTAssertTrue(searchField.sendAction(searchField.action, to: searchField.target))
     controller.window?.layoutIfNeeded()
     XCTAssertEqual(controller.workflowSourceFilterText, "daily")
     XCTAssertNotNil(selectableRow(accessibilityLabel: "Daily Summary", in: root))
+    XCTAssertTrue(window.firstResponder === searchField.currentEditor())
 
     searchField.stringValue = "does-not-match"
-    controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+    XCTAssertTrue(searchField.sendAction(searchField.action, to: searchField.target))
     controller.window?.layoutIfNeeded()
     XCTAssertNil(selectableRow(accessibilityLabel: "Daily Summary", in: root))
     XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains {
       $0.stringValue == "No workflow sources match the current filter."
     })
+    XCTAssertTrue(window.firstResponder === searchField.currentEditor())
+
+    searchField.stringValue = ""
+    XCTAssertTrue(searchField.sendAction(searchField.action, to: searchField.target))
+    controller.window?.layoutIfNeeded()
+    XCTAssertNotNil(selectableRow(accessibilityLabel: "Daily Summary", in: root))
+    XCTAssertTrue(window.firstResponder === searchField.currentEditor())
   }
 
   func testSourcesPaneOpensWorkflowSourceDetailWithGraphAtRuntime() throws {

@@ -91,6 +91,7 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rielaapp-live-filters-and-back-navigation` | 2026-07-16 | `design-rielaapp-ui-consistency-and-native-ux-review` F15 |
 | `riela-note-adversarial-review-fixes` | 2026-07-12 | `design-riela-note-adversarial-review-2026-07-12` |
 | `workflow-package-publish` | 2026-07-12 | `design-workflow-package-publish#workflow-package-publish` |
 | `workflow-package-checkout-search` | 2026-07-12 | `design-workflow-package-checkout-search` |

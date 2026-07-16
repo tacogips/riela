@@ -132,7 +132,7 @@ extension DaemonWorkflowWindowController {
   private func configureMarketplaceSearchField() {
     marketplaceSearchField.placeholderString = "Filter marketplace workflows"
     marketplaceSearchField.target = self
-    marketplaceSearchField.delegate = self
+    marketplaceSearchField.action = #selector(marketplaceSearchChanged)
     marketplaceSearchField.sendsSearchStringImmediately = true
     marketplaceSearchField.controlSize = .large
     marketplaceSearchField.stringValue = marketplaceFilterText
@@ -142,17 +142,26 @@ extension DaemonWorkflowWindowController {
   }
 
   func rebuildMarketplaceOverviewViewForSearch() {
+    let wasEditing = marketplaceSearchField.currentEditor() === window?.firstResponder
     marketplaceFilterText = marketplaceSearchField.stringValue
     guard let marketplacePane = marketplaceOverviewView as? DaemonWorkflowSourcesPaneView else {
       marketplaceOverviewFingerprint = nil
       rebuildMarketplaceOverviewView()
-      window?.makeFirstResponder(marketplaceSearchField)
+      if wasEditing {
+        window?.makeFirstResponder(marketplaceSearchField)
+      }
       return
     }
     let listContent = marketplaceListContent()
     marketplacePane.replaceListScrollView(listContent.scrollView, emptyLabel: listContent.emptyLabel)
     marketplaceOverviewFingerprint = marketplaceOverviewFingerprintValue()
-    window?.makeFirstResponder(marketplaceSearchField)
+  }
+
+  @objc func marketplaceSearchChanged() {
+    guard activeSidebarPane == .marketplace, !isShowingMarketplaceWorkflowDetail else {
+      return
+    }
+    rebuildMarketplaceOverviewViewForSearch()
   }
 
   private func updateMarketplaceSummary() {
@@ -348,6 +357,11 @@ extension DaemonWorkflowWindowController {
       return
     }
     selectedMarketplaceWorkflowIdentifier = identifier
+    activeSidebarPane = .marketplace
+    isShowingInstanceDetail = false
+    isShowingAddInstanceSelection = false
+    isShowingProfileDetail = false
+    isShowingWorkflowSourceDetail = false
     isShowingMarketplaceWorkflowDetail = true
     marketplaceWorkflowDetailView?.removeFromSuperview()
     marketplaceWorkflowDetailView = buildMarketplaceWorkflowDetailView(listing)

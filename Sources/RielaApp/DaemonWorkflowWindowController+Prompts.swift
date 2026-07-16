@@ -31,6 +31,7 @@ extension DaemonWorkflowWindowController {
     isShowingAddInstanceSelection = true
     isShowingProfileDetail = false
     isShowingWorkflowSourceDetail = false
+    isShowingMarketplaceWorkflowDetail = false
     instanceDetailPane = .overview
     let selectionView = buildInlineAddInstanceSelectionView(options: workflowSourceOptions())
     selectionView.translatesAutoresizingMaskIntoConstraints = true
@@ -57,35 +58,6 @@ extension DaemonWorkflowWindowController {
   func controlTextDidChange(_ notification: Notification) {
     if notification.object as? NSTextField === eventSourceIdField {
       eventSourceFormValueChanged()
-      return
-    }
-    if notification.object as? NSSearchField === inlineAddInstanceSearchField,
-      isShowingAddInstanceSelection {
-      rebuildInlineAddInstanceSelectionForSearch()
-      return
-    }
-    if let searchField = notification.object as? NSSearchField,
-      isShowingAddInstanceSelection {
-      inlineAddInstanceSearchField.stringValue = searchField.stringValue
-      rebuildInlineAddInstanceSelectionForSearch()
-      return
-    }
-    if notification.object as? NSSearchField === workflowSourceSearchField,
-      activeSidebarPane == .sources,
-      !isShowingWorkflowSourceDetail {
-      rebuildSourcesOverviewViewForSearch()
-      return
-    }
-    if notification.object as? NSSearchField === marketplaceSearchField,
-      activeSidebarPane == .marketplace {
-      rebuildMarketplaceOverviewViewForSearch()
-      return
-    }
-    if notification.object as? NSSearchField === instanceSearchField,
-      activeSidebarPane == .instances,
-      !isShowingInstanceDetail,
-      !isShowingAddInstanceSelection {
-      instanceSearchChanged()
     }
   }
 
@@ -160,7 +132,7 @@ extension DaemonWorkflowWindowController {
   private func configureInlineAddInstanceSearchField() {
     inlineAddInstanceSearchField.placeholderString = "Filter workflows"
     inlineAddInstanceSearchField.target = self
-    inlineAddInstanceSearchField.delegate = self
+    inlineAddInstanceSearchField.action = #selector(inlineAddInstanceSearchChanged)
     inlineAddInstanceSearchField.sendsSearchStringImmediately = true
     inlineAddInstanceSearchField.controlSize = .large
     inlineAddInstanceSearchField.setAccessibilityLabel("Filter Workflows")
@@ -197,12 +169,31 @@ extension DaemonWorkflowWindowController {
   }
 
   private func rebuildInlineAddInstanceSelectionForSearch() {
+    let wasEditing = inlineAddInstanceSearchField.currentEditor() === window?.firstResponder
+    let selectedSourceId = inlineAddInstanceSourceSelectionTarget.flatMap { target in
+      inlineAddInstanceSourceOptions.indices.contains(target.selectedIndex)
+        ? inlineAddInstanceSourceOptions[target.selectedIndex].candidate.id
+        : nil
+    }
     let selectionView = buildInlineAddInstanceSelectionView(options: inlineAddInstanceAllSourceOptions)
+    if let selectedSourceId,
+      let selectedIndex = inlineAddInstanceSourceOptions.firstIndex(where: { $0.candidate.id == selectedSourceId }) {
+      inlineAddInstanceSourceSelectionTarget?.updateSelection(index: selectedIndex)
+    }
     selectionView.translatesAutoresizingMaskIntoConstraints = true
     addInstanceSelectionView?.removeFromSuperview()
     addInstanceSelectionView = selectionView
     showContentPane(selectionView)
-    window?.makeFirstResponder(inlineAddInstanceSearchField)
+    if wasEditing {
+      window?.makeFirstResponder(inlineAddInstanceSearchField)
+    }
+  }
+
+  @objc func inlineAddInstanceSearchChanged() {
+    guard isShowingAddInstanceSelection else {
+      return
+    }
+    rebuildInlineAddInstanceSelectionForSearch()
   }
 
   private func inlineSourceActionStack() -> NSStackView {

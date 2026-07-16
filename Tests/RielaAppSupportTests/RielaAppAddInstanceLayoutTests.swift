@@ -132,14 +132,50 @@ final class RielaAppAddInstanceLayoutTests: XCTestCase {
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Daily Summary" })
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Slack Chat" })
 
-    let searchField = try XCTUnwrap(firstSubview(of: NSSearchField.self, in: root))
+    let searchField = try XCTUnwrap(
+      allSubviews(of: NSSearchField.self, in: root).first {
+        !$0.hasHiddenAncestor && $0.accessibilityLabel() == "Filter Workflows"
+      }
+    )
+    let selectedTarget = try XCTUnwrap(controller.inlineAddInstanceSourceSelectionTarget)
+    selectedTarget.updateSelection(index: 1)
+    XCTAssertEqual(
+      controller.inlineAddInstanceSourceOptions[selectedTarget.selectedIndex].candidate.id,
+      slack.id
+    )
+    let window = try XCTUnwrap(controller.window)
+    XCTAssertTrue(window.makeFirstResponder(searchField))
+    XCTAssertTrue(window.firstResponder === searchField.currentEditor())
+    XCTAssertNil(searchField.delegate)
+
     searchField.stringValue = "slack"
-    controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+    XCTAssertTrue(searchField.sendAction(searchField.action, to: searchField.target))
     controller.window?.layoutIfNeeded()
 
     XCTAssertFalse(visibleTextFields(in: root).contains { $0.stringValue == "Daily Summary" })
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Slack Chat" })
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "1 of 2 workflow sources" })
+    let filteredTarget = try XCTUnwrap(controller.inlineAddInstanceSourceSelectionTarget)
+    XCTAssertEqual(
+      controller.inlineAddInstanceSourceOptions[filteredTarget.selectedIndex].candidate.id,
+      slack.id
+    )
+    XCTAssertTrue(window.firstResponder === searchField.currentEditor())
+
+    searchField.stringValue = "does-not-match"
+    XCTAssertTrue(searchField.sendAction(searchField.action, to: searchField.target))
+    controller.window?.layoutIfNeeded()
+    XCTAssertTrue(visibleTextFields(in: root).contains {
+      $0.stringValue == "No workflows match the current filter."
+    })
+    XCTAssertTrue(window.firstResponder === searchField.currentEditor())
+
+    searchField.stringValue = ""
+    XCTAssertTrue(searchField.sendAction(searchField.action, to: searchField.target))
+    controller.window?.layoutIfNeeded()
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Daily Summary" })
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Slack Chat" })
+    XCTAssertTrue(window.firstResponder === searchField.currentEditor())
   }
 
   private func makeController() -> DaemonWorkflowWindowController {

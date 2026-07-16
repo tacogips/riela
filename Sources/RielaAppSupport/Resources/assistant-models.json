@@ -1,32 +1,43 @@
 {
   "codex-cli": [
-    "gpt-5.5-medium",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
     "gpt-5.5",
-    "gpt-5",
-    "gpt-5-mini"
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.3-codex-spark"
   ],
   "claude-code-cli": [
-    "claude-opus-4.8",
-    "claude-sonnet-4-5",
-    "claude-opus-4-1"
+    "claude-opus-4-8",
+    "claude-sonnet-5",
+    "claude-fable-5",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5"
   ],
   "cursor-cli": [
-    "composer-2",
-    "claude-opus-4.8",
-    "gpt-5.5-medium"
+    "auto",
+    "composer-2.5",
+    "gpt-5.6-sol-medium",
+    "gpt-5.6-terra-medium",
+    "gpt-5.6-luna-medium",
+    "claude-opus-4-8-high",
+    "claude-sonnet-5-high"
   ],
   "openai-api": [
-    "gpt-5.5-medium",
+    "gpt-5.6",
     "gpt-5.5",
-    "gpt-5",
-    "gpt-5-mini"
+    "gpt-5.4",
+    "gpt-5.4-mini"
   ],
   "anthropic-api": [
-    "claude-opus-4.8",
-    "claude-sonnet-4-5",
-    "claude-opus-4-1"
+    "claude-opus-4-8",
+    "claude-sonnet-5",
+    "claude-fable-5",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5"
   ],
   "cursor-api": [
-    "composer-2"
+    "composer-2.5"
   ]
 }

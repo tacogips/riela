@@ -734,20 +734,12 @@ final class WorkflowViewerWindowController: NSWindowController, NSOutlineViewDat
     configuration: WorkflowViewerNodeConfiguration,
     patch: RielaAppDaemonWorkflowNodePatch?
   ) -> [String] {
-    uniqueValues([
-      patch?.model,
-      configuration.model,
-      "gpt-5.5",
-      "gpt-5.4-mini",
-      "gpt-5.3-codex-spark",
-      "gpt-5",
-      "gpt-5-mini",
-      "gpt-5-nano",
-      "claude-sonnet-4-5",
-      "claude-haiku-4-5",
-      "claude-sonnet",
-      "riela/chat-reply-worker"
-    ].compactMap { $0 })
+    let vendorModels = RielaAppAssistantModelCatalog.shared.models(for: configuration.executionBackend)
+    return uniqueValues(
+      [patch?.model, configuration.model].compactMap { $0 }
+        + vendorModels
+        + ["riela/chat-reply-worker"]
+    )
   }
 
   private func uniqueValues(_ values: [String]) -> [String] {

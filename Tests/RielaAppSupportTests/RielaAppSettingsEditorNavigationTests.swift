@@ -269,10 +269,10 @@ final class RielaAppSettingsEditorNavigationTests: XCTestCase {
     XCTAssertEqual(savedSettings?.vendor, .anthropicAPI)
     XCTAssertEqual(savedSettings?.normalizedModel, RielaAppAssistantVendor.anthropicAPI.defaultModel)
 
-    controller.assistantSettingsModelPopup.selectItem(withTitle: "claude-sonnet-4-5")
+    controller.assistantSettingsModelPopup.selectItem(withTitle: "claude-sonnet-5")
     controller.assistantModelChanged()
-    XCTAssertEqual(savedSettings?.modelsByVendor[RielaAppAssistantVendor.anthropicAPI.rawValue], "claude-sonnet-4-5")
-    XCTAssertEqual(savedSettings?.normalizedModel, "claude-sonnet-4-5")
+    XCTAssertEqual(savedSettings?.modelsByVendor[RielaAppAssistantVendor.anthropicAPI.rawValue], "claude-sonnet-5")
+    XCTAssertEqual(savedSettings?.normalizedModel, "claude-sonnet-5")
   }
 
   func testAssistantPanelPersistsAcrossPaneNavigationAndSubmitsSelectedWorkingDirectory() throws {

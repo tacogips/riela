@@ -93,6 +93,34 @@ final class WorkflowSessionPolicyTests: XCTestCase {
     XCTAssertEqual(lifecycleContexts, [WorkflowRunLifecycleContext(workflowRunId: result.session.sessionId)])
   }
 
+  func testRunnerCleansUpRootRunAfterFailureAndCancellation() async throws {
+    for failure in [LifecycleFailure.provider, .cancellation] {
+      let adapter = LifecycleFailingAdapter(failure: failure)
+      let runner = DeterministicWorkflowRunner(adapter: adapter)
+      do {
+        _ = try await runner.run(DeterministicWorkflowRunRequest(
+          workflow: makeSingleStepWorkflow(),
+          nodePayloads: [
+            "node": AgentNodePayload(
+              id: "node",
+              executionBackend: .codexAgent,
+              model: "model"
+            )
+          ]
+        ))
+        XCTFail("Expected \(failure) to fail the workflow")
+      } catch {
+        if failure == .cancellation {
+          XCTAssertTrue(error is CancellationError)
+        }
+      }
+
+      let lifecycleContexts = await adapter.capturedLifecycleContexts()
+      XCTAssertEqual(lifecycleContexts.count, 1)
+      XCTAssertFalse(lifecycleContexts[0].workflowRunId.isEmpty)
+    }
+  }
+
   private func makeWorkflow(stepPolicy: WorkflowStepSessionPolicy?) -> WorkflowDefinition {
     WorkflowDefinition(
       workflowId: "session-policy",
@@ -145,6 +173,40 @@ private actor LifecycleCapturingAdapter: NodeAdapter {
 
   func capturedInput() -> AdapterExecutionInput? {
     input
+  }
+
+  func capturedLifecycleContexts() -> [WorkflowRunLifecycleContext] {
+    lifecycleContexts
+  }
+}
+
+private enum LifecycleFailure: Equatable, Sendable {
+  case provider
+  case cancellation
+}
+
+private actor LifecycleFailingAdapter: NodeAdapter {
+  private let failure: LifecycleFailure
+  private var lifecycleContexts: [WorkflowRunLifecycleContext] = []
+
+  init(failure: LifecycleFailure) {
+    self.failure = failure
+  }
+
+  func execute(
+    _ input: AdapterExecutionInput,
+    context _: AdapterExecutionContext
+  ) async throws -> AdapterExecutionOutput {
+    switch failure {
+    case .provider:
+      throw AdapterExecutionError(.providerError, "forced failure")
+    case .cancellation:
+      throw CancellationError()
+    }
+  }
+
+  func workflowRunDidEnd(_ context: WorkflowRunLifecycleContext) async {
+    lifecycleContexts.append(context)
   }
 
   func capturedLifecycleContexts() -> [WorkflowRunLifecycleContext] {

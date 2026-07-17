@@ -124,6 +124,55 @@ final class CodexSessionReuseTests: XCTestCase {
     XCTAssertEqual(Set(resumeRuns.compactMap(resumedSessionId)), ["thread-a", "thread-b"])
   }
 
+  func testPromotionRejectsConflictsAndFailedProcessesButKeepsIdlessResume() async throws {
+    let runner = SequencedRunner([
+      result(threadId: "thread-base", content: "one"),
+      result(content: "two"),
+      result(content: "three"),
+      result(threadId: "thread-conflict", content: "four"),
+      result(threadId: "thread-fallback", content: "five"),
+      LocalAgentProcessResult(
+        stdout: #"{"type":"thread.started","thread_id":"thread-failed"}"#,
+        stderr: "failed",
+        terminationStatus: 1
+      ),
+      result(threadId: "thread-after-failure", content: "seven")
+    ])
+    let adapter = CodexAgentAdapter(runner: runner, authPreflight: false)
+
+    _ = try await adapter.execute(input(stepId: "base", mode: .new), context: AdapterExecutionContext())
+    _ = try await adapter.execute(input(stepId: "idless", mode: .reuse), context: AdapterExecutionContext())
+    _ = try await adapter.execute(
+      input(stepId: "idless-child", mode: .reuse, inheritFromStepId: "idless"),
+      context: AdapterExecutionContext()
+    )
+    _ = try await adapter.execute(
+      input(stepId: "conflict", mode: .reuse, inheritFromStepId: "base"),
+      context: AdapterExecutionContext()
+    )
+    _ = try await adapter.execute(
+      input(stepId: "conflict-child", mode: .reuse, inheritFromStepId: "conflict"),
+      context: AdapterExecutionContext()
+    )
+    do {
+      _ = try await adapter.execute(input(stepId: "failed", mode: .new), context: AdapterExecutionContext())
+      XCTFail("Expected the process failure")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .providerError)
+    }
+    _ = try await adapter.execute(
+      input(stepId: "failed-child", mode: .reuse, inheritFromStepId: "failed"),
+      context: AdapterExecutionContext()
+    )
+
+    let runs = await runner.runs()
+    XCTAssertEqual(resumedSessionId(runs[1]), "thread-base")
+    XCTAssertEqual(resumedSessionId(runs[2]), "thread-base")
+    XCTAssertEqual(resumedSessionId(runs[3]), "thread-base")
+    XCTAssertFalse(runs[4].configuration.arguments.contains("resume"))
+    XCTAssertFalse(runs[6].configuration.arguments.contains("resume"))
+  }
+
   func testAuthSuccessIsCachedPerRunFailureRetriesAndCleanupEvicts() async throws {
     let successCounter = AuthCheckCounter()
     let runner = RecordingRunner(output: "done")
@@ -175,11 +224,57 @@ final class CodexSessionReuseTests: XCTestCase {
     XCTAssertEqual(cancellationCount, 2)
   }
 
+  func testConcurrentAuthChecksUseSingleFlightForTheSameRunAndConfiguration() async throws {
+    let probe = AuthSingleFlightProbe()
+    let adapter = CodexAgentAdapter(
+      runner: RecordingRunner(output: "done"),
+      checkAuthPreflight: { _ in try await probe.check() }
+    )
+    let firstInput = input(stepId: "one", mode: .new)
+    let secondInput = input(stepId: "two", mode: .new)
+
+    async let first = adapter.execute(firstInput, context: AdapterExecutionContext())
+    async let second = adapter.execute(secondInput, context: AdapterExecutionContext())
+    _ = try await (first, second)
+
+    let snapshot = await probe.snapshot()
+    XCTAssertEqual(snapshot.count, 1)
+    XCTAssertEqual(snapshot.maxActive, 1)
+  }
+
+  func testAuthReadinessIsIsolatedByRunAndEffectiveConfiguration() async throws {
+    let probe = AuthSingleFlightProbe(delayNanoseconds: 0)
+    let sharedState = CodexWorkflowRunState()
+    let firstAdapter = CodexAgentAdapter(
+      runner: RecordingRunner(output: "done"),
+      environment: ["CODEX_PROFILE": "first"],
+      checkAuthPreflight: { _ in try await probe.check() },
+      state: sharedState
+    )
+    let secondAdapter = CodexAgentAdapter(
+      runner: RecordingRunner(output: "done"),
+      environment: ["CODEX_PROFILE": "second"],
+      checkAuthPreflight: { _ in try await probe.check() },
+      state: sharedState
+    )
+
+    _ = try await firstAdapter.execute(input(stepId: "one", mode: .new), context: AdapterExecutionContext())
+    _ = try await secondAdapter.execute(input(stepId: "two", mode: .new), context: AdapterExecutionContext())
+    _ = try await firstAdapter.execute(
+      input(stepId: "three", mode: .new, workflowRunId: "other-run"),
+      context: AdapterExecutionContext()
+    )
+
+    let snapshot = await probe.snapshot()
+    XCTAssertEqual(snapshot.count, 3)
+  }
+
   private func input(
     stepId: String,
     mode: NodeSessionMode,
     inheritFromStepId: String? = nil,
-    workflowSessionId: String = "session"
+    workflowSessionId: String = "session",
+    workflowRunId: String = "run"
   ) -> AdapterExecutionInput {
     AdapterExecutionInput(
       node: AgentNodePayload(
@@ -192,7 +287,7 @@ final class CodexSessionReuseTests: XCTestCase {
       resumedPromptText: "resumed \(stepId)",
       sessionPolicy: WorkflowStepSessionPolicy(mode: mode, inheritFromStepId: inheritFromStepId),
       executionIdentity: AdapterExecutionIdentity(
-        workflowRunId: "run",
+        workflowRunId: workflowRunId,
         workflowSessionId: workflowSessionId,
         stepId: stepId
       )
@@ -278,5 +373,30 @@ private actor AuthCancellationCounter {
 
   func value() -> Int {
     count
+  }
+}
+
+private actor AuthSingleFlightProbe {
+  private let delayNanoseconds: UInt64
+  private var count = 0
+  private var active = 0
+  private var maxActive = 0
+
+  init(delayNanoseconds: UInt64 = 50_000_000) {
+    self.delayNanoseconds = delayNanoseconds
+  }
+
+  func check() async throws {
+    count += 1
+    active += 1
+    maxActive = max(maxActive, active)
+    defer { active -= 1 }
+    if delayNanoseconds > 0 {
+      try await Task.sleep(nanoseconds: delayNanoseconds)
+    }
+  }
+
+  func snapshot() -> (count: Int, maxActive: Int) {
+    (count, maxActive)
   }
 }

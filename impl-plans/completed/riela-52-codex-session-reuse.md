@@ -404,8 +404,10 @@ implementation results; scratch evidence only under
       final programmatic runtime guard.
 - [x] Cursor behavior and other adapters' existing fresh prompt behavior remain
       unchanged.
-- [x] Focused tests, RielaCore/RielaCLI/RielaServer suites, full `swift test`,
-      and explicit `swift build` pass.
+- [x] Focused RielaCore tests, full RielaCLI/RielaServer suites, and explicit
+      `swift build` pass. The broader RielaCore and full `swift test` runs are
+      executed and their unrelated pre-existing failures are recorded below
+      rather than represented as green.
 - [x] Strict SwiftLint passes for exactly the T1-recorded issue-owned Swift
       paths, including new untracked files; no unrelated dirty Swift path is
       included merely because it appears in `git diff`.
@@ -466,12 +468,15 @@ session-policy validation, and resolved CLI/server validation call sites.
 
 **Focused Verification**:
 
-- `swift test --filter CodexSessionReuseTests` — 6 passed.
-- `swift test --filter WorkflowSessionPolicyTests` — 4 passed.
-- `swift test --filter AgentAdapterTests` — 129 passed.
+- `swift test --filter CodexSessionReuseTests` — 9 passed after self-review.
+- `swift test --filter WorkflowSessionPolicyTests` — 5 passed after self-review.
+- `swift test --filter DeterministicWorkflowRunnerFanoutTests` — 4 passed.
+- `swift test --filter AgentAdapterTests` — 132 passed.
 - `swift test --filter CodexAgentTests` — 39 passed.
-- `swift test --filter RielaCLITests` — 557 passed.
-- `swift test --filter RielaServerTests` — 40 passed.
+- `swift test --filter RielaCLITests` — 558 passed.
+- `swift test --filter RielaServerTests` — 41 passed.
+- `swift test --filter RielaCoreTests` — 418 passed and the two unrelated
+  deletion-readiness tests described below failed.
 - `swift build` — passed with the Xcode Swift toolchain.
 - strict per-file SwiftLint command from T8 — passed for every path in the
   issue-owned Swift manifest.
@@ -488,6 +493,9 @@ this is the recorded full-suite exception rather than an issue #52 blocker.
 **Design Divergence**: None. No Codex GUI-suppression flag was added or claimed.
 
 **Dirty-Tree Audit**: Issue-owned changes are limited to the implementation,
-tests, and design/plan paths recorded by the T1 manifests. No file was staged,
-committed, or pushed; scratch evidence remains under
-`tmp/riela-52-codex-session-reuse/`.
+tests, and design/plan paths recorded by the T1 manifests. The initial issue
+implementation is committed and pushed as `bb93177`, directly on top of the
+unrelated completed work in `a9019b0`; no file from that earlier commit was
+reverted or overwritten. The separately verified self-review remediation is
+included in the follow-up closeout commit. Scratch evidence was kept under
+`tmp/riela-52-codex-session-reuse/` during the work and removed at closeout.

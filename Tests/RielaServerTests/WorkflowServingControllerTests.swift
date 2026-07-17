@@ -354,6 +354,45 @@ final class WorkflowServingControllerTests: XCTestCase {
     XCTAssertEqual(resolved.workflowDirectory, workflowDirectory.path)
   }
 
+  func testDefaultResolverRejectsInvalidEffectiveNodeSessionPolicy() async throws {
+    let root = try temporaryDirectory()
+    let workflowDirectory = root.appendingPathComponent("invalid-session-policy", isDirectory: true)
+    let nodesDirectory = workflowDirectory.appendingPathComponent("nodes", isDirectory: true)
+    try FileManager.default.createDirectory(at: nodesDirectory, withIntermediateDirectories: true)
+    try """
+    {
+      "workflowId": "invalid-session-policy",
+      "defaults": { "nodeTimeoutMs": 1000, "maxLoopIterations": 1 },
+      "entryStepId": "first",
+      "nodeRegistry": [{ "id": "worker", "nodeFile": "nodes/worker.json" }],
+      "steps": [
+        { "id": "first", "nodeId": "worker" },
+        { "id": "second", "nodeId": "worker" }
+      ],
+      "nodes": [{ "id": "worker", "nodeFile": "nodes/worker.json" }]
+    }
+    """.write(to: workflowDirectory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+    try """
+    {
+      "id": "worker",
+      "executionBackend": "codex-agent",
+      "model": "model",
+      "sessionPolicy": { "mode": "reuse", "inheritFromStepId": "missing" }
+    }
+    """.write(to: nodesDirectory.appendingPathComponent("worker.json"), atomically: true, encoding: .utf8)
+
+    do {
+      _ = try await DefaultWorkflowServeResolver().resolve(WorkflowServeStartRequest(
+        selection: .directDirectory(workflowDirectory.path, identifier: "invalid-session-policy"),
+        workingDirectory: root.path
+      ))
+      XCTFail("Expected effective session-policy validation to fail")
+    } catch let WorkflowServeError.validationFailed(diagnostics) {
+      XCTAssertEqual(diagnostics.code, "workflow_invalid")
+      XCTAssertTrue(diagnostics.message.contains("workflow.steps.second.sessionPolicy.inheritFromStepId"))
+    }
+  }
+
   private func temporaryDirectory() throws -> URL {
     let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
       .appendingPathComponent("workflow-serving-controller-tests-\(UUID().uuidString)", isDirectory: true)

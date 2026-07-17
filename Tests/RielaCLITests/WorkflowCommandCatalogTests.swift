@@ -252,6 +252,65 @@ extension WorkflowCommandTests {
     })
   }
 
+  func testCLIEntryPointsReportInvalidEffectiveNodeSessionPolicy() async throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-invalid-session-policy-\(UUID().uuidString)", isDirectory: true)
+    let workflowDir = tempDir.appendingPathComponent("invalid-session-policy", isDirectory: true)
+    let nodesDir = workflowDir.appendingPathComponent("nodes", isDirectory: true)
+    try FileManager.default.createDirectory(at: nodesDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    try """
+    {
+      "workflowId": "invalid-session-policy",
+      "defaults": { "maxLoopIterations": 3, "nodeTimeoutMs": 120000 },
+      "entryStepId": "first",
+      "nodeRegistry": [{ "id": "worker", "nodeFile": "nodes/worker.json" }],
+      "steps": [
+        { "id": "first", "nodeId": "worker" },
+        { "id": "second", "nodeId": "worker" }
+      ],
+      "nodes": [{ "id": "worker", "nodeFile": "nodes/worker.json" }]
+    }
+    """.write(to: workflowDir.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+    try """
+    {
+      "id": "worker",
+      "executionBackend": "codex-agent",
+      "model": "model",
+      "sessionPolicy": { "mode": "reuse", "inheritFromStepId": "missing" }
+    }
+    """.write(to: nodesDir.appendingPathComponent("worker.json"), atomically: true, encoding: .utf8)
+
+    let app = RielaCLIApplication()
+    let rejectingCommands = [
+      ["workflow", "validate", "invalid-session-policy"],
+      ["workflow", "run", "invalid-session-policy"]
+    ]
+    for command in rejectingCommands {
+      let result = await app.run(command + [
+        "--workflow-definition-dir", tempDir.path,
+        "--output", "json"
+      ])
+      XCTAssertEqual(result.exitCode, .failure, result.stderr + result.stdout)
+      XCTAssertTrue(
+        (result.stderr + result.stdout).contains("workflow.steps.second.sessionPolicy.inheritFromStepId"),
+        result.stderr + result.stdout
+      )
+    }
+
+    let inspection = await app.run([
+      "workflow", "inspect", "invalid-session-policy",
+      "--workflow-definition-dir", tempDir.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(inspection.exitCode, .success, inspection.stderr + inspection.stdout)
+    XCTAssertTrue(inspection.stdout.contains("runtimeCapabilityGaps"), inspection.stdout)
+    XCTAssertTrue(
+      inspection.stdout.contains("workflow.steps.second.sessionPolicy.inheritFromStepId"),
+      inspection.stdout
+    )
+  }
+
   func testValidateJSONFailureReturnsParseableEnvelopeForMalformedNodePatch() async throws {
     let root = repositoryRoot()
     let result = await RielaCLIApplication().run([

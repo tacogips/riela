@@ -56,6 +56,13 @@ public actor DispatchingNodeAdapter: NodeAdapter {
     return try await adapter.execute(input, context: context)
   }
 
+  public func workflowRunDidEnd(_ context: WorkflowRunLifecycleContext) async {
+    let loadedAdapters = Array(adapters.values)
+    for adapter in loadedAdapters {
+      await adapter.workflowRunDidEnd(context)
+    }
+  }
+
   private func loadAdapter(for backend: NodeExecutionBackend) async throws -> any NodeAdapter {
     if let adapter = adapters[backend] {
       return adapter

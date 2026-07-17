@@ -328,6 +328,7 @@ Usage:
   riela note notebook list|create|show|delete [target] [--note-root <dir>] [--output json|text|table]
   riela note storage migrate <file-id|--all> --s3-endpoint <url> --s3-region <region> --s3-bucket <bucket> [--output json|text]
   riela note client register|list|revoke [target] [--direct] [--note-root <dir>] [--output json|text|table]
+  riela serve [--host <host>] [--port <port>]
   riela serve --note-api [--note-root <dir>] [--host <host>] [--port <port>]
   riela session rerun <session-id> <step-id> [--scope project|user|auto] [--output jsonl|json|text]
   riela session resume <session-id> [--max-steps <n>] [--scope project|user|auto] [--output jsonl|json|text]
@@ -347,6 +348,10 @@ for automation, agents, and LLM-driven tool use, especially for workflow run.
 Use --output text for human-readable output. Use --output json only when a
 legacy caller explicitly requires one non-streaming JSON document after
 completion.
+
+Bare `riela serve` starts an HTTP listener and remains active until SIGINT or
+SIGTERM. The default address is 127.0.0.1:8787. The status, health, overview,
+and graphql serve subcommands remain one-shot commands.
 
 The Swift CLI is the production Homebrew runtime. The formula installs only the riela command on macOS; Linux users install CLI release tarballs directly. The macOS Cask installs RielaApp.app and riela together.
 

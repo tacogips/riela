@@ -51,6 +51,10 @@ public struct LocalAgentCommand: Sendable {
   public var normalizeStdout: @Sendable (String) -> String
   public var backendEventType: @Sendable (String) -> String?
   public var classifyBackendEvent: (@Sendable (String) -> AdapterBackendEvent?)?
+  /// Observes raw stdout JSONL without consuming or rewriting normal output.
+  public var observeStdoutLine: (@Sendable (String) -> Void)?
+  /// Called after a zero process exit and before output normalization.
+  public var processDidSucceed: (@Sendable () -> Void)?
   /// Optional terminal tool-child stall monitor (nil = policy off).
   public var toolChildMonitor: (any LocalAgentToolChildMonitoring)?
 
@@ -61,6 +65,8 @@ public struct LocalAgentCommand: Sendable {
     normalizeStdout: @escaping @Sendable (String) -> String = { $0 },
     backendEventType: @escaping @Sendable (String) -> String? = { _ in nil },
     classifyBackendEvent: (@Sendable (String) -> AdapterBackendEvent?)? = nil,
+    observeStdoutLine: (@Sendable (String) -> Void)? = nil,
+    processDidSucceed: (@Sendable () -> Void)? = nil,
     toolChildMonitor: (any LocalAgentToolChildMonitoring)? = nil
   ) {
     self.provider = provider
@@ -69,6 +75,8 @@ public struct LocalAgentCommand: Sendable {
     self.normalizeStdout = normalizeStdout
     self.backendEventType = backendEventType
     self.classifyBackendEvent = classifyBackendEvent
+    self.observeStdoutLine = observeStdoutLine
+    self.processDidSucceed = processDidSucceed
     self.toolChildMonitor = toolChildMonitor
   }
 }
@@ -839,16 +847,17 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
       let monitor = command.toolChildMonitor
       monitor?.start(emitBackendEvent: eventBridge.emitInjected)
       let outputHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
-      if let monitor {
-        let bridgeHandler = eventBridge.handler
+      let bridgeHandler = eventBridge.handler
+      if monitor != nil || command.observeStdoutLine != nil || bridgeHandler != nil {
         outputHandler = { outputEvent in
           if outputEvent.stream == .stdout {
-            monitor.observeStdoutLine(outputEvent.line)
+            command.observeStdoutLine?(outputEvent.line)
+            monitor?.observeStdoutLine(outputEvent.line)
           }
           bridgeHandler?(outputEvent)
         }
       } else {
-        outputHandler = eventBridge.handler
+        outputHandler = nil
       }
       do {
         if let monitor, let spawnObservingRunner = streamingRunner as? any LocalAgentProcessSpawnObserving {
@@ -878,6 +887,9 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
       }
     } else {
       result = try await runner.run(configuration: command.configuration, stdin: command.stdin, deadline: context.deadline)
+      for line in result.stdout.split(whereSeparator: \.isNewline) {
+        command.observeStdoutLine?(String(line))
+      }
     }
     guard result.terminationStatus == 0 else {
       let detail = redactAdapterSensitiveText(
@@ -886,6 +898,7 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
       )
       throw AdapterExecutionError(.providerError, "\(command.provider) failed with exit code \(result.terminationStatus): \(detail)")
     }
+    command.processDidSucceed?()
 
     let responseText = command.normalizeStdout(result.stdout)
     let normalized = try normalizeAgentOutput(responseText, source: command.provider, requiresOutputContract: input.node.output != nil)
@@ -970,47 +983,4 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
     let parsed = try parseJSONObjectCandidate(text, source: source)
     return try normalizeOutputContractEnvelope(parsed, source: source)
   }
-}
-
-private struct BackendEventBridge: Sendable {
-  var handler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
-  /// Injects a synthesized event (tool-child recovery diagnostics) into the
-  /// same consumer stream as classified stdout events.
-  var emitInjected: @Sendable (AdapterBackendEvent) -> Void
-  var finish: @Sendable () -> Void
-  var waitForCompletion: @Sendable () async -> Void
-}
-
-private func fallbackBackendEvent(command: LocalAgentCommand, line: String) -> AdapterBackendEvent? {
-  guard let eventType = command.backendEventType(line) else {
-    return nil
-  }
-  return AdapterBackendEvent(provider: command.provider, eventType: eventType)
-}
-
-private func sanitizedBackendEventContent(_ text: String?, sensitiveValues: [String]) -> String? {
-  guard let text else {
-    return nil
-  }
-  let redacted = redactAdapterSensitiveText(text, additionalSensitiveValues: sensitiveValues)
-  let cap = 16 * 1024
-  guard redacted.utf8.count > cap else {
-    return redacted
-  }
-  var prefix = ""
-  prefix.reserveCapacity(cap)
-  for character in redacted {
-    guard prefix.utf8.count + String(character).utf8.count <= cap else {
-      break
-    }
-    prefix.append(character)
-  }
-  return prefix
-}
-
-private func backendContentStreamingEnabled(_ value: JSONValue?) -> Bool {
-  guard case let .bool(enabled) = value else {
-    return true
-  }
-  return enabled
 }

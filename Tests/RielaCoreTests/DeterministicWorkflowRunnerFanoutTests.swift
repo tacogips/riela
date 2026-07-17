@@ -25,6 +25,11 @@ final class DeterministicWorkflowRunnerFanoutTests: XCTestCase {
     XCTAssertEqual(branches.compactMap(branchOutputIndex), [0, 1, 2])
     XCTAssertEqual(join["fanoutGroupRunId"], .string("group:source-attempt-1-exec-1"))
     XCTAssertEqual(join["resultOrder"], .string("input"))
+    let identities = await tracker.branchIdentities()
+    XCTAssertEqual(identities.count, 3)
+    XCTAssertEqual(Set(identities.map(\.workflowRunId)), [result.session.sessionId])
+    XCTAssertEqual(Set(identities.map(\.workflowSessionId)).count, 3)
+    XCTAssertEqual(Set(identities.map(\.stepId)), ["branch"])
   }
 
   func testFanoutFailFastCancelsOutstandingBranchesAndStopsScheduling() async throws {
@@ -103,6 +108,11 @@ final class DeterministicWorkflowRunnerFanoutTests: XCTestCase {
       return XCTFail("fanoutJoin branches should be an array")
     }
     XCTAssertEqual(branches.compactMap(branchOutputIndex), [0, 1, 2])
+    let identities = await tracker.branchIdentities()
+    XCTAssertEqual(identities.count, 3)
+    XCTAssertEqual(Set(identities.map(\.workflowRunId)), [result.session.sessionId])
+    XCTAssertEqual(Set(identities.map(\.workflowSessionId)).count, 3)
+    XCTAssertEqual(Set(identities.map(\.stepId)), ["branch"])
   }
 
   private func branchIndex(_ value: JSONValue) -> Int? {
@@ -131,6 +141,7 @@ private actor FanoutBranchTracker {
   private var started: [Int] = []
   private var cancellationObserved = false
   private var joinFanout: JSONObject?
+  private var identities: [AdapterExecutionIdentity] = []
 
   init(delaysByIndex: [Int: UInt64], failingIndexes: Set<Int> = []) {
     self.delaysByIndex = delaysByIndex
@@ -160,6 +171,12 @@ private actor FanoutBranchTracker {
     joinFanout = fanout
   }
 
+  func recordIdentity(_ identity: AdapterExecutionIdentity?) {
+    if let identity {
+      identities.append(identity)
+    }
+  }
+
   func maxActiveCount() -> Int {
     maxActive
   }
@@ -174,6 +191,10 @@ private actor FanoutBranchTracker {
 
   func joinRuntimeFanout() -> JSONObject? {
     joinFanout
+  }
+
+  func branchIdentities() -> [AdapterExecutionIdentity] {
+    identities
   }
 }
 
@@ -200,6 +221,7 @@ private struct FanoutTestAdapter: NodeAdapter {
       )
     case "branch":
       let index = branchIndex(from: input.arguments["feature"])
+      await tracker.recordIdentity(input.executionIdentity)
       let delay = await tracker.begin(index: index)
       do {
         if delay > 0 {

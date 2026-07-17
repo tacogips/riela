@@ -166,7 +166,7 @@ public final class CodexProcessRunningSession: CodexRunningSession, @unchecked S
       streamGranularity: streamGranularity,
       resumeBackfill: resumeBackfill,
       terminateProcess: terminateProcess,
-      sessionIdResolver: { lines in Self.sessionId(from: lines) },
+      sessionIdResolver: { lines in CodexSessionIdExtractor.firstSessionId(from: lines) },
       lineDeduplicator: { lines in lines.deduplicatingStableRolloutLines() },
       streamChunker: { lines, granularity, sessionId in
         lines.streamChunks(granularity: granularity, sessionId: sessionId)
@@ -198,20 +198,6 @@ public final class CodexProcessRunningSession: CodexRunningSession, @unchecked S
     CodexSessionResult(state.cancel())
   }
 
-  private static func sessionId(from lines: [CodexRolloutLine]) -> String? {
-    for line in lines where line.type == "session_meta" {
-      guard let object = line.payloadObject else {
-        continue
-      }
-      if case let .object(meta)? = object["meta"], case let .string(id)? = meta["id"] {
-        return id
-      }
-      if case let .string(id)? = object["session_id"] ?? object["sessionId"] ?? object["id"] {
-        return id
-      }
-    }
-    return nil
-  }
 }
 
 private extension CodexSessionResult {
@@ -240,7 +226,7 @@ public final class CodexProcessSessionRunner: CodexSessionRunner, @unchecked Sen
     }
     let result = processManager.spawnExecStream(prompt: config.prompt, options: config.options)
     return CodexProcessRunningSession(
-      sessionId: sessionId(from: result.lines.snapshot()) ?? result.process.id,
+      sessionId: CodexSessionIdExtractor.firstSessionId(from: result.lines.snapshot()) ?? result.process.id,
       processRecord: result.process,
       streamResult: result,
       streamGranularity: config.options.streamGranularity ?? "event",
@@ -267,21 +253,6 @@ public final class CodexProcessSessionRunner: CodexSessionRunner, @unchecked Sen
         processManager.kill(id: processId)
       }
     )
-  }
-
-  private func sessionId(from lines: [CodexRolloutLine]) -> String? {
-    for line in lines where line.type == "session_meta" {
-      guard let object = line.payloadObject else {
-        continue
-      }
-      if case let .object(meta)? = object["meta"], case let .string(id)? = meta["id"] {
-        return id
-      }
-      if case let .string(id)? = object["session_id"] ?? object["sessionId"] ?? object["id"] {
-        return id
-      }
-    }
-    return nil
   }
 
   private func existingRolloutLines(session: CodexSession?) -> [CodexRolloutLine] {

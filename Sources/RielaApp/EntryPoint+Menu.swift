@@ -25,6 +25,31 @@ extension RielaApp {
       menu.addItem(supplementaryMenuItem(launchAtLoginDetail))
     }
     menu.addItem(.separator())
+    let webState = webServerController?.state ?? .stopped
+    let startWebServerItem = menuItem(
+      "Start Web Server",
+      action: #selector(startWebServerFromMenu),
+      enabled: webState == .stopped || webState.label == "failed"
+    )
+    let stopWebServerItem = menuItem(
+      "Stop Web Server",
+      action: #selector(stopWebServerFromMenu),
+      enabled: webState.boundPort != nil || webState.label == "starting"
+    )
+    let openWebServerItem = menuItem(
+      "Open in Browser",
+      action: #selector(openWebServerFromMenu),
+      enabled: webServerController?.endpointURL != nil
+    )
+    menu.addItem(startWebServerItem)
+    menu.addItem(stopWebServerItem)
+    menu.addItem(openWebServerItem)
+    if let webServerController {
+      menu.addItem(supplementaryMenuItem(webServerController.statusDescription))
+    } else {
+      menu.addItem(supplementaryMenuItem(webServerSetupError ?? "Web Server: Unavailable"))
+    }
+    menu.addItem(.separator())
     menu.addItem(supplementaryMenuItem(
       rielaAppMetadataText(["Instances \(daemonSummary())", "Profile \(daemonProfileName.rawValue)"])
     ))

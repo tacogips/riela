@@ -30,6 +30,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   /// fail loudly instead of recursing without bound.
   public var crossWorkflowDispatchDepth: Int
   var stopBeforeStepId: String?
+  var workflowRunId: String?
 
   public init(
     workflow: WorkflowDefinition,
@@ -75,6 +76,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     self.eventHandler = eventHandler
     self.crossWorkflowDispatchDepth = crossWorkflowDispatchDepth
     self.stopBeforeStepId = stopBeforeStepId
+    self.workflowRunId = nil
   }
 }
 
@@ -168,38 +170,11 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
   }
 
   public func run(_ request: DeterministicWorkflowRunRequest) async throws -> WorkflowRunResult {
-    var interruptedSessionId: String?
+    var interruptedSessionId: String?, ownedWorkflowRunId: String?
     var pendingStepBudgetDiagnostic: WorkflowStepBudgetDiagnostic?
     do {
-    let diagnostics = DefaultWorkflowValidator().validate(request.workflow)
-    if let diagnostic = diagnostics.first(where: { $0.severity == .error }) {
-      throw DeterministicWorkflowRunnerError.invalidWorkflow("\(diagnostic.path): \(diagnostic.message)")
-    }
-    let supportsCrossWorkflowDispatch = simulatesCrossWorkflowDispatch || calleeResolver != nil
-    let capabilityGaps = Self.unsupportedFeatures(
-      in: request.workflow,
-      maxConcurrency: request.maxConcurrency,
-      supportsCrossWorkflowDispatch: supportsCrossWorkflowDispatch
-    )
-    if let gap = capabilityGaps.first(where: { $0.severity == .error }) {
-      throw DeterministicWorkflowRunnerError.invalidWorkflow("\(gap.path): \(gap.message)")
-    }
-    if !supportsCrossWorkflowDispatch,
-       let gap = capabilityGaps.first(where: { $0.path.hasSuffix(".transitions.toWorkflowId") }) {
-      throw DeterministicWorkflowRunnerError.invalidWorkflow("\(gap.path): \(gap.message)")
-    }
-    try enforceRequiredLoopPolicyPreflight(request)
-    let executionPlan = WorkflowExecutionPlan(workflow: request.workflow)
-
-    do {
-      try WorkflowSessionEntryValidation.validateMutuallyExclusiveSessionEntryModes(
-        resumeSessionId: request.resumeSessionId,
-        rerunFromSessionId: request.rerunFromSessionId,
-        continueFromWorkflowExecutionId: nil
-      )
-    } catch let error as WorkflowSessionEntryValidationError {
-      throw DeterministicWorkflowRunnerError.resumeValidation(errorMessage(error))
-    }
+    let executionPlan = try validatedExecutionPlan(for: request)
+    try validateSessionEntryModes(request)
     var effectiveRequest = request
 
     let entryContext: SessionEntryContext
@@ -215,6 +190,9 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     for (key, value) in entryContext.variableOverrides {
       effectiveRequest.variables[key] = value
     }
+    let lifecycleIdentity = lifecycleIdentity(request: request, sessionId: session.sessionId)
+    effectiveRequest.workflowRunId = lifecycleIdentity.workflowRunId
+    ownedWorkflowRunId = lifecycleIdentity.ownedWorkflowRunId
 
     interruptedSessionId = session.sessionId
     try enforceLoopSessionAttempts(lineage: recoveryLineage, workflow: effectiveRequest.workflow)
@@ -384,17 +362,20 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       recovery: recoveryLineage
     )
     await emitSessionCompletedEvent(result: completedResult, handler: effectiveRequest.eventHandler)
+    await finishOwnedWorkflowRun(ownedWorkflowRunId)
     return completedResult
     } catch {
+      let originalError = error
       if let interruptedSessionId {
         await finalizeInterruptedSessionFailed(
           sessionId: interruptedSessionId,
           request: request,
-          error: error,
+          error: originalError,
           stepBudgetDiagnostic: pendingStepBudgetDiagnostic
         )
       }
-      throw error
+      await finishOwnedWorkflowRun(ownedWorkflowRunId)
+      throw originalError
     }
   }
 
@@ -592,8 +573,17 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     let adapterInput = AdapterExecutionInput(
       node: executionPayload,
       promptText: prompts.promptText,
+      freshPromptText: prompts.promptText,
+      resumedPromptText: prompts.resumedPromptText,
       systemPromptText: prompts.systemPromptText,
       sessionPolicy: step.sessionPolicy ?? executionPayload.sessionPolicy,
+      executionIdentity: request.workflowRunId.map {
+        AdapterExecutionIdentity(
+          workflowRunId: $0,
+          workflowSessionId: session.sessionId,
+          stepId: step.id
+        )
+      },
       arguments: request.variables,
       mergedVariables: mergedVariables,
       agentEnvironment: agentEnvironment

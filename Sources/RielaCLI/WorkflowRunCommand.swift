@@ -50,6 +50,7 @@ public struct WorkflowRunCommand: Sendable {
         nodePayloads: bundle.nodePayloads
       )
       bundle.nodePayloads = instanceResolution.nodePayloads
+      try validateEffectiveSessionPolicies(bundle)
       if let saveInstance = options.saveInstance {
         try saveEffectiveInstance(
           identity: saveInstance,
@@ -340,6 +341,16 @@ public struct WorkflowRunCommand: Sendable {
       return [:]
     }
     return try jsonLoader.object(from: reference, workingDirectory: workingDirectory)
+  }
+
+  private func validateEffectiveSessionPolicies(_ bundle: ResolvedWorkflowBundle) throws {
+    let diagnostics = DefaultWorkflowValidator().validate(
+      bundle.workflow,
+      nodePayloads: bundle.nodePayloads
+    )
+    if diagnostics.contains(where: { $0.severity == .error }) {
+      throw WorkflowResolutionError.invalidWorkflow(diagnostics)
+    }
   }
 
   private func makeTelemetry(environment: [String: String]) -> any RielaTelemetry {

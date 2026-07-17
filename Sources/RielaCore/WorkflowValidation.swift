@@ -95,6 +95,44 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
 
     return diagnostics
   }
+
+  public func validate(
+    _ workflow: WorkflowDefinition,
+    nodePayloads: [String: AgentNodePayload]
+  ) -> [WorkflowValidationDiagnostic] {
+    var diagnostics = validate(workflow)
+    let stepIds = Set(workflow.steps.map(\.id))
+    for step in workflow.steps {
+      let effectivePolicy = step.sessionPolicy ?? nodePayloads[step.nodeId]?.sessionPolicy
+      validateEffectiveSessionPolicy(
+        effectivePolicy,
+        path: "workflow.steps.\(step.id).sessionPolicy",
+        stepIds: stepIds,
+        diagnostics: &diagnostics
+      )
+    }
+    return diagnostics
+  }
+}
+
+private func validateEffectiveSessionPolicy(
+  _ policy: WorkflowStepSessionPolicy?,
+  path: String,
+  stepIds: Set<String>,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let policy, let inheritedStepId = policy.inheritFromStepId else {
+    return
+  }
+  let trimmedStepId = inheritedStepId.trimmingCharacters(in: .whitespacesAndNewlines)
+  if policy.mode != .reuse {
+    diagnostics.append(error("\(path).inheritFromStepId", "is allowed only when sessionPolicy.mode is 'reuse'"))
+  }
+  if trimmedStepId.isEmpty {
+    diagnostics.append(error("\(path).inheritFromStepId", "must be a non-empty string"))
+  } else if !stepIds.contains(trimmedStepId) {
+    diagnostics.append(error("\(path).inheritFromStepId", "must reference a step in the same workflow"))
+  }
 }
 
 private func validateUniqueIds(
@@ -269,6 +307,12 @@ private func validateTypedAuthoredWorkflow(_ workflow: AuthoredWorkflowJSON) -> 
     if let transitions = step.transitions {
       validateTypedTransitions(transitions, path: "\(path).transitions", stepIds: stepIds, diagnostics: &diagnostics)
     }
+    validateEffectiveSessionPolicy(
+      step.sessionPolicy,
+      path: "\(path).sessionPolicy",
+      stepIds: stepIds,
+      diagnostics: &diagnostics
+    )
     validateTypedStepLoop(step.loop, path: "\(path).loop", gateIds: gateIds, diagnostics: &diagnostics)
   }
 

@@ -169,7 +169,7 @@ extension DeterministicWorkflowRunner {
       branchVariables["fanoutIndex"] = .integer(Int64(index))
       branchVariables["fanoutGroupId"] = .string(directive.groupId)
 
-      let branchRequest = DeterministicWorkflowRunRequest(
+      var branchRequest = DeterministicWorkflowRunRequest(
         workflow: branchWorkflow,
         nodePayloads: branchNodePayloads,
         variables: branchVariables,
@@ -190,6 +190,7 @@ extension DeterministicWorkflowRunner {
           : request.crossWorkflowDispatchDepth + 1,
         stopBeforeStepId: directive.joinStepId
       )
+      branchRequest.workflowRunId = request.workflowRunId
       let result = try await run(branchRequest)
       guard result.status == .completed else {
         return .failure(

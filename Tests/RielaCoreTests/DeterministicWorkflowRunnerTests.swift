@@ -822,7 +822,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       id: "worker-node",
       executionBackend: .codexAgent,
       model: "gpt-5.5",
-      sessionPolicy: WorkflowStepSessionPolicy(mode: .reuse, inheritFromStepId: "prior")
+      sessionPolicy: WorkflowStepSessionPolicy(mode: .reuse, inheritFromStepId: "worker")
     )
     let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: adapter)
 
@@ -851,7 +851,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       id: "worker-node",
       executionBackend: .codexAgent,
       model: "gpt-5.5",
-      sessionPolicy: WorkflowStepSessionPolicy(mode: .reuse, inheritFromStepId: "prior")
+      sessionPolicy: WorkflowStepSessionPolicy(mode: .reuse, inheritFromStepId: "worker")
     )
     let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: adapter)
 
@@ -863,7 +863,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
     let capturedInput = await adapter.capturedInput()
     let input = try XCTUnwrap(capturedInput)
     XCTAssertEqual(input.sessionPolicy?.mode, .reuse)
-    XCTAssertEqual(input.sessionPolicy?.inheritFromStepId, "prior")
+    XCTAssertEqual(input.sessionPolicy?.inheritFromStepId, "worker")
   }
 
 }

@@ -16,7 +16,8 @@ struct WorkflowStagedVerifier: Sendable {
       workflowDefinitionDir: staged.root.path,
       workingDirectory: staged.root.path
     ))
-    let diagnostics = bundle.diagnostics + DefaultWorkflowValidator().validate(bundle.workflow)
+    let diagnostics = bundle.diagnostics
+      + DefaultWorkflowValidator().validate(bundle.workflow, nodePayloads: bundle.nodePayloads)
     let errors = diagnostics.filter { $0.severity == .error }
     guard errors.isEmpty else {
       let summary = errors.map { "\($0.path): \($0.message)" }.joined(separator: "; ")

@@ -192,6 +192,14 @@ private func validateSteps(
     if let stallTimeoutMs = entry["stallTimeoutMs"] {
       validateNumberField(stallTimeoutMs, path: "\(path).stallTimeoutMs", diagnostics: &diagnostics)
     }
+    if let sessionPolicy = entry["sessionPolicy"] {
+      validateRawSessionPolicy(
+        sessionPolicy,
+        path: "\(path).sessionPolicy",
+        stepIds: stepIds,
+        diagnostics: &diagnostics
+      )
+    }
     if let transitions = entry["transitions"] {
       validateTransitions(transitions, path: "\(path).transitions", stepIds: stepIds, diagnostics: &diagnostics)
     }
@@ -212,6 +220,44 @@ private func validateSteps(
 
   if let managerStepId = raw["managerStepId"] as? String, !managerStepId.isEmpty, !stepIds.contains(managerStepId) {
     diagnostics.append(error("workflow.managerStepId", "must reference workflow.steps[] entry '\(managerStepId)'"))
+  }
+}
+
+private func validateRawSessionPolicy(
+  _ raw: Any,
+  path: String,
+  stepIds: Set<String>,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let policy = raw as? [String: Any] else {
+    diagnostics.append(error(path, "must be an object when provided"))
+    return
+  }
+  let allowedKeys: Set<String> = ["mode", "inheritFromStepId"]
+  for key in policy.keys where !allowedKeys.contains(key) {
+    diagnostics.append(error("\(path).\(key)", "uses an unsupported session policy field"))
+  }
+  let mode = policy["mode"] as? String
+  if let rawMode = policy["mode"], mode == nil {
+    diagnostics.append(error("\(path).mode", "must be 'new' or 'reuse' when provided; received \(rawMode)"))
+  } else if let mode, mode != "new", mode != "reuse" {
+    diagnostics.append(error("\(path).mode", "must be 'new' or 'reuse' when provided"))
+  }
+  guard let inheritance = policy["inheritFromStepId"] else {
+    return
+  }
+  guard let inheritedStepId = inheritance as? String else {
+    diagnostics.append(error("\(path).inheritFromStepId", "must be a non-empty string"))
+    return
+  }
+  let trimmedStepId = inheritedStepId.trimmingCharacters(in: .whitespacesAndNewlines)
+  if mode != "reuse" {
+    diagnostics.append(error("\(path).inheritFromStepId", "is allowed only when sessionPolicy.mode is 'reuse'"))
+  }
+  if trimmedStepId.isEmpty {
+    diagnostics.append(error("\(path).inheritFromStepId", "must be a non-empty string"))
+  } else if !stepIds.contains(trimmedStepId) {
+    diagnostics.append(error("\(path).inheritFromStepId", "must reference a step in the same workflow"))
   }
 }
 

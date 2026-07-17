@@ -142,7 +142,8 @@ public struct WorkflowCatalogCommand: Sendable {
         workingDirectory: parsed.workingDirectory
       )
       let bundle = try FileSystemWorkflowBundleResolver().resolve(resolution)
-      let diagnostics = bundle.diagnostics + DefaultWorkflowValidator().validate(bundle.workflow)
+      let diagnostics = bundle.diagnostics
+        + DefaultWorkflowValidator().validate(bundle.workflow, nodePayloads: bundle.nodePayloads)
       let entry = WorkflowCatalogEntry(
         workflowName: target,
         scope: bundle.sourceScope,
@@ -181,7 +182,8 @@ public struct WorkflowCatalogCommand: Sendable {
         let resolution = WorkflowResolutionOptions(workflowName: name, scope: scope, workingDirectory: parsed.workingDirectory)
         do {
           let bundle = try FileSystemWorkflowBundleResolver().resolve(resolution)
-          let diagnostics = bundle.diagnostics + DefaultWorkflowValidator().validate(bundle.workflow)
+          let diagnostics = bundle.diagnostics
+            + DefaultWorkflowValidator().validate(bundle.workflow, nodePayloads: bundle.nodePayloads)
           entries.append(WorkflowCatalogEntry(
             workflowName: name,
             scope: bundle.sourceScope,

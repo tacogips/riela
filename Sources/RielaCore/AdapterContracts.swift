@@ -78,8 +78,11 @@ public struct AdapterUsage: Codable, Equatable, Sendable {
 public struct AdapterExecutionInput: Codable, Equatable, Sendable {
   public var node: AgentNodePayload
   public var promptText: String
+  public var freshPromptText: String?
+  public var resumedPromptText: String?
   public var systemPromptText: String?
   public var sessionPolicy: WorkflowStepSessionPolicy?
+  public var executionIdentity: AdapterExecutionIdentity?
   public var arguments: JSONObject
   public var mergedVariables: JSONObject
   public var agentEnvironment: [String: String]
@@ -89,8 +92,11 @@ public struct AdapterExecutionInput: Codable, Equatable, Sendable {
   public init(
     node: AgentNodePayload,
     promptText: String,
+    freshPromptText: String? = nil,
+    resumedPromptText: String? = nil,
     systemPromptText: String? = nil,
     sessionPolicy: WorkflowStepSessionPolicy? = nil,
+    executionIdentity: AdapterExecutionIdentity? = nil,
     arguments: JSONObject = [:],
     mergedVariables: JSONObject = [:],
     agentEnvironment: [String: String] = [:],
@@ -99,13 +105,36 @@ public struct AdapterExecutionInput: Codable, Equatable, Sendable {
   ) {
     self.node = node
     self.promptText = promptText
+    self.freshPromptText = freshPromptText
+    self.resumedPromptText = resumedPromptText
     self.systemPromptText = systemPromptText
     self.sessionPolicy = sessionPolicy
+    self.executionIdentity = executionIdentity
     self.arguments = arguments
     self.mergedVariables = mergedVariables
     self.agentEnvironment = agentEnvironment
     self.executionIndex = executionIndex
     self.output = output
+  }
+
+  public var resolvedFreshPromptText: String {
+    freshPromptText ?? promptText
+  }
+
+  public var resolvedResumedPromptText: String {
+    resumedPromptText ?? promptText
+  }
+}
+
+public struct AdapterExecutionIdentity: Codable, Equatable, Hashable, Sendable {
+  public var workflowRunId: String
+  public var workflowSessionId: String
+  public var stepId: String
+
+  public init(workflowRunId: String, workflowSessionId: String, stepId: String) {
+    self.workflowRunId = workflowRunId
+    self.workflowSessionId = workflowSessionId
+    self.stepId = stepId
   }
 }
 
@@ -206,6 +235,19 @@ public struct AdapterExecutionOutput: Codable, Equatable, Sendable {
 
 public protocol NodeAdapter: Sendable {
   func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput
+  func workflowRunDidEnd(_ context: WorkflowRunLifecycleContext) async
+}
+
+public struct WorkflowRunLifecycleContext: Equatable, Sendable {
+  public var workflowRunId: String
+
+  public init(workflowRunId: String) {
+    self.workflowRunId = workflowRunId
+  }
+}
+
+public extension NodeAdapter {
+  func workflowRunDidEnd(_: WorkflowRunLifecycleContext) async {}
 }
 
 public func normalizeTextBusinessPayload(_ text: String) -> JSONObject {

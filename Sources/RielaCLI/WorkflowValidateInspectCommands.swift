@@ -34,7 +34,7 @@ public struct WorkflowValidateCommand: Sendable {
         )
       }
       let diagnostics = bundle.diagnostics +
-        DefaultWorkflowValidator().validate(bundle.workflow) +
+        DefaultWorkflowValidator().validate(bundle.workflow, nodePayloads: bundle.nodePayloads) +
         (await runtimeCapabilityDiagnostics(
           bundle: bundle,
           resolution: options.resolution,
@@ -425,11 +425,13 @@ public struct WorkflowInspectCommand: Sendable {
       return "\(node.id):\(payload.executionBackend?.rawValue ?? "deterministic-local")"
     }
     let callable = buildCallableInspection(workflow, nodePayloads: bundle.nodePayloads)
-    let capabilityGaps = await runtimeCapabilityDiagnostics(
+    let capabilityGaps = bundle.diagnostics
+      + DefaultWorkflowValidator().validate(workflow, nodePayloads: bundle.nodePayloads)
+      + (await runtimeCapabilityDiagnostics(
       bundle: bundle,
       resolution: resolution,
       resolver: resolver
-    )
+      ))
     return WorkflowInspectionSummary(
       workflowId: workflow.workflowId,
       sourceScope: bundle.sourceScope,

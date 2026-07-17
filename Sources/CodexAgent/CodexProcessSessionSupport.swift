@@ -41,7 +41,7 @@ public enum CodexAgentSDK {
     }
     let result = session.waitForCompletion()
     let messages = session.messages()
-    let resolvedSessionId = sessionId(from: messages) ?? session.sessionId
+    let resolvedSessionId = CodexSessionIdExtractor.firstSessionId(from: messages) ?? session.sessionId
     let started = CodexAgentNormalizedEvent(type: "session.started", sessionId: resolvedSessionId, payload: ["resumed": .bool(resumed)])
     let completed = completedEvent(result: result, sessionId: resolvedSessionId, normalized: request.streamMode == .normalized)
     if request.streamMode == .raw {
@@ -62,21 +62,6 @@ public enum CodexAgentSDK {
       return normalizer.normalize(chunk, fallbackSessionId: resolvedSessionId, includeSessionStarted: false)
     }
     return [started] + normalized + [completed]
-  }
-
-  private static func sessionId(from lines: [CodexRolloutLine]) -> String? {
-    for line in lines where line.type == "session_meta" {
-      guard let object = line.payloadObject else {
-        continue
-      }
-      if case let .object(meta)? = object["meta"], case let .string(id)? = meta["id"] {
-        return id
-      }
-      if case let .string(id)? = object["session_id"] ?? object["sessionId"] ?? object["id"] {
-        return id
-      }
-    }
-    return nil
   }
 
   private static func rawMessageEvent(from line: CodexRolloutLine, sessionId: String) -> CodexAgentNormalizedEvent {

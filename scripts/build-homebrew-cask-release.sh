@@ -270,6 +270,9 @@ write_riela_app_bundle() {
   cp "$source_executable" "$macos_dir/RielaApp"
   chmod 0755 "$macos_dir/RielaApp"
   write_app_icon "$app_icon_source" "$resources_dir" "$app_icon_name"
+  test -s "$repo_root/web/dist/index.html"
+  mkdir -p "$resources_dir/Web"
+  cp -R "$repo_root/web/dist/". "$resources_dir/Web/"
 
   cat > "$contents_dir/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -303,6 +306,19 @@ write_riela_app_bundle() {
 </dict>
 </plist>
 PLIST
+}
+
+build_web_assets() {
+  require_command bun
+  (
+    cd "$repo_root/web"
+    bun install --frozen-lockfile
+    bun run lint
+    bun run typecheck
+    bun run test
+    bun run build
+  )
+  test -s "$repo_root/web/dist/index.html"
 }
 
 print_plan() {
@@ -426,6 +442,9 @@ main() {
   fi
 
   local target
+  if [[ "$dry_run" != true ]]; then
+    build_web_assets
+  fi
   for target in "${targets[@]}"; do
     validate_target "$target"
     if [[ "$dry_run" == true ]]; then

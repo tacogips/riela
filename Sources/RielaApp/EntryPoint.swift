@@ -47,6 +47,9 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   var viewerWindowController: WorkflowViewerWindowController?
   var noteWindowController: NoteWindowController?
   var noteSettingsWindowController: NoteSettingsWindowController?
+  var webServerController: RielaAppWebServerController?
+  var webServerSetupError: String?
+  var webRevision = 1
   private var terminationShutdownStarted = false
 
   static func main() {
@@ -84,6 +87,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
     logDaemon("profile=\(daemonProfileName.rawValue) discovered \(daemonInstances.count) workflow instance(s)")
     configureStatusItem()
+    configureWebServer()
     rebuildMenu()
     startDaemonStatusRefreshTimer()
     importDaemonSourcesIfRequested()
@@ -110,6 +114,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     daemonStatusRefreshTimer?.invalidate()
     daemonStatusRefreshTimer = nil
     Task {
+      await webServerController?.shutdownForTermination()
       let stopped = await stopDaemonRuntimeForTermination()
       if !stopped {
         logDaemon("daemon workflow shutdown timed out during app termination")

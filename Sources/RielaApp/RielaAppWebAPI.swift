@@ -13,7 +13,8 @@ private struct RielaAppWebInstancePatch: Decodable {
   var expectedRevision: Int
   var workingDirectory: String?
   var environmentFilePath: String?
-  var environmentVariables: [String: String]?
+  var environmentVariableUpdates: [String: String]?
+  var environmentVariablesToClear: [String]?
   var workflowVariables: JSONObject?
 }
 
@@ -43,7 +44,7 @@ private struct RielaAppWebDirectoryRequest: Decodable {
 
 extension RielaApp {
   func webAPIResponse(for request: RielaHTTPRequest, csrfToken: String) async -> RielaHTTPResponse {
-    let components = request.path.split(separator: "/").map(String.init)
+    let components = request.percentEncodedPath.split(separator: "/").map(String.init)
     switch (request.method, request.path) {
     case ("GET", "/api/v1/bootstrap"):
       return webJSON([
@@ -58,7 +59,7 @@ extension RielaApp {
     case ("GET", "/api/v1/instances"):
       return webJSON([
         "revision": .number(Double(webRevision)),
-        "items": .array(daemonInstances.map(webInstanceJSON))
+        "items": .array(webInstancesJSON())
       ])
     case ("GET", "/api/v1/workflows/sources"):
       return webJSON([
@@ -73,7 +74,8 @@ extension RielaApp {
             "id": .string(source.id),
             "name": .string(source.displayName),
             "workflowId": .string(source.workflowId),
-            "scope": .string(source.sourceScope.rawValue)
+            "scope": .string(source.sourceScope.rawValue),
+            "sourceKind": .string(source.packageDirectory == nil ? "directory" : "package")
           ])
         })
       ])
@@ -170,30 +172,45 @@ extension RielaApp {
       webRevision += 1
       return webJSON(webServerSettingsJSON())
     default:
-      if components.count == 4, components[0...2] == ["api", "v1", "instances"], request.method == "GET" {
-        return webInstanceDetail(identity: components[3])
-      }
-      if components.count == 5,
-         components[0...2] == ["api", "v1", "instances"],
-         components[4] == "configuration",
-         request.method == "PUT" {
-        return await webUpdateInstance(identity: components[3], request: request, csrfToken: csrfToken)
-      }
-      if components.count == 5,
-         components[0...2] == ["api", "v1", "instances"],
-         components[4] == "executions",
-         request.method == "GET" {
-        return webExecutions(identity: components[3])
-      }
-      return webError(status: 404, code: "not_found", message: "Unknown API route")
+      return await webParameterizedResponse(components: components, request: request)
     }
   }
 
-  private func webInstanceDetail(identity: String) -> RielaHTTPResponse {
-    guard let instance = daemonInstances.first(where: { $0.identity == identity }) else {
-      return webError(status: 404, code: "instance_not_found", message: "Workflow instance was not found")
+  private func webParameterizedResponse(
+    components: [String],
+    request: RielaHTTPRequest
+  ) async -> RielaHTTPResponse {
+    guard components.count == 4 || components.count == 5,
+          components[0...2] == ["api", "v1", "instances"],
+          let identity = components[3].removingPercentEncoding else {
+      return webError(status: 404, code: "not_found", message: "Unknown API route")
     }
-    return webJSON(["revision": .number(Double(webRevision)), "item": webInstanceJSON(instance)])
+    if components.count == 4, request.method == "GET" {
+      return webInstanceDetail(identity: identity)
+    }
+    guard components.count == 5 else {
+      return webError(status: 404, code: "not_found", message: "Unknown API route")
+    }
+    if components[4] == "configuration", request.method == "PUT" {
+      return await webUpdateInstance(identity: identity, request: request)
+    }
+    if components[4] == "executions", request.method == "GET" {
+      return webExecutions(identity: identity)
+    }
+    return webError(status: 404, code: "not_found", message: "Unknown API route")
+  }
+
+  private func webInstanceDetail(identity: String) -> RielaHTTPResponse {
+    if let instance = daemonInstances.first(where: { $0.identity == identity }) {
+      return webJSON(["revision": .number(Double(webRevision)), "item": webInstanceJSON(instance)])
+    }
+    if let preference = daemonState.preferences[identity] {
+      return webJSON([
+        "revision": .number(Double(webRevision)),
+        "item": webMissingSourceInstanceJSON(identity: identity, preference: preference)
+      ])
+    }
+    return webError(status: 404, code: "instance_not_found", message: "Workflow instance was not found")
   }
 
   private func webExecutions(identity: String) -> RielaHTTPResponse {
@@ -227,21 +244,21 @@ extension RielaApp {
         "revision": .number(Double(webRevision)),
         "instanceId": .string(identity),
         "items": .array([]),
-        "diagnostic": .string(error.localizedDescription)
+        "truncated": .bool(false),
+        "diagnostics": .array([.string(error.localizedDescription)])
       ])
     }
   }
 
   private func webUpdateInstance(
     identity: String,
-    request: RielaHTTPRequest,
-    csrfToken: String
+    request: RielaHTTPRequest
   ) async -> RielaHTTPResponse {
     guard let patch = decodeWebBody(request, as: RielaAppWebInstancePatch.self),
           patch.expectedRevision == webRevision else {
       return webConflictOrBadRequest(request)
     }
-    guard resolveDaemonWorkflowInstance(identity: identity) != nil else {
+    guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
       return webError(status: 404, code: "instance_not_found", message: "Workflow instance was not found")
     }
     let saved = updateDaemonPreference(identity: identity) { preference in
@@ -251,8 +268,15 @@ extension RielaApp {
       if let environmentFilePath = patch.environmentFilePath {
         preference.environmentFilePath = environmentFilePath.trimmingCharacters(in: .whitespacesAndNewlines)
       }
-      if let environmentVariables = patch.environmentVariables {
-        preference.environmentVariables = environmentVariables
+      if let environmentVariableUpdates = patch.environmentVariableUpdates {
+        for (name, value) in environmentVariableUpdates where !value.isEmpty {
+          preference.environmentVariables[name] = value
+        }
+      }
+      if let environmentVariablesToClear = patch.environmentVariablesToClear {
+        for name in environmentVariablesToClear {
+          preference.environmentVariables.removeValue(forKey: name)
+        }
       }
       if let workflowVariables = patch.workflowVariables {
         preference.defaultVariables = workflowVariables
@@ -266,7 +290,16 @@ extension RielaApp {
       identity: identity,
       changeDescription: "web configuration"
     )
-    return webInstanceDetail(identity: identity)
+    let updatedPreference = daemonState(profileName: resolved.profileName).preference(for: resolved.localIdentity)
+    let updatedInstance = WorkflowInstance.configured(
+      identity: identity,
+      source: resolved.instance.instance.source,
+      preference: updatedPreference
+    )
+    return webJSON([
+      "revision": .number(Double(webRevision)),
+      "item": webInstanceJSON(updatedInstance)
+    ])
   }
 
   private func webInstanceJSON(_ instance: WorkflowInstance) -> JSONValue {
@@ -275,23 +308,86 @@ extension RielaApp {
       localIdentity: instance.identity
     ))
     let preference = instance.preference
+    let effectiveEnvironment = daemonEnvironment(for: instance.candidate, preference: preference)
     return .object([
       "id": .string(instance.identity),
       "name": .string(instance.displayName),
       "workflowId": .string(instance.source.workflowId),
       "source": .string(instance.source.sourceDescription),
+      "sourceKind": .string(instance.source.packageDirectory == nil ? "directory" : "package"),
       "status": .string(snapshot.status.rawValue),
       "statusDetail": .string(snapshot.detail),
       "active": .bool(preference.active),
       "enabledAtLaunch": .bool(preference.enabledAtLaunch),
       "workingDirectory": preference.workingDirectory.map(JSONValue.string) ?? .null,
       "environmentFilePath": preference.environmentFilePath.map(JSONValue.string) ?? .null,
-      "environmentVariables": .object(preference.environmentVariables.mapValues(JSONValue.string)),
+      "environmentVariables": .array(preference.environmentVariables.keys.sorted().map { name in
+        .object([
+          "name": .string(name),
+          "isSet": .bool(true),
+          "masked": .string("••••••••")
+        ])
+      }),
+      "requiredEnvironment": .array(instance.candidate.requiredEnvironment.map { requirement in
+        let value = effectiveEnvironment[requirement.name]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return .object([
+          "name": .string(requirement.name),
+          "description": requirement.description.map(JSONValue.string) ?? .null,
+          "required": .bool(true),
+          "secret": .bool(requirement.secret),
+          "source": .string("workflow"),
+          "present": .bool(value?.isEmpty == false)
+        ])
+      }),
       "workflowVariables": .object(preference.defaultVariables),
       "nodePatchCount": .number(Double(preference.nodePatches.count)),
       "eventSources": .array(instance.source.eventSources.map { eventSource in
         .object(["id": .string(eventSource.id), "kind": .string(eventSource.kind)])
       })
+    ])
+  }
+
+  private func webInstancesJSON() -> [JSONValue] {
+    let availableIdentities = Set(daemonInstances.map(\.identity))
+    let availableItems = daemonInstances.map(webInstanceJSON)
+    let missingSourceItems = daemonState.preferences
+      .filter { !availableIdentities.contains($0.key) }
+      .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
+      .map { identity, preference in
+        webMissingSourceInstanceJSON(identity: identity, preference: preference)
+      }
+    return availableItems + missingSourceItems
+  }
+
+  private func webMissingSourceInstanceJSON(
+    identity: String,
+    preference: RielaAppDaemonWorkflowPreference
+  ) -> JSONValue {
+    let sourceIdentity = preference.sourceIdentity ?? identity
+    let name = preference.displayName?.isEmpty == false ? preference.displayName ?? identity : identity
+    return .object([
+      "id": .string(identity),
+      "name": .string(name),
+      "workflowId": .string(sourceIdentity),
+      "source": .string("Missing source: \(sourceIdentity)"),
+      "sourceKind": .string("missing"),
+      "status": .string("needsSource"),
+      "statusDetail": .string("The configured workflow source is unavailable. Relink it in the native app."),
+      "active": .bool(preference.active),
+      "enabledAtLaunch": .bool(preference.enabledAtLaunch),
+      "workingDirectory": preference.workingDirectory.map(JSONValue.string) ?? .null,
+      "environmentFilePath": preference.environmentFilePath.map(JSONValue.string) ?? .null,
+      "environmentVariables": .array(preference.environmentVariables.keys.sorted().map { name in
+        .object([
+          "name": .string(name),
+          "isSet": .bool(true),
+          "masked": .string("••••••••")
+        ])
+      }),
+      "requiredEnvironment": .array([]),
+      "workflowVariables": .object(preference.defaultVariables),
+      "nodePatchCount": .number(Double(preference.nodePatches.count)),
+      "eventSources": .array([])
     ])
   }
 

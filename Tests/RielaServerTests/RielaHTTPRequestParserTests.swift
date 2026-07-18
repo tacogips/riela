@@ -12,9 +12,24 @@ final class RielaHTTPRequestParserTests: XCTestCase {
     }
     XCTAssertEqual(request.method, "POST")
     XCTAssertEqual(request.path, "/graphql")
+    XCTAssertEqual(request.percentEncodedPath, "/graphql")
     XCTAssertEqual(request.query, "operation=test")
     XCTAssertEqual(request.headers["host"], "127.0.0.1")
     XCTAssertEqual(request.body, Data("{}".utf8))
+  }
+
+  func testPreservesEncodedRouteSeparatorsAlongsideCompatibleDecodedPath() throws {
+    let rawPath = "/api/v1/instances/project-package%3A%2Ftmp%2Friela%3Areview-loop/executions"
+    let requestData = Data("GET \(rawPath) HTTP/1.1\r\nHost: 127.0.0.1:19091\r\n\r\n".utf8)
+    guard case let .complete(request) = try RielaHTTPRequestParser().parse(requestData) else {
+      return XCTFail("Expected a complete request")
+    }
+
+    XCTAssertEqual(
+      request.path,
+      "/api/v1/instances/project-package:/tmp/riela:review-loop/executions"
+    )
+    XCTAssertEqual(request.percentEncodedPath, rawPath)
   }
 
   func testRejectsTraversalMalformedPercentEncodingAndTransferEncoding() {

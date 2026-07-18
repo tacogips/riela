@@ -14,16 +14,33 @@ export interface Instance {
   name: string
   workflowId: string
   source: string
-  status: string
+  sourceKind: 'directory' | 'package' | 'missing'
+  status: 'running' | 'starting' | 'reloading' | 'stopping' | 'stopped' | 'failed' | 'needsSource'
   statusDetail: string
   active: boolean
   enabledAtLaunch: boolean
   workingDirectory: string | null
   environmentFilePath: string | null
-  environmentVariables: Record<string, string>
+  environmentVariables: MaskedEnvironmentVariable[]
+  requiredEnvironment: RequiredEnvironmentVariable[]
   workflowVariables: Record<string, JSONValue>
   nodePatchCount: number
   eventSources: Array<{ id: string; kind: string }>
+}
+
+export interface MaskedEnvironmentVariable {
+  name: string
+  isSet: boolean
+  masked: string
+}
+
+export interface RequiredEnvironmentVariable {
+  name: string
+  description: string | null
+  required: boolean
+  secret: boolean
+  source: 'workflow' | 'addon' | 'agent'
+  present: boolean
 }
 
 export interface InstancesResponse {
@@ -41,7 +58,7 @@ export interface WorkflowSources {
   directories: string[]
   projectDirectories: string[]
   repositories: Array<{ id: string; source: string }>
-  discovered: Array<{ id: string; name: string; workflowId: string; scope: string }>
+  discovered: Array<{ id: string; name: string; workflowId: string; scope: string; sourceKind: 'directory' | 'package' }>
 }
 
 export interface AssistantSettings {
@@ -70,8 +87,18 @@ export interface WebServerSettings {
 export interface ExecutionsResponse {
   revision: number
   instanceId: string
-  items: Array<Record<string, JSONValue>>
-  diagnostic?: string
+  items: Execution[]
+  diagnostics: string[]
+  truncated: boolean
+}
+
+export interface Execution {
+  sessionId: string
+  workflowId: string
+  status: string
+  currentStepId: string | null
+  activeStepIds: string[]
+  updatedAt: string
 }
 
 export interface APIErrorPayload {

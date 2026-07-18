@@ -4,6 +4,7 @@ import RielaCore
 public struct RielaHTTPRequest: Equatable, Sendable {
   public var method: String
   public var path: String
+  public var percentEncodedPath: String
   public var query: String?
   public var headers: [String: String]
   public var body: Data
@@ -11,12 +12,14 @@ public struct RielaHTTPRequest: Equatable, Sendable {
   public init(
     method: String,
     path: String,
+    percentEncodedPath: String? = nil,
     query: String? = nil,
     headers: [String: String] = [:],
     body: Data = Data()
   ) {
     self.method = method.uppercased()
     self.path = path
+    self.percentEncodedPath = percentEncodedPath ?? path
     self.query = query
     self.headers = headers.reduce(into: [:]) { result, element in
       result[element.key.lowercased()] = element.value

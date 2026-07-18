@@ -5,6 +5,12 @@ public enum RielaHTTPRequestParseResult: Equatable, Sendable {
   case complete(RielaHTTPRequest)
 }
 
+private struct RielaHTTPNormalizedTarget {
+  var path: String
+  var percentEncodedPath: String
+  var query: String?
+}
+
 public enum RielaHTTPRequestParserError: LocalizedError, Equatable, Sendable {
   case headersTooLarge
   case bodyTooLarge
@@ -64,7 +70,7 @@ public struct RielaHTTPRequestParser: Sendable {
       throw RielaHTTPRequestParserError.malformedRequest
     }
     let target = String(requestParts[1])
-    let (path, query) = try normalizedTarget(target)
+    let normalized = try normalizedTarget(target)
     var headers: [String: String] = [:]
     for line in lines.dropFirst() where !line.isEmpty {
       guard let separator = line.firstIndex(of: ":") else {
@@ -102,14 +108,15 @@ public struct RielaHTTPRequestParser: Sendable {
     }
     return .complete(RielaHTTPRequest(
       method: String(requestParts[0]),
-      path: path,
-      query: query,
+      path: normalized.path,
+      percentEncodedPath: normalized.percentEncodedPath,
+      query: normalized.query,
       headers: headers,
       body: data.subdata(in: bodyStart..<(bodyStart + contentLength))
     ))
   }
 
-  private func normalizedTarget(_ target: String) throws -> (String, String?) {
+  private func normalizedTarget(_ target: String) throws -> RielaHTTPNormalizedTarget {
     guard target.hasPrefix("/"),
           !target.contains("\\"),
           !target.unicodeScalars.contains(where: { $0.value == 0 }) else {
@@ -125,7 +132,11 @@ public struct RielaHTTPRequestParser: Sendable {
           !decodedPath.contains("\\") else {
       throw RielaHTTPRequestParserError.invalidTarget
     }
-    return (decodedPath, pieces.count == 2 ? String(pieces[1]) : nil)
+    return RielaHTTPNormalizedTarget(
+      path: decodedPath,
+      percentEncodedPath: rawPath,
+      query: pieces.count == 2 ? String(pieces[1]) : nil
+    )
   }
 
   private func validPercentEncoding(in value: String) -> Bool {

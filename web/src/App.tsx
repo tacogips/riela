@@ -20,6 +20,7 @@ export function App() {
 
   return (
     <div class="app-shell">
+      <a class="skip-link" href="#main-content">Skip to content</a>
       <aside class="sidebar">
         <div class="brand">
           <div class="brand-mark">R</div>
@@ -27,17 +28,17 @@ export function App() {
         </div>
         <nav aria-label="Primary navigation">
           <For each={navigation}>{(item) => (
-            <button classList={{ active: view() === item.id }} onClick={() => setView(item.id)}>
-              <span class="nav-glyph">{item.glyph}</span>{item.label}
+            <button classList={{ active: view() === item.id }} aria-current={view() === item.id ? 'page' : undefined} onClick={() => setView(item.id)}>
+              <span class="nav-glyph" aria-hidden="true">{item.glyph}</span>{item.label}
             </button>
           )}</For>
         </nav>
-        <div class="server-card">
+        <div class="server-card" role="status" aria-live="polite">
           <span classList={{ dot: true, live: bootstrap()?.server.state === 'running' }} />
           <div><strong>{bootstrap()?.server.state ?? 'Connecting'}</strong><span>{bootstrap()?.server.boundPort ? `127.0.0.1:${bootstrap()?.server.boundPort}` : 'Local server'}</span></div>
         </div>
       </aside>
-      <main>
+      <main id="main-content" tabindex="-1">
         <Show when={bootstrap.loading}><div class="center-state"><span class="loader" />Connecting to Riela…</div></Show>
         <Show when={bootstrap.error}><div class="center-state error-panel"><strong>Could not connect</strong><span>{String(bootstrap.error)}</span><button onClick={() => void refetch()}>Try again</button></div></Show>
         <Show when={bootstrap()}>

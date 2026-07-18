@@ -11,3 +11,14 @@ export function EmptyState(props: { title: string; detail: string }) {
 export function ErrorBanner(props: { message: string }) {
   return <div class="error-banner" role="alert">{props.message}</div>
 }
+
+export function LoadingState(props: { label: string }) {
+  return <div class="loading-state" role="status"><span class="loader" aria-hidden="true" />{props.label}</div>
+}
+
+export function MutationMessage(props: { message: string; isError?: boolean; onRefresh?: () => void }) {
+  return <div classList={{ 'mutation-message': true, error: props.isError }} role={props.isError ? 'alert' : 'status'} aria-live={props.isError ? 'assertive' : 'polite'}>
+    <span>{props.message}</span>
+    {props.onRefresh && <button class="secondary" type="button" onClick={props.onRefresh}>Refresh</button>}
+  </div>
+}

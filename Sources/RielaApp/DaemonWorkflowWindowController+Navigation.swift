@@ -32,6 +32,9 @@ extension DaemonWorkflowWindowController {
   }
 
   @objc func goBack() {
+    guard isBackNavigationAvailable else {
+      return
+    }
     if isShowingAddInstanceSelection {
       showInstancesList()
       return
@@ -65,9 +68,6 @@ extension DaemonWorkflowWindowController {
     }
     if isShowingProfileDetail {
       showProfilesPane()
-      return
-    }
-    guard activeSidebarPane != .instances else {
       return
     }
     showInstancesPane()
@@ -135,10 +135,18 @@ extension DaemonWorkflowWindowController {
   }
 
   func updateNavigationState() {
-    navigationBackButton.isEnabled = isShowingAddInstanceSelection
+    let isAvailable = isBackNavigationAvailable
+    navigationBackButton.isEnabled = isAvailable
+    navigationBackButton.isHidden = !isAvailable
+    navigationBackButton.superview?.isHidden = !isAvailable
+  }
+
+  var isBackNavigationAvailable: Bool {
+    isShowingAddInstanceSelection
       || isShowingInstanceDetail
       || isShowingWorkflowSourceDetail
       || isShowingMarketplaceWorkflowDetail
+      || isShowingProfileDetail
       || activeSidebarPane != .instances
   }
 

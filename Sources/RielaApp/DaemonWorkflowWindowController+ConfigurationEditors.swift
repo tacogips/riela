@@ -298,7 +298,9 @@ extension DaemonWorkflowWindowController {
       return
     }
     isShowingAddInstanceSelection = false
+    isShowingProfileDetail = false
     isShowingWorkflowSourceDetail = false
+    isShowingMarketplaceWorkflowDetail = false
     navigationTitleLabel.stringValue = title
     let editor = configurationEditorView(
       title: title,

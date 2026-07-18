@@ -277,6 +277,12 @@ shows the current runtime state. Toggling `Active` starts or stops that instance
 immediately. Selecting an instance shows its source path, event sources, profile
 scope, active preference, instance variables, and runtime detail below the
 toolbar.
+The search fields in Instances, Workflow Sources, Add Instance, and Marketplace
+filter their already-loaded lists as you type; matching is case- and
+diacritic-insensitive, and clearing a search restores the full list. The Back
+control appears only when the current pane has a real back destination, so it is
+hidden at the Instances overview root and available throughout supported detail
+and configuration panes.
 Use `Add Project...` to attach one or more project folders containing
 `.riela/workflows` or `.riela/packages` without copying them into the profile.
 Use `Open Profile Folder` from the menu bar item or Instances window to inspect

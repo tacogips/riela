@@ -429,7 +429,6 @@ extension DaemonWorkflowWindowController {
     updateInstancesEmptyStateVisibility()
     restoreSelection()
     updateInstanceDetail()
-    window?.makeFirstResponder(instanceSearchField)
   }
 
   func updateInstancesEmptyStateVisibility() {
@@ -654,6 +653,7 @@ extension DaemonWorkflowWindowController {
     isShowingAddInstanceSelection = false
     isShowingProfileDetail = false
     isShowingWorkflowSourceDetail = false
+    isShowingMarketplaceWorkflowDetail = false
     instanceDetailPane = .overview
     showContentPane(instancesListView)
     navigationTitleLabel.stringValue = "Instances"
@@ -670,6 +670,7 @@ extension DaemonWorkflowWindowController {
     isShowingAddInstanceSelection = false
     isShowingProfileDetail = false
     isShowingWorkflowSourceDetail = false
+    isShowingMarketplaceWorkflowDetail = false
     instanceDetailPane = .overview
     updateInstanceDetail()
     showContentPane(instanceDetailView)
@@ -812,7 +813,9 @@ extension DaemonWorkflowWindowController {
 
   func showInstanceDetailOverview() {
     isShowingAddInstanceSelection = false
+    isShowingProfileDetail = false
     isShowingWorkflowSourceDetail = false
+    isShowingMarketplaceWorkflowDetail = false
     instanceDetailPane = .overview
     updateInstanceDetail()
     showContentPane(instanceDetailView)
@@ -825,7 +828,9 @@ extension DaemonWorkflowWindowController {
       return
     }
     isShowingAddInstanceSelection = false
+    isShowingProfileDetail = false
     isShowingWorkflowSourceDetail = false
+    isShowingMarketplaceWorkflowDetail = false
     instanceDetailPane = .removalConfirmation
     instanceDetailView?.removeFromSuperview()
     let detail = buildInstanceRemovalConfirmationView(row)

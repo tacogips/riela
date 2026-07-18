@@ -191,7 +191,6 @@ extension DaemonWorkflowWindowController {
     refreshButton.setAccessibilityLabel("Refresh Instances")
     instanceSearchField.placeholderString = "Filter instances"
     instanceSearchField.target = self
-    instanceSearchField.delegate = self
     instanceSearchField.sendsSearchStringImmediately = true
     instanceSearchField.controlSize = .large
     instanceSearchField.setAccessibilityLabel("Filter Instances")
@@ -463,6 +462,7 @@ extension DaemonWorkflowWindowController {
     isShowingAddInstanceSelection = false
     isShowingProfileDetail = true
     isShowingWorkflowSourceDetail = false
+    isShowingMarketplaceWorkflowDetail = false
     selectedProfileDetailName = profileName
     profileDetailMode = mode
     profileDetailView?.removeFromSuperview()
@@ -677,11 +677,18 @@ extension DaemonWorkflowWindowController {
   }
 
   private func configureToolbarButton(_ button: NSButton, symbolName: String, accessibilityLabel: String) {
-    button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
+    let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
+    button.image = symbol?.withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
+    button.imageScaling = .scaleProportionallyDown
+    button.translatesAutoresizingMaskIntoConstraints = false
     button.bezelStyle = .toolbar
     button.isBordered = false
     button.toolTip = accessibilityLabel
     button.setAccessibilityLabel(accessibilityLabel)
+    NSLayoutConstraint.activate([
+      button.widthAnchor.constraint(equalToConstant: 20),
+      button.heightAnchor.constraint(equalTo: button.widthAnchor)
+    ])
   }
 
   private func configureAssistantControls() {

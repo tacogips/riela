@@ -171,7 +171,6 @@ public struct RielaNoteAgentView: View {
       }
       .buttonStyle(.borderedProminent)
       .disabled(!viewModel.canSubmit)
-      .keyboardShortcut(.return, modifiers: [])
     }
     .padding()
   }

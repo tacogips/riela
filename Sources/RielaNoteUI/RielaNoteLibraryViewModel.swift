@@ -41,6 +41,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   @Published public private(set) var hasMoreNotebooks = false
   @Published public private(set) var hasMoreNotebookNotes = false
   @Published public private(set) var hasMoreSearchResults = false
+  @Published public private(set) var fileTreeInvalidationRevision = 0
   @Published public internal(set) var linkProposals: [NoteLinkProposal] = []
   @Published public internal(set) var linkProposalError: String?
   @Published public internal(set) var isLinkProposalLoading = false
@@ -151,32 +152,27 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   }
 
   public var selectedNoteIndex: Int? {
-    guard let selectedNote else {
-      return nil
-    }
-    return notebookNotes.firstIndex { $0.noteId == selectedNote.noteId }
+    pagerNoteSnapshot.currentIndex
   }
 
   public var selectedNotePositionText: String? {
-    guard let selectedNoteIndex, !notebookNotes.isEmpty else {
-      return nil
-    }
-    let loadedCount = hasMoreNotebookNotes ? "\(notebookNotes.count)+" : "\(notebookNotes.count)"
-    return "#\(selectedNoteIndex + 1) of \(loadedCount)"
+    pagerNoteSnapshot.selectedPositionText
   }
 
   public var canSelectPreviousNote: Bool {
-    guard let selectedNoteIndex else {
-      return false
-    }
-    return selectedNoteIndex > 0
+    pagerNoteSnapshot.canSelectPrevious
   }
 
   public var canSelectNextNote: Bool {
-    guard let selectedNoteIndex else {
-      return false
-    }
-    return selectedNoteIndex + 1 < notebookNotes.count || hasMoreNotebookNotes
+    pagerNoteSnapshot.canSelectNext
+  }
+
+  public var pagerNoteSnapshot: RielaNotePagerNoteSnapshot {
+    RielaNotePagerNoteSnapshot(
+      notes: notebookNotes,
+      selectedNoteId: selectedNote?.noteId,
+      hasMoreNotes: hasMoreNotebookNotes
+    )
   }
 
   public var canLoadMoreNotebookNotes: Bool {
@@ -232,6 +228,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   }
 
   public func refresh() async {
+    fileTreeInvalidationRevision += 1
     let selectedNoteId = selectedNote?.noteId
     let currentNotebookId = selectedNotebookId
     let preferredMode = contentMode
@@ -842,17 +839,19 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   }
 
   private func selectAdjacentNote(delta: Int) async {
-    guard let selectedNoteIndex else {
+    var snapshot = pagerNoteSnapshot
+    guard let selectedNoteIndex = snapshot.currentIndex else {
       return
     }
     let targetIndex = selectedNoteIndex + delta
-    if targetIndex >= notebookNotes.count, delta > 0, canLoadMoreNotebookNotes {
+    if targetIndex >= snapshot.notes.count, delta > 0, canLoadMoreNotebookNotes {
       await loadMoreNotebookNotes()
+      snapshot = pagerNoteSnapshot
     }
-    guard notebookNotes.indices.contains(targetIndex) else {
+    guard snapshot.notes.indices.contains(targetIndex) else {
       return
     }
-    await selectNote(notebookNotes[targetIndex].noteId)
+    await selectNote(snapshot.notes[targetIndex].noteId)
   }
 
   private func loadNotebooksFirstPage() async throws {

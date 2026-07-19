@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 /// into the outgoing message.
 public struct RielaNoteAgentBottomBar: View {
   @ObservedObject private var viewModel: RielaNoteAgentViewModel
-  @State private var isFolded = false
+  @AppStorage("rielaNoteWorkspace.agentBottomBar.isFolded") private var isFolded = false
   @State private var isTranscriptExpanded = true
   @State private var isFileImporterPresented = false
   @FocusState private var isComposerFocused: Bool
@@ -244,7 +244,6 @@ public struct RielaNoteAgentBottomBar: View {
       }
       .buttonStyle(.plain)
       .disabled(!viewModel.canSubmit)
-      .keyboardShortcut(.return, modifiers: [])
       .help("Send")
       .accessibilityLabel("Send agent message")
     }

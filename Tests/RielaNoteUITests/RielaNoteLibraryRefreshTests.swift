@@ -122,6 +122,17 @@ final class RielaNoteLibraryRefreshTests: XCTestCase {
     XCTAssertEqual(viewModel.state, .loaded)
   }
 
+  func testRefreshInvalidatesFileTreePageCache() async throws {
+    let fixture = NoteUITestFixture()
+    let viewModel = RielaNoteLibraryViewModel(client: fixture.client)
+    await viewModel.load()
+    let revision = viewModel.fileTreeInvalidationRevision
+
+    await viewModel.refresh()
+
+    XCTAssertEqual(viewModel.fileTreeInvalidationRevision, revision + 1)
+  }
+
   func testRefreshRerunsActiveSearchWithoutChangingSelection() async throws {
     let fixture = NoteUITestFixture()
     let viewModel = RielaNoteLibraryViewModel(client: fixture.client)

@@ -1,3 +1,4 @@
+import RielaNote
 import SwiftUI
 
 public struct RielaNoteRootView: View {
@@ -13,8 +14,9 @@ public struct RielaNoteRootView: View {
   @State private var didRunInitialLoad = false
   @State private var noteStoreChangeWatcher: RielaNoteStoreChangeWatcher?
   // Left/right panes start folded; the top-right icons expand them.
-  @State private var isFileTreePaneExpanded = false
-  @State private var isMetadataPaneExpanded = false
+  @AppStorage("rielaNoteWorkspace.leftPane.isExpanded") private var isFileTreePaneExpanded = false
+  @AppStorage("rielaNoteWorkspace.rightPane.isExpanded") private var isMetadataPaneExpanded = false
+  @AppStorage("rielaNoteWorkspace.leftPane.mode") private var selectedLeftPaneMode = RielaNoteLeftPaneMode.tree
   @State private var isSearchPopupPresented = false
   private let onOpenSettings: (() -> Void)?
 
@@ -213,6 +215,11 @@ public struct RielaNoteRootView: View {
         isSearchPopupPresented = false
       }
     }
+    .onChange(of: viewModel.pendingSelection) { _, pendingSelection in
+      if pendingSelection != nil, isSearchPopupPresented {
+        isSearchPopupPresented = false
+      }
+    }
   }
 
   @ViewBuilder
@@ -231,9 +238,7 @@ public struct RielaNoteRootView: View {
   @ViewBuilder
   private var paneSplitContent: some View {
     if isFileTreePaneExpanded {
-      RielaNoteFileTreePane(viewModel: viewModel) { _ in
-        composeDestination = nil
-      }
+      leftPane
       .frame(minWidth: 200, idealWidth: 260, maxWidth: 360)
     }
     Group {
@@ -253,6 +258,101 @@ public struct RielaNoteRootView: View {
       }
       .frame(minWidth: 240, idealWidth: 320, maxWidth: 420)
     }
+  }
+
+  private var leftPane: some View {
+    VStack(spacing: 0) {
+      Picker("Left pane", selection: $selectedLeftPaneMode) {
+        Label("Tree", systemImage: "folder")
+          .tag(RielaNoteLeftPaneMode.tree)
+        Label("Notes", systemImage: "list.bullet")
+          .tag(RielaNoteLeftPaneMode.notes)
+      }
+      .pickerStyle(.segmented)
+      .labelsHidden()
+      .padding(.horizontal, 10)
+      .padding(.vertical, 8)
+      Divider()
+      switch selectedLeftPaneMode {
+      case .tree:
+        RielaNoteFileTreePane(viewModel: viewModel) { _ in
+          composeDestination = nil
+        }
+      case .notes:
+        leftPaneNotesList
+      }
+    }
+    .background(.background)
+  }
+
+  private var leftPaneNotesList: some View {
+    let snapshot = viewModel.pagerNoteSnapshot
+    return List {
+      if let selectedNotebookTitle {
+        Section {
+          ForEach(Array(snapshot.notes.enumerated()), id: \.element.noteId) { index, note in
+            leftPaneNoteRow(note, index: index, snapshot: snapshot)
+          }
+          if viewModel.canLoadMoreNotebookNotes {
+            Button {
+              Task {
+                await viewModel.loadMoreNotebookNotes()
+              }
+            } label: {
+              Label("Load more", systemImage: "ellipsis.circle")
+            }
+            .buttonStyle(.plain)
+          }
+        } header: {
+          HStack {
+            Text(selectedNotebookTitle)
+              .lineLimit(1)
+            Spacer()
+            if let position = snapshot.selectedNoteId.flatMap({ snapshot.positionText(for: $0) }) {
+              Text(position)
+                .monospacedDigit()
+            }
+          }
+        }
+      } else {
+        ContentUnavailableView("No notebook selected", systemImage: "folder")
+      }
+    }
+    .listStyle(.sidebar)
+  }
+
+  private func leftPaneNoteRow(
+    _ note: Note,
+    index: Int,
+    snapshot: RielaNotePagerNoteSnapshot
+  ) -> some View {
+    let isSelected = note.noteId == snapshot.selectedNoteId
+    return Button {
+      Task {
+        await viewModel.requestSelection(.note(note.noteId))
+        guard viewModel.pendingSelection == nil else {
+          return
+        }
+        composeDestination = nil
+      }
+    } label: {
+      HStack(spacing: 8) {
+        Image(systemName: isSelected ? "doc.text.fill" : "doc.text")
+          .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+        Text(note.title ?? note.noteId)
+          .fontWeight(isSelected ? .semibold : .regular)
+          .lineLimit(1)
+        Spacer(minLength: 6)
+        Text("\(index + 1)/\(snapshot.totalText)")
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+          .monospacedDigit()
+      }
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .listRowBackground(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+    .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 
   private var regularToolbar: some View {
@@ -395,6 +495,11 @@ private enum RielaNoteRootTab: Hashable {
   case library
   case agent
   case config
+}
+
+private enum RielaNoteLeftPaneMode: String, Hashable {
+  case tree
+  case notes
 }
 
 private enum RielaNoteLibraryRoute: Hashable {

@@ -487,3 +487,115 @@ an allowlist; `reason` is attacker-influenceable display text (plain
 
 Follow-up tasks: TASK-012–TASK-018 in
 `impl-plans/active/riela-note-ui-refinements.md`.
+
+## Workspace Hardening Addendum (2026-07-19)
+
+Issue source: workflow intake
+`codex-design-and-implement-review-loop-session-1171` / `comm-000847`.
+Scope is one work package on branch `feat/riela-note-workspace-revamp`
+covering only `Sources/RielaNoteUI` and `Tests/RielaNoteUITests`
+unless a compile fix requires a direct RielaApp host update.
+
+### Requirements
+
+1. Return pressed inside note text inputs must never trigger the agent
+   send action. The agent composer remains the only plain-Enter send
+   owner through its own submit handling; the compose screen's
+   Cmd-Return save shortcut remains separate.
+2. Selecting a search-popup result while a body edit has unsaved changes
+   must always expose the existing discard confirmation. Discard
+   selects the picked note; keep-editing preserves the draft.
+3. The file tree must reflect note-store changes and explicit refreshes,
+   and notebooks with more than one note page must expose a load-more
+   path instead of stopping at the first fixed-size fetch.
+4. The left pane must offer Tree and Notes modes. Notes mode lists notes
+   for the selected notebook in the same order as the detail pager,
+   highlights the current note, shows current position, and selects rows
+   through the same pending-selection edit guard used elsewhere.
+5. Left pane expansion, right pane expansion, selected left-pane tab,
+   and the note-agent folded state must survive app relaunch.
+6. Custom note-workspace panels must render correctly in dark and light
+   appearance by using semantic colors instead of hard-coded theme
+   assumptions.
+
+### Design Decisions
+
+- **D12 - Plain Return ownership stays local to the composer.** Agent
+  send buttons in `RielaNoteAgentBottomBar` and `RielaNoteAgentView`
+  must not register a global bare-Return shortcut. Text inputs such as
+  the note body editor, comment editor, tag field, rewrite pill, and
+  link/search fields keep their local Return behavior. The composer
+  send affordance is still available through its focused submit path.
+- **D13 - Pending selection remains root-owned.** Search-popup result
+  selection may set `RielaNoteLibraryViewModel.pendingSelection`, but
+  the popup must then yield presentation control so the root
+  confirmation dialog can appear. The binding that hides the dialog
+  must not clear `pendingSelection`; only explicit Discard or Keep
+  Editing resolves it.
+- **D14 - File-tree loading is an invalidatable paged model.** The file
+  tree treats `notesByNotebook` as a page cache with explicit freshness
+  state, not as permanent data. `viewModel.refresh()` and
+  `RielaNoteStoreChangeWatcher` note-store changes invalidate affected
+  notebook pages. Loading merges pages by note id, preserves service
+  ordering, and exposes whether another page is available.
+- **D15 - Pager order is a shared data source.** The detail pager and
+  the left-pane Notes tab consume one ordered-note snapshot from
+  `RielaNoteLibraryViewModel`. Previous/next navigation, row order,
+  current index, and position text are derived from that snapshot so the
+  two surfaces cannot diverge.
+- **D16 - Left-pane mode is workspace chrome.** Tree/Notes selection
+  belongs to the root workspace layout, not to notebook data. Compact
+  navigation keeps the existing `NavigationStack` behavior; macOS
+  split-view behavior remains behind `#if os(macOS)`.
+- **D17 - Workspace chrome persistence is view state, not model data.**
+  Pane expansion, selected left-pane tab, and agent folded state may use
+  `AppStorage` or equivalent scene-persistent storage. Keys must be
+  scoped to Riela Note workspace UI state and must not affect note-store
+  content or tests that instantiate view models directly.
+- **D18 - Color semantics follow platform appearance.** Agent bottom
+  bar panels, attachment chips, pane backgrounds, and similar custom
+  surfaces use semantic SwiftUI/system colors for background, border,
+  selection, disabled, and secondary text roles. Hard-coded opacity
+  overlays are acceptable only when they remain legible in both light
+  and dark appearances.
+
+### Data Flow And Validation
+
+- `RielaNoteRootView` owns workspace chrome state, presents the
+  Tree/Notes switcher, hosts pending-selection confirmation, and
+  connects search-popup dismissal to pending-selection creation.
+- `RielaNoteLibraryViewModel` owns note ordering for pager and Notes tab
+  consumers. A testable ordered snapshot exposes ordered notes,
+  current index, total count, previous note, and next note.
+- `RielaNoteFileTreePane` delegates page merge/invalidation rules to a
+  testable helper or view-model type. Validation covers first page,
+  load-more page, duplicate note id merge, reset after refresh, and
+  reset after note-store change notification.
+- Notes-tab row selection must call the existing guarded selection path
+  so unsaved body edits produce the same confirmation as tree/list
+  selection. Direct mutation of selected note id from a row is out of
+  bounds.
+- Verification commands for this work package are:
+  `swift build`,
+  `swift test --filter RielaNoteUITests`, and
+  `swift test --filter RielaAppNotesIntegrationTests`.
+
+### Rollout Constraints
+
+- No fanout: all six behavior changes land as one branch-local commit
+  with focused tests and review notes.
+- Do not touch translate-related code, web dashboard code, or daemon
+  workflow code.
+- Keep `RielaNoteUI` iOS-compilable and keep RielaApp
+  `NoteWindowController` compiling.
+- Known unrelated local failure
+  `DaemonWorkflowNodePatchTests/testRuntimeRestartsWorkflowWhenEventSourceExits`
+  must not be fixed or attributed to this work.
+
+### Manual GUI Checks
+
+Manual verification must record exact steps for: Return routing in body
+editor/comment/tag/rewrite inputs versus composer submit; search-popup
+pending-selection discard and keep-editing paths; relaunch persistence
+for left/right panes, Tree/Notes mode, and agent fold; and dark/light
+appearance checks for the custom workspace panels.

@@ -7,8 +7,10 @@ import SwiftUI
 public struct RielaNoteFileTreePane: View {
   @ObservedObject private var viewModel: RielaNoteLibraryViewModel
   @State private var expandedNotebookIds: Set<String> = []
-  @State private var notesByNotebook: [String: [Note]] = [:]
+  @State private var pagesByNotebook: [String: RielaNoteFileTreeNotebookNotesPageState] = [:]
+  @State private var cacheGeneration = 0
   private let onOpenNote: (String) -> Void
+  private let pageSize = 200
 
   public init(
     viewModel: RielaNoteLibraryViewModel,
@@ -53,7 +55,13 @@ public struct RielaNoteFileTreePane: View {
       // agent citations, links): reveal the selected notebook's children.
       if let notebookId {
         expandedNotebookIds.insert(notebookId)
+        Task {
+          await loadNotesIfNeeded(notebookId: notebookId)
+        }
       }
+    }
+    .onChange(of: viewModel.fileTreeInvalidationRevision) { _, _ in
+      resetCachedPages()
     }
   }
 
@@ -87,8 +95,8 @@ public struct RielaNoteFileTreePane: View {
 
   @ViewBuilder
   private func notebookChildren(_ notebook: Notebook) -> some View {
-    let notes = childNotes(for: notebook.notebookId)
-    if notes.isEmpty {
+    let state = pageState(for: notebook.notebookId)
+    if state.notes.isEmpty {
       Text("No notes")
         .font(.caption)
         .foregroundStyle(.tertiary)
@@ -96,8 +104,21 @@ public struct RielaNoteFileTreePane: View {
           await loadNotesIfNeeded(notebookId: notebook.notebookId)
         }
     } else {
-      ForEach(notes, id: \.noteId) { note in
+      ForEach(state.notes, id: \.noteId) { note in
         noteRow(note)
+      }
+      if state.canLoadMore {
+        Button {
+          Task {
+            await loadNextPage(notebookId: notebook.notebookId)
+          }
+        } label: {
+          Label("Load more", systemImage: "ellipsis.circle")
+        }
+        .buttonStyle(.plain)
+      } else if state.isLoading {
+        ProgressView()
+          .controlSize(.small)
       }
     }
   }
@@ -127,13 +148,8 @@ public struct RielaNoteFileTreePane: View {
     .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 
-  /// The selected notebook mirrors the live list so create/edit/delete stay
-  /// fresh; other notebooks use the lazily fetched snapshot.
-  private func childNotes(for notebookId: String) -> [Note] {
-    if viewModel.selectedNotebookId == notebookId, !viewModel.notebookNotes.isEmpty {
-      return viewModel.notebookNotes
-    }
-    return notesByNotebook[notebookId] ?? []
+  private func pageState(for notebookId: String) -> RielaNoteFileTreeNotebookNotesPageState {
+    pagesByNotebook[notebookId] ?? RielaNoteFileTreeNotebookNotesPageState()
   }
 
   private func expansionBinding(for notebookId: String) -> Binding<Bool> {
@@ -152,12 +168,48 @@ public struct RielaNoteFileTreePane: View {
   }
 
   private func loadNotesIfNeeded(notebookId: String) async {
-    guard notesByNotebook[notebookId] == nil else {
+    let state = pageState(for: notebookId)
+    guard !state.didLoad, !state.isLoading else {
       return
     }
-    guard let notes = try? await viewModel.client.listNotes(notebookId: notebookId, limit: 200, offset: 0) else {
+    await loadNextPage(notebookId: notebookId, generation: cacheGeneration)
+  }
+
+  private func loadNextPage(notebookId: String, generation: Int? = nil) async {
+    let generation = generation ?? cacheGeneration
+    var state = pageState(for: notebookId)
+    guard !state.isLoading else {
       return
     }
-    notesByNotebook[notebookId] = notes
+    state.markLoading()
+    pagesByNotebook[notebookId] = state
+    do {
+      let page = try await viewModel.client.listNotes(
+        notebookId: notebookId,
+        limit: pageSize + 1,
+        offset: state.nextOffset
+      )
+      guard generation == cacheGeneration else {
+        return
+      }
+      state.mergeFetchedPage(page, pageSize: pageSize)
+      pagesByNotebook[notebookId] = state
+    } catch {
+      guard generation == cacheGeneration else {
+        return
+      }
+      state.markLoadFinished()
+      pagesByNotebook[notebookId] = state
+    }
+  }
+
+  private func resetCachedPages() {
+    cacheGeneration += 1
+    pagesByNotebook.removeAll()
+    for notebookId in expandedNotebookIds {
+      Task {
+        await loadNotesIfNeeded(notebookId: notebookId)
+      }
+    }
   }
 }

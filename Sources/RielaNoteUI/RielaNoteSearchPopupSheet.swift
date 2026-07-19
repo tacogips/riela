@@ -82,11 +82,8 @@ public struct RielaNoteSearchPopupSheet: View {
   private func openResult(_ noteId: String) {
     Task {
       await viewModel.requestSelection(.note(noteId))
-      // A body edit defers the switch behind the discard confirmation hosted at
-      // the root; closing now would drop that dialog, so keep the popup open.
-      guard viewModel.pendingSelection == nil else {
-        return
-      }
+      // Yield presentation to the root so its pending-selection confirmation can
+      // surface when body edits defer this search-result selection.
       onClose()
     }
   }

@@ -73,6 +73,18 @@ final class RielaNoteNavigationGuardTests: XCTestCase {
     XCTAssertEqual(viewModel.pendingSelection, .notebook("notebook-1"))
   }
 
+  func testNotesTabRowSelectionUsesGuardedNoteSelection() async throws {
+    let fixture = NoteUITestFixture()
+    let viewModel = RielaNoteLibraryViewModel(client: fixture.client)
+    await viewModel.load()
+    viewModel.setEditingBody(true)
+
+    await viewModel.requestSelection(.note("note-2"))
+
+    XCTAssertEqual(viewModel.pendingSelection, .note("note-2"))
+    XCTAssertEqual(viewModel.selectedNote?.noteId, "note-1")
+  }
+
   func testClearingEditingDropsPendingSelection() async throws {
     let fixture = NoteUITestFixture()
     let viewModel = RielaNoteLibraryViewModel(client: fixture.client)

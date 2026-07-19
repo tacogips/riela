@@ -15,6 +15,12 @@ public final class RielaNoteAgentViewModel: ObservableObject {
   @Published public private(set) var state: LoadState = .idle
   @Published public var draftMessage = ""
   @Published public var isTemporaryChat = false
+  @Published public private(set) var draftAttachments: [RielaNoteAgentDraftAttachment] = []
+  @Published public private(set) var attachmentError: String?
+
+  /// Inlined attachment text is capped so a huge file cannot blow up the agent
+  /// prompt; larger files should be attached to a note instead.
+  public static let maximumAttachmentBytes = 256 * 1024
 
   private let client: any RielaNoteUIClient
   private let searchLimit: Int
@@ -26,7 +32,40 @@ public final class RielaNoteAgentViewModel: ObservableObject {
   }
 
   public var canSubmit: Bool {
-    !draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && state != .loading
+    (!draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !draftAttachments.isEmpty)
+      && state != .loading
+  }
+
+  public func addAttachment(filename: String, data: Data) {
+    guard data.count <= Self.maximumAttachmentBytes else {
+      attachmentError = "\(filename) is too large to attach (max \(Self.maximumAttachmentBytes / 1024) KB)."
+      return
+    }
+    guard let text = String(data: data, encoding: .utf8) else {
+      attachmentError = "\(filename) is not a text file. Only text files can be attached here."
+      return
+    }
+    attachmentError = nil
+    draftAttachments.append(RielaNoteAgentDraftAttachment(filename: filename, text: text))
+  }
+
+  public func removeAttachment(id: String) {
+    draftAttachments.removeAll { $0.id == id }
+    attachmentError = nil
+  }
+
+  public func clearAttachmentError() {
+    attachmentError = nil
+  }
+
+  public func reportAttachmentReadFailure(filename: String) {
+    attachmentError = "Could not read \(filename)."
+  }
+
+  /// The message actually sent to the agent: the typed draft followed by each
+  /// attachment inlined as a fenced block labelled with its filename.
+  func composedDraftMessage() -> String {
+    rielaNoteAgentComposedMessage(draft: draftMessage, attachments: draftAttachments)
   }
 
   public var canSaveTemporaryConversation: Bool {
@@ -34,7 +73,10 @@ public final class RielaNoteAgentViewModel: ObservableObject {
   }
 
   public var canStartNewConversation: Bool {
-    !turns.isEmpty || !draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || autoSaveNotebookId != nil
+    !turns.isEmpty
+      || !draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      || !draftAttachments.isEmpty
+      || autoSaveNotebookId != nil
   }
 
   public var errorMessage: String? {
@@ -48,13 +90,15 @@ public final class RielaNoteAgentViewModel: ObservableObject {
     guard !isSubmitting else {
       return
     }
-    let message = draftMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+    let message = composedDraftMessage()
     guard !message.isEmpty else {
       return
     }
     isSubmitting = true
     defer { isSubmitting = false }
     draftMessage = ""
+    draftAttachments = []
+    attachmentError = nil
     state = .loading
     do {
       let turn = try await client.answerNoteAgentTurn(message: message, limit: searchLimit)
@@ -92,6 +136,8 @@ public final class RielaNoteAgentViewModel: ObservableObject {
     turns = []
     autoSaveNotebookId = nil
     draftMessage = ""
+    draftAttachments = []
+    attachmentError = nil
     isTemporaryChat = false
     state = .idle
   }
@@ -158,4 +204,38 @@ public final class RielaNoteAgentViewModel: ObservableObject {
 
 private enum RielaNoteAgentViewModelError: Error, Equatable, Sendable {
   case unexpectedPersistedNoteCount(expected: Int, actual: Int)
+}
+
+/// Builds the outgoing agent message from the typed draft plus inlined
+/// attachments. A fence longer than any backtick run inside the content keeps
+/// the blocks well-formed even when a file itself contains fenced code.
+func rielaNoteAgentComposedMessage(
+  draft: String,
+  attachments: [RielaNoteAgentDraftAttachment]
+) -> String {
+  let trimmedDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+  guard !attachments.isEmpty else {
+    return trimmedDraft
+  }
+  let attachmentSections = attachments.map { attachment in
+    let fence = rielaNoteAgentAttachmentFence(for: attachment.text)
+    return "Attached file `\(attachment.filename)`:\n\(fence)\n\(attachment.text)\n\(fence)"
+  }
+  return ([trimmedDraft] + attachmentSections)
+    .filter { !$0.isEmpty }
+    .joined(separator: "\n\n")
+}
+
+private func rielaNoteAgentAttachmentFence(for text: String) -> String {
+  var longestRun = 0
+  var currentRun = 0
+  for character in text {
+    if character == "`" {
+      currentRun += 1
+      longestRun = max(longestRun, currentRun)
+    } else {
+      currentRun = 0
+    }
+  }
+  return String(repeating: "`", count: max(3, longestRun + 1))
 }

@@ -48,6 +48,7 @@ extension RielaApp {
           registrationBaseURLProvider: { [weak self] in
             self?.noteAPIRegistrationBaseURL(profileName: profileName)
           },
+          appearanceStore: appearanceSettingsStore,
           onWindowWillClose: { [weak self] in
             self?.noteSettingsWindowController = nil
             self?.restoreAccessoryActivationPolicyIfNoAppWindows()

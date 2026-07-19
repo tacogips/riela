@@ -5,6 +5,75 @@ import XCTest
 
 @MainActor
 final class RielaNoteAgentViewModelTests: XCTestCase {
+  func testComposedMessageInlinesAttachmentsWithSafeFences() throws {
+    XCTAssertEqual(rielaNoteAgentComposedMessage(draft: "  hello  ", attachments: []), "hello")
+
+    let simple = rielaNoteAgentComposedMessage(
+      draft: "Summarize this",
+      attachments: [RielaNoteAgentDraftAttachment(filename: "notes.md", text: "# Title\nBody")]
+    )
+    XCTAssertEqual(simple, "Summarize this\n\nAttached file `notes.md`:\n```\n# Title\nBody\n```")
+
+    // A file containing a triple-backtick fence gets a longer outer fence.
+    let fenced = rielaNoteAgentComposedMessage(
+      draft: "",
+      attachments: [RielaNoteAgentDraftAttachment(filename: "code.md", text: "```swift\nlet a = 1\n```")]
+    )
+    XCTAssertEqual(fenced, "Attached file `code.md`:\n````\n```swift\nlet a = 1\n```\n````")
+  }
+
+  func testAttachmentValidationRejectsBinaryAndOversizedFiles() throws {
+    let client = AgentStubClient()
+    let viewModel = RielaNoteAgentViewModel(client: client)
+
+    viewModel.addAttachment(filename: "image.png", data: Data([0xFF, 0xFE, 0x00, 0xC3]))
+    XCTAssertEqual(viewModel.draftAttachments, [])
+    XCTAssertNotNil(viewModel.attachmentError)
+
+    let oversized = Data(repeating: UInt8(ascii: "a"), count: RielaNoteAgentViewModel.maximumAttachmentBytes + 1)
+    viewModel.addAttachment(filename: "big.txt", data: oversized)
+    XCTAssertEqual(viewModel.draftAttachments, [])
+    XCTAssertNotNil(viewModel.attachmentError)
+
+    viewModel.addAttachment(filename: "ok.txt", data: Data("fine".utf8))
+    XCTAssertEqual(viewModel.draftAttachments.map(\.filename), ["ok.txt"])
+    XCTAssertNil(viewModel.attachmentError)
+
+    let attachmentId = try XCTUnwrap(viewModel.draftAttachments.first?.id)
+    viewModel.removeAttachment(id: attachmentId)
+    XCTAssertEqual(viewModel.draftAttachments, [])
+  }
+
+  func testSubmitSendsAttachmentsInlineAndClearsThem() async throws {
+    let client = AgentStubClient()
+    let viewModel = RielaNoteAgentViewModel(client: client)
+
+    viewModel.draftMessage = "What does this say?"
+    viewModel.addAttachment(filename: "memo.txt", data: Data("remember the milk".utf8))
+    XCTAssertTrue(viewModel.canSubmit)
+    await viewModel.submitDraft()
+
+    XCTAssertEqual(viewModel.turns.count, 1)
+    XCTAssertEqual(
+      viewModel.turns.first?.userMarkdown,
+      "What does this say?\n\nAttached file `memo.txt`:\n```\nremember the milk\n```"
+    )
+    XCTAssertEqual(viewModel.draftAttachments, [])
+    XCTAssertEqual(viewModel.draftMessage, "")
+  }
+
+  func testAttachmentsAloneAreSubmittable() async throws {
+    let client = AgentStubClient()
+    let viewModel = RielaNoteAgentViewModel(client: client)
+
+    XCTAssertFalse(viewModel.canSubmit)
+    viewModel.addAttachment(filename: "memo.txt", data: Data("content".utf8))
+    XCTAssertTrue(viewModel.canSubmit)
+    await viewModel.submitDraft()
+
+    XCTAssertEqual(viewModel.turns.first?.userMarkdown, "Attached file `memo.txt`:\n```\ncontent\n```")
+  }
+
   func testAnswerFailureClearsDraftAndSurfacesErrorWithoutTurn() async throws {
     let fixture = NoteUITestFixture()
     fixture.client.agentAnswerError = AgentViewModelTestError.answerFailed

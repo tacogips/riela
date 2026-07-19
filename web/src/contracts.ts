@@ -71,7 +71,6 @@ export interface AssistantSettings {
 export interface NoteSettings {
   revision: number
   exposesNoteAPI: boolean
-  defaultTranslationTargetLanguage: string
   s3ProfileCount: number
 }
 

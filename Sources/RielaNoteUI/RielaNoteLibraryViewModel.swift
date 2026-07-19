@@ -50,9 +50,6 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   @Published public internal(set) var selectionQuestionError: String?
   @Published public internal(set) var isSelectionQuestionLoading = false
   @Published public internal(set) var didSaveSelectionQuestionComment = false
-  @Published public internal(set) var translateNoteError: String?
-  @Published public internal(set) var isTranslateNoteLoading = false
-  @Published public internal(set) var translateNoteSummary: String?
   @Published public internal(set) var commentPromotionError: String?
   @Published public internal(set) var isCommentPromotionLoading = false
   @Published public private(set) var isSourceImageLoading = false
@@ -61,7 +58,6 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   @Published public var sourceImageZoom = 1.0
   @Published public var contentMode: NoteContentMode = .text
   @Published public var isDetailExpanded = false
-  @Published public var translationTargetLanguage: String
   @Published public internal(set) var state: LoadState = .idle
 
   /// A selection change that another view (list, links, agent citation, pager)
@@ -98,7 +94,6 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   var linkProposalGeneration = 0
   var editRewriteGeneration = 0
   var selectionQuestionGeneration = 0
-  var translateNoteGeneration = 0
   var commentPromotionGeneration = 0
 
   /// Pagination cursor for the selected notebook's note list, exposed for tests that
@@ -128,17 +123,13 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     notebookLimit: Int = 50,
     notebookNoteLimit: Int = 50,
     searchLimit: Int = 30,
-    sourceImageCacheLimit: Int = 64,
-    translationTargetLanguage: String? = nil
+    sourceImageCacheLimit: Int = 64
   ) {
     self.client = client
     self.notebookLimit = notebookLimit
     self.notebookNoteLimit = notebookNoteLimit
     self.searchLimit = searchLimit
     self.sourceImageCacheLimit = max(sourceImageCacheLimit, 1)
-    self.translationTargetLanguage = rielaNoteNormalizedTranslationTargetLanguage(
-      translationTargetLanguage ?? client.defaultTranslationTargetLanguage
-    )
   }
 
   public var isSearching: Bool {
@@ -944,7 +935,6 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     linkProposalGeneration += 1
     editRewriteGeneration += 1
     selectionQuestionGeneration += 1
-    translateNoteGeneration += 1
     commentPromotionGeneration += 1
     linkProposals = []
     linkProposalError = nil

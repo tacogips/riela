@@ -1,7 +1,9 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 public struct RielaNoteAgentView: View {
   @ObservedObject private var viewModel: RielaNoteAgentViewModel
+  @State private var isFileImporterPresented = false
   private let onOpenCitation: (String) -> Void
 
   public init(
@@ -30,9 +32,68 @@ public struct RielaNoteAgentView: View {
         .frame(maxWidth: .infinity)
       }
       Divider()
+      if let attachmentError = viewModel.attachmentError {
+        errorBanner(attachmentError)
+      }
+      if !viewModel.draftAttachments.isEmpty {
+        attachmentChips
+      }
       composer
     }
     .navigationTitle("Agent")
+    .fileImporter(
+      isPresented: $isFileImporterPresented,
+      allowedContentTypes: [.item],
+      allowsMultipleSelection: true
+    ) { result in
+      attachFiles(result)
+    }
+  }
+
+  private var attachmentChips: some View {
+    FlowLayout(spacing: 6) {
+      ForEach(viewModel.draftAttachments) { attachment in
+        HStack(spacing: 4) {
+          Image(systemName: "doc.text")
+          Text(attachment.filename)
+            .lineLimit(1)
+          Button {
+            viewModel.removeAttachment(id: attachment.id)
+          } label: {
+            Image(systemName: "xmark.circle.fill")
+          }
+          .buttonStyle(.plain)
+          .foregroundStyle(.secondary)
+          .help("Remove attachment")
+        }
+        .font(.caption)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(.secondary.opacity(0.14), in: Capsule())
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.horizontal)
+    .padding(.top, 8)
+  }
+
+  private func attachFiles(_ result: Result<[URL], Error>) {
+    guard case let .success(urls) = result else {
+      return
+    }
+    for url in urls {
+      let accessing = url.startAccessingSecurityScopedResource()
+      defer {
+        if accessing {
+          url.stopAccessingSecurityScopedResource()
+        }
+      }
+      guard let data = try? Data(contentsOf: url) else {
+        viewModel.reportAttachmentReadFailure(filename: url.lastPathComponent)
+        continue
+      }
+      viewModel.addAttachment(filename: url.lastPathComponent, data: data)
+    }
   }
 
   private var toolbar: some View {
@@ -81,6 +142,14 @@ public struct RielaNoteAgentView: View {
 
   private var composer: some View {
     HStack(alignment: .bottom, spacing: 10) {
+      Button {
+        isFileImporterPresented = true
+      } label: {
+        Image(systemName: "paperclip")
+      }
+      .buttonStyle(.borderless)
+      .disabled(viewModel.state == .loading)
+      .help("Attach text files")
       TextField("Ask Riela Note", text: $viewModel.draftMessage, axis: .vertical)
         .textFieldStyle(.roundedBorder)
         .lineLimit(1...5)

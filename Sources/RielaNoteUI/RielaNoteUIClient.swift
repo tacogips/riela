@@ -70,7 +70,6 @@ public struct RielaNoteListFilter: Equatable, Sendable {
 
 public protocol RielaNoteUIClient: Sendable {
   var defaultConfigWorkflowRoot: String { get }
-  var defaultTranslationTargetLanguage: String { get }
   var noteStoreChangeObservationURLs: [URL] { get }
 
   func listNotebooks(limit: Int, offset: Int) async throws -> [Notebook]
@@ -145,10 +144,6 @@ public protocol RielaNoteUIClient: Sendable {
 }
 
 public extension RielaNoteUIClient {
-  var defaultTranslationTargetLanguage: String {
-    "English"
-  }
-
   var noteStoreChangeObservationURLs: [URL] {
     []
   }
@@ -287,7 +282,6 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
   private let linkProposalProvider: (any RielaNoteLinkProposalProviding)?
   private let editRewriteProvider: (any RielaNoteEditRewriteProviding)?
   private let selectionQuestionProvider: (any RielaNoteSelectionQuestionProviding)?
-  public let defaultTranslationTargetLanguage: String
 
   public init(
     service: NoteService,
@@ -295,8 +289,7 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
     s3HTTPClient: any S3HTTPClient = URLSessionS3HTTPClient(),
     linkProposalProvider: (any RielaNoteLinkProposalProviding)? = nil,
     editRewriteProvider: (any RielaNoteEditRewriteProviding)? = nil,
-    selectionQuestionProvider: (any RielaNoteSelectionQuestionProviding)? = nil,
-    defaultTranslationTargetLanguage: String = "English"
+    selectionQuestionProvider: (any RielaNoteSelectionQuestionProviding)? = nil
   ) {
     self.service = service
     self.s3Profiles = s3Profiles
@@ -304,9 +297,6 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
     self.linkProposalProvider = linkProposalProvider
     self.editRewriteProvider = editRewriteProvider
     self.selectionQuestionProvider = selectionQuestionProvider
-    self.defaultTranslationTargetLanguage = rielaNoteNormalizedTranslationTargetLanguage(
-      defaultTranslationTargetLanguage
-    )
   }
 
   public func listNotebooks(limit: Int, offset: Int) async throws -> [Notebook] {

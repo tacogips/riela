@@ -369,3 +369,64 @@ Implementation steps must append concise dated entries below with:
   PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH
   /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint --quiet`; build and targeted
   tests passed, and SwiftLint reported the same pre-existing warnings.
+
+## Follow-up Documentation Reconciliation Plan
+
+**Issue Reference**: `codex-design-and-implement-review-loop-session-1172` /
+`comm-000873`
+**Workflow Mode**: issue-resolution
+
+This follow-up owns only the post-implementation documentation/archive commit
+for TODO-DOC-COMMIT-001. The accepted design remains
+`design-docs/specs/design-riela-note-ui-refinements.md`; no design-doc,
+source-code, or test edits are in scope.
+
+### TASK-DOC-001: Verify docs-only worktree scope
+
+**Depends On**: Step 3 design review acceptance.
+**Deliverables**:
+- Confirm branch `feat/riela-note-workspace-revamp`.
+- Confirm `git status --short` lists only:
+  `README.md`, `impl-plans/README.md`,
+  `impl-plans/active/riela-note-workspace-hardening.md`,
+  `impl-plans/completed/riela-note-workspace-hardening.md`, and
+  `.codex/skills/riela-impl-workflow/`.
+- Confirm `git diff --name-status -- design-docs Sources Tests` is empty.
+
+**Completion criteria**:
+- No unrelated worktree paths are staged or modified by this follow-up.
+
+### TASK-DOC-002: Commit exactly the accepted documentation/archive paths
+
+**Depends On**: TASK-DOC-001.
+**Deliverables**:
+- Stage only the five accepted paths.
+- Commit once with message:
+  `docs: archive riela-note-workspace-hardening plan and update workflow docs`.
+- Do not push, amend, rewrite history, or touch commit `07f481f`.
+
+**Completion criteria**:
+- `git status --porcelain` is empty after commit.
+- `git show --stat --name-status HEAD` shows exactly the accepted five paths.
+- `git rev-parse HEAD^` prints
+  `07f481f1ee48567a357714da6cf582de9d88b1ef`.
+- `git cherry -v origin/feat/riela-note-workspace-revamp` shows only the new
+  docs commit as unpushed.
+
+### Follow-up Progress Log Expectations
+
+The implementation step must record the branch, staged paths, commit hash,
+verification command results, and explicit no-push confirmation.
+
+### Follow-up Progress Log
+
+- 2026-07-19: TASK-DOC-001 completed on branch
+  `feat/riela-note-workspace-revamp`. Verified the dirty worktree is limited to
+  `README.md`, `impl-plans/README.md`, deletion of
+  `impl-plans/active/riela-note-workspace-hardening.md`, addition of
+  `impl-plans/completed/riela-note-workspace-hardening.md`, and addition of
+  `.codex/skills/riela-impl-workflow/`; `git diff --name-status -- design-docs
+  Sources Tests` was empty. TASK-DOC-002 will stage only those accepted paths
+  and create the single docs/archive commit; the resulting commit hash and
+  no-push verification are recorded in the Step 6 implementation result because
+  the hash is not knowable before commit creation without amending.

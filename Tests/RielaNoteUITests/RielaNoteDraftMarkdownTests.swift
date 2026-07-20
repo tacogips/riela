@@ -34,6 +34,24 @@ final class RielaNoteDraftMarkdownTests: XCTestCase {
     XCTAssertEqual(state.draftBodyMarkdown, "Unsaved body")
   }
 
+  func testBodyDraftStateStartsViewFirst() {
+    let state = RielaNoteBodyDraftState()
+    let note = Note(
+      noteId: "note-1",
+      notebookId: "notebook-1",
+      noteNumber: 1,
+      title: "Readable",
+      bodyMarkdown: "Persisted body",
+      readOnly: false,
+      createdAt: "2026-07-05T00:00:00Z",
+      updatedAt: "2026-07-05T00:00:00Z"
+    )
+
+    XCTAssertFalse(state.isEditingBody)
+    XCTAssertNil(state.editingNoteId)
+    XCTAssertEqual(state.previewBodyMarkdown(for: note), "Persisted body")
+  }
+
   func testMarkdownBlockParserPreservesBlocksAndStripsDisplayMarkers() {
     let blocks = RielaNoteMarkdownBlock.parse(
       """

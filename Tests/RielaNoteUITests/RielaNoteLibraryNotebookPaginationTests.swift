@@ -69,6 +69,22 @@ final class RielaNoteLibraryNotebookPaginationTests: XCTestCase {
     XCTAssertEqual(viewModel.notebookNotesOffsetForTesting, viewModel.notebookNotes.count)
     XCTAssertEqual(viewModel.notebookNotes.map(\.noteId), ["n-1", "n-2", "n-3", "n-4"])
   }
+
+  func testReaderEdgeLoadsOneAdditionalNotebookNotesPage() async throws {
+    let client = NotebookNotesPaginationClient()
+    let viewModel = RielaNoteLibraryViewModel(client: client, notebookNoteLimit: 2)
+
+    await viewModel.selectNotebook("notebook-notes")
+
+    XCTAssertEqual(viewModel.notebookNotes.map(\.noteId), ["n-1", "n-2"])
+    let beforeEdgeLoad = await viewModel.loadNextNotebookNotesPageIfNeeded(visibleNoteId: "n-1", trailingThreshold: 0)
+    XCTAssertFalse(beforeEdgeLoad)
+    XCTAssertEqual(viewModel.notebookNotes.map(\.noteId), ["n-1", "n-2"])
+
+    let edgeLoad = await viewModel.loadNextNotebookNotesPageIfNeeded(visibleNoteId: "n-2", trailingThreshold: 0)
+    XCTAssertTrue(edgeLoad)
+    XCTAssertEqual(viewModel.notebookNotes.map(\.noteId), ["n-1", "n-2", "n-3", "n-4"])
+  }
 }
 
 private final class NotebookPaginationClient: RielaNoteUIClient, @unchecked Sendable {

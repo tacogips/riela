@@ -52,6 +52,29 @@ final class FileTreePageStateTests: XCTestCase {
     XCTAssertFalse(state.isLoading)
   }
 
+  func testNearTrailingEdgeTriggersNextPageOnlyInsideThreshold() {
+    var state = RielaNoteFileTreeNotebookNotesPageState()
+    state.mergeFetchedPage((1...6).map { makeNote($0) }, pageSize: 5)
+
+    XCTAssertFalse(state.shouldLoadNextPage(visibleNoteId: "note-2", trailingThreshold: 1))
+    XCTAssertTrue(state.shouldLoadNextPage(visibleNoteId: "note-4", trailingThreshold: 1))
+    XCTAssertTrue(state.shouldLoadNextPage(visibleNoteId: "note-5", trailingThreshold: 1))
+  }
+
+  func testNearTrailingEdgeRefusesLoadingExhaustedAndUnknownNotes() {
+    var loadingState = RielaNoteFileTreeNotebookNotesPageState()
+    loadingState.mergeFetchedPage((1...6).map { makeNote($0) }, pageSize: 5)
+    loadingState.markLoading()
+
+    XCTAssertFalse(loadingState.shouldLoadNextPage(visibleNoteId: "note-5", trailingThreshold: 2))
+
+    var exhaustedState = RielaNoteFileTreeNotebookNotesPageState()
+    exhaustedState.mergeFetchedPage((1...5).map { makeNote($0) }, pageSize: 5)
+
+    XCTAssertFalse(exhaustedState.shouldLoadNextPage(visibleNoteId: "note-5", trailingThreshold: 2))
+    XCTAssertFalse(exhaustedState.shouldLoadNextPage(visibleNoteId: "missing", trailingThreshold: 2))
+  }
+
   private func makeNote(_ index: Int, title: String? = nil) -> Note {
     Note(
       noteId: "note-\(index)",

@@ -17,6 +17,7 @@ public struct RielaNoteRootView: View {
   @AppStorage("rielaNoteWorkspace.leftPane.isExpanded") private var isFileTreePaneExpanded = false
   @AppStorage("rielaNoteWorkspace.rightPane.isExpanded") private var isMetadataPaneExpanded = false
   @AppStorage("rielaNoteWorkspace.leftPane.mode") private var selectedLeftPaneMode = RielaNoteLeftPaneMode.tree
+  @AppStorage("rielaNoteWorkspace.agentBottomBar.isFolded") private var isAgentBottomBarFolded = false
   @State private var isSearchPopupPresented = false
   private let onOpenSettings: (() -> Void)?
 
@@ -183,7 +184,7 @@ public struct RielaNoteRootView: View {
         .navigationDestination(for: RielaNoteLibraryRoute.self) { route in
           switch route {
           case .detail:
-            RielaNoteDetailView(viewModel: viewModel)
+            RielaNoteDetailView(viewModel: viewModel, onAskAgent: openAgentForCurrentNote)
           case .compose(let destination):
             composeView(destination)
           }
@@ -245,7 +246,12 @@ public struct RielaNoteRootView: View {
       if let composeDestination {
         composeView(composeDestination)
       } else {
-        RielaNoteDetailView(viewModel: viewModel, showsMetadata: false, showsExpandToggle: false)
+        RielaNoteDetailView(
+          viewModel: viewModel,
+          showsMetadata: false,
+          showsExpandToggle: false,
+          onAskAgent: openAgentForCurrentNote
+        )
       }
     }
     .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
@@ -422,6 +428,14 @@ public struct RielaNoteRootView: View {
     .labelStyle(.iconOnly)
     .padding(.horizontal, 12)
     .padding(.vertical, 8)
+  }
+
+  private func openAgentForCurrentNote(_ note: Note) {
+    agentViewModel.prepareCurrentNoteQuestion(for: note)
+    isAgentBottomBarFolded = false
+    if horizontalSizeClass == .compact {
+      selectedTab = .agent
+    }
   }
 
   @ToolbarContentBuilder

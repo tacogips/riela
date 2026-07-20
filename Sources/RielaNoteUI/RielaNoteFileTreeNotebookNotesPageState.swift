@@ -11,6 +11,15 @@ struct RielaNoteFileTreeNotebookNotesPageState: Equatable {
     didLoad && hasMore && !isLoading
   }
 
+  func shouldLoadNextPage(visibleNoteId: String, trailingThreshold: Int) -> Bool {
+    guard canLoadMore,
+          let visibleIndex = notes.firstIndex(where: { $0.noteId == visibleNoteId }) else {
+      return false
+    }
+    let lastIndex = notes.index(before: notes.endIndex)
+    return lastIndex - visibleIndex <= max(trailingThreshold, 0)
+  }
+
   mutating func reset() {
     notes = []
     nextOffset = 0

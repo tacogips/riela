@@ -74,6 +74,29 @@ final class RielaNoteAgentViewModelTests: XCTestCase {
     XCTAssertEqual(viewModel.turns.first?.userMarkdown, "Attached file `memo.txt`:\n```\ncontent\n```")
   }
 
+  func testCurrentNoteQuestionPreparesExistingAgentComposer() {
+    let client = AgentStubClient()
+    let viewModel = RielaNoteAgentViewModel(client: client)
+
+    viewModel.prepareCurrentNoteQuestion(
+      for: Note(
+        noteId: "note-42",
+        notebookId: "notebook-1",
+        noteNumber: 42,
+        title: "Reading Plan",
+        bodyMarkdown: "# Reading Plan\n\nNext steps.",
+        readOnly: false,
+        createdAt: "2026-07-20T00:00:00Z",
+        updatedAt: "2026-07-20T00:00:00Z"
+      )
+    )
+
+    XCTAssertEqual(viewModel.draftMessage, "Ask about Reading Plan:")
+    XCTAssertEqual(viewModel.draftAttachments.map(\.filename), ["note-42.md"])
+    XCTAssertEqual(viewModel.draftAttachments.first?.text, "# Reading Plan\n\nNext steps.")
+    XCTAssertTrue(viewModel.canSubmit)
+  }
+
   func testAnswerFailureClearsDraftAndSurfacesErrorWithoutTurn() async throws {
     let fixture = NoteUITestFixture()
     fixture.client.agentAnswerError = AgentViewModelTestError.answerFailed

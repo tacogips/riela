@@ -49,44 +49,36 @@ public struct RielaNoteDetailView: View {
   @State private var markdownExportDocument = RielaNoteMarkdownFileDocument(markdown: "")
   @State private var markdownExportFilename = "note.md"
   @State private var bodyEditError: String?
+  @State private var visibleNoteId: String?
+  @State private var commentDraftNoteId: String?
+  @State private var commentDraft = ""
+  @State private var commentError: String?
   @FocusState private var isRewriteFieldFocused: Bool
+  @FocusState private var isCommentFieldFocused: Bool
   private let showsMetadata: Bool
   private let showsExpandToggle: Bool
+  private let onAskAgent: (Note) -> Void
 
   public init(
     viewModel: RielaNoteLibraryViewModel,
     showsMetadata: Bool = true,
-    showsExpandToggle: Bool = true
+    showsExpandToggle: Bool = true,
+    onAskAgent: @escaping (Note) -> Void = { _ in }
   ) {
     self.viewModel = viewModel
     self.showsMetadata = showsMetadata
     self.showsExpandToggle = showsExpandToggle
+    self.onAskAgent = onAskAgent
   }
 
   public var body: some View {
     Group {
       if let detail = viewModel.selectedDetail {
-        ScrollView {
-          VStack(alignment: .leading, spacing: 18) {
-            header(detail.note)
-            if viewModel.sourcePageImageAttachment != nil {
-              Picker("Mode", selection: contentModeBinding) {
-                Label("Text", systemImage: "doc.text").tag(RielaNoteLibraryViewModel.NoteContentMode.text)
-                Label("Image", systemImage: "photo").tag(RielaNoteLibraryViewModel.NoteContentMode.sourceImage)
-              }
-              .pickerStyle(.segmented)
-            }
-            content(detail)
-            if showsMetadata {
-              RielaNoteMetadataPane(viewModel: viewModel)
-            }
-          }
-          .padding()
-          .frame(maxWidth: 880, alignment: .leading)
-        }
+        reader(detail: detail)
         .navigationTitle(detail.note.title ?? "Note")
-        .onChange(of: detail.note.noteId) { _, _ in
+        .onChange(of: detail.note.noteId) { _, noteId in
           resetEditingState()
+          synchronizeVisibleNoteId(noteId)
         }
         .fileExporter(
           isPresented: $isMarkdownExportPresented,
@@ -103,6 +95,57 @@ public struct RielaNoteDetailView: View {
       } else {
         emptySelection
       }
+    }
+  }
+
+  private func reader(detail: RielaNoteDetail) -> some View {
+    let notes = viewModel.pagerNoteSnapshot.notes.isEmpty
+      ? [detail.note]
+      : viewModel.pagerNoteSnapshot.notes
+    return ScrollView(.vertical) {
+      LazyVStack(spacing: 0) {
+        ForEach(notes, id: \.noteId) { note in
+          readerPage(note, selectedDetail: detail)
+            .id(note.noteId)
+            .containerRelativeFrame(.vertical, alignment: .top)
+        }
+      }
+      .scrollTargetLayout()
+    }
+    .scrollTargetBehavior(.paging)
+    .scrollPosition(id: $visibleNoteId)
+    .scrollDisabled(bodyDraft.isEditingBody)
+    .onAppear {
+      synchronizeVisibleNoteId(detail.note.noteId)
+      Task {
+        await viewModel.loadNextNotebookNotesPageIfNeeded(visibleNoteId: detail.note.noteId)
+      }
+    }
+    .onChange(of: visibleNoteId) { _, noteId in
+      handleVisibleNoteChange(noteId)
+    }
+  }
+
+  private func readerPage(_ note: Note, selectedDetail: RielaNoteDetail) -> some View {
+    let isSelected = note.noteId == selectedDetail.note.noteId
+    return ScrollView {
+      VStack(alignment: .leading, spacing: 18) {
+        header(note, isSelected: isSelected)
+        if isSelected, viewModel.sourcePageImageAttachment != nil {
+          Picker("Mode", selection: contentModeBinding) {
+            Label("Text", systemImage: "doc.text").tag(RielaNoteLibraryViewModel.NoteContentMode.text)
+            Label("Image", systemImage: "photo").tag(RielaNoteLibraryViewModel.NoteContentMode.sourceImage)
+          }
+          .pickerStyle(.segmented)
+        }
+        content(note, selectedDetail: selectedDetail)
+        if showsMetadata, isSelected {
+          RielaNoteMetadataPane(viewModel: viewModel)
+        }
+      }
+      .padding()
+      .frame(maxWidth: 880, alignment: .leading)
+      .frame(maxWidth: .infinity, alignment: .top)
     }
   }
 
@@ -131,9 +174,10 @@ public struct RielaNoteDetailView: View {
     }
   }
 
-  private func header(_ note: Note) -> some View {
+  private func header(_ note: Note, isSelected: Bool) -> some View {
     VStack(alignment: .leading, spacing: 10) {
-      actionRow(note)
+      actionRow(note, isSelected: isSelected)
+      commentComposer(note)
       HStack(alignment: .firstTextBaseline, spacing: 8) {
         Text(note.title ?? note.noteId)
           .font(.title2)
@@ -154,13 +198,25 @@ public struct RielaNoteDetailView: View {
     }
   }
 
-  private func actionRow(_ note: Note) -> some View {
+  private func actionRow(_ note: Note, isSelected: Bool) -> some View {
     HStack(alignment: .top, spacing: 8) {
-      if !note.readOnly {
+      if !note.readOnly, isSelected {
         editControl(note)
       }
       Spacer(minLength: 12)
       HStack(spacing: 8) {
+        Button {
+          onAskAgent(note)
+        } label: {
+          Image(systemName: "sparkles")
+        }
+        .help("Ask agent about this note")
+        Button {
+          startComment(note)
+        } label: {
+          Image(systemName: "text.bubble")
+        }
+        .help("Add comment")
         Button {
           copyDisplayedMarkdown(for: note)
         } label: {
@@ -188,6 +244,35 @@ public struct RielaNoteDetailView: View {
       }
       .buttonStyle(.borderless)
       .controlSize(.small)
+    }
+  }
+
+  @ViewBuilder
+  private func commentComposer(_ note: Note) -> some View {
+    if commentDraftNoteId == note.noteId {
+      VStack(alignment: .leading, spacing: 6) {
+        HStack(alignment: .bottom, spacing: 8) {
+          TextField("Add comment", text: $commentDraft, axis: .vertical)
+            .textFieldStyle(.roundedBorder)
+            .lineLimit(1...4)
+            .focused($isCommentFieldFocused)
+          Button("Cancel") {
+            resetCommentComposer()
+          }
+          Button {
+            submitComment(note)
+          } label: {
+            Label("Add", systemImage: "checkmark")
+          }
+          .buttonStyle(.borderedProminent)
+          .disabled(commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        if let commentError {
+          Text(commentError)
+            .font(.caption)
+            .foregroundStyle(.red)
+        }
+      }
     }
   }
 
@@ -329,13 +414,18 @@ public struct RielaNoteDetailView: View {
   }
 
   @ViewBuilder
-  private func content(_ detail: RielaNoteDetail) -> some View {
-    if bodyDraft.isEditingBody, !detail.note.readOnly {
-      bodyEditor(detail.note)
+  private func content(_ note: Note, selectedDetail: RielaNoteDetail) -> some View {
+    let isSelected = note.noteId == selectedDetail.note.noteId
+    if isSelected, bodyDraft.isEditingBody, !note.readOnly {
+      bodyEditor(note)
+    } else if !isSelected {
+      RielaNoteMarkdownBodyView(markdown: note.bodyMarkdown)
+        .font(.body)
+        .padding(.vertical, 4)
     } else {
       switch viewModel.contentMode {
       case .text:
-        RielaNoteMarkdownBodyView(markdown: bodyDraft.previewBodyMarkdown(for: detail.note))
+        RielaNoteMarkdownBodyView(markdown: bodyDraft.previewBodyMarkdown(for: note))
           .font(.body)
           .padding(.vertical, 4)
       case .sourceImage:
@@ -469,6 +559,63 @@ public struct RielaNoteDetailView: View {
     viewModel.clearEditRewriteState()
     viewModel.clearSelectionQAState()
     viewModel.clearLinkProposals()
+  }
+
+  private func resetCommentComposer() {
+    commentDraftNoteId = nil
+    commentDraft = ""
+    commentError = nil
+  }
+
+  private func startComment(_ note: Note) {
+    commentDraftNoteId = note.noteId
+    commentDraft = ""
+    commentError = nil
+    isCommentFieldFocused = true
+  }
+
+  private func submitComment(_ note: Note) {
+    let bodyMarkdown = commentDraft
+    Task {
+      do {
+        if viewModel.selectedNote?.noteId != note.noteId {
+          await viewModel.requestSelection(.note(note.noteId))
+          guard viewModel.pendingSelection == nil else {
+            return
+          }
+        }
+        try await viewModel.addCommentToSelectedNote(bodyMarkdown)
+        guard viewModel.selectedNote?.noteId == note.noteId else {
+          return
+        }
+        resetCommentComposer()
+      } catch {
+        guard commentDraftNoteId == note.noteId else {
+          return
+        }
+        commentError = rielaNoteMutationErrorMessage(error)
+      }
+    }
+  }
+
+  private func synchronizeVisibleNoteId(_ noteId: String) {
+    guard visibleNoteId != noteId else {
+      return
+    }
+    visibleNoteId = noteId
+  }
+
+  private func handleVisibleNoteChange(_ noteId: String?) {
+    guard let noteId, !bodyDraft.isEditingBody else {
+      return
+    }
+    Task {
+      await viewModel.loadNextNotebookNotesPageIfNeeded(visibleNoteId: noteId)
+      guard viewModel.selectedNote?.noteId != noteId else {
+        return
+      }
+      await viewModel.requestSelection(.note(noteId))
+    }
   }
 
   private func startEditing(_ note: Note) {
@@ -628,7 +775,7 @@ func rielaNoteResolvedFileName(for file: FileRecord) -> String {
   if let original = file.originalFilename?.trimmingCharacters(in: .whitespacesAndNewlines),
      !original.isEmpty {
     let base = (original as NSString).lastPathComponent
-    if !base.isEmpty, base != "." , base != ".." {
+    if !base.isEmpty, base != ".", base != ".." {
       return base
     }
   }

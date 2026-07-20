@@ -37,6 +37,20 @@ final class RielaNotePagerNoteSnapshotTests: XCTestCase {
     XCTAssertNil(snapshot.nextNote)
   }
 
+  func testSnapshotReportsTrailingEdgeForReaderLazyLoading() {
+    let notes = (1...5).map(makeNote)
+    let snapshot = RielaNotePagerNoteSnapshot(
+      notes: notes,
+      selectedNoteId: "note-3",
+      hasMoreNotes: true
+    )
+
+    XCTAssertFalse(snapshot.shouldLoadNextPage(visibleNoteId: "note-2", trailingThreshold: 1))
+    XCTAssertTrue(snapshot.shouldLoadNextPage(visibleNoteId: "note-4", trailingThreshold: 1))
+    XCTAssertFalse(snapshot.shouldLoadNextPage(visibleNoteId: "missing", trailingThreshold: 1))
+    XCTAssertEqual(snapshot.positionText(for: "note-3"), "3/5+")
+  }
+
   func testViewModelPagerPropertiesUseSnapshotForAdjacentSelection() async {
     let fixture = NoteUITestFixture()
     let viewModel = RielaNoteLibraryViewModel(client: fixture.client)

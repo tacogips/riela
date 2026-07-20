@@ -1,4 +1,5 @@
 import Foundation
+import RielaNote
 import SwiftUI
 
 @MainActor
@@ -55,6 +56,16 @@ public final class RielaNoteAgentViewModel: ObservableObject {
   }
 
   public func clearAttachmentError() {
+    attachmentError = nil
+  }
+
+  public func prepareCurrentNoteQuestion(for note: Note) {
+    let title = note.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let displayTitle = title?.isEmpty == false ? title ?? note.noteId : note.noteId
+    draftMessage = "Ask about \(displayTitle):"
+    draftAttachments = [
+      RielaNoteAgentDraftAttachment(filename: "\(note.noteId).md", text: note.bodyMarkdown)
+    ]
     attachmentError = nil
   }
 

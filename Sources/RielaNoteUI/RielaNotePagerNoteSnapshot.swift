@@ -75,4 +75,15 @@ public struct RielaNotePagerNoteSnapshot: Equatable {
     }
     return "\(index + 1)/\(totalText)"
   }
+
+  public func isWithinTrailingEdge(noteId: String, threshold: Int) -> Bool {
+    guard let index = notes.firstIndex(where: { $0.noteId == noteId }), !notes.isEmpty else {
+      return false
+    }
+    return notes.index(before: notes.endIndex) - index <= max(threshold, 0)
+  }
+
+  public func shouldLoadNextPage(visibleNoteId: String, trailingThreshold: Int) -> Bool {
+    hasMoreNotes && isWithinTrailingEdge(noteId: visibleNoteId, threshold: trailingThreshold)
+  }
 }

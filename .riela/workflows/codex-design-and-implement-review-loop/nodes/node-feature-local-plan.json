@@ -2,7 +2,7 @@
   "id": "feature-local-plan",
   "description": "Produce one accepted feature-local design and implementation-plan branch result for the bounded fanout path.",
   "executionBackend": "codex-agent",
-  "model": "gpt-5.5",
+  "model": "gpt-5.6-sol",
   "modelFreeze": false,
   "effort": "high",
   "sessionPolicy": {

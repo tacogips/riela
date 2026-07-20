@@ -28,7 +28,6 @@ private struct RielaAppWebAssistantPatch: Decodable {
 private struct RielaAppWebNoteSettingsPatch: Decodable {
   var expectedRevision: Int
   var exposesNoteAPI: Bool?
-  var defaultTranslationTargetLanguage: String?
 }
 
 private struct RielaAppWebServerSettingsPatch: Decodable {
@@ -124,7 +123,6 @@ extension RielaApp {
       return webJSON([
         "revision": .number(Double(webRevision)),
         "exposesNoteAPI": .bool(settings.exposesNoteAPI),
-        "defaultTranslationTargetLanguage": .string(settings.defaultTranslationTargetLanguage),
         "s3ProfileCount": .number(Double(settings.s3Profiles.count))
       ])
     case ("PUT", "/api/v1/settings/notes"):
@@ -135,9 +133,6 @@ extension RielaApp {
       let store = RielaAppNoteSettingsStore(noteRoot: noteRootURL(profileName: daemonProfileName))
       var settings = store.load()
       if let exposesNoteAPI = patch.exposesNoteAPI { settings.exposesNoteAPI = exposesNoteAPI }
-      if let language = patch.defaultTranslationTargetLanguage {
-        settings.defaultTranslationTargetLanguage = language
-      }
       do {
         try store.save(settings)
       } catch {

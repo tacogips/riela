@@ -110,11 +110,19 @@ under `examples/note-quick-memo`, `examples/note-pdf-ingest`,
 `examples/note-link-extract`, `examples/note-edit-rewrite`, and
 `examples/note-selection-question`.
 
-In the RielaApp Notes window, the note detail pane carries a header action row:
-an **Edit** control at the top-left and **copy**, **download**, and **expand**
+In the RielaApp Notes window, the note detail pane is a read-first vertical
+reader: each note occupies one snapping page, and approaching either edge of a
+mid-notebook window loads only the next bounded page instead of scanning the
+whole notebook. Each page keeps **Ask agent** and **Add comment** one tap away
+through the existing agent bar and comment service. **Ask agent** expands and
+focuses the existing composer with the current note attached. Bounded page
+loads are generation-guarded, so a late load from earlier navigation cannot
+replace the note selected most recently. The header action row also carries an
+**Edit** control at the top-left and **copy**, **download**, and **expand**
 buttons at the top-right (copy/download/expand stay available on read-only
-notes; only the Edit control is hidden). Pressing Edit enables manual markdown
-editing and reveals an **"Ask for changes"** agent pill. Submitting the pill
+notes; only the Edit control is hidden). Pressing Edit disables pager movement,
+enables manual markdown editing, and reveals an **"Ask for changes"** agent
+pill. Submitting the pill
 asks the edit agent to rewrite the note; on macOS you can also select text in
 the body and press **⌘K** (or the floating "Ask for changes ⌘K" chip) to scope
 the request to that selection, falling back to whole-note scope when the
@@ -144,6 +152,23 @@ modified, and failures persist nothing. Each comment gains a
 notebook whose first note carries the comment body and links the source note
 to that new note (`related`, human provenance), surfacing the link in the
 detail Links section. The Agent tab query pathway is unchanged.
+
+The regular-width RielaApp Notes workspace has a left pane with **Tree** and
+**Notes** modes. Tree mode shows notebooks with lazily loaded note children and
+a load-more row for large notebooks; explicit refreshes and note-store changes
+invalidate the cached children so created and deleted notes reappear without an
+app restart. Notes mode lists the selected notebook's notes in the same order as
+the detail pager, highlights the current note, shows row positions such as
+`3/12`, and selects through the same unsaved-edit guard as the pager and links.
+Selecting a search result while body edits are unsaved dismisses the search
+sheet and surfaces the root **Discard / Keep Editing** confirmation; Discard
+navigates to the result and Keep Editing preserves the draft. Plain Return is
+owned by the focused agent composer only: Return in note body, comment, tag,
+rewrite, search, or link text inputs does not trigger agent send. The left and
+right pane expansion state, selected Tree/Notes mode, and folded bottom-agent
+bar persist across relaunches. Custom workspace panels use semantic SwiftUI
+roles so the agent bar, attachment chips, pane backgrounds, and selected rows
+remain legible in dark and light appearances.
 
 The remote note API transport is not shipped yet. `riela note` and the built-in
 note add-ons execute note GraphQL documents in-process against the local store.

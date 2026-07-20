@@ -51,8 +51,7 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
       selectionQuestionProvider: RielaWorkflowNoteSelectionQuestionProvider.defaultProvider(
         environment: environment,
         allowEnvironmentOverrides: true
-      ),
-      defaultTranslationTargetLanguage: noteSettings.normalizedTranslationTargetLanguage
+      )
     )
     let hostingController = NSHostingController(
       rootView: RielaNoteRootView(client: client, onOpenSettings: onOpenSettings)

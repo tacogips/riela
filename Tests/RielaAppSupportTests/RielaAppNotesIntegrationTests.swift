@@ -150,24 +150,49 @@ final class RielaAppNotesIntegrationTests: XCTestCase {
     }
   }
 
+  func testAppearanceSettingsDefaultToDarkAndRoundTrip() throws {
+    let appRoot = try scratchRoot(name: "riela-app-appearance-\(UUID().uuidString)")
+    let store = RielaAppAppearanceSettingsStore(appRootURL: appRoot)
+
+    XCTAssertEqual(store.load().colorScheme, .dark)
+
+    try store.save(RielaAppAppearanceSettings(colorScheme: .light))
+    XCTAssertEqual(store.load().colorScheme, .light)
+
+    // Unknown persisted values fall back to the dark default instead of failing.
+    try Data(#"{"colorScheme":"solarized"}"#.utf8).write(to: store.settingsURL)
+    XCTAssertEqual(store.load().colorScheme, .dark)
+  }
+
+  func testNoteSettingsWindowPersistsColorScheme() throws {
+    let scratch = try scratchRoot(name: "riela-app-appearance-window-\(UUID().uuidString)")
+    let noteRoot = scratch.appendingPathComponent("note", isDirectory: true)
+    let appearanceStore = RielaAppAppearanceSettingsStore(
+      appRootURL: scratch.appendingPathComponent("app-root", isDirectory: true)
+    )
+    let controller = try NoteSettingsWindowController(
+      noteRoot: noteRoot,
+      profileName: .default,
+      appearanceStore: appearanceStore
+    )
+
+    controller.setColorScheme(.light)
+    XCTAssertEqual(appearanceStore.load().colorScheme, .light)
+
+    controller.setColorScheme(.dark)
+    XCTAssertEqual(appearanceStore.load().colorScheme, .dark)
+    controller.close()
+  }
+
   func testNoteSettingsPersistsExposureAndManagesClients() throws {
     let noteRoot = try scratchRoot(name: "riela-app-note-settings-\(UUID().uuidString)")
       .appendingPathComponent("note", isDirectory: true)
     let controller = try NoteSettingsWindowController(noteRoot: noteRoot, profileName: .default)
 
     XCTAssertFalse(controller.settingsStore.load().exposesNoteAPI)
-    XCTAssertEqual(controller.settingsStore.load().normalizedTranslationTargetLanguage, "English")
 
-    try controller.settingsStore.save(RielaAppNoteSettings(
-      exposesNoteAPI: true,
-      defaultTranslationTargetLanguage: "Japanese"
-    ))
+    try controller.settingsStore.save(RielaAppNoteSettings(exposesNoteAPI: true))
     XCTAssertTrue(controller.settingsStore.load().exposesNoteAPI)
-    XCTAssertEqual(controller.settingsStore.load().normalizedTranslationTargetLanguage, "Japanese")
-
-    controller.setDefaultTranslationTargetLanguage(" French ")
-    try controller.saveTranslationSettingsFromEditor()
-    XCTAssertEqual(controller.settingsStore.load().defaultTranslationTargetLanguage, "French")
 
     let client = try controller.service.registerAPIClient(displayName: "Local test", bearerToken: "secret-token")
     XCTAssertEqual(try controller.service.listAPIClients().map(\.displayName), ["Local test"])

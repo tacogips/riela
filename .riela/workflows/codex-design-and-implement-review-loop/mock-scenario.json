@@ -1,7 +1,7 @@
 {
   "riela-manager": {
     "provider": "scenario-mock",
-    "model": "gpt-5.5",
+    "model": "gpt-5.6-sol",
     "when": {
       "always": true
     },
@@ -12,7 +12,7 @@
   },
   "step1-issue-intake": {
     "provider": "scenario-mock",
-    "model": "gpt-5.5",
+    "model": "gpt-5.6-sol",
     "when": {
       "always": true
     },
@@ -46,7 +46,7 @@
   "step2-design-doc-update": [
     {
       "provider": "scenario-mock",
-      "model": "gpt-5.5",
+      "model": "gpt-5.6-sol",
       "when": {
         "always": true
       },
@@ -77,7 +77,7 @@
     },
     {
       "provider": "scenario-mock",
-      "model": "gpt-5.5",
+      "model": "gpt-5.6-sol",
       "when": {
         "always": true
       },
@@ -109,7 +109,7 @@
   ],
   "step2-design-self-review": {
     "provider": "scenario-mock",
-    "model": "gpt-5.5",
+    "model": "gpt-5.6-sol",
     "when": {
       "needs_revision": false
     },
@@ -127,7 +127,7 @@
   "step3-design-review": [
     {
       "provider": "scenario-mock",
-      "model": "gpt-5.5",
+      "model": "gpt-5.6-sol",
       "when": {
         "needs_revision": true,
         "requires_adversarial_review": false
@@ -151,7 +151,7 @@
     },
     {
       "provider": "scenario-mock",
-      "model": "gpt-5.5",
+      "model": "gpt-5.6-sol",
       "when": {
         "needs_revision": false
       },
@@ -166,7 +166,7 @@
   "step4-impl-plan-create": [
     {
       "provider": "scenario-mock",
-      "model": "gpt-5.5",
+      "model": "gpt-5.6-sol",
       "when": {
         "always": true
       },
@@ -196,7 +196,7 @@
     },
     {
       "provider": "scenario-mock",
-      "model": "gpt-5.5",
+      "model": "gpt-5.6-sol",
       "when": {
         "always": true
       },
@@ -237,7 +237,7 @@
   ],
   "step4-impl-plan-self-review": {
     "provider": "scenario-mock",
-    "model": "gpt-5.5",
+    "model": "gpt-5.6-sol",
     "when": {
       "needs_design_revision": false,
       "needs_revision": false
@@ -257,7 +257,7 @@
   "step5-impl-plan-review": [
     {
       "provider": "scenario-mock",
-      "model": "gpt-5.5",
+      "model": "gpt-5.6-sol",
       "when": {
         "needs_design_revision": false,
         "needs_revision": true,
@@ -284,7 +284,7 @@
     },
     {
       "provider": "scenario-mock",
-      "model": "gpt-5.5",
+      "model": "gpt-5.6-sol",
       "when": {
         "needs_design_revision": false,
         "needs_revision": false,
@@ -303,7 +303,7 @@
   "step6-implement": [
     {
       "provider": "scenario-mock",
-      "model": "gpt-5.5",
+      "model": "gpt-5.6-sol",
       "when": {
         "always": true
       },
@@ -324,7 +324,7 @@
     },
     {
       "provider": "scenario-mock",
-      "model": "gpt-5.5",
+      "model": "gpt-5.6-sol",
       "when": {
         "always": true
       },
@@ -351,7 +351,7 @@
   ],
   "step6-implement-self-review": {
     "provider": "scenario-mock",
-    "model": "gpt-5.5",
+    "model": "gpt-5.6-sol",
     "when": {
       "needs_revision": false
     },
@@ -371,7 +371,7 @@
   },
   "step6-test-integrity-check": {
     "provider": "scenario-mock",
-    "model": "gpt-5.5",
+    "model": "gpt-5.6-sol",
     "when": {
       "needs_revision": false
     },
@@ -398,7 +398,7 @@
   "step7-review": [
     {
       "provider": "scenario-mock",
-      "model": "gpt-5.5",
+      "model": "gpt-5.6-sol",
       "when": {
         "needs_revision": true,
         "requires_adversarial_review": false
@@ -422,7 +422,7 @@
     },
     {
       "provider": "scenario-mock",
-      "model": "gpt-5.5",
+      "model": "gpt-5.6-sol",
       "when": {
         "needs_revision": false,
         "requires_adversarial_review": true
@@ -439,7 +439,7 @@
   ],
   "step7-adversarial-review": {
     "provider": "scenario-mock",
-    "model": "gpt-5.5",
+    "model": "gpt-5.6-sol",
     "when": {
       "needs_revision": false
     },
@@ -454,7 +454,7 @@
   },
   "step8-docs-refresh": {
     "provider": "scenario-mock",
-    "model": "gpt-5.5",
+    "model": "gpt-5.6-sol",
     "when": {
       "always": true
     },
@@ -474,7 +474,7 @@
   },
   "step8-impl-plan-completion-check": {
     "provider": "scenario-mock",
-    "model": "gpt-5.5",
+    "model": "gpt-5.6-sol",
     "when": {
       "needs_revision": false
     },
@@ -495,7 +495,7 @@
   },
   "step9-commit-message": {
     "provider": "scenario-mock",
-    "model": "gpt-5.5",
+    "model": "gpt-5.6-sol",
     "when": {
       "always": true
     },
@@ -579,7 +579,7 @@
   },
   "workflow-output": {
     "provider": "scenario-mock",
-    "model": "gpt-5.5",
+    "model": "gpt-5.6-sol",
     "when": {
       "always": true
     },

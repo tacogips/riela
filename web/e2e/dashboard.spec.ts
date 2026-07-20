@@ -88,7 +88,7 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
       return json({ revision: 2, directories: [], projectDirectories: [], repositories: [], discovered: [] })
     }
     if (url.pathname === '/api/v1/settings/assistant' && request.method() === 'GET') return json({ revision: 1, assistance: '', vendor: 'openai-api', model: 'gpt-5.6' })
-    if (url.pathname === '/api/v1/settings/notes' && request.method() === 'GET') return json({ revision: 1, exposesNoteAPI: false, defaultTranslationTargetLanguage: 'English', s3ProfileCount: 0 })
+    if (url.pathname === '/api/v1/settings/notes' && request.method() === 'GET') return json({ revision: 1, exposesNoteAPI: false, s3ProfileCount: 0 })
     if (url.pathname === '/api/v1/settings/web-server' && request.method() === 'GET') return json({ revision: 1, isEnabled: true, configuredPort, boundPort: 19091, restartRequired, state: 'running' })
     if (url.pathname === '/api/v1/settings/assistant' && request.method() === 'PUT') {
       mutationCount += 1

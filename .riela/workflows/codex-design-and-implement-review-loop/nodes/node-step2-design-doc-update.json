@@ -2,7 +2,7 @@
   "id": "step2-design-doc-update",
   "description": "Update the design documentation from the shared intake brief, including Codex-reference mapping when the run is reference-driven.",
   "executionBackend": "codex-agent",
-  "model": "gpt-5.5",
+  "model": "gpt-5.6-sol",
   "modelFreeze": false,
   "effort": "high",
   "sessionPolicy": {

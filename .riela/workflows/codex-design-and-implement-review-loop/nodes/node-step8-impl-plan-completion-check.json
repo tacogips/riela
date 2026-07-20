@@ -2,7 +2,7 @@
   "id": "step8-impl-plan-completion-check",
   "description": "Check that accepted issue-resolution implementation plans are not left completed under impl-plans/active before commit generation.",
   "executionBackend": "codex-agent",
-  "model": "gpt-5.5",
+  "model": "gpt-5.6-sol",
   "modelFreeze": false,
   "promptTemplateFile": "prompts/step8-impl-plan-completion-check.md",
   "variables": {},

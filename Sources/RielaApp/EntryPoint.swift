@@ -52,6 +52,10 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   var webRevision = 1
   private var terminationShutdownStarted = false
 
+  var appearanceSettingsStore: RielaAppAppearanceSettingsStore {
+    RielaAppAppearanceSettingsStore(appRootURL: profileStore.appRootURL)
+  }
+
   static func main() {
     let app = NSApplication.shared
     let delegate = RielaApp()
@@ -65,6 +69,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     profileStore = RielaAppProfileStore(
       appRootURL: launchOptions.appRoot ?? RielaAppProfileStore.defaultAppRootURL(homeDirectory: appHomeDirectory)
     )
+    rielaAppApplyColorScheme(appearanceSettingsStore.load().colorScheme)
     daemonProfileName = initialDaemonProfileName()
     do {
       try prepareInitialDaemonProfile()

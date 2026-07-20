@@ -1,3 +1,4 @@
+import RielaNote
 import SwiftUI
 
 public struct RielaNoteRootView: View {
@@ -11,15 +12,17 @@ public struct RielaNoteRootView: View {
   @State private var composeDestination: RielaNoteCreationDestination?
   @State private var isFilterSheetPresented = false
   @State private var didRunInitialLoad = false
-  @State private var regularColumnVisibility: NavigationSplitViewVisibility = .all
   @State private var noteStoreChangeWatcher: RielaNoteStoreChangeWatcher?
+  // Left/right panes start folded; the top-right icons expand them.
+  @AppStorage("rielaNoteWorkspace.leftPane.isExpanded") private var isFileTreePaneExpanded = false
+  @AppStorage("rielaNoteWorkspace.rightPane.isExpanded") private var isMetadataPaneExpanded = false
+  @AppStorage("rielaNoteWorkspace.leftPane.mode") private var selectedLeftPaneMode = RielaNoteLeftPaneMode.tree
+  @AppStorage("rielaNoteWorkspace.agentBottomBar.isFolded") private var isAgentBottomBarFolded = false
+  @State private var isSearchPopupPresented = false
   private let onOpenSettings: (() -> Void)?
 
   public init(client: any RielaNoteUIClient, onOpenSettings: (() -> Void)? = nil) {
-    _viewModel = StateObject(wrappedValue: RielaNoteLibraryViewModel(
-      client: client,
-      translationTargetLanguage: client.defaultTranslationTargetLanguage
-    ))
+    _viewModel = StateObject(wrappedValue: RielaNoteLibraryViewModel(client: client))
     _agentViewModel = StateObject(wrappedValue: RielaNoteAgentViewModel(client: client))
     _configAgentViewModel = StateObject(wrappedValue: RielaNoteConfigAgentViewModel(client: client))
     self.onOpenSettings = onOpenSettings
@@ -181,37 +184,256 @@ public struct RielaNoteRootView: View {
         .navigationDestination(for: RielaNoteLibraryRoute.self) { route in
           switch route {
           case .detail:
-            RielaNoteDetailView(viewModel: viewModel)
+            RielaNoteDetailView(viewModel: viewModel, onAskAgent: openAgentForCurrentNote)
           case .compose(let destination):
             composeView(destination)
           }
         }
       }
     } else {
-      NavigationSplitView(columnVisibility: regularColumnVisibilityBinding) {
-        RielaNoteFilterPane(viewModel: viewModel)
-          .navigationTitle("Filters")
-          .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360)
-          .toolbar {
-            settingsToolbarItem
-          }
-      } content: {
-        RielaNoteNotebookListView(
-          viewModel: viewModel,
-          onCreate: openCompose,
-          onOpenNote: { _ in
-            composeDestination = nil
-          }
-        )
-          .navigationTitle("Notes")
-          .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 460)
-      } detail: {
-        if let composeDestination {
-          composeView(composeDestination)
-        } else {
-          RielaNoteDetailView(viewModel: viewModel)
+      regularLayout
+    }
+  }
+
+  /// Regular-width layout: file tree (left, folded by default), note (center),
+  /// note metadata (right, folded by default), search as a popup, and the agent
+  /// bar pinned to the bottom of the screen.
+  private var regularLayout: some View {
+    VStack(spacing: 0) {
+      regularToolbar
+      Divider()
+      paneSplit
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      Divider()
+      RielaNoteAgentBottomBar(viewModel: agentViewModel) { noteId in
+        Task {
+          await viewModel.requestSelection(.note(noteId))
         }
       }
+    }
+    .sheet(isPresented: $isSearchPopupPresented) {
+      RielaNoteSearchPopupSheet(viewModel: viewModel) {
+        isSearchPopupPresented = false
+      }
+    }
+    .onChange(of: viewModel.pendingSelection) { _, pendingSelection in
+      if pendingSelection != nil, isSearchPopupPresented {
+        isSearchPopupPresented = false
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var paneSplit: some View {
+    #if os(macOS)
+    HSplitView {
+      paneSplitContent
+    }
+    #else
+    HStack(spacing: 0) {
+      paneSplitContent
+    }
+    #endif
+  }
+
+  @ViewBuilder
+  private var paneSplitContent: some View {
+    if isFileTreePaneExpanded {
+      leftPane
+      .frame(minWidth: 200, idealWidth: 260, maxWidth: 360)
+    }
+    Group {
+      if let composeDestination {
+        composeView(composeDestination)
+      } else {
+        RielaNoteDetailView(
+          viewModel: viewModel,
+          showsMetadata: false,
+          showsExpandToggle: false,
+          onAskAgent: openAgentForCurrentNote
+        )
+      }
+    }
+    .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
+    .layoutPriority(1)
+    if isMetadataPaneExpanded {
+      ScrollView {
+        RielaNoteMetadataPane(viewModel: viewModel, expandsAllSections: true)
+          .padding()
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      .frame(minWidth: 240, idealWidth: 320, maxWidth: 420)
+    }
+  }
+
+  private var leftPane: some View {
+    VStack(spacing: 0) {
+      Picker("Left pane", selection: $selectedLeftPaneMode) {
+        Label("Tree", systemImage: "folder")
+          .tag(RielaNoteLeftPaneMode.tree)
+        Label("Notes", systemImage: "list.bullet")
+          .tag(RielaNoteLeftPaneMode.notes)
+      }
+      .pickerStyle(.segmented)
+      .labelsHidden()
+      .padding(.horizontal, 10)
+      .padding(.vertical, 8)
+      Divider()
+      switch selectedLeftPaneMode {
+      case .tree:
+        RielaNoteFileTreePane(viewModel: viewModel) { _ in
+          composeDestination = nil
+        }
+      case .notes:
+        leftPaneNotesList
+      }
+    }
+    .background(.background)
+  }
+
+  private var leftPaneNotesList: some View {
+    let snapshot = viewModel.pagerNoteSnapshot
+    return List {
+      if let selectedNotebookTitle {
+        Section {
+          ForEach(snapshot.notes, id: \.noteId) { note in
+            leftPaneNoteRow(note, snapshot: snapshot)
+          }
+          if viewModel.canLoadMoreNotebookNotes {
+            Button {
+              Task {
+                await viewModel.loadMoreNotebookNotes()
+              }
+            } label: {
+              Label("Load more", systemImage: "ellipsis.circle")
+            }
+            .buttonStyle(.plain)
+          }
+        } header: {
+          HStack {
+            Text(selectedNotebookTitle)
+              .lineLimit(1)
+            Spacer()
+            if let position = snapshot.selectedNoteId.flatMap({ snapshot.positionText(for: $0) }) {
+              Text(position)
+                .monospacedDigit()
+            }
+          }
+        }
+      } else {
+        ContentUnavailableView("No notebook selected", systemImage: "folder")
+      }
+    }
+    .listStyle(.sidebar)
+  }
+
+  private func leftPaneNoteRow(
+    _ note: Note,
+    snapshot: RielaNotePagerNoteSnapshot
+  ) -> some View {
+    let isSelected = note.noteId == snapshot.selectedNoteId
+    return Button {
+      Task {
+        await viewModel.requestSelection(.note(note.noteId))
+        guard viewModel.pendingSelection == nil else {
+          return
+        }
+        composeDestination = nil
+      }
+    } label: {
+      HStack(spacing: 8) {
+        Image(systemName: isSelected ? "doc.text.fill" : "doc.text")
+          .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+        Text(note.title ?? note.noteId)
+          .fontWeight(isSelected ? .semibold : .regular)
+          .lineLimit(1)
+        Spacer(minLength: 6)
+        Text(snapshot.positionText(for: note.noteId) ?? snapshot.totalText)
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+          .monospacedDigit()
+      }
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .listRowBackground(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+    .accessibilityAddTraits(isSelected ? .isSelected : [])
+  }
+
+  private var regularToolbar: some View {
+    HStack(spacing: 10) {
+      Text("Notes")
+        .font(.headline)
+      Button {
+        openCompose(.memo)
+      } label: {
+        Label("New memo", systemImage: "square.and.pencil")
+      }
+      .help("New memo")
+      .keyboardShortcut("n", modifiers: .command)
+      Button {
+        openCompose(.selectedNotebook)
+      } label: {
+        Label("New note", systemImage: "doc.badge.plus")
+      }
+      .disabled(!viewModel.canCreateNoteInSelectedNotebook)
+      .help("New note in selected notebook")
+      .keyboardShortcut("n", modifiers: [.command, .shift])
+      Button {
+        Task {
+          await viewModel.refresh()
+        }
+      } label: {
+        Label("Refresh", systemImage: "arrow.clockwise")
+      }
+      .help("Refresh notes")
+      .keyboardShortcut("r", modifiers: .command)
+      Spacer()
+      Button {
+        isSearchPopupPresented = true
+      } label: {
+        Label("Search", systemImage: "magnifyingglass")
+      }
+      .help("Search notes")
+      .keyboardShortcut("f", modifiers: .command)
+      if let onOpenSettings {
+        Button(action: onOpenSettings) {
+          Label("Settings", systemImage: "gearshape")
+        }
+        .help("Note settings")
+      }
+      Divider()
+        .frame(height: 16)
+      Button {
+        withAnimation {
+          isFileTreePaneExpanded.toggle()
+        }
+      } label: {
+        Label("Files", systemImage: "sidebar.leading")
+      }
+      .help(isFileTreePaneExpanded ? "Hide file list" : "Show file list")
+      .keyboardShortcut("1", modifiers: [.command, .option])
+      Button {
+        withAnimation {
+          isMetadataPaneExpanded.toggle()
+        }
+      } label: {
+        Label("Metadata", systemImage: "sidebar.trailing")
+      }
+      .help(isMetadataPaneExpanded ? "Hide note metadata" : "Show note metadata")
+      .keyboardShortcut("2", modifiers: [.command, .option])
+    }
+    .buttonStyle(.borderless)
+    .labelStyle(.iconOnly)
+    .padding(.horizontal, 12)
+    .padding(.vertical, 8)
+  }
+
+  private func openAgentForCurrentNote(_ note: Note) {
+    agentViewModel.prepareCurrentNoteQuestion(for: note)
+    isAgentBottomBarFolded = false
+    if horizontalSizeClass == .compact {
+      selectedTab = .agent
     }
   }
 
@@ -266,15 +488,6 @@ public struct RielaNoteRootView: View {
     return viewModel.notebooks.first { $0.notebookId == selectedNotebookId }?.title
   }
 
-  private var regularColumnVisibilityBinding: Binding<NavigationSplitViewVisibility> {
-    Binding {
-      viewModel.isDetailExpanded ? .detailOnly : regularColumnVisibility
-    } set: { visibility in
-      regularColumnVisibility = visibility
-      viewModel.isDetailExpanded = visibility == .detailOnly
-    }
-  }
-
   private func startNoteStoreChangeWatcher() {
     guard noteStoreChangeWatcher == nil else {
       return
@@ -295,6 +508,11 @@ private enum RielaNoteRootTab: Hashable {
   case library
   case agent
   case config
+}
+
+private enum RielaNoteLeftPaneMode: String, Hashable {
+  case tree
+  case notes
 }
 
 private enum RielaNoteLibraryRoute: Hashable {

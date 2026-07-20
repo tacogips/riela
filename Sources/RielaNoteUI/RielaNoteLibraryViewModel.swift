@@ -24,6 +24,26 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     case notebook(String)
     case previousNote
     case nextNote
+
+    var isPagerSelection: Bool {
+      switch self {
+      case .previousNote, .nextNote:
+        true
+      case .note, .notebook:
+        false
+      }
+    }
+
+    func isNoOp(currentNoteId: String?) -> Bool {
+      switch self {
+      case let .note(noteId):
+        currentNoteId == noteId
+      case .notebook:
+        false
+      case .previousNote, .nextNote:
+        false
+      }
+    }
   }
 
   @Published public private(set) var notebooks: [Notebook] = []
@@ -32,15 +52,17 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   @Published public private(set) var availableSearchTagClasses: [TagClass] = []
   @Published public private(set) var searchResults: [NoteSearchResult] = []
   @Published public internal(set) var selectedDetail: RielaNoteDetail?
-  @Published public private(set) var resolvedSourceImage: RielaNoteResolvedFile?
-  @Published public private(set) var decodedSourceImage: RielaNoteDecodedSourceImage?
-  @Published public private(set) var selectedResolvedFile: RielaNoteResolvedFile?
-  @Published public private(set) var selectedNotebookId: String?
+  @Published public internal(set) var resolvedSourceImage: RielaNoteResolvedFile?
+  @Published public internal(set) var decodedSourceImage: RielaNoteDecodedSourceImage?
+  @Published public internal(set) var selectedResolvedFile: RielaNoteResolvedFile?
+  @Published public internal(set) var selectedNotebookId: String?
   @Published public private(set) var selectedSearchTagNames: Set<String> = []
   @Published public private(set) var selectedSearchClassIds: Set<String> = []
   @Published public private(set) var hasMoreNotebooks = false
-  @Published public private(set) var hasMoreNotebookNotes = false
+  @Published public internal(set) var hasEarlierNotebookNotes = false
+  @Published public internal(set) var hasMoreNotebookNotes = false
   @Published public private(set) var hasMoreSearchResults = false
+  @Published public private(set) var fileTreeInvalidationRevision = 0
   @Published public internal(set) var linkProposals: [NoteLinkProposal] = []
   @Published public internal(set) var linkProposalError: String?
   @Published public internal(set) var isLinkProposalLoading = false
@@ -50,18 +72,14 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   @Published public internal(set) var selectionQuestionError: String?
   @Published public internal(set) var isSelectionQuestionLoading = false
   @Published public internal(set) var didSaveSelectionQuestionComment = false
-  @Published public internal(set) var translateNoteError: String?
-  @Published public internal(set) var isTranslateNoteLoading = false
-  @Published public internal(set) var translateNoteSummary: String?
   @Published public internal(set) var commentPromotionError: String?
   @Published public internal(set) var isCommentPromotionLoading = false
-  @Published public private(set) var isSourceImageLoading = false
+  @Published public internal(set) var isSourceImageLoading = false
   @Published public var filter = RielaNoteListFilter()
   @Published public var searchText = ""
   @Published public var sourceImageZoom = 1.0
   @Published public var contentMode: NoteContentMode = .text
   @Published public var isDetailExpanded = false
-  @Published public var translationTargetLanguage: String
   @Published public internal(set) var state: LoadState = .idle
 
   /// A selection change that another view (list, links, agent citation, pager)
@@ -80,31 +98,36 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
 
   public nonisolated let client: any RielaNoteUIClient
   private let notebookLimit: Int
-  private let notebookNoteLimit: Int
+  let notebookNoteLimit: Int
   private let searchLimit: Int
-  private let sourceImageCacheLimit: Int
+  let sourceImageCacheLimit: Int
   private var notebooksOffset = 0
-  private var notebookNotesOffset = 0
+  var notebookNotesStartOffset = 0
+  var notebookNotesOffset = 0
   private var searchResultsOffset = 0
-  private var resolvedFileCache: [String: RielaNoteResolvedFile] = [:]
-  private var resolvedFileCacheOrder: [String] = []
-  private var decodedSourceImageCache: [String: RielaNoteDecodedSourceImage] = [:]
-  private var decodedSourceImageCacheOrder: [String] = []
-  private var notebookContentModes: [String: NoteContentMode] = [:]
-  private var isLoadingMoreNotebookNotes = false
+  var resolvedFileCache: [String: RielaNoteResolvedFile] = [:]
+  var resolvedFileCacheOrder: [String] = []
+  var decodedSourceImageCache: [String: RielaNoteDecodedSourceImage] = [:]
+  var decodedSourceImageCacheOrder: [String] = []
+  var notebookContentModes: [String: NoteContentMode] = [:]
+  var isLoadingMoreNotebookNotes = false
+  var isLoadingEarlierNotebookNotes = false
   private var isLoadingMoreSearchResults = false
   private var searchGeneration = 0
-  private var selectionGeneration = 0
+  var selectionGeneration = 0
   var linkProposalGeneration = 0
   var editRewriteGeneration = 0
   var selectionQuestionGeneration = 0
-  var translateNoteGeneration = 0
   var commentPromotionGeneration = 0
 
-  /// Pagination cursor for the selected notebook's note list, exposed for tests that
-  /// assert the offset invariant (offset stays equal to the appended note count).
+  /// Absolute trailing pagination cursor for the selected notebook's note
+  /// window. It equals the note count for a window that begins at offset zero.
   var notebookNotesOffsetForTesting: Int {
     notebookNotesOffset
+  }
+
+  var notebookNotesStartOffsetForTesting: Int {
+    notebookNotesStartOffset
   }
 
   var searchResultsOffsetForTesting: Int {
@@ -115,7 +138,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     max(notebookLimit, 1)
   }
 
-  private var notebookNotePageSize: Int {
+  var notebookNotePageSize: Int {
     max(notebookNoteLimit, 1)
   }
 
@@ -128,17 +151,13 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     notebookLimit: Int = 50,
     notebookNoteLimit: Int = 50,
     searchLimit: Int = 30,
-    sourceImageCacheLimit: Int = 64,
-    translationTargetLanguage: String? = nil
+    sourceImageCacheLimit: Int = 64
   ) {
     self.client = client
     self.notebookLimit = notebookLimit
     self.notebookNoteLimit = notebookNoteLimit
     self.searchLimit = searchLimit
     self.sourceImageCacheLimit = max(sourceImageCacheLimit, 1)
-    self.translationTargetLanguage = rielaNoteNormalizedTranslationTargetLanguage(
-      translationTargetLanguage ?? client.defaultTranslationTargetLanguage
-    )
   }
 
   public var isSearching: Bool {
@@ -160,36 +179,40 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   }
 
   public var selectedNoteIndex: Int? {
-    guard let selectedNote else {
-      return nil
-    }
-    return notebookNotes.firstIndex { $0.noteId == selectedNote.noteId }
+    pagerNoteSnapshot.currentIndex
   }
 
   public var selectedNotePositionText: String? {
-    guard let selectedNoteIndex, !notebookNotes.isEmpty else {
-      return nil
-    }
-    let loadedCount = hasMoreNotebookNotes ? "\(notebookNotes.count)+" : "\(notebookNotes.count)"
-    return "#\(selectedNoteIndex + 1) of \(loadedCount)"
+    pagerNoteSnapshot.selectedPositionText
   }
 
   public var canSelectPreviousNote: Bool {
-    guard let selectedNoteIndex else {
-      return false
-    }
-    return selectedNoteIndex > 0
+    pagerNoteSnapshot.canSelectPrevious
   }
 
   public var canSelectNextNote: Bool {
-    guard let selectedNoteIndex else {
-      return false
-    }
-    return selectedNoteIndex + 1 < notebookNotes.count || hasMoreNotebookNotes
+    pagerNoteSnapshot.canSelectNext
+  }
+
+  public var pagerNoteSnapshot: RielaNotePagerNoteSnapshot {
+    RielaNotePagerNoteSnapshot(
+      notes: notebookNotes,
+      selectedNoteId: selectedNote?.noteId,
+      leadingOffset: notebookNotesStartOffset,
+      hasEarlierNotes: hasEarlierNotebookNotes,
+      hasMoreNotes: hasMoreNotebookNotes
+    )
   }
 
   public var canLoadMoreNotebookNotes: Bool {
     selectedNotebookId != nil && hasMoreNotebookNotes && !isSearching && !isLoadingMoreNotebookNotes
+  }
+
+  public var canLoadEarlierNotebookNotes: Bool {
+    selectedNotebookId != nil
+      && hasEarlierNotebookNotes
+      && !isSearching
+      && !isLoadingEarlierNotebookNotes
   }
 
   public var canLoadMoreNotebooks: Bool {
@@ -241,6 +264,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   }
 
   public func refresh() async {
+    fileTreeInvalidationRevision += 1
     let selectedNoteId = selectedNote?.noteId
     let currentNotebookId = selectedNotebookId
     let preferredMode = contentMode
@@ -271,8 +295,18 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
         applySearchResultsPage(page)
       } else if let currentNotebookId {
         try await loadNotebookNotesFirstPage(notebookId: currentNotebookId, generation: selectionGeneration)
-        if let selectedNoteId {
-          try await loadNotebookNotesUntilContains(selectedNoteId, generation: selectionGeneration)
+        if let selectedNoteId,
+           !notebookNotes.contains(where: { $0.noteId == selectedNoteId }) {
+          do {
+            try await loadNotebookNotesWindow(
+              containing: selectedNoteId,
+              notebookId: currentNotebookId,
+              generation: selectionGeneration
+            )
+          } catch let error as NoteServiceError where isMissingSelection(error, noteId: selectedNoteId) {
+            // Let the detail refresh below degrade the deleted selection to the
+            // first still-available note in the bounded first page.
+          }
         }
       } else if let first = notebooks.first {
         self.selectedNotebookId = first.notebookId
@@ -467,17 +501,18 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
       guard isCurrentSelection(generation) else {
         return
       }
-      selectedDetail = detail
       let detailNotebookId = detail.note.notebookId
       if selectedNotebookId != detailNotebookId || !notebookNotes.contains(where: { $0.noteId == noteId }) {
-        let notebookId = detailNotebookId
-        selectedNotebookId = notebookId
-        try await loadNotebookNotesFirstPage(notebookId: notebookId, generation: generation)
-        try await loadNotebookNotesUntilContains(noteId, generation: generation)
+        try await loadNotebookNotesWindow(
+          containing: noteId,
+          notebookId: detailNotebookId,
+          generation: generation
+        )
       }
       guard isCurrentSelection(generation) else {
         return
       }
+      selectedDetail = detail
       let notebookId = selectedDetail?.note.notebookId
       let preferredMode = notebookId.flatMap { notebookContentModes[$0] }
         ?? (previousNotebookId == notebookId ? contentMode : .text)
@@ -511,6 +546,12 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   /// is raised; otherwise it runs immediately. Returns after any immediate
   /// navigation completes.
   public func requestSelection(_ selection: PendingSelection) async {
+    if selection.isNoOp(currentNoteId: selectedNote?.noteId) {
+      return
+    }
+    if isEditingBody, selection.isPagerSelection {
+      return
+    }
     guard isEditingBody else {
       await performSelection(selection)
       return
@@ -614,7 +655,13 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     availableSearchTags = try await client.listTags()
     availableSearchTagClasses = try await client.listTagClasses()
     try await loadNotebookNotesFirstPage(notebookId: detail.note.notebookId, generation: generation)
-    try await loadNotebookNotesUntilContains(detail.note.noteId, generation: generation)
+    if !notebookNotes.contains(where: { $0.noteId == detail.note.noteId }) {
+      try await loadNotebookNotesWindow(
+        containing: detail.note.noteId,
+        notebookId: detail.note.notebookId,
+        generation: generation
+      )
+    }
     guard isCurrentSelection(generation) else {
       return
     }
@@ -624,72 +671,6 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     clearResolvedFileSelection()
     contentMode = .text
     state = .loaded
-  }
-
-  public func setContentMode(_ mode: NoteContentMode) async {
-    guard mode == .sourceImage else {
-      contentMode = .text
-      rememberContentMode(.text)
-      return
-    }
-    guard let sourcePageImageAttachment else {
-      contentMode = .text
-      rememberContentMode(.text)
-      return
-    }
-    contentMode = .sourceImage
-    rememberContentMode(.sourceImage)
-    await resolveSourceImageAttachment(sourcePageImageAttachment, generation: selectionGeneration)
-  }
-
-  public func retrySourceImage() async {
-    let attachment = sourcePageImageAttachment ?? selectedResolvedFile.map {
-      NoteFileAttachment(noteId: selectedNote?.noteId ?? "", file: $0.file, role: .related, position: 0)
-    }
-    guard let attachment else {
-      return
-    }
-    removeResolvedFileCacheValue(forKey: attachment.file.fileId)
-    removeDecodedSourceImageCacheValue(forKey: attachment.file.fileId)
-    if resolvedSourceImage?.file.fileId == attachment.file.fileId {
-      resolvedSourceImage = nil
-      decodedSourceImage = nil
-    }
-    contentMode = .sourceImage
-    await resolveSourceImageAttachment(attachment, generation: selectionGeneration, useCache: false)
-  }
-
-  public func zoomInSourceImage() {
-    sourceImageZoom = clampedSourceImageZoom(sourceImageZoom + Self.sourceImageZoomStep)
-  }
-
-  public func zoomOutSourceImage() {
-    sourceImageZoom = clampedSourceImageZoom(sourceImageZoom - Self.sourceImageZoomStep)
-  }
-
-  public func resetSourceImageZoom() {
-    sourceImageZoom = 1.0
-  }
-
-  public func selectFileAttachment(_ attachment: NoteFileAttachment) async {
-    if attachment.role == .sourcePageImage || attachment.file.mediaType.hasPrefix("image/") {
-      contentMode = .sourceImage
-      await resolveSourceImageAttachment(attachment, generation: selectionGeneration)
-      return
-    }
-    let generation = selectionGeneration
-    do {
-      let resolved = try await resolveFile(attachment.file.fileId)
-      guard isCurrentSelection(generation) else {
-        return
-      }
-      selectedResolvedFile = resolved
-    } catch {
-      guard isCurrentSelection(generation) else {
-        return
-      }
-      state = .failed(rielaNoteLoadFailureMessage(error))
-    }
   }
 
   public func saveSelectedNoteBody(_ bodyMarkdown: String, expectedNoteId: String? = nil) async throws {
@@ -751,13 +732,17 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     guard let noteId = selectedDetail?.note.noteId else {
       throw NoteServiceError.notFound("No note is selected.")
     }
+    try await addComment(bodyMarkdown, toNoteId: noteId)
+  }
+
+  public func addComment(_ bodyMarkdown: String, toNoteId noteId: String) async throws {
     let commentBody = bodyMarkdown.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !commentBody.isEmpty else {
       throw NoteServiceError.invalidInput("A comment cannot be empty.")
     }
     let generation = selectionGeneration
     let detail = try await client.addComment(noteId: noteId, bodyMarkdown: commentBody)
-    guard isCurrentSelection(generation) else {
+    guard isCurrentSelection(generation), selectedDetail?.note.noteId == noteId else {
       return
     }
     selectedDetail = detail
@@ -823,45 +808,6 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
       isLoadingMoreSearchResults = false
       state = .failed(rielaNoteLoadFailureMessage(error))
     }
-  }
-
-  public func loadMoreNotebookNotes() async {
-    guard let notebookId = selectedNotebookId, canLoadMoreNotebookNotes else {
-      return
-    }
-    let generation = selectionGeneration
-    isLoadingMoreNotebookNotes = true
-    state = .loading
-    do {
-      try await appendNotebookNotesPage(notebookId: notebookId, generation: generation)
-      guard isCurrentSelection(generation) else {
-        isLoadingMoreNotebookNotes = false
-        return
-      }
-      isLoadingMoreNotebookNotes = false
-      state = .loaded
-    } catch {
-      guard isCurrentSelection(generation) else {
-        isLoadingMoreNotebookNotes = false
-        return
-      }
-      isLoadingMoreNotebookNotes = false
-      state = .failed(rielaNoteLoadFailureMessage(error))
-    }
-  }
-
-  private func selectAdjacentNote(delta: Int) async {
-    guard let selectedNoteIndex else {
-      return
-    }
-    let targetIndex = selectedNoteIndex + delta
-    if targetIndex >= notebookNotes.count, delta > 0, canLoadMoreNotebookNotes {
-      await loadMoreNotebookNotes()
-    }
-    guard notebookNotes.indices.contains(targetIndex) else {
-      return
-    }
-    await selectNote(notebookNotes[targetIndex].noteId)
   }
 
   private func loadNotebooksFirstPage() async throws {
@@ -944,7 +890,6 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     linkProposalGeneration += 1
     editRewriteGeneration += 1
     selectionQuestionGeneration += 1
-    translateNoteGeneration += 1
     commentPromotionGeneration += 1
     linkProposals = []
     linkProposalError = nil
@@ -970,47 +915,6 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     selectionGeneration
   }
 
-  private func loadNotebookNotesFirstPage(notebookId: String, generation: Int) async throws {
-    let page = try await client.listNotes(notebookId: notebookId, limit: notebookNotePageSize + 1, offset: 0)
-    // Drop a first page fetched for a superseded selection so it never replaces the
-    // list the newer selection has already populated.
-    guard isCurrentSelection(generation), selectedNotebookId == notebookId else {
-      return
-    }
-    notebookNotes = Array(page.prefix(notebookNotePageSize))
-    notebookNotesOffset = notebookNotes.count
-    hasMoreNotebookNotes = page.count > notebookNotePageSize
-  }
-
-  private func appendNotebookNotesPage(notebookId: String, generation: Int) async throws {
-    let requestOffset = notebookNotesOffset
-    let page = try await client.listNotes(
-      notebookId: notebookId,
-      limit: notebookNotePageSize + 1,
-      offset: requestOffset
-    )
-    // Drop a page fetched for a superseded selection so it never lands in the new
-    // notebook's list or skews the shared offset.
-    guard isCurrentSelection(generation), selectedNotebookId == notebookId else {
-      return
-    }
-    let visiblePage = Array(page.prefix(notebookNotePageSize))
-    let existingNoteIds = Set(notebookNotes.map(\.noteId))
-    let appended = visiblePage.filter { !existingNoteIds.contains($0.noteId) }
-    notebookNotes.append(contentsOf: appended)
-    notebookNotesOffset += appended.count
-    hasMoreNotebookNotes = page.count > notebookNotePageSize
-  }
-
-  private func loadNotebookNotesUntilContains(_ noteId: String, generation: Int) async throws {
-    while !notebookNotes.contains(where: { $0.noteId == noteId }), hasMoreNotebookNotes {
-      guard let notebookId = selectedNotebookId, isCurrentSelection(generation) else {
-        return
-      }
-      try await appendNotebookNotesPage(notebookId: notebookId, generation: generation)
-    }
-  }
-
   private func replaceSelectedDetail(_ detail: RielaNoteDetail) {
     selectedDetail = detail
     if let index = notebookNotes.firstIndex(where: { $0.noteId == detail.note.noteId }) {
@@ -1018,99 +922,6 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     }
   }
 
-  private func prepareSelectedNoteFiles(preferredMode: NoteContentMode) async {
-    clearResolvedFileSelection()
-    let generation = selectionGeneration
-    guard selectedDetail != nil else {
-      contentMode = .text
-      return
-    }
-    if preferredMode == .sourceImage, let sourcePageImageAttachment {
-      contentMode = .sourceImage
-      await resolveSourceImageAttachment(sourcePageImageAttachment, generation: generation)
-    } else {
-      contentMode = .text
-    }
-    scheduleAdjacentSourceImagePrefetch(generation: generation)
-  }
-
-  private func scheduleAdjacentSourceImagePrefetch(generation: Int) {
-    Task { @MainActor [weak self] in
-      guard let self, self.isCurrentSelection(generation) else {
-        return
-      }
-      await self.prefetchAdjacentSourceImages()
-    }
-  }
-
-  private func resolveSourceImageAttachment(
-    _ attachment: NoteFileAttachment,
-    generation: Int,
-    useCache: Bool = true
-  ) async {
-    isSourceImageLoading = true
-    do {
-      let resolved = try await resolveFile(attachment.file.fileId, useCache: useCache)
-      // A stale resolution is dropped whole; the current selection owns isSourceImageLoading.
-      guard isCurrentSelection(generation) else {
-        return
-      }
-      resolvedSourceImage = resolved
-      selectedResolvedFile = resolved
-      // Decode after publishing the resolved file so a decode failure still leaves the
-      // resolved image visible (matching the non-decodable-image behavior).
-      let decoded = try await decodeSourceImage(resolved, useCache: useCache)
-      guard isCurrentSelection(generation) else {
-        return
-      }
-      decodedSourceImage = decoded
-      isSourceImageLoading = false
-    } catch {
-      // A stale failure never sets global state = .failed and never clears a newer
-      // selection's loading flag.
-      guard isCurrentSelection(generation) else {
-        return
-      }
-      isSourceImageLoading = false
-      state = .failed(rielaNoteLoadFailureMessage(error))
-    }
-  }
-
-  private func prefetchAdjacentSourceImages() async {
-    guard let selectedNoteIndex else {
-      return
-    }
-    let adjacentIndices = [selectedNoteIndex - 1, selectedNoteIndex + 1]
-    for index in adjacentIndices where notebookNotes.indices.contains(index) {
-      await prefetchSourceImage(noteId: notebookNotes[index].noteId)
-    }
-  }
-
-  private func prefetchSourceImage(noteId: String) async {
-    do {
-      let detail = try await client.noteDetail(noteId: noteId)
-      guard let attachment = detail.files.first(where: { $0.role == .sourcePageImage }) else {
-        return
-      }
-      _ = try await resolveFile(attachment.file.fileId)
-    } catch {
-      // Prefetch is best-effort; explicit image selection still surfaces errors.
-    }
-  }
-
-  private func rememberContentMode(_ mode: NoteContentMode) {
-    guard let notebookId = selectedDetail?.note.notebookId ?? selectedNotebookId else {
-      return
-    }
-    notebookContentModes[notebookId] = mode
-  }
-
-  func clearResolvedFileSelection() {
-    resolvedSourceImage = nil
-    decodedSourceImage = nil
-    selectedResolvedFile = nil
-    isSourceImageLoading = false
-  }
 }
 
 extension RielaNoteLibraryViewModel {
@@ -1166,122 +977,4 @@ extension RielaNoteLibraryViewModel {
     await reloadForFilterChange()
   }
 
-}
-
-private extension RielaNoteLibraryViewModel {
-  func prefetchFile(_ fileId: String) async {
-    do {
-      _ = try await resolveFile(fileId)
-    } catch {
-      // Prefetch is best-effort; explicit file selection still surfaces errors.
-    }
-  }
-
-  func resolveFile(_ fileId: String, useCache: Bool = true) async throws -> RielaNoteResolvedFile {
-    if useCache, let cached = resolvedFileCache[fileId] {
-      touchResolvedFileCacheKey(fileId)
-      return cached
-    }
-    let resolved = try await client.resolveFile(fileId: fileId)
-    storeResolvedFileCacheValue(resolved, forKey: fileId)
-    return resolved
-  }
-
-  func decodeSourceImage(
-    _ resolvedFile: RielaNoteResolvedFile,
-    useCache: Bool = true
-  ) async throws -> RielaNoteDecodedSourceImage {
-    let fileId = resolvedFile.file.fileId
-    if useCache, let cached = decodedSourceImageCache[fileId] {
-      touchDecodedSourceImageCacheKey(fileId)
-      return cached
-    }
-    let data = resolvedFile.data
-    let decoded = try await Task.detached(priority: .userInitiated) {
-      try RielaNoteSourceImageDecoder.decode(fileId: fileId, data: data)
-    }.value
-    storeDecodedSourceImageCacheValue(decoded, forKey: fileId)
-    return decoded
-  }
-
-  private func storeResolvedFileCacheValue(_ value: RielaNoteResolvedFile, forKey fileId: String) {
-    resolvedFileCache[fileId] = value
-    touchResolvedFileCacheKey(fileId)
-    evictResolvedFileCacheIfNeeded()
-  }
-
-  private func touchResolvedFileCacheKey(_ fileId: String) {
-    resolvedFileCacheOrder.removeAll { $0 == fileId }
-    resolvedFileCacheOrder.append(fileId)
-  }
-
-  private func evictResolvedFileCacheIfNeeded() {
-    while resolvedFileCacheOrder.count > sourceImageCacheLimit {
-      let evicted = resolvedFileCacheOrder.removeFirst()
-      resolvedFileCache.removeValue(forKey: evicted)
-    }
-  }
-
-  private func removeResolvedFileCacheValue(forKey fileId: String) {
-    resolvedFileCache.removeValue(forKey: fileId)
-    resolvedFileCacheOrder.removeAll { $0 == fileId }
-  }
-
-  private func storeDecodedSourceImageCacheValue(_ value: RielaNoteDecodedSourceImage, forKey fileId: String) {
-    decodedSourceImageCache[fileId] = value
-    touchDecodedSourceImageCacheKey(fileId)
-    evictDecodedSourceImageCacheIfNeeded()
-  }
-
-  private func touchDecodedSourceImageCacheKey(_ fileId: String) {
-    decodedSourceImageCacheOrder.removeAll { $0 == fileId }
-    decodedSourceImageCacheOrder.append(fileId)
-  }
-
-  private func evictDecodedSourceImageCacheIfNeeded() {
-    while decodedSourceImageCacheOrder.count > sourceImageCacheLimit {
-      let evicted = decodedSourceImageCacheOrder.removeFirst()
-      decodedSourceImageCache.removeValue(forKey: evicted)
-    }
-  }
-
-  private func removeDecodedSourceImageCacheValue(forKey fileId: String) {
-    decodedSourceImageCache.removeValue(forKey: fileId)
-    decodedSourceImageCacheOrder.removeAll { $0 == fileId }
-  }
-
-  private func clampedSourceImageZoom(_ zoom: Double) -> Double {
-    min(max(zoom, Self.sourceImageMinimumZoom), Self.sourceImageMaximumZoom)
-  }
-
-  private func fileDisplayName(_ file: FileRecord) -> String {
-    file.originalFilename ?? file.fileId
-  }
-
-  private func byteCountText(_ byteSize: Int64) -> String {
-    byteSize == 1 ? "1 byte" : "\(byteSize) bytes"
-  }
-}
-
-/// Human-readable message for a list load/selection failure. `NoteServiceError`
-/// cases map to short user-facing text; anything else falls back to a generic
-/// message so raw error descriptions never reach the UI.
-func rielaNoteLoadFailureMessage(_ error: Error) -> String {
-  switch error {
-  case let serviceError as NoteServiceError:
-    switch serviceError {
-    case .notFound:
-      return "That note is no longer available."
-    case .readOnly:
-      return "This note is read-only."
-    case .protectedTag:
-      return "That tag can't be changed."
-    case .invalidInput:
-      return "The request was invalid."
-    case .invalidRow:
-      return "A stored note could not be read."
-    }
-  default:
-    return "Unable to load notes right now."
-  }
 }

@@ -2,7 +2,7 @@
   "id": "step8-docs-refresh",
   "description": "Refresh user-facing repository documentation after implementation review acceptance and before commit generation.",
   "executionBackend": "codex-agent",
-  "model": "gpt-5.5",
+  "model": "gpt-5.6-sol",
   "modelFreeze": false,
   "promptTemplateFile": "prompts/step8-docs-refresh.md",
   "variables": {},

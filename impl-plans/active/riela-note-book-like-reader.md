@@ -1,8 +1,8 @@
 # Riela Note Book-Like Reader Implementation Plan
 
-**Status**: Planning
+**Status**: Planning revised after Step 5 review
 **Workflow Mode**: issue-resolution
-**Issue Reference**: `codex-design-and-implement-review-loop-session-1174` / `comm-000891`
+**Issue Reference**: `codex-design-and-implement-review-loop-session-1174` / `comm-000891`; `fable-and-improve-session-1175` / `comm-000901`; `codex-design-and-implement-review-loop-session-1176` / `comm-000903`
 **Design Reference**: `design-docs/specs/design-riela-note-ui-refinements.md:603`
 **Created**: 2026-07-20
 **Last Updated**: 2026-07-20
@@ -40,18 +40,60 @@ and full-notebook eager fetch behavior.
 ### References
 
 - Step 1 intake: `comm-000891`, workflow execution
-  `codex-design-and-implement-review-loop-session-1174`.
-- Step 3 design review: `comm-000895`, accepted with no findings.
+  `codex-design-and-implement-review-loop-session-1174`; Fable handoff
+  `comm-000901`, workflow execution `fable-and-improve-session-1175`; child
+  intake `comm-000903`, workflow execution
+  `codex-design-and-implement-review-loop-session-1176`.
+- Step 3 design review: `comm-000906`, accepted with no findings; design review
+  confirmed D19-D25, no `design-docs/user-qa/` entry required, no codex-agent
+  references, and Cursor CLI behavior not applicable.
+- Step 5 plan review: `comm-000909`, requested preserving committed baseline
+  `79c1cb9`, separating already-done work from remaining review/fix work, and
+  recording nonzero XCTest counts for required filtered test runs.
 - Codex-agent references: none supplied.
 - Cursor adapter behavior: not applicable; this is local `RielaNoteUI` reader
   behavior and introduces no CLI or agent-adapter semantics.
+
+### Baseline and Remaining Work
+
+Treat commit `79c1cb9` (`wip: book-like note reader pager`) as the starting
+state. The implementation step must review and complete that committed work,
+not restart or discard it.
+
+Already present in `79c1cb9` and requiring verification, not reimplementation:
+
+- TASK-002: near-edge helpers and guards in
+  `RielaNoteFileTreeNotebookNotesPageState` / `RielaNotePagerNoteSnapshot`, with
+  state and snapshot tests.
+- TASK-003: `RielaNoteLibraryViewModel+ReaderPaging.swift` one-page-per-trigger
+  bridge guarded by `canLoadMoreNotebookNotes`, with pagination tests.
+- TASK-004 core: `RielaNoteDetailView.reader` uses vertical SwiftUI paging with
+  `scrollPosition`, `scrollTargetBehavior(.paging)`,
+  `containerRelativeFrame(.vertical)`, page ids equal to note ids, read-only
+  markdown pages by default, and pager/previous-next disabled while editing.
+- TASK-005 core: current-note ask-agent and add-comment affordances route
+  through existing `RielaNoteAgentBottomBar` / agent view-model and
+  `addCommentToSelectedNote` pathways.
+
+Remaining review/fix work before TASK-006 completion:
+
+- Review the `79c1cb9` diff for visibleNoteId/requestSelection feedback loops,
+  stale async/no-op filtering, pending-selection comment draft handling,
+  position-text consistency, empty `pagerNoteSnapshot.notes` fallback, and any
+  accidental eager reader fetch path.
+- Add missing navigation-guard coverage for programmatic selection without
+  loops and inert pager/shortcuts while `bodyDraft.isEditingBody`.
+- Record TASK-001 platform/API and no-backward-fetch decisions in this progress
+  log.
+- Produce authoritative verification evidence with nonzero XCTest counts for
+  both filtered test runs.
 
 ---
 
 ## Task Breakdown
 
 ### TASK-001: Confirm platform/API boundary
-**Status**: NOT_STARTED
+**Status**: PENDING_LOG_ONLY
 **Depends On**: -
 **Write Scope**: none, unless a comment is needed in this plan's progress log
 **Deliverables**:
@@ -71,7 +113,7 @@ and full-notebook eager fetch behavior.
 ---
 
 ### TASK-002: Extend bounded pager/window state
-**Status**: NOT_STARTED
+**Status**: VERIFY_FROM_BASELINE
 **Depends On**: TASK-001
 **Write Scope**:
 - `Sources/RielaNoteUI/RielaNoteFileTreeNotebookNotesPageState.swift`
@@ -100,7 +142,7 @@ and full-notebook eager fetch behavior.
 ---
 
 ### TASK-003: Bridge lazy page loading through the view model
-**Status**: NOT_STARTED
+**Status**: VERIFY_FROM_BASELINE
 **Depends On**: TASK-002
 **Write Scope**:
 - `Sources/RielaNoteUI/RielaNoteLibraryViewModel.swift`
@@ -127,7 +169,7 @@ and full-notebook eager fetch behavior.
 ---
 
 ### TASK-004: Replace primary detail body with a vertical snap reader
-**Status**: NOT_STARTED
+**Status**: VERIFY_AND_FIX_FROM_BASELINE
 **Depends On**: TASK-001, TASK-003
 **Write Scope**:
 - `Sources/RielaNoteUI/RielaNoteDetailView.swift`
@@ -145,6 +187,10 @@ and full-notebook eager fetch behavior.
   `bodyDraft.isEditingBody` is true.
 - Ensure default page rendering uses `RielaNoteMarkdownBodyView`, not an
   editable body field.
+- When the pager snapshot is empty, render the selected detail as a single
+  read-first fallback page without triggering full-notebook eager fetch.
+- Extend navigation-guard tests for programmatic selection without scroll /
+  selection loops and for inert pager controls while `bodyDraft.isEditingBody`.
 
 **Checklist**:
 - [ ] Opening note detail is view-first with `isEditingBody == false`.
@@ -156,7 +202,7 @@ and full-notebook eager fetch behavior.
 ---
 
 ### TASK-005: Add current-note agent and comment affordance wiring
-**Status**: NOT_STARTED
+**Status**: VERIFY_AND_FIX_FROM_BASELINE
 **Depends On**: TASK-004
 **Write Scope**:
 - `Sources/RielaNoteUI/RielaNoteDetailView.swift`
@@ -174,6 +220,8 @@ and full-notebook eager fetch behavior.
   `Sources/RielaNote` changes because `NoteService.addComment` already exists
   unless compile-time wiring proves a missing bridge.
 - Refresh only the current selected detail after comment creation.
+- Preserve the comment draft and target note across guarded pending-selection
+  paths; aborting or keeping an edit must not silently drop a draft.
 - Add view-model-level tests for current-note action target selection and
   one-tap affordance wiring.
 
@@ -197,6 +245,9 @@ and full-notebook eager fetch behavior.
   - `swift build`
   - `swift test --filter RielaNoteUITests`
   - `swift test --filter RielaNoteTests`
+- For each filtered XCTest command, record the executed test count in the
+  progress log and treat `0 tests` / `0 suites` as failed evidence even when
+  the process exits successfully.
 - Run code search over the reader path to confirm no eager full-notebook fetch:
   - `rg -n "while .*hasMore|hasMore.*while|loadAll|prefetch" Sources/RielaNoteUI`
 - Review repository-facing documentation before handoff: `README.md`, this
@@ -208,10 +259,14 @@ and full-notebook eager fetch behavior.
   `Sources/RielaNote` behavior changes, record that rationale in the progress
   log while still running `swift test --filter RielaNoteTests`.
 - Record command outcomes, failures, and any accepted unrelated gaps in the
-  progress log.
+  progress log, including the known unrelated `DaemonWorkflowNodePatchTests`
+  flake only if it appears outside these filters.
 
 **Checklist**:
 - [ ] Required commands pass or failures are explicitly classified.
+- [ ] `swift test --filter RielaNoteUITests` and
+  `swift test --filter RielaNoteTests` each report nonzero executed test
+  counts.
 - [ ] No eager full-notebook reader fetch path is present.
 - [ ] New/extended tests cover window-edge trigger, no-refetch-while-loading,
   current-page tracking, view-first default, and one-tap action wiring.
@@ -260,6 +315,15 @@ and full-notebook eager fetch behavior.
   requires documentation review/update or no-doc-change rationale, and clarifies
   the `Tests/RielaNoteTests` obligation when `Sources/RielaNote` does or does
   not change.
+- 2026-07-20: Step 4 rerun aligned plan references with accepted Step 3 design
+  review `comm-000906`, Fable handoff `comm-000901`, and child intake
+  `comm-000903`; no task scope change was needed.
+- 2026-07-20: Addressed Step 5 plan review `comm-000909`: recorded committed
+  baseline `79c1cb9`, split already-present baseline work from remaining
+  review/fix work, added explicit checks for selection-loop guards,
+  pending-selection comment draft handling, empty snapshot fallback, position
+  text consistency, and required nonzero XCTest counts for both filtered test
+  commands.
 
 ## Completion Criteria
 
@@ -276,6 +340,11 @@ and full-notebook eager fetch behavior.
 - Required verification commands pass:
   `swift build`, `swift test --filter RielaNoteUITests`, and
   `swift test --filter RielaNoteTests`.
+- Both filtered XCTest commands report nonzero executed test counts in the
+  progress log; zero-test runs are treated as failed evidence.
+- TASK-001 decisions, docs review/update or no-doc-change rationale, no-service
+  change rationale when `Sources/RielaNote` stays untouched, and no eager-fetch
+  search results are recorded in this progress log.
 
 ## Risks
 

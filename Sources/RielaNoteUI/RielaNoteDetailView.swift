@@ -576,21 +576,16 @@ public struct RielaNoteDetailView: View {
 
   private func submitComment(_ note: Note) {
     let bodyMarkdown = commentDraft
+    let targetNoteId = note.noteId
     Task {
       do {
-        if viewModel.selectedNote?.noteId != note.noteId {
-          await viewModel.requestSelection(.note(note.noteId))
-          guard viewModel.pendingSelection == nil else {
-            return
-          }
-        }
-        try await viewModel.addCommentToSelectedNote(bodyMarkdown)
-        guard viewModel.selectedNote?.noteId == note.noteId else {
+        try await viewModel.addComment(bodyMarkdown, toNoteId: targetNoteId)
+        guard commentDraftNoteId == targetNoteId else {
           return
         }
         resetCommentComposer()
       } catch {
-        guard commentDraftNoteId == note.noteId else {
+        guard commentDraftNoteId == targetNoteId else {
           return
         }
         commentError = rielaNoteMutationErrorMessage(error)
@@ -611,6 +606,9 @@ public struct RielaNoteDetailView: View {
     }
     Task {
       await viewModel.loadNextNotebookNotesPageIfNeeded(visibleNoteId: noteId)
+      guard visibleNoteId == noteId, !bodyDraft.isEditingBody else {
+        return
+      }
       guard viewModel.selectedNote?.noteId != noteId else {
         return
       }

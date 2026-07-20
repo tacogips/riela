@@ -85,6 +85,21 @@ final class RielaNoteLibraryNotebookPaginationTests: XCTestCase {
     XCTAssertTrue(edgeLoad)
     XCTAssertEqual(viewModel.notebookNotes.map(\.noteId), ["n-1", "n-2", "n-3", "n-4"])
   }
+
+  func testReaderEdgeDoesNotRefetchAfterWindowIsExhausted() async throws {
+    let client = NotebookNotesPaginationClient()
+    let viewModel = RielaNoteLibraryViewModel(client: client, notebookNoteLimit: 2)
+
+    await viewModel.selectNotebook("notebook-notes")
+    _ = await viewModel.loadNextNotebookNotesPageIfNeeded(visibleNoteId: "n-2", trailingThreshold: 0)
+    let requestCountAfterExhaustion = client.listNoteRequests.count
+
+    let exhaustedLoad = await viewModel.loadNextNotebookNotesPageIfNeeded(visibleNoteId: "n-4", trailingThreshold: 0)
+
+    XCTAssertFalse(exhaustedLoad)
+    XCTAssertFalse(viewModel.canLoadMoreNotebookNotes)
+    XCTAssertEqual(client.listNoteRequests.count, requestCountAfterExhaustion)
+  }
 }
 
 private final class NotebookPaginationClient: RielaNoteUIClient, @unchecked Sendable {
@@ -242,6 +257,7 @@ private final class NotebookNotesPaginationClient: RielaNoteUIClient, @unchecked
     updatedAt: "2026-07-04T00:00:00Z"
   )
   private let notes: [Note]
+  var listNoteRequests: [NotebookListRequest] = []
 
   init() {
     notes = (1...4).map { index in
@@ -267,7 +283,8 @@ private final class NotebookNotesPaginationClient: RielaNoteUIClient, @unchecked
   }
 
   func listNotes(notebookId: String, limit: Int, offset: Int) async throws -> [Note] {
-    Array(notes.dropFirst(offset).prefix(limit))
+    listNoteRequests.append(NotebookListRequest(limit: limit, offset: offset))
+    return Array(notes.dropFirst(offset).prefix(limit))
   }
 
   func listTags() async throws -> [Tag] {

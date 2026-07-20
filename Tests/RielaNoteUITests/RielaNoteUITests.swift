@@ -172,6 +172,18 @@ final class RielaNoteUITests: XCTestCase {
     XCTAssertEqual(viewModel.state, .loaded)
   }
 
+  func testViewModelAddsCommentToExplicitTargetWithoutChangingSelection() async throws {
+    let fixture = NoteUITestFixture()
+    let viewModel = RielaNoteLibraryViewModel(client: fixture.client)
+
+    await viewModel.selectNote("note-2")
+    try await viewModel.addComment("Visible page comment", toNoteId: "note-1")
+
+    XCTAssertEqual(viewModel.selectedNote?.noteId, "note-2")
+    XCTAssertEqual(fixture.client.commentsByNoteId["note-1"]?.map(\.bodyMarkdown), ["Visible page comment"])
+    XCTAssertTrue(viewModel.selectedDetail?.comments.isEmpty == true)
+  }
+
   func testViewModelOpensLinkedNoteById() async throws {
     let fixture = NoteUITestFixture()
     let viewModel = RielaNoteLibraryViewModel(client: fixture.client)
@@ -562,6 +574,7 @@ final class MockRielaNoteUIClient: RielaNoteUIClient, @unchecked Sendable {
   var links: [NoteLink] = []
   var searchRequests: [MockSearchRequest] = []
   var listNoteRequests: [MockListNotesRequest] = []
+  var noteDetailRequests: [String] = []
   var resolveFileCallCount = 0
   var resolvedFileIds: [String] = []
   var savedConversations: [(title: String, turns: [RielaNoteAgentTurn])] = []
@@ -702,6 +715,7 @@ final class MockRielaNoteUIClient: RielaNoteUIClient, @unchecked Sendable {
 
   func noteDetail(noteId: String) async throws -> RielaNoteDetail {
     onNoteDetailStart?(noteId)
+    noteDetailRequests.append(noteId)
     if let delay = noteDetailDelayNanosecondsByNoteId[noteId] {
       try await Task.sleep(nanoseconds: delay)
     }

@@ -603,12 +603,15 @@ appearance checks for the custom workspace panels.
 ## Book-Like Reader Addendum (2026-07-20)
 
 Issue source: workflow intake
-`codex-design-and-implement-review-loop-session-1174` / `comm-000891`.
+`codex-design-and-implement-review-loop-session-1174` / `comm-000891`,
+continued by Fable handoff `fable-and-improve-session-1175` /
+`comm-000901` and child intake
+`codex-design-and-implement-review-loop-session-1176` / `comm-000903`.
 Scope is one work package on branch `feat/riela-note-workspace-revamp`
-covering the note workspace reader in `Sources/RielaNoteUI`, minimal
-`Sources/RielaNote` comment/paging support only if the UI client cannot
-already perform the write, and tests in `Tests/RielaNoteUITests` and
-`Tests/RielaNoteTests`.
+starting from committed baseline `79c1cb9` and covering the note workspace
+reader in `Sources/RielaNoteUI`, minimal `Sources/RielaNote` comment/paging
+support only if the UI client cannot already perform the write, and tests in
+`Tests/RielaNoteUITests` and `Tests/RielaNoteTests`.
 
 ### Requirements
 
@@ -633,8 +636,10 @@ already perform the write, and tests in `Tests/RielaNoteUITests` and
    notebook or loop until `hasMore` is false.
 6. Verification must include `swift build`,
    `swift test --filter RielaNoteUITests`, and
-   `swift test --filter RielaNoteTests`, with focused pager/windowing
-   tests.
+   `swift test --filter RielaNoteTests`, each with nonzero executed test
+   counts, plus focused pager/windowing tests and a reader-path search for
+   eager loading patterns:
+   `rg -n "while .*hasMore|hasMore.*while|loadAll|prefetch" Sources/RielaNoteUI`.
 
 ### Design Decisions
 
@@ -729,14 +734,16 @@ already perform the write, and tests in `Tests/RielaNoteUITests` and
 
 ### Open Questions
 
+- No unresolved user decisions are open for this continuation. The following
+  implementation checks remain bounded by the accepted design.
 - Backward page fetch is required only if implementation confirms a
   reader entry path that can start before the accumulated forward
   window. Otherwise forward-accumulated previous pages remain the v1
   contract.
-- The implementation plan must pick the exact SwiftUI scroll-position
-  API variant after confirming the package's `macOS 14` / `iOS 17`
-  availability constraints; the behavioral contract is vertical,
-  one-page snapping bound to note ids.
+- The implementation plan must record the SwiftUI scroll-position API choice
+  after confirming the package's `macOS 14` / `iOS 17` availability
+  constraints; the behavioral contract is vertical, one-page snapping bound to
+  note ids.
 
 ### Reference Mapping
 

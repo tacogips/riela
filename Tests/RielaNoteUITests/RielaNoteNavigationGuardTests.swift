@@ -20,6 +20,19 @@ final class RielaNoteNavigationGuardTests: XCTestCase {
     XCTAssertEqual(viewModel.selectedNote?.noteId, "note-2")
   }
 
+  func testRequestSelectionNoOpsForAlreadySelectedNote() async throws {
+    let fixture = NoteUITestFixture()
+    let viewModel = RielaNoteLibraryViewModel(client: fixture.client)
+    await viewModel.selectNote("note-1")
+    fixture.client.noteDetailRequests.removeAll()
+
+    await viewModel.requestSelection(.note("note-1"))
+
+    XCTAssertNil(viewModel.pendingSelection)
+    XCTAssertEqual(viewModel.selectedNote?.noteId, "note-1")
+    XCTAssertTrue(fixture.client.noteDetailRequests.isEmpty)
+  }
+
   func testRequestSelectionDefersWhileEditing() async throws {
     let fixture = NoteUITestFixture()
     let viewModel = RielaNoteLibraryViewModel(client: fixture.client)
@@ -82,6 +95,19 @@ final class RielaNoteNavigationGuardTests: XCTestCase {
     await viewModel.requestSelection(.note("note-2"))
 
     XCTAssertEqual(viewModel.pendingSelection, .note("note-2"))
+    XCTAssertEqual(viewModel.selectedNote?.noteId, "note-1")
+  }
+
+  func testPagerSelectionRequestsAreInertWhileEditing() async throws {
+    let fixture = NoteUITestFixture()
+    let viewModel = RielaNoteLibraryViewModel(client: fixture.client)
+    await viewModel.load()
+    viewModel.setEditingBody(true)
+
+    await viewModel.requestSelection(.nextNote)
+
+    XCTAssertNil(viewModel.pendingSelection)
+    XCTAssertTrue(viewModel.isEditingBody)
     XCTAssertEqual(viewModel.selectedNote?.noteId, "note-1")
   }
 

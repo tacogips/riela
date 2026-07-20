@@ -24,6 +24,26 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     case notebook(String)
     case previousNote
     case nextNote
+
+    var isPagerSelection: Bool {
+      switch self {
+      case .previousNote, .nextNote:
+        true
+      case .note, .notebook:
+        false
+      }
+    }
+
+    func isNoOp(currentNoteId: String?) -> Bool {
+      switch self {
+      case let .note(noteId):
+        currentNoteId == noteId
+      case .notebook:
+        false
+      case .previousNote, .nextNote:
+        false
+      }
+    }
   }
 
   @Published public private(set) var notebooks: [Notebook] = []
@@ -499,6 +519,12 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   /// is raised; otherwise it runs immediately. Returns after any immediate
   /// navigation completes.
   public func requestSelection(_ selection: PendingSelection) async {
+    if selection.isNoOp(currentNoteId: selectedNote?.noteId) {
+      return
+    }
+    if isEditingBody, selection.isPagerSelection {
+      return
+    }
     guard isEditingBody else {
       await performSelection(selection)
       return
@@ -739,13 +765,17 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     guard let noteId = selectedDetail?.note.noteId else {
       throw NoteServiceError.notFound("No note is selected.")
     }
+    try await addComment(bodyMarkdown, toNoteId: noteId)
+  }
+
+  public func addComment(_ bodyMarkdown: String, toNoteId noteId: String) async throws {
     let commentBody = bodyMarkdown.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !commentBody.isEmpty else {
       throw NoteServiceError.invalidInput("A comment cannot be empty.")
     }
     let generation = selectionGeneration
     let detail = try await client.addComment(noteId: noteId, bodyMarkdown: commentBody)
-    guard isCurrentSelection(generation) else {
+    guard isCurrentSelection(generation), selectedDetail?.note.noteId == noteId else {
       return
     }
     selectedDetail = detail

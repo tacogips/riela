@@ -621,7 +621,7 @@ private final class RewriteTestClient: RielaNoteUIClient, @unchecked Sendable {
   }
 
   func listNotes(notebookId: String, limit: Int, offset: Int) async throws -> [Note] {
-    []
+    Array([note(noteId: "note-1"), note(noteId: "note-2")].dropFirst(offset).prefix(limit))
   }
 
   func listTags() async throws -> [Tag] {

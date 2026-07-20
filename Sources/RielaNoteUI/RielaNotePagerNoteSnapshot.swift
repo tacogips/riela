@@ -3,11 +3,21 @@ import RielaNote
 public struct RielaNotePagerNoteSnapshot: Equatable {
   public let notes: [Note]
   public let selectedNoteId: String?
+  public let leadingOffset: Int
+  public let hasEarlierNotes: Bool
   public let hasMoreNotes: Bool
 
-  public init(notes: [Note], selectedNoteId: String?, hasMoreNotes: Bool) {
+  public init(
+    notes: [Note],
+    selectedNoteId: String?,
+    leadingOffset: Int = 0,
+    hasEarlierNotes: Bool = false,
+    hasMoreNotes: Bool
+  ) {
     self.notes = notes
     self.selectedNoteId = selectedNoteId
+    self.leadingOffset = max(leadingOffset, 0)
+    self.hasEarlierNotes = hasEarlierNotes
     self.hasMoreNotes = hasMoreNotes
   }
 
@@ -23,21 +33,22 @@ public struct RielaNotePagerNoteSnapshot: Equatable {
   }
 
   public var totalText: String {
-    hasMoreNotes ? "\(notes.count)+" : "\(notes.count)"
+    let loadedEndOffset = leadingOffset + notes.count
+    return hasMoreNotes ? "\(loadedEndOffset)+" : "\(loadedEndOffset)"
   }
 
   public var selectedPositionText: String? {
     guard let currentIndex, !notes.isEmpty else {
       return nil
     }
-    return "#\(currentIndex + 1) of \(totalText)"
+    return "#\(leadingOffset + currentIndex + 1) of \(totalText)"
   }
 
   public var canSelectPrevious: Bool {
     guard let currentIndex else {
       return false
     }
-    return currentIndex > 0
+    return currentIndex > 0 || hasEarlierNotes
   }
 
   public var canSelectNext: Bool {
@@ -73,7 +84,7 @@ public struct RielaNotePagerNoteSnapshot: Equatable {
     guard let index = notes.firstIndex(where: { $0.noteId == noteId }) else {
       return nil
     }
-    return "\(index + 1)/\(totalText)"
+    return "\(leadingOffset + index + 1)/\(totalText)"
   }
 
   public func isWithinTrailingEdge(noteId: String, threshold: Int) -> Bool {
@@ -85,5 +96,21 @@ public struct RielaNotePagerNoteSnapshot: Equatable {
 
   public func shouldLoadNextPage(visibleNoteId: String, trailingThreshold: Int) -> Bool {
     hasMoreNotes && isWithinTrailingEdge(noteId: visibleNoteId, threshold: trailingThreshold)
+  }
+
+  public func shouldLoadPreviousPage(visibleNoteId: String, leadingThreshold: Int) -> Bool {
+    guard hasEarlierNotes,
+          let index = notes.firstIndex(where: { $0.noteId == visibleNoteId }) else {
+      return false
+    }
+    return index <= max(leadingThreshold, 0)
+  }
+
+  public func isCloserToTrailingEdge(noteId: String) -> Bool {
+    guard let index = notes.firstIndex(where: { $0.noteId == noteId }), !notes.isEmpty else {
+      return false
+    }
+    let trailingDistance = notes.index(before: notes.endIndex) - index
+    return trailingDistance <= index
   }
 }

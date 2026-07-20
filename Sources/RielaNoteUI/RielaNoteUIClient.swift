@@ -33,9 +33,29 @@ public struct RielaNoteResolvedFile: Equatable, Sendable {
   }
 }
 
+public struct RielaNoteNotebookNotesWindow: Equatable, Sendable {
+  public var notes: [Note]
+  public var startOffset: Int
+  public var hasEarlierNotes: Bool
+  public var hasMoreNotes: Bool
+
+  public init(
+    notes: [Note],
+    startOffset: Int,
+    hasEarlierNotes: Bool,
+    hasMoreNotes: Bool
+  ) {
+    self.notes = notes
+    self.startOffset = startOffset
+    self.hasEarlierNotes = hasEarlierNotes
+    self.hasMoreNotes = hasMoreNotes
+  }
+}
+
 public enum RielaNoteUIClientCapabilityError: Error, Equatable, Sendable {
   case currentNotebookNoteCreationUnsupported
   case commentPromotionUnsupported
+  case notebookNotesWindowUnsupported
 }
 
 public struct RielaNoteListFilter: Equatable, Sendable {
@@ -75,6 +95,7 @@ public protocol RielaNoteUIClient: Sendable {
   func listNotebooks(limit: Int, offset: Int) async throws -> [Notebook]
   func listNotebooks(limit: Int, offset: Int, filter: RielaNoteListFilter) async throws -> [Notebook]
   func listNotes(notebookId: String, limit: Int, offset: Int) async throws -> [Note]
+  func notebookNotesWindow(containing noteId: String, pageSize: Int) async throws -> RielaNoteNotebookNotesWindow
   func listTags() async throws -> [Tag]
   func listTagClasses() async throws -> [TagClass]
   func createUserMemo(bodyMarkdown: String) async throws -> RielaNoteDetail
@@ -158,6 +179,26 @@ public extension RielaNoteUIClient {
 
   func listNotebooks(limit: Int, offset: Int, filter: RielaNoteListFilter) async throws -> [Notebook] {
     try await listNotebooks(limit: limit, offset: offset)
+  }
+
+  func notebookNotesWindow(containing noteId: String, pageSize: Int) async throws -> RielaNoteNotebookNotesWindow {
+    let detail = try await noteDetail(noteId: noteId)
+    let boundedPageSize = max(pageSize, 1)
+    let firstPage = try await listNotes(
+      notebookId: detail.note.notebookId,
+      limit: boundedPageSize + 1,
+      offset: 0
+    )
+    let visiblePage = Array(firstPage.prefix(boundedPageSize))
+    if visiblePage.contains(where: { $0.noteId == noteId }) {
+      return RielaNoteNotebookNotesWindow(
+        notes: visiblePage,
+        startOffset: 0,
+        hasEarlierNotes: false,
+        hasMoreNotes: firstPage.count > boundedPageSize
+      )
+    }
+    throw RielaNoteUIClientCapabilityError.notebookNotesWindowUnsupported
   }
 
   func searchNotes(
@@ -315,6 +356,27 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
 
   public func listNotes(notebookId: String, limit: Int, offset: Int) async throws -> [Note] {
     try service.listNotes(notebookId: notebookId, limit: limit, offset: offset)
+  }
+
+  public func notebookNotesWindow(
+    containing noteId: String,
+    pageSize: Int
+  ) async throws -> RielaNoteNotebookNotesWindow {
+    let note = try service.getNote(noteId)
+    let targetOffset = try service.noteOffsetInNotebook(noteId: noteId)
+    let boundedPageSize = max(pageSize, 1)
+    let startOffset = max(targetOffset - (boundedPageSize / 2), 0)
+    let page = try service.listNotes(
+      notebookId: note.notebookId,
+      limit: boundedPageSize + 1,
+      offset: startOffset
+    )
+    return RielaNoteNotebookNotesWindow(
+      notes: Array(page.prefix(boundedPageSize)),
+      startOffset: startOffset,
+      hasEarlierNotes: startOffset > 0,
+      hasMoreNotes: page.count > boundedPageSize
+    )
   }
 
   public func listTags() async throws -> [Tag] {

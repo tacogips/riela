@@ -606,7 +606,9 @@ Issue source: workflow intake
 `codex-design-and-implement-review-loop-session-1174` / `comm-000891`,
 continued by Fable handoff `fable-and-improve-session-1175` /
 `comm-000901` and child intake
-`codex-design-and-implement-review-loop-session-1176` / `comm-000903`.
+`codex-design-and-implement-review-loop-session-1176` / `comm-000903`, then
+resumed without reopening design by
+`codex-design-and-implement-review-loop-session-1178` / `comm-000914`.
 Scope is one work package on branch `feat/riela-note-workspace-revamp`
 starting from committed baseline `79c1cb9` and covering the note workspace
 reader in `Sources/RielaNoteUI`, minimal `Sources/RielaNote` comment/paging

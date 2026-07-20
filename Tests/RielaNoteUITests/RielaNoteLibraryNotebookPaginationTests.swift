@@ -100,6 +100,61 @@ final class RielaNoteLibraryNotebookPaginationTests: XCTestCase {
     XCTAssertFalse(viewModel.canLoadMoreNotebookNotes)
     XCTAssertEqual(client.listNoteRequests.count, requestCountAfterExhaustion)
   }
+
+  func testDirectMidNotebookSelectionLoadsBoundedWindowAndPagesBackwardOnDemand() async throws {
+    let client = NotebookNotesPaginationClient(noteCount: 6)
+    let viewModel = RielaNoteLibraryViewModel(client: client, notebookNoteLimit: 2)
+
+    await viewModel.selectNotebook("notebook-notes")
+    await viewModel.selectNote("n-5")
+
+    XCTAssertEqual(viewModel.notebookNotes.map(\.noteId), ["n-4", "n-5"])
+    XCTAssertEqual(viewModel.notebookNotesStartOffsetForTesting, 3)
+    XCTAssertEqual(viewModel.notebookNotesOffsetForTesting, 5)
+    XCTAssertEqual(viewModel.selectedNotePositionText, "#5 of 5+")
+    XCTAssertTrue(viewModel.canLoadEarlierNotebookNotes)
+    XCTAssertTrue(viewModel.canLoadMoreNotebookNotes)
+    XCTAssertEqual(client.windowRequests, ["n-5"])
+
+    let loadedEarlier = await viewModel.loadNotebookNotesPageIfNeeded(
+      visibleNoteId: "n-4",
+      edgeThreshold: 0
+    )
+
+    XCTAssertTrue(loadedEarlier)
+    XCTAssertEqual(viewModel.notebookNotes.map(\.noteId), ["n-2", "n-3", "n-4", "n-5"])
+    XCTAssertEqual(viewModel.notebookNotesStartOffsetForTesting, 1)
+    XCTAssertEqual(viewModel.selectedNotePositionText, "#5 of 5+")
+    XCTAssertEqual(client.listNoteRequests.last, NotebookListRequest(limit: 2, offset: 1))
+
+    await viewModel.requestSelection(.note("n-2"))
+    await viewModel.requestSelection(.previousNote)
+
+    XCTAssertEqual(viewModel.selectedNote?.noteId, "n-1")
+    XCTAssertEqual(viewModel.notebookNotes.map(\.noteId), ["n-1", "n-2", "n-3", "n-4", "n-5"])
+    XCTAssertFalse(viewModel.canLoadEarlierNotebookNotes)
+    XCTAssertEqual(client.listNoteRequests.last, NotebookListRequest(limit: 1, offset: 0))
+  }
+
+  func testReaderDualEdgeTriggerLoadsNearestTrailingPage() async throws {
+    let client = NotebookNotesPaginationClient(noteCount: 6)
+    let viewModel = RielaNoteLibraryViewModel(client: client, notebookNoteLimit: 2)
+
+    await viewModel.selectNotebook("notebook-notes")
+    await viewModel.selectNote("n-5")
+
+    let loadedLater = await viewModel.loadNotebookNotesPageIfNeeded(
+      visibleNoteId: "n-5",
+      edgeThreshold: 2
+    )
+
+    XCTAssertTrue(loadedLater)
+    XCTAssertEqual(viewModel.notebookNotes.map(\.noteId), ["n-4", "n-5", "n-6"])
+    XCTAssertEqual(viewModel.notebookNotesStartOffsetForTesting, 3)
+    XCTAssertFalse(viewModel.canLoadMoreNotebookNotes)
+    XCTAssertTrue(viewModel.canLoadEarlierNotebookNotes)
+    XCTAssertEqual(client.listNoteRequests.last, NotebookListRequest(limit: 3, offset: 5))
+  }
 }
 
 private final class NotebookPaginationClient: RielaNoteUIClient, @unchecked Sendable {
@@ -258,9 +313,10 @@ private final class NotebookNotesPaginationClient: RielaNoteUIClient, @unchecked
   )
   private let notes: [Note]
   var listNoteRequests: [NotebookListRequest] = []
+  var windowRequests: [String] = []
 
-  init() {
-    notes = (1...4).map { index in
+  init(noteCount: Int = 4) {
+    notes = (1...noteCount).map { index in
       Note(
         noteId: "n-\(index)",
         notebookId: "notebook-notes",
@@ -285,6 +341,25 @@ private final class NotebookNotesPaginationClient: RielaNoteUIClient, @unchecked
   func listNotes(notebookId: String, limit: Int, offset: Int) async throws -> [Note] {
     listNoteRequests.append(NotebookListRequest(limit: limit, offset: offset))
     return Array(notes.dropFirst(offset).prefix(limit))
+  }
+
+  func notebookNotesWindow(
+    containing noteId: String,
+    pageSize: Int
+  ) async throws -> RielaNoteNotebookNotesWindow {
+    guard let targetOffset = notes.firstIndex(where: { $0.noteId == noteId }) else {
+      throw NotebookPaginationClientError.missingNote
+    }
+    windowRequests.append(noteId)
+    let boundedPageSize = max(pageSize, 1)
+    let startOffset = max(targetOffset - (boundedPageSize / 2), 0)
+    let page = Array(notes.dropFirst(startOffset).prefix(boundedPageSize + 1))
+    return RielaNoteNotebookNotesWindow(
+      notes: Array(page.prefix(boundedPageSize)),
+      startOffset: startOffset,
+      hasEarlierNotes: startOffset > 0,
+      hasMoreNotes: page.count > boundedPageSize
+    )
   }
 
   func listTags() async throws -> [Tag] {

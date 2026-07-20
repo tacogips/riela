@@ -110,11 +110,16 @@ under `examples/note-quick-memo`, `examples/note-pdf-ingest`,
 `examples/note-link-extract`, `examples/note-edit-rewrite`, and
 `examples/note-selection-question`.
 
-In the RielaApp Notes window, the note detail pane carries a header action row:
-an **Edit** control at the top-left and **copy**, **download**, and **expand**
-buttons at the top-right (copy/download/expand stay available on read-only
-notes; only the Edit control is hidden). Pressing Edit enables manual markdown
-editing and reveals an **"Ask for changes"** agent pill. Submitting the pill
+In the RielaApp Notes window, the note detail pane is a read-first vertical
+reader: each note occupies one snapping page, and approaching either edge of a
+mid-notebook window loads only the next bounded page instead of scanning the
+whole notebook. Each page keeps **Ask agent** and **Add comment** one tap away
+through the existing agent bar and comment service. Its header action row also
+carries an **Edit** control at the top-left and **copy**, **download**, and
+**expand** buttons at the top-right (copy/download/expand stay available on
+read-only notes; only the Edit control is hidden). Pressing Edit disables pager
+movement, enables manual markdown editing, and reveals an **"Ask for changes"**
+agent pill. Submitting the pill
 asks the edit agent to rewrite the note; on macOS you can also select text in
 the body and press **⌘K** (or the floating "Ask for changes ⌘K" chip) to scope
 the request to that selection, falling back to whole-note scope when the

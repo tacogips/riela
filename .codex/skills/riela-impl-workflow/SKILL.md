@@ -44,6 +44,10 @@ Accepted Riela Note workspace hardening on
   paginated load-more for large notebooks. Notes mode uses the shared detail
   pager order, highlights the current note, shows row position, and routes row
   selection through the unsaved-edit guard.
+- The detail surface is a read-first vertical snap reader with one note per
+  page. Current-note agent and comment actions remain one tap away, editing is
+  explicit and makes pager controls inert, and notebook notes load through
+  bounded forward/backward windows without target-scanning fetch loops.
 - Left pane expansion, right pane expansion, selected Tree/Notes mode, and
   bottom-agent folded state persist across app relaunches.
 - Changed note-workspace panels use semantic SwiftUI color roles so custom agent
@@ -57,10 +61,13 @@ For this work package, accepted verification included:
 ```bash
 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build
 /usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter RielaNoteUITests
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter RielaNoteTests
 /usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter RielaAppNotesIntegrationTests
+rg -n "while .*hasMore|hasMore.*while|loadAll|prefetch" Sources/RielaNoteUI
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint --quiet
 ```
 
 Manual GUI verification should record Return routing, search-popup confirmation
-reachability, relaunch persistence, and dark/light rendering for the changed
+reachability, reader snapping and edit-mode pager blocking, current-note action
+routing, relaunch persistence, and dark/light rendering for the changed
 workspace surfaces.

@@ -68,6 +68,24 @@ final class RielaNotePagerNoteSnapshotTests: XCTestCase {
     XCTAssertEqual(viewModel.pagerNoteSnapshot.previousNote?.noteId, "note-1")
   }
 
+  func testCenteredWindowUsesAbsolutePositionAndExposesEarlierPageBoundary() {
+    let snapshot = RielaNotePagerNoteSnapshot(
+      notes: [makeNote(4), makeNote(5)],
+      selectedNoteId: "note-4",
+      leadingOffset: 3,
+      hasEarlierNotes: true,
+      hasMoreNotes: true
+    )
+
+    XCTAssertEqual(snapshot.selectedPositionText, "#4 of 5+")
+    XCTAssertEqual(snapshot.positionText(for: "note-5"), "5/5+")
+    XCTAssertTrue(snapshot.canSelectPrevious)
+    XCTAssertTrue(snapshot.shouldLoadPreviousPage(visibleNoteId: "note-4", leadingThreshold: 0))
+    XCTAssertFalse(snapshot.shouldLoadPreviousPage(visibleNoteId: "note-5", leadingThreshold: 0))
+    XCTAssertFalse(snapshot.isCloserToTrailingEdge(noteId: "note-4"))
+    XCTAssertTrue(snapshot.isCloserToTrailingEdge(noteId: "note-5"))
+  }
+
   private func makeNote(_ index: Int) -> Note {
     Note(
       noteId: "note-\(index)",

@@ -296,8 +296,8 @@ public struct RielaNoteRootView: View {
     return List {
       if let selectedNotebookTitle {
         Section {
-          ForEach(Array(snapshot.notes.enumerated()), id: \.element.noteId) { index, note in
-            leftPaneNoteRow(note, index: index, snapshot: snapshot)
+          ForEach(snapshot.notes, id: \.noteId) { note in
+            leftPaneNoteRow(note, snapshot: snapshot)
           }
           if viewModel.canLoadMoreNotebookNotes {
             Button {
@@ -329,7 +329,6 @@ public struct RielaNoteRootView: View {
 
   private func leftPaneNoteRow(
     _ note: Note,
-    index: Int,
     snapshot: RielaNotePagerNoteSnapshot
   ) -> some View {
     let isSelected = note.noteId == snapshot.selectedNoteId
@@ -349,7 +348,7 @@ public struct RielaNoteRootView: View {
           .fontWeight(isSelected ? .semibold : .regular)
           .lineLimit(1)
         Spacer(minLength: 6)
-        Text("\(index + 1)/\(snapshot.totalText)")
+        Text(snapshot.positionText(for: note.noteId) ?? snapshot.totalText)
           .font(.caption)
           .foregroundStyle(.tertiary)
           .monospacedDigit()

@@ -98,7 +98,17 @@ public struct RielaNoteDetailView: View {
     }
   }
 
+  @ViewBuilder
   private func reader(detail: RielaNoteDetail) -> some View {
+    if bodyDraft.isEditingBody {
+      readerPage(detail.note, selectedDetail: detail)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    } else {
+      readerPager(detail: detail)
+    }
+  }
+
+  private func readerPager(detail: RielaNoteDetail) -> some View {
     let notes = viewModel.pagerNoteSnapshot.notes.isEmpty
       ? [detail.note]
       : viewModel.pagerNoteSnapshot.notes
@@ -114,11 +124,10 @@ public struct RielaNoteDetailView: View {
     }
     .scrollTargetBehavior(.paging)
     .scrollPosition(id: $visibleNoteId)
-    .scrollDisabled(bodyDraft.isEditingBody)
     .onAppear {
       synchronizeVisibleNoteId(detail.note.noteId)
       Task {
-        await viewModel.loadNextNotebookNotesPageIfNeeded(visibleNoteId: detail.note.noteId)
+        await viewModel.loadNotebookNotesPageIfNeeded(visibleNoteId: detail.note.noteId)
       }
     }
     .onChange(of: visibleNoteId) { _, noteId in
@@ -605,7 +614,7 @@ public struct RielaNoteDetailView: View {
       return
     }
     Task {
-      await viewModel.loadNextNotebookNotesPageIfNeeded(visibleNoteId: noteId)
+      await viewModel.loadNotebookNotesPageIfNeeded(visibleNoteId: noteId)
       guard visibleNoteId == noteId, !bodyDraft.isEditingBody else {
         return
       }

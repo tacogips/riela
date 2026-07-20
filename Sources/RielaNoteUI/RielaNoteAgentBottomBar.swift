@@ -39,6 +39,18 @@ public struct RielaNoteAgentBottomBar: View {
     ) { result in
       attachFiles(result)
     }
+    .task(id: viewModel.composerFocusRequestRevision) {
+      guard viewModel.composerFocusRequestRevision > 0 else {
+        return
+      }
+      await Task.yield()
+      isComposerFocused = true
+    }
+    .onChange(of: isFolded) { _, folded in
+      if !folded, viewModel.composerFocusRequestRevision > 0 {
+        isComposerFocused = true
+      }
+    }
   }
 
   private var foldedBar: some View {

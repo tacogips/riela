@@ -78,6 +78,64 @@ final class RielaNoteGenerationGuardTests: XCTestCase {
     XCTAssertEqual(viewModel.notebookNotesOffsetForTesting, viewModel.notebookNotes.count)
   }
 
+  func testStaleWindowFailureDoesNotRestoreOlderNotebookSelection() async throws {
+    let client = GenerationGuardClient()
+    let viewModel = RielaNoteLibraryViewModel(client: client, notebookNoteLimit: 2)
+
+    await viewModel.selectNotebook("notebook-1")
+    client.notebookWindowDelayNanosecondsByNoteId["note-7"] = 60_000_000
+    client.notebookWindowErrorByNoteId["note-7"] = GenerationGuardClientError.windowFailed
+
+    let staleSelection = Task { await viewModel.selectNote("note-7") }
+    try await Task.sleep(nanoseconds: 5_000_000)
+    await viewModel.selectNote("note-8")
+    await staleSelection.value
+
+    XCTAssertEqual(viewModel.selectedNotebookId, "notebook-2")
+    XCTAssertEqual(viewModel.selectedNote?.noteId, "note-8")
+    XCTAssertTrue(viewModel.notebookNotes.allSatisfy { $0.notebookId == "notebook-2" })
+    XCTAssertEqual(viewModel.state, .loaded)
+  }
+
+  func testStaleBackwardNavigationDoesNotOverrideNewerSelection() async throws {
+    let client = GenerationGuardClient()
+    let viewModel = RielaNoteLibraryViewModel(client: client, notebookNoteLimit: 2)
+
+    await viewModel.selectNotebook("notebook-1")
+    await viewModel.selectNote("note-5")
+    await viewModel.selectNote("note-4")
+    client.listNotesDelayNanoseconds = 60_000_000
+
+    let stalePrevious = Task { await viewModel.selectPreviousNote() }
+    try await Task.sleep(nanoseconds: 5_000_000)
+    client.listNotesDelayNanoseconds = 0
+    await viewModel.selectNote("note-5")
+    await stalePrevious.value
+
+    XCTAssertEqual(viewModel.selectedNote?.noteId, "note-5")
+    XCTAssertEqual(viewModel.state, .loaded)
+  }
+
+  func testStaleForwardNavigationDoesNotUseChangedWindowIndices() async throws {
+    let client = GenerationGuardClient()
+    let viewModel = RielaNoteLibraryViewModel(client: client, notebookNoteLimit: 2)
+
+    await viewModel.selectNotebook("notebook-1")
+    await viewModel.selectNote("note-5")
+    client.listNotesDelayNanoseconds = 60_000_000
+
+    let staleNext = Task { await viewModel.selectNextNote() }
+    try await Task.sleep(nanoseconds: 5_000_000)
+    client.listNotesDelayNanoseconds = 0
+    await viewModel.selectNote("note-4")
+    await viewModel.selectNote("note-5")
+    await viewModel.loadEarlierNotebookNotes()
+    await staleNext.value
+
+    XCTAssertEqual(viewModel.selectedNote?.noteId, "note-5")
+    XCTAssertEqual(viewModel.state, .loaded)
+  }
+
   // MARK: - (c) search load-more racing a new query
 
   func testSearchLoadMoreRacingNewQueryKeepsNewResults() async throws {
@@ -237,6 +295,7 @@ final class RielaNoteGenerationGuardTests: XCTestCase {
 private enum GenerationGuardClientError: Error {
   case unsupported
   case resolveFailed
+  case windowFailed
 }
 
 private final class GenerationGuardClient: RielaNoteUIClient, @unchecked Sendable {
@@ -251,6 +310,8 @@ private final class GenerationGuardClient: RielaNoteUIClient, @unchecked Sendabl
   var updateNoteBodyDelayNanoseconds: UInt64 = 0
   var answerDelayNanoseconds: UInt64 = 0
   var rewriteDelayNanoseconds: UInt64 = 0
+  var notebookWindowDelayNanosecondsByNoteId: [String: UInt64] = [:]
+  var notebookWindowErrorByNoteId: [String: Error] = [:]
 
   private(set) var listNotesCallCount = 0
   private(set) var searchNotesCallCount = 0
@@ -294,6 +355,35 @@ private final class GenerationGuardClient: RielaNoteUIClient, @unchecked Sendabl
     }
     listNotesCallCount += 1
     return Array((notesByNotebookId[notebookId] ?? []).dropFirst(offset).prefix(limit))
+  }
+
+  func notebookNotesWindow(
+    containing noteId: String,
+    pageSize: Int
+  ) async throws -> RielaNoteNotebookNotesWindow {
+    let delay = notebookWindowDelayNanosecondsByNoteId[noteId] ?? 0
+    let requestError = notebookWindowErrorByNoteId[noteId]
+    if delay > 0 {
+      try await Task.sleep(nanoseconds: delay)
+    }
+    if let requestError {
+      throw requestError
+    }
+    guard let notes = notesByNotebookId.values.first(where: { notes in
+      notes.contains(where: { $0.noteId == noteId })
+    }),
+    let targetOffset = notes.firstIndex(where: { $0.noteId == noteId }) else {
+      throw GenerationGuardClientError.unsupported
+    }
+    let boundedPageSize = max(pageSize, 1)
+    let startOffset = max(targetOffset - (boundedPageSize / 2), 0)
+    let page = Array(notes.dropFirst(startOffset).prefix(boundedPageSize + 1))
+    return RielaNoteNotebookNotesWindow(
+      notes: Array(page.prefix(boundedPageSize)),
+      startOffset: startOffset,
+      hasEarlierNotes: startOffset > 0,
+      hasMoreNotes: page.count > boundedPageSize
+    )
   }
 
   func listTags() async throws -> [Tag] {

@@ -78,6 +78,8 @@ final class RielaNoteAgentViewModelTests: XCTestCase {
     let client = AgentStubClient()
     let viewModel = RielaNoteAgentViewModel(client: client)
 
+    XCTAssertEqual(viewModel.composerFocusRequestRevision, 0)
+
     viewModel.prepareCurrentNoteQuestion(
       for: Note(
         noteId: "note-42",
@@ -95,6 +97,21 @@ final class RielaNoteAgentViewModelTests: XCTestCase {
     XCTAssertEqual(viewModel.draftAttachments.map(\.filename), ["note-42.md"])
     XCTAssertEqual(viewModel.draftAttachments.first?.text, "# Reading Plan\n\nNext steps.")
     XCTAssertTrue(viewModel.canSubmit)
+    XCTAssertEqual(viewModel.composerFocusRequestRevision, 1)
+
+    viewModel.prepareCurrentNoteQuestion(
+      for: Note(
+        noteId: "note-43",
+        notebookId: "notebook-1",
+        noteNumber: 43,
+        title: nil,
+        bodyMarkdown: "Next note.",
+        readOnly: false,
+        createdAt: "2026-07-20T00:00:00Z",
+        updatedAt: "2026-07-20T00:00:00Z"
+      )
+    )
+    XCTAssertEqual(viewModel.composerFocusRequestRevision, 2)
   }
 
   func testAnswerFailureClearsDraftAndSurfacesErrorWithoutTurn() async throws {

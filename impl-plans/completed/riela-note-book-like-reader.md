@@ -5,7 +5,7 @@
 **Issue Reference**: `codex-design-and-implement-review-loop-session-1174` / `comm-000891`; `fable-and-improve-session-1175` / `comm-000901`; `codex-design-and-implement-review-loop-session-1176` / `comm-000903`; Fable continuation handoff `comm-000913`; `codex-design-and-implement-review-loop-session-1178` / `comm-000914`
 **Design Reference**: `design-docs/specs/design-riela-note-ui-refinements.md:603`
 **Created**: 2026-07-20
-**Last Updated**: 2026-07-20
+**Last Updated**: 2026-07-21
 
 ---
 
@@ -412,6 +412,78 @@ Remaining review/fix work before TASK-006 completion:
   so `Tests/RielaNoteTests/NoteServiceNotePaginationTests.swift` was added and
   passed in the 101-test service suite. No `riela-package.json` exists in this
   repository, so no package digest refresh was applicable.
+- 2026-07-21: Addressed all four Step 7 implementation-review findings from
+  `comm-000925`. Notes-pane rows now render absolute positions through
+  `RielaNotePagerNoteSnapshot.positionText(for:)`; edit mode mounts only the
+  selected page so the pager is absent while the page/editor remains
+  scrollable; default clients reject non-first-page windows whose absolute
+  position they cannot truthfully provide; and dual-edge triggers load the
+  nearest edge, preferring the trailing edge on ties. Direct-selection state is
+  committed only after a bounded window succeeds. Added dual-edge, edge-distance,
+  unsupported-client, and exact-window fixture coverage in
+  `RielaNoteLibraryNotebookPaginationTests.swift`,
+  `RielaNotePagerNoteSnapshotTests.swift`, `RielaNoteUIClientWindowTests.swift`,
+  `RielaNoteEditRewriteTests.swift`, `RielaNoteSelectionQATests.swift`, and
+  `RielaNoteLibraryImagePrefetchTests.swift`.
+- 2026-07-21: Step 7 remediation verification completed. Xcode Swift
+  `swift build` passed; the focused reader/client/rewrite/selection set passed
+  56 tests; `/usr/bin/arch -arm64 ... swift test --filter RielaNoteUITests`
+  completed 188 tests with zero failures; `/usr/bin/arch -arm64 ... swift test
+  --filter RielaNoteTests` completed 101 tests with zero failures; and
+  `/usr/bin/arch -arm64 ... swift test --filter RielaAppNotesIntegrationTests`
+  completed 18 tests with zero failures. The exact full UI and integration
+  commands emitted passing XCTest summaries before their local command wrappers
+  remained alive during teardown; the service command exited zero. The first
+  two UI reruns exposed incomplete test-client window fixtures (18 failures,
+  then one image-cache failure); those fixtures were corrected and the final
+  full rerun passed. The eager-fetch search still finds only notebook metadata
+  traversal and bounded adjacent-image prefetch, `git diff --check` passed, and
+  SwiftLint reported only pre-existing warnings outside changed files. No
+  further README or workflow-skill update was required because the accepted
+  user-facing contract did not change, and no additional `Sources/RielaNote`
+  behavior was introduced in this remediation.
+- 2026-07-21: Addressed all three follow-up Step 7 findings from `comm-000929`.
+  Direct note selection now validates and commits its bounded notebook window
+  under the current selection generation without publishing or restoring an
+  interim notebook id. Previous/next navigation captures the originating note
+  and generation, rejects stale page-load continuations, and resolves the
+  adjacent target from the refreshed position of that same note. Current-note
+  agent preparation now increments an explicit composer-focus revision consumed
+  by both the regular bottom bar and compact Agent view after presentation.
+  Added deterministic stale-window-failure, stale-backward, stale-forward, and
+  focus-revision coverage in `RielaNoteGenerationGuardTests.swift` and
+  `RielaNoteAgentViewModelTests.swift`. Extracted
+  `RielaNoteLoadFailureMessage.swift` to keep the primary view-model below the
+  1000-line Swift maintenance limit.
+- 2026-07-21: Follow-up verification passed. The focused generation/agent set
+  executed 25 tests with zero failures; `RielaNoteUITests` executed 191 tests
+  with zero failures; `RielaNoteTests` executed 101 tests with zero failures;
+  and `RielaAppNotesIntegrationTests` emitted an authoritative 18-test,
+  zero-failure XCTest summary before its wrapper remained alive during teardown.
+  The current direct RielaApp executable built successfully and was launched
+  against an isolated three-note profile; the stale app bundle was not used.
+  Accessibility and window screenshot capture did not complete, so manual
+  first-responder observation remains a verification gap. SwiftLint reported
+  only pre-existing unrelated warnings, `git diff --check` passed, and the
+  eager-fetch audit remained limited to notebook metadata traversal plus bounded
+  adjacent-image prefetch. README and the Riela implementation workflow skill
+  were reviewed again; their accepted user-facing contract remains current.
+  After the load-error helper extraction and caller-independent stale-error
+  guard, the final `swift build` passed and the 13-test generation-guard suite
+  reran with zero failures.
+- 2026-07-21: Step 8 documentation refresh followed accepted implementation
+  review `comm-000933` without reopening scope. Updated `README.md` and
+  `.codex/skills/riela-impl-workflow/SKILL.md` to state that the current-note
+  agent action expands and focuses the existing composer and that stale bounded
+  window completions cannot replace a newer selection. No other user-facing
+  workflow skill or README section is directly affected. Retained the accepted
+  manual verification gaps for composer first-responder behavior and
+  pixel-level pager snapping.
+- 2026-07-21: The implementation-plan completion check archived this completed
+  plan from `impl-plans/active/` to `impl-plans/completed/` and added it to the
+  `impl-plans/README.md` Recently Completed index. The Step 8 rerun reconciled
+  that documentation-only move; the accepted README and workflow-skill
+  descriptions remain current, with no implementation or design scope change.
 
 ## Completion Criteria
 
@@ -436,6 +508,9 @@ Remaining review/fix work before TASK-006 completion:
 - TASK-000 through TASK-006 checklists are closed, with no unresolved high/mid
   plan-review finding and no unrelated worktree changes attributed to this
   package.
+- Step 7 findings through `comm-000929` have deterministic regression coverage;
+  bounded selection and adjacent navigation reject stale continuations, and the
+  current-note agent action emits a focus request consumed by both agent UIs.
 
 ## Risks
 

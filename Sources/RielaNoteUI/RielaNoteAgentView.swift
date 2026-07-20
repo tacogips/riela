@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 public struct RielaNoteAgentView: View {
   @ObservedObject private var viewModel: RielaNoteAgentViewModel
   @State private var isFileImporterPresented = false
+  @FocusState private var isComposerFocused: Bool
   private let onOpenCitation: (String) -> Void
 
   public init(
@@ -47,6 +48,13 @@ public struct RielaNoteAgentView: View {
       allowsMultipleSelection: true
     ) { result in
       attachFiles(result)
+    }
+    .task(id: viewModel.composerFocusRequestRevision) {
+      guard viewModel.composerFocusRequestRevision > 0 else {
+        return
+      }
+      await Task.yield()
+      isComposerFocused = true
     }
   }
 
@@ -153,6 +161,7 @@ public struct RielaNoteAgentView: View {
       TextField("Ask Riela Note", text: $viewModel.draftMessage, axis: .vertical)
         .textFieldStyle(.roundedBorder)
         .lineLimit(1...5)
+        .focused($isComposerFocused)
         .onSubmit {
           Task {
             await viewModel.submitDraft()

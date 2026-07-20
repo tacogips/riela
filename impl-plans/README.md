@@ -91,6 +91,7 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `riela-note-book-like-reader`                 | 2026-07-21 | `design-riela-note-ui-refinements#book-like-reader-addendum-2026-07-20`                                                                                                                      |
 | `riela-note-workspace-hardening` | 2026-07-19 | `design-riela-note-ui-refinements#workspace-hardening-addendum-2026-07-19` |
 | `rielaapp-live-filters-and-back-navigation` | 2026-07-16 | `design-rielaapp-ui-consistency-and-native-ux-review` F15 |
 | `riela-note-adversarial-review-fixes` | 2026-07-12 | `design-riela-note-adversarial-review-2026-07-12` |

@@ -103,23 +103,26 @@ public extension RielaNoteLibraryViewModel {
 extension RielaNoteLibraryViewModel {
   func selectAdjacentNote(delta: Int) async {
     var snapshot = pagerNoteSnapshot
-    guard var selectedNoteIndex = snapshot.currentIndex else {
+    guard let originatingNoteId = snapshot.selectedNoteId,
+          let selectedNoteIndex = snapshot.currentIndex else {
       return
     }
+    let generation = selectionGeneration
     if selectedNoteIndex == 0, delta < 0, canLoadEarlierNotebookNotes {
       await loadEarlierNotebookNotes()
-      snapshot = pagerNoteSnapshot
-      guard let refreshedIndex = snapshot.currentIndex else {
-        return
-      }
-      selectedNoteIndex = refreshedIndex
     } else if selectedNoteIndex + delta >= snapshot.notes.count,
               delta > 0,
               canLoadMoreNotebookNotes {
       await loadMoreNotebookNotes()
-      snapshot = pagerNoteSnapshot
     }
-    let targetIndex = selectedNoteIndex + delta
+    guard isCurrentSelection(generation), selectedNote?.noteId == originatingNoteId else {
+      return
+    }
+    snapshot = pagerNoteSnapshot
+    guard let refreshedIndex = snapshot.notes.firstIndex(where: { $0.noteId == originatingNoteId }) else {
+      return
+    }
+    let targetIndex = refreshedIndex + delta
     guard snapshot.notes.indices.contains(targetIndex) else {
       return
     }
@@ -138,19 +141,32 @@ extension RielaNoteLibraryViewModel {
     hasMoreNotebookNotes = page.count > notebookNotePageSize
   }
 
-  func loadNotebookNotesWindow(containing noteId: String, generation: Int) async throws {
-    let window = try await client.notebookNotesWindow(
-      containing: noteId,
-      pageSize: notebookNotePageSize
-    )
+  func loadNotebookNotesWindow(
+    containing noteId: String,
+    notebookId: String,
+    generation: Int
+  ) async throws {
+    let window: RielaNoteNotebookNotesWindow
+    do {
+      window = try await client.notebookNotesWindow(
+        containing: noteId,
+        pageSize: notebookNotePageSize
+      )
+    } catch {
+      guard isCurrentSelection(generation) else {
+        return
+      }
+      throw error
+    }
     guard isCurrentSelection(generation) else {
       return
     }
     guard window.startOffset >= 0,
           window.notes.contains(where: { $0.noteId == noteId }),
-          window.notes.allSatisfy({ $0.notebookId == selectedNotebookId }) else {
+          window.notes.allSatisfy({ $0.notebookId == notebookId }) else {
       throw NoteServiceError.invalidInput("The note client returned an invalid notebook window.")
     }
+    selectedNotebookId = notebookId
     notebookNotes = window.notes
     notebookNotesStartOffset = window.startOffset
     notebookNotesOffset = window.startOffset + window.notes.count

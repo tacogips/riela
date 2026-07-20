@@ -55,7 +55,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   @Published public internal(set) var resolvedSourceImage: RielaNoteResolvedFile?
   @Published public internal(set) var decodedSourceImage: RielaNoteDecodedSourceImage?
   @Published public internal(set) var selectedResolvedFile: RielaNoteResolvedFile?
-  @Published public private(set) var selectedNotebookId: String?
+  @Published public internal(set) var selectedNotebookId: String?
   @Published public private(set) var selectedSearchTagNames: Set<String> = []
   @Published public private(set) var selectedSearchClassIds: Set<String> = []
   @Published public private(set) var hasMoreNotebooks = false
@@ -298,7 +298,11 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
         if let selectedNoteId,
            !notebookNotes.contains(where: { $0.noteId == selectedNoteId }) {
           do {
-            try await loadNotebookNotesWindow(containing: selectedNoteId, generation: selectionGeneration)
+            try await loadNotebookNotesWindow(
+              containing: selectedNoteId,
+              notebookId: currentNotebookId,
+              generation: selectionGeneration
+            )
           } catch let error as NoteServiceError where isMissingSelection(error, noteId: selectedNoteId) {
             // Let the detail refresh below degrade the deleted selection to the
             // first still-available note in the bounded first page.
@@ -499,13 +503,11 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
       }
       let detailNotebookId = detail.note.notebookId
       if selectedNotebookId != detailNotebookId || !notebookNotes.contains(where: { $0.noteId == noteId }) {
-        selectedNotebookId = detailNotebookId
-        do {
-          try await loadNotebookNotesWindow(containing: noteId, generation: generation)
-        } catch {
-          selectedNotebookId = previousNotebookId
-          throw error
-        }
+        try await loadNotebookNotesWindow(
+          containing: noteId,
+          notebookId: detailNotebookId,
+          generation: generation
+        )
       }
       guard isCurrentSelection(generation) else {
         return
@@ -654,7 +656,11 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
     availableSearchTagClasses = try await client.listTagClasses()
     try await loadNotebookNotesFirstPage(notebookId: detail.note.notebookId, generation: generation)
     if !notebookNotes.contains(where: { $0.noteId == detail.note.noteId }) {
-      try await loadNotebookNotesWindow(containing: detail.note.noteId, generation: generation)
+      try await loadNotebookNotesWindow(
+        containing: detail.note.noteId,
+        notebookId: detail.note.notebookId,
+        generation: generation
+      )
     }
     guard isCurrentSelection(generation) else {
       return
@@ -971,29 +977,4 @@ extension RielaNoteLibraryViewModel {
     await reloadForFilterChange()
   }
 
-}
-
-/// Human-readable message for a list load/selection failure. `NoteServiceError`
-/// cases map to short user-facing text; anything else falls back to a generic
-/// message so raw error descriptions never reach the UI.
-func rielaNoteLoadFailureMessage(_ error: Error) -> String {
-  switch error {
-  case RielaNoteUIClientCapabilityError.notebookNotesWindowUnsupported:
-    return "This note source cannot open a bounded reader window."
-  case let serviceError as NoteServiceError:
-    switch serviceError {
-    case .notFound:
-      return "That note is no longer available."
-    case .readOnly:
-      return "This note is read-only."
-    case .protectedTag:
-      return "That tag can't be changed."
-    case .invalidInput:
-      return "The request was invalid."
-    case .invalidRow:
-      return "A stored note could not be read."
-    }
-  default:
-    return "Unable to load notes right now."
-  }
 }

@@ -45,9 +45,11 @@ Accepted Riela Note workspace hardening on
   pager order, highlights the current note, shows row position, and routes row
   selection through the unsaved-edit guard.
 - The detail surface is a read-first vertical snap reader with one note per
-  page. Current-note agent and comment actions remain one tap away, editing is
-  explicit and makes pager controls inert, and notebook notes load through
-  bounded forward/backward windows without target-scanning fetch loops.
+  page. Current-note agent and comment actions remain one tap away; the agent
+  action expands and focuses the existing composer with the current note as
+  context. Editing is explicit and makes pager controls inert. Notebook notes
+  load through bounded forward/backward windows without target-scanning fetch
+  loops, and stale window completions cannot override a newer selection.
 - Left pane expansion, right pane expansion, selected Tree/Notes mode, and
   bottom-agent folded state persist across app relaunches.
 - Changed note-workspace panels use semantic SwiftUI color roles so custom agent

@@ -18,6 +18,7 @@ public final class RielaNoteAgentViewModel: ObservableObject {
   @Published public var isTemporaryChat = false
   @Published public private(set) var draftAttachments: [RielaNoteAgentDraftAttachment] = []
   @Published public private(set) var attachmentError: String?
+  @Published public private(set) var composerFocusRequestRevision = 0
 
   /// Inlined attachment text is capped so a huge file cannot blow up the agent
   /// prompt; larger files should be attached to a note instead.
@@ -67,6 +68,7 @@ public final class RielaNoteAgentViewModel: ObservableObject {
       RielaNoteAgentDraftAttachment(filename: "\(note.noteId).md", text: note.bodyMarkdown)
     ]
     attachmentError = nil
+    composerFocusRequestRevision &+= 1
   }
 
   public func reportAttachmentReadFailure(filename: String) {

@@ -288,7 +288,7 @@ dedicated retrieval, search, and proposal traversal; lower candidates outside
 the caps are not considered reachable for that request.
 
 The hard traversal budget is 20 globally finalized, distinct non-seed note IDs
-per request:
+per request, extended by one slot per caller-excluded note ID:
 
 - request seeds do not consume the budget;
 - merely queued candidate paths do not consume the budget;
@@ -296,11 +296,18 @@ per request:
   slot, because best-path ordering guarantees it is the winning path;
 - alternative paths to a finalized note and duplicate paths across seeds do
   not consume additional slots;
+- caller-excluded destinations (already-linked notes for proposals, direct
+  hits for search expansion) finalize for cycle avoidance but must not starve
+  return-eligible candidates, so the exploration ceiling is
+  `20 + |resultExclusions|`; work remains bounded because the exclusion set is
+  a finite caller-provided input. Without this allowance a hub note with 20+
+  existing links would always receive an empty proposal set;
 - a finalized note may add qualifying next-hop paths to the frontier only when
   its hop count is below the normalized depth and budget remains;
 - traversal stops when the requested number of return-eligible results has
-  finalized, 20 distinct non-seed notes have finalized, the depth is exhausted,
-  or no qualifying frontier remains.
+  finalized, the exploration ceiling is reached, the depth is exhausted,
+  or no qualifying frontier remains. At most 20 return-eligible notes finalize
+  regardless of the exclusion allowance.
 
 The requested result limit is applied to return-eligible finalized notes after
 path deduplication and any caller-specific result exclusion. The dedicated

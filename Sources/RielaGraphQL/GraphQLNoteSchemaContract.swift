@@ -1,8 +1,10 @@
 // Pagination bounds enforced by NoteGraphQLDocumentExecutor for every list and
-// search field (notebooks, notes, searchNotes, proposeNoteLinks): `limit` must
-// be an integer in 0...200 (0 returns an empty list) and `offset` an integer in
-// 0...1_000_000. Any other value (out of range, non-integral, or the wrong
-// type) is rejected with an invalidVariable error rather than silently clamped.
+// search field (notebooks, notes, searchNotes): `limit` must be an integer in
+// 0...200 (0 returns an empty list) and `offset` an integer in 0...1_000_000.
+// Graph fields (noteGraphNeighbors, proposeNoteLinks) accept `limit` only in
+// 0...20 — the bounded traversal's node cap. Any other value (out of range,
+// non-integral, or the wrong type) is rejected with an invalidVariable error
+// rather than silently clamped.
 let graphQLNoteSchemaContract = """
 type NoteTag { tagId: String!, name: String!, classId: String, isSystem: Boolean!, createdAt: String! }
 type NoteTagClass { classId: String!, label: String!, description: String, isSystem: Boolean!, createdAt: String! }

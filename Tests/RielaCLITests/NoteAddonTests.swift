@@ -84,6 +84,54 @@ final class NoteAddonTests: XCTestCase {
     }
   }
 
+  func testGraphNeighborSeedClampNoteIdPrecedenceAndBatchGetCap() async throws {
+    let noteRoot = try makeNoteAddonRoot()
+    defer {
+      try? FileManager.default.removeItem(atPath: noteRoot)
+    }
+    let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot))
+    var noteIds: [JSONValue] = []
+    for index in 0..<(NoteGraphPolicy.maximumSeedCount + 5) {
+      let note = try service.createNote(bodyMarkdown: "# Note \(index)\nbody")
+      noteIds.append(.string(note.noteId))
+    }
+    let resolver = BuiltinWorkflowAddonResolver(environment: ["RIELA_NOTE_ROOT": noteRoot])
+
+    // More seeds than the service's 20-seed cap must clamp, not throw.
+    let graph = try await resolver.execute(
+      noteInput(name: "riela/note-graph-neighbors", config: ["noteIds": .array(noteIds)]),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(
+      try arrayValue(graph.payload["seedNoteIds"], field: "seedNoteIds").count,
+      NoteGraphPolicy.maximumSeedCount
+    )
+
+    // An explicit noteId keeps the single-note shape even when a forwarded
+    // payload also carries a noteIds array.
+    let single = try await resolver.execute(
+      noteInput(
+        name: "riela/note-get",
+        config: ["noteId": noteIds[0], "noteIds": .array(Array(noteIds.prefix(3)))]
+      ),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(single.payload["noteId"], noteIds[0])
+    XCTAssertNotNil(single.payload["note"])
+    XCTAssertNil(single.payload["notes"])
+
+    // Batch fetch dedupes and caps caller-supplied ids.
+    let duplicated = noteIds + noteIds
+    let batch = try await resolver.execute(
+      noteInput(name: "riela/note-get", config: ["noteIds": .array(duplicated)]),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(
+      try arrayValue(batch.payload["notes"], field: "notes").count,
+      NoteGraphPolicy.maximumSeedCount
+    )
+  }
+
   func testNoteCreateTagCommentGetAndSearchReturnFlattenedPayload() async throws {
     let noteRoot = try makeNoteAddonRoot()
     defer {

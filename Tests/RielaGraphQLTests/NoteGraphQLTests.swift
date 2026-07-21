@@ -447,6 +447,34 @@ final class NoteGraphQLTests: XCTestCase {
     XCTAssertTrue(negativeOffset.handled)
     let negativeOffsetError = try firstErrorMessage(negativeOffset)
     XCTAssertTrue(negativeOffsetError.contains("invalidVariable"), negativeOffsetError)
+
+    // Graph fields can return at most NoteGraphPolicy.maximumLimit rows, so a
+    // limit the general 0...200 rule would accept is rejected here instead of
+    // being silently truncated by the bounded traversal.
+    let note = try service.service.createNote(bodyMarkdown: "# Graph Bounds\n\nBody")
+    let overGraphLimit = await executor.execute(GraphQLDocumentRequest(
+      query: "query Graph($ids: [String!]!, $limit: Int) { noteGraphNeighbors(noteIds: $ids, limit: $limit) { value { note { noteId } } result { accepted } } }",
+      variables: [
+        "ids": .array([.string(note.noteId)]),
+        "limit": .integer(Int64(NoteGraphPolicy.maximumLimit + 1))
+      ],
+      operationName: "Graph"
+    ))
+    XCTAssertTrue(overGraphLimit.handled)
+    let overGraphLimitError = try firstErrorMessage(overGraphLimit)
+    XCTAssertTrue(overGraphLimitError.contains("invalidVariable"), overGraphLimitError)
+
+    let overProposalLimit = await executor.execute(GraphQLDocumentRequest(
+      query: "query Proposals($noteId: String!, $limit: Int) { proposeNoteLinks(noteId: $noteId, limit: $limit) { value { targetNote { noteId } } result { accepted } } }",
+      variables: [
+        "noteId": .string(note.noteId),
+        "limit": .integer(Int64(NoteGraphPolicy.maximumLimit + 1))
+      ],
+      operationName: "Proposals"
+    ))
+    XCTAssertTrue(overProposalLimit.handled)
+    let overProposalLimitError = try firstErrorMessage(overProposalLimit)
+    XCTAssertTrue(overProposalLimitError.contains("invalidVariable"), overProposalLimitError)
   }
 
   private func firstErrorMessage(_ response: GraphQLDocumentExecutionResponse) throws -> String {

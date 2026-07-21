@@ -200,8 +200,14 @@ private func updateNote(_ context: NoteAddonContext) throws -> JSONObject {
 }
 
 private func getNote(_ context: NoteAddonContext) throws -> JSONObject {
-  if let rawNoteIds = context.value("noteIds") {
-    let noteIds = try noteStringArray(rawNoteIds, fieldName: "note noteIds") ?? []
+  // An explicit noteId keeps the original single-note response shape even when
+  // upstream inputs (e.g. a forwarded riela/note-search payload) also carry a
+  // top-level noteIds array; the batch shape applies only when no noteId is
+  // addressed. Batch ids are deduplicated and capped so a hostile or buggy
+  // workflow cannot drive unbounded sequential getNote round-trips.
+  if context.string("noteId") == nil, let rawNoteIds = context.value("noteIds") {
+    let requestedNoteIds = try noteStringArray(rawNoteIds, fieldName: "note noteIds") ?? []
+    let noteIds = Array(orderedUniqueNoteIds(requestedNoteIds).prefix(NoteGraphPolicy.maximumSeedCount))
     let notes = try noteIds.map(context.service.getNote)
     var payload: JSONObject = [
       "notes": .array(notes.map(noteJSON)),
@@ -244,7 +250,12 @@ private func graphNeighbors(_ context: NoteAddonContext) throws -> JSONObject {
   guard let rawNoteIds = context.value("noteIds") ?? context.value("noteId") else {
     throw noteAddonInvalidInput("\(context.input.addon.name) noteIds is required")
   }
-  let noteIds = try noteStringArray(rawNoteIds, fieldName: "note noteIds") ?? []
+  let requestedNoteIds = try noteStringArray(rawNoteIds, fieldName: "note noteIds") ?? []
+  // Clamp to the service's 20-seed cap instead of surfacing invalidInput:
+  // upstream nodes (e.g. riela/note-search with a caller-controlled limit) may
+  // legitimately hand over more ids, and the search-side expansion path clamps
+  // the same way (appendLinkedNeighborResults / prefix(maximumSeedCount)).
+  let noteIds = Array(orderedUniqueNoteIds(requestedNoteIds).prefix(NoteGraphPolicy.maximumSeedCount))
   let results = try context.service.graphNeighbors(
     noteIds: noteIds,
     maxDepth: context.int("depth", default: NoteGraphPolicy.defaultMaxDepth),

@@ -73,8 +73,15 @@ func noteGraphNeighborsInDatabase(
     )
   }
 
+  // Excluded destinations (already-linked notes for proposals, direct hits for
+  // search expansion) are finalized for cycle avoidance but must not consume
+  // the eligible-result budget: a hub note with 20+ existing links would
+  // otherwise exhaust finalizedNodeLimit before any real candidate finalizes.
+  // Work stays bounded because the allowance is capped by the caller-provided
+  // exclusion set's size.
+  let explorationLimit = NoteGraphPolicy.finalizedNodeLimit + resultExclusions.count
   while state.eligibleResults.count < normalizedLimit,
-        state.finalized.count < NoteGraphPolicy.finalizedNodeLimit,
+        state.finalized.count < explorationLimit,
         let path = popBestGraphPath(from: &state.pending) {
     guard state.finalized.insert(path.destinationNoteId).inserted else {
       continue
@@ -83,7 +90,7 @@ func noteGraphNeighborsInDatabase(
       state.eligibleResults.append(path)
     }
     guard state.eligibleResults.count < normalizedLimit,
-          state.finalized.count < NoteGraphPolicy.finalizedNodeLimit,
+          state.finalized.count < explorationLimit,
           path.hopCount < normalizedDepth else {
       continue
     }
@@ -370,10 +377,35 @@ private func sharedTagWeight(noteCount: Int, tagNoteCount: Int) -> Double {
 }
 
 private func maximumEligibleTagFrequency(pathScore: Double, noteCount: Int) -> Int? {
-  (1...noteCount).last { frequency in
+  // sharedTagWeight is strictly decreasing in tagNoteCount, so eligibility is
+  // monotone (true up to a boundary frequency, false after). Binary-search the
+  // boundary instead of scanning 1...noteCount linearly: this runs once per
+  // expanded node per hop and the linear scan is O(noteCount) log() calls on
+  // large stores.
+  guard noteCount >= 1 else {
+    return nil
+  }
+  func eligible(_ frequency: Int) -> Bool {
     pathScore * sharedTagWeight(noteCount: noteCount, tagNoteCount: frequency)
       * NoteGraphPolicy.hopDecay >= NoteGraphPolicy.relevanceFloor
   }
+  guard eligible(1) else {
+    return nil
+  }
+  if eligible(noteCount) {
+    return noteCount
+  }
+  var lastEligible = 1
+  var firstIneligible = noteCount
+  while firstIneligible - lastEligible > 1 {
+    let middle = lastEligible + (firstIneligible - lastEligible) / 2
+    if eligible(middle) {
+      lastEligible = middle
+    } else {
+      firstIneligible = middle
+    }
+  }
+  return lastEligible
 }
 
 private func offerGraphPath(_ path: NoteGraphPath, to pending: inout [String: NoteGraphPath]) {

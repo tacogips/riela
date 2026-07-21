@@ -89,6 +89,29 @@ final class NoteGraphTraversalTests: NoteTestCase {
     XCTAssertEqual(results.count, NoteGraphPolicy.finalizedNodeLimit)
   }
 
+  func testProposalsSurviveHubNoteWithMoreExistingLinksThanNodeBudget() throws {
+    // Already-linked neighbors are excluded from proposals but must not consume
+    // the finalized-node budget: a hub note with more existing links than
+    // NoteGraphPolicy.finalizedNodeLimit still gets hop-2 proposals.
+    let service = try makeService()
+    let hub = try service.createNote(bodyMarkdown: "# Hub\nx")
+    var firstLinked: Note?
+    for index in 0..<(NoteGraphPolicy.finalizedNodeLimit + 1) {
+      let linked = try service.createNote(bodyMarkdown: "# L\(index)\ny")
+      _ = try service.linkNotes(from: hub.noteId, to: linked.noteId)
+      if firstLinked == nil {
+        firstLinked = linked
+      }
+    }
+    let bridge = try XCTUnwrap(firstLinked)
+    let candidate = try service.createNote(bodyMarkdown: "# Candidate\nz")
+    _ = try service.linkNotes(from: bridge.noteId, to: candidate.noteId)
+
+    let proposals = try service.proposeLinks(noteId: hub.noteId)
+
+    XCTAssertEqual(proposals.map(\.targetNote.noteId), [candidate.noteId])
+  }
+
   func testAssociationUsesDepthTwoBridgeWithoutPersistingProposal() throws {
     let service = try makeService()
     let seed = try service.createNote(bodyMarkdown: "# A\nx")

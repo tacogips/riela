@@ -171,7 +171,7 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
       return try await encodedJSONValue(service.noteGraphNeighbors(
         noteIds: try optionalStringArray("noteIds", variables: variables) ?? [],
         depth: try optionalInt("depth", variables: variables) ?? NoteGraphPolicy.defaultMaxDepth,
-        limit: validatedLimit(
+        limit: validatedGraphLimit(
           try optionalInt("limit", variables: variables),
           defaultValue: NoteGraphPolicy.defaultLimit
         )
@@ -179,7 +179,7 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
     case "proposeNoteLinks":
       return try await encodedJSONValue(service.proposeNoteLinks(
         noteId: requiredString("noteId", variables: variables),
-        limit: validatedLimit(try optionalInt("limit", variables: variables), defaultValue: 8)
+        limit: validatedGraphLimit(try optionalInt("limit", variables: variables), defaultValue: 8)
       ))
     case "tags":
       return try await encodedJSONValue(service.tags())
@@ -916,6 +916,22 @@ private func validatedLimit(_ value: Int?, defaultValue: Int) throws -> Int {
   guard (0...noteGraphQLMaximumLimit).contains(value) else {
     throw NoteGraphQLDocumentExecutorError.invalidVariable(
       "limit must be between 0 and \(noteGraphQLMaximumLimit)"
+    )
+  }
+  return value
+}
+
+/// Graph fields (`noteGraphNeighbors`, `proposeNoteLinks`) can return at most
+/// `NoteGraphPolicy.maximumLimit` rows; the contract promise is "rejected
+/// rather than silently clamped", so a larger `limit` is an error here instead
+/// of being truncated by the service.
+private func validatedGraphLimit(_ value: Int?, defaultValue: Int) throws -> Int {
+  guard let value else {
+    return defaultValue
+  }
+  guard (0...NoteGraphPolicy.maximumLimit).contains(value) else {
+    throw NoteGraphQLDocumentExecutorError.invalidVariable(
+      "limit must be between 0 and \(NoteGraphPolicy.maximumLimit) for graph fields"
     )
   }
   return value

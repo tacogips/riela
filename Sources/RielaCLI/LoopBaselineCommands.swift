@@ -1,4 +1,5 @@
 import Foundation
+import ArgumentParser
 import RielaCore
 
 public struct LoopBaselineCommandResult: Codable, Equatable, Sendable {
@@ -76,24 +77,36 @@ extension LoopCommandRunner {
     var sessionStore: String?
   }
 
+  private struct BaselineArguments: RielaClientFamilyArguments {
+    @Argument var positionalSessionId: String?
+    @Option(name: .customLong("session")) var flaggedSessionId: String?
+    @Option var note: String?
+    @Flag var force = false
+    @Option var scope = "auto"
+    @Option(name: [.customLong("working-dir"), .customLong("working-directory")])
+    var workingDirectory = FileManager.default.currentDirectoryPath
+    @Option var sessionStore: String?
+    @Option var output: String?
+  }
+
   func runBaseline(_ command: LoopCommand) -> CLICommandResult {
     guard let workflowId = command.options.target, !workflowId.isEmpty else {
       return CLICommandResult(exitCode: .usage, stderr: "loop baseline requires a workflow id")
     }
-    guard let action = command.options.arguments.first, ["set", "show", "clear"].contains(action) else {
+    guard let route = try? ParsedLoopBaselineActionArguments.parseCLI(command.options.arguments) else {
       return CLICommandResult(
         exitCode: .usage,
         stderr: "usage: riela loop baseline set|show|clear <workflow> [<session-id>] [--note <text>] [--force]"
       )
     }
     do {
-      let parsed = try parseBaselineOptions(Array(command.options.arguments.dropFirst()))
-      switch action {
-      case "set":
+      let parsed = try parseBaselineOptions(route.options)
+      switch route.action {
+      case .set:
         return try runBaselineSet(workflowId: workflowId, parsed: parsed, output: command.options.output)
-      case "show":
+      case .show:
         return try runBaselineShow(workflowId: workflowId, parsed: parsed, output: command.options.output)
-      default:
+      case .clear:
         return try runBaselineClear(workflowId: workflowId, parsed: parsed, output: command.options.output)
       }
     } catch let error as CLIUsageError {
@@ -153,8 +166,8 @@ extension LoopCommandRunner {
     guard let workflowId = command.options.target, !workflowId.isEmpty else {
       throw CLIUsageError("loop diff --baseline requires a workflow id")
     }
-    let arguments = Array(command.options.arguments.dropFirst()) // drop the --baseline marker
-    let parsed = try parseBaselineOptions(arguments, sessionViaFlagOnly: true)
+    let arguments = try ParsedLoopBaselineMarker.parseCLI(command.options.arguments)
+    let parsed = try parseBaselineOptions(arguments.options, sessionViaFlagOnly: true)
     switch try resolveBaselinePair(workflowId: workflowId, parsed: parsed) {
     case let .missing(verdict, diagnostics):
       throw CLIUsageError("loop diff --baseline: \(verdict): \(diagnostics.joined(separator: "; "))")
@@ -432,42 +445,24 @@ extension LoopCommandRunner {
     _ arguments: [String],
     sessionViaFlagOnly: Bool = false
   ) throws -> ParsedBaselineOptions {
-    var parsed = ParsedBaselineOptions()
-    var index = 0
-    while index < arguments.count {
-      let token = arguments[index]
-      switch token {
-      case "--session":
-        parsed.sessionId = try readRequiredOption(token, arguments: arguments, index: &index)
-      case "--note":
-        parsed.note = try readRequiredOption(token, arguments: arguments, index: &index)
-      case "--force":
-        parsed.force = true
-        index += 1
-      case "--scope":
-        let raw = try readRequiredOption(token, arguments: arguments, index: &index)
-        guard let value = WorkflowScope(rawValue: raw), value != .direct else {
-          throw CLIUsageError("invalid --scope value '\(raw)'; expected auto, project, or user")
-        }
-        parsed.scope = value
-      case "--working-dir", "--working-directory":
-        parsed.workingDirectory = try readRequiredOption(token, arguments: arguments, index: &index)
-      case "--session-store":
-        parsed.sessionStore = try readRequiredOption(token, arguments: arguments, index: &index)
-      case "--output":
-        _ = try readRequiredOption(token, arguments: arguments, index: &index)
-      default:
-        if token.hasPrefix("--output=") {
-          index += 1
-        } else if !token.hasPrefix("--"), parsed.sessionId == nil, !sessionViaFlagOnly {
-          parsed.sessionId = token
-          index += 1
-        } else {
-          throw CLIUsageError("unsupported loop baseline option '\(token)'")
-        }
-      }
+    let arguments = try BaselineArguments.parseCLI(arguments)
+    if sessionViaFlagOnly, arguments.positionalSessionId != nil {
+      throw CLIUsageError("loop regress accepts the target session through --session")
     }
-    return parsed
+    if arguments.positionalSessionId != nil, arguments.flaggedSessionId != nil {
+      throw CLIUsageError("loop baseline accepts a session id either positionally or through --session, not both")
+    }
+    guard let scope = WorkflowScope(rawValue: arguments.scope), scope != .direct else {
+      throw CLIUsageError("invalid --scope value '\(arguments.scope)'; expected auto, project, or user")
+    }
+    return ParsedBaselineOptions(
+      sessionId: arguments.flaggedSessionId ?? arguments.positionalSessionId,
+      note: arguments.note,
+      force: arguments.force,
+      scope: scope,
+      workingDirectory: arguments.workingDirectory,
+      sessionStore: arguments.sessionStore
+    )
   }
 
   private func renderBaseline(

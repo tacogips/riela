@@ -1,4 +1,5 @@
 import Foundation
+import ArgumentParser
 import RielaCore
 
 public struct LoopGatePanelEntry: Codable, Equatable, Sendable {
@@ -81,6 +82,12 @@ public struct LoopStartCommand: Sendable {
   public var runCommand: WorkflowRunCommand
   public var policyEvaluator: any LoopPolicyEvaluating
 
+  private struct StartArguments: RielaClientFamilyArguments {
+    @Option(name: .customLong("var")) var variablePairs: [String] = []
+    @Flag var isolate = false
+    @Argument(parsing: .allUnrecognized) var workflowArguments: [String] = []
+  }
+
   public init(
     resolver: any WorkflowBundleResolving = FileSystemWorkflowBundleResolver(),
     runCommand: WorkflowRunCommand = WorkflowRunCommand(),
@@ -140,29 +147,18 @@ public struct LoopStartCommand: Sendable {
   /// `--isolate` flag, and parses the remainder through the real `workflow
   /// run` argument parser so behavior stays identical to `workflow run`.
   static func workflowRunOptions(workflowName: String, tokens: [String]) throws -> WorkflowRunOptions {
-    var variables: [String: JSONValue] = [:]
-    var passthrough: [String] = []
-    var index = 0
-    while index < tokens.count {
-      let token = tokens[index]
-      if token == "--isolate" {
-        throw CLIUsageError("loop start --isolate is not yet supported; worktree isolation lands in a later phase (LA6)")
-      }
-      if token == "--var" {
-        guard index + 1 < tokens.count, !tokens[index + 1].hasPrefix("--") else {
-          throw CLIUsageError("--var requires a k=v value")
-        }
-        let pair = tokens[index + 1]
-        guard let separator = pair.firstIndex(of: "="), separator != pair.startIndex else {
-          throw CLIUsageError("--var requires a k=v value; got '\(pair)'")
-        }
-        variables[String(pair[pair.startIndex..<separator])] = .string(String(pair[pair.index(after: separator)...]))
-        index += 2
-        continue
-      }
-      passthrough.append(token)
-      index += 1
+    let arguments = try StartArguments.parseCLI(tokens)
+    if arguments.isolate {
+      throw CLIUsageError("loop start --isolate is not yet supported; worktree isolation lands in a later phase (LA6)")
     }
+    var variables: [String: JSONValue] = [:]
+    for pair in arguments.variablePairs {
+      guard let separator = pair.firstIndex(of: "="), separator != pair.startIndex else {
+        throw CLIUsageError("--var requires a k=v value; got '\(pair)'")
+      }
+      variables[String(pair[pair.startIndex..<separator])] = .string(String(pair[pair.index(after: separator)...]))
+    }
+    var passthrough = arguments.workflowArguments
     if !variables.isEmpty {
       guard !passthrough.contains("--variables") else {
         throw CLIUsageError("loop start cannot combine --var with --variables; pass one form")

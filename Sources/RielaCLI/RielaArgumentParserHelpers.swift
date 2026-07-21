@@ -1,51 +1,42 @@
 import Foundation
-import RielaMemory
+import ArgumentParser
 
-private let tableOutputSupportMessage = "`--output table` is only supported for workflow list, workflow status, session list, session latest, package search, package list, node search, node list, note list, note search, and note notebook list"
+private let tableOutputSupportMessage = [
+  "`--output table` is only supported for workflow list, workflow status,",
+  "session list, session latest, package search, package list, node search,",
+  "node list, note list, note search, and note notebook list"
+].joined(separator: " ")
+
+private struct ParsedOutputProjection: RielaClientFamilyArguments {
+  @Option(name: .customLong("output")) var outputs: [String] = []
+  @Argument(parsing: .allUnrecognized) var remaining: [String] = []
+}
+
+func argumentParserUsageMessage(_ message: String) -> String {
+  if message.hasPrefix("Unknown option ") {
+    return message.prefix(1).lowercased() + message.dropFirst()
+  }
+  let missingValuePrefix = "Missing value for '"
+  if message.hasPrefix(missingValuePrefix) {
+    let remainder = message.dropFirst(missingValuePrefix.count)
+    if let separator = remainder.firstIndex(of: " ") {
+      return "\(remainder[..<separator]) requires a value"
+    }
+  }
+  return message
+}
 
 func parseOutputOnly(
   _ tokens: [String],
   allowTableOutput: Bool,
   defaultOutput: WorkflowOutputFormat = .jsonl
 ) throws -> WorkflowOutputFormat {
-  var output = defaultOutput
-  var index = 0
-  while index < tokens.count {
-    let token = tokens[index]
-    if token == "--output" {
-      guard index + 1 < tokens.count, !tokens[index + 1].hasPrefix("--") else {
-        throw CLIUsageError("--output requires a value")
-      }
-      guard let value = WorkflowOutputFormat(rawValue: tokens[index + 1]) else {
-        throw CLIUsageError("invalid --output value '\(tokens[index + 1])'; expected text, json, jsonl, or table")
-      }
-      if value == .table && !allowTableOutput {
-        throw CLIUsageError(tableOutputSupportMessage)
-      }
-      output = value
-      index += 2
-      continue
-    }
-    if token.hasPrefix("--output=") {
-      let raw = String(token.dropFirst("--output=".count))
-      guard let value = WorkflowOutputFormat(rawValue: raw) else {
-        throw CLIUsageError("invalid --output value '\(raw)'; expected text, json, jsonl, or table")
-      }
-      if value == .table && !allowTableOutput {
-        throw CLIUsageError(tableOutputSupportMessage)
-      }
-      output = value
-    }
-    index += 1
+  let outputTokens = tokens.filter { $0 != "--help" && $0 != "-h" }
+  let parsed = try ParsedOutputProjection.parseCLI(outputTokens)
+  guard let raw = parsed.outputs.last else {
+    return defaultOutput
   }
-  return output
-}
-
-func inlineOptionValue(_ token: String, prefix: String) -> String? {
-  guard token.hasPrefix(prefix) else {
-    return nil
-  }
-  return String(token.dropFirst(prefix.count))
+  return try parseOutputValue(raw, allowTableOutput: allowTableOutput)
 }
 
 func parseOutputValue(_ raw: String, allowTableOutput: Bool) throws -> WorkflowOutputFormat {
@@ -54,41 +45,6 @@ func parseOutputValue(_ raw: String, allowTableOutput: Bool) throws -> WorkflowO
   }
   if value == .table && !allowTableOutput {
     throw CLIUsageError(tableOutputSupportMessage)
-  }
-  return value
-}
-
-func parseMemoryValueSort(_ raw: String) throws -> MemoryValueSortOrder {
-  guard let value = MemoryValueSortOrder(rawValue: raw) else {
-    throw CLIUsageError("invalid --sort value '\(raw)'; expected value-asc or value-desc")
-  }
-  return value
-}
-
-func requireRunOption(_ token: String, allowRunOptions: Bool) throws {
-  if !allowRunOptions {
-    throw CLIUsageError("\(token) is supported only by workflow run")
-  }
-}
-
-func readOptionValue(_ token: String, tokens: [String], index: inout Int) throws -> String {
-  guard index + 1 < tokens.count, !tokens[index + 1].hasPrefix("--") else {
-    throw CLIUsageError("\(token) requires a value")
-  }
-  index += 1
-  return tokens[index]
-}
-
-func positiveInt(_ token: String, _ raw: String) throws -> Int {
-  guard let value = Int(raw), value > 0 else {
-    throw CLIUsageError("\(token) requires a positive integer")
-  }
-  return value
-}
-
-func nonNegativeInt(_ token: String, _ raw: String) throws -> Int {
-  guard let value = Int(raw), value >= 0 else {
-    throw CLIUsageError("\(token) must be a non-negative integer")
   }
   return value
 }

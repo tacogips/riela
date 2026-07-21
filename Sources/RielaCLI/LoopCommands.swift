@@ -1,4 +1,5 @@
 import Foundation
+import ArgumentParser
 import RielaCore
 
 public struct LoopStatusCommandResult: Codable, Equatable, Sendable {
@@ -112,7 +113,8 @@ public struct LoopCommandRunner: Sendable {
     }
     if command.kind == .diff || command.kind == .findings {
       do {
-        if command.kind == .diff, command.options.arguments.first == "--baseline" {
+        let baseline = try ParsedLoopBaselineMarker.parseCLI(command.options.arguments).baseline
+        if command.kind == .diff, baseline {
           return try runBaselineDiff(command)
         }
         return command.kind == .diff ? try runDiff(command) : try runFindings(command)
@@ -173,111 +175,96 @@ public struct LoopCommandRunner: Sendable {
     var limit: Int
   }
 
+  private struct InspectionArguments: RielaClientFamilyArguments {
+    @Option var scope = "auto"
+    @Option(name: [.customLong("working-dir"), .customLong("working-directory")])
+    var workingDirectory = FileManager.default.currentDirectoryPath
+    @Option var sessionStore: String?
+    @Option var output: String?
+    @Flag var check = false
+  }
+
+  private struct RecoverArguments: RielaClientFamilyArguments {
+    @Option var fromStep: String?
+    @Option var fromGate: String?
+    @Option var workflowDefinitionDir: String?
+    @Option var mockScenario: String?
+    @Option var sessionStore: String?
+    @Option(name: [.customLong("working-dir"), .customLong("working-directory")])
+    var workingDirectory = FileManager.default.currentDirectoryPath
+    @Option var scope = "auto"
+    @Option var output: String?
+    @Flag(name: [.customLong("nested-superviser"), .customLong("nested-supervisor")])
+    var nestedSuperviser = false
+  }
+
+  private struct OverviewArguments: RielaClientFamilyArguments {
+    @Option var scope = "auto"
+    @Option(name: [.customLong("working-dir"), .customLong("working-directory")])
+    var workingDirectory = FileManager.default.currentDirectoryPath
+    @Option var sessionStore: String?
+    @Option var workflow: String?
+    @Option var status: String?
+    @Option var gateDecision: String?
+    @Option var limit = 50
+    @Option var output: String?
+  }
+
+  private struct FindingsArguments: RielaClientFamilyArguments {
+    @Option var gate: String?
+    @Option var format = "json"
+    @Option var scope = "auto"
+    @Option(name: [.customLong("working-dir"), .customLong("working-directory")])
+    var workingDirectory = FileManager.default.currentDirectoryPath
+    @Option var sessionStore: String?
+    @Option var output: String?
+  }
+
+  private struct DiffArguments: RielaClientFamilyArguments {
+    @Argument var sessionId: String
+    @Option var scope = "auto"
+    @Option(name: [.customLong("working-dir"), .customLong("working-directory")])
+    var workingDirectory = FileManager.default.currentDirectoryPath
+    @Option var sessionStore: String?
+    @Option var output: String?
+  }
+
   struct RenderSnapshot {
     var snapshot: WorkflowRuntimePersistenceSnapshot
     var loopEvidenceRecorded: Bool
   }
 
   func parseInspectionOptions(_ arguments: [String]) throws -> ParsedOptions {
-    var scope = WorkflowScope.auto
-    var workingDirectory = FileManager.default.currentDirectoryPath
-    var sessionStore: String?
-    var index = 0
-    while index < arguments.count {
-      let token = arguments[index]
-      switch token {
-      case "--scope":
-        guard index + 1 < arguments.count, let value = WorkflowScope(rawValue: arguments[index + 1]), value != .direct else {
-          throw CLIUsageError("invalid --scope value; expected auto, project, or user")
-        }
-        scope = value
-        index += 2
-      case "--working-dir", "--working-directory":
-        guard index + 1 < arguments.count else {
-          throw CLIUsageError("\(token) requires a value")
-        }
-        workingDirectory = arguments[index + 1]
-        index += 2
-      case "--session-store":
-        guard index + 1 < arguments.count else {
-          throw CLIUsageError("--session-store requires a value")
-        }
-        sessionStore = arguments[index + 1]
-        index += 2
-      case "--output":
-        guard index + 1 < arguments.count else {
-          throw CLIUsageError("--output requires a value")
-        }
-        index += 2
-      default:
-        if token.hasPrefix("--output=") {
-          index += 1
-        } else {
-          throw CLIUsageError("unsupported loop option '\(token)'")
-        }
-      }
+    let parsed = try InspectionArguments.parseCLI(arguments)
+    guard let scope = WorkflowScope(rawValue: parsed.scope), scope != .direct else {
+      throw CLIUsageError("invalid --scope value; expected auto, project, or user")
     }
-    return ParsedOptions(scope: scope, workingDirectory: workingDirectory, sessionStore: sessionStore)
+    return ParsedOptions(
+      scope: scope,
+      workingDirectory: parsed.workingDirectory,
+      sessionStore: parsed.sessionStore
+    )
   }
 
   private func parseRecoverOptions(_ options: CLICommandOptions, sessionId: String) throws -> SessionRerunOptions {
-    var scope = WorkflowScope.auto
-    var workingDirectory = FileManager.default.currentDirectoryPath
-    var workflowDefinitionDir: String?
-    var mockScenarioPath: String?
-    var sessionStore: String?
-    var fromStep: String?
-    var fromGate: String?
-    var nestedSuperviser = false
-    var index = 0
-    while index < options.arguments.count {
-      let token = options.arguments[index]
-      switch token {
-      case "--from-step":
-        fromStep = try readRequiredOption(token, arguments: options.arguments, index: &index)
-      case "--from-gate":
-        fromGate = try readRequiredOption(token, arguments: options.arguments, index: &index)
-      case "--workflow-definition-dir":
-        workflowDefinitionDir = try readRequiredOption(token, arguments: options.arguments, index: &index)
-      case "--mock-scenario":
-        mockScenarioPath = try readRequiredOption(token, arguments: options.arguments, index: &index)
-      case "--session-store":
-        sessionStore = try readRequiredOption(token, arguments: options.arguments, index: &index)
-      case "--working-dir", "--working-directory":
-        workingDirectory = try readRequiredOption(token, arguments: options.arguments, index: &index)
-      case "--scope":
-        let raw = try readRequiredOption(token, arguments: options.arguments, index: &index)
-        guard let value = WorkflowScope(rawValue: raw), value != .direct else {
-          throw CLIUsageError("invalid --scope value '\(raw)'; expected auto, project, or user")
-        }
-        scope = value
-      case "--output":
-        _ = try readRequiredOption(token, arguments: options.arguments, index: &index)
-      case "--nested-superviser", "--nested-supervisor":
-        nestedSuperviser = true
-        index += 1
-      default:
-        if token.hasPrefix("--output=") {
-          index += 1
-        } else {
-          throw CLIUsageError("unsupported loop recover option '\(token)'")
-        }
-      }
+    let parsed = try RecoverArguments.parseCLI(options.arguments)
+    guard let scope = WorkflowScope(rawValue: parsed.scope), scope != .direct else {
+      throw CLIUsageError("invalid --scope value '\(parsed.scope)'; expected auto, project, or user")
     }
-    if fromStep != nil, fromGate != nil {
+    if parsed.fromStep != nil, parsed.fromGate != nil {
       throw CLIUsageError("loop recover accepts only one of --from-step or --from-gate")
     }
     let resolvedStep: String
-    if let fromStep, !fromStep.isEmpty {
+    if let fromStep = parsed.fromStep, !fromStep.isEmpty {
       resolvedStep = fromStep
-    } else if let fromGate, !fromGate.isEmpty {
+    } else if let fromGate = parsed.fromGate, !fromGate.isEmpty {
       resolvedStep = try resolveGateStepId(
         sessionId: sessionId,
         gateId: fromGate,
         scope: scope,
-        workflowDefinitionDir: workflowDefinitionDir,
-        workingDirectory: workingDirectory,
-        sessionStore: sessionStore
+        workflowDefinitionDir: parsed.workflowDefinitionDir,
+        workingDirectory: parsed.workingDirectory,
+        sessionStore: parsed.sessionStore
       )
     } else {
       throw CLIUsageError("loop recover requires --from-step <step-id> or --from-gate <gate-id>")
@@ -287,98 +274,51 @@ public struct LoopCommandRunner: Sendable {
       stepId: resolvedStep,
       output: options.output,
       scope: scope,
-      workflowDefinitionDir: workflowDefinitionDir,
-      workingDirectory: workingDirectory,
-      mockScenarioPath: mockScenarioPath,
-      sessionStore: sessionStore,
-      nestedSuperviser: nestedSuperviser
+      workflowDefinitionDir: parsed.workflowDefinitionDir,
+      workingDirectory: parsed.workingDirectory,
+      mockScenarioPath: parsed.mockScenario,
+      sessionStore: parsed.sessionStore,
+      nestedSuperviser: parsed.nestedSuperviser
     )
   }
 
   func parseOverviewOptions(_ command: LoopCommand) throws -> ParsedOverviewOptions {
-    var scope = WorkflowScope.auto
-    var workingDirectory = FileManager.default.currentDirectoryPath
-    var sessionStore: String?
-    var workflowId = (command.kind == .history || command.kind == .stats) ? command.options.target : nil
-    var status: String?
-    var gateDecision: String?
-    var limit = 50
-    var index = 0
-    while index < command.options.arguments.count {
-      let token = command.options.arguments[index]
-      switch token {
-      case "--scope":
-        let raw = try readRequiredOption(token, arguments: command.options.arguments, index: &index)
-        guard let value = WorkflowScope(rawValue: raw), value != .direct else {
-          throw CLIUsageError("invalid --scope value '\(raw)'; expected auto, project, or user")
-        }
-        scope = value
-      case "--working-dir", "--working-directory":
-        workingDirectory = try readRequiredOption(token, arguments: command.options.arguments, index: &index)
-      case "--session-store":
-        sessionStore = try readRequiredOption(token, arguments: command.options.arguments, index: &index)
-      case "--workflow":
-        guard command.kind == .list else {
-          throw CLIUsageError("--workflow is only supported for loop list; use 'loop history <workflow>'")
-        }
-        workflowId = try readRequiredOption(token, arguments: command.options.arguments, index: &index)
-      case "--status":
-        status = try readStatusOption(token, arguments: command.options.arguments, index: &index)
-      case "--gate-decision":
-        gateDecision = try readGateDecisionOption(token, arguments: command.options.arguments, index: &index)
-      case "--limit":
-        let raw = try readRequiredOption(token, arguments: command.options.arguments, index: &index)
-        guard let parsedLimit = Int(raw), parsedLimit > 0 else {
-          throw CLIUsageError("--limit requires a positive integer")
-        }
-        limit = parsedLimit
-      case "--output":
-        _ = try readRequiredOption(token, arguments: command.options.arguments, index: &index)
-      default:
-        if token.hasPrefix("--output=") {
-          index += 1
-        } else {
-          throw CLIUsageError("unsupported loop \(command.kind.rawValue) option '\(token)'")
-        }
+    let parsed = try OverviewArguments.parseCLI(command.options.arguments)
+    guard let scope = WorkflowScope(rawValue: parsed.scope), scope != .direct else {
+      throw CLIUsageError("invalid --scope value '\(parsed.scope)'; expected auto, project, or user")
+    }
+    guard parsed.limit > 0 else {
+      throw CLIUsageError("--limit requires a positive integer")
+    }
+    if command.kind != .list, parsed.workflow != nil {
+      throw CLIUsageError("--workflow is only supported for loop list; use 'loop history <workflow>'")
+    }
+    if let status = parsed.status {
+      let supported = ["active", "created", "running", "completed", "failed"]
+      guard supported.contains(status) else {
+        throw CLIUsageError(
+          "invalid --status value '\(status)'; expected active, created, running, completed, or failed"
+        )
       }
     }
+    if let gateDecision = parsed.gateDecision, LoopGateDecision(rawValue: gateDecision) == nil {
+      throw CLIUsageError(
+        "invalid --gate-decision value '\(gateDecision)'; expected accepted, rejected, needs_work, or skipped"
+      )
+    }
+    let workflowId = command.kind == .list ? parsed.workflow : command.options.target
     if command.kind == .history || command.kind == .stats, workflowId == nil {
       throw CLIUsageError("loop \(command.kind.rawValue) requires a workflow id")
     }
     return ParsedOverviewOptions(
       scope: scope,
-      workingDirectory: workingDirectory,
-      sessionStore: sessionStore,
+      workingDirectory: parsed.workingDirectory,
+      sessionStore: parsed.sessionStore,
       workflowId: workflowId,
-      status: status,
-      gateDecision: gateDecision,
-      limit: limit
+      status: parsed.status,
+      gateDecision: parsed.gateDecision,
+      limit: parsed.limit
     )
-  }
-
-  private func readStatusOption(_ token: String, arguments: [String], index: inout Int) throws -> String {
-    let value = try readRequiredOption(token, arguments: arguments, index: &index)
-    let supported = ["active", "created", "running", "completed", "failed"]
-    guard supported.contains(value) else {
-      throw CLIUsageError("invalid --status value '\(value)'; expected active, created, running, completed, or failed")
-    }
-    return value
-  }
-
-  private func readGateDecisionOption(_ token: String, arguments: [String], index: inout Int) throws -> String {
-    let value = try readRequiredOption(token, arguments: arguments, index: &index)
-    guard LoopGateDecision(rawValue: value) != nil else {
-      throw CLIUsageError("invalid --gate-decision value '\(value)'; expected accepted, rejected, needs_work, or skipped")
-    }
-    return value
-  }
-
-  func readRequiredOption(_ token: String, arguments: [String], index: inout Int) throws -> String {
-    guard index + 1 < arguments.count, !arguments[index + 1].hasPrefix("--") else {
-      throw CLIUsageError("\(token) requires a value")
-    }
-    index += 2
-    return arguments[index - 1]
   }
 
   func loadOverviews(_ parsed: ParsedOverviewOptions) throws -> [LoopSessionOverview] {
@@ -535,55 +475,32 @@ public struct LoopCommandRunner: Sendable {
     guard let sessionId = command.options.target, !sessionId.isEmpty else {
       throw CLIUsageError("loop findings requires a session id")
     }
-    var gateId: String?
-    var format = "json"
-    var scope = WorkflowScope.auto
-    var workingDirectory = FileManager.default.currentDirectoryPath
-    var sessionStore: String?
-    let args = command.options.arguments
-    var index = 0
-    while index < args.count {
-      let token = args[index]
-      switch token {
-      case "--gate":
-        gateId = try readRequiredOption(token, arguments: args, index: &index)
-      case "--format":
-        let value = try readRequiredOption(token, arguments: args, index: &index)
-        guard value == "sarif" || value == "json" else {
-          throw CLIUsageError("invalid --format value '\(value)'; expected sarif or json")
-        }
-        format = value
-      case "--scope":
-        let raw = try readRequiredOption(token, arguments: args, index: &index)
-        guard let value = WorkflowScope(rawValue: raw), value != .direct else {
-          throw CLIUsageError("invalid --scope value '\(raw)'; expected auto, project, or user")
-        }
-        scope = value
-      case "--working-dir", "--working-directory":
-        workingDirectory = try readRequiredOption(token, arguments: args, index: &index)
-      case "--session-store":
-        sessionStore = try readRequiredOption(token, arguments: args, index: &index)
-      case "--output":
-        _ = try readRequiredOption(token, arguments: args, index: &index)
-      default:
-        throw CLIUsageError("unsupported loop findings option '\(token)'")
-      }
+    let arguments = try FindingsArguments.parseCLI(command.options.arguments)
+    guard arguments.format == "sarif" || arguments.format == "json" else {
+      throw CLIUsageError("invalid --format value '\(arguments.format)'; expected sarif or json")
     }
-    let parsed = ParsedOptions(scope: scope, workingDirectory: workingDirectory, sessionStore: sessionStore)
+    guard let scope = WorkflowScope(rawValue: arguments.scope), scope != .direct else {
+      throw CLIUsageError("invalid --scope value '\(arguments.scope)'; expected auto, project, or user")
+    }
+    let parsed = ParsedOptions(
+      scope: scope,
+      workingDirectory: arguments.workingDirectory,
+      sessionStore: arguments.sessionStore
+    )
     let rendered = try snapshotForRendering(kind: .gates, sessionId: sessionId, parsed: parsed)
     guard let manifest = rendered.snapshot.loopEvidence else {
       throw CLIUsageError("session '\(sessionId)' has no loop evidence")
     }
-    if format == "sarif" {
-      let sarif = LoopFindingsSARIFExporter.sarif(manifest: manifest, gateId: gateId)
+    if arguments.format == "sarif" {
+      let sarif = LoopFindingsSARIFExporter.sarif(manifest: manifest, gateId: arguments.gate)
       return CLICommandResult(exitCode: .success, stdout: try jsonString(JSONValue.object(sarif)))
     }
-    let findings = LoopFindingsSARIFExporter.findings(manifest: manifest, gateId: gateId)
+    let findings = LoopFindingsSARIFExporter.findings(manifest: manifest, gateId: arguments.gate)
     return CLICommandResult(exitCode: .success, stdout: try jsonString(findings))
   }
 
   private func runGatesCheck(_ command: LoopCommand, sessionId: String) throws -> CLICommandResult {
-    let parsed = try parseInspectionOptions(command.options.arguments.filter { $0 != "--check" })
+    let parsed = try parseInspectionOptions(command.options.arguments)
     let loaded = try CLIWorkflowSessionResolution.loadPersistedSession(
       sessionId: sessionId,
       sessionStore: parsed.sessionStore,
@@ -654,10 +571,16 @@ public struct LoopCommandRunner: Sendable {
     guard let sessionA = command.options.target, !sessionA.isEmpty else {
       throw CLIUsageError("loop diff requires two session ids: loop diff <session-a> <session-b>")
     }
-    guard let sessionB = command.options.arguments.first, !sessionB.hasPrefix("--"), !sessionB.isEmpty else {
-      throw CLIUsageError("loop diff requires a second session id: loop diff <session-a> <session-b>")
+    let arguments = try DiffArguments.parseCLI(command.options.arguments)
+    let sessionB = arguments.sessionId
+    guard let scope = WorkflowScope(rawValue: arguments.scope), scope != .direct else {
+      throw CLIUsageError("invalid --scope value '\(arguments.scope)'; expected auto, project, or user")
     }
-    let parsed = try parseInspectionOptions(Array(command.options.arguments.dropFirst()))
+    let parsed = ParsedOptions(
+      scope: scope,
+      workingDirectory: arguments.workingDirectory,
+      sessionStore: arguments.sessionStore
+    )
     let base = try loadDiffManifest(sessionId: sessionA, parsed: parsed)
     let target = try loadDiffManifest(sessionId: sessionB, parsed: parsed)
     let diff = LoopEvidenceDiffer.diff(base: base, target: target)

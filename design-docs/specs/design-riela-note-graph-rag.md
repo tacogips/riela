@@ -371,6 +371,12 @@ direct hits. Search does not rerun traversal or backfill entries removed by this
 combined-result deduplication; the result may therefore contain fewer than the
 requested limit, preserving the graph API's 20-result cap and bounded work.
 Existing tag, class, and created-date filters also apply to appended neighbors.
+These filters are applied to the full bounded candidate set (up to the graph
+API's 20-result cap) returned by the single traversal, and the surviving
+neighbors are then truncated to the remaining result capacity. A lower-weight
+neighbor that passes the filters is therefore surfaced even when a
+higher-weight sibling fails them; filter removal — unlike deduplication — does
+not starve a filter-passing neighbor, and no additional traversal is run.
 Offset and limit apply to the final combined list. Search delegates neighbor
 discovery to the graph API and does not maintain a separate link query.
 

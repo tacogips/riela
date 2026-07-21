@@ -367,17 +367,22 @@ private func appendLinkedNeighborResults(
     return directResults
   }
   let directNoteIds = directResults.map(\.note.noteId)
+  let directNoteIdSet = Set(directNoteIds)
+  let neighborLimit = limit - directResults.count
+  // Exclude direct hits from the traversal results and fetch a full candidate
+  // set: eligibility (tag/date) filtering happens below, so truncating to the
+  // neighbor budget before filtering would let a direct hit or a filter-failing
+  // note consume a slot and undercount genuine neighbors.
   let graphResults = try noteGraphNeighborsInDatabase(
     noteIds: Array(directNoteIds.prefix(NoteGraphPolicy.maximumSeedCount)),
     maxDepth: depth,
-    limit: min(limit - directResults.count, NoteGraphPolicy.maximumLimit),
-    resultExclusions: [],
+    limit: NoteGraphPolicy.maximumLimit,
+    resultExclusions: directNoteIdSet,
     in: database
   )
   guard !graphResults.isEmpty else {
     return directResults
   }
-  let directNoteIdSet = Set(directNoteIds)
   let candidateIds = graphResults.map(\.note.noteId).filter { !directNoteIdSet.contains($0) }
   guard !candidateIds.isEmpty else {
     return directResults
@@ -422,7 +427,7 @@ private func appendLinkedNeighborResults(
       isLinkedNeighbor: true
     )
   }
-  return directResults + neighbors
+  return directResults + neighbors.prefix(max(0, neighborLimit))
 }
 
 func noteSortOrderClause(alias: String, sort: NoteListSort) -> String {

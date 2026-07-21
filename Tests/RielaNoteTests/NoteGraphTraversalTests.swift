@@ -185,7 +185,14 @@ final class NoteGraphTraversalTests: NoteTestCase {
     XCTAssertEqual(destinationResult.edgeKind, .explicitLink)
   }
 
-  func testSearchDoesNotBackfillAfterTopGraphCandidateFailsFilters() throws {
+  func testSearchSurfacesFilterPassingNeighborWhenTopCandidateFailsFilters() throws {
+    // Per the design (search: "Existing tag, class, and created-date filters
+    // also apply to appended neighbors") and the pre-existing shipped R7
+    // contract, tag/class/date filters apply to the bounded graph-candidate set
+    // rather than only to the single highest-weighted candidate: a
+    // filter-passing neighbor is surfaced even when a higher-weighted sibling
+    // fails the filter. The no-backfill rule is scoped to direct-hit
+    // deduplication only, not to filter removal.
     let service = try makeService()
     let direct = try service.createNote(
       bodyMarkdown: "# Seed\nprojectalpha",
@@ -194,7 +201,9 @@ final class NoteGraphTraversalTests: NoteTestCase {
         NoteTagInput(name: "shared-entity", classId: "topic")
       ]
     )
+    // Highest-weight neighbor (explicit link, weight 0.5) but fails the filter.
     let filteredExplicit = try service.createNote(bodyMarkdown: "# B\nx")
+    // Lower-weight shared-tag neighbor that passes the "eligible" filter.
     let eligibleShared = try service.createNote(
       bodyMarkdown: "# C\ny",
       tags: [
@@ -212,7 +221,8 @@ final class NoteGraphTraversalTests: NoteTestCase {
       limit: 2
     )
 
-    XCTAssertEqual(results.map(\.note.noteId), [direct.noteId])
-    XCTAssertFalse(results.map(\.note.noteId).contains(eligibleShared.noteId))
+    XCTAssertEqual(results.map(\.note.noteId), [direct.noteId, eligibleShared.noteId])
+    XCTAssertEqual(results.last?.isLinkedNeighbor, true)
+    XCTAssertFalse(results.map(\.note.noteId).contains(filteredExplicit.noteId))
   }
 }

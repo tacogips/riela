@@ -762,6 +762,7 @@ public struct NoteService: Sendable {
     createdAfter: String? = nil,
     createdBefore: String? = nil,
     includeLinked: Bool = false,
+    depth: Int = 1,
     limit: Int = 20,
     offset: Int = 0
   ) throws -> [NoteSearchResult] {
@@ -773,7 +774,7 @@ public struct NoteService: Sendable {
         sort: sort,
         createdAfter: createdAfter,
         createdBefore: createdBefore,
-        includeLinked: includeLinked,
+        graphOptions: NoteSearchGraphOptions(includeLinked: includeLinked, depth: depth),
         limit: limit,
         offset: offset,
         in: database

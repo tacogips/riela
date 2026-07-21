@@ -1,14 +1,14 @@
 # Riela Note Bounded Graph-RAG Retrieval
 
-- Status: Revised for independent design review
+- Status: Revised for session-612 design review
 - Date: 2026-07-21
 - Workflow mode: `issue-resolution`
-- Workflow session: `codex-design-and-implement-review-loop-session-610`
-- Intake communication: `comm-001371`
-- Self-review feedback: `comm-001373`, `comm-001375`, `comm-001377`, `comm-001382`, `comm-001384`
+- Workflow session: `codex-design-and-implement-review-loop-session-612`
+- Intake communication: `comm-001387`, normalized by `comm-001388`
+- Self-review feedback: `comm-001373`, `comm-001375`, `comm-001377`, `comm-001382`, `comm-001384`, `comm-001390`
 - Independent-review feedback: `comm-001380`
 - Issue reference: workflow-provided title only; no GitHub URL, repository, or issue number was supplied
-- Issue-reference communication: `comm-001378`
+- Issue-reference communication: `comm-001388`
 - Review mode: standard, with adversarial review required because the work executes workflows and creates commits
 
 ## Purpose
@@ -57,8 +57,9 @@ independent feature branches.
 
 ### Out of scope
 
-- More than two hops, transitive closure, whole-notebook traversal, background
-  graph materialization, or a new persisted score table.
+- More than the service safety cap of five hops, transitive closure,
+  whole-notebook traversal, background graph materialization, or a new
+  persisted score table.
 - Semantic vector retrieval, embeddings, ANN, cosine similarity, sqlite-vec,
   faiss, an external or separate-process graph database, loadable SQLite
   extensions, or SQLite user-defined-function bridges.
@@ -80,21 +81,30 @@ Each ranked neighbor returned by `NoteService` carries:
 - `edgeKind`: `explicit-link`, `shared-tag`, or `lexical`, describing the
   terminal edge on the winning path;
 - `weight`: the final bounded path score used for ranking;
-- `hopCount`: one or two;
+- `hopCount`: one through the normalized request depth;
 - `pathNoteIds`: the complete ordered path from seed to neighbor, inclusive.
 
 The result is sufficient for an agent to explain the connection without
 recomputing it. A note appearing through multiple seeds or paths is returned
-once. The highest-weight eligible path admitted by the candidate-materialization
-rules wins. Ties resolve, in order, by fewer hops,
-stronger terminal edge kind (`explicit-link` before `shared-tag` before
-`lexical`), lexicographically smaller seed ID, lexicographically smaller
-`pathNoteIds`, then lexicographically smaller neighbor note ID. These complete
-tie-breakers make results stable across SQLite query plans and repeated runs.
+once. Distinct result notes are ordered only by descending weight and then
+lexicographically ascending neighbor note ID, matching the public ranking
+contract.
+
+Winning-path selection is a separate evidence decision for paths ending at the
+same neighbor. The highest-weight eligible admitted path wins; equal-weight
+paths resolve by fewer hops, stronger terminal edge kind (`explicit-link`
+before `shared-tag` before `lexical`), lexicographically smaller seed ID, then
+lexicographically smaller `pathNoteIds`. Because the destination is identical
+in this comparison, neighbor note ID is not an evidence tie-breaker. Separating
+result ordering from evidence selection keeps both decisions deterministic
+across SQLite query plans and repeated runs.
 
 ### Request policy
 
-- Depth defaults to two for the dedicated graph API and is hard-capped at two.
+- `maxDepth` defaults to five for the dedicated Graph-RAG API and is
+  hard-capped at five by the service. Each request's normalized `maxDepth` is
+  the traversal's explicit hard ceiling; traversal never increases it based on
+  result count, convergence, or graph shape.
 - Depth zero returns no neighbors. Negative depth is invalid.
 - Limit defaults to 16 and is hard-capped at 20. Limit zero returns no
   neighbors; a negative limit is invalid.
@@ -108,8 +118,9 @@ tie-breakers make results stable across SQLite query plans and repeated runs.
 - Scoring and ranking are deterministic for an unchanged database snapshot.
 
 Adapters may accept a larger positive depth or limit for forward compatibility,
-but `NoteService` normalizes it to the hard caps. No surface may bypass these
-caps.
+but `NoteService` normalizes them to the service caps of five hops and 20
+results. No surface may bypass these caps. Association always supplies
+`maxDepth = 2` even though general Graph-RAG retrieval may use five.
 
 ## Graph substrate and weights
 
@@ -168,9 +179,9 @@ the implementation must centralize it rather than preserve two copies.
 Each retained term is issued separately through the existing FTS match-query
 escaping. A term query returns at most 20 non-seed notes ordered by FTS rank and
 then note ID. Across all term queries, a seed retains at most the best 20
-distinct lexical candidates, ordered by descending number of matched seed
-terms, earliest matching seed-term position, lowest numeric FTS rank, then note
-ID. This
+distinct lexical candidates, ordered by descending number of matched seed terms
+and then note ID. Earliest matching seed-term position and lowest numeric FTS
+rank select evidence when repeated rows describe the same destination. This
 bounds lexical collection to eight queries and at most 160 examined rows per
 seed before the 20-candidate reduction.
 
@@ -188,20 +199,24 @@ rather than falling back to a whole-store scan.
 
 ## Traversal and scoring policy
 
-Traversal is a weighted, best-path-first expansion over at most two hops. Edge
-candidates may be loaded with bounded plain SQL, including `WITH RECURSIVE`
-through `RielaSQLite.SQLiteDatabase.query`, and evaluated in Swift. The storage
-choice does not change the observable rules below.
+Traversal is a weighted, best-path-first expansion through the normalized
+`maxDepth`, never beyond the service cap of five. Edge candidates may be loaded
+with bounded plain SQL, including `WITH RECURSIVE` through
+`RielaSQLite.SQLiteDatabase.query`, and evaluated in Swift. The storage choice
+does not change the observable rules below.
 
-For a one-hop path, the path score equals its edge weight. For a second hop:
+For a path containing `hopCount` edges:
 
-`secondHopScore = firstHopScore * secondEdgeWeight * 0.5`
+`pathScore = product(edgeWeights) * pow(0.5, hopCount)`
 
-The `0.5` factor is the per-hop decay after the first edge. A candidate path is
-eligible for the best-path frontier only when its final score is at least
-`0.10`, it does not repeat a note ID, and it does not end at any request seed.
-The frontier is global across all normalized seeds and is ordered by the result
-score and complete tie-break rules above.
+The `0.5` factor applies once per hop, so nearer otherwise-equivalent paths
+always outrank farther paths. A candidate path is eligible for the best-path
+frontier only when its final score is at least `0.03`, it does not repeat a
+note ID, and it does not end at any request seed.
+The frontier is global across all normalized seeds. Distinct destinations use
+the public result ordering: descending path score, then ascending destination
+note ID. Competing paths to the same destination use the winning-path evidence
+rules above.
 
 ### Candidate materialization budgets
 
@@ -213,7 +228,7 @@ enter the global frontier:
    maximum-tag selection for shared-tag edges.
 2. Before any source's 20-destination limit, it removes every destination that
    is a normalized request seed, already occurs in the current path, is already
-   finalized, or produces a path below the `0.10` relevance floor. These hard
+   finalized, or produces a path below the `0.03` relevance floor. These hard
    path-invalid destinations never consume a source slot.
 3. A destination already pending in the frontier is not removed before the
    source limit because a newly offered path may replace it. A caller-specific
@@ -237,14 +252,17 @@ not change loader admission or trigger backfill.
   weight `1.0`;
 - the shared-tag loader first reduces multiple shared tags for a destination to
   the maximum-weight tag, using the smaller tag ID on a tie, then returns at
-  most 20 distinct destinations ordered by descending edge weight, winning tag
-  ID, and destination note ID;
-- the seed-only lexical loader retains at most 20 distinct destinations under
-  the lexical ordering defined above;
+  most 20 distinct destinations ordered by descending edge weight and
+  destination note ID;
+- the seed-only lexical loader retains at most 20 distinct destinations ordered
+  by descending lexical weight and destination note ID; term position and FTS
+  rank select evidence for repeated rows of the same destination but do not
+  precede destination note ID across distinct results;
 - the three loader outputs are merged by destination, retaining the strongest
-  local edge and the documented edge-kind precedence on a tie, then only the
-  first 20 distinct destinations under the complete path ordering may be
-  offered to the frontier.
+  local edge and the documented edge-kind precedence on a tie for the same
+  destination, then only the first 20 distinct destinations ordered by
+  descending candidate path score and destination note ID may be offered to
+  the frontier.
 
 A seed origin therefore emits at most 60 loader-output candidates, a non-seed
 origin emits at most 40 because lexical loading is seed-only, and either offers
@@ -254,16 +272,17 @@ most 20 seeds and 20 finalized notes, one request receives at most 4,800 bounded
 edge-loader query-result rows: 800 explicit-link rows, 800 shared-tag rows, and
 3,200 lexical rows under the separately documented eight-query bound. Those
 rows reduce to at most 2,000 loader-output candidates and 800 paths offered to
-the frontier across both hops. Scalar counts, seed-note reads, and final note
-hydration are outside this edge-candidate row bound but do not add graph paths.
+the frontier across the bounded traversal. Scalar counts, seed-note reads, and
+final note hydration are outside this edge-candidate row bound but do not add
+graph paths.
 
 The global pending frontier retains at most 40 distinct destination notes. A
 better path replaces the pending path for the same destination. When a new
 destination arrives at capacity, the frontier keeps the best 40 destinations
-under the complete result ordering and discards the rest. Loader truncation,
-the per-origin merge cap, and frontier eviction are final for that candidate
-path: traversal does not page, rerun, or backfill a truncated source. A later
-expansion may independently offer another path to the same destination. These
+by descending path score and destination note ID and discards the rest. Loader
+truncation, the per-origin merge cap, and frontier eviction are final for that
+candidate path: traversal does not page, rerun, or backfill a truncated source.
+A later expansion may independently offer another path to the same destination. These
 caps define the request's observable candidate graph and apply equally to
 dedicated retrieval, search, and proposal traversal; lower candidates outside
 the caps are not considered reachable for that request.
@@ -290,15 +309,20 @@ graph API and add-on have no result exclusions, so they return the first
 does not reset between hops.
 
 Lexical edges may occur only as the first edge from a seed. Explicit and
-shared-tag edges may occur at either hop. Cycles are prevented by rejecting a
-path that repeats a note ID. A seed may still reach a note through a different
-acyclic path; only the best path survives.
+shared-tag edges may occur at any permitted hop. Cycles are prevented by
+rejecting a path that repeats a note ID. A seed may still reach a note through
+a different acyclic path; only the best path survives.
 
-More than two hops is rejected because each additional hop amplifies generic
-hub tags, indirect link noise, and explanation length while weakening the
-connection to the user's seed. Two hops covers useful bridge notes while
-keeping query work, result inspection, and provenance bounded. The depth cap is
-a safety and relevance invariant, not a tuning default.
+Five hops is the general retrieval safety cap because it permits an agent to
+walk a short explicit-link chain while the `0.5` decay, `0.03` floor, 20-node
+budget, loader caps, and 40-destination frontier suppress weak expansion in
+practice. A caller may choose any smaller ceiling, and the chosen value remains
+hard: there is no adaptive continuation or convergence test. Related-note
+association is deliberately tighter at two hops because a proposal must remain
+close enough to explain and confirm; farther indirect relationships are useful
+as retrieval context but too weak and surprising as proposed durable links.
+The explicit depth policy is simpler to inspect and test than an adaptive stop
+rule and gives every surface the same upper-bound semantics.
 
 ## Data flow
 
@@ -338,7 +362,8 @@ graph API never receives more than its 20-seed hard cap and never turns a valid
 large search request into an invalid graph request.
 
 Graph neighbors of the selected direct hits fill only the remaining result
-capacity, are ordered by graph weight, and retain `isLinkedNeighbor = true`.
+capacity, are ordered by graph weight descending and then note ID, and retain
+`isLinkedNeighbor = true`.
 Before appending, search removes every graph result whose note ID already
 appears anywhere in the complete direct-result set, including direct hits after
 the twentieth that did not seed traversal. Filtering never removes or reorders
@@ -351,12 +376,13 @@ discovery to the graph API and does not maintain a separate link query.
 
 ### Related-note proposals
 
-`NoteService.proposeLinks` uses the seed note's bounded graph results rather
-than independent term searches. The seed and already-linked notes remain
+`NoteService.proposeLinks` calls the shared traversal with `maxDepth = 2` and
+uses those bounded graph results rather than independent term searches. The
+seed and already-linked notes remain
 excluded from proposals, though an existing explicit link may serve as the
 first hop to a different second-hop candidate. Candidate order follows graph
-weight and deterministic graph tie-breakers. The proposal reason names the
-winning edge kind and path; `source` remains deterministic.
+weight descending and then candidate note ID. The proposal reason names the
+separately selected winning edge kind and path; `source` remains deterministic.
 
 Proposal traversal marks the seed's already-linked note IDs as result-ineligible
 before applying the requested proposal limit. Those notes remain traversable
@@ -422,13 +448,16 @@ lifecycle, opaque score explanations, and additional dependencies without
 being required for the deterministic relatedness policy. An external graph
 database would duplicate note identity and edge state, add synchronization and
 process-lifecycle failure modes, and weaken portability. The bounded embedded
-design is sufficient for two-hop traversal and makes every result explainable
-with stored links, tags, FTS evidence, and an explicit path.
+design is sufficient for configurable traversal through five hops and makes
+every result explainable with stored links, tags, FTS evidence, and an explicit
+path.
 
 ## Validation and rollout constraints
 
-- Tests must prove two-hop termination, second-hop decay, rare-tag IDF ordering,
-  structural-tag exclusion, deterministic tie-breaking, node-cap enforcement,
+- Tests must prove the configured hard stop, depth-five service cap, per-hop
+  decay ordering, association's depth-two bound, rare-tag IDF ordering,
+  structural-tag exclusion, weight-then-note-ID result ordering, deterministic
+  same-destination path evidence selection, node-cap enforcement,
   explicit/shared-tag loader caps, per-origin and global frontier caps,
   pre-limit path-invalid filtering, pending-path replacement, preservation of
   proposal bridge nodes, no-backfill behavior, empty-graph behavior, and
@@ -465,8 +494,8 @@ part of this feature's evidence and must not be investigated or attributed.
 
 | Intake requirement | Design decision |
 | --- | --- |
-| Ranked neighbors with kind, weight, hops, and path | Neighbor result contract and deterministic best-path selection |
-| Maximum two hops, decay, floor, and node cap | Depth 2 hard cap, 0.5 second-hop decay, 0.10 floor, and 20 globally finalized distinct non-seed nodes per request |
+| Ranked neighbors with kind, weight, hops, and path | Distinct results order by weight descending then note ID; deterministic best-path evidence is selected separately for each destination |
+| Configurable hard depth, decay, floor, and node cap | Request `maxDepth` is a hard ceiling; general retrieval defaults and caps at 5, association uses 2, every hop decays by 0.5, the relevance floor is 0.03, and at most 20 distinct non-seed nodes finalize per request |
 | Bounded candidate materialization | Path-invalid destinations are removed before source limits; pending and proposal-excluded bridge destinations remain eligible; then at most 60 seed-origin or 40 non-seed-origin loader outputs, 20 offered paths per origin, 40 pending destinations, 4,800 edge-loader rows, 2,000 loader outputs, and 800 offered paths per request, with no post-limit backfill |
 | Strong links, medium IDF tags, weak lexical evidence | Explicit `1.0`, shared-tag `0.30 + 0.35 * idf` in `[0.30, 0.65)`, lexical `0.10...0.25` at seed only |
 | Shared policy across surfaces | `NoteService` is the only scoring and traversal seam |
@@ -486,6 +515,16 @@ surface ownership, provenance behavior, verification expectations, and commit
 policy. Exact implementation types and SQL shape belong in the implementation
 plan provided they preserve this observable contract.
 
+## Session-612 authoritative revision
+
+The session-612 intake supersedes the session-610 review assumption that all
+traversal must stop at depth two. General Graph-RAG now uses a configurable
+request `maxDepth` with a default and service cap of five; association remains
+fixed at depth two. The revised scoring formula applies `0.5` decay per hop and
+uses a `0.03` floor so a five-edge explicit-link path can remain eligible while
+weaker paths terminate earlier. Existing deterministic loader, frontier, and
+20-node budgets continue to bound work independently of depth.
+
 ## Addressed self-review feedback
 
 The Step 2 self-review cycle (`comm-001373`, `comm-001375`, and `comm-001377`)
@@ -495,8 +534,8 @@ raised six mid-severity findings, all resolved in this revision:
   rather than summation, and remains strictly above the lexical range;
 - lexical term extraction, query count, row/candidate bounds, ranking, and
   weight calculation are deterministic and explicit;
-- terminal edge-kind tie precedence is `explicit-link`, `shared-tag`, then
-  `lexical`;
+- same-destination path evidence uses terminal edge-kind precedence of
+  `explicit-link`, `shared-tag`, then `lexical` after equal score and hop count;
 - search compatibility now distinguishes unchanged default behavior from the
   intentional candidate broadening when `includeLinked` is explicitly true;
 - large searches use the first 20 direct results as graph seeds; later direct
@@ -529,3 +568,15 @@ below-floor paths before each source limit; preserves pending destinations and
 proposal bridge nodes through truncation; keeps search deduplication after
 traversal; and forbids backfill after source limits, merge deduplication, pending
 comparison, or frontier eviction.
+
+## Addressed session-612 self-review feedback
+
+The `comm-001390` self-review raised one mid-severity and one low-severity
+finding, both resolved in this revision:
+
+- distinct result ranking, frontier admission, bounded loader selection, and
+  proposal ordering now use weight descending and then destination note ID;
+  equal-score winning-path evidence for the same destination uses hop, edge,
+  seed, and path tie-breakers separately;
+- the issue-reference communication now identifies the session-612 normalized
+  intake at `comm-001388` instead of the stale session-610 reference.

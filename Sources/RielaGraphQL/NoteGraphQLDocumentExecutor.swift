@@ -163,8 +163,18 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
         createdAfter: try optionalString("createdAfter", variables: variables),
         createdBefore: try optionalString("createdBefore", variables: variables),
         includeLinked: try optionalBool("includeLinked", variables: variables) ?? false,
+        depth: try optionalInt("depth", variables: variables) ?? 1,
         limit: validatedLimit(try optionalInt("limit", variables: variables), defaultValue: 20),
         offset: validatedOffset(try optionalInt("offset", variables: variables))
+      ))
+    case "noteGraphNeighbors":
+      return try await encodedJSONValue(service.noteGraphNeighbors(
+        noteIds: try optionalStringArray("noteIds", variables: variables) ?? [],
+        depth: try optionalInt("depth", variables: variables) ?? NoteGraphPolicy.defaultMaxDepth,
+        limit: validatedLimit(
+          try optionalInt("limit", variables: variables),
+          defaultValue: NoteGraphPolicy.defaultLimit
+        )
       ))
     case "proposeNoteLinks":
       return try await encodedJSONValue(service.proposeNoteLinks(
@@ -451,6 +461,7 @@ let supportedNoteGraphQLFields: Set<String> = [
   "notebooks",
   "notes",
   "searchNotes",
+  "noteGraphNeighbors",
   "proposeNoteLinks",
   "tags",
   "tagClasses",
@@ -486,6 +497,7 @@ private let noteGraphQLQueryFields: Set<String> = [
   "notebooks",
   "notes",
   "searchNotes",
+  "noteGraphNeighbors",
   "proposeNoteLinks",
   "tags",
   "tagClasses",
@@ -603,6 +615,7 @@ private let noteGraphQLRootSelectionTypes: [String: String] = [
   "notebooks": "NotebooksQueryPayload",
   "notes": "NotesQueryPayload",
   "searchNotes": "NoteSearchQueryPayload",
+  "noteGraphNeighbors": "NoteGraphNeighborsQueryPayload",
   "proposeNoteLinks": "NoteLinkProposalQueryPayload",
   "tags": "NoteTagsQueryPayload",
   "tagClasses": "NoteTagClassesQueryPayload",
@@ -627,6 +640,7 @@ let noteGraphQLSelectionFields: [String: [String: String?]] = [
   "NotebooksQueryPayload": noteGraphQLQueryPayloadFields(valueType: "Notebook"),
   "NotesQueryPayload": noteGraphQLQueryPayloadFields(valueType: "Note"),
   "NoteSearchQueryPayload": noteGraphQLQueryPayloadFields(valueType: "NoteSearchResult"),
+  "NoteGraphNeighborsQueryPayload": noteGraphQLQueryPayloadFields(valueType: "NoteGraphNeighbor"),
   "NoteLinkProposalQueryPayload": noteGraphQLQueryPayloadFields(valueType: "NoteLinkProposal"),
   "NoteTagsQueryPayload": noteGraphQLQueryPayloadFields(valueType: "NoteTag"),
   "NoteTagClassesQueryPayload": noteGraphQLQueryPayloadFields(valueType: "NoteTagClass"),
@@ -733,6 +747,14 @@ let noteGraphQLSelectionFields: [String: [String: String?]] = [
     "rank": nil,
     "matchedTags": "NoteTag",
     "isLinkedNeighbor": nil
+  ],
+  "NoteGraphNeighbor": [
+    "seedNoteId": nil,
+    "note": "Note",
+    "edgeKind": nil,
+    "weight": nil,
+    "hopCount": nil,
+    "pathNoteIds": nil
   ],
   "NoteLinkProposal": [
     "targetNote": "Note",

@@ -12,6 +12,7 @@ enum BuiltinNoteAddon: String {
   case update = "riela/note-update"
   case get = "riela/note-get"
   case search = "riela/note-search"
+  case graphNeighbors = "riela/note-graph-neighbors"
   case tagApply = "riela/note-tag-apply"
   case attachFile = "riela/note-attach-file"
   case graphQLDocument = "riela/note-graphql-document"
@@ -40,6 +41,8 @@ extension BuiltinWorkflowAddonResolver {
       candidate = try getNote(context)
     case .search:
       candidate = try searchNotes(context)
+    case .graphNeighbors:
+      candidate = try graphNeighbors(context)
     case .tagApply:
       candidate = try applyNoteTags(context)
     case .attachFile:
@@ -197,6 +200,18 @@ private func updateNote(_ context: NoteAddonContext) throws -> JSONObject {
 }
 
 private func getNote(_ context: NoteAddonContext) throws -> JSONObject {
+  if let rawNoteIds = context.value("noteIds") {
+    let noteIds = try noteStringArray(rawNoteIds, fieldName: "note noteIds") ?? []
+    let notes = try noteIds.map(context.service.getNote)
+    var payload: JSONObject = [
+      "notes": .array(notes.map(noteJSON)),
+      "noteIds": .array(notes.map { .string($0.noteId) })
+    ]
+    if let graphEvidence = context.value("graphEvidence") {
+      payload["graphEvidence"] = graphEvidence
+    }
+    return payload
+  }
   let note = try context.service.getNote(try context.requiredString("noteId", fieldName: "noteId"))
   return [
     "noteId": .string(note.noteId),
@@ -209,10 +224,13 @@ private func getNote(_ context: NoteAddonContext) throws -> JSONObject {
 }
 
 private func searchNotes(_ context: NoteAddonContext) throws -> JSONObject {
+  let includeLinked = context.bool("includeLinked", default: false)
   let results = try context.service.searchNotes(
     query: try context.requiredString("query", "match", fieldName: "query"),
     tagFilter: try noteStringArray(context.value("tagFilter") ?? context.value("tags"), fieldName: "note tagFilter") ?? [],
     classFilter: try noteStringArray(context.value("classFilter"), fieldName: "note classFilter") ?? [],
+    includeLinked: includeLinked,
+    depth: context.int("depth", default: 1),
     limit: context.int("limit", default: 20)
   )
   return [
@@ -220,6 +238,30 @@ private func searchNotes(_ context: NoteAddonContext) throws -> JSONObject {
     "resultCount": .number(Double(results.count)),
     "noteIds": .array(results.map { .string($0.note.noteId) })
   ]
+}
+
+private func graphNeighbors(_ context: NoteAddonContext) throws -> JSONObject {
+  guard let rawNoteIds = context.value("noteIds") ?? context.value("noteId") else {
+    throw noteAddonInvalidInput("\(context.input.addon.name) noteIds is required")
+  }
+  let noteIds = try noteStringArray(rawNoteIds, fieldName: "note noteIds") ?? []
+  let results = try context.service.graphNeighbors(
+    noteIds: noteIds,
+    maxDepth: context.int("depth", default: NoteGraphPolicy.defaultMaxDepth),
+    limit: context.int("limit", default: NoteGraphPolicy.defaultLimit)
+  )
+  return [
+    "results": .array(results.map(noteGraphNeighborJSON)),
+    "resultCount": .number(Double(results.count)),
+    "noteIds": .array(results.map { .string($0.note.noteId) }),
+    "seedNoteIds": .array(noteIds.map(JSONValue.string)),
+    "retrievalNoteIds": .array(orderedUniqueNoteIds(noteIds + results.map(\.note.noteId)).map(JSONValue.string))
+  ]
+}
+
+private func orderedUniqueNoteIds(_ noteIds: [String]) -> [String] {
+  var seen = Set<String>()
+  return noteIds.filter { seen.insert($0).inserted }
 }
 
 private func applyNoteTags(_ context: NoteAddonContext) throws -> JSONObject {
@@ -854,7 +896,20 @@ private func noteSearchResultJSON(_ result: NoteSearchResult) -> JSONValue {
     "notebookId": .string(result.note.notebookId),
     "snippet": .string(result.snippet),
     "rank": .number(result.rank),
-    "matchedTags": .array(result.matchedTags.map(tagJSON))
+    "matchedTags": .array(result.matchedTags.map(tagJSON)),
+    "isLinkedNeighbor": .bool(result.isLinkedNeighbor)
+  ])
+}
+
+private func noteGraphNeighborJSON(_ result: NoteGraphNeighbor) -> JSONValue {
+  .object([
+    "seedNoteId": .string(result.seedNoteId),
+    "note": noteJSON(result.note),
+    "noteId": .string(result.note.noteId),
+    "edgeKind": .string(result.edgeKind.rawValue),
+    "weight": .number(result.weight),
+    "hopCount": .number(Double(result.hopCount)),
+    "pathNoteIds": .array(result.pathNoteIds.map(JSONValue.string))
   ])
 }
 

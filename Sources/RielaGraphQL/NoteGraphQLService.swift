@@ -77,6 +77,7 @@ public struct GraphQLNoteGraphQLService: Sendable {
     createdAfter: String? = nil,
     createdBefore: String? = nil,
     includeLinked: Bool = false,
+    depth: Int = 1,
     limit: Int = 20,
     offset: Int = 0
   ) async -> GraphQLNoteQueryResult<[GraphQLNoteSearchResultDTO]> {
@@ -89,9 +90,21 @@ public struct GraphQLNoteGraphQLService: Sendable {
         createdAfter: createdAfter,
         createdBefore: createdBefore,
         includeLinked: includeLinked,
+        depth: depth,
         limit: limit,
         offset: offset
       ).map(GraphQLNoteSearchResultDTO.init)
+    }
+  }
+
+  public func noteGraphNeighbors(
+    noteIds: [String],
+    depth: Int = NoteGraphPolicy.defaultMaxDepth,
+    limit: Int = NoteGraphPolicy.defaultLimit
+  ) async -> GraphQLNoteQueryResult<[GraphQLNoteGraphNeighborDTO]> {
+    noteResult {
+      try service.graphNeighbors(noteIds: noteIds, maxDepth: depth, limit: limit)
+        .map(GraphQLNoteGraphNeighborDTO.init)
     }
   }
 

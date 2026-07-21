@@ -999,7 +999,12 @@ public enum GraphQLContractProjector {
     notebooks(limit: Int, offset: Int, tagFilter: [String!], sort: NoteListSort, createdAfter: String, createdBefore: String): NotebooksQueryPayload!
     notes(limit: Int, offset: Int, notebookId: String, tagFilter: [String!]): NotesQueryPayload!
     # Direct full-text hits are ranked first; sort orders filter-only and linked-neighbor groups.
-    searchNotes(query: String!, tagFilter: [String!], classFilter: [String!], sort: NoteListSort, createdAfter: String, createdBefore: String, includeLinked: Boolean, limit: Int, offset: Int): NoteSearchQueryPayload!
+    searchNotes(
+      query: String!, tagFilter: [String!], classFilter: [String!], sort: NoteListSort,
+      createdAfter: String, createdBefore: String, includeLinked: Boolean, depth: Int,
+      limit: Int, offset: Int
+    ): NoteSearchQueryPayload!
+    noteGraphNeighbors(noteIds: [String!]!, depth: Int, limit: Int): NoteGraphNeighborsQueryPayload!
     proposeNoteLinks(noteId: String!, limit: Int): NoteLinkProposalQueryPayload!
     tags: NoteTagsQueryPayload!
     tagClasses: NoteTagClassesQueryPayload!

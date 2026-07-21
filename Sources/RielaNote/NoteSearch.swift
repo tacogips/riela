@@ -8,6 +8,11 @@ struct FTSPayload {
   var tags: String
 }
 
+struct NoteSearchGraphOptions {
+  var includeLinked: Bool
+  var depth: Int
+}
+
 func searchNotesInDatabase(
   query: String,
   tagFilter: [String],
@@ -15,7 +20,7 @@ func searchNotesInDatabase(
   sort: NoteListSort,
   createdAfter: String?,
   createdBefore: String?,
-  includeLinked: Bool,
+  graphOptions: NoteSearchGraphOptions,
   limit: Int,
   offset: Int,
   in database: SQLiteDatabase
@@ -58,7 +63,7 @@ func searchNotesInDatabase(
         in: database
       )
     }
-    let expanded = try includeLinked
+    let expanded = try graphOptions.includeLinked
       ? appendLinkedNeighborResults(
           to: results,
           query: query,
@@ -67,6 +72,7 @@ func searchNotesInDatabase(
           sort: sort,
           createdAfter: createdAfter,
           createdBefore: createdBefore,
+          depth: graphOptions.depth,
           limit: fetchLimit,
           in: database
         )
@@ -148,7 +154,7 @@ func searchNotesInDatabase(
     )
     results.append(contentsOf: fallback)
   }
-  let expanded = try includeLinked
+  let expanded = try graphOptions.includeLinked
     ? appendLinkedNeighborResults(
         to: results,
         query: query,
@@ -157,6 +163,7 @@ func searchNotesInDatabase(
         sort: sort,
         createdAfter: createdAfter,
         createdBefore: createdBefore,
+        depth: graphOptions.depth,
         limit: fetchLimit,
         in: database
       )
@@ -352,6 +359,7 @@ private func appendLinkedNeighborResults(
   sort: NoteListSort,
   createdAfter: String?,
   createdBefore: String?,
+  depth: Int,
   limit: Int,
   in database: SQLiteDatabase
 ) throws -> [NoteSearchResult] {
@@ -359,11 +367,25 @@ private func appendLinkedNeighborResults(
     return directResults
   }
   let directNoteIds = directResults.map(\.note.noteId)
+  let graphResults = try noteGraphNeighborsInDatabase(
+    noteIds: Array(directNoteIds.prefix(NoteGraphPolicy.maximumSeedCount)),
+    maxDepth: depth,
+    limit: min(limit - directResults.count, NoteGraphPolicy.maximumLimit),
+    resultExclusions: [],
+    in: database
+  )
+  guard !graphResults.isEmpty else {
+    return directResults
+  }
+  let directNoteIdSet = Set(directNoteIds)
+  let candidateIds = graphResults.map(\.note.noteId).filter { !directNoteIdSet.contains($0) }
+  guard !candidateIds.isEmpty else {
+    return directResults
+  }
   var predicates: [String] = [
-    "linked.note_id NOT IN (\(placeholders(count: directNoteIds.count)))"
+    "n.note_id IN (\(placeholders(count: candidateIds.count)))"
   ]
-  var bindings = directNoteIds.map(SQLiteValue.text) + directNoteIds.map(SQLiteValue.text)
-  bindings.append(contentsOf: directNoteIds.map(SQLiteValue.text))
+  var bindings = candidateIds.map(SQLiteValue.text)
   appendCreatedAtPredicates(
     alias: "n",
     createdAfter: createdAfter,
@@ -378,37 +400,25 @@ private func appendLinkedNeighborResults(
     predicates: &predicates,
     bindings: &bindings
   )
-  bindings.append(.int(Int64(limit - directResults.count)))
-  let rows = try database.query(
+  let eligibleRows = try database.query(
     """
-    SELECT linked.note_id
-    FROM (
-      SELECT to_note_id AS note_id
-      FROM note_links
-      WHERE from_note_id IN (\(placeholders(count: directNoteIds.count)))
-      UNION
-      SELECT from_note_id AS note_id
-      FROM note_links
-      WHERE to_note_id IN (\(placeholders(count: directNoteIds.count)))
-    ) linked
-    INNER JOIN notes n ON n.note_id = linked.note_id
+    SELECT n.note_id
+    FROM notes n
     WHERE \(predicates.joined(separator: " AND "))
-    ORDER BY \(noteSortOrderClause(alias: "n", sort: sort))
-    LIMIT ?
     """,
     bindings: bindings
   )
-  let neighborIds = rows.compactMap { $0["note_id"] }
-  let notesById = try requireNotes(neighborIds, in: database)
-  let neighbors = neighborIds.compactMap { noteId -> NoteSearchResult? in
-    guard let note = notesById[noteId] else {
+  let eligibleIds = Set(eligibleRows.compactMap { $0["note_id"] })
+  let neighbors = graphResults.compactMap { graphResult -> NoteSearchResult? in
+    guard !directNoteIdSet.contains(graphResult.note.noteId),
+          eligibleIds.contains(graphResult.note.noteId) else {
       return nil
     }
     return NoteSearchResult(
-      note: note,
-      snippet: snippet(from: note.bodyMarkdown, query: query),
-      rank: 10,
-      matchedTags: note.tags.map(\.tag),
+      note: graphResult.note,
+      snippet: snippet(from: graphResult.note.bodyMarkdown, query: query),
+      rank: graphResult.weight,
+      matchedTags: graphResult.note.tags.map(\.tag),
       isLinkedNeighbor: true
     )
   }

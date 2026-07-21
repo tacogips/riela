@@ -27,6 +27,7 @@ type NoteFileAttachment { noteId: String!, file: NoteFile!, role: String!, posit
 type NoteComment { commentId: String!, noteId: String!, bodyMarkdown: String!, author: String!, createdAt: String! }
 type NoteLink { fromNoteId: String!, toNoteId: String!, linkKind: String!, provenance: String!, createdAt: String! }
 type NoteSearchResult { note: Note!, snippet: String!, rank: Float!, matchedTags: [NoteTag!]!, isLinkedNeighbor: Boolean! }
+type NoteGraphNeighbor { seedNoteId: String!, note: Note!, edgeKind: String!, weight: Float!, hopCount: Int!, pathNoteIds: [String!]! }
 type NoteLinkProposal { targetNote: Note!, targetNoteId: String!, linkKind: String!, reason: String!, source: String! }
 type NoteAutoAction { actionId: String!, trigger: String!, workflowId: String!, filterJSON: String, enabled: Boolean!, position: Int!, createdAt: String! }
 type NoteWorkflowScaffoldFile { relativePath: String!, path: String! }
@@ -37,6 +38,7 @@ type NotebookQueryPayload { result: ControlPlaneResult!, value: Notebook }
 type NotebooksQueryPayload { result: ControlPlaneResult!, value: [Notebook!] }
 type NotesQueryPayload { result: ControlPlaneResult!, value: [Note!] }
 type NoteSearchQueryPayload { result: ControlPlaneResult!, value: [NoteSearchResult!] }
+type NoteGraphNeighborsQueryPayload { result: ControlPlaneResult!, value: [NoteGraphNeighbor!] }
 type NoteLinkProposalQueryPayload { result: ControlPlaneResult!, value: [NoteLinkProposal!] }
 type NoteTagsQueryPayload { result: ControlPlaneResult!, value: [NoteTag!] }
 type NoteTagClassesQueryPayload { result: ControlPlaneResult!, value: [NoteTagClass!] }

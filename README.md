@@ -110,6 +110,17 @@ under `examples/note-quick-memo`, `examples/note-pdf-ingest`,
 `examples/note-link-extract`, `examples/note-edit-rewrite`, and
 `examples/note-selection-question`.
 
+Linked search is now backed by the same bounded Graph-RAG policy used by note
+agents and related-note proposals. Default search is unchanged because
+`includeLinked` remains false. When a caller explicitly enables
+`includeLinked`, depth defaults to one and candidates may come from explicit
+links, eligible IDF-weighted shared entity tags, or seed-only lexical overlap;
+callers may request a smaller or larger depth, but `NoteService` always caps it
+at five. Related-note proposals remain tighter at depth two and still require a
+separate confirmation before any link is written. Workflows can call
+`riela/note-graph-neighbors` for ranked path evidence and use `riela/note-get`
+with either `noteId` or `noteIds` to retrieve source bodies.
+
 In the RielaApp Notes window, the note detail pane is a read-first vertical
 reader: each note occupies one snapping page, and approaching either edge of a
 mid-notebook window loads only the next bounded page instead of scanning the

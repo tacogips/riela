@@ -5,6 +5,85 @@ import XCTest
 @testable import RielaCLI
 
 final class NoteAddonTests: XCTestCase {
+  func testGraphNeighborsAndSearchGraphInputsUseSharedNoteService() async throws {
+    let noteRoot = try makeNoteAddonRoot()
+    defer {
+      try? FileManager.default.removeItem(atPath: noteRoot)
+    }
+    let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot))
+    let seed = try service.createNote(bodyMarkdown: "# Seed\nprojectalpha")
+    let neighbor = try service.createNote(bodyMarkdown: "# Neighbor\nx")
+    _ = try service.linkNotes(from: seed.noteId, to: neighbor.noteId)
+    let resolver = BuiltinWorkflowAddonResolver(environment: ["RIELA_NOTE_ROOT": noteRoot])
+
+    let graph = try await resolver.execute(
+      noteInput(
+        name: "riela/note-graph-neighbors",
+        config: [
+          "noteIds": .array([.string(seed.noteId)]),
+          "depth": .number(1),
+          "limit": .number(10)
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(try arrayValue(graph.payload["noteIds"], field: "noteIds"), [.string(neighbor.noteId)])
+    let graphResult = try objectValue(
+      try XCTUnwrap(try arrayValue(graph.payload["results"], field: "results").first)
+    )
+    XCTAssertEqual(graphResult["edgeKind"], .string("explicit-link"))
+    XCTAssertEqual(graphResult["hopCount"], .number(1))
+    XCTAssertEqual(graphResult["pathNoteIds"], .array([.string(seed.noteId), .string(neighbor.noteId)]))
+
+    let search = try await resolver.execute(
+      noteInput(
+        name: "riela/note-search",
+        config: [
+          "query": .string("projectalpha"),
+          "includeLinked": .bool(true),
+          "depth": .number(1),
+          "limit": .number(10)
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(
+      try arrayValue(search.payload["noteIds"], field: "noteIds"),
+      [.string(seed.noteId), .string(neighbor.noteId)]
+    )
+  }
+
+  func testGraphNeighborsRejectsMalformedNoteIdsAndNegativeBounds() async throws {
+    let noteRoot = try makeNoteAddonRoot()
+    defer {
+      try? FileManager.default.removeItem(atPath: noteRoot)
+    }
+    let resolver = BuiltinWorkflowAddonResolver(environment: ["RIELA_NOTE_ROOT": noteRoot])
+
+    do {
+      _ = try await resolver.execute(
+        noteInput(name: "riela/note-graph-neighbors", config: ["noteIds": .number(1)]),
+        context: AdapterExecutionContext()
+      )
+      XCTFail("expected malformed noteIds to fail")
+    } catch {
+      XCTAssertTrue(String(describing: error).contains("noteIds"))
+    }
+
+    do {
+      _ = try await resolver.execute(
+        noteInput(
+          name: "riela/note-graph-neighbors",
+          config: ["noteIds": .array([]), "depth": .number(-1)]
+        ),
+        context: AdapterExecutionContext()
+      )
+      XCTFail("expected negative depth to fail")
+    } catch {
+      XCTAssertTrue(String(describing: error).contains("depth"))
+    }
+  }
+
   func testNoteCreateTagCommentGetAndSearchReturnFlattenedPayload() async throws {
     let noteRoot = try makeNoteAddonRoot()
     defer {

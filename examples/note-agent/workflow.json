@@ -1,12 +1,12 @@
 {
   "workflowId": "note-agent",
-  "description": "Answer a note chat request by retrieving Riela Note candidates and returning cited note_id sources.",
+  "description": "Answer a note chat request through bounded Graph-RAG retrieval and exact note_id citations.",
   "defaults": {
     "maxLoopIterations": 3,
     "nodeTimeoutMs": 120000
   },
   "prompts": {
-    "workerSystemPromptTemplate": "Return concise JSON only. Preserve note_id citation values exactly as returned by riela/note-search."
+    "workerSystemPromptTemplate": "Return concise JSON only. Cite only exact note_id values returned by the bounded Riela Note retrieval steps."
   },
   "entryStepId": "retrieve-notes",
   "nodes": [
@@ -18,7 +18,37 @@
         "config": {
           "noteRoot": "{{noteRoot}}",
           "query": "{{workflowInput.query}}",
+          "includeLinked": false,
           "limit": "{{workflowInput.limit}}"
+        }
+      }
+    },
+    {
+      "id": "walk-note-graph",
+      "addon": {
+        "name": "riela/note-graph-neighbors",
+        "version": "1",
+        "config": {
+          "noteRoot": "{{noteRoot}}",
+          "depth": 5,
+          "limit": 16
+        },
+        "inputs": {
+          "noteIds": "{{_rielaInput.latest.payload.noteIds}}"
+        }
+      }
+    },
+    {
+      "id": "get-source-notes",
+      "addon": {
+        "name": "riela/note-get",
+        "version": "1",
+        "config": {
+          "noteRoot": "{{noteRoot}}"
+        },
+        "inputs": {
+          "noteIds": "{{_rielaInput.latest.payload.retrievalNoteIds}}",
+          "graphEvidence": "{{_rielaInput.latest.payload.results}}"
         }
       }
     },
@@ -36,6 +66,26 @@
     {
       "id": "retrieve-notes",
       "nodeId": "retrieve-notes",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "walk-note-graph"
+        }
+      ]
+    },
+    {
+      "id": "walk-note-graph",
+      "nodeId": "walk-note-graph",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "get-source-notes"
+        }
+      ]
+    },
+    {
+      "id": "get-source-notes",
+      "nodeId": "get-source-notes",
       "role": "worker",
       "transitions": [
         {

@@ -1,0 +1,15 @@
+{
+  "id": "workflow-output",
+  "description": "Project the notebook compact operation payload as workflow output.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplate": "Project the latest notebook compact operation payload.",
+  "variables": {},
+  "output": {
+    "description": "Latest notebook compact operation payload.",
+    "projection": {
+      "kind": "latest-input-payload"
+    }
+  }
+}

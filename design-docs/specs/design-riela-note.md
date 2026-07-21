@@ -30,6 +30,10 @@ Primary capabilities delivered by this design:
 - Riela Note Agent local-search chat with citation links and
   conversation-as-notebook persistence; vector/web RAG remains a
   follow-up. Riela Note Config Agent for note/workflow configuration.
+- Notebook-level **Expand with Agent** creates a compact-summary-grounded
+  agent conversation with lazy, invalidatable summary caching and explicit
+  source-note provenance. Its focused contract is defined in
+  `design-docs/specs/design-riela-note-notebook-expand.md`.
 - Optional remote note API exposure is designed but not shipped; current
   code provides in-process/local GraphQL plus pluggable auth and QR-code
   client-registration building blocks for a future socket transport.

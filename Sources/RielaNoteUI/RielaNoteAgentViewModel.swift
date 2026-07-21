@@ -19,6 +19,7 @@ public final class RielaNoteAgentViewModel: ObservableObject {
   @Published public private(set) var draftAttachments: [RielaNoteAgentDraftAttachment] = []
   @Published public private(set) var attachmentError: String?
   @Published public private(set) var composerFocusRequestRevision = 0
+  @Published public private(set) var mode: RielaNoteAgentMode = .general
 
   /// Inlined attachment text is capped so a huge file cannot blow up the agent
   /// prompt; larger files should be attached to a note instead.
@@ -34,11 +35,16 @@ public final class RielaNoteAgentViewModel: ObservableObject {
   }
 
   public var canSubmit: Bool {
-    (!draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !draftAttachments.isEmpty)
-      && state != .loading
+    let hasDraft = !draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    let hasContent = mode.isNotebookExpansion ? hasDraft : hasDraft || !draftAttachments.isEmpty
+    return hasContent && state != .loading
   }
 
   public func addAttachment(filename: String, data: Data) {
+    guard !mode.isNotebookExpansion else {
+      attachmentError = "Notebook expansion questions use the compact summary only."
+      return
+    }
     guard data.count <= Self.maximumAttachmentBytes else {
       attachmentError = "\(filename) is too large to attach (max \(Self.maximumAttachmentBytes / 1024) KB)."
       return
@@ -61,6 +67,7 @@ public final class RielaNoteAgentViewModel: ObservableObject {
   }
 
   public func prepareCurrentNoteQuestion(for note: Note) {
+    mode = .general
     let title = note.title?.trimmingCharacters(in: .whitespacesAndNewlines)
     let displayTitle = title?.isEmpty == false ? title ?? note.noteId : note.noteId
     draftMessage = "Ask about \(displayTitle):"
@@ -82,7 +89,7 @@ public final class RielaNoteAgentViewModel: ObservableObject {
   }
 
   public var canSaveTemporaryConversation: Bool {
-    isTemporaryChat && hasUnsavedTurns && state != .loading
+    !mode.isNotebookExpansion && isTemporaryChat && hasUnsavedTurns && state != .loading
   }
 
   public var canStartNewConversation: Bool {
@@ -90,6 +97,7 @@ public final class RielaNoteAgentViewModel: ObservableObject {
       || !draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       || !draftAttachments.isEmpty
       || autoSaveNotebookId != nil
+      || mode.isNotebookExpansion
   }
 
   public var errorMessage: String? {
@@ -103,7 +111,9 @@ public final class RielaNoteAgentViewModel: ObservableObject {
     guard !isSubmitting else {
       return
     }
-    let message = composedDraftMessage()
+    let message = mode.isNotebookExpansion
+      ? draftMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+      : composedDraftMessage()
     guard !message.isEmpty else {
       return
     }
@@ -114,6 +124,11 @@ public final class RielaNoteAgentViewModel: ObservableObject {
     attachmentError = nil
     state = .loading
     do {
+      if case let .notebookExpansion(session) = mode {
+        try await submitNotebookExpansionQuestion(message, session: session)
+        state = .loaded
+        return
+      }
       let turn = try await client.answerNoteAgentTurn(message: message, limit: searchLimit)
       // Show first: the answered turn is visible immediately so a persistence
       // failure never discards a paid-for answer.
@@ -152,7 +167,51 @@ public final class RielaNoteAgentViewModel: ObservableObject {
     draftAttachments = []
     attachmentError = nil
     isTemporaryChat = false
+    mode = .general
     state = .idle
+  }
+
+  public func beginNotebookExpansionSession(_ session: RielaNoteNotebookExpansionSession) {
+    mode = .notebookExpansion(session)
+    turns = [RielaNoteAgentTurn(
+      userMarkdown: "Expand this notebook into useful key points and follow-up directions.",
+      assistantMarkdown: session.compactSummaryMarkdown,
+      persistedNoteIds: [session.initialNoteId]
+    )]
+    autoSaveNotebookId = session.conversationNotebookId
+    draftMessage = ""
+    draftAttachments = []
+    attachmentError = nil
+    isTemporaryChat = false
+    state = .loaded
+    composerFocusRequestRevision &+= 1
+  }
+
+  private func submitNotebookExpansionQuestion(
+    _ question: String,
+    session: RielaNoteNotebookExpansionSession
+  ) async throws {
+    let answer = try await client.answerNotebookExpansion(request: RielaNoteNotebookExpansionRequest(
+      compactSummaryMarkdown: session.compactSummaryMarkdown,
+      questionMarkdown: question
+    ))
+    // Show first, then persist — mirroring the general agent path — so that a
+    // persistence failure (e.g. a source note deleted after this expansion
+    // session started, which makes the frozen sourceNoteIds fail validation)
+    // never silently discards the paid-for answer or wedges the conversation.
+    let turnIndex = turns.count
+    turns.append(RielaNoteAgentTurn(
+      userMarkdown: question,
+      assistantMarkdown: answer.assistantMarkdown,
+      persistedNoteIds: []
+    ))
+    let note = try await client.appendNotebookExpansionTurn(
+      notebookId: session.conversationNotebookId,
+      questionMarkdown: question,
+      assistantMarkdown: answer.assistantMarkdown,
+      sourceNoteIds: session.sourceNoteIds
+    )
+    turns[turnIndex].persistedNoteIds = [note.noteId]
   }
 
   private func persistUnsavedTurns(title: String? = nil) async throws {
@@ -212,6 +271,15 @@ public final class RielaNoteAgentViewModel: ObservableObject {
     let seed = turns.first?.userMarkdown ?? "Agent conversation"
     let firstLine = seed.split(separator: "\n").first.map(String.init) ?? seed
     return firstLine.isEmpty ? "Agent conversation" : String(firstLine.prefix(80))
+  }
+}
+
+private extension RielaNoteAgentMode {
+  var isNotebookExpansion: Bool {
+    if case .notebookExpansion = self {
+      return true
+    }
+    return false
   }
 }
 

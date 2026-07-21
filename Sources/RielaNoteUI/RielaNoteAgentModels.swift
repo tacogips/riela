@@ -59,3 +59,8 @@ public struct RielaNoteAgentConversationSaveResult: Equatable, Sendable {
     self.noteIds = noteIds
   }
 }
+
+public enum RielaNoteAgentMode: Equatable, Sendable {
+  case general
+  case notebookExpansion(RielaNoteNotebookExpansionSession)
+}

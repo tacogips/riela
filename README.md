@@ -108,7 +108,17 @@ under `examples/note-quick-memo`, `examples/note-pdf-ingest`,
 `examples/note-youtube-transcript`, `examples/note-auto-tagging`,
 `examples/note-agent`, `examples/note-config-agent`,
 `examples/note-link-extract`, `examples/note-edit-rewrite`, and
-`examples/note-selection-question`.
+`examples/note-selection-question`, and `examples/note-notebook-compact`.
+
+Notebook rows in both the notebook list and file-tree pane provide **Expand
+with Agent**. The first expansion of a notebook revision runs
+`note-notebook-compact`, caches versioned key points in the source notebook's
+metadata, and creates a linked `notebook-kind:agent-conversation` notebook.
+Later questions are grounded only in that compact summary; every saved turn has
+AI `source-citation` links back to all source notes. Configure discovery with
+`RIELA_NOTE_NOTEBOOK_COMPACT_WORKFLOW_DIR` and
+`RIELA_NOTE_NOTEBOOK_COMPACT_RIELA_EXECUTABLE`. If the provider is absent, the
+action reports that expansion is not configured without changing the notebook.
 
 In the RielaApp Notes window, the note detail pane is a read-first vertical
 reader: each note occupies one snapping page, and approaching either edge of a

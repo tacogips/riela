@@ -91,6 +91,7 @@ public struct RielaNoteListFilter: Equatable, Sendable {
 public protocol RielaNoteUIClient: Sendable {
   var defaultConfigWorkflowRoot: String { get }
   var noteStoreChangeObservationURLs: [URL] { get }
+  var isNotebookExpansionConfigured: Bool { get }
 
   func listNotebooks(limit: Int, offset: Int) async throws -> [Notebook]
   func listNotebooks(limit: Int, offset: Int, filter: RielaNoteListFilter) async throws -> [Notebook]
@@ -157,6 +158,28 @@ public protocol RielaNoteUIClient: Sendable {
     notebookId: String,
     turn: RielaNoteAgentTurn
   ) async throws -> RielaNoteAgentConversationSaveResult
+  func notebookForExpansion(notebookId: String) async throws -> Notebook
+  func notesForNotebookExpansion(notebookId: String) async throws -> [Note]
+  func compactNotebook(
+    request: RielaNoteNotebookCompactRequest
+  ) async throws -> RielaNoteNotebookCompactDraft
+  func updateNotebookCompactCache(notebookId: String, compactMetadataJSON: String) async throws -> Notebook
+  func saveNotebookExpansion(
+    title: String,
+    seedPromptMarkdown: String,
+    compactSummaryMarkdown: String,
+    notebookMetaJSON: String,
+    sourceNoteIds: [String]
+  ) async throws -> SavedConversation
+  func answerNotebookExpansion(
+    request: RielaNoteNotebookExpansionRequest
+  ) async throws -> RielaNoteNotebookExpansionAnswer
+  func appendNotebookExpansionTurn(
+    notebookId: String,
+    questionMarkdown: String,
+    assistantMarkdown: String,
+    sourceNoteIds: [String]
+  ) async throws -> Note
   func proposeNoteConfigAgentChange(message: String) async throws -> RielaNoteConfigAgentProposal
   func applyNoteConfigAgentProposal(
     _ proposal: RielaNoteConfigAgentProposal,
@@ -165,6 +188,10 @@ public protocol RielaNoteUIClient: Sendable {
 }
 
 public extension RielaNoteUIClient {
+  var isNotebookExpansionConfigured: Bool {
+    false
+  }
+
   var noteStoreChangeObservationURLs: [URL] {
     []
   }
@@ -254,6 +281,49 @@ public extension RielaNoteUIClient {
   func promoteCommentToNotebook(noteId: String, commentId: String) async throws -> RielaNoteDetail {
     throw RielaNoteUIClientCapabilityError.commentPromotionUnsupported
   }
+
+  func notebookForExpansion(notebookId: String) async throws -> Notebook {
+    throw RielaNoteNotebookExpansionError.notConfigured
+  }
+
+  func notesForNotebookExpansion(notebookId: String) async throws -> [Note] {
+    throw RielaNoteNotebookExpansionError.notConfigured
+  }
+
+  func compactNotebook(
+    request: RielaNoteNotebookCompactRequest
+  ) async throws -> RielaNoteNotebookCompactDraft {
+    throw RielaNoteNotebookExpansionError.notConfigured
+  }
+
+  func updateNotebookCompactCache(notebookId: String, compactMetadataJSON: String) async throws -> Notebook {
+    throw RielaNoteNotebookExpansionError.notConfigured
+  }
+
+  func saveNotebookExpansion(
+    title: String,
+    seedPromptMarkdown: String,
+    compactSummaryMarkdown: String,
+    notebookMetaJSON: String,
+    sourceNoteIds: [String]
+  ) async throws -> SavedConversation {
+    throw RielaNoteNotebookExpansionError.notConfigured
+  }
+
+  func answerNotebookExpansion(
+    request: RielaNoteNotebookExpansionRequest
+  ) async throws -> RielaNoteNotebookExpansionAnswer {
+    throw RielaNoteNotebookExpansionError.notConfigured
+  }
+
+  func appendNotebookExpansionTurn(
+    notebookId: String,
+    questionMarkdown: String,
+    assistantMarkdown: String,
+    sourceNoteIds: [String]
+  ) async throws -> Note {
+    throw RielaNoteNotebookExpansionError.notConfigured
+  }
 }
 
 public extension RielaNoteListFilter {
@@ -317,12 +387,13 @@ func rielaNoteCreatedBoundInputIsValid(_ rawValue: String) -> Bool {
 
 public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
   private static let linkProposalLimit = 8
-  private let service: NoteService
+  let service: NoteService
   private let s3Profiles: [S3StorageProfile]
   private let s3HTTPClient: any S3HTTPClient
   private let linkProposalProvider: (any RielaNoteLinkProposalProviding)?
   private let editRewriteProvider: (any RielaNoteEditRewriteProviding)?
   private let selectionQuestionProvider: (any RielaNoteSelectionQuestionProviding)?
+  let notebookExpansionProvider: (any RielaNoteNotebookExpansionProviding)?
 
   public init(
     service: NoteService,
@@ -330,7 +401,8 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
     s3HTTPClient: any S3HTTPClient = URLSessionS3HTTPClient(),
     linkProposalProvider: (any RielaNoteLinkProposalProviding)? = nil,
     editRewriteProvider: (any RielaNoteEditRewriteProviding)? = nil,
-    selectionQuestionProvider: (any RielaNoteSelectionQuestionProviding)? = nil
+    selectionQuestionProvider: (any RielaNoteSelectionQuestionProviding)? = nil,
+    notebookExpansionProvider: (any RielaNoteNotebookExpansionProviding)? = nil
   ) {
     self.service = service
     self.s3Profiles = s3Profiles
@@ -338,6 +410,11 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
     self.linkProposalProvider = linkProposalProvider
     self.editRewriteProvider = editRewriteProvider
     self.selectionQuestionProvider = selectionQuestionProvider
+    self.notebookExpansionProvider = notebookExpansionProvider
+  }
+
+  public var isNotebookExpansionConfigured: Bool {
+    notebookExpansionProvider != nil
   }
 
   public func listNotebooks(limit: Int, offset: Int) async throws -> [Notebook] {

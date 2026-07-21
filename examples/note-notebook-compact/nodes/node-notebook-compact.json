@@ -1,0 +1,12 @@
+{
+  "id": "notebook-compact",
+  "description": "Compact ordered notebook notes or answer from a supplied compact summary.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/notebook-compact.md",
+  "variables": {},
+  "output": {
+    "description": "Return either { summaryMarkdown, version } or { assistantMarkdown }."
+  }
+}

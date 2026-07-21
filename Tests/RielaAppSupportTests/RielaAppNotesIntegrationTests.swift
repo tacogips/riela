@@ -47,6 +47,42 @@ final class RielaAppNotesIntegrationTests: XCTestCase {
     controller.close()
   }
 
+  func testNoteWindowConfiguresNotebookExpansionProviderOnlyWhenBundleIsDiscoverable() throws {
+    let scratch = try scratchRoot(name: "riela-app-note-expansion-provider-\(UUID().uuidString)")
+    let workflowRoot = scratch.appendingPathComponent("examples", isDirectory: true)
+    let workflowDirectory = workflowRoot.appendingPathComponent("note-notebook-compact", isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+    try Data("{}".utf8).write(to: workflowDirectory.appendingPathComponent("workflow.json"))
+    let executable = scratch.appendingPathComponent("riela")
+    try "#!/bin/sh\nexit 0\n".write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+    let configured = try NoteWindowController(
+      noteRoot: scratch.appendingPathComponent("configured-note", isDirectory: true),
+      profileName: .default,
+      environment: [
+        "RIELA_NOTE_NOTEBOOK_COMPACT_WORKFLOW_DIR": workflowRoot.path,
+        "RIELA_NOTE_NOTEBOOK_COMPACT_RIELA_EXECUTABLE": executable.path
+      ]
+    )
+
+    XCTAssertTrue(configured.notebookExpansionProviderConfigured)
+    configured.close()
+
+    let unavailable = try NoteWindowController(
+      noteRoot: scratch.appendingPathComponent("unavailable-note", isDirectory: true),
+      profileName: .default,
+      environment: [
+        "RIELA_NOTE_NOTEBOOK_COMPACT_WORKFLOW_DIR": scratch
+          .appendingPathComponent("missing-examples", isDirectory: true).path,
+        "RIELA_NOTE_NOTEBOOK_COMPACT_RIELA_EXECUTABLE": scratch
+          .appendingPathComponent("missing-riela").path
+      ]
+    )
+
+    XCTAssertFalse(unavailable.notebookExpansionProviderConfigured)
+    unavailable.close()
+  }
+
   func testNoteWindowLoadsS3ProfileFromEnvironment() throws {
     let scratch = try scratchRoot(name: "riela-app-note-window-s3-\(UUID().uuidString)")
     let noteRoot = scratch

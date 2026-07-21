@@ -271,8 +271,12 @@ private enum AgentViewModelTestError: Error {
 /// notebook bookkeeping, used for the persistence-integrity tests.
 final class AgentStubClient: RielaNoteUIClient, @unchecked Sendable {
   var answerError: Error?
+  var expansionAnswerError: Error?
   var saveError: Error?
   var answerDelayNanoseconds: UInt64 = 0
+  var generalAnswerCallCount = 0
+  var expansionAnswerRequests: [RielaNoteNotebookExpansionRequest] = []
+  var appendedExpansionNotebookIds: [String] = []
   var savedConversations: [(title: String, turns: [RielaNoteAgentTurn])] = []
   var appendedNotebookIds: [String] = []
   private var persistedNoteCount = 0
@@ -330,6 +334,7 @@ final class AgentStubClient: RielaNoteUIClient, @unchecked Sendable {
   }
 
   func answerNoteAgentTurn(message: String, limit: Int) async throws -> RielaNoteAgentTurn {
+    generalAnswerCallCount += 1
     if answerDelayNanoseconds > 0 {
       try await Task.sleep(nanoseconds: answerDelayNanoseconds)
     }
@@ -339,6 +344,36 @@ final class AgentStubClient: RielaNoteUIClient, @unchecked Sendable {
     return RielaNoteAgentTurn(
       userMarkdown: message,
       assistantMarkdown: "Mock answer for \(message)"
+    )
+  }
+
+  func answerNotebookExpansion(
+    request: RielaNoteNotebookExpansionRequest
+  ) async throws -> RielaNoteNotebookExpansionAnswer {
+    expansionAnswerRequests.append(request)
+    if let expansionAnswerError {
+      throw expansionAnswerError
+    }
+    return RielaNoteNotebookExpansionAnswer(assistantMarkdown: "Expansion answer")
+  }
+
+  func appendNotebookExpansionTurn(
+    notebookId: String,
+    questionMarkdown: String,
+    assistantMarkdown: String,
+    sourceNoteIds: [String]
+  ) async throws -> Note {
+    appendedExpansionNotebookIds.append(notebookId)
+    persistedNoteCount += 1
+    return Note(
+      noteId: "expansion-note-\(persistedNoteCount)",
+      notebookId: notebookId,
+      noteNumber: persistedNoteCount,
+      title: questionMarkdown,
+      bodyMarkdown: assistantMarkdown,
+      readOnly: false,
+      createdAt: "2026-07-21T00:00:00Z",
+      updatedAt: "2026-07-21T00:00:00Z"
     )
   }
 

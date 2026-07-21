@@ -93,6 +93,26 @@ public struct RielaNoteRootView: View {
         await viewModel.refresh()
       }
     }
+    .onChange(of: viewModel.notebookExpansionSession) { _, session in
+      guard let session else {
+        return
+      }
+      Task {
+        await viewModel.refresh()
+        await viewModel.selectNotebook(session.conversationNotebookId)
+        agentViewModel.beginNotebookExpansionSession(session)
+        composeDestination = nil
+        selectedTab = .agent
+        isAgentBottomBarFolded = false
+      }
+    }
+    .alert("Unable to expand notebook", isPresented: notebookExpansionErrorBinding) {
+      Button("OK") {
+        viewModel.notebookExpansionError = nil
+      }
+    } message: {
+      Text(viewModel.notebookExpansionError ?? "Notebook expansion failed.")
+    }
     .onDisappear {
       noteStoreChangeWatcher?.stop()
       noteStoreChangeWatcher = nil
@@ -132,6 +152,16 @@ public struct RielaNoteRootView: View {
     } set: { presented in
       if !presented, viewModel.pendingSelection != nil {
         viewModel.cancelPendingSelection()
+      }
+    }
+  }
+
+  private var notebookExpansionErrorBinding: Binding<Bool> {
+    Binding {
+      viewModel.notebookExpansionError != nil
+    } set: { presented in
+      if !presented {
+        viewModel.notebookExpansionError = nil
       }
     }
   }

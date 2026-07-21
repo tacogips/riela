@@ -11,37 +11,13 @@ public extension NoteService {
   ) throws -> NoteLink {
     try driver.withDatabase { database in
       try database.transaction { db in
-        _ = try requireNote(fromNoteId, in: db)
-        _ = try requireNote(toNoteId, in: db)
-        let now = NoteStoreClock.system.now()
-        try db.execute(
-          """
-          INSERT INTO note_links (
-            from_note_id, to_note_id, link_kind, provenance, created_at
-          ) VALUES (?, ?, ?, ?, ?)
-          ON CONFLICT(from_note_id, to_note_id, link_kind) DO UPDATE SET
-            provenance = CASE
-              WHEN note_links.provenance IN ('human', 'system')
-                AND excluded.provenance = 'ai'
-                THEN note_links.provenance
-              ELSE excluded.provenance
-            END,
-            created_at = CASE
-              WHEN note_links.provenance IN ('human', 'system')
-                AND excluded.provenance = 'ai'
-                THEN note_links.created_at
-              ELSE excluded.created_at
-            END
-          """,
-          bindings: [
-            .text(fromNoteId),
-            .text(toNoteId),
-            .text(linkKind),
-            .text(provenance.rawValue),
-            .text(now)
-          ]
+        try linkNotesInDatabase(
+          from: fromNoteId,
+          to: toNoteId,
+          linkKind: linkKind,
+          provenance: provenance,
+          in: db
         )
-        return try requireNoteLink(from: fromNoteId, to: toNoteId, linkKind: linkKind, in: db)
       }
     }
   }
@@ -126,6 +102,7 @@ public extension NoteService {
   func appendConversationTurn(
     notebookId: String,
     turn: NoteConversationTurn,
+    sourceLinks: NoteConversationSourceLinks? = nil,
     assignedBy: String? = nil,
     originatingActionId: String? = nil
   ) throws -> Note {
@@ -135,6 +112,7 @@ public extension NoteService {
         let note = try appendConversationTurnInDatabase(
           notebookId: notebookId,
           turn: turn,
+          sourceLinks: sourceLinks,
           assignedBy: assignedBy,
           in: db
         )
@@ -159,6 +137,8 @@ public extension NoteService {
   func saveConversation(
     title conversationTitle: String,
     transcript: [NoteConversationTurn],
+    notebookMetaJSON: String? = nil,
+    sourceLinks: NoteConversationSourceLinks? = nil,
     assignedBy: String? = nil,
     originatingActionId: String? = nil
   ) throws -> SavedConversation {
@@ -169,9 +149,15 @@ public extension NoteService {
         try db.execute(
           """
           INSERT INTO notebooks (notebook_id, title, created_at, updated_at, meta_json)
-          VALUES (?, ?, ?, ?, NULL)
+          VALUES (?, ?, ?, ?, jsonb(?))
           """,
-          bindings: [.text(notebookId), .text(conversationTitle), .text(now), .text(now)]
+          bindings: [
+            .text(notebookId),
+            .text(conversationTitle),
+            .text(now),
+            .text(now),
+            .optionalText(notebookMetaJSON)
+          ]
         )
         try applyConversationNotebookKind(notebookId: notebookId, assignedBy: assignedBy, in: db)
 
@@ -181,6 +167,7 @@ public extension NoteService {
             try appendConversationTurnInDatabase(
               notebookId: notebookId,
               turn: turn,
+              sourceLinks: sourceLinks,
               assignedBy: assignedBy,
               in: db
             )
@@ -219,11 +206,17 @@ public extension NoteService {
 private func appendConversationTurnInDatabase(
   notebookId: String,
   turn: NoteConversationTurn,
+  sourceLinks: NoteConversationSourceLinks?,
   assignedBy: String?,
   in database: SQLiteDatabase
 ) throws -> Note {
   for sourceNoteId in turn.sourceNoteIds {
     _ = try requireNote(sourceNoteId, in: database)
+  }
+  if let sourceLinks {
+    for sourceNoteId in sourceLinks.sourceNoteIds {
+      _ = try requireNote(sourceNoteId, in: database)
+    }
   }
   let now = NoteStoreClock.system.now()
   let noteNumber = try nextNoteNumber(notebookId: notebookId, in: database)
@@ -247,15 +240,24 @@ private func appendConversationTurnInDatabase(
     ]
   )
   for sourceNoteId in turn.sourceNoteIds {
-    try database.execute(
-      """
-      INSERT INTO note_links (
-        from_note_id, to_note_id, link_kind, provenance, created_at
-      ) VALUES (?, ?, 'source-citation', 'system', ?)
-      ON CONFLICT(from_note_id, to_note_id, link_kind) DO NOTHING
-      """,
-      bindings: [.text(noteId), .text(sourceNoteId), .text(now)]
+    _ = try linkNotesInDatabase(
+      from: noteId,
+      to: sourceNoteId,
+      linkKind: "source-citation",
+      provenance: .system,
+      in: database
     )
+  }
+  if let sourceLinks {
+    for sourceNoteId in sourceLinks.sourceNoteIds {
+      _ = try linkNotesInDatabase(
+        from: noteId,
+        to: sourceNoteId,
+        linkKind: sourceLinks.linkKind,
+        provenance: sourceLinks.provenance,
+        in: database
+      )
+    }
   }
   try database.execute(
     "UPDATE notebooks SET updated_at = ? WHERE notebook_id = ?",
@@ -263,6 +265,51 @@ private func appendConversationTurnInDatabase(
   )
   try refreshFTS(noteId: noteId, previous: nil, in: database)
   return try requireNote(noteId, in: database)
+}
+
+@discardableResult
+func linkNotesInDatabase(
+  from fromNoteId: String,
+  to toNoteId: String,
+  linkKind: String,
+  provenance: NoteProvenance,
+  in database: SQLiteDatabase
+) throws -> NoteLink {
+  // Bind link_kind verbatim (no trimming / emptiness check) so this shared
+  // helper preserves the exact behavior of the public `linkNotes` mutation it
+  // was extracted from. The conversation source-link callers always pass a
+  // controlled, non-empty kind, so they need no additional validation here.
+  _ = try requireNote(fromNoteId, in: database)
+  _ = try requireNote(toNoteId, in: database)
+  let now = NoteStoreClock.system.now()
+  try database.execute(
+    """
+    INSERT INTO note_links (
+      from_note_id, to_note_id, link_kind, provenance, created_at
+    ) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(from_note_id, to_note_id, link_kind) DO UPDATE SET
+      provenance = CASE
+        WHEN note_links.provenance IN ('human', 'system')
+          AND excluded.provenance = 'ai'
+          THEN note_links.provenance
+        ELSE excluded.provenance
+      END,
+      created_at = CASE
+        WHEN note_links.provenance IN ('human', 'system')
+          AND excluded.provenance = 'ai'
+          THEN note_links.created_at
+        ELSE excluded.created_at
+      END
+    """,
+    bindings: [
+      .text(fromNoteId),
+      .text(toNoteId),
+      .text(linkKind),
+      .text(provenance.rawValue),
+      .text(now)
+    ]
+  )
+  return try requireNoteLink(from: fromNoteId, to: toNoteId, linkKind: linkKind, in: database)
 }
 
 private func applyConversationNotebookKind(

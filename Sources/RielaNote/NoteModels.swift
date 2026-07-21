@@ -447,6 +447,22 @@ public struct NoteConversationTurn: Equatable, Sendable {
   }
 }
 
+public struct NoteConversationSourceLinks: Equatable, Sendable {
+  public var sourceNoteIds: [String]
+  public var linkKind: String
+  public var provenance: NoteProvenance
+
+  public init(
+    sourceNoteIds: [String],
+    linkKind: String = "source-citation",
+    provenance: NoteProvenance = .ai
+  ) {
+    self.sourceNoteIds = sourceNoteIds
+    self.linkKind = linkKind
+    self.provenance = provenance
+  }
+}
+
 public struct SavedConversation: Equatable, Sendable {
   public var notebook: Notebook
   public var notes: [Note]

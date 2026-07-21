@@ -114,6 +114,16 @@ public struct RielaNoteNotebookListView: View {
           RielaNoteNotebookRow(notebook: notebook)
         }
         .buttonStyle(.plain)
+        .contextMenu {
+          Button {
+            Task {
+              await rielaNoteNotebookListExpandAction(viewModel: viewModel, notebook: notebook)
+            }
+          } label: {
+            Label("Expand with Agent", systemImage: "sparkles")
+          }
+          .disabled(viewModel.isExpandingNotebook(notebook.notebookId))
+        }
       }
       if viewModel.canLoadMoreNotebooks {
         Button {
@@ -207,6 +217,14 @@ public struct RielaNoteNotebookListView: View {
     }
   }
 
+}
+
+@MainActor
+func rielaNoteNotebookListExpandAction(
+  viewModel: RielaNoteLibraryViewModel,
+  notebook: Notebook
+) async {
+  await viewModel.expandNotebook(notebook)
 }
 
 struct RielaNoteNotebookRow: View {

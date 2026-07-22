@@ -1,4 +1,5 @@
 import ArgumentParser
+import Foundation
 
 protocol RielaClientFamilyArguments: ParsableArguments {}
 
@@ -17,6 +18,7 @@ enum WorkflowClientSubcommand: String, ExpressibleByArgument {
   case manifest
   case list
   case status
+  case register
   case versions
   case version
   case restore
@@ -145,6 +147,15 @@ extension CaseIterable where Self: RawRepresentable, RawValue == String {
 struct ParsedWorkflowFamily: RielaClientFamilyArguments {
   @Argument var subcommand: WorkflowClientSubcommand
   @Argument(parsing: .captureForPassthrough) var remainder: [String] = []
+}
+
+struct ParsedWorkflowRegisterArguments: RielaClientFamilyArguments {
+  @Argument var inputPath: String
+  @Flag var temporary = false
+  @Flag var overwrite = false
+  @Option(name: [.customLong("working-dir"), .customLong("working-directory")])
+  var workingDirectory = FileManager.default.currentDirectoryPath
+  @Option var output: WorkflowOutputFormat = .jsonl
 }
 
 struct ParsedPackageFamily: RielaClientFamilyArguments {

@@ -97,6 +97,7 @@ public struct WorkflowValidationCommandResult: Codable, Equatable, Sendable {
   public var packageVersion: String?
   public var packageDirectory: String?
   public var mutable: Bool
+  @CodableDefaultFalse public var temporary: Bool
   public var diagnostics: [WorkflowValidationDiagnostic]
   public var nodeValidationResults: [NodeValidationResult]
 
@@ -110,6 +111,7 @@ public struct WorkflowValidationCommandResult: Codable, Equatable, Sendable {
     packageVersion: String? = nil,
     packageDirectory: String? = nil,
     mutable: Bool = true,
+    temporary: Bool = false,
     diagnostics: [WorkflowValidationDiagnostic],
     nodeValidationResults: [NodeValidationResult]
   ) {
@@ -122,6 +124,7 @@ public struct WorkflowValidationCommandResult: Codable, Equatable, Sendable {
     self.packageVersion = packageVersion
     self.packageDirectory = packageDirectory
     self.mutable = mutable
+    self.temporary = temporary
     self.diagnostics = diagnostics
     self.nodeValidationResults = nodeValidationResults
   }

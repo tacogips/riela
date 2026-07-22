@@ -5,6 +5,28 @@ import RielaMemory
 import XCTest
 @testable import RielaCLI
 
+final class WorkflowCommandCatalogTests: XCTestCase {
+  func testListRejectsEmptyPositionalQuery() async {
+    let result = await RielaCLIApplication().run([
+      "workflow", "list", "", "--output", "json"
+    ])
+    XCTAssertEqual(result.exitCode, .usage)
+    XCTAssertTrue((result.stderr + result.stdout).contains("query must not be empty"))
+  }
+
+  func testListParserKeepsTemporaryExclusionAndQuery() throws {
+    let command = try RielaArgumentParser().parse([
+      "workflow", "list", "Needle", "--scope", "user", "--exclude-temporary", "--output", "table"
+    ])
+    guard case let .workflow(.list(options)) = command else {
+      return XCTFail("expected workflow list command")
+    }
+    XCTAssertEqual(options.target, "Needle")
+    XCTAssertEqual(options.output, .table)
+    XCTAssertTrue(options.arguments.contains("--exclude-temporary"))
+  }
+}
+
 extension WorkflowCommandTests {
   func testAutoScopeSkipsInvalidProjectWorkflowWhenUserWorkflowIsValid() async throws {
     let root = repositoryRoot()
@@ -362,8 +384,8 @@ extension WorkflowCommandTests {
     ])
     XCTAssertEqual(status.exitCode, .success)
     XCTAssertTrue(status.stderr.isEmpty)
-    XCTAssertTrue(status.stdout.contains("WORKFLOW\tSCOPE\tSOURCE\tSTATUS\tDIRECTORY"))
-    XCTAssertTrue(status.stdout.contains("demo\tproject\tworkflow\tvalid"))
+    XCTAssertTrue(status.stdout.contains("WORKFLOW\tSCOPE\tSOURCE\tPROVENANCE\tSTATUS\tDIRECTORY"))
+    XCTAssertTrue(status.stdout.contains("demo\tproject\tworkflow\tstandard\tvalid"))
 
     let manifestURL = tempDir.appendingPathComponent("riela-package.json")
     try """

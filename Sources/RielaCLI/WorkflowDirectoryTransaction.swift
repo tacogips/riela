@@ -5,7 +5,6 @@ import Glibc
 #endif
 import Foundation
 import RielaCore
-
 public enum WorkflowDirectoryTransactionPhase: String, Codable, Equatable, Sendable {
   case preparing
   case prepared
@@ -16,87 +15,10 @@ public enum WorkflowDirectoryTransactionPhase: String, Codable, Equatable, Senda
   case failed
   case recovered
 }
-
 public enum WorkflowDirectoryTransactionKind: String, Codable, Equatable, Sendable {
   case apply
   case restore
 }
-
-public struct WorkflowTransactionStableMetadata: Codable, Equatable, Sendable {
-  public var schemaVersion: Int
-  public var transactionId: String
-  public var target: WorkflowBundleIdentity
-  public var historyRoot: String
-
-  public init(
-    schemaVersion: Int = 1,
-    transactionId: String,
-    target: WorkflowBundleIdentity,
-    historyRoot: String
-  ) {
-    self.schemaVersion = schemaVersion
-    self.transactionId = transactionId
-    self.target = target
-    self.historyRoot = historyRoot
-  }
-
-  public static func url(forOwnershipRoot root: URL) -> URL {
-    root.deletingLastPathComponent().appendingPathComponent(
-      ".\(root.lastPathComponent).riela-active-transaction.json"
-    )
-  }
-}
-
-public enum WorkflowInventoryEntryType: String, Codable, Equatable, Sendable {
-  case regularFile = "regular-file"
-}
-
-public struct WorkflowUnownedInventoryEntry: Codable, Equatable, Sendable {
-  public var relativePath: String
-  public var entryType: WorkflowInventoryEntryType
-  public var contentDigest: String
-  public var byteCount: Int
-  public var executable: Bool
-
-  init(_ file: WorkflowOwnedFile) {
-    relativePath = file.metadata.relativePath
-    entryType = .regularFile
-    contentDigest = file.metadata.contentDigest
-    byteCount = file.metadata.byteCount
-    executable = file.metadata.executable
-  }
-}
-
-public enum WorkflowDirectoryOperationAuditIntent: Codable, Equatable, Sendable {
-  case mutation(LoopWorkflowMutationEvidence)
-  case restore(WorkflowRestoreRecord)
-
-  private enum CodingKeys: String, CodingKey { case kind, mutation, restore }
-  private enum Kind: String, Codable { case mutation, restore }
-
-  public init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    switch try container.decode(Kind.self, forKey: .kind) {
-    case .mutation:
-      self = .mutation(try container.decode(LoopWorkflowMutationEvidence.self, forKey: .mutation))
-    case .restore:
-      self = .restore(try container.decode(WorkflowRestoreRecord.self, forKey: .restore))
-    }
-  }
-
-  public func encode(to encoder: Encoder) throws {
-    var container = encoder.container(keyedBy: CodingKeys.self)
-    switch self {
-    case let .mutation(value):
-      try container.encode(Kind.mutation, forKey: .kind)
-      try container.encode(value, forKey: .mutation)
-    case let .restore(value):
-      try container.encode(Kind.restore, forKey: .kind)
-      try container.encode(value, forKey: .restore)
-    }
-  }
-}
-
 public struct WorkflowDirectoryTransactionRecord: Codable, Equatable, Sendable {
   public var schemaVersion: Int
   public var transactionId: String
@@ -110,10 +32,10 @@ public struct WorkflowDirectoryTransactionRecord: Codable, Equatable, Sendable {
   public var operationAuditIntent: WorkflowDirectoryOperationAuditIntent
   public var stagingPath: String
   public var rollbackPath: String
+  public var physicalOwnershipRoot: String?
   public var phase: WorkflowDirectoryTransactionPhase
   public var verification: [LoopVerificationEvidence]
   public var diagnostics: [String]
-
   private enum CodingKeys: String, CodingKey {
     case schemaVersion
     case transactionId
@@ -127,11 +49,11 @@ public struct WorkflowDirectoryTransactionRecord: Codable, Equatable, Sendable {
     case operationAuditIntent
     case stagingPath
     case rollbackPath
+    case physicalOwnershipRoot
     case phase
     case verification
     case diagnostics
   }
-
   public init(
     schemaVersion: Int = 1,
     transactionId: String,
@@ -145,6 +67,7 @@ public struct WorkflowDirectoryTransactionRecord: Codable, Equatable, Sendable {
     operationAuditIntent: WorkflowDirectoryOperationAuditIntent,
     stagingPath: String,
     rollbackPath: String,
+    physicalOwnershipRoot: String? = nil,
     phase: WorkflowDirectoryTransactionPhase,
     verification: [LoopVerificationEvidence] = [],
     diagnostics: [String] = []
@@ -161,11 +84,11 @@ public struct WorkflowDirectoryTransactionRecord: Codable, Equatable, Sendable {
     self.operationAuditIntent = operationAuditIntent
     self.stagingPath = stagingPath
     self.rollbackPath = rollbackPath
+    self.physicalOwnershipRoot = physicalOwnershipRoot
     self.phase = phase
     self.verification = verification
     self.diagnostics = diagnostics
   }
-
   public init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
@@ -183,12 +106,12 @@ public struct WorkflowDirectoryTransactionRecord: Codable, Equatable, Sendable {
     operationAuditIntent = try container.decode(WorkflowDirectoryOperationAuditIntent.self, forKey: .operationAuditIntent)
     stagingPath = try container.decode(String.self, forKey: .stagingPath)
     rollbackPath = try container.decode(String.self, forKey: .rollbackPath)
+    physicalOwnershipRoot = try container.decodeIfPresent(String.self, forKey: .physicalOwnershipRoot)
     phase = try container.decode(WorkflowDirectoryTransactionPhase.self, forKey: .phase)
     verification = try container.decodeIfPresent([LoopVerificationEvidence].self, forKey: .verification) ?? []
     diagnostics = try container.decodeIfPresent([String].self, forKey: .diagnostics) ?? []
   }
 }
-
 public struct WorkflowDirectoryTransactionAudit: Codable, Equatable, Sendable {
   public var schemaVersion: Int
   public var transactionId: String
@@ -201,7 +124,6 @@ public struct WorkflowDirectoryTransactionAudit: Codable, Equatable, Sendable {
   public var outcome: WorkflowHistoryOutcome
   public var verification: [LoopVerificationEvidence]
   public var diagnostics: [String]
-
   public init(
     transaction: WorkflowDirectoryTransactionRecord,
     resultBundleDigest: String?,
@@ -221,11 +143,9 @@ public struct WorkflowDirectoryTransactionAudit: Codable, Equatable, Sendable {
     self.diagnostics = diagnostics
   }
 }
-
 protocol WorkflowTransactionAuditPersisting: Sendable {
   func persist(_ audit: WorkflowDirectoryTransactionAudit, historyRoot: URL) throws
 }
-
 struct FileWorkflowTransactionAuditStore: WorkflowTransactionAuditPersisting {
   func persist(_ audit: WorkflowDirectoryTransactionAudit, historyRoot: URL) throws {
     let directory = historyRoot.appendingPathComponent("audits", isDirectory: true)
@@ -244,13 +164,11 @@ struct FileWorkflowTransactionAuditStore: WorkflowTransactionAuditPersisting {
     try WorkflowHistorySecurePersistence.writeCanonical(audit, to: url, historyRoot: historyRoot, overwrite: false)
   }
 }
-
 public struct WorkflowDirectoryTransactionResult: Equatable, Sendable {
   public var transactionId: String
   public var resultBundleDigest: String
   public var verification: [LoopVerificationEvidence]
 }
-
 private struct DirectoryTransactionPreflightInput {
   var target: WorkflowBundleIdentity
   var historyRoot: URL
@@ -265,6 +183,8 @@ private struct DirectoryTransactionPreflightInput {
   var rollback: URL
   var transactions: URL
   var active: URL
+  var usesDetachedPhysicalRoot: Bool
+  var detachedRoot: WorkflowDetachedOwnershipPinnedRoot?
 }
 
 private struct DirectoryTransactionPreflightResult {
@@ -278,24 +198,28 @@ public struct WorkflowDirectoryTransactionCoordinator: Sendable {
   private let preflightAttemptStore: any WorkflowPreflightAttemptPersisting
   private let lockedPreflightHook: @Sendable () throws -> Void
   private let boundaryHook: @Sendable (WorkflowDirectoryTransactionBoundary) throws -> Void
+  let detachedRecoveryValidatedHook: @Sendable () throws -> Void
 
   public init() {
     auditStore = FileWorkflowTransactionAuditStore()
     preflightAttemptStore = FileWorkflowPreflightAttemptStore()
     lockedPreflightHook = {}
     boundaryHook = { _ in }
+    detachedRecoveryValidatedHook = {}
   }
 
   init(
     auditStore: any WorkflowTransactionAuditPersisting,
     preflightAttemptStore: any WorkflowPreflightAttemptPersisting = FileWorkflowPreflightAttemptStore(),
     lockedPreflightHook: @escaping @Sendable () throws -> Void = {},
-    boundaryHook: @escaping @Sendable (WorkflowDirectoryTransactionBoundary) throws -> Void = { _ in }
+    boundaryHook: @escaping @Sendable (WorkflowDirectoryTransactionBoundary) throws -> Void = { _ in },
+    detachedRecoveryValidatedHook: @escaping @Sendable () throws -> Void = {}
   ) {
     self.auditStore = auditStore
     self.preflightAttemptStore = preflightAttemptStore
     self.lockedPreflightHook = lockedPreflightHook
     self.boundaryHook = boundaryHook
+    self.detachedRecoveryValidatedHook = detachedRecoveryValidatedHook
   }
 
   public func commit(
@@ -307,21 +231,15 @@ public struct WorkflowDirectoryTransactionCoordinator: Sendable {
     preOperationSnapshotId: String,
     operationAuditIntent: ((String) -> WorkflowDirectoryOperationAuditIntent)? = nil,
     persistOperationAudit: (WorkflowDirectoryTransactionResult) throws -> Void = { _ in },
+    physicalOwnershipRoot: URL? = nil,
+    postCommitPublication: (URL) throws -> Void = { _ in },
     mutateStaging: (URL) throws -> Void
   ) throws -> WorkflowDirectoryTransactionResult {
     let transactionId = "transaction-\(UUID().uuidString.lowercased())"
-    var attempt = WorkflowPreflightAttemptRecord(
-      attemptId: "attempt-\(transactionId)",
-      transactionId: transactionId,
-      kind: kind,
-      target: target,
-      expectedBeforeBundleDigest: expectedBeforeBundleDigest,
-      expectedAfterBundleDigest: expectedAfterBundleDigest,
-      preOperationSnapshotId: preOperationSnapshotId,
-      status: .attempted,
-      mutationOccurred: false,
-      diagnostics: [],
-      startedAt: millisecondDate()
+    var attempt = makeWorkflowTransactionPreflightAttempt(
+      transactionId: transactionId, kind: kind, target: target,
+      beforeDigest: expectedBeforeBundleDigest, afterDigest: expectedAfterBundleDigest,
+      snapshotId: preOperationSnapshotId
     )
     try preflightAttemptStore.persist(attempt, historyRoot: historyRoot)
     let auditIntent = operationAuditIntent?(transactionId) ?? defaultAuditIntent(
@@ -332,7 +250,13 @@ public struct WorkflowDirectoryTransactionCoordinator: Sendable {
       expectedAfterBundleDigest: expectedAfterBundleDigest,
       preOperationSnapshotId: preOperationSnapshotId
     )
-    let live = URL(fileURLWithPath: target.ownershipRoot, isDirectory: true)
+    let detachedRoot = try physicalOwnershipRoot.map {
+      try WorkflowDetachedOwnershipPinnedRoot(candidate: $0, requireRoot: true)
+    }
+    let detachedIdentity = detachedRoot?.identity
+    let fileSystem = WorkflowDirectoryCommitFileSystem(detachedRoot: detachedRoot)
+    let live = detachedIdentity?.root
+      ?? URL(fileURLWithPath: target.ownershipRoot, isDirectory: true)
     let parent = live.deletingLastPathComponent()
     let staging = parent.appendingPathComponent(".\(live.lastPathComponent).riela-stage-\(transactionId)", isDirectory: true)
     let rollback = parent.appendingPathComponent(".\(live.lastPathComponent).riela-rollback-\(transactionId)", isDirectory: true)
@@ -343,7 +267,10 @@ public struct WorkflowDirectoryTransactionCoordinator: Sendable {
     let stableMetadata = WorkflowTransactionStableMetadata(
       transactionId: transactionId,
       target: target,
-      historyRoot: historyRoot.standardizedFileURL.path
+      historyRoot: historyRoot.standardizedFileURL.path,
+      physicalOwnershipRoot: detachedIdentity?.root.path,
+      physicalOwnershipContainerDevice: detachedIdentity?.containerDevice,
+      physicalOwnershipContainerInode: detachedIdentity?.containerInode
     )
     let preflightInput = DirectoryTransactionPreflightInput(
       target: target,
@@ -358,7 +285,9 @@ public struct WorkflowDirectoryTransactionCoordinator: Sendable {
       staging: staging,
       rollback: rollback,
       transactions: transactions,
-      active: active
+      active: active,
+      usesDetachedPhysicalRoot: physicalOwnershipRoot != nil,
+      detachedRoot: detachedRoot
     )
     let preflight: DirectoryTransactionPreflightResult
     do {
@@ -381,24 +310,20 @@ public struct WorkflowDirectoryTransactionCoordinator: Sendable {
         overwrite: false
       )
       try boundaryHook(.activeMarker)
-      try WorkflowHistorySecurePersistence.writeCanonical(stableMetadata, to: stableMarker, historyRoot: parent)
+      try fileSystem.writeStableMetadata(stableMetadata, marker: stableMarker, parent: parent)
       try boundaryHook(.stableMarker)
-      try FileManager.default.copyItem(at: live, to: staging)
-      try mutateStaging(staging)
-      record.verification = try WorkflowStagedVerifier().verify(target: target, stagingRoot: staging)
-        .sorted { $0.id < $1.id }
-      let staged = try WorkflowHistoryIdentityResolver.inventory(for: target, rootOverride: staging)
-      guard staged.bundleDigest == expectedAfterBundleDigest else {
-        throw CLIUsageError("staged workflow digest does not match reviewed result")
-      }
-      guard staged.unownedFiles.map(\.metadata) == current.unownedFiles.map(\.metadata) else {
-        throw CLIUsageError("staged workflow changed unowned files")
-      }
+      record.verification = try fileSystem.prepareStaging(
+        target: target,
+        live: live,
+        staging: staging,
+        expectedAfterDigest: expectedAfterBundleDigest,
+        expectedUnowned: current.unownedFiles.map(\.metadata),
+        mutate: mutateStaging
+      )
       record.phase = .prepared
-      try syncTree(staging)
       try write(record, to: recordURL, active: active)
       try boundaryHook(.preparedRecord)
-      let immediatelyBeforeCommit = try WorkflowHistoryIdentityResolver.inventory(for: target)
+      let immediatelyBeforeCommit = try fileSystem.inventory(for: target, at: live)
       guard immediatelyBeforeCommit.bundleDigest == expectedBeforeBundleDigest,
             immediatelyBeforeCommit.unownedFiles.map(\.metadata) == current.unownedFiles.map(\.metadata) else {
         throw CLIUsageError("workflow owned or unowned files drifted immediately before commit")
@@ -406,34 +331,37 @@ public struct WorkflowDirectoryTransactionCoordinator: Sendable {
       record.phase = .committing
       try write(record, to: recordURL, active: active)
       try boundaryHook(.committingRecord)
-      guard try directoryExistsWithoutFollowingLinks(live),
-            try directoryExistsWithoutFollowingLinks(staging),
-            try !historyEntryExistsWithoutFollowingLinks(rollback) else {
+      try fileSystem.requireConfiguredPathIdentity()
+      guard try fileSystem.directoryExists(live),
+            try fileSystem.directoryExists(staging),
+            try !fileSystem.entryExists(rollback) else {
         throw CLIUsageError("workflow transaction paths changed type before the first rename")
       }
-      try moveSiblingDirectory(from: live, to: rollback, parent: parent)
-      try syncDirectory(parent)
+      try fileSystem.renameDirectory(from: live, to: rollback, parent: parent)
+      try fileSystem.syncParent(parent)
       try boundaryHook(.liveToRollbackRename)
       record.phase = .liveMoved
       try write(record, to: recordURL, active: active)
       try boundaryHook(.liveMovedRecord)
-      guard try !historyEntryExistsWithoutFollowingLinks(live),
-            try directoryExistsWithoutFollowingLinks(rollback),
-            try directoryExistsWithoutFollowingLinks(staging) else {
+      try fileSystem.requireConfiguredPathIdentity()
+      guard try !fileSystem.entryExists(live),
+            try fileSystem.directoryExists(rollback),
+            try fileSystem.directoryExists(staging) else {
         throw CLIUsageError("workflow transaction paths changed type before publication")
       }
-      try moveSiblingDirectory(from: staging, to: live, parent: parent)
-      try syncDirectory(parent)
+      try fileSystem.renameDirectory(from: staging, to: live, parent: parent)
+      try fileSystem.syncParent(parent)
       try boundaryHook(.stagingToLiveRename)
       record.phase = .published
       try write(record, to: recordURL, active: active)
       try boundaryHook(.publishedRecord)
-      let published = try WorkflowHistoryIdentityResolver.inventory(for: target)
+      let published = try fileSystem.inventory(for: target, at: live)
       guard published.bundleDigest == expectedAfterBundleDigest,
             published.unownedFiles.map(WorkflowUnownedInventoryEntry.init) == record.expectedAfterUnownedInventory else {
         throw CLIUsageError("published workflow failed post-commit digest verification")
       }
-      try verifyTree(
+      try postCommitPublication(try fileSystem.accessURL(live))
+      try fileSystem.verifyTree(
         rollback,
         target: target,
         digest: expectedBeforeBundleDigest,
@@ -457,10 +385,14 @@ public struct WorkflowDirectoryTransactionCoordinator: Sendable {
       record.phase = .committed
       try write(record, to: recordURL, active: nil)
       try boundaryHook(.committedRecord)
-      try FileManager.default.removeItem(at: rollback)
-      try syncDirectory(parent)
+      try fileSystem.requireConfiguredPathIdentity()
+      try fileSystem.removeDirectory(rollback)
+      try fileSystem.syncParent(parent)
       try boundaryHook(.rollbackUnlink)
-      try cleanupMarkers(stableMarker: stableMarker, targetParent: parent, active: active, historyRoot: historyRoot)
+      try cleanupMarkers(
+        stableMarker: stableMarker, targetParent: parent, active: active,
+        historyRoot: historyRoot, detachedRoot: detachedRoot
+      )
       return result
     } catch {
       if error is WorkflowDirectoryInjectedInterruption { throw error }
@@ -482,11 +414,14 @@ public struct WorkflowDirectoryTransactionCoordinator: Sendable {
           ), historyRoot: historyRoot)
           record.phase = .failed
           try write(record, to: recordURL, active: nil)
-          if try historyEntryExistsWithoutFollowingLinks(staging) {
-            try FileManager.default.removeItem(at: staging)
-            try syncDirectory(parent)
+          if try fileSystem.entryExists(staging) {
+            try fileSystem.removeDirectory(staging)
+            try fileSystem.syncParent(parent)
           }
-          try cleanupMarkers(stableMarker: stableMarker, targetParent: parent, active: active, historyRoot: historyRoot)
+          try cleanupMarkers(
+            stableMarker: stableMarker, targetParent: parent, active: active,
+            historyRoot: historyRoot, detachedRoot: detachedRoot
+          )
         } catch let auditError {
           record.phase = recoverablePhase
           try? write(record, to: recordURL, active: active)
@@ -508,6 +443,7 @@ public struct WorkflowDirectoryTransactionCoordinator: Sendable {
   public func recover(
     historyRoot: URL,
     target: WorkflowBundleIdentity,
+    authoritativeBundleDigest: String? = nil,
     lockAlreadyHeld: Bool = false
   ) throws -> WorkflowDirectoryTransactionRecord? {
     let transactions = historyRoot.appendingPathComponent("transactions", isDirectory: true)
@@ -516,39 +452,36 @@ public struct WorkflowDirectoryTransactionCoordinator: Sendable {
     defer {
       if let lockDescriptor { releaseWorkflowTargetLock(lockDescriptor) }
     }
-    guard try directoryExistsWithoutFollowingLinks(transactions) else { return nil }
-    guard let discovered = try discoverWorkflowTransaction(
-      transactions: transactions,
-      active: active,
-      historyRoot: historyRoot
+    guard let context = try prepareLockedRecovery(
+      transactions: transactions, active: active, historyRoot: historyRoot, target: target
     ) else { return nil }
-    guard discovered.record.target == target else {
-      throw CLIUsageError("workflow transaction recovery target does not match the locked canonical target")
-    }
-    var record = discovered.record
-    let recordURL = discovered.recordURL
-    let snapshot = try WorkflowHistoryStore(root: historyRoot).loadSnapshot(
-      record.preOperationSnapshotId,
-      expectedIdentity: record.target
+    var record = context.record
+    let recordURL = context.recordURL
+    let live = context.live
+    let staging = context.staging
+    let rollback = context.rollback
+    let parent = context.parent
+    let stableMarker = context.stableMarker
+    let detachedRoot = context.detachedRoot
+    let recoveryFileSystem = WorkflowDirectoryRecoveryFileSystem(
+      target: record.target, parent: parent, detachedRoot: detachedRoot
     )
-    guard snapshot.bundleDigest == record.beforeBundleDigest else {
-      throw CLIUsageError("recovery snapshot does not match the transaction before digest")
-    }
-    let live = URL(fileURLWithPath: record.target.ownershipRoot, isDirectory: true)
-    let staging = URL(fileURLWithPath: record.stagingPath, isDirectory: true)
-    let rollback = URL(fileURLWithPath: record.rollbackPath, isDirectory: true)
-    let present: (URL) throws -> Bool = { try directoryExistsWithoutFollowingLinks($0) }
-    let parent = live.deletingLastPathComponent()
-    let stableMarker = WorkflowTransactionStableMetadata.url(forOwnershipRoot: live)
-    try validateWorkflowTransactionStableMetadata(
-      record: record,
-      marker: stableMarker,
+    if let recovered = try recoverUnpublishedDetachedTransaction(
+      record: &record,
+      authoritativeBundleDigest: authoritativeBundleDigest,
+      detachedRoot: detachedRoot,
+      recordURL: recordURL,
+      active: active,
+      stableMarker: stableMarker,
       historyRoot: historyRoot
-    )
+    ) {
+      return recovered
+    }
     var terminalOutcome = WorkflowHistoryOutcome.recovered
     switch record.phase {
     case .preparing, .prepared:
-      guard try present(live), try !present(rollback) else {
+      guard try recoveryFileSystem.directoryExists(live),
+            try !recoveryFileSystem.directoryExists(rollback) else {
         throw CLIUsageError("ambiguous pre-commit workflow transaction state; no recovery action taken")
       }
       let inventory = try WorkflowHistoryIdentityResolver.inventory(for: record.target)
@@ -556,39 +489,59 @@ public struct WorkflowDirectoryTransactionCoordinator: Sendable {
             inventory.unownedFiles.map(WorkflowUnownedInventoryEntry.init) == record.beforeUnownedInventory else {
         throw CLIUsageError("pre-commit workflow tree does not match transaction before digest")
       }
-      if try present(staging) { try FileManager.default.removeItem(at: staging) }
-      try syncDirectory(parent)
+      if try recoveryFileSystem.directoryExists(staging) { try recoveryFileSystem.remove(staging) }
+      try recoveryFileSystem.syncParent()
       terminalOutcome = .failed
     case .committing:
-      switch (try present(live), try present(rollback), try present(staging)) {
+      switch (try recoveryFileSystem.directoryExists(live),
+              try recoveryFileSystem.directoryExists(rollback),
+              try recoveryFileSystem.directoryExists(staging)) {
       case (true, false, true):
-        try verifyTree(live, target: record.target, digest: record.beforeBundleDigest, unowned: record.beforeUnownedInventory)
-        try verifyTree(staging, target: record.target, digest: record.expectedAfterBundleDigest, unowned: record.expectedAfterUnownedInventory)
-        try FileManager.default.removeItem(at: staging)
+        try recoveryFileSystem.verify(live, digest: record.beforeBundleDigest, unowned: record.beforeUnownedInventory)
+        try recoveryFileSystem.verify(
+          staging,
+          digest: record.expectedAfterBundleDigest,
+          unowned: record.expectedAfterUnownedInventory
+        )
+        try recoveryFileSystem.remove(staging)
       case (false, true, true):
-        try verifyTree(rollback, target: record.target, digest: record.beforeBundleDigest, unowned: record.beforeUnownedInventory)
-        try verifyTree(staging, target: record.target, digest: record.expectedAfterBundleDigest, unowned: record.expectedAfterUnownedInventory)
-        try moveSiblingDirectory(from: rollback, to: live, parent: parent)
-        try syncDirectory(parent)
-        try FileManager.default.removeItem(at: staging)
+        try recoveryFileSystem.verify(rollback, digest: record.beforeBundleDigest, unowned: record.beforeUnownedInventory)
+        try recoveryFileSystem.verify(
+          staging,
+          digest: record.expectedAfterBundleDigest,
+          unowned: record.expectedAfterUnownedInventory
+        )
+        try recoveryFileSystem.move(rollback, to: live)
+        try recoveryFileSystem.syncParent()
+        try recoveryFileSystem.remove(staging)
       default:
         throw CLIUsageError("ambiguous committing workflow transaction state; no recovery action taken")
       }
-      try syncDirectory(parent)
+      try recoveryFileSystem.syncParent()
     case .liveMoved:
-      switch (try present(live), try present(rollback), try present(staging)) {
+      switch (try recoveryFileSystem.directoryExists(live),
+              try recoveryFileSystem.directoryExists(rollback),
+              try recoveryFileSystem.directoryExists(staging)) {
       case (false, true, false):
-        try verifyTree(rollback, target: record.target, digest: record.beforeBundleDigest, unowned: record.beforeUnownedInventory)
-        try moveSiblingDirectory(from: rollback, to: live, parent: parent)
+        try recoveryFileSystem.verify(rollback, digest: record.beforeBundleDigest, unowned: record.beforeUnownedInventory)
+        try recoveryFileSystem.move(rollback, to: live)
       case (false, true, true):
-        try verifyTree(rollback, target: record.target, digest: record.beforeBundleDigest, unowned: record.beforeUnownedInventory)
-        try verifyTree(staging, target: record.target, digest: record.expectedAfterBundleDigest, unowned: record.expectedAfterUnownedInventory)
-        try moveSiblingDirectory(from: rollback, to: live, parent: parent)
-        try syncDirectory(parent)
-        try FileManager.default.removeItem(at: staging)
+        try recoveryFileSystem.verify(rollback, digest: record.beforeBundleDigest, unowned: record.beforeUnownedInventory)
+        try recoveryFileSystem.verify(
+          staging,
+          digest: record.expectedAfterBundleDigest,
+          unowned: record.expectedAfterUnownedInventory
+        )
+        try recoveryFileSystem.move(rollback, to: live)
+        try recoveryFileSystem.syncParent()
+        try recoveryFileSystem.remove(staging)
       case (true, true, false):
-        try verifyTree(live, target: record.target, digest: record.expectedAfterBundleDigest, unowned: record.expectedAfterUnownedInventory)
-        try verifyTree(rollback, target: record.target, digest: record.beforeBundleDigest, unowned: record.beforeUnownedInventory)
+        try recoveryFileSystem.verify(
+          live,
+          digest: record.expectedAfterBundleDigest,
+          unowned: record.expectedAfterUnownedInventory
+        )
+        try recoveryFileSystem.verify(rollback, digest: record.beforeBundleDigest, unowned: record.beforeUnownedInventory)
         record.phase = .published
         try write(record, to: recordURL, active: active)
         try persistSpecificOperationAudit(
@@ -604,21 +557,27 @@ public struct WorkflowDirectoryTransactionCoordinator: Sendable {
         ), historyRoot: historyRoot)
         record.phase = .committed
         try write(record, to: recordURL, active: nil)
-        try FileManager.default.removeItem(at: rollback)
-        try syncDirectory(parent)
-        try cleanupMarkers(stableMarker: stableMarker, targetParent: parent, active: active, historyRoot: historyRoot)
-        try syncDirectory(parent)
+        try recoveryFileSystem.remove(rollback)
+        try recoveryFileSystem.syncParent()
+        try cleanupRecoveryMarkers(context: context, active: active, historyRoot: historyRoot)
+        try recoveryFileSystem.syncParent()
         return record
       default:
         throw CLIUsageError("ambiguous live-moved workflow transaction state; no recovery action taken")
       }
-      try syncDirectory(parent)
+      try recoveryFileSystem.syncParent()
     case .published:
-      guard try present(live), try present(rollback), try !present(staging) else {
+      guard try recoveryFileSystem.directoryExists(live),
+            try recoveryFileSystem.directoryExists(rollback),
+            try !recoveryFileSystem.directoryExists(staging) else {
         throw CLIUsageError("ambiguous published workflow transaction state; no recovery action taken")
       }
-      try verifyTree(live, target: record.target, digest: record.expectedAfterBundleDigest, unowned: record.expectedAfterUnownedInventory)
-      try verifyTree(rollback, target: record.target, digest: record.beforeBundleDigest, unowned: record.beforeUnownedInventory)
+      try recoveryFileSystem.verify(
+        live,
+        digest: record.expectedAfterBundleDigest,
+        unowned: record.expectedAfterUnownedInventory
+      )
+      try recoveryFileSystem.verify(rollback, digest: record.beforeBundleDigest, unowned: record.beforeUnownedInventory)
       try persistSpecificOperationAudit(
         record,
         resultBundleDigest: record.expectedAfterBundleDigest,
@@ -632,35 +591,37 @@ public struct WorkflowDirectoryTransactionCoordinator: Sendable {
       ), historyRoot: historyRoot)
       record.phase = .committed
       try write(record, to: recordURL, active: nil)
-      try FileManager.default.removeItem(at: rollback)
-      try syncDirectory(parent)
-      try cleanupMarkers(stableMarker: stableMarker, targetParent: parent, active: active, historyRoot: historyRoot)
-      try syncDirectory(parent)
+      try recoveryFileSystem.remove(rollback)
+      try recoveryFileSystem.syncParent()
+      try cleanupRecoveryMarkers(context: context, active: active, historyRoot: historyRoot)
+      try recoveryFileSystem.syncParent()
       return record
     case .committed:
-      guard try present(live), try !present(staging) else {
+      guard try recoveryFileSystem.directoryExists(live),
+            try !recoveryFileSystem.directoryExists(staging) else {
         throw CLIUsageError("terminal committed workflow transaction has ambiguous tree state")
       }
-      try verifyTree(live, target: record.target, digest: record.expectedAfterBundleDigest, unowned: record.expectedAfterUnownedInventory)
+      try recoveryFileSystem.verify(
+        live,
+        digest: record.expectedAfterBundleDigest,
+        unowned: record.expectedAfterUnownedInventory
+      )
       try completeCommittedAudits(record, historyRoot: historyRoot)
-      if try present(rollback) {
-        try verifyTree(
-          rollback,
-          target: record.target,
-          digest: record.beforeBundleDigest,
-          unowned: record.beforeUnownedInventory
-        )
-        try FileManager.default.removeItem(at: rollback)
-        try syncDirectory(parent)
+      if try recoveryFileSystem.directoryExists(rollback) {
+        try recoveryFileSystem.verify(rollback, digest: record.beforeBundleDigest, unowned: record.beforeUnownedInventory)
+        try recoveryFileSystem.remove(rollback)
+        try recoveryFileSystem.syncParent()
       }
-      try cleanupMarkers(stableMarker: stableMarker, targetParent: parent, active: active, historyRoot: historyRoot)
+      try cleanupRecoveryMarkers(context: context, active: active, historyRoot: historyRoot)
       return record
     case .failed, .recovered:
-      guard try present(live), try !present(rollback), try !present(staging) else {
+      guard try recoveryFileSystem.directoryExists(live),
+            try !recoveryFileSystem.directoryExists(rollback),
+            try !recoveryFileSystem.directoryExists(staging) else {
         throw CLIUsageError("terminal rolled-back workflow transaction has ambiguous tree state")
       }
-      try verifyTree(live, target: record.target, digest: record.beforeBundleDigest, unowned: record.beforeUnownedInventory)
-      try cleanupMarkers(stableMarker: stableMarker, targetParent: parent, active: active, historyRoot: historyRoot)
+      try recoveryFileSystem.verify(live, digest: record.beforeBundleDigest, unowned: record.beforeUnownedInventory)
+      try cleanupRecoveryMarkers(context: context, active: active, historyRoot: historyRoot)
       return record
     }
     try persistSpecificOperationAudit(
@@ -679,7 +640,85 @@ public struct WorkflowDirectoryTransactionCoordinator: Sendable {
     ), historyRoot: historyRoot)
     record.phase = terminalOutcome == .failed ? .failed : .recovered
     try write(record, to: recordURL, active: nil)
-    try cleanupMarkers(stableMarker: stableMarker, targetParent: parent, active: active, historyRoot: historyRoot)
+    try cleanupRecoveryMarkers(context: context, active: active, historyRoot: historyRoot)
+    return record
+  }
+
+  private func cleanupRecoveryMarkers(
+    context: WorkflowDirectoryRecoveryContext,
+    active: URL,
+    historyRoot: URL
+  ) throws {
+    try cleanupMarkers(
+      stableMarker: context.stableMarker,
+      targetParent: context.parent,
+      active: active,
+      historyRoot: historyRoot,
+      detachedRoot: context.detachedRoot
+    )
+  }
+  private func recoverUnpublishedDetachedTransaction(
+    record: inout WorkflowDirectoryTransactionRecord,
+    authoritativeBundleDigest: String?,
+    detachedRoot: WorkflowDetachedOwnershipPinnedRoot?,
+    recordURL: URL,
+    active: URL,
+    stableMarker: URL,
+    historyRoot: URL
+  ) throws -> WorkflowDirectoryTransactionRecord? {
+    guard record.physicalOwnershipRoot != nil, let detachedRoot,
+          [.liveMoved, .published].contains(record.phase) else { return nil }
+    guard let authoritativeBundleDigest else {
+      throw CLIUsageError("detached workflow recovery requires an authoritative registry digest")
+    }
+    if authoritativeBundleDigest != record.beforeBundleDigest {
+      guard authoritativeBundleDigest == record.expectedAfterBundleDigest else {
+        throw CLIUsageError("authoritative registry digest does not match detached recovery state")
+      }
+      return nil
+    }
+    let liveName = "root"
+    let stagingName = URL(fileURLWithPath: record.stagingPath).lastPathComponent
+    let rollbackName = URL(fileURLWithPath: record.rollbackPath).lastPathComponent
+    let state = (try detachedRoot.directoryExists(liveName),
+                 try detachedRoot.directoryExists(rollbackName),
+                 try detachedRoot.directoryExists(stagingName))
+    if record.phase == .liveMoved, state == (false, true, true) { return nil }
+    guard state == (true, true, false) else {
+      throw CLIUsageError("ambiguous detached workflow publication state; no recovery action taken")
+    }
+    let liveInventory = try detachedRoot.inventory(for: record.target, directory: liveName)
+    let rollbackInventory = try detachedRoot.inventory(for: record.target, directory: rollbackName)
+    guard liveInventory.bundleDigest == record.expectedAfterBundleDigest,
+          liveInventory.unownedFiles.map(WorkflowUnownedInventoryEntry.init) == record.expectedAfterUnownedInventory,
+          rollbackInventory.bundleDigest == record.beforeBundleDigest,
+          rollbackInventory.unownedFiles.map(WorkflowUnownedInventoryEntry.init) == record.beforeUnownedInventory else {
+      throw CLIUsageError("detached workflow recovery tree digest verification failed")
+    }
+    try detachedRoot.removeDirectory(liveName)
+    try detachedRoot.renameDirectory(from: rollbackName, to: liveName)
+    try detachedRoot.sync()
+    try persistSpecificOperationAudit(
+      record,
+      resultBundleDigest: record.beforeBundleDigest,
+      outcome: .failed,
+      historyRoot: historyRoot
+    )
+    try auditStore.persist(WorkflowDirectoryTransactionAudit(
+      transaction: record,
+      resultBundleDigest: record.beforeBundleDigest,
+      outcome: .failed,
+      diagnostics: ["registry publication did not reach its authoritative commit point"]
+    ), historyRoot: historyRoot)
+    record.phase = .recovered
+    try write(record, to: recordURL, active: nil)
+    try cleanupMarkers(
+      stableMarker: stableMarker,
+      targetParent: stableMarker.deletingLastPathComponent(),
+      active: active,
+      historyRoot: historyRoot,
+      detachedRoot: detachedRoot
+    )
     return record
   }
 
@@ -740,7 +779,14 @@ public struct WorkflowDirectoryTransactionCoordinator: Sendable {
         throw CLIUsageError("workflow target has a nonterminal directory transaction")
       }
       try lockedPreflightHook()
-      try validateLockedTarget(input.target, live: input.live, parent: input.parent)
+      try input.detachedRoot?.requireConfiguredPathIdentity()
+      try validateLockedTarget(
+        input.target,
+        live: input.live,
+        parent: input.parent,
+        usesDetachedPhysicalRoot: input.usesDetachedPhysicalRoot,
+        detachedRoot: input.detachedRoot
+      )
       let snapshot = try WorkflowHistoryStore(root: input.historyRoot).loadSnapshot(
         input.preOperationSnapshotId,
         expectedIdentity: input.target
@@ -748,7 +794,8 @@ public struct WorkflowDirectoryTransactionCoordinator: Sendable {
       guard snapshot.bundleDigest == input.expectedBeforeBundleDigest else {
         throw CLIUsageError("pre-operation snapshot does not match the transaction before digest")
       }
-      let current = try WorkflowHistoryIdentityResolver.inventory(for: input.target)
+      let current = try WorkflowDirectoryCommitFileSystem(detachedRoot: input.detachedRoot)
+        .inventory(for: input.target, at: input.live)
       guard current.bundleDigest == input.expectedBeforeBundleDigest else {
         throw CLIUsageError("workflow bundle changed since review; refusing dirty mutation")
       }
@@ -764,6 +811,7 @@ public struct WorkflowDirectoryTransactionCoordinator: Sendable {
         operationAuditIntent: input.auditIntent,
         stagingPath: input.staging.path,
         rollbackPath: input.rollback.path,
+        physicalOwnershipRoot: input.usesDetachedPhysicalRoot ? input.live.path : nil,
         phase: .preparing
       )
       attempt.status = .transactionStarted
@@ -802,20 +850,31 @@ public struct WorkflowDirectoryTransactionCoordinator: Sendable {
   private func validateLockedTarget(
     _ target: WorkflowBundleIdentity,
     live: URL,
-    parent: URL
+    parent: URL,
+    usesDetachedPhysicalRoot: Bool,
+    detachedRoot: WorkflowDetachedOwnershipPinnedRoot?
   ) throws {
+    let ownershipMatches = usesDetachedPhysicalRoot
+      || live.resolvingSymlinksInPath().standardizedFileURL.path == target.ownershipRoot
     guard target.sourceMutable,
           target.sourceKind != .installedPackage,
           target.packageDirectory == nil,
-          live.resolvingSymlinksInPath().standardizedFileURL.path == target.ownershipRoot,
-          try directoryExistsWithoutFollowingLinks(live),
-          try directoryExistsWithoutFollowingLinks(parent),
-          try deviceIdentifier(live) == deviceIdentifier(parent) else {
+          ownershipMatches else {
       throw CLIUsageError("workflow target identity, mutability, or same-filesystem staging authority changed under lock")
     }
-    let workflowURL = URL(fileURLWithPath: target.workflowDirectory).appendingPathComponent("workflow.json")
-    let workflowDirectory = URL(fileURLWithPath: target.workflowDirectory, isDirectory: true)
-    let workflowBytes = try WorkflowDescriptorRelativeReader.read(workflowURL, within: workflowDirectory).bytes
+    let fileSystem = WorkflowDirectoryCommitFileSystem(detachedRoot: detachedRoot)
+    if detachedRoot == nil {
+      guard try directoryExistsWithoutFollowingLinks(live),
+            try directoryExistsWithoutFollowingLinks(parent),
+            try deviceIdentifier(live) == deviceIdentifier(parent) else {
+        throw CLIUsageError("workflow target identity, mutability, or same-filesystem staging authority changed under lock")
+      }
+    } else {
+      guard try fileSystem.directoryExists(live) else {
+        throw CLIUsageError("detached workflow target changed under the transaction lock")
+      }
+    }
+    let workflowBytes = try fileSystem.readWorkflowBytes(target: target, live: live)
     let object = try JSONSerialization.jsonObject(with: workflowBytes)
     guard let declaration = object as? [String: Any],
           declaration["workflowId"] as? String == target.workflowId,
@@ -824,64 +883,25 @@ public struct WorkflowDirectoryTransactionCoordinator: Sendable {
     }
   }
 
-  private func verifyTree(
-    _ root: URL,
-    target: WorkflowBundleIdentity,
-    digest: String,
-    unowned: [WorkflowUnownedInventoryEntry]
-  ) throws {
-    let inventory = try WorkflowHistoryIdentityResolver.inventory(for: target, rootOverride: root)
-    guard inventory.bundleDigest == digest,
-          inventory.unownedFiles.map(WorkflowUnownedInventoryEntry.init) == unowned else {
-      throw CLIUsageError("workflow transaction tree digest verification failed: \(root.path)")
-    }
-  }
-
-  private func syncTree(_ root: URL) throws {
-    var enumerationError: Error?
-    guard let enumerator = FileManager.default.enumerator(
-      at: root,
-      includingPropertiesForKeys: [.isDirectoryKey],
-      errorHandler: { url, error in
-        enumerationError = CLIUsageError("unable to enumerate transaction staging entry \(url.path): \(error)")
-        return false
-      }
-    ) else {
-      throw CLIUsageError("unable to enumerate transaction staging tree for fsync")
-    }
-    var directories = [root]
-    for case let url as URL in enumerator {
-      let values = try url.resourceValues(forKeys: [.isDirectoryKey])
-      if values.isDirectory == true { directories.append(url) } else { try syncFile(url) }
-    }
-    if let enumerationError { throw enumerationError }
-    for directory in directories.reversed() { try syncDirectory(directory) }
-  }
-
-  private func syncFile(_ url: URL) throws {
-    let descriptor = open(url.path, O_RDONLY)
-    guard descriptor >= 0 else { throw CLIUsageError("unable to open file for fsync: \(url.path)") }
-    defer { _ = close(descriptor) }
-    guard fsync(descriptor) == 0 else { throw CLIUsageError("unable to fsync file: \(url.path)") }
-  }
-
-  private func syncDirectory(_ url: URL) throws {
-    let descriptor = open(url.path, O_RDONLY)
-    guard descriptor >= 0 else { throw CLIUsageError("unable to open directory for fsync: \(url.path)") }
-    defer { _ = close(descriptor) }
-    guard fsync(descriptor) == 0 else { throw CLIUsageError("unable to fsync directory: \(url.path)") }
-  }
-
   private func cleanupMarkers(
     stableMarker: URL,
     targetParent: URL,
     active: URL,
-    historyRoot: URL
+    historyRoot: URL,
+    detachedRoot: WorkflowDetachedOwnershipPinnedRoot? = nil
   ) throws {
-    let stable = try WorkflowPinnedRecordCleanup(record: stableMarker, historyRoot: targetParent)
+    // Pin the stable-marker parent before the unlink boundary: an ancestor
+    // swapped in after this point must not receive the unlink.
+    let stable = detachedRoot == nil
+      ? try WorkflowPinnedRecordCleanup(record: stableMarker, historyRoot: targetParent)
+      : nil
     let history = try WorkflowPinnedRecordCleanup(record: active, historyRoot: historyRoot)
     try boundaryHook(.stableMarkerUnlink)
-    try stable.remove(beforeRecord: {}, beforeSidecar: {})
+    if let detachedRoot {
+      try detachedRoot.removePersistedRecord(name: stableMarker.lastPathComponent)
+    } else if let stable {
+      try stable.remove(beforeRecord: {}, beforeSidecar: {})
+    }
     try boundaryHook(.activeMarkerUnlink)
     try history.remove(beforeRecord: {}, beforeSidecar: {})
   }

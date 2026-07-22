@@ -6,6 +6,130 @@ import Glibc
 import Foundation
 import RielaCore
 
+public struct WorkflowTransactionStableMetadata: Codable, Equatable, Sendable {
+  public var schemaVersion: Int
+  public var transactionId: String
+  public var target: WorkflowBundleIdentity
+  public var historyRoot: String
+  public var physicalOwnershipRoot: String?
+  public var physicalOwnershipContainerDevice: UInt64?
+  public var physicalOwnershipContainerInode: UInt64?
+
+  public init(
+    schemaVersion: Int = 1,
+    transactionId: String,
+    target: WorkflowBundleIdentity,
+    historyRoot: String,
+    physicalOwnershipRoot: String? = nil,
+    physicalOwnershipContainerDevice: UInt64? = nil,
+    physicalOwnershipContainerInode: UInt64? = nil
+  ) {
+    self.schemaVersion = schemaVersion
+    self.transactionId = transactionId
+    self.target = target
+    self.historyRoot = historyRoot
+    self.physicalOwnershipRoot = physicalOwnershipRoot
+    self.physicalOwnershipContainerDevice = physicalOwnershipContainerDevice
+    self.physicalOwnershipContainerInode = physicalOwnershipContainerInode
+  }
+
+  public static func url(forOwnershipRoot root: URL) -> URL {
+    root.deletingLastPathComponent().appendingPathComponent(
+      ".\(root.lastPathComponent).riela-active-transaction.json"
+    )
+  }
+}
+
+struct WorkflowDetachedOwnershipRootIdentity: Equatable, Sendable {
+  var root: URL
+  var containerDevice: UInt64
+  var containerInode: UInt64
+}
+
+enum WorkflowDetachedOwnershipRoot {
+  static let containerPrefix = "riela-temporary-snapshot-"
+
+  static func create() throws -> URL {
+    let namespace = canonicalNamespaceRoot
+    let pinned = try WorkflowHistoryPinnedRoot(namespace, create: false)
+    let container = containerPrefix + UUID().uuidString.lowercased()
+    guard mkdirat(pinned.descriptor, container, S_IRWXU) == 0 else {
+      throw CLIUsageError("unable to create detached workflow ownership container")
+    }
+    let descriptor = openat(pinned.descriptor, container, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+    guard descriptor >= 0 else {
+      _ = unlinkat(pinned.descriptor, container, AT_REMOVEDIR)
+      throw CLIUsageError("unable to pin detached workflow ownership container")
+    }
+    defer { _ = close(descriptor) }
+    guard mkdirat(descriptor, "root", S_IRWXU) == 0, fsync(descriptor) == 0 else {
+      _ = unlinkat(pinned.descriptor, container, AT_REMOVEDIR)
+      throw CLIUsageError("unable to create detached workflow ownership root")
+    }
+    let root = namespace.appendingPathComponent(container, isDirectory: true)
+      .appendingPathComponent("root", isDirectory: true)
+    return try validate(root, requireRoot: true).root
+  }
+
+  static func validate(_ candidate: URL, requireRoot: Bool) throws -> WorkflowDetachedOwnershipRootIdentity {
+    try WorkflowDetachedOwnershipPinnedRoot(candidate: candidate, requireRoot: requireRoot).identity
+  }
+
+  static var canonicalNamespaceRoot: URL {
+    FileManager.default.temporaryDirectory.resolvingSymlinksInPath().standardizedFileURL
+  }
+}
+
+public enum WorkflowInventoryEntryType: String, Codable, Equatable, Sendable {
+  case regularFile = "regular-file"
+}
+
+public struct WorkflowUnownedInventoryEntry: Codable, Equatable, Sendable {
+  public var relativePath: String
+  public var entryType: WorkflowInventoryEntryType
+  public var contentDigest: String
+  public var byteCount: Int
+  public var executable: Bool
+
+  init(_ file: WorkflowOwnedFile) {
+    relativePath = file.metadata.relativePath
+    entryType = .regularFile
+    contentDigest = file.metadata.contentDigest
+    byteCount = file.metadata.byteCount
+    executable = file.metadata.executable
+  }
+}
+
+public enum WorkflowDirectoryOperationAuditIntent: Codable, Equatable, Sendable {
+  case mutation(LoopWorkflowMutationEvidence)
+  case restore(WorkflowRestoreRecord)
+
+  private enum CodingKeys: String, CodingKey { case kind, mutation, restore }
+  private enum Kind: String, Codable { case mutation, restore }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    switch try container.decode(Kind.self, forKey: .kind) {
+    case .mutation:
+      self = .mutation(try container.decode(LoopWorkflowMutationEvidence.self, forKey: .mutation))
+    case .restore:
+      self = .restore(try container.decode(WorkflowRestoreRecord.self, forKey: .restore))
+    }
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    switch self {
+    case let .mutation(value):
+      try container.encode(Kind.mutation, forKey: .kind)
+      try container.encode(value, forKey: .mutation)
+    case let .restore(value):
+      try container.encode(Kind.restore, forKey: .kind)
+      try container.encode(value, forKey: .restore)
+    }
+  }
+}
+
 struct WorkflowTransactionActiveMarker: Codable, Equatable, Sendable {
   var schemaVersion: Int
   var transactionId: String
@@ -42,6 +166,31 @@ enum WorkflowDirectoryTransactionBoundary: String, CaseIterable, Sendable {
 
 struct WorkflowDirectoryInjectedInterruption: Error, Sendable {
   var boundary: WorkflowDirectoryTransactionBoundary
+}
+
+func makeWorkflowTransactionPreflightAttempt(
+  transactionId: String,
+  kind: WorkflowDirectoryTransactionKind,
+  target: WorkflowBundleIdentity,
+  beforeDigest: String,
+  afterDigest: String,
+  snapshotId: String
+) -> WorkflowPreflightAttemptRecord {
+  WorkflowPreflightAttemptRecord(
+    attemptId: "attempt-\(transactionId)",
+    transactionId: transactionId,
+    kind: kind,
+    target: target,
+    expectedBeforeBundleDigest: beforeDigest,
+    expectedAfterBundleDigest: afterDigest,
+    preOperationSnapshotId: snapshotId,
+    status: .attempted,
+    mutationOccurred: false,
+    diagnostics: [],
+    startedAt: Date(
+      timeIntervalSince1970: (Date().timeIntervalSince1970 * 1_000).rounded(.down) / 1_000
+    )
+  )
 }
 
 struct WorkflowDiscoveredTransaction {
@@ -213,7 +362,11 @@ func validateWorkflowTransactionRecordForDiscovery(
   case let .mutation(evidence): try WorkflowHistoryCanonicalCoding.validate(evidence)
   case let .restore(restore): try WorkflowHistoryCanonicalCoding.validate(restore)
   }
-  let live = URL(fileURLWithPath: record.target.ownershipRoot, isDirectory: true).standardizedFileURL
+  let detachedIdentity = try record.physicalOwnershipRoot.map {
+    try WorkflowDetachedOwnershipRoot.validate(URL(fileURLWithPath: $0, isDirectory: true), requireRoot: false)
+  }
+  let live = detachedIdentity?.root
+    ?? URL(fileURLWithPath: record.target.ownershipRoot, isDirectory: true).standardizedFileURL
   let parent = live.deletingLastPathComponent()
   let expectedStaging = parent.appendingPathComponent(
     ".\(live.lastPathComponent).riela-stage-\(record.transactionId)", isDirectory: true
@@ -223,6 +376,7 @@ func validateWorkflowTransactionRecordForDiscovery(
   ).standardizedFileURL
   guard URL(fileURLWithPath: record.stagingPath).standardizedFileURL.path == expectedStaging.path,
         URL(fileURLWithPath: record.rollbackPath).standardizedFileURL.path == expectedRollback.path,
+        record.physicalOwnershipRoot == detachedIdentity?.root.path,
         historyRoot.standardizedFileURL.path.hasPrefix("/") else {
     throw CLIUsageError("transaction paths do not match their canonical target and history root")
   }
@@ -269,10 +423,18 @@ func reconcileWorkflowTransaction(
 func validateWorkflowTransactionStableMetadata(
   record: WorkflowDirectoryTransactionRecord,
   marker: URL,
-  historyRoot: URL
+  historyRoot: URL,
+  detachedRoot: WorkflowDetachedOwnershipPinnedRoot? = nil
 ) throws {
-  if try historyEntryExistsWithoutFollowingLinks(marker) {
-    let metadata = try WorkflowHistorySecurePersistence.readCanonical(
+  let detachedMetadata = try detachedRoot?.readCanonicalIfPresent(
+    WorkflowTransactionStableMetadata.self,
+    name: marker.lastPathComponent
+  )
+  let markerExists = detachedRoot == nil
+    ? try historyEntryExistsWithoutFollowingLinks(marker)
+    : detachedMetadata != nil
+  if markerExists {
+    let metadata = try detachedMetadata ?? WorkflowHistorySecurePersistence.readCanonical(
       WorkflowTransactionStableMetadata.self,
       from: marker,
       historyRoot: marker.deletingLastPathComponent()
@@ -280,8 +442,24 @@ func validateWorkflowTransactionStableMetadata(
     guard metadata.schemaVersion == 1,
           metadata.transactionId == record.transactionId,
           metadata.target == record.target,
-          metadata.historyRoot == historyRoot.standardizedFileURL.path else {
+          metadata.historyRoot == historyRoot.standardizedFileURL.path,
+          metadata.physicalOwnershipRoot == record.physicalOwnershipRoot else {
       throw CLIUsageError("stable workflow transaction metadata does not match the active transaction")
+    }
+    if let physicalOwnershipRoot = record.physicalOwnershipRoot {
+      guard let detachedRoot else {
+        throw CLIUsageError("detached workflow recovery did not retain its ownership container")
+      }
+      let identity = detachedRoot.identity
+      guard identity.root.path == physicalOwnershipRoot else {
+        throw CLIUsageError("detached workflow ownership root changed before recovery")
+      }
+      guard metadata.physicalOwnershipContainerDevice == identity.containerDevice,
+            metadata.physicalOwnershipContainerInode == identity.containerInode else {
+        throw CLIUsageError("detached workflow ownership container identity changed before recovery")
+      }
+    } else if metadata.physicalOwnershipContainerDevice != nil || metadata.physicalOwnershipContainerInode != nil {
+      throw CLIUsageError("stable workflow transaction metadata has unexpected detached ownership identity")
     }
   } else if record.phase != .preparing
               && record.phase != .committed

@@ -59,6 +59,7 @@ public struct WorkflowValidateCommand: Sendable {
         packageVersion: bundle.packageManifest?.version,
         packageDirectory: bundle.packageDirectory,
         mutable: bundle.packageManifest == nil,
+        temporary: bundle.temporary,
         diagnostics: diagnostics,
         nodeValidationResults: nodeResults
       )
@@ -93,7 +94,7 @@ public struct WorkflowValidateCommand: Sendable {
     case .text, .table:
       var lines = [
         result.valid ? "valid: \(result.workflowId)" : "invalid: \(result.workflowId)",
-        "source: \(result.sourceScope.rawValue) \(result.sourceKind.rawValue) \(result.workflowDirectory)"
+        "source: \(result.sourceScope.rawValue) \(result.sourceKind.rawValue) \(result.temporary ? "temporary" : "standard") \(result.workflowDirectory)"
       ]
       if let packageName = result.packageName {
         lines.append("package: \(packageName) \(result.packageVersion ?? "") \(result.packageDirectory ?? "")")
@@ -197,6 +198,7 @@ public struct WorkflowInspectionSummary: Codable, Equatable, Sendable {
   public var packageVersion: String?
   public var packageDirectory: String?
   public var mutable: Bool
+  @CodableDefaultFalse public var temporary: Bool
   public var description: String
   public var entryStepId: String
   public var managerStepId: String?
@@ -441,6 +443,7 @@ public struct WorkflowInspectCommand: Sendable {
       packageVersion: bundle.packageManifest?.version,
       packageDirectory: bundle.packageDirectory,
       mutable: bundle.packageManifest == nil,
+      temporary: CodableDefaultFalse(wrappedValue: bundle.temporary),
       description: workflow.description,
       entryStepId: workflow.entryStepId,
       managerStepId: workflow.managerStepId,
@@ -562,7 +565,7 @@ public struct WorkflowInspectCommand: Sendable {
   private func renderText(_ summary: WorkflowInspectionSummary) -> String {
     var lines = [
       "workflow: \(summary.workflowId)",
-      "source: \(summary.sourceScope.rawValue) \(summary.sourceKind.rawValue) \(summary.workflowDirectory)",
+      "source: \(summary.sourceScope.rawValue) \(summary.sourceKind.rawValue) \(summary.temporary ? "temporary" : "standard") \(summary.workflowDirectory)",
       "entryStepId: \(summary.entryStepId)",
       "steps: \(summary.stepIds.joined(separator: ", "))",
       "nodes: \(summary.nodeRegistryIds.joined(separator: ", "))",

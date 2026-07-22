@@ -1,5 +1,29 @@
 # Temporary Workflow Example
 
+## Register For Reuse
+
+The current Swift CLI can persist a normal workflow JSON file or bundle as a
+user-scoped temporary workflow:
+
+```bash
+riela workflow register ./path/to/workflow-bundle --temporary --output jsonl
+riela workflow list --output table
+riela workflow list --exclude-temporary --output jsonl
+riela workflow validate <workflowId> --output jsonl
+riela workflow run <workflowId> --mock-scenario ./path/to/mock.json --output jsonl
+```
+
+Use `--overwrite` to replace the managed copy. Registration performs full
+bundle validation before publishing and stores the result below
+`~/.riela/temporary-workflows/<workflowId>/`. `workflow list [query]` performs a
+case-insensitive workflow/package-name substring match. Registered temporary
+workflows are the lowest-precedence local resolution source.
+
+The checked-in `temp-workflow.json` below demonstrates the older one-shot
+embedded payload form. It is intentionally distinct from persistent
+registration: its wrapper JSON is executed directly and is not added to the
+workflow catalog.
+
 This example is a temporary workflow payload, not an installed workflow bundle.
 It can run directly from JSON without copying anything into project or user
 workflow scope.

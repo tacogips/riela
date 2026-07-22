@@ -23,6 +23,7 @@ public struct WorkflowCatalogEntry: Codable, Equatable, Sendable {
   public var packageVersion: String?
   public var packageDirectory: String?
   public var mutable: Bool
+  @CodableDefaultFalse public var temporary: Bool
   public var valid: Bool
   public var diagnostics: [WorkflowValidationDiagnostic]
 
@@ -35,6 +36,7 @@ public struct WorkflowCatalogEntry: Codable, Equatable, Sendable {
     packageVersion: String? = nil,
     packageDirectory: String? = nil,
     mutable: Bool = true,
+    temporary: Bool = false,
     valid: Bool,
     diagnostics: [WorkflowValidationDiagnostic]
   ) {
@@ -46,6 +48,7 @@ public struct WorkflowCatalogEntry: Codable, Equatable, Sendable {
     self.packageVersion = packageVersion
     self.packageDirectory = packageDirectory
     self.mutable = mutable
+    self.temporary = temporary
     self.valid = valid
     self.diagnostics = diagnostics
   }
@@ -117,7 +120,15 @@ public struct WorkflowManifestValidateCommand: Sendable {
 }
 
 public struct WorkflowCatalogCommand: Sendable {
-  public init() {}
+  private var temporaryRegistry: WorkflowTemporaryRegistry
+
+  public init() {
+    temporaryRegistry = WorkflowTemporaryRegistry()
+  }
+
+  init(temporaryRegistry: WorkflowTemporaryRegistry) {
+    self.temporaryRegistry = temporaryRegistry
+  }
 
   public func list(_ options: CLICommandOptions) -> CLICommandResult {
     do {
@@ -154,6 +165,7 @@ public struct WorkflowCatalogCommand: Sendable {
         packageVersion: bundle.packageManifest?.version,
         packageDirectory: bundle.packageDirectory,
         mutable: bundle.packageManifest == nil,
+        temporary: bundle.temporary,
         valid: !diagnostics.contains { $0.severity == .error },
         diagnostics: diagnostics
       )
@@ -173,15 +185,20 @@ public struct WorkflowCatalogCommand: Sendable {
     @Option(name: [.customLong("working-dir"), .customLong("working-directory")])
     var workingDirectory = FileManager.default.currentDirectoryPath
     @Option var output: String?
+    @Flag var excludeTemporary = false
   }
 
   private struct ParsedCatalogOptions {
     var scope: WorkflowScope
     var workingDirectory: String
+    var excludeTemporary: Bool
   }
 
   private func catalogEntries(options: CLICommandOptions) throws -> [WorkflowCatalogEntry] {
     let parsed = try catalogParseOptions(options)
+    if options.target == "" {
+      throw CLIUsageError("workflow list query must not be empty")
+    }
     let roots = workflowRoots(scope: parsed.scope, workingDirectory: parsed.workingDirectory)
     var entries: [WorkflowCatalogEntry] = []
     for (scope, root) in roots {
@@ -201,6 +218,7 @@ public struct WorkflowCatalogCommand: Sendable {
             packageVersion: bundle.packageManifest?.version,
             packageDirectory: bundle.packageDirectory,
             mutable: bundle.packageManifest == nil,
+            temporary: bundle.temporary,
             valid: !diagnostics.contains { $0.severity == .error },
             diagnostics: diagnostics
           ))
@@ -211,6 +229,7 @@ public struct WorkflowCatalogCommand: Sendable {
             sourceKind: .workflow,
             workflowDirectory: root.appendingPathComponent(name).path,
             mutable: true,
+            temporary: false,
             valid: false,
             diagnostics: [
               WorkflowValidationDiagnostic(severity: .error, path: "workflow.json", message: "\(error)")
@@ -220,6 +239,15 @@ public struct WorkflowCatalogCommand: Sendable {
       }
     }
     entries.append(contentsOf: try packageCatalogEntries(options: parsed))
+    if parsed.scope != .project {
+      entries.append(contentsOf: try temporaryCatalogEntries())
+    }
+    if parsed.excludeTemporary {
+      entries.removeAll(where: \.temporary)
+    }
+    if let query = options.target {
+      entries = entries.filter { Self.matchesQuery($0, query: query) }
+    }
     return entries.sorted { left, right in
       if left.scope.rawValue != right.scope.rawValue {
         return left.scope.rawValue < right.scope.rawValue
@@ -228,6 +256,55 @@ public struct WorkflowCatalogCommand: Sendable {
         return left.workflowName < right.workflowName
       }
       return left.sourceKind.rawValue < right.sourceKind.rawValue
+    }
+  }
+
+  static func matchesQuery(_ entry: WorkflowCatalogEntry, query: String) -> Bool {
+    let needle = query.lowercased()
+    return entry.workflowName.lowercased().contains(needle)
+      || (entry.packageName?.lowercased().contains(needle) ?? false)
+  }
+
+  private func temporaryCatalogEntries() throws -> [WorkflowCatalogEntry] {
+    let registry = temporaryRegistry
+    return try registry.snapshotCandidates().map { candidate in
+      let workflowName = candidate.lastPathComponent
+      do {
+        return try registry.withWorkflowRead(workflowId: workflowName) { snapshotCandidate in
+          let bundle = try FileSystemWorkflowBundleResolver().loadBundle(
+            at: snapshotCandidate,
+            rootDirectory: snapshotCandidate.deletingLastPathComponent(),
+            scope: .user,
+            temporary: true,
+            expectedWorkflowId: workflowName
+          )
+          let diagnostics = bundle.diagnostics
+            + DefaultWorkflowValidator().validate(bundle.workflow, nodePayloads: bundle.nodePayloads)
+          return WorkflowCatalogEntry(
+            workflowName: workflowName,
+            scope: .user,
+            sourceKind: .workflow,
+            workflowDirectory: candidate.path,
+            mutable: true,
+            temporary: true,
+            valid: !diagnostics.contains { $0.severity == .error },
+            diagnostics: diagnostics
+          )
+        }
+      } catch {
+        return WorkflowCatalogEntry(
+          workflowName: workflowName,
+          scope: .user,
+          sourceKind: .workflow,
+          workflowDirectory: candidate.path,
+          mutable: true,
+          temporary: true,
+          valid: false,
+          diagnostics: [
+            WorkflowValidationDiagnostic(severity: .error, path: "workflow.json", message: "\(error)")
+          ]
+        )
+      }
     }
   }
 
@@ -264,6 +341,7 @@ public struct WorkflowCatalogCommand: Sendable {
             packageVersion: manifest.version,
             packageDirectory: packageDirectory.path,
             mutable: false,
+            temporary: false,
             valid: diagnostics.isEmpty,
             diagnostics: diagnostics
           ))
@@ -275,6 +353,7 @@ public struct WorkflowCatalogCommand: Sendable {
             workflowDirectory: packageDirectory.path,
             packageDirectory: packageDirectory.path,
             mutable: false,
+            temporary: false,
             valid: false,
             diagnostics: [
               WorkflowValidationDiagnostic(severity: .error, path: "riela-package.json", message: "\(error)")
@@ -292,12 +371,12 @@ public struct WorkflowCatalogCommand: Sendable {
       return try jsonString(result)
     case .text:
       return result.workflows.map {
-        "\($0.workflowName)\t\($0.scope.rawValue)\t\($0.sourceKind.rawValue)\t\($0.valid ? "valid" : "invalid")\t\($0.workflowDirectory)"
+        "\($0.workflowName)\t\($0.scope.rawValue)\t\($0.sourceKind.rawValue)\t\($0.temporary ? "temporary" : "standard")\t\($0.valid ? "valid" : "invalid")\t\($0.workflowDirectory)"
       }.joined(separator: "\n") + (result.workflows.isEmpty ? "" : "\n")
     case .table:
-      let header = "WORKFLOW\tSCOPE\tSOURCE\tSTATUS\tDIRECTORY"
+      let header = "WORKFLOW\tSCOPE\tSOURCE\tPROVENANCE\tSTATUS\tDIRECTORY"
       let rows = result.workflows.map {
-        "\($0.workflowName)\t\($0.scope.rawValue)\t\($0.sourceKind.rawValue)\t\($0.valid ? "valid" : "invalid")\t\($0.workflowDirectory)"
+        "\($0.workflowName)\t\($0.scope.rawValue)\t\($0.sourceKind.rawValue)\t\($0.temporary ? "temporary" : "standard")\t\($0.valid ? "valid" : "invalid")\t\($0.workflowDirectory)"
       }
       return ([header] + rows).joined(separator: "\n") + "\n"
     }
@@ -308,7 +387,11 @@ public struct WorkflowCatalogCommand: Sendable {
     guard let scope = WorkflowScope(rawValue: arguments.scope), scope != .direct else {
       throw CLIUsageError("invalid --scope value; expected auto, project, or user")
     }
-    return ParsedCatalogOptions(scope: scope, workingDirectory: arguments.workingDirectory)
+    return ParsedCatalogOptions(
+      scope: scope,
+      workingDirectory: arguments.workingDirectory,
+      excludeTemporary: arguments.excludeTemporary
+    )
   }
 
   private func workflowRoots(scope: WorkflowScope, workingDirectory: String) -> [(WorkflowScope, URL)] {

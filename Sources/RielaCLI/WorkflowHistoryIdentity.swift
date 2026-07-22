@@ -144,9 +144,12 @@ public enum WorkflowHistoryIdentityResolver {
     configuredRoot: String? = nil
   ) throws -> URL {
     try WorkflowHistoryCanonicalCoding.validateSafeComponent(target.workflowId)
+    // Standardize both scope roots: standardizedFileURL strips the /private
+    // prefix from /private/tmp-style paths, so an unstandardized home root
+    // would false-positive the containment check under such a HOME.
     let scopeRoot: URL = switch target.sourceScope {
     case .user:
-      URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
+      URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true).standardizedFileURL
     case .project, .direct:
       workingDirectory.standardizedFileURL
     }
@@ -257,7 +260,7 @@ public enum WorkflowHistoryIdentityResolver {
       throw CLIUsageError("workflow ownership inventory does not contain workflow.json")
     }
     let workflowPrefix = String(
-      URL(fileURLWithPath: target.workflowDirectory).path.dropFirst(root.path.count)
+      target.workflowDirectory.dropFirst(target.ownershipRoot.count)
     ).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
     func relativeToOwnershipRoot(_ authoredPath: String, declaringPrefix: String) throws -> String {
       try WorkflowHistoryCanonicalCoding.validateRelativePath(authoredPath)

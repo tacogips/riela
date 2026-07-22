@@ -57,6 +57,7 @@ Temporary workflows are user-scoped managed copies stored at:
 ~/.riela/temporary-workflows/
   <workflowId>/workflow.json
   .registry-state/
+    catalog.lock
     locks/<workflowId>.lock
     transactions/<workflowId>.json
     record-staging/<transactionId>.json
@@ -78,15 +79,31 @@ embedded callers can isolate the registry. Registration does not accept
 resolution of a relative input path.
 
 Registration is transactional from the catalog's perspective. The registry
-uses a per-workflow publication lock shared by registration, catalog loading,
-name resolution, and existing mutation paths when their resolved origin is
-temporary. On Darwin and Linux CLI builds, the lock is an advisory filesystem
-lock on a regular, non-symlink lock file beneath the registry root; all
-registry-owned readers and writers take the lock before inspecting or changing
-that workflow's publication state. The internal subtree and each artifact it
-uses must be a real directory or regular file rather than a symlink. Staging,
-backup, and transaction records remain beneath the same registry root as the
-destination so directory renames never cross a filesystem boundary.
+uses two lock levels: the registry-wide `catalog.lock` is the discovery and
+publication barrier, while `locks/<workflowId>.lock` coordinates access to one
+published workflow. Registration, recovery, and existing mutation paths acquire
+the registry-wide barrier before the per-workflow lock whenever they may change
+visible registry state. Catalog discovery holds the same barrier from the start
+of its recovery sweep through its visible-directory snapshot. It then releases
+the barrier and loads each snapshotted descriptor under its per-workflow lock.
+This closes the sweep/enumeration race without holding a global lock during
+bundle decoding and validation. A fresh registration that begins after the
+snapshot is normally absent from that snapshot; an overwrite cannot make an
+entry that was present at snapshot time disappear from the current result.
+
+The lock order is always registry-wide barrier, then per-workflow lock; recovery
+of multiple workflows takes per-workflow locks one at a time in stable
+identifier order. No operation may wait for `catalog.lock` while retaining a
+per-workflow lock. Catalog descriptor loading and direct resolution retain the
+per-workflow lock through the candidate existence check and bundle load, so
+publication beginning after a catalog snapshot cannot invalidate a snapshotted
+descriptor during loading.
+On Darwin and Linux CLI builds, both levels are advisory filesystem locks on
+regular, non-symlink lock files beneath the registry root. The internal subtree
+and each artifact it uses must be a real directory or regular file rather than
+a symlink. Staging, backup, and transaction records remain beneath the same
+registry root as the destination so directory renames never cross a filesystem
+boundary.
 
 Each transaction record is versioned and contains `schemaVersion: 1`, the safe
 `workflowId`, a unique `transactionId`, `phase`, `hadOriginal`, a SHA-256 digest
@@ -99,10 +116,11 @@ subtree, and resolve without symlinks.
 
 Transaction phases are `prepared`, `movingOriginal`, `originalBackedUp`,
 `publishingReplacement`, and `replacementPublished`. Record creation and every
-phase transition occur while holding the per-workflow lock. A complete next
-record is written and synced as a regular file under `record-staging`, renamed
-atomically over `transactions/<workflowId>.json`, and followed by a sync of the
-transactions directory before the corresponding directory rename begins.
+phase transition occur while holding the registry-wide barrier and per-workflow
+lock. A complete next record is written and synced as a regular file under
+`record-staging`, renamed atomically over
+`transactions/<workflowId>.json`, and followed by a sync of the transactions
+directory before the corresponding directory rename begins.
 Record-staging files are never scanned as active transactions. This ordering
 means recovery observes either the prior complete phase or the next complete
 phase, never partial JSON.
@@ -115,8 +133,9 @@ The publication protocol is:
 3. Copy into a private staging directory below the temporary-workflow root.
 4. Resolve the staged bundle and run the same authored-workflow and node-payload
    validation used by `riela workflow validate`.
-5. Acquire the per-workflow publication lock and recover any earlier incomplete
-   transaction for the same identifier before changing the visible entry.
+5. Acquire the registry-wide discovery/publication barrier and then the
+   per-workflow publication lock. Recover any earlier incomplete transaction for
+   the same identifier before changing the visible entry.
 6. Publish the `prepared` record. For overwrite, publish `movingOriginal`, rename
    the old entry to its private backup, then publish `originalBackedUp`.
 7. Publish `publishingReplacement`, rename the validated staging directory to
@@ -124,8 +143,9 @@ The publication protocol is:
    `replacementPublished`. Each directory rename is atomic, but the design does
    not assume a portable atomic exchange of two nonempty directories.
 8. Remove the backup and transaction record, sync their parent directories, and
-   release the lock. A fresh registration follows the same protocol with
-   `hadOriginal: false` and without an old-entry backup.
+   release the per-workflow lock and registry-wide barrier. A fresh registration
+   follows the same protocol with `hadOriginal: false` and without an old-entry
+   backup.
 
 If `<workflowId>` already exists, the default is a usage error that names the
 workflow and destination and suggests `--overwrite`. With `--overwrite`, the old
@@ -141,13 +161,16 @@ closed with a diagnostic and preserves every available artifact for adversarial
 review. Tests inject failure and interruption after each state transition.
 
 Recovery happens before discovery. When temporary entries are eligible for a
-catalog request, the catalog scans transaction filenames in stable identifier
-order. It derives and validates the safe workflow identifier from each
-`<workflowId>.json` filename, acquires that workflow's lock, and only then uses
-`lstat` and a fresh read to validate the regular non-symlink record, its matching
-identifier, phase, digest, and contained paths. A record that disappeared before
-the lock was acquired is a completed concurrent transaction and is skipped;
-linked, special, or malformed state fails closed without deletion.
+catalog request, the catalog first acquires `catalog.lock`, scans transaction
+filenames in stable identifier order, and recovers each record under its
+per-workflow lock. It derives and validates the safe workflow identifier from
+each `<workflowId>.json` filename, acquires that workflow's lock, and only then
+uses `lstat` and a fresh read to validate the regular non-symlink record, its
+matching identifier, phase, digest, and contained paths. A record that
+disappears between enumeration and the locked fresh read is skipped only when a
+fresh `lstat` confirms absence; linked, special, or malformed state fails closed
+without deletion. Registry-owned publishers cannot cause that disappearance
+because they also require the barrier.
 
 Under the lock, recovery combines the last durable phase with actual staging,
 backup, and destination state. Before replacement publication, it aborts the
@@ -161,20 +184,24 @@ fails closed and preserves all artifacts. Recovery removes the transaction
 record only after syncing the recovered visible state.
 
 After recovering every scanned record, the catalog snapshots visible workflow
-directories. This restores a backup-only interrupted entry before enumeration.
-A concurrent transaction created after the sweep is serialized when its visible
-candidate is loaded and is otherwise recovered by the following catalog access.
+directories before releasing `catalog.lock`. Because every publisher must hold
+that barrier before creating an active transaction or moving a visible entry,
+no backup-only interval can begin between the sweep and snapshot. The catalog
+then loads each descriptor under its per-workflow lock, so it returns either the
+prior or replacement entry for an overwrite rather than silently omitting it.
 Direct name resolution and registration do not depend on visible-directory
-discovery: they run the same keyed recovery for the requested or decoded
-workflow identifier before testing destination existence.
+discovery: they acquire the barrier and per-workflow lock in that order, run the
+same keyed recovery for the requested or decoded workflow identifier, and test
+destination existence while the per-workflow lock remains held.
 
 Registered copies are local authored workflows and report `mutable: true`, just
 like entries under `~/.riela/workflows`. The registry owns registration and
 overwrite publication, but it does not introduce a new immutability boundary:
 existing versioning, self-improvement, and workflow mutation paths may update a
 resolved temporary bundle under their existing authored-workflow rules while
-coordinating through the same publication lock. `temporary` records provenance
-independently from mutability. Entries persist until explicitly overwritten,
+coordinating through the same barrier-then-per-workflow lock order. `temporary`
+records provenance independently from mutability. Entries persist until
+explicitly overwritten,
 changed through an existing authored-workflow mutation path, or manually
 removed. This work package does not add a remove or expiry command.
 
@@ -391,8 +418,11 @@ duplicate rejection, overwrite preservation, publication failure injection,
 interruption before the original move, after backup creation, and after
 replacement promotion, backup-only recovery through `workflow list`, concurrent
 catalog scans during record creation and removal, benign record disappearance,
-fail-closed linked or partial records, reader blocking, exclusion of every
-`.registry-state` artifact from catalog output, unsafe identifiers, malformed
+fail-closed linked or partial records, reader blocking, and a deterministic
+overwrite race in which listing begins after the active transaction is durable
+but before the original moves and must return the prior or replacement entry
+without omission. They must also cover exclusion of every `.registry-state`
+artifact from catalog output, unsafe identifiers, malformed
 JSON, missing and escaping assets, all four marker renderers, query discovery,
 case-insensitive query matching and nonmatching fields, exclusion-before-query,
 duplicate-name direct catalog provenance, explicit-scope fail-fast behavior,
@@ -403,12 +433,14 @@ without evidence connecting it to these changes.
 
 ## Review decision and risks
 
-Design decision: **ready for independent design review, with adversarial
-implementation review required**. The declared review mode is `standard` and
-declared risk is `normal`, but the feature copies user-selected filesystem
-content and makes it executable through normal workflow resolution. Review must
-explicitly examine symlink and containment checks, special files, staging
-cleanup, overwrite
+Design decision: **revised after independent design review and ready for
+re-review, with adversarial implementation review required**. The revision adds
+the registry-wide discovery/publication barrier and fixed lock ordering so a
+catalog request cannot omit an entry during the overwrite backup-only interval.
+The declared review mode is `standard` and declared risk is `normal`, but the
+feature copies user-selected filesystem content and makes it executable through
+normal workflow resolution. Review must explicitly examine symlink and
+containment checks, special files, staging cleanup, overwrite
 failure behavior, transaction recovery, lock coordination, name validation,
 precedence, and structured error output.
 

@@ -57,7 +57,21 @@ public struct WorkflowRestoreCommandResult: Codable, Equatable, Sendable {
 }
 
 public struct WorkflowVersionCommand: Sendable {
-  public init() {}
+  private let resolver: any WorkflowBundleResolving
+  private let temporaryRegistry: WorkflowTemporaryRegistry
+
+  public init() {
+    resolver = FileSystemWorkflowBundleResolver()
+    temporaryRegistry = WorkflowTemporaryRegistry()
+  }
+
+  init(
+    resolver: any WorkflowBundleResolving,
+    temporaryRegistry: WorkflowTemporaryRegistry
+  ) {
+    self.resolver = resolver
+    self.temporaryRegistry = temporaryRegistry
+  }
 
   public func run(_ options: WorkflowVersionCommandOptions) -> CLICommandResult {
     do {
@@ -67,7 +81,7 @@ public struct WorkflowVersionCommand: Sendable {
         fileURLWithPath: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath,
         isDirectory: true
       )
-      let bundle = try FileSystemWorkflowBundleResolver().resolve(WorkflowResolutionOptions(
+      let bundle = try resolver.resolve(WorkflowResolutionOptions(
         workflowName: options.workflowName,
         scope: parsed.scope,
         workflowDefinitionDir: parsed.workflowDefinitionDir,
@@ -120,13 +134,44 @@ public struct WorkflowVersionCommand: Sendable {
         }
       case .restore:
         let snapshotId = try require(options.firstReference, "workflow restore requires a snapshot id")
-        let result = try restore(
-          snapshotId: snapshotId,
-          target: target,
-          historyRoot: historyRoot,
-          store: store,
-          approved: parsed.exactYes
-        )
+        let result: WorkflowRestoreCommandResult
+        if bundle.temporary {
+          guard let expectedDigest = bundle.temporaryRegistryDigest else {
+            throw CLIUsageError("temporary workflow resolution did not retain a registry digest")
+          }
+          result = try temporaryRegistry.withWorkflowMutationAccess(
+            workflowId: bundle.workflow.workflowId,
+            expectedDigest: expectedDigest,
+            shouldPublish: { $0.restored },
+            { detachedWorkflowDirectory, publish in
+              let stableTarget = try WorkflowHistoryIdentityResolver.identity(for: bundle)
+              let stableHistoryRoot = try WorkflowHistoryIdentityResolver.historyRoot(
+                for: stableTarget,
+                workingDirectory: workingDirectory,
+                configuredRoot: bundle.workflow.loop?.selfEvolution?.historyRoot
+              )
+              return try restore(
+                snapshotId: snapshotId,
+                target: stableTarget,
+                historyRoot: stableHistoryRoot,
+                store: WorkflowHistoryStore(root: stableHistoryRoot),
+                approved: parsed.exactYes,
+                physicalOwnershipRoot: detachedWorkflowDirectory,
+                postCommitPublication: publish
+              )
+            }
+          )
+        } else {
+          result = try restore(
+            snapshotId: snapshotId,
+            target: target,
+            historyRoot: historyRoot,
+            store: store,
+            approved: parsed.exactYes,
+            physicalOwnershipRoot: nil,
+            postCommitPublication: { _ in }
+          )
+        }
         return try render(result, output: output) { result in
           "restore snapshot=\(result.sourceSnapshotId) dryRun=\(result.dryRun) restored=\(result.restored) files=\(result.restoredFiles.count) conflicts=\(result.dirtyConflicts.count)\n"
         }
@@ -178,13 +223,18 @@ public struct WorkflowVersionCommand: Sendable {
     target: WorkflowBundleIdentity,
     historyRoot: URL,
     store: WorkflowHistoryStore,
-    approved: Bool
+    approved: Bool,
+    physicalOwnershipRoot: URL?,
+    postCommitPublication: (URL) throws -> Void
   ) throws -> WorkflowRestoreCommandResult {
     guard target.sourceMutable, target.sourceKind != .installedPackage, target.packageDirectory == nil else {
       throw CLIUsageError("installed package workflows are immutable restore destinations")
     }
     let source = try store.loadSnapshot(snapshotId, expectedIdentity: target)
-    let current = try WorkflowHistoryIdentityResolver.inventory(for: target)
+    let current = try WorkflowHistoryIdentityResolver.inventory(
+      for: target,
+      rootOverride: physicalOwnershipRoot
+    )
     let changes = try diff(from: current.files.map(\.metadata), to: source.files)
     let sourcePaths = Set(source.files.map(\.relativePath))
     let dirtyConflicts = current.unownedFiles
@@ -245,6 +295,8 @@ public struct WorkflowVersionCommand: Sendable {
           outcome: .failed
         ))
       },
+      physicalOwnershipRoot: physicalOwnershipRoot,
+      postCommitPublication: postCommitPublication,
       mutateStaging: { staging in
       for owned in current.files where !WorkflowSharedNodeDependencyInventory.isDependencyPath(
         owned.metadata.relativePath

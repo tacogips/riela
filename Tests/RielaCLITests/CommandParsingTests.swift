@@ -203,6 +203,7 @@ final class CommandParsingTests: XCTestCase {
       "--variables", #"{"topic":"swift"}"#,
       "--mock-scenario", "./scenario.json",
       "--max-steps", "2",
+      "--disable-default-loop-guard",
       "--agent-silence-warning-ms", "5000",
       "--agent-silence-monitor-interval-ms", "250",
       "--output", "json"
@@ -211,6 +212,7 @@ final class CommandParsingTests: XCTestCase {
       XCTAssertEqual(options.variables, #"{"topic":"swift"}"#)
       XCTAssertEqual(options.mockScenarioPath, "./scenario.json")
       XCTAssertEqual(options.maxSteps, 2)
+      XCTAssertTrue(options.disableDefaultLoopGuard)
       XCTAssertEqual(options.agentSilenceWarningMs, 5000)
       XCTAssertEqual(options.agentSilenceMonitorIntervalMs, 250)
       XCTAssertEqual(options.output, .json)

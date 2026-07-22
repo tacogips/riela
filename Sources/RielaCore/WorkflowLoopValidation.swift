@@ -281,6 +281,15 @@ private func validateTypedLoopConvergence(
   loopRequired: Bool,
   diagnostics: inout [WorkflowValidationDiagnostic]
 ) {
+  if !convergence.enabled {
+    if convergence.maxGateVisits != nil || convergence.maxRepeatedFindingRounds != nil || convergence.onStall != .fail {
+      diagnostics.append(loopValidationError(
+        "workflow.loop.convergence",
+        "enabled false cannot be combined with convergence bounds or a non-default onStall"
+      ))
+    }
+    return
+  }
   if convergence.maxGateVisits == nil && convergence.maxRepeatedFindingRounds == nil {
     diagnostics.append(loopValidationError(
       "workflow.loop.convergence",
@@ -317,8 +326,28 @@ private func validateRawLoopConvergence(
     return
   }
 
+  let enabled: Bool
+  if let rawEnabled = convergence["enabled"] {
+    guard let bool = rawEnabled as? Bool else {
+      diagnostics.append(loopValidationError("workflow.loop.convergence.enabled", "must be a boolean"))
+      return
+    }
+    enabled = bool
+  } else {
+    enabled = true
+  }
+
   let hasMaxGateVisits = convergence["maxGateVisits"] != nil
   let hasMaxRepeatedFindingRounds = convergence["maxRepeatedFindingRounds"] != nil
+  if !enabled {
+    if hasMaxGateVisits || hasMaxRepeatedFindingRounds || (convergence["onStall"] as? String).map({ $0 != "fail" }) == true {
+      diagnostics.append(loopValidationError(
+        "workflow.loop.convergence",
+        "enabled false cannot be combined with convergence bounds or a non-default onStall"
+      ))
+    }
+    return
+  }
   if !hasMaxGateVisits && !hasMaxRepeatedFindingRounds {
     diagnostics.append(loopValidationError(
       "workflow.loop.convergence",

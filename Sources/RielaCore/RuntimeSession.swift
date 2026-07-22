@@ -174,6 +174,41 @@ public struct WorkflowAdapterOutputMetadata: Codable, Equatable, Sendable {
   }
 }
 
+// Names mirror the persisted publication contract.
+// swiftlint:disable:next type_name
+public enum WorkflowPublicationTransitionSelectionMode: String, Codable, Equatable, Sendable {
+  case rejectMultiple
+  case firstMatch
+}
+
+// swiftlint:disable:next type_name
+public enum WorkflowPublicationNoSelectionDisposition: String, Codable, Equatable, Sendable {
+  case publishPayloadAsRoot
+  case completeRootWithoutOutput
+}
+
+public struct WorkflowPendingRoutePublication: Codable, Equatable, Sendable {
+  public var selectedTransitions: [WorkflowStepTransition]
+  public var publishesRootOutput: Bool
+  public var completesRootWithoutOutput: Bool
+  public var noSelectionDisposition: WorkflowPublicationNoSelectionDisposition
+  public var intendedSuccessfulStatus: WorkflowStepExecutionStatus
+
+  public init(
+    selectedTransitions: [WorkflowStepTransition],
+    publishesRootOutput: Bool,
+    completesRootWithoutOutput: Bool,
+    noSelectionDisposition: WorkflowPublicationNoSelectionDisposition,
+    intendedSuccessfulStatus: WorkflowStepExecutionStatus
+  ) {
+    self.selectedTransitions = selectedTransitions
+    self.publishesRootOutput = publishesRootOutput
+    self.completesRootWithoutOutput = completesRootWithoutOutput
+    self.noSelectionDisposition = noSelectionDisposition
+    self.intendedSuccessfulStatus = intendedSuccessfulStatus
+  }
+}
+
 public struct WorkflowStepExecution: Codable, Equatable, Sendable {
   public var executionId: String
   public var stepId: String
@@ -190,6 +225,7 @@ public struct WorkflowStepExecution: Codable, Equatable, Sendable {
   public var recentBackendEvents: [WorkflowBackendEventRecord]?
   public var streamedResponseText: String?
   public var usage: AdapterUsage?
+  public var pendingRoutePublication: WorkflowPendingRoutePublication?
   public var createdAt: Date
   public var updatedAt: Date
 
@@ -209,6 +245,7 @@ public struct WorkflowStepExecution: Codable, Equatable, Sendable {
     recentBackendEvents: [WorkflowBackendEventRecord]? = nil,
     streamedResponseText: String? = nil,
     usage: AdapterUsage? = nil,
+    pendingRoutePublication: WorkflowPendingRoutePublication? = nil,
     createdAt: Date,
     updatedAt: Date
   ) {
@@ -227,6 +264,7 @@ public struct WorkflowStepExecution: Codable, Equatable, Sendable {
     self.recentBackendEvents = recentBackendEvents
     self.streamedResponseText = streamedResponseText
     self.usage = usage
+    self.pendingRoutePublication = pendingRoutePublication
     self.createdAt = createdAt
     self.updatedAt = updatedAt
   }

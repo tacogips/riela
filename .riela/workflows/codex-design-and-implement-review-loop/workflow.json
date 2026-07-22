@@ -10,6 +10,11 @@
     "kind": "design-implement-review",
     "required": false,
     "description": "First-party Codex design, implementation-plan, implementation, review, documentation, and commit workflow loop metadata.",
+    "convergence": {
+      "maxGateVisits": 4,
+      "maxRepeatedFindingRounds": 2,
+      "onStall": "fail"
+    },
     "evidence": {
       "required": true,
       "artifactRootPolicy": "runtime-owned",

@@ -189,6 +189,7 @@ extension RielaArgumentParser {
       maxSteps: parsed.maxSteps,
       maxConcurrency: parsed.maxConcurrency,
       maxLoopIterations: parsed.maxLoopIterations,
+      disableDefaultLoopGuard: parsed.disableDefaultLoopGuard,
       defaultTimeoutMs: parsed.defaultTimeoutMs,
       timeoutMs: parsed.timeoutMs,
       agentSilenceWarningMs: parsed.agentSilenceWarningMs,

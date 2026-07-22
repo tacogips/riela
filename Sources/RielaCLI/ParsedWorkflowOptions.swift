@@ -14,9 +14,12 @@ struct ParsedWorkflowOptions: ParsableArguments {
   @Option var instanceScope: WorkflowInstanceScope?
   @Option var saveInstance: String?
   @Option(name: .customLong("mock-scenario")) var mockScenarioPath: String?
-  @Option var maxSteps: Int?
+  @Option(help: "Hard per-session step limit; inherited unchanged by cross-workflow child sessions.")
+  var maxSteps: Int?
   @Option var maxConcurrency: Int?
   @Option var maxLoopIterations: Int?
+  @Flag(help: "Disable the synthesized loop convergence guard (4 gate visits, 2 identical-finding rounds, 3 reserved terminal steps) only for workflows without workflow.loop.")
+  var disableDefaultLoopGuard = false
   @Option var defaultTimeoutMs: Int?
   @Option var timeoutMs: Int?
   @Option var agentSilenceWarningMs = 120_000
@@ -53,6 +56,7 @@ struct ParsedWorkflowOptions: ParsableArguments {
     "--max-steps",
     "--max-concurrency",
     "--max-loop-iterations",
+    "--disable-default-loop-guard",
     "--default-timeout-ms",
     "--timeout-ms",
     "--agent-silence-warning-ms",

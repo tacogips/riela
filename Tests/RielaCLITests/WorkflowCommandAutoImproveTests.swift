@@ -4,6 +4,47 @@ import XCTest
 @testable import RielaCLI
 
 extension WorkflowCommandTests {
+  func testAutoImproveRerunPreservesDefaultGuardOptOut() {
+    let workflow = WorkflowDefinition(
+      workflowId: "auto-improve-opt-out",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
+      entryStepId: "review",
+      nodeRegistry: [WorkflowNodeRegistryRef(id: "review-node", nodeFile: "nodes/review.json")],
+      steps: [WorkflowStepRef(id: "review", nodeId: "review-node")],
+      nodes: [WorkflowNodeRef(id: "review-node", nodeFile: "nodes/review.json")]
+    )
+    let payloads = [
+      "review-node": AgentNodePayload(
+        id: "review-node",
+        executionBackend: .codexAgent,
+        model: "gpt-5.5"
+      )
+    ]
+    let options = WorkflowRunOptions(
+      target: workflow.workflowId,
+      maxSteps: 11,
+      maxLoopIterations: 5,
+      disableDefaultLoopGuard: true,
+      autoImprove: true
+    )
+
+    let rerun = WorkflowRunCommand().rerunRequest(
+      base: DeterministicWorkflowRunRequest(workflow: workflow),
+      workflow: workflow,
+      nodePayloads: payloads,
+      variables: ["request": .string("retry")],
+      options: options,
+      sourceSessionId: "source-session",
+      targetStepId: "review"
+    )
+
+    XCTAssertTrue(rerun.disableDefaultLoopGuard)
+    XCTAssertEqual(rerun.maxSteps, 11)
+    XCTAssertEqual(rerun.maxLoopIterations, 5)
+    XCTAssertEqual(rerun.rerunFromSessionId, "source-session")
+    XCTAssertEqual(rerun.rerunFromStepId, "review")
+  }
+
   func testAutoImproveRetriesStalledWorkflowFromActiveStep() async throws {
     let tempDir = FileManager.default.temporaryDirectory
       .appendingPathComponent("riela-auto-improve-stall-\(UUID().uuidString)", isDirectory: true)

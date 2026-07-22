@@ -263,6 +263,7 @@ public struct WorkflowRemoteRunRequest: Codable, Equatable, Sendable {
   public var maxSteps: Int?
   public var maxConcurrency: Int?
   public var maxLoopIterations: Int?
+  public var disableDefaultLoopGuard: Bool
   public var defaultTimeoutMs: Int?
   public var timeoutMs: Int?
   public var authToken: String?
@@ -279,6 +280,7 @@ public struct WorkflowRemoteRunRequest: Codable, Equatable, Sendable {
     maxSteps: Int? = nil,
     maxConcurrency: Int? = nil,
     maxLoopIterations: Int? = nil,
+    disableDefaultLoopGuard: Bool = false,
     defaultTimeoutMs: Int? = nil,
     timeoutMs: Int? = nil,
     authToken: String? = nil,
@@ -294,6 +296,7 @@ public struct WorkflowRemoteRunRequest: Codable, Equatable, Sendable {
     self.maxSteps = maxSteps
     self.maxConcurrency = maxConcurrency
     self.maxLoopIterations = maxLoopIterations
+    self.disableDefaultLoopGuard = disableDefaultLoopGuard
     self.defaultTimeoutMs = defaultTimeoutMs
     self.timeoutMs = timeoutMs
     self.authToken = authToken
@@ -486,6 +489,9 @@ private func remoteRunInputObject(_ request: WorkflowRemoteRunRequest) -> JSONOb
   }
   if let maxLoopIterations = request.maxLoopIterations {
     input["maxLoopIterations"] = .number(Double(maxLoopIterations))
+  }
+  if request.disableDefaultLoopGuard {
+    input["disableDefaultLoopGuard"] = .bool(true)
   }
   if let defaultTimeoutMs = request.defaultTimeoutMs {
     input["defaultTimeoutMs"] = .number(Double(defaultTimeoutMs))

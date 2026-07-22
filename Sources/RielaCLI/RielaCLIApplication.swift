@@ -472,7 +472,10 @@ func workflowRunHelpText(target: String?) -> String {
   Runtime options:
     --session-store <path>         Persist CLI session records under this store.
     --artifact-root <path>         Write runtime artifacts under this root.
-    --max-steps <n>
+    --max-steps <n>               Hard per-session limit inherited by child workflows.
+    --disable-default-loop-guard  Disable the synthesized loop convergence guard (4 gate
+                                  visits, 2 identical-finding rounds, 3 terminal steps)
+                                  only for workflows without workflow.loop.
     --max-concurrency <n>          Cap concurrent fanout branch execution.
     --max-loop-iterations <n>
     --default-timeout-ms <n>

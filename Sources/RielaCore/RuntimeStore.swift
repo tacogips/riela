@@ -137,6 +137,7 @@ public struct WorkflowStepExecutionUpdateInput: Equatable, Sendable {
   public var usage: AdapterUsage?
   public var completesRootWithoutOutput: Bool
   public var currentStepId: String?
+  public var pendingRoutePublication: WorkflowPendingRoutePublication?
 
   public init(
     sessionId: String,
@@ -147,7 +148,8 @@ public struct WorkflowStepExecutionUpdateInput: Equatable, Sendable {
     failureReason: String? = nil,
     usage: AdapterUsage? = nil,
     completesRootWithoutOutput: Bool = false,
-    currentStepId: String? = nil
+    currentStepId: String? = nil,
+    pendingRoutePublication: WorkflowPendingRoutePublication? = nil
   ) {
     self.sessionId = sessionId
     self.executionId = executionId
@@ -158,6 +160,7 @@ public struct WorkflowStepExecutionUpdateInput: Equatable, Sendable {
     self.usage = usage
     self.completesRootWithoutOutput = completesRootWithoutOutput
     self.currentStepId = currentStepId
+    self.pendingRoutePublication = pendingRoutePublication
   }
 }
 
@@ -279,6 +282,10 @@ public protocol WorkflowRuntimeStore: Sendable {
   func createSession(_ input: WorkflowSessionCreateInput) async throws -> WorkflowSession
   func recordStepExecution(_ input: WorkflowStepExecutionRecordInput) async throws -> WorkflowStepExecution
   func updateStepExecution(_ input: WorkflowStepExecutionUpdateInput) async throws -> WorkflowStepExecution
+  func stageWorkflowPublication(_ input: WorkflowPublicationStageInput) async throws -> WorkflowPublicationStageResult
+  func commitWorkflowPublication(_ input: WorkflowPublicationCommitInput) async throws -> WorkflowPublicationCommitResult
+  func abortWorkflowPublication(_ input: WorkflowPublicationAbortInput) async throws -> WorkflowStepExecution
+  func redirectPendingWorkflowStep(_ input: WorkflowPendingStepRedirectInput) async throws -> WorkflowPendingStepRedirectResult
   func markSessionFailed(_ input: WorkflowSessionFailureInput) async throws -> WorkflowSession
   func recordStepBackendEvent(_ input: WorkflowStepBackendEventInput) async throws -> WorkflowStepExecution
   func recordStepBackendEventReceipt(_ input: WorkflowStepBackendEventInput) async throws -> WorkflowBackendEventReceipt
@@ -299,143 +306,16 @@ public extension WorkflowRuntimeStore {
   }
 }
 
-public struct WorkflowResolvedMessageInput: Codable, Equatable, Sendable {
-  public var workflowExecutionId: String
-  public var stepId: String
-  public var messages: [WorkflowMessageRecord]
-  public var payload: JSONObject
-  public var communicationIds: [String]
-  public var sourceStepIds: [String]
-
-  public init(
-    workflowExecutionId: String,
-    stepId: String,
-    messages: [WorkflowMessageRecord],
-    payload: JSONObject,
-    communicationIds: [String],
-    sourceStepIds: [String]
-  ) {
-    self.workflowExecutionId = workflowExecutionId
-    self.stepId = stepId
-    self.messages = messages
-    self.payload = payload
-    self.communicationIds = communicationIds
-    self.sourceStepIds = sourceStepIds
-  }
-
-  public func applying(to input: AdapterExecutionInput) -> AdapterExecutionInput {
-    var adapterInput = input
-    for (key, value) in payload {
-      adapterInput.mergedVariables[key] = value
-    }
-    return adapterInput
-  }
-}
-
-public protocol WorkflowMessageInputResolving: Sendable {
-  func resolveInput(
-    for sessionId: String,
-    stepId: String,
-    store: any WorkflowRuntimeStore
-  ) async throws -> WorkflowResolvedMessageInput
-}
-
-public struct DefaultWorkflowMessageInputResolver: WorkflowMessageInputResolving {
-  public init() {}
-
-  public func resolveInput(
-    for sessionId: String,
-    stepId: String,
-    store: any WorkflowRuntimeStore
-  ) async throws -> WorkflowResolvedMessageInput {
-    let messages = try await store.listMessages(for: sessionId, toStepId: stepId)
-      .filter { $0.isResolvableInput }
-      .sorted {
-        if $0.createdOrder == $1.createdOrder {
-          return $0.communicationId < $1.communicationId
-        }
-        return $0.createdOrder < $1.createdOrder
-      }
-    var payload: JSONObject = [:]
-    var sourceStepIds: [String] = []
-    for message in messages {
-      if let fromStepId = message.fromStepId, !sourceStepIds.contains(fromStepId) {
-        sourceStepIds.append(fromStepId)
-      }
-      for (key, value) in message.payload {
-        payload[key] = value
-      }
-    }
-    payload["_rielaInput"] = resolvedInputMetadata(
-      sessionId: sessionId,
-      stepId: stepId,
-      messages: messages,
-      sourceStepIds: sourceStepIds
-    )
-    return WorkflowResolvedMessageInput(
-      workflowExecutionId: sessionId,
-      stepId: stepId,
-      messages: messages,
-      payload: payload,
-      communicationIds: messages.map(\.communicationId),
-      sourceStepIds: sourceStepIds
-    )
-  }
-}
-
-private func resolvedInputMetadata(
-  sessionId: String,
-  stepId: String,
-  messages: [WorkflowMessageRecord],
-  sourceStepIds: [String]
-) -> JSONValue {
-  let messageValues = messages.map(resolvedInputMessageMetadata)
-  var metadata: JSONObject = [
-    "workflowExecutionId": .string(sessionId),
-    "stepId": .string(stepId),
-    "communicationIds": .array(messages.map(\.communicationId).map(JSONValue.string)),
-    "sourceStepIds": .array(sourceStepIds.map(JSONValue.string)),
-    "messages": .array(messageValues)
-  ]
-  if let latest = messages.last {
-    metadata["latest"] = resolvedInputMessageMetadata(latest)
-  }
-  return .object(metadata)
-}
-
-private func resolvedInputMessageMetadata(_ message: WorkflowMessageRecord) -> JSONValue {
-  var metadata: JSONObject = [
-    "communicationId": .string(message.communicationId),
-    "workflowExecutionId": .string(message.workflowExecutionId),
-    "sourceStepExecutionId": .string(message.sourceStepExecutionId),
-    "deliveryKind": .string(message.deliveryKind.rawValue),
-    "routingScope": .string(message.routingScope.rawValue),
-    "lifecycleStatus": .string(message.lifecycleStatus.rawValue),
-    "createdOrder": .number(Double(message.createdOrder)),
-    "payload": .object(message.payload)
-  ]
-  if let fromStepId = message.fromStepId {
-    metadata["fromStepId"] = .string(fromStepId)
-  }
-  if let toStepId = message.toStepId {
-    metadata["toStepId"] = .string(toStepId)
-  }
-  if let transitionCondition = message.transitionCondition {
-    metadata["transitionCondition"] = .string(transitionCondition)
-  }
-  return .object(metadata)
-}
-
 public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
   public typealias AppendFailurePredicate = @Sendable (WorkflowMessageAppendInput) -> String?
 
-  private let clock: any WorkflowRuntimeClock
-  private let idGenerator: any WorkflowRuntimeIDGenerating
-  private let appendFailurePredicate: AppendFailurePredicate?
-  private var sessions: [String: WorkflowSession] = [:]
+  let clock: any WorkflowRuntimeClock
+  let idGenerator: any WorkflowRuntimeIDGenerating
+  let appendFailurePredicate: AppendFailurePredicate?
+  var sessions: [String: WorkflowSession] = [:]
   private var executionLiveTails: [String: WorkflowExecutionLiveTail] = [:]
-  private var messagesBySession: [String: [WorkflowMessageRecord]] = [:]
-  private var createdOrder = 0
+  var messagesBySession: [String: [WorkflowMessageRecord]] = [:]
+  var createdOrder = 0
 
   public init(
     clock: any WorkflowRuntimeClock = SystemWorkflowRuntimeClock(),
@@ -537,6 +417,7 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     execution.adapterOutput = input.adapterOutput ?? execution.adapterOutput
     execution.failureReason = input.failureReason
     execution.usage = input.usage ?? execution.usage
+    execution.pendingRoutePublication = input.pendingRoutePublication
     execution.updatedAt = date
     if let acceptedOutput = input.acceptedOutput {
       let extractedFindings = WorkflowReviewFindingExtractor.extract(
@@ -774,17 +655,17 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     return detached
   }
 
-  private func projectBackendLiveTails(on session: WorkflowSession) -> WorkflowSession {
+  func projectBackendLiveTails(on session: WorkflowSession) -> WorkflowSession {
     var projected = session
     projected.executions = session.executions.map(projectBackendLiveTail(on:))
     return projected
   }
 
-  private func projectBackendLiveTail(on execution: WorkflowStepExecution) -> WorkflowStepExecution {
+  func projectBackendLiveTail(on execution: WorkflowStepExecution) -> WorkflowStepExecution {
     executionLiveTails[execution.executionId]?.applying(to: execution) ?? execution
   }
 
-  private func finalizeBackendLiveTail(on execution: WorkflowStepExecution) -> WorkflowStepExecution {
+  func finalizeBackendLiveTail(on execution: WorkflowStepExecution) -> WorkflowStepExecution {
     let finalized = projectBackendLiveTail(on: execution)
     executionLiveTails.removeValue(forKey: execution.executionId)
     return finalized
@@ -983,16 +864,5 @@ private extension WorkflowStepExecution {
     execution.recentBackendEvents = nil
     execution.streamedResponseText = nil
     return execution
-  }
-}
-
-private extension WorkflowMessageRecord {
-  var isResolvableInput: Bool {
-    switch lifecycleStatus {
-    case .delivered, .consumed:
-      return true
-    case .created, .failed, .superseded:
-      return false
-    }
   }
 }

@@ -8,6 +8,96 @@ public enum WorkflowPublicationBody: Equatable, Sendable {
   case none
 }
 
+public enum WorkflowLoopGuardAction: String, Codable, Equatable, Sendable {
+  case fail
+  case warn
+  case acceptWithResidualRisks = "accept-with-residual-risks"
+}
+
+public struct WorkflowLoopGuardPublication: Equatable, Sendable {
+  public var violation: LoopConvergenceViolation
+  public var action: WorkflowLoopGuardAction
+  public var policySource: LoopConvergencePolicySource
+
+  public init(
+    violation: LoopConvergenceViolation,
+    action: WorkflowLoopGuardAction,
+    policySource: LoopConvergencePolicySource
+  ) {
+    self.violation = violation
+    self.action = action
+    self.policySource = policySource
+  }
+}
+
+public struct WorkflowPrePersistenceRoutingContext: Equatable, Sendable {
+  public var session: WorkflowSession
+  public var stepExecution: WorkflowStepExecution
+  public var payload: JSONObject
+  public var when: [String: Bool]
+  public var selectedTransitions: [WorkflowStepTransition]
+  public var publishesRootOutput: Bool
+  public var completesRootWithoutOutput: Bool
+  public var intendedSuccessfulStatus: WorkflowStepExecutionStatus
+
+  public init(
+    session: WorkflowSession,
+    stepExecution: WorkflowStepExecution,
+    payload: JSONObject,
+    when: [String: Bool],
+    selectedTransitions: [WorkflowStepTransition],
+    publishesRootOutput: Bool,
+    completesRootWithoutOutput: Bool,
+    intendedSuccessfulStatus: WorkflowStepExecutionStatus
+  ) {
+    self.session = session
+    self.stepExecution = stepExecution
+    self.payload = payload
+    self.when = when
+    self.selectedTransitions = selectedTransitions
+    self.publishesRootOutput = publishesRootOutput
+    self.completesRootWithoutOutput = completesRootWithoutOutput
+    self.intendedSuccessfulStatus = intendedSuccessfulStatus
+  }
+}
+
+public struct WorkflowPrePersistenceRoutingDecision: Equatable, Sendable {
+  public var selectedTransitions: [WorkflowStepTransition]
+  public var routedPayload: JSONObject
+  public var publishesRootOutput: Bool
+  public var completesRootWithoutOutput: Bool
+  public var loopGuard: WorkflowLoopGuardPublication?
+
+  public init(
+    selectedTransitions: [WorkflowStepTransition],
+    routedPayload: JSONObject,
+    publishesRootOutput: Bool,
+    completesRootWithoutOutput: Bool,
+    loopGuard: WorkflowLoopGuardPublication? = nil
+  ) {
+    self.selectedTransitions = selectedTransitions
+    self.routedPayload = routedPayload
+    self.publishesRootOutput = publishesRootOutput
+    self.completesRootWithoutOutput = completesRootWithoutOutput
+    self.loopGuard = loopGuard
+  }
+
+  public static func unchanged(
+    _ context: WorkflowPrePersistenceRoutingContext
+  ) -> WorkflowPrePersistenceRoutingDecision {
+    WorkflowPrePersistenceRoutingDecision(
+      selectedTransitions: context.selectedTransitions,
+      routedPayload: context.payload,
+      publishesRootOutput: context.publishesRootOutput,
+      completesRootWithoutOutput: context.completesRootWithoutOutput
+    )
+  }
+}
+
+public typealias WorkflowPrePersistenceRoutingDecider = @Sendable (
+  WorkflowPrePersistenceRoutingContext
+) throws -> WorkflowPrePersistenceRoutingDecision
+
 public struct WorkflowPublicationRequest: Sendable {
   public var sessionId: String
   public var stepId: String
@@ -22,6 +112,10 @@ public struct WorkflowPublicationRequest: Sendable {
   public var successfulExecutionStatus: WorkflowStepExecutionStatus
   public var completesRootWithoutOutput: Bool
   public var allowsNoOutput: Bool
+  public var transitionSelectionMode: WorkflowPublicationTransitionSelectionMode
+  public var noSelectionDisposition: WorkflowPublicationNoSelectionDisposition
+  public var prePersistenceRoutingDecider: WorkflowPrePersistenceRoutingDecider?
+  public var carriedPayloadFields: JSONObject
 
   public init(
     sessionId: String,
@@ -36,7 +130,11 @@ public struct WorkflowPublicationRequest: Sendable {
     publishesRootOutput: Bool = false,
     successfulExecutionStatus: WorkflowStepExecutionStatus = .completed,
     completesRootWithoutOutput: Bool = false,
-    allowsNoOutput: Bool = false
+    allowsNoOutput: Bool = false,
+    transitionSelectionMode: WorkflowPublicationTransitionSelectionMode = .rejectMultiple,
+    noSelectionDisposition: WorkflowPublicationNoSelectionDisposition = .publishPayloadAsRoot,
+    prePersistenceRoutingDecider: WorkflowPrePersistenceRoutingDecider? = nil,
+    carriedPayloadFields: JSONObject = [:]
   ) {
     self.sessionId = sessionId
     self.stepId = stepId
@@ -51,6 +149,10 @@ public struct WorkflowPublicationRequest: Sendable {
     self.successfulExecutionStatus = successfulExecutionStatus
     self.completesRootWithoutOutput = completesRootWithoutOutput
     self.allowsNoOutput = allowsNoOutput
+    self.transitionSelectionMode = transitionSelectionMode
+    self.noSelectionDisposition = noSelectionDisposition
+    self.prePersistenceRoutingDecider = prePersistenceRoutingDecider
+    self.carriedPayloadFields = carriedPayloadFields
   }
 }
 
@@ -142,6 +244,7 @@ public struct WorkflowPublicationResult: Equatable, Sendable {
   public var rootOutput: JSONObject?
   public var crossWorkflowDispatch: WorkflowCrossWorkflowDispatchDirective?
   public var fanoutDispatch: WorkflowFanoutDispatchDirective?
+  public var loopGuard: WorkflowLoopGuardPublication?
 
   public init(
     session: WorkflowSession,
@@ -150,7 +253,8 @@ public struct WorkflowPublicationResult: Equatable, Sendable {
     nextStepId: String? = nil,
     rootOutput: JSONObject? = nil,
     crossWorkflowDispatch: WorkflowCrossWorkflowDispatchDirective? = nil,
-    fanoutDispatch: WorkflowFanoutDispatchDirective? = nil
+    fanoutDispatch: WorkflowFanoutDispatchDirective? = nil,
+    loopGuard: WorkflowLoopGuardPublication? = nil
   ) {
     self.session = session
     self.stepExecution = stepExecution
@@ -159,6 +263,7 @@ public struct WorkflowPublicationResult: Equatable, Sendable {
     self.rootOutput = rootOutput
     self.crossWorkflowDispatch = crossWorkflowDispatch
     self.fanoutDispatch = fanoutDispatch
+    self.loopGuard = loopGuard
   }
 }
 
@@ -173,6 +278,10 @@ public protocol WorkflowOutputPublishing: Sendable {
 }
 
 public typealias RuntimeCandidatePathFinalizer = @Sendable (RuntimeCandidatePathReservation) async throws -> Void
+public typealias WorkflowTransitionPredicateEvaluator = @Sendable (
+  WorkflowStepTransition,
+  RuntimeOutputCandidate
+) -> Bool
 
 public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
   public var store: any WorkflowRuntimeStore
@@ -182,6 +291,7 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
   public var clock: any WorkflowRuntimeClock
   public var simulatesCrossWorkflowDispatch: Bool
   public var supportsLiveCrossWorkflowDispatch: Bool
+  public var transitionPredicateEvaluator: WorkflowTransitionPredicateEvaluator
 
   public init(
     store: any WorkflowRuntimeStore,
@@ -190,7 +300,14 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
     candidatePathFinalizer: RuntimeCandidatePathFinalizer? = nil,
     clock: any WorkflowRuntimeClock = SystemWorkflowRuntimeClock(),
     simulatesCrossWorkflowDispatch: Bool = false,
-    supportsLiveCrossWorkflowDispatch: Bool = false
+    supportsLiveCrossWorkflowDispatch: Bool = false,
+    transitionPredicateEvaluator: @escaping WorkflowTransitionPredicateEvaluator = { transition, candidate in
+      WorkflowBranchEvaluator().evaluate(
+        label: transition.label,
+        when: candidate.when,
+        payload: candidate.payload
+      )
+    }
   ) {
     self.store = store
     self.validator = validator
@@ -199,8 +316,11 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
     self.clock = clock
     self.simulatesCrossWorkflowDispatch = simulatesCrossWorkflowDispatch
     self.supportsLiveCrossWorkflowDispatch = supportsLiveCrossWorkflowDispatch
+    self.transitionPredicateEvaluator = transitionPredicateEvaluator
   }
 
+  // Publication owns validation, single-pass selection, and staged transaction finalization atomically.
+  // swiftlint:disable:next function_body_length
   public func publishAcceptedOutput(_ request: WorkflowPublicationRequest) async throws -> WorkflowPublicationResult {
     let recordedExecution: WorkflowStepExecution
     if let existingExecution = try await runningExecution(for: request) {
@@ -225,6 +345,9 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       )
     }
     let adapterUsage = request.adapterOutputMetadataSource?.usage
+    if recordedExecution.pendingRoutePublication != nil {
+      return try await finishStagedPublication(request: request, execution: recordedExecution)
+    }
     if case let .failure(adapterFailure, _) = request.body {
       _ = try await store.updateStepExecution(
         WorkflowStepExecutionUpdateInput(
@@ -312,7 +435,7 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
     }
 
     let validation = try validator.validate(candidate, contract: request.outputContract)
-    guard validation.status == .accepted, let payload = validation.payload else {
+    guard validation.status == .accepted, let validatedPayload = validation.payload else {
       let reason = validation.reason ?? "output validation rejected candidate"
       let failedExecution = try await store.updateStepExecution(
         WorkflowStepExecutionUpdateInput(
@@ -327,8 +450,33 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       let session = try await store.loadSession(id: request.sessionId)
       throw WorkflowPublicationError.validationRejected(failedExecution.failureReason ?? session?.status.rawValue ?? reason)
     }
+    var payload = validatedPayload
+    for (key, value) in request.carriedPayloadFields {
+      payload[key] = value
+    }
 
-    let publishableTransitions = request.transitions.filter { shouldPublish(transition: $0, candidate: candidate) }
+    let publishableTransitions: [WorkflowStepTransition]
+    do {
+      publishableTransitions = try selectedTransitions(request: request, candidate: candidate)
+    } catch {
+      let failureReason: String
+      if let adapterFailure = error as? AdapterExecutionError {
+        failureReason = "\(adapterFailure.code.rawValue): \(adapterFailure.message)"
+      } else {
+        failureReason = String(describing: error)
+      }
+      _ = try await store.updateStepExecution(
+        WorkflowStepExecutionUpdateInput(
+          sessionId: request.sessionId,
+          executionId: recordedExecution.executionId,
+          status: .failed,
+          adapterOutput: adapterOutputMetadata,
+          failureReason: failureReason,
+          usage: adapterUsage
+        )
+      )
+      throw error
+    }
     if let reason = unsupportedTransitionReason(in: publishableTransitions) {
       _ = try await store.updateStepExecution(
         WorkflowStepExecutionUpdateInput(
@@ -343,32 +491,219 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       throw WorkflowPublicationError.unsupportedTransition(reason)
     }
 
-    let publishesRootOutput = request.publishesRootOutput || (!request.transitions.isEmpty && publishableTransitions.isEmpty)
-    let nextStepId = self.nextStepId(from: publishableTransitions)
+    let ordinaryCompletion = completionDisposition(
+      request: request,
+      selectedTransitions: publishableTransitions
+    )
     let acceptedOutput = WorkflowAcceptedOutputMetadata(
       payload: payload,
       when: candidate.when,
-      isRootOutput: publishesRootOutput,
+      isRootOutput: ordinaryCompletion.publishesRootOutput,
       acceptedAt: clock.now(),
       routingDiagnostics: candidate.routingDiagnostics
     )
 
-    // Live cross-workflow dispatch: the handoff payload must not be echoed to
-    // the caller's resume step; the runner dispatches the callee and delivers
-    // the callee root output to the resume step instead.
-    let liveDispatch = liveCrossWorkflowDispatchDirective(
-      in: publishableTransitions,
-      handoffPayload: payload,
-      sourceStepExecutionId: recordedExecution.executionId
-    )
-    let fanoutDispatch = liveFanoutDispatchDirective(
-      in: publishableTransitions,
-      sourceStepId: request.stepId,
-      sourcePayload: payload,
-      sourceStepExecutionId: recordedExecution.executionId
-    )
+    if request.prePersistenceRoutingDecider != nil {
+      let staged = try await store.stageWorkflowPublication(WorkflowPublicationStageInput(
+        sessionId: request.sessionId,
+        executionId: recordedExecution.executionId,
+        acceptedOutput: acceptedOutput,
+        adapterOutput: adapterOutputMetadata,
+        usage: adapterUsage,
+        pendingRoutePublication: WorkflowPendingRoutePublication(
+          selectedTransitions: publishableTransitions,
+          publishesRootOutput: ordinaryCompletion.publishesRootOutput,
+          completesRootWithoutOutput: ordinaryCompletion.completesRootWithoutOutput,
+          noSelectionDisposition: request.noSelectionDisposition,
+          intendedSuccessfulStatus: request.successfulExecutionStatus
+        )
+      ))
+      return try await finishStagedPublication(request: request, execution: staged.execution)
+    }
 
-    let messageInputs = publishableTransitions
+    return try await commitDirectPublication(
+      request: request,
+      execution: recordedExecution,
+      acceptedOutput: acceptedOutput,
+      adapterOutput: adapterOutputMetadata,
+      usage: adapterUsage,
+      selectedTransitions: publishableTransitions,
+      routedPayload: payload,
+      publishesRootOutput: ordinaryCompletion.publishesRootOutput,
+      completesRootWithoutOutput: ordinaryCompletion.completesRootWithoutOutput
+    )
+  }
+
+  private func finishStagedPublication(
+    request: WorkflowPublicationRequest,
+    execution: WorkflowStepExecution
+  ) async throws -> WorkflowPublicationResult {
+    guard let pending = execution.pendingRoutePublication,
+          let acceptedOutput = execution.acceptedOutput,
+          let decider = request.prePersistenceRoutingDecider,
+          let session = try await store.loadSession(id: request.sessionId) else {
+      throw WorkflowRuntimeStoreError.messageAppendRejected("pending publication cannot be resumed")
+    }
+    let context = WorkflowPrePersistenceRoutingContext(
+      session: session,
+      stepExecution: execution,
+      payload: acceptedOutput.payload,
+      when: acceptedOutput.when,
+      selectedTransitions: pending.selectedTransitions,
+      publishesRootOutput: pending.publishesRootOutput,
+      completesRootWithoutOutput: pending.completesRootWithoutOutput,
+      intendedSuccessfulStatus: pending.intendedSuccessfulStatus
+    )
+    let decision: WorkflowPrePersistenceRoutingDecision
+    do {
+      decision = try decider(context)
+      if let reason = unsupportedTransitionReason(in: decision.selectedTransitions) {
+        throw WorkflowPublicationError.unsupportedTransition(reason)
+      }
+    } catch {
+      _ = try? await store.abortWorkflowPublication(WorkflowPublicationAbortInput(
+        sessionId: request.sessionId,
+        executionId: execution.executionId,
+        reason: String(describing: error)
+      ))
+      throw error
+    }
+    let nextStepId = self.nextStepId(from: decision.selectedTransitions)
+    let messageInputs = publicationMessageInputs(
+      request: request,
+      executionId: execution.executionId,
+      transitions: decision.selectedTransitions,
+      payload: decision.routedPayload
+    )
+    let committed: WorkflowPublicationCommitResult
+    do {
+      committed = try await store.commitWorkflowPublication(WorkflowPublicationCommitInput(
+        sessionId: request.sessionId,
+        executionId: execution.executionId,
+        messageInputs: messageInputs,
+        currentStepId: nextStepId,
+        publishesRootOutput: decision.publishesRootOutput,
+        completesRootWithoutOutput: decision.completesRootWithoutOutput
+      ))
+    } catch {
+      _ = try? await store.abortWorkflowPublication(WorkflowPublicationAbortInput(
+        sessionId: request.sessionId,
+        executionId: execution.executionId,
+        reason: String(describing: error)
+      ))
+      throw error
+    }
+    return publicationResult(
+      request: request,
+      session: committed.session,
+      execution: committed.execution,
+      messages: committed.messages,
+      selectedTransitions: decision.selectedTransitions,
+      payload: decision.routedPayload,
+      publishesRootOutput: decision.publishesRootOutput,
+      loopGuard: decision.loopGuard
+    )
+  }
+
+  private func commitDirectPublication(
+    request: WorkflowPublicationRequest,
+    execution: WorkflowStepExecution,
+    acceptedOutput: WorkflowAcceptedOutputMetadata,
+    adapterOutput: WorkflowAdapterOutputMetadata?,
+    usage: AdapterUsage?,
+    selectedTransitions: [WorkflowStepTransition],
+    routedPayload: JSONObject,
+    publishesRootOutput: Bool,
+    completesRootWithoutOutput: Bool
+  ) async throws -> WorkflowPublicationResult {
+    let nextStepId = self.nextStepId(from: selectedTransitions)
+    let messageInputs = publicationMessageInputs(
+      request: request,
+      executionId: execution.executionId,
+      transitions: selectedTransitions,
+      payload: routedPayload
+    )
+    let publishedMessages: [WorkflowMessageRecord]
+    do {
+      publishedMessages = try await store.appendWorkflowMessages(messageInputs)
+    } catch {
+      _ = try await store.updateStepExecution(
+        WorkflowStepExecutionUpdateInput(
+          sessionId: request.sessionId,
+          executionId: execution.executionId,
+          status: .failed,
+          adapterOutput: adapterOutput,
+          failureReason: String(describing: error),
+          usage: usage
+        )
+      )
+      throw error
+    }
+    let completedExecution = try await store.updateStepExecution(
+      WorkflowStepExecutionUpdateInput(
+        sessionId: request.sessionId,
+        executionId: execution.executionId,
+        status: request.successfulExecutionStatus,
+        acceptedOutput: acceptedOutput,
+        adapterOutput: adapterOutput,
+        usage: usage,
+        completesRootWithoutOutput: completesRootWithoutOutput,
+        currentStepId: nextStepId
+      )
+    )
+    guard let session = try await store.loadSession(id: request.sessionId) else {
+      throw WorkflowRuntimeStoreError.sessionNotFound(request.sessionId)
+    }
+    return publicationResult(
+      request: request,
+      session: session,
+      execution: completedExecution,
+      messages: publishedMessages,
+      selectedTransitions: selectedTransitions,
+      payload: routedPayload,
+      publishesRootOutput: publishesRootOutput,
+      loopGuard: nil
+    )
+  }
+
+  private func publicationResult(
+    request: WorkflowPublicationRequest,
+    session: WorkflowSession,
+    execution: WorkflowStepExecution,
+    messages: [WorkflowMessageRecord],
+    selectedTransitions: [WorkflowStepTransition],
+    payload: JSONObject,
+    publishesRootOutput: Bool,
+    loopGuard: WorkflowLoopGuardPublication?
+  ) -> WorkflowPublicationResult {
+    WorkflowPublicationResult(
+      session: session,
+      stepExecution: execution,
+      publishedMessages: messages,
+      nextStepId: nextStepId(from: selectedTransitions),
+      rootOutput: publishesRootOutput ? payload : nil,
+      crossWorkflowDispatch: liveCrossWorkflowDispatchDirective(
+        in: selectedTransitions,
+        handoffPayload: payload,
+        sourceStepExecutionId: execution.executionId
+      ),
+      fanoutDispatch: liveFanoutDispatchDirective(
+        in: selectedTransitions,
+        sourceStepId: request.stepId,
+        sourcePayload: payload,
+        sourceStepExecutionId: execution.executionId
+      ),
+      loopGuard: loopGuard
+    )
+  }
+
+  private func publicationMessageInputs(
+    request: WorkflowPublicationRequest,
+    executionId: String,
+    transitions: [WorkflowStepTransition],
+    payload: JSONObject
+  ) -> [WorkflowMessageAppendInput] {
+    transitions
       .filter { !isLiveCrossWorkflowDispatchTransition($0) && !isLiveFanoutDispatchTransition($0) }
       .map { transition in
         WorkflowMessageAppendInput(
@@ -377,53 +712,58 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
           toStepId: transition.resumeStepId ?? transition.toStepId,
           routingScope: .workflow,
           deliveryKind: .direct,
-          sourceStepExecutionId: recordedExecution.executionId,
+          sourceStepExecutionId: executionId,
           transitionCondition: transition.label,
           payload: payload
         )
       }
-    let publishedMessages: [WorkflowMessageRecord]
-    do {
-      publishedMessages = try await store.appendWorkflowMessages(messageInputs)
-    } catch {
-      _ = try await store.updateStepExecution(
-        WorkflowStepExecutionUpdateInput(
-          sessionId: request.sessionId,
-          executionId: recordedExecution.executionId,
-          status: .failed,
-          acceptedOutput: nil,
-          adapterOutput: adapterOutputMetadata,
-          failureReason: String(describing: error),
-          usage: adapterUsage
-        )
-      )
-      throw error
-    }
-    let completedExecution = try await store.updateStepExecution(
-      WorkflowStepExecutionUpdateInput(
-        sessionId: request.sessionId,
-        executionId: recordedExecution.executionId,
-        status: request.successfulExecutionStatus,
-        acceptedOutput: acceptedOutput,
-        adapterOutput: adapterOutputMetadata,
-        usage: adapterUsage,
-        completesRootWithoutOutput: request.completesRootWithoutOutput,
-        currentStepId: nextStepId
-      )
-    )
+  }
 
-    guard let session = try await store.loadSession(id: request.sessionId) else {
-      throw WorkflowRuntimeStoreError.sessionNotFound(request.sessionId)
+  private func selectedTransitions(
+    request: WorkflowPublicationRequest,
+    candidate: RuntimeOutputCandidate
+  ) throws -> [WorkflowStepTransition] {
+    switch request.transitionSelectionMode {
+    case .firstMatch:
+      for transition in request.transitions where transitionPredicateEvaluator(transition, candidate) {
+        return [transition]
+      }
+      return []
+    case .rejectMultiple:
+      var selected: [WorkflowStepTransition] = []
+      for transition in request.transitions where transitionPredicateEvaluator(transition, candidate) {
+        selected.append(transition)
+      }
+      guard selected.count <= 1 else {
+        throw AdapterExecutionError(
+          .invalidOutput,
+          "multiple direct transitions are not supported by this sequential runner"
+        )
+      }
+      return selected
     }
-    return WorkflowPublicationResult(
-      session: session,
-      stepExecution: completedExecution,
-      publishedMessages: publishedMessages,
-      nextStepId: nextStepId,
-      rootOutput: publishesRootOutput ? payload : nil,
-      crossWorkflowDispatch: liveDispatch,
-      fanoutDispatch: fanoutDispatch
-    )
+  }
+
+  private func completionDisposition(
+    request: WorkflowPublicationRequest,
+    selectedTransitions: [WorkflowStepTransition]
+  ) -> (publishesRootOutput: Bool, completesRootWithoutOutput: Bool) {
+    guard selectedTransitions.isEmpty else {
+      return (false, false)
+    }
+    if request.publishesRootOutput {
+      return (true, false)
+    }
+    if request.completesRootWithoutOutput {
+      return (false, true)
+    }
+    if request.noSelectionDisposition == .completeRootWithoutOutput {
+      return (false, true)
+    }
+    guard !request.transitions.isEmpty else {
+      return (false, false)
+    }
+    return (true, false)
   }
 
   private func runningExecution(for request: WorkflowPublicationRequest) async throws -> WorkflowStepExecution? {
@@ -482,10 +822,6 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
     if FileManager.default.fileExists(atPath: reservation.stagingDirectory.path) {
       try FileManager.default.removeItem(at: reservation.stagingDirectory)
     }
-  }
-
-  private func shouldPublish(transition: WorkflowStepTransition, candidate: RuntimeOutputCandidate) -> Bool {
-    WorkflowBranchEvaluator().evaluate(label: transition.label, when: candidate.when, payload: candidate.payload)
   }
 
   private func unsupportedTransitionReason(in transitions: [WorkflowStepTransition]) -> String? {

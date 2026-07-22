@@ -52,18 +52,11 @@ extension DeterministicWorkflowRunner {
       executionIndex: executionIndex
     )
 
-    let routingReconciler = workflowRoutingReconciler(workflow: workflow, step: step)
-    let candidate = try normalizeRuntimeAdapterOutput(adapterOutput, routingReconciler: routingReconciler)
-    if let adapterFailure = multiplePublishableTransitionFailure(transitions: transitions, candidate: candidate) {
-      try await publishFailureAndThrow(
-        adapterFailure,
-        sessionId: sessionId,
-        step: step,
-        attempt: executionIndex,
-        adapterOutput: adapterOutput,
-        transitions: transitions
-      )
-    }
+    let routingReconciler = workflowRoutingReconciler(
+      workflow: workflow,
+      step: step,
+      disableDefaultLoopGuard: request.disableDefaultLoopGuard
+    )
     return try await publisher.publishAcceptedOutput(
       WorkflowPublicationRequest(
         sessionId: sessionId,
@@ -73,7 +66,13 @@ extension DeterministicWorkflowRunner {
         body: .adapterOutput(adapterOutput),
         routingReconciler: routingReconciler,
         transitions: transitions,
-        publishesRootOutput: transitions.isEmpty
+        publishesRootOutput: transitions.isEmpty,
+        prePersistenceRoutingDecider: workflowPrePersistenceRoutingDecider(
+          workflow: workflow,
+          step: step,
+          request: request
+        ),
+        carriedPayloadFields: carriedLoopGuardPayload(from: request)
       )
     )
   }

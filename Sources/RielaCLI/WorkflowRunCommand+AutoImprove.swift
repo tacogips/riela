@@ -390,7 +390,9 @@ private extension WorkflowRunCommand {
     remediation["targetSessionId"] = .string(targetSessionId)
     remediations[index] = .object(remediation)
   }
+}
 
+extension WorkflowRunCommand {
   func rerunRequest(
     base: DeterministicWorkflowRunRequest,
     workflow: WorkflowDefinition,
@@ -407,6 +409,7 @@ private extension WorkflowRunCommand {
       maxSteps: options.maxSteps,
       maxConcurrency: options.maxConcurrency,
       maxLoopIterations: options.maxLoopIterations,
+      disableDefaultLoopGuard: options.disableDefaultLoopGuard,
       defaultTimeoutMs: options.defaultTimeoutMs,
       timeoutMs: options.timeoutMs,
       addonAttachments: base.addonAttachments,
@@ -419,7 +422,9 @@ private extension WorkflowRunCommand {
       eventHandler: base.eventHandler
     )
   }
+}
 
+private extension WorkflowRunCommand {
   func supervisionRecord(
     status: String,
     policy: WorkflowAutoImprovePolicy,

@@ -360,7 +360,8 @@ extension WorkflowCommandTests {
       nodes: [
         WorkflowNodeRef(id: "step", nodeFile: "nodes/node.json"),
         WorkflowNodeRef(id: "final", nodeFile: "nodes/final-node.json")
-      ]
+      ],
+      loop: WorkflowLoopMetadata(required: false)
     )
     let result = try await runner.run(DeterministicWorkflowRunRequest(
       workflow: workflow,
@@ -458,4 +459,134 @@ extension WorkflowCommandTests {
     XCTAssertEqual(run.session.executions.first?.nodeId, "shared-worker")
   }
 
+  func testMockScenarioUsesDefaultGuardUnlessCLIExplicitlyOptsOut() async throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-default-loop-guard-scenario-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    let scenarioURL = tempDir.appendingPathComponent("mock-scenario.json")
+    try Self.defaultLoopGuardScenarioJSON.write(to: scenarioURL, atomically: true, encoding: .utf8)
+
+    let guardedResult = await RielaCLIApplication().run([
+      "workflow", "run", Self.defaultLoopGuardWorkflowJSON,
+      "--mock-scenario", scenarioURL.path,
+      "--session-store", tempDir.appendingPathComponent("guarded-sessions", isDirectory: true).path,
+      "--max-steps", "8",
+      "--output", "json"
+    ])
+
+    XCTAssertEqual(guardedResult.exitCode, .success, guardedResult.stderr + guardedResult.stdout)
+    let guarded = try decodeJSON(WorkflowRunResult.self, from: guardedResult.stdout)
+    XCTAssertEqual(guarded.session.executions.map(\.stepId), ["review", "review", "finalize", "done"])
+    guard case let .object(guardOutcome)? = guarded.rootOutput?["loopGuardOutcome"] else {
+      return XCTFail("expected default guard marker from mock-scenario run")
+    }
+    XCTAssertEqual(guardOutcome["decision"], .string("accept-with-residual-risks"))
+    XCTAssertEqual(guardOutcome["policySource"], .string("default"))
+
+    let optedOutResult = await RielaCLIApplication().run([
+      "workflow", "run", Self.defaultLoopGuardWorkflowJSON,
+      "--mock-scenario", scenarioURL.path,
+      "--session-store", tempDir.appendingPathComponent("opted-out-sessions", isDirectory: true).path,
+      "--max-steps", "8",
+      "--disable-default-loop-guard",
+      "--output", "json"
+    ])
+
+    XCTAssertEqual(optedOutResult.exitCode, .success, optedOutResult.stderr + optedOutResult.stdout)
+    let optedOut = try decodeJSON(WorkflowRunResult.self, from: optedOutResult.stdout)
+    XCTAssertEqual(optedOut.session.executions.map(\.stepId), ["review", "review", "review", "finalize", "done"])
+    XCTAssertNil(optedOut.rootOutput?["loopGuardOutcome"])
+  }
+
+}
+
+private extension WorkflowCommandTests {
+  static let defaultLoopGuardWorkflowJSON = """
+  {
+    "workflow": {
+      "workflowId": "mock-default-loop-guard",
+      "defaults": {
+        "maxLoopIterations": 20,
+        "nodeTimeoutMs": 120000
+      },
+      "entryStepId": "review",
+      "nodes": [
+        {"id":"review-node","nodeFile":"nodes/review.json"},
+        {"id":"finalize-node","nodeFile":"nodes/finalize.json"},
+        {"id":"done-node","nodeFile":"nodes/done.json"}
+      ],
+      "steps": [
+        {
+          "id": "review",
+          "nodeId": "review-node",
+          "loop": {"role":"gate","gateId":"implementation-review"},
+          "transitions": [
+            {"toStepId":"review","label":"needs_work"},
+            {"toStepId":"finalize","label":"!needs_work"}
+          ]
+        },
+        {
+          "id": "finalize",
+          "nodeId": "finalize-node",
+          "transitions": [{"toStepId":"done"}]
+        },
+        {"id":"done","nodeId":"done-node"}
+      ]
+    },
+    "nodePayloads": {
+      "nodes/review.json": {
+        "id":"review-node","executionBackend":"codex-agent","model":"gpt-5.5","variables":{}
+      },
+      "nodes/finalize.json": {
+        "id":"finalize-node","executionBackend":"codex-agent","model":"gpt-5.5","variables":{}
+      },
+      "nodes/done.json": {
+        "id":"done-node","executionBackend":"codex-agent","model":"gpt-5.5","variables":{}
+      }
+    }
+  }
+  """
+
+  static let defaultLoopGuardScenarioJSON = """
+  {
+    "review": [
+      {
+        "when":{"needs_work":true},
+        "payload":{
+          "decision":"needs_work",
+          "loopGate":{
+            "gateId":"implementation-review",
+            "decision":"needs_work",
+            "blockingFindings":[{"id":"same","severity":"high","message":"same finding"}]
+          }
+        }
+      },
+      {
+        "when":{"needs_work":true},
+        "payload":{
+          "decision":"needs_work",
+          "loopGate":{
+            "gateId":"implementation-review",
+            "decision":"needs_work",
+            "blockingFindings":[{"id":"same","severity":"high","message":"same finding"}]
+          }
+        }
+      },
+      {
+        "when":{"needs_work":false},
+        "payload":{
+          "decision":"accepted",
+          "loopGate":{
+            "gateId":"implementation-review",
+            "decision":"accepted",
+            "blockingFindings":[]
+          }
+        }
+      }
+    ],
+    "finalize":{"payload":{"status":"finalized"}},
+    "done":{"payload":{"status":"done"}}
+  }
+  """
 }

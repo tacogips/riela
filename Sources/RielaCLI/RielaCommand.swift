@@ -353,6 +353,7 @@ public struct WorkflowRunOptions: Equatable, Sendable {
   public var maxSteps: Int?
   public var maxConcurrency: Int?
   public var maxLoopIterations: Int?
+  public var disableDefaultLoopGuard: Bool
   public var defaultTimeoutMs: Int?
   public var timeoutMs: Int?
   public var agentSilenceWarningMs: Int?
@@ -381,6 +382,7 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     maxSteps: Int? = nil,
     maxConcurrency: Int? = nil,
     maxLoopIterations: Int? = nil,
+    disableDefaultLoopGuard: Bool = false,
     defaultTimeoutMs: Int? = nil,
     timeoutMs: Int? = nil,
     agentSilenceWarningMs: Int? = 120_000,
@@ -408,6 +410,7 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     self.maxSteps = maxSteps
     self.maxConcurrency = maxConcurrency
     self.maxLoopIterations = maxLoopIterations
+    self.disableDefaultLoopGuard = disableDefaultLoopGuard
     self.defaultTimeoutMs = defaultTimeoutMs
     self.timeoutMs = timeoutMs
     self.agentSilenceWarningMs = agentSilenceWarningMs

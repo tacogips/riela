@@ -102,6 +102,7 @@ public struct LoopStallPayload: Codable, Equatable, Sendable {
   public var gateVisits: Int
   public var repeatedRounds: Int
   public var fingerprints: [String]
+  public var policySource: String?
 
   public init(
     gateId: String,
@@ -109,7 +110,8 @@ public struct LoopStallPayload: Codable, Equatable, Sendable {
     action: String,
     gateVisits: Int,
     repeatedRounds: Int,
-    fingerprints: [String] = []
+    fingerprints: [String] = [],
+    policySource: String? = nil
   ) {
     self.gateId = gateId
     self.violationKind = violationKind
@@ -117,6 +119,7 @@ public struct LoopStallPayload: Codable, Equatable, Sendable {
     self.gateVisits = gateVisits
     self.repeatedRounds = repeatedRounds
     self.fingerprints = fingerprints
+    self.policySource = policySource
   }
 }
 
@@ -195,6 +198,7 @@ public enum WorkflowRunEvent: Equatable, Sendable {
     loopStallGateVisits: Int? = nil,
     loopStallRepeatedRounds: Int? = nil,
     loopStallFingerprints: [String]? = nil,
+    loopStallPolicySource: String? = nil,
     loopBudgetDiagnostic: String? = nil,
     loopBudgetAction: String? = nil,
     loopBudgetConsumedTokens: Int? = nil,
@@ -255,7 +259,8 @@ public enum WorkflowRunEvent: Equatable, Sendable {
           action: loopStallAction ?? "",
           gateVisits: loopStallGateVisits ?? 0,
           repeatedRounds: loopStallRepeatedRounds ?? 0,
-          fingerprints: loopStallFingerprints ?? []
+          fingerprints: loopStallFingerprints ?? [],
+          policySource: loopStallPolicySource
         )
       )
     case .budgetExceeded:
@@ -438,7 +443,7 @@ public extension WorkflowRunEvent {
     }
   }
 
-  private var loopStallPayload: LoopStallPayload? {
+  var loopStallPayload: LoopStallPayload? {
     switch self {
     case let .loopStall(_, _, payload):
       payload
@@ -499,6 +504,7 @@ extension WorkflowRunEvent: Codable {
     case loopStallGateVisits
     case loopStallRepeatedRounds
     case loopStallFingerprints
+    case loopStallPolicySource
     case loopBudgetDiagnostic
     case loopBudgetAction
     case loopBudgetConsumedTokens
@@ -536,6 +542,7 @@ extension WorkflowRunEvent: Codable {
       loopStallGateVisits: try container.decodeIfPresent(Int.self, forKey: .loopStallGateVisits),
       loopStallRepeatedRounds: try container.decodeIfPresent(Int.self, forKey: .loopStallRepeatedRounds),
       loopStallFingerprints: try container.decodeIfPresent([String].self, forKey: .loopStallFingerprints),
+      loopStallPolicySource: try container.decodeIfPresent(String.self, forKey: .loopStallPolicySource),
       loopBudgetDiagnostic: try container.decodeIfPresent(String.self, forKey: .loopBudgetDiagnostic),
       loopBudgetAction: try container.decodeIfPresent(String.self, forKey: .loopBudgetAction),
       loopBudgetConsumedTokens: try container.decodeIfPresent(Int.self, forKey: .loopBudgetConsumedTokens),
@@ -573,6 +580,7 @@ extension WorkflowRunEvent: Codable {
     try container.encodeIfPresent(loopStallPayload?.gateVisits, forKey: .loopStallGateVisits)
     try container.encodeIfPresent(loopStallPayload?.repeatedRounds, forKey: .loopStallRepeatedRounds)
     try container.encodeIfPresent(loopStallPayload?.fingerprints, forKey: .loopStallFingerprints)
+    try container.encodeIfPresent(loopStallPayload?.policySource, forKey: .loopStallPolicySource)
     try container.encodeIfPresent(loopBudgetPayload?.diagnostic, forKey: .loopBudgetDiagnostic)
     try container.encodeIfPresent(loopBudgetPayload?.action, forKey: .loopBudgetAction)
     try container.encodeIfPresent(loopBudgetPayload?.consumedTokens, forKey: .loopBudgetConsumedTokens)

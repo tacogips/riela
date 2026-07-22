@@ -18,6 +18,10 @@ control-plane commands, direct `call-step`/`workflow-call` execution,
 supervised `workflow run --auto-improve`, and reviewed `workflow self-improve`
 mutation flows.
 
+Client command routing, subcommand validation, positional arguments, and typed
+option parsing use Apple's `swift-argument-parser`. Existing command names,
+aliases, defaults, and output contracts remain stable behind the typed routes.
+
 Runtime-owned records stay in the Swift session and runtime stores. Workers and
 adapters return candidate outputs only; session ids, step execution ids,
 workflow message ids, output publication, root output selection, continuation,
@@ -53,6 +57,40 @@ agents, and LLM-driven tool use should prefer `--output jsonl`, especially for
 interactive package creation and import flows. Use `--output json` only when a
 legacy caller explicitly needs a single non-streaming JSON document after
 completion.
+
+## Runtime Data Garbage Collection
+
+Runtime data GC is off by default. Enable automatic RielaApp cleanup by writing
+the retention period to `~/.riela/config.json`:
+
+```json
+{
+  "gc": {
+    "retentionDays": 30
+  }
+}
+```
+
+RielaApp starts cleanup asynchronously during launch, so opening the app and
+starting configured workflows do not wait for GC. `RIELA_GC_RETENTION_DAYS`
+overrides the configuration file when an environment-based deployment is more
+convenient.
+
+Run the same cleanup manually with the CLI:
+
+```bash
+riela gc --scope all
+riela gc --retention-days 30 --scope user
+riela gc --retention-days 30 --scope project --dry-run --output json
+```
+
+With no configured or explicit retention period, `riela gc` reports that GC is
+off and changes nothing. The collector removes expired session/runtime rows,
+message-log rows, legacy session files, workflow-history snapshots, event
+receipts, artifacts, and logs. Authored workflows, installed packages,
+registries, profiles, notes, and configuration files are not GC targets.
+`--scope all` covers both `~/.riela` and the current project's `.riela`;
+RielaApp automatically collects only its configured user home.
 
 ## Riela Note
 

@@ -26,6 +26,7 @@ public struct RielaCLIApplication: Sendable {
   public var noteCommandRunner: NoteCommandRunner
   public var instanceCommandRunner: InstanceCommandRunner
   public var doctorCommand: DoctorCommand
+  public var garbageCollectionCommand: GarbageCollectionCommand
   public var loopCommandRunner: LoopCommandRunner
   public var sessionContinueCommand: SessionContinueCommand
   public var scopedCommandRunner: ScopedParityCommandRunner
@@ -50,6 +51,7 @@ public struct RielaCLIApplication: Sendable {
     noteCommandRunner: NoteCommandRunner = NoteCommandRunner(),
     instanceCommandRunner: InstanceCommandRunner = InstanceCommandRunner(),
     doctorCommand: DoctorCommand = DoctorCommand(),
+    garbageCollectionCommand: GarbageCollectionCommand = GarbageCollectionCommand(),
     loopCommandRunner: LoopCommandRunner = LoopCommandRunner(),
     sessionContinueCommand: SessionContinueCommand = SessionContinueCommand(),
     scopedCommandRunner: ScopedParityCommandRunner = ScopedParityCommandRunner()
@@ -73,6 +75,7 @@ public struct RielaCLIApplication: Sendable {
     self.noteCommandRunner = noteCommandRunner
     self.instanceCommandRunner = instanceCommandRunner
     self.doctorCommand = doctorCommand
+    self.garbageCollectionCommand = garbageCollectionCommand
     self.loopCommandRunner = loopCommandRunner
     self.sessionContinueCommand = sessionContinueCommand
     self.scopedCommandRunner = scopedCommandRunner
@@ -144,6 +147,8 @@ public struct RielaCLIApplication: Sendable {
         return instanceCommandRunner.run(options)
       case let .doctor(options):
         return await doctorCommand.run(options)
+      case let .gc(options):
+        return garbageCollectionCommand.run(options)
       case let .scoped(command):
         return await scopedCommandRunner.run(command)
       }
@@ -174,11 +179,12 @@ public struct RielaCLIApplication: Sendable {
     guard requestsStructuredOutput(arguments) else {
       return CLICommandResult(exitCode: .usage, stderr: error.message)
     }
-    guard arguments.first == "workflow" else {
+    let invocation = ParsedClientInvocation.parseCLI(arguments)
+    guard invocation.scope == "workflow" else {
       let result = CLIUnsupportedCommandResult(
-        scope: arguments.first ?? "riela",
-        command: arguments.dropFirst().first,
-        target: arguments.dropFirst(2).first,
+        scope: invocation.scope,
+        command: invocation.command,
+        target: invocation.target,
         exitCode: CLIExitCode.usage.rawValue,
         error: error.message
       )
@@ -187,8 +193,8 @@ public struct RielaCLIApplication: Sendable {
         stdout: (try? jsonString(result)) ?? #"{"error":"failed to encode parser failure","exitCode":2}"# + "\n"
       )
     }
-    let subcommand = arguments.count > 1 ? arguments[1] : "workflow"
-    let target = parserFailureTarget(arguments: arguments, subcommand: subcommand)
+    let subcommand = invocation.command ?? "workflow"
+    let target = invocation.target ?? "workflow \(subcommand)"
     let exitCode = CLIExitCode.usage.rawValue
     let stdout: String?
     switch subcommand {
@@ -224,23 +230,8 @@ public struct RielaCLIApplication: Sendable {
   }
 
   private func requestsStructuredOutput(_ arguments: [String]) -> Bool {
-    for index in arguments.indices {
-      if arguments[index] == "--output", index + 1 < arguments.count {
-        return arguments[index + 1] != "text" && arguments[index + 1] != "table"
-      }
-      if arguments[index].hasPrefix("--output=") {
-        let value = String(arguments[index].dropFirst("--output=".count))
-        return value != "text" && value != "table"
-      }
-    }
-    return true
-  }
-
-  private func parserFailureTarget(arguments: [String], subcommand: String) -> String {
-    guard arguments.count > 2, !arguments[2].hasPrefix("--") else {
-      return "workflow \(subcommand)"
-    }
-    return arguments[2]
+    let output = try? parseOutputOnly(arguments, allowTableOutput: true, defaultOutput: .json)
+    return output != .text && output != .table
   }
 
 }
@@ -311,6 +302,7 @@ Usage:
   riela workflow run <workflow> [--variables <json|@file>] [--instance <name>] [--mock-scenario <path>] [--auto-improve] [--output jsonl|json|text]
   riela instance list|show|create|update|remove [identity] [--workflow <id>] [--scope project|user|all] [--output json|jsonl|text|table]
   riela doctor [--scope project|user|auto] [--working-dir <dir>] [--output json|text]
+  riela gc [--retention-days <days>] [--scope user|project|all] [--working-dir <dir>] [--dry-run] [--output json|text]
   riela package <search|list|status|install|ci|update|remove|checkout|init|validate|pack|publish> [options]
   riela node search [query] [--scope project|user|auto] [--registry default] [--refresh] [--output json|text|table]
   riela node list [query] [--scope project|user|auto] [--registry default] [--refresh] [--output json|text|table]

@@ -2,6 +2,7 @@ import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
+import ArgumentParser
 import RielaAdapters
 
 public enum SetupContainerActionKind: String, Codable, Equatable, Sendable {
@@ -417,43 +418,27 @@ public struct SetupContainerCommand: Sendable {
   }
 }
 
-private struct SetupContainerOptions: Sendable {
-  var yes: Bool
-  var dryRun: Bool
-  var printScript: Bool
-  var openInstaller: Bool
+private struct SetupContainerOptions: ParsableArguments, Sendable {
+  @Flag(name: .shortAndLong) var yes = false
+  @Flag var dryRun = false
+  @Flag var printScript = false
+  @Flag var openInstaller = false
+  @Option var output: String?
+
+  init() {}
 
   init(arguments: [String]) throws {
-    var yes = false
-    var dryRun = false
-    var printScript = false
-    var openInstaller = false
-    var index = 0
-    while index < arguments.count {
-      let token = arguments[index]
-      switch token {
-      case "--yes", "-y":
-        yes = true
-      case "--dry-run":
-        dryRun = true
-      case "--print-script":
-        printScript = true
-      case "--open-installer":
-        openInstaller = true
-      case "--output":
-        index += 1
-      default:
-        if token.hasPrefix("--output=") {
-          break
-        }
-        throw CLIUsageError("unsupported setup container option '\(token)'")
-      }
-      index += 1
+    do {
+      self = try Self.parse(arguments)
+    } catch {
+      throw CLIUsageError(Self.message(for: error))
     }
-    self.yes = yes
-    self.dryRun = dryRun || printScript
-    self.printScript = printScript
-    self.openInstaller = openInstaller
+  }
+
+  mutating func validate() throws {
+    if printScript {
+      dryRun = true
+    }
   }
 }
 

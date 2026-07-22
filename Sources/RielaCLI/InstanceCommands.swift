@@ -1,3 +1,4 @@
+import ArgumentParser
 import Foundation
 import RielaCore
 
@@ -223,83 +224,52 @@ public struct InstanceCommandRunner: Sendable {
   }
 }
 
-private struct InstanceCommandOptions {
-  var workflowId: String?
-  var scope: WorkflowInstanceScope
-  var output: WorkflowOutputFormat
-  var variables: String?
-  var nodePatch: String?
-  var workingDirectory: String
-  var workflowDefinitionDir: String?
+private struct InstanceCommandOptions: ParsableArguments {
+  @Option(name: .customLong("workflow")) var workflowId: String?
+  @Option(name: [.customLong("scope"), .customLong("instance-scope")])
+  private var parsedScope: WorkflowInstanceScope?
+  @Option(name: .customLong("output")) private var parsedOutput: WorkflowOutputFormat?
+  @Option var variables: String?
+  @Option var nodePatch: String?
+  @Option(name: .customLong("cwd")) var workingDirectory = FileManager.default.currentDirectoryPath
+  @Option var workflowDefinitionDir: String?
+  @Option(name: [.customLong("working-dir"), .customLong("working-directory")])
   var workingDirectoryOverride: String?
   var didSetWorkingDirectory = false
-  var environmentFilePath: String?
+  @Option(name: .customLong("env-file")) var environmentFilePath: String?
   var didSetEnvironmentFilePath = false
   var environmentVariables: [String: String] = [:]
-  var displayName: String?
+  @Option(name: .customLong("env")) private var environmentAssignments: [String] = []
+  @Option var displayName: String?
+  var scope = WorkflowInstanceScope.all
+  var output = WorkflowOutputFormat.jsonl
+
+  init() {}
 
   init(
     _ tokens: [String],
     defaultScope: WorkflowInstanceScope?,
     defaultOutput: WorkflowOutputFormat
   ) throws {
-    scope = defaultScope ?? .all
-    output = defaultOutput
-    workingDirectory = FileManager.default.currentDirectoryPath
-    var index = 0
-    while index < tokens.count {
-      let token = tokens[index]
-      func value() throws -> String {
-        guard index + 1 < tokens.count, !tokens[index + 1].hasPrefix("--") else {
-          throw CLIUsageError("\(token) requires a value")
-        }
-        index += 1
-        return tokens[index]
-      }
-      switch token {
-      case "--workflow":
-        workflowId = try value()
-      case "--scope", "--instance-scope":
-        let raw = try value()
-        guard let parsedScope = WorkflowInstanceScope(rawValue: raw),
-              defaultScope == .all || parsedScope != .all else {
-          throw CLIUsageError("invalid \(token) value '\(raw)'; expected project or user")
-        }
-        scope = parsedScope
-      case "--output":
-        let raw = try value()
-        guard let parsedOutput = WorkflowOutputFormat(rawValue: raw) else {
-          throw CLIUsageError("invalid --output value '\(raw)'; expected text, json, jsonl, or table")
-        }
-        output = parsedOutput
-      case "--variables":
-        variables = try value()
-      case "--node-patch":
-        nodePatch = try value()
-      case "--working-dir", "--working-directory":
-        workingDirectoryOverride = try value()
-        didSetWorkingDirectory = true
-      case "--cwd":
-        workingDirectory = try value()
-      case "--workflow-definition-dir":
-        workflowDefinitionDir = try value()
-      case "--env-file":
-        environmentFilePath = try value()
-        didSetEnvironmentFilePath = true
-      case "--env":
-        let assignment = try value()
+    do {
+      self = try Self.parse(tokens)
+    } catch {
+      throw CLIUsageError(Self.message(for: error))
+    }
+    scope = parsedScope ?? defaultScope ?? .all
+    output = parsedOutput ?? defaultOutput
+    if let parsedScope, defaultScope != .all, parsedScope == .all {
+      throw CLIUsageError("invalid --scope value 'all'; expected project or user")
+    }
+    didSetWorkingDirectory = workingDirectoryOverride != nil
+    didSetEnvironmentFilePath = environmentFilePath != nil
+    for assignment in environmentAssignments {
         guard let separator = assignment.firstIndex(of: "="), separator != assignment.startIndex else {
           throw CLIUsageError("--env expects KEY=VALUE")
         }
         let key = String(assignment[..<separator])
         let value = String(assignment[assignment.index(after: separator)...])
         environmentVariables[key] = value
-      case "--display-name":
-        displayName = try value()
-      default:
-        throw CLIUsageError("unsupported instance option '\(token)'")
-      }
-      index += 1
     }
   }
 }

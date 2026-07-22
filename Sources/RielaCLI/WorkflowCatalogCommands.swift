@@ -1,4 +1,5 @@
 import Foundation
+import ArgumentParser
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -167,6 +168,13 @@ public struct WorkflowCatalogCommand: Sendable {
     }
   }
 
+  private struct ParsedCatalogArguments: RielaClientFamilyArguments {
+    @Option var scope = "auto"
+    @Option(name: [.customLong("working-dir"), .customLong("working-directory")])
+    var workingDirectory = FileManager.default.currentDirectoryPath
+    @Option var output: String?
+  }
+
   private struct ParsedCatalogOptions {
     var scope: WorkflowScope
     var workingDirectory: String
@@ -296,35 +304,11 @@ public struct WorkflowCatalogCommand: Sendable {
   }
 
   private func catalogParseOptions(_ options: CLICommandOptions) throws -> ParsedCatalogOptions {
-    var scope = WorkflowScope.auto
-    var workingDirectory = FileManager.default.currentDirectoryPath
-    var index = 0
-    while index < options.arguments.count {
-      let token = options.arguments[index]
-      switch token {
-      case "--scope":
-        guard index + 1 < options.arguments.count, let value = WorkflowScope(rawValue: options.arguments[index + 1]), value != .direct else {
-          throw CLIUsageError("invalid --scope value; expected auto, project, or user")
-        }
-        scope = value
-        index += 2
-      case "--working-dir", "--working-directory":
-        guard index + 1 < options.arguments.count else {
-          throw CLIUsageError("\(token) requires a value")
-        }
-        workingDirectory = options.arguments[index + 1]
-        index += 2
-      case "--output":
-        index += 2
-      default:
-        if token.hasPrefix("--output=") {
-          index += 1
-        } else {
-          throw CLIUsageError("unsupported workflow catalog option '\(token)'")
-        }
-      }
+    let arguments = try ParsedCatalogArguments.parseCLI(options.arguments)
+    guard let scope = WorkflowScope(rawValue: arguments.scope), scope != .direct else {
+      throw CLIUsageError("invalid --scope value; expected auto, project, or user")
     }
-    return ParsedCatalogOptions(scope: scope, workingDirectory: workingDirectory)
+    return ParsedCatalogOptions(scope: scope, workingDirectory: arguments.workingDirectory)
   }
 
   private func workflowRoots(scope: WorkflowScope, workingDirectory: String) -> [(WorkflowScope, URL)] {

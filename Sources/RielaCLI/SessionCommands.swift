@@ -1,3 +1,4 @@
+import ArgumentParser
 import Foundation
 import RielaAdapters
 import RielaCore
@@ -34,69 +35,43 @@ public struct SessionDiscoveryCommand: Sendable {
     }
   }
 
-  private struct ParsedOptions {
-    var workflowName: String?
+  private struct ParsedOptions: ParsableArguments {
+    @Option(name: .customLong("workflow")) var workflowName: String?
+    @Option(name: .customLong("status")) private var statusRawValue: String?
+    @Option var limit = 10
+    @Option var scope = WorkflowScope.auto
+    @Option(name: [.customLong("working-dir"), .customLong("working-directory")])
+    var workingDirectory = FileManager.default.currentDirectoryPath
+    @Option var sessionStore: String?
+    @Option private var output: String?
     var status: WorkflowSessionStatus?
-    var limit: Int = 10
-    var scope: WorkflowScope = .auto
-    var workingDirectory: String = FileManager.default.currentDirectoryPath
-    var sessionStore: String?
+
+    init() {}
+
+    init(_ arguments: [String]) throws {
+      do {
+        self = try Self.parse(arguments)
+      } catch {
+        throw CLIUsageError(Self.message(for: error))
+      }
+      if let statusRawValue {
+        guard let status = WorkflowSessionStatus(rawValue: statusRawValue) else {
+          throw CLIUsageError("invalid --status value; expected created, running, completed, or failed")
+        }
+        self.status = status
+      }
+      guard limit > 0 else {
+        throw CLIUsageError("--limit requires a positive integer")
+      }
+      limit = min(limit, 100)
+      guard scope != .direct else {
+        throw CLIUsageError("invalid --scope value; expected auto, project, or user")
+      }
+    }
   }
 
   private func parseOptions(_ arguments: [String]) throws -> ParsedOptions {
-    var parsed = ParsedOptions()
-    var index = 0
-    while index < arguments.count {
-      let token = arguments[index]
-      switch token {
-      case "--workflow":
-        parsed.workflowName = try value(after: token, at: index, in: arguments)
-        index += 2
-      case "--status":
-        let raw = try value(after: token, at: index, in: arguments)
-        guard let status = WorkflowSessionStatus(rawValue: raw) else {
-          throw CLIUsageError("invalid --status value; expected created, running, completed, or failed")
-        }
-        parsed.status = status
-        index += 2
-      case "--limit":
-        let raw = try value(after: token, at: index, in: arguments)
-        guard let limit = Int(raw), limit > 0 else {
-          throw CLIUsageError("--limit requires a positive integer")
-        }
-        parsed.limit = min(limit, 100)
-        index += 2
-      case "--scope":
-        let raw = try value(after: token, at: index, in: arguments)
-        guard let scope = WorkflowScope(rawValue: raw), scope != .direct else {
-          throw CLIUsageError("invalid --scope value; expected auto, project, or user")
-        }
-        parsed.scope = scope
-        index += 2
-      case "--working-dir", "--working-directory":
-        parsed.workingDirectory = try value(after: token, at: index, in: arguments)
-        index += 2
-      case "--session-store":
-        parsed.sessionStore = try value(after: token, at: index, in: arguments)
-        index += 2
-      case "--output":
-        index += 2
-      default:
-        if token.hasPrefix("--output=") {
-          index += 1
-        } else {
-          throw CLIUsageError("unsupported session \(token) option")
-        }
-      }
-    }
-    return parsed
-  }
-
-  private func value(after option: String, at index: Int, in arguments: [String]) throws -> String {
-    guard index + 1 < arguments.count else {
-      throw CLIUsageError("\(option) requires a value")
-    }
-    return arguments[index + 1]
+    try ParsedOptions(arguments)
   }
 
   private func renderList(_ rows: [SessionDiscoveryRow], output: WorkflowOutputFormat) -> CLICommandResult {
@@ -267,49 +242,29 @@ public struct SessionInspectionCommand: Sendable {
     }
   }
 
-  private struct ParsedOptions {
-    var scope: WorkflowScope
-    var workingDirectory: String
-    var sessionStore: String?
+  private struct ParsedOptions: ParsableArguments {
+    @Option var scope = WorkflowScope.auto
+    @Option(name: [.customLong("working-dir"), .customLong("working-directory")])
+    var workingDirectory = FileManager.default.currentDirectoryPath
+    @Option var sessionStore: String?
+    @Option private var output: String?
+
+    init() {}
+
+    init(_ arguments: [String]) throws {
+      do {
+        self = try Self.parse(arguments)
+      } catch {
+        throw CLIUsageError(Self.message(for: error))
+      }
+      guard scope != .direct else {
+        throw CLIUsageError("invalid --scope value; expected auto, project, or user")
+      }
+    }
   }
 
   private func parseSessionInspectionOptions(_ arguments: [String]) throws -> ParsedOptions {
-    var scope = WorkflowScope.auto
-    var workingDirectory = FileManager.default.currentDirectoryPath
-    var sessionStore: String?
-    var index = 0
-    while index < arguments.count {
-      let token = arguments[index]
-      switch token {
-      case "--scope":
-        guard index + 1 < arguments.count, let value = WorkflowScope(rawValue: arguments[index + 1]), value != .direct else {
-          throw CLIUsageError("invalid --scope value; expected auto, project, or user")
-        }
-        scope = value
-        index += 2
-      case "--working-dir", "--working-directory":
-        guard index + 1 < arguments.count else {
-          throw CLIUsageError("\(token) requires a value")
-        }
-        workingDirectory = arguments[index + 1]
-        index += 2
-      case "--session-store":
-        guard index + 1 < arguments.count else {
-          throw CLIUsageError("--session-store requires a value")
-        }
-        sessionStore = arguments[index + 1]
-        index += 2
-      case "--output":
-        index += 2
-      default:
-        if token.hasPrefix("--output=") {
-          index += 1
-        } else {
-          throw CLIUsageError("unsupported session \(token) option")
-        }
-      }
-    }
-    return ParsedOptions(scope: scope, workingDirectory: workingDirectory, sessionStore: sessionStore)
+    try ParsedOptions(arguments)
   }
 
   private func loadRuntimeSnapshot(sessionId: String, parsed: ParsedOptions) throws -> WorkflowRuntimePersistenceSnapshot {

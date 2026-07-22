@@ -5,13 +5,12 @@ import RielaAppSupport
 import RielaObservability
 import RielaServer
 import UniformTypeIdentifiers
-
 @main
 @MainActor
 final class RielaApp: NSObject, NSApplicationDelegate {
   let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
   private let controller = WorkflowServingController()
-  private let launchOptions = RielaAppLaunchOptions.current()
+  let launchOptions = RielaAppLaunchOptions.current()
   private var daemonDiscovery = RielaAppDaemonWorkflowDiscovery()
   let daemonRuntime = RielaAppDaemonWorkflowRuntime()
   private let telemetry = RielaTelemetryFactory.make(configuration: .fromEnvironment(surface: .app))
@@ -66,6 +65,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     appHomeDirectory = configuredHomeDirectory()
+    startGarbageCollection()
     profileStore = RielaAppProfileStore(
       appRootURL: launchOptions.appRoot ?? RielaAppProfileStore.defaultAppRootURL(homeDirectory: appHomeDirectory)
     )

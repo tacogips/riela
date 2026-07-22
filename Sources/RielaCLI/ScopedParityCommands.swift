@@ -48,15 +48,10 @@ public struct ScopedParityCommandRunner: Sendable {
     do {
       let options = command.options
       let parityArguments: [String]
-      if command.kind == .callStep || command.kind == .workflowCall,
-        let first = options.arguments.first,
-        !first.hasPrefix("--") {
-        parityArguments = Array(options.arguments.dropFirst())
-      } else if command.kind == .events,
-        options.command == "schedules",
-        let first = options.arguments.first,
-        !first.hasPrefix("--") {
-        parityArguments = Array(options.arguments.dropFirst())
+      if command.kind == .callStep || command.kind == .workflowCall {
+        parityArguments = try ParsedTargetAndOptions.parseCLI(options.arguments).options
+      } else if command.kind == .events, options.command == "schedules" {
+        parityArguments = try ParsedTargetAndOptions.parseCLI(options.arguments).options
       } else {
         parityArguments = options.arguments
       }
@@ -297,10 +292,10 @@ fileprivate extension ScopedParityCommandRunner {
   }
 
   private func callStep(options: CLICommandOptions, parsed: ParsedParityOptions) async -> CLICommandResult {
+    let route = try? ParsedTargetAndOptions.parseCLI(options.arguments)
     guard let workflowId = options.command,
       let workflowRunId = options.target,
-      let stepId = options.arguments.first,
-      !stepId.hasPrefix("--")
+      let stepId = route?.target
     else {
       return CLICommandResult(exitCode: .usage, stderr: "call-step requires <workflow-id> <workflow-run-id> <step-id>")
     }
@@ -658,7 +653,7 @@ fileprivate extension ScopedParityCommandRunner {
       )
     case "schedules":
       let schedulesCommand = options.target ?? "list"
-      let scheduleId = options.arguments.first(where: { !$0.hasPrefix("--") })
+      let scheduleId = try ParsedTargetAndOptions.parseCLI(options.arguments).target
       switch schedulesCommand {
       case "list":
         let schedules = try listEventSchedules(eventRoot: root)

@@ -7,6 +7,43 @@ final class CommandParsingTests: XCTestCase {
   func testParsesTopLevelHelp() throws {
     XCTAssertEqual(try RielaArgumentParser().parse(["--help"]), .help)
     XCTAssertEqual(try RielaArgumentParser().parse(["-h"]), .help)
+    XCTAssertEqual(try RielaArgumentParser().parse(["help"]), .help)
+  }
+
+  func testParsesTopLevelVersionThroughArgumentParser() throws {
+    XCTAssertEqual(try RielaArgumentParser().parse([]), .version)
+    XCTAssertEqual(try RielaArgumentParser().parse(["--version"]), .version)
+    XCTAssertEqual(try RielaArgumentParser().parse(["version"]), .version)
+  }
+
+  func testArgumentParserRegistersEveryTopLevelClientCommand() {
+    XCTAssertEqual(
+      Set(RielaClientCommandRouter.configuration.subcommands.map { $0._commandName }),
+      Set([
+        "workflow", "package", "node", "rrun", "setup", "memory", "note", "instance", "doctor", "gc",
+        "session", "loop", "graphql", "gql", "hook", "events", "serve", "call-step", "workflow-call", "version"
+      ])
+    )
+  }
+
+  func testArgumentParserRejectsUnknownTopLevelCommand() {
+    XCTAssertThrowsError(try RielaArgumentParser().parse(["unknown-command"])) { error in
+      XCTAssertTrue((error as? CLIUsageError)?.message.contains("unknown-command") == true)
+    }
+  }
+
+  func testParsesGarbageCollectionCommand() throws {
+    XCTAssertEqual(
+      try RielaArgumentParser().parse([
+        "gc", "--retention-days", "30", "--scope", "user", "--dry-run", "--output", "json"
+      ]),
+      .gc(CLICommandOptions(
+        scope: "gc",
+        command: "gc",
+        arguments: ["--retention-days", "30", "--scope", "user", "--dry-run", "--output", "json"],
+        output: .json
+      ))
+    )
   }
 
   func testParsesPackageHelp() throws {
@@ -213,6 +250,30 @@ final class CommandParsingTests: XCTestCase {
       XCTAssertTrue(options.autoImprovePolicy.nestedSuperviser)
     } else {
       XCTFail("expected supervised run command")
+    }
+
+    let disabledThenConfigured = try parser.parse([
+      "workflow", "run", "demo",
+      "--no-auto-improve",
+      "--max-workflow-patches", "4"
+    ])
+    if case let .workflow(.run(options)) = disabledThenConfigured {
+      XCTAssertFalse(options.autoImprove)
+      XCTAssertEqual(options.autoImprovePolicy.maxWorkflowPatches, 4)
+    } else {
+      XCTFail("expected disabled run command")
+    }
+
+    let configuredThenDisabled = try parser.parse([
+      "workflow", "run", "demo",
+      "--max-workflow-patches", "4",
+      "--no-auto-improve"
+    ])
+    if case let .workflow(.run(options)) = configuredThenDisabled {
+      XCTAssertFalse(options.autoImprove)
+      XCTAssertEqual(options.autoImprovePolicy.maxWorkflowPatches, 0)
+    } else {
+      XCTFail("expected disabled run command")
     }
   }
 

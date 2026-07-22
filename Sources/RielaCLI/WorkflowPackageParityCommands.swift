@@ -18,7 +18,7 @@ private let defaultWorkflowPackageRegistryTimestamp = "2026-06-18T00:00:00Z"
 
 // swiftlint:disable:next type_body_length
 public struct WorkflowPackageCommandRunner: Sendable {
-  private struct PackageSummaryRoot {
+  struct PackageSummaryRoot {
     var url: URL
     var source: String
   }
@@ -228,14 +228,15 @@ public struct WorkflowPackageCommandRunner: Sendable {
     let registryId: String?
     let optionArguments: [String]
     let registryIndexRoot: String?
-    if action == "index", let first = options.arguments.first, !first.hasPrefix("--") {
+    let route = try ParsedTargetAndOptions.parseCLI(options.arguments)
+    if action == "index", let target = route.target {
       registryId = nil
-      registryIndexRoot = first
-      optionArguments = Array(options.arguments.dropFirst())
-    } else if ["add", "sync"].contains(action), let first = options.arguments.first, !first.hasPrefix("--") {
-      registryId = first
+      registryIndexRoot = target
+      optionArguments = route.options
+    } else if ["add", "sync"].contains(action), let target = route.target {
+      registryId = target
       registryIndexRoot = nil
-      optionArguments = Array(options.arguments.dropFirst())
+      optionArguments = route.options
     } else {
       registryId = nil
       registryIndexRoot = nil
@@ -419,7 +420,7 @@ public struct WorkflowPackageCommandRunner: Sendable {
     return indexURL
   }
 
-  private func managedRegistryCacheRoot(id: String) -> URL {
+  func managedRegistryCacheRoot(id: String) -> URL {
     URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
       .appendingPathComponent(".riela/registries", isDirectory: true)
       .appendingPathComponent(packageFilesystemKey(id), isDirectory: true)
@@ -972,89 +973,4 @@ public struct WorkflowPackageCommandRunner: Sendable {
     return config.registries
   }
 
-  private func packageSummaryRoots(parsed: ParsedParityOptions, workingDirectory: URL) throws -> [PackageSummaryRoot] {
-    let installedRoots = packageRoots(parsed: parsed, workingDirectory: workingDirectory).map {
-      PackageSummaryRoot(url: $0, source: "installed")
-    }
-    let registryRoots = try selectedPackageRegistries(parsed: parsed, workingDirectory: workingDirectory)
-      .flatMap { registry in
-        registryPackageRoots(registry: registry, parsed: parsed, workingDirectory: workingDirectory)
-      }
-    return uniquePackageRoots(installedRoots + registryRoots)
-  }
-
-  private func registryPackageRoots(
-    registry: WorkflowPackageRegistryEntry,
-    parsed: ParsedParityOptions,
-    workingDirectory: URL
-  ) -> [PackageSummaryRoot] {
-    if let localPath = parsed.localPath {
-      return [registryPackagesRoot(localPath, relativeTo: workingDirectory, source: "flag")]
-    }
-    var roots: [PackageSummaryRoot] = []
-    if let localPath = registry.localPath {
-      roots.append(registryPackagesRoot(localPath, relativeTo: workingDirectory, source: "configured"))
-    }
-    roots.append(PackageSummaryRoot(
-      url: URL(fileURLWithPath: "\(workingDirectory.path)-packages", isDirectory: true)
-        .appendingPathComponent("packages", isDirectory: true),
-      source: "sibling"
-    ))
-    roots.append(PackageSummaryRoot(
-      url: managedRegistryCacheRoot(id: registry.id).appendingPathComponent("packages", isDirectory: true),
-      source: "managed"
-    ))
-    return uniquePackageRoots(roots)
-  }
-  private func registryPackagesRoot(_ localPath: String, relativeTo workingDirectory: URL, source: String) -> PackageSummaryRoot {
-    PackageSummaryRoot(
-      url: absoluteURL(localPath, relativeTo: workingDirectory).appendingPathComponent("packages", isDirectory: true),
-      source: source
-    )
-  }
-  private func uniquePackageRoots(_ roots: [PackageSummaryRoot]) -> [PackageSummaryRoot] {
-    var seen = Set<String>()
-    var result: [PackageSummaryRoot] = []
-    for root in roots {
-      let path = root.url.standardizedFileURL.path
-      if seen.insert(path).inserted {
-        result.append(root)
-      }
-    }
-    return result
-  }
-  private func inferredPackageName(from packageDirectory: URL) -> String {
-    let name = packageDirectory.lastPathComponent
-    let scope = packageDirectory.deletingLastPathComponent().lastPathComponent
-    if scope.hasPrefix("@") {
-      return "\(scope)/\(name)"
-    }
-    return name
-  }
-  private func removePackage(target: String?, parsed: ParsedParityOptions) throws -> URL {
-    guard let target, !target.isEmpty else {
-      throw CLIUsageError("package remove requires a package name")
-    }
-    guard WorkflowPackageManifestValidator.isSafePackageName(target) else {
-      throw CLIUsageError("invalid package name '\(target)'")
-    }
-    let workingDirectory = URL(fileURLWithPath: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath, isDirectory: true)
-    let root = packageRoot(scope: parsed.scope, workingDirectory: workingDirectory).standardizedFileURL
-    let destination = root.appendingPathComponent(target, isDirectory: true).standardizedFileURL
-    guard isURL(destination, containedIn: root) else {
-      throw CLIUsageError("invalid package name '\(target)'")
-    }
-    guard FileManager.default.fileExists(atPath: destination.path) else {
-      throw CLIUsageError("installed package not found: \(target)")
-    }
-    if !parsed.dryRun {
-      try FileManager.default.removeItem(at: destination)
-      try removeWorkflowPackageLockEntry(
-        packageName: target,
-        parsed: parsed,
-        workingDirectory: workingDirectory
-      )
-    }
-    return destination
-  }
 }

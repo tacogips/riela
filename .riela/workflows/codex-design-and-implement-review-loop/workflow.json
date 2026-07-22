@@ -3,7 +3,7 @@
   "description": "Shared Codex workflow for issue resolution or planning-only design and implementation-plan handoff. The workflow owns both the sequential path and the bounded feature-local fanout path, then joins accepted plans before implementation or planning-only completion, with an optional adversarial implementation review gate for high-risk changes.",
   "defaults": {
     "fanoutConcurrency": 20,
-    "maxLoopIterations": 3,
+    "maxLoopIterations": 30,
     "nodeTimeoutMs": 3600000
   },
   "loop": {

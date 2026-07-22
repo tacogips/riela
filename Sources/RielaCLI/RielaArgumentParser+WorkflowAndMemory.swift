@@ -44,7 +44,7 @@ extension RielaArgumentParser {
         firstReference: parsed.snapshotId,
         arguments: parsed.options
       )
-    case .package, .manifest, .list, .status, .validate, .inspect, .usage, .run, .checkout, .create, .selfImprove:
+    case .package, .manifest, .list, .status, .register, .validate, .inspect, .usage, .run, .checkout, .create, .selfImprove:
       throw CLIUsageError("unsupported workflow version route '\(subcommand.rawValue)'")
     }
   }

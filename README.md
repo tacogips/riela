@@ -37,6 +37,24 @@ includes provenance fields such as `sourceKind`, `packageName`,
 `packageDirectory`, and `mutable` so package-derived workflows can be treated as
 installed, read-only artifacts.
 
+Validated authored workflows can also be registered as persistent user-scoped
+temporary workflows:
+
+```bash
+riela workflow register ./path/to/workflow-bundle --temporary
+riela workflow list temporary-name --output table
+riela workflow validate temporary-name
+riela workflow run temporary-name --mock-scenario ./path/to/mock.json
+```
+
+Registration accepts a standalone workflow JSON file or a bundle directory,
+copies it under `~/.riela/temporary-workflows/<workflowId>/`, and requires
+`--overwrite` to replace an existing entry. Temporary entries are included by
+default, carry `temporary: true` in structured workflow results, render a
+`temporary` token in text/table lists, and can be hidden with
+`workflow list --exclude-temporary`. Name resolution considers them after
+project workflows, user workflows, project packages, and user packages.
+
 Local agent backend ids remain explicit compatibility contracts:
 `codex-agent`, `claude-code-agent`, and `cursor-cli-agent`. Official SDK adapter
 parity is tracked separately; `official/cursor-sdk` is not aliased to

@@ -13,6 +13,7 @@ public struct RielaCLIApplication: Sendable {
   public var runCommand: WorkflowRunCommand
   public var manifestValidateCommand: WorkflowManifestValidateCommand
   public var workflowCatalogCommand: WorkflowCatalogCommand
+  public var workflowTemporaryRegistrationCommand: WorkflowTemporaryRegistrationCommand
   public var sessionRerunCommand: SessionRerunCommand
   public var sessionResumeCommand: SessionResumeCommand
   public var sessionDiscoveryCommand: SessionDiscoveryCommand
@@ -38,6 +39,7 @@ public struct RielaCLIApplication: Sendable {
     runCommand: WorkflowRunCommand = WorkflowRunCommand(),
     manifestValidateCommand: WorkflowManifestValidateCommand = WorkflowManifestValidateCommand(),
     workflowCatalogCommand: WorkflowCatalogCommand = WorkflowCatalogCommand(),
+    workflowTemporaryRegistrationCommand: WorkflowTemporaryRegistrationCommand = WorkflowTemporaryRegistrationCommand(),
     sessionRerunCommand: SessionRerunCommand = SessionRerunCommand(),
     sessionResumeCommand: SessionResumeCommand = SessionResumeCommand(),
     sessionDiscoveryCommand: SessionDiscoveryCommand = SessionDiscoveryCommand(),
@@ -62,6 +64,7 @@ public struct RielaCLIApplication: Sendable {
     self.runCommand = runCommand
     self.manifestValidateCommand = manifestValidateCommand
     self.workflowCatalogCommand = workflowCatalogCommand
+    self.workflowTemporaryRegistrationCommand = workflowTemporaryRegistrationCommand
     self.sessionRerunCommand = sessionRerunCommand
     self.sessionResumeCommand = sessionResumeCommand
     self.sessionDiscoveryCommand = sessionDiscoveryCommand
@@ -103,32 +106,8 @@ public struct RielaCLIApplication: Sendable {
         return CLICommandResult(exitCode: .success, stdout: packageHelpText(scope: scope))
       case .version:
         return CLICommandResult(exitCode: .success, stdout: "\(rielaSwiftMigrationVersion)\n")
-      case let .workflow(.validate(options)):
-        return await validateCommand.run(options)
-      case let .workflow(.inspect(options)):
-        return await inspectCommand.run(options)
-      case let .workflow(.usage(options)):
-        return await inspectCommand.run(options)
-      case let .workflow(.runHelp(target)):
-        return CLICommandResult(exitCode: .success, stdout: workflowRunHelpText(target: target))
-      case let .workflow(.run(options)):
-        return await runCommand.run(options)
-      case let .workflow(.list(options)):
-        return workflowCatalogCommand.list(options)
-      case let .workflow(.status(options)):
-        return workflowCatalogCommand.status(options)
-      case let .workflow(.manifestValidate(options)):
-        return await manifestValidateCommand.run(options)
-      case let .workflow(.checkout(options)):
-        return workflowScaffoldCommand.checkout(options)
-      case let .workflow(.create(options)):
-        return workflowScaffoldCommand.create(options)
-      case let .workflow(.selfImprove(options)):
-        return workflowScaffoldCommand.selfImprove(options)
-      case let .workflow(.version(options)):
-        return workflowVersionCommand.run(options)
-      case let .workflow(.package(command)):
-        return await packageCommandRunner.run(command)
+      case let .workflow(command):
+        return await runWorkflow(command)
       case let .session(command):
         return await runSession(command)
       case let .loop(command):
@@ -156,6 +135,39 @@ public struct RielaCLIApplication: Sendable {
       return renderParserFailure(arguments: arguments, error: error)
     } catch {
       return CLICommandResult(exitCode: .failure, stderr: "\(error)")
+    }
+  }
+
+  private func runWorkflow(_ command: WorkflowCommand) async -> CLICommandResult {
+    switch command {
+    case let .validate(options):
+      return await validateCommand.run(options)
+    case let .inspect(options), let .usage(options):
+      return await inspectCommand.run(options)
+    case let .runHelp(target):
+      return CLICommandResult(exitCode: .success, stdout: workflowRunHelpText(target: target))
+    case let .run(options):
+      return await runCommand.run(options)
+    case let .list(options):
+      return workflowCatalogCommand.list(options)
+    case let .status(options):
+      return workflowCatalogCommand.status(options)
+    case let .register(options):
+      return workflowTemporaryRegistrationCommand.run(options)
+    case .registerHelp:
+      return CLICommandResult(exitCode: .success, stdout: workflowRegisterHelpText)
+    case let .manifestValidate(options):
+      return await manifestValidateCommand.run(options)
+    case let .checkout(options):
+      return workflowScaffoldCommand.checkout(options)
+    case let .create(options):
+      return workflowScaffoldCommand.create(options)
+    case let .selfImprove(options):
+      return workflowScaffoldCommand.selfImprove(options)
+    case let .version(options):
+      return workflowVersionCommand.run(options)
+    case let .package(command):
+      return await packageCommandRunner.run(command)
     }
   }
 
@@ -291,7 +303,9 @@ Usage:
   riela workflow validate <workflow> [--scope project|user|auto] [--output jsonl|json|text]
   riela workflow inspect <workflow> [--scope project|user|auto] [--output jsonl|json|text]
   riela workflow usage <workflow> [--scope project|user|auto] [--output jsonl|json|text]
-  riela workflow list|status [--output jsonl|json|text|table]
+  riela workflow list [query] [--scope project|user|auto] [--exclude-temporary] [--output jsonl|json|text|table]
+  riela workflow status <workflow> [--output jsonl|json|text|table]
+  riela workflow register <path> --temporary [--overwrite] [--working-dir <dir>] [--output jsonl|json|text|table]
   riela workflow manifest validate <manifest-path> [--output jsonl|json|text]
   riela workflow checkout|create|self-improve <workflow> [options]
   riela workflow versions <workflow> [--output json|text]

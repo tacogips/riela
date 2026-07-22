@@ -12,6 +12,18 @@ private struct WorkflowTransactionResolutionFailure: Error, CustomStringConverti
   var description: String { message }
 }
 
+private struct WorkflowCandidateMissing: Error, CustomStringConvertible {
+  var path: String
+  var description: String { "\(path) not found" }
+}
+
+/// Candidate-level rejection that must be collected into the not-found error
+/// list (JSON failure result) rather than escalating to a CLI usage error,
+/// regardless of the requested scope.
+private struct WorkflowCandidateRejected: Error, CustomStringConvertible {
+  var description: String
+}
+
 public struct ResolvedWorkflowBundle: Equatable, Sendable {
   public var workflow: WorkflowDefinition
   public var nodePayloads: [String: AgentNodePayload]
@@ -20,6 +32,8 @@ public struct ResolvedWorkflowBundle: Equatable, Sendable {
   public var diagnostics: [WorkflowValidationDiagnostic]
   public var packageManifest: WorkflowPackageManifest?
   public var packageDirectory: String?
+  public var temporary: Bool
+  var temporaryRegistryDigest: String?
 
   public init(
     workflow: WorkflowDefinition,
@@ -28,7 +42,8 @@ public struct ResolvedWorkflowBundle: Equatable, Sendable {
     workflowDirectory: String,
     diagnostics: [WorkflowValidationDiagnostic] = [],
     packageManifest: WorkflowPackageManifest? = nil,
-    packageDirectory: String? = nil
+    packageDirectory: String? = nil,
+    temporary: Bool = false
   ) {
     self.workflow = workflow
     self.nodePayloads = nodePayloads
@@ -37,6 +52,8 @@ public struct ResolvedWorkflowBundle: Equatable, Sendable {
     self.diagnostics = diagnostics
     self.packageManifest = packageManifest
     self.packageDirectory = packageDirectory
+    self.temporary = temporary
+    temporaryRegistryDigest = nil
   }
 }
 
@@ -46,9 +63,23 @@ public protocol WorkflowBundleResolving: Sendable {
 
 public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
   private let enforcesTransactionBlock: Bool
+  private let temporaryHistoryRecoveryHook: @Sendable () throws -> Void
+  private let temporaryRegistry: WorkflowTemporaryRegistry
 
   public init(enforcesTransactionBlock: Bool = true) {
     self.enforcesTransactionBlock = enforcesTransactionBlock
+    temporaryHistoryRecoveryHook = {}
+    temporaryRegistry = WorkflowTemporaryRegistry()
+  }
+
+  init(
+    enforcesTransactionBlock: Bool = true,
+    temporaryHistoryRecoveryHook: @escaping @Sendable () throws -> Void,
+    temporaryRegistry: WorkflowTemporaryRegistry = WorkflowTemporaryRegistry()
+  ) {
+    self.enforcesTransactionBlock = enforcesTransactionBlock
+    self.temporaryHistoryRecoveryHook = temporaryHistoryRecoveryHook
+    self.temporaryRegistry = temporaryRegistry
   }
 
   public func resolve(_ options: WorkflowResolutionOptions) throws -> ResolvedWorkflowBundle {
@@ -58,44 +89,113 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     }
     var errors: [String] = []
     for candidate in candidates {
-      let resolvedRoot = candidate.rootDirectory.resolvingSymlinksInPath().standardizedFileURL
-      let resolvedDirectory = candidate.directory.resolvingSymlinksInPath().standardizedFileURL
-      guard isContained(resolvedDirectory, in: resolvedRoot) else {
-        errors.append("\(resolvedDirectory.path) escapes \(resolvedRoot.path)")
-        continue
-      }
-      let workflowURL = resolvedDirectory.appendingPathComponent("workflow.json")
-      guard FileManager.default.fileExists(atPath: workflowURL.path) else {
-        errors.append("\(workflowURL.path) not found")
-        continue
-      }
       do {
-        let bundle = try loadBundle(
-          at: resolvedDirectory,
-          rootDirectory: candidate.rootDirectory,
-          scope: candidate.scope,
-          packageManifest: candidate.packageManifest,
-          packageDirectory: candidate.packageDirectory
-        )
-        if enforcesTransactionBlock {
-          try refuseNonterminalHistoryTransaction(bundle: bundle, options: options)
+        let bundle: ResolvedWorkflowBundle
+        if candidate.temporary {
+          bundle = try temporaryRegistry.withWorkflowPinnedAccess(
+            workflowId: options.workflowName
+          ) { pinned in
+            let loadResolved = {
+              guard let pinned else { throw WorkflowCandidateMissing(path: candidate.directory.path) }
+              guard try pinned.entryType(candidate.directory) != nil else {
+                throw WorkflowCandidateMissing(path: candidate.directory.appendingPathComponent("workflow.json").path)
+              }
+              var resolved = try temporaryRegistry.loadBundle(
+                workflowId: options.workflowName,
+                pinned: pinned,
+                resolver: self,
+                scope: candidate.scope
+              )
+              guard resolved.workflowDirectory == candidate.directory.standardizedFileURL.path else {
+                throw CLIUsageError("temporary workflow detached read did not restore its configured directory identity")
+              }
+              if enforcesTransactionBlock {
+                try temporaryHistoryRecoveryHook()
+                do {
+                  try refuseNonterminalHistoryTransaction(
+                    bundle: resolved,
+                    options: options,
+                    authoritativeBundleDigest: try temporaryRegistry.bundleDigest(
+                      at: candidate.directory,
+                      pinned: pinned
+                    )
+                  )
+                } catch {
+                  throw CLIUsageError("temporary workflow history recovery failed: \(error)")
+                }
+                do {
+                  resolved = try temporaryRegistry.loadBundle(
+                    workflowId: options.workflowName,
+                    pinned: pinned,
+                    resolver: self,
+                    scope: candidate.scope
+                  )
+                } catch {
+                  throw CLIUsageError("temporary workflow post-recovery reload failed: \(error)")
+                }
+              }
+              resolved.temporaryRegistryDigest = try temporaryRegistry.bundleDigest(
+                at: candidate.directory,
+                pinned: pinned
+              )
+              return resolved
+            }
+            return try loadResolved()
+          }
+        } else {
+          bundle = try resolveCandidate(candidate, options: options)
+          if enforcesTransactionBlock {
+            try refuseNonterminalHistoryTransaction(bundle: bundle, options: options)
+          }
         }
         return bundle
       } catch {
         if error is WorkflowTransactionResolutionFailure { throw error }
+        if let missing = error as? WorkflowCandidateMissing {
+          errors.append(missing.description)
+          continue
+        }
+        if let rejected = error as? WorkflowCandidateRejected {
+          errors.append(rejected.description)
+          continue
+        }
         guard options.scope == .auto else {
           throw error
         }
-        errors.append("\(resolvedDirectory.path) invalid: \(workflowResolutionErrorDescription(error))")
+        errors.append("\(candidate.directory.path) invalid: \(workflowResolutionErrorDescription(error))")
         continue
       }
     }
     throw WorkflowResolutionError.notFound(options.workflowName, errors)
   }
 
+  private func resolveCandidate(
+    _ candidate: CandidateDirectory,
+    options: WorkflowResolutionOptions
+  ) throws -> ResolvedWorkflowBundle {
+    let resolvedRoot = candidate.rootDirectory.resolvingSymlinksInPath().standardizedFileURL
+    let resolvedDirectory = candidate.directory.resolvingSymlinksInPath().standardizedFileURL
+    guard isContained(resolvedDirectory, in: resolvedRoot) else {
+      throw WorkflowCandidateRejected(description: "\(resolvedDirectory.path) escapes \(resolvedRoot.path)")
+    }
+    let workflowURL = resolvedDirectory.appendingPathComponent("workflow.json")
+    guard FileManager.default.fileExists(atPath: workflowURL.path) else {
+      throw WorkflowCandidateMissing(path: workflowURL.path)
+    }
+    return try loadBundle(
+      at: resolvedDirectory,
+      rootDirectory: candidate.rootDirectory,
+      scope: candidate.scope,
+      packageManifest: candidate.packageManifest,
+      packageDirectory: candidate.packageDirectory,
+      temporary: candidate.temporary,
+      expectedWorkflowId: candidate.temporary ? options.workflowName : nil
+    )
+  }
+
   private func refuseStableNonterminalTransactions(candidates: [CandidateDirectory]) throws {
     var inspected = Set<String>()
-    for candidate in candidates {
+    for candidate in candidates where !candidate.temporary {
       let ownershipRoot = (candidate.packageDirectory ?? candidate.directory).standardizedFileURL
       let marker = WorkflowTransactionStableMetadata.url(forOwnershipRoot: ownershipRoot)
       guard inspected.insert(marker.path).inserted else { continue }
@@ -152,7 +252,8 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
 
   private func refuseNonterminalHistoryTransaction(
     bundle: ResolvedWorkflowBundle,
-    options: WorkflowResolutionOptions
+    options: WorkflowResolutionOptions,
+    authoritativeBundleDigest: String? = nil
   ) throws {
     guard isSafeScopedWorkflowName(bundle.workflow.workflowId) else { return }
     let base: URL
@@ -168,7 +269,11 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       configuredRoot: bundle.workflow.loop?.selfEvolution?.historyRoot
     )
     do {
-      if let recovered = try WorkflowDirectoryTransactionCoordinator().recover(historyRoot: historyRoot, target: target),
+      if let recovered = try WorkflowDirectoryTransactionCoordinator().recover(
+        historyRoot: historyRoot,
+        target: target,
+        authoritativeBundleDigest: authoritativeBundleDigest
+      ),
          recovered.target != target {
         throw CLIUsageError("workflow transaction recovery did not match the resolved target")
       }
@@ -185,19 +290,22 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     var scope: WorkflowScope
     var packageManifest: WorkflowPackageManifest?
     var packageDirectory: URL?
+    var temporary: Bool
 
     init(
       directory: URL,
       rootDirectory: URL,
       scope: WorkflowScope,
       packageManifest: WorkflowPackageManifest? = nil,
-      packageDirectory: URL? = nil
+      packageDirectory: URL? = nil,
+      temporary: Bool = false
     ) {
       self.directory = directory
       self.rootDirectory = rootDirectory
       self.scope = scope
       self.packageManifest = packageManifest
       self.packageDirectory = packageDirectory
+      self.temporary = temporary
     }
   }
 
@@ -245,7 +353,18 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
         CandidateDirectory(directory: user.appendingPathComponent(options.workflowName).standardizedFileURL, rootDirectory: user, scope: .user)
       ] : []
     }
-    return workflowCandidates + (safePackageName ? try packageCandidateDirectories(for: options, workingDirectory: workingDirectory) : [])
+    var candidates = workflowCandidates
+      + (safePackageName ? try packageCandidateDirectories(for: options, workingDirectory: workingDirectory) : [])
+    if safeWorkflowName, options.scope != .project {
+      let temporaryRoot = WorkflowTemporaryRegistry().root
+      candidates.append(CandidateDirectory(
+        directory: temporaryRoot.appendingPathComponent(options.workflowName, isDirectory: true),
+        rootDirectory: temporaryRoot,
+        scope: .user,
+        temporary: true
+      ))
+    }
+    return candidates
   }
 
   private func packageCandidateDirectories(
@@ -310,12 +429,14 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     return directoryPath == rootPath || directoryPath.hasPrefix(rootPath + "/")
   }
 
-  private func loadBundle(
+  func loadBundle(
     at directory: URL,
     rootDirectory: URL,
     scope: WorkflowScope,
     packageManifest providedPackageManifest: WorkflowPackageManifest? = nil,
-    packageDirectory: URL? = nil
+    packageDirectory: URL? = nil,
+    temporary: Bool = false,
+    expectedWorkflowId: String? = nil
   ) throws -> ResolvedWorkflowBundle {
     let workflowURL = try containedFile(
       directory.appendingPathComponent("workflow.json"),
@@ -327,6 +448,11 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     let validation = validateAuthoredWorkflowData(workflowData)
     guard var workflow = validation.workflow else {
       throw WorkflowResolutionError.invalidWorkflow(validation.diagnostics)
+    }
+    if let expectedWorkflowId, workflow.workflowId != expectedWorkflowId {
+      throw CLIUsageError(
+        "temporary workflow registry key '\(expectedWorkflowId)' does not match decoded workflowId '\(workflow.workflowId)'"
+      )
     }
     var nodePayloads: [String: AgentNodePayload] = [:]
     let promptTemplateLoader = PromptTemplateAssetLoader()
@@ -359,8 +485,15 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     )
     workflow = materialized.workflow
     nodePayloads = materialized.nodePayloads
-    let packageManifest = try providedPackageManifest ?? loadPackageManifestIfPresent(at: directory)
-    let resolvedPackageDirectory = packageDirectory?.path ?? (packageManifest == nil ? nil : directory.path)
+    let packageManifest: WorkflowPackageManifest?
+    let resolvedPackageDirectory: String?
+    if temporary {
+      packageManifest = nil
+      resolvedPackageDirectory = nil
+    } else {
+      packageManifest = try providedPackageManifest ?? loadPackageManifestIfPresent(at: directory)
+      resolvedPackageDirectory = packageDirectory?.path ?? (packageManifest == nil ? nil : directory.path)
+    }
     return ResolvedWorkflowBundle(
       workflow: workflow,
       nodePayloads: nodePayloads,
@@ -368,7 +501,8 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       workflowDirectory: directory.path,
       diagnostics: validation.diagnostics,
       packageManifest: packageManifest,
-      packageDirectory: resolvedPackageDirectory
+      packageDirectory: resolvedPackageDirectory,
+      temporary: temporary
     )
   }
 

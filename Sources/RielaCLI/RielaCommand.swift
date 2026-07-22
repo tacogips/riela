@@ -82,6 +82,8 @@ public enum WorkflowCommand: Equatable, Sendable {
   case runHelp(String?)
   case list(CLICommandOptions)
   case status(CLICommandOptions)
+  case register(WorkflowTemporaryRegistrationOptions)
+  case registerHelp
   case manifestValidate(WorkflowManifestValidateOptions)
   case checkout(CLICommandOptions)
   case create(CLICommandOptions)
@@ -581,6 +583,9 @@ public struct RielaArgumentParser: CLIArgumentParsing {
   }
 
   private func parseWorkflow(_ arguments: [String]) throws -> RielaCommand {
+    if arguments.count == 1, arguments.contains(where: isHelpOption) {
+      return .help
+    }
     let family = try ParsedWorkflowFamily.parseCLI(arguments)
     if family.subcommand == .package {
       let packageArguments = family.remainder
@@ -614,6 +619,12 @@ public struct RielaArgumentParser: CLIArgumentParsing {
         arguments: route.options,
         allowTableOutput: true
       )))
+    }
+    if family.subcommand == .register {
+      return try parseWorkflowRegister(
+        family.remainder,
+        helpRequested: family.remainder.contains(where: isHelpOption)
+      )
     }
     if [.versions, .version, .restore].contains(family.subcommand) {
       let versionCommand = try parseWorkflowVersionCommand(
@@ -664,7 +675,7 @@ public struct RielaArgumentParser: CLIArgumentParsing {
         target: target,
         arguments: route.options
       )))
-    case .package, .manifest, .list, .status, .versions, .version, .restore:
+    case .package, .manifest, .list, .status, .register, .versions, .version, .restore:
       throw CLIUsageError("unsupported target-based workflow route '\(family.subcommand.rawValue)'")
     }
   }

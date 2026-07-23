@@ -114,6 +114,8 @@ enum GraphQLClientAction: String, CaseIterable, ExpressibleByArgument {
   case session
   case inspectSession = "inspect-session"
   case workflowSession = "workflow-session"
+  case sessionProgress = "session-progress"
+  case sessionHealth = "session-health"
   case managerSession = "manager-session"
   case sendManagerMessage = "send-manager-message"
   case replayCommunication = "replay-communication"

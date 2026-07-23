@@ -6,6 +6,9 @@ struct RielaSwiftCLI {
     let app = RielaCLIApplication(
       runCommand: WorkflowRunCommand(jsonlRecordWriter: { line in
         FileHandle.standardOutput.write(Data(line.utf8))
+      }),
+      sessionInspectionCommand: SessionInspectionCommand(followRecordWriter: { line in
+        FileHandle.standardOutput.write(Data(line.utf8))
       })
     )
     let arguments = Array(CommandLine.arguments.dropFirst())

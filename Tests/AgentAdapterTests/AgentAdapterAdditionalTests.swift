@@ -80,7 +80,13 @@ extension AgentAdapterTests {
       authPreflight: false
     ).execute(input(backend: .codexAgent), context: context)
     _ = try await ClaudeCodeAgentAdapter(
-      runner: StreamingRecordingRunner(output: #"{"type":"assistant","message":{"content":"done"}}"#),
+      runner: StreamingRecordingRunner(
+        output: #"{"type":"system","subtype":"init","session_id":"claude-session-1"}"#
+          + "\n"
+          + #"{"type":"assistant","message":{"content":"claude done"},"session_id":"claude-session-1"}"#
+          + "\n"
+          + #"{"type":"result","result":"done","session_id":"claude-session-1"}"#
+      ),
       authPreflight: false
     ).execute(input(backend: .claudeCodeAgent), context: context)
     _ = try await CursorCLIAgentAdapter(
@@ -89,10 +95,22 @@ extension AgentAdapterTests {
     ).execute(input(backend: .cursorCliAgent), context: context)
 
     let events = await recorder.recordedEvents()
-    XCTAssertEqual(events.map(\.provider), ["codex-agent", "codex-agent", "claude-code-agent", "cursor-cli-agent", "cursor-cli-agent"])
-    XCTAssertEqual(events.map(\.eventType), ["turn.started", "assistant.snapshot", "assistant", "session.thinking", "result"])
-    XCTAssertEqual(events.map(\.channel), [.lifecycle, .assistant, nil, .lifecycle, .lifecycle])
+    XCTAssertEqual(
+      events.map(\.provider),
+      [
+        "codex-agent", "codex-agent",
+        "claude-code-agent", "claude-code-agent", "claude-code-agent",
+        "cursor-cli-agent", "cursor-cli-agent"
+      ]
+    )
+    XCTAssertEqual(
+      events.map(\.eventType),
+      ["turn.started", "assistant.snapshot", "system", "assistant", "result", "session.thinking", "result"]
+    )
+    XCTAssertEqual(events.map(\.channel), [.lifecycle, .assistant, nil, nil, nil, .lifecycle, .lifecycle])
     XCTAssertEqual(events[1].contentSnapshot, "done")
+    XCTAssertEqual(events[2].backendSessionId, "claude-session-1")
+    XCTAssertEqual(events[3].backendSessionId, "claude-session-1")
   }
 
   func testAgentAdaptersIgnoreNonJSONAndStderrForBackendEvents() async throws {

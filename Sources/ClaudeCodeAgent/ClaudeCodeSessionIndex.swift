@@ -1,4 +1,5 @@
 import Foundation
+import AgentRuntimeKit
 import RielaCore
 
 public struct ClaudeCodeSession: Equatable, Sendable {
@@ -232,29 +233,45 @@ public enum ClaudeCodeSessionIndex {
     )
   }
 
-  public static func listSessions(options: ClaudeCodeSessionListOptions = ClaudeCodeSessionListOptions()) -> ClaudeCodeSessionListResult {
-    var sessions = mergedIndexedSessions(claudeCodeHome: options.claudeCodeHome)
+  public static func listSessions(
+    options: ClaudeCodeSessionListOptions = ClaudeCodeSessionListOptions(),
+    stateReadMode: AgentSessionSQLiteReadMode = .compatibility
+  ) -> ClaudeCodeSessionListResult {
+    var sessions = mergedIndexedSessions(
+      claudeCodeHome: options.claudeCodeHome,
+      stateReadMode: stateReadMode
+    )
     sessions = ClaudeCodeSessionQuery.sorted(sessions.filter { ClaudeCodeSessionQuery.matches($0, options: options) }, options: options)
     let total = sessions.count
     let pageRange = ClaudeCodeSessionQuery.page(totalCount: total, offset: options.offset, limit: options.limit)
     return ClaudeCodeSessionListResult(sessions: Array(sessions[pageRange]), total: total, offset: options.offset, limit: options.limit)
   }
 
-  private static func mergedIndexedSessions(claudeCodeHome: String?) -> [ClaudeCodeSession] {
-    let sqliteSessions = unfilteredSQLiteSessions(claudeCodeHome: claudeCodeHome)
+  private static func mergedIndexedSessions(
+    claudeCodeHome: String?,
+    stateReadMode: AgentSessionSQLiteReadMode = .compatibility
+  ) -> [ClaudeCodeSession] {
+    let sqliteSessions = unfilteredSQLiteSessions(
+      claudeCodeHome: claudeCodeHome,
+      stateReadMode: stateReadMode
+    )
     let rolloutSessions = preferredRolloutSessions(discoverRolloutPaths(claudeCodeHome: claudeCodeHome).compactMap(buildSession))
     let rolloutIds = Set(rolloutSessions.map(\.id))
     return rolloutSessions + sqliteSessions.filter { !rolloutIds.contains($0.id) }
   }
 
-  private static func unfilteredSQLiteSessions(claudeCodeHome: String?) -> [ClaudeCodeSession] {
+  private static func unfilteredSQLiteSessions(
+    claudeCodeHome: String?,
+    stateReadMode: AgentSessionSQLiteReadMode
+  ) -> [ClaudeCodeSession] {
     ClaudeCodeSessionSQLiteIndex.listSessionsSqlite(
       claudeCodeHome: claudeCodeHome,
       options: ClaudeCodeSessionListOptions(
         claudeCodeHome: claudeCodeHome,
         limit: Int.max,
         offset: 0
-      )
+      ),
+      readMode: stateReadMode
     )?.sessions ?? []
   }
 
@@ -284,8 +301,15 @@ public enum ClaudeCodeSessionIndex {
     return candidate.rolloutPath > existing.rolloutPath
   }
 
-  public static func findSession(id: String, claudeCodeHome: String? = nil) -> ClaudeCodeSession? {
-    mergedIndexedSessions(claudeCodeHome: claudeCodeHome).first { $0.id == id }
+  public static func findSession(
+    id: String,
+    claudeCodeHome: String? = nil,
+    stateReadMode: AgentSessionSQLiteReadMode = .compatibility
+  ) -> ClaudeCodeSession? {
+    mergedIndexedSessions(
+      claudeCodeHome: claudeCodeHome,
+      stateReadMode: stateReadMode
+    ).first { $0.id == id }
   }
 
   public static func findLatestSession(claudeCodeHome: String? = nil, cwd: String? = nil) -> ClaudeCodeSession? {

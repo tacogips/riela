@@ -215,6 +215,8 @@ public struct WorkflowStepExecution: Codable, Equatable, Sendable {
   public var nodeId: String
   public var attempt: Int
   public var backend: NodeExecutionBackend?
+  public var backendSessionId: String?
+  public var backendWorkingDirectory: String?
   public var status: WorkflowStepExecutionStatus
   public var acceptedOutput: WorkflowAcceptedOutputMetadata?
   public var adapterOutput: WorkflowAdapterOutputMetadata?
@@ -235,6 +237,8 @@ public struct WorkflowStepExecution: Codable, Equatable, Sendable {
     nodeId: String,
     attempt: Int,
     backend: NodeExecutionBackend? = nil,
+    backendSessionId: String? = nil,
+    backendWorkingDirectory: String? = nil,
     status: WorkflowStepExecutionStatus = .running,
     acceptedOutput: WorkflowAcceptedOutputMetadata? = nil,
     adapterOutput: WorkflowAdapterOutputMetadata? = nil,
@@ -254,6 +258,8 @@ public struct WorkflowStepExecution: Codable, Equatable, Sendable {
     self.nodeId = nodeId
     self.attempt = attempt
     self.backend = backend
+    self.backendSessionId = backendSessionId
+    self.backendWorkingDirectory = backendWorkingDirectory
     self.status = status
     self.acceptedOutput = acceptedOutput
     self.adapterOutput = adapterOutput
@@ -318,6 +324,9 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     case instanceKind
     case instanceBaseIdentity
     case instanceConfiguration
+    case parentSessionId
+    case rootSessionId
+    case effectiveStepBudget
   }
 
   public var workflowId: String
@@ -338,6 +347,9 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
   public var instanceKind: String?
   public var instanceBaseIdentity: String?
   public var instanceConfiguration: JSONObject?
+  public var parentSessionId: String?
+  public var rootSessionId: String?
+  public var effectiveStepBudget: Int?
 
   public var workflowExecutionId: String {
     get { sessionId }
@@ -362,7 +374,10 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     instanceIdentity: String? = nil,
     instanceKind: String? = nil,
     instanceBaseIdentity: String? = nil,
-    instanceConfiguration: JSONObject? = nil
+    instanceConfiguration: JSONObject? = nil,
+    parentSessionId: String? = nil,
+    rootSessionId: String? = nil,
+    effectiveStepBudget: Int? = nil
   ) {
     self.workflowId = workflowId
     self.sessionId = sessionId
@@ -382,6 +397,9 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     self.instanceKind = instanceKind
     self.instanceBaseIdentity = instanceBaseIdentity
     self.instanceConfiguration = instanceConfiguration
+    self.parentSessionId = parentSessionId
+    self.rootSessionId = rootSessionId
+    self.effectiveStepBudget = effectiveStepBudget
   }
 
   public init(from decoder: Decoder) throws {
@@ -404,6 +422,9 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     self.instanceKind = try container.decodeIfPresent(String.self, forKey: .instanceKind)
     self.instanceBaseIdentity = try container.decodeIfPresent(String.self, forKey: .instanceBaseIdentity)
     self.instanceConfiguration = try container.decodeIfPresent(JSONObject.self, forKey: .instanceConfiguration)
+    self.parentSessionId = try container.decodeIfPresent(String.self, forKey: .parentSessionId)
+    self.rootSessionId = try container.decodeIfPresent(String.self, forKey: .rootSessionId)
+    self.effectiveStepBudget = try container.decodeIfPresent(Int.self, forKey: .effectiveStepBudget)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -426,6 +447,9 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     try container.encodeIfPresent(instanceKind, forKey: .instanceKind)
     try container.encodeIfPresent(instanceBaseIdentity, forKey: .instanceBaseIdentity)
     try container.encodeIfPresent(instanceConfiguration, forKey: .instanceConfiguration)
+    try container.encodeIfPresent(parentSessionId, forKey: .parentSessionId)
+    try container.encodeIfPresent(rootSessionId, forKey: .rootSessionId)
+    try container.encodeIfPresent(effectiveStepBudget, forKey: .effectiveStepBudget)
   }
 }
 

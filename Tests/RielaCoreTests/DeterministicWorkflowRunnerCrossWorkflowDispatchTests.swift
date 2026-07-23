@@ -34,6 +34,9 @@ final class DeterministicWorkflowRunnerCrossWorkflowDispatchTests: XCTestCase {
     let calleeSession = try XCTUnwrap(calleeSessionLoaded)
     XCTAssertEqual(calleeSession.status, .completed)
     XCTAssertEqual(calleeSession.executions.map(\.stepId), ["callee-entry"])
+    XCTAssertEqual(calleeSession.parentSessionId, result.session.sessionId)
+    XCTAssertEqual(calleeSession.rootSessionId, result.session.sessionId)
+    XCTAssertNotNil(calleeSession.effectiveStepBudget)
 
     let resumeMessages = try await store.listMessages(for: result.session.sessionId, toStepId: "resume")
     XCTAssertEqual(resumeMessages.count, 1)
@@ -63,6 +66,46 @@ final class DeterministicWorkflowRunnerCrossWorkflowDispatchTests: XCTestCase {
     XCTAssertEqual(calleeSessionEvents.first?.type, .sessionStarted)
     XCTAssertEqual(calleeSessionEvents.first?.sessionId, calleeSession.sessionId)
     XCTAssertTrue(calleeSessionEvents.contains { $0.type == .sessionCompleted })
+  }
+
+  func testLiveChildFirstRunningSnapshotContainsParentAndRootProvenance() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    let gate = CalleeExecutionGate()
+    let adapter = BlockingCalleeAdapter(
+      gate: gate,
+      outputsByStep: [
+        "dispatch": output(payload: ["handoff": .string("outbound-request")]),
+        "callee-entry": output(payload: ["calleeResult": .string("done")]),
+        "resume": output(payload: ["status": .string("applied")])
+      ]
+    )
+    let runner = DeterministicWorkflowRunner(
+      store: store,
+      adapter: adapter,
+      calleeResolver: StaticCalleeResolver(callees: [calleeFixture()])
+    )
+    let workflow = callerWorkflow()
+    let nodePayloads = callerNodePayloads()
+    let runTask = Task {
+      try await runner.run(DeterministicWorkflowRunRequest(
+        workflow: workflow,
+        nodePayloads: nodePayloads
+      ))
+    }
+
+    await gate.waitUntilCalleeIsBlocked()
+    let parent = await store.latestSession(workflowId: "caller")
+    let child = await store.latestSession(workflowId: "callee")
+    XCTAssertEqual(parent?.status, .running)
+    XCTAssertEqual(child?.status, .running)
+    XCTAssertEqual(child?.currentStepId, "callee-entry")
+    XCTAssertEqual(child?.parentSessionId, parent?.sessionId)
+    XCTAssertEqual(child?.rootSessionId, parent?.sessionId)
+    XCTAssertNotNil(child?.effectiveStepBudget)
+
+    await gate.releaseCallee()
+    let result = try await runTask.value
+    XCTAssertEqual(result.status, .completed)
   }
 
   func testTerminalResumeDoesNotPreflightMissingCallee() async throws {
@@ -711,5 +754,62 @@ private actor CrossWorkflowSequenceAdapter: NodeAdapter {
     let output = outputs.removeFirst()
     outputsByStep[input.node.id] = outputs
     return output
+  }
+}
+
+private actor CalleeExecutionGate {
+  private var blocked = false
+  private var released = false
+  private var blockedWaiters: [CheckedContinuation<Void, Never>] = []
+  private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+  func blockCallee() async {
+    blocked = true
+    blockedWaiters.forEach { $0.resume() }
+    blockedWaiters.removeAll()
+    guard !released else {
+      return
+    }
+    await withCheckedContinuation { continuation in
+      releaseWaiters.append(continuation)
+    }
+  }
+
+  func waitUntilCalleeIsBlocked() async {
+    guard !blocked else {
+      return
+    }
+    await withCheckedContinuation { continuation in
+      blockedWaiters.append(continuation)
+    }
+  }
+
+  func releaseCallee() {
+    released = true
+    releaseWaiters.forEach { $0.resume() }
+    releaseWaiters.removeAll()
+  }
+}
+
+private actor BlockingCalleeAdapter: NodeAdapter {
+  private let gate: CalleeExecutionGate
+  private let outputsByStep: [String: AdapterExecutionOutput]
+
+  init(gate: CalleeExecutionGate, outputsByStep: [String: AdapterExecutionOutput]) {
+    self.gate = gate
+    self.outputsByStep = outputsByStep
+  }
+
+  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    if input.node.id == "callee-entry" {
+      await gate.blockCallee()
+    }
+    return outputsByStep[input.node.id] ?? AdapterExecutionOutput(
+      provider: "test",
+      model: input.node.model,
+      promptText: input.promptText,
+      completionPassed: true,
+      payload: ["status": .string("ok")]
+    )
   }
 }

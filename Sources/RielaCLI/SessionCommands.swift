@@ -3,131 +3,10 @@ import Foundation
 import RielaAdapters
 import RielaCore
 
-public struct SessionDiscoveryCommand: Sendable {
-  public init() {}
-
-  public func run(_ options: CLICommandOptions) -> CLICommandResult {
-    do {
-      let parsed = try parseOptions(options.arguments)
-      if options.command == "latest", parsed.workflowName == nil {
-        throw CLIUsageError("session latest requires --workflow <name>")
-      }
-      let storeRoot = CLIWorkflowSessionStore.resolveRootDirectory(
-        sessionStore: parsed.sessionStore,
-        scope: parsed.scope,
-        workingDirectory: parsed.workingDirectory
-      )
-      let limit = options.command == "latest" ? 1 : parsed.limit
-      let rows = try CLIWorkflowSessionStore(rootDirectory: storeRoot)
-        .list(workflowName: parsed.workflowName, status: parsed.status, limit: limit)
-        .map { SessionDiscoveryRow(record: $0, sessionStore: storeRoot) }
-      if options.command == "latest" {
-        guard let latest = rows.first else {
-          return failure(output: options.output, error: "session not found", exitCode: .failure)
-        }
-        return renderLatest(latest, output: options.output)
-      }
-      return renderList(rows, output: options.output)
-    } catch let error as CLIUsageError {
-      return CLICommandResult(exitCode: .usage, stderr: error.message)
-    } catch {
-      return failure(output: options.output, error: "\(error)", exitCode: .failure)
-    }
-  }
-
-  private struct ParsedOptions: ParsableArguments {
-    @Option(name: .customLong("workflow")) var workflowName: String?
-    @Option(name: .customLong("status")) private var statusRawValue: String?
-    @Option var limit = 10
-    @Option var scope = WorkflowScope.auto
-    @Option(name: [.customLong("working-dir"), .customLong("working-directory")])
-    var workingDirectory = FileManager.default.currentDirectoryPath
-    @Option var sessionStore: String?
-    @Option private var output: String?
-    var status: WorkflowSessionStatus?
-
-    init() {}
-
-    init(_ arguments: [String]) throws {
-      do {
-        self = try Self.parse(arguments)
-      } catch {
-        throw CLIUsageError(Self.message(for: error))
-      }
-      if let statusRawValue {
-        guard let status = WorkflowSessionStatus(rawValue: statusRawValue) else {
-          throw CLIUsageError("invalid --status value; expected created, running, completed, or failed")
-        }
-        self.status = status
-      }
-      guard limit > 0 else {
-        throw CLIUsageError("--limit requires a positive integer")
-      }
-      limit = min(limit, 100)
-      guard scope != .direct else {
-        throw CLIUsageError("invalid --scope value; expected auto, project, or user")
-      }
-    }
-  }
-
-  private func parseOptions(_ arguments: [String]) throws -> ParsedOptions {
-    try ParsedOptions(arguments)
-  }
-
-  private func renderList(_ rows: [SessionDiscoveryRow], output: WorkflowOutputFormat) -> CLICommandResult {
-    switch output {
-    case .json, .jsonl:
-      return CLICommandResult(exitCode: .success, stdout: (try? jsonString(rows)) ?? "[]\n")
-    case .text, .table:
-      let lines = rows.map { row in
-        [
-          row.sessionId,
-          row.workflowName,
-          row.status.rawValue,
-          row.failureKind?.rawValue ?? "-",
-          row.currentStepId ?? "-",
-          String(row.executionCount),
-          iso8601String(row.updatedAt),
-          row.sessionStore
-        ].joined(separator: "\t")
-      }
-      return CLICommandResult(exitCode: .success, stdout: lines.joined(separator: "\n") + (lines.isEmpty ? "" : "\n"))
-    }
-  }
-
-  private func renderLatest(_ row: SessionDiscoveryRow, output: WorkflowOutputFormat) -> CLICommandResult {
-    switch output {
-    case .json, .jsonl:
-      return CLICommandResult(exitCode: .success, stdout: (try? jsonString(row)) ?? "{}\n")
-    case .text, .table:
-      return CLICommandResult(
-        exitCode: .success,
-        stdout: """
-        sessionId: \(row.sessionId)
-        workflow: \(row.workflowName)
-        status: \(row.status.rawValue)
-        failureKind: \(row.failureKind?.rawValue ?? "-")
-        currentStepId: \(row.currentStepId ?? "-")
-        executionCount: \(row.executionCount)
-        updatedAt: \(iso8601String(row.updatedAt))
-        sessionStore: \(row.sessionStore)
-
-        """
-      )
-    }
-  }
-
-  private func failure(output: WorkflowOutputFormat, error: String, exitCode: CLIExitCode) -> CLICommandResult {
-    guard output.isStructured else {
-      return CLICommandResult(exitCode: exitCode, stderr: error)
-    }
-    let payload = SessionCommandFailureResult(sessionId: "", error: error, exitCode: exitCode.rawValue)
-    return CLICommandResult(exitCode: exitCode, stdout: (try? jsonString(payload)) ?? "")
-  }
-}
-
 public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
   public var sessionId: String
+  public var parentSessionId: String?
+  public var rootSessionId: String
   public var workflowName: String
   public var status: WorkflowSessionStatus
   public var currentStepId: String?
@@ -156,9 +35,14 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
   public var health: String?
   public var loopEvidenceRecorded: Bool
   public var loopEvidence: LoopEvidenceSummary?
+  public var progress: SessionProgressDigest?
+  public var rollup: SessionRollupNode?
+  public var backendActivity: SessionBackendActivity?
 
   public init(
     sessionId: String,
+    parentSessionId: String? = nil,
+    rootSessionId: String? = nil,
     workflowName: String,
     status: WorkflowSessionStatus,
     currentStepId: String?,
@@ -186,9 +70,14 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
     reviewFindings: [WorkflowReviewFinding] = [],
     health: String? = nil,
     loopEvidenceRecorded: Bool = false,
-    loopEvidence: LoopEvidenceSummary? = nil
+    loopEvidence: LoopEvidenceSummary? = nil,
+    progress: SessionProgressDigest? = nil,
+    rollup: SessionRollupNode? = nil,
+    backendActivity: SessionBackendActivity? = nil
   ) {
     self.sessionId = sessionId
+    self.parentSessionId = parentSessionId
+    self.rootSessionId = rootSessionId ?? sessionId
     self.workflowName = workflowName
     self.status = status
     self.currentStepId = currentStepId
@@ -217,20 +106,93 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
     self.health = health
     self.loopEvidenceRecorded = loopEvidenceRecorded
     self.loopEvidence = loopEvidence
+    self.progress = progress
+    self.rollup = rollup
+    self.backendActivity = backendActivity
   }
 }
 
 public struct SessionInspectionCommand: Sendable {
-  public init() {}
+  public var clock: any WorkflowRuntimeClock
+  public var sleeper: any SessionFollowSleeping
+  public var followRecordWriter: (@Sendable (String) -> Void)?
+  var observabilityServiceFactory:
+    @Sendable (SQLiteWorkflowRuntimePersistenceStore, any WorkflowRuntimeClock) -> SessionObservabilityService
 
-  public func run(_ options: CLICommandOptions) -> CLICommandResult {
+  public init(
+    clock: any WorkflowRuntimeClock = SystemWorkflowRuntimeClock(),
+    sleeper: any SessionFollowSleeping = SystemSessionFollowSleeper(),
+    followRecordWriter: (@Sendable (String) -> Void)? = nil
+  ) {
+    self.clock = clock
+    self.sleeper = sleeper
+    self.followRecordWriter = followRecordWriter
+    self.observabilityServiceFactory = { store, clock in
+      SessionObservabilityComposition.makeService(store: store, clock: clock)
+    }
+  }
+
+  init(
+    clock: any WorkflowRuntimeClock,
+    sleeper: any SessionFollowSleeping,
+    followRecordWriter: (@Sendable (String) -> Void)?,
+    observabilityServiceFactory:
+      @escaping @Sendable (SQLiteWorkflowRuntimePersistenceStore, any WorkflowRuntimeClock)
+      -> SessionObservabilityService
+  ) {
+    self.clock = clock
+    self.sleeper = sleeper
+    self.followRecordWriter = followRecordWriter
+    self.observabilityServiceFactory = observabilityServiceFactory
+  }
+
+  public func run(_ options: CLICommandOptions) async -> CLICommandResult {
     guard let sessionId = options.target, !sessionId.isEmpty else {
       return CLICommandResult(exitCode: .usage, stderr: "scope, command, and target are required")
     }
     do {
       let parsed = try parseSessionInspectionOptions(options.arguments)
-      let snapshot = try loadRuntimeSnapshot(sessionId: sessionId, parsed: parsed)
-      return try render(snapshot: snapshot, command: options.command ?? "status", output: options.output)
+      let command = options.command ?? "status"
+      try validateObservabilityOptions(parsed, command: command, output: options.output, arguments: options.arguments)
+      let isObservabilityRead = command == "progress" || command == "health"
+      let store = try runtimeStore(
+        sessionId: sessionId,
+        parsed: parsed,
+        strictReadOnly: isObservabilityRead
+      )
+      let service = observabilityServiceFactory(store, clock)
+      if command == "progress" {
+        if parsed.follow {
+          return try await follow(
+            sessionId: sessionId,
+            includeChildren: parsed.includeChildren,
+            pollInterval: parsed.pollInterval,
+            output: options.output,
+            service: service
+          )
+        }
+        let observation = try service.progressObservation(
+          sessionId: sessionId,
+          includeChildren: parsed.includeChildren
+        )
+        return try render(
+          snapshot: observation.snapshot,
+          command: command,
+          output: options.output,
+          observabilityView: observation.view
+        )
+      }
+      if command == "health" {
+        let observation = try service.healthObservation(sessionId: sessionId)
+        return try render(
+          snapshot: observation.snapshot,
+          command: command,
+          output: options.output,
+          observabilityView: observation.view
+        )
+      }
+      let snapshot = try store.load(sessionId: sessionId)
+      return try render(snapshot: snapshot, command: command, output: options.output)
     } catch let error as CLIUsageError {
       return CLICommandResult(exitCode: .usage, stderr: error.message)
     } catch {
@@ -248,6 +210,9 @@ public struct SessionInspectionCommand: Sendable {
     var workingDirectory = FileManager.default.currentDirectoryPath
     @Option var sessionStore: String?
     @Option private var output: String?
+    @Flag var follow = false
+    @Option(name: .customLong("poll-interval")) var pollInterval = 2.0
+    @Flag(name: .customLong("include-children")) var includeChildren = false
 
     init() {}
 
@@ -260,6 +225,9 @@ public struct SessionInspectionCommand: Sendable {
       guard scope != .direct else {
         throw CLIUsageError("invalid --scope value; expected auto, project, or user")
       }
+      guard pollInterval.isFinite, (0.1...3600).contains(pollInterval) else {
+        throw CLIUsageError("--poll-interval requires a finite value between 0.1 and 3600 seconds")
+      }
     }
   }
 
@@ -267,160 +235,143 @@ public struct SessionInspectionCommand: Sendable {
     try ParsedOptions(arguments)
   }
 
-  private func loadRuntimeSnapshot(sessionId: String, parsed: ParsedOptions) throws -> WorkflowRuntimePersistenceSnapshot {
+  private func validateObservabilityOptions(
+    _ parsed: ParsedOptions,
+    command: String,
+    output: WorkflowOutputFormat,
+    arguments: [String]
+  ) throws {
+    let suppliedPollInterval = arguments.contains {
+      $0 == "--poll-interval" || $0.hasPrefix("--poll-interval=")
+    }
+    if command != "progress", parsed.follow || parsed.includeChildren || suppliedPollInterval {
+      throw CLIUsageError("--follow, --poll-interval, and --include-children are valid only for session progress")
+    }
+    if parsed.follow, output == .json {
+      throw CLIUsageError("session progress --follow does not support --output json; use --output jsonl")
+    }
+  }
+
+  private func follow(
+    sessionId: String,
+    includeChildren: Bool,
+    pollInterval: Double,
+    output: WorkflowOutputFormat,
+    service: SessionObservabilityService
+  ) async throws -> CLICommandResult {
+    var previousStatuses: [String: WorkflowSessionStatus] = [:]
+    var bufferedOutput = ""
+    while true {
+      try Task.checkCancellation()
+      let view = try service.progress(
+        sessionId: sessionId,
+        includeChildren: includeChildren,
+        previousStatuses: previousStatuses
+      )
+      let record: String
+      switch output {
+      case .jsonl:
+        record = try jsonString(view)
+      case .text, .table:
+        var lines: [String] = []
+        if let truncated = view.rollupTruncated {
+          lines.append("rollupTruncated: \(truncated ? "true" : "false")")
+        }
+        if let limit = view.rollupSnapshotLimit {
+          lines.append("rollupSnapshotLimit: \(limit)")
+        }
+        lines.append(contentsOf: progressTreeLines(view.root))
+        record = lines.joined(separator: "\n") + "\n"
+      case .json:
+        throw CLIUsageError("session progress --follow does not support --output json; use --output jsonl")
+      }
+      if let followRecordWriter {
+        followRecordWriter(record)
+      } else {
+        bufferedOutput += record
+      }
+      previousStatuses = statuses(in: view.root)
+      if SessionObservabilityService.isTerminal(view.root) {
+        if includeChildren, view.rollupTruncated == true {
+          return CLICommandResult(
+            exitCode: .failure,
+            stdout: bufferedOutput,
+            stderr: "session progress --follow cannot confirm terminal state because the child rollup is truncated"
+          )
+        }
+        return CLICommandResult(exitCode: .success, stdout: bufferedOutput)
+      }
+      try await sleeper.sleep(seconds: pollInterval)
+    }
+  }
+
+  private func statuses(in root: SessionRollupNode) -> [String: WorkflowSessionStatus] {
+    var result = [root.digest.sessionId: root.digest.status]
+    for child in root.children {
+      result.merge(statuses(in: child)) { _, new in new }
+    }
+    return result
+  }
+
+  func progressTreeLines(_ root: SessionRollupNode, depth: Int = 0) -> [String] {
+    let digest = root.digest
+    let prefix = String(repeating: "  ", count: depth)
+    var lines = [
+      "\(prefix)sessionId: \(digest.sessionId)",
+      "\(prefix)workflow: \(digest.workflowId)",
+      "\(prefix)parentSessionId: \(digest.parentSessionId ?? "-")",
+      "\(prefix)rootSessionId: \(digest.rootSessionId)",
+      "\(prefix)status: \(digest.status.rawValue)",
+      "\(prefix)failureKind: \(digest.failureKind?.rawValue ?? "-")",
+      "\(prefix)previousStatus: \(digest.previousStatus?.rawValue ?? "-")",
+      "\(prefix)currentStepId: \(digest.currentStepId ?? "-")",
+      "\(prefix)currentStage: \(digest.currentStage ?? "-")",
+      "\(prefix)executions: \(digest.executionCount)/\(digest.effectiveStepBudget.map(String.init) ?? "-")",
+      "\(prefix)gateVisits: \(gateVisitDescription(digest.gateVisitCounts))",
+      "\(prefix)lastBackendEventType: \(digest.lastBackendEventType ?? "-")",
+      "\(prefix)lastBackendEventAgeMs: \(digest.lastBackendEventAgeMs.map(String.init) ?? "-")",
+      "\(prefix)activeBackend: \(digest.activeBackend?.rawValue ?? "-")",
+      "\(prefix)observedAt: \(iso8601String(digest.observedAt))"
+    ]
+    for child in root.children {
+      lines.append("\(prefix)child:")
+      lines.append(contentsOf: progressTreeLines(child, depth: depth + 1))
+    }
+    return lines
+  }
+
+  private func gateVisitDescription(_ counts: [String: Int]) -> String {
+    guard !counts.isEmpty else {
+      return "-"
+    }
+    return counts.keys.sorted().map { "\($0)=\(counts[$0] ?? 0)" }.joined(separator: ",")
+  }
+
+  func homeAbbreviatedPath(_ path: String) -> String {
+    let home = FileManager.default.homeDirectoryForCurrentUser.path
+    guard path == home || path.hasPrefix(home + "/") else {
+      return path
+    }
+    return "~" + path.dropFirst(home.count)
+  }
+
+  private func runtimeStore(
+    sessionId: String,
+    parsed: ParsedOptions,
+    strictReadOnly: Bool
+  ) throws -> SQLiteWorkflowRuntimePersistenceStore {
     let loaded = try CLIWorkflowSessionResolution.loadPersistedSession(
       sessionId: sessionId,
       sessionStore: parsed.sessionStore,
       scope: parsed.scope,
-      workingDirectory: parsed.workingDirectory
+      workingDirectory: parsed.workingDirectory,
+      strictReadOnly: strictReadOnly
     )
-    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: loaded.storeRoot))
-    return try store.load(sessionId: sessionId)
-  }
-
-  private func render(snapshot: WorkflowRuntimePersistenceSnapshot, command: String, output: WorkflowOutputFormat) throws -> CLICommandResult {
-    let health = command == "health" ? (snapshot.session.status == .failed ? "failed" : "ok") : nil
-    let loopEvidence = snapshot.loopEvidence.map(LoopEvidenceSummary.init)
-    let runningExecutions = snapshot.session.executions.filter { $0.status == .running }
-    let activeExecution = runningExecutions.last
-    let lastCompletedStepId = snapshot.session.executions.last { $0.status == .completed || $0.status == .skipped }?.stepId
-    let result = SessionInspectionCommandResult(
-      sessionId: snapshot.session.sessionId,
-      workflowName: snapshot.session.workflowId,
-      status: snapshot.session.status,
-      currentStepId: snapshot.session.currentStepId,
-      currentStage: Self.stageDescription(for: snapshot.session.currentStepId),
-      lastCompletedStepId: lastCompletedStepId,
-      failureReason: snapshot.session.failureReason,
-      failureKind: snapshot.session.failureKind,
-      stepBudgetDiagnostic: snapshot.session.stepBudgetDiagnostic,
-      instanceIdentity: snapshot.session.instanceIdentity,
-      instanceKind: snapshot.session.instanceKind,
-      instanceBaseIdentity: snapshot.session.instanceBaseIdentity,
-      instanceConfiguration: snapshot.session.instanceConfiguration,
-      activeStepId: activeExecution?.stepId,
-      activeStage: Self.stageDescription(for: activeExecution?.stepId),
-      activeExecutionId: activeExecution?.executionId,
-      activeBackend: activeExecution?.backend,
-      activeExecutionUpdatedAt: activeExecution?.updatedAt,
-      activeBackendEventAt: activeExecution?.lastBackendEventAt,
-      activeBackendEventType: activeExecution?.lastBackendEventType,
-      backendSilentForMs: activeExecution.flatMap(backendSilentForMs),
-      activeSilentForMs: activeExecution.flatMap(activeSilentForMs),
-      executionCount: snapshot.session.executions.count,
-      executions: executionRows(for: command, allExecutions: snapshot.session.executions, runningExecutions: runningExecutions),
-      reviewFindingCount: snapshot.session.reviewFindings.count,
-      reviewFindings: snapshot.session.reviewFindings,
-      health: health,
-      loopEvidenceRecorded: snapshot.loopEvidence != nil,
-      loopEvidence: loopEvidence
+    return SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: loaded.storeRoot)
     )
-    switch output {
-    case .json, .jsonl:
-      return CLICommandResult(exitCode: .success, stdout: try jsonString(result))
-    case .text, .table:
-      var lines = [
-        "sessionId: \(result.sessionId)",
-        "workflow: \(result.workflowName)",
-        "status: \(result.status.rawValue)",
-        "currentStepId: \(result.currentStepId ?? "-")",
-        "currentStage: \(result.currentStage ?? "-")",
-        "lastCompletedStepId: \(result.lastCompletedStepId ?? "-")",
-        "failureKind: \(result.failureKind?.rawValue ?? "-")",
-        "failureReason: \(result.failureReason ?? "-")",
-        "instanceIdentity: \(result.instanceIdentity ?? "-")",
-        "instanceKind: \(result.instanceKind ?? "-")",
-        "instanceBaseIdentity: \(result.instanceBaseIdentity ?? "-")",
-        "activeStepId: \(result.activeStepId ?? "-")",
-        "activeStage: \(result.activeStage ?? "-")",
-        "activeExecutionId: \(result.activeExecutionId ?? "-")",
-        "activeBackend: \(result.activeBackend?.rawValue ?? "-")",
-        "activeExecutionUpdatedAt: \(result.activeExecutionUpdatedAt.map(iso8601String) ?? "-")",
-        "activeBackendEventAt: \(result.activeBackendEventAt.map(iso8601String) ?? "-")",
-        "activeBackendEventType: \(result.activeBackendEventType ?? "-")",
-        "backendSilentForMs: \(result.backendSilentForMs.map(String.init) ?? "-")",
-        "activeSilentForMs: \(result.activeSilentForMs.map(String.init) ?? "-")",
-        "executionCount: \(result.executionCount)",
-        "reviewFindingCount: \(result.reviewFindingCount)",
-        "loopEvidenceRecorded: \(result.loopEvidenceRecorded ? "true" : "false")"
-      ]
-      if let health {
-        lines.append("health: \(health)")
-      }
-      if let loopEvidence {
-        lines.append(
-          "loopEvidence: gates=\(loopEvidence.gateCount) accepted=\(loopEvidence.acceptedGateCount) rejected=\(loopEvidence.rejectedGateCount) blockingFindings=\(loopEvidence.blockingFindingCount)"
-        )
-      }
-      if let diagnostic = result.stepBudgetDiagnostic {
-        lines.append("stepBudget: \(diagnostic.stepBudget)")
-        if let cycleStepIds = diagnostic.dominantCycleStepIds, let repeatCount = diagnostic.dominantCycleRepeatCount {
-          lines.append("dominantCycle: \(cycleStepIds.joined(separator: " -> ")) (x\(repeatCount))")
-        }
-        if let perStepRevisitCap = diagnostic.perStepRevisitCap {
-          lines.append("perStepRevisitCap: \(perStepRevisitCap)")
-        }
-        if let exceededStepIds = diagnostic.projectedCapExceededStepIds, !exceededStepIds.isEmpty {
-          lines.append("projectedCapExceededStepIds: \(exceededStepIds.joined(separator: ","))")
-        }
-        lines.append("unscheduledStepId: \(diagnostic.unscheduledStepId ?? "-")")
-        lines.append("suggestedRemediation: \(diagnostic.suggestedRemediation ?? "-")")
-      }
-      if command == "logs" {
-        lines.append(contentsOf: snapshot.session.executions.compactMap { execution in
-          execution.failureReason.map { "\(execution.executionId)\t\(execution.stepId)\t\($0)" }
-        })
-      }
-      return CLICommandResult(exitCode: .success, stdout: lines.joined(separator: "\n") + "\n")
-    }
   }
 
-  private static func stageDescription(for stepId: String?) -> String? {
-    guard let stepId else {
-      return nil
-    }
-    let normalized = stepId.lowercased()
-    if normalized.contains("ocr") {
-      return "OCR in progress"
-    }
-    if normalized.contains("translate") || normalized.contains("translation") {
-      return "Translation in progress"
-    }
-    if normalized.contains("ingest") || normalized.contains("note-create") || normalized.contains("create-note") {
-      return "Note creation in progress"
-    }
-    return nil
-  }
-
-  private func executionRows(
-    for command: String,
-    allExecutions: [WorkflowStepExecution],
-    runningExecutions: [WorkflowStepExecution]
-  ) -> [WorkflowStepExecution] {
-    switch command {
-    case "status", "export", "step-runs":
-      return allExecutions
-    case "progress":
-      return runningExecutions
-    default:
-      return []
-    }
-  }
-
-  private func activeSilentForMs(_ execution: WorkflowStepExecution) -> Int? {
-    guard execution.status == .running else {
-      return nil
-    }
-    let lastSignalAt = execution.lastBackendEventAt ?? execution.updatedAt
-    return max(0, Int(Date().timeIntervalSince(lastSignalAt) * 1_000))
-  }
-
-  private func backendSilentForMs(_ execution: WorkflowStepExecution) -> Int? {
-    guard execution.status == .running, let lastSignalAt = execution.lastBackendEventAt else {
-      return nil
-    }
-    return max(0, Int(Date().timeIntervalSince(lastSignalAt) * 1_000))
-  }
 }
 
 private func iso8601String(_ date: Date) -> String {
@@ -508,6 +459,18 @@ public struct SessionRerunCommand: Sendable {
       let variables = instanceResolution.effectiveInstance?.configuration.defaultVariables
         ?? persisted.runtimeVariables
         ?? [:]
+      let eventHandler = await makeSessionCommandLivePersistenceHandler(
+        configuration: SessionLivePersistenceConfig(
+          workflowName: persisted.workflowName,
+          resolution: resolution,
+          storeRoot: storeRoot,
+          bundle: bundle,
+          variables: variables,
+          runtimeStore: runtimeStore,
+          mockScenarioPath: options.mockScenarioPath ?? persisted.mockScenarioPath,
+          workingDirectory: options.workingDirectory
+        )
+      )
       let result = try await runner.run(
         DeterministicWorkflowRunRequest(
           workflow: bundle.workflow,
@@ -519,7 +482,8 @@ public struct SessionRerunCommand: Sendable {
             sessionId: persisted.session.sessionId,
             storeRoot: storeRoot
           ),
-          effectiveInstance: instanceResolution.effectiveInstance
+          effectiveInstance: instanceResolution.effectiveInstance,
+          eventHandler: eventHandler
         )
       )
       let workflowMessages = try await runtimeStore.listMessages(for: result.session.sessionId, toStepId: nil)
@@ -713,6 +677,18 @@ public struct SessionResumeCommand: Sendable {
       )
       let effectiveMockScenarioPath = options.mockScenarioPath ?? persisted.mockScenarioPath
       let variables = try resumeRuntimeVariables(options: options, persisted: persisted)
+      let eventHandler = await makeSessionCommandLivePersistenceHandler(
+        configuration: SessionLivePersistenceConfig(
+          workflowName: persisted.workflowName,
+          resolution: resolution,
+          storeRoot: storeRoot,
+          bundle: bundle,
+          variables: variables,
+          runtimeStore: runtimeStore,
+          mockScenarioPath: effectiveMockScenarioPath,
+          workingDirectory: options.workingDirectory
+        )
+      )
       let result: WorkflowRunResult
       do {
         result = try await runner.run(
@@ -725,7 +701,8 @@ public struct SessionResumeCommand: Sendable {
             sourceRecoveryLineage: persistedRecoveryLineage(
               sessionId: persisted.session.sessionId,
               storeRoot: storeRoot
-            )
+            ),
+            eventHandler: eventHandler
           )
         )
       } catch {

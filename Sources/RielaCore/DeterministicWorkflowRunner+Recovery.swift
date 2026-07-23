@@ -31,7 +31,10 @@ extension DeterministicWorkflowRunner {
       WorkflowSessionCreateInput(
         workflowId: request.workflow.workflowId,
         entryStepId: entryStepId,
-        effectiveInstance: request.effectiveInstance
+        effectiveInstance: request.effectiveInstance,
+        parentSessionId: request.parentSessionId,
+        rootSessionId: request.rootSessionId,
+        effectiveStepBudget: request.effectiveStepBudget
       )
     )
     return .proceed(SessionEntryContext(
@@ -107,7 +110,10 @@ extension DeterministicWorkflowRunner {
       WorkflowSessionCreateInput(
         workflowId: request.workflow.workflowId,
         entryStepId: entryStepId,
-        effectiveInstance: request.effectiveInstance
+        effectiveInstance: request.effectiveInstance,
+        parentSessionId: request.parentSessionId,
+        rootSessionId: request.rootSessionId,
+        effectiveStepBudget: request.effectiveStepBudget
       )
     )
     return .proceed(SessionEntryContext(

@@ -99,15 +99,24 @@ public struct WorkflowSessionCreateInput: Equatable, Sendable {
   public var workflowId: String
   public var entryStepId: String
   public var effectiveInstance: EffectiveWorkflowInstance?
+  public var parentSessionId: String?
+  public var rootSessionId: String?
+  public var effectiveStepBudget: Int?
 
   public init(
     workflowId: String,
     entryStepId: String,
-    effectiveInstance: EffectiveWorkflowInstance? = nil
+    effectiveInstance: EffectiveWorkflowInstance? = nil,
+    parentSessionId: String? = nil,
+    rootSessionId: String? = nil,
+    effectiveStepBudget: Int? = nil
   ) {
     self.workflowId = workflowId
     self.entryStepId = entryStepId
     self.effectiveInstance = effectiveInstance
+    self.parentSessionId = parentSessionId
+    self.rootSessionId = rootSessionId
+    self.effectiveStepBudget = effectiveStepBudget
   }
 }
 
@@ -117,13 +126,25 @@ public struct WorkflowStepExecutionRecordInput: Equatable, Sendable {
   public var nodeId: String
   public var attempt: Int
   public var backend: NodeExecutionBackend?
+  public var backendWorkingDirectory: String?
+  public var effectiveStepBudget: Int?
 
-  public init(sessionId: String, stepId: String, nodeId: String, attempt: Int, backend: NodeExecutionBackend? = nil) {
+  public init(
+    sessionId: String,
+    stepId: String,
+    nodeId: String,
+    attempt: Int,
+    backend: NodeExecutionBackend? = nil,
+    backendWorkingDirectory: String? = nil,
+    effectiveStepBudget: Int? = nil
+  ) {
     self.sessionId = sessionId
     self.stepId = stepId
     self.nodeId = nodeId
     self.attempt = attempt
     self.backend = backend
+    self.backendWorkingDirectory = backendWorkingDirectory
+    self.effectiveStepBudget = effectiveStepBudget
   }
 }
 
@@ -170,19 +191,22 @@ public struct WorkflowSessionFailureInput: Equatable, Sendable {
   public var failureKind: WorkflowSessionFailureKind?
   public var failedAt: Date?
   public var stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic?
+  public var effectiveStepBudget: Int?
 
   public init(
     sessionId: String,
     reason: String,
     failureKind: WorkflowSessionFailureKind? = nil,
     failedAt: Date? = nil,
-    stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic? = nil
+    stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic? = nil,
+    effectiveStepBudget: Int? = nil
   ) {
     self.sessionId = sessionId
     self.reason = reason
     self.failureKind = failureKind
     self.failedAt = failedAt
     self.stepBudgetDiagnostic = stepBudgetDiagnostic
+    self.effectiveStepBudget = effectiveStepBudget
   }
 }
 
@@ -198,6 +222,7 @@ public struct WorkflowStepBackendEventInput: Equatable, Sendable {
   public var usage: JSONObject?
   public var sequence: Int?
   public var at: Date?
+  public var backendSessionId: String?
 
   public init(
     sessionId: String,
@@ -210,7 +235,8 @@ public struct WorkflowStepBackendEventInput: Equatable, Sendable {
     toolName: String? = nil,
     usage: JSONObject? = nil,
     sequence: Int? = nil,
-    at: Date? = nil
+    at: Date? = nil,
+    backendSessionId: String? = nil
   ) {
     self.sessionId = sessionId
     self.executionId = executionId
@@ -223,6 +249,7 @@ public struct WorkflowStepBackendEventInput: Equatable, Sendable {
     self.usage = usage
     self.sequence = sequence
     self.at = at
+    self.backendSessionId = backendSessionId
   }
 }
 
@@ -368,7 +395,10 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
       instanceIdentity: input.effectiveInstance?.identity,
       instanceKind: input.effectiveInstance?.kind.rawValue,
       instanceBaseIdentity: input.effectiveInstance?.baseIdentity,
-      instanceConfiguration: input.effectiveInstance?.configurationJSONObject
+      instanceConfiguration: input.effectiveInstance?.configurationJSONObject,
+      parentSessionId: input.parentSessionId,
+      rootSessionId: input.rootSessionId ?? sessionId,
+      effectiveStepBudget: input.effectiveStepBudget
     )
     sessions[sessionId] = session
     messagesBySession[sessionId] = []
@@ -386,6 +416,7 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
       nodeId: input.nodeId,
       attempt: input.attempt,
       backend: input.backend,
+      backendWorkingDirectory: input.backendWorkingDirectory,
       status: .running,
       createdAt: date,
       updatedAt: date
@@ -397,6 +428,7 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     session.failureKind = nil
     session.failedAt = nil
     session.stepBudgetDiagnostic = nil
+    session.effectiveStepBudget = input.effectiveStepBudget ?? session.effectiveStepBudget
     session.executions.append(execution)
     sessions[input.sessionId] = session
     return execution
@@ -470,6 +502,7 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     session.failureKind = input.failureKind
     session.failedAt = input.failedAt ?? date
     session.stepBudgetDiagnostic = input.stepBudgetDiagnostic
+    session.effectiveStepBudget = input.effectiveStepBudget ?? session.effectiveStepBudget
     session.executions = session.executions.map { execution in
       guard execution.status == .running else {
         return execution
@@ -518,6 +551,7 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     let sequence = input.sequence ?? ((liveTail.backendEventCount ?? 0) + 1)
     liveTail.lastBackendEventAt = date
     liveTail.lastBackendEventType = input.eventType
+    liveTail.backendSessionId = input.backendSessionId ?? liveTail.backendSessionId
     liveTail.backendEventCount = sequence
     appendRecentBackendEvent(to: &liveTail, input: input, sequence: sequence, date: date)
     updateStreamedResponseText(on: &liveTail, input: input)
@@ -688,6 +722,7 @@ private extension WorkflowStepExecutionStatus {
 }
 
 private struct WorkflowExecutionLiveTail: Sendable {
+  var backendSessionId: String?
   var lastBackendEventAt: Date?
   var lastBackendEventType: String?
   var backendEventCount: Int?
@@ -695,6 +730,7 @@ private struct WorkflowExecutionLiveTail: Sendable {
   var streamedResponseTextBuffer: StreamedResponseTextBuffer?
 
   init(execution: WorkflowStepExecution) {
+    self.backendSessionId = execution.backendSessionId
     self.lastBackendEventAt = execution.lastBackendEventAt
     self.lastBackendEventType = execution.lastBackendEventType
     self.backendEventCount = execution.backendEventCount
@@ -705,7 +741,8 @@ private struct WorkflowExecutionLiveTail: Sendable {
   }
 
   var isEmpty: Bool {
-    lastBackendEventAt == nil
+    backendSessionId == nil
+      && lastBackendEventAt == nil
       && lastBackendEventType == nil
       && backendEventCount == nil
       && recentBackendEvents == nil
@@ -724,6 +761,7 @@ private struct WorkflowExecutionLiveTail: Sendable {
 
   func applying(to execution: WorkflowStepExecution) -> WorkflowStepExecution {
     var projected = execution
+    projected.backendSessionId = backendSessionId
     projected.lastBackendEventAt = lastBackendEventAt
     projected.lastBackendEventType = lastBackendEventType
     projected.backendEventCount = backendEventCount
@@ -858,6 +896,7 @@ private struct StreamedResponseTextBuffer: Sendable {
 private extension WorkflowStepExecution {
   func withoutBackendLiveTail() -> WorkflowStepExecution {
     var execution = self
+    execution.backendSessionId = nil
     execution.lastBackendEventAt = nil
     execution.lastBackendEventType = nil
     execution.backendEventCount = nil

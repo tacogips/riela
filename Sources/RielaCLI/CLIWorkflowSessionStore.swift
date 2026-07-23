@@ -161,14 +161,17 @@ public struct CLIWorkflowSessionStore: Sendable {
     }
   }
 
-  public func load(sessionId: String) throws -> PersistedCLIWorkflowSession {
+  public func load(
+    sessionId: String,
+    strictReadOnly: Bool = false
+  ) throws -> PersistedCLIWorkflowSession {
     guard isSafeSessionId(sessionId) else {
       throw CLIWorkflowSessionStoreError.invalidSessionId(sessionId)
     }
     guard FileManager.default.fileExists(atPath: databasePath) else {
       throw CLIWorkflowSessionStoreError.notFound("session not found: \(sessionId)")
     }
-    let db = try openDatabase(readOnly: true)
+    let db = try openDatabase(readOnly: true, strictReadOnly: strictReadOnly)
     guard try tableExists(db, name: "cli_workflow_sessions") else {
       throw CLIWorkflowSessionStoreError.notFound("session not found: \(sessionId)")
     }
@@ -267,11 +270,20 @@ public struct CLIWorkflowSessionStore: Sendable {
     }
   }
 
-  private func openDatabase(readOnly: Bool = false) throws -> SQLiteDatabase {
-    try mapSQLiteError {
+  private func openDatabase(
+    readOnly: Bool = false,
+    strictReadOnly: Bool = false
+  ) throws -> SQLiteDatabase {
+    let mode: SQLiteOpenMode
+    if strictReadOnly {
+      mode = .strictReadOnlyWithImmutableFallback
+    } else {
+      mode = readOnly ? .readOnly : .readWriteCreate
+    }
+    return try mapSQLiteError {
       try SQLiteDatabase.open(
         path: databasePath,
-        mode: readOnly ? .readOnly : .readWriteCreate,
+        mode: mode,
         options: readOnly ? .readOnlyDefault : .writableDefault
       )
     }

@@ -4,6 +4,36 @@ import XCTest
 @testable import RielaCLI
 
 final class WorkflowCommandSessionDiscoveryTests: XCTestCase {
+  func testSessionListTextAppendsProvenanceAfterLegacyColumns() async throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-session-list-columns-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    try CLIWorkflowSessionStore(rootDirectory: tempDir.path).save(persistedSession(
+      sessionId: "child-session",
+      workflowName: "child-workflow",
+      status: .running,
+      updatedAt: Date(timeIntervalSince1970: 40),
+      parentSessionId: "parent-session",
+      rootSessionId: "root-session"
+    ))
+
+    let result = await RielaCLIApplication().run([
+      "session", "list",
+      "--session-store", tempDir.path,
+      "--output", "text"
+    ])
+
+    XCTAssertEqual(result.exitCode, .success, result.stderr)
+    let columns = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+      .components(separatedBy: "\t")
+    XCTAssertEqual(Array(columns.prefix(6)), [
+      "child-session", "child-workflow", "running", "-", "step-a", "0"
+    ])
+    XCTAssertEqual(columns[7], tempDir.path)
+    XCTAssertEqual(Array(columns.suffix(2)), ["parent-session", "root-session"])
+  }
+
   func testSessionListFiltersOrdersAndLimitsPersistedRows() async throws {
     let tempDir = FileManager.default.temporaryDirectory
       .appendingPathComponent("riela-session-list-\(UUID().uuidString)", isDirectory: true)
@@ -188,13 +218,62 @@ final class WorkflowCommandSessionDiscoveryTests: XCTestCase {
     let persisted = try CLIWorkflowSessionStore(rootDirectory: sessionStore.path).load(sessionId: sessionId)
     XCTAssertEqual(persisted.runtimeVariables?["workflowInput"], .object(["request": .string("preserve me")]))
 
-    let resume = await RielaCLIApplication().run([
-      "session", "resume", sessionId,
-      "--workflow-definition-dir", workflowRoot.path,
-      "--session-store", sessionStore.path,
-      "--max-steps", "2",
-      "--output", "json"
-    ])
+    let releaseFile = tempDir.appendingPathComponent("release-resume")
+    _ = try createExecutable(
+      directory: tempDir,
+      name: "two-step-command.sh",
+      body: """
+      while [ ! -f '\(releaseFile.path)' ]; do
+        sleep 0.05
+      done
+      if grep -q '"request":"preserve me"'; then
+        printf '%s\\n' '{"status":"ok"}'
+      else
+        printf '%s\\n' 'missing workflowInput.request' >&2
+        exit 7
+      fi
+      """
+    )
+    let resumeTask = Task {
+      await RielaCLIApplication().run([
+        "session", "resume", sessionId,
+        "--workflow-definition-dir", workflowRoot.path,
+        "--session-store", sessionStore.path,
+        "--max-steps", "2",
+        "--output", "json"
+      ])
+    }
+    var runningProgress: SessionInspectionCommandResult?
+    let runningDeadline = Date().addingTimeInterval(3)
+    while Date() < runningDeadline {
+      let progress = await RielaCLIApplication().run([
+        "session", "progress", sessionId,
+        "--session-store", sessionStore.path,
+        "--output", "json"
+      ])
+      if progress.exitCode == .success,
+         let decoded = try? decodeJSON(SessionInspectionCommandResult.self, from: progress.stdout),
+         decoded.status == .running {
+        runningProgress = decoded
+        break
+      }
+      try await Task.sleep(nanoseconds: 50_000_000)
+    }
+    XCTAssertEqual(runningProgress?.status, .running)
+    XCTAssertEqual(runningProgress?.progress?.status, .running)
+    let followTask = Task {
+      await RielaCLIApplication().run([
+        "session", "progress", sessionId,
+        "--session-store", sessionStore.path,
+        "--follow", "--poll-interval", "0.1",
+        "--output", "jsonl"
+      ])
+    }
+    try await Task.sleep(nanoseconds: 100_000_000)
+    try Data().write(to: releaseFile)
+
+    let resume = await resumeTask.value
+    let follow = await followTask.value
 
     XCTAssertEqual(resume.exitCode, .success, resume.stderr)
     let resumePayload = try decodeJSON(SessionResumeCommandResult.self, from: resume.stdout)
@@ -203,6 +282,12 @@ final class WorkflowCommandSessionDiscoveryTests: XCTestCase {
     XCTAssertEqual(resumePayload.status, .completed)
     XCTAssertEqual(resumePayload.exitCode, CLIExitCode.success.rawValue)
     XCTAssertEqual(resumePayload.recovery?.entryMode, .resume)
+    XCTAssertEqual(follow.exitCode, .success, follow.stderr + follow.stdout)
+    let followViews = try follow.stdout.split(whereSeparator: \.isNewline).map {
+      try decodeJSON(SessionObservabilityView.self, from: String($0))
+    }
+    XCTAssertEqual(followViews.first?.root.digest.status, .running)
+    XCTAssertEqual(followViews.last?.root.digest.status, .completed)
 
     let progress = await RielaCLIApplication().run([
       "session", "progress", sessionId,
@@ -331,7 +416,9 @@ final class WorkflowCommandSessionDiscoveryTests: XCTestCase {
     workflowName: String,
     status: WorkflowSessionStatus,
     updatedAt: Date,
-    failureKind: WorkflowSessionFailureKind? = nil
+    failureKind: WorkflowSessionFailureKind? = nil,
+    parentSessionId: String? = nil,
+    rootSessionId: String? = nil
   ) -> PersistedCLIWorkflowSession {
     PersistedCLIWorkflowSession(
       workflowName: workflowName,
@@ -343,7 +430,9 @@ final class WorkflowCommandSessionDiscoveryTests: XCTestCase {
         currentStepId: "step-a",
         createdAt: updatedAt,
         updatedAt: updatedAt,
-        failureKind: failureKind
+        failureKind: failureKind,
+        parentSessionId: parentSessionId,
+        rootSessionId: rootSessionId
       ),
       resolution: WorkflowResolutionOptions(workflowName: workflowName)
     )

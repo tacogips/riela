@@ -120,7 +120,7 @@ public struct WorkflowRunCommand: Sendable {
       livePersistenceState = persistenceState
       let persistenceBundle = bundle
       let runEventHandler: WorkflowRunEventHandler = { event in
-        if workflowRunEventTriggersLiveSessionPersistence(event) {
+        if await persistenceState.shouldPersist(event: event) {
           // Cross-workflow callee sessions share the runtime store and event
           // stream; persist them under the callee workflow identity so they
           // stay inspectable and resumable on their own.
@@ -136,7 +136,6 @@ public struct WorkflowRunCommand: Sendable {
                 workingDirectory: persistedIdentity.resolution.workingDirectory
               )
               : persistedIdentity.resolution,
-            storeRoot: storeRoot,
             bundle: persistenceBundle,
             variables: effectiveVariables,
             runtimeStore: runtimeStore,
@@ -252,7 +251,6 @@ public struct WorkflowRunCommand: Sendable {
     sessionId: String,
     workflowName: String,
     resolution: WorkflowResolutionOptions,
-    storeRoot: String,
     bundle: ResolvedWorkflowBundle,
     variables: JSONObject,
     runtimeStore: InMemoryWorkflowRuntimeStore,
@@ -260,43 +258,21 @@ public struct WorkflowRunCommand: Sendable {
     recorder: WorkflowRunJSONLRecorder?,
     state: WorkflowRunLivePersistenceState
   ) async {
-    do {
-      guard let session = try await runtimeStore.loadSession(id: sessionId) else {
-        return
-      }
-      let workflowMessages = try await runtimeStore.listMessages(for: sessionId, toStepId: nil)
-      let snapshot = runtimeSnapshot(
-        session: session,
-        workflowMessages: workflowMessages,
+    await persistWorkflowRunLiveSessionRecord(
+      sessionId: sessionId,
+      context: WorkflowRunLivePersistenceContext(
+        workflowName: workflowName,
+        resolution: resolution,
         bundle: bundle,
-        variables: variables
-      )
-      let artifactRoot = options.artifactRoot.map {
-        absoluteURL(
-          $0,
-          relativeTo: URL(fileURLWithPath: options.workingDirectory, isDirectory: true)
-        ).path
-      }
-      try await state.persistLiveSnapshot(
-        WorkflowRunLivePersistenceSaveInput(
-          persistedSession: PersistedCLIWorkflowSession(
-            workflowName: workflowName,
-            session: session,
-            resolution: resolution,
-            mockScenarioPath: options.mockScenarioPath,
-            runtimeVariables: variables
-          ),
-          runtimeSnapshot: snapshot,
-          workflowMessages: workflowMessages,
-          artifactRoot: artifactRoot
-        )
-      )
-    } catch {
-      await state.recordFailure(sessionId: sessionId, error: "\(error)")
-      if let recorder {
-        await recorder.append((try? jsonString(WorkflowRunPersistenceFailureRecord(sessionId: sessionId, error: "\(error)"))) ?? "")
-      }
-    }
+        variables: variables,
+        runtimeStore: runtimeStore,
+        mockScenarioPath: options.mockScenarioPath,
+        artifactRoot: options.artifactRoot,
+        workingDirectory: options.workingDirectory,
+        recorder: recorder
+      ),
+      state: state
+    )
   }
 
   private func runRemote(endpoint: String, options: WorkflowRunOptions) async throws -> CLICommandResult {

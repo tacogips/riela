@@ -18,9 +18,13 @@ struct WorkflowRunLivePersistenceSnapshot: Sendable {
 }
 
 actor WorkflowRunLivePersistenceState {
+  static let backendEventPersistenceInterval: TimeInterval = 1
+
   private var latestSessionId: String?
   private var storeRoot: String?
   private var persistedSessionIds: Set<String> = []
+  private var persistedBackendSessionIdsBySessionId: [String: String] = [:]
+  private var lastBackendEventPersistenceAtBySessionId: [String: Date] = [:]
   private var lastPersistedMessageOrderBySessionId: [String: Int] = [:]
   private var connection: WorkflowRunLivePersistenceConnection?
   private var connectionOpenCount = 0
@@ -76,6 +80,30 @@ actor WorkflowRunLivePersistenceState {
   func recordFailure(sessionId: String, error: String) {
     latestSessionId = sessionId
     appendDiagnostic("live session persistence failed for \(sessionId): \(boundedWorkflowRunDiagnostic(error))")
+  }
+
+  func shouldPersist(
+    event: WorkflowRunEvent,
+    observedAt: Date = Date()
+  ) -> Bool {
+    guard workflowRunEventTriggersLiveSessionPersistence(event) else {
+      return false
+    }
+    guard event.type == .backendEvent else {
+      return true
+    }
+    if let backendSessionId = event.backendSessionId,
+       persistedBackendSessionIdsBySessionId[event.sessionId] != backendSessionId {
+      persistedBackendSessionIdsBySessionId[event.sessionId] = backendSessionId
+      lastBackendEventPersistenceAtBySessionId[event.sessionId] = observedAt
+      return true
+    }
+    if let lastPersistedAt = lastBackendEventPersistenceAtBySessionId[event.sessionId],
+       observedAt.timeIntervalSince(lastPersistedAt) < Self.backendEventPersistenceInterval {
+      return false
+    }
+    lastBackendEventPersistenceAtBySessionId[event.sessionId] = observedAt
+    return true
   }
 
   func snapshot() -> WorkflowRunLivePersistenceSnapshot {
@@ -137,10 +165,87 @@ private final class WorkflowRunLivePersistenceConnection: @unchecked Sendable {
 
 func workflowRunEventTriggersLiveSessionPersistence(_ event: WorkflowRunEvent) -> Bool {
   switch event.type {
-  case .sessionStarted, .stepStarted, .silenceWarning, .loopStall, .budgetExceeded, .stepCompleted, .sessionCompleted:
+  case .sessionStarted, .stepStarted, .backendEvent, .silenceWarning,
+       .loopStall, .budgetExceeded, .stepCompleted, .sessionCompleted:
     return true
-  case .backendEvent:
-    return false
+  }
+}
+
+struct WorkflowRunLivePersistenceContext: Sendable {
+  var workflowName: String
+  var resolution: WorkflowResolutionOptions
+  var bundle: ResolvedWorkflowBundle
+  var variables: JSONObject
+  var runtimeStore: InMemoryWorkflowRuntimeStore
+  var mockScenarioPath: String?
+  var artifactRoot: String?
+  var workingDirectory: String
+  var recorder: WorkflowRunJSONLRecorder?
+}
+
+func persistWorkflowRunLiveSessionRecord(
+  sessionId: String,
+  context: WorkflowRunLivePersistenceContext,
+  state: WorkflowRunLivePersistenceState
+) async {
+  do {
+    guard let session = try await context.runtimeStore.loadSession(id: sessionId) else {
+      return
+    }
+    let workflowMessages = try await context.runtimeStore.listMessages(for: sessionId, toStepId: nil)
+    let loopEvidence = try? DefaultLoopEvidenceProjector().project(
+      LoopEvidenceProjectionInput(
+        workflow: context.bundle.workflow,
+        session: session,
+        workflowMessages: workflowMessages,
+        workflowSource: LoopWorkflowSource(
+          scope: context.bundle.sourceScope.rawValue,
+          kind: context.bundle.packageManifest == nil ? "workflow-directory" : "package",
+          workflowDirectory: context.bundle.workflowDirectory,
+          packageName: context.bundle.packageManifest?.name,
+          packageVersion: context.bundle.packageManifest?.version,
+          packageDirectory: context.bundle.packageDirectory,
+          mutable: context.bundle.packageManifest == nil
+        ),
+        variables: context.variables
+      )
+    )
+    let snapshot = WorkflowRuntimePersistenceProjector.snapshot(
+      session: session,
+      workflowMessages: workflowMessages,
+      loopEvidence: loopEvidence,
+      loopMetadata: context.bundle.workflow.loop
+    )
+    let resolvedArtifactRoot = context.artifactRoot.map {
+      absoluteURL(
+        $0,
+        relativeTo: URL(fileURLWithPath: context.workingDirectory, isDirectory: true)
+      ).path
+    }
+    try await state.persistLiveSnapshot(
+      WorkflowRunLivePersistenceSaveInput(
+        persistedSession: PersistedCLIWorkflowSession(
+          workflowName: context.workflowName,
+          session: session,
+          resolution: context.resolution,
+          mockScenarioPath: context.mockScenarioPath,
+          runtimeVariables: context.variables
+        ),
+        runtimeSnapshot: snapshot,
+        workflowMessages: workflowMessages,
+        artifactRoot: resolvedArtifactRoot
+      )
+    )
+  } catch {
+    await state.recordFailure(sessionId: sessionId, error: "\(error)")
+    if let recorder = context.recorder {
+      await recorder.append(
+        (try? jsonString(WorkflowRunPersistenceFailureRecord(
+          sessionId: sessionId,
+          error: "\(error)"
+        ))) ?? ""
+      )
+    }
   }
 }
 

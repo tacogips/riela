@@ -9,14 +9,16 @@ extension DeterministicWorkflowRunner {
     sessionId: String,
     request: DeterministicWorkflowRunRequest,
     error: Error,
-    stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic?
+    stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic?,
+    effectiveStepBudget: Int?
   ) async {
     guard let failedSession = try? await store.markSessionFailed(
       WorkflowSessionFailureInput(
         sessionId: sessionId,
         reason: workflowRunFailureReason(error),
         failureKind: workflowRunFailureKind(error),
-        stepBudgetDiagnostic: stepBudgetDiagnostic
+        stepBudgetDiagnostic: stepBudgetDiagnostic,
+        effectiveStepBudget: effectiveStepBudget
       )
     ) else {
       return

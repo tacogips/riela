@@ -183,7 +183,7 @@ public struct RielaCLIApplication: Sendable {
       return sessionDiscoveryCommand.run(options)
     case let .progress(options), let .health(options), let .status(options),
          let .stepRuns(options), let .export(options), let .logs(options):
-      return sessionInspectionCommand.run(options)
+      return await sessionInspectionCommand.run(options)
     case let .continueSession(options):
       return await sessionContinueCommand.run(options)
     }
@@ -347,7 +347,9 @@ Usage:
   riela session resume <session-id> [--max-steps <n>] [--scope project|user|auto] [--output jsonl|json|text]
   riela session list [--workflow <name>] [--status created|running|completed|failed] [--limit 10] [--scope project|user|auto] [--output jsonl|json|text|table]
   riela session latest --workflow <name> [--scope project|user|auto] [--output jsonl|json|text|table]
-  riela session progress|health|status|continue|step-runs|export|logs [session-id] [options]
+  riela session progress <session-id> [--follow] [--poll-interval 2.0] [--include-children] [--output text|jsonl|json]
+  riela session health <session-id> [--output text|jsonl|json]  # backendActivity: active|quiet|stalled-suspect|unknown
+  riela session status|continue|step-runs|export|logs <session-id> [options]
   riela loop status|evidence|gates <session-id> [--session-store <dir>] [--output jsonl|json|text]
   riela loop list [--workflow <name>] [--status active|created|running|completed|failed] [--gate-decision accepted|rejected|needs_work|skipped] [--limit 50] [--session-store <dir>] [--output jsonl|json|text|table]
   riela loop history <workflow> [--status active|created|running|completed|failed] [--gate-decision accepted|rejected|needs_work|skipped] [--limit 50] [--session-store <dir>] [--output jsonl|json|text|table]
@@ -361,6 +363,11 @@ for automation, agents, and LLM-driven tool use, especially for workflow run.
 Use --output text for human-readable output. Use --output json only when a
 legacy caller explicitly requires one non-streaming JSON document after
 completion.
+
+Session progress observers are read-only. `--follow` and `--poll-interval`
+(finite `0.1...3600`, default `2.0`) are progress-only; follow rejects
+`--output json`, emits one text or JSONL digest per refresh, and exits after the
+requested session or included child tree is terminal.
 
 Bare `riela serve` starts an HTTP listener and remains active until SIGINT or
 SIGTERM. The default address is 127.0.0.1:8787. The status, health, overview,

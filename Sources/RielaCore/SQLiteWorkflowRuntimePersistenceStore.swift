@@ -103,10 +103,21 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   }
 
   public func load(sessionId: String) throws -> WorkflowRuntimePersistenceSnapshot {
+    try load(sessionId: sessionId, strictReadOnly: false)
+  }
+
+  public func loadStrictReadOnly(sessionId: String) throws -> WorkflowRuntimePersistenceSnapshot {
+    try load(sessionId: sessionId, strictReadOnly: true)
+  }
+
+  private func load(
+    sessionId: String,
+    strictReadOnly: Bool
+  ) throws -> WorkflowRuntimePersistenceSnapshot {
     guard isSafeId(sessionId) else {
       throw WorkflowRuntimePersistenceStoreError.invalidSessionId(sessionId)
     }
-    let db = try openDatabase(readOnly: true)
+    let db = try openDatabase(readOnly: true, strictReadOnly: strictReadOnly)
     let loopEvidenceSelect = try loopEvidenceSelectExpression(db)
     let rows = try mapSQLiteError {
       try db.query(
@@ -511,12 +522,21 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     }.isEmpty == false
   }
 
-  private func openDatabase(readOnly: Bool = false) throws -> SQLiteDatabase {
+  func openDatabase(
+    readOnly: Bool = false,
+    strictReadOnly: Bool = false
+  ) throws -> SQLiteDatabase {
     let databasePath = Self.defaultDatabasePath(rootDirectory: rootDirectory)
+    let mode: SQLiteOpenMode
+    if strictReadOnly {
+      mode = .strictReadOnlyWithImmutableFallback
+    } else {
+      mode = readOnly ? .readOnly : .readWriteCreate
+    }
     return try mapSQLiteError {
       try SQLiteDatabase.open(
         path: databasePath,
-        mode: readOnly ? .readOnly : .readWriteCreate,
+        mode: mode,
         options: readOnly ? .readOnlyDefault : .writableDefault
       )
     }
@@ -532,6 +552,8 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
         workflow_id TEXT,
         session_status TEXT,
         created_at TEXT,
+        parent_session_id TEXT,
+        root_session_id TEXT,
         session_json BLOB NOT NULL CHECK (json_valid(session_json, 8)),
         root_output_json BLOB CHECK (root_output_json IS NULL OR json_valid(root_output_json, 8)),
         diagnostics_json BLOB NOT NULL CHECK (json_valid(diagnostics_json, 8)),
@@ -551,6 +573,12 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       if !columns.contains("created_at") {
         try db.execute("ALTER TABLE workflow_runtime_snapshots ADD COLUMN created_at TEXT")
       }
+      if !columns.contains("parent_session_id") {
+        try db.execute("ALTER TABLE workflow_runtime_snapshots ADD COLUMN parent_session_id TEXT")
+      }
+      if !columns.contains("root_session_id") {
+        try db.execute("ALTER TABLE workflow_runtime_snapshots ADD COLUMN root_session_id TEXT")
+      }
       if !columns.contains("loop_evidence_json") {
         try db.execute(
         """
@@ -569,6 +597,8 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       }
       try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_runtime_snapshots_updated ON workflow_runtime_snapshots (updated_at DESC, workflow_execution_id)")
       try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_runtime_snapshots_summary ON workflow_runtime_snapshots (workflow_id, session_status, updated_at DESC)")
+      try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_runtime_snapshots_parent ON workflow_runtime_snapshots (parent_session_id, created_at, workflow_execution_id)")
+      try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_runtime_snapshots_root ON workflow_runtime_snapshots (root_session_id, created_at, workflow_execution_id)")
       try backfillSummaryColumns(db)
     }
   }
@@ -583,13 +613,15 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       try db.execute(
       """
       INSERT INTO workflow_runtime_snapshots (
-        workflow_execution_id, workflow_id, session_status, created_at,
+        workflow_execution_id, workflow_id, session_status, created_at, parent_session_id, root_session_id,
         session_json, root_output_json, diagnostics_json, loop_evidence_json, loop_summary_json, updated_at
-      ) VALUES (?, ?, ?, ?, jsonb(?), jsonb(?), jsonb(?), jsonb(?), jsonb(?), ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, jsonb(?), jsonb(?), jsonb(?), jsonb(?), jsonb(?), ?)
       ON CONFLICT(workflow_execution_id) DO UPDATE SET
         workflow_id = excluded.workflow_id,
         session_status = excluded.session_status,
         created_at = excluded.created_at,
+        parent_session_id = excluded.parent_session_id,
+        root_session_id = excluded.root_session_id,
         session_json = excluded.session_json,
         root_output_json = excluded.root_output_json,
         diagnostics_json = excluded.diagnostics_json,
@@ -602,6 +634,8 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
         .text(snapshot.session.workflowId),
         .text(snapshot.session.status.rawValue),
         .text(Self.dateString(snapshot.session.createdAt)),
+        .optionalText(snapshot.session.parentSessionId),
+        .optionalText(snapshot.session.rootSessionId ?? snapshot.session.sessionId),
         .text(try jsonString(snapshot.session)),
         .optionalText(rootOutputJSON),
         .text(try jsonString(snapshot.diagnostics)),
@@ -692,7 +726,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     var loopSummaryJSON: String?
   }
 
-  private func snapshot(from row: SQLiteRow, db: SQLiteDatabase) throws -> WorkflowRuntimePersistenceSnapshot {
+  func snapshot(from row: SQLiteRow, db: SQLiteDatabase) throws -> WorkflowRuntimePersistenceSnapshot {
     guard let sessionText = row["session_json"],
           let diagnosticsText = row["diagnostics_json"],
           let sessionData = sessionText.data(using: .utf8),
@@ -822,7 +856,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     return LoopSessionOverview.make(session: session, summary: summary)
   }
 
-  private func loopEvidenceSelectExpression(_ db: SQLiteDatabase) throws -> String {
+  func loopEvidenceSelectExpression(_ db: SQLiteDatabase) throws -> String {
     if try mapSQLiteError({ try db.tableColumnNames("workflow_runtime_snapshots") }).contains("loop_evidence_json") {
       return "CASE WHEN loop_evidence_json IS NULL THEN NULL ELSE json(loop_evidence_json) END AS loop_evidence_json"
     }
@@ -835,7 +869,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     return String(data: try encoder.encode(value), encoding: .utf8) ?? "{}"
   }
 
-  private func isSafeId(_ value: String) -> Bool {
+  func isSafeId(_ value: String) -> Bool {
     guard !value.isEmpty, !value.contains("/"), !value.contains("..") else {
       return false
     }

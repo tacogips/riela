@@ -41,6 +41,7 @@ final class WorkflowMutableRegistryPinnedRoot: @unchecked Sendable {
     }
     let lexicalHome = homeDirectory.standardizedFileURL
     guard let resolvedPointer = realpath(lexicalHome.path, nil) else {
+      if !create, errno == ENOENT { throw WorkflowMutableRegistryRootAbsent() }
       throw CLIUsageError("unable to resolve mutable workflow registry home")
     }
     defer { free(resolvedPointer) }
@@ -50,6 +51,7 @@ final class WorkflowMutableRegistryPinnedRoot: @unchecked Sendable {
     ).standardizedFileURL
     var current = open(resolvedHome.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
     guard current >= 0 else {
+      if !create, errno == ENOENT { throw WorkflowMutableRegistryRootAbsent() }
       throw CLIUsageError("unable to pin mutable workflow registry home")
     }
     do {

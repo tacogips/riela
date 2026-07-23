@@ -88,7 +88,7 @@ final class WorkflowStagedVerificationTests: XCTestCase {
   }
 
   private func commitUnchanged(root: URL) throws -> WorkflowDirectoryTransactionResult {
-    let resolved = try resolveVersioningTarget(root: root)
+    let resolved = try resolveMutableTransactionTarget(root: root)
     let inventory = try WorkflowHistoryIdentityResolver.inventory(for: resolved.identity)
     let snapshot = try WorkflowHistoryStore(root: resolved.historyRoot).createSnapshot(inventory: inventory)
     return try WorkflowDirectoryTransactionCoordinator().commit(

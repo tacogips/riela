@@ -99,8 +99,15 @@ struct WorkflowActivationStore: Sendable {
       pinned = try statePinnedRoot(create: true)
     } catch {
       let home = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
-      guard stateRootParentIsExplicitlyReadOnly(home: home) else { throw error }
-      return try body()
+      if stateRootParentIsExplicitlyReadOnly(home: home) { return try body() }
+      // A read against an absent state root (including an absent home) has
+      // nothing to lock or read; degrade instead of failing the command.
+      do {
+        _ = try statePinnedRoot(create: false)
+      } catch is WorkflowMutableRegistryRootAbsent {
+        return try body()
+      } catch {}
+      throw error
     }
     return try withFileLock(pinned: pinned) {
       try withThreadPinnedRoot(pinned) {

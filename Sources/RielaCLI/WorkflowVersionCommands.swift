@@ -58,19 +58,19 @@ public struct WorkflowRestoreCommandResult: Codable, Equatable, Sendable {
 
 public struct WorkflowVersionCommand: Sendable {
   private let resolver: any WorkflowBundleResolving
-  private let temporaryRegistry: WorkflowTemporaryRegistry
+  private let mutableRegistry: WorkflowMutableRegistry
 
   public init() {
     resolver = FileSystemWorkflowBundleResolver()
-    temporaryRegistry = WorkflowTemporaryRegistry()
+    mutableRegistry = WorkflowMutableRegistry()
   }
 
   init(
     resolver: any WorkflowBundleResolving,
-    temporaryRegistry: WorkflowTemporaryRegistry
+    mutableRegistry: WorkflowMutableRegistry
   ) {
     self.resolver = resolver
-    self.temporaryRegistry = temporaryRegistry
+    self.mutableRegistry = mutableRegistry
   }
 
   public func run(_ options: WorkflowVersionCommandOptions) -> CLICommandResult {
@@ -135,11 +135,11 @@ public struct WorkflowVersionCommand: Sendable {
       case .restore:
         let snapshotId = try require(options.firstReference, "workflow restore requires a snapshot id")
         let result: WorkflowRestoreCommandResult
-        if bundle.temporary {
-          guard let expectedDigest = bundle.temporaryRegistryDigest else {
-            throw CLIUsageError("temporary workflow resolution did not retain a registry digest")
+        if bundle.provenance == .mutable {
+          guard let expectedDigest = bundle.mutableRegistryDigest else {
+            throw CLIUsageError("mutable workflow resolution did not retain a registry digest")
           }
-          result = try temporaryRegistry.withWorkflowMutationAccess(
+          result = try mutableRegistry.withWorkflowMutationAccess(
             workflowId: bundle.workflow.workflowId,
             expectedDigest: expectedDigest,
             shouldPublish: { $0.restored },
@@ -189,9 +189,6 @@ public struct WorkflowVersionCommand: Sendable {
     store: WorkflowHistoryStore
   ) throws -> [WorkflowBundleSnapshotFile] {
     if reference == "current" {
-      guard target.sourceMutable, target.sourceKind != .installedPackage else {
-        throw CLIUsageError("the current token is available only for mutable workflow bundles")
-      }
       return try WorkflowHistoryIdentityResolver.inventory(for: target).files.map(\.metadata)
     }
     return try store.loadSnapshot(reference, expectedIdentity: target).files
@@ -227,9 +224,6 @@ public struct WorkflowVersionCommand: Sendable {
     physicalOwnershipRoot: URL?,
     postCommitPublication: (URL) throws -> Void
   ) throws -> WorkflowRestoreCommandResult {
-    guard target.sourceMutable, target.sourceKind != .installedPackage, target.packageDirectory == nil else {
-      throw CLIUsageError("installed package workflows are immutable restore destinations")
-    }
     let source = try store.loadSnapshot(snapshotId, expectedIdentity: target)
     let current = try WorkflowHistoryIdentityResolver.inventory(
       for: target,
@@ -261,6 +255,13 @@ public struct WorkflowVersionCommand: Sendable {
         restoredFiles: changes.map(\.relativePath),
         dirtyConflicts: dirtyConflicts,
         validation: validation
+      )
+    }
+    guard target.sourceMutable, target.sourceKind != .installedPackage, target.packageDirectory == nil else {
+      throw WorkflowRegistryError(
+        code: .immutableWorkflow,
+        message: "immutable workflow '\(target.workflowId)' cannot be restored; register a mutable copy",
+        workflowId: target.workflowId
       )
     }
     guard dirtyConflicts.isEmpty else {

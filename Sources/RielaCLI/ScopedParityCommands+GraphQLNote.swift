@@ -29,15 +29,22 @@ extension ScopedParityCommandRunner {
       ),
       autoActionDiagnosticRecorder: StderrAutoActionFilterDiagnostics()
     )
-    let executor = NoteGraphQLDocumentExecutor(
-      service: GraphQLNoteGraphQLService(service: noteService),
-      allowRawS3ProfileInput: true
+    let executor = CompositeGraphQLDocumentExecutor(
+      workflowRegistry: WorkflowRegistryGraphQLDocumentExecutor(
+        localProvider: FileWorkflowRegistryGraphQLProvider(workingDirectory: workingDirectory)
+      ),
+      fallback: NoteGraphQLDocumentExecutor(
+        service: GraphQLNoteGraphQLService(service: noteService),
+        allowRawS3ProfileInput: true
+      )
     )
     let response = await executor.execute(GraphQLDocumentRequest(
       query: query,
       variables: variables,
       operationName: parsed.graphQLOperationName,
-      environment: CLIRuntimeEnvironment.mergedProcessEnvironment()
+      environment: CLIRuntimeEnvironment.mergedProcessEnvironment(),
+      isLocallyTrusted: true,
+      localWorkingDirectory: workingDirectory
     ))
     guard response.handled else {
       throw CLIUsageError("graphql \(action) document was not handled by the note executor")

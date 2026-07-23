@@ -13,7 +13,7 @@ public struct RielaCLIApplication: Sendable {
   public var runCommand: WorkflowRunCommand
   public var manifestValidateCommand: WorkflowManifestValidateCommand
   public var workflowCatalogCommand: WorkflowCatalogCommand
-  public var workflowTemporaryRegistrationCommand: WorkflowTemporaryRegistrationCommand
+  public var workflowMutableRegistrationCommand: WorkflowMutableRegistrationCommand
   public var sessionRerunCommand: SessionRerunCommand
   public var sessionResumeCommand: SessionResumeCommand
   public var sessionDiscoveryCommand: SessionDiscoveryCommand
@@ -39,7 +39,7 @@ public struct RielaCLIApplication: Sendable {
     runCommand: WorkflowRunCommand = WorkflowRunCommand(),
     manifestValidateCommand: WorkflowManifestValidateCommand = WorkflowManifestValidateCommand(),
     workflowCatalogCommand: WorkflowCatalogCommand = WorkflowCatalogCommand(),
-    workflowTemporaryRegistrationCommand: WorkflowTemporaryRegistrationCommand = WorkflowTemporaryRegistrationCommand(),
+    workflowMutableRegistrationCommand: WorkflowMutableRegistrationCommand = WorkflowMutableRegistrationCommand(),
     sessionRerunCommand: SessionRerunCommand = SessionRerunCommand(),
     sessionResumeCommand: SessionResumeCommand = SessionResumeCommand(),
     sessionDiscoveryCommand: SessionDiscoveryCommand = SessionDiscoveryCommand(),
@@ -64,7 +64,7 @@ public struct RielaCLIApplication: Sendable {
     self.runCommand = runCommand
     self.manifestValidateCommand = manifestValidateCommand
     self.workflowCatalogCommand = workflowCatalogCommand
-    self.workflowTemporaryRegistrationCommand = workflowTemporaryRegistrationCommand
+    self.workflowMutableRegistrationCommand = workflowMutableRegistrationCommand
     self.sessionRerunCommand = sessionRerunCommand
     self.sessionResumeCommand = sessionResumeCommand
     self.sessionDiscoveryCommand = sessionDiscoveryCommand
@@ -153,9 +153,11 @@ public struct RielaCLIApplication: Sendable {
     case let .status(options):
       return workflowCatalogCommand.status(options)
     case let .register(options):
-      return workflowTemporaryRegistrationCommand.run(options)
+      return workflowMutableRegistrationCommand.run(options)
     case .registerHelp:
       return CLICommandResult(exitCode: .success, stdout: workflowRegisterHelpText)
+    case let .registry(options):
+      return WorkflowRegistryCLICommand().run(options)
     case let .manifestValidate(options):
       return await manifestValidateCommand.run(options)
     case let .checkout(options):
@@ -303,9 +305,14 @@ Usage:
   riela workflow validate <workflow> [--scope project|user|auto] [--output jsonl|json|text]
   riela workflow inspect <workflow> [--scope project|user|auto] [--output jsonl|json|text]
   riela workflow usage <workflow> [--scope project|user|auto] [--output jsonl|json|text]
-  riela workflow list [query] [--scope project|user|auto] [--exclude-temporary] [--output jsonl|json|text|table]
+  riela workflow list [query] [--scope project|user|auto] [--exclude-mutable] [--activation active|deactivated] [--provenance mutable|immutable] [--output jsonl|json|text|table]
+    (--exclude-temporary remains a deprecated alias for --exclude-mutable)
   riela workflow status <workflow> [--output jsonl|json|text|table]
-  riela workflow register <path> --temporary [--overwrite] [--working-dir <dir>] [--output jsonl|json|text|table]
+  riela workflow register <path> --mutable [--overwrite] [--working-dir <dir>] [--output jsonl|json|text|table]
+    (--temporary remains a deprecated alias for --mutable)
+  riela workflow update <workflow> <path> [--scope auto|project|user] [--origin-id <id>] [--output jsonl|json|text]
+  riela workflow delete|activate|deactivate <workflow> [--scope auto|project|user] [--origin-id <id>] [--output jsonl|json|text]
+  riela workflow consolidate --source <workflow> --source <workflow> --replacement <path> --retire deactivate|delete [--output jsonl|json|text]
   riela workflow manifest validate <manifest-path> [--output jsonl|json|text]
   riela workflow checkout|create|self-improve <workflow> [options]
   riela workflow versions <workflow> [--output json|text]

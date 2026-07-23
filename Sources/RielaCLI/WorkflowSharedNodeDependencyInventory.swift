@@ -1,12 +1,18 @@
 import Foundation
 import RielaCore
 
+typealias WorkflowSharedNodeDependencyReader = (
+  _ workflowId: String,
+  _ relativePath: String
+) throws -> WorkflowDescriptorRelativeRead
+
 enum WorkflowSharedNodeDependencyInventory {
   static let virtualPrefix = ".riela-shared-nodes"
 
   static func files(
     for target: WorkflowBundleIdentity,
-    primaryFiles: [WorkflowOwnedFile]
+    primaryFiles: [WorkflowOwnedFile],
+    dependencyReader: WorkflowSharedNodeDependencyReader? = nil
   ) throws -> [WorkflowOwnedFile] {
     guard target.sourceKind == .authoredWorkflow else { return [] }
     let workflowDirectory = URL(fileURLWithPath: target.workflowDirectory, isDirectory: true).standardizedFileURL
@@ -22,7 +28,7 @@ enum WorkflowSharedNodeDependencyInventory {
     let declaration = try jsonObject(workflowFile.bytes, label: "workflow.json")
     let references = nodeReferences(in: declaration)
     guard !references.isEmpty else { return [] }
-    var collector = Collector(root: dependencyRoot)
+    var collector = Collector(root: dependencyRoot, dependencyReader: dependencyReader)
     for reference in references {
       try collector.collect(reference, stack: [])
     }
@@ -51,6 +57,7 @@ enum WorkflowSharedNodeDependencyInventory {
 
   private struct Collector {
     var root: URL
+    var dependencyReader: WorkflowSharedNodeDependencyReader?
     var files: [String: WorkflowOwnedFile] = [:]
 
     mutating func collect(_ reference: Reference, stack: [Reference]) throws {
@@ -90,7 +97,12 @@ enum WorkflowSharedNodeDependencyInventory {
       guard url.path.hasPrefix(directory.path + "/") else {
         throw CLIUsageError("shared-node dependency escapes its workflow directory")
       }
-      let read = try WorkflowDescriptorRelativeReader.read(url, within: root)
+      let read: WorkflowDescriptorRelativeRead
+      if let dependencyReader {
+        read = try dependencyReader(workflowId, relativePath)
+      } else {
+        read = try WorkflowDescriptorRelativeReader.read(url, within: root)
+      }
       let virtualPath = "\(WorkflowSharedNodeDependencyInventory.virtualPrefix)/\(workflowId)/\(relativePath)"
       let metadata = WorkflowBundleSnapshotFile(
         relativePath: virtualPath,

@@ -75,6 +75,23 @@ enum WorkflowDetachedOwnershipRoot {
     try WorkflowDetachedOwnershipPinnedRoot(candidate: candidate, requireRoot: requireRoot).identity
   }
 
+  static func validateCanonicalPath(_ candidate: URL) throws -> URL {
+    let root = candidate.standardizedFileURL
+    let container = root.deletingLastPathComponent()
+    let namespace = canonicalNamespaceRoot
+    let name = container.lastPathComponent
+    let identifier = String(name.dropFirst(containerPrefix.count))
+    guard candidate.path == root.path,
+          root.lastPathComponent == "root",
+          container.deletingLastPathComponent().path == namespace.path,
+          name.hasPrefix(containerPrefix),
+          let uuid = UUID(uuidString: identifier),
+          uuid.uuidString.lowercased() == identifier else {
+      throw CLIUsageError("detached workflow ownership root is outside its canonical temporary namespace")
+    }
+    return root
+  }
+
   static var canonicalNamespaceRoot: URL {
     FileManager.default.temporaryDirectory.resolvingSymlinksInPath().standardizedFileURL
   }
@@ -362,10 +379,14 @@ func validateWorkflowTransactionRecordForDiscovery(
   case let .mutation(evidence): try WorkflowHistoryCanonicalCoding.validate(evidence)
   case let .restore(restore): try WorkflowHistoryCanonicalCoding.validate(restore)
   }
-  let detachedIdentity = try record.physicalOwnershipRoot.map {
-    try WorkflowDetachedOwnershipRoot.validate(URL(fileURLWithPath: $0, isDirectory: true), requireRoot: false)
+  let detachedRoot = try record.physicalOwnershipRoot.map {
+    let candidate = URL(fileURLWithPath: $0, isDirectory: true)
+    if record.phase.isTerminal {
+      return try WorkflowDetachedOwnershipRoot.validateCanonicalPath(candidate)
+    }
+    return try WorkflowDetachedOwnershipRoot.validate(candidate, requireRoot: false).root
   }
-  let live = detachedIdentity?.root
+  let live = detachedRoot
     ?? URL(fileURLWithPath: record.target.ownershipRoot, isDirectory: true).standardizedFileURL
   let parent = live.deletingLastPathComponent()
   let expectedStaging = parent.appendingPathComponent(
@@ -376,7 +397,7 @@ func validateWorkflowTransactionRecordForDiscovery(
   ).standardizedFileURL
   guard URL(fileURLWithPath: record.stagingPath).standardizedFileURL.path == expectedStaging.path,
         URL(fileURLWithPath: record.rollbackPath).standardizedFileURL.path == expectedRollback.path,
-        record.physicalOwnershipRoot == detachedIdentity?.root.path,
+        record.physicalOwnershipRoot == detachedRoot?.path,
         historyRoot.standardizedFileURL.path.hasPrefix("/") else {
     throw CLIUsageError("transaction paths do not match their canonical target and history root")
   }

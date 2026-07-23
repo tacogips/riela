@@ -7,9 +7,13 @@ extension RielaArgumentParser {
       return .workflow(.registerHelp)
     }
     let parsed = try ParsedWorkflowRegisterArguments.parseCLI(arguments)
-    return .workflow(.register(WorkflowTemporaryRegistrationOptions(
+    if parsed.mutable && parsed.temporary {
+      throw CLIUsageError("--mutable and --temporary are mutually exclusive")
+    }
+    return .workflow(.register(WorkflowMutableRegistrationOptions(
       inputPath: parsed.inputPath,
-      temporary: parsed.temporary,
+      mutable: parsed.mutable || parsed.temporary,
+      usedDeprecatedTemporaryAlias: parsed.temporary,
       overwrite: parsed.overwrite,
       workingDirectory: parsed.workingDirectory,
       output: parsed.output

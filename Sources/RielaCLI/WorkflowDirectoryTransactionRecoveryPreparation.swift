@@ -36,11 +36,20 @@ extension WorkflowDirectoryTransactionCoordinator {
     guard snapshot.bundleDigest == record.beforeBundleDigest else {
       throw CLIUsageError("recovery snapshot does not match the transaction before digest")
     }
-    let live = record.physicalOwnershipRoot.map { URL(fileURLWithPath: $0, isDirectory: true) }
-      ?? URL(fileURLWithPath: record.target.ownershipRoot, isDirectory: true)
-    let detachedRoot = try record.physicalOwnershipRoot.map {
-      try WorkflowDetachedOwnershipPinnedRoot(candidate: URL(fileURLWithPath: $0), requireRoot: false)
+    let configuredLive = URL(fileURLWithPath: record.target.ownershipRoot, isDirectory: true)
+    let physicalLive = record.physicalOwnershipRoot.map { URL(fileURLWithPath: $0, isDirectory: true) }
+    let terminal = [.committed, .failed, .recovered].contains(record.phase)
+    let detachedRoot: WorkflowDetachedOwnershipPinnedRoot?
+    if let physicalLive {
+      if FileManager.default.fileExists(atPath: physicalLive.path) || !terminal {
+        detachedRoot = try WorkflowDetachedOwnershipPinnedRoot(candidate: physicalLive, requireRoot: false)
+      } else {
+        detachedRoot = nil
+      }
+    } else {
+      detachedRoot = nil
     }
+    let live = detachedRoot == nil ? configuredLive : physicalLive ?? configuredLive
     let stableMarker = WorkflowTransactionStableMetadata.url(forOwnershipRoot: live)
     try validateWorkflowTransactionStableMetadata(
       record: record,

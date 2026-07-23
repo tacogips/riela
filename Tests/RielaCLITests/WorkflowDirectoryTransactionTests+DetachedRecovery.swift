@@ -152,7 +152,7 @@ extension WorkflowDirectoryTransactionTests {
 
   func testDetachedCommitFailsClosedWhenOwnershipContainerChangesAfterValidation() async throws {
     let (root, _) = try await makeWorkflowVersioningFixture(self)
-    let resolved = try resolveVersioningTarget(root: root)
+    let resolved = try resolveMutableTransactionTarget(root: root)
     let before = try WorkflowHistoryIdentityResolver.inventory(for: resolved.identity)
     let snapshot = try WorkflowHistoryStore(root: resolved.historyRoot).createSnapshot(inventory: before)
     let source = URL(fileURLWithPath: resolved.identity.ownershipRoot, isDirectory: true)
@@ -226,7 +226,7 @@ extension WorkflowDirectoryTransactionTests {
     boundary: WorkflowDirectoryTransactionBoundary
   ) async throws -> DetachedInterruptionFixture {
     let (root, _) = try await makeWorkflowVersioningFixture(self)
-    let resolved = try resolveVersioningTarget(root: root)
+    let resolved = try resolveMutableTransactionTarget(root: root)
     let before = try WorkflowHistoryIdentityResolver.inventory(for: resolved.identity)
     let snapshot = try WorkflowHistoryStore(root: resolved.historyRoot).createSnapshot(inventory: before)
     let source = URL(fileURLWithPath: resolved.identity.ownershipRoot, isDirectory: true)

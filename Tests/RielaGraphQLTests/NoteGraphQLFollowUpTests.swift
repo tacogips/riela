@@ -14,7 +14,12 @@ final class NoteGraphQLFollowUpTests: XCTestCase {
 
     let search = await executor.execute(GraphQLDocumentRequest(
       query: """
-      query SearchOptions($query: String!, $sort: String, $createdAfter: String, $includeLinked: Boolean) {
+      query SearchOptions(
+        $query: String!,
+        $sort: NoteListSort,
+        $createdAfter: String,
+        $includeLinked: Boolean
+      ) {
         searchNotes(query: $query, sort: $sort, createdAfter: $createdAfter, includeLinked: $includeLinked) {
           result { accepted status diagnostics }
           value { note { noteId } isLinkedNeighbor }
@@ -49,7 +54,7 @@ final class NoteGraphQLFollowUpTests: XCTestCase {
 
     let rejected = await executor.execute(GraphQLDocumentRequest(
       query: """
-      query InvalidSort($query: String!, $sort: String) {
+      query InvalidSort($query: String!, $sort: NoteListSort) {
         searchNotes(query: $query, sort: $sort) {
           result { accepted status diagnostics }
           value { note { noteId } }
@@ -90,7 +95,7 @@ final class NoteGraphQLFollowUpTests: XCTestCase {
     let notebookB = await service.createNotebook(GraphQLCreateNotebookInput(title: "B Notebook"))
     let notebooks = await executor.execute(GraphQLDocumentRequest(
       query: """
-      query NotebookSort($sort: String) {
+      query NotebookSort($sort: NoteListSort) {
         notebooks(sort: $sort) { result { accepted } value { notebookId title } }
       }
       """,

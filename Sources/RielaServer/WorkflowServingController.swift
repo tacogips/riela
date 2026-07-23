@@ -460,7 +460,11 @@ public struct InProcessWorkflowServeListenerFactory: WorkflowServeListenerFactor
     endpoint: String
   ) async throws -> InProcessWorkflowServeRouteConfiguration {
     guard request.server.noteAPIEnabled else {
-      return InProcessWorkflowServeRouteConfiguration(routeHandler: DeterministicServerRouteHandler())
+      return InProcessWorkflowServeRouteConfiguration(
+        routeHandler: DeterministicServerRouteHandler(
+          graphQLExecutor: WorkflowRegistryGraphQLDocumentExecutor()
+        )
+      )
     }
     guard let noteRoot = request.server.noteRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
           !noteRoot.isEmpty else {
@@ -478,10 +482,12 @@ public struct InProcessWorkflowServeListenerFactory: WorkflowServeListenerFactor
       registrationScope: URL(fileURLWithPath: noteRoot, isDirectory: true).standardizedFileURL.path
     )
     let routeHandler = DeterministicServerRouteHandler(
-      graphQLExecutor: NoteGraphQLDocumentExecutor(
-        service: GraphQLNoteGraphQLService(service: service),
-        s3HTTPClient: s3HTTPClient,
-        s3Profiles: try noteS3Profiles(for: request)
+      graphQLExecutor: CompositeGraphQLDocumentExecutor(
+        fallback: NoteGraphQLDocumentExecutor(
+          service: GraphQLNoteGraphQLService(service: service),
+          s3HTTPClient: s3HTTPClient,
+          s3Profiles: try noteS3Profiles(for: request)
+        )
       ),
       noteAPIAuthenticator: authenticator
     )

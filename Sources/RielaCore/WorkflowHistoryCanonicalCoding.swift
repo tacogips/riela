@@ -148,8 +148,8 @@ public enum WorkflowHistoryCanonicalCoding {
             !identity.sourceMutable else {
         throw WorkflowHistoryValidationError.invalidContract("package workflow identity has inconsistent ownership or mutability")
       }
-    } else if identity.sourceKind == .installedPackage || !identity.sourceMutable {
-      throw WorkflowHistoryValidationError.invalidContract("authored workflow identity has inconsistent source kind or mutability")
+    } else if identity.sourceKind == .installedPackage {
+      throw WorkflowHistoryValidationError.invalidContract("authored workflow identity has inconsistent source kind")
     }
   }
 

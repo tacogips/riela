@@ -88,7 +88,10 @@ final class WorkflowHistoryPinnedRoot: @unchecked Sendable {
         }
         let next = openat(current, component, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
         guard next >= 0 else {
-          throw CLIUsageError("workflow history directory contains a linked or non-directory component")
+          throw CLIUsageError(
+            "workflow history directory contains a linked or non-directory component: "
+              + "\(component) in \(relative) (errno \(errno))"
+          )
         }
         var status = stat()
         guard fstat(next, &status) == 0, status.st_mode & S_IFMT == S_IFDIR else {

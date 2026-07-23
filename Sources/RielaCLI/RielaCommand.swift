@@ -82,8 +82,9 @@ public enum WorkflowCommand: Equatable, Sendable {
   case runHelp(String?)
   case list(CLICommandOptions)
   case status(CLICommandOptions)
-  case register(WorkflowTemporaryRegistrationOptions)
+  case register(WorkflowMutableRegistrationOptions)
   case registerHelp
+  case registry(CLICommandOptions)
   case manifestValidate(WorkflowManifestValidateOptions)
   case checkout(CLICommandOptions)
   case create(CLICommandOptions)
@@ -285,17 +286,20 @@ public struct WorkflowResolutionOptions: Codable, Equatable, Sendable {
   public var scope: WorkflowScope
   public var workflowDefinitionDir: String?
   public var workingDirectory: String
+  public var includeDeactivated: Bool
 
   public init(
     workflowName: String,
     scope: WorkflowScope = .auto,
     workflowDefinitionDir: String? = nil,
-    workingDirectory: String = FileManager.default.currentDirectoryPath
+    workingDirectory: String = FileManager.default.currentDirectoryPath,
+    includeDeactivated: Bool = false
   ) {
     self.workflowName = workflowName
     self.scope = workflowDefinitionDir == nil ? scope : .direct
     self.workflowDefinitionDir = workflowDefinitionDir
     self.workingDirectory = workingDirectory
+    self.includeDeactivated = includeDeactivated
   }
 }
 
@@ -626,6 +630,15 @@ public struct RielaArgumentParser: CLIArgumentParsing {
         helpRequested: family.remainder.contains(where: isHelpOption)
       )
     }
+    if [.update, .delete, .activate, .deactivate, .consolidate].contains(family.subcommand) {
+      let route = try ParsedTargetAndOptions.parseCLI(family.remainder)
+      return .workflow(.registry(try parseGeneric(
+        scope: "workflow",
+        command: family.subcommand.rawValue,
+        target: route.target,
+        arguments: route.options
+      )))
+    }
     if [.versions, .version, .restore].contains(family.subcommand) {
       let versionCommand = try parseWorkflowVersionCommand(
         subcommand: family.subcommand,
@@ -675,7 +688,8 @@ public struct RielaArgumentParser: CLIArgumentParsing {
         target: target,
         arguments: route.options
       )))
-    case .package, .manifest, .list, .status, .register, .versions, .version, .restore:
+    case .package, .manifest, .list, .status, .register, .update, .delete, .activate, .deactivate,
+         .consolidate, .versions, .version, .restore:
       throw CLIUsageError("unsupported target-based workflow route '\(family.subcommand.rawValue)'")
     }
   }

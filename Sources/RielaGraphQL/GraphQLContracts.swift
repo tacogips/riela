@@ -993,6 +993,7 @@ public enum GraphQLContractProjector {
     costDelta: LoopCostSummaryDelta
     diagnostics: [String!]!
   }
+  \(workflowRegistryGraphQLSchemaTypes)
   type Query {
     note(noteId: String!): NoteQueryPayload!
     notebook(notebookId: String!): NotebookQueryPayload!
@@ -1014,6 +1015,8 @@ public enum GraphQLContractProjector {
     loopWorkflowStats(workflowId: String!, limit: Int): LoopWorkflowStats
     loopEvidenceDiff(baseSessionId: String!, targetSessionId: String!): LoopEvidenceDiff
     managerSession(managerSessionId: String): ManagerSessionView
+    workflows(filter: WorkflowFilter): WorkflowListPayload!
+    workflow(target: WorkflowTargetInput!): WorkflowQueryPayload!
   }
   type Mutation {
     createNote(input: CreateNoteInput!): NoteMutationPayload!
@@ -1045,6 +1048,12 @@ public enum GraphQLContractProjector {
     sendManagerMessage(input: SendManagerMessageInput!): SendManagerMessagePayload!
     replayCommunication(input: ReplayCommunicationInput!): ReplayCommunicationPayload!
     retryCommunicationDelivery(input: RetryCommunicationDeliveryInput!): RetryCommunicationDeliveryPayload!
+    registerMutableWorkflow(input: RegisterMutableWorkflowInput!): WorkflowMutationPayload!
+    updateMutableWorkflow(input: UpdateMutableWorkflowInput!): WorkflowMutationPayload!
+    deleteMutableWorkflow(input: DeleteMutableWorkflowInput!): WorkflowMutationPayload!
+    activateWorkflow(input: SetWorkflowActivationInput!): WorkflowMutationPayload!
+    deactivateWorkflow(input: SetWorkflowActivationInput!): WorkflowMutationPayload!
+    consolidateWorkflows(input: ConsolidateWorkflowsInput!): WorkflowMutationPayload!
   }
   """
 

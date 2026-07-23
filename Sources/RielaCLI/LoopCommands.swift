@@ -715,7 +715,7 @@ public struct LoopCommandRunner: Sendable {
       packageName: bundle.packageManifest?.name,
       packageVersion: bundle.packageManifest?.version,
       packageDirectory: bundle.packageDirectory,
-      mutable: bundle.packageManifest == nil
+      mutable: bundle.provenance == .mutable
     )
   }
 

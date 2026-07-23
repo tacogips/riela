@@ -44,7 +44,8 @@ extension RielaArgumentParser {
         firstReference: parsed.snapshotId,
         arguments: parsed.options
       )
-    case .package, .manifest, .list, .status, .register, .validate, .inspect, .usage, .run, .checkout, .create, .selfImprove:
+    case .package, .manifest, .list, .status, .register, .update, .delete, .activate, .deactivate,
+         .consolidate, .validate, .inspect, .usage, .run, .checkout, .create, .selfImprove:
       throw CLIUsageError("unsupported workflow version route '\(subcommand.rawValue)'")
     }
   }
@@ -138,7 +139,8 @@ extension RielaArgumentParser {
       workflowName: target,
       scope: parsed.scope,
       workflowDefinitionDir: parsed.workflowDefinitionDir,
-      workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
+      workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath,
+      includeDeactivated: true
     )
     return WorkflowValidateOptions(
       workflowName: target,
@@ -157,7 +159,8 @@ extension RielaArgumentParser {
       workflowName: target,
       scope: parsed.scope,
       workflowDefinitionDir: parsed.workflowDefinitionDir,
-      workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
+      workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath,
+      includeDeactivated: true
     )
     return WorkflowInspectOptions(
       workflowName: target,

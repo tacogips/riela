@@ -50,7 +50,7 @@ extension WorkflowCommandScopedResolutionTests {
       XCTAssertEqual(projectWorkflow.workflow.description, "project-workflow")
       XCTAssertEqual(projectWorkflow.sourceScope, .project)
       XCTAssertNil(projectWorkflow.packageManifest)
-      XCTAssertFalse(projectWorkflow.temporary)
+      XCTAssertEqual(projectWorkflow.provenance, .immutable)
 
       try FileManager.default.removeItem(
         at: layout.project.appendingPathComponent(".riela/workflows/\(workflowId)")
@@ -59,7 +59,7 @@ extension WorkflowCommandScopedResolutionTests {
       XCTAssertEqual(userWorkflow.workflow.description, "user-workflow")
       XCTAssertEqual(userWorkflow.sourceScope, .user)
       XCTAssertNil(userWorkflow.packageManifest)
-      XCTAssertFalse(userWorkflow.temporary)
+      XCTAssertEqual(userWorkflow.provenance, .immutable)
 
       try FileManager.default.removeItem(
         at: layout.home.appendingPathComponent(".riela/workflows/\(workflowId)")
@@ -68,7 +68,7 @@ extension WorkflowCommandScopedResolutionTests {
       XCTAssertEqual(projectPackage.workflow.description, "project-package")
       XCTAssertEqual(projectPackage.sourceScope, .project)
       XCTAssertEqual(projectPackage.packageManifest?.name, workflowId)
-      XCTAssertFalse(projectPackage.temporary)
+      XCTAssertEqual(projectPackage.provenance, .immutable)
 
       try FileManager.default.removeItem(
         at: layout.project.appendingPathComponent(".riela/packages/\(workflowId)")
@@ -77,16 +77,16 @@ extension WorkflowCommandScopedResolutionTests {
       XCTAssertEqual(userPackage.workflow.description, "user-package")
       XCTAssertEqual(userPackage.sourceScope, .user)
       XCTAssertEqual(userPackage.packageManifest?.name, workflowId)
-      XCTAssertFalse(userPackage.temporary)
+      XCTAssertEqual(userPackage.provenance, .immutable)
 
       try FileManager.default.removeItem(
         at: layout.home.appendingPathComponent(".riela/packages/\(workflowId)")
       )
-      let temporary = try FileSystemWorkflowBundleResolver().resolve(options)
-      XCTAssertEqual(temporary.workflow.description, "temporary-workflow")
-      XCTAssertEqual(temporary.sourceScope, .user)
-      XCTAssertNil(temporary.packageManifest)
-      XCTAssertTrue(temporary.temporary)
+      let mutable = try FileSystemWorkflowBundleResolver().resolve(options)
+      XCTAssertEqual(mutable.workflow.description, "temporary-workflow")
+      XCTAssertEqual(mutable.sourceScope, .user)
+      XCTAssertNil(mutable.packageManifest)
+      XCTAssertEqual(mutable.provenance, .mutable)
     }
   }
 
@@ -125,7 +125,7 @@ extension WorkflowCommandScopedResolutionTests {
           scope: .auto,
           workingDirectory: layout.project.path
         ))
-        XCTAssertTrue(automatic.temporary)
+        XCTAssertEqual(automatic.provenance, .mutable)
         XCTAssertEqual(automatic.workflow.description, "temporary-fallback")
         XCTAssertThrowsError(try FileSystemWorkflowBundleResolver().resolve(WorkflowResolutionOptions(
           workflowName: workflowId,

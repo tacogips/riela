@@ -673,7 +673,11 @@ public struct WorkflowDirectoryTransactionCoordinator: Sendable {
     }
     if authoritativeBundleDigest != record.beforeBundleDigest {
       guard authoritativeBundleDigest == record.expectedAfterBundleDigest else {
-        throw CLIUsageError("authoritative registry digest does not match detached recovery state")
+        throw CLIUsageError(
+          "authoritative workflow digest does not match detached recovery state "
+            + "(authoritative=\(authoritativeBundleDigest), before=\(record.beforeBundleDigest), "
+            + "after=\(record.expectedAfterBundleDigest))"
+        )
       }
       return nil
     }

@@ -68,7 +68,7 @@ final class WorkflowDirectoryTransactionTests: XCTestCase {
 
   func testTransactionCommitsCompleteStagedBundleAndRetainsRecord() async throws {
     let (root, created) = try await makeWorkflowVersioningFixture(self)
-    let resolved = try resolveVersioningTarget(root: root)
+    let resolved = try resolveMutableTransactionTarget(root: root)
     let (target, historyRoot) = (resolved.identity, resolved.historyRoot)
     let before = try WorkflowHistoryIdentityResolver.inventory(for: target)
     let workflowPath = URL(fileURLWithPath: created.workflowDirectory).appendingPathComponent("workflow.json")
@@ -102,7 +102,7 @@ final class WorkflowDirectoryTransactionTests: XCTestCase {
 
   func testTransactionRejectsDirtyBeforeDigestAndTraversalValidation() async throws {
     let (root, _) = try await makeWorkflowVersioningFixture(self)
-    let resolved = try resolveVersioningTarget(root: root)
+    let resolved = try resolveMutableTransactionTarget(root: root)
     let (target, historyRoot) = (resolved.identity, resolved.historyRoot)
     XCTAssertThrowsError(try WorkflowDirectoryTransactionCoordinator().commit(
       target: target,
@@ -116,12 +116,12 @@ final class WorkflowDirectoryTransactionTests: XCTestCase {
   }
 
   func testTransactionRejectsInvalidStagedWorkflowBeforeSourceMutation() async throws {
-    let (root, created) = try await makeWorkflowVersioningFixture(self)
-    let resolved = try resolveVersioningTarget(root: root)
+    let (root, _) = try await makeWorkflowVersioningFixture(self)
+    let resolved = try resolveMutableTransactionTarget(root: root)
     let (target, historyRoot) = (resolved.identity, resolved.historyRoot)
     let before = try WorkflowHistoryIdentityResolver.inventory(for: target)
     let snapshot = try WorkflowHistoryStore(root: historyRoot).createSnapshot(inventory: before)
-    let workflow = URL(fileURLWithPath: created.workflowDirectory).appendingPathComponent("workflow.json")
+    let workflow = URL(fileURLWithPath: target.ownershipRoot).appendingPathComponent("workflow.json")
     let original = try Data(contentsOf: workflow)
     let invalid = Data("{}".utf8)
     var files = before.files.map(\.metadata)
@@ -171,20 +171,12 @@ final class WorkflowDirectoryTransactionTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.rollback.path))
   }
 
-  func testStableMetadataRecoversLiveAbsentTreeBeforePublicResolution() async throws {
+  func testStableMetadataRecoversLiveAbsentTreeBeforeInventoryRead() async throws {
     let fixture = try await makeRecoveryFixture(phase: .committing, moveLiveToRollback: true)
-    let projectRoot = URL(fileURLWithPath: fixture.target.ownershipRoot)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-
-    let response = await RielaCLIApplication().run([
-      "workflow", "validate", fixture.target.workflowId,
-      "--scope", "auto",
-      "--working-dir", projectRoot.path,
-      "--output", "json"
-    ])
-    XCTAssertEqual(response.exitCode, .success, response.stdout)
+    _ = try WorkflowDirectoryTransactionCoordinator().recover(
+      historyRoot: fixture.historyRoot,
+      target: fixture.target
+    )
     XCTAssertEqual(try WorkflowHistoryIdentityResolver.inventory(for: fixture.target).bundleDigest, fixture.beforeDigest)
     XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.active.path))
   }
@@ -252,7 +244,7 @@ final class WorkflowDirectoryTransactionTests: XCTestCase {
 
   func testAuditFailurePreservesPublishedAndRollbackTreesForRecovery() async throws {
     let (root, _) = try await makeWorkflowVersioningFixture(self)
-    let resolved = try resolveVersioningTarget(root: root)
+    let resolved = try resolveMutableTransactionTarget(root: root)
     let before = try WorkflowHistoryIdentityResolver.inventory(for: resolved.identity)
     let snapshot = try WorkflowHistoryStore(root: resolved.historyRoot).createSnapshot(inventory: before)
     let updated = try updatedWorkflowBytes(root: URL(fileURLWithPath: resolved.identity.ownershipRoot))
@@ -286,7 +278,7 @@ final class WorkflowDirectoryTransactionTests: XCTestCase {
 
   func testRecoveryCompletesOperationSpecificAuditBeforeRollbackCleanup() async throws {
     let (root, _) = try await makeWorkflowVersioningFixture(self)
-    let resolved = try resolveVersioningTarget(root: root)
+    let resolved = try resolveMutableTransactionTarget(root: root)
     let before = try WorkflowHistoryIdentityResolver.inventory(for: resolved.identity)
     let snapshot = try WorkflowHistoryStore(root: resolved.historyRoot).createSnapshot(inventory: before)
     let updated = try updatedWorkflowBytes(root: URL(fileURLWithPath: resolved.identity.ownershipRoot))
@@ -323,7 +315,7 @@ final class WorkflowDirectoryTransactionTests: XCTestCase {
 
   func testLockSymlinkIsRejectedWithoutTruncatingTarget() async throws {
     let (root, _) = try await makeWorkflowVersioningFixture(self)
-    let resolved = try resolveVersioningTarget(root: root)
+    let resolved = try resolveMutableTransactionTarget(root: root)
     let before = try WorkflowHistoryIdentityResolver.inventory(for: resolved.identity)
     let snapshot = try WorkflowHistoryStore(root: resolved.historyRoot).createSnapshot(inventory: before)
     let victim = root.appendingPathComponent("lock-victim.txt")
@@ -383,10 +375,11 @@ final class WorkflowDirectoryTransactionTests: XCTestCase {
   }
 
   func testTransactionRejectsValidSnapshotWhoseIdentityStateDoesNotMatchBeforeDigest() async throws {
-    let (root, created) = try await makeWorkflowVersioningFixture(self)
-    let resolved = try resolveVersioningTarget(root: root)
+    let (root, _) = try await makeWorkflowVersioningFixture(self)
+    let resolved = try resolveMutableTransactionTarget(root: root)
     let original = try WorkflowHistoryIdentityResolver.inventory(for: resolved.identity)
-    let workflowURL = URL(fileURLWithPath: created.workflowDirectory).appendingPathComponent("workflow.json")
+    let workflowURL = URL(fileURLWithPath: resolved.identity.ownershipRoot)
+      .appendingPathComponent("workflow.json")
     let originalBytes = try Data(contentsOf: workflowURL)
     let updated = try updatedWorkflowBytes(root: URL(fileURLWithPath: resolved.identity.ownershipRoot))
     try updated.write(to: workflowURL)
@@ -408,7 +401,7 @@ final class WorkflowDirectoryTransactionTests: XCTestCase {
 
   func testStaleLockFileDoesNotBlockCommitOrRecovery() async throws {
     let (root, _) = try await makeWorkflowVersioningFixture(self)
-    let resolved = try resolveVersioningTarget(root: root)
+    let resolved = try resolveMutableTransactionTarget(root: root)
     let before = try WorkflowHistoryIdentityResolver.inventory(for: resolved.identity)
     let snapshot = try WorkflowHistoryStore(root: resolved.historyRoot).createSnapshot(inventory: before)
     let transactions = resolved.historyRoot.appendingPathComponent("transactions", isDirectory: true)
@@ -432,7 +425,7 @@ final class WorkflowDirectoryTransactionTests: XCTestCase {
 
   func testLockedPreflightRejectsDeterministicStaleCurrentTreeBeforePreparing() async throws {
     let (root, _) = try await makeWorkflowVersioningFixture(self)
-    let resolved = try resolveVersioningTarget(root: root)
+    let resolved = try resolveMutableTransactionTarget(root: root)
     let before = try WorkflowHistoryIdentityResolver.inventory(for: resolved.identity)
     let snapshot = try WorkflowHistoryStore(root: resolved.historyRoot).createSnapshot(inventory: before)
     let live = URL(fileURLWithPath: resolved.identity.ownershipRoot)
@@ -466,7 +459,7 @@ final class WorkflowDirectoryTransactionTests: XCTestCase {
 
   func testPreparingFailurePersistsFailedOperationAndTransactionAuditsBeforeCleanup() async throws {
     let (root, _) = try await makeWorkflowVersioningFixture(self)
-    let resolved = try resolveVersioningTarget(root: root)
+    let resolved = try resolveMutableTransactionTarget(root: root)
     let before = try WorkflowHistoryIdentityResolver.inventory(for: resolved.identity)
     let snapshot = try WorkflowHistoryStore(root: resolved.historyRoot).createSnapshot(inventory: before)
 
@@ -509,7 +502,7 @@ final class WorkflowDirectoryTransactionTests: XCTestCase {
 
   func testTransactionStagingIsAVerifiedSameDeviceSiblingBoundary() async throws {
     let (root, _) = try await makeWorkflowVersioningFixture(self)
-    let resolved = try resolveVersioningTarget(root: root)
+    let resolved = try resolveMutableTransactionTarget(root: root)
     let before = try WorkflowHistoryIdentityResolver.inventory(for: resolved.identity)
     let snapshot = try WorkflowHistoryStore(root: resolved.historyRoot).createSnapshot(inventory: before)
     let live = URL(fileURLWithPath: resolved.identity.ownershipRoot)
@@ -542,7 +535,7 @@ final class WorkflowDirectoryTransactionTests: XCTestCase {
     let scenario = [nodeId: ["payload": ["verified": true]]]
     try JSONSerialization.data(withJSONObject: scenario, options: [.prettyPrinted, .sortedKeys])
       .write(to: URL(fileURLWithPath: created.workflowDirectory).appendingPathComponent("mock-scenario.json"))
-    let resolved = try resolveVersioningTarget(root: root)
+    let resolved = try resolveMutableTransactionTarget(root: root)
     let before = try WorkflowHistoryIdentityResolver.inventory(for: resolved.identity)
     let snapshot = try WorkflowHistoryStore(root: resolved.historyRoot).createSnapshot(inventory: before)
 
@@ -572,7 +565,7 @@ final class WorkflowDirectoryTransactionTests: XCTestCase {
     var workflow = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: workflowURL)) as? [String: Any])
     workflow["loop"] = selfEvolutionLoop(requiredVerification: ["workflow validate", "mock-scenario"])
     try JSONSerialization.data(withJSONObject: workflow, options: [.prettyPrinted, .sortedKeys]).write(to: workflowURL)
-    let resolved = try resolveVersioningTarget(root: root)
+    let resolved = try resolveMutableTransactionTarget(root: root)
     let before = try WorkflowHistoryIdentityResolver.inventory(for: resolved.identity)
     let snapshot = try WorkflowHistoryStore(root: resolved.historyRoot).createSnapshot(inventory: before)
 
@@ -591,7 +584,7 @@ final class WorkflowDirectoryTransactionTests: XCTestCase {
 
   func testSnapshotAndProposalExactFileChecksRejectEnumeratedSymlinks() async throws {
     let (root, _) = try await makeWorkflowVersioningFixture(self)
-    let resolved = try resolveVersioningTarget(root: root)
+    let resolved = try resolveMutableTransactionTarget(root: root)
     let inventory = try WorkflowHistoryIdentityResolver.inventory(for: resolved.identity)
     let snapshot = try WorkflowHistoryStore(root: resolved.historyRoot).createSnapshot(inventory: inventory)
     let snapshotDirectory = resolved.historyRoot.appendingPathComponent("snapshots/\(snapshot.snapshotId)")
@@ -636,7 +629,7 @@ final class WorkflowDirectoryTransactionTests: XCTestCase {
 
   func testIncompleteSnapshotFailsClosedBeforeUse() async throws {
     let (root, _) = try await makeWorkflowVersioningFixture(self)
-    let resolved = try resolveVersioningTarget(root: root)
+    let resolved = try resolveMutableTransactionTarget(root: root)
     let inventory = try WorkflowHistoryIdentityResolver.inventory(for: resolved.identity)
     let snapshot = try WorkflowHistoryStore(root: resolved.historyRoot).createSnapshot(inventory: inventory)
     let file = try XCTUnwrap(snapshot.files.first)
@@ -712,7 +705,7 @@ final class WorkflowDirectoryTransactionTests: XCTestCase {
     state: TreeState
   ) async throws -> RecoveryFixture {
     let (root, _) = try await makeWorkflowVersioningFixture(self)
-    let resolved = try resolveVersioningTarget(root: root)
+    let resolved = try resolveMutableTransactionTarget(root: root)
     let (target, historyRoot) = (resolved.identity, resolved.historyRoot)
     let before = try WorkflowHistoryIdentityResolver.inventory(for: target)
     let snapshot = try WorkflowHistoryStore(root: historyRoot).createSnapshot(

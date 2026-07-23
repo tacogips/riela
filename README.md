@@ -38,22 +38,33 @@ includes provenance fields such as `sourceKind`, `packageName`,
 installed, read-only artifacts.
 
 Validated authored workflows can also be registered as persistent user-scoped
-temporary workflows:
+mutable workflows:
 
 ```bash
-riela workflow register ./path/to/workflow-bundle --temporary
-riela workflow list temporary-name --output table
-riela workflow validate temporary-name
-riela workflow run temporary-name --mock-scenario ./path/to/mock.json
+riela workflow register ./path/to/workflow-bundle --mutable
+riela workflow list mutable-name --output table
+riela workflow validate mutable-name
+riela workflow deactivate mutable-name
+riela workflow activate mutable-name
+riela workflow run mutable-name --mock-scenario ./path/to/mock.json
 ```
 
 Registration accepts a standalone workflow JSON file or a bundle directory,
 copies it under `~/.riela/temporary-workflows/<workflowId>/`, and requires
-`--overwrite` to replace an existing entry. Temporary entries are included by
-default, carry `temporary: true` in structured workflow results, render a
-`temporary` token in text/table lists, and can be hidden with
-`workflow list --exclude-temporary`. Name resolution considers them after
+`--overwrite` to replace an existing entry. The legacy physical directory is
+retained for read compatibility; public results use `provenance: "mutable"`,
+`mutable: true`, and `activationState`. `--temporary` and
+`--exclude-temporary` remain deprecated aliases for `--mutable` and
+`--exclude-mutable` until the next major CLI release. Name resolution considers mutable entries after
 project workflows, user workflows, project packages, and user packages.
+Project, user, and installed-package workflows have immutable provenance:
+they remain readable but update/delete operations return
+`IMMUTABLE_WORKFLOW`. Either provenance can be deactivated; deactivated
+origins remain listable and inspectable but execution returns
+`WORKFLOW_DEACTIVATED`. The additive GraphQL registry surface provides list,
+fetch, mutable CRUD, activation, and consolidation; remote registry execution
+is disabled unless an embedding host supplies the complete provider,
+authorizer, and managed-reference configuration.
 
 Local agent backend ids remain explicit compatibility contracts:
 `codex-agent`, `claude-code-agent`, and `cursor-cli-agent`. Official SDK adapter

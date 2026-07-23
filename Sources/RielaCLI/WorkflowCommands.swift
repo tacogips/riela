@@ -97,7 +97,8 @@ public struct WorkflowValidationCommandResult: Codable, Equatable, Sendable {
   public var packageVersion: String?
   public var packageDirectory: String?
   public var mutable: Bool
-  @CodableDefaultFalse public var temporary: Bool
+  @CodableDefaultImmutable public var provenance: WorkflowProvenance
+  @CodableDefaultActive public var activationState: WorkflowActivationState
   public var diagnostics: [WorkflowValidationDiagnostic]
   public var nodeValidationResults: [NodeValidationResult]
 
@@ -111,7 +112,8 @@ public struct WorkflowValidationCommandResult: Codable, Equatable, Sendable {
     packageVersion: String? = nil,
     packageDirectory: String? = nil,
     mutable: Bool = true,
-    temporary: Bool = false,
+    provenance: WorkflowProvenance? = nil,
+    activationState: WorkflowActivationState = .active,
     diagnostics: [WorkflowValidationDiagnostic],
     nodeValidationResults: [NodeValidationResult]
   ) {
@@ -123,8 +125,10 @@ public struct WorkflowValidationCommandResult: Codable, Equatable, Sendable {
     self.packageName = packageName
     self.packageVersion = packageVersion
     self.packageDirectory = packageDirectory
-    self.mutable = mutable
-    self.temporary = temporary
+    let resolvedProvenance = provenance ?? (mutable ? .mutable : .immutable)
+    self.mutable = resolvedProvenance == .mutable
+    self.provenance = resolvedProvenance
+    self.activationState = activationState
     self.diagnostics = diagnostics
     self.nodeValidationResults = nodeValidationResults
   }

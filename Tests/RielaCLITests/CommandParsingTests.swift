@@ -169,7 +169,8 @@ final class CommandParsingTests: XCTestCase {
           workflowName: "demo",
           scope: .direct,
           workflowDefinitionDir: "./examples",
-          workingDirectory: FileManager.default.currentDirectoryPath
+          workingDirectory: FileManager.default.currentDirectoryPath,
+          includeDeactivated: true
         ),
         output: .json,
         executable: true,

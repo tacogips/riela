@@ -10,13 +10,13 @@ final class WorkflowCommandScopedResolutionTests: XCTestCase {
       sourceKind: .workflow,
       workflowDirectory: "/tmp/temporary-demo",
       mutable: true,
-      temporary: true,
+      provenance: .mutable,
       valid: true,
       diagnostics: []
     ))
     let decoded = try JSONDecoder().decode(WorkflowCatalogEntry.self, from: encoded)
     XCTAssertEqual(decoded.sourceKind, .workflow)
-    XCTAssertTrue(decoded.temporary)
+    XCTAssertEqual(decoded.provenance, .mutable)
   }
 }
 

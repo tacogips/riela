@@ -37,12 +37,21 @@ final class WorkflowInstanceResolverTests: XCTestCase {
     )
 
     XCTAssertEqual(resolved.instance.identity, "prod+overrides")
-    XCTAssertEqual(resolved.instance.kind, .temporary)
+    XCTAssertEqual(resolved.instance.kind, .ephemeral)
     XCTAssertEqual(resolved.instance.baseIdentity, "prod")
     XCTAssertEqual(resolved.instance.configuration.defaultVariables["tone"], .string("urgent"))
     XCTAssertEqual(resolved.instance.configuration.defaultVariables["region"], .string("jp"))
     XCTAssertEqual(resolved.nodePayloads["worker"]?.model, "gpt-5.1")
     XCTAssertEqual(resolved.nodePayloads["worker"]?.effort, .high)
+  }
+
+  func testHistoricalTemporaryInstanceKindDecodesAsEphemeral() throws {
+    let decoded = try JSONDecoder().decode(
+      WorkflowInstanceKind.self,
+      from: Data(#""temporary""#.utf8)
+    )
+    XCTAssertEqual(decoded, .ephemeral)
+    XCTAssertEqual(String(data: try JSONEncoder().encode(decoded), encoding: .utf8), #""ephemeral""#)
   }
 
   func testFrozenModelRejectsInstanceLayerPatch() throws {

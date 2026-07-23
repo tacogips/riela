@@ -384,8 +384,10 @@ extension WorkflowCommandTests {
     ])
     XCTAssertEqual(status.exitCode, .success)
     XCTAssertTrue(status.stderr.isEmpty)
-    XCTAssertTrue(status.stdout.contains("WORKFLOW\tSCOPE\tSOURCE\tPROVENANCE\tSTATUS\tDIRECTORY"))
-    XCTAssertTrue(status.stdout.contains("demo\tproject\tworkflow\tstandard\tvalid"))
+    XCTAssertTrue(status.stdout.contains(
+      "WORKFLOW\tSCOPE\tSOURCE\tPROVENANCE\tMUTABLE\tACTIVATION\tSTATUS\tDIRECTORY"
+    ))
+    XCTAssertTrue(status.stdout.contains("demo\tproject\tworkflow\timmutable\tfalse\tactive\tvalid"))
 
     let manifestURL = tempDir.appendingPathComponent("riela-package.json")
     try """

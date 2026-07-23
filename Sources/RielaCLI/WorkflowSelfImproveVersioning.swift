@@ -8,21 +8,21 @@ import RielaCore
 
 public struct WorkflowSelfImproveVersioning: Sendable {
   private let beforeProposalWorkflowOpen: @Sendable () throws -> Void
-  private let temporaryRegistry: WorkflowTemporaryRegistry
+  private let mutableRegistry: WorkflowMutableRegistry
 
   public init() {
     beforeProposalWorkflowOpen = {}
-    temporaryRegistry = WorkflowTemporaryRegistry()
+    mutableRegistry = WorkflowMutableRegistry()
   }
 
   init(beforeProposalWorkflowOpen: @escaping @Sendable () throws -> Void) {
     self.beforeProposalWorkflowOpen = beforeProposalWorkflowOpen
-    temporaryRegistry = WorkflowTemporaryRegistry()
+    mutableRegistry = WorkflowMutableRegistry()
   }
 
-  init(temporaryRegistry: WorkflowTemporaryRegistry) {
+  init(mutableRegistry: WorkflowMutableRegistry) {
     beforeProposalWorkflowOpen = {}
-    self.temporaryRegistry = temporaryRegistry
+    self.mutableRegistry = mutableRegistry
   }
 
   func finalize(
@@ -96,13 +96,13 @@ public struct WorkflowSelfImproveVersioning: Sendable {
         postCommitPublication: publish
       )
     }
-    guard bundle.temporary else {
+    guard bundle.provenance == .mutable else {
       return try operation(bundle, physicalRoot: nil, publish: { _ in })
     }
-    guard let expectedDigest = bundle.temporaryRegistryDigest else {
-      throw CLIUsageError("temporary workflow resolution did not retain a registry digest")
+    guard let expectedDigest = bundle.mutableRegistryDigest else {
+      throw CLIUsageError("mutable workflow resolution did not retain a registry digest")
     }
-    return try temporaryRegistry.withWorkflowMutationAccess(
+    return try mutableRegistry.withWorkflowMutationAccess(
       workflowId: bundle.workflow.workflowId,
       expectedDigest: expectedDigest,
       shouldPublish: { $0.mutated },
@@ -168,9 +168,6 @@ public struct WorkflowSelfImproveVersioning: Sendable {
     sourceSessionId: String,
     physicalOwnershipRoot: URL?
   ) throws -> WorkflowSelfImproveCommandResult {
-    guard target.sourceMutable, target.sourceKind != .installedPackage else {
-      throw CLIUsageError("installed package workflow sources are immutable; create an overlay or package update")
-    }
     let inventory = try WorkflowHistoryIdentityResolver.inventory(
       for: target,
       rootOverride: physicalOwnershipRoot
@@ -262,7 +259,11 @@ public struct WorkflowSelfImproveVersioning: Sendable {
     postCommitPublication: (URL) throws -> Void
   ) throws -> WorkflowSelfImproveCommandResult {
     guard target.sourceMutable, target.sourceKind != .installedPackage else {
-      throw CLIUsageError("installed package workflow sources are immutable")
+      throw WorkflowRegistryError(
+        code: .immutableWorkflow,
+        message: "immutable workflow '\(workflowName)' cannot apply self-improvement; register a mutable copy",
+        workflowId: workflowName
+      )
     }
     try WorkflowHistoryCanonicalCoding.validateDigest(expectedDigest)
     let changeStore = WorkflowChangeSetStore(root: historyRoot)

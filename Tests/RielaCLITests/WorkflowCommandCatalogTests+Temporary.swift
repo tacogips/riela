@@ -57,26 +57,29 @@ extension WorkflowCommandCatalogTests {
     let allEntries = try decodeCatalogMatrix(all.stdout).workflows
     let duplicates = allEntries.filter { $0.workflowName == workflowId }
     XCTAssertEqual(duplicates.count, 2)
-    XCTAssertEqual(duplicates.filter(\.temporary).count, 1)
+    XCTAssertEqual(duplicates.filter { $0.provenance == .mutable }.count, 1)
     XCTAssertTrue(duplicates.contains {
-      $0.temporary && $0.workflowDirectory.contains("temporary-workflows/\(workflowId)")
+      $0.provenance == .mutable && $0.workflowDirectory.contains("temporary-workflows/\(workflowId)")
     })
     let invalidEntry = try XCTUnwrap(allEntries.first { $0.workflowName == "invalid-temporary" })
-    XCTAssertTrue(invalidEntry.temporary)
+    XCTAssertEqual(invalidEntry.provenance, .mutable)
     XCTAssertFalse(invalidEntry.valid)
-    XCTAssertFalse(allEntries.contains { $0.workflowName == WorkflowTemporaryRegistry.reservedStateName })
+    XCTAssertFalse(allEntries.contains { $0.workflowName == WorkflowMutableRegistry.reservedStateName })
 
     let caseInsensitive = await application.run([
       "workflow", "list", "SHARED-CATALOG", "--scope", "user", "--output", "json"
     ], environment: environment)
     XCTAssertEqual(try decodeCatalogMatrix(caseInsensitive.stdout).workflows.count, 2)
 
-    for nonmatching in ["description-only-token", "temporary-workflows"] {
-      let result = await application.run([
-        "workflow", "list", nonmatching, "--scope", "user", "--output", "json"
-      ], environment: environment)
-      XCTAssertEqual(try decodeCatalogMatrix(result.stdout).workflows, [], nonmatching)
-    }
+    let descriptionMatch = await application.run([
+      "workflow", "list", "description-only-token", "--scope", "user", "--output", "json"
+    ], environment: environment)
+    XCTAssertEqual(try decodeCatalogMatrix(descriptionMatch.stdout).workflows.count, 2)
+
+    let pathDoesNotMatch = await application.run([
+      "workflow", "list", "temporary-workflows", "--scope", "user", "--output", "json"
+    ], environment: environment)
+    XCTAssertEqual(try decodeCatalogMatrix(pathDoesNotMatch.stdout).workflows, [])
 
     let excludedInvalid = await application.run([
       "workflow", "list", "invalid-temporary", "--scope", "user",
@@ -126,7 +129,7 @@ extension WorkflowCommandCatalogTests {
     XCTAssertEqual(process.terminationStatus, 0, stderr + stdout)
     let entry = try XCTUnwrap(decodeCatalogMatrix(stdout).workflows.first)
     XCTAssertEqual(entry.workflowName, "process-persisted")
-    XCTAssertTrue(entry.temporary)
+    XCTAssertEqual(entry.provenance, .mutable)
   }
 }
 

@@ -20,19 +20,10 @@ final class WorkflowDetachedOwnershipPinnedRoot: @unchecked Sendable {
   private var descriptor: Int32
 
   init(candidate: URL, requireRoot: Bool) throws {
-    let root = candidate.standardizedFileURL
+    let root = try WorkflowDetachedOwnershipRoot.validateCanonicalPath(candidate)
     let container = root.deletingLastPathComponent()
     let namespace = WorkflowDetachedOwnershipRoot.canonicalNamespaceRoot
     let name = container.lastPathComponent
-    let identifier = String(name.dropFirst(WorkflowDetachedOwnershipRoot.containerPrefix.count))
-    guard candidate.path == root.path,
-          root.lastPathComponent == "root",
-          container.deletingLastPathComponent().path == namespace.path,
-          name.hasPrefix(WorkflowDetachedOwnershipRoot.containerPrefix),
-          let uuid = UUID(uuidString: identifier),
-          uuid.uuidString.lowercased() == identifier else {
-      throw CLIUsageError("detached workflow ownership root is outside its canonical temporary namespace")
-    }
     let namespaceRoot = try WorkflowHistoryPinnedRoot(namespace, create: false)
     descriptor = try namespaceRoot.openDirectory(name)
     var status = stat()
@@ -120,6 +111,8 @@ final class WorkflowDetachedOwnershipPinnedRoot: @unchecked Sendable {
     #endif
     return URL(fileURLWithPath: descriptorRoot, isDirectory: true)
       .appendingPathComponent(name, isDirectory: true)
+      .resolvingSymlinksInPath()
+      .standardizedFileURL
   }
 
   func readRegularFile(_ relativePath: String, in directory: String) throws -> Data {
@@ -160,7 +153,7 @@ final class WorkflowDetachedOwnershipPinnedRoot: @unchecked Sendable {
     try sync()
   }
 
-  func populateRoot(with entries: [WorkflowTemporaryRegistryInventoryEntry]) throws {
+  func populateRoot(with entries: [WorkflowMutableRegistryInventoryEntry]) throws {
     for entry in entries {
       let path = "root/\(entry.relativePath)"
       if let bytes = entry.bytes {

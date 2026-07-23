@@ -17,7 +17,7 @@ extension WorkflowTemporaryRegistrationTests {
 
     let help = await application.run(["workflow", "register", "--help"])
     XCTAssertEqual(help.exitCode, .success)
-    for token in ["register", "--temporary", "--overwrite", "--working-dir", "--output"] {
+    for token in ["register", "--mutable", "--temporary", "--overwrite", "--working-dir", "--output"] {
       XCTAssertTrue(help.stdout.contains(token), "missing \(token)")
     }
   }
@@ -37,7 +37,7 @@ extension WorkflowTemporaryRegistrationTests {
     ], environment: ["HOME": layout.home.path])
 
     XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
-    let registered = try decodeMatrix(TemporaryWorkflowRegistrationResult.self, result.stdout)
+    let registered = try decodeMatrix(MutableWorkflowRegistrationResult.self, result.stdout)
     XCTAssertEqual(registered.workflowId, "relative-working-dir")
     XCTAssertEqual(registered.inputPath, bundle.path)
     XCTAssertTrue(FileManager.default.fileExists(
@@ -58,7 +58,7 @@ extension WorkflowTemporaryRegistrationTests {
     )
     let root = matrixRegistryRoot(layout)
     let displaced = layout.base.appendingPathComponent("displaced-registry", isDirectory: true)
-    let hooks = WorkflowTemporaryRegistryHooks(
+    let hooks = WorkflowMutableRegistryHooks(
       beforeLockAcquire: { _ in },
       afterLockAcquire: { lock in
         guard lock == .catalog else { return }
@@ -67,8 +67,8 @@ extension WorkflowTemporaryRegistrationTests {
       }
     )
     let application = RielaCLIApplication(
-      workflowTemporaryRegistrationCommand: WorkflowTemporaryRegistrationCommand(
-        registry: WorkflowTemporaryRegistry(hooks: hooks)
+      workflowMutableRegistrationCommand: WorkflowMutableRegistrationCommand(
+        registry: WorkflowMutableRegistry(hooks: hooks)
       )
     )
 
@@ -98,13 +98,13 @@ extension WorkflowTemporaryRegistrationTests {
     let root = matrixRegistryRoot(layout)
     let stagingRoot = root.appendingPathComponent(".registry-state/staging", isDirectory: true)
     let externalStaging = layout.base.appendingPathComponent("external-staging", isDirectory: true)
-    let registry = WorkflowTemporaryRegistry(hooks: WorkflowTemporaryRegistryHooks { phase in
+    let registry = WorkflowMutableRegistry(hooks: WorkflowMutableRegistryHooks { phase in
       guard phase == .publishingReplacement else { return }
       try FileManager.default.moveItem(at: stagingRoot, to: externalStaging)
       try FileManager.default.createSymbolicLink(at: stagingRoot, withDestinationURL: externalStaging)
     })
     let application = RielaCLIApplication(
-      workflowTemporaryRegistrationCommand: WorkflowTemporaryRegistrationCommand(registry: registry)
+      workflowMutableRegistrationCommand: WorkflowMutableRegistrationCommand(registry: registry)
     )
 
     let result = await application.run([
@@ -184,9 +184,9 @@ extension WorkflowTemporaryRegistrationTests {
       "workflow", "register", input.path, "--temporary", "--output", "json"
     ], environment: environment)
     XCTAssertEqual(registration.exitCode, .success, registration.stderr + registration.stdout)
-    let registered = try decodeMatrix(TemporaryWorkflowRegistrationResult.self, registration.stdout)
+    let registered = try decodeMatrix(MutableWorkflowRegistrationResult.self, registration.stdout)
     XCTAssertEqual(registered.sourceKind, .workflow)
-    XCTAssertTrue(registered.temporary)
+    XCTAssertEqual(registered.provenance, .mutable)
     XCTAssertTrue(registered.mutable)
 
     let listed = await application.run([
@@ -202,7 +202,7 @@ extension WorkflowTemporaryRegistrationTests {
     XCTAssertEqual(validated.exitCode, .success, validated.stderr + validated.stdout)
     let validation = try decodeMatrix(WorkflowValidationCommandResult.self, validated.stdout)
     XCTAssertEqual(validation.sourceKind, .workflow)
-    XCTAssertTrue(validation.temporary)
+    XCTAssertEqual(validation.provenance, .mutable)
     XCTAssertTrue(validation.mutable)
     XCTAssertNil(validation.packageName)
     XCTAssertNil(validation.packageDirectory)
@@ -213,7 +213,7 @@ extension WorkflowTemporaryRegistrationTests {
     XCTAssertEqual(inspected.exitCode, .success, inspected.stderr + inspected.stdout)
     let inspection = try decodeMatrix(WorkflowInspectionSummary.self, inspected.stdout)
     XCTAssertEqual(inspection.sourceKind, .workflow)
-    XCTAssertTrue(inspection.temporary)
+    XCTAssertEqual(inspection.provenance, .mutable)
     XCTAssertTrue(inspection.mutable)
     XCTAssertNil(inspection.packageName)
     XCTAssertNil(inspection.packageDirectory)
@@ -231,7 +231,7 @@ extension WorkflowTemporaryRegistrationTests {
         scope: .user,
         workingDirectory: layout.base.path
       ))
-      XCTAssertTrue(bundle.temporary)
+      XCTAssertEqual(bundle.provenance, .mutable)
       XCTAssertNil(bundle.packageManifest)
       XCTAssertNil(bundle.packageDirectory)
       let target = try WorkflowHistoryIdentityResolver.identity(for: bundle)
@@ -308,7 +308,7 @@ extension WorkflowTemporaryRegistrationTests {
   }
 
   func testCatalogScanWaitsAcrossRecordCreationAndRemovalWithoutOmission() async throws {
-    for phase in [WorkflowTemporaryRegistryPhase.prepared, .replacementPublished] {
+    for phase in [WorkflowMutableRegistryPhase.prepared, .replacementPublished] {
       let layout = try makeMatrixLayout()
       defer { try? FileManager.default.removeItem(at: layout.base) }
       let original = try writeMatrixBundle(
@@ -329,14 +329,14 @@ extension WorkflowTemporaryRegistrationTests {
 
       let phaseReached = DispatchSemaphore(value: 0)
       let releaseRegistration = DispatchSemaphore(value: 0)
-      let registry = WorkflowTemporaryRegistry(hooks: WorkflowTemporaryRegistryHooks { reached in
+      let registry = WorkflowMutableRegistry(hooks: WorkflowMutableRegistryHooks { reached in
         if reached == phase {
           phaseReached.signal()
           releaseRegistration.wait()
         }
       })
       let registeringApp = RielaCLIApplication(
-        workflowTemporaryRegistrationCommand: WorkflowTemporaryRegistrationCommand(registry: registry)
+        workflowMutableRegistrationCommand: WorkflowMutableRegistrationCommand(registry: registry)
       )
       let overwriteTask = Task {
         await registeringApp.run([
@@ -351,7 +351,7 @@ extension WorkflowTemporaryRegistrationTests {
       let lockProbe = TemporaryRegistryLockProbe(lock: .catalog)
       let listingApp = RielaCLIApplication(
         workflowCatalogCommand: WorkflowCatalogCommand(
-          temporaryRegistry: WorkflowTemporaryRegistry(hooks: lockProbe.hooks)
+          mutableRegistry: WorkflowMutableRegistry(hooks: lockProbe.hooks)
         )
       )
       let listTask = Task {
@@ -398,7 +398,7 @@ extension WorkflowTemporaryRegistrationTests {
     let releaseReader = DispatchSemaphore(value: 0)
     let readerTask = Task {
       try CLIRuntimeEnvironment.$overrides.withValue(environment) {
-        try WorkflowTemporaryRegistry().withWorkflowRead(workflowId: "reader-race") { _ in
+        try WorkflowMutableRegistry().withWorkflowRead(workflowId: "reader-race") { _ in
           readerEntered.signal()
           releaseReader.wait()
         }
@@ -407,8 +407,8 @@ extension WorkflowTemporaryRegistrationTests {
     XCTAssertEqual(readerEntered.wait(timeout: .now() + 2), .success)
     let lockProbe = TemporaryRegistryLockProbe(lock: .workflow("reader-race"))
     let registeringApp = RielaCLIApplication(
-      workflowTemporaryRegistrationCommand: WorkflowTemporaryRegistrationCommand(
-        registry: WorkflowTemporaryRegistry(hooks: lockProbe.hooks)
+      workflowMutableRegistrationCommand: WorkflowMutableRegistrationCommand(
+        registry: WorkflowMutableRegistry(hooks: lockProbe.hooks)
       )
     )
     let overwriteTask = Task {
@@ -442,7 +442,7 @@ extension WorkflowTemporaryRegistrationTests {
     )
     try JSONEncoder().encode(fixture).write(to: record)
 
-    let hooks = WorkflowTemporaryRegistryHooks(
+    let hooks = WorkflowMutableRegistryHooks(
       afterPhase: { _ in },
       beforeRecordRead: { workflowId in
         if workflowId == "vanishing", FileManager.default.fileExists(atPath: record.path) {
@@ -451,7 +451,7 @@ extension WorkflowTemporaryRegistrationTests {
       }
     )
     let candidates = try CLIRuntimeEnvironment.$overrides.withValue(environment) {
-      try WorkflowTemporaryRegistry(hooks: hooks).snapshotCandidates()
+      try WorkflowMutableRegistry(hooks: hooks).snapshotCandidates()
     }
     XCTAssertEqual(candidates, [])
     XCTAssertFalse(FileManager.default.fileExists(atPath: record.path))
@@ -467,13 +467,13 @@ extension WorkflowTemporaryRegistrationTests {
       description: "must remain recoverable"
     )
     let environment = ["HOME": layout.home.path]
-    let interruptedRegistry = WorkflowTemporaryRegistry(
-      hooks: WorkflowTemporaryRegistryHooks { phase in
-        if phase == .prepared { throw TemporaryRegistryInterruption() }
+    let interruptedRegistry = WorkflowMutableRegistry(
+      hooks: WorkflowMutableRegistryHooks { phase in
+        if phase == .prepared { throw MutableRegistryInterruption() }
       }
     )
     let interruptedApp = RielaCLIApplication(
-      workflowTemporaryRegistrationCommand: WorkflowTemporaryRegistrationCommand(
+      workflowMutableRegistrationCommand: WorkflowMutableRegistrationCommand(
         registry: interruptedRegistry
       )
     )
@@ -494,7 +494,7 @@ extension WorkflowTemporaryRegistrationTests {
     )
     XCTAssertEqual(stagedBefore.count, 1)
 
-    let recoveringRegistry = WorkflowTemporaryRegistry(hooks: WorkflowTemporaryRegistryHooks(
+    let recoveringRegistry = WorkflowMutableRegistry(hooks: WorkflowMutableRegistryHooks(
       afterPhase: { _ in },
       beforeRecordRead: { id in
         guard id == workflowId else { return }
@@ -503,7 +503,7 @@ extension WorkflowTemporaryRegistrationTests {
       }
     ))
     let listed = await RielaCLIApplication(
-      workflowCatalogCommand: WorkflowCatalogCommand(temporaryRegistry: recoveringRegistry)
+      workflowCatalogCommand: WorkflowCatalogCommand(mutableRegistry: recoveringRegistry)
     ).run([
       "workflow", "list", workflowId, "--scope", "user", "--output", "json"
     ], environment: environment)
@@ -558,12 +558,12 @@ extension WorkflowTemporaryRegistrationTests {
         to: root.appendingPathComponent(workflowId, isDirectory: true)
       )
     }
-    let registry = WorkflowTemporaryRegistry(hooks: WorkflowTemporaryRegistryHooks(
+    let registry = WorkflowMutableRegistry(hooks: WorkflowMutableRegistryHooks(
       beforeDetachedBundleLoad: { try swap.run() }
     ))
     let resolver = FileSystemWorkflowBundleResolver(
-      temporaryHistoryRecoveryHook: {},
-      temporaryRegistry: registry
+      mutableRegistryHistoryRecoveryHook: {},
+      mutableRegistry: registry
     )
     XCTAssertThrowsError(try CLIRuntimeEnvironment.$overrides.withValue(environment) {
       try resolver.resolve(WorkflowResolutionOptions(
@@ -626,12 +626,12 @@ extension WorkflowTemporaryRegistrationTests {
         to: root.appendingPathComponent(workflowId, isDirectory: true)
       )
     }
-    let registry = WorkflowTemporaryRegistry(hooks: WorkflowTemporaryRegistryHooks(
+    let registry = WorkflowMutableRegistry(hooks: WorkflowMutableRegistryHooks(
       afterMutationWorkspaceExport: { try swap.run() }
     ))
     let application = RielaCLIApplication(workflowVersionCommand: WorkflowVersionCommand(
       resolver: MatrixFixedWorkflowBundleResolver(bundle: prepared.0),
-      temporaryRegistry: registry
+      mutableRegistry: registry
     ))
     let restored = await application.run([
       "workflow", "restore", workflowId, prepared.1,
@@ -683,8 +683,8 @@ extension WorkflowTemporaryRegistrationTests {
         to: root.appendingPathComponent(workflowId, isDirectory: true)
       )
     }
-    let versioning = WorkflowSelfImproveVersioning(temporaryRegistry: WorkflowTemporaryRegistry(
-      hooks: WorkflowTemporaryRegistryHooks(afterMutationWorkspaceExport: { try swap.run() })
+    let versioning = WorkflowSelfImproveVersioning(mutableRegistry: WorkflowMutableRegistry(
+      hooks: WorkflowMutableRegistryHooks(afterMutationWorkspaceExport: { try swap.run() })
     ))
     XCTAssertThrowsError(try CLIRuntimeEnvironment.$overrides.withValue(environment) {
       try versioning.execute(
@@ -755,13 +755,13 @@ extension WorkflowTemporaryRegistrationTests {
     let activeRecord = root.appendingPathComponent(
       ".registry-state/transactions/\(workflowId).json"
     )
-    let registry = WorkflowTemporaryRegistry(hooks: WorkflowTemporaryRegistryHooks { phase in
+    let registry = WorkflowMutableRegistry(hooks: WorkflowMutableRegistryHooks { phase in
       guard phase == .prepared else { return }
       try "{".write(to: activeRecord, atomically: true, encoding: .utf8)
       throw CLIUsageError("injected ordinary publication failure")
     })
     let application = RielaCLIApplication(
-      workflowTemporaryRegistrationCommand: WorkflowTemporaryRegistrationCommand(registry: registry)
+      workflowMutableRegistrationCommand: WorkflowMutableRegistrationCommand(registry: registry)
     )
     let failed = await application.run([
       "workflow", "register", replacement.path, "--temporary", "--overwrite", "--output", "json"
@@ -794,7 +794,7 @@ private struct MatrixRegistryRecord: Encodable {
   var schemaVersion = 1
   var workflowId: String
   var transactionId: String
-  var phase: WorkflowTemporaryRegistryPhase
+  var phase: WorkflowMutableRegistryPhase
   var hadOriginal: Bool
   var replacementDigest = String(repeating: "0", count: 64)
   var destinationPath: String
@@ -899,7 +899,7 @@ private func assertTemporaryAuthoredProvenance(
   line: UInt = #line
 ) {
   XCTAssertEqual(entry.sourceKind, .workflow, file: file, line: line)
-  XCTAssertTrue(entry.temporary, file: file, line: line)
+  XCTAssertEqual(entry.provenance, .mutable, file: file, line: line)
   XCTAssertTrue(entry.mutable, file: file, line: line)
   XCTAssertNil(entry.packageName, file: file, line: line)
   XCTAssertNil(entry.packageDirectory, file: file, line: line)

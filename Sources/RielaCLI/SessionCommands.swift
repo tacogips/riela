@@ -933,7 +933,7 @@ private func loopWorkflowSource(from bundle: ResolvedWorkflowBundle) -> LoopWork
     packageName: bundle.packageManifest?.name,
     packageVersion: bundle.packageManifest?.version,
     packageDirectory: bundle.packageDirectory,
-    mutable: bundle.packageManifest == nil
+    mutable: bundle.provenance == .mutable
   )
 }
 

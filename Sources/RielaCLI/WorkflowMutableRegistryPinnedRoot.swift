@@ -5,27 +5,44 @@ import Glibc
 #endif
 import Foundation
 
-struct WorkflowTemporaryRegistryInventoryEntry: Sendable {
+struct WorkflowMutableRegistryInventoryEntry: Sendable {
   var relativePath: String
   var bytes: Data?
   var mode: mode_t
 }
 
-struct WorkflowTemporaryRegistryRootAbsent: Error {}
+struct WorkflowMutableRegistryRootAbsent: Error {}
 
 /// Pins the temporary-workflow registry below the selected home directory and
 /// resolves every registry-owned child through directory descriptors.
-final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
+final class WorkflowMutableRegistryPinnedRoot: @unchecked Sendable {
   let url: URL
   private let lexicalRoot: URL
   private let descriptor: Int32
   private let device: dev_t
   private let inode: ino_t
 
-  init(homeDirectory: URL, create: Bool) throws {
+  convenience init(homeDirectory: URL, create: Bool) throws {
+    try self.init(
+      homeDirectory: homeDirectory,
+      rootComponents: [".riela", "temporary-workflows"],
+      create: create
+    )
+  }
+
+  init(
+    homeDirectory: URL,
+    rootComponents: [String],
+    create: Bool
+  ) throws {
+    guard !rootComponents.isEmpty,
+          rootComponents.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." && !$0.contains("/") }) else {
+      throw CLIUsageError("pinned registry root components are invalid")
+    }
     let lexicalHome = homeDirectory.standardizedFileURL
     guard let resolvedPointer = realpath(lexicalHome.path, nil) else {
-      throw CLIUsageError("unable to resolve temporary workflow registry home")
+      if !create, errno == ENOENT { throw WorkflowMutableRegistryRootAbsent() }
+      throw CLIUsageError("unable to resolve mutable workflow registry home")
     }
     defer { free(resolvedPointer) }
     let resolvedHome = URL(
@@ -34,17 +51,18 @@ final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
     ).standardizedFileURL
     var current = open(resolvedHome.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
     guard current >= 0 else {
-      throw CLIUsageError("unable to pin temporary workflow registry home")
+      if !create, errno == ENOENT { throw WorkflowMutableRegistryRootAbsent() }
+      throw CLIUsageError("unable to pin mutable workflow registry home")
     }
     do {
-      for component in [".riela", "temporary-workflows"] {
+      for component in rootComponents {
         if create, mkdirat(current, component, S_IRWXU) != 0, errno != EEXIST {
-          throw CLIUsageError("unable to create temporary workflow registry root")
+          throw CLIUsageError("unable to create mutable workflow registry root")
         }
         let next = openat(current, component, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
         guard next >= 0 else {
-          if !create, errno == ENOENT { throw WorkflowTemporaryRegistryRootAbsent() }
-          throw CLIUsageError("temporary workflow registry root contains a linked or non-directory component")
+          if !create, errno == ENOENT { throw WorkflowMutableRegistryRootAbsent() }
+          throw CLIUsageError("mutable workflow registry root contains a linked or non-directory component")
         }
         _ = close(current)
         current = next
@@ -52,7 +70,7 @@ final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
       descriptor = current
       var status = stat()
       guard fstat(descriptor, &status) == 0 else {
-        throw CLIUsageError("unable to inspect pinned temporary workflow registry root")
+        throw CLIUsageError("unable to inspect pinned mutable workflow registry root")
       }
       device = status.st_dev
       inode = status.st_ino
@@ -60,14 +78,12 @@ final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
       _ = close(current)
       throw error
     }
-    lexicalRoot = lexicalHome
-      .appendingPathComponent(".riela", isDirectory: true)
-      .appendingPathComponent("temporary-workflows", isDirectory: true)
-      .standardizedFileURL
-    url = resolvedHome
-      .appendingPathComponent(".riela", isDirectory: true)
-      .appendingPathComponent("temporary-workflows", isDirectory: true)
-      .standardizedFileURL
+    lexicalRoot = rootComponents.reduce(lexicalHome) {
+      $0.appendingPathComponent($1, isDirectory: true)
+    }.standardizedFileURL
+    url = rootComponents.reduce(resolvedHome) {
+      $0.appendingPathComponent($1, isDirectory: true)
+    }.standardizedFileURL
   }
 
   deinit { _ = close(descriptor) }
@@ -75,21 +91,21 @@ final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
   func requireConfiguredPathIdentity() throws {
     let current = open(lexicalRoot.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
     guard current >= 0 else {
-      throw CLIUsageError("temporary workflow registry root changed while an operation was active")
+      throw CLIUsageError("mutable workflow registry root changed while an operation was active")
     }
     defer { _ = close(current) }
     var status = stat()
     guard fstat(current, &status) == 0,
           status.st_dev == device,
           status.st_ino == inode else {
-      throw CLIUsageError("temporary workflow registry root changed while an operation was active")
+      throw CLIUsageError("mutable workflow registry root changed while an operation was active")
     }
   }
 
-  func bundleInventory(in child: URL) throws -> [WorkflowTemporaryRegistryInventoryEntry] {
+  func bundleInventory(in child: URL) throws -> [WorkflowMutableRegistryInventoryEntry] {
     let directory = try openDirectory(relativePath(for: child))
     defer { _ = close(directory) }
-    var entries: [WorkflowTemporaryRegistryInventoryEntry] = []
+    var entries: [WorkflowMutableRegistryInventoryEntry] = []
     try inventory(descriptor: directory, prefix: "", entries: &entries)
     return entries.sorted { $0.relativePath.utf8.lexicographicallyPrecedes($1.relativePath.utf8) }
   }
@@ -103,15 +119,15 @@ final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
     if relative.isEmpty { return dup(descriptor) }
     try validate(relative)
     var current = dup(descriptor)
-    guard current >= 0 else { throw CLIUsageError("unable to duplicate temporary registry root") }
+    guard current >= 0 else { throw CLIUsageError("unable to duplicate mutable registry root") }
     do {
       for component in relative.split(separator: "/").map(String.init) {
         if create, mkdirat(current, component, S_IRWXU) != 0, errno != EEXIST {
-          throw CLIUsageError("unable to create temporary registry directory")
+          throw CLIUsageError("unable to create mutable registry directory")
         }
         let next = openat(current, component, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
         guard next >= 0 else {
-          throw CLIUsageError("temporary registry path contains a linked or non-directory component")
+          throw CLIUsageError("mutable registry path contains a linked or non-directory component")
         }
         _ = close(current)
         current = next
@@ -126,7 +142,7 @@ final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
   func entryType(_ child: URL) throws -> mode_t? {
     let relative = try relativePath(for: child)
     let components = relative.split(separator: "/").map(String.init)
-    guard let leaf = components.last else { throw CLIUsageError("temporary registry leaf is required") }
+    guard let leaf = components.last else { throw CLIUsageError("mutable registry leaf is required") }
     guard let parent = try openDirectoryIfPresent(components.dropLast().joined(separator: "/")) else {
       return nil
     }
@@ -134,10 +150,10 @@ final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
     var status = stat()
     if fstatat(parent, leaf, &status, AT_SYMLINK_NOFOLLOW) != 0 {
       if errno == ENOENT { return nil }
-      throw CLIUsageError("unable to inspect temporary registry entry")
+      throw CLIUsageError("unable to inspect mutable registry entry")
     }
     guard status.st_mode & S_IFMT != S_IFLNK else {
-      throw CLIUsageError("temporary workflow transaction record is linked or malformed")
+      throw CLIUsageError("mutable workflow transaction record is linked or malformed")
     }
     return status.st_mode & S_IFMT
   }
@@ -150,12 +166,12 @@ final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
     try withParent(of: child) { parent, leaf in
       let file = openat(parent, leaf, flags | O_NOFOLLOW, permissions)
       guard file >= 0 else {
-        throw CLIUsageError("temporary registry file is linked, missing, or inaccessible")
+        throw CLIUsageError("mutable registry file is linked, missing, or inaccessible")
       }
       var status = stat()
       guard fstat(file, &status) == 0, status.st_mode & S_IFMT == S_IFREG else {
         _ = close(file)
-        throw CLIUsageError("temporary registry file has unexpected type")
+        throw CLIUsageError("mutable registry file has unexpected type")
       }
       return file
     }
@@ -171,7 +187,7 @@ final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
         let count = buffer.withUnsafeMutableBytes { bytes in
           read(file, bytes.baseAddress, bytes.count)
         }
-        guard count >= 0 else { throw CLIUsageError("unable to read temporary registry record") }
+        guard count >= 0 else { throw CLIUsageError("unable to read mutable registry record") }
         if count == 0 { return data }
         data.append(contentsOf: buffer.prefix(Int(count)))
       }
@@ -196,11 +212,11 @@ final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
       var offset = 0
       while offset < bytes.count {
         let count = write(file, bytes.baseAddress?.advanced(by: offset), bytes.count - offset)
-        guard count > 0 else { throw CLIUsageError("unable to write temporary registry file") }
+        guard count > 0 else { throw CLIUsageError("unable to write mutable registry file") }
         offset += count
       }
     }
-    guard fsync(file) == 0 else { throw CLIUsageError("unable to sync temporary registry file") }
+    guard fsync(file) == 0 else { throw CLIUsageError("unable to sync mutable registry file") }
     succeeded = true
   }
 
@@ -210,18 +226,18 @@ final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
     let sourceParts = sourceRelative.split(separator: "/").map(String.init)
     let destinationParts = destinationRelative.split(separator: "/").map(String.init)
     guard let sourceLeaf = sourceParts.last, let destinationLeaf = destinationParts.last else {
-      throw CLIUsageError("temporary registry rename requires child paths")
+      throw CLIUsageError("mutable registry rename requires child paths")
     }
     let sourceParent = try openDirectory(sourceParts.dropLast().joined(separator: "/"))
     defer { _ = close(sourceParent) }
     let destinationParent = try openDirectory(destinationParts.dropLast().joined(separator: "/"))
     defer { _ = close(destinationParent) }
     guard renameat(sourceParent, sourceLeaf, destinationParent, destinationLeaf) == 0 else {
-      throw CLIUsageError("temporary workflow registry publication rename failed: \(String(cString: strerror(errno)))")
+      throw CLIUsageError("mutable workflow registry publication rename failed: \(String(cString: strerror(errno)))")
     }
-    guard fsync(sourceParent) == 0 else { throw CLIUsageError("unable to sync temporary registry directory") }
+    guard fsync(sourceParent) == 0 else { throw CLIUsageError("unable to sync mutable registry directory") }
     if sourceParent != destinationParent, fsync(destinationParent) != 0 {
-      throw CLIUsageError("unable to sync temporary registry directory")
+      throw CLIUsageError("unable to sync mutable registry directory")
     }
   }
 
@@ -229,30 +245,30 @@ final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
     try withParent(of: child) { parent, leaf in
       try validateRemovableTree(parent: parent, leaf: leaf)
       try remove(parent: parent, leaf: leaf)
-      guard fsync(parent) == 0 else { throw CLIUsageError("unable to sync temporary registry directory") }
+      guard fsync(parent) == 0 else { throw CLIUsageError("unable to sync mutable registry directory") }
     }
   }
 
   func unlink(_ child: URL) throws {
     try withParent(of: child) { parent, leaf in
       if unlinkat(parent, leaf, 0) != 0, errno != ENOENT {
-        throw CLIUsageError("unable to remove temporary registry file")
+        throw CLIUsageError("unable to remove mutable registry file")
       }
-      guard fsync(parent) == 0 else { throw CLIUsageError("unable to sync temporary registry directory") }
+      guard fsync(parent) == 0 else { throw CLIUsageError("unable to sync mutable registry directory") }
     }
   }
 
   func syncDirectory(_ child: URL) throws {
     let directory = try openDirectory(relativePath(for: child))
     defer { _ = close(directory) }
-    guard fsync(directory) == 0 else { throw CLIUsageError("unable to sync temporary registry directory") }
+    guard fsync(directory) == 0 else { throw CLIUsageError("unable to sync mutable registry directory") }
   }
 
   func names(in child: URL) throws -> [String] {
     let directoryDescriptor = try openDirectory(relativePath(for: child))
     guard let directory = fdopendir(directoryDescriptor) else {
       _ = close(directoryDescriptor)
-      throw CLIUsageError("unable to enumerate temporary registry directory")
+      throw CLIUsageError("unable to enumerate mutable registry directory")
     }
     defer { closedir(directory) }
     var result: [String] = []
@@ -268,7 +284,7 @@ final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
   private func withParent<T>(of child: URL, _ body: (Int32, String) throws -> T) throws -> T {
     let relative = try relativePath(for: child)
     let components = relative.split(separator: "/").map(String.init)
-    guard let leaf = components.last else { throw CLIUsageError("temporary registry leaf is required") }
+    guard let leaf = components.last else { throw CLIUsageError("mutable registry leaf is required") }
     let parent = try openDirectory(components.dropLast().joined(separator: "/"))
     defer { _ = close(parent) }
     return try body(parent, leaf)
@@ -278,14 +294,14 @@ final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
     if relative.isEmpty { return dup(descriptor) }
     try validate(relative)
     var current = dup(descriptor)
-    guard current >= 0 else { throw CLIUsageError("unable to duplicate temporary registry root") }
+    guard current >= 0 else { throw CLIUsageError("unable to duplicate mutable registry root") }
     for component in relative.split(separator: "/").map(String.init) {
       let next = openat(current, component, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
       if next < 0 {
         let failure = errno
         _ = close(current)
         if failure == ENOENT { return nil }
-        throw CLIUsageError("temporary registry path contains a linked or non-directory component")
+        throw CLIUsageError("mutable registry path contains a linked or non-directory component")
       }
       _ = close(current)
       current = next
@@ -297,33 +313,33 @@ final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
     var status = stat()
     guard fstatat(parent, leaf, &status, AT_SYMLINK_NOFOLLOW) == 0 else {
       if errno == ENOENT { return }
-      throw CLIUsageError("unable to inspect temporary registry artifact")
+      throw CLIUsageError("unable to inspect mutable registry artifact")
     }
     let kind = status.st_mode & S_IFMT
     guard kind != S_IFLNK else {
-      throw CLIUsageError("refusing to remove a linked temporary registry artifact")
+      throw CLIUsageError("refusing to remove a linked mutable registry artifact")
     }
     if kind == S_IFREG {
       guard unlinkat(parent, leaf, 0) == 0 else {
-        throw CLIUsageError("unable to remove temporary registry file")
+        throw CLIUsageError("unable to remove mutable registry file")
       }
       return
     }
     guard kind == S_IFDIR else {
-      throw CLIUsageError("refusing to remove a special temporary registry artifact")
+      throw CLIUsageError("refusing to remove a special mutable registry artifact")
     }
     let child = openat(parent, leaf, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
-    guard child >= 0 else { throw CLIUsageError("unable to open temporary registry directory") }
+    guard child >= 0 else { throw CLIUsageError("unable to open mutable registry directory") }
     var closed = false
     do {
       for name in try names(descriptor: child) {
         try remove(parent: child, leaf: name)
       }
-      guard fsync(child) == 0 else { throw CLIUsageError("unable to sync temporary registry directory") }
+      guard fsync(child) == 0 else { throw CLIUsageError("unable to sync mutable registry directory") }
       _ = close(child)
       closed = true
       guard unlinkat(parent, leaf, AT_REMOVEDIR) == 0 else {
-        throw CLIUsageError("unable to remove temporary registry directory")
+        throw CLIUsageError("unable to remove mutable registry directory")
       }
     } catch {
       if !closed { _ = close(child) }
@@ -335,18 +351,18 @@ final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
     var status = stat()
     guard fstatat(parent, leaf, &status, AT_SYMLINK_NOFOLLOW) == 0 else {
       if errno == ENOENT { return }
-      throw CLIUsageError("unable to inspect temporary registry artifact")
+      throw CLIUsageError("unable to inspect mutable registry artifact")
     }
     let kind = status.st_mode & S_IFMT
     guard kind != S_IFLNK else {
-      throw CLIUsageError("refusing to remove a linked temporary registry artifact")
+      throw CLIUsageError("refusing to remove a linked mutable registry artifact")
     }
     if kind == S_IFREG { return }
     guard kind == S_IFDIR else {
-      throw CLIUsageError("refusing to remove a special temporary registry artifact")
+      throw CLIUsageError("refusing to remove a special mutable registry artifact")
     }
     let child = openat(parent, leaf, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
-    guard child >= 0 else { throw CLIUsageError("unable to open temporary registry directory") }
+    guard child >= 0 else { throw CLIUsageError("unable to open mutable registry directory") }
     defer { _ = close(child) }
     for name in try names(descriptor: child) {
       try validateRemovableTree(parent: child, leaf: name)
@@ -357,7 +373,7 @@ final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
     let duplicate = openat(descriptor, ".", O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
     guard duplicate >= 0, let directory = fdopendir(duplicate) else {
       if duplicate >= 0 { _ = close(duplicate) }
-      throw CLIUsageError("unable to enumerate temporary registry directory")
+      throw CLIUsageError("unable to enumerate mutable registry directory")
     }
     defer { closedir(directory) }
     var result: [String] = []
@@ -373,21 +389,21 @@ final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
   private func inventory(
     descriptor: Int32,
     prefix: String,
-    entries: inout [WorkflowTemporaryRegistryInventoryEntry]
+    entries: inout [WorkflowMutableRegistryInventoryEntry]
   ) throws {
     for name in try names(descriptor: descriptor) {
       var status = stat()
       guard fstatat(descriptor, name, &status, AT_SYMLINK_NOFOLLOW) == 0 else {
-        throw CLIUsageError("temporary workflow bundle entry disappeared during inventory")
+        throw CLIUsageError("mutable workflow bundle entry disappeared during inventory")
       }
       let relative = prefix.isEmpty ? name : "\(prefix)/\(name)"
       switch status.st_mode & S_IFMT {
       case S_IFDIR:
         let child = openat(descriptor, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
         guard child >= 0 else {
-          throw CLIUsageError("temporary workflow bundle directory is linked or inaccessible")
+          throw CLIUsageError("mutable workflow bundle directory is linked or inaccessible")
         }
-        entries.append(WorkflowTemporaryRegistryInventoryEntry(
+        entries.append(WorkflowMutableRegistryInventoryEntry(
           relativePath: relative,
           bytes: nil,
           mode: status.st_mode
@@ -402,7 +418,7 @@ final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
       case S_IFREG:
         let file = openat(descriptor, name, O_RDONLY | O_NOFOLLOW)
         guard file >= 0 else {
-          throw CLIUsageError("temporary workflow bundle file is linked or inaccessible")
+          throw CLIUsageError("mutable workflow bundle file is linked or inaccessible")
         }
         var openedStatus = stat()
         guard fstat(file, &openedStatus) == 0,
@@ -410,7 +426,7 @@ final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
               openedStatus.st_dev == status.st_dev,
               openedStatus.st_ino == status.st_ino else {
           _ = close(file)
-          throw CLIUsageError("temporary workflow bundle entry changed during inventory")
+          throw CLIUsageError("mutable workflow bundle entry changed during inventory")
         }
         let bytes: Data
         do {
@@ -420,13 +436,13 @@ final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
           _ = close(file)
           throw error
         }
-        entries.append(WorkflowTemporaryRegistryInventoryEntry(
+        entries.append(WorkflowMutableRegistryInventoryEntry(
           relativePath: relative,
           bytes: bytes,
           mode: openedStatus.st_mode
         ))
       default:
-        throw CLIUsageError("temporary workflow bundle inventory contains a linked or special entry")
+        throw CLIUsageError("mutable workflow bundle inventory contains a linked or special entry")
       }
     }
   }
@@ -436,7 +452,7 @@ final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
     guard standardized.path != lexicalRoot.path,
           standardized.path.hasPrefix(lexicalRoot.path + "/") else {
       if standardized.path == lexicalRoot.path { return "" }
-      throw CLIUsageError("temporary registry path escapes its pinned root")
+      throw CLIUsageError("mutable registry path escapes its pinned root")
     }
     let relative = String(standardized.path.dropFirst(lexicalRoot.path.count + 1))
     try validate(relative)
@@ -446,11 +462,11 @@ final class WorkflowTemporaryRegistryPinnedRoot: @unchecked Sendable {
   private func validate(_ relative: String) throws {
     guard !relative.hasPrefix("/"), !relative.isEmpty else {
       if relative.isEmpty { return }
-      throw CLIUsageError("temporary registry path must be relative")
+      throw CLIUsageError("mutable registry path must be relative")
     }
     let components = relative.split(separator: "/", omittingEmptySubsequences: false)
     guard !components.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) else {
-      throw CLIUsageError("temporary registry path contains an unsafe component")
+      throw CLIUsageError("mutable registry path contains an unsafe component")
     }
   }
 }

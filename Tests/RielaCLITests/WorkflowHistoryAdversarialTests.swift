@@ -6,7 +6,7 @@ import XCTest
 final class WorkflowHistoryAdversarialTests: XCTestCase {
   func testSameTargetDifferentHistoryRootsShareOneCanonicalLock() async throws {
     let (root, _) = try await makeWorkflowVersioningFixture(self)
-    let resolved = try resolveVersioningTarget(root: root)
+    let resolved = try resolveMutableTransactionTarget(root: root)
     let inventory = try WorkflowHistoryIdentityResolver.inventory(for: resolved.identity)
     let snapshot = try WorkflowHistoryStore(root: resolved.historyRoot).createSnapshot(inventory: inventory)
     let otherHistory = root.appendingPathComponent("alternate-history/versioned-flow", isDirectory: true)
@@ -159,7 +159,7 @@ final class WorkflowHistoryAdversarialTests: XCTestCase {
 
   func testOrphanAndMultipleNonterminalRecordsAreDiscoveredFailClosed() async throws {
     let (root, _) = try await makeWorkflowVersioningFixture(self)
-    let resolved = try resolveVersioningTarget(root: root)
+    let resolved = try resolveMutableTransactionTarget(root: root)
     let inventory = try WorkflowHistoryIdentityResolver.inventory(for: resolved.identity)
     let snapshot = try WorkflowHistoryStore(root: resolved.historyRoot).createSnapshot(inventory: inventory)
     let coordinator = WorkflowDirectoryTransactionCoordinator(
@@ -226,20 +226,45 @@ final class WorkflowHistoryAdversarialTests: XCTestCase {
     try FileManager.default.copyItem(at: URL(fileURLWithPath: resolved.identity.ownershipRoot), to: userWorkflow)
     let inventory = try WorkflowHistoryIdentityResolver.inventory(for: resolved.identity)
     let snapshot = try WorkflowHistoryStore(root: resolved.historyRoot).createSnapshot(inventory: inventory)
-    let coordinator = WorkflowDirectoryTransactionCoordinator(
-      auditStore: FileWorkflowTransactionAuditStore(),
-      boundaryHook: { boundary in
-        if boundary == .transactionRecord { throw WorkflowDirectoryInjectedInterruption(boundary: boundary) }
-      }
-    )
-    XCTAssertThrowsError(try coordinator.commit(
-      target: resolved.identity,
-      historyRoot: resolved.historyRoot,
+    // A legacy nonterminal transaction can predate the mutable-registry model on
+    // an immutable project origin; plant its record directly instead of using the
+    // coordinator, whose preflight now rejects immutable sources.
+    let transactions = resolved.historyRoot.appendingPathComponent("transactions", isDirectory: true)
+    let live = URL(fileURLWithPath: resolved.identity.ownershipRoot)
+    let legacyRecord = WorkflowDirectoryTransactionRecord(
+      transactionId: "transaction-legacy-corrupt",
       kind: .apply,
-      expectedBeforeBundleDigest: inventory.bundleDigest,
+      target: resolved.identity,
+      beforeBundleDigest: inventory.bundleDigest,
       expectedAfterBundleDigest: inventory.bundleDigest,
-      preOperationSnapshotId: snapshot.snapshotId
-    ) { _ in })
+      preOperationSnapshotId: snapshot.snapshotId,
+      beforeUnownedInventory: inventory.unownedFiles.map(WorkflowUnownedInventoryEntry.init),
+      expectedAfterUnownedInventory: inventory.unownedFiles.map(WorkflowUnownedInventoryEntry.init),
+      operationAuditIntent: .mutation(LoopWorkflowMutationEvidence(
+        mode: "legacy-corrupt-test",
+        snapshotId: snapshot.snapshotId,
+        transactionId: "transaction-legacy-corrupt",
+        target: resolved.identity,
+        beforeBundleDigest: inventory.bundleDigest,
+        afterBundleDigest: inventory.bundleDigest,
+        applied: false,
+        restored: false,
+        outcome: .failed
+      )),
+      stagingPath: live.deletingLastPathComponent().appendingPathComponent(
+        ".\(live.lastPathComponent).riela-stage-transaction-legacy-corrupt"
+      ).path,
+      rollbackPath: live.deletingLastPathComponent().appendingPathComponent(
+        ".\(live.lastPathComponent).riela-rollback-transaction-legacy-corrupt"
+      ).path,
+      phase: .preparing
+    )
+    try WorkflowTransactionGenerationStore.write(
+      legacyRecord,
+      logicalURL: transactions.appendingPathComponent("\(legacyRecord.transactionId).json"),
+      historyRoot: resolved.historyRoot,
+      betweenPayloadAndSidecar: {}
+    )
     let generations = try XCTUnwrap(try FileManager.default.contentsOfDirectory(
       at: resolved.historyRoot.appendingPathComponent("transactions"),
       includingPropertiesForKeys: nil

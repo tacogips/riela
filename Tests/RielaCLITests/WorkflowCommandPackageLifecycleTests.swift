@@ -382,7 +382,9 @@ extension WorkflowCommandTests {
     XCTAssertEqual(selfImproveResult.workflowName, "created-flow")
     XCTAssertEqual(selfImproveResult.dryRun, false)
     XCTAssertEqual(selfImproveResult.mutated, true)
-    XCTAssertTrue(try String(contentsOfFile: "\(created.workflowDirectory)/workflow.json").contains("self-improve-reviewed"))
+    // The immutable project bundle must stay untouched; the mutable registry
+    // copy (asserted inside applyReviewedSelfImprove) receives the change.
+    XCTAssertFalse(try String(contentsOfFile: "\(created.workflowDirectory)/workflow.json").contains("self-improve-reviewed"))
     XCTAssertTrue(FileManager.default.fileExists(atPath: try XCTUnwrap(selfImproveResult.backupDirectory)))
     XCTAssertTrue(FileManager.default.fileExists(atPath: try XCTUnwrap(selfImproveResult.reportPath)))
 

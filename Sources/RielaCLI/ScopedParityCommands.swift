@@ -138,6 +138,26 @@ fileprivate extension ScopedParityCommandRunner {
         communications: snapshot.workflowMessages
       )
       records = [try jsonString(projected)]
+    case "session-progress", "session-health":
+      let sessionId = try requiredGraphQLTarget(options: options, action: action)
+      let store = runtimePersistenceStore(parsed: parsed)
+      let observabilityService = SessionObservabilityComposition.makeService(store: store)
+      let graphQLService = GraphQLRuntimeSnapshotQueryService(
+        loadSnapshot: { try store.load(sessionId: $0) },
+        loadSnapshots: { try store.loadAll() },
+        sessionStore: store.rootDirectory,
+        observabilityService: observabilityService
+      )
+      if action == "session-progress" {
+        records = [try jsonString(await graphQLService.sessionProgress(GraphQLSessionProgressRequest(
+          sessionId: sessionId,
+          includeChildren: parsed.includeChildren
+        )))]
+      } else {
+        records = [try jsonString(await graphQLService.sessionHealth(GraphQLSessionHealthRequest(
+          sessionId: sessionId
+        )))]
+      }
     case "manager-session":
       let snapshot = try loadRuntimeSnapshot(sessionId: options.target, parsed: parsed, action: action)
       let view = GraphQLManagerSessionViewDTO(

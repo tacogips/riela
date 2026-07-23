@@ -202,6 +202,7 @@ func writeClaudeRollout(
   branch: String? = nil,
   message: String = "hello",
   modifiedAt: String? = nil,
+  createdAt: String = "2026-06-17T00:00:00.000Z",
   rolloutFileTimestamp: String = "2026-06-17T00-00-00"
 ) throws -> URL {
   let day = home.appendingPathComponent("sessions/2026/06/17", isDirectory: true)
@@ -210,7 +211,7 @@ func writeClaudeRollout(
   let lines = [
     claudeSessionMetaLine(
       id: sessionId,
-      timestamp: "2026-06-17T00:00:00.000Z",
+      timestamp: createdAt,
       cwd: cwd,
       cliVersion: "0.1.0",
       source: source,

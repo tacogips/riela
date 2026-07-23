@@ -33,6 +33,7 @@ struct ParsedParityOptions: ParsableArguments, Sendable {
   @Option var eventRoot: String?
   @Option(name: [.customLong("event-file"), .customLong("file")]) var eventFile: String?
   @Flag var readOnly = false
+  @Flag(name: .customLong("include-children")) var includeChildren = false
   @Option var status: String?
   @Option var limit: Int?
   @Option var reason: String?

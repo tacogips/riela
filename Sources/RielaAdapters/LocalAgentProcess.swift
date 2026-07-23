@@ -936,8 +936,9 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
       guard outputEvent.stream == .stdout else {
         return
       }
-      let classified = streamContent ? command.classifyBackendEvent?(outputEvent.line) : nil
-      guard var event = classified ?? fallbackBackendEvent(command: command, line: outputEvent.line) else {
+      let classified = command.classifyBackendEvent?(outputEvent.line)
+      let selectedEvent = streamContent || classified?.backendSessionId != nil ? classified : nil
+      guard var event = selectedEvent ?? fallbackBackendEvent(command: command, line: outputEvent.line) else {
         return
       }
       if event.provider.isEmpty {

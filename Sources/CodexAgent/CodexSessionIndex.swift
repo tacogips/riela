@@ -1,4 +1,5 @@
 import Foundation
+import AgentRuntimeKit
 import RielaCore
 
 public struct CodexSession: Equatable, Sendable {
@@ -231,8 +232,14 @@ public enum CodexSessionIndex {
     )
   }
 
-  public static func listSessions(options: CodexSessionListOptions = CodexSessionListOptions()) -> CodexSessionListResult {
-    var sessions = mergedIndexedSessions(codexHome: options.codexHome)
+  public static func listSessions(
+    options: CodexSessionListOptions = CodexSessionListOptions(),
+    stateReadMode: AgentSessionSQLiteReadMode = .compatibility
+  ) -> CodexSessionListResult {
+    var sessions = mergedIndexedSessions(
+      codexHome: options.codexHome,
+      stateReadMode: stateReadMode
+    )
     sessions = sessions.filter { CodexSessionQuery.matches($0, options: options) }
     sessions = CodexSessionQuery.sorted(sessions, options: options)
     let total = sessions.count
@@ -240,21 +247,31 @@ public enum CodexSessionIndex {
     return CodexSessionListResult(sessions: Array(sessions[pageRange]), total: total, offset: options.offset, limit: options.limit)
   }
 
-  private static func mergedIndexedSessions(codexHome: String?) -> [CodexSession] {
-    let sqliteSessions = unfilteredSQLiteSessions(codexHome: codexHome)
+  private static func mergedIndexedSessions(
+    codexHome: String?,
+    stateReadMode: AgentSessionSQLiteReadMode = .compatibility
+  ) -> [CodexSession] {
+    let sqliteSessions = unfilteredSQLiteSessions(
+      codexHome: codexHome,
+      stateReadMode: stateReadMode
+    )
     let rolloutSessions = preferredRolloutSessions(discoverRolloutPaths(codexHome: codexHome).compactMap(buildSession))
     let rolloutIds = Set(rolloutSessions.map(\.id))
     return rolloutSessions + sqliteSessions.filter { !rolloutIds.contains($0.id) }
   }
 
-  private static func unfilteredSQLiteSessions(codexHome: String?) -> [CodexSession] {
+  private static func unfilteredSQLiteSessions(
+    codexHome: String?,
+    stateReadMode: AgentSessionSQLiteReadMode
+  ) -> [CodexSession] {
     CodexSessionSQLiteIndex.listSessionsSqlite(
       codexHome: codexHome,
       options: CodexSessionListOptions(
         codexHome: codexHome,
         limit: Int.max,
         offset: 0
-      )
+      ),
+      readMode: stateReadMode
     )?.sessions ?? []
   }
 
@@ -284,8 +301,15 @@ public enum CodexSessionIndex {
     return candidate.rolloutPath > existing.rolloutPath
   }
 
-  public static func findSession(id: String, codexHome: String? = nil) -> CodexSession? {
-    mergedIndexedSessions(codexHome: codexHome).first { $0.id == id }
+  public static func findSession(
+    id: String,
+    codexHome: String? = nil,
+    stateReadMode: AgentSessionSQLiteReadMode = .compatibility
+  ) -> CodexSession? {
+    mergedIndexedSessions(
+      codexHome: codexHome,
+      stateReadMode: stateReadMode
+    ).first { $0.id == id }
   }
 
   public static func findLatestSession(codexHome: String? = nil, cwd: String? = nil) -> CodexSession? {

@@ -76,6 +76,60 @@ interactive package creation and import flows. Use `--output json` only when a
 legacy caller explicitly needs a single non-streaming JSON document after
 completion.
 
+## Session Observability
+
+Session observers open the runtime store read-only and never create, migrate,
+lock, or update it. Checkpointed stores without WAL/SHM sidecars use SQLite's
+immutable read-only mode; live WAL stores retain the normal read-only snapshot
+path. Use one-shot progress for a compact digest or follow a live writer with a
+two-second default polling interval:
+
+```bash
+riela session progress <session-id> --output text
+riela session progress <session-id> --follow --output text
+riela session progress <session-id> --follow --poll-interval 0.5 --output jsonl
+```
+
+`--poll-interval` accepts finite values from `0.1` through `3600` seconds.
+Follow emits every refresh, including unchanged state, and exits after its
+terminal digest. Streaming structured output is JSONL; `--follow --output json`
+is rejected.
+
+Cross-workflow children persist `parentSessionId` and `rootSessionId` on their
+first writer-owned snapshot. Inspect the complete running or completed tree and
+list its relationships with:
+
+```bash
+riela session progress <parent-session-id> --include-children --output json
+riela session progress <parent-session-id> --include-children --follow --output jsonl
+riela session list --output table
+```
+
+`--include-children` follow waits until the requested session and every
+discovered descendant are terminal. Legacy sessions without provenance remain
+standalone. Rollup refreshes decode at most 1,000 snapshots. Structured output
+reports `rollupTruncated` and `rollupSnapshotLimit`; text output prints the same
+fields before the tree so an intentionally bounded view is never mistaken for
+the complete tree. If a terminal-looking follow refresh is truncated, the
+command emits that refresh and exits nonzero instead of claiming the complete
+tree is terminal.
+
+Backend health is evidence-based:
+
+```bash
+riela session health <session-id> --output json
+```
+
+`backendActivity` is `active`, `quiet`, `stalled-suspect`, or `unknown` and
+includes activity evidence plus the active and stalled thresholds. Codex uses
+uniquely correlated rollout freshness; Claude Code uses persisted stream-event
+recency and a uniquely correlated artifact when available. Missing, unreadable,
+or ambiguous artifacts produce `unknown` when no other sufficient correlated
+evidence exists. A stalled-suspect verdict is an observation signal, not
+remediation or proof of deadlock. Provider fallback correlation inspects at
+most 200 launch-window candidates and returns `unknown` if that limit is
+exceeded; native session ids use targeted SQLite lookup.
+
 ## Runtime Data Garbage Collection
 
 Runtime data GC is off by default. Enable automatic RielaApp cleanup by writing

@@ -12,6 +12,17 @@ struct WorkflowBackendEventEmissionContext: Sendable {
   var nodeExecutions: Int
 }
 
+func resolvedBackendWorkingDirectory(
+  backend: NodeExecutionBackend?,
+  configuredWorkingDirectory: String?
+) -> String? {
+  guard backend != nil else {
+    return nil
+  }
+  let path = configuredWorkingDirectory ?? FileManager.default.currentDirectoryPath
+  return URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL.path
+}
+
 extension DeterministicWorkflowRunner {
   func recordStepStartedExecution(
     workflowId: String,
@@ -19,6 +30,8 @@ extension DeterministicWorkflowRunner {
     step: WorkflowStepRef,
     attempt: Int,
     backend: NodeExecutionBackend?,
+    backendWorkingDirectory: String? = nil,
+    effectiveStepBudget: Int? = nil,
     handler: WorkflowRunEventHandler?
   ) async throws -> WorkflowStepStartedExecutionRecord {
     let execution = try await store.recordStepExecution(
@@ -27,7 +40,9 @@ extension DeterministicWorkflowRunner {
         stepId: step.id,
         nodeId: step.nodeId,
         attempt: attempt,
-        backend: backend
+        backend: backend,
+        backendWorkingDirectory: backendWorkingDirectory,
+        effectiveStepBudget: effectiveStepBudget
       )
     )
     guard let updatedSession = try await store.loadSession(id: sessionId) else {
@@ -75,7 +90,8 @@ extension DeterministicWorkflowRunner {
           toolName: backendEvent.toolName,
           usage: backendEvent.usage,
           sequence: nil,
-          at: backendEvent.at
+          at: backendEvent.at,
+          backendSessionId: backendEvent.backendSessionId
         )
       )
       guard let receipt else {

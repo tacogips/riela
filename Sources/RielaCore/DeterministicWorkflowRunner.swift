@@ -32,6 +32,9 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   public var crossWorkflowDispatchDepth: Int
   var stopBeforeStepId: String?
   var workflowRunId: String?
+  var parentSessionId: String?
+  var rootSessionId: String?
+  var effectiveStepBudget: Int?
 
   public init(
     workflow: WorkflowDefinition,
@@ -80,6 +83,9 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     self.crossWorkflowDispatchDepth = crossWorkflowDispatchDepth
     self.stopBeforeStepId = stopBeforeStepId
     self.workflowRunId = nil
+    self.parentSessionId = nil
+    self.rootSessionId = nil
+    self.effectiveStepBudget = nil
   }
 }
 
@@ -177,13 +183,19 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
   public func run(_ request: DeterministicWorkflowRunRequest) async throws -> WorkflowRunResult {
     var interruptedSessionId: String?, ownedWorkflowRunId: String?
     var pendingStepBudgetDiagnostic: WorkflowStepBudgetDiagnostic?
+    var enforcedStepBudget: Int?
     do {
     let executionPlan = try validatedExecutionPlan(for: request)
     try validateSessionEntryModes(request)
     var effectiveRequest = request
+    let maxLoopIterations = effectiveRequest.maxLoopIterations ?? effectiveRequest.workflow.defaults.maxLoopIterations
+    let maxStepsSource: WorkflowStepBudgetSource = effectiveRequest.maxSteps == nil ? .computedDefault : .commandLine
+    let maxSteps = effectiveRequest.maxSteps ?? max(1, effectiveRequest.workflow.steps.count + maxLoopIterations)
+    effectiveRequest.effectiveStepBudget = maxSteps
+    enforcedStepBudget = maxSteps
 
     let entryContext: SessionEntryContext
-    switch try await resolveSessionEntry(request) {
+    switch try await resolveSessionEntry(effectiveRequest) {
     case let .terminal(result):
       return result
     case let .proceed(context):
@@ -191,6 +203,8 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     }
     var session = entryContext.session
     var currentStepId = entryContext.currentStepId
+    effectiveRequest.parentSessionId = session.parentSessionId
+    effectiveRequest.rootSessionId = session.rootSessionId ?? session.sessionId
     let recoveryLineage = entryContext.recoveryLineage
     for (key, value) in entryContext.variableOverrides {
       effectiveRequest.variables[key] = value
@@ -208,10 +222,6 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     var publishedTransitions = 0
     var rootOutput: JSONObject?
     var executionCounts: [String: Int] = [:]
-    let maxLoopIterations = effectiveRequest.maxLoopIterations ?? effectiveRequest.workflow.defaults.maxLoopIterations
-    let maxStepsSource: WorkflowStepBudgetSource = effectiveRequest.maxSteps == nil ? .computedDefault : .commandLine
-    let maxSteps = effectiveRequest.maxSteps ?? max(1, effectiveRequest.workflow.steps.count + maxLoopIterations)
-
     while let stepId = currentStepId {
       guard let step = executionPlan.step(id: stepId) else {
         throw DeterministicWorkflowRunnerError.missingStep(stepId)
@@ -382,7 +392,8 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           sessionId: interruptedSessionId,
           request: request,
           error: originalError,
-          stepBudgetDiagnostic: pendingStepBudgetDiagnostic
+          stepBudgetDiagnostic: pendingStepBudgetDiagnostic,
+          effectiveStepBudget: enforcedStepBudget
         )
       }
       await finishOwnedWorkflowRun(ownedWorkflowRunId)
@@ -638,6 +649,11 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       step: step,
       attempt: executionIndex,
       backend: payload.executionBackend,
+      backendWorkingDirectory: resolvedBackendWorkingDirectory(
+        backend: payload.executionBackend,
+        configuredWorkingDirectory: payload.workingDirectory
+      ),
+      effectiveStepBudget: request.effectiveStepBudget,
       handler: request.eventHandler
     )
     let projectedPayload = try outputProjectionPayload(
@@ -700,6 +716,11 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         step: step,
         attempt: executionIndex,
         backend: payload.executionBackend,
+        backendWorkingDirectory: resolvedBackendWorkingDirectory(
+          backend: payload.executionBackend,
+          configuredWorkingDirectory: payload.workingDirectory
+        ),
+        effectiveStepBudget: request.effectiveStepBudget,
         handler: request.eventHandler
       )
       let execution = startedExecution.execution
@@ -795,6 +816,11 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         step: step,
         attempt: attempt,
         backend: basePayload.executionBackend,
+        backendWorkingDirectory: resolvedBackendWorkingDirectory(
+          backend: basePayload.executionBackend,
+          configuredWorkingDirectory: basePayload.workingDirectory
+        ),
+        effectiveStepBudget: request.effectiveStepBudget,
         handler: request.eventHandler
       )
       let execution = startedExecution.execution

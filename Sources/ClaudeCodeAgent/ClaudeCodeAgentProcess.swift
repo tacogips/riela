@@ -56,8 +56,8 @@ public enum ClaudeCodeProcessCommandBuilder {
     options: ClaudeCodeProcessOptions = ClaudeCodeProcessOptions(),
     terminatePromptWithDoubleDash: Bool = true
   ) -> [String] {
-    var arguments = ["-p", "--output-format", "stream-json"]
-    arguments.append(contentsOf: buildCommonArguments(options))
+    var arguments = ["-p", "--output-format", "stream-json", "--verbose"]
+    arguments.append(contentsOf: buildCommonArguments(options, ownsVerbose: true))
     appendImages(options.images, to: &arguments)
     arguments.append(prompt)
     return arguments
@@ -69,8 +69,8 @@ public enum ClaudeCodeProcessCommandBuilder {
     options: ClaudeCodeProcessOptions = ClaudeCodeProcessOptions(),
     terminatePromptWithDoubleDash: Bool = true
   ) -> [String] {
-    var arguments = ["-p", "--output-format", "stream-json", "--resume", sessionId]
-    arguments.append(contentsOf: buildResumeCommonArguments(options))
+    var arguments = ["-p", "--output-format", "stream-json", "--verbose", "--resume", sessionId]
+    arguments.append(contentsOf: buildResumeCommonArguments(options, ownsVerbose: true))
     appendImages(options.images, to: &arguments)
     if let prompt, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       arguments.append(prompt)
@@ -109,7 +109,10 @@ public enum ClaudeCodeProcessCommandBuilder {
     return "\(systemPrompt)\n\n\(prompt)"
   }
 
-  private static func buildCommonArguments(_ options: ClaudeCodeProcessOptions) -> [String] {
+  private static func buildCommonArguments(
+    _ options: ClaudeCodeProcessOptions,
+    ownsVerbose: Bool = false
+  ) -> [String] {
     var arguments: [String] = []
     if let model = options.model {
       arguments.append(contentsOf: ["--model", model])
@@ -126,14 +129,18 @@ public enum ClaudeCodeProcessCommandBuilder {
     for configOverride in options.configOverrides {
       arguments.append(contentsOf: ["--config", configOverride])
     }
-    arguments.append(contentsOf: sanitizedAdditionalArguments(options.additionalArguments))
+    let additionalArguments = sanitizedAdditionalArguments(options.additionalArguments)
+    arguments.append(contentsOf: ownsVerbose ? additionalArguments.filter { $0 != "--verbose" } : additionalArguments)
     return arguments
   }
 
-  private static func buildResumeCommonArguments(_ options: ClaudeCodeProcessOptions) -> [String] {
+  private static func buildResumeCommonArguments(
+    _ options: ClaudeCodeProcessOptions,
+    ownsVerbose: Bool
+  ) -> [String] {
     var resumeOptions = options
     resumeOptions.sandbox = nil
-    return buildCommonArguments(resumeOptions)
+    return buildCommonArguments(resumeOptions, ownsVerbose: ownsVerbose)
   }
 
   private static func appendImages(_ images: [String], to arguments: inout [String]) {

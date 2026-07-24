@@ -59,11 +59,31 @@ public func resolveNodeExecutionBackend(_ node: AgentNodePayload) throws -> Node
 public func mergedAgentProcessEnvironment(
   baseEnvironment: [String: String],
   input: AdapterExecutionInput,
+  providerEnvironment: [String: String] = [:],
   provider: String
 ) -> [String: String] {
   var environment = baseEnvironment.merging(input.agentEnvironment) { _, nodeValue in nodeValue }
+  environment.merge(providerEnvironment) { _, providerValue in providerValue }
   environment["RIELA_AGENT_BACKEND"] = provider
   return environment
+}
+
+public func validateAgentProviderRoutingForAdapter(_ node: AgentNodePayload) throws {
+  guard let diagnostic = validateAgentNodePayload(node).first(where: { $0.severity == .error }) else {
+    return
+  }
+  throw AdapterExecutionError(.invalidInput, "\(diagnostic.path): \(diagnostic.message)")
+}
+
+public func providerCredentialSensitiveValues(
+  _ provider: AgentProviderConfiguration?,
+  processEnvironment: [String: String]
+) -> [String] {
+  guard let apiKeyEnv = provider?.apiKeyEnv else {
+    return []
+  }
+  let value = processEnvironment[apiKeyEnv] ?? ProcessInfo.processInfo.environment[apiKeyEnv]
+  return value.map { [$0] } ?? []
 }
 
 public func defaultAgentPreflightDeadline(existingDeadline: Date?, timeout: TimeInterval, now: Date = Date()) -> Date {
@@ -281,6 +301,13 @@ private func appendImageDescriptorPaths(_ object: JSONObject, paths: inout [Stri
 public func redactAdapterSensitiveText(_ text: String, additionalSensitiveValues: [String] = []) -> String {
   var redacted = text
 
+  for (key, value) in ProcessInfo.processInfo.environment where isSensitiveEnvironmentKey(key) && value.count >= 8 {
+    redacted = redacted.replacingOccurrences(of: value, with: "<redacted>")
+  }
+  for value in additionalSensitiveValues.filter({ !$0.isEmpty }).sorted(by: { $0.count > $1.count }) {
+    redacted = redacted.replacingOccurrences(of: value, with: "<redacted>")
+  }
+
   redacted = replacingRegexMatches(
     in: redacted,
     pattern: #"\b([A-Za-z0-9_]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE[_-]?KEY|ACCESS[_-]?KEY)[A-Za-z0-9_]*)\s*[:=]\s*("[^"]*"|'[^']*'|[^\s,;]+)"#,
@@ -298,14 +325,33 @@ public func redactAdapterSensitiveText(_ text: String, additionalSensitiveValues
     replacement: "<redacted-token>"
   )
 
-  for (key, value) in ProcessInfo.processInfo.environment where isSensitiveEnvironmentKey(key) && value.count >= 8 {
-    redacted = redacted.replacingOccurrences(of: value, with: "<redacted>")
-  }
-  for value in additionalSensitiveValues.filter({ $0.count >= 4 }).sorted(by: { $0.count > $1.count }) {
-    redacted = redacted.replacingOccurrences(of: value, with: "<redacted>")
-  }
-
   return redacted
+}
+
+public func redactAdapterSensitiveJSONValue(
+  _ value: JSONValue,
+  additionalSensitiveValues: [String] = []
+) -> JSONValue {
+  switch value {
+  case let .string(text):
+    return .string(redactAdapterSensitiveText(text, additionalSensitiveValues: additionalSensitiveValues))
+  case let .array(values):
+    return .array(values.map {
+      redactAdapterSensitiveJSONValue($0, additionalSensitiveValues: additionalSensitiveValues)
+    })
+  case let .object(object):
+    var redacted: JSONObject = [:]
+    for (key, nestedValue) in object {
+      let redactedKey = redactAdapterSensitiveText(key, additionalSensitiveValues: additionalSensitiveValues)
+      redacted[redactedKey] = redactAdapterSensitiveJSONValue(
+        nestedValue,
+        additionalSensitiveValues: additionalSensitiveValues
+      )
+    }
+    return .object(redacted)
+  case .null, .bool, .integer, .number:
+    return value
+  }
 }
 
 public func sensitiveAdapterEnvironmentValues(_ environment: [String: String]) -> [String] {

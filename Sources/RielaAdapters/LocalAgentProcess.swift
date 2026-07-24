@@ -6,131 +6,6 @@ import Darwin
 import Glibc
 #endif
 
-public struct LocalAgentProcessConfiguration: Equatable, Sendable {
-  public var executableURL: URL
-  public var arguments: [String]
-  public var environment: [String: String]
-  public var unsetEnvironmentKeys: Set<String>
-  public var workingDirectoryURL: URL?
-  public var sandboxPolicy: LocalProcessSandboxPolicy?
-
-  public init(
-    executableURL: URL,
-    arguments: [String] = [],
-    environment: [String: String] = [:],
-    unsetEnvironmentKeys: Set<String> = [],
-    workingDirectoryURL: URL? = nil,
-    sandboxPolicy: LocalProcessSandboxPolicy? = nil
-  ) {
-    self.executableURL = executableURL
-    self.arguments = arguments
-    self.environment = environment
-    self.unsetEnvironmentKeys = unsetEnvironmentKeys
-    self.workingDirectoryURL = workingDirectoryURL
-    self.sandboxPolicy = sandboxPolicy
-  }
-}
-
-/// Backend-specific tool-child liveness monitor (codex terminal-child stall
-/// recovery). The adapter drives its lifecycle: `start` before the process
-/// spawns, `processSpawned` once the direct agent child's pid is known, raw
-/// stdout lines during streaming, and `stop` on completion, failure, or
-/// cancellation — after `stop` returns, no monitor task or signal may remain
-/// live.
-public protocol LocalAgentToolChildMonitoring: Sendable {
-  func start(emitBackendEvent: @escaping @Sendable (AdapterBackendEvent) -> Void)
-  func processSpawned(_ processId: Int32)
-  func observeStdoutLine(_ line: String)
-  func stop() async
-}
-
-public struct LocalAgentCommand: Sendable {
-  public var provider: String
-  public var configuration: LocalAgentProcessConfiguration
-  public var stdin: String
-  public var normalizeStdout: @Sendable (String) -> String
-  public var backendEventType: @Sendable (String) -> String?
-  public var classifyBackendEvent: (@Sendable (String) -> AdapterBackendEvent?)?
-  /// Optional terminal tool-child stall monitor (nil = policy off).
-  public var toolChildMonitor: (any LocalAgentToolChildMonitoring)?
-
-  public init(
-    provider: String,
-    configuration: LocalAgentProcessConfiguration,
-    stdin: String,
-    normalizeStdout: @escaping @Sendable (String) -> String = { $0 },
-    backendEventType: @escaping @Sendable (String) -> String? = { _ in nil },
-    classifyBackendEvent: (@Sendable (String) -> AdapterBackendEvent?)? = nil,
-    toolChildMonitor: (any LocalAgentToolChildMonitoring)? = nil
-  ) {
-    self.provider = provider
-    self.configuration = configuration
-    self.stdin = stdin
-    self.normalizeStdout = normalizeStdout
-    self.backendEventType = backendEventType
-    self.classifyBackendEvent = classifyBackendEvent
-    self.toolChildMonitor = toolChildMonitor
-  }
-}
-
-public protocol LocalAgentCommandBuilding: Sendable {
-  var provider: String { get }
-  func buildCommand(for input: AdapterExecutionInput) throws -> LocalAgentCommand
-}
-
-public struct LocalAgentProcessResult: Equatable, Sendable {
-  public var stdout: String
-  public var stderr: String
-  public var terminationStatus: Int32
-
-  public init(stdout: String, stderr: String, terminationStatus: Int32) {
-    self.stdout = stdout
-    self.stderr = stderr
-    self.terminationStatus = terminationStatus
-  }
-}
-
-public protocol LocalAgentProcessRunning: Sendable {
-  func run(configuration: LocalAgentProcessConfiguration, stdin: String, deadline: Date?) async throws -> LocalAgentProcessResult
-}
-
-public enum LocalAgentProcessOutputStream: String, Equatable, Sendable {
-  case stdout
-  case stderr
-}
-
-public struct LocalAgentProcessOutputEvent: Equatable, Sendable {
-  public var stream: LocalAgentProcessOutputStream
-  public var line: String
-
-  public init(stream: LocalAgentProcessOutputStream, line: String) {
-    self.stream = stream
-    self.line = line
-  }
-}
-
-public protocol LocalAgentProcessEventStreaming: LocalAgentProcessRunning {
-  func run(
-    configuration: LocalAgentProcessConfiguration,
-    stdin: String,
-    deadline: Date?,
-    outputEventHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
-  ) async throws -> LocalAgentProcessResult
-}
-
-/// Streaming runners that can additionally report the spawned direct child's
-/// pid, enabling tool-child correlation. Optional capability; runners without
-/// it simply never bind process identities.
-public protocol LocalAgentProcessSpawnObserving: LocalAgentProcessEventStreaming {
-  func run(
-    configuration: LocalAgentProcessConfiguration,
-    stdin: String,
-    deadline: Date?,
-    outputEventHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?,
-    spawnHandler: (@Sendable (Int32) -> Void)?
-  ) async throws -> LocalAgentProcessResult
-}
-
 private final class LockedProcessData: @unchecked Sendable {
   private let lock = NSLock()
   private var data = Data()
@@ -874,28 +749,38 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
         await monitor?.stop()
         eventBridge.finish()
         await eventBridge.waitForCompletion()
-        throw error
+        throw redactedCommandExecutionError(error, command: command)
       }
     } else {
-      result = try await runner.run(configuration: command.configuration, stdin: command.stdin, deadline: context.deadline)
+      do {
+        result = try await runner.run(configuration: command.configuration, stdin: command.stdin, deadline: context.deadline)
+      } catch {
+        throw redactedCommandExecutionError(error, command: command)
+      }
     }
     guard result.terminationStatus == 0 else {
       let detail = redactAdapterSensitiveText(
         result.stderr.trimmingCharacters(in: .whitespacesAndNewlines),
-        additionalSensitiveValues: sensitiveAdapterEnvironmentValues(command.configuration.environment)
+        additionalSensitiveValues: commandSensitiveValues(command)
       )
       throw AdapterExecutionError(.providerError, "\(command.provider) failed with exit code \(result.terminationStatus): \(detail)")
     }
 
-    let responseText = command.normalizeStdout(result.stdout)
+    let responseText = redactAdapterSensitiveText(
+      command.normalizeStdout(result.stdout),
+      additionalSensitiveValues: commandSensitiveValues(command)
+    )
     let normalized = try normalizeAgentOutput(responseText, source: command.provider, requiresOutputContract: input.node.output != nil)
+    let sensitiveValues = commandSensitiveValues(command)
+    var payload = sanitizedJSONObject(normalized.payload, sensitiveValues: sensitiveValues)
+    payload.merge(sanitizedJSONObject(command.metadata, sensitiveValues: sensitiveValues)) { _, metadataValue in metadataValue }
     return AdapterExecutionOutput(
       provider: command.provider,
       model: input.node.model,
       promptText: input.promptText,
       completionPassed: normalized.completionPassed,
-      when: normalized.when,
-      payload: normalized.payload
+      when: sanitizedWhen(normalized.when, sensitiveValues: sensitiveValues),
+      payload: payload
     )
   }
 
@@ -908,7 +793,7 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
     guard let backendEventHandler = context.backendEventHandler else {
       return BackendEventBridge(handler: nil, emitInjected: { _ in }, finish: {}, waitForCompletion: {})
     }
-    let sensitiveValues = sensitiveAdapterEnvironmentValues(command.configuration.environment)
+    let sensitiveValues = commandSensitiveValues(command)
     let (eventStream, continuation) = AsyncStream.makeStream(
       of: AdapterBackendEvent.self,
       bufferingPolicy: .bufferingNewest(512)
@@ -930,13 +815,20 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
       if event.provider.isEmpty {
         event.provider = command.provider
       }
-      event.contentDelta = sanitizedBackendEventContent(event.contentDelta, sensitiveValues: sensitiveValues)
-      event.contentSnapshot = sanitizedBackendEventContent(event.contentSnapshot, sensitiveValues: sensitiveValues)
+      if !command.metadata.isEmpty {
+        event.metadata = (event.metadata ?? [:]).merging(command.metadata) { _, commandValue in commandValue }
+      }
+      event = sanitizedBackendEvent(event, sensitiveValues: sensitiveValues)
       coalescer.absorb(event) { continuation.yield($0) }
     }
     return BackendEventBridge(
       handler: handler,
       emitInjected: { event in
+        var event = event
+        if !command.metadata.isEmpty {
+          event.metadata = (event.metadata ?? [:]).merging(command.metadata) { _, commandValue in commandValue }
+        }
+        event = sanitizedBackendEvent(event, sensitiveValues: sensitiveValues)
         _ = continuation.yield(event)
       },
       finish: {
@@ -981,11 +873,75 @@ private struct BackendEventBridge: Sendable {
   var waitForCompletion: @Sendable () async -> Void
 }
 
+private func commandSensitiveValues(_ command: LocalAgentCommand) -> [String] {
+  sensitiveAdapterEnvironmentValues(command.configuration.environment) + command.additionalSensitiveValues
+}
+
+private func redactedCommandExecutionError(_ error: Error, command: LocalAgentCommand) -> Error {
+  if error is CancellationError {
+    return error
+  }
+  let sensitiveValues = commandSensitiveValues(command)
+  if let adapterError = error as? AdapterExecutionError {
+    return AdapterExecutionError(
+      adapterError.code,
+      redactAdapterSensitiveText(adapterError.message, additionalSensitiveValues: sensitiveValues),
+      isRetryable: adapterError.isRetryable,
+      retryAfter: adapterError.retryAfter
+    )
+  }
+  let message = error.localizedDescription
+  let redactedMessage = redactAdapterSensitiveText(message, additionalSensitiveValues: sensitiveValues)
+  guard redactedMessage != message else {
+    return error
+  }
+  return AdapterExecutionError(.providerError, redactedMessage)
+}
+
 private func fallbackBackendEvent(command: LocalAgentCommand, line: String) -> AdapterBackendEvent? {
   guard let eventType = command.backendEventType(line) else {
     return nil
   }
-  return AdapterBackendEvent(provider: command.provider, eventType: eventType)
+  return AdapterBackendEvent(
+    provider: command.provider,
+    eventType: eventType,
+    metadata: command.metadata.isEmpty ? nil : command.metadata
+  )
+}
+
+private func sanitizedBackendEvent(
+  _ event: AdapterBackendEvent,
+  sensitiveValues: [String]
+) -> AdapterBackendEvent {
+  var event = event
+  event.provider = redactAdapterSensitiveText(event.provider, additionalSensitiveValues: sensitiveValues)
+  event.eventType = redactAdapterSensitiveText(event.eventType, additionalSensitiveValues: sensitiveValues)
+  event.contentDelta = sanitizedBackendEventContent(event.contentDelta, sensitiveValues: sensitiveValues)
+  event.contentSnapshot = sanitizedBackendEventContent(event.contentSnapshot, sensitiveValues: sensitiveValues)
+  event.toolName = event.toolName.map {
+    redactAdapterSensitiveText($0, additionalSensitiveValues: sensitiveValues)
+  }
+  event.usage = event.usage.map { sanitizedJSONObject($0, sensitiveValues: sensitiveValues) }
+  event.metadata = event.metadata.map { sanitizedJSONObject($0, sensitiveValues: sensitiveValues) }
+  return event
+}
+
+private func sanitizedJSONObject(_ object: JSONObject, sensitiveValues: [String]) -> JSONObject {
+  guard case let .object(redacted) = redactAdapterSensitiveJSONValue(
+    .object(object),
+    additionalSensitiveValues: sensitiveValues
+  ) else {
+    return [:]
+  }
+  return redacted
+}
+
+private func sanitizedWhen(_ when: [String: Bool], sensitiveValues: [String]) -> [String: Bool] {
+  var redacted: [String: Bool] = [:]
+  for (key, value) in when {
+    redacted[redactAdapterSensitiveText(key, additionalSensitiveValues: sensitiveValues)] = value
+  }
+  return redacted
 }
 
 private func sanitizedBackendEventContent(_ text: String?, sensitiveValues: [String]) -> String? {

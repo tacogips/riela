@@ -359,6 +359,12 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     )
     workflow = materialized.workflow
     nodePayloads = materialized.nodePayloads
+    let providerDiagnostics = nodePayloads.keys.sorted().flatMap { nodeId in
+      nodePayloads[nodeId].map { validateAgentNodePayload($0, path: "nodes.\(nodeId)") } ?? []
+    }
+    if providerDiagnostics.contains(where: { $0.severity == .error }) {
+      throw WorkflowResolutionError.invalidWorkflow(providerDiagnostics)
+    }
     let packageManifest = try providedPackageManifest ?? loadPackageManifestIfPresent(at: directory)
     let resolvedPackageDirectory = packageDirectory?.path ?? (packageManifest == nil ? nil : directory.path)
     return ResolvedWorkflowBundle(
@@ -366,7 +372,7 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       nodePayloads: nodePayloads,
       sourceScope: scope,
       workflowDirectory: directory.path,
-      diagnostics: validation.diagnostics,
+      diagnostics: validation.diagnostics + providerDiagnostics,
       packageManifest: packageManifest,
       packageDirectory: resolvedPackageDirectory
     )

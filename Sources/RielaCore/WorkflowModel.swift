@@ -800,6 +800,8 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
   public var agentSandbox: AgentSandboxMode?
   public var agentToolPolicy: AgentToolPolicy?
   public var agentEnvironment: [String: AgentEnvironmentBinding]
+  public var provider: AgentProviderConfiguration?
+  public var providerProxy: AgentProviderProxy?
   public var systemPromptTemplate: String?
   public var systemPromptTemplateFile: String?
   public var promptTemplate: String?
@@ -828,6 +830,8 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     agentSandbox: AgentSandboxMode? = nil,
     agentToolPolicy: AgentToolPolicy? = nil,
     agentEnvironment: [String: AgentEnvironmentBinding] = [:],
+    provider: AgentProviderConfiguration? = nil,
+    providerProxy: AgentProviderProxy? = nil,
     systemPromptTemplate: String? = nil,
     systemPromptTemplateFile: String? = nil,
     promptTemplate: String? = nil,
@@ -855,6 +859,8 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     self.agentSandbox = agentSandbox
     self.agentToolPolicy = agentToolPolicy
     self.agentEnvironment = agentEnvironment
+    self.provider = provider
+    self.providerProxy = providerProxy
     self.systemPromptTemplate = systemPromptTemplate
     self.systemPromptTemplateFile = systemPromptTemplateFile
     self.promptTemplate = promptTemplate
@@ -884,6 +890,8 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     case agentSandbox
     case agentToolPolicy
     case agentEnvironment
+    case provider
+    case providerProxy
     case systemPromptTemplate
     case systemPromptTemplateFile
     case promptTemplate
@@ -933,6 +941,15 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
         )
       }
     }
+    self.provider = try container.decodeIfPresent(AgentProviderConfiguration.self, forKey: .provider)
+    self.providerProxy = try container.decodeIfPresent(AgentProviderProxy.self, forKey: .providerProxy)
+    if providerProxy != nil, provider == nil {
+      throw DecodingError.dataCorruptedError(
+        forKey: .providerProxy,
+        in: container,
+        debugDescription: "providerProxy requires provider"
+      )
+    }
     self.systemPromptTemplate = try container.decodeIfPresent(String.self, forKey: .systemPromptTemplate)
     self.systemPromptTemplateFile = try container.decodeIfPresent(String.self, forKey: .systemPromptTemplateFile)
     self.promptTemplate = try container.decodeIfPresent(String.self, forKey: .promptTemplate)
@@ -971,62 +988,4 @@ public struct NodePromptVariant: Codable, Equatable, Sendable {
     self.sessionStartPromptTemplate = sessionStartPromptTemplate
     self.sessionStartPromptTemplateFile = sessionStartPromptTemplateFile
   }
-}
-
-public struct NodeInputContract: Codable, Equatable, Sendable {
-  public var description: String?
-  public var jsonSchema: JSONObject?
-
-  public init(description: String? = nil, jsonSchema: JSONObject? = nil) {
-    self.description = description
-    self.jsonSchema = jsonSchema
-  }
-}
-
-public struct NodeOutputContract: Codable, Equatable, Sendable {
-  public var description: String?
-  public var jsonSchema: JSONObject?
-  public var maxValidationAttempts: Int?
-  public var projection: WorkflowOutputProjection?
-
-  public init(
-    description: String? = nil,
-    jsonSchema: JSONObject? = nil,
-    maxValidationAttempts: Int? = nil,
-    projection: WorkflowOutputProjection? = nil
-  ) {
-    self.description = description
-    self.jsonSchema = jsonSchema
-    self.maxValidationAttempts = maxValidationAttempts
-    self.projection = projection
-  }
-}
-
-public enum WorkflowOutputProjectionKind: String, Codable, CaseIterable, Hashable, Sendable {
-  case latestInputPayload = "latest-input-payload"
-}
-
-public struct WorkflowOutputProjection: Codable, Equatable, Sendable {
-  public var kind: WorkflowOutputProjectionKind
-
-  public init(kind: WorkflowOutputProjectionKind) {
-    self.kind = kind
-  }
-}
-
-public func normalizeCliAgentBackend(_ rawValue: String) -> CliAgentBackend? {
-  CliAgentBackend(rawValue: rawValue)
-}
-
-public func normalizeNodeExecutionBackend(_ rawValue: String) -> NodeExecutionBackend? {
-  NodeExecutionBackend(rawValue: rawValue)
-}
-
-public func nodeExecutionBackendListText() -> String {
-  let values = NodeExecutionBackend.allCases.map(\.rawValue)
-  guard let last = values.last else {
-    return ""
-  }
-  let leading = values.dropLast()
-  return leading.isEmpty ? last : "\(leading.joined(separator: ", ")), or \(last)"
 }

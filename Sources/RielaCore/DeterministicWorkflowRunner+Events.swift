@@ -98,6 +98,7 @@ extension DeterministicWorkflowRunner {
         backendEventSequence: backendEvent.sequence,
         backendToolName: backendEvent.toolName,
         backendEventUsage: backendEvent.usage,
+        backendEventMetadata: backendEvent.metadata,
         nodeExecutions: eventContext.nodeExecutions
       ),
       handler: handler
@@ -238,6 +239,9 @@ extension DeterministicWorkflowRunner {
     }
     if let backendEventChannel = event.backendEventChannel {
       attributes["backend.event.channel"] = backendEventChannel
+    }
+    if case let .string(providerName)? = event.backendEventMetadata?["provider_name"] {
+      attributes["model.provider.name"] = providerName
     }
     if let silentForMs = event.silentForMs {
       attributes["backend.silent_for_ms"] = String(silentForMs)

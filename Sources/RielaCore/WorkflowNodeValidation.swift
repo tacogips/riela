@@ -1,5 +1,48 @@
 import Foundation
 
+public func validateAgentNodePayload(
+  _ payload: AgentNodePayload,
+  path: String = "node"
+) -> [WorkflowValidationDiagnostic] {
+  if payload.provider == nil, payload.providerProxy != nil {
+    return [error("\(path).providerProxy", "requires provider")]
+  }
+  guard payload.provider != nil else {
+    return []
+  }
+
+  var diagnostics: [WorkflowValidationDiagnostic] = []
+  let supportedBackends: Set<NodeExecutionBackend> = [.codexAgent, .claudeCodeAgent]
+  if let backend = payload.executionBackend, !supportedBackends.contains(backend) {
+    diagnostics.append(error(
+      "\(path).provider",
+      "is supported only with executionBackend 'codex-agent' or 'claude-code-agent', not '\(backend.rawValue)'"
+    ))
+  } else if payload.executionBackend == nil {
+    diagnostics.append(error(
+      "\(path).provider",
+      "requires executionBackend 'codex-agent' or 'claude-code-agent'"
+    ))
+  }
+
+  if payload.providerProxy == .codex, payload.executionBackend != .codexAgent {
+    diagnostics.append(error(
+      "\(path).providerProxy",
+      "'codex' requires executionBackend 'codex-agent'"
+    ))
+  }
+
+  if payload.executionBackend == .claudeCodeAgent,
+    payload.agentEnvironment["ANTHROPIC_BASE_URL"] != nil {
+    diagnostics.append(WorkflowValidationDiagnostic(
+      severity: .warning,
+      path: "\(path).agentEnvironment.ANTHROPIC_BASE_URL",
+      message: "is overridden by provider.baseUrl for claude-code-agent"
+    ))
+  }
+  return diagnostics
+}
+
 func validateNodeSource(
   nodeFile: String?,
   nodeRef: WorkflowSharedNodeRef?,

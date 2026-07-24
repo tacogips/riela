@@ -451,15 +451,18 @@ public struct NoteConversationSourceLinks: Equatable, Sendable {
   public var sourceNoteIds: [String]
   public var linkKind: String
   public var provenance: NoteProvenance
+  public var allowMissingSourceNotes: Bool
 
   public init(
     sourceNoteIds: [String],
     linkKind: String = "source-citation",
-    provenance: NoteProvenance = .ai
+    provenance: NoteProvenance = .ai,
+    allowMissingSourceNotes: Bool = false
   ) {
     self.sourceNoteIds = sourceNoteIds
     self.linkKind = linkKind
     self.provenance = provenance
+    self.allowMissingSourceNotes = allowMissingSourceNotes
   }
 }
 

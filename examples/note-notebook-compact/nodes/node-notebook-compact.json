@@ -4,6 +4,31 @@
   "executionBackend": "codex-agent",
   "model": "gpt-5.5",
   "modelFreeze": false,
+  "agentSandbox": "read-only",
+  "agentToolPolicy": {
+    "mode": "backend-arguments",
+    "codexArguments": [
+      "--ephemeral",
+      "--ignore-user-config",
+      "--disable", "shell_tool",
+      "--disable", "unified_exec",
+      "--disable", "browser_use",
+      "--disable", "browser_use_external",
+      "--disable", "browser_use_full_cdp_access",
+      "--disable", "computer_use",
+      "--disable", "in_app_browser",
+      "--disable", "apps",
+      "--disable", "enable_mcp_apps",
+      "--disable", "remote_plugin",
+      "--disable", "plugin_sharing",
+      "--disable", "tool_call_mcp_elicitation",
+      "--disable", "skill_mcp_dependency_install",
+      "--disable", "standalone_web_search",
+      "--disable", "web_search_request",
+      "--disable", "multi_agent",
+      "--disable", "image_generation"
+    ]
+  },
   "promptTemplateFile": "prompts/notebook-compact.md",
   "variables": {},
   "output": {

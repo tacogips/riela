@@ -13,11 +13,17 @@ public extension NoteService {
   @discardableResult
   func updateNotebookCompactMetadata(
     notebookId: String,
-    compactMetadataJSON: String
-  ) throws -> Notebook {
+    compactMetadataJSON: String,
+    expectedUpdatedAt: String,
+    expectedNoteCount: Int
+  ) throws -> Notebook? {
     try driver.withDatabase { database in
       try database.transaction { db in
         let notebook = try requireNotebook(notebookId, in: db)
+        guard notebook.updatedAt == expectedUpdatedAt,
+              notebook.noteCount == expectedNoteCount else {
+          return nil
+        }
         let compactMetadata = try notebookJSONObject(
           from: compactMetadataJSON,
           fieldName: "notebook compact metadata"

@@ -119,6 +119,11 @@ AI `source-citation` links back to all source notes. Configure discovery with
 `RIELA_NOTE_NOTEBOOK_COMPACT_WORKFLOW_DIR` and
 `RIELA_NOTE_NOTEBOOK_COMPACT_RIELA_EXECUTABLE`. If the provider is absent, the
 action reports that expansion is not configured without changing the notebook.
+Notebook data is processed by an ephemeral, no-ambient-tool worker whose
+private variables and workflow session store are removed after each invocation;
+timeout and cancellation terminate the complete subprocess group. Opening a
+new expansion preserves current Agent drafts and unsaved turns unless the user
+explicitly confirms discard.
 
 In the RielaApp Notes window, the note detail pane is a read-first vertical
 reader: each note occupies one snapping page, and approaching either edge of a

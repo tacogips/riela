@@ -104,29 +104,36 @@ public extension NoteService {
     turn: NoteConversationTurn,
     sourceLinks: NoteConversationSourceLinks? = nil,
     assignedBy: String? = nil,
-    originatingActionId: String? = nil
+    originatingActionId: String? = nil,
+    idempotencyKey: String? = nil
   ) throws -> Note {
     let result = try driver.withDatabase { database in
       try database.transaction { db in
         _ = try requireNotebook(notebookId, in: db)
-        let note = try appendConversationTurnInDatabase(
+        let appendResult = try appendConversationTurnInDatabase(
           notebookId: notebookId,
           turn: turn,
           sourceLinks: sourceLinks,
           assignedBy: assignedBy,
+          idempotencyKey: idempotencyKey,
           in: db
         )
-        let dispatches = try enqueueAutoActions(
-          for: NoteAutoActionEvent(
-            trigger: .noteCreated,
-            notebookId: note.notebookId,
-            noteId: note.noteId,
-            noteBodyMarkdown: note.bodyMarkdown,
-            originatingActionId: originatingActionId
-          ),
-          in: db
-        )
-        return (note: note, dispatches: dispatches)
+        let dispatches: [QueuedAutoActionDispatch]
+        if appendResult.inserted {
+          dispatches = try enqueueAutoActions(
+            for: NoteAutoActionEvent(
+              trigger: .noteCreated,
+              notebookId: appendResult.note.notebookId,
+              noteId: appendResult.note.noteId,
+              noteBodyMarkdown: appendResult.note.bodyMarkdown,
+              originatingActionId: originatingActionId
+            ),
+            in: db
+          )
+        } else {
+          dispatches = []
+        }
+        return (note: appendResult.note, dispatches: dispatches)
       }
     }
     dispatchQueuedAutoActions(result.dispatches)
@@ -163,15 +170,14 @@ public extension NoteService {
 
         var notes: [Note] = []
         for turn in transcript {
-          notes.append(
-            try appendConversationTurnInDatabase(
-              notebookId: notebookId,
-              turn: turn,
-              sourceLinks: sourceLinks,
-              assignedBy: assignedBy,
-              in: db
-            )
-          )
+          notes.append(try appendConversationTurnInDatabase(
+            notebookId: notebookId,
+            turn: turn,
+            sourceLinks: sourceLinks,
+            assignedBy: assignedBy,
+            idempotencyKey: nil,
+            in: db
+          ).note)
         }
         let notebook = try requireNotebook(notebookId, in: db)
         let saved = SavedConversation(notebook: notebook, notes: notes)
@@ -208,26 +214,44 @@ private func appendConversationTurnInDatabase(
   turn: NoteConversationTurn,
   sourceLinks: NoteConversationSourceLinks?,
   assignedBy: String?,
+  idempotencyKey: String?,
   in database: SQLiteDatabase
-) throws -> Note {
+) throws -> (note: Note, inserted: Bool) {
+  if let idempotencyKey,
+     let existing = try conversationTurn(
+       notebookId: notebookId,
+       idempotencyKey: idempotencyKey,
+       in: database
+     ) {
+    return (existing, false)
+  }
   for sourceNoteId in turn.sourceNoteIds {
     _ = try requireNote(sourceNoteId, in: database)
   }
+  var sourceNoteIds = sourceLinks?.sourceNoteIds ?? []
+  var missingSourceNoteIds: [String] = []
   if let sourceLinks {
-    for sourceNoteId in sourceLinks.sourceNoteIds {
-      _ = try requireNote(sourceNoteId, in: database)
+    let existingSources = try requireNotes(sourceLinks.sourceNoteIds, in: database)
+    missingSourceNoteIds = sourceLinks.sourceNoteIds.filter { existingSources[$0] == nil }
+    if !sourceLinks.allowMissingSourceNotes, let missingSourceNoteId = missingSourceNoteIds.first {
+      throw NoteServiceError.notFound("note not found: \(missingSourceNoteId)")
     }
+    sourceNoteIds = sourceLinks.sourceNoteIds.filter { existingSources[$0] != nil }
   }
   let now = NoteStoreClock.system.now()
   let noteNumber = try nextNoteNumber(notebookId: notebookId, in: database)
   let bodyMarkdown = conversationBody(turn: turn, noteNumber: noteNumber)
   let noteId = makeNoteId(prefix: "note")
+  let noteMetaJSON = try conversationTurnMetadataJSON(
+    idempotencyKey: idempotencyKey,
+    missingSourceNoteIds: missingSourceNoteIds
+  )
   try database.execute(
     """
     INSERT INTO notes (
       note_id, notebook_id, note_number, title, body_markdown,
       read_only, created_at, updated_at, meta_json
-    ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, NULL)
+    ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, jsonb(?))
     """,
     bindings: [
       .text(noteId),
@@ -236,7 +260,8 @@ private func appendConversationTurnInDatabase(
       .optionalText(noteTitle(from: bodyMarkdown)),
       .text(bodyMarkdown),
       .text(now),
-      .text(now)
+      .text(now),
+      .optionalText(noteMetaJSON)
     ]
   )
   for sourceNoteId in turn.sourceNoteIds {
@@ -249,7 +274,7 @@ private func appendConversationTurnInDatabase(
     )
   }
   if let sourceLinks {
-    for sourceNoteId in sourceLinks.sourceNoteIds {
+    for sourceNoteId in sourceNoteIds {
       _ = try linkNotesInDatabase(
         from: noteId,
         to: sourceNoteId,
@@ -264,7 +289,50 @@ private func appendConversationTurnInDatabase(
     bindings: [.text(now), .text(notebookId)]
   )
   try refreshFTS(noteId: noteId, previous: nil, in: database)
+  return (try requireNote(noteId, in: database), true)
+}
+
+private func conversationTurn(
+  notebookId: String,
+  idempotencyKey: String,
+  in database: SQLiteDatabase
+) throws -> Note? {
+  let rows = try database.query(
+    """
+    SELECT note_id
+    FROM notes
+    WHERE notebook_id = ?
+      AND json_extract(meta_json, '$.rielaNote.conversationTurn.idempotencyKey') = ?
+    LIMIT 1
+    """,
+    bindings: [.text(notebookId), .text(idempotencyKey)]
+  )
+  guard let noteId = rows.first?["note_id"] else {
+    return nil
+  }
   return try requireNote(noteId, in: database)
+}
+
+private func conversationTurnMetadataJSON(
+  idempotencyKey: String?,
+  missingSourceNoteIds: [String]
+) throws -> String? {
+  guard idempotencyKey != nil || !missingSourceNoteIds.isEmpty else {
+    return nil
+  }
+  var metadata: [String: Any] = [:]
+  if let idempotencyKey {
+    metadata["idempotencyKey"] = idempotencyKey
+  }
+  if !missingSourceNoteIds.isEmpty {
+    metadata["missingSourceNoteIds"] = missingSourceNoteIds
+  }
+  let root = ["rielaNote": ["conversationTurn": metadata]]
+  let data = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+  guard let json = String(data: data, encoding: .utf8) else {
+    throw NoteServiceError.invalidInput("conversation turn metadata must be UTF-8 JSON")
+  }
+  return json
 }
 
 @discardableResult

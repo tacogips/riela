@@ -92,10 +92,15 @@ executable/workflow paths, sanitized environment with the existing model-auth
 allowlist, private variables files, cancellation-safe process termination, and
 last-valid-JSONL `result.rootOutput` parsing. The adapter runs
 `riela workflow run note-notebook-compact --workflow-definition-dir <dir>
---variables-file <file> --output jsonl` for both operations. Its agent worker
-uses `executionBackend: codex-agent`. Codex-agent is an execution backend here,
-not a copied source-code reference; no external codex-agent repository behavior
-is adopted.
+--session-store <private-path> --variables-file <file> --output jsonl` for both
+operations. The private working directory, variables file, and session store
+are removed after success, failure, timeout, or cancellation. Cancellation and
+timeout terminate the complete workflow process group, including agent
+descendants. Its agent worker uses `executionBackend: codex-agent` with an
+explicit read-only sandbox, ephemeral/ignored user configuration, and ambient
+shell, browser, network-search, app, plugin, multi-agent, and image tools
+disabled. Codex-agent is an execution backend here, not a copied source-code
+reference; no external codex-agent repository behavior is adopted.
 
 Provider construction must make the stage boundary testable: an expansion
 request can be captured and asserted to contain the compact summary while
@@ -292,7 +297,12 @@ Use narrower new test-case filters when available; do not run the full suite.
   every note in the compacted source snapshot. This is an accepted linear
   write cost; no silent cap may weaken provenance.
 - **External command behavior:** existing trust, environment, cancellation,
-  private-file, and JSONL parsing rules apply unchanged.
+  private-file, and JSONL parsing rules are strengthened with a private
+  per-invocation session store, process-group termination, and an explicit
+  no-ambient-tool worker policy.
+- **Agent-state replacement:** opening an expansion cannot replace an in-flight
+  response, draft, attachment, temporary chat, or unpersisted expansion turn.
+  The user must retain the current conversation or explicitly confirm discard.
 
 ## Open Questions
 

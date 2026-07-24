@@ -12,10 +12,12 @@ final class NoteServiceNotebookExpansionTests: NoteTestCase {
     _ = try service.createNote(notebookId: notebook.notebookId, bodyMarkdown: "# Milestone\nDraft it.")
     let before = try service.getNotebookForExpansion(notebook.notebookId)
 
-    let updated = try service.updateNotebookCompactMetadata(
+    let updated = try XCTUnwrap(service.updateNotebookCompactMetadata(
       notebookId: notebook.notebookId,
-      compactMetadataJSON: #"{"version":1,"summaryMarkdown":"- Draft it","computedAt":"2026-07-21T00:00:00.000Z","sourceNoteIds":["note-1"],"source":{"updatedAt":"marker","noteCount":1}}"#
-    )
+      compactMetadataJSON: #"{"version":1,"summaryMarkdown":"- Draft it","computedAt":"2026-07-21T00:00:00.000Z","sourceNoteIds":["note-1"],"source":{"updatedAt":"marker","noteCount":1}}"#,
+      expectedUpdatedAt: before.updatedAt,
+      expectedNoteCount: before.noteCount ?? 0
+    ))
 
     XCTAssertEqual(updated.updatedAt, before.updatedAt)
     let root = try XCTUnwrap(jsonObject(updated.metaJSON))
@@ -30,7 +32,9 @@ final class NoteServiceNotebookExpansionTests: NoteTestCase {
 
     XCTAssertThrowsError(try service.updateNotebookCompactMetadata(
       notebookId: notebook.notebookId,
-      compactMetadataJSON: "[]"
+      compactMetadataJSON: "[]",
+      expectedUpdatedAt: notebook.updatedAt,
+      expectedNoteCount: 0
     ))
     XCTAssertEqual(try service.getNotebook(notebook.notebookId).metaJSON, notebook.metaJSON)
   }
@@ -44,10 +48,29 @@ final class NoteServiceNotebookExpansionTests: NoteTestCase {
 
     XCTAssertThrowsError(try service.updateNotebookCompactMetadata(
       notebookId: notebook.notebookId,
-      compactMetadataJSON: #"{"version":1}"#
+      compactMetadataJSON: #"{"version":1}"#,
+      expectedUpdatedAt: notebook.updatedAt,
+      expectedNoteCount: 0
     ))
 
     XCTAssertEqual(try service.getNotebook(notebook.notebookId).metaJSON, notebook.metaJSON)
+  }
+
+  func testCompactMetadataCompareAndSetRejectsSourceMutationBeforeWrite() throws {
+    let service = try makeService()
+    let source = try service.createNote(bodyMarkdown: "Initial source")
+    let expected = try service.getNotebookForExpansion(source.notebookId)
+
+    _ = try service.createNote(notebookId: source.notebookId, bodyMarkdown: "Concurrent source")
+    let published = try service.updateNotebookCompactMetadata(
+      notebookId: source.notebookId,
+      compactMetadataJSON: #"{"version":1,"summaryMarkdown":"stale"}"#,
+      expectedUpdatedAt: expected.updatedAt,
+      expectedNoteCount: expected.noteCount ?? 0
+    )
+
+    XCTAssertNil(published)
+    XCTAssertNil(try service.getNotebook(source.notebookId).metaJSON)
   }
 
   func testConversationSourceLinksAreAIProvenanceAndAtomic() throws {
@@ -88,6 +111,78 @@ final class NoteServiceNotebookExpansionTests: NoteTestCase {
       sourceLinks: NoteConversationSourceLinks(sourceNoteIds: ["missing-note"])
     ))
     XCTAssertEqual(try service.listNotebooks(limit: 100).count, notebookCount)
+
+    let countsBeforeInjectedFailure = try databaseCounts(service)
+    try service.driver.withDatabase { database in
+      try database.execute(
+        """
+        CREATE TRIGGER fail_notebook_expansion_link_insert
+        BEFORE INSERT ON note_links
+        WHEN NEW.provenance = 'ai'
+        BEGIN
+          SELECT RAISE(ABORT, 'injected notebook expansion link failure');
+        END
+        """
+      )
+    }
+
+    XCTAssertThrowsError(try service.saveConversation(
+      title: "Injected link failure",
+      transcript: [NoteConversationTurn(userMarkdown: "Q", assistantMarkdown: "A")],
+      sourceLinks: NoteConversationSourceLinks(sourceNoteIds: sourceIds)
+    ))
+    XCTAssertEqual(try databaseCounts(service), countsBeforeInjectedFailure)
+  }
+
+  func testExpansionTurnPersistenceIsIdempotentAndSurvivesDeletedSources() throws {
+    let service = try makeService()
+    let source = try service.createNote(bodyMarkdown: "Source")
+    let saved = try service.saveConversation(
+      title: "Expansion",
+      transcript: [NoteConversationTurn(userMarkdown: "Expand", assistantMarkdown: "Summary")],
+      sourceLinks: NoteConversationSourceLinks(sourceNoteIds: [source.noteId])
+    )
+    try service.deleteNote(noteId: source.noteId)
+    let links = NoteConversationSourceLinks(
+      sourceNoteIds: [source.noteId],
+      allowMissingSourceNotes: true
+    )
+
+    let first = try service.appendConversationTurn(
+      notebookId: saved.notebook.notebookId,
+      turn: NoteConversationTurn(userMarkdown: "Next?", assistantMarkdown: "Answer"),
+      sourceLinks: links,
+      idempotencyKey: "expansion-turn-1"
+    )
+    let retry = try service.appendConversationTurn(
+      notebookId: saved.notebook.notebookId,
+      turn: NoteConversationTurn(userMarkdown: "Next?", assistantMarkdown: "Answer"),
+      sourceLinks: links,
+      idempotencyKey: "expansion-turn-1"
+    )
+
+    XCTAssertEqual(retry.noteId, first.noteId)
+    XCTAssertEqual(
+      try service.listNotes(notebookId: saved.notebook.notebookId, limit: 100).count,
+      2
+    )
+    XCTAssertTrue(try service.listLinks(noteId: first.noteId).isEmpty)
+    let metadata = try XCTUnwrap(jsonObject(first.metaJSON))
+    let rielaNote = try XCTUnwrap(metadata["rielaNote"] as? [String: Any])
+    let turn = try XCTUnwrap(rielaNote["conversationTurn"] as? [String: Any])
+    XCTAssertEqual(turn["idempotencyKey"] as? String, "expansion-turn-1")
+    XCTAssertEqual(turn["missingSourceNoteIds"] as? [String], [source.noteId])
+  }
+
+  private func databaseCounts(_ service: NoteService) throws -> [String: Int] {
+    try service.driver.withDatabase { database in
+      var counts: [String: Int] = [:]
+      for table in ["notebooks", "notes", "note_links"] {
+        let value = try database.query("SELECT COUNT(*) AS count FROM \(table)").first?["count"]
+        counts[table] = value.flatMap(Int.init) ?? -1
+      }
+      return counts
+    }
   }
 
   private func jsonObject(_ json: String?) -> [String: Any]? {

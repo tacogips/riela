@@ -13,6 +13,8 @@ public struct RielaNoteRootView: View {
   @State private var isFilterSheetPresented = false
   @State private var didRunInitialLoad = false
   @State private var noteStoreChangeWatcher: RielaNoteStoreChangeWatcher?
+  @State private var pendingNotebookExpansionSession: RielaNoteNotebookExpansionSession?
+  @State private var isAgentReplacementConfirmationPresented = false
   // Left/right panes start folded; the top-right icons expand them.
   @AppStorage("rielaNoteWorkspace.leftPane.isExpanded") private var isFileTreePaneExpanded = false
   @AppStorage("rielaNoteWorkspace.rightPane.isExpanded") private var isMetadataPaneExpanded = false
@@ -97,14 +99,12 @@ public struct RielaNoteRootView: View {
       guard let session else {
         return
       }
-      Task {
-        await viewModel.refresh()
-        await viewModel.selectNotebook(session.conversationNotebookId)
-        agentViewModel.beginNotebookExpansionSession(session)
-        composeDestination = nil
-        selectedTab = .agent
-        isAgentBottomBarFolded = false
+      pendingNotebookExpansionSession = session
+      guard agentViewModel.canBeginNotebookExpansionSession else {
+        isAgentReplacementConfirmationPresented = true
+        return
       }
+      routeNotebookExpansion(session)
     }
     .alert("Unable to expand notebook", isPresented: notebookExpansionErrorBinding) {
       Button("OK") {
@@ -133,16 +133,59 @@ public struct RielaNoteRootView: View {
         guard let selection = viewModel.pendingSelection else {
           return
         }
+        let expansionSession = pendingNotebookExpansionSession.flatMap { session in
+          if case let .notebook(notebookId) = selection,
+             notebookId == session.conversationNotebookId {
+            return session
+          }
+          return nil
+        }
         Task {
           await viewModel.confirmPendingSelection(selection)
-          finishPendingNavigation()
+          if let expansionSession {
+            if rielaNoteCompleteNotebookExpansionRouting(
+              viewModel: viewModel,
+              agentViewModel: agentViewModel,
+              session: expansionSession
+            ) {
+              finishNotebookExpansionRouting()
+            } else {
+              pendingNotebookExpansionSession = nil
+              viewModel.notebookExpansionError = "The expanded notebook couldn't be opened."
+            }
+          } else {
+            pendingNotebookExpansionSession = nil
+            finishPendingNavigation()
+          }
         }
       }
       Button("Keep editing", role: .cancel) {
         viewModel.cancelPendingSelection()
+        pendingNotebookExpansionSession = nil
       }
     } message: {
       Text("Switching notes will discard your edits.")
+    }
+    .confirmationDialog(
+      "Replace unsaved Agent conversation?",
+      isPresented: $isAgentReplacementConfirmationPresented,
+      titleVisibility: .visible
+    ) {
+      Button("Discard and expand", role: .destructive) {
+        guard let session = pendingNotebookExpansionSession else {
+          return
+        }
+        guard agentViewModel.discardCurrentConversation() else {
+          return
+        }
+        routeNotebookExpansion(session)
+      }
+      .disabled(agentViewModel.state == .loading)
+      Button("Keep current conversation", role: .cancel) {
+        pendingNotebookExpansionSession = nil
+      }
+    } message: {
+      Text("Wait for any active response, then save the current Agent conversation or discard it to open this expansion.")
     }
   }
 
@@ -173,6 +216,30 @@ public struct RielaNoteRootView: View {
     selectedTab = .library
     if horizontalSizeClass == .compact {
       libraryPath = [.detail]
+    }
+  }
+
+  private func finishNotebookExpansionRouting() {
+    pendingNotebookExpansionSession = nil
+    composeDestination = nil
+    selectedTab = .agent
+    isAgentBottomBarFolded = false
+  }
+
+  private func routeNotebookExpansion(_ session: RielaNoteNotebookExpansionSession) {
+    Task {
+      await viewModel.refresh()
+      let didBeginExpansion = await rielaNoteBeginNotebookExpansionRouting(
+        viewModel: viewModel,
+        agentViewModel: agentViewModel,
+        session: session
+      )
+      if didBeginExpansion {
+        finishNotebookExpansionRouting()
+      } else if viewModel.pendingSelection == nil {
+        pendingNotebookExpansionSession = nil
+        viewModel.notebookExpansionError = "The expanded notebook couldn't be opened."
+      }
     }
   }
 
@@ -532,6 +599,37 @@ public struct RielaNoteRootView: View {
     }
     noteStoreChangeWatcher = watcher
   }
+}
+
+@MainActor
+func rielaNoteBeginNotebookExpansionRouting(
+  viewModel: RielaNoteLibraryViewModel,
+  agentViewModel: RielaNoteAgentViewModel,
+  session: RielaNoteNotebookExpansionSession
+) async -> Bool {
+  guard agentViewModel.canBeginNotebookExpansionSession else {
+    return false
+  }
+  await viewModel.requestSelection(.notebook(session.conversationNotebookId))
+  return rielaNoteCompleteNotebookExpansionRouting(
+    viewModel: viewModel,
+    agentViewModel: agentViewModel,
+    session: session
+  )
+}
+
+@MainActor
+func rielaNoteCompleteNotebookExpansionRouting(
+  viewModel: RielaNoteLibraryViewModel,
+  agentViewModel: RielaNoteAgentViewModel,
+  session: RielaNoteNotebookExpansionSession
+) -> Bool {
+  guard viewModel.pendingSelection == nil,
+        viewModel.selectedNotebookId == session.conversationNotebookId,
+        viewModel.state == .loaded else {
+    return false
+  }
+  return agentViewModel.beginNotebookExpansionSession(session)
 }
 
 private enum RielaNoteRootTab: Hashable {

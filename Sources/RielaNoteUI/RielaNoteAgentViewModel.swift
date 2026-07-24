@@ -89,15 +89,25 @@ public final class RielaNoteAgentViewModel: ObservableObject {
   }
 
   public var canSaveTemporaryConversation: Bool {
-    !mode.isNotebookExpansion && isTemporaryChat && hasUnsavedTurns && state != .loading
+    hasUnsavedTurns && state != .loading && (mode.isNotebookExpansion || isTemporaryChat)
   }
 
   public var canStartNewConversation: Bool {
-    !turns.isEmpty
+    if mode.isNotebookExpansion && hasUnsavedTurns {
+      return false
+    }
+    return !turns.isEmpty
       || !draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       || !draftAttachments.isEmpty
       || autoSaveNotebookId != nil
       || mode.isNotebookExpansion
+  }
+
+  public var canBeginNotebookExpansionSession: Bool {
+    state != .loading
+      && !hasUnsavedTurns
+      && draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      && draftAttachments.isEmpty
   }
 
   public var errorMessage: String? {
@@ -123,6 +133,7 @@ public final class RielaNoteAgentViewModel: ObservableObject {
     draftAttachments = []
     attachmentError = nil
     state = .loading
+    let turnCountBeforeSubmission = turns.count
     do {
       if case let .notebookExpansion(session) = mode {
         try await submitNotebookExpansionQuestion(message, session: session)
@@ -141,6 +152,9 @@ public final class RielaNoteAgentViewModel: ObservableObject {
       // The answer, if any, is already in `turns` and marked unsaved via its
       // empty `persistedNoteIds`; leave the draft cleared and surface the error.
       rielaNoteLogUIError("noteAgent.submitDraft", error)
+      if mode.isNotebookExpansion, turns.count == turnCountBeforeSubmission {
+        draftMessage = message
+      }
       state = .failed("Couldn't complete the agent turn. Please try again.")
     }
   }
@@ -151,6 +165,11 @@ public final class RielaNoteAgentViewModel: ObservableObject {
     }
     state = .loading
     do {
+      if case let .notebookExpansion(session) = mode {
+        try await persistUnsavedNotebookExpansionTurns(session: session)
+        state = .loaded
+        return
+      }
       try await persistUnsavedTurns(title: title)
       isTemporaryChat = false
       state = .loaded
@@ -161,6 +180,10 @@ public final class RielaNoteAgentViewModel: ObservableObject {
   }
 
   public func startNewConversation() {
+    guard !mode.isNotebookExpansion || !hasUnsavedTurns else {
+      state = .failed("Save the pending expansion turn before starting a new chat.")
+      return
+    }
     turns = []
     autoSaveNotebookId = nil
     draftMessage = ""
@@ -171,7 +194,28 @@ public final class RielaNoteAgentViewModel: ObservableObject {
     state = .idle
   }
 
-  public func beginNotebookExpansionSession(_ session: RielaNoteNotebookExpansionSession) {
+  /// Clears the current Agent state after an explicit user confirmation.
+  @discardableResult
+  public func discardCurrentConversation() -> Bool {
+    guard state != .loading else {
+      return false
+    }
+    turns = []
+    autoSaveNotebookId = nil
+    draftMessage = ""
+    draftAttachments = []
+    attachmentError = nil
+    isTemporaryChat = false
+    mode = .general
+    state = .idle
+    return true
+  }
+
+  @discardableResult
+  public func beginNotebookExpansionSession(_ session: RielaNoteNotebookExpansionSession) -> Bool {
+    guard canBeginNotebookExpansionSession else {
+      return false
+    }
     mode = .notebookExpansion(session)
     turns = [RielaNoteAgentTurn(
       userMarkdown: "Expand this notebook into useful key points and follow-up directions.",
@@ -185,33 +229,51 @@ public final class RielaNoteAgentViewModel: ObservableObject {
     isTemporaryChat = false
     state = .loaded
     composerFocusRequestRevision &+= 1
+    return true
   }
 
   private func submitNotebookExpansionQuestion(
     _ question: String,
     session: RielaNoteNotebookExpansionSession
   ) async throws {
+    try await persistUnsavedNotebookExpansionTurns(session: session)
     let answer = try await client.answerNotebookExpansion(request: RielaNoteNotebookExpansionRequest(
       compactSummaryMarkdown: session.compactSummaryMarkdown,
       questionMarkdown: question
     ))
     // Show first, then persist — mirroring the general agent path — so that a
-    // persistence failure (e.g. a source note deleted after this expansion
-    // session started, which makes the frozen sourceNoteIds fail validation)
-    // never silently discards the paid-for answer or wedges the conversation.
+    // transient persistence failure never silently discards the paid-for
+    // answer. The stable turn id lets Save or the next submission retry safely.
     let turnIndex = turns.count
     turns.append(RielaNoteAgentTurn(
       userMarkdown: question,
       assistantMarkdown: answer.assistantMarkdown,
       persistedNoteIds: []
     ))
+    try await persistNotebookExpansionTurn(at: turnIndex, session: session)
+  }
+
+  private func persistUnsavedNotebookExpansionTurns(
+    session: RielaNoteNotebookExpansionSession
+  ) async throws {
+    for index in unsavedTurnIndices {
+      try await persistNotebookExpansionTurn(at: index, session: session)
+    }
+  }
+
+  private func persistNotebookExpansionTurn(
+    at index: Int,
+    session: RielaNoteNotebookExpansionSession
+  ) async throws {
+    let turn = turns[index]
     let note = try await client.appendNotebookExpansionTurn(
       notebookId: session.conversationNotebookId,
-      questionMarkdown: question,
-      assistantMarkdown: answer.assistantMarkdown,
+      turnId: turn.id,
+      questionMarkdown: turn.userMarkdown,
+      assistantMarkdown: turn.assistantMarkdown,
       sourceNoteIds: session.sourceNoteIds
     )
-    turns[turnIndex].persistedNoteIds = [note.noteId]
+    turns[index].persistedNoteIds = [note.noteId]
   }
 
   private func persistUnsavedTurns(title: String? = nil) async throws {

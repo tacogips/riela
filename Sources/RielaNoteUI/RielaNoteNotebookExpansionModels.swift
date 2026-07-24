@@ -64,7 +64,6 @@ public protocol RielaNoteNotebookExpansionProviding: Sendable {
   ) async throws -> RielaNoteNotebookCompactDraft
 
   func answerNotebookExpansion(
-    noteRoot: String,
     request: RielaNoteNotebookExpansionRequest
   ) async throws -> RielaNoteNotebookExpansionAnswer
 }

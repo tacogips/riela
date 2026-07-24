@@ -163,7 +163,11 @@ public protocol RielaNoteUIClient: Sendable {
   func compactNotebook(
     request: RielaNoteNotebookCompactRequest
   ) async throws -> RielaNoteNotebookCompactDraft
-  func updateNotebookCompactCache(notebookId: String, compactMetadataJSON: String) async throws -> Notebook
+  func updateNotebookCompactCache(
+    notebookId: String,
+    compactMetadataJSON: String,
+    expectedMarker: RielaNoteNotebookExpansionSourceMarker
+  ) async throws -> Notebook?
   func saveNotebookExpansion(
     title: String,
     seedPromptMarkdown: String,
@@ -176,6 +180,7 @@ public protocol RielaNoteUIClient: Sendable {
   ) async throws -> RielaNoteNotebookExpansionAnswer
   func appendNotebookExpansionTurn(
     notebookId: String,
+    turnId: String,
     questionMarkdown: String,
     assistantMarkdown: String,
     sourceNoteIds: [String]
@@ -296,7 +301,11 @@ public extension RielaNoteUIClient {
     throw RielaNoteNotebookExpansionError.notConfigured
   }
 
-  func updateNotebookCompactCache(notebookId: String, compactMetadataJSON: String) async throws -> Notebook {
+  func updateNotebookCompactCache(
+    notebookId: String,
+    compactMetadataJSON: String,
+    expectedMarker: RielaNoteNotebookExpansionSourceMarker
+  ) async throws -> Notebook? {
     throw RielaNoteNotebookExpansionError.notConfigured
   }
 
@@ -318,6 +327,7 @@ public extension RielaNoteUIClient {
 
   func appendNotebookExpansionTurn(
     notebookId: String,
+    turnId: String,
     questionMarkdown: String,
     assistantMarkdown: String,
     sourceNoteIds: [String]

@@ -94,10 +94,16 @@ private func buildNotebookExpansion(
       source: sourceMarker
     )
     let cacheJSON = try encodedJSONString(cache)
-    _ = try await client.updateNotebookCompactCache(
+    guard try await client.updateNotebookCompactCache(
       notebookId: notebook.notebookId,
-      compactMetadataJSON: cacheJSON
-    )
+      compactMetadataJSON: cacheJSON,
+      expectedMarker: sourceMarker
+    ) != nil else {
+      if attempt == 0 {
+        continue
+      }
+      throw RielaNoteNotebookExpansionError.sourceChanged
+    }
     return try await saveNotebookExpansion(
       sourceNotebook: sourceNotebook,
       marker: sourceMarker,

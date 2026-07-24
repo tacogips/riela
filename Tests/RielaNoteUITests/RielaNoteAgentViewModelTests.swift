@@ -260,6 +260,90 @@ final class RielaNoteAgentViewModelTests: XCTestCase {
     XCTAssertFalse(viewModel.isTemporaryChat)
     XCTAssertEqual(viewModel.state, .idle)
   }
+
+  func testExpansionStartPreservesUnsavedTemporaryConversationUntilExplicitDiscard() async throws {
+    let client = AgentStubClient()
+    let viewModel = RielaNoteAgentViewModel(client: client)
+    viewModel.isTemporaryChat = true
+    viewModel.draftMessage = "paid temporary question"
+    await viewModel.submitDraft()
+    viewModel.draftMessage = "unfinished follow-up"
+    viewModel.addAttachment(filename: "context.txt", data: Data("retain me".utf8))
+
+    let originalTurns = viewModel.turns
+    let originalMode = viewModel.mode
+    let originalFocusRevision = viewModel.composerFocusRequestRevision
+
+    XCTAssertFalse(viewModel.canBeginNotebookExpansionSession)
+    XCTAssertFalse(viewModel.beginNotebookExpansionSession(agentExpansionSession(notebookId: "expansion-2")))
+    XCTAssertEqual(viewModel.turns, originalTurns)
+    XCTAssertEqual(viewModel.mode, originalMode)
+    XCTAssertEqual(viewModel.draftMessage, "unfinished follow-up")
+    XCTAssertEqual(viewModel.draftAttachments.map(\.filename), ["context.txt"])
+    XCTAssertEqual(viewModel.composerFocusRequestRevision, originalFocusRevision)
+
+    viewModel.discardCurrentConversation()
+
+    XCTAssertTrue(viewModel.canBeginNotebookExpansionSession)
+    XCTAssertTrue(viewModel.beginNotebookExpansionSession(agentExpansionSession(notebookId: "expansion-2")))
+    XCTAssertEqual(viewModel.autoSaveNotebookId, "expansion-2")
+  }
+
+  func testExpansionStartPreservesUnpersistedExpansionAnswer() async throws {
+    let client = AgentStubClient()
+    let viewModel = RielaNoteAgentViewModel(client: client)
+    let originalSession = agentExpansionSession(notebookId: "expansion-1")
+    XCTAssertTrue(viewModel.beginNotebookExpansionSession(originalSession))
+    client.expansionAppendFailuresRemaining = 1
+    viewModel.draftMessage = "What comes next?"
+
+    await viewModel.submitDraft()
+
+    let originalTurns = viewModel.turns
+    XCTAssertEqual(originalTurns.last?.persistedNoteIds, [])
+    XCTAssertFalse(viewModel.canBeginNotebookExpansionSession)
+    XCTAssertFalse(viewModel.beginNotebookExpansionSession(agentExpansionSession(notebookId: "expansion-2")))
+    XCTAssertEqual(viewModel.turns, originalTurns)
+    XCTAssertEqual(viewModel.mode, .notebookExpansion(originalSession))
+    XCTAssertEqual(viewModel.autoSaveNotebookId, "expansion-1")
+    XCTAssertTrue(viewModel.canSaveTemporaryConversation)
+  }
+
+  func testDiscardAndExpansionStartFailClosedWhileAnswerIsInFlight() async throws {
+    let client = AgentStubClient()
+    client.answerDelayNanoseconds = 40_000_000
+    let viewModel = RielaNoteAgentViewModel(client: client)
+    viewModel.isTemporaryChat = true
+    viewModel.draftMessage = "in flight"
+
+    let submission = Task { await viewModel.submitDraft() }
+    try await Task.sleep(nanoseconds: 5_000_000)
+
+    XCTAssertEqual(viewModel.state, .loading)
+    XCTAssertFalse(viewModel.discardCurrentConversation())
+    XCTAssertFalse(viewModel.beginNotebookExpansionSession(agentExpansionSession(notebookId: "expansion-2")))
+    XCTAssertEqual(viewModel.mode, .general)
+
+    await submission.value
+
+    XCTAssertEqual(viewModel.turns.map(\.userMarkdown), ["in flight"])
+    XCTAssertEqual(viewModel.turns.first?.persistedNoteIds, [])
+    XCTAssertTrue(viewModel.isTemporaryChat)
+  }
+}
+
+private func agentExpansionSession(notebookId: String) -> RielaNoteNotebookExpansionSession {
+  RielaNoteNotebookExpansionSession(
+    sourceNotebookId: "source-notebook",
+    conversationNotebookId: notebookId,
+    initialNoteId: "\(notebookId)-seed",
+    compactSummaryMarkdown: "Compact summary",
+    sourceNoteIds: ["source-note"],
+    sourceMarker: RielaNoteNotebookExpansionSourceMarker(
+      updatedAt: "2026-07-21T00:00:00Z",
+      noteCount: 1
+    )
+  )
 }
 
 private enum AgentViewModelTestError: Error {
@@ -272,14 +356,18 @@ private enum AgentViewModelTestError: Error {
 final class AgentStubClient: RielaNoteUIClient, @unchecked Sendable {
   var answerError: Error?
   var expansionAnswerError: Error?
+  var expansionAppendError: Error?
+  var expansionAppendFailuresRemaining = 0
   var saveError: Error?
   var answerDelayNanoseconds: UInt64 = 0
   var generalAnswerCallCount = 0
   var expansionAnswerRequests: [RielaNoteNotebookExpansionRequest] = []
   var appendedExpansionNotebookIds: [String] = []
+  var appendedExpansionTurnIds: [String] = []
   var savedConversations: [(title: String, turns: [RielaNoteAgentTurn])] = []
   var appendedNotebookIds: [String] = []
   private var persistedNoteCount = 0
+  private var persistedExpansionNotesByTurnId: [String: Note] = [:]
 
   var defaultConfigWorkflowRoot: String {
     "tmp/RielaNoteUITests/agent-stub-workflows"
@@ -359,13 +447,22 @@ final class AgentStubClient: RielaNoteUIClient, @unchecked Sendable {
 
   func appendNotebookExpansionTurn(
     notebookId: String,
+    turnId: String,
     questionMarkdown: String,
     assistantMarkdown: String,
     sourceNoteIds: [String]
   ) async throws -> Note {
     appendedExpansionNotebookIds.append(notebookId)
+    appendedExpansionTurnIds.append(turnId)
+    if expansionAppendFailuresRemaining > 0 {
+      expansionAppendFailuresRemaining -= 1
+      throw expansionAppendError ?? AgentViewModelTestError.saveFailed
+    }
+    if let existing = persistedExpansionNotesByTurnId[turnId] {
+      return existing
+    }
     persistedNoteCount += 1
-    return Note(
+    let note = Note(
       noteId: "expansion-note-\(persistedNoteCount)",
       notebookId: notebookId,
       noteNumber: persistedNoteCount,
@@ -375,6 +472,8 @@ final class AgentStubClient: RielaNoteUIClient, @unchecked Sendable {
       createdAt: "2026-07-21T00:00:00Z",
       updatedAt: "2026-07-21T00:00:00Z"
     )
+    persistedExpansionNotesByTurnId[turnId] = note
+    return note
   }
 
   func saveNoteAgentConversation(

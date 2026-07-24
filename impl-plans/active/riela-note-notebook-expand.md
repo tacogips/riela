@@ -1,20 +1,24 @@
 # Riela Note Notebook Expansion Implementation Plan
 
-**Status**: Implemented; Step 6 self-review revision verification complete
+**Status**: Implemented; `comm-001444` adversarial revisions addressed and verified
 **Workflow mode**: `issue-resolution` — one feature / one work package; no fan-out
 **Issue reference**: `codex-design-and-implement-review-loop-session-614`
 (communications `comm-001401`, `comm-001402`, `comm-001403`, `comm-001404`,
 `comm-001405`, `comm-001406`, `comm-001407`, `comm-001408`, `comm-001409`,
-`comm-001410`, `comm-001412`, `comm-001413`, `comm-001414`, `comm-001415`, and
-`comm-001416`; no GitHub
+`comm-001410`, `comm-001412`, `comm-001413`, `comm-001414`, `comm-001415`,
+`comm-001416`, Step 7 review `comm-001432`, and adversarial reviews
+`comm-001437` and `comm-001444`; no GitHub
 repository, number, or URL)
 **Design references**:
 - `design-docs/specs/design-riela-note-notebook-expand.md` (D1–D6)
 - `design-docs/specs/design-riela-note.md`
 - `design-docs/user-qa/qa-riela-note-notebook-expand-seed-format.md`
 **Design review**: accepted by Step 3 in `comm-001415`; no findings or feedback
-**Codex-agent references**: none. `executionBackend: codex-agent` is an execution
-backend choice, not a source-repository reference.
+**Codex-agent references**: `/root/adversarial_swift_review`,
+`/root/step6_adversarial_fixes`, `/root/step6_plan_evidence_fix`,
+`/root/step7_adversarial_audit`, `/root/step6_security_fixes`, and
+`/root/step6_agent_state_fix`. `executionBackend: codex-agent` is also an
+execution backend choice, not a source-repository reference.
 **Created**: 2026-07-21
 **Last updated**: 2026-07-21
 
@@ -35,9 +39,13 @@ Implementation must preserve these accepted boundaries:
 - Provider absence fails with `.notConfigured` before cache, notebook, or note
   mutation on cache-hit and cache-miss paths.
 - Cache writes preserve unrelated `metaJSON` and the source `updatedAt`; source
-  `updatedAt` plus note count invalidate the cache.
+  `updatedAt` plus note count invalidate the cache, and cache publication uses
+  an atomic expected-marker compare-and-set.
 - `saveConversation` and `appendConversationTurn` remain the creation seams;
   conversation/note creation and all source links commit or roll back together.
+- Active expansion turns have stable persistence keys. A retry never
+  regenerates an answer or duplicates a note; source notes deleted after the
+  session began are recorded in turn metadata while surviving links persist.
 - General Note Agent retrieval, selection Q&A, edit rewrite, ingestion,
   historical expansion-session reopening, remote sync, and background
   precomputation are out of scope.
@@ -47,8 +55,8 @@ Implementation must preserve these accepted boundaries:
 
 ### TASK-001 — Service metadata and atomic relation primitives
 
-**Status**: Done  
-**Depends on**: —  
+**Status**: Done
+**Depends on**: —
 **Write scope**: `Sources/RielaNote/NoteModels.swift`,
 `Sources/RielaNote/NoteService+Relations.swift`,
 `Sources/RielaNote/NoteService+NotebookExpansion.swift`, and
@@ -78,11 +86,14 @@ Implementation must preserve these accepted boundaries:
 - A failed source validation or link write leaves no notebook, turn, or partial
   links; a successful write returns links for every source id with `.ai`
   provenance.
+- Expansion follow-up retries are idempotent. Missing source tolerance remains
+  opt-in for that active-session path and records deleted source ids in the
+  generated note metadata.
 
 ### TASK-002 — `note-notebook-compact` workflow bundle
 
-**Status**: Done  
-**Depends on**: —  
+**Status**: Done
+**Depends on**: —
 **Write scope**: `examples/note-notebook-compact/`
 
 **Deliverables**:
@@ -102,11 +113,15 @@ Implementation must preserve these accepted boundaries:
 
 - Bundle validation succeeds, both mock operations complete, and the answer
   mock demonstrates summary-only input.
+- Both codex-agent nodes use a read-only sandbox, ephemeral ignored user
+  configuration, and an explicit policy disabling ambient execution, browser,
+  search, app, plugin, multi-agent, and image capabilities. A prompt-injection
+  canary verifies that note instructions remain data behind this boundary.
 
 ### TASK-003 — Expansion DTOs and subprocess provider
 
-**Status**: Done  
-**Depends on**: TASK-002 contract names  
+**Status**: Done
+**Depends on**: TASK-002 contract names
 **Write scope**:
 `Sources/RielaNoteUI/RielaNoteNotebookExpansionModels.swift`,
 `Sources/RielaNoteUI/RielaNoteWorkflowNotebookCompactProvider.swift`, and
@@ -123,6 +138,10 @@ Implementation must preserve these accepted boundaries:
   workflow resolution, private variables files, environment sanitization,
   cancellation-safe subprocess termination, deadline handling, and final-valid
   JSONL `result.rootOutput` decoding.
+- Give every invocation a mode-0700 working directory and private session
+  store, remove the complete directory on every handled outcome, and launch the
+  workflow in its own POSIX process group so timeout/cancellation reaches all
+  descendants.
 - Add provider tests for argv, environment allowlisting, cancellation/failure
   mapping, operation-specific decoding, and captured variables. A distinctive
   source-body sentinel must occur in compact input and be absent from answer
@@ -133,11 +152,15 @@ Implementation must preserve these accepted boundaries:
 - The answer request type and serialized answer operation cannot carry notebook
   objects, source ids, note bodies, attachments, search results, or ambient Note
   Agent retrieval context.
+- Answer-operation runtime variables contain exactly the operation, compact
+  summary, and question envelope; `noteRoot` remains compaction-only.
+- Full source-body variables and workflow runtime records do not survive the
+  invocation, and non-`exec` descendants exit on timeout and cancellation.
 
 ### TASK-004 — Client integration, cache orchestration, and seeded conversation
 
-**Status**: Done  
-**Depends on**: TASK-001, TASK-003  
+**Status**: Done
+**Depends on**: TASK-001, TASK-003
 **Write scope**: `Sources/RielaNoteUI/RielaNoteUIClient.swift`,
 `Sources/RielaNoteUI/RielaNoteUIClient+NotebookExpansion.swift`,
 `Sources/RielaNoteUI/RielaNoteLibraryViewModel.swift`,
@@ -172,11 +195,14 @@ Implementation must preserve these accepted boundaries:
 - Repeated expansion of the same unchanged source reuses the compact cache but
   creates a fresh seeded conversation; no cache or conversation mutation occurs
   when the provider is unavailable.
+- A source mutation between verification and publication fails the atomic
+  compare-and-set and enters the existing bounded retry path without writing a
+  stale cache.
 
 ### TASK-005 — Expansion-mode Agent session and root routing
 
-**Status**: Done  
-**Depends on**: TASK-004  
+**Status**: Done
+**Depends on**: TASK-004
 **Write scope**: `Sources/RielaNoteUI/RielaNoteAgentModels.swift`,
 `Sources/RielaNoteUI/RielaNoteAgentViewModel.swift`,
 `Sources/RielaNoteUI/RielaNoteRootView.swift`, and
@@ -202,11 +228,14 @@ Implementation must preserve these accepted boundaries:
 
 - Every successful active-session turn is visible as a note in the created
   notebook and through `listLinks`; general Note Agent behavior is unchanged.
+- A failed expansion-turn write remains visible and Save retries persistence
+  only. A later question first flushes pending turns, and a new chat cannot
+  discard an unsaved expansion answer.
 
 ### TASK-006 — Notebook-row actions on both UI surfaces
 
-**Status**: Done  
-**Depends on**: TASK-004  
+**Status**: Done
+**Depends on**: TASK-004
 **Write scope**: `Sources/RielaNoteUI/RielaNoteNotebookListView.swift`,
 `Sources/RielaNoteUI/RielaNoteFileTreePane.swift`, and
 `Tests/RielaNoteUITests/RielaNoteNotebookExpansionTests.swift`
@@ -227,8 +256,8 @@ Implementation must preserve these accepted boundaries:
 
 ### TASK-007 — RielaApp provider construction
 
-**Status**: Done  
-**Depends on**: TASK-003, TASK-004  
+**Status**: Done
+**Depends on**: TASK-003, TASK-004
 **Write scope**: `Sources/RielaApp/NoteWindowController.swift` and
 `Tests/RielaAppSupportTests/RielaAppNotesIntegrationTests.swift`
 
@@ -247,8 +276,8 @@ Implementation must preserve these accepted boundaries:
 
 ### TASK-008 — Documentation, adversarial review, and final verification
 
-**Status**: Done  
-**Depends on**: TASK-001 through TASK-007  
+**Status**: Done
+**Depends on**: TASK-001 through TASK-007
 **Write scope**: directly affected tests and documentation only
 
 **Deliverables**:
@@ -309,7 +338,7 @@ riela workflow run note-notebook-compact \
 riela workflow run note-notebook-compact \
   --workflow-definition-dir ./examples \
   --mock-scenario ./examples/note-notebook-compact/mock-scenario-answer.json \
-  --variables '{"noteRoot":"./tmp/note-notebook-compact/note-root","workflowInput":{"operation":"answer","compactSummaryMarkdown":"SUMMARY-SENTINEL: Draft the milestone.","questionMarkdown":"What is next?"}}' \
+  --variables '{"workflowInput":{"operation":"answer","compactSummaryMarkdown":"SUMMARY-SENTINEL: Draft the milestone.","questionMarkdown":"What is next?"}}' \
   --output json
 git diff --check
 ```
@@ -333,7 +362,8 @@ mutation.
 - A fresh agent-conversation notebook is seeded from the compact summary and
   every active-session question/answer pair is persisted as a note.
 - Every generated note links to every compacted source note with `.ai`
-  `source-citation` provenance, queryable through `NoteService.listLinks`.
+  `source-citation` provenance while that source exists, queryable through
+  `NoteService.listLinks`; deleted source ids remain auditable in turn metadata.
 - Expansion provider input contains only the compact summary and question; no
   full source body reaches the answer operation or general Note Agent.
 - Missing providers return `.notConfigured` without a crash or mutation.
@@ -348,8 +378,22 @@ mutation.
 - [x] Seed and later-turn notes are persisted and atomically linked to every
   source note with `.ai` `source-citation` provenance.
 - [x] Answer variables are structurally summary/question-only and exclude the
-  full-source-body sentinel.
+  full-source-body sentinel and `noteRoot`.
+- [x] Compact-cache publication compares the expected `updatedAt` and note
+  count inside the service transaction; a deterministic race regression proves
+  stale metadata is not written.
+- [x] Expansion-turn persistence is idempotent and recoverable: Save performs a
+  persistence-only retry, subsequent questions flush pending turns first, and
+  deleted source ids are audited without dropping the generated answer.
 - [x] Missing-provider paths fail before mutation.
+- [x] Untrusted note content runs behind an explicit ephemeral no-ambient-tool
+  codex-agent policy with a deterministic prompt-injection canary.
+- [x] Each workflow run uses a private removable session store and POSIX
+  process group; tests prove source-body runtime records are deleted and
+  non-`exec` children terminate on timeout and cancellation.
+- [x] Agent drafts, attachments, temporary turns, failed-persistence answers,
+  and in-flight responses cannot be replaced by a new expansion without an
+  explicit discard decision.
 - [x] Swift build, note service tests, the 208-test aggregate note UI filter,
   the 17-test focused expansion filter, 19 app integration tests, bundle
   validation, both mock operations, SwiftLint, and diff checks pass.
@@ -467,6 +511,137 @@ final handoff.
   exit. The initial test-only cancellation marker race and timestamp-based
   stale-test nondeterminism were corrected before these final results.
 
+### 2026-07-21 — Step 7 review revision (`comm-001432`)
+
+- Addressed the Step 7 mid finding in
+  `Sources/RielaNoteUI/RielaNoteRootView.swift`: expansion completion now routes
+  through `requestSelection(.notebook(...))`, waits behind the existing
+  unsaved-edit confirmation, starts the expansion Agent session only after an
+  immediate or confirmed selection, and leaves the draft/current selection
+  unchanged when the user chooses Keep Editing.
+- Added the focused Discard/Keep Editing regression in
+  `Tests/RielaNoteUITests/RielaNoteNotebookExpansionTests.swift`; the expansion
+  filter passed 19/19.
+- Closed the low rollback-coverage finding in
+  `Tests/RielaNoteTests/NoteServiceNotebookExpansionTests.swift` with a
+  deterministic SQLite trigger that aborts the AI link insert after generated
+  note creation; database counts prove notebook, note, and link rollback. The
+  service filter passed 4/4.
+- Removed implementation-plan trailing whitespace that the earlier untracked
+  file check missed. `git diff --check adc2eb1f` and `git diff --check` now pass
+  for the complete feature range and current revision.
+- Revalidated
+  `.build/arm64-apple-macosx/debug/riela workflow validate note-notebook-compact
+  --workflow-definition-dir ./examples` with `valid=true` and no diagnostics.
+  Targeted SwiftLint passed for the three changed Swift files; the broader lint
+  output contained only the repository's existing warnings outside them.
+- The Xcode toolchain built the current direct
+  `.build/arm64-apple-macosx/debug/RielaApp` executable successfully, and the
+  isolated executable launched its Notes window. Screenshot capture was not
+  available: `screencapture` lacked capture permission, ScreenCaptureKit
+  returned `SCStreamErrorDomain -3811`, and the Computer Use fallback timed
+  out. No app bundle was used. Automated route-state coverage is the final UI
+  evidence for this non-layout behavior revision.
+
+### 2026-07-21 — Adversarial Step 7 revision (`comm-001437`)
+
+- Addressed all three mid findings from Codex-agent reference
+  `/root/adversarial_swift_review` without feature fan-out or design-scope
+  expansion.
+- `Sources/RielaNoteUI/RielaNoteAgentViewModel.swift`,
+  `Sources/RielaNoteUI/RielaNoteUIClient.swift`, and
+  `Sources/RielaNoteUI/RielaNoteUIClient+NotebookExpansion.swift` now carry a
+  stable turn id through expansion persistence, expose Save as a
+  persistence-only retry, flush pending turns before generating a later answer,
+  and prevent New chat from discarding an unsaved expansion answer.
+- `Sources/RielaNote/NoteModels.swift` and
+  `Sources/RielaNote/NoteService+Relations.swift` preserve strict source-link
+  validation by default while allowing only expansion follow-ups to survive a
+  source deleted after session start. Missing source ids are recorded in the
+  turn's `rielaNote.conversationTurn` metadata; stable idempotency keys return
+  the existing note and do not redispatch note-created auto actions.
+- `Sources/RielaNoteUI/RielaNoteWorkflowNotebookCompactProvider.swift` and
+  `Sources/RielaNoteUI/RielaNoteNotebookExpansionModels.swift` remove
+  `noteRoot` from the answer provider boundary. The serialized answer variables
+  test asserts that the complete runtime envelope contains only
+  `workflowInput`, whose exact keys are `operation`, `compactSummaryMarkdown`,
+  and `questionMarkdown`.
+- `Sources/RielaNote/NoteService+NotebookExpansion.swift` and
+  `Sources/RielaNoteUI/RielaNoteLibraryViewModel+NotebookExpand.swift` publish
+  compact metadata only when the expected source `updatedAt` and note count
+  still match inside the database transaction. Compare-and-set failure uses the
+  existing one-retry stale-source path.
+- Added deterministic regression coverage in
+  `Tests/RielaNoteTests/NoteServiceNotebookExpansionTests.swift`,
+  `Tests/RielaNoteUITests/RielaNoteAgentViewModelTests.swift`, and
+  `Tests/RielaNoteUITests/RielaNoteNotebookExpansionTests.swift` for atomic
+  cache publication, service idempotency, persistence-only retry, pending-turn
+  flush ordering, and deleted-source recovery.
+- Final adversarial-revision verification passed:
+  `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter NoteServiceNotebookExpansionTests`
+  (6/6) and
+  `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter RielaNoteNotebookExpansionTests`
+  (21/21); the explicit Xcode-toolchain
+  `swift build --product RielaApp`; targeted SwiftLint across every changed
+  Swift file; `.build/arm64-apple-macosx/debug/riela workflow validate
+  note-notebook-compact --workflow-definition-dir ./examples` with
+  `valid=true` and no diagnostics; and `git diff --check adc2eb1f && git diff
+  --check`.
+
+### 2026-07-21 — Step 6 self-review revision (`comm-001439`)
+
+- Corrected the authoritative answer-operation mock command so its variables
+  contain only `workflowInput` with `operation`, `compactSummaryMarkdown`, and
+  `questionMarkdown`; `noteRoot` is absent from the answer boundary.
+- Verified the corrected command with
+  `.build/arm64-apple-macosx/debug/riela workflow run note-notebook-compact
+  --workflow-definition-dir ./examples --mock-scenario
+  ./examples/note-notebook-compact/mock-scenario-answer.json --variables
+  '{"workflowInput":{"operation":"answer","compactSummaryMarkdown":"SUMMARY-SENTINEL:
+  Draft the milestone.","questionMarkdown":"What is next?"}}' --output json`;
+  it completed with assistant output. Then
+  `git -c core.fsmonitor=false diff --check adc2eb1f && git -c
+  core.fsmonitor=false diff --check` passed.
+
+### 2026-07-21 — Adversarial Step 7 revision (`comm-001444`)
+
+- Addressed all four mid findings without feature fan-out. Codex-agent
+  references were `/root/adversarial_swift_review`,
+  `/root/step6_adversarial_fixes`, `/root/step6_plan_evidence_fix`,
+  `/root/step7_adversarial_audit`, `/root/step6_security_fixes`, and
+  `/root/step6_agent_state_fix`.
+- `examples/note-notebook-compact/nodes/node-notebook-compact.json` and
+  `nodes/node-workflow-output.json` now enforce read-only, ephemeral,
+  ignored-user-config execution and disable ambient command, browser, search,
+  app, plugin, multi-agent, and image capabilities. The focused provider suite
+  includes an explicitly named prompt-injection canary.
+- `Sources/RielaNoteUI/RielaNoteWorkflowProviderSupport.swift` and
+  `Sources/RielaNoteUI/RielaNoteWorkflowNotebookCompactProvider.swift` now use
+  a private mode-0700 per-invocation working directory, a private
+  `--session-store`, mode-0600 variables, and deterministic POSIX process-group
+  launch/termination. Cleanup and non-`exec` descendant tests cover success,
+  failure, timeout, and cancellation.
+- `Sources/RielaNoteUI/RielaNoteAgentViewModel.swift` and
+  `Sources/RielaNoteUI/RielaNoteRootView.swift` preserve drafts, attachments,
+  temporary chats, failed-persistence expansion answers, and in-flight replies.
+  The root offers **Discard and expand** or **Keep current conversation**, and
+  replacement fails closed while a response is loading.
+- Verification passed: Xcode-toolchain `swift build` reported `Build complete`;
+  `swift test --skip-build --filter NoteServiceNotebookExpansionTests` passed
+  6/6; `swift test --skip-build --filter RielaNoteNotebookExpansionTests`
+  passed 23/23; `swift test --skip-build --filter
+  RielaNoteAgentViewModelTests` passed 15/15; and workflow validation returned
+  `valid=true` with no diagnostics. SwiftLint reported only eight pre-existing
+  warnings outside this feature. `jq` confirmed both worker nodes carry the
+  explicit sandbox/ephemeral policy, all changed Swift files remain below
+  1,000 lines, and `git -c core.fsmonitor=false diff --check adc2eb1f` passed.
+  Some SwiftPM/lint command wrappers remained alive after their successful
+  output; this is recorded as a tooling gap, not a test-suite failure.
+- Updated `README.md` and
+  `design-docs/specs/design-riela-note-notebook-expand.md`. The implementation
+  workflow and Swift skills required no change, and no applicable
+  `riela-package.json` exists.
+
 ## Risks carried into implementation
 
 - Derived cache writes could self-invalidate if they accidentally update source
@@ -477,9 +652,9 @@ final handoff.
   links if transaction boundaries diverge.
 - Linking every generated turn to every source note has intentional linear
   write fanout and must not be silently capped.
-- Workflow subprocess timeout, cancellation, private-file cleanup, environment
-  sanitization, or last-valid-JSONL parsing could regress when the new provider
-  is added.
+- Abrupt process death outside handled success/failure/timeout/cancellation can
+  leave an operating-system temporary invocation directory for later cleanup;
+  handled outcomes remove it deterministically.
 - The source-link fanout remains intentionally linear in generated-note count
   times source-note count; no silent cap was introduced.
 - The final current-executable smoke session did not invoke both context menus

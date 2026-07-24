@@ -23,11 +23,14 @@ extension NoteServiceRielaNoteUIClient {
 
   public func updateNotebookCompactCache(
     notebookId: String,
-    compactMetadataJSON: String
-  ) async throws -> Notebook {
+    compactMetadataJSON: String,
+    expectedMarker: RielaNoteNotebookExpansionSourceMarker
+  ) async throws -> Notebook? {
     try service.updateNotebookCompactMetadata(
       notebookId: notebookId,
-      compactMetadataJSON: compactMetadataJSON
+      compactMetadataJSON: compactMetadataJSON,
+      expectedUpdatedAt: expectedMarker.updatedAt,
+      expectedNoteCount: expectedMarker.noteCount
     )
   }
 
@@ -60,14 +63,12 @@ extension NoteServiceRielaNoteUIClient {
     guard let notebookExpansionProvider else {
       throw RielaNoteNotebookExpansionError.notConfigured
     }
-    return try await notebookExpansionProvider.answerNotebookExpansion(
-      noteRoot: service.noteRootPath(),
-      request: request
-    )
+    return try await notebookExpansionProvider.answerNotebookExpansion(request: request)
   }
 
   public func appendNotebookExpansionTurn(
     notebookId: String,
+    turnId: String,
     questionMarkdown: String,
     assistantMarkdown: String,
     sourceNoteIds: [String]
@@ -81,9 +82,11 @@ extension NoteServiceRielaNoteUIClient {
       sourceLinks: NoteConversationSourceLinks(
         sourceNoteIds: sourceNoteIds,
         linkKind: "source-citation",
-        provenance: .ai
+        provenance: .ai,
+        allowMissingSourceNotes: true
       ),
-      assignedBy: "riela-note-notebook-expansion"
+      assignedBy: "riela-note-notebook-expansion",
+      idempotencyKey: turnId
     )
   }
 }

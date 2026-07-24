@@ -33,9 +33,19 @@ public enum CLIWorkflowSessionStoreError: Error, Equatable, Sendable {
 
 public struct CLIWorkflowSessionStore: Sendable {
   public var rootDirectory: String
+  private let warningSink: @Sendable (String) -> Void
 
   public init(rootDirectory: String) {
     self.rootDirectory = rootDirectory
+    warningSink = Self.writeWarningToStandardError
+  }
+
+  init(
+    rootDirectory: String,
+    warningSink: @escaping @Sendable (String) -> Void
+  ) {
+    self.rootDirectory = rootDirectory
+    self.warningSink = warningSink
   }
 
   public static func defaultDatabasePath(rootDirectory: String) -> String {
@@ -184,7 +194,12 @@ public struct CLIWorkflowSessionStore: Sendable {
     guard let recordText = rows.first?["record_json"] else {
       throw CLIWorkflowSessionStoreError.notFound("session not found: \(sessionId)")
     }
-    return try decodeRecord(recordText)
+    do {
+      return try decodeRecord(recordText)
+    } catch {
+      warnAboutSkippedRecords(count: 1)
+      throw CLIWorkflowSessionStoreError.notFound("session not found: \(sessionId)")
+    }
   }
 
   public func loadAll() throws -> [PersistedCLIWorkflowSession] {
@@ -195,14 +210,10 @@ public struct CLIWorkflowSessionStore: Sendable {
     guard try tableExists(db, name: "cli_workflow_sessions") else {
       return []
     }
-    return try mapSQLiteError {
+    let rows = try mapSQLiteError {
       try db.query("SELECT json(record_json) AS record_json FROM cli_workflow_sessions ORDER BY session_id")
-    }.compactMap { row in
-      guard let recordText = row["record_json"] else {
-        return nil
-      }
-      return try decodeRecord(recordText)
     }
+    return decodeRecords(rows)
   }
 
   public func list(
@@ -237,14 +248,10 @@ public struct CLIWorkflowSessionStore: Sendable {
     ORDER BY updated_at DESC, session_id
     LIMIT ?
     """
-    return try mapSQLiteError {
+    let rows = try mapSQLiteError {
       try db.query(sql, bindings: bindings)
-    }.compactMap { row in
-      guard let recordText = row["record_json"] else {
-        return nil
-      }
-      return try decodeRecord(recordText)
     }
+    return decodeRecords(rows)
   }
 
   private func isSafeSessionId(_ sessionId: String) -> Bool {
@@ -354,6 +361,35 @@ public struct CLIWorkflowSessionStore: Sendable {
       throw CLIWorkflowSessionStoreError.sqliteFailed("stored session record is not UTF-8")
     }
     return try decoder.decode(PersistedCLIWorkflowSession.self, from: data)
+  }
+
+  private func decodeRecords(_ rows: [SQLiteRow]) -> [PersistedCLIWorkflowSession] {
+    var records: [PersistedCLIWorkflowSession] = []
+    var skippedCount = 0
+    for row in rows {
+      guard let recordText = row["record_json"] else {
+        continue
+      }
+      guard let record = try? decodeRecord(recordText) else {
+        skippedCount += 1
+        continue
+      }
+      records.append(record)
+    }
+    warnAboutSkippedRecords(count: skippedCount)
+    return records
+  }
+
+  private func warnAboutSkippedRecords(count: Int) {
+    guard count > 0 else {
+      return
+    }
+    warningSink("warning: skipped \(count) unreadable CLI session record(s)")
+  }
+
+  private static func writeWarningToStandardError(_ message: String) {
+    let data = Data("\(message)\n".utf8)
+    FileHandle.standardError.write(data)
   }
 
   private static func dateString(_ date: Date) -> String {

@@ -212,13 +212,23 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting, GraphQLDocu
         createdAfter: try optionalString("createdAfter", variables: variables),
         createdBefore: try optionalString("createdBefore", variables: variables),
         includeLinked: try optionalBool("includeLinked", variables: variables) ?? false,
+        depth: try optionalInt("depth", variables: variables) ?? 1,
         limit: validatedLimit(try optionalInt("limit", variables: variables), defaultValue: 20),
         offset: validatedOffset(try optionalInt("offset", variables: variables))
+      ))
+    case "noteGraphNeighbors":
+      return try await encodedJSONValue(service.noteGraphNeighbors(
+        noteIds: try optionalStringArray("noteIds", variables: variables) ?? [],
+        depth: try optionalInt("depth", variables: variables) ?? NoteGraphPolicy.defaultMaxDepth,
+        limit: validatedGraphLimit(
+          try optionalInt("limit", variables: variables),
+          defaultValue: NoteGraphPolicy.defaultLimit
+        )
       ))
     case "proposeNoteLinks":
       return try await encodedJSONValue(service.proposeNoteLinks(
         noteId: requiredString("noteId", variables: variables),
-        limit: validatedLimit(try optionalInt("limit", variables: variables), defaultValue: 8)
+        limit: validatedGraphLimit(try optionalInt("limit", variables: variables), defaultValue: 8)
       ))
     case "tags":
       return try await encodedJSONValue(service.tags())
@@ -505,6 +515,7 @@ let supportedNoteGraphQLFields: Set<String> = [
   "notebooks",
   "notes",
   "searchNotes",
+  "noteGraphNeighbors",
   "proposeNoteLinks",
   "tags",
   "tagClasses",
@@ -541,6 +552,7 @@ private let noteGraphQLQueryFields: Set<String> = [
   "notebooks",
   "notes",
   "searchNotes",
+  "noteGraphNeighbors",
   "proposeNoteLinks",
   "tags",
   "tagClasses",
@@ -668,6 +680,7 @@ private let noteGraphQLRootSelectionTypes: [String: String] = [
   "notebooks": "NotebooksQueryPayload",
   "notes": "NotesQueryPayload",
   "searchNotes": "NoteSearchQueryPayload",
+  "noteGraphNeighbors": "NoteGraphNeighborsQueryPayload",
   "proposeNoteLinks": "NoteLinkProposalQueryPayload",
   "tags": "NoteTagsQueryPayload",
   "tagClasses": "NoteTagClassesQueryPayload",
@@ -692,6 +705,7 @@ let noteGraphQLSelectionFields: [String: [String: String?]] = [
   "NotebooksQueryPayload": noteGraphQLQueryPayloadFields(valueType: "Notebook"),
   "NotesQueryPayload": noteGraphQLQueryPayloadFields(valueType: "Note"),
   "NoteSearchQueryPayload": noteGraphQLQueryPayloadFields(valueType: "NoteSearchResult"),
+  "NoteGraphNeighborsQueryPayload": noteGraphQLQueryPayloadFields(valueType: "NoteGraphNeighbor"),
   "NoteLinkProposalQueryPayload": noteGraphQLQueryPayloadFields(valueType: "NoteLinkProposal"),
   "NoteTagsQueryPayload": noteGraphQLQueryPayloadFields(valueType: "NoteTag"),
   "NoteTagClassesQueryPayload": noteGraphQLQueryPayloadFields(valueType: "NoteTagClass"),
@@ -800,6 +814,14 @@ let noteGraphQLSelectionFields: [String: [String: String?]] = [
     "rank": nil,
     "matchedTags": "NoteTag",
     "isLinkedNeighbor": nil
+  ],
+  "NoteGraphNeighbor": [
+    "seedNoteId": nil,
+    "note": "Note",
+    "edgeKind": nil,
+    "weight": nil,
+    "hopCount": nil,
+    "pathNoteIds": nil
   ],
   "NoteLinkProposal": [
     "targetNote": "Note",
@@ -961,6 +983,22 @@ private func validatedLimit(_ value: Int?, defaultValue: Int) throws -> Int {
   guard (0...noteGraphQLMaximumLimit).contains(value) else {
     throw NoteGraphQLDocumentExecutorError.invalidVariable(
       "limit must be between 0 and \(noteGraphQLMaximumLimit)"
+    )
+  }
+  return value
+}
+
+/// Graph fields (`noteGraphNeighbors`, `proposeNoteLinks`) can return at most
+/// `NoteGraphPolicy.maximumLimit` rows; the contract promise is "rejected
+/// rather than silently clamped", so a larger `limit` is an error here instead
+/// of being truncated by the service.
+private func validatedGraphLimit(_ value: Int?, defaultValue: Int) throws -> Int {
+  guard let value else {
+    return defaultValue
+  }
+  guard (0...NoteGraphPolicy.maximumLimit).contains(value) else {
+    throw NoteGraphQLDocumentExecutorError.invalidVariable(
+      "limit must be between 0 and \(NoteGraphPolicy.maximumLimit) for graph fields"
     )
   }
   return value

@@ -6,7 +6,7 @@ Ignore `sessionId`, timestamps, and artifact paths.
 ## Validate
 
 ```bash
-riela workflow validate note-link-extract --workflow-definition-dir ./examples
+riela workflow validate note-link-extract --workflow-definition-dir examples/note-link-extract
 ```
 
 Expected result: the workflow is valid.
@@ -17,14 +17,14 @@ Create a temporary note root containing:
 
 - subject note id: `<subject-note-id>`
 - candidate note id: `note-candidate`
-- both notes containing the phrase `project planning`
+- a bounded explicit/shared-tag/seed-lexical graph path between the notes
 
 Then run:
 
 ```bash
 riela workflow run note-link-extract \
-  --workflow-definition-dir ./examples \
-  --mock-scenario ./examples/note-link-extract/mock-scenario.json \
+  --workflow-definition-dir examples/note-link-extract \
+  --mock-scenario examples/note-link-extract/mock-scenario.json \
   --variables '{"noteRoot":"<tmp-note-root>","workflowInput":{"noteId":"<subject-note-id>","subjectBodyMarkdown":"# Subject\nProject planning context.","query":"project planning","limit":10}}' \
   --output json
 ```
@@ -36,5 +36,7 @@ Expected stable result:
 - The root output contains one `proposals` item.
 - The proposal has `targetNoteId: "note-candidate"`, `linkKind: "related"`,
   and a non-empty `reason`.
+- Candidate generation is fixed to `depth: 2` and consumes the service-provided
+  graph score/path rather than prompt-side scoring.
 - The workflow only proposes candidates; the UI or caller must still confirm
   before creating `.ai` provenance links.

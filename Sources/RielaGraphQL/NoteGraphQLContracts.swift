@@ -194,6 +194,24 @@ public struct GraphQLNoteSearchResultDTO: Codable, Equatable, Sendable {
   }
 }
 
+public struct GraphQLNoteGraphNeighborDTO: Codable, Equatable, Sendable {
+  public var seedNoteId: String
+  public var note: GraphQLNoteDTO
+  public var edgeKind: String
+  public var weight: Double
+  public var hopCount: Int
+  public var pathNoteIds: [String]
+
+  public init(result: NoteGraphNeighbor) {
+    seedNoteId = result.seedNoteId
+    note = GraphQLNoteDTO(note: result.note)
+    edgeKind = result.edgeKind.rawValue
+    weight = result.weight
+    hopCount = result.hopCount
+    pathNoteIds = result.pathNoteIds
+  }
+}
+
 public struct GraphQLNoteLinkProposalDTO: Codable, Equatable, Sendable {
   public var targetNote: GraphQLNoteDTO
   public var targetNoteId: String

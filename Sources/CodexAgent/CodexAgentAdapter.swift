@@ -212,8 +212,19 @@ public struct CodexAgentCommandBuilder: LocalAgentCommandBuilding {
   }
 
   public func buildCommand(for input: AdapterExecutionInput) throws -> LocalAgentCommand {
+    try validateAgentProviderRoutingForAdapter(input.node)
     let imagePaths = resolveAdapterImagePaths(input)
-    let configOverrides = input.node.effort.map { [#"model_reasoning_effort="\#($0.rawValue)""#] } ?? []
+    var configOverrides = input.node.effort.map { [#"model_reasoning_effort="\#($0.rawValue)""#] } ?? []
+    if let provider = input.node.provider {
+      configOverrides.append(contentsOf: [
+        "model_provider=\(provider.name)",
+        "model_providers.\(provider.name).name=\(provider.name)",
+        "model_providers.\(provider.name).base_url=\(provider.baseUrl)"
+      ])
+      if let apiKeyEnv = provider.apiKeyEnv {
+        configOverrides.append("model_providers.\(provider.name).env_key=\(apiKeyEnv)")
+      }
+    }
     let usesResume = input.sessionPolicy?.mode == .reuse
       && resumeSessionId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     let selectedPromptText = usesResume ? input.resolvedResumedPromptText : input.resolvedFreshPromptText
@@ -265,6 +276,11 @@ public struct CodexAgentCommandBuilder: LocalAgentCommandBuilding {
     }
     return LocalAgentCommand(
       provider: provider,
+      metadata: providerMetadata(input.node.provider),
+      additionalSensitiveValues: providerCredentialSensitiveValues(
+        input.node.provider,
+        processEnvironment: environment
+      ),
       configuration: LocalAgentProcessConfiguration(
         executableURL: URL(fileURLWithPath: "/usr/bin/env"),
         arguments: arguments,
@@ -285,6 +301,10 @@ public struct CodexAgentCommandBuilder: LocalAgentCommandBuilding {
       )
     )
   }
+}
+
+private func providerMetadata(_ configuration: AgentProviderConfiguration?) -> JSONObject {
+  configuration.map { ["provider_name": .string($0.name)] } ?? [:]
 }
 
 public struct CodexAgentAdapter: NodeAdapter {
@@ -372,16 +392,22 @@ public struct CodexAgentAdapter: NodeAdapter {
   private func ensureAuthReady(input: AdapterExecutionInput, deadline: Date?) async throws {
     let operation: @Sendable () async throws -> Void = {
       if let checkAuthPreflight {
+        let sensitiveValues = codexPreflightSensitiveValues(input: input, baseEnvironment: environment)
         do {
           try await checkAuthPreflight(input)
         } catch let error as CancellationError {
           throw error
         } catch let error as AdapterExecutionError {
-          throw error
+          throw AdapterExecutionError(
+            error.code,
+            redactAdapterSensitiveText(error.message, additionalSensitiveValues: sensitiveValues),
+            isRetryable: error.isRetryable,
+            retryAfter: error.retryAfter
+          )
         } catch {
           throw AdapterExecutionError(
             .policyBlocked,
-            "codex-agent authentication is unavailable: \(redactAdapterSensitiveText(error.localizedDescription))"
+            "codex-agent authentication is unavailable: \(redactAdapterSensitiveText(error.localizedDescription, additionalSensitiveValues: sensitiveValues))"
           )
         }
       } else {
@@ -440,6 +466,7 @@ private func runCodexDefaultAuthPreflight(
     provider: CliAgentBackend.codexAgent.rawValue
   )
   let sensitiveValues = sensitiveAdapterEnvironmentValues(preflightEnvironment)
+    + providerCredentialSensitiveValues(input.node.provider, processEnvironment: preflightEnvironment)
   let preflightDeadline = defaultAgentPreflightDeadline(existingDeadline: deadline, timeout: defaultCodexAuthPreflightTimeout)
   let version: LocalAgentProcessResult
   do {
@@ -466,6 +493,12 @@ private func runCodexDefaultAuthPreflight(
       .policyBlocked,
       "codex-agent CLI is unavailable: \(compactAgentReadinessMessage([version.stderr, version.stdout].joined(separator: "\n"), fallback: "codex command is unavailable", additionalSensitiveValues: sensitiveValues))"
     )
+  }
+  // Alternate providers authenticate through their configured runtime
+  // environment. The default Codex account login state is unrelated and must
+  // not block an otherwise valid provider-backed execution.
+  if input.node.provider != nil {
+    return
   }
   let result: LocalAgentProcessResult
   do {
@@ -494,6 +527,19 @@ private func runCodexDefaultAuthPreflight(
       "codex-agent authentication is unavailable: \(compactAgentReadinessMessage(combined, fallback: "login status failed", additionalSensitiveValues: sensitiveValues))"
     )
   }
+}
+
+private func codexPreflightSensitiveValues(
+  input: AdapterExecutionInput,
+  baseEnvironment: [String: String]
+) -> [String] {
+  let processEnvironment = mergedAgentProcessEnvironment(
+    baseEnvironment: baseEnvironment,
+    input: input,
+    provider: CliAgentBackend.codexAgent.rawValue
+  )
+  return sensitiveAdapterEnvironmentValues(processEnvironment)
+    + providerCredentialSensitiveValues(input.node.provider, processEnvironment: processEnvironment)
 }
 
 private func hasAuthFailureText(_ text: String) -> Bool {

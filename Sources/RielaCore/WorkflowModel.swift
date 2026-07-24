@@ -800,6 +800,8 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
   public var agentSandbox: AgentSandboxMode?
   public var agentToolPolicy: AgentToolPolicy?
   public var agentEnvironment: [String: AgentEnvironmentBinding]
+  public var provider: AgentProviderConfiguration?
+  public var providerProxy: AgentProviderProxy?
   public var systemPromptTemplate: String?
   public var systemPromptTemplateFile: String?
   public var promptTemplate: String?
@@ -828,6 +830,8 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     agentSandbox: AgentSandboxMode? = nil,
     agentToolPolicy: AgentToolPolicy? = nil,
     agentEnvironment: [String: AgentEnvironmentBinding] = [:],
+    provider: AgentProviderConfiguration? = nil,
+    providerProxy: AgentProviderProxy? = nil,
     systemPromptTemplate: String? = nil,
     systemPromptTemplateFile: String? = nil,
     promptTemplate: String? = nil,
@@ -855,6 +859,8 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     self.agentSandbox = agentSandbox
     self.agentToolPolicy = agentToolPolicy
     self.agentEnvironment = agentEnvironment
+    self.provider = provider
+    self.providerProxy = providerProxy
     self.systemPromptTemplate = systemPromptTemplate
     self.systemPromptTemplateFile = systemPromptTemplateFile
     self.promptTemplate = promptTemplate
@@ -884,6 +890,8 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     case agentSandbox
     case agentToolPolicy
     case agentEnvironment
+    case provider
+    case providerProxy
     case systemPromptTemplate
     case systemPromptTemplateFile
     case promptTemplate
@@ -932,6 +940,15 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
           debugDescription: "agentEnvironment target '\(key)' is reserved by Riela"
         )
       }
+    }
+    self.provider = try container.decodeIfPresent(AgentProviderConfiguration.self, forKey: .provider)
+    self.providerProxy = try container.decodeIfPresent(AgentProviderProxy.self, forKey: .providerProxy)
+    if providerProxy != nil, provider == nil {
+      throw DecodingError.dataCorruptedError(
+        forKey: .providerProxy,
+        in: container,
+        debugDescription: "providerProxy requires provider"
+      )
     }
     self.systemPromptTemplate = try container.decodeIfPresent(String.self, forKey: .systemPromptTemplate)
     self.systemPromptTemplateFile = try container.decodeIfPresent(String.self, forKey: .systemPromptTemplateFile)

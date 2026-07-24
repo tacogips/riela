@@ -155,6 +155,7 @@ public struct AdapterBackendEvent: Equatable, Sendable {
   public var isDelta: Bool
   public var toolName: String?
   public var usage: JSONObject?
+  public var metadata: JSONObject?
   public var sequence: Int?
   public var at: Date?
   public var backendSessionId: String?
@@ -168,6 +169,7 @@ public struct AdapterBackendEvent: Equatable, Sendable {
     isDelta: Bool = false,
     toolName: String? = nil,
     usage: JSONObject? = nil,
+    metadata: JSONObject? = nil,
     sequence: Int? = nil,
     at: Date? = nil,
     backendSessionId: String? = nil
@@ -180,6 +182,7 @@ public struct AdapterBackendEvent: Equatable, Sendable {
     self.isDelta = isDelta
     self.toolName = toolName
     self.usage = usage
+    self.metadata = metadata
     self.sequence = sequence
     self.at = at
     self.backendSessionId = backendSessionId

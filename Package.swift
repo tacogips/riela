@@ -236,11 +236,11 @@ let package = Package(
     ),
     .testTarget(
       name: "CodexAgentTests",
-      dependencies: ["RielaCore", "CodexAgent"]
+      dependencies: ["RielaCore", "RielaAdapters", "CodexAgent"]
     ),
     .testTarget(
       name: "ClaudeCodeAgentTests",
-      dependencies: ["RielaCore", "ClaudeCodeAgent"]
+      dependencies: ["RielaCore", "RielaAdapters", "ClaudeCodeAgent"]
     ),
     .testTarget(
       name: "CursorCLIAgentTests",

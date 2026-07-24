@@ -49,10 +49,12 @@ private func rielaExampleWorkflowNames() -> [String] {
     "note-config-agent",
     "note-edit-rewrite",
     "note-link-extract",
+    "note-notebook-compact",
     "note-pdf-ingest",
     "note-quick-memo",
     "note-selection-question",
     "note-youtube-transcript",
+    "open-model-provider-codex",
     "recent-change-quality-loop",
     "required-loop-gate-failure",
     "riela-default-workflow-supervisor",
@@ -83,7 +85,7 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum ExampleCatalog {
     static let directoryName = "examples"
-    static let expectedMockScenarioCount = 37
+    static let expectedMockScenarioCount = 38
     static let expectedNodeMockScenarioCount = 0
   }
 

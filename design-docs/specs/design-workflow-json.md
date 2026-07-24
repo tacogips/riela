@@ -680,6 +680,8 @@ Optional:
 - `executionBackend`
 - `model`
 - `modelFreeze`
+- `provider`
+- `providerProxy`
 - `sessionPolicy`
 - `systemPromptTemplate`
 - `systemPromptTemplateFile`
@@ -815,6 +817,36 @@ Codex-specific node variables:
   an acknowledged terminal tool result and an intact stream — which the
   current codex host protocol cannot prove — so recovery stays fail-closed
   and routes confirmed incidents through supervised retry/rerun.
+
+### `provider` and `providerProxy`
+
+Optional alternate-provider routing for CLI-backed agents. Full design:
+`design-docs/specs/design-open-model-provider-routing.md`.
+
+- `provider` is an object with `name` (required, `[a-z0-9][a-z0-9_-]*`, max
+  64 chars), `baseUrl` (required absolute URL; `https`, or `http` for
+  loopback hosts only; userinfo, query, and fragment rejected), and optional `apiKeyEnv` (a valid,
+  non-reserved environment variable *name*; the value is resolved at process
+  launch and never persisted).
+- `providerProxy` is an optional string; the only accepted value is
+  `"codex"`, it requires `provider` to be present, and it requires
+  `executionBackend: "codex-agent"`. The canonical camelCase spelling is
+  `providerProxy`; the snake_case `provider_proxy` is not an accepted alias.
+- `provider` is valid only on `codex-agent` and `claude-code-agent` nodes.
+  `cursor-cli-agent` and `official/*` SDK backends reject it; official SDK
+  backends keep their existing configuration-level `baseURL`/`apiKeyEnv`
+  override path.
+- For codex-agent, provider config becomes `-c model_provider=...` and
+  `-c model_providers.<name>.{name,base_url,env_key}=...` config overrides.
+  For claude-code-agent, it becomes `ANTHROPIC_BASE_URL` and (when
+  `apiKeyEnv` is set) `ANTHROPIC_AUTH_TOKEN` process environment entries,
+  overriding overlapping `agentEnvironment` targets with a validation
+  warning.
+- Omitting both fields preserves current behavior exactly.
+- A resolved `apiKeyEnv` value is treated as sensitive regardless of length.
+  Adapter stdout, decoded output-contract JSON, thrown diagnostics, and all
+  string-bearing backend-event fields (including nested `usage` and
+  `metadata`) are sanitized before runtime persistence.
 
 ### `modelFreeze`
 

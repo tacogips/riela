@@ -46,6 +46,8 @@ public protocol LocalAgentToolChildMonitoring: Sendable {
 
 public struct LocalAgentCommand: Sendable {
   public var provider: String
+  public var metadata: JSONObject
+  public var additionalSensitiveValues: [String]
   public var configuration: LocalAgentProcessConfiguration
   public var stdin: String
   public var normalizeStdout: @Sendable (String) -> String
@@ -60,6 +62,8 @@ public struct LocalAgentCommand: Sendable {
 
   public init(
     provider: String,
+    metadata: JSONObject = [:],
+    additionalSensitiveValues: [String] = [],
     configuration: LocalAgentProcessConfiguration,
     stdin: String,
     normalizeStdout: @escaping @Sendable (String) -> String = { $0 },
@@ -70,6 +74,8 @@ public struct LocalAgentCommand: Sendable {
     toolChildMonitor: (any LocalAgentToolChildMonitoring)? = nil
   ) {
     self.provider = provider
+    self.metadata = metadata
+    self.additionalSensitiveValues = additionalSensitiveValues
     self.configuration = configuration
     self.stdin = stdin
     self.normalizeStdout = normalizeStdout
@@ -883,10 +889,14 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
         await monitor?.stop()
         eventBridge.finish()
         await eventBridge.waitForCompletion()
-        throw error
+        throw redactedCommandExecutionError(error, command: command)
       }
     } else {
-      result = try await runner.run(configuration: command.configuration, stdin: command.stdin, deadline: context.deadline)
+      do {
+        result = try await runner.run(configuration: command.configuration, stdin: command.stdin, deadline: context.deadline)
+      } catch {
+        throw redactedCommandExecutionError(error, command: command)
+      }
       for line in result.stdout.split(whereSeparator: \.isNewline) {
         command.observeStdoutLine?(String(line))
       }
@@ -894,21 +904,27 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
     guard result.terminationStatus == 0 else {
       let detail = redactAdapterSensitiveText(
         result.stderr.trimmingCharacters(in: .whitespacesAndNewlines),
-        additionalSensitiveValues: sensitiveAdapterEnvironmentValues(command.configuration.environment)
+        additionalSensitiveValues: commandSensitiveValues(command)
       )
       throw AdapterExecutionError(.providerError, "\(command.provider) failed with exit code \(result.terminationStatus): \(detail)")
     }
     command.processDidSucceed?()
 
-    let responseText = command.normalizeStdout(result.stdout)
+    let responseText = redactAdapterSensitiveText(
+      command.normalizeStdout(result.stdout),
+      additionalSensitiveValues: commandSensitiveValues(command)
+    )
     let normalized = try normalizeAgentOutput(responseText, source: command.provider, requiresOutputContract: input.node.output != nil)
+    let sensitiveValues = commandSensitiveValues(command)
+    var payload = sanitizedJSONObject(normalized.payload, sensitiveValues: sensitiveValues)
+    payload.merge(sanitizedJSONObject(command.metadata, sensitiveValues: sensitiveValues)) { _, metadataValue in metadataValue }
     return AdapterExecutionOutput(
       provider: command.provider,
       model: input.node.model,
       promptText: input.promptText,
       completionPassed: normalized.completionPassed,
-      when: normalized.when,
-      payload: normalized.payload
+      when: sanitizedWhen(normalized.when, sensitiveValues: sensitiveValues),
+      payload: payload
     )
   }
 
@@ -921,7 +937,7 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
     guard let backendEventHandler = context.backendEventHandler else {
       return BackendEventBridge(handler: nil, emitInjected: { _ in }, finish: {}, waitForCompletion: {})
     }
-    let sensitiveValues = sensitiveAdapterEnvironmentValues(command.configuration.environment)
+    let sensitiveValues = commandSensitiveValues(command)
     let (eventStream, continuation) = AsyncStream.makeStream(
       of: AdapterBackendEvent.self,
       bufferingPolicy: .bufferingNewest(512)
@@ -944,13 +960,20 @@ public struct LocalAgentCommandAdapter: NodeAdapter {
       if event.provider.isEmpty {
         event.provider = command.provider
       }
-      event.contentDelta = sanitizedBackendEventContent(event.contentDelta, sensitiveValues: sensitiveValues)
-      event.contentSnapshot = sanitizedBackendEventContent(event.contentSnapshot, sensitiveValues: sensitiveValues)
+      if !command.metadata.isEmpty {
+        event.metadata = (event.metadata ?? [:]).merging(command.metadata) { _, commandValue in commandValue }
+      }
+      event = sanitizedBackendEvent(event, sensitiveValues: sensitiveValues)
       coalescer.absorb(event) { continuation.yield($0) }
     }
     return BackendEventBridge(
       handler: handler,
       emitInjected: { event in
+        var event = event
+        if !command.metadata.isEmpty {
+          event.metadata = (event.metadata ?? [:]).merging(command.metadata) { _, commandValue in commandValue }
+        }
+        event = sanitizedBackendEvent(event, sensitiveValues: sensitiveValues)
         _ = continuation.yield(event)
       },
       finish: {

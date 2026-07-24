@@ -43,3 +43,59 @@ func backendContentStreamingEnabled(_ value: JSONValue?) -> Bool {
   }
   return enabled
 }
+
+func commandSensitiveValues(_ command: LocalAgentCommand) -> [String] {
+  sensitiveAdapterEnvironmentValues(command.configuration.environment) + command.additionalSensitiveValues
+}
+func redactedCommandExecutionError(_ error: Error, command: LocalAgentCommand) -> Error {
+  if error is CancellationError {
+    return error
+  }
+  let sensitiveValues = commandSensitiveValues(command)
+  if let adapterError = error as? AdapterExecutionError {
+    return AdapterExecutionError(
+      adapterError.code,
+      redactAdapterSensitiveText(adapterError.message, additionalSensitiveValues: sensitiveValues),
+      isRetryable: adapterError.isRetryable,
+      retryAfter: adapterError.retryAfter
+    )
+  }
+  let message = error.localizedDescription
+  let redactedMessage = redactAdapterSensitiveText(message, additionalSensitiveValues: sensitiveValues)
+  guard redactedMessage != message else {
+    return error
+  }
+  return AdapterExecutionError(.providerError, redactedMessage)
+}
+func sanitizedBackendEvent(
+  _ event: AdapterBackendEvent,
+  sensitiveValues: [String]
+) -> AdapterBackendEvent {
+  var event = event
+  event.provider = redactAdapterSensitiveText(event.provider, additionalSensitiveValues: sensitiveValues)
+  event.eventType = redactAdapterSensitiveText(event.eventType, additionalSensitiveValues: sensitiveValues)
+  event.contentDelta = sanitizedBackendEventContent(event.contentDelta, sensitiveValues: sensitiveValues)
+  event.contentSnapshot = sanitizedBackendEventContent(event.contentSnapshot, sensitiveValues: sensitiveValues)
+  event.toolName = event.toolName.map {
+    redactAdapterSensitiveText($0, additionalSensitiveValues: sensitiveValues)
+  }
+  event.usage = event.usage.map { sanitizedJSONObject($0, sensitiveValues: sensitiveValues) }
+  event.metadata = event.metadata.map { sanitizedJSONObject($0, sensitiveValues: sensitiveValues) }
+  return event
+}
+func sanitizedJSONObject(_ object: JSONObject, sensitiveValues: [String]) -> JSONObject {
+  guard case let .object(redacted) = redactAdapterSensitiveJSONValue(
+    .object(object),
+    additionalSensitiveValues: sensitiveValues
+  ) else {
+    return [:]
+  }
+  return redacted
+}
+func sanitizedWhen(_ when: [String: Bool], sensitiveValues: [String]) -> [String: Bool] {
+  var redacted: [String: Bool] = [:]
+  for (key, value) in when {
+    redacted[redactAdapterSensitiveText(key, additionalSensitiveValues: sensitiveValues)] = value
+  }
+  return redacted
+}

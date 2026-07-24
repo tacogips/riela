@@ -89,6 +89,7 @@ extension DeterministicWorkflowRunner {
           isDelta: backendEvent.isDelta,
           toolName: backendEvent.toolName,
           usage: backendEvent.usage,
+          metadata: backendEvent.metadata,
           sequence: nil,
           at: backendEvent.at,
           backendSessionId: backendEvent.backendSessionId

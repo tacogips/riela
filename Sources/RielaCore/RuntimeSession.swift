@@ -284,6 +284,7 @@ public struct WorkflowBackendEventRecord: Codable, Equatable, Sendable {
   public var content: String?
   public var toolName: String?
   public var usage: JSONObject?
+  public var metadata: JSONObject?
 
   public init(
     sequence: Int,
@@ -292,7 +293,8 @@ public struct WorkflowBackendEventRecord: Codable, Equatable, Sendable {
     channel: AdapterBackendEventChannel? = nil,
     content: String? = nil,
     toolName: String? = nil,
-    usage: JSONObject? = nil
+    usage: JSONObject? = nil,
+    metadata: JSONObject? = nil
   ) {
     self.sequence = sequence
     self.at = at
@@ -301,6 +303,7 @@ public struct WorkflowBackendEventRecord: Codable, Equatable, Sendable {
     self.content = content
     self.toolName = toolName
     self.usage = usage
+    self.metadata = metadata
   }
 }
 

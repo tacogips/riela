@@ -33,8 +33,12 @@ public struct WorkflowValidateCommand: Sendable {
           to: bundle.nodePayloads
         )
       }
+      let patchedProviderDiagnostics = options.nodePatch == nil ? [] : bundle.nodePayloads.keys.sorted().flatMap { nodeId in
+        bundle.nodePayloads[nodeId].map { validateAgentNodePayload($0, path: "nodes.\(nodeId)") } ?? []
+      }
       let diagnostics = bundle.diagnostics +
         DefaultWorkflowValidator().validate(bundle.workflow, nodePayloads: bundle.nodePayloads) +
+        patchedProviderDiagnostics +
         (await runtimeCapabilityDiagnostics(
           bundle: bundle,
           resolution: options.resolution,

@@ -32,6 +32,7 @@ public struct ClaudeCodeAgentCommandBuilder: LocalAgentCommandBuilding {
   }
 
   public func buildCommand(for input: AdapterExecutionInput) throws -> LocalAgentCommand {
+    try validateAgentProviderRoutingForAdapter(input.node)
     var arguments = [
       executableName, "-p", "--output-format", "stream-json", "--verbose", "--model", input.node.model
     ]
@@ -62,6 +63,7 @@ public struct ClaudeCodeAgentCommandBuilder: LocalAgentCommandBuilding {
     let environment = mergedAgentProcessEnvironment(
       baseEnvironment: environment,
       input: input,
+      providerEnvironment: try claudeProviderEnvironment(input: input, baseEnvironment: environment),
       provider: provider
     )
     let workingDirectoryURL = input.node.workingDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) }
@@ -73,6 +75,7 @@ public struct ClaudeCodeAgentCommandBuilder: LocalAgentCommandBuilding {
     )
     return LocalAgentCommand(
       provider: provider,
+      metadata: providerMetadata(input.node.provider),
       configuration: LocalAgentProcessConfiguration(
         executableURL: URL(fileURLWithPath: "/usr/bin/env"),
         arguments: arguments,
@@ -150,14 +153,23 @@ public struct ClaudeCodeAgentAdapter: NodeAdapter {
   public func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
     if authPreflight {
       if let checkAuthPreflight {
+        let sensitiveValues = claudePreflightSensitiveValues(input: input, baseEnvironment: environment)
         do {
           try await checkAuthPreflight(input)
         } catch let error as CancellationError {
           throw error
         } catch let error as AdapterExecutionError {
-          throw error
+          throw AdapterExecutionError(
+            error.code,
+            redactAdapterSensitiveText(error.message, additionalSensitiveValues: sensitiveValues),
+            isRetryable: error.isRetryable,
+            retryAfter: error.retryAfter
+          )
         } catch {
-          throw AdapterExecutionError(.policyBlocked, "claude-code-agent authentication is unavailable: \(redactAdapterSensitiveText(error.localizedDescription))")
+          throw AdapterExecutionError(
+            .policyBlocked,
+            "claude-code-agent authentication is unavailable: \(redactAdapterSensitiveText(error.localizedDescription, additionalSensitiveValues: sensitiveValues))"
+          )
         }
       } else {
         try await runClaudeDefaultAuthPreflight(
@@ -173,6 +185,19 @@ public struct ClaudeCodeAgentAdapter: NodeAdapter {
   }
 }
 
+private func claudePreflightSensitiveValues(
+  input: AdapterExecutionInput,
+  baseEnvironment: [String: String]
+) -> [String] {
+  let processEnvironment = mergedAgentProcessEnvironment(
+    baseEnvironment: baseEnvironment,
+    input: input,
+    provider: CliAgentBackend.claudeCodeAgent.rawValue
+  )
+  return sensitiveAdapterEnvironmentValues(processEnvironment)
+    + providerCredentialSensitiveValues(input.node.provider, processEnvironment: processEnvironment)
+}
+
 private func runClaudeDefaultAuthPreflight(
   input: AdapterExecutionInput,
   executableName: String,
@@ -183,6 +208,7 @@ private func runClaudeDefaultAuthPreflight(
   let preflightEnvironment = mergedAgentProcessEnvironment(
     baseEnvironment: environment,
     input: input,
+    providerEnvironment: try claudeProviderEnvironment(input: input, baseEnvironment: environment),
     provider: CliAgentBackend.claudeCodeAgent.rawValue
   )
   let sensitiveValues = sensitiveAdapterEnvironmentValues(preflightEnvironment)
@@ -242,6 +268,33 @@ private func runClaudeDefaultAuthPreflight(
       "claude-code-agent authentication is unavailable: \(preflightFailureDetail(auth, fallback: "auth verify failed", additionalSensitiveValues: sensitiveValues))"
     )
   }
+}
+
+private func claudeProviderEnvironment(
+  input: AdapterExecutionInput,
+  baseEnvironment: [String: String]
+) throws -> [String: String] {
+  guard let provider = input.node.provider else {
+    return [:]
+  }
+  var environment = ["ANTHROPIC_BASE_URL": provider.baseUrl]
+  if let apiKeyEnv = provider.apiKeyEnv {
+    let runtimeValue = input.agentEnvironment[apiKeyEnv]
+      ?? baseEnvironment[apiKeyEnv]
+      ?? ProcessInfo.processInfo.environment[apiKeyEnv]
+    guard let runtimeValue, !runtimeValue.isEmpty else {
+      throw AdapterExecutionError(
+        .policyBlocked,
+        "provider.apiKeyEnv requires runtime environment '\(apiKeyEnv)'"
+      )
+    }
+    environment["ANTHROPIC_AUTH_TOKEN"] = runtimeValue
+  }
+  return environment
+}
+
+private func providerMetadata(_ configuration: AgentProviderConfiguration?) -> JSONObject {
+  configuration.map { ["provider_name": .string($0.name)] } ?? [:]
 }
 
 private func preflightFailureDetail(

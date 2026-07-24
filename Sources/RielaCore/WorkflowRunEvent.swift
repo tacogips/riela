@@ -58,6 +58,7 @@ public struct BackendEventPayload: Codable, Equatable, Sendable {
   public var backendEventSequence: Int?
   public var backendToolName: String?
   public var backendEventUsage: JSONObject?
+  public var backendEventMetadata: JSONObject?
 
   public init(
     backendEventType: String? = nil,
@@ -67,7 +68,8 @@ public struct BackendEventPayload: Codable, Equatable, Sendable {
     backendEventIsDelta: Bool? = nil,
     backendEventSequence: Int? = nil,
     backendToolName: String? = nil,
-    backendEventUsage: JSONObject? = nil
+    backendEventUsage: JSONObject? = nil,
+    backendEventMetadata: JSONObject? = nil
   ) {
     self.backendEventType = backendEventType
     self.backendSessionId = backendSessionId
@@ -77,6 +79,7 @@ public struct BackendEventPayload: Codable, Equatable, Sendable {
     self.backendEventSequence = backendEventSequence
     self.backendToolName = backendToolName
     self.backendEventUsage = backendEventUsage
+    self.backendEventMetadata = backendEventMetadata
   }
 }
 
@@ -194,6 +197,7 @@ public enum WorkflowRunEvent: Equatable, Sendable {
     backendEventSequence: Int? = nil,
     backendToolName: String? = nil,
     backendEventUsage: JSONObject? = nil,
+    backendEventMetadata: JSONObject? = nil,
     silentForMs: Int? = nil,
     silenceThresholdMs: Int? = nil,
     loopStallGateId: String? = nil,
@@ -242,7 +246,8 @@ public enum WorkflowRunEvent: Equatable, Sendable {
           backendEventIsDelta: backendEventIsDelta,
           backendEventSequence: backendEventSequence,
           backendToolName: backendToolName,
-          backendEventUsage: backendEventUsage
+          backendEventUsage: backendEventUsage,
+          backendEventMetadata: backendEventMetadata
         )
       )
     case .silenceWarning:
@@ -378,6 +383,10 @@ public extension WorkflowRunEvent {
     backendEventPayload?.backendEventUsage
   }
 
+  var backendEventMetadata: JSONObject? {
+    backendEventPayload?.backendEventMetadata
+  }
+
   var exitCode: Int32? {
     sessionCompletionPayload?.exitCode
   }
@@ -506,6 +515,7 @@ extension WorkflowRunEvent: Codable {
     case backendEventSequence
     case backendToolName
     case backendEventUsage
+    case backendEventMetadata
     case silentForMs
     case silenceThresholdMs
     case loopStallGateId
@@ -545,6 +555,7 @@ extension WorkflowRunEvent: Codable {
       backendEventSequence: try container.decodeIfPresent(Int.self, forKey: .backendEventSequence),
       backendToolName: try container.decodeIfPresent(String.self, forKey: .backendToolName),
       backendEventUsage: try container.decodeIfPresent(JSONObject.self, forKey: .backendEventUsage),
+      backendEventMetadata: try container.decodeIfPresent(JSONObject.self, forKey: .backendEventMetadata),
       silentForMs: try container.decodeIfPresent(Int.self, forKey: .silentForMs),
       silenceThresholdMs: try container.decodeIfPresent(Int.self, forKey: .silenceThresholdMs),
       loopStallGateId: try container.decodeIfPresent(String.self, forKey: .loopStallGateId),
@@ -584,6 +595,7 @@ extension WorkflowRunEvent: Codable {
     try container.encodeIfPresent(backendEventSequence, forKey: .backendEventSequence)
     try container.encodeIfPresent(backendToolName, forKey: .backendToolName)
     try container.encodeIfPresent(backendEventUsage, forKey: .backendEventUsage)
+    try container.encodeIfPresent(backendEventMetadata, forKey: .backendEventMetadata)
     try container.encodeIfPresent(silentForMs, forKey: .silentForMs)
     try container.encodeIfPresent(silenceThresholdMs, forKey: .silenceThresholdMs)
     try container.encodeIfPresent(loopStallPayload?.gateId, forKey: .loopStallGateId)

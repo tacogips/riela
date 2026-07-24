@@ -24,6 +24,8 @@ tests may still construct legacy fixtures under explicit non-strict validation.
 - grouped lane payloads may live under `workflows/*/nodes/`
 - `worker-only-single-step/EXPECTED_RESULTS.md` includes a named-instance demo
   that runs the same workflow with two saved execution configurations
+- `open-model-provider-codex/` demonstrates canonical `provider` and
+  `providerProxy` routing to a loopback OpenAI-compatible endpoint
 
 ## Split Document Index
 

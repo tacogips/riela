@@ -178,11 +178,35 @@ RielaApp automatically collects only its configured user home.
 ## Riela Note
 
 Riela Note is the local notebook and note store for markdown notes, provenance
-aware tags, comments, links, file attachments, search, and workflow-backed note
-automation. The CLI stores notes under `~/.riela/note` by default; set
+aware hierarchical tags, typed notebook progress, per-tag grouped views,
+comments, links, file attachments, search, and workflow-backed note automation.
+The CLI stores notes under `~/.riela/note` by default; set
 `RIELA_NOTE_ROOT` or pass `--note-root <dir>` to use an isolated store.
 RielaApp uses the active profile's note root under
 `~/.riela/profiles/<profile>/note/`.
+
+Tags can have one optional parent. A tag filter resolves the selected tag plus
+all transitive descendants for notebook listing, note listing, text search,
+filter-only search, fallback search, and linked-note expansion. Filtering by a
+leaf remains exact, an unknown tag produces no matches, and parent changes that
+would create a self- or ancestor-cycle are rejected. The seeded `folder` tag
+class is available for notebook organization; it classifies notebook tags and
+does not introduce filesystem folder or ownership semantics.
+
+Every notebook has one typed progress value: `none`, `progress`, `done`, or
+`pending`; existing and newly created notebooks default to `none`. With a tag
+filter active, the compact notebook list and regular-width macOS search popup
+show matching notebooks in those four fixed groups, including notebooks tagged
+through descendant tags. A notebook row exposes its progress and a progress
+change menu. Filtered loads fail closed rather than showing an unfiltered or
+previous-tag board, and stale refresh, pagination, or progress-mutation
+responses cannot replace the current board.
+
+The additive note GraphQL surface exposes `NoteTag.parentTagId`,
+`Notebook.progress`, `DefineNoteTagInput.parentTagId`, the
+`NotebookProgress` enum, and
+`setNotebookProgress(notebookId:progress)`. Existing `tagFilter` arguments use
+the same descendant expansion as the local service.
 
 Common local commands:
 

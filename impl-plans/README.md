@@ -48,7 +48,7 @@ only the W13 read-through/move to `completed/`.
 
 | Plan | Status | Workstream |
 | ---- | ------ | ---------- |
-| `active/riela-note` | Partially implemented; three explicit accepted deferrals recorded 2026-07-12 (libsql sync, remote listener, vector/RAG) with owner + trigger | W8 |
+| `active/riela-note` | Hierarchical-tags/folder-class/notebook-progress work package accepted complete 2026-07-24; retained active only for three explicit baseline deferrals (libsql sync, remote listener, vector/RAG), each with owner + activation trigger | W8 |
 | `active/swift-cli-runtime-parity-gap-closure` | Implementation largely present; TypeScript deletion gate blocked on accepted review/adversarial metadata + final evidence | W9 |
 | `active/hermes-inspired-capabilities` | Planning; explicitly deferred pending the user's adoption-set decision (owner: user; trigger: H-A…H-E confirmation). Self-evolution substrate note corrected 2026-07-12 | W11 |
 | `active/distributed-registry-container-node-roadmap` | Foundation implemented; release publication is an explicitly accepted external deferral (owner: maintainer with release access; trigger: next release window) | W12 |

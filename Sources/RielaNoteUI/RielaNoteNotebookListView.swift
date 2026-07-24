@@ -20,6 +20,9 @@ public struct RielaNoteNotebookListView: View {
   public var body: some View {
     List(selection: selectedNoteIdBinding) {
       if viewModel.isSearching {
+        if viewModel.isTagKanbanActive && viewModel.hasCurrentTagKanbanSnapshot {
+          tagKanban
+        }
         searchResults
       } else {
         notebooks
@@ -97,9 +100,18 @@ public struct RielaNoteNotebookListView: View {
         ProgressView()
       } else if viewModel.state == .loaded && !viewModel.isSearching && viewModel.notebooks.isEmpty {
         ContentUnavailableView("No notes", systemImage: "note.text")
-      } else if viewModel.state == .loaded && viewModel.isSearching && viewModel.searchResults.isEmpty {
+      } else if viewModel.state == .loaded
+        && viewModel.isSearching
+        && viewModel.searchResults.isEmpty
+        && (!viewModel.hasCurrentTagKanbanSnapshot || viewModel.notebooks.isEmpty) {
         ContentUnavailableView.search
       }
+    }
+  }
+
+  private var tagKanban: some View {
+    RielaNoteTagKanbanSections(viewModel: viewModel) { notebookId in
+      await viewModel.requestSelection(.notebook(notebookId))
     }
   }
 
@@ -191,6 +203,7 @@ public struct RielaNoteNotebookListView: View {
   private var listIsEmpty: Bool {
     if viewModel.isSearching {
       return viewModel.searchResults.isEmpty
+        && (!viewModel.hasCurrentTagKanbanSnapshot || viewModel.notebooks.isEmpty)
     }
     return viewModel.notebooks.isEmpty && viewModel.notebookNotes.isEmpty
   }
@@ -222,6 +235,12 @@ struct RielaNoteNotebookRow: View {
         if let kind = notebook.kindTagName {
           RielaNoteTagChip(label: kind.replacingOccurrences(of: "notebook-kind:", with: ""), provenance: .system)
         }
+        Label(
+          rielaNoteNotebookProgressLabel(notebook.progress),
+          systemImage: rielaNoteNotebookProgressSystemImage(notebook.progress)
+        )
+        .font(.caption)
+        .foregroundStyle(.secondary)
       }
       if let preview = notebook.firstNotePreview, !preview.isEmpty {
         Text(preview)
@@ -245,6 +264,32 @@ struct RielaNoteNotebookRow: View {
 
 func rielaNoteNotebookNoteCountText(_ count: Int) -> String {
   count == 1 ? "1 note" : "\(count) notes"
+}
+
+func rielaNoteNotebookProgressLabel(_ progress: NotebookProgress) -> String {
+  switch progress {
+  case .none:
+    "None"
+  case .progress:
+    "In progress"
+  case .done:
+    "Done"
+  case .pending:
+    "Pending"
+  }
+}
+
+func rielaNoteNotebookProgressSystemImage(_ progress: NotebookProgress) -> String {
+  switch progress {
+  case .none:
+    "circle"
+  case .progress:
+    "clock.arrow.circlepath"
+  case .done:
+    "checkmark.circle"
+  case .pending:
+    "pause.circle"
+  }
 }
 
 struct RielaNoteSearchResultRow: View {

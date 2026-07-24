@@ -139,6 +139,7 @@ final class FailingRielaNoteUIClient: RielaNoteUIClient, @unchecked Sendable {
   var failApplyTag = false
   var failRemoveTag = false
   var failLinkNote = false
+  var failSetNotebookProgress = false
 
   init(base: MockRielaNoteUIClient) {
     self.base = base
@@ -150,6 +151,19 @@ final class FailingRielaNoteUIClient: RielaNoteUIClient, @unchecked Sendable {
 
   func listNotebooks(limit: Int, offset: Int) async throws -> [Notebook] {
     try await base.listNotebooks(limit: limit, offset: offset)
+  }
+
+  func setNotebookProgress(
+    notebookId: String,
+    progress: NotebookProgress
+  ) async throws -> Notebook {
+    if failSetNotebookProgress {
+      throw NoteServiceError.invalidInput("progress mutation failed")
+    }
+    return try await base.setNotebookProgress(
+      notebookId: notebookId,
+      progress: progress
+    )
   }
 
   func listNotes(notebookId: String, limit: Int, offset: Int) async throws -> [Note] {

@@ -6,8 +6,10 @@ extension DeterministicWorkflowRunner {
     requestVariables: JSONObject,
     resolvedInputPayload: JSONObject,
     sessionId: String,
+    workflow: WorkflowDefinition,
     step: WorkflowStepRef,
     transitions: [WorkflowStepTransition],
+    request: DeterministicWorkflowRunRequest,
     executionIndex: Int
   ) async throws -> WorkflowPublicationResult? {
     guard let inputFilters = registryNode.inputFilters, !inputFilters.isEmpty else {
@@ -25,8 +27,10 @@ extension DeterministicWorkflowRunner {
     }
     return try await skipFilteredStepAndAdvance(
       sessionId: sessionId,
+      workflow: workflow,
       step: step,
       transitions: transitions,
+      request: request,
       executionIndex: executionIndex
     )
   }
@@ -41,11 +45,12 @@ extension DeterministicWorkflowRunner {
 
   private func skipFilteredStepAndAdvance(
     sessionId: String,
+    workflow: WorkflowDefinition,
     step: WorkflowStepRef,
     transitions: [WorkflowStepTransition],
+    request: DeterministicWorkflowRunRequest,
     executionIndex: Int
   ) async throws -> WorkflowPublicationResult {
-    let selectedTransitions = transitionAfterSkippedInputFilter(from: transitions).map { [$0] } ?? []
     return try await publisher.publishAcceptedOutput(
       WorkflowPublicationRequest(
         sessionId: sessionId,
@@ -53,21 +58,18 @@ extension DeterministicWorkflowRunner {
         nodeId: step.nodeId,
         attempt: executionIndex,
         body: .inlineCandidate(skippedInputFilterCandidatePayload),
-        transitions: selectedTransitions,
+        transitions: transitions,
         successfulExecutionStatus: .skipped,
-        completesRootWithoutOutput: selectedTransitions.isEmpty
+        transitionSelectionMode: .firstMatch,
+        noSelectionDisposition: .completeRootWithoutOutput,
+        prePersistenceRoutingDecider: workflowPrePersistenceRoutingDecider(
+          workflow: workflow,
+          step: step,
+          request: request
+        ),
+        carriedPayloadFields: carriedLoopGuardPayload(from: request)
       )
     )
-  }
-
-  private func transitionAfterSkippedInputFilter(from transitions: [WorkflowStepTransition]) -> WorkflowStepTransition? {
-    transitions.first { transition in
-      WorkflowBranchEvaluator().evaluate(
-        label: transition.label,
-        when: skippedInputFilterCandidate.when,
-        payload: skippedInputFilterCandidate.payload
-      )
-    }
   }
 }
 

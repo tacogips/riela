@@ -8,6 +8,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   public var maxSteps: Int?
   public var maxConcurrency: Int?
   public var maxLoopIterations: Int?
+  public var disableDefaultLoopGuard: Bool
   public var defaultTimeoutMs: Int?
   public var timeoutMs: Int?
   public var addonAttachments: [String: WorkflowAddonAttachmentValue]
@@ -31,6 +32,9 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   public var crossWorkflowDispatchDepth: Int
   var stopBeforeStepId: String?
   var workflowRunId: String?
+  var parentSessionId: String?
+  var rootSessionId: String?
+  var effectiveStepBudget: Int?
 
   public init(
     workflow: WorkflowDefinition,
@@ -39,6 +43,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     maxSteps: Int? = nil,
     maxConcurrency: Int? = nil,
     maxLoopIterations: Int? = nil,
+    disableDefaultLoopGuard: Bool = false,
     defaultTimeoutMs: Int? = nil,
     timeoutMs: Int? = nil,
     addonAttachments: [String: WorkflowAddonAttachmentValue] = [:],
@@ -61,6 +66,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     self.maxSteps = maxSteps
     self.maxConcurrency = maxConcurrency
     self.maxLoopIterations = maxLoopIterations
+    self.disableDefaultLoopGuard = disableDefaultLoopGuard
     self.defaultTimeoutMs = defaultTimeoutMs
     self.timeoutMs = timeoutMs
     self.addonAttachments = addonAttachments
@@ -77,6 +83,9 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     self.crossWorkflowDispatchDepth = crossWorkflowDispatchDepth
     self.stopBeforeStepId = stopBeforeStepId
     self.workflowRunId = nil
+    self.parentSessionId = nil
+    self.rootSessionId = nil
+    self.effectiveStepBudget = nil
   }
 }
 
@@ -169,16 +178,24 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     self.calleeResolver = calleeResolver
   }
 
+  // The run loop keeps setup, recovery, publication, and failure finalization in one ownership scope.
+  // swiftlint:disable:next function_body_length
   public func run(_ request: DeterministicWorkflowRunRequest) async throws -> WorkflowRunResult {
     var interruptedSessionId: String?, ownedWorkflowRunId: String?
     var pendingStepBudgetDiagnostic: WorkflowStepBudgetDiagnostic?
+    var enforcedStepBudget: Int?
     do {
     let executionPlan = try validatedExecutionPlan(for: request)
     try validateSessionEntryModes(request)
     var effectiveRequest = request
+    let maxLoopIterations = effectiveRequest.maxLoopIterations ?? effectiveRequest.workflow.defaults.maxLoopIterations
+    let maxStepsSource: WorkflowStepBudgetSource = effectiveRequest.maxSteps == nil ? .computedDefault : .commandLine
+    let maxSteps = effectiveRequest.maxSteps ?? max(1, effectiveRequest.workflow.steps.count + maxLoopIterations)
+    effectiveRequest.effectiveStepBudget = maxSteps
+    enforcedStepBudget = maxSteps
 
     let entryContext: SessionEntryContext
-    switch try await resolveSessionEntry(request) {
+    switch try await resolveSessionEntry(effectiveRequest) {
     case let .terminal(result):
       return result
     case let .proceed(context):
@@ -186,6 +203,8 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     }
     var session = entryContext.session
     var currentStepId = entryContext.currentStepId
+    effectiveRequest.parentSessionId = session.parentSessionId
+    effectiveRequest.rootSessionId = session.rootSessionId ?? session.sessionId
     let recoveryLineage = entryContext.recoveryLineage
     for (key, value) in entryContext.variableOverrides {
       effectiveRequest.variables[key] = value
@@ -203,104 +222,102 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     var publishedTransitions = 0
     var rootOutput: JSONObject?
     var executionCounts: [String: Int] = [:]
-    let maxLoopIterations = effectiveRequest.maxLoopIterations ?? effectiveRequest.workflow.defaults.maxLoopIterations
-    let maxStepsSource: WorkflowStepBudgetSource = effectiveRequest.maxSteps == nil ? .computedDefault : .commandLine
-    let maxSteps = effectiveRequest.maxSteps ?? max(1, effectiveRequest.workflow.steps.count + maxLoopIterations)
-
     while let stepId = currentStepId {
-      visitedSteps += 1
-      if visitedSteps > maxSteps {
-        pendingStepBudgetDiagnostic = stepBudgetDiagnostic(
-          session: session,
-          stepBudget: maxSteps,
-          executionCount: maxSteps,
-          maxLoopIterations: maxLoopIterations,
-          budgetSource: maxStepsSource,
-          executionCounts: executionCounts,
-          unscheduledStepId: stepId
-        )
-        throw DeterministicWorkflowRunnerError.maxStepsExceeded(maxSteps)
-      }
-      // Step-boundary budget check: accumulated cost/wall-clock from completed
-      // steps is evaluated before the next step is dispatched.
-      try await enforceLoopBudgetAtStepBoundary(
-        visitedSteps: visitedSteps,
-        sessionId: session.sessionId,
-        workflow: effectiveRequest.workflow,
-        eventHandler: effectiveRequest.eventHandler,
-        budgetEventEmitted: &loopBudgetEventEmitted
-      )
       guard let step = executionPlan.step(id: stepId) else {
         throw DeterministicWorkflowRunnerError.missingStep(stepId)
       }
-      guard let registryNode = executionPlan.registryNode(id: step.nodeId) else {
-        throw DeterministicWorkflowRunnerError.missingNode(step.nodeId)
-      }
-      let executionIndex = (executionCounts[step.id] ?? 0) + 1
-      executionCounts[step.id] = executionIndex
-      let resolvedInput = try await inputResolver.resolveInput(for: session.sessionId, stepId: step.id, store: store)
       let transitions = step.transitions ?? []
-      if let publishResult = try await skipFilteredStepIfNeeded(
-        registryNode: registryNode, requestVariables: effectiveRequest.variables, resolvedInputPayload: resolvedInput.payload,
-        sessionId: session.sessionId, step: step, transitions: transitions, executionIndex: executionIndex
-      ) {
-        session = publishResult.session
-        try await enforceLoopConvergenceIfNeeded(
-          publishResult: publishResult,
-          workflow: effectiveRequest.workflow,
-          step: step,
-          request: effectiveRequest
-        )
-        publishedTransitions += publishResult.publishedMessages.count
-        await emitStepCompletedEvent(
-          workflowId: effectiveRequest.workflow.workflowId,
+      let pendingExecution = session.executions.last {
+        $0.stepId == stepId && $0.status == .running && $0.pendingRoutePublication != nil
+      }
+      if pendingExecution == nil,
+         let redirect = try await redirectForTerminalReservationIfNeeded(
           session: session,
-          step: step,
-          publishResult: publishResult,
-          publishedTransitions: publishedTransitions,
-          handler: effectiveRequest.eventHandler
-        )
-        if let dispatch = publishResult.crossWorkflowDispatch {
-          try await dispatchCrossWorkflowCallee(
-            directive: dispatch,
-            parentSessionId: session.sessionId,
-            parentStepId: step.id,
-            request: effectiveRequest
-          )
-          publishedTransitions += 1
-        }
-        if let dispatch = publishResult.fanoutDispatch {
-          let fanoutJoin = try await dispatchFanout(
-            directive: dispatch,
-            parentSessionId: session.sessionId,
-            parentStepId: step.id,
-            request: effectiveRequest
-          )
-          effectiveRequest.variables["fanoutJoin"] = .object(fanoutJoin)
-          publishedTransitions += 1
-          currentStepId = dispatch.joinStepId
-          continue
-        }
-        if let stoppedRootOutput = try await branchRootOutputIfStoppingBeforeStep(
-          publishResult: publishResult,
-          request: effectiveRequest
-        ) {
-          rootOutput = stoppedRootOutput
-          currentStepId = nil
-          continue
-        }
-        currentStepId = publishResult.nextStepId
+          currentStepId: stepId,
+          workflow: effectiveRequest.workflow,
+          request: effectiveRequest,
+          visitedSteps: visitedSteps,
+          maxSteps: maxSteps
+         ) {
+        session = redirect.result.session
+        currentStepId = redirect.result.replacementMessage.toStepId
+        effectiveRequest.variables["loopGuardOutcome"] = redirect.loopGuardOutcome
         continue
       }
-      let publishResult = try await executeNodeAndRecordMemory(
-        registryNode: registryNode,
-        request: effectiveRequest,
-        session: session,
-        step: step,
-        resolvedInput: resolvedInput,
-        transitions: transitions,
-        executionIndex: executionIndex
-      )
+      let publishResult: WorkflowPublicationResult
+      if let pendingExecution, let pending = pendingExecution.pendingRoutePublication {
+        publishResult = try await publisher.publishAcceptedOutput(WorkflowPublicationRequest(
+          sessionId: session.sessionId,
+          stepId: step.id,
+          nodeId: step.nodeId,
+          attempt: pendingExecution.attempt,
+          backend: pendingExecution.backend,
+          transitions: transitions,
+          publishesRootOutput: transitions.isEmpty,
+          successfulExecutionStatus: pending.intendedSuccessfulStatus,
+          noSelectionDisposition: pending.noSelectionDisposition,
+          prePersistenceRoutingDecider: workflowPrePersistenceRoutingDecider(
+            workflow: effectiveRequest.workflow,
+            step: step,
+            request: effectiveRequest
+          ),
+          carriedPayloadFields: carriedLoopGuardPayload(from: effectiveRequest)
+        ))
+      } else {
+        visitedSteps += 1
+        if visitedSteps > maxSteps {
+          pendingStepBudgetDiagnostic = stepBudgetDiagnostic(
+            session: session,
+            stepBudget: maxSteps,
+            executionCount: maxSteps,
+            maxLoopIterations: maxLoopIterations,
+            budgetSource: maxStepsSource,
+            executionCounts: executionCounts,
+            unscheduledStepId: stepId
+          )
+          throw DeterministicWorkflowRunnerError.maxStepsExceeded(maxSteps)
+        }
+        try await enforceLoopBudgetAtStepBoundary(
+          visitedSteps: visitedSteps,
+          sessionId: session.sessionId,
+          workflow: effectiveRequest.workflow,
+          eventHandler: effectiveRequest.eventHandler,
+          budgetEventEmitted: &loopBudgetEventEmitted
+        )
+        guard let registryNode = executionPlan.registryNode(id: step.nodeId) else {
+          throw DeterministicWorkflowRunnerError.missingNode(step.nodeId)
+        }
+        let executionIndex = (executionCounts[step.id] ?? 0) + 1
+        executionCounts[step.id] = executionIndex
+        let resolvedInput = try await inputResolver.resolveInput(
+          for: session.sessionId,
+          stepId: step.id,
+          store: store
+        )
+        if let skipped = try await skipFilteredStepIfNeeded(
+          registryNode: registryNode,
+          requestVariables: effectiveRequest.variables,
+          resolvedInputPayload: resolvedInput.payload,
+          sessionId: session.sessionId,
+          workflow: effectiveRequest.workflow,
+          step: step,
+          transitions: transitions,
+          request: effectiveRequest,
+          executionIndex: executionIndex
+        ) {
+          publishResult = skipped
+        } else {
+          publishResult = try await executeNodeAndRecordMemory(
+            registryNode: registryNode,
+            request: effectiveRequest,
+            session: session,
+            step: step,
+            resolvedInput: resolvedInput,
+            transitions: transitions,
+            executionIndex: executionIndex
+          )
+        }
+      }
       session = publishResult.session
       try await enforceLoopConvergenceIfNeeded(
         publishResult: publishResult,
@@ -309,6 +326,10 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         request: effectiveRequest
       )
       publishedTransitions += publishResult.publishedMessages.count
+      if publishResult.loopGuard?.action == .acceptWithResidualRisks,
+         case let .object(outcome)? = publishResult.publishedMessages.first?.payload["loopGuardOutcome"] {
+        effectiveRequest.variables["loopGuardOutcome"] = .object(outcome)
+      }
       rootOutput = publishResult.rootOutput ?? rootOutput
       await emitStepCompletedEvent(
         workflowId: effectiveRequest.workflow.workflowId,
@@ -371,7 +392,8 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           sessionId: interruptedSessionId,
           request: request,
           error: originalError,
-          stepBudgetDiagnostic: pendingStepBudgetDiagnostic
+          stepBudgetDiagnostic: pendingStepBudgetDiagnostic,
+          effectiveStepBudget: enforcedStepBudget
         )
       }
       await finishOwnedWorkflowRun(ownedWorkflowRunId)
@@ -627,23 +649,22 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       step: step,
       attempt: executionIndex,
       backend: payload.executionBackend,
+      backendWorkingDirectory: resolvedBackendWorkingDirectory(
+        backend: payload.executionBackend,
+        configuredWorkingDirectory: payload.workingDirectory
+      ),
+      effectiveStepBudget: request.effectiveStepBudget,
       handler: request.eventHandler
     )
     let projectedPayload = try outputProjectionPayload(
       projection,
       resolvedInputPayload: resolvedInputPayload
     )
-    let routingReconciler = workflowRoutingReconciler(workflow: workflow, step: step)
-    let candidate = try normalizeRuntimeInlineCandidate(projectedPayload, routingReconciler: routingReconciler)
-    if let adapterFailure = multiplePublishableTransitionFailure(transitions: transitions, candidate: candidate) {
-      try await publishFailureAndThrow(
-        adapterFailure,
-        sessionId: sessionId,
-        step: step,
-        attempt: executionIndex,
-        transitions: transitions
-      )
-    }
+    let routingReconciler = workflowRoutingReconciler(
+      workflow: workflow,
+      step: step,
+      disableDefaultLoopGuard: request.disableDefaultLoopGuard
+    )
     return try await publisher.publishAcceptedOutput(
       WorkflowPublicationRequest(
         sessionId: sessionId,
@@ -655,7 +676,13 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         outputContract: workflowOutputContract(from: payload.output),
         routingReconciler: routingReconciler,
         transitions: transitions,
-        publishesRootOutput: transitions.isEmpty
+        publishesRootOutput: transitions.isEmpty,
+        prePersistenceRoutingDecider: workflowPrePersistenceRoutingDecider(
+          workflow: workflow,
+          step: step,
+          request: request
+        ),
+        carriedPayloadFields: carriedLoopGuardPayload(from: request)
       )
     )
   }
@@ -689,6 +716,11 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         step: step,
         attempt: executionIndex,
         backend: payload.executionBackend,
+        backendWorkingDirectory: resolvedBackendWorkingDirectory(
+          backend: payload.executionBackend,
+          configuredWorkingDirectory: payload.workingDirectory
+        ),
+        effectiveStepBudget: request.effectiveStepBudget,
         handler: request.eventHandler
       )
       let execution = startedExecution.execution
@@ -717,19 +749,11 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           handler: request.eventHandler
         )
       )
-      let routingReconciler = workflowRoutingReconciler(workflow: workflow, step: step)
-      if let payload = result.payload {
-        let candidate = try normalizeRuntimeInlineCandidate(payload, routingReconciler: routingReconciler)
-        if let adapterFailure = multiplePublishableTransitionFailure(transitions: transitions, candidate: candidate) {
-          try await publishFailureAndThrow(
-            adapterFailure,
-            sessionId: sessionId,
-            step: step,
-            attempt: executionIndex,
-            transitions: transitions
-          )
-        }
-      }
+      let routingReconciler = workflowRoutingReconciler(
+        workflow: workflow,
+        step: step,
+        disableDefaultLoopGuard: request.disableDefaultLoopGuard
+      )
       return try await publisher.publishAcceptedOutput(
         WorkflowPublicationRequest(
           sessionId: sessionId,
@@ -741,7 +765,13 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           routingReconciler: routingReconciler,
           transitions: transitions,
           publishesRootOutput: transitions.isEmpty,
-          allowsNoOutput: result.payload == nil
+          allowsNoOutput: result.payload == nil,
+          prePersistenceRoutingDecider: workflowPrePersistenceRoutingDecider(
+            workflow: workflow,
+            step: step,
+            request: request
+          ),
+          carriedPayloadFields: carriedLoopGuardPayload(from: request)
         )
       )
     } catch let adapterFailure as AdapterExecutionError {
@@ -786,6 +816,11 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         step: step,
         attempt: attempt,
         backend: basePayload.executionBackend,
+        backendWorkingDirectory: resolvedBackendWorkingDirectory(
+          backend: basePayload.executionBackend,
+          configuredWorkingDirectory: basePayload.workingDirectory
+        ),
+        effectiveStepBudget: request.effectiveStepBudget,
         handler: request.eventHandler
       )
       let execution = startedExecution.execution
@@ -842,30 +877,11 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           throwing: error
         )
       }
-      let candidate: RuntimeOutputCandidate
-      let routingReconciler = workflowRoutingReconciler(workflow: request.workflow, step: step)
-      do {
-        candidate = try normalizeRuntimeAdapterOutput(adapterOutput, routingReconciler: routingReconciler)
-      } catch let adapterFailure as AdapterExecutionError {
-        try await publishFailureAndThrow(
-          adapterFailure,
-          sessionId: sessionId,
-          step: step,
-          attempt: attempt,
-          backend: basePayload.executionBackend,
-          transitions: transitions
-        )
-      }
-      if let adapterFailure = multiplePublishableTransitionFailure(transitions: transitions, candidate: candidate) {
-        try await publishFailureAndThrow(
-          adapterFailure,
-          sessionId: sessionId,
-          step: step,
-          attempt: attempt,
-          backend: basePayload.executionBackend,
-          transitions: transitions
-        )
-      }
+      let routingReconciler = workflowRoutingReconciler(
+        workflow: request.workflow,
+        step: step,
+        disableDefaultLoopGuard: request.disableDefaultLoopGuard
+      )
       do {
         return try await publisher.publishAcceptedOutput(
           WorkflowPublicationRequest(
@@ -878,7 +894,13 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
             outputContract: workflowOutputContract(from: basePayload.output),
             routingReconciler: routingReconciler,
             transitions: transitions,
-            publishesRootOutput: transitions.isEmpty
+            publishesRootOutput: transitions.isEmpty,
+            prePersistenceRoutingDecider: workflowPrePersistenceRoutingDecider(
+              workflow: request.workflow,
+              step: step,
+              request: request
+            ),
+            carriedPayloadFields: carriedLoopGuardPayload(from: request)
           )
         )
       } catch let error as WorkflowPublicationError {

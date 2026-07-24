@@ -97,6 +97,8 @@ public struct WorkflowValidationCommandResult: Codable, Equatable, Sendable {
   public var packageVersion: String?
   public var packageDirectory: String?
   public var mutable: Bool
+  @CodableDefaultImmutable public var provenance: WorkflowProvenance
+  @CodableDefaultActive public var activationState: WorkflowActivationState
   public var diagnostics: [WorkflowValidationDiagnostic]
   public var nodeValidationResults: [NodeValidationResult]
 
@@ -110,6 +112,8 @@ public struct WorkflowValidationCommandResult: Codable, Equatable, Sendable {
     packageVersion: String? = nil,
     packageDirectory: String? = nil,
     mutable: Bool = true,
+    provenance: WorkflowProvenance? = nil,
+    activationState: WorkflowActivationState = .active,
     diagnostics: [WorkflowValidationDiagnostic],
     nodeValidationResults: [NodeValidationResult]
   ) {
@@ -121,7 +125,10 @@ public struct WorkflowValidationCommandResult: Codable, Equatable, Sendable {
     self.packageName = packageName
     self.packageVersion = packageVersion
     self.packageDirectory = packageDirectory
-    self.mutable = mutable
+    let resolvedProvenance = provenance ?? (mutable ? .mutable : .immutable)
+    self.mutable = resolvedProvenance == .mutable
+    self.provenance = resolvedProvenance
+    self.activationState = activationState
     self.diagnostics = diagnostics
     self.nodeValidationResults = nodeValidationResults
   }
@@ -260,6 +267,7 @@ public struct WorkflowRemoteRunRequest: Codable, Equatable, Sendable {
   public var maxSteps: Int?
   public var maxConcurrency: Int?
   public var maxLoopIterations: Int?
+  public var disableDefaultLoopGuard: Bool
   public var defaultTimeoutMs: Int?
   public var timeoutMs: Int?
   public var authToken: String?
@@ -276,6 +284,7 @@ public struct WorkflowRemoteRunRequest: Codable, Equatable, Sendable {
     maxSteps: Int? = nil,
     maxConcurrency: Int? = nil,
     maxLoopIterations: Int? = nil,
+    disableDefaultLoopGuard: Bool = false,
     defaultTimeoutMs: Int? = nil,
     timeoutMs: Int? = nil,
     authToken: String? = nil,
@@ -291,6 +300,7 @@ public struct WorkflowRemoteRunRequest: Codable, Equatable, Sendable {
     self.maxSteps = maxSteps
     self.maxConcurrency = maxConcurrency
     self.maxLoopIterations = maxLoopIterations
+    self.disableDefaultLoopGuard = disableDefaultLoopGuard
     self.defaultTimeoutMs = defaultTimeoutMs
     self.timeoutMs = timeoutMs
     self.authToken = authToken
@@ -483,6 +493,9 @@ private func remoteRunInputObject(_ request: WorkflowRemoteRunRequest) -> JSONOb
   }
   if let maxLoopIterations = request.maxLoopIterations {
     input["maxLoopIterations"] = .number(Double(maxLoopIterations))
+  }
+  if request.disableDefaultLoopGuard {
+    input["disableDefaultLoopGuard"] = .bool(true)
   }
   if let defaultTimeoutMs = request.defaultTimeoutMs {
     input["defaultTimeoutMs"] = .number(Double(defaultTimeoutMs))

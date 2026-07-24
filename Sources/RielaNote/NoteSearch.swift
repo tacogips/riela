@@ -25,6 +25,10 @@ func searchNotesInDatabase(
   offset: Int,
   in database: SQLiteDatabase
 ) throws -> [NoteSearchResult] {
+  let expandedTagFilter = try expandedTagFilterNames(tagFilter, in: database)
+  guard tagFilter.isEmpty || !expandedTagFilter.isEmpty else {
+    return []
+  }
   let requestedLimit = max(0, limit)
   let requestedOffset = max(0, offset)
   // Guard against Int overflow: a hostile `offset` near `Int.max` must not trap
@@ -42,7 +46,7 @@ func searchNotesInDatabase(
     let results: [NoteSearchResult]
     if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       results = try searchNotesByFilters(
-        tagFilter: tagFilter,
+        tagFilter: expandedTagFilter,
         classFilter: classFilter,
         sort: sort,
         createdAfter: createdAfter,
@@ -53,7 +57,7 @@ func searchNotesInDatabase(
     } else {
       results = try searchNotesByTextLike(
         query: query,
-        tagFilter: tagFilter,
+        tagFilter: expandedTagFilter,
         classFilter: classFilter,
         excludedNoteIds: [],
         sort: sort,
@@ -67,7 +71,7 @@ func searchNotesInDatabase(
       ? appendLinkedNeighborResults(
           to: results,
           query: query,
-          tagFilter: tagFilter,
+          tagFilter: expandedTagFilter,
           classFilter: classFilter,
           sort: sort,
           createdAfter: createdAfter,
@@ -94,7 +98,7 @@ func searchNotesInDatabase(
     sql: &sql,
     bindings: &bindings
   )
-  if !tagFilter.isEmpty {
+  if !expandedTagFilter.isEmpty {
     sql += """
 
       AND EXISTS (
@@ -102,10 +106,10 @@ func searchNotesInDatabase(
         FROM note_tags nt
         INNER JOIN tags t ON t.tag_id = nt.tag_id
         WHERE nt.note_id = n.note_id
-          AND t.name IN (\(placeholders(count: tagFilter.count)))
+          AND t.name IN (\(placeholders(count: expandedTagFilter.count)))
       )
       """
-    bindings.append(contentsOf: tagFilter.map(SQLiteValue.text))
+    bindings.append(contentsOf: expandedTagFilter.map(SQLiteValue.text))
   }
   if !classFilter.isEmpty {
     sql += """
@@ -143,7 +147,7 @@ func searchNotesInDatabase(
   if shouldRunTextLikeFallback(query: query, ftsResultCount: results.count) {
     let fallback = try searchNotesByTextLike(
       query: query,
-      tagFilter: tagFilter,
+      tagFilter: expandedTagFilter,
       classFilter: classFilter,
       excludedNoteIds: Set(results.map(\.note.noteId)),
       sort: sort,
@@ -158,7 +162,7 @@ func searchNotesInDatabase(
     ? appendLinkedNeighborResults(
         to: results,
         query: query,
-        tagFilter: tagFilter,
+        tagFilter: expandedTagFilter,
         classFilter: classFilter,
         sort: sort,
         createdAfter: createdAfter,

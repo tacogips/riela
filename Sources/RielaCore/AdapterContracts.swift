@@ -157,6 +157,7 @@ public struct AdapterBackendEvent: Equatable, Sendable {
   public var usage: JSONObject?
   public var sequence: Int?
   public var at: Date?
+  public var backendSessionId: String?
 
   public init(
     provider: String,
@@ -168,7 +169,8 @@ public struct AdapterBackendEvent: Equatable, Sendable {
     toolName: String? = nil,
     usage: JSONObject? = nil,
     sequence: Int? = nil,
-    at: Date? = nil
+    at: Date? = nil,
+    backendSessionId: String? = nil
   ) {
     self.provider = provider
     self.eventType = eventType
@@ -180,6 +182,7 @@ public struct AdapterBackendEvent: Equatable, Sendable {
     self.usage = usage
     self.sequence = sequence
     self.at = at
+    self.backendSessionId = backendSessionId
   }
 }
 

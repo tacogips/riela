@@ -48,12 +48,15 @@ struct LoopGatePayloadParser: Sendable {
     return normalized(result)
   }
 
-  func result(from execution: WorkflowStepExecution) -> LoopGateResult? {
+  func result(
+    from execution: WorkflowStepExecution,
+    intendedStatus: WorkflowStepExecutionStatus? = nil
+  ) -> LoopGateResult? {
     if let output = execution.acceptedOutput?.payload,
        case let .object(loopGate)? = output["loopGate"] {
       return result(from: loopGate, execution: execution)
     }
-    guard execution.status == .skipped,
+    guard (intendedStatus ?? execution.status) == .skipped,
           gateStepIds.contains(execution.stepId) else {
       return nil
     }

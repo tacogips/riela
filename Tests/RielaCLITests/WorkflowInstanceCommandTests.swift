@@ -341,7 +341,7 @@ final class WorkflowInstanceCommandTests: XCTestCase {
     ])
     XCTAssertEqual(firstRun.exitCode, CLIExitCode.success, firstRun.stderr + firstRun.stdout)
     let first = try decode(WorkflowRunResult.self, from: firstRun.stdout)
-    XCTAssertEqual(first.session.instanceKind, "temporary")
+    XCTAssertEqual(first.session.instanceKind, "ephemeral")
     XCTAssertEqual(first.session.executions.map(\.backend), [.claudeCodeAgent])
 
     let rerun = await app.run([
@@ -362,7 +362,7 @@ final class WorkflowInstanceCommandTests: XCTestCase {
     ])
     XCTAssertEqual(status.exitCode, CLIExitCode.success, status.stderr + status.stdout)
     let inspection = try decode(SessionInspectionCommandResult.self, from: status.stdout)
-    XCTAssertEqual(inspection.instanceKind, "temporary")
+    XCTAssertEqual(inspection.instanceKind, "ephemeral")
     XCTAssertEqual(
       inspection.instanceConfiguration?["nodePatches"],
       .object(["main-worker": .object(["executionBackend": .string("claude-code-agent")])])

@@ -1,10 +1,1014 @@
 # Riela Note Implementation Plan
 
-**Status**: Partially implemented. **Remaining-work reconciliation
-(2026-07-12, W8):** the shipped scope (local note store, CLI/GraphQL/App
-surfaces, note agent with cited answers, auto-action loop) is implemented
-and tested; the prose follow-ups are now enumerated below as explicit
-accepted deferrals so completion stays measurable:
+**Status**: ACTIVE — the hierarchical-tags/folder-class/notebook-progress
+implementation is complete and accepted, but its current git-landing follow-up
+remains open until the authorized worktree is safety-checked, committed, pushed,
+and independently verified. The three owner-and-trigger deferrals under “Prior
+Riela Note Baseline and Accepted Deferrals” remain outside this work package.
+**Workflow Mode**: `issue-resolution` (exactly one feature/work package;
+`has_feature_fanout = false`)
+**Issue Reference**: No GitHub issue was provided. Runtime issue title:
+“Land accepted Riela Note hierarchical-tags/Kanban worktree: verified commit +
+push on `feat/riela-note-hierarchical-tags-kanban` (plus optional low-severity
+coverage tests).” Prior child session:
+`codex-design-and-implement-review-loop-session-631`; current workflow
+execution: `codex-design-and-implement-review-loop-session-632`.
+**Codex-Agent References**: None provided; the runtime intake and accepted
+design are authoritative.
+**Design Reference**: `design-docs/specs/design-riela-note.md` (D16–D19,
+Hierarchy filtering and schema-v4 rollout, GraphQL Surface, UI Design,
+Acceptance Traceability, Verification)
+**Accepted Design Review**: `comm-001569`, accepted with no high/mid findings
+and no revision requested. The accepted feature design remains
+`design-docs/specs/design-riela-note.md`; this follow-up does not reopen it.
+**Created**: 2026-07-04
+**Last Updated**: 2026-07-24
+
+## Current Issue-Resolution Work Package
+
+### Objective and boundaries
+
+Deliver hierarchical tags, the notebook-applicable `folder` system tag class,
+typed notebook progress, additive GraphQL exposure, and a minimal per-tag
+Kanban presentation as one coherent feature.
+
+Included write scopes:
+
+- `Sources/RielaNote/`: schema v4, models, tag-parent validation, shared
+  descendant expansion, notebook progress, and row projection.
+- `Sources/RielaGraphQL/`: additive note DTO/SDL/service/document-executor
+  changes.
+- `Sources/RielaNoteUI/`: notebook progress display and tag-filtered grouped
+  presentation.
+- `Tests/RielaNoteTests/`, `Tests/RielaGraphQLTests/`,
+  `Tests/RielaNoteUITests/`, and
+  `Tests/RielaServerTests/ServerContractsTests.swift`.
+- This implementation plan and the accepted Riela Note design/progress
+  documentation.
+
+Excluded:
+
+- Feature fan-out or a second work package.
+- Filesystem folder semantics, notebook ownership changes, containment
+  deletion, a general-purpose board designer, or unrelated UI redesign.
+- Changed semantics for existing GraphQL fields or exact-name tag-filter
+  inputs.
+- Unrelated Riela domains, worktrees, and the previously accepted libsql,
+  remote-listener, and vector/RAG deferrals.
+
+### Data flow
+
+For every note and notebook tag-filter entry point:
+
+1. Preserve the current tag-name normalization and OR behavior.
+2. Resolve requested names to tag ids.
+3. Expand each id to itself plus all transitive descendants through
+   `tags.parent_tag_id`, with duplicate/bounded traversal for defensive reads.
+4. Match note or notebook assignments against the expanded ids.
+5. Apply the existing text, class, date, sort, and pagination behavior.
+
+Unknown tag names continue to match nothing. A leaf expands only to itself.
+Expansion affects filtering only; it never creates inherited assignments.
+
+### TASK-016: Schema v4, seeds, and typed models
+
+**Status**: COMPLETE
+**Depends On**: —
+**Write Scope**:
+`Sources/RielaNote/NoteStoreSchema.swift`,
+`Sources/RielaNote/NoteModels.swift`,
+`Tests/RielaNoteTests/NoteStoreSchemaTests.swift`, and
+`Tests/RielaNoteTests/NoteHierarchyProgressTests.swift` (new).
+
+**Deliverables**:
+
+- Bump `NoteStoreSchema.currentVersion` from 3 to 4 and append
+  `NoteSchemaMigration(version: 4, apply: migrateToV4)`.
+- Add nullable self-referencing `tags.parent_tag_id` and
+  `notebooks.progress TEXT NOT NULL DEFAULT 'none'` with the four-value
+  CHECK constraint to both fresh-schema creation and v3→v4 migration.
+- Follow the existing guarded migration sequence: probe before alteration,
+  apply both changes transactionally, and record version 4 only after success.
+  Use the existing rename-copy-rebuild precedent only if the supported SQLite
+  runtime cannot add the constrained progress column directly.
+- Seed `folder` in `systemTagClasses` without changing existing seed identity
+  or idempotency.
+- Add `Tag.parentTagId: String?`, `NotebookProgress`
+  (`none`, `progress`, `done`, `pending`), and typed `Notebook.progress`.
+
+**Completion Criteria**:
+
+- Fresh databases and migrated v3 databases have equivalent v4 columns and
+  constraints.
+- Existing notebook rows migrate to `none`; existing tags retain a null
+  parent.
+- Invalid progress values are rejected by SQLite.
+- Existing schema idempotency and system-tag seeds remain intact.
+
+### TASK-017: Shared hierarchy and notebook-progress domain behavior
+
+**Status**: COMPLETE
+**Depends On**: TASK-016
+**Write Scope**:
+`Sources/RielaNote/NoteService.swift`,
+`Sources/RielaNote/NoteService+Catalog.swift`,
+`Sources/RielaNote/NoteService+Rows.swift`,
+`Sources/RielaNote/NoteService+NotebookTags.swift`,
+`Sources/RielaNote/NoteSearch.swift`, one focused hierarchy extension file
+under `Sources/RielaNote/` if needed, and
+`Tests/RielaNoteTests/NoteHierarchyProgressTests.swift`.
+
+**Deliverables**:
+
+- Extend tag definition/linking with an optional parent.
+- Validate parent existence and reject self/ancestor cycles in the same
+  transaction that persists the parent relationship.
+- Provide one shared descendant-closure facility over `parent_tag_id`; use
+  duplicate-eliminating or bounded recursion defensively against malformed
+  legacy cycles.
+- Route every existing tag-filter site through that shared expansion:
+  `NoteService.listNotebooks`, both `NoteService.listNotes` paths,
+  `searchNotesByFilters`, `searchNotesByTextLike`, and
+  `appendTagPredicates`.
+- Parse notebook progress in all notebook row projections and add
+  `setNotebookProgress(notebookId:progress:)` through the `NoteService`
+  write boundary.
+- Preserve exact-name filter inputs, unknown-name behavior, leaf behavior,
+  sort order, pagination, FTS behavior, and assignment provenance.
+
+**Completion Criteria**:
+
+- Parent filters surface items assigned to the parent or any descendant for
+  both notes and notebooks; child filters do not surface ancestor-only items;
+  leaves behave exactly as before.
+- List, filtered-search, LIKE fallback, and composed-predicate paths share the
+  same expansion behavior.
+- Self-parent and ancestor-parent writes fail atomically; defensive reads
+  terminate for malformed cyclic data.
+- Progress reads and writes round-trip all four enum values.
+- A `folder`-class tag can be applied to a notebook through existing notebook
+  tag assignment behavior.
+
+### TASK-018: Additive GraphQL contract and execution
+
+**Status**: COMPLETE
+**Depends On**: TASK-017
+**Write Scope**:
+`Sources/RielaGraphQL/GraphQLNoteSchemaContract.swift`,
+`Sources/RielaGraphQL/GraphQLContracts.swift`,
+`Sources/RielaGraphQL/NoteGraphQLContracts.swift`,
+`Sources/RielaGraphQL/NoteGraphQLService.swift`,
+`Sources/RielaGraphQL/NoteGraphQLDocumentExecutor.swift`,
+supporting note document-input/parsing files only when required,
+`Tests/RielaGraphQLTests/NoteGraphQLTests.swift`,
+`Tests/RielaGraphQLTests/NoteGraphQLHierarchyProgressTests.swift` (new), and
+`Tests/RielaServerTests/ServerContractsTests.swift`.
+
+**Deliverables**:
+
+- Add `parentTagId` to `NoteTag` and typed progress projection to `Notebook`.
+- Let `defineNoteTag` carry the optional parent relationship.
+- Add `setNotebookProgress(notebookId, progress)` and route it to
+  `NoteService`.
+- Keep note/notebook/search `tagFilter` arguments unchanged; inherit
+  descendant expansion from the domain service rather than duplicating it in
+  GraphQL.
+- Add a GraphQL integration test that creates or resolves the seeded `folder`
+  class, applies a folder-class tag to a notebook through
+  `applyNotebookTags`, and verifies the notebook/tag projection.
+- Keep every authoritative `type Query` and `type Mutation` SDL field on one
+  physical line and synchronize `GraphQLContracts.swift` with
+  `GraphQLNoteSchemaContract.swift`.
+
+**Completion Criteria**:
+
+- Existing GraphQL documents retain their behavior and response fields.
+- New parent/progress fields and the progress mutation work through both the
+  service facade and document executor.
+- GraphQL tag-filter tests prove parent/child/grandchild behavior.
+- GraphQL folder-class tagging succeeds through `applyNotebookTags` and is
+  projected correctly.
+- Server substring contract assertions remain green.
+
+### TASK-019: Minimal notebook progress and per-tag Kanban UI
+
+**Status**: COMPLETE
+**Depends On**: TASK-017
+**Write Scope**:
+`Sources/RielaNoteUI/RielaNoteUIClient.swift`,
+`Sources/RielaNoteUI/RielaNoteLibraryViewModel.swift`,
+`Sources/RielaNoteUI/RielaNoteNotebookListView.swift`,
+`Sources/RielaNoteUI/RielaNoteSearchPopupSheet.swift`, directly supporting
+RielaNoteUI components/extensions including the reusable Kanban sections,
+`Tests/RielaAppSupportTests/RielaAppNotesIntegrationTests.swift`,
+`Tests/RielaNoteUITests/RielaNoteUIClientCatalogTests.swift`,
+`Tests/RielaNoteUITests/RielaNoteNotebookRowMetadataTests.swift`, and
+`Tests/RielaNoteUITests/RielaNoteKanbanTests.swift` (new).
+
+**Deliverables**:
+
+- Add an explicit tag-filtered notebook-list operation to
+  `RielaNoteUIClient`, with a source-compatible default that delegates only for
+  an empty filter and fails closed for nonempty filters, plus production
+  delegation from `NoteServiceRielaNoteUIClient` to
+  `NoteService.listNotebooks(limit:offset:tagFilter:)`.
+- Carry notebook progress and tag-filtered notebook pages through the UI client
+  and view-model boundary. The Kanban must use notebook-list results, not infer
+  notebooks from note-search results.
+- Show the progress state on notebook rows.
+- When a tag filter is active, present the descendant-inclusive notebook
+  result set in fixed `none`, `progress`, `done`, and `pending` groups.
+- Route a user progress change through `setNotebookProgress`, refresh the
+  affected grouping, and surface mutation failure through existing UI error
+  handling.
+- Keep filtering and grouping separate; do not introduce folder trees,
+  drag-board infrastructure, or broad workspace redesign.
+
+**Completion Criteria**:
+
+- The existing notebook list remains usable without a tag filter.
+- UI-client tests prove selected tag names, limit, and offset reach the
+  notebook service path while legacy conformers remain source-compatible and
+  reject unsupported nonempty filters instead of returning unfiltered results.
+- Active tag filtering can switch to or display the four progress groups
+  without changing which notebooks the domain query returns.
+- The regular-width macOS search popup displays the active per-tag Kanban even
+  when the note-search result set is empty.
+- Progress changes update persistence and grouping, and failure leaves the
+  model/UI consistent with a visible regular-popup error.
+- Per-notebook mutation generations and tag/filter context prevent an older
+  mutation success or failure from replacing newer canonical state; a
+  superseded success reasserts the latest target.
+- Failure reconciliation refreshes only the failed notebook and does not
+  invalidate a concurrent mutation for another notebook.
+- Tag-filter, generation, filter, and offset snapshots prevent stale
+  first-page or load-more responses from mutating the active Kanban board.
+- The whole package builds, proving RielaNoteUI compiles with the new typed
+  models.
+
+### TASK-020: Integrated verification, documentation, and handoff
+
+**Status**: COMPLETE — implementation review was accepted, verification and
+documentation refresh are recorded, and commit/push remains a workflow handoff
+rather than implementation-plan work.
+**Depends On**: TASK-018, TASK-019
+**Write Scope**:
+focused regression tests, `design-docs/specs/design-riela-note.md`,
+`impl-plans/active/riela-note.md`, and directly affected README/skill
+documentation only if its user-facing contract requires an update.
+
+**Deliverables**:
+
+- Run the required build and focused suites below, recording exact commands,
+  pass/fail counts, reruns, and any verified unrelated flakes.
+- Review the changed diff for scope, additive GraphQL behavior, one-line SDL,
+  migration parity, and absence of duplicated tag-expansion logic.
+- Reconcile design and repository-facing documentation with implemented
+  behavior without reopening the accepted scope.
+- Append a progress-log entry containing completed tasks, changed files,
+  verification evidence, residual risks, and commit/push status.
+
+**Completion Criteria**:
+
+- TASK-016 through TASK-019 are complete with no unaddressed high/mid review
+  findings.
+- All required verification commands pass; a known flaky failure is accepted
+  only after a clean rerun demonstrates it is unrelated.
+- No implementation files outside the accepted Riela Note, GraphQL note,
+  RielaNoteUI, and focused test scopes are changed.
+
+### Current-work-package dependencies
+
+| Task | Depends On | Reason |
+| ---- | ---------- | ------ |
+| TASK-016 | — | Establishes schema and public domain types. |
+| TASK-017 | TASK-016 | Service behavior consumes the v4 schema and typed models. |
+| TASK-018 | TASK-017 | GraphQL projects and invokes the completed domain contract. |
+| TASK-019 | TASK-017 | UI consumes the completed domain contract. |
+| TASK-020 | TASK-018, TASK-019 | Verification and docs require all surfaces. |
+
+### Parallelization
+
+- TASK-016 and TASK-017 are sequential because both own
+  `Sources/RielaNote/` contracts.
+- After TASK-017, TASK-018 and TASK-019 are parallelizable: their write scopes
+  are disjoint (`RielaGraphQL`/GraphQL+server tests versus
+  `RielaNoteUI`/UI tests).
+- TASK-020 starts only after both parallel branches merge. Do not parallelize
+  overlapping edits within TASK-016 or TASK-017.
+
+### Required verification
+
+```bash
+swift build
+swift build --target RielaNoteUI --triple arm64-apple-ios17.0-simulator --sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)"
+swift test --filter RielaNoteTests
+swift test --filter NoteStoreSchemaTests
+swift test --filter NoteServiceMemoKindTagTests
+swift test --filter NoteGraphQL
+swift test --filter ServerContractsTests
+swift test --filter RielaNoteUITests
+git diff --check
+```
+
+Record a focused source audit confirming that all tag-filter paths use the
+shared descendant expansion and that `type Query`/`type Mutation` fields remain
+one line. The known `DaemonWorkflowNodePatchTests` event-source restart and
+agent-VM interleaved-submit failures are unrelated candidates only; rerun any
+failure before classifying it as non-regression.
+
+The iOS-targeted `RielaNoteUI` build is a required portability gate for the
+changed UI surface; host-only `swift build` is not a substitute.
+
+### Current-work-package completion criteria
+
+- [x] Exactly one feature/work package is delivered; no feature fan-out.
+- [x] Schema v4 migration preserves existing data and fresh-database parity.
+- [x] Tag-parent writes are transactional and cycle-safe; recursive reads are
+      defensive.
+- [x] Every note/notebook list and search tag-filter path expands to self plus
+      transitive descendants while preserving leaf and unknown-tag behavior.
+- [x] `folder` is seeded and folder-class tags apply to notebooks.
+- [x] Notebook progress is typed, defaults/migrates to `none`, and round-trips
+      through service, GraphQL, and UI.
+- [x] GraphQL changes are additive and one-line SDL assertions pass.
+- [x] The minimal UI shows progress and groups active-tag notebooks into the
+      four fixed progress states.
+- [x] `RielaNoteUI` builds for the iOS simulator target without AppKit or
+      unavailable-platform regressions.
+- [x] GraphQL verifies folder-class notebook tagging through
+      `applyNotebookTags`.
+- [x] Required build/tests and `git diff --check` pass with evidence.
+- [x] Progress log, documentation review, and commit/push status are recorded.
+
+### Current-work-package progress-log expectations
+
+Each implementation session appends one dated entry with:
+
+- tasks completed and still in progress;
+- exact files changed;
+- tests added or updated;
+- exact verification commands and outcomes;
+- review findings and their dispositions;
+- residual risks, known-flake reruns, and any verification gaps;
+- commit hash and push status when the workflow reaches commit handoff.
+
+### Session: 2026-07-24 Hierarchical-tags/Kanban plan authored
+
+**Tasks Completed**: — (planning only)
+**Tasks In Progress**: TASK-016
+**Files Changed**:
+`design-docs/specs/design-riela-note.md`,
+`impl-plans/active/riela-note.md`.
+**Review Evidence**: Step 3 accepted
+`design-docs/specs/design-riela-note.md` via `comm-001523` with no findings and
+no requested revision.
+**Verification**: Not run; implementation has not started. Required commands
+are listed above.
+**References**: No GitHub issue or Codex-agent reference was provided.
+
+### Session: 2026-07-24 Step 5 plan-review revisions
+
+**Tasks Completed**: Plan review findings from `comm-001526` addressed.
+**Tasks In Progress**: TASK-016
+**Files Changed**: `impl-plans/active/riela-note.md`.
+**Review Findings Addressed**:
+
+- Added an explicit iOS-simulator `RielaNoteUI` build gate and matching
+  completion criterion.
+- Added explicit GraphQL folder-class notebook-tagging coverage through
+  `applyNotebookTags`.
+
+**Verification**: Plan-only revision; implementation commands remain
+planned-not-run.
+**References**: Step 5 review `comm-001526`; accepted design review
+`comm-001523`; no GitHub issue or Codex-agent reference was provided.
+
+### Session: 2026-07-24 Hierarchical-tags/Kanban implementation
+
+**Tasks Completed**: TASK-016, TASK-017, TASK-018, TASK-019.
+**Tasks In Progress**: TASK-020 (review and commit/push handoff only).
+**Files Changed**:
+`README.md`,
+`design-docs/specs/design-riela-note.md`,
+`impl-plans/active/riela-note.md`,
+`Sources/RielaNote/NoteModels.swift`,
+`Sources/RielaNote/NoteSearch.swift`,
+`Sources/RielaNote/NoteService.swift`,
+`Sources/RielaNote/NoteService+Catalog.swift`,
+`Sources/RielaNote/NoteService+Hydration.swift`,
+`Sources/RielaNote/NoteService+Rows.swift`,
+`Sources/RielaNote/NoteStoreSchema.swift`,
+`Sources/RielaNote/NoteTagHierarchy.swift`,
+`Sources/RielaGraphQL/GraphQLContracts.swift`,
+`Sources/RielaGraphQL/GraphQLNoteSchemaContract.swift`,
+`Sources/RielaGraphQL/NoteGraphQLContracts.swift`,
+`Sources/RielaGraphQL/NoteGraphQLDocumentExecutor.swift`,
+`Sources/RielaGraphQL/NoteGraphQLService.swift`,
+`Sources/RielaNoteUI/RielaNoteLibraryViewModel.swift`,
+`Sources/RielaNoteUI/RielaNoteLibraryViewModel+Kanban.swift`,
+`Sources/RielaNoteUI/RielaNoteLibraryViewModel+SearchState.swift`,
+`Sources/RielaNoteUI/RielaNoteNotebookListView.swift`,
+`Sources/RielaNoteUI/RielaNoteUIClient.swift`,
+`Tests/RielaNoteTests/NoteHierarchyProgressTests.swift`,
+`Tests/RielaNoteTests/NoteStoreSchemaTests.swift`,
+`Tests/RielaGraphQLTests/NoteGraphQLHierarchyProgressTests.swift`,
+`Tests/RielaGraphQLTests/NoteGraphQLTests.swift`,
+`Tests/RielaNoteUITests/RielaNoteKanbanTests.swift`,
+`Tests/RielaNoteUITests/RielaNoteNotebookRowMetadataTests.swift`, and
+`Tests/RielaNoteUITests/RielaNoteUIClientCatalogTests.swift`.
+**Implementation**: Added schema v4 with nullable single-parent tags and typed
+notebook progress; one cycle-safe recursive descendant resolver shared by
+notebook listing, note listing, FTS, filter-only search, LIKE fallback, and
+linked-neighbor predicates; additive GraphQL parent/progress fields and
+progress mutation; and a source-compatible tag-filtered UI client plus fixed
+four-state grouped notebook presentation.
+**Verification**: Passed
+`swift build`;
+iOS-simulator `swift build --target RielaNoteUI`;
+`swift test --filter RielaNoteTests` (105 tests);
+`swift test --filter NoteStoreSchemaTests` (7 tests, included in the domain
+suite);
+`swift test --filter NoteServiceMemoKindTagTests` (4 tests);
+`swift test --filter NoteGraphQL` (61 tests);
+`swift test --filter ServerContractsTests` (15 tests);
+`swift test --filter RielaNoteUITests` (194 tests);
+and `git diff --check`.
+SwiftLint completed with no errors; its remaining warnings are pre-existing
+large-tuple, file-length, and naming warnings outside this work package.
+**Review Evidence**: Step 5 accepted the implementation plan in `comm-001529`;
+the initial review evidence and later adversarial revision are recorded below.
+**Residual Risks**: Manual visual interaction was not performed; automated UI
+construction, grouping/state tests, host compilation, and iOS-simulator
+compilation passed. GraphQL SDL remains intentionally one-line and additive.
+**Commit/Push**: Not performed in Step 6; deferred to the workflow commit
+handoff.
+**References**: `comm-001523`, `comm-001526`, `comm-001529`; no GitHub issue or
+Codex-agent reference was provided.
+
+### Session: 2026-07-24 Adversarial-review revision
+
+**Tasks Completed**: Addressed all Step 7 adversarial findings from
+`comm-001534`; TASK-019 completion criteria are reconfirmed.
+**Tasks In Progress**: TASK-020 (adversarial re-review and commit/push handoff
+only).
+**Files Changed**:
+`Sources/RielaNoteUI/RielaNoteUIClient.swift`,
+`Tests/RielaNoteTests/NoteHierarchyProgressTests.swift`,
+`Tests/RielaGraphQLTests/NoteGraphQLHierarchyProgressTests.swift`,
+`Tests/RielaNoteUITests/RielaNoteKanbanTests.swift`,
+`Tests/RielaNoteUITests/RielaNoteMutationFailureTests.swift`,
+`Tests/RielaNoteUITests/RielaNoteUIClientCatalogTests.swift`,
+`Tests/RielaNoteUITests/RielaNoteUITests.swift`, and
+`impl-plans/active/riela-note.md`.
+**Implementation**: The public UI-client compatibility default now delegates
+only for an empty tag filter and throws
+`notebookTagFilterUnsupported` for nonempty filters, preventing an unfiltered
+notebook set from being presented as a successful per-tag board. Capable
+conformers explicitly implement the filtered operation.
+**Tests Added or Updated**: Added a legacy-conformer fail-closed contract;
+empty-query, sub-trigram LIKE-fallback, and linked-neighbor hierarchy
+assertions; invalid GraphQL progress rejection with persisted-state
+preservation; and failed UI progress mutation grouping preservation.
+**Verification**: Passed the combined focused revision suite (12 tests),
+`swift build`, the iOS-simulator `RielaNoteUI` target build,
+`swift test --filter RielaNoteTests` (105 tests),
+`swift test --filter NoteGraphQL` (61 tests),
+`swift test --filter RielaNoteUITests` (196 tests), and
+`swift test --filter ServerContractsTests` (15 tests);
+`git diff --check` passed; SwiftLint completed without errors and reported only
+the pre-existing large-tuple, file-length, and type-name warnings.
+**Review Findings Addressed**:
+
+- Mid: eliminated the fail-open nonempty UI-client tag-filter fallback.
+- Low: covered filter-only, LIKE-fallback, and linked-neighbor descendant
+  expansion.
+- Low: covered invalid GraphQL progress rejection without persistence changes.
+- Low: covered failing UI progress mutations and prior-group preservation.
+
+**Residual Risks**: Manual visual interaction remains unperformed; automated
+grouping, error-state, host-build, and iOS-simulator verification passed.
+**Commit/Push**: Not performed in Step 6; deferred to the workflow commit
+handoff.
+**References**: `comm-001529`, `comm-001534`; no GitHub issue or Codex-agent
+reference was provided.
+
+### Session: 2026-07-24 Step 7 stale-Kanban revision
+
+**Tasks Completed**: Addressed the mid-severity Step 7 finding from
+`comm-001538`; TASK-019 completion criteria are reconfirmed.
+**Tasks In Progress**: TASK-020 (re-review and commit/push handoff only).
+**Files Changed**:
+`Sources/RielaNoteUI/RielaNoteLibraryViewModel.swift`,
+`Sources/RielaNoteUI/RielaNoteLibraryViewModel+NotebookPaging.swift` (new),
+`Tests/RielaNoteUITests/RielaNoteKanbanRaceTests.swift` (new), and
+`impl-plans/active/riela-note.md`.
+**Implementation**: Notebook first-page and pagination requests now snapshot
+the search generation, notebook-page generation, selected tag filter, list
+filter, and pagination offset. Every new first-page request invalidates older
+first-page and load-more work. Responses and failures are discarded when those
+values become stale; append responses additionally require the original offset
+to remain current, so concurrent or superseded pages cannot corrupt notebook
+membership or pagination cursors. Notebook paging moved to a focused extension
+to keep the main view-model type below its SwiftLint body-length threshold.
+**Tests Added**: Deterministic actor-gated races prove a tag change wins over
+both an in-flight Kanban load-more page and an in-flight refresh first page,
+and that a same-filter refresh invalidates an older load-more page.
+**Verification**:
+`/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build`
+passed;
+the iOS-simulator `RielaNoteUI` target build passed;
+the focused `RielaNoteKanbanRaceTests|RielaNoteKanbanTests` run reported 5
+tests passed; the full `RielaNoteUITests` run reported 199 tests passed; and
+`git diff --check` passed. Both Swift test commands exited successfully.
+SwiftLint completed without errors and reported only the pre-existing
+large-tuple, GraphQL file-length, and type-name warnings.
+**Review Finding Addressed**:
+
+- Mid: stale refresh or pagination responses can no longer place notebooks
+  from an old tag filter onto the active per-tag Kanban board.
+
+**Residual Risks**: Manual visual interaction remains unperformed.
+**Commit/Push**: Not performed in Step 6; deferred to the workflow commit
+handoff.
+**References**: `comm-001529`, `comm-001534`, `comm-001538`; no GitHub issue or
+Codex-agent reference was provided.
+
+### Session: 2026-07-24 Step 7 macOS Kanban and mutation-race revision
+
+**Tasks Completed**: Addressed both mid-severity adversarial findings and the
+bounded-waiter feedback from `comm-001543`; TASK-019 completion criteria are
+reconfirmed.
+**Tasks In Progress**: TASK-020 (Step 7 re-review and commit/push handoff only).
+**Files Changed**:
+`Sources/RielaNoteUI/RielaNoteLibraryViewModel.swift`,
+`Sources/RielaNoteUI/RielaNoteLibraryViewModel+Kanban.swift`,
+`Sources/RielaNoteUI/RielaNoteNotebookListView.swift`,
+`Sources/RielaNoteUI/RielaNoteSearchPopupSheet.swift`,
+`Sources/RielaNoteUI/RielaNoteTagKanbanSections.swift` (new),
+`Tests/RielaNoteUITests/RielaNoteKanbanRaceTests.swift`,
+`Tests/RielaNoteUITests/RielaNoteKanbanTests.swift`,
+`Tests/RielaAppSupportTests/RielaAppNotesIntegrationTests.swift`, and
+`impl-plans/active/riela-note.md`.
+**Implementation**: Extracted the four-state notebook board into reusable
+SwiftUI sections and mounted it in both the compact notebook list and the
+regular-width macOS search popup whenever a tag filter is active. Progress
+mutations now carry per-notebook generations and the active notebook-page
+generation; stale successes and failures are discarded instead of publishing
+or rolling back over newer canonical state, and a current failure reloads the
+canonical notebook page before publishing the error state.
+**Tests Added or Updated**: Added deterministic actor-gated coverage for
+out-of-order success, an older failure completing after newer success, and
+refresh invalidation of an in-flight mutation. The actor gate now has a
+two-second deterministic timeout. Added regular search-popup content-mode and
+AppKit-host rendering coverage for an active parent tag whose notebook is
+tagged through a descendant.
+**Verification**: The focused
+`RielaNoteKanbanRaceTests|RielaNoteKanbanTests|RielaAppNotesIntegrationTests`
+run reported 9 tests passed. The combined
+`RielaNoteUITests|RielaAppNotesIntegrationTests` run reported 221 tests and
+zero failures before its wrapper timeout. The iOS-simulator `RielaNoteUI`
+target build and current RielaApp product build passed. SwiftLint completed
+without errors and reported only pre-existing warnings.
+**Review Findings Addressed**:
+
+- Mid: the regular macOS RielaApp search route now renders the per-tag Kanban.
+- Mid: stale progress-mutation completions cannot replace newer state.
+- Low: the Kanban request gate waiter now fails with a bounded timeout.
+
+**Visual Verification**: The current direct debug executable was launched with
+isolated app/home roots and its base Notes window was captured and inspected.
+The AppKit-host PNG from the active hierarchical-tag integration test was
+inspected and shows the regular-width four-state board, descendant-tagged
+notebook, typed progress state, progress control, and Notes section. An
+active-filter window-ID capture from the running executable remains unavailable
+because local UI automation timed out and subsequent `screencapture -l`
+attempts failed.
+**Residual Risks**: The requested active-filter screenshot from the running
+executable remains a verification gap; no implementation or automated-test
+failure remains.
+**Commit/Push**: Not performed in Step 6; deferred to the workflow commit
+handoff.
+**References**: `comm-001542`, `comm-001543`; no GitHub issue or Codex-agent
+reference was provided.
+
+### Session: 2026-07-24 Step 6 self-review revision
+
+**Tasks Completed**: Addressed both mid-severity author self-review findings
+from `comm-001545`; TASK-019 completion criteria are reconfirmed.
+**Tasks In Progress**: TASK-020 (Step 7 re-review and commit/push handoff only).
+**Files Changed**:
+`Sources/RielaNoteUI/RielaNoteLibraryViewModel.swift`,
+`Sources/RielaNoteUI/RielaNoteLibraryViewModel+Kanban.swift`,
+`Sources/RielaNoteUI/RielaNoteSearchPopupSheet.swift`,
+`Tests/RielaNoteUITests/RielaNoteKanbanRaceTests.swift`,
+`Tests/RielaNoteUITests/RielaNoteKanbanTests.swift`, and
+`impl-plans/active/riela-note.md`.
+**Implementation**: The regular-width Kanban now retains its board while
+rendering an explicit accessible mutation-failure banner. Progress mutation
+validity is scoped by notebook, generation, active tag filter, and list filter
+rather than the global notebook-page generation. Failure reconciliation
+queries the loaded range and updates only the failed notebook. If an older
+successful request persists after a newer request, the view model reasserts
+the latest target so persistence and grouping converge on the latest intent.
+**Tests Added or Updated**: The failed-mutation test now proves the regular
+popup selects its visible failure branch. The actor-gated client now maintains
+canonical progress state. Deterministic tests prove refresh plus mutation
+completion converges, an older late success cannot persist over a newer target,
+and one notebook's failure does not invalidate another notebook's successful
+mutation. The regular-width AppKit-host integration test also renders the
+failure branch; its inspected PNG shows a legible semantic-color error banner.
+**Verification**: The focused
+`RielaNoteKanbanRaceTests|RielaNoteKanbanTests|RielaAppNotesIntegrationTests`
+run reported 10 tests and zero failures. Broader build, UI suite, iOS target,
+lint, and diff checks are recorded in the Step 6 handoff.
+**Review Findings Addressed**:
+
+- Mid: regular-width progress-mutation failures are visibly surfaced.
+- Mid: per-notebook failure reconciliation no longer invalidates unrelated
+  successful mutations.
+
+**Residual Risks**: The active-filter current-executable window-ID screenshot
+remains unavailable; the regular-width AppKit-host render remains the visual
+evidence.
+**Commit/Push**: Not performed in Step 6; deferred to the workflow commit
+handoff.
+**References**: `comm-001545`; no GitHub issue or Codex-agent reference was
+provided.
+
+### Session: 2026-07-24 Step 7 filtered-load fail-closed revision
+
+**Tasks Completed**: Addressed the mid-severity Step 7 finding from
+`comm-001549`; TASK-019 completion criteria are reconfirmed.
+**Tasks In Progress**: TASK-020 (Step 7 re-review and commit/push handoff only).
+**Files Changed**:
+`Sources/RielaNoteUI/RielaNoteLibraryViewModel.swift`,
+`Sources/RielaNoteUI/RielaNoteLibraryViewModel+Kanban.swift`,
+`Sources/RielaNoteUI/RielaNoteLibraryViewModel+NotebookPaging.swift`,
+`Sources/RielaNoteUI/RielaNoteNotebookListView.swift`,
+`Sources/RielaNoteUI/RielaNoteSearchPopupSheet.swift`,
+`Tests/RielaNoteUITests/RielaNoteKanbanRaceTests.swift`,
+`Tests/RielaAppSupportTests/RielaAppNotesIntegrationTests.swift`, and
+`impl-plans/active/riela-note.md`.
+**Implementation**: Every successfully applied notebook first page now records
+its exact tag-filter and list-filter context. Compact and regular-width Kanban
+surfaces render a notebook snapshot only when that context matches the active
+request. Search, refresh, and first-page work clear prior mutation-failure
+markers; a load or pagination failure selects a board-load failure surface
+without rendering stale membership. Progress-mutation failures retain the
+current board only when the stored failure context and message match the active
+board and current failed state.
+**Tests Added or Updated**: Added deterministic regressions proving that an
+initial unfiltered notebook snapshot is not exposed after a tag-filtered load
+failure and that an alpha board is not exposed after a failed switch to beta.
+The existing mutation-failure and regular-width AppKit-host assertions continue
+to prove that a same-board progress failure retains the board and visible error.
+**Verification**:
+
+- `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'RielaNoteKanbanRaceTests|RielaNoteKanbanTests|RielaAppNotesIntegrationTests.testRegularSearchPopupRendersActiveTagKanban'`
+  passed 12 tests with zero failures.
+- `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'RielaNoteUITests|RielaAppNotesIntegrationTests'`
+  passed 224 tests with zero failures.
+- `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build`
+  emitted `Build complete!`; its wrapper remained alive until timeout.
+- The iOS-simulator `RielaNoteUI` target build passed.
+- Xcode-toolchain SwiftLint completed without errors and reported only the
+  pre-existing large-tuple, GraphQL file-length, and type-name warnings.
+- Focused `git diff --check` passed.
+
+**Review Finding Addressed**:
+
+- Mid: filtered-load failures can no longer present an unfiltered or
+  previous-tag notebook snapshot as the active Kanban board.
+
+**Residual Risks**: The active-filter current-executable window-ID screenshot
+remains unavailable; the regular-width AppKit-host render remains the visual
+evidence. The host build wrapper remained alive after conclusive successful
+output.
+**Commit/Push**: Not performed in Step 6; deferred to the workflow commit
+handoff.
+**References**: `comm-001549`; no GitHub issue or Codex-agent reference was
+provided.
+
+### Session: 2026-07-24 Completion-state gate
+
+**Tasks Completed**: TASK-020; TASK-016 through TASK-020 are complete.
+**Tasks In Progress**: None in the hierarchical-tags/folder-class/notebook-
+progress issue-resolution work package.
+**Review Evidence**: Step 7 accepted the implementation as
+`accepted_adversarial_review_with_low_coverage_gaps`; Step 8 documentation
+refresh `comm-001555` aligned `README.md` and
+`.codex/skills/riela-impl-workflow/SKILL.md` and reviewed the design and plan
+without reopening scope.
+**Verification**:
+`/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'NoteHierarchyProgressTests|NoteGraphQLHierarchyProgressTests|RielaNoteKanbanRaceTests'`
+passed 15 tests with zero failures; `git diff --check` passed. The accepted
+SwiftLint command reported only pre-existing warning-level findings before its
+wrapper timeout.
+**Residual Risks**: The current-executable active-filter window-ID screenshot
+remains unavailable; fresh-v4 foreign-key metadata and progress-CHECK
+enforcement lack dedicated assertions; GraphQL document execution lacks a
+parent-child-grandchild projection assertion for nested `parentTagId`.
+**Plan Disposition**: The completed current work package does not justify
+archiving this multi-scope plan because the baseline section still owns three
+intentional deferrals: real libsql sync, remote note listener/registration, and
+vector/embedding multi-source RAG. Each has an exact owner and activation
+trigger below. No accepted implementation work remains active.
+**Commit/Push**: Not performed; commit generation and push remain downstream
+workflow handoff actions.
+**References**: `comm-001555`; no external issue or Codex-agent reference was
+provided.
+
+## Current Git-Landing Follow-Up Work Package
+
+### Objective and boundaries
+
+Land the already implemented and review-accepted hierarchical-tags/Kanban
+worktree on `feat/riela-note-hierarchical-tags-kanban` as exactly one
+`issue-resolution` work package. Success requires a real local commit and a
+matching remote branch ref; addon status text is not evidence.
+
+The mandatory scope is repository safety review, exact-path staging, commit,
+push, and independent verification. No production-code changes, amend, rebase,
+feature fan-out, or other-worktree operations are authorized. The only optional
+edits are the two low-severity test additions in TASK-022.
+
+Baseline and target:
+
+- Repository: the repository root containing this active plan
+- Branch: `feat/riela-note-hierarchical-tags-kanban`
+- Pre-feature HEAD: `e82ede992852a161207c3251168768e8b46a42d4`
+- Commit message:
+  `feat(riela-note): add hierarchical tags and notebook progress Kanban`
+- Remote ref:
+  `refs/heads/feat/riela-note-hierarchical-tags-kanban`
+
+### Authorized path manifest
+
+Stage and commit exactly these 37 unique paths from the authoritative runtime
+`changedFiles` array:
+
+1. `.codex/skills/riela-impl-workflow/SKILL.md`
+2. `README.md`
+3. `Sources/RielaGraphQL/GraphQLContracts.swift`
+4. `Sources/RielaGraphQL/GraphQLNoteSchemaContract.swift`
+5. `Sources/RielaGraphQL/NoteGraphQLContracts.swift`
+6. `Sources/RielaGraphQL/NoteGraphQLDocumentExecutor.swift`
+7. `Sources/RielaGraphQL/NoteGraphQLService.swift`
+8. `Sources/RielaNote/NoteModels.swift`
+9. `Sources/RielaNote/NoteSearch.swift`
+10. `Sources/RielaNote/NoteService+Catalog.swift`
+11. `Sources/RielaNote/NoteService+Hydration.swift`
+12. `Sources/RielaNote/NoteService+Rows.swift`
+13. `Sources/RielaNote/NoteService.swift`
+14. `Sources/RielaNote/NoteStoreSchema.swift`
+15. `Sources/RielaNote/NoteTagHierarchy.swift`
+16. `Sources/RielaNoteUI/RielaNoteLibraryViewModel.swift`
+17. `Sources/RielaNoteUI/RielaNoteLibraryViewModel+Kanban.swift`
+18. `Sources/RielaNoteUI/RielaNoteLibraryViewModel+NotebookPaging.swift`
+19. `Sources/RielaNoteUI/RielaNoteLibraryViewModel+SearchState.swift`
+20. `Sources/RielaNoteUI/RielaNoteNotebookListView.swift`
+21. `Sources/RielaNoteUI/RielaNoteSearchPopupSheet.swift`
+22. `Sources/RielaNoteUI/RielaNoteTagKanbanSections.swift`
+23. `Sources/RielaNoteUI/RielaNoteUIClient.swift`
+24. `Tests/RielaAppSupportTests/RielaAppNotesIntegrationTests.swift`
+25. `Tests/RielaGraphQLTests/NoteGraphQLHierarchyProgressTests.swift`
+26. `Tests/RielaGraphQLTests/NoteGraphQLTests.swift`
+27. `Tests/RielaNoteTests/NoteHierarchyProgressTests.swift`
+28. `Tests/RielaNoteTests/NoteStoreSchemaTests.swift`
+29. `Tests/RielaNoteUITests/RielaNoteKanbanRaceTests.swift`
+30. `Tests/RielaNoteUITests/RielaNoteKanbanTests.swift`
+31. `Tests/RielaNoteUITests/RielaNoteMutationFailureTests.swift`
+32. `Tests/RielaNoteUITests/RielaNoteNotebookRowMetadataTests.swift`
+33. `Tests/RielaNoteUITests/RielaNoteUIClientCatalogTests.swift`
+34. `Tests/RielaNoteUITests/RielaNoteUITests.swift`
+35. `design-docs/specs/design-riela-note.md`
+36. `impl-plans/README.md`
+37. `impl-plans/active/riela-note.md`
+
+The runtime acceptance prose describes “38 changed files,” but its authoritative
+`changedFiles` array and the current `git status --porcelain` each contain the
+same 37 unique paths. Do not invent a 38th path or stage anything outside that
+authoritative set. Record this reconciled count in the progress log and result
+payload.
+
+### TASK-021: Repository identity, exact scope, and safety gate
+
+**Status**: COMPLETE
+**Depends On**: TASK-020
+**Write Scope**: none; this is a read-only gate.
+
+**Deliverables**:
+
+- Confirm the repository root, current branch, and pre-commit HEAD.
+- Resolve the authoritative unique path set from runtime `changedFiles`, compare
+  it with `git status --porcelain`, and stop if any authorized change is
+  missing or an unexpected path would need staging.
+- Run the repository `git-precommit-safety-check` workflow over the complete
+  unstaged diff, checking credential material, private URLs, and machine-local
+  absolute paths. Resolve findings before staging.
+- Confirm `git diff --check` is clean.
+
+**Verification**:
+
+```bash
+git rev-parse --show-toplevel
+git branch --show-current
+git rev-parse HEAD
+git status --porcelain
+git diff --check
+```
+
+**Completion Criteria**:
+
+- Repository, branch, and base HEAD match the declared target.
+- The authorized unique path set is explicitly recorded and no unrelated path
+  is selected for staging.
+- The full-diff safety check and `git diff --check` pass.
+
+### TASK-022: Optional low-severity coverage
+
+**Status**: SKIPPED — accepted low-severity residual risks
+**Depends On**: TASK-021
+**Write Scope**:
+`Tests/RielaNoteTests/NoteHierarchyProgressTests.swift` and
+`Tests/RielaGraphQLTests/NoteGraphQLHierarchyProgressTests.swift` only.
+
+**Deliverables**:
+
+- Optionally assert fresh-v4 `tags.parent_tag_id` foreign-key metadata through
+  `PRAGMA foreign_key_list` and reject an invalid `notebooks.progress` insert.
+- Optionally add GraphQL document-execution coverage projecting nested
+  `parentTagId` across a parent→child→grandchild chain.
+- Keep authoritative `type Query` and `type Mutation` fields one physical line.
+
+**Verification**:
+
+```bash
+swift test --filter 'NoteHierarchyProgressTests|NoteGraphQLHierarchyProgressTests'
+```
+
+**Completion Criteria**:
+
+- If either optional edit is made, the focused command passes and both modified
+  test files remain within the authorized manifest.
+- If skipped, record both items as accepted low-severity residual risks.
+
+### TASK-023: Exact commit, push, and independent evidence
+
+**Status**: COMPLETE — final commit and remote-ref evidence is reported in the
+Step 6 adapter payload because a commit cannot contain its own hash.
+**Depends On**: TASK-021 and TASK-022 only when TASK-022 is executed
+**Write Scope**: git index, one new commit, and the target remote branch.
+
+**Deliverables**:
+
+- After all selected edits are complete, rerun the full-diff
+  `git-precommit-safety-check` so its evidence covers the exact content that
+  will be staged; the earlier TASK-021 result is not sufficient if TASK-022
+  changed either test file.
+- Reconfirm `git diff --check` immediately before staging.
+- Stage each authoritative path explicitly; do not use broad staging.
+- Compare the staged path set with the resolved authoritative unique path set
+  before committing.
+- Create one non-amended commit with the required message.
+- Push with upstream tracking to
+  `origin/feat/riela-note-hierarchical-tags-kanban`.
+- Record the actual local commit hash and the matching remote ref hash.
+
+**Verification**:
+
+```bash
+git diff --check
+git diff --cached --name-only
+git commit -m 'feat(riela-note): add hierarchical tags and notebook progress Kanban'
+git rev-parse HEAD
+git status --porcelain
+git push -u origin feat/riela-note-hierarchical-tags-kanban
+git ls-remote --heads origin feat/riela-note-hierarchical-tags-kanban
+```
+
+**Completion Criteria**:
+
+- `git rev-parse HEAD` differs from
+  `e82ede992852a161207c3251168768e8b46a42d4`.
+- The commit contains exactly the resolved authoritative unique path set and
+  uses the required message; no amend or rebase occurs.
+- The final full-diff safety check and `git diff --check` pass after all
+  selected optional edits and before staging.
+- `git status --porcelain` is empty after commit, which proves every authorized
+  path is clean and no unrelated worktree change was consumed or left behind.
+- `git ls-remote --heads origin
+  feat/riela-note-hierarchical-tags-kanban` returns the new local commit hash.
+- The result payload reports hashes and command evidence, not addon status.
+
+### Inherited implementation, typecheck, test, and documentation gates
+
+TASK-016 through TASK-020 already completed the design-implied production
+implementation, macOS build/typecheck, iOS-simulator `RielaNoteUI` build,
+domain/GraphQL/UI/integration tests, design refresh, `README.md` refresh, skill
+refresh, and progress logging. The accepted evidence records 420 passing tests,
+successful macOS and iOS-simulator builds, and a clean `git diff --check`.
+
+This follow-up authorizes no production changes, so those completed gates are
+not repeated. If TASK-022 changes either test file, its focused `swift test`
+command is mandatory and compiles the affected test and product dependencies.
+TASK-023 must still commit the accepted documentation paths
+`README.md`, `.codex/skills/riela-impl-workflow/SKILL.md`,
+`design-docs/specs/design-riela-note.md`, `impl-plans/README.md`, and this plan.
+
+### Dependencies and parallelization
+
+| Task | Depends On | Parallelization |
+| ---- | ---------- | --------------- |
+| TASK-021 | TASK-020 | Sequential safety gate. |
+| TASK-022 | TASK-021 | Optional; its two test files are disjoint and may be edited in parallel only if explicitly chosen. |
+| TASK-023 | TASK-021; TASK-022 if executed | Sequential commit and push gate. |
+
+No mandatory tasks are parallelizable. TASK-023 must wait for all selected
+edits and verification to finish.
+
+### Follow-up completion criteria
+
+- [x] Exactly one issue-resolution work package; no feature fan-out.
+- [x] No production-code edits beyond the accepted dirty worktree.
+- [x] Full-diff safety check reports no unresolved credentials, private URLs,
+      or machine-local absolute paths after all selected edits.
+- [x] Staged and committed paths exactly match the authoritative unique
+      `changedFiles` set.
+- [x] A new non-amended commit exists with the required message.
+- [x] Authorized paths are clean after commit.
+- [x] The remote branch ref exists and equals the new local commit hash.
+- [x] Optional test edits, if any, pass the focused test command and are
+      included in the commit.
+
+### Follow-up progress-log expectations
+
+Append one dated entry recording TASK-021/TASK-022/TASK-023 dispositions, the
+resolved authoritative unique path count, safety findings, optional-test
+decision, exact verification commands and results, commit hash, remote ref
+hash, residual risks, and the references `comm-001569`,
+`codex-design-and-implement-review-loop-session-631`, and
+`codex-design-and-implement-review-loop-session-632`. Codex-agent references
+remain empty.
+
+### Session: 2026-07-24 Step 4 landing-plan self-review
+
+**Tasks Completed**: Plan-only self-review; no implementation, staging, commit,
+or push action performed.
+**Tasks In Progress**: TASK-021.
+**Files Changed**: `impl-plans/active/riela-note.md`.
+**Plan Findings Addressed**:
+
+- Required the safety check and `git diff --check` to run after all optional
+  test edits, ensuring they cover the exact final diff.
+- Replaced the non-executable path placeholder with the stronger explicit
+  `git status --porcelain` clean-worktree command.
+- Made completed build/typecheck, test, documentation, and progress-log gates
+  explicit without reopening the accepted implementation scope.
+
+**Verification**: `git diff --check -- impl-plans/active/riela-note.md`;
+`git branch --show-current`; `git rev-parse HEAD`; and
+`git status --porcelain`.
+**Review Evidence**: Step 3 accepted the design in `comm-001569`; Step 4 plan
+creation is `comm-001570`. No Codex-agent reference was provided.
+**Residual Risk**: Runtime prose says 38 files while the authoritative
+`changedFiles` array and current status contain the same 37 unique paths.
+
+### Session: 2026-07-24 Step 6 verified git landing
+
+**Tasks Completed**: TASK-021 and TASK-023.
+**Task Skipped**: TASK-022; both optional coverage items remain accepted
+low-severity residual risks.
+**Files Changed by This Follow-Up**:
+`impl-plans/active/riela-note.md`; no production-code changes were made beyond
+the previously accepted dirty worktree.
+**Authorized Manifest**: The runtime `changedFiles` array and
+`git status --porcelain` resolve to the same 37 unique paths. The conflicting
+runtime prose count of 38 was not used to invent or stage another path.
+**Safety Review**: The final full diff was checked for credential material,
+private URLs, credential-bearing URLs, private-key content, and machine-local
+absolute paths. One machine-local repository path in this plan was replaced
+with a repository-relative description; no unresolved safety finding remains.
+**Verification**: `git rev-parse --show-toplevel`;
+`git branch --show-current`; `git rev-parse HEAD`;
+`git status --porcelain`; `git diff --check`;
+`git diff --cached --name-only`;
+`git commit -m 'feat(riela-note): add hierarchical tags and notebook progress Kanban'`;
+`git push -u origin feat/riela-note-hierarchical-tags-kanban`; and
+`git ls-remote --heads origin feat/riela-note-hierarchical-tags-kanban`.
+The actual local commit hash and matching remote-ref hash are reported in the
+Step 6 adapter payload because the commit cannot contain its own hash.
+**References**: `comm-001569`, `comm-001570`, `comm-001572`,
+`codex-design-and-implement-review-loop-session-631`, and
+`codex-design-and-implement-review-loop-session-632`.
+**Codex-Agent References**: None.
+
+## Prior Riela Note Baseline and Accepted Deferrals
+
+The previously shipped scope (local note store, CLI/GraphQL/App surfaces, note
+agent with cited answers, auto-action loop) is implemented and tested. Its
+remaining prose follow-ups remain explicit accepted deferrals:
 
 - **DEFERRED** Real libsql embedded-replica/sync execution and parity
   (TASK-015 is stubbed: driver fails fast for `.embeddedReplica`). Owner:
@@ -19,11 +1023,8 @@ accepted deferrals so completion stays measurable:
   adoption decision on retrieval quality (relates to the Hermes H-B/H-C
   decision set).
 
-No other open work remains in this plan; it stays active only as the home
-for these three named deferrals.
-**Design Reference**: design-docs/specs/design-riela-note.md
-**Created**: 2026-07-04
-**Last Updated**: 2026-07-04
+These deferrals are not part of TASK-016 through TASK-020 and must not expand
+the current issue-resolution scope.
 
 ## Summary
 
@@ -38,7 +1039,7 @@ follow-up work.
 
 ## Source References
 
-- Design: `design-docs/specs/design-riela-note.md` (decisions D1–D15)
+- Design: `design-docs/specs/design-riela-note.md` (decisions D1–D19)
 - Requirements memo: `design-docs/riela-note-design.md`
 - Code precedents:
   - `Sources/RielaSQLite/SQLiteDatabase.swift` (driver base)

@@ -7,6 +7,8 @@ import SQLite3
 
 public enum SQLiteOpenMode: Sendable {
   case readOnly
+  case strictReadOnly
+  case strictReadOnlyWithImmutableFallback
   case readWriteCreate
 }
 
@@ -124,6 +126,24 @@ public final class SQLiteDatabase: @unchecked Sendable {
       } catch let error as SQLiteError where shouldFallbackToReadWriteOpen(path: path, error: error) {
         return try openConfiguredDatabase(path: path, flags: SQLITE_OPEN_READWRITE, options: options)
       }
+    case .strictReadOnly:
+      let database = try openConfiguredDatabase(path: path, flags: SQLITE_OPEN_READONLY, options: options)
+      try database.verifyUsableReadConnection()
+      return database
+    case .strictReadOnlyWithImmutableFallback:
+      if shouldUseImmutableReadOnlyOpen(path: path) {
+        let database = try openConfiguredDatabase(
+          path: immutableReadOnlyURI(path: path),
+          flags: SQLITE_OPEN_READONLY | SQLITE_OPEN_URI,
+          options: options,
+          reportedPath: path
+        )
+        try database.verifyUsableReadConnection()
+        return database
+      }
+      let database = try openConfiguredDatabase(path: path, flags: SQLITE_OPEN_READONLY, options: options)
+      try database.verifyUsableReadConnection()
+      return database
     case .readWriteCreate:
       let directory = URL(fileURLWithPath: path).deletingLastPathComponent()
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -134,8 +154,10 @@ public final class SQLiteDatabase: @unchecked Sendable {
   private static func openConfiguredDatabase(
     path: String,
     flags: Int32,
-    options: SQLiteOpenOptions
+    options: SQLiteOpenOptions,
+    reportedPath: String? = nil
   ) throws -> SQLiteDatabase {
+    let diagnosticPath = reportedPath ?? path
     var db: OpaquePointer?
     guard sqlite3_open_v2(path, &db, flags, nil) == SQLITE_OK, let opened = db else {
       let message = db.map(errorMessage) ?? "sqlite open failed"
@@ -146,10 +168,10 @@ public final class SQLiteDatabase: @unchecked Sendable {
       throw SQLiteError(
         operation: .open,
         code: code,
-        message: "failed to open sqlite database at \(path): \(message)"
+        message: "failed to open sqlite database at \(diagnosticPath): \(message)"
       )
     }
-    let database = SQLiteDatabase(path: path, handle: opened, ownsHandle: true)
+    let database = SQLiteDatabase(path: diagnosticPath, handle: opened, ownsHandle: true)
     try database.configure(options)
     return database
   }
@@ -161,6 +183,15 @@ public final class SQLiteDatabase: @unchecked Sendable {
       return false
     }
     return true
+  }
+
+  private static func shouldUseImmutableReadOnlyOpen(path: String) -> Bool {
+    FileManager.default.fileExists(atPath: path)
+      && !FileManager.default.fileExists(atPath: path + "-wal")
+  }
+
+  private static func immutableReadOnlyURI(path: String) -> String {
+    URL(fileURLWithPath: path).absoluteString + "?mode=ro&immutable=1"
   }
 
   public static func borrowing(_ handle: OpaquePointer?, path: String? = nil) -> SQLiteDatabase {

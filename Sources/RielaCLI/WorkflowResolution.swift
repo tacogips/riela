@@ -12,6 +12,18 @@ private struct WorkflowTransactionResolutionFailure: Error, CustomStringConverti
   var description: String { message }
 }
 
+private struct WorkflowCandidateMissing: Error, CustomStringConvertible {
+  var path: String
+  var description: String { "\(path) not found" }
+}
+
+/// Candidate-level rejection that must be collected into the not-found error
+/// list (JSON failure result) rather than escalating to a CLI usage error,
+/// regardless of the requested scope.
+private struct WorkflowCandidateRejected: Error, CustomStringConvertible {
+  var description: String
+}
+
 public struct ResolvedWorkflowBundle: Equatable, Sendable {
   public var workflow: WorkflowDefinition
   public var nodePayloads: [String: AgentNodePayload]
@@ -20,6 +32,11 @@ public struct ResolvedWorkflowBundle: Equatable, Sendable {
   public var diagnostics: [WorkflowValidationDiagnostic]
   public var packageManifest: WorkflowPackageManifest?
   public var packageDirectory: String?
+  public var provenance: WorkflowProvenance
+  public var activationState: WorkflowActivationState
+  public var originId: String?
+  public var mutable: Bool { provenance == .mutable }
+  var mutableRegistryDigest: String?
 
   public init(
     workflow: WorkflowDefinition,
@@ -28,7 +45,8 @@ public struct ResolvedWorkflowBundle: Equatable, Sendable {
     workflowDirectory: String,
     diagnostics: [WorkflowValidationDiagnostic] = [],
     packageManifest: WorkflowPackageManifest? = nil,
-    packageDirectory: String? = nil
+    packageDirectory: String? = nil,
+    provenance: WorkflowProvenance = .immutable
   ) {
     self.workflow = workflow
     self.nodePayloads = nodePayloads
@@ -37,6 +55,10 @@ public struct ResolvedWorkflowBundle: Equatable, Sendable {
     self.diagnostics = diagnostics
     self.packageManifest = packageManifest
     self.packageDirectory = packageDirectory
+    self.provenance = provenance
+    activationState = .active
+    originId = nil
+    mutableRegistryDigest = nil
   }
 }
 
@@ -46,56 +68,250 @@ public protocol WorkflowBundleResolving: Sendable {
 
 public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
   private let enforcesTransactionBlock: Bool
+  private let capturesCatalogOriginSnapshot: Bool
+  private let mutableRegistryHistoryRecoveryHook: @Sendable () throws -> Void
+  private let mutableRegistry: WorkflowMutableRegistry
 
   public init(enforcesTransactionBlock: Bool = true) {
     self.enforcesTransactionBlock = enforcesTransactionBlock
+    capturesCatalogOriginSnapshot = true
+    mutableRegistryHistoryRecoveryHook = {}
+    mutableRegistry = WorkflowMutableRegistry()
+  }
+
+  init(enforcesTransactionBlock: Bool = true, capturesCatalogOriginSnapshot: Bool) {
+    self.enforcesTransactionBlock = enforcesTransactionBlock
+    self.capturesCatalogOriginSnapshot = capturesCatalogOriginSnapshot
+    mutableRegistryHistoryRecoveryHook = {}
+    mutableRegistry = WorkflowMutableRegistry()
+  }
+
+  init(
+    enforcesTransactionBlock: Bool = true,
+    mutableRegistryHistoryRecoveryHook: @escaping @Sendable () throws -> Void,
+    mutableRegistry: WorkflowMutableRegistry = WorkflowMutableRegistry(),
+    capturesCatalogOriginSnapshot: Bool = true
+  ) {
+    self.enforcesTransactionBlock = enforcesTransactionBlock
+    self.capturesCatalogOriginSnapshot = capturesCatalogOriginSnapshot
+    self.mutableRegistryHistoryRecoveryHook = mutableRegistryHistoryRecoveryHook
+    self.mutableRegistry = mutableRegistry
   }
 
   public func resolve(_ options: WorkflowResolutionOptions) throws -> ResolvedWorkflowBundle {
+    try WorkflowRegistryService(registry: mutableRegistry).withCoordinatedRead(
+      workingDirectory: options.workingDirectory
+    ) {
+      let deactivatedOrigins = Array(try WorkflowActivationStore().snapshot().values.map(\.origin))
+      let catalogOrigins = try deactivatedOrigins.isEmpty || !capturesCatalogOriginSnapshot
+        ? []
+        : WorkflowCatalogCommand(mutableRegistry: mutableRegistry)
+          .catalogOriginIdentities(workingDirectory: options.workingDirectory)
+      let activationPolicy = WorkflowSharedNodeActivationPolicy(
+        catalogOrigins: catalogOrigins,
+        deactivatedOrigins: deactivatedOrigins,
+        includeDeactivated: options.includeDeactivated
+      )
+      return try resolveCoordinated(options, sharedNodeActivationPolicy: activationPolicy)
+    }
+  }
+
+  private func resolveCoordinated(
+    _ options: WorkflowResolutionOptions,
+    sharedNodeActivationPolicy: WorkflowSharedNodeActivationPolicy
+  ) throws -> ResolvedWorkflowBundle {
     let candidates = try candidateDirectories(for: options)
     if enforcesTransactionBlock {
       try refuseStableNonterminalTransactions(candidates: candidates)
     }
     var errors: [String] = []
+    var deactivatedOrigins: [WorkflowOriginIdentity] = []
+    var deactivatedDependencyFailure: WorkflowRegistryError?
     for candidate in candidates {
-      let resolvedRoot = candidate.rootDirectory.resolvingSymlinksInPath().standardizedFileURL
-      let resolvedDirectory = candidate.directory.resolvingSymlinksInPath().standardizedFileURL
-      guard isContained(resolvedDirectory, in: resolvedRoot) else {
-        errors.append("\(resolvedDirectory.path) escapes \(resolvedRoot.path)")
-        continue
-      }
-      let workflowURL = resolvedDirectory.appendingPathComponent("workflow.json")
-      guard FileManager.default.fileExists(atPath: workflowURL.path) else {
-        errors.append("\(workflowURL.path) not found")
-        continue
-      }
       do {
-        let bundle = try loadBundle(
-          at: resolvedDirectory,
-          rootDirectory: candidate.rootDirectory,
-          scope: candidate.scope,
-          packageManifest: candidate.packageManifest,
-          packageDirectory: candidate.packageDirectory
+        try sharedNodeActivationPolicy.requireActiveCandidate(
+          name: options.workflowName,
+          directory: candidate.directory
         )
-        if enforcesTransactionBlock {
-          try refuseNonterminalHistoryTransaction(bundle: bundle, options: options)
+        let bundle: ResolvedWorkflowBundle
+        if candidate.provenance == .mutable {
+          bundle = try mutableRegistry.withWorkflowPinnedAccess(
+            workflowId: options.workflowName
+          ) { pinned in
+            let loadResolved = {
+              guard let pinned else { throw WorkflowCandidateMissing(path: candidate.directory.path) }
+              guard try pinned.entryType(candidate.directory) != nil else {
+                throw WorkflowCandidateMissing(path: candidate.directory.appendingPathComponent("workflow.json").path)
+              }
+              var resolved = try mutableRegistry.loadBundle(
+                workflowId: options.workflowName,
+                pinned: pinned,
+                resolver: self,
+                scope: candidate.scope,
+                sharedNodeActivationPolicy: sharedNodeActivationPolicy
+              )
+              guard resolved.workflowDirectory == candidate.directory.standardizedFileURL.path else {
+                throw CLIUsageError("mutable workflow detached read did not restore its configured directory identity")
+              }
+              if enforcesTransactionBlock {
+                try mutableRegistryHistoryRecoveryHook()
+                do {
+                  let target = try WorkflowHistoryIdentityResolver.identity(for: resolved)
+                  let authoritativeHistoryDigest = try mutableRegistry.historyBundleDigest(
+                    at: candidate.directory,
+                    target: target,
+                    pinned: pinned
+                  )
+                  try refuseNonterminalHistoryTransaction(
+                    bundle: resolved,
+                    options: options,
+                    authoritativeBundleDigest: authoritativeHistoryDigest
+                  )
+                } catch {
+                  throw CLIUsageError("mutable workflow history recovery failed: \(error)")
+                }
+                do {
+                  resolved = try mutableRegistry.loadBundle(
+                    workflowId: options.workflowName,
+                    pinned: pinned,
+                    resolver: self,
+                    scope: candidate.scope,
+                    sharedNodeActivationPolicy: sharedNodeActivationPolicy
+                  )
+                } catch {
+                  throw CLIUsageError("mutable workflow post-recovery reload failed: \(error)")
+                }
+              }
+              resolved.mutableRegistryDigest = try mutableRegistry.bundleDigest(
+                at: candidate.directory,
+                pinned: pinned
+              )
+              return resolved
+            }
+            return try loadResolved()
+          }
+        } else {
+          bundle = try resolveCandidate(
+            candidate,
+            options: options,
+            sharedNodeActivationPolicy: sharedNodeActivationPolicy
+          )
+          if enforcesTransactionBlock {
+            try refuseNonterminalHistoryTransaction(bundle: bundle, options: options)
+          }
         }
-        return bundle
+        var activatedBundle = bundle
+        let origin = try activationOrigin(for: bundle, candidate: candidate, options: options)
+        let provenance = origin.provenance
+        let activationState = try WorkflowActivationStore().state(for: origin)
+        activatedBundle.provenance = provenance
+        activatedBundle.activationState = activationState
+        activatedBundle.originId = origin.originId
+        if activationState == .deactivated, !options.includeDeactivated {
+          deactivatedOrigins.append(origin)
+          errors.append("\(candidate.directory.path) deactivated")
+          continue
+        }
+        return activatedBundle
       } catch {
         if error is WorkflowTransactionResolutionFailure { throw error }
+        if let missing = error as? WorkflowCandidateMissing {
+          errors.append(missing.description)
+          continue
+        }
+        if let rejected = error as? WorkflowCandidateRejected {
+          errors.append(rejected.description)
+          continue
+        }
+        if let deactivated = error as? WorkflowRegistryError,
+           deactivated.code == .workflowDeactivated {
+          deactivatedDependencyFailure = deactivatedDependencyFailure ?? deactivated
+          errors.append(deactivated.description)
+          continue
+        }
         guard options.scope == .auto else {
           throw error
         }
-        errors.append("\(resolvedDirectory.path) invalid: \(workflowResolutionErrorDescription(error))")
+        errors.append("\(candidate.directory.path) invalid: \(workflowResolutionErrorDescription(error))")
         continue
       }
+    }
+    if let deactivatedDependencyFailure {
+      throw deactivatedDependencyFailure
+    }
+    if !deactivatedOrigins.isEmpty {
+      throw WorkflowRegistryError(
+        code: .workflowDeactivated,
+        message: "workflow '\(options.workflowName)' has no active origin",
+        workflowId: options.workflowName,
+        originId: deactivatedOrigins.count == 1 ? deactivatedOrigins[0].originId : nil
+      )
     }
     throw WorkflowResolutionError.notFound(options.workflowName, errors)
   }
 
+  private func activationOrigin(
+    for bundle: ResolvedWorkflowBundle,
+    candidate: CandidateDirectory,
+    options: WorkflowResolutionOptions
+  ) throws -> WorkflowOriginIdentity {
+    if bundle.sourceScope == .direct {
+      let canonical = URL(fileURLWithPath: bundle.workflowDirectory, isDirectory: true)
+        .resolvingSymlinksInPath().standardizedFileURL.path
+      if let entry = try WorkflowRegistryService().list(workingDirectory: options.workingDirectory).first(where: {
+        URL(fileURLWithPath: $0.workflowDirectory, isDirectory: true)
+          .resolvingSymlinksInPath().standardizedFileURL.path == canonical
+          && $0.workflowId == bundle.workflow.workflowId
+      }) {
+        return workflowOriginIdentity(
+          name: entry.workflowName,
+          workflowId: entry.workflowId,
+          scope: entry.scope,
+          sourceKind: entry.sourceKind,
+          provenance: entry.provenance,
+          locator: entry.workflowDirectory
+        )
+      }
+    }
+    return workflowOriginIdentity(
+      name: options.workflowName,
+      workflowId: bundle.workflow.workflowId,
+      scope: bundle.sourceScope,
+      sourceKind: workflowSourceKind(bundle),
+      provenance: candidate.provenance,
+      locator: bundle.workflowDirectory
+    )
+  }
+
+  private func resolveCandidate(
+    _ candidate: CandidateDirectory,
+    options: WorkflowResolutionOptions,
+    sharedNodeActivationPolicy: WorkflowSharedNodeActivationPolicy
+  ) throws -> ResolvedWorkflowBundle {
+    let resolvedRoot = candidate.rootDirectory.resolvingSymlinksInPath().standardizedFileURL
+    let resolvedDirectory = candidate.directory.resolvingSymlinksInPath().standardizedFileURL
+    guard isContained(resolvedDirectory, in: resolvedRoot) else {
+      throw WorkflowCandidateRejected(description: "\(resolvedDirectory.path) escapes \(resolvedRoot.path)")
+    }
+    let workflowURL = resolvedDirectory.appendingPathComponent("workflow.json")
+    guard FileManager.default.fileExists(atPath: workflowURL.path) else {
+      throw WorkflowCandidateMissing(path: workflowURL.path)
+    }
+    return try loadBundle(
+      at: resolvedDirectory,
+      rootDirectory: candidate.rootDirectory,
+      scope: candidate.scope,
+      packageManifest: candidate.packageManifest,
+      packageDirectory: candidate.packageDirectory,
+      provenance: candidate.provenance,
+      expectedWorkflowId: candidate.provenance == .mutable ? options.workflowName : nil,
+      sharedNodeActivationPolicy: sharedNodeActivationPolicy
+    )
+  }
+
   private func refuseStableNonterminalTransactions(candidates: [CandidateDirectory]) throws {
     var inspected = Set<String>()
-    for candidate in candidates {
+    for candidate in candidates where candidate.provenance == .immutable {
       let ownershipRoot = (candidate.packageDirectory ?? candidate.directory).standardizedFileURL
       let marker = WorkflowTransactionStableMetadata.url(forOwnershipRoot: ownershipRoot)
       guard inspected.insert(marker.path).inserted else { continue }
@@ -111,7 +327,7 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
         workflowDirectory: candidate.directory.path,
         ownershipRoot: ownershipRoot.path,
         packageDirectory: candidate.packageDirectory?.path,
-        sourceMutable: candidate.packageDirectory == nil
+        sourceMutable: false
       )
       try withWorkflowTargetLock(target: provisionalTarget, owner: "stable-recovery") {
         var status = stat()
@@ -152,7 +368,8 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
 
   private func refuseNonterminalHistoryTransaction(
     bundle: ResolvedWorkflowBundle,
-    options: WorkflowResolutionOptions
+    options: WorkflowResolutionOptions,
+    authoritativeBundleDigest: String? = nil
   ) throws {
     guard isSafeScopedWorkflowName(bundle.workflow.workflowId) else { return }
     let base: URL
@@ -168,13 +385,17 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       configuredRoot: bundle.workflow.loop?.selfEvolution?.historyRoot
     )
     do {
-      if let recovered = try WorkflowDirectoryTransactionCoordinator().recover(historyRoot: historyRoot, target: target),
+      if let recovered = try WorkflowDirectoryTransactionCoordinator().recover(
+        historyRoot: historyRoot,
+        target: target,
+        authoritativeBundleDigest: authoritativeBundleDigest
+      ),
          recovered.target != target {
         throw CLIUsageError("workflow transaction recovery did not match the resolved target")
       }
     } catch {
       throw WorkflowTransactionResolutionFailure(
-        message: "nonterminal directory transaction recovery failed: \(error)"
+        message: "nonterminal directory transaction recovery failed at \(historyRoot.path): \(error)"
       )
     }
   }
@@ -185,19 +406,22 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     var scope: WorkflowScope
     var packageManifest: WorkflowPackageManifest?
     var packageDirectory: URL?
+    var provenance: WorkflowProvenance
 
     init(
       directory: URL,
       rootDirectory: URL,
       scope: WorkflowScope,
       packageManifest: WorkflowPackageManifest? = nil,
-      packageDirectory: URL? = nil
+      packageDirectory: URL? = nil,
+      provenance: WorkflowProvenance = .immutable
     ) {
       self.directory = directory
       self.rootDirectory = rootDirectory
       self.scope = scope
       self.packageManifest = packageManifest
       self.packageDirectory = packageDirectory
+      self.provenance = provenance
     }
   }
 
@@ -245,7 +469,18 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
         CandidateDirectory(directory: user.appendingPathComponent(options.workflowName).standardizedFileURL, rootDirectory: user, scope: .user)
       ] : []
     }
-    return workflowCandidates + (safePackageName ? try packageCandidateDirectories(for: options, workingDirectory: workingDirectory) : [])
+    var candidates = workflowCandidates
+      + (safePackageName ? try packageCandidateDirectories(for: options, workingDirectory: workingDirectory) : [])
+    if safeWorkflowName, options.scope != .project {
+      let mutableRoot = WorkflowMutableRegistry().root
+      candidates.append(CandidateDirectory(
+        directory: mutableRoot.appendingPathComponent(options.workflowName, isDirectory: true),
+        rootDirectory: mutableRoot,
+        scope: .user,
+        provenance: .mutable
+      ))
+    }
+    return candidates
   }
 
   private func packageCandidateDirectories(
@@ -310,12 +545,16 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     return directoryPath == rootPath || directoryPath.hasPrefix(rootPath + "/")
   }
 
-  private func loadBundle(
+  func loadBundle(
     at directory: URL,
     rootDirectory: URL,
     scope: WorkflowScope,
     packageManifest providedPackageManifest: WorkflowPackageManifest? = nil,
-    packageDirectory: URL? = nil
+    packageDirectory: URL? = nil,
+    provenance: WorkflowProvenance = .immutable,
+    expectedWorkflowId: String? = nil,
+    sharedNodeActivationPolicy: WorkflowSharedNodeActivationPolicy = .includeDeactivated,
+    sharedNodeActivationRootDirectory: URL? = nil
   ) throws -> ResolvedWorkflowBundle {
     let workflowURL = try containedFile(
       directory.appendingPathComponent("workflow.json"),
@@ -327,6 +566,11 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     let validation = validateAuthoredWorkflowData(workflowData)
     guard var workflow = validation.workflow else {
       throw WorkflowResolutionError.invalidWorkflow(validation.diagnostics)
+    }
+    if let expectedWorkflowId, workflow.workflowId != expectedWorkflowId {
+      throw CLIUsageError(
+        "mutable workflow registry key '\(expectedWorkflowId)' does not match decoded workflowId '\(workflow.workflowId)'"
+      )
     }
     var nodePayloads: [String: AgentNodePayload] = [:]
     let promptTemplateLoader = PromptTemplateAssetLoader()
@@ -354,13 +598,23 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       in: workflow,
       nodePayloads: nodePayloads,
       rootDirectory: rootDirectory,
+      activationRootDirectory: sharedNodeActivationRootDirectory ?? rootDirectory,
       scope: scope,
-      promptTemplateLoader: promptTemplateLoader
+      provenance: provenance,
+      promptTemplateLoader: promptTemplateLoader,
+      activationPolicy: sharedNodeActivationPolicy
     )
     workflow = materialized.workflow
     nodePayloads = materialized.nodePayloads
-    let packageManifest = try providedPackageManifest ?? loadPackageManifestIfPresent(at: directory)
-    let resolvedPackageDirectory = packageDirectory?.path ?? (packageManifest == nil ? nil : directory.path)
+    let packageManifest: WorkflowPackageManifest?
+    let resolvedPackageDirectory: String?
+    if provenance == .mutable {
+      packageManifest = nil
+      resolvedPackageDirectory = nil
+    } else {
+      packageManifest = try providedPackageManifest ?? loadPackageManifestIfPresent(at: directory)
+      resolvedPackageDirectory = packageDirectory?.path ?? (packageManifest == nil ? nil : directory.path)
+    }
     return ResolvedWorkflowBundle(
       workflow: workflow,
       nodePayloads: nodePayloads,
@@ -368,7 +622,8 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       workflowDirectory: directory.path,
       diagnostics: validation.diagnostics,
       packageManifest: packageManifest,
-      packageDirectory: resolvedPackageDirectory
+      packageDirectory: resolvedPackageDirectory,
+      provenance: provenance
     )
   }
 

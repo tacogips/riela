@@ -825,6 +825,7 @@ final class NoteGraphQLTests: XCTestCase {
       "deleteNotebook",
       "applyNotebookTags",
       "removeNotebookTag",
+      "setNotebookProgress",
       "setNoteReadOnly",
       "applyNoteTags",
       "removeNoteTag",

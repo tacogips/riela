@@ -31,16 +31,14 @@ fleet listing, cost, budgets, diff, stats, CI verdicts, lessons, isolation.
 Operating real loops has since exposed failure modes that neither document
 addresses. They are not observation gaps; they are control and feedback gaps:
 
-- **Loops that stop converging keep running.** On 2026-07-08 the packaged
-  `codex-design-and-implement-review-loop` iterated its step6↔step7 review
-  loop indefinitely, re-raising the same unsatisfiable finding every round
-  (`design-docs/specs/design-incomplete-work-inventory.md` section 6). The
-  runner bounds iteration *counts* (`defaults.maxLoopIterations`, `maxSteps`
-  — `Sources/RielaCore/DeterministicWorkflowRunner.swift:282`), and LA2
-  budgets will bound tokens and wall-clock, but nothing recognizes the
-  distinctive stall signature: the same gate rejecting the same blocking
-  findings round after round. Count and cost bounds either fire long after
-  progress stopped or cut off loops that are still making progress.
+- **Undeclared loops have no convergence or terminal-preservation guard.** On
+  2026-07-08 the packaged `codex-design-and-implement-review-loop` iterated its
+  step6↔step7 review loop indefinitely, re-raising the same unsatisfiable
+  finding every round (`design-docs/specs/design-incomplete-work-inventory.md`
+  section 6). Authored `loop.convergence` enforcement has since shipped, but a
+  workflow with no `loop` object still bypasses it. Such a workflow can repeat
+  one gate until `maxSteps` fails, including after consuming capacity needed
+  by commit or output stages.
 - **There is no accepted baseline, so there is no regression verdict.**
   LA3's `loop diff` compares two explicit sessions. Operators actually ask
   a baseline question: "did this run regress against the last run we
@@ -71,53 +69,50 @@ the dependency is explicit and the shared code is specified once.
 
 ## Current-State Review
 
-Verified against `main` on 2026-07-08.
+S9/S9a surfaces were re-verified against the
+`feat/loop-guardrail-defaults` branch baseline on 2026-07-22. Operations
+surfaces outside this work package retain their historical roadmap status and
+were not re-audited here.
 
 | Surface | State | Evidence |
 | --- | --- | --- |
 | Loop metadata, gates, policy, validation | Implemented | `Sources/RielaCore/LoopEngineeringModels.swift`, `WorkflowLoopValidation.swift`, `LoopPolicyEvaluator.swift` |
 | Evidence manifest + projection | Implemented | `Sources/RielaCore/LoopEvidenceManifest.swift`, `LoopEvidenceProjector.swift` |
 | Gate results from step outputs | Implemented | `LoopEvidenceProjector.swift:110` — each gate-step execution with an accepted `loopGate` payload yields one `LoopGateResult`; repeated visits yield one result per visit |
+| Authored convergence tracking and `loop_stall` enforcement | Implemented | `Sources/RielaCore/LoopConvergenceTracker.swift`, `DeterministicWorkflowRunner+LoopPolicy.swift`, `LoopFindingFingerprint.swift`, `WorkflowRunEvent.swift` |
+| Tolerant persisted failure kinds, including `loopNotConverging` | Implemented | `WorkflowSessionFailureKind` is a raw-value struct in `Sources/RielaCore/RuntimeSession.swift`; unknown values remain decodable and expose a compatibility diagnostic |
+| Synthesized defaults, default-policy provenance, graceful terminal routing, terminal reservation, and default opt-out | Not implemented | This work package; specified by S9a |
 | Recovery lineage, `loop recover --from-step/--from-gate` | Implemented | `Sources/RielaCore/LoopRecoveryLineage.swift`, `Sources/RielaCLI/LoopCommands.swift` |
 | Summary SQL + `loop list`/`history` (LA1a) | Implemented | `Sources/RielaCore/LoopSessionOverview.swift`, `loadSessionOverviews` in `SQLiteWorkflowRuntimePersistenceStore.swift` |
-| `loop start`/`promote`, cost accumulator, budgets, diff, stats, `gates --check`, SARIF, lessons, isolation, GraphQL list/stats/diff | Not implemented | LA1b–LA6 modules in `impl-plans/active/loop-engineering-application-gap-closure.md`, all NOT_STARTED |
+| Baseline, regression, concurrency, notifications, trend, and retrospective surfaces | Historical roadmap state | Outside this S9a work package; phases LB2–LB6 remain documented below without a new implementation audit |
 | Event-triggered workflow runs | Implemented | `Sources/RielaCLI/EventLiveServe.swift`; `RielaEvents` event→workflow bindings (`directWorkflow`, `workflowName`) |
 | Outbound run-outcome notification | Absent | no runner or CLI egress on terminal states; `riela hook` is inbound vendor-hook ingestion (`Sources/RielaCLI/ScopedParityCommands.swift:70`), not egress |
 
 Grounded observations that shape the specifications:
 
-- **The runner already has a per-gate-visit seam.** Gate results are parsed
-  from the accepted output payload key `loopGate` at projection time
-  (`LoopEvidenceProjector.swift:110-150`). The same payload is reconciled at
-  step completion by a routing reconciler the runner installs *only for gate
-  steps*: `workflowRoutingReconciler(workflow:step:)`
-  (`Sources/RielaCore/DeterministicWorkflowRunner+LoopPolicy.swift:26`)
-  returns `reconcileCompletionReviewRouting`
-  (`Sources/RielaCore/LoopCompletionReviewRouting.swift`) exactly when
-  `step.loop?.gateId != nil || step.loop?.role == "gate"`, and it is invoked
-  at every candidate-publication site
-  (`DeterministicWorkflowRunner.swift:639,723,849`,
-  `DeterministicWorkflowRunner+Addons.swift:55`). This is the natural
-  integration point for a convergence tracker: it already fires once per
-  gate visit with the completion payload in hand and no other steps. The
-  tracker can therefore observe per-visit blocking findings without new I/O,
-  provided the `loopGate` payload parsing is extracted into a shared helper
-  instead of forked.
+- **The runner already enforces authored convergence at the per-gate-visit
+  seam.** `workflowRoutingReconciler(workflow:step:)` and
+  `enforceLoopConvergenceIfNeeded` in
+  `Sources/RielaCore/DeterministicWorkflowRunner+LoopPolicy.swift` consume the
+  shared `LoopGatePayloadParser` in `LoopFindingFingerprint.swift`. The current
+  entry guards require `workflow.loop`; S9a widens only those guards to consume
+  the resolved effective-policy state plus step annotations, without adding a
+  second parser or tracker.
 - **A finding identity already exists.** `LoopBlockingFinding` carries
   optional `id`, `filePath`, `line`, `severity`, `message`. The LA3 diff
   spec matches findings by `(filePath, message)` with line drift tolerated.
   Convergence detection must reuse the same identity so "diff says nothing
   changed" and "convergence guard says the loop stalled" can never disagree.
-- **`WorkflowSessionFailureKind` is a closed raw-value enum**
-  (`Sources/RielaCore/RuntimeSession.swift:17`) and unknown persisted values
-  still fail the whole snapshot decode. LA2 specifies tolerant decoding as a
-  prerequisite for `budgetExceeded`; this design adds `loopNotConverging`
-  and shares the same prerequisite — whichever change lands first builds
-  tolerant decoding.
-- **`WorkflowRunEventType` is a closed enum**
-  (`Sources/RielaCore/WorkflowRunEvent.swift:3`); new progress records are
-  additive JSONL contract changes and must be called out, exactly as LA2
-  does for `budget_exceeded`.
+- **Persisted failure-kind compatibility is already tolerant.**
+  `WorkflowSessionFailureKind` is a raw-value struct
+  (`Sources/RielaCore/RuntimeSession.swift:17`), includes
+  `loopNotConverging`, and preserves unknown values with a compatibility
+  diagnostic. S9a does not need a new failure-kind case for graceful default
+  routing.
+- **`loop_stall` already has a structured event contract.** S9a retains the
+  existing gate id, violation kind, action, visit, repeated-round, and
+  fingerprint fields, and adds optional policy provenance. The event type
+  itself is not new.
 - **Env-name secret references are the established convention.** Event
   contracts reference secrets by environment variable name
   (`chatWebhookBearerTokenEnv`, `Sources/RielaEvents/EventContracts.swift:341`),
@@ -129,14 +124,14 @@ Grounded observations that shape the specifications:
 
 ## Gap Analysis
 
-### G10. No convergence guard
+### G10. No default convergence guard or terminal preservation
 
-Iteration and (future) budget bounds are blunt: they cannot distinguish "ten
-productive rounds" from "three identical rounds". The observed 2026-07-08
-incident is exactly the signature a guard should catch deterministically:
-same gate, same blocking-finding set, consecutive rounds. Highest priority
-because it is an observed production failure with no mitigation beyond
-manually killing the run.
+The authored convergence guard handles workflows that declare
+`loop.convergence`, but workflows with no `loop` object retain only blunt
+iteration and step bounds. They neither detect repeated identical findings nor
+reserve capacity for a deterministic terminal path. The remaining gap is a
+conservative synthesized policy with explicit provenance, opt-out, and
+backward-compatible terminal handling.
 
 ### G11. No baseline and no regression verdict
 
@@ -179,9 +174,13 @@ feedback path from evidence to improvement.
    the LA3 matching rule — explicit `id` when authored, else
    `(filePath, whitespace-normalized message)`, line excluded — implemented
    once in RielaCore and consumed by both features.
-3. **All new authored metadata is optional and additive.** Workflows without
-   `loop.convergence`, `loop.concurrency`, or `loop.notifications` behave
-   exactly as today. Absent fields decode as nil; old snapshots decode.
+3. **Authored loop behavior remains explicit; undeclared workflows get a
+   conservative convergence floor.** A workflow with an authored `loop`
+   object keeps exactly its declared convergence behavior, including no
+   convergence enforcement when `loop.convergence` is absent. A workflow with
+   no `loop` object receives the default guard specified in S9a unless the CLI
+   opts out. New declaration and event fields decode with defaults so old
+   snapshots continue to decode.
 4. **Baselines are explicit operator state.** No inference of "latest
    accepted run is the baseline" — an implicit baseline that silently moves
    makes regression verdicts unreproducible. A baseline is set, shown, and
@@ -194,9 +193,9 @@ feedback path from evidence to improvement.
    never change a session outcome, never block completion beyond a bounded
    timeout, and carry export-safe payloads (ids, counts, decisions — no
    prompt text, no finding messages, no variable values).
-7. **Tolerant failure-kind decoding is a shared prerequisite.** LA2
-   (`budgetExceeded`) and LB1 (`loopNotConverging`) both need it; the design
-   assigns it to whichever ships first and the other consumes it.
+7. **Tolerant failure-kind decoding is an established shared contract.** LA2
+   (`budgetExceeded`) and LB1 (`loopNotConverging`) both use the implemented
+   raw-value failure-kind model; S9a introduces no new failure kind.
 8. **Trend and flakiness extend LA3's `LoopWorkflowStats`.** Additive fields
    on the same aggregation over the same summary rows — no second stats
    pipeline, no materialized tables.
@@ -209,7 +208,8 @@ feedback path from evidence to improvement.
 
 ### S9. Loop convergence guard (G10)
 
-New optional authored metadata:
+The authored convergence contract below is implemented and is the baseline
+that S9a extends. Its optional metadata is:
 
 ```json
 {
@@ -249,14 +249,10 @@ Semantics:
    identical findings). This is the LA3 diff identity, extracted into one
    shared implementation that S10 regression and LA3 diff also consume.
 
-**Runner integration.** A runner-owned `LoopConvergenceTracker`:
+**Runner integration.** The runner-owned `LoopConvergenceTracker`:
 
-- Fed at the gate-step routing-reconciler seam
-  (`workflowRoutingReconciler`, which already fires once per gate visit —
-  see Current-State Review). The `loopGate` payload parsing currently lives
-  inside the evidence projector (`LoopEvidenceProjector.swift:129`); it is
-  extracted into a shared parsing helper used by the projector, the routing
-  reconciler, and the tracker — no forked parser.
+- Is fed at the gate-step routing-reconciler seam through the shared
+  `LoopGatePayloadParser` used by the evidence projector and tracker.
 - Tracks, per `gateId`: visit count, last fingerprint set, consecutive
   identical-rejection rounds.
 - Checks bounds after recording each gate visit and before the runner
@@ -265,11 +261,10 @@ Semantics:
   deterministic diagnostic naming the gate id, visit count, repeated-round
   count, and a bounded listing of the repeated fingerprints. With `warn`,
   the runner records a residual risk plus diagnostic and continues.
-- Emits a `loop_stall` progress record (additive `WorkflowRunEventType`
-  case; the live-persistence event switch updates with it) carrying gateId,
-  visits, repeated rounds, and the action taken.
+- Emits the existing `loop_stall` progress record carrying gateId, visits,
+  repeated rounds, fingerprints, and the action taken.
 
-**Evidence.** `LoopEvidenceManifest` gains an optional
+**Evidence.** `LoopEvidenceManifest` contains an optional
 `convergence: LoopConvergenceEvidence`:
 
 ```swift
@@ -283,20 +278,235 @@ public struct LoopConvergenceEvidence: Codable, Equatable, Sendable {
 }
 ```
 
-Absent for sessions without convergence metadata; defaulted decoding for
-old snapshots.
+This manifest section remains evidence for an authored, enabled
+`loop.convergence` declaration. It is absent for `authored-inactive`,
+`disabled`, and synthesized `default` policy states; `action` therefore remains
+limited to `fail` or `warn`, and old snapshots retain defaulted decoding. This
+boundary avoids projecting a request-level default or CLI opt-out as if it were
+authored workflow metadata.
 
-**Failure-kind compatibility.** `loopNotConverging` is a new persisted enum
-case. Tolerant persisted decoding (unknown raw values decode to a preserved
-`other(String)`-style representation with a diagnostic) is required and does
-not exist yet; it ships with whichever of LB1 or LA2 lands first, per
-Design Decision 7. Binaries predating that change cannot decode stalled
-sessions — the same accepted, documented limitation LA2 records.
+Default-policy enforcement instead uses the persisted accepted `loopGate`
+payloads and step-execution identities as its canonical gate evidence. During
+the run, the shared parser reconstructs visit counts and finding fingerprints
+from those executions. A violation persists its `default` provenance and
+disposition in the `loop_stall` progress record and, when graceful routing is
+available, the `loopGuardOutcome` output marker. The runtime never reads
+`LoopConvergenceEvidence` to make a routing decision. Thus default sessions are
+observable when the guard acts without widening the authored-policy manifest
+contract; a default session with no violation adds no convergence manifest.
+
+**Failure-kind compatibility.** `loopNotConverging` and tolerant unknown-value
+decoding are already implemented by the raw-value
+`WorkflowSessionFailureKind`. S9a reuses that failure only when a default guard
+cannot route to a terminal corridor; it adds no closed failure-kind case.
 
 **Non-goals.** No semantic finding similarity, no cross-session convergence
 tracking (a rerun starts fresh; cross-session patterns are S13 flakiness),
 no automatic recovery from a stall (the operator uses
 `loop recover --from-gate`).
+
+### S9a. Default convergence guard and terminal preservation
+
+S9 remains the contract for explicitly authored convergence policies. This
+extension supplies a deterministic safety floor only when the workflow has no
+authored `loop` object. It does not merge defaults into, reinterpret, or
+otherwise change any explicit loop declaration.
+
+#### Effective policy and provenance
+
+At run entry the runner resolves exactly one of four states, in this precedence
+order:
+
+1. `declared`: `workflow.loop.convergence` is present and enabled. The authored
+   bounds and `onStall` action apply without default merging. The CLI opt-out
+   has no effect on this state.
+2. `authored-inactive`: `workflow.loop` is present but `loop.convergence` is
+   absent. No convergence tracker or synthesized bound applies. This preserves
+   the existing behavior of workflows that author other loop metadata without
+   authoring convergence policy; the CLI opt-out has no additional effect.
+3. `disabled`: an authored convergence declaration sets `enabled: false`, or a
+   workflow with no `loop` object is run with
+   `--disable-default-loop-guard`. Declaration-level disablement is represented
+   as follows and may omit both bounds:
+
+   ```json
+   {
+     "loop": {
+       "convergence": {
+         "enabled": false
+       }
+     }
+   }
+   ```
+
+   The CLI flag disables only synthesized defaults; it never disables an
+   explicit enabled convergence policy or changes an `authored-inactive`
+   workflow.
+4. `default`: the workflow has no `loop` object and the CLI has not opted out.
+   The effective declaration is `maxGateVisits: 4`,
+   `maxRepeatedFindingRounds: 2`. A gate may execute four times; the fifth
+   visit violates the visit cap. The second consecutive rejected or
+   needs-work visit with the same blocking-finding fingerprint set violates
+   the repeated-finding bound.
+
+`LoopConvergenceDeclaration.enabled` is optional and decodes as `true`.
+Validation accepts omitted bounds only when it is `false`; `enabled: false`
+combined with either bound or a non-default `onStall` is rejected as
+contradictory. Existing `onStall` values remain closed to `fail` and `warn`.
+The default guard's terminal-routing disposition is runtime policy derived
+from `default` provenance, not a new persisted enum case.
+
+The resolved state and its provenance are request-local runtime context; they
+do not mutate or backfill the workflow declaration. The runner evaluates only
+`declared` and `default` policies through the same `LoopConvergenceTracker` and
+`LoopPolicyEvaluator` components. `authored-inactive` and `disabled` do not
+produce convergence violations or `loop_stall` events, so they have no stall
+policy source to persist. Within the `default` state, terminal-step reservation
+is independently identified by `policySource: "step-budget"` as described
+below. Every actual
+convergence violation retains the existing `loopStallGateId`,
+`loopStallViolationKind`, `loopStallGateVisits`,
+`loopStallRepeatedRounds`, and `loopStallFingerprints` fields and adds
+`loopStallPolicySource` with `declared` or `default`. Explicit `warn` continues
+and explicit `fail` fails exactly as before.
+
+Default-policy gate discovery cannot depend on `workflow.loop` because that
+object is absent by definition. A step participates when `step.loop.gateId` is
+present or `step.loop.role == "gate"`. Its stable gate identity is the authored
+`gateId`, falling back to the step id for a role-only gate. The shared
+`LoopGatePayloadParser` already supports this fallback; the routing-reconciler
+and convergence-enforcement entry guards must use the effective policy plus
+step annotation instead of requiring `workflow.loop != nil`. Steps without
+either gate annotation are never inferred as gates from prompt or output text.
+
+#### Graceful terminal routing
+
+A default-policy violation must not fail immediately when the workflow has a
+deterministic terminal corridor. Corridor selection is a shared graph contract
+used by both convergence routing and terminal-step reservation. It takes an
+origin step: the just-published gate for a convergence violation, or the
+runner's selected current step before dispatch for reservation. From that
+origin and the validated execution graph it derives the corridor as follows:
+
+- Enumerate transitionless, root-output-producing sinks statically reachable
+  from the origin. Conditional branches count as reachable until runtime has
+  already selected and persisted one branch.
+- For each reachable sink, walk backward through the maximal suffix whose
+  steps have one unconditional outgoing edge into that suffix. A gate,
+  branching step, fanout/cross-workflow boundary, or multiple incoming edges
+  stops extension; multiple incoming edges do not invalidate the suffix
+  already found.
+- A corridor is selectable only when all reachable output paths converge on
+  the same suffix and therefore the same corridor entry. Distinct reachable
+  output sinks, distinct suffixes, or a suffix containing a fanout or
+  cross-workflow boundary are ambiguous and produce no corridor. This avoids
+  predicting an unresolved condition or choosing among terminal outcomes.
+
+On a default-policy violation with a corridor, the runner replaces the
+loop-back destination with the corridor entry and persists an additive marker
+in the routed payload and final root output:
+
+```json
+{
+  "loopGuardOutcome": {
+    "decision": "accept-with-residual-risks",
+    "policySource": "default",
+    "gateId": "implementation-review",
+    "violationKind": "repeatedFindingsStall",
+    "gateVisits": 2,
+    "repeatedRounds": 2,
+    "findingFingerprints": ["..."],
+    "residualRisks": ["default loop convergence guard stopped further revision"]
+  }
+}
+```
+
+The marker is derived only from the persisted accepted `loopGate` payloads and
+step-execution identities used to reconstruct the violating tracker state; it
+does not depend on `LoopConvergenceEvidence`. Fingerprints remain bounded. The
+marker does not rewrite the gate's original decision or erase findings. The
+`loop_stall` event action is
+`accept-with-residual-risks`. Workflows without a deterministic terminal
+corridor still fail, and authored `onStall: "fail"` always fails even when a
+corridor exists.
+
+#### Reserved terminal steps
+
+The step budget remains a hard total limit. Terminal reservation is part of the
+synthesized default safety policy and applies only in the `default` state when
+an unambiguous corridor exists. `declared`, `authored-inactive`, and `disabled`
+requests retain their existing step-budget and routing behavior. Consequently,
+both declaration-level disablement and `--disable-default-loop-guard` disable
+reservation as well as default convergence enforcement; neither opt-out
+disables or raises the existing hard `maxSteps` limit.
+
+After recovery and ordinary routing have selected the current step, but before
+that step consumes a `maxSteps` slot or is dispatched, the runner applies the
+shared corridor selection contract with that current step as origin. If the
+current step is already in the selected corridor, it proceeds and may consume
+reserved capacity. Otherwise the runner reserves enough remaining capacity to
+complete the corridor. The default reserve floor is three steps; when the
+corridor is longer, its actual length is reserved. A non-terminal dispatch
+that would consume the reserve is replaced by the corridor entry. The marker
+is persisted with the corridor-entry inbound payload, carried unchanged
+through the corridor, and merged into the final root output. A reserve
+activation has its own marker shape because it may occur outside a gate while
+the synthesized default state is active:
+
+```json
+{
+  "loopGuardOutcome": {
+    "decision": "accept-with-residual-risks",
+    "trigger": "terminal-step-reserve",
+    "policySource": "step-budget",
+    "stepBudget": 20,
+    "visitedSteps": 17,
+    "reservedTerminalSteps": 3,
+    "residualRisks": ["step budget reserved for terminal workflow stages"]
+  }
+}
+```
+
+Gate ids, finding fingerprints, and convergence violation kinds are omitted
+for reserve activation; it does not fabricate a gate-convergence violation,
+emit `loop_stall`, or extend the closed `LoopConvergenceViolationKind` enum.
+Steps already in the selected corridor may use the reserve. If `maxSteps` is
+smaller than the corridor itself, or no unambiguous corridor exists, existing
+`maxStepsExceeded` failure behavior applies. This preserves the configured
+hard limit while preventing an undeclared revision loop from consuming commit,
+push, or output capacity. Authored policies never enter this reservation path.
+
+#### CLI and cross-workflow propagation
+
+`riela workflow run --disable-default-loop-guard` is a typed Boolean option
+and appears beside `--max-steps` in help. The run request carries the opt-out
+as execution context; it is not written into the workflow definition.
+
+Live cross-workflow child requests inherit the parent's request-level
+`maxSteps`, `maxLoopIterations`, and default-guard opt-out context alongside
+`defaultTimeoutMs`. Each child receives the same per-session maximum; the
+parent's already-consumed count is not subtracted. The child workflow's own
+`loop.convergence` and `loop.budget` declarations always remain authoritative:
+no authored budget or convergence declaration is copied from the parent or
+replaced by request context.
+
+#### Rollout and verification boundary
+
+The first-party
+`.riela/workflows/codex-design-and-implement-review-loop/workflow.json`
+declares an explicit `loop.convergence` policy so its behavior is reviewable
+and independent of synthesized defaults. Tests pin default visit-cap and
+fingerprint stalls, all four policy-resolution states and provenance, terminal
+routing and residual-risk output, reserve exhaustion, non-gate reserve
+activation under the default state, reservation absence for declared,
+authored-inactive, and disabled states, a branch that converges on one terminal
+suffix, an ambiguous
+multi-sink branch that retains `maxStepsExceeded`, explicit-policy
+preservation, both opt-outs, cross-workflow propagation, and the evidence
+boundary: declared runs may project `LoopConvergenceEvidence`, while default
+runs persist guard actions only through progress records and output markers.
+CLI help and loop-engineering documentation state the exact defaults and the
+limited scope of the opt-out.
 
 ### S10. Accepted baseline and regression verdict (G11)
 
@@ -593,20 +803,18 @@ stats. Both are sequenced last for that reason.
 
 ## Compatibility and Migration
 
-- All authored metadata (`loop.convergence`, `loop.concurrency`,
-  `loop.notifications`) is optional; absent metadata preserves today's
-  behavior. Raw validation accepts the new keys; existing workflows stay
-  valid.
+- Authored metadata remains optional and existing workflows stay valid. An
+  absent `loop` object now activates S9a defaults; an authored `loop` object
+  preserves its declared behavior. `loop.convergence.enabled` is additive and
+  defaults to `true`; `enabled: false` is the declaration-level opt-out.
 - `LoopConvergenceEvidence` and the `LoopSessionSummary.workflowDefinitionDigest`
   field are additive with defaulted decoding; old snapshots decode.
-- `WorkflowSessionFailureKind.loopNotConverging` requires tolerant persisted
-  decoding, shared with LA2's `budgetExceeded` (Design Decision 7). Old
-  binaries cannot decode stalled sessions — accepted, documented, same as
-  LA2.
-- `loop_stall`, `loop_concurrency_busy`, and `loop_concurrency_skipped` are
-  additive JSONL record types; `WorkflowRunEventType` gains `loop_stall`
-  and the live-persistence event switch updates with it. Consumers ignore
-  unknown record types.
+- `WorkflowSessionFailureKind.loopNotConverging` and tolerant unknown-value
+  decoding are already implemented. S9a adds no failure-kind value.
+- `loop_stall` is already an additive JSONL record type. S9a adds optional
+  provenance and the `accept-with-residual-risks` action string without adding
+  an event-type case. The later LB3 concurrency record types remain additive;
+  consumers ignore unknown record types and fields.
 - `loop_baselines` and `loop_concurrency_leases` are new tables created by
   the existing migration pattern; their absence in old stores is handled by
   `CREATE TABLE IF NOT EXISTS` on writable opens, and read paths treat a
@@ -615,17 +823,24 @@ stats. Both are sequenced last for that reason.
   --baseline` adds a flag to an LA3 command without changing its defaults.
 - No existing CLI command changes shape; all new surfaces are new
   subcommands or new flags.
+- `--disable-default-loop-guard` and inherited child request fields are
+  runtime-only context. They do not mutate workflow bundles or persisted
+  authored policy. New event/output provenance fields are optional for
+  decoding and ignored by older consumers.
 
 ## Phased Roadmap
 
 Ordered by observed operational pain, then by dependency.
 
-### LB1: Convergence guard (G10)
+### LB1: Convergence guard (G10; authored baseline shipped, S9a pending)
 
-Fingerprint helper (shared with diff), authored metadata + validation,
-runner tracker, `loopNotConverging` + tolerant failure-kind decoding
-(unless LA2 landed it first), `loop_stall` record, evidence section.
-No dependency on any LA phase.
+The fingerprint helper, authored metadata and validation, runner tracker,
+`loopNotConverging`, tolerant failure-kind decoding, `loop_stall` record, and
+authored evidence section are implemented. The remaining single S9a work
+package adds effective-policy resolution, synthesized defaults and provenance,
+default-only terminal routing and reservation, both opt-outs, cross-workflow
+request-context propagation, fixture adoption, tests, and documentation. It
+has no dependency on an LA phase.
 
 ### LB2: Baseline and regression verdict (G11)
 
@@ -729,9 +944,23 @@ slip.
   that may land before, during, or after this work. Mitigation: the shared
   pieces (differ core, finding identity, stats shape) are specified once,
   here and in LA, with explicit "one implementation, two consumers" rules.
+- **Terminal-corridor ambiguity.** Graphs with multiple reachable output
+  sinks cannot be routed safely by inference. The runner fails with a
+  diagnostic rather than choosing one, and tests cover unique, absent, and
+  ambiguous corridors.
+- **Step-budget contract drift.** Reserving capacity can end an undeclared
+  workflow's revision work earlier than a caller expects. The hard `maxSteps`
+  total remains unchanged, reserve activation is explicit in output evidence,
+  and authored or opted-out workflows retain their existing routing and budget
+  behavior.
+- **Cross-workflow budget amplification.** Giving every child the parent's
+  per-session `maxSteps` can multiply total work across nested calls. Existing
+  dispatch-depth bounds remain in force, events identify parent and child
+  sessions, and no parent-authored loop budget is copied into the child.
 
 ## Implementation Plan
 
-`impl-plans/active/loop-engineering-convergence-and-operations.md` tracks
-phases LB1–LB4 as concrete modules; LB5–LB6 are outlined there and get
-detailed module specs when their phase starts.
+`impl-plans/active/loop-engineering-convergence-and-operations.md` tracks the
+S9a default-guard and terminal-preservation work. The completed historical
+plan at `impl-plans/completed/loop-engineering-convergence-and-operations.md`
+records LB1–LB4; LB5–LB6 remain roadmap material in this design.

@@ -524,3 +524,420 @@ parallel with 2-3.
 - `swiftlint`, `git diff --check`, and pre-commit safety checks before
   committing. If any command is unavailable or exposes unrelated pre-existing
   failures, record the command, result, and owner explicitly in the handoff.
+
+## Session Follow, Rollup, and Backend Liveness Extension (2026-07-23)
+
+### Scope and issue reference
+
+This extension is the accepted design for the single `issue-resolution` work
+package **“Session observability: progress --follow, parent/child rollup,
+backend liveness verdict (one feature)”**. The request came from
+`fable-and-improve` through workflow execution
+`codex-design-and-implement-review-loop-session-2`; no GitHub repository,
+issue number, or issue URL was supplied. It extends the compact progress
+projection designed above. It does not reopen the earlier failure-finalization,
+discovery, or budget-recovery decisions.
+
+The extension owns three views over one persisted model:
+
+1. periodic progress digests for one live session;
+2. a root/child tree for cross-workflow sessions; and
+3. an evidence-backed activity verdict for the active CLI-agent backend.
+
+These remain one feature because provenance, follow mode, health, CLI, and
+GraphQL all consume the same read-only session-observability service. There is
+no feature fan-out. No kill, restart, reconciliation, detach, attach, wait, or
+new daemon behavior is introduced.
+
+### Source-verified starting points
+
+- `Sources/RielaCLI/SessionCommands.swift` builds
+  `SessionInspectionCommandResult` directly from one
+  `WorkflowRuntimePersistenceSnapshot`. It already exposes current step/stage,
+  execution count, running backend, last backend event, silence ages,
+  `stepBudgetDiagnostic`, and loop evidence, but has no follow loop, rollup, or
+  backend-activity verdict.
+- `Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift` opens
+  `load` and `loadAll` connections in SQLite read-only mode. Its writable
+  `ensureSchema` path uses additive `ALTER TABLE` migrations. The
+  `workflow_runtime_snapshots` table has no root or parent session columns.
+- `Sources/RielaCore/WorkflowRuntimePersistenceSnapshot.swift` persists a
+  `WorkflowSession` JSON blob. `WorkflowSession` in
+  `Sources/RielaCore/RuntimeSession.swift` has no cross-workflow provenance or
+  live effective-budget field; old JSON is already decoded through optional
+  additive fields.
+- `Sources/RielaCore/DeterministicWorkflowRunner+CrossWorkflow.swift` passes
+  the runtime-only `workflowRunId` to the callee and appends
+  `_rielaCrossWorkflow` to the parent only after the child completes. The
+  child is therefore not durably discoverable while it is running.
+- `Sources/CodexAgent/CodexSessionIndex.swift` and
+  `Sources/ClaudeCodeAgent/ClaudeCodeSessionIndex.swift` expose indexed native
+  sessions with rollout paths and modification dates. Their home resolvers
+  honor `CODEX_HOME` and `CLAUDE_CONFIG_DIR`, respectively, with home-relative
+  defaults. The corresponding rollout watchers use the same roots.
+- `Sources/AgentRuntimeKit/AgentProcessStateProber.swift` can classify a known
+  PID as running, zombie, or missing, but the workflow snapshot does not
+  currently persist a backend PID. Process evidence is therefore optional in
+  this work package; artifact and stream evidence are the required paths.
+- `RielaCore` cannot import `CodexAgent` or `ClaudeCodeAgent` under the SwiftPM
+  dependency graph. Provider-neutral contracts belong in `RielaCore`;
+  provider-specific probes stay in their adapter modules and are injected by
+  an application composition layer.
+
+### Shared read-only projection
+
+Add a provider-neutral session-observability API in `Sources/RielaCore`, with
+one service used by CLI and GraphQL. Names may follow repository conventions,
+but the public data contract is fixed:
+
+- `SessionProgressDigest`: observation time, session/workflow identifiers,
+  `parentSessionId`, `rootSessionId`, status, optional previous status, current
+  step and stage, execution count, effective step budget, gate visit counts,
+  last backend event type/time/age, and active backend.
+- `SessionRollupNode`: one digest plus recursively nested `children`.
+- `SessionBackendActivity`: backend, verdict, evidence list, active and stalled
+  thresholds, last activity time, and age.
+- `SessionObservabilityView`: the requested root node and, for health reads,
+  the backend activity assessment. CLI and GraphQL may wrap this contract but
+  must not independently recalculate its fields.
+
+All ages are derived from an injected clock at read time. Reads never persist
+the observation time, status transitions, liveness result, or access metadata.
+Stable structured output uses milliseconds for ages and ISO-8601 UTC dates.
+
+The effective step budget is selected in this order:
+
+1. `stepBudgetDiagnostic.stepBudget`, when a failure diagnostic exists;
+2. the new optional `WorkflowSession.effectiveStepBudget`, captured from the
+   runner's already-computed budget when the session starts; or
+3. `null` for legacy sessions where neither value exists.
+
+The service must not invent a budget from execution count. Gate visit counts
+use `loopEvidence.convergence.gateVisitCounts` as the authoritative map; its
+keys are stable `gateId` values, not step ids. When convergence evidence is
+absent, group `loopEvidence.gates` by `gateId`. When the evidence manifest is
+absent, the service may count executions only for gate ids that persisted loop
+metadata explicitly maps to step ids; otherwise it returns an empty count set
+rather than guessing from step names.
+
+### Persisted parent/child provenance
+
+Add optional, Codable-compatible session fields:
+
+- `parentSessionId`: the immediately dispatching workflow session, or `nil`
+  for a top-level run;
+- `rootSessionId`: the top-level workflow session shared by the dispatch tree;
+  old sessions resolve a missing value to their own `sessionId`; and
+- `effectiveStepBudget`: the budget calculated for this run.
+
+`DeterministicWorkflowRunRequest` carries parent/root provenance internally.
+The top-level runner sets `rootSessionId` to its generated session id. Before
+`dispatchCrossWorkflowCallee` invokes the child runner, it supplies the known
+parent session id and inherited root id. The child's initial `session_started`
+snapshot therefore includes provenance. This is the earliest durable point at
+which a child exists and makes an in-flight child discoverable; discovery must
+not wait for the parent's `_rielaCrossWorkflow` completion payload.
+
+The writable SQLite migration adds nullable `parent_session_id` and
+`root_session_id` columns plus indexes for parent and root queries. Upsert
+writes the columns from session JSON. Migration and backfill occur only on an
+existing writer/schema-preparation path. A reader opened against an older
+database feature-detects missing columns and returns legacy sessions as
+standalone roots; it must not run DDL, open a writable connection, create a
+database, or modify file timestamps.
+
+The store adds read-only queries for direct children and a complete rollup.
+One rollup refresh should use a short autocommit read on a read-only connection,
+selecting the root and indexed descendants, then close the connection before
+sleeping. Tree assembly is in memory, orders siblings by `createdAt` then
+`sessionId`, tracks visited ids to prevent malformed cycles, and represents a
+missing referenced parent as an unattached root rather than failing the whole
+read.
+
+`session list` adds `parentSessionId` and `rootSessionId` to structured rows.
+Text/table output adds stable parent and root columns without reordering or
+removing existing columns.
+
+### `session progress --follow` contract
+
+`riela session progress <id>` remains a one-shot command. Add:
+
+- `--follow`, valid only for `session progress`;
+- `--poll-interval <seconds>`, default `2.0`; accepted values are finite and
+  between `0.1` and `3600` seconds; and
+- `--include-children`, valid for one-shot and follow progress reads.
+
+Each refresh creates a new read-only store connection, reads one coherent
+view, renders it, closes the connection, and then waits. No application lock,
+write transaction, schema preparation, heartbeat, or observer state is stored
+in the session database. A concurrently running writer remains the sole owner
+of session mutations.
+
+Text and JSONL emit one digest per refresh, including unchanged refreshes, so
+silence ages continue to advance. JSONL emits one complete JSON object per
+line; it never opens an array and never rewrites prior output. `--follow
+--output json` is rejected with usage guidance to select `jsonl`; text/table
+use the text digest. `previousStatus` is `null` on the first observation and is
+set from the immediately preceding in-process observation thereafter.
+
+Without `--include-children`, follow exits after emitting the first observation
+whose requested session is terminal. With `--include-children`, it exits after
+emitting a view in which the requested session and every discovered descendant
+are terminal. Today `completed` and `failed` are terminal; a failed session
+whose `failureKind` is `cancelled` is also terminal, and a future first-class
+`cancelled` status must be handled additively. An already-terminal session
+emits exactly once and exits successfully. Read/decode/not-found errors produce
+one normal command failure and terminate rather than retrying forever.
+
+### Backend activity verdict
+
+Define the provider-neutral probe protocol and verdict/evidence models in
+`RielaCore`. Concrete probes live in:
+
+- `Sources/CodexAgent`: resolve a uniquely correlated Codex native session and
+  use its rollout/session artifact modification time;
+- `Sources/ClaudeCodeAgent`: use persisted Claude stream-event recency and,
+  when uniquely correlated, its native session artifact modification time;
+  and
+- `Sources/AgentRuntimeKit`: optional process-state evidence for a PID and
+  start identity supplied by a future or existing adapter integration.
+
+The probe input includes workflow/session/execution identity, backend,
+execution start/update times, persisted last backend event, working directory,
+optional native backend session id, and configured thresholds. Add optional
+`backendSessionId` and `backendWorkingDirectory` fields to
+`WorkflowStepExecution`, and an optional `backendSessionId` to
+`AdapterBackendEvent`. The runner copies the node's effective working directory
+when it starts an execution. Codex and Claude classifiers populate the event
+session id as soon as an existing stream parser identifies the native session;
+the runner's existing backend-event receipt path persists it on the running
+execution. Correlation uses that id directly. When a provider does not emit an
+id, an artifact match must be unique within the active execution time window
+and persisted working directory. Ambiguous correlation is `unknown`, never
+“latest session wins.” Legacy executions decode both new fields as `nil`.
+
+Home resolution must call `CodexSessionIndex.resolveCodexHome` or
+`ClaudeCodeSessionIndex.resolveClaudeCodeHome`, or accept an explicitly
+injected root in tests. No absolute user path appears in source. Unreadable or
+missing roots, absent artifacts, unsupported backends, ambiguous matches, and
+probe errors degrade to `unknown` with a non-secret reason. Evidence may expose
+the resolved artifact path in structured local output; text rendering should
+home-abbreviate it for readability. Probe code never creates, touches, or
+opens artifacts for writing.
+
+Default thresholds are `activeThresholdMs = 30_000` and
+`stalledThresholdMs = 180_000`, and both values are included in output.
+Classification is deterministic:
+
+- `active`: the newest correlated backend event, artifact modification, or
+  positive process-activity evidence is no older than the active threshold;
+- `quiet`: correlated evidence exists and is older than the active threshold
+  but no older than the stalled threshold, or correlated evidence exists and
+  the workflow execution is no longer running;
+- `stalled-suspect`: the workflow execution is still running and runtime
+  silence exceeds the stalled threshold. For Codex, a matching stale artifact
+  or a matched live process plus stale artifact must corroborate the verdict.
+  For Claude, a persisted stream event attached to that execution is already
+  provider-correlated evidence and is sufficient when its age also exceeds the
+  stalled threshold; a uniquely matched stale artifact is an additional path;
+  and
+- `unknown`: the probe lacks enough unique, readable evidence for the other
+  verdicts.
+
+This is evidence, not remediation. “Suspect” intentionally avoids claiming
+that a stale artifact proves deadlock. Fixture tests distinguish a healthy
+long turn (fresh stream or artifact evidence) from a wedged-looking turn
+(running execution plus stale runtime and provider evidence). A merely stale
+runtime event with no correlated provider evidence remains `unknown`.
+
+### CLI and GraphQL parity
+
+`SessionInspectionCommand` delegates projection to the shared service.
+`session health` retains existing health and silence fields and additively
+returns `backendActivity` plus evidence and thresholds. `session progress`
+returns the same digest/rollup shape used by follow. `session list` projects
+the shared provenance fields.
+
+Add GraphQL fields/queries without renaming or removing existing schema:
+
+- `sessionProgress(sessionId: String!, includeChildren: Boolean = false)`
+  returns the shared digest/rollup view;
+- `sessionHealth(sessionId: String!)` returns the shared digest plus backend
+  activity assessment; and
+- existing session discovery rows gain nullable `parentSessionId` and
+  `rootSessionId`.
+
+`RielaGraphQL` depends only on the provider-neutral service/protocol. The
+application composition layer injects the Codex and Claude probe registry.
+Every in-repository production composition path that exposes these GraphQL
+queries must register the same concrete probes and root configuration used by
+the CLI. The `unknown` default exists only for external/library consumers that
+intentionally omit probe registration. Resolver tests compare decoded GraphQL
+fields with the result of the shared service for the same fixture and clock,
+rather than comparing two independent implementations.
+
+The production composition inventory is explicit:
+
+- `Sources/RielaCLI/SessionCommands.swift` is the production CLI progress and
+  health path. The `RielaCLI` target already imports `CodexAgent` and
+  `ClaudeCodeAgent`; one CLI-owned composition factory assembles the concrete
+  probe registry, configured roots, clock, and read-only store service used by
+  both `SessionInspectionCommand` and GraphQL parity commands.
+- `Sources/RielaCLI/ScopedParityCommands.swift` is the production
+  `riela graphql session` path. Its additive progress and health actions use
+  that same CLI-owned composition factory and delegate to
+  `GraphQLRuntimeSnapshotQueryService`; they do not build a second probe
+  registry or recalculate a verdict.
+- `Sources/RielaGraphQL/RielaGraphQL.swift` owns the provider-neutral
+  `GraphQLRuntimeSnapshotQueryService`. It accepts the shared observability
+  service or probe registry through initialization and has no dependency on
+  `CodexAgent` or `ClaudeCodeAgent`. A caller that deliberately omits the
+  registry receives `unknown`, as documented by the public initializer.
+- `Sources/RielaServer/ServerContracts.swift` and
+  `Sources/RielaServer/WorkflowServingController.swift` do **not** currently
+  execute runtime-session GraphQL queries: `/graphql` either delegates to the
+  note-only document executor or returns the schema/delegation envelope.
+  `Sources/RielaCLI/ServeHTTPCommand.swift` therefore exposes no production
+  runtime-session query composition to update in this package. If runtime
+  session document execution is added there later, its executable composition
+  root must inject the same registry; `RielaServer` itself remains
+  provider-neutral.
+- `Sources/RielaApp/RielaAppWebRouter.swift` likewise forwards `/graphql` to
+  the default server adapter and does not install a runtime-session executor.
+  RielaApp has no production runtime-session GraphQL composition in this work
+  package, so it must not grow an unused probe registry merely to satisfy a
+  test. Its existing `/api/v1` session summary is a separate REST projection
+  and is not changed by this GraphQL acceptance signal.
+
+This inventory makes the CLI and its GraphQL parity path the two concrete
+production consumers in scope. Tests must prove both receive the same registry;
+tests that instantiate `GraphQLRuntimeSnapshotQueryService` without a registry
+cover only the documented external/library `unknown` fallback.
+
+### Data flow and boundaries
+
+1. The runner creates a session with root/parent provenance and effective
+   budget.
+2. The existing writer event path persists the snapshot and indexed provenance
+   columns.
+3. A progress, health, list, or GraphQL reader opens the SQLite database in
+   read-only mode and loads the requested snapshot or indexed descendants.
+4. The shared service derives digest and rollup fields using an injected clock.
+5. Health composition invokes only the probe matching the active backend and
+   merges its assessment into the shared view.
+6. CLI or GraphQL renders that view without additional business derivation.
+
+Cursor CLI behavior is not a reference input for this work package, so there
+is no Cursor behavior mapping. Cursor remains unsupported by the new concrete
+liveness probes and reports `unknown`; no Cursor-specific path or process
+logic enters `RielaCore`. No external codex-agent reference repository was
+provided or consulted. Codex-agent in this design denotes the in-repository
+`Sources/CodexAgent` adapter only.
+
+### User-facing documentation contract
+
+Implementation updates both user-facing command-documentation surfaces before
+handoff:
+
+- `README.md` gains a compact session-observability section with runnable
+  examples for one-shot and followed progress, text and JSONL streaming,
+  `--poll-interval`, `--include-children`, parent/root fields in `session list`,
+  and `session health`. It states that observers are read-only, follow exits
+  after the applicable terminal tree, and unavailable or ambiguous artifacts
+  yield `backendActivity: unknown`.
+- `Sources/RielaCLI/RielaCLIApplication.swift` command help lists the new flags,
+  their validity (`progress` only where applicable), the `2.0` second default
+  and accepted interval range, the rejection of `--follow --output json`, and
+  the four backend-activity verdicts.
+
+The documentation defines `active`, `quiet`, `stalled-suspect`, and `unknown`
+as evidence classifications rather than remediation or a guarantee of
+deadlock. It preserves existing command examples and does not document
+RielaServer or RielaApp runtime-session GraphQL execution because those
+production paths do not exist in this package.
+
+### Acceptance mapping
+
+| Requested signal | Design decision |
+|---|---|
+| Follow streams text and JSONL and exits on terminal state | Per-refresh output, JSONL-only structured stream, terminal rules, injected clock/sleeper |
+| Digest includes step/stage, executions/budget, gate visits, backend event/age, transitions | `SessionProgressDigest` and persisted `effectiveStepBudget` |
+| Parent plus in-flight/completed children are visible | Parent/root provenance on the child's first snapshot plus indexed rollup query |
+| Session list shows relationships | Additive parent/root fields and text columns |
+| Health distinguishes active, quiet, stalled-suspect, unknown | Deterministic two-threshold verdict with runtime and provider evidence |
+| Codex and Claude are covered | Provider-specific probes using existing home resolvers, indexes, streams, and injectable fixture roots |
+| CLI and GraphQL agree | One `RielaCore` observability service and parity tests using the same fixture/clock |
+| Readers do not interfere with a live writer | Read-only, short-lived connections; no DDL, writes, locks, or sleeps while connected |
+| Session-command behavior is documented | `README.md` examples and `RielaCLIApplication.swift` help cover follow, rollup/list provenance, and backend-activity semantics |
+
+### Validation and review gates
+
+Required automated verification from the worktree root:
+
+```bash
+swift build
+swift test --filter RielaCoreTests
+swift test --filter RielaCLITests
+swift test --filter RielaGraphQLTests
+swift test --filter CodexAgentTests
+swift test --filter ClaudeCodeAgentTests
+rg -n "session progress|include-children|poll-interval|backendActivity|parentSessionId|rootSessionId" README.md Sources/RielaCLI/RielaCLIApplication.swift
+git diff --check
+```
+
+Targeted tests must cover digest projection with an injected clock; legacy and
+new provenance decoding; indexed discovery of a running child; cycle-safe tree
+assembly; read-only access to a pre-migration database; concurrent writer and
+polling reader; follow output cadence, status transitions, terminal exit, and
+invalid intervals; Codex and Claude fresh/stale/missing/ambiguous artifacts;
+stalled-suspect versus healthy-long-turn fixtures; unsupported backend
+fallback; GraphQL/shared-service equality; shared CLI/GraphQL probe-registry
+identity; and command-help parsing for every new option and invalid output
+combination. Documentation review must confirm the README examples match the
+tested CLI spelling, defaults, terminal behavior, and structured field names.
+
+Live smoke verification must run a small mock-scenario parent/child workflow
+and execute:
+
+```bash
+.build/debug/riela session progress <session-id> --follow --poll-interval 0.2 --output text
+.build/debug/riela session progress <session-id> --follow --poll-interval 0.2 --output jsonl
+.build/debug/riela session progress <parent-session-id> --include-children --output json
+.build/debug/riela session list --output json
+.build/debug/riela session health <session-id> --output json
+```
+
+The smoke record must show that follow observed live updates, emitted its
+terminal digest, exited, and did not change snapshot content except for writes
+made by the workflow writer. Known baseline exclusions are the two
+`SourceDeletionReadinessTests` failures, the flaky
+`DaemonWorkflowNodePatchTests` event-source-restart test, and the occasionally
+flaky agent-VM interleaved-submit test; any other failure is a regression until
+explained.
+
+Because this change includes an additive database migration, workflow runner
+provenance, external artifact reads, and branch-owned commit/push behavior, the
+implementation receives adversarial review even though the requested
+`reviewMode` is `standard` and `riskLevel` is `normal`. Review must explicitly
+decide: **accept**, **accept with non-blocking findings**, or **request
+changes**, and must treat read-path writes, ambiguous backend correlation,
+CLI/GraphQL drift, or missing terminal-exit coverage as blocking findings.
+
+### Risks and rollout constraints
+
+- Old stores have no provenance. They remain readable and appear as standalone
+  roots; provenance cannot be reconstructed reliably from completed parent
+  payloads without false matches.
+- A child can be absent for the brief interval before its first persisted
+  `session_started` snapshot. No reader-side mutation is allowed to close that
+  interval.
+- Artifact modification times can be coarse or externally changed. Verdict
+  output includes evidence and thresholds, and ambiguous or missing matches
+  remain `unknown`.
+- Very small polling intervals increase read load. Validation bounds and an
+  indexed one-query rollup keep that load finite.
+- A parent could become terminal before a child due to failure propagation.
+  Include-children follow waits for every discovered descendant so its final
+  emitted tree is internally terminal.
+- Structured schema additions are optional and additive. Existing commands,
+  flags, GraphQL fields, and legacy snapshot decoding remain supported.

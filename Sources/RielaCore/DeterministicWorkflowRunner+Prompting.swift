@@ -159,23 +159,6 @@ extension DeterministicWorkflowRunner {
     return "Prior unresolved high and mid review findings for this rerun:\n\(trimmed)"
   }
 
-  func multiplePublishableTransitionFailure(
-    transitions: [WorkflowStepTransition],
-    candidate: RuntimeOutputCandidate
-  ) -> AdapterExecutionError? {
-    let evaluator = WorkflowBranchEvaluator()
-    let publishableCount = transitions.filter { transition in
-      evaluator.evaluate(label: transition.label, when: candidate.when, payload: candidate.payload)
-    }.count
-    guard publishableCount > 1 else {
-      return nil
-    }
-    return AdapterExecutionError(
-      .invalidOutput,
-      "multiple direct transitions are not supported by this sequential runner"
-    )
-  }
-
   func deadline(for step: WorkflowStepRef, request: DeterministicWorkflowRunRequest) -> Date? {
     let timeoutMs = request.timeoutMs ?? step.timeoutMs ?? request.defaultTimeoutMs ?? request.workflow.defaults.nodeTimeoutMs
     guard timeoutMs > 0 else {

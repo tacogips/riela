@@ -493,6 +493,8 @@ final class GraphQLContractsTests: XCTestCase {
       "WorkflowSession": try encodedFieldNames(GraphQLWorkflowSessionDTO(
         workflowId: "workflow-a",
         sessionId: "session-a",
+        parentSessionId: "parent-session",
+        rootSessionId: "root-session",
         status: "running",
         currentStepId: "step-a",
         lastCompletedStepId: "step-a",
@@ -543,6 +545,8 @@ final class GraphQLContractsTests: XCTestCase {
       )),
       "WorkflowSessionSummary": try encodedFieldNames(GraphQLWorkflowSessionSummaryDTO(
         sessionId: "session-a",
+        parentSessionId: "parent-session",
+        rootSessionId: "root-session",
         workflowName: "workflow-a",
         status: "failed",
         failureKind: "maxStepsExceeded",
@@ -803,6 +807,69 @@ final class GraphQLContractsTests: XCTestCase {
       createdAt: date,
       updatedAt: date
     )
+  }
+}
+
+extension GraphQLContractsTests {
+  func testSessionObservabilitySchemaFieldSetsMatchEncodedDTOs() throws {
+    let date = Date(timeIntervalSince1970: 2_000)
+    let progressDigest = SessionProgressDigest(
+      observedAt: date,
+      sessionId: "session-a",
+      workflowId: "workflow-a",
+      parentSessionId: "parent-session",
+      rootSessionId: "root-session",
+      status: .running,
+      failureKind: .maxStepsExceeded,
+      previousStatus: .created,
+      currentStepId: "step-a",
+      currentStage: "Implementation in progress",
+      executionCount: 2,
+      effectiveStepBudget: 8,
+      gateVisitCounts: ["review": 2],
+      lastBackendEventType: "assistant",
+      lastBackendEventAt: date,
+      lastBackendEventAgeMs: 1_000,
+      activeBackend: .codexAgent
+    )
+    let activityEvidence = SessionBackendActivityEvidence(
+      kind: .artifact,
+      detail: "fixture artifact",
+      path: "/tmp/codex.jsonl",
+      observedAt: date,
+      ageMs: 1_000
+    )
+    let backendActivity = SessionBackendActivity(
+      backend: .codexAgent,
+      verdict: .active,
+      evidence: [activityEvidence],
+      activeThresholdMs: 30_000,
+      stalledThresholdMs: 180_000,
+      lastActivityAt: date,
+      ageMs: 1_000,
+      observedAt: date
+    )
+    let observabilityView = SessionObservabilityView(
+      root: SessionRollupNode(digest: progressDigest),
+      backendActivity: backendActivity,
+      rollupTruncated: false,
+      rollupSnapshotLimit: 1_000
+    )
+    let expectedFieldsBySchemaType: [String: Set<String>] = [
+      "SessionProgressDigest": try encodedFieldNames(progressDigest),
+      "SessionRollupNode": try encodedFieldNames(SessionRollupNode(digest: progressDigest)),
+      "SessionBackendActivityEvidence": try encodedFieldNames(activityEvidence),
+      "SessionBackendActivity": try encodedFieldNames(backendActivity),
+      "SessionObservabilityView": try encodedFieldNames(observabilityView),
+      "SessionObservabilityPayload": try encodedFieldNames(GraphQLSessionObservabilityResult(
+        result: GraphQLControlPlaneResult(accepted: true, status: "found"),
+        view: observabilityView
+      ))
+    ]
+
+    for (schemaType, encodedFields) in expectedFieldsBySchemaType {
+      XCTAssertEqual(try schemaFieldNames(schemaType), encodedFields, "schema drift for \(schemaType)")
+    }
   }
 }
 

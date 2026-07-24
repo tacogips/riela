@@ -61,22 +61,25 @@ final class WorkflowSelfImproveVersioningTests: XCTestCase {
   }
 
   func testProposalReviewFinalizeAndApplyUsesSnapshotAndEvidenceBindings() async throws {
-    let (root, created) = try await makeWorkflowVersioningFixture(self)
+    let fixture = try await makeMutableWorkflowVersioningFixture(self)
+    let root = fixture.root
     let app = RielaCLIApplication()
-    let before = try Data(contentsOf: URL(fileURLWithPath: created.workflowDirectory).appendingPathComponent("workflow.json"))
+    let workflowURL = fixture.workflowDirectory.appendingPathComponent("workflow.json")
+    let before = try Data(contentsOf: workflowURL)
     let proposalResponse = await app.run([
       "workflow", "self-improve", "versioned-flow",
+      "--scope", "user",
       "--working-dir", root.path,
       "--dry-run",
       "--source-session-id", "session-review",
       "--output", "json"
-    ])
+    ], environment: fixture.environment)
     XCTAssertEqual(proposalResponse.exitCode, .success, proposalResponse.stderr)
     let proposalResult = try decodeVersionJSON(WorkflowSelfImproveCommandResult.self, proposalResponse.stdout)
     XCTAssertFalse(proposalResult.mutated)
-    XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: created.workflowDirectory).appendingPathComponent("workflow.json")), before)
+    XCTAssertEqual(try Data(contentsOf: workflowURL), before)
 
-    let resolved = try resolveVersioningTarget(root: root)
+    let resolved = fixture.resolved
     let (target, historyRoot) = (resolved.identity, resolved.historyRoot)
     let proposalId = try XCTUnwrap(proposalResult.proposalId)
     let proposalDigest = try XCTUnwrap(proposalResult.proposalDigest)
@@ -113,20 +116,21 @@ final class WorkflowSelfImproveVersioningTests: XCTestCase {
     )
     let applyResponse = await app.run([
       "workflow", "self-improve", "versioned-flow",
+      "--scope", "user",
       "--working-dir", root.path,
       "--yes",
       "--change-set-id", changeSet.changeSetId,
       "--expected-digest", changeSet.finalizedDigest,
       "--output", "json"
-    ])
-    XCTAssertEqual(applyResponse.exitCode, .success, applyResponse.stderr)
+    ], environment: fixture.environment)
+    XCTAssertEqual(applyResponse.exitCode, .success, applyResponse.stdout + applyResponse.stderr)
     let result = try decodeVersionJSON(WorkflowSelfImproveCommandResult.self, applyResponse.stdout)
     XCTAssertTrue(result.mutated)
     XCTAssertEqual(result.changeSetId, changeSet.changeSetId)
     XCTAssertNotNil(result.snapshotId)
     XCTAssertNotNil(result.transactionId)
     XCTAssertEqual(result.mutationEvidence?.review?.gateResultId, gateResultId)
-    XCTAssertTrue(try String(contentsOfFile: "\(created.workflowDirectory)/workflow.json").contains("self-improve-reviewed"))
+    XCTAssertTrue(try String(contentsOf: workflowURL).contains("self-improve-reviewed"))
   }
 
   func testApplyRejectsMissingApprovalStaleDigestAndImmutablePackageIdentity() async throws {
@@ -151,6 +155,17 @@ final class WorkflowSelfImproveVersioningTests: XCTestCase {
       XCTAssertNotEqual(aliased.exitCode, .success)
       XCTAssertTrue((aliased.stdout + aliased.stderr).contains("explicit --yes"))
     }
+
+    let immutableApply = await app.run([
+      "workflow", "self-improve", "versioned-flow", "--working-dir", root.path,
+      "--yes", "--change-set-id", "change-set-missing",
+      "--expected-digest", String(repeating: "0", count: 64), "--output", "json"
+    ])
+    XCTAssertEqual(immutableApply.exitCode, .failure)
+    XCTAssertTrue(
+      (immutableApply.stdout + immutableApply.stderr)
+        .contains(WorkflowRegistryErrorCode.immutableWorkflow.rawValue)
+    )
 
     let target = try resolveVersioningTarget(root: root).identity
     var immutable = target
@@ -289,45 +304,50 @@ final class WorkflowSelfImproveVersioningTests: XCTestCase {
     }
   }
 
-  func testApplyRepeatsDeclaredGatePolicyAgainstPersistedRuntimeEvidence() async throws {
-    let (root, _) = try await makeWorkflowVersioningFixture(self)
-    let resolved = try resolveVersioningTarget(root: root)
-    let proposal = try makeReviewProposal(root: root, resolved: resolved)
-    let gate = try WorkflowReviewGatePolicy.requiredGate(in: resolved.bundle.workflow)
-    let gateResult = LoopGateResult(
-      gateId: gate.id,
-      stepId: gate.stepId,
-      stepExecutionId: "review-execution",
-      decision: .accepted,
-      severityCounts: LoopFindingSeverityCounts(medium: 1)
-    )
-    let resultId = try WorkflowRuntimeGateEvidenceStore.resultId(stepExecutionId: gateResult.stepExecutionId)
-    try WorkflowRuntimeGateEvidenceStore(root: resolved.historyRoot).publish(WorkflowRuntimeGateEvidence(
-      resultId: resultId,
-      workflowId: resolved.bundle.workflow.workflowId,
-      sessionId: "review-session",
-      result: gateResult
-    ))
-    var review = reviewEvidence(for: proposal)
-    review.gateResultId = resultId
-    review.reviewerStepId = gate.stepId
-    let changeSet = try WorkflowChangeSetStore(root: resolved.historyRoot).finalize(
-      proposalId: proposal.proposalId,
-      expectedIdentity: resolved.identity,
-      review: review
-    )
-
-    XCTAssertThrowsError(try WorkflowSelfImproveVersioning().execute(
-      workflowName: "versioned-flow",
-      bundle: resolved.bundle,
-      workingDirectory: root,
-      dryRun: false,
-      approved: true,
-      changeSetId: changeSet.changeSetId,
-      expectedDigest: changeSet.finalizedDigest,
-      sourceSessionId: nil
-    )) { error in
-      XCTAssertTrue(String(describing: error).contains("medium-finding policy"))
+  func testDeclaredGatePolicyRejectsPersistedRuntimeEvidence() async throws {
+    let fixture = try await makeMutableWorkflowVersioningFixture(self)
+    try CLIRuntimeEnvironment.$overrides.withValue(fixture.environment) {
+      let resolved = fixture.resolved
+      let proposal = try makeReviewProposal(root: fixture.root, resolved: resolved)
+      let gate = try WorkflowReviewGatePolicy.requiredGate(in: resolved.bundle.workflow)
+      let gateResult = LoopGateResult(
+        gateId: gate.id,
+        stepId: gate.stepId,
+        stepExecutionId: "review-execution",
+        decision: .accepted,
+        severityCounts: LoopFindingSeverityCounts(medium: 1)
+      )
+      let resultId = try WorkflowRuntimeGateEvidenceStore.resultId(
+        stepExecutionId: gateResult.stepExecutionId
+      )
+      try WorkflowRuntimeGateEvidenceStore(root: resolved.historyRoot).publish(
+        WorkflowRuntimeGateEvidence(
+          resultId: resultId,
+          workflowId: resolved.bundle.workflow.workflowId,
+          sessionId: "review-session",
+          result: gateResult
+        )
+      )
+      var review = reviewEvidence(for: proposal)
+      review.gateResultId = resultId
+      review.reviewerStepId = gate.stepId
+      let changeSet = try WorkflowChangeSetStore(root: resolved.historyRoot).finalize(
+        proposalId: proposal.proposalId,
+        expectedIdentity: resolved.identity,
+        review: review
+      )
+      XCTAssertThrowsError(try WorkflowSelfImproveVersioning().execute(
+        workflowName: "versioned-flow",
+        bundle: resolved.bundle,
+        workingDirectory: fixture.root,
+        dryRun: false,
+        approved: true,
+        changeSetId: changeSet.changeSetId,
+        expectedDigest: changeSet.finalizedDigest,
+        sourceSessionId: nil
+      )) { error in
+        XCTAssertTrue(String(describing: error).contains("medium-finding policy"))
+      }
     }
   }
 

@@ -35,6 +35,7 @@ final class ClaudeCodeAgentCompatibilityTests: XCTestCase {
     )
 
     XCTAssertEqual(args.prefix(3), ["-p", "--output-format", "stream-json"])
+    XCTAssertEqual(args.filter { $0 == "--verbose" }.count, 1)
     XCTAssertTrue(args.containsSubsequence(["--model", "claude-sonnet-4"]))
     XCTAssertTrue(args.containsSubsequence(["--permission-mode", "acceptEdits"]))
     XCTAssertTrue(args.contains("--dangerously-skip-permissions"))
@@ -46,15 +47,23 @@ final class ClaudeCodeAgentCompatibilityTests: XCTestCase {
     XCTAssertTrue(ClaudeCodeProcessCommandBuilder.buildExecArguments(prompt: "allow", options: ClaudeCodeProcessOptions(approvalMode: "allow_all")).containsSubsequence(["--permission-mode", "allow_all"]))
     let sanitized = ClaudeCodeProcessCommandBuilder.buildExecArguments(
       prompt: "safe",
-      options: ClaudeCodeProcessOptions(additionalArguments: ["--output-format", "text", "--input-format=json", "--print", "-p", "--max-turns", "3"])
+      options: ClaudeCodeProcessOptions(
+        additionalArguments: [
+          "--output-format", "text", "--input-format=json", "--print", "-p", "--verbose", "--max-turns", "3"
+        ]
+      )
     )
     XCTAssertFalse(sanitized.contains("text"))
     XCTAssertFalse(sanitized.contains("--input-format=json"))
     XCTAssertEqual(sanitized.filter { $0 == "-p" }.count, 1)
+    XCTAssertEqual(sanitized.filter { $0 == "--verbose" }.count, 1)
     XCTAssertTrue(sanitized.containsSubsequence(["--max-turns", "3"]))
 
     let resume = ClaudeCodeProcessCommandBuilder.buildResumeArguments(sessionId: "session-1", prompt: "continue")
-    XCTAssertEqual(resume.prefix(5), ["-p", "--output-format", "stream-json", "--resume", "session-1"])
+    XCTAssertEqual(
+      resume.prefix(6),
+      ["-p", "--output-format", "stream-json", "--verbose", "--resume", "session-1"]
+    )
     XCTAssertEqual(resume.last, "continue")
 
     let env = ClaudeCodeProcessCommandBuilder.buildEnvironment(base: [:], options: ClaudeCodeProcessOptions(claudeCodeHome: "/tmp/claude-config"))

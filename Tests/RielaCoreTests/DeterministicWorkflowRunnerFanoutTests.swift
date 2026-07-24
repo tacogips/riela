@@ -115,6 +115,27 @@ final class DeterministicWorkflowRunnerFanoutTests: XCTestCase {
     XCTAssertEqual(Set(identities.map(\.stepId)), ["branch"])
   }
 
+  func testFanoutBranchesInheritDefaultGuardOptOut() async throws {
+    let adapter = FanoutLoopOptOutAdapter()
+    let runner = DeterministicWorkflowRunner(
+      store: InMemoryWorkflowRuntimeStore(),
+      adapter: adapter
+    )
+
+    let result = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: fanoutLoopWorkflow(),
+      nodePayloads: fanoutLoopPayloads(),
+      maxSteps: 10,
+      maxConcurrency: 3,
+      maxLoopIterations: 10,
+      disableDefaultLoopGuard: true
+    ))
+
+    XCTAssertEqual(result.status, .completed)
+    let reviewExecutions = await adapter.totalReviewExecutions()
+    XCTAssertEqual(reviewExecutions, 9, "each of three branches must reach its third review response")
+  }
+
   private func branchIndex(_ value: JSONValue) -> Int? {
     guard case let .object(object) = value,
           let index = object["index"]?.asInt64 else {
@@ -130,6 +151,71 @@ final class DeterministicWorkflowRunnerFanoutTests: XCTestCase {
       return nil
     }
     return Int(index)
+  }
+}
+
+private actor FanoutLoopOptOutAdapter: NodeAdapter {
+  private var reviewExecutionsBySession: [String: Int] = [:]
+
+  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    switch input.node.id {
+    case "source":
+      return AdapterExecutionOutput(
+        provider: "test",
+        model: input.node.model,
+        promptText: input.promptText,
+        completionPassed: true,
+        payload: [
+          "payload": .object([
+            "items": .array([
+              .object(["index": .integer(0)]),
+              .object(["index": .integer(1)]),
+              .object(["index": .integer(2)])
+            ])
+          ])
+        ]
+      )
+    case "review":
+      let sessionId = input.executionIdentity?.workflowSessionId ?? "unknown"
+      let execution = reviewExecutionsBySession[sessionId, default: 0] + 1
+      reviewExecutionsBySession[sessionId] = execution
+      let needsWork = execution < 3
+      return AdapterExecutionOutput(
+        provider: "test",
+        model: input.node.model,
+        promptText: input.promptText,
+        completionPassed: true,
+        when: ["needs_work": needsWork],
+        payload: [
+          "decision": .string(needsWork ? "needs_work" : "accepted"),
+          "loopGate": .object([
+            "gateId": .string("fanout-review"),
+            "decision": .string(needsWork ? "needs_work" : "accepted"),
+            "blockingFindings": needsWork
+              ? .array([.object([
+                "id": .string("same"),
+                "severity": .string("high"),
+                "message": .string("same finding")
+              ])])
+              : .array([])
+          ])
+        ]
+      )
+    case "join":
+      return AdapterExecutionOutput(
+        provider: "test",
+        model: input.node.model,
+        promptText: input.promptText,
+        completionPassed: true,
+        payload: ["joined": .bool(true)]
+      )
+    default:
+      throw AdapterExecutionError(.invalidInput, "unexpected fanout loop step '\(input.node.id)'")
+    }
+  }
+
+  func totalReviewExecutions() -> Int {
+    reviewExecutionsBySession.values.reduce(0, +)
   }
 }
 
@@ -361,10 +447,67 @@ private func fanoutCalleeWorkflow() -> WorkflowDefinition {
   )
 }
 
+private func fanoutLoopWorkflow() -> WorkflowDefinition {
+  WorkflowDefinition(
+    workflowId: "fanout-loop-opt-out",
+    defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 10),
+    entryStepId: "source",
+    nodeRegistry: [
+      WorkflowNodeRegistryRef(id: "source-node", nodeFile: "nodes/source.json"),
+      WorkflowNodeRegistryRef(id: "review-node", nodeFile: "nodes/review.json"),
+      WorkflowNodeRegistryRef(id: "join-node", nodeFile: "nodes/join.json")
+    ],
+    steps: [
+      WorkflowStepRef(
+        id: "source",
+        nodeId: "source-node",
+        transitions: [
+          WorkflowStepTransition(
+            toStepId: "review",
+            fanout: WorkflowStepFanout(
+              groupId: "loop-group",
+              itemsFrom: "/payload/items",
+              itemVariable: "feature",
+              concurrency: 3,
+              joinStepId: "join",
+              failurePolicy: .failFast,
+              resultOrder: .input,
+              writeOwnership: WorkflowFanoutWriteOwnership(mode: .readOnly)
+            )
+          )
+        ]
+      ),
+      WorkflowStepRef(
+        id: "review",
+        nodeId: "review-node",
+        transitions: [
+          WorkflowStepTransition(toStepId: "review", label: "needs_work"),
+          WorkflowStepTransition(toStepId: "join", label: "!needs_work")
+        ],
+        loop: WorkflowStepLoopMetadata(role: "gate", gateId: "fanout-review")
+      ),
+      WorkflowStepRef(id: "join", nodeId: "join-node")
+    ],
+    nodes: [
+      WorkflowNodeRef(id: "source-node", nodeFile: "nodes/source.json"),
+      WorkflowNodeRef(id: "review-node", nodeFile: "nodes/review.json"),
+      WorkflowNodeRef(id: "join-node", nodeFile: "nodes/join.json")
+    ]
+  )
+}
+
 private func fanoutPayloads() -> [String: AgentNodePayload] {
   [
     "source-node": AgentNodePayload(id: "source-node", executionBackend: .codexAgent, model: "gpt-5.5"),
     "branch-node": AgentNodePayload(id: "branch-node", executionBackend: .codexAgent, model: "gpt-5.5"),
+    "join-node": AgentNodePayload(id: "join-node", executionBackend: .codexAgent, model: "gpt-5.5")
+  ]
+}
+
+private func fanoutLoopPayloads() -> [String: AgentNodePayload] {
+  [
+    "source-node": AgentNodePayload(id: "source-node", executionBackend: .codexAgent, model: "gpt-5.5"),
+    "review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5"),
     "join-node": AgentNodePayload(id: "join-node", executionBackend: .codexAgent, model: "gpt-5.5")
   ]
 }

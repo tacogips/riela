@@ -218,7 +218,8 @@ public struct DeterministicServerRouteHandler: ServerRouteHandling {
           variables: envelope.variables,
           operationName: envelope.operationName,
           environment: context.sanitizedEnvironment,
-          authenticatedClientId: authenticatedNoteAPIClient?.clientId
+          authenticatedClientId: authenticatedNoteAPIClient?.clientId,
+          transportCredential: context.bearerToken.map(GraphQLTransportCredential.init)
         ))
         if executed.handled {
           return .init(status: executed.status, body: executed.body)

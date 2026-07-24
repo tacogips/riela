@@ -2,6 +2,24 @@ import Foundation
 import XCTest
 @testable import RielaCLI
 
+final class WorkflowCommandScopedResolutionTests: XCTestCase {
+  func testTemporaryProvenanceDoesNotChangeWorkflowSourceKind() throws {
+    let encoded = try JSONEncoder().encode(WorkflowCatalogEntry(
+      workflowName: "temporary-demo",
+      scope: .user,
+      sourceKind: .workflow,
+      workflowDirectory: "/tmp/temporary-demo",
+      mutable: true,
+      provenance: .mutable,
+      valid: true,
+      diagnostics: []
+    ))
+    let decoded = try JSONDecoder().decode(WorkflowCatalogEntry.self, from: encoded)
+    XCTAssertEqual(decoded.sourceKind, .workflow)
+    XCTAssertEqual(decoded.provenance, .mutable)
+  }
+}
+
 extension WorkflowCommandTests {
   func testScopedWorkflowNamesRejectTraversalAndSlashTargets() async throws {
     let validate = await RielaCLIApplication().run([

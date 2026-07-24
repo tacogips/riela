@@ -2,34 +2,57 @@ import Foundation
 
 extension RielaArgumentParser {
   func parseSession(_ arguments: [String]) throws -> RielaCommand {
-    guard let subcommand = arguments.first else {
-      throw CLIUsageError("session command requires a subcommand")
-    }
-    switch subcommand {
-    case "rerun":
-      return try parseSessionRerun(arguments)
-    case "resume":
-      return try parseSessionResume(arguments)
-    case "list":
-      return .session(.list(try parseSessionDiscovery(subcommand: subcommand, arguments: arguments)))
-    case "latest":
-      return .session(.latest(try parseSessionDiscovery(subcommand: subcommand, arguments: arguments)))
-    case "progress":
-      return .session(.progress(try parseSessionGeneric(subcommand: subcommand, arguments: arguments)))
-    case "health":
-      return .session(.health(try parseSessionGeneric(subcommand: subcommand, arguments: arguments)))
-    case "status":
-      return .session(.status(try parseSessionGeneric(subcommand: subcommand, arguments: arguments)))
-    case "continue":
-      return .session(.continueSession(try parseSessionGeneric(subcommand: subcommand, arguments: arguments)))
-    case "step-runs":
-      return .session(.stepRuns(try parseSessionGeneric(subcommand: subcommand, arguments: arguments)))
-    case "export":
-      return .session(.export(try parseSessionGeneric(subcommand: subcommand, arguments: arguments)))
-    case "logs":
-      return .session(.logs(try parseSessionGeneric(subcommand: subcommand, arguments: arguments)))
-    default:
-      throw CLIUsageError("unsupported session subcommand '\(subcommand)'")
+    let family = try ParsedSessionFamily.parseCLI(arguments)
+    switch family.subcommand {
+    case .rerun:
+      return try parseSessionRerun(family.remainder)
+    case .resume:
+      return try parseSessionResume(family.remainder)
+    case .list:
+      return .session(.list(try parseSessionDiscovery(
+        subcommand: family.subcommand.rawValue,
+        arguments: family.remainder
+      )))
+    case .latest:
+      return .session(.latest(try parseSessionDiscovery(
+        subcommand: family.subcommand.rawValue,
+        arguments: family.remainder
+      )))
+    case .progress:
+      return .session(.progress(try parseSessionGeneric(
+        subcommand: family.subcommand.rawValue,
+        arguments: family.remainder
+      )))
+    case .health:
+      return .session(.health(try parseSessionGeneric(
+        subcommand: family.subcommand.rawValue,
+        arguments: family.remainder
+      )))
+    case .status:
+      return .session(.status(try parseSessionGeneric(
+        subcommand: family.subcommand.rawValue,
+        arguments: family.remainder
+      )))
+    case .continueSession:
+      return .session(.continueSession(try parseSessionGeneric(
+        subcommand: family.subcommand.rawValue,
+        arguments: family.remainder
+      )))
+    case .stepRuns:
+      return .session(.stepRuns(try parseSessionGeneric(
+        subcommand: family.subcommand.rawValue,
+        arguments: family.remainder
+      )))
+    case .export:
+      return .session(.export(try parseSessionGeneric(
+        subcommand: family.subcommand.rawValue,
+        arguments: family.remainder
+      )))
+    case .logs:
+      return .session(.logs(try parseSessionGeneric(
+        subcommand: family.subcommand.rawValue,
+        arguments: family.remainder
+      )))
     }
   }
 
@@ -46,15 +69,13 @@ extension RielaArgumentParser {
   }
 
   private func parseSessionRerun(_ arguments: [String]) throws -> RielaCommand {
-    guard arguments.count >= 3, !arguments[1].hasPrefix("--"), !arguments[2].hasPrefix("--") else {
-      throw CLIUsageError("usage: riela session rerun <session-id> <step-id> [options]")
-    }
-    let parsed = try ParsedWorkflowOptions(Array(arguments.dropFirst(3)), allowRunOptions: true)
+    let route = try ParsedSessionRerunArguments.parseCLI(arguments)
+    let parsed = try ParsedWorkflowOptions(route.options, allowRunOptions: true)
     try rejectRemoteSessionOptions(parsed)
     let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
     return .session(.rerun(SessionRerunOptions(
-      sessionId: arguments[1],
-      stepId: arguments[2],
+      sessionId: route.sessionId,
+      stepId: route.stepId,
       output: parsed.output,
       scope: parsed.scope,
       workflowDefinitionDir: parsed.workflowDefinitionDir,
@@ -66,14 +87,12 @@ extension RielaArgumentParser {
   }
 
   private func parseSessionResume(_ arguments: [String]) throws -> RielaCommand {
-    guard arguments.count >= 2, !arguments[1].hasPrefix("--") else {
-      throw CLIUsageError("usage: riela session resume <session-id> [options]")
-    }
-    let parsed = try ParsedWorkflowOptions(Array(arguments.dropFirst(2)), allowRunOptions: true)
+    let route = try ParsedSessionResumeArguments.parseCLI(arguments)
+    let parsed = try ParsedWorkflowOptions(route.options, allowRunOptions: true)
     try rejectRemoteSessionOptions(parsed)
     let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
     return .session(.resume(SessionResumeOptions(
-      sessionId: arguments[1],
+      sessionId: route.sessionId,
       output: parsed.output,
       scope: parsed.scope,
       workflowDefinitionDir: parsed.workflowDefinitionDir,
@@ -86,16 +105,15 @@ extension RielaArgumentParser {
   }
 
   private func parseSessionGeneric(subcommand: String, arguments: [String]) throws -> CLICommandOptions {
-    let target = arguments.count >= 2 && !arguments[1].hasPrefix("--") ? arguments[1] : nil
-    let optionStart = target == nil ? 1 : 2
-    if target == nil {
+    let route = try ParsedTargetAndOptions.parseCLI(arguments)
+    guard let target = route.target else {
       throw CLIUsageError("session \(subcommand) requires a session id")
     }
     return try parseGeneric(
       scope: "session",
       command: subcommand,
       target: target,
-      arguments: Array(arguments.dropFirst(optionStart))
+      arguments: route.options
     )
   }
 
@@ -104,7 +122,7 @@ extension RielaArgumentParser {
       scope: "session",
       command: subcommand,
       target: nil,
-      arguments: Array(arguments.dropFirst()),
+      arguments: arguments,
       allowTableOutput: true
     )
   }

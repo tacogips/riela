@@ -38,44 +38,123 @@ public struct RielaNoteSearchPopupSheet: View {
 
   @ViewBuilder
   private var results: some View {
-    if !viewModel.isSearching {
+    switch contentMode {
+    case .idle:
       ContentUnavailableView(
         "Search your notes",
         systemImage: "magnifyingglass",
         description: Text("Type a query or pick filters to see matching notes.")
       )
-    } else if viewModel.searchResults.isEmpty {
-      if viewModel.state == .loading {
-        ProgressView()
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
-      } else {
-        ContentUnavailableView.search
-      }
-    } else {
+    case .loading:
+      ProgressView()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    case .empty:
+      ContentUnavailableView.search
+    case .tagKanban:
+      tagKanbanResults()
+    case let .tagKanbanFailed(message):
+      tagKanbanResults(failureMessage: message)
+    case let .tagKanbanLoadFailed(message):
+      ContentUnavailableView(
+        "Unable to load notebook board",
+        systemImage: "exclamationmark.triangle",
+        description: Text(message)
+      )
+    case .noteResults:
       List {
-        ForEach(viewModel.searchResults, id: \.note.noteId) { result in
-          Button {
-            openResult(result.note.noteId)
-          } label: {
-            RielaNoteSearchResultRow(
-              result: result,
-              isSelected: viewModel.selectedNote?.noteId == result.note.noteId
-            )
-          }
-          .buttonStyle(.plain)
-        }
-        if viewModel.canLoadMoreSearchResults {
-          Button {
-            Task {
-              await viewModel.loadMoreSearchResults()
-            }
-          } label: {
-            Label("Load more", systemImage: "ellipsis.circle")
-          }
-          .buttonStyle(.plain)
-        }
+        noteResultRows
       }
       .listStyle(.inset)
+    }
+  }
+
+  private func tagKanbanResults(failureMessage: String? = nil) -> some View {
+    ScrollView {
+      LazyVStack(alignment: .leading, spacing: 16) {
+        if let failureMessage {
+          VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+              Image(systemName: "exclamationmark.triangle")
+                .foregroundStyle(.red)
+              Text("Unable to update notebook board")
+                .font(.headline)
+            }
+            Text(failureMessage)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          .padding(10)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+          .overlay {
+            RoundedRectangle(cornerRadius: 8)
+              .stroke(Color.red.opacity(0.8), lineWidth: 1)
+          }
+          .accessibilityIdentifier("notebook-kanban-error")
+        }
+        RielaNoteTagKanbanSections(viewModel: viewModel) { notebookId in
+          await viewModel.requestSelection(.notebook(notebookId))
+          onClose()
+        }
+        Divider()
+        Text("Notes")
+          .font(.headline)
+        if viewModel.searchResults.isEmpty {
+          Text("No matching notes")
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+        } else {
+          noteResultRows
+        }
+      }
+      .padding()
+    }
+  }
+
+  var contentMode: RielaNoteSearchPopupContentMode {
+    guard viewModel.isSearching else {
+      return .idle
+    }
+    if viewModel.isTagKanbanActive {
+      if case let .failed(message) = viewModel.state {
+        return viewModel.hasCurrentProgressMutationFailure
+          ? .tagKanbanFailed(message)
+          : .tagKanbanLoadFailed(message)
+      }
+      guard viewModel.state != .loading,
+            viewModel.hasCurrentTagKanbanSnapshot else {
+        return .loading
+      }
+      return .tagKanban
+    }
+    guard !viewModel.searchResults.isEmpty else {
+      return viewModel.state == .loading ? .loading : .empty
+    }
+    return .noteResults
+  }
+
+  @ViewBuilder
+  private var noteResultRows: some View {
+    ForEach(viewModel.searchResults, id: \.note.noteId) { result in
+      Button {
+        openResult(result.note.noteId)
+      } label: {
+        RielaNoteSearchResultRow(
+          result: result,
+          isSelected: viewModel.selectedNote?.noteId == result.note.noteId
+        )
+      }
+      .buttonStyle(.plain)
+    }
+    if viewModel.canLoadMoreSearchResults {
+      Button {
+        Task {
+          await viewModel.loadMoreSearchResults()
+        }
+      } label: {
+        Label("Load more", systemImage: "ellipsis.circle")
+      }
+      .buttonStyle(.plain)
     }
   }
 
@@ -87,4 +166,14 @@ public struct RielaNoteSearchPopupSheet: View {
       onClose()
     }
   }
+}
+
+enum RielaNoteSearchPopupContentMode: Equatable {
+  case idle
+  case loading
+  case empty
+  case tagKanban
+  case tagKanbanFailed(String)
+  case tagKanbanLoadFailed(String)
+  case noteResults
 }

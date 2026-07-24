@@ -55,6 +55,28 @@ struct WorkflowVersioningResolvedTarget {
   var historyRoot: URL
 }
 
+struct MutableWorkflowVersioningFixture {
+  var root: URL
+  var created: WorkflowCreateCommandResult
+  var environment: [String: String]
+  var resolved: WorkflowVersioningResolvedTarget
+
+  var workflowDirectory: URL {
+    URL(fileURLWithPath: resolved.identity.ownershipRoot, isDirectory: true)
+  }
+
+  func registeredURL(for sourcePath: String) throws -> URL {
+    let sourceRoot = URL(fileURLWithPath: created.workflowDirectory, isDirectory: true)
+      .standardizedFileURL.path
+    let source = URL(fileURLWithPath: sourcePath).standardizedFileURL.path
+    let prefix = sourceRoot + "/"
+    guard source.hasPrefix(prefix) else {
+      throw CLIUsageError("versioning fixture source path is outside the created workflow")
+    }
+    return workflowDirectory.appendingPathComponent(String(source.dropFirst(prefix.count)))
+  }
+}
+
 func resolveVersioningTarget(root: URL) throws -> WorkflowVersioningResolvedTarget {
   let bundle = try FileSystemWorkflowBundleResolver().resolve(WorkflowResolutionOptions(
     workflowName: "versioned-flow",
@@ -64,6 +86,53 @@ func resolveVersioningTarget(root: URL) throws -> WorkflowVersioningResolvedTarg
   let target = try WorkflowHistoryIdentityResolver.identity(for: bundle)
   let historyRoot = try WorkflowHistoryIdentityResolver.historyRoot(for: target, workingDirectory: root)
   return WorkflowVersioningResolvedTarget(bundle: bundle, identity: target, historyRoot: historyRoot)
+}
+
+func resolveMutableTransactionTarget(root: URL) throws -> WorkflowVersioningResolvedTarget {
+  let environment = mutableWorkflowVersioningEnvironment(root: root)
+  let home = URL(fileURLWithPath: environment["HOME"] ?? "", isDirectory: true)
+  try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+  return try CLIRuntimeEnvironment.$overrides.withValue(environment) {
+    let input = root.appendingPathComponent(".riela/workflows/versioned-flow", isDirectory: true)
+    let destination = home.appendingPathComponent(
+      ".riela/temporary-workflows/versioned-flow",
+      isDirectory: true
+    )
+    if !FileManager.default.fileExists(atPath: destination.path) {
+      _ = try WorkflowMutableRegistry().register(input: input, overwrite: false)
+    }
+    let bundle = try FileSystemWorkflowBundleResolver().resolve(WorkflowResolutionOptions(
+      workflowName: "versioned-flow",
+      scope: .user,
+      workingDirectory: root.path
+    ))
+    let target = try WorkflowHistoryIdentityResolver.identity(for: bundle)
+    let historyRoot = try WorkflowHistoryIdentityResolver.historyRoot(
+      for: target,
+      workingDirectory: root
+    )
+    return WorkflowVersioningResolvedTarget(
+      bundle: bundle,
+      identity: target,
+      historyRoot: historyRoot
+    )
+  }
+}
+
+func makeMutableWorkflowVersioningFixture(
+  _ testCase: XCTestCase
+) async throws -> MutableWorkflowVersioningFixture {
+  let (root, created) = try await makeWorkflowVersioningFixture(testCase)
+  return MutableWorkflowVersioningFixture(
+    root: root,
+    created: created,
+    environment: mutableWorkflowVersioningEnvironment(root: root),
+    resolved: try resolveMutableTransactionTarget(root: root)
+  )
+}
+
+func mutableWorkflowVersioningEnvironment(root: URL) -> [String: String] {
+  ["HOME": root.appendingPathComponent("mutable-home", isDirectory: true).path]
 }
 
 func decodeVersionJSON<T: Decodable>(_ type: T.Type, _ output: String) throws -> T {

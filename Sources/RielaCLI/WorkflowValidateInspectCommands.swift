@@ -58,7 +58,9 @@ public struct WorkflowValidateCommand: Sendable {
         packageName: bundle.packageManifest?.name,
         packageVersion: bundle.packageManifest?.version,
         packageDirectory: bundle.packageDirectory,
-        mutable: bundle.packageManifest == nil,
+        mutable: bundle.provenance == .mutable,
+        provenance: bundle.provenance,
+        activationState: bundle.activationState,
         diagnostics: diagnostics,
         nodeValidationResults: nodeResults
       )
@@ -93,7 +95,7 @@ public struct WorkflowValidateCommand: Sendable {
     case .text, .table:
       var lines = [
         result.valid ? "valid: \(result.workflowId)" : "invalid: \(result.workflowId)",
-        "source: \(result.sourceScope.rawValue) \(result.sourceKind.rawValue) \(result.workflowDirectory)"
+        "source: \(result.sourceScope.rawValue) \(result.sourceKind.rawValue) \(result.provenance.rawValue) \(result.activationState.rawValue) \(result.workflowDirectory)"
       ]
       if let packageName = result.packageName {
         lines.append("package: \(packageName) \(result.packageVersion ?? "") \(result.packageDirectory ?? "")")
@@ -197,6 +199,8 @@ public struct WorkflowInspectionSummary: Codable, Equatable, Sendable {
   public var packageVersion: String?
   public var packageDirectory: String?
   public var mutable: Bool
+  @CodableDefaultImmutable public var provenance: WorkflowProvenance
+  @CodableDefaultActive public var activationState: WorkflowActivationState
   public var description: String
   public var entryStepId: String
   public var managerStepId: String?
@@ -440,7 +444,9 @@ public struct WorkflowInspectCommand: Sendable {
       packageName: bundle.packageManifest?.name,
       packageVersion: bundle.packageManifest?.version,
       packageDirectory: bundle.packageDirectory,
-      mutable: bundle.packageManifest == nil,
+      mutable: bundle.provenance == .mutable,
+      provenance: CodableDefaultImmutable(wrappedValue: bundle.provenance),
+      activationState: CodableDefaultActive(wrappedValue: bundle.activationState),
       description: workflow.description,
       entryStepId: workflow.entryStepId,
       managerStepId: workflow.managerStepId,
@@ -562,7 +568,7 @@ public struct WorkflowInspectCommand: Sendable {
   private func renderText(_ summary: WorkflowInspectionSummary) -> String {
     var lines = [
       "workflow: \(summary.workflowId)",
-      "source: \(summary.sourceScope.rawValue) \(summary.sourceKind.rawValue) \(summary.workflowDirectory)",
+      "source: \(summary.sourceScope.rawValue) \(summary.sourceKind.rawValue) \(summary.provenance.rawValue) \(summary.activationState.rawValue) \(summary.workflowDirectory)",
       "entryStepId: \(summary.entryStepId)",
       "steps: \(summary.stepIds.joined(separator: ", "))",
       "nodes: \(summary.nodeRegistryIds.joined(separator: ", "))",

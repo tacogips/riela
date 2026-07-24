@@ -8,17 +8,28 @@ public enum CodexSessionSQLiteIndex {
     URL(fileURLWithPath: codexHome ?? resolveCodexHome(), isDirectory: true).appendingPathComponent("state").path
   }
 
-  public static func openCodexDb(codexHome: String? = nil) -> String? {
-    AgentSessionSQLiteSupport.openThreadsDatabase(at: statePath(codexHome: codexHome))
+  public static func openCodexDb(
+    codexHome: String? = nil,
+    readMode: AgentSessionSQLiteReadMode = .compatibility
+  ) -> String? {
+    AgentSessionSQLiteSupport.openThreadsDatabase(
+      at: statePath(codexHome: codexHome),
+      readMode: readMode
+    )
   }
 
-  public static func listSessionsSqlite(codexHome: String? = nil, options: CodexSessionListOptions = CodexSessionListOptions()) -> CodexSessionListResult? {
-    guard let dbPath = openCodexDb(codexHome: codexHome) else {
+  public static func listSessionsSqlite(
+    codexHome: String? = nil,
+    options: CodexSessionListOptions = CodexSessionListOptions(),
+    readMode: AgentSessionSQLiteReadMode = .compatibility
+  ) -> CodexSessionListResult? {
+    guard let dbPath = openCodexDb(codexHome: codexHome, readMode: readMode) else {
       return nil
     }
     let records = AgentSessionSQLiteSupport.listThreadRecords(
       dbPath: dbPath,
-      separator: sessionSQLiteSeparator
+      separator: sessionSQLiteSeparator,
+      readMode: readMode
     )
     let sessions = CodexSessionQuery.sorted(
       records.map(recordToSession).filter { CodexSessionQuery.matches($0, options: options) },
@@ -35,6 +46,21 @@ public enum CodexSessionSQLiteIndex {
 
   public static func findLatestSessionSqlite(codexHome: String? = nil, cwd: String? = nil) -> CodexSession? {
     listSessionsSqlite(codexHome: codexHome, options: CodexSessionListOptions(codexHome: codexHome, cwd: cwd, limit: 1, sortBy: "updatedAt")).map(\.sessions.first) ?? nil
+  }
+
+  static func activitySessionsSqlite(
+    codexHome: String,
+    query: AgentSessionSQLiteQuery,
+    readMode: AgentSessionSQLiteReadMode
+  ) -> [CodexSession] {
+    guard let dbPath = openCodexDb(codexHome: codexHome, readMode: readMode) else {
+      return []
+    }
+    return AgentSessionSQLiteSupport.queryThreadRecords(
+      dbPath: dbPath,
+      query: query,
+      readMode: readMode
+    ).map(recordToSession)
   }
 
   private static func recordToSession(_ record: AgentSessionSQLiteRecord) -> CodexSession {

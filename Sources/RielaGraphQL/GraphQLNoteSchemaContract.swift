@@ -6,10 +6,11 @@
 // non-integral, or the wrong type) is rejected with an invalidVariable error
 // rather than silently clamped.
 let graphQLNoteSchemaContract = """
-type NoteTag { tagId: String!, name: String!, classId: String, isSystem: Boolean!, createdAt: String! }
+type NoteTag { tagId: String!, name: String!, classId: String, parentTagId: String, isSystem: Boolean!, createdAt: String! }
 type NoteTagClass { classId: String!, label: String!, description: String, isSystem: Boolean!, createdAt: String! }
 type NoteTagAssignment { tag: NoteTag!, provenance: String!, assignedBy: String, deletable: Boolean!, createdAt: String! }
-type Notebook { notebookId: String!, title: String!, createdAt: String!, updatedAt: String!, metaJSON: String, tags: [NoteTagAssignment!]!, firstNotePreview: String, noteCount: Int }
+enum NotebookProgress { none progress done pending }
+type Notebook { notebookId: String!, title: String!, progress: NotebookProgress!, createdAt: String!, updatedAt: String!, metaJSON: String, tags: [NoteTagAssignment!]!, firstNotePreview: String, noteCount: Int }
 type Note { noteId: String!, notebookId: String!, noteNumber: Int!, title: String, bodyMarkdown: String!, readOnly: Boolean!, createdAt: String!, updatedAt: String!, metaJSON: String, tags: [NoteTagAssignment!]! }
 type NoteFile {
   fileId: String!
@@ -61,7 +62,7 @@ input CreateNoteInput {
 }
 input CreateNotebookInput { title: String!, kindTagName: String, metaJSON: String, originatingActionId: String }
 input DefineNoteTagClassInput { classId: String!, label: String!, description: String }
-input DefineNoteTagInput { name: String!, classId: String }
+input DefineNoteTagInput { name: String!, classId: String, parentTagId: String }
 input ScaffoldNoteIngestionWorkflowInput { workflowRoot: String!, workflowId: String!, notebookKindTag: String, assignedBy: String, translationEnabled: Boolean }
 # updateNote re-derives the stored title from bodyMarkdown, replacing any previously explicit title.
 input UpdateNoteInput { noteId: String!, bodyMarkdown: String!, originatingActionId: String }

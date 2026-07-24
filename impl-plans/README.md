@@ -38,6 +38,7 @@ only the W13 read-through/move to `completed/`.
 
 | Plan | Unchecked | Status | Workstream |
 | ---- | --------: | ------ | ---------- |
+| `active/loop-engineering-convergence-and-operations` | 13 | Ready for implementation; S9a default convergence, graceful terminal routing/reservation, opt-outs, child request propagation, fixture adoption, tests, and docs | Current issue-resolution work package |
 | `active/apple-mail-addons` | 3 | Implemented in Swift + `AppleMailAddonTests` (15) green; every implementation/verification box reconciled+checked with per-box evidence 2026-07-12. The 3 open boxes are the upstream `apple-gateway file download` output-contract confirmation, its contingent code change, and closing the QA note — all **DEFERRED (accepted): live QA blocked on absent `apple-gateway` CLI**; owner: next session with apple-gateway; trigger: `which apple-gateway` succeeds | W4 |
 | `active/apple-clock-alarm-addons` | 4 | Implemented + tested (`AppleClockAlarmAddonTests`, 9 green); all 4 open boxes are TASK-001 **live envelope/time-format QA DEFERRED (accepted): blocked on absent `apple-gateway` CLI**; owner: next session with apple-gateway; trigger: `which apple-gateway` succeeds | W4 |
 | `active/rielaapp-instance-execution-timeline` | 5 | Implemented + unit-tested (RielaViewer data/layout; RielaApp pane/popover/integration/entry-point compile); RielaViewerTests 16/0. Interactive UI-visual verification **DEFERRED** to a RielaApp session with the rielaapp-ui-verification workflow | W6 |
@@ -47,7 +48,7 @@ only the W13 read-through/move to `completed/`.
 
 | Plan | Status | Workstream |
 | ---- | ------ | ---------- |
-| `active/riela-note` | Partially implemented; three explicit accepted deferrals recorded 2026-07-12 (libsql sync, remote listener, vector/RAG) with owner + trigger | W8 |
+| `active/riela-note` | Hierarchical-tags/folder-class/notebook-progress work package accepted complete 2026-07-24; retained active only for three explicit baseline deferrals (libsql sync, remote listener, vector/RAG), each with owner + activation trigger | W8 |
 | `active/swift-cli-runtime-parity-gap-closure` | Implementation largely present; TypeScript deletion gate blocked on accepted review/adversarial metadata + final evidence | W9 |
 | `active/hermes-inspired-capabilities` | Planning; explicitly deferred pending the user's adoption-set decision (owner: user; trigger: H-A…H-E confirmation). Self-evolution substrate note corrected 2026-07-12 | W11 |
 | `active/distributed-registry-container-node-roadmap` | Foundation implemented; release publication is an explicitly accepted external deferral (owner: maintainer with release access; trigger: next release window) | W12 |

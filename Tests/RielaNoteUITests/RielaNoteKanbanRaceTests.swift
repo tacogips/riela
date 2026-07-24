@@ -248,6 +248,38 @@ final class RielaNoteKanbanRaceTests: XCTestCase {
     XCTAssertEqual(viewModel.state, .loaded)
   }
 
+  func testNewerProgressMutationConvergesDatabaseEvenWhenBoardContextChanges() async throws {
+    let gate = KanbanNotebookRequestGate()
+    let client = KanbanRaceClient(gate: gate)
+    let viewModel = await loadedAlphaViewModel(client: client)
+    let notebookId = try XCTUnwrap(viewModel.notebooks.first?.notebookId)
+
+    // Older mutation (progress) is suspended before its DB write lands.
+    let olderKey = kanbanProgressRequestKey(notebookId: notebookId, progress: .progress)
+    await gate.block(olderKey)
+    let olderMutation = Task {
+      await viewModel.setNotebookProgress(notebookId: notebookId, progress: .progress)
+    }
+    try await gate.waitUntilSuspended(olderKey)
+
+    // Newer mutation (done) commits fully: DB and UI now show done.
+    await viewModel.setNotebookProgress(notebookId: notebookId, progress: .done)
+    XCTAssertEqual(viewModel.notebooks.first?.progress, .done)
+
+    // The user switches to a different tag board before the stale write lands.
+    viewModel.selectedSearchTagNames = ["beta"]
+    await viewModel.submitSearch()
+
+    // Now the stale older write commits last (DB briefly regresses to progress).
+    await gate.resume(olderKey)
+    await olderMutation.value
+
+    // Convergence guarantee: the database must reflect the newest requested
+    // target (done), even though the active board context changed to beta.
+    let persistedProgress = await client.persistedProgress(notebookId: notebookId)
+    XCTAssertEqual(persistedProgress, .done)
+  }
+
   private func loadedAlphaViewModel(
     client: KanbanRaceClient,
     notebookLimit: Int = 1

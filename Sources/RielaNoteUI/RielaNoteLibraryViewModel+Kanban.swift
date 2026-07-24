@@ -141,9 +141,11 @@ public extension RielaNoteLibraryViewModel {
     supersededGeneration: Int,
     context: RielaNoteNotebookBoardContext
   ) async {
-    guard selectedSearchTagNames.sorted() == context.tagFilter,
-          filter == context.filter,
-          let currentGeneration = notebookProgressMutationGenerations[notebookId],
+    // Database convergence to the newest requested progress must not be gated on
+    // the board context: a stale write that lands last has to be corrected even
+    // if the user has since switched the active tag filter/sort. Only the UI
+    // mutations below stay context-gated (via isCurrentNotebookProgressMutation).
+    guard let currentGeneration = notebookProgressMutationGenerations[notebookId],
           currentGeneration > supersededGeneration,
           let currentTarget = notebookProgressMutationTargets[notebookId] else {
       return

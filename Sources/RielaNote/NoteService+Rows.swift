@@ -4,7 +4,7 @@ import RielaSQLite
 func noteTags(noteId: String, in database: SQLiteDatabase) throws -> [TagAssignment] {
   try tagAssignments(
     sql: """
-      SELECT t.tag_id, t.name, t.class_id, t.is_system, t.created_at,
+      SELECT t.tag_id, t.name, t.class_id, t.parent_tag_id, t.is_system, t.created_at,
         nt.provenance, nt.assigned_by, nt.deletable, nt.created_at AS assigned_at
       FROM note_tags nt
       INNER JOIN tags t ON t.tag_id = nt.tag_id
@@ -23,7 +23,7 @@ func noteTags(noteIds: [String], in database: SQLiteDatabase) throws -> [String:
   }
   let rows = try database.query(
     """
-      SELECT nt.note_id, t.tag_id, t.name, t.class_id, t.is_system, t.created_at,
+      SELECT nt.note_id, t.tag_id, t.name, t.class_id, t.parent_tag_id, t.is_system, t.created_at,
         nt.provenance, nt.assigned_by, nt.deletable, nt.created_at AS assigned_at
       FROM note_tags nt
       INNER JOIN tags t ON t.tag_id = nt.tag_id
@@ -46,7 +46,7 @@ func noteTags(noteIds: [String], in database: SQLiteDatabase) throws -> [String:
 func notebookTags(notebookId: String, in database: SQLiteDatabase) throws -> [TagAssignment] {
   try tagAssignments(
     sql: """
-      SELECT t.tag_id, t.name, t.class_id, t.is_system, t.created_at,
+      SELECT t.tag_id, t.name, t.class_id, t.parent_tag_id, t.is_system, t.created_at,
         nt.provenance, nt.assigned_by, nt.deletable, nt.created_at AS assigned_at
       FROM notebook_tags nt
       INNER JOIN tags t ON t.tag_id = nt.tag_id
@@ -61,7 +61,7 @@ func notebookTags(notebookId: String, in database: SQLiteDatabase) throws -> [Ta
 func tagAssignment(noteId: String, tagName: String, in database: SQLiteDatabase) throws -> TagAssignment? {
   try tagAssignments(
     sql: """
-      SELECT t.tag_id, t.name, t.class_id, t.is_system, t.created_at,
+      SELECT t.tag_id, t.name, t.class_id, t.parent_tag_id, t.is_system, t.created_at,
         nt.provenance, nt.assigned_by, nt.deletable, nt.created_at AS assigned_at
       FROM note_tags nt
       INNER JOIN tags t ON t.tag_id = nt.tag_id
@@ -76,7 +76,7 @@ func tagAssignment(noteId: String, tagName: String, in database: SQLiteDatabase)
 func notebookTagAssignment(notebookId: String, tagName: String, in database: SQLiteDatabase) throws -> TagAssignment? {
   try tagAssignments(
     sql: """
-      SELECT t.tag_id, t.name, t.class_id, t.is_system, t.created_at,
+      SELECT t.tag_id, t.name, t.class_id, t.parent_tag_id, t.is_system, t.created_at,
         nt.provenance, nt.assigned_by, nt.deletable, nt.created_at AS assigned_at
       FROM notebook_tags nt
       INNER JOIN tags t ON t.tag_id = nt.tag_id

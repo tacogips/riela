@@ -271,6 +271,11 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting, GraphQLDocu
         tagName: requiredString("tagName", variables: variables),
         provenance: try optionalString("provenance", variables: variables) ?? "human"
       ))
+    case "setNotebookProgress":
+      return try await encodedJSONValue(service.setNotebookProgress(
+        notebookId: requiredString("notebookId", variables: variables),
+        progress: requiredString("progress", variables: variables)
+      ))
     case "setNoteReadOnly":
       return try await encodedJSONValue(service.setReadOnly(
         noteId: requiredString("noteId", variables: variables),
@@ -515,6 +520,7 @@ let supportedNoteGraphQLFields: Set<String> = [
   "deleteNotebook",
   "applyNotebookTags",
   "removeNotebookTag",
+  "setNotebookProgress",
   "setNoteReadOnly",
   "applyNoteTags",
   "removeNoteTag",
@@ -730,6 +736,7 @@ let noteGraphQLSelectionFields: [String: [String: String?]] = [
   "Notebook": [
     "notebookId": nil,
     "title": nil,
+    "progress": nil,
     "createdAt": nil,
     "updatedAt": nil,
     "metaJSON": nil,
@@ -748,6 +755,7 @@ let noteGraphQLSelectionFields: [String: [String: String?]] = [
     "tagId": nil,
     "name": nil,
     "classId": nil,
+    "parentTagId": nil,
     "isSystem": nil,
     "createdAt": nil
   ],

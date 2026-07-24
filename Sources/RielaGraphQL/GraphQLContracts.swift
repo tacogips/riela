@@ -1076,6 +1076,7 @@ public enum GraphQLContractProjector {
     deleteNotebook(notebookId: String!): ControlPlaneResult!
     applyNotebookTags(input: ApplyNotebookTagsInput!): NoteMutationPayload!
     removeNotebookTag(notebookId: String!, tagName: String!, provenance: String): NoteMutationPayload!
+    setNotebookProgress(notebookId: String!, progress: NotebookProgress!): NoteMutationPayload!
     setNoteReadOnly(noteId: String!, readOnly: Boolean!): NoteMutationPayload!
     applyNoteTags(input: ApplyNoteTagsInput!): NoteMutationPayload!
     removeNoteTag(noteId: String!, tagName: String!, provenance: String): NoteMutationPayload!

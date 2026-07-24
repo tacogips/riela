@@ -32,6 +32,73 @@ final class RielaNoteUIClientCatalogTests: XCTestCase {
     XCTAssertEqual(proposals.first?.source, "workflow")
     XCTAssertEqual(proposals.first?.reason, "Workflow selected this candidate.")
   }
+
+  func testNoteServiceClientForwardsTagFilterPaginationAndProgressMutation() async throws {
+    let service = try makeCatalogTestService()
+    let parent = try service.defineTag(name: "portfolio")
+    let child = try service.defineTag(name: "project", parentTagId: parent.tagId)
+    let first = try service.createNotebook(title: "First")
+    let second = try service.createNotebook(title: "Second")
+    _ = try service.applyNotebookTags(
+      notebookId: first.notebookId,
+      tags: [child.name],
+      provenance: .human
+    )
+    _ = try service.applyNotebookTags(
+      notebookId: second.notebookId,
+      tags: [child.name],
+      provenance: .human
+    )
+    let client = NoteServiceRielaNoteUIClient(service: service)
+    let all = try await client.listNotebooks(
+      limit: 10,
+      offset: 0,
+      tagFilter: [parent.name],
+      filter: RielaNoteListFilter()
+    )
+    let page = try await client.listNotebooks(
+      limit: 1,
+      offset: 1,
+      tagFilter: [parent.name],
+      filter: RielaNoteListFilter()
+    )
+
+    XCTAssertEqual(Set(all.map(\.notebookId)), Set([first.notebookId, second.notebookId]))
+    XCTAssertEqual(page.map(\.notebookId), Array(all.dropFirst().prefix(1)).map(\.notebookId))
+    let updated = try await client.setNotebookProgress(
+      notebookId: first.notebookId,
+      progress: .pending
+    )
+    XCTAssertEqual(updated.progress, .pending)
+  }
+
+  func testLegacyClientTagFilterFallbackFailsClosed() async throws {
+    let fixture = NoteUITestFixture()
+    let legacyClient = FailingRielaNoteUIClient(base: fixture.client)
+
+    let unfiltered = try await legacyClient.listNotebooks(
+      limit: 10,
+      offset: 0,
+      tagFilter: [],
+      filter: RielaNoteListFilter()
+    )
+
+    XCTAssertEqual(unfiltered.map(\.notebookId), [fixture.notebook.notebookId])
+    do {
+      _ = try await legacyClient.listNotebooks(
+        limit: 10,
+        offset: 0,
+        tagFilter: ["portfolio"],
+        filter: RielaNoteListFilter()
+      )
+      XCTFail("expected a nonempty tag filter to fail closed")
+    } catch {
+      XCTAssertEqual(
+        error as? RielaNoteUIClientCapabilityError,
+        .notebookTagFilterUnsupported
+      )
+    }
+  }
 }
 
 private struct StaticLinkProposalProvider: RielaNoteLinkProposalProviding {

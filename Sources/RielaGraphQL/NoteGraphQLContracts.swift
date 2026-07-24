@@ -6,6 +6,7 @@ public struct GraphQLNoteTagDTO: Codable, Equatable, Sendable {
   public var tagId: String
   public var name: String
   public var classId: String?
+  public var parentTagId: String?
   public var isSystem: Bool
   public var createdAt: String
 
@@ -13,6 +14,7 @@ public struct GraphQLNoteTagDTO: Codable, Equatable, Sendable {
     tagId = tag.tagId
     name = tag.name
     classId = tag.classId
+    parentTagId = tag.parentTagId
     isSystem = tag.isSystem
     createdAt = tag.createdAt
   }
@@ -53,6 +55,7 @@ public struct GraphQLNoteTagAssignmentDTO: Codable, Equatable, Sendable {
 public struct GraphQLNotebookDTO: Codable, Equatable, Sendable {
   public var notebookId: String
   public var title: String
+  public var progress: NotebookProgress
   public var createdAt: String
   public var updatedAt: String
   public var metaJSON: String?
@@ -63,6 +66,7 @@ public struct GraphQLNotebookDTO: Codable, Equatable, Sendable {
   public init(notebook: Notebook) {
     notebookId = notebook.notebookId
     title = notebook.title
+    progress = notebook.progress
     createdAt = notebook.createdAt
     updatedAt = notebook.updatedAt
     metaJSON = notebook.metaJSON
@@ -349,10 +353,12 @@ public struct GraphQLDefineNoteTagClassInput: Codable, Equatable, Sendable {
 public struct GraphQLDefineNoteTagInput: Codable, Equatable, Sendable {
   public var name: String
   public var classId: String?
+  public var parentTagId: String?
 
-  public init(name: String, classId: String? = nil) {
+  public init(name: String, classId: String? = nil, parentTagId: String? = nil) {
     self.name = name
     self.classId = classId
+    self.parentTagId = parentTagId
   }
 }
 

@@ -45,9 +45,14 @@ public extension NoteService {
   }
 
   @discardableResult
-  func defineTag(name rawName: String, classId rawClassId: String? = nil) throws -> Tag {
+  func defineTag(
+    name rawName: String,
+    classId rawClassId: String? = nil,
+    parentTagId rawParentTagId: String? = nil
+  ) throws -> Tag {
     let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
     let classId = rawClassId?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let parentTagId = rawParentTagId?.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !name.isEmpty else {
       throw NoteServiceError.invalidInput("tag name is required")
     }
@@ -56,23 +61,33 @@ public extension NoteService {
         if let classId, !classId.isEmpty {
           _ = try requireTagClass(classId: classId, in: db)
         }
-        if let existing = try findTag(name: name, in: db), existing.isSystem {
+        let existing = try findTag(name: name, in: db)
+        if let existing, existing.isSystem {
           guard existing.classId == classId || classId?.isEmpty != false else {
+            throw NoteServiceError.protectedTag("system tag is protected: \(name)")
+          }
+          guard parentTagId?.isEmpty != false || existing.parentTagId == parentTagId else {
             throw NoteServiceError.protectedTag("system tag is protected: \(name)")
           }
           return existing
         }
+        let tagId = existing?.tagId ?? makeNoteId(prefix: "tag")
+        if let parentTagId, !parentTagId.isEmpty {
+          try validateTagParent(childTagId: tagId, parentTagId: parentTagId, in: db)
+        }
         try db.execute(
           """
-          INSERT INTO tags (tag_id, name, class_id, is_system, created_at)
-          VALUES (?, ?, ?, 0, ?)
+          INSERT INTO tags (tag_id, name, class_id, parent_tag_id, is_system, created_at)
+          VALUES (?, ?, ?, ?, 0, ?)
           ON CONFLICT(name) DO UPDATE SET
-            class_id = coalesce(excluded.class_id, tags.class_id)
+            class_id = coalesce(excluded.class_id, tags.class_id),
+            parent_tag_id = coalesce(excluded.parent_tag_id, tags.parent_tag_id)
           """,
           bindings: [
-            .text(makeNoteId(prefix: "tag")),
+            .text(tagId),
             .text(name),
             .optionalText(classId?.isEmpty == true ? nil : classId),
+            .optionalText(parentTagId?.isEmpty == true ? nil : parentTagId),
             .text(NoteStoreClock.system.now())
           ]
         )
@@ -85,7 +100,7 @@ public extension NoteService {
     try driver.withDatabase { database in
       try database.query(
         """
-        SELECT tag_id, name, class_id, is_system, created_at
+        SELECT tag_id, name, class_id, parent_tag_id, is_system, created_at
         FROM tags
         ORDER BY name
         """
@@ -128,7 +143,7 @@ func requireTagClass(classId: String, in database: SQLiteDatabase) throws -> Tag
 private func findTag(name: String, in database: SQLiteDatabase) throws -> Tag? {
   try database.query(
     """
-    SELECT tag_id, name, class_id, is_system, created_at
+    SELECT tag_id, name, class_id, parent_tag_id, is_system, created_at
     FROM tags
     WHERE name = ?
     LIMIT 1
@@ -154,6 +169,7 @@ private func noteCatalogTag(from row: SQLiteRow) throws -> Tag {
     tagId: tagId,
     name: name,
     classId: row["class_id"] ?? nil,
+    parentTagId: row["parent_tag_id"] ?? nil,
     isSystem: row["is_system"] == "1",
     createdAt: createdAt
   )

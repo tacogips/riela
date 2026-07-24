@@ -919,6 +919,24 @@ private struct StaticWorkflowRuntimeStore: WorkflowRuntimeStore {
     throw WorkflowRuntimeStoreError.messageAppendRejected("static store does not update executions")
   }
 
+  func stageWorkflowPublication(_ input: WorkflowPublicationStageInput) async throws -> WorkflowPublicationStageResult {
+    throw WorkflowRuntimeStoreError.messageAppendRejected("static store does not stage publications")
+  }
+
+  func commitWorkflowPublication(_ input: WorkflowPublicationCommitInput) async throws -> WorkflowPublicationCommitResult {
+    throw WorkflowRuntimeStoreError.messageAppendRejected("static store does not commit publications")
+  }
+
+  func abortWorkflowPublication(_ input: WorkflowPublicationAbortInput) async throws -> WorkflowStepExecution {
+    throw WorkflowRuntimeStoreError.messageAppendRejected("static store does not abort publications")
+  }
+
+  func redirectPendingWorkflowStep(
+    _ input: WorkflowPendingStepRedirectInput
+  ) async throws -> WorkflowPendingStepRedirectResult {
+    throw WorkflowRuntimeStoreError.messageAppendRejected("static store does not redirect pending steps")
+  }
+
   func markSessionFailed(_ input: WorkflowSessionFailureInput) async throws -> WorkflowSession {
     throw WorkflowRuntimeStoreError.messageAppendRejected("static store does not fail sessions")
   }

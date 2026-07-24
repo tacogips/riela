@@ -1,4 +1,5 @@
 import Foundation
+import ArgumentParser
 import RielaAddons
 import RielaCore
 import RielaMemory
@@ -50,6 +51,7 @@ public enum RielaCommand: Equatable, Sendable {
   case note(NoteCommand)
   case instance(CLICommandOptions)
   case doctor(CLICommandOptions)
+  case gc(CLICommandOptions)
   case scoped(ScopedCommand)
 }
 
@@ -80,6 +82,9 @@ public enum WorkflowCommand: Equatable, Sendable {
   case runHelp(String?)
   case list(CLICommandOptions)
   case status(CLICommandOptions)
+  case register(WorkflowMutableRegistrationOptions)
+  case registerHelp
+  case registry(CLICommandOptions)
   case manifestValidate(WorkflowManifestValidateOptions)
   case checkout(CLICommandOptions)
   case create(CLICommandOptions)
@@ -281,17 +286,20 @@ public struct WorkflowResolutionOptions: Codable, Equatable, Sendable {
   public var scope: WorkflowScope
   public var workflowDefinitionDir: String?
   public var workingDirectory: String
+  public var includeDeactivated: Bool
 
   public init(
     workflowName: String,
     scope: WorkflowScope = .auto,
     workflowDefinitionDir: String? = nil,
-    workingDirectory: String = FileManager.default.currentDirectoryPath
+    workingDirectory: String = FileManager.default.currentDirectoryPath,
+    includeDeactivated: Bool = false
   ) {
     self.workflowName = workflowName
     self.scope = workflowDefinitionDir == nil ? scope : .direct
     self.workflowDefinitionDir = workflowDefinitionDir
     self.workingDirectory = workingDirectory
+    self.includeDeactivated = includeDeactivated
   }
 }
 
@@ -349,6 +357,7 @@ public struct WorkflowRunOptions: Equatable, Sendable {
   public var maxSteps: Int?
   public var maxConcurrency: Int?
   public var maxLoopIterations: Int?
+  public var disableDefaultLoopGuard: Bool
   public var defaultTimeoutMs: Int?
   public var timeoutMs: Int?
   public var agentSilenceWarningMs: Int?
@@ -377,6 +386,7 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     maxSteps: Int? = nil,
     maxConcurrency: Int? = nil,
     maxLoopIterations: Int? = nil,
+    disableDefaultLoopGuard: Bool = false,
     defaultTimeoutMs: Int? = nil,
     timeoutMs: Int? = nil,
     agentSilenceWarningMs: Int? = 120_000,
@@ -404,6 +414,7 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     self.maxSteps = maxSteps
     self.maxConcurrency = maxConcurrency
     self.maxLoopIterations = maxLoopIterations
+    self.disableDefaultLoopGuard = disableDefaultLoopGuard
     self.defaultTimeoutMs = defaultTimeoutMs
     self.timeoutMs = timeoutMs
     self.agentSilenceWarningMs = agentSilenceWarningMs
@@ -505,23 +516,83 @@ public struct RielaArgumentParser: CLIArgumentParsing {
   public init() {}
 
   public func parse(_ arguments: [String]) throws -> RielaCommand {
-    if arguments == ["--help"] || arguments == ["-h"] || arguments == ["help"] {
+    let route: any ParsableCommand
+    do {
+      route = try RielaClientCommandRouter.parseAsRoot(arguments)
+    } catch {
+      let message = RielaClientCommandRouter.message(for: error)
+      if message == rielaSwiftMigrationVersion {
+        return .version
+      }
+      throw CLIUsageError(message)
+    }
+    switch route {
+    case let route as WorkflowRoute:
+      return try parseWorkflow(route.passthroughArguments)
+    case let route as PackageRoute:
+      return try parsePackageRoute(route.passthroughArguments, scope: .package)
+    case let route as NodeRoute:
+      return .node(try parseNode(route.passthroughArguments))
+    case let route as RrunRoute:
+      return .node(try parseRrun(route.passthroughArguments))
+    case let route as SetupRoute:
+      return .setup(try parseSetup(route.passthroughArguments))
+    case let route as MemoryRoute:
+      return .memory(try parseMemory(route.passthroughArguments))
+    case let route as NoteRoute:
+      return .note(try parseNote(route.passthroughArguments))
+    case let route as InstanceRoute:
+      return .instance(try parseInstance(route.passthroughArguments))
+    case let route as DoctorRoute:
+      return .doctor(try parseGeneric(
+        scope: "doctor",
+        command: "doctor",
+        arguments: route.passthroughArguments,
+        allowTableOutput: false,
+        defaultOutput: .text
+      ))
+    case let route as GarbageCollectionRoute:
+      return .gc(try parseGeneric(
+        scope: "gc",
+        command: "gc",
+        arguments: route.passthroughArguments,
+        allowTableOutput: false,
+        defaultOutput: .text
+      ))
+    case let route as SessionRoute:
+      return try parseSession(route.passthroughArguments)
+    case let route as LoopRoute:
+      return .loop(try parseLoop(route.passthroughArguments))
+    case let route as GraphQLRoute:
+      return .scoped(try parseScoped(kind: .graphql, arguments: route.passthroughArguments))
+    case let route as GQLRoute:
+      return .scoped(try parseScoped(kind: .gql, arguments: route.passthroughArguments))
+    case let route as HookRoute:
+      return .scoped(try parseScoped(kind: .hook, arguments: route.passthroughArguments))
+    case let route as EventsRoute:
+      return .scoped(try parseScoped(kind: .events, arguments: route.passthroughArguments))
+    case let route as ServeRoute:
+      return .scoped(try parseScoped(kind: .serve, arguments: route.passthroughArguments))
+    case let route as CallStepRoute:
+      return .scoped(try parseScoped(kind: .callStep, arguments: route.passthroughArguments))
+    case let route as WorkflowCallRoute:
+      return .scoped(try parseScoped(kind: .workflowCall, arguments: route.passthroughArguments))
+    case is VersionRoute:
+      return .version
+    case is RielaClientCommandRouter:
+      return .version
+    default:
+      return arguments.contains("--version") ? .version : .help
+    }
+  }
+
+  private func parseWorkflow(_ arguments: [String]) throws -> RielaCommand {
+    if arguments.count == 1, arguments.contains(where: isHelpOption) {
       return .help
     }
-    if arguments.isEmpty || arguments == ["--version"] || arguments == ["version"] {
-      return .version
-    }
-    if let command = try parseTopLevelCommand(arguments) {
-      return command
-    }
-    guard arguments.first == "workflow" else {
-      throw CLIUsageError("expected 'workflow', 'package', 'node', 'rrun', 'setup', 'memory', 'note', 'instance', 'doctor', 'session', 'loop', 'graphql', 'gql', 'hook', 'events', 'serve', or 'call-step' command")
-    }
-    guard arguments.count >= 2 else {
-      throw CLIUsageError("workflow command requires a subcommand and workflow name")
-    }
-    if arguments[1] == "package" {
-      let packageArguments = Array(arguments.dropFirst(2))
+    let family = try ParsedWorkflowFamily.parseCLI(arguments)
+    if family.subcommand == .package {
+      let packageArguments = family.remainder
       if isPackageHelpRequest(packageArguments) {
         return .packageHelp(.workflowPackage)
       }
@@ -530,68 +601,96 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       }
       return .workflow(.package(try parsePackage(scope: "workflow package", arguments: packageArguments)))
     }
-    if arguments[1] == "manifest" {
-      return .workflow(.manifestValidate(try parseWorkflowManifest(Array(arguments.dropFirst(2)))))
+    if family.subcommand == .manifest {
+      return .workflow(.manifestValidate(try parseWorkflowManifest(family.remainder)))
     }
-    if arguments[1] == "list" {
-      let remaining = Array(arguments.dropFirst(2))
-      let target = remaining.first?.hasPrefix("--") == false ? remaining.first : nil
-      let optionTokens = target == nil ? remaining : Array(remaining.dropFirst())
+    if family.subcommand == .list {
+      let route = try ParsedTargetAndOptions.parseCLI(family.remainder)
       return .workflow(.list(try parseGeneric(
         scope: "workflow",
         command: "list",
-        target: target,
-        arguments: optionTokens,
+        target: route.target,
+        arguments: route.options,
         allowTableOutput: true
       )))
     }
-    if arguments[1] == "status" {
-      let remaining = Array(arguments.dropFirst(2))
-      let target = remaining.first?.hasPrefix("--") == false ? remaining.first : nil
-      let optionTokens = target == nil ? remaining : Array(remaining.dropFirst())
+    if family.subcommand == .status {
+      let route = try ParsedTargetAndOptions.parseCLI(family.remainder)
       return .workflow(.status(try parseGeneric(
         scope: "workflow",
         command: "status",
-        target: target,
-        arguments: optionTokens,
+        target: route.target,
+        arguments: route.options,
         allowTableOutput: true
       )))
     }
-    if let versionCommand = try parseWorkflowVersionCommand(arguments) {
+    if family.subcommand == .register {
+      return try parseWorkflowRegister(
+        family.remainder,
+        helpRequested: family.remainder.contains(where: isHelpOption)
+      )
+    }
+    if [.update, .delete, .activate, .deactivate, .consolidate].contains(family.subcommand) {
+      let route = try ParsedTargetAndOptions.parseCLI(family.remainder)
+      return .workflow(.registry(try parseGeneric(
+        scope: "workflow",
+        command: family.subcommand.rawValue,
+        target: route.target,
+        arguments: route.options
+      )))
+    }
+    if [.versions, .version, .restore].contains(family.subcommand) {
+      let versionCommand = try parseWorkflowVersionCommand(
+        subcommand: family.subcommand,
+        arguments: family.remainder
+      )
       return .workflow(.version(versionCommand))
     }
-    let subcommand = arguments[1]
-    guard arguments.count >= 3 else {
-      throw CLIUsageError("workflow command requires a subcommand and workflow name")
-    }
-    if subcommand == "run", isHelpOption(arguments[2]) {
+    let route = try ParsedTargetAndOptions.parseCLI(family.remainder)
+    if family.subcommand == .run,
+       route.target == nil,
+       route.options.contains(where: isHelpOption) {
       return .workflow(.runHelp(nil))
     }
-    let target = arguments[2]
-    guard !target.hasPrefix("--") else {
-      throw CLIUsageError("workflow \(subcommand) requires a workflow name")
+    guard let target = route.target else {
+      throw CLIUsageError("workflow \(family.subcommand.rawValue) requires a workflow name")
     }
-    let optionTokens = Array(arguments.dropFirst(3))
-    switch subcommand {
-    case "validate":
-      return .workflow(.validate(try parseValidate(target: target, tokens: optionTokens)))
-    case "inspect":
-      return .workflow(.inspect(try parseInspect(target: target, tokens: optionTokens)))
-    case "usage":
-      return .workflow(.usage(try parseInspect(target: target, tokens: optionTokens)))
-    case "run":
-      if optionTokens.contains(where: isHelpOption) {
+    switch family.subcommand {
+    case .validate:
+      return .workflow(.validate(try parseValidate(target: target, tokens: route.options)))
+    case .inspect:
+      return .workflow(.inspect(try parseInspect(target: target, tokens: route.options)))
+    case .usage:
+      return .workflow(.usage(try parseInspect(target: target, tokens: route.options)))
+    case .run:
+      if route.options.contains(where: isHelpOption) {
         return .workflow(.runHelp(target))
       }
-      return .workflow(.run(try parseRun(target: target, tokens: optionTokens)))
-    case "checkout":
-      return .workflow(.checkout(try parseGeneric(scope: "workflow", command: subcommand, target: target, arguments: optionTokens)))
-    case "create":
-      return .workflow(.create(try parseGeneric(scope: "workflow", command: subcommand, target: target, arguments: optionTokens)))
-    case "self-improve":
-      return .workflow(.selfImprove(try parseGeneric(scope: "workflow", command: subcommand, target: target, arguments: optionTokens)))
-    default:
-      throw CLIUsageError("unsupported workflow subcommand '\(subcommand)'")
+      return .workflow(.run(try parseRun(target: target, tokens: route.options)))
+    case .checkout:
+      return .workflow(.checkout(try parseGeneric(
+        scope: "workflow",
+        command: family.subcommand.rawValue,
+        target: target,
+        arguments: route.options
+      )))
+    case .create:
+      return .workflow(.create(try parseGeneric(
+        scope: "workflow",
+        command: family.subcommand.rawValue,
+        target: target,
+        arguments: route.options
+      )))
+    case .selfImprove:
+      return .workflow(.selfImprove(try parseGeneric(
+        scope: "workflow",
+        command: family.subcommand.rawValue,
+        target: target,
+        arguments: route.options
+      )))
+    case .package, .manifest, .list, .status, .register, .update, .delete, .activate, .deactivate,
+         .consolidate, .versions, .version, .restore:
+      throw CLIUsageError("unsupported target-based workflow route '\(family.subcommand.rawValue)'")
     }
   }
 
@@ -599,55 +698,20 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     token == "--help" || token == "-h"
   }
 
-  private func parseTopLevelCommand(_ arguments: [String]) throws -> RielaCommand? {
-    if let scopedKind = ScopedCommandKind(rawValue: arguments[0]) {
-      return .scoped(try parseScoped(kind: scopedKind, arguments: Array(arguments.dropFirst())))
+  private func parsePackageRoute(
+    _ arguments: [String],
+    scope: PackageHelpScope
+  ) throws -> RielaCommand {
+    if isPackageHelpRequest(arguments) || isPackageSubcommandHelpRequest(arguments) {
+      return .packageHelp(scope)
     }
-    if arguments.first == "package" {
-      let packageArguments = Array(arguments.dropFirst())
-      if isPackageHelpRequest(packageArguments) || isPackageSubcommandHelpRequest(packageArguments) {
-        return .packageHelp(.package)
-      }
-      return .package(try parsePackage(scope: "package", arguments: packageArguments))
-    }
-    if arguments.first == "node" {
-      return .node(try parseNode(Array(arguments.dropFirst())))
-    }
-    if arguments.first == "rrun" {
-      return .node(try parseRrun(Array(arguments.dropFirst())))
-    }
-    if arguments.first == "setup" {
-      return .setup(try parseSetup(Array(arguments.dropFirst())))
-    }
-    if arguments.first == "memory" {
-      return .memory(try parseMemory(Array(arguments.dropFirst())))
-    }
-    if arguments.first == "note" {
-      return .note(try parseNote(Array(arguments.dropFirst())))
-    }
-    if arguments.first == "instance" {
-      return .instance(try parseInstance(Array(arguments.dropFirst())))
-    }
-    if arguments.first == "doctor" {
-      return .doctor(try parseGeneric(
-        scope: "doctor",
-        command: "doctor",
-        arguments: Array(arguments.dropFirst()),
-        allowTableOutput: false,
-        defaultOutput: .text
-      ))
-    }
-    if arguments.first == "session" {
-      return try parseSession(Array(arguments.dropFirst()))
-    }
-    if arguments.first == "loop" {
-      return .loop(try parseLoop(Array(arguments.dropFirst())))
-    }
-    return nil
+    return .package(try parsePackage(scope: scope.rawValue, arguments: arguments))
   }
 
   private func isPackageHelpRequest(_ arguments: [String]) -> Bool {
-    arguments.isEmpty || (arguments.count == 1 && (isHelpOption(arguments[0]) || arguments[0] == "help"))
+    arguments.isEmpty || (
+      arguments.count == 1 && arguments.allSatisfy { isHelpOption($0) || $0 == "help" }
+    )
   }
 
   private func isPackageSubcommandHelpRequest(_ arguments: [String]) -> Bool {
@@ -655,25 +719,26 @@ public struct RielaArgumentParser: CLIArgumentParsing {
   }
 
   private func parseLoop(_ arguments: [String]) throws -> LoopCommand {
-    guard let subcommand = arguments.first else {
-      throw CLIUsageError("loop command requires a subcommand")
-    }
-    guard let kind = LoopCommandKind(rawValue: subcommand) else {
-      throw CLIUsageError("unsupported loop subcommand '\(subcommand)'")
-    }
+    let family = try ParsedLoopFamily.parseCLI(arguments)
+    let kind = family.subcommand
+    let remaining = family.remainder
+    let subcommand = kind.rawValue
     if kind == .list {
       return LoopCommand(
         kind: kind,
         options: try parseGeneric(
           scope: "loop",
           command: subcommand,
-          arguments: Array(arguments.dropFirst()),
+          arguments: remaining,
           allowTableOutput: true
         )
       )
     }
     if kind == .baseline {
-      guard arguments.count >= 3, ["set", "show", "clear"].contains(arguments[1]), !arguments[2].hasPrefix("--") else {
+      let route: ParsedLoopBaselineRoute
+      do {
+        route = try ParsedLoopBaselineRoute.parseCLI(remaining)
+      } catch {
         throw CLIUsageError(
           "usage: riela loop baseline set|show|clear <workflow> [<session-id>] [--note <text>] [--force]"
         )
@@ -683,29 +748,27 @@ public struct RielaArgumentParser: CLIArgumentParsing {
         options: try parseGeneric(
           scope: "loop",
           command: "baseline",
-          target: arguments[2],
-          arguments: [arguments[1]] + Array(arguments.dropFirst(3))
-        )
-      )
-    }
-    if kind == .diff, arguments.count >= 2, arguments[1] == "--baseline" {
-      guard arguments.count >= 3, !arguments[2].hasPrefix("--") else {
-        throw CLIUsageError("loop diff --baseline requires a workflow id")
-      }
-      return LoopCommand(
-        kind: kind,
-        options: try parseGeneric(
-          scope: "loop",
-          command: "diff",
-          target: arguments[2],
-          arguments: ["--baseline"] + Array(arguments.dropFirst(3))
+          target: route.workflowId,
+          arguments: [route.action.rawValue] + route.options
         )
       )
     }
     if kind == .diff {
-      guard arguments.count >= 3, !arguments[1].hasPrefix("--"), !arguments[2].hasPrefix("--") else {
-        throw CLIUsageError("loop diff requires two session ids: loop diff <session-a> <session-b>")
+      let route = try ParsedLoopBaselineDiffRoute.parseCLI(remaining)
+      if route.baseline {
+        return LoopCommand(
+          kind: kind,
+          options: try parseGeneric(
+            scope: "loop",
+            command: "diff",
+            target: route.workflowId,
+            arguments: ["--baseline"] + route.options
+          )
+        )
       }
+    }
+    if kind == .diff {
+      let route = try ParsedLoopDiffRoute.parseCLI(remaining)
       // session-a is the target; session-b leads the remaining args and is
       // recovered in the command runner (the loop parser threads one target).
       return LoopCommand(
@@ -713,95 +776,66 @@ public struct RielaArgumentParser: CLIArgumentParsing {
         options: try parseGeneric(
           scope: "loop",
           command: subcommand,
-          target: arguments[1],
-          arguments: Array(arguments.dropFirst(2))
+          target: route.firstSessionId,
+          arguments: [route.secondSessionId] + route.options
         )
       )
     }
-    guard arguments.count >= 2, !arguments[1].hasPrefix("--") else {
+    guard !remaining.isEmpty else {
       if kind == .history || kind == .stats || kind == .start || kind == .promote || kind == .regress {
         throw CLIUsageError("loop \(subcommand) requires a workflow id")
       }
       throw CLIUsageError("loop \(subcommand) requires a session id")
     }
+    let route = try ParsedLoopTargetRoute.parseCLI(remaining)
     return LoopCommand(
       kind: kind,
       options: try parseGeneric(
         scope: "loop",
         command: subcommand,
-        target: arguments[1],
-        arguments: Array(arguments.dropFirst(2)),
+        target: route.target,
+        arguments: route.options,
         allowTableOutput: kind == .history
       )
     )
   }
 
   private func parseWorkflowManifest(_ arguments: [String]) throws -> WorkflowManifestValidateOptions {
-    guard arguments.first == "validate" else {
-      throw CLIUsageError("unsupported workflow manifest subcommand '\(arguments.first ?? "")'")
-    }
-    var manifestPath: String?
-    var optionTokens: [String] = []
-    var index = 1
-    while index < arguments.count {
-      let token = arguments[index]
-      if token.hasPrefix("--") {
-        if token == "--workflow-manifest" {
-          guard index + 1 < arguments.count, !arguments[index + 1].hasPrefix("--") else {
-            throw CLIUsageError("--workflow-manifest requires a value")
-          }
-          manifestPath = arguments[index + 1]
-          index += 2
-          continue
-        }
-        optionTokens.append(token)
-        if Set(["--output", "--working-dir", "--working-directory"]).contains(token) {
-          guard index + 1 < arguments.count, !arguments[index + 1].hasPrefix("--") else {
-            throw CLIUsageError("\(token) requires a value")
-          }
-          optionTokens.append(arguments[index + 1])
-          index += 2
-        } else {
-          index += 1
-        }
-        continue
-      }
-      guard manifestPath == nil else {
-        throw CLIUsageError("workflow manifest validate accepts at most one manifest path")
-      }
-      manifestPath = token
-      index += 1
-    }
-    if manifestPath == nil {
-      let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
-      manifestPath = environment["RIELA_WORKFLOW_MANIFEST"].flatMap { $0.isEmpty ? nil : $0 }
-    }
-    guard let manifestPath, !manifestPath.isEmpty else {
-      throw CLIUsageError("workflow manifest validate requires a manifest path, --workflow-manifest, or RIELA_WORKFLOW_MANIFEST")
-    }
-    let parsed = try ParsedWorkflowOptions(optionTokens)
+    let family = try ParsedWorkflowManifestFamily.parseCLI(arguments)
+    let parsed = try ParsedWorkflowManifestOptions(family.remainder)
+    let manifestPath = try parsed.resolvedManifestPath(
+      environment: CLIRuntimeEnvironment.mergedProcessEnvironment()
+    )
     return WorkflowManifestValidateOptions(
       manifestPath: manifestPath,
       output: parsed.output,
       executable: parsed.executable,
-      workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
+      workingDirectory: parsed.workingDirectory
     )
   }
 
   private func parsePackage(scope: String, arguments: [String]) throws -> PackageCommand {
-    guard let subcommand = arguments.first else {
-      throw CLIUsageError("\(scope) command requires a subcommand")
+    let family = try ParsedPackageFamily.parseCLI(arguments)
+    if family.subcommand == .registry {
+      let route = try ParsedPackageRegistryRoute.parseCLI(family.remainder)
+      return PackageCommand(
+        kind: .registry,
+        options: try parseGeneric(
+          scope: scope,
+          command: PackageCommandKind.registry.rawValue,
+          target: route.action.rawValue,
+          arguments: route.remainder,
+          defaultOutput: .text
+        )
+      )
     }
-    guard let kind = PackageCommandKind(rawValue: subcommand) else {
-      throw CLIUsageError("unsupported \(scope) subcommand '\(subcommand)'")
-    }
-    let target = arguments.count >= 2 && !arguments[1].hasPrefix("--") ? arguments[1] : nil
-    let optionStart = target == nil ? 1 : 2
+    let route = try ParsedTargetAndOptions.parseCLI(family.remainder)
+    let kind = family.subcommand
     let options = try parseGeneric(
       scope: scope,
-      command: subcommand,
-      target: target,
-      arguments: Array(arguments.dropFirst(optionStart)),
+      command: kind.rawValue,
+      target: route.target,
+      arguments: route.options,
       allowTableOutput: kind == .search || kind == .list,
       defaultOutput: .text
     )
@@ -809,22 +843,17 @@ public struct RielaArgumentParser: CLIArgumentParsing {
   }
 
   private func parseNode(_ arguments: [String]) throws -> NodeCommand {
-    guard let subcommand = arguments.first else {
-      throw CLIUsageError("node command requires a subcommand")
+    let family = try ParsedNodeFamily.parseCLI(arguments)
+    let route = try ParsedTargetAndOptions.parseCLI(family.remainder)
+    let kind = family.subcommand
+    if kind != .search, kind != .list, route.target == nil {
+      throw CLIUsageError("node \(kind.rawValue) requires an add-on or package name")
     }
-    guard let kind = NodeCommandKind(rawValue: subcommand) else {
-      throw CLIUsageError("unsupported node subcommand '\(subcommand)'")
-    }
-    let target = arguments.count >= 2 && !arguments[1].hasPrefix("--") ? arguments[1] : nil
-    if kind != .search, kind != .list, target == nil {
-      throw CLIUsageError("node \(subcommand) requires an add-on or package name")
-    }
-    let optionStart = target == nil ? 1 : 2
     let options = try parseGeneric(
       scope: "node",
-      command: subcommand,
-      target: target,
-      arguments: Array(arguments.dropFirst(optionStart)),
+      command: kind.rawValue,
+      target: route.target,
+      arguments: route.options,
       allowTableOutput: kind == .search || kind == .list,
       defaultOutput: kind == .run ? .json : .text
     )
@@ -832,14 +861,15 @@ public struct RielaArgumentParser: CLIArgumentParsing {
   }
 
   private func parseRrun(_ arguments: [String]) throws -> NodeCommand {
-    guard let target = arguments.first, !target.hasPrefix("--") else {
+    let route = try ParsedTargetAndOptions.parseCLI(arguments)
+    guard let target = route.target else {
       throw CLIUsageError("rrun requires an add-on name")
     }
     let options = try parseGeneric(
       scope: "node",
       command: NodeCommandKind.run.rawValue,
       target: target,
-      arguments: Array(arguments.dropFirst()),
+      arguments: route.options,
       allowTableOutput: false,
       defaultOutput: .json
     )
@@ -847,65 +877,50 @@ public struct RielaArgumentParser: CLIArgumentParsing {
   }
 
   private func parseSetup(_ arguments: [String]) throws -> CLICommandOptions {
-    guard let subcommand = arguments.first else {
-      throw CLIUsageError("setup command requires a subcommand")
-    }
-    guard subcommand == "container" else {
-      throw CLIUsageError("unsupported setup subcommand '\(subcommand)'")
-    }
+    let family = try ParsedSetupFamily.parseCLI(arguments)
     return try parseGeneric(
       scope: "setup",
-      command: subcommand,
-      arguments: Array(arguments.dropFirst()),
+      command: family.subcommand.rawValue,
+      arguments: family.remainder,
       allowTableOutput: false,
       defaultOutput: .text
     )
   }
 
   private func parseInstance(_ arguments: [String]) throws -> CLICommandOptions {
-    guard let subcommand = arguments.first else {
-      throw CLIUsageError("instance command requires a subcommand")
+    let family = try ParsedInstanceFamily.parseCLI(arguments)
+    let route = try ParsedTargetAndOptions.parseCLI(family.remainder)
+    if family.subcommand != .list, route.target == nil {
+      throw CLIUsageError("instance \(family.subcommand.rawValue) requires an instance identity")
     }
-    let supported = Set(["list", "show", "create", "update", "remove"])
-    guard supported.contains(subcommand) else {
-      throw CLIUsageError("unsupported instance subcommand '\(subcommand)'")
-    }
-    let target = arguments.count >= 2 && !arguments[1].hasPrefix("--") ? arguments[1] : nil
-    if subcommand != "list", target == nil {
-      throw CLIUsageError("instance \(subcommand) requires an instance identity")
-    }
-    let optionStart = target == nil ? 1 : 2
     return try parseGeneric(
       scope: "instance",
-      command: subcommand,
-      target: target,
-      arguments: Array(arguments.dropFirst(optionStart)),
-      allowTableOutput: subcommand == "list",
-      defaultOutput: subcommand == "list" ? .table : .json
+      command: family.subcommand.rawValue,
+      target: route.target,
+      arguments: route.options,
+      allowTableOutput: family.subcommand == .list,
+      defaultOutput: family.subcommand == .list ? .table : .json
     )
   }
 
   private func parseMemory(_ arguments: [String]) throws -> MemoryCommand {
-    guard let subcommand = arguments.first else {
-      throw CLIUsageError("memory command requires a subcommand")
+    let family = try ParsedMemoryFamily.parseCLI(arguments)
+    let route = try ParsedTargetAndOptions.parseCLI(family.remainder)
+    let kind = family.subcommand
+    guard let memoryId = route.target else {
+      throw CLIUsageError("memory \(kind.rawValue) requires a memory id")
     }
-    guard let kind = MemoryCommandKind(rawValue: subcommand) else {
-      throw CLIUsageError("unsupported memory subcommand '\(subcommand)'")
-    }
-    guard arguments.count >= 2, !arguments[1].hasPrefix("--") else {
-      throw CLIUsageError("memory \(subcommand) requires a memory id")
-    }
-    let options = try parseMemoryOptions(memoryId: arguments[1], tokens: Array(arguments.dropFirst(2)))
+    let options = try parseMemoryOptions(memoryId: memoryId, tokens: route.options)
     switch kind {
     case .save, .update:
       if options.payloadJSON != nil && options.payloadFile != nil {
-        throw CLIUsageError("memory \(subcommand) accepts only one of --payload-json or --payload-file")
+        throw CLIUsageError("memory \(kind.rawValue) accepts only one of --payload-json or --payload-file")
       }
       if options.payloadJSON == nil && options.payloadFile == nil {
-        throw CLIUsageError("memory \(subcommand) requires --payload-json or --payload-file")
+        throw CLIUsageError("memory \(kind.rawValue) requires --payload-json or --payload-file")
       }
       if options.workflowId == nil {
-        throw CLIUsageError("memory \(subcommand) requires --workflow-id")
+        throw CLIUsageError("memory \(kind.rawValue) requires --workflow-id")
       }
       if kind == .update && options.recordId == nil {
         throw CLIUsageError("memory update requires --record-id")
@@ -914,11 +929,11 @@ public struct RielaArgumentParser: CLIArgumentParsing {
         throw CLIUsageError("memory save does not support --clear-files")
       }
       if options.clearFiles && !options.filePaths.isEmpty {
-        throw CLIUsageError("memory \(subcommand) cannot combine --clear-files with --file")
+        throw CLIUsageError("memory \(kind.rawValue) cannot combine --clear-files with --file")
       }
     case .load, .search:
       if options.workflowId == nil && !options.allWorkflows {
-        throw CLIUsageError("memory \(subcommand) requires --workflow-id")
+        throw CLIUsageError("memory \(kind.rawValue) requires --workflow-id")
       }
     case .metadata, .tags, .relatedIds:
       break
@@ -927,38 +942,70 @@ public struct RielaArgumentParser: CLIArgumentParsing {
   }
 
   private func parseNote(_ arguments: [String]) throws -> NoteCommand {
-    guard let subcommand = arguments.first else {
-      throw CLIUsageError("note command requires a subcommand")
-    }
-    guard let kind = NoteCommandKind(rawValue: subcommand) else {
-      throw CLIUsageError("unsupported note subcommand '\(subcommand)'")
-    }
-    if kind == .notebook || kind == .storage || kind == .client || kind == .autoAction {
-      guard arguments.count >= 2, !arguments[1].hasPrefix("--") else {
-        throw CLIUsageError("note \(subcommand) requires a subcommand")
-      }
-      let action = arguments[1]
+    let family = try ParsedNoteFamily.parseCLI(arguments)
+    let kind = family.subcommand
+    if kind == .notebook {
+      let route = try ParsedNoteNotebookRoute.parseCLI(family.remainder)
       return NoteCommand(
         kind: kind,
         options: try parseGeneric(
           scope: "note",
-          command: subcommand,
-          target: action,
-          arguments: Array(arguments.dropFirst(2)),
-          allowTableOutput: (kind == .notebook || kind == .client) && action == "list",
+          command: kind.rawValue,
+          target: route.action.rawValue,
+          arguments: route.options,
+          allowTableOutput: route.action == .list,
           defaultOutput: .text
         )
       )
     }
-    let target = arguments.count >= 2 && !arguments[1].hasPrefix("--") ? arguments[1] : nil
-    let optionStart = target == nil ? 1 : 2
+    if kind == .storage {
+      let route = try ParsedNoteStorageRoute.parseCLI(family.remainder)
+      return NoteCommand(
+        kind: kind,
+        options: try parseGeneric(
+          scope: "note",
+          command: kind.rawValue,
+          target: route.action.rawValue,
+          arguments: route.options,
+          defaultOutput: .text
+        )
+      )
+    }
+    if kind == .client {
+      let route = try ParsedNoteClientRegistrationRoute.parseCLI(family.remainder)
+      return NoteCommand(
+        kind: kind,
+        options: try parseGeneric(
+          scope: "note",
+          command: kind.rawValue,
+          target: route.action.rawValue,
+          arguments: route.options,
+          allowTableOutput: route.action == .list,
+          defaultOutput: .text
+        )
+      )
+    }
+    if kind == .autoAction {
+      let route = try ParsedNoteAutoActionRoute.parseCLI(family.remainder)
+      return NoteCommand(
+        kind: kind,
+        options: try parseGeneric(
+          scope: "note",
+          command: kind.rawValue,
+          target: route.action.rawValue,
+          arguments: route.options,
+          defaultOutput: .text
+        )
+      )
+    }
+    let route = try ParsedTargetAndOptions.parseCLI(family.remainder)
     return NoteCommand(
       kind: kind,
       options: try parseGeneric(
         scope: "note",
-        command: subcommand,
-        target: target,
-        arguments: Array(arguments.dropFirst(optionStart)),
+        command: kind.rawValue,
+        target: route.target,
+        arguments: route.options,
         allowTableOutput: kind == .list || kind == .search,
         defaultOutput: .text
       )

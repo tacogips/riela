@@ -6,7 +6,7 @@ public enum NoteStoreSchemaError: Error, Equatable, Sendable {
 }
 
 public enum NoteStoreSchema {
-  public static let currentVersion = 3
+  public static let currentVersion = 4
   public static let autoTaggingWorkflowId = "note-auto-tagging"
 
   public static func prepare(on driver: NoteDatabaseDriving) throws {
@@ -204,6 +204,32 @@ public enum NoteStoreSchema {
     try database.execute("DROP TABLE auto_action_dispatches_v2")
     try database.execute(autoActionDispatchesStatusIndexStatement)
   }
+
+  fileprivate static func migrateToV4(in database: SQLiteDatabase) throws {
+    if try !columnExists("parent_tag_id", in: "tags", database: database) {
+      try database.execute(
+        "ALTER TABLE tags ADD COLUMN parent_tag_id TEXT REFERENCES tags(tag_id)"
+      )
+    }
+    if try !columnExists("progress", in: "notebooks", database: database) {
+      try database.execute(
+        """
+        ALTER TABLE notebooks
+        ADD COLUMN progress TEXT NOT NULL DEFAULT 'none'
+          CHECK (progress IN ('none','progress','done','pending'))
+        """
+      )
+    }
+  }
+
+  private static func columnExists(
+    _ columnName: String,
+    in tableName: String,
+    database: SQLiteDatabase
+  ) throws -> Bool {
+    try database.query("PRAGMA table_info(\(tableName))")
+      .contains { $0["name"] == columnName }
+  }
 }
 
 private struct NoteSchemaMigration: Sendable {
@@ -213,7 +239,8 @@ private struct NoteSchemaMigration: Sendable {
 
 private let schemaMigrations: [NoteSchemaMigration] = [
   NoteSchemaMigration(version: 2, apply: NoteStoreSchema.migrateToV2),
-  NoteSchemaMigration(version: 3, apply: NoteStoreSchema.migrateToV3)
+  NoteSchemaMigration(version: 3, apply: NoteStoreSchema.migrateToV3),
+  NoteSchemaMigration(version: 4, apply: NoteStoreSchema.migrateToV4)
 ]
 
 final class NoteSQLiteCapabilityCache: @unchecked Sendable {
@@ -285,6 +312,7 @@ private let systemTagClasses: [SystemTagClass] = [
   SystemTagClass(classId: "event", label: "Event", description: "Events and milestones"),
   SystemTagClass(classId: "document-kind", label: "Document Kind", description: "Notebook or document kinds"),
   SystemTagClass(classId: "topic", label: "Topic", description: "Conceptual topics"),
+  SystemTagClass(classId: "folder", label: "Folder", description: "Notebook organization folders"),
   SystemTagClass(classId: "source", label: "Source", description: "Original source types and references"),
   SystemTagClass(classId: "workflow", label: "Workflow", description: "Workflow-originated processing tags")
 ]
@@ -307,6 +335,8 @@ private let schemaStatements = [
   CREATE TABLE IF NOT EXISTS notebooks (
     notebook_id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
+    progress TEXT NOT NULL DEFAULT 'none'
+      CHECK (progress IN ('none','progress','done','pending')),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     meta_json BLOB CHECK (meta_json IS NULL OR json_valid(meta_json, 8))
@@ -343,6 +373,7 @@ private let schemaStatements = [
     tag_id TEXT PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     class_id TEXT REFERENCES tag_classes(class_id),
+    parent_tag_id TEXT REFERENCES tags(tag_id),
     is_system INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
   )

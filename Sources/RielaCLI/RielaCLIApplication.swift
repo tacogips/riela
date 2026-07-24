@@ -13,6 +13,7 @@ public struct RielaCLIApplication: Sendable {
   public var runCommand: WorkflowRunCommand
   public var manifestValidateCommand: WorkflowManifestValidateCommand
   public var workflowCatalogCommand: WorkflowCatalogCommand
+  public var workflowMutableRegistrationCommand: WorkflowMutableRegistrationCommand
   public var sessionRerunCommand: SessionRerunCommand
   public var sessionResumeCommand: SessionResumeCommand
   public var sessionDiscoveryCommand: SessionDiscoveryCommand
@@ -26,6 +27,7 @@ public struct RielaCLIApplication: Sendable {
   public var noteCommandRunner: NoteCommandRunner
   public var instanceCommandRunner: InstanceCommandRunner
   public var doctorCommand: DoctorCommand
+  public var garbageCollectionCommand: GarbageCollectionCommand
   public var loopCommandRunner: LoopCommandRunner
   public var sessionContinueCommand: SessionContinueCommand
   public var scopedCommandRunner: ScopedParityCommandRunner
@@ -37,6 +39,7 @@ public struct RielaCLIApplication: Sendable {
     runCommand: WorkflowRunCommand = WorkflowRunCommand(),
     manifestValidateCommand: WorkflowManifestValidateCommand = WorkflowManifestValidateCommand(),
     workflowCatalogCommand: WorkflowCatalogCommand = WorkflowCatalogCommand(),
+    workflowMutableRegistrationCommand: WorkflowMutableRegistrationCommand = WorkflowMutableRegistrationCommand(),
     sessionRerunCommand: SessionRerunCommand = SessionRerunCommand(),
     sessionResumeCommand: SessionResumeCommand = SessionResumeCommand(),
     sessionDiscoveryCommand: SessionDiscoveryCommand = SessionDiscoveryCommand(),
@@ -50,6 +53,7 @@ public struct RielaCLIApplication: Sendable {
     noteCommandRunner: NoteCommandRunner = NoteCommandRunner(),
     instanceCommandRunner: InstanceCommandRunner = InstanceCommandRunner(),
     doctorCommand: DoctorCommand = DoctorCommand(),
+    garbageCollectionCommand: GarbageCollectionCommand = GarbageCollectionCommand(),
     loopCommandRunner: LoopCommandRunner = LoopCommandRunner(),
     sessionContinueCommand: SessionContinueCommand = SessionContinueCommand(),
     scopedCommandRunner: ScopedParityCommandRunner = ScopedParityCommandRunner()
@@ -60,6 +64,7 @@ public struct RielaCLIApplication: Sendable {
     self.runCommand = runCommand
     self.manifestValidateCommand = manifestValidateCommand
     self.workflowCatalogCommand = workflowCatalogCommand
+    self.workflowMutableRegistrationCommand = workflowMutableRegistrationCommand
     self.sessionRerunCommand = sessionRerunCommand
     self.sessionResumeCommand = sessionResumeCommand
     self.sessionDiscoveryCommand = sessionDiscoveryCommand
@@ -73,6 +78,7 @@ public struct RielaCLIApplication: Sendable {
     self.noteCommandRunner = noteCommandRunner
     self.instanceCommandRunner = instanceCommandRunner
     self.doctorCommand = doctorCommand
+    self.garbageCollectionCommand = garbageCollectionCommand
     self.loopCommandRunner = loopCommandRunner
     self.sessionContinueCommand = sessionContinueCommand
     self.scopedCommandRunner = scopedCommandRunner
@@ -100,32 +106,8 @@ public struct RielaCLIApplication: Sendable {
         return CLICommandResult(exitCode: .success, stdout: packageHelpText(scope: scope))
       case .version:
         return CLICommandResult(exitCode: .success, stdout: "\(rielaSwiftMigrationVersion)\n")
-      case let .workflow(.validate(options)):
-        return await validateCommand.run(options)
-      case let .workflow(.inspect(options)):
-        return await inspectCommand.run(options)
-      case let .workflow(.usage(options)):
-        return await inspectCommand.run(options)
-      case let .workflow(.runHelp(target)):
-        return CLICommandResult(exitCode: .success, stdout: workflowRunHelpText(target: target))
-      case let .workflow(.run(options)):
-        return await runCommand.run(options)
-      case let .workflow(.list(options)):
-        return workflowCatalogCommand.list(options)
-      case let .workflow(.status(options)):
-        return workflowCatalogCommand.status(options)
-      case let .workflow(.manifestValidate(options)):
-        return await manifestValidateCommand.run(options)
-      case let .workflow(.checkout(options)):
-        return workflowScaffoldCommand.checkout(options)
-      case let .workflow(.create(options)):
-        return workflowScaffoldCommand.create(options)
-      case let .workflow(.selfImprove(options)):
-        return workflowScaffoldCommand.selfImprove(options)
-      case let .workflow(.version(options)):
-        return workflowVersionCommand.run(options)
-      case let .workflow(.package(command)):
-        return await packageCommandRunner.run(command)
+      case let .workflow(command):
+        return await runWorkflow(command)
       case let .session(command):
         return await runSession(command)
       case let .loop(command):
@@ -144,6 +126,8 @@ public struct RielaCLIApplication: Sendable {
         return instanceCommandRunner.run(options)
       case let .doctor(options):
         return await doctorCommand.run(options)
+      case let .gc(options):
+        return garbageCollectionCommand.run(options)
       case let .scoped(command):
         return await scopedCommandRunner.run(command)
       }
@@ -151,6 +135,41 @@ public struct RielaCLIApplication: Sendable {
       return renderParserFailure(arguments: arguments, error: error)
     } catch {
       return CLICommandResult(exitCode: .failure, stderr: "\(error)")
+    }
+  }
+
+  private func runWorkflow(_ command: WorkflowCommand) async -> CLICommandResult {
+    switch command {
+    case let .validate(options):
+      return await validateCommand.run(options)
+    case let .inspect(options), let .usage(options):
+      return await inspectCommand.run(options)
+    case let .runHelp(target):
+      return CLICommandResult(exitCode: .success, stdout: workflowRunHelpText(target: target))
+    case let .run(options):
+      return await runCommand.run(options)
+    case let .list(options):
+      return workflowCatalogCommand.list(options)
+    case let .status(options):
+      return workflowCatalogCommand.status(options)
+    case let .register(options):
+      return workflowMutableRegistrationCommand.run(options)
+    case .registerHelp:
+      return CLICommandResult(exitCode: .success, stdout: workflowRegisterHelpText)
+    case let .registry(options):
+      return WorkflowRegistryCLICommand().run(options)
+    case let .manifestValidate(options):
+      return await manifestValidateCommand.run(options)
+    case let .checkout(options):
+      return workflowScaffoldCommand.checkout(options)
+    case let .create(options):
+      return workflowScaffoldCommand.create(options)
+    case let .selfImprove(options):
+      return workflowScaffoldCommand.selfImprove(options)
+    case let .version(options):
+      return workflowVersionCommand.run(options)
+    case let .package(command):
+      return await packageCommandRunner.run(command)
     }
   }
 
@@ -164,7 +183,7 @@ public struct RielaCLIApplication: Sendable {
       return sessionDiscoveryCommand.run(options)
     case let .progress(options), let .health(options), let .status(options),
          let .stepRuns(options), let .export(options), let .logs(options):
-      return sessionInspectionCommand.run(options)
+      return await sessionInspectionCommand.run(options)
     case let .continueSession(options):
       return await sessionContinueCommand.run(options)
     }
@@ -174,11 +193,12 @@ public struct RielaCLIApplication: Sendable {
     guard requestsStructuredOutput(arguments) else {
       return CLICommandResult(exitCode: .usage, stderr: error.message)
     }
-    guard arguments.first == "workflow" else {
+    let invocation = ParsedClientInvocation.parseCLI(arguments)
+    guard invocation.scope == "workflow" else {
       let result = CLIUnsupportedCommandResult(
-        scope: arguments.first ?? "riela",
-        command: arguments.dropFirst().first,
-        target: arguments.dropFirst(2).first,
+        scope: invocation.scope,
+        command: invocation.command,
+        target: invocation.target,
         exitCode: CLIExitCode.usage.rawValue,
         error: error.message
       )
@@ -187,8 +207,8 @@ public struct RielaCLIApplication: Sendable {
         stdout: (try? jsonString(result)) ?? #"{"error":"failed to encode parser failure","exitCode":2}"# + "\n"
       )
     }
-    let subcommand = arguments.count > 1 ? arguments[1] : "workflow"
-    let target = parserFailureTarget(arguments: arguments, subcommand: subcommand)
+    let subcommand = invocation.command ?? "workflow"
+    let target = invocation.target ?? "workflow \(subcommand)"
     let exitCode = CLIExitCode.usage.rawValue
     let stdout: String?
     switch subcommand {
@@ -224,23 +244,8 @@ public struct RielaCLIApplication: Sendable {
   }
 
   private func requestsStructuredOutput(_ arguments: [String]) -> Bool {
-    for index in arguments.indices {
-      if arguments[index] == "--output", index + 1 < arguments.count {
-        return arguments[index + 1] != "text" && arguments[index + 1] != "table"
-      }
-      if arguments[index].hasPrefix("--output=") {
-        let value = String(arguments[index].dropFirst("--output=".count))
-        return value != "text" && value != "table"
-      }
-    }
-    return true
-  }
-
-  private func parserFailureTarget(arguments: [String], subcommand: String) -> String {
-    guard arguments.count > 2, !arguments[2].hasPrefix("--") else {
-      return "workflow \(subcommand)"
-    }
-    return arguments[2]
+    let output = try? parseOutputOnly(arguments, allowTableOutput: true, defaultOutput: .json)
+    return output != .text && output != .table
   }
 
 }
@@ -300,7 +305,14 @@ Usage:
   riela workflow validate <workflow> [--scope project|user|auto] [--output jsonl|json|text]
   riela workflow inspect <workflow> [--scope project|user|auto] [--output jsonl|json|text]
   riela workflow usage <workflow> [--scope project|user|auto] [--output jsonl|json|text]
-  riela workflow list|status [--output jsonl|json|text|table]
+  riela workflow list [query] [--scope project|user|auto] [--exclude-mutable] [--activation active|deactivated] [--provenance mutable|immutable] [--output jsonl|json|text|table]
+    (--exclude-temporary remains a deprecated alias for --exclude-mutable)
+  riela workflow status <workflow> [--output jsonl|json|text|table]
+  riela workflow register <path> --mutable [--overwrite] [--working-dir <dir>] [--output jsonl|json|text|table]
+    (--temporary remains a deprecated alias for --mutable)
+  riela workflow update <workflow> <path> [--scope auto|project|user] [--origin-id <id>] [--output jsonl|json|text]
+  riela workflow delete|activate|deactivate <workflow> [--scope auto|project|user] [--origin-id <id>] [--output jsonl|json|text]
+  riela workflow consolidate --source <workflow> --source <workflow> --replacement <path> --retire deactivate|delete [--output jsonl|json|text]
   riela workflow manifest validate <manifest-path> [--output jsonl|json|text]
   riela workflow checkout|create|self-improve <workflow> [options]
   riela workflow versions <workflow> [--output json|text]
@@ -311,6 +323,7 @@ Usage:
   riela workflow run <workflow> [--variables <json|@file>] [--instance <name>] [--mock-scenario <path>] [--auto-improve] [--output jsonl|json|text]
   riela instance list|show|create|update|remove [identity] [--workflow <id>] [--scope project|user|all] [--output json|jsonl|text|table]
   riela doctor [--scope project|user|auto] [--working-dir <dir>] [--output json|text]
+  riela gc [--retention-days <days>] [--scope user|project|all] [--working-dir <dir>] [--dry-run] [--output json|text]
   riela package <search|list|status|install|ci|update|remove|checkout|init|validate|pack|publish> [options]
   riela node search [query] [--scope project|user|auto] [--registry default] [--refresh] [--output json|text|table]
   riela node list [query] [--scope project|user|auto] [--registry default] [--refresh] [--output json|text|table]
@@ -334,7 +347,9 @@ Usage:
   riela session resume <session-id> [--max-steps <n>] [--scope project|user|auto] [--output jsonl|json|text]
   riela session list [--workflow <name>] [--status created|running|completed|failed] [--limit 10] [--scope project|user|auto] [--output jsonl|json|text|table]
   riela session latest --workflow <name> [--scope project|user|auto] [--output jsonl|json|text|table]
-  riela session progress|health|status|continue|step-runs|export|logs [session-id] [options]
+  riela session progress <session-id> [--follow] [--poll-interval 2.0] [--include-children] [--output text|jsonl|json]
+  riela session health <session-id> [--output text|jsonl|json]  # backendActivity: active|quiet|stalled-suspect|unknown
+  riela session status|continue|step-runs|export|logs <session-id> [options]
   riela loop status|evidence|gates <session-id> [--session-store <dir>] [--output jsonl|json|text]
   riela loop list [--workflow <name>] [--status active|created|running|completed|failed] [--gate-decision accepted|rejected|needs_work|skipped] [--limit 50] [--session-store <dir>] [--output jsonl|json|text|table]
   riela loop history <workflow> [--status active|created|running|completed|failed] [--gate-decision accepted|rejected|needs_work|skipped] [--limit 50] [--session-store <dir>] [--output jsonl|json|text|table]
@@ -348,6 +363,11 @@ for automation, agents, and LLM-driven tool use, especially for workflow run.
 Use --output text for human-readable output. Use --output json only when a
 legacy caller explicitly requires one non-streaming JSON document after
 completion.
+
+Session progress observers are read-only. `--follow` and `--poll-interval`
+(finite `0.1...3600`, default `2.0`) are progress-only; follow rejects
+`--output json`, emits one text or JSONL digest per refresh, and exits after the
+requested session or included child tree is terminal.
 
 Bare `riela serve` starts an HTTP listener and remains active until SIGINT or
 SIGTERM. The default address is 127.0.0.1:8787. The status, health, overview,
@@ -466,7 +486,10 @@ func workflowRunHelpText(target: String?) -> String {
   Runtime options:
     --session-store <path>         Persist CLI session records under this store.
     --artifact-root <path>         Write runtime artifacts under this root.
-    --max-steps <n>
+    --max-steps <n>               Hard per-session limit inherited by child workflows.
+    --disable-default-loop-guard  Disable the synthesized loop convergence guard (4 gate
+                                  visits, 2 identical-finding rounds, 3 terminal steps)
+                                  only for workflows without workflow.loop.
     --max-concurrency <n>          Cap concurrent fanout branch execution.
     --max-loop-iterations <n>
     --default-timeout-ms <n>

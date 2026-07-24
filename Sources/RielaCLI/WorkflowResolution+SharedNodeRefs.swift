@@ -1,13 +1,108 @@
 import Foundation
 import RielaCore
 
+struct WorkflowSharedNodeActivationPolicy: Sendable {
+  private var catalogOriginsByLocator: [String: [WorkflowOriginIdentity]]
+  private var deactivatedOriginIds: Set<String>
+
+  static let includeDeactivated = WorkflowSharedNodeActivationPolicy(
+    catalogOrigins: [],
+    deactivatedOrigins: [],
+    includeDeactivated: true
+  )
+
+  init(
+    catalogOrigins: [WorkflowOriginIdentity],
+    deactivatedOrigins: [WorkflowOriginIdentity],
+    includeDeactivated: Bool
+  ) {
+    catalogOriginsByLocator = Dictionary(
+      grouping: catalogOrigins,
+      by: \.canonicalLocator
+    )
+    deactivatedOriginIds = includeDeactivated
+      ? []
+      : Set(deactivatedOrigins.map(\.originId))
+  }
+
+  func requireActive(
+    name: String,
+    workflowId: String,
+    directory: URL,
+    scope: WorkflowScope,
+    provenance: WorkflowProvenance
+  ) throws {
+    let canonicalLocator = directory.resolvingSymlinksInPath().standardizedFileURL.path
+    let matchingOrigins = (catalogOriginsByLocator[canonicalLocator] ?? [])
+      .filter { $0.workflowId == workflowId }
+    let origin: WorkflowOriginIdentity
+    if matchingOrigins.count == 1, let exact = matchingOrigins.first {
+      origin = exact
+    } else if let named = matchingOrigins.filter({ $0.name == name }).only {
+      origin = named
+    } else if matchingOrigins.isEmpty {
+      origin = workflowOriginIdentity(
+        name: name,
+        workflowId: workflowId,
+        scope: scope,
+        sourceKind: .workflow,
+        provenance: provenance,
+        locator: canonicalLocator
+      )
+    } else {
+      throw WorkflowRegistryError(
+        code: .invalidOrigin,
+        message: "shared workflow '\(name)' resolves to multiple catalog origins",
+        workflowId: workflowId
+      )
+    }
+    guard deactivatedOriginIds.contains(origin.originId) else { return }
+    throw WorkflowRegistryError(
+      code: .workflowDeactivated,
+      message: "shared workflow '\(workflowId)' is deactivated",
+      workflowId: workflowId,
+      originId: origin.originId
+    )
+  }
+
+  func requireActiveCandidate(
+    name: String,
+    directory: URL
+  ) throws {
+    let canonicalLocator = directory.resolvingSymlinksInPath().standardizedFileURL.path
+    let matchingOrigins = catalogOriginsByLocator[canonicalLocator] ?? []
+    let origin: WorkflowOriginIdentity?
+    if matchingOrigins.count == 1 {
+      origin = matchingOrigins.first
+    } else {
+      origin = matchingOrigins.filter { $0.name == name }.only
+    }
+    guard let origin, deactivatedOriginIds.contains(origin.originId) else { return }
+    throw WorkflowRegistryError(
+      code: .workflowDeactivated,
+      message: "workflow '\(origin.workflowId)' is deactivated",
+      workflowId: origin.workflowId,
+      originId: origin.originId
+    )
+  }
+}
+
+private extension Collection {
+  var only: Element? {
+    count == 1 ? first : nil
+  }
+}
+
 extension FileSystemWorkflowBundleResolver {
   func materializeSharedNodeReferences(
     in workflow: WorkflowDefinition,
     nodePayloads: [String: AgentNodePayload],
     rootDirectory: URL,
+    activationRootDirectory: URL,
     scope: WorkflowScope,
-    promptTemplateLoader: PromptTemplateAssetLoader
+    provenance: WorkflowProvenance,
+    promptTemplateLoader: PromptTemplateAssetLoader,
+    activationPolicy: WorkflowSharedNodeActivationPolicy
   ) throws -> (workflow: WorkflowDefinition, nodePayloads: [String: AgentNodePayload]) {
     var workflow = workflow
     var nodePayloads = nodePayloads
@@ -20,8 +115,11 @@ extension FileSystemWorkflowBundleResolver {
         nodeRef,
         currentWorkflowId: workflow.workflowId,
         rootDirectory: rootDirectory,
+        activationRootDirectory: activationRootDirectory,
         scope: scope,
+        provenance: provenance,
         promptTemplateLoader: promptTemplateLoader,
+        activationPolicy: activationPolicy,
         resolutionStack: [WorkflowSharedNodeRef(workflowId: workflow.workflowId, nodeId: localNodeId)]
       )
       workflow.nodeRegistry[index] = mergeSharedNodeReference(local: workflow.nodeRegistry[index], shared: resolved.node)
@@ -38,12 +136,18 @@ extension FileSystemWorkflowBundleResolver {
     _ nodeRef: WorkflowSharedNodeRef,
     currentWorkflowId: String,
     rootDirectory: URL,
+    activationRootDirectory: URL,
     scope: WorkflowScope,
+    provenance: WorkflowProvenance,
     promptTemplateLoader: PromptTemplateAssetLoader,
+    activationPolicy: WorkflowSharedNodeActivationPolicy,
     resolutionStack: [WorkflowSharedNodeRef]
   ) throws -> (node: WorkflowNodeRegistryRef, payload: AgentNodePayload?) {
     try validateSharedNodeReference(nodeRef, resolutionStack: resolutionStack)
 
+    let activationDirectory = activationRootDirectory
+      .appendingPathComponent(nodeRef.workflowId, isDirectory: true)
+      .standardizedFileURL
     let referencedDirectory = rootDirectory
       .appendingPathComponent(nodeRef.workflowId, isDirectory: true)
       .standardizedFileURL
@@ -61,6 +165,13 @@ extension FileSystemWorkflowBundleResolver {
     guard let referencedWorkflow = validation.workflow else {
       throw WorkflowResolutionError.invalidWorkflow(validation.diagnostics)
     }
+    try activationPolicy.requireActive(
+      name: nodeRef.workflowId,
+      workflowId: referencedWorkflow.workflowId,
+      directory: activationDirectory,
+      scope: scope,
+      provenance: provenance
+    )
     guard let referencedNode = referencedWorkflow.nodeRegistry.first(where: { $0.id == nodeRef.nodeId }) else {
       throw WorkflowResolutionError.invalidWorkflow([
         WorkflowValidationDiagnostic(
@@ -75,8 +186,11 @@ extension FileSystemWorkflowBundleResolver {
         nestedRef,
         currentWorkflowId: nodeRef.workflowId,
         rootDirectory: rootDirectory,
+        activationRootDirectory: activationRootDirectory,
         scope: scope,
+        provenance: provenance,
         promptTemplateLoader: promptTemplateLoader,
+        activationPolicy: activationPolicy,
         resolutionStack: resolutionStack + [nodeRef]
       )
       return (mergeSharedNodeReference(local: referencedNode, shared: resolved.node), resolved.payload)

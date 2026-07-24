@@ -9,7 +9,7 @@ public extension NoteService {
     linkKind: String = "related",
     provenance: NoteProvenance = .human
   ) throws -> NoteLink {
-    try driver.withDatabase { database in
+    return try driver.withDatabase { database in
       try database.transaction { db in
         try linkNotesInDatabase(
           from: fromNoteId,
@@ -38,8 +38,14 @@ public extension NoteService {
   }
 
   func proposeLinks(noteId: String, limit: Int = 8) throws -> [NoteLinkProposal] {
-    try driver.withDatabase { database in
-      let note = try requireNote(noteId, in: database)
+    guard limit >= 0 else {
+      throw NoteServiceError.invalidInput("note link proposal limit must not be negative")
+    }
+    guard limit > 0 else {
+      return []
+    }
+    return try driver.withDatabase { database in
+      _ = try requireNote(noteId, in: database)
       let links = try database.query(
         """
         SELECT from_note_id, to_note_id, link_kind, provenance, created_at
@@ -49,37 +55,20 @@ public extension NoteService {
         bindings: [.text(noteId), .text(noteId)]
       ).map(noteLink(from:))
       let excludedIds = Set(links.map { $0.counterpartNoteId(for: noteId) } + [noteId])
-      let terms = linkProposalTerms(from: note.bodyMarkdown)
-      guard !terms.isEmpty else {
-        return []
-      }
-      var proposals: [NoteLinkProposal] = []
-      var seenIds = excludedIds
-      for term in terms {
-        let results = try searchNotesInDatabase(
-          query: term,
-          tagFilter: [],
-          classFilter: [],
-          sort: .createdAtDesc,
-          createdAfter: nil,
-          createdBefore: nil,
-          includeLinked: false,
-          limit: max(limit * 2, 10),
-          offset: 0,
-          in: database
+      let results = try noteGraphNeighborsInDatabase(
+        noteIds: [noteId],
+        maxDepth: NoteGraphPolicy.associationMaxDepth,
+        limit: limit,
+        resultExclusions: excludedIds,
+        in: database
+      )
+      return results.map { result in
+        NoteLinkProposal(
+          targetNote: result.note,
+          linkKind: "related",
+          reason: "Graph \(result.edgeKind.rawValue) path: \(result.pathNoteIds.joined(separator: " -> "))."
         )
-        for result in results where seenIds.insert(result.note.noteId).inserted {
-          proposals.append(NoteLinkProposal(
-            targetNote: result.note,
-            linkKind: "related",
-            reason: "Shares the term \"\(term)\" with this note."
-          ))
-          if proposals.count >= limit {
-            return proposals
-          }
-        }
       }
-      return proposals
     }
   }
 
@@ -484,32 +473,4 @@ private extension NoteLink {
   func counterpartNoteId(for noteId: String) -> String {
     fromNoteId == noteId ? toNoteId : fromNoteId
   }
-}
-
-private func linkProposalTerms(from bodyMarkdown: String) -> [String] {
-  var seen = Set<String>()
-  var terms: [String] = []
-  var current = String.UnicodeScalarView()
-  func flushCurrentTerm() {
-    let term = String(current).trimmingCharacters(in: .whitespacesAndNewlines)
-    current.removeAll(keepingCapacity: true)
-    guard term.count >= 4, seen.insert(term.lowercased()).inserted else {
-      return
-    }
-    terms.append(term)
-  }
-  for scalar in bodyMarkdown.unicodeScalars {
-    if CharacterSet.alphanumerics.contains(scalar) {
-      current.append(scalar)
-    } else {
-      flushCurrentTerm()
-    }
-    if terms.count >= 8 {
-      break
-    }
-  }
-  if terms.count < 8 {
-    flushCurrentTerm()
-  }
-  return terms
 }

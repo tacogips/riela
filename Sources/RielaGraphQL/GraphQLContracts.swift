@@ -259,6 +259,8 @@ public struct GraphQLLoopRecoveryLineageDTO: Codable, Equatable, Sendable {
 public struct GraphQLWorkflowSessionDTO: Codable, Equatable, Sendable {
   public var workflowId: String
   public var sessionId: String
+  public var parentSessionId: String?
+  public var rootSessionId: String?
   public var workflowExecutionId: String
   public var status: String
   public var currentStepId: String?
@@ -284,6 +286,8 @@ public struct GraphQLWorkflowSessionDTO: Codable, Equatable, Sendable {
   public init(
     workflowId: String,
     sessionId: String,
+    parentSessionId: String? = nil,
+    rootSessionId: String? = nil,
     workflowExecutionId: String? = nil,
     status: String,
     currentStepId: String? = nil,
@@ -308,6 +312,8 @@ public struct GraphQLWorkflowSessionDTO: Codable, Equatable, Sendable {
   ) {
     self.workflowId = workflowId
     self.sessionId = sessionId
+    self.parentSessionId = parentSessionId
+    self.rootSessionId = rootSessionId
     self.workflowExecutionId = workflowExecutionId ?? sessionId
     self.status = status
     self.currentStepId = currentStepId
@@ -329,43 +335,6 @@ public struct GraphQLWorkflowSessionDTO: Codable, Equatable, Sendable {
     self.loopEvidence = loopEvidence
     self.loopGates = loopGates
     self.loopRecovery = loopRecovery
-  }
-}
-
-public struct GraphQLWorkflowSessionSummaryDTO: Codable, Equatable, Sendable {
-  public var sessionId: String
-  public var workflowName: String
-  public var status: String
-  public var failureKind: String?
-  public var currentStepId: String?
-  public var instanceIdentity: String?
-  public var instanceKind: String?
-  public var executionCount: Int
-  public var updatedAt: Date
-  public var sessionStore: String?
-
-  public init(
-    sessionId: String,
-    workflowName: String,
-    status: String,
-    failureKind: String? = nil,
-    currentStepId: String? = nil,
-    instanceIdentity: String? = nil,
-    instanceKind: String? = nil,
-    executionCount: Int,
-    updatedAt: Date,
-    sessionStore: String? = nil
-  ) {
-    self.sessionId = sessionId
-    self.workflowName = workflowName
-    self.status = status
-    self.failureKind = failureKind
-    self.currentStepId = currentStepId
-    self.instanceIdentity = instanceIdentity
-    self.instanceKind = instanceKind
-    self.executionCount = executionCount
-    self.updatedAt = updatedAt
-    self.sessionStore = sessionStore
   }
 }
 
@@ -706,6 +675,8 @@ public struct GraphQLWorkflowInstanceMutationResult: Codable, Equatable, Sendabl
 public protocol GraphQLControlPlaneServicing: Sendable {
   func inspectSession(_ request: GraphQLInspectSessionRequest) async -> GraphQLInspectSessionResult
   func workflowSessions(_ request: GraphQLWorkflowSessionsRequest) async -> GraphQLWorkflowSessionsResult
+  func sessionProgress(_ request: GraphQLSessionProgressRequest) async -> GraphQLSessionObservabilityResult
+  func sessionHealth(_ request: GraphQLSessionHealthRequest) async -> GraphQLSessionObservabilityResult
   func loopEvidence(_ request: GraphQLLoopEvidenceRequest) async -> GraphQLLoopEvidenceResult
   func continueSession(_ request: GraphQLContinueSessionRequest) async -> GraphQLControlPlaneResult
   func managerSession(_ request: GraphQLManagerSessionLookupRequest) async -> GraphQLManagerSessionViewDTO?
@@ -715,6 +686,26 @@ public protocol GraphQLControlPlaneServicing: Sendable {
 }
 
 public extension GraphQLControlPlaneServicing {
+  func sessionProgress(_ request: GraphQLSessionProgressRequest) async -> GraphQLSessionObservabilityResult {
+    GraphQLSessionObservabilityResult(
+      result: GraphQLControlPlaneResult(
+        accepted: false,
+        status: GraphQLLoopEvidenceQueryStatus.error.rawValue,
+        diagnostics: ["session progress is not available from this service"]
+      )
+    )
+  }
+
+  func sessionHealth(_ request: GraphQLSessionHealthRequest) async -> GraphQLSessionObservabilityResult {
+    GraphQLSessionObservabilityResult(
+      result: GraphQLControlPlaneResult(
+        accepted: false,
+        status: GraphQLLoopEvidenceQueryStatus.error.rawValue,
+        diagnostics: ["session health is not available from this service"]
+      )
+    )
+  }
+
   func workflowSessions(_ request: GraphQLWorkflowSessionsRequest) async -> GraphQLWorkflowSessionsResult {
     GraphQLWorkflowSessionsResult(
       result: GraphQLControlPlaneResult(
@@ -833,6 +824,8 @@ public enum GraphQLContractProjector {
   type WorkflowSession {
     workflowId: String!
     sessionId: String!
+    parentSessionId: String
+    rootSessionId: String
     workflowExecutionId: String!
     status: String!
     currentStepId: String
@@ -872,6 +865,8 @@ public enum GraphQLContractProjector {
   }
   type WorkflowSessionSummary {
     sessionId: String!
+    parentSessionId: String
+    rootSessionId: String
     workflowName: String!
     status: String!
     failureKind: String
@@ -881,6 +876,56 @@ public enum GraphQLContractProjector {
     executionCount: Int!
     updatedAt: String!
     sessionStore: String
+  }
+  type SessionProgressDigest {
+    observedAt: String!
+    sessionId: String!
+    workflowId: String!
+    parentSessionId: String
+    rootSessionId: String!
+    status: String!
+    failureKind: String
+    previousStatus: String
+    currentStepId: String
+    currentStage: String
+    executionCount: Int!
+    effectiveStepBudget: Int
+    gateVisitCounts: JSON!
+    lastBackendEventType: String
+    lastBackendEventAt: String
+    lastBackendEventAgeMs: Int
+    activeBackend: String
+  }
+  type SessionRollupNode {
+    digest: SessionProgressDigest!
+    children: [SessionRollupNode!]!
+  }
+  type SessionBackendActivityEvidence {
+    kind: String!
+    detail: String!
+    path: String
+    observedAt: String
+    ageMs: Int
+  }
+  type SessionBackendActivity {
+    backend: String
+    verdict: String!
+    evidence: [SessionBackendActivityEvidence!]!
+    activeThresholdMs: Int!
+    stalledThresholdMs: Int!
+    lastActivityAt: String
+    ageMs: Int
+    observedAt: String!
+  }
+  type SessionObservabilityView {
+    root: SessionRollupNode!
+    backendActivity: SessionBackendActivity
+    rollupTruncated: Boolean
+    rollupSnapshotLimit: Int
+  }
+  type SessionObservabilityPayload {
+    result: ControlPlaneResult!
+    view: SessionObservabilityView
   }
   type WorkflowInstance {
     identity: String!
@@ -993,13 +1038,17 @@ public enum GraphQLContractProjector {
     costDelta: LoopCostSummaryDelta
     diagnostics: [String!]!
   }
+  \(workflowRegistryGraphQLSchemaTypes)
   type Query {
     note(noteId: String!): NoteQueryPayload!
     notebook(notebookId: String!): NotebookQueryPayload!
     notebooks(limit: Int, offset: Int, tagFilter: [String!], sort: NoteListSort, createdAfter: String, createdBefore: String): NotebooksQueryPayload!
     notes(limit: Int, offset: Int, notebookId: String, tagFilter: [String!]): NotesQueryPayload!
-    # Direct full-text hits are ranked first; sort orders filter-only and linked-neighbor groups.
-    searchNotes(query: String!, tagFilter: [String!], classFilter: [String!], sort: NoteListSort, createdAfter: String, createdBefore: String, includeLinked: Boolean, limit: Int, offset: Int): NoteSearchQueryPayload!
+    # Direct full-text hits are ranked first; sort orders filter-only results.
+    # Linked neighbors are appended after direct hits ordered by descending
+    # graph relevance weight; the sort argument does not reorder them.
+    searchNotes(query: String!, tagFilter: [String!], classFilter: [String!], sort: NoteListSort, createdAfter: String, createdBefore: String, includeLinked: Boolean, depth: Int, limit: Int, offset: Int): NoteSearchQueryPayload!
+    noteGraphNeighbors(noteIds: [String!]!, depth: Int, limit: Int): NoteGraphNeighborsQueryPayload!
     proposeNoteLinks(noteId: String!, limit: Int): NoteLinkProposalQueryPayload!
     tags: NoteTagsQueryPayload!
     tagClasses: NoteTagClassesQueryPayload!
@@ -1009,11 +1058,15 @@ public enum GraphQLContractProjector {
     workflowInstance(identity: String!, workflowId: String): WorkflowInstanceQueryPayload!
     workflowSession(workflowId: String!, sessionId: String!): WorkflowSession
     workflowSessions(workflowName: String, status: String, limit: Int): [WorkflowSessionSummary!]!
+    sessionProgress(sessionId: String!, includeChildren: Boolean = false): SessionObservabilityPayload!
+    sessionHealth(sessionId: String!): SessionObservabilityPayload!
     loopEvidence(workflowId: String!, sessionId: String!): LoopEvidenceSummary
     loopSessions(workflowId: String, status: String, limit: Int): [LoopSessionOverview!]!
     loopWorkflowStats(workflowId: String!, limit: Int): LoopWorkflowStats
     loopEvidenceDiff(baseSessionId: String!, targetSessionId: String!): LoopEvidenceDiff
     managerSession(managerSessionId: String): ManagerSessionView
+    workflows(filter: WorkflowFilter): WorkflowListPayload!
+    workflow(target: WorkflowTargetInput!): WorkflowQueryPayload!
   }
   type Mutation {
     createNote(input: CreateNoteInput!): NoteMutationPayload!
@@ -1026,6 +1079,7 @@ public enum GraphQLContractProjector {
     deleteNotebook(notebookId: String!): ControlPlaneResult!
     applyNotebookTags(input: ApplyNotebookTagsInput!): NoteMutationPayload!
     removeNotebookTag(notebookId: String!, tagName: String!, provenance: String): NoteMutationPayload!
+    setNotebookProgress(notebookId: String!, progress: NotebookProgress!): NoteMutationPayload!
     setNoteReadOnly(noteId: String!, readOnly: Boolean!): NoteMutationPayload!
     applyNoteTags(input: ApplyNoteTagsInput!): NoteMutationPayload!
     removeNoteTag(noteId: String!, tagName: String!, provenance: String): NoteMutationPayload!
@@ -1045,6 +1099,12 @@ public enum GraphQLContractProjector {
     sendManagerMessage(input: SendManagerMessageInput!): SendManagerMessagePayload!
     replayCommunication(input: ReplayCommunicationInput!): ReplayCommunicationPayload!
     retryCommunicationDelivery(input: RetryCommunicationDeliveryInput!): RetryCommunicationDeliveryPayload!
+    registerMutableWorkflow(input: RegisterMutableWorkflowInput!): WorkflowMutationPayload!
+    updateMutableWorkflow(input: UpdateMutableWorkflowInput!): WorkflowMutationPayload!
+    deleteMutableWorkflow(input: DeleteMutableWorkflowInput!): WorkflowMutationPayload!
+    activateWorkflow(input: SetWorkflowActivationInput!): WorkflowMutationPayload!
+    deactivateWorkflow(input: SetWorkflowActivationInput!): WorkflowMutationPayload!
+    consolidateWorkflows(input: ConsolidateWorkflowsInput!): WorkflowMutationPayload!
   }
   """
 
@@ -1061,6 +1121,8 @@ public enum GraphQLContractProjector {
     .init(
       workflowId: session.workflowId,
       sessionId: session.sessionId,
+      parentSessionId: session.parentSessionId,
+      rootSessionId: session.rootSessionId,
       workflowExecutionId: session.workflowExecutionId,
       status: session.status.rawValue,
       currentStepId: session.currentStepId,
@@ -1131,6 +1193,8 @@ public enum GraphQLContractProjector {
   ) -> GraphQLWorkflowSessionSummaryDTO {
     GraphQLWorkflowSessionSummaryDTO(
       sessionId: session.sessionId,
+      parentSessionId: session.parentSessionId,
+      rootSessionId: session.rootSessionId,
       workflowName: workflowName,
       status: session.status.rawValue,
       failureKind: session.failureKind?.rawValue,

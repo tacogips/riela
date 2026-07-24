@@ -66,8 +66,8 @@ public enum WorkflowInstanceResolver {
     let configuration = baseDefinition.configuration.merging(overrideConfiguration)
     let hasRunOverrides = !runVariables.isEmpty || !runNodePatch.isEmpty
     let effective = EffectiveWorkflowInstance(
-      identity: hasRunOverrides ? temporaryIdentity(baseDefinition.identity) : baseDefinition.identity,
-      kind: hasRunOverrides ? .temporary : baseKind,
+      identity: hasRunOverrides ? ephemeralIdentity(baseDefinition.identity) : baseDefinition.identity,
+      kind: hasRunOverrides ? .ephemeral : baseKind,
       baseIdentity: hasRunOverrides ? baseDefinition.identity : nil,
       configuration: configuration
     )
@@ -127,7 +127,7 @@ public enum WorkflowInstanceResolver {
     return patched
   }
 
-  private static func temporaryIdentity(_ baseIdentity: String) -> String {
+  public static func ephemeralIdentity(_ baseIdentity: String) -> String {
     "\(baseIdentity)+overrides"
   }
 

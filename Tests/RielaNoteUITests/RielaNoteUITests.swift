@@ -612,6 +612,17 @@ final class MockRielaNoteUIClient: RielaNoteUIClient, @unchecked Sendable {
     [notebook]
   }
 
+  func listNotebooks(
+    limit: Int,
+    offset: Int,
+    tagFilter: [String],
+    filter: RielaNoteListFilter
+  ) async throws -> [Notebook] {
+    let matches = tagFilter.isEmpty
+      || !Set(notebook.tags.map(\.tag.name)).isDisjoint(with: tagFilter)
+    return matches ? [notebook] : []
+  }
+
   func listNotes(notebookId: String, limit: Int, offset: Int) async throws -> [Note] {
     listNoteRequests.append(MockListNotesRequest(notebookId: notebookId, limit: limit, offset: offset))
     return Array(([note, searchNote] + createdMemos + createdNotebookNotes).dropFirst(offset).prefix(limit))

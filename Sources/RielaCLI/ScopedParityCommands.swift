@@ -48,15 +48,10 @@ public struct ScopedParityCommandRunner: Sendable {
     do {
       let options = command.options
       let parityArguments: [String]
-      if command.kind == .callStep || command.kind == .workflowCall,
-        let first = options.arguments.first,
-        !first.hasPrefix("--") {
-        parityArguments = Array(options.arguments.dropFirst())
-      } else if command.kind == .events,
-        options.command == "schedules",
-        let first = options.arguments.first,
-        !first.hasPrefix("--") {
-        parityArguments = Array(options.arguments.dropFirst())
+      if command.kind == .callStep || command.kind == .workflowCall {
+        parityArguments = try ParsedTargetAndOptions.parseCLI(options.arguments).options
+      } else if command.kind == .events, options.command == "schedules" {
+        parityArguments = try ParsedTargetAndOptions.parseCLI(options.arguments).options
       } else {
         parityArguments = options.arguments
       }
@@ -143,6 +138,26 @@ fileprivate extension ScopedParityCommandRunner {
         communications: snapshot.workflowMessages
       )
       records = [try jsonString(projected)]
+    case "session-progress", "session-health":
+      let sessionId = try requiredGraphQLTarget(options: options, action: action)
+      let store = runtimePersistenceStore(parsed: parsed)
+      let observabilityService = SessionObservabilityComposition.makeService(store: store)
+      let graphQLService = GraphQLRuntimeSnapshotQueryService(
+        loadSnapshot: { try store.load(sessionId: $0) },
+        loadSnapshots: { try store.loadAll() },
+        sessionStore: store.rootDirectory,
+        observabilityService: observabilityService
+      )
+      if action == "session-progress" {
+        records = [try jsonString(await graphQLService.sessionProgress(GraphQLSessionProgressRequest(
+          sessionId: sessionId,
+          includeChildren: parsed.includeChildren
+        )))]
+      } else {
+        records = [try jsonString(await graphQLService.sessionHealth(GraphQLSessionHealthRequest(
+          sessionId: sessionId
+        )))]
+      }
     case "manager-session":
       let snapshot = try loadRuntimeSnapshot(sessionId: options.target, parsed: parsed, action: action)
       let view = GraphQLManagerSessionViewDTO(
@@ -297,10 +312,10 @@ fileprivate extension ScopedParityCommandRunner {
   }
 
   private func callStep(options: CLICommandOptions, parsed: ParsedParityOptions) async -> CLICommandResult {
+    let route = try? ParsedTargetAndOptions.parseCLI(options.arguments)
     guard let workflowId = options.command,
       let workflowRunId = options.target,
-      let stepId = options.arguments.first,
-      !stepId.hasPrefix("--")
+      let stepId = route?.target
     else {
       return CLICommandResult(exitCode: .usage, stderr: "call-step requires <workflow-id> <workflow-run-id> <step-id>")
     }
@@ -658,7 +673,7 @@ fileprivate extension ScopedParityCommandRunner {
       )
     case "schedules":
       let schedulesCommand = options.target ?? "list"
-      let scheduleId = options.arguments.first(where: { !$0.hasPrefix("--") })
+      let scheduleId = try ParsedTargetAndOptions.parseCLI(options.arguments).target
       switch schedulesCommand {
       case "list":
         let schedules = try listEventSchedules(eventRoot: root)

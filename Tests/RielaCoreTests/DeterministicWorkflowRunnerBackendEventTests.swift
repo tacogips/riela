@@ -27,6 +27,7 @@ final class DeterministicWorkflowRunnerBackendEventTests: XCTestCase {
     }
     XCTAssertEqual(event.backendEventType, "turn.started")
     XCTAssertEqual(payload.backendEventType, "turn.started")
+    XCTAssertNil(event.backendSessionId)
     XCTAssertNil(event.backendEventChannel)
     XCTAssertNil(event.backendEventContent)
     XCTAssertNil(event.backendEventSequence)
@@ -66,6 +67,7 @@ final class DeterministicWorkflowRunnerBackendEventTests: XCTestCase {
       nodeId: "node",
       executionId: "exec",
       backendEventType: "thinking",
+      backendSessionId: "native-session",
       backendEventChannel: "thinking",
       backendEventContent: "stream",
       backendEventIsDelta: true,
@@ -81,6 +83,7 @@ final class DeterministicWorkflowRunnerBackendEventTests: XCTestCase {
 
     XCTAssertEqual(object["type"] as? String, "backend_event")
     XCTAssertEqual(object["backendEventType"] as? String, "thinking")
+    XCTAssertEqual(object["backendSessionId"] as? String, "native-session")
     XCTAssertEqual(object["backendEventChannel"] as? String, "thinking")
     XCTAssertEqual(object["backendEventContent"] as? String, "stream")
     XCTAssertEqual(object["backendEventIsDelta"] as? Bool, true)
@@ -89,6 +92,7 @@ final class DeterministicWorkflowRunnerBackendEventTests: XCTestCase {
     XCTAssertEqual(usage["output_tokens"] as? Int, 3)
 
     let decoded = try JSONDecoder().decode(WorkflowRunEvent.self, from: JSONEncoder().encode(event))
+    XCTAssertEqual(decoded.backendSessionId, "native-session")
     XCTAssertEqual(decoded.backendEventUsage, ["output_tokens": .number(3)])
   }
 
@@ -128,7 +132,8 @@ final class DeterministicWorkflowRunnerBackendEventTests: XCTestCase {
           channel: .assistant,
           contentSnapshot: "streamed text",
           usage: ["output_tokens": .number(3)],
-          sequence: 99
+          sequence: 99,
+          backendSessionId: "native-session"
         )
       )
     )
@@ -153,6 +158,7 @@ final class DeterministicWorkflowRunnerBackendEventTests: XCTestCase {
       event.type == .backendEvent &&
         event.executionId == execution.executionId &&
         event.backendEventType == "item.completed" &&
+        event.backendSessionId == "native-session" &&
         event.backendEventChannel == "assistant" &&
         event.backendEventContent == "streamed text" &&
         event.backendEventSequence == 1 &&
@@ -254,6 +260,48 @@ final class DeterministicWorkflowRunnerBackendEventTests: XCTestCase {
     XCTAssertEqual(executedStepIds, ["producer"])
   }
 
+  func testBackendExecutionsPersistResolvedInheritedAndRelativeWorkingDirectories() async throws {
+    let output = AdapterExecutionOutput(
+      provider: "test",
+      model: "gpt-5.5",
+      promptText: "prompt",
+      completionPassed: true,
+      payload: ["status": .string("ok")]
+    )
+    let inheritedResult = try await DeterministicWorkflowRunner(
+      adapter: StepCountingAdapter(outputsByStep: ["node": output])
+    ).run(DeterministicWorkflowRunRequest(
+      workflow: backendEventWorkflow(),
+      nodePayloads: ["node": backendEventPayload()]
+    ))
+    let expectedInherited = URL(
+      fileURLWithPath: FileManager.default.currentDirectoryPath,
+      isDirectory: true
+    ).standardizedFileURL.path
+    XCTAssertEqual(
+      inheritedResult.session.executions.first?.backendWorkingDirectory,
+      expectedInherited
+    )
+
+    let relativePath = "tmp/session-observability-relative/\(UUID().uuidString)"
+    let relativeResult = try await DeterministicWorkflowRunner(
+      adapter: StepCountingAdapter(outputsByStep: ["node": output])
+    ).run(DeterministicWorkflowRunRequest(
+      workflow: backendEventWorkflow(),
+      nodePayloads: ["node": backendEventPayload(workingDirectory: relativePath)]
+    ))
+    let expectedRelative = URL(
+      fileURLWithPath: FileManager.default.currentDirectoryPath,
+      isDirectory: true
+    )
+    .appendingPathComponent(relativePath, isDirectory: true)
+    .standardizedFileURL.path
+    XCTAssertEqual(
+      relativeResult.session.executions.first?.backendWorkingDirectory,
+      expectedRelative
+    )
+  }
+
   private func backendEventWorkflow() -> WorkflowDefinition {
     WorkflowDefinition(
       workflowId: "runner",
@@ -265,8 +313,13 @@ final class DeterministicWorkflowRunnerBackendEventTests: XCTestCase {
     )
   }
 
-  private func backendEventPayload() -> AgentNodePayload {
-    AgentNodePayload(id: "node", executionBackend: .codexAgent, model: "gpt-5.5")
+  private func backendEventPayload(workingDirectory: String? = nil) -> AgentNodePayload {
+    AgentNodePayload(
+      id: "node",
+      executionBackend: .codexAgent,
+      model: "gpt-5.5",
+      workingDirectory: workingDirectory
+    )
   }
 
   private func outputProjectionWorkflow() -> WorkflowDefinition {

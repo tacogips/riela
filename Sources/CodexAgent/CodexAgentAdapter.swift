@@ -332,6 +332,15 @@ public struct CodexAgentAdapter: NodeAdapter {
     selectedInput.promptText = resolution.resumeSessionId == nil
       ? input.resolvedFreshPromptText
       : input.resolvedResumedPromptText
+    if let resumeSessionId = resolution.resumeSessionId, let handler = context.backendEventHandler {
+      await handler(AdapterBackendEvent(
+        provider: CliAgentBackend.codexAgent.rawValue,
+        eventType: "session_identified",
+        channel: .lifecycle,
+        at: Date(),
+        backendSessionId: resumeSessionId
+      ))
+    }
     do {
       let output = try await localAdapter.execute(selectedInput, context: context)
       await promoteSuccessfulExecution(collector: collector, resolution: resolution, input: input)
@@ -584,13 +593,27 @@ private func classifyCodexBackendEvent(_ line: String) -> AdapterBackendEvent? {
     return nil
   }
   let eventType = stringValue(object["type"]) ?? "json-event"
+  let sessionIds = CodexSessionIdExtractor.sessionIds(fromJSONLine: line)
+  let backendSessionId = sessionIds.count == 1 ? sessionIds.first : nil
   if eventType == "turn.completed", let usage = objectValue(object["usage"]) {
-    return AdapterBackendEvent(provider: CliAgentBackend.codexAgent.rawValue, eventType: eventType, channel: .usage, usage: usage)
+    return AdapterBackendEvent(
+      provider: CliAgentBackend.codexAgent.rawValue,
+      eventType: eventType,
+      channel: .usage,
+      usage: usage,
+      backendSessionId: backendSessionId
+    )
   }
-  if let classified = classifyCodexContentEvent(object: object, eventType: eventType) {
+  if var classified = classifyCodexContentEvent(object: object, eventType: eventType) {
+    classified.backendSessionId = backendSessionId
     return classified
   }
-  return AdapterBackendEvent(provider: CliAgentBackend.codexAgent.rawValue, eventType: eventType, channel: .lifecycle)
+  return AdapterBackendEvent(
+    provider: CliAgentBackend.codexAgent.rawValue,
+    eventType: eventType,
+    channel: .lifecycle,
+    backendSessionId: backendSessionId
+  )
 }
 
 private func classifyCodexContentEvent(object: JSONObject, eventType: String) -> AdapterBackendEvent? {

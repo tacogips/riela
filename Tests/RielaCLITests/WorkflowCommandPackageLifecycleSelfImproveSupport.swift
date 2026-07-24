@@ -8,27 +8,45 @@ func applyReviewedSelfImprove(
   workingDirectory: URL
 ) async throws -> WorkflowSelfImproveCommandResult {
   try configurePackageLifecycleReviewGate(workingDirectory: workingDirectory)
+  // Self-improve apply now requires a mutable registry origin; register the
+  // created project workflow as a mutable copy under an isolated home and
+  // apply against that origin. The immutable project bundle stays untouched.
+  let home = workingDirectory.appendingPathComponent("self-improve-home", isDirectory: true)
+  try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+  let environment = ["HOME": home.path]
+  let registerResponse = await app.run([
+    "workflow", "register",
+    workingDirectory.appendingPathComponent(".riela/workflows/created-flow").path,
+    "--mutable",
+    "--working-dir", workingDirectory.path,
+    "--output", "json"
+  ], environment: environment)
+  XCTAssertEqual(registerResponse.exitCode, .success, registerResponse.stderr)
   let proposalResponse = await app.run([
     "workflow", "self-improve", "created-flow",
+    "--scope", "user",
     "--working-dir", workingDirectory.path,
     "--dry-run",
     "--output", "json"
-  ])
+  ], environment: environment)
   XCTAssertEqual(proposalResponse.exitCode, .success, proposalResponse.stderr)
   let proposalResult = try JSONDecoder().decode(
     WorkflowSelfImproveCommandResult.self,
     from: Data(proposalResponse.stdout.utf8)
   )
-  let bundle = try FileSystemWorkflowBundleResolver().resolve(WorkflowResolutionOptions(
-    workflowName: "created-flow",
-    scope: .project,
-    workingDirectory: workingDirectory.path
-  ))
-  let target = try WorkflowHistoryIdentityResolver.identity(for: bundle)
-  let historyRoot = try WorkflowHistoryIdentityResolver.historyRoot(
-    for: target,
-    workingDirectory: workingDirectory
-  )
+  let (bundle, target, historyRoot) = try CLIRuntimeEnvironment.$overrides.withValue(environment) {
+    let bundle = try FileSystemWorkflowBundleResolver().resolve(WorkflowResolutionOptions(
+      workflowName: "created-flow",
+      scope: .user,
+      workingDirectory: workingDirectory.path
+    ))
+    let target = try WorkflowHistoryIdentityResolver.identity(for: bundle)
+    let historyRoot = try WorkflowHistoryIdentityResolver.historyRoot(
+      for: target,
+      workingDirectory: workingDirectory
+    )
+    return (bundle, target, historyRoot)
+  }
   let proposalId = try XCTUnwrap(proposalResult.proposalId)
   let proposalDigest = try XCTUnwrap(proposalResult.proposalDigest)
   let store = WorkflowChangeSetStore(root: historyRoot)
@@ -64,13 +82,18 @@ func applyReviewedSelfImprove(
   )
   let applyResponse = await app.run([
     "workflow", "self-improve", "created-flow",
+    "--scope", "user",
     "--working-dir", workingDirectory.path,
     "--yes",
     "--change-set-id", changeSet.changeSetId,
     "--expected-digest", changeSet.finalizedDigest,
     "--output", "json"
-  ])
+  ], environment: environment)
   XCTAssertEqual(applyResponse.exitCode, .success, applyResponse.stderr)
+  let mutableWorkflowURL = home.appendingPathComponent(
+    ".riela/temporary-workflows/created-flow/workflow.json"
+  )
+  XCTAssertTrue(try String(contentsOf: mutableWorkflowURL).contains("self-improve-reviewed"))
   let decoder = JSONDecoder()
   decoder.dateDecodingStrategy = .iso8601
   return try decoder.decode(WorkflowSelfImproveCommandResult.self, from: Data(applyResponse.stdout.utf8))

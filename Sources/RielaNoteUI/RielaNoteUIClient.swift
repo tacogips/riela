@@ -56,6 +56,8 @@ public enum RielaNoteUIClientCapabilityError: Error, Equatable, Sendable {
   case currentNotebookNoteCreationUnsupported
   case commentPromotionUnsupported
   case notebookNotesWindowUnsupported
+  case notebookTagFilterUnsupported
+  case notebookProgressMutationUnsupported
 }
 
 public struct RielaNoteListFilter: Equatable, Sendable {
@@ -95,6 +97,12 @@ public protocol RielaNoteUIClient: Sendable {
 
   func listNotebooks(limit: Int, offset: Int) async throws -> [Notebook]
   func listNotebooks(limit: Int, offset: Int, filter: RielaNoteListFilter) async throws -> [Notebook]
+  func listNotebooks(
+    limit: Int,
+    offset: Int,
+    tagFilter: [String],
+    filter: RielaNoteListFilter
+  ) async throws -> [Notebook]
   func listNotes(notebookId: String, limit: Int, offset: Int) async throws -> [Note]
   func notebookNotesWindow(containing noteId: String, pageSize: Int) async throws -> RielaNoteNotebookNotesWindow
   func listTags() async throws -> [Tag]
@@ -120,6 +128,7 @@ public protocol RielaNoteUIClient: Sendable {
   func firstNote(inNotebook notebookId: String) async throws -> RielaNoteDetail?
   func resolveFile(fileId: String) async throws -> RielaNoteResolvedFile
   func updateNoteBody(noteId: String, bodyMarkdown: String) async throws -> RielaNoteDetail
+  func setNotebookProgress(notebookId: String, progress: NotebookProgress) async throws -> Notebook
   func applyTag(noteId: String, tagName: String, classId: String?) async throws -> RielaNoteDetail
   func removeTag(noteId: String, tagName: String) async throws -> RielaNoteDetail
   func addComment(noteId: String, bodyMarkdown: String) async throws -> RielaNoteDetail
@@ -211,6 +220,22 @@ public extension RielaNoteUIClient {
 
   func listNotebooks(limit: Int, offset: Int, filter: RielaNoteListFilter) async throws -> [Notebook] {
     try await listNotebooks(limit: limit, offset: offset)
+  }
+
+  func listNotebooks(
+    limit: Int,
+    offset: Int,
+    tagFilter: [String],
+    filter: RielaNoteListFilter
+  ) async throws -> [Notebook] {
+    guard tagFilter.isEmpty else {
+      throw RielaNoteUIClientCapabilityError.notebookTagFilterUnsupported
+    }
+    return try await listNotebooks(limit: limit, offset: offset, filter: filter)
+  }
+
+  func setNotebookProgress(notebookId: String, progress: NotebookProgress) async throws -> Notebook {
+    throw RielaNoteUIClientCapabilityError.notebookProgressMutationUnsupported
   }
 
   func notebookNotesWindow(containing noteId: String, pageSize: Int) async throws -> RielaNoteNotebookNotesWindow {
@@ -441,6 +466,22 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
     )
   }
 
+  public func listNotebooks(
+    limit: Int,
+    offset: Int,
+    tagFilter: [String],
+    filter: RielaNoteListFilter
+  ) async throws -> [Notebook] {
+    try service.listNotebooks(
+      limit: limit,
+      offset: offset,
+      tagFilter: tagFilter,
+      sort: filter.sort,
+      createdAfter: filter.createdAfter,
+      createdBefore: filter.createdBefore
+    )
+  }
+
   public func listNotes(notebookId: String, limit: Int, offset: Int) async throws -> [Note] {
     try service.listNotes(notebookId: notebookId, limit: limit, offset: offset)
   }
@@ -573,6 +614,13 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
   public func updateNoteBody(noteId: String, bodyMarkdown: String) async throws -> RielaNoteDetail {
     _ = try service.updateNoteBody(noteId: noteId, bodyMarkdown: bodyMarkdown)
     return try detail(noteId: noteId)
+  }
+
+  public func setNotebookProgress(
+    notebookId: String,
+    progress: NotebookProgress
+  ) async throws -> Notebook {
+    try service.setNotebookProgress(notebookId: notebookId, progress: progress)
   }
 
   public func applyTag(noteId: String, tagName: String, classId: String?) async throws -> RielaNoteDetail {

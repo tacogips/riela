@@ -1,7 +1,10 @@
 #if os(macOS)
 import AppKit
 import RielaAppSupport
+import RielaNote
+@testable import RielaNoteUI
 import RielaServer
+import SwiftUI
 @testable import RielaApp
 import XCTest
 
@@ -81,6 +84,73 @@ final class RielaAppNotesIntegrationTests: XCTestCase {
 
     XCTAssertFalse(unavailable.notebookExpansionProviderConfigured)
     unavailable.close()
+  }
+
+  func testRegularSearchPopupRendersActiveTagKanban() async throws {
+    let noteRoot = try scratchRoot(
+      name: "riela-app-note-kanban-\(UUID().uuidString)"
+    )
+    let service = try NoteService(
+      driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot.path)
+    )
+    let parent = try service.defineTag(name: "portfolio")
+    let child = try service.defineTag(
+      name: "project",
+      parentTagId: parent.tagId
+    )
+    let notebook = try service.createNotebook(title: "Current project")
+    _ = try service.applyNotebookTags(
+      notebookId: notebook.notebookId,
+      tags: [child.name],
+      provenance: .human
+    )
+    _ = try service.setNotebookProgress(
+      notebookId: notebook.notebookId,
+      progress: .progress
+    )
+    let viewModel = RielaNoteLibraryViewModel(
+      client: NoteServiceRielaNoteUIClient(service: service)
+    )
+    await viewModel.load()
+    await viewModel.toggleSearchTag(parent.name)
+    let popup = RielaNoteSearchPopupSheet(
+      viewModel: viewModel,
+      onClose: {}
+    )
+    XCTAssertEqual(popup.contentMode, .tagKanban)
+
+    let hostingController = NSHostingController(rootView: popup)
+    let pngData = try renderPNGData(view: hostingController.view)
+    try pngData.write(
+      to: noteRoot.appendingPathComponent("tag-kanban-popup-render.png")
+    )
+
+    XCTAssertGreaterThan(pngData.count, 1_000)
+    XCTAssertEqual(viewModel.notebooks.map(\.notebookId), [notebook.notebookId])
+    XCTAssertEqual(viewModel.notebooks.first?.progress, .progress)
+
+    let failureMessage = "Progress update failed."
+    viewModel.notebookProgressMutationFailure = viewModel.notebookSnapshotContext.map {
+      RielaNoteNotebookMutationFailure(
+        context: $0,
+        message: failureMessage
+      )
+    }
+    viewModel.state = .failed(failureMessage)
+    let failedPopup = RielaNoteSearchPopupSheet(
+      viewModel: viewModel,
+      onClose: {}
+    )
+    XCTAssertEqual(
+      failedPopup.contentMode,
+      .tagKanbanFailed(failureMessage)
+    )
+    let failedHostingController = NSHostingController(rootView: failedPopup)
+    let failedPNGData = try renderPNGData(view: failedHostingController.view)
+    try failedPNGData.write(
+      to: noteRoot.appendingPathComponent("tag-kanban-popup-failure-render.png")
+    )
+    XCTAssertGreaterThan(failedPNGData.count, 1_000)
   }
 
   func testNoteWindowLoadsS3ProfileFromEnvironment() throws {

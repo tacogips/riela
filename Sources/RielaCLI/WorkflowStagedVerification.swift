@@ -10,12 +10,13 @@ struct WorkflowStagedVerifier: Sendable {
     let staged = try stagedResolutionLayout(target: target, stagingRoot: stagingRoot)
     defer { try? FileManager.default.removeItem(at: staged.root) }
     let workflowDirectory = staged.workflowDirectory
-    let bundle = try FileSystemWorkflowBundleResolver(enforcesTransactionBlock: false).resolve(WorkflowResolutionOptions(
-      workflowName: target.workflowId,
+    let bundle = try FileSystemWorkflowBundleResolver(enforcesTransactionBlock: false).loadBundle(
+      at: workflowDirectory,
+      rootDirectory: staged.root,
       scope: .direct,
-      workflowDefinitionDir: staged.root.path,
-      workingDirectory: staged.root.path
-    ))
+      provenance: target.sourceMutable ? .mutable : .immutable,
+      expectedWorkflowId: target.workflowId
+    )
     let diagnostics = bundle.diagnostics
       + DefaultWorkflowValidator().validate(bundle.workflow, nodePayloads: bundle.nodePayloads)
     let errors = diagnostics.filter { $0.severity == .error }

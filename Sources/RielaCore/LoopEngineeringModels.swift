@@ -152,21 +152,25 @@ public struct WorkflowSelfEvolutionDeclaration: Codable, Equatable, Sendable {
 }
 
 public struct LoopConvergenceDeclaration: Codable, Equatable, Sendable {
+  public var enabled: Bool
   public var maxGateVisits: Int?
   public var maxRepeatedFindingRounds: Int?
   public var onStall: LoopConvergenceStallAction
 
   private enum CodingKeys: String, CodingKey {
+    case enabled
     case maxGateVisits
     case maxRepeatedFindingRounds
     case onStall
   }
 
   public init(
+    enabled: Bool = true,
     maxGateVisits: Int? = nil,
     maxRepeatedFindingRounds: Int? = nil,
     onStall: LoopConvergenceStallAction = .fail
   ) {
+    self.enabled = enabled
     self.maxGateVisits = maxGateVisits
     self.maxRepeatedFindingRounds = maxRepeatedFindingRounds
     self.onStall = onStall
@@ -174,6 +178,7 @@ public struct LoopConvergenceDeclaration: Codable, Equatable, Sendable {
 
   public init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
     self.maxGateVisits = try container.decodeIfPresent(Int.self, forKey: .maxGateVisits)
     self.maxRepeatedFindingRounds = try container.decodeIfPresent(Int.self, forKey: .maxRepeatedFindingRounds)
     self.onStall = try container.decodeIfPresent(LoopConvergenceStallAction.self, forKey: .onStall) ?? .fail

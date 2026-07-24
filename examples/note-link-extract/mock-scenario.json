@@ -10,7 +10,7 @@
         {
           "targetNoteId": "note-candidate",
           "linkKind": "related",
-          "reason": "Shares the same project planning context."
+          "reason": "Depth-two graph path from the subject note."
         }
       ]
     }
@@ -26,7 +26,7 @@
         {
           "targetNoteId": "note-candidate",
           "linkKind": "related",
-          "reason": "Shares the same project planning context."
+          "reason": "Depth-two graph path from the subject note."
         }
       ]
     }

@@ -22,14 +22,19 @@
       }
     },
     {
-      "id": "search-candidates",
+      "id": "graph-candidates",
       "addon": {
-        "name": "riela/note-search",
+        "name": "riela/note-graph-neighbors",
         "version": "1",
         "config": {
           "noteRoot": "{{noteRoot}}",
-          "query": "{{workflowInput.query}}",
+          "depth": 2,
           "limit": "{{workflowInput.limit}}"
+        },
+        "inputs": {
+          "noteIds": [
+            "{{workflowInput.noteId}}"
+          ]
         }
       }
     },
@@ -50,13 +55,13 @@
       "role": "worker",
       "transitions": [
         {
-          "toStepId": "search-candidates"
+          "toStepId": "graph-candidates"
         }
       ]
     },
     {
-      "id": "search-candidates",
-      "nodeId": "search-candidates",
+      "id": "graph-candidates",
+      "nodeId": "graph-candidates",
       "role": "worker",
       "transitions": [
         {

@@ -157,6 +157,362 @@ extension WorkflowCommandTests {
     XCTAssertNil(bundle.nodePayloads["mika"])
   }
 
+  func testResolverRejectsDeactivatedImmutableSharedNodeUsingExactOriginIdentity() throws {
+    let root = sharedNodeRepositoryRoot()
+      .appendingPathComponent("tmp/riela-cli-immutable-shared-activation-\(UUID().uuidString)", isDirectory: true)
+    let home = root.appendingPathComponent("home", isDirectory: true)
+    let workflowRoot = root.appendingPathComponent(".riela/workflows", isDirectory: true)
+    let sharedWorkflow = workflowRoot.appendingPathComponent("shared-alias", isDirectory: true)
+    let entryWorkflow = workflowRoot.appendingPathComponent("entry-alias", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    try writeSharedNodePayloadWorkflow(
+      to: sharedWorkflow,
+      workflowId: "shared-decoded",
+      nodeId: "worker",
+      prompt: "direct immutable shared payload"
+    )
+    try writeSharedNodeRefWorkflow(
+      to: entryWorkflow,
+      workflowId: "entry-decoded",
+      nodeId: "reply",
+      targetWorkflowId: "shared-alias",
+      targetNodeId: "worker"
+    )
+
+    try CLIRuntimeEnvironment.$overrides.withValue(["HOME": home.path]) {
+      let mutation = try WorkflowRegistryService().setActivation(
+        .deactivated,
+        target: WorkflowRegistryTarget(workflowId: "shared-alias", scope: .project),
+        workingDirectory: root.path
+      )
+      let expectedOriginId = try XCTUnwrap(mutation.workflow?.originId)
+      let options = WorkflowResolutionOptions(
+        workflowName: "entry-alias",
+        scope: .project,
+        workingDirectory: root.path
+      )
+
+      XCTAssertThrowsError(try FileSystemWorkflowBundleResolver().resolve(options)) { error in
+        let registryError = error as? WorkflowRegistryError
+        XCTAssertEqual(registryError?.code, .workflowDeactivated)
+        XCTAssertEqual(registryError?.workflowId, "shared-decoded")
+        XCTAssertEqual(registryError?.originId, expectedOriginId)
+      }
+
+      let inspected = try FileSystemWorkflowBundleResolver().resolve(
+        WorkflowResolutionOptions(
+          workflowName: "entry-alias",
+          scope: .project,
+          workingDirectory: root.path,
+          includeDeactivated: true
+        )
+      )
+      XCTAssertEqual(inspected.nodePayloads["reply"]?.promptTemplate, "direct immutable shared payload")
+    }
+  }
+
+  func testResolverRejectsNestedDeactivatedImmutableSharedNodeUsingExactOriginIdentity() throws {
+    let root = sharedNodeRepositoryRoot()
+      .appendingPathComponent("tmp/riela-cli-nested-immutable-activation-\(UUID().uuidString)", isDirectory: true)
+    let home = root.appendingPathComponent("home", isDirectory: true)
+    let workflowRoot = root.appendingPathComponent(".riela/workflows", isDirectory: true)
+    let leafWorkflow = workflowRoot.appendingPathComponent("leaf-alias", isDirectory: true)
+    let middleWorkflow = workflowRoot.appendingPathComponent("middle-alias", isDirectory: true)
+    let entryWorkflow = workflowRoot.appendingPathComponent("entry-alias", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    try writeSharedNodePayloadWorkflow(
+      to: leafWorkflow,
+      workflowId: "leaf-decoded",
+      nodeId: "worker",
+      prompt: "nested immutable shared payload"
+    )
+    try writeSharedNodeRefWorkflow(
+      to: middleWorkflow,
+      workflowId: "middle-decoded",
+      nodeId: "bridge",
+      targetWorkflowId: "leaf-alias",
+      targetNodeId: "worker"
+    )
+    try writeSharedNodeRefWorkflow(
+      to: entryWorkflow,
+      workflowId: "entry-decoded",
+      nodeId: "reply",
+      targetWorkflowId: "middle-alias",
+      targetNodeId: "bridge"
+    )
+
+    try CLIRuntimeEnvironment.$overrides.withValue(["HOME": home.path]) {
+      let mutation = try WorkflowRegistryService().setActivation(
+        .deactivated,
+        target: WorkflowRegistryTarget(workflowId: "leaf-alias", scope: .project),
+        workingDirectory: root.path
+      )
+      let expectedOriginId = try XCTUnwrap(mutation.workflow?.originId)
+      let options = WorkflowResolutionOptions(
+        workflowName: "entry-alias",
+        scope: .project,
+        workingDirectory: root.path
+      )
+
+      XCTAssertThrowsError(try FileSystemWorkflowBundleResolver().resolve(options)) { error in
+        let registryError = error as? WorkflowRegistryError
+        XCTAssertEqual(registryError?.code, .workflowDeactivated)
+        XCTAssertEqual(registryError?.workflowId, "leaf-decoded")
+        XCTAssertEqual(registryError?.originId, expectedOriginId)
+      }
+
+      let inspected = try FileSystemWorkflowBundleResolver().resolve(
+        WorkflowResolutionOptions(
+          workflowName: "entry-alias",
+          scope: .project,
+          workingDirectory: root.path,
+          includeDeactivated: true
+        )
+      )
+      XCTAssertEqual(inspected.nodePayloads["reply"]?.promptTemplate, "nested immutable shared payload")
+    }
+  }
+
+  func testResolverRejectsDeactivatedProjectDependencyThroughDirectRoot() throws {
+    let root = sharedNodeRepositoryRoot()
+      .appendingPathComponent("tmp/riela-cli-direct-project-activation-\(UUID().uuidString)", isDirectory: true)
+    let home = root.appendingPathComponent("home", isDirectory: true)
+    let workflowRoot = root.appendingPathComponent(".riela/workflows", isDirectory: true)
+    let sharedWorkflow = workflowRoot.appendingPathComponent("project-shared", isDirectory: true)
+    let entryWorkflow = workflowRoot.appendingPathComponent("project-entry", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    try writeSharedNodePayloadWorkflow(
+      to: sharedWorkflow,
+      workflowId: "project-shared-decoded",
+      nodeId: "worker",
+      prompt: "direct project payload"
+    )
+    try writeSharedNodeRefWorkflow(
+      to: entryWorkflow,
+      workflowId: "project-entry-decoded",
+      nodeId: "reply",
+      targetWorkflowId: "project-shared",
+      targetNodeId: "worker"
+    )
+
+    try CLIRuntimeEnvironment.$overrides.withValue(["HOME": home.path]) {
+      let mutation = try WorkflowRegistryService().setActivation(
+        .deactivated,
+        target: WorkflowRegistryTarget(workflowId: "project-shared", scope: .project),
+        workingDirectory: root.path
+      )
+      let expectedOriginId = try XCTUnwrap(mutation.workflow?.originId)
+      let direct = WorkflowResolutionOptions(
+        workflowName: "project-entry",
+        workflowDefinitionDir: workflowRoot.path,
+        workingDirectory: root.path
+      )
+
+      XCTAssertThrowsError(try FileSystemWorkflowBundleResolver().resolve(direct)) { error in
+        let registryError = error as? WorkflowRegistryError
+        XCTAssertEqual(registryError?.code, .workflowDeactivated)
+        XCTAssertEqual(registryError?.workflowId, "project-shared-decoded")
+        XCTAssertEqual(registryError?.originId, expectedOriginId)
+      }
+      let inspected = try FileSystemWorkflowBundleResolver().resolve(
+        WorkflowResolutionOptions(
+          workflowName: "project-entry",
+          workflowDefinitionDir: workflowRoot.path,
+          workingDirectory: root.path,
+          includeDeactivated: true
+        )
+      )
+      XCTAssertEqual(inspected.nodePayloads["reply"]?.promptTemplate, "direct project payload")
+    }
+  }
+
+  func testResolverRejectsDeactivatedProjectDependencyBeforeReadingNodePayload() throws {
+    let root = sharedNodeRepositoryRoot()
+      .appendingPathComponent("tmp/riela-cli-shared-node-pre-materialization-\(UUID().uuidString)", isDirectory: true)
+    let home = root.appendingPathComponent("home", isDirectory: true)
+    let workflowRoot = root.appendingPathComponent(".riela/workflows", isDirectory: true)
+    let sharedWorkflow = workflowRoot.appendingPathComponent("project-shared", isDirectory: true)
+    let entryWorkflow = workflowRoot.appendingPathComponent("project-entry", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    try writeSharedNodePayloadWorkflow(
+      to: sharedWorkflow,
+      workflowId: "project-shared-decoded",
+      nodeId: "worker",
+      prompt: "must not materialize"
+    )
+    try writeSharedNodeRefWorkflow(
+      to: entryWorkflow,
+      workflowId: "project-entry-decoded",
+      nodeId: "reply",
+      targetWorkflowId: "project-shared",
+      targetNodeId: "worker"
+    )
+
+    try CLIRuntimeEnvironment.$overrides.withValue(["HOME": home.path]) {
+      let mutation = try WorkflowRegistryService().setActivation(
+        .deactivated,
+        target: WorkflowRegistryTarget(workflowId: "project-shared", scope: .project),
+        workingDirectory: root.path
+      )
+      let expectedOriginId = try XCTUnwrap(mutation.workflow?.originId)
+      try "{not-json".write(
+        to: sharedWorkflow.appendingPathComponent("nodes/worker.json"),
+        atomically: true,
+        encoding: .utf8
+      )
+
+      XCTAssertThrowsError(
+        try FileSystemWorkflowBundleResolver().resolve(
+          WorkflowResolutionOptions(
+            workflowName: "project-entry",
+            workflowDefinitionDir: workflowRoot.path,
+            workingDirectory: root.path
+          )
+        )
+      ) { error in
+        let registryError = error as? WorkflowRegistryError
+        XCTAssertEqual(registryError?.code, .workflowDeactivated)
+        XCTAssertEqual(registryError?.workflowId, "project-shared-decoded")
+        XCTAssertEqual(registryError?.originId, expectedOriginId)
+      }
+    }
+  }
+
+  func testResolverRejectsNestedDeactivatedUserDependencyThroughDirectRoot() throws {
+    let root = sharedNodeRepositoryRoot()
+      .appendingPathComponent("tmp/riela-cli-direct-user-activation-\(UUID().uuidString)", isDirectory: true)
+    let home = root.appendingPathComponent("home", isDirectory: true)
+    let workflowRoot = home.appendingPathComponent(".riela/workflows", isDirectory: true)
+    let leafWorkflow = workflowRoot.appendingPathComponent("user-leaf", isDirectory: true)
+    let middleWorkflow = workflowRoot.appendingPathComponent("user-middle", isDirectory: true)
+    let entryWorkflow = workflowRoot.appendingPathComponent("user-entry", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    try writeSharedNodePayloadWorkflow(
+      to: leafWorkflow,
+      workflowId: "user-leaf-decoded",
+      nodeId: "worker",
+      prompt: "nested direct user payload"
+    )
+    try writeSharedNodeRefWorkflow(
+      to: middleWorkflow,
+      workflowId: "user-middle-decoded",
+      nodeId: "bridge",
+      targetWorkflowId: "user-leaf",
+      targetNodeId: "worker"
+    )
+    try writeSharedNodeRefWorkflow(
+      to: entryWorkflow,
+      workflowId: "user-entry-decoded",
+      nodeId: "reply",
+      targetWorkflowId: "user-middle",
+      targetNodeId: "bridge"
+    )
+
+    try CLIRuntimeEnvironment.$overrides.withValue(["HOME": home.path]) {
+      let mutation = try WorkflowRegistryService().setActivation(
+        .deactivated,
+        target: WorkflowRegistryTarget(workflowId: "user-leaf", scope: .user),
+        workingDirectory: root.path
+      )
+      let expectedOriginId = try XCTUnwrap(mutation.workflow?.originId)
+      let direct = WorkflowResolutionOptions(
+        workflowName: "user-entry",
+        workflowDefinitionDir: workflowRoot.path,
+        workingDirectory: root.path
+      )
+
+      XCTAssertThrowsError(try FileSystemWorkflowBundleResolver().resolve(direct)) { error in
+        let registryError = error as? WorkflowRegistryError
+        XCTAssertEqual(registryError?.code, .workflowDeactivated)
+        XCTAssertEqual(registryError?.workflowId, "user-leaf-decoded")
+        XCTAssertEqual(registryError?.originId, expectedOriginId)
+      }
+      let inspected = try FileSystemWorkflowBundleResolver().resolve(
+        WorkflowResolutionOptions(
+          workflowName: "user-entry",
+          workflowDefinitionDir: workflowRoot.path,
+          workingDirectory: root.path,
+          includeDeactivated: true
+        )
+      )
+      XCTAssertEqual(inspected.nodePayloads["reply"]?.promptTemplate, "nested direct user payload")
+    }
+  }
+
+  func testResolverRejectsDeactivatedPackageDependencyThroughDirectRoot() throws {
+    let root = sharedNodeRepositoryRoot()
+      .appendingPathComponent("tmp/riela-cli-direct-package-activation-\(UUID().uuidString)", isDirectory: true)
+    let home = root.appendingPathComponent("home", isDirectory: true)
+    let packageDirectory = root.appendingPathComponent(".riela/packages/catalog-package", isDirectory: true)
+    let workflowRoot = packageDirectory.appendingPathComponent("workflows", isDirectory: true)
+    let packageWorkflow = workflowRoot.appendingPathComponent("package-main", isDirectory: true)
+    let entryWorkflow = workflowRoot.appendingPathComponent("direct-entry", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: packageDirectory, withIntermediateDirectories: true)
+    try """
+    {
+      "name": "catalog-package",
+      "version": "1.0.0",
+      "description": "Catalog package activation fixture",
+      "tags": ["workflow"],
+      "registry": "local",
+      "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "checksumAlgorithm": "md5",
+      "workflowDirectory": "workflows/package-main"
+    }
+    """.write(to: packageDirectory.appendingPathComponent("riela-package.json"), atomically: true, encoding: .utf8)
+    try writeSharedNodePayloadWorkflow(
+      to: packageWorkflow,
+      workflowId: "package-main-decoded",
+      nodeId: "worker",
+      prompt: "direct package payload"
+    )
+    try writeSharedNodeRefWorkflow(
+      to: entryWorkflow,
+      workflowId: "direct-entry-decoded",
+      nodeId: "reply",
+      targetWorkflowId: "package-main",
+      targetNodeId: "worker"
+    )
+
+    try CLIRuntimeEnvironment.$overrides.withValue(["HOME": home.path]) {
+      let mutation = try WorkflowRegistryService().setActivation(
+        .deactivated,
+        target: WorkflowRegistryTarget(workflowId: "catalog-package", scope: .project),
+        workingDirectory: root.path
+      )
+      let expectedOriginId = try XCTUnwrap(mutation.workflow?.originId)
+      XCTAssertEqual(mutation.workflow?.workflowId, "package-main-decoded")
+      let direct = WorkflowResolutionOptions(
+        workflowName: "direct-entry",
+        workflowDefinitionDir: workflowRoot.path,
+        workingDirectory: root.path
+      )
+
+      XCTAssertThrowsError(try FileSystemWorkflowBundleResolver().resolve(direct)) { error in
+        let registryError = error as? WorkflowRegistryError
+        XCTAssertEqual(registryError?.code, .workflowDeactivated)
+        XCTAssertEqual(registryError?.workflowId, "package-main-decoded")
+        XCTAssertEqual(registryError?.originId, expectedOriginId)
+      }
+      let inspected = try FileSystemWorkflowBundleResolver().resolve(
+        WorkflowResolutionOptions(
+          workflowName: "direct-entry",
+          workflowDefinitionDir: workflowRoot.path,
+          workingDirectory: root.path,
+          includeDeactivated: true
+        )
+      )
+      XCTAssertEqual(inspected.nodePayloads["reply"]?.promptTemplate, "direct package payload")
+    }
+  }
+
   func testResolverMaterializesAddonNodeRefsInsidePackagedWorkflowRoot() throws {
     let root = sharedNodeRepositoryRoot()
       .appendingPathComponent("tmp/riela-cli-packaged-shared-node-\(UUID().uuidString)", isDirectory: true)
@@ -317,5 +673,34 @@ extension WorkflowCommandTests {
       "steps": [{ "id": "\(nodeId)", "nodeId": "\(nodeId)", "role": "worker" }]
     }
     """.write(to: directory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+  }
+
+  private func writeSharedNodePayloadWorkflow(
+    to directory: URL,
+    workflowId: String,
+    nodeId: String,
+    prompt: String
+  ) throws {
+    let nodeFile = "nodes/\(nodeId).json"
+    try FileManager.default.createDirectory(
+      at: directory.appendingPathComponent("nodes", isDirectory: true),
+      withIntermediateDirectories: true
+    )
+    try writeNodeFileWorkflow(
+      to: directory,
+      workflowId: workflowId,
+      nodeId: nodeId,
+      nodeFile: nodeFile
+    )
+    try """
+    {
+      "id": "\(nodeId)",
+      "executionBackend": "codex-agent",
+      "model": "gpt-5.5",
+      "modelFreeze": false,
+      "promptTemplate": "\(prompt)",
+      "variables": {}
+    }
+    """.write(to: directory.appendingPathComponent(nodeFile), atomically: true, encoding: .utf8)
   }
 }

@@ -279,7 +279,7 @@ private extension WorkflowRound7AdversarialTests {
 
   func transactionFixture() async throws -> TransactionFixture {
     let (root, _) = try await makeWorkflowVersioningFixture(self)
-    let resolved = try resolveVersioningTarget(root: root)
+    let resolved = try resolveMutableTransactionTarget(root: root)
     let inventory = try WorkflowHistoryIdentityResolver.inventory(for: resolved.identity)
     let snapshot = try WorkflowHistoryStore(root: resolved.historyRoot).createSnapshot(inventory: inventory)
     return TransactionFixture(

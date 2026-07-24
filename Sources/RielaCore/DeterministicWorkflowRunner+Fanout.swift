@@ -176,6 +176,7 @@ extension DeterministicWorkflowRunner {
         maxSteps: request.maxSteps,
         maxConcurrency: request.maxConcurrency,
         maxLoopIterations: request.maxLoopIterations,
+        disableDefaultLoopGuard: request.disableDefaultLoopGuard,
         defaultTimeoutMs: request.defaultTimeoutMs,
         timeoutMs: request.timeoutMs,
         addonAttachments: request.addonAttachments,

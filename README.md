@@ -18,6 +18,10 @@ control-plane commands, direct `call-step`/`workflow-call` execution,
 supervised `workflow run --auto-improve`, and reviewed `workflow self-improve`
 mutation flows.
 
+Client command routing, subcommand validation, positional arguments, and typed
+option parsing use Apple's `swift-argument-parser`. Existing command names,
+aliases, defaults, and output contracts remain stable behind the typed routes.
+
 Runtime-owned records stay in the Swift session and runtime stores. Workers and
 adapters return candidate outputs only; session ids, step execution ids,
 workflow message ids, output publication, root output selection, continuation,
@@ -32,6 +36,35 @@ registry-backed execution without a prior local install. Workflow command JSON
 includes provenance fields such as `sourceKind`, `packageName`,
 `packageDirectory`, and `mutable` so package-derived workflows can be treated as
 installed, read-only artifacts.
+
+Validated authored workflows can also be registered as persistent user-scoped
+mutable workflows:
+
+```bash
+riela workflow register ./path/to/workflow-bundle --mutable
+riela workflow list mutable-name --output table
+riela workflow validate mutable-name
+riela workflow deactivate mutable-name
+riela workflow activate mutable-name
+riela workflow run mutable-name --mock-scenario ./path/to/mock.json
+```
+
+Registration accepts a standalone workflow JSON file or a bundle directory,
+copies it under `~/.riela/temporary-workflows/<workflowId>/`, and requires
+`--overwrite` to replace an existing entry. The legacy physical directory is
+retained for read compatibility; public results use `provenance: "mutable"`,
+`mutable: true`, and `activationState`. `--temporary` and
+`--exclude-temporary` remain deprecated aliases for `--mutable` and
+`--exclude-mutable` until the next major CLI release. Name resolution considers mutable entries after
+project workflows, user workflows, project packages, and user packages.
+Project, user, and installed-package workflows have immutable provenance:
+they remain readable but update/delete operations return
+`IMMUTABLE_WORKFLOW`. Either provenance can be deactivated; deactivated
+origins remain listable and inspectable but execution returns
+`WORKFLOW_DEACTIVATED`. The additive GraphQL registry surface provides list,
+fetch, mutable CRUD, activation, and consolidation; remote registry execution
+is disabled unless an embedding host supplies the complete provider,
+authorizer, and managed-reference configuration.
 
 Local agent backend ids remain explicit compatibility contracts:
 `codex-agent`, `claude-code-agent`, and `cursor-cli-agent`. Official SDK adapter
@@ -54,14 +87,126 @@ interactive package creation and import flows. Use `--output json` only when a
 legacy caller explicitly needs a single non-streaming JSON document after
 completion.
 
+## Session Observability
+
+Session observers open the runtime store read-only and never create, migrate,
+lock, or update it. Checkpointed stores without WAL/SHM sidecars use SQLite's
+immutable read-only mode; live WAL stores retain the normal read-only snapshot
+path. Use one-shot progress for a compact digest or follow a live writer with a
+two-second default polling interval:
+
+```bash
+riela session progress <session-id> --output text
+riela session progress <session-id> --follow --output text
+riela session progress <session-id> --follow --poll-interval 0.5 --output jsonl
+```
+
+`--poll-interval` accepts finite values from `0.1` through `3600` seconds.
+Follow emits every refresh, including unchanged state, and exits after its
+terminal digest. Streaming structured output is JSONL; `--follow --output json`
+is rejected.
+
+Cross-workflow children persist `parentSessionId` and `rootSessionId` on their
+first writer-owned snapshot. Inspect the complete running or completed tree and
+list its relationships with:
+
+```bash
+riela session progress <parent-session-id> --include-children --output json
+riela session progress <parent-session-id> --include-children --follow --output jsonl
+riela session list --output table
+```
+
+`--include-children` follow waits until the requested session and every
+discovered descendant are terminal. Legacy sessions without provenance remain
+standalone. Rollup refreshes decode at most 1,000 snapshots. Structured output
+reports `rollupTruncated` and `rollupSnapshotLimit`; text output prints the same
+fields before the tree so an intentionally bounded view is never mistaken for
+the complete tree. If a terminal-looking follow refresh is truncated, the
+command emits that refresh and exits nonzero instead of claiming the complete
+tree is terminal.
+
+Backend health is evidence-based:
+
+```bash
+riela session health <session-id> --output json
+```
+
+`backendActivity` is `active`, `quiet`, `stalled-suspect`, or `unknown` and
+includes activity evidence plus the active and stalled thresholds. Codex uses
+uniquely correlated rollout freshness; Claude Code uses persisted stream-event
+recency and a uniquely correlated artifact when available. Missing, unreadable,
+or ambiguous artifacts produce `unknown` when no other sufficient correlated
+evidence exists. A stalled-suspect verdict is an observation signal, not
+remediation or proof of deadlock. Provider fallback correlation inspects at
+most 200 launch-window candidates and returns `unknown` if that limit is
+exceeded; native session ids use targeted SQLite lookup.
+
+## Runtime Data Garbage Collection
+
+Runtime data GC is off by default. Enable automatic RielaApp cleanup by writing
+the retention period to `~/.riela/config.json`:
+
+```json
+{
+  "gc": {
+    "retentionDays": 30
+  }
+}
+```
+
+RielaApp starts cleanup asynchronously during launch, so opening the app and
+starting configured workflows do not wait for GC. `RIELA_GC_RETENTION_DAYS`
+overrides the configuration file when an environment-based deployment is more
+convenient.
+
+Run the same cleanup manually with the CLI:
+
+```bash
+riela gc --scope all
+riela gc --retention-days 30 --scope user
+riela gc --retention-days 30 --scope project --dry-run --output json
+```
+
+With no configured or explicit retention period, `riela gc` reports that GC is
+off and changes nothing. The collector removes expired session/runtime rows,
+message-log rows, legacy session files, workflow-history snapshots, event
+receipts, artifacts, and logs. Authored workflows, installed packages,
+registries, profiles, notes, and configuration files are not GC targets.
+`--scope all` covers both `~/.riela` and the current project's `.riela`;
+RielaApp automatically collects only its configured user home.
+
 ## Riela Note
 
 Riela Note is the local notebook and note store for markdown notes, provenance
-aware tags, comments, links, file attachments, search, and workflow-backed note
-automation. The CLI stores notes under `~/.riela/note` by default; set
+aware hierarchical tags, typed notebook progress, per-tag grouped views,
+comments, links, file attachments, search, and workflow-backed note automation.
+The CLI stores notes under `~/.riela/note` by default; set
 `RIELA_NOTE_ROOT` or pass `--note-root <dir>` to use an isolated store.
 RielaApp uses the active profile's note root under
 `~/.riela/profiles/<profile>/note/`.
+
+Tags can have one optional parent. A tag filter resolves the selected tag plus
+all transitive descendants for notebook listing, note listing, text search,
+filter-only search, fallback search, and linked-note expansion. Filtering by a
+leaf remains exact, an unknown tag produces no matches, and parent changes that
+would create a self- or ancestor-cycle are rejected. The seeded `folder` tag
+class is available for notebook organization; it classifies notebook tags and
+does not introduce filesystem folder or ownership semantics.
+
+Every notebook has one typed progress value: `none`, `progress`, `done`, or
+`pending`; existing and newly created notebooks default to `none`. With a tag
+filter active, the compact notebook list and regular-width macOS search popup
+show matching notebooks in those four fixed groups, including notebooks tagged
+through descendant tags. A notebook row exposes its progress and a progress
+change menu. Filtered loads fail closed rather than showing an unfiltered or
+previous-tag board, and stale refresh, pagination, or progress-mutation
+responses cannot replace the current board.
+
+The additive note GraphQL surface exposes `NoteTag.parentTagId`,
+`Notebook.progress`, `DefineNoteTagInput.parentTagId`, the
+`NotebookProgress` enum, and
+`setNotebookProgress(notebookId:progress)`. Existing `tagFilter` arguments use
+the same descendant expansion as the local service.
 
 Common local commands:
 
@@ -124,6 +269,17 @@ private variables and workflow session store are removed after each invocation;
 timeout and cancellation terminate the complete subprocess group. Opening a
 new expansion preserves current Agent drafts and unsaved turns unless the user
 explicitly confirms discard.
+
+Linked search is now backed by the same bounded Graph-RAG policy used by note
+agents and related-note proposals. Default search is unchanged because
+`includeLinked` remains false. When a caller explicitly enables
+`includeLinked`, depth defaults to one and candidates may come from explicit
+links, eligible IDF-weighted shared entity tags, or seed-only lexical overlap;
+callers may request a smaller or larger depth, but `NoteService` always caps it
+at five. Related-note proposals remain tighter at depth two and still require a
+separate confirmation before any link is written. Workflows can call
+`riela/note-graph-neighbors` for ranked path evidence and use `riela/note-get`
+with either `noteId` or `noteIds` to retrieve source bodies.
 
 In the RielaApp Notes window, the note detail pane is a read-first vertical
 reader: each note occupies one snapping page, and approaching either edge of a

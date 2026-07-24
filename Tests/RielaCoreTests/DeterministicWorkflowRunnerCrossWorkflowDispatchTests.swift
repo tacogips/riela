@@ -2,6 +2,8 @@ import XCTest
 import RielaMemory
 @testable import RielaCore
 
+// Name follows the existing runner-suite convention.
+// swiftlint:disable:next type_name
 final class DeterministicWorkflowRunnerCrossWorkflowDispatchTests: XCTestCase {
   func testLiveDispatchRunsCalleeAndDeliversCalleeRootOutputToResumeStep() async throws {
     let store = InMemoryWorkflowRuntimeStore()
@@ -32,6 +34,9 @@ final class DeterministicWorkflowRunnerCrossWorkflowDispatchTests: XCTestCase {
     let calleeSession = try XCTUnwrap(calleeSessionLoaded)
     XCTAssertEqual(calleeSession.status, .completed)
     XCTAssertEqual(calleeSession.executions.map(\.stepId), ["callee-entry"])
+    XCTAssertEqual(calleeSession.parentSessionId, result.session.sessionId)
+    XCTAssertEqual(calleeSession.rootSessionId, result.session.sessionId)
+    XCTAssertNotNil(calleeSession.effectiveStepBudget)
 
     let resumeMessages = try await store.listMessages(for: result.session.sessionId, toStepId: "resume")
     XCTAssertEqual(resumeMessages.count, 1)
@@ -61,6 +66,46 @@ final class DeterministicWorkflowRunnerCrossWorkflowDispatchTests: XCTestCase {
     XCTAssertEqual(calleeSessionEvents.first?.type, .sessionStarted)
     XCTAssertEqual(calleeSessionEvents.first?.sessionId, calleeSession.sessionId)
     XCTAssertTrue(calleeSessionEvents.contains { $0.type == .sessionCompleted })
+  }
+
+  func testLiveChildFirstRunningSnapshotContainsParentAndRootProvenance() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    let gate = CalleeExecutionGate()
+    let adapter = BlockingCalleeAdapter(
+      gate: gate,
+      outputsByStep: [
+        "dispatch": output(payload: ["handoff": .string("outbound-request")]),
+        "callee-entry": output(payload: ["calleeResult": .string("done")]),
+        "resume": output(payload: ["status": .string("applied")])
+      ]
+    )
+    let runner = DeterministicWorkflowRunner(
+      store: store,
+      adapter: adapter,
+      calleeResolver: StaticCalleeResolver(callees: [calleeFixture()])
+    )
+    let workflow = callerWorkflow()
+    let nodePayloads = callerNodePayloads()
+    let runTask = Task {
+      try await runner.run(DeterministicWorkflowRunRequest(
+        workflow: workflow,
+        nodePayloads: nodePayloads
+      ))
+    }
+
+    await gate.waitUntilCalleeIsBlocked()
+    let parent = await store.latestSession(workflowId: "caller")
+    let child = await store.latestSession(workflowId: "callee")
+    XCTAssertEqual(parent?.status, .running)
+    XCTAssertEqual(child?.status, .running)
+    XCTAssertEqual(child?.currentStepId, "callee-entry")
+    XCTAssertEqual(child?.parentSessionId, parent?.sessionId)
+    XCTAssertEqual(child?.rootSessionId, parent?.sessionId)
+    XCTAssertNotNil(child?.effectiveStepBudget)
+
+    await gate.releaseCallee()
+    let result = try await runTask.value
+    XCTAssertEqual(result.status, .completed)
   }
 
   func testTerminalResumeDoesNotPreflightMissingCallee() async throws {
@@ -386,6 +431,81 @@ final class DeterministicWorkflowRunnerCrossWorkflowDispatchTests: XCTestCase {
     XCTAssertEqual(unsupportedGaps.first?.path, "workflow.steps.dispatch.transitions.toWorkflowId")
   }
 
+  func testLiveChildInheritsParentMaxSteps() async throws {
+    let childStepIds = ["callee-entry", "child-two", "child-three"]
+    let callee = linearCallee(stepIds: childStepIds)
+    var outputs: [String: AdapterExecutionOutput] = [
+      "dispatch": output(payload: ["handoff": .string("run")]),
+      "resume": output(payload: ["status": .string("done")])
+    ]
+    for stepId in childStepIds {
+      outputs[stepId] = output(payload: ["step": .string(stepId)])
+    }
+    let runner = DeterministicWorkflowRunner(
+      store: InMemoryWorkflowRuntimeStore(),
+      adapter: VariableRecordingAdapter(outputsByStep: outputs),
+      calleeResolver: StaticCalleeResolver(callees: [callee])
+    )
+
+    do {
+      _ = try await runner.run(DeterministicWorkflowRunRequest(
+        workflow: callerWorkflow(),
+        nodePayloads: callerNodePayloads(),
+        maxSteps: 2,
+        disableDefaultLoopGuard: true
+      ))
+      XCTFail("expected inherited child maxSteps failure")
+    } catch let DeterministicWorkflowRunnerError.crossWorkflowDispatchFailed(workflowId, reason) {
+      XCTAssertEqual(workflowId, "callee")
+      XCTAssertTrue(reason.contains("maxStepsExceeded(2)"), reason)
+    }
+  }
+
+  func testLiveChildInheritsParentMaxLoopIterationsForComputedStepLimit() async throws {
+    let needsWork = AdapterExecutionOutput(
+      provider: "test",
+      model: "gpt-5.5",
+      promptText: "prompt",
+      completionPassed: true,
+      when: ["needs_work": true],
+      payload: [
+        "decision": .string("needs_work"),
+        "loopGate": .object([
+          "gateId": .string("child-review"),
+          "decision": .string("needs_work"),
+          "blockingFindings": .array([.object([
+            "id": .string("same"),
+            "severity": .string("high"),
+            "message": .string("same finding")
+          ])])
+        ])
+      ]
+    )
+    let runner = DeterministicWorkflowRunner(
+      store: InMemoryWorkflowRuntimeStore(),
+      adapter: CrossWorkflowSequenceAdapter(outputsByStep: [
+        "dispatch": [output(payload: ["handoff": .string("run")])],
+        "callee-entry": [needsWork, needsWork, needsWork, needsWork],
+        "child-done": [output(payload: ["status": .string("done")])],
+        "resume": [output(payload: ["status": .string("done")])]
+      ]),
+      calleeResolver: StaticCalleeResolver(callees: [loopingCallee()])
+    )
+
+    do {
+      _ = try await runner.run(DeterministicWorkflowRunRequest(
+        workflow: callerWorkflow(),
+        nodePayloads: callerNodePayloads(),
+        maxLoopIterations: 1,
+        disableDefaultLoopGuard: true
+      ))
+      XCTFail("expected inherited child computed step-limit failure")
+    } catch let DeterministicWorkflowRunnerError.crossWorkflowDispatchFailed(workflowId, reason) {
+      XCTAssertEqual(workflowId, "callee")
+      XCTAssertTrue(reason.contains("maxStepsExceeded(3)"), reason)
+    }
+  }
+
   // MARK: - Fixtures
 
   private func callerWorkflow() -> WorkflowDefinition {
@@ -494,6 +614,67 @@ final class DeterministicWorkflowRunnerCrossWorkflowDispatchTests: XCTestCase {
     )
   }
 
+  private func linearCallee(stepIds: [String]) -> ResolvedWorkflowCallee {
+    let steps = stepIds.enumerated().map { index, stepId in
+      WorkflowStepRef(
+        id: stepId,
+        nodeId: "\(stepId)-node",
+        transitions: index + 1 < stepIds.count
+          ? [WorkflowStepTransition(toStepId: stepIds[index + 1])]
+          : nil
+      )
+    }
+    return ResolvedWorkflowCallee(
+      workflow: WorkflowDefinition(
+        workflowId: "callee",
+        defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 20),
+        entryStepId: stepIds[0],
+        nodeRegistry: stepIds.map {
+          WorkflowNodeRegistryRef(id: "\($0)-node", nodeFile: "nodes/\($0).json")
+        },
+        steps: steps,
+        nodes: stepIds.map { WorkflowNodeRef(id: "\($0)-node", nodeFile: "nodes/\($0).json") }
+      ),
+      nodePayloads: Dictionary(uniqueKeysWithValues: stepIds.map {
+        ("\($0)-node", AgentNodePayload(id: "\($0)-node", executionBackend: .codexAgent, model: "gpt-5.5"))
+      })
+    )
+  }
+
+  private func loopingCallee() -> ResolvedWorkflowCallee {
+    ResolvedWorkflowCallee(
+      workflow: WorkflowDefinition(
+        workflowId: "callee",
+        defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 20),
+        entryStepId: "callee-entry",
+        nodeRegistry: [
+          WorkflowNodeRegistryRef(id: "callee-entry-node", nodeFile: "nodes/callee-entry.json"),
+          WorkflowNodeRegistryRef(id: "child-done-node", nodeFile: "nodes/child-done.json")
+        ],
+        steps: [
+          WorkflowStepRef(
+            id: "callee-entry",
+            nodeId: "callee-entry-node",
+            transitions: [
+              WorkflowStepTransition(toStepId: "callee-entry", label: "needs_work"),
+              WorkflowStepTransition(toStepId: "child-done", label: "!needs_work")
+            ],
+            loop: WorkflowStepLoopMetadata(role: "gate", gateId: "child-review")
+          ),
+          WorkflowStepRef(id: "child-done", nodeId: "child-done-node")
+        ],
+        nodes: [
+          WorkflowNodeRef(id: "callee-entry-node", nodeFile: "nodes/callee-entry.json"),
+          WorkflowNodeRef(id: "child-done-node", nodeFile: "nodes/child-done.json")
+        ]
+      ),
+      nodePayloads: [
+        "callee-entry-node": AgentNodePayload(id: "callee-entry-node", executionBackend: .codexAgent, model: "gpt-5.5"),
+        "child-done-node": AgentNodePayload(id: "child-done-node", executionBackend: .codexAgent, model: "gpt-5.5")
+      ]
+    )
+  }
+
   private struct FailingCalleeResolver: WorkflowCalleeResolving {
     func resolveCallee(workflowId: String) async throws -> ResolvedWorkflowCallee {
       throw WorkflowResolutionFailure()
@@ -550,5 +731,85 @@ private actor VariableRecordingAdapter: NodeAdapter {
 
   func mergedVariables(forStep stepId: String) -> JSONObject? {
     recordedVariables[stepId]
+  }
+}
+
+private actor CrossWorkflowSequenceAdapter: NodeAdapter {
+  private var outputsByStep: [String: [AdapterExecutionOutput]]
+
+  init(outputsByStep: [String: [AdapterExecutionOutput]]) {
+    self.outputsByStep = outputsByStep
+  }
+
+  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    guard var outputs = outputsByStep[input.node.id], !outputs.isEmpty else {
+      return AdapterExecutionOutput(
+        provider: "test",
+        model: input.node.model,
+        promptText: input.promptText,
+        completionPassed: true,
+        payload: ["status": .string("ok")]
+      )
+    }
+    let output = outputs.removeFirst()
+    outputsByStep[input.node.id] = outputs
+    return output
+  }
+}
+
+private actor CalleeExecutionGate {
+  private var blocked = false
+  private var released = false
+  private var blockedWaiters: [CheckedContinuation<Void, Never>] = []
+  private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+  func blockCallee() async {
+    blocked = true
+    blockedWaiters.forEach { $0.resume() }
+    blockedWaiters.removeAll()
+    guard !released else {
+      return
+    }
+    await withCheckedContinuation { continuation in
+      releaseWaiters.append(continuation)
+    }
+  }
+
+  func waitUntilCalleeIsBlocked() async {
+    guard !blocked else {
+      return
+    }
+    await withCheckedContinuation { continuation in
+      blockedWaiters.append(continuation)
+    }
+  }
+
+  func releaseCallee() {
+    released = true
+    releaseWaiters.forEach { $0.resume() }
+    releaseWaiters.removeAll()
+  }
+}
+
+private actor BlockingCalleeAdapter: NodeAdapter {
+  private let gate: CalleeExecutionGate
+  private let outputsByStep: [String: AdapterExecutionOutput]
+
+  init(gate: CalleeExecutionGate, outputsByStep: [String: AdapterExecutionOutput]) {
+    self.gate = gate
+    self.outputsByStep = outputsByStep
+  }
+
+  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    if input.node.id == "callee-entry" {
+      await gate.blockCallee()
+    }
+    return outputsByStep[input.node.id] ?? AdapterExecutionOutput(
+      provider: "test",
+      model: input.node.model,
+      promptText: input.promptText,
+      completionPassed: true,
+      payload: ["status": .string("ok")]
+    )
   }
 }

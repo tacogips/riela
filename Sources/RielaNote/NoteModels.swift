@@ -28,9 +28,17 @@ public enum NoteAutoActionTrigger: String, Codable, Equatable, Sendable {
   case notebookCreated = "notebook-created"
 }
 
+public enum NotebookProgress: String, Codable, Equatable, Sendable, CaseIterable {
+  case none
+  case progress
+  case done
+  case pending
+}
+
 public struct Notebook: Equatable, Sendable {
   public var notebookId: String
   public var title: String
+  public var progress: NotebookProgress
   public var createdAt: String
   public var updatedAt: String
   public var metaJSON: String?
@@ -41,6 +49,7 @@ public struct Notebook: Equatable, Sendable {
   public init(
     notebookId: String,
     title: String,
+    progress: NotebookProgress = .none,
     createdAt: String,
     updatedAt: String,
     metaJSON: String? = nil,
@@ -50,6 +59,7 @@ public struct Notebook: Equatable, Sendable {
   ) {
     self.notebookId = notebookId
     self.title = title
+    self.progress = progress
     self.createdAt = createdAt
     self.updatedAt = updatedAt
     self.metaJSON = metaJSON
@@ -148,13 +158,22 @@ public struct Tag: Equatable, Sendable {
   public var tagId: String
   public var name: String
   public var classId: String?
+  public var parentTagId: String?
   public var isSystem: Bool
   public var createdAt: String
 
-  public init(tagId: String, name: String, classId: String?, isSystem: Bool, createdAt: String) {
+  public init(
+    tagId: String,
+    name: String,
+    classId: String?,
+    parentTagId: String? = nil,
+    isSystem: Bool,
+    createdAt: String
+  ) {
     self.tagId = tagId
     self.name = name
     self.classId = classId
+    self.parentTagId = parentTagId
     self.isSystem = isSystem
     self.createdAt = createdAt
   }

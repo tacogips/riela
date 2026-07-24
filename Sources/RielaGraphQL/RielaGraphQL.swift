@@ -14,25 +14,87 @@ public struct GraphQLRuntimeSnapshotQueryService: Sendable {
   public var loadSnapshot: @Sendable (String) throws -> WorkflowRuntimePersistenceSnapshot
   public var loadSnapshots: @Sendable () throws -> [WorkflowRuntimePersistenceSnapshot]
   public var sessionStore: String?
+  public var observabilityService: SessionObservabilityService
 
   public init(
     loadSnapshot: @escaping @Sendable (String) throws -> WorkflowRuntimePersistenceSnapshot,
     loadSnapshots: @escaping @Sendable () throws -> [WorkflowRuntimePersistenceSnapshot] = {
       throw WorkflowRuntimePersistenceStoreError.notFound("workflow session discovery is unavailable")
     },
-    sessionStore: String? = nil
+    sessionStore: String? = nil,
+    observabilityService: SessionObservabilityService? = nil
   ) {
     self.loadSnapshot = loadSnapshot
     self.loadSnapshots = loadSnapshots
     self.sessionStore = sessionStore
+    self.observabilityService = observabilityService ?? SessionObservabilityService(
+      loadSnapshot: loadSnapshot,
+      loadRollupSnapshots: { sessionId in
+        let snapshots = try loadSnapshots()
+        guard snapshots.contains(where: { $0.session.sessionId == sessionId }) else {
+          throw WorkflowRuntimePersistenceStoreError.notFound("runtime snapshot not found: \(sessionId)")
+        }
+        return snapshots
+      }
+    )
   }
 
   public init(store: SQLiteWorkflowRuntimePersistenceStore) {
     self.init(
       loadSnapshot: { sessionId in try store.load(sessionId: sessionId) },
       loadSnapshots: { try store.loadAll() },
-      sessionStore: store.rootDirectory
+      sessionStore: store.rootDirectory,
+      observabilityService: SessionObservabilityService(store: store)
     )
+  }
+
+  public func sessionProgress(
+    _ request: GraphQLSessionProgressRequest
+  ) async -> GraphQLSessionObservabilityResult {
+    do {
+      let view = try observabilityService.progress(
+        sessionId: request.sessionId,
+        includeChildren: request.includeChildren
+      )
+      return GraphQLSessionObservabilityResult(
+        result: GraphQLControlPlaneResult(
+          accepted: true,
+          status: GraphQLLoopEvidenceQueryStatus.found.rawValue
+        ),
+        view: view
+      )
+    } catch {
+      return GraphQLSessionObservabilityResult(
+        result: GraphQLControlPlaneResult(
+          accepted: false,
+          status: GraphQLLoopEvidenceQueryStatus.error.rawValue,
+          diagnostics: [String(describing: error)]
+        )
+      )
+    }
+  }
+
+  public func sessionHealth(
+    _ request: GraphQLSessionHealthRequest
+  ) async -> GraphQLSessionObservabilityResult {
+    do {
+      let view = try observabilityService.health(sessionId: request.sessionId)
+      return GraphQLSessionObservabilityResult(
+        result: GraphQLControlPlaneResult(
+          accepted: true,
+          status: GraphQLLoopEvidenceQueryStatus.found.rawValue
+        ),
+        view: view
+      )
+    } catch {
+      return GraphQLSessionObservabilityResult(
+        result: GraphQLControlPlaneResult(
+          accepted: false,
+          status: GraphQLLoopEvidenceQueryStatus.error.rawValue,
+          diagnostics: [String(describing: error)]
+        )
+      )
+    }
   }
 
   public init(fileStore: FileWorkflowRuntimePersistenceStore) {

@@ -453,13 +453,14 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
     let resumed = try await runner.run(DeterministicWorkflowRunRequest(
       workflow: workflow,
       nodePayloads: nodePayloads(for: workflow),
-      maxSteps: 1,
+      maxSteps: 3,
       resumeSessionId: failed.sessionId
     ))
 
     XCTAssertEqual(resumed.session.sessionId, failed.sessionId)
     XCTAssertEqual(resumed.session.status, .completed)
     XCTAssertNil(resumed.session.failureKind)
+    XCTAssertEqual(resumed.session.effectiveStepBudget, 3)
     XCTAssertEqual(resumed.session.executions.map(\.stepId), ["step-a", "step-b"])
   }
 
@@ -519,6 +520,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
     XCTAssertEqual(overwritten.failureKind, .cancelled)
     XCTAssertEqual(overwritten.failureReason, "workflow run cancelled")
     XCTAssertNil(overwritten.stepBudgetDiagnostic)
+    XCTAssertEqual(overwritten.effectiveStepBudget, 3)
 
     let terminalResume = try await runner.run(DeterministicWorkflowRunRequest(
       workflow: workflow,
@@ -530,6 +532,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
     XCTAssertEqual(terminalResume.status, .failed)
     XCTAssertEqual(terminalResume.exitCode, 1)
     XCTAssertEqual(terminalResume.session.failureKind, .cancelled)
+    XCTAssertEqual(terminalResume.session.effectiveStepBudget, 3)
   }
 
   func testRerunCreatesNewSessionStartingAtRequestedStep() async throws {

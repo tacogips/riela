@@ -78,6 +78,53 @@ final class SQLiteDatabaseTests: XCTestCase {
     XCTAssertEqual(rows.first?["value"], "1")
   }
 
+  func testStrictReadOnlyOpenNeverFallsBackToWritableForIdleWALDatabase() throws {
+    let path = temporaryDatabasePath()
+    do {
+      let database = try SQLiteDatabase.open(path: path)
+      try database.execute("CREATE TABLE records (id TEXT PRIMARY KEY, value INTEGER NOT NULL)")
+      try database.execute("INSERT INTO records (id, value) VALUES ('one', 1)")
+      _ = try database.query("PRAGMA wal_checkpoint(TRUNCATE)")
+    }
+    removeSQLiteSidecars(for: path)
+    let before = try modificationDate(path)
+
+    XCTAssertThrowsError(
+      try SQLiteDatabase.open(path: path, mode: .strictReadOnly, options: .readOnlyDefault)
+    )
+
+    XCTAssertEqual(try modificationDate(path), before)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: path + "-shm"))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: path + "-wal"))
+  }
+
+  func testStrictReadOnlyImmutableFallbackReadsIdleWALDatabaseWithoutMutation() throws {
+    let path = temporaryDatabasePath()
+    do {
+      let database = try SQLiteDatabase.open(path: path)
+      try database.execute("CREATE TABLE records (id TEXT PRIMARY KEY, value INTEGER NOT NULL)")
+      try database.execute("INSERT INTO records (id, value) VALUES ('one', 1)")
+      _ = try database.query("PRAGMA wal_checkpoint(TRUNCATE)")
+    }
+    removeSQLiteSidecars(for: path)
+    let bytesBefore = try Data(contentsOf: URL(fileURLWithPath: path))
+    let modifiedBefore = try modificationDate(path)
+
+    let readDatabase = try SQLiteDatabase.open(
+      path: path,
+      mode: .strictReadOnlyWithImmutableFallback,
+      options: .readOnlyDefault
+    )
+    let rows = try readDatabase.query("SELECT id, value FROM records")
+
+    XCTAssertEqual(rows.first?["id"], "one")
+    XCTAssertEqual(rows.first?["value"], "1")
+    XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: path)), bytesBefore)
+    XCTAssertEqual(try modificationDate(path), modifiedBefore)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: path + "-shm"))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: path + "-wal"))
+  }
+
   func testStatementErrorsIncludeDatabasePath() throws {
     let path = temporaryDatabasePath()
     let database = try SQLiteDatabase.open(path: path)
@@ -101,5 +148,10 @@ final class SQLiteDatabaseTests: XCTestCase {
     for suffix in ["-shm", "-wal"] {
       try? FileManager.default.removeItem(atPath: path + suffix)
     }
+  }
+
+  private func modificationDate(_ path: String) throws -> Date {
+    let attributes = try FileManager.default.attributesOfItem(atPath: path)
+    return try XCTUnwrap(attributes[.modificationDate] as? Date)
   }
 }

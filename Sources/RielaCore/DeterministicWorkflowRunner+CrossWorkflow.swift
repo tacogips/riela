@@ -54,6 +54,9 @@ extension DeterministicWorkflowRunner {
       workflow: calleeWorkflow,
       nodePayloads: callee.nodePayloads,
       variables: directive.handoffPayload,
+      maxSteps: request.maxSteps,
+      maxLoopIterations: request.maxLoopIterations,
+      disableDefaultLoopGuard: request.disableDefaultLoopGuard,
       defaultTimeoutMs: request.defaultTimeoutMs,
       memoryRootDirectory: request.memoryRootDirectory,
       agentSilenceWarningMs: request.agentSilenceWarningMs,
@@ -62,6 +65,8 @@ extension DeterministicWorkflowRunner {
       crossWorkflowDispatchDepth: request.crossWorkflowDispatchDepth + 1
     )
     calleeRequest.workflowRunId = request.workflowRunId
+    calleeRequest.parentSessionId = parentSessionId
+    calleeRequest.rootSessionId = request.rootSessionId ?? parentSessionId
     let calleeResult: WorkflowRunResult
     do {
       calleeResult = try await run(calleeRequest)

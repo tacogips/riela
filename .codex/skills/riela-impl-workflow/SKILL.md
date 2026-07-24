@@ -73,3 +73,51 @@ Manual GUI verification should record Return routing, search-popup confirmation
 reachability, reader snapping and edit-mode pager blocking, current-note action
 routing, relaunch persistence, and dark/light rendering for the changed
 workspace surfaces.
+
+## Hierarchical Tags and Per-Tag Kanban Behavior
+
+Accepted Riela Note hierarchy and Kanban work on
+`feat/riela-note-hierarchical-tags-kanban` ships these user-facing contracts as
+one issue-resolution work package:
+
+- Tags support one optional parent. Parent-tag filters include the parent and
+  all transitive descendants across notebook lists, note lists, text and
+  filter-only search, LIKE fallback, and linked-note expansion. Leaf filters
+  remain exact, unknown filters return no matches, and self/ancestor parent
+  cycles are rejected.
+- The `folder` system tag class can classify tags applied to notebooks. It does
+  not add filesystem folder, containment, or notebook-ownership semantics.
+- Notebook progress is the typed four-state value `none`, `progress`, `done`,
+  or `pending`. Schema-v4 migration and fresh databases default notebooks to
+  `none` and enforce the allowed values.
+- The GraphQL surface additively exposes `NoteTag.parentTagId`,
+  `Notebook.progress`, `DefineNoteTagInput.parentTagId`,
+  `NotebookProgress`, and `setNotebookProgress(notebookId:progress)`.
+  Existing `tagFilter` fields inherit the service's descendant expansion.
+- An active tag filter renders notebooks in fixed `none`, `progress`, `done`,
+  and `pending` groups in both compact and regular-width macOS Notes surfaces.
+  Progress changes are persisted through the shared service.
+- Filtered loads fail closed. Generation and board-context guards prevent stale
+  refresh, pagination, and progress-mutation completions from replacing newer
+  membership or progress state. Current mutation failures retain the matching
+  board, reconcile canonical state, and remain visible to the user.
+
+The Step 7 decision was
+`accepted_adversarial_review_with_low_coverage_gaps`: no high- or mid-severity
+production failure remained. The accepted focused verification was:
+
+```bash
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'NoteHierarchyProgressTests|NoteGraphQLHierarchyProgressTests|RielaNoteKanbanRaceTests'
+git diff --check && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/xcrun swiftlint --quiet --no-cache
+```
+
+The focused test run passed 15 tests with zero failures. `git diff --check`
+passed; SwiftLint reported existing warning-only findings before its wrapper
+timed out. Keep these accepted residual gaps explicit in handoffs:
+
+- a current-executable active-filter window-ID screenshot is unavailable;
+  inspected AppKit-host rendering is the available visual evidence;
+- fresh-schema v4 foreign-key metadata and progress-CHECK enforcement lack
+  dedicated assertions independent of migration coverage;
+- the GraphQL document test does not yet exercise a parent/child/grandchild
+  projection and assert the nested `parentTagId`.

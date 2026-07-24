@@ -73,6 +73,9 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   @Published public internal(set) var isSelectionQuestionLoading = false
   @Published public internal(set) var didSaveSelectionQuestionComment = false
   @Published public internal(set) var commentPromotionError: String?
+  @Published public internal(set) var notebookExpansionError: String?
+  @Published public internal(set) var notebookExpansionSession: RielaNoteNotebookExpansionSession?
+  @Published public internal(set) var expandingNotebookIds: Set<String> = []
   @Published public internal(set) var isCommentPromotionLoading = false
   @Published public internal(set) var isSourceImageLoading = false
   @Published public var filter = RielaNoteListFilter()
@@ -124,6 +127,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   var editRewriteGeneration = 0
   var selectionQuestionGeneration = 0
   var commentPromotionGeneration = 0
+  var notebookExpansionTasks: [String: Task<RielaNoteNotebookExpansionSession, Error>] = [:]
 
   /// Absolute trailing pagination cursor for the selected notebook's note
   /// window. It equals the note count for a window that begins at offset zero.

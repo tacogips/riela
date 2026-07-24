@@ -1,0 +1,24 @@
+{
+  "notebook-compact": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "summaryMarkdown": "- Draft the milestone.\n- Confirm the owner and delivery date.",
+      "version": 1
+    }
+  },
+  "workflow-output": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "summaryMarkdown": "- Draft the milestone.\n- Confirm the owner and delivery date.",
+      "version": 1
+    }
+  }
+}

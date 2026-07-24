@@ -253,7 +253,22 @@ under `examples/note-quick-memo`, `examples/note-pdf-ingest`,
 `examples/note-youtube-transcript`, `examples/note-auto-tagging`,
 `examples/note-agent`, `examples/note-config-agent`,
 `examples/note-link-extract`, `examples/note-edit-rewrite`, and
-`examples/note-selection-question`.
+`examples/note-selection-question`, and `examples/note-notebook-compact`.
+
+Notebook rows in both the notebook list and file-tree pane provide **Expand
+with Agent**. The first expansion of a notebook revision runs
+`note-notebook-compact`, caches versioned key points in the source notebook's
+metadata, and creates a linked `notebook-kind:agent-conversation` notebook.
+Later questions are grounded only in that compact summary; every saved turn has
+AI `source-citation` links back to all source notes. Configure discovery with
+`RIELA_NOTE_NOTEBOOK_COMPACT_WORKFLOW_DIR` and
+`RIELA_NOTE_NOTEBOOK_COMPACT_RIELA_EXECUTABLE`. If the provider is absent, the
+action reports that expansion is not configured without changing the notebook.
+Notebook data is processed by an ephemeral, no-ambient-tool worker whose
+private variables and workflow session store are removed after each invocation;
+timeout and cancellation terminate the complete subprocess group. Opening a
+new expansion preserves current Agent drafts and unsaved turns unless the user
+explicitly confirms discard.
 
 Linked search is now backed by the same bounded Graph-RAG policy used by note
 agents and related-note proposals. Default search is unchanged because

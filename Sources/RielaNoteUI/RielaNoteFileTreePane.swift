@@ -91,6 +91,16 @@ public struct RielaNoteFileTreePane: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
+    .contextMenu {
+      Button {
+        Task {
+          await rielaNoteFileTreeExpandAction(viewModel: viewModel, notebook: notebook)
+        }
+      } label: {
+        Label("Expand with Agent", systemImage: "sparkles")
+      }
+      .disabled(viewModel.isExpandingNotebook(notebook.notebookId))
+    }
   }
 
   @ViewBuilder
@@ -212,4 +222,12 @@ public struct RielaNoteFileTreePane: View {
       }
     }
   }
+}
+
+@MainActor
+func rielaNoteFileTreeExpandAction(
+  viewModel: RielaNoteLibraryViewModel,
+  notebook: Notebook
+) async {
+  await viewModel.expandNotebook(notebook)
 }

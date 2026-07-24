@@ -3,13 +3,18 @@
   "description": "Shared Codex workflow for issue resolution or planning-only design and implementation-plan handoff. The workflow owns both the sequential path and the bounded feature-local fanout path, then joins accepted plans before implementation or planning-only completion, with an optional adversarial implementation review gate for high-risk changes.",
   "defaults": {
     "fanoutConcurrency": 20,
-    "maxLoopIterations": 3,
+    "maxLoopIterations": 30,
     "nodeTimeoutMs": 3600000
   },
   "loop": {
     "kind": "design-implement-review",
     "required": false,
     "description": "First-party Codex design, implementation-plan, implementation, review, documentation, and commit workflow loop metadata.",
+    "convergence": {
+      "maxGateVisits": 4,
+      "maxRepeatedFindingRounds": 2,
+      "onStall": "fail"
+    },
     "evidence": {
       "required": true,
       "artifactRootPolicy": "runtime-owned",
@@ -41,7 +46,7 @@
         "allowedBackends": [
           "codex-agent"
         ],
-        "requiredWorkerModel": "gpt-5.5"
+        "requiredWorkerModel": "gpt-5.6-sol"
       },
       "network": {
         "mode": "inherit-command"

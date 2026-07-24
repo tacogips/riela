@@ -31,7 +31,10 @@ extension DeterministicWorkflowRunner {
       WorkflowSessionCreateInput(
         workflowId: request.workflow.workflowId,
         entryStepId: entryStepId,
-        effectiveInstance: request.effectiveInstance
+        effectiveInstance: request.effectiveInstance,
+        parentSessionId: request.parentSessionId,
+        rootSessionId: request.rootSessionId,
+        effectiveStepBudget: request.effectiveStepBudget
       )
     )
     return .proceed(SessionEntryContext(
@@ -69,10 +72,16 @@ extension DeterministicWorkflowRunner {
       return .terminal(terminalResult)
     }
     try await validateCrossWorkflowDispatchTargets(in: request.workflow)
+    let currentStepId = existing.currentStepId ?? existing.entryStepId
+    let variableOverrides = try await recoveredLoopGuardPayload(
+      sessionId: existing.sessionId,
+      stepId: currentStepId
+    )
     return .proceed(SessionEntryContext(
       session: existing,
-      currentStepId: existing.currentStepId ?? existing.entryStepId,
-      recoveryLineage: resumeLineage
+      currentStepId: currentStepId,
+      recoveryLineage: resumeLineage,
+      variableOverrides: variableOverrides
     ))
   }
 
@@ -101,7 +110,10 @@ extension DeterministicWorkflowRunner {
       WorkflowSessionCreateInput(
         workflowId: request.workflow.workflowId,
         entryStepId: entryStepId,
-        effectiveInstance: request.effectiveInstance
+        effectiveInstance: request.effectiveInstance,
+        parentSessionId: request.parentSessionId,
+        rootSessionId: request.rootSessionId,
+        effectiveStepBudget: request.effectiveStepBudget
       )
     )
     return .proceed(SessionEntryContext(

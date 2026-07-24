@@ -180,6 +180,24 @@ private final class PrefetchNoteUIClient: RielaNoteUIClient, @unchecked Sendable
     Array(notes.dropFirst(offset).prefix(limit))
   }
 
+  func notebookNotesWindow(
+    containing noteId: String,
+    pageSize: Int
+  ) async throws -> RielaNoteNotebookNotesWindow {
+    guard let targetOffset = notes.firstIndex(where: { $0.noteId == noteId }) else {
+      throw PrefetchClientError.missingNote
+    }
+    let boundedPageSize = max(pageSize, 1)
+    let startOffset = max(targetOffset - (boundedPageSize / 2), 0)
+    let page = Array(notes.dropFirst(startOffset).prefix(boundedPageSize + 1))
+    return RielaNoteNotebookNotesWindow(
+      notes: Array(page.prefix(boundedPageSize)),
+      startOffset: startOffset,
+      hasEarlierNotes: startOffset > 0,
+      hasMoreNotes: page.count > boundedPageSize
+    )
+  }
+
   func listTags() async throws -> [Tag] {
     []
   }

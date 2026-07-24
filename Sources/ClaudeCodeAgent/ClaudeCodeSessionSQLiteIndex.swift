@@ -8,17 +8,28 @@ public enum ClaudeCodeSessionSQLiteIndex {
     URL(fileURLWithPath: claudeCodeHome ?? resolveClaudeCodeHome(), isDirectory: true).appendingPathComponent("state").path
   }
 
-  public static func openClaudeCodeDb(claudeCodeHome: String? = nil) -> String? {
-    AgentSessionSQLiteSupport.openThreadsDatabase(at: statePath(claudeCodeHome: claudeCodeHome))
+  public static func openClaudeCodeDb(
+    claudeCodeHome: String? = nil,
+    readMode: AgentSessionSQLiteReadMode = .compatibility
+  ) -> String? {
+    AgentSessionSQLiteSupport.openThreadsDatabase(
+      at: statePath(claudeCodeHome: claudeCodeHome),
+      readMode: readMode
+    )
   }
 
-  public static func listSessionsSqlite(claudeCodeHome: String? = nil, options: ClaudeCodeSessionListOptions = ClaudeCodeSessionListOptions()) -> ClaudeCodeSessionListResult? {
-    guard let dbPath = openClaudeCodeDb(claudeCodeHome: claudeCodeHome) else {
+  public static func listSessionsSqlite(
+    claudeCodeHome: String? = nil,
+    options: ClaudeCodeSessionListOptions = ClaudeCodeSessionListOptions(),
+    readMode: AgentSessionSQLiteReadMode = .compatibility
+  ) -> ClaudeCodeSessionListResult? {
+    guard let dbPath = openClaudeCodeDb(claudeCodeHome: claudeCodeHome, readMode: readMode) else {
       return nil
     }
     let records = AgentSessionSQLiteSupport.listThreadRecords(
       dbPath: dbPath,
-      separator: sessionSQLiteSeparator
+      separator: sessionSQLiteSeparator,
+      readMode: readMode
     )
     let sessions = ClaudeCodeSessionQuery.sorted(
       records.map(recordToSession).filter { ClaudeCodeSessionQuery.matches($0, options: options) },
@@ -35,6 +46,21 @@ public enum ClaudeCodeSessionSQLiteIndex {
 
   public static func findLatestSessionSqlite(claudeCodeHome: String? = nil, cwd: String? = nil) -> ClaudeCodeSession? {
     listSessionsSqlite(claudeCodeHome: claudeCodeHome, options: ClaudeCodeSessionListOptions(claudeCodeHome: claudeCodeHome, cwd: cwd, limit: 1, sortBy: "updatedAt")).map(\.sessions.first) ?? nil
+  }
+
+  static func activitySessionsSqlite(
+    claudeCodeHome: String,
+    query: AgentSessionSQLiteQuery,
+    readMode: AgentSessionSQLiteReadMode
+  ) -> [ClaudeCodeSession] {
+    guard let dbPath = openClaudeCodeDb(claudeCodeHome: claudeCodeHome, readMode: readMode) else {
+      return []
+    }
+    return AgentSessionSQLiteSupport.queryThreadRecords(
+      dbPath: dbPath,
+      query: query,
+      readMode: readMode
+    ).map(recordToSession)
   }
 
   private static func recordToSession(_ record: AgentSessionSQLiteRecord) -> ClaudeCodeSession {

@@ -356,9 +356,9 @@ final class AgentAdapterTests: XCTestCase {
     XCTAssertEqual(
       run.configuration.arguments,
       [
-        "claude-dev", "-p", "--output-format", "text", "--model", "model", "--effort", "medium",
+        "claude-dev", "-p", "--output-format", "stream-json", "--verbose", "--model", "model", "--effort", "medium",
         "--permission-mode", "plan", "--add-dir", "/tmp/a", "--add-dir", "/tmp/b", "--add-dir",
-        "/tmp/c", "--verbose", "--allowedTools", "Read"
+        "/tmp/c", "--allowedTools", "Read"
       ]
     )
     XCTAssertEqual(run.configuration.environment["RIELA_AGENT_BACKEND"], "claude-code-agent")

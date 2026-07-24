@@ -8,19 +8,34 @@ public struct GraphQLDocumentRequest: Equatable, Sendable {
   public var operationName: String?
   public var environment: [String: String]
   public var authenticatedClientId: String?
+  public var transportCredential: GraphQLTransportCredential?
+  public var isLocallyTrusted: Bool
+  public var localWorkingDirectory: String?
+  var parsedRootFields: [ParsedNoteGraphQLRootField]?
+  var domainPreflightComplete: Bool
+  var verifiedRegistryPrincipal: WorkflowRegistryVerifiedPrincipal?
 
   public init(
     query: String,
     variables: JSONObject = [:],
     operationName: String? = nil,
     environment: [String: String] = ProcessInfo.processInfo.environment,
-    authenticatedClientId: String? = nil
+    authenticatedClientId: String? = nil,
+    transportCredential: GraphQLTransportCredential? = nil,
+    isLocallyTrusted: Bool = false,
+    localWorkingDirectory: String? = nil
   ) {
     self.query = query
     self.variables = variables
     self.operationName = operationName
     self.environment = environment
     self.authenticatedClientId = authenticatedClientId
+    self.transportCredential = transportCredential
+    self.isLocallyTrusted = isLocallyTrusted
+    self.localWorkingDirectory = localWorkingDirectory
+    parsedRootFields = nil
+    domainPreflightComplete = false
+    verifiedRegistryPrincipal = nil
   }
 }
 
@@ -42,7 +57,14 @@ public protocol GraphQLDocumentExecuting: Sendable {
   func execute(_ request: GraphQLDocumentRequest) async -> GraphQLDocumentExecutionResponse
 }
 
-public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
+protocol GraphQLDocumentDomainPreflighting: Sendable {
+  func preflight(
+    _ request: GraphQLDocumentRequest,
+    rootFields: [ParsedNoteGraphQLRootField]
+  ) async -> GraphQLDocumentExecutionResponse?
+}
+
+public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting, GraphQLDocumentDomainPreflighting {
   public static let defaultRawS3EnvironmentAllowlist: Set<String> = [
     "AWS_ACCESS_KEY_ID",
     "AWS_SECRET_ACCESS_KEY",
@@ -72,7 +94,7 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
   public func execute(_ request: GraphQLDocumentRequest) async -> GraphQLDocumentExecutionResponse {
     let rootFields: [ParsedNoteGraphQLRootField]
     do {
-      guard let parsed = try parseNoteGraphQLRootFields(
+      guard let parsed = try request.parsedRootFields ?? parseNoteGraphQLRootFields(
         in: request.query,
         operationName: request.operationName,
         variables: request.variables,
@@ -89,17 +111,19 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
       let responseKey = noteGraphQLRootFieldName(in: request.query, operationName: request.operationName) ?? "noteGraphQL"
       return errorResponse(responseKeys: [responseKey], error: error)
     }
-    // This executor owns the document only when every root selection is a note
-    // field. A document with no note fields belongs to another executor.
-    guard rootFields.contains(where: { supportedNoteGraphQLFields.contains($0.fieldName) }) else {
+    let routedRootFields = rootFields.filter { supportedNoteGraphQLFields.contains($0.fieldName) }
+    guard !routedRootFields.isEmpty else {
       return .notHandled
+    }
+    guard request.domainPreflightComplete || routedRootFields.count == rootFields.count else {
+      return errorResponse(
+        responseKeys: routedRootFields.map(\.responseKey),
+        error: NoteGraphQLDocumentExecutorError.invalidSelection("mixed-domain document requires composite preflight")
+      )
     }
     do {
       var data: JSONObject = [:]
-      for rootField in rootFields {
-        guard supportedNoteGraphQLFields.contains(rootField.fieldName) else {
-          throw NoteGraphQLDocumentExecutorError.invalidSelection("unsupported root field '\(rootField.fieldName)'")
-        }
+      for rootField in routedRootFields {
         try validateOperationType(rootField.operationType, fieldName: rootField.fieldName)
         try validateSelections(rootField.selections, rootFieldName: rootField.fieldName)
         var routedRequest = request
@@ -112,6 +136,31 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
         data[rootField.responseKey] = try projectGraphQLValue(value, selections: rootField.selections, typeName: rootType)
       }
       return GraphQLDocumentExecutionResponse(handled: true, body: ["data": .object(data)])
+    } catch {
+      return errorResponse(responseKeys: routedRootFields.map(\.responseKey), error: error)
+    }
+  }
+
+  func preflight(
+    _ request: GraphQLDocumentRequest,
+    rootFields: [ParsedNoteGraphQLRootField]
+  ) async -> GraphQLDocumentExecutionResponse? {
+    do {
+      guard !rootFields.isEmpty,
+            rootFields.allSatisfy({ supportedNoteGraphQLFields.contains($0.fieldName) }) else {
+        throw NoteGraphQLDocumentExecutorError.invalidSelection("unsupported mixed-domain root field")
+      }
+      var responseKeys = Set<String>()
+      for rootField in rootFields {
+        try validateOperationType(rootField.operationType, fieldName: rootField.fieldName)
+        try validateSelections(rootField.selections, rootFieldName: rootField.fieldName)
+        guard responseKeys.insert(rootField.responseKey).inserted else {
+          throw NoteGraphQLDocumentExecutorError.invalidSelection(
+            "duplicate response key '\(rootField.responseKey)'"
+          )
+        }
+      }
+      return nil
     } catch {
       return errorResponse(responseKeys: rootFields.map(\.responseKey), error: error)
     }
@@ -163,13 +212,23 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
         createdAfter: try optionalString("createdAfter", variables: variables),
         createdBefore: try optionalString("createdBefore", variables: variables),
         includeLinked: try optionalBool("includeLinked", variables: variables) ?? false,
+        depth: try optionalInt("depth", variables: variables) ?? 1,
         limit: validatedLimit(try optionalInt("limit", variables: variables), defaultValue: 20),
         offset: validatedOffset(try optionalInt("offset", variables: variables))
+      ))
+    case "noteGraphNeighbors":
+      return try await encodedJSONValue(service.noteGraphNeighbors(
+        noteIds: try optionalStringArray("noteIds", variables: variables) ?? [],
+        depth: try optionalInt("depth", variables: variables) ?? NoteGraphPolicy.defaultMaxDepth,
+        limit: validatedGraphLimit(
+          try optionalInt("limit", variables: variables),
+          defaultValue: NoteGraphPolicy.defaultLimit
+        )
       ))
     case "proposeNoteLinks":
       return try await encodedJSONValue(service.proposeNoteLinks(
         noteId: requiredString("noteId", variables: variables),
-        limit: validatedLimit(try optionalInt("limit", variables: variables), defaultValue: 8)
+        limit: validatedGraphLimit(try optionalInt("limit", variables: variables), defaultValue: 8)
       ))
     case "tags":
       return try await encodedJSONValue(service.tags())
@@ -221,6 +280,11 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting {
         notebookId: requiredString("notebookId", variables: variables),
         tagName: requiredString("tagName", variables: variables),
         provenance: try optionalString("provenance", variables: variables) ?? "human"
+      ))
+    case "setNotebookProgress":
+      return try await encodedJSONValue(service.setNotebookProgress(
+        notebookId: requiredString("notebookId", variables: variables),
+        progress: requiredString("progress", variables: variables)
       ))
     case "setNoteReadOnly":
       return try await encodedJSONValue(service.setReadOnly(
@@ -451,6 +515,7 @@ let supportedNoteGraphQLFields: Set<String> = [
   "notebooks",
   "notes",
   "searchNotes",
+  "noteGraphNeighbors",
   "proposeNoteLinks",
   "tags",
   "tagClasses",
@@ -466,6 +531,7 @@ let supportedNoteGraphQLFields: Set<String> = [
   "deleteNotebook",
   "applyNotebookTags",
   "removeNotebookTag",
+  "setNotebookProgress",
   "setNoteReadOnly",
   "applyNoteTags",
   "removeNoteTag",
@@ -486,6 +552,7 @@ private let noteGraphQLQueryFields: Set<String> = [
   "notebooks",
   "notes",
   "searchNotes",
+  "noteGraphNeighbors",
   "proposeNoteLinks",
   "tags",
   "tagClasses",
@@ -534,6 +601,16 @@ private func validateSelections(
     throw NoteGraphQLDocumentExecutorError.invalidSelection("\(path) requires nested selections")
   }
   for selection in selections {
+    guard selection.fragmentTypeConditions.allSatisfy({ $0 == typeName }) else {
+      throw NoteGraphQLDocumentExecutorError.invalidSelection(
+        "fragment type condition is incompatible with '\(typeName)' at \(path)"
+      )
+    }
+    guard selection.arguments.isEmpty else {
+      throw NoteGraphQLDocumentExecutorError.invalidSelection(
+        "\(path).\(selection.fieldName) does not accept arguments"
+      )
+    }
     if selection.fieldName == "__typename" {
       guard selection.selections.isEmpty else {
         throw NoteGraphQLDocumentExecutorError.invalidSelection("\(path).__typename does not support nested selections")
@@ -603,6 +680,7 @@ private let noteGraphQLRootSelectionTypes: [String: String] = [
   "notebooks": "NotebooksQueryPayload",
   "notes": "NotesQueryPayload",
   "searchNotes": "NoteSearchQueryPayload",
+  "noteGraphNeighbors": "NoteGraphNeighborsQueryPayload",
   "proposeNoteLinks": "NoteLinkProposalQueryPayload",
   "tags": "NoteTagsQueryPayload",
   "tagClasses": "NoteTagClassesQueryPayload",
@@ -627,6 +705,7 @@ let noteGraphQLSelectionFields: [String: [String: String?]] = [
   "NotebooksQueryPayload": noteGraphQLQueryPayloadFields(valueType: "Notebook"),
   "NotesQueryPayload": noteGraphQLQueryPayloadFields(valueType: "Note"),
   "NoteSearchQueryPayload": noteGraphQLQueryPayloadFields(valueType: "NoteSearchResult"),
+  "NoteGraphNeighborsQueryPayload": noteGraphQLQueryPayloadFields(valueType: "NoteGraphNeighbor"),
   "NoteLinkProposalQueryPayload": noteGraphQLQueryPayloadFields(valueType: "NoteLinkProposal"),
   "NoteTagsQueryPayload": noteGraphQLQueryPayloadFields(valueType: "NoteTag"),
   "NoteTagClassesQueryPayload": noteGraphQLQueryPayloadFields(valueType: "NoteTagClass"),
@@ -671,6 +750,7 @@ let noteGraphQLSelectionFields: [String: [String: String?]] = [
   "Notebook": [
     "notebookId": nil,
     "title": nil,
+    "progress": nil,
     "createdAt": nil,
     "updatedAt": nil,
     "metaJSON": nil,
@@ -689,6 +769,7 @@ let noteGraphQLSelectionFields: [String: [String: String?]] = [
     "tagId": nil,
     "name": nil,
     "classId": nil,
+    "parentTagId": nil,
     "isSystem": nil,
     "createdAt": nil
   ],
@@ -733,6 +814,14 @@ let noteGraphQLSelectionFields: [String: [String: String?]] = [
     "rank": nil,
     "matchedTags": "NoteTag",
     "isLinkedNeighbor": nil
+  ],
+  "NoteGraphNeighbor": [
+    "seedNoteId": nil,
+    "note": "Note",
+    "edgeKind": nil,
+    "weight": nil,
+    "hopCount": nil,
+    "pathNoteIds": nil
   ],
   "NoteLinkProposal": [
     "targetNote": "Note",
@@ -894,6 +983,22 @@ private func validatedLimit(_ value: Int?, defaultValue: Int) throws -> Int {
   guard (0...noteGraphQLMaximumLimit).contains(value) else {
     throw NoteGraphQLDocumentExecutorError.invalidVariable(
       "limit must be between 0 and \(noteGraphQLMaximumLimit)"
+    )
+  }
+  return value
+}
+
+/// Graph fields (`noteGraphNeighbors`, `proposeNoteLinks`) can return at most
+/// `NoteGraphPolicy.maximumLimit` rows; the contract promise is "rejected
+/// rather than silently clamped", so a larger `limit` is an error here instead
+/// of being truncated by the service.
+private func validatedGraphLimit(_ value: Int?, defaultValue: Int) throws -> Int {
+  guard let value else {
+    return defaultValue
+  }
+  guard (0...NoteGraphPolicy.maximumLimit).contains(value) else {
+    throw NoteGraphQLDocumentExecutorError.invalidVariable(
+      "limit must be between 0 and \(NoteGraphPolicy.maximumLimit) for graph fields"
     )
   }
   return value

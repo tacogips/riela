@@ -33,7 +33,9 @@ public struct ClaudeCodeAgentCommandBuilder: LocalAgentCommandBuilding {
 
   public func buildCommand(for input: AdapterExecutionInput) throws -> LocalAgentCommand {
     try validateAgentProviderRoutingForAdapter(input.node)
-    var arguments = [executableName, "-p", "--output-format", "text", "--model", input.node.model]
+    var arguments = [
+      executableName, "-p", "--output-format", "stream-json", "--verbose", "--model", input.node.model
+    ]
     if let effort = input.node.effort {
       arguments.append(contentsOf: ["--effort", effort.rawValue])
     }
@@ -52,9 +54,11 @@ public struct ClaudeCodeAgentCommandBuilder: LocalAgentCommandBuilding {
       arguments.append(contentsOf: ["--add-dir", directory])
     }
 
-    arguments.append(contentsOf: additionalArguments)
-    arguments.append(contentsOf: agentToolPolicyArguments(input.node.agentToolPolicy, backend: .claudeCodeAgent))
-    arguments.append(contentsOf: stringArray(input.node.variables["claudeAdditionalArgs"]))
+    arguments.append(contentsOf: ClaudeCodeProcessCommandBuilder.sanitizedAdditionalArguments(
+      additionalArguments
+        + agentToolPolicyArguments(input.node.agentToolPolicy, backend: .claudeCodeAgent)
+        + stringArray(input.node.variables["claudeAdditionalArgs"])
+    ).filter { $0 != "--verbose" })
 
     let environment = mergedAgentProcessEnvironment(
       baseEnvironment: environment,
@@ -84,7 +88,9 @@ public struct ClaudeCodeAgentCommandBuilder: LocalAgentCommandBuilding {
         systemPrompt: input.systemPromptText,
         attachmentPaths: attachmentPaths
       ),
-      backendEventType: claudeBackendEventType
+      normalizeStdout: normalizeClaudeStreamJSONStdout,
+      backendEventType: claudeBackendEventType,
+      classifyBackendEvent: claudeBackendEvent
     )
   }
 }
@@ -326,6 +332,91 @@ private func claudeBackendEventType(_ line: String) -> String? {
     return nil
   }
   return stringValue(object["type"]) ?? stringValue(object["event"]) ?? "json-event"
+}
+
+private func normalizeClaudeStreamJSONStdout(_ text: String) -> String {
+  let lines = text
+    .split(whereSeparator: \.isNewline)
+    .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+    .filter { !$0.isEmpty }
+  guard !lines.isEmpty else {
+    return text
+  }
+
+  var containsClaudeEvent = false
+  var assistantText = ""
+  var completedResult = ""
+  for line in lines {
+    guard
+      let data = line.data(using: .utf8),
+      let decoded = try? JSONDecoder().decode(JSONValue.self, from: data),
+      case let .object(object) = decoded
+    else {
+      return text
+    }
+    switch stringValue(object["type"]) {
+    case "system", "user", "assistant", "result":
+      containsClaudeEvent = true
+    default:
+      continue
+    }
+    if stringValue(object["type"]) == "assistant",
+       case let .object(message)? = object["message"],
+       let content = claudeMessageText(message["content"]),
+       !content.isEmpty {
+      assistantText = content
+    }
+    if stringValue(object["type"]) == "result",
+       let result = stringValue(object["result"]),
+       !result.isEmpty {
+      completedResult = result
+    }
+  }
+
+  guard containsClaudeEvent else {
+    return text
+  }
+  if !completedResult.isEmpty {
+    return completedResult
+  }
+  return assistantText
+}
+
+private func claudeMessageText(_ value: JSONValue?) -> String? {
+  switch value {
+  case let .string(text):
+    return text
+  case let .array(entries):
+    let text = entries.compactMap { entry -> String? in
+      guard case let .object(object) = entry, stringValue(object["type"]) == "text" else {
+        return nil
+      }
+      return stringValue(object["text"])
+    }
+    return text.isEmpty ? nil : text.joined()
+  default:
+    return nil
+  }
+}
+
+private func claudeBackendEvent(_ line: String) -> AdapterBackendEvent? {
+  guard
+    let data = line.data(using: .utf8),
+    let decoded = try? JSONDecoder().decode(JSONValue.self, from: data),
+    case let .object(object) = decoded
+  else {
+    return nil
+  }
+  let eventType = stringValue(object["type"]) ?? stringValue(object["event"]) ?? "json-event"
+  var backendSessionId = stringValue(object["session_id"]) ?? stringValue(object["sessionId"])
+  if backendSessionId == nil, case let .object(payload) = object["payload"] {
+    backendSessionId = stringValue(payload["session_id"]) ?? stringValue(payload["sessionId"])
+  }
+  return AdapterBackendEvent(
+    provider: CliAgentBackend.claudeCodeAgent.rawValue,
+    eventType: eventType,
+    backendSessionId: backendSessionId
+  )
 }
 
 private func uniqueSortedDirectories(containing paths: [String]) -> [String] {

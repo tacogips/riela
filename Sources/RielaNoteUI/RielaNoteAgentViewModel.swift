@@ -1,4 +1,5 @@
 import Foundation
+import RielaNote
 import SwiftUI
 
 @MainActor
@@ -15,6 +16,14 @@ public final class RielaNoteAgentViewModel: ObservableObject {
   @Published public private(set) var state: LoadState = .idle
   @Published public var draftMessage = ""
   @Published public var isTemporaryChat = false
+  @Published public private(set) var draftAttachments: [RielaNoteAgentDraftAttachment] = []
+  @Published public private(set) var attachmentError: String?
+  @Published public private(set) var composerFocusRequestRevision = 0
+  @Published public private(set) var mode: RielaNoteAgentMode = .general
+
+  /// Inlined attachment text is capped so a huge file cannot blow up the agent
+  /// prompt; larger files should be attached to a note instead.
+  public static let maximumAttachmentBytes = 256 * 1024
 
   private let client: any RielaNoteUIClient
   private let searchLimit: Int
@@ -26,15 +35,79 @@ public final class RielaNoteAgentViewModel: ObservableObject {
   }
 
   public var canSubmit: Bool {
-    !draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && state != .loading
+    let hasDraft = !draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    let hasContent = mode.isNotebookExpansion ? hasDraft : hasDraft || !draftAttachments.isEmpty
+    return hasContent && state != .loading
+  }
+
+  public func addAttachment(filename: String, data: Data) {
+    guard !mode.isNotebookExpansion else {
+      attachmentError = "Notebook expansion questions use the compact summary only."
+      return
+    }
+    guard data.count <= Self.maximumAttachmentBytes else {
+      attachmentError = "\(filename) is too large to attach (max \(Self.maximumAttachmentBytes / 1024) KB)."
+      return
+    }
+    guard let text = String(data: data, encoding: .utf8) else {
+      attachmentError = "\(filename) is not a text file. Only text files can be attached here."
+      return
+    }
+    attachmentError = nil
+    draftAttachments.append(RielaNoteAgentDraftAttachment(filename: filename, text: text))
+  }
+
+  public func removeAttachment(id: String) {
+    draftAttachments.removeAll { $0.id == id }
+    attachmentError = nil
+  }
+
+  public func clearAttachmentError() {
+    attachmentError = nil
+  }
+
+  public func prepareCurrentNoteQuestion(for note: Note) {
+    mode = .general
+    let title = note.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let displayTitle = title?.isEmpty == false ? title ?? note.noteId : note.noteId
+    draftMessage = "Ask about \(displayTitle):"
+    draftAttachments = [
+      RielaNoteAgentDraftAttachment(filename: "\(note.noteId).md", text: note.bodyMarkdown)
+    ]
+    attachmentError = nil
+    composerFocusRequestRevision &+= 1
+  }
+
+  public func reportAttachmentReadFailure(filename: String) {
+    attachmentError = "Could not read \(filename)."
+  }
+
+  /// The message actually sent to the agent: the typed draft followed by each
+  /// attachment inlined as a fenced block labelled with its filename.
+  func composedDraftMessage() -> String {
+    rielaNoteAgentComposedMessage(draft: draftMessage, attachments: draftAttachments)
   }
 
   public var canSaveTemporaryConversation: Bool {
-    isTemporaryChat && hasUnsavedTurns && state != .loading
+    hasUnsavedTurns && state != .loading && (mode.isNotebookExpansion || isTemporaryChat)
   }
 
   public var canStartNewConversation: Bool {
-    !turns.isEmpty || !draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || autoSaveNotebookId != nil
+    if mode.isNotebookExpansion && hasUnsavedTurns {
+      return false
+    }
+    return !turns.isEmpty
+      || !draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      || !draftAttachments.isEmpty
+      || autoSaveNotebookId != nil
+      || mode.isNotebookExpansion
+  }
+
+  public var canBeginNotebookExpansionSession: Bool {
+    state != .loading
+      && !hasUnsavedTurns
+      && draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      && draftAttachments.isEmpty
   }
 
   public var errorMessage: String? {
@@ -48,15 +121,25 @@ public final class RielaNoteAgentViewModel: ObservableObject {
     guard !isSubmitting else {
       return
     }
-    let message = draftMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+    let message = mode.isNotebookExpansion
+      ? draftMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+      : composedDraftMessage()
     guard !message.isEmpty else {
       return
     }
     isSubmitting = true
     defer { isSubmitting = false }
     draftMessage = ""
+    draftAttachments = []
+    attachmentError = nil
     state = .loading
+    let turnCountBeforeSubmission = turns.count
     do {
+      if case let .notebookExpansion(session) = mode {
+        try await submitNotebookExpansionQuestion(message, session: session)
+        state = .loaded
+        return
+      }
       let turn = try await client.answerNoteAgentTurn(message: message, limit: searchLimit)
       // Show first: the answered turn is visible immediately so a persistence
       // failure never discards a paid-for answer.
@@ -69,6 +152,9 @@ public final class RielaNoteAgentViewModel: ObservableObject {
       // The answer, if any, is already in `turns` and marked unsaved via its
       // empty `persistedNoteIds`; leave the draft cleared and surface the error.
       rielaNoteLogUIError("noteAgent.submitDraft", error)
+      if mode.isNotebookExpansion, turns.count == turnCountBeforeSubmission {
+        draftMessage = message
+      }
       state = .failed("Couldn't complete the agent turn. Please try again.")
     }
   }
@@ -79,6 +165,11 @@ public final class RielaNoteAgentViewModel: ObservableObject {
     }
     state = .loading
     do {
+      if case let .notebookExpansion(session) = mode {
+        try await persistUnsavedNotebookExpansionTurns(session: session)
+        state = .loaded
+        return
+      }
       try await persistUnsavedTurns(title: title)
       isTemporaryChat = false
       state = .loaded
@@ -89,11 +180,100 @@ public final class RielaNoteAgentViewModel: ObservableObject {
   }
 
   public func startNewConversation() {
+    guard !mode.isNotebookExpansion || !hasUnsavedTurns else {
+      state = .failed("Save the pending expansion turn before starting a new chat.")
+      return
+    }
     turns = []
     autoSaveNotebookId = nil
     draftMessage = ""
+    draftAttachments = []
+    attachmentError = nil
     isTemporaryChat = false
+    mode = .general
     state = .idle
+  }
+
+  /// Clears the current Agent state after an explicit user confirmation.
+  @discardableResult
+  public func discardCurrentConversation() -> Bool {
+    guard state != .loading else {
+      return false
+    }
+    turns = []
+    autoSaveNotebookId = nil
+    draftMessage = ""
+    draftAttachments = []
+    attachmentError = nil
+    isTemporaryChat = false
+    mode = .general
+    state = .idle
+    return true
+  }
+
+  @discardableResult
+  public func beginNotebookExpansionSession(_ session: RielaNoteNotebookExpansionSession) -> Bool {
+    guard canBeginNotebookExpansionSession else {
+      return false
+    }
+    mode = .notebookExpansion(session)
+    turns = [RielaNoteAgentTurn(
+      userMarkdown: "Expand this notebook into useful key points and follow-up directions.",
+      assistantMarkdown: session.compactSummaryMarkdown,
+      persistedNoteIds: [session.initialNoteId]
+    )]
+    autoSaveNotebookId = session.conversationNotebookId
+    draftMessage = ""
+    draftAttachments = []
+    attachmentError = nil
+    isTemporaryChat = false
+    state = .loaded
+    composerFocusRequestRevision &+= 1
+    return true
+  }
+
+  private func submitNotebookExpansionQuestion(
+    _ question: String,
+    session: RielaNoteNotebookExpansionSession
+  ) async throws {
+    try await persistUnsavedNotebookExpansionTurns(session: session)
+    let answer = try await client.answerNotebookExpansion(request: RielaNoteNotebookExpansionRequest(
+      compactSummaryMarkdown: session.compactSummaryMarkdown,
+      questionMarkdown: question
+    ))
+    // Show first, then persist — mirroring the general agent path — so that a
+    // transient persistence failure never silently discards the paid-for
+    // answer. The stable turn id lets Save or the next submission retry safely.
+    let turnIndex = turns.count
+    turns.append(RielaNoteAgentTurn(
+      userMarkdown: question,
+      assistantMarkdown: answer.assistantMarkdown,
+      persistedNoteIds: []
+    ))
+    try await persistNotebookExpansionTurn(at: turnIndex, session: session)
+  }
+
+  private func persistUnsavedNotebookExpansionTurns(
+    session: RielaNoteNotebookExpansionSession
+  ) async throws {
+    for index in unsavedTurnIndices {
+      try await persistNotebookExpansionTurn(at: index, session: session)
+    }
+  }
+
+  private func persistNotebookExpansionTurn(
+    at index: Int,
+    session: RielaNoteNotebookExpansionSession
+  ) async throws {
+    let turn = turns[index]
+    let note = try await client.appendNotebookExpansionTurn(
+      notebookId: session.conversationNotebookId,
+      turnId: turn.id,
+      questionMarkdown: turn.userMarkdown,
+      assistantMarkdown: turn.assistantMarkdown,
+      sourceNoteIds: session.sourceNoteIds
+    )
+    turns[index].persistedNoteIds = [note.noteId]
   }
 
   private func persistUnsavedTurns(title: String? = nil) async throws {
@@ -156,6 +336,49 @@ public final class RielaNoteAgentViewModel: ObservableObject {
   }
 }
 
+private extension RielaNoteAgentMode {
+  var isNotebookExpansion: Bool {
+    if case .notebookExpansion = self {
+      return true
+    }
+    return false
+  }
+}
+
 private enum RielaNoteAgentViewModelError: Error, Equatable, Sendable {
   case unexpectedPersistedNoteCount(expected: Int, actual: Int)
+}
+
+/// Builds the outgoing agent message from the typed draft plus inlined
+/// attachments. A fence longer than any backtick run inside the content keeps
+/// the blocks well-formed even when a file itself contains fenced code.
+func rielaNoteAgentComposedMessage(
+  draft: String,
+  attachments: [RielaNoteAgentDraftAttachment]
+) -> String {
+  let trimmedDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+  guard !attachments.isEmpty else {
+    return trimmedDraft
+  }
+  let attachmentSections = attachments.map { attachment in
+    let fence = rielaNoteAgentAttachmentFence(for: attachment.text)
+    return "Attached file `\(attachment.filename)`:\n\(fence)\n\(attachment.text)\n\(fence)"
+  }
+  return ([trimmedDraft] + attachmentSections)
+    .filter { !$0.isEmpty }
+    .joined(separator: "\n\n")
+}
+
+private func rielaNoteAgentAttachmentFence(for text: String) -> String {
+  var longestRun = 0
+  var currentRun = 0
+  for character in text {
+    if character == "`" {
+      currentRun += 1
+      longestRun = max(longestRun, currentRun)
+    } else {
+      currentRun = 0
+    }
+  }
+  return String(repeating: "`", count: max(3, longestRun + 1))
 }

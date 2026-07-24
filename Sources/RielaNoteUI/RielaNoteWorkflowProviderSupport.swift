@@ -6,11 +6,31 @@ import Darwin
 final class RielaWorkflowProcessBox: @unchecked Sendable {
   private let lock = NSLock()
   private var process: Process?
+  private var processGroupID: pid_t?
   private var cancelled = false
 
-  func set(_ process: Process) {
+  func set(_ process: Process, processGroupID: pid_t? = nil) {
     lock.lock()
     self.process = process
+    self.processGroupID = processGroupID
+    lock.unlock()
+  }
+
+  func setProcessGroup(_ processGroupID: pid_t) {
+    lock.lock()
+    self.processGroupID = processGroupID
+    let cancelled = self.cancelled
+    lock.unlock()
+    if cancelled {
+      rielaWorkflowTerminateProcessGroup(processGroupID)
+    }
+  }
+
+  func clearProcessGroup(_ processGroupID: pid_t) {
+    lock.lock()
+    if self.processGroupID == processGroupID {
+      self.processGroupID = nil
+    }
     lock.unlock()
   }
 
@@ -18,6 +38,7 @@ final class RielaWorkflowProcessBox: @unchecked Sendable {
     lock.lock()
     if self.process === process {
       self.process = nil
+      self.processGroupID = nil
     }
     lock.unlock()
   }
@@ -35,8 +56,13 @@ final class RielaWorkflowProcessBox: @unchecked Sendable {
     lock.lock()
     cancelled = true
     let process = self.process
+    let processGroupID = self.processGroupID
     lock.unlock()
-    process?.terminateWithEscalation()
+    if let processGroupID {
+      rielaWorkflowTerminateProcessGroup(processGroupID)
+    } else {
+      process?.terminateWithEscalation()
+    }
   }
 }
 
@@ -199,15 +225,35 @@ struct RielaWorkflowVariablesFile: Sendable {
   let path: String
   private let cleanup: RielaWorkflowFileCleanup
 
-  init(variables: [String: Any]) throws {
+  init(variables: [String: Any], directory: URL? = nil) throws {
     let data = try JSONSerialization.data(withJSONObject: variables, options: [.sortedKeys])
-    let directory = FileManager.default.temporaryDirectory
+    let directory = directory ?? FileManager.default.temporaryDirectory
       .appendingPathComponent("riela-note-workflow", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let fileURL = directory.appendingPathComponent("variables-\(UUID().uuidString).json")
     try data.write(to: fileURL, options: [.atomic])
+    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
     path = fileURL.path
     cleanup = RielaWorkflowFileCleanup(path: fileURL.path)
+  }
+}
+
+/// Owns the complete per-run working directory, including Riela's session
+/// database. Removing it at the end of every outcome prevents source note
+/// bodies from surviving in workflow runtime records.
+struct RielaWorkflowInvocationDirectory: Sendable {
+  let rootURL: URL
+  let sessionStorePath: String
+  private let cleanup: RielaWorkflowFileCleanup
+
+  init() throws {
+    let rootURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-note-workflow-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: false)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: rootURL.path)
+    self.rootURL = rootURL
+    self.sessionStorePath = rootURL.appendingPathComponent("sessions", isDirectory: true).path
+    self.cleanup = RielaWorkflowFileCleanup(path: rootURL.path)
   }
 }
 
@@ -230,19 +276,26 @@ private final class RielaWorkflowFileCleanup: @unchecked Sendable {
 func rielaWorkflowRunArguments(
   workflowName: String,
   workflowDefinitionDirectory: String,
-  variablesFilePath: String
+  variablesFilePath: String,
+  sessionStorePath: String? = nil
 ) -> [String] {
-  [
+  var arguments = [
     "workflow",
     "run",
     workflowName,
     "--workflow-definition-dir",
-    workflowDefinitionDirectory,
+    workflowDefinitionDirectory
+  ]
+  if let sessionStorePath {
+    arguments.append(contentsOf: ["--session-store", sessionStorePath])
+  }
+  arguments.append(contentsOf: [
     "--variables-file",
     variablesFilePath,
     "--output",
     "jsonl"
-  ]
+  ])
+  return arguments
 }
 
 func rielaWorkflowWaitForDrain(
@@ -277,5 +330,26 @@ extension Process {
       kill(processIdentifier, SIGKILL)
     }
   }
+}
+
+func rielaWorkflowTerminateProcessGroup(
+  _ processGroupID: pid_t,
+  graceSeconds: TimeInterval = 1
+) {
+  _ = kill(-processGroupID, SIGTERM)
+  let deadline = Date().addingTimeInterval(graceSeconds)
+  while rielaWorkflowProcessGroupIsRunning(processGroupID) && Date() < deadline {
+    Thread.sleep(forTimeInterval: 0.02)
+  }
+  if rielaWorkflowProcessGroupIsRunning(processGroupID) {
+    _ = kill(-processGroupID, SIGKILL)
+  }
+}
+
+func rielaWorkflowProcessGroupIsRunning(_ processGroupID: pid_t) -> Bool {
+  if kill(-processGroupID, 0) == 0 {
+    return true
+  }
+  return errno == EPERM
 }
 #endif

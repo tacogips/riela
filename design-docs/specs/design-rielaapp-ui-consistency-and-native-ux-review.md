@@ -1,7 +1,9 @@
 # RielaApp UI Consistency and Native macOS UX Review
 
 Status: review-findings design draft (specification only; no implementation
-ships with this document)
+ships with this document). The sole active issue-resolution slice is **F15**;
+R1-F14 are historical/deferred design material and are not obligations of the
+current work package.
 
 This design documents deficiencies found in a UI/UX review of RielaApp and
 specifies improvements for each. The guiding principle throughout is:
@@ -384,30 +386,23 @@ explained in the UI.
 
 ## Design
 
-### Implementation slice for issue-resolution workflow
+### Active implementation slice for issue-resolution workflow: F15 only
 
-The current issue-resolution workflow implements the narrow, directly
-testable slice first:
+The current issue-resolution workflow implements **F15 as one work package**:
 
-1. **R1/F1:** align workflow source detail and instance detail around one
-   settings-section header helper and one document order:
-   settings/summary, actions, graph.
-2. **R2/F2:** replace the fixed-width variable/environment editors with
-   bounded guided editors, placeholders, line counts, and live `KEY=value`
-   validation that disables Save.
-3. **R3/F3:** add an Assistant Clear control that is disabled for empty
-   transcripts, confirms before deleting persisted messages, refreshes the
-   transcript, and cancels any in-flight assistant work before clearing.
-4. **R4/F4:** make codex preflight run `codex --version` before
-   `codex login status`, so a missing binary is reported as CLI
-   unavailable with a PATH remedy rather than as an authentication failure
-   or a raw `env:` spawn error.
+1. repair the confirmed field-to-dispatch-to-projection-to-visible-reload break
+   for the four F15 search fields;
+2. make one back-navigation availability predicate govern both `goBack()`
+   reachability and Back-button visibility/enablement across every effective
+   navigation branch;
+3. keep the Back chevron proportional in a square, non-stretching control; and
+4. add the scoped `RielaAppSupportTests` coverage and run the required F15
+   verification commands.
 
-Focused B/F work may be included only when it is local to the same files and
-can be verified in the same turn. In this slice, F5 is eligible because the
-assistant color audit is directly verified by searching for
-`NSColor(calibratedWhite:)` under `Sources/RielaApp`. Broader B/F items
-remain specified below but should not displace R1-R4.
+R1-F14 below are retained only as historical/deferred design material. They
+must not be implemented, tested as current acceptance obligations, or used to
+justify edits outside the F15 impacted areas in this issue-resolution work
+package.
 
 ### Adapter behavior boundaries
 
@@ -773,6 +768,98 @@ assistant looks like part of the same app in both appearances.
    `Reloading` states show a small `NSProgressIndicator` (spinning style)
    next to the state label, resolving the A5 finding for the instance list.
 
+### F15. Make list filters live and back navigation truthful
+
+This issue-resolution slice is one RielaApp work package spanning the
+Instances, Workflow Sources, Add Instance, Marketplace, and shared navigation
+surfaces. It changes no workflow, package, profile, or runtime data model.
+
+#### Live-filter contract and data flow
+
+The four search fields are live projections over their already-loaded source
+collections:
+
+- `instanceSearchField` filters configured instance rows;
+- `workflowSourceSearchField` filters the Workflow Sources overview;
+- `inlineAddInstanceSearchField` filters the Add Instance workflow choices;
+- `marketplaceSearchField` filters workflow listings without hiding repository
+  fetch, error, or progress state needed to understand the results.
+
+Each edit follows one observable chain: the field delivers its change to the
+controller, the controller stores the query, the corresponding projection is
+recomputed, and the list that is currently visible is reloaded or replaced.
+Matching remains case- and diacritic-insensitive over each pane's existing
+searchable fields. Trimming an empty query restores every entry in the original
+collection. A non-empty query with no matches shows the pane's filtered-empty
+message rather than its no-data onboarding state.
+
+The implementation must identify and repair the broken stage in that chain
+before changing filtering predicates. In particular, tests and the
+implementation summary must distinguish among delegate/notification delivery,
+pane-state guards, fingerprint suppression, replacement of a non-visible view,
+and missing table/list reload. Already-correct matching predicates are not a
+substitute for fixing a broken binding.
+
+Filtering is a view-only operation. It must not trigger persistence, network
+refresh, package installation, daemon lifecycle changes, or a full controller
+state refresh. Fingerprints may continue to suppress equivalent rebuilds, but
+the active query must participate in any fingerprint that gates visible list
+content. A live edit preserves first responder and preserves selection by
+stable item identity when that item remains visible; it clears only a selection
+that the new projection excludes. This prevents excess reloads, stale visible
+content, and selection loss.
+
+#### Back-navigation invariant
+
+One side-effect-free availability predicate is the source of truth for both
+`goBack()` reachability and presentation of `navigationBackButton`. It is true
+for every state in which the current `goBack()` dispatch has an effective
+branch:
+
+- Add Instance selection;
+- instance detail overview, removal confirmation, and every configuration
+  sub-pane, including a sub-pane whose dirty-state confirmation can veto the
+  transition;
+- workflow-source detail;
+- marketplace-workflow detail;
+- profile detail overview and removal confirmation; and
+- the Sources, Marketplace, Profiles, and Assistant overview roots, whose back
+  destination is the Instances root.
+
+It is false only at the Instances overview root when no detail, selection, or
+configuration sub-pane is active. `updateNavigationState()` applies the same
+value to enablement and visibility so the app never presents an enabled no-op
+or a disabled decorative back control. Every method that changes the active
+sidebar pane or any detail/sub-pane flag refreshes navigation state after the
+transition state is complete. Confirmation-dialog branches remain reachable:
+availability describes whether pressing Back initiates a valid navigation
+attempt, not whether a later discard confirmation accepts it.
+
+#### Back-chevron layout
+
+The toolbar uses the platform `chevron.left` symbol with proportional-down
+image scaling. Its button content has a square, non-stretching layout bounded
+by the 36-point navigation group, so stack-view height cannot deform the
+symbol. The Back control retains its accessibility label and normal AppKit
+focus and hit behavior in every pane where it is visible.
+
+#### Validation and rollout boundary
+
+`Tests/RielaAppSupportTests` exercise the controller's actual change-dispatch
+path, not only standalone predicate helpers. Fixtures prove narrowing and
+clearing for all four fields, visible-list replacement/reload, selection and
+focus behavior where applicable, and filtered-empty versus no-data states.
+Navigation fixtures cover every availability branch above and compare button
+visibility and enablement with the expected `goBack()` destination. Layout
+tests assert proportional image scaling and square/non-stretching button
+constraints.
+
+The rollout is macOS RielaApp-only and preserves existing AppKit/SwiftUI style.
+No CLI, Cursor CLI adapter, Codex-agent adapter, workflow schema, or persisted
+state behavior changes. Required verification is `swift build` followed by
+`swift test --filter RielaAppSupportTests`, including the directly affected
+`RielaAppControllerLayoutTests` and `RielaAppBehaviorRegressionTests`.
+
 ### Out of scope
 
 Deferred to follow-up designs, with their evidence recorded above:
@@ -793,6 +880,41 @@ Deferred to follow-up designs, with their evidence recorded above:
   model.
 
 ## Acceptance criteria
+
+### Active F15 acceptance — current issue-resolution work package
+
+- `instanceSearchField`, `workflowSourceSearchField`,
+  `inlineAddInstanceSearchField`, and `marketplaceSearchField` each narrow the
+  list currently displayed as the user types, and clearing each field restores
+  its complete already-loaded source collection. The fix and tests traverse
+  field change, controller dispatch, projection rebuild, and visible
+  reload/replacement, and identify the broken stage instead of rewriting an
+  already-correct matching predicate without evidence.
+- Back-button visibility and enablement use the same side-effect-free
+  availability predicate as every effective `goBack()` branch. Every relevant
+  pane transition refreshes that state; confirmation-backed branches remain
+  reachable; and the Instances overview root is both hidden and disabled.
+- The Back chevron uses proportional image scaling in a square,
+  non-stretching layout while retaining its accessibility label and normal
+  AppKit control behavior.
+- Scoped tests in `Tests/RielaAppSupportTests` cover all four filter chains,
+  narrowing and clearing, visible reload/replacement, back-navigation
+  reachability across all listed pane states, and Back-button layout. This
+  includes the directly affected `RielaAppControllerLayoutTests` and
+  `RielaAppBehaviorRegressionTests`.
+- Required verification commands are:
+
+  ```bash
+  swift build
+  swift test --filter RielaAppSupportTests
+  git diff --check -- design-docs/specs/design-rielaapp-ui-consistency-and-native-ux-review.md
+  ```
+
+### Historical/deferred acceptance material — R1-F14 only
+
+The criteria below preserve the earlier review record. They are not active
+acceptance obligations, implementation scope, or regression-test requirements
+for the current F15 issue-resolution work package.
 
 - Workflow source detail and instance detail render section headers with one
   shared helper, in the same visual style, and order their document stacks

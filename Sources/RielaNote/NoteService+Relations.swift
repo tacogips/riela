@@ -9,39 +9,15 @@ public extension NoteService {
     linkKind: String = "related",
     provenance: NoteProvenance = .human
   ) throws -> NoteLink {
-    try driver.withDatabase { database in
+    return try driver.withDatabase { database in
       try database.transaction { db in
-        _ = try requireNote(fromNoteId, in: db)
-        _ = try requireNote(toNoteId, in: db)
-        let now = NoteStoreClock.system.now()
-        try db.execute(
-          """
-          INSERT INTO note_links (
-            from_note_id, to_note_id, link_kind, provenance, created_at
-          ) VALUES (?, ?, ?, ?, ?)
-          ON CONFLICT(from_note_id, to_note_id, link_kind) DO UPDATE SET
-            provenance = CASE
-              WHEN note_links.provenance IN ('human', 'system')
-                AND excluded.provenance = 'ai'
-                THEN note_links.provenance
-              ELSE excluded.provenance
-            END,
-            created_at = CASE
-              WHEN note_links.provenance IN ('human', 'system')
-                AND excluded.provenance = 'ai'
-                THEN note_links.created_at
-              ELSE excluded.created_at
-            END
-          """,
-          bindings: [
-            .text(fromNoteId),
-            .text(toNoteId),
-            .text(linkKind),
-            .text(provenance.rawValue),
-            .text(now)
-          ]
+        try linkNotesInDatabase(
+          from: fromNoteId,
+          to: toNoteId,
+          linkKind: linkKind,
+          provenance: provenance,
+          in: db
         )
-        return try requireNoteLink(from: fromNoteId, to: toNoteId, linkKind: linkKind, in: db)
       }
     }
   }
@@ -62,8 +38,14 @@ public extension NoteService {
   }
 
   func proposeLinks(noteId: String, limit: Int = 8) throws -> [NoteLinkProposal] {
-    try driver.withDatabase { database in
-      let note = try requireNote(noteId, in: database)
+    guard limit >= 0 else {
+      throw NoteServiceError.invalidInput("note link proposal limit must not be negative")
+    }
+    guard limit > 0 else {
+      return []
+    }
+    return try driver.withDatabase { database in
+      _ = try requireNote(noteId, in: database)
       let links = try database.query(
         """
         SELECT from_note_id, to_note_id, link_kind, provenance, created_at
@@ -73,37 +55,20 @@ public extension NoteService {
         bindings: [.text(noteId), .text(noteId)]
       ).map(noteLink(from:))
       let excludedIds = Set(links.map { $0.counterpartNoteId(for: noteId) } + [noteId])
-      let terms = linkProposalTerms(from: note.bodyMarkdown)
-      guard !terms.isEmpty else {
-        return []
-      }
-      var proposals: [NoteLinkProposal] = []
-      var seenIds = excludedIds
-      for term in terms {
-        let results = try searchNotesInDatabase(
-          query: term,
-          tagFilter: [],
-          classFilter: [],
-          sort: .createdAtDesc,
-          createdAfter: nil,
-          createdBefore: nil,
-          includeLinked: false,
-          limit: max(limit * 2, 10),
-          offset: 0,
-          in: database
+      let results = try noteGraphNeighborsInDatabase(
+        noteIds: [noteId],
+        maxDepth: NoteGraphPolicy.associationMaxDepth,
+        limit: limit,
+        resultExclusions: excludedIds,
+        in: database
+      )
+      return results.map { result in
+        NoteLinkProposal(
+          targetNote: result.note,
+          linkKind: "related",
+          reason: "Graph \(result.edgeKind.rawValue) path: \(result.pathNoteIds.joined(separator: " -> "))."
         )
-        for result in results where seenIds.insert(result.note.noteId).inserted {
-          proposals.append(NoteLinkProposal(
-            targetNote: result.note,
-            linkKind: "related",
-            reason: "Shares the term \"\(term)\" with this note."
-          ))
-          if proposals.count >= limit {
-            return proposals
-          }
-        }
       }
-      return proposals
     }
   }
 
@@ -126,29 +91,38 @@ public extension NoteService {
   func appendConversationTurn(
     notebookId: String,
     turn: NoteConversationTurn,
+    sourceLinks: NoteConversationSourceLinks? = nil,
     assignedBy: String? = nil,
-    originatingActionId: String? = nil
+    originatingActionId: String? = nil,
+    idempotencyKey: String? = nil
   ) throws -> Note {
     let result = try driver.withDatabase { database in
       try database.transaction { db in
         _ = try requireNotebook(notebookId, in: db)
-        let note = try appendConversationTurnInDatabase(
+        let appendResult = try appendConversationTurnInDatabase(
           notebookId: notebookId,
           turn: turn,
+          sourceLinks: sourceLinks,
           assignedBy: assignedBy,
+          idempotencyKey: idempotencyKey,
           in: db
         )
-        let dispatches = try enqueueAutoActions(
-          for: NoteAutoActionEvent(
-            trigger: .noteCreated,
-            notebookId: note.notebookId,
-            noteId: note.noteId,
-            noteBodyMarkdown: note.bodyMarkdown,
-            originatingActionId: originatingActionId
-          ),
-          in: db
-        )
-        return (note: note, dispatches: dispatches)
+        let dispatches: [QueuedAutoActionDispatch]
+        if appendResult.inserted {
+          dispatches = try enqueueAutoActions(
+            for: NoteAutoActionEvent(
+              trigger: .noteCreated,
+              notebookId: appendResult.note.notebookId,
+              noteId: appendResult.note.noteId,
+              noteBodyMarkdown: appendResult.note.bodyMarkdown,
+              originatingActionId: originatingActionId
+            ),
+            in: db
+          )
+        } else {
+          dispatches = []
+        }
+        return (note: appendResult.note, dispatches: dispatches)
       }
     }
     dispatchQueuedAutoActions(result.dispatches)
@@ -159,6 +133,8 @@ public extension NoteService {
   func saveConversation(
     title conversationTitle: String,
     transcript: [NoteConversationTurn],
+    notebookMetaJSON: String? = nil,
+    sourceLinks: NoteConversationSourceLinks? = nil,
     assignedBy: String? = nil,
     originatingActionId: String? = nil
   ) throws -> SavedConversation {
@@ -169,22 +145,28 @@ public extension NoteService {
         try db.execute(
           """
           INSERT INTO notebooks (notebook_id, title, created_at, updated_at, meta_json)
-          VALUES (?, ?, ?, ?, NULL)
+          VALUES (?, ?, ?, ?, jsonb(?))
           """,
-          bindings: [.text(notebookId), .text(conversationTitle), .text(now), .text(now)]
+          bindings: [
+            .text(notebookId),
+            .text(conversationTitle),
+            .text(now),
+            .text(now),
+            .optionalText(notebookMetaJSON)
+          ]
         )
         try applyConversationNotebookKind(notebookId: notebookId, assignedBy: assignedBy, in: db)
 
         var notes: [Note] = []
         for turn in transcript {
-          notes.append(
-            try appendConversationTurnInDatabase(
-              notebookId: notebookId,
-              turn: turn,
-              assignedBy: assignedBy,
-              in: db
-            )
-          )
+          notes.append(try appendConversationTurnInDatabase(
+            notebookId: notebookId,
+            turn: turn,
+            sourceLinks: sourceLinks,
+            assignedBy: assignedBy,
+            idempotencyKey: nil,
+            in: db
+          ).note)
         }
         let notebook = try requireNotebook(notebookId, in: db)
         let saved = SavedConversation(notebook: notebook, notes: notes)
@@ -219,22 +201,46 @@ public extension NoteService {
 private func appendConversationTurnInDatabase(
   notebookId: String,
   turn: NoteConversationTurn,
+  sourceLinks: NoteConversationSourceLinks?,
   assignedBy: String?,
+  idempotencyKey: String?,
   in database: SQLiteDatabase
-) throws -> Note {
+) throws -> (note: Note, inserted: Bool) {
+  if let idempotencyKey,
+     let existing = try conversationTurn(
+       notebookId: notebookId,
+       idempotencyKey: idempotencyKey,
+       in: database
+     ) {
+    return (existing, false)
+  }
   for sourceNoteId in turn.sourceNoteIds {
     _ = try requireNote(sourceNoteId, in: database)
+  }
+  var sourceNoteIds = sourceLinks?.sourceNoteIds ?? []
+  var missingSourceNoteIds: [String] = []
+  if let sourceLinks {
+    let existingSources = try requireNotes(sourceLinks.sourceNoteIds, in: database)
+    missingSourceNoteIds = sourceLinks.sourceNoteIds.filter { existingSources[$0] == nil }
+    if !sourceLinks.allowMissingSourceNotes, let missingSourceNoteId = missingSourceNoteIds.first {
+      throw NoteServiceError.notFound("note not found: \(missingSourceNoteId)")
+    }
+    sourceNoteIds = sourceLinks.sourceNoteIds.filter { existingSources[$0] != nil }
   }
   let now = NoteStoreClock.system.now()
   let noteNumber = try nextNoteNumber(notebookId: notebookId, in: database)
   let bodyMarkdown = conversationBody(turn: turn, noteNumber: noteNumber)
   let noteId = makeNoteId(prefix: "note")
+  let noteMetaJSON = try conversationTurnMetadataJSON(
+    idempotencyKey: idempotencyKey,
+    missingSourceNoteIds: missingSourceNoteIds
+  )
   try database.execute(
     """
     INSERT INTO notes (
       note_id, notebook_id, note_number, title, body_markdown,
       read_only, created_at, updated_at, meta_json
-    ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, NULL)
+    ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, jsonb(?))
     """,
     bindings: [
       .text(noteId),
@@ -243,26 +249,124 @@ private func appendConversationTurnInDatabase(
       .optionalText(noteTitle(from: bodyMarkdown)),
       .text(bodyMarkdown),
       .text(now),
-      .text(now)
+      .text(now),
+      .optionalText(noteMetaJSON)
     ]
   )
   for sourceNoteId in turn.sourceNoteIds {
-    try database.execute(
-      """
-      INSERT INTO note_links (
-        from_note_id, to_note_id, link_kind, provenance, created_at
-      ) VALUES (?, ?, 'source-citation', 'system', ?)
-      ON CONFLICT(from_note_id, to_note_id, link_kind) DO NOTHING
-      """,
-      bindings: [.text(noteId), .text(sourceNoteId), .text(now)]
+    _ = try linkNotesInDatabase(
+      from: noteId,
+      to: sourceNoteId,
+      linkKind: "source-citation",
+      provenance: .system,
+      in: database
     )
+  }
+  if let sourceLinks {
+    for sourceNoteId in sourceNoteIds {
+      _ = try linkNotesInDatabase(
+        from: noteId,
+        to: sourceNoteId,
+        linkKind: sourceLinks.linkKind,
+        provenance: sourceLinks.provenance,
+        in: database
+      )
+    }
   }
   try database.execute(
     "UPDATE notebooks SET updated_at = ? WHERE notebook_id = ?",
     bindings: [.text(now), .text(notebookId)]
   )
   try refreshFTS(noteId: noteId, previous: nil, in: database)
+  return (try requireNote(noteId, in: database), true)
+}
+
+private func conversationTurn(
+  notebookId: String,
+  idempotencyKey: String,
+  in database: SQLiteDatabase
+) throws -> Note? {
+  let rows = try database.query(
+    """
+    SELECT note_id
+    FROM notes
+    WHERE notebook_id = ?
+      AND json_extract(meta_json, '$.rielaNote.conversationTurn.idempotencyKey') = ?
+    LIMIT 1
+    """,
+    bindings: [.text(notebookId), .text(idempotencyKey)]
+  )
+  guard let noteId = rows.first?["note_id"] else {
+    return nil
+  }
   return try requireNote(noteId, in: database)
+}
+
+private func conversationTurnMetadataJSON(
+  idempotencyKey: String?,
+  missingSourceNoteIds: [String]
+) throws -> String? {
+  guard idempotencyKey != nil || !missingSourceNoteIds.isEmpty else {
+    return nil
+  }
+  var metadata: [String: Any] = [:]
+  if let idempotencyKey {
+    metadata["idempotencyKey"] = idempotencyKey
+  }
+  if !missingSourceNoteIds.isEmpty {
+    metadata["missingSourceNoteIds"] = missingSourceNoteIds
+  }
+  let root = ["rielaNote": ["conversationTurn": metadata]]
+  let data = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+  guard let json = String(data: data, encoding: .utf8) else {
+    throw NoteServiceError.invalidInput("conversation turn metadata must be UTF-8 JSON")
+  }
+  return json
+}
+
+@discardableResult
+func linkNotesInDatabase(
+  from fromNoteId: String,
+  to toNoteId: String,
+  linkKind: String,
+  provenance: NoteProvenance,
+  in database: SQLiteDatabase
+) throws -> NoteLink {
+  // Bind link_kind verbatim (no trimming / emptiness check) so this shared
+  // helper preserves the exact behavior of the public `linkNotes` mutation it
+  // was extracted from. The conversation source-link callers always pass a
+  // controlled, non-empty kind, so they need no additional validation here.
+  _ = try requireNote(fromNoteId, in: database)
+  _ = try requireNote(toNoteId, in: database)
+  let now = NoteStoreClock.system.now()
+  try database.execute(
+    """
+    INSERT INTO note_links (
+      from_note_id, to_note_id, link_kind, provenance, created_at
+    ) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(from_note_id, to_note_id, link_kind) DO UPDATE SET
+      provenance = CASE
+        WHEN note_links.provenance IN ('human', 'system')
+          AND excluded.provenance = 'ai'
+          THEN note_links.provenance
+        ELSE excluded.provenance
+      END,
+      created_at = CASE
+        WHEN note_links.provenance IN ('human', 'system')
+          AND excluded.provenance = 'ai'
+          THEN note_links.created_at
+        ELSE excluded.created_at
+      END
+    """,
+    bindings: [
+      .text(fromNoteId),
+      .text(toNoteId),
+      .text(linkKind),
+      .text(provenance.rawValue),
+      .text(now)
+    ]
+  )
+  return try requireNoteLink(from: fromNoteId, to: toNoteId, linkKind: linkKind, in: database)
 }
 
 private func applyConversationNotebookKind(
@@ -369,32 +473,4 @@ private extension NoteLink {
   func counterpartNoteId(for noteId: String) -> String {
     fromNoteId == noteId ? toNoteId : fromNoteId
   }
-}
-
-private func linkProposalTerms(from bodyMarkdown: String) -> [String] {
-  var seen = Set<String>()
-  var terms: [String] = []
-  var current = String.UnicodeScalarView()
-  func flushCurrentTerm() {
-    let term = String(current).trimmingCharacters(in: .whitespacesAndNewlines)
-    current.removeAll(keepingCapacity: true)
-    guard term.count >= 4, seen.insert(term.lowercased()).inserted else {
-      return
-    }
-    terms.append(term)
-  }
-  for scalar in bodyMarkdown.unicodeScalars {
-    if CharacterSet.alphanumerics.contains(scalar) {
-      current.append(scalar)
-    } else {
-      flushCurrentTerm()
-    }
-    if terms.count >= 8 {
-      break
-    }
-  }
-  if terms.count < 8 {
-    flushCurrentTerm()
-  }
-  return terms
 }

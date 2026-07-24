@@ -60,7 +60,7 @@ public enum WorkflowHistoryIdentityResolver {
       packageName: bundle.packageManifest?.name,
       packageVersion: bundle.packageManifest?.version,
       workflowContractVersion: try authoredContractVersion(at: workflowDirectory),
-      sourceMutable: packageDirectory == nil
+      sourceMutable: bundle.provenance == .mutable
     )
   }
 
@@ -120,12 +120,21 @@ public enum WorkflowHistoryIdentityResolver {
     }
     if let enumerationError { throw enumerationError }
     discovered.sort { $0.metadata.relativePath.utf8.lexicographicallyPrecedes($1.metadata.relativePath.utf8) }
-    let ownedPaths = try ownedRelativePaths(target: target, root: root, discovered: discovered)
+    return try inventory(for: target, discovered: discovered)
+  }
+
+  static func inventory(
+    for target: WorkflowBundleIdentity,
+    discovered: [WorkflowOwnedFile],
+    dependencyReader: WorkflowSharedNodeDependencyReader? = nil
+  ) throws -> WorkflowBundleInventory {
+    let ownedPaths = try ownedRelativePaths(target: target, discovered: discovered)
     let localFiles = discovered.filter { ownedPaths.contains($0.metadata.relativePath) }
     let unownedFiles = discovered.filter { !ownedPaths.contains($0.metadata.relativePath) }
     let dependencies = try WorkflowSharedNodeDependencyInventory.files(
       for: target,
-      primaryFiles: localFiles
+      primaryFiles: localFiles,
+      dependencyReader: dependencyReader
     )
     var dependencyPaths = Set(localFiles.map(\.metadata.relativePath))
     for dependency in dependencies where !dependencyPaths.insert(dependency.metadata.relativePath).inserted {
@@ -144,9 +153,12 @@ public enum WorkflowHistoryIdentityResolver {
     configuredRoot: String? = nil
   ) throws -> URL {
     try WorkflowHistoryCanonicalCoding.validateSafeComponent(target.workflowId)
+    // Standardize both scope roots: standardizedFileURL strips the /private
+    // prefix from /private/tmp-style paths, so an unstandardized home root
+    // would false-positive the containment check under such a HOME.
     let scopeRoot: URL = switch target.sourceScope {
     case .user:
-      URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
+      URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true).standardizedFileURL
     case .project, .direct:
       workingDirectory.standardizedFileURL
     }
@@ -236,7 +248,7 @@ public enum WorkflowHistoryIdentityResolver {
     return FileManager.default.fileExists(atPath: url.path, isDirectory: &directory) && directory.boolValue
   }
 
-  private static func artifactKind(_ path: String) -> WorkflowArtifactKind {
+  static func artifactKind(_ path: String) -> WorkflowArtifactKind {
     if path.hasSuffix("workflow.json") { return .workflowDefinition }
     if path.contains("/nodes/") || path.hasPrefix("nodes/") { return .node }
     if path.contains("prompt") { return .prompt }
@@ -248,7 +260,6 @@ public enum WorkflowHistoryIdentityResolver {
 
   private static func ownedRelativePaths(
     target: WorkflowBundleIdentity,
-    root: URL,
     discovered: [WorkflowOwnedFile]
   ) throws -> Set<String> {
     let byPath = Dictionary(uniqueKeysWithValues: discovered.map { ($0.metadata.relativePath, $0) })
@@ -257,7 +268,7 @@ public enum WorkflowHistoryIdentityResolver {
       throw CLIUsageError("workflow ownership inventory does not contain workflow.json")
     }
     let workflowPrefix = String(
-      URL(fileURLWithPath: target.workflowDirectory).path.dropFirst(root.path.count)
+      target.workflowDirectory.dropFirst(target.ownershipRoot.count)
     ).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
     func relativeToOwnershipRoot(_ authoredPath: String, declaringPrefix: String) throws -> String {
       try WorkflowHistoryCanonicalCoding.validateRelativePath(authoredPath)
@@ -277,7 +288,7 @@ public enum WorkflowHistoryIdentityResolver {
       let bytes: Data
       let object: Any
       do {
-        bytes = try WorkflowDescriptorRelativeReader.read(file.url, within: root).bytes
+        bytes = file.bytes
         object = try JSONSerialization.jsonObject(with: bytes)
       } catch {
         throw CLIUsageError("unable to read or parse declaration JSON \(path): \(error)")

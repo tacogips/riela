@@ -6,11 +6,19 @@ struct RielaSwiftCLI {
     let app = RielaCLIApplication(
       runCommand: WorkflowRunCommand(jsonlRecordWriter: { line in
         FileHandle.standardOutput.write(Data(line.utf8))
+      }),
+      sessionInspectionCommand: SessionInspectionCommand(followRecordWriter: { line in
+        FileHandle.standardOutput.write(Data(line.utf8))
       })
     )
     let arguments = Array(CommandLine.arguments.dropFirst())
     let runTask = Task {
-      await app.run(arguments)
+      if ServeHTTPCommand.isLongRunningInvocation(arguments) {
+        return await ServeHTTPCommand().run(arguments: arguments) { line in
+          FileHandle.standardOutput.write(Data(line.utf8))
+        }
+      }
+      return await app.run(arguments)
     }
     let signalCancellation = CLISignalCancellation { _ in
       runTask.cancel()

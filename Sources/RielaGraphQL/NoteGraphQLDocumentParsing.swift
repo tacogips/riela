@@ -4,26 +4,32 @@ import RielaCore
 public enum NoteGraphQLDocumentLimits {
   public static let maximumDocumentUTF8Bytes = 512 * 1024
   static let maximumSelectionDepth = 20
+  static let maximumFragmentExpansionDepth = 20
+  static let maximumFragmentExpansionCount = 1_024
   static let maximumValueDepth = 10
   static let maximumBalancedBlockDepth = 64
 }
 
-enum GraphQLDocumentOperationType {
+enum GraphQLDocumentOperationType: Equatable, Sendable {
   case query
   case mutation
 }
 
-struct ParsedNoteGraphQLRootField {
+struct ParsedNoteGraphQLRootField: Equatable, Sendable {
   var operationType: GraphQLDocumentOperationType
   var fieldName: String
   var responseKey: String
   var arguments: JSONObject
   var selections: [ParsedNoteGraphQLSelectionField]
+  var variableDefinitions: [String: ParsedGraphQLVariableDefinition]
+  var variableUsages: [ParsedGraphQLVariableUsage]
 }
 
-struct ParsedNoteGraphQLSelectionField {
+struct ParsedNoteGraphQLSelectionField: Equatable, Sendable {
   var fieldName: String
   var responseKey: String
+  var arguments: JSONObject
+  var fragmentTypeConditions: [String]
   var selections: [ParsedNoteGraphQLSelectionField]
 }
 
@@ -33,71 +39,16 @@ func parseNoteGraphQLRootFields(
   variables: JSONObject,
   parseArguments: Bool
 ) throws -> [ParsedNoteGraphQLRootField]? {
-  try validateNoteGraphQLDocumentLength(query)
-  if operationName == nil, try graphQLExecutableOperationCount(in: query) > 1 {
-    throw NoteGraphQLDocumentExecutorError.invalidSelection(
-      "GraphQL operationName is required when a document contains multiple operations"
-    )
-  }
-  var index = query.startIndex
-  while index < query.endIndex {
-    skipGraphQLIgnored(in: query, index: &index)
-    guard index < query.endIndex else {
-      return nil
-    }
-    if query[index] == "{" {
-      guard operationName == nil else {
-        try skipGraphQLBalanced(in: query, index: &index, open: "{", close: "}")
-        continue
-      }
-      return try parseGraphQLRootSelections(
-        in: query,
-        index: &index,
-        operationType: .query,
-        variables: variables,
-        parseArguments: parseArguments
-      )
-    }
-    guard let operation = readGraphQLIdentifier(in: query, index: &index) else {
-      return nil
-    }
-    if operation == "fragment" {
-      try skipGraphQLDefinition(in: query, index: &index)
-      continue
-    }
-    let operationType: GraphQLDocumentOperationType
-    switch operation {
-    case "query":
-      operationType = .query
-    case "mutation":
-      operationType = .mutation
-    default:
-      return nil
-    }
-    let parsedOperationName = readOptionalGraphQLIdentifier(in: query, index: &index)
-    skipGraphQLIgnored(in: query, index: &index)
-    var operationVariables = variables
-    if index < query.endIndex, query[index] == "(" {
-      let defaultVariables = try parseGraphQLVariableDefinitions(in: query, index: &index)
-      operationVariables = defaultVariables.merging(variables) { _, provided in provided }
-    }
-    try rejectGraphQLDirectives(in: query, index: &index, reject: parseArguments)
-    guard try advanceToGraphQLSelectionSet(in: query, index: &index) else {
-      return nil
-    }
-    if let operationName, parsedOperationName != operationName {
-      try skipGraphQLBalanced(in: query, index: &index, open: "{", close: "}")
-      continue
-    }
-    return try parseGraphQLRootSelections(
-      in: query,
-      index: &index,
-      operationType: operationType,
-      variables: operationVariables,
-      parseArguments: parseArguments
-    )
-  }
-  return nil
+  let operations = try parseNoteGraphQLOperations(
+    in: query,
+    operationName: operationName,
+    variables: variables,
+    parseArguments: parseArguments
+  )
+  return try selectNoteGraphQLOperation(
+    operations,
+    operationName: operationName
+  )?.rootFields
 }
 
 public func noteGraphQLNamedOperationNames(in query: String) -> Set<String> {
@@ -136,55 +87,23 @@ public func noteGraphQLNamedOperationNames(in query: String) -> Set<String> {
   return names
 }
 
-private func graphQLExecutableOperationCount(in query: String) throws -> Int {
-  var index = query.startIndex
-  var count = 0
-  while index < query.endIndex {
-    skipGraphQLIgnored(in: query, index: &index)
-    guard index < query.endIndex else {
-      return count
-    }
-    if query[index] == "{" {
-      count += 1
-      try skipGraphQLBalanced(in: query, index: &index, open: "{", close: "}")
-      continue
-    }
-    guard let operation = readGraphQLIdentifier(in: query, index: &index) else {
-      index = query.index(after: index)
-      continue
-    }
-    if operation == "fragment" {
-      try skipGraphQLDefinition(in: query, index: &index)
-      continue
-    }
-    guard ["query", "mutation", "subscription"].contains(operation) else {
-      continue
-    }
-    count += 1
-    _ = readOptionalGraphQLIdentifier(in: query, index: &index)
-    skipGraphQLIgnored(in: query, index: &index)
-    if index < query.endIndex, query[index] == "(" {
-      try skipGraphQLBalanced(in: query, index: &index, open: "(", close: ")")
-    }
-    if try advanceToGraphQLSelectionSet(in: query, index: &index) {
-      try skipGraphQLBalanced(in: query, index: &index, open: "{", close: "}")
-    }
-  }
-  return count
-}
-
-private func validateNoteGraphQLDocumentLength(_ query: String) throws {
+func validateNoteGraphQLDocumentLength(_ query: String) throws {
   guard query.utf8.count <= NoteGraphQLDocumentLimits.maximumDocumentUTF8Bytes else {
     throw NoteGraphQLDocumentExecutorError.invalidSelection("GraphQL document size limit exceeded")
   }
 }
 
-private func parseGraphQLRootSelections(
+func parseGraphQLRootSelections(
   in query: String,
   index: inout String.Index,
   operationType: GraphQLDocumentOperationType,
   variables: JSONObject,
-  parseArguments: Bool
+  variableDefinitions: [String: ParsedGraphQLVariableDefinition],
+  parseArguments: Bool,
+  fragments: [String: ParsedGraphQLFragment],
+  fragmentStack: Set<String>,
+  fragmentBudget: GraphQLFragmentExpansionBudget,
+  allowUnresolvedVariables: Bool
 ) throws -> [ParsedNoteGraphQLRootField] {
   guard index < query.endIndex, query[index] == "{" else {
     return []
@@ -197,8 +116,39 @@ private func parseGraphQLRootSelections(
       index = query.index(after: index)
       return fields
     }
-    guard !query[index...].hasPrefix("...") else {
-      throw NoteGraphQLDocumentExecutorError.invalidSelection("GraphQL fragments are not supported in note documents")
+    if query[index...].hasPrefix("...") {
+      let name = try parseGraphQLFragmentSpreadName(
+        in: query,
+        index: &index,
+        rejectDirectives: parseArguments
+      )
+      guard let fragment = fragments[name] else {
+        throw NoteGraphQLDocumentExecutorError.invalidSelection("unknown GraphQL fragment '\(name)'")
+      }
+      let expectedType = operationType == .query ? "Query" : "Mutation"
+      guard fragment.typeCondition == expectedType else {
+        throw NoteGraphQLDocumentExecutorError.invalidSelection(
+          "GraphQL fragment '\(name)' cannot be used on \(expectedType)"
+        )
+      }
+      guard !fragmentStack.contains(name) else {
+        throw NoteGraphQLDocumentExecutorError.invalidSelection("cyclic GraphQL fragment '\(name)'")
+      }
+      try fragmentBudget.consume(name: name, depth: fragmentStack.count)
+      var fragmentIndex = fragment.selectionSource.startIndex
+      fields += try parseGraphQLRootSelections(
+        in: fragment.selectionSource,
+        index: &fragmentIndex,
+        operationType: operationType,
+        variables: variables,
+        variableDefinitions: variableDefinitions,
+        parseArguments: parseArguments,
+        fragments: fragments,
+        fragmentStack: fragmentStack.union([name]),
+        fragmentBudget: fragmentBudget,
+        allowUnresolvedVariables: allowUnresolvedVariables
+      )
+      continue
     }
     guard let first = readGraphQLIdentifier(in: query, index: &index) else {
       throw NoteGraphQLDocumentExecutorError.invalidSelection("GraphQL root selection is missing a field name")
@@ -215,10 +165,18 @@ private func parseGraphQLRootSelections(
       fieldName = aliasedFieldName
     }
     var arguments: JSONObject = [:]
+    let usageCollector = GraphQLVariableUsageCollector()
     skipGraphQLIgnored(in: query, index: &index)
     if index < query.endIndex, query[index] == "(" {
       if parseArguments {
-        arguments = try parseGraphQLArguments(in: query, index: &index, variables: variables)
+        arguments = try parseGraphQLArguments(
+          in: query,
+          index: &index,
+          variables: variables,
+          variableDefinitions: variableDefinitions,
+          allowUnresolvedVariables: allowUnresolvedVariables,
+          usageCollector: usageCollector
+        )
       } else {
         try skipGraphQLBalanced(in: query, index: &index, open: "(", close: ")")
       }
@@ -227,7 +185,23 @@ private func parseGraphQLRootSelections(
     let selections: [ParsedNoteGraphQLSelectionField]
     skipGraphQLIgnored(in: query, index: &index)
     if index < query.endIndex, query[index] == "{" {
-      selections = try parseGraphQLSelectionSet(in: query, index: &index, depth: 1, rejectDirectives: parseArguments)
+      let selectionContext = GraphQLSelectionParsingContext(
+        variables: variables,
+        variableDefinitions: variableDefinitions,
+        parseArguments: parseArguments,
+        fragments: fragments,
+        fragmentBudget: fragmentBudget,
+        allowUnresolvedVariables: allowUnresolvedVariables,
+        usageCollector: usageCollector
+      )
+      selections = try parseGraphQLSelectionSet(
+        in: query,
+        index: &index,
+        depth: 1,
+        context: selectionContext,
+        fragmentStack: fragmentStack,
+        fragmentTypeConditions: []
+      )
     } else {
       selections = []
     }
@@ -236,17 +210,31 @@ private func parseGraphQLRootSelections(
       fieldName: fieldName,
       responseKey: responseKey,
       arguments: arguments,
-      selections: selections
+      selections: selections,
+      variableDefinitions: variableDefinitions,
+      variableUsages: usageCollector.usages
     ))
   }
   throw NoteGraphQLDocumentExecutorError.invalidSelection("GraphQL root selection set was not closed")
+}
+
+private struct GraphQLSelectionParsingContext {
+  var variables: JSONObject
+  var variableDefinitions: [String: ParsedGraphQLVariableDefinition]
+  var parseArguments: Bool
+  var fragments: [String: ParsedGraphQLFragment]
+  var fragmentBudget: GraphQLFragmentExpansionBudget
+  var allowUnresolvedVariables: Bool
+  var usageCollector: GraphQLVariableUsageCollector
 }
 
 private func parseGraphQLSelectionSet(
   in query: String,
   index: inout String.Index,
   depth: Int,
-  rejectDirectives: Bool
+  context: GraphQLSelectionParsingContext,
+  fragmentStack: Set<String>,
+  fragmentTypeConditions: [String]
 ) throws -> [ParsedNoteGraphQLSelectionField] {
   guard index < query.endIndex, query[index] == "{" else {
     return []
@@ -263,7 +251,28 @@ private func parseGraphQLSelectionSet(
       return selections
     }
     if query[index...].hasPrefix("...") {
-      throw NoteGraphQLDocumentExecutorError.invalidSelection("GraphQL fragments are not supported in note documents")
+      let name = try parseGraphQLFragmentSpreadName(
+        in: query,
+        index: &index,
+        rejectDirectives: context.parseArguments
+      )
+      guard let fragment = context.fragments[name] else {
+        throw NoteGraphQLDocumentExecutorError.invalidSelection("unknown GraphQL fragment '\(name)'")
+      }
+      guard !fragmentStack.contains(name) else {
+        throw NoteGraphQLDocumentExecutorError.invalidSelection("cyclic GraphQL fragment '\(name)'")
+      }
+      try context.fragmentBudget.consume(name: name, depth: fragmentStack.count)
+      var fragmentIndex = fragment.selectionSource.startIndex
+      selections += try parseGraphQLSelectionSet(
+        in: fragment.selectionSource,
+        index: &fragmentIndex,
+        depth: depth,
+        context: context,
+        fragmentStack: fragmentStack.union([name]),
+        fragmentTypeConditions: fragmentTypeConditions + [fragment.typeCondition]
+      )
+      continue
     }
     guard let first = readGraphQLIdentifier(in: query, index: &index) else {
       throw NoteGraphQLDocumentExecutorError.invalidSelection("GraphQL selection is missing a field name")
@@ -279,33 +288,67 @@ private func parseGraphQLSelectionSet(
       responseKey = first
       fieldName = aliasedFieldName
     }
-    try skipGraphQLSelectionSuffix(in: query, index: &index, rejectDirectives: rejectDirectives)
+    var arguments: JSONObject = [:]
+    skipGraphQLIgnored(in: query, index: &index)
+    if index < query.endIndex, query[index] == "(" {
+      if context.parseArguments {
+        arguments = try parseGraphQLArguments(
+          in: query,
+          index: &index,
+          variables: context.variables,
+          variableDefinitions: context.variableDefinitions,
+          allowUnresolvedVariables: context.allowUnresolvedVariables,
+          usageCollector: context.usageCollector
+        )
+      } else {
+        try skipGraphQLBalanced(in: query, index: &index, open: "(", close: ")")
+      }
+    }
+    try rejectGraphQLDirectives(in: query, index: &index, reject: context.parseArguments)
     let nestedSelections: [ParsedNoteGraphQLSelectionField]
     skipGraphQLIgnored(in: query, index: &index)
     if index < query.endIndex, query[index] == "{" {
-      nestedSelections = try parseGraphQLSelectionSet(in: query, index: &index, depth: depth + 1, rejectDirectives: rejectDirectives)
+      nestedSelections = try parseGraphQLSelectionSet(
+        in: query,
+        index: &index,
+        depth: depth + 1,
+        context: context,
+        fragmentStack: fragmentStack,
+        fragmentTypeConditions: []
+      )
     } else {
       nestedSelections = []
     }
     selections.append(ParsedNoteGraphQLSelectionField(
       fieldName: fieldName,
       responseKey: responseKey,
+      arguments: arguments,
+      fragmentTypeConditions: fragmentTypeConditions,
       selections: nestedSelections
     ))
   }
   throw NoteGraphQLDocumentExecutorError.invalidSelection("GraphQL selection set was not closed")
 }
 
-private func skipGraphQLSelectionSuffix(
+private func parseGraphQLFragmentSpreadName(
   in query: String,
   index: inout String.Index,
   rejectDirectives: Bool
-) throws {
+) throws -> String {
+  guard query[index...].hasPrefix("...") else {
+    throw NoteGraphQLDocumentExecutorError.invalidSelection("GraphQL fragment spread is malformed")
+  }
+  for _ in 0..<3 {
+    index = query.index(after: index)
+  }
   skipGraphQLIgnored(in: query, index: &index)
-  if index < query.endIndex, query[index] == "(" {
-    try skipGraphQLBalanced(in: query, index: &index, open: "(", close: ")")
+  guard let name = readGraphQLIdentifier(in: query, index: &index), name != "on" else {
+    throw NoteGraphQLDocumentExecutorError.invalidSelection(
+      "inline GraphQL fragments are not supported"
+    )
   }
   try rejectGraphQLDirectives(in: query, index: &index, reject: rejectDirectives)
+  return name
 }
 
 /// Directives (`@skip`, `@include`, or any other) are not supported by the note
@@ -314,7 +357,7 @@ private func skipGraphQLSelectionSuffix(
 /// scans (route detection / field-name extraction) the directive is skipped so
 /// the note field can still be identified and the execution path can report the
 /// explicit error.
-private func rejectGraphQLDirectives(in query: String, index: inout String.Index, reject: Bool) throws {
+func rejectGraphQLDirectives(in query: String, index: inout String.Index, reject: Bool) throws {
   skipGraphQLIgnored(in: query, index: &index)
   while index < query.endIndex, query[index] == "@" {
     if reject {
@@ -335,7 +378,10 @@ private func rejectGraphQLDirectives(in query: String, index: inout String.Index
 private func parseGraphQLArguments(
   in query: String,
   index: inout String.Index,
-  variables: JSONObject
+  variables: JSONObject,
+  variableDefinitions: [String: ParsedGraphQLVariableDefinition],
+  allowUnresolvedVariables: Bool,
+  usageCollector: GraphQLVariableUsageCollector
 ) throws -> JSONObject {
   guard index < query.endIndex, query[index] == "(" else {
     return [:]
@@ -356,16 +402,34 @@ private func parseGraphQLArguments(
       throw NoteGraphQLDocumentExecutorError.invalidVariable("GraphQL argument '\(name)' is missing ':'")
     }
     index = query.index(after: index)
-    arguments[name] = try parseGraphQLValue(in: query, index: &index, variables: variables, depth: 1)
+    guard arguments[name] == nil else {
+      throw NoteGraphQLDocumentExecutorError.invalidVariable(
+        "duplicate GraphQL argument '\(name)'"
+      )
+    }
+    arguments[name] = try parseGraphQLValue(
+      in: query,
+      index: &index,
+      variables: variables,
+      variableDefinitions: variableDefinitions,
+      depth: 1,
+      allowUnresolvedVariables: allowUnresolvedVariables,
+      usageCollector: usageCollector,
+      path: [.field(name)]
+    )
   }
   throw NoteGraphQLDocumentExecutorError.invalidVariable("GraphQL arguments were not closed")
 }
 
-private func parseGraphQLValue(
+func parseGraphQLValue(
   in query: String,
   index: inout String.Index,
   variables: JSONObject,
-  depth: Int
+  variableDefinitions: [String: ParsedGraphQLVariableDefinition],
+  depth: Int,
+  allowUnresolvedVariables: Bool,
+  usageCollector: GraphQLVariableUsageCollector?,
+  path: [ParsedGraphQLInputPathComponent]
 ) throws -> JSONValue {
   guard depth <= NoteGraphQLDocumentLimits.maximumValueDepth else {
     throw NoteGraphQLDocumentExecutorError.invalidVariable("GraphQL value depth limit exceeded")
@@ -380,16 +444,43 @@ private func parseGraphQLValue(
     guard let variableName = readGraphQLIdentifier(in: query, index: &index) else {
       throw NoteGraphQLDocumentExecutorError.invalidVariable("GraphQL variable is missing a name")
     }
-    guard let value = variables[variableName] else {
+    guard variableDefinitions[variableName] != nil else {
+      throw NoteGraphQLDocumentExecutorError.invalidVariable(
+        "GraphQL variable '$\(variableName)' is not defined by the operation"
+      )
+    }
+    usageCollector?.record(name: variableName, path: path)
+    if let value = variables[variableName] {
+      return value
+    }
+    guard allowUnresolvedVariables else {
       throw NoteGraphQLDocumentExecutorError.missingVariable(variableName)
     }
-    return value
+    return .null
   case "\"":
     return .string(try readGraphQLString(in: query, index: &index))
   case "[":
-    return try parseGraphQLArray(in: query, index: &index, variables: variables, depth: depth)
+    return try parseGraphQLArray(
+      in: query,
+      index: &index,
+      variables: variables,
+      variableDefinitions: variableDefinitions,
+      depth: depth,
+      allowUnresolvedVariables: allowUnresolvedVariables,
+      usageCollector: usageCollector,
+      path: path
+    )
   case "{":
-    return try parseGraphQLObject(in: query, index: &index, variables: variables, depth: depth)
+    return try parseGraphQLObject(
+      in: query,
+      index: &index,
+      variables: variables,
+      variableDefinitions: variableDefinitions,
+      depth: depth,
+      allowUnresolvedVariables: allowUnresolvedVariables,
+      usageCollector: usageCollector,
+      path: path
+    )
   default:
     if query[index] == "-" || query[index].isNumber {
       return try parseGraphQLNumber(in: query, index: &index)
@@ -414,7 +505,11 @@ private func parseGraphQLArray(
   in query: String,
   index: inout String.Index,
   variables: JSONObject,
-  depth: Int
+  variableDefinitions: [String: ParsedGraphQLVariableDefinition],
+  depth: Int,
+  allowUnresolvedVariables: Bool,
+  usageCollector: GraphQLVariableUsageCollector?,
+  path: [ParsedGraphQLInputPathComponent]
 ) throws -> JSONValue {
   index = query.index(after: index)
   var values: [JSONValue] = []
@@ -424,7 +519,16 @@ private func parseGraphQLArray(
       index = query.index(after: index)
       return .array(values)
     }
-    values.append(try parseGraphQLValue(in: query, index: &index, variables: variables, depth: depth + 1))
+    values.append(try parseGraphQLValue(
+      in: query,
+      index: &index,
+      variables: variables,
+      variableDefinitions: variableDefinitions,
+      depth: depth + 1,
+      allowUnresolvedVariables: allowUnresolvedVariables,
+      usageCollector: usageCollector,
+      path: path + [.listElement]
+    ))
   }
   throw NoteGraphQLDocumentExecutorError.invalidVariable("GraphQL array was not closed")
 }
@@ -433,7 +537,11 @@ private func parseGraphQLObject(
   in query: String,
   index: inout String.Index,
   variables: JSONObject,
-  depth: Int
+  variableDefinitions: [String: ParsedGraphQLVariableDefinition],
+  depth: Int,
+  allowUnresolvedVariables: Bool,
+  usageCollector: GraphQLVariableUsageCollector?,
+  path: [ParsedGraphQLInputPathComponent]
 ) throws -> JSONValue {
   index = query.index(after: index)
   var object: JSONObject = [:]
@@ -443,12 +551,7 @@ private func parseGraphQLObject(
       index = query.index(after: index)
       return .object(object)
     }
-    let key: String
-    if index < query.endIndex, query[index] == "\"" {
-      key = try readGraphQLString(in: query, index: &index)
-    } else if let identifier = readGraphQLIdentifier(in: query, index: &index) {
-      key = identifier
-    } else {
+    guard let key = readGraphQLIdentifier(in: query, index: &index) else {
       throw NoteGraphQLDocumentExecutorError.invalidVariable("GraphQL object key is missing")
     }
     skipGraphQLIgnored(in: query, index: &index)
@@ -456,69 +559,26 @@ private func parseGraphQLObject(
       throw NoteGraphQLDocumentExecutorError.invalidVariable("GraphQL object key '\(key)' is missing ':'")
     }
     index = query.index(after: index)
-    object[key] = try parseGraphQLValue(in: query, index: &index, variables: variables, depth: depth + 1)
+    guard object[key] == nil else {
+      throw NoteGraphQLDocumentExecutorError.invalidVariable(
+        "duplicate GraphQL input field '\(key)'"
+      )
+    }
+    object[key] = try parseGraphQLValue(
+      in: query,
+      index: &index,
+      variables: variables,
+      variableDefinitions: variableDefinitions,
+      depth: depth + 1,
+      allowUnresolvedVariables: allowUnresolvedVariables,
+      usageCollector: usageCollector,
+      path: path + [.field(key)]
+    )
   }
   throw NoteGraphQLDocumentExecutorError.invalidVariable("GraphQL object was not closed")
 }
 
-private func parseGraphQLVariableDefinitions(
-  in query: String,
-  index: inout String.Index
-) throws -> JSONObject {
-  guard index < query.endIndex, query[index] == "(" else {
-    return [:]
-  }
-  index = query.index(after: index)
-  var defaults: JSONObject = [:]
-  while index < query.endIndex {
-    skipGraphQLIgnored(in: query, index: &index)
-    if index < query.endIndex, query[index] == ")" {
-      index = query.index(after: index)
-      return defaults
-    }
-    guard index < query.endIndex, query[index] == "$" else {
-      throw NoteGraphQLDocumentExecutorError.invalidVariable("GraphQL variable definition is missing '$'")
-    }
-    index = query.index(after: index)
-    guard let variableName = readGraphQLIdentifier(in: query, index: &index) else {
-      throw NoteGraphQLDocumentExecutorError.invalidVariable("GraphQL variable definition is missing a name")
-    }
-    skipGraphQLIgnored(in: query, index: &index)
-    guard index < query.endIndex, query[index] == ":" else {
-      throw NoteGraphQLDocumentExecutorError.invalidVariable("GraphQL variable '\(variableName)' is missing a type")
-    }
-    index = query.index(after: index)
-    try skipGraphQLTypeReference(in: query, index: &index)
-    skipGraphQLIgnored(in: query, index: &index)
-    if index < query.endIndex, query[index] == "=" {
-      index = query.index(after: index)
-      defaults[variableName] = try parseGraphQLValue(in: query, index: &index, variables: [:], depth: 1)
-    }
-  }
-  throw NoteGraphQLDocumentExecutorError.invalidVariable("GraphQL variable definitions were not closed")
-}
-
-private func skipGraphQLTypeReference(in query: String, index: inout String.Index) throws {
-  while index < query.endIndex {
-    skipGraphQLIgnored(in: query, index: &index)
-    guard index < query.endIndex else {
-      return
-    }
-    if query[index] == "=" || query[index] == ")" || query[index] == "," || query[index] == "$" {
-      return
-    }
-    if readOptionalGraphQLIdentifier(in: query, index: &index) != nil {
-      continue
-    }
-    if query[index] == "[" || query[index] == "]" || query[index] == "!" {
-      index = query.index(after: index)
-      continue
-    }
-    throw NoteGraphQLDocumentExecutorError.invalidVariable("GraphQL variable type is invalid")
-  }
-}
-
-private func parseGraphQLNumber(in query: String, index: inout String.Index) throws -> JSONValue {
+func parseGraphQLNumber(in query: String, index: inout String.Index) throws -> JSONValue {
   let start = index
   var isFloatingPoint = false
   if index < query.endIndex, query[index] == "-" {
@@ -554,12 +614,12 @@ private func parseGraphQLNumber(in query: String, index: inout String.Index) thr
   throw NoteGraphQLDocumentExecutorError.invalidVariable("invalid GraphQL number: \(raw)")
 }
 
-private func readGraphQLIdentifier(in query: String, index: inout String.Index) -> String? {
+func readGraphQLIdentifier(in query: String, index: inout String.Index) -> String? {
   skipGraphQLIgnored(in: query, index: &index)
   return readOptionalGraphQLIdentifier(in: query, index: &index)
 }
 
-private func readOptionalGraphQLIdentifier(in query: String, index: inout String.Index) -> String? {
+func readOptionalGraphQLIdentifier(in query: String, index: inout String.Index) -> String? {
   skipGraphQLIgnored(in: query, index: &index)
   guard index < query.endIndex, isGraphQLNameStart(query[index]) else {
     return nil
@@ -572,7 +632,7 @@ private func readOptionalGraphQLIdentifier(in query: String, index: inout String
   return String(query[start..<index])
 }
 
-private func readGraphQLString(in query: String, index: inout String.Index) throws -> String {
+func readGraphQLString(in query: String, index: inout String.Index) throws -> String {
   guard index < query.endIndex, query[index] == "\"" else {
     throw NoteGraphQLDocumentExecutorError.invalidVariable("GraphQL string is missing opening quote")
   }
@@ -751,7 +811,7 @@ private func graphQLUnicodeScalar(from value: UInt32) throws -> Character {
   return Character(scalar)
 }
 
-private func skipGraphQLIgnored(in query: String, index: inout String.Index) {
+func skipGraphQLIgnored(in query: String, index: inout String.Index) {
   while index < query.endIndex {
     if query[index].isWhitespace || query[index] == "," {
       index = query.index(after: index)
@@ -769,14 +829,14 @@ private func skipGraphQLComment(in query: String, index: inout String.Index) {
   }
 }
 
-private func skipGraphQLDefinition(in query: String, index: inout String.Index) throws {
+func skipGraphQLDefinition(in query: String, index: inout String.Index) throws {
   guard try advanceToGraphQLSelectionSet(in: query, index: &index) else {
     return
   }
   try skipGraphQLBalanced(in: query, index: &index, open: "{", close: "}")
 }
 
-private func advanceToGraphQLSelectionSet(in query: String, index: inout String.Index) throws -> Bool {
+func advanceToGraphQLSelectionSet(in query: String, index: inout String.Index) throws -> Bool {
   while index < query.endIndex {
     skipGraphQLIgnored(in: query, index: &index)
     guard index < query.endIndex else {
@@ -796,7 +856,7 @@ private func advanceToGraphQLSelectionSet(in query: String, index: inout String.
   return false
 }
 
-private func skipGraphQLBalanced(
+func skipGraphQLBalanced(
   in query: String,
   index: inout String.Index,
   open: Character,

@@ -223,7 +223,24 @@ public struct WorkflowInstanceDefinition: Codable, Equatable, Sendable {
 public enum WorkflowInstanceKind: String, Codable, Equatable, Sendable {
   case `default`
   case named
-  case temporary
+  case ephemeral
+
+  public init(from decoder: Decoder) throws {
+    let value = try decoder.singleValueContainer().decode(String.self)
+    switch value {
+    case Self.default.rawValue:
+      self = .default
+    case Self.named.rawValue:
+      self = .named
+    case Self.ephemeral.rawValue, "temporary":
+      self = .ephemeral
+    default:
+      throw DecodingError.dataCorruptedError(
+        in: try decoder.singleValueContainer(),
+        debugDescription: "unknown workflow instance kind '\(value)'"
+      )
+    }
+  }
 }
 
 public enum WorkflowInstanceIdentity {

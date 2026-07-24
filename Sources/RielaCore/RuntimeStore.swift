@@ -99,15 +99,24 @@ public struct WorkflowSessionCreateInput: Equatable, Sendable {
   public var workflowId: String
   public var entryStepId: String
   public var effectiveInstance: EffectiveWorkflowInstance?
+  public var parentSessionId: String?
+  public var rootSessionId: String?
+  public var effectiveStepBudget: Int?
 
   public init(
     workflowId: String,
     entryStepId: String,
-    effectiveInstance: EffectiveWorkflowInstance? = nil
+    effectiveInstance: EffectiveWorkflowInstance? = nil,
+    parentSessionId: String? = nil,
+    rootSessionId: String? = nil,
+    effectiveStepBudget: Int? = nil
   ) {
     self.workflowId = workflowId
     self.entryStepId = entryStepId
     self.effectiveInstance = effectiveInstance
+    self.parentSessionId = parentSessionId
+    self.rootSessionId = rootSessionId
+    self.effectiveStepBudget = effectiveStepBudget
   }
 }
 
@@ -117,13 +126,25 @@ public struct WorkflowStepExecutionRecordInput: Equatable, Sendable {
   public var nodeId: String
   public var attempt: Int
   public var backend: NodeExecutionBackend?
+  public var backendWorkingDirectory: String?
+  public var effectiveStepBudget: Int?
 
-  public init(sessionId: String, stepId: String, nodeId: String, attempt: Int, backend: NodeExecutionBackend? = nil) {
+  public init(
+    sessionId: String,
+    stepId: String,
+    nodeId: String,
+    attempt: Int,
+    backend: NodeExecutionBackend? = nil,
+    backendWorkingDirectory: String? = nil,
+    effectiveStepBudget: Int? = nil
+  ) {
     self.sessionId = sessionId
     self.stepId = stepId
     self.nodeId = nodeId
     self.attempt = attempt
     self.backend = backend
+    self.backendWorkingDirectory = backendWorkingDirectory
+    self.effectiveStepBudget = effectiveStepBudget
   }
 }
 
@@ -137,6 +158,7 @@ public struct WorkflowStepExecutionUpdateInput: Equatable, Sendable {
   public var usage: AdapterUsage?
   public var completesRootWithoutOutput: Bool
   public var currentStepId: String?
+  public var pendingRoutePublication: WorkflowPendingRoutePublication?
 
   public init(
     sessionId: String,
@@ -147,7 +169,8 @@ public struct WorkflowStepExecutionUpdateInput: Equatable, Sendable {
     failureReason: String? = nil,
     usage: AdapterUsage? = nil,
     completesRootWithoutOutput: Bool = false,
-    currentStepId: String? = nil
+    currentStepId: String? = nil,
+    pendingRoutePublication: WorkflowPendingRoutePublication? = nil
   ) {
     self.sessionId = sessionId
     self.executionId = executionId
@@ -158,6 +181,7 @@ public struct WorkflowStepExecutionUpdateInput: Equatable, Sendable {
     self.usage = usage
     self.completesRootWithoutOutput = completesRootWithoutOutput
     self.currentStepId = currentStepId
+    self.pendingRoutePublication = pendingRoutePublication
   }
 }
 
@@ -167,19 +191,68 @@ public struct WorkflowSessionFailureInput: Equatable, Sendable {
   public var failureKind: WorkflowSessionFailureKind?
   public var failedAt: Date?
   public var stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic?
+  public var effectiveStepBudget: Int?
 
   public init(
     sessionId: String,
     reason: String,
     failureKind: WorkflowSessionFailureKind? = nil,
     failedAt: Date? = nil,
-    stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic? = nil
+    stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic? = nil,
+    effectiveStepBudget: Int? = nil
   ) {
     self.sessionId = sessionId
     self.reason = reason
     self.failureKind = failureKind
     self.failedAt = failedAt
     self.stepBudgetDiagnostic = stepBudgetDiagnostic
+    self.effectiveStepBudget = effectiveStepBudget
+  }
+}
+
+public struct WorkflowStepBackendEventInput: Equatable, Sendable {
+  public var sessionId: String
+  public var executionId: String
+  public var eventType: String
+  public var channel: AdapterBackendEventChannel?
+  public var contentDelta: String?
+  public var contentSnapshot: String?
+  public var isDelta: Bool
+  public var toolName: String?
+  public var usage: JSONObject?
+  public var metadata: JSONObject?
+  public var sequence: Int?
+  public var at: Date?
+  public var backendSessionId: String?
+
+  public init(
+    sessionId: String,
+    executionId: String,
+    eventType: String,
+    channel: AdapterBackendEventChannel? = nil,
+    contentDelta: String? = nil,
+    contentSnapshot: String? = nil,
+    isDelta: Bool = false,
+    toolName: String? = nil,
+    usage: JSONObject? = nil,
+    metadata: JSONObject? = nil,
+    sequence: Int? = nil,
+    at: Date? = nil,
+    backendSessionId: String? = nil
+  ) {
+    self.sessionId = sessionId
+    self.executionId = executionId
+    self.eventType = eventType
+    self.channel = channel
+    self.contentDelta = contentDelta
+    self.contentSnapshot = contentSnapshot
+    self.isDelta = isDelta
+    self.toolName = toolName
+    self.usage = usage
+    self.metadata = metadata
+    self.sequence = sequence
+    self.at = at
+    self.backendSessionId = backendSessionId
   }
 }
 
@@ -239,6 +312,10 @@ public protocol WorkflowRuntimeStore: Sendable {
   func createSession(_ input: WorkflowSessionCreateInput) async throws -> WorkflowSession
   func recordStepExecution(_ input: WorkflowStepExecutionRecordInput) async throws -> WorkflowStepExecution
   func updateStepExecution(_ input: WorkflowStepExecutionUpdateInput) async throws -> WorkflowStepExecution
+  func stageWorkflowPublication(_ input: WorkflowPublicationStageInput) async throws -> WorkflowPublicationStageResult
+  func commitWorkflowPublication(_ input: WorkflowPublicationCommitInput) async throws -> WorkflowPublicationCommitResult
+  func abortWorkflowPublication(_ input: WorkflowPublicationAbortInput) async throws -> WorkflowStepExecution
+  func redirectPendingWorkflowStep(_ input: WorkflowPendingStepRedirectInput) async throws -> WorkflowPendingStepRedirectResult
   func markSessionFailed(_ input: WorkflowSessionFailureInput) async throws -> WorkflowSession
   func recordStepBackendEvent(_ input: WorkflowStepBackendEventInput) async throws -> WorkflowStepExecution
   func recordStepBackendEventReceipt(_ input: WorkflowStepBackendEventInput) async throws -> WorkflowBackendEventReceipt
@@ -259,143 +336,16 @@ public extension WorkflowRuntimeStore {
   }
 }
 
-public struct WorkflowResolvedMessageInput: Codable, Equatable, Sendable {
-  public var workflowExecutionId: String
-  public var stepId: String
-  public var messages: [WorkflowMessageRecord]
-  public var payload: JSONObject
-  public var communicationIds: [String]
-  public var sourceStepIds: [String]
-
-  public init(
-    workflowExecutionId: String,
-    stepId: String,
-    messages: [WorkflowMessageRecord],
-    payload: JSONObject,
-    communicationIds: [String],
-    sourceStepIds: [String]
-  ) {
-    self.workflowExecutionId = workflowExecutionId
-    self.stepId = stepId
-    self.messages = messages
-    self.payload = payload
-    self.communicationIds = communicationIds
-    self.sourceStepIds = sourceStepIds
-  }
-
-  public func applying(to input: AdapterExecutionInput) -> AdapterExecutionInput {
-    var adapterInput = input
-    for (key, value) in payload {
-      adapterInput.mergedVariables[key] = value
-    }
-    return adapterInput
-  }
-}
-
-public protocol WorkflowMessageInputResolving: Sendable {
-  func resolveInput(
-    for sessionId: String,
-    stepId: String,
-    store: any WorkflowRuntimeStore
-  ) async throws -> WorkflowResolvedMessageInput
-}
-
-public struct DefaultWorkflowMessageInputResolver: WorkflowMessageInputResolving {
-  public init() {}
-
-  public func resolveInput(
-    for sessionId: String,
-    stepId: String,
-    store: any WorkflowRuntimeStore
-  ) async throws -> WorkflowResolvedMessageInput {
-    let messages = try await store.listMessages(for: sessionId, toStepId: stepId)
-      .filter { $0.isResolvableInput }
-      .sorted {
-        if $0.createdOrder == $1.createdOrder {
-          return $0.communicationId < $1.communicationId
-        }
-        return $0.createdOrder < $1.createdOrder
-      }
-    var payload: JSONObject = [:]
-    var sourceStepIds: [String] = []
-    for message in messages {
-      if let fromStepId = message.fromStepId, !sourceStepIds.contains(fromStepId) {
-        sourceStepIds.append(fromStepId)
-      }
-      for (key, value) in message.payload {
-        payload[key] = value
-      }
-    }
-    payload["_rielaInput"] = resolvedInputMetadata(
-      sessionId: sessionId,
-      stepId: stepId,
-      messages: messages,
-      sourceStepIds: sourceStepIds
-    )
-    return WorkflowResolvedMessageInput(
-      workflowExecutionId: sessionId,
-      stepId: stepId,
-      messages: messages,
-      payload: payload,
-      communicationIds: messages.map(\.communicationId),
-      sourceStepIds: sourceStepIds
-    )
-  }
-}
-
-private func resolvedInputMetadata(
-  sessionId: String,
-  stepId: String,
-  messages: [WorkflowMessageRecord],
-  sourceStepIds: [String]
-) -> JSONValue {
-  let messageValues = messages.map(resolvedInputMessageMetadata)
-  var metadata: JSONObject = [
-    "workflowExecutionId": .string(sessionId),
-    "stepId": .string(stepId),
-    "communicationIds": .array(messages.map(\.communicationId).map(JSONValue.string)),
-    "sourceStepIds": .array(sourceStepIds.map(JSONValue.string)),
-    "messages": .array(messageValues)
-  ]
-  if let latest = messages.last {
-    metadata["latest"] = resolvedInputMessageMetadata(latest)
-  }
-  return .object(metadata)
-}
-
-private func resolvedInputMessageMetadata(_ message: WorkflowMessageRecord) -> JSONValue {
-  var metadata: JSONObject = [
-    "communicationId": .string(message.communicationId),
-    "workflowExecutionId": .string(message.workflowExecutionId),
-    "sourceStepExecutionId": .string(message.sourceStepExecutionId),
-    "deliveryKind": .string(message.deliveryKind.rawValue),
-    "routingScope": .string(message.routingScope.rawValue),
-    "lifecycleStatus": .string(message.lifecycleStatus.rawValue),
-    "createdOrder": .number(Double(message.createdOrder)),
-    "payload": .object(message.payload)
-  ]
-  if let fromStepId = message.fromStepId {
-    metadata["fromStepId"] = .string(fromStepId)
-  }
-  if let toStepId = message.toStepId {
-    metadata["toStepId"] = .string(toStepId)
-  }
-  if let transitionCondition = message.transitionCondition {
-    metadata["transitionCondition"] = .string(transitionCondition)
-  }
-  return .object(metadata)
-}
-
 public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
   public typealias AppendFailurePredicate = @Sendable (WorkflowMessageAppendInput) -> String?
 
-  private let clock: any WorkflowRuntimeClock
-  private let idGenerator: any WorkflowRuntimeIDGenerating
-  private let appendFailurePredicate: AppendFailurePredicate?
-  private var sessions: [String: WorkflowSession] = [:]
+  let clock: any WorkflowRuntimeClock
+  let idGenerator: any WorkflowRuntimeIDGenerating
+  let appendFailurePredicate: AppendFailurePredicate?
+  var sessions: [String: WorkflowSession] = [:]
   private var executionLiveTails: [String: WorkflowExecutionLiveTail] = [:]
-  private var messagesBySession: [String: [WorkflowMessageRecord]] = [:]
-  private var createdOrder = 0
+  var messagesBySession: [String: [WorkflowMessageRecord]] = [:]
+  var createdOrder = 0
 
   public init(
     clock: any WorkflowRuntimeClock = SystemWorkflowRuntimeClock(),
@@ -448,7 +398,10 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
       instanceIdentity: input.effectiveInstance?.identity,
       instanceKind: input.effectiveInstance?.kind.rawValue,
       instanceBaseIdentity: input.effectiveInstance?.baseIdentity,
-      instanceConfiguration: input.effectiveInstance?.configurationJSONObject
+      instanceConfiguration: input.effectiveInstance?.configurationJSONObject,
+      parentSessionId: input.parentSessionId,
+      rootSessionId: input.rootSessionId ?? sessionId,
+      effectiveStepBudget: input.effectiveStepBudget
     )
     sessions[sessionId] = session
     messagesBySession[sessionId] = []
@@ -466,6 +419,7 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
       nodeId: input.nodeId,
       attempt: input.attempt,
       backend: input.backend,
+      backendWorkingDirectory: input.backendWorkingDirectory,
       status: .running,
       createdAt: date,
       updatedAt: date
@@ -477,6 +431,7 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     session.failureKind = nil
     session.failedAt = nil
     session.stepBudgetDiagnostic = nil
+    session.effectiveStepBudget = input.effectiveStepBudget ?? session.effectiveStepBudget
     session.executions.append(execution)
     sessions[input.sessionId] = session
     return execution
@@ -497,6 +452,7 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     execution.adapterOutput = input.adapterOutput ?? execution.adapterOutput
     execution.failureReason = input.failureReason
     execution.usage = input.usage ?? execution.usage
+    execution.pendingRoutePublication = input.pendingRoutePublication
     execution.updatedAt = date
     if let acceptedOutput = input.acceptedOutput {
       let extractedFindings = WorkflowReviewFindingExtractor.extract(
@@ -549,6 +505,7 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     session.failureKind = input.failureKind
     session.failedAt = input.failedAt ?? date
     session.stepBudgetDiagnostic = input.stepBudgetDiagnostic
+    session.effectiveStepBudget = input.effectiveStepBudget ?? session.effectiveStepBudget
     session.executions = session.executions.map { execution in
       guard execution.status == .running else {
         return execution
@@ -597,6 +554,7 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     let sequence = input.sequence ?? ((liveTail.backendEventCount ?? 0) + 1)
     liveTail.lastBackendEventAt = date
     liveTail.lastBackendEventType = input.eventType
+    liveTail.backendSessionId = input.backendSessionId ?? liveTail.backendSessionId
     liveTail.backendEventCount = sequence
     appendRecentBackendEvent(to: &liveTail, input: input, sequence: sequence, date: date)
     updateStreamedResponseText(on: &liveTail, input: input)
@@ -622,8 +580,7 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
       channel: input.channel,
       content: input.contentSnapshot ?? input.contentDelta,
       toolName: input.toolName,
-      usage: input.usage,
-      metadata: input.metadata
+      usage: input.usage
     ))
     if events.count > 100 {
       events.removeFirst(events.count - 100)
@@ -735,17 +692,17 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     return detached
   }
 
-  private func projectBackendLiveTails(on session: WorkflowSession) -> WorkflowSession {
+  func projectBackendLiveTails(on session: WorkflowSession) -> WorkflowSession {
     var projected = session
     projected.executions = session.executions.map(projectBackendLiveTail(on:))
     return projected
   }
 
-  private func projectBackendLiveTail(on execution: WorkflowStepExecution) -> WorkflowStepExecution {
+  func projectBackendLiveTail(on execution: WorkflowStepExecution) -> WorkflowStepExecution {
     executionLiveTails[execution.executionId]?.applying(to: execution) ?? execution
   }
 
-  private func finalizeBackendLiveTail(on execution: WorkflowStepExecution) -> WorkflowStepExecution {
+  func finalizeBackendLiveTail(on execution: WorkflowStepExecution) -> WorkflowStepExecution {
     let finalized = projectBackendLiveTail(on: execution)
     executionLiveTails.removeValue(forKey: execution.executionId)
     return finalized
@@ -768,6 +725,7 @@ private extension WorkflowStepExecutionStatus {
 }
 
 private struct WorkflowExecutionLiveTail: Sendable {
+  var backendSessionId: String?
   var lastBackendEventAt: Date?
   var lastBackendEventType: String?
   var backendEventCount: Int?
@@ -775,6 +733,7 @@ private struct WorkflowExecutionLiveTail: Sendable {
   var streamedResponseTextBuffer: StreamedResponseTextBuffer?
 
   init(execution: WorkflowStepExecution) {
+    self.backendSessionId = execution.backendSessionId
     self.lastBackendEventAt = execution.lastBackendEventAt
     self.lastBackendEventType = execution.lastBackendEventType
     self.backendEventCount = execution.backendEventCount
@@ -785,7 +744,8 @@ private struct WorkflowExecutionLiveTail: Sendable {
   }
 
   var isEmpty: Bool {
-    lastBackendEventAt == nil
+    backendSessionId == nil
+      && lastBackendEventAt == nil
       && lastBackendEventType == nil
       && backendEventCount == nil
       && recentBackendEvents == nil
@@ -804,6 +764,7 @@ private struct WorkflowExecutionLiveTail: Sendable {
 
   func applying(to execution: WorkflowStepExecution) -> WorkflowStepExecution {
     var projected = execution
+    projected.backendSessionId = backendSessionId
     projected.lastBackendEventAt = lastBackendEventAt
     projected.lastBackendEventType = lastBackendEventType
     projected.backendEventCount = backendEventCount
@@ -938,22 +899,12 @@ private struct StreamedResponseTextBuffer: Sendable {
 private extension WorkflowStepExecution {
   func withoutBackendLiveTail() -> WorkflowStepExecution {
     var execution = self
+    execution.backendSessionId = nil
     execution.lastBackendEventAt = nil
     execution.lastBackendEventType = nil
     execution.backendEventCount = nil
     execution.recentBackendEvents = nil
     execution.streamedResponseText = nil
     return execution
-  }
-}
-
-private extension WorkflowMessageRecord {
-  var isResolvableInput: Bool {
-    switch lifecycleStatus {
-    case .delivered, .consumed:
-      return true
-    case .created, .failed, .superseded:
-      return false
-    }
   }
 }

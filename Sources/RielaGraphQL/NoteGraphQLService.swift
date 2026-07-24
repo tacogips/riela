@@ -77,6 +77,7 @@ public struct GraphQLNoteGraphQLService: Sendable {
     createdAfter: String? = nil,
     createdBefore: String? = nil,
     includeLinked: Bool = false,
+    depth: Int = 1,
     limit: Int = 20,
     offset: Int = 0
   ) async -> GraphQLNoteQueryResult<[GraphQLNoteSearchResultDTO]> {
@@ -89,9 +90,21 @@ public struct GraphQLNoteGraphQLService: Sendable {
         createdAfter: createdAfter,
         createdBefore: createdBefore,
         includeLinked: includeLinked,
+        depth: depth,
         limit: limit,
         offset: offset
       ).map(GraphQLNoteSearchResultDTO.init)
+    }
+  }
+
+  public func noteGraphNeighbors(
+    noteIds: [String],
+    depth: Int = NoteGraphPolicy.defaultMaxDepth,
+    limit: Int = NoteGraphPolicy.defaultLimit
+  ) async -> GraphQLNoteQueryResult<[GraphQLNoteGraphNeighborDTO]> {
+    noteResult {
+      try service.graphNeighbors(noteIds: noteIds, maxDepth: depth, limit: limit)
+        .map(GraphQLNoteGraphNeighborDTO.init)
     }
   }
 
@@ -171,7 +184,11 @@ public struct GraphQLNoteGraphQLService: Sendable {
 
   public func defineTag(_ input: GraphQLDefineNoteTagInput) async -> GraphQLNoteMutationResult {
     noteMutation {
-      let tag = try service.defineTag(name: input.name, classId: input.classId)
+      let tag = try service.defineTag(
+        name: input.name,
+        classId: input.classId,
+        parentTagId: input.parentTagId
+      )
       return .init(result: .ok, tag: GraphQLNoteTagDTO(tag: tag))
     }
   }
@@ -238,6 +255,22 @@ public struct GraphQLNoteGraphQLService: Sendable {
         notebookId: notebookId,
         tagName: tagName,
         removedBy: try graphQLNoteProvenance(provenance)
+      )
+      return .init(result: .ok, notebook: GraphQLNotebookDTO(notebook: notebook))
+    }
+  }
+
+  public func setNotebookProgress(
+    notebookId: String,
+    progress: String
+  ) async -> GraphQLNoteMutationResult {
+    noteMutation {
+      guard let progress = NotebookProgress(rawValue: progress) else {
+        throw GraphQLNoteServiceError.invalidRequest("unsupported notebook progress: \(progress)")
+      }
+      let notebook = try service.setNotebookProgress(
+        notebookId: notebookId,
+        progress: progress
       )
       return .init(result: .ok, notebook: GraphQLNotebookDTO(notebook: notebook))
     }

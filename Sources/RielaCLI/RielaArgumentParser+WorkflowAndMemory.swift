@@ -3,181 +3,130 @@ import RielaAddons
 import RielaMemory
 
 extension RielaArgumentParser {
-  func parseWorkflowVersionCommand(_ arguments: [String]) throws -> WorkflowVersionCommandOptions? {
-    switch arguments[1] {
-    case "versions":
-      guard arguments.count >= 3, !arguments[2].hasPrefix("--") else {
-        throw CLIUsageError("workflow versions requires a workflow name")
-      }
+  func parseWorkflowVersionCommand(
+    subcommand: WorkflowClientSubcommand,
+    arguments: [String]
+  ) throws -> WorkflowVersionCommandOptions {
+    switch subcommand {
+    case .versions:
+      let parsed = try ParsedWorkflowVersionsArguments.parseCLI(arguments)
       return WorkflowVersionCommandOptions(
         kind: .list,
-        workflowName: arguments[2],
-        arguments: Array(arguments.dropFirst(3))
+        workflowName: parsed.workflowName,
+        arguments: parsed.options
       )
-    case "version":
-      guard arguments.count >= 5 else {
-        throw CLIUsageError("workflow version requires show|diff, a workflow name, and snapshot reference(s)")
-      }
-      switch arguments[2] {
-      case "show":
+    case .version:
+      let family = try ParsedWorkflowVersionFamily.parseCLI(arguments)
+      switch family.operation {
+      case .show:
+        let parsed = try ParsedWorkflowVersionShowArguments.parseCLI(family.remainder)
         return WorkflowVersionCommandOptions(
           kind: .show,
-          workflowName: arguments[3],
-          firstReference: arguments[4],
-          arguments: Array(arguments.dropFirst(5))
+          workflowName: parsed.workflowName,
+          firstReference: parsed.reference,
+          arguments: parsed.options
         )
-      case "diff":
-        guard arguments.count >= 6 else {
-          throw CLIUsageError("workflow version diff requires a workflow name and two snapshot references")
-        }
+      case .diff:
+        let parsed = try ParsedWorkflowVersionDiffArguments.parseCLI(family.remainder)
         return WorkflowVersionCommandOptions(
           kind: .diff,
-          workflowName: arguments[3],
-          firstReference: arguments[4],
-          secondReference: arguments[5],
-          arguments: Array(arguments.dropFirst(6))
+          workflowName: parsed.workflowName,
+          firstReference: parsed.firstReference,
+          secondReference: parsed.secondReference,
+          arguments: parsed.options
         )
-      default:
-        throw CLIUsageError("unsupported workflow version operation '\(arguments[2])'")
       }
-    case "restore":
-      guard arguments.count >= 4, !arguments[2].hasPrefix("--"), !arguments[3].hasPrefix("--") else {
-        throw CLIUsageError("workflow restore requires a workflow name and snapshot id")
-      }
+    case .restore:
+      let parsed = try ParsedWorkflowRestoreArguments.parseCLI(arguments)
       return WorkflowVersionCommandOptions(
         kind: .restore,
-        workflowName: arguments[2],
-        firstReference: arguments[3],
-        arguments: Array(arguments.dropFirst(4))
+        workflowName: parsed.workflowName,
+        firstReference: parsed.snapshotId,
+        arguments: parsed.options
       )
-    default:
-      return nil
+    case .package, .manifest, .list, .status, .register, .update, .delete, .activate, .deactivate,
+         .consolidate, .validate, .inspect, .usage, .run, .checkout, .create, .selfImprove:
+      throw CLIUsageError("unsupported workflow version route '\(subcommand.rawValue)'")
     }
   }
 
   func parseMemoryOptions(memoryId: String, tokens: [String]) throws -> MemoryCommandOptions {
-    var workflowId: String?
-    var allWorkflows = false
-    var nodeId: String?
-    var recordId: Int64?
-    var payloadJSON: String?
-    var payloadFile: String?
-    var registeredAt: String?
-    var matchPatterns: [String] = []
-    var tags: [String] = []
-    var relatedRecordIds: [Int64] = []
-    var filePaths: [String] = []
-    var clearFiles = false
-    var sortOrder: MemoryValueSortOrder = .valueAsc
-    var limit = 30
-    var offset = 0
-    var databaseRoot: String?
-    var workingDirectory = FileManager.default.currentDirectoryPath
-    var output: WorkflowOutputFormat = .jsonl
-    var index = 0
-    while index < tokens.count {
-      let token = tokens[index]
-      guard token.hasPrefix("-") else { throw CLIUsageError("unexpected positional argument '\(token)'") }
-      if let value = inlineOptionValue(token, prefix: "--output=") {
-        output = try parseOutputValue(value, allowTableOutput: false)
-        index += 1
-        continue
-      }
-      if let value = inlineOptionValue(token, prefix: "--sort=") {
-        sortOrder = try parseMemoryValueSort(value)
-        index += 1
-        continue
-      }
-      let value: () throws -> String = {
-        guard index + 1 < tokens.count, !tokens[index + 1].hasPrefix("--") else {
-          throw CLIUsageError("\(token) requires a value")
-        }
-        index += 1
-        return tokens[index]
-      }
-      switch token {
-      case "--all-workflows": allWorkflows = true
-      case "--workflow-id": workflowId = try value()
-      case "--node-id": nodeId = try value()
-      case "--record-id":
-        guard let parsed = Int64(try value()), parsed > 0 else { throw CLIUsageError("--record-id must be a positive integer") }
-        recordId = parsed
-      case "--payload-json": payloadJSON = try value()
-      case "--payload-file": payloadFile = try value()
-      case "--registered-at": registeredAt = try value()
-      case "--match", "-e": matchPatterns.append(try value())
-      case "--tag": tags.append(try value())
-      case "--related-id", "--related-record-id":
-        guard let parsed = Int64(try value()), parsed > 0 else { throw CLIUsageError("\(token) must be a positive integer") }
-        relatedRecordIds.append(parsed)
-      case "--file", "--file-path": filePaths.append(try value())
-      case "--clear-files": clearFiles = true
-      case "--sort": sortOrder = try parseMemoryValueSort(try value())
-      case "--limit":
-        guard let parsed = Int(try value()), parsed > 0 else { throw CLIUsageError("--limit must be a positive integer") }
-        limit = parsed
-      case "--offset":
-        guard let parsed = Int(try value()), parsed >= 0 else { throw CLIUsageError("--offset must be zero or a positive integer") }
-        offset = parsed
-      case "--database-root", "--memory-root": databaseRoot = try value()
-      case "--working-dir", "--working-directory": workingDirectory = try value()
-      case "--output": output = try parseOutputValue(try value(), allowTableOutput: false)
-      default: throw CLIUsageError("unsupported memory option '\(token)'")
-      }
-      index += 1
-    }
-    return MemoryCommandOptions(
-      memoryId: memoryId,
-      workflowId: workflowId,
-      allWorkflows: allWorkflows,
-      nodeId: nodeId,
-      recordId: recordId,
-      payloadJSON: payloadJSON,
-      payloadFile: payloadFile,
-      registeredAt: registeredAt,
-      matchPatterns: matchPatterns,
-      tags: tags,
-      relatedRecordIds: relatedRecordIds,
-      filePaths: filePaths,
-      clearFiles: clearFiles,
-      sortOrder: sortOrder,
-      limit: limit,
-      offset: offset,
-      databaseRoot: databaseRoot,
-      workingDirectory: workingDirectory,
-      output: output
-    )
+    try ParsedMemoryOptions(tokens).commandOptions(memoryId: memoryId)
   }
 
   func parseScoped(kind: ScopedCommandKind, arguments: [String]) throws -> ScopedCommand {
     if kind == .callStep || kind == .workflowCall {
-      guard arguments.count >= 3,
-            !arguments[0].hasPrefix("--"),
-            !arguments[1].hasPrefix("--"),
-            !arguments[2].hasPrefix("--") else {
-        throw CLIUsageError("\(kind.rawValue) requires <workflow-id> <workflow-run-id> <step-id>")
-      }
+      let parsed = try ParsedWorkflowCallArguments.parseCLI(arguments)
       return ScopedCommand(
         kind: kind,
         options: try parseGeneric(
           scope: kind.rawValue,
-          command: arguments[0],
-          target: arguments[1],
-          arguments: Array(arguments.dropFirst(2))
+          command: parsed.workflowId,
+          target: parsed.workflowRunId,
+          arguments: [parsed.stepId] + parsed.options
         )
       )
     }
-    let command = arguments.first?.hasPrefix("--") == false ? arguments.first : nil
-    let targetIndex = command == nil ? 0 : 1
-    let target = arguments.count > targetIndex && !arguments[targetIndex].hasPrefix("--") ? arguments[targetIndex] : nil
-    let optionStart = target == nil ? targetIndex : targetIndex + 1
+    let parsed = try ParsedScopedCommandArguments.parseCLI(arguments)
+    if kind == .graphql || kind == .gql, parsed.command != nil {
+      let route = try ParsedGraphQLActionRoute.parseCLI(arguments)
+      let invocation = try ParsedTargetAndOptions.parseCLI(route.remainder)
+      return ScopedCommand(
+        kind: kind,
+        options: try parseGeneric(
+          scope: kind.rawValue,
+          command: route.action.rawValue,
+          target: invocation.target,
+          arguments: invocation.options
+        )
+      )
+    }
+    if kind == .events, parsed.command != nil {
+      let route = try ParsedEventsActionRoute.parseCLI(arguments)
+      if route.action == .schedules {
+        let schedules = try ParsedEventSchedulesRoute.parseCLI(arguments)
+        let invocation = try ParsedTargetAndOptions.parseCLI(schedules.remainder)
+        return ScopedCommand(
+          kind: kind,
+          options: try parseGeneric(
+            scope: kind.rawValue,
+            command: route.action.rawValue,
+            target: schedules.action.rawValue,
+            arguments: invocation.target.map { [$0] + invocation.options } ?? invocation.options
+          )
+        )
+      }
+      let invocation = try ParsedTargetAndOptions.parseCLI(route.remainder)
+      return ScopedCommand(
+        kind: kind,
+        options: try parseGeneric(
+          scope: kind.rawValue,
+          command: route.action.rawValue,
+          target: invocation.target,
+          arguments: invocation.options
+        )
+      )
+    }
+    if kind == .hook, parsed.command != nil {
+      let route = try ParsedHookRoute.parseCLI(arguments)
+      let invocation = try ParsedTargetAndOptions.parseCLI(route.remainder)
+      return ScopedCommand(
+        kind: kind,
+        options: try parseGeneric(
+          scope: kind.rawValue,
+          command: route.vendor.rawValue,
+          target: invocation.target,
+          arguments: invocation.options
+        )
+      )
+    }
     return ScopedCommand(
       kind: kind,
       options: try parseGeneric(
         scope: kind.rawValue,
-        command: command,
-        target: target,
-        arguments: Array(arguments.dropFirst(optionStart))
+        command: parsed.command,
+        target: parsed.target,
+        arguments: parsed.options
       )
     )
   }
@@ -190,7 +139,8 @@ extension RielaArgumentParser {
       workflowName: target,
       scope: parsed.scope,
       workflowDefinitionDir: parsed.workflowDefinitionDir,
-      workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
+      workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath,
+      includeDeactivated: true
     )
     return WorkflowValidateOptions(
       workflowName: target,
@@ -209,7 +159,8 @@ extension RielaArgumentParser {
       workflowName: target,
       scope: parsed.scope,
       workflowDefinitionDir: parsed.workflowDefinitionDir,
-      workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
+      workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath,
+      includeDeactivated: true
     )
     return WorkflowInspectOptions(
       workflowName: target,
@@ -241,6 +192,7 @@ extension RielaArgumentParser {
       maxSteps: parsed.maxSteps,
       maxConcurrency: parsed.maxConcurrency,
       maxLoopIterations: parsed.maxLoopIterations,
+      disableDefaultLoopGuard: parsed.disableDefaultLoopGuard,
       defaultTimeoutMs: parsed.defaultTimeoutMs,
       timeoutMs: parsed.timeoutMs,
       agentSilenceWarningMs: parsed.agentSilenceWarningMs,

@@ -8,13 +8,21 @@ import RielaCore
 
 public struct WorkflowSelfImproveVersioning: Sendable {
   private let beforeProposalWorkflowOpen: @Sendable () throws -> Void
+  private let mutableRegistry: WorkflowMutableRegistry
 
   public init() {
     beforeProposalWorkflowOpen = {}
+    mutableRegistry = WorkflowMutableRegistry()
   }
 
   init(beforeProposalWorkflowOpen: @escaping @Sendable () throws -> Void) {
     self.beforeProposalWorkflowOpen = beforeProposalWorkflowOpen
+    mutableRegistry = WorkflowMutableRegistry()
+  }
+
+  init(mutableRegistry: WorkflowMutableRegistry) {
+    beforeProposalWorkflowOpen = {}
+    self.mutableRegistry = mutableRegistry
   }
 
   func finalize(
@@ -70,6 +78,52 @@ public struct WorkflowSelfImproveVersioning: Sendable {
     expectedDigest: String?,
     sourceSessionId: String?
   ) throws -> WorkflowSelfImproveCommandResult {
+    func operation(
+      _ operationBundle: ResolvedWorkflowBundle,
+      physicalRoot: URL?,
+      publish: (URL) throws -> Void
+    ) throws -> WorkflowSelfImproveCommandResult {
+      try executeUnlocked(
+        workflowName: workflowName,
+        bundle: operationBundle,
+        workingDirectory: workingDirectory,
+        dryRun: dryRun,
+        approved: approved,
+        changeSetId: changeSetId,
+        expectedDigest: expectedDigest,
+        sourceSessionId: sourceSessionId,
+        physicalOwnershipRoot: physicalRoot,
+        postCommitPublication: publish
+      )
+    }
+    guard bundle.provenance == .mutable else {
+      return try operation(bundle, physicalRoot: nil, publish: { _ in })
+    }
+    guard let expectedDigest = bundle.mutableRegistryDigest else {
+      throw CLIUsageError("mutable workflow resolution did not retain a registry digest")
+    }
+    return try mutableRegistry.withWorkflowMutationAccess(
+      workflowId: bundle.workflow.workflowId,
+      expectedDigest: expectedDigest,
+      shouldPublish: { $0.mutated },
+      { detachedWorkflowDirectory, publish in
+        try operation(bundle, physicalRoot: detachedWorkflowDirectory, publish: publish)
+      }
+    )
+  }
+
+  private func executeUnlocked(
+    workflowName: String,
+    bundle: ResolvedWorkflowBundle,
+    workingDirectory: URL,
+    dryRun: Bool,
+    approved: Bool,
+    changeSetId: String?,
+    expectedDigest: String?,
+    sourceSessionId: String?,
+    physicalOwnershipRoot: URL?,
+    postCommitPublication: (URL) throws -> Void
+  ) throws -> WorkflowSelfImproveCommandResult {
     let target = try WorkflowHistoryIdentityResolver.identity(for: bundle)
     let selfEvolution = bundle.workflow.loop?.selfEvolution
     if let selfEvolution, !selfEvolution.allowed {
@@ -85,7 +139,8 @@ public struct WorkflowSelfImproveVersioning: Sendable {
         workflowName: workflowName,
         target: target,
         historyRoot: historyRoot,
-        sourceSessionId: sourceSessionId ?? "cli-\(UUID().uuidString.lowercased())"
+        sourceSessionId: sourceSessionId ?? "cli-\(UUID().uuidString.lowercased())",
+        physicalOwnershipRoot: physicalOwnershipRoot
       )
     }
     guard approved else {
@@ -100,7 +155,9 @@ public struct WorkflowSelfImproveVersioning: Sendable {
       target: target,
       historyRoot: historyRoot,
       changeSetId: changeSetId,
-      expectedDigest: expectedDigest
+      expectedDigest: expectedDigest,
+      physicalOwnershipRoot: physicalOwnershipRoot,
+      postCommitPublication: postCommitPublication
     )
   }
 
@@ -108,12 +165,13 @@ public struct WorkflowSelfImproveVersioning: Sendable {
     workflowName: String,
     target: WorkflowBundleIdentity,
     historyRoot: URL,
-    sourceSessionId: String
+    sourceSessionId: String,
+    physicalOwnershipRoot: URL?
   ) throws -> WorkflowSelfImproveCommandResult {
-    guard target.sourceMutable, target.sourceKind != .installedPackage else {
-      throw CLIUsageError("installed package workflow sources are immutable; create an overlay or package update")
-    }
-    let inventory = try WorkflowHistoryIdentityResolver.inventory(for: target)
+    let inventory = try WorkflowHistoryIdentityResolver.inventory(
+      for: target,
+      rootOverride: physicalOwnershipRoot
+    )
     let workflowRelativePath = try relativeWorkflowPath(target)
     guard let beforeFile = inventory.files.first(where: { $0.metadata.relativePath == workflowRelativePath }) else {
       throw CLIUsageError("workflow inventory does not contain the resolved workflow.json")
@@ -196,10 +254,16 @@ public struct WorkflowSelfImproveVersioning: Sendable {
     target: WorkflowBundleIdentity,
     historyRoot: URL,
     changeSetId: String,
-    expectedDigest: String
+    expectedDigest: String,
+    physicalOwnershipRoot: URL?,
+    postCommitPublication: (URL) throws -> Void
   ) throws -> WorkflowSelfImproveCommandResult {
     guard target.sourceMutable, target.sourceKind != .installedPackage else {
-      throw CLIUsageError("installed package workflow sources are immutable")
+      throw WorkflowRegistryError(
+        code: .immutableWorkflow,
+        message: "immutable workflow '\(workflowName)' cannot apply self-improvement; register a mutable copy",
+        workflowId: workflowName
+      )
     }
     try WorkflowHistoryCanonicalCoding.validateDigest(expectedDigest)
     let changeStore = WorkflowChangeSetStore(root: historyRoot)
@@ -213,7 +277,10 @@ public struct WorkflowSelfImproveVersioning: Sendable {
       throw CLIUsageError("persisted runtime gate evidence belongs to a different workflow")
     }
     try WorkflowReviewGatePolicy.validate(gateEvidence.result, gate: requiredGate, review: changeSet.review)
-    let current = try WorkflowHistoryIdentityResolver.inventory(for: target)
+    let current = try WorkflowHistoryIdentityResolver.inventory(
+      for: target,
+      rootOverride: physicalOwnershipRoot
+    )
     guard current.bundleDigest == changeSet.proposal.beforeBundleDigest else {
       throw CLIUsageError("workflow bundle changed after review; refusing apply")
     }
@@ -245,6 +312,8 @@ public struct WorkflowSelfImproveVersioning: Sendable {
           outcome: .failed
         ))
       },
+      physicalOwnershipRoot: physicalOwnershipRoot,
+      postCommitPublication: postCommitPublication,
       mutateStaging: { staging in
       try apply(changeSet.proposal.operations, proposalId: changeSet.proposal.proposalId, store: changeStore, to: staging)
     })

@@ -14,12 +14,12 @@ extension ScopedParityCommandRunner {
     case "status", "health":
       return await handler.route(
         ServerRequestEnvelope(method: "GET", path: "/healthz"),
-        context: serverContext(parsed: parsed)
+        context: serveRequestContext(parsed: parsed)
       )
     case "overview":
       return await handler.route(
         ServerRequestEnvelope(method: "GET", path: "/overview"),
-        context: serverContext(parsed: parsed)
+        context: serveRequestContext(parsed: parsed)
       )
     case "graphql":
       let bodyObject: JSONObject
@@ -34,19 +34,19 @@ extension ScopedParityCommandRunner {
       let body = try JSONEncoder().encode(JSONValue.object(bodyObject))
       return await handler.route(
         ServerRequestEnvelope(method: "POST", path: "/graphql", body: body),
-        context: serverContext(parsed: parsed)
+        context: serveRequestContext(parsed: parsed)
       )
     default:
       let route = options.target ?? action
       return await DeterministicServerRouteHandler().route(
         ServerRequestEnvelope(method: "GET", path: route.hasPrefix("/") ? route : "/\(route)"),
-        context: serverContext(parsed: parsed)
+        context: serveRequestContext(parsed: parsed)
       )
     }
   }
 
   private func noteAPIServeResponse(parsed: ParsedParityOptions) async throws -> ServerResponseDescriptor {
-    let noteRoot = resolvedNoteRoot(parsed: parsed)
+    let noteRoot = resolvedServeNoteRoot(parsed: parsed)
     let server = RielaServerConfiguration(
       host: parsed.host ?? "127.0.0.1",
       port: parsed.port ?? 8787,
@@ -73,16 +73,6 @@ extension ScopedParityCommandRunner {
     ])
   }
 
-  private func resolvedNoteRoot(parsed: ParsedParityOptions) -> String {
-    let raw = parsed.noteRoot
-      ?? CLIRuntimeEnvironment.mergedProcessEnvironment()["RIELA_NOTE_ROOT"].flatMap { $0.isEmpty ? nil : $0 }
-      ?? "\(NSHomeDirectory())/.riela/note"
-    return (raw as NSString).expandingTildeInPath
-  }
-
-  private func serverContext(parsed: ParsedParityOptions) -> ServerRequestContext {
-    ServerRequestContext(inheritedEnvironment: parsed.sessionStore.map { ["RIELA_MANAGER_SESSION_ID": $0] } ?? [:])
-  }
 }
 
 private func encodedJSONValue<T: Encodable>(_ value: T) throws -> JSONValue {

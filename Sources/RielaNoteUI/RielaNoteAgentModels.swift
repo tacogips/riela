@@ -35,6 +35,21 @@ public struct RielaNoteAgentTurn: Codable, Equatable, Identifiable, Sendable {
   }
 }
 
+/// A file the user attached to the agent composer before sending. Attachment
+/// text is inlined into the submitted message so any note-agent backend can see
+/// it without a dedicated file-upload channel.
+public struct RielaNoteAgentDraftAttachment: Equatable, Identifiable, Sendable {
+  public var id: String
+  public var filename: String
+  public var text: String
+
+  public init(id: String = UUID().uuidString, filename: String, text: String) {
+    self.id = id
+    self.filename = filename
+    self.text = text
+  }
+}
+
 public struct RielaNoteAgentConversationSaveResult: Equatable, Sendable {
   public var notebookId: String
   public var noteIds: [String]
@@ -43,4 +58,9 @@ public struct RielaNoteAgentConversationSaveResult: Equatable, Sendable {
     self.notebookId = notebookId
     self.noteIds = noteIds
   }
+}
+
+public enum RielaNoteAgentMode: Equatable, Sendable {
+  case general
+  case notebookExpansion(RielaNoteNotebookExpansionSession)
 }

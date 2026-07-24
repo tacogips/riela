@@ -317,12 +317,20 @@ public struct DefaultWorkflowServeResolver: WorkflowServeResolving {
           selection: request.selection
         ))
       }
-      try preflightNodePatchIfNeeded(
+      let nodePayloads = try resolvedNodePayloads(
         request.nodePatch,
         workflow: workflow,
         workflowDirectory: URL(fileURLWithPath: directory, isDirectory: true),
         selection: request.selection
       )
+      let diagnostics = DefaultWorkflowValidator().validate(workflow, nodePayloads: nodePayloads)
+      if diagnostics.contains(where: { $0.severity == .error }) {
+        throw WorkflowServeError.validationFailed(WorkflowServeDiagnostics(
+          code: "workflow_invalid",
+          message: diagnostics.map { "\($0.path): \($0.message)" }.joined(separator: "; "),
+          selection: request.selection
+        ))
+      }
       return WorkflowServeResolvedWorkflow(
         workflowId: workflow.workflowId,
         selectedIdentity: workflow.workflowId,
@@ -371,27 +379,24 @@ public struct DefaultWorkflowServeResolver: WorkflowServeResolving {
     !value.isEmpty && !value.contains("..") && !value.contains("/") && !value.contains("\\")
   }
 
-  private func preflightNodePatchIfNeeded(
+  private func resolvedNodePayloads(
     _ nodePatch: JSONObject?,
     workflow: WorkflowDefinition,
     workflowDirectory: URL,
     selection: WorkflowServeSelection
-  ) throws {
-    guard let nodePatch, !nodePatch.isEmpty else {
-      return
-    }
+  ) throws -> [String: AgentNodePayload] {
     let nodePayloads = try loadNodePayloads(workflow: workflow, workflowDirectory: workflowDirectory, selection: selection)
-    guard !nodePayloads.isEmpty else {
-      return
+    guard let nodePatch, !nodePatch.isEmpty else {
+      return nodePayloads
     }
     do {
       let patches = try WorkflowInstanceResolver.nodePatches(from: nodePatch)
-      _ = try WorkflowInstanceResolver.resolve(
+      return try WorkflowInstanceResolver.resolve(
         workflowId: workflow.workflowId,
         base: nil,
         runNodePatch: patches,
         nodePayloads: nodePayloads
-      )
+      ).nodePayloads
     } catch {
       throw WorkflowServeError.validationFailed(WorkflowServeDiagnostics(
         code: "workflow_instance_patch_invalid",
@@ -455,7 +460,11 @@ public struct InProcessWorkflowServeListenerFactory: WorkflowServeListenerFactor
     endpoint: String
   ) async throws -> InProcessWorkflowServeRouteConfiguration {
     guard request.server.noteAPIEnabled else {
-      return InProcessWorkflowServeRouteConfiguration(routeHandler: DeterministicServerRouteHandler())
+      return InProcessWorkflowServeRouteConfiguration(
+        routeHandler: DeterministicServerRouteHandler(
+          graphQLExecutor: WorkflowRegistryGraphQLDocumentExecutor()
+        )
+      )
     }
     guard let noteRoot = request.server.noteRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
           !noteRoot.isEmpty else {
@@ -473,10 +482,12 @@ public struct InProcessWorkflowServeListenerFactory: WorkflowServeListenerFactor
       registrationScope: URL(fileURLWithPath: noteRoot, isDirectory: true).standardizedFileURL.path
     )
     let routeHandler = DeterministicServerRouteHandler(
-      graphQLExecutor: NoteGraphQLDocumentExecutor(
-        service: GraphQLNoteGraphQLService(service: service),
-        s3HTTPClient: s3HTTPClient,
-        s3Profiles: try noteS3Profiles(for: request)
+      graphQLExecutor: CompositeGraphQLDocumentExecutor(
+        fallback: NoteGraphQLDocumentExecutor(
+          service: GraphQLNoteGraphQLService(service: service),
+          s3HTTPClient: s3HTTPClient,
+          s3Profiles: try noteS3Profiles(for: request)
+        )
       ),
       noteAPIAuthenticator: authenticator
     )

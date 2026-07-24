@@ -6,6 +6,42 @@ import XCTest
 
 // swiftlint:disable type_body_length
 final class NoteGraphQLTests: XCTestCase {
+  func testNoteGraphNeighborsDocumentAndSearchDepthUseSharedService() async throws {
+    let service = try makeNoteGraphQLService()
+    let seed = try service.service.createNote(bodyMarkdown: "# Seed\nprojectalpha")
+    let first = try service.service.createNote(bodyMarkdown: "# B\nx")
+    let second = try service.service.createNote(bodyMarkdown: "# C\ny")
+    _ = try service.service.linkNotes(from: seed.noteId, to: first.noteId)
+    _ = try service.service.linkNotes(from: first.noteId, to: second.noteId)
+    let executor = NoteGraphQLDocumentExecutor(service: service)
+
+    let response = await executor.execute(GraphQLDocumentRequest(query: """
+      query {
+        noteGraphNeighbors(noteIds: ["\(seed.noteId)"], depth: 2, limit: 5) {
+          result { accepted }
+          value { seedNoteId note { noteId } edgeKind weight hopCount pathNoteIds }
+        }
+      }
+      """))
+    let payload = try graphQLPayload(response.body, field: "noteGraphNeighbors")
+    let values = try arrayValue(payload["value"], field: "noteGraphNeighbors.value")
+    XCTAssertEqual(values.count, 2)
+    let secondResult = try objectValue(values[1], field: "noteGraphNeighbors.value[1]")
+    XCTAssertEqual(secondResult["hopCount"], .integer(2))
+    XCTAssertEqual(secondResult["pathNoteIds"], .array([
+      .string(seed.noteId),
+      .string(first.noteId),
+      .string(second.noteId)
+    ]))
+
+    let search = await service.searchNotes(
+      query: "projectalpha",
+      includeLinked: true,
+      depth: 2
+    )
+    XCTAssertEqual(search.value?.map(\.note.noteId), [seed.noteId, first.noteId, second.noteId])
+  }
+
   func testNoteGraphQLServiceCreatesSearchesTagsAndRejectsReadOnlyUpdate() async throws {
     let service = try makeNoteGraphQLService()
     let create = await service.createNote(GraphQLCreateNoteInput(
@@ -411,6 +447,34 @@ final class NoteGraphQLTests: XCTestCase {
     XCTAssertTrue(negativeOffset.handled)
     let negativeOffsetError = try firstErrorMessage(negativeOffset)
     XCTAssertTrue(negativeOffsetError.contains("invalidVariable"), negativeOffsetError)
+
+    // Graph fields can return at most NoteGraphPolicy.maximumLimit rows, so a
+    // limit the general 0...200 rule would accept is rejected here instead of
+    // being silently truncated by the bounded traversal.
+    let note = try service.service.createNote(bodyMarkdown: "# Graph Bounds\n\nBody")
+    let overGraphLimit = await executor.execute(GraphQLDocumentRequest(
+      query: "query Graph($ids: [String!]!, $limit: Int) { noteGraphNeighbors(noteIds: $ids, limit: $limit) { value { note { noteId } } result { accepted } } }",
+      variables: [
+        "ids": .array([.string(note.noteId)]),
+        "limit": .integer(Int64(NoteGraphPolicy.maximumLimit + 1))
+      ],
+      operationName: "Graph"
+    ))
+    XCTAssertTrue(overGraphLimit.handled)
+    let overGraphLimitError = try firstErrorMessage(overGraphLimit)
+    XCTAssertTrue(overGraphLimitError.contains("invalidVariable"), overGraphLimitError)
+
+    let overProposalLimit = await executor.execute(GraphQLDocumentRequest(
+      query: "query Proposals($noteId: String!, $limit: Int) { proposeNoteLinks(noteId: $noteId, limit: $limit) { value { targetNote { noteId } } result { accepted } } }",
+      variables: [
+        "noteId": .string(note.noteId),
+        "limit": .integer(Int64(NoteGraphPolicy.maximumLimit + 1))
+      ],
+      operationName: "Proposals"
+    ))
+    XCTAssertTrue(overProposalLimit.handled)
+    let overProposalLimitError = try firstErrorMessage(overProposalLimit)
+    XCTAssertTrue(overProposalLimitError.contains("invalidVariable"), overProposalLimitError)
   }
 
   private func firstErrorMessage(_ response: GraphQLDocumentExecutionResponse) throws -> String {
@@ -724,9 +788,9 @@ final class NoteGraphQLTests: XCTestCase {
     XCTAssertTrue(schema.contains("input ApplyNotebookTagsInput"))
     XCTAssertTrue(schema.contains("applyNotebookTags(input: ApplyNotebookTagsInput!)"))
     XCTAssertTrue(schema.contains("removeNotebookTag(notebookId: String!, tagName: String!, provenance: String)"))
-    XCTAssertTrue(schema.contains(
-      "searchNotes(query: String!, tagFilter: [String!], classFilter: [String!], sort: NoteListSort, createdAfter: String, createdBefore: String, includeLinked: Boolean, limit: Int, offset: Int)"
-    ))
+    XCTAssertTrue(schema.contains("searchNotes("))
+    XCTAssertTrue(schema.contains("includeLinked: Boolean, depth: Int"))
+    XCTAssertTrue(schema.contains("noteGraphNeighbors(noteIds: [String!]!, depth: Int, limit: Int)"))
     XCTAssertTrue(schema.contains("proposeNoteLinks(noteId: String!, limit: Int)"))
     XCTAssertTrue(schema.contains("configureNoteAutoAction(input: ConfigureNoteAutoActionInput!)"))
     XCTAssertTrue(schema.contains("deleteNoteAutoAction(actionId: String!)"))
@@ -743,6 +807,7 @@ final class NoteGraphQLTests: XCTestCase {
       "notebooks",
       "notes",
       "searchNotes",
+      "noteGraphNeighbors",
       "proposeNoteLinks",
       "tags",
       "tagClasses",
@@ -760,6 +825,7 @@ final class NoteGraphQLTests: XCTestCase {
       "deleteNotebook",
       "applyNotebookTags",
       "removeNotebookTag",
+      "setNotebookProgress",
       "setNoteReadOnly",
       "applyNoteTags",
       "removeNoteTag",

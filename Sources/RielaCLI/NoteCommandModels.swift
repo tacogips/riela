@@ -1,252 +1,112 @@
+import ArgumentParser
 import Foundation
 import RielaCore
 import RielaGraphQL
 import RielaNote
 
-struct NoteCommandOptions {
-  var noteRoot: String
-  var workingDirectory: String
-  var body: String?
-  var bodyFile: String?
-  var tags: [String] = []
-  var removeTags: [String] = []
-  var tagClassId: String?
-  var classFilter: [String] = []
-  var notebookId: String?
-  var notebookTitle: String?
-  var query: String?
+private enum NoteReadOnlyFlag: String, EnumerableFlag {
+  case readOnly
+  case on
+  case off
+}
+
+struct NoteCommandOptions: ParsableArguments {
+  @Option var noteRoot = defaultNoteRoot()
+  @Option(name: [.customLong("working-dir"), .customLong("working-directory")])
+  var workingDirectory = FileManager.default.currentDirectoryPath
+  @Option(name: [.customLong("body"), .customLong("body-markdown")]) var body: String?
+  @Option var bodyFile: String?
+  @Option(name: [.customLong("tag"), .customLong("add")]) var tags: [String] = []
+  @Option(name: .customLong("remove")) var removeTags: [String] = []
+  @Option(name: [.customLong("class"), .customLong("class-id")]) var tagClassId: String?
+  @Option(name: .customLong("class-filter")) var classFilter: [String] = []
+  @Option(name: [.customLong("notebook"), .customLong("notebook-id")]) var notebookId: String?
+  @Option var notebookTitle: String?
+  @Option var query: String?
   var readOnly = false
   var readOnlyValueCount = 0
-  var provenance = "human"
-  var assignedBy: String?
-  var author: String?
-  var filePath: String?
-  var mediaType: String?
-  var filename: String?
-  var role = NoteFileRole.related.rawValue
-  var position = 0
-  var limit = 50
-  var offset = 0
-  var title: String?
-  var kindTagName: String?
+  @Flag private var readOnlyFlags: [NoteReadOnlyFlag] = []
+  @Option(name: .customLong("value")) private var readOnlyRawValues: [String] = []
+  @Option var provenance = "human"
+  @Option var assignedBy: String?
+  @Option var author: String?
+  @Option(name: .customLong("file")) var filePath: String?
+  @Option var mediaType: String?
+  @Option(name: [.customLong("filename"), .customLong("file-name")]) var filename: String?
+  @Option var role = NoteFileRole.related.rawValue
+  @Option var position = 0
+  @Option var limit = 50
+  @Option var offset = 0
+  @Option var title: String?
+  @Option(name: [.customLong("kind-tag"), .customLong("kind-tag-name")]) var kindTagName: String?
+  @Option(name: [.customLong("profile"), .customLong("s3-profile"), .customLong("s3-profile-name")])
   var s3ProfileName = "default-s3"
-  var s3Endpoint: String?
-  var s3Region: String?
-  var s3Bucket: String?
-  var s3AccessKeyIdEnv = "AWS_ACCESS_KEY_ID"
-  var s3SecretAccessKeyEnv = "AWS_SECRET_ACCESS_KEY"
-  var s3SessionTokenEnv: String?
-  var s3KeyPrefix = ""
-  var displayName: String?
-  var includeRevoked = false
-  var migrateAll = false
-  var graceHours: Int?
-  var directRegistration = false
-  var appendBody = false
+  @Option var s3Endpoint: String?
+  @Option var s3Region: String?
+  @Option var s3Bucket: String?
+  @Option var s3AccessKeyIdEnv = "AWS_ACCESS_KEY_ID"
+  @Option var s3SecretAccessKeyEnv = "AWS_SECRET_ACCESS_KEY"
+  @Option var s3SessionTokenEnv: String?
+  @Option var s3KeyPrefix = ""
+  @Option var displayName: String?
+  @Flag var includeRevoked = false
+  @Flag(name: .customLong("all")) var migrateAll = false
+  @Option var graceHours: Int?
+  @Flag(name: .customLong("direct")) var directRegistration = false
+  @Flag(name: .customLong("append")) var appendBody = false
   var firstPositional: String?
+  @Argument private var positionalArguments: [String] = []
+  @Option(name: .customLong("to")) private var storageDestination: String?
+  @Option private var output: String?
+
+  init() {}
 
   init(_ options: CLICommandOptions) throws {
-    workingDirectory = FileManager.default.currentDirectoryPath
-    noteRoot = CLIRuntimeEnvironment.mergedProcessEnvironment()["RIELA_NOTE_ROOT"].flatMap { $0.isEmpty ? nil : $0 }
-      ?? "\(NSHomeDirectory())/.riela/note"
+    do {
+      self = try Self.parse(options.arguments)
+    } catch {
+      throw CLIUsageError(Self.message(for: error))
+    }
+    try applyCompatibility()
+  }
+
+  private mutating func applyCompatibility() throws {
     noteRoot = (noteRoot as NSString).expandingTildeInPath
-    try parse(options.arguments)
-  }
-
-  mutating func parse(_ tokens: [String]) throws {
-    var index = 0
-    while index < tokens.count {
-      let token = tokens[index]
-      if !token.hasPrefix("--") {
-        try appendPositional(token)
-        index += 1
-        continue
+    guard positionalArguments.count <= 2 else {
+      throw CLIUsageError("unexpected positional argument '\(positionalArguments[2])'")
+    }
+    firstPositional = positionalArguments.first
+    if positionalArguments.count == 2 {
+      guard title == nil else {
+        throw CLIUsageError("unexpected positional argument '\(positionalArguments[1])'")
       }
-      if try handleInlineOption(token) {
-        index += 1
-        continue
-      }
-      try handleOption(token, tokens: tokens, index: &index)
-      index += 1
+      title = positionalArguments[1]
     }
+    if position < 0 {
+      throw CLIUsageError("--position must be a non-negative integer")
+    }
+    if limit <= 0 {
+      throw CLIUsageError("--limit requires a positive integer")
+    }
+    if offset < 0 {
+      throw CLIUsageError("--offset must be a non-negative integer")
+    }
+    if let graceHours, graceHours < 0 {
+      throw CLIUsageError("--grace-hours must be a non-negative integer")
+    }
+    if let storageDestination, storageDestination != "s3" {
+      throw CLIUsageError("note storage migrate only supports --to s3")
+    }
+    try applyReadOnlyCompatibility()
   }
 
-  private mutating func appendPositional(_ token: String) throws {
-    if firstPositional == nil {
-      firstPositional = token
-    } else if title == nil {
-      title = token
-    } else {
-      throw CLIUsageError("unexpected positional argument '\(token)'")
+  private mutating func applyReadOnlyCompatibility() throws {
+    readOnlyValueCount = readOnlyFlags.count + readOnlyRawValues.count
+    if let flag = readOnlyFlags.first, readOnlyValueCount == 1 {
+      readOnly = flag != .off
+    } else if let rawValue = readOnlyRawValues.first, readOnlyValueCount == 1 {
+      readOnly = try boolOption("--value", rawValue)
     }
-  }
-
-  private mutating func handleInlineOption(_ token: String) throws -> Bool {
-    if let value = inlineOptionValue(token, prefix: "--note-root=") {
-      noteRoot = (value as NSString).expandingTildeInPath
-      return true
-    }
-    if let value = inlineOptionValue(token, prefix: "--output=") {
-      _ = value
-      return true
-    }
-    return false
-  }
-
-  private mutating func handleOption(_ token: String, tokens: [String], index: inout Int) throws {
-    if try handleS3Option(token, tokens: tokens, index: &index) {
-      return
-    }
-    if try handleContentOption(token, tokens: tokens, index: &index) {
-      return
-    }
-    if try handleNoteMetadataOption(token, tokens: tokens, index: &index) {
-      return
-    }
-    if try handleAttachmentOption(token, tokens: tokens, index: &index) {
-      return
-    }
-    if try handleControlOption(token, tokens: tokens, index: &index) {
-      return
-    }
-    throw CLIUsageError("unsupported note option '\(token)'")
-  }
-
-  private mutating func handleContentOption(_ token: String, tokens: [String], index: inout Int) throws -> Bool {
-    switch token {
-    case "--note-root":
-      noteRoot = (try noteOptionValue(token, tokens: tokens, index: &index) as NSString).expandingTildeInPath
-    case "--working-dir", "--working-directory":
-      workingDirectory = try noteOptionValue(token, tokens: tokens, index: &index)
-    case "--body", "--body-markdown":
-      body = try noteOptionValue(token, tokens: tokens, index: &index)
-    case "--body-file":
-      bodyFile = try noteOptionValue(token, tokens: tokens, index: &index)
-    case "--query":
-      query = try noteOptionValue(token, tokens: tokens, index: &index)
-    default:
-      return false
-    }
-    return true
-  }
-
-  private mutating func handleNoteMetadataOption(_ token: String, tokens: [String], index: inout Int) throws -> Bool {
-    switch token {
-    case "--tag", "--add":
-      tags.append(try noteOptionValue(token, tokens: tokens, index: &index))
-    case "--remove":
-      removeTags.append(try noteOptionValue(token, tokens: tokens, index: &index))
-    case "--class", "--class-id":
-      tagClassId = try noteOptionValue(token, tokens: tokens, index: &index)
-    case "--class-filter":
-      classFilter.append(try noteOptionValue(token, tokens: tokens, index: &index))
-    case "--notebook", "--notebook-id":
-      notebookId = try noteOptionValue(token, tokens: tokens, index: &index)
-    case "--notebook-title":
-      notebookTitle = try noteOptionValue(token, tokens: tokens, index: &index)
-    case "--read-only":
-      readOnly = true
-      readOnlyValueCount += 1
-    case "--on":
-      readOnly = true
-      readOnlyValueCount += 1
-    case "--off":
-      readOnly = false
-      readOnlyValueCount += 1
-    case "--value":
-      readOnly = try boolOption(token, noteOptionValue(token, tokens: tokens, index: &index))
-      readOnlyValueCount += 1
-    case "--provenance":
-      provenance = try noteOptionValue(token, tokens: tokens, index: &index)
-    case "--assigned-by":
-      assignedBy = try noteOptionValue(token, tokens: tokens, index: &index)
-    case "--author":
-      author = try noteOptionValue(token, tokens: tokens, index: &index)
-    case "--title":
-      title = try noteOptionValue(token, tokens: tokens, index: &index)
-    case "--kind-tag", "--kind-tag-name":
-      kindTagName = try noteOptionValue(token, tokens: tokens, index: &index)
-    default:
-      return false
-    }
-    return true
-  }
-
-  private mutating func handleAttachmentOption(_ token: String, tokens: [String], index: inout Int) throws -> Bool {
-    switch token {
-    case "--file":
-      filePath = try noteOptionValue(token, tokens: tokens, index: &index)
-    case "--media-type":
-      mediaType = try noteOptionValue(token, tokens: tokens, index: &index)
-    case "--filename", "--file-name":
-      filename = try noteOptionValue(token, tokens: tokens, index: &index)
-    case "--role":
-      role = try noteOptionValue(token, tokens: tokens, index: &index)
-    case "--position":
-      position = try nonNegativeInt(token, noteOptionValue(token, tokens: tokens, index: &index))
-    default:
-      return false
-    }
-    return true
-  }
-
-  private mutating func handleControlOption(_ token: String, tokens: [String], index: inout Int) throws -> Bool {
-    switch token {
-    case "--limit":
-      limit = try positiveInt(token, noteOptionValue(token, tokens: tokens, index: &index))
-    case "--offset":
-      offset = try nonNegativeInt(token, noteOptionValue(token, tokens: tokens, index: &index))
-    case "--display-name":
-      displayName = try noteOptionValue(token, tokens: tokens, index: &index)
-    case "--include-revoked":
-      includeRevoked = true
-    case "--direct":
-      directRegistration = true
-    case "--append":
-      appendBody = true
-    case "--all":
-      migrateAll = true
-    case "--grace-hours":
-      graceHours = try nonNegativeInt(token, noteOptionValue(token, tokens: tokens, index: &index))
-    case "--to":
-      let target = try noteOptionValue(token, tokens: tokens, index: &index)
-      guard target == "s3" else {
-        throw CLIUsageError("note storage migrate only supports --to s3")
-      }
-    case "--output":
-      _ = try noteOptionValue(token, tokens: tokens, index: &index)
-    default:
-      return false
-    }
-    return true
-  }
-
-  private mutating func handleS3Option(_ token: String, tokens: [String], index: inout Int) throws -> Bool {
-    switch token {
-    case "--profile", "--s3-profile", "--s3-profile-name":
-      s3ProfileName = try noteOptionValue(token, tokens: tokens, index: &index)
-    case "--s3-endpoint":
-      s3Endpoint = try noteOptionValue(token, tokens: tokens, index: &index)
-    case "--s3-region":
-      s3Region = try noteOptionValue(token, tokens: tokens, index: &index)
-    case "--s3-bucket":
-      s3Bucket = try noteOptionValue(token, tokens: tokens, index: &index)
-    case "--s3-access-key-id-env":
-      s3AccessKeyIdEnv = try noteOptionValue(token, tokens: tokens, index: &index)
-    case "--s3-secret-access-key-env":
-      s3SecretAccessKeyEnv = try noteOptionValue(token, tokens: tokens, index: &index)
-    case "--s3-session-token-env":
-      s3SessionTokenEnv = try noteOptionValue(token, tokens: tokens, index: &index)
-    case "--s3-key-prefix":
-      s3KeyPrefix = try noteOptionValue(token, tokens: tokens, index: &index)
-    default:
-      return false
-    }
-    return true
-  }
-
-  private func noteOptionValue(_ token: String, tokens: [String], index: inout Int) throws -> String {
-    try readOptionValue(token, tokens: tokens, index: &index)
   }
 
   func requiredBody(command: String) throws -> String {
@@ -362,6 +222,12 @@ struct NoteCommandOptions {
   var rawS3EnvironmentAllowlist: Set<String> {
     Set([s3AccessKeyIdEnv, s3SecretAccessKeyEnv] + [s3SessionTokenEnv].compactMap { $0 })
   }
+}
+
+private func defaultNoteRoot() -> String {
+  let configured = CLIRuntimeEnvironment.mergedProcessEnvironment()["RIELA_NOTE_ROOT"]
+    .flatMap { $0.isEmpty ? nil : $0 }
+  return configured ?? "\(NSHomeDirectory())/.riela/note"
 }
 
 func appendedNoteBody(existing: String, addition: String) -> String {

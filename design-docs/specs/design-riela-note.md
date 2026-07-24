@@ -30,6 +30,10 @@ Primary capabilities delivered by this design:
 - Riela Note Agent local-search chat with citation links and
   conversation-as-notebook persistence; vector/web RAG remains a
   follow-up. Riela Note Config Agent for note/workflow configuration.
+- Notebook-level **Expand with Agent** creates a compact-summary-grounded
+  agent conversation with lazy, invalidatable summary caching and explicit
+  source-note provenance. Its focused contract is defined in
+  `design-docs/specs/design-riela-note-notebook-expand.md`.
 - Optional remote note API exposure is designed but not shipped; current
   code provides in-process/local GraphQL plus pluggable auth and QR-code
   client-registration building blocks for a future socket transport.
@@ -173,6 +177,27 @@ Primary capabilities delivered by this design:
   RielaApp hosts them via `NSHostingController` in a new Note window.
   iPhone/iPad apps are out of scope, but must be able to reuse
   `RielaNoteUI` unchanged.
+- **D16 — Tag hierarchy is single-parent and filter expansion is
+  descendant-inclusive.** A tag may have one optional parent. Existing
+  tag filters remain name-based and retain their current OR semantics,
+  but each requested name is resolved to the matching tag and its
+  transitive descendants before note or notebook assignments are
+  matched. The requested tag itself is always included, so filtering by
+  a leaf is unchanged. Unknown names continue to match nothing.
+- **D17 — Parent changes reject cycles.** Creating or updating a tag
+  parent validates that the parent exists, differs from the child, and
+  is not already below the child. Validation and persistence occur in
+  one transaction. Descendant reads additionally bound or de-duplicate
+  recursive traversal so malformed legacy data cannot loop indefinitely.
+- **D18 — Folder is a notebook-applicable system tag class.** The
+  seeded `folder` class organizes notebooks through ordinary
+  `notebook_tags` assignments. It does not create filesystem folders,
+  change notebook ownership, or introduce containment-based deletion.
+- **D19 — Notebook progress is a typed workflow state.** Every notebook
+  has exactly one state: `none`, `progress`, `done`, or `pending`.
+  `none` is the storage default and migration value. Progress is a
+  first-class notebook column, not `meta_json`, and changes use the same
+  `NoteService` write boundary as other notebook mutations.
 
 ## Data Model (SQLite)
 
@@ -188,6 +213,8 @@ existing stores).
 CREATE TABLE notebooks (
   notebook_id   TEXT PRIMARY KEY,
   title         TEXT NOT NULL,
+  progress      TEXT NOT NULL DEFAULT 'none'
+                CHECK (progress IN ('none','progress','done','pending')),
   created_at    TEXT NOT NULL,
   updated_at    TEXT NOT NULL,
   meta_json     BLOB CHECK (meta_json IS NULL OR json_valid(meta_json, 8))
@@ -217,11 +244,12 @@ CREATE TABLE tag_classes (
 );
 
 CREATE TABLE tags (
-  tag_id     TEXT PRIMARY KEY,
-  name       TEXT NOT NULL UNIQUE,
-  class_id   TEXT REFERENCES tag_classes(class_id),   -- D7, nullable
-  is_system  INTEGER NOT NULL DEFAULT 0,              -- notebook-kind tags etc.
-  created_at TEXT NOT NULL
+  tag_id        TEXT PRIMARY KEY,
+  name          TEXT NOT NULL UNIQUE,
+  class_id      TEXT REFERENCES tag_classes(class_id),   -- D7, nullable
+  parent_tag_id TEXT REFERENCES tags(tag_id),             -- D16, nullable
+  is_system     INTEGER NOT NULL DEFAULT 0,                -- notebook-kind tags etc.
+  created_at    TEXT NOT NULL
 );
 
 CREATE TABLE note_tags (
@@ -360,13 +388,39 @@ Write semantics enforced by `NoteService` (the sole writer, D10):
   v1 non-goal.
 
 Seeded rows: system tag classes (`person`, `year`, `event`,
-`document-kind`, `topic`), system tags for notebook kinds
+`document-kind`, `topic`, `folder`), system tags for notebook kinds
 (`notebook-kind:imported-material`, `notebook-kind:agent-conversation`,
 `notebook-kind:user-memo`), and default `auto_actions` rows binding
 `note-created` **and** `note-updated` (requirement: tagging happens on
 create and edit) to the packaged AI-tagging workflow. The seeded rows
 are inert — skipped with a diagnostic — until that workflow is
 installed (see auto-action dispatch rules below).
+
+### Hierarchy filtering and schema-v4 rollout
+
+All note and notebook filtering follows one logical data flow:
+
+1. Normalize the requested tag names while preserving existing
+   name-based filter behavior.
+2. Resolve those names to root tag ids.
+3. Traverse `tags.parent_tag_id` from each root to obtain the union of
+   each root and all transitive descendants.
+4. Match `note_tags` or `notebook_tags` against that id set, then apply
+   the existing sorting, pagination, text, class, and date predicates.
+
+This flow is shared by notebook listing, note listing, filtered search,
+text-search fallback, and composed search predicates. Expansion happens
+before assignment filtering; it does not mutate assignments or make a
+parent tag appear directly assigned to descendant-tagged items.
+
+Schema version 4 adds nullable `tags.parent_tag_id` and typed
+`notebooks.progress`. Migration follows the existing guarded migration
+sequence: probe each column, alter only when absent, record version 4
+only after both changes succeed, and keep fresh-database table
+definitions identical to the migrated shape. Existing notebooks read as
+`none`. If the supported SQLite runtime cannot add the constrained
+progress column directly, migration uses the established transactional
+rename-copy-rebuild pattern without rewriting unrelated tables.
 
 ## File Storage
 
@@ -391,10 +445,12 @@ installed (see auto-action dispatch rules below).
 - Notebook/note CRUD: `createNotebook`, `createNote`, `updateNoteBody`
   (rejects when `read_only`), `setReadOnly`, `deleteNote`/`deleteNotebook`
   (rejects read-only content), `listNotebooks(sort: .createdAtDesc)`
-  returning first-note preview snippets, `getNote`, `getNotebook`.
-- Tags: `defineTagClass`, `defineTag`, `applyTags(noteId, tags,
-  provenance, assignedBy)`, `removeTag` (rejects `deletable = 0`;
-  AI provenance may never remove a `human` assignment).
+  returning first-note preview snippets, `getNote`, `getNotebook`, and
+  `setNotebookProgress`.
+- Tags: `defineTagClass`, `defineTag` with an optional validated parent,
+  `applyTags(noteId, tags, provenance, assignedBy)`, `removeTag`
+  (rejects `deletable = 0`; AI provenance may never remove a `human`
+  assignment).
 - Files: `attachFile(noteId, data/stream, role)`, `attachExistingFile`,
   `resolveFileContent(fileId)`, `migrateFileStorage`, `migrateAllFiles`.
 - Links & comments: `linkNotes`, `addComment` (allowed on read-only).
@@ -471,7 +527,7 @@ rather than duplicating field-by-field SDL.
 Mutations: `createNotebook`, `createNote`, `defineNoteTagClass`,
 `defineNoteTag`, `scaffoldNoteIngestionWorkflow`, `updateNote`,
 `deleteNote`, `deleteNotebook`, `applyNotebookTags`,
-`removeNotebookTag`, `setNoteReadOnly`, `applyNoteTags`,
+`removeNotebookTag`, `setNotebookProgress`, `setNoteReadOnly`, `applyNoteTags`,
 `removeNoteTag`, `addNoteComment`, `linkNotes`, `attachNoteFile`
 (base64 with bounded decoded size for CLI-sized payloads),
 `configureNoteAutoAction`, `deleteNoteAutoAction`,
@@ -482,6 +538,15 @@ that envelope. Mutations execute through `NoteService`; this introduces
 the first non-manager mutation path in `RielaGraphQL`, wired the same
 way for CLI (`riela graphql`), server `/graphql`, and the library entry
 points.
+
+`NoteTag.parentTagId` and `Notebook.progress` are additive fields.
+`defineNoteTag` accepts the optional parent relationship, while
+`setNotebookProgress(notebookId, progress)` validates the four-value
+enum before calling `NoteService`. Existing `tagFilter` query arguments
+keep their public meaning and syntax; descendant expansion occurs in
+the shared domain service. Authoritative `type Query` and
+`type Mutation` SDL fields remain one line each because server contract
+tests assert those strings.
 
 ## CLI Surface
 
@@ -557,7 +622,14 @@ New SwiftUI target `Sources/RielaNoteUI/` (D15), compact-first layout
 
 - **Notebook list** (home): sorted by registration date desc (default),
   each row shows notebook title, kind tag chip, and the leading snippet
-  of the first note; pull-in search field filters by FTS + tags.
+  of the first note; pull-in search field filters by FTS + tags. Rows
+  also show the typed progress state.
+- **Per-tag Kanban**: when a tag filter is active, the same
+  descendant-inclusive notebook result set can be presented in fixed
+  `none`, `progress`, `done`, and `pending` groups. Changing a
+  notebook's group calls `setNotebookProgress`; filtering and grouping
+  remain separate operations. This is a minimal grouped presentation,
+  not a general board designer or folder tree.
 - **Note view**: rendered markdown; when the note has a
   `source-page-image`, a one-tap segmented toggle switches text ↔ page
   image (fast, preloaded); related files strip (images/video/audio);
@@ -603,6 +675,9 @@ without RielaApp/AppKit imports.
 | note/notebook, page-per-note, markdown, single note = notebook | Data Model, D3/D4 |
 | comments, related files, related notes, title from `#` header | Data Model, D4/D5 |
 | tags bound to world-model classes; AI vs human tags separated | D6/D7, note_tags.provenance |
+| parent/child tags and descendant-inclusive filters | D16/D17, Hierarchy filtering |
+| folder-class notebook organization | D18, notebook_tags |
+| typed notebook progress and per-tag Kanban | D19, GraphQL Surface, UI Design |
 | read-only notes still taggable/commentable | D5 |
 | note edit/get as workflow node built-in add-ons | Built-in Note Add-ons |
 | PDF → notebook (pages, page images, source PDF) | notebook-ingest-pages, PDF use case |
@@ -623,6 +698,16 @@ without RielaApp/AppKit imports.
 
 - `swift build` / `swift test` including new `RielaNoteTests`,
   `RielaNoteUI` compile check for iOS-compatible targets.
+- Schema-v4 migration: migrate a version-3 database, assert nullable
+  parent tags and `none` progress for existing notebooks, compare with a
+  fresh database, and reject invalid progress values.
+- Hierarchy behavior: parent/child/grandchild fixtures for note and
+  notebook list/search paths; assert parent transitivity, child scope,
+  leaf compatibility, unknown-name behavior, and cycle rejection.
+- GraphQL behavior: assert `parentTagId`, `progress`,
+  `setNotebookProgress`, folder-class notebook tagging, and
+  descendant-inclusive `tagFilter` while preserving one-line SDL
+  contract assertions.
 - CLI round-trip: `riela note add` → `list` → `search` → `attach` →
   `storage migrate --all` against a temp note root.
 - Workflow round-trip: run packaged quick-memo and pdf-ingest example

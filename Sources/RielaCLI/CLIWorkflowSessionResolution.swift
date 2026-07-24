@@ -45,6 +45,7 @@ enum CLIWorkflowSessionResolution {
     sessionStore: String?,
     scope: WorkflowScope,
     workingDirectory: String,
+    strictReadOnly: Bool = false,
     environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment()
   ) throws -> LoadedPersistedCLIWorkflowSession {
     if usesExplicitSessionStoreRoot(sessionStore: sessionStore, environment: environment) {
@@ -54,7 +55,10 @@ enum CLIWorkflowSessionResolution {
         workingDirectory: workingDirectory,
         environment: environment
       )
-      let record = try CLIWorkflowSessionStore(rootDirectory: storeRoot).load(sessionId: sessionId)
+      let record = try CLIWorkflowSessionStore(rootDirectory: storeRoot).load(
+        sessionId: sessionId,
+        strictReadOnly: strictReadOnly
+      )
       return LoadedPersistedCLIWorkflowSession(record: record, storeRoot: storeRoot)
     }
 
@@ -67,7 +71,10 @@ enum CLIWorkflowSessionResolution {
         environment: environment
       )
       do {
-        let record = try CLIWorkflowSessionStore(rootDirectory: storeRoot).load(sessionId: sessionId)
+        let record = try CLIWorkflowSessionStore(rootDirectory: storeRoot).load(
+          sessionId: sessionId,
+          strictReadOnly: strictReadOnly
+        )
         return LoadedPersistedCLIWorkflowSession(record: record, storeRoot: storeRoot)
       } catch let error as CLIWorkflowSessionStoreError {
         outcomes.append(SessionStoreSearchOutcome(scope: searchScope, storeRoot: storeRoot, error: error))

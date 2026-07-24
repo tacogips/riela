@@ -1,13 +1,16 @@
 // Pagination bounds enforced by NoteGraphQLDocumentExecutor for every list and
-// search field (notebooks, notes, searchNotes, proposeNoteLinks): `limit` must
-// be an integer in 0...200 (0 returns an empty list) and `offset` an integer in
-// 0...1_000_000. Any other value (out of range, non-integral, or the wrong
-// type) is rejected with an invalidVariable error rather than silently clamped.
+// search field (notebooks, notes, searchNotes): `limit` must be an integer in
+// 0...200 (0 returns an empty list) and `offset` an integer in 0...1_000_000.
+// Graph fields (noteGraphNeighbors, proposeNoteLinks) accept `limit` only in
+// 0...20 — the bounded traversal's node cap. Any other value (out of range,
+// non-integral, or the wrong type) is rejected with an invalidVariable error
+// rather than silently clamped.
 let graphQLNoteSchemaContract = """
-type NoteTag { tagId: String!, name: String!, classId: String, isSystem: Boolean!, createdAt: String! }
+type NoteTag { tagId: String!, name: String!, classId: String, parentTagId: String, isSystem: Boolean!, createdAt: String! }
 type NoteTagClass { classId: String!, label: String!, description: String, isSystem: Boolean!, createdAt: String! }
 type NoteTagAssignment { tag: NoteTag!, provenance: String!, assignedBy: String, deletable: Boolean!, createdAt: String! }
-type Notebook { notebookId: String!, title: String!, createdAt: String!, updatedAt: String!, metaJSON: String, tags: [NoteTagAssignment!]!, firstNotePreview: String, noteCount: Int }
+enum NotebookProgress { none progress done pending }
+type Notebook { notebookId: String!, title: String!, progress: NotebookProgress!, createdAt: String!, updatedAt: String!, metaJSON: String, tags: [NoteTagAssignment!]!, firstNotePreview: String, noteCount: Int }
 type Note { noteId: String!, notebookId: String!, noteNumber: Int!, title: String, bodyMarkdown: String!, readOnly: Boolean!, createdAt: String!, updatedAt: String!, metaJSON: String, tags: [NoteTagAssignment!]! }
 type NoteFile {
   fileId: String!
@@ -27,6 +30,7 @@ type NoteFileAttachment { noteId: String!, file: NoteFile!, role: String!, posit
 type NoteComment { commentId: String!, noteId: String!, bodyMarkdown: String!, author: String!, createdAt: String! }
 type NoteLink { fromNoteId: String!, toNoteId: String!, linkKind: String!, provenance: String!, createdAt: String! }
 type NoteSearchResult { note: Note!, snippet: String!, rank: Float!, matchedTags: [NoteTag!]!, isLinkedNeighbor: Boolean! }
+type NoteGraphNeighbor { seedNoteId: String!, note: Note!, edgeKind: String!, weight: Float!, hopCount: Int!, pathNoteIds: [String!]! }
 type NoteLinkProposal { targetNote: Note!, targetNoteId: String!, linkKind: String!, reason: String!, source: String! }
 type NoteAutoAction { actionId: String!, trigger: String!, workflowId: String!, filterJSON: String, enabled: Boolean!, position: Int!, createdAt: String! }
 type NoteWorkflowScaffoldFile { relativePath: String!, path: String! }
@@ -37,6 +41,7 @@ type NotebookQueryPayload { result: ControlPlaneResult!, value: Notebook }
 type NotebooksQueryPayload { result: ControlPlaneResult!, value: [Notebook!] }
 type NotesQueryPayload { result: ControlPlaneResult!, value: [Note!] }
 type NoteSearchQueryPayload { result: ControlPlaneResult!, value: [NoteSearchResult!] }
+type NoteGraphNeighborsQueryPayload { result: ControlPlaneResult!, value: [NoteGraphNeighbor!] }
 type NoteLinkProposalQueryPayload { result: ControlPlaneResult!, value: [NoteLinkProposal!] }
 type NoteTagsQueryPayload { result: ControlPlaneResult!, value: [NoteTag!] }
 type NoteTagClassesQueryPayload { result: ControlPlaneResult!, value: [NoteTagClass!] }
@@ -57,7 +62,7 @@ input CreateNoteInput {
 }
 input CreateNotebookInput { title: String!, kindTagName: String, metaJSON: String, originatingActionId: String }
 input DefineNoteTagClassInput { classId: String!, label: String!, description: String }
-input DefineNoteTagInput { name: String!, classId: String }
+input DefineNoteTagInput { name: String!, classId: String, parentTagId: String }
 input ScaffoldNoteIngestionWorkflowInput { workflowRoot: String!, workflowId: String!, notebookKindTag: String, assignedBy: String, translationEnabled: Boolean }
 # updateNote re-derives the stored title from bodyMarkdown, replacing any previously explicit title.
 input UpdateNoteInput { noteId: String!, bodyMarkdown: String!, originatingActionId: String }

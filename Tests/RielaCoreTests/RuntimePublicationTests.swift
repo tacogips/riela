@@ -145,7 +145,7 @@ final class RuntimePublicationTests: XCTestCase {
     XCTAssertEqual(updatedSession.executions.first?.status, .failed)
   }
 
-  func testBatchMessageAppendFailureDoesNotLeavePartialMessages() async throws {
+  func testMultipleDirectTransitionsFailBeforePublishingMessages() async throws {
     let store = InMemoryWorkflowRuntimeStore(
       clock: FixedWorkflowRuntimeClock(Date(timeIntervalSince1970: 300)),
       appendFailurePredicate: { input in input.toStepId == "second" ? "second append blocked" : nil }
@@ -167,9 +167,10 @@ final class RuntimePublicationTests: XCTestCase {
           ]
         )
       )
-      XCTFail("expected append failure")
-    } catch WorkflowRuntimeStoreError.messageAppendRejected(let reason) {
-      XCTAssertEqual(reason, "second append blocked")
+      XCTFail("expected multiple-transition rejection")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .invalidOutput)
+      XCTAssertTrue(error.message.contains("multiple direct transitions"))
     }
 
     let listedMessages = try await store.listMessages(for: session.sessionId, toStepId: nil)

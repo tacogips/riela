@@ -906,7 +906,8 @@ Shape:
 
 ```json
 {
-  "mode": "new"
+  "mode": "reuse",
+  "inheritFromStepId": "plan"
 }
 ```
 
@@ -915,9 +916,26 @@ Supported modes:
 - `new`
 - `reuse`
 
-`reuse` allows the runtime to request the same backend-managed session for repeated executions of the same node within one workflow run.
+Omitted `sessionPolicy`, an omitted `mode`, and explicit `new` start a fresh
+backend session. `reuse` asks the backend adapter to resume a session inside
+the current workflow-session boundary. With `inheritFromStepId`, resolution
+targets that exact workflow step; without it, resolution uses the latest
+backend session known to the current workflow session. If no session can be
+resolved, execution falls back to a fresh session. Fanout branches have
+distinct workflow-session identities and cannot inherit one another's backend
+sessions. `inheritFromStepId` is invalid unless `mode` is `reuse`.
 
-When a node also declares `sessionStartPromptTemplate`, that template is rendered only on the first turn of a fresh backend session for that node.
+Codex-specific capture, fallback, and readiness behavior is detailed in
+`design-docs/specs/design-riela-52-codex-session-reuse.md`.
+
+When a node also declares `sessionStartPromptTemplate`, the runtime renders a
+fresh prompt containing that template plus the ordinary prompt and a resumed
+prompt containing only the ordinary prompt. The adapter selects the fresh
+form for `new`, absent policy, or unresolved-reuse fallback, and selects the
+resumed form only after resolving a prior backend session. Output-validation
+retries repeat that resolution: a successful fresh fallback that captured a
+session id resumes without the session-start text, while explicit `new` or an
+id-less fallback creates another fresh session and includes the text again.
 
 ## Structured Arguments
 

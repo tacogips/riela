@@ -1,7 +1,10 @@
 #if os(macOS)
 import AppKit
 import RielaAppSupport
+import RielaNote
+@testable import RielaNoteUI
 import RielaServer
+import SwiftUI
 @testable import RielaApp
 import XCTest
 
@@ -45,6 +48,109 @@ final class RielaAppNotesIntegrationTests: XCTestCase {
     XCTAssertTrue(String(describing: type(of: contentController)).contains("RielaNoteRootView"))
     XCTAssertGreaterThan(pngData.count, 1_000)
     controller.close()
+  }
+
+  func testNoteWindowConfiguresNotebookExpansionProviderOnlyWhenBundleIsDiscoverable() throws {
+    let scratch = try scratchRoot(name: "riela-app-note-expansion-provider-\(UUID().uuidString)")
+    let workflowRoot = scratch.appendingPathComponent("examples", isDirectory: true)
+    let workflowDirectory = workflowRoot.appendingPathComponent("note-notebook-compact", isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+    try Data("{}".utf8).write(to: workflowDirectory.appendingPathComponent("workflow.json"))
+    let executable = scratch.appendingPathComponent("riela")
+    try "#!/bin/sh\nexit 0\n".write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+    let configured = try NoteWindowController(
+      noteRoot: scratch.appendingPathComponent("configured-note", isDirectory: true),
+      profileName: .default,
+      environment: [
+        "RIELA_NOTE_NOTEBOOK_COMPACT_WORKFLOW_DIR": workflowRoot.path,
+        "RIELA_NOTE_NOTEBOOK_COMPACT_RIELA_EXECUTABLE": executable.path
+      ]
+    )
+
+    XCTAssertTrue(configured.notebookExpansionProviderConfigured)
+    configured.close()
+
+    let unavailable = try NoteWindowController(
+      noteRoot: scratch.appendingPathComponent("unavailable-note", isDirectory: true),
+      profileName: .default,
+      environment: [
+        "RIELA_NOTE_NOTEBOOK_COMPACT_WORKFLOW_DIR": scratch
+          .appendingPathComponent("missing-examples", isDirectory: true).path,
+        "RIELA_NOTE_NOTEBOOK_COMPACT_RIELA_EXECUTABLE": scratch
+          .appendingPathComponent("missing-riela").path
+      ]
+    )
+
+    XCTAssertFalse(unavailable.notebookExpansionProviderConfigured)
+    unavailable.close()
+  }
+
+  func testRegularSearchPopupRendersActiveTagKanban() async throws {
+    let noteRoot = try scratchRoot(
+      name: "riela-app-note-kanban-\(UUID().uuidString)"
+    )
+    let service = try NoteService(
+      driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot.path)
+    )
+    let parent = try service.defineTag(name: "portfolio")
+    let child = try service.defineTag(
+      name: "project",
+      parentTagId: parent.tagId
+    )
+    let notebook = try service.createNotebook(title: "Current project")
+    _ = try service.applyNotebookTags(
+      notebookId: notebook.notebookId,
+      tags: [child.name],
+      provenance: .human
+    )
+    _ = try service.setNotebookProgress(
+      notebookId: notebook.notebookId,
+      progress: .progress
+    )
+    let viewModel = RielaNoteLibraryViewModel(
+      client: NoteServiceRielaNoteUIClient(service: service)
+    )
+    await viewModel.load()
+    await viewModel.toggleSearchTag(parent.name)
+    let popup = RielaNoteSearchPopupSheet(
+      viewModel: viewModel,
+      onClose: {}
+    )
+    XCTAssertEqual(popup.contentMode, .tagKanban)
+
+    let hostingController = NSHostingController(rootView: popup)
+    let pngData = try renderPNGData(view: hostingController.view)
+    try pngData.write(
+      to: noteRoot.appendingPathComponent("tag-kanban-popup-render.png")
+    )
+
+    XCTAssertGreaterThan(pngData.count, 1_000)
+    XCTAssertEqual(viewModel.notebooks.map(\.notebookId), [notebook.notebookId])
+    XCTAssertEqual(viewModel.notebooks.first?.progress, .progress)
+
+    let failureMessage = "Progress update failed."
+    viewModel.notebookProgressMutationFailure = viewModel.notebookSnapshotContext.map {
+      RielaNoteNotebookMutationFailure(
+        context: $0,
+        message: failureMessage
+      )
+    }
+    viewModel.state = .failed(failureMessage)
+    let failedPopup = RielaNoteSearchPopupSheet(
+      viewModel: viewModel,
+      onClose: {}
+    )
+    XCTAssertEqual(
+      failedPopup.contentMode,
+      .tagKanbanFailed(failureMessage)
+    )
+    let failedHostingController = NSHostingController(rootView: failedPopup)
+    let failedPNGData = try renderPNGData(view: failedHostingController.view)
+    try failedPNGData.write(
+      to: noteRoot.appendingPathComponent("tag-kanban-popup-failure-render.png")
+    )
+    XCTAssertGreaterThan(failedPNGData.count, 1_000)
   }
 
   func testNoteWindowLoadsS3ProfileFromEnvironment() throws {
@@ -150,24 +256,49 @@ final class RielaAppNotesIntegrationTests: XCTestCase {
     }
   }
 
+  func testAppearanceSettingsDefaultToDarkAndRoundTrip() throws {
+    let appRoot = try scratchRoot(name: "riela-app-appearance-\(UUID().uuidString)")
+    let store = RielaAppAppearanceSettingsStore(appRootURL: appRoot)
+
+    XCTAssertEqual(store.load().colorScheme, .dark)
+
+    try store.save(RielaAppAppearanceSettings(colorScheme: .light))
+    XCTAssertEqual(store.load().colorScheme, .light)
+
+    // Unknown persisted values fall back to the dark default instead of failing.
+    try Data(#"{"colorScheme":"solarized"}"#.utf8).write(to: store.settingsURL)
+    XCTAssertEqual(store.load().colorScheme, .dark)
+  }
+
+  func testNoteSettingsWindowPersistsColorScheme() throws {
+    let scratch = try scratchRoot(name: "riela-app-appearance-window-\(UUID().uuidString)")
+    let noteRoot = scratch.appendingPathComponent("note", isDirectory: true)
+    let appearanceStore = RielaAppAppearanceSettingsStore(
+      appRootURL: scratch.appendingPathComponent("app-root", isDirectory: true)
+    )
+    let controller = try NoteSettingsWindowController(
+      noteRoot: noteRoot,
+      profileName: .default,
+      appearanceStore: appearanceStore
+    )
+
+    controller.setColorScheme(.light)
+    XCTAssertEqual(appearanceStore.load().colorScheme, .light)
+
+    controller.setColorScheme(.dark)
+    XCTAssertEqual(appearanceStore.load().colorScheme, .dark)
+    controller.close()
+  }
+
   func testNoteSettingsPersistsExposureAndManagesClients() throws {
     let noteRoot = try scratchRoot(name: "riela-app-note-settings-\(UUID().uuidString)")
       .appendingPathComponent("note", isDirectory: true)
     let controller = try NoteSettingsWindowController(noteRoot: noteRoot, profileName: .default)
 
     XCTAssertFalse(controller.settingsStore.load().exposesNoteAPI)
-    XCTAssertEqual(controller.settingsStore.load().normalizedTranslationTargetLanguage, "English")
 
-    try controller.settingsStore.save(RielaAppNoteSettings(
-      exposesNoteAPI: true,
-      defaultTranslationTargetLanguage: "Japanese"
-    ))
+    try controller.settingsStore.save(RielaAppNoteSettings(exposesNoteAPI: true))
     XCTAssertTrue(controller.settingsStore.load().exposesNoteAPI)
-    XCTAssertEqual(controller.settingsStore.load().normalizedTranslationTargetLanguage, "Japanese")
-
-    controller.setDefaultTranslationTargetLanguage(" French ")
-    try controller.saveTranslationSettingsFromEditor()
-    XCTAssertEqual(controller.settingsStore.load().defaultTranslationTargetLanguage, "French")
 
     let client = try controller.service.registerAPIClient(displayName: "Local test", bearerToken: "secret-token")
     XCTAssertEqual(try controller.service.listAPIClients().map(\.displayName), ["Local test"])

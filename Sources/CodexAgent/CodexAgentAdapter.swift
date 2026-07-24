@@ -1,3 +1,4 @@
+import Crypto
 import Foundation
 import RielaAdapters
 import RielaCore
@@ -19,21 +20,195 @@ private let codexJSONEventTypes: Set<String> = [
 ]
 private let codexItemEventTypes: Set<String> = ["item.started", "item.updated", "item.completed"]
 
+private enum CodexSessionExecutionKind: Equatable, Sendable {
+  case fresh
+  case freshFallback
+  case resume(sessionId: String, sourceStepId: String)
+
+  var resumeSessionId: String? {
+    guard case let .resume(sessionId, _) = self else {
+      return nil
+    }
+    return sessionId
+  }
+}
+
+private struct CodexThreadStepKey: Hashable, Sendable {
+  var workflowRunId: String
+  var workflowSessionId: String
+  var stepId: String
+}
+
+private struct CodexThreadSessionKey: Hashable, Sendable {
+  var workflowRunId: String
+  var workflowSessionId: String
+}
+
+private struct CodexLatestThread: Sendable {
+  var sessionId: String
+  var stepId: String
+}
+
+private struct CodexAuthPreflightKey: Hashable, Sendable {
+  var workflowRunId: String
+  var configurationFingerprint: String
+}
+
+private enum CodexAuthReadiness: Sendable {
+  case checking(UUID, Task<Void, Error>)
+  case ready
+}
+
+public actor CodexWorkflowRunState {
+  private var threadsByStep: [CodexThreadStepKey: String] = [:]
+  private var latestThreads: [CodexThreadSessionKey: CodexLatestThread] = [:]
+  private var authReadiness: [CodexAuthPreflightKey: CodexAuthReadiness] = [:]
+
+  public init() {}
+
+  fileprivate func resolveSession(for input: AdapterExecutionInput) -> CodexSessionExecutionKind {
+    guard input.sessionPolicy?.mode == .reuse, let identity = input.executionIdentity else {
+      return .fresh
+    }
+    let sessionKey = CodexThreadSessionKey(
+      workflowRunId: identity.workflowRunId,
+      workflowSessionId: identity.workflowSessionId
+    )
+    if let inheritedStepId = input.sessionPolicy?.inheritFromStepId {
+      let stepKey = CodexThreadStepKey(
+        workflowRunId: identity.workflowRunId,
+        workflowSessionId: identity.workflowSessionId,
+        stepId: inheritedStepId
+      )
+      guard let sessionId = threadsByStep[stepKey] else {
+        return .freshFallback
+      }
+      return .resume(sessionId: sessionId, sourceStepId: inheritedStepId)
+    }
+    guard let latest = latestThreads[sessionKey] else {
+      return .freshFallback
+    }
+    return .resume(sessionId: latest.sessionId, sourceStepId: latest.stepId)
+  }
+
+  fileprivate func promote(
+    observation: CodexSessionIdObservation,
+    resolution: CodexSessionExecutionKind,
+    identity: AdapterExecutionIdentity
+  ) {
+    let promotedId: String?
+    switch (resolution, observation) {
+    case (.fresh, .identified(let id)), (.freshFallback, .identified(let id)):
+      promotedId = id
+    case let (.resume(sessionId, _), .identified(observedId)) where sessionId == observedId:
+      promotedId = sessionId
+    case let (.resume(sessionId, _), .none):
+      promotedId = sessionId
+    default:
+      promotedId = nil
+    }
+    guard let promotedId else {
+      return
+    }
+    let stepKey = CodexThreadStepKey(
+      workflowRunId: identity.workflowRunId,
+      workflowSessionId: identity.workflowSessionId,
+      stepId: identity.stepId
+    )
+    let sessionKey = CodexThreadSessionKey(
+      workflowRunId: identity.workflowRunId,
+      workflowSessionId: identity.workflowSessionId
+    )
+    threadsByStep[stepKey] = promotedId
+    latestThreads[sessionKey] = CodexLatestThread(sessionId: promotedId, stepId: identity.stepId)
+  }
+
+  fileprivate func ensureAuthReady(
+    key: CodexAuthPreflightKey,
+    operation: @escaping @Sendable () async throws -> Void
+  ) async throws {
+    let token: UUID
+    let task: Task<Void, Error>
+    switch authReadiness[key] {
+    case .ready:
+      try Task.checkCancellation()
+      return
+    case let .checking(existingToken, existingTask):
+      token = existingToken
+      task = existingTask
+    case nil:
+      token = UUID()
+      task = Task {
+        try await operation()
+      }
+      authReadiness[key] = .checking(token, task)
+    }
+
+    do {
+      try await task.value
+    } catch {
+      if case let .checking(currentToken, _)? = authReadiness[key], currentToken == token {
+        authReadiness.removeValue(forKey: key)
+      }
+      throw error
+    }
+    if case let .checking(currentToken, _)? = authReadiness[key], currentToken == token {
+      authReadiness[key] = .ready
+    }
+    try Task.checkCancellation()
+  }
+
+  fileprivate func removeAll(for workflowRunId: String) async {
+    let tasks = authReadiness.compactMap { key, value -> Task<Void, Error>? in
+      guard key.workflowRunId == workflowRunId, case let .checking(_, task) = value else {
+        return nil
+      }
+      return task
+    }
+    authReadiness = authReadiness.filter { $0.key.workflowRunId != workflowRunId }
+    threadsByStep = threadsByStep.filter { $0.key.workflowRunId != workflowRunId }
+    latestThreads = latestThreads.filter { $0.key.workflowRunId != workflowRunId }
+    for task in tasks {
+      task.cancel()
+      _ = await task.result
+    }
+  }
+}
+
 public struct CodexAgentCommandBuilder: LocalAgentCommandBuilding {
   public var executableName: String
   public var environment: [String: String]
   public var additionalArguments: [String]
+  public var resumeSessionId: String?
+  var sessionIdCollector: CodexSessionIdCollector?
 
   public var provider: String { CliAgentBackend.codexAgent.rawValue }
 
   public init(
     executableName: String = "codex",
     environment: [String: String] = [:],
-    additionalArguments: [String] = []
+    additionalArguments: [String] = [],
+    resumeSessionId: String? = nil
   ) {
     self.executableName = executableName
     self.environment = environment
     self.additionalArguments = additionalArguments
+    self.resumeSessionId = resumeSessionId
+    self.sessionIdCollector = nil
+  }
+
+  init(
+    executableName: String,
+    environment: [String: String],
+    additionalArguments: [String],
+    resumeSessionId: String?,
+    sessionIdCollector: CodexSessionIdCollector
+  ) {
+    self.executableName = executableName
+    self.environment = environment
+    self.additionalArguments = additionalArguments
+    self.resumeSessionId = resumeSessionId
+    self.sessionIdCollector = sessionIdCollector
   }
 
   public func buildCommand(for input: AdapterExecutionInput) throws -> LocalAgentCommand {
@@ -50,7 +225,10 @@ public struct CodexAgentCommandBuilder: LocalAgentCommandBuilding {
         configOverrides.append("model_providers.\(provider.name).env_key=\(apiKeyEnv)")
       }
     }
-    let promptText = buildCombinedPromptText(promptText: input.promptText, systemPromptText: input.systemPromptText)
+    let usesResume = input.sessionPolicy?.mode == .reuse
+      && resumeSessionId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    let selectedPromptText = usesResume ? input.resolvedResumedPromptText : input.resolvedFreshPromptText
+    let promptText = buildCombinedPromptText(promptText: selectedPromptText, systemPromptText: input.systemPromptText)
     let processOptions = CodexProcessOptions(
       model: input.node.model,
       sandbox: input.node.agentSandbox?.rawValue,
@@ -61,10 +239,20 @@ public struct CodexAgentCommandBuilder: LocalAgentCommandBuilding {
         + codexUnifiedExecArguments(input.node.variables["codexUnifiedExec"])
         + stringArray(input.node.variables["codexAdditionalArgs"])
     )
-    let arguments = [executableName] + CodexProcessCommandBuilder.buildExecArguments(
-      prompt: "-",
-      options: processOptions
-    )
+    let processArguments: [String]
+    if usesResume, let resumeSessionId {
+      processArguments = CodexProcessCommandBuilder.buildResumeArguments(
+        sessionId: resumeSessionId,
+        prompt: "-",
+        options: processOptions
+      )
+    } else {
+      processArguments = CodexProcessCommandBuilder.buildExecArguments(
+        prompt: "-",
+        options: processOptions
+      )
+    }
+    let arguments = [executableName] + processArguments
     try CodexProcessCommandBuilder.validatePipedStdinExecPromptTransport(arguments: arguments)
 
     let environment = mergedAgentProcessEnvironment(
@@ -73,6 +261,19 @@ public struct CodexAgentCommandBuilder: LocalAgentCommandBuilding {
       provider: provider
     )
     let recoveryPolicy = codexToolChildRecoveryPolicy(input.node.variables)
+    let observeStdoutLine: (@Sendable (String) -> Void)?
+    let processDidSucceed: (@Sendable () -> Void)?
+    if let sessionIdCollector {
+      observeStdoutLine = { line in
+        sessionIdCollector.observe(line)
+      }
+      processDidSucceed = {
+        sessionIdCollector.markProcessSucceeded()
+      }
+    } else {
+      observeStdoutLine = nil
+      processDidSucceed = nil
+    }
     return LocalAgentCommand(
       provider: provider,
       metadata: providerMetadata(input.node.provider),
@@ -90,6 +291,8 @@ public struct CodexAgentCommandBuilder: LocalAgentCommandBuilding {
       normalizeStdout: normalizeCodexExecJSONStdout,
       backendEventType: codexBackendEventType,
       classifyBackendEvent: classifyCodexBackendEvent,
+      observeStdoutLine: observeStdoutLine,
+      processDidSucceed: processDidSucceed,
       toolChildMonitor: recoveryPolicy.mode == .off ? nil : CodexToolChildRecoveryMonitor(
         policy: recoveryPolicy,
         workflowExecutionId: "codex-agent",
@@ -105,12 +308,13 @@ private func providerMetadata(_ configuration: AgentProviderConfiguration?) -> J
 }
 
 public struct CodexAgentAdapter: NodeAdapter {
-  private let adapter: LocalAgentCommandAdapter
   private let executableName: String
   private let runner: any LocalAgentProcessRunning
   private let environment: [String: String]
+  private let additionalArguments: [String]
   private let authPreflight: Bool
   private let checkAuthPreflight: (@Sendable (AdapterExecutionInput) async throws -> Void)?
+  private let state: CodexWorkflowRunState
 
   public init(
     executableName: String = "codex",
@@ -118,25 +322,75 @@ public struct CodexAgentAdapter: NodeAdapter {
     environment: [String: String] = [:],
     additionalArguments: [String] = [],
     authPreflight: Bool = true,
-    checkAuthPreflight: (@Sendable (AdapterExecutionInput) async throws -> Void)? = nil
+    checkAuthPreflight: (@Sendable (AdapterExecutionInput) async throws -> Void)? = nil,
+    state: CodexWorkflowRunState = CodexWorkflowRunState()
   ) {
     self.executableName = executableName
     self.runner = runner
     self.environment = environment
+    self.additionalArguments = additionalArguments
     self.authPreflight = authPreflight
-    self.adapter = LocalAgentCommandAdapter(
-      commandBuilder: CodexAgentCommandBuilder(
-        executableName: executableName,
-        environment: environment,
-        additionalArguments: additionalArguments
-      ),
-      runner: runner
-    )
     self.checkAuthPreflight = checkAuthPreflight
+    self.state = state
   }
 
   public func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
     if authPreflight {
+      try await ensureAuthReady(input: input, deadline: context.deadline)
+    }
+    let resolution = await state.resolveSession(for: input)
+    let collector = CodexSessionIdCollector()
+    let commandBuilder = CodexAgentCommandBuilder(
+      executableName: executableName,
+      environment: environment,
+      additionalArguments: additionalArguments,
+      resumeSessionId: resolution.resumeSessionId,
+      sessionIdCollector: collector
+    )
+    let localAdapter = LocalAgentCommandAdapter(commandBuilder: commandBuilder, runner: runner)
+    var selectedInput = input
+    selectedInput.promptText = resolution.resumeSessionId == nil
+      ? input.resolvedFreshPromptText
+      : input.resolvedResumedPromptText
+    if let resumeSessionId = resolution.resumeSessionId, let handler = context.backendEventHandler {
+      await handler(AdapterBackendEvent(
+        provider: CliAgentBackend.codexAgent.rawValue,
+        eventType: "session_identified",
+        channel: .lifecycle,
+        at: Date(),
+        backendSessionId: resumeSessionId
+      ))
+    }
+    do {
+      let output = try await localAdapter.execute(selectedInput, context: context)
+      await promoteSuccessfulExecution(collector: collector, resolution: resolution, input: input)
+      return output
+    } catch {
+      await promoteSuccessfulExecution(collector: collector, resolution: resolution, input: input)
+      throw error
+    }
+  }
+
+  public func workflowRunDidEnd(_ context: WorkflowRunLifecycleContext) async {
+    await state.removeAll(for: context.workflowRunId)
+  }
+
+  private func promoteSuccessfulExecution(
+    collector: CodexSessionIdCollector,
+    resolution: CodexSessionExecutionKind,
+    input: AdapterExecutionInput
+  ) async {
+    guard
+      let observation = collector.successfulObservation(),
+      let identity = input.executionIdentity
+    else {
+      return
+    }
+    await state.promote(observation: observation, resolution: resolution, identity: identity)
+  }
+
+  private func ensureAuthReady(input: AdapterExecutionInput, deadline: Date?) async throws {
+    let operation: @Sendable () async throws -> Void = {
       if let checkAuthPreflight {
         let sensitiveValues = codexPreflightSensitiveValues(input: input, baseEnvironment: environment)
         do {
@@ -162,12 +416,41 @@ public struct CodexAgentAdapter: NodeAdapter {
           executableName: executableName,
           environment: environment,
           runner: runner,
-          deadline: context.deadline
+          deadline: deadline
         )
       }
     }
-    return try await adapter.execute(input, context: context)
+    guard let identity = input.executionIdentity else {
+      try await operation()
+      return
+    }
+    let key = CodexAuthPreflightKey(
+      workflowRunId: identity.workflowRunId,
+      configurationFingerprint: codexAuthConfigurationFingerprint(
+        executableName: executableName,
+        input: input,
+        environment: environment
+      )
+    )
+    try await state.ensureAuthReady(key: key, operation: operation)
   }
+}
+
+private func codexAuthConfigurationFingerprint(
+  executableName: String,
+  input: AdapterExecutionInput,
+  environment: [String: String]
+) -> String {
+  let effectiveEnvironment = mergedAgentProcessEnvironment(
+    baseEnvironment: environment,
+    input: input,
+    provider: CliAgentBackend.codexAgent.rawValue
+  )
+  let components = [executableName, input.node.workingDirectory ?? ""] + effectiveEnvironment
+    .sorted { $0.key.utf8.lexicographicallyPrecedes($1.key.utf8) }
+    .flatMap { [$0.key, $0.value] }
+  let digest = SHA256.hash(data: Data(components.joined(separator: "\u{0}").utf8))
+  return digest.map { String(format: "%02x", $0) }.joined()
 }
 
 private func runCodexDefaultAuthPreflight(
@@ -356,13 +639,27 @@ private func classifyCodexBackendEvent(_ line: String) -> AdapterBackendEvent? {
     return nil
   }
   let eventType = stringValue(object["type"]) ?? "json-event"
+  let sessionIds = CodexSessionIdExtractor.sessionIds(fromJSONLine: line)
+  let backendSessionId = sessionIds.count == 1 ? sessionIds.first : nil
   if eventType == "turn.completed", let usage = objectValue(object["usage"]) {
-    return AdapterBackendEvent(provider: CliAgentBackend.codexAgent.rawValue, eventType: eventType, channel: .usage, usage: usage)
+    return AdapterBackendEvent(
+      provider: CliAgentBackend.codexAgent.rawValue,
+      eventType: eventType,
+      channel: .usage,
+      usage: usage,
+      backendSessionId: backendSessionId
+    )
   }
-  if let classified = classifyCodexContentEvent(object: object, eventType: eventType) {
+  if var classified = classifyCodexContentEvent(object: object, eventType: eventType) {
+    classified.backendSessionId = backendSessionId
     return classified
   }
-  return AdapterBackendEvent(provider: CliAgentBackend.codexAgent.rawValue, eventType: eventType, channel: .lifecycle)
+  return AdapterBackendEvent(
+    provider: CliAgentBackend.codexAgent.rawValue,
+    eventType: eventType,
+    channel: .lifecycle,
+    backendSessionId: backendSessionId
+  )
 }
 
 private func classifyCodexContentEvent(object: JSONObject, eventType: String) -> AdapterBackendEvent? {

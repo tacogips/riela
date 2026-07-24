@@ -170,7 +170,7 @@ enum WorkflowTransactionGenerationStore {
       .prepared: [.prepared, .committing, .failed],
       .committing: [.committing, .liveMoved, .recovered],
       .liveMoved: [.liveMoved, .published, .recovered],
-      .published: [.published, .committed],
+      .published: [.published, .committed, .recovered],
       .committed: [.committed],
       .failed: [.failed],
       .recovered: [.recovered]

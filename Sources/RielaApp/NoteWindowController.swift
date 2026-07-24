@@ -12,6 +12,7 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
   let profileName: RielaAppProfileName
   let s3Profiles: [S3StorageProfile]
   let service: NoteService
+  let notebookExpansionProviderConfigured: Bool
   private let onOpenSettings: () -> Void
   private let onWindowWillClose: () -> Void
   private let maintenanceTicker: NoteAutoActionMaintenanceTicker?
@@ -40,6 +41,11 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
     self.maintenanceTicker = autoActionLauncher == nil
       ? nil
       : NoteAutoActionMaintenanceTicker(service: service)
+    let notebookExpansionProvider = RielaNoteWorkflowNotebookCompactProvider.defaultProvider(
+      environment: environment,
+      allowEnvironmentOverrides: true
+    )
+    self.notebookExpansionProviderConfigured = notebookExpansionProvider != nil
     let client = NoteServiceRielaNoteUIClient(
       service: service,
       s3Profiles: s3Profiles,
@@ -52,7 +58,7 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
         environment: environment,
         allowEnvironmentOverrides: true
       ),
-      defaultTranslationTargetLanguage: noteSettings.normalizedTranslationTargetLanguage
+      notebookExpansionProvider: notebookExpansionProvider
     )
     let hostingController = NSHostingController(
       rootView: RielaNoteRootView(client: client, onOpenSettings: onOpenSettings)

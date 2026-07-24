@@ -94,6 +94,8 @@ public struct SessionCommandFailureResult: Codable, Equatable, Sendable {
 
 public struct SessionDiscoveryRow: Codable, Equatable, Sendable {
   public var sessionId: String
+  public var parentSessionId: String?
+  public var rootSessionId: String
   public var workflowName: String
   public var status: WorkflowSessionStatus
   public var failureKind: WorkflowSessionFailureKind?
@@ -104,6 +106,8 @@ public struct SessionDiscoveryRow: Codable, Equatable, Sendable {
 
   public init(record: PersistedCLIWorkflowSession, sessionStore: String) {
     self.sessionId = record.session.sessionId
+    self.parentSessionId = record.session.parentSessionId
+    self.rootSessionId = record.session.rootSessionId ?? record.session.sessionId
     self.workflowName = record.workflowName
     self.status = record.session.status
     self.failureKind = record.session.failureKind

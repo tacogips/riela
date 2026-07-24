@@ -487,3 +487,269 @@ an allowlist; `reason` is attacker-influenceable display text (plain
 
 Follow-up tasks: TASK-012–TASK-018 in
 `impl-plans/active/riela-note-ui-refinements.md`.
+
+## Workspace Hardening Addendum (2026-07-19)
+
+Issue source: workflow intake
+`codex-design-and-implement-review-loop-session-1171` / `comm-000847`.
+Scope is one work package on branch `feat/riela-note-workspace-revamp`
+covering only `Sources/RielaNoteUI` and `Tests/RielaNoteUITests`
+unless a compile fix requires a direct RielaApp host update.
+
+### Requirements
+
+1. Return pressed inside note text inputs must never trigger the agent
+   send action. The agent composer remains the only plain-Enter send
+   owner through its own submit handling; the compose screen's
+   Cmd-Return save shortcut remains separate.
+2. Selecting a search-popup result while a body edit has unsaved changes
+   must always expose the existing discard confirmation. Discard
+   selects the picked note; keep-editing preserves the draft.
+3. The file tree must reflect note-store changes and explicit refreshes,
+   and notebooks with more than one note page must expose a load-more
+   path instead of stopping at the first fixed-size fetch.
+4. The left pane must offer Tree and Notes modes. Notes mode lists notes
+   for the selected notebook in the same order as the detail pager,
+   highlights the current note, shows current position, and selects rows
+   through the same pending-selection edit guard used elsewhere.
+5. Left pane expansion, right pane expansion, selected left-pane tab,
+   and the note-agent folded state must survive app relaunch.
+6. Custom note-workspace panels must render correctly in dark and light
+   appearance by using semantic colors instead of hard-coded theme
+   assumptions.
+
+### Design Decisions
+
+- **D12 - Plain Return ownership stays local to the composer.** Agent
+  send buttons in `RielaNoteAgentBottomBar` and `RielaNoteAgentView`
+  must not register a global bare-Return shortcut. Text inputs such as
+  the note body editor, comment editor, tag field, rewrite pill, and
+  link/search fields keep their local Return behavior. The composer
+  send affordance is still available through its focused submit path.
+- **D13 - Pending selection remains root-owned.** Search-popup result
+  selection may set `RielaNoteLibraryViewModel.pendingSelection`, but
+  the popup must then yield presentation control so the root
+  confirmation dialog can appear. The binding that hides the dialog
+  must not clear `pendingSelection`; only explicit Discard or Keep
+  Editing resolves it.
+- **D14 - File-tree loading is an invalidatable paged model.** The file
+  tree treats `notesByNotebook` as a page cache with explicit freshness
+  state, not as permanent data. `viewModel.refresh()` and
+  `RielaNoteStoreChangeWatcher` note-store changes invalidate affected
+  notebook pages. Loading merges pages by note id, preserves service
+  ordering, and exposes whether another page is available.
+- **D15 - Pager order is a shared data source.** The detail pager and
+  the left-pane Notes tab consume one ordered-note snapshot from
+  `RielaNoteLibraryViewModel`. Previous/next navigation, row order,
+  current index, and position text are derived from that snapshot so the
+  two surfaces cannot diverge.
+- **D16 - Left-pane mode is workspace chrome.** Tree/Notes selection
+  belongs to the root workspace layout, not to notebook data. Compact
+  navigation keeps the existing `NavigationStack` behavior; macOS
+  split-view behavior remains behind `#if os(macOS)`.
+- **D17 - Workspace chrome persistence is view state, not model data.**
+  Pane expansion, selected left-pane tab, and agent folded state may use
+  `AppStorage` or equivalent scene-persistent storage. Keys must be
+  scoped to Riela Note workspace UI state and must not affect note-store
+  content or tests that instantiate view models directly.
+- **D18 - Color semantics follow platform appearance.** Agent bottom
+  bar panels, attachment chips, pane backgrounds, and similar custom
+  surfaces use semantic SwiftUI/system colors for background, border,
+  selection, disabled, and secondary text roles. Hard-coded opacity
+  overlays are acceptable only when they remain legible in both light
+  and dark appearances.
+
+### Data Flow And Validation
+
+- `RielaNoteRootView` owns workspace chrome state, presents the
+  Tree/Notes switcher, hosts pending-selection confirmation, and
+  connects search-popup dismissal to pending-selection creation.
+- `RielaNoteLibraryViewModel` owns note ordering for pager and Notes tab
+  consumers. A testable ordered snapshot exposes ordered notes,
+  current index, total count, previous note, and next note.
+- `RielaNoteFileTreePane` delegates page merge/invalidation rules to a
+  testable helper or view-model type. Validation covers first page,
+  load-more page, duplicate note id merge, reset after refresh, and
+  reset after note-store change notification.
+- Notes-tab row selection must call the existing guarded selection path
+  so unsaved body edits produce the same confirmation as tree/list
+  selection. Direct mutation of selected note id from a row is out of
+  bounds.
+- Verification commands for this work package are:
+  `swift build`,
+  `swift test --filter RielaNoteUITests`, and
+  `swift test --filter RielaAppNotesIntegrationTests`.
+
+### Rollout Constraints
+
+- No fanout: all six behavior changes land as one branch-local commit
+  with focused tests and review notes.
+- Do not touch translate-related code, web dashboard code, or daemon
+  workflow code.
+- Keep `RielaNoteUI` iOS-compilable and keep RielaApp
+  `NoteWindowController` compiling.
+- Known unrelated local failure
+  `DaemonWorkflowNodePatchTests/testRuntimeRestartsWorkflowWhenEventSourceExits`
+  must not be fixed or attributed to this work.
+
+### Manual GUI Checks
+
+Manual verification must record exact steps for: Return routing in body
+editor/comment/tag/rewrite inputs versus composer submit; search-popup
+pending-selection discard and keep-editing paths; relaunch persistence
+for left/right panes, Tree/Notes mode, and agent fold; and dark/light
+appearance checks for the custom workspace panels.
+
+## Book-Like Reader Addendum (2026-07-20)
+
+Issue source: workflow intake
+`codex-design-and-implement-review-loop-session-1174` / `comm-000891`,
+continued by Fable handoff `fable-and-improve-session-1175` /
+`comm-000901` and child intake
+`codex-design-and-implement-review-loop-session-1176` / `comm-000903`, then
+resumed without reopening design by
+`codex-design-and-implement-review-loop-session-1178` / `comm-000914`.
+Scope is one work package on branch `feat/riela-note-workspace-revamp`
+starting from committed baseline `79c1cb9` and covering the note workspace
+reader in `Sources/RielaNoteUI`, minimal `Sources/RielaNote` comment/paging
+support only if the UI client cannot already perform the write, and tests in
+`Tests/RielaNoteUITests` and `Tests/RielaNoteTests`.
+
+### Requirements
+
+1. Opening a notebook's notes presents a book-like reader: one note per
+   full-container page, vertically sliding with page snapping, and able
+   to advance through consecutive notes without relying on button-only
+   previous/next navigation.
+2. Reader selection remains model-owned. The visible page is bound to
+   the selected note id, and `RielaNoteLibraryViewModel` remains the
+   source of truth for selected detail, pager order, keyboard
+   navigation, and left-pane Notes row selection.
+3. Reading is primary. Reader pages render body content in read mode by
+   default with `RielaNoteMarkdownBodyView`; editable text controls are
+   entered only through the existing explicit `isEditingBody` action.
+4. Each reader page keeps current-note agent and comment actions one
+   visible tap away. Agent requests route through the existing
+   `RielaNoteAgentBottomBar` / agent view-model path; comments route
+   through the existing note comment client/service path.
+5. Notes load lazily in a bounded page window. Approaching the loaded
+   window edge triggers the next page fetch only when guarded by
+   loading and `hasMore` state; no code path may prefetch the whole
+   notebook or loop until `hasMore` is false.
+6. Verification must include `swift build`,
+   `swift test --filter RielaNoteUITests`, and
+   `swift test --filter RielaNoteTests`, each with nonzero executed test
+   counts, plus focused pager/windowing tests and a reader-path search for
+   eager loading patterns:
+   `rg -n "while .*hasMore|hasMore.*while|loadAll|prefetch" Sources/RielaNoteUI`.
+
+### Design Decisions
+
+- **D19 - The detail body becomes a vertical snap pager.**
+  `RielaNoteDetailView` replaces its single-note primary `ScrollView`
+  with a vertically scrolling, lazy page container over the shared
+  `RielaNotePagerNoteSnapshot`. Each page uses the full reader
+  container height and an id equal to its `noteId`. On the supported
+  platforms declared by `Package.swift` (`macOS 14`, `iOS 17`), the
+  preferred implementation is SwiftUI scroll-position paging
+  (`scrollPosition` / `scrollTargetBehavior(.paging)` with
+  `containerRelativeFrame` or the closest equivalent that preserves the
+  same contract). The old previous/next buttons and Cmd-left/Cmd-right
+  shortcuts remain secondary controls over the same selection model.
+- **D20 - Page identity and selection are one-way guarded.** The pager
+  publishes visible-page changes as note-id selection requests through
+  the existing guarded selection path. Programmatic selection changes
+  scroll the pager to the selected note id. Both directions must guard
+  against no-op repeats and stale async selection so scroll-position
+  updates do not create a selection loop or resurrect an older note.
+- **D21 - Read mode owns the default page surface.** A reader page uses
+  `RielaNoteMarkdownBodyView` unless the selected note is explicitly in
+  `bodyDraft.isEditingBody`. The editor is mounted only for the current
+  selected note and only after the edit affordance is activated.
+  Swiping/page scrolling, previous/next buttons, and keyboard pager
+  shortcuts are disabled while editing so unsaved draft handling remains
+  root-owned and explicit.
+- **D22 - Current-note actions stay page-local and persistent.** The
+  reader surface exposes an agent action and a comment action for the
+  currently visible note without opening another navigation layer first.
+  The agent action focuses/expands the existing `RielaNoteAgentBottomBar`
+  with the current note as context rather than introducing a second
+  agent execution path. The comment action opens a compact current-note
+  comment composer and persists through `RielaNoteUIClient.addComment`;
+  `NoteService.addComment(noteId:bodyMarkdown:author:)` already exists,
+  so service changes are out of scope unless compile-time wiring proves
+  a missing bridge.
+- **D23 - Windowed note loading is explicit state, not a loop.**
+  `RielaNoteFileTreeNotebookNotesPageState` (or a sibling window state
+  used by `RielaNoteLibraryViewModel`) owns loaded notes, next offset,
+  `hasMore`, `didLoad`, and `isLoading`. It gains a testable threshold
+  rule such as "within N pages of the loaded trailing edge" that returns
+  whether to request another page. Fetching may request only one next
+  page per trigger, uses the existing `limit + 1` sentinel pattern, and
+  refuses to fire while loading or when `hasMore` is false.
+- **D24 - Backward paging is deferred unless the selection can open
+  before the accumulated window.** The current branch's groundwork is
+  forward-offset paging. Previous navigation is covered by notes already
+  accumulated in the loaded window. If implementation discovers a
+  supported mid-notebook entry that can start without prior pages, the
+  window state may grow a backward fetch boundary; otherwise the design
+  documents forward-accumulated previous pages as the v1 behavior.
+- **D25 - Pager tests target state and wiring, not pixels.** Unit tests
+  cover threshold firing near the edge and not before it, no refetch
+  while loading, no fetch after `hasMore` is false, selected-position
+  tracking as selection changes, and view-model wiring for one-tap
+  agent/comment affordances. View-first behavior is asserted through
+  state defaults (`isEditingBody == false`, no editor-focused default)
+  rather than screenshot snapshots.
+
+### Data Flow And Validation
+
+- `RielaNoteLibraryViewModel.pagerNoteSnapshot` remains the shared
+  ordering source for `RielaNoteDetailView`, `RielaNoteFileTreePane`,
+  keyboard navigation, and the left-pane Notes mode.
+- `RielaNoteDetailView` binds the vertical pager's scroll position to
+  the selected note id. A visible-page change calls
+  `viewModel.requestSelection(.note(noteId))`; button/keyboard
+  navigation continues to call `.previousNote` / `.nextNote`.
+- Near-edge page appearance asks the view model to load one additional
+  notebook-notes page only when the window state says it is eligible.
+  The implementation must not contain a `while hasMore` or equivalent
+  full-notebook prefetch path in the reader.
+- Comment creation refreshes only the current selected detail. Agent
+  focus/expansion changes workspace UI state only; note content changes
+  still go through explicit note/comment service methods.
+- Validation includes code search for eager-fetch patterns in the
+  reader path and tests in `RielaNoteFileTreeNotebookNotesPageStateTests`
+  / `RielaNotePagerNoteSnapshotTests` or their current equivalents.
+
+### Rollout Constraints
+
+- No fanout: vertical pager, view-first pages, current-note actions, and
+  lazy loading land as one issue-resolution work package.
+- Do not remove compose/edit functionality; demote editing to an
+  explicit action in the reader.
+- Keep the change inside `Sources/RielaNoteUI` unless minimal
+  `Sources/RielaNote` support is required for comment/paging bridges.
+- Keep `RielaNoteUI` compatible with `macOS 14` and `iOS 17`.
+- Do not push to origin. Do not chase the known unrelated
+  `DaemonWorkflowNodePatchTests` local flake.
+
+### Open Questions
+
+- No unresolved user decisions are open for this continuation. The following
+  implementation checks remain bounded by the accepted design.
+- Backward page fetch is required only if implementation confirms a
+  reader entry path that can start before the accumulated forward
+  window. Otherwise forward-accumulated previous pages remain the v1
+  contract.
+- The implementation plan must record the SwiftUI scroll-position API choice
+  after confirming the package's `macOS 14` / `iOS 17` availability
+  constraints; the behavioral contract is vertical, one-page snapping bound to
+  note ids.
+
+### Reference Mapping
+
+- Codex-agent references: none supplied for this work package.
+- Cursor CLI behavior: not applicable. The reader is local
+  `RielaNoteUI` behavior and introduces no agent-adapter or CLI
+  execution semantics.

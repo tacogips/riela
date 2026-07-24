@@ -438,9 +438,13 @@ public struct NoteService: Sendable {
     createdBefore: String? = nil
   ) throws -> [Notebook] {
     try driver.withDatabase { database in
+      let expandedTagFilter = try expandedTagFilterNames(tagFilter, in: database)
+      guard tagFilter.isEmpty || !expandedTagFilter.isEmpty else {
+        return []
+      }
       var predicates: [String] = []
       var bindings: [SQLiteValue] = []
-      if !tagFilter.isEmpty {
+      if !expandedTagFilter.isEmpty {
         predicates.append(
           """
           EXISTS (
@@ -448,11 +452,11 @@ public struct NoteService: Sendable {
             FROM notebook_tags nt
             INNER JOIN tags t ON t.tag_id = nt.tag_id
             WHERE nt.notebook_id = notebooks.notebook_id
-              AND t.name IN (\(placeholders(count: tagFilter.count)))
+              AND t.name IN (\(placeholders(count: expandedTagFilter.count)))
           )
           """
         )
-        bindings.append(contentsOf: tagFilter.map(SQLiteValue.text))
+        bindings.append(contentsOf: expandedTagFilter.map(SQLiteValue.text))
       }
       appendCreatedAtPredicates(
         alias: "notebooks",
@@ -466,7 +470,7 @@ public struct NoteService: Sendable {
       bindings.append(.int(Int64(offset)))
       var notebooks = try database.query(
         """
-        SELECT notebook_id, title, created_at, updated_at,
+        SELECT notebook_id, title, progress, created_at, updated_at,
           CASE WHEN meta_json IS NULL THEN NULL ELSE json(meta_json) END AS meta_json
         FROM notebooks
         \(whereClause)
@@ -492,6 +496,27 @@ public struct NoteService: Sendable {
   public func getNote(_ noteId: String) throws -> Note {
     try driver.withDatabase { database in
       try requireNote(noteId, in: database)
+    }
+  }
+
+  @discardableResult
+  public func setNotebookProgress(
+    notebookId: String,
+    progress: NotebookProgress
+  ) throws -> Notebook {
+    try driver.withDatabase { database in
+      try database.transaction { db in
+        _ = try requireNotebook(notebookId, in: db)
+        try db.execute(
+          "UPDATE notebooks SET progress = ?, updated_at = ? WHERE notebook_id = ?",
+          bindings: [
+            .text(progress.rawValue),
+            .text(NoteStoreClock.system.now()),
+            .text(notebookId)
+          ]
+        )
+        return try requireNotebook(notebookId, in: db)
+      }
     }
   }
 
@@ -521,6 +546,10 @@ public struct NoteService: Sendable {
     tagFilter: [String] = []
   ) throws -> [Note] {
     try driver.withDatabase { database in
+      let expandedTagFilter = try expandedTagFilterNames(tagFilter, in: database)
+      guard tagFilter.isEmpty || !expandedTagFilter.isEmpty else {
+        return []
+      }
       var predicates: [String] = []
       var bindings: [SQLiteValue] = []
       if let notebookId {
@@ -528,7 +557,7 @@ public struct NoteService: Sendable {
         predicates.append("notebook_id = ?")
         bindings.append(.text(notebookId))
       }
-      if !tagFilter.isEmpty {
+      if !expandedTagFilter.isEmpty {
         predicates.append(
           """
           EXISTS (
@@ -536,11 +565,11 @@ public struct NoteService: Sendable {
             FROM note_tags nt
             INNER JOIN tags t ON t.tag_id = nt.tag_id
             WHERE nt.note_id = notes.note_id
-              AND t.name IN (\(placeholders(count: tagFilter.count)))
+              AND t.name IN (\(placeholders(count: expandedTagFilter.count)))
           )
           """
         )
-        bindings.append(contentsOf: tagFilter.map(SQLiteValue.text))
+        bindings.append(contentsOf: expandedTagFilter.map(SQLiteValue.text))
       }
       let whereClause = predicates.isEmpty ? "" : "WHERE \(predicates.joined(separator: " AND "))"
       // A notebook-scoped listing returns the notebook's pages in their intrinsic
@@ -762,6 +791,7 @@ public struct NoteService: Sendable {
     createdAfter: String? = nil,
     createdBefore: String? = nil,
     includeLinked: Bool = false,
+    depth: Int = 1,
     limit: Int = 20,
     offset: Int = 0
   ) throws -> [NoteSearchResult] {
@@ -773,7 +803,7 @@ public struct NoteService: Sendable {
         sort: sort,
         createdAfter: createdAfter,
         createdBefore: createdBefore,
-        includeLinked: includeLinked,
+        graphOptions: NoteSearchGraphOptions(includeLinked: includeLinked, depth: depth),
         limit: limit,
         offset: offset,
         in: database
@@ -939,150 +969,4 @@ private func deleteNoteRows(noteId: String, in database: SQLiteDatabase) throws 
   )
   try database.execute("DELETE FROM note_comments WHERE note_id = ?", bindings: [.text(noteId)])
   try database.execute("DELETE FROM notes WHERE note_id = ?", bindings: [.text(noteId)])
-}
-
-func requireNotebook(_ notebookId: String, in database: SQLiteDatabase) throws -> Notebook {
-  let rows = try database.query(
-    """
-    SELECT notebook_id, title, created_at, updated_at,
-      CASE WHEN meta_json IS NULL THEN NULL ELSE json(meta_json) END AS meta_json
-    FROM notebooks
-    WHERE notebook_id = ?
-    LIMIT 1
-    """,
-    bindings: [.text(notebookId)]
-  )
-  guard let row = rows.first else {
-    throw NoteServiceError.notFound("notebook not found: \(notebookId)")
-  }
-  var notebook = try notebook(from: row, in: database)
-  try enrichNotebookListMetadata(&notebook, in: database)
-  return notebook
-}
-
-func requireNote(_ noteId: String, in database: SQLiteDatabase) throws -> Note {
-  let rows = try database.query(
-    """
-    SELECT note_id, notebook_id, note_number, title, body_markdown, read_only,
-      created_at, updated_at,
-      CASE WHEN meta_json IS NULL THEN NULL ELSE json(meta_json) END AS meta_json
-    FROM notes
-    WHERE note_id = ?
-    LIMIT 1
-    """,
-    bindings: [.text(noteId)]
-  )
-  guard let row = rows.first else {
-    throw NoteServiceError.notFound("note not found: \(noteId)")
-  }
-  return try note(from: row, in: database)
-}
-
-func requireNotes(_ noteIds: [String], in database: SQLiteDatabase) throws -> [String: Note] {
-  let orderedNoteIds = orderedUnique(noteIds)
-  guard !orderedNoteIds.isEmpty else {
-    return [:]
-  }
-  let rows = try database.query(
-    """
-    SELECT note_id, notebook_id, note_number, title, body_markdown, read_only,
-      created_at, updated_at,
-      CASE WHEN meta_json IS NULL THEN NULL ELSE json(meta_json) END AS meta_json
-    FROM notes
-    WHERE note_id IN (\(placeholders(count: orderedNoteIds.count)))
-    """,
-    bindings: orderedNoteIds.map(SQLiteValue.text)
-  )
-  let hydratedNotes = try notes(from: rows, in: database)
-  var notesById: [String: Note] = [:]
-  notesById.reserveCapacity(hydratedNotes.count)
-  for note in hydratedNotes {
-    notesById[note.noteId] = note
-  }
-  return notesById
-}
-
-private func requireTag(name: String, in database: SQLiteDatabase) throws -> Tag {
-  let rows = try database.query(
-    "SELECT tag_id, name, class_id, is_system, created_at FROM tags WHERE name = ? LIMIT 1",
-    bindings: [.text(name)]
-  )
-  guard let row = rows.first else {
-    throw NoteServiceError.notFound("tag not found: \(name)")
-  }
-  return try tag(from: row)
-}
-
-private func notebook(from row: SQLiteRow, in database: SQLiteDatabase) throws -> Notebook {
-  guard let notebookId = row["notebook_id"],
-        let title = row["title"],
-        let createdAt = row["created_at"],
-        let updatedAt = row["updated_at"] else {
-    throw NoteServiceError.invalidRow("notebook row is missing required fields")
-  }
-  return Notebook(
-    notebookId: notebookId,
-    title: title,
-    createdAt: createdAt,
-    updatedAt: updatedAt,
-    metaJSON: row["meta_json"] ?? nil,
-    tags: try notebookTags(notebookId: notebookId, in: database)
-  )
-}
-
-private func note(from row: SQLiteRow, in database: SQLiteDatabase) throws -> Note {
-  guard let noteId = row["note_id"] else {
-    throw NoteServiceError.invalidRow("note row is missing note_id")
-  }
-  return try note(from: row, tags: noteTags(noteId: noteId, in: database))
-}
-
-private func notes(from rows: [SQLiteRow], in database: SQLiteDatabase) throws -> [Note] {
-  let noteIds = rows.compactMap { $0["note_id"] }
-  let tagsByNoteId = try noteTags(noteIds: noteIds, in: database)
-  return try rows.map { row in
-    guard let noteId = row["note_id"] else {
-      throw NoteServiceError.invalidRow("note row is missing note_id")
-    }
-    return try note(from: row, tags: tagsByNoteId[noteId] ?? [])
-  }
-}
-
-private func note(from row: SQLiteRow, tags: [TagAssignment]) throws -> Note {
-  guard let noteId = row["note_id"],
-        let notebookId = row["notebook_id"],
-        let noteNumberText = row["note_number"],
-        let noteNumber = Int(noteNumberText),
-        let bodyMarkdown = row["body_markdown"],
-        let createdAt = row["created_at"],
-        let updatedAt = row["updated_at"] else {
-    throw NoteServiceError.invalidRow("note row is missing required fields")
-  }
-  return Note(
-    noteId: noteId,
-    notebookId: notebookId,
-    noteNumber: noteNumber,
-    title: row["title"] ?? nil,
-    bodyMarkdown: bodyMarkdown,
-    readOnly: row["read_only"] == "1",
-    createdAt: createdAt,
-    updatedAt: updatedAt,
-    metaJSON: row["meta_json"] ?? nil,
-    tags: tags
-  )
-}
-
-func tag(from row: SQLiteRow) throws -> Tag {
-  guard let tagId = row["tag_id"],
-        let name = row["name"],
-        let createdAt = row["created_at"] else {
-    throw NoteServiceError.invalidRow("tag row is missing required fields")
-  }
-  return Tag(
-    tagId: tagId,
-    name: name,
-    classId: row["class_id"] ?? nil,
-    isSystem: row["is_system"] == "1",
-    createdAt: createdAt
-  )
 }

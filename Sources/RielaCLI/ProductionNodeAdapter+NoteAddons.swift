@@ -12,6 +12,7 @@ enum BuiltinNoteAddon: String {
   case update = "riela/note-update"
   case get = "riela/note-get"
   case search = "riela/note-search"
+  case graphNeighbors = "riela/note-graph-neighbors"
   case tagApply = "riela/note-tag-apply"
   case attachFile = "riela/note-attach-file"
   case graphQLDocument = "riela/note-graphql-document"
@@ -40,6 +41,8 @@ extension BuiltinWorkflowAddonResolver {
       candidate = try getNote(context)
     case .search:
       candidate = try searchNotes(context)
+    case .graphNeighbors:
+      candidate = try graphNeighbors(context)
     case .tagApply:
       candidate = try applyNoteTags(context)
     case .attachFile:
@@ -197,6 +200,24 @@ private func updateNote(_ context: NoteAddonContext) throws -> JSONObject {
 }
 
 private func getNote(_ context: NoteAddonContext) throws -> JSONObject {
+  // An explicit noteId keeps the original single-note response shape even when
+  // upstream inputs (e.g. a forwarded riela/note-search payload) also carry a
+  // top-level noteIds array; the batch shape applies only when no noteId is
+  // addressed. Batch ids are deduplicated and capped so a hostile or buggy
+  // workflow cannot drive unbounded sequential getNote round-trips.
+  if context.string("noteId") == nil, let rawNoteIds = context.value("noteIds") {
+    let requestedNoteIds = try noteStringArray(rawNoteIds, fieldName: "note noteIds") ?? []
+    let noteIds = Array(orderedUniqueNoteIds(requestedNoteIds).prefix(NoteGraphPolicy.maximumSeedCount))
+    let notes = try noteIds.map(context.service.getNote)
+    var payload: JSONObject = [
+      "notes": .array(notes.map(noteJSON)),
+      "noteIds": .array(notes.map { .string($0.noteId) })
+    ]
+    if let graphEvidence = context.value("graphEvidence") {
+      payload["graphEvidence"] = graphEvidence
+    }
+    return payload
+  }
   let note = try context.service.getNote(try context.requiredString("noteId", fieldName: "noteId"))
   return [
     "noteId": .string(note.noteId),
@@ -209,10 +230,13 @@ private func getNote(_ context: NoteAddonContext) throws -> JSONObject {
 }
 
 private func searchNotes(_ context: NoteAddonContext) throws -> JSONObject {
+  let includeLinked = context.bool("includeLinked", default: false)
   let results = try context.service.searchNotes(
     query: try context.requiredString("query", "match", fieldName: "query"),
     tagFilter: try noteStringArray(context.value("tagFilter") ?? context.value("tags"), fieldName: "note tagFilter") ?? [],
     classFilter: try noteStringArray(context.value("classFilter"), fieldName: "note classFilter") ?? [],
+    includeLinked: includeLinked,
+    depth: context.int("depth", default: 1),
     limit: context.int("limit", default: 20)
   )
   return [
@@ -220,6 +244,35 @@ private func searchNotes(_ context: NoteAddonContext) throws -> JSONObject {
     "resultCount": .number(Double(results.count)),
     "noteIds": .array(results.map { .string($0.note.noteId) })
   ]
+}
+
+private func graphNeighbors(_ context: NoteAddonContext) throws -> JSONObject {
+  guard let rawNoteIds = context.value("noteIds") ?? context.value("noteId") else {
+    throw noteAddonInvalidInput("\(context.input.addon.name) noteIds is required")
+  }
+  let requestedNoteIds = try noteStringArray(rawNoteIds, fieldName: "note noteIds") ?? []
+  // Clamp to the service's 20-seed cap instead of surfacing invalidInput:
+  // upstream nodes (e.g. riela/note-search with a caller-controlled limit) may
+  // legitimately hand over more ids, and the search-side expansion path clamps
+  // the same way (appendLinkedNeighborResults / prefix(maximumSeedCount)).
+  let noteIds = Array(orderedUniqueNoteIds(requestedNoteIds).prefix(NoteGraphPolicy.maximumSeedCount))
+  let results = try context.service.graphNeighbors(
+    noteIds: noteIds,
+    maxDepth: context.int("depth", default: NoteGraphPolicy.defaultMaxDepth),
+    limit: context.int("limit", default: NoteGraphPolicy.defaultLimit)
+  )
+  return [
+    "results": .array(results.map(noteGraphNeighborJSON)),
+    "resultCount": .number(Double(results.count)),
+    "noteIds": .array(results.map { .string($0.note.noteId) }),
+    "seedNoteIds": .array(noteIds.map(JSONValue.string)),
+    "retrievalNoteIds": .array(orderedUniqueNoteIds(noteIds + results.map(\.note.noteId)).map(JSONValue.string))
+  ]
+}
+
+private func orderedUniqueNoteIds(_ noteIds: [String]) -> [String] {
+  var seen = Set<String>()
+  return noteIds.filter { seen.insert($0).inserted }
 }
 
 private func applyNoteTags(_ context: NoteAddonContext) throws -> JSONObject {
@@ -823,6 +876,7 @@ private func notebookJSON(_ notebook: Notebook) -> JSONValue {
   .object([
     "notebookId": .string(notebook.notebookId),
     "title": .string(notebook.title),
+    "progress": .string(notebook.progress.rawValue),
     "createdAt": .string(notebook.createdAt),
     "updatedAt": .string(notebook.updatedAt),
     "metaJSON": notebook.metaJSON.map { .string($0) } ?? .null,
@@ -854,7 +908,20 @@ private func noteSearchResultJSON(_ result: NoteSearchResult) -> JSONValue {
     "notebookId": .string(result.note.notebookId),
     "snippet": .string(result.snippet),
     "rank": .number(result.rank),
-    "matchedTags": .array(result.matchedTags.map(tagJSON))
+    "matchedTags": .array(result.matchedTags.map(tagJSON)),
+    "isLinkedNeighbor": .bool(result.isLinkedNeighbor)
+  ])
+}
+
+private func noteGraphNeighborJSON(_ result: NoteGraphNeighbor) -> JSONValue {
+  .object([
+    "seedNoteId": .string(result.seedNoteId),
+    "note": noteJSON(result.note),
+    "noteId": .string(result.note.noteId),
+    "edgeKind": .string(result.edgeKind.rawValue),
+    "weight": .number(result.weight),
+    "hopCount": .number(Double(result.hopCount)),
+    "pathNoteIds": .array(result.pathNoteIds.map(JSONValue.string))
   ])
 }
 

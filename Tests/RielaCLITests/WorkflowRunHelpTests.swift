@@ -11,7 +11,11 @@ final class WorkflowRunHelpTests: XCTestCase {
     XCTAssertTrue(result.stdout.contains("for automation, agents, and LLM-driven tool use"))
     XCTAssertTrue(result.stdout.contains("Use --output json only when a"))
     XCTAssertTrue(result.stdout.contains("legacy caller explicitly requires"))
+    XCTAssertTrue(result.stdout.contains("riela serve [--host <host>] [--port <port>]"))
     XCTAssertTrue(result.stdout.contains("riela serve --note-api [--note-root <dir>] [--host <host>] [--port <port>]"))
+    XCTAssertTrue(result.stdout.contains("remains active until SIGINT or"))
+    XCTAssertTrue(result.stdout.contains("The default address is 127.0.0.1:8787"))
+    XCTAssertTrue(result.stdout.contains("serve subcommands remain one-shot commands"))
   }
 
   func testWorkflowRunHelpDocumentsVariablesAndSessionStartOutput() async {
@@ -22,6 +26,9 @@ final class WorkflowRunHelpTests: XCTestCase {
     XCTAssertTrue(result.stdout.contains("Riela workflow run"))
     XCTAssertTrue(result.stdout.contains("--variables <json|@file>"))
     XCTAssertTrue(result.stdout.contains("--stall-timeout-ms <n>"))
+    XCTAssertTrue(result.stdout.contains("--max-steps <n>"))
+    XCTAssertTrue(result.stdout.contains("--disable-default-loop-guard"))
+    XCTAssertTrue(result.stdout.contains("Disable the synthesized loop convergence guard"))
     XCTAssertTrue(result.stdout.contains("CLI agent and official SDK backends are not"))
     XCTAssertTrue(result.stdout.contains("Prefer jsonl for agents/LLMs"))
     XCTAssertTrue(result.stdout.contains("json is legacy and emits only after completion"))

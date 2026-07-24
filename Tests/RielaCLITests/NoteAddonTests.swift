@@ -5,6 +5,133 @@ import XCTest
 @testable import RielaCLI
 
 final class NoteAddonTests: XCTestCase {
+  func testGraphNeighborsAndSearchGraphInputsUseSharedNoteService() async throws {
+    let noteRoot = try makeNoteAddonRoot()
+    defer {
+      try? FileManager.default.removeItem(atPath: noteRoot)
+    }
+    let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot))
+    let seed = try service.createNote(bodyMarkdown: "# Seed\nprojectalpha")
+    let neighbor = try service.createNote(bodyMarkdown: "# Neighbor\nx")
+    _ = try service.linkNotes(from: seed.noteId, to: neighbor.noteId)
+    let resolver = BuiltinWorkflowAddonResolver(environment: ["RIELA_NOTE_ROOT": noteRoot])
+
+    let graph = try await resolver.execute(
+      noteInput(
+        name: "riela/note-graph-neighbors",
+        config: [
+          "noteIds": .array([.string(seed.noteId)]),
+          "depth": .number(1),
+          "limit": .number(10)
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(try arrayValue(graph.payload["noteIds"], field: "noteIds"), [.string(neighbor.noteId)])
+    let graphResult = try objectValue(
+      try XCTUnwrap(try arrayValue(graph.payload["results"], field: "results").first)
+    )
+    XCTAssertEqual(graphResult["edgeKind"], .string("explicit-link"))
+    XCTAssertEqual(graphResult["hopCount"], .number(1))
+    XCTAssertEqual(graphResult["pathNoteIds"], .array([.string(seed.noteId), .string(neighbor.noteId)]))
+
+    let search = try await resolver.execute(
+      noteInput(
+        name: "riela/note-search",
+        config: [
+          "query": .string("projectalpha"),
+          "includeLinked": .bool(true),
+          "depth": .number(1),
+          "limit": .number(10)
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(
+      try arrayValue(search.payload["noteIds"], field: "noteIds"),
+      [.string(seed.noteId), .string(neighbor.noteId)]
+    )
+  }
+
+  func testGraphNeighborsRejectsMalformedNoteIdsAndNegativeBounds() async throws {
+    let noteRoot = try makeNoteAddonRoot()
+    defer {
+      try? FileManager.default.removeItem(atPath: noteRoot)
+    }
+    let resolver = BuiltinWorkflowAddonResolver(environment: ["RIELA_NOTE_ROOT": noteRoot])
+
+    do {
+      _ = try await resolver.execute(
+        noteInput(name: "riela/note-graph-neighbors", config: ["noteIds": .number(1)]),
+        context: AdapterExecutionContext()
+      )
+      XCTFail("expected malformed noteIds to fail")
+    } catch {
+      XCTAssertTrue(String(describing: error).contains("noteIds"))
+    }
+
+    do {
+      _ = try await resolver.execute(
+        noteInput(
+          name: "riela/note-graph-neighbors",
+          config: ["noteIds": .array([]), "depth": .number(-1)]
+        ),
+        context: AdapterExecutionContext()
+      )
+      XCTFail("expected negative depth to fail")
+    } catch {
+      XCTAssertTrue(String(describing: error).contains("depth"))
+    }
+  }
+
+  func testGraphNeighborSeedClampNoteIdPrecedenceAndBatchGetCap() async throws {
+    let noteRoot = try makeNoteAddonRoot()
+    defer {
+      try? FileManager.default.removeItem(atPath: noteRoot)
+    }
+    let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot))
+    var noteIds: [JSONValue] = []
+    for index in 0..<(NoteGraphPolicy.maximumSeedCount + 5) {
+      let note = try service.createNote(bodyMarkdown: "# Note \(index)\nbody")
+      noteIds.append(.string(note.noteId))
+    }
+    let resolver = BuiltinWorkflowAddonResolver(environment: ["RIELA_NOTE_ROOT": noteRoot])
+
+    // More seeds than the service's 20-seed cap must clamp, not throw.
+    let graph = try await resolver.execute(
+      noteInput(name: "riela/note-graph-neighbors", config: ["noteIds": .array(noteIds)]),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(
+      try arrayValue(graph.payload["seedNoteIds"], field: "seedNoteIds").count,
+      NoteGraphPolicy.maximumSeedCount
+    )
+
+    // An explicit noteId keeps the single-note shape even when a forwarded
+    // payload also carries a noteIds array.
+    let single = try await resolver.execute(
+      noteInput(
+        name: "riela/note-get",
+        config: ["noteId": noteIds[0], "noteIds": .array(Array(noteIds.prefix(3)))]
+      ),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(single.payload["noteId"], noteIds[0])
+    XCTAssertNotNil(single.payload["note"])
+    XCTAssertNil(single.payload["notes"])
+
+    // Batch fetch dedupes and caps caller-supplied ids.
+    let duplicated = noteIds + noteIds
+    let batch = try await resolver.execute(
+      noteInput(name: "riela/note-get", config: ["noteIds": .array(duplicated)]),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(
+      try arrayValue(batch.payload["notes"], field: "notes").count,
+      NoteGraphPolicy.maximumSeedCount
+    )
+  }
+
   func testNoteCreateTagCommentGetAndSearchReturnFlattenedPayload() async throws {
     let noteRoot = try makeNoteAddonRoot()
     defer {

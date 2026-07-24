@@ -51,6 +51,7 @@ public struct StepEnvelope: Codable, Equatable, Sendable {
 
 public struct BackendEventPayload: Codable, Equatable, Sendable {
   public var backendEventType: String?
+  public var backendSessionId: String?
   public var backendEventChannel: String?
   public var backendEventContent: String?
   public var backendEventIsDelta: Bool?
@@ -61,6 +62,7 @@ public struct BackendEventPayload: Codable, Equatable, Sendable {
 
   public init(
     backendEventType: String? = nil,
+    backendSessionId: String? = nil,
     backendEventChannel: String? = nil,
     backendEventContent: String? = nil,
     backendEventIsDelta: Bool? = nil,
@@ -70,6 +72,7 @@ public struct BackendEventPayload: Codable, Equatable, Sendable {
     backendEventMetadata: JSONObject? = nil
   ) {
     self.backendEventType = backendEventType
+    self.backendSessionId = backendSessionId
     self.backendEventChannel = backendEventChannel
     self.backendEventContent = backendEventContent
     self.backendEventIsDelta = backendEventIsDelta
@@ -105,6 +108,7 @@ public struct LoopStallPayload: Codable, Equatable, Sendable {
   public var gateVisits: Int
   public var repeatedRounds: Int
   public var fingerprints: [String]
+  public var policySource: String?
 
   public init(
     gateId: String,
@@ -112,7 +116,8 @@ public struct LoopStallPayload: Codable, Equatable, Sendable {
     action: String,
     gateVisits: Int,
     repeatedRounds: Int,
-    fingerprints: [String] = []
+    fingerprints: [String] = [],
+    policySource: String? = nil
   ) {
     self.gateId = gateId
     self.violationKind = violationKind
@@ -120,6 +125,7 @@ public struct LoopStallPayload: Codable, Equatable, Sendable {
     self.gateVisits = gateVisits
     self.repeatedRounds = repeatedRounds
     self.fingerprints = fingerprints
+    self.policySource = policySource
   }
 }
 
@@ -184,6 +190,7 @@ public enum WorkflowRunEvent: Equatable, Sendable {
     nodeId: String? = nil,
     executionId: String? = nil,
     backendEventType: String? = nil,
+    backendSessionId: String? = nil,
     backendEventChannel: String? = nil,
     backendEventContent: String? = nil,
     backendEventIsDelta: Bool? = nil,
@@ -199,6 +206,7 @@ public enum WorkflowRunEvent: Equatable, Sendable {
     loopStallGateVisits: Int? = nil,
     loopStallRepeatedRounds: Int? = nil,
     loopStallFingerprints: [String]? = nil,
+    loopStallPolicySource: String? = nil,
     loopBudgetDiagnostic: String? = nil,
     loopBudgetAction: String? = nil,
     loopBudgetConsumedTokens: Int? = nil,
@@ -232,6 +240,7 @@ public enum WorkflowRunEvent: Equatable, Sendable {
         step,
         BackendEventPayload(
           backendEventType: backendEventType,
+          backendSessionId: backendSessionId,
           backendEventChannel: backendEventChannel,
           backendEventContent: backendEventContent,
           backendEventIsDelta: backendEventIsDelta,
@@ -260,7 +269,8 @@ public enum WorkflowRunEvent: Equatable, Sendable {
           action: loopStallAction ?? "",
           gateVisits: loopStallGateVisits ?? 0,
           repeatedRounds: loopStallRepeatedRounds ?? 0,
-          fingerprints: loopStallFingerprints ?? []
+          fingerprints: loopStallFingerprints ?? [],
+          policySource: loopStallPolicySource
         )
       )
     case .budgetExceeded:
@@ -343,6 +353,10 @@ public extension WorkflowRunEvent {
 
   var backendEventType: String? {
     backendEventPayload?.backendEventType
+  }
+
+  var backendSessionId: String? {
+    backendEventPayload?.backendSessionId
   }
 
   var backendEventChannel: String? {
@@ -447,7 +461,7 @@ public extension WorkflowRunEvent {
     }
   }
 
-  private var loopStallPayload: LoopStallPayload? {
+  var loopStallPayload: LoopStallPayload? {
     switch self {
     case let .loopStall(_, _, payload):
       payload
@@ -494,6 +508,7 @@ extension WorkflowRunEvent: Codable {
     case nodeId
     case executionId
     case backendEventType
+    case backendSessionId
     case backendEventChannel
     case backendEventContent
     case backendEventIsDelta
@@ -509,6 +524,7 @@ extension WorkflowRunEvent: Codable {
     case loopStallGateVisits
     case loopStallRepeatedRounds
     case loopStallFingerprints
+    case loopStallPolicySource
     case loopBudgetDiagnostic
     case loopBudgetAction
     case loopBudgetConsumedTokens
@@ -532,6 +548,7 @@ extension WorkflowRunEvent: Codable {
       nodeId: try container.decodeIfPresent(String.self, forKey: .nodeId),
       executionId: try container.decodeIfPresent(String.self, forKey: .executionId),
       backendEventType: try container.decodeIfPresent(String.self, forKey: .backendEventType),
+      backendSessionId: try container.decodeIfPresent(String.self, forKey: .backendSessionId),
       backendEventChannel: try container.decodeIfPresent(String.self, forKey: .backendEventChannel),
       backendEventContent: try container.decodeIfPresent(String.self, forKey: .backendEventContent),
       backendEventIsDelta: try container.decodeIfPresent(Bool.self, forKey: .backendEventIsDelta),
@@ -547,6 +564,7 @@ extension WorkflowRunEvent: Codable {
       loopStallGateVisits: try container.decodeIfPresent(Int.self, forKey: .loopStallGateVisits),
       loopStallRepeatedRounds: try container.decodeIfPresent(Int.self, forKey: .loopStallRepeatedRounds),
       loopStallFingerprints: try container.decodeIfPresent([String].self, forKey: .loopStallFingerprints),
+      loopStallPolicySource: try container.decodeIfPresent(String.self, forKey: .loopStallPolicySource),
       loopBudgetDiagnostic: try container.decodeIfPresent(String.self, forKey: .loopBudgetDiagnostic),
       loopBudgetAction: try container.decodeIfPresent(String.self, forKey: .loopBudgetAction),
       loopBudgetConsumedTokens: try container.decodeIfPresent(Int.self, forKey: .loopBudgetConsumedTokens),
@@ -570,6 +588,7 @@ extension WorkflowRunEvent: Codable {
     try container.encodeIfPresent(nodeId, forKey: .nodeId)
     try container.encodeIfPresent(executionId, forKey: .executionId)
     try container.encodeIfPresent(backendEventType, forKey: .backendEventType)
+    try container.encodeIfPresent(backendSessionId, forKey: .backendSessionId)
     try container.encodeIfPresent(backendEventChannel, forKey: .backendEventChannel)
     try container.encodeIfPresent(backendEventContent, forKey: .backendEventContent)
     try container.encodeIfPresent(backendEventIsDelta, forKey: .backendEventIsDelta)
@@ -585,6 +604,7 @@ extension WorkflowRunEvent: Codable {
     try container.encodeIfPresent(loopStallPayload?.gateVisits, forKey: .loopStallGateVisits)
     try container.encodeIfPresent(loopStallPayload?.repeatedRounds, forKey: .loopStallRepeatedRounds)
     try container.encodeIfPresent(loopStallPayload?.fingerprints, forKey: .loopStallFingerprints)
+    try container.encodeIfPresent(loopStallPayload?.policySource, forKey: .loopStallPolicySource)
     try container.encodeIfPresent(loopBudgetPayload?.diagnostic, forKey: .loopBudgetDiagnostic)
     try container.encodeIfPresent(loopBudgetPayload?.action, forKey: .loopBudgetAction)
     try container.encodeIfPresent(loopBudgetPayload?.consumedTokens, forKey: .loopBudgetConsumedTokens)

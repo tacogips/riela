@@ -5,13 +5,12 @@ import RielaAppSupport
 import RielaObservability
 import RielaServer
 import UniformTypeIdentifiers
-
 @main
 @MainActor
 final class RielaApp: NSObject, NSApplicationDelegate {
   let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
   private let controller = WorkflowServingController()
-  private let launchOptions = RielaAppLaunchOptions.current()
+  let launchOptions = RielaAppLaunchOptions.current()
   private var daemonDiscovery = RielaAppDaemonWorkflowDiscovery()
   let daemonRuntime = RielaAppDaemonWorkflowRuntime()
   private let telemetry = RielaTelemetryFactory.make(configuration: .fromEnvironment(surface: .app))
@@ -47,7 +46,14 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   var viewerWindowController: WorkflowViewerWindowController?
   var noteWindowController: NoteWindowController?
   var noteSettingsWindowController: NoteSettingsWindowController?
+  var webServerController: RielaAppWebServerController?
+  var webServerSetupError: String?
+  var webRevision = 1
   private var terminationShutdownStarted = false
+
+  var appearanceSettingsStore: RielaAppAppearanceSettingsStore {
+    RielaAppAppearanceSettingsStore(appRootURL: profileStore.appRootURL)
+  }
 
   static func main() {
     let app = NSApplication.shared
@@ -59,9 +65,11 @@ final class RielaApp: NSObject, NSApplicationDelegate {
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     appHomeDirectory = configuredHomeDirectory()
+    startGarbageCollection()
     profileStore = RielaAppProfileStore(
       appRootURL: launchOptions.appRoot ?? RielaAppProfileStore.defaultAppRootURL(homeDirectory: appHomeDirectory)
     )
+    rielaAppApplyColorScheme(appearanceSettingsStore.load().colorScheme)
     daemonProfileName = initialDaemonProfileName()
     do {
       try prepareInitialDaemonProfile()
@@ -84,6 +92,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
     logDaemon("profile=\(daemonProfileName.rawValue) discovered \(daemonInstances.count) workflow instance(s)")
     configureStatusItem()
+    configureWebServer()
     rebuildMenu()
     startDaemonStatusRefreshTimer()
     importDaemonSourcesIfRequested()
@@ -110,6 +119,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     daemonStatusRefreshTimer?.invalidate()
     daemonStatusRefreshTimer = nil
     Task {
+      await webServerController?.shutdownForTermination()
       let stopped = await stopDaemonRuntimeForTermination()
       if !stopped {
         logDaemon("daemon workflow shutdown timed out during app termination")

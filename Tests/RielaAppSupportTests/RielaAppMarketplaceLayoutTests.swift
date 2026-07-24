@@ -37,15 +37,35 @@ final class RielaAppMarketplaceLayoutTests: XCTestCase {
       visibleSubviews(of: NSSearchField.self, in: root)
         .first { $0.accessibilityLabel() == "Filter Marketplace Workflows" }
     )
+    let window = try XCTUnwrap(controller.window)
+    XCTAssertTrue(window.makeFirstResponder(searchField))
+    XCTAssertTrue(window.firstResponder === searchField.currentEditor())
+    XCTAssertNil(searchField.delegate)
     XCTAssertTrue(hasButton(label: "Install daily-summary", in: root))
 
     searchField.stringValue = "chat"
-    controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+    XCTAssertTrue(searchField.sendAction(searchField.action, to: searchField.target))
     controller.window?.layoutIfNeeded()
 
     XCTAssertEqual(controller.marketplaceFilterText, "chat")
     XCTAssertFalse(hasButton(label: "Install daily-summary", in: root))
     XCTAssertTrue(hasButton(label: "Install chat-reply", in: root))
+    XCTAssertTrue(window.firstResponder === searchField.currentEditor())
+
+    searchField.stringValue = "does-not-match"
+    XCTAssertTrue(searchField.sendAction(searchField.action, to: searchField.target))
+    controller.window?.layoutIfNeeded()
+    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains {
+      $0.stringValue == "No workflows in this repository match the current filter."
+    })
+    XCTAssertTrue(window.firstResponder === searchField.currentEditor())
+
+    searchField.stringValue = ""
+    XCTAssertTrue(searchField.sendAction(searchField.action, to: searchField.target))
+    controller.window?.layoutIfNeeded()
+    XCTAssertTrue(hasButton(label: "Install daily-summary", in: root))
+    XCTAssertTrue(hasButton(label: "Install chat-reply", in: root))
+    XCTAssertTrue(window.firstResponder === searchField.currentEditor())
   }
 
   func testMarketplaceHeaderUsesAccessibleIconButtonsAtRuntime() throws {

@@ -2,7 +2,7 @@
   "id": "step4-impl-plan-create",
   "description": "Create or revise the implementation plan that executes the accepted design, including Codex-reference traceability when relevant.",
   "executionBackend": "codex-agent",
-  "model": "gpt-5.5",
+  "model": "gpt-5.6-sol",
   "modelFreeze": false,
   "effort": "high",
   "sessionPolicy": {

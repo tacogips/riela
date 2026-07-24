@@ -48,7 +48,7 @@ final class NoteStoreSchemaTests: NoteTestCase {
       XCTAssertTrue(try database.tableExists("note_fts_map"))
       XCTAssertEqual(
         try NoteStoreSchema.seededTagClassIds(in: database),
-        ["content-kind", "document-kind", "event", "person", "source", "topic", "workflow", "year"]
+        ["content-kind", "document-kind", "event", "folder", "person", "source", "topic", "workflow", "year"]
       )
 
       let kindTags = try database.query(
@@ -72,7 +72,7 @@ final class NoteStoreSchemaTests: NoteTestCase {
       XCTAssertEqual(autoActions.map { $0["trigger"] }, ["note-created", "note-updated"])
       XCTAssertTrue(autoActions.allSatisfy { $0["workflow_id"] == NoteStoreSchema.autoTaggingWorkflowId })
       XCTAssertEqual(try database.query("PRAGMA foreign_keys").first?["foreign_keys"], "1")
-      XCTAssertEqual(try schemaVersions(in: database), [1, 2, NoteStoreSchema.currentVersion])
+      XCTAssertEqual(try schemaVersions(in: database), [1, 2, 3, NoteStoreSchema.currentVersion])
 
       try database.requireFTS5Available()
       try database.requireFTS5TrigramAvailable()
@@ -109,7 +109,7 @@ final class NoteStoreSchemaTests: NoteTestCase {
     try NoteStoreSchema.prepare(on: driver)
 
     try driver.withDatabase { database in
-      XCTAssertEqual(try schemaVersions(in: database), [1, 2, NoteStoreSchema.currentVersion])
+      XCTAssertEqual(try schemaVersions(in: database), [1, 2, 3, NoteStoreSchema.currentVersion])
       let ftsSchema = try database.query(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'note_fts' LIMIT 1"
       ).first?["sql"]

@@ -698,6 +698,7 @@ extension WorkflowCommandTests {
       "--endpoint", "http://localhost:4000/graphql",
       "--auth-token-env", "RIELA_REMOTE_AUTH_TOKEN",
       "--variables", #"{"request":"remote"}"#,
+      "--disable-default-loop-guard",
       "--output", "json"
     ])
 
@@ -712,6 +713,7 @@ extension WorkflowCommandTests {
     XCTAssertEqual(request.workflowName, "worker-only-single-step")
     XCTAssertEqual(request.runtimeVariables["request"], .string("remote"))
     XCTAssertNil(request.maxConcurrency)
+    XCTAssertTrue(request.disableDefaultLoopGuard)
     XCTAssertEqual(request.authToken, "env-token-1")
     XCTAssertEqual(request.authTokenEnv, "RIELA_REMOTE_AUTH_TOKEN")
   }
@@ -754,6 +756,7 @@ extension WorkflowCommandTests {
       "--endpoint", "http://riela.test/graphql",
       "--auth-token", "explicit-token",
       "--variables", #"{"request":"remote"}"#,
+      "--disable-default-loop-guard",
       "--timeout-ms", "100",
       "--output", "json"
     ], environment: [
@@ -800,6 +803,7 @@ extension WorkflowCommandTests {
     XCTAssertNil(input["authTokenEnv"])
     XCTAssertNil(input["managerSessionId"])
     XCTAssertNil(input["maxConcurrency"])
+    XCTAssertEqual(input["disableDefaultLoopGuard"] as? Bool, true)
 
     let summaryBody = try XCTUnwrap(bodies.last)
     let summaryQuery = try XCTUnwrap(summaryBody["query"] as? String)

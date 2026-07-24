@@ -33,9 +33,31 @@ public struct RielaNoteResolvedFile: Equatable, Sendable {
   }
 }
 
+public struct RielaNoteNotebookNotesWindow: Equatable, Sendable {
+  public var notes: [Note]
+  public var startOffset: Int
+  public var hasEarlierNotes: Bool
+  public var hasMoreNotes: Bool
+
+  public init(
+    notes: [Note],
+    startOffset: Int,
+    hasEarlierNotes: Bool,
+    hasMoreNotes: Bool
+  ) {
+    self.notes = notes
+    self.startOffset = startOffset
+    self.hasEarlierNotes = hasEarlierNotes
+    self.hasMoreNotes = hasMoreNotes
+  }
+}
+
 public enum RielaNoteUIClientCapabilityError: Error, Equatable, Sendable {
   case currentNotebookNoteCreationUnsupported
   case commentPromotionUnsupported
+  case notebookNotesWindowUnsupported
+  case notebookTagFilterUnsupported
+  case notebookProgressMutationUnsupported
 }
 
 public struct RielaNoteListFilter: Equatable, Sendable {
@@ -70,12 +92,19 @@ public struct RielaNoteListFilter: Equatable, Sendable {
 
 public protocol RielaNoteUIClient: Sendable {
   var defaultConfigWorkflowRoot: String { get }
-  var defaultTranslationTargetLanguage: String { get }
   var noteStoreChangeObservationURLs: [URL] { get }
+  var isNotebookExpansionConfigured: Bool { get }
 
   func listNotebooks(limit: Int, offset: Int) async throws -> [Notebook]
   func listNotebooks(limit: Int, offset: Int, filter: RielaNoteListFilter) async throws -> [Notebook]
+  func listNotebooks(
+    limit: Int,
+    offset: Int,
+    tagFilter: [String],
+    filter: RielaNoteListFilter
+  ) async throws -> [Notebook]
   func listNotes(notebookId: String, limit: Int, offset: Int) async throws -> [Note]
+  func notebookNotesWindow(containing noteId: String, pageSize: Int) async throws -> RielaNoteNotebookNotesWindow
   func listTags() async throws -> [Tag]
   func listTagClasses() async throws -> [TagClass]
   func createUserMemo(bodyMarkdown: String) async throws -> RielaNoteDetail
@@ -99,6 +128,7 @@ public protocol RielaNoteUIClient: Sendable {
   func firstNote(inNotebook notebookId: String) async throws -> RielaNoteDetail?
   func resolveFile(fileId: String) async throws -> RielaNoteResolvedFile
   func updateNoteBody(noteId: String, bodyMarkdown: String) async throws -> RielaNoteDetail
+  func setNotebookProgress(notebookId: String, progress: NotebookProgress) async throws -> Notebook
   func applyTag(noteId: String, tagName: String, classId: String?) async throws -> RielaNoteDetail
   func removeTag(noteId: String, tagName: String) async throws -> RielaNoteDetail
   func addComment(noteId: String, bodyMarkdown: String) async throws -> RielaNoteDetail
@@ -137,6 +167,33 @@ public protocol RielaNoteUIClient: Sendable {
     notebookId: String,
     turn: RielaNoteAgentTurn
   ) async throws -> RielaNoteAgentConversationSaveResult
+  func notebookForExpansion(notebookId: String) async throws -> Notebook
+  func notesForNotebookExpansion(notebookId: String) async throws -> [Note]
+  func compactNotebook(
+    request: RielaNoteNotebookCompactRequest
+  ) async throws -> RielaNoteNotebookCompactDraft
+  func updateNotebookCompactCache(
+    notebookId: String,
+    compactMetadataJSON: String,
+    expectedMarker: RielaNoteNotebookExpansionSourceMarker
+  ) async throws -> Notebook?
+  func saveNotebookExpansion(
+    title: String,
+    seedPromptMarkdown: String,
+    compactSummaryMarkdown: String,
+    notebookMetaJSON: String,
+    sourceNoteIds: [String]
+  ) async throws -> SavedConversation
+  func answerNotebookExpansion(
+    request: RielaNoteNotebookExpansionRequest
+  ) async throws -> RielaNoteNotebookExpansionAnswer
+  func appendNotebookExpansionTurn(
+    notebookId: String,
+    turnId: String,
+    questionMarkdown: String,
+    assistantMarkdown: String,
+    sourceNoteIds: [String]
+  ) async throws -> Note
   func proposeNoteConfigAgentChange(message: String) async throws -> RielaNoteConfigAgentProposal
   func applyNoteConfigAgentProposal(
     _ proposal: RielaNoteConfigAgentProposal,
@@ -145,8 +202,8 @@ public protocol RielaNoteUIClient: Sendable {
 }
 
 public extension RielaNoteUIClient {
-  var defaultTranslationTargetLanguage: String {
-    "English"
+  var isNotebookExpansionConfigured: Bool {
+    false
   }
 
   var noteStoreChangeObservationURLs: [URL] {
@@ -163,6 +220,42 @@ public extension RielaNoteUIClient {
 
   func listNotebooks(limit: Int, offset: Int, filter: RielaNoteListFilter) async throws -> [Notebook] {
     try await listNotebooks(limit: limit, offset: offset)
+  }
+
+  func listNotebooks(
+    limit: Int,
+    offset: Int,
+    tagFilter: [String],
+    filter: RielaNoteListFilter
+  ) async throws -> [Notebook] {
+    guard tagFilter.isEmpty else {
+      throw RielaNoteUIClientCapabilityError.notebookTagFilterUnsupported
+    }
+    return try await listNotebooks(limit: limit, offset: offset, filter: filter)
+  }
+
+  func setNotebookProgress(notebookId: String, progress: NotebookProgress) async throws -> Notebook {
+    throw RielaNoteUIClientCapabilityError.notebookProgressMutationUnsupported
+  }
+
+  func notebookNotesWindow(containing noteId: String, pageSize: Int) async throws -> RielaNoteNotebookNotesWindow {
+    let detail = try await noteDetail(noteId: noteId)
+    let boundedPageSize = max(pageSize, 1)
+    let firstPage = try await listNotes(
+      notebookId: detail.note.notebookId,
+      limit: boundedPageSize + 1,
+      offset: 0
+    )
+    let visiblePage = Array(firstPage.prefix(boundedPageSize))
+    if visiblePage.contains(where: { $0.noteId == noteId }) {
+      return RielaNoteNotebookNotesWindow(
+        notes: visiblePage,
+        startOffset: 0,
+        hasEarlierNotes: false,
+        hasMoreNotes: firstPage.count > boundedPageSize
+      )
+    }
+    throw RielaNoteUIClientCapabilityError.notebookNotesWindowUnsupported
   }
 
   func searchNotes(
@@ -217,6 +310,54 @@ public extension RielaNoteUIClient {
 
   func promoteCommentToNotebook(noteId: String, commentId: String) async throws -> RielaNoteDetail {
     throw RielaNoteUIClientCapabilityError.commentPromotionUnsupported
+  }
+
+  func notebookForExpansion(notebookId: String) async throws -> Notebook {
+    throw RielaNoteNotebookExpansionError.notConfigured
+  }
+
+  func notesForNotebookExpansion(notebookId: String) async throws -> [Note] {
+    throw RielaNoteNotebookExpansionError.notConfigured
+  }
+
+  func compactNotebook(
+    request: RielaNoteNotebookCompactRequest
+  ) async throws -> RielaNoteNotebookCompactDraft {
+    throw RielaNoteNotebookExpansionError.notConfigured
+  }
+
+  func updateNotebookCompactCache(
+    notebookId: String,
+    compactMetadataJSON: String,
+    expectedMarker: RielaNoteNotebookExpansionSourceMarker
+  ) async throws -> Notebook? {
+    throw RielaNoteNotebookExpansionError.notConfigured
+  }
+
+  func saveNotebookExpansion(
+    title: String,
+    seedPromptMarkdown: String,
+    compactSummaryMarkdown: String,
+    notebookMetaJSON: String,
+    sourceNoteIds: [String]
+  ) async throws -> SavedConversation {
+    throw RielaNoteNotebookExpansionError.notConfigured
+  }
+
+  func answerNotebookExpansion(
+    request: RielaNoteNotebookExpansionRequest
+  ) async throws -> RielaNoteNotebookExpansionAnswer {
+    throw RielaNoteNotebookExpansionError.notConfigured
+  }
+
+  func appendNotebookExpansionTurn(
+    notebookId: String,
+    turnId: String,
+    questionMarkdown: String,
+    assistantMarkdown: String,
+    sourceNoteIds: [String]
+  ) async throws -> Note {
+    throw RielaNoteNotebookExpansionError.notConfigured
   }
 }
 
@@ -281,13 +422,13 @@ func rielaNoteCreatedBoundInputIsValid(_ rawValue: String) -> Bool {
 
 public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
   private static let linkProposalLimit = 8
-  private let service: NoteService
+  let service: NoteService
   private let s3Profiles: [S3StorageProfile]
   private let s3HTTPClient: any S3HTTPClient
   private let linkProposalProvider: (any RielaNoteLinkProposalProviding)?
   private let editRewriteProvider: (any RielaNoteEditRewriteProviding)?
   private let selectionQuestionProvider: (any RielaNoteSelectionQuestionProviding)?
-  public let defaultTranslationTargetLanguage: String
+  let notebookExpansionProvider: (any RielaNoteNotebookExpansionProviding)?
 
   public init(
     service: NoteService,
@@ -296,7 +437,7 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
     linkProposalProvider: (any RielaNoteLinkProposalProviding)? = nil,
     editRewriteProvider: (any RielaNoteEditRewriteProviding)? = nil,
     selectionQuestionProvider: (any RielaNoteSelectionQuestionProviding)? = nil,
-    defaultTranslationTargetLanguage: String = "English"
+    notebookExpansionProvider: (any RielaNoteNotebookExpansionProviding)? = nil
   ) {
     self.service = service
     self.s3Profiles = s3Profiles
@@ -304,9 +445,11 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
     self.linkProposalProvider = linkProposalProvider
     self.editRewriteProvider = editRewriteProvider
     self.selectionQuestionProvider = selectionQuestionProvider
-    self.defaultTranslationTargetLanguage = rielaNoteNormalizedTranslationTargetLanguage(
-      defaultTranslationTargetLanguage
-    )
+    self.notebookExpansionProvider = notebookExpansionProvider
+  }
+
+  public var isNotebookExpansionConfigured: Bool {
+    notebookExpansionProvider != nil
   }
 
   public func listNotebooks(limit: Int, offset: Int) async throws -> [Notebook] {
@@ -323,8 +466,45 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
     )
   }
 
+  public func listNotebooks(
+    limit: Int,
+    offset: Int,
+    tagFilter: [String],
+    filter: RielaNoteListFilter
+  ) async throws -> [Notebook] {
+    try service.listNotebooks(
+      limit: limit,
+      offset: offset,
+      tagFilter: tagFilter,
+      sort: filter.sort,
+      createdAfter: filter.createdAfter,
+      createdBefore: filter.createdBefore
+    )
+  }
+
   public func listNotes(notebookId: String, limit: Int, offset: Int) async throws -> [Note] {
     try service.listNotes(notebookId: notebookId, limit: limit, offset: offset)
+  }
+
+  public func notebookNotesWindow(
+    containing noteId: String,
+    pageSize: Int
+  ) async throws -> RielaNoteNotebookNotesWindow {
+    let note = try service.getNote(noteId)
+    let targetOffset = try service.noteOffsetInNotebook(noteId: noteId)
+    let boundedPageSize = max(pageSize, 1)
+    let startOffset = max(targetOffset - (boundedPageSize / 2), 0)
+    let page = try service.listNotes(
+      notebookId: note.notebookId,
+      limit: boundedPageSize + 1,
+      offset: startOffset
+    )
+    return RielaNoteNotebookNotesWindow(
+      notes: Array(page.prefix(boundedPageSize)),
+      startOffset: startOffset,
+      hasEarlierNotes: startOffset > 0,
+      hasMoreNotes: page.count > boundedPageSize
+    )
   }
 
   public func listTags() async throws -> [Tag] {
@@ -434,6 +614,13 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
   public func updateNoteBody(noteId: String, bodyMarkdown: String) async throws -> RielaNoteDetail {
     _ = try service.updateNoteBody(noteId: noteId, bodyMarkdown: bodyMarkdown)
     return try detail(noteId: noteId)
+  }
+
+  public func setNotebookProgress(
+    notebookId: String,
+    progress: NotebookProgress
+  ) async throws -> Notebook {
+    try service.setNotebookProgress(notebookId: notebookId, progress: progress)
   }
 
   public func applyTag(noteId: String, tagName: String, classId: String?) async throws -> RielaNoteDetail {

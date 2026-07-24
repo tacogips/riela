@@ -1,5 +1,11 @@
 import Foundation
 
+struct ComposedAdapterPrompts {
+  var promptText: String
+  var resumedPromptText: String
+  var systemPromptText: String?
+}
+
 extension DeterministicWorkflowRunner {
   func workflowOutputContract(from output: NodeOutputContract?) -> WorkflowOutputContract? {
     guard let output else {
@@ -85,7 +91,7 @@ extension DeterministicWorkflowRunner {
     step: WorkflowStepRef,
     payload: AgentNodePayload,
     variables: JSONObject
-  ) -> (promptText: String, systemPromptText: String?) {
+  ) -> ComposedAdapterPrompts {
     let fallbackPrompt = step.description ?? workflow.description
     let usesConfiguredPromptTemplate = payload.promptTemplate != nil
     let promptTemplate = payload.promptTemplate ?? fallbackPrompt
@@ -122,8 +128,9 @@ extension DeterministicWorkflowRunner {
       .filter { !$0.isEmpty }
       .joined(separator: "\n\n")
 
-    return (
+    return ComposedAdapterPrompts(
       promptText: renderedPromptText.isEmpty && !usesConfiguredPromptTemplate ? fallbackPrompt : renderedPromptText,
+      resumedPromptText: promptText.isEmpty && !usesConfiguredPromptTemplate ? fallbackPrompt : promptText,
       systemPromptText: systemPromptText.isEmpty ? nil : systemPromptText
     )
   }
@@ -150,23 +157,6 @@ extension DeterministicWorkflowRunner {
       return nil
     }
     return "Prior unresolved high and mid review findings for this rerun:\n\(trimmed)"
-  }
-
-  func multiplePublishableTransitionFailure(
-    transitions: [WorkflowStepTransition],
-    candidate: RuntimeOutputCandidate
-  ) -> AdapterExecutionError? {
-    let evaluator = WorkflowBranchEvaluator()
-    let publishableCount = transitions.filter { transition in
-      evaluator.evaluate(label: transition.label, when: candidate.when, payload: candidate.payload)
-    }.count
-    guard publishableCount > 1 else {
-      return nil
-    }
-    return AdapterExecutionError(
-      .invalidOutput,
-      "multiple direct transitions are not supported by this sequential runner"
-    )
   }
 
   func deadline(for step: WorkflowStepRef, request: DeterministicWorkflowRunRequest) -> Date? {

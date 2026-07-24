@@ -92,6 +92,7 @@ extension DeterministicWorkflowRunner {
         nodeId: step.nodeId,
         executionId: executionId,
         backendEventType: backendEvent.eventType,
+        backendSessionId: backendEvent.backendSessionId,
         backendEventChannel: backendEvent.channel?.rawValue,
         backendEventContent: backendEvent.contentSnapshot ?? backendEvent.contentDelta,
         backendEventIsDelta: backendEvent.channel == nil ? nil : backendEvent.isDelta,

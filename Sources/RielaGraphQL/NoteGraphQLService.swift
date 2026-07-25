@@ -187,7 +187,8 @@ public struct GraphQLNoteGraphQLService: Sendable {
       let tag = try service.defineTag(
         name: input.name,
         classId: input.classId,
-        parentTagId: input.parentTagId
+        parentTagId: input.parentTagId,
+        createOnly: input.createOnly
       )
       return .init(result: .ok, tag: GraphQLNoteTagDTO(tag: tag))
     }

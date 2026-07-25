@@ -45,6 +45,12 @@ final class RielaAppWebRouter: RielaHTTPRouteHandling, @unchecked Sendable {
     if request.path == "/graphql", let rejection = securityRejection(for: request) {
       return rejection
     }
+    if request.path == "/graphql" {
+      guard let app else {
+        return .json(status: 503, .object(["error": .string("RielaApp is unavailable")]))
+      }
+      return await app.webNoteGraphQLResponse(for: request)
+    }
     let deterministic = await deterministicAdapter.response(for: request)
     if deterministic.status != 404 {
       return deterministic
@@ -79,7 +85,7 @@ final class RielaAppWebRouter: RielaHTTPRouteHandling, @unchecked Sendable {
     guard !path.hasPrefix("/api/"), !path.hasPrefix("/note/") else {
       return false
     }
-    return !path.split(separator: "/").last.map { $0.contains(".") }!
+    return path.split(separator: "/").last?.contains(".") != true
   }
 }
 #endif

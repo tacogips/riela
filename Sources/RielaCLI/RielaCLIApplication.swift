@@ -343,6 +343,7 @@ Usage:
   riela note client register|list|revoke [target] [--direct] [--note-root <dir>] [--output json|text|table]
   riela serve [--host <host>] [--port <port>]
   riela serve --note-api [--note-root <dir>] [--host <host>] [--port <port>]
+  riela serve --note-api --web-root <dir> [--note-root <dir>] [--host <host>] [--port <port>]
   riela session rerun <session-id> <step-id> [--scope project|user|auto] [--output jsonl|json|text]
   riela session resume <session-id> [--max-steps <n>] [--scope project|user|auto] [--output jsonl|json|text]
   riela session list [--workflow <name>] [--status created|running|completed|failed] [--limit 10] [--scope project|user|auto] [--output jsonl|json|text|table]

@@ -372,11 +372,26 @@ public struct GraphQLDefineNoteTagInput: Codable, Equatable, Sendable {
   public var name: String
   public var classId: String?
   public var parentTagId: String?
+  public var createOnly: Bool
 
-  public init(name: String, classId: String? = nil, parentTagId: String? = nil) {
+  public init(
+    name: String,
+    classId: String? = nil,
+    parentTagId: String? = nil,
+    createOnly: Bool = false
+  ) {
     self.name = name
     self.classId = classId
     self.parentTagId = parentTagId
+    self.createOnly = createOnly
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    name = try container.decode(String.self, forKey: .name)
+    classId = try container.decodeIfPresent(String.self, forKey: .classId)
+    parentTagId = try container.decodeIfPresent(String.self, forKey: .parentTagId)
+    createOnly = try container.decodeIfPresent(Bool.self, forKey: .createOnly) ?? false
   }
 }
 

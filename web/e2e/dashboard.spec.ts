@@ -39,6 +39,14 @@ type FixtureOptions = {
   instancesDelay?: number
   workflowMode?: 'empty' | 'malformed'
   mutationMode?: 'success' | 'malformed' | 'conflict'
+  noteFolderFailure?: boolean
+  noteFolderRefreshFailureAfterRemove?: boolean
+  createdFolderDelay?: number
+  defineFolderMutationDelay?: number
+  removeFolderMutationDelay?: number
+  secondNotebook?: boolean
+  notePreviewExactPage?: boolean
+  notesDelayByNotebook?: Record<string, number>
 }
 
 async function installAPI(page: Page, options: FixtureOptions = {}) {
@@ -50,18 +58,156 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
   let mutationCount = 0
   let configuredPort = 19091
   let restartRequired = false
+  let noteProgress = 'none'
+  let folderRemoved = false
+  const folder = { tagId: 'folder-work', name: 'Work', classId: 'folder', parentTagId: null, isSystem: false, createdAt: '2026-07-25T00:00:00Z' }
+  const child = { tagId: 'folder-launch', name: 'Launch', classId: 'folder', parentTagId: 'folder-work', isSystem: false, createdAt: '2026-07-25T00:00:00Z' }
+  const foldersByName = new Map([folder, child].map((tag) => [tag.name, tag]))
+  let noteFolderNames = ['Work']
+  const folderAssignments = (names: string[]) => names.flatMap((name) => {
+    const tag = foldersByName.get(name)
+    return tag ? [{ tag, provenance: 'human', assignedBy: 'riela-web', deletable: true, createdAt: '2026-07-25T00:00:00Z' }] : []
+  })
+  const currentNotebook = () => ({
+    notebookId: 'notebook-web',
+    title: 'Web notebook',
+    progress: noteProgress,
+    createdAt: '2026-07-25T00:00:00Z',
+    updatedAt: '2026-07-25T01:00:00Z',
+    tags: folderAssignments(noteFolderNames),
+  })
+  const otherNotebook = () => ({
+    notebookId: 'notebook-other',
+    title: 'Other notebook',
+    progress: 'pending',
+    createdAt: '2026-07-25T00:00:00Z',
+    updatedAt: '2026-07-25T02:00:00Z',
+    tags: folderAssignments(['Work']),
+  })
+  const matchesFolderScope = (tagFilter: unknown, assignedFolderNames: string[]): boolean => {
+    if (!Array.isArray(tagFilter) || tagFilter.length === 0) return true
+    return tagFilter.some((name) =>
+      name === 'Work'
+        ? assignedFolderNames.some((assigned) => assigned === 'Work' || assigned === 'Launch')
+        : typeof name === 'string' && assignedFolderNames.includes(name))
+  }
   page.on('console', (message) => {
     if (message.type() !== 'error') return
     const expectedConflictNoise = options.mutationMode === 'conflict'
       && message.text().includes('409 (Conflict)')
-    if (!expectedConflictNoise) browserErrors.push(message.text())
+    const expectedNoteFailureNoise = (options.noteFolderFailure || options.noteFolderRefreshFailureAfterRemove)
+      && message.text().includes('503 (Service Unavailable)')
+    if (!expectedConflictNoise && !expectedNoteFailureNoise) browserErrors.push(message.text())
   })
   page.on('pageerror', (error) => browserErrors.push(error.message))
   page.on('requestfailed', (request) => failedRequests.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText ?? 'failed'}`))
   page.on('response', (response) => {
     const url = new URL(response.url())
     const expectedConflict = options.mutationMode === 'conflict' && response.status() === 409 && url.pathname === '/api/v1/workflows/sources/directories'
-    if (response.status() >= 400 && !expectedConflict) badResponses.push(`${response.status()} ${response.request().method()} ${url.pathname}`)
+    const expectedNoteFailure = (options.noteFolderFailure || options.noteFolderRefreshFailureAfterRemove)
+      && response.status() === 503
+      && url.pathname === '/graphql'
+    if (response.status() >= 400 && !expectedConflict && !expectedNoteFailure) badResponses.push(`${response.status()} ${response.request().method()} ${url.pathname}`)
+  })
+  await page.route('**/graphql', async (route: Route) => {
+    const request = route.request()
+    const body = request.postDataJSON() as { operationName?: string; variables?: Record<string, unknown> }
+    const operation = body.operationName ?? 'Unknown'
+    requests.push(`POST /graphql:${operation}`)
+    const result = (value: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: value }) })
+    const accepted = { accepted: true, status: 'ok', diagnostics: [] }
+    if (operation === 'Tags') return result({ tags: { result: accepted, value: [...foldersByName.values()] } })
+    if (operation === 'TagClasses') return result({ tagClasses: { result: accepted, value: [{ classId: 'folder', label: 'Folder', description: null }] } })
+    if (operation === 'Notebooks') {
+      const tagFilter = body.variables?.tagFilter
+      if (options.createdFolderDelay && Array.isArray(tagFilter) && tagFilter.includes('New folder')) {
+        await new Promise((resolve) => setTimeout(resolve, options.createdFolderDelay))
+      }
+      if (
+        Array.isArray(tagFilter)
+        && tagFilter.length > 0
+        && (options.noteFolderFailure || (options.noteFolderRefreshFailureAfterRemove && folderRemoved))
+      ) {
+        return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'folder unavailable' }) })
+      }
+      const candidates = [
+        { notebook: currentNotebook(), folderNames: noteFolderNames },
+        ...(options.secondNotebook ? [{ notebook: otherNotebook(), folderNames: ['Work'] }] : []),
+      ]
+      return result({
+        notebooks: {
+          result: accepted,
+          value: candidates
+            .filter((candidate) => matchesFolderScope(tagFilter, candidate.folderNames))
+            .map((candidate) => candidate.notebook),
+        },
+      })
+    }
+    if (operation === 'Notebook') {
+      const value = body.variables?.notebookId === 'notebook-other' ? otherNotebook() : currentNotebook()
+      return result({ notebook: { result: accepted, value } })
+    }
+    if (operation === 'Notes') {
+      const notesDelay = options.notesDelayByNotebook?.[String(body.variables?.notebookId ?? '')]
+      if (notesDelay) await new Promise((resolve) => setTimeout(resolve, notesDelay))
+      const offset = Number(body.variables?.offset ?? 0)
+      const notes = options.notePreviewExactPage
+        ? offset === 0
+          ? Array.from({ length: 200 }, (_, index) => ({
+              noteId: `note-${index + 1}`,
+              notebookId: 'notebook-web',
+              noteNumber: index + 1,
+              title: `Brief ${index + 1}`,
+              bodyMarkdown: `Launch brief ${index + 1}`,
+              readOnly: true,
+              createdAt: '2026-07-25T00:00:00Z',
+              updatedAt: '2026-07-25T00:00:00Z',
+            }))
+          : []
+        : [{ noteId: 'note-1', notebookId: 'notebook-web', noteNumber: 1, title: 'Brief', bodyMarkdown: '# Launch brief', readOnly: true, createdAt: '2026-07-25T00:00:00Z', updatedAt: '2026-07-25T00:00:00Z' }]
+      return result({ notes: { result: accepted, value: notes } })
+    }
+    if (operation === 'SetProgress') {
+      noteProgress = String(body.variables?.progress ?? noteProgress)
+      return result({ setNotebookProgress: { result: accepted, notebook: currentNotebook() } })
+    }
+    if (operation === 'ApplyFolder') {
+      const input = body.variables?.input as { tags?: unknown } | undefined
+      const names = Array.isArray(input?.tags)
+        ? input.tags.filter((name): name is string => typeof name === 'string' && foldersByName.has(name))
+        : []
+      noteFolderNames = [...new Set([...noteFolderNames, ...names])]
+      return result({ applyNotebookTags: { result: accepted, notebook: currentNotebook() } })
+    }
+    if (operation === 'RemoveFolder') {
+      if (options.removeFolderMutationDelay) {
+        await new Promise((resolve) => setTimeout(resolve, options.removeFolderMutationDelay))
+      }
+      const tagName = body.variables?.tagName
+      if (body.variables?.notebookId === 'notebook-web' && typeof tagName === 'string') {
+        noteFolderNames = noteFolderNames.filter((name) => name !== tagName)
+      }
+      folderRemoved = true
+      const notebook = body.variables?.notebookId === 'notebook-other' ? otherNotebook() : currentNotebook()
+      return result({ removeNotebookTag: { result: accepted, notebook } })
+    }
+    if (operation === 'DefineFolder') {
+      if (options.defineFolderMutationDelay) {
+        await new Promise((resolve) => setTimeout(resolve, options.defineFolderMutationDelay))
+      }
+      const input = body.variables?.input as { name?: unknown; classId?: unknown; parentTagId?: unknown } | undefined
+      const created = {
+        ...child,
+        tagId: 'new-folder',
+        name: typeof input?.name === 'string' ? input.name : 'New folder',
+        classId: typeof input?.classId === 'string' ? input.classId : 'folder',
+        parentTagId: typeof input?.parentTagId === 'string' ? input.parentTagId : null,
+      }
+      foldersByName.set(created.name, created)
+      return result({ defineNoteTag: { result: accepted, tag: created } })
+    }
+    unexpectedRequests.push(`POST /graphql:${operation}`)
+    return route.fulfill({ status: 418, contentType: 'application/json', body: JSON.stringify({ error: 'unexpected GraphQL operation' }) })
   })
   await page.route('**/api/v1/**', async (route: Route) => {
     const request = route.request()
@@ -200,5 +346,168 @@ test('keeps narrow navigation, focus, and content usable', async ({ page }) => {
   const columns = await page.locator('.instance-grid').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
   expect(columns).toBe(1)
   await captureEvidence(page, 'mobile-instances')
+  fixture.assertClean()
+})
+
+test('navigates folder-scoped List and Board Notes with detail and progress controls', async ({ page }) => {
+  const fixture = await installAPI(page)
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Notes' }).click()
+  await page.getByLabel('Create folder').fill('Work')
+  await page.getByRole('button', { name: 'Create', exact: true }).click()
+  await expect(page.getByText(/already belongs to a folder/)).toBeVisible()
+  expect(fixture.requests).not.toContain('POST /graphql:DefineFolder')
+  const listRow = page.getByRole('button', { name: /Web notebook/ })
+  await expect(listRow).toBeVisible()
+  await listRow.click()
+  const detail = page.getByRole('complementary', { name: /Notebook details/ })
+  await expect(detail).toBeVisible()
+  await detail.getByLabel('Add folder').selectOption('Launch')
+  await expect(detail.getByRole('button', { name: 'Remove Launch' })).toBeVisible()
+  expect(fixture.requests).toContain('POST /graphql:ApplyFolder')
+  await detail.getByRole('button', { name: 'Remove Launch' }).click()
+  await expect(detail.getByRole('button', { name: 'Remove Launch' })).toHaveCount(0)
+  expect(fixture.requests).toContain('POST /graphql:RemoveFolder')
+  await page.getByRole('button', { name: 'Close notebook details' }).click()
+  await expect(listRow).toBeFocused()
+  const workFolder = page.getByRole('treeitem', { name: /Work/ }).getByRole('button', { name: 'Work', exact: true })
+  await workFolder.focus()
+  await page.keyboard.press('ArrowRight')
+  const launchFolder = page.getByRole('button', { name: 'Launch', exact: true })
+  await expect(launchFolder).toBeVisible()
+  await page.keyboard.press('ArrowDown')
+  await expect(launchFolder).toBeFocused()
+  await page.keyboard.press('ArrowLeft')
+  await expect(workFolder).toBeFocused()
+  await page.keyboard.press('End')
+  await expect(launchFolder).toBeFocused()
+  await page.keyboard.press('Home')
+  await expect(workFolder).toBeFocused()
+  await workFolder.click()
+  await expect(page.getByText('Work', { exact: true }).first()).toBeVisible()
+  await page.getByRole('tab', { name: 'Board' }).click()
+  await expect(page.getByRole('region', { name: 'No status notebooks' })).toContainText('Web notebook')
+  await page.getByRole('region', { name: 'No status notebooks' }).getByRole('combobox').selectOption('done')
+  await expect(page.getByRole('region', { name: 'Done notebooks' })).toContainText('Web notebook')
+  await page.getByRole('button', { name: /Web notebook/ }).click()
+  await expect(page.getByRole('complementary', { name: /Notebook details/ })).toContainText('Launch brief')
+  await captureEvidence(page, 'notes-folder-board-detail')
+  await page.getByRole('button', { name: 'Remove Work' }).click()
+  await expect(page.getByRole('complementary', { name: /Notebook details/ })).toHaveCount(0)
+  await expect(page.locator('.notes-message')).toContainText('the notebook left this folder scope')
+  await expect(page.getByRole('button', { name: /Web notebook/ })).toHaveCount(0)
+  expect(fixture.requests).toContain('POST /graphql:SetProgress')
+  expect(fixture.requests.filter((request) => request === 'POST /graphql:RemoveFolder')).toHaveLength(2)
+  fixture.assertClean()
+})
+
+test('selects a created folder without retaining the previous notebook scope', async ({ page }) => {
+  const fixture = await installAPI(page, { createdFolderDelay: 250 })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Notes' }).click()
+  await expect(page.getByRole('button', { name: /Web notebook/ })).toBeVisible()
+  await page.getByLabel('Create folder').fill('New folder')
+  await page.getByRole('button', { name: 'Create', exact: true }).click()
+  await expect(page.locator('.folder-row.selected')).toContainText('New folder')
+  await expect(page.getByRole('button', { name: /Web notebook/ })).toHaveCount(0)
+  await expect(page.getByText('No notebooks in this scope')).toBeVisible()
+  await expect(page.locator('.notes-message')).toContainText('Created folder “New folder”')
+  expect(fixture.requests).toContain('POST /graphql:DefineFolder')
+  fixture.assertClean()
+})
+
+test('preserves newer folder navigation while creation completes', async ({ page }) => {
+  const fixture = await installAPI(page, { defineFolderMutationDelay: 500 })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Notes' }).click()
+  await page.getByLabel('Create folder').fill('New folder')
+  await page.getByRole('button', { name: 'Create', exact: true }).click()
+  await expect.poll(() => fixture.requests.filter((request) => request === 'POST /graphql:DefineFolder').length).toBe(1)
+  const workFolder = page.getByRole('treeitem', { name: /Work/ }).getByRole('button', { name: 'Work', exact: true })
+  await workFolder.click()
+  await expect(page.locator('.folder-row.selected')).toContainText('Work')
+  await expect(page.locator('.notes-message')).toContainText('Created folder “New folder”')
+  await expect(page.locator('.folder-row.selected')).toContainText('Work')
+  await expect(page.locator('.notes-message')).not.toContainText('did not match')
+  fixture.assertClean()
+})
+
+test('preserves a newer notebook detail while an older folder removal completes', async ({ page }) => {
+  const fixture = await installAPI(page, {
+    removeFolderMutationDelay: 500,
+    secondNotebook: true,
+  })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Notes' }).click()
+  await page.getByRole('treeitem', { name: /Work/ }).getByRole('button', { name: 'Work', exact: true }).click()
+  await page.getByRole('button', { name: /Web notebook/ }).click()
+  await page.getByRole('button', { name: 'Remove Work' }).click()
+  await expect.poll(() => fixture.requests.filter((request) => request === 'POST /graphql:RemoveFolder').length).toBe(1)
+  await page.getByRole('button', { name: /Other notebook/ }).click()
+  const detail = page.getByRole('complementary', { name: /Notebook details/ })
+  await expect(detail).toContainText('Other notebook')
+  await expect(page.getByRole('button', { name: /Web notebook/ })).toHaveCount(0)
+  await expect(detail).toContainText('Other notebook')
+  fixture.assertClean()
+})
+
+test('fails closed when scope refresh fails after folder removal', async ({ page }) => {
+  const fixture = await installAPI(page, { noteFolderRefreshFailureAfterRemove: true })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Notes' }).click()
+  await page.getByRole('treeitem', { name: /Work/ }).getByRole('button', { name: 'Work', exact: true }).click()
+  const listRow = page.getByRole('button', { name: /Web notebook/ })
+  await expect(listRow).toBeVisible()
+  await listRow.click()
+  await page.getByRole('button', { name: 'Remove Work' }).click()
+  await expect(page.getByRole('alert')).toContainText('folder unavailable')
+  await expect(page.getByRole('complementary', { name: /Notebook details/ })).toHaveCount(0)
+  await expect(listRow).toHaveCount(0)
+  await expect(page.locator('.notes-message')).toContainText('scope could not be refreshed')
+  expect(fixture.requests).toContain('POST /graphql:RemoveFolder')
+  fixture.assertClean()
+})
+
+test('keeps the newer notebook preview loading when an older notes response arrives', async ({ page }) => {
+  const fixture = await installAPI(page, {
+    secondNotebook: true,
+    notesDelayByNotebook: { 'notebook-web': 500, 'notebook-other': 1500 },
+  })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Notes' }).click()
+  await page.getByRole('button', { name: /Web notebook/ }).click()
+  await page.getByRole('button', { name: /Other notebook/ }).click()
+  const detail = page.getByRole('complementary', { name: /Notebook details/ })
+  await expect(detail).toContainText('Other notebook')
+  await expect.poll(() => fixture.requests.filter((request) => request === 'POST /graphql:Notes').length).toBe(2)
+  await page.waitForTimeout(700)
+  await expect(detail).not.toContainText('No notes in this notebook.')
+  await expect(detail).toContainText('Loading notes…')
+  await expect(detail).toContainText('Launch brief')
+  fixture.assertClean()
+})
+
+test('ends note preview paging after an exact full page', async ({ page }) => {
+  const fixture = await installAPI(page, { notePreviewExactPage: true })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Notes' }).click()
+  await page.getByRole('button', { name: /Web notebook/ }).click()
+  const detail = page.getByRole('complementary', { name: /Notebook details/ })
+  const loadMore = detail.getByRole('button', { name: 'Load more notes' })
+  await expect(loadMore).toBeVisible()
+  await loadMore.click()
+  await expect(loadMore).toHaveCount(0)
+  expect(fixture.requests.filter((request) => request === 'POST /graphql:Notes')).toHaveLength(2)
+  fixture.assertClean()
+})
+
+test('fails closed instead of showing the previous notebook scope', async ({ page }) => {
+  const fixture = await installAPI(page, { noteFolderFailure: true })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Notes' }).click()
+  await expect(page.getByRole('button', { name: /Web notebook/ })).toBeVisible()
+  await page.getByRole('treeitem', { name: /Work/ }).getByRole('button', { name: 'Work', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('folder unavailable')
+  await expect(page.getByRole('button', { name: /Web notebook/ })).toHaveCount(0)
   fixture.assertClean()
 })

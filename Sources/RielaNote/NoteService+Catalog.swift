@@ -48,7 +48,8 @@ public extension NoteService {
   func defineTag(
     name rawName: String,
     classId rawClassId: String? = nil,
-    parentTagId rawParentTagId: String? = nil
+    parentTagId rawParentTagId: String? = nil,
+    createOnly: Bool = false
   ) throws -> Tag {
     let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
     let classId = rawClassId?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -62,6 +63,9 @@ public extension NoteService {
           _ = try requireTagClass(classId: classId, in: db)
         }
         let existing = try findTag(name: name, in: db)
+        if createOnly, existing != nil {
+          throw NoteServiceError.invalidInput("tag already exists: \(name)")
+        }
         if let existing, existing.isSystem {
           guard existing.classId == classId || classId?.isEmpty != false else {
             throw NoteServiceError.protectedTag("system tag is protected: \(name)")

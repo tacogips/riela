@@ -121,3 +121,40 @@ timed out. Keep these accepted residual gaps explicit in handoffs:
   dedicated assertions independent of migration coverage;
 - the GraphQL document test does not yet exercise a parent/child/grandchild
   projection and assert the nested `parentTagId`.
+
+## Wrike-style web notebook view
+
+`feat/riela-note-web-notebook-view` adds one issue-resolution work package on
+top of the hierarchical-tag and progress contracts:
+
+- The SolidJS dashboard exposes Notes with an arbitrary-depth folder tree,
+  descendant-scoped List and Board views, a shared detail panel, folder chip
+  mutation, and a bounded read-only notes preview.
+- `DefineNoteTagInput.createOnly` is additive and defaults to `false`.
+  Web-created folders set it to `true`, making name collisions fail atomically
+  without changing the existing tag's class or parent.
+- Progress writes live in a notebook-keyed controller outside mounted view
+  state. Optimistic values are serialized and converge to the newest requested
+  database value across view and folder changes.
+- RielaApp composes its Note GraphQL executor at request time from the active
+  profile note root, behind the existing Host, Origin, CSRF, and JSON policy.
+- `riela serve --note-api --web-root web/dist` serves the SPA same-origin.
+  GET `/note/register` bootstraps the SPA while POST registration and GraphQL
+  retain service precedence. Static resolution rejects NUL, traversal, and
+  symlink escape attempts.
+- Browser authentication reuses the single-use registration code and keeps the
+  resulting bearer token in session storage; no CORS or alternate auth system
+  is added.
+
+The implementation gate is:
+
+```bash
+cd web && bun run lint && bun run typecheck && bun run test && bun run build
+cd web && bun run test:e2e
+swift build
+swift test --filter RielaServerTests
+swift test --filter RielaGraphQLTests
+swift test --filter RielaNoteTests
+swift test --filter RielaCLITests
+/usr/bin/xcrun swiftlint --quiet --no-cache
+```

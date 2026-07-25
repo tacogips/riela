@@ -21,6 +21,10 @@ class RielaAPIClient {
     return value
   }
 
+  noteHeaders(): Record<string, string> {
+    return this.csrfToken ? { 'X-Riela-CSRF': this.csrfToken } : {}
+  }
+
   async get<T extends { revision?: number }>(path: string, signal?: AbortSignal): Promise<T> {
     const value = await this.request<T>(path, { signal })
     if (typeof value.revision === 'number') this.revision = value.revision
@@ -46,7 +50,16 @@ class RielaAPIClient {
 
   private async request<T>(path: string, init: RequestInit): Promise<T> {
     const response = await fetch(path, { ...init, credentials: 'same-origin' })
-    const value = (await response.json()) as T | APIErrorPayload
+    const text = await response.text()
+    let value: T | APIErrorPayload
+    try {
+      value = JSON.parse(text) as T | APIErrorPayload
+    } catch {
+      if (!response.ok) {
+        throw new APIError(`Request failed (${response.status})`, response.status, 'request_failed')
+      }
+      throw new APIError('The server returned invalid JSON.', response.status, 'invalid_response')
+    }
     if (!response.ok) {
       const payload = value as APIErrorPayload
       throw new APIError(payload.error?.message ?? `Request failed (${response.status})`, response.status, payload.error?.code ?? 'request_failed')

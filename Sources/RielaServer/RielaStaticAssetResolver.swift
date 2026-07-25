@@ -1,5 +1,19 @@
 import Foundation
 
+private let rielaSPAServiceNamespaces = [
+  "/api",
+  "/graphql",
+  "/healthz",
+  "/note",
+  "/overview"
+]
+
+private func isRielaSPAServicePath(_ path: String) -> Bool {
+  rielaSPAServiceNamespaces.contains { namespace in
+    path == namespace || path.hasPrefix(namespace + "/")
+  }
+}
+
 public struct RielaStaticAssetResolver: Sendable {
   public var rootURL: URL
 
@@ -11,18 +25,20 @@ public struct RielaStaticAssetResolver: Sendable {
     guard request.method == "GET" || request.method == "HEAD" else {
       return nil
     }
-    guard !request.path.hasPrefix("/api/"),
-          request.path != "/healthz",
-          request.path != "/overview",
-          request.path != "/graphql",
-          request.path != "/note/register" else {
+    guard !isRielaSPAServicePath(request.path) else {
       return nil
+    }
+    guard !request.path.unicodeScalars.contains(where: { $0.value == 0 }),
+          !request.percentEncodedPath.lowercased().contains("%00"),
+          let decodedPath = request.percentEncodedPath.removingPercentEncoding,
+          decodedPath == request.path else {
+      return RielaHTTPResponse.text(status: 404, "Not Found")
     }
     let requestedPath = request.path == "/" ? "index.html" : String(request.path.dropFirst())
     if let response = fileResponse(relativePath: requestedPath) {
       return response
     }
-    guard !requestedPath.split(separator: "/").last.map({ $0.contains(".") })! else {
+    guard requestedPath.split(separator: "/").last?.contains(".") != true else {
       return RielaHTTPResponse.text(status: 404, "Not Found")
     }
     return fileResponse(relativePath: "index.html") ?? RielaHTTPResponse.text(status: 404, "Not Found")
@@ -71,5 +87,36 @@ public struct RielaStaticAssetResolver: Sendable {
     case "woff2": "font/woff2"
     default: "application/octet-stream"
     }
+  }
+}
+
+public struct RielaStaticSPAHTTPRouter: RielaHTTPRouteHandling {
+  public var service: any RielaHTTPRouteHandling
+  public var assets: RielaStaticAssetResolver
+
+  public init(service: any RielaHTTPRouteHandling, webRoot: URL) {
+    self.service = service
+    assets = RielaStaticAssetResolver(rootURL: webRoot)
+  }
+
+  public func response(for request: RielaHTTPRequest) async -> RielaHTTPResponse {
+    if request.method == "GET", request.path == "/note/register" {
+      var bootstrapRequest = request
+      bootstrapRequest.path = "/"
+      bootstrapRequest.percentEncodedPath = "/"
+      return assets.response(for: bootstrapRequest)
+        ?? RielaHTTPResponse.text(status: 404, "Not Found")
+    }
+    if isServiceRoute(request) {
+      return await service.response(for: request)
+    }
+    if let assetResponse = assets.response(for: request) {
+      return assetResponse
+    }
+    return await service.response(for: request)
+  }
+
+  private func isServiceRoute(_ request: RielaHTTPRequest) -> Bool {
+    isRielaSPAServicePath(request.path)
   }
 }

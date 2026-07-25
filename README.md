@@ -341,13 +341,29 @@ bar persist across relaunches. Custom workspace panels use semantic SwiftUI
 roles so the agent bar, attachment chips, pane backgrounds, and selected rows
 remain legible in dark and light appearances.
 
-The remote note API transport is not shipped yet. `riela note` and the built-in
-note add-ons execute note GraphQL documents in-process against the local store.
-`riela serve --note-api` currently prepares the note API configuration used by
-the serving layer, but it does not bind a network socket or expose a remote URL.
-Until a real listener lands, use `riela note client register --direct` for local
-administrative token creation only; do not treat generated registration
-challenge URLs as reachable remote endpoints.
+The web dashboard includes a **Notes** workspace with a hierarchical Folder
+tree, folder-scoped List and Board views, notebook progress, folder chips, and a
+read-only note preview. Folder creation is create-only, so a same-name
+collision never reparents or reclassifies an existing tag. Board progress
+updates are optimistic and reconcile the newest requested value even after the
+user changes view or folder.
+
+RielaApp serves the Notes GraphQL documents at its existing `/graphql` route
+against the active profile's note root, protected by the dashboard's Host,
+Origin, CSRF, and JSON checks. For a standalone same-origin web view, build the
+SPA and pass its output directory to the local listener:
+
+```bash
+cd web && bun run build
+riela serve --note-api --web-root web/dist
+```
+
+The command prints a one-use `/note/register?code=...` URL. Opening that URL
+loads the SPA, removes the code from browser history, redeems it through the
+existing registration flow, and keeps the bearer token in session storage.
+Static hosting preserves POST `/note/register` and `/graphql` service
+precedence, rejects traversal and symlink escapes, and does not require CORS or
+introduce another authentication system.
 
 ## Apple Gateway Add-Ons
 

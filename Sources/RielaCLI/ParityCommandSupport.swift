@@ -56,6 +56,7 @@ struct ParsedParityOptions: ParsableArguments, Sendable {
   @Option var host: String?
   @Option var port: Int?
   @Option var noteRoot: String?
+  @Option var webRoot: String?
   @Option(name: [.customLong("query"), .customLong("document")]) var graphQLQuery: String?
   @Option(name: [.customLong("query-file"), .customLong("document-file")]) var graphQLQueryFile: String?
   @Option(name: .customLong("operation-name")) var graphQLOperationName: String?
@@ -97,6 +98,9 @@ struct ParsedParityOptions: ParsableArguments, Sendable {
     }
     if let noteRoot {
       self.noteRoot = (noteRoot as NSString).expandingTildeInPath
+    }
+    if let webRoot {
+      self.webRoot = (webRoot as NSString).expandingTildeInPath
     }
   }
 }

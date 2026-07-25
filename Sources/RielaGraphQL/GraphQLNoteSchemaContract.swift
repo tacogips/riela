@@ -62,7 +62,7 @@ input CreateNoteInput {
 }
 input CreateNotebookInput { title: String!, kindTagName: String, metaJSON: String, originatingActionId: String }
 input DefineNoteTagClassInput { classId: String!, label: String!, description: String }
-input DefineNoteTagInput { name: String!, classId: String, parentTagId: String }
+input DefineNoteTagInput { name: String!, classId: String, parentTagId: String, createOnly: Boolean }
 input ScaffoldNoteIngestionWorkflowInput { workflowRoot: String!, workflowId: String!, notebookKindTag: String, assignedBy: String, translationEnabled: Boolean }
 # updateNote re-derives the stored title from bodyMarkdown, replacing any previously explicit title.
 input UpdateNoteInput { noteId: String!, bodyMarkdown: String!, originatingActionId: String }

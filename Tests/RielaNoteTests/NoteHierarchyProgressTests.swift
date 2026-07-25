@@ -4,6 +4,29 @@ import RielaSQLite
 import XCTest
 
 final class NoteHierarchyProgressTests: NoteTestCase {
+  func testCreateOnlyTagRejectsCollisionWithoutChangingClassOrParent() throws {
+    let service = try NoteService(driver: makeNoteDriver())
+    let parent = try service.defineTag(name: "Parent", classId: "folder")
+    let existing = try service.defineTag(
+      name: "Shared",
+      classId: "folder",
+      parentTagId: parent.tagId
+    )
+
+    XCTAssertThrowsError(
+      try service.defineTag(name: "Shared", classId: "topic", createOnly: true)
+    ) { error in
+      XCTAssertEqual(error as? NoteServiceError, .invalidInput("tag already exists: Shared"))
+    }
+    let persisted = try XCTUnwrap(try service.listTags().first { $0.tagId == existing.tagId })
+    XCTAssertEqual(persisted.classId, "folder")
+    XCTAssertEqual(persisted.parentTagId, parent.tagId)
+
+    let updated = try service.defineTag(name: "Shared", classId: "topic")
+    XCTAssertEqual(updated.classId, "topic", "omitted createOnly must retain upsert compatibility")
+    XCTAssertEqual(updated.parentTagId, parent.tagId)
+  }
+
   func testV3MigrationPreservesRowsAndAddsHierarchyAndProgressConstraints() throws {
     let driver = try makeNoteDriver()
     try driver.withDatabase { database in

@@ -35,6 +35,7 @@ struct ServeHTTPCommand: Sendable {
   ) async throws -> CLICommandResult {
     let host = parsed.host ?? "127.0.0.1"
     let requestedPort = parsed.port ?? 8787
+    let webRoot = try resolvedServeWebRoot(parsed: parsed)
     let configuration = RielaServerConfiguration(
       host: host,
       port: requestedPort,
@@ -46,7 +47,13 @@ struct ServeHTTPCommand: Sendable {
       routeHandler: listenerHandle.routeHandler,
       context: serveRequestContext(parsed: parsed)
     )
-    let server = RielaLocalHTTPServer(routeHandler: adapter)
+    let routeHandler: any RielaHTTPRouteHandling
+    if let webRoot {
+      routeHandler = RielaStaticSPAHTTPRouter(service: adapter, webRoot: webRoot)
+    } else {
+      routeHandler = adapter
+    }
+    let server = RielaLocalHTTPServer(routeHandler: routeHandler)
     let boundPort = try await server.start(host: host, port: requestedPort)
     let endpoint = "http://\(host):\(boundPort)"
     let readyResult = ScopedParityCommandResult(
@@ -57,7 +64,8 @@ struct ServeHTTPCommand: Sendable {
       records: readyRecords(
         endpoint: endpoint,
         noteAPIEnabled: parsed.noteAPIEnabled,
-        registrationChallenge: listenerHandle.registrationChallenge
+        registrationChallenge: listenerHandle.registrationChallenge,
+        webRoot: webRoot
       )
     )
     let rendered = try render(readyResult, options: command.options) { result in
@@ -92,14 +100,44 @@ struct ServeHTTPCommand: Sendable {
   private func readyRecords(
     endpoint: String,
     noteAPIEnabled: Bool,
-    registrationChallenge: NoteAPIRegistrationChallenge?
+    registrationChallenge: NoteAPIRegistrationChallenge?,
+    webRoot: URL?
   ) -> [String] {
     var records = ["endpoint=\(endpoint)", "noteAPIEnabled=\(noteAPIEnabled)"]
+    if let webRoot {
+      records.append("webRoot=\(webRoot.path)")
+    }
     if let registrationChallenge {
       records.append("registrationURL=\(registrationChallenge.registrationURL)")
     }
     return records
   }
+}
+
+func resolvedServeWebRoot(parsed: ParsedParityOptions) throws -> URL? {
+  guard let raw = parsed.webRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
+        !raw.isEmpty else {
+    return nil
+  }
+  let root = URL(fileURLWithPath: raw, isDirectory: true)
+    .standardizedFileURL
+    .resolvingSymlinksInPath()
+  let index = root
+    .appendingPathComponent("index.html", isDirectory: false)
+    .standardizedFileURL
+    .resolvingSymlinksInPath()
+  let rootPrefix = root.path.hasSuffix("/") ? root.path : root.path + "/"
+  var isDirectory: ObjCBool = false
+  let indexValues = try? index.resourceValues(forKeys: [.isRegularFileKey])
+  guard FileManager.default.fileExists(atPath: root.path, isDirectory: &isDirectory),
+        isDirectory.boolValue,
+        FileManager.default.isReadableFile(atPath: root.path),
+        index.path.hasPrefix(rootPrefix),
+        indexValues?.isRegularFile == true,
+        FileManager.default.isReadableFile(atPath: index.path) else {
+    throw CLIUsageError("--web-root requires a readable directory containing index.html")
+  }
+  return root
 }
 
 func resolvedServeNoteRoot(parsed: ParsedParityOptions) -> String {

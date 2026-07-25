@@ -5,6 +5,49 @@ import RielaNote
 import XCTest
 
 final class NoteGraphQLHierarchyProgressTests: XCTestCase {
+  func testDefineTagCreateOnlyProjectsAndRejectsCollisionAtomically() async throws {
+    let service = try makeHierarchyGraphQLService()
+    let first = await service.defineTag(
+      GraphQLDefineNoteTagInput(name: "Web Folder", classId: "folder", createOnly: true)
+    )
+    XCTAssertTrue(first.result.accepted)
+    let tagId = try XCTUnwrap(first.tag?.tagId)
+    let executor = NoteGraphQLDocumentExecutor(service: service)
+    let response = await executor.execute(GraphQLDocumentRequest(
+      query: """
+      mutation DefineFolder($input: DefineNoteTagInput!) {
+        defineNoteTag(input: $input) {
+          result { accepted status diagnostics }
+          tag { tagId classId parentTagId }
+        }
+      }
+      """,
+      variables: [
+        "input": .object([
+          "name": .string("Web Folder"),
+          "classId": .string("topic"),
+          "createOnly": .bool(true)
+        ])
+      ],
+      operationName: "DefineFolder"
+    ))
+    let payload = try payloadObject(response.body, field: "defineNoteTag")
+    let result = try objectValue(payload["result"], field: "result")
+    XCTAssertEqual(result["accepted"], .bool(false))
+    XCTAssertEqual(result["status"], .string("invalid_request"))
+    let persisted = await service.tags()
+    let tag = try XCTUnwrap(persisted.value?.first { $0.tagId == tagId })
+    XCTAssertEqual(tag.classId, "folder")
+    XCTAssertNil(tag.parentTagId)
+
+    let decoded = try JSONDecoder().decode(
+      GraphQLDefineNoteTagInput.self,
+      from: Data(#"{"name":"Compatible"}"#.utf8)
+    )
+    XCTAssertFalse(decoded.createOnly)
+    XCTAssertTrue(GraphQLContractProjector.schemaContract.contains("createOnly: Boolean"))
+  }
+
   func testGraphQLProjectsHierarchyProgressFolderAndExpandedNotebookFilters() async throws {
     let service = try makeHierarchyGraphQLService()
     let parentResult = await service.defineTag(

@@ -185,6 +185,7 @@ let package = Package(
         "CodexAgent",
         "ClaudeCodeAgent",
         "CursorCLIAgent",
+        "RielaGraphQL",
         "RielaServer",
         "RielaViewer",
         "RielaObservability",

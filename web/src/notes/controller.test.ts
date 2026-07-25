@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { NotebookProgressController } from './controller'
+import { NotebookProgressController, NotebookScopeController } from './controller'
 import type { Notebook, NotebookProgress } from './types'
 
 const notebook = (progress: NotebookProgress): Notebook => ({
@@ -71,5 +71,40 @@ describe('progress convergence', () => {
 
     expect(controller.adopt(notebook('none'), refreshSnapshot).progress).toBe('done')
     expect(controller.adopt(notebook('done'), controller.snapshot()).progress).toBe('done')
+  })
+})
+
+describe('notebook scope generation', () => {
+  test('keeps one mutually exclusive folder, tag, or all-notebooks scope', () => {
+    const controller = new NotebookScopeController()
+    expect(controller.tagFilter()).toEqual([])
+
+    controller.select({ kind: 'folder', tagId: 'folder-work', tagName: 'Work' })
+    expect(controller.current()).toEqual({ kind: 'folder', tagId: 'folder-work', tagName: 'Work' })
+    expect(controller.tagFilter()).toEqual(['Work'])
+
+    controller.select({ kind: 'tag', tagId: 'topic-launch', tagName: 'Launch', classId: 'topic' })
+    expect(controller.current()).toEqual({
+      kind: 'tag',
+      tagId: 'topic-launch',
+      tagName: 'Launch',
+      classId: 'topic',
+    })
+    expect(controller.tagFilter()).toEqual(['Launch'])
+
+    controller.select({ kind: 'all' })
+    expect(controller.tagFilter()).toEqual([])
+  })
+
+  test('invalidates older folder-to-tag and tag-to-folder completions', () => {
+    const controller = new NotebookScopeController()
+    const folder = controller.select({ kind: 'folder', tagId: 'folder-work', tagName: 'Work' })
+    const tag = controller.select({ kind: 'tag', tagId: 'topic-launch', tagName: 'Launch', classId: 'topic' })
+    expect(controller.isCurrent(folder)).toBe(false)
+    expect(controller.isCurrent(tag)).toBe(true)
+
+    const newerFolder = controller.select({ kind: 'folder', tagId: 'folder-archive', tagName: 'Archive' })
+    expect(controller.isCurrent(tag)).toBe(false)
+    expect(controller.isCurrent(newerFolder)).toBe(true)
   })
 })

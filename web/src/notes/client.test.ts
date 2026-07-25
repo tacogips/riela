@@ -35,7 +35,7 @@ function environment(
 }
 
 describe('Note GraphQL transport', () => {
-  test('sends RielaApp CSRF credentials and bounded folder variables', async () => {
+  test('sends RielaApp CSRF credentials, bounded scope variables, and notebook metadata selections', async () => {
     const harness = environment([{ data: { notebooks: { result: { accepted: true, status: 'ok', diagnostics: [] }, value: [] } } }])
     const client = new NoteGraphQLClient('riela-app', {
       ...harness.value,
@@ -47,8 +47,10 @@ describe('Note GraphQL transport', () => {
       },
     })
     await client.notebooks(200, 'updatedAtDesc', ['Work'])
-    const body = JSON.parse(String(harness.requests[0]?.init?.body)) as { variables: Record<string, unknown> }
+    const body = requestBody(harness.requests[0])
     expect(body.variables).toEqual({ limit: 200, offset: 200, sort: 'updatedAtDesc', tagFilter: ['Work'] })
+    expect(body.query).toContain('firstNotePreview noteCount')
+    expect(body.query).toContain('classId parentTagId')
     expect(harness.requests[0]?.init?.credentials).toBe('same-origin')
   })
 
@@ -66,20 +68,22 @@ describe('Note GraphQL transport', () => {
     expect(JSON.parse(String(harness.requests[0]?.init?.body))).toEqual({ code: 'once', displayName: 'Riela Web' })
   })
 
-  test('sends explicit human provenance for folder membership', async () => {
+  test('sends explicit human provenance for catalog-selected tag membership', async () => {
     const harness = environment([{ data: { applyNotebookTags: {
       result: { accepted: true, status: 'ok', diagnostics: [] },
       notebook: { notebookId: 'book', title: 'Book', progress: 'none', createdAt: '', updatedAt: '', tags: [] },
     } } }])
     const client = new NoteGraphQLClient('riela-app', harness.value)
-    await client.applyFolder('book', 'Work')
+    await client.applyTag('book', 'Urgent')
     const body = JSON.parse(String(harness.requests[0]?.init?.body)) as { variables: { input: Record<string, unknown> } }
     expect(body.variables.input).toEqual({
       notebookId: 'book',
-      tags: ['Work'],
+      tags: ['Urgent'],
       provenance: 'human',
       assignedBy: 'riela-web',
     })
+    expect(requestBody(harness.requests[0]).operationName).toBe('ApplyNotebookTag')
+    expect(requestBody(harness.requests[0]).query).toContain('firstNotePreview noteCount')
   })
 
   test('sends create-only folder variables and human remove provenance', async () => {
@@ -112,7 +116,7 @@ describe('Note GraphQL transport', () => {
     const client = new NoteGraphQLClient('riela-app', harness.value)
 
     expect(await client.defineFolder('Child', 'folder', 'folder-root')).toEqual(created)
-    await client.removeFolder('book', 'Child')
+    await client.removeTag('book', 'Child')
     const defineBody = requestBody(harness.requests[0])
     const removeBody = requestBody(harness.requests[1])
     expect(defineBody.variables).toEqual({
@@ -128,6 +132,8 @@ describe('Note GraphQL transport', () => {
       tagName: 'Child',
       provenance: 'human',
     })
+    expect(removeBody.operationName).toBe('RemoveNotebookTag')
+    expect(removeBody.query).toContain('firstNotePreview noteCount')
   })
 
   test('distinguishes rejected results and GraphQL envelope failures', async () => {
@@ -161,8 +167,14 @@ describe('Note GraphQL transport', () => {
 
 function requestBody(request?: { init?: RequestInit }): {
   variables: Record<string, unknown>
+  query: string
+  operationName: string
 } {
-  return JSON.parse(String(request?.init?.body)) as { variables: Record<string, unknown> }
+  return JSON.parse(String(request?.init?.body)) as {
+    variables: Record<string, unknown>
+    query: string
+    operationName: string
+  }
 }
 
 async function expectErrorKind(

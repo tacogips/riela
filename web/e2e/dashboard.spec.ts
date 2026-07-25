@@ -47,6 +47,7 @@ type FixtureOptions = {
   secondNotebook?: boolean
   notePreviewExactPage?: boolean
   notesDelayByNotebook?: Record<string, number>
+  scopeDelayByTag?: Record<string, number>
 }
 
 async function installAPI(page: Page, options: FixtureOptions = {}) {
@@ -55,6 +56,7 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
   const browserErrors: string[] = []
   const failedRequests: string[] = []
   const badResponses: string[] = []
+  const notebookFilters: string[][] = []
   let mutationCount = 0
   let configuredPort = 19091
   let restartRequired = false
@@ -62,11 +64,16 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
   let folderRemoved = false
   const folder = { tagId: 'folder-work', name: 'Work', classId: 'folder', parentTagId: null, isSystem: false, createdAt: '2026-07-25T00:00:00Z' }
   const child = { tagId: 'folder-launch', name: 'Launch', classId: 'folder', parentTagId: 'folder-work', isSystem: false, createdAt: '2026-07-25T00:00:00Z' }
+  const topicRoot = { tagId: 'topic-roadmap', name: 'Roadmap', classId: 'topic', parentTagId: null, isSystem: false, createdAt: '2026-07-25T00:00:00Z' }
+  const topicChild = { tagId: 'topic-web', name: 'Web', classId: 'topic', parentTagId: 'topic-roadmap', isSystem: false, createdAt: '2026-07-25T00:00:00Z' }
+  const priority = { tagId: 'priority-high', name: 'High', classId: 'priority', parentTagId: null, isSystem: false, createdAt: '2026-07-25T00:00:00Z' }
+  const classless = { tagId: 'tag-personal', name: 'Personal', classId: null, parentTagId: null, isSystem: false, createdAt: '2026-07-25T00:00:00Z' }
   const foldersByName = new Map([folder, child].map((tag) => [tag.name, tag]))
-  let noteFolderNames = ['Work']
-  const folderAssignments = (names: string[]) => names.flatMap((name) => {
-    const tag = foldersByName.get(name)
-    return tag ? [{ tag, provenance: 'human', assignedBy: 'riela-web', deletable: true, createdAt: '2026-07-25T00:00:00Z' }] : []
+  const tagsByName = new Map([folder, child, topicRoot, topicChild, priority, classless].map((tag) => [tag.name, tag]))
+  let noteTagNames = ['Work', 'Web', 'High', 'Personal']
+  const assignments = (names: string[]) => names.flatMap((name) => {
+    const tag = tagsByName.get(name)
+    return tag ? [{ tag, provenance: 'human', assignedBy: 'riela-web', deletable: tag.tagId !== 'priority-high', createdAt: '2026-07-25T00:00:00Z' }] : []
   })
   const currentNotebook = () => ({
     notebookId: 'notebook-web',
@@ -74,7 +81,9 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
     progress: noteProgress,
     createdAt: '2026-07-25T00:00:00Z',
     updatedAt: '2026-07-25T01:00:00Z',
-    tags: folderAssignments(noteFolderNames),
+    tags: assignments(noteTagNames),
+    firstNotePreview: 'First **plain-text** launch note',
+    noteCount: 3,
   })
   const otherNotebook = () => ({
     notebookId: 'notebook-other',
@@ -82,14 +91,18 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
     progress: 'pending',
     createdAt: '2026-07-25T00:00:00Z',
     updatedAt: '2026-07-25T02:00:00Z',
-    tags: folderAssignments(['Work']),
+    tags: assignments(['Work']),
+    firstNotePreview: '   ',
+    noteCount: 0,
   })
-  const matchesFolderScope = (tagFilter: unknown, assignedFolderNames: string[]): boolean => {
+  const matchesScope = (tagFilter: unknown, assignedTagNames: string[]): boolean => {
     if (!Array.isArray(tagFilter) || tagFilter.length === 0) return true
     return tagFilter.some((name) =>
       name === 'Work'
-        ? assignedFolderNames.some((assigned) => assigned === 'Work' || assigned === 'Launch')
-        : typeof name === 'string' && assignedFolderNames.includes(name))
+        ? assignedTagNames.some((assigned) => assigned === 'Work' || assigned === 'Launch')
+        : name === 'Roadmap'
+          ? assignedTagNames.some((assigned) => assigned === 'Roadmap' || assigned === 'Web')
+          : typeof name === 'string' && assignedTagNames.includes(name))
   }
   page.on('console', (message) => {
     if (message.type() !== 'error') return
@@ -116,10 +129,21 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
     requests.push(`POST /graphql:${operation}`)
     const result = (value: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: value }) })
     const accepted = { accepted: true, status: 'ok', diagnostics: [] }
-    if (operation === 'Tags') return result({ tags: { result: accepted, value: [...foldersByName.values()] } })
-    if (operation === 'TagClasses') return result({ tagClasses: { result: accepted, value: [{ classId: 'folder', label: 'Folder', description: null }] } })
+    if (operation === 'Tags') return result({ tags: { result: accepted, value: [...tagsByName.values()] } })
+    if (operation === 'TagClasses') return result({ tagClasses: { result: accepted, value: [
+      { classId: 'folder', label: 'Folder', description: null },
+      { classId: 'priority', label: 'Priority', description: null },
+      { classId: 'topic', label: 'Topic', description: null },
+      { classId: 'empty', label: 'Empty class', description: null },
+    ] } })
     if (operation === 'Notebooks') {
       const tagFilter = body.variables?.tagFilter
+      notebookFilters.push(Array.isArray(tagFilter)
+        ? tagFilter.filter((value): value is string => typeof value === 'string')
+        : [])
+      const requestedTag = Array.isArray(tagFilter) && typeof tagFilter[0] === 'string' ? tagFilter[0] : ''
+      const scopeDelay = options.scopeDelayByTag?.[requestedTag]
+      if (scopeDelay) await new Promise((resolve) => setTimeout(resolve, scopeDelay))
       if (options.createdFolderDelay && Array.isArray(tagFilter) && tagFilter.includes('New folder')) {
         await new Promise((resolve) => setTimeout(resolve, options.createdFolderDelay))
       }
@@ -131,14 +155,14 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
         return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'folder unavailable' }) })
       }
       const candidates = [
-        { notebook: currentNotebook(), folderNames: noteFolderNames },
-        ...(options.secondNotebook ? [{ notebook: otherNotebook(), folderNames: ['Work'] }] : []),
+        { notebook: currentNotebook(), tagNames: noteTagNames },
+        ...(options.secondNotebook ? [{ notebook: otherNotebook(), tagNames: ['Work'] }] : []),
       ]
       return result({
         notebooks: {
           result: accepted,
           value: candidates
-            .filter((candidate) => matchesFolderScope(tagFilter, candidate.folderNames))
+            .filter((candidate) => matchesScope(tagFilter, candidate.tagNames))
             .map((candidate) => candidate.notebook),
         },
       })
@@ -171,21 +195,21 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
       noteProgress = String(body.variables?.progress ?? noteProgress)
       return result({ setNotebookProgress: { result: accepted, notebook: currentNotebook() } })
     }
-    if (operation === 'ApplyFolder') {
+    if (operation === 'ApplyNotebookTag') {
       const input = body.variables?.input as { tags?: unknown } | undefined
       const names = Array.isArray(input?.tags)
-        ? input.tags.filter((name): name is string => typeof name === 'string' && foldersByName.has(name))
+        ? input.tags.filter((name): name is string => typeof name === 'string' && tagsByName.has(name))
         : []
-      noteFolderNames = [...new Set([...noteFolderNames, ...names])]
+      noteTagNames = [...new Set([...noteTagNames, ...names])]
       return result({ applyNotebookTags: { result: accepted, notebook: currentNotebook() } })
     }
-    if (operation === 'RemoveFolder') {
+    if (operation === 'RemoveNotebookTag') {
       if (options.removeFolderMutationDelay) {
         await new Promise((resolve) => setTimeout(resolve, options.removeFolderMutationDelay))
       }
       const tagName = body.variables?.tagName
       if (body.variables?.notebookId === 'notebook-web' && typeof tagName === 'string') {
-        noteFolderNames = noteFolderNames.filter((name) => name !== tagName)
+        noteTagNames = noteTagNames.filter((name) => name !== tagName)
       }
       folderRemoved = true
       const notebook = body.variables?.notebookId === 'notebook-other' ? otherNotebook() : currentNotebook()
@@ -204,6 +228,7 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
         parentTagId: typeof input?.parentTagId === 'string' ? input.parentTagId : null,
       }
       foldersByName.set(created.name, created)
+      tagsByName.set(created.name, created)
       return result({ defineNoteTag: { result: accepted, tag: created } })
     }
     unexpectedRequests.push(`POST /graphql:${operation}`)
@@ -252,6 +277,8 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
   })
   return {
     requests,
+    notebookFilters,
+    removeCatalogTag: (name: string) => { tagsByName.delete(name) },
     mutationCount: () => mutationCount,
     assertClean: () => {
       expect(unexpectedRequests, 'unexpected API requests').toEqual([])
@@ -362,12 +389,12 @@ test('navigates folder-scoped List and Board Notes with detail and progress cont
   await listRow.click()
   const detail = page.getByRole('complementary', { name: /Notebook details/ })
   await expect(detail).toBeVisible()
-  await detail.getByLabel('Add folder').selectOption('Launch')
+  await detail.getByLabel('Add folder').selectOption({ label: 'Launch' })
   await expect(detail.getByRole('button', { name: 'Remove Launch' })).toBeVisible()
-  expect(fixture.requests).toContain('POST /graphql:ApplyFolder')
+  expect(fixture.requests).toContain('POST /graphql:ApplyNotebookTag')
   await detail.getByRole('button', { name: 'Remove Launch' }).click()
   await expect(detail.getByRole('button', { name: 'Remove Launch' })).toHaveCount(0)
-  expect(fixture.requests).toContain('POST /graphql:RemoveFolder')
+  expect(fixture.requests).toContain('POST /graphql:RemoveNotebookTag')
   await page.getByRole('button', { name: 'Close notebook details' }).click()
   await expect(listRow).toBeFocused()
   const workFolder = page.getByRole('treeitem', { name: /Work/ }).getByRole('button', { name: 'Work', exact: true })
@@ -397,7 +424,126 @@ test('navigates folder-scoped List and Board Notes with detail and progress cont
   await expect(page.locator('.notes-message')).toContainText('the notebook left this folder scope')
   await expect(page.getByRole('button', { name: /Web notebook/ })).toHaveCount(0)
   expect(fixture.requests).toContain('POST /graphql:SetProgress')
-  expect(fixture.requests.filter((request) => request === 'POST /graphql:RemoveFolder')).toHaveLength(2)
+  expect(fixture.requests.filter((request) => request === 'POST /graphql:RemoveNotebookTag')).toHaveLength(2)
+  fixture.assertClean()
+})
+
+test('renders notebook preview and count metadata while omitting empty previews', async ({ page }) => {
+  const fixture = await installAPI(page, { secondNotebook: true })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Notes' }).click()
+  const webRow = page.getByRole('button', { name: /Web notebook/ })
+  const otherRow = page.getByRole('button', { name: /Other notebook/ })
+  await expect(webRow).toContainText('3 notes')
+  await expect(webRow.locator('.list-preview')).toHaveText('First **plain-text** launch note')
+  await expect(otherRow).toContainText('0 notes')
+  await expect(otherRow.locator('.notebook-preview')).toHaveCount(0)
+
+  await page.getByRole('tab', { name: 'Board' }).click()
+  const webCard = page.locator('.board-card').filter({ hasText: 'Web notebook' })
+  const otherCard = page.locator('.board-card').filter({ hasText: 'Other notebook' })
+  await expect(webCard.locator('.board-preview')).toHaveText('First **plain-text** launch note')
+  await expect(webCard).toContainText('3 notes')
+  await expect(otherCard.locator('.notebook-preview')).toHaveCount(0)
+  fixture.assertClean()
+})
+
+test('groups all-class detail chips and only applies existing assignable tags', async ({ page }) => {
+  const fixture = await installAPI(page)
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Notes' }).click()
+  await page.getByRole('button', { name: /Web notebook/ }).click()
+  const detail = page.getByRole('complementary', { name: /Notebook details/ })
+  await expect(detail.locator('.assignment-group h3')).toHaveText(['Folder', 'Priority', 'Topic', 'Tags'])
+  await expect(detail.getByText('High', { exact: true })).toBeVisible()
+  await expect(detail.getByRole('button', { name: 'Remove High' })).toHaveCount(0)
+
+  await detail.getByLabel('Tag class').selectOption({ label: 'Empty class' })
+  await expect(detail.getByLabel('Existing tag')).toBeDisabled()
+  await expect(detail.locator('.tag-picker-help')).toContainText('No existing tag')
+
+  await detail.getByLabel('Tag class').selectOption({ label: 'Topic' })
+  await expect(detail.getByLabel('Existing tag').locator('option', { hasText: 'Web' })).toHaveCount(0)
+  await detail.getByLabel('Existing tag').selectOption({ label: 'Roadmap' })
+  await detail.getByRole('button', { name: 'Add selected tag' }).click()
+  await expect(detail.getByRole('button', { name: 'Remove Roadmap' })).toBeVisible()
+  await detail.getByRole('button', { name: 'Remove Roadmap' }).click()
+  await expect(detail.getByRole('button', { name: 'Remove Roadmap' })).toHaveCount(0)
+  expect(fixture.requests).toContain('POST /graphql:ApplyNotebookTag')
+  expect(fixture.requests).toContain('POST /graphql:RemoveNotebookTag')
+  fixture.assertClean()
+})
+
+test('scopes List and Board from classed tag trees with breadcrumb and mutual clearing', async ({ page }) => {
+  const fixture = await installAPI(page)
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Notes' }).click()
+  await page.getByRole('treeitem', { name: /Work/ }).getByRole('button', { name: 'Work', exact: true }).focus()
+  await page.getByRole('tab', { name: 'Tags', exact: true }).click()
+  await expect(page.locator('.tag-group-toggle')).toHaveText(['› Priority1', '› Topic2', '› Tags1'])
+  const topicGroup = page.getByRole('button', { name: /Topic/ })
+  await topicGroup.click()
+  await topicGroup.focus()
+  await page.keyboard.press('Tab')
+  await expect(page.getByRole('button', { name: 'Expand Roadmap' })).toBeFocused()
+  await page.keyboard.press('Tab')
+  const roadmapTag = page.getByRole('button', { name: 'Roadmap', exact: true })
+  await expect(roadmapTag).toBeFocused()
+  await page.keyboard.press('ArrowRight')
+  await page.keyboard.press('ArrowDown')
+  await expect(page.getByRole('button', { name: 'Web', exact: true })).toBeFocused()
+  await roadmapTag.click()
+  await expect(page.locator('.notes-breadcrumb')).toContainText('Topic')
+  await expect(page.locator('.notes-breadcrumb')).toContainText('Roadmap')
+  await expect(page.getByRole('button', { name: /Web notebook/ })).toBeVisible()
+  expect(fixture.notebookFilters).toContainEqual(['Roadmap'])
+
+  await page.getByRole('tab', { name: 'Board' }).click()
+  await expect(page.getByRole('region', { name: 'No status notebooks' })).toContainText('Web notebook')
+  await page.getByRole('tab', { name: 'Folder', exact: true }).click()
+  await page.getByRole('treeitem', { name: /Work/ }).getByRole('button', { name: 'Work', exact: true }).click()
+  await expect(page.locator('.notes-breadcrumb')).toContainText('Work')
+  await expect(page.locator('.notes-breadcrumb')).not.toContainText('Topic')
+  await expect.poll(() => fixture.notebookFilters.some((filter) => filter.length === 1 && filter[0] === 'Work')).toBe(true)
+  await page.getByRole('button', { name: 'All notebooks' }).first().click()
+  await expect.poll(() => fixture.notebookFilters.at(-1)).toEqual([])
+  fixture.assertClean()
+})
+
+test('clears tag scope and stale detail when the selected catalog tag disappears', async ({ page }) => {
+  const fixture = await installAPI(page)
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Notes' }).click()
+  await page.getByRole('tab', { name: 'Tags', exact: true }).click()
+  await page.getByRole('button', { name: /Topic/ }).click()
+  await page.getByRole('button', { name: 'Roadmap', exact: true }).click()
+  await page.getByRole('button', { name: /Web notebook/ }).click()
+  await expect(page.getByRole('complementary', { name: /Notebook details/ })).toBeVisible()
+
+  fixture.removeCatalogTag('Roadmap')
+  await page.getByRole('button', { name: 'Refresh' }).click()
+  await expect.poll(() => fixture.notebookFilters.at(-1)).toEqual([])
+  await expect(page.getByRole('complementary', { name: /Notebook details/ })).toHaveCount(0)
+  await expect(page.locator('.notes-breadcrumb')).not.toContainText('Roadmap')
+  await expect(page.getByRole('button', { name: /Web notebook/ })).toBeVisible()
+  fixture.assertClean()
+})
+
+test('rejects a delayed tag-scope completion after a newer folder selection', async ({ page }) => {
+  const fixture = await installAPI(page, { scopeDelayByTag: { Roadmap: 500 } })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Notes' }).click()
+  await page.getByRole('tab', { name: 'Tags', exact: true }).click()
+  await page.getByRole('button', { name: /Topic/ }).click()
+  await page.getByRole('button', { name: 'Roadmap', exact: true }).click()
+  await page.getByRole('tab', { name: 'Folder', exact: true }).click()
+  await page.getByRole('treeitem', { name: /Work/ }).getByRole('button', { name: 'Work', exact: true }).click()
+  await expect(page.locator('.notes-breadcrumb')).toContainText('Work')
+  await expect(page.getByRole('button', { name: /Web notebook/ })).toBeVisible()
+  await page.waitForTimeout(650)
+  await expect(page.locator('.notes-breadcrumb')).toContainText('Work')
+  await expect(page.locator('.notes-breadcrumb')).not.toContainText('Topic')
+  await expect(page.getByRole('button', { name: /Web notebook/ })).toBeVisible()
   fixture.assertClean()
 })
 
@@ -442,7 +588,7 @@ test('preserves a newer notebook detail while an older folder removal completes'
   await page.getByRole('treeitem', { name: /Work/ }).getByRole('button', { name: 'Work', exact: true }).click()
   await page.getByRole('button', { name: /Web notebook/ }).click()
   await page.getByRole('button', { name: 'Remove Work' }).click()
-  await expect.poll(() => fixture.requests.filter((request) => request === 'POST /graphql:RemoveFolder').length).toBe(1)
+  await expect.poll(() => fixture.requests.filter((request) => request === 'POST /graphql:RemoveNotebookTag').length).toBe(1)
   await page.getByRole('button', { name: /Other notebook/ }).click()
   const detail = page.getByRole('complementary', { name: /Notebook details/ })
   await expect(detail).toContainText('Other notebook')
@@ -464,7 +610,7 @@ test('fails closed when scope refresh fails after folder removal', async ({ page
   await expect(page.getByRole('complementary', { name: /Notebook details/ })).toHaveCount(0)
   await expect(listRow).toHaveCount(0)
   await expect(page.locator('.notes-message')).toContainText('scope could not be refreshed')
-  expect(fixture.requests).toContain('POST /graphql:RemoveFolder')
+  expect(fixture.requests).toContain('POST /graphql:RemoveNotebookTag')
   fixture.assertClean()
 })
 

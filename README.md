@@ -341,12 +341,15 @@ bar persist across relaunches. Custom workspace panels use semantic SwiftUI
 roles so the agent bar, attachment chips, pane backgrounds, and selected rows
 remain legible in dark and light appearances.
 
-The web dashboard includes a **Notes** workspace with a hierarchical Folder
-tree, folder-scoped List and Board views, notebook progress, folder chips, and a
-read-only note preview. Folder creation is create-only, so a same-name
-collision never reparents or reclassifies an existing tag. Board progress
-updates are optimistic and reconcile the newest requested value even after the
-user changes view or folder.
+The web dashboard includes a **Notes** workspace with Folder and Tags
+navigation, descendant-scoped List and Board views, notebook progress,
+class-grouped tag chips, and a read-only note preview. Cards and rows show the
+first note excerpt and note count when available. The detail panel can add only
+existing catalog tags and exposes removal only for deletable assignments.
+Folder creation is create-only, so a same-name collision never reparents or
+reclassifies an existing tag. Folder and tag selections share one active scope;
+Board progress updates and scope loads reject stale completions after the user
+changes view or navigation.
 
 RielaApp serves the Notes GraphQL documents at its existing `/graphql` route
 against the active profile's note root, protected by the dashboard's Host,

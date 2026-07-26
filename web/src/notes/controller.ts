@@ -1,5 +1,42 @@
 import type { Notebook, NotebookProgress } from './types'
 
+export type NotebookScope =
+  | { kind: 'all' }
+  | { kind: 'folder'; tagId: string; tagName: string }
+  | { kind: 'tag'; tagId: string; tagName: string; classId: string | null }
+
+export interface NotebookScopeSnapshot {
+  generation: number
+  scope: NotebookScope
+}
+
+export class NotebookScopeController {
+  private generation = 0
+  private scope: NotebookScope = { kind: 'all' }
+
+  current(): NotebookScope {
+    return this.scope
+  }
+
+  select(scope: NotebookScope): NotebookScopeSnapshot {
+    this.generation += 1
+    this.scope = scope
+    return this.snapshot()
+  }
+
+  snapshot(): NotebookScopeSnapshot {
+    return { generation: this.generation, scope: this.scope }
+  }
+
+  isCurrent(snapshot: NotebookScopeSnapshot): boolean {
+    return snapshot.generation === this.generation
+  }
+
+  tagFilter(snapshot = this.snapshot()): string[] {
+    return snapshot.scope.kind === 'all' ? [] : [snapshot.scope.tagName]
+  }
+}
+
 export interface ProgressOperations {
   setProgress(notebookId: string, progress: NotebookProgress): Promise<Notebook>
   readNotebook(notebookId: string): Promise<Notebook>

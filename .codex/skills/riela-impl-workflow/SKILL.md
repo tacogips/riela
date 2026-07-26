@@ -146,6 +146,37 @@ top of the hierarchical-tag and progress contracts:
   resulting bearer token in session storage; no CORS or alternate auth system
   is added.
 
+The `feat/riela-note-web-tags-and-card-preview` extension retains those
+contracts and adds:
+
+- first-note plain-text excerpts and note counts to Board cards and List rows,
+  omitting empty preview blocks;
+- deterministic Folder-first, named-class, and classless tag-assignment
+  sections with deletable-only removal and existing-catalog-only addition; and
+- a Folder/Tags navigation switch whose class-scoped trees, breadcrumbs, and
+  one-name descendant filters share one generation-safe active scope.
+
+Its additional implementation gate is:
+
+```bash
+cd web && bun run lint && bun run typecheck && bun run test && bun run build
+cd web && bun run test:e2e
+swift build
+swift test --filter RielaServerTests
+swift test --filter RielaGraphQLTests
+swift test --filter RielaNoteTests
+swift test --filter RielaAppSupportTests --skip 'DaemonWorkflowNodePatchTests.testRuntimeRestartsWorkflowWhenEventSourceExits'
+git diff --check
+```
+
+The Step 7 decision was `accepted_adversarial_review_with_low_findings`: no
+high- or mid-severity production failure remained. Keep the accepted low risks
+explicit in handoffs: a refreshed catalog can leave a stale add-tag selection
+enabled as a silent no-op; a scoped tag reclassified between folder and
+non-folder can remain hidden or mislabeled until the scope is cleared; and an
+explicitly null mutation preview can preserve older list metadata until
+refresh.
+
 The implementation gate is:
 
 ```bash

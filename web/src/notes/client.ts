@@ -82,7 +82,7 @@ export class NoteGraphQLClient {
       query Notebooks($limit: Int, $offset: Int, $sort: NoteListSort, $tagFilter: [String!]) {
         notebooks(limit: $limit, offset: $offset, sort: $sort, tagFilter: $tagFilter) {
           result { accepted status diagnostics }
-          value { notebookId title progress createdAt updatedAt tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
+          value { notebookId title progress createdAt updatedAt firstNotePreview noteCount tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
         }
       }
     `, { limit: 200, offset, sort, tagFilter }, (data) => data.notebooks)
@@ -93,7 +93,7 @@ export class NoteGraphQLClient {
       query Notebook($notebookId: String!) {
         notebook(notebookId: $notebookId) {
           result { accepted status diagnostics }
-          value { notebookId title progress createdAt updatedAt tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
+          value { notebookId title progress createdAt updatedAt firstNotePreview noteCount tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
         }
       }
     `, { notebookId }, (data) => data.notebook)
@@ -123,23 +123,23 @@ export class NoteGraphQLClient {
     return payload.tag
   }
 
-  async applyFolder(notebookId: string, tagName: string): Promise<Notebook> {
-    return this.notebookMutation('ApplyFolder', `
-      mutation ApplyFolder($input: ApplyNotebookTagsInput!) {
+  async applyTag(notebookId: string, tagName: string): Promise<Notebook> {
+    return this.notebookMutation('ApplyNotebookTag', `
+      mutation ApplyNotebookTag($input: ApplyNotebookTagsInput!) {
         applyNotebookTags(input: $input) {
           result { accepted status diagnostics }
-          notebook { notebookId title progress createdAt updatedAt tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
+          notebook { notebookId title progress createdAt updatedAt firstNotePreview noteCount tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
         }
       }
     `, { input: { notebookId, tags: [tagName], provenance: 'human', assignedBy: 'riela-web' } }, 'applyNotebookTags')
   }
 
-  async removeFolder(notebookId: string, tagName: string): Promise<Notebook> {
-    return this.notebookMutation('RemoveFolder', `
-      mutation RemoveFolder($notebookId: String!, $tagName: String!, $provenance: String) {
+  async removeTag(notebookId: string, tagName: string): Promise<Notebook> {
+    return this.notebookMutation('RemoveNotebookTag', `
+      mutation RemoveNotebookTag($notebookId: String!, $tagName: String!, $provenance: String) {
         removeNotebookTag(notebookId: $notebookId, tagName: $tagName, provenance: $provenance) {
           result { accepted status diagnostics }
-          notebook { notebookId title progress createdAt updatedAt tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
+          notebook { notebookId title progress createdAt updatedAt firstNotePreview noteCount tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
         }
       }
     `, { notebookId, tagName, provenance: 'human' }, 'removeNotebookTag')
@@ -150,7 +150,7 @@ export class NoteGraphQLClient {
       mutation SetProgress($notebookId: String!, $progress: NotebookProgress!) {
         setNotebookProgress(notebookId: $notebookId, progress: $progress) {
           result { accepted status diagnostics }
-          notebook { notebookId title progress createdAt updatedAt tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
+          notebook { notebookId title progress createdAt updatedAt firstNotePreview noteCount tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
         }
       }
     `, { notebookId, progress }, 'setNotebookProgress')

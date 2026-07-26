@@ -38,6 +38,8 @@ export interface Notebook {
   createdAt: string
   updatedAt: string
   tags: NoteTagAssignment[]
+  firstNotePreview?: string | null
+  noteCount?: number | null
 }
 
 export interface Note {

@@ -200,6 +200,8 @@ final class NoteCommandTests: XCTestCase {
   }
 
   func testNoteNotebookListAppliesTagFilter() async throws {
+    XCTAssertTrue(NoteCommandGraphQLDocuments.notebooks.contains("$tagFilterGroups: [[String!]!]"))
+    XCTAssertTrue(NoteCommandGraphQLDocuments.notebooks.contains("tagFilterGroups: $tagFilterGroups"))
     let noteRoot = try makeNoteCommandRoot()
     defer {
       try? FileManager.default.removeItem(atPath: noteRoot)

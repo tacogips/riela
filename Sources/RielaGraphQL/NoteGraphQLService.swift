@@ -37,6 +37,7 @@ public struct GraphQLNoteGraphQLService: Sendable {
     limit: Int = 50,
     offset: Int = 0,
     tagFilter: [String] = [],
+    tagFilterGroups: [[String]] = [],
     sort: String? = nil,
     createdAfter: String? = nil,
     createdBefore: String? = nil
@@ -46,6 +47,7 @@ public struct GraphQLNoteGraphQLService: Sendable {
         limit: limit,
         offset: offset,
         tagFilter: tagFilter,
+        tagFilterGroups: tagFilterGroups,
         sort: try graphQLNoteListSort(sort),
         createdAfter: createdAfter,
         createdBefore: createdBefore

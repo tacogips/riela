@@ -355,14 +355,7 @@ public struct NoteCommandRunner: Sendable {
     case "list":
       let output: GraphQLNoteQueryResult<[GraphQLNotebookDTO]> = try await executeNoteDocument(
         field: "notebooks",
-        query: """
-        query Notebooks($limit: Int, $offset: Int, $tagFilter: [String!]) {
-          notebooks(limit: $limit, offset: $offset, tagFilter: $tagFilter) {
-            value { \(NoteCommandGraphQLDocuments.notebook) }
-            result { \(NoteCommandGraphQLDocuments.controlResult) }
-          }
-        }
-        """,
+        query: NoteCommandGraphQLDocuments.notebooks,
         variables: [
           "limit": .integer(Int64(parsed.limit)),
           "offset": .integer(Int64(parsed.offset)),

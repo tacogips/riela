@@ -192,6 +192,7 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting, GraphQLDocu
         limit: validatedLimit(try optionalInt("limit", variables: variables), defaultValue: 50),
         offset: validatedOffset(try optionalInt("offset", variables: variables)),
         tagFilter: try optionalStringArray("tagFilter", variables: variables) ?? [],
+        tagFilterGroups: try optionalStringArrayArray("tagFilterGroups", variables: variables) ?? [],
         sort: try optionalString("sort", variables: variables),
         createdAfter: try optionalString("createdAfter", variables: variables),
         createdBefore: try optionalString("createdBefore", variables: variables)
@@ -1028,5 +1029,31 @@ private func optionalStringArray(_ key: String, variables: JSONObject) throws ->
       throw NoteGraphQLDocumentExecutorError.invalidVariable("\(key) must be an array of strings")
     }
     return string
+  }
+}
+
+private func optionalStringArrayArray(_ key: String, variables: JSONObject) throws -> [[String]]? {
+  guard let value = variables[key], value != .null else {
+    return nil
+  }
+  guard case let .array(groups) = value else {
+    throw NoteGraphQLDocumentExecutorError.invalidVariable(
+      "\(key) must be an array of string arrays"
+    )
+  }
+  return try groups.map { group in
+    guard case let .array(values) = group else {
+      throw NoteGraphQLDocumentExecutorError.invalidVariable(
+        "\(key) must be an array of string arrays"
+      )
+    }
+    return try values.map { value in
+      guard case let .string(string) = value else {
+        throw NoteGraphQLDocumentExecutorError.invalidVariable(
+          "\(key) must be an array of string arrays"
+        )
+      }
+      return string
+    }
   }
 }

@@ -35,6 +35,7 @@ export interface Notebook {
   notebookId: string
   title: string
   progress: NotebookProgress
+  progressWasUnknown: boolean
   createdAt: string
   updatedAt: string
   tags: NoteTagAssignment[]

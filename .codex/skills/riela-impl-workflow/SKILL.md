@@ -189,3 +189,58 @@ swift test --filter RielaNoteTests
 swift test --filter RielaCLITests
 /usr/bin/xcrun swiftlint --quiet --no-cache
 ```
+
+## Web Cross-Tag Grouped Filtering
+
+Accepted work on `feat/riela-note-web-cross-tag-filter` extends the web Notes
+contracts as one issue-resolution package:
+
+- `NoteService.listNotebooks` and GraphQL `notebooks` accept additive
+  `tagFilterGroups`. Each group unions descendant-expanded names and the
+  service intersects groups. Empty groups are ignored, any unknown non-empty
+  group fails closed to an empty result, and non-empty grouped input takes
+  precedence over legacy `tagFilter`.
+- Grouped requests are bounded to 64 groups, 256 input names, and 900 expanded
+  names. Equivalent groups and names are canonicalized and deduplicated;
+  oversized requests produce a controlled `invalid_request`. Legacy flat
+  `tagFilter` limits and behavior remain unchanged.
+- The web Folder and Tags trees use plain selection to replace the filter and
+  a labeled, keyboard-focusable add action to append a constraint. Ordered
+  chips support individual removal and clear-all. List and Board consume the
+  same intersection, and catalog reconciliation removes only missing
+  constraints.
+- Board membership is retained until a current bounded load completes.
+  Membership mutations are globally serialized, drag-time refresh commits are
+  deferred, preview loads use generations, scope-ejecting tag removal restores
+  focus deterministically, and stale activators are pruned.
+- Notebook paging shares a 200-item page size, stops on duplicate-only pages,
+  and caps loads at 1,000 pages. Unknown progress values normalize visibly to
+  `none`. New folders are entered automatically only from their exact
+  single-parent-folder scope.
+
+The Step 7 decision was
+`accepted_adversarial_review_with_residual_low_risks`: no high- or mid-severity
+finding remained. Accepted verification was:
+
+```bash
+cd web && bun test src
+cd web && ./node_modules/.bin/tsc --noEmit
+cd web && ./node_modules/.bin/eslint src/views/NotesView.tsx src/notes/controller.ts src/notes/controller.test.ts src/notes/client.ts src/notes/client.test.ts src/notes/paging.ts src/notes/paging.test.ts e2e/dashboard.spec.ts
+cd web && bun scripts/audit-source.ts
+cd web && bun run build
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'NoteHierarchyProgressTests|NoteGraphQLHierarchyProgressTests|NoteGraphQLParsingRegressionTests|NoteCommandTests'
+git diff --check
+```
+
+The focused Swift run passed 33 tests with zero failures; the carried-forward
+web unit run passed 29 tests with zero failures and 95 assertions. Keep these
+accepted residual risks and verification gaps explicit in handoffs:
+
+- `Sources/RielaNote/NoteService.swift` remains large; grouped-filter
+  normalization and predicate construction are later-maintenance extraction
+  candidates;
+- mocked Playwright execution and live List, Board, cross-tag, drag,
+  mutation-race, partial-failure, and focus checks remain operator-owned; and
+- repository-wide `cd web && bun run lint` remains blocked by diagnostics in
+  excluded pre-existing `web/verify-live.mjs`.

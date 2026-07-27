@@ -3,15 +3,24 @@ import {
   Show,
   createMemo,
   createSignal,
+  onCleanup,
   onMount,
 } from 'solid-js'
 import { NoteGraphQLClient } from '../notes/client'
 import {
   NotebookProgressController,
   NotebookScopeController,
+  constraintForTag,
+  pruneNotebookActivatorEntries,
+  tagRemovalCanAffectConstraints,
+  type NotebookConstraint,
   type NotebookScope,
 } from '../notes/controller'
-import { loadNotebookPages } from '../notes/paging'
+import {
+  NotebookPartialLoadError,
+  loadNotebookPages,
+  notebookPageLimit,
+} from '../notes/paging'
 import {
   assignableTagGroups,
   buildFolderTree,
@@ -57,7 +66,7 @@ export function NotesView(props: { mode: HostMode }) {
   const [view, setView] = createSignal<'list' | 'board'>('list')
   const [sort, setSort] = createSignal<NoteListSort>('updatedAtDesc')
   const [loading, setLoading] = createSignal(true)
-  const [partialLoading, setPartialLoading] = createSignal(false)
+  const [draggingNotebookId, setDraggingNotebookId] = createSignal<string>()
   const [error, setError] = createSignal('')
   const [message, setMessage] = createSignal('')
   const [selectedNotebookId, setSelectedNotebookId] = createSignal<string>()
@@ -74,6 +83,10 @@ export function NotesView(props: { mode: HostMode }) {
   const notebookActivators = new Map<string, HTMLButtonElement>()
   let detailReturnNotebookId: string | undefined
   let loadGeneration = 0
+  let previewGeneration = 0
+  let pendingNotebookCommit: { generation: number; notebooks: Notebook[] } | undefined
+  let clearAllButton: HTMLButtonElement | undefined
+  let contentHeading: HTMLDivElement | undefined
 
   const controller = new NotebookProgressController(
     {
@@ -82,9 +95,47 @@ export function NotesView(props: { mode: HostMode }) {
     },
     (updated, mutationError) => {
       setNotebooks((current) => replaceNotebook(current, updated))
+      if (pendingNotebookCommit) {
+        pendingNotebookCommit = {
+          ...pendingNotebookCommit,
+          notebooks: replaceNotebook(pendingNotebookCommit.notebooks, updated),
+        }
+      }
       if (mutationError) setMessage(`Progress reconciled to the server value: ${mutationError}`)
     },
   )
+
+  const publishNotebooks = (accepted: Notebook[], generation: number) => {
+    if (generation !== loadGeneration) return
+    const draggingId = draggingNotebookId()
+    // Only defer the commit while the dragged card still exists in the incoming
+    // list; if the drag source has left the scope its dragend can never fire
+    // (Chromium does not dispatch dragend on a disconnected node), so publishing
+    // now — and clearing the stale drag — prevents a permanently frozen list.
+    if (draggingId && accepted.some((notebook) => notebook.notebookId === draggingId)) {
+      pendingNotebookCommit = { generation, notebooks: accepted }
+      return
+    }
+    if (draggingId) setDraggingNotebookId(undefined)
+    pendingNotebookCommit = undefined
+    setNotebooks(accepted)
+    pruneNotebookActivatorEntries(
+      notebookActivators,
+      accepted.map((notebook) => notebook.notebookId),
+    )
+  }
+
+  const finishNotebookDrag = () => {
+    setDraggingNotebookId(undefined)
+    const pending = pendingNotebookCommit
+    pendingNotebookCommit = undefined
+    if (!pending || pending.generation !== loadGeneration) return
+    setNotebooks(pending.notebooks)
+    pruneNotebookActivatorEntries(
+      notebookActivators,
+      pending.notebooks.map((notebook) => notebook.notebookId),
+    )
+  }
 
   const folders = createMemo(() => folderTags(tags()))
   const tree = createMemo(() => buildFolderTree(tags()))
@@ -92,13 +143,19 @@ export function NotesView(props: { mode: HostMode }) {
   const pickerGroups = createMemo(() =>
     assignableTagGroups(tags(), tagClasses()).filter((group) => group.knownClass))
   const selectedFolderId = createMemo(() => {
-    const scope = activeScope()
-    return scope.kind === 'folder' ? scope.tagId : undefined
+    const constraints = activeScope().constraints
+    return constraints.length === 1 && constraints[0]?.kind === 'folder'
+      ? constraints[0].tagId
+      : undefined
   })
   const selectedTagId = createMemo(() => {
-    const scope = activeScope()
-    return scope.kind === 'tag' ? scope.tagId : undefined
+    const constraints = activeScope().constraints
+    return constraints.length === 1 && constraints[0]?.kind === 'tag'
+      ? constraints[0].tagId
+      : undefined
   })
+  const activeConstraintIds = createMemo(() =>
+    new Set(activeScope().constraints.map((constraint) => constraint.tagId)))
   const selectedFolder = createMemo(() => folders().find((tag) => tag.tagId === selectedFolderId()))
   const selectedScopeTag = createMemo(() => tags().find((tag) => tag.tagId === selectedTagId()))
   const selectedNotebook = createMemo(() =>
@@ -138,17 +195,31 @@ export function NotesView(props: { mode: HostMode }) {
     return fallbackTagId
   }
 
-  onMount(() => void refresh({ initialize: true }))
+  onMount(() => {
+    void refresh({ initialize: true })
+    // Safety net: a drag that ends outside any board column (or in List view,
+    // which has no drop targets) must still release the deferred list commit.
+    const releaseDrag = () => { if (draggingNotebookId()) finishNotebookDrag() }
+    document.addEventListener('dragend', releaseDrag)
+    document.addEventListener('drop', releaseDrag)
+    onCleanup(() => {
+      document.removeEventListener('dragend', releaseDrag)
+      document.removeEventListener('drop', releaseDrag)
+    })
+  })
 
   const refresh = async (
     options: { initialize?: boolean; clearMembership?: boolean } = {},
   ): Promise<RefreshOutcome> => {
     const generation = ++loadGeneration
+    pendingNotebookCommit = undefined
     let scopeSnapshot = scopeController.snapshot()
     const progressSnapshot = controller.snapshot()
+    let acceptedPartialNotebooks: Notebook[] | undefined
     if (options.clearMembership) {
+      setDraggingNotebookId(undefined)
       setNotebooks([])
-      setPartialLoading(false)
+      pruneNotebookActivatorEntries(notebookActivators, [])
     }
     setLoading(true)
     setError('')
@@ -159,76 +230,109 @@ export function NotesView(props: { mode: HostMode }) {
       }
       const [nextTags, classes] = await Promise.all([client.tags(), client.tagClasses()])
       if (generation !== loadGeneration || !scopeController.isCurrent(scopeSnapshot)) return 'superseded'
-      const requestedScope = scopeSnapshot.scope
-      const requestedTag = requestedScope.kind === 'all'
-        ? undefined
-        : nextTags.find((tag) =>
-            tag.tagId === requestedScope.tagId
-            && (requestedScope.kind !== 'folder' || tag.classId === 'folder'))
-      if (requestedScope.kind !== 'all' && requestedTag && requestedScope.tagName !== requestedTag.name) {
-        scopeSnapshot = scopeController.select({ ...requestedScope, tagName: requestedTag.name })
+      const hadActiveConstraints = scopeSnapshot.scope.constraints.length > 0
+      const reconciled = scopeController.reconcile(nextTags)
+      const catalogClearedScope = hadActiveConstraints
+        && reconciled.scope.constraints.length === 0
+      if (!scopeController.isCurrent(scopeSnapshot)) {
+        scopeSnapshot = reconciled
         setActiveScope(scopeSnapshot.scope)
       }
-      if (requestedScope.kind !== 'all' && !requestedTag) {
-        scopeSnapshot = scopeController.select({ kind: 'all' })
-        setActiveScope(scopeSnapshot.scope)
+      if (catalogClearedScope) {
         setSelectedNotebookId(undefined)
         detailReturnNotebookId = undefined
+        setDraggingNotebookId(undefined)
+        previewGeneration += 1
         setPreview([])
+        setPreviewOffset(0)
         setPreviewHasMore(false)
+        setPreviewLoading(false)
         setAddGroupKey('')
         setAddTagId('')
         setNotebooks([])
+        pruneNotebookActivatorEntries(notebookActivators, [])
       }
       setTags(nextTags)
       setTagClasses(classes)
       const nextNotebooks = await loadNotebookPages(
         client,
         sort(),
-        scopeController.tagFilter(scopeSnapshot),
+        scopeController.tagFilterGroups(scopeSnapshot),
         () => generation === loadGeneration && scopeController.isCurrent(scopeSnapshot),
-        (values, hasMore) => {
-          setPartialLoading(hasMore)
-          setNotebooks(values.map((notebook) => controller.adopt(notebook, progressSnapshot)))
+        (values) => {
+          acceptedPartialNotebooks = values
         },
       )
       if (!nextNotebooks || generation !== loadGeneration || !scopeController.isCurrent(scopeSnapshot)) {
         return 'superseded'
       }
-      setPartialLoading(false)
+      publishNotebooks(
+        nextNotebooks.map((notebook) => controller.adopt(notebook, progressSnapshot)),
+        generation,
+      )
       return 'completed'
     } catch (refreshError) {
       if (generation !== loadGeneration || !scopeController.isCurrent(scopeSnapshot)) return 'superseded'
+      if (refreshError instanceof NotebookPartialLoadError) {
+        publishNotebooks(
+          (acceptedPartialNotebooks ?? refreshError.notebooks)
+            .map((notebook) => controller.adopt(notebook, progressSnapshot)),
+          generation,
+        )
+      }
       setError(errorMessage(refreshError))
-      setPartialLoading(false)
       return 'failed'
     } finally {
       if (generation === loadGeneration && scopeController.isCurrent(scopeSnapshot)) setLoading(false)
     }
   }
 
-  const beginScope = (scope: NotebookScope) => {
+  const beginScope = (constraint?: NotebookConstraint, append = false) => {
     loadGeneration += 1
-    const snapshot = scopeController.select(scope)
+    pendingNotebookCommit = undefined
+    setDraggingNotebookId(undefined)
+    const snapshot = append && constraint
+      ? scopeController.add(constraint)
+      : scopeController.select(constraint)
     setActiveScope(snapshot.scope)
     setSelectedNotebookId(undefined)
     detailReturnNotebookId = undefined
+    previewGeneration += 1
     setPreview([])
     setNotebooks([])
-    setPartialLoading(false)
   }
 
   const selectScope = (tag?: NoteTag) => {
-    const scope: NotebookScope = !tag
-      ? { kind: 'all' }
-      : tag.classId === 'folder'
-        ? { kind: 'folder', tagId: tag.tagId, tagName: tag.name }
-        : { kind: 'tag', tagId: tag.tagId, tagName: tag.name, classId: tag.classId }
-    beginScope(scope)
+    beginScope(tag ? constraintForTag(tag) : undefined)
+    void refresh()
+  }
+
+  const addScope = (tag: NoteTag) => {
+    beginScope(constraintForTag(tag), true)
+    void refresh()
+  }
+
+  const removeScope = (tagId: string) => {
+    loadGeneration += 1
+    pendingNotebookCommit = undefined
+    setDraggingNotebookId(undefined)
+    const snapshot = scopeController.remove(tagId)
+    setActiveScope(snapshot.scope)
+    setSelectedNotebookId(undefined)
+    detailReturnNotebookId = undefined
+    previewGeneration += 1
+    setPreview([])
+    setNotebooks([])
+    void refresh()
+  }
+
+  const clearScope = () => {
+    beginScope()
     void refresh()
   }
 
   const selectNotebook = async (notebook: Notebook, activator?: HTMLButtonElement) => {
+    previewGeneration += 1
     detailReturnNotebookId = notebook.notebookId
     if (activator) notebookActivators.set(notebook.notebookId, activator)
     setSelectedNotebookId(notebook.notebookId)
@@ -237,14 +341,16 @@ export function NotesView(props: { mode: HostMode }) {
     setPreviewHasMore(false)
     setAddGroupKey('')
     setAddTagId('')
-    await loadPreview(notebook.notebookId, 0, false)
+    await loadPreview(notebook.notebookId, 0, false, previewGeneration)
   }
 
   const closeDetail = (restoreFocus = true) => {
+    previewGeneration += 1
     const notebookId = detailReturnNotebookId
     setSelectedNotebookId(undefined)
     setPreview([])
     setPreviewHasMore(false)
+    setPreviewLoading(false)
     setAddGroupKey('')
     setAddTagId('')
     detailReturnNotebookId = undefined
@@ -255,20 +361,26 @@ export function NotesView(props: { mode: HostMode }) {
     })
   }
 
-  const loadPreview = async (notebookId: string, offset: number, append: boolean) => {
+  const loadPreview = async (
+    notebookId: string,
+    offset: number,
+    append: boolean,
+    generation = previewGeneration,
+  ) => {
     setPreviewLoading(true)
     try {
       const values = await client.notes(notebookId, offset)
-      if (selectedNotebookId() !== notebookId) return
+      if (selectedNotebookId() !== notebookId || generation !== previewGeneration) return
       setPreview((current) => append ? [...current, ...values] : values)
       setPreviewOffset(offset + values.length)
-      setPreviewHasMore(values.length === 200)
+      setPreviewHasMore(values.length === notebookPageLimit)
     } catch (previewError) {
-      if (selectedNotebookId() !== notebookId) return
+      if (selectedNotebookId() !== notebookId || generation !== previewGeneration) return
       setMessage(`Could not load notes: ${errorMessage(previewError)}`)
     } finally {
-      const current = selectedNotebookId()
-      if (current === notebookId || current === undefined) setPreviewLoading(false)
+      if (selectedNotebookId() === notebookId && generation === previewGeneration) {
+        setPreviewLoading(false)
+      }
     }
   }
 
@@ -277,6 +389,9 @@ export function NotesView(props: { mode: HostMode }) {
     if (!name) return
     const parentTagId = selectedFolderId()
     const scopeSnapshot = scopeController.snapshot()
+    const shouldEnterCreatedFolder = scopeSnapshot.scope.constraints.length === 1
+      && scopeSnapshot.scope.constraints[0]?.kind === 'folder'
+      && scopeSnapshot.scope.constraints[0].tagId === parentTagId
     const collision = folderNameCollision(tags(), name)
     if (collision) {
       setMessage(`“${name}” already belongs to ${collision.classId === 'folder' ? 'a folder' : 'another tag class'}.`)
@@ -294,8 +409,8 @@ export function NotesView(props: { mode: HostMode }) {
       setExpanded((current) => new Set(current).add(parentTagId ?? created.tagId))
       setNewFolderName('')
       setMessage(`Created folder “${created.name}”.`)
-      if (scopeController.isCurrent(scopeSnapshot) && selectedFolderId() === parentTagId) {
-        beginScope({ kind: 'folder', tagId: created.tagId, tagName: created.name })
+      if (shouldEnterCreatedFolder && scopeController.isCurrent(scopeSnapshot)) {
+        beginScope(constraintForTag(created))
         await refresh()
       }
     } catch (creationError) {
@@ -317,7 +432,8 @@ export function NotesView(props: { mode: HostMode }) {
 
   const applyExistingTag = async (tag: NoteTag) => {
     const notebook = selectedNotebook()
-    if (!notebook) return
+    if (!notebook || membershipBusy()) return
+    const scopeSnapshot = scopeController.snapshot()
     const currentTag = tags().find((candidate) =>
       candidate.tagId === tag.tagId && candidate.name === tag.name && candidate.classId === tag.classId)
     if (!currentTag || assignedTagIds().has(currentTag.tagId)) {
@@ -330,7 +446,11 @@ export function NotesView(props: { mode: HostMode }) {
     setMessage('')
     try {
       const updated = await client.applyTag(notebook.notebookId, currentTag.name)
-      if (selectedNotebookId() !== notebook.notebookId) return
+      if (selectedNotebookId() !== notebook.notebookId
+          || !scopeController.isCurrent(scopeSnapshot)) {
+        await refresh()
+        return
+      }
       setNotebooks((current) => replaceNotebook(current, controller.adopt(updated)))
       setAddTagId('')
       setMessage(`Added “${currentTag.name}”.`)
@@ -344,28 +464,70 @@ export function NotesView(props: { mode: HostMode }) {
 
   const removeTag = async (tag: NoteTag) => {
     const notebook = selectedNotebook()
-    if (!notebook) return
+    if (!notebook || membershipBusy()) return
+    const scopeSnapshot = scopeController.snapshot()
     const busyKey = `remove:${notebook.notebookId}:${tag.tagId}`
     setMembershipBusy(busyKey)
     setMessage('')
     try {
       const updated = await client.removeTag(notebook.notebookId, tag.name)
+      if (selectedNotebookId() !== notebook.notebookId
+          || !scopeController.isCurrent(scopeSnapshot)) {
+        const currentScope = scopeController.current()
+        const currentDetailNotebookId = selectedNotebookId()
+        const clearMembership = tagRemovalCanAffectConstraints(
+          tag,
+          currentScope.constraints,
+          tags(),
+        )
+        const refreshOutcome = await refresh({ clearMembership })
+        if (clearMembership
+            && currentDetailNotebookId
+            && refreshOutcome !== 'superseded'
+            && selectedNotebookId() === currentDetailNotebookId) {
+          const detailRemainsVisible = refreshOutcome === 'completed'
+            && notebooks().some((item) => item.notebookId === currentDetailNotebookId)
+          if (detailRemainsVisible) {
+            focusAfterScopeEjection(
+              notebooks(),
+              notebookActivators,
+              clearAllButton,
+              contentHeading,
+              currentDetailNotebookId,
+            )
+          } else {
+            closeDetail(false)
+            focusAfterScopeEjection(notebooks(), notebookActivators, clearAllButton, contentHeading)
+          }
+        }
+        return
+      }
       setNotebooks((current) => replaceNotebook(current, controller.adopt(updated)))
-      const scoped = activeScope().kind !== 'all'
-      const refreshOutcome = await refresh({ clearMembership: scoped })
+      const clearMembership = tagRemovalCanAffectConstraints(
+        tag,
+        scopeSnapshot.scope.constraints,
+        tags(),
+      )
+      const refreshOutcome = await refresh({ clearMembership })
       if (refreshOutcome === 'superseded') return
       if (refreshOutcome === 'failed') {
         const removingCurrentDetail = selectedNotebookId() === notebook.notebookId
-        if (scoped && removingCurrentDetail) closeDetail(false)
+        if (clearMembership && removingCurrentDetail) {
+          closeDetail(false)
+          focusAfterScopeEjection(notebooks(), notebookActivators, clearAllButton, contentHeading)
+        }
         if (removingCurrentDetail) {
           setMessage(`Removed “${tag.name}”, but the notebook scope could not be refreshed.`)
         }
         return
       }
       if (!notebooks().some((item) => item.notebookId === notebook.notebookId)) {
-        if (selectedNotebookId() === notebook.notebookId) closeDetail(false)
+        if (selectedNotebookId() === notebook.notebookId) {
+          closeDetail(false)
+          focusAfterScopeEjection(notebooks(), notebookActivators, clearAllButton, contentHeading)
+        }
         if (!selectedNotebookId() || selectedNotebookId() === notebook.notebookId) {
-          setMessage(`Removed “${tag.name}”; the notebook left this ${activeScope().kind === 'folder' ? 'folder' : 'tag'} scope.`)
+          setMessage(`Removed “${tag.name}”; the notebook left the active filter.`)
         }
       } else if (selectedNotebookId() === notebook.notebookId) {
         setMessage(`Removed “${tag.name}”.`)
@@ -381,6 +543,12 @@ export function NotesView(props: { mode: HostMode }) {
     const assigned = new Set(selectedNotebook() ? directFolderAssignments(selectedNotebook()!).map((tag) => tag.tagId) : [])
     return folders().filter((folder) => !assigned.has(folder.tagId))
   })
+  const registerNotebookActivator = (notebookId: string, element: HTMLButtonElement) => {
+    notebookActivators.set(notebookId, element)
+    onCleanup(() => {
+      if (notebookActivators.get(notebookId) === element) notebookActivators.delete(notebookId)
+    })
+  }
 
   return <section class="notes-workspace">
     <aside class="folder-pane" aria-label="Notes navigation">
@@ -389,7 +557,7 @@ export function NotesView(props: { mode: HostMode }) {
         <button role="tab" aria-selected={navigationTab() === 'folder'} classList={{ active: navigationTab() === 'folder' }} onClick={() => setNavigationTab('folder')}>Folder</button>
         <button role="tab" aria-selected={navigationTab() === 'tags'} classList={{ active: navigationTab() === 'tags' }} onClick={() => setNavigationTab('tags')}>Tags</button>
       </div>
-      <button classList={{ 'folder-root': true, selected: activeScope().kind === 'all' }} onClick={() => selectScope()}>
+      <button classList={{ 'folder-root': true, selected: activeScope().constraints.length === 0 }} onClick={clearScope}>
         <span aria-hidden="true">▣</span> All notebooks
       </button>
       <Show when={navigationTab() === 'folder'}>
@@ -399,11 +567,12 @@ export function NotesView(props: { mode: HostMode }) {
               node={node}
               level={1}
               expanded={expanded()}
-              selectedId={selectedFolderId()}
+              activeIds={activeConstraintIds()}
               focusedId={activeFolderTreeTagId()}
               icon="▰"
               onToggle={(tagId) => setExpanded((current) => toggleSet(current, tagId))}
               onSelect={selectScope}
+              onAdd={addScope}
               onFocus={setFocusedTagId}
             />}
           </For>
@@ -426,10 +595,10 @@ export function NotesView(props: { mode: HostMode }) {
               </button>
               <Show when={isExpanded()}>
                 <Show when={group.classId !== null} fallback={<div class="folder-tree" role="tree" aria-label={`${group.label} tags`}>
-                  <For each={group.tags}>{(tag) => <TagTreeItem node={{ tag, children: [] }} level={1} expanded={expanded()} selectedId={selectedTagId()} focusedId={activeGroupTreeTagId(group.tags, group.tags[0]?.tagId)} icon="●" onToggle={() => {}} onSelect={selectScope} onFocus={setFocusedTagId} />}</For>
+                  <For each={group.tags}>{(tag) => <TagTreeItem node={{ tag, children: [] }} level={1} expanded={expanded()} activeIds={activeConstraintIds()} focusedId={activeGroupTreeTagId(group.tags, group.tags[0]?.tagId)} icon="●" onToggle={() => {}} onSelect={selectScope} onAdd={addScope} onFocus={setFocusedTagId} />}</For>
                 </div>}>
                   <div class="folder-tree" role="tree" aria-label={`${group.label} tags`}>
-                    <For each={group.tree}>{(node) => <TagTreeItem node={node} level={1} expanded={expanded()} selectedId={selectedTagId()} focusedId={activeGroupTreeTagId(group.tags, group.tree[0]?.tag.tagId)} icon="◆" onToggle={(tagId) => setExpanded((current) => toggleSet(current, tagId))} onSelect={selectScope} onFocus={setFocusedTagId} />}</For>
+                    <For each={group.tree}>{(node) => <TagTreeItem node={node} level={1} expanded={expanded()} activeIds={activeConstraintIds()} focusedId={activeGroupTreeTagId(group.tags, group.tree[0]?.tag.tagId)} icon="◆" onToggle={(tagId) => setExpanded((current) => toggleSet(current, tagId))} onSelect={selectScope} onAdd={addScope} onFocus={setFocusedTagId} />}</For>
                   </div>
                 </Show>
               </Show>
@@ -442,11 +611,14 @@ export function NotesView(props: { mode: HostMode }) {
     <div class="notes-content">
       <header class="notes-header">
         <div class="notes-breadcrumb" aria-label="Notebook scope breadcrumb">
-          <button onClick={() => selectScope()}>All notebooks</button>
-          <Show when={activeScope().kind === 'folder'}>
+          <button onClick={clearScope}>All notebooks</button>
+          <Show when={activeScope().constraints.length > 1}>
+            <span aria-hidden="true">/</span><span>Filtered notebooks</span>
+          </Show>
+          <Show when={activeScope().constraints.length === 1 && activeScope().constraints[0]?.kind === 'folder'}>
             <For each={folderPath()}>{(tag) => <><span aria-hidden="true">/</span><button onClick={() => selectScope(tag)}>{tag.name}</button></>}</For>
           </Show>
-          <Show when={activeScope().kind === 'tag'}>
+          <Show when={activeScope().constraints.length === 1 && activeScope().constraints[0]?.kind === 'tag'}>
             <span aria-hidden="true">/</span><span>{selectedTagGroup()?.label ?? 'Tags'}</span>
             <For each={selectedTagPath()}>{(tag) => <><span aria-hidden="true">/</span><button onClick={() => selectScope(tag)}>{tag.name}</button></>}</For>
           </Show>
@@ -462,39 +634,57 @@ export function NotesView(props: { mode: HostMode }) {
           <button class="secondary" onClick={() => void refresh()}>Refresh</button>
         </div>
       </header>
+      <Show when={activeScope().constraints.length > 0}>
+        <div class="filter-bar" aria-label="Active notebook filters">
+          <For each={activeScope().constraints}>{(constraint) =>
+            <span class="filter-chip">
+              <span>{constraint.kind === 'folder' ? 'Folder' : 'Tag'}: {constraint.tagName}</span>
+              <button aria-label={`Remove ${constraint.tagName} filter`} onClick={() => removeScope(constraint.tagId)}>×</button>
+            </span>}
+          </For>
+          <button ref={clearAllButton} class="secondary filter-clear" onClick={clearScope}>Clear all</button>
+        </div>
+      </Show>
       <Show when={message()}><div class="notes-message" role="status" aria-live="polite">{message()}<button aria-label="Dismiss message" onClick={() => setMessage('')}>×</button></div></Show>
       <Show when={error()}><div class="error-banner" role="alert">{error()} <button class="secondary" onClick={() => void refresh()}>Retry</button></div></Show>
       <Show when={loading() && notebooks().length === 0}><div class="loading-state"><span class="loader" />Loading notebooks and final board counts…</div></Show>
-      <Show when={loading() && notebooks().length > 0}><div class="loading-state" role="status"><span class="loader" />Loaded {notebooks().length} notebooks; loading the next bounded page…</div></Show>
-      <Show when={!loading() && !error() && notebooks().length === 0}><div class="empty-state"><span>◇</span><strong>No notebooks in this scope</strong><p>Select another folder or tag scope.</p></div></Show>
+      <Show when={loading() && notebooks().length > 0}><div class="loading-state" role="status"><span class="loader" />Counts updating…</div></Show>
+      <Show when={!loading() && !error() && notebooks().length === 0}><div ref={contentHeading} class="empty-state" tabIndex={-1}><span>◇</span><strong>No notebooks in this scope</strong><p>Select another folder or tag scope.</p></div></Show>
       <Show when={view() === 'list' && notebooks().length > 0}>
         <div class="notebook-list" aria-label="Notebooks">
-          <For each={notebooks()}>{(notebook) => <button ref={(element) => { notebookActivators.set(notebook.notebookId, element) }} classList={{ 'notebook-row': true, selected: selectedNotebookId() === notebook.notebookId }} onClick={(event) => void selectNotebook(notebook, event.currentTarget)}>
+          <For each={notebooks()}>{(notebook) => <button ref={(element) => registerNotebookActivator(notebook.notebookId, element)} classList={{ 'notebook-row': true, selected: selectedNotebookId() === notebook.notebookId }} onClick={(event) => void selectNotebook(notebook, event.currentTarget)}>
             <div class="notebook-row-copy">
               <strong>{notebook.title}</strong>
               <div class="notebook-row-meta"><span>{formatDate(notebook.updatedAt)}</span><Show when={normalizedNoteCount(notebook.noteCount) !== null}><span>{noteCountLabel(normalizedNoteCount(notebook.noteCount) ?? 0)}</span></Show></div>
               <Show when={normalizedPreview(notebook.firstNotePreview)}>{(value) => <span class="notebook-preview list-preview">{value()}</span>}</Show>
             </div>
             <span class={`progress-pill ${notebook.progress}`}>{progressLabels[notebook.progress]}</span>
+            <Show when={notebook.progressWasUnknown}><span class="unknown-progress">Unknown status · shown in None</span></Show>
             <FolderChips notebook={notebook} />
           </button>}</For>
         </div>
       </Show>
-      <Show when={!loading() && !partialLoading() && view() === 'board'}>
+      <Show when={view() === 'board'}>
         <div class="notebook-board">
           <For each={progressOrder}>{(progress) => {
             const column = () => notebooks().filter((notebook) => notebook.progress === progress)
             return <section class={`board-column ${progress}`} aria-label={`${progressLabels[progress]} notebooks`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
-              const notebook = notebooks().find((item) => item.notebookId === event.dataTransfer?.getData('text/plain'))
+              const draggedId = event.dataTransfer?.getData('text/plain')
+              finishNotebookDrag()
+              const notebook = notebooks().find((item) => item.notebookId === draggedId)
               if (notebook && notebook.progress !== progress) void moveProgress(notebook, progress)
             }}>
               <header><strong>{progressLabels[progress]}</strong><span>{column().length}</span></header>
-              <div class="board-cards"><For each={column()}>{(notebook) => <article class="board-card" draggable="true" onDragStart={(event) => event.dataTransfer?.setData('text/plain', notebook.notebookId)}>
-                <button ref={(element) => { notebookActivators.set(notebook.notebookId, element) }} class="board-card-open" onClick={(event) => void selectNotebook(notebook, event.currentTarget)}>
+              <div class="board-cards"><For each={column()}>{(notebook) => <article class="board-card" draggable="true" onDragStart={(event) => {
+                event.dataTransfer?.setData('text/plain', notebook.notebookId)
+                setDraggingNotebookId(notebook.notebookId)
+              }} onDragEnd={finishNotebookDrag}>
+                <button ref={(element) => registerNotebookActivator(notebook.notebookId, element)} class="board-card-open" onClick={(event) => void selectNotebook(notebook, event.currentTarget)}>
                   <strong>{notebook.title}</strong>
                   <Show when={normalizedPreview(notebook.firstNotePreview)}>{(value) => <span class="notebook-preview board-preview">{value()}</span>}</Show>
                   <div class="board-card-meta"><span>{formatDate(notebook.updatedAt)}</span><Show when={normalizedNoteCount(notebook.noteCount) !== null}><span>{noteCountLabel(normalizedNoteCount(notebook.noteCount) ?? 0)}</span></Show></div>
                   <FolderChips notebook={notebook} />
+                  <Show when={notebook.progressWasUnknown}><span class="unknown-progress">Unknown status · shown in None</span></Show>
                 </button>
                 <label><span class="sr-only">Move {notebook.title} to progress</span><select value={notebook.progress} onChange={(event) => void moveProgress(notebook, event.currentTarget.value as NotebookProgress)}>
                   <For each={progressOrder}>{(value) => <option value={value}>{progressLabels[value]}</option>}</For>
@@ -511,17 +701,17 @@ export function NotesView(props: { mode: HostMode }) {
       <dl><div><dt>Progress</dt><dd><select value={notebook().progress} onChange={(event) => void moveProgress(notebook(), event.currentTarget.value as NotebookProgress)}><For each={progressOrder}>{(value) => <option value={value}>{progressLabels[value]}</option>}</For></select></dd></div><div><dt>Updated</dt><dd>{formatDate(notebook().updatedAt)}</dd></div></dl>
       <section class="assignment-group"><h3>Folder</h3>
         <Show when={folderAssignments()}>{(group) => <div class="detail-chips"><For each={group().assignments}>{(assignment) => <TagChip assignment={assignment} busy={membershipBusy()} onRemove={removeTag} />}</For></div>}</Show>
-        <label><span>Add folder</span><select value="" disabled={membershipBusy().startsWith('add:') || availableFolders().length === 0} onChange={(event) => {
+        <label><span>Add folder</span><select value="" disabled={Boolean(membershipBusy()) || availableFolders().length === 0} onChange={(event) => {
           const folder = folders().find((candidate) => candidate.tagId === event.currentTarget.value)
           if (folder) void applyExistingTag(folder)
         }}><option value="">Choose a folder…</option><For each={availableFolders()}>{(folder) => <option value={folder.tagId}>{folder.name}</option>}</For></select></label>
       </section>
       <For each={nonFolderAssignmentGroups()}>{(group) => <section class="assignment-group"><h3>{group.label}</h3><div class="detail-chips"><For each={group.assignments}>{(assignment) => <TagChip assignment={assignment} busy={membershipBusy()} onRemove={removeTag} />}</For></div></section>}</For>
       <section class="tag-add-flow"><h3>Add tag</h3>
-        <label><span>Tag class</span><select aria-label="Tag class" value={addGroupKey()} disabled={membershipBusy().startsWith('add:')} onChange={(event) => { setAddGroupKey(event.currentTarget.value); setAddTagId('') }}>
+        <label><span>Tag class</span><select aria-label="Tag class" value={addGroupKey()} disabled={Boolean(membershipBusy())} onChange={(event) => { setAddGroupKey(event.currentTarget.value); setAddTagId('') }}>
           <option value="">Choose a tag class…</option><For each={pickerGroups()}>{(group) => <option value={group.key}>{group.label}</option>}</For>
         </select></label>
-        <label><span>Existing tag</span><select aria-label="Existing tag" value={addTagId()} disabled={!selectedPickerGroup() || assignableTags().length === 0 || membershipBusy().startsWith('add:')} onChange={(event) => setAddTagId(event.currentTarget.value)}>
+        <label><span>Existing tag</span><select aria-label="Existing tag" value={addTagId()} disabled={!selectedPickerGroup() || assignableTags().length === 0 || Boolean(membershipBusy())} onChange={(event) => setAddTagId(event.currentTarget.value)}>
           <option value="">Choose an existing tag…</option><For each={assignableTags()}>{(tag) => <option value={tag.tagId}>{tag.name}</option>}</For>
         </select></label>
         <Show when={selectedPickerGroup() && assignableTags().length === 0}><p class="tag-picker-help">No existing tag in this group is available to assign.</p></Show>
@@ -542,16 +732,18 @@ function TagTreeItem(props: {
   node: TagTreeNode
   level: number
   expanded: Set<string>
-  selectedId?: string
+  activeIds: Set<string>
   focusedId?: string
   icon: string
   onToggle: (tagId: string) => void
   onSelect: (tag: NoteTag) => void
+  onAdd: (tag: NoteTag) => void
   onFocus: (tagId: string) => void
 }) {
   const isExpanded = () => props.expanded.has(props.node.tag.tagId)
+  const isActive = () => props.activeIds.has(props.node.tag.tagId)
   return <div>
-    <div classList={{ 'folder-row': true, selected: props.selectedId === props.node.tag.tagId }} role="treeitem" aria-level={props.level} aria-expanded={props.node.children.length ? isExpanded() : undefined} aria-selected={props.selectedId === props.node.tag.tagId} style={{ '--folder-level': props.level }}>
+    <div classList={{ 'folder-row': true, selected: isActive() }} role="treeitem" aria-level={props.level} aria-expanded={props.node.children.length ? isExpanded() : undefined} aria-selected={isActive()} style={{ '--folder-level': props.level }}>
       <Show when={props.node.children.length > 0} fallback={<span class="tree-spacer" />}><button class="tree-toggle" aria-label={`${isExpanded() ? 'Collapse' : 'Expand'} ${props.node.tag.name}`} onClick={() => props.onToggle(props.node.tag.tagId)}>{isExpanded() ? '⌄' : '›'}</button></Show>
       <button
         class="tree-select"
@@ -561,6 +753,15 @@ function TagTreeItem(props: {
         onKeyDown={(event) => handleTreeKeyDown(event, props)}
         onClick={() => props.onSelect(props.node.tag)}
       ><span aria-hidden="true">{props.icon}</span>{props.node.tag.name}</button>
+      <button
+        class="tree-add-filter"
+        aria-label={`Add ${props.node.tag.name} to filter`}
+        disabled={isActive()}
+        onClick={(event) => {
+          event.stopPropagation()
+          props.onAdd(props.node.tag)
+        }}
+      >+</button>
     </div>
     <Show when={isExpanded()}><div role="group"><For each={props.node.children}>{(child) => <TagTreeItem {...props} node={child} level={props.level + 1} />}</For></div></Show>
   </div>
@@ -572,7 +773,7 @@ function TagChip(props: {
   onRemove: (tag: NoteTag) => void
 }) {
   const busyKey = () => props.busy.endsWith(`:${props.assignment.tag.tagId}`)
-  return <span class="folder-chip">{props.assignment.tag.name}<Show when={props.assignment.deletable}><button aria-label={`Remove ${props.assignment.tag.name}`} disabled={busyKey()} onClick={() => props.onRemove(props.assignment.tag)}>×</button></Show></span>
+  return <span class="folder-chip">{props.assignment.tag.name}<Show when={busyKey()}><span class="sr-only">Updating</span></Show><Show when={props.assignment.deletable}><button aria-label={`Remove ${props.assignment.tag.name}`} disabled={Boolean(props.busy)} onClick={() => props.onRemove(props.assignment.tag)}>×</button></Show></span>
 }
 
 function FolderChips(props: { notebook: Notebook }) {
@@ -587,6 +788,32 @@ function replaceNotebook(notebooks: Notebook[], replacement: Notebook): Notebook
         noteCount: replacement.noteCount ?? notebook.noteCount,
       }
     : notebook)
+}
+
+function focusAfterScopeEjection(
+  notebooks: Notebook[],
+  activators: Map<string, HTMLButtonElement>,
+  clearAllButton?: HTMLButtonElement,
+  contentHeading?: HTMLDivElement,
+  preferredNotebookId?: string,
+): void {
+  queueMicrotask(() => {
+    const orderedNotebooks = preferredNotebookId
+      ? [
+          ...notebooks.filter((notebook) => notebook.notebookId === preferredNotebookId),
+          ...notebooks.filter((notebook) => notebook.notebookId !== preferredNotebookId),
+        ]
+      : notebooks
+    for (const notebook of orderedNotebooks) {
+      const activator = activators.get(notebook.notebookId)
+      if (activator?.isConnected) {
+        activator.focus()
+        return
+      }
+    }
+    if (clearAllButton?.isConnected) clearAllButton.focus()
+    else contentHeading?.focus()
+  })
 }
 
 function toggleSet(current: Set<string>, value: string): Set<string> {

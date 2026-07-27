@@ -444,7 +444,7 @@ func parseGraphQLValue(
     guard let variableName = readGraphQLIdentifier(in: query, index: &index) else {
       throw NoteGraphQLDocumentExecutorError.invalidVariable("GraphQL variable is missing a name")
     }
-    guard variableDefinitions[variableName] != nil else {
+    guard let definition = variableDefinitions[variableName] else {
       throw NoteGraphQLDocumentExecutorError.invalidVariable(
         "GraphQL variable '$\(variableName)' is not defined by the operation"
       )
@@ -454,6 +454,14 @@ func parseGraphQLValue(
       return value
     }
     guard allowUnresolvedVariables else {
+      if path.count == 1,
+         case .field = path[0],
+         case .nonNull = definition.type {
+        throw NoteGraphQLDocumentExecutorError.missingVariable(variableName)
+      }
+      if path.count == 1, case .field = path[0] {
+        return .null
+      }
       throw NoteGraphQLDocumentExecutorError.missingVariable(variableName)
     }
     return .null

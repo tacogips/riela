@@ -1,11 +1,17 @@
 import { describe, expect, test } from 'bun:test'
-import { NotebookProgressController, NotebookScopeController } from './controller'
+import {
+  NotebookProgressController,
+  NotebookScopeController,
+  pruneNotebookActivatorEntries,
+  tagRemovalCanAffectConstraints,
+} from './controller'
 import type { Notebook, NotebookProgress } from './types'
 
 const notebook = (progress: NotebookProgress): Notebook => ({
   notebookId: 'book-1',
   title: 'Launch',
   progress,
+  progressWasUnknown: false,
   createdAt: '2026-07-25T00:00:00Z',
   updatedAt: '2026-07-25T00:00:00Z',
   tags: [],
@@ -75,25 +81,29 @@ describe('progress convergence', () => {
 })
 
 describe('notebook scope generation', () => {
-  test('keeps one mutually exclusive folder, tag, or all-notebooks scope', () => {
+  test('preserves single-filter replacement and supports ordered intersection groups', () => {
     const controller = new NotebookScopeController()
-    expect(controller.tagFilter()).toEqual([])
+    expect(controller.tagFilterGroups()).toEqual([])
 
     controller.select({ kind: 'folder', tagId: 'folder-work', tagName: 'Work' })
-    expect(controller.current()).toEqual({ kind: 'folder', tagId: 'folder-work', tagName: 'Work' })
-    expect(controller.tagFilter()).toEqual(['Work'])
+    expect(controller.tagFilterGroups()).toEqual([['Work']])
 
-    controller.select({ kind: 'tag', tagId: 'topic-launch', tagName: 'Launch', classId: 'topic' })
-    expect(controller.current()).toEqual({
+    controller.add({ kind: 'tag', tagId: 'topic-launch', tagName: 'Launch', classId: 'topic' })
+    expect(controller.current().constraints).toEqual([
+      { kind: 'folder', tagId: 'folder-work', tagName: 'Work' },
+      {
       kind: 'tag',
       tagId: 'topic-launch',
       tagName: 'Launch',
       classId: 'topic',
-    })
-    expect(controller.tagFilter()).toEqual(['Launch'])
+      },
+    ])
+    expect(controller.tagFilterGroups()).toEqual([['Work'], ['Launch']])
 
-    controller.select({ kind: 'all' })
-    expect(controller.tagFilter()).toEqual([])
+    controller.remove('folder-work')
+    expect(controller.tagFilterGroups()).toEqual([['Launch']])
+    controller.clear()
+    expect(controller.tagFilterGroups()).toEqual([])
   })
 
   test('invalidates older folder-to-tag and tag-to-folder completions', () => {
@@ -106,5 +116,114 @@ describe('notebook scope generation', () => {
     const newerFolder = controller.select({ kind: 'folder', tagId: 'folder-archive', tagName: 'Archive' })
     expect(controller.isCurrent(tag)).toBe(false)
     expect(controller.isCurrent(newerFolder)).toBe(true)
+  })
+
+  test('reconciles constraints independently and ignores duplicate additions', () => {
+    const controller = new NotebookScopeController()
+    controller.select({ kind: 'folder', tagId: 'folder-work', tagName: 'Old Work' })
+    const beforeDuplicate = controller.add({
+      kind: 'folder',
+      tagId: 'folder-work',
+      tagName: 'Ignored',
+    })
+    expect(controller.isCurrent(beforeDuplicate)).toBe(true)
+    controller.add({ kind: 'tag', tagId: 'topic-launch', tagName: 'Launch', classId: 'topic' })
+
+    controller.reconcile([
+      {
+        tagId: 'folder-work',
+        name: 'Work',
+        classId: 'folder',
+        parentTagId: null,
+        isSystem: false,
+        createdAt: '',
+      },
+    ])
+
+    expect(controller.current().constraints).toEqual([
+      {
+        kind: 'folder',
+        tagId: 'folder-work',
+        tagName: 'Work',
+        classId: 'folder',
+      },
+    ])
+
+    const beforeReclassification = controller.snapshot()
+    controller.reconcile([
+      {
+        tagId: 'folder-work',
+        name: 'Work topic',
+        classId: 'topic',
+        parentTagId: null,
+        isSystem: false,
+        createdAt: '',
+      },
+    ])
+    expect(controller.isCurrent(beforeReclassification)).toBe(false)
+    expect(controller.current().constraints).toEqual([
+      {
+        kind: 'tag',
+        tagId: 'folder-work',
+        tagName: 'Work topic',
+        classId: 'topic',
+      },
+    ])
+
+    const beforeDeletion = controller.snapshot()
+    controller.reconcile([])
+    expect(controller.isCurrent(beforeDeletion)).toBe(false)
+    expect(controller.current().constraints).toEqual([])
+  })
+
+  test('prunes missing and disconnected notebook activators', () => {
+    const retained = { isConnected: true }
+    const activators = new Map([
+      ['retained', retained],
+      ['disconnected', { isConnected: false }],
+      ['removed', { isConnected: true }],
+    ])
+
+    pruneNotebookActivatorEntries(activators, ['retained', 'disconnected'])
+
+    expect([...activators.entries()]).toEqual([['retained', retained]])
+  })
+
+  test('detects descendant removals for every active tag class', () => {
+    const topicRoot = {
+      tagId: 'topic-roadmap',
+      name: 'Roadmap',
+      classId: 'topic',
+      parentTagId: null,
+      isSystem: false,
+      createdAt: '',
+    }
+    const topicChild = {
+      tagId: 'topic-web',
+      name: 'Web',
+      classId: 'topic',
+      parentTagId: 'topic-roadmap',
+      isSystem: false,
+      createdAt: '',
+    }
+    const personal = {
+      tagId: 'tag-personal',
+      name: 'Personal',
+      classId: null,
+      parentTagId: null,
+      isSystem: false,
+      createdAt: '',
+    }
+    const tags = [topicRoot, topicChild, personal]
+    const constraints = [{
+      kind: 'tag' as const,
+      tagId: 'topic-roadmap',
+      tagName: 'Roadmap',
+      classId: 'topic',
+    }]
+
+    expect(tagRemovalCanAffectConstraints(topicChild, constraints, tags)).toBe(true)
+    expect(tagRemovalCanAffectConstraints(topicRoot, constraints, tags)).toBe(true)
+    expect(tagRemovalCanAffectConstraints(personal, constraints, tags)).toBe(false)
   })
 })

@@ -195,6 +195,119 @@ final class NoteGraphQLHierarchyProgressTests: XCTestCase {
     XCTAssertEqual(projectedNotebook["progress"], .string("done"))
   }
 
+  func testDocumentExecutorValidatesAndDispatchesGroupedNotebookFilters() async throws {
+    let service = try makeHierarchyGraphQLService()
+    _ = await service.defineTag(GraphQLDefineNoteTagInput(name: "Work", classId: "folder"))
+    _ = await service.defineTagClass(
+      GraphQLDefineNoteTagClassInput(classId: "priority", label: "Priority")
+    )
+    _ = await service.defineTag(GraphQLDefineNoteTagInput(name: "Urgent", classId: "priority"))
+    let created = await service.createNotebook(GraphQLCreateNotebookInput(title: "Matched"))
+    let notebookId = try XCTUnwrap(created.notebook?.notebookId)
+    _ = await service.applyNotebookTags(
+      GraphQLApplyNotebookTagsInput(notebookId: notebookId, tags: ["Work", "Urgent"])
+    )
+    let executor = NoteGraphQLDocumentExecutor(service: service)
+    let query = """
+    query Grouped($tagFilterGroups: [[String!]!]) {
+      notebooks(tagFilterGroups: $tagFilterGroups) {
+        result { accepted status diagnostics }
+        value { notebookId }
+      }
+    }
+    """
+
+    let response = await executor.execute(GraphQLDocumentRequest(
+      query: query,
+      variables: [
+        "tagFilterGroups": .array([
+          .array([.string("Work")]),
+          .array([.string("Urgent")])
+        ])
+      ],
+      operationName: "Grouped"
+    ))
+    let payload = try payloadObject(response.body, field: "notebooks")
+    guard case let .array(values)? = payload["value"],
+          case let .object(notebook)? = values.first else {
+      return XCTFail("expected grouped notebook result")
+    }
+    XCTAssertEqual(notebook["notebookId"], .string(notebookId))
+
+    let malformed = await executor.execute(GraphQLDocumentRequest(
+      query: query,
+      variables: ["tagFilterGroups": .array([.string("Work")])],
+      operationName: "Grouped"
+    ))
+    XCTAssertNotNil(malformed.body["errors"])
+    XCTAssertEqual(try objectValue(malformed.body["data"], field: "data")["notebooks"], .null)
+
+    let malformedOuter = await executor.execute(GraphQLDocumentRequest(
+      query: query,
+      variables: ["tagFilterGroups": .string("Work")],
+      operationName: "Grouped"
+    ))
+    XCTAssertNotNil(malformedOuter.body["errors"])
+    XCTAssertEqual(
+      try objectValue(malformedOuter.body["data"], field: "data")["notebooks"],
+      .null
+    )
+
+    let malformedMember = await executor.execute(GraphQLDocumentRequest(
+      query: query,
+      variables: [
+        "tagFilterGroups": .array([
+          .array([.string("Work"), .integer(1)])
+        ])
+      ],
+      operationName: "Grouped"
+    ))
+    XCTAssertNotNil(malformedMember.body["errors"])
+    XCTAssertEqual(
+      try objectValue(malformedMember.body["data"], field: "data")["notebooks"],
+      .null
+    )
+
+    let oversized = await executor.execute(GraphQLDocumentRequest(
+      query: query,
+      variables: [
+        "tagFilterGroups": .array(Array(
+          repeating: .array([.string("Work")]),
+          count: 65
+        ))
+      ],
+      operationName: "Grouped"
+    ))
+    let oversizedPayload = try payloadObject(oversized.body, field: "notebooks")
+    let oversizedResult = try objectValue(
+      oversizedPayload["result"],
+      field: "notebooks.result"
+    )
+    XCTAssertEqual(oversizedResult["accepted"], .bool(false))
+    XCTAssertEqual(oversizedResult["status"], .string("invalid_request"))
+    guard case let .array(diagnostics)? = oversizedResult["diagnostics"] else {
+      return XCTFail("expected oversized grouped-filter diagnostics")
+    }
+    XCTAssertTrue(diagnostics.contains {
+      guard case let .string(message) = $0 else { return false }
+      return message.contains("tagFilterGroups supports at most 64 groups")
+    })
+    XCTAssertEqual(oversizedPayload["value"], .null)
+
+    for variables: JSONObject in [[:], ["tagFilterGroups": .null]] {
+      let optional = await executor.execute(GraphQLDocumentRequest(
+        query: query,
+        variables: variables,
+        operationName: "Grouped"
+      ))
+      let optionalPayload = try payloadObject(optional.body, field: "notebooks")
+      guard case let .array(optionalValues)? = optionalPayload["value"] else {
+        return XCTFail("expected omitted or null grouped input to remain optional")
+      }
+      XCTAssertEqual(optionalValues.count, 1)
+    }
+  }
+
   private func makeHierarchyGraphQLService(
     function: String = #function
   ) throws -> GraphQLNoteGraphQLService {

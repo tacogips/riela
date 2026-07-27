@@ -205,8 +205,14 @@ responses cannot replace the current board.
 The additive note GraphQL surface exposes `NoteTag.parentTagId`,
 `Notebook.progress`, `DefineNoteTagInput.parentTagId`, the
 `NotebookProgress` enum, and
-`setNotebookProgress(notebookId:progress)`. Existing `tagFilter` arguments use
-the same descendant expansion as the local service.
+`setNotebookProgress(notebookId:progress)`. Notebook listing also accepts
+`tagFilterGroups: [[String!]!]`: names within a group are unioned after
+descendant expansion, while non-empty groups are intersected. An unknown group
+returns no notebooks, empty groups are ignored, and a non-empty grouped filter
+takes precedence over the existing single-group `tagFilter`. Grouped requests
+are bounded to 64 groups, 256 input names, and 900 expanded names; oversized
+requests fail as controlled `invalid_request` results. Existing `tagFilter`
+callers retain their prior descendant-expanded behavior.
 
 Common local commands:
 
@@ -347,9 +353,15 @@ class-grouped tag chips, and a read-only note preview. Cards and rows show the
 first note excerpt and note count when available. The detail panel can add only
 existing catalog tags and exposes removal only for deletable assignments.
 Folder creation is create-only, so a same-name collision never reparents or
-reclassifies an existing tag. Folder and tag selections share one active scope;
-Board progress updates and scope loads reject stale completions after the user
-changes view or navigation.
+reclassifies an existing tag. Clicking a folder or tag replaces the current
+filter; its adjacent **+** action adds another constraint. Active constraints
+appear as removable chips with **Clear all**, and both List and Board show only
+notebooks matching every chip while retaining descendant expansion within each
+chip. Catalog refreshes drop only constraints whose tags disappeared. Board
+refreshes retain the accepted board until the current bounded load finishes,
+membership writes are serialized, and stale scope, preview, paging, or
+mutation completions cannot replace current state. Unknown server progress is
+shown visibly in **None** instead of dropping the notebook.
 
 RielaApp serves the Notes GraphQL documents at its existing `/graphql` route
 against the active profile's note root, protected by the dashboard's Host,

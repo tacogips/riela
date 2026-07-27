@@ -226,6 +226,160 @@ final class NoteHierarchyProgressTests: NoteTestCase {
     XCTAssertTrue(try service.listNotebooks(tagFilter: ["unknown-tag"]).isEmpty)
   }
 
+  func testGroupedNotebookFiltersIntersectExpandedUnionsAndPreserveFlatCompatibility() throws {
+    let service = try NoteService(driver: makeNoteDriver())
+    let folder = try service.defineTag(name: "Work", classId: "folder")
+    let child = try service.defineTag(
+      name: "Launch",
+      classId: "folder",
+      parentTagId: folder.tagId
+    )
+    try service.defineTagClass(classId: "priority", label: "Priority")
+    let urgent = try service.defineTag(name: "Urgent", classId: "priority")
+    let normal = try service.defineTag(name: "Normal", classId: "priority")
+    let launchUrgent = try service.createNotebook(title: "Launch urgent")
+    let workNormal = try service.createNotebook(title: "Work normal")
+    let urgentOnly = try service.createNotebook(title: "Urgent only")
+    try service.applyNotebookTags(
+      notebookId: launchUrgent.notebookId,
+      tags: [child.name, urgent.name],
+      provenance: .human
+    )
+    try service.applyNotebookTags(
+      notebookId: workNormal.notebookId,
+      tags: [folder.name, normal.name],
+      provenance: .human
+    )
+    try service.applyNotebookTags(
+      notebookId: urgentOnly.notebookId,
+      tags: [urgent.name],
+      provenance: .human
+    )
+
+    XCTAssertEqual(
+      try service.listNotebooks(
+        tagFilterGroups: [[folder.name], [urgent.name]]
+      ).map(\.notebookId),
+      [launchUrgent.notebookId]
+    )
+    XCTAssertEqual(
+      Set(try service.listNotebooks(
+        tagFilterGroups: [[folder.name], [urgent.name, normal.name]]
+      ).map(\.notebookId)),
+      Set([launchUrgent.notebookId, workNormal.notebookId])
+    )
+    XCTAssertTrue(
+      try service.listNotebooks(tagFilterGroups: [[folder.name], ["unknown"]]).isEmpty
+    )
+    XCTAssertEqual(
+      Set(try service.listNotebooks(tagFilterGroups: [[], []]).map(\.notebookId)),
+      Set([launchUrgent.notebookId, workNormal.notebookId, urgentOnly.notebookId])
+    )
+    XCTAssertEqual(
+      Set(try service.listNotebooks(tagFilter: [urgent.name]).map(\.notebookId)),
+      Set([launchUrgent.notebookId, urgentOnly.notebookId])
+    )
+    XCTAssertEqual(
+      try service.listNotebooks(
+        tagFilter: [normal.name],
+        tagFilterGroups: [[urgent.name]]
+      ).map(\.notebookId).sorted(),
+      [launchUrgent.notebookId, urgentOnly.notebookId].sorted()
+    )
+  }
+
+  func testGroupedNotebookFilterBoundsDeduplicateAndFailClosedBeforeFurtherExpansion() throws {
+    let driver = try makeNoteDriver()
+    let service = try NoteService(driver: driver)
+    let work = try service.defineTag(name: "Work", classId: "folder")
+    let notebook = try service.createNotebook(title: "Work notebook")
+    try service.applyNotebookTags(
+      notebookId: notebook.notebookId,
+      tags: [work.name],
+      provenance: .human
+    )
+
+    XCTAssertEqual(
+      try service.listNotebooks(
+        tagFilterGroups: [[work.name, work.name], [work.name], []]
+      ).map(\.notebookId),
+      [notebook.notebookId]
+    )
+    XCTAssertTrue(
+      try service.listNotebooks(
+        tagFilterGroups: [["unknown"], [work.name]]
+      ).isEmpty
+    )
+
+    XCTAssertThrowsError(
+      try service.listNotebooks(
+        tagFilterGroups: Array(
+          repeating: [work.name],
+          count: NoteService.maximumNotebookTagFilterGroups + 1
+        )
+      )
+    ) { error in
+      XCTAssertEqual(
+        error as? NoteServiceError,
+        .invalidInput(
+          "tagFilterGroups supports at most \(NoteService.maximumNotebookTagFilterGroups) groups"
+        )
+      )
+    }
+    XCTAssertThrowsError(
+      try service.listNotebooks(
+        tagFilterGroups: [Array(
+          repeating: work.name,
+          count: NoteService.maximumNotebookTagFilterNames + 1
+        )]
+      )
+    ) { error in
+      XCTAssertEqual(
+        error as? NoteServiceError,
+        .invalidInput(
+          "tagFilterGroups supports at most \(NoteService.maximumNotebookTagFilterNames) tag names"
+        )
+      )
+    }
+  }
+
+  func testGroupedNotebookFilterRejectsOversizedDescendantExpansion() throws {
+    let driver = try makeNoteDriver()
+    let service = try NoteService(driver: driver)
+    let root = try service.defineTag(name: "Root", classId: "folder")
+    try driver.withDatabase { database in
+      try database.transaction { transaction in
+        for index in 0..<NoteService.maximumExpandedNotebookTagFilterNames {
+          try transaction.execute(
+            """
+            INSERT INTO tags (tag_id, name, class_id, parent_tag_id, is_system, created_at)
+            VALUES (?, ?, 'folder', ?, 0, '2026-07-27T00:00:00Z')
+            """,
+            bindings: [
+              .text("child-\(index)"),
+              .text("Child \(index)"),
+              .text(root.tagId)
+            ]
+          )
+        }
+      }
+    }
+
+    XCTAssertThrowsError(
+      try service.listNotebooks(tagFilterGroups: [[root.name]])
+    ) { error in
+      XCTAssertEqual(
+        error as? NoteServiceError,
+        .invalidInput(
+          """
+          tagFilterGroups expands to at most \
+          \(NoteService.maximumExpandedNotebookTagFilterNames) tag names
+          """
+        )
+      )
+    }
+  }
+
   func testCycleRejectionIsAtomicAndDefensiveExpansionTerminates() throws {
     let driver = try makeNoteDriver()
     let service = try NoteService(driver: driver)

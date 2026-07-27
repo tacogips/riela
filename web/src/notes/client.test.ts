@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   NoteGraphQLClient,
   NoteTransportError,
+  notebookPageLimit,
   type NoteClientEnvironment,
 } from './client'
 
@@ -46,12 +47,75 @@ describe('Note GraphQL transport', () => {
         return harness.value.request(input, init)
       },
     })
-    await client.notebooks(200, 'updatedAtDesc', ['Work'])
+    await client.notebooks(200, 'updatedAtDesc', [['Work'], ['Launch']])
     const body = requestBody(harness.requests[0])
-    expect(body.variables).toEqual({ limit: 200, offset: 200, sort: 'updatedAtDesc', tagFilter: ['Work'] })
+    expect(body.variables).toEqual({
+      limit: 200,
+      offset: 200,
+      sort: 'updatedAtDesc',
+      tagFilter: [],
+      tagFilterGroups: [['Work'], ['Launch']],
+    })
+    expect(body.query).toContain('$tagFilterGroups: [[String!]!]')
     expect(body.query).toContain('firstNotePreview noteCount')
     expect(body.query).toContain('classId parentTagId')
     expect(harness.requests[0]?.init?.credentials).toBe('same-origin')
+  })
+
+  test('normalizes unknown notebook progress and clears the marker on canonical reads', async () => {
+    const raw = {
+      notebookId: 'book',
+      title: 'Book',
+      progress: 'future',
+      createdAt: '',
+      updatedAt: '',
+      tags: [],
+    }
+    const canonical = { ...raw, progress: 'done' }
+    const harness = environment([
+      { data: { notebooks: {
+        result: { accepted: true, status: 'ok', diagnostics: [] },
+        value: [raw],
+      } } },
+      { data: { setNotebookProgress: {
+        result: { accepted: true, status: 'ok', diagnostics: [] },
+        notebook: raw,
+      } } },
+      { data: { notebook: {
+        result: { accepted: true, status: 'ok', diagnostics: [] },
+        value: canonical,
+      } } },
+    ])
+    const client = new NoteGraphQLClient('riela-app', harness.value)
+    expect(await client.notebooks(0, 'updatedAtDesc', [])).toMatchObject([
+      { progress: 'none', progressWasUnknown: true },
+    ])
+    expect(await client.setProgress('book', 'done')).toMatchObject({
+      progress: 'none',
+      progressWasUnknown: true,
+    })
+    expect(await client.notebook('book')).toMatchObject({
+      progress: 'done',
+      progressWasUnknown: false,
+    })
+  })
+
+  test('uses the shared notebook page limit for note previews', async () => {
+    const harness = environment([
+      { data: { notes: {
+        result: { accepted: true, status: 'ok', diagnostics: [] },
+        value: [],
+      } } },
+    ])
+    const client = new NoteGraphQLClient('riela-app', harness.value)
+
+    await client.notes('book', notebookPageLimit)
+
+    expect(requestBody(harness.requests[0]).variables).toEqual({
+      notebookId: 'book',
+      limit: notebookPageLimit,
+      offset: notebookPageLimit,
+    })
   })
 
   test('redeems CLI code, removes it from the URL, and keeps bearer in session scope', async () => {

@@ -13,6 +13,7 @@ import type {
 } from './types'
 
 const bearerKey = 'riela-note-bearer'
+export const notebookPageLimit = 200
 
 export interface NoteClientEnvironment {
   request(input: RequestInfo | URL, init?: RequestInit): Promise<Response>
@@ -77,19 +78,25 @@ export class NoteGraphQLClient {
     `, {}, (data) => data.tagClasses)
   }
 
-  async notebooks(offset: number, sort: NoteListSort, tagFilter: string[]): Promise<Notebook[]> {
-    return this.queryValue<{ notebooks: QueryPayload<Notebook[]> }, Notebook[]>('Notebooks', `
-      query Notebooks($limit: Int, $offset: Int, $sort: NoteListSort, $tagFilter: [String!]) {
-        notebooks(limit: $limit, offset: $offset, sort: $sort, tagFilter: $tagFilter) {
+  async notebooks(
+    offset: number,
+    sort: NoteListSort,
+    tagFilterGroups: string[][],
+    limit = notebookPageLimit,
+  ): Promise<Notebook[]> {
+    const values = await this.queryValue<{ notebooks: QueryPayload<Notebook[]> }, Notebook[]>('Notebooks', `
+      query Notebooks($limit: Int, $offset: Int, $sort: NoteListSort, $tagFilter: [String!], $tagFilterGroups: [[String!]!]) {
+        notebooks(limit: $limit, offset: $offset, sort: $sort, tagFilter: $tagFilter, tagFilterGroups: $tagFilterGroups) {
           result { accepted status diagnostics }
           value { notebookId title progress createdAt updatedAt firstNotePreview noteCount tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
         }
       }
-    `, { limit: 200, offset, sort, tagFilter }, (data) => data.notebooks)
+    `, { limit, offset, sort, tagFilter: [], tagFilterGroups }, (data) => data.notebooks)
+    return values.map(normalizeNotebook)
   }
 
   async notebook(notebookId: string): Promise<Notebook> {
-    return this.queryValue<{ notebook: QueryPayload<Notebook> }, Notebook>('Notebook', `
+    const value = await this.queryValue<{ notebook: QueryPayload<Notebook> }, Notebook>('Notebook', `
       query Notebook($notebookId: String!) {
         notebook(notebookId: $notebookId) {
           result { accepted status diagnostics }
@@ -97,6 +104,7 @@ export class NoteGraphQLClient {
         }
       }
     `, { notebookId }, (data) => data.notebook)
+    return normalizeNotebook(value)
   }
 
   async notes(notebookId: string, offset: number): Promise<Note[]> {
@@ -107,7 +115,7 @@ export class NoteGraphQLClient {
           value { noteId notebookId noteNumber title bodyMarkdown readOnly createdAt updatedAt }
         }
       }
-    `, { notebookId, limit: 200, offset }, (data) => data.notes)
+    `, { notebookId, limit: notebookPageLimit, offset }, (data) => data.notes)
   }
 
   async defineFolder(name: string, classId: string, parentTagId?: string): Promise<NoteTag> {
@@ -164,7 +172,7 @@ export class NoteGraphQLClient {
   ): Promise<Notebook> {
     const payload = await this.mutation(operationName, query, variables, field)
     if (!payload.notebook) throw new NoteTransportError('The server did not return the notebook.', 'result')
-    return payload.notebook
+    return normalizeNotebook(payload.notebook)
   }
 
   private async mutation(
@@ -223,6 +231,17 @@ export class NoteGraphQLClient {
     }
     if (!envelope.data) throw new NoteTransportError('GraphQL response did not include data.', 'graphql')
     return envelope.data
+  }
+}
+
+function normalizeNotebook(notebook: Notebook): Notebook {
+  const supported = ['none', 'progress', 'done', 'pending'] as const
+  const progress = String(notebook.progress)
+  const known = supported.some((value) => value === progress)
+  return {
+    ...notebook,
+    progress: known ? progress as NotebookProgress : 'none',
+    progressWasUnknown: !known,
   }
 }
 

@@ -122,6 +122,25 @@ enum NoteCommandGraphQLDocuments {
   }
   """
 
+  static let notebooks = """
+  query Notebooks(
+    $limit: Int,
+    $offset: Int,
+    $tagFilter: [String!],
+    $tagFilterGroups: [[String!]!]
+  ) {
+    notebooks(
+      limit: $limit,
+      offset: $offset,
+      tagFilter: $tagFilter,
+      tagFilterGroups: $tagFilterGroups
+    ) {
+      value { \(notebook) }
+      result { \(controlResult) }
+    }
+  }
+  """
+
   static let searchNotes = """
   query SearchNotes($query: String!, $tagFilter: [String!], $classFilter: [String!], $limit: Int, $offset: Int) {
     searchNotes(query: $query, tagFilter: $tagFilter, classFilter: $classFilter, limit: $limit, offset: $offset) {

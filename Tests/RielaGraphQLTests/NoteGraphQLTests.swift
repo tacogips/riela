@@ -769,11 +769,16 @@ final class NoteGraphQLTests: XCTestCase {
 
   func testSchemaContractExposesNoteDomain() {
     let schema = GraphQLContractProjector.schemaContract
+    let normalizedSchema = schema.split(whereSeparator: \.isWhitespace).joined(separator: " ")
 
     XCTAssertTrue(schema.contains("type Note "))
     XCTAssertTrue(schema.contains("enum NoteListSort { createdAtDesc createdAtAsc updatedAtDesc title }"))
-    XCTAssertTrue(schema.contains(
-      "notebooks(limit: Int, offset: Int, tagFilter: [String!], sort: NoteListSort, createdAfter: String, createdBefore: String)"
+    XCTAssertTrue(normalizedSchema.contains(
+      """
+      notebooks( limit: Int, offset: Int, tagFilter: [String!], \
+      tagFilterGroups: [[String!]!], sort: NoteListSort, createdAfter: String, \
+      createdBefore: String ): NotebooksQueryPayload!
+      """
     ))
     XCTAssertTrue(schema.contains("notes(limit: Int, offset: Int, notebookId: String, tagFilter: [String!]): NotesQueryPayload!"))
     XCTAssertTrue(schema.contains("tags: NoteTagsQueryPayload!"))

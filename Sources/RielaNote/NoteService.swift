@@ -10,6 +10,10 @@ public enum NoteServiceError: Error, Equatable, Sendable {
 }
 
 public struct NoteService: Sendable {
+  static let maximumNotebookTagFilterGroups = 64
+  static let maximumNotebookTagFilterNames = 256
+  static let maximumExpandedNotebookTagFilterNames = 900
+
   public var driver: NoteDatabaseDriving
   public var autoActionDispatcher: AutoActionDispatching?
   public var autoActionDiagnosticRecorder: (any NoteAutoActionFilterDiagnosticRecording)?
@@ -433,18 +437,61 @@ public struct NoteService: Sendable {
     limit: Int = 50,
     offset: Int = 0,
     tagFilter: [String] = [],
+    tagFilterGroups: [[String]] = [],
     sort: NoteListSort = .createdAtDesc,
     createdAfter: String? = nil,
     createdBefore: String? = nil
   ) throws -> [Notebook] {
     try driver.withDatabase { database in
-      let expandedTagFilter = try expandedTagFilterNames(tagFilter, in: database)
-      guard tagFilter.isEmpty || !expandedTagFilter.isEmpty else {
-        return []
+      if !tagFilterGroups.isEmpty {
+        guard tagFilterGroups.count <= Self.maximumNotebookTagFilterGroups else {
+          throw NoteServiceError.invalidInput(
+            "tagFilterGroups supports at most \(Self.maximumNotebookTagFilterGroups) groups"
+          )
+        }
+        var inputNameCount = 0
+        for group in tagFilterGroups {
+          guard group.count <= Self.maximumNotebookTagFilterNames - inputNameCount else {
+            throw NoteServiceError.invalidInput(
+              "tagFilterGroups supports at most \(Self.maximumNotebookTagFilterNames) tag names"
+            )
+          }
+          inputNameCount += group.count
+        }
+      }
+      var requestedGroups: [[String]] = []
+      for group in tagFilterGroups where !group.isEmpty {
+        let canonicalGroup = orderedUnique(group).sorted()
+        if !requestedGroups.contains(canonicalGroup) {
+          requestedGroups.append(canonicalGroup)
+        }
+      }
+      let usesGroupedFilter = !requestedGroups.isEmpty
+      let normalizedGroups = requestedGroups.isEmpty
+        ? (tagFilter.isEmpty ? [] : [tagFilter])
+        : requestedGroups
+      var expandedGroups: [[String]] = []
+      var expandedNameCount = 0
+      for group in normalizedGroups {
+        let expandedGroup = try expandedTagFilterNames(group, in: database)
+        guard !expandedGroup.isEmpty else { return [] }
+        if usesGroupedFilter {
+          guard expandedGroup.count
+            <= Self.maximumExpandedNotebookTagFilterNames - expandedNameCount else {
+            throw NoteServiceError.invalidInput(
+              """
+              tagFilterGroups expands to at most \
+              \(Self.maximumExpandedNotebookTagFilterNames) tag names
+              """
+            )
+          }
+          expandedNameCount += expandedGroup.count
+        }
+        expandedGroups.append(expandedGroup)
       }
       var predicates: [String] = []
       var bindings: [SQLiteValue] = []
-      if !expandedTagFilter.isEmpty {
+      for expandedGroup in expandedGroups {
         predicates.append(
           """
           EXISTS (
@@ -452,11 +499,11 @@ public struct NoteService: Sendable {
             FROM notebook_tags nt
             INNER JOIN tags t ON t.tag_id = nt.tag_id
             WHERE nt.notebook_id = notebooks.notebook_id
-              AND t.name IN (\(placeholders(count: expandedTagFilter.count)))
+              AND t.name IN (\(placeholders(count: expandedGroup.count)))
           )
           """
         )
-        bindings.append(contentsOf: expandedTagFilter.map(SQLiteValue.text))
+        bindings.append(contentsOf: expandedGroup.map(SQLiteValue.text))
       }
       appendCreatedAtPredicates(
         alias: "notebooks",

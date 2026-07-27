@@ -452,6 +452,21 @@
       "residualLowRisks": []
     }
   },
+  "step7b-e2e-evidence": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.6-sol",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "e2eAttempted": false,
+      "command": null,
+      "outcome": "skipped",
+      "reason": "The accepted change did not touch a browser-facing surface and the repository declares no browser E2E script, so headless browser verification was not applicable.",
+      "evidence": "No web package with a test:e2e script was detected in the repository diff.",
+      "residualRisks": []
+    }
+  },
   "step8-docs-refresh": {
     "provider": "scenario-mock",
     "model": "gpt-5.6-sol",

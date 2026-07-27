@@ -33,8 +33,8 @@ Expected stable run summary:
   "status": "completed",
   "workflowName": "codex-design-and-implement-review-loop",
   "workflowId": "codex-design-and-implement-review-loop",
-  "nodeExecutions": 29,
-  "transitions": 28,
+  "nodeExecutions": 30,
+  "transitions": 29,
   "exitCode": 0
 }
 ```

@@ -185,6 +185,10 @@
       "nodeFile": "nodes/node-step7-adversarial-review.json"
     },
     {
+      "id": "step7b-e2e-evidence",
+      "nodeFile": "nodes/node-step7b-e2e-evidence.json"
+    },
+    {
       "id": "step8-docs-refresh",
       "nodeFile": "nodes/node-step8-docs-refresh.json"
     },
@@ -248,7 +252,7 @@
           "label": "has_feature_fanout",
           "fanout": {
             "groupId": "feature-local-planning",
-            "itemsFrom": "/payload/featureFanoutItems",
+            "itemsFrom": "/featureFanoutItems",
             "itemVariable": "feature",
             "concurrency": 20,
             "joinStepId": "step5-feature-plan-join",
@@ -529,7 +533,7 @@
           "label": "!(needs_revision) && requires_adversarial_review"
         },
         {
-          "toStepId": "step8-docs-refresh",
+          "toStepId": "step7b-e2e-evidence",
           "label": "!(needs_revision || requires_adversarial_review)"
         }
       ]
@@ -554,8 +558,27 @@
           "label": "needs_revision"
         },
         {
-          "toStepId": "step8-docs-refresh",
+          "toStepId": "step7b-e2e-evidence",
           "label": "!(needs_revision)"
+        }
+      ]
+    },
+    {
+      "id": "step7b-e2e-evidence",
+      "nodeId": "step7b-e2e-evidence",
+      "description": "Run headless browser E2E as non-blocking evidence after review acceptance and before documentation refresh.",
+      "role": "worker",
+      "loop": {
+        "role": "worker",
+        "evidenceTags": [
+          "e2e",
+          "verification"
+        ],
+        "recordsVerification": true
+      },
+      "transitions": [
+        {
+          "toStepId": "step8-docs-refresh"
         }
       ]
     },

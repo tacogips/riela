@@ -122,7 +122,7 @@ function sameConstraints(left: NotebookConstraint[], right: NotebookConstraint[]
     return current?.kind === constraint.kind
       && current.tagId === constraint.tagId
       && current.tagName === constraint.tagName
-      && current.classId === constraint.classId
+      && (current.classId ?? null) === (constraint.classId ?? null)
   })
 }
 

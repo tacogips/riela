@@ -107,10 +107,16 @@ export function NotesView(props: { mode: HostMode }) {
 
   const publishNotebooks = (accepted: Notebook[], generation: number) => {
     if (generation !== loadGeneration) return
-    if (draggingNotebookId()) {
+    const draggingId = draggingNotebookId()
+    // Only defer the commit while the dragged card still exists in the incoming
+    // list; if the drag source has left the scope its dragend can never fire
+    // (Chromium does not dispatch dragend on a disconnected node), so publishing
+    // now — and clearing the stale drag — prevents a permanently frozen list.
+    if (draggingId && accepted.some((notebook) => notebook.notebookId === draggingId)) {
       pendingNotebookCommit = { generation, notebooks: accepted }
       return
     }
+    if (draggingId) setDraggingNotebookId(undefined)
     pendingNotebookCommit = undefined
     setNotebooks(accepted)
     pruneNotebookActivatorEntries(
@@ -189,7 +195,18 @@ export function NotesView(props: { mode: HostMode }) {
     return fallbackTagId
   }
 
-  onMount(() => void refresh({ initialize: true }))
+  onMount(() => {
+    void refresh({ initialize: true })
+    // Safety net: a drag that ends outside any board column (or in List view,
+    // which has no drop targets) must still release the deferred list commit.
+    const releaseDrag = () => { if (draggingNotebookId()) finishNotebookDrag() }
+    document.addEventListener('dragend', releaseDrag)
+    document.addEventListener('drop', releaseDrag)
+    onCleanup(() => {
+      document.removeEventListener('dragend', releaseDrag)
+      document.removeEventListener('drop', releaseDrag)
+    })
+  })
 
   const refresh = async (
     options: { initialize?: boolean; clearMembership?: boolean } = {},
@@ -224,6 +241,7 @@ export function NotesView(props: { mode: HostMode }) {
       if (catalogClearedScope) {
         setSelectedNotebookId(undefined)
         detailReturnNotebookId = undefined
+        setDraggingNotebookId(undefined)
         previewGeneration += 1
         setPreview([])
         setPreviewOffset(0)
@@ -332,6 +350,7 @@ export function NotesView(props: { mode: HostMode }) {
     setSelectedNotebookId(undefined)
     setPreview([])
     setPreviewHasMore(false)
+    setPreviewLoading(false)
     setAddGroupKey('')
     setAddTagId('')
     detailReturnNotebookId = undefined
@@ -650,8 +669,9 @@ export function NotesView(props: { mode: HostMode }) {
           <For each={progressOrder}>{(progress) => {
             const column = () => notebooks().filter((notebook) => notebook.progress === progress)
             return <section class={`board-column ${progress}`} aria-label={`${progressLabels[progress]} notebooks`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
-              const notebook = notebooks().find((item) => item.notebookId === event.dataTransfer?.getData('text/plain'))
+              const draggedId = event.dataTransfer?.getData('text/plain')
               finishNotebookDrag()
+              const notebook = notebooks().find((item) => item.notebookId === draggedId)
               if (notebook && notebook.progress !== progress) void moveProgress(notebook, progress)
             }}>
               <header><strong>{progressLabels[progress]}</strong><span>{column().length}</span></header>

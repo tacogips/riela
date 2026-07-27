@@ -476,7 +476,7 @@ test('navigates folder-scoped List and Board Notes with detail and progress cont
   await page.getByRole('button', { name: /Web notebook/ }).click()
   await expect(page.getByRole('complementary', { name: /Notebook details/ })).toContainText('Launch brief')
   await captureEvidence(page, 'notes-folder-board-detail')
-  await page.getByRole('button', { name: 'Remove Work' }).click()
+  await page.getByRole('button', { name: 'Remove Work', exact: true }).click()
   await expect(page.getByRole('complementary', { name: /Notebook details/ })).toHaveCount(0)
   await expect(page.locator('.notes-message')).toContainText('the notebook left the active filter')
   await expect(page.getByRole('button', { name: /Web notebook/ })).toHaveCount(0)
@@ -579,7 +579,7 @@ test('keeps Board columns mounted during fail-closed membership reconciliation',
   await expect(page.getByRole('button', { name: /Web notebook/ })).toBeVisible()
   await page.getByRole('tab', { name: 'Board' }).click()
   await page.getByRole('button', { name: /Web notebook/ }).click()
-  await page.getByRole('button', { name: 'Remove Work' }).click()
+  await page.getByRole('button', { name: 'Remove Work', exact: true }).click()
 
   await expect.poll(() =>
     fixture.requests.filter((request) => request === 'POST /graphql:Notebooks').length,
@@ -681,7 +681,7 @@ test('serializes all notebook membership controls behind one in-flight mutation'
   const removePersonal = detail.getByRole('button', { name: 'Remove Personal' })
   await removePersonal.click()
   await expect(removePersonal).toBeDisabled()
-  await expect(detail.getByRole('button', { name: 'Remove Work' })).toBeDisabled()
+  await expect(detail.getByRole('button', { name: 'Remove Work', exact: true })).toBeDisabled()
   await expect(detail.getByRole('button', { name: 'Remove Web' })).toBeDisabled()
   await expect(detail.getByLabel('Add folder')).toBeDisabled()
   await expect(detail.getByLabel('Tag class')).toBeDisabled()
@@ -783,7 +783,7 @@ test('focuses the first surviving notebook after the selected notebook leaves th
   await page.getByRole('button', { name: 'Work', exact: true }).click()
   await page.getByRole('button', { name: /Web notebook/ }).click()
 
-  await page.getByRole('button', { name: 'Remove Work' }).click()
+  await page.getByRole('button', { name: 'Remove Work', exact: true }).click()
 
   await expect(page.getByRole('complementary', { name: /Notebook details/ })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /Other notebook/ })).toBeFocused()
@@ -922,7 +922,7 @@ test('preserves a newer notebook detail while an older folder removal completes'
   await page.getByRole('button', { name: 'Notes' }).click()
   await page.getByRole('treeitem', { name: /Work/ }).getByRole('button', { name: 'Work', exact: true }).click()
   await page.getByRole('button', { name: /Web notebook/ }).click()
-  await page.getByRole('button', { name: 'Remove Work' }).click()
+  await page.getByRole('button', { name: 'Remove Work', exact: true }).click()
   await expect.poll(() => fixture.requests.filter((request) => request === 'POST /graphql:RemoveNotebookTag').length).toBe(1)
   await page.getByRole('button', { name: /Other notebook/ }).click()
   const detail = page.getByRole('complementary', { name: /Notebook details/ })
@@ -943,7 +943,7 @@ test('clears newer detail and restores focus when stale removal refresh fails', 
   await page.getByRole('button', { name: 'Notes' }).click()
   await page.getByRole('treeitem', { name: /Work/ }).getByRole('button', { name: 'Work', exact: true }).click()
   await page.getByRole('button', { name: /Web notebook/ }).click()
-  await page.getByRole('button', { name: 'Remove Work' }).click()
+  await page.getByRole('button', { name: 'Remove Work', exact: true }).click()
   await expect.poll(() => fixture.requests.filter((request) => request === 'POST /graphql:RemoveNotebookTag').length).toBe(1)
   await page.getByRole('button', { name: /Other notebook/ }).click()
   await expect(page.getByRole('complementary', { name: /Notebook details/ })).toContainText('Other notebook')
@@ -962,7 +962,7 @@ test('fails closed when scope refresh fails after folder removal', async ({ page
   const listRow = page.getByRole('button', { name: /Web notebook/ })
   await expect(listRow).toBeVisible()
   await listRow.click()
-  await page.getByRole('button', { name: 'Remove Work' }).click()
+  await page.getByRole('button', { name: 'Remove Work', exact: true }).click()
   await expect(page.getByRole('alert')).toContainText('folder unavailable')
   await expect(page.getByRole('complementary', { name: /Notebook details/ })).toHaveCount(0)
   await expect(listRow).toHaveCount(0)

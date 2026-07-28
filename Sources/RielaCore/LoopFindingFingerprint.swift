@@ -28,6 +28,7 @@ public struct LoopFindingFingerprint: Hashable, Codable, Sendable {
 struct LoopGatePayloadParser: Sendable {
   var stepGateIdsByStepId: [String: String]
   var gateStepIds: Set<String>
+  var advisoryGateStepIds: Set<String>
   var requiredGatesById: [String: LoopGateDeclaration]
 
   func result(from payload: JSONObject, execution: WorkflowStepExecution) -> LoopGateResult {
@@ -56,8 +57,9 @@ struct LoopGatePayloadParser: Sendable {
        case let .object(loopGate)? = output["loopGate"] {
       return result(from: loopGate, execution: execution)
     }
-    guard (intendedStatus ?? execution.status) == .skipped,
-          gateStepIds.contains(execution.stepId) else {
+    let status = intendedStatus ?? execution.status
+    guard gateStepIds.contains(execution.stepId),
+          status == .skipped || (status == .failed && advisoryGateStepIds.contains(execution.stepId)) else {
       return nil
     }
     let gateId = stepGateIdsByStepId[execution.stepId] ?? execution.stepId
@@ -67,7 +69,11 @@ struct LoopGatePayloadParser: Sendable {
       stepExecutionId: execution.executionId,
       decision: .skipped,
       acceptedAt: execution.acceptedOutput?.acceptedAt,
-      diagnostics: ["gate step was skipped"]
+      diagnostics: [
+        status == .failed
+          ? "gate step failed under advisory failure policy and was skipped"
+          : "gate step was skipped"
+      ]
     ))
   }
 
@@ -137,6 +143,9 @@ func loopGateParser(workflow: WorkflowDefinition) -> LoopGatePayloadParser {
     }),
     gateStepIds: Set(workflow.steps.compactMap { step in
       step.loop?.gateId != nil || step.loop?.role == "gate" ? step.id : nil
+    }),
+    advisoryGateStepIds: Set(workflow.steps.compactMap { step in
+      step.failurePolicy == .advisory && (step.loop?.gateId != nil || step.loop?.role == "gate") ? step.id : nil
     }),
     requiredGatesById: Dictionary(uniqueKeysWithValues: (workflow.loop?.gates ?? []).compactMap { gate in
       gate.required ? (gate.id, gate) : nil

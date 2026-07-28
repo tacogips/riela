@@ -137,6 +137,7 @@ private func validateSteps(
     "promptVariant",
     "timeoutMs",
     "stallTimeoutMs",
+    "failurePolicy",
     "sessionPolicy",
     "transitions",
     "loop"
@@ -191,6 +192,25 @@ private func validateSteps(
     }
     if let stallTimeoutMs = entry["stallTimeoutMs"] {
       validateNumberField(stallTimeoutMs, path: "\(path).stallTimeoutMs", diagnostics: &diagnostics)
+    }
+    if let failurePolicy = entry["failurePolicy"] {
+      guard let value = failurePolicy as? String, ["fail", "advisory"].contains(value) else {
+        diagnostics.append(error("\(path).failurePolicy", "must be 'fail' or 'advisory' when provided"))
+        continue
+      }
+      if value == "advisory" {
+        let transitions = entry["transitions"] as? [Any]
+        if transitions?.isEmpty != false {
+          diagnostics.append(error(
+            "\(path).failurePolicy",
+            "'advisory' requires at least one transition because terminal steps cannot skip their output"
+          ))
+        }
+        let isManager = (entry["role"] as? String) == "manager" || (raw["managerStepId"] as? String) == id
+        if isManager {
+          diagnostics.append(error("\(path).failurePolicy", "'advisory' is not supported on the manager step"))
+        }
+      }
     }
     if let sessionPolicy = entry["sessionPolicy"] {
       validateRawSessionPolicy(

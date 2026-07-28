@@ -475,6 +475,11 @@ public struct WorkflowStepSessionPolicy: Codable, Equatable, Sendable {
   }
 }
 
+public enum WorkflowStepFailurePolicy: String, Codable, Sendable {
+  case fail
+  case advisory
+}
+
 public struct WorkflowStepRef: Codable, Equatable, Sendable {
   public var id: String
   public var stepFile: String?
@@ -484,6 +489,7 @@ public struct WorkflowStepRef: Codable, Equatable, Sendable {
   public var promptVariant: String?
   public var timeoutMs: Int?
   public var stallTimeoutMs: Int?
+  public var failurePolicy: WorkflowStepFailurePolicy?
   public var sessionPolicy: WorkflowStepSessionPolicy?
   public var transitions: [WorkflowStepTransition]?
   public var loop: WorkflowStepLoopMetadata?
@@ -497,6 +503,7 @@ public struct WorkflowStepRef: Codable, Equatable, Sendable {
     promptVariant: String? = nil,
     timeoutMs: Int? = nil,
     stallTimeoutMs: Int? = nil,
+    failurePolicy: WorkflowStepFailurePolicy? = nil,
     sessionPolicy: WorkflowStepSessionPolicy? = nil,
     transitions: [WorkflowStepTransition]? = nil,
     loop: WorkflowStepLoopMetadata? = nil
@@ -509,6 +516,7 @@ public struct WorkflowStepRef: Codable, Equatable, Sendable {
     self.promptVariant = promptVariant
     self.timeoutMs = timeoutMs
     self.stallTimeoutMs = stallTimeoutMs
+    self.failurePolicy = failurePolicy
     self.sessionPolicy = sessionPolicy
     self.transitions = transitions
     self.loop = loop

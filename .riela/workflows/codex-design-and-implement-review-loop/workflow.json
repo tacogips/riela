@@ -570,6 +570,7 @@
       "description": "Run headless browser E2E as non-blocking evidence after review acceptance and before documentation refresh.",
       "role": "worker",
       "timeoutMs": 1800000,
+      "failurePolicy": "advisory",
       "loop": {
         "role": "worker",
         "evidenceTags": [

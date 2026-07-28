@@ -779,7 +779,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         )
       )
     } catch let adapterFailure as AdapterExecutionError {
-      try await publishFailureAndThrow(
+      return try await publishAdapterFailure(
         adapterFailure,
         sessionId: sessionId,
         step: step,
@@ -791,7 +791,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         throw error
       }
       let adapterFailure = AdapterExecutionError(.providerError, String(describing: error))
-      try await publishFailureAndThrow(
+      return try await publishAdapterFailure(
         adapterFailure,
         sessionId: sessionId,
         step: step,
@@ -858,7 +858,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           context: context
         )
       } catch let adapterFailure as AdapterExecutionError {
-        try await publishFailureAndThrow(
+        return try await publishAdapterFailure(
           adapterFailure,
           sessionId: sessionId,
           step: step,
@@ -871,7 +871,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           throw error
         }
         let adapterFailure = AdapterExecutionError(.providerError, String(describing: error))
-        try await publishFailureAndThrow(
+        return try await publishAdapterFailure(
           adapterFailure,
           sessionId: sessionId,
           step: step,

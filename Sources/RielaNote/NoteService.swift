@@ -458,15 +458,15 @@ public struct NoteService: Sendable {
           }
           inputNameCount += group.count
         }
+        guard tagFilterGroups.allSatisfy({ !$0.isEmpty }) else { return [] }
       }
       var requestedGroups: [[String]] = []
-      for group in tagFilterGroups where !group.isEmpty {
+      for group in tagFilterGroups {
         let canonicalGroup = orderedUnique(group).sorted()
         if !requestedGroups.contains(canonicalGroup) {
           requestedGroups.append(canonicalGroup)
         }
       }
-      let usesGroupedFilter = !requestedGroups.isEmpty
       let normalizedGroups = requestedGroups.isEmpty
         ? (tagFilter.isEmpty ? [] : [tagFilter])
         : requestedGroups
@@ -475,18 +475,16 @@ public struct NoteService: Sendable {
       for group in normalizedGroups {
         let expandedGroup = try expandedTagFilterNames(group, in: database)
         guard !expandedGroup.isEmpty else { return [] }
-        if usesGroupedFilter {
-          guard expandedGroup.count
-            <= Self.maximumExpandedNotebookTagFilterNames - expandedNameCount else {
-            throw NoteServiceError.invalidInput(
-              """
-              tagFilterGroups expands to at most \
-              \(Self.maximumExpandedNotebookTagFilterNames) tag names
-              """
-            )
-          }
-          expandedNameCount += expandedGroup.count
+        guard expandedGroup.count
+          <= Self.maximumExpandedNotebookTagFilterNames - expandedNameCount else {
+          throw NoteServiceError.invalidInput(
+            """
+            tagFilterGroups expands to at most \
+            \(Self.maximumExpandedNotebookTagFilterNames) tag names
+            """
+          )
         }
+        expandedNameCount += expandedGroup.count
         expandedGroups.append(expandedGroup)
       }
       var predicates: [String] = []

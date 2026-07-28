@@ -3,19 +3,22 @@ import Foundation
 @main
 struct RielaSwiftCLI {
   static func main() async {
+    let jsonlRecordWriter: WorkflowJSONLRecordWriting = { line in
+      FileHandle.standardOutput.write(Data(line.utf8))
+    }
     let app = RielaCLIApplication(
-      runCommand: WorkflowRunCommand(jsonlRecordWriter: { line in
-        FileHandle.standardOutput.write(Data(line.utf8))
-      }),
-      sessionRerunCommand: SessionRerunCommand(jsonlRecordWriter: { line in
-        FileHandle.standardOutput.write(Data(line.utf8))
-      }),
-      sessionResumeCommand: SessionResumeCommand(jsonlRecordWriter: { line in
-        FileHandle.standardOutput.write(Data(line.utf8))
-      }),
+      runCommand: WorkflowRunCommand(jsonlRecordWriter: jsonlRecordWriter),
+      sessionRerunCommand: SessionRerunCommand(jsonlRecordWriter: jsonlRecordWriter),
+      sessionResumeCommand: SessionResumeCommand(jsonlRecordWriter: jsonlRecordWriter),
       sessionInspectionCommand: SessionInspectionCommand(followRecordWriter: { line in
         FileHandle.standardOutput.write(Data(line.utf8))
-      })
+      }),
+      loopCommandRunner: LoopCommandRunner(
+        sessionRerunCommand: SessionRerunCommand(jsonlRecordWriter: jsonlRecordWriter)
+      ),
+      sessionContinueCommand: SessionContinueCommand(
+        sessionResumeCommand: SessionResumeCommand(jsonlRecordWriter: jsonlRecordWriter)
+      )
     )
     let arguments = Array(CommandLine.arguments.dropFirst())
     let runTask = Task {

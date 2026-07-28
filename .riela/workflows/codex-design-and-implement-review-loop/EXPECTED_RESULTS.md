@@ -18,7 +18,11 @@ Expected result: the workflow is valid.
 
 ## Run
 
-Issue-resolution command:
+Issue-resolution command. The default computed step budget
+(`steps.count + maxLoopIterations`, with `maxLoopIterations: 30`) accommodates
+the full review path (design-revision loop, plan-revision loop,
+implementation-review loop, adversarial review, and the non-blocking Step 7b
+E2E evidence node), so no explicit `--max-steps` is needed:
 
 ```bash
 riela workflow run codex-design-and-implement-review-loop \
@@ -38,6 +42,11 @@ Expected stable run summary:
   "exitCode": 0
 }
 ```
+
+The accepted implementation path routes `step7-review` →
+`step7-adversarial-review` → `step7b-e2e-evidence` → `step8-docs-refresh`, where
+`step7b-e2e-evidence` runs headless browser E2E as non-blocking evidence and
+always proceeds to Step 8.
 
 Expected final output node: `workflow-output`
 
@@ -131,3 +140,44 @@ Expected planning-only final output payload:
   "residualRisks": []
 }
 ```
+
+## Run (feature fanout)
+
+Feature-fanout command, exercising the bounded fanout path where the intake
+step emits `when.has_feature_fanout` with a non-empty `payload.featureFanoutItems`
+array. Each item runs the feature-local design/plan branch concurrently before
+joining at `step5-feature-plan-join`:
+
+```bash
+riela workflow run codex-design-and-implement-review-loop \
+  --mock-scenario .riela/workflows/codex-design-and-implement-review-loop/mock-scenario-fanout.json \
+  --output json
+```
+
+Expected stable run summary:
+
+```json
+{
+  "status": "completed",
+  "workflowName": "codex-design-and-implement-review-loop",
+  "workflowId": "codex-design-and-implement-review-loop",
+  "nodeExecutions": 19,
+  "transitions": 18,
+  "exitCode": 0
+}
+```
+
+The run routes `step1-issue-intake` → `[fanout: feature-local-plan]` →
+`step5-feature-plan-join` → `step6-implement` → … → `step7-review` →
+`step7-adversarial-review` → `step7b-e2e-evidence` → `step8-docs-refresh` → … →
+`workflow-output`, skipping the linear single-feature design/plan steps. The
+implementation step has a four-hour (`14400000` ms) per-step timeout so
+full-project verification is not terminated by the one-hour workflow default.
+The advisory `step7b-e2e-evidence` step has a 30-minute (`1800000` ms)
+per-step timeout so a hung headless E2E run cannot stall the session.
+The fanout path stays within the default step budget, so it traverses the
+non-blocking `step7b-e2e-evidence` evidence node without an explicit
+`--max-steps`. The join receives the ordered branch outputs through
+`runtimeVariables.fanoutJoin`.
+
+Expected final output node: `workflow-output`, with `payload.status` `accepted`.

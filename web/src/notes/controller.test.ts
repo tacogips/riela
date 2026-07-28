@@ -3,7 +3,10 @@ import {
   NotebookProgressController,
   NotebookScopeController,
   pruneNotebookActivatorEntries,
+  replaceNotebook,
+  stageNotebookUpdate,
   tagRemovalCanAffectConstraints,
+  type PendingNotebookCommit,
 } from './controller'
 import type { Notebook, NotebookProgress } from './types'
 
@@ -77,6 +80,42 @@ describe('progress convergence', () => {
 
     expect(controller.adopt(notebook('none'), refreshSnapshot).progress).toBe('done')
     expect(controller.adopt(notebook('done'), controller.snapshot()).progress).toBe('done')
+  })
+
+  test('stages a converge confirmation until an active drag ends', async () => {
+    let releaseWrite: (() => void) | undefined
+    const writeGate = new Promise<void>((resolve) => { releaseWrite = resolve })
+    let visible = [notebook('none')]
+    let draggingNotebookId: string | undefined
+    let pending: PendingNotebookCommit | undefined
+    const controller = new NotebookProgressController({
+      setProgress: async (_id, progress) => {
+        await writeGate
+        return notebook(progress)
+      },
+      readNotebook: async () => notebook('none'),
+    }, (updated) => {
+      if (draggingNotebookId) {
+        pending = stageNotebookUpdate(visible, pending, updated, 1)
+      } else {
+        visible = replaceNotebook(visible, updated)
+      }
+    })
+
+    const convergence = controller.move(notebook('none'), 'done')
+    const draggedCard = visible[0]
+    draggingNotebookId = draggedCard?.notebookId
+    releaseWrite?.()
+    await convergence
+
+    expect(draggingNotebookId).toBe('book-1')
+    expect(visible[0]).toBe(draggedCard)
+    expect(pending?.notebooks[0]?.progress).toBe('done')
+
+    draggingNotebookId = undefined
+    visible = pending?.notebooks ?? visible
+    pending = undefined
+    expect(visible[0]?.progress).toBe('done')
   })
 })
 

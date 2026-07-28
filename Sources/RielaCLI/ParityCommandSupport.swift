@@ -30,6 +30,7 @@ struct ParsedParityOptions: ParsableArguments, Sendable {
   @Flag var continueSession = false
   @Option(name: .customLong("resume-step-exec")) var resumeStepExecutionId: String?
   @Option var timeoutMs: Int?
+  @Option var maxSteps: Int?
   @Option var eventRoot: String?
   @Option(name: [.customLong("event-file"), .customLong("file")]) var eventFile: String?
   @Flag var readOnly = false
@@ -89,6 +90,9 @@ struct ParsedParityOptions: ParsableArguments, Sendable {
     }
     if let timeoutMs, timeoutMs <= 0 {
       throw ValidationError("--timeout-ms requires a positive integer")
+    }
+    if let maxSteps, maxSteps <= 0 {
+      throw ValidationError("--max-steps requires a positive integer")
     }
     if let limit, limit <= 0 {
       throw ValidationError("--limit requires a positive integer")

@@ -48,6 +48,59 @@ extension DeterministicWorkflowRunner {
     throw adapterFailure
   }
 
+  func publishAdvisoryFailure(
+    _ adapterFailure: AdapterExecutionError,
+    sessionId: String,
+    step: WorkflowStepRef,
+    attempt: Int,
+    backend: NodeExecutionBackend? = nil,
+    adapterOutput: AdapterExecutionOutput? = nil,
+    transitions: [WorkflowStepTransition]
+  ) async throws -> WorkflowPublicationResult {
+    try await publisher.publishAcceptedOutput(
+      WorkflowPublicationRequest(
+        sessionId: sessionId,
+        stepId: step.id,
+        nodeId: step.nodeId,
+        attempt: attempt,
+        backend: backend,
+        body: .failure(adapterFailure, adapterOutput: adapterOutput),
+        transitions: transitions,
+        routesAdapterFailureAsAdvisory: true
+      )
+    )
+  }
+
+  func publishAdapterFailure(
+    _ adapterFailure: AdapterExecutionError,
+    sessionId: String,
+    step: WorkflowStepRef,
+    attempt: Int,
+    backend: NodeExecutionBackend? = nil,
+    transitions: [WorkflowStepTransition],
+    throwing originalError: Error? = nil
+  ) async throws -> WorkflowPublicationResult {
+    if step.failurePolicy == .advisory {
+      return try await publishAdvisoryFailure(
+        adapterFailure,
+        sessionId: sessionId,
+        step: step,
+        attempt: attempt,
+        backend: backend,
+        transitions: transitions
+      )
+    }
+    try await publishFailureAndThrow(
+      adapterFailure,
+      sessionId: sessionId,
+      step: step,
+      attempt: attempt,
+      backend: backend,
+      transitions: transitions,
+      throwing: originalError
+    )
+  }
+
   private func failurePublicationAttributes(
     sessionId: String,
     step: WorkflowStepRef,

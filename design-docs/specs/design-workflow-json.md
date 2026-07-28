@@ -531,6 +531,8 @@ Optional inline step fields:
 - `role: "manager" | "worker"`
 - `promptVariant: string`
 - `timeoutMs: number`
+- `stallTimeoutMs: number`
+- `failurePolicy: "fail" | "advisory"`
 - `sessionPolicy`
 - `transitions`
 
@@ -538,14 +540,16 @@ Validation rules:
 
 - `id` values are unique within the workflow
 - a file-backed authored step contains `id` and `stepFile`; an inline authored step contains `id`, `nodeId`, and optional inline fields
-- only `id`, `stepFile`, `nodeId`, `description`, `role`, `promptVariant`, `timeoutMs`, `sessionPolicy`, and `transitions` are accepted on authored step entries
-- when `stepFile` is used in source authoring, the inline step fields `nodeId`, `description`, `role`, `promptVariant`, `timeoutMs`, `sessionPolicy`, and `transitions` must not be authored on the same entry; loading resolves the file into a complete step before validation
+- only `id`, `stepFile`, `nodeId`, `description`, `role`, `promptVariant`, `timeoutMs`, `stallTimeoutMs`, `failurePolicy`, `sessionPolicy`, `transitions`, and `loop` are accepted on authored step entries
+- when `stepFile` is used in source authoring, the inline step fields `nodeId`, `description`, `role`, `promptVariant`, `timeoutMs`, `stallTimeoutMs`, `failurePolicy`, `sessionPolicy`, `transitions`, and `loop` must not be authored on the same entry; loading resolves the file into a complete step before validation
 - when `stepFile` is used, the loaded step definition must resolve to the same `id`
 - `nodeId` must resolve through `workflow.json.nodes[]`
 - when `role` is omitted, the step named by `managerStepId` is treated as the manager execution site and all other steps default to worker execution sites
 - manager-role steps must reference file-backed nodes; add-on-backed registry entries are worker-only
 - `transitions[]` target step ids, not node ids
 - `sessionPolicy.inheritFromStepId`, when present, must reference an authored step in the same workflow
+- omitted `failurePolicy` is `fail`, preserving normal session-failing adapter behavior
+- `failurePolicy: "advisory"` records adapter, timeout, and stall-timeout failures on the node execution, then routes an empty payload only through an unconditional transition; it is invalid on manager steps and steps without transitions
 - step-local `timeoutMs`, prompt, and session settings override node defaults for that step usage site only
 
 ## `StepTransition`

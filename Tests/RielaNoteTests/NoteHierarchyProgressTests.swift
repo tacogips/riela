@@ -271,9 +271,9 @@ final class NoteHierarchyProgressTests: NoteTestCase {
     XCTAssertTrue(
       try service.listNotebooks(tagFilterGroups: [[folder.name], ["unknown"]]).isEmpty
     )
-    XCTAssertEqual(
-      Set(try service.listNotebooks(tagFilterGroups: [[], []]).map(\.notebookId)),
-      Set([launchUrgent.notebookId, workNormal.notebookId, urgentOnly.notebookId])
+    XCTAssertTrue(try service.listNotebooks(tagFilterGroups: [[]]).isEmpty)
+    XCTAssertTrue(
+      try service.listNotebooks(tagFilterGroups: [[], [urgent.name]]).isEmpty
     )
     XCTAssertEqual(
       Set(try service.listNotebooks(tagFilter: [urgent.name]).map(\.notebookId)),
@@ -299,11 +299,10 @@ final class NoteHierarchyProgressTests: NoteTestCase {
       provenance: .human
     )
 
-    XCTAssertEqual(
+    XCTAssertTrue(
       try service.listNotebooks(
         tagFilterGroups: [[work.name, work.name], [work.name], []]
-      ).map(\.notebookId),
-      [notebook.notebookId]
+      ).isEmpty
     )
     XCTAssertTrue(
       try service.listNotebooks(
@@ -367,6 +366,43 @@ final class NoteHierarchyProgressTests: NoteTestCase {
 
     XCTAssertThrowsError(
       try service.listNotebooks(tagFilterGroups: [[root.name]])
+    ) { error in
+      XCTAssertEqual(
+        error as? NoteServiceError,
+        .invalidInput(
+          """
+          tagFilterGroups expands to at most \
+          \(NoteService.maximumExpandedNotebookTagFilterNames) tag names
+          """
+        )
+      )
+    }
+  }
+
+  func testLegacyNotebookFilterRejectsOversizedDescendantExpansion() throws {
+    let driver = try makeNoteDriver()
+    let service = try NoteService(driver: driver)
+    let root = try service.defineTag(name: "Root", classId: "folder")
+    try driver.withDatabase { database in
+      try database.transaction { transaction in
+        for index in 0..<NoteService.maximumExpandedNotebookTagFilterNames {
+          try transaction.execute(
+            """
+            INSERT INTO tags (tag_id, name, class_id, parent_tag_id, is_system, created_at)
+            VALUES (?, ?, 'folder', ?, 0, '2026-07-27T00:00:00Z')
+            """,
+            bindings: [
+              .text("legacy-child-\(index)"),
+              .text("Legacy Child \(index)"),
+              .text(root.tagId)
+            ]
+          )
+        }
+      }
+    }
+
+    XCTAssertThrowsError(
+      try service.listNotebooks(tagFilter: [root.name])
     ) { error in
       XCTAssertEqual(
         error as? NoteServiceError,

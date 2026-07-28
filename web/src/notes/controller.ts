@@ -131,6 +131,33 @@ export interface ProgressOperations {
   readNotebook(notebookId: string): Promise<Notebook>
 }
 
+export interface PendingNotebookCommit {
+  generation: number
+  notebooks: Notebook[]
+}
+
+export function replaceNotebook(notebooks: Notebook[], replacement: Notebook): Notebook[] {
+  return notebooks.map((notebook) => notebook.notebookId === replacement.notebookId
+    ? {
+        ...replacement,
+        firstNotePreview: replacement.firstNotePreview ?? notebook.firstNotePreview,
+        noteCount: replacement.noteCount ?? notebook.noteCount,
+      }
+    : notebook)
+}
+
+export function stageNotebookUpdate(
+  current: Notebook[],
+  pending: PendingNotebookCommit | undefined,
+  updated: Notebook,
+  generation: number,
+): PendingNotebookCommit {
+  return {
+    generation: pending?.generation ?? generation,
+    notebooks: replaceNotebook(pending?.notebooks ?? current, updated),
+  }
+}
+
 export class NotebookProgressController {
   private canonical = new Map<string, Notebook>()
   private desired = new Map<string, NotebookProgress>()

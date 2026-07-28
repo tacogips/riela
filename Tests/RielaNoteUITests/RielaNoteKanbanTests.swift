@@ -14,9 +14,17 @@ final class RielaNoteKanbanTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: root) }
 
     let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: root.path))
-    let oneYearJob = try service.defineTag(name: "one year job")
-    let julyTask = try service.defineTag(name: "july task", parentTagId: oneYearJob.tagId)
-    let augustTask = try service.defineTag(name: "august task", parentTagId: oneYearJob.tagId)
+    let oneYearJob = try service.defineTag(name: "one year job", classId: "folder")
+    let julyTask = try service.defineTag(
+      name: "july task",
+      classId: "folder",
+      parentTagId: oneYearJob.tagId
+    )
+    let augustTask = try service.defineTag(
+      name: "august task",
+      classId: "folder",
+      parentTagId: oneYearJob.tagId
+    )
     let julyNotebook = try service.createNotebook(title: "July deliverables")
     let augustNotebook = try service.createNotebook(title: "August deliverables")
     _ = try service.applyNotebookTags(

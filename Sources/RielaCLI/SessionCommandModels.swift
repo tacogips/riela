@@ -70,6 +70,7 @@ public struct SessionResumeOptions: Equatable, Sendable {
 }
 
 public struct SessionRerunCommandResult: Codable, Equatable, Sendable {
+  public private(set) var type = "rerun_result"
   public var sourceSessionId: String
   public var sessionId: String
   public var status: WorkflowSessionStatus
@@ -79,6 +80,7 @@ public struct SessionRerunCommandResult: Codable, Equatable, Sendable {
 }
 
 public struct SessionResumeCommandResult: Codable, Equatable, Sendable {
+  public private(set) var type = "resume_result"
   public var sourceSessionId: String?
   public var sessionId: String
   public var status: WorkflowSessionStatus
@@ -87,6 +89,7 @@ public struct SessionResumeCommandResult: Codable, Equatable, Sendable {
 }
 
 public struct SessionCommandFailureResult: Codable, Equatable, Sendable {
+  public private(set) var type = "session_failure"
   public var sessionId: String
   public var error: String
   public var exitCode: Int32

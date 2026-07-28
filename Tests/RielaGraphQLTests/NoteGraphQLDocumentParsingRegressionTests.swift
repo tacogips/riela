@@ -224,13 +224,49 @@ final class NoteGraphQLParsingRegressionTests: XCTestCase {
     )
   }
 
-  func testRejectsMissingVariablesInsideInputObjectsAndArrays() async throws {
+  func testResolvesOmittedNullableVariableInsideInputObjectToNull() async throws {
     let service = try makeNoteGraphQLService()
     let executor = NoteGraphQLDocumentExecutor(service: service)
+    let query = """
+    mutation Create($title: String) {
+      createNote(input: { title: $title, bodyMarkdown: "# Nullable Variable\\n\\nBody" }) {
+        result { accepted }
+        note { noteId }
+      }
+    }
+    """
+    let parsedFields = try XCTUnwrap(parseNoteGraphQLRootFields(
+      in: query,
+      operationName: "Create",
+      variables: [:],
+      parseArguments: true
+    ))
+    XCTAssertEqual(
+      parsedFields.first?.arguments["input"],
+      .object([
+        "title": .null,
+        "bodyMarkdown": .string("# Nullable Variable\n\nBody")
+      ])
+    )
 
-    let missingObjectVariable = await executor.execute(GraphQLDocumentRequest(
+    let response = await executor.execute(GraphQLDocumentRequest(
+      query: query,
+      operationName: "Create"
+    ))
+
+    XCTAssertTrue(response.handled)
+    XCTAssertNil(response.body["errors"])
+    let payload = try graphQLPayload(response.body, field: "createNote")
+    XCTAssertEqual(try resultObject(payload)["accepted"], .bool(true))
+    XCTAssertEqual(try service.service.listNotes(limit: 10).count, 1)
+  }
+
+  func testRejectsOmittedNonNullVariableInsideInputObject() async throws {
+    let service = try makeNoteGraphQLService()
+    let executor = NoteGraphQLDocumentExecutor(service: service)
+    let response = await executor.execute(GraphQLDocumentRequest(
       query: """
-      mutation Create($title: String) {
+      mutation Create($title: String!) {
         createNote(input: { title: $title, bodyMarkdown: "# Missing Variable\\n\\nBody" }) {
           result { accepted }
           note { noteId }
@@ -240,31 +276,14 @@ final class NoteGraphQLParsingRegressionTests: XCTestCase {
       operationName: "Create"
     ))
 
-    XCTAssertTrue(missingObjectVariable.handled)
-    let objectErrors = try arrayValue(missingObjectVariable.body["errors"], field: "object missing variable errors")
+    XCTAssertTrue(response.handled)
+    let objectErrors = try arrayValue(response.body["errors"], field: "object missing variable errors")
     let objectError = try objectValue(objectErrors.first, field: "object missing variable errors[0]")
     XCTAssertTrue(
       try stringValue(objectError["message"], field: "object missing variable errors[0].message")
-        .contains("missingVariable")
+        .contains("missingVariable: title")
     )
     XCTAssertEqual(try service.service.listNotes(limit: 10).count, 0)
-
-    let missingArrayVariable = await executor.execute(GraphQLDocumentRequest(
-      query: """
-      query Search($tag: String) {
-        searchNotes(query: "anything", tagFilter: [$tag]) { result { accepted } value { note { noteId } } }
-      }
-      """,
-      operationName: "Search"
-    ))
-
-    XCTAssertTrue(missingArrayVariable.handled)
-    let arrayErrors = try arrayValue(missingArrayVariable.body["errors"], field: "array missing variable errors")
-    let arrayError = try objectValue(arrayErrors.first, field: "array missing variable errors[0]")
-    XCTAssertTrue(
-      try stringValue(arrayError["message"], field: "array missing variable errors[0].message")
-        .contains("missingVariable")
-    )
   }
 
   private func makeNoteGraphQLService(function: String = #function) throws -> GraphQLNoteGraphQLService {

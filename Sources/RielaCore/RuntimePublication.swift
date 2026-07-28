@@ -112,6 +112,7 @@ public struct WorkflowPublicationRequest: Sendable {
   public var successfulExecutionStatus: WorkflowStepExecutionStatus
   public var completesRootWithoutOutput: Bool
   public var allowsNoOutput: Bool
+  public var routesAdapterFailureAsAdvisory: Bool
   public var transitionSelectionMode: WorkflowPublicationTransitionSelectionMode
   public var noSelectionDisposition: WorkflowPublicationNoSelectionDisposition
   public var prePersistenceRoutingDecider: WorkflowPrePersistenceRoutingDecider?
@@ -131,6 +132,7 @@ public struct WorkflowPublicationRequest: Sendable {
     successfulExecutionStatus: WorkflowStepExecutionStatus = .completed,
     completesRootWithoutOutput: Bool = false,
     allowsNoOutput: Bool = false,
+    routesAdapterFailureAsAdvisory: Bool = false,
     transitionSelectionMode: WorkflowPublicationTransitionSelectionMode = .rejectMultiple,
     noSelectionDisposition: WorkflowPublicationNoSelectionDisposition = .publishPayloadAsRoot,
     prePersistenceRoutingDecider: WorkflowPrePersistenceRoutingDecider? = nil,
@@ -149,6 +151,7 @@ public struct WorkflowPublicationRequest: Sendable {
     self.successfulExecutionStatus = successfulExecutionStatus
     self.completesRootWithoutOutput = completesRootWithoutOutput
     self.allowsNoOutput = allowsNoOutput
+    self.routesAdapterFailureAsAdvisory = routesAdapterFailureAsAdvisory
     self.transitionSelectionMode = transitionSelectionMode
     self.noSelectionDisposition = noSelectionDisposition
     self.prePersistenceRoutingDecider = prePersistenceRoutingDecider
@@ -349,7 +352,10 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       return try await finishStagedPublication(request: request, execution: recordedExecution)
     }
     if case let .failure(adapterFailure, _) = request.body {
-      _ = try await store.updateStepExecution(
+      let advisoryTransitions = request.routesAdapterFailureAsAdvisory
+        ? request.transitions.filter { ($0.label ?? "").isEmpty }
+        : []
+      var failedExecution = try await store.updateStepExecution(
         WorkflowStepExecutionUpdateInput(
           sessionId: request.sessionId,
           executionId: recordedExecution.executionId,
@@ -360,6 +366,38 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
         )
       )
       try? await finalizeCandidatePathIfNeeded(for: request)
+      if request.routesAdapterFailureAsAdvisory {
+        let advisoryMessages = try await store.appendWorkflowMessages(publicationMessageInputs(
+          request: request,
+          executionId: recordedExecution.executionId,
+          transitions: advisoryTransitions,
+          payload: [:]
+        ))
+        failedExecution = try await store.updateStepExecution(
+          WorkflowStepExecutionUpdateInput(
+            sessionId: request.sessionId,
+            executionId: recordedExecution.executionId,
+            status: .failed,
+            adapterOutput: adapterOutputMetadata,
+            failureReason: "\(adapterFailure.code.rawValue): \(adapterFailure.message)",
+            usage: adapterUsage,
+            currentStepId: nextStepId(from: advisoryTransitions)
+          )
+        )
+        guard let session = try await store.loadSession(id: request.sessionId) else {
+          throw WorkflowRuntimeStoreError.sessionNotFound(request.sessionId)
+        }
+        return publicationResult(
+          request: request,
+          session: session,
+          execution: failedExecution,
+          messages: advisoryMessages,
+          selectedTransitions: advisoryTransitions,
+          payload: [:],
+          publishesRootOutput: false,
+          loopGuard: nil
+        )
+      }
       throw adapterFailure
     }
 

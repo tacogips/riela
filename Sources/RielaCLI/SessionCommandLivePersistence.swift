@@ -2,6 +2,7 @@ import RielaCore
 
 struct SessionLivePersistenceConfig: Sendable {
   var workflowName: String
+  var requestedScope: WorkflowScope
   var resolution: WorkflowResolutionOptions
   var storeRoot: String
   var bundle: ResolvedWorkflowBundle
@@ -52,7 +53,7 @@ func makeSessionCommandLivePersistenceHandler(
         sessionId: event.sessionId,
         workflowName: configuration.workflowName,
         sessionStore: configuration.storeRoot,
-        scope: configuration.bundle.sourceScope
+        scope: configuration.requestedScope
       )
       await recorder.append((try? jsonString(context)) ?? #"{"type":"run_context_encode_failed"}"# + "\n")
     }

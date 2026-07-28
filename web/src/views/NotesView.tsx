@@ -12,8 +12,11 @@ import {
   NotebookScopeController,
   constraintForTag,
   pruneNotebookActivatorEntries,
+  replaceNotebook,
+  stageNotebookUpdate,
   tagRemovalCanAffectConstraints,
   type NotebookConstraint,
+  type PendingNotebookCommit,
   type NotebookScope,
 } from '../notes/controller'
 import {
@@ -84,7 +87,7 @@ export function NotesView(props: { mode: HostMode }) {
   let detailReturnNotebookId: string | undefined
   let loadGeneration = 0
   let previewGeneration = 0
-  let pendingNotebookCommit: { generation: number; notebooks: Notebook[] } | undefined
+  let pendingNotebookCommit: PendingNotebookCommit | undefined
   let clearAllButton: HTMLButtonElement | undefined
   let contentHeading: HTMLDivElement | undefined
 
@@ -94,12 +97,15 @@ export function NotesView(props: { mode: HostMode }) {
       readNotebook: (notebookId) => client.notebook(notebookId),
     },
     (updated, mutationError) => {
-      setNotebooks((current) => replaceNotebook(current, updated))
-      if (pendingNotebookCommit) {
-        pendingNotebookCommit = {
-          ...pendingNotebookCommit,
-          notebooks: replaceNotebook(pendingNotebookCommit.notebooks, updated),
-        }
+      if (draggingNotebookId()) {
+        pendingNotebookCommit = stageNotebookUpdate(
+          notebooks(),
+          pendingNotebookCommit,
+          updated,
+          loadGeneration,
+        )
+      } else {
+        setNotebooks((current) => replaceNotebook(current, updated))
       }
       if (mutationError) setMessage(`Progress reconciled to the server value: ${mutationError}`)
     },
@@ -778,16 +784,6 @@ function TagChip(props: {
 
 function FolderChips(props: { notebook: Notebook }) {
   return <span class="folder-chips"><For each={directFolderAssignments(props.notebook)}>{(tag) => <span class="folder-chip">{tag.name}</span>}</For></span>
-}
-
-function replaceNotebook(notebooks: Notebook[], replacement: Notebook): Notebook[] {
-  return notebooks.map((notebook) => notebook.notebookId === replacement.notebookId
-    ? {
-        ...replacement,
-        firstNotePreview: replacement.firstNotePreview ?? notebook.firstNotePreview,
-        noteCount: replacement.noteCount ?? notebook.noteCount,
-      }
-    : notebook)
 }
 
 function focusAfterScopeEjection(

@@ -8,7 +8,11 @@ import RielaHook
 import RielaServer
 
 public struct SessionContinueCommand: Sendable {
-  public init() {}
+  public var sessionResumeCommand: SessionResumeCommand
+
+  public init(sessionResumeCommand: SessionResumeCommand = SessionResumeCommand()) {
+    self.sessionResumeCommand = sessionResumeCommand
+  }
 
   public func run(_ options: CLICommandOptions) async -> CLICommandResult {
     guard let sessionId = options.target else {
@@ -16,14 +20,19 @@ public struct SessionContinueCommand: Sendable {
     }
     do {
       let parsed = try ParsedParityOptions(options.arguments)
-      return await SessionResumeCommand().run(SessionResumeOptions(
+      let requestedScope = requestedSessionContinueScope(
+        arguments: options.arguments,
+        parsedScope: parsed.scope
+      )
+      return await sessionResumeCommand.run(SessionResumeOptions(
         sessionId: sessionId,
         output: options.output,
-        scope: parsed.scope,
+        scope: requestedScope,
         workflowDefinitionDir: parsed.workflowDefinitionDir,
         workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath,
         mockScenarioPath: parsed.mockScenarioPath,
-        sessionStore: parsed.sessionStore
+        sessionStore: parsed.sessionStore,
+        maxSteps: parsed.maxSteps
       ))
     } catch let error as CLIUsageError {
       return failure(error.message, output: options.output, options: options)
@@ -31,6 +40,20 @@ public struct SessionContinueCommand: Sendable {
       return failure("\(error)", output: options.output, options: options)
     }
   }
+}
+
+private func requestedSessionContinueScope(
+  arguments: [String],
+  parsedScope: WorkflowScope
+) -> WorkflowScope {
+  if arguments.contains("--scope=auto") {
+    return .auto
+  }
+  for (index, argument) in arguments.enumerated()
+  where argument == "--scope" && arguments.indices.contains(index + 1) {
+    return arguments[index + 1] == WorkflowScope.auto.rawValue ? .auto : parsedScope
+  }
+  return .auto
 }
 
 public struct ScopedParityCommandRunner: Sendable {

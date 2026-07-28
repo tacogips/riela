@@ -467,6 +467,7 @@ public struct SessionRerunCommand: Sendable {
       let eventHandler = await makeSessionCommandLivePersistenceHandler(
         configuration: SessionLivePersistenceConfig(
           workflowName: persisted.workflowName,
+          requestedScope: options.scope,
           resolution: resolution,
           storeRoot: storeRoot,
           bundle: bundle,
@@ -709,6 +710,7 @@ public struct SessionResumeCommand: Sendable {
       let eventHandler = await makeSessionCommandLivePersistenceHandler(
         configuration: SessionLivePersistenceConfig(
           workflowName: persisted.workflowName,
+          requestedScope: options.scope,
           resolution: resolution,
           storeRoot: storeRoot,
           bundle: bundle,

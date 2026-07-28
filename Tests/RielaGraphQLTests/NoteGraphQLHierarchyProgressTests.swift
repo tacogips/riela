@@ -234,6 +234,14 @@ final class NoteGraphQLHierarchyProgressTests: XCTestCase {
     }
     XCTAssertEqual(notebook["notebookId"], .string(notebookId))
 
+    let emptyGroup = await executor.execute(GraphQLDocumentRequest(
+      query: query,
+      variables: ["tagFilterGroups": .array([.array([])])],
+      operationName: "Grouped"
+    ))
+    let emptyGroupPayload = try payloadObject(emptyGroup.body, field: "notebooks")
+    XCTAssertEqual(emptyGroupPayload["value"], .array([]))
+
     let malformed = await executor.execute(GraphQLDocumentRequest(
       query: query,
       variables: ["tagFilterGroups": .array([.string("Work")])],

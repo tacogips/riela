@@ -12,36 +12,49 @@ struct SessionLivePersistenceConfig: Sendable {
 }
 
 func makeSessionCommandLivePersistenceHandler(
-  configuration: SessionLivePersistenceConfig
+  configuration: SessionLivePersistenceConfig,
+  recorder: WorkflowRunJSONLRecorder? = nil
 ) async -> WorkflowRunEventHandler {
   let state = WorkflowRunLivePersistenceState()
   await state.configure(storeRoot: configuration.storeRoot)
   return { event in
-    guard await state.shouldPersist(event: event) else {
+    if await state.shouldPersist(event: event) {
+      let isCalleeSession = event.workflowId != configuration.bundle.workflow.workflowId
+      await persistWorkflowRunLiveSessionRecord(
+        sessionId: event.sessionId,
+        context: WorkflowRunLivePersistenceContext(
+          workflowName: isCalleeSession ? event.workflowId : configuration.workflowName,
+          resolution: isCalleeSession
+            ? WorkflowResolutionOptions(
+              workflowName: event.workflowId,
+              scope: configuration.resolution.scope,
+              workflowDefinitionDir: configuration.resolution.workflowDefinitionDir,
+              workingDirectory: configuration.resolution.workingDirectory
+            )
+            : configuration.resolution,
+          bundle: configuration.bundle,
+          variables: configuration.variables,
+          runtimeStore: configuration.runtimeStore,
+          mockScenarioPath: configuration.mockScenarioPath,
+          artifactRoot: nil,
+          workingDirectory: configuration.workingDirectory,
+          recorder: recorder
+        ),
+        state: state
+      )
+    }
+    guard let recorder else {
       return
     }
-    let isCalleeSession = event.workflowId != configuration.bundle.workflow.workflowId
-    await persistWorkflowRunLiveSessionRecord(
-      sessionId: event.sessionId,
-      context: WorkflowRunLivePersistenceContext(
-        workflowName: isCalleeSession ? event.workflowId : configuration.workflowName,
-        resolution: isCalleeSession
-          ? WorkflowResolutionOptions(
-            workflowName: event.workflowId,
-            scope: configuration.resolution.scope,
-            workflowDefinitionDir: configuration.resolution.workflowDefinitionDir,
-            workingDirectory: configuration.resolution.workingDirectory
-          )
-          : configuration.resolution,
-        bundle: configuration.bundle,
-        variables: configuration.variables,
-        runtimeStore: configuration.runtimeStore,
-        mockScenarioPath: configuration.mockScenarioPath,
-        artifactRoot: nil,
-        workingDirectory: configuration.workingDirectory,
-        recorder: nil
-      ),
-      state: state
-    )
+    await recorder.append(event)
+    if event.type == .sessionStarted, event.workflowId == configuration.bundle.workflow.workflowId {
+      let context = WorkflowRunContextRecord(
+        sessionId: event.sessionId,
+        workflowName: configuration.workflowName,
+        sessionStore: configuration.storeRoot,
+        scope: configuration.bundle.sourceScope
+      )
+      await recorder.append((try? jsonString(context)) ?? #"{"type":"run_context_encode_failed"}"# + "\n")
+    }
   }
 }

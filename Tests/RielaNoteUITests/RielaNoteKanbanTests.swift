@@ -5,6 +5,64 @@ import XCTest
 
 @MainActor
 final class RielaNoteKanbanTests: XCTestCase {
+  func testParentFolderTagShowsNotebooksVisibleUnderEachChildTaskTag() async throws {
+    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+      .appendingPathComponent("tmp/RielaNoteKanbanTests", isDirectory: true)
+      .appendingPathComponent(#function.replacingOccurrences(of: "()", with: ""), isDirectory: true)
+      .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: root.path))
+    let oneYearJob = try service.defineTag(name: "one year job")
+    let julyTask = try service.defineTag(name: "july task", parentTagId: oneYearJob.tagId)
+    let augustTask = try service.defineTag(name: "august task", parentTagId: oneYearJob.tagId)
+    let julyNotebook = try service.createNotebook(title: "July deliverables")
+    let augustNotebook = try service.createNotebook(title: "August deliverables")
+    _ = try service.applyNotebookTags(
+      notebookId: julyNotebook.notebookId,
+      tags: [julyTask.name],
+      provenance: .human
+    )
+    _ = try service.applyNotebookTags(
+      notebookId: augustNotebook.notebookId,
+      tags: [augustTask.name],
+      provenance: .human
+    )
+    _ = try service.setNotebookProgress(notebookId: julyNotebook.notebookId, progress: .progress)
+    _ = try service.setNotebookProgress(notebookId: augustNotebook.notebookId, progress: .pending)
+    let viewModel = RielaNoteLibraryViewModel(
+      client: NoteServiceRielaNoteUIClient(service: service),
+      notebookLimit: 10
+    )
+
+    await viewModel.load()
+    await viewModel.toggleSearchTag(julyTask.name)
+
+    XCTAssertEqual(viewModel.notebooks.map(\.notebookId), [julyNotebook.notebookId])
+    XCTAssertEqual(viewModel.notebooks(for: .progress).map(\.notebookId), [julyNotebook.notebookId])
+
+    await viewModel.clearSearchFilters()
+    await viewModel.toggleSearchTag(augustTask.name)
+
+    XCTAssertEqual(viewModel.notebooks.map(\.notebookId), [augustNotebook.notebookId])
+    XCTAssertEqual(viewModel.notebooks(for: .pending).map(\.notebookId), [augustNotebook.notebookId])
+
+    await viewModel.clearSearchFilters()
+    await viewModel.toggleSearchTag(oneYearJob.name)
+
+    XCTAssertEqual(
+      Set(viewModel.notebooks.map(\.notebookId)),
+      Set([julyNotebook.notebookId, augustNotebook.notebookId])
+    )
+    XCTAssertEqual(viewModel.notebooks(for: .progress).map(\.notebookId), [julyNotebook.notebookId])
+    XCTAssertEqual(viewModel.notebooks(for: .pending).map(\.notebookId), [augustNotebook.notebookId])
+    XCTAssertEqual(
+      RielaNoteSearchPopupSheet(viewModel: viewModel, onClose: {}).contentMode,
+      .tagKanban
+    )
+  }
+
   func testActiveParentTagLoadsDescendantNotebooksAndGroupsByProgress() async throws {
     let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
       .appendingPathComponent("tmp/RielaNoteKanbanTests", isDirectory: true)

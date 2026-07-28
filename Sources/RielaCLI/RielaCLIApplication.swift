@@ -360,7 +360,8 @@ Usage:
   riela graphql|gql|hook|events|serve|call-step|workflow-call [command] [target] [options]
 
 Output defaults to JSONL for machine-readable commands. Prefer --output jsonl
-for automation, agents, and LLM-driven tool use, especially for workflow run.
+for automation, agents, and LLM-driven tool use. Workflow run, session rerun,
+and session resume stream lifecycle and backend events while they execute.
 Use --output text for human-readable output. Use --output json only when a
 legacy caller explicitly requires one non-streaming JSON document after
 completion.

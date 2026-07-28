@@ -9,6 +9,8 @@ final class WorkflowRunHelpTests: XCTestCase {
     XCTAssertTrue(result.stderr.isEmpty)
     XCTAssertTrue(result.stdout.contains("Prefer --output jsonl"))
     XCTAssertTrue(result.stdout.contains("for automation, agents, and LLM-driven tool use"))
+    XCTAssertTrue(result.stdout.contains("session rerun"))
+    XCTAssertTrue(result.stdout.contains("session resume stream lifecycle and backend events"))
     XCTAssertTrue(result.stdout.contains("Use --output json only when a"))
     XCTAssertTrue(result.stdout.contains("legacy caller explicitly requires"))
     XCTAssertTrue(result.stdout.contains("riela serve [--host <host>] [--port <port>]"))

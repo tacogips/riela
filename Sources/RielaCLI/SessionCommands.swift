@@ -381,21 +381,26 @@ private func iso8601String(_ date: Date) -> String {
 public struct SessionRerunCommand: Sendable {
   public var resolver: any WorkflowBundleResolving
   public var jsonLoader: JSONReferenceLoader
+  public var jsonlRecordWriter: WorkflowJSONLRecordWriting?
 
   public init(
     resolver: any WorkflowBundleResolving = FileSystemWorkflowBundleResolver(),
-    jsonLoader: JSONReferenceLoader = JSONReferenceLoader()
+    jsonLoader: JSONReferenceLoader = JSONReferenceLoader(),
+    jsonlRecordWriter: WorkflowJSONLRecordWriting? = nil
   ) {
     self.resolver = resolver
     self.jsonLoader = jsonLoader
+    self.jsonlRecordWriter = jsonlRecordWriter
   }
 
   public func run(_ options: SessionRerunOptions) async -> CLICommandResult {
+    let jsonlRecorder = options.output == .jsonl ? WorkflowRunJSONLRecorder(writer: jsonlRecordWriter) : nil
     if options.nestedSuperviser {
-      return failure(
+      return await failure(
         options: options,
         exitCode: .usage,
-        error: "--nested-supervisor / --nested-superviser is not supported for session rerun; use workflow run or session resume with --auto-improve instead"
+        error: "--nested-supervisor / --nested-superviser is not supported for session rerun; use workflow run or session resume with --auto-improve instead",
+        jsonlRecorder: jsonlRecorder
       )
     }
     do {
@@ -469,7 +474,8 @@ public struct SessionRerunCommand: Sendable {
           runtimeStore: runtimeStore,
           mockScenarioPath: options.mockScenarioPath ?? persisted.mockScenarioPath,
           workingDirectory: options.workingDirectory
-        )
+        ),
+        recorder: jsonlRecorder
       )
       let result = try await runner.run(
         DeterministicWorkflowRunRequest(
@@ -508,21 +514,27 @@ public struct SessionRerunCommand: Sendable {
           loopMetadata: bundle.workflow.loop
         )
       )
-      return renderRerunSuccess(options: options, result: result, warning: instanceResolution.warning)
+      return await renderRerunSuccess(
+        options: options,
+        result: result,
+        warning: instanceResolution.warning,
+        jsonlRecorder: jsonlRecorder
+      )
     } catch let error as CLIWorkflowSessionStoreError {
-      return failure(options: options, exitCode: .failure, error: "\(error)")
+      return await failure(options: options, exitCode: .failure, error: "\(error)", jsonlRecorder: jsonlRecorder)
     } catch let error as DeterministicWorkflowRunnerError {
-      return failure(options: options, exitCode: .failure, error: "\(error)")
+      return await failure(options: options, exitCode: .failure, error: "\(error)", jsonlRecorder: jsonlRecorder)
     } catch {
-      return failure(options: options, exitCode: .failure, error: "\(error)")
+      return await failure(options: options, exitCode: .failure, error: "\(error)", jsonlRecorder: jsonlRecorder)
     }
   }
 
   private func renderRerunSuccess(
     options: SessionRerunOptions,
     result: WorkflowRunResult,
-    warning: String?
-  ) -> CLICommandResult {
+    warning: String?,
+    jsonlRecorder: WorkflowRunJSONLRecorder?
+  ) async -> CLICommandResult {
     let exitCode = CLIExitCode(rawValue: result.exitCode) ?? .failure
     switch options.output {
     case .json, .jsonl:
@@ -534,11 +546,12 @@ public struct SessionRerunCommand: Sendable {
         exitCode: result.exitCode,
         recovery: result.recovery
       )
-      let stdout = (try? jsonString(payload)) ?? ""
-      return CLICommandResult(
+      return await renderSessionCommandStructuredPayload(
+        payload,
+        output: options.output,
         exitCode: exitCode,
-        stdout: stdout + (stdout.hasSuffix("\n") ? "" : "\n"),
-        stderr: warning.map { "\($0)\n" } ?? ""
+        stderr: warning.map { "\($0)\n" } ?? "",
+        jsonlRecorder: jsonlRecorder
       )
     case .text, .table:
       let warningLine = warning.map { "warning: \($0)\n" } ?? ""
@@ -557,13 +570,22 @@ public struct SessionRerunCommand: Sendable {
     }
   }
 
-  private func failure(options: SessionRerunOptions, exitCode: CLIExitCode, error: String) -> CLICommandResult {
+  private func failure(
+    options: SessionRerunOptions,
+    exitCode: CLIExitCode,
+    error: String,
+    jsonlRecorder: WorkflowRunJSONLRecorder?
+  ) async -> CLICommandResult {
     guard options.output.isStructured else {
       return CLICommandResult(exitCode: exitCode, stderr: error)
     }
     let payload = SessionCommandFailureResult(sessionId: options.sessionId, error: error, exitCode: exitCode.rawValue)
-    let stdout = (try? jsonString(payload)) ?? ""
-    return CLICommandResult(exitCode: exitCode, stdout: stdout + (stdout.hasSuffix("\n") ? "" : "\n"))
+    return await renderSessionCommandStructuredPayload(
+      payload,
+      output: options.output,
+      exitCode: exitCode,
+      jsonlRecorder: jsonlRecorder
+    )
   }
 
   private func mergedResolution(persisted: PersistedCLIWorkflowSession, options: SessionRerunOptions) -> WorkflowResolutionOptions {
@@ -597,12 +619,18 @@ public struct SessionRerunCommand: Sendable {
 
 public struct SessionResumeCommand: Sendable {
   public var resolver: any WorkflowBundleResolving
+  public var jsonlRecordWriter: WorkflowJSONLRecordWriting?
 
-  public init(resolver: any WorkflowBundleResolving = FileSystemWorkflowBundleResolver()) {
+  public init(
+    resolver: any WorkflowBundleResolving = FileSystemWorkflowBundleResolver(),
+    jsonlRecordWriter: WorkflowJSONLRecordWriting? = nil
+  ) {
     self.resolver = resolver
+    self.jsonlRecordWriter = jsonlRecordWriter
   }
 
   public func run(_ options: SessionResumeOptions) async -> CLICommandResult {
+    let jsonlRecorder = options.output == .jsonl ? WorkflowRunJSONLRecorder(writer: jsonlRecordWriter) : nil
     do {
       let loaded = try CLIWorkflowSessionResolution.loadPersistedSession(
         sessionId: options.sessionId,
@@ -612,10 +640,11 @@ public struct SessionResumeCommand: Sendable {
       )
       let persisted = loaded.record
       if blocksResume(persisted.session) {
-        return resumeFailure(
+        return await resumeFailure(
           options: options,
           exitCode: .failure,
-          error: nonBudgetFailureResumeMessage(session: persisted.session)
+          error: nonBudgetFailureResumeMessage(session: persisted.session),
+          jsonlRecorder: jsonlRecorder
         )
       }
       let storeRoot = CLIWorkflowSessionResolution.saveStoreRoot(
@@ -687,7 +716,8 @@ public struct SessionResumeCommand: Sendable {
           runtimeStore: runtimeStore,
           mockScenarioPath: effectiveMockScenarioPath,
           workingDirectory: options.workingDirectory
-        )
+        ),
+        recorder: jsonlRecorder
       )
       let result: WorkflowRunResult
       do {
@@ -717,10 +747,11 @@ public struct SessionResumeCommand: Sendable {
             runtimeVariables: variables
           )
         } catch let persistenceError {
-          return resumeFailure(
+          return await resumeFailure(
             options: options,
             exitCode: .failure,
-            error: "\(error); failed to persist failed resume snapshot: \(persistenceError)"
+            error: "\(error); failed to persist failed resume snapshot: \(persistenceError)",
+            jsonlRecorder: jsonlRecorder
           )
         }
         throw error
@@ -747,13 +778,18 @@ public struct SessionResumeCommand: Sendable {
           loopMetadata: bundle.workflow.loop
         )
       )
-      return renderResumeSuccess(options: options, result: result, warning: instanceResolution.warning)
+      return await renderResumeSuccess(
+        options: options,
+        result: result,
+        warning: instanceResolution.warning,
+        jsonlRecorder: jsonlRecorder
+      )
     } catch let error as CLIWorkflowSessionStoreError {
-      return resumeFailure(options: options, exitCode: .failure, error: "\(error)")
+      return await resumeFailure(options: options, exitCode: .failure, error: "\(error)", jsonlRecorder: jsonlRecorder)
     } catch let error as DeterministicWorkflowRunnerError {
-      return resumeFailure(options: options, exitCode: .failure, error: "\(error)")
+      return await resumeFailure(options: options, exitCode: .failure, error: "\(error)", jsonlRecorder: jsonlRecorder)
     } catch {
-      return resumeFailure(options: options, exitCode: .failure, error: "\(error)")
+      return await resumeFailure(options: options, exitCode: .failure, error: "\(error)", jsonlRecorder: jsonlRecorder)
     }
   }
 
@@ -803,8 +839,9 @@ public struct SessionResumeCommand: Sendable {
   private func renderResumeSuccess(
     options: SessionResumeOptions,
     result: WorkflowRunResult,
-    warning: String?
-  ) -> CLICommandResult {
+    warning: String?,
+    jsonlRecorder: WorkflowRunJSONLRecorder?
+  ) async -> CLICommandResult {
     let exitCode = CLIExitCode(rawValue: result.exitCode) ?? .failure
     switch options.output {
     case .json, .jsonl:
@@ -815,11 +852,12 @@ public struct SessionResumeCommand: Sendable {
         exitCode: result.exitCode,
         recovery: result.recovery
       )
-      let stdout = (try? jsonString(payload)) ?? ""
-      return CLICommandResult(
+      return await renderSessionCommandStructuredPayload(
+        payload,
+        output: options.output,
         exitCode: exitCode,
-        stdout: stdout + (stdout.hasSuffix("\n") ? "" : "\n"),
-        stderr: warning.map { "\($0)\n" } ?? ""
+        stderr: warning.map { "\($0)\n" } ?? "",
+        jsonlRecorder: jsonlRecorder
       )
     case .text, .table:
       let warningLine = warning.map { "warning: \($0)\n" } ?? ""
@@ -837,13 +875,22 @@ public struct SessionResumeCommand: Sendable {
     }
   }
 
-  private func resumeFailure(options: SessionResumeOptions, exitCode: CLIExitCode, error: String) -> CLICommandResult {
+  private func resumeFailure(
+    options: SessionResumeOptions,
+    exitCode: CLIExitCode,
+    error: String,
+    jsonlRecorder: WorkflowRunJSONLRecorder?
+  ) async -> CLICommandResult {
     guard options.output.isStructured else {
       return CLICommandResult(exitCode: exitCode, stderr: error)
     }
     let payload = SessionCommandFailureResult(sessionId: options.sessionId, error: error, exitCode: exitCode.rawValue)
-    let stdout = (try? jsonString(payload)) ?? ""
-    return CLICommandResult(exitCode: exitCode, stdout: stdout + (stdout.hasSuffix("\n") ? "" : "\n"))
+    return await renderSessionCommandStructuredPayload(
+      payload,
+      output: options.output,
+      exitCode: exitCode,
+      jsonlRecorder: jsonlRecorder
+    )
   }
 
   private func blocksResume(_ session: WorkflowSession) -> Bool {

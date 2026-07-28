@@ -7,6 +7,12 @@ struct RielaSwiftCLI {
       runCommand: WorkflowRunCommand(jsonlRecordWriter: { line in
         FileHandle.standardOutput.write(Data(line.utf8))
       }),
+      sessionRerunCommand: SessionRerunCommand(jsonlRecordWriter: { line in
+        FileHandle.standardOutput.write(Data(line.utf8))
+      }),
+      sessionResumeCommand: SessionResumeCommand(jsonlRecordWriter: { line in
+        FileHandle.standardOutput.write(Data(line.utf8))
+      }),
       sessionInspectionCommand: SessionInspectionCommand(followRecordWriter: { line in
         FileHandle.standardOutput.write(Data(line.utf8))
       })

@@ -370,7 +370,7 @@
         },
         {
           "toStepId": "step4-impl-plan-create",
-          "label": "needs_revision"
+          "label": "needs_revision && !(needs_design_revision)"
         },
         {
           "toStepId": "step5-impl-plan-review",
@@ -399,7 +399,7 @@
         },
         {
           "toStepId": "step4-impl-plan-create",
-          "label": "needs_revision"
+          "label": "needs_revision && !(needs_design_revision)"
         },
         {
           "toStepId": "step9-commit-message",

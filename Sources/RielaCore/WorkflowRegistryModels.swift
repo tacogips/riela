@@ -1,6 +1,18 @@
 import Crypto
 import Foundation
 
+public enum WorkflowScope: String, Codable, Sendable {
+  case auto
+  case project
+  case user
+  case direct
+}
+
+public enum WorkflowSourceKind: String, Codable, Equatable, Sendable {
+  case workflow
+  case package
+}
+
 public enum WorkflowProvenance: String, Codable, CaseIterable, Equatable, Sendable {
   case mutable
   case immutable

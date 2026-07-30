@@ -1,43 +1,51 @@
 #if os(macOS)
 import Foundation
+import RielaWorkflowRegistry
 import RielaCore
 import RielaGraphQL
 import RielaNote
 import RielaServer
 
 private struct RielaAppGraphQLExecutor: GraphQLDocumentExecuting {
-  let noteExecutor: NoteGraphQLDocumentExecutor
+  let executor: CompositeGraphQLDocumentExecutor
+  let registryWorkingDirectory: String
 
   func execute(_ request: GraphQLDocumentRequest) async -> GraphQLDocumentExecutionResponse {
-    let noteResponse = await noteExecutor.execute(request)
-    guard !noteResponse.handled else {
-      return noteResponse
-    }
-    return GraphQLDocumentExecutionResponse(
-      handled: true,
-      body: [
-        "graphql": .object([
-          "delegated": .bool(true),
-          "query": .string(request.query),
-          "variables": .object(request.variables),
-          "operationName": request.operationName.map(JSONValue.string) ?? .null,
-          "schema": .string(GraphQLContractProjector.schemaContract)
-        ])
-      ]
+    var trustedRequest = request
+    trustedRequest.transportCredential = GraphQLTransportCredential(
+      RielaAppWebRegistryAuthorizer.internalCredential
     )
+    trustedRequest.localWorkingDirectory = registryWorkingDirectory
+    return await executor.execute(trustedRequest)
   }
 }
 
 extension RielaApp {
   func webNoteGraphQLResponse(for request: RielaHTTPRequest) async -> RielaHTTPResponse {
+    guard request.headers["x-riela-profile"] == daemonProfileName.rawValue else {
+      return webGraphQLProfileConflictResponse()
+    }
     do {
       let profileName = daemonProfileName
       let root = noteRootURL(profileName: profileName)
       let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: root.path))
       let executor = RielaAppGraphQLExecutor(
-        noteExecutor: NoteGraphQLDocumentExecutor(
-          service: GraphQLNoteGraphQLService(service: service)
-        )
+        executor: CompositeGraphQLDocumentExecutor(
+          workflowRegistry: WorkflowRegistryGraphQLDocumentExecutor(
+            configuration: WorkflowRegistryGraphQLServerConfig(
+              provider: FileWorkflowRegistryGraphQLProvider(
+                workingDirectory: NSHomeDirectory(),
+                webPrincipalId: RielaAppWebRegistryAuthorizer.principalId
+              ),
+              authorizer: RielaAppWebRegistryAuthorizer(),
+              managedReferenceResolver: RielaAppWebManagedReferenceResolver()
+            )
+          ),
+          fallback: NoteGraphQLDocumentExecutor(
+            service: GraphQLNoteGraphQLService(service: service)
+          )
+        ),
+        registryWorkingDirectory: NSHomeDirectory()
       )
       return await DeterministicServerHTTPAdapter(
         routeHandler: DeterministicServerRouteHandler(
@@ -52,6 +60,17 @@ extension RielaApp {
         "message": .string("The active profile's Notes service is unavailable.")
       ]))
     }
+  }
+
+  private func webGraphQLProfileConflictResponse() -> RielaHTTPResponse {
+    let message = "The active profile changed after this view was loaded"
+    return .json(status: 409, .object([
+      "error": .string("profile_conflict"),
+      "errors": .array([.object([
+        "message": .string(message),
+        "extensions": .object(["code": .string("PROFILE_CONFLICT")])
+      ])])
+    ]))
   }
 }
 #endif

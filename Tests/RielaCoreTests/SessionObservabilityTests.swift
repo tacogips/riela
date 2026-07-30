@@ -354,6 +354,96 @@ final class SessionObservabilityTests: XCTestCase {
     XCTAssertEqual(view.root.children.map(\.digest.sessionId), ["child-a"])
   }
 
+  func testSQLiteSessionSummariesBoundLargeHistoryWithoutLoadingMessages() throws {
+    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+      .appendingPathComponent("tmp/session-observability-tests/\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    for index in 0..<125 {
+      let date = Date(timeIntervalSince1970: TimeInterval(index))
+      try store.save(snapshot(
+        sessionId: String(format: "session-%03d", index),
+        status: .running,
+        createdAt: date
+      ))
+    }
+
+    let summaries = try store.loadSessionSummaries(workflowId: "workflow", limit: 101)
+
+    XCTAssertEqual(summaries.count, 101)
+    XCTAssertEqual(summaries.first?.sessionId, "session-124")
+    XCTAssertEqual(summaries.last?.sessionId, "session-024")
+    XCTAssertEqual(summaries.first?.activeStepIds, ["step"])
+    XCTAssertEqual(
+      try store.loadDiagnostics(sessionId: "session-124"),
+      []
+    )
+  }
+
+  func testSQLiteSessionSummariesCompleteLegacyMigrationBeyondFirstBatch() throws {
+    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+      .appendingPathComponent("tmp/session-observability-tests/\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let databasePath = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
+    let setup = runSQLite(
+      databasePath,
+      """
+      CREATE TABLE workflow_runtime_snapshots (
+        workflow_execution_id TEXT PRIMARY KEY,
+        session_json BLOB NOT NULL CHECK (json_valid(session_json, 8)),
+        root_output_json BLOB CHECK (root_output_json IS NULL OR json_valid(root_output_json, 8)),
+        diagnostics_json BLOB NOT NULL CHECK (json_valid(diagnostics_json, 8)),
+        updated_at TEXT NOT NULL
+      );
+      WITH RECURSIVE sessions(value) AS (
+        SELECT 0
+        UNION ALL
+        SELECT value + 1 FROM sessions WHERE value < 524
+      )
+      INSERT INTO workflow_runtime_snapshots (
+        workflow_execution_id, session_json, root_output_json, diagnostics_json, updated_at
+      )
+      SELECT
+        printf('legacy-%03d', value),
+        jsonb(json_object(
+          'workflowId', CASE WHEN value = 524 THEN 'selected-workflow' ELSE 'foreign-workflow' END,
+          'sessionId', printf('legacy-%03d', value),
+          'status', 'completed',
+          'entryStepId', 'step',
+          'createdAt', '1970-01-01T00:16:40.000Z',
+          'updatedAt', '1970-01-01T00:16:40.000Z',
+          'executions', json('[]')
+        )),
+        NULL,
+        jsonb('[]'),
+        '1970-01-01T00:16:40.000Z'
+      FROM sessions;
+      """
+    )
+    XCTAssertEqual(setup.exitCode, 0, setup.stderr)
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+
+    let summaries = try store.loadSessionSummaries(
+      workflowId: "selected-workflow",
+      limit: 101
+    )
+    let remaining = runSQLite(
+      databasePath,
+      """
+      SELECT COUNT(*)
+      FROM workflow_runtime_snapshots
+      WHERE workflow_id IS NULL OR session_status IS NULL OR created_at IS NULL;
+      """,
+      readOnly: true
+    )
+
+    XCTAssertEqual(summaries.map(\.sessionId), ["legacy-524"])
+    XCTAssertEqual(remaining.exitCode, 0, remaining.stderr)
+    XCTAssertEqual(remaining.stdout.trimmingCharacters(in: .whitespacesAndNewlines), "0")
+  }
+
   func testSQLiteRollupReadsPreMigrationSchemaWithoutDDL() throws {
     let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
       .appendingPathComponent("tmp/session-observability-tests/\(UUID().uuidString)")

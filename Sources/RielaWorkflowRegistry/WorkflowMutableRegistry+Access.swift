@@ -64,7 +64,7 @@ extension WorkflowMutableRegistry {
     try withWorkflowPinnedAccess(workflowId: workflowId) { _ in try body() }
   }
 
-  func withWorkflowPinnedAccess<T>(
+  package func withWorkflowPinnedAccess<T>(
     workflowId: String,
     _ body: (WorkflowMutableRegistryPinnedRoot?) throws -> T
   ) throws -> T {
@@ -85,7 +85,7 @@ extension WorkflowMutableRegistry {
     }
   }
 
-  func withWorkflowMutationAccess<T>(
+  package func withWorkflowMutationAccess<T>(
     workflowId: String,
     expectedDigest: String,
     shouldPublish: (T) -> Bool = { _ in true },

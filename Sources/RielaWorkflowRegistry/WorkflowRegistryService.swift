@@ -23,6 +23,12 @@ public struct WorkflowRegistryMutationResult: Codable, Equatable, Sendable {
   }
 }
 
+struct WorkflowRegistryDefinitionSnapshot: Sendable {
+  var entry: WorkflowCatalogEntry
+  var data: Data
+  var revision: String
+}
+
 public struct WorkflowRegistryService: Sendable {
   private let registry: WorkflowMutableRegistry
   private let activationStore: WorkflowActivationStore
@@ -34,7 +40,7 @@ public struct WorkflowRegistryService: Sendable {
     coordinator = WorkflowRegistryCoordinator()
   }
 
-  init(
+  package init(
     registry: WorkflowMutableRegistry,
     activationStore: WorkflowActivationStore = WorkflowActivationStore(),
     coordinator: WorkflowRegistryCoordinator = WorkflowRegistryCoordinator()
@@ -49,41 +55,10 @@ public struct WorkflowRegistryService: Sendable {
     workingDirectory: String = FileManager.default.currentDirectoryPath
   ) throws -> [WorkflowCatalogEntry] {
     try withCoordinatedRead(workingDirectory: workingDirectory) {
-      try filter.validate()
-      let arguments = ["--scope", filter.scope?.rawValue ?? WorkflowRegistryScope.auto.rawValue]
-      let entries = try WorkflowCatalogCommand(mutableRegistry: registry).catalogEntries(
-        options: CLICommandOptions(
-          scope: "workflow",
-          command: "list",
-          arguments: arguments + ["--working-dir", workingDirectory],
-          output: .json
-        )
+      try WorkflowRegistryCatalog(registry: registry).list(
+        filter: filter,
+        workingDirectory: workingDirectory
       )
-      return entries.filter { entry in
-        if let query = filter.query?.lowercased(), !query.isEmpty,
-           !entry.workflowName.lowercased().contains(query),
-           !entry.workflowId.lowercased().contains(query) {
-          return false
-        }
-        if let description = filter.description?.lowercased(), !description.isEmpty,
-           !(entry.description?.lowercased().contains(description) ?? false) {
-          return false
-        }
-        if let sourceKind = filter.sourceKind,
-           sourceKind.rawValue != entry.sourceKind.rawValue {
-          return false
-        }
-        if let provenance = filter.provenance, provenance != entry.provenance {
-          return false
-        }
-        if let mutable = filter.mutable, mutable != entry.mutable {
-          return false
-        }
-        if let activationState = filter.activationState, activationState != entry.activationState {
-          return false
-        }
-        return true
-      }
     }
   }
 
@@ -165,6 +140,7 @@ public struct WorkflowRegistryService: Sendable {
 
   public func delete(
     target: WorkflowRegistryTarget,
+    expectedDefinitionRevision: String? = nil,
     workingDirectory: String = FileManager.default.currentDirectoryPath
   ) throws -> WorkflowRegistryMutationResult {
     try coordinated(workingDirectory: workingDirectory) {
@@ -174,8 +150,8 @@ public struct WorkflowRegistryService: Sendable {
         workflowIds: [entry.workflowId],
         originIds: [entry.originId]
       ) {
+        try requireDefinitionRevision(expectedDefinitionRevision, entry: entry)
         _ = try registry.delete(workflowId: entry.workflowId)
-        try activationStore.remove(origin: origin(for: entry))
         return WorkflowRegistryMutationResult(accepted: true, retiredWorkflows: [entry])
       }
     }
@@ -184,6 +160,8 @@ public struct WorkflowRegistryService: Sendable {
   public func setActivation(
     _ state: WorkflowActivationState,
     target: WorkflowRegistryTarget,
+    expectedDefinitionRevision: String? = nil,
+    expectedActivationState: WorkflowActivationState? = nil,
     workingDirectory: String = FileManager.default.currentDirectoryPath
   ) throws -> WorkflowRegistryMutationResult {
     try coordinated(workingDirectory: workingDirectory) {
@@ -192,9 +170,95 @@ public struct WorkflowRegistryService: Sendable {
         workflowIds: [entry.workflowId],
         originIds: [entry.originId]
       ) {
+        try requireDefinitionRevision(expectedDefinitionRevision, entry: entry)
+        if let expectedActivationState, entry.activationState != expectedActivationState {
+          throw WorkflowRegistryError(
+            code: .registryConflict,
+            message: "workflow activation changed after it was loaded",
+            workflowId: entry.workflowId,
+            originId: entry.originId
+          )
+        }
         try activationStore.set(state, for: origin(for: entry))
         entry.activationState = state
         return WorkflowRegistryMutationResult(accepted: true, workflow: entry)
+      }
+    }
+  }
+
+  func definitionSnapshot(
+    target: WorkflowRegistryTarget,
+    workingDirectory: String = FileManager.default.currentDirectoryPath
+  ) throws -> WorkflowRegistryDefinitionSnapshot {
+    try withCoordinatedRead(workingDirectory: workingDirectory) {
+      let entry = try fetch(target: target, workingDirectory: workingDirectory)
+      try requireMutable(entry)
+      return try registry.withCoordinatorWorkflowLocks(
+        workflowIds: [entry.workflowId],
+        originIds: [entry.originId]
+      ) {
+        let data = try definitionData(for: entry)
+        return WorkflowRegistryDefinitionSnapshot(
+          entry: entry,
+          data: data,
+          revision: WorkflowHistoryCanonicalCoding.sha256(data)
+        )
+      }
+    }
+  }
+
+  func updateDefinition(
+    target: WorkflowRegistryTarget,
+    expectedDefinitionRevision: String,
+    workingDirectory: String = FileManager.default.currentDirectoryPath,
+    transform: (Data, WorkflowCatalogEntry) throws -> Data
+  ) throws -> WorkflowRegistryMutationResult {
+    try coordinated(workingDirectory: workingDirectory) {
+      let entry = try fetch(target: target, workingDirectory: workingDirectory)
+      try requireMutable(entry)
+      return try registry.withCoordinatorWorkflowLocks(
+        workflowIds: [entry.workflowId],
+        originIds: [entry.originId]
+      ) {
+        let current = try definitionData(for: entry)
+        try requireDefinitionRevision(expectedDefinitionRevision, data: current, entry: entry)
+        let expectedBundleDigest = try registry.withWorkflowPinnedAccess(workflowId: entry.workflowId) { pinned in
+          guard let pinned else {
+            throw WorkflowRegistryError(
+              code: .workflowNotFound,
+              message: "mutable workflow '\(entry.workflowId)' was not found",
+              workflowId: entry.workflowId,
+              originId: entry.originId
+            )
+          }
+          return try registry.bundleDigest(
+            at: registry.root.appendingPathComponent(entry.workflowId, isDirectory: true),
+            pinned: pinned
+          )
+        }
+        try registry.withWorkflowMutationAccess(
+          workflowId: entry.workflowId,
+          expectedDigest: expectedBundleDigest
+        ) { workspace, publish in
+          let workspaceDefinition = workspace.appendingPathComponent("workflow.json")
+          let persisted = try Data(contentsOf: workspaceDefinition)
+          try requireDefinitionRevision(expectedDefinitionRevision, data: persisted, entry: entry)
+          let replacement = try transform(persisted, entry)
+          guard replacement.count <= 512 * 1_024 else {
+            throw WorkflowRegistryError(
+              code: .invalidWorkflow,
+              message: "workflow definition exceeds 512 KiB",
+              workflowId: entry.workflowId,
+              originId: entry.originId
+            )
+          }
+          try replacement.write(to: workspaceDefinition, options: .atomic)
+          try publish(workspace)
+        }
+        return WorkflowRegistryMutationResult(
+          accepted: true,
+          workflow: try mutableEntry(workflowId: entry.workflowId, workingDirectory: workingDirectory)
+        )
       }
     }
   }
@@ -222,7 +286,7 @@ public struct WorkflowRegistryService: Sendable {
           originId: immutable.originId
         )
       }
-      let staged = try FileSystemWorkflowBundleResolver().loadBundle(
+      let staged = try WorkflowRegistryBundleLoader().loadBundle(
         at: replacement.standardizedFileURL,
         rootDirectory: replacement.standardizedFileURL,
         scope: .user,
@@ -340,7 +404,7 @@ public struct WorkflowRegistryService: Sendable {
     )
   }
 
-  func withCoordinatedRead<T>(
+  package func withCoordinatedRead<T>(
     workingDirectory: String,
     _ body: () throws -> T
   ) throws -> T {
@@ -504,6 +568,57 @@ public struct WorkflowRegistryService: Sendable {
         workflowId: entry.workflowId,
         originId: entry.originId
       )
+    }
+  }
+
+  private func requireDefinitionRevision(
+    _ expected: String?,
+    entry: WorkflowCatalogEntry
+  ) throws {
+    guard let expected else { return }
+    try requireDefinitionRevision(expected, data: definitionData(for: entry), entry: entry)
+  }
+
+  private func requireDefinitionRevision(
+    _ expected: String,
+    data: Data,
+    entry: WorkflowCatalogEntry
+  ) throws {
+    guard WorkflowHistoryCanonicalCoding.sha256(data) == expected else {
+      throw WorkflowRegistryError(
+        code: .registryConflict,
+        message: "workflow definition changed after it was loaded",
+        workflowId: entry.workflowId,
+        originId: entry.originId
+      )
+    }
+  }
+
+  private func definitionData(for entry: WorkflowCatalogEntry) throws -> Data {
+    let expectedDirectory = registry.root
+      .appendingPathComponent(entry.workflowId, isDirectory: true)
+      .standardizedFileURL
+    guard entry.workflowDirectory == expectedDirectory.path else {
+      throw WorkflowRegistryError(
+        code: .invalidOrigin,
+        message: "mutable workflow origin escaped the canonical registry root",
+        workflowId: entry.workflowId,
+        originId: entry.originId
+      )
+    }
+    return try registry.withWorkflowPinnedAccess(workflowId: entry.workflowId) { pinned in
+      guard let pinned,
+            let data = try pinned.readRegularIfPresent(
+              expectedDirectory.appendingPathComponent("workflow.json")
+            ) else {
+        throw WorkflowRegistryError(
+          code: .workflowNotFound,
+          message: "mutable workflow definition was not found",
+          workflowId: entry.workflowId,
+          originId: entry.originId
+        )
+      }
+      return data
     }
   }
 

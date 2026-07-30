@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import RielaCLI
+@testable import RielaWorkflowRegistry
 @testable import RielaCore
 
 extension WorkflowDirectoryTransactionTests {

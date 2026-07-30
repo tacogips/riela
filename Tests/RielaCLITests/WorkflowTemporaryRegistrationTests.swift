@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import RielaCLI
+@testable import RielaWorkflowRegistry
 
 final class WorkflowTemporaryRegistrationTests: XCTestCase {
   private enum InjectedFailure: Error { case phase }

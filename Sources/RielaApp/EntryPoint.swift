@@ -49,6 +49,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   var webServerController: RielaAppWebServerController?
   var webServerSetupError: String?
   var webRevision = 1
+  var webSessionStoreRootOverride: String?
   private var terminationShutdownStarted = false
 
   var appearanceSettingsStore: RielaAppAppearanceSettingsStore {
@@ -572,6 +573,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
     Task { @MainActor in
       daemonProfileName = profileName
+      webRevision += 1
       daemonStore = makeDaemonStore(profileName: profileName)
       daemonState = loadDaemonStateReportingCorruption(
         profileName: profileName,

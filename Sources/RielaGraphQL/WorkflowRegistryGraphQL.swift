@@ -107,22 +107,67 @@ public struct GraphQLWorkflowFilterInput: Codable, Equatable, Sendable {
 }
 
 public struct GraphQLRegisterMutableWorkflowInput: Codable, Equatable, Sendable {
-  public var bundle: GraphQLWorkflowBundleReferenceInput
+  public var bundle: GraphQLWorkflowBundleReferenceInput?
+  public var definition: JSONObject?
   public var overwrite: Bool?
   public var activationState: GraphQLWorkflowActivationState?
+
+  public init(
+    bundle: GraphQLWorkflowBundleReferenceInput? = nil,
+    definition: JSONObject? = nil,
+    overwrite: Bool? = nil,
+    activationState: GraphQLWorkflowActivationState? = nil
+  ) {
+    self.bundle = bundle
+    self.definition = definition
+    self.overwrite = overwrite
+    self.activationState = activationState
+  }
 }
 
 public struct GraphQLUpdateMutableWorkflowInput: Codable, Equatable, Sendable {
   public var target: GraphQLWorkflowTargetInput
-  public var bundle: GraphQLWorkflowBundleReferenceInput
+  public var bundle: GraphQLWorkflowBundleReferenceInput?
+  public var definition: JSONObject?
+  public var expectedDefinitionRevision: String?
+
+  public init(
+    target: GraphQLWorkflowTargetInput,
+    bundle: GraphQLWorkflowBundleReferenceInput? = nil,
+    definition: JSONObject? = nil,
+    expectedDefinitionRevision: String? = nil
+  ) {
+    self.target = target
+    self.bundle = bundle
+    self.definition = definition
+    self.expectedDefinitionRevision = expectedDefinitionRevision
+  }
 }
 
 public struct GraphQLDeleteMutableWorkflowInput: Codable, Equatable, Sendable {
   public var target: GraphQLWorkflowTargetInput
+  public var expectedDefinitionRevision: String?
+
+  public init(target: GraphQLWorkflowTargetInput, expectedDefinitionRevision: String? = nil) {
+    self.target = target
+    self.expectedDefinitionRevision = expectedDefinitionRevision
+  }
 }
 
 public struct GraphQLSetWorkflowActivationInput: Codable, Equatable, Sendable {
   public var target: GraphQLWorkflowTargetInput
+  public var expectedDefinitionRevision: String?
+  public var expectedActivationState: GraphQLWorkflowActivationState?
+
+  public init(
+    target: GraphQLWorkflowTargetInput,
+    expectedDefinitionRevision: String? = nil,
+    expectedActivationState: GraphQLWorkflowActivationState? = nil
+  ) {
+    self.target = target
+    self.expectedDefinitionRevision = expectedDefinitionRevision
+    self.expectedActivationState = expectedActivationState
+  }
 }
 
 public struct GraphQLConsolidateWorkflowsInput: Codable, Equatable, Sendable {
@@ -130,6 +175,35 @@ public struct GraphQLConsolidateWorkflowsInput: Codable, Equatable, Sendable {
   public var replacement: GraphQLWorkflowBundleReferenceInput
   public var retireMode: GraphQLWorkflowRetireMode
   public var activateReplacement: Bool?
+}
+
+public enum WorkflowRegistryDefinitionInputPolicy {
+  public static let maximumDepth = 10
+
+  public static func validate(_ value: JSONValue) throws {
+    try validate(value, depth: 1)
+  }
+
+  private static func validate(_ value: JSONValue, depth: Int) throws {
+    guard depth <= maximumDepth else {
+      throw WorkflowRegistryError(
+        code: .invalidWorkflow,
+        message: "workflow definition exceeds the maximum nesting depth"
+      )
+    }
+    switch value {
+    case let .array(values):
+      for child in values {
+        try validate(child, depth: depth + 1)
+      }
+    case let .object(object):
+      for child in object.values {
+        try validate(child, depth: depth + 1)
+      }
+    case .bool, .integer, .null, .number, .string:
+      break
+    }
+  }
 }
 
 public struct GraphQLWorkflowRegistryDiagnostic: Codable, Equatable, Sendable {
@@ -157,6 +231,8 @@ public struct GraphQLWorkflowRegistryEntry: Codable, Equatable, Sendable {
   public var valid: Bool
   public var packageName: String?
   public var packageVersion: String?
+  public var definition: JSONObject?
+  public var definitionRevision: String?
   public var diagnostics: [GraphQLWorkflowRegistryDiagnostic]
 
   public init(
@@ -172,6 +248,8 @@ public struct GraphQLWorkflowRegistryEntry: Codable, Equatable, Sendable {
     valid: Bool,
     packageName: String? = nil,
     packageVersion: String? = nil,
+    definition: JSONObject? = nil,
+    definitionRevision: String? = nil,
     diagnostics: [GraphQLWorkflowRegistryDiagnostic] = []
   ) {
     self.originId = originId
@@ -186,6 +264,8 @@ public struct GraphQLWorkflowRegistryEntry: Codable, Equatable, Sendable {
     self.valid = valid
     self.packageName = packageName
     self.packageVersion = packageVersion
+    self.definition = definition
+    self.definitionRevision = definitionRevision
     self.diagnostics = diagnostics
   }
 }
@@ -555,15 +635,49 @@ public struct WorkflowRegistryGraphQLDocumentExecutor: GraphQLDocumentExecuting 
       ))
     case "registerMutableWorkflow":
       let input: GraphQLRegisterMutableWorkflowInput = try requiredRegistryInput("input", arguments: root.arguments)
+      if let definition = input.definition {
+        guard input.bundle == nil else {
+          throw WorkflowRegistryError(code: .invalidWorkflow, message: "provide exactly one of bundle or definition")
+        }
+        return try await withTemporaryDefinitionBundle(definition) { url in
+          try await registryJSONValue(provider.registerMutableWorkflow(input: input, resolvedBundleURL: url))
+        }
+      }
+      guard let bundle = input.bundle else {
+        throw WorkflowRegistryError(code: .invalidWorkflow, message: "provide exactly one of bundle or definition")
+      }
       return try await registryJSONValue(provider.registerMutableWorkflow(
         input: input,
-        resolvedBundleURL: resolve(input.bundle, request: request, managedResolver: managedResolver)
+        resolvedBundleURL: resolve(bundle, request: request, managedResolver: managedResolver)
       ))
     case "updateMutableWorkflow":
       let input: GraphQLUpdateMutableWorkflowInput = try requiredRegistryInput("input", arguments: root.arguments)
+      if let definition = input.definition {
+        guard input.bundle == nil else {
+          throw WorkflowRegistryError(code: .invalidWorkflow, message: "provide exactly one of bundle or definition")
+        }
+        guard input.expectedDefinitionRevision != nil else {
+          throw WorkflowRegistryError(
+            code: .invalidWorkflow,
+            message: "expectedDefinitionRevision is required with definition"
+          )
+        }
+        return try await withTemporaryDefinitionBundle(definition) { url in
+          try await registryJSONValue(provider.updateMutableWorkflow(input: input, resolvedBundleURL: url))
+        }
+      }
+      guard let bundle = input.bundle else {
+        throw WorkflowRegistryError(code: .invalidWorkflow, message: "provide exactly one of bundle or definition")
+      }
+      guard input.expectedDefinitionRevision == nil else {
+        throw WorkflowRegistryError(
+          code: .invalidWorkflow,
+          message: "expectedDefinitionRevision is unavailable with bundle"
+        )
+      }
       return try await registryJSONValue(provider.updateMutableWorkflow(
         input: input,
-        resolvedBundleURL: resolve(input.bundle, request: request, managedResolver: managedResolver)
+        resolvedBundleURL: resolve(bundle, request: request, managedResolver: managedResolver)
       ))
     case "deleteMutableWorkflow":
       let input: GraphQLDeleteMutableWorkflowInput = try requiredRegistryInput("input", arguments: root.arguments)
@@ -581,6 +695,23 @@ public struct WorkflowRegistryGraphQLDocumentExecutor: GraphQLDocumentExecuting 
     default:
       throw WorkflowRegistryError(code: .invalidWorkflow, message: "unsupported workflow registry field")
     }
+  }
+
+  private func withTemporaryDefinitionBundle<T: Sendable>(
+    _ definition: JSONObject,
+    operation: (URL) async throws -> T
+  ) async throws -> T {
+    try WorkflowRegistryDefinitionInputPolicy.validate(.object(definition))
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-web-registry-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let data = try JSONEncoder().encode(JSONValue.object(definition))
+    guard data.count <= 512 * 1_024 else {
+      throw WorkflowRegistryError(code: .invalidWorkflow, message: "workflow definition exceeds 512 KiB")
+    }
+    try data.write(to: root.appendingPathComponent("workflow.json"), options: .atomic)
+    return try await operation(root)
   }
 
   private func resolve(

@@ -5,24 +5,24 @@ import Glibc
 #endif
 import Foundation
 
-struct WorkflowMutableRegistryInventoryEntry: Sendable {
-  var relativePath: String
-  var bytes: Data?
-  var mode: mode_t
+package struct WorkflowMutableRegistryInventoryEntry: Sendable {
+  package var relativePath: String
+  package var bytes: Data?
+  package var mode: mode_t
 }
 
 struct WorkflowMutableRegistryRootAbsent: Error {}
 
 /// Pins the temporary-workflow registry below the selected home directory and
 /// resolves every registry-owned child through directory descriptors.
-final class WorkflowMutableRegistryPinnedRoot: @unchecked Sendable {
+package final class WorkflowMutableRegistryPinnedRoot: @unchecked Sendable {
   let url: URL
   private let lexicalRoot: URL
   private let descriptor: Int32
   private let device: dev_t
   private let inode: ino_t
 
-  convenience init(homeDirectory: URL, create: Bool) throws {
+  package convenience init(homeDirectory: URL, create: Bool) throws {
     try self.init(
       homeDirectory: homeDirectory,
       rootComponents: [".riela", "temporary-workflows"],
@@ -30,7 +30,7 @@ final class WorkflowMutableRegistryPinnedRoot: @unchecked Sendable {
     )
   }
 
-  init(
+  package init(
     homeDirectory: URL,
     rootComponents: [String],
     create: Bool
@@ -139,7 +139,7 @@ final class WorkflowMutableRegistryPinnedRoot: @unchecked Sendable {
     }
   }
 
-  func entryType(_ child: URL) throws -> mode_t? {
+  package func entryType(_ child: URL) throws -> mode_t? {
     let relative = try relativePath(for: child)
     let components = relative.split(separator: "/").map(String.init)
     guard let leaf = components.last else { throw CLIUsageError("mutable registry leaf is required") }

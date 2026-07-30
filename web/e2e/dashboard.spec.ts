@@ -19,6 +19,7 @@ const instance = {
   requiredEnvironment: [{ name: 'API_KEY', description: 'Provider credential', required: true, secret: true, source: 'workflow', present: true }],
   workflowVariables: {},
   nodePatchCount: 0,
+  nodePatches: {},
   eventSources: [],
 }
 
@@ -287,6 +288,9 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
       tagsByName.set(created.name, created)
       return result({ defineNoteTag: { result: accepted, tag: created } })
     }
+    if (operation === 'WebMutableWorkflows') {
+      return result({ workflows: { workflows: [], errors: [] } })
+    }
     unexpectedRequests.push(`POST /graphql:${operation}`)
     return route.fulfill({ status: 418, contentType: 'application/json', body: JSON.stringify({ error: 'unexpected GraphQL operation' }) })
   })
@@ -298,29 +302,29 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
     if (url.pathname === '/api/v1/bootstrap') return json({ apiVersion: 'v1', profile: 'e2e', csrfToken: 'csrf', revision: 1, capabilities: [], server: { revision: 1, isEnabled: true, configuredPort: 19091, boundPort: 19091, restartRequired: false, state: 'running' } })
     if (url.pathname === '/api/v1/instances' && request.method() === 'GET') {
       if (options.instancesDelay) await new Promise((resolve) => setTimeout(resolve, options.instancesDelay))
-      return json({ revision: 1, items: [instance, missingSourceInstance] })
+      return json({ profile: 'e2e', revision: 1, items: [instance, missingSourceInstance] })
     }
     if (url.pathname === `/api/v1/instances/${encodeURIComponent(compositeId)}/executions`) return json({ revision: 1, instanceId: compositeId, items: [], diagnostics: [], truncated: false })
     if (url.pathname === `/api/v1/instances/${encodeURIComponent(compositeId)}/configuration`) {
       mutationCount += 1
-      return json({ revision: 2, item: instance })
+      return json({ profile: 'e2e', revision: 2, item: instance })
     }
     if (url.pathname === '/api/v1/workflows/sources') {
       if (options.workflowMode === 'malformed') return route.fulfill({ status: 200, contentType: 'application/json', body: '{' })
-      return json({ revision: 1, directories: [], projectDirectories: [], repositories: [], discovered: [] })
+      return json({ profile: 'e2e', revision: 1, directories: [], projectDirectories: [], repositories: [], discovered: [] })
     }
     if (url.pathname === '/api/v1/workflows/sources/directories') {
       mutationCount += 1
       if (options.mutationMode === 'conflict') return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'revision_conflict', message: 'Changed elsewhere' }, revision: 2 }) })
-      return json({ revision: 2, directories: [], projectDirectories: [], repositories: [], discovered: [] })
+      return json({ profile: 'e2e', revision: 2, directories: [], projectDirectories: [], repositories: [], discovered: [] })
     }
-    if (url.pathname === '/api/v1/settings/assistant' && request.method() === 'GET') return json({ revision: 1, assistance: '', vendor: 'openai-api', model: 'gpt-5.6' })
-    if (url.pathname === '/api/v1/settings/notes' && request.method() === 'GET') return json({ revision: 1, exposesNoteAPI: false, s3ProfileCount: 0 })
+    if (url.pathname === '/api/v1/settings/assistant' && request.method() === 'GET') return json({ profile: 'e2e', revision: 1, assistance: '', vendor: 'openai-api', model: 'gpt-5.6' })
+    if (url.pathname === '/api/v1/settings/notes' && request.method() === 'GET') return json({ profile: 'e2e', revision: 1, exposesNoteAPI: false, s3ProfileCount: 0 })
     if (url.pathname === '/api/v1/settings/web-server' && request.method() === 'GET') return json({ revision: 1, isEnabled: true, configuredPort, boundPort: 19091, restartRequired, state: 'running' })
     if (url.pathname === '/api/v1/settings/assistant' && request.method() === 'PUT') {
       mutationCount += 1
       if (options.mutationMode === 'malformed') return route.fulfill({ status: 200, contentType: 'application/json', body: '{' })
-      return json({ revision: 2, assistance: '', vendor: 'openai-api', model: 'gpt-5.6' })
+      return json({ profile: 'e2e', revision: 2, assistance: '', vendor: 'openai-api', model: 'gpt-5.6' })
     }
     if (url.pathname === '/api/v1/settings/web-server' && request.method() === 'PUT') {
       mutationCount += 1
@@ -387,7 +391,13 @@ test('shows loading, empty, error, and mutation recovery states', async ({ page 
   await page.getByLabel('Additional workflow directory').fill('/tmp/workflows')
   await page.getByRole('button', { name: 'Add directory' }).click()
   await expect(page.getByText(/Changed elsewhere — refresh/)).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Refresh' })).toBeVisible()
+  await expect(page.getByLabel('Additional workflow directory')).toHaveValue('/tmp/workflows')
+  const sourceReadsBeforeRefresh = fixture.requests.filter((request) =>
+    request === 'GET /api/v1/workflows/sources').length
+  await page.getByRole('button', { name: 'Refresh', exact: true }).last().click()
+  await expect.poll(() => fixture.requests.filter((request) =>
+    request === 'GET /api/v1/workflows/sources').length).toBeGreaterThan(sourceReadsBeforeRefresh)
+  await expect(page.getByRole('button', { name: 'Add directory', exact: true })).toBeEnabled()
   await captureEvidence(page, 'workflows-conflict-recovery')
   fixture.assertClean()
 })

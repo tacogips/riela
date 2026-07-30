@@ -644,6 +644,152 @@ final class WorkflowViewerTests: XCTestCase {
     XCTAssertEqual(decoded.diagnostics, [])
   }
 
+  func testBoundedViewerLimitsHistoryAndRejectsForeignSelectedSession() throws {
+    let temp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+      .appendingPathComponent("riela-viewer-bounded-\(UUID().uuidString)", isDirectory: true)
+    let workflowDirectory = temp.appendingPathComponent("workflows/demo", isDirectory: true)
+    let sessionStoreRoot = temp.appendingPathComponent(".riela/sessions", isDirectory: true)
+    let runtimeRoot = sessionStoreRoot.appendingPathComponent("runtime-records", isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: runtimeRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temp) }
+
+    let workflow = WorkflowDefinition(
+      workflowId: "viewer-bounded",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 1_000, maxLoopIterations: 3),
+      entryStepId: "first",
+      nodeRegistry: [WorkflowNodeRegistryRef(id: "first")],
+      steps: [WorkflowStepRef(id: "first", nodeId: "first")],
+      nodes: [WorkflowNodeRef(id: "first", nodeFile: "nodes/first.json")]
+    )
+    try JSONEncoder().encode(workflow).write(
+      to: workflowDirectory.appendingPathComponent("workflow.json")
+    )
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot.path)
+    for index in 0..<125 {
+      try store.save(WorkflowRuntimePersistenceSnapshot(session: WorkflowSession(
+        workflowId: "viewer-bounded",
+        sessionId: String(format: "session-%03d", index),
+        status: .completed,
+        entryStepId: "first",
+        createdAt: Date(timeIntervalSince1970: TimeInterval(index)),
+        updatedAt: Date(timeIntervalSince1970: TimeInterval(index))
+      )))
+    }
+    try store.save(WorkflowRuntimePersistenceSnapshot(session: WorkflowSession(
+      workflowId: "foreign-workflow",
+      sessionId: "foreign-session",
+      status: .completed,
+      entryStepId: "first",
+      createdAt: Date(timeIntervalSince1970: 200),
+      updatedAt: Date(timeIntervalSince1970: 200)
+    )))
+
+    let loader = WorkflowViewerLoader()
+    let list = try loader.loadBounded(
+      WorkflowViewerLoadRequest(
+        workflowDirectory: workflowDirectory.path,
+        sessionStoreRoot: sessionStoreRoot.path
+      ),
+      maximumSessionCount: 101
+    )
+    let foreignSelection = try loader.loadBounded(
+      WorkflowViewerLoadRequest(
+        workflowDirectory: workflowDirectory.path,
+        sessionStoreRoot: sessionStoreRoot.path,
+        selectedSessionId: "foreign-session"
+      ),
+      maximumSessionCount: 1
+    )
+
+    XCTAssertEqual(list.sessions.count, 101)
+    XCTAssertEqual(list.sessions.first?.sessionId, "session-124")
+    XCTAssertEqual(list.sessions.last?.sessionId, "session-024")
+    XCTAssertNil(foreignSelection.selectedSessionId)
+    XCTAssertTrue(foreignSelection.sessions.isEmpty)
+  }
+
+  func testBoundedViewerLoadsNewestRoutingRecordsWithoutMessagePayloads() throws {
+    let temp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+      .appendingPathComponent("riela-viewer-bounded-messages-\(UUID().uuidString)", isDirectory: true)
+    let workflowDirectory = temp.appendingPathComponent("workflows/demo", isDirectory: true)
+    let sessionStoreRoot = temp.appendingPathComponent(".riela/sessions", isDirectory: true)
+    let runtimeRoot = sessionStoreRoot.appendingPathComponent("runtime-records", isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: runtimeRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temp) }
+
+    let workflow = WorkflowDefinition(
+      workflowId: "viewer-bounded-messages",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 1_000, maxLoopIterations: 3),
+      entryStepId: "first",
+      nodeRegistry: [WorkflowNodeRegistryRef(id: "first")],
+      steps: [WorkflowStepRef(id: "first", nodeId: "first")],
+      nodes: [WorkflowNodeRef(id: "first", nodeFile: "nodes/first.json")]
+    )
+    try JSONEncoder().encode(workflow).write(
+      to: workflowDirectory.appendingPathComponent("workflow.json")
+    )
+    let createdAt = Date(timeIntervalSince1970: 1_000)
+    let session = WorkflowSession(
+      workflowId: workflow.workflowId,
+      sessionId: "large-message-session",
+      status: .running,
+      entryStepId: "first",
+      currentStepId: "first",
+      createdAt: createdAt,
+      updatedAt: createdAt
+    )
+    let messages = (0..<350).map { index in
+      WorkflowMessageRecord(
+        communicationId: String(format: "comm-%03d", index),
+        workflowExecutionId: session.sessionId,
+        fromStepId: "first",
+        toStepId: "first",
+        sourceStepExecutionId: String(format: "exec-%03d", index),
+        payload: ["large": .string(String(repeating: "x", count: 2_048))],
+        createdOrder: index,
+        createdAt: createdAt.addingTimeInterval(TimeInterval(index))
+      )
+    }
+    let evidence = LoopEvidenceManifest(
+      schemaVersion: 1,
+      manifestId: "large-message-evidence",
+      workflowId: workflow.workflowId,
+      sessionId: session.sessionId,
+      workflowSource: LoopWorkflowSource(scope: "project", kind: "workflow-directory", mutable: true),
+      policy: LoopPolicyEvidence(),
+      convergence: LoopConvergenceEvidence(),
+      redaction: LoopRedactionSummary(policyName: "summary-only", status: "clean"),
+      createdAt: createdAt,
+      updatedAt: createdAt
+    )
+    try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot.path).save(
+      WorkflowRuntimePersistenceSnapshot(
+        session: session,
+        workflowMessages: messages,
+        loopEvidence: evidence
+      )
+    )
+
+    let state = try WorkflowViewerLoader().loadBounded(
+      WorkflowViewerLoadRequest(
+        workflowDirectory: workflowDirectory.path,
+        sessionStoreRoot: sessionStoreRoot.path,
+        selectedSessionId: session.sessionId
+      ),
+      maximumSessionCount: 1,
+      maximumMessageCount: 201
+    )
+
+    XCTAssertEqual(state.messages.count, 201)
+    XCTAssertEqual(state.messageTotalCount, 350)
+    XCTAssertEqual(state.messages.first?.createdOrder, 149)
+    XCTAssertEqual(state.messages.last?.createdOrder, 349)
+    XCTAssertEqual(state.messages.first?.payloadJSON, "")
+    XCTAssertEqual(state.loopEvidence?.manifestId, "large-message-evidence")
+  }
+
   private func writeWorkflow(_ workflow: AuthoredWorkflowJSON, to workflowDirectory: URL) throws {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

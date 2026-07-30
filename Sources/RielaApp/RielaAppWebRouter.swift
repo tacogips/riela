@@ -7,12 +7,19 @@ final class RielaAppWebRouter: RielaHTTPRouteHandling, @unchecked Sendable {
   private weak var app: RielaApp?
   private let assetResolver: RielaStaticAssetResolver
   private let deterministicAdapter: DeterministicServerHTTPAdapter
+  private let beforeGraphQLProfileBinding: (@MainActor () -> Void)?
   private let lock = NSLock()
   private var configuredPort: Int
   let csrfToken: String
 
-  init(app: RielaApp, assetRoot: URL, configuredPort: Int) {
+  init(
+    app: RielaApp,
+    assetRoot: URL,
+    configuredPort: Int,
+    beforeGraphQLProfileBinding: (@MainActor () -> Void)? = nil
+  ) {
     self.app = app
+    self.beforeGraphQLProfileBinding = beforeGraphQLProfileBinding
     assetResolver = RielaStaticAssetResolver(rootURL: assetRoot)
     deterministicAdapter = DeterministicServerHTTPAdapter(
       context: ServerRequestContext(serviceName: "riela-app")
@@ -48,6 +55,9 @@ final class RielaAppWebRouter: RielaHTTPRouteHandling, @unchecked Sendable {
     if request.path == "/graphql" {
       guard let app else {
         return .json(status: 503, .object(["error": .string("RielaApp is unavailable")]))
+      }
+      if let beforeGraphQLProfileBinding {
+        await beforeGraphQLProfileBinding()
       }
       return await app.webNoteGraphQLResponse(for: request)
     }

@@ -30,13 +30,6 @@ public extension WorkflowOutputFormat {
   }
 }
 
-public enum WorkflowScope: String, Codable, Sendable {
-  case auto
-  case project
-  case user
-  case direct
-}
-
 public enum RielaCommand: Equatable, Sendable {
   case help
   case packageHelp(PackageHelpScope)
@@ -281,28 +274,6 @@ public struct CLICommandOptions: Equatable, Sendable {
   }
 }
 
-public struct WorkflowResolutionOptions: Codable, Equatable, Sendable {
-  public var workflowName: String
-  public var scope: WorkflowScope
-  public var workflowDefinitionDir: String?
-  public var workingDirectory: String
-  public var includeDeactivated: Bool
-
-  public init(
-    workflowName: String,
-    scope: WorkflowScope = .auto,
-    workflowDefinitionDir: String? = nil,
-    workingDirectory: String = FileManager.default.currentDirectoryPath,
-    includeDeactivated: Bool = false
-  ) {
-    self.workflowName = workflowName
-    self.scope = workflowDefinitionDir == nil ? scope : .direct
-    self.workflowDefinitionDir = workflowDefinitionDir
-    self.workingDirectory = workingDirectory
-    self.includeDeactivated = includeDeactivated
-  }
-}
-
 public struct WorkflowValidateOptions: Equatable, Sendable {
   public var workflowName: String
   public var resolution: WorkflowResolutionOptions
@@ -502,14 +473,6 @@ public struct WorkflowAutoImprovePolicy: Codable, Equatable, Sendable {
 
 public protocol CLIArgumentParsing: Sendable {
   func parse(_ arguments: [String]) throws -> RielaCommand
-}
-
-public struct CLIUsageError: Error, Equatable, Sendable {
-  public var message: String
-
-  public init(_ message: String) {
-    self.message = message
-  }
 }
 
 public struct RielaArgumentParser: CLIArgumentParsing {

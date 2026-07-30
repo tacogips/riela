@@ -23,13 +23,23 @@ input WorkflowFilter {
 input WorkflowTargetInput { workflowId: String!, scope: WorkflowRegistryScope = AUTO, originId: String }
 input WorkflowBundleReferenceInput { kind: WorkflowBundleReferenceKind!, value: String! }
 input RegisterMutableWorkflowInput {
-  bundle: WorkflowBundleReferenceInput!
+  bundle: WorkflowBundleReferenceInput
+  definition: JSONObject
   overwrite: Boolean = false
   activationState: WorkflowActivationState
 }
-input UpdateMutableWorkflowInput { target: WorkflowTargetInput!, bundle: WorkflowBundleReferenceInput! }
-input DeleteMutableWorkflowInput { target: WorkflowTargetInput! }
-input SetWorkflowActivationInput { target: WorkflowTargetInput! }
+input UpdateMutableWorkflowInput {
+  target: WorkflowTargetInput!
+  bundle: WorkflowBundleReferenceInput
+  definition: JSONObject
+  expectedDefinitionRevision: String
+}
+input DeleteMutableWorkflowInput { target: WorkflowTargetInput!, expectedDefinitionRevision: String }
+input SetWorkflowActivationInput {
+  target: WorkflowTargetInput!
+  expectedDefinitionRevision: String
+  expectedActivationState: WorkflowActivationState
+}
 input ConsolidateWorkflowsInput {
   sources: [WorkflowTargetInput!]!
   replacement: WorkflowBundleReferenceInput!
@@ -50,6 +60,8 @@ type WorkflowRegistryEntry {
   valid: Boolean!
   packageName: String
   packageVersion: String
+  definition: JSONObject
+  definitionRevision: String
   diagnostics: [WorkflowRegistryDiagnostic!]!
 }
 type WorkflowRegistryError {

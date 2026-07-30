@@ -41,7 +41,7 @@ let package = Package(
     .executable(name: "codex-agent", targets: ["CodexAgentCLI"]),
     .executable(name: "claude-code-agent", targets: ["ClaudeCodeAgentCLI"]),
     .executable(name: "cursor-cli-agent", targets: ["CursorCLIAgentCLI"]),
-    .executable(name: "riela", targets: ["RielaCLI"]),
+    .executable(name: "riela", targets: ["RielaCLIExecutable"]),
     .executable(name: "RielaApp", targets: ["RielaApp"])
   ],
   dependencies: [
@@ -154,7 +154,16 @@ let package = Package(
       name: "RielaAdapters",
       dependencies: ["RielaCore"]
     ),
-    .executableTarget(
+    .target(
+      name: "RielaWorkflowRegistry",
+      dependencies: [
+        "RielaAddons",
+        "RielaCore",
+        "RielaGraphQL",
+        .product(name: "Crypto", package: "swift-crypto")
+      ]
+    ),
+    .target(
       name: "RielaCLI",
       dependencies: [
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
@@ -170,12 +179,14 @@ let package = Package(
         "RielaGraphQL",
         "RielaServer",
         "RielaHook",
+        "RielaWorkflowRegistry",
         .product(name: "Crypto", package: "swift-crypto"),
         "CodexAgent",
         "ClaudeCodeAgent",
         "CursorCLIAgent"
       ]
     ),
+    .executableTarget(name: "RielaCLIExecutable", dependencies: ["RielaCLI"]),
     .executableTarget(
       name: "RielaApp",
       dependencies: [
@@ -191,7 +202,8 @@ let package = Package(
         "RielaObservability",
         "RielaNote",
         "RielaNoteUI",
-        "RielaNoteDispatch"
+        "RielaNoteDispatch",
+        "RielaWorkflowRegistry"
       ]
     ),
     .testTarget(
@@ -228,9 +240,27 @@ let package = Package(
     .testTarget(name: "RielaViewerTests", dependencies: ["RielaCore", "RielaViewer"]),
     .testTarget(
       name: "RielaAppSupportTests",
-      dependencies: ["RielaAddons", "RielaAppSupport", "RielaServer", "RielaApp", "RielaNote", "RielaNoteUI"]
+      dependencies: [
+        "RielaAddons",
+        "RielaAppSupport",
+        "RielaServer",
+        "RielaApp",
+        "RielaCLI",
+        "RielaNote",
+        "RielaNoteUI"
+      ]
     ),
-    .testTarget(name: "RielaCLITests", dependencies: ["RielaCore", "RielaAdapters", "RielaAppSupport", "RielaCLI", "RielaNote"]),
+    .testTarget(
+      name: "RielaCLITests",
+      dependencies: [
+        "RielaCore",
+        "RielaAdapters",
+        "RielaAppSupport",
+        "RielaCLI",
+        "RielaNote",
+        "RielaWorkflowRegistry"
+      ]
+    ),
     .testTarget(
       name: "AgentAdapterTests",
       dependencies: ["RielaCore", "RielaAdapters", "CodexAgent", "ClaudeCodeAgent", "CursorCLIAgent"]

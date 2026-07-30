@@ -53,7 +53,8 @@ extension WorkflowMutableRegistry {
             backupPath: hadOriginal ? relativePath(backup) : nil,
             operation: .replace,
             requestedActivationState: activationState
-              ?? (hadOriginal || !WorkflowActivationStore.coordinatorLockHeld ? nil : .active)
+              ?? (hadOriginal || !WorkflowActivationStore.coordinatorLockHeld ? nil : .active),
+            deletionActivationRemoved: nil
           )
           var replacementPublished = false
           do {

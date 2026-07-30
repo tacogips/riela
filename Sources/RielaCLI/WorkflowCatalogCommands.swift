@@ -14,131 +14,6 @@ public struct WorkflowManifestValidationCommandResult: Codable, Equatable, Senda
   public var executablePreflight: Bool
 }
 
-public struct WorkflowCatalogEntry: Codable, Equatable, Sendable {
-  public var workflowName: String
-  public var workflowId: String
-  public var description: String?
-  public var scope: WorkflowScope
-  public var sourceKind: WorkflowSourceKind
-  public var provenance: WorkflowProvenance
-  public var activationState: WorkflowActivationState
-  public var originId: String
-  public var workflowDirectory: String
-  public var packageName: String?
-  public var packageVersion: String?
-  public var packageDirectory: String?
-  public var mutable: Bool
-  public var valid: Bool
-  public var diagnostics: [WorkflowValidationDiagnostic]
-
-  private enum CodingKeys: String, CodingKey {
-    case workflowName
-    case workflowId
-    case description
-    case scope
-    case sourceKind
-    case provenance
-    case activationState
-    case originId
-    case workflowDirectory
-    case packageName
-    case packageVersion
-    case packageDirectory
-    case mutable
-    case temporary
-    case valid
-    case diagnostics
-  }
-
-  public init(
-    workflowName: String,
-    workflowId: String? = nil,
-    description: String? = nil,
-    scope: WorkflowScope,
-    sourceKind: WorkflowSourceKind = .workflow,
-    workflowDirectory: String,
-    packageName: String? = nil,
-    packageVersion: String? = nil,
-    packageDirectory: String? = nil,
-    mutable: Bool = false,
-    provenance: WorkflowProvenance? = nil,
-    activationState: WorkflowActivationState = .active,
-    originId: String? = nil,
-    valid: Bool,
-    diagnostics: [WorkflowValidationDiagnostic]
-  ) {
-    self.workflowName = workflowName
-    self.workflowId = workflowId ?? workflowName
-    self.description = description
-    self.scope = scope
-    self.sourceKind = sourceKind
-    self.provenance = provenance ?? (mutable ? .mutable : .immutable)
-    self.activationState = activationState
-    self.workflowDirectory = workflowDirectory
-    self.packageName = packageName
-    self.packageVersion = packageVersion
-    self.packageDirectory = packageDirectory
-    self.mutable = self.provenance == .mutable
-    self.valid = valid
-    self.diagnostics = diagnostics
-    self.originId = originId ?? workflowOriginIdentity(
-      name: workflowName,
-      workflowId: self.workflowId,
-      scope: scope,
-      sourceKind: sourceKind,
-      provenance: self.provenance,
-      locator: workflowDirectory
-    ).originId
-  }
-
-  public init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    let workflowName = try container.decode(String.self, forKey: .workflowName)
-    let workflowId = try container.decodeIfPresent(String.self, forKey: .workflowId) ?? workflowName
-    let scope = try container.decode(WorkflowScope.self, forKey: .scope)
-    let sourceKind = try container.decode(WorkflowSourceKind.self, forKey: .sourceKind)
-    let workflowDirectory = try container.decode(String.self, forKey: .workflowDirectory)
-    let legacyTemporary = try container.decodeIfPresent(Bool.self, forKey: .temporary) ?? false
-    let provenance = try container.decodeIfPresent(WorkflowProvenance.self, forKey: .provenance)
-      ?? (legacyTemporary ? .mutable : .immutable)
-    self.init(
-      workflowName: workflowName,
-      workflowId: workflowId,
-      description: try container.decodeIfPresent(String.self, forKey: .description),
-      scope: scope,
-      sourceKind: sourceKind,
-      workflowDirectory: workflowDirectory,
-      packageName: try container.decodeIfPresent(String.self, forKey: .packageName),
-      packageVersion: try container.decodeIfPresent(String.self, forKey: .packageVersion),
-      packageDirectory: try container.decodeIfPresent(String.self, forKey: .packageDirectory),
-      provenance: provenance,
-      activationState: try container.decodeIfPresent(WorkflowActivationState.self, forKey: .activationState) ?? .active,
-      originId: try container.decodeIfPresent(String.self, forKey: .originId),
-      valid: try container.decode(Bool.self, forKey: .valid),
-      diagnostics: try container.decode([WorkflowValidationDiagnostic].self, forKey: .diagnostics)
-    )
-  }
-
-  public func encode(to encoder: Encoder) throws {
-    var container = encoder.container(keyedBy: CodingKeys.self)
-    try container.encode(workflowName, forKey: .workflowName)
-    try container.encode(workflowId, forKey: .workflowId)
-    try container.encodeIfPresent(description, forKey: .description)
-    try container.encode(scope, forKey: .scope)
-    try container.encode(sourceKind, forKey: .sourceKind)
-    try container.encode(provenance, forKey: .provenance)
-    try container.encode(activationState, forKey: .activationState)
-    try container.encode(originId, forKey: .originId)
-    try container.encode(workflowDirectory, forKey: .workflowDirectory)
-    try container.encodeIfPresent(packageName, forKey: .packageName)
-    try container.encodeIfPresent(packageVersion, forKey: .packageVersion)
-    try container.encodeIfPresent(packageDirectory, forKey: .packageDirectory)
-    try container.encode(mutable, forKey: .mutable)
-    try container.encode(valid, forKey: .valid)
-    try container.encode(diagnostics, forKey: .diagnostics)
-  }
-}
-
 public struct WorkflowCatalogResult: Codable, Equatable, Sendable {
   public var workflows: [WorkflowCatalogEntry]
 }
@@ -290,27 +165,34 @@ public struct WorkflowCatalogCommand: Sendable {
   }
 
   func catalogEntries(options: CLICommandOptions) throws -> [WorkflowCatalogEntry] {
-    let parsed = try catalogParseOptions(options)
-    return try WorkflowRegistryService(registry: mutableRegistry).withCoordinatedRead(
-      workingDirectory: parsed.workingDirectory
-    ) {
-      try catalogEntriesCoordinated(options: options, parsed: parsed)
+    if let query = options.target, query.isEmpty {
+      throw CLIUsageError("query must not be empty")
     }
+    let parsed = try catalogParseOptions(options)
+    return try WorkflowRegistryService(registry: mutableRegistry).list(
+      filter: WorkflowRegistryFilter(
+        query: options.target,
+        description: parsed.description,
+        scope: WorkflowRegistryScope(rawValue: parsed.scope.rawValue),
+        provenance: parsed.provenance,
+        mutable: parsed.excludeMutable ? false : nil,
+        activationState: parsed.activation
+      ),
+      workingDirectory: parsed.workingDirectory
+    )
   }
 
   func catalogOriginIdentities(workingDirectory: String) throws -> [WorkflowOriginIdentity] {
-    var origins = workflowRoots(scope: .auto, workingDirectory: workingDirectory).flatMap { scope, root in
-      (try? workflowNames(in: root))?.compactMap { name in
-        authoredWorkflowOrigin(
-          name: name,
-          directory: root.appendingPathComponent(name, isDirectory: true),
-          scope: scope
-        )
-      } ?? []
+    try WorkflowRegistryService(registry: mutableRegistry).list(workingDirectory: workingDirectory).map {
+      workflowOriginIdentity(
+        name: $0.workflowName,
+        workflowId: $0.workflowId,
+        scope: $0.scope,
+        sourceKind: $0.sourceKind,
+        provenance: $0.provenance,
+        locator: $0.workflowDirectory
+      )
     }
-    origins.append(contentsOf: packageOriginIdentities(workingDirectory: workingDirectory))
-    origins.append(contentsOf: try mutableRegistry.catalogOriginIdentities())
-    return origins
   }
 
   private func authoredWorkflowOrigin(
@@ -418,7 +300,10 @@ public struct WorkflowCatalogCommand: Sendable {
     }
     entries.append(contentsOf: try packageCatalogEntries(options: parsed))
     if parsed.scope != .project {
-      entries.append(contentsOf: try temporaryCatalogEntries())
+      entries.append(contentsOf: try WorkflowRegistryService().list(
+        filter: WorkflowRegistryFilter(scope: .user, mutable: true),
+        workingDirectory: parsed.workingDirectory
+      ))
     }
     entries = try entries.map(applyingActivation)
     if parsed.excludeMutable {
@@ -453,49 +338,6 @@ public struct WorkflowCatalogCommand: Sendable {
       || entry.workflowId.lowercased().contains(needle)
       || (entry.description?.lowercased().contains(needle) ?? false)
       || (entry.packageName?.lowercased().contains(needle) ?? false)
-  }
-
-  private func temporaryCatalogEntries() throws -> [WorkflowCatalogEntry] {
-    let registry = mutableRegistry
-    return try registry.snapshotCandidates().map { candidate in
-      let workflowName = candidate.lastPathComponent
-      do {
-        return try registry.withWorkflowRead(workflowId: workflowName) { snapshotCandidate in
-          let bundle = try FileSystemWorkflowBundleResolver().loadBundle(
-            at: snapshotCandidate,
-            rootDirectory: snapshotCandidate.deletingLastPathComponent(),
-            scope: .user,
-            provenance: .mutable,
-            expectedWorkflowId: workflowName
-          )
-          let diagnostics = bundle.diagnostics
-            + DefaultWorkflowValidator().validate(bundle.workflow, nodePayloads: bundle.nodePayloads)
-          return WorkflowCatalogEntry(
-            workflowName: workflowName,
-            workflowId: bundle.workflow.workflowId,
-            description: bundle.workflow.description,
-            scope: .user,
-            sourceKind: .workflow,
-            workflowDirectory: candidate.path,
-            provenance: .mutable,
-            valid: !diagnostics.contains { $0.severity == .error },
-            diagnostics: diagnostics
-          )
-        }
-      } catch {
-        return WorkflowCatalogEntry(
-          workflowName: workflowName,
-          scope: .user,
-          sourceKind: .workflow,
-          workflowDirectory: candidate.path,
-          provenance: .mutable,
-          valid: false,
-          diagnostics: [
-            WorkflowValidationDiagnostic(severity: .error, path: "workflow.json", message: "\(error)")
-          ]
-        )
-      }
-    }
   }
 
   private func packageCatalogEntries(options: ParsedCatalogOptions) throws -> [WorkflowCatalogEntry] {

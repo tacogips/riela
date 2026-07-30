@@ -2,7 +2,7 @@ import Foundation
 import RielaCore
 
 extension WorkflowMutableRegistry {
-  func historyBundleDigest(
+  package func historyBundleDigest(
     at directory: URL,
     target: WorkflowBundleIdentity,
     pinned: WorkflowMutableRegistryPinnedRoot

@@ -2,6 +2,7 @@ import Foundation
 import RielaCore
 import XCTest
 @testable import RielaCLI
+@testable import RielaWorkflowRegistry
 
 final class WorkflowMutableRegistryTests: XCTestCase {
   func testMutableCRUDFilteringAndLegacyRootReadability() async throws {
@@ -232,6 +233,36 @@ final class WorkflowMutableRegistryTests: XCTestCase {
           }
         }
       }
+    }
+  }
+
+  func testDetachedSnapshotInfrastructureMissingFileRemainsUnclassified() throws {
+    let layout = try makeLayout()
+    defer { try? FileManager.default.removeItem(at: layout.root) }
+    let bundle = try makeBundle(
+      id: "detached-infrastructure-error",
+      description: "preserve infrastructure error",
+      in: layout.inputs
+    )
+    let injected = NSError(
+      domain: NSCocoaErrorDomain,
+      code: NSFileReadNoSuchFileError
+    )
+    let registry = WorkflowMutableRegistry(hooks: WorkflowMutableRegistryHooks(
+      beforeDetachedBundleLoad: { throw injected }
+    ))
+
+    XCTAssertThrowsError(try CLIRuntimeEnvironment.$overrides.withValue(layout.environment) {
+      _ = try WorkflowRegistryService(registry: registry).register(
+        input: bundle,
+        overwrite: false,
+        workingDirectory: layout.root.path
+      )
+    }) { error in
+      let cocoaError = error as NSError
+      XCTAssertEqual(cocoaError.domain, NSCocoaErrorDomain)
+      XCTAssertEqual(cocoaError.code, NSFileReadNoSuchFileError)
+      XCTAssertFalse(error is WorkflowResolutionError)
     }
   }
 
@@ -551,6 +582,112 @@ final class WorkflowMutableRegistryTests: XCTestCase {
     _ = try acceptedGraphQLPayload("deleteMutableWorkflow", from: deleted)
   }
 
+  func testDeleteRollsBackBundleAndActivationWhenActivationCleanupFails() throws {
+    let layout = try makeLayout()
+    defer { try? FileManager.default.removeItem(at: layout.root) }
+    let workflowId = "delete-activation-rollback"
+    let bundle = try makeBundle(
+      id: workflowId,
+      description: "delete rollback",
+      in: layout.inputs
+    )
+    try CLIRuntimeEnvironment.$overrides.withValue(layout.environment) {
+      let baseline = WorkflowRegistryService()
+      let registered = try baseline.register(
+        input: bundle,
+        overwrite: false,
+        activationState: .deactivated,
+        workingDirectory: layout.root.path
+      )
+      let entry = try XCTUnwrap(registered.workflow)
+      let target = WorkflowRegistryTarget(
+        workflowId: workflowId,
+        scope: .user,
+        originId: entry.originId
+      )
+      let revision = try baseline.definitionSnapshot(
+        target: target,
+        workingDirectory: layout.root.path
+      ).revision
+      let interrupted = WorkflowRegistryService(
+        registry: WorkflowMutableRegistry(hooks: WorkflowMutableRegistryHooks(
+          beforeDeletionActivationRemoval: { throw MutableRegistryInterruption() }
+        ))
+      )
+
+      XCTAssertThrowsError(try interrupted.delete(
+        target: target,
+        expectedDefinitionRevision: revision,
+        workingDirectory: layout.root.path
+      ))
+
+      let restored = try baseline.fetch(
+        target: target,
+        workingDirectory: layout.root.path
+      )
+      XCTAssertEqual(restored.activationState, .deactivated)
+      XCTAssertTrue(FileManager.default.fileExists(atPath: layout.home.appendingPathComponent(
+        ".riela/temporary-workflows/\(workflowId)/workflow.json"
+      ).path))
+    }
+  }
+
+  func testDeleteReturnsSuccessWhenPostCommitFinalizationFails() throws {
+    let layout = try makeLayout()
+    defer { try? FileManager.default.removeItem(at: layout.root) }
+    let workflowId = "delete-post-commit-cleanup"
+    let bundle = try makeBundle(
+      id: workflowId,
+      description: "delete commit",
+      in: layout.inputs
+    )
+    try CLIRuntimeEnvironment.$overrides.withValue(layout.environment) {
+      let baseline = WorkflowRegistryService()
+      let registered = try baseline.register(
+        input: bundle,
+        overwrite: false,
+        activationState: .deactivated,
+        workingDirectory: layout.root.path
+      )
+      let entry = try XCTUnwrap(registered.workflow)
+      let target = WorkflowRegistryTarget(
+        workflowId: workflowId,
+        scope: .user,
+        originId: entry.originId
+      )
+      let revision = try baseline.definitionSnapshot(
+        target: target,
+        workingDirectory: layout.root.path
+      ).revision
+      let interrupted = WorkflowRegistryService(
+        registry: WorkflowMutableRegistry(hooks: WorkflowMutableRegistryHooks(
+          beforeDeletionFinalization: { throw MutableRegistryInterruption() }
+        ))
+      )
+
+      let result = try interrupted.delete(
+        target: target,
+        expectedDefinitionRevision: revision,
+        workingDirectory: layout.root.path
+      )
+
+      XCTAssertTrue(result.accepted)
+      XCTAssertThrowsError(try baseline.fetch(
+        target: target,
+        workingDirectory: layout.root.path
+      )) { error in
+        XCTAssertEqual((error as? WorkflowRegistryError)?.code, .invalidOrigin)
+      }
+      XCTAssertNil(try WorkflowActivationStore().snapshot()[entry.originId])
+      XCTAssertFalse(FileManager.default.fileExists(atPath: layout.home.appendingPathComponent(
+        ".riela/temporary-workflows/\(workflowId)"
+      ).path))
+      XCTAssertFalse(FileManager.default.fileExists(atPath: layout.home.appendingPathComponent(
+        ".riela/temporary-workflows/.registry-state/transactions/\(workflowId).json"
+      ).path))
+    }
+  }
+
   private struct Layout {
     var root: URL
     var home: URL
@@ -685,6 +822,98 @@ final class WorkflowMutableRegistryTests: XCTestCase {
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
     return try decoder.decode(type, from: Data(text.utf8))
+  }
+}
+
+extension WorkflowMutableRegistryTests {
+  func testLaterRegistryAccessCleansCommittedDeletionAfterImmediateRecoveryFails() throws {
+    let layout = try makeLayout()
+    defer { try? FileManager.default.removeItem(at: layout.root) }
+    let workflowId = "delete-deferred-cleanup"
+    let bundle = try makeBundle(
+      id: workflowId,
+      description: "delete with deferred cleanup",
+      in: layout.inputs
+    )
+    try CLIRuntimeEnvironment.$overrides.withValue(layout.environment) {
+      let baseline = WorkflowRegistryService()
+      let registered = try baseline.register(
+        input: bundle,
+        overwrite: false,
+        activationState: .deactivated,
+        workingDirectory: layout.root.path
+      )
+      let entry = try XCTUnwrap(registered.workflow)
+      let target = WorkflowRegistryTarget(
+        workflowId: workflowId,
+        scope: .user,
+        originId: entry.originId
+      )
+      let revision = try baseline.definitionSnapshot(
+        target: target,
+        workingDirectory: layout.root.path
+      ).revision
+      let registryRoot = layout.home.appendingPathComponent(".riela/temporary-workflows", isDirectory: true)
+      let transaction = registryRoot.appendingPathComponent(
+        ".registry-state/transactions/\(workflowId).json"
+      )
+      let recordReadFailure = OneTimeRecordReadFailure(recordURL: transaction)
+      let interrupted = WorkflowRegistryService(
+        registry: WorkflowMutableRegistry(hooks: WorkflowMutableRegistryHooks(
+          beforeRecordRead: recordReadFailure.call,
+          beforeDeletionFinalization: { throw MutableRegistryInterruption() }
+        ))
+      )
+
+      let result = try interrupted.delete(
+        target: target,
+        expectedDefinitionRevision: revision,
+        workingDirectory: layout.root.path
+      )
+
+      let backups = registryRoot.appendingPathComponent(".registry-state/backups", isDirectory: true)
+      let workflowBackups = backups.appendingPathComponent(workflowId, isDirectory: true)
+      XCTAssertTrue(result.accepted)
+      XCTAssertFalse(FileManager.default.fileExists(
+        atPath: registryRoot.appendingPathComponent(workflowId, isDirectory: true).path
+      ))
+      XCTAssertTrue(FileManager.default.fileExists(atPath: transaction.path))
+      XCTAssertFalse((try FileManager.default.contentsOfDirectory(atPath: workflowBackups.path)).isEmpty)
+      XCTAssertNil(try WorkflowActivationStore().snapshot()[entry.originId])
+
+      XCTAssertThrowsError(try baseline.fetch(
+        target: target,
+        workingDirectory: layout.root.path
+      )) { error in
+        XCTAssertEqual((error as? WorkflowRegistryError)?.code, .invalidOrigin)
+      }
+      XCTAssertFalse(FileManager.default.fileExists(atPath: transaction.path))
+      XCTAssertTrue(
+        (try? FileManager.default.contentsOfDirectory(atPath: workflowBackups.path).isEmpty) ?? true
+      )
+      XCTAssertFalse(FileManager.default.fileExists(
+        atPath: registryRoot.appendingPathComponent(workflowId, isDirectory: true).path
+      ))
+    }
+  }
+}
+
+private final class OneTimeRecordReadFailure: @unchecked Sendable {
+  private let lock = NSLock()
+  private let recordURL: URL
+  private var hasFailed = false
+
+  init(recordURL: URL) {
+    self.recordURL = recordURL
+  }
+
+  func call(_: String) throws {
+    lock.lock()
+    defer { lock.unlock() }
+    if !hasFailed, FileManager.default.fileExists(atPath: recordURL.path) {
+      hasFailed = true
+      throw MutableRegistryInterruption()
+    }
   }
 }
 

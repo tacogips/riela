@@ -1,15 +1,15 @@
 import Foundation
 import RielaCore
 
-typealias WorkflowSharedNodeDependencyReader = (
+package typealias WorkflowSharedNodeDependencyReader = (
   _ workflowId: String,
   _ relativePath: String
 ) throws -> WorkflowDescriptorRelativeRead
 
-enum WorkflowSharedNodeDependencyInventory {
-  static let virtualPrefix = ".riela-shared-nodes"
+package enum WorkflowSharedNodeDependencyInventory {
+  package static let virtualPrefix = ".riela-shared-nodes"
 
-  static func files(
+  package static func files(
     for target: WorkflowBundleIdentity,
     primaryFiles: [WorkflowOwnedFile],
     dependencyReader: WorkflowSharedNodeDependencyReader? = nil
@@ -37,11 +37,11 @@ enum WorkflowSharedNodeDependencyInventory {
     }
   }
 
-  static func isDependencyPath(_ path: String) -> Bool {
+  package static func isDependencyPath(_ path: String) -> Bool {
     path.hasPrefix(virtualPrefix + "/")
   }
 
-  static func dependencyLocation(for virtualPath: String) throws -> (workflowId: String, relativePath: String) {
+  package static func dependencyLocation(for virtualPath: String) throws -> (workflowId: String, relativePath: String) {
     try WorkflowHistoryCanonicalCoding.validateRelativePath(virtualPath)
     let components = virtualPath.split(separator: "/").map(String.init)
     guard components.count >= 3, components[0] == virtualPrefix else {

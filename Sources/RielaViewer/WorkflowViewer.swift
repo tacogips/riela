@@ -13,31 +13,6 @@ public enum WorkflowViewerMessageDirection: String, Codable, Equatable, Sendable
   case outbox
 }
 
-public struct WorkflowViewerSessionSummary: Codable, Equatable, Sendable {
-  public var sessionId: String
-  public var workflowId: String
-  public var status: WorkflowSessionStatus
-  public var currentStepId: String?
-  public var activeStepIds: [String]
-  public var updatedAt: Date
-
-  public init(
-    sessionId: String,
-    workflowId: String,
-    status: WorkflowSessionStatus,
-    currentStepId: String?,
-    activeStepIds: [String],
-    updatedAt: Date
-  ) {
-    self.sessionId = sessionId
-    self.workflowId = workflowId
-    self.status = status
-    self.currentStepId = currentStepId
-    self.activeStepIds = activeStepIds
-    self.updatedAt = updatedAt
-  }
-}
-
 public struct WorkflowViewerNode: Codable, Equatable, Hashable, Identifiable, Sendable {
   public var id: String
   public var nodeId: String
@@ -189,6 +164,8 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
   public var nodes: [WorkflowViewerNode]
   public var timeline: [WorkflowViewerTimelineEntry]
   public var messages: [WorkflowViewerMessage]
+  public var messageTotalCount: Int?
+  public var loopEvidence: LoopEvidenceManifest?
   public var messageLogAvailable: Bool
   public var diagnostics: [String]
 
@@ -202,6 +179,8 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
     nodes: [WorkflowViewerNode],
     timeline: [WorkflowViewerTimelineEntry] = [],
     messages: [WorkflowViewerMessage] = [],
+    messageTotalCount: Int? = nil,
+    loopEvidence: LoopEvidenceManifest? = nil,
     messageLogAvailable: Bool = true,
     diagnostics: [String] = []
   ) {
@@ -214,6 +193,8 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
     self.nodes = nodes
     self.timeline = timeline
     self.messages = messages
+    self.messageTotalCount = messageTotalCount
+    self.loopEvidence = loopEvidence
     self.messageLogAvailable = messageLogAvailable
     self.diagnostics = diagnostics
   }
@@ -237,6 +218,8 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
     case nodes
     case timeline
     case messages
+    case messageTotalCount
+    case loopEvidence
     case messageLogAvailable
     case diagnostics
   }
@@ -252,6 +235,8 @@ public struct WorkflowViewerState: Codable, Equatable, Sendable {
     nodes = try container.decode([WorkflowViewerNode].self, forKey: .nodes)
     timeline = try container.decode([WorkflowViewerTimelineEntry].self, forKey: .timeline)
     messages = try container.decodeIfPresent([WorkflowViewerMessage].self, forKey: .messages) ?? []
+    messageTotalCount = try container.decodeIfPresent(Int.self, forKey: .messageTotalCount)
+    loopEvidence = try container.decodeIfPresent(LoopEvidenceManifest.self, forKey: .loopEvidence)
     messageLogAvailable = try container.decodeIfPresent(Bool.self, forKey: .messageLogAvailable) ?? true
     diagnostics = try container.decodeIfPresent([String].self, forKey: .diagnostics) ?? []
   }
@@ -292,6 +277,83 @@ public enum WorkflowViewerLoadError: Error, Equatable, Sendable, CustomStringCon
 public struct WorkflowViewerLoader: Sendable {
   public init() {}
 
+  public func loadBounded(
+    _ request: WorkflowViewerLoadRequest,
+    maximumSessionCount: Int,
+    maximumMessageCount: Int = 201
+  ) throws -> WorkflowViewerState {
+    let workflowDirectory = URL(
+      fileURLWithPath: request.workflowDirectory,
+      isDirectory: true
+    ).standardizedFileURL.path
+    let workflowURL = URL(
+      fileURLWithPath: workflowDirectory,
+      isDirectory: true
+    ).appendingPathComponent("workflow.json")
+    guard FileManager.default.fileExists(atPath: workflowURL.path) else {
+      throw WorkflowViewerLoadError.workflowNotFound(workflowURL.path)
+    }
+    let validation = validateAuthoredWorkflowData(try Data(contentsOf: workflowURL))
+    guard let workflow = validation.workflow else {
+      throw WorkflowViewerLoadError.invalidWorkflow(
+        validation.diagnostics.map { "\($0.path): \($0.message)" }
+      )
+    }
+    let sessionStoreRoot = request.sessionStoreRoot.map {
+      URL(fileURLWithPath: $0, isDirectory: true).standardizedFileURL.path
+    } ?? defaultSessionStoreRoot(workflowDirectory: workflowDirectory)
+    let runtimeRoot = runtimeStoreRoot(sessionStoreRoot: sessionStoreRoot)
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot)
+    let selectedDetail = try boundedSelectedDetail(
+      sessionId: request.selectedSessionId,
+      workflowId: workflow.workflowId,
+      maximumMessageCount: maximumMessageCount,
+      store: store
+    )
+    let summaries: [WorkflowViewerSessionSummary]
+    let diagnostics: [String]
+    if let selectedDetail {
+      summaries = [summary(selectedDetail.session)]
+      diagnostics = selectedDetail.diagnostics
+    } else if request.selectedSessionId == nil {
+      let storedSummaries = try store.loadSessionSummaries(
+        workflowId: workflow.workflowId,
+        limit: maximumSessionCount
+      )
+      summaries = storedSummaries.map {
+        WorkflowViewerSessionSummary(
+          sessionId: $0.sessionId,
+          workflowId: $0.workflowId,
+          status: $0.status,
+          currentStepId: $0.currentStepId,
+          activeStepIds: $0.activeStepIds,
+          updatedAt: $0.updatedAt
+        )
+      }
+      diagnostics = try storedSummaries.first.map {
+        try store.loadDiagnostics(sessionId: $0.sessionId)
+      } ?? []
+    } else {
+      summaries = []
+      diagnostics = []
+    }
+    return WorkflowViewerState(
+      workflow: workflow,
+      workflowDirectory: workflowDirectory,
+      sessionStoreRoot: sessionStoreRoot,
+      sessionStoreCandidates: [sessionStoreRoot],
+      selectedSessionId: selectedDetail?.session.sessionId,
+      sessions: summaries,
+      nodes: [],
+      timeline: selectedDetail.map { timelineEntries(from: $0.session) } ?? [],
+      messages: selectedDetail.map { messages(from: $0.messages) } ?? [],
+      messageTotalCount: selectedDetail?.messageTotalCount,
+      loopEvidence: selectedDetail?.loopEvidence,
+      messageLogAvailable: selectedDetail != nil,
+      diagnostics: diagnostics
+    )
+  }
+
   public func load(_ request: WorkflowViewerLoadRequest) throws -> WorkflowViewerState {
     let workflowDirectory = URL(fileURLWithPath: request.workflowDirectory, isDirectory: true).standardizedFileURL.path
     let workflowURL = URL(fileURLWithPath: workflowDirectory, isDirectory: true).appendingPathComponent("workflow.json")
@@ -331,6 +393,8 @@ public struct WorkflowViewerLoader: Sendable {
       nodes: buildTree(workflow: workflow, workflowDirectory: workflowDirectory, selectedSession: selectedSnapshot?.session),
       timeline: selectedSnapshot.map { timelineEntries(from: $0.session) } ?? [],
       messages: selectedSnapshot.map { messages(from: $0.workflowMessages) } ?? [],
+      messageTotalCount: selectedSnapshot?.workflowMessages.count,
+      loopEvidence: selectedSnapshot?.loopEvidence,
       messageLogAvailable: messageLogAvailable,
       diagnostics: diagnostics
     )
@@ -373,18 +437,48 @@ public struct WorkflowViewerLoader: Sendable {
   }
 
   private func summary(_ snapshot: WorkflowRuntimePersistenceSnapshot) -> WorkflowViewerSessionSummary {
-    var active = Set(snapshot.session.executions.filter { $0.status == .running }.map(\.stepId))
-    if snapshot.session.status == .running, let currentStepId = snapshot.session.currentStepId {
+    summary(snapshot.session)
+  }
+
+  private func summary(_ session: WorkflowSession) -> WorkflowViewerSessionSummary {
+    var active = Set(session.executions.filter { $0.status == .running }.map(\.stepId))
+    if session.status == .running, let currentStepId = session.currentStepId {
       active.insert(currentStepId)
     }
     return WorkflowViewerSessionSummary(
-      sessionId: snapshot.session.sessionId,
-      workflowId: snapshot.session.workflowId,
-      status: snapshot.session.status,
-      currentStepId: snapshot.session.currentStepId,
+      sessionId: session.sessionId,
+      workflowId: session.workflowId,
+      status: session.status,
+      currentStepId: session.currentStepId,
       activeStepIds: active.sorted(),
-      updatedAt: snapshot.session.updatedAt
+      updatedAt: session.updatedAt
     )
+  }
+
+  private func boundedSelectedDetail(
+    sessionId: String?,
+    workflowId: String,
+    maximumMessageCount: Int,
+    store: SQLiteWorkflowRuntimePersistenceStore
+  ) throws -> SQLiteWorkflowRuntimePersistenceStore.WebSessionDetail? {
+    guard let sessionId else { return nil }
+    guard FileManager.default.fileExists(
+      atPath: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(
+        rootDirectory: store.rootDirectory
+      )
+    ) else {
+      return nil
+    }
+    do {
+      let detail = try store.loadWebSessionDetail(
+        sessionId: sessionId,
+        messageLimit: maximumMessageCount
+      )
+      return detail.session.workflowId == workflowId ? detail : nil
+    } catch WorkflowRuntimePersistenceStoreError.notFound,
+            WorkflowRuntimePersistenceStoreError.invalidSessionId {
+      return nil
+    }
   }
 
   private func timelineEntries(from session: WorkflowSession) -> [WorkflowViewerTimelineEntry] {
@@ -418,6 +512,28 @@ public struct WorkflowViewerLoader: Sendable {
     records
       .sorted { $0.createdOrder < $1.createdOrder }
       .map { viewerMessage($0, direction: .outbox) }
+  }
+
+  private func messages(
+    from records: [SQLiteWorkflowRuntimePersistenceStore.MessageRoutingRecord]
+  ) -> [WorkflowViewerMessage] {
+    records.map { message in
+      WorkflowViewerMessage(
+        id: message.communicationId,
+        direction: .outbox,
+        fromStepId: message.fromStepId,
+        toStepId: message.toStepId,
+        sourceStepExecutionId: message.sourceStepExecutionId,
+        transitionCondition: message.transitionCondition,
+        status: message.lifecycleStatus,
+        payloadPreview: "",
+        payloadJSON: "",
+        artifactRefs: [],
+        deliveryKind: message.deliveryKind,
+        createdOrder: message.createdOrder,
+        createdAt: message.createdAt
+      )
+    }
   }
 
   private func loadSnapshots(sessionStoreRoot: String) throws -> [WorkflowRuntimePersistenceSnapshot] {

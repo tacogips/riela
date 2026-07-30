@@ -6,7 +6,7 @@ extension WorkflowMutableRegistry {
     at candidate: URL,
     expectedWorkflowId: String? = nil,
     pinned: WorkflowMutableRegistryPinnedRoot,
-    resolver: FileSystemWorkflowBundleResolver = FileSystemWorkflowBundleResolver()
+    resolver: WorkflowRegistryBundleLoader = WorkflowRegistryBundleLoader()
   ) throws -> (bundle: ResolvedWorkflowBundle, registryDigest: String) {
     try pinned.requireConfiguredPathIdentity()
     let candidateEntries = try pinned.bundleInventory(in: candidate)
@@ -41,13 +41,28 @@ extension WorkflowMutableRegistry {
 
     let loaded = try withDetachedInventorySnapshot(entries: entries) { snapshotRoot in
       try hooks.beforeDetachedBundleLoad()
-      return try resolver.loadBundle(
-        at: snapshotRoot.appendingPathComponent(workflowId, isDirectory: true),
-        rootDirectory: snapshotRoot,
-        scope: .user,
-        provenance: .mutable,
-        expectedWorkflowId: workflowId
-      )
+      do {
+        return try resolver.loadBundle(
+          at: snapshotRoot.appendingPathComponent(workflowId, isDirectory: true),
+          rootDirectory: snapshotRoot,
+          scope: .user,
+          provenance: .mutable,
+          expectedWorkflowId: workflowId
+        )
+      } catch {
+        let cocoaError = error as NSError
+        guard cocoaError.domain == NSCocoaErrorDomain,
+              cocoaError.code == NSFileReadNoSuchFileError else {
+          throw error
+        }
+        throw WorkflowResolutionError.invalidWorkflow([
+          WorkflowValidationDiagnostic(
+            severity: .error,
+            path: "workflow.json",
+            message: "workflow bundle references a missing file"
+          )
+        ])
+      }
     }
     try pinned.requireConfiguredPathIdentity()
     return (loaded, registryDigest(for: candidateEntries))
@@ -88,10 +103,10 @@ extension WorkflowMutableRegistry {
     return WorkflowHistoryCanonicalCoding.sha256(Data(records.joined(separator: "\n").utf8))
   }
 
-  func loadBundle(
+  package func loadBundle(
     workflowId: String,
     pinned: WorkflowMutableRegistryPinnedRoot,
-    resolver: FileSystemWorkflowBundleResolver,
+    resolver: WorkflowRegistryBundleLoader,
     scope: WorkflowScope,
     sharedNodeActivationPolicy: WorkflowSharedNodeActivationPolicy = .includeDeactivated
   ) throws -> ResolvedWorkflowBundle {
@@ -192,7 +207,7 @@ extension WorkflowMutableRegistry {
       // An injected interruption models process death. Preserve the detached
       // tree even if the interruption precedes stable-marker publication so
       // the next public resolution exercises the same recovery state.
-      preserveForInjectedRecovery = error is WorkflowDirectoryInjectedInterruption
+      preserveForInjectedRecovery = error is any WorkflowInjectedInterruption
       throw error
     }
   }

@@ -1,8 +1,7 @@
 import Foundation
 
-@main
-struct RielaSwiftCLI {
-  static func main() async {
+public enum RielaCLIMain {
+  public static func run() async {
     let jsonlRecordWriter: WorkflowJSONLRecordWriting = { line in
       FileHandle.standardOutput.write(Data(line.utf8))
     }

@@ -16,7 +16,7 @@ private func linuxRenameAt2(
 ) -> Int32
 #endif
 
-func workflowHistoryExclusiveRename(
+package func workflowHistoryExclusiveRename(
   oldDirectory: Int32,
   oldName: UnsafePointer<CChar>,
   newDirectory: Int32,

@@ -119,7 +119,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     }
     let db = try openDatabase(readOnly: true, strictReadOnly: strictReadOnly)
     let loopEvidenceSelect = try loopEvidenceSelectExpression(db)
-    let rows = try mapSQLiteError {
+    let rows = try mapRuntimeSQLiteError {
       try db.query(
         """
         SELECT json(session_json) AS session_json,
@@ -145,7 +145,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     }
     let db = try openDatabase(readOnly: true)
     let loopEvidenceSelect = try loopEvidenceSelectExpression(db)
-    return try mapSQLiteError {
+    return try mapRuntimeSQLiteError {
       try db.query(
         """
         SELECT json(session_json) AS session_json,
@@ -165,7 +165,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       return []
     }
     let db = try openDatabase(readOnly: true)
-    let columns = try mapSQLiteError { try db.tableColumnNames("workflow_runtime_snapshots") }
+    let columns = try mapRuntimeSQLiteError { try db.tableColumnNames("workflow_runtime_snapshots") }
     let hasSummaryColumns = Set(["workflow_id", "session_status", "created_at", "loop_summary_json"]).isSubset(of: columns)
     let limit = max(1, min(filter.limit, 200))
     let loopEvidencePresenceSelect = columns.contains("loop_evidence_json")
@@ -192,7 +192,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     repeat {
       let rows: [SQLiteRow]
       if hasSummaryColumns {
-        rows = try mapSQLiteError {
+        rows = try mapRuntimeSQLiteError {
           try db.query(
             """
             SELECT workflow_execution_id,
@@ -212,7 +212,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
         }
       } else {
         let loopEvidenceSelect = try loopEvidenceSelectExpression(db)
-        rows = try mapSQLiteError {
+        rows = try mapRuntimeSQLiteError {
           try db.query(
             """
             SELECT workflow_execution_id,
@@ -258,7 +258,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     }
     let db = try openDatabase()
     try ensureLoopBaselineSchema(db)
-    try mapSQLiteError {
+    try mapRuntimeSQLiteError {
       try db.execute(
         """
         INSERT INTO loop_baselines (workflow_id, session_id, set_at, note)
@@ -288,7 +288,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     guard try loopBaselineTableExists(db) else {
       return nil
     }
-    let rows = try mapSQLiteError {
+    let rows = try mapRuntimeSQLiteError {
       try db.query(
         "SELECT workflow_id, session_id, set_at, note FROM loop_baselines WHERE workflow_id = ? LIMIT 1",
         bindings: [.text(workflowId)]
@@ -313,20 +313,20 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   public func clearLoopBaseline(workflowId: String) throws -> Bool {
     let db = try openDatabase()
     try ensureLoopBaselineSchema(db)
-    let existed = try mapSQLiteError {
+    let existed = try mapRuntimeSQLiteError {
       try db.query(
         "SELECT workflow_id FROM loop_baselines WHERE workflow_id = ? LIMIT 1",
         bindings: [.text(workflowId)]
       )
     }.isEmpty == false
-    try mapSQLiteError {
+    try mapRuntimeSQLiteError {
       try db.execute("DELETE FROM loop_baselines WHERE workflow_id = ?", bindings: [.text(workflowId)])
     }
     return existed
   }
 
   private func ensureLoopBaselineSchema(_ db: SQLiteDatabase) throws {
-    try mapSQLiteError {
+    try mapRuntimeSQLiteError {
       try db.execute(
         """
         CREATE TABLE IF NOT EXISTS loop_baselines (
@@ -341,7 +341,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   }
 
   private func loopBaselineTableExists(_ db: SQLiteDatabase) throws -> Bool {
-    try mapSQLiteError {
+    try mapRuntimeSQLiteError {
       try db.query(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'loop_baselines' LIMIT 1",
         bindings: []
@@ -373,7 +373,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     let db = try openDatabase()
     try ensureLoopLeaseSchema(db)
     var acquisition = LoopLeaseAcquisition.acquired(takenOverFrom: nil)
-    try mapSQLiteError {
+    try mapRuntimeSQLiteError {
       try db.transaction { database in
         let rows = try database.query(
           "SELECT session_id, heartbeat_at FROM loop_concurrency_leases WHERE workflow_id = ? LIMIT 1",
@@ -432,7 +432,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     guard try loopLeaseTableExists(db) else {
       return nil
     }
-    let rows = try mapSQLiteError {
+    let rows = try mapRuntimeSQLiteError {
       try db.query(
         "SELECT session_id, acquired_at, heartbeat_at FROM loop_concurrency_leases WHERE workflow_id = ? LIMIT 1",
         bindings: [.text(workflowId)]
@@ -453,7 +453,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   public func releaseLoopConcurrencyLease(workflowId: String, holder: String) throws {
     let db = try openDatabase()
     try ensureLoopLeaseSchema(db)
-    try mapSQLiteError {
+    try mapRuntimeSQLiteError {
       try db.execute(
         "DELETE FROM loop_concurrency_leases WHERE workflow_id = ? AND session_id = ?",
         bindings: [.text(workflowId), .text(holder)]
@@ -499,7 +499,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   }
 
   private func ensureLoopLeaseSchema(_ db: SQLiteDatabase) throws {
-    try mapSQLiteError {
+    try mapRuntimeSQLiteError {
       try db.execute(
         """
         CREATE TABLE IF NOT EXISTS loop_concurrency_leases (
@@ -514,7 +514,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   }
 
   private func loopLeaseTableExists(_ db: SQLiteDatabase) throws -> Bool {
-    try mapSQLiteError {
+    try mapRuntimeSQLiteError {
       try db.query(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'loop_concurrency_leases' LIMIT 1",
         bindings: []
@@ -533,7 +533,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     } else {
       mode = readOnly ? .readOnly : .readWriteCreate
     }
-    return try mapSQLiteError {
+    return try mapRuntimeSQLiteError {
       try SQLiteDatabase.open(
         path: databasePath,
         mode: mode,
@@ -543,7 +543,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   }
 
   private func ensureSchema(_ db: SQLiteDatabase) throws {
-    try mapSQLiteError {
+    try mapRuntimeSQLiteError {
       try db.requireJSONBAvailable()
       try db.execute(
       """
@@ -599,6 +599,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_runtime_snapshots_summary ON workflow_runtime_snapshots (workflow_id, session_status, updated_at DESC)")
       try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_runtime_snapshots_parent ON workflow_runtime_snapshots (parent_session_id, created_at, workflow_execution_id)")
       try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_runtime_snapshots_root ON workflow_runtime_snapshots (root_session_id, created_at, workflow_execution_id)")
+      try backfillRuntimeSessionSummaryColumns(db)
       try backfillSummaryColumns(db)
     }
   }
@@ -609,7 +610,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     let loopSummaryJSON = try snapshot.loopEvidence.map {
       try jsonString(LoopSessionSummary.make(manifest: $0, loopMetadata: snapshot.loopMetadata))
     }
-    try mapSQLiteError {
+    try mapRuntimeSQLiteError {
       try db.execute(
       """
       INSERT INTO workflow_runtime_snapshots (
@@ -817,7 +818,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
 
   private func legacyOverview(sessionId: String, db: SQLiteDatabase) throws -> LoopSessionOverview? {
     let loopEvidenceSelect = try loopEvidenceSelectExpression(db)
-    let rows = try mapSQLiteError {
+    let rows = try mapRuntimeSQLiteError {
       try db.query(
         """
         SELECT workflow_execution_id,
@@ -857,7 +858,9 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   }
 
   func loopEvidenceSelectExpression(_ db: SQLiteDatabase) throws -> String {
-    if try mapSQLiteError({ try db.tableColumnNames("workflow_runtime_snapshots") }).contains("loop_evidence_json") {
+    if try mapRuntimeSQLiteError({
+      try db.tableColumnNames("workflow_runtime_snapshots")
+    }).contains("loop_evidence_json") {
       return "CASE WHEN loop_evidence_json IS NULL THEN NULL ELSE json(loop_evidence_json) END AS loop_evidence_json"
     }
     return "NULL AS loop_evidence_json"
@@ -880,14 +883,14 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     dateFormatter.string(from: date)
   }
 
-  private static func date(from text: String) -> Date? {
+  static func date(from text: String) -> Date? {
     dateFormatter.date(from: text)
   }
 }
 
 private let dateFormatter = LockedISO8601DateFormatter()
 
-private func mapSQLiteError<T>(_ body: () throws -> T) throws -> T {
+func mapRuntimeSQLiteError<T>(_ body: () throws -> T) throws -> T {
   do {
     return try body()
   } catch let error as SQLiteError {

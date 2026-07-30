@@ -9,11 +9,11 @@ import RielaCore
 /// Pins the selected history root and resolves every child through directory
 /// descriptors. Absolute path validation alone is insufficient because an
 /// ancestor may be exchanged after validation.
-final class WorkflowHistoryPinnedRoot: @unchecked Sendable {
-  let url: URL
-  let descriptor: Int32
+package final class WorkflowHistoryPinnedRoot: @unchecked Sendable {
+  package let url: URL
+  package let descriptor: Int32
 
-  init(_ root: URL, create: Bool = true) throws {
+  package init(_ root: URL, create: Bool = true) throws {
     url = try Self.canonicalPotentialPath(root)
     guard url.path.hasPrefix("/") else {
       throw CLIUsageError("workflow history root must be absolute")
@@ -48,7 +48,7 @@ final class WorkflowHistoryPinnedRoot: @unchecked Sendable {
 
   deinit { _ = close(descriptor) }
 
-  func relativePath(for child: URL) throws -> String {
+  package func relativePath(for child: URL) throws -> String {
     let standardized = child.standardizedFileURL
     let candidate: String
     if standardized.path.hasPrefix(url.path + "/") || standardized.path == url.path {
@@ -70,13 +70,13 @@ final class WorkflowHistoryPinnedRoot: @unchecked Sendable {
     return relative
   }
 
-  func ensureDirectory(_ child: URL) throws {
+  package func ensureDirectory(_ child: URL) throws {
     let relative = try relativePath(for: child)
     let opened = try openDirectory(relative, create: true)
     _ = close(opened)
   }
 
-  func openDirectory(_ relative: String, create: Bool = false) throws -> Int32 {
+  package func openDirectory(_ relative: String, create: Bool = false) throws -> Int32 {
     if relative.isEmpty { return dup(descriptor) }
     try WorkflowHistoryCanonicalCoding.validateRelativePath(relative)
     var current = dup(descriptor)
@@ -108,7 +108,7 @@ final class WorkflowHistoryPinnedRoot: @unchecked Sendable {
     }
   }
 
-  func withParent<T>(of child: URL, create: Bool = false, _ body: (Int32, String) throws -> T) throws -> T {
+  package func withParent<T>(of child: URL, create: Bool = false, _ body: (Int32, String) throws -> T) throws -> T {
     let relative = try relativePath(for: child)
     let components = relative.split(separator: "/").map(String.init)
     guard let leaf = components.last else { throw CLIUsageError("workflow history leaf is required") }
@@ -118,7 +118,7 @@ final class WorkflowHistoryPinnedRoot: @unchecked Sendable {
     return try body(parentDescriptor, leaf)
   }
 
-  func readRegular(_ child: URL, requireNonWritable: Bool = false) throws -> Data {
+  package func readRegular(_ child: URL, requireNonWritable: Bool = false) throws -> Data {
     try withParent(of: child) { parent, leaf in
       let file = openat(parent, leaf, O_RDONLY | O_NOFOLLOW)
       guard file >= 0 else { throw CLIUsageError("unable to open workflow history record without following links") }
@@ -146,7 +146,7 @@ final class WorkflowHistoryPinnedRoot: @unchecked Sendable {
     }
   }
 
-  func requireDirectoryNonWritable(_ child: URL) throws {
+  package func requireDirectoryNonWritable(_ child: URL) throws {
     let relative = try relativePath(for: child)
     let directory = try openDirectory(relative)
     defer { _ = close(directory) }
@@ -158,7 +158,7 @@ final class WorkflowHistoryPinnedRoot: @unchecked Sendable {
     }
   }
 
-  func setPermissions(_ permissions: mode_t, for child: URL, expectedType: mode_t) throws {
+  package func setPermissions(_ permissions: mode_t, for child: URL, expectedType: mode_t) throws {
     try withParent(of: child) { parent, leaf in
       let flags = expectedType == S_IFDIR ? O_RDONLY | O_DIRECTORY | O_NOFOLLOW : O_RDONLY | O_NOFOLLOW
       let descriptor = openat(parent, leaf, flags)
@@ -174,7 +174,7 @@ final class WorkflowHistoryPinnedRoot: @unchecked Sendable {
     }
   }
 
-  func entryType(_ child: URL) throws -> mode_t? {
+  package func entryType(_ child: URL) throws -> mode_t? {
     try withParent(of: child) { parent, leaf in
       var status = stat()
       if fstatat(parent, leaf, &status, AT_SYMLINK_NOFOLLOW) != 0 {
@@ -188,7 +188,7 @@ final class WorkflowHistoryPinnedRoot: @unchecked Sendable {
     }
   }
 
-  func atomicWrite(_ bytes: Data, to child: URL, overwrite: Bool) throws {
+  package func atomicWrite(_ bytes: Data, to child: URL, overwrite: Bool) throws {
     try withParent(of: child, create: true) { parent, leaf in
       let temporary = ".tmp-\(UUID().uuidString.lowercased())"
       let file = openat(parent, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, S_IRUSR | S_IWUSR)
@@ -226,7 +226,7 @@ final class WorkflowHistoryPinnedRoot: @unchecked Sendable {
     }
   }
 
-  func unlink(_ child: URL, directory: Bool = false) throws {
+  package func unlink(_ child: URL, directory: Bool = false) throws {
     try withParent(of: child) { parent, leaf in
       guard unlinkat(parent, leaf, directory ? AT_REMOVEDIR : 0) == 0 else {
         if errno == ENOENT { return }
@@ -236,7 +236,7 @@ final class WorkflowHistoryPinnedRoot: @unchecked Sendable {
     }
   }
 
-  func publishDirectory(_ temporary: URL, to destination: URL) throws {
+  package func publishDirectory(_ temporary: URL, to destination: URL) throws {
     let temporaryRelative = try relativePath(for: temporary)
     let destinationRelative = try relativePath(for: destination)
     let temporaryParts = temporaryRelative.split(separator: "/").map(String.init)
@@ -264,7 +264,7 @@ final class WorkflowHistoryPinnedRoot: @unchecked Sendable {
     guard fsync(parent) == 0 else { throw CLIUsageError("unable to fsync workflow history publication directory") }
   }
 
-  func names(in child: URL) throws -> [String] {
+  package func names(in child: URL) throws -> [String] {
     let relative = try relativePath(for: child)
     let directoryDescriptor = try openDirectory(relative)
     guard let directory = fdopendir(directoryDescriptor) else {

@@ -17,7 +17,7 @@ public struct WorkflowMutableRegistry: Sendable {
     self.hooks = hooks
   }
 
-  var root: URL {
+  package var root: URL {
     URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
       .appendingPathComponent(".riela", isDirectory: true)
       .appendingPathComponent("temporary-workflows", isDirectory: true)
@@ -69,7 +69,8 @@ public struct WorkflowMutableRegistry: Sendable {
         stagingPath: relativePath(staging),
         backupPath: relativePath(backup),
         operation: .replace,
-        requestedActivationState: nil
+        requestedActivationState: nil,
+        deletionActivationRemoved: nil
       )
       var replacementPublished = false
       do {
@@ -260,7 +261,7 @@ public struct WorkflowMutableRegistry: Sendable {
     )
   }
 
-  func bundleDigest(
+  package func bundleDigest(
     at directory: URL,
     pinned: WorkflowMutableRegistryPinnedRoot
   ) throws -> String {
@@ -479,10 +480,30 @@ public struct WorkflowMutableRegistry: Sendable {
     pinned: WorkflowMutableRegistryPinnedRoot
   ) throws {
     if record.phase == .replacementPublished {
+      if let priorActivationState = record.requestedActivationState,
+         record.deletionActivationRemoved != true {
+        if backupExists, let backup {
+          guard !destinationExists else {
+            throw CLIUsageError("ambiguous mutable deletion rollback for '\(record.workflowId)'")
+          }
+          try renameDirectory(backup, to: destination, pinned: pinned)
+        } else if !destinationExists {
+          throw CLIUsageError("mutable deletion rollback cannot restore '\(record.workflowId)'")
+        }
+        try restoreActivationAfterDeletionRollback(
+          workflowId: record.workflowId,
+          state: priorActivationState
+        )
+        if stagingExists { try removeArtifact(staging, pinned: pinned) }
+        try removeRecord(recordURL, pinned: pinned)
+        return
+      }
       guard !destinationExists else {
         throw CLIUsageError("ambiguous committed mutable deletion for '\(record.workflowId)'")
       }
-      try removeActivationForCommittedDeletion(workflowId: record.workflowId)
+      if record.deletionActivationRemoved != true {
+        try removeActivationForCommittedDeletion(workflowId: record.workflowId)
+      }
       if backupExists, let backup { try removeArtifact(backup, pinned: pinned) }
       if stagingExists { try removeArtifact(staging, pinned: pinned) }
       try removeRecord(recordURL, pinned: pinned)
@@ -500,9 +521,26 @@ public struct WorkflowMutableRegistry: Sendable {
     try removeRecord(recordURL, pinned: pinned)
   }
 
+  func activationStateForDeletion(workflowId: String) throws -> WorkflowActivationState? {
+    guard WorkflowActivationStore.coordinatorLockHeld else { return nil }
+    return try WorkflowActivationStore().state(for: activationOrigin(workflowId: workflowId))
+  }
+
   func removeActivationForCommittedDeletion(workflowId: String) throws {
     guard WorkflowActivationStore.coordinatorLockHeld else { return }
-    let origin = WorkflowOriginIdentity(
+    try WorkflowActivationStore().remove(origin: activationOrigin(workflowId: workflowId))
+  }
+
+  private func restoreActivationAfterDeletionRollback(
+    workflowId: String,
+    state: WorkflowActivationState
+  ) throws {
+    guard WorkflowActivationStore.coordinatorLockHeld else { return }
+    try WorkflowActivationStore().set(state, for: activationOrigin(workflowId: workflowId))
+  }
+
+  private func activationOrigin(workflowId: String) -> WorkflowOriginIdentity {
+    WorkflowOriginIdentity(
       scope: .user,
       sourceKind: .workflow,
       provenance: .mutable,
@@ -510,7 +548,6 @@ public struct WorkflowMutableRegistry: Sendable {
       workflowId: workflowId,
       canonicalLocator: root.appendingPathComponent(workflowId, isDirectory: true).path
     )
-    try WorkflowActivationStore().remove(origin: origin)
   }
 
   func applyRequestedActivation(_ record: WorkflowMutableRegistryTransaction) throws {

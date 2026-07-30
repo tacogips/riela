@@ -6,9 +6,9 @@ import Glibc
 import Foundation
 import RielaCore
 
-struct WorkflowActivationRecord: Codable, Equatable, Sendable {
-  var origin: WorkflowOriginIdentity
-  var updatedAt: Date
+package struct WorkflowActivationRecord: Codable, Equatable, Sendable {
+  package var origin: WorkflowOriginIdentity
+  package var updatedAt: Date
 }
 
 private struct WorkflowActivationDocument: Codable, Equatable, Sendable {
@@ -18,20 +18,20 @@ private struct WorkflowActivationDocument: Codable, Equatable, Sendable {
   static let empty = WorkflowActivationDocument(schemaVersion: 1, deactivated: [:])
 }
 
-struct WorkflowActivationStoreHooks: Sendable {
+package struct WorkflowActivationStoreHooks: Sendable {
   var afterStateRootPin: @Sendable () throws -> Void
 
-  init(afterStateRootPin: @escaping @Sendable () throws -> Void = {}) {
+  package init(afterStateRootPin: @escaping @Sendable () throws -> Void = {}) {
     self.afterStateRootPin = afterStateRootPin
   }
 }
 
-struct WorkflowActivationStore: Sendable {
+package struct WorkflowActivationStore: Sendable {
   private static let coordinatorLockKey = "riela.workflow-registry.activation-lock"
   private static let coordinatorRootKey = "riela.workflow-registry.activation-root"
   let hooks: WorkflowActivationStoreHooks
 
-  init(hooks: WorkflowActivationStoreHooks = WorkflowActivationStoreHooks()) {
+  package init(hooks: WorkflowActivationStoreHooks = WorkflowActivationStoreHooks()) {
     self.hooks = hooks
   }
 
@@ -43,17 +43,17 @@ struct WorkflowActivationStore: Sendable {
     Thread.current.threadDictionary[coordinatorRootKey] as? WorkflowMutableRegistryPinnedRoot
   }
 
-  func state(for origin: WorkflowOriginIdentity) throws -> WorkflowActivationState {
+  package func state(for origin: WorkflowOriginIdentity) throws -> WorkflowActivationState {
     try withLock(create: false) { document in
       document.deactivated[origin.originId] == nil ? .active : .deactivated
     } ?? .active
   }
 
-  func snapshot() throws -> [String: WorkflowActivationRecord] {
+  package func snapshot() throws -> [String: WorkflowActivationRecord] {
     try withLock(create: false, body: { $0.deactivated }) ?? [:]
   }
 
-  func set(_ state: WorkflowActivationState, for origin: WorkflowOriginIdentity) throws {
+  package func set(_ state: WorkflowActivationState, for origin: WorkflowOriginIdentity) throws {
     _ = try withLock(create: true) { document in
       var updated = document
       switch state {
@@ -67,7 +67,7 @@ struct WorkflowActivationStore: Sendable {
     }
   }
 
-  func remove(origin: WorkflowOriginIdentity) throws {
+  package func remove(origin: WorkflowOriginIdentity) throws {
     _ = try withLock(create: false) { document in
       guard document.deactivated[origin.originId] != nil else { return }
       var updated = document
@@ -76,7 +76,7 @@ struct WorkflowActivationStore: Sendable {
     }
   }
 
-  func withCoordinatorLock<T>(_ body: () throws -> T) throws -> T {
+  package func withCoordinatorLock<T>(_ body: () throws -> T) throws -> T {
     if Self.coordinatorLockHeld {
       return try body()
     }
@@ -90,7 +90,7 @@ struct WorkflowActivationStore: Sendable {
     }
   }
 
-  func withCoordinatorReadLock<T>(_ body: () throws -> T) throws -> T {
+  package func withCoordinatorReadLock<T>(_ body: () throws -> T) throws -> T {
     if Self.coordinatorLockHeld {
       return try body()
     }
@@ -237,7 +237,7 @@ struct WorkflowActivationStore: Sendable {
   }
 }
 
-func workflowOriginIdentity(
+package func workflowOriginIdentity(
   name: String,
   workflowId: String,
   scope: WorkflowScope,

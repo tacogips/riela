@@ -6,7 +6,7 @@ import Glibc
 import Foundation
 import RielaCore
 
-enum WorkflowConsolidationPhase: String, Codable, CaseIterable, Sendable {
+package enum WorkflowConsolidationPhase: String, Codable, CaseIterable, Sendable {
   case prepared
   case replacementPublished
   case retiringSources
@@ -32,21 +32,21 @@ struct WorkflowConsolidationJournal: Codable, Equatable, Sendable {
   var activateReplacement: Bool
 }
 
-struct WorkflowRegistryCoordinatorHooks: Sendable {
+package struct WorkflowRegistryCoordinatorHooks: Sendable {
   var afterPhase: @Sendable (WorkflowConsolidationPhase) throws -> Void
 
-  init(afterPhase: @escaping @Sendable (WorkflowConsolidationPhase) throws -> Void = { _ in }) {
+  package init(afterPhase: @escaping @Sendable (WorkflowConsolidationPhase) throws -> Void = { _ in }) {
     self.afterPhase = afterPhase
   }
 }
 
 struct WorkflowConsolidationInterruption: Error, Sendable {}
 
-struct WorkflowRegistryCoordinator: Sendable {
+package struct WorkflowRegistryCoordinator: Sendable {
   private static let recursionKey = "riela.workflow-registry-coordinator"
   let hooks: WorkflowRegistryCoordinatorHooks
 
-  init(hooks: WorkflowRegistryCoordinatorHooks = WorkflowRegistryCoordinatorHooks()) {
+  package init(hooks: WorkflowRegistryCoordinatorHooks = WorkflowRegistryCoordinatorHooks()) {
     self.hooks = hooks
   }
 

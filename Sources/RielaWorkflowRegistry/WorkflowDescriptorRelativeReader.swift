@@ -5,16 +5,16 @@ import Glibc
 #endif
 import Foundation
 
-struct WorkflowDescriptorRelativeRead: Sendable {
-  var bytes: Data
-  var mode: mode_t
+package struct WorkflowDescriptorRelativeRead: Sendable {
+  package var bytes: Data
+  package var mode: mode_t
 
-  var executable: Bool { mode & 0o111 != 0 }
-  var writable: Bool { mode & 0o222 != 0 }
+  package var executable: Bool { mode & 0o111 != 0 }
+  package var writable: Bool { mode & 0o222 != 0 }
 }
 
-enum WorkflowDescriptorRelativeReader {
-  static func read(
+package enum WorkflowDescriptorRelativeReader {
+  package static func read(
     _ url: URL,
     within root: URL,
     beforeLeafOpen: @Sendable () throws -> Void = {}

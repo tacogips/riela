@@ -24,48 +24,6 @@ private struct WorkflowCandidateRejected: Error, CustomStringConvertible {
   var description: String
 }
 
-public struct ResolvedWorkflowBundle: Equatable, Sendable {
-  public var workflow: WorkflowDefinition
-  public var nodePayloads: [String: AgentNodePayload]
-  public var sourceScope: WorkflowScope
-  public var workflowDirectory: String
-  public var diagnostics: [WorkflowValidationDiagnostic]
-  public var packageManifest: WorkflowPackageManifest?
-  public var packageDirectory: String?
-  public var provenance: WorkflowProvenance
-  public var activationState: WorkflowActivationState
-  public var originId: String?
-  public var mutable: Bool { provenance == .mutable }
-  var mutableRegistryDigest: String?
-
-  public init(
-    workflow: WorkflowDefinition,
-    nodePayloads: [String: AgentNodePayload],
-    sourceScope: WorkflowScope,
-    workflowDirectory: String,
-    diagnostics: [WorkflowValidationDiagnostic] = [],
-    packageManifest: WorkflowPackageManifest? = nil,
-    packageDirectory: String? = nil,
-    provenance: WorkflowProvenance = .immutable
-  ) {
-    self.workflow = workflow
-    self.nodePayloads = nodePayloads
-    self.sourceScope = sourceScope
-    self.workflowDirectory = workflowDirectory
-    self.diagnostics = diagnostics
-    self.packageManifest = packageManifest
-    self.packageDirectory = packageDirectory
-    self.provenance = provenance
-    activationState = .active
-    originId = nil
-    mutableRegistryDigest = nil
-  }
-}
-
-public protocol WorkflowBundleResolving: Sendable {
-  func resolve(_ options: WorkflowResolutionOptions) throws -> ResolvedWorkflowBundle
-}
-
 public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
   private let enforcesTransactionBlock: Bool
   private let capturesCatalogOriginSnapshot: Bool
@@ -146,7 +104,7 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
               var resolved = try mutableRegistry.loadBundle(
                 workflowId: options.workflowName,
                 pinned: pinned,
-                resolver: self,
+                resolver: WorkflowRegistryBundleLoader(),
                 scope: candidate.scope,
                 sharedNodeActivationPolicy: sharedNodeActivationPolicy
               )
@@ -174,7 +132,7 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
                   resolved = try mutableRegistry.loadBundle(
                     workflowId: options.workflowName,
                     pinned: pinned,
-                    resolver: self,
+                    resolver: WorkflowRegistryBundleLoader(),
                     scope: candidate.scope,
                     sharedNodeActivationPolicy: sharedNodeActivationPolicy
                   )
@@ -556,80 +514,16 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     sharedNodeActivationPolicy: WorkflowSharedNodeActivationPolicy = .includeDeactivated,
     sharedNodeActivationRootDirectory: URL? = nil
   ) throws -> ResolvedWorkflowBundle {
-    let workflowURL = try containedFile(
-      directory.appendingPathComponent("workflow.json"),
-      in: directory,
-      scope: scope,
-      label: "workflow.json"
-    )
-    let workflowData = try Data(contentsOf: workflowURL)
-    let validation = validateAuthoredWorkflowData(workflowData)
-    guard var workflow = validation.workflow else {
-      throw WorkflowResolutionError.invalidWorkflow(validation.diagnostics)
-    }
-    if let expectedWorkflowId, workflow.workflowId != expectedWorkflowId {
-      throw CLIUsageError(
-        "mutable workflow registry key '\(expectedWorkflowId)' does not match decoded workflowId '\(workflow.workflowId)'"
-      )
-    }
-    var nodePayloads: [String: AgentNodePayload] = [:]
-    let promptTemplateLoader = PromptTemplateAssetLoader()
-    for registryNode in workflow.nodeRegistry {
-      guard let nodeFile = registryNode.nodeFile else {
-        continue
-      }
-      let payloadURL = try containedFile(
-        directory.appendingPathComponent(nodeFile),
-        in: directory,
-        scope: scope,
-        label: "nodeFile \(nodeFile)"
-      )
-      let data = try Data(contentsOf: payloadURL)
-      let payload = try JSONDecoder().decode(AgentNodePayload.self, from: data)
-      let hydratedPayload: AgentNodePayload
-      do {
-        hydratedPayload = try promptTemplateLoader.hydrate(payload, workflowDirectory: directory)
-      } catch let error as PromptTemplateAssetLoadingError {
-        throw WorkflowResolutionError.invalidWorkflow([error.diagnostic])
-      }
-      nodePayloads[registryNode.id] = absolutizedStdioPaths(in: hydratedPayload, workflowDirectory: directory)
-    }
-    let materialized = try materializeSharedNodeReferences(
-      in: workflow,
-      nodePayloads: nodePayloads,
+    try WorkflowRegistryBundleLoader().loadBundle(
+      at: directory,
       rootDirectory: rootDirectory,
-      activationRootDirectory: sharedNodeActivationRootDirectory ?? rootDirectory,
       scope: scope,
+      packageManifest: providedPackageManifest,
+      packageDirectory: packageDirectory,
       provenance: provenance,
-      promptTemplateLoader: promptTemplateLoader,
-      activationPolicy: sharedNodeActivationPolicy
-    )
-    workflow = materialized.workflow
-    nodePayloads = materialized.nodePayloads
-    let providerDiagnostics = nodePayloads.keys.sorted().flatMap { nodeId in
-      nodePayloads[nodeId].map { validateAgentNodePayload($0, path: "nodes.\(nodeId)") } ?? []
-    }
-    if providerDiagnostics.contains(where: { $0.severity == .error }) {
-      throw WorkflowResolutionError.invalidWorkflow(providerDiagnostics)
-    }
-    let packageManifest: WorkflowPackageManifest?
-    let resolvedPackageDirectory: String?
-    if provenance == .mutable {
-      packageManifest = nil
-      resolvedPackageDirectory = nil
-    } else {
-      packageManifest = try providedPackageManifest ?? loadPackageManifestIfPresent(at: directory)
-      resolvedPackageDirectory = packageDirectory?.path ?? (packageManifest == nil ? nil : directory.path)
-    }
-    return ResolvedWorkflowBundle(
-      workflow: workflow,
-      nodePayloads: nodePayloads,
-      sourceScope: scope,
-      workflowDirectory: directory.path,
-      diagnostics: validation.diagnostics + providerDiagnostics,
-      packageManifest: packageManifest,
-      packageDirectory: resolvedPackageDirectory,
-      provenance: provenance
+      expectedWorkflowId: expectedWorkflowId,
+      sharedNodeActivationPolicy: sharedNodeActivationPolicy,
+      sharedNodeActivationRootDirectory: sharedNodeActivationRootDirectory
     )
   }
 
@@ -671,12 +565,6 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     }
     return resolvedFile
   }
-}
-
-public enum WorkflowResolutionError: Error, Equatable, Sendable {
-  case notFound(String, [String])
-  case invalidWorkflow([WorkflowValidationDiagnostic])
-  case invalidJSONReference(String)
 }
 
 func workflowResolutionErrorDescription(_ error: Error) -> String {

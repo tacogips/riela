@@ -1,17 +1,17 @@
 import Foundation
 import RielaCore
 
-struct WorkflowSharedNodeActivationPolicy: Sendable {
+public struct WorkflowSharedNodeActivationPolicy: Sendable {
   private var catalogOriginsByLocator: [String: [WorkflowOriginIdentity]]
   private var deactivatedOriginIds: Set<String>
 
-  static let includeDeactivated = WorkflowSharedNodeActivationPolicy(
+  public static let includeDeactivated = WorkflowSharedNodeActivationPolicy(
     catalogOrigins: [],
     deactivatedOrigins: [],
     includeDeactivated: true
   )
 
-  init(
+  public init(
     catalogOrigins: [WorkflowOriginIdentity],
     deactivatedOrigins: [WorkflowOriginIdentity],
     includeDeactivated: Bool
@@ -65,7 +65,7 @@ struct WorkflowSharedNodeActivationPolicy: Sendable {
     )
   }
 
-  func requireActiveCandidate(
+  package func requireActiveCandidate(
     name: String,
     directory: URL
   ) throws {
@@ -93,7 +93,7 @@ private extension Collection {
   }
 }
 
-extension FileSystemWorkflowBundleResolver {
+extension WorkflowRegistryBundleLoader {
   func materializeSharedNodeReferences(
     in workflow: WorkflowDefinition,
     nodePayloads: [String: AgentNodePayload],

@@ -105,6 +105,50 @@ final class GraphQLWorkflowRegistryTests: XCTestCase {
     XCTAssertEqual(error["code"], .string(WorkflowRegistryErrorCode.immutableWorkflow.rawValue))
   }
 
+  func testDefinitionUpdateRequiresRevisionBeforeProviderDispatch() async {
+    let executor = WorkflowRegistryGraphQLDocumentExecutor(localProvider: StubWorkflowRegistryProvider())
+    let response = await executor.execute(GraphQLDocumentRequest(
+      query: """
+      mutation Update($input: UpdateMutableWorkflowInput!) {
+        updateMutableWorkflow(input: $input) { accepted errors { code message } }
+      }
+      """,
+      variables: [
+        "input": .object([
+          "target": .object(["workflowId": .string("alpha")]),
+          "definition": .object(["workflowId": .string("alpha")])
+        ])
+      ],
+      operationName: "Update",
+      isLocallyTrusted: true
+    ))
+    XCTAssertEqual(errorCode(response), WorkflowRegistryErrorCode.invalidWorkflow.rawValue)
+  }
+
+  func testBundleUpdateRejectsDefinitionRevisionBeforeProviderDispatch() async {
+    let executor = WorkflowRegistryGraphQLDocumentExecutor(localProvider: StubWorkflowRegistryProvider())
+    let response = await executor.execute(GraphQLDocumentRequest(
+      query: """
+      mutation Update($input: UpdateMutableWorkflowInput!) {
+        updateMutableWorkflow(input: $input) { accepted errors { code message } }
+      }
+      """,
+      variables: [
+        "input": .object([
+          "target": .object(["workflowId": .string("alpha")]),
+          "bundle": .object([
+            "kind": .string("PATH"),
+            "value": .string("/tmp/unused")
+          ]),
+          "expectedDefinitionRevision": .string("unexpected")
+        ])
+      ],
+      operationName: "Update",
+      isLocallyTrusted: true
+    ))
+    XCTAssertEqual(errorCode(response), WorkflowRegistryErrorCode.invalidWorkflow.rawValue)
+  }
+
   func testCompositeExecutorPreflightsAndExecutesMixedDomainDocument() async {
     let executor = CompositeGraphQLDocumentExecutor(
       workflowRegistry: WorkflowRegistryGraphQLDocumentExecutor(localProvider: StubWorkflowRegistryProvider()),
@@ -702,6 +746,29 @@ final class GraphQLWorkflowRegistryTests: XCTestCase {
     }
   }
 
+  func testUnexpectedAndCancellationRegistrationErrorsMapToRegistryIOFailure() async {
+    for failureId in ["explode", "cancel"] {
+      let executor = WorkflowRegistryGraphQLDocumentExecutor(
+        localProvider: FailingWorkflowRegistryProvider()
+      )
+      let response = await executor.execute(GraphQLDocumentRequest(
+        query: """
+        mutation {
+          registerMutableWorkflow(input: {
+            bundle: {kind: LOCAL_PATH, value: "\(failureId)"}
+          }) { accepted }
+        }
+        """,
+        isLocallyTrusted: true
+      ))
+      XCTAssertEqual(
+        errorCode(response),
+        WorkflowRegistryErrorCode.registryIOFailure.rawValue,
+        "\(response.body)"
+      )
+    }
+  }
+
   func testLocalPathResolvesRelativeToRequestWorkingDirectory() async {
     let provider = RecordingWorkflowRegistryProvider()
     let executor = WorkflowRegistryGraphQLDocumentExecutor(localProvider: provider)
@@ -962,7 +1029,13 @@ private actor FailingWorkflowRegistryProvider: WorkflowRegistryGraphQLProviding 
     input: GraphQLRegisterMutableWorkflowInput,
     resolvedBundleURL: URL
   ) async throws -> GraphQLWorkflowMutationPayload {
-    GraphQLWorkflowMutationPayload(accepted: true)
+    if resolvedBundleURL.lastPathComponent == "cancel" {
+      throw CancellationError()
+    }
+    if resolvedBundleURL.lastPathComponent == "explode" {
+      throw UnexpectedWorkflowRegistryProviderError.injected
+    }
+    return GraphQLWorkflowMutationPayload(accepted: true)
   }
 
   func updateMutableWorkflow(

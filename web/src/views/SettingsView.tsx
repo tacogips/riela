@@ -1,5 +1,5 @@
 import { Show, createResource, createSignal } from 'solid-js'
-import { APIError, api } from '../api'
+import { APIError, api, requireExpectedProfile } from '../api'
 import type { AssistantSettings, NoteSettings, WebServerSettings } from '../contracts'
 import { ErrorBanner, LoadingState, MutationMessage, PageHeader } from '../components/Primitives'
 
@@ -9,9 +9,21 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-export function SettingsView(props: { onServerChange: () => void }) {
-  const [assistant, { refetch: refetchAssistant }] = createResource(() => api.get<AssistantSettings>('/api/v1/settings/assistant'))
-  const [notes, { refetch: refetchNotes }] = createResource(() => api.get<NoteSettings>('/api/v1/settings/notes'))
+export function SettingsView(props: { profileKey: string; profileName: string; onServerChange: () => void }) {
+  const [assistant, { refetch: refetchAssistant }] = createResource(
+    () => props.profileKey,
+    async () => requireExpectedProfile(
+      await api.get<AssistantSettings>('/api/v1/settings/assistant'),
+      props.profileName,
+    ),
+  )
+  const [notes, { refetch: refetchNotes }] = createResource(
+    () => props.profileKey,
+    async () => requireExpectedProfile(
+      await api.get<NoteSettings>('/api/v1/settings/notes'),
+      props.profileName,
+    ),
+  )
   const [server, { refetch: refetchServer }] = createResource(() => api.get<WebServerSettings>('/api/v1/settings/web-server'))
   const [messages, setMessages] = createSignal<Partial<Record<SettingsSection, string>>>({})
   const [errors, setErrors] = createSignal<Partial<Record<SettingsSection, boolean>>>({})
@@ -34,14 +46,28 @@ export function SettingsView(props: { onServerChange: () => void }) {
   const saveAssistant = async (form: HTMLFormElement) => {
     const data = new FormData(form)
     await runMutation('assistant', async () => {
-      await api.mutate('/api/v1/settings/assistant', 'PUT', { assistance: data.get('assistance'), vendor: data.get('vendor'), model: data.get('model') })
+      requireExpectedProfile(
+        await api.mutate<AssistantSettings>('/api/v1/settings/assistant', 'PUT', {
+          assistance: data.get('assistance'),
+          vendor: data.get('vendor'),
+          model: data.get('model'),
+          expectedProfile: props.profileName,
+        }),
+        props.profileName,
+      )
       void refetchAssistant()
     }, 'Assistant settings saved.')
   }
   const saveNotes = async (form: HTMLFormElement) => {
     const data = new FormData(form)
     await runMutation('notes', async () => {
-      await api.mutate('/api/v1/settings/notes', 'PUT', { exposesNoteAPI: data.get('exposesNoteAPI') === 'on' })
+      requireExpectedProfile(
+        await api.mutate<NoteSettings>('/api/v1/settings/notes', 'PUT', {
+          exposesNoteAPI: data.get('exposesNoteAPI') === 'on',
+          expectedProfile: props.profileName,
+        }),
+        props.profileName,
+      )
       void refetchNotes()
     }, 'Note settings saved.')
   }

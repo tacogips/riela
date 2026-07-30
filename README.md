@@ -363,6 +363,19 @@ membership writes are serialized, and stale scope, preview, paging, or
 mutation completions cannot replace current state. Unknown server progress is
 shown visibly in **None** instead of dropping the notebook.
 
+The RielaApp-hosted dashboard also exposes workflow observability and
+management views. **Instances** and **Run logs** poll every five seconds while
+the tab is visible, retain manual Refresh, and pause while hidden. Run-log rows
+open persisted step details with bounded, redacted diagnostics and gate/loop
+evidence. Instances validate workflow-variable JSON before Save and show
+read-only node patches. **Workflows** provides source-scoped read-only
+definition inspection plus user-mutable registry list, paste-register, edit,
+activate/deactivate, and confirmed delete operations. Registry writes reuse the
+CLI registry's canonical locks, validation, activation store, and exact
+revision conflicts; sensitive definition values use opaque retain handles
+instead of being returned to the browser. The standalone `riela serve` host
+remains Notes-only.
+
 RielaApp serves the Notes GraphQL documents at its existing `/graphql` route
 against the active profile's note root, protected by the dashboard's Host,
 Origin, CSRF, and JSON checks. For a standalone same-origin web view, build the

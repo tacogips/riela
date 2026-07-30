@@ -15,11 +15,11 @@ private struct WorkflowDetachedInventoryEntry {
 /// Retains the verified detached ownership container for the full recovery
 /// operation so later checks and mutations cannot be redirected by replacing
 /// its lexical path.
-final class WorkflowDetachedOwnershipPinnedRoot: @unchecked Sendable {
-  let identity: WorkflowDetachedOwnershipRootIdentity
+package final class WorkflowDetachedOwnershipPinnedRoot: @unchecked Sendable {
+  package let identity: WorkflowDetachedOwnershipRootIdentity
   private var descriptor: Int32
 
-  init(candidate: URL, requireRoot: Bool) throws {
+  package init(candidate: URL, requireRoot: Bool) throws {
     let root = try WorkflowDetachedOwnershipRoot.validateCanonicalPath(candidate)
     let container = root.deletingLastPathComponent()
     let namespace = WorkflowDetachedOwnershipRoot.canonicalNamespaceRoot
@@ -50,7 +50,7 @@ final class WorkflowDetachedOwnershipPinnedRoot: @unchecked Sendable {
     if descriptor >= 0 { _ = close(descriptor) }
   }
 
-  func requireConfiguredPathIdentity() throws {
+  package func requireConfiguredPathIdentity() throws {
     let containerName = identity.root.deletingLastPathComponent().lastPathComponent
     let namespace = try WorkflowHistoryPinnedRoot(
       WorkflowDetachedOwnershipRoot.canonicalNamespaceRoot,
@@ -66,7 +66,7 @@ final class WorkflowDetachedOwnershipPinnedRoot: @unchecked Sendable {
     }
   }
 
-  func directoryExists(_ name: String) throws -> Bool {
+  package func directoryExists(_ name: String) throws -> Bool {
     try validateLeaf(name)
     var status = stat()
     if fstatat(descriptor, name, &status, AT_SYMLINK_NOFOLLOW) != 0 {
@@ -79,7 +79,7 @@ final class WorkflowDetachedOwnershipPinnedRoot: @unchecked Sendable {
     return true
   }
 
-  func stableDirectoryURL(_ name: String) throws -> URL {
+  package func stableDirectoryURL(_ name: String) throws -> URL {
     guard try directoryExists(name) else {
       throw CLIUsageError("detached workflow transaction directory is missing")
     }
@@ -115,7 +115,7 @@ final class WorkflowDetachedOwnershipPinnedRoot: @unchecked Sendable {
       .standardizedFileURL
   }
 
-  func readRegularFile(_ relativePath: String, in directory: String) throws -> Data {
+  package func readRegularFile(_ relativePath: String, in directory: String) throws -> Data {
     try validateRelativePath(relativePath)
     let components = relativePath.split(separator: "/").map(String.init)
     guard let leaf = components.last else {
@@ -127,7 +127,7 @@ final class WorkflowDetachedOwnershipPinnedRoot: @unchecked Sendable {
     return try readRegular(parent: parent, name: leaf)
   }
 
-  func copyDirectory(from source: String, to destination: String) throws {
+  package func copyDirectory(from source: String, to destination: String) throws {
     try validateLeaf(source)
     try validateLeaf(destination)
     guard try directoryExists(source), try !entryExists(destination) else {
@@ -153,7 +153,7 @@ final class WorkflowDetachedOwnershipPinnedRoot: @unchecked Sendable {
     try sync()
   }
 
-  func populateRoot(with entries: [WorkflowMutableRegistryInventoryEntry]) throws {
+  package func populateRoot(with entries: [WorkflowMutableRegistryInventoryEntry]) throws {
     for entry in entries {
       let path = "root/\(entry.relativePath)"
       if let bytes = entry.bytes {
@@ -165,7 +165,7 @@ final class WorkflowDetachedOwnershipPinnedRoot: @unchecked Sendable {
     try syncTree("root")
   }
 
-  func inventory(for target: WorkflowBundleIdentity, directory name: String) throws -> WorkflowBundleInventory {
+  package func inventory(for target: WorkflowBundleIdentity, directory name: String) throws -> WorkflowBundleInventory {
     let source = try openDirectory(name)
     defer { _ = close(source) }
     var entries: [WorkflowDetachedInventoryEntry] = []
@@ -186,7 +186,7 @@ final class WorkflowDetachedOwnershipPinnedRoot: @unchecked Sendable {
     return result
   }
 
-  func readCanonicalIfPresent<T: Codable>(_ type: T.Type, name: String) throws -> T? {
+  package func readCanonicalIfPresent<T: Codable>(_ type: T.Type, name: String) throws -> T? {
     let sidecar = name + ".sha256"
     let recordExists = try regularFileExists(name)
     let sidecarExists = try regularFileExists(sidecar)
@@ -202,7 +202,7 @@ final class WorkflowDetachedOwnershipPinnedRoot: @unchecked Sendable {
     return try WorkflowHistoryCanonicalCoding.decode(type, from: bytes)
   }
 
-  func writeCanonical<T: Encodable>(_ value: T, name: String) throws {
+  package func writeCanonical<T: Encodable>(_ value: T, name: String) throws {
     try validateLeaf(name)
     let bytes = try WorkflowHistoryCanonicalCoding.encode(value)
     try write(bytes, to: name, mode: S_IRUSR | S_IWUSR)
@@ -214,7 +214,7 @@ final class WorkflowDetachedOwnershipPinnedRoot: @unchecked Sendable {
     try sync()
   }
 
-  func removePersistedRecord(name: String) throws {
+  package func removePersistedRecord(name: String) throws {
     let sidecar = name + ".sha256"
     let recordExists = try regularFileExists(name)
     let sidecarExists = try regularFileExists(sidecar)
@@ -229,14 +229,14 @@ final class WorkflowDetachedOwnershipPinnedRoot: @unchecked Sendable {
     }
   }
 
-  func removeDirectory(_ name: String) throws {
+  package func removeDirectory(_ name: String) throws {
     try validateLeaf(name)
     try validateRemovableTree(parent: descriptor, leaf: name)
     try remove(parent: descriptor, leaf: name)
     try sync()
   }
 
-  func renameDirectory(from source: String, to destination: String) throws {
+  package func renameDirectory(from source: String, to destination: String) throws {
     guard try directoryExists(source), try !entryExists(destination) else {
       throw CLIUsageError("detached workflow transaction rename paths are not verified siblings")
     }
@@ -245,20 +245,20 @@ final class WorkflowDetachedOwnershipPinnedRoot: @unchecked Sendable {
     }
   }
 
-  func sync() throws {
+  package func sync() throws {
     guard fsync(descriptor) == 0 else {
       throw CLIUsageError("unable to sync detached workflow ownership container")
     }
   }
 
-  func syncTree(_ name: String) throws {
+  package func syncTree(_ name: String) throws {
     let root = try openDirectory(name)
     defer { _ = close(root) }
     try syncTree(descriptor: root)
     try sync()
   }
 
-  func destroyContainer() throws {
+  package func destroyContainer() throws {
     try requireConfiguredPathIdentity()
     let containerName = identity.root.deletingLastPathComponent().lastPathComponent
     try removeDirectory("root")
@@ -477,7 +477,7 @@ final class WorkflowDetachedOwnershipPinnedRoot: @unchecked Sendable {
     }
   }
 
-  func entryExists(_ name: String) throws -> Bool {
+  package func entryExists(_ name: String) throws -> Bool {
     try validateLeaf(name)
     var status = stat()
     if fstatat(descriptor, name, &status, AT_SYMLINK_NOFOLLOW) != 0 {

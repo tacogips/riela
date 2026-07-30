@@ -82,11 +82,6 @@ public struct DeterministicWorkflowExecutablePreflight: WorkflowExecutablePrefli
   }
 }
 
-public enum WorkflowSourceKind: String, Codable, Equatable, Sendable {
-  case workflow
-  case package
-}
-
 public struct WorkflowValidationCommandResult: Codable, Equatable, Sendable {
   public var valid: Bool
   public var workflowId: String

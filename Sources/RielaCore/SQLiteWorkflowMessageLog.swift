@@ -206,6 +206,7 @@ public struct SQLiteWorkflowMessageLog: Sendable {
       )
       try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_messages_inbox ON workflow_messages (workflow_execution_id, to_step_id, lifecycle_status, created_order, communication_id)")
       try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_messages_outbox ON workflow_messages (workflow_execution_id, from_step_id, created_order, communication_id)")
+      try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_messages_session_order ON workflow_messages (workflow_execution_id, created_order DESC, communication_id DESC)")
       try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_messages_source_exec ON workflow_messages (source_step_execution_id, created_order)")
       try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_message_payload_string ON workflow_message_payload_index (workflow_execution_id, key, string_value, communication_id)")
       try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_message_payload_number ON workflow_message_payload_index (workflow_execution_id, key, number_value, communication_id)")

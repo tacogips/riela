@@ -6,6 +6,7 @@ import Glibc
 import Foundation
 import XCTest
 @testable import RielaCLI
+@testable import RielaWorkflowRegistry
 
 extension WorkflowTemporaryRegistrationTests {
   func testHelpDocumentsRegistrationFlags() async {

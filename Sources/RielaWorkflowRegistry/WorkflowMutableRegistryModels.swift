@@ -18,6 +18,7 @@ struct WorkflowMutableRegistryTransaction: Codable, Equatable, Sendable {
   var backupPath: String?
   var operation: Operation?
   var requestedActivationState: WorkflowActivationState?
+  var deletionActivationRemoved: Bool?
 }
 
 struct WorkflowMutableRegistryRecoveryFailure: Error, CustomStringConvertible {
@@ -50,6 +51,8 @@ public struct WorkflowMutableRegistryHooks: Sendable {
   var afterLockAcquire: @Sendable (WorkflowMutableRegistryLock) throws -> Void
   var beforeDetachedBundleLoad: @Sendable () throws -> Void
   var afterMutationWorkspaceExport: @Sendable () throws -> Void
+  var beforeDeletionActivationRemoval: @Sendable () throws -> Void
+  var beforeDeletionFinalization: @Sendable () throws -> Void
 
   public init(afterPhase: @escaping @Sendable (WorkflowMutableRegistryPhase) throws -> Void = { _ in }) {
     self.afterPhase = afterPhase
@@ -58,6 +61,8 @@ public struct WorkflowMutableRegistryHooks: Sendable {
     afterLockAcquire = { _ in }
     beforeDetachedBundleLoad = {}
     afterMutationWorkspaceExport = {}
+    beforeDeletionActivationRemoval = {}
+    beforeDeletionFinalization = {}
   }
 
   init(
@@ -70,6 +75,8 @@ public struct WorkflowMutableRegistryHooks: Sendable {
     afterLockAcquire = { _ in }
     beforeDetachedBundleLoad = {}
     afterMutationWorkspaceExport = {}
+    beforeDeletionActivationRemoval = {}
+    beforeDeletionFinalization = {}
   }
 
   init(
@@ -82,6 +89,8 @@ public struct WorkflowMutableRegistryHooks: Sendable {
     self.afterLockAcquire = afterLockAcquire
     beforeDetachedBundleLoad = {}
     afterMutationWorkspaceExport = {}
+    beforeDeletionActivationRemoval = {}
+    beforeDeletionFinalization = {}
   }
 
   init(
@@ -94,6 +103,44 @@ public struct WorkflowMutableRegistryHooks: Sendable {
     afterLockAcquire = { _ in }
     self.beforeDetachedBundleLoad = beforeDetachedBundleLoad
     self.afterMutationWorkspaceExport = afterMutationWorkspaceExport
+    beforeDeletionActivationRemoval = {}
+    beforeDeletionFinalization = {}
+  }
+
+  init(beforeDeletionActivationRemoval: @escaping @Sendable () throws -> Void) {
+    afterPhase = { _ in }
+    beforeRecordRead = { _ in }
+    beforeLockAcquire = { _ in }
+    afterLockAcquire = { _ in }
+    beforeDetachedBundleLoad = {}
+    afterMutationWorkspaceExport = {}
+    self.beforeDeletionActivationRemoval = beforeDeletionActivationRemoval
+    beforeDeletionFinalization = {}
+  }
+
+  init(beforeDeletionFinalization: @escaping @Sendable () throws -> Void) {
+    afterPhase = { _ in }
+    beforeRecordRead = { _ in }
+    beforeLockAcquire = { _ in }
+    afterLockAcquire = { _ in }
+    beforeDetachedBundleLoad = {}
+    afterMutationWorkspaceExport = {}
+    beforeDeletionActivationRemoval = {}
+    self.beforeDeletionFinalization = beforeDeletionFinalization
+  }
+
+  init(
+    beforeRecordRead: @escaping @Sendable (String) throws -> Void,
+    beforeDeletionFinalization: @escaping @Sendable () throws -> Void
+  ) {
+    afterPhase = { _ in }
+    self.beforeRecordRead = beforeRecordRead
+    beforeLockAcquire = { _ in }
+    afterLockAcquire = { _ in }
+    beforeDetachedBundleLoad = {}
+    afterMutationWorkspaceExport = {}
+    beforeDeletionActivationRemoval = {}
+    self.beforeDeletionFinalization = beforeDeletionFinalization
   }
 }
 

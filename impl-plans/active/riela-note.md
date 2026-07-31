@@ -529,6 +529,60 @@ not pushed and final status must be clean.
 orphaned and unread. The repository-baseline SwiftLint violations remain
 outside the required acceptance gates and revision files.
 
+### Session: 2026-08-01 Step 6 test-integrity revisions
+
+**Tasks Completed**: Closed all three mid-severity test-integrity findings
+from `comm-001857`; TASK-025, TASK-027, TASK-028, and TASK-030 remain complete.
+No behavior outside the accepted D20-D24 system-memory work was added.
+**Files Changed**:
+`Sources/RielaNote/NoteService.swift`,
+`Sources/RielaCLI/ProductionNodeAdapter+NoteMemoryAddons.swift`,
+`Tests/RielaNoteTests/SystemMemoryNotebookTests.swift`,
+`Tests/RielaCLITests/NoteMemoryAddonHandoffTests.swift`,
+`Tests/RielaCLITests/RielaExampleParityTests.swift`, and this progress log.
+**Findings Addressed**:
+
+- Comment promotion now enforces effective note/notebook read-only state.
+  The system-memory lock test asserts exact `readOnly` failures for editing,
+  deletion, note creation, attachment writes, notebook deletion, and comment
+  promotion, plus rejection of reserved-kind claims.
+- Persona successor coverage again exercises visited and self handoffs,
+  runtime trails, deterministic multiple-flag priority, allowed handoffs,
+  maximum-turn continuation removal, non-continuation mentions, and the
+  established persona fallback replies.
+- Slack, Telegram, and Discord parity coverage now seeds the system-memory
+  notebook, mock-runs each workflow with a new Yui memory entry, asserts the
+  read-node projection, and verifies the written Note record.
+
+**Verification**:
+
+- Focused system-memory, handoff, and trio persistence tests: 11 passed,
+  0 failed.
+- `swift build`: passed.
+- `swift test --filter RielaNoteTests`: 136 passed, 0 failed.
+- `swift test --filter RielaCLITests`: 657 passed, 0 failed.
+- `swift test --filter RielaCoreTests`: 477 passed, 0 failed.
+- Slack, Telegram, Discord, Matrix, and Telegram-SDK workflow validation:
+  all returned `valid: true` through `.build/debug/riela`.
+- `cd web && bun run typecheck && bun test src && bun run build`: passed;
+  154 web tests passed, 0 failed.
+- Production/test/example removed-symbol audit, `git diff --check`, branch,
+  and package-removal checks passed.
+- `swiftlint lint --strict --no-cache` reported the same 11 repository-baseline
+  errors. Focused lint reported only the pre-existing large-tuple diagnostic
+  on `NoteService.promoteCommentToNotebook`; the four other revision files
+  were clean.
+
+**Documentation Review**: `README.md` and
+`.codex/skills/riela-impl-workflow/SKILL.md` remain aligned with the accepted
+system-memory contract and require no additional user-facing change.
+**Commit**: `c9acbf2` (`fix(riela-note): restore system-memory regressions`).
+Branch: `feat/note-hub-improve`; push status: not pushed. This progress-log
+update is the final documentation commit, after which status must be clean.
+**Residual Risks**: Existing `.riela/memory/` data remains intentionally
+orphaned and unread. The 11 repository-baseline SwiftLint errors remain outside
+the required gates; no new test-integrity gap remains.
+
 ## Historical Issue-Resolution Work Package: Hierarchical Tags and Kanban
 
 ### Objective and boundaries

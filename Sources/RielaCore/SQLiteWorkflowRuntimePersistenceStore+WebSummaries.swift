@@ -411,15 +411,22 @@ private func sessionSummaryRowPrecedes(_ lhs: SQLiteRow, _ rhs: SQLiteRow) -> Bo
 }
 
 func backfillRuntimeSessionSummaryColumns(_ db: SQLiteDatabase) throws {
+  // Undecodable legacy rows must keep NULL summary columns (the decode-based
+  // backfill skips them); gate this cheap SQL pass on a known session status
+  // so it cannot resurrect rows the typed decoder rejects.
+  let knownStatuses = WorkflowSessionStatus.allCases
+    .map { "'\($0.rawValue)'" }
+    .joined(separator: ", ")
   try db.execute(
     """
     UPDATE workflow_runtime_snapshots
     SET workflow_id = COALESCE(workflow_id, json_extract(session_json, '$.workflowId')),
       session_status = COALESCE(session_status, json_extract(session_json, '$.status')),
       created_at = COALESCE(created_at, json_extract(session_json, '$.createdAt'))
-    WHERE workflow_id IS NULL
+    WHERE (workflow_id IS NULL
       OR session_status IS NULL
-      OR created_at IS NULL
+      OR created_at IS NULL)
+      AND json_extract(session_json, '$.status') IN (\(knownStatuses))
     """
   )
 }

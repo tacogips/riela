@@ -4,6 +4,7 @@ import RielaCore
 public struct WorkflowSharedNodeActivationPolicy: Sendable {
   private var catalogOriginsByLocator: [String: [WorkflowOriginIdentity]]
   private var deactivatedOriginIds: Set<String>
+  private var deactivatedOriginsByLocator: [String: [WorkflowOriginIdentity]]
 
   public static let includeDeactivated = WorkflowSharedNodeActivationPolicy(
     catalogOrigins: [],
@@ -23,6 +24,23 @@ public struct WorkflowSharedNodeActivationPolicy: Sendable {
     deactivatedOriginIds = includeDeactivated
       ? []
       : Set(deactivatedOrigins.map(\.originId))
+    deactivatedOriginsByLocator = includeDeactivated
+      ? [:]
+      : Dictionary(grouping: deactivatedOrigins, by: \.canonicalLocator)
+  }
+
+  /// A deactivation recorded for this locator must win even when the catalog
+  /// cannot decode the bundle anymore (its entry then carries a placeholder
+  /// workflowId), so the recorded origin is matched by locator plus name or
+  /// workflowId instead of relying on catalog identity reconstruction.
+  private func recordedDeactivation(
+    canonicalLocator: String,
+    name: String,
+    workflowId: String?
+  ) -> WorkflowOriginIdentity? {
+    (deactivatedOriginsByLocator[canonicalLocator] ?? []).first {
+      $0.name == name || ($0.workflowId == workflowId && workflowId != nil)
+    }
   }
 
   func requireActive(
@@ -33,8 +51,8 @@ public struct WorkflowSharedNodeActivationPolicy: Sendable {
     provenance: WorkflowProvenance
   ) throws {
     let canonicalLocator = directory.resolvingSymlinksInPath().standardizedFileURL.path
-    let matchingOrigins = (catalogOriginsByLocator[canonicalLocator] ?? [])
-      .filter { $0.workflowId == workflowId }
+    let locatorOrigins = catalogOriginsByLocator[canonicalLocator] ?? []
+    let matchingOrigins = locatorOrigins.filter { $0.workflowId == workflowId }
     let origin: WorkflowOriginIdentity
     if matchingOrigins.count == 1, let exact = matchingOrigins.first {
       origin = exact
@@ -56,13 +74,26 @@ public struct WorkflowSharedNodeActivationPolicy: Sendable {
         workflowId: workflowId
       )
     }
-    guard deactivatedOriginIds.contains(origin.originId) else { return }
-    throw WorkflowRegistryError(
-      code: .workflowDeactivated,
-      message: "shared workflow '\(workflowId)' is deactivated",
-      workflowId: workflowId,
-      originId: origin.originId
-    )
+    if deactivatedOriginIds.contains(origin.originId) {
+      throw WorkflowRegistryError(
+        code: .workflowDeactivated,
+        message: "shared workflow '\(workflowId)' is deactivated",
+        workflowId: workflowId,
+        originId: origin.originId
+      )
+    }
+    if let recorded = recordedDeactivation(
+      canonicalLocator: canonicalLocator,
+      name: name,
+      workflowId: workflowId
+    ) {
+      throw WorkflowRegistryError(
+        code: .workflowDeactivated,
+        message: "shared workflow '\(workflowId)' is deactivated",
+        workflowId: workflowId,
+        originId: recorded.originId
+      )
+    }
   }
 
   package func requireActiveCandidate(
@@ -77,13 +108,26 @@ public struct WorkflowSharedNodeActivationPolicy: Sendable {
     } else {
       origin = matchingOrigins.filter { $0.name == name }.only
     }
-    guard let origin, deactivatedOriginIds.contains(origin.originId) else { return }
-    throw WorkflowRegistryError(
-      code: .workflowDeactivated,
-      message: "workflow '\(origin.workflowId)' is deactivated",
-      workflowId: origin.workflowId,
-      originId: origin.originId
-    )
+    if let origin, deactivatedOriginIds.contains(origin.originId) {
+      throw WorkflowRegistryError(
+        code: .workflowDeactivated,
+        message: "workflow '\(origin.workflowId)' is deactivated",
+        workflowId: origin.workflowId,
+        originId: origin.originId
+      )
+    }
+    if let recorded = recordedDeactivation(
+      canonicalLocator: canonicalLocator,
+      name: name,
+      workflowId: origin?.workflowId
+    ) {
+      throw WorkflowRegistryError(
+        code: .workflowDeactivated,
+        message: "workflow '\(recorded.workflowId)' is deactivated",
+        workflowId: recorded.workflowId,
+        originId: recorded.originId
+      )
+    }
   }
 }
 

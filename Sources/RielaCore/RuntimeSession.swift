@@ -1,6 +1,6 @@
 import Foundation
 
-public enum WorkflowSessionStatus: String, Codable, Sendable {
+public enum WorkflowSessionStatus: String, Codable, Sendable, CaseIterable {
   case created
   case running
   case completed

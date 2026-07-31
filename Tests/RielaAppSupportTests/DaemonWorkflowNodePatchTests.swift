@@ -532,7 +532,10 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
   }
 
   private func writeRunnableWorkflow(id: String, to directory: URL) throws {
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+      at: directory.appendingPathComponent("nodes", isDirectory: true),
+      withIntermediateDirectories: true
+    )
     try """
     {
       "workflowId": "\(id)",
@@ -548,10 +551,43 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
             "name": "riela/test-reply",
             "version": "1"
           }
+        },
+        {
+          "id": "worker",
+          "nodeFile": "nodes/worker.node.json"
+        }
+      ],
+      "steps": [
+        {
+          "id": "reply",
+          "nodeId": "reply",
+          "role": "worker",
+          "transitions": [
+            {
+              "toStepId": "worker"
+            }
+          ]
+        },
+        {
+          "id": "worker",
+          "nodeId": "worker",
+          "role": "worker"
         }
       ]
     }
     """.write(to: directory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+    try """
+    {
+      "id": "worker",
+      "model": "gpt-5",
+      "modelFreeze": false,
+      "promptTemplate": "Reply"
+    }
+    """.write(
+      to: directory.appendingPathComponent("nodes/worker.node.json"),
+      atomically: true,
+      encoding: .utf8
+    )
   }
 
   private func writeModelFrozenWorkflow(id: String, to directory: URL) throws {

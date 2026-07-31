@@ -102,7 +102,7 @@ otherwise record it only as a follow-up in the analysis document.
 
 ### TASK-025: Schema v6, system notebook, and NoteService lock boundary
 
-**Status**: COMPLETE — committed as part of `7e5c29c`.
+**Status**: COMPLETE — committed in `7e5c29c`; persistence coverage completed in `1d9b11c`.
 **Depends On**: TASK-024
 **Write Scope**:
 `Sources/RielaNote/`, `Tests/RielaNoteTests/`, and only directly required Note
@@ -175,7 +175,7 @@ memory-specific tests, and the shared CLI/Core test-support files enumerated in
 
 ### TASK-027: Implement the six Note-backed memory successor add-ons
 
-**Status**: COMPLETE — committed as part of `7e5c29c`.
+**Status**: COMPLETE — committed in `7e5c29c`; persona file continuity completed in `1d9b11c`.
 **Depends On**: TASK-025, TASK-026
 **Write Scope**:
 focused Note add-on adapter files under `Sources/RielaCLI/`, directly required
@@ -242,7 +242,7 @@ related mock scenario tests.
 
 ### TASK-029: Expose persisted lock control through GraphQL, REST, and web
 
-**Status**: COMPLETE — committed as part of `7e5c29c`.
+**Status**: COMPLETE — committed in `7e5c29c`; locked-control revision completed in `1d9b11c`.
 **Depends On**: TASK-025
 **Write Scope**:
 `Sources/RielaGraphQL/GraphQLContracts.swift`,
@@ -489,6 +489,45 @@ pushed. Final status is required to be clean after that commit.
 orphaned and unread; Matrix/Telegram-SDK migrations exceed the three named
 examples only to remove dangling ids. The known unrelated interleaved-submit
 timing flake was not observed and did not affect any required filtered suite.
+
+### Session: 2026-08-01 Step 6 self-review revisions
+
+**Tasks Completed**: Closed both mid-severity findings and both verification
+gaps from `comm-001854`; TASK-025, TASK-027, TASK-029, and TASK-030 remain
+complete. No scope outside the accepted D20-D24 system-memory work was added.
+**Files Changed**: `Sources/RielaCLI/ProductionNodeAdapter+NoteMemoryAddons.swift`,
+focused CLI and Note tests, `web/src/views/NotesView.tsx`, the focused
+`web/src/notes/notebookLock*` helper/tests, and this progress log.
+**Findings Addressed**:
+
+- Persona writes attach every projected file to every generated memory note;
+  persona reads return deterministic file projections clamped by `fileLimit`.
+- Canonical relock success closes stale composer/detail content and disables
+  Expand with Agent while locked; a failed mutation preserves visible state.
+- Persisted unlock is asserted after reopening NoteService, and a synthetic
+  v5 database proves additive v6 `read_only` migration and legacy-row default.
+
+**Verification**:
+
+- Focused Swift revision tests: 30 passed, 0 failed.
+- `swift build`: passed.
+- `swift test --filter RielaNoteTests`: 136 passed, 0 failed.
+- `swift test --filter RielaCLITests`: 649 passed, 0 failed.
+- `swift test --filter RielaCoreTests`: 477 passed, 0 failed.
+- Slack, Telegram, Discord, Matrix, and Telegram-SDK workflow validation:
+  all returned `valid: true`.
+- `cd web && bun run typecheck`, `bun test src`, and `bun run build`: passed;
+  154 web tests passed, 0 failed.
+- Removed-symbol audit and `git diff --check`: passed.
+- Advisory `swiftlint lint --strict`: the same 11 repository-baseline errors;
+  no finding in a revision file.
+
+**Commit**: `1d9b11c` (`fix(riela-note): preserve locked memory contracts`).
+This progress update is the final local documentation commit; push status is
+not pushed and final status must be clean.
+**Residual Risks**: Existing `.riela/memory/` data remains intentionally
+orphaned and unread. The repository-baseline SwiftLint violations remain
+outside the required acceptance gates and revision files.
 
 ## Historical Issue-Resolution Work Package: Hierarchical Tags and Kanban
 

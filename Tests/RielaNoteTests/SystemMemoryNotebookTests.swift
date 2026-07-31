@@ -30,14 +30,46 @@ final class SystemMemoryNotebookTests: NoteTestCase {
       tags: [NoteTagInput(name: "memory-namespace:test")]
     )
 
-    XCTAssertThrowsError(try service.updateNoteBody(noteId: note.noteId, bodyMarkdown: "changed"))
-    XCTAssertThrowsError(try service.deleteNote(noteId: note.noteId))
-    XCTAssertThrowsError(
+    assertReadOnly(
+      try service.updateNoteBody(noteId: note.noteId, bodyMarkdown: "changed"),
+      expectedIdentifier: note.notebookId
+    )
+    assertReadOnly(try service.deleteNote(noteId: note.noteId), expectedIdentifier: note.notebookId)
+    assertReadOnly(
       try service.createNote(
         notebookId: NoteStoreSchema.systemMemoryNotebookId,
         bodyMarkdown: "blocked"
-      )
+      ),
+      expectedIdentifier: note.notebookId
     )
+    assertReadOnly(
+      try service.attachFile(
+        noteId: note.noteId,
+        data: Data("blocked".utf8),
+        mediaType: "text/plain"
+      ),
+      expectedIdentifier: note.notebookId
+    )
+    assertReadOnly(
+      try service.deleteNotebook(notebookId: note.notebookId),
+      expectedIdentifier: note.notebookId
+    )
+
+    let comment = try service.addComment(noteId: note.noteId, bodyMarkdown: "metadata")
+    assertReadOnly(
+      try service.promoteCommentToNotebook(noteId: note.noteId, commentId: comment.commentId),
+      expectedIdentifier: note.notebookId
+    )
+    XCTAssertThrowsError(
+      try service.createNotebook(
+        title: "Claimed System Memory",
+        kindTagName: NoteStoreSchema.systemMemoryNotebookKindTag
+      )
+    ) { error in
+      guard case NoteServiceError.invalidInput = error else {
+        return XCTFail("expected invalidInput, got \(error)")
+      }
+    }
 
     let tagged = try service.applyTags(
       noteId: note.noteId,
@@ -45,7 +77,7 @@ final class SystemMemoryNotebookTests: NoteTestCase {
       provenance: .human
     )
     XCTAssertTrue(tagged.tags.contains { $0.tag.name == "reviewed" })
-    XCTAssertEqual(try service.addComment(noteId: note.noteId, bodyMarkdown: "metadata").bodyMarkdown, "metadata")
+    XCTAssertEqual(comment.bodyMarkdown, "metadata")
 
     XCTAssertFalse(try service.setNotebookReadOnly(notebookId: note.notebookId, readOnly: false).readOnly)
     XCTAssertEqual(
@@ -86,5 +118,16 @@ final class SystemMemoryNotebookTests: NoteTestCase {
       originalFilename: "memory.txt"
     )
     XCTAssertEqual(attachment.noteId, note.noteId)
+  }
+
+  private func assertReadOnly<T>(
+    _ expression: @autoclosure () throws -> T,
+    expectedIdentifier: String,
+    file: StaticString = #filePath,
+    line: UInt = #line
+  ) {
+    XCTAssertThrowsError(try expression(), file: file, line: line) { error in
+      XCTAssertEqual(error as? NoteServiceError, .readOnly(expectedIdentifier), file: file, line: line)
+    }
   }
 }

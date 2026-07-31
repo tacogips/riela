@@ -393,7 +393,8 @@ public struct NoteService: Sendable {
   ) throws -> (notebook: Notebook, note: Note) {
     let result = try driver.withDatabase { database in
       try database.transaction { db -> (notebook: Notebook, note: Note, dispatches: [QueuedAutoActionDispatch]) in
-        _ = try requireNote(noteId, in: db)
+        let sourceNote = try requireNote(noteId, in: db)
+        try requireNoteContentWritable(sourceNote, in: db)
         let commentRows = try db.query(
           """
           SELECT body_markdown

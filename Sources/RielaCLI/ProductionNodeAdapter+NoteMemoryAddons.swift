@@ -249,7 +249,7 @@ private func writePersonaNoteMemory(_ context: NoteMemoryAddonContext) throws ->
   )
   var output = payload
   for (key, value) in handoffDecision.handoffs { output[key] = .bool(value) }
-  let fallback = "\(personaName) has no reply."
+  let fallback = personaMemoryFallbackReply(personaId: personaId, personaName: personaName)
   let originalReplyText = context.string("replyText") ?? string("replyText", in: payload) ?? fallback
   let replyText = sanitizedPersonaReplyText(originalReplyText, decision: handoffDecision, fallback: fallback)
   output["replyText"] = .string(replyText)
@@ -439,18 +439,58 @@ private func sanitizedPersonaReplyText(
   decision: PersonaHandoffDecision,
   fallback: String
 ) -> String {
-  guard decision.blocked, let selected = decision.selectedTarget else { return text }
-  let aliases = personaHandoffTargets.first { $0.id == selected }?.aliases ?? ["@\(selected)", selected]
-  let fragments = text.split(omittingEmptySubsequences: false, whereSeparator: { ".。!?！？\n".contains($0) })
+  let personasToRemove: [String]
+  if decision.blocked, let selected = decision.selectedTarget {
+    personasToRemove = [selected]
+  } else if decision.selectedTarget == nil, decision.handoffTrail.count >= decision.maxTurns {
+    personasToRemove = decision.visitedPersonas
+  } else {
+    personasToRemove = []
+  }
+  guard !personasToRemove.isEmpty else { return text }
+  let fragments = personaReplySentenceFragments(text)
   let kept = fragments.filter { fragment in
     let lowered = fragment.lowercased()
-    let addressed = aliases.contains { lowered.contains($0.lowercased()) }
-    let continues = ["@", "次", "next", "ask", "聞", "伺", "お願い", "どう", "くれ", "ください", "教え", "view"]
-      .contains { lowered.contains($0) }
-    return !(addressed && continues)
+    return !personasToRemove.contains { personaId in
+      let aliases = personaHandoffTargets.first { $0.id == personaId }?.aliases ?? ["@\(personaId)", personaId]
+      let addressed = aliases.contains { lowered.contains($0.lowercased()) }
+      let continues = personaHandoffContinuationCues.contains { lowered.contains($0) }
+      return addressed && continues
+    }
   }
-  let result = kept.joined(separator: ".").trimmingCharacters(in: .whitespacesAndNewlines)
+  let result = kept.joined().trimmingCharacters(in: .whitespacesAndNewlines)
   return result.isEmpty ? fallback : result
+}
+
+private let personaHandoffContinuationCues = [
+  "@", "次", "next", "ask", "聞", "伺", "お願い", "どう", "くれ", "ください", "教え", "view"
+]
+
+private func personaReplySentenceFragments(_ text: String) -> [String] {
+  var fragments: [String] = []
+  var current = ""
+  for character in text {
+    current.append(character)
+    if ".。!?！？\n".contains(character) {
+      fragments.append(current)
+      current = ""
+    }
+  }
+  if !current.isEmpty { fragments.append(current) }
+  return fragments.isEmpty ? [text] : fragments
+}
+
+private func personaMemoryFallbackReply(personaId: String, personaName: String) -> String {
+  switch personaId {
+  case "yui":
+    return "では、肩の力を抜いて続けましょう。"
+  case "mika":
+    return "いいね、ゆるく続けよ。"
+  case "rina":
+    return "了解。ここまでで一度区切れる。"
+  default:
+    return "\(personaName)です。今の話題を受けて、自然に続けます。"
+  }
 }
 
 private func bool(_ key: String, in object: JSONObject) -> Bool? {

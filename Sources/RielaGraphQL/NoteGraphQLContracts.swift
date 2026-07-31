@@ -115,6 +115,7 @@ public struct GraphQLNotebookDTO: Codable, Equatable, Sendable {
   public var notebookId: String
   public var title: String
   public var progress: String
+  public var readOnly: Bool
   public var createdAt: String
   public var updatedAt: String
   public var metaJSON: String?
@@ -126,6 +127,7 @@ public struct GraphQLNotebookDTO: Codable, Equatable, Sendable {
     notebookId = notebook.notebookId
     title = notebook.title
     progress = notebook.progress
+    readOnly = notebook.readOnly
     createdAt = notebook.createdAt
     updatedAt = notebook.updatedAt
     metaJSON = notebook.metaJSON

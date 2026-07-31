@@ -629,10 +629,10 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
         {
           "id": "save-memory",
           "addon": {
-            "name": "riela/memory-save",
+            "name": "riela/note-memory-save",
             "version": "1",
             "config": {
-              "memoryId": "missing-memory",
+              "memoryNamespace": "missing-memory",
               "payloadSource": "event"
             }
           }

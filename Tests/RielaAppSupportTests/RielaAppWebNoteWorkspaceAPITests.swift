@@ -11,6 +11,31 @@ import XCTest
 final class RielaAppWebNoteWorkspaceAPITests: XCTestCase {
   private let profile = RielaAppProfileName.defaultRawValue
 
+  func testSystemMemoryNotebookReadOnlyRoutePersistsAndChecksProfile() async throws {
+    let fixture = try makeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let path = "/api/v1/notes/notebooks/\(NoteStoreSchema.systemMemoryNotebookId)/read-only"
+
+    let unlocked = try jsonObject(await fixture.app.webAPIResponse(
+      for: postRequest(path: path, body: [
+        "expectedProfile": profile,
+        "readOnly": false
+      ]),
+      csrfToken: "csrf"
+    ))
+    XCTAssertEqual((unlocked["notebook"] as? [String: Any])?["readOnly"] as? Bool, false)
+
+    let conflict = await fixture.app.webAPIResponse(
+      for: postRequest(path: path, body: [
+        "expectedProfile": "other-profile",
+        "readOnly": true
+      ]),
+      csrfToken: "csrf"
+    )
+    XCTAssertEqual(conflict.status, 409)
+    XCTAssertEqual(errorCode(conflict), "profile_conflict")
+  }
+
   func testNoteSettingsRoundTripIncludesS3Profiles() async throws {
     let fixture = try makeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }

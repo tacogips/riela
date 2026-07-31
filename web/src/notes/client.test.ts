@@ -58,8 +58,31 @@ describe('Note GraphQL transport', () => {
     })
     expect(body.query).toContain('$tagFilterGroups: [[String!]!]')
     expect(body.query).toContain('firstNotePreview noteCount')
+    expect(body.query).toContain('progress readOnly')
     expect(body.query).toContain('classId parentTagId')
     expect(harness.requests[0]?.init?.credentials).toBe('same-origin')
+  })
+
+  test('adopts the canonical notebook lock mutation response', async () => {
+    const canonical = {
+      notebookId: 'notebook-system-memory',
+      title: 'System Memory',
+      progress: 'none',
+      readOnly: false,
+      createdAt: '',
+      updatedAt: '',
+      tags: [],
+    }
+    const harness = environment([{ data: { setNotebookReadOnly: {
+      result: { accepted: true, status: 'ok', diagnostics: [] },
+      notebook: canonical,
+    } } }])
+    const client = new NoteGraphQLClient('riela-app', harness.value)
+
+    expect(await client.setNotebookReadOnly(canonical.notebookId, false)).toEqual(canonical)
+    const body = requestBody(harness.requests[0])
+    expect(body.variables).toEqual({ notebookId: canonical.notebookId, readOnly: false })
+    expect(body.query).toContain('setNotebookReadOnly')
   })
 
   test('preserves custom status names verbatim on reads and writes', async () => {

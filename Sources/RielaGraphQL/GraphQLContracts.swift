@@ -1090,6 +1090,7 @@ public enum GraphQLContractProjector {
     applyNotebookTags(input: ApplyNotebookTagsInput!): NoteMutationPayload!
     removeNotebookTag(notebookId: String!, tagName: String!, provenance: String): NoteMutationPayload!
     setNotebookProgress(notebookId: String!, progress: String!, expectedProgress: String): NoteMutationPayload!
+    setNotebookReadOnly(notebookId: String!, readOnly: Boolean!): NoteMutationPayload!
     createKanbanStatusSet(name: String!, statuses: [KanbanStatusInput!]!): KanbanStatusSetQueryPayload!
     updateKanbanStatusSet(setId: String!, statuses: [KanbanStatusInput!]!, reassignments: [KanbanStatusReassignmentInput!]): KanbanStatusSetQueryPayload!
     deleteKanbanStatusSet(setId: String!): ControlPlaneResult!

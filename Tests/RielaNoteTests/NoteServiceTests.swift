@@ -20,7 +20,7 @@ final class NoteServiceTests: NoteTestCase {
     XCTAssertEqual(note.tags.map(\.tag.name), ["ノート"])
 
     let notebooks = try service.listNotebooks()
-    XCTAssertEqual(notebooks.count, 1)
+    XCTAssertEqual(notebooks.count, 2)
     XCTAssertEqual(notebooks.first?.title, "Design Notes")
     XCTAssertEqual(notebooks.first?.firstNotePreview?.contains("First paragraph"), true)
   }
@@ -631,7 +631,7 @@ final class NoteServiceTests: NoteTestCase {
       XCTAssertTrue(message.contains("1") && message.contains("2"), "message should name colliding pages: \(message)")
     }
 
-    XCTAssertTrue(try service.listNotebooks().isEmpty)
+    XCTAssertTrue(try service.listNotebooks().allSatisfy { $0.notebookId == NoteStoreSchema.systemMemoryNotebookId })
   }
 
   func testCreateNotebookWithNotesRollsBackWhenAnyPageFails() throws {
@@ -646,7 +646,7 @@ final class NoteServiceTests: NoteTestCase {
       ]
     ))
 
-    XCTAssertTrue(try service.listNotebooks().isEmpty)
+    XCTAssertTrue(try service.listNotebooks().allSatisfy { $0.notebookId == NoteStoreSchema.systemMemoryNotebookId })
     XCTAssertTrue(try service.searchNotes(query: "Should not remain").isEmpty)
   }
 

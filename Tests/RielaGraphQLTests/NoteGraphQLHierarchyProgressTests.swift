@@ -5,6 +5,31 @@ import RielaNote
 import XCTest
 
 final class NoteGraphQLHierarchyProgressTests: XCTestCase {
+  func testSetNotebookReadOnlyPersistsAndProjectsCanonicalValue() async throws {
+    let service = try makeHierarchyGraphQLService()
+    let created = await service.createNotebook(GraphQLCreateNotebookInput(title: "Lockable"))
+    let notebookId = try XCTUnwrap(created.notebook?.notebookId)
+    let executor = NoteGraphQLDocumentExecutor(service: service)
+    let response = await executor.execute(GraphQLDocumentRequest(
+      query: """
+      mutation SetNotebookLock($notebookId: String!, $readOnly: Boolean!) {
+        setNotebookReadOnly(notebookId: $notebookId, readOnly: $readOnly) {
+          result { accepted status }
+          notebook { notebookId readOnly }
+        }
+      }
+      """,
+      variables: ["notebookId": .string(notebookId), "readOnly": .bool(true)],
+      operationName: "SetNotebookLock"
+    ))
+
+    let payload = try payloadObject(response.body, field: "setNotebookReadOnly")
+    let notebook = try objectValue(payload["notebook"], field: "notebook")
+    XCTAssertEqual(notebook["readOnly"], .bool(true))
+    let persisted = await service.notebook(notebookId: notebookId)
+    XCTAssertEqual(persisted.value?.readOnly, true)
+  }
+
   func testDefineTagCreateOnlyProjectsAndRejectsCollisionAtomically() async throws {
     let service = try makeHierarchyGraphQLService()
     let first = await service.defineTag(
@@ -312,7 +337,7 @@ final class NoteGraphQLHierarchyProgressTests: XCTestCase {
       guard case let .array(optionalValues)? = optionalPayload["value"] else {
         return XCTFail("expected omitted or null grouped input to remain optional")
       }
-      XCTAssertEqual(optionalValues.count, 1)
+      XCTAssertEqual(optionalValues.count, 2)
     }
   }
 

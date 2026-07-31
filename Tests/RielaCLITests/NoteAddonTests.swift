@@ -4,6 +4,7 @@ import RielaNote
 import XCTest
 @testable import RielaCLI
 
+// swiftlint:disable:next type_body_length
 final class NoteAddonTests: XCTestCase {
   func testGraphNeighborsAndSearchGraphInputsUseSharedNoteService() async throws {
     let noteRoot = try makeNoteAddonRoot()
@@ -833,6 +834,100 @@ final class NoteAddonTests: XCTestCase {
     }
     XCTAssertEqual(notebooksByColumn[0].first?["notebookId"], .string(idle.notebookId))
     XCTAssertEqual(notebooksByColumn[3].first?["notebookId"], .string(reviewing.notebookId))
+  }
+
+  func testNoteMemorySuccessorsSaveUpdateLoadAndSearchLockedSystemNotebook() async throws {
+    let noteRoot = try makeNoteAddonRoot()
+    defer { try? FileManager.default.removeItem(atPath: noteRoot) }
+    let resolver = BuiltinWorkflowAddonResolver(environment: ["RIELA_NOTE_ROOT": noteRoot])
+    let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot))
+    let related = try service.createNote(bodyMarkdown: "# Related\ncontext")
+
+    let saved = try await resolver.execute(
+      noteInput(
+        name: "riela/note-memory-save",
+        config: [
+          "bodyMarkdown": .string("# Durable fact\nalpha memory"),
+          "memoryNamespace": .string("chat"),
+          "tags": .array([.string("topic:alpha")]),
+          "relatedNoteIds": .array([.string(related.noteId)]),
+          "attachments": .array([.string("source")])
+        ],
+        attachments: [
+          "source": WorkflowAddonAttachmentValue(
+            id: "source",
+            mediaType: "text/plain",
+            filename: "source.txt",
+            sizeBytes: 11,
+            sha256: "sha256:unused-by-resolver",
+            contentText: "hello memory"
+          )
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+    let noteId = try stringValue(saved.payload["noteId"], field: "noteId")
+    XCTAssertTrue(try service.systemMemoryNotebook().readOnly)
+    XCTAssertEqual(try service.listLinks(noteId: noteId).map(\.toNoteId), [related.noteId])
+    XCTAssertEqual(try service.listFiles(noteId: noteId).map(\.file.originalFilename), ["source.txt"])
+
+    let updated = try await resolver.execute(
+      noteInput(
+        name: "riela/note-memory-update",
+        config: ["noteId": .string(noteId), "bodyMarkdown": .string("# Durable fact\nbeta memory")]
+      ),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(updated.payload["operation"], .string("update"))
+
+    let loaded = try await resolver.execute(
+      noteInput(name: "riela/note-memory-load", config: ["noteId": .string(noteId)]),
+      context: AdapterExecutionContext()
+    )
+    let loadedNote = try objectValue(loaded.payload["note"])
+    XCTAssertEqual(loadedNote["bodyMarkdown"], .string("# Durable fact\nbeta memory"))
+
+    let searched = try await resolver.execute(
+      noteInput(name: "riela/note-memory-search", config: ["query": .string("beta memory")]),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(searched.payload["noteIds"], .array([.string(noteId)]))
+  }
+
+  func testPersonaMemorySuccessorsPreserveReplyAndHandoffFlags() async throws {
+    let noteRoot = try makeNoteAddonRoot()
+    defer { try? FileManager.default.removeItem(atPath: noteRoot) }
+    let resolver = BuiltinWorkflowAddonResolver(environment: ["RIELA_NOTE_ROOT": noteRoot])
+    let payload: JSONObject = [
+      "replyText": .string("I will remember."),
+      "handoff_mika": .bool(true),
+      "memoryEntries": .array([.object([
+        "kind": .string("user-instruction"),
+        "importance": .string("high"),
+        "content": .string("Prefer concise replies")
+      ])])
+    ]
+
+    let written = try await resolver.execute(
+      noteInput(
+        name: "riela/note-persona-memory-write",
+        config: ["personaId": .string("yui")],
+        variables: payload
+      ),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(written.payload["replyText"], .string("I will remember."))
+    XCTAssertEqual(written.when["handoff_mika"], true)
+
+    let read = try await resolver.execute(
+      noteInput(
+        name: "riela/note-persona-memory-read",
+        config: ["personaId": .string("yui")]
+      ),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(read.payload["memoryRecordCount"], .number(1))
+    XCTAssertTrue(try stringValue(read.payload["memoryMarkdown"], field: "memoryMarkdown").contains("concise replies"))
   }
 
   private func noteInput(

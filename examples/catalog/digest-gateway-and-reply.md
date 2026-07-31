@@ -215,7 +215,7 @@ the Discord and Telegram examples:
   `team-matrix.replyBots`
 - each persona reads and writes only its own records in the
   `persona-chat-memory` SQLite database before and after replying. Set
-  `workflowInput.memoryRoot` or `RIELA_MEMORY_ROOT` to choose the storage root
+  `workflowInput.noteRoot` or `RIELA_NOTE_ROOT` to choose the storage root
 - sends replies through `riela/chat-reply-worker` and the
   `matrix-persona-replies` chat destination
 

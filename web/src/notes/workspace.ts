@@ -1,5 +1,5 @@
 import { api } from '../api'
-import type { Note } from './types'
+import type { Note, Notebook } from './types'
 
 // REST client for the RielaApp-hosted note workspace API (/api/v1/notes/*).
 // These operations mirror the native RielaNoteUIClient surface; they are only
@@ -166,6 +166,15 @@ export class NoteWorkspaceClient {
       `/api/v1/notes/notebooks/${encodeURIComponent(notebookId)}/notes`, 'POST', this.body({ bodyMarkdown }),
     )
     return value.detail
+  }
+
+  async setNotebookReadOnly(notebookId: string, readOnly: boolean): Promise<Notebook> {
+    const value = await api.mutate<{ notebook: Notebook; revision?: number }>(
+      `/api/v1/notes/notebooks/${encodeURIComponent(notebookId)}/read-only`,
+      'POST',
+      this.body({ readOnly }),
+    )
+    return value.notebook
   }
 
   async updateNoteBody(noteId: string, bodyMarkdown: string): Promise<NoteDetail> {

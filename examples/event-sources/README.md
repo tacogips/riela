@@ -88,8 +88,8 @@ workflow and sends workflow replies through the explicit
 `matrix-agent-trio-to-workflow` runs `matrix-agent-trio-chat` for the
 `!persona:matrix.example` room and sends Yui, Mika, or Rina replies through
 `matrix-persona-replies`. The trio workflow stores only per-persona records in
-the `persona-chat-memory` SQLite database under `workflowInput.memoryRoot`,
-`RIELA_MEMORY_ROOT`, or the default Riela memory root; this is separate from
+the `persona-chat-memory` SQLite database under `workflowInput.noteRoot`,
+`RIELA_NOTE_ROOT`, or the default Riela memory root; this is separate from
 Matrix event history and remains outside the repository. Matrix support currently
 handles text-like `m.room.message` events from configured rooms, optional
 bounded text-compatible attachment downloads, and Matrix Client-Server room
@@ -196,8 +196,8 @@ Mika Trend, and Rina Cursor are routed as separate named personas by
 `riela/chat-persona-router`. Use
 `examples/discord-agent-trio-chat/assets/icons/` as the Discord application icon
 source files for the three bot applications. Each trio persona also has its own
-records in the `persona-chat-memory` SQLite database. Set `RIELA_MEMORY_ROOT`
-for served examples, or pass `workflowInput.memoryRoot` for a single run.
+records in the `persona-chat-memory` SQLite database. Set `RIELA_NOTE_ROOT`
+for served examples, or pass `workflowInput.noteRoot` for a single run.
 
 Serve the Discord source with env-var references only:
 
@@ -345,7 +345,7 @@ set, ignores bot and self messages by default, attaches bounded persisted chat
 history to `event.input.payload.history`, and sends workflow replies through
 Telegram `sendMessage`. The paired trio workflow uses the same per-persona
 `persona-chat-memory` SQLite database as the Discord trio; set
-`RIELA_MEMORY_ROOT` for served examples or use `workflowInput.memoryRoot` for
+`RIELA_NOTE_ROOT` for served examples or use `workflowInput.noteRoot` for
 one run.
 
 Serve the Gateway source with a Telegram bot token and bot id. Add the bot to

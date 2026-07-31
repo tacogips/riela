@@ -227,7 +227,7 @@ Discord chat workflow for three named bot personas in one channel:
 - a selected persona can set handoff flags such as `handoff_mika` when the user explicitly asks to hear another persona too
 - each persona reads and writes only its own records in the
   `persona-chat-memory` SQLite database before and after replying. Set
-  `workflowInput.memoryRoot` or `RIELA_MEMORY_ROOT` to choose the storage root
+  `workflowInput.noteRoot` or `RIELA_NOTE_ROOT` to choose the storage root
 - Discord replies use `riela/chat-reply-worker` and dry-run when a direct local run has no chat target
 
 Validate it:
@@ -261,7 +261,7 @@ ingestion:
   Discord trio
 - each persona reads and writes only its own records in the
   `persona-chat-memory` SQLite database before and after replying. Set
-  `workflowInput.memoryRoot` or `RIELA_MEMORY_ROOT` to choose the storage root
+  `workflowInput.noteRoot` or `RIELA_NOTE_ROOT` to choose the storage root
 - sends replies through `riela/chat-reply-worker` and the
   `telegram-gateway-persona-replies` chat destination
 
@@ -293,9 +293,9 @@ Minimal Telegram trio chat workflow using the SDK-backed worker add-ons:
   `@mikatrend0529bot`, `Rina`, or `@rinacursor0529bot`)
 - Yui replies to explicit Yui mentions and also acts as the default responder
   when no Mika/Rina mention is present
-- accepted chat events are persisted through the native `riela/memory-save`
+- accepted chat events are persisted through the native `riela/note-memory-save`
   add-on, and each persona loads recent workflow-scoped `chat-memory` records
-  through `riela/memory-load` before replying
+  through `riela/note-memory-load` before replying
 - replies use `riela/chat-reply-worker` and dry-run when a local run has no
   Telegram chat target
 - the deterministic mock scenario passes Telegram event variables that activate

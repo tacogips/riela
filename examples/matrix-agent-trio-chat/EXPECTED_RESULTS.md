@@ -23,11 +23,11 @@
   dangling mention or runaway loop.
 - Each persona reads only its own recent records from the declared
   `persona-chat-memory` memory database before replying, using
-  `workflowInput.memoryRoot`, `RIELA_MEMORY_ROOT`, or the default Riela memory
+  `workflowInput.noteRoot`, `RIELA_NOTE_ROOT`, or the default Riela memory
   root.
 - Each persona can return `memoryEntries` for explicit remember requests,
   corrections, durable preferences, important events, or refreshed old memories;
-  the workflow writes them through `riela/chat-persona-memory-write` with
+  the workflow writes them through `riela/note-persona-memory-write` with
   persona-scoped tags.
 - Matrix replies are sent through `riela/chat-reply-worker` to the same
   conversation and thread from the normalized chat event.

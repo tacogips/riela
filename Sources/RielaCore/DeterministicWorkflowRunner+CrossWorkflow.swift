@@ -58,7 +58,6 @@ extension DeterministicWorkflowRunner {
       maxLoopIterations: request.maxLoopIterations,
       disableDefaultLoopGuard: request.disableDefaultLoopGuard,
       defaultTimeoutMs: request.defaultTimeoutMs,
-      memoryRootDirectory: request.memoryRootDirectory,
       agentSilenceWarningMs: request.agentSilenceWarningMs,
       agentSilenceMonitorIntervalMs: request.agentSilenceMonitorIntervalMs,
       eventHandler: request.eventHandler,

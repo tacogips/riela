@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import Foundation
 import RielaCore
 import RielaGraphQL
@@ -19,6 +20,12 @@ enum BuiltinNoteAddon: String {
   case commentAdd = "riela/note-comment-add"
   case notebookIngestPages = "riela/notebook-ingest-pages"
   case conversationSave = "riela/note-conversation-save"
+  case memorySave = "riela/note-memory-save"
+  case memoryUpdate = "riela/note-memory-update"
+  case memoryLoad = "riela/note-memory-load"
+  case memorySearch = "riela/note-memory-search"
+  case personaMemoryRead = "riela/note-persona-memory-read"
+  case personaMemoryWrite = "riela/note-persona-memory-write"
   case kanbanTaskCreate = "riela/note-kanban-task-create"
   case kanbanMove = "riela/note-kanban-move"
   case kanbanBoard = "riela/note-kanban-board"
@@ -58,6 +65,9 @@ extension BuiltinWorkflowAddonResolver {
       candidate = try ingestNotebookPages(context)
     case .conversationSave:
       candidate = try saveNoteConversation(context)
+    case .memorySave, .memoryUpdate, .memoryLoad, .memorySearch,
+         .personaMemoryRead, .personaMemoryWrite:
+      candidate = try executeNoteMemoryAddon(input, operation: operation, environment: environment)
     case .kanbanTaskCreate:
       candidate = try kanbanTaskCreate(context)
     case .kanbanMove:
@@ -78,11 +88,20 @@ extension BuiltinWorkflowAddonResolver {
     for (key, value) in candidate {
       payload[key] = value
     }
+    let when: [String: Bool]
+    if operation == .personaMemoryWrite {
+      when = ["always", "handoff_yui", "handoff_mika", "handoff_rina"].reduce(into: [:]) { result, key in
+        if case let .bool(value)? = candidate[key] { result[key] = value }
+      }
+    } else {
+      when = [:]
+    }
     return AdapterExecutionOutput(
       provider: "riela-builtin-addon",
       model: input.addon.name,
       promptText: "",
       completionPassed: true,
+      when: when,
       payload: payload
     )
   }

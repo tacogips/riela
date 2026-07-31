@@ -16,7 +16,7 @@ enum NoteCommandGraphQLDocuments {
   """
 
   static let notebook = """
-  notebookId title progress createdAt updatedAt metaJSON firstNotePreview noteCount
+  notebookId title progress readOnly createdAt updatedAt metaJSON firstNotePreview noteCount
   tags { \(tagAssignment) }
   """
 
@@ -78,6 +78,16 @@ enum NoteCommandGraphQLDocuments {
       result { \(controlResult) }
       \(mutationNotes)
       note { \(note) }
+    }
+  }
+  """
+
+  static let setNotebookReadOnly = """
+  mutation SetNotebookReadOnly($notebookId: String!, $readOnly: Boolean!) {
+    setNotebookReadOnly(notebookId: $notebookId, readOnly: $readOnly) {
+      result { \(controlResult) }
+      \(mutationNotes)
+      notebook { \(notebook) }
     }
   }
   """

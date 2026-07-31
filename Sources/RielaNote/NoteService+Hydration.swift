@@ -3,7 +3,7 @@ import RielaSQLite
 func requireNotebook(_ notebookId: String, in database: SQLiteDatabase) throws -> Notebook {
   let rows = try database.query(
     """
-    SELECT notebook_id, title, status AS progress, created_at, updated_at,
+    SELECT notebook_id, title, status AS progress, read_only, created_at, updated_at,
       CASE WHEN meta_json IS NULL THEN NULL ELSE json(meta_json) END AS meta_json
     FROM notebooks
     WHERE notebook_id = ?
@@ -84,6 +84,7 @@ func notebook(from row: SQLiteRow, in database: SQLiteDatabase) throws -> Notebo
     notebookId: notebookId,
     title: title,
     progress: progress,
+    readOnly: row["read_only"] == "1",
     createdAt: createdAt,
     updatedAt: updatedAt,
     metaJSON: row["meta_json"] ?? nil,

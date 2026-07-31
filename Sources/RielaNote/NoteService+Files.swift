@@ -11,16 +11,64 @@ public extension NoteService {
     originalFilename: String? = nil,
     position: Int = 0
   ) throws -> NoteFileAttachment {
+    try attachLocalFile(
+      noteId: noteId,
+      data: data,
+      role: role,
+      mediaType: mediaType,
+      originalFilename: originalFilename,
+      position: position,
+      bypassNotebookLock: false
+    )
+  }
+
+  @discardableResult
+  func attachSystemMemoryFile(
+    noteId: String,
+    data: Data,
+    role: NoteFileRole = .related,
+    mediaType: String,
+    originalFilename: String? = nil,
+    position: Int = 0
+  ) throws -> NoteFileAttachment {
+    try attachLocalFile(
+      noteId: noteId,
+      data: data,
+      role: role,
+      mediaType: mediaType,
+      originalFilename: originalFilename,
+      position: position,
+      bypassNotebookLock: true
+    )
+  }
+
+  private func attachLocalFile(
+    noteId: String,
+    data: Data,
+    role: NoteFileRole,
+    mediaType: String,
+    originalFilename: String?,
+    position: Int,
+    bypassNotebookLock: Bool
+  ) throws -> NoteFileAttachment {
     let fileStore = LocalNoteFileStore(noteRoot: noteRootPath())
     let fileId = makeNoteId(prefix: "file")
     try driver.withDatabase { database in
-      _ = try requireNote(noteId, in: database)
+      try validateFileWriteTarget(
+        requireNote(noteId, in: database),
+        bypassNotebookLock: bypassNotebookLock,
+        in: database
+      )
     }
     let stored = try fileStore.store(data: data, fileId: fileId)
     do {
       return try driver.withDatabase { database in
         try database.transaction { db in
-          _ = try requireNote(noteId, in: db)
+          try validateFileWriteTarget(
+            requireNote(noteId, in: db),
+            bypassNotebookLock: bypassNotebookLock,
+            in: db
+          )
           let record = try insertFileRecord(
             fileId: fileId,
             stored: stored,
@@ -56,6 +104,23 @@ public extension NoteService {
     }
   }
 
+  private func validateFileWriteTarget(
+    _ note: Note,
+    bypassNotebookLock: Bool,
+    in database: SQLiteDatabase
+  ) throws {
+    guard bypassNotebookLock else {
+      try requireNoteNotebookContentWritable(note, in: database)
+      return
+    }
+    guard note.notebookId == NoteStoreSchema.systemMemoryNotebookId else {
+      throw NoteServiceError.invalidInput("system-memory file target is outside the reserved notebook")
+    }
+    guard !note.readOnly else {
+      throw NoteServiceError.readOnly(note.noteId)
+    }
+  }
+
   @discardableResult
   func attachFile(
     noteId: String,
@@ -68,13 +133,13 @@ public extension NoteService {
     let fileStore = LocalNoteFileStore(noteRoot: noteRootPath())
     let fileId = makeNoteId(prefix: "file")
     try driver.withDatabase { database in
-      _ = try requireNote(noteId, in: database)
+      try requireNoteNotebookContentWritable(requireNote(noteId, in: database), in: database)
     }
     let stored = try fileStore.store(fileURL: fileURL, fileId: fileId)
     do {
       return try driver.withDatabase { database in
         try database.transaction { db in
-          _ = try requireNote(noteId, in: db)
+          try requireNoteNotebookContentWritable(requireNote(noteId, in: db), in: db)
           let record = try insertFileRecord(
             fileId: fileId,
             stored: stored,
@@ -124,13 +189,13 @@ public extension NoteService {
     let fileStore = S3NoteFileStore(profile: s3Profile, httpClient: httpClient)
     let fileId = makeNoteId(prefix: "file")
     try driver.withDatabase { database in
-      _ = try requireNote(noteId, in: database)
+      try requireNoteNotebookContentWritable(requireNote(noteId, in: database), in: database)
     }
     let stored = try fileStore.store(data: data, fileId: fileId)
     do {
       return try driver.withDatabase { database in
         try database.transaction { db in
-          _ = try requireNote(noteId, in: db)
+          try requireNoteNotebookContentWritable(requireNote(noteId, in: db), in: db)
           let record = try insertFileRecord(
             fileId: fileId,
             stored: stored,
@@ -177,13 +242,13 @@ public extension NoteService {
     let fileStore = LocalNoteFileStore(noteRoot: noteRootPath())
     let fileId = makeNoteId(prefix: "file")
     try driver.withDatabase { database in
-      _ = try requireNotebook(notebookId, in: database)
+      try requireNotebookContentWritable(requireNotebook(notebookId, in: database))
     }
     let stored = try fileStore.store(data: data, fileId: fileId)
     do {
       return try driver.withDatabase { database in
         try database.transaction { db in
-          _ = try requireNotebook(notebookId, in: db)
+          try requireNotebookContentWritable(requireNotebook(notebookId, in: db))
           let record = try insertFileRecord(
             fileId: fileId,
             stored: stored,
@@ -224,13 +289,13 @@ public extension NoteService {
     let fileStore = LocalNoteFileStore(noteRoot: noteRootPath())
     let fileId = makeNoteId(prefix: "file")
     try driver.withDatabase { database in
-      _ = try requireNotebook(notebookId, in: database)
+      try requireNotebookContentWritable(requireNotebook(notebookId, in: database))
     }
     let stored = try fileStore.store(fileURL: fileURL, fileId: fileId)
     do {
       return try driver.withDatabase { database in
         try database.transaction { db in
-          _ = try requireNotebook(notebookId, in: db)
+          try requireNotebookContentWritable(requireNotebook(notebookId, in: db))
           let record = try insertFileRecord(
             fileId: fileId,
             stored: stored,

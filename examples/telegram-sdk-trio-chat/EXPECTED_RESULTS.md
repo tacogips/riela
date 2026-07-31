@@ -21,7 +21,7 @@
 - `save-chat-event-memory` persists every accepted Telegram chat event into the
   workflow-scoped `chat-memory` SQLite memory before persona routing.
 - Each persona loads recent `chat-memory` records through the native
-  `riela/memory-load` add-on immediately before replying.
+  `riela/note-memory-load` add-on immediately before replying.
 - Each persona prompt uses recent chat memory as context for follow-up
   questions. Follow-ups should refer back to the most recent relevant bot reply
   when memory provides enough context, and ask for clarification instead of

@@ -1,6 +1,5 @@
 import Foundation
 import RielaAddons
-import RielaMemory
 
 extension RielaArgumentParser {
   func parseWorkflowVersionCommand(
@@ -48,10 +47,6 @@ extension RielaArgumentParser {
          .consolidate, .validate, .inspect, .usage, .run, .checkout, .create, .selfImprove:
       throw CLIUsageError("unsupported workflow version route '\(subcommand.rawValue)'")
     }
-  }
-
-  func parseMemoryOptions(memoryId: String, tokens: [String]) throws -> MemoryCommandOptions {
-    try ParsedMemoryOptions(tokens).commandOptions(memoryId: memoryId)
   }
 
   func parseScoped(kind: ScopedCommandKind, arguments: [String]) throws -> ScopedCommand {

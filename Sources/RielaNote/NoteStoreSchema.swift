@@ -6,9 +6,11 @@ public enum NoteStoreSchemaError: Error, Equatable, Sendable {
 }
 
 public enum NoteStoreSchema {
-  public static let currentVersion = 5
+  public static let currentVersion = 6
   public static let autoTaggingWorkflowId = "note-auto-tagging"
   public static let systemKanbanStatusSetId = "kanban-default"
+  public static let systemMemoryNotebookId = "notebook-system-memory"
+  public static let systemMemoryNotebookKindTag = "notebook-kind:system-memory"
 
   public static func prepare(on driver: NoteDatabaseDriving) throws {
     try driver.withDatabase { database in
@@ -30,6 +32,7 @@ public enum NoteStoreSchema {
       try ensureNoteFTSUsesTrigram(in: db)
       try seedTagClasses(in: db)
       try seedNotebookKindTags(in: db)
+      try seedSystemMemoryNotebook(in: db)
       try seedKanbanDefaultStatusSet(in: db)
       if isFirstSchemaCreation {
         try seedAutoActions(in: db)
@@ -74,6 +77,32 @@ public enum NoteStoreSchema {
         ]
       )
     }
+  }
+
+  private static func seedSystemMemoryNotebook(in database: SQLiteDatabase) throws {
+    let now = NoteStoreClock.system.now()
+    try database.execute(
+      """
+      INSERT INTO notebooks (
+        notebook_id, title, status, read_only, created_at, updated_at, meta_json
+      ) VALUES (?, 'System Memory', 'none', 1, ?, ?, NULL)
+      ON CONFLICT(notebook_id) DO NOTHING
+      """,
+      bindings: [.text(systemMemoryNotebookId), .text(now), .text(now)]
+    )
+    try database.execute(
+      """
+      INSERT INTO notebook_tags (
+        notebook_id, tag_id, provenance, assigned_by, deletable, created_at
+      ) VALUES (?, ?, 'system', 'riela-note', 0, ?)
+      ON CONFLICT(notebook_id, tag_id) DO NOTHING
+      """,
+      bindings: [
+        .text(systemMemoryNotebookId),
+        .text(stableTagId(for: systemMemoryNotebookKindTag)),
+        .text(now)
+      ]
+    )
   }
 
   private static func seedKanbanDefaultStatusSet(in database: SQLiteDatabase) throws {
@@ -284,6 +313,14 @@ public enum NoteStoreSchema {
     }
   }
 
+  fileprivate static func migrateToV6(in database: SQLiteDatabase) throws {
+    if try !columnExists("read_only", in: "notebooks", database: database) {
+      try database.execute(
+        "ALTER TABLE notebooks ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0"
+      )
+    }
+  }
+
   private static func columnExists(
     _ columnName: String,
     in tableName: String,
@@ -303,7 +340,8 @@ private let schemaMigrations: [NoteSchemaMigration] = [
   NoteSchemaMigration(version: 2, apply: NoteStoreSchema.migrateToV2),
   NoteSchemaMigration(version: 3, apply: NoteStoreSchema.migrateToV3),
   NoteSchemaMigration(version: 4, apply: NoteStoreSchema.migrateToV4),
-  NoteSchemaMigration(version: 5, apply: NoteStoreSchema.migrateToV5)
+  NoteSchemaMigration(version: 5, apply: NoteStoreSchema.migrateToV5),
+  NoteSchemaMigration(version: 6, apply: NoteStoreSchema.migrateToV6)
 ]
 
 final class NoteSQLiteCapabilityCache: @unchecked Sendable {
@@ -383,7 +421,8 @@ private let systemTagClasses: [SystemTagClass] = [
 private let systemNotebookKindTags = [
   "notebook-kind:imported-material",
   "notebook-kind:agent-conversation",
-  "notebook-kind:user-memo"
+  "notebook-kind:user-memo",
+  NoteStoreSchema.systemMemoryNotebookKindTag
 ]
 
 private let noteSchemaVersionTableStatement = """
@@ -399,6 +438,7 @@ private let schemaStatements = [
     notebook_id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'none',
+    read_only INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     meta_json BLOB CHECK (meta_json IS NULL OR json_valid(meta_json, 8))

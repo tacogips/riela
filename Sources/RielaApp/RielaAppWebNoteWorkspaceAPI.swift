@@ -15,6 +15,11 @@ private struct RielaAppWebNoteBodyMarkdownRequest: Decodable {
   var bodyMarkdown: String
 }
 
+private struct RielaAppWebNotebookReadOnlyRequest: Decodable {
+  var expectedProfile: String?
+  var readOnly: Bool
+}
+
 private struct RielaAppWebNoteCommentRequest: Decodable {
   var expectedProfile: String?
   var bodyMarkdown: String
@@ -136,6 +141,7 @@ private struct RielaAppWebNoteExpansionAppendRequest: Decodable {
 }
 
 extension RielaApp {
+  // swiftlint:disable:next cyclomatic_complexity
   func webNoteWorkspaceResponse(
     components: [String],
     request: RielaHTTPRequest
@@ -168,6 +174,14 @@ extension RielaApp {
         return try await webNoteDetailJSON(
           webNoteWorkspaceClient().createNote(inNotebook: tail[1], bodyMarkdown: body.bodyMarkdown)
         )
+      case ("POST", "notebooks") where tail.count == 3 && tail[2] == "read-only":
+        let body: RielaAppWebNotebookReadOnlyRequest = try webNoteBody(request)
+        if let conflict = webNoteWorkspaceProfileConflict(body.expectedProfile) { return conflict }
+        let notebook = try webNoteService().setNotebookReadOnly(
+          notebookId: tail[1],
+          readOnly: body.readOnly
+        )
+        return try webNoteWorkspaceJSON(["notebook": webNoteEncoded(GraphQLNotebookDTO(notebook: notebook))])
       case ("POST", "notebooks") where tail.count == 4 && tail[2] == "expansion":
         return try await webNoteExpansionResponse(notebookId: tail[1], action: tail[3], request: request)
       case ("GET", _) where tail.count == 2 && tail[1] == "detail":

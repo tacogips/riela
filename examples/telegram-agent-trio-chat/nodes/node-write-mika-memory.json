@@ -3,15 +3,14 @@
   "modelFreeze": false,
   "description": "Persist Mika Trend memory entries proposed by the persona and pass through reply/handoff flags.",
   "addon": {
-    "name": "riela/chat-persona-memory-write",
+    "name": "riela/note-persona-memory-write",
     "version": "1",
     "config": {
       "personaId": "mika",
       "personaName": "Mika Trend",
-      "memoryId": "persona-chat-memory"
+      "memoryNamespace": "persona-chat-memory"
     }
   },
-  "memories": [{"id": "persona-chat-memory", "purpose": "persist Mika memory entries"}],
   "output": {
     "description": "Return Mika Trend replyText and handoff flags after writing any memoryEntries."
   }

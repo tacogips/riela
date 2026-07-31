@@ -161,6 +161,7 @@ export function NotesView(props: {
   const [newFolderName, setNewFolderName] = createSignal('')
   const [creatingFolder, setCreatingFolder] = createSignal(false)
   const [membershipBusy, setMembershipBusy] = createSignal('')
+  const [lockBusy, setLockBusy] = createSignal(false)
   const [focusedTagId, setFocusedTagId] = createSignal<string>()
   const [addGroupKey, setAddGroupKey] = createSignal('')
   const [addTagId, setAddTagId] = createSignal('')
@@ -370,7 +371,7 @@ export function NotesView(props: {
       } else if (event.key === 'n') {
         event.preventDefault()
         setComposeDestination('memo')
-      } else if (event.key === 'N' && selectedNotebookId()) {
+      } else if (event.key === 'N' && selectedNotebookId() && !selectedNotebook()?.readOnly) {
         event.preventDefault()
         setComposeDestination('notebook')
       }
@@ -545,7 +546,7 @@ export function NotesView(props: {
     setAddTagId('')
     // The reader pane loads notes over REST; the GraphQL preview is only the
     // cli-serve fallback, so it is not fetched when the pane is available.
-    if (workspaceEnabled()) return
+    if (workspaceEnabled() && !notebook.readOnly) return
     await loadPreview(notebook.notebookId, 0, false, previewGeneration)
   }
 
@@ -584,6 +585,27 @@ export function NotesView(props: {
     setMessage(`Created “${detail.note.title ?? `Note ${detail.note.noteNumber}`}”.`)
     await openNote(detail.note.noteId, detail.note.notebookId)
     await refresh()
+  }
+
+  const setNotebookLock = async (notebook: Notebook, readOnly: boolean) => {
+    setLockBusy(true)
+    setMessage('')
+    try {
+      const updated = await workspace.setNotebookReadOnly(notebook.notebookId, readOnly)
+      setNotebooks((current) => replaceNotebook(current, updated))
+      if (externalNotebook()?.notebookId === updated.notebookId) setExternalNotebook(updated)
+      if (readOnly) {
+        detailDirty = false
+        setActiveNoteId(undefined)
+        previewGeneration += 1
+        await loadPreview(updated.notebookId, 0, false, previewGeneration)
+      }
+      setMessage(readOnly ? 'System Memory locked.' : 'System Memory unlocked for editing.')
+    } catch (lockError) {
+      setMessage(`Could not update notebook lock: ${errorMessage(lockError)}`)
+    } finally {
+      setLockBusy(false)
+    }
   }
 
   const closeDetail = (restoreFocus = true) => {
@@ -999,7 +1021,10 @@ export function NotesView(props: {
       <header><div><span class="eyebrow">NOTEBOOK</span><h2>{notebook().title}</h2></div><button class="detail-close secondary" aria-label="Close notebook details" onClick={() => closeDetail()}>×</button></header>
       <Show when={workspaceEnabled()}>
         <div class="notebook-actions">
-          <button class="secondary" onClick={() => setComposeDestination('notebook')}>Add note</button>
+          <button class="secondary" disabled={notebook().readOnly} onClick={() => setComposeDestination('notebook')}>Add note</button>
+          <Show when={notebook().tags.some((assignment) => assignment.tag.name === 'notebook-kind:system-memory')}>
+            <button class="secondary" disabled={lockBusy()} onClick={() => void setNotebookLock(notebook(), !notebook().readOnly)}>{notebook().readOnly ? 'Unlock' : 'Lock'}</button>
+          </Show>
           <Show when={props.onExpandNotebook}>
             <button class="secondary" onClick={() => props.onExpandNotebook?.(notebook().notebookId, notebook().title)}>Expand with Agent</button>
           </Show>
@@ -1027,7 +1052,7 @@ export function NotesView(props: {
           if (tag) void applyExistingTag(tag)
         }}>Add selected tag</button>
       </section>
-      <Show when={workspaceEnabled()}>
+      <Show when={workspaceEnabled() && !notebook().readOnly}>
         <NoteDetailPane
           notebookId={notebook().notebookId}
           notebookTitle={notebook().title}
@@ -1040,7 +1065,7 @@ export function NotesView(props: {
           onDirtyChange={(dirty) => { detailDirty = dirty }}
         />
       </Show>
-      <Show when={!workspaceEnabled()}>
+      <Show when={!workspaceEnabled() || notebook().readOnly}>
         <section class="note-preview"><h3>Read-only notes</h3><Show when={preview().length === 0 && !previewLoading()}><p>No notes in this notebook.</p></Show><For each={preview()}>{(note) => <article><div><strong>{note.title ?? `Note ${note.noteNumber}`}</strong><span>{formatDate(note.updatedAt)}</span></div><pre>{note.bodyMarkdown}</pre></article>}</For>
           <Show when={previewLoading()}><div class="loading-state"><span class="loader" />Loading notes…</div></Show>
           <Show when={previewHasMore()}><button class="secondary" disabled={previewLoading()} onClick={() => void loadPreview(notebook().notebookId, previewOffset(), true)}>Load more notes</button></Show>

@@ -23,7 +23,6 @@ public struct RielaCLIApplication: Sendable {
   public var packageCommandRunner: WorkflowPackageCommandRunner
   public var nodeCommandRunner: NodeCommandRunner
   public var setupContainerCommand: SetupContainerCommand
-  public var memoryCommandRunner: MemoryCommandRunner
   public var noteCommandRunner: NoteCommandRunner
   public var instanceCommandRunner: InstanceCommandRunner
   public var doctorCommand: DoctorCommand
@@ -49,7 +48,6 @@ public struct RielaCLIApplication: Sendable {
     packageCommandRunner: WorkflowPackageCommandRunner = WorkflowPackageCommandRunner(),
     nodeCommandRunner: NodeCommandRunner = NodeCommandRunner(),
     setupContainerCommand: SetupContainerCommand = SetupContainerCommand(),
-    memoryCommandRunner: MemoryCommandRunner = MemoryCommandRunner(),
     noteCommandRunner: NoteCommandRunner = NoteCommandRunner(),
     instanceCommandRunner: InstanceCommandRunner = InstanceCommandRunner(),
     doctorCommand: DoctorCommand = DoctorCommand(),
@@ -74,7 +72,6 @@ public struct RielaCLIApplication: Sendable {
     self.packageCommandRunner = packageCommandRunner
     self.nodeCommandRunner = nodeCommandRunner
     self.setupContainerCommand = setupContainerCommand
-    self.memoryCommandRunner = memoryCommandRunner
     self.noteCommandRunner = noteCommandRunner
     self.instanceCommandRunner = instanceCommandRunner
     self.doctorCommand = doctorCommand
@@ -118,8 +115,6 @@ public struct RielaCLIApplication: Sendable {
         return await nodeCommandRunner.run(command)
       case let .setup(options):
         return await setupContainerCommand.run(options)
-      case let .memory(command):
-        return memoryCommandRunner.run(command)
       case let .note(command):
         return await noteCommandRunner.run(command)
       case let .instance(options):

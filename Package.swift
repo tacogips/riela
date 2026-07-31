@@ -45,7 +45,6 @@ let package = Package(
     .executable(name: "RielaApp", targets: ["RielaApp"])
   ],
   dependencies: [
-    .package(path: "Packages/RielaMemory"),
     .package(url: "https://github.com/apple/swift-crypto.git", from: "3.15.1"),
     .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2")
   ],
@@ -62,8 +61,7 @@ let package = Package(
         "RielaSQLite",
         "RielaObservability",
         "RielaJavaScript",
-        .product(name: "Crypto", package: "swift-crypto"),
-        .product(name: "RielaMemory", package: "RielaMemory")
+        .product(name: "Crypto", package: "swift-crypto")
       ]
     ),
     .target(
@@ -171,7 +169,6 @@ let package = Package(
         "RielaSQLite",
         "RielaNote",
         "RielaNoteDispatch",
-        .product(name: "RielaMemory", package: "RielaMemory"),
         "RielaAdapters",
         "RielaAddons",
         "RielaEvents",
@@ -210,8 +207,7 @@ let package = Package(
       name: "RielaCoreTests",
       dependencies: [
         "RielaCore",
-        "RielaObservability",
-        .product(name: "RielaMemory", package: "RielaMemory")
+        "RielaObservability"
       ]
     ),
     .testTarget(name: "RielaSQLiteTests", dependencies: ["RielaSQLite"]),

@@ -5,7 +5,6 @@ import Foundation
 import RielaAdapters
 import RielaAddons
 import RielaCore
-import RielaMemory
 
 func makeProductionNodeAdapter(
   environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment()
@@ -332,15 +331,6 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     if input.addon.name == "riela/chat-reply-worker" {
       return try executeChatReplyWorker(input)
     }
-    if input.addon.name == "riela/chat-memory-raw-daily-summary" {
-      return try executeChatMemoryRawDailySummary(input)
-    }
-    if input.addon.name == "riela/chat-persona-memory-read" {
-      return try executeChatPersonaMemoryRead(input)
-    }
-    if input.addon.name == "riela/chat-persona-memory-write" {
-      return try executeChatPersonaMemoryWrite(input)
-    }
     if input.addon.name == "riela/x-digest" {
       return try executeXDigest(input)
     }
@@ -388,9 +378,6 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     }
     if let noteAddon = BuiltinNoteAddon(rawValue: input.addon.name) {
       return try await executeNoteAddon(input, operation: noteAddon)
-    }
-    if let memoryAddon = BuiltinMemoryAddon(rawValue: input.addon.name) {
-      return try executeMemoryAddon(input, operation: memoryAddon)
     }
     return AdapterExecutionOutput(
       provider: "riela-builtin-addon",
@@ -661,128 +648,6 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       return nonEmptyString(nested["replyText"]) ?? nonEmptyString(nested["text"])
     }
     return nil
-  }
-
-  private func executeMemoryAddon(
-    _ input: WorkflowAddonExecutionInput,
-    operation: BuiltinMemoryAddon
-  ) throws -> AdapterExecutionOutput {
-    guard input.addon.version == nil || input.addon.version == "1" else {
-      throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
-    }
-
-    let config = input.addon.config ?? [:]
-    let variables = addonVariables(for: input)
-    let memoryId = nonEmptyString(config["memoryId"]) ?? nonEmptyString(variables["memoryId"]) ?? "chat-memory"
-    let nodeId = nonEmptyString(config["nodeId"]) ?? nonEmptyString(variables["memoryNodeId"]) ?? input.nodeId
-    let limit = intValue(config["limit"]) ?? intValue(variables["limit"]) ?? 30
-    let workflowInput = memoryAddonJSONObject(variables["workflowInput"])
-    let memoryRoot = nonEmptyString(config["memoryRoot"])
-      ?? nonEmptyString(variables["memoryRoot"])
-      ?? nonEmptyString(workflowInput["memoryRoot"])
-    let store = RielaMemoryStore(
-      rootDirectory: memoryRoot ?? RielaMemoryStore.defaultRootDirectory()
-    )
-
-    switch operation {
-    case .save:
-      let payload = try memoryPayload(config: config, variables: variables, input: input)
-      let tags = try memoryTags(config: config, variables: variables)
-      let relatedRecordIds = try memoryRelatedRecordIds(config: config, variables: variables)
-      let files = try memoryFileReferences(config: config, variables: variables)
-      let record = try store.save(
-        memoryId: memoryId,
-        workflowId: input.workflowId,
-        nodeId: nodeId,
-        tags: tags,
-        relatedRecordIds: relatedRecordIds,
-        files: files,
-        payload: payload
-      )
-      return memoryAddonOutput(
-        input: input,
-        operation: operation,
-        memoryId: memoryId,
-        databasePath: try store.databasePath(memoryId: memoryId),
-        payload: [
-          "saved": .bool(true),
-          "record": memoryRecordJSON(record)
-        ]
-      )
-    case .update:
-      let recordId = try requiredMemoryRecordId(config: config, variables: variables)
-      let payload = try memoryPayload(config: config, variables: variables, input: input)
-      let tags = try memoryTags(config: config, variables: variables)
-      let relatedRecordIds = try memoryRelatedRecordIds(config: config, variables: variables)
-      let files = try memoryUpdateFileReferences(config: config, variables: variables)
-      let record = try store.update(
-        memoryId: memoryId,
-        recordId: recordId,
-        workflowId: input.workflowId,
-        nodeId: optionalNodeScope(config: config, variables: variables),
-        tags: tags,
-        relatedRecordIds: relatedRecordIds,
-        files: files,
-        payload: payload
-      )
-      return memoryAddonOutput(
-        input: input,
-        operation: operation,
-        memoryId: memoryId,
-        databasePath: try store.databasePath(memoryId: memoryId),
-        payload: [
-          "updated": .bool(true),
-          "record": memoryRecordJSON(record)
-        ]
-      )
-    case .load:
-      let records = try store.load(
-        memoryId: memoryId,
-        workflowId: input.workflowId,
-        nodeId: optionalNodeScope(config: config, variables: variables),
-        limit: limit
-      )
-      return memoryAddonOutput(
-        input: input,
-        operation: operation,
-        memoryId: memoryId,
-        databasePath: try store.databasePath(memoryId: memoryId),
-        payload: memoryRecordsPayload(records: records).merging([
-          "records": .array(records.map(memoryRecordJSON)),
-          "recordsText": .string(memoryRecordsText(records)),
-          "limit": .number(Double(limit))
-        ]) { _, new in new }
-      )
-    case .search:
-      let patterns = memoryMatchPatterns(config: config, variables: variables)
-      let tags = try memoryTags(config: config, variables: variables)
-      let relatedRecordIds = try memoryRelatedRecordIds(config: config, variables: variables)
-      let records = try store.search(
-        memoryId: memoryId,
-        options: MemorySearchOptions(
-          workflowId: input.workflowId,
-          nodeId: optionalNodeScope(config: config, variables: variables),
-          matchPatterns: patterns,
-          tags: tags,
-          relatedRecordIds: relatedRecordIds,
-          limit: limit
-        )
-      )
-      return memoryAddonOutput(
-        input: input,
-        operation: operation,
-        memoryId: memoryId,
-        databasePath: try store.databasePath(memoryId: memoryId),
-        payload: memoryRecordsPayload(records: records).merging([
-          "records": .array(records.map(memoryRecordJSON)),
-          "recordsText": .string(memoryRecordsText(records)),
-          "matchPatterns": .array(patterns.map { .string($0) }),
-          "tags": .array(tags.map { .string($0) }),
-          "relatedRecordIds": .array(relatedRecordIds.map { .number(Double($0)) }),
-          "limit": .number(Double(limit))
-        ]) { _, new in new }
-      )
-    }
   }
 
   private func executeGeminiSDKWorker(

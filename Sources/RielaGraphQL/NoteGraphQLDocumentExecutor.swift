@@ -250,6 +250,7 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting, GraphQLDocu
     }
   }
 
+  // swiftlint:disable:next cyclomatic_complexity function_body_length
   private func executeMutation(fieldName: String, request: GraphQLDocumentRequest) async throws -> JSONValue {
     let variables = request.variables
     switch fieldName {
@@ -293,6 +294,11 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting, GraphQLDocu
         notebookId: requiredString("notebookId", variables: variables),
         progress: requiredString("progress", variables: variables),
         expectedProgress: try optionalString("expectedProgress", variables: variables)
+      ))
+    case "setNotebookReadOnly":
+      return try await encodedJSONValue(service.setNotebookReadOnly(
+        notebookId: requiredString("notebookId", variables: variables),
+        readOnly: requiredBool("readOnly", variables: variables)
       ))
     case "createKanbanStatusSet":
       return try await encodedJSONValue(service.createKanbanStatusSet(
@@ -568,6 +574,7 @@ let supportedNoteGraphQLFields: Set<String> = [
   "applyNotebookTags",
   "removeNotebookTag",
   "setNotebookProgress",
+  "setNotebookReadOnly",
   "createKanbanStatusSet",
   "updateKanbanStatusSet",
   "deleteKanbanStatusSet",
@@ -812,6 +819,7 @@ let noteGraphQLSelectionFields: [String: [String: String?]] = [
     "notebookId": nil,
     "title": nil,
     "progress": nil,
+    "readOnly": nil,
     "createdAt": nil,
     "updatedAt": nil,
     "metaJSON": nil,

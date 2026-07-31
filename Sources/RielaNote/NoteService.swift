@@ -10,6 +10,7 @@ public enum NoteServiceError: Error, Equatable, Sendable {
   case progressConflict(expected: String, actual: String)
 }
 
+// swiftlint:disable:next type_body_length
 public struct NoteService: Sendable {
   static let maximumNotebookTagFilterGroups = 64
   static let maximumNotebookTagFilterNames = 256
@@ -55,6 +56,9 @@ public struct NoteService: Sendable {
     metaJSON: String? = nil,
     originatingActionId: String? = nil
   ) throws -> Notebook {
+    guard kindTagName != NoteStoreSchema.systemMemoryNotebookKindTag else {
+      throw NoteServiceError.invalidInput("the reserved system-memory notebook kind cannot be claimed")
+    }
     let result = try driver.withDatabase { database in
       try database.transaction { db in
         let now = NoteStoreClock.system.now()
@@ -124,7 +128,8 @@ public struct NoteService: Sendable {
         let notebookId: String
         let createdNotebookId: String?
         if let requestedNotebookId {
-          _ = try requireNotebook(requestedNotebookId, in: db)
+          let notebook = try requireNotebook(requestedNotebookId, in: db)
+          try requireNotebookContentWritable(notebook)
           notebookId = requestedNotebookId
           createdNotebookId = nil
         } else {
@@ -239,6 +244,9 @@ public struct NoteService: Sendable {
       throw NoteServiceError.invalidInput("notebook ingest pages must not be empty")
     }
     try validateNotebookIngestPageNumbers(pages)
+    guard kindTagName != NoteStoreSchema.systemMemoryNotebookKindTag else {
+      throw NoteServiceError.invalidInput("the reserved system-memory notebook kind cannot be claimed")
+    }
     let result = try driver.withDatabase { database in
       try database.transaction { db in
         try insertNotebookWithNotes(
@@ -537,7 +545,7 @@ public struct NoteService: Sendable {
       bindings.append(.int(Int64(offset)))
       var notebooks = try database.query(
         """
-        SELECT notebook_id, title, status AS progress, created_at, updated_at,
+        SELECT notebook_id, title, status AS progress, read_only, created_at, updated_at,
           CASE WHEN meta_json IS NULL THEN NULL ELSE json(meta_json) END AS meta_json
         FROM notebooks
         \(whereClause)
@@ -686,9 +694,7 @@ public struct NoteService: Sendable {
     let result = try driver.withDatabase { database in
       try database.transaction { db in
         let existing = try requireNote(noteId, in: db)
-        guard !existing.readOnly else {
-          throw NoteServiceError.readOnly(noteId)
-        }
+        try requireNoteContentWritable(existing, in: db)
         let previous = try ftsPayload(noteId: noteId, in: db)
         let now = NoteStoreClock.system.now()
         // Explicit titles (set via the `title` argument on create) are preserved
@@ -751,9 +757,7 @@ public struct NoteService: Sendable {
     try driver.withDatabase { database in
       try database.transaction { db in
         let note = try requireNote(noteId, in: db)
-        guard !note.readOnly else {
-          throw NoteServiceError.readOnly(noteId)
-        }
+        try requireNoteContentWritable(note, in: db)
         try deleteNoteRows(noteId: noteId, in: db)
         try db.execute(
           "UPDATE notebooks SET updated_at = ? WHERE notebook_id = ?",
@@ -767,6 +771,10 @@ public struct NoteService: Sendable {
     let tagNames = try driver.withDatabase { database in
       try database.transaction { db in
         let notebook = try requireNotebook(notebookId, in: db)
+        guard notebook.notebookId != NoteStoreSchema.systemMemoryNotebookId else {
+          throw NoteServiceError.readOnly(notebookId)
+        }
+        try requireNotebookContentWritable(notebook)
         let notes = try db.query(
           "SELECT note_id, read_only FROM notes WHERE notebook_id = ? ORDER BY note_number",
           bindings: [.text(notebookId)]
@@ -972,7 +980,7 @@ func applyNotebookTag(
   )
 }
 
-private func applyTag(
+func applyTag(
   noteId: String,
   tag: NoteTagInput,
   provenance: NoteProvenance,

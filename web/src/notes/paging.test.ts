@@ -10,6 +10,7 @@ const notebook = (index: number): Notebook => ({
   notebookId: `book-${index}`,
   title: `Book ${index}`,
   progress: 'none',
+  readOnly: false,
   createdAt: '',
   updatedAt: '',
   tags: [],

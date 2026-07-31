@@ -278,6 +278,16 @@ public struct GraphQLNoteGraphQLService: Sendable {
     }
   }
 
+  public func setNotebookReadOnly(
+    notebookId: String,
+    readOnly: Bool
+  ) async -> GraphQLNoteMutationResult {
+    noteMutation {
+      let notebook = try service.setNotebookReadOnly(notebookId: notebookId, readOnly: readOnly)
+      return .init(result: .ok, notebook: GraphQLNotebookDTO(notebook: notebook))
+    }
+  }
+
   public func kanbanStatusSets() async -> GraphQLNoteQueryResult<[GraphQLKanbanStatusSetDTO]> {
     noteResult {
       try service.listKanbanStatusSets().map(GraphQLKanbanStatusSetDTO.init)

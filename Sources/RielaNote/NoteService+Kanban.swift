@@ -39,7 +39,7 @@ extension NoteService {
       throw NoteServiceError.invalidInput("kanban status set name must not be empty")
     }
     try validateStatusList(statuses)
-    return try driver.withDatabase { database in
+    let created = try driver.withDatabase { database in
       try database.transaction { db in
         let setId = "kanban-set-" + stableKanbanIdentifier(trimmedName)
         let existing = try db.query(
@@ -64,6 +64,8 @@ extension NoteService {
         return created
       }
     }
+    publishChange(NoteChangeEvent(kind: NoteChangeEventKind.statusSets))
+    return created
   }
 
   @discardableResult
@@ -73,7 +75,7 @@ extension NoteService {
     removedReassignTo: [String: String] = [:]
   ) throws -> KanbanStatusSet {
     try validateStatusList(statuses)
-    return try driver.withDatabase { database in
+    let updated = try driver.withDatabase { database in
       try database.transaction { db in
         guard let current = try kanbanStatusSet(setId: setId, in: db) else {
           throw NoteServiceError.notFound("kanban status set not found: \(setId)")
@@ -129,6 +131,8 @@ extension NoteService {
         return updated
       }
     }
+    publishChange(NoteChangeEvent(kind: NoteChangeEventKind.statusSets))
+    return updated
   }
 
   public func deleteKanbanStatusSet(setId: String) throws {
@@ -153,11 +157,12 @@ extension NoteService {
         try db.execute("DELETE FROM kanban_status_sets WHERE set_id = ?", bindings: [.text(setId)])
       }
     }
+    publishChange(NoteChangeEvent(kind: NoteChangeEventKind.statusSets))
   }
 
   @discardableResult
   public func assignKanbanStatusSet(tagName: String, setId: String?) throws -> Tag {
-    try driver.withDatabase { database in
+    let tag = try driver.withDatabase { database in
       try database.transaction { db in
         let tag = try requireTag(name: tagName, in: db)
         guard tag.classId == "folder" else {
@@ -178,6 +183,11 @@ extension NoteService {
         return try requireTag(name: tagName, in: db)
       }
     }
+    publishChange(NoteChangeEvent(
+      kind: NoteChangeEventKind.statusSets,
+      tagNames: [tagName]
+    ))
+    return tag
   }
 
   public func effectiveKanbanStatuses(tagName: String?) throws -> KanbanStatusSet {

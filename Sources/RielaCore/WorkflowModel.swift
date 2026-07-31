@@ -388,6 +388,10 @@ public struct WorkflowSharedNodeRef: Codable, Equatable, Hashable, Sendable {
 public enum WorkflowFanoutFailurePolicy: String, Codable, Sendable {
   case failFast = "fail-fast"
   case collectAll = "collect-all"
+  /// Waits for every branch like collect-all, but always delivers the join
+  /// message with per-branch status/failureReason records instead of failing
+  /// the dispatch when a branch failed. Dispatch-level errors still throw.
+  case collectPartial = "collect-partial"
 }
 
 public enum WorkflowFanoutResultOrder: String, Codable, Sendable {

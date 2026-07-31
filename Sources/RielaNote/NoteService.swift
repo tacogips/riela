@@ -22,6 +22,9 @@ public struct NoteService: Sendable {
   /// the recovery path. A running attempt heartbeats its lease on a fraction of
   /// this window so a long workflow is never reclaimed out from under it.
   public var autoActionDispatchLeaseStaleness: TimeInterval
+  /// Notified after each committed board-visible mutation. Nil disables the
+  /// change feed entirely.
+  public var changeObserver: (any NoteChangeObserving)?
   /// Shared registry of background dispatch tasks fired by this service value,
   /// awaited by `drainAutoActionDispatches()`.
   let autoActionDispatchTasks: AutoActionDispatchTaskTracker
@@ -30,12 +33,14 @@ public struct NoteService: Sendable {
     driver: NoteDatabaseDriving,
     autoActionDispatcher: AutoActionDispatching? = nil,
     autoActionDiagnosticRecorder: (any NoteAutoActionFilterDiagnosticRecording)? = nil,
-    autoActionDispatchLeaseStaleness: TimeInterval = defaultAutoActionDispatchLeaseStaleness
+    autoActionDispatchLeaseStaleness: TimeInterval = defaultAutoActionDispatchLeaseStaleness,
+    changeObserver: (any NoteChangeObserving)? = nil
   ) throws {
     self.driver = driver
     self.autoActionDispatcher = autoActionDispatcher
     self.autoActionDiagnosticRecorder = autoActionDiagnosticRecorder
     self.autoActionDispatchLeaseStaleness = autoActionDispatchLeaseStaleness
+    self.changeObserver = changeObserver
     self.autoActionDispatchTasks = AutoActionDispatchTaskTracker()
     try NoteStoreSchema.prepare(on: driver)
     // Recovery+retry is no longer run from init; it is an explicit entry point
@@ -91,6 +96,11 @@ public struct NoteService: Sendable {
       }
     }
     dispatchQueuedAutoActions(result.dispatches)
+    publishChange(NoteChangeEvent(
+      kind: NoteChangeEventKind.notebookCreated,
+      notebookId: result.notebook.notebookId,
+      tagNames: folderTagNames(of: result.notebook)
+    ))
     return result.notebook
   }
 
@@ -202,10 +212,16 @@ public struct NoteService: Sendable {
           ),
           in: db
         ))
-        return (note: note, dispatches: dispatches)
+        return (note: note, dispatches: dispatches, createdNotebookId: createdNotebookId)
       }
     }
     dispatchQueuedAutoActions(result.dispatches)
+    if let createdNotebookId = result.createdNotebookId {
+      publishChange(NoteChangeEvent(
+        kind: NoteChangeEventKind.notebookCreated,
+        notebookId: createdNotebookId
+      ))
+    }
     return result.note
   }
 
@@ -238,6 +254,11 @@ public struct NoteService: Sendable {
       }
     }
     dispatchQueuedAutoActions(result.dispatches)
+    publishChange(NoteChangeEvent(
+      kind: NoteChangeEventKind.notebookCreated,
+      notebookId: result.ingestResult.notebook.notebookId,
+      tagNames: folderTagNames(of: result.ingestResult.notebook)
+    ))
     return result.ingestResult
   }
 
@@ -551,7 +572,7 @@ public struct NoteService: Sendable {
     progress: String,
     expectedProgress: String? = nil
   ) throws -> Notebook {
-    try driver.withDatabase { database in
+    let updated = try driver.withDatabase { database in
       try database.transaction { db in
         let notebook = try requireNotebook(notebookId, in: db)
         let allowed = try allowedKanbanStatusNames(notebookId: notebookId, in: db)
@@ -574,6 +595,12 @@ public struct NoteService: Sendable {
         return try requireNotebook(notebookId, in: db)
       }
     }
+    publishChange(NoteChangeEvent(
+      kind: NoteChangeEventKind.notebookProgress,
+      notebookId: updated.notebookId,
+      tagNames: folderTagNames(of: updated)
+    ))
+    return updated
   }
 
   public func listNotes(notebookId: String, limit: Int = 100, offset: Int = 0) throws -> [Note] {
@@ -737,9 +764,9 @@ public struct NoteService: Sendable {
   }
 
   public func deleteNotebook(notebookId: String) throws {
-    try driver.withDatabase { database in
+    let tagNames = try driver.withDatabase { database in
       try database.transaction { db in
-        _ = try requireNotebook(notebookId, in: db)
+        let notebook = try requireNotebook(notebookId, in: db)
         let notes = try db.query(
           "SELECT note_id, read_only FROM notes WHERE notebook_id = ? ORDER BY note_number",
           bindings: [.text(notebookId)]
@@ -755,8 +782,14 @@ public struct NoteService: Sendable {
         try db.execute("DELETE FROM notebook_tags WHERE notebook_id = ?", bindings: [.text(notebookId)])
         try db.execute("DELETE FROM notebook_files WHERE notebook_id = ?", bindings: [.text(notebookId)])
         try db.execute("DELETE FROM notebooks WHERE notebook_id = ?", bindings: [.text(notebookId)])
+        return folderTagNames(of: notebook)
       }
     }
+    publishChange(NoteChangeEvent(
+      kind: NoteChangeEventKind.notebookDeleted,
+      notebookId: notebookId,
+      tagNames: tagNames
+    ))
   }
 
   @discardableResult

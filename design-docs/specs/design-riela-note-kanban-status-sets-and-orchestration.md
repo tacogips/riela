@@ -178,6 +178,12 @@ CREATE TABLE IF NOT EXISTS kanban_statuses (
     and false on genuine v4→v5 upgrades.
   - fresh schema: `notebooks` has only `status TEXT NOT NULL DEFAULT 'none'`
     (no `progress` column, no CHECK).
+  - **`migrateToV4` is touched too** (second-pass review MEDIUM 4): its
+    original `!columnExists("progress")` guard would re-add the legacy
+    CHECK-constrained column on fresh v5 stores (fresh installs run every
+    migration after the schema statements); the guard becomes
+    `!columnExists("status") && !columnExists("progress")` so only genuine
+    pre-v4 stores gain the legacy column (and then copy it forward in v5).
   - the legacy `progress` column (with its CHECK) remains **dead** on
     migrated stores: no code reads or writes it again; every INSERT names
     its columns and omits it, so its `DEFAULT 'none'` always satisfies the
@@ -464,13 +470,21 @@ to watch without touching:
 ### A7. Realtime board sync (web)
 
 Requirement: card moves made by orchestration agents (or another browser)
-appear on the board without manual refresh. Transport decision: **SSE
-(`text/event-stream`)** over the existing same-origin HTTP server rather
-than WebSocket — the serving stack is a custom Swift HTTP server with no
-WebSocket upgrade support today, SSE needs only a long-lived chunked
-response, auto-reconnect (`Last-Event-ID`) is built into `EventSource`, and
-the flow is strictly server→client (writes keep using GraphQL). WebSocket
-remains a possible later upgrade behind the same event contract.
+appear on the board without manual refresh. Transport decision (revised
+after code verification): **HTTP long-poll** on the existing same-origin
+server. Implementation found `RielaLocalHTTPServer` has a strict
+request→single-value-response→close model (`RielaHTTPResponse` is an
+Equatable value with a `Data` body; `send` cancels the connection after one
+write, `RielaLocalHTTPServer.swift:312-322`), so both SSE and WebSocket
+require a streaming response contract that does not exist — deep surgery.
+But the route handler is `async` and the connection stays open while it
+awaits, so a long-poll endpoint (`GET /note/events?since=<revision>&
+timeoutMs=…` that suspends until the store's revision advances or the
+timeout lapses) delivers push-latency updates with **zero server-core
+changes**. Additionally `EventSource` cannot send the `Authorization`
+header the cli-serve note API requires, so the web client uses `fetch` in a
+long-poll loop either way. SSE/WebSocket remain possible upgrades behind
+the same client contract (event → debounced refresh).
 
 Design:
 
@@ -479,10 +493,13 @@ Design:
   apply/remove, status-set mutations) publish a monotonic-revision change
   event `{ revision, kind, notebookId?, tagNames? }` to an in-process
   broadcaster actor owned by the serving layer.
-- **Endpoint**: `GET /note/events` (SSE) beside `/graphql`, same-origin,
-  same host/auth gating as the existing note API (bearer where the SPA uses
-  bearer, host/CSRF gate in-app). Emits `event: note-change` frames plus
-  keep-alive comments.
+- **Endpoint**: `GET /note/events?since=<revision>&timeoutMs=<cap 30000>`
+  beside `/graphql`, same-origin, same auth gating as the existing note API
+  (bearer where the SPA uses bearer, host/CSRF gate in-app). Suspends until
+  revision > since (or timeout), then returns `{ revision, events: [{kind,
+  notebookId?, tagNames?}] }` from a bounded ring buffer; a `since` older
+  than the buffer returns the current revision with no events, which the
+  client treats as "refresh once".
 - **Client**: `EventSource` subscription; an incoming event whose scope
   intersects the current board (tag names or unknown scope) schedules a
   debounced `refresh()` through the existing generation-guarded path — the
@@ -491,9 +508,14 @@ Design:
   which makes gap handling trivial (no server-side event replay buffer
   required; `Last-Event-ID` is accepted but only used to skip the initial
   refresh when nothing changed).
-- **Fallback**: if the SSE connection cannot be established (proxy
-  buffering, etc.) the client degrades to the current manual/interval
-  refresh behavior; realtime is progressive enhancement.
+- **Fallback**: if the feed cannot be reached the client backs off
+  exponentially and degrades to the current manual refresh behavior;
+  realtime is progressive enhancement.
+- **Held-request cost**: each in-flight long-poll occupies one response
+  cycle — a connection entry on the NW server and a blocked thread on the
+  POSIX variant — so the poll timeout is capped (25s client / 30s server)
+  and the audience is the local single-user SPA; this is acceptable by
+  design and another reason WebSocket/SSE remain a later upgrade only.
 - The optimistic-write controller keeps precedence: self-initiated changes
   arriving back through the feed are deduped by the existing
   `isCurrentNotebookProgressMutation`/desired-map convergence logic.
@@ -584,22 +606,33 @@ Authoring details (each hardened against adversarial-review findings F3–F7):
   `/payload/...`. (The existing `design-and-implement-review-loop` example's
   `/payload/featureFanoutItems` is a latent mismatch never exercised by its
   mock — not a precedent to copy.)
-- **Loop bounding uses the real loop-gate mechanism** (F5 — there is no
-  `loop_exhausted` label facility): `step6-review` is authored as a loop
-  gate (`loop.gateId` / gate role) whose guard corridor
-  (`LoopPolicy.swift:113-187`; default synthesized `maxGateVisits`, set
-  explicitly to 3) routes exhaustion to `step7-finalize`, which finalizes
-  with unresolved cards left in `review` and reported in the output payload.
-  The reviewer also threads a `round` counter into each rework item for
-  prompt context. Pass/fail transitions are label-exclusive (`all_pass` /
-  `!(all_pass)`) because live publication rejects multiple matching
-  transitions (`RuntimePublication.swift:770-781`); labels use the
-  restricted `WorkflowBranchEvaluator` grammar (identifiers from the
-  node's `when` map, `&&`/`||`/`!` only).
+- **Loop bounding is round-counter routing, with the gate guard as a
+  fail-stop backstop** (F5 revised after verifying the guard corridor
+  mechanics): the terminal-corridor selector refuses to build a corridor
+  when a dispatch boundary (fan-out transition) is reachable from the gate
+  (`LoopTerminalCorridor.swift:29-35,161-163`), and with a nil corridor the
+  default guard fails the session instead of routing
+  (`DeterministicWorkflowRunner+LoopPolicy.swift:158-176`) — so "corridor
+  routes exhaustion to finalize" is impossible for a gate that owns a
+  fan-out edge. Instead: the orchestrator threads a `round` counter through
+  the rework items; the reviewer emits `when` flags such that its three
+  label-exclusive transitions terminate deterministically —
+  `all_pass` → `step7-finalize`; `needs_rework` (failures AND round <
+  maxReworkRounds, initial 3) → rework fan-out;
+  `!(all_pass || needs_rework)` (failures with rounds exhausted) →
+  `step7-finalize` with unresolved cards reported in the output payload.
+  `step6-review` additionally carries `loop.role: "gate"` so the default
+  convergence guard (synthesized `maxGateVisits`) hard-stops the session if
+  the reviewer misroutes repeatedly — a clean failure, never a spin.
+  Live publication rejects multiple matching transitions
+  (`RuntimePublication.swift:770-781`); labels use the restricted
+  `WorkflowBranchEvaluator` grammar (identifiers from the node's `when`
+  map, `&&`/`||`/`!` only).
 - **`failurePolicy: collect-partial`** (the scoped RielaCore extension) so
   one failed card cancels nothing and the join always runs: branch outcome
-  records (success or failure + reason) arrive in
-  `runtimeVariables.fanoutJoin.branches[]` in input order; the review step
+  records (success or failure + reason) arrive in the join step's input
+  message payload under `fanoutJoin.branches[]` in input order (merged into
+  prompt variables, so prompts read `{{fanoutJoin}}`); the review step
   treats failed branches as failed-review items with the failure reason as
   feedback.
 - **CAS conflict is a branch-local success path** (F3): `step3-claim`

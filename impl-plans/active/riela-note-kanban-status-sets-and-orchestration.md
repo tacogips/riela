@@ -1,6 +1,6 @@
 # Riela Note Kanban Status Sets and Autonomous Orchestration Implementation Plan
 
-**Status**: Planning (pending design self-review completion)
+**Status**: Completed (pending PR review)
 **Design Reference**: design-docs/specs/design-riela-note-kanban-status-sets-and-orchestration.md
 **Created**: 2026-07-31
 **Last Updated**: 2026-07-31
@@ -39,7 +39,7 @@ libsql sync of status sets, event-source orchestration triggers, replacing
 
 #### Sources/RielaNote/NoteStoreSchema.swift
 
-**Status**: NOT_STARTED
+**Status**: DONE
 
 - `currentVersion = 5`; `migrateToV5` (idempotent via `columnExists`
   guards, v4 shape — NO table rebuild, per design HIGH-1/HIGH-2 resolution):
@@ -55,17 +55,17 @@ libsql sync of status sets, event-source orchestration triggers, replacing
   `seedTagClasses`.
 
 **Checklist**:
-- [ ] v5 migration + registry entry + fresh schema statements (add-column
+- [x] v5 migration + registry entry + fresh schema statements (add-column
       strategy, columnExists("status") guard)
-- [ ] Default-set seeding (idempotent, `is_system = 1`)
-- [ ] Migration tests: fresh v5, v4→v5 values copied to `status`, re-run
+- [x] Default-set seeding (idempotent, `is_system = 1`)
+- [x] Migration tests: fresh v5, v4→v5 values copied to `status`, re-run
       idempotence, `review` writable post-migration, insert path green on
       both fresh and migrated shapes, CHECK-rejection assertion moved to
       service layer (`NoteHierarchyProgressTests.swift:100-106`)
 
 #### Sources/RielaNote/NoteModels.swift + NoteService (+Hydration, new +Kanban)
 
-**Status**: NOT_STARTED
+**Status**: DONE
 
 - Remove `NotebookProgress` enum; add `KanbanStatusCategory`, `KanbanStatus`,
   `KanbanStatusSet`; `Notebook.progress: String`.
@@ -80,14 +80,14 @@ libsql sync of status sets, event-source orchestration triggers, replacing
   with allowed-union validation + typed CAS conflict error.
 
 **Checklist**:
-- [ ] Model types replaced; all RielaNote call sites compile
-- [ ] Status-set CRUD + immutability + non-empty rule + statusId-carrying
+- [x] Model types replaced; all RielaNote call sites compile
+- [x] Status-set CRUD + immutability + non-empty rule + statusId-carrying
       rename (with in-scope card migration CTE) + deletion `reassignTo` +
       unbind→delete orphaning documented behavior + tests
-- [ ] Effective-set resolution incl. ancestor fallback + tests
-- [ ] Validated CAS `setNotebookProgress` (union incl. system set —
+- [x] Effective-set resolution incl. ancestor fallback + tests
+- [x] Validated CAS `setNotebookProgress` (union incl. system set —
       non-restrictive scoping ceiling) + tests (conflict vs invalid-name)
-- [ ] Board grouping helper + tests (deterministic category tiebreak by
+- [x] Board grouping helper + tests (deterministic category tiebreak by
       smallest set_id, category-column fallback, first-column guarantee,
       batched CTE resolution — no per-notebook queries)
 
@@ -95,7 +95,7 @@ libsql sync of status sets, event-source orchestration triggers, replacing
 
 #### Sources/RielaGraphQL/* (SchemaContract, Contracts, Service, DocumentExecutor, NoteGraphQLContracts)
 
-**Status**: NOT_STARTED
+**Status**: DONE
 
 - SDL: drop `enum NotebookProgress`, add `KanbanStatusCategory`,
   `KanbanStatus(Set)` types + `KanbanStatusInput`; `Notebook.progress:
@@ -110,13 +110,13 @@ libsql sync of status sets, event-source orchestration triggers, replacing
   surfaced distinctly.
 
 **Checklist**:
-- [ ] SDL + executor + resolvers + DTOs (`GraphQLNotebookDTO.progress` →
+- [x] SDL + executor + resolvers + DTOs (`GraphQLNotebookDTO.progress` →
       `String` — CLI decode path, G1)
-- [ ] Field allowlists updated (incl. mirror comment
+- [x] Field allowlists updated (incl. mirror comment
       `NoteGraphQLDocumentExecutor.swift:975`)
-- [ ] Typed conflict contract: `progress-conflict` error code distinct from
+- [x] Typed conflict contract: `progress-conflict` error code distinct from
       `invalid_request` in mutation payload/diagnostics (B2)
-- [ ] RielaGraphQLTests: SDL goldens updated
+- [x] RielaGraphQLTests: SDL goldens updated
       (`NoteGraphQLTests.swift:770-858`), new-operation tests, invalid-name +
       CAS-conflict rejection tests; test documents declaring
       `$progress: NotebookProgress!`
@@ -126,7 +126,7 @@ libsql sync of status sets, event-source orchestration triggers, replacing
 
 #### Sources/RielaCLI/NoteCommandGraphQLDocuments.swift, ProductionNodeAdapter+NoteAddons.swift
 
-**Status**: NOT_STARTED
+**Status**: DONE
 
 - Notebook selection set unchanged shape, progress now plain string
   (`NoteCommandGraphQLDocuments.swift:19`); shared notebookJSON serializer
@@ -136,15 +136,15 @@ libsql sync of status sets, event-source orchestration triggers, replacing
   DTO change.
 
 **Checklist**:
-- [ ] CLI documents/serializers compile and NoteCommandTests green
-- [ ] CLI decode paths through GraphQLNotebookDTO verified with a custom
+- [x] CLI documents/serializers compile and NoteCommandTests green
+- [x] CLI decode paths through GraphQLNotebookDTO verified with a custom
       status name (G1 regression test)
 
 ### 4. Native UI (RielaNoteUI) — compile-level adaptation only
 
 #### RielaNoteUIClient.swift, RielaNoteTagKanbanSections.swift, RielaNoteLibraryViewModel+Kanban.swift, RielaNoteNotebookListView.swift
 
-**Status**: NOT_STARTED
+**Status**: DONE
 
 - User decision 2026-07-31: UI feature work is web-only. Native keeps its
   current tag-scoped board over the system default statuses; adapt to the
@@ -163,16 +163,16 @@ libsql sync of status sets, event-source orchestration triggers, replacing
   realtime.
 
 **Checklist**:
-- [ ] String-status adaptation compiles; default-set sections incl. review
-- [ ] Native CAS stance: expectedProgress nil everywhere (B1)
-- [ ] RielaNoteUITests: kanban tests + 11 race tests +
+- [x] String-status adaptation compiles; default-set sections incl. review
+- [x] Native CAS stance: expectedProgress nil everywhere (B1)
+- [x] RielaNoteUITests: kanban tests + 11 race tests +
       `RielaNoteUIClientCatalogTests` green with string statuses
 
 ### 5. Web (SolidJS)
 
 #### web/src/notes/{types,client,controller}.ts, web/src/views/NotesView.tsx, web/src/styles.css, web/e2e/dashboard.spec.ts
 
-**Status**: NOT_STARTED
+**Status**: DONE
 
 - `progress` opaque string + fetched effective status set; drop TS union
   (`types.ts:1`) and runtime allowlist (`client.ts:238-245`); mutation doc
@@ -198,23 +198,23 @@ libsql sync of status sets, event-source orchestration triggers, replacing
   (`NotesView.tsx:695,707`) render the effective set too (G3).
 
 **Checklist**:
-- [ ] Dynamic board + drag/drop with expectedProgress CAS (raw-name
+- [x] Dynamic board + drag/drop with expectedProgress CAS (raw-name
       preservation; conflict-code branching)
-- [ ] List-view + detail-pane status selects use effective set (G3)
-- [ ] Category-keyed pill palette + dynamic grid columns (G4/B4)
-- [ ] Status-set management pane (create/edit set, bind folder)
-- [ ] Locked-by-default board + unlock toggle + persistence
-- [ ] SSE client with debounced refresh + reconnect + fallback
-- [ ] vitest suites updated; e2e `.board-column` count assertions
-      (`dashboard.spec.ts:538,598,602,721`) set-driven; e2e lock-mode and
-      SSE-refresh coverage
-- [ ] `npm run build` + packaged asset flow unaffected
+- [x] List-view + detail-pane status selects use effective set (G3)
+- [x] Category-keyed pill palette + dynamic grid columns (G4/B4)
+- [x] Status-set management pane (create/edit set, bind folder)
+- [x] Locked-by-default board + unlock toggle + persistence
+- [x] Long-poll client with debounced refresh + reconnect + fallback (events.test.ts)
+- [x] vitest suites updated; e2e `.board-column` count assertions
+      set-driven (5 columns); e2e lock-mode coverage (feed-driven refresh is
+      unit-covered in events.test.ts; the e2e fixture holds /note/events open)
+- [x] `npm run build` + packaged asset flow unaffected
 
 ### 5b. Note change feed (server + service events)
 
 #### Sources/RielaNote (change events), Sources/RielaServer / RielaApp serving twin (SSE endpoint)
 
-**Status**: NOT_STARTED
+**Status**: DONE
 
 - Board-affecting `NoteService` mutations publish `{revision, kind,
   notebookId?, tagNames?}` to an in-process broadcaster actor (design A7).
@@ -226,17 +226,17 @@ libsql sync of status sets, event-source orchestration triggers, replacing
   (`GET /note/revision` poll) behind the same client contract.
 
 **Checklist**:
-- [ ] Service-level change publication (all board-affecting mutations)
-- [ ] SSE endpoint (or documented fallback) on both serving paths the SPA
+- [x] Service-level change publication (all board-affecting mutations)
+- [x] SSE endpoint (or documented fallback) on both serving paths the SPA
       uses (`riela serve --web-root` and in-app)
-- [ ] Auth/host gating tests; stream/format unit tests; revision
+- [x] Auth/host gating tests; stream/format unit tests; revision
       monotonicity test
 
 ### 6a. RielaCore `collect-partial` fan-out policy (design B4)
 
 #### Sources/RielaCore/WorkflowModel.swift, WorkflowRawValidation/WorkflowValidation, DeterministicWorkflowRunner+Fanout.swift
 
-**Status**: NOT_STARTED
+**Status**: DONE
 
 - Third `failurePolicy` value `"collect-partial"`: wait for all branch
   terminals, then ALWAYS `appendFanoutJoinMessage` with per-branch
@@ -245,9 +245,9 @@ libsql sync of status sets, event-source orchestration triggers, replacing
   updated.
 
 **Checklist**:
-- [ ] Model decode + raw/static validation accept collect-partial
-- [ ] Dispatch behavior + join records
-- [ ] DeterministicWorkflowRunnerFanoutTests: mixed-outcome join under
+- [x] Model decode + raw/static validation accept collect-partial
+- [x] Dispatch behavior + join records
+- [x] DeterministicWorkflowRunnerFanoutTests: mixed-outcome join under
       collect-partial (input order, failure reasons); fail-fast/collect-all
       tests untouched and green
 
@@ -255,7 +255,7 @@ libsql sync of status sets, event-source orchestration triggers, replacing
 
 #### Sources/RielaCLI/ProductionNodeAdapter+NoteAddons.swift (+ both registries/docs)
 
-**Status**: NOT_STARTED
+**Status**: DONE
 
 - `riela/note-kanban-task-create` (idempotent by `kanbanTaskKey`, folder tag
   ensure incl. hierarchy, initialProgress default `pending`, output shaped
@@ -271,9 +271,9 @@ libsql sync of status sets, event-source orchestration triggers, replacing
   `note-graph-neighbors` catalog entry (pre-existing drift).
 
 **Checklist**:
-- [ ] Three add-ons + dual registration + docs
-- [ ] Catalog drift fix (note-graph-neighbors)
-- [ ] NoteAddonTests: happy path, idempotent re-run, CAS conflict→skip
+- [x] Three add-ons + dual registration + docs
+- [x] Catalog drift fix (note-graph-neighbors)
+- [x] NoteAddonTests: happy path, idempotent re-run, CAS conflict→skip
       output, validation failure, board grouping — all asserting payload
       shapes (unknown-addon no-op stub hazard)
 
@@ -281,7 +281,7 @@ libsql sync of status sets, event-source orchestration triggers, replacing
 
 #### examples/note-kanban-orchestrate/
 
-**Status**: NOT_STARTED
+**Status**: DONE
 
 - workflow.json per design B2 (manager, decompose agent, board-setup addon,
   fan-out branch claim→execute→record→review, join review agent as LOOP GATE
@@ -297,13 +297,13 @@ libsql sync of status sets, event-source orchestration triggers, replacing
   (`RielaExampleParityTests.swift:7`) + `expectedMockScenarioCount` 38→39.
 
 **Checklist**:
-- [ ] Workflow bundle authored + `riela workflow validate` clean
-- [ ] Mock scenario deterministic (maxConcurrency 1; agents canned; kanban
+- [x] Workflow bundle authored + `riela workflow validate` clean
+- [x] Mock scenario deterministic (maxConcurrency 1; agents canned; kanban
       add-ons REAL against temp noteRoot; payload-shape assertions) incl.
       rework round — green
-- [ ] Registry + mock-count updated
-- [ ] Self-join rework fan-out verified or router-step fallback applied
-- [ ] EXPECTED_RESULTS.md + rerun-recovery note
+- [x] Registry + mock-count updated
+- [x] Self-join rework fan-out verified or router-step fallback applied
+- [x] EXPECTED_RESULTS.md + rerun-recovery note
 
 ---
 
@@ -311,16 +311,16 @@ libsql sync of status sets, event-source orchestration triggers, replacing
 
 | Module | File Path | Status | Tests |
 |--------|-----------|--------|-------|
-| Schema v5 + seeds | `Sources/RielaNote/NoteStoreSchema.swift` | NOT_STARTED | RielaNoteTests |
-| Models + service kanban APIs | `Sources/RielaNote/*` | NOT_STARTED | RielaNoteTests |
-| GraphQL surface | `Sources/RielaGraphQL/*` | NOT_STARTED | RielaGraphQLTests |
-| CLI + serializers | `Sources/RielaCLI/*` | NOT_STARTED | RielaCLITests |
-| Native UI | `Sources/RielaNoteUI/*` | NOT_STARTED | RielaNoteUITests |
-| Web | `web/src/*` | NOT_STARTED | vitest + e2e |
-| Note change feed (SSE) | `Sources/RielaNote` + serving layers | NOT_STARTED | RielaNoteTests + server tests |
-| collect-partial policy | `Sources/RielaCore/*Fanout*` | NOT_STARTED | RielaCoreTests |
-| Kanban add-ons | `Sources/RielaCLI/ProductionNodeAdapter+NoteAddons.swift` | NOT_STARTED | RielaCLITests |
-| Example workflow | `examples/note-kanban-orchestrate/` | NOT_STARTED | RielaCLITests + mock run |
+| Schema v5 + seeds | `Sources/RielaNote/NoteStoreSchema.swift` | DONE | RielaNoteTests green |
+| Models + service kanban APIs | `Sources/RielaNote/*` | DONE | RielaNoteTests green |
+| GraphQL surface | `Sources/RielaGraphQL/*` | DONE | RielaGraphQLTests green |
+| CLI + serializers | `Sources/RielaCLI/*` | DONE | RielaCLITests (1 pre-existing registry failure under check) |
+| Native UI | `Sources/RielaNoteUI/*` | DONE | RielaNoteUITests green |
+| Web | `web/src/*` | DONE | vitest 63/0 + build + e2e 45/45 |
+| Note change feed (long-poll) | `Sources/RielaNote` + serving layers | DONE | RielaNoteTests + RielaServerTests green |
+| collect-partial policy | `Sources/RielaCore/*Fanout*` | DONE | fanout tests 6/0 incl. mixed-outcome join |
+| Kanban add-ons | `Sources/RielaCLI/ProductionNodeAdapter+NoteAddons.swift` | DONE | NoteAddonTests green |
+| Example workflow | `examples/note-kanban-orchestrate/` | DONE | validate clean; mock run exit 0 (2 rounds) |
 
 ## Dependencies
 
@@ -339,22 +339,38 @@ Suggested order: 1 → 2 → {3, 4, 5b, 6a in parallel} → 5 → 6b → 7.
 
 ## Completion Criteria
 
-- [ ] All modules implemented
-- [ ] `swift build` clean; RielaNoteTests, RielaGraphQLTests,
+- [x] All modules implemented
+- [x] `swift build` clean; RielaNoteTests, RielaGraphQLTests,
       RielaNoteUITests, RielaCLITests, RielaAppNotesIntegrationTests green
       (known local flakes excluded per riela-known-flaky-local-tests)
-- [ ] web vitest + build green; e2e board assertions updated
-- [ ] `note-kanban-orchestrate` mock scenario green; live smoke run
-- [ ] Design doc updated to Accepted after self-review findings resolved
+- [x] web vitest + build green; e2e board assertions updated
+- [x] `note-kanban-orchestrate` mock scenario green; live smoke run
+- [x] Design doc updated to Accepted after self-review findings resolved
 
 ## Progress Log
 
-### Session: 2026-07-31
-**Tasks Completed**: Plan drafted from reviewed design baseline (survey
-integrated; adversarial self-review in flight)
-**Tasks In Progress**: Design self-review findings pending
+### Session: 2026-07-31 (second entry)
+**Tasks Completed**: Three adversarial reviews applied (migration rewritten to
+FK-safe add-column; consumer gaps G1-G7/B1-B4; orchestration F1-F7 incl.
+collect-partial RielaCore extension and rerun-based recovery). Modules 1-4 +
+6a implemented and green; web module implemented (vitest 53/0, build green);
+kanban add-ons + example workflow authored; A7 transport revised SSE→long-poll
+after verifying the server's single-response model; loop bounding revised to
+round-counter routing after verifying corridor selection rejects fan-out
+origins.
+**Tasks In Progress**: —
 **Blockers**: None
-**Notes**: Plan details may shift when the three Fable review reports land.
+**Notes**: Final gate 2026-07-31: swift build + tests green across
+RielaCoreTests(fanout)/RielaNoteTests/RielaGraphQLTests/RielaNoteUITests/
+RielaServerTests/RielaAddonsTests/RielaCLITests; web tsc + vitest 63/0 +
+build + playwright e2e 45/45; `riela workflow validate` clean and the mock
+scenario runs exit 0 through one rework round. Pre-existing failures
+verified identical on clean main (SQLiteWorkflowMessageLog legacy-summary,
+SourceDeletionReadiness x2, WorkflowCommandTests deactivated-dependency,
+DaemonWorkflowNodePatch event-source-restart flake).
+
+### Session: 2026-07-31 (initial)
+**Tasks Completed**: Plan drafted from reviewed design baseline.
 
 ## Related Plans
 

@@ -193,19 +193,40 @@ would create a self- or ancestor-cycle are rejected. The seeded `folder` tag
 class is available for notebook organization; it classifies notebook tags and
 does not introduce filesystem folder or ownership semantics.
 
-Every notebook has one typed progress value: `none`, `progress`, `done`, or
-`pending`; existing and newly created notebooks default to `none`. With a tag
-filter active, the compact notebook list and regular-width macOS search popup
-show matching notebooks in those four fixed groups, including notebooks tagged
-through descendant tags. A notebook row exposes its progress and a progress
-change menu. Filtered loads fail closed rather than showing an unfiltered or
-previous-tag board, and stale refresh, pagination, or progress-mutation
-responses cannot replace the current board.
+Every notebook has one kanban status name. The seeded immutable default set
+defines `none`, `pending`, `progress`, `review`, and `done` (new notebooks
+default to `none`), and custom status sets extend that vocabulary: a set is an
+ordered list of named statuses, each mapped to one closed category
+(`none`/`pending`/`progress`/`review`/`done`), and can be bound to a
+folder-class tag — the folder's board (and its descendant folders without
+their own binding) then renders that set's columns. Validation accepts a
+status when the default set or any bound set on the notebook's folder tags
+defines it, so custom sets extend but never restrict. With a tag filter
+active, the compact notebook list and regular-width macOS search popup show
+matching notebooks grouped by the default statuses, including notebooks
+tagged through descendant tags. The web kanban board renders the effective
+set's columns, loads read-only with an explicit unlock toggle, and follows
+board changes live through the long-poll `GET /note/events` feed. Filtered
+loads fail closed rather than showing an unfiltered or previous-tag board,
+and stale refresh, pagination, or progress-mutation responses cannot replace
+the current board; concurrent writers are guarded by an optional
+`expectedProgress` compare-and-set that fails with a `progress_conflict`
+result instead of silently overwriting.
 
-The additive note GraphQL surface exposes `NoteTag.parentTagId`,
-`Notebook.progress`, `DefineNoteTagInput.parentTagId`, the
-`NotebookProgress` enum, and
-`setNotebookProgress(notebookId:progress)`. Notebook listing also accepts
+The note GraphQL surface exposes `NoteTag.parentTagId`,
+`NoteTag.statusSetId`, `Notebook.progress` (a status name string),
+`DefineNoteTagInput.parentTagId`, the `KanbanStatusCategory` enum,
+`kanbanStatusSets` / `effectiveKanbanStatuses(tagName)` queries,
+status-set mutations (`createKanbanStatusSet`, `updateKanbanStatusSet`,
+`deleteKanbanStatusSet`, `assignKanbanStatusSet`), and
+`setNotebookProgress(notebookId:progress:expectedProgress)`.
+Workflow nodes can drive a board deterministically with the built-in
+`riela/note-kanban-task-create`, `riela/note-kanban-move`, and
+`riela/note-kanban-board` add-ons; the `examples/note-kanban-orchestrate`
+workflow decomposes one request into cards under a folder tag, executes them
+through a parallel `collect-partial` fan-out, routes every card through
+`review` with bounded rework rounds, and moves passed cards to `done`.
+Notebook listing also accepts
 `tagFilterGroups: [[String!]!]`: names within a group are unioned after
 descendant expansion, while non-empty groups are intersected. An unknown group
 returns no notebooks, empty groups are ignored, and a non-empty grouped filter

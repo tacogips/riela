@@ -80,6 +80,40 @@ final class DeterministicWorkflowRunnerFanoutTests: XCTestCase {
     XCTAssertEqual(started.sorted(), [0, 1, 2])
   }
 
+  func testFanoutCollectPartialDeliversMixedBranchRecordsToJoin() async throws {
+    let tracker = FanoutBranchTracker(
+      delaysByIndex: [0: 20_000_000, 1: 10_000_000, 2: 30_000_000],
+      failingIndexes: [1]
+    )
+    let adapter = FanoutTestAdapter(tracker: tracker)
+    let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: adapter)
+
+    let result = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: fanoutWorkflow(concurrency: 2, failurePolicy: .collectPartial),
+      nodePayloads: fanoutPayloads()
+    ))
+
+    XCTAssertEqual(result.exitCode, 0)
+    let started = await tracker.startedIndexes()
+    XCTAssertEqual(started.sorted(), [0, 1, 2])
+    let capturedJoin = await tracker.joinRuntimeFanout()
+    let join = try XCTUnwrap(capturedJoin)
+    guard case let .array(branches)? = join["branches"] else {
+      return XCTFail("fanoutJoin branches should be an array")
+    }
+    XCTAssertEqual(branches.compactMap(branchIndex), [0, 1, 2])
+    let statuses = branches.map { branch -> String? in
+      guard case let .object(record) = branch, case let .string(status)? = record["status"] else { return nil }
+      return status
+    }
+    XCTAssertEqual(statuses, ["completed", "failed", "completed"])
+    guard case let .object(failedRecord) = branches[1],
+          case let .string(reason)? = failedRecord["failureReason"] else {
+      return XCTFail("failed branch should carry a failureReason")
+    }
+    XCTAssertFalse(reason.isEmpty)
+  }
+
   func testCrossWorkflowFanoutRunsCalleesAndJoinsInParent() async throws {
     let tracker = FanoutBranchTracker(delaysByIndex: [0: 30_000_000, 1: 10_000_000, 2: 20_000_000])
     let adapter = FanoutTestAdapter(tracker: tracker)

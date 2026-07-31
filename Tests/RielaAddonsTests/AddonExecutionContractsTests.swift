@@ -154,12 +154,16 @@ final class AddonExecutionContractsTests: XCTestCase {
         "riela/note-update",
         "riela/note-get",
         "riela/note-search",
+        "riela/note-graph-neighbors",
         "riela/note-tag-apply",
         "riela/note-attach-file",
         "riela/note-graphql-document",
         "riela/note-comment-add",
         "riela/notebook-ingest-pages",
-        "riela/note-conversation-save"
+        "riela/note-conversation-save",
+        "riela/note-kanban-task-create",
+        "riela/note-kanban-move",
+        "riela/note-kanban-board"
       ]
     )
   }

@@ -473,9 +473,11 @@ public struct InProcessWorkflowServeListenerFactory: WorkflowServeListenerFactor
         message: "note API serving requires server.noteRoot"
       ))
     }
+    let changeFeed = NoteChangeFeed()
     let service = try NoteService(
       driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot),
-      autoActionDispatcher: ServedNoteAPIAutoActionDispatcher()
+      autoActionDispatcher: ServedNoteAPIAutoActionDispatcher(),
+      changeObserver: NoteChangeFeedObserver(feed: changeFeed)
     )
     let authenticator = QRClientRegistrationAuthenticator(
       service: service,
@@ -489,7 +491,8 @@ public struct InProcessWorkflowServeListenerFactory: WorkflowServeListenerFactor
           s3Profiles: try noteS3Profiles(for: request)
         )
       ),
-      noteAPIAuthenticator: authenticator
+      noteAPIAuthenticator: authenticator,
+      noteChangeFeed: changeFeed
     )
     let challenge = try await authenticator.createRegistrationChallenge(publicBaseURL: endpoint)
     return InProcessWorkflowServeRouteConfiguration(

@@ -110,8 +110,14 @@ export function NotesView(props: { mode: HostMode }) {
   const [expanded, setExpanded] = createSignal<Set<string>>(new Set())
   const [expandedTagGroups, setExpandedTagGroups] = createSignal<Set<string>>(new Set())
   const [view, setView] = createSignal<'list' | 'board'>('list')
-  const [statusSet, setStatusSet] = createSignal<KanbanStatusSet>(defaultStatusSet)
-  const [kanbanSets, setKanbanSets] = createSignal<KanbanStatusSet[]>([])
+  // Value equality keeps the signal referentially stable across refreshes so
+  // board sections are not re-created mid-drag when the set has not changed.
+  const [statusSet, setStatusSet] = createSignal<KanbanStatusSet>(defaultStatusSet, {
+    equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+  })
+  const [kanbanSets, setKanbanSets] = createSignal<KanbanStatusSet[]>([], {
+    equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+  })
   const [boardLocked, setBoardLocked] = createSignal(true)
   const [sort, setSort] = createSignal<NoteListSort>('updatedAtDesc')
   const [loading, setLoading] = createSignal(true)
@@ -230,14 +236,15 @@ export function NotesView(props: { mode: HostMode }) {
     }
   }
   const boardStatuses = createMemo(() => statusSet().statuses)
-  const boardColumns = createMemo(() => {
+  const boardColumnAssignments = createMemo(() => {
     const statuses = boardStatuses()
-    const columns = statuses.map((status) => ({ status, notebooks: [] as Notebook[] }))
-    if (columns.length === 0) return columns
+    const assignments = new Map<string, Notebook[]>(statuses.map((status) => [status.name, []]))
+    if (statuses.length === 0) return assignments
     for (const notebook of notebooks()) {
-      columns[boardColumnIndex(notebook.progress, statuses)]?.notebooks.push(notebook)
+      const status = statuses[boardColumnIndex(notebook.progress, statuses)]
+      if (status) assignments.get(status.name)?.push(notebook)
     }
-    return columns
+    return assignments
   })
   const selectedFolder = createMemo(() => folders().find((tag) => tag.tagId === selectedFolderId()))
   const selectedScopeTag = createMemo(() => tags().find((tag) => tag.tagId === selectedTagId()))
@@ -817,16 +824,17 @@ export function NotesView(props: { mode: HostMode }) {
       </Show>
       <Show when={view() === 'board'}>
         <div class="notebook-board" style={{ '--board-columns': boardStatuses().length }}>
-          <For each={boardColumns()}>{(column) =>
-            <section class={`board-column cat-${column.status.category}`} aria-label={`${statusLabel(column.status)} notebooks`} onDragOver={(event) => { if (!boardLocked()) event.preventDefault() }} onDrop={(event) => {
+          <For each={boardStatuses()}>{(status) => {
+            const column = () => boardColumnAssignments().get(status.name) ?? []
+            return <section class={`board-column cat-${status.category}`} aria-label={`${statusLabel(status)} notebooks`} onDragOver={(event) => { if (!boardLocked()) event.preventDefault() }} onDrop={(event) => {
               if (boardLocked()) return
               const draggedId = event.dataTransfer?.getData('text/plain')
               finishNotebookDrag()
               const notebook = notebooks().find((item) => item.notebookId === draggedId)
-              if (notebook && notebook.progress !== column.status.name) void moveProgress(notebook, column.status.name)
+              if (notebook && notebook.progress !== status.name) void moveProgress(notebook, status.name)
             }}>
-              <header><strong>{statusLabel(column.status)}</strong><span>{column.notebooks.length}</span></header>
-              <div class="board-cards"><For each={column.notebooks}>{(notebook) => <article class="board-card" draggable={!boardLocked()} onDragStart={(event) => {
+              <header><strong>{statusLabel(status)}</strong><span>{column().length}</span></header>
+              <div class="board-cards"><For each={column()}>{(notebook) => <article class="board-card" draggable={!boardLocked()} onDragStart={(event) => {
                 if (boardLocked()) { event.preventDefault(); return }
                 event.dataTransfer?.setData('text/plain', notebook.notebookId)
                 setDraggingNotebookId(notebook.notebookId)
@@ -838,11 +846,11 @@ export function NotesView(props: { mode: HostMode }) {
                   <FolderChips notebook={notebook} />
                 </button>
                 <label><span class="sr-only">Move {notebook.title} to progress</span><select value={notebook.progress} disabled={boardLocked()} onChange={(event) => void moveProgress(notebook, event.currentTarget.value)}>
-                  <For each={boardStatuses()}>{(status) => <option value={status.name}>{statusLabel(status)}</option>}</For>
+                  <For each={boardStatuses()}>{(option) => <option value={option.name}>{statusLabel(option)}</option>}</For>
                 </select></label>
               </article>}</For></div>
             </section>
-          }</For>
+          }}</For>
         </div>
       </Show>
     </div>

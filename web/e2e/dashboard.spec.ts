@@ -122,7 +122,12 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
     if (!expectedConflictNoise && !expectedNoteFailureNoise) browserErrors.push(message.text())
   })
   page.on('pageerror', (error) => browserErrors.push(error.message))
-  page.on('requestfailed', (request) => failedRequests.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText ?? 'failed'}`))
+  page.on('requestfailed', (request) => {
+    // Long-poll /note/events requests are held open by design and abort when
+    // the page closes; they are not failures.
+    if (new URL(request.url()).pathname === '/note/events') return
+    failedRequests.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText ?? 'failed'}`)
+  })
   page.on('response', (response) => {
     const url = new URL(response.url())
     const expectedConflict = options.mutationMode === 'conflict' && response.status() === 409 && url.pathname === '/api/v1/workflows/sources/directories'
@@ -139,6 +144,23 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
     const result = (value: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: value }) })
     const accepted = { accepted: true, status: 'ok', diagnostics: [] }
     if (operation === 'Tags') return result({ tags: { result: accepted, value: [...tagsByName.values()] } })
+    if (operation === 'EffectiveKanbanStatuses') {
+      return result({ effectiveKanbanStatuses: { result: accepted, value: {
+        setId: 'kanban-default',
+        name: 'default',
+        isSystem: true,
+        statuses: [
+          { statusId: 'kanban-default-none', name: 'none', category: 'none', position: 0 },
+          { statusId: 'kanban-default-pending', name: 'pending', category: 'pending', position: 1 },
+          { statusId: 'kanban-default-progress', name: 'progress', category: 'progress', position: 2 },
+          { statusId: 'kanban-default-review', name: 'review', category: 'review', position: 3 },
+          { statusId: 'kanban-default-done', name: 'done', category: 'done', position: 4 },
+        ],
+      } } })
+    }
+    if (operation === 'KanbanStatusSets') {
+      return result({ kanbanStatusSets: { result: accepted, value: [] } })
+    }
     if (operation === 'TagClasses') return result({ tagClasses: { result: accepted, value: [
       { classId: 'folder', label: 'Folder', description: null },
       { classId: 'priority', label: 'Priority', description: null },
@@ -293,6 +315,10 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
     }
     unexpectedRequests.push(`POST /graphql:${operation}`)
     return route.fulfill({ status: 418, contentType: 'application/json', body: JSON.stringify({ error: 'unexpected GraphQL operation' }) })
+  })
+  await page.route('**/note/events**', async () => {
+    // Never fulfilled: real long-polls are held open until a change or the
+    // 25s timeout; tests finish first and the abort is filtered above.
   })
   await page.route('**/api/v1/**', async (route: Route) => {
     const request = route.request()
@@ -481,6 +507,8 @@ test('navigates folder-scoped List and Board Notes with detail and progress cont
   await expect(page.getByText('Work', { exact: true }).first()).toBeVisible()
   await page.getByRole('tab', { name: 'Board' }).click()
   await expect(page.getByRole('region', { name: 'No status notebooks' })).toContainText('Web notebook')
+  await expect(page.getByRole('region', { name: 'No status notebooks' }).getByRole('combobox')).toBeDisabled()
+  await page.getByRole('button', { name: 'Locked' }).click()
   await page.getByRole('region', { name: 'No status notebooks' }).getByRole('combobox').selectOption('done')
   await expect(page.getByRole('region', { name: 'Done notebooks' })).toContainText('Web notebook')
   await page.getByRole('button', { name: /Web notebook/ }).click()
@@ -534,8 +562,9 @@ test('retains Board columns and the dragged card through delayed refresh', async
   await page.getByRole('button', { name: 'Notes' }).click()
   await expect(page.getByRole('button', { name: /Web notebook/ })).toBeVisible()
   await page.getByRole('tab', { name: 'Board' }).click()
+  await page.getByRole('button', { name: 'Locked' }).click()
   const card = page.locator('.board-card').filter({ hasText: 'Web notebook' })
-  await expect(page.locator('.board-column')).toHaveCount(4)
+  await expect(page.locator('.board-column')).toHaveCount(5)
   await card.evaluate((element) => {
     element.dispatchEvent(new DragEvent('dragstart', {
       bubbles: true,
@@ -595,11 +624,11 @@ test('keeps Board columns mounted during fail-closed membership reconciliation',
     fixture.requests.filter((request) => request === 'POST /graphql:Notebooks').length,
   ).toBe(3)
   await expect(page.locator('.notebook-board')).toBeVisible()
-  await expect(page.locator('.board-column')).toHaveCount(4)
+  await expect(page.locator('.board-column')).toHaveCount(5)
   await expect(page.locator('.board-card')).toHaveCount(0)
   await expect(page.getByText('Loading notebooks and final board counts…')).toBeVisible()
   await expect(page.getByText('No notebooks in this scope')).toBeVisible()
-  await expect(page.locator('.board-column')).toHaveCount(4)
+  await expect(page.locator('.board-column')).toHaveCount(5)
   fixture.assertClean()
 })
 
@@ -614,19 +643,18 @@ test('retains accepted partial notebooks when paging makes no forward progress',
   fixture.assertClean()
 })
 
-test('shows unknown progress in the None column with a visible explanation', async ({ page }) => {
+test('keeps custom status names verbatim and groups them into the fallback column', async ({ page }) => {
   const fixture = await installAPI(page, { initialNotebookProgress: 'future-status' })
   await page.goto('/')
   await page.getByRole('button', { name: 'Notes' }).click()
 
   const listRow = page.getByRole('button', { name: /Web notebook/ })
-  await expect(listRow).toContainText('No status')
-  await expect(listRow).toContainText('Unknown status · shown in None')
+  await expect(listRow).toContainText('future-status')
+  await expect(listRow).not.toContainText('Unknown status')
 
   await page.getByRole('tab', { name: 'Board' }).click()
   const noneColumn = page.getByRole('region', { name: 'No status notebooks' })
   await expect(noneColumn).toContainText('Web notebook')
-  await expect(noneColumn).toContainText('Unknown status · shown in None')
   fixture.assertClean()
 })
 
@@ -718,7 +746,7 @@ test('retains filtered List and Board membership when unrelated tag removal refr
 
   await expect(page.getByRole('alert')).toContainText('folder unavailable')
   await expect(page.locator('.notebook-board')).toBeVisible()
-  await expect(page.locator('.board-column')).toHaveCount(4)
+  await expect(page.locator('.board-column')).toHaveCount(5)
   await expect(boardCard).toBeVisible()
   await expect(page.getByRole('complementary', { name: /Notebook details/ }))
     .toContainText('Web notebook')

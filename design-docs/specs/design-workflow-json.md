@@ -608,7 +608,7 @@ Fields:
 - optional `itemVariable: string`
 - optional `concurrency: number`
 - `joinStepId: string`
-- optional `failurePolicy: "fail-fast" | "collect-all"`
+- optional `failurePolicy: "fail-fast" | "collect-all" | "collect-partial"`
 - optional `resultOrder: "input"`
 
 Rules:
@@ -623,7 +623,7 @@ Rules:
 - `joinStepId` must reference a current-workflow step and is queued once after all required branch work succeeds
 - for cross-workflow fanout, authored `resumeStepId` remains required and must equal `fanout.joinStepId`
 - branch outputs are aggregated in source item order and delivered to the join step through runtime-owned communication artifacts
-- partial-success joins are out of scope for the initial schema; `fail-fast` stops on first branch failure, while `collect-all` waits for terminal branch states and then fails if any branch failed
+- `fail-fast` stops on first branch failure; `collect-all` waits for terminal branch states and then fails if any branch failed; `collect-partial` waits for terminal branch states and always delivers the join message with per-branch `status`/`failureReason` records instead of failing the dispatch (dispatch-level errors such as an unresolvable `itemsFrom` still fail for every policy)
 
 Detailed design:
 `design-docs/specs/design-bounded-fanout-join-workflow-execution.md`.

@@ -1,16 +1,19 @@
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal } from 'solid-js'
 import { APIError, api } from './api'
+import { NotebookExpansionPanel } from './components/NotebookExpansionPanel'
 import type { Bootstrap } from './contracts'
 import type { HostMode } from './notes/types'
 import { createPollingResource } from './polling'
 import { InstancesView } from './views/InstancesView'
 import { LogsView } from './views/LogsView'
+import { NoteAgentView, type NoteAgentPrefill } from './views/NoteAgentView'
+import { NoteConfigAgentView } from './views/NoteConfigAgentView'
 import { NotesView } from './views/NotesView'
 import { RunDetailView } from './views/RunDetailView'
 import { SettingsView } from './views/SettingsView'
 import { WorkflowsView } from './views/WorkflowsView'
 
-type NavigationView = 'notes' | 'instances' | 'logs' | 'workflows' | 'settings'
+type NavigationView = 'notes' | 'note-agent' | 'note-config' | 'instances' | 'logs' | 'workflows' | 'settings'
 type View = NavigationView | 'run-detail'
 
 export interface ProfileViewTransition {
@@ -34,6 +37,8 @@ export function profileViewTransition(
 
 const navigation: Array<{ id: NavigationView; label: string; glyph: string }> = [
   { id: 'notes', label: 'Notes', glyph: '▤' },
+  { id: 'note-agent', label: 'Note Agent', glyph: '✱' },
+  { id: 'note-config', label: 'Note Config', glyph: '⚙' },
   { id: 'instances', label: 'Instances', glyph: '◇' },
   { id: 'logs', label: 'Run logs', glyph: '≋' },
   { id: 'workflows', label: 'Workflows', glyph: '⌘' },
@@ -44,6 +49,8 @@ export function App() {
   const [view, setView] = createSignal<View>('instances')
   const [selectedInstanceId, setSelectedInstanceId] = createSignal('')
   const [selectedRun, setSelectedRun] = createSignal<{ sessionId: string; workflowId: string }>()
+  const [expansionTarget, setExpansionTarget] = createSignal<{ notebookId: string; notebookTitle: string }>()
+  const [agentPrefill, setAgentPrefill] = createSignal<NoteAgentPrefill>()
   const host = createPollingResource(() => 'active-host', discoverHost)
   const profileKey = createMemo(() => host.data()?.bootstrap ? `riela-app:${host.data()!.bootstrap!.profile}` : 'cli-serve')
   const visibleNavigation = createMemo(() => host.data()?.mode === 'cli-serve' ? navigation.filter((item) => item.id === 'notes') : navigation)
@@ -90,7 +97,36 @@ export function App() {
           <Switch>
             <Match when={view() === 'notes'}>
               <Show when={profileKey()} keyed>{(_notesProfileKey) =>
-                <NotesView mode={host.data()!.mode} />
+                <NotesView
+                  mode={host.data()!.mode}
+                  profileName={host.data()?.bootstrap?.profile ?? ''}
+                  onExpandNotebook={host.data()?.mode === 'riela-app'
+                    ? (notebookId, notebookTitle) => setExpansionTarget({ notebookId, notebookTitle })
+                    : undefined}
+                  onAskAgent={host.data()?.mode === 'riela-app'
+                    ? (payload) => {
+                      setAgentPrefill({
+                        draft: `Ask about ${payload.title}:`,
+                        attachment: { name: `${payload.noteId}.md`, content: payload.bodyMarkdown },
+                      })
+                      setView('note-agent')
+                    }
+                    : undefined}
+                />
+              }</Show>
+            </Match>
+            <Match when={view() === 'note-agent'}>
+              <Show when={profileKey()} keyed>{(_agentProfileKey) =>
+                <NoteAgentView
+                  profileName={host.data()?.bootstrap?.profile ?? ''}
+                  prefill={agentPrefill()}
+                  onPrefillConsumed={() => setAgentPrefill(undefined)}
+                />
+              }</Show>
+            </Match>
+            <Match when={view() === 'note-config'}>
+              <Show when={profileKey()} keyed>{(_configProfileKey) =>
+                <NoteConfigAgentView profileName={host.data()?.bootstrap?.profile ?? ''} />
               }</Show>
             </Match>
             <Match when={view() === 'instances'}><InstancesView profileKey={profileKey()} profileName={host.data()?.bootstrap?.profile ?? ''} /></Match>
@@ -114,6 +150,16 @@ export function App() {
               }</Show>
             </Match>
           </Switch>
+          <Show when={expansionTarget()}>{(target) => (
+            <div class="expansion-overlay" role="dialog" aria-label={`Notebook expansion for ${target().notebookTitle}`}>
+              <NotebookExpansionPanel
+                profileName={host.data()?.bootstrap?.profile ?? ''}
+                notebookId={target().notebookId}
+                notebookTitle={target().notebookTitle}
+                onClose={() => setExpansionTarget(undefined)}
+              />
+            </div>
+          )}</Show>
         </Show>
       </main>
     </div>

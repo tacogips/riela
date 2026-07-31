@@ -1,0 +1,79 @@
+/* Assistant surfaces: note agent chat, config agent, notebook expansion.
+   Scoped to .assistant-* / .config-* classes so the shared dashboard styles in
+   styles.css stay untouched. */
+
+.assistant-panel { display: flex; flex-direction: column; gap: 16px; }
+.assistant-panel-actions { display: flex; align-items: center; gap: 10px; }
+
+.assistant-panel-header { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.assistant-panel-header > div:first-child { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.assistant-panel-header strong { overflow: hidden; color: #e7eff6; font-family: Georgia, serif; font-size: 18px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-panel-alert { display: flex; align-items: center; gap: 12px; }
+.assistant-panel-alert .error-banner { flex: 1; }
+
+.assistant-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; }
+.assistant-toolbar .check-row { margin-bottom: 0; gap: 8px; }
+.assistant-title-field { min-width: 280px; }
+.assistant-notebook-chip { padding: 5px 9px; border: 1px solid #25414a; border-radius: 999px; color: #79ccd0; background: #102027; font-size: 10px; }
+
+.assistant-transcript { display: flex; flex-direction: column; gap: 14px; }
+.assistant-turn, .config-proposal { display: flex; flex-direction: column; gap: 12px; padding: 15px; border: 1px solid #1c2b38; border-radius: 9px; background: #0a131d; }
+.assistant-message { display: flex; flex-direction: column; gap: 5px; }
+.assistant-message p { margin: 0; color: #cbd9e6; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
+.assistant-message.agent { padding-top: 10px; border-top: 1px solid #182632; }
+.assistant-role { color: #5e768a; font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.assistant-unsaved { color: #d6ba68; font-size: 10px; }
+
+.assistant-citations { display: flex; flex-wrap: wrap; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.assistant-citations li { max-width: 320px; overflow: hidden; padding: 4px 9px; border: 1px solid #27404b; border-radius: 999px; color: #8fc9cd; background: #0e1b23; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+
+.assistant-composer { display: flex; align-items: end; gap: 10px; padding-top: 4px; }
+.assistant-composer label { gap: 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.config-proposal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin: 0; }
+.config-proposal-grid > div { min-width: 0; padding: 8px 10px; border: 1px solid #182632; border-radius: 6px; }
+.config-proposal-grid dt { color: #5e768a; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
+.config-proposal-grid dd { margin: 4px 0 0; overflow-wrap: anywhere; color: #cbd9e6; font-size: 11px; }
+.config-proposal-actions { display: flex; justify-content: end; gap: 10px; }
+.config-proposal-applied { display: flex; flex-direction: column; gap: 4px; padding: 11px 13px; border: 1px solid #245043; border-radius: 8px; background: rgba(31,78,63,.22); font-size: 11px; }
+.config-proposal-applied strong { color: #7fcdb2; font-weight: 650; }
+.config-proposal-applied span { overflow-wrap: anywhere; color: #6f8799; font-size: 10px; }
+
+.expansion-panel { padding: 18px; border: 1px solid #1c2b38; border-radius: 11px; background: rgba(13,21,31,.86); }
+
+@media (max-width: 800px) {
+  .assistant-toolbar { align-items: stretch; flex-direction: column; }
+  .assistant-title-field { min-width: 0; }
+  .assistant-composer { align-items: stretch; flex-direction: column; }
+}
+
+.expansion-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(4, 8, 12, 0.62);
+}
+.expansion-overlay .expansion-panel {
+  width: min(760px, 100%);
+  max-height: min(80vh, 720px);
+  overflow-y: auto;
+}
+
+/* Composer attachments: chips above the composer, plus the inline read/size
+   errors the native bottom bar shows under the transcript. */
+.assistant-attachments { display: flex; flex-wrap: wrap; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.assistant-attachment-chip { display: flex; align-items: center; gap: 6px; max-width: 260px; padding: 4px 6px 4px 10px; border: 1px solid #27404b; border-radius: 999px; color: #cbd9e6; background: #0e1b23; font-size: 11px; }
+.assistant-attachment-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-attachment-remove { padding: 0 5px; border: 0; border-radius: 999px; color: #6f8799; background: none; font-size: 13px; line-height: 1; cursor: pointer; }
+.assistant-attachment-remove:hover:not(:disabled) { color: #e7eff6; }
+.assistant-attachment-remove:disabled { cursor: default; opacity: .5; }
+.assistant-attachment-error { margin: 0; color: #d98d7a; font-size: 11px; }
+.assistant-file-input { display: none; }
+.assistant-composer .assistant-attach-button { flex: 0 0 auto; }
+.assistant-turn-files { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 0; padding: 0; list-style: none; }
+.assistant-turn-files li { max-width: 240px; overflow: hidden; padding: 3px 8px; border: 1px solid #23323f; border-radius: 999px; color: #8fa4b6; background: #0d1720; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }

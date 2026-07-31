@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page, type Route } from '@playwright/test'
+import { readerPageSize } from '../src/components/NoteDetailLogic'
 
 const compositeId = 'project-workflow:/tmp/riela:review-loop'
 const plantedSecret = 'SENTINEL_SECRET_MUST_NOT_RENDER'
@@ -47,8 +48,12 @@ type FixtureOptions = {
   applyTagMutationDelay?: number
   removeFolderMutationDelay?: number
   secondNotebook?: boolean
-  notePreviewExactPage?: boolean
+  /** The reader window for `notebook-web` comes back exactly one page full, so
+   * the server still claims more notes are available. */
+  readerExactPage?: boolean
+  /** Delay applied to every `first-note` read of that notebook. */
   notesDelayByNotebook?: Record<string, number>
+  /** Scripted `first-note` reads of a notebook, applied in request order. */
   noteResponsesByNotebook?: Record<string, Array<{ delay?: number; title: string }>>
   scopeDelayByTag?: Record<string, number>
   notebookDelayAfterFirst?: number
@@ -64,7 +69,7 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
   const badResponses: string[] = []
   const notebookFilters: string[][] = []
   const notebookFilterGroups: string[][][] = []
-  const noteRequestCounts = new Map<string, number>()
+  const firstNoteRequestCounts = new Map<string, number>()
   let mutationCount = 0
   let notebookRequestCount = 0
   let configuredPort = 19091
@@ -103,6 +108,32 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
     tags: assignments(['Work']),
     firstNotePreview: '   ',
     noteCount: 0,
+  })
+  // One shared note fixture backs both the GraphQL `Notes` paging query and the
+  // REST reader endpoints, so the reader shows the same bodies either way.
+  const noteFixture = (notebookId: string, index: number, title: string, bodyMarkdown: string) => ({
+    noteId: `${notebookId}-note-${index + 1}`,
+    notebookId,
+    noteNumber: index + 1,
+    title,
+    bodyMarkdown,
+    readOnly: true,
+    createdAt: '2026-07-25T00:00:00Z',
+    updatedAt: '2026-07-25T00:00:00Z',
+  })
+  const notesInNotebook = (notebookId: string) => {
+    if (options.readerExactPage && notebookId === 'notebook-web') {
+      return Array.from({ length: readerPageSize }, (_, index) =>
+        noteFixture(notebookId, index, `Brief ${index + 1}`, `Launch brief ${index + 1}`))
+    }
+    if (notebookId === 'notebook-other') return [noteFixture(notebookId, 0, 'Other brief', '# Other brief')]
+    return [noteFixture(notebookId, 0, 'Brief', '# Launch brief')]
+  }
+  const notebookIdForNote = (noteId: string) => /^(.+)-note-\d+$/.exec(noteId)?.[1] ?? 'notebook-web'
+  const noteDetailEnvelope = (note: ReturnType<typeof noteFixture>) => ({
+    profile: 'e2e',
+    revision: 1,
+    detail: { note, comments: [], links: [], linkedNotes: {}, files: [] },
   })
   const matchesScope = (tagFilter: unknown, assignedTagNames: string[]): boolean => {
     if (!Array.isArray(tagFilter) || tagFilter.length === 0) return true
@@ -234,37 +265,10 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
     }
     if (operation === 'Notes') {
       const notebookId = String(body.variables?.notebookId ?? '')
-      const noteRequestIndex = noteRequestCounts.get(notebookId) ?? 0
-      noteRequestCounts.set(notebookId, noteRequestIndex + 1)
-      const noteResponse = options.noteResponsesByNotebook?.[notebookId]?.[noteRequestIndex]
-      const notesDelay = noteResponse?.delay ?? options.notesDelayByNotebook?.[notebookId]
-      if (notesDelay) await new Promise((resolve) => setTimeout(resolve, notesDelay))
       const offset = Number(body.variables?.offset ?? 0)
       const requestedLimit = Number(body.variables?.limit)
       const limit = Number.isInteger(requestedLimit) && requestedLimit > 0 ? requestedLimit : 0
-      const notes = options.notePreviewExactPage
-        ? offset === 0
-          ? Array.from({ length: limit }, (_, index) => ({
-              noteId: `note-${index + 1}`,
-              notebookId: 'notebook-web',
-              noteNumber: index + 1,
-              title: `Brief ${index + 1}`,
-              bodyMarkdown: `Launch brief ${index + 1}`,
-              readOnly: true,
-              createdAt: '2026-07-25T00:00:00Z',
-              updatedAt: '2026-07-25T00:00:00Z',
-            }))
-          : []
-        : [{
-            noteId: `note-${noteRequestIndex + 1}`,
-            notebookId,
-            noteNumber: 1,
-            title: noteResponse?.title ?? 'Brief',
-            bodyMarkdown: noteResponse?.title ?? '# Launch brief',
-            readOnly: true,
-            createdAt: '2026-07-25T00:00:00Z',
-            updatedAt: '2026-07-25T00:00:00Z',
-          }]
+      const notes = notesInNotebook(notebookId).slice(offset, offset + limit)
       return result({ notes: { result: accepted, value: notes } })
     }
     if (operation === 'SetProgress') {
@@ -344,8 +348,47 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
       if (options.mutationMode === 'conflict') return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'revision_conflict', message: 'Changed elsewhere' }, revision: 2 }) })
       return json({ profile: 'e2e', revision: 2, directories: [], projectDirectories: [], repositories: [], discovered: [] })
     }
+    // Reader endpoints (riela-app only): the pane reads the notebook's first
+    // note, then the window around it for paging.
+    const firstNotePath = /^\/api\/v1\/notes\/notebooks\/([^/]+)\/first-note$/.exec(url.pathname)
+    if (firstNotePath && request.method() === 'GET') {
+      const notebookId = decodeURIComponent(firstNotePath[1] ?? '')
+      const requestIndex = firstNoteRequestCounts.get(notebookId) ?? 0
+      firstNoteRequestCounts.set(notebookId, requestIndex + 1)
+      const scripted = options.noteResponsesByNotebook?.[notebookId]?.[requestIndex]
+      const delay = scripted?.delay ?? options.notesDelayByNotebook?.[notebookId]
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay))
+      const first = notesInNotebook(notebookId)[0]
+      if (!first) return json({ profile: 'e2e', revision: 1, detail: null })
+      return json(noteDetailEnvelope(scripted
+        ? { ...first, title: scripted.title, bodyMarkdown: `# ${scripted.title}` }
+        : first))
+    }
+    const notePath = /^\/api\/v1\/notes\/([^/]+)\/(detail|window)$/.exec(url.pathname)
+    if (notePath && request.method() === 'GET') {
+      const noteId = decodeURIComponent(notePath[1] ?? '')
+      const notes = notesInNotebook(notebookIdForNote(noteId))
+      if (notePath[2] === 'detail') {
+        const note = notes.find((candidate) => candidate.noteId === noteId)
+        if (!note) return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: { code: 'not_found', message: noteId }, revision: 1 }) })
+        return json(noteDetailEnvelope(note))
+      }
+      const pageSize = Number(url.searchParams.get('pageSize')) || readerPageSize
+      const page = notes.slice(0, pageSize)
+      return json({
+        profile: 'e2e',
+        revision: 1,
+        notes: page,
+        startOffset: 0,
+        hasEarlierNotes: false,
+        // An exactly full page leaves the server claiming more notes exist.
+        hasMoreNotes: page.length >= pageSize,
+      })
+    }
     if (url.pathname === '/api/v1/settings/assistant' && request.method() === 'GET') return json({ profile: 'e2e', revision: 1, assistance: '', vendor: 'openai-api', model: 'gpt-5.6' })
-    if (url.pathname === '/api/v1/settings/notes' && request.method() === 'GET') return json({ profile: 'e2e', revision: 1, exposesNoteAPI: false, s3ProfileCount: 0 })
+    if (url.pathname === '/api/v1/settings/notes' && request.method() === 'GET') return json({ profile: 'e2e', revision: 1, noteRoot: '/tmp/riela/notes', exposesNoteAPI: false, s3ProfileCount: 0, s3Profiles: [] })
+    if (url.pathname === '/api/v1/settings/notes/clients' && request.method() === 'GET') return json({ profile: 'e2e', revision: 1, items: [] })
+    if (url.pathname === '/api/v1/settings/appearance' && request.method() === 'GET') return json({ profile: 'e2e', revision: 1, colorScheme: 'dark', options: ['dark', 'light'] })
     if (url.pathname === '/api/v1/settings/web-server' && request.method() === 'GET') return json({ revision: 1, isEnabled: true, configuredPort, boundPort: 19091, restartRequired, state: 'running' })
     if (url.pathname === '/api/v1/settings/assistant' && request.method() === 'PUT') {
       mutationCount += 1
@@ -444,6 +487,12 @@ test('confirms a port change and keeps success and restart feedback visible', as
   const fixture = await installAPI(page)
   await page.goto('/')
   await page.getByRole('button', { name: 'Settings' }).click()
+  await expect(page.getByLabel('Note root')).toHaveValue('/tmp/riela/notes')
+  await expect(page.getByRole('heading', { name: 'S3 storage profile' })).toBeVisible()
+  await expect(page.getByLabel('Endpoint', { exact: true })).toHaveValue('')
+  await expect(page.getByRole('heading', { name: 'Registered clients' })).toBeVisible()
+  await expect(page.getByText('No registered clients.')).toBeVisible()
+  await expect(page.getByLabel('Native window appearance')).toHaveValue('dark')
   await page.getByLabel('Configured port').fill('19092')
   await page.getByRole('button', { name: 'Save server' }).click()
   await expect(page.getByText('Type CHANGE PORT to confirm that this page may become unreachable.')).toBeVisible()
@@ -462,7 +511,11 @@ test('keeps narrow navigation, focus, and content usable', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Instances' })).toHaveAttribute('aria-current', 'page')
   await page.keyboard.press('Tab')
   await expect(page.getByRole('link', { name: 'Skip to content' })).toBeFocused()
+  // The full navigation is wider than a phone viewport, so it has to scroll
+  // inside its own strip instead of widening the document.
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  expect(await page.locator('.sidebar nav').evaluate((element) =>
+    element.scrollWidth > element.clientWidth && getComputedStyle(element).overflowX === 'auto')).toBe(true)
   const columns = await page.locator('.instance-grid').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
   expect(columns).toBe(1)
   await captureEvidence(page, 'mobile-instances')
@@ -1010,12 +1063,12 @@ test('fails closed when scope refresh fails after folder removal', async ({ page
   fixture.assertClean()
 })
 
-test('rejects an older preview after closing and reopening the same notebook', async ({ page }) => {
+test('rejects an older note read after closing and reopening the same notebook', async ({ page }) => {
   const fixture = await installAPI(page, {
     noteResponsesByNotebook: {
       'notebook-web': [
-        { delay: 500, title: 'Stale preview' },
-        { delay: 50, title: 'Fresh preview' },
+        { delay: 500, title: 'Stale note' },
+        { delay: 50, title: 'Fresh note' },
       ],
     },
   })
@@ -1026,15 +1079,15 @@ test('rejects an older preview after closing and reopening the same notebook', a
   await page.getByRole('button', { name: 'Close notebook details' }).click()
   await notebook.click()
 
-  const detail = page.getByRole('complementary', { name: /Notebook details/ })
-  await expect(detail).toContainText('Fresh preview')
+  const reader = page.getByRole('complementary', { name: /Notebook details/ }).locator('.note-reader')
+  await expect(reader).toContainText('Fresh note')
   await page.waitForTimeout(550)
-  await expect(detail).toContainText('Fresh preview')
-  await expect(detail).not.toContainText('Stale preview')
+  await expect(reader).toContainText('Fresh note')
+  await expect(reader).not.toContainText('Stale note')
   fixture.assertClean()
 })
 
-test('keeps the newer notebook preview loading when an older notes response arrives', async ({ page }) => {
+test('keeps the newer note reader loading when an older first-note response arrives', async ({ page }) => {
   const fixture = await installAPI(page, {
     secondNotebook: true,
     notesDelayByNotebook: { 'notebook-web': 500, 'notebook-other': 1500 },
@@ -1045,25 +1098,37 @@ test('keeps the newer notebook preview loading when an older notes response arri
   await page.getByRole('button', { name: /Other notebook/ }).click()
   const detail = page.getByRole('complementary', { name: /Notebook details/ })
   await expect(detail).toContainText('Other notebook')
-  await expect.poll(() => fixture.requests.filter((request) => request === 'POST /graphql:Notes').length).toBe(2)
+  await expect.poll(() =>
+    fixture.requests.filter((request) => request.endsWith('/first-note')).length).toBe(2)
+
+  // The notebook-web read lands at ~500ms and must not resolve the newer read.
   await page.waitForTimeout(700)
-  await expect(detail).not.toContainText('No notes in this notebook.')
-  await expect(detail).toContainText('Loading notes…')
-  await expect(detail).toContainText('Launch brief')
+  await expect(detail).not.toContainText('This notebook has no notes yet.')
+  await expect(detail).not.toContainText('Launch brief')
+  await expect(detail).toContainText('Loading note…')
+  await expect(detail).toContainText('Other brief')
   fixture.assertClean()
 })
 
-test('ends note preview paging after an exact full page', async ({ page }) => {
-  const fixture = await installAPI(page, { notePreviewExactPage: true })
+test('ends reader paging after an exact full page', async ({ page }) => {
+  const fixture = await installAPI(page, { readerExactPage: true })
   await page.goto('/')
   await page.getByRole('button', { name: 'Notes' }).click()
   await page.getByRole('button', { name: /Web notebook/ }).click()
-  const detail = page.getByRole('complementary', { name: /Notebook details/ })
-  const loadMore = detail.getByRole('button', { name: 'Load more notes' })
-  await expect(loadMore).toBeVisible()
-  await loadMore.click()
-  await expect(loadMore).toHaveCount(0)
-  expect(fixture.requests.filter((request) => request === 'POST /graphql:Notes')).toHaveLength(2)
+  const reader = page.getByRole('complementary', { name: /Notebook details/ }).locator('.note-reader')
+  const position = reader.locator('.note-reader-position')
+  const nextNote = reader.getByRole('button', { name: 'Next note' })
+
+  // The full window claims more notes, so paging is still offered at its end.
+  await expect(position).toHaveText(`1 of ${readerPageSize}+`)
+  for (let step = 1; step < readerPageSize; step += 1) await nextNote.click()
+  await expect(position).toHaveText(`${readerPageSize} of ${readerPageSize}+`)
+  expect(fixture.requests.filter((request) => request === 'POST /graphql:Notes')).toHaveLength(0)
+
+  await nextNote.click()
+  await expect(nextNote).toBeDisabled()
+  await expect(position).toHaveText(`${readerPageSize} of ${readerPageSize}`)
+  expect(fixture.requests.filter((request) => request === 'POST /graphql:Notes')).toHaveLength(1)
   fixture.assertClean()
 })
 

@@ -79,11 +79,53 @@ export interface AssistantSettings {
   model: string
 }
 
+export interface NoteS3Profile {
+  name: string
+  endpoint: string
+  region: string
+  bucket: string
+  accessKeyIdEnv: string
+  secretAccessKeyEnv: string
+  sessionTokenEnv: string | null
+  keyPrefix: string
+}
+
 export interface NoteSettings {
   profile: string
   revision: number
+  noteRoot?: string
   exposesNoteAPI: boolean
   s3ProfileCount: number
+  s3Profiles?: NoteS3Profile[]
+}
+
+export interface NoteAPIClientInfo {
+  clientId: string
+  displayName: string
+  createdAt: string
+  lastSeenAt: string | null
+}
+
+export interface NoteClientsResponse {
+  profile: string
+  revision: number
+  items: NoteAPIClientInfo[]
+}
+
+export interface NoteClientRegistration {
+  profile: string
+  revision: number
+  code: string
+  registrationURL: string
+  qrText: string
+  expiresAt: string
+}
+
+export interface AppearanceSettings {
+  profile: string
+  revision: number
+  colorScheme: string
+  options: string[]
 }
 
 export interface WebServerSettings {

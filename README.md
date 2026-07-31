@@ -274,7 +274,7 @@ lease-owned, so concurrent CLI or app processes never double-run a live
 dispatch.
 
 `riela note` executes note operations through the note GraphQL service against
-the local store, so the CLI, built-in note add-ons, RielaNoteUI, and server note
+the local store, so the CLI, built-in note add-ons, the web note workspace, and server note
 surface share the same `NoteService` write path. Example workflow bundles live
 under `examples/note-quick-memo`, `examples/note-pdf-ingest`,
 `examples/note-youtube-transcript`, `examples/note-auto-tagging`,
@@ -308,7 +308,8 @@ separate confirmation before any link is written. Workflows can call
 `riela/note-graph-neighbors` for ranked path evidence and use `riela/note-get`
 with either `noteId` or `noteIds` to retrieve source bodies.
 
-In the RielaApp Notes window, the note detail pane is a read-first vertical
+In the Notes workspace (served by RielaApp's web UI — the former native Notes
+window was replaced by it), the note detail pane is a read-first vertical
 reader: each note occupies one snapping page, and approaching either edge of a
 mid-notebook window loads only the next bounded page instead of scanning the
 whole notebook. Each page keeps **Ask agent** and **Add comment** one tap away

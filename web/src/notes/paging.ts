@@ -10,6 +10,7 @@ export interface NotebookPageClient {
     sort: NoteListSort,
     tagFilterGroups: string[][],
     limit?: number,
+    created?: { createdAfter?: string; createdBefore?: string },
   ): Promise<Notebook[]>
 }
 
@@ -30,13 +31,14 @@ export async function loadNotebookPages(
   isCurrent: () => boolean,
   onPage: (notebooks: Notebook[], hasMore: boolean) => void,
   pageCap = notebookPageCap,
+  created: { createdAfter?: string; createdBefore?: string } = {},
 ): Promise<Notebook[] | undefined> {
   const result: Notebook[] = []
   const seen = new Set<string>()
   let offset = 0
   const effectivePageCap = Math.min(Math.max(pageCap, 1), notebookPageCap)
   for (let pageIndex = 0; pageIndex < effectivePageCap; pageIndex += 1) {
-    const page = await client.notebooks(offset, sort, tagFilterGroups, notebookPageLimit)
+    const page = await client.notebooks(offset, sort, tagFilterGroups, notebookPageLimit, created)
     if (!isCurrent()) return undefined
     let added = 0
     for (const notebook of page) {

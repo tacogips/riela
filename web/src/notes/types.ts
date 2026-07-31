@@ -68,6 +68,14 @@ export interface Note {
   updatedAt: string
 }
 
+export interface NoteSearchResult {
+  note: Note
+  snippet: string
+  rank: number
+  matchedTags: NoteTag[]
+  isLinkedNeighbor: boolean
+}
+
 export interface QueryPayload<T> {
   result: ControlResult
   value: T

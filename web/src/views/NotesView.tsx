@@ -7,6 +7,17 @@ import {
   onMount,
 } from 'solid-js'
 import { NoteGraphQLClient } from '../notes/client'
+import { NoteWorkspaceClient } from '../notes/workspace'
+import { NoteComposePanel, type NoteComposeDestination } from '../components/NoteComposePanel'
+import {
+  createdBoundInputIsValid,
+  createdBounds,
+  createdRangeOptions,
+  type CreatedRange,
+} from '../notes/createdFilter'
+import { NoteDetailPane } from '../components/NoteDetailPane'
+import { NoteSearchPopup } from '../components/NoteSearchPopup'
+import '../notes-detail.css'
 import {
   NotebookProgressController,
   NotebookScopeController,
@@ -99,8 +110,17 @@ export function progressLabelFor(progress: string, statuses: KanbanStatus[]): st
 const boardLockStoragePrefix = 'riela-note-board-lock:'
 type RefreshOutcome = 'completed' | 'failed' | 'superseded'
 
-export function NotesView(props: { mode: HostMode }) {
+export function NotesView(props: {
+  mode: HostMode
+  profileName?: string
+  onExpandNotebook?: (notebookId: string, notebookTitle: string) => void
+  onAskAgent?: (payload: { noteId: string; title: string; bodyMarkdown: string }) => void
+}) {
   const client = new NoteGraphQLClient(props.mode)
+  // The REST note workspace only exists when RielaApp hosts the web app; in
+  // cli-serve mode the pane stays on the GraphQL read-only preview.
+  const workspace = new NoteWorkspaceClient(() => props.profileName ?? '')
+  const workspaceEnabled = () => props.mode === 'riela-app'
   const scopeController = new NotebookScopeController()
   const [tags, setTags] = createSignal<NoteTag[]>([])
   const [tagClasses, setTagClasses] = createSignal<NoteTagClass[]>([])
@@ -120,11 +140,20 @@ export function NotesView(props: { mode: HostMode }) {
   })
   const [boardLocked, setBoardLocked] = createSignal(true)
   const [sort, setSort] = createSignal<NoteListSort>('updatedAtDesc')
+  const [createdRange, setCreatedRange] = createSignal<CreatedRange>('any')
+  const [customCreatedAfter, setCustomCreatedAfter] = createSignal('')
+  const [customCreatedBefore, setCustomCreatedBefore] = createSignal('')
   const [loading, setLoading] = createSignal(true)
   const [draggingNotebookId, setDraggingNotebookId] = createSignal<string>()
   const [error, setError] = createSignal('')
   const [message, setMessage] = createSignal('')
   const [selectedNotebookId, setSelectedNotebookId] = createSignal<string>()
+  // A note opened from search or from a link can live outside the active scope;
+  // its notebook is fetched on demand so the detail aside can still render it.
+  const [externalNotebook, setExternalNotebook] = createSignal<Notebook>()
+  const [activeNoteId, setActiveNoteId] = createSignal<string>()
+  const [searchOpen, setSearchOpen] = createSignal(false)
+  const [composeDestination, setComposeDestination] = createSignal<NoteComposeDestination>()
   const [preview, setPreview] = createSignal<Note[]>([])
   const [previewOffset, setPreviewOffset] = createSignal(0)
   const [previewHasMore, setPreviewHasMore] = createSignal(false)
@@ -248,8 +277,13 @@ export function NotesView(props: { mode: HostMode }) {
   })
   const selectedFolder = createMemo(() => folders().find((tag) => tag.tagId === selectedFolderId()))
   const selectedScopeTag = createMemo(() => tags().find((tag) => tag.tagId === selectedTagId()))
-  const selectedNotebook = createMemo(() =>
-    notebooks().find((notebook) => notebook.notebookId === selectedNotebookId()))
+  const selectedNotebook = createMemo(() => {
+    const notebookId = selectedNotebookId()
+    const inScope = notebooks().find((notebook) => notebook.notebookId === notebookId)
+    if (inScope) return inScope
+    const external = externalNotebook()
+    return external?.notebookId === notebookId ? external : undefined
+  })
   const activeFolderTreeTagId = createMemo(() => {
     const focused = focusedTagId()
     if (focused && folders().some((tag) => tag.tagId === focused)) return focused
@@ -323,6 +357,26 @@ export function NotesView(props: { mode: HostMode }) {
       document.removeEventListener('dragend', releaseDrag)
       document.removeEventListener('drop', releaseDrag)
     })
+    // Browser-safe subset of the native shortcut set: `/` opens search (⌘F
+    // equivalent), `n` composes a memo (⌘N) and `N` a note in the selected
+    // notebook (⇧⌘N). Only when the workspace exists and no field is focused.
+    const shortcutHandler = (event: KeyboardEvent) => {
+      if (!workspaceEnabled() || event.metaKey || event.ctrlKey || event.altKey) return
+      const target = event.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return
+      if (event.key === '/') {
+        event.preventDefault()
+        setSearchOpen(true)
+      } else if (event.key === 'n') {
+        event.preventDefault()
+        setComposeDestination('memo')
+      } else if (event.key === 'N' && selectedNotebookId()) {
+        event.preventDefault()
+        setComposeDestination('notebook')
+      }
+    }
+    window.addEventListener('keydown', shortcutHandler)
+    onCleanup(() => window.removeEventListener('keydown', shortcutHandler))
   })
 
   const refresh = async (
@@ -366,6 +420,8 @@ export function NotesView(props: { mode: HostMode }) {
       }
       if (catalogClearedScope) {
         setSelectedNotebookId(undefined)
+        setExternalNotebook(undefined)
+        setActiveNoteId(undefined)
         detailReturnNotebookId = undefined
         setDraggingNotebookId(undefined)
         previewGeneration += 1
@@ -388,6 +444,8 @@ export function NotesView(props: { mode: HostMode }) {
         (values) => {
           acceptedPartialNotebooks = values
         },
+        undefined,
+        createdBounds(createdRange(), customCreatedAfter(), customCreatedBefore()),
       )
       if (!nextNotebooks || generation !== loadGeneration || !scopeController.isCurrent(scopeSnapshot)) {
         return 'superseded'
@@ -422,6 +480,8 @@ export function NotesView(props: { mode: HostMode }) {
       : scopeController.select(constraint)
     setActiveScope(snapshot.scope)
     setSelectedNotebookId(undefined)
+    setExternalNotebook(undefined)
+    setActiveNoteId(undefined)
     detailReturnNotebookId = undefined
     previewGeneration += 1
     setPreview([])
@@ -446,6 +506,8 @@ export function NotesView(props: { mode: HostMode }) {
     const snapshot = scopeController.remove(tagId)
     setActiveScope(snapshot.scope)
     setSelectedNotebookId(undefined)
+    setExternalNotebook(undefined)
+    setActiveNoteId(undefined)
     detailReturnNotebookId = undefined
     previewGeneration += 1
     setPreview([])
@@ -458,23 +520,82 @@ export function NotesView(props: { mode: HostMode }) {
     void refresh()
   }
 
+  // Mirrors the native root-hosted unsaved-edit guard: every selection path
+  // confirms before discarding an in-flight body edit.
+  let detailDirty = false
+  const confirmDiscardIfDirty = (): boolean => {
+    if (!detailDirty) return true
+    const discard = window.confirm('Discard unsaved note changes?')
+    if (discard) detailDirty = false
+    return discard
+  }
+
   const selectNotebook = async (notebook: Notebook, activator?: HTMLButtonElement) => {
+    if (selectedNotebookId() !== notebook.notebookId && !confirmDiscardIfDirty()) return
     previewGeneration += 1
     detailReturnNotebookId = notebook.notebookId
     if (activator) notebookActivators.set(notebook.notebookId, activator)
     setSelectedNotebookId(notebook.notebookId)
+    setExternalNotebook(undefined)
+    setActiveNoteId(undefined)
     setPreview([])
     setPreviewOffset(0)
     setPreviewHasMore(false)
     setAddGroupKey('')
     setAddTagId('')
+    // The reader pane loads notes over REST; the GraphQL preview is only the
+    // cli-serve fallback, so it is not fetched when the pane is available.
+    if (workspaceEnabled()) return
     await loadPreview(notebook.notebookId, 0, false, previewGeneration)
   }
 
+  /** Opens a note found through search or a link, pulling in its notebook when
+   * that notebook is outside the active scope. */
+  const openNote = async (noteId: string, notebookId: string) => {
+    if (activeNoteId() !== noteId && !confirmDiscardIfDirty()) return
+    previewGeneration += 1
+    setActiveNoteId(noteId)
+    setAddGroupKey('')
+    setAddTagId('')
+    setPreview([])
+    setPreviewHasMore(false)
+    if (selectedNotebookId() === notebookId) return
+    detailReturnNotebookId = notebookId
+    setSelectedNotebookId(notebookId)
+    if (notebooks().some((notebook) => notebook.notebookId === notebookId)) {
+      setExternalNotebook(undefined)
+      return
+    }
+    try {
+      const notebook = await client.notebook(notebookId)
+      if (selectedNotebookId() !== notebookId) return
+      setExternalNotebook(notebook)
+    } catch (notebookError) {
+      setMessage(`Could not open that note's notebook: ${errorMessage(notebookError)}`)
+    }
+  }
+
+  const createNote = async (destination: NoteComposeDestination, bodyMarkdown: string) => {
+    const notebookId = selectedNotebookId()
+    const detail = destination === 'memo' || !notebookId
+      ? await workspace.createMemo(bodyMarkdown)
+      : await workspace.createNote(notebookId, bodyMarkdown)
+    setComposeDestination(undefined)
+    setMessage(`Created “${detail.note.title ?? `Note ${detail.note.noteNumber}`}”.`)
+    await openNote(detail.note.noteId, detail.note.notebookId)
+    await refresh()
+  }
+
   const closeDetail = (restoreFocus = true) => {
+    // Only user-initiated closes prompt; background reconciliation (a vanished
+    // notebook or scope change) must never block on a confirm dialog.
+    if (restoreFocus && !confirmDiscardIfDirty()) return
+    detailDirty = false
     previewGeneration += 1
     const notebookId = detailReturnNotebookId
     setSelectedNotebookId(undefined)
+    setExternalNotebook(undefined)
+    setActiveNoteId(undefined)
     setPreview([])
     setPreviewHasMore(false)
     setPreviewLoading(false)
@@ -789,7 +910,26 @@ export function NotesView(props: { mode: HostMode }) {
           <label class="sort-control"><span>Sort</span><select value={sort()} onChange={(event) => { setSort(event.currentTarget.value as NoteListSort); void refresh() }}>
             <option value="updatedAtDesc">Recently updated</option><option value="title">Title</option><option value="createdAtDesc">Newest</option><option value="createdAtAsc">Oldest</option>
           </select></label>
+          <label class="sort-control"><span>Created</span><select value={createdRange()} onChange={(event) => { setCreatedRange(event.currentTarget.value as CreatedRange); void refresh() }}>
+            <For each={createdRangeOptions}>{(option) => <option value={option.value}>{option.label}</option>}</For>
+          </select></label>
+          <Show when={createdRange() === 'custom'}>
+            <label class="sort-control"><span>After</span>
+              <input class="created-bound" classList={{ invalid: !createdBoundInputIsValid(customCreatedAfter()) }}
+                placeholder="YYYY-MM-DD" value={customCreatedAfter()}
+                onChange={(event) => { setCustomCreatedAfter(event.currentTarget.value); if (createdBoundInputIsValid(event.currentTarget.value)) void refresh() }} />
+            </label>
+            <label class="sort-control"><span>Before</span>
+              <input class="created-bound" classList={{ invalid: !createdBoundInputIsValid(customCreatedBefore()) }}
+                placeholder="YYYY-MM-DD" value={customCreatedBefore()}
+                onChange={(event) => { setCustomCreatedBefore(event.currentTarget.value); if (createdBoundInputIsValid(event.currentTarget.value)) void refresh() }} />
+            </label>
+          </Show>
           <button class="secondary lock-toggle" aria-pressed={boardLocked()} title={boardLocked() ? 'Board is read-only; click to allow edits' : 'Board is editable; click to lock'} onClick={toggleBoardLock}>{boardLocked() ? 'Locked' : 'Editable'}</button>
+          <Show when={workspaceEnabled()}>
+            <button class="secondary" onClick={() => setSearchOpen(true)}>Search notes</button>
+            <button onClick={() => setComposeDestination('memo')}>New memo</button>
+          </Show>
           <button class="secondary" onClick={() => void refresh()}>Refresh</button>
         </div>
       </header>
@@ -857,6 +997,14 @@ export function NotesView(props: { mode: HostMode }) {
 
     <Show when={selectedNotebook()}>{(notebook) => <aside class="note-detail" aria-label={`Notebook details for ${notebook().title}`}>
       <header><div><span class="eyebrow">NOTEBOOK</span><h2>{notebook().title}</h2></div><button class="detail-close secondary" aria-label="Close notebook details" onClick={() => closeDetail()}>×</button></header>
+      <Show when={workspaceEnabled()}>
+        <div class="notebook-actions">
+          <button class="secondary" onClick={() => setComposeDestination('notebook')}>Add note</button>
+          <Show when={props.onExpandNotebook}>
+            <button class="secondary" onClick={() => props.onExpandNotebook?.(notebook().notebookId, notebook().title)}>Expand with Agent</button>
+          </Show>
+        </div>
+      </Show>
       <dl><div><dt>Progress</dt><dd><select value={notebook().progress} disabled={boardLocked()} onChange={(event) => void moveProgress(notebook(), event.currentTarget.value)}><For each={boardStatuses()}>{(status) => <option value={status.name}>{statusLabel(status)}</option>}</For></select></dd></div><div><dt>Updated</dt><dd>{formatDate(notebook().updatedAt)}</dd></div></dl>
       <section class="assignment-group"><h3>Folder</h3>
         <Show when={folderAssignments()}>{(group) => <div class="detail-chips"><For each={group().assignments}>{(assignment) => <TagChip assignment={assignment} busy={membershipBusy()} onRemove={removeTag} />}</For></div>}</Show>
@@ -879,11 +1027,42 @@ export function NotesView(props: { mode: HostMode }) {
           if (tag) void applyExistingTag(tag)
         }}>Add selected tag</button>
       </section>
-      <section class="note-preview"><h3>Read-only notes</h3><Show when={preview().length === 0 && !previewLoading()}><p>No notes in this notebook.</p></Show><For each={preview()}>{(note) => <article><div><strong>{note.title ?? `Note ${note.noteNumber}`}</strong><span>{formatDate(note.updatedAt)}</span></div><pre>{note.bodyMarkdown}</pre></article>}</For>
-        <Show when={previewLoading()}><div class="loading-state"><span class="loader" />Loading notes…</div></Show>
-        <Show when={previewHasMore()}><button class="secondary" disabled={previewLoading()} onClick={() => void loadPreview(notebook().notebookId, previewOffset(), true)}>Load more notes</button></Show>
-      </section>
+      <Show when={workspaceEnabled()}>
+        <NoteDetailPane
+          notebookId={notebook().notebookId}
+          notebookTitle={notebook().title}
+          noteId={activeNoteId()}
+          client={client}
+          workspace={workspace}
+          onOpenNote={(noteId, notebookId) => void openNote(noteId, notebookId)}
+          onNotebookChanged={() => void refresh()}
+          onAskAgent={props.onAskAgent}
+          onDirtyChange={(dirty) => { detailDirty = dirty }}
+        />
+      </Show>
+      <Show when={!workspaceEnabled()}>
+        <section class="note-preview"><h3>Read-only notes</h3><Show when={preview().length === 0 && !previewLoading()}><p>No notes in this notebook.</p></Show><For each={preview()}>{(note) => <article><div><strong>{note.title ?? `Note ${note.noteNumber}`}</strong><span>{formatDate(note.updatedAt)}</span></div><pre>{note.bodyMarkdown}</pre></article>}</For>
+          <Show when={previewLoading()}><div class="loading-state"><span class="loader" />Loading notes…</div></Show>
+          <Show when={previewHasMore()}><button class="secondary" disabled={previewLoading()} onClick={() => void loadPreview(notebook().notebookId, previewOffset(), true)}>Load more notes</button></Show>
+        </section>
+      </Show>
     </aside>}</Show>
+
+    <Show when={workspaceEnabled() && searchOpen()}>
+      <NoteSearchPopup
+        client={client}
+        onOpenNote={(noteId, notebookId) => void openNote(noteId, notebookId)}
+        onClose={() => setSearchOpen(false)}
+      />
+    </Show>
+    <Show when={workspaceEnabled() && composeDestination()}>{(destination) =>
+      <NoteComposePanel
+        destination={destination()}
+        notebookTitle={selectedNotebook()?.title}
+        onSave={(bodyMarkdown) => createNote(destination(), bodyMarkdown)}
+        onClose={() => setComposeDestination(undefined)}
+      />}
+    </Show>
   </section>
 }
 

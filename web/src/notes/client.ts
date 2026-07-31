@@ -2,12 +2,12 @@ import { api } from '../api'
 import type {
   GraphQLEnvelope,
   HostMode,
-  KanbanStatus,
   KanbanStatusSet,
   MutationPayload,
   Note,
   Notebook,
   NoteListSort,
+  NoteSearchResult,
   NoteTag,
   NoteTagClass,
   QueryPayload,
@@ -100,15 +100,24 @@ export class NoteGraphQLClient {
     sort: NoteListSort,
     tagFilterGroups: string[][],
     limit = notebookPageLimit,
+    created: { createdAfter?: string; createdBefore?: string } = {},
   ): Promise<Notebook[]> {
     const values = await this.queryValue<{ notebooks: QueryPayload<Notebook[]> }, Notebook[]>('Notebooks', `
-      query Notebooks($limit: Int, $offset: Int, $sort: NoteListSort, $tagFilter: [String!], $tagFilterGroups: [[String!]!]) {
-        notebooks(limit: $limit, offset: $offset, sort: $sort, tagFilter: $tagFilter, tagFilterGroups: $tagFilterGroups) {
+      query Notebooks($limit: Int, $offset: Int, $sort: NoteListSort, $tagFilter: [String!], $tagFilterGroups: [[String!]!], $createdAfter: String, $createdBefore: String) {
+        notebooks(limit: $limit, offset: $offset, sort: $sort, tagFilter: $tagFilter, tagFilterGroups: $tagFilterGroups, createdAfter: $createdAfter, createdBefore: $createdBefore) {
           result { accepted status diagnostics }
           value { notebookId title progress createdAt updatedAt firstNotePreview noteCount tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
         }
       }
-    `, { limit, offset, sort, tagFilter: [], tagFilterGroups }, (data) => data.notebooks)
+    `, {
+      limit,
+      offset,
+      sort,
+      tagFilter: [],
+      tagFilterGroups,
+      ...(created.createdAfter ? { createdAfter: created.createdAfter } : {}),
+      ...(created.createdBefore ? { createdBefore: created.createdBefore } : {}),
+    }, (data) => data.notebooks)
     return values.map(normalizeNotebook)
   }
 
@@ -244,6 +253,69 @@ export class NoteGraphQLClient {
     `, { tagName, setId }, 'assignKanbanStatusSet')
     if (!payload.tag) throw new NoteTransportError('The server did not return the updated tag.', 'result')
     return payload.tag
+  }
+
+  async searchNotes(input: {
+    query: string
+    tagFilter?: string[]
+    classFilter?: string[]
+    sort?: string
+    createdAfter?: string
+    createdBefore?: string
+    includeLinked?: boolean
+    limit?: number
+    offset?: number
+  }): Promise<NoteSearchResult[]> {
+    return this.queryValue<{ searchNotes: QueryPayload<NoteSearchResult[]> }, NoteSearchResult[]>('SearchNotes', `
+      query SearchNotes($query: String!, $tagFilter: [String!], $classFilter: [String!], $sort: String, $createdAfter: String, $createdBefore: String, $includeLinked: Boolean, $limit: Int, $offset: Int) {
+        searchNotes(query: $query, tagFilter: $tagFilter, classFilter: $classFilter, sort: $sort, createdAfter: $createdAfter, createdBefore: $createdBefore, includeLinked: $includeLinked, limit: $limit, offset: $offset) {
+          result { accepted status diagnostics }
+          value { snippet rank isLinkedNeighbor note { noteId notebookId noteNumber title bodyMarkdown readOnly createdAt updatedAt } matchedTags { tagId name classId parentTagId isSystem createdAt } }
+        }
+      }
+    `, {
+      query: input.query,
+      tagFilter: input.tagFilter ?? [],
+      classFilter: input.classFilter ?? [],
+      ...(input.sort ? { sort: input.sort } : {}),
+      ...(input.createdAfter ? { createdAfter: input.createdAfter } : {}),
+      ...(input.createdBefore ? { createdBefore: input.createdBefore } : {}),
+      includeLinked: input.includeLinked ?? false,
+      limit: input.limit ?? 20,
+      offset: input.offset ?? 0,
+    }, (data) => data.searchNotes)
+  }
+
+  async setNoteReadOnly(noteId: string, readOnly: boolean): Promise<Note> {
+    const data = await this.request<{ setNoteReadOnly: { result: { accepted: boolean; status: string; diagnostics: string[] }; note?: Note | null } }>('SetNoteReadOnly', `
+      mutation SetNoteReadOnly($noteId: String!, $readOnly: Boolean!) {
+        setNoteReadOnly(noteId: $noteId, readOnly: $readOnly) {
+          result { accepted status diagnostics }
+          note { noteId notebookId noteNumber title bodyMarkdown readOnly createdAt updatedAt }
+        }
+      }
+    `, { noteId, readOnly })
+    ensureAccepted(data.setNoteReadOnly.result)
+    if (!data.setNoteReadOnly.note) throw new NoteTransportError('The server did not return the updated note.', 'result')
+    return data.setNoteReadOnly.note
+  }
+
+  async applyNoteTag(noteId: string, tagName: string, classId?: string): Promise<void> {
+    const data = await this.request<{ applyNoteTags: { result: { accepted: boolean; status: string; diagnostics: string[] } } }>('ApplyNoteTags', `
+      mutation ApplyNoteTags($input: ApplyNoteTagsInput!) {
+        applyNoteTags(input: $input) { result { accepted status diagnostics } }
+      }
+    `, { input: { noteId, tags: [{ name: tagName, ...(classId ? { classId } : {}) }], provenance: 'human', assignedBy: 'riela-web' } })
+    ensureAccepted(data.applyNoteTags.result)
+  }
+
+  async removeNoteTag(noteId: string, tagName: string): Promise<void> {
+    const data = await this.request<{ removeNoteTag: { result: { accepted: boolean; status: string; diagnostics: string[] } } }>('RemoveNoteTag', `
+      mutation RemoveNoteTag($noteId: String!, $tagName: String!, $provenance: String) {
+        removeNoteTag(noteId: $noteId, tagName: $tagName, provenance: $provenance) { result { accepted status diagnostics } }
+      }
+    `, { noteId, tagName, provenance: 'human' })
+    ensureAccepted(data.removeNoteTag.result)
   }
 
   private async notebookMutation(

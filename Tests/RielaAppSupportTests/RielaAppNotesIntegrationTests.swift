@@ -2,12 +2,16 @@
 import AppKit
 import RielaAppSupport
 import RielaNote
-@testable import RielaNoteUI
+@testable import RielaNoteWorkspace
 import RielaServer
-import SwiftUI
 @testable import RielaApp
 import XCTest
 
+/// Integration coverage for the note seams that outlived the SwiftUI Notes and
+/// Note Settings windows: the profile-scoped note root, the settings store, S3
+/// profile resolution, the registration challenge flow, and the daemon server
+/// configuration derived from note settings. The user-facing surfaces now live
+/// in the web app (`web/src`) backed by the /api/v1 note workspace routes.
 @MainActor
 final class RielaAppNotesIntegrationTests: XCTestCase {
   func testNoteRootUsesHomeScopedProfileDirectory() throws {
@@ -20,37 +24,19 @@ final class RielaAppNotesIntegrationTests: XCTestCase {
     XCTAssertEqual(noteRoot.path, root.appendingPathComponent(".riela/profiles/work-team/note").path)
   }
 
-  func testStatusMenuContainsNotesActions() throws {
+  func testStatusMenuOpensNotesOnTheWeb() throws {
     let app = RielaApp()
     app.rebuildMenu()
 
     let titles = try XCTUnwrap(app.statusItem.menu?.items.map(\.title))
 
     XCTAssertEqual(titles.first, "Instances...")
-    XCTAssertTrue(titles.contains("Notes..."))
-    XCTAssertTrue(titles.contains("Note Settings..."))
-    XCTAssertEqual(app.statusItem.menu?.items.first { $0.title == "Notes..." }?.target as? RielaApp, app)
+    XCTAssertTrue(titles.contains("Notes (Web)..."))
+    XCTAssertFalse(titles.contains("Note Settings..."))
+    XCTAssertEqual(app.statusItem.menu?.items.first { $0.title == "Notes (Web)..." }?.target as? RielaApp, app)
   }
 
-  func testNoteWindowHostsRielaNoteRootViewAndCreatesStore() throws {
-    let scratch = try scratchRoot(name: "riela-app-note-window-\(UUID().uuidString)")
-    let noteRoot = scratch
-      .appendingPathComponent("note", isDirectory: true)
-
-    let controller = try NoteWindowController(noteRoot: noteRoot, profileName: .default)
-    let contentController = try XCTUnwrap(controller.window?.contentViewController)
-    let pngData = try renderPNGData(view: contentController.view)
-    let screenshotURL = scratch.appendingPathComponent("note-window-render.png")
-    try pngData.write(to: screenshotURL)
-
-    XCTAssertTrue(FileManager.default.fileExists(atPath: noteRoot.path))
-    XCTAssertTrue(FileManager.default.fileExists(atPath: noteRoot.appendingPathComponent("note-store.sqlite").path))
-    XCTAssertTrue(String(describing: type(of: contentController)).contains("RielaNoteRootView"))
-    XCTAssertGreaterThan(pngData.count, 1_000)
-    controller.close()
-  }
-
-  func testNoteWindowConfiguresNotebookExpansionProviderOnlyWhenBundleIsDiscoverable() throws {
+  func testNotebookExpansionProviderConfiguredOnlyWhenBundleIsDiscoverable() throws {
     let scratch = try scratchRoot(name: "riela-app-note-expansion-provider-\(UUID().uuidString)")
     let workflowRoot = scratch.appendingPathComponent("examples", isDirectory: true)
     let workflowDirectory = workflowRoot.appendingPathComponent("note-notebook-compact", isDirectory: true)
@@ -59,108 +45,22 @@ final class RielaAppNotesIntegrationTests: XCTestCase {
     let executable = scratch.appendingPathComponent("riela")
     try "#!/bin/sh\nexit 0\n".write(to: executable, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
-    let configured = try NoteWindowController(
-      noteRoot: scratch.appendingPathComponent("configured-note", isDirectory: true),
-      profileName: .default,
-      environment: [
-        "RIELA_NOTE_NOTEBOOK_COMPACT_WORKFLOW_DIR": workflowRoot.path,
-        "RIELA_NOTE_NOTEBOOK_COMPACT_RIELA_EXECUTABLE": executable.path
-      ]
-    )
 
-    XCTAssertTrue(configured.notebookExpansionProviderConfigured)
-    configured.close()
-
-    let unavailable = try NoteWindowController(
-      noteRoot: scratch.appendingPathComponent("unavailable-note", isDirectory: true),
-      profileName: .default,
-      environment: [
-        "RIELA_NOTE_NOTEBOOK_COMPACT_WORKFLOW_DIR": scratch
-          .appendingPathComponent("missing-examples", isDirectory: true).path,
-        "RIELA_NOTE_NOTEBOOK_COMPACT_RIELA_EXECUTABLE": scratch
-          .appendingPathComponent("missing-riela").path
-      ]
-    )
-
-    XCTAssertFalse(unavailable.notebookExpansionProviderConfigured)
-    unavailable.close()
+    XCTAssertNotNil(RielaNoteWorkflowNotebookCompactProvider.defaultProvider(environment: [
+      "RIELA_NOTE_NOTEBOOK_COMPACT_WORKFLOW_DIR": workflowRoot.path,
+      "RIELA_NOTE_NOTEBOOK_COMPACT_RIELA_EXECUTABLE": executable.path
+    ]))
+    XCTAssertNil(RielaNoteWorkflowNotebookCompactProvider.defaultProvider(environment: [
+      "RIELA_NOTE_NOTEBOOK_COMPACT_WORKFLOW_DIR": scratch
+        .appendingPathComponent("missing-examples", isDirectory: true).path,
+      "RIELA_NOTE_NOTEBOOK_COMPACT_RIELA_EXECUTABLE": scratch
+        .appendingPathComponent("missing-riela").path
+    ]))
   }
 
-  func testRegularSearchPopupRendersActiveTagKanban() async throws {
-    let noteRoot = try scratchRoot(
-      name: "riela-app-note-kanban-\(UUID().uuidString)"
-    )
-    let service = try NoteService(
-      driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot.path)
-    )
-    let parent = try service.defineTag(name: "portfolio")
-    let child = try service.defineTag(
-      name: "project",
-      parentTagId: parent.tagId
-    )
-    let notebook = try service.createNotebook(title: "Current project")
-    _ = try service.applyNotebookTags(
-      notebookId: notebook.notebookId,
-      tags: [child.name],
-      provenance: .human
-    )
-    _ = try service.setNotebookProgress(
-      notebookId: notebook.notebookId,
-      progress: "progress"
-    )
-    let viewModel = RielaNoteLibraryViewModel(
-      client: NoteServiceRielaNoteUIClient(service: service)
-    )
-    await viewModel.load()
-    await viewModel.toggleSearchTag(parent.name)
-    let popup = RielaNoteSearchPopupSheet(
-      viewModel: viewModel,
-      onClose: {}
-    )
-    XCTAssertEqual(popup.contentMode, .tagKanban)
-
-    let hostingController = NSHostingController(rootView: popup)
-    let pngData = try renderPNGData(view: hostingController.view)
-    try pngData.write(
-      to: noteRoot.appendingPathComponent("tag-kanban-popup-render.png")
-    )
-
-    XCTAssertGreaterThan(pngData.count, 1_000)
-    XCTAssertEqual(viewModel.notebooks.map(\.notebookId), [notebook.notebookId])
-    XCTAssertEqual(viewModel.notebooks.first?.progress, "progress")
-
-    let failureMessage = "Progress update failed."
-    viewModel.notebookProgressMutationFailure = viewModel.notebookSnapshotContext.map {
-      RielaNoteNotebookMutationFailure(
-        context: $0,
-        message: failureMessage
-      )
-    }
-    viewModel.state = .failed(failureMessage)
-    let failedPopup = RielaNoteSearchPopupSheet(
-      viewModel: viewModel,
-      onClose: {}
-    )
-    XCTAssertEqual(
-      failedPopup.contentMode,
-      .tagKanbanFailed(failureMessage)
-    )
-    let failedHostingController = NSHostingController(rootView: failedPopup)
-    let failedPNGData = try renderPNGData(view: failedHostingController.view)
-    try failedPNGData.write(
-      to: noteRoot.appendingPathComponent("tag-kanban-popup-failure-render.png")
-    )
-    XCTAssertGreaterThan(failedPNGData.count, 1_000)
-  }
-
-  func testNoteWindowLoadsS3ProfileFromEnvironment() throws {
-    let scratch = try scratchRoot(name: "riela-app-note-window-s3-\(UUID().uuidString)")
-    let noteRoot = scratch
-      .appendingPathComponent("note", isDirectory: true)
-
-    let controller = try NoteWindowController(
-      noteRoot: noteRoot,
-      profileName: .default,
+  func testS3ProfileResolvesFromEnvironment() throws {
+    let profiles = try RielaAppNoteS3ProfileResolver().profiles(
+      settings: RielaAppNoteSettings(),
       environment: [
         "RIELA_NOTE_S3_PROFILE": "app-s3",
         "RIELA_NOTE_S3_ENDPOINT": "https://s3.example.test",
@@ -172,18 +72,13 @@ final class RielaAppNotesIntegrationTests: XCTestCase {
       ]
     )
 
-    XCTAssertEqual(controller.s3Profiles.map(\.name), ["app-s3"])
-    XCTAssertEqual(controller.s3Profiles.first?.endpoint.absoluteString, "https://s3.example.test")
-    XCTAssertEqual(controller.s3Profiles.first?.keyPrefix, "profile/default")
-    controller.close()
+    XCTAssertEqual(profiles.map(\.name), ["app-s3"])
+    XCTAssertEqual(profiles.first?.endpoint.absoluteString, "https://s3.example.test")
+    XCTAssertEqual(profiles.first?.keyPrefix, "profile/default")
   }
 
-  func testNoteWindowLoadsNamedS3ProfileFromSettings() throws {
-    let scratch = try scratchRoot(name: "riela-app-note-window-settings-s3-\(UUID().uuidString)")
-    let noteRoot = scratch
-      .appendingPathComponent("note", isDirectory: true)
-    let settingsStore = RielaAppNoteSettingsStore(noteRoot: noteRoot)
-    try settingsStore.save(RielaAppNoteSettings(
+  func testS3ProfileResolvesNamedProfileFromSettings() throws {
+    let settings = RielaAppNoteSettings(
       s3Profiles: [
         RielaAppNoteS3ProfileSettings(
           name: "settings-s3",
@@ -195,61 +90,29 @@ final class RielaAppNotesIntegrationTests: XCTestCase {
           keyPrefix: "profiles/default"
         )
       ]
-    ))
+    )
 
-    let controller = try NoteWindowController(
-      noteRoot: noteRoot,
-      profileName: .default,
+    let resolved = try RielaAppNoteS3ProfileResolver().profiles(
+      settings: settings,
       environment: [
         "NOTE_ACCESS_KEY_ID": "access-key",
         "NOTE_SECRET_ACCESS_KEY": "secret-key"
       ]
     )
+    XCTAssertEqual(resolved.map(\.name), ["settings-s3"])
+    XCTAssertEqual(resolved.first?.endpoint.absoluteString, "https://settings-s3.example.test")
+    XCTAssertEqual(resolved.first?.bucket, "notes")
+    XCTAssertEqual(resolved.first?.keyPrefix, "profiles/default")
 
-    XCTAssertEqual(controller.s3Profiles.map(\.name), ["settings-s3"])
-    XCTAssertEqual(controller.s3Profiles.first?.endpoint.absoluteString, "https://settings-s3.example.test")
-    XCTAssertEqual(controller.s3Profiles.first?.bucket, "notes")
-    XCTAssertEqual(controller.s3Profiles.first?.keyPrefix, "profiles/default")
-    controller.close()
+    // Profiles whose credential environment variables are absent are skipped
+    // rather than failing the whole workspace.
+    let unresolved = try RielaAppNoteS3ProfileResolver().profiles(settings: settings, environment: [:])
+    XCTAssertEqual(unresolved, [])
   }
 
-  func testNoteWindowOpensWhenSavedS3ProfileCredentialsAreMissing() throws {
-    let scratch = try scratchRoot(name: "riela-app-note-window-settings-s3-missing-env-\(UUID().uuidString)")
-    let noteRoot = scratch
-      .appendingPathComponent("note", isDirectory: true)
-    let settingsStore = RielaAppNoteSettingsStore(noteRoot: noteRoot)
-    try settingsStore.save(RielaAppNoteSettings(
-      s3Profiles: [
-        RielaAppNoteS3ProfileSettings(
-          name: "settings-s3",
-          endpoint: "https://settings-s3.example.test",
-          region: "ap-northeast-1",
-          bucket: "notes",
-          accessKeyIdEnv: "NOTE_ACCESS_KEY_ID",
-          secretAccessKeyEnv: "NOTE_SECRET_ACCESS_KEY",
-          keyPrefix: "profiles/default"
-        )
-      ]
-    ))
-
-    let controller = try NoteWindowController(
-      noteRoot: noteRoot,
-      profileName: .default,
-      environment: [:]
-    )
-
-    XCTAssertEqual(controller.s3Profiles, [])
-    controller.close()
-  }
-
-  func testNoteWindowRejectsPartialS3ProfileEnvironment() throws {
-    let scratch = try scratchRoot(name: "riela-app-note-window-partial-s3-\(UUID().uuidString)")
-    let noteRoot = scratch
-      .appendingPathComponent("note", isDirectory: true)
-
-    XCTAssertThrowsError(try NoteWindowController(
-      noteRoot: noteRoot,
-      profileName: .default,
+  func testS3ProfileRejectsPartialEnvironment() {
+    XCTAssertThrowsError(try RielaAppNoteS3ProfileResolver().profiles(
+      settings: RielaAppNoteSettings(),
       environment: ["RIELA_NOTE_S3_ENDPOINT": "https://s3.example.test"]
     )) { error in
       XCTAssertEqual(error as? RielaAppNoteS3ProfileError, .incompleteProfile)
@@ -270,154 +133,62 @@ final class RielaAppNotesIntegrationTests: XCTestCase {
     XCTAssertEqual(store.load().colorScheme, .dark)
   }
 
-  func testNoteSettingsWindowPersistsColorScheme() throws {
-    let scratch = try scratchRoot(name: "riela-app-appearance-window-\(UUID().uuidString)")
-    let noteRoot = scratch.appendingPathComponent("note", isDirectory: true)
-    let appearanceStore = RielaAppAppearanceSettingsStore(
-      appRootURL: scratch.appendingPathComponent("app-root", isDirectory: true)
-    )
-    let controller = try NoteSettingsWindowController(
-      noteRoot: noteRoot,
-      profileName: .default,
-      appearanceStore: appearanceStore
-    )
-
-    controller.setColorScheme(.light)
-    XCTAssertEqual(appearanceStore.load().colorScheme, .light)
-
-    controller.setColorScheme(.dark)
-    XCTAssertEqual(appearanceStore.load().colorScheme, .dark)
-    controller.close()
-  }
-
-  func testNoteSettingsPersistsExposureAndManagesClients() throws {
+  func testNoteSettingsStorePersistsExposureAndServiceManagesClients() throws {
     let noteRoot = try scratchRoot(name: "riela-app-note-settings-\(UUID().uuidString)")
       .appendingPathComponent("note", isDirectory: true)
-    let controller = try NoteSettingsWindowController(noteRoot: noteRoot, profileName: .default)
+    try FileManager.default.createDirectory(at: noteRoot, withIntermediateDirectories: true)
+    let store = RielaAppNoteSettingsStore(noteRoot: noteRoot)
+    let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot.path))
 
-    XCTAssertFalse(controller.settingsStore.load().exposesNoteAPI)
+    XCTAssertFalse(store.load().exposesNoteAPI)
+    try store.save(RielaAppNoteSettings(exposesNoteAPI: true))
+    XCTAssertTrue(store.load().exposesNoteAPI)
 
-    try controller.settingsStore.save(RielaAppNoteSettings(exposesNoteAPI: true))
-    XCTAssertTrue(controller.settingsStore.load().exposesNoteAPI)
+    let client = try service.registerAPIClient(displayName: "Local test", bearerToken: "secret-token")
+    XCTAssertEqual(try service.listAPIClients().map(\.displayName), ["Local test"])
 
-    let client = try controller.service.registerAPIClient(displayName: "Local test", bearerToken: "secret-token")
-    XCTAssertEqual(try controller.service.listAPIClients().map(\.displayName), ["Local test"])
-
-    _ = try controller.service.revokeAPIClient(clientId: client.clientId)
-    XCTAssertEqual(try controller.service.listAPIClients(), [])
-    XCTAssertEqual(try controller.service.listAPIClients(includeRevoked: true).first?.displayName, "Local test")
-    controller.close()
+    _ = try service.revokeAPIClient(clientId: client.clientId)
+    XCTAssertEqual(try service.listAPIClients(), [])
+    XCTAssertEqual(try service.listAPIClients(includeRevoked: true).first?.displayName, "Local test")
   }
 
-  func testNoteSettingsEditsS3Profile() throws {
-    let noteRoot = try scratchRoot(name: "riela-app-note-settings-s3-\(UUID().uuidString)")
+  func testRegistrationChallengeFlowRegistersClient() async throws {
+    let noteRoot = try scratchRoot(name: "riela-app-note-register-\(UUID().uuidString)")
       .appendingPathComponent("note", isDirectory: true)
-    let controller = try NoteSettingsWindowController(noteRoot: noteRoot, profileName: .default)
-    try controller.settingsStore.save(RielaAppNoteSettings(exposesNoteAPI: true))
-
-    controller.setS3ProfileEditor(RielaAppNoteS3ProfileSettings(
-      name: "window-s3",
-      endpoint: "https://window-s3.example.test",
-      region: "ap-northeast-1",
-      bucket: "notes",
-      accessKeyIdEnv: "WINDOW_ACCESS_KEY_ID",
-      secretAccessKeyEnv: "WINDOW_SECRET_ACCESS_KEY",
-      sessionTokenEnv: "WINDOW_SESSION_TOKEN",
-      keyPrefix: "profiles/default"
-    ))
-    try controller.saveS3ProfileFromEditor()
-
-    let saved = controller.settingsStore.load()
-    XCTAssertTrue(saved.exposesNoteAPI)
-    XCTAssertEqual(saved.s3Profiles.map(\.name), ["window-s3"])
-    XCTAssertEqual(saved.s3Profiles.first?.endpoint, "https://window-s3.example.test")
-    XCTAssertEqual(saved.s3Profiles.first?.secretAccessKeyEnv, "WINDOW_SECRET_ACCESS_KEY")
-    XCTAssertEqual(saved.s3Profiles.first?.sessionTokenEnv, "WINDOW_SESSION_TOKEN")
-    XCTAssertEqual(saved.s3Profiles.first?.keyPrefix, "profiles/default")
-    XCTAssertFalse(String(data: try JSONEncoder().encode(saved), encoding: .utf8)?.contains("secret-key") ?? true)
-
-    try controller.clearS3ProfilesFromSettings()
-    XCTAssertTrue(controller.settingsStore.load().exposesNoteAPI)
-    XCTAssertEqual(controller.settingsStore.load().s3Profiles, [])
-    controller.close()
-  }
-
-  func testNoteSettingsWindowRendersS3ProfileEditor() throws {
-    let noteRoot = try scratchRoot(name: "riela-app-note-settings-render-\(UUID().uuidString)")
-      .appendingPathComponent("note", isDirectory: true)
-    let controller = try NoteSettingsWindowController(noteRoot: noteRoot, profileName: .default)
-    let contentView = try XCTUnwrap(controller.window?.contentView)
-    let pngData = try renderPNGData(view: contentView)
-
-    XCTAssertTrue(containsLabel("S3 Storage Profile", in: contentView))
-    XCTAssertTrue(containsLabel("Endpoint", in: contentView))
-    XCTAssertGreaterThan(pngData.count, 1_000)
-    controller.close()
-  }
-
-  func testNoteSettingsRegistersClientThroughChallengeFlow() async throws {
-    let noteRoot = try scratchRoot(name: "riela-app-note-settings-register-\(UUID().uuidString)")
-      .appendingPathComponent("note", isDirectory: true)
-    let controller = try NoteSettingsWindowController(
-      noteRoot: noteRoot,
-      profileName: .default,
-      registrationBaseURL: "http://192.0.2.10:9876"
+    try FileManager.default.createDirectory(at: noteRoot, withIntermediateDirectories: true)
+    let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot.path))
+    let authenticator = QRClientRegistrationAuthenticator(
+      service: service,
+      registrationScope: noteRoot.standardizedFileURL.path
     )
 
-    let credential = try await controller.registerNextClientUsingChallenge()
+    let challenge = try await authenticator.createRegistrationChallenge(
+      publicBaseURL: "http://192.0.2.10:9876"
+    )
+    XCTAssertTrue(challenge.registrationURL.contains("/note/register?code=\(challenge.code)"))
+    XCTAssertTrue(challenge.registrationURL.hasPrefix("http://192.0.2.10:9876/"))
 
+    let credential = try await authenticator.redeemRegistrationCode(
+      code: challenge.code,
+      displayName: "Client 1"
+    )
     XCTAssertEqual(credential.displayName, "Client 1")
     XCTAssertTrue(credential.bearerToken.hasPrefix("rn_"))
     XCTAssertEqual(credential.bearerToken.count, 46)
-    XCTAssertEqual(try controller.service.listAPIClients().map(\.displayName), ["Client 1"])
-    controller.close()
+    XCTAssertEqual(try service.listAPIClients().map(\.displayName), ["Client 1"])
   }
 
-  func testNoteSettingsRegistrationRequiresServedEndpoint() async throws {
-    let noteRoot = try scratchRoot(name: "riela-app-note-settings-register-unavailable-\(UUID().uuidString)")
+  func testRegistrationChallengeRedeemsThroughServedNoteAPIRoute() async throws {
+    let noteRoot = try scratchRoot(name: "riela-app-note-route-redeem-\(UUID().uuidString)")
       .appendingPathComponent("note", isDirectory: true)
-    let controller = try NoteSettingsWindowController(noteRoot: noteRoot, profileName: .default)
-
-    do {
-      _ = try await controller.createRegistrationChallengeForSheet()
-      XCTFail("Expected registration challenge creation to require an active Note API endpoint.")
-    } catch {
-      XCTAssertEqual(error as? RielaAppNoteRegistrationError, .endpointUnavailable)
-    }
-    controller.close()
-  }
-
-  func testNoteSettingsBuildsQRRegistrationChallengeSheet() async throws {
-    let noteRoot = try scratchRoot(name: "riela-app-note-settings-qr-\(UUID().uuidString)")
-      .appendingPathComponent("note", isDirectory: true)
-    let controller = try NoteSettingsWindowController(
-      noteRoot: noteRoot,
-      profileName: .default,
-      registrationBaseURL: "http://192.0.2.10:9876"
-    )
-
-    let challenge = try await controller.createRegistrationChallengeForSheet()
-    let accessoryView = controller.registrationChallengeAccessoryView(challenge)
-    let pngData = try renderPNGData(view: accessoryView)
-    let imageView = firstDescendantImageView(in: accessoryView)
-
-    XCTAssertTrue(challenge.registrationURL.contains("/note/register?code=\(challenge.code)"))
-    XCTAssertTrue(challenge.registrationURL.hasPrefix("http://192.0.2.10:9876/"))
-    XCTAssertNotNil(imageView?.image)
-    XCTAssertGreaterThan(pngData.count, 1_000)
-    controller.close()
-  }
-
-  func testNoteSettingsChallengeRedeemsThroughServedNoteAPIRoute() async throws {
-    let noteRoot = try scratchRoot(name: "riela-app-note-settings-route-redeem-\(UUID().uuidString)")
-      .appendingPathComponent("note", isDirectory: true)
+    try FileManager.default.createDirectory(at: noteRoot, withIntermediateDirectories: true)
+    let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot.path))
     let registrationBaseURL = "http://192.0.2.10:9876"
-    let controller = try NoteSettingsWindowController(
-      noteRoot: noteRoot,
-      profileName: .default,
-      registrationBaseURL: registrationBaseURL
+    let authenticator = QRClientRegistrationAuthenticator(
+      service: service,
+      registrationScope: noteRoot.standardizedFileURL.path
     )
-    let challenge = try await controller.createRegistrationChallengeForSheet()
+    let challenge = try await authenticator.createRegistrationChallenge(publicBaseURL: registrationBaseURL)
     let listener = try await InProcessWorkflowServeListenerFactory().startListener(
       for: WorkflowServeResolvedWorkflow(workflowId: "note-api", selectedIdentity: "note-api"),
       request: WorkflowServeStartRequest(
@@ -446,9 +217,8 @@ final class RielaAppNotesIntegrationTests: XCTestCase {
 
     XCTAssertEqual(registration.status, 200)
     XCTAssertEqual(challenge.registrationURL.hasPrefix(registrationBaseURL), true)
-    XCTAssertEqual(try controller.service.listAPIClients().map(\.displayName), ["Phone"])
+    XCTAssertEqual(try service.listAPIClients().map(\.displayName), ["Phone"])
     try await listener.shutdown()
-    controller.close()
   }
 
   func testDaemonServerConfigurationReflectsNoteAPIExposureSetting() throws {
@@ -550,41 +320,6 @@ final class RielaAppNotesIntegrationTests: XCTestCase {
     }
     """
     try workflow.write(to: workflowDirectory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
-  }
-
-  private func renderPNGData(view: NSView) throws -> Data {
-    view.frame = NSRect(x: 0, y: 0, width: 760, height: 520)
-    view.layoutSubtreeIfNeeded()
-    guard let representation = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
-      throw NSError(domain: "RielaAppNotesIntegrationTests", code: 1)
-    }
-    view.cacheDisplay(in: view.bounds, to: representation)
-    guard let data = representation.representation(using: .png, properties: [:]) else {
-      throw NSError(domain: "RielaAppNotesIntegrationTests", code: 2)
-    }
-    return data
-  }
-
-  private func firstDescendantImageView(in view: NSView) -> NSImageView? {
-    if let imageView = view as? NSImageView {
-      return imageView
-    }
-    for subview in view.subviews {
-      if let imageView = firstDescendantImageView(in: subview) {
-        return imageView
-      }
-    }
-    return nil
-  }
-
-  private func containsLabel(_ value: String, in view: NSView) -> Bool {
-    if let label = view as? NSTextField, label.stringValue == value {
-      return true
-    }
-    for subview in view.subviews where containsLabel(value, in: subview) {
-      return true
-    }
-    return false
   }
 }
 #endif

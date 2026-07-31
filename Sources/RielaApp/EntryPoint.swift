@@ -44,8 +44,6 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   private var daemonStatusRefreshTimer: Timer?
   var daemonWindowController: DaemonWorkflowWindowController?
   var viewerWindowController: WorkflowViewerWindowController?
-  var noteWindowController: NoteWindowController?
-  var noteSettingsWindowController: NoteSettingsWindowController?
   var webServerController: RielaAppWebServerController?
   var webServerSetupError: String?
   var webRevision = 1
@@ -102,11 +100,8 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     importDaemonSourcesIfRequested()
     openInitialViewerIfRequested()
     openInitialWorkflowsIfRequested()
-    if launchOptions.opensNotes {
+    if launchOptions.opensNotes || launchOptions.opensNoteSettings {
       openNotes()
-    }
-    if launchOptions.opensNoteSettings {
-      openNoteSettings()
     }
     if shouldAutostartDaemonWorkflows() {
       autostartDaemonWorkflows()
@@ -481,9 +476,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
 
   func restoreAccessoryActivationPolicyIfNoAppWindows() {
     guard daemonWindowController?.window?.isVisible != true,
-      viewerWindowController?.window?.isVisible != true,
-      noteWindowController?.window?.isVisible != true,
-      noteSettingsWindowController?.window?.isVisible != true
+      viewerWindowController?.window?.isVisible != true
     else {
       return
     }

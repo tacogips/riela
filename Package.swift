@@ -22,7 +22,7 @@ let package = Package(
     .library(name: "RielaSQLite", targets: ["RielaSQLite"]),
     .library(name: "RielaNote", targets: ["RielaNote"]),
     .library(name: "RielaNoteLibSQL", targets: ["RielaNoteLibSQL"]),
-    .library(name: "RielaNoteUI", targets: ["RielaNoteUI"]),
+    .library(name: "RielaNoteWorkspace", targets: ["RielaNoteWorkspace"]),
     .library(name: "RielaNoteDispatch", targets: ["RielaNoteDispatch"]),
     .library(name: "AgentRuntimeKit", targets: ["AgentRuntimeKit"]),
     .library(name: "RielaJavaScript", targets: ["RielaJavaScript"]),
@@ -86,7 +86,7 @@ let package = Package(
         "RielaSQLite"
       ]
     ),
-    .target(name: "RielaNoteUI", dependencies: ["RielaNote"]),
+    .target(name: "RielaNoteWorkspace", dependencies: ["RielaNote"]),
     .target(name: "RielaNoteDispatch", dependencies: ["RielaCore", "RielaNote"]),
     .systemLibrary(
       name: "CRielaSQLite3",
@@ -201,7 +201,7 @@ let package = Package(
         "RielaViewer",
         "RielaObservability",
         "RielaNote",
-        "RielaNoteUI",
+        "RielaNoteWorkspace",
         "RielaNoteDispatch",
         "RielaWorkflowRegistry"
       ]
@@ -220,7 +220,7 @@ let package = Package(
       dependencies: rielaNoteTestDependencies,
       swiftSettings: rielaNoteTestSwiftSettings
     ),
-    .testTarget(name: "RielaNoteUITests", dependencies: ["RielaNote", "RielaNoteUI"]),
+    .testTarget(name: "RielaNoteWorkspaceTests", dependencies: ["RielaNote", "RielaNoteWorkspace"]),
     .testTarget(
       name: "RielaNoteDispatchTests",
       dependencies: ["RielaCore", "RielaNote", "RielaNoteDispatch"]
@@ -247,7 +247,7 @@ let package = Package(
         "RielaApp",
         "RielaCLI",
         "RielaNote",
-        "RielaNoteUI"
+        "RielaNoteWorkspace"
       ]
     ),
     .testTarget(

@@ -14,58 +14,29 @@ extension RielaApp {
       .appendingPathComponent("note", isDirectory: true)
   }
 
+  /// Notes now live in the web UI: opening Notes ensures the local web server
+  /// is running and opens the browser on it (the SwiftUI Notes window was
+  /// removed after the web app reached feature parity).
   @objc func openNotes() {
-    do {
-      if noteWindowController == nil {
-        noteWindowController = try NoteWindowController(
-          noteRoot: noteRootURL(profileName: daemonProfileName),
-          profileName: daemonProfileName,
-          changeObserver: NoteChangeFeedObserver(feed: noteChangeFeed),
-          onOpenSettings: { [weak self] in
-            self?.openNoteSettings()
-          },
-          onWindowWillClose: { [weak self] in
-            self?.noteWindowController = nil
-            self?.restoreAccessoryActivationPolicyIfNoAppWindows()
-          }
-        )
+    Task { @MainActor [weak self] in
+      guard let self else {
+        return
       }
-      promoteToRegularApplication()
-      noteWindowController?.showWindow(nil)
-      NSApp.activate(ignoringOtherApps: true)
-      status = "Opened Notes for profile \(daemonProfileName.rawValue)."
-      rebuildMenu()
-    } catch {
-      status = "Failed to open Notes: \(error.localizedDescription)"
-      rebuildMenu()
-    }
-  }
-
-  @objc func openNoteSettings() {
-    do {
-      if noteSettingsWindowController == nil {
-        let profileName = daemonProfileName
-        noteSettingsWindowController = try NoteSettingsWindowController(
-          noteRoot: noteRootURL(profileName: profileName),
-          profileName: profileName,
-          registrationBaseURLProvider: { [weak self] in
-            self?.noteAPIRegistrationBaseURL(profileName: profileName)
-          },
-          changeObserver: NoteChangeFeedObserver(feed: noteChangeFeed),
-          appearanceStore: appearanceSettingsStore,
-          onWindowWillClose: { [weak self] in
-            self?.noteSettingsWindowController = nil
-            self?.restoreAccessoryActivationPolicyIfNoAppWindows()
-          }
-        )
+      guard let webServerController else {
+        status = webServerSetupError ?? "Web Server: Unavailable"
+        rebuildMenu()
+        return
       }
-      promoteToRegularApplication()
-      noteSettingsWindowController?.showWindow(nil)
-      NSApp.activate(ignoringOtherApps: true)
-      status = "Opened Notes settings for profile \(daemonProfileName.rawValue)."
-      rebuildMenu()
-    } catch {
-      status = "Failed to open Notes settings: \(error.localizedDescription)"
+      if webServerController.endpointURL == nil {
+        await webServerController.start()
+      }
+      guard webServerController.endpointURL != nil else {
+        status = "Failed to open Notes: the web server did not start."
+        rebuildMenu()
+        return
+      }
+      webServerController.openInBrowser()
+      status = "Opened Notes (web) for profile \(daemonProfileName.rawValue)."
       rebuildMenu()
     }
   }

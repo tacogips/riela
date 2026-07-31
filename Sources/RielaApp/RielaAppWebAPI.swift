@@ -31,6 +31,17 @@ private struct RielaAppWebNoteSettingsPatch: Decodable {
   var expectedRevision: Int
   var expectedProfile: String?
   var exposesNoteAPI: Bool?
+  var s3Profiles: [RielaAppWebNoteS3ProfilePayload]?
+}
+
+private struct RielaAppWebNoteClientRequest: Decodable {
+  var expectedRevision: Int
+  var expectedProfile: String?
+}
+
+private struct RielaAppWebAppearancePatch: Decodable {
+  var expectedRevision: Int
+  var colorScheme: String
 }
 
 private struct RielaAppWebServerSettingsPatch: Decodable {
@@ -97,15 +108,25 @@ extension RielaApp {
     case ("PUT", "/api/v1/settings/assistant"):
       return await webUpdateAssistantSettings(request: request, csrfToken: csrfToken)
     case ("GET", "/api/v1/settings/notes"):
-      let settings = RielaAppNoteSettingsStore(noteRoot: noteRootURL(profileName: daemonProfileName)).load()
-      return webJSON([
-        "profile": .string(daemonProfileName.rawValue),
-        "revision": .number(Double(webRevision)),
-        "exposesNoteAPI": .bool(settings.exposesNoteAPI),
-        "s3ProfileCount": .number(Double(settings.s3Profiles.count))
-      ])
+      return webJSON(webNoteSettingsJSON())
     case ("PUT", "/api/v1/settings/notes"):
       return await webUpdateNoteSettings(request: request, csrfToken: csrfToken)
+    case ("GET", "/api/v1/settings/notes/clients"):
+      return webNoteClientsJSON()
+    case ("POST", "/api/v1/settings/notes/clients/registrations"):
+      guard let body = decodeWebBody(request, as: RielaAppWebNoteClientRequest.self),
+            body.expectedRevision == webRevision else {
+        return webConflictOrBadRequest(request)
+      }
+      return await webRegisterNoteClient(expectedProfile: body.expectedProfile)
+    case ("GET", "/api/v1/settings/appearance"):
+      return webJSON(webAppearanceSettingsJSON())
+    case ("PUT", "/api/v1/settings/appearance"):
+      guard let patch = decodeWebBody(request, as: RielaAppWebAppearancePatch.self),
+            patch.expectedRevision == webRevision else {
+        return webConflictOrBadRequest(request)
+      }
+      return webUpdateAppearanceSettings(colorScheme: patch.colorScheme)
     case ("GET", "/api/v1/settings/web-server"):
       return webJSON(webServerSettingsJSON())
     case ("PUT", "/api/v1/settings/web-server"):
@@ -191,6 +212,13 @@ extension RielaApp {
     let store = RielaAppNoteSettingsStore(noteRoot: noteRootURL(profileName: daemonProfileName))
     var settings = store.load()
     if let exposesNoteAPI = patch.exposesNoteAPI { settings.exposesNoteAPI = exposesNoteAPI }
+    if let s3Profiles = patch.s3Profiles {
+      do {
+        settings.s3Profiles = try s3Profiles.map { try $0.validatedSettings() }
+      } catch {
+        return webError(status: 400, code: "invalid_settings", message: error.localizedDescription)
+      }
+    }
     do {
       try store.save(settings)
     } catch {
@@ -207,12 +235,25 @@ extension RielaApp {
     components: [String],
     request: RielaHTTPRequest
   ) async -> RielaHTTPResponse {
+    if let noteResponse = await webNoteWorkspaceResponse(components: components, request: request) {
+      return noteResponse
+    }
     if components.count == 6,
        components[0...3] == ["api", "v1", "workflows", "sources"],
        components[5] == "definition",
        request.method == "GET",
        let sourceId = components[4].removingPercentEncoding {
       return webWorkflowDefinition(sourceId: sourceId)
+    }
+    if components.count == 6,
+       components[0...4] == ["api", "v1", "settings", "notes", "clients"],
+       request.method == "DELETE",
+       let clientId = components[5].removingPercentEncoding {
+      guard let body = decodeWebBody(request, as: RielaAppWebNoteClientRequest.self),
+            body.expectedRevision == webRevision else {
+        return webConflictOrBadRequest(request)
+      }
+      return webRevokeNoteClient(clientId: clientId, expectedProfile: body.expectedProfile)
     }
     guard components.count == 4 || components.count == 5 || components.count == 6,
           components[0...2] == ["api", "v1", "instances"],

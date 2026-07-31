@@ -1,0 +1,15 @@
+{
+  "id": "riela-manager",
+  "description": "Coordinate the kanban orchestration: decomposition, card creation, parallel execution, bounded review rounds, finalize, and summary.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/riela-manager.md",
+  "variables": {},
+  "input": {
+    "description": "Provide task (the high-level request), optional folderTagName, optional noteRoot, and optional maxReworkRounds (default 3)."
+  },
+  "output": {
+    "description": "Return the final orchestration outcome with per-card verdicts and any unresolved cards."
+  }
+}

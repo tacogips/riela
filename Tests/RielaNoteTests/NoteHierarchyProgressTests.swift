@@ -449,9 +449,9 @@ final class NoteHierarchyProgressTests: NoteTestCase {
       provenance: .human
     )
     XCTAssertEqual(tagged.tags.first?.tag.classId, "folder")
-    XCTAssertEqual(tagged.progress, .none)
+    XCTAssertEqual(tagged.progress, "none")
 
-    for progress in NotebookProgress.allCases {
+    for progress in ["none", "pending", "progress", "review", "done"] {
       let updated = try service.setNotebookProgress(
         notebookId: notebook.notebookId,
         progress: progress

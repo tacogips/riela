@@ -62,7 +62,7 @@ describe('Note GraphQL transport', () => {
     expect(harness.requests[0]?.init?.credentials).toBe('same-origin')
   })
 
-  test('normalizes unknown notebook progress and clears the marker on canonical reads', async () => {
+  test('preserves custom status names verbatim on reads and writes', async () => {
     const raw = {
       notebookId: 'book',
       title: 'Book',
@@ -87,16 +87,16 @@ describe('Note GraphQL transport', () => {
       } } },
     ])
     const client = new NoteGraphQLClient('riela-app', harness.value)
+    // Custom status names must survive verbatim: coercing them (the old
+    // unknown→'none' behavior) would poison expectedProgress CAS writes.
     expect(await client.notebooks(0, 'updatedAtDesc', [])).toMatchObject([
-      { progress: 'none', progressWasUnknown: true },
+      { progress: 'future' },
     ])
     expect(await client.setProgress('book', 'done')).toMatchObject({
-      progress: 'none',
-      progressWasUnknown: true,
+      progress: 'future',
     })
     expect(await client.notebook('book')).toMatchObject({
       progress: 'done',
-      progressWasUnknown: false,
     })
   })
 

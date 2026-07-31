@@ -155,7 +155,7 @@ final class FailingRielaNoteUIClient: RielaNoteUIClient, @unchecked Sendable {
 
   func setNotebookProgress(
     notebookId: String,
-    progress: NotebookProgress
+    progress: String
   ) async throws -> Notebook {
     if failSetNotebookProgress {
       throw NoteServiceError.invalidInput("progress mutation failed")

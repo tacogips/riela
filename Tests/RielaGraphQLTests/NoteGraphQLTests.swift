@@ -816,6 +816,8 @@ final class NoteGraphQLTests: XCTestCase {
       "proposeNoteLinks",
       "tags",
       "tagClasses",
+      "kanbanStatusSets",
+      "effectiveKanbanStatuses",
       "noteFile",
       "autoActions"
     ]
@@ -831,6 +833,10 @@ final class NoteGraphQLTests: XCTestCase {
       "applyNotebookTags",
       "removeNotebookTag",
       "setNotebookProgress",
+      "createKanbanStatusSet",
+      "updateKanbanStatusSet",
+      "deleteKanbanStatusSet",
+      "assignKanbanStatusSet",
       "setNoteReadOnly",
       "applyNoteTags",
       "removeNoteTag",

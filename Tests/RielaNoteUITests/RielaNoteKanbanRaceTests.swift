@@ -138,22 +138,22 @@ final class RielaNoteKanbanRaceTests: XCTestCase {
     let client = KanbanRaceClient(gate: gate)
     let viewModel = await loadedAlphaViewModel(client: client)
     let notebookId = try XCTUnwrap(viewModel.notebooks.first?.notebookId)
-    let olderKey = kanbanProgressRequestKey(notebookId: notebookId, progress: .progress)
+    let olderKey = kanbanProgressRequestKey(notebookId: notebookId, progress: "progress")
     await gate.block(olderKey)
     let olderMutation = Task {
-      await viewModel.setNotebookProgress(notebookId: notebookId, progress: .progress)
+      await viewModel.setNotebookProgress(notebookId: notebookId, progress: "progress")
     }
     try await gate.waitUntilSuspended(olderKey)
 
-    await viewModel.setNotebookProgress(notebookId: notebookId, progress: .done)
-    XCTAssertEqual(viewModel.notebooks.first?.progress, .done)
+    await viewModel.setNotebookProgress(notebookId: notebookId, progress: "done")
+    XCTAssertEqual(viewModel.notebooks.first?.progress, "done")
 
     await gate.resume(olderKey)
     await olderMutation.value
 
     let persistedProgress = await client.persistedProgress(notebookId: notebookId)
-    XCTAssertEqual(viewModel.notebooks.first?.progress, .done)
-    XCTAssertEqual(persistedProgress, .done)
+    XCTAssertEqual(viewModel.notebooks.first?.progress, "done")
+    XCTAssertEqual(persistedProgress, "done")
     XCTAssertEqual(viewModel.state, .loaded)
   }
 
@@ -162,19 +162,19 @@ final class RielaNoteKanbanRaceTests: XCTestCase {
     let client = KanbanRaceClient(gate: gate)
     let viewModel = await loadedAlphaViewModel(client: client)
     let notebookId = try XCTUnwrap(viewModel.notebooks.first?.notebookId)
-    let olderKey = kanbanProgressRequestKey(notebookId: notebookId, progress: .progress)
+    let olderKey = kanbanProgressRequestKey(notebookId: notebookId, progress: "progress")
     await gate.block(olderKey)
     await gate.fail(olderKey)
     let olderMutation = Task {
-      await viewModel.setNotebookProgress(notebookId: notebookId, progress: .progress)
+      await viewModel.setNotebookProgress(notebookId: notebookId, progress: "progress")
     }
     try await gate.waitUntilSuspended(olderKey)
 
-    await viewModel.setNotebookProgress(notebookId: notebookId, progress: .done)
+    await viewModel.setNotebookProgress(notebookId: notebookId, progress: "done")
     await gate.resume(olderKey)
     await olderMutation.value
 
-    XCTAssertEqual(viewModel.notebooks.first?.progress, .done)
+    XCTAssertEqual(viewModel.notebooks.first?.progress, "done")
     XCTAssertEqual(viewModel.state, .loaded)
   }
 
@@ -183,22 +183,22 @@ final class RielaNoteKanbanRaceTests: XCTestCase {
     let client = KanbanRaceClient(gate: gate)
     let viewModel = await loadedAlphaViewModel(client: client)
     let notebookId = try XCTUnwrap(viewModel.notebooks.first?.notebookId)
-    let mutationKey = kanbanProgressRequestKey(notebookId: notebookId, progress: .done)
+    let mutationKey = kanbanProgressRequestKey(notebookId: notebookId, progress: "done")
     await gate.block(mutationKey)
     let staleMutation = Task {
-      await viewModel.setNotebookProgress(notebookId: notebookId, progress: .done)
+      await viewModel.setNotebookProgress(notebookId: notebookId, progress: "done")
     }
     try await gate.waitUntilSuspended(mutationKey)
 
     await viewModel.refresh()
-    XCTAssertEqual(viewModel.notebooks.first?.progress, NotebookProgress.none)
+    XCTAssertEqual(viewModel.notebooks.first?.progress, "none")
 
     await gate.resume(mutationKey)
     await staleMutation.value
 
     let persistedProgress = await client.persistedProgress(notebookId: notebookId)
-    XCTAssertEqual(viewModel.notebooks.first?.progress, .done)
-    XCTAssertEqual(persistedProgress, .done)
+    XCTAssertEqual(viewModel.notebooks.first?.progress, "done")
+    XCTAssertEqual(persistedProgress, "done")
     XCTAssertEqual(viewModel.state, .loaded)
   }
 
@@ -210,25 +210,25 @@ final class RielaNoteKanbanRaceTests: XCTestCase {
     let successfulNotebookId = "alpha-2"
     let successKey = kanbanProgressRequestKey(
       notebookId: successfulNotebookId,
-      progress: .done
+      progress: "done"
     )
     await gate.block(successKey)
     let successfulMutation = Task {
       await viewModel.setNotebookProgress(
         notebookId: successfulNotebookId,
-        progress: .done
+        progress: "done"
       )
     }
     try await gate.waitUntilSuspended(successKey)
 
     let failureKey = kanbanProgressRequestKey(
       notebookId: failedNotebookId,
-      progress: .pending
+      progress: "pending"
     )
     await gate.fail(failureKey)
     await viewModel.setNotebookProgress(
       notebookId: failedNotebookId,
-      progress: .pending
+      progress: "pending"
     )
     guard case .failed = viewModel.state else {
       return XCTFail("expected the first notebook mutation to fail")
@@ -242,9 +242,9 @@ final class RielaNoteKanbanRaceTests: XCTestCase {
     )
     XCTAssertEqual(
       viewModel.notebooks.first(where: { $0.notebookId == successfulNotebookId })?.progress,
-      .done
+      "done"
     )
-    XCTAssertEqual(persistedProgress, .done)
+    XCTAssertEqual(persistedProgress, "done")
     XCTAssertEqual(viewModel.state, .loaded)
   }
 
@@ -255,16 +255,16 @@ final class RielaNoteKanbanRaceTests: XCTestCase {
     let notebookId = try XCTUnwrap(viewModel.notebooks.first?.notebookId)
 
     // Older mutation (progress) is suspended before its DB write lands.
-    let olderKey = kanbanProgressRequestKey(notebookId: notebookId, progress: .progress)
+    let olderKey = kanbanProgressRequestKey(notebookId: notebookId, progress: "progress")
     await gate.block(olderKey)
     let olderMutation = Task {
-      await viewModel.setNotebookProgress(notebookId: notebookId, progress: .progress)
+      await viewModel.setNotebookProgress(notebookId: notebookId, progress: "progress")
     }
     try await gate.waitUntilSuspended(olderKey)
 
     // Newer mutation (done) commits fully: DB and UI now show done.
-    await viewModel.setNotebookProgress(notebookId: notebookId, progress: .done)
-    XCTAssertEqual(viewModel.notebooks.first?.progress, .done)
+    await viewModel.setNotebookProgress(notebookId: notebookId, progress: "done")
+    XCTAssertEqual(viewModel.notebooks.first?.progress, "done")
 
     // The user switches to a different tag board before the stale write lands.
     viewModel.selectedSearchTagNames = ["beta"]
@@ -277,7 +277,7 @@ final class RielaNoteKanbanRaceTests: XCTestCase {
     // Convergence guarantee: the database must reflect the newest requested
     // target (done), even though the active board context changed to beta.
     let persistedProgress = await client.persistedProgress(notebookId: notebookId)
-    XCTAssertEqual(persistedProgress, .done)
+    XCTAssertEqual(persistedProgress, "done")
   }
 
   private func loadedAlphaViewModel(
@@ -395,7 +395,7 @@ private final class KanbanRaceClient: RielaNoteUIClient, @unchecked Sendable {
 
   func setNotebookProgress(
     notebookId: String,
-    progress: NotebookProgress
+    progress: String
   ) async throws -> Notebook {
     let key = kanbanProgressRequestKey(notebookId: notebookId, progress: progress)
     await gate.suspendIfBlocked(key)
@@ -406,7 +406,7 @@ private final class KanbanRaceClient: RielaNoteUIClient, @unchecked Sendable {
     return Self.notebook(id: notebookId, progress: progress)
   }
 
-  func persistedProgress(notebookId: String) async -> NotebookProgress {
+  func persistedProgress(notebookId: String) async -> String {
     await progressStore.progress(notebookId: notebookId)
   }
 
@@ -494,7 +494,7 @@ private final class KanbanRaceClient: RielaNoteUIClient, @unchecked Sendable {
 
   private static func notebook(
     id: String,
-    progress: NotebookProgress = .none
+    progress: String = "none"
   ) -> Notebook {
     Notebook(
       notebookId: id,
@@ -517,14 +517,14 @@ private final class KanbanRaceClient: RielaNoteUIClient, @unchecked Sendable {
 }
 
 private actor KanbanNotebookProgressStore {
-  private var progressByNotebookId: [String: NotebookProgress] = [:]
+  private var progressByNotebookId: [String: String] = [:]
 
-  func setProgress(_ progress: NotebookProgress, notebookId: String) {
+  func setProgress(_ progress: String, notebookId: String) {
     progressByNotebookId[notebookId] = progress
   }
 
-  func progress(notebookId: String) -> NotebookProgress {
-    progressByNotebookId[notebookId] ?? .none
+  func progress(notebookId: String) -> String {
+    progressByNotebookId[notebookId] ?? "none"
   }
 
   func applyingProgress(to notebooks: [Notebook]) -> [Notebook] {
@@ -557,7 +557,7 @@ private func kanbanRequestKey(tagFilter: [String], offset: Int) -> String {
 
 private func kanbanProgressRequestKey(
   notebookId: String,
-  progress: NotebookProgress
+  progress: String
 ) -> String {
-  "progress|\(notebookId)|\(progress.rawValue)"
+  "progress|\(notebookId)|\(progress)"
 }

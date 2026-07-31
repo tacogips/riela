@@ -1,4 +1,18 @@
-export type NotebookProgress = 'none' | 'progress' | 'done' | 'pending'
+export type KanbanStatusCategory = 'none' | 'pending' | 'progress' | 'review' | 'done'
+
+export interface KanbanStatus {
+  statusId: string
+  name: string
+  category: KanbanStatusCategory
+  position: number
+}
+
+export interface KanbanStatusSet {
+  setId: string
+  name: string
+  isSystem: boolean
+  statuses: KanbanStatus[]
+}
 export type NoteListSort = 'updatedAtDesc' | 'title' | 'createdAtDesc' | 'createdAtAsc'
 export type HostMode = 'riela-app' | 'cli-serve'
 
@@ -13,6 +27,7 @@ export interface NoteTag {
   name: string
   classId: string | null
   parentTagId: string | null
+  statusSetId?: string | null
   isSystem: boolean
   createdAt: string
 }
@@ -34,8 +49,7 @@ export interface NoteTagAssignment {
 export interface Notebook {
   notebookId: string
   title: string
-  progress: NotebookProgress
-  progressWasUnknown: boolean
+  progress: string
   createdAt: string
   updatedAt: string
   tags: NoteTagAssignment[]

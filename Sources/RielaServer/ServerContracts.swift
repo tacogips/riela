@@ -1,6 +1,7 @@
 import Foundation
 import RielaCore
 import RielaGraphQL
+import RielaNote
 import RielaObservability
 
 public struct ServerRequestEnvelope: Equatable, Sendable {
@@ -8,12 +9,37 @@ public struct ServerRequestEnvelope: Equatable, Sendable {
   public var path: String
   public var headers: [String: String]
   public var body: Data?
+  /// Raw request-target query string, without the leading `?`.
+  public var query: String?
 
-  public init(method: String, path: String, headers: [String: String] = [:], body: Data? = nil) {
+  public init(
+    method: String,
+    path: String,
+    headers: [String: String] = [:],
+    body: Data? = nil,
+    query: String? = nil
+  ) {
     self.method = method
     self.path = path
     self.headers = headers
     self.body = body
+    self.query = query
+  }
+
+  public var queryParameters: [String: String] {
+    guard let query, !query.isEmpty else {
+      return [:]
+    }
+    var parameters: [String: String] = [:]
+    for pair in query.split(separator: "&", omittingEmptySubsequences: true) {
+      let pieces = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+      guard let name = String(pieces[0]).removingPercentEncoding, !name.isEmpty else {
+        continue
+      }
+      let rawValue = pieces.count == 2 ? String(pieces[1]).replacingOccurrences(of: "+", with: " ") : ""
+      parameters[name] = rawValue.removingPercentEncoding ?? rawValue
+    }
+    return parameters
   }
 }
 
@@ -80,17 +106,20 @@ public struct DeterministicServerRouteHandler: ServerRouteHandling {
   public var graphQLExecutor: (any GraphQLDocumentExecuting)?
   public var noteAPIAuthenticator: (any NoteAPIAuthenticating)?
   public var allowUnauthenticatedNoteAPI: Bool
+  public var noteChangeFeed: NoteChangeFeed?
 
   public init(
     telemetry: any RielaTelemetry = NoOpRielaTelemetry(),
     graphQLExecutor: (any GraphQLDocumentExecuting)? = nil,
     noteAPIAuthenticator: (any NoteAPIAuthenticating)? = nil,
-    allowUnauthenticatedNoteAPI: Bool = false
+    allowUnauthenticatedNoteAPI: Bool = false,
+    noteChangeFeed: NoteChangeFeed? = nil
   ) {
     self.telemetry = telemetry
     self.graphQLExecutor = graphQLExecutor
     self.noteAPIAuthenticator = noteAPIAuthenticator
     self.allowUnauthenticatedNoteAPI = allowUnauthenticatedNoteAPI
+    self.noteChangeFeed = noteChangeFeed
   }
 
   public func route(_ request: ServerRequestEnvelope, context: ServerRequestContext) async -> ServerResponseDescriptor {
@@ -116,7 +145,10 @@ public struct DeterministicServerRouteHandler: ServerRouteHandling {
       response = await routeNoteRegistrationChallenge(request, context: contextWithHeaders)
     case ("POST", "/note/register"):
       response = await routeNoteRegistration(request, context: contextWithHeaders)
-    case (_, "/"), (_, "/overview"), (_, "/healthz"), (_, "/graphql"), (_, "/note/register"):
+    case ("GET", "/note/events"):
+      response = await routeNoteEvents(request, context: contextWithHeaders)
+    case (_, "/"), (_, "/overview"), (_, "/healthz"), (_, "/graphql"), (_, "/note/register"),
+      (_, "/note/events"):
       response = .init(status: 405, body: [
         "error": .string("unsupported method"),
         "method": .string(normalizedMethod),
@@ -275,6 +307,57 @@ public struct DeterministicServerRouteHandler: ServerRouteHandling {
     }
     return await registrar.createRegistrationChallenge(request: request, context: context)
   }
+
+  /// Long-poll change feed for live note views. Suspends until the store's
+  /// revision passes `since` or the (capped) timeout lapses, then answers with
+  /// the current revision and the events the caller has not seen.
+  private func routeNoteEvents(
+    _ request: ServerRequestEnvelope,
+    context: ServerRequestContext
+  ) async -> ServerResponseDescriptor {
+    guard let noteChangeFeed else {
+      return .init(status: 404, body: [
+        "error": .string("note events are not enabled")
+      ])
+    }
+    if let noteAPIAuthenticator {
+      switch await noteAPIAuthenticator.authenticate(request: request, context: context) {
+      case .accepted:
+        break
+      case let .rejected(response):
+        return response
+      }
+    } else if !allowUnauthenticatedNoteAPI {
+      return noteAPIUnavailableResponse("note API authentication is not configured")
+    }
+    let parameters = request.queryParameters
+    let since = parameters["since"].flatMap(UInt64.init) ?? 0
+    let timeoutMilliseconds = min(
+      parameters["timeoutMs"].flatMap(UInt64.init) ?? NoteEventPollLimits.defaultTimeoutMilliseconds,
+      NoteEventPollLimits.maximumTimeoutMilliseconds
+    )
+    let polled = await noteChangeFeed.poll(
+      since: since,
+      timeoutNanoseconds: timeoutMilliseconds * 1_000_000
+    )
+    return .init(status: 200, body: [
+      "revision": .integer(Int64(polled.revision)),
+      "events": .array(polled.events.map(noteChangeEventJSON))
+    ])
+  }
+}
+
+public enum NoteEventPollLimits {
+  public static let defaultTimeoutMilliseconds: UInt64 = 25_000
+  public static let maximumTimeoutMilliseconds: UInt64 = 30_000
+}
+
+private func noteChangeEventJSON(_ event: NoteChangeEvent) -> JSONValue {
+  .object([
+    "kind": .string(event.kind),
+    "notebookId": event.notebookId.map(JSONValue.string) ?? .null,
+    "tagNames": .array(event.tagNames.map(JSONValue.string))
+  ])
 }
 
 public enum GraphQLEnvelopeParseResult: Equatable, Sendable {

@@ -128,7 +128,7 @@ public protocol RielaNoteUIClient: Sendable {
   func firstNote(inNotebook notebookId: String) async throws -> RielaNoteDetail?
   func resolveFile(fileId: String) async throws -> RielaNoteResolvedFile
   func updateNoteBody(noteId: String, bodyMarkdown: String) async throws -> RielaNoteDetail
-  func setNotebookProgress(notebookId: String, progress: NotebookProgress) async throws -> Notebook
+  func setNotebookProgress(notebookId: String, progress: String) async throws -> Notebook
   func applyTag(noteId: String, tagName: String, classId: String?) async throws -> RielaNoteDetail
   func removeTag(noteId: String, tagName: String) async throws -> RielaNoteDetail
   func addComment(noteId: String, bodyMarkdown: String) async throws -> RielaNoteDetail
@@ -234,7 +234,7 @@ public extension RielaNoteUIClient {
     return try await listNotebooks(limit: limit, offset: offset, filter: filter)
   }
 
-  func setNotebookProgress(notebookId: String, progress: NotebookProgress) async throws -> Notebook {
+  func setNotebookProgress(notebookId: String, progress: String) async throws -> Notebook {
     throw RielaNoteUIClientCapabilityError.notebookProgressMutationUnsupported
   }
 
@@ -618,7 +618,7 @@ public struct NoteServiceRielaNoteUIClient: RielaNoteUIClient {
 
   public func setNotebookProgress(
     notebookId: String,
-    progress: NotebookProgress
+    progress: String
   ) async throws -> Notebook {
     try service.setNotebookProgress(notebookId: notebookId, progress: progress)
   }

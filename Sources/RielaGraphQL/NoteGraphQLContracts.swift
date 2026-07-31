@@ -7,6 +7,7 @@ public struct GraphQLNoteTagDTO: Codable, Equatable, Sendable {
   public var name: String
   public var classId: String?
   public var parentTagId: String?
+  public var statusSetId: String?
   public var isSystem: Bool
   public var createdAt: String
 
@@ -15,6 +16,7 @@ public struct GraphQLNoteTagDTO: Codable, Equatable, Sendable {
     name = tag.name
     classId = tag.classId
     parentTagId = tag.parentTagId
+    statusSetId = tag.statusSetId
     isSystem = tag.isSystem
     createdAt = tag.createdAt
   }
@@ -52,10 +54,67 @@ public struct GraphQLNoteTagAssignmentDTO: Codable, Equatable, Sendable {
   }
 }
 
+public struct GraphQLKanbanStatusDTO: Codable, Equatable, Sendable {
+  public var statusId: String
+  public var name: String
+  public var category: String
+  public var position: Int
+
+  public init(status: KanbanStatus) {
+    statusId = status.statusId
+    name = status.name
+    category = status.category.rawValue
+    position = status.position
+  }
+}
+
+public struct GraphQLKanbanStatusSetDTO: Codable, Equatable, Sendable {
+  public var setId: String
+  public var name: String
+  public var isSystem: Bool
+  public var statuses: [GraphQLKanbanStatusDTO]
+
+  public init(set: KanbanStatusSet) {
+    setId = set.setId
+    name = set.name
+    isSystem = set.isSystem
+    statuses = set.statuses.map(GraphQLKanbanStatusDTO.init)
+  }
+}
+
+public struct GraphQLKanbanStatusInput: Codable, Equatable, Sendable {
+  public var statusId: String?
+  public var name: String
+  public var category: String
+
+  public init(statusId: String? = nil, name: String, category: String) {
+    self.statusId = statusId
+    self.name = name
+    self.category = category
+  }
+
+  public func upsert() throws -> KanbanStatusUpsert {
+    guard let parsed = KanbanStatusCategory(rawValue: category) else {
+      throw NoteServiceError.invalidInput("unsupported kanban status category: \(category)")
+    }
+    return KanbanStatusUpsert(statusId: statusId, name: name, category: parsed)
+  }
+}
+
+public struct GraphQLKanbanStatusReassignmentInput: Codable, Equatable, Sendable {
+  public var removedName: String
+  public var reassignTo: String
+
+  public init(removedName: String, reassignTo: String) {
+    self.removedName = removedName
+    self.reassignTo = reassignTo
+  }
+}
+
 public struct GraphQLNotebookDTO: Codable, Equatable, Sendable {
   public var notebookId: String
   public var title: String
-  public var progress: NotebookProgress
+  public var progress: String
   public var createdAt: String
   public var updatedAt: String
   public var metaJSON: String?

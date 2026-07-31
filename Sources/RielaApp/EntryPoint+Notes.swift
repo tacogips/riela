@@ -2,6 +2,8 @@
 import AppKit
 import Foundation
 import RielaAppSupport
+import RielaNote
+import RielaServer
 
 extension RielaApp {
   func noteRootURL(profileName: RielaAppProfileName) -> URL {
@@ -18,6 +20,7 @@ extension RielaApp {
         noteWindowController = try NoteWindowController(
           noteRoot: noteRootURL(profileName: daemonProfileName),
           profileName: daemonProfileName,
+          changeObserver: NoteChangeFeedObserver(feed: noteChangeFeed),
           onOpenSettings: { [weak self] in
             self?.openNoteSettings()
           },
@@ -48,6 +51,7 @@ extension RielaApp {
           registrationBaseURLProvider: { [weak self] in
             self?.noteAPIRegistrationBaseURL(profileName: profileName)
           },
+          changeObserver: NoteChangeFeedObserver(feed: noteChangeFeed),
           appearanceStore: appearanceSettingsStore,
           onWindowWillClose: { [weak self] in
             self?.noteSettingsWindowController = nil

@@ -698,6 +698,143 @@ final class NoteAddonTests: XCTestCase {
     XCTAssertEqual(try stringValue(objectValue(links[0])["linkKind"], field: "linkKind"), "source-citation")
   }
 
+  func testKanbanTaskCreateIsIdempotentAndShapesFanoutItems() async throws {
+    let noteRoot = try makeNoteAddonRoot()
+    defer {
+      try? FileManager.default.removeItem(atPath: noteRoot)
+    }
+    let resolver = BuiltinWorkflowAddonResolver(environment: ["RIELA_NOTE_ROOT": noteRoot])
+    let config: JSONObject = [
+      "folderTagName": .string("orchestrations/demo-run"),
+      "runLabel": .string("demo"),
+      "tasks": .array([
+        .object([
+          "taskKey": .string("first-card"),
+          "title": .string("First card"),
+          "briefMarkdown": .string("Do the first thing."),
+          "acceptanceMarkdown": .string("- done well")
+        ]),
+        .object([
+          "taskKey": .string("second-card"),
+          "title": .string("Second card"),
+          "briefMarkdown": .string("Do the second thing.")
+        ])
+      ])
+    ]
+
+    let first = try await resolver.execute(
+      noteInput(name: "riela/note-kanban-task-create", config: config),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(first.payload["folderTagName"], .string("demo-run"))
+    let firstTasks = try arrayValue(first.payload["tasks"], field: "tasks").map(objectValue)
+    XCTAssertEqual(firstTasks.count, 2)
+    XCTAssertEqual(firstTasks.map { $0["taskKey"] }, [.string("first-card"), .string("second-card")])
+    XCTAssertEqual(firstTasks.map { $0["progress"] }, [.string("pending"), .string("pending")])
+    XCTAssertEqual(firstTasks.map { $0["reused"] }, [.bool(false), .bool(false)])
+    let firstNotebookIds = try firstTasks.map { try stringValue($0["notebookId"], field: "notebookId") }
+
+    let second = try await resolver.execute(
+      noteInput(name: "riela/note-kanban-task-create", config: config),
+      context: AdapterExecutionContext()
+    )
+    let secondTasks = try arrayValue(second.payload["tasks"], field: "tasks").map(objectValue)
+    XCTAssertEqual(secondTasks.map { $0["reused"] }, [.bool(true), .bool(true)])
+    XCTAssertEqual(
+      try secondTasks.map { try stringValue($0["notebookId"], field: "notebookId") },
+      firstNotebookIds
+    )
+
+    let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot))
+    let folderTag = try service.listTags().first { $0.name == "demo-run" }
+    XCTAssertEqual(try XCTUnwrap(folderTag).classId, "folder")
+    let parentTag = try service.listTags().first { $0.name == "orchestrations" }
+    XCTAssertEqual(try XCTUnwrap(folderTag).parentTagId, try XCTUnwrap(parentTag).tagId)
+    XCTAssertEqual(try service.listNotebooks(tagFilter: ["demo-run"]).count, 2)
+  }
+
+  func testKanbanMoveReportsConflictAsBranchLocalOutcome() async throws {
+    let noteRoot = try makeNoteAddonRoot()
+    defer {
+      try? FileManager.default.removeItem(atPath: noteRoot)
+    }
+    let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot))
+    let notebook = try service.createNotebook(title: "Card")
+    _ = try service.setNotebookProgress(notebookId: notebook.notebookId, progress: "pending")
+    let resolver = BuiltinWorkflowAddonResolver(environment: ["RIELA_NOTE_ROOT": noteRoot])
+
+    let claimed = try await resolver.execute(
+      noteInput(name: "riela/note-kanban-move", config: [
+        "notebookId": .string(notebook.notebookId),
+        "to": .string("progress"),
+        "expectedFrom": .string("pending")
+      ]),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(claimed.payload["conflict"], .bool(false))
+    XCTAssertEqual(claimed.payload["progress"], .string("progress"))
+    XCTAssertEqual(claimed.payload["previousProgress"], .string("pending"))
+
+    let conflicted = try await resolver.execute(
+      noteInput(name: "riela/note-kanban-move", config: [
+        "notebookId": .string(notebook.notebookId),
+        "to": .string("progress"),
+        "expectedFrom": .string("pending")
+      ]),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(conflicted.payload["conflict"], .bool(true))
+    XCTAssertEqual(conflicted.payload["progress"], .string("progress"))
+    XCTAssertEqual(conflicted.payload["expectedProgress"], .string("pending"))
+    XCTAssertEqual(try service.getNotebook(notebook.notebookId).progress, "progress")
+
+    do {
+      _ = try await resolver.execute(
+        noteInput(name: "riela/note-kanban-move", config: [
+          "notebookId": .string(notebook.notebookId),
+          "to": .string("not-a-status")
+        ]),
+        context: AdapterExecutionContext()
+      )
+      XCTFail("expected an invalid status name to fail")
+    } catch {
+      XCTAssertTrue(String(describing: error).contains("unsupported notebook progress"))
+    }
+  }
+
+  func testKanbanBoardGroupsNotebooksIntoEffectiveColumns() async throws {
+    let noteRoot = try makeNoteAddonRoot()
+    defer {
+      try? FileManager.default.removeItem(atPath: noteRoot)
+    }
+    let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot))
+    _ = try service.defineTag(name: "board-folder", classId: "folder")
+    let reviewing = try service.createNotebook(title: "Reviewing")
+    _ = try service.applyNotebookTags(notebookId: reviewing.notebookId, tags: ["board-folder"], provenance: .ai)
+    _ = try service.setNotebookProgress(notebookId: reviewing.notebookId, progress: "review")
+    let idle = try service.createNotebook(title: "Idle")
+    _ = try service.applyNotebookTags(notebookId: idle.notebookId, tags: ["board-folder"], provenance: .ai)
+    let resolver = BuiltinWorkflowAddonResolver(environment: ["RIELA_NOTE_ROOT": noteRoot])
+
+    let board = try await resolver.execute(
+      noteInput(name: "riela/note-kanban-board", config: ["tagName": .string("board-folder")]),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(board.payload["tagName"], .string("board-folder"))
+    let columns = try arrayValue(board.payload["columns"], field: "columns").map(objectValue)
+    XCTAssertEqual(columns.count, 5)
+    let statusNames = try columns.map { column -> String in
+      let status = try objectValue(column["status"])
+      return try stringValue(status["name"], field: "status.name")
+    }
+    XCTAssertEqual(statusNames, ["none", "pending", "progress", "review", "done"])
+    let notebooksByColumn = try columns.map { column in
+      try arrayValue(column["notebooks"], field: "notebooks").map(objectValue)
+    }
+    XCTAssertEqual(notebooksByColumn[0].first?["notebookId"], .string(idle.notebookId))
+    XCTAssertEqual(notebooksByColumn[3].first?["notebookId"], .string(reviewing.notebookId))
+  }
+
   private func noteInput(
     name: String,
     config: JSONObject,

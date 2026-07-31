@@ -1060,6 +1060,8 @@ public enum GraphQLContractProjector {
     proposeNoteLinks(noteId: String!, limit: Int): NoteLinkProposalQueryPayload!
     tags: NoteTagsQueryPayload!
     tagClasses: NoteTagClassesQueryPayload!
+    kanbanStatusSets: KanbanStatusSetsQueryPayload!
+    effectiveKanbanStatuses(tagName: String): KanbanStatusSetQueryPayload!
     noteFile(fileId: String!): NoteFileQueryPayload!
     autoActions: NoteAutoActionsQueryPayload!
     workflowInstances(workflowId: String): WorkflowInstancesQueryPayload!
@@ -1087,7 +1089,11 @@ public enum GraphQLContractProjector {
     deleteNotebook(notebookId: String!): ControlPlaneResult!
     applyNotebookTags(input: ApplyNotebookTagsInput!): NoteMutationPayload!
     removeNotebookTag(notebookId: String!, tagName: String!, provenance: String): NoteMutationPayload!
-    setNotebookProgress(notebookId: String!, progress: NotebookProgress!): NoteMutationPayload!
+    setNotebookProgress(notebookId: String!, progress: String!, expectedProgress: String): NoteMutationPayload!
+    createKanbanStatusSet(name: String!, statuses: [KanbanStatusInput!]!): KanbanStatusSetQueryPayload!
+    updateKanbanStatusSet(setId: String!, statuses: [KanbanStatusInput!]!, reassignments: [KanbanStatusReassignmentInput!]): KanbanStatusSetQueryPayload!
+    deleteKanbanStatusSet(setId: String!): ControlPlaneResult!
+    assignKanbanStatusSet(tagName: String!, setId: String): NoteMutationPayload!
     setNoteReadOnly(noteId: String!, readOnly: Boolean!): NoteMutationPayload!
     applyNoteTags(input: ApplyNoteTagsInput!): NoteMutationPayload!
     removeNoteTag(noteId: String!, tagName: String!, provenance: String): NoteMutationPayload!

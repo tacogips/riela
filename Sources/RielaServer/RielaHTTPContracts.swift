@@ -125,7 +125,8 @@ public struct DeterministicServerHTTPAdapter: RielaHTTPRouteHandling {
         method: request.method,
         path: request.path,
         headers: request.headers,
-        body: request.body.isEmpty ? nil : request.body
+        body: request.body.isEmpty ? nil : request.body,
+        query: request.query
       ),
       context: context
     )

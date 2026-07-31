@@ -28,7 +28,10 @@ extension RielaApp {
     do {
       let profileName = daemonProfileName
       let root = noteRootURL(profileName: profileName)
-      let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: root.path))
+      let service = try NoteService(
+        driver: SQLiteNoteDatabaseDriver(noteRoot: root.path),
+        changeObserver: NoteChangeFeedObserver(feed: noteChangeFeed)
+      )
       let executor = RielaAppGraphQLExecutor(
         executor: CompositeGraphQLDocumentExecutor(
           workflowRegistry: WorkflowRegistryGraphQLDocumentExecutor(
@@ -60,6 +63,16 @@ extension RielaApp {
         "message": .string("The active profile's Notes service is unavailable.")
       ]))
     }
+  }
+
+  func webNoteEventsResponse(for request: RielaHTTPRequest) async -> RielaHTTPResponse {
+    await DeterministicServerHTTPAdapter(
+      routeHandler: DeterministicServerRouteHandler(
+        allowUnauthenticatedNoteAPI: true,
+        noteChangeFeed: noteChangeFeed
+      ),
+      context: ServerRequestContext(serviceName: "riela-app")
+    ).response(for: request)
   }
 
   private func webGraphQLProfileConflictResponse() -> RielaHTTPResponse {

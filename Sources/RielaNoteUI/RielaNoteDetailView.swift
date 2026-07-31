@@ -853,6 +853,8 @@ func rielaNoteMutationErrorMessage(_ error: Error) -> String {
       return message
     case .invalidRow:
       return "A stored note could not be read."
+    case .progressConflict:
+      return "The notebook status changed elsewhere. Refresh and try again."
     }
   default:
     return "The change could not be saved. Please try again."

@@ -284,29 +284,46 @@ func rielaNoteNotebookNoteCountText(_ count: Int) -> String {
   count == 1 ? "1 note" : "\(count) notes"
 }
 
-func rielaNoteNotebookProgressLabel(_ progress: NotebookProgress) -> String {
-  switch progress {
+/// The system default kanban lifecycle, in board order. Native renders this
+/// fixed set; custom per-folder status sets are a web-only surface.
+let rielaNoteDefaultKanbanStatuses = ["none", "pending", "progress", "review", "done"]
+
+/// Category for a status name: default-set names map directly; any custom
+/// name falls back to `.none` for rendering purposes.
+func rielaNoteKanbanCategory(_ progress: String) -> KanbanStatusCategory {
+  KanbanStatusCategory(rawValue: progress) ?? .none
+}
+
+func rielaNoteNotebookProgressLabel(_ progress: String) -> String {
+  guard rielaNoteDefaultKanbanStatuses.contains(progress) else {
+    return progress
+  }
+  switch rielaNoteKanbanCategory(progress) {
   case .none:
-    "None"
-  case .progress:
-    "In progress"
-  case .done:
-    "Done"
+    return "None"
   case .pending:
-    "Pending"
+    return "Pending"
+  case .progress:
+    return "In progress"
+  case .review:
+    return "In review"
+  case .done:
+    return "Done"
   }
 }
 
-func rielaNoteNotebookProgressSystemImage(_ progress: NotebookProgress) -> String {
-  switch progress {
+func rielaNoteNotebookProgressSystemImage(_ progress: String) -> String {
+  switch rielaNoteKanbanCategory(progress) {
   case .none:
-    "circle"
-  case .progress:
-    "clock.arrow.circlepath"
-  case .done:
-    "checkmark.circle"
+    return "circle"
   case .pending:
-    "pause.circle"
+    return "pause.circle"
+  case .progress:
+    return "clock.arrow.circlepath"
+  case .review:
+    return "eye.circle"
+  case .done:
+    return "checkmark.circle"
   }
 }
 

@@ -79,13 +79,13 @@ final class NoteGraphQLHierarchyProgressTests: XCTestCase {
 
     let progressed = await service.setNotebookProgress(
       notebookId: notebookId,
-      progress: NotebookProgress.progress.rawValue
+      progress: "progress"
     )
-    XCTAssertEqual(progressed.notebook?.progress, .progress)
+    XCTAssertEqual(progressed.notebook?.progress, "progress")
 
     let parentFiltered = await service.notebooks(tagFilter: ["portfolio"])
     XCTAssertEqual(parentFiltered.value?.map(\.notebookId), [notebookId])
-    XCTAssertEqual(parentFiltered.value?.first?.progress, .progress)
+    XCTAssertEqual(parentFiltered.value?.first?.progress, "progress")
 
     let folderResult = await service.defineTag(
       GraphQLDefineNoteTagInput(name: "Work", classId: "folder")
@@ -123,7 +123,7 @@ final class NoteGraphQLHierarchyProgressTests: XCTestCase {
     let mutation = await executor.execute(
       GraphQLDocumentRequest(
         query: """
-        mutation SetProgress($notebookId: String!, $progress: NotebookProgress!) {
+        mutation SetProgress($notebookId: String!, $progress: String!) {
           setNotebookProgress(notebookId: $notebookId, progress: $progress) {
             result { accepted status }
             notebook { notebookId progress tags { tag { name parentTagId } } }
@@ -147,7 +147,7 @@ final class NoteGraphQLHierarchyProgressTests: XCTestCase {
     let invalidMutation = await executor.execute(
       GraphQLDocumentRequest(
         query: """
-        mutation RejectInvalidProgress($notebookId: String!, $progress: NotebookProgress!) {
+        mutation RejectInvalidProgress($notebookId: String!, $progress: String!) {
           setNotebookProgress(notebookId: $notebookId, progress: $progress) {
             result { accepted status }
             notebook { notebookId progress }
@@ -169,7 +169,7 @@ final class NoteGraphQLHierarchyProgressTests: XCTestCase {
     XCTAssertEqual(invalidResult["accepted"], .bool(false))
     XCTAssertEqual(invalidResult["status"], .string("invalid_request"))
     let persistedAfterInvalid = await service.notebook(notebookId: notebookId)
-    XCTAssertEqual(persistedAfterInvalid.value?.progress, .done)
+    XCTAssertEqual(persistedAfterInvalid.value?.progress, "done")
 
     let query = await executor.execute(
       GraphQLDocumentRequest(

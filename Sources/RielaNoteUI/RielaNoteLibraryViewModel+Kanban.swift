@@ -21,13 +21,13 @@ public extension RielaNoteLibraryViewModel {
     )
   }
 
-  func notebooks(for progress: NotebookProgress) -> [Notebook] {
+  func notebooks(for progress: String) -> [Notebook] {
     notebooks.filter { $0.progress == progress }
   }
 
   func setNotebookProgress(
     notebookId: String,
-    progress: NotebookProgress
+    progress: String
   ) async {
     let mutationGeneration = nextNotebookProgressMutationGeneration(
       notebookId: notebookId,
@@ -87,7 +87,7 @@ public extension RielaNoteLibraryViewModel {
 
   private func nextNotebookProgressMutationGeneration(
     notebookId: String,
-    progress: NotebookProgress
+    progress: String
   ) -> Int {
     let generation = (notebookProgressMutationGenerations[notebookId] ?? 0) + 1
     notebookProgressMutationGenerations[notebookId] = generation

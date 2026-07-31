@@ -49,6 +49,15 @@ final class RielaAppWebRouter: RielaHTTPRouteHandling, @unchecked Sendable {
        let response = assetResolver.response(for: request) {
       return response
     }
+    if request.path == "/note/events" {
+      if let rejection = securityRejection(for: request) {
+        return rejection
+      }
+      guard let app else {
+        return .json(status: 503, .object(["error": .string("RielaApp is unavailable")]))
+      }
+      return await app.webNoteEventsResponse(for: request)
+    }
     if request.path == "/graphql", let rejection = securityRejection(for: request) {
       return rejection
     }

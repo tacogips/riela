@@ -119,6 +119,7 @@ final class NoteSettingsWindowController: NSWindowController, NSWindowDelegate {
     registrationBaseURL: String? = nil,
     registrationBaseURLProvider: (@MainActor () -> String?)? = nil,
     autoActionLauncher: (any NoteAutoActionWorkflowLaunching)? = nil,
+    changeObserver: (any NoteChangeObserving)? = nil,
     appearanceStore: RielaAppAppearanceSettingsStore? = nil,
     onWindowWillClose: @escaping () -> Void = {}
   ) throws {
@@ -132,7 +133,8 @@ final class NoteSettingsWindowController: NSWindowController, NSWindowDelegate {
     try FileManager.default.createDirectory(at: noteRoot, withIntermediateDirectories: true)
     let service = try NoteService(
       driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot.path),
-      autoActionDispatcher: autoActionLauncher.map { NoteAutoActionWorkflowDispatcher(launcher: $0) }
+      autoActionDispatcher: autoActionLauncher.map { NoteAutoActionWorkflowDispatcher(launcher: $0) },
+      changeObserver: changeObserver
     )
     self.service = service
     self.maintenanceTicker = autoActionLauncher == nil

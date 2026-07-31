@@ -265,17 +265,74 @@ public struct GraphQLNoteGraphQLService: Sendable {
 
   public func setNotebookProgress(
     notebookId: String,
-    progress: String
+    progress: String,
+    expectedProgress: String? = nil
   ) async -> GraphQLNoteMutationResult {
     noteMutation {
-      guard let progress = NotebookProgress(rawValue: progress) else {
-        throw GraphQLNoteServiceError.invalidRequest("unsupported notebook progress: \(progress)")
-      }
       let notebook = try service.setNotebookProgress(
         notebookId: notebookId,
-        progress: progress
+        progress: progress,
+        expectedProgress: expectedProgress
       )
       return .init(result: .ok, notebook: GraphQLNotebookDTO(notebook: notebook))
+    }
+  }
+
+  public func kanbanStatusSets() async -> GraphQLNoteQueryResult<[GraphQLKanbanStatusSetDTO]> {
+    noteResult {
+      try service.listKanbanStatusSets().map(GraphQLKanbanStatusSetDTO.init)
+    }
+  }
+
+  public func effectiveKanbanStatuses(tagName: String?) async -> GraphQLNoteQueryResult<GraphQLKanbanStatusSetDTO> {
+    noteResult {
+      GraphQLKanbanStatusSetDTO(set: try service.effectiveKanbanStatuses(tagName: tagName))
+    }
+  }
+
+  public func createKanbanStatusSet(
+    name: String,
+    statuses: [GraphQLKanbanStatusInput]
+  ) async -> GraphQLNoteQueryResult<GraphQLKanbanStatusSetDTO> {
+    noteResult {
+      GraphQLKanbanStatusSetDTO(
+        set: try service.createKanbanStatusSet(
+          name: name,
+          statuses: try statuses.map { try $0.upsert() }
+        )
+      )
+    }
+  }
+
+  public func updateKanbanStatusSet(
+    setId: String,
+    statuses: [GraphQLKanbanStatusInput],
+    reassignments: [GraphQLKanbanStatusReassignmentInput] = []
+  ) async -> GraphQLNoteQueryResult<GraphQLKanbanStatusSetDTO> {
+    noteResult {
+      GraphQLKanbanStatusSetDTO(
+        set: try service.updateKanbanStatusSet(
+          setId: setId,
+          statuses: try statuses.map { try $0.upsert() },
+          removedReassignTo: Dictionary(
+            reassignments.map { ($0.removedName, $0.reassignTo) },
+            uniquingKeysWith: { _, last in last }
+          )
+        )
+      )
+    }
+  }
+
+  public func deleteKanbanStatusSet(setId: String) async -> GraphQLControlPlaneResult {
+    noteControlResult {
+      try service.deleteKanbanStatusSet(setId: setId)
+    }
+  }
+
+  public func assignKanbanStatusSet(tagName: String, setId: String?) async -> GraphQLNoteMutationResult {
+    noteMutation {
+      let tag = try service.assignKanbanStatusSet(tagName: tagName, setId: setId)
+      return .init(result: .ok, tag: GraphQLNoteTagDTO(tag: tag))
     }
   }
 
@@ -496,6 +553,8 @@ private func graphQLNoteResult(for error: Error) -> GraphQLControlPlaneResult {
     return .init(accepted: false, status: "rejected", diagnostics: [graphQLNotePublicDiagnostic(for: error)])
   case NoteServiceError.invalidInput:
     return .init(accepted: false, status: "invalid_request", diagnostics: [graphQLNotePublicDiagnostic(for: error)])
+  case NoteServiceError.progressConflict:
+    return .init(accepted: false, status: "progress_conflict", diagnostics: [graphQLNotePublicDiagnostic(for: error)])
   case GraphQLNoteServiceError.invalidRequest:
     return .init(accepted: false, status: "invalid_request", diagnostics: [graphQLNotePublicDiagnostic(for: error)])
   default:
@@ -513,6 +572,8 @@ func graphQLNotePublicDiagnostic(for error: Error) -> String {
     return "tag is protected"
   case let NoteServiceError.invalidInput(message):
     return "invalid note request: \(message)"
+  case let NoteServiceError.progressConflict(expected, actual):
+    return "notebook progress conflict: expected '\(expected)' but found '\(actual)'"
   case let NoteServiceError.invalidRow(message):
     return "invalid note store row: \(message)"
   case let GraphQLNoteServiceError.invalidRequest(message):

@@ -336,4 +336,14 @@ private func validateFanout(_ raw: Any, path: String, diagnostics: inout [Workfl
   if let concurrency = fanout["concurrency"] {
     validatePositiveInteger(concurrency, path: "\(path).concurrency", diagnostics: &diagnostics)
   }
+  if let failurePolicy = fanout["failurePolicy"] {
+    let supported = ["fail-fast", "collect-all", "collect-partial"]
+    guard let value = failurePolicy as? String, supported.contains(value) else {
+      diagnostics.append(error(
+        "\(path).failurePolicy",
+        "must be one of \(supported.joined(separator: ", ")) when provided"
+      ))
+      return
+    }
+  }
 }

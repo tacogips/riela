@@ -104,7 +104,7 @@ public extension NoteService {
     try driver.withDatabase { database in
       try database.query(
         """
-        SELECT tag_id, name, class_id, parent_tag_id, is_system, created_at
+        SELECT tag_id, name, class_id, parent_tag_id, status_set_id, is_system, created_at
         FROM tags
         ORDER BY name
         """
@@ -147,7 +147,7 @@ func requireTagClass(classId: String, in database: SQLiteDatabase) throws -> Tag
 private func findTag(name: String, in database: SQLiteDatabase) throws -> Tag? {
   try database.query(
     """
-    SELECT tag_id, name, class_id, parent_tag_id, is_system, created_at
+    SELECT tag_id, name, class_id, parent_tag_id, status_set_id, is_system, created_at
     FROM tags
     WHERE name = ?
     LIMIT 1
@@ -174,6 +174,7 @@ private func noteCatalogTag(from row: SQLiteRow) throws -> Tag {
     name: name,
     classId: row["class_id"] ?? nil,
     parentTagId: row["parent_tag_id"] ?? nil,
+    statusSetId: row["status_set_id"] ?? nil,
     isSystem: row["is_system"] == "1",
     createdAt: createdAt
   )

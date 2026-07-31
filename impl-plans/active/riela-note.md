@@ -1,30 +1,496 @@
 # Riela Note Implementation Plan
 
-**Status**: ACTIVE — the hierarchical-tags/folder-class/notebook-progress
-implementation is complete and accepted, but its current git-landing follow-up
-remains open until the authorized worktree is safety-checked, committed, pushed,
-and independently verified. The three owner-and-trigger deferrals under “Prior
-Riela Note Baseline and Accepted Deferrals” remain outside this work package.
+**Status**: COMPLETE — TASK-024 through TASK-030 delivered the sole current
+work package: the Note hub gap-and-waste analysis, standalone-memory removal,
+and the read-only system-memory notebook. Earlier packages in this file are
+historical records; baseline deferrals remain out of scope.
 **Workflow Mode**: `issue-resolution` (exactly one feature/work package;
 `has_feature_fanout = false`)
 **Issue Reference**: No GitHub issue was provided. Runtime issue title:
-“Land accepted Riela Note hierarchical-tags/Kanban worktree: verified commit +
-push on `feat/riela-note-hierarchical-tags-kanban` (plus optional low-severity
-coverage tests).” Prior child session:
-`codex-design-and-implement-review-loop-session-631`; current workflow
-execution: `codex-design-and-implement-review-loop-session-632`.
+“Riela Note hub: gap-and-waste analysis + fold system memory into Riela Note
+(delete RielaMemory, add read-only system-memory notebook).” Workflow execution:
+`codex-design-and-implement-review-loop-session-650`.
 **Codex-Agent References**: None provided; the runtime intake and accepted
 design are authoritative.
-**Design Reference**: `design-docs/specs/design-riela-note.md` (D16–D19,
-Hierarchy filtering and schema-v4 rollout, GraphQL Surface, UI Design,
-Acceptance Traceability, Verification)
-**Accepted Design Review**: `comm-001569`, accepted with no high/mid findings
-and no revision requested. The accepted feature design remains
-`design-docs/specs/design-riela-note.md`; this follow-up does not reopen it.
+**Design Reference**: `design-docs/specs/design-riela-note.md` (D20–D24,
+Schema-v6 and system-memory bootstrap, memory-to-note mapping, standalone
+memory removal boundary, GraphQL/REST/UI surfaces, and Verification)
+**Accepted Design Review**: `comm-001847`, accepted with no findings and no
+revision requested.
 **Created**: 2026-07-04
-**Last Updated**: 2026-07-24
+**Last Updated**: 2026-08-01
 
-## Current Issue-Resolution Work Package
+## Current Issue-Resolution Work Package: System Memory in Riela Note
+
+### Objective and boundaries
+
+Deliver exactly one issue-resolution work package on
+`feat/note-hub-improve`, confined to
+`<isolated-worktree>`:
+
+1. Write and commit the Note hub gap-and-waste analysis before implementation.
+2. Remove the standalone `RielaMemory` package, CLI, add-ons, workflow schema,
+   runner/validation code, fixtures, and examples without touching stored
+   `.riela/memory/` data.
+3. Add the schema-v6 read-only system-memory notebook, privileged NoteService
+   write path, six note-backed successor add-ons, GraphQL/REST lock mutation,
+   and SolidJS Unlock/Lock UI.
+4. Migrate the Slack, Telegram, and Discord trio examples atomically with
+   example-name, mock-count, and parity fixtures.
+5. Verify, review, document, and commit all work locally. Do not push, switch
+   branches, rebase, merge, or modify the parallel checkout at
+   `<parallel-checkout>`.
+
+The accepted design is authoritative. Optional Phase 3 implementation is
+permitted only after TASK-025 through TASK-029 are complete and every required
+Phase 2 build, test, typecheck, example-validation, and deletion-audit gate is
+green. Even then, TASK-024 must have ranked the item as small and high-value;
+otherwise record it only as a follow-up in the analysis document.
+
+### Data flow and invariants
+
+1. Store preparation runs schema migrations through additive `migrateToV6`,
+   then idempotently seeds `notebook-kind:system-memory` and the fixed
+   `notebook-system-memory` notebook. Conflict handling never rewrites the
+   persisted `read_only` value.
+2. Ordinary NoteService content writes compute effective lock state as
+   `notebook.readOnly || note.readOnly`. Allowed metadata/navigation flows
+   remain available exactly as D21 specifies.
+3. Typed system-memory save/update entry points resolve the reserved notebook,
+   bypass only its notebook-level lock, and suppress auto-action enqueueing.
+   No public Boolean bypass is accepted by GraphQL, REST, CLI, or generic note
+   add-ons.
+4. Successor add-ons translate memory inputs into note body, tags, links,
+   files, and bounded metadata; read/load/search operations are restricted to
+   the reserved notebook and outputs use notebook/note ids.
+5. GraphQL and same-origin REST call the ordinary
+   `setNotebookReadOnly` mutation. The web client adopts only the canonical
+   response and preserves locked state on failure.
+6. The trio examples call the new persona Note add-ons with ordinary
+   `noteRoot` configuration and no workflow-level `memories` declaration.
+
+### TASK-024: Commit the Note hub gap-and-waste analysis first
+
+**Status**: COMPLETE — committed as `82140ac`.
+**Depends On**: Accepted design review `comm-001847`
+**Write Scope**:
+`docs/briefs/note-hub-gap-and-waste-2026-08-01.md` only for the first commit.
+
+**Deliverables**:
+
+- Reconfirm the verified inventory in
+  `docs/briefs/note-system-memory-2026-08-01.md` without reopening operator
+  decisions.
+- Survey the current Note domain, add-on, GraphQL, REST, and web workspace
+  surfaces named by the accepted design.
+- Create missing-capability and waste/redundancy tables. Every row must include
+  evidence, rationale, a `keep`/`add`/`remove`/`simplify` decision, value, risk,
+  and disposition in this work package or as a follow-up.
+- Rank the memory-to-note fold first. Treat additional implementation as
+  optional and bounded; record anything not selected as a follow-up.
+- Commit this document as the first implementation-phase commit, staging only
+  its exact path. Do not stage the already modified design or plan in this
+  first commit.
+
+**Completion Criteria**:
+
+- The document exists under `docs/briefs/`, covers both gaps and waste, and
+  makes every decision explicit.
+- `git show --stat --oneline HEAD` proves the first implementation-phase commit
+  contains the analysis document and no production code.
+- The branch remains `feat/note-hub-improve`; no push occurs.
+
+### TASK-025: Schema v6, system notebook, and NoteService lock boundary
+
+**Status**: COMPLETE — committed as part of `7e5c29c`.
+**Depends On**: TASK-024
+**Write Scope**:
+`Sources/RielaNote/`, `Tests/RielaNoteTests/`, and only directly required Note
+test support.
+
+**Deliverables**:
+
+- Append schema migration 6 with only
+  `ALTER TABLE notebooks ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0`;
+  update fresh schema and notebook row/model projections.
+- Seed the non-deletable `notebook-kind:system-memory` tag and fixed
+  `notebook-system-memory` row after migration with `read_only = 1` on insert.
+  Preserve an existing row's lock value on every later prepare/open.
+- Reject ordinary content mutations covered by D21 when the notebook or note
+  lock applies; keep tag, comment, link, progress, read/search, and lock-toggle
+  behavior available.
+- Protect the reserved notebook from ordinary deletion and reject attempts to
+  claim its fixed id or kind through ordinary notebook creation.
+- Add narrow typed system-memory save/update operations that resolve the
+  reserved notebook, bypass only its notebook lock, reject out-of-notebook
+  targets, and suppress auto-actions.
+- Add fresh/migrated schema, bootstrap idempotency, persisted unlock, ordinary
+  lock rejection, allowed metadata flow, system bypass, target confinement,
+  and auto-action behavior tests.
+
+**Completion Criteria**:
+
+- Fresh and v5-migrated stores have equivalent schema-v6 projections and
+  preserve existing notebook/note data.
+- Exactly one locked system-memory notebook is prepared, and a persisted
+  unlock survives reopen.
+- Ordinary locked content writes fail with `NoteServiceError.readOnly`; typed
+  system writes succeed only in the reserved notebook.
+- Focused `RielaNoteTests` pass before downstream adapters are integrated.
+
+### TASK-026: Remove the standalone memory package and runtime surface
+
+**Status**: COMPLETE — committed as part of `7e5c29c`.
+**Depends On**: TASK-024
+**Write Scope**:
+`Package.swift`, `Packages/RielaMemory/`, memory-specific files under
+`Sources/RielaCLI/` and `Sources/RielaCore/`, `.riela/workflows/riela-memory-design-impl-review/`,
+memory-specific tests, and the shared CLI/Core test-support files enumerated in
+`docs/briefs/note-system-memory-2026-08-01.md`.
+
+**Deliverables**:
+
+- Remove all root SwiftPM references and delete `Packages/RielaMemory/`.
+- Delete the `riela memory` route, commands, models, parsing, runner injection,
+  and help text; split the mixed parser so workflow parsing remains intact.
+- Delete legacy memory/persona/raw-summary adapters, file helpers, and the
+  `riela/memory-` prefix catch-all. Leave a deliberate registration seam for
+  the TASK-027 Note-backed successors without retaining compatibility aliases.
+- Delete `WorkflowMemoryScope`, `WorkflowMemoryDeclaration`, all authored and
+  resolved `memories` fields/decoding, memory runner resolution, and memory
+  validation. Repair shared publication, persistence, prompting, fanout,
+  failure, stdio, loop-cost, initializer, and test-support call sites.
+- Delete the memory-specific project workflow fixture and tests; do not
+  enumerate, migrate, rewrite, or delete any user `.riela/memory/` data.
+
+**Completion Criteria**:
+
+- SwiftPM resolves without `RielaMemory`; workflow and non-memory CLI parsing
+  remain represented by tests.
+- No production, example, fixture, or test reference to removed memory schema
+  symbols remains, except the three examples awaiting TASK-028 and the new
+  Note-successor work explicitly owned by TASK-027.
+- The deletion is limited to the accepted memory surface and does not alter
+  unrelated workflow engine, event-source, or package-manager behavior.
+
+### TASK-027: Implement the six Note-backed memory successor add-ons
+
+**Status**: COMPLETE — committed as part of `7e5c29c`.
+**Depends On**: TASK-025, TASK-026
+**Write Scope**:
+focused Note add-on adapter files under `Sources/RielaCLI/`, directly required
+validation/registration files, and focused successor coverage under
+`Tests/RielaCLITests/`.
+
+**Deliverables**:
+
+- Register `riela/note-memory-save`, `riela/note-memory-update`,
+  `riela/note-memory-load`, `riela/note-memory-search`,
+  `riela/note-persona-memory-read`, and
+  `riela/note-persona-memory-write` as exact ids, never prefix dispatch.
+- Resolve note roots through the existing Note add-on order and use only
+  `RielaNote`/`NoteService` domain boundaries.
+- Implement the D24 field mapping for body markdown, metadata provenance,
+  tags, related note ids, and attachments; return note/notebook ids rather
+  than legacy integer record ids or database paths.
+- Restrict load/search/persona reads to the reserved notebook and clamp persona
+  limits to `1...30` with deterministic newest-first ordering.
+- Preserve persona chat contracts (`memoryMarkdown`, `memoryGuidance`, reply
+  text, and handoff flags) while changing the storage contract.
+- Cover all six ids, lock bypass, out-of-notebook rejection, provenance,
+  attachments, bounded reads, and persona reply/handoff behavior.
+
+**Completion Criteria**:
+
+- All six successors execute through typed NoteService behavior while the
+  system-memory notebook is locked.
+- No public adapter input can select a privileged bypass or another notebook.
+- Focused CLI/add-on tests pass and contain no `RielaMemory` import.
+
+### TASK-028: Migrate trio examples and parity fixtures atomically
+
+**Status**: COMPLETE — committed as part of `7e5c29c`.
+**Depends On**: TASK-026, TASK-027
+**Write Scope**:
+`examples/slack-agent-trio-chat/`, `examples/telegram-agent-trio-chat/`,
+`examples/discord-agent-trio-chat/`,
+`examples/chat-memory-raw-and-daily-summary/`,
+`examples/catalog/chat-persona-and-agent-trio.md`, example-name/mock-count
+fixtures, `Tests/RielaCLITests/RielaExampleParityTests.swift`, and directly
+related mock scenario tests.
+
+**Deliverables**:
+
+- Remove every workflow/node `memories` declaration from the three trio
+  examples and point their six persona read/write nodes at the new Note ids.
+- Replace memory-root/database terminology and fixture data with
+  note-root/notebook/note terminology while preserving conversational and
+  handoff expectations.
+- Delete `examples/chat-memory-raw-and-daily-summary/` and its catalog
+  reference.
+- Update `rielaExampleWorkflowNames()`, expected mock counts, and parity tests
+  in the same change.
+- Validate and mock-run each modified example.
+
+**Completion Criteria**:
+
+- All three trio examples validate and exercise Note-backed persona memory.
+- Example names, counts, mock scenarios, catalog references, and parity tests
+  agree exactly.
+- No removed add-on id or workflow `memories` key remains outside historical
+  documentation.
+
+### TASK-029: Expose persisted lock control through GraphQL, REST, and web
+
+**Status**: COMPLETE — committed as part of `7e5c29c`.
+**Depends On**: TASK-025
+**Write Scope**:
+`Sources/RielaGraphQL/GraphQLContracts.swift`,
+`Sources/RielaGraphQL/GraphQLNoteSchemaContract.swift`,
+`Sources/RielaGraphQL/NoteGraphQLContracts.swift`,
+`Sources/RielaGraphQL/NoteGraphQLService.swift`,
+`Sources/RielaGraphQL/NoteGraphQLDocumentExecutor.swift`,
+`Sources/RielaCLI/NoteCommandGraphQLDocuments.swift`,
+`Sources/RielaApp/RielaAppWebNoteWorkspaceAPI.swift`,
+`Sources/RielaNoteWorkspace/RielaNoteUIClient.swift`,
+`web/src/notes/types.ts`, `web/src/notes/client.ts`,
+`web/src/notes/controller.ts`, `web/src/notes/workspace.ts`,
+`web/src/views/NotesView.tsx`, directly supporting Note components/styles,
+and focused tests in `Tests/RielaGraphQLTests/`,
+`Tests/RielaAppSupportTests/RielaAppWebNoteWorkspaceAPITests.swift`,
+`Tests/RielaNoteWorkspaceTests/`, and `web/src/**/*.test.ts`. This scope
+excludes TASK-027 add-on adapter files.
+
+**Deliverables**:
+
+- Add `Notebook.readOnly` and
+  `setNotebookReadOnly(notebookId:readOnly)` to synchronized GraphQL DTOs,
+  contracts, selections, and execution through ordinary NoteService behavior.
+- Add `POST /api/v1/notes/notebooks/{notebookId}/read-only` using existing
+  Host, Origin, CSRF/session, JSON, and active-profile policies; return the
+  canonical notebook and expose no bypass.
+- Project `readOnly` into the SolidJS Note client/controller/view. Detect the
+  system notebook by `notebook-kind:system-memory`, disable content
+  creation/editing while locked, and render explicit Unlock/Lock controls.
+- Adopt only the canonical mutation response; retain the prior lock state and
+  show existing error handling on failure.
+- Cover GraphQL contract/execution, REST policy/error mapping/profile race,
+  web client/controller state, locked controls, unlock, relock, and failure.
+
+**Completion Criteria**:
+
+- GraphQL and REST persist the same notebook-level value and expose no system
+  write bypass.
+- The system-memory UI is locked by default, unlocks/relocks durably, and does
+  not show new lock chrome for ordinary notebooks.
+- Focused Swift and `web/src` tests pass, and
+  `cd web && bun run typecheck` succeeds independently of the Vite build.
+
+### TASK-030: Integration, deletion audit, documentation, and local commits
+
+**Status**: COMPLETE — required gates are green; design/plan evidence is the
+final local documentation commit.
+**Depends On**: TASK-027, TASK-028, TASK-029
+**Write Scope**:
+focused regression repairs, `README.md`, directly affected user-facing skills,
+`design-docs/specs/design-riela-note.md`, this plan, and the analysis document.
+
+**Deliverables**:
+
+- Run every required verification command below and record exact outcome,
+  counts where available, reruns, and any verified unrelated timing flake.
+- Audit for dangling `RielaMemory`, legacy add-on ids,
+  `WorkflowMemoryDeclaration`, and authored `memories:` references while
+  excluding only `docs/**` and `design-docs/**`.
+- Review `README.md`, `.codex/skills/riela-impl-workflow/SKILL.md`, example
+  catalog text, design, and plan; update only directly affected user-facing
+  contracts and preserve accepted historical documentation.
+- Review the final diff for additive schema-v6 behavior, lock/bypass
+  separation, example parity, removal boundaries, and scope containment.
+- Commit implementation and documentation in logical local commits on
+  `feat/note-hub-improve`; never push. Record commit hashes and finish with a
+  clean status.
+
+**Completion Criteria**:
+
+- TASK-024 through TASK-029 are complete with no unresolved high/mid review
+  finding.
+- Every required command passes. The known interleaved-submit full-suite flake
+  is relevant only if independently reproduced; it cannot waive a filtered
+  suite failure.
+- All work is committed locally on `feat/note-hub-improve`, no file outside the
+  isolated worktree was modified, and `git status --short` is empty.
+
+### Current-work-package dependencies
+
+| Task | Depends On | Reason |
+| --- | --- | --- |
+| TASK-024 | accepted design | Analysis must be authored and committed first. |
+| TASK-025 | TASK-024 | Note schema/domain implementation follows the committed ranking. |
+| TASK-026 | TASK-024 | Deletion follows the committed inventory and decisions. |
+| TASK-027 | TASK-025, TASK-026 | Successors require Note system writes and the legacy dispatch removal. |
+| TASK-028 | TASK-026, TASK-027 | Examples must target final ids after legacy removal. |
+| TASK-029 | TASK-025 | API/UI require the completed notebook lock model. |
+| TASK-030 | TASK-027, TASK-028, TASK-029 | Integration starts after all product surfaces converge. |
+
+### Parallelization
+
+- TASK-024 is an exclusive first phase because its exact-path commit must
+  precede implementation.
+- After TASK-024, TASK-025 and TASK-026 may run in parallel: their write scopes
+  are disjoint (`Sources/RielaNote` versus package/CLI/Core deletion). Do not
+  parallelize shared build/test repair that crosses those scopes.
+- After TASK-025, TASK-029 may run in parallel with the TASK-026→TASK-027
+  sequence. Keep TASK-029 out of TASK-027's add-on adapter/registration files;
+  coordinate any unavoidable shared `Sources/RielaCLI/` registry edit
+  sequentially.
+- TASK-027 is sequential after TASK-026 because both touch production adapter
+  registration. TASK-028 follows TASK-027. TASK-030 is exclusive.
+
+### Required verification
+
+```bash
+swift build
+swift test --filter RielaNoteTests
+swift test --filter RielaCLITests
+swift test --filter RielaCoreTests
+riela workflow validate examples/slack-agent-trio-chat
+riela workflow validate examples/telegram-agent-trio-chat
+riela workflow validate examples/discord-agent-trio-chat
+cd web && bun run typecheck
+cd web && bun run build
+cd web && bun test src
+rg -n 'RielaMemory|riela/(memory-|chat-persona-memory-|chat-memory-raw)|WorkflowMemoryDeclaration|memories:' --glob '!docs/**' --glob '!design-docs/**' .
+git diff --check
+git branch --show-current
+git log --oneline --decorate -n 12
+git status --short
+```
+
+The deletion audit must produce no production/example/fixture/test matches.
+Also inspect `Package.swift` and the tracked tree to confirm
+`Packages/RielaMemory/` is absent. Record whether each modified trio example
+was validated with the built worktree executable if `riela` on `PATH` points
+elsewhere.
+
+### Current-work-package completion criteria
+
+- [x] The gap-and-waste analysis is the first implementation-phase commit and
+      every row has evidence, rationale, and an explicit decision.
+- [x] Schema v6 is additive and existing Note data is preserved.
+- [x] Exactly one default system-memory notebook exists; its persisted lock
+      survives reopen and its reserved identity cannot be claimed or deleted.
+- [x] Ordinary content writes enforce effective read-only state; the typed
+      system path bypasses only the notebook lock and suppresses auto-actions.
+- [x] Six exact Note-backed successor add-ons pass focused coverage without a
+      public bypass or cross-notebook access.
+- [x] `RielaMemory`, the memory CLI/add-ons, workflow memory schema/runtime,
+      memory fixtures/tests, and raw-summary example are removed without
+      touching user `.riela/memory/` data.
+- [x] Slack, Telegram, and Discord trio examples, mocks, names, counts, catalog,
+      and parity tests are synchronized and green.
+- [x] GraphQL, REST, and web lock/unlock behavior is synchronized and tested.
+- [x] The changed TypeScript passes `cd web && bun run typecheck` as a distinct
+      gate from Vite build and `bun test src`.
+- [x] Required Swift, example, web, source-audit, diff, branch, commit, and
+      status checks are recorded and pass.
+- [x] Logical commits exist only on `feat/note-hub-improve`; no push occurred
+      and final status is clean.
+
+### Current-work-package progress-log expectations
+
+Append one dated entry per implementation/review session containing:
+
+- tasks completed, in progress, and blocked;
+- exact files changed and whether their write scope was planned;
+- tests added/updated and exact verification commands/results;
+- review findings with severity and disposition;
+- deletion-audit results, known-flake reruns, residual risks, and gaps;
+- commit hashes, branch confirmation, push status (`not pushed`), and final
+  worktree status.
+
+### Session: 2026-08-01 System-memory implementation plan authored
+
+**Tasks Completed**: Planning only; accepted Step 3 design review incorporated.
+**Tasks In Progress**: TASK-024.
+**Files Changed**:
+`design-docs/specs/design-riela-note.md`,
+`impl-plans/active/riela-note.md`.
+**Review Evidence**: `comm-001847` accepted the design with no findings and no
+revision request. No Step 5 feedback exists on this first plan iteration.
+**Verification**: `git diff --check` and targeted plan/source-reference audits
+are required before handoff; implementation commands are planned, not run.
+**References**: No GitHub issue or Codex-agent/Cursor reference was provided.
+
+### Session: 2026-08-01 Step 4 self-review revisions
+
+**Tasks Completed**: Addressed both plan-only mid-severity findings from
+`comm-001849`.
+**Tasks In Progress**: TASK-024.
+**Files Changed**: `impl-plans/active/riela-note.md`.
+**Findings Addressed**:
+
+- Added the independent `cd web && bun run typecheck` gate to TASK-029,
+  required verification, and completion criteria because `bun run build` is
+  Vite-only.
+- Required TASK-025 through TASK-029 and all Phase 2 gates to be green before
+  any optional Phase 3 implementation; otherwise analysis items remain
+  follow-ups.
+
+**Verification**: Plan-only revision; implementation commands remain planned,
+not run. Run `git diff --check` and targeted text audits before handoff.
+**References**: Accepted design review `comm-001847`; Step 4 self-review
+`comm-001849`; no GitHub issue or Codex-agent/Cursor reference was provided.
+
+### Session: 2026-08-01 System-memory implementation and verification
+
+**Tasks Completed**: TASK-024 through TASK-030. No task remains in progress or
+blocked, and no optional Phase 3 feature was added.
+**Files Changed**: Planned scopes only: `Package.swift`, the removed
+`Packages/RielaMemory/` and memory workflow/CLI/Core surfaces,
+`Sources/RielaNote/`, `Sources/RielaGraphQL/`, the Note adapter and RielaApp
+REST surfaces, affected shared test support, the trio examples and parity
+fixtures, `web/src/`, `README.md`, the accepted design, and this plan.
+Matrix and Telegram-SDK trio fixtures were also migrated because the deletion
+audit found the same removed ids there; this is a compatibility repair inside
+the accepted example-removal boundary, not feature fan-out.
+**Tests Added/Updated**: Schema-v6/bootstrap, notebook lock, system bypass,
+attachment/relationship/provenance mapping, all six successor ids, persona
+handoff guards, GraphQL mutation execution, REST profile policy, web canonical
+lock adoption, parser removal, shared-node fixtures, and example parity.
+**Verification**:
+
+- `swift build`: passed.
+- `swift test --filter RielaNoteTests`: 135 passed, 0 failed.
+- `swift test --filter RielaCLITests`: 649 passed, 0 failed.
+- `swift test --filter RielaCoreTests`: 477 passed, 0 failed.
+- Focused Note add-on/GraphQL/RielaApp REST tests: 31 passed, 0 failed.
+- Worktree executable validation: Slack, Telegram, Discord, Matrix, and
+  Telegram-SDK trio workflows all returned `valid: true`.
+- `cd web && bun run typecheck`, `bun run build`, and `bun test src`: passed;
+  149 web tests passed, 0 failed.
+- Removed-symbol/package audit and `git diff --check`: passed with no scoped
+  matches or whitespace errors; `Packages/RielaMemory/` is absent.
+- Advisory `swiftlint lint --strict` still reports repository-baseline findings
+  outside this work package; it is not a required acceptance gate and no new
+  feature-specific lint finding remains unresolved.
+
+**Review Findings**: Two implementation-review findings were resolved before
+the final gate: D24 relationship/file projection was completed, and direct
+GraphQL/REST lock tests plus the supported-mutation inventory were added.
+Full CLI rerun failures exposed stale parser, seeded-notebook-count,
+shared-node-memory, and persona-handoff fixtures; each was repaired and the
+required filter then passed in full.
+**Commits**: `82140ac` (analysis only) and `7e5c29c` (implementation, tests,
+examples, and public README). This design/plan evidence update is the final
+local documentation commit. Branch: `feat/note-hub-improve`; push status: not
+pushed. Final status is required to be clean after that commit.
+**Residual Risks**: Existing `.riela/memory/` data intentionally remains
+orphaned and unread; Matrix/Telegram-SDK migrations exceed the three named
+examples only to remove dangling ids. The known unrelated interleaved-submit
+timing flake was not observed and did not affect any required filtered suite.
+
+## Historical Issue-Resolution Work Package: Hierarchical Tags and Kanban
 
 ### Objective and boundaries
 
@@ -719,7 +1185,7 @@ workflow handoff actions.
 **References**: `comm-001555`; no external issue or Codex-agent reference was
 provided.
 
-## Current Git-Landing Follow-Up Work Package
+## Historical Git-Landing Follow-Up Work Package
 
 ### Objective and boundaries
 

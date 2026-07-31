@@ -24,6 +24,9 @@ Primary capabilities delivered by this design:
   per-file storage locators and single/bulk local-to-S3 migration.
 - Note CRUD exposed as built-in workflow add-ons, a GraphQL surface, and
   a `riela note` CLI family.
+- A default, read-only system-memory notebook replaces the standalone
+  `RielaMemory` package and gives agents and humans one shared knowledge
+  substrate without exposing the privileged system-write bypass to clients.
 - Ingestion pipelines as workflows: PDF page-per-note import, YouTube
   transcript notes, quick memo capture from chat event sources.
 - Post-create auto-actions (default: AI tagging) expressed as workflows.
@@ -76,6 +79,12 @@ Primary capabilities delivered by this design:
   an iPad-portable note UI needs a new hosting boundary.
 - **F7 — Storage roots.** User scope `~/.riela/...`, project scope
   `./.riela/...`, app profile scope `~/.riela/profiles/<profile>/...`.
+- **F8 — Standalone memory duplicates the Note domain.**
+  `Packages/RielaMemory`, `riela memory`, the `riela/memory-*` and persona
+  memory add-ons, workflow-level `memories` declarations, and memory-specific
+  runner/validation code maintain a parallel record, search, attachment, and
+  metadata path. Riela Note already owns those concepts through notes, tags,
+  links, files, FTS, GraphQL, REST workspace routes, and human-facing views.
 
 ## Design Decisions
 
@@ -198,6 +207,42 @@ Primary capabilities delivered by this design:
   `none` is the storage default and migration value. Progress is a
   first-class notebook column, not `meta_json`, and changes use the same
   `NoteService` write boundary as other notebook mutations.
+- **D20 — System memory is one reserved notebook.** Every prepared note store
+  contains the notebook id `notebook-system-memory`, titled `System Memory`,
+  tagged with the non-deletable system tag
+  `notebook-kind:system-memory`. The fixed id makes bootstrap idempotent; the
+  kind tag is the public classification used by clients. Ordinary notebook
+  creation cannot claim the reserved id or kind, and ordinary deletion cannot
+  remove this notebook.
+- **D21 — Notebook read-only is a persisted content lock.**
+  `notebooks.read_only` defaults to `0`; the system-memory bootstrap row starts
+  at `1`. Effective content read-only is
+  `notebook.read_only || note.read_only`. It blocks ordinary note creation,
+  body/title updates, note or notebook deletion, attachment mutation, comment
+  promotion, and other operations that create or replace notebook content.
+  Consistent with D5, navigation, reads, search, tags, comments, links, Kanban
+  status, and the lock toggle remain available. This keeps read-only notebooks
+  organizable and avoids blocking read-only source use by agent expansion.
+- **D22 — The system bypass is capability-shaped, not a Boolean option.**
+  Note-backed system-memory add-ons call a dedicated `NoteService` system-memory
+  write entry point. That entry point resolves the reserved notebook and may
+  bypass only its notebook-level content lock; no GraphQL, REST, CLI, or generic
+  note-add-on input can request bypass. System-memory writes do not enqueue note
+  auto-actions, preventing an agent-memory write from recursively starting
+  enrichment workflows. Writes made by a human after unlocking use ordinary
+  NoteService semantics, including auto-actions.
+- **D23 — Unlock is a durable notebook mutation.** GraphQL and the same-origin
+  RielaApp workspace REST API expose `setNotebookReadOnly`; the SolidJS Notes
+  view renders an explicit Unlock button for the locked system-memory notebook
+  and a Lock button after unlock. The value is stored in SQLite, survives
+  reload/relaunch, and is never reset by bootstrap conflict handling.
+- **D24 — Memory records become notes without data-file migration.** Each new
+  memory entry is one note in the system-memory notebook. Its `note_id` is the
+  durable record identity, markdown is searchable content, note tags carry
+  classification, note links carry relationships, note files carry
+  attachments, and `meta_json` carries source/provenance fields. Existing
+  `.riela/memory/` databases and sidecars remain untouched and unread; there is
+  no compatibility shim, importer, or dual write.
 
 ## Data Model (SQLite)
 
@@ -215,6 +260,7 @@ CREATE TABLE notebooks (
   title         TEXT NOT NULL,
   progress      TEXT NOT NULL DEFAULT 'none'
                 CHECK (progress IN ('none','progress','done','pending')),
+  read_only     INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT NOT NULL,
   updated_at    TEXT NOT NULL,
   meta_json     BLOB CHECK (meta_json IS NULL OR json_valid(meta_json, 8))
@@ -422,6 +468,44 @@ definitions identical to the migrated shape. Existing notebooks read as
 progress column directly, migration uses the established transactional
 rename-copy-rebuild pattern without rewriting unrelated tables.
 
+### Schema-v6 and system-memory bootstrap
+
+Schema v6 is additive. `NoteStoreSchema.currentVersion` becomes `6`, fresh
+`notebooks` definitions include `read_only INTEGER NOT NULL DEFAULT 0`, and
+`migrateToV6` performs only:
+
+```sql
+ALTER TABLE notebooks ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0;
+```
+
+The migration is appended to `schemaMigrations`; it does not rename, rebuild,
+drop, or copy `notebooks` or `notes`. After migrations, the existing bootstrap
+transaction seeds `notebook-kind:system-memory`, inserts the reserved notebook
+with `read_only = 1` using conflict-ignore semantics, and idempotently attaches
+the system tag. Conflict handling must not overwrite `read_only`, so a user's
+persisted unlock survives subsequent store preparation. Existing notebooks
+retain the default writable value and existing note data is unchanged.
+
+### Memory-to-note field mapping
+
+| Removed memory field | Riela Note owner | Rule |
+| --- | --- | --- |
+| `recordId` | `notes.note_id` | New outputs and relationships use note ids; legacy integer ids are not translated. |
+| `memoryId` | `meta_json.memoryNamespace` | Logical namespace only; storage always resolves to the reserved notebook. |
+| `workflowId`, `nodeId` | `meta_json.source.workflowId/nodeId` | Preserve agent provenance without creating high-cardinality tags. |
+| `registeredAt` | `notes.created_at` and `meta_json.recordedAt` | Store timestamp is authoritative; caller timestamp is retained when supplied. |
+| `payload` | `notes.body_markdown` plus structured `meta_json` | Human-readable content is searchable; bounded structured fields remain machine-readable. |
+| `tags[]` | `note_tags` | Apply through NoteService provenance and validation rules. |
+| `relatedRecordIds[]` | `note_links` | Successor inputs accept related note ids only. |
+| `files[]` | `files` plus `note_files` | Copy/attach through the Note file-store boundary; no path-only sidecar contract remains. |
+
+Persona entries use markdown content plus metadata keys `memoryNamespace`,
+`personaId`, `personaName`, `kind`, `importance`, `source`, `recordedAt`, and
+source workflow/node ids. Tags include `persona:<id>`,
+`memory-kind:<kind>`, and `memory-importance:<importance>`. Reads are bounded to
+the reserved notebook, namespace, and persona, newest first, with limit
+clamped to `1...30`.
+
 ## File Storage
 
 `NoteFileStore` (in `RielaNote`) abstracts content storage:
@@ -443,10 +527,11 @@ rename-copy-rebuild pattern without rewriting unrelated tables.
 `Sources/RielaNote/NoteService.swift` — the single write/read API (D10):
 
 - Notebook/note CRUD: `createNotebook`, `createNote`, `updateNoteBody`
-  (rejects when `read_only`), `setReadOnly`, `deleteNote`/`deleteNotebook`
-  (rejects read-only content), `listNotebooks(sort: .createdAtDesc)`
-  returning first-note preview snippets, `getNote`, `getNotebook`, and
-  `setNotebookProgress`.
+  (rejects when either effective content lock is set), `setReadOnly`,
+  `setNotebookReadOnly`, `deleteNote`/`deleteNotebook` (rejects effective
+  read-only content and protects the reserved system-memory notebook),
+  `listNotebooks(sort: .createdAtDesc)` returning first-note preview
+  snippets, `getNote`, `getNotebook`, and `setNotebookProgress`.
 - Tags: `defineTagClass`, `defineTag` with an optional validated parent,
   `applyTags(noteId, tags, provenance, assignedBy)`, `removeTag`
   (rejects `deletable = 0`; AI provenance may never remove a `human`
@@ -471,12 +556,15 @@ rename-copy-rebuild pattern without rewriting unrelated tables.
   action inert until its packaged workflow is installed). Loop guard
   per D11: action-originated writes carry the action id and are
   excluded from re-dispatch for the same note.
+- System memory: `systemMemoryNotebook` resolves the reserved id/tag invariant;
+  narrow save/update operations may bypass the notebook content lock and
+  suppress auto-action enqueueing. The bypass is internal to these typed
+  operations and is not an argument on ordinary CRUD methods.
 
 ## Built-in Note Add-ons
 
-New built-ins registered alongside the existing `riela/memory-*` family
-(`Sources/RielaCLI/ProductionNodeAdapter.swift` + validation in
-`Sources/RielaAddons/`). All operate through `NoteService` against a
+Built-ins are registered in the production adapter and operate through
+`NoteService` against a
 note root resolved in order: explicit `addon.config.noteRoot` →
 `RIELA_NOTE_ROOT` environment variable → app profile context →
 default `~/.riela/note/` (D9).
@@ -492,10 +580,61 @@ default `~/.riela/note/` (D9).
 | `riela/note-comment-add` | Add an agent comment. |
 | `riela/notebook-ingest-pages` | Batch: `pages: [{number, markdown, pageImageRef?}]` + optional `sourceDocumentRef` → notebook with one note per page, `source-page-image` files bound, kind tag `imported-material`. |
 | `riela/note-conversation-save` | Persist an agent conversation turn (or finalize a temp conversation) as notes in a conversation notebook (D12). |
+| `riela/note-memory-save` | Create one system-memory note from markdown or structured payload, tags, related note ids, attachments, and source metadata. |
+| `riela/note-memory-update` | Update an identified system-memory note through the privileged system path; reject notes outside the reserved notebook. |
+| `riela/note-memory-load` | Load an identified note only when it belongs to the reserved notebook. |
+| `riela/note-memory-search` | Search only the reserved notebook, optionally narrowed by namespace/tags, with bounded results. |
+| `riela/note-persona-memory-read` | Return recent persona-scoped notes as `memoryMarkdown`, note/file projections, and existing handoff guidance. |
+| `riela/note-persona-memory-write` | Persist explicit persona `memoryEntries` as notes while preserving reply/handoff behavior; outputs note ids, never legacy record ids. |
 
 Add-on inputs reuse the existing attachment projection
 (`attachmentReadInputFields`) so chat-event files flow in without
 custom plumbing (F3).
+
+The six successor ids are new contracts, not aliases. They accept `noteRoot`
+rather than `memoryRoot`, return `notebookId`/`noteId` rather than database
+paths or integer record ids, and never dispatch through a `riela/memory-`
+prefix. The persona pair intentionally retains `memoryMarkdown`,
+`memoryGuidance`, `replyText`, and handoff flags because those are chat-node
+data-flow contracts rather than storage compatibility. All other standalone
+memory add-ons, including `riela/chat-memory-raw-daily-summary`, are removed.
+
+The Slack, Telegram, and Discord trio examples remove every workflow/node
+`memories` declaration and select `riela/note-persona-memory-read` or
+`riela/note-persona-memory-write` through ordinary add-on configuration. Their
+mock scenarios and node descriptions use note-root/notebook terminology.
+`examples/chat-memory-raw-and-daily-summary` and its catalog reference are
+deleted. Example-name and mock-count fixtures change in the same unit so
+`RielaExampleParityTests` remains authoritative.
+
+### Standalone memory removal boundary
+
+Removal is deliberate and atomic across these seams:
+
+- Delete `Packages/RielaMemory/` and all root `Package.swift` products,
+  dependencies, and target links.
+- Delete the `riela memory` route, models, option parsing, execution, injected
+  runner, and help text under `Sources/RielaCLI/`; preserve workflow option
+  parsing when splitting the mixed parser file.
+- Delete memory adapter implementations and dispatch branches, including the
+  `riela/memory-` prefix catch-all. Note-backed successors live with the Note
+  add-on surface and depend on `RielaNote`, never `RielaMemory`.
+- Delete `WorkflowMemoryScope`, `WorkflowMemoryDeclaration`, every authored or
+  resolved `memories` field, tolerant decoding, memory validation, and runner
+  resolution under `Sources/RielaCore/`. Repair shared runtime publication,
+  persistence, prompt, fanout, failure, and test-support initializers rather
+  than retaining empty placeholders.
+- Delete memory-specific tests and the project fixture
+  `.riela/workflows/riela-memory-design-impl-review/`; replace them with
+  RielaNote/add-on coverage. Shared fixtures remain and lose only memory
+  arguments/assertions.
+- Never enumerate, migrate, rewrite, or delete `.riela/memory/`. After upgrade
+  those files are inert operator-owned data; all new writes go to Riela Note.
+
+Authored `memories` keys are no longer part of the workflow model. They follow
+the runtime's ordinary unknown-field policy but never restore validation,
+resolution, publication, or execution semantics. The three migrated examples
+prove the supported path.
 
 ## Ingestion Use Cases (workflows, packaged as examples)
 
@@ -527,7 +666,8 @@ rather than duplicating field-by-field SDL.
 Mutations: `createNotebook`, `createNote`, `defineNoteTagClass`,
 `defineNoteTag`, `scaffoldNoteIngestionWorkflow`, `updateNote`,
 `deleteNote`, `deleteNotebook`, `applyNotebookTags`,
-`removeNotebookTag`, `setNotebookProgress`, `setNoteReadOnly`, `applyNoteTags`,
+`removeNotebookTag`, `setNotebookProgress`, `setNotebookReadOnly`,
+`setNoteReadOnly`, `applyNoteTags`,
 `removeNoteTag`, `addNoteComment`, `linkNotes`, `attachNoteFile`
 (base64 with bounded decoded size for CLI-sized payloads),
 `configureNoteAutoAction`, `deleteNoteAutoAction`,
@@ -547,6 +687,11 @@ keep their public meaning and syntax; descendant expansion occurs in
 the shared domain service. Authoritative `type Query` and
 `type Mutation` SDL fields remain one line each because server contract
 tests assert those strings.
+
+`Notebook.readOnly` is additive in GraphQL DTOs and every notebook selection
+used by CLI/web clients. `setNotebookReadOnly(notebookId, readOnly)` calls the
+ordinary NoteService toggle and returns the canonical notebook. There is no
+GraphQL field or input for privileged system writes.
 
 ## CLI Surface
 
@@ -571,6 +716,12 @@ riela note notebook   list|show|create|delete ...
 riela note storage    migrate <file-id>|--all [--to s3 --profile <name>]
 riela note client     register|list|revoke ...          # note API clients (Security)
 ```
+
+The top-level `riela memory` family is deleted, including parser routes,
+command models, runner injection, help text, and `RielaMemory` imports. No new
+CLI compatibility command is added. Notebook lock/unlock is required through
+GraphQL and the web workspace for this work package; a dedicated CLI spelling
+is a follow-up only if user demand appears.
 
 ## Remote Note API and Auth (Security)
 
@@ -597,6 +748,15 @@ riela note client     register|list|revoke ...          # note API clients (Secu
     v1; document this assumption.
 - All note mutations require an authenticated identity when arriving
   over the network; local in-process callers bypass adapter auth.
+
+The shipped RielaApp same-origin workspace API adds
+`POST /api/v1/notes/notebooks/{notebookId}/read-only` with JSON
+`{ "readOnly": Bool, "expectedProfile": String? }`. It uses the existing
+Host/Origin/CSRF/session and active-profile checks, calls
+`NoteService.setNotebookReadOnly`, and returns the canonical notebook. Invalid
+ids or bodies fail as `invalid_request`, missing notebooks as `not_found`, and
+profile races as the existing conflict response. No REST route accepts a
+system-write bypass.
 
 ## Note Agent and Note Config Agent
 
@@ -641,6 +801,14 @@ New SwiftUI target `Sources/RielaNoteUI/` (D15), compact-first layout
 - Design principle from requirements: minimal chrome, browsing and
   search must feel light.
 
+The SolidJS web Notes workspace also projects `Notebook.readOnly`. A
+system-memory notebook is detected by `notebook-kind:system-memory`, shows a
+locked state, and disables content editing/creation controls while locked.
+Unlock calls the persisted REST mutation and replaces local state only with
+the returned notebook; failure leaves the notebook locked and visible error
+handling unchanged. After unlock, the same location shows Lock. Ordinary
+notebooks do not gain extra lock chrome in this work package.
+
 RielaApp integration: a "Notes" window (new window controller hosting
 `NSHostingController(rootView:)`), menu/status-bar entry, profile-aware
 note root, and the note-API exposure toggle in settings. iPhone/iPad
@@ -656,6 +824,10 @@ without RielaApp/AppKit imports.
 - SwiftUI hosting boundary in RielaApp (AppKit-only today).
 - FTS5 usage in the SQLite layer (JSONB-only today) — requires a
   capability probe in `SQLiteOpenOptions` analogous to `requireJSONB`.
+- The memory fold removes a second persistence/search/attachment/schema
+  surface and makes Riela Note the sole new-write knowledge substrate. The
+  broader hub gap-and-waste ranking is recorded separately in
+  `docs/briefs/note-hub-gap-and-waste-2026-08-01.md` before implementation.
 
 ## Non-Goals / Boundaries
 
@@ -667,6 +839,12 @@ without RielaApp/AppKit imports.
   consumed as existing workflow capabilities, not (re)designed here.
 - Note version history (revisions) — `updated_at` only in v1; a
   `note_revisions` table is a compatible future addition.
+- Importing, converting, deleting, or otherwise modifying existing
+  `.riela/memory/` data.
+- Compatibility aliases for `riela memory`, `riela/memory-*`,
+  `riela/chat-persona-memory-*`, or workflow `memories` fields.
+- Changes to event sources, package management, Kanban, graph-RAG, or workflow
+  runtime behavior beyond removing the memory schema and execution surface.
 
 ## Acceptance Traceability
 
@@ -693,6 +871,11 @@ without RielaApp/AppKit imports.
 | optional note API exposure, switchable auth, QR registration, VPN assumption | D14, Security |
 | notebook kinds as non-deletable tags | D3, notebook_tags |
 | note config agent screen | Note Config Agent |
+| default read-only system-memory notebook | D20-D23, Schema-v6 bootstrap, UI Design |
+| memory record concepts map onto Note | D24, Memory-to-note field mapping, Built-in Note Add-ons |
+| standalone memory package/CLI/schema/add-ons removed without data deletion | D24, CLI Surface, Non-Goals |
+| trio-chat examples remain note-backed and parity checked | Built-in Note Add-ons |
+| persisted web unlock with no public bypass | D22/D23, GraphQL Surface, Remote Note API, UI Design |
 
 ## Verification
 
@@ -715,6 +898,40 @@ without RielaApp/AppKit imports.
 - GraphQL parity: same mutation documents via `riela graphql` and via
   `riela serve` HTTP endpoint (with and without `--note-api`).
 - Auth: registration-code TTL/single-use tests; revoked client rejected.
+- Schema-v6 behavior: fresh and migrated stores expose notebook `readOnly`,
+  preserve existing notebooks/data, create exactly one locked system-memory
+  notebook, and preserve a persisted unlock across reopen.
+- Read-only behavior: ordinary content mutations fail with
+  `NoteServiceError.readOnly`; tags/comments/links/progress remain usable;
+  typed system-memory writes succeed while locked and cannot target another
+  notebook; ordinary unlocked writes retain auto-action behavior.
+- GraphQL/REST/web behavior: notebook DTOs include `readOnly`, both lock
+  mutations persist, the web Unlock/Lock control follows the canonical
+  response, and no public bypass input exists.
+- Add-on behavior: all six note-memory successor ids cover save/update/load/
+  search and persona read/write, attachment/provenance mapping, bounded reads,
+  locked system writes, and preservation of reply/handoff contracts.
+- Required implementation gate:
+
+  ```bash
+  swift build
+  swift test --filter RielaNoteTests
+  swift test --filter RielaCLITests
+  swift test --filter RielaCoreTests
+  riela workflow validate examples/slack-agent-trio-chat
+  riela workflow validate examples/telegram-agent-trio-chat
+  riela workflow validate examples/discord-agent-trio-chat
+  cd web && bun run build
+  cd web && bun test src
+  rg -n 'RielaMemory|riela/memory-|WorkflowMemoryDeclaration|memories:' --glob '!docs/**' --glob '!design-docs/**' .
+  git diff --check
+  git branch --show-current
+  git status --short
+  ```
+
+  The deletion audit must return no production/example/test references. A
+  known unrelated full-suite interleaved-submit timing flake is not an excuse
+  for failure in the required filtered suites.
 
 Implementation plan: `impl-plans/active/riela-note.md`.
 

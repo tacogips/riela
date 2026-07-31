@@ -7,7 +7,7 @@ struct RielaNoteTagKanbanSections: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
-      ForEach(NotebookProgress.allCases, id: \.self) { progress in
+      ForEach(rielaNoteDefaultKanbanStatuses, id: \.self) { progress in
         let notebooks = viewModel.notebooks(for: progress)
         VStack(alignment: .leading, spacing: 8) {
           Text(rielaNoteNotebookProgressLabel(progress))
@@ -50,7 +50,7 @@ struct RielaNoteTagKanbanSections: View {
       }
       .buttonStyle(.plain)
       Menu {
-        ForEach(NotebookProgress.allCases, id: \.self) { targetProgress in
+        ForEach(rielaNoteDefaultKanbanStatuses, id: \.self) { targetProgress in
           Button {
             Task {
               await viewModel.setNotebookProgress(

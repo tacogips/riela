@@ -7,6 +7,7 @@ public enum NoteServiceError: Error, Equatable, Sendable {
   case protectedTag(String)
   case invalidInput(String)
   case invalidRow(String)
+  case progressConflict(expected: String, actual: String)
 }
 
 public struct NoteService: Sendable {
@@ -515,7 +516,7 @@ public struct NoteService: Sendable {
       bindings.append(.int(Int64(offset)))
       var notebooks = try database.query(
         """
-        SELECT notebook_id, title, progress, created_at, updated_at,
+        SELECT notebook_id, title, status AS progress, created_at, updated_at,
           CASE WHEN meta_json IS NULL THEN NULL ELSE json(meta_json) END AS meta_json
         FROM notebooks
         \(whereClause)
@@ -547,15 +548,25 @@ public struct NoteService: Sendable {
   @discardableResult
   public func setNotebookProgress(
     notebookId: String,
-    progress: NotebookProgress
+    progress: String,
+    expectedProgress: String? = nil
   ) throws -> Notebook {
     try driver.withDatabase { database in
       try database.transaction { db in
-        _ = try requireNotebook(notebookId, in: db)
+        let notebook = try requireNotebook(notebookId, in: db)
+        let allowed = try allowedKanbanStatusNames(notebookId: notebookId, in: db)
+        guard allowed.contains(progress) else {
+          throw NoteServiceError.invalidInput(
+            "unsupported notebook progress: \(progress); allowed: \(allowed.sorted().joined(separator: ", "))"
+          )
+        }
+        if let expectedProgress, expectedProgress != notebook.progress {
+          throw NoteServiceError.progressConflict(expected: expectedProgress, actual: notebook.progress)
+        }
         try db.execute(
-          "UPDATE notebooks SET progress = ?, updated_at = ? WHERE notebook_id = ?",
+          "UPDATE notebooks SET status = ?, updated_at = ? WHERE notebook_id = ?",
           bindings: [
-            .text(progress.rawValue),
+            .text(progress),
             .text(NoteStoreClock.system.now()),
             .text(notebookId)
           ]

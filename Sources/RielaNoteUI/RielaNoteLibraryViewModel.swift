@@ -121,7 +121,7 @@ public final class RielaNoteLibraryViewModel: ObservableObject {
   var notebookSnapshotContext: RielaNoteNotebookBoardContext?
   var notebookProgressMutationFailure: RielaNoteNotebookMutationFailure?
   var notebookProgressMutationGenerations: [String: Int] = [:]
-  var notebookProgressMutationTargets: [String: NotebookProgress] = [:]
+  var notebookProgressMutationTargets: [String: String] = [:]
   var selectionGeneration = 0
   var linkProposalGeneration = 0
   var editRewriteGeneration = 0

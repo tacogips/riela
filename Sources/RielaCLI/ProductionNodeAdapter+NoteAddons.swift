@@ -876,7 +876,7 @@ private func notebookJSON(_ notebook: Notebook) -> JSONValue {
   .object([
     "notebookId": .string(notebook.notebookId),
     "title": .string(notebook.title),
-    "progress": .string(notebook.progress.rawValue),
+    "progress": .string(notebook.progress),
     "createdAt": .string(notebook.createdAt),
     "updatedAt": .string(notebook.updatedAt),
     "metaJSON": notebook.metaJSON.map { .string($0) } ?? .null,

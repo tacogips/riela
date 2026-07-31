@@ -67,9 +67,9 @@ final class RielaNoteUIClientCatalogTests: XCTestCase {
     XCTAssertEqual(page.map(\.notebookId), Array(all.dropFirst().prefix(1)).map(\.notebookId))
     let updated = try await client.setNotebookProgress(
       notebookId: first.notebookId,
-      progress: .pending
+      progress: "pending"
     )
-    XCTAssertEqual(updated.progress, .pending)
+    XCTAssertEqual(updated.progress, "pending")
   }
 
   func testLegacyClientTagFilterFallbackFailsClosed() async throws {

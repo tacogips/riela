@@ -6,11 +6,17 @@
 // non-integral, or the wrong type) is rejected with an invalidVariable error
 // rather than silently clamped.
 let graphQLNoteSchemaContract = """
-type NoteTag { tagId: String!, name: String!, classId: String, parentTagId: String, isSystem: Boolean!, createdAt: String! }
+type NoteTag { tagId: String!, name: String!, classId: String, parentTagId: String, statusSetId: String, isSystem: Boolean!, createdAt: String! }
 type NoteTagClass { classId: String!, label: String!, description: String, isSystem: Boolean!, createdAt: String! }
 type NoteTagAssignment { tag: NoteTag!, provenance: String!, assignedBy: String, deletable: Boolean!, createdAt: String! }
-enum NotebookProgress { none progress done pending }
-type Notebook { notebookId: String!, title: String!, progress: NotebookProgress!, createdAt: String!, updatedAt: String!, metaJSON: String, tags: [NoteTagAssignment!]!, firstNotePreview: String, noteCount: Int }
+enum KanbanStatusCategory { none pending progress review done }
+type KanbanStatus { statusId: String!, name: String!, category: KanbanStatusCategory!, position: Int! }
+type KanbanStatusSet { setId: String!, name: String!, isSystem: Boolean!, statuses: [KanbanStatus!]! }
+type KanbanStatusSetQueryPayload { result: ControlPlaneResult!, value: KanbanStatusSet }
+type KanbanStatusSetsQueryPayload { result: ControlPlaneResult!, value: [KanbanStatusSet!] }
+input KanbanStatusInput { statusId: String, name: String!, category: KanbanStatusCategory! }
+input KanbanStatusReassignmentInput { removedName: String!, reassignTo: String! }
+type Notebook { notebookId: String!, title: String!, progress: String!, createdAt: String!, updatedAt: String!, metaJSON: String, tags: [NoteTagAssignment!]!, firstNotePreview: String, noteCount: Int }
 type Note { noteId: String!, notebookId: String!, noteNumber: Int!, title: String, bodyMarkdown: String!, readOnly: Boolean!, createdAt: String!, updatedAt: String!, metaJSON: String, tags: [NoteTagAssignment!]! }
 type NoteFile {
   fileId: String!

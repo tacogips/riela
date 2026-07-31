@@ -6,8 +6,9 @@ public enum NoteStoreSchemaError: Error, Equatable, Sendable {
 }
 
 public enum NoteStoreSchema {
-  public static let currentVersion = 4
+  public static let currentVersion = 5
   public static let autoTaggingWorkflowId = "note-auto-tagging"
+  public static let systemKanbanStatusSetId = "kanban-default"
 
   public static func prepare(on driver: NoteDatabaseDriving) throws {
     try driver.withDatabase { database in
@@ -29,6 +30,7 @@ public enum NoteStoreSchema {
       try ensureNoteFTSUsesTrigram(in: db)
       try seedTagClasses(in: db)
       try seedNotebookKindTags(in: db)
+      try seedKanbanDefaultStatusSet(in: db)
       if isFirstSchemaCreation {
         try seedAutoActions(in: db)
       }
@@ -69,6 +71,42 @@ public enum NoteStoreSchema {
           .text(stableTagId(for: tagName)),
           .text(tagName),
           .text(NoteStoreClock.system.now())
+        ]
+      )
+    }
+  }
+
+  private static func seedKanbanDefaultStatusSet(in database: SQLiteDatabase) throws {
+    let now = NoteStoreClock.system.now()
+    try database.execute(
+      """
+      INSERT INTO kanban_status_sets (set_id, name, is_system, created_at, updated_at)
+      VALUES (?, 'default', 1, ?, ?)
+      ON CONFLICT(set_id) DO NOTHING
+      """,
+      bindings: [.text(systemKanbanStatusSetId), .text(now), .text(now)]
+    )
+    let defaultStatuses: [(name: String, category: String, position: Int)] = [
+      ("none", "none", 0),
+      ("pending", "pending", 1),
+      ("progress", "progress", 2),
+      ("review", "review", 3),
+      ("done", "done", 4)
+    ]
+    for status in defaultStatuses {
+      try database.execute(
+        """
+        INSERT INTO kanban_statuses (status_id, set_id, name, category, position, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(status_id) DO NOTHING
+        """,
+        bindings: [
+          .text("\(systemKanbanStatusSetId)-\(status.name)"),
+          .text(systemKanbanStatusSetId),
+          .text(status.name),
+          .text(status.category),
+          .int(Int64(status.position)),
+          .text(now)
         ]
       )
     }
@@ -211,7 +249,11 @@ public enum NoteStoreSchema {
         "ALTER TABLE tags ADD COLUMN parent_tag_id TEXT REFERENCES tags(tag_id)"
       )
     }
-    if try !columnExists("progress", in: "notebooks", database: database) {
+    // Fresh stores no longer carry the legacy CHECK-constrained progress
+    // column, so v4's ALTER only applies to stores that predate v4 AND v5;
+    // those gain the column here and copy it into `status` in migrateToV5.
+    if try !columnExists("status", in: "notebooks", database: database),
+       try !columnExists("progress", in: "notebooks", database: database) {
       try database.execute(
         """
         ALTER TABLE notebooks
@@ -219,6 +261,26 @@ public enum NoteStoreSchema {
           CHECK (progress IN ('none','progress','done','pending'))
         """
       )
+    }
+  }
+
+  fileprivate static func migrateToV5(in database: SQLiteDatabase) throws {
+    if try !columnExists("status_set_id", in: "tags", database: database) {
+      try database.execute(
+        "ALTER TABLE tags ADD COLUMN status_set_id TEXT REFERENCES kanban_status_sets(set_id)"
+      )
+    }
+    // The legacy CHECK-constrained `progress` column cannot be dropped or
+    // rebuilt away: `notebooks` has incoming FKs (notes, notebook_tags,
+    // notebook_files) and the store runs with foreign_keys=ON, where a
+    // rename-rebuild rewrites child FK targets and the final drop fails.
+    // Instead the un-CHECKed `status` column supersedes it; `progress`
+    // stays behind, unread, its DEFAULT satisfying the old CHECK forever.
+    if try !columnExists("status", in: "notebooks", database: database) {
+      try database.execute(
+        "ALTER TABLE notebooks ADD COLUMN status TEXT NOT NULL DEFAULT 'none'"
+      )
+      try database.execute("UPDATE notebooks SET status = progress")
     }
   }
 
@@ -240,7 +302,8 @@ private struct NoteSchemaMigration: Sendable {
 private let schemaMigrations: [NoteSchemaMigration] = [
   NoteSchemaMigration(version: 2, apply: NoteStoreSchema.migrateToV2),
   NoteSchemaMigration(version: 3, apply: NoteStoreSchema.migrateToV3),
-  NoteSchemaMigration(version: 4, apply: NoteStoreSchema.migrateToV4)
+  NoteSchemaMigration(version: 4, apply: NoteStoreSchema.migrateToV4),
+  NoteSchemaMigration(version: 5, apply: NoteStoreSchema.migrateToV5)
 ]
 
 final class NoteSQLiteCapabilityCache: @unchecked Sendable {
@@ -335,8 +398,7 @@ private let schemaStatements = [
   CREATE TABLE IF NOT EXISTS notebooks (
     notebook_id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
-    progress TEXT NOT NULL DEFAULT 'none'
-      CHECK (progress IN ('none','progress','done','pending')),
+    status TEXT NOT NULL DEFAULT 'none',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     meta_json BLOB CHECK (meta_json IS NULL OR json_valid(meta_json, 8))
@@ -369,11 +431,33 @@ private let schemaStatements = [
   )
   """,
   """
+  CREATE TABLE IF NOT EXISTS kanban_status_sets (
+    set_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    is_system INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )
+  """,
+  """
+  CREATE TABLE IF NOT EXISTS kanban_statuses (
+    status_id TEXT PRIMARY KEY,
+    set_id TEXT NOT NULL REFERENCES kanban_status_sets(set_id),
+    name TEXT NOT NULL,
+    category TEXT NOT NULL CHECK (category IN ('none','pending','progress','review','done')),
+    position INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (set_id, name),
+    UNIQUE (set_id, position)
+  )
+  """,
+  """
   CREATE TABLE IF NOT EXISTS tags (
     tag_id TEXT PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     class_id TEXT REFERENCES tag_classes(class_id),
     parent_tag_id TEXT REFERENCES tags(tag_id),
+    status_set_id TEXT REFERENCES kanban_status_sets(set_id),
     is_system INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
   )

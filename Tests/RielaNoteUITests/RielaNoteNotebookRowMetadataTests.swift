@@ -9,10 +9,10 @@ final class RielaNoteNotebookRowMetadataTests: XCTestCase {
   }
 
   func testNotebookProgressMetadataUsesFixedLabelsAndSymbols() {
-    XCTAssertEqual(rielaNoteNotebookProgressLabel(.none), "None")
-    XCTAssertEqual(rielaNoteNotebookProgressLabel(.progress), "In progress")
-    XCTAssertEqual(rielaNoteNotebookProgressLabel(.done), "Done")
-    XCTAssertEqual(rielaNoteNotebookProgressLabel(.pending), "Pending")
-    XCTAssertEqual(rielaNoteNotebookProgressSystemImage(.done), "checkmark.circle")
+    XCTAssertEqual(rielaNoteNotebookProgressLabel("none"), "None")
+    XCTAssertEqual(rielaNoteNotebookProgressLabel("progress"), "In progress")
+    XCTAssertEqual(rielaNoteNotebookProgressLabel("done"), "Done")
+    XCTAssertEqual(rielaNoteNotebookProgressLabel("pending"), "Pending")
+    XCTAssertEqual(rielaNoteNotebookProgressSystemImage("done"), "checkmark.circle")
   }
 }

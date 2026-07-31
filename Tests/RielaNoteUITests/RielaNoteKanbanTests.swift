@@ -37,8 +37,8 @@ final class RielaNoteKanbanTests: XCTestCase {
       tags: [augustTask.name],
       provenance: .human
     )
-    _ = try service.setNotebookProgress(notebookId: julyNotebook.notebookId, progress: .progress)
-    _ = try service.setNotebookProgress(notebookId: augustNotebook.notebookId, progress: .pending)
+    _ = try service.setNotebookProgress(notebookId: julyNotebook.notebookId, progress: "progress")
+    _ = try service.setNotebookProgress(notebookId: augustNotebook.notebookId, progress: "pending")
     let viewModel = RielaNoteLibraryViewModel(
       client: NoteServiceRielaNoteUIClient(service: service),
       notebookLimit: 10
@@ -48,13 +48,13 @@ final class RielaNoteKanbanTests: XCTestCase {
     await viewModel.toggleSearchTag(julyTask.name)
 
     XCTAssertEqual(viewModel.notebooks.map(\.notebookId), [julyNotebook.notebookId])
-    XCTAssertEqual(viewModel.notebooks(for: .progress).map(\.notebookId), [julyNotebook.notebookId])
+    XCTAssertEqual(viewModel.notebooks(for: "progress").map(\.notebookId), [julyNotebook.notebookId])
 
     await viewModel.clearSearchFilters()
     await viewModel.toggleSearchTag(augustTask.name)
 
     XCTAssertEqual(viewModel.notebooks.map(\.notebookId), [augustNotebook.notebookId])
-    XCTAssertEqual(viewModel.notebooks(for: .pending).map(\.notebookId), [augustNotebook.notebookId])
+    XCTAssertEqual(viewModel.notebooks(for: "pending").map(\.notebookId), [augustNotebook.notebookId])
 
     await viewModel.clearSearchFilters()
     await viewModel.toggleSearchTag(oneYearJob.name)
@@ -63,8 +63,8 @@ final class RielaNoteKanbanTests: XCTestCase {
       Set(viewModel.notebooks.map(\.notebookId)),
       Set([julyNotebook.notebookId, augustNotebook.notebookId])
     )
-    XCTAssertEqual(viewModel.notebooks(for: .progress).map(\.notebookId), [julyNotebook.notebookId])
-    XCTAssertEqual(viewModel.notebooks(for: .pending).map(\.notebookId), [augustNotebook.notebookId])
+    XCTAssertEqual(viewModel.notebooks(for: "progress").map(\.notebookId), [julyNotebook.notebookId])
+    XCTAssertEqual(viewModel.notebooks(for: "pending").map(\.notebookId), [augustNotebook.notebookId])
     XCTAssertEqual(
       RielaNoteSearchPopupSheet(viewModel: viewModel, onClose: {}).contentMode,
       .tagKanban
@@ -92,8 +92,8 @@ final class RielaNoteKanbanTests: XCTestCase {
       tags: [child.name],
       provenance: .human
     )
-    _ = try service.setNotebookProgress(notebookId: active.notebookId, progress: .progress)
-    _ = try service.setNotebookProgress(notebookId: pending.notebookId, progress: .pending)
+    _ = try service.setNotebookProgress(notebookId: active.notebookId, progress: "progress")
+    _ = try service.setNotebookProgress(notebookId: pending.notebookId, progress: "pending")
     let viewModel = RielaNoteLibraryViewModel(
       client: NoteServiceRielaNoteUIClient(service: service),
       notebookLimit: 10
@@ -103,18 +103,18 @@ final class RielaNoteKanbanTests: XCTestCase {
     await viewModel.toggleSearchTag(parent.name)
 
     XCTAssertTrue(viewModel.isTagKanbanActive)
-    XCTAssertEqual(viewModel.notebooks(for: .progress).map(\.notebookId), [active.notebookId])
-    XCTAssertEqual(viewModel.notebooks(for: .pending).map(\.notebookId), [pending.notebookId])
+    XCTAssertEqual(viewModel.notebooks(for: "progress").map(\.notebookId), [active.notebookId])
+    XCTAssertEqual(viewModel.notebooks(for: "pending").map(\.notebookId), [pending.notebookId])
     XCTAssertEqual(
       RielaNoteSearchPopupSheet(viewModel: viewModel, onClose: {}).contentMode,
       .tagKanban
     )
 
-    await viewModel.setNotebookProgress(notebookId: active.notebookId, progress: .done)
+    await viewModel.setNotebookProgress(notebookId: active.notebookId, progress: "done")
 
-    XCTAssertTrue(viewModel.notebooks(for: .progress).isEmpty)
-    XCTAssertEqual(viewModel.notebooks(for: .done).map(\.notebookId), [active.notebookId])
-    XCTAssertEqual(try service.getNotebook(active.notebookId).progress, .done)
+    XCTAssertTrue(viewModel.notebooks(for: "progress").isEmpty)
+    XCTAssertEqual(viewModel.notebooks(for: "done").map(\.notebookId), [active.notebookId])
+    XCTAssertEqual(try service.getNotebook(active.notebookId).progress, "done")
   }
 
   func testFailedProgressMutationPreservesPriorGrouping() async {
@@ -127,14 +127,14 @@ final class RielaNoteKanbanTests: XCTestCase {
 
     await viewModel.setNotebookProgress(
       notebookId: fixture.notebook.notebookId,
-      progress: .done
+      progress: "done"
     )
 
     XCTAssertEqual(
-      viewModel.notebooks(for: .none).map(\.notebookId),
+      viewModel.notebooks(for: "none").map(\.notebookId),
       [fixture.notebook.notebookId]
     )
-    XCTAssertTrue(viewModel.notebooks(for: .done).isEmpty)
+    XCTAssertTrue(viewModel.notebooks(for: "done").isEmpty)
     guard case let .failed(message) = viewModel.state else {
       return XCTFail("expected the failed mutation to surface through view-model state")
     }

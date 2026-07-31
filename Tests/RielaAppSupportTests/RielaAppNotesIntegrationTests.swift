@@ -106,7 +106,7 @@ final class RielaAppNotesIntegrationTests: XCTestCase {
     )
     _ = try service.setNotebookProgress(
       notebookId: notebook.notebookId,
-      progress: .progress
+      progress: "progress"
     )
     let viewModel = RielaNoteLibraryViewModel(
       client: NoteServiceRielaNoteUIClient(service: service)
@@ -127,7 +127,7 @@ final class RielaAppNotesIntegrationTests: XCTestCase {
 
     XCTAssertGreaterThan(pngData.count, 1_000)
     XCTAssertEqual(viewModel.notebooks.map(\.notebookId), [notebook.notebookId])
-    XCTAssertEqual(viewModel.notebooks.first?.progress, .progress)
+    XCTAssertEqual(viewModel.notebooks.first?.progress, "progress")
 
     let failureMessage = "Progress update failed."
     viewModel.notebookProgressMutationFailure = viewModel.notebookSnapshotContext.map {

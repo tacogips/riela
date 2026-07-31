@@ -1,4 +1,4 @@
-import type { Notebook, NotebookProgress } from './types'
+import type { Notebook } from './types'
 
 import type { NoteTag } from './types'
 
@@ -127,7 +127,7 @@ function sameConstraints(left: NotebookConstraint[], right: NotebookConstraint[]
 }
 
 export interface ProgressOperations {
-  setProgress(notebookId: string, progress: NotebookProgress): Promise<Notebook>
+  setProgress(notebookId: string, progress: string, expectedProgress?: string): Promise<Notebook>
   readNotebook(notebookId: string): Promise<Notebook>
 }
 
@@ -160,7 +160,7 @@ export function stageNotebookUpdate(
 
 export class NotebookProgressController {
   private canonical = new Map<string, Notebook>()
-  private desired = new Map<string, NotebookProgress>()
+  private desired = new Map<string, string>()
   private generations = new Map<string, number>()
   private stateVersions = new Map<string, number>()
   private running = new Map<string, Promise<void>>()
@@ -187,7 +187,7 @@ export class NotebookProgressController {
     return desired ? { ...notebook, progress: desired } : notebook
   }
 
-  move(notebook: Notebook, progress: NotebookProgress): Promise<void> {
+  move(notebook: Notebook, progress: string): Promise<void> {
     if (notebook.progress === progress && !this.desired.has(notebook.notebookId)) return Promise.resolve()
     if (!this.canonical.has(notebook.notebookId) || !this.desired.has(notebook.notebookId)) {
       this.canonical.set(notebook.notebookId, notebook)
@@ -205,10 +205,11 @@ export class NotebookProgressController {
 
   private async converge(notebookId: string): Promise<void> {
     while (this.desired.has(notebookId)) {
-      const target = this.desired.get(notebookId) as NotebookProgress
+      const target = this.desired.get(notebookId) as string
       const generation = this.generations.get(notebookId) ?? 0
       try {
-        const canonical = await this.operations.setProgress(notebookId, target)
+        const expected = this.canonical.get(notebookId)?.progress
+        const canonical = await this.operations.setProgress(notebookId, target, expected)
         this.canonical.set(notebookId, canonical)
         this.bumpStateVersion(notebookId)
         if (this.generations.get(notebookId) === generation && this.desired.get(notebookId) === target) {

@@ -8,13 +8,12 @@ import {
   tagRemovalCanAffectConstraints,
   type PendingNotebookCommit,
 } from './controller'
-import type { Notebook, NotebookProgress } from './types'
+import type { Notebook } from './types'
 
-const notebook = (progress: NotebookProgress): Notebook => ({
+const notebook = (progress: string): Notebook => ({
   notebookId: 'book-1',
   title: 'Launch',
   progress,
-  progressWasUnknown: false,
   createdAt: '2026-07-25T00:00:00Z',
   updatedAt: '2026-07-25T00:00:00Z',
   tags: [],
@@ -22,10 +21,10 @@ const notebook = (progress: NotebookProgress): Notebook => ({
 
 describe('progress convergence', () => {
   test('serializes writes and replays the newest intent outside view context', async () => {
-    const writes: NotebookProgress[] = []
+    const writes: string[] = []
     let releaseFirst: (() => void) | undefined
     const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve })
-    const updates: NotebookProgress[] = []
+    const updates: string[] = []
     const controller = new NotebookProgressController({
       setProgress: async (_id, progress) => {
         writes.push(progress)
@@ -44,7 +43,7 @@ describe('progress convergence', () => {
   })
 
   test('reconciles canonical state after current failure', async () => {
-    const updates: Array<{ progress: NotebookProgress; error?: string }> = []
+    const updates: Array<{ progress: string; error?: string }> = []
     const controller = new NotebookProgressController({
       setProgress: async () => { throw new Error('offline') },
       readNotebook: async () => notebook('pending'),
@@ -54,7 +53,7 @@ describe('progress convergence', () => {
   })
 
   test('falls back to the last canonical state when write and refresh both fail', async () => {
-    const updates: Array<{ progress: NotebookProgress; error?: string }> = []
+    const updates: Array<{ progress: string; error?: string }> = []
     const controller = new NotebookProgressController({
       setProgress: async () => { throw new Error('write offline') },
       readNotebook: async () => { throw new Error('read offline') },

@@ -39,21 +39,64 @@ import {
 } from '../notes/tree'
 import type {
   HostMode,
+  KanbanStatus,
+  KanbanStatusSet,
   Note,
   Notebook,
   NoteListSort,
   NoteTag,
   NoteTagClass,
-  NotebookProgress,
 } from '../notes/types'
+import { eventAffectsScope, subscribeNoteEvents } from '../notes/events'
 
-const progressOrder: NotebookProgress[] = ['none', 'progress', 'done', 'pending']
-const progressLabels: Record<NotebookProgress, string> = {
-  none: 'No status',
-  progress: 'In progress',
-  done: 'Done',
-  pending: 'Pending',
+const defaultStatusSet: KanbanStatusSet = {
+  setId: 'kanban-default',
+  name: 'default',
+  isSystem: true,
+  statuses: [
+    { statusId: 'kanban-default-none', name: 'none', category: 'none', position: 0 },
+    { statusId: 'kanban-default-pending', name: 'pending', category: 'pending', position: 1 },
+    { statusId: 'kanban-default-progress', name: 'progress', category: 'progress', position: 2 },
+    { statusId: 'kanban-default-review', name: 'review', category: 'review', position: 3 },
+    { statusId: 'kanban-default-done', name: 'done', category: 'done', position: 4 },
+  ],
 }
+const defaultStatusLabels: Record<string, string> = {
+  none: 'No status',
+  pending: 'Pending',
+  progress: 'In progress',
+  review: 'In review',
+  done: 'Done',
+}
+
+export function statusLabel(status: Pick<KanbanStatus, 'name'>): string {
+  return defaultStatusLabels[status.name] ?? status.name
+}
+
+/** Deterministic client-side fallback grouping: direct name match, else the
+ * first column whose category matches the (default-name) category, else the
+ * first none-category column, else the first column. Cards are never dropped. */
+export function boardColumnIndex(progress: string, statuses: KanbanStatus[]): number {
+  const direct = statuses.findIndex((status) => status.name === progress)
+  if (direct >= 0) return direct
+  const category = defaultStatusSet.statuses.find((status) => status.name === progress)?.category ?? 'none'
+  const byCategory = statuses.findIndex((status) => status.category === category)
+  if (byCategory >= 0) return byCategory
+  const noneColumn = statuses.findIndex((status) => status.category === 'none')
+  return noneColumn >= 0 ? noneColumn : 0
+}
+
+export function statusCategoryFor(progress: string, statuses: KanbanStatus[]): string {
+  return statuses[boardColumnIndex(progress, statuses)]?.category ?? 'none'
+}
+
+export function progressLabelFor(progress: string, statuses: KanbanStatus[]): string {
+  const direct = statuses.find((status) => status.name === progress)
+  if (direct) return statusLabel(direct)
+  return defaultStatusLabels[progress] ?? progress
+}
+
+const boardLockStoragePrefix = 'riela-note-board-lock:'
 type RefreshOutcome = 'completed' | 'failed' | 'superseded'
 
 export function NotesView(props: { mode: HostMode }) {
@@ -67,6 +110,9 @@ export function NotesView(props: { mode: HostMode }) {
   const [expanded, setExpanded] = createSignal<Set<string>>(new Set())
   const [expandedTagGroups, setExpandedTagGroups] = createSignal<Set<string>>(new Set())
   const [view, setView] = createSignal<'list' | 'board'>('list')
+  const [statusSet, setStatusSet] = createSignal<KanbanStatusSet>(defaultStatusSet)
+  const [kanbanSets, setKanbanSets] = createSignal<KanbanStatusSet[]>([])
+  const [boardLocked, setBoardLocked] = createSignal(true)
   const [sort, setSort] = createSignal<NoteListSort>('updatedAtDesc')
   const [loading, setLoading] = createSignal(true)
   const [draggingNotebookId, setDraggingNotebookId] = createSignal<string>()
@@ -162,6 +208,37 @@ export function NotesView(props: { mode: HostMode }) {
   })
   const activeConstraintIds = createMemo(() =>
     new Set(activeScope().constraints.map((constraint) => constraint.tagId)))
+  const scopeTagName = createMemo(() => {
+    const constraints = activeScope().constraints
+    return constraints.length === 1 ? constraints[0]?.tagName : undefined
+  })
+  const boardLockKey = () => `${boardLockStoragePrefix}${scopeTagName() ?? '*'}`
+  const loadBoardLock = () => {
+    try {
+      setBoardLocked(localStorage.getItem(boardLockKey()) !== 'unlocked')
+    } catch {
+      setBoardLocked(true)
+    }
+  }
+  const toggleBoardLock = () => {
+    const next = !boardLocked()
+    setBoardLocked(next)
+    try {
+      localStorage.setItem(boardLockKey(), next ? 'locked' : 'unlocked')
+    } catch {
+      // Persistence is best-effort; the toggle still applies to this session.
+    }
+  }
+  const boardStatuses = createMemo(() => statusSet().statuses)
+  const boardColumns = createMemo(() => {
+    const statuses = boardStatuses()
+    const columns = statuses.map((status) => ({ status, notebooks: [] as Notebook[] }))
+    if (columns.length === 0) return columns
+    for (const notebook of notebooks()) {
+      columns[boardColumnIndex(notebook.progress, statuses)]?.notebooks.push(notebook)
+    }
+    return columns
+  })
   const selectedFolder = createMemo(() => folders().find((tag) => tag.tagId === selectedFolderId()))
   const selectedScopeTag = createMemo(() => tags().find((tag) => tag.tagId === selectedTagId()))
   const selectedNotebook = createMemo(() =>
@@ -202,7 +279,34 @@ export function NotesView(props: { mode: HostMode }) {
   }
 
   onMount(() => {
+    loadBoardLock()
     void refresh({ initialize: true })
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined
+    let firstConnect = true
+    const scheduleEventRefresh = () => {
+      if (refreshTimer) return
+      refreshTimer = setTimeout(() => {
+        refreshTimer = undefined
+        void refresh()
+      }, 400)
+    }
+    const unsubscribe = subscribeNoteEvents({
+      headers: () => client.streamHeaders(),
+      onEvent: (event) => {
+        const names = activeScope().constraints.map((constraint) => constraint.tagName)
+        if (eventAffectsScope(event, names)) scheduleEventRefresh()
+      },
+      onConnect: () => {
+        // Refresh once on every (re)connect so missed events can never leave
+        // stale state; the initial mount refresh covers the first connect.
+        if (firstConnect) { firstConnect = false; return }
+        scheduleEventRefresh()
+      },
+    })
+    onCleanup(() => {
+      unsubscribe()
+      if (refreshTimer) clearTimeout(refreshTimer)
+    })
     // Safety net: a drag that ends outside any board column (or in List view,
     // which has no drop targets) must still release the deferred list commit.
     const releaseDrag = () => { if (draggingNotebookId()) finishNotebookDrag() }
@@ -234,8 +338,17 @@ export function NotesView(props: { mode: HostMode }) {
       if (!client.hasCredential()) {
         throw new Error('Open the registration URL printed by the current riela serve process.')
       }
-      const [nextTags, classes] = await Promise.all([client.tags(), client.tagClasses()])
+      const scopeConstraints = scopeSnapshot.scope.constraints
+      const scopeTag = scopeConstraints.length === 1 ? scopeConstraints[0]?.tagName : undefined
+      const [nextTags, classes, effectiveSet, allSets] = await Promise.all([
+        client.tags(),
+        client.tagClasses(),
+        client.effectiveKanbanStatuses(scopeTag).catch(() => defaultStatusSet),
+        client.kanbanStatusSets().catch(() => []),
+      ])
       if (generation !== loadGeneration || !scopeController.isCurrent(scopeSnapshot)) return 'superseded'
+      setStatusSet(effectiveSet.statuses.length > 0 ? effectiveSet : defaultStatusSet)
+      setKanbanSets(allSets)
       const hadActiveConstraints = scopeSnapshot.scope.constraints.length > 0
       const reconciled = scopeController.reconcile(nextTags)
       const catalogClearedScope = hadActiveConstraints
@@ -306,6 +419,7 @@ export function NotesView(props: { mode: HostMode }) {
     previewGeneration += 1
     setPreview([])
     setNotebooks([])
+    loadBoardLock()
   }
 
   const selectScope = (tag?: NoteTag) => {
@@ -431,7 +545,7 @@ export function NotesView(props: { mode: HostMode }) {
     }
   }
 
-  const moveProgress = async (notebook: Notebook, progress: NotebookProgress) => {
+  const moveProgress = async (notebook: Notebook, progress: string) => {
     setMessage('')
     await controller.move(notebook, progress)
   }
@@ -611,6 +725,37 @@ export function NotesView(props: { mode: HostMode }) {
             </section>
           }}</For>
         </div>
+        <KanbanSetManager
+          sets={kanbanSets()}
+          folders={folders()}
+          onCreate={async (name, statuses) => {
+            try {
+              await client.createKanbanStatusSet(name, statuses)
+              setMessage(`Created status set “${name}”.`)
+              await refresh()
+            } catch (setError) {
+              setMessage(errorMessage(setError))
+            }
+          }}
+          onAssign={async (folderName, setId) => {
+            try {
+              await client.assignKanbanStatusSet(folderName, setId)
+              setMessage(setId ? `Bound status set to “${folderName}”.` : `Unbound status set from “${folderName}”.`)
+              await refresh()
+            } catch (assignError) {
+              setMessage(errorMessage(assignError))
+            }
+          }}
+          onDelete={async (setId) => {
+            try {
+              await client.deleteKanbanStatusSet(setId)
+              setMessage('Deleted status set.')
+              await refresh()
+            } catch (deleteError) {
+              setMessage(errorMessage(deleteError))
+            }
+          }}
+        />
       </Show>
     </aside>
 
@@ -637,6 +782,7 @@ export function NotesView(props: { mode: HostMode }) {
           <label class="sort-control"><span>Sort</span><select value={sort()} onChange={(event) => { setSort(event.currentTarget.value as NoteListSort); void refresh() }}>
             <option value="updatedAtDesc">Recently updated</option><option value="title">Title</option><option value="createdAtDesc">Newest</option><option value="createdAtAsc">Oldest</option>
           </select></label>
+          <button class="secondary lock-toggle" aria-pressed={boardLocked()} title={boardLocked() ? 'Board is read-only; click to allow edits' : 'Board is editable; click to lock'} onClick={toggleBoardLock}>{boardLocked() ? 'Locked' : 'Editable'}</button>
           <button class="secondary" onClick={() => void refresh()}>Refresh</button>
         </div>
       </header>
@@ -664,24 +810,24 @@ export function NotesView(props: { mode: HostMode }) {
               <div class="notebook-row-meta"><span>{formatDate(notebook.updatedAt)}</span><Show when={normalizedNoteCount(notebook.noteCount) !== null}><span>{noteCountLabel(normalizedNoteCount(notebook.noteCount) ?? 0)}</span></Show></div>
               <Show when={normalizedPreview(notebook.firstNotePreview)}>{(value) => <span class="notebook-preview list-preview">{value()}</span>}</Show>
             </div>
-            <span class={`progress-pill ${notebook.progress}`}>{progressLabels[notebook.progress]}</span>
-            <Show when={notebook.progressWasUnknown}><span class="unknown-progress">Unknown status · shown in None</span></Show>
+            <span class={`progress-pill cat-${statusCategoryFor(notebook.progress, boardStatuses())}`}>{progressLabelFor(notebook.progress, boardStatuses())}</span>
             <FolderChips notebook={notebook} />
           </button>}</For>
         </div>
       </Show>
       <Show when={view() === 'board'}>
-        <div class="notebook-board">
-          <For each={progressOrder}>{(progress) => {
-            const column = () => notebooks().filter((notebook) => notebook.progress === progress)
-            return <section class={`board-column ${progress}`} aria-label={`${progressLabels[progress]} notebooks`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
+        <div class="notebook-board" style={{ '--board-columns': boardStatuses().length }}>
+          <For each={boardColumns()}>{(column) =>
+            <section class={`board-column cat-${column.status.category}`} aria-label={`${statusLabel(column.status)} notebooks`} onDragOver={(event) => { if (!boardLocked()) event.preventDefault() }} onDrop={(event) => {
+              if (boardLocked()) return
               const draggedId = event.dataTransfer?.getData('text/plain')
               finishNotebookDrag()
               const notebook = notebooks().find((item) => item.notebookId === draggedId)
-              if (notebook && notebook.progress !== progress) void moveProgress(notebook, progress)
+              if (notebook && notebook.progress !== column.status.name) void moveProgress(notebook, column.status.name)
             }}>
-              <header><strong>{progressLabels[progress]}</strong><span>{column().length}</span></header>
-              <div class="board-cards"><For each={column()}>{(notebook) => <article class="board-card" draggable="true" onDragStart={(event) => {
+              <header><strong>{statusLabel(column.status)}</strong><span>{column.notebooks.length}</span></header>
+              <div class="board-cards"><For each={column.notebooks}>{(notebook) => <article class="board-card" draggable={!boardLocked()} onDragStart={(event) => {
+                if (boardLocked()) { event.preventDefault(); return }
                 event.dataTransfer?.setData('text/plain', notebook.notebookId)
                 setDraggingNotebookId(notebook.notebookId)
               }} onDragEnd={finishNotebookDrag}>
@@ -690,21 +836,20 @@ export function NotesView(props: { mode: HostMode }) {
                   <Show when={normalizedPreview(notebook.firstNotePreview)}>{(value) => <span class="notebook-preview board-preview">{value()}</span>}</Show>
                   <div class="board-card-meta"><span>{formatDate(notebook.updatedAt)}</span><Show when={normalizedNoteCount(notebook.noteCount) !== null}><span>{noteCountLabel(normalizedNoteCount(notebook.noteCount) ?? 0)}</span></Show></div>
                   <FolderChips notebook={notebook} />
-                  <Show when={notebook.progressWasUnknown}><span class="unknown-progress">Unknown status · shown in None</span></Show>
                 </button>
-                <label><span class="sr-only">Move {notebook.title} to progress</span><select value={notebook.progress} onChange={(event) => void moveProgress(notebook, event.currentTarget.value as NotebookProgress)}>
-                  <For each={progressOrder}>{(value) => <option value={value}>{progressLabels[value]}</option>}</For>
+                <label><span class="sr-only">Move {notebook.title} to progress</span><select value={notebook.progress} disabled={boardLocked()} onChange={(event) => void moveProgress(notebook, event.currentTarget.value)}>
+                  <For each={boardStatuses()}>{(status) => <option value={status.name}>{statusLabel(status)}</option>}</For>
                 </select></label>
               </article>}</For></div>
             </section>
-          }}</For>
+          }</For>
         </div>
       </Show>
     </div>
 
     <Show when={selectedNotebook()}>{(notebook) => <aside class="note-detail" aria-label={`Notebook details for ${notebook().title}`}>
       <header><div><span class="eyebrow">NOTEBOOK</span><h2>{notebook().title}</h2></div><button class="detail-close secondary" aria-label="Close notebook details" onClick={() => closeDetail()}>×</button></header>
-      <dl><div><dt>Progress</dt><dd><select value={notebook().progress} onChange={(event) => void moveProgress(notebook(), event.currentTarget.value as NotebookProgress)}><For each={progressOrder}>{(value) => <option value={value}>{progressLabels[value]}</option>}</For></select></dd></div><div><dt>Updated</dt><dd>{formatDate(notebook().updatedAt)}</dd></div></dl>
+      <dl><div><dt>Progress</dt><dd><select value={notebook().progress} disabled={boardLocked()} onChange={(event) => void moveProgress(notebook(), event.currentTarget.value)}><For each={boardStatuses()}>{(status) => <option value={status.name}>{statusLabel(status)}</option>}</For></select></dd></div><div><dt>Updated</dt><dd>{formatDate(notebook().updatedAt)}</dd></div></dl>
       <section class="assignment-group"><h3>Folder</h3>
         <Show when={folderAssignments()}>{(group) => <div class="detail-chips"><For each={group().assignments}>{(assignment) => <TagChip assignment={assignment} busy={membershipBusy()} onRemove={removeTag} />}</For></div>}</Show>
         <label><span>Add folder</span><select value="" disabled={Boolean(membershipBusy()) || availableFolders().length === 0} onChange={(event) => {
@@ -771,6 +916,61 @@ function TagTreeItem(props: {
     </div>
     <Show when={isExpanded()}><div role="group"><For each={props.node.children}>{(child) => <TagTreeItem {...props} node={child} level={props.level + 1} />}</For></div></Show>
   </div>
+}
+
+function KanbanSetManager(props: {
+  sets: KanbanStatusSet[]
+  folders: NoteTag[]
+  onCreate: (name: string, statuses: Array<{ name: string; category: string }>) => Promise<void>
+  onAssign: (folderName: string, setId: string | null) => Promise<void>
+  onDelete: (setId: string) => Promise<void>
+}) {
+  const [newSetName, setNewSetName] = createSignal('')
+  const [newSetStatuses, setNewSetStatuses] = createSignal('todo:pending, doing:progress, review:review, done:done')
+  const [bindFolder, setBindFolder] = createSignal('')
+  const [bindSetId, setBindSetId] = createSignal('')
+  const [busy, setBusy] = createSignal(false)
+  const parsedStatuses = () => newSetStatuses().split(',')
+    .map((entry) => entry.trim()).filter(Boolean)
+    .map((entry) => {
+      const [name, category] = entry.split(':').map((part) => part.trim())
+      return { name: name ?? '', category: category || 'progress' }
+    })
+    .filter((status) => status.name.length > 0)
+  return <section class="kanban-set-manager" aria-label="Kanban status sets">
+    <h3>Kanban status sets</h3>
+    <For each={props.sets}>{(set) =>
+      <div class="kanban-set-row">
+        <strong>{set.name}</strong>
+        <span>{set.statuses.map((status) => status.name).join(' → ')}</span>
+        <Show when={!set.isSystem}>
+          <button class="secondary" aria-label={`Delete status set ${set.name}`} disabled={busy()} onClick={() => {
+            setBusy(true)
+            void props.onDelete(set.setId).finally(() => setBusy(false))
+          }}>×</button>
+        </Show>
+      </div>}
+    </For>
+    <label><span>New set name</span><input value={newSetName()} disabled={busy()} onInput={(event) => setNewSetName(event.currentTarget.value)} /></label>
+    <label><span>Statuses (name:category, …)</span><input value={newSetStatuses()} disabled={busy()} onInput={(event) => setNewSetStatuses(event.currentTarget.value)} /></label>
+    <button disabled={busy() || !newSetName().trim() || parsedStatuses().length === 0} onClick={() => {
+      setBusy(true)
+      void props.onCreate(newSetName().trim(), parsedStatuses()).finally(() => {
+        setBusy(false)
+        setNewSetName('')
+      })
+    }}>Create status set</button>
+    <label><span>Bind folder</span><select value={bindFolder()} disabled={busy()} onChange={(event) => setBindFolder(event.currentTarget.value)}>
+      <option value="">Choose folder…</option><For each={props.folders}>{(folder) => <option value={folder.name}>{folder.name}</option>}</For>
+    </select></label>
+    <label><span>Status set</span><select value={bindSetId()} disabled={busy()} onChange={(event) => setBindSetId(event.currentTarget.value)}>
+      <option value="">Default (unbind)</option><For each={props.sets.filter((set) => !set.isSystem)}>{(set) => <option value={set.setId}>{set.name}</option>}</For>
+    </select></label>
+    <button class="secondary" disabled={busy() || !bindFolder()} onClick={() => {
+      setBusy(true)
+      void props.onAssign(bindFolder(), bindSetId() || null).finally(() => setBusy(false))
+    }}>Apply binding</button>
+  </section>
 }
 
 function TagChip(props: {

@@ -2,13 +2,14 @@ import { api } from '../api'
 import type {
   GraphQLEnvelope,
   HostMode,
+  KanbanStatus,
+  KanbanStatusSet,
   MutationPayload,
   Note,
   Notebook,
   NoteListSort,
   NoteTag,
   NoteTagClass,
-  NotebookProgress,
   QueryPayload,
 } from './types'
 
@@ -30,9 +31,14 @@ export class NoteTransportError extends Error {
     message: string,
     readonly kind: 'network' | 'http' | 'graphql' | 'result' | 'registration',
     readonly status?: number,
+    readonly resultStatus?: string,
   ) {
     super(message)
   }
+}
+
+export function isProgressConflict(error: unknown): boolean {
+  return error instanceof NoteTransportError && error.resultStatus === 'progress_conflict'
 }
 
 export class NoteGraphQLClient {
@@ -64,6 +70,17 @@ export class NoteGraphQLClient {
 
   hasCredential(): boolean {
     return this.mode === 'riela-app' || Boolean(this.environment.getSessionItem(bearerKey))
+  }
+
+  /** Headers for the streaming note-events request (EventSource cannot send
+   * an Authorization header, so the stream uses fetch with these). */
+  streamHeaders(): Record<string, string> {
+    const headers: Record<string, string> = { ...this.environment.appHeaders() }
+    if (this.mode === 'cli-serve') {
+      const bearer = this.environment.getSessionItem(bearerKey)
+      if (bearer) headers.Authorization = `Bearer ${bearer}`
+    }
+    return headers
   }
 
   async tags(): Promise<NoteTag[]> {
@@ -153,15 +170,80 @@ export class NoteGraphQLClient {
     `, { notebookId, tagName, provenance: 'human' }, 'removeNotebookTag')
   }
 
-  async setProgress(notebookId: string, progress: NotebookProgress): Promise<Notebook> {
+  async setProgress(notebookId: string, progress: string, expectedProgress?: string): Promise<Notebook> {
     return this.notebookMutation('SetProgress', `
-      mutation SetProgress($notebookId: String!, $progress: NotebookProgress!) {
-        setNotebookProgress(notebookId: $notebookId, progress: $progress) {
+      mutation SetProgress($notebookId: String!, $progress: String!, $expectedProgress: String) {
+        setNotebookProgress(notebookId: $notebookId, progress: $progress, expectedProgress: $expectedProgress) {
           result { accepted status diagnostics }
           notebook { notebookId title progress createdAt updatedAt firstNotePreview noteCount tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
         }
       }
-    `, { notebookId, progress }, 'setNotebookProgress')
+    `, { notebookId, progress, ...(expectedProgress ? { expectedProgress } : {}) }, 'setNotebookProgress')
+  }
+
+  async kanbanStatusSets(): Promise<KanbanStatusSet[]> {
+    return this.queryValue<{ kanbanStatusSets: QueryPayload<KanbanStatusSet[]> }, KanbanStatusSet[]>('KanbanStatusSets', `
+      query KanbanStatusSets { kanbanStatusSets { result { accepted status diagnostics } value { setId name isSystem statuses { statusId name category position } } } }
+    `, {}, (data) => data.kanbanStatusSets)
+  }
+
+  async effectiveKanbanStatuses(tagName?: string): Promise<KanbanStatusSet> {
+    return this.queryValue<{ effectiveKanbanStatuses: QueryPayload<KanbanStatusSet> }, KanbanStatusSet>('EffectiveKanbanStatuses', `
+      query EffectiveKanbanStatuses($tagName: String) {
+        effectiveKanbanStatuses(tagName: $tagName) {
+          result { accepted status diagnostics }
+          value { setId name isSystem statuses { statusId name category position } }
+        }
+      }
+    `, tagName ? { tagName } : {}, (data) => data.effectiveKanbanStatuses)
+  }
+
+  async createKanbanStatusSet(name: string, statuses: Array<{ name: string; category: string }>): Promise<KanbanStatusSet> {
+    return this.queryValue<{ createKanbanStatusSet: QueryPayload<KanbanStatusSet> }, KanbanStatusSet>('CreateKanbanStatusSet', `
+      mutation CreateKanbanStatusSet($name: String!, $statuses: [KanbanStatusInput!]!) {
+        createKanbanStatusSet(name: $name, statuses: $statuses) {
+          result { accepted status diagnostics }
+          value { setId name isSystem statuses { statusId name category position } }
+        }
+      }
+    `, { name, statuses }, (data) => data.createKanbanStatusSet)
+  }
+
+  async updateKanbanStatusSet(
+    setId: string,
+    statuses: Array<{ statusId?: string; name: string; category: string }>,
+    reassignments: Array<{ removedName: string; reassignTo: string }> = [],
+  ): Promise<KanbanStatusSet> {
+    return this.queryValue<{ updateKanbanStatusSet: QueryPayload<KanbanStatusSet> }, KanbanStatusSet>('UpdateKanbanStatusSet', `
+      mutation UpdateKanbanStatusSet($setId: String!, $statuses: [KanbanStatusInput!]!, $reassignments: [KanbanStatusReassignmentInput!]) {
+        updateKanbanStatusSet(setId: $setId, statuses: $statuses, reassignments: $reassignments) {
+          result { accepted status diagnostics }
+          value { setId name isSystem statuses { statusId name category position } }
+        }
+      }
+    `, { setId, statuses, reassignments }, (data) => data.updateKanbanStatusSet)
+  }
+
+  async deleteKanbanStatusSet(setId: string): Promise<void> {
+    const data = await this.request<{ deleteKanbanStatusSet: { accepted: boolean; status: string; diagnostics: string[] } }>('DeleteKanbanStatusSet', `
+      mutation DeleteKanbanStatusSet($setId: String!) {
+        deleteKanbanStatusSet(setId: $setId) { accepted status diagnostics }
+      }
+    `, { setId })
+    ensureAccepted(data.deleteKanbanStatusSet)
+  }
+
+  async assignKanbanStatusSet(tagName: string, setId: string | null): Promise<NoteTag> {
+    const payload = await this.mutation('AssignKanbanStatusSet', `
+      mutation AssignKanbanStatusSet($tagName: String!, $setId: String) {
+        assignKanbanStatusSet(tagName: $tagName, setId: $setId) {
+          result { accepted status diagnostics }
+          tag { tagId name classId parentTagId statusSetId isSystem createdAt }
+        }
+      }
+    `, { tagName, setId }, 'assignKanbanStatusSet')
+    if (!payload.tag) throw new NoteTransportError('The server did not return the updated tag.', 'result')
+    return payload.tag
   }
 
   private async notebookMutation(
@@ -235,14 +317,7 @@ export class NoteGraphQLClient {
 }
 
 function normalizeNotebook(notebook: Notebook): Notebook {
-  const supported = ['none', 'progress', 'done', 'pending'] as const
-  const progress = String(notebook.progress)
-  const known = supported.some((value) => value === progress)
-  return {
-    ...notebook,
-    progress: known ? progress as NotebookProgress : 'none',
-    progressWasUnknown: !known,
-  }
+  return { ...notebook, progress: String(notebook.progress) }
 }
 
 function browserEnvironment(): NoteClientEnvironment {
@@ -259,7 +334,12 @@ function browserEnvironment(): NoteClientEnvironment {
 
 function ensureAccepted(result?: { accepted: boolean; diagnostics: string[]; status: string }): void {
   if (result?.accepted) return
-  throw new NoteTransportError(result?.diagnostics.join('; ') || result?.status || 'Note operation failed.', 'result')
+  throw new NoteTransportError(
+    result?.diagnostics.join('; ') || result?.status || 'Note operation failed.',
+    'result',
+    undefined,
+    result?.status,
+  )
 }
 
 async function parseJSON<T>(response: Response): Promise<T> {

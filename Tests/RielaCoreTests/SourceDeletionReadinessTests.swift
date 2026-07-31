@@ -2,13 +2,17 @@ import Foundation
 import XCTest
 
 final class SourceDeletionReadinessTests: XCTestCase {
+  // `web/` is the explicitly retained SolidJS SPA: its TypeScript sources,
+  // e2e specs, and local node_modules are not deletion-blocking remnants of
+  // the removed TypeScript runtime.
   private static let ignoredRepositoryPathPrefixes = [
     ".git/",
     ".build/",
     ".direnv/",
     ".riela/",
     "dist/",
-    "tmp/"
+    "tmp/",
+    "web/"
   ]
 
   private var temporaryDirectories: [URL] = []

@@ -59,6 +59,7 @@ import type {
   NoteTagClass,
 } from '../notes/types'
 import { eventAffectsScope, subscribeNoteEvents } from '../notes/events'
+import { applyNotebookLockMutation, notebookContentActionsDisabled } from '../notes/notebookLock'
 
 const defaultStatusSet: KanbanStatusSet = {
   setId: 'kanban-default',
@@ -591,16 +592,27 @@ export function NotesView(props: {
     setLockBusy(true)
     setMessage('')
     try {
-      const updated = await workspace.setNotebookReadOnly(notebook.notebookId, readOnly)
-      setNotebooks((current) => replaceNotebook(current, updated))
-      if (externalNotebook()?.notebookId === updated.notebookId) setExternalNotebook(updated)
-      if (readOnly) {
-        detailDirty = false
-        setActiveNoteId(undefined)
-        previewGeneration += 1
-        await loadPreview(updated.notebookId, 0, false, previewGeneration)
-      }
-      setMessage(readOnly ? 'System Memory locked.' : 'System Memory unlocked for editing.')
+      const updated = await applyNotebookLockMutation(
+        notebook,
+        readOnly,
+        (notebookId, nextReadOnly) => workspace.setNotebookReadOnly(notebookId, nextReadOnly),
+        {
+          adopt: (canonical) => {
+            setNotebooks((current) => replaceNotebook(current, canonical))
+            if (externalNotebook()?.notebookId === canonical.notebookId) setExternalNotebook(canonical)
+          },
+          clearContentState: () => {
+            detailDirty = false
+            setComposeDestination(undefined)
+            setActiveNoteId(undefined)
+          },
+          loadLockedPreview: async (canonical) => {
+            previewGeneration += 1
+            await loadPreview(canonical.notebookId, 0, false, previewGeneration)
+          },
+        },
+      )
+      setMessage(updated.readOnly ? 'System Memory locked.' : 'System Memory unlocked for editing.')
     } catch (lockError) {
       setMessage(`Could not update notebook lock: ${errorMessage(lockError)}`)
     } finally {
@@ -1026,7 +1038,7 @@ export function NotesView(props: {
             <button class="secondary" disabled={lockBusy()} onClick={() => void setNotebookLock(notebook(), !notebook().readOnly)}>{notebook().readOnly ? 'Unlock' : 'Lock'}</button>
           </Show>
           <Show when={props.onExpandNotebook}>
-            <button class="secondary" onClick={() => props.onExpandNotebook?.(notebook().notebookId, notebook().title)}>Expand with Agent</button>
+            <button class="secondary" disabled={notebookContentActionsDisabled(notebook())} onClick={() => props.onExpandNotebook?.(notebook().notebookId, notebook().title)}>Expand with Agent</button>
           </Show>
         </div>
       </Show>

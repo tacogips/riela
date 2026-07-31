@@ -905,6 +905,10 @@ final class NoteAddonTests: XCTestCase {
         "kind": .string("user-instruction"),
         "importance": .string("high"),
         "content": .string("Prefer concise replies")
+      ]), .object([
+        "kind": .string("observation"),
+        "importance": .string("normal"),
+        "content": .string("Uses image references")
       ])])
     ]
 
@@ -912,22 +916,45 @@ final class NoteAddonTests: XCTestCase {
       noteInput(
         name: "riela/note-persona-memory-write",
         config: ["personaId": .string("yui")],
-        variables: payload
+        variables: payload,
+        attachments: [
+          "chat-image": WorkflowAddonAttachmentValue(
+            id: "chat-image",
+            mediaType: "image/png",
+            filename: "chat-image.png",
+            sizeBytes: 7,
+            sha256: "sha256:unused-by-resolver",
+            contentText: "pngdata"
+          )
+        ]
       ),
       context: AdapterExecutionContext()
     )
     XCTAssertEqual(written.payload["replyText"], .string("I will remember."))
     XCTAssertEqual(written.when["handoff_mika"], true)
+    let writtenMemory = try objectValue(written.payload["memory"])
+    XCTAssertEqual(try arrayValue(writtenMemory["fileIds"], field: "memory.fileIds").count, 2)
+    let noteIds = try arrayValue(writtenMemory["noteIds"], field: "memory.noteIds")
+      .compactMap { value -> String? in
+        guard case let .string(noteId) = value else { return nil }
+        return noteId
+      }
+    let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot))
+    XCTAssertEqual(try noteIds.map { try service.listFiles(noteId: $0).count }, [1, 1])
 
     let read = try await resolver.execute(
       noteInput(
         name: "riela/note-persona-memory-read",
-        config: ["personaId": .string("yui")]
+        config: ["personaId": .string("yui"), "fileLimit": .integer(1)]
       ),
       context: AdapterExecutionContext()
     )
-    XCTAssertEqual(read.payload["memoryRecordCount"], .number(1))
+    XCTAssertEqual(read.payload["memoryRecordCount"], .number(2))
     XCTAssertTrue(try stringValue(read.payload["memoryMarkdown"], field: "memoryMarkdown").contains("concise replies"))
+    let files = try arrayValue(read.payload["files"], field: "files").map(objectValue)
+    XCTAssertEqual(files.count, 1)
+    let file = try objectValue(files[0]["file"])
+    XCTAssertEqual(file["originalFilename"], .string("chat-image.png"))
   }
 
   private func noteInput(

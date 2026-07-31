@@ -22,7 +22,8 @@ final class SystemMemoryNotebookTests: NoteTestCase {
   }
 
   func testNotebookLockBlocksContentWritesButAllowsMetadataAndPersistedUnlock() throws {
-    let service = try makeService()
+    let driver = try makeNoteDriver()
+    let service = try NoteService(driver: driver)
     let note = try service.saveSystemMemoryNote(
       title: "Remembered",
       bodyMarkdown: "# Remembered\nBody",
@@ -52,6 +53,9 @@ final class SystemMemoryNotebookTests: NoteTestCase {
       "unlocked"
     )
     XCTAssertFalse(try service.getNotebook(note.notebookId).readOnly)
+
+    let reopened = try NoteService(driver: driver)
+    XCTAssertFalse(try reopened.systemMemoryNotebook().readOnly)
   }
 
   func testTypedSystemWriteBypassesOnlyNotebookLockAndSkipsAutoActions() throws {

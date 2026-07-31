@@ -176,13 +176,17 @@ private func readPersonaNoteMemory(_ context: NoteMemoryAddonContext) throws -> 
   let personaName = context.string("personaName") ?? personaId
   let namespace = context.string("memoryNamespace", "memoryId") ?? "persona-chat-memory"
   let limit = max(1, min(context.int("limit", default: 3), 30))
-  let notes = try context.service.listNotes(
+  let notes = Array(try context.service.listNotes(
     notebookId: NoteStoreSchema.systemMemoryNotebookId,
     limit: 10_000
   ).reversed().filter { note in
     let names = Set(note.tags.map(\.tag.name))
     return names.contains("persona:\(personaId)") && names.contains("memory-namespace:\(namespace)")
-  }.prefix(limit)
+  }.prefix(limit))
+  let fileLimit = max(1, min(context.int("fileLimit", default: 30), 100))
+  let files = Array(try notes.flatMap { note in
+    try context.service.listFiles(noteId: note.noteId)
+  }.prefix(fileLimit))
   return [
     "personaId": .string(personaId),
     "personaName": .string(personaName),
@@ -190,6 +194,8 @@ private func readPersonaNoteMemory(_ context: NoteMemoryAddonContext) throws -> 
     "memoryRecordCount": .number(Double(notes.count)),
     "noteIds": .array(notes.map { .string($0.noteId) }),
     "notes": .array(notes.map(noteMemoryJSON)),
+    "fileIds": .array(files.map { .string($0.file.fileId) }),
+    "files": .array(files.map(noteMemoryFileJSON)),
     "memoryMarkdown": .string(notes.map(\.bodyMarkdown).joined(separator: "\n\n---\n\n")),
     "handoffTrail": .array(personaHandoffTrail(from: context.input.resolvedInputPayload).map(JSONValue.string)),
     "memoryGuidance": .array([
@@ -209,6 +215,7 @@ private func writePersonaNoteMemory(_ context: NoteMemoryAddonContext) throws ->
   )
   let entries = personaEntries(payload["memoryEntries"])
   var notes: [Note] = []
+  var files: [NoteFileAttachment] = []
   for entry in entries {
     let metadata: JSONObject = [
       "memoryNamespace": .string(namespace),
@@ -221,7 +228,7 @@ private func writePersonaNoteMemory(_ context: NoteMemoryAddonContext) throws ->
       "sourceWorkflowId": .string(context.input.workflowId),
       "sourceNodeId": .string(context.input.nodeId)
     ]
-    notes.append(try context.service.saveSystemMemoryNote(
+    let note = try context.service.saveSystemMemoryNote(
       bodyMarkdown: entry.content,
       tags: noteMemoryTags(nil, required: [
         "memory-namespace:\(namespace)",
@@ -230,7 +237,9 @@ private func writePersonaNoteMemory(_ context: NoteMemoryAddonContext) throws ->
         "memory-importance:\(entry.importance)"
       ]),
       metaJSON: encodeObject(metadata)
-    ))
+    )
+    notes.append(note)
+    files.append(contentsOf: try attachNoteMemoryFiles(context: context, noteId: note.noteId))
   }
   let handoffDecision = guardedPersonaHandoffs(
     personaId: personaId,
@@ -247,7 +256,9 @@ private func writePersonaNoteMemory(_ context: NoteMemoryAddonContext) throws ->
   output["memory"] = .object([
     "notebookId": .string(NoteStoreSchema.systemMemoryNotebookId),
     "entriesWritten": .number(Double(notes.count)),
-    "noteIds": .array(notes.map { .string($0.noteId) })
+    "noteIds": .array(notes.map { .string($0.noteId) }),
+    "fileIds": .array(files.map { .string($0.file.fileId) }),
+    "files": .array(files.map(noteMemoryFileJSON))
   ])
   output["status"] = .string("ok")
   output["addon"] = .string(context.input.addon.name)
@@ -520,6 +531,23 @@ private func attachNoteMemoryFiles(
       position: position
     )
   }
+}
+
+private func noteMemoryFileJSON(_ attachment: NoteFileAttachment) -> JSONValue {
+  .object([
+    "noteId": .string(attachment.noteId),
+    "role": .string(attachment.role.rawValue),
+    "position": .number(Double(attachment.position)),
+    "file": .object([
+      "fileId": .string(attachment.file.fileId),
+      "storageKind": .string(attachment.file.storageKind.rawValue),
+      "mediaType": .string(attachment.file.mediaType),
+      "byteSize": .number(Double(attachment.file.byteSize)),
+      "sha256": .string(attachment.file.sha256),
+      "originalFilename": attachment.file.originalFilename.map(JSONValue.string) ?? .null,
+      "createdAt": .string(attachment.file.createdAt)
+    ])
+  ])
 }
 
 private func encodeObject(_ object: JSONObject) -> String? {

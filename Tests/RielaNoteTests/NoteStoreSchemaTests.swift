@@ -118,6 +118,62 @@ final class NoteStoreSchemaTests: NoteTestCase {
     }
   }
 
+  func testMigrateToV6AddsReadOnlyAndPreservesV5Notebook() throws {
+    let driver = try makeNoteDriver()
+    try driver.withDatabase { database in
+      try database.execute(
+        """
+        CREATE TABLE note_schema_version (
+          version INTEGER PRIMARY KEY,
+          applied_at TEXT NOT NULL
+        )
+        """
+      )
+      for version in 1...5 {
+        try database.execute(
+          "INSERT INTO note_schema_version (version, applied_at) VALUES (?, '2026-08-01T00:00:00Z')",
+          bindings: [.int(Int64(version))]
+        )
+      }
+      try database.execute(
+        """
+        CREATE TABLE notebooks (
+          notebook_id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'none',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          meta_json BLOB CHECK (meta_json IS NULL OR json_valid(meta_json, 8))
+        )
+        """
+      )
+      try database.execute(
+        """
+        INSERT INTO notebooks (notebook_id, title, status, created_at, updated_at)
+        VALUES ('legacy-notebook', 'Legacy', 'none', '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z')
+        """
+      )
+    }
+
+    try NoteStoreSchema.prepare(on: driver)
+
+    try driver.withDatabase { database in
+      let columns = try database.query("PRAGMA table_info(notebooks)").compactMap { $0["name"] }
+      XCTAssertTrue(columns.contains("read_only"))
+      XCTAssertEqual(
+        try database.query("SELECT read_only FROM notebooks WHERE notebook_id = 'legacy-notebook'").first?["read_only"],
+        "0"
+      )
+      XCTAssertEqual(
+        try database.query("SELECT read_only FROM notebooks WHERE notebook_id = ?", bindings: [
+          .text(NoteStoreSchema.systemMemoryNotebookId)
+        ]).first?["read_only"],
+        "1"
+      )
+      XCTAssertEqual(try schemaVersions(in: database), [1, 2, 3, 4, 5, NoteStoreSchema.currentVersion])
+    }
+  }
+
   func testPrepareCachesSQLiteCapabilityProbeAcrossNoteStores() throws {
     NoteSQLiteCapabilityCache.resetForTesting()
     defer {

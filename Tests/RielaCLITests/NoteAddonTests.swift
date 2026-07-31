@@ -887,11 +887,99 @@ final class NoteAddonTests: XCTestCase {
     let loadedNote = try objectValue(loaded.payload["note"])
     XCTAssertEqual(loadedNote["bodyMarkdown"], .string("# Durable fact\nbeta memory"))
 
+    for index in 0..<3 {
+      _ = try service.createNote(bodyMarkdown: "beta memory ordinary \(index)")
+    }
+    _ = try await resolver.execute(
+      noteInput(
+        name: "riela/note-memory-save",
+        config: [
+          "bodyMarkdown": .string("beta memory other namespace"),
+          "memoryNamespace": .string("other"),
+          "tags": .array([.string("topic:alpha")])
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+    _ = try await resolver.execute(
+      noteInput(
+        name: "riela/note-memory-save",
+        config: [
+          "bodyMarkdown": .string("beta memory other tag"),
+          "memoryNamespace": .string("chat"),
+          "tags": .array([.string("topic:other")])
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+
     let searched = try await resolver.execute(
-      noteInput(name: "riela/note-memory-search", config: ["query": .string("beta memory")]),
+      noteInput(
+        name: "riela/note-memory-search",
+        config: [
+          "query": .string("beta memory"),
+          "memoryNamespace": .string("chat"),
+          "tagFilter": .array([.string("topic:alpha")]),
+          "limit": .integer(1)
+        ]
+      ),
       context: AdapterExecutionContext()
     )
     XCTAssertEqual(searched.payload["noteIds"], .array([.string(noteId)]))
+  }
+
+  func testNoteMemoryCompositeWritesPreflightBeforePersistence() async throws {
+    let noteRoot = try makeNoteAddonRoot()
+    defer { try? FileManager.default.removeItem(atPath: noteRoot) }
+    let resolver = BuiltinWorkflowAddonResolver(environment: ["RIELA_NOTE_ROOT": noteRoot])
+    let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot))
+
+    do {
+      _ = try await resolver.execute(
+        noteInput(
+          name: "riela/note-memory-save",
+          config: [
+            "bodyMarkdown": .string("must not persist"),
+            "relatedNoteIds": .array([.string("missing-note")]),
+            "attachments": .array([.string("source")])
+          ],
+          attachments: [
+            "source": WorkflowAddonAttachmentValue(
+              id: "source",
+              mediaType: "text/plain",
+              filename: "source.txt",
+              sizeBytes: 7,
+              sha256: "sha256:unused-by-resolver",
+              contentText: "partial"
+            )
+          ]
+        ),
+        context: AdapterExecutionContext()
+      )
+      XCTFail("expected missing relationship target rejection")
+    } catch {
+      XCTAssertTrue(try service.listNotes(notebookId: NoteStoreSchema.systemMemoryNotebookId).isEmpty)
+    }
+
+    do {
+      _ = try await resolver.execute(
+        noteInput(
+          name: "riela/note-persona-memory-write",
+          config: [
+            "personaId": .string("yui"),
+            "attachments": .array([.string("missing-projection")])
+          ],
+          variables: [
+            "replyText": .string("reply"),
+            "memoryEntries": .array([.object(["content": .string("must not persist")])])
+          ]
+        ),
+        context: AdapterExecutionContext()
+      )
+      XCTFail("expected missing attachment projection rejection")
+    } catch {
+      XCTAssertTrue(try service.listNotes(notebookId: NoteStoreSchema.systemMemoryNotebookId).isEmpty)
+    }
   }
 
   func testPersonaMemorySuccessorsPreserveReplyAndHandoffFlags() async throws {

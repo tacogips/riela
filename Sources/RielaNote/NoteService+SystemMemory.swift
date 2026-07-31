@@ -1,8 +1,88 @@
+import Foundation
 import RielaSQLite
 
 public extension NoteService {
   func systemMemoryNotebook() throws -> Notebook {
     try getNotebook(NoteStoreSchema.systemMemoryNotebookId)
+  }
+
+  func searchSystemMemoryNotes(
+    query: String = "",
+    namespace: String? = nil,
+    tagFilter: [String] = [],
+    limit: Int = 20
+  ) throws -> [Note] {
+    guard limit > 0 else { return [] }
+    let normalizedNamespace = namespace?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedTags = orderedUnique(tagFilter.compactMap { rawValue in
+      let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+      return value.isEmpty ? nil : value
+    })
+    return try driver.withDatabase { database in
+      let notebook = try requireNotebook(NoteStoreSchema.systemMemoryNotebookId, in: database)
+      guard notebook.tags.contains(where: { $0.tag.name == NoteStoreSchema.systemMemoryNotebookKindTag }) else {
+        throw NoteServiceError.invalidInput("reserved system-memory notebook is missing its kind tag")
+      }
+      var predicates = ["n.notebook_id = ?"]
+      var bindings: [SQLiteValue] = [.text(NoteStoreSchema.systemMemoryNotebookId)]
+      if let normalizedNamespace, !normalizedNamespace.isEmpty {
+        predicates.append(systemMemoryTagPredicate(alias: "n"))
+        bindings.append(.text("memory-namespace:\(normalizedNamespace)"))
+      }
+      if !normalizedTags.isEmpty {
+        predicates.append(
+          """
+          EXISTS (
+            SELECT 1
+            FROM note_tags nt
+            INNER JOIN tags t ON t.tag_id = nt.tag_id
+            WHERE nt.note_id = n.note_id
+              AND t.name IN (\(placeholders(count: normalizedTags.count)))
+          )
+          """
+        )
+        bindings.append(contentsOf: normalizedTags.map(SQLiteValue.text))
+      }
+      let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !normalizedQuery.isEmpty {
+        let pattern = "%\(escapedSystemMemoryLikePattern(normalizedQuery))%"
+        predicates.append(
+          """
+          (
+            coalesce(n.title, '') LIKE ? ESCAPE '\\'
+            OR n.body_markdown LIKE ? ESCAPE '\\'
+            OR EXISTS (
+              SELECT 1
+              FROM note_tags nt
+              INNER JOIN tags t ON t.tag_id = nt.tag_id
+              WHERE nt.note_id = n.note_id
+                AND t.name LIKE ? ESCAPE '\\'
+            )
+          )
+          """
+        )
+        bindings.append(contentsOf: [.text(pattern), .text(pattern), .text(pattern)])
+      }
+      bindings.append(.int(Int64(limit)))
+      let rows = try database.query(
+        """
+        SELECT n.note_id
+        FROM notes n
+        WHERE \(predicates.joined(separator: " AND "))
+        ORDER BY n.created_at DESC, n.note_number DESC, n.note_id DESC
+        LIMIT ?
+        """,
+        bindings: bindings
+      )
+      let noteIds = rows.compactMap { $0["note_id"] }
+      let notesById = try requireNotes(noteIds, in: database)
+      return try noteIds.map { noteId in
+        guard let note = notesById[noteId] else {
+          throw NoteServiceError.notFound("note not found: \(noteId)")
+        }
+        return note
+      }
+    }
   }
 
   @discardableResult
@@ -125,6 +205,78 @@ public extension NoteService {
       }
     }
   }
+
+  func rollbackSystemMemoryNotes(noteIds: [String]) throws {
+    let uniqueNoteIds = orderedUnique(noteIds)
+    guard !uniqueNoteIds.isEmpty else { return }
+    let deletedFiles = try driver.withDatabase { database in
+      try database.transaction { db in
+        for noteId in uniqueNoteIds {
+          let note = try requireNote(noteId, in: db)
+          guard note.notebookId == NoteStoreSchema.systemMemoryNotebookId else {
+            throw NoteServiceError.invalidInput("system-memory rollback target is outside the reserved notebook")
+          }
+        }
+        let rows = try db.query(
+          """
+          SELECT DISTINCT f.file_id, f.storage_kind, f.local_path, f.s3_profile, f.s3_bucket, f.s3_key,
+            f.media_type, f.byte_size, f.sha256, f.original_filename, f.created_at, f.migrated_at
+          FROM files f
+          INNER JOIN note_files nf ON nf.file_id = f.file_id
+          WHERE nf.note_id IN (\(placeholders(count: uniqueNoteIds.count)))
+          """,
+          bindings: uniqueNoteIds.map(SQLiteValue.text)
+        )
+        let candidates = try rows.map(fileRecord(from:))
+        for noteId in uniqueNoteIds {
+          try deleteNoteRows(noteId: noteId, in: db)
+        }
+        var deleted: [FileRecord] = []
+        for record in candidates {
+          let stillReferenced = try db.query(
+            """
+            SELECT 1
+            WHERE EXISTS (SELECT 1 FROM note_files WHERE file_id = ?)
+               OR EXISTS (SELECT 1 FROM notebook_files WHERE file_id = ?)
+            LIMIT 1
+            """,
+            bindings: [.text(record.fileId), .text(record.fileId)]
+          ).first != nil
+          guard !stillReferenced else { continue }
+          try db.execute("DELETE FROM files WHERE file_id = ?", bindings: [.text(record.fileId)])
+          deleted.append(record)
+        }
+        try db.execute(
+          "UPDATE notebooks SET updated_at = ? WHERE notebook_id = ?",
+          bindings: [.text(NoteStoreClock.system.now()), .text(NoteStoreSchema.systemMemoryNotebookId)]
+        )
+        return deleted
+      }
+    }
+    let localStore = LocalNoteFileStore(noteRoot: noteRootPath())
+    for record in deletedFiles where record.storageKind == .local {
+      try localStore.delete(record: record)
+    }
+  }
+}
+
+private func systemMemoryTagPredicate(alias: String) -> String {
+  """
+  EXISTS (
+    SELECT 1
+    FROM note_tags nt
+    INNER JOIN tags t ON t.tag_id = nt.tag_id
+    WHERE nt.note_id = \(alias).note_id
+      AND t.name = ?
+  )
+  """
+}
+
+private func escapedSystemMemoryLikePattern(_ value: String) -> String {
+  value
+    .replacingOccurrences(of: "\\", with: "\\\\")
+    .replacingOccurrences(of: "%", with: "\\%")
+    .replacingOccurrences(of: "_", with: "\\_")
 }
 
 func requireNotebookContentWritable(_ notebook: Notebook) throws {

@@ -153,6 +153,37 @@ final class NoteStoreSchemaTests: NoteTestCase {
         VALUES ('legacy-notebook', 'Legacy', 'none', '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z')
         """
       )
+      try database.execute(
+        """
+        CREATE TABLE tag_classes (
+          class_id TEXT PRIMARY KEY,
+          label TEXT NOT NULL,
+          description TEXT,
+          is_system INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL
+        )
+        """
+      )
+      try database.execute(
+        """
+        CREATE TABLE tags (
+          tag_id TEXT PRIMARY KEY,
+          name TEXT NOT NULL UNIQUE,
+          class_id TEXT,
+          parent_tag_id TEXT,
+          status_set_id TEXT,
+          is_system INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL
+        )
+        """
+      )
+      try database.execute(
+        """
+        INSERT INTO tags (tag_id, name, class_id, is_system, created_at)
+        VALUES ('legacy-system-memory-kind', ?, NULL, 0, '2026-08-01T00:00:00Z')
+        """,
+        bindings: [.text(NoteStoreSchema.systemMemoryNotebookKindTag)]
+      )
     }
 
     try NoteStoreSchema.prepare(on: driver)
@@ -169,6 +200,20 @@ final class NoteStoreSchemaTests: NoteTestCase {
           .text(NoteStoreSchema.systemMemoryNotebookId)
         ]).first?["read_only"],
         "1"
+      )
+      let kindTag = try database.query(
+        "SELECT tag_id, class_id, is_system FROM tags WHERE name = ?",
+        bindings: [.text(NoteStoreSchema.systemMemoryNotebookKindTag)]
+      ).first
+      XCTAssertEqual(kindTag?["tag_id"], "legacy-system-memory-kind")
+      XCTAssertEqual(kindTag?["class_id"], "document-kind")
+      XCTAssertEqual(kindTag?["is_system"], "1")
+      XCTAssertEqual(
+        try database.query(
+          "SELECT tag_id FROM notebook_tags WHERE notebook_id = ?",
+          bindings: [.text(NoteStoreSchema.systemMemoryNotebookId)]
+        ).first?["tag_id"],
+        "legacy-system-memory-kind"
       )
       XCTAssertEqual(try schemaVersions(in: database), [1, 2, 3, 4, 5, NoteStoreSchema.currentVersion])
     }

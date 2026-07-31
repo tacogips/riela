@@ -1,5 +1,6 @@
 import Foundation
 import RielaNote
+import RielaSQLite
 import XCTest
 
 final class SystemMemoryNotebookTests: NoteTestCase {
@@ -118,6 +119,99 @@ final class SystemMemoryNotebookTests: NoteTestCase {
       originalFilename: "memory.txt"
     )
     XCTAssertEqual(attachment.noteId, note.noteId)
+  }
+
+  func testSystemMemorySearchScopesNamespaceAndTagsBeforeLimit() throws {
+    let service = try makeService()
+    let target = try service.saveSystemMemoryNote(
+      bodyMarkdown: "shared needle target",
+      tags: [
+        NoteTagInput(name: "memory-namespace:chat"),
+        NoteTagInput(name: "topic:target")
+      ]
+    )
+    for index in 0..<3 {
+      _ = try service.saveSystemMemoryNote(
+        bodyMarkdown: "shared needle other \(index)",
+        tags: [
+          NoteTagInput(name: "memory-namespace:other"),
+          NoteTagInput(name: "topic:target")
+        ]
+      )
+      _ = try service.createNote(bodyMarkdown: "shared needle ordinary \(index)")
+    }
+    _ = try service.saveSystemMemoryNote(
+      bodyMarkdown: "shared needle wrong tag",
+      tags: [
+        NoteTagInput(name: "memory-namespace:chat"),
+        NoteTagInput(name: "topic:other")
+      ]
+    )
+
+    XCTAssertEqual(
+      try service.searchSystemMemoryNotes(
+        query: "shared needle",
+        namespace: "chat",
+        tagFilter: ["topic:target"],
+        limit: 1
+      ).map(\.noteId),
+      [target.noteId]
+    )
+  }
+
+  func testSystemMemoryNewestReadHasNoLegacyTenThousandNoteWindow() throws {
+    let driver = try makeNoteDriver()
+    let service = try NoteService(driver: driver)
+    try driver.withDatabase { database in
+      try database.transaction { db in
+        for index in 1...10_001 {
+          try db.execute(
+            """
+            INSERT INTO notes (
+              note_id, notebook_id, note_number, title, title_source, body_markdown,
+              read_only, created_at, updated_at, meta_json
+            ) VALUES (?, ?, ?, NULL, 'derived', ?, 0, '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z', NULL)
+            """,
+            bindings: [
+              .text("bulk-memory-\(index)"),
+              .text(NoteStoreSchema.systemMemoryNotebookId),
+              .int(Int64(index)),
+              .text("memory \(index)")
+            ]
+          )
+        }
+      }
+    }
+
+    XCTAssertEqual(
+      try service.searchSystemMemoryNotes(limit: 1).first?.noteId,
+      "bulk-memory-10001"
+    )
+  }
+
+  func testSystemMemoryRollbackRemovesNotesRelationshipsAndFiles() throws {
+    let service = try makeService()
+    let related = try service.createNote(bodyMarkdown: "related")
+    let note = try service.saveSystemMemoryNote(bodyMarkdown: "partial")
+    _ = try service.linkNotes(from: note.noteId, to: related.noteId, provenance: .ai)
+    let attachment = try service.attachSystemMemoryFile(
+      noteId: note.noteId,
+      data: Data("partial file".utf8),
+      mediaType: "text/plain",
+      originalFilename: "partial.txt"
+    )
+    let storedPath = URL(fileURLWithPath: service.noteRootPath(), isDirectory: true)
+      .appendingPathComponent("files", isDirectory: true)
+      .appendingPathComponent(try XCTUnwrap(attachment.file.localPath))
+      .path
+    XCTAssertTrue(FileManager.default.fileExists(atPath: storedPath))
+
+    try service.rollbackSystemMemoryNotes(noteIds: [note.noteId])
+
+    XCTAssertThrowsError(try service.getNote(note.noteId))
+    XCTAssertThrowsError(try service.getFileRecord(fileId: attachment.file.fileId))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: storedPath))
+    XCTAssertEqual(try service.getNote(related.noteId).noteId, related.noteId)
   }
 
   private func assertReadOnly<T>(

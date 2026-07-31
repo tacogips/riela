@@ -96,21 +96,46 @@ private func saveNoteMemory(_ context: NoteMemoryAddonContext) throws -> JSONObj
   let namespace = context.string("memoryNamespace", "memoryId") ?? "system"
   let tags = noteMemoryTags(context.value("tags"), required: ["memory-namespace:\(namespace)"])
   let metadata = metadataJSON(context: context, extra: ["memoryNamespace": .string(namespace)])
-  let note = try context.service.saveSystemMemoryNote(
-    title: context.string("title"),
-    bodyMarkdown: body,
-    tags: tags,
-    metaJSON: metadata
-  )
   let relatedNoteIds = try noteMemoryStringArray(context.value("relatedNoteIds"), field: "relatedNoteIds")
   for relatedNoteId in relatedNoteIds {
-    _ = try context.service.linkNotes(from: note.noteId, to: relatedNoteId, provenance: .ai)
+    _ = try context.service.getNote(relatedNoteId)
   }
-  let attachments = try attachNoteMemoryFiles(context: context, noteId: note.noteId)
-  var payload = noteMemoryPayload(note: note, operation: "save")
-  payload["relatedNoteIds"] = .array(relatedNoteIds.map(JSONValue.string))
-  payload["fileIds"] = .array(attachments.map { .string($0.file.fileId) })
-  return payload
+  let preparedAttachments = try prepareNoteMemoryFiles(context: context)
+  var note: Note?
+  do {
+    let saved = try context.service.saveSystemMemoryNote(
+      title: context.string("title"),
+      bodyMarkdown: body,
+      tags: tags,
+      metaJSON: metadata
+    )
+    note = saved
+    for relatedNoteId in relatedNoteIds {
+      _ = try context.service.linkNotes(from: saved.noteId, to: relatedNoteId, provenance: .ai)
+    }
+    let attachments = try attachPreparedNoteMemoryFiles(
+      preparedAttachments,
+      service: context.service,
+      noteId: saved.noteId
+    )
+    var payload = noteMemoryPayload(note: saved, operation: "save")
+    payload["relatedNoteIds"] = .array(relatedNoteIds.map(JSONValue.string))
+    payload["fileIds"] = .array(attachments.map { .string($0.file.fileId) })
+    return payload
+  } catch {
+    let writeError = error
+    if let note {
+      do {
+        try context.service.rollbackSystemMemoryNotes(noteIds: [note.noteId])
+      } catch {
+        throw AdapterExecutionError(
+          .providerError,
+          "\(context.input.addon.name) failed and rollback failed: \(writeError); rollback: \(error)"
+        )
+      }
+    }
+    throw writeError
+  }
 }
 
 private func updateNoteMemory(_ context: NoteMemoryAddonContext) throws -> JSONObject {
@@ -141,26 +166,16 @@ private func memoryNotesPayload(context: NoteMemoryAddonContext) throws -> JSONO
   let limit = max(1, min(context.int("limit", default: 20), 100))
   let query = context.string("query", "match") ?? ""
   let namespace = context.string("memoryNamespace", "memoryId")
-  let notes: [Note]
-  if query.isEmpty {
-    notes = Array(try context.service.listNotes(
-      notebookId: NoteStoreSchema.systemMemoryNotebookId,
-      limit: 10_000
-    ).reversed()).filter { note in
-      guard let namespace else { return true }
-      return note.tags.contains { $0.tag.name == "memory-namespace:\(namespace)" }
-    }.prefix(limit).map { $0 }
-  } else {
-    notes = try context.service.searchNotes(query: query, limit: limit * 2)
-      .map(\.note)
-      .filter { note in
-        guard note.notebookId == NoteStoreSchema.systemMemoryNotebookId else { return false }
-        guard let namespace else { return true }
-        return note.tags.contains { $0.tag.name == "memory-namespace:\(namespace)" }
-      }
-      .prefix(limit)
-      .map { $0 }
-  }
+  let tagFilter = try noteMemoryStringArray(
+    context.value("tagFilter") ?? context.value("tags"),
+    field: "tagFilter"
+  )
+  let notes = try context.service.searchSystemMemoryNotes(
+    query: query,
+    namespace: namespace,
+    tagFilter: tagFilter,
+    limit: limit
+  )
   return [
     "notebookId": .string(NoteStoreSchema.systemMemoryNotebookId),
     "noteIds": .array(notes.map { .string($0.noteId) }),
@@ -176,13 +191,11 @@ private func readPersonaNoteMemory(_ context: NoteMemoryAddonContext) throws -> 
   let personaName = context.string("personaName") ?? personaId
   let namespace = context.string("memoryNamespace", "memoryId") ?? "persona-chat-memory"
   let limit = max(1, min(context.int("limit", default: 3), 30))
-  let notes = Array(try context.service.listNotes(
-    notebookId: NoteStoreSchema.systemMemoryNotebookId,
-    limit: 10_000
-  ).reversed().filter { note in
-    let names = Set(note.tags.map(\.tag.name))
-    return names.contains("persona:\(personaId)") && names.contains("memory-namespace:\(namespace)")
-  }.prefix(limit))
+  let notes = try context.service.searchSystemMemoryNotes(
+    namespace: namespace,
+    tagFilter: ["persona:\(personaId)"],
+    limit: limit
+  )
   let fileLimit = max(1, min(context.int("fileLimit", default: 30), 100))
   let files = Array(try notes.flatMap { note in
     try context.service.listFiles(noteId: note.noteId)
@@ -214,32 +227,50 @@ private func writePersonaNoteMemory(_ context: NoteMemoryAddonContext) throws ->
     context.input.resolvedInputPayload.isEmpty ? context.variables : context.input.resolvedInputPayload
   )
   let entries = personaEntries(payload["memoryEntries"])
+  let preparedAttachments = try prepareNoteMemoryFiles(context: context)
   var notes: [Note] = []
   var files: [NoteFileAttachment] = []
-  for entry in entries {
-    let metadata: JSONObject = [
-      "memoryNamespace": .string(namespace),
-      "personaId": .string(personaId),
-      "personaName": .string(personaName),
-      "kind": .string(entry.kind),
-      "importance": .string(entry.importance),
-      "source": entry.source.map(JSONValue.string) ?? .null,
-      "recordedAt": .string(context.string("recordedAt", "registeredAt") ?? ISO8601DateFormatter().string(from: Date())),
-      "sourceWorkflowId": .string(context.input.workflowId),
-      "sourceNodeId": .string(context.input.nodeId)
-    ]
-    let note = try context.service.saveSystemMemoryNote(
-      bodyMarkdown: entry.content,
-      tags: noteMemoryTags(nil, required: [
-        "memory-namespace:\(namespace)",
-        "persona:\(personaId)",
-        "memory-kind:\(entry.kind)",
-        "memory-importance:\(entry.importance)"
-      ]),
-      metaJSON: encodeObject(metadata)
-    )
-    notes.append(note)
-    files.append(contentsOf: try attachNoteMemoryFiles(context: context, noteId: note.noteId))
+  do {
+    for entry in entries {
+      let metadata: JSONObject = [
+        "memoryNamespace": .string(namespace),
+        "personaId": .string(personaId),
+        "personaName": .string(personaName),
+        "kind": .string(entry.kind),
+        "importance": .string(entry.importance),
+        "source": entry.source.map(JSONValue.string) ?? .null,
+        "recordedAt": .string(context.string("recordedAt", "registeredAt") ?? ISO8601DateFormatter().string(from: Date())),
+        "sourceWorkflowId": .string(context.input.workflowId),
+        "sourceNodeId": .string(context.input.nodeId)
+      ]
+      let note = try context.service.saveSystemMemoryNote(
+        bodyMarkdown: entry.content,
+        tags: noteMemoryTags(nil, required: [
+          "memory-namespace:\(namespace)",
+          "persona:\(personaId)",
+          "memory-kind:\(entry.kind)",
+          "memory-importance:\(entry.importance)"
+        ]),
+        metaJSON: encodeObject(metadata)
+      )
+      notes.append(note)
+      files.append(contentsOf: try attachPreparedNoteMemoryFiles(
+        preparedAttachments,
+        service: context.service,
+        noteId: note.noteId
+      ))
+    }
+  } catch {
+    let writeError = error
+    do {
+      try context.service.rollbackSystemMemoryNotes(noteIds: notes.map(\.noteId))
+    } catch {
+      throw AdapterExecutionError(
+        .providerError,
+        "\(context.input.addon.name) failed and rollback failed: \(writeError); rollback: \(error)"
+      )
+    }
+    throw writeError
   }
   let handoffDecision = guardedPersonaHandoffs(
     personaId: personaId,
@@ -539,10 +570,16 @@ private func noteMemoryStringArray(_ value: JSONValue?, field: String) throws ->
   }
 }
 
-private func attachNoteMemoryFiles(
-  context: NoteMemoryAddonContext,
-  noteId: String
-) throws -> [NoteFileAttachment] {
+private struct PreparedNoteMemoryAttachment {
+  var data: Data
+  var mediaType: String
+  var filename: String?
+  var position: Int
+}
+
+private func prepareNoteMemoryFiles(
+  context: NoteMemoryAddonContext
+) throws -> [PreparedNoteMemoryAttachment] {
   let explicitRefs = try noteMemoryStringArray(
     context.value("attachmentRefs") ?? context.value("attachments"),
     field: "attachments"
@@ -563,12 +600,27 @@ private func attachNoteMemoryFiles(
     guard data.count <= 25 * 1_024 * 1_024 else {
       throw AdapterExecutionError(.policyBlocked, "note memory attachment \(ref) exceeds 25 MiB")
     }
-    return try context.service.attachSystemMemoryFile(
-      noteId: noteId,
+    return PreparedNoteMemoryAttachment(
       data: data,
       mediaType: attachment.mediaType,
-      originalFilename: attachment.filename,
+      filename: attachment.filename,
       position: position
+    )
+  }
+}
+
+private func attachPreparedNoteMemoryFiles(
+  _ attachments: [PreparedNoteMemoryAttachment],
+  service: NoteService,
+  noteId: String
+) throws -> [NoteFileAttachment] {
+  try attachments.map { attachment in
+    try service.attachSystemMemoryFile(
+      noteId: noteId,
+      data: attachment.data,
+      mediaType: attachment.mediaType,
+      originalFilename: attachment.filename,
+      position: attachment.position
     )
   }
 }

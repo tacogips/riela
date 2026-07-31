@@ -1048,7 +1048,7 @@ private func ensureTag(_ tag: NoteTagInput, in database: SQLiteDatabase) throws 
   )
 }
 
-private func deleteNoteRows(noteId: String, in database: SQLiteDatabase) throws {
+func deleteNoteRows(noteId: String, in database: SQLiteDatabase) throws {
   if let previous = try ftsPayload(noteId: noteId, in: database) {
     try database.execute(
       """

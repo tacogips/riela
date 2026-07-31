@@ -77,10 +77,20 @@ public enum NoteStoreSchema {
         ]
       )
     }
+    try database.execute(
+      "UPDATE tags SET class_id = 'document-kind', is_system = 1 WHERE name = ?",
+      bindings: [.text(systemMemoryNotebookKindTag)]
+    )
   }
 
   private static func seedSystemMemoryNotebook(in database: SQLiteDatabase) throws {
     let now = NoteStoreClock.system.now()
+    guard let systemMemoryTagId = try database.query(
+      "SELECT tag_id FROM tags WHERE name = ? LIMIT 1",
+      bindings: [.text(systemMemoryNotebookKindTag)]
+    ).first?["tag_id"] else {
+      throw NoteServiceError.notFound("system-memory notebook kind tag was not seeded")
+    }
     try database.execute(
       """
       INSERT INTO notebooks (
@@ -99,7 +109,7 @@ public enum NoteStoreSchema {
       """,
       bindings: [
         .text(systemMemoryNotebookId),
-        .text(stableTagId(for: systemMemoryNotebookKindTag)),
+        .text(systemMemoryTagId),
         .text(now)
       ]
     )

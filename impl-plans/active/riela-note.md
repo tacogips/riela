@@ -583,6 +583,62 @@ update is the final documentation commit, after which status must be clean.
 orphaned and unread. The 11 repository-baseline SwiftLint errors remain outside
 the required gates; no new test-integrity gap remains.
 
+### Session: 2026-08-01 Step 7 implementation-review revisions
+
+**Tasks Completed**: Closed all three mid-severity findings from `comm-001861`.
+TASK-024 through TASK-030 and every current-work-package completion criterion
+remain complete; no optional Phase 3 scope was added.
+**Files Changed**:
+`Sources/RielaNote/NoteStoreSchema.swift`,
+`Sources/RielaNote/NoteService.swift`,
+`Sources/RielaNote/NoteService+SystemMemory.swift`,
+`Sources/RielaCLI/ProductionNodeAdapter+NoteMemoryAddons.swift`,
+`Tests/RielaNoteTests/NoteStoreSchemaTests.swift`,
+`Tests/RielaNoteTests/SystemMemoryNotebookTests.swift`,
+`Tests/RielaCLITests/NoteAddonTests.swift`, and this progress log.
+**Findings Addressed**:
+
+- System-memory bootstrap now promotes a same-name pre-v6 tag to the reserved
+  system classification while preserving and resolving its stored `tag_id`;
+  the v5 migration fixture proves the notebook assignment uses that id.
+- System-memory and persona reads apply notebook, namespace, and requested tag
+  constraints in SQLite before `LIMIT`, order newest-first, and have no 10,000
+  note truncation window. Saturation and 10,001-note regressions cover both
+  failure modes.
+- Memory-save relationship and attachment inputs are preflighted before the
+  first write. A typed system-memory rollback removes partial notes, links,
+  attachment rows, file rows, and local blobs when a later composite step
+  fails; persona multi-entry writes share the same rollback boundary.
+
+**Verification**:
+
+- Focused migration/search/preflight/rollback tests: 9 passed, 0 failed.
+- `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build`:
+  passed.
+- `swift test --skip-build --filter RielaNoteTests`: 139 passed, 0 failed.
+- `swift test --skip-build --filter RielaCLITests`: 658 passed, 0 failed.
+- `swift test --skip-build --filter RielaCoreTests`: 477 passed, 0 failed.
+- `web/` `bun run typecheck && bun test src && bun run build`: passed; 154
+  tests, 0 failed, and the production build completed.
+- Slack, Telegram, Discord, Matrix, and Telegram-SDK trio workflow validation:
+  each returned `valid: true` through `.build/debug/riela`.
+- Focused strict SwiftLint found only the two pre-existing large-tuple
+  diagnostics in `NoteStoreSchema.swift` and `NoteService.swift`; no revision
+  code or test produced a new violation.
+- Removed-symbol/package audit, `git diff --check`, and the manual pre-commit
+  credential/private-URL/machine-path review passed.
+
+**Documentation Review**: `README.md` and
+`.codex/skills/riela-impl-workflow/SKILL.md` remain aligned with the accepted
+system-memory contract; the fixes refine correctness without changing the
+documented user-facing surface.
+**Commit**: `a2c653b` (`fix(riela-note): close system memory review gaps`). This
+progress update is committed separately. Branch: `feat/note-hub-improve`;
+push status: not pushed. No GitHub issue or Codex-agent reference was provided.
+**Residual Risks**: Existing `.riela/memory/` data remains intentionally
+orphaned and unread. Repository-baseline SwiftLint violations remain outside
+the required gates; no Step 7 verification gap remains.
+
 ## Historical Issue-Resolution Work Package: Hierarchical Tags and Kanban
 
 ### Objective and boundaries

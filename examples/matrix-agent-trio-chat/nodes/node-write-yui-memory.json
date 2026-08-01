@@ -2,16 +2,14 @@
   "id": "write-yui-memory",
   "modelFreeze": false,
   "addon": {
-    "name": "riela/chat-persona-memory-write",
+    "name": "riela/note-persona-context-write",
     "version": "1",
     "config": {
       "personaId": "yui",
-      "personaName": "Yui Codex",
-      "memoryId": "persona-chat-memory"
+      "personaName": "Yui Codex"
     }
   },
-  "memories": [{"id": "persona-chat-memory", "purpose": "persist Yui Codex memory entries"}],
   "output": {
-    "description": "Persist Yui Codex memory entries and pass through reply/handoff flags."
+    "description": "Persist Yui Codex note context entries and pass through reply/handoff flags."
   }
 }

@@ -11,7 +11,6 @@ struct RielaClientCommandRouter: ParsableCommand {
       NodeRoute.self,
       RrunRoute.self,
       SetupRoute.self,
-      MemoryRoute.self,
       NoteRoute.self,
       InstanceRoute.self,
       DoctorRoute.self,
@@ -56,11 +55,6 @@ struct RrunRoute: RielaClientPassthroughRoute {
 
 struct SetupRoute: RielaClientPassthroughRoute {
   static let configuration = passthroughRouteConfiguration("setup", abstract: "Set up local runtime dependencies.")
-  @Argument(parsing: .captureForPassthrough) var passthroughArguments: [String] = []
-}
-
-struct MemoryRoute: RielaClientPassthroughRoute {
-  static let configuration = passthroughRouteConfiguration("memory", abstract: "Manage workflow memory.")
   @Argument(parsing: .captureForPassthrough) var passthroughArguments: [String] = []
 }
 

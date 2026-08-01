@@ -458,12 +458,12 @@ Initial built-in add-ons:
   using `executionBackend: "official/gemini-sdk"` and explicit Gemini API key
   environment binding
 - `riela/chat-persona-router`: worker node that chooses chat persona routing
-- `riela/chat-memory-raw-daily-summary`: worker node that maintains raw and
-  daily-summary chat memory
-- `riela/chat-persona-memory-read` and `riela/chat-persona-memory-write`:
-  worker nodes that read and write persona-scoped chat memory
-- `riela/memory-save`, `riela/memory-update`, `riela/memory-load`, and
-  `riela/memory-search`: worker nodes for file-backed workflow memory records
+- `riela/note-persona-context-read` and
+  `riela/note-persona-context-write`: worker nodes that read and append
+  persona-scoped context in the Riela Note system-memory notebook
+- `riela/note-memory-save` and `riela/note-memory-load`: worker nodes that
+  append and read workflow-scoped streams in the Riela Note system-memory
+  notebook; no update, search, or raw/daily-summary operation is provided
 - `riela/x-digest`: worker node that summarizes X/Twitter data through the
   production X digest adapter
 - `riela/gmail-digest`: worker node that summarizes Gmail/mail-gateway data

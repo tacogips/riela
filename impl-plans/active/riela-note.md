@@ -22,7 +22,7 @@ Acceptance Traceability, Verification)
 and no revision requested. The accepted feature design remains
 `design-docs/specs/design-riela-note.md`; this follow-up does not reopen it.
 **Created**: 2026-07-04
-**Last Updated**: 2026-07-24
+**Last Updated**: 2026-08-01
 
 ## Current Issue-Resolution Work Package
 
@@ -1045,8 +1045,10 @@ follow-up work.
   - `Sources/RielaSQLite/SQLiteDatabase.swift` (driver base)
   - `Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift`
     (schema/upsert precedent)
-  - `Sources/RielaCLI/ProductionNodeAdapter.swift` (built-in add-on
-    dispatch, `riela/memory-*` family)
+  - `Sources/RielaCLI/ProductionNodeAdapter+NoteAddonDispatch.swift`,
+    `ProductionNodeAdapter+NoteMemoryAddons.swift`, and
+    `ProductionNodeAdapter+NotePersonaAddons.swift` (Note built-in dispatch,
+    Note-backed workflow/stream save-load, and persona context)
   - `Sources/RielaGraphQL/GraphQLContracts.swift`,
     `Sources/RielaGraphQL/RielaGraphQL.swift` (DTO/service pattern)
   - `Sources/RielaServer/` (`ServerRequestContext`, route handling)

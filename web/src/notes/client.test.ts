@@ -100,6 +100,35 @@ describe('Note GraphQL transport', () => {
     })
   })
 
+  test('projects notebook read-only state and persists explicit unlocks', async () => {
+    const notebook = {
+      notebookId: 'system-memory',
+      title: 'Riela System Memory',
+      progress: 'none',
+      readOnly: true,
+      createdAt: '',
+      updatedAt: '',
+      tags: [],
+    }
+    const harness = environment([
+      { data: { notebooks: {
+        result: { accepted: true, status: 'ok', diagnostics: [] },
+        value: [notebook],
+      } } },
+      { data: { setNotebookReadOnly: {
+        result: { accepted: true, status: 'ok', diagnostics: [] },
+        notebook: { ...notebook, readOnly: false },
+      } } },
+    ])
+    const client = new NoteGraphQLClient('riela-app', harness.value)
+
+    expect(await client.notebooks(0, 'updatedAtDesc', [])).toMatchObject([{ readOnly: true }])
+    expect(await client.setNotebookReadOnly('system-memory', false)).toMatchObject({ readOnly: false })
+    const body = requestBody(harness.requests[1])
+    expect(body.operationName).toBe('SetNotebookReadOnly')
+    expect(body.variables).toEqual({ notebookId: 'system-memory', readOnly: false })
+  })
+
   test('uses the shared notebook page limit for note previews', async () => {
     const harness = environment([
       { data: { notes: {

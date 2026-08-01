@@ -1,5 +1,4 @@
 import XCTest
-import RielaMemory
 @testable import RielaCore
 
 final class DeterministicWorkflowRunnerTests: XCTestCase {
@@ -677,97 +676,6 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       }
       XCTAssertEqual(message, "unknown rerun step 'missing-step'")
     }
-  }
-
-  func testMemoryGuidanceUsesDeclaredNodeIdWhenStepIdDiffers() async throws {
-    let workflow = WorkflowDefinition(
-      workflowId: "memory-runner",
-      defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
-      entryStepId: "persona-step",
-      nodeRegistry: [
-        WorkflowNodeRegistryRef(
-          id: "persona-node",
-          nodeFile: "nodes/persona.json",
-          memories: [
-            WorkflowMemoryDeclaration(id: "persona-events", description: "chronological persona events")
-          ]
-        )
-      ],
-      steps: [WorkflowStepRef(id: "persona-step", nodeId: "persona-node", role: .worker)],
-      nodes: [
-        WorkflowNodeRef(
-          id: "persona-step",
-          nodeFile: "nodes/persona.json",
-          role: .worker,
-          memories: [
-            WorkflowMemoryDeclaration(id: "persona-summary", description: "summarized persona memory")
-          ]
-        )
-      ]
-    )
-    let adapter = InputCapturingAdapter()
-    let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: adapter)
-
-    _ = try await runner.run(DeterministicWorkflowRunRequest(
-      workflow: workflow,
-      nodePayloads: ["persona-node": AgentNodePayload(id: "persona-node", executionBackend: .codexAgent, model: "gpt-5.4-mini")]
-    ))
-
-    let capturedInput = await adapter.capturedInput()
-    let input = try XCTUnwrap(capturedInput)
-    XCTAssertTrue(input.systemPromptText?.contains("persona-events") == true)
-    XCTAssertTrue(input.systemPromptText?.contains("persona-summary") == true)
-    XCTAssertTrue(input.systemPromptText?.contains("--workflow-id memory-runner") == true)
-    XCTAssertTrue(input.systemPromptText?.contains("--node-id persona-node") == true)
-    guard case let .object(availableMemories)? = input.mergedVariables["availableMemories"],
-      case let .array(nodeMemories)? = availableMemories["node"]
-    else {
-      return XCTFail("expected availableMemories.node")
-    }
-    XCTAssertEqual(nodeMemories.count, 2)
-  }
-
-  func testRegisteredMemoryMetadataPrefersNodePurposeAndFillsWorkflowDefaults() async throws {
-    let root = FileManager.default.temporaryDirectory
-      .appendingPathComponent("riela-memory-metadata-\(UUID().uuidString)", isDirectory: true)
-      .path
-    defer { try? FileManager.default.removeItem(atPath: root) }
-    let workflow = WorkflowDefinition(
-      workflowId: "memory-runner",
-      defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
-      memories: [
-        WorkflowMemoryDeclaration(
-          id: "persona-memory",
-          description: "workflow description",
-          purpose: "workflow purpose",
-          scope: .crossWorkflow,
-          defaultLimit: 12
-        )
-      ],
-      entryStepId: "persona-step",
-      nodeRegistry: [
-        WorkflowNodeRegistryRef(
-          id: "persona-node",
-          nodeFile: "nodes/persona.json",
-          memories: [
-            WorkflowMemoryDeclaration(id: "persona-memory", purpose: "node-specific purpose")
-          ]
-        )
-      ],
-      steps: [WorkflowStepRef(id: "persona-step", nodeId: "persona-node", role: .worker)],
-      nodes: [WorkflowNodeRef(id: "persona-step", nodeFile: "nodes/persona.json")]
-    )
-    let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: StaticAdapter(output: output()))
-
-    _ = try await runner.run(DeterministicWorkflowRunRequest(
-      workflow: workflow,
-      nodePayloads: ["persona-node": AgentNodePayload(id: "persona-node", executionBackend: .codexAgent, model: "gpt-5.4-mini")],
-      memoryRootDirectory: root
-    ))
-
-    let metadata = try XCTUnwrap(RielaMemoryStore(rootDirectory: root).metadata(memoryId: "persona-memory"))
-    XCTAssertEqual(metadata.description, "workflow description")
-    XCTAssertEqual(metadata.purpose, "node-specific purpose")
   }
 
   func testStepSessionPolicyIsPassedToAdapterInput() async throws {

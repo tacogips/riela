@@ -20,6 +20,7 @@ import { NoteSearchPopup } from '../components/NoteSearchPopup'
 import '../notes-detail.css'
 import {
   NotebookProgressController,
+  NotebookReadOnlyController,
   NotebookScopeController,
   constraintForTag,
   pruneNotebookActivatorEntries,
@@ -151,6 +152,7 @@ export function NotesView(props: {
   // A note opened from search or from a link can live outside the active scope;
   // its notebook is fetched on demand so the detail aside can still render it.
   const [externalNotebook, setExternalNotebook] = createSignal<Notebook>()
+  const [notebookLockBusy, setNotebookLockBusy] = createSignal(false)
   const [activeNoteId, setActiveNoteId] = createSignal<string>()
   const [searchOpen, setSearchOpen] = createSignal(false)
   const [composeDestination, setComposeDestination] = createSignal<NoteComposeDestination>()
@@ -172,23 +174,43 @@ export function NotesView(props: {
   let clearAllButton: HTMLButtonElement | undefined
   let contentHeading: HTMLDivElement | undefined
 
+  const publishNotebookMutation = (notebook: Notebook): Notebook => {
+    const reconciled = readOnlyController.visible(controller.visible(notebook))
+    if (draggingNotebookId()) {
+      pendingNotebookCommit = stageNotebookUpdate(
+        notebooks(),
+        pendingNotebookCommit,
+        reconciled,
+        loadGeneration,
+      )
+    } else {
+      setNotebooks((current) => replaceNotebook(current, reconciled))
+    }
+    if (externalNotebook()?.notebookId === reconciled.notebookId) setExternalNotebook(reconciled)
+    return reconciled
+  }
+
   const controller = new NotebookProgressController(
     {
       setProgress: (notebookId, progress) => client.setProgress(notebookId, progress),
       readNotebook: (notebookId) => client.notebook(notebookId),
     },
     (updated, mutationError) => {
-      if (draggingNotebookId()) {
-        pendingNotebookCommit = stageNotebookUpdate(
-          notebooks(),
-          pendingNotebookCommit,
-          updated,
-          loadGeneration,
-        )
-      } else {
-        setNotebooks((current) => replaceNotebook(current, updated))
-      }
+      publishNotebookMutation(updated)
       if (mutationError) setMessage(`Progress reconciled to the server value: ${mutationError}`)
+    },
+  )
+
+  const readOnlyController = new NotebookReadOnlyController(
+    {
+      setReadOnly: (notebookId, readOnly) => client.setNotebookReadOnly(notebookId, readOnly),
+    },
+    (updated, mutationError) => {
+      const reconciled = publishNotebookMutation(updated)
+      if (selectedNotebookId() !== updated.notebookId) return
+      setMessage(mutationError
+        ? `Could not change notebook lock: ${mutationError}`
+        : reconciled.readOnly ? 'System memory is locked.' : 'System memory is unlocked.')
     },
   )
 
@@ -386,6 +408,7 @@ export function NotesView(props: {
     pendingNotebookCommit = undefined
     let scopeSnapshot = scopeController.snapshot()
     const progressSnapshot = controller.snapshot()
+    const readOnlySnapshot = readOnlyController.snapshot()
     let acceptedPartialNotebooks: Notebook[] | undefined
     if (options.clearMembership) {
       setDraggingNotebookId(undefined)
@@ -451,7 +474,10 @@ export function NotesView(props: {
         return 'superseded'
       }
       publishNotebooks(
-        nextNotebooks.map((notebook) => controller.adopt(notebook, progressSnapshot)),
+        nextNotebooks.map((notebook) => readOnlyController.adopt(
+          controller.adopt(notebook, progressSnapshot),
+          readOnlySnapshot,
+        )),
         generation,
       )
       return 'completed'
@@ -460,7 +486,10 @@ export function NotesView(props: {
       if (refreshError instanceof NotebookPartialLoadError) {
         publishNotebooks(
           (acceptedPartialNotebooks ?? refreshError.notebooks)
-            .map((notebook) => controller.adopt(notebook, progressSnapshot)),
+            .map((notebook) => readOnlyController.adopt(
+              controller.adopt(notebook, progressSnapshot),
+              readOnlySnapshot,
+            )),
           generation,
         )
       }
@@ -567,9 +596,14 @@ export function NotesView(props: {
       return
     }
     try {
+      const progressSnapshot = controller.snapshot()
+      const readOnlySnapshot = readOnlyController.snapshot()
       const notebook = await client.notebook(notebookId)
       if (selectedNotebookId() !== notebookId) return
-      setExternalNotebook(notebook)
+      setExternalNotebook(readOnlyController.adopt(
+        controller.adopt(notebook, progressSnapshot),
+        readOnlySnapshot,
+      ))
     } catch (notebookError) {
       setMessage(`Could not open that note's notebook: ${errorMessage(notebookError)}`)
     }
@@ -577,6 +611,10 @@ export function NotesView(props: {
 
   const createNote = async (destination: NoteComposeDestination, bodyMarkdown: string) => {
     const notebookId = selectedNotebookId()
+    if (destination === 'notebook' && selectedNotebook()?.readOnly) {
+      setMessage('Unlock this notebook before adding notes.')
+      return
+    }
     const detail = destination === 'memo' || !notebookId
       ? await workspace.createMemo(bodyMarkdown)
       : await workspace.createNote(notebookId, bodyMarkdown)
@@ -584,6 +622,15 @@ export function NotesView(props: {
     setMessage(`Created “${detail.note.title ?? `Note ${detail.note.noteNumber}`}”.`)
     await openNote(detail.note.noteId, detail.note.notebookId)
     await refresh()
+  }
+
+  const toggleNotebookReadOnly = async (notebook: Notebook) => {
+    setNotebookLockBusy(true)
+    try {
+      await readOnlyController.set(notebook, !notebook.readOnly)
+    } finally {
+      setNotebookLockBusy(false)
+    }
   }
 
   const closeDetail = (restoreFocus = true) => {
@@ -682,6 +729,8 @@ export function NotesView(props: {
     const notebook = selectedNotebook()
     if (!notebook || membershipBusy()) return
     const scopeSnapshot = scopeController.snapshot()
+    const progressSnapshot = controller.snapshot()
+    const readOnlySnapshot = readOnlyController.snapshot()
     const currentTag = tags().find((candidate) =>
       candidate.tagId === tag.tagId && candidate.name === tag.name && candidate.classId === tag.classId)
     if (!currentTag || assignedTagIds().has(currentTag.tagId)) {
@@ -699,7 +748,11 @@ export function NotesView(props: {
         await refresh()
         return
       }
-      setNotebooks((current) => replaceNotebook(current, controller.adopt(updated)))
+      const reconciled = readOnlyController.adopt(
+        controller.adopt(updated, progressSnapshot),
+        readOnlySnapshot,
+      )
+      setNotebooks((current) => replaceNotebook(current, reconciled))
       setAddTagId('')
       setMessage(`Added “${currentTag.name}”.`)
       await refresh()
@@ -714,6 +767,8 @@ export function NotesView(props: {
     const notebook = selectedNotebook()
     if (!notebook || membershipBusy()) return
     const scopeSnapshot = scopeController.snapshot()
+    const progressSnapshot = controller.snapshot()
+    const readOnlySnapshot = readOnlyController.snapshot()
     const busyKey = `remove:${notebook.notebookId}:${tag.tagId}`
     setMembershipBusy(busyKey)
     setMessage('')
@@ -750,7 +805,11 @@ export function NotesView(props: {
         }
         return
       }
-      setNotebooks((current) => replaceNotebook(current, controller.adopt(updated)))
+      const reconciled = readOnlyController.adopt(
+        controller.adopt(updated, progressSnapshot),
+        readOnlySnapshot,
+      )
+      setNotebooks((current) => replaceNotebook(current, reconciled))
       const clearMembership = tagRemovalCanAffectConstraints(
         tag,
         scopeSnapshot.scope.constraints,
@@ -996,10 +1055,15 @@ export function NotesView(props: {
     </div>
 
     <Show when={selectedNotebook()}>{(notebook) => <aside class="note-detail" aria-label={`Notebook details for ${notebook().title}`}>
-      <header><div><span class="eyebrow">NOTEBOOK</span><h2>{notebook().title}</h2></div><button class="detail-close secondary" aria-label="Close notebook details" onClick={() => closeDetail()}>×</button></header>
+      <header><div><span class="eyebrow">NOTEBOOK</span><h2>{notebook().title}</h2><Show when={notebook().readOnly}><span class="note-readonly-badge">Read-only</span></Show></div><button class="detail-close secondary" aria-label="Close notebook details" onClick={() => closeDetail()}>×</button></header>
+      <Show when={notebook().tags.some((assignment) => assignment.tag.name === 'notebook-kind:system-memory')}>
+        <button class="secondary" disabled={notebookLockBusy()} aria-pressed={notebook().readOnly} onClick={() => void toggleNotebookReadOnly(notebook())}>
+          {notebook().readOnly ? 'Unlock' : 'Lock'}
+        </button>
+      </Show>
       <Show when={workspaceEnabled()}>
         <div class="notebook-actions">
-          <button class="secondary" onClick={() => setComposeDestination('notebook')}>Add note</button>
+          <button class="secondary" disabled={notebook().readOnly} onClick={() => setComposeDestination('notebook')}>Add note</button>
           <Show when={props.onExpandNotebook}>
             <button class="secondary" onClick={() => props.onExpandNotebook?.(notebook().notebookId, notebook().title)}>Expand with Agent</button>
           </Show>
@@ -1031,6 +1095,7 @@ export function NotesView(props: {
         <NoteDetailPane
           notebookId={notebook().notebookId}
           notebookTitle={notebook().title}
+          notebookReadOnly={notebook().readOnly}
           noteId={activeNoteId()}
           client={client}
           workspace={workspace}

@@ -69,10 +69,10 @@ Additional grounded observations:
   into loop evidence, session output, or any cross-run surface, and persisted
   records cannot recover the counts after the fact. Cost evidence must
   therefore be accumulated by the runner while the run is live (S3).
-- `riela memory` and `RielaMemoryStore` exist
-  (`Sources/RielaCLI/ProductionNodeAdapter+ChatMemory.swift`), but they are a
-  workflow-facing memory surface without lesson provenance, expiry,
-  redaction status, or revocation semantics.
+- The former `riela memory` command, `RielaMemoryStore`, and legacy chat-memory
+  adapter were deleted. Workflow/persona context now uses Riela Note's
+  system-memory notebook, which still does not provide the lesson provenance,
+  expiry, redaction status, or revocation semantics required here.
 - `design-docs/specs/design-riela-architecture-review.md` flags that
   cross-session reads currently use full-store `loadAll()` scans and per-call
   SQLite connection opens. Any cross-run loop surface built naively on
@@ -185,12 +185,12 @@ window-controller consolidation) will move the UI code this would touch.
 5. **Verdict surfaces are contracts.** `--check` exit codes and SARIF export
    get explicit documented codes and schema versions; they do not inherit the
    currently inconsistent per-command exit-code habits.
-6. **Lessons are a new small store, not a retrofit of `riela memory`.**
-   The chat memory store has no provenance/expiry/redaction/revocation
-   semantics and serves a different consumer (workflow prompts). Lesson
-   records get their own SQLite-backed store under the data root with the
-   fields the first-line design mandated. A read-only bridge addon can expose
-   lessons to workflows later.
+6. **Lessons are a new small store, not a retrofit of system-memory notes.**
+   The Note-backed context surface has no lesson-specific
+   provenance/expiry/redaction/revocation contract and serves a different
+   consumer (workflow prompts). Lesson records get their own SQLite-backed
+   store under the data root with the fields the first-line design mandated.
+   A read-only bridge add-on can expose lessons to workflows later.
 7. **Self-evolution versioning stays in plan module 8.** This design links to
    it and orders it after metrics exist, so self-improve proposals can cite
    gate-failure statistics as rationale.
@@ -802,10 +802,10 @@ rationale when both exist.
 - **Materialized metrics tables in the MVP.** Bounded on-read aggregation
   over summary rows is simple, cannot go stale, and the CLI contract hides
   the strategy; materialize later only if profiling demands it.
-- **Retrofitting lessons into `riela memory`.** The chat memory store lacks
-  provenance/expiry/revocation and serves prompts directly; entangling
-  redaction-sensitive lessons with it risks silent prompt leakage of stale
-  or revoked guidance.
+- **Retrofitting lessons into Riela Note system memory.** The context surface
+  lacks lesson-specific provenance/expiry/revocation and serves prompts
+  directly; entangling redaction-sensitive lessons with it risks silent prompt
+  leakage of stale or revoked guidance.
 - **Mid-step budget interruption.** Killing live agent processes on token
   overrun trades an overspend bounded by one step for partial-write and
   orphan-process risk; step-boundary enforcement is deterministic. In-flight

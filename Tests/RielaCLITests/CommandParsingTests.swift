@@ -1,6 +1,5 @@
 import Foundation
 import XCTest
-import RielaMemory
 @testable import RielaCLI
 
 final class CommandParsingTests: XCTestCase {
@@ -20,7 +19,7 @@ final class CommandParsingTests: XCTestCase {
     XCTAssertEqual(
       Set(RielaClientCommandRouter.configuration.subcommands.map { $0._commandName }),
       Set([
-        "workflow", "package", "node", "rrun", "setup", "memory", "note", "instance", "doctor", "gc",
+        "workflow", "package", "node", "rrun", "setup", "note", "instance", "doctor", "gc",
         "session", "loop", "graphql", "gql", "hook", "events", "serve", "call-step", "workflow-call", "version"
       ])
     )
@@ -673,144 +672,8 @@ final class CommandParsingTests: XCTestCase {
     }
   }
 
-  func testParsesMemoryCommandSurface() throws {
-    let parser = RielaArgumentParser()
-
-    XCTAssertEqual(
-      try parser.parse([
-        "memory", "save", "chat-memory",
-        "--workflow-id", "telegram-sdk-trio-chat",
-        "--node-id", "save-chat-event-memory",
-        "--payload-json", #"{"text":"hello"}"#,
-        "--registered-at", "2026-06-20T10:00:00Z",
-        "--file", "fixtures/yui.png",
-        "--memory-root", "tmp/memory",
-        "--output", "json"
-      ]),
-      .memory(MemoryCommand(
-        kind: .save,
-        options: MemoryCommandOptions(
-          memoryId: "chat-memory",
-          workflowId: "telegram-sdk-trio-chat",
-          nodeId: "save-chat-event-memory",
-          payloadJSON: #"{"text":"hello"}"#,
-          registeredAt: "2026-06-20T10:00:00Z",
-          filePaths: ["fixtures/yui.png"],
-          databaseRoot: "tmp/memory",
-          output: .json
-        )
-      ))
-    )
-
-    XCTAssertEqual(
-      try parser.parse([
-        "memory", "update", "daily-summary",
-        "--workflow-id", "telegram-sdk-trio-chat",
-        "--record-id", "7",
-        "--payload-json", #"{"summary":"updated"}"#,
-        "--tag", "date:2026-06-22",
-        "--output", "json"
-      ]),
-      .memory(MemoryCommand(
-        kind: .update,
-        options: MemoryCommandOptions(
-          memoryId: "daily-summary",
-          workflowId: "telegram-sdk-trio-chat",
-          recordId: 7,
-          payloadJSON: #"{"summary":"updated"}"#,
-          tags: ["date:2026-06-22"],
-          output: .json
-        )
-      ))
-    )
-
-    XCTAssertEqual(
-      try parser.parse([
-        "memory", "update", "chat-memory",
-        "--workflow-id", "telegram-sdk-trio-chat",
-        "--record-id", "8",
-        "--payload-json", #"{"text":"remove files"}"#,
-        "--clear-files"
-      ]),
-      .memory(MemoryCommand(
-        kind: .update,
-        options: MemoryCommandOptions(
-          memoryId: "chat-memory",
-          workflowId: "telegram-sdk-trio-chat",
-          recordId: 8,
-          payloadJSON: #"{"text":"remove files"}"#,
-          clearFiles: true
-        )
-      ))
-    )
-
-    XCTAssertEqual(
-      try parser.parse([
-        "memory", "search", "chat-memory",
-        "--workflow-id", "telegram-sdk-trio-chat",
-        "--match", "Yui",
-        "-e", "Rina",
-        "--tag", "chat",
-        "--related-id", "12",
-        "--limit", "5",
-        "--output=json"
-      ]),
-      .memory(MemoryCommand(
-        kind: .search,
-        options: MemoryCommandOptions(
-          memoryId: "chat-memory",
-          workflowId: "telegram-sdk-trio-chat",
-          matchPatterns: ["Yui", "Rina"],
-          tags: ["chat"],
-          relatedRecordIds: [12],
-          limit: 5,
-          output: .json
-        )
-      ))
-    )
-
-    XCTAssertEqual(
-      try parser.parse([
-        "memory", "load", "rina-shared",
-        "--all-workflows",
-        "--node-id", "rina",
-        "--limit", "10"
-      ]),
-      .memory(MemoryCommand(
-        kind: .load,
-        options: MemoryCommandOptions(
-          memoryId: "rina-shared",
-          allWorkflows: true,
-          nodeId: "rina",
-          limit: 10
-        )
-      ))
-    )
-
-    XCTAssertEqual(
-      try parser.parse([
-        "memory", "tags", "chat-memory",
-        "--memory-root", "tmp/memory",
-        "--sort", "value-desc",
-        "--limit", "10",
-        "--offset", "5"
-      ]),
-      .memory(MemoryCommand(
-        kind: .tags,
-        options: MemoryCommandOptions(
-          memoryId: "chat-memory",
-          sortOrder: .valueDesc,
-          limit: 10,
-          offset: 5,
-          databaseRoot: "tmp/memory"
-        )
-      ))
-    )
-
-    XCTAssertEqual(
-      try parser.parse(["memory", "metadata", "chat-memory"]),
-      .memory(MemoryCommand(kind: .metadata, options: MemoryCommandOptions(memoryId: "chat-memory")))
-    )
+  func testRejectsRemovedMemoryCommandSurface() {
+    XCTAssertThrowsError(try RielaArgumentParser().parse(["memory", "save", "chat-memory"]))
   }
 
   func testDefaultOutputIsJSONLForMachineReadableCommands() throws {

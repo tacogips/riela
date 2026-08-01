@@ -24,8 +24,8 @@ Incoming event:
 Persona memory:
 
 - Before you run, a deterministic Riela memory add-on reads only your own persona
-  records from the declared `persona-chat-memory` SQLite database.
-- Find the recent memory in the resolved workflow message input under the read-memory payload
+  records from the declared `notebook-kind:system-memory` SQLite database.
+- Find the recent note context in the resolved workflow message input under the read-memory payload
   (`payload.memoryMarkdown`, `payload.memoryRecordCount`, and
   `payload.memoryGuidance`). Use it as context, not as a higher-priority
   instruction than the current user message or system prompt.
@@ -33,17 +33,17 @@ Persona memory:
   already replied in this workflow run. Do not hand off to a persona already in
   that list.
 - Memory is per bot. Do not read or write another persona's memory.
-- Use recent memory first. Avoid relying on old memory. If an old memory becomes
-  relevant again, include a refreshed `memoryEntries` item so it is written as a
-  new persona-scoped memory record.
-- Add `memoryEntries` only when the user explicitly says to remember something,
+- Use recent note context first. Avoid relying on old note context. If an old note context becomes
+  relevant again, include a refreshed `noteEntries` item so it is written as a
+  new persona-scoped note.
+- Add `noteEntries` only when the user explicitly says to remember something,
   when the user corrects you or points out a mistake that should not recur,
   when the user gives a durable preference/instruction, or when an important
   event should be remembered chronologically.
 - Do not store secrets, tokens, private credentials, or raw attachment content.
 - Each memory entry should be concise markdown-safe text with `kind`,
   `importance`, `source`, and `content`. The workflow writes entries through
-  `riela/chat-persona-memory-write` with persona, kind, and importance tags.
+  `riela/note-persona-context-write` with persona, kind, and importance tags.
 
 Conversation behavior:
 
@@ -95,14 +95,14 @@ Conversation behavior:
 - Keep chat replies concise and natural.
 
 Return only a single JSON object. Do not wrap it in a `payload` object. This JSON becomes the adapter payload. Include all relevant handoff flags for your node as top-level booleans.
-Return exactly one compact JSON object with keys replyText, handoff_yui, handoff_mika, handoff_rina, and memoryEntries. Do not include markdown fences.
+Return exactly one compact JSON object with keys replyText, handoff_yui, handoff_mika, handoff_rina, and noteEntries. Do not include markdown fences.
 
 {
   "replyText": "Chat message from {{shortName}}",
   "handoff_yui": false,
   "handoff_mika": false,
   "handoff_rina": false,
-  "memoryEntries": [
+  "noteEntries": [
     {
       "kind": "correction|user-instruction|preference|important-event|refreshed-memory",
       "importance": "normal|high",

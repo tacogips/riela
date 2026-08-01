@@ -3,10 +3,12 @@ import RielaSQLite
 
 public enum NoteStoreSchemaError: Error, Equatable, Sendable {
   case unsupportedFutureVersion(found: Int, supported: Int)
+  case systemTagCollision(name: String)
 }
 
 public enum NoteStoreSchema {
-  public static let currentVersion = 5
+  public static let currentVersion = 6
+  public static let systemMemoryNotebookKindTag = "notebook-kind:system-memory"
   public static let autoTaggingWorkflowId = "note-auto-tagging"
   public static let systemKanbanStatusSetId = "kanban-default"
 
@@ -73,6 +75,21 @@ public enum NoteStoreSchema {
           .text(NoteStoreClock.system.now())
         ]
       )
+      if tagName == systemMemoryNotebookKindTag {
+        try validateSystemMemoryTagOwnership(in: database)
+      }
+    }
+  }
+
+  private static func validateSystemMemoryTagOwnership(in database: SQLiteDatabase) throws {
+    let row = try database.query(
+      "SELECT tag_id, class_id, is_system FROM tags WHERE name = ? LIMIT 1",
+      bindings: [.text(systemMemoryNotebookKindTag)]
+    ).first
+    guard row?["tag_id"] == stableTagId(for: systemMemoryNotebookKindTag),
+          row?["class_id"] == "document-kind",
+          row?["is_system"] == "1" else {
+      throw NoteStoreSchemaError.systemTagCollision(name: systemMemoryNotebookKindTag)
     }
   }
 
@@ -284,6 +301,14 @@ public enum NoteStoreSchema {
     }
   }
 
+  fileprivate static func migrateToV6(in database: SQLiteDatabase) throws {
+    if try !columnExists("read_only", in: "notebooks", database: database) {
+      try database.execute(
+        "ALTER TABLE notebooks ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0"
+      )
+    }
+  }
+
   private static func columnExists(
     _ columnName: String,
     in tableName: String,
@@ -303,7 +328,8 @@ private let schemaMigrations: [NoteSchemaMigration] = [
   NoteSchemaMigration(version: 2, apply: NoteStoreSchema.migrateToV2),
   NoteSchemaMigration(version: 3, apply: NoteStoreSchema.migrateToV3),
   NoteSchemaMigration(version: 4, apply: NoteStoreSchema.migrateToV4),
-  NoteSchemaMigration(version: 5, apply: NoteStoreSchema.migrateToV5)
+  NoteSchemaMigration(version: 5, apply: NoteStoreSchema.migrateToV5),
+  NoteSchemaMigration(version: 6, apply: NoteStoreSchema.migrateToV6)
 ]
 
 final class NoteSQLiteCapabilityCache: @unchecked Sendable {
@@ -383,7 +409,8 @@ private let systemTagClasses: [SystemTagClass] = [
 private let systemNotebookKindTags = [
   "notebook-kind:imported-material",
   "notebook-kind:agent-conversation",
-  "notebook-kind:user-memo"
+  "notebook-kind:user-memo",
+  NoteStoreSchema.systemMemoryNotebookKindTag
 ]
 
 private let noteSchemaVersionTableStatement = """
@@ -399,6 +426,7 @@ private let schemaStatements = [
     notebook_id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'none',
+    read_only INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     meta_json BLOB CHECK (meta_json IS NULL OR json_valid(meta_json, 8))

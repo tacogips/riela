@@ -52,6 +52,26 @@ final class NoteChangeObserverTests: NoteTestCase {
     XCTAssertEqual(observer.events.count, baseline, "a failed transaction must not publish")
   }
 
+  func testSetNotebookReadOnlyPublishesLockAndUnlockEvents() throws {
+    let observer = RecordingNoteChangeObserver()
+    let service = try NoteService(driver: makeNoteDriver(), changeObserver: observer)
+    _ = try service.defineTag(name: "proj/locked", classId: "folder")
+    let notebook = try service.createNotebook(title: "Lockable")
+    _ = try service.applyNotebookTags(
+      notebookId: notebook.notebookId,
+      tags: ["proj/locked"],
+      provenance: .human
+    )
+
+    _ = try service.setNotebookReadOnly(notebookId: notebook.notebookId, readOnly: true)
+    _ = try service.setNotebookReadOnly(notebookId: notebook.notebookId, readOnly: false)
+
+    let events = observer.events.filter { $0.kind == NoteChangeEventKind.notebookReadOnly }
+    XCTAssertEqual(events.count, 2)
+    XCTAssertEqual(events.map(\.notebookId), [notebook.notebookId, notebook.notebookId])
+    XCTAssertEqual(events.map(\.tagNames), [["proj/locked"], ["proj/locked"]])
+  }
+
   func testNotebookLifecycleAndTagMutationsPublishTheirOwnKinds() throws {
     let observer = RecordingNoteChangeObserver()
     let service = try NoteService(driver: makeNoteDriver(), changeObserver: observer)

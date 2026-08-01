@@ -265,57 +265,10 @@ final class WorkflowStdioNodeExecutorTests: XCTestCase {
     XCTAssertTrue(configuration.arguments.contains("./run.sh"))
   }
 
-  func testContainerNodeReceivesWritableMemoryBindAndContainerMemoryRoot() async throws {
-    let memoryRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-      .appendingPathComponent("riela-container-memory-\(UUID().uuidString)", isDirectory: true)
-      .path
-    defer {
-      try? FileManager.default.removeItem(atPath: memoryRoot)
-    }
-    let runner = RecordingStdioNodeProcessRunner { configuration, stdin in
-      let inputLine = try XCTUnwrap(stdin.split(whereSeparator: \.isNewline).first)
-      let inputData = try XCTUnwrap(String(inputLine).data(using: .utf8))
-      let decoded = try JSONDecoder().decode(WorkflowStdioNodeInvocationEnvelope.self, from: inputData)
-      XCTAssertEqual(decoded.memoryRootDirectory, memoryRoot)
-      XCTAssertEqual(decoded.availableMemories.map(\.id), ["rina-shared"])
-      XCTAssertEqual(configuration.environment["RIELA_MEMORY_ROOT"], "/riela/memory")
-      return #"{"container":true}"# + "\n"
-    }
-    let executor = LocalWorkflowStdioNodeExecutor(runner: runner)
-
-    _ = try await executor.execute(
-      input(
-        kind: .container,
-        node: AgentNodePayload(
-          id: "node",
-          nodeType: .container,
-          model: "",
-          container: WorkflowContainerExecution(
-            image: "ghcr.io/example/rina:latest",
-            runnerKind: "docker",
-            command: ["./run.sh"]
-          )
-        ),
-        memoryRootDirectory: memoryRoot,
-        availableMemories: [WorkflowMemoryDeclaration(id: "rina-shared", scope: .crossWorkflow)]
-      ),
-      context: AdapterExecutionContext()
-    )
-
-    let configurations = await runner.configurations()
-    let configuration = try XCTUnwrap(configurations.first)
-    XCTAssertTrue(configuration.arguments.contains("-v"))
-    XCTAssertTrue(configuration.arguments.contains("\(memoryRoot):/riela/memory"))
-    XCTAssertTrue(configuration.arguments.contains("RIELA_MEMORY_ROOT"))
-    XCTAssertTrue(FileManager.default.fileExists(atPath: memoryRoot))
-  }
-
   private func input(
     kind: WorkflowStdioNodeExecutionKind,
     node: AgentNodePayload,
     variables: JSONObject = ["target": .string("prod")],
-    memoryRootDirectory: String? = nil,
-    availableMemories: [WorkflowMemoryDeclaration] = [],
     policy: LoopPolicyStepDecision? = nil
   ) -> WorkflowStdioNodeExecutionInput {
     WorkflowStdioNodeExecutionInput(
@@ -328,8 +281,6 @@ final class WorkflowStdioNodeExecutorTests: XCTestCase {
       node: node,
       variables: variables,
       resolvedInputPayload: ["upstream": .string("ready")],
-      memoryRootDirectory: memoryRootDirectory,
-      availableMemories: availableMemories,
       policy: policy
     )
   }

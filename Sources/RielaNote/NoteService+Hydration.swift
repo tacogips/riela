@@ -3,7 +3,7 @@ import RielaSQLite
 func requireNotebook(_ notebookId: String, in database: SQLiteDatabase) throws -> Notebook {
   let rows = try database.query(
     """
-    SELECT notebook_id, title, status AS progress, created_at, updated_at,
+    SELECT notebook_id, title, status AS progress, read_only, created_at, updated_at,
       CASE WHEN meta_json IS NULL THEN NULL ELSE json(meta_json) END AS meta_json
     FROM notebooks
     WHERE notebook_id = ?
@@ -35,6 +35,25 @@ func requireNote(_ noteId: String, in database: SQLiteDatabase) throws -> Note {
     throw NoteServiceError.notFound("note not found: \(noteId)")
   }
   return try note(from: row, in: database)
+}
+
+@discardableResult
+func requireWritableNote(_ noteId: String, in database: SQLiteDatabase) throws -> Note {
+  let note = try requireNote(noteId, in: database)
+  let notebook = try requireNotebook(note.notebookId, in: database)
+  guard !note.readOnly, !notebook.readOnly else {
+    throw NoteServiceError.readOnly(noteId)
+  }
+  return note
+}
+
+@discardableResult
+func requireWritableNotebook(_ notebookId: String, in database: SQLiteDatabase) throws -> Notebook {
+  let notebook = try requireNotebook(notebookId, in: database)
+  guard !notebook.readOnly else {
+    throw NoteServiceError.readOnly(notebookId)
+  }
+  return notebook
 }
 
 func requireNotes(_ noteIds: [String], in database: SQLiteDatabase) throws -> [String: Note] {
@@ -84,6 +103,7 @@ func notebook(from row: SQLiteRow, in database: SQLiteDatabase) throws -> Notebo
     notebookId: notebookId,
     title: title,
     progress: progress,
+    readOnly: row["read_only"] == "1",
     createdAt: createdAt,
     updatedAt: updatedAt,
     metaJSON: row["meta_json"] ?? nil,

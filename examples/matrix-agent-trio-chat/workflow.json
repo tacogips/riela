@@ -9,19 +9,6 @@
     "workerSystemPromptTemplate": "Return concise JSON only. Keep user-facing chat text in top-level replyText. Do not expose internal workflow routing details unless the user asks for diagnostics.",
     "chatFailureMessageTemplate": "ごめん、{{node.variables.shortName}}はいま少し調子が悪いみたい。少し待ってからもう一度呼んでね。"
   },
-  "memories": [
-    {
-      "id": "persona-chat-memory",
-      "description": "Persona-specific durable chat memory for Yui, Mika, and Rina.",
-      "purpose": "Provide recent persona memory to chat reply nodes and persist explicit memoryEntries without Python scripts.",
-      "dataSchema": {
-        "type": "object",
-        "required": ["personaId", "content", "recordedAt"]
-      },
-      "scope": "cross-workflow",
-      "defaultLimit": 3
-    }
-  ],
   "entryStepId": "route-message",
   "nodes": [
     {
@@ -78,20 +65,24 @@
     {
       "id": "read-yui-memory",
       "addon": {
-        "name": "riela/chat-persona-memory-read",
+        "name": "riela/note-persona-context-read",
         "version": "1",
-        "config": {"personaId": "yui", "personaName": "Yui Codex", "memoryId": "persona-chat-memory"}
-      },
-      "memories": [{"id": "persona-chat-memory", "purpose": "read recent Yui memory"}]
+        "config": {
+          "personaId": "yui",
+          "personaName": "Yui Codex"
+        }
+      }
     },
     {
       "id": "write-yui-memory",
       "addon": {
-        "name": "riela/chat-persona-memory-write",
+        "name": "riela/note-persona-context-write",
         "version": "1",
-        "config": {"personaId": "yui", "personaName": "Yui Codex", "memoryId": "persona-chat-memory"}
-      },
-      "memories": [{"id": "persona-chat-memory", "purpose": "persist Yui memory entries"}]
+        "config": {
+          "personaId": "yui",
+          "personaName": "Yui Codex"
+        }
+      }
     },
     {
       "id": "mika-claude",
@@ -103,20 +94,24 @@
     {
       "id": "read-mika-memory",
       "addon": {
-        "name": "riela/chat-persona-memory-read",
+        "name": "riela/note-persona-context-read",
         "version": "1",
-        "config": {"personaId": "mika", "personaName": "Mika Trend", "memoryId": "persona-chat-memory"}
-      },
-      "memories": [{"id": "persona-chat-memory", "purpose": "read recent Mika memory"}]
+        "config": {
+          "personaId": "mika",
+          "personaName": "Mika Trend"
+        }
+      }
     },
     {
       "id": "write-mika-memory",
       "addon": {
-        "name": "riela/chat-persona-memory-write",
+        "name": "riela/note-persona-context-write",
         "version": "1",
-        "config": {"personaId": "mika", "personaName": "Mika Trend", "memoryId": "persona-chat-memory"}
-      },
-      "memories": [{"id": "persona-chat-memory", "purpose": "persist Mika memory entries"}]
+        "config": {
+          "personaId": "mika",
+          "personaName": "Mika Trend"
+        }
+      }
     },
     {
       "id": "rina-cursor",
@@ -128,20 +123,24 @@
     {
       "id": "read-rina-memory",
       "addon": {
-        "name": "riela/chat-persona-memory-read",
+        "name": "riela/note-persona-context-read",
         "version": "1",
-        "config": {"personaId": "rina", "personaName": "Rina Cursor", "memoryId": "persona-chat-memory"}
-      },
-      "memories": [{"id": "persona-chat-memory", "purpose": "read recent Rina memory"}]
+        "config": {
+          "personaId": "rina",
+          "personaName": "Rina Cursor"
+        }
+      }
     },
     {
       "id": "write-rina-memory",
       "addon": {
-        "name": "riela/chat-persona-memory-write",
+        "name": "riela/note-persona-context-write",
         "version": "1",
-        "config": {"personaId": "rina", "personaName": "Rina Cursor", "memoryId": "persona-chat-memory"}
-      },
-      "memories": [{"id": "persona-chat-memory", "purpose": "persist Rina memory entries"}]
+        "config": {
+          "personaId": "rina",
+          "personaName": "Rina Cursor"
+        }
+      }
     },
     {
       "id": "send-yui-reply",

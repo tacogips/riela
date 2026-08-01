@@ -78,13 +78,7 @@ public struct LocalNoteFileStore: NoteFileStore {
   }
 
   public func read(record: FileRecord) throws -> Data {
-    guard record.storageKind == .local else {
-      throw NoteFileStoreError.unsupportedStorageKind(record.storageKind)
-    }
-    guard let localPath = record.localPath else {
-      throw NoteFileStoreError.missingLocalPath(record.fileId)
-    }
-    let data = try Data(contentsOf: filesRoot().appendingPathComponent(localPath))
+    let data = try Data(contentsOf: fileURL(record: record))
     let actual = sha256Hex(data)
     guard actual == record.sha256 else {
       throw NoteFileStoreError.checksumMismatch(expected: record.sha256, actual: actual)
@@ -93,16 +87,20 @@ public struct LocalNoteFileStore: NoteFileStore {
   }
 
   public func delete(record: FileRecord) throws {
+    let url = try fileURL(record: record)
+    if FileManager.default.fileExists(atPath: url.path) {
+      try FileManager.default.removeItem(at: url)
+    }
+  }
+
+  public func fileURL(record: FileRecord) throws -> URL {
     guard record.storageKind == .local else {
       throw NoteFileStoreError.unsupportedStorageKind(record.storageKind)
     }
     guard let localPath = record.localPath else {
       throw NoteFileStoreError.missingLocalPath(record.fileId)
     }
-    let url = filesRoot().appendingPathComponent(localPath)
-    if FileManager.default.fileExists(atPath: url.path) {
-      try FileManager.default.removeItem(at: url)
-    }
+    return filesRoot().appendingPathComponent(localPath).standardizedFileURL
   }
 
   private func filesRoot() -> URL {

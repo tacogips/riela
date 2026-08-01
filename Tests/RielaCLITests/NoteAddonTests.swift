@@ -354,6 +354,9 @@ final class NoteAddonTests: XCTestCase {
     }
   }
 
+}
+
+extension NoteAddonTests {
   func testNoteAttachFileAndNotebookIngestPages() async throws {
     let noteRoot = try makeNoteAddonRoot()
     defer {
@@ -469,11 +472,65 @@ final class NoteAddonTests: XCTestCase {
 
     let firstNote = try objectValue(try arrayValue(ingest.payload["notes"], field: "notes").first)
     XCTAssertEqual(firstNote["noteNumber"], .number(10))
+    XCTAssertEqual(firstNote["readOnly"], .bool(true))
     let metaJSON = try stringValue(firstNote["metaJSON"], field: "first note metaJSON")
     XCTAssertTrue(metaJSON.contains(#""number":10"#), metaJSON)
     XCTAssertTrue(metaJSON.contains(#""pageImageRef":"\#(localPageImage.path)""#), metaJSON)
   }
 
+  func testNotebookIngestAttachmentFailureRestoresRequestedPageLocks() async throws {
+    let noteRoot = try makeNoteAddonRoot()
+    defer { try? FileManager.default.removeItem(atPath: noteRoot) }
+    let resolver = BuiltinWorkflowAddonResolver(environment: [:])
+
+    do {
+      _ = try await resolver.execute(
+        noteInput(
+          name: "riela/notebook-ingest-pages",
+          config: [
+            "noteRoot": .string(noteRoot),
+            "title": .string("Failed Imported Packet"),
+            "maxAttachmentBytes": .number(2),
+            "pages": .array([
+              .object([
+                "bodyMarkdown": .string("Locked imported page"),
+                "pageImageRef": .string("oversized-image")
+              ])
+            ])
+          ],
+          attachments: [
+            "oversized-image": WorkflowAddonAttachmentValue(
+              id: "oversized-image",
+              mediaType: "image/png",
+              filename: "oversized.png",
+              sizeBytes: 3,
+              sha256: "fixture",
+              contentBase64: Data([1, 2, 3]).base64EncodedString()
+            )
+          ]
+        ),
+        context: AdapterExecutionContext()
+      )
+      XCTFail("Expected oversized page image rejection")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .invalidInput)
+      XCTAssertTrue(error.message.contains("max 2"), error.message)
+    } catch {
+      XCTFail("Unexpected ingestion error: \(error)")
+    }
+
+    let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot))
+    let notebook = try XCTUnwrap(
+      service.listNotebooks(limit: 100).first { $0.title == "Failed Imported Packet" }
+    )
+    let notes = try service.listNotes(notebookId: notebook.notebookId)
+    XCTAssertEqual(notes.count, 1)
+    XCTAssertTrue(try XCTUnwrap(notes.first).readOnly)
+  }
+
+}
+
+extension NoteAddonTests {
   func testNoteSearchCoercesRenderedNumericLimit() async throws {
     let noteRoot = try makeNoteAddonRoot()
     defer {

@@ -70,6 +70,7 @@ public struct Notebook: Equatable, Sendable {
   public var notebookId: String
   public var title: String
   public var progress: String
+  public var readOnly: Bool
   public var createdAt: String
   public var updatedAt: String
   public var metaJSON: String?
@@ -81,6 +82,7 @@ public struct Notebook: Equatable, Sendable {
     notebookId: String,
     title: String,
     progress: String = "none",
+    readOnly: Bool = false,
     createdAt: String,
     updatedAt: String,
     metaJSON: String? = nil,
@@ -91,6 +93,7 @@ public struct Notebook: Equatable, Sendable {
     self.notebookId = notebookId
     self.title = title
     self.progress = progress
+    self.readOnly = readOnly
     self.createdAt = createdAt
     self.updatedAt = updatedAt
     self.metaJSON = metaJSON

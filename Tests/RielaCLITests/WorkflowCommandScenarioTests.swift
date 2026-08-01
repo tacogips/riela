@@ -1,7 +1,6 @@
 import Foundation
 import RielaAdapters
 import RielaCore
-import RielaMemory
 import XCTest
 @testable import RielaCLI
 

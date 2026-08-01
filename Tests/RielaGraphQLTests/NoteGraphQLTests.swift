@@ -833,6 +833,7 @@ final class NoteGraphQLTests: XCTestCase {
       "applyNotebookTags",
       "removeNotebookTag",
       "setNotebookProgress",
+      "setNotebookReadOnly",
       "createKanbanStatusSet",
       "updateKanbanStatusSet",
       "deleteKanbanStatusSet",

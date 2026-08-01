@@ -19,7 +19,7 @@ final class NoteServiceTests: NoteTestCase {
     XCTAssertEqual(note.noteNumber, 1)
     XCTAssertEqual(note.tags.map(\.tag.name), ["ノート"])
 
-    let notebooks = try service.listNotebooks()
+    let notebooks = try service.listNotebooks().filter { $0.notebookId == note.notebookId }
     XCTAssertEqual(notebooks.count, 1)
     XCTAssertEqual(notebooks.first?.title, "Design Notes")
     XCTAssertEqual(notebooks.first?.firstNotePreview?.contains("First paragraph"), true)
@@ -32,7 +32,10 @@ final class NoteServiceTests: NoteTestCase {
 
     XCTAssertEqual(note.title, "Explicit Title")
     XCTAssertEqual(note.bodyMarkdown, "Body without a heading")
-    XCTAssertEqual(try service.listNotebooks().first?.title, "Explicit Title")
+    XCTAssertEqual(
+      try service.listNotebooks().first { $0.notebookId == note.notebookId }?.title,
+      "Explicit Title"
+    )
   }
 
   func testUpdateNoteBodyReDerivesDerivedTitleButPreservesExplicitTitle() throws {
@@ -631,7 +634,10 @@ final class NoteServiceTests: NoteTestCase {
       XCTAssertTrue(message.contains("1") && message.contains("2"), "message should name colliding pages: \(message)")
     }
 
-    XCTAssertTrue(try service.listNotebooks().isEmpty)
+    XCTAssertEqual(
+      try service.listNotebooks().filter { $0.title == "Broken Packet" }.count,
+      0
+    )
   }
 
   func testCreateNotebookWithNotesRollsBackWhenAnyPageFails() throws {
@@ -646,7 +652,10 @@ final class NoteServiceTests: NoteTestCase {
       ]
     ))
 
-    XCTAssertTrue(try service.listNotebooks().isEmpty)
+    XCTAssertEqual(
+      try service.listNotebooks().filter { $0.title == "Broken Packet" }.count,
+      0
+    )
     XCTAssertTrue(try service.searchNotes(query: "Should not remain").isEmpty)
   }
 

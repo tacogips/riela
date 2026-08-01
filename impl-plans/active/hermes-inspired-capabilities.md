@@ -8,11 +8,15 @@ product decision, not an engineering blocker to unrelated work). Note
 "NOT_STARTED" — Section 8 of `loop-engineering-first-line-tool` is implemented
 and accepted (plan now in `impl-plans/completed/`); Phase H-A should build on
 that landed substrate rather than treating it as green-field.
+Note (2026-08-01 correction): the standalone `RielaMemory` package, memory CLI,
+workflow-memory schema, and legacy add-ons were deleted. Phase H-B is rebased
+onto Riela Note's system-memory notebook and Note-backed context/save-load
+add-ons; it must not restore a compatibility path.
 **Design Reference**: `design-docs/specs/design-hermes-inspired-capabilities.md`
 **Workflow Mode**: feature-intake
 **Issue Reference**: #38 (tracking); #40 (H-A), #41 (H-B), #42 (H-C), #43 (H-D), #44 (H-E)
 **Created**: 2026-07-08
-**Last Updated**: 2026-07-08
+**Last Updated**: 2026-08-01
 
 ## Summary
 
@@ -29,7 +33,9 @@ each scope. This plan enumerates deliverables and interfaces only — no code.
 - Existing gap the plan closes: `design-docs/specs/design-incomplete-work-inventory.md` §1 (fan-out), §2 (self-evolution versioning)
 - Loop evidence substrate: `Sources/RielaCore/LoopEvidenceManifest.swift`, `LoopEngineeringModels.swift`, `LoopGateResult`
 - Self-evolution substrate (implemented + accepted): `impl-plans/completed/loop-engineering-first-line-tool.md` §8
-- Memory substrate: `Packages/RielaMemory/Sources/RielaMemory/{RielaMemory,MemoryModels}.swift`; `Sources/RielaCLI/ProductionNodeAdapter+{PersonaMemory,ChatMemory,MemoryAddonCore}.swift`
+- Context substrate: `Sources/RielaNote/NoteService+SystemMemory.swift`;
+  `Sources/RielaCLI/ProductionNodeAdapter+NoteMemoryAddons.swift`;
+  `Sources/RielaCLI/ProductionNodeAdapter+NotePersonaAddons.swift`
 - Fan-out data model: `Sources/RielaCore/WorkflowModel.swift` (`WorkflowStepFanout`, `fanoutConcurrency`, `WorkflowFanoutWriteOwnership`, `WorkflowFanoutResultOrder`, `WorkflowFanoutFailurePolicy`); `Sources/RielaCore/WorkflowRuntimeCapabilityGap.swift`
 - Backend enum: `Sources/RielaCore/WorkflowModel.swift` (`NodeExecutionBackend`, `NodeType.container`); `design-docs/specs/design-distributed-registry-container-node-roadmap.md`; `design-riela-seatbelt-sandbox.md`
 - Scheduling: `design-docs/specs/design-event-listener-workflow-trigger.md`; `impl-plans/completed/scheduled-workflow-execution.md`; `Sources/RielaCore/DeterministicWorkflowRunner+Events.swift`
@@ -51,7 +57,7 @@ persona/user-model learning; vector-DB memory.
 | Phase | Adoption | Priority | Depends On |
 | ----- | -------- | -------- | ---------- |
 | H-A | Evidence-gated self-evolution | P0 | Existing loop evidence + gates + package manager |
-| H-B | Episodic memory (FTS + summarization) | P1 | RielaMemory, RielaNote, hook system |
+| H-B | Episodic memory (FTS + summarization) | P1 | Riela Note system-memory, hook system |
 | H-C | Remote/serverless backends | P1 | NodeExecutionBackend, container env-isolation, seatbelt sandbox |
 | H-D | Live fan-out + worktree isolation | P1 | Fan-out data model, capability-gap validator |
 | H-E | Automation Blueprints + CLI | P2 | Cron event source, chat-reply-worker |
@@ -90,9 +96,9 @@ Builds on the implemented-and-accepted "Workflow Self-Evolution Versioning"
 
 ### Phase H-B — Cross-session episodic memory (P1)
 
-- **B1. FTS5 recall.** Add a SQLite FTS5 index over `RielaMemory` records;
-  add an FTS recall query alongside the existing `matchPatterns` path in
-  `RielaMemory.swift`. Keep regex path for back-compat.
+- **B1. FTS5 recall.** Add an FTS5 query over eligible system-memory note
+  body/metadata, preserving workflow/stream/persona isolation. Do not recreate
+  the standalone store, regex compatibility path, or workflow `memories`.
 - **B2. Session-text indexing (opt-in).** Optional per-workflow indexing of
   session transcript/output text with redaction; default off (secrets risk).
 - **B3. Cross-run summarization.** A summarization step that condenses prior
@@ -100,8 +106,10 @@ Builds on the implemented-and-accepted "Workflow Self-Evolution Versioning"
   `RielaNote`; refreshed via a runtime hook (deterministic trigger, not
   self-nudge).
 - **B4. Recall injection.** Surface the digest + top FTS hits into agent node
-  context through the existing memory add-ons.
-- **B5. CLI/GraphQL.** `memory recall <query>` and digest inspection.
+  context through a Note-backed recall contract alongside the current
+  context/save-load add-ons.
+- **B5. CLI/GraphQL.** Add recall and digest inspection under the existing
+  `riela note` and Note GraphQL surfaces; do not restore `riela memory`.
 
 ### Phase H-C — Remote & serverless execution backends (P1)
 
@@ -151,8 +159,9 @@ Closes `design-incomplete-work-inventory.md` §1.
 - H-A: distillation from a fixture evidence manifest; gate rejects a candidate
   when the verification run has unresolved findings or exceeds size bound;
   lineage/versioning round-trip; promotion path.
-- H-B: FTS recall returns expected records; summarization digest round-trip;
-  opt-in transcript indexing respects redaction; regex path unchanged.
+- H-B: FTS recall returns isolated expected system-memory notes;
+  summarization digest round-trip; opt-in transcript indexing respects
+  redaction; removal gates prove no standalone-memory compatibility returns.
 - H-C: SSH backend executes a command node against a local sshd fixture;
   serverless backend provisions/tears down; capability-gap diagnostics for
   invalid combos.
@@ -171,6 +180,6 @@ completion blocker (see `design-incomplete-work-inventory.md` §5).
 ## Open Questions
 
 Carried from the design doc: (A) auto-promote vs human-confirm on gate pass;
-(B) memory-records-only vs opt-in transcript indexing; (D) worktree cleanup and
+(B) system-memory-note-only vs opt-in transcript indexing; (D) worktree cleanup and
 merge-conflict semantics under deterministic replay; (C) trust/credential
 surface for remote backends. Resolve before the corresponding phase starts.

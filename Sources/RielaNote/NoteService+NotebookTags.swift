@@ -80,3 +80,19 @@ public extension NoteService {
 func affectedFolderTagNames(before: Notebook, after: Notebook) -> [String] {
   Array(Set(folderTagNames(of: before)).union(folderTagNames(of: after))).sorted()
 }
+
+func ensureNotebookKindTag(_ tagName: String, in database: SQLiteDatabase) throws {
+  let tagId = notebookKindTagId(for: tagName)
+  try database.execute(
+    """
+    INSERT INTO tags (tag_id, name, class_id, is_system, created_at)
+    VALUES (?, ?, 'document-kind', 1, ?)
+    ON CONFLICT(name) DO NOTHING
+    """,
+    bindings: [.text(tagId), .text(tagName), .text(NoteStoreClock.system.now())]
+  )
+}
+
+private func notebookKindTagId(for tagName: String) -> String {
+  "notebook-kind-\(tagName.utf8.map { String(format: "%02x", $0) }.joined())"
+}

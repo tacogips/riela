@@ -2,16 +2,14 @@
   "id": "read-yui-memory",
   "modelFreeze": false,
   "addon": {
-    "name": "riela/chat-persona-memory-read",
+    "name": "riela/note-persona-context-read",
     "version": "1",
     "config": {
       "personaId": "yui",
-      "personaName": "Yui Codex",
-      "memoryId": "persona-chat-memory"
+      "personaName": "Yui Codex"
     }
   },
-  "memories": [{"id": "persona-chat-memory", "purpose": "read recent Yui Codex memory"}],
   "output": {
-    "description": "Return recent Yui Codex memory records from persona-chat-memory."
+    "description": "Return recent Yui Codex note context from system-memory notebook."
   }
 }

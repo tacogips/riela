@@ -18,6 +18,7 @@ public struct NoteChangeEvent: Equatable, Sendable {
 
 public enum NoteChangeEventKind {
   public static let notebookProgress = "notebook-progress"
+  public static let notebookReadOnly = "notebook-read-only"
   public static let notebookCreated = "notebook-created"
   public static let notebookDeleted = "notebook-deleted"
   public static let notebookTags = "notebook-tags"

@@ -106,7 +106,7 @@ export class NoteGraphQLClient {
       query Notebooks($limit: Int, $offset: Int, $sort: NoteListSort, $tagFilter: [String!], $tagFilterGroups: [[String!]!], $createdAfter: String, $createdBefore: String) {
         notebooks(limit: $limit, offset: $offset, sort: $sort, tagFilter: $tagFilter, tagFilterGroups: $tagFilterGroups, createdAfter: $createdAfter, createdBefore: $createdBefore) {
           result { accepted status diagnostics }
-          value { notebookId title progress createdAt updatedAt firstNotePreview noteCount tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
+          value { notebookId title progress readOnly createdAt updatedAt firstNotePreview noteCount tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
         }
       }
     `, {
@@ -126,7 +126,7 @@ export class NoteGraphQLClient {
       query Notebook($notebookId: String!) {
         notebook(notebookId: $notebookId) {
           result { accepted status diagnostics }
-          value { notebookId title progress createdAt updatedAt firstNotePreview noteCount tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
+          value { notebookId title progress readOnly createdAt updatedAt firstNotePreview noteCount tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
         }
       }
     `, { notebookId }, (data) => data.notebook)
@@ -162,7 +162,7 @@ export class NoteGraphQLClient {
       mutation ApplyNotebookTag($input: ApplyNotebookTagsInput!) {
         applyNotebookTags(input: $input) {
           result { accepted status diagnostics }
-          notebook { notebookId title progress createdAt updatedAt firstNotePreview noteCount tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
+          notebook { notebookId title progress readOnly createdAt updatedAt firstNotePreview noteCount tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
         }
       }
     `, { input: { notebookId, tags: [tagName], provenance: 'human', assignedBy: 'riela-web' } }, 'applyNotebookTags')
@@ -173,7 +173,7 @@ export class NoteGraphQLClient {
       mutation RemoveNotebookTag($notebookId: String!, $tagName: String!, $provenance: String) {
         removeNotebookTag(notebookId: $notebookId, tagName: $tagName, provenance: $provenance) {
           result { accepted status diagnostics }
-          notebook { notebookId title progress createdAt updatedAt firstNotePreview noteCount tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
+          notebook { notebookId title progress readOnly createdAt updatedAt firstNotePreview noteCount tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
         }
       }
     `, { notebookId, tagName, provenance: 'human' }, 'removeNotebookTag')
@@ -184,10 +184,21 @@ export class NoteGraphQLClient {
       mutation SetProgress($notebookId: String!, $progress: String!, $expectedProgress: String) {
         setNotebookProgress(notebookId: $notebookId, progress: $progress, expectedProgress: $expectedProgress) {
           result { accepted status diagnostics }
-          notebook { notebookId title progress createdAt updatedAt firstNotePreview noteCount tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
+          notebook { notebookId title progress readOnly createdAt updatedAt firstNotePreview noteCount tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
         }
       }
     `, { notebookId, progress, ...(expectedProgress ? { expectedProgress } : {}) }, 'setNotebookProgress')
+  }
+
+  async setNotebookReadOnly(notebookId: string, readOnly: boolean): Promise<Notebook> {
+    return this.notebookMutation('SetNotebookReadOnly', `
+      mutation SetNotebookReadOnly($notebookId: String!, $readOnly: Boolean!) {
+        setNotebookReadOnly(notebookId: $notebookId, readOnly: $readOnly) {
+          result { accepted status diagnostics }
+          notebook { notebookId title progress readOnly createdAt updatedAt firstNotePreview noteCount tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
+        }
+      }
+    `, { notebookId, readOnly }, 'setNotebookReadOnly')
   }
 
   async kanbanStatusSets(): Promise<KanbanStatusSet[]> {
@@ -389,7 +400,7 @@ export class NoteGraphQLClient {
 }
 
 function normalizeNotebook(notebook: Notebook): Notebook {
-  return { ...notebook, progress: String(notebook.progress) }
+  return { ...notebook, progress: String(notebook.progress), readOnly: Boolean(notebook.readOnly) }
 }
 
 function browserEnvironment(): NoteClientEnvironment {

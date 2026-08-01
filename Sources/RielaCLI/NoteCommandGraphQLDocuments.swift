@@ -16,7 +16,7 @@ enum NoteCommandGraphQLDocuments {
   """
 
   static let notebook = """
-  notebookId title progress createdAt updatedAt metaJSON firstNotePreview noteCount
+  notebookId title progress readOnly createdAt updatedAt metaJSON firstNotePreview noteCount
   tags { \(tagAssignment) }
   """
 

@@ -88,8 +88,8 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     let model = try DaemonWorkflowGraphModel.load(workflowDirectory: workflowDirectory.path)
 
     XCTAssertEqual(model.summary, "2 nodes, 1 transitions")
-    XCTAssertEqual(model.nodes.map(\.id), ["save-memory", "reply"])
-    XCTAssertEqual(model.edges, [DaemonWorkflowGraphModel.Edge(from: "save-memory", to: "reply", label: nil)])
+    XCTAssertEqual(model.nodes.map(\.id), ["save-note", "reply"])
+    XCTAssertEqual(model.edges, [DaemonWorkflowGraphModel.Edge(from: "save-note", to: "reply", label: nil)])
   }
 
   func testWorkflowGraphRejectsDuplicateStepIdsWhenRuntimeValidationFails() throws {
@@ -624,16 +624,16 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
         "nodeTimeoutMs": 1000,
         "maxLoopIterations": 1
       },
-      "entryStepId": "save-memory",
+      "entryStepId": "save-note",
       "nodes": [
         {
-          "id": "save-memory",
+          "id": "save-note",
           "addon": {
-            "name": "riela/memory-save",
+            "name": "riela/note-create",
             "version": "1",
             "config": {
-              "memoryId": "missing-memory",
-              "payloadSource": "event"
+              "notebookId": "missing-notebook",
+              "bodyMarkdown": "runtime diagnostic fixture"
             }
           }
         },
@@ -651,8 +651,8 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
       ],
       "steps": [
         {
-          "id": "save-memory",
-          "nodeId": "save-memory",
+          "id": "save-note",
+          "nodeId": "save-note",
           "role": "worker",
           "transitions": [
             { "toStepId": "reply" }

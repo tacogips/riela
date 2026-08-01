@@ -74,7 +74,9 @@ final class NoteWorkflowExampleTests: XCTestCase {
     XCTAssertEqual(result.status, .completed)
     XCTAssertEqual(result.rootOutput?["pageCount"], .number(2))
     let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot))
-    let notebooks = try service.listNotebooks()
+    let notebooks = try service.listNotebooks().filter {
+      !$0.tags.contains { $0.tag.name == NoteStoreSchema.systemMemoryNotebookKindTag }
+    }
     XCTAssertEqual(notebooks.count, 1)
     XCTAssertEqual(notebooks.first?.tags.map(\.tag.name), ["notebook-kind:imported-material"])
     XCTAssertEqual(try service.searchNotes(query: "Alpha OCR").count, 1)

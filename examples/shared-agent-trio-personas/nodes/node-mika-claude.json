@@ -11,11 +11,10 @@
     "shortName": "Mika",
     "backendName": "official/openai-sdk",
     "peerSummary": "Yui Codex is a refined secretary and default coordinator. Rina Cursor is an intellectual otaku and technical analyst.",
-    "personaId": "mika",
-    "memoryRoot": "{{workflowInput.memoryRoot}}"
+    "personaId": "mika"
   },
   "output": {
-    "description": "Return Mika's chat reply; optional handoff flags are adapter-level when values; optional memoryEntries are written by the following deterministic memory node.",
+    "description": "Return Mika's chat reply; optional handoff flags are adapter-level when values; optional noteEntries are written by the following deterministic memory node.",
     "jsonSchema": {
       "type": "object",
       "required": [
@@ -25,7 +24,7 @@
         "replyText": {
           "type": "string"
         },
-        "memoryEntries": {
+        "noteEntries": {
           "type": "array",
           "items": {
             "type": "object",

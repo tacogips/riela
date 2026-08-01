@@ -43,6 +43,7 @@ public struct NoteService: Sendable {
     self.changeObserver = changeObserver
     self.autoActionDispatchTasks = AutoActionDispatchTaskTracker()
     try NoteStoreSchema.prepare(on: driver)
+    try bootstrapSystemMemoryNotebook()
     // Recovery+retry is no longer run from init; it is an explicit entry point
     // (`recoverAndRetryAutoActionDispatches`) invoked by the
     // `riela note auto-action retry` subcommand and the app maintenance tick.
@@ -124,7 +125,10 @@ public struct NoteService: Sendable {
         let notebookId: String
         let createdNotebookId: String?
         if let requestedNotebookId {
-          _ = try requireNotebook(requestedNotebookId, in: db)
+          let notebook = try requireNotebook(requestedNotebookId, in: db)
+          guard !notebook.readOnly else {
+            throw NoteServiceError.readOnly(requestedNotebookId)
+          }
           notebookId = requestedNotebookId
           createdNotebookId = nil
         } else {
@@ -537,7 +541,7 @@ public struct NoteService: Sendable {
       bindings.append(.int(Int64(offset)))
       var notebooks = try database.query(
         """
-        SELECT notebook_id, title, status AS progress, created_at, updated_at,
+        SELECT notebook_id, title, status AS progress, read_only, created_at, updated_at,
           CASE WHEN meta_json IS NULL THEN NULL ELSE json(meta_json) END AS meta_json
         FROM notebooks
         \(whereClause)
@@ -686,7 +690,8 @@ public struct NoteService: Sendable {
     let result = try driver.withDatabase { database in
       try database.transaction { db in
         let existing = try requireNote(noteId, in: db)
-        guard !existing.readOnly else {
+        let notebook = try requireNotebook(existing.notebookId, in: db)
+        guard !existing.readOnly, !notebook.readOnly else {
           throw NoteServiceError.readOnly(noteId)
         }
         let previous = try ftsPayload(noteId: noteId, in: db)
@@ -731,65 +736,6 @@ public struct NoteService: Sendable {
     }
     dispatchQueuedAutoActions(result.dispatches)
     return result.note
-  }
-
-  @discardableResult
-  public func setReadOnly(noteId: String, readOnly: Bool) throws -> Note {
-    try driver.withDatabase { database in
-      try database.transaction { db in
-        _ = try requireNote(noteId, in: db)
-        try db.execute(
-          "UPDATE notes SET read_only = ?, updated_at = ? WHERE note_id = ?",
-          bindings: [.int(readOnly ? 1 : 0), .text(NoteStoreClock.system.now()), .text(noteId)]
-        )
-        return try requireNote(noteId, in: db)
-      }
-    }
-  }
-
-  public func deleteNote(noteId: String) throws {
-    try driver.withDatabase { database in
-      try database.transaction { db in
-        let note = try requireNote(noteId, in: db)
-        guard !note.readOnly else {
-          throw NoteServiceError.readOnly(noteId)
-        }
-        try deleteNoteRows(noteId: noteId, in: db)
-        try db.execute(
-          "UPDATE notebooks SET updated_at = ? WHERE notebook_id = ?",
-          bindings: [.text(NoteStoreClock.system.now()), .text(note.notebookId)]
-        )
-      }
-    }
-  }
-
-  public func deleteNotebook(notebookId: String) throws {
-    let tagNames = try driver.withDatabase { database in
-      try database.transaction { db in
-        let notebook = try requireNotebook(notebookId, in: db)
-        let notes = try db.query(
-          "SELECT note_id, read_only FROM notes WHERE notebook_id = ? ORDER BY note_number",
-          bindings: [.text(notebookId)]
-        )
-        if let readOnlyNoteId = notes.first(where: { $0["read_only"] == "1" })?["note_id"] {
-          throw NoteServiceError.readOnly(readOnlyNoteId)
-        }
-        for row in notes {
-          if let noteId = row["note_id"] {
-            try deleteNoteRows(noteId: noteId, in: db)
-          }
-        }
-        try db.execute("DELETE FROM notebook_tags WHERE notebook_id = ?", bindings: [.text(notebookId)])
-        try db.execute("DELETE FROM notebook_files WHERE notebook_id = ?", bindings: [.text(notebookId)])
-        try db.execute("DELETE FROM notebooks WHERE notebook_id = ?", bindings: [.text(notebookId)])
-        return folderTagNames(of: notebook)
-      }
-    }
-    publishChange(NoteChangeEvent(
-      kind: NoteChangeEventKind.notebookDeleted,
-      notebookId: notebookId,
-      tagNames: tagNames
-    ))
   }
 
   @discardableResult
@@ -912,30 +858,22 @@ func promoteCommentNotebookTitle(explicit: String?, commentBody: String) -> Stri
   return String(base.prefix(120))
 }
 
-private func ensureNotebookKindTag(_ tagName: String, in database: SQLiteDatabase) throws {
-  let tagId = notebookKindTagId(for: tagName)
-  try database.execute(
-    """
-    INSERT INTO tags (tag_id, name, class_id, is_system, created_at)
-    VALUES (?, ?, 'document-kind', 1, ?)
-    ON CONFLICT(name) DO NOTHING
-    """,
-    bindings: [.text(tagId), .text(tagName), .text(NoteStoreClock.system.now())]
-  )
-}
-
-private func notebookKindTagId(for tagName: String) -> String {
-  "notebook-kind-\(tagName.utf8.map { String(format: "%02x", $0) }.joined())"
-}
-
 func applyNotebookTag(
   notebookId: String,
   tagName: String,
   provenance: NoteProvenance,
   assignedBy: String?,
   deletable: Bool,
+  allowsSystemMemoryIdentityCreation: Bool = false,
   in database: SQLiteDatabase
 ) throws {
+  if tagName == NoteStoreSchema.systemMemoryNotebookKindTag {
+    try validateSystemMemoryNotebookTagAssignment(
+      notebookId: notebookId,
+      allowsIdentityCreation: allowsSystemMemoryIdentityCreation,
+      in: database
+    )
+  }
   try ensureTag(NoteTagInput(name: tagName), in: database)
   let tag = try requireTag(name: tagName, in: database)
   let existing = try notebookTagAssignment(notebookId: notebookId, tagName: tagName, in: database)
@@ -972,7 +910,7 @@ func applyNotebookTag(
   )
 }
 
-private func applyTag(
+func applyTag(
   noteId: String,
   tag: NoteTagInput,
   provenance: NoteProvenance,
@@ -1039,7 +977,7 @@ private func ensureTag(_ tag: NoteTagInput, in database: SQLiteDatabase) throws 
   )
 }
 
-private func deleteNoteRows(noteId: String, in database: SQLiteDatabase) throws {
+func deleteNoteRows(noteId: String, in database: SQLiteDatabase) throws {
   if let previous = try ftsPayload(noteId: noteId, in: database) {
     try database.execute(
       """

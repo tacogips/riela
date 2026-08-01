@@ -1,18 +1,16 @@
 {
   "id": "read-rina-memory",
   "modelFreeze": false,
-  "description": "Read recent Rina Cursor memory from the configured local memory root before the persona replies.",
+  "description": "Read recent Rina Cursor note context from the configured local Riela Note root before the persona replies.",
   "addon": {
-    "name": "riela/chat-persona-memory-read",
+    "name": "riela/note-persona-context-read",
     "version": "1",
     "config": {
       "personaId": "rina",
-      "personaName": "Rina Cursor",
-      "memoryId": "persona-chat-memory"
+      "personaName": "Rina Cursor"
     }
   },
-  "memories": [{"id": "persona-chat-memory", "purpose": "read recent Rina memory"}],
   "output": {
-    "description": "Return recent Rina Cursor memory markdown and the persona-specific memory directory."
+    "description": "Return recent Rina Cursor note context markdown and the system-memory notebook."
   }
 }

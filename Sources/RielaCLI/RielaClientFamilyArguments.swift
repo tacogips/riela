@@ -181,11 +181,6 @@ struct ParsedLoopFamily: RielaClientFamilyArguments {
   @Argument(parsing: .captureForPassthrough) var remainder: [String] = []
 }
 
-struct ParsedMemoryFamily: RielaClientFamilyArguments {
-  @Argument var subcommand: MemoryCommandKind
-  @Argument(parsing: .captureForPassthrough) var remainder: [String] = []
-}
-
 struct ParsedNoteFamily: RielaClientFamilyArguments {
   @Argument var subcommand: NoteCommandKind
   @Argument(parsing: .captureForPassthrough) var remainder: [String] = []
@@ -417,5 +412,4 @@ struct ParsedHookRoute: RielaClientFamilyArguments {
 extension PackageCommandKind: ExpressibleByArgument {}
 extension NodeCommandKind: ExpressibleByArgument {}
 extension LoopCommandKind: ExpressibleByArgument {}
-extension MemoryCommandKind: ExpressibleByArgument {}
 extension NoteCommandKind: ExpressibleByArgument {}

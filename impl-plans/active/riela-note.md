@@ -647,6 +647,47 @@ push status: not pushed. No GitHub issue or Codex-agent reference was provided.
 orphaned and unread. Repository-baseline SwiftLint violations remain outside
 the required gates; no Step 7 verification gap remains.
 
+### Session: 2026-08-01 Step 7 locked-expansion revision
+
+**Tasks Completed**: Closed the mid and low findings from `comm-001865`.
+TASK-029 and TASK-030 remain complete; no optional Phase 3 work was added.
+**Files Changed**: `README.md`, `impl-plans/active/riela-note.md`,
+`web/e2e/dashboard.spec.ts`, `web/src/notes/notebookLock.test.ts`,
+`web/src/notes/notebookLock.ts`, and `web/src/views/NotesView.tsx`.
+**Findings Addressed**:
+
+- Removed the notebook read-only guard from **Expand with Agent** while
+  retaining the lock for source-notebook content mutations such as add and
+  edit.
+- Added a rendered Playwright regression that routes Unlock and Lock through
+  the REST mutation, verifies the persisted canonical state, and proves that
+  locked System Memory disables Add note while preserving read-only preview
+  and agent expansion.
+- Corrected the earlier progress entry and README contract so they record D21
+  accurately.
+
+**Verification**:
+
+- `cd web && bun run typecheck`: passed.
+- `cd web && bun test src`: 153 passed, 0 failed, 1,814 assertions.
+- `cd web && bun run build`: passed.
+- Targeted ESLint and `cd web && bun run audit`: passed.
+- `cd web && bun run test:e2e`: 46 passed, 0 failed.
+- Rendered state was inspected at
+  `tmp/web-dashboard-e2e/screenshots/notes-system-memory-lock.png`.
+- Removed-symbol audit, `git diff --check`, and the manual pre-commit
+  credential/private-URL/machine-path review passed.
+
+**Documentation Review**: `README.md` now states the locked source-expansion
+contract; `.codex/skills/riela-impl-workflow/SKILL.md` required no change.
+**Commit**: `6572442` (`fix(riela-note): preserve locked source expansion`).
+This progress update is committed separately. Branch:
+`feat/note-hub-improve`; push status: not pushed. No GitHub issue or
+Codex-agent reference was provided.
+**Residual Risks**: Existing `.riela/memory/` data remains intentionally
+orphaned and unread. Repository-baseline SwiftLint violations remain outside
+the required gates; no Step 7 verification gap remains.
+
 ## Historical Issue-Resolution Work Package: Hierarchical Tags and Kanban
 
 ### Objective and boundaries

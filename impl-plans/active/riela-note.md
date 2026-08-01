@@ -833,6 +833,49 @@ this TypeScript-only revision. A local blob deletion failure after database
 rollback can leave reclaimable unreferenced storage while surfacing the
 rollback failure.
 
+### Session: 2026-08-01 Step 6 actionability-faithful relock revision
+
+**Tasks Completed**: Closed the mid-severity test-integrity finding from
+`comm-001877`. TASK-029 and TASK-030 remain complete, all current-work-package
+completion criteria remain satisfied, and no optional Phase 3 work was added.
+**Files Changed**: `web/src/components/NoteComposePanel.tsx`,
+`web/src/views/NotesView.tsx`, `web/e2e/dashboard.spec.ts`, and this progress
+log.
+**Finding Addressed**:
+
+- The unlocked System Memory new-note composer now exposes an accessible
+  `Lock System Memory` action inside its modal. It routes through the same
+  dirty-state confirmation and canonical lock mutation as the notebook action.
+- The rendered regression uses ordinary Playwright clicks on that reachable
+  modal action. It no longer bypasses actionability with `evaluate()`, forced
+  clicks, or direct event dispatch.
+
+**Verification**:
+
+- `cd web && bun run typecheck`: passed.
+- `cd web && bun run lint`: passed, including ESLint and production source
+  audit.
+- Focused actionability-faithful composer-relock Playwright regression:
+  1 passed, 0 failed.
+- `cd web && bun test src`: 154 passed, 0 failed, 1,816 assertions.
+- `cd web && bun run build`: passed.
+- `cd web && bun run test:e2e`: 48 passed, 0 failed.
+
+**Documentation Review**: `README.md` and
+`.codex/skills/riela-impl-workflow/SKILL.md` remain aligned because the
+revision makes the existing relock contract user-reachable without changing
+the documented lock semantics.
+**Commit**: This progress entry ships in the local
+`fix(riela-note): make composer relock user reachable` revision on
+`feat/note-hub-improve`; push status: not pushed. No GitHub issue or
+Codex-agent reference was provided.
+**Residual Risks**: Existing `.riela/memory/` data remains intentionally
+orphaned and unread. Repository-baseline SwiftLint violations and the
+pre-existing oversized `ProductionNodeAdapter+NoteAddons.swift` remain outside
+this TypeScript-only revision. A local blob deletion failure after database
+rollback can leave reclaimable unreferenced storage while surfacing the
+rollback failure.
+
 ## Historical Issue-Resolution Work Package: Hierarchical Tags and Kanban
 
 ### Objective and boundaries

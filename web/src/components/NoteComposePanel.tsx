@@ -12,6 +12,8 @@ export function NoteComposePanel(props: {
   onSave: (bodyMarkdown: string) => Promise<void>
   onClose: () => void
   onDirtyChange?: (dirty: boolean) => void
+  onLockNotebook?: () => void
+  lockNotebookBusy?: boolean
 }) {
   const [bodyMarkdown, setBodyMarkdown] = createSignal('')
   const [saving, setSaving] = createSignal(false)
@@ -69,6 +71,11 @@ export function NoteComposePanel(props: {
       </label>
       <Show when={saveError()}><p class="note-inline-error" role="alert">{saveError()}</p></Show>
       <footer>
+        <Show when={props.onLockNotebook}>
+          <button class="secondary" disabled={saving() || props.lockNotebookBusy} onClick={() => props.onLockNotebook?.()}>
+            {props.lockNotebookBusy ? 'Locking…' : 'Lock System Memory'}
+          </button>
+        </Show>
         <button class="secondary" disabled={saving()} onClick={props.onClose}>Cancel</button>
         <button disabled={!canSave()} onClick={() => void save()}>{saving() ? 'Saving…' : 'Save'}</button>
       </footer>

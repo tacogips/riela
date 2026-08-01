@@ -1115,6 +1115,15 @@ export function NotesView(props: {
         onSave={(bodyMarkdown) => createNote(destination(), bodyMarkdown)}
         onClose={() => { setComposeDirty(false); setComposeDestination(undefined) }}
         onDirtyChange={setComposeDirty}
+        onLockNotebook={destination() === 'notebook'
+          && selectedNotebook()?.readOnly === false
+          && selectedNotebook()?.tags.some((assignment) => assignment.tag.name === 'notebook-kind:system-memory')
+          ? () => {
+              const notebook = selectedNotebook()
+              if (notebook) void setNotebookLock(notebook, true)
+            }
+          : undefined}
+        lockNotebookBusy={lockBusy()}
       />}
     </Show>
   </section>

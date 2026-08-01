@@ -688,6 +688,45 @@ Codex-agent reference was provided.
 orphaned and unread. Repository-baseline SwiftLint violations remain outside
 the required gates; no Step 7 verification gap remains.
 
+### Session: 2026-08-01 Step 6 router test-integrity revision
+
+**Tasks Completed**: Closed the remaining mid-severity test-integrity finding
+from `comm-001868`; TASK-026, TASK-028, and TASK-030 remain complete. No
+production or TypeScript behavior changed.
+**Files Changed**: `Tests/RielaCLITests/WorkflowCommandTests.swift` and this
+progress log.
+**Finding Addressed**:
+
+- Restored `testBuiltinChatPersonaRouterPrefersEarliestAliasMention` under a
+  retained CLI test file. The regression supplies both Rina and Mika aliases
+  and asserts that `riela/chat-persona-router` selects the earliest mention,
+  preserving non-memory behavior that was previously covered by the deleted
+  memory-specific test file.
+
+**Verification**:
+
+- Explicit Xcode Swift toolchain focused router tests: 2 passed, 0 failed.
+- `swift test --skip-build --filter RielaCLITests`: 659 passed, 0 failed after
+  the focused command rebuilt the current CLI test bundle.
+- `git diff --check`: passed.
+- Focused strict SwiftLint reported only the pre-existing
+  `superfluous_disable_command` at
+  `Tests/RielaCLITests/WorkflowCommandTests.swift:8`; the restored test added no
+  lint violation.
+- Manual staged-patch credential, private-URL, and machine-path review passed.
+
+**Documentation Review**: `README.md` and
+`.codex/skills/riela-impl-workflow/SKILL.md` remain aligned because this
+revision restores test coverage without changing user-facing behavior.
+**Commit**: `493baee` (`test(riela-cli): restore persona routing priority
+coverage`). This progress update is committed separately. Branch:
+`feat/note-hub-improve`; push status: not pushed. No GitHub issue or
+Codex-agent reference was provided.
+**Residual Risks**: Existing `.riela/memory/` data remains intentionally
+orphaned and unread. Repository-baseline SwiftLint violations remain outside
+the required gates. A local blob deletion failure after database rollback can
+leave reclaimable unreferenced storage while surfacing the rollback failure.
+
 ## Historical Issue-Resolution Work Package: Hierarchical Tags and Kanban
 
 ### Objective and boundaries

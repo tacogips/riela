@@ -967,7 +967,8 @@ final class NoteAddonTests: XCTestCase {
         context: AdapterExecutionContext()
       )
       XCTFail("expected missing relationship target rejection")
-    } catch {
+    } catch let error as NoteServiceError {
+      XCTAssertEqual(error, .notFound("note not found: missing-note"))
       XCTAssertTrue(try service.listNotes(notebookId: NoteStoreSchema.systemMemoryNotebookId).isEmpty)
     }
 
@@ -987,7 +988,9 @@ final class NoteAddonTests: XCTestCase {
         context: AdapterExecutionContext()
       )
       XCTFail("expected missing attachment projection rejection")
-    } catch {
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .policyBlocked)
+      XCTAssertEqual(error.message, "note memory attachment missing-projection was not projected")
       XCTAssertTrue(try service.listNotes(notebookId: NoteStoreSchema.systemMemoryNotebookId).isEmpty)
     }
   }
@@ -1082,8 +1085,10 @@ final class NoteAddonTests: XCTestCase {
   }
 
   private func objectValue(_ value: JSONValue?) throws -> JSONObject {
-    guard case let .object(object)? = value else {
-      throw XCTSkip("expected object")
+    let value = try XCTUnwrap(value, "expected object")
+    guard case let .object(object) = value else {
+      XCTFail("expected object, got \(value)")
+      return [:]
     }
     return object
   }

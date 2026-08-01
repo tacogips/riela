@@ -1042,6 +1042,46 @@ safety review is required. A local blob deletion failure after database
 rollback can leave reclaimable unreferenced storage while surfacing the
 rollback failure.
 
+### Session: 2026-08-01 Step 6 fail-closed add-on test revision
+
+**Tasks Completed**: Closed TI-001 and TI-002 from `comm-001890`; TASK-027 and
+TASK-030 remain complete, and no production behavior or accepted design scope
+changed.
+**Files Changed**: `Tests/RielaCLITests/NoteAddonTests.swift` and this progress
+log.
+**Findings Addressed**:
+
+- The shared object-payload assertion now uses `XCTUnwrap` and `XCTFail`; a
+  missing or non-object successor payload fails instead of skipping the test.
+- Composite-write rejection coverage now requires the exact
+  `NoteServiceError.notFound` relationship diagnostic and the exact
+  `AdapterExecutionError.policyBlocked` missing-projection diagnostic before
+  asserting that the system-memory notebook remains empty.
+
+**Verification**:
+
+- Focused successor and composite-write regressions: 3 passed, 0 failed.
+- `swift test --skip-build --filter RielaCLITests`: the full suite emitted 659
+  passed and 0 failed; the SwiftPM wrapper timed out only after the completed
+  suite summary while returning to package planning.
+- Focused strict SwiftLint reported 0 violations in
+  `Tests/RielaCLITests/NoteAddonTests.swift`.
+- `rg` confirms the skip-based `XCTSkip("expected object")` helper is absent.
+- No TypeScript file changed, so no TypeScript post-modification gate applies;
+  the accepted web evidence remains unchanged.
+
+**Documentation Review**: `README.md` and
+`.codex/skills/riela-impl-workflow/SKILL.md` remain aligned because this
+revision only makes existing regression tests fail closed.
+**Commit**: This progress entry ships in the local test-integrity revision on
+`feat/note-hub-improve`; push status: not pushed. No GitHub issue or
+Codex-agent reference was provided.
+**Residual Risks**: Existing `.riela/memory/` data remains intentionally
+orphaned and unread. Ten repository-baseline SwiftLint warnings remain outside
+this revision. `Tests/RielaCLITests/NoteAddonTests.swift` remains a pre-existing
+oversized test file. A local blob deletion failure after database rollback can
+leave reclaimable unreferenced storage while surfacing the rollback failure.
+
 ## Historical Issue-Resolution Work Package: Hierarchical Tags and Kanban
 
 ### Objective and boundaries

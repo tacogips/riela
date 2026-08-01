@@ -979,6 +979,69 @@ safety review is required. A local blob deletion failure after database
 rollback can leave reclaimable unreferenced storage while surfacing the
 rollback failure.
 
+### Session: 2026-08-01 Step 6 profile-root and metadata-preservation revision
+
+**Tasks Completed**: Closed both mid-severity findings and the low-severity
+documentation finding from `comm-001887`. TASK-027 through TASK-030 and all
+current-work-package completion criteria remain complete.
+**Files Changed**: `Sources/RielaApp/EntryPoint+Environment.swift`,
+`Sources/RielaCLI/ProductionNodeAdapter+NoteMemoryAddons.swift`,
+`Sources/RielaNote/NoteService+SystemMemory.swift`,
+`Tests/RielaAppSupportTests/RielaAppNotesIntegrationTests.swift`,
+`Tests/RielaCLITests/NoteAddonTests.swift`,
+`Tests/RielaNoteTests/SystemMemoryNotebookTests.swift`, the nine Slack,
+Telegram, and Discord persona read-node JSON files, and this progress log.
+**Findings Addressed**:
+
+- RielaApp daemon environments now default `RIELA_NOTE_ROOT` to the active
+  profile's Note root when the preference does not provide a non-empty
+  override. The integration regression executes a persona-memory successor
+  through the daemon environment and reads the result from the same profile
+  store used by the web workspace; an explicit override still wins.
+- System-memory updates now merge metadata inside the existing transaction,
+  preserve the immutable `memoryNamespace`, and retain structured fields
+  omitted by the update. Service and successor add-on regressions cover
+  namespace, payload, and `recordedAt` preservation.
+- The nine migrated trio read-node descriptions now describe the configured
+  Riela Note system-memory notebook and bounded Note file projections instead
+  of a removed memory root or persona directory.
+
+**Verification**:
+
+- `swift build`: passed.
+- Focused profile-root, add-on metadata, and service metadata regressions: 3
+  passed, 0 failed.
+- `swift test --skip-build --filter RielaAppNotesIntegrationTests`: 13 passed,
+  0 failed.
+- `swift test --skip-build --filter RielaNoteTests`: 142 passed, 0 failed.
+- `swift test --skip-build --filter RielaCLITests`: 659 passed, 0 failed.
+- `swift test --skip-build --filter RielaCoreTests`: 477 passed, 0 failed.
+- `.build/debug/riela workflow validate <workflow> --workflow-definition-dir
+  examples --output json`: emitted `valid: true` for the Slack, Telegram, and
+  Discord trio workflows; the aggregate shell wrapper timed out only after all
+  three validation payloads were emitted.
+- Full SwiftLint completed with the same ten documented repository-baseline
+  warnings and no new warning in this revision.
+- Removed-memory, stale trio wording, test-bypass, and `git diff --check`
+  audits passed with no matches or errors.
+- No TypeScript file changed, so no TypeScript post-modification gate was
+  required; the previously accepted web gate evidence remains applicable.
+
+**Documentation Review**: `README.md` and
+`.codex/skills/riela-impl-workflow/SKILL.md` remain aligned. README already
+states that RielaApp uses the active profile Note root, and the workflow skill
+requires no change for this implementation correction.
+**Commit**: This progress entry ships in the local
+`fix(riela-note): preserve profile-scoped memory` revision on
+`feat/note-hub-improve`; push status: not pushed. No GitHub issue or
+Codex-agent reference was provided.
+**Residual Risks**: Existing `.riela/memory/` data remains intentionally
+orphaned and unread. Ten repository-baseline SwiftLint warnings remain outside
+this revision. The repository has no `.pre-commit-config.yaml`; manual staged
+safety review is required. A local blob deletion failure after database
+rollback can leave reclaimable unreferenced storage while surfacing the
+rollback failure.
+
 ## Historical Issue-Resolution Work Package: Hierarchical Tags and Kanban
 
 ### Objective and boundaries

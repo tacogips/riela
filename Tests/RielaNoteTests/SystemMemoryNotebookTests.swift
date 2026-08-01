@@ -158,6 +158,27 @@ final class SystemMemoryNotebookTests: NoteTestCase {
     XCTAssertEqual(attachment.noteId, note.noteId)
   }
 
+  func testSystemMemoryMetadataPatchPreservesNamespaceAndOmittedFields() throws {
+    let service = try makeService()
+    let note = try service.saveSystemMemoryNote(
+      bodyMarkdown: "original",
+      metaJSON: #"{"memoryNamespace":"chat","payload":{"answer":"keep"},"recordedAt":"2026-08-01T00:00:00Z"}"#
+    )
+
+    let updated = try service.updateSystemMemoryNote(
+      noteId: note.noteId,
+      bodyMarkdown: "updated",
+      metaJSONPatch: #"{"memoryNamespace":"replacement","source":{"nodeId":"update"}}"#
+    )
+    let data = try XCTUnwrap(updated.metaJSON?.data(using: .utf8))
+    let metadata = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+    XCTAssertEqual(metadata["memoryNamespace"] as? String, "chat")
+    XCTAssertEqual(metadata["recordedAt"] as? String, "2026-08-01T00:00:00Z")
+    XCTAssertEqual((metadata["payload"] as? [String: Any])?["answer"] as? String, "keep")
+    XCTAssertEqual((metadata["source"] as? [String: Any])?["nodeId"] as? String, "update")
+  }
+
   func testNoteLevelLockBlocksOrdinaryAttachmentWritesInWritableNotebook() throws {
     let service = try makeService()
     let note = try service.createNote(bodyMarkdown: "# Locked note\nBody")

@@ -165,7 +165,7 @@ public extension NoteService {
   func updateSystemMemoryNote(
     noteId: String,
     bodyMarkdown: String,
-    metaJSON: String? = nil
+    metaJSONPatch: String? = nil
   ) throws -> Note {
     try driver.withDatabase { database in
       try database.transaction { db in
@@ -182,6 +182,10 @@ public extension NoteService {
         let updatedTitle = titleSource == .explicit
           ? existing.title
           : (noteTitle(from: bodyMarkdown) ?? existing.title)
+        let updatedMetaJSON = try mergedSystemMemoryMetaJSON(
+          existing: existing.metaJSON,
+          patch: metaJSONPatch
+        )
         try db.execute(
           """
           UPDATE notes
@@ -191,7 +195,7 @@ public extension NoteService {
           bindings: [
             .optionalText(updatedTitle),
             .text(bodyMarkdown),
-            .optionalText(metaJSON ?? existing.metaJSON),
+            .optionalText(updatedMetaJSON),
             .text(now),
             .text(noteId)
           ]
@@ -258,6 +262,35 @@ public extension NoteService {
       try localStore.delete(record: record)
     }
   }
+}
+
+private func mergedSystemMemoryMetaJSON(existing: String?, patch: String?) throws -> String? {
+  guard let patch else { return existing }
+  var merged = try systemMemoryMetaJSONObject(existing) ?? [:]
+  let existingNamespace = merged["memoryNamespace"]
+  guard let patchObject = try systemMemoryMetaJSONObject(patch) else {
+    throw NoteServiceError.invalidInput("system-memory metadata patch must be a JSON object")
+  }
+  for (key, value) in patchObject {
+    merged[key] = value
+  }
+  if let existingNamespace {
+    merged["memoryNamespace"] = existingNamespace
+  }
+  let data = try JSONSerialization.data(withJSONObject: merged, options: [.sortedKeys])
+  guard let encoded = String(data: data, encoding: .utf8) else {
+    throw NoteServiceError.invalidInput("system-memory metadata could not be encoded")
+  }
+  return encoded
+}
+
+private func systemMemoryMetaJSONObject(_ rawValue: String?) throws -> [String: Any]? {
+  guard let rawValue else { return nil }
+  guard let data = rawValue.data(using: .utf8),
+        let object = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) as? [String: Any] else {
+    throw NoteServiceError.invalidInput("system-memory metadata must be a JSON object")
+  }
+  return object
 }
 
 private func systemMemoryTagPredicate(alias: String) -> String {

@@ -849,6 +849,8 @@ final class NoteAddonTests: XCTestCase {
         config: [
           "bodyMarkdown": .string("# Durable fact\nalpha memory"),
           "memoryNamespace": .string("chat"),
+          "payload": .object(["answer": .string("preserve me")]),
+          "recordedAt": .string("2026-08-01T00:00:00Z"),
           "tags": .array([.string("topic:alpha")]),
           "relatedNoteIds": .array([.string(related.noteId)]),
           "attachments": .array([.string("source")])
@@ -886,6 +888,14 @@ final class NoteAddonTests: XCTestCase {
     )
     let loadedNote = try objectValue(loaded.payload["note"])
     XCTAssertEqual(loadedNote["bodyMarkdown"], .string("# Durable fact\nbeta memory"))
+    let updatedNote = try service.getNote(noteId)
+    let metadataData = try XCTUnwrap(updatedNote.metaJSON?.data(using: .utf8))
+    let metadata = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: metadataData) as? [String: Any]
+    )
+    XCTAssertEqual(metadata["memoryNamespace"] as? String, "chat")
+    XCTAssertEqual(metadata["recordedAt"] as? String, "2026-08-01T00:00:00Z")
+    XCTAssertEqual((metadata["payload"] as? [String: Any])?["answer"] as? String, "preserve me")
 
     for index in 0..<3 {
       _ = try service.createNote(bodyMarkdown: "beta memory ordinary \(index)")

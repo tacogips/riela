@@ -40,7 +40,7 @@ private struct NoteMemoryAddonContext {
     let root = Self.string("noteRoot", in: config)
       ?? Self.string("noteRoot", in: variables)
       ?? Self.string("noteRoot", in: workflowInput)
-      ?? environment["RIELA_NOTE_ROOT"]
+      ?? environment["RIELA_NOTE_ROOT"].flatMap(Self.nonEmptyString)
       ?? "\(NSHomeDirectory())/.riela/note"
     service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: (root as NSString).expandingTildeInPath))
   }
@@ -80,6 +80,11 @@ private struct NoteMemoryAddonContext {
   private static func object(_ value: JSONValue?) -> JSONObject {
     guard case let .object(object)? = value else { return [:] }
     return object
+  }
+
+  private static func nonEmptyString(_ value: String) -> String? {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
   }
 }
 
@@ -142,7 +147,7 @@ private func updateNoteMemory(_ context: NoteMemoryAddonContext) throws -> JSONO
   let note = try context.service.updateSystemMemoryNote(
     noteId: try context.requiredString("noteId"),
     bodyMarkdown: try context.requiredString("bodyMarkdown", "body", "text", "content"),
-    metaJSON: metadataJSON(context: context)
+    metaJSONPatch: metadataJSON(context: context)
   )
   return noteMemoryPayload(note: note, operation: "update")
 }

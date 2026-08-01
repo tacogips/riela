@@ -1,5 +1,7 @@
 #if os(macOS)
 import AppKit
+@testable import RielaCLI
+import RielaCore
 import RielaAppSupport
 import RielaNote
 @testable import RielaNoteWorkspace
@@ -22,6 +24,73 @@ final class RielaAppNotesIntegrationTests: XCTestCase {
     let noteRoot = app.noteRootURL(profileName: RielaAppProfileName("work/team"))
 
     XCTAssertEqual(noteRoot.path, root.appendingPathComponent(".riela/profiles/work-team/note").path)
+  }
+
+  func testDaemonPersonaMemoryUsesProfileNoteRootUnlessExplicitlyOverridden() async throws {
+    let root = try scratchRoot(name: "riela-app-profile-memory-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let app = RielaApp()
+    app.appHomeDirectory = root
+    let profileName = RielaAppProfileName("work")
+    let candidate = RielaAppDaemonWorkflowCandidate(
+      id: RielaAppProfileInstanceIdentity(profileName: profileName, identity: "slack-trio").rawValue,
+      workflowId: "slack-agent-trio-chat",
+      displayName: "Slack Trio",
+      sourceDescription: "test source",
+      workflowDirectory: root.appendingPathComponent("workflow", isDirectory: true).path,
+      workingDirectory: root.path,
+      eventRoot: nil,
+      eventSources: []
+    )
+    let preference = RielaAppDaemonWorkflowPreference(
+      identity: "slack-trio",
+      environmentVariables: ["RIELA_NOTE_ROOT": "  "]
+    )
+    let environment = app.daemonEnvironment(for: candidate, preference: preference)
+    let profileNoteRoot = app.noteRootURL(profileName: profileName).path
+    XCTAssertEqual(environment["RIELA_NOTE_ROOT"], profileNoteRoot)
+
+    let resolver = BuiltinWorkflowAddonResolver(environment: environment)
+    _ = try await resolver.execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "slack-agent-trio-chat",
+        stepId: "write-yui-memory",
+        nodeId: "write-yui-memory",
+        addon: WorkflowNodeAddonRef(
+          name: "riela/note-persona-memory-write",
+          version: "1",
+          config: [
+            "personaId": .string("yui"),
+            "personaName": .string("Yui Codex"),
+            "memoryNamespace": .string("persona-chat-memory")
+          ]
+        ),
+        variables: [
+          "replyText": .string("Remembered."),
+          "memoryEntries": .array([.object(["content": .string("Profile-scoped memory")])])
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: profileNoteRoot))
+    XCTAssertEqual(
+      try service.searchSystemMemoryNotes(
+        namespace: "persona-chat-memory",
+        tagFilter: ["persona:yui"]
+      ).map(\.bodyMarkdown),
+      ["Profile-scoped memory"]
+    )
+
+    let explicitRoot = root.appendingPathComponent("explicit-note", isDirectory: true).path
+    let explicitPreference = RielaAppDaemonWorkflowPreference(
+      identity: "slack-trio",
+      environmentVariables: ["RIELA_NOTE_ROOT": explicitRoot]
+    )
+    XCTAssertEqual(
+      app.daemonEnvironment(for: candidate, preference: explicitPreference)["RIELA_NOTE_ROOT"],
+      explicitRoot
+    )
   }
 
   func testStatusMenuOpensNotesOnTheWeb() throws {

@@ -936,6 +936,49 @@ machine-local-path safety checks. A local blob deletion failure after database
 rollback can leave reclaimable unreferenced storage while surfacing the
 rollback failure.
 
+### Session: 2026-08-01 Step 6 pre-v6 reserved-assignment revision
+
+**Tasks Completed**: Closed the mid-severity migration finding from
+`comm-001883`. TASK-025 and TASK-030 remain complete, and the exact-one
+system-memory classification completion criterion is now covered for valid v5
+stores with a colliding tag assignment.
+**Files Changed**: `Sources/RielaNote/NoteStoreSchema.swift`,
+`Tests/RielaNoteTests/NoteStoreSchemaTests.swift`, and this progress log.
+**Finding Addressed**:
+
+- Schema preparation now transactionally removes the promoted reserved tag
+  assignment from every notebook except `notebook-system-memory` before
+  installing the canonical non-deletable assignment.
+- The v5 migration regression starts with the future reserved tag assigned to
+  an ordinary notebook and verifies the notebook, its note body, and an
+  unrelated notebook tag survive while exactly one notebook retains the
+  reserved public classification.
+
+**Verification**:
+
+- Focused migration, `SystemMemoryNotebookTests`, and
+  `NoteGraphQLHierarchyProgressTests`: 15 passed, 0 failed; the command rebuilt
+  affected targets successfully.
+- `swift test --skip-build --filter RielaNoteTests`: 141 passed, 0 failed.
+- Focused strict SwiftLint completed with the one pre-existing
+  `NoteStoreSchema.swift` large-tuple violation and no revision-hunk violation.
+- `git diff --check`: passed.
+
+**Documentation Review**: `README.md` and
+`.codex/skills/riela-impl-workflow/SKILL.md` remain aligned because this is a
+migration invariant fix for the already documented unique System Memory
+notebook, not a new user-facing contract.
+**Commit**: This progress entry ships in the local
+`fix(riela-note): reclaim reserved system memory tag` revision on
+`feat/note-hub-improve`; push status: not pushed. No GitHub issue or
+Codex-agent reference was provided.
+**Residual Risks**: Existing `.riela/memory/` data remains intentionally
+orphaned and unread. Ten repository-baseline SwiftLint warnings remain outside
+this revision. The repository has no `.pre-commit-config.yaml`; manual staged
+safety review is required. A local blob deletion failure after database
+rollback can leave reclaimable unreferenced storage while surfacing the
+rollback failure.
+
 ## Historical Issue-Resolution Work Package: Hierarchical Tags and Kanban
 
 ### Objective and boundaries

@@ -100,6 +100,15 @@ public enum NoteStoreSchema {
       """,
       bindings: [.text(systemMemoryNotebookId), .text(now), .text(now)]
     )
+    // Before v6 this future reserved name was user-definable. Reclaim only its
+    // notebook classification so notebooks, notes, and unrelated tags survive.
+    try database.execute(
+      """
+      DELETE FROM notebook_tags
+      WHERE tag_id = ? AND notebook_id <> ?
+      """,
+      bindings: [.text(systemMemoryTagId), .text(systemMemoryNotebookId)]
+    )
     try database.execute(
       """
       INSERT INTO notebook_tags (

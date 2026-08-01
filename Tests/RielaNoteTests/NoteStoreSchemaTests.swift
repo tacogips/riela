@@ -155,6 +155,33 @@ final class NoteStoreSchemaTests: NoteTestCase {
       )
       try database.execute(
         """
+        CREATE TABLE notes (
+          note_id TEXT PRIMARY KEY,
+          notebook_id TEXT NOT NULL REFERENCES notebooks(notebook_id),
+          note_number INTEGER NOT NULL,
+          title TEXT,
+          title_source TEXT NOT NULL DEFAULT 'derived' CHECK (title_source IN ('derived','explicit')),
+          body_markdown TEXT NOT NULL,
+          read_only INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          meta_json BLOB CHECK (meta_json IS NULL OR json_valid(meta_json, 8)),
+          UNIQUE (notebook_id, note_number)
+        )
+        """
+      )
+      try database.execute(
+        """
+        INSERT INTO notes (
+          note_id, notebook_id, note_number, title, body_markdown, created_at, updated_at
+        ) VALUES (
+          'legacy-note', 'legacy-notebook', 1, 'Legacy note', 'preserved body',
+          '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z'
+        )
+        """
+      )
+      try database.execute(
+        """
         CREATE TABLE tag_classes (
           class_id TEXT PRIMARY KEY,
           label TEXT NOT NULL,
@@ -184,6 +211,36 @@ final class NoteStoreSchemaTests: NoteTestCase {
         """,
         bindings: [.text(NoteStoreSchema.systemMemoryNotebookKindTag)]
       )
+      try database.execute(
+        """
+        INSERT INTO tags (tag_id, name, class_id, is_system, created_at)
+        VALUES ('legacy-unrelated-tag', 'legacy-unrelated', NULL, 0, '2026-08-01T00:00:00Z')
+        """
+      )
+      try database.execute(
+        """
+        CREATE TABLE notebook_tags (
+          notebook_id TEXT NOT NULL REFERENCES notebooks(notebook_id),
+          tag_id TEXT NOT NULL REFERENCES tags(tag_id),
+          provenance TEXT NOT NULL CHECK (provenance IN ('human','ai','system')),
+          assigned_by TEXT,
+          deletable INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY (notebook_id, tag_id)
+        )
+        """
+      )
+      try database.execute(
+        """
+        INSERT INTO notebook_tags (
+          notebook_id, tag_id, provenance, assigned_by, deletable, created_at
+        ) VALUES
+          ('legacy-notebook', 'legacy-system-memory-kind', 'human', 'legacy-user', 1,
+           '2026-08-01T00:00:00Z'),
+          ('legacy-notebook', 'legacy-unrelated-tag', 'human', 'legacy-user', 1,
+           '2026-08-01T00:00:00Z')
+        """
+      )
     }
 
     try NoteStoreSchema.prepare(on: driver)
@@ -194,6 +251,10 @@ final class NoteStoreSchemaTests: NoteTestCase {
       XCTAssertEqual(
         try database.query("SELECT read_only FROM notebooks WHERE notebook_id = 'legacy-notebook'").first?["read_only"],
         "0"
+      )
+      XCTAssertEqual(
+        try database.query("SELECT body_markdown FROM notes WHERE note_id = 'legacy-note'").first?["body_markdown"],
+        "preserved body"
       )
       XCTAssertEqual(
         try database.query("SELECT read_only FROM notebooks WHERE notebook_id = ?", bindings: [
@@ -214,6 +275,29 @@ final class NoteStoreSchemaTests: NoteTestCase {
           bindings: [.text(NoteStoreSchema.systemMemoryNotebookId)]
         ).first?["tag_id"],
         "legacy-system-memory-kind"
+      )
+      XCTAssertEqual(
+        try database.query(
+          """
+          SELECT nt.notebook_id
+          FROM notebook_tags nt
+          JOIN tags t ON t.tag_id = nt.tag_id
+          WHERE t.name = ?
+          ORDER BY nt.notebook_id
+          """,
+          bindings: [.text(NoteStoreSchema.systemMemoryNotebookKindTag)]
+        ).compactMap { $0["notebook_id"] },
+        [NoteStoreSchema.systemMemoryNotebookId]
+      )
+      XCTAssertEqual(
+        try database.query(
+          """
+          SELECT tag_id FROM notebook_tags
+          WHERE notebook_id = 'legacy-notebook'
+          ORDER BY tag_id
+          """
+        ).compactMap { $0["tag_id"] },
+        ["legacy-unrelated-tag"]
       )
       XCTAssertEqual(try schemaVersions(in: database), [1, 2, 3, 4, 5, NoteStoreSchema.currentVersion])
     }

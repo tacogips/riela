@@ -30,6 +30,49 @@ final class NoteGraphQLHierarchyProgressTests: XCTestCase {
     XCTAssertEqual(persisted.value?.readOnly, true)
   }
 
+  func testApplyNotebookTagsRejectsReservedSystemMemoryKindAtomically() async throws {
+    let service = try makeHierarchyGraphQLService()
+    let created = await service.createNotebook(GraphQLCreateNotebookInput(title: "Ordinary"))
+    let notebookId = try XCTUnwrap(created.notebook?.notebookId)
+    let executor = NoteGraphQLDocumentExecutor(service: service)
+    let response = await executor.execute(GraphQLDocumentRequest(
+      query: """
+      mutation ClaimSystemMemory($input: ApplyNotebookTagsInput!) {
+        applyNotebookTags(input: $input) {
+          result { accepted status diagnostics }
+          notebook { notebookId tags { tag { name } } }
+        }
+      }
+      """,
+      variables: [
+        "input": .object([
+          "notebookId": .string(notebookId),
+          "tags": .array([
+            .string("allowed-before-rollback"),
+            .string(NoteStoreSchema.systemMemoryNotebookKindTag)
+          ]),
+          "provenance": .string("human")
+        ])
+      ],
+      operationName: "ClaimSystemMemory"
+    ))
+
+    let payload = try payloadObject(response.body, field: "applyNotebookTags")
+    let result = try objectValue(payload["result"], field: "result")
+    XCTAssertEqual(result["accepted"], .bool(false))
+    XCTAssertEqual(result["status"], .string("invalid_request"))
+    XCTAssertEqual(payload["notebook"], .null)
+    let persisted = await service.notebook(notebookId: notebookId)
+    XCTAssertTrue(persisted.value?.tags.isEmpty == true)
+    let classified = await service.notebooks(
+      tagFilter: [NoteStoreSchema.systemMemoryNotebookKindTag]
+    )
+    XCTAssertEqual(
+      classified.value?.map(\.notebookId),
+      [NoteStoreSchema.systemMemoryNotebookId]
+    )
+  }
+
   func testDefineTagCreateOnlyProjectsAndRejectsCollisionAtomically() async throws {
     let service = try makeHierarchyGraphQLService()
     let first = await service.defineTag(

@@ -5,7 +5,6 @@
 // 0...20 — the bounded traversal's node cap. Any other value (out of range,
 // non-integral, or the wrong type) is rejected with an invalidVariable error
 // rather than silently clamped.
-// swiftlint:disable line_length
 let graphQLNoteSchemaContract = """
 type NoteTag { tagId: String!, name: String!, classId: String, parentTagId: String, statusSetId: String, isSystem: Boolean!, createdAt: String! }
 type NoteTagClass { classId: String!, label: String!, description: String, isSystem: Boolean!, createdAt: String! }
@@ -17,7 +16,18 @@ type KanbanStatusSetQueryPayload { result: ControlPlaneResult!, value: KanbanSta
 type KanbanStatusSetsQueryPayload { result: ControlPlaneResult!, value: [KanbanStatusSet!] }
 input KanbanStatusInput { statusId: String, name: String!, category: KanbanStatusCategory! }
 input KanbanStatusReassignmentInput { removedName: String!, reassignTo: String! }
-type Notebook { notebookId: String!, title: String!, progress: String!, readOnly: Boolean!, createdAt: String!, updatedAt: String!, metaJSON: String, tags: [NoteTagAssignment!]!, firstNotePreview: String, noteCount: Int }
+type Notebook {
+  notebookId: String!
+  title: String!
+  progress: String!
+  readOnly: Boolean!
+  createdAt: String!
+  updatedAt: String!
+  metaJSON: String
+  tags: [NoteTagAssignment!]!
+  firstNotePreview: String
+  noteCount: Int
+}
 type Note { noteId: String!, notebookId: String!, noteNumber: Int!, title: String, bodyMarkdown: String!, readOnly: Boolean!, createdAt: String!, updatedAt: String!, metaJSON: String, tags: [NoteTagAssignment!]! }
 type NoteFile {
   fileId: String!

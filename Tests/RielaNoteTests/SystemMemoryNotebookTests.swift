@@ -22,6 +22,43 @@ final class SystemMemoryNotebookTests: NoteTestCase {
     )
   }
 
+  func testReservedSystemMemoryKindCannotBeClaimedByOrdinaryNotebookPaths() throws {
+    let service = try makeService()
+    let initialNotebookIds = try service.listNotebooks().map(\.notebookId)
+
+    XCTAssertThrowsError(
+      try service.createNote(
+        notebookKindTagName: NoteStoreSchema.systemMemoryNotebookKindTag,
+        bodyMarkdown: "must not persist"
+      )
+    ) { error in
+      XCTAssertEqual(
+        error as? NoteServiceError,
+        .invalidInput("the reserved system-memory notebook kind cannot be claimed")
+      )
+    }
+    XCTAssertEqual(try service.listNotebooks().map(\.notebookId), initialNotebookIds)
+
+    let ordinary = try service.createNotebook(title: "Ordinary")
+    XCTAssertThrowsError(
+      try service.applyNotebookTags(
+        notebookId: ordinary.notebookId,
+        tags: ["allowed-before-rollback", NoteStoreSchema.systemMemoryNotebookKindTag],
+        provenance: .human
+      )
+    ) { error in
+      XCTAssertEqual(
+        error as? NoteServiceError,
+        .invalidInput("the reserved system-memory notebook kind cannot be claimed")
+      )
+    }
+    XCTAssertTrue(try service.getNotebook(ordinary.notebookId).tags.isEmpty)
+    XCTAssertEqual(
+      try service.listNotebooks(tagFilter: [NoteStoreSchema.systemMemoryNotebookKindTag]).map(\.notebookId),
+      [NoteStoreSchema.systemMemoryNotebookId]
+    )
+  }
+
   func testNotebookLockBlocksContentWritesButAllowsMetadataAndPersistedUnlock() throws {
     let driver = try makeNoteDriver()
     let service = try NoteService(driver: driver)

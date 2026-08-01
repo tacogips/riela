@@ -13,6 +13,9 @@ public extension NoteService {
       try database.transaction { db in
         let before = try requireNotebook(notebookId, in: db)
         for tagName in tags {
+          try requireAllowedNotebookKindAssignment(notebookId: notebookId, tagName: tagName)
+        }
+        for tagName in tags {
           try applyNotebookTag(
             notebookId: notebookId,
             tagName: tagName,

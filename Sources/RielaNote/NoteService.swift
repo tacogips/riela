@@ -122,6 +122,10 @@ public struct NoteService: Sendable {
     metaJSON: String? = nil,
     originatingActionId: String? = nil
   ) throws -> Note {
+    guard requestedNotebookId != nil
+      || notebookKindTagName != NoteStoreSchema.systemMemoryNotebookKindTag else {
+      throw NoteServiceError.invalidInput("the reserved system-memory notebook kind cannot be claimed")
+    }
     let result = try driver.withDatabase { database in
       try database.transaction { db in
         let now = NoteStoreClock.system.now()
@@ -945,6 +949,7 @@ func applyNotebookTag(
   deletable: Bool,
   in database: SQLiteDatabase
 ) throws {
+  try requireAllowedNotebookKindAssignment(notebookId: notebookId, tagName: tagName)
   try ensureTag(NoteTagInput(name: tagName), in: database)
   let tag = try requireTag(name: tagName, in: database)
   let existing = try notebookTagAssignment(notebookId: notebookId, tagName: tagName, in: database)
@@ -979,6 +984,13 @@ func applyNotebookTag(
       .text(NoteStoreClock.system.now())
     ]
   )
+}
+
+func requireAllowedNotebookKindAssignment(notebookId: String, tagName: String) throws {
+  guard tagName != NoteStoreSchema.systemMemoryNotebookKindTag
+    || notebookId == NoteStoreSchema.systemMemoryNotebookId else {
+    throw NoteServiceError.invalidInput("the reserved system-memory notebook kind cannot be claimed")
+  }
 }
 
 func applyTag(

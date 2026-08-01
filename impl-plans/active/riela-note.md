@@ -876,6 +876,66 @@ this TypeScript-only revision. A local blob deletion failure after database
 rollback can leave reclaimable unreferenced storage while surfacing the
 rollback failure.
 
+### Session: 2026-08-01 Step 6 reserved system-memory identity revision
+
+**Tasks Completed**: Closed the mid- and low-severity findings from
+`comm-001881`. TASK-025 and TASK-030 remain complete, and the system-memory
+identity completion criterion remains satisfied.
+**Files Changed**: `Sources/RielaNote/NoteService.swift`,
+`Sources/RielaNote/NoteService+NotebookTags.swift`,
+`Sources/RielaGraphQL/GraphQLNoteSchemaContract.swift`,
+`Tests/RielaNoteTests/SystemMemoryNotebookTests.swift`,
+`Tests/RielaGraphQLTests/NoteGraphQLHierarchyProgressTests.swift`, and this
+progress log.
+**Findings Addressed**:
+
+- Ordinary implicit notebook creation and notebook-tag mutation now reject the
+  reserved `notebook-kind:system-memory` identity before writing. Bulk tag
+  assignment preflights every requested tag so a mixed valid/reserved request
+  is atomic.
+- NoteService and GraphQL regressions prove failed reserved-kind claims leave
+  the ordinary notebook unchanged and exactly one notebook classified as
+  System Memory.
+- The GraphQL notebook schema is wrapped across lines, removing the blanket
+  `line_length` suppression and its `blanket_disable_command` warning.
+
+**Verification**:
+
+- `swift build`: passed.
+- Focused `SystemMemoryNotebookTests|NoteGraphQLHierarchyProgressTests`: 14
+  passed, 0 failed.
+- Final reserved-identity regressions after the assertion-only test adjustment:
+  2 passed, 0 failed; the wrapper timed out only after suite completion during
+  subsequent SwiftPM planning.
+- `swift test --skip-build --filter RielaNoteTests`: 141 passed, 0 failed; the
+  wrapper timed out only after the completed suite during SwiftPM planning.
+- `swift test --skip-build --filter RielaCLITests`: 659 passed, 0 failed; the
+  wrapper timed out only after the completed suite during SwiftPM planning.
+- `swift test --skip-build --filter RielaCoreTests`: 477 passed, 0 failed.
+- Full `RielaGraphQLTests` wrapper was terminated after an extended silent
+  SwiftPM planning interval with no test process or failure output; changed
+  GraphQL behavior is covered by the passing focused suite.
+- Full SwiftLint traversal reported 10 repository-baseline warnings and no
+  `GraphQLNoteSchemaContract.swift` blanket-disable warning; its bounded wrapper
+  timed out after emitting the warning inventory.
+- `git diff --check`: passed.
+
+**Documentation Review**: `README.md` and
+`.codex/skills/riela-impl-workflow/SKILL.md` remain aligned because this
+hardens the accepted reserved-identity contract without changing public
+workflow instructions.
+**Commit**: This progress entry ships in the local
+`fix(riela-note): protect reserved system memory identity` revision on
+`feat/note-hub-improve`; push status: not pushed. No GitHub issue or
+Codex-agent reference was provided.
+**Residual Risks**: Existing `.riela/memory/` data remains intentionally
+orphaned and unread. Ten repository-baseline SwiftLint warnings remain outside
+this revision. The repository has no `.pre-commit-config.yaml`; the staged
+commit was reviewed with the required manual credential, private-URL, and
+machine-local-path safety checks. A local blob deletion failure after database
+rollback can leave reclaimable unreferenced storage while surfacing the
+rollback failure.
+
 ## Historical Issue-Resolution Work Package: Hierarchical Tags and Kanban
 
 ### Objective and boundaries

@@ -657,6 +657,38 @@ test('renders system-memory lock controls without blocking read-only agent expan
   fixture.assertClean()
 })
 
+test('relock confirms before discarding a same-notebook composer draft', async ({ page }) => {
+  const fixture = await installAPI(page, { systemMemoryLocked: true })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Notes' }).click()
+  await page.getByRole('button', { name: /System Memory/ }).click()
+
+  const detail = page.getByRole('complementary', { name: 'Notebook details for System Memory' })
+  const notebookActions = detail.locator('.notebook-actions')
+  await notebookActions.getByRole('button', { name: 'Unlock', exact: true }).click()
+  await detail.getByRole('button', { name: 'Add note' }).click()
+  const composer = page.getByRole('dialog', { name: 'New note' })
+  const editor = composer.getByLabel('Note body markdown')
+  await editor.fill('# Unsaved composer draft')
+
+  page.once('dialog', async (dialog) => {
+    expect(dialog.message()).toBe('Discard unsaved note changes?')
+    await dialog.dismiss()
+  })
+  const lockButton = notebookActions.getByRole('button', { name: 'Lock', exact: true })
+  await lockButton.evaluate((element) => (element as HTMLButtonElement).click())
+  await expect(composer).toBeVisible()
+  await expect(editor).toHaveValue('# Unsaved composer draft')
+  expect(fixture.notebookLockMutations).toEqual([false])
+
+  page.once('dialog', async (dialog) => { await dialog.accept() })
+  await lockButton.evaluate((element) => (element as HTMLButtonElement).click())
+  await expect(composer).toHaveCount(0)
+  await expect(notebookActions.getByRole('button', { name: 'Unlock', exact: true })).toBeVisible()
+  expect(fixture.notebookLockMutations).toEqual([false, true])
+  fixture.assertClean()
+})
+
 test('delayed system-memory relock does not clear a newly selected notebook composer', async ({ page }) => {
   const fixture = await installAPI(page, {
     systemMemoryLocked: true,

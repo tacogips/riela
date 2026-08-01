@@ -11,6 +11,7 @@ export function NoteComposePanel(props: {
   notebookTitle?: string
   onSave: (bodyMarkdown: string) => Promise<void>
   onClose: () => void
+  onDirtyChange?: (dirty: boolean) => void
 }) {
   const [bodyMarkdown, setBodyMarkdown] = createSignal('')
   const [saving, setSaving] = createSignal(false)
@@ -53,7 +54,11 @@ export function NoteComposePanel(props: {
           rows={14}
           value={bodyMarkdown()}
           disabled={saving()}
-          onInput={(event) => setBodyMarkdown(event.currentTarget.value)}
+          onInput={(event) => {
+            const nextBody = event.currentTarget.value
+            setBodyMarkdown(nextBody)
+            props.onDirtyChange?.(nextBody.length > 0)
+          }}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
               event.preventDefault()

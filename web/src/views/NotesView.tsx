@@ -155,6 +155,7 @@ export function NotesView(props: {
   const [activeNoteId, setActiveNoteId] = createSignal<string>()
   const [searchOpen, setSearchOpen] = createSignal(false)
   const [composeDestination, setComposeDestination] = createSignal<NoteComposeDestination>()
+  const [composeDirty, setComposeDirty] = createSignal(false)
   const [preview, setPreview] = createSignal<Note[]>([])
   const [previewOffset, setPreviewOffset] = createSignal(0)
   const [previewHasMore, setPreviewHasMore] = createSignal(false)
@@ -371,9 +372,11 @@ export function NotesView(props: {
         setSearchOpen(true)
       } else if (event.key === 'n') {
         event.preventDefault()
+        setComposeDirty(false)
         setComposeDestination('memo')
       } else if (event.key === 'N' && selectedNotebookId() && !selectedNotebook()?.readOnly) {
         event.preventDefault()
+        setComposeDirty(false)
         setComposeDestination('notebook')
       }
     }
@@ -526,9 +529,13 @@ export function NotesView(props: {
   // confirms before discarding an in-flight body edit.
   let detailDirty = false
   const confirmDiscardIfDirty = (markDiscarded = true): boolean => {
-    if (!detailDirty) return true
+    if (!detailDirty && !composeDirty()) return true
     const discard = window.confirm('Discard unsaved note changes?')
-    if (discard && markDiscarded) detailDirty = false
+    if (discard && markDiscarded) {
+      detailDirty = false
+      setComposeDirty(false)
+      setComposeDestination(undefined)
+    }
     return discard
   }
 
@@ -582,6 +589,7 @@ export function NotesView(props: {
     const detail = destination === 'memo' || !notebookId
       ? await workspace.createMemo(bodyMarkdown)
       : await workspace.createNote(notebookId, bodyMarkdown)
+    setComposeDirty(false)
     setComposeDestination(undefined)
     setMessage(`Created “${detail.note.title ?? `Note ${detail.note.noteNumber}`}”.`)
     await openNote(detail.note.noteId, detail.note.notebookId)
@@ -610,6 +618,7 @@ export function NotesView(props: {
               && previewGeneration === targetSelectionGeneration,
           clearContentState: () => {
             detailDirty = false
+            setComposeDirty(false)
             setComposeDestination(undefined)
             setActiveNoteId(undefined)
           },
@@ -969,7 +978,7 @@ export function NotesView(props: {
           <button class="secondary lock-toggle" aria-pressed={boardLocked()} title={boardLocked() ? 'Board is read-only; click to allow edits' : 'Board is editable; click to lock'} onClick={toggleBoardLock}>{boardLocked() ? 'Locked' : 'Editable'}</button>
           <Show when={workspaceEnabled()}>
             <button class="secondary" onClick={() => setSearchOpen(true)}>Search notes</button>
-            <button onClick={() => setComposeDestination('memo')}>New memo</button>
+            <button onClick={() => { setComposeDirty(false); setComposeDestination('memo') }}>New memo</button>
           </Show>
           <button class="secondary" onClick={() => void refresh()}>Refresh</button>
         </div>
@@ -1040,7 +1049,7 @@ export function NotesView(props: {
       <header><div><span class="eyebrow">NOTEBOOK</span><h2>{notebook().title}</h2></div><button class="detail-close secondary" aria-label="Close notebook details" onClick={() => closeDetail()}>×</button></header>
       <Show when={workspaceEnabled()}>
         <div class="notebook-actions">
-          <button class="secondary" disabled={notebook().readOnly} onClick={() => setComposeDestination('notebook')}>Add note</button>
+          <button class="secondary" disabled={notebook().readOnly} onClick={() => { setComposeDirty(false); setComposeDestination('notebook') }}>Add note</button>
           <Show when={notebook().tags.some((assignment) => assignment.tag.name === 'notebook-kind:system-memory')}>
             <button class="secondary" disabled={lockBusy()} onClick={() => void setNotebookLock(notebook(), !notebook().readOnly)}>{notebook().readOnly ? 'Unlock' : 'Lock'}</button>
           </Show>
@@ -1104,7 +1113,8 @@ export function NotesView(props: {
         destination={destination()}
         notebookTitle={selectedNotebook()?.title}
         onSave={(bodyMarkdown) => createNote(destination(), bodyMarkdown)}
-        onClose={() => setComposeDestination(undefined)}
+        onClose={() => { setComposeDirty(false); setComposeDestination(undefined) }}
+        onDirtyChange={setComposeDirty}
       />}
     </Show>
   </section>

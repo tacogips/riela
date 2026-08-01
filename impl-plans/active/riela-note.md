@@ -790,6 +790,49 @@ orphaned and unread. Repository-baseline SwiftLint violations remain outside
 the required gates. A local blob deletion failure after database rollback can
 leave reclaimable unreferenced storage while surfacing the rollback failure.
 
+### Session: 2026-08-01 Step 6 composer-draft relock revision
+
+**Tasks Completed**: Closed the mid-severity self-review finding from
+`comm-001874`. TASK-029 and TASK-030 remain complete, all current-work-package
+completion criteria remain satisfied, and no optional Phase 3 work was added.
+**Files Changed**: `web/src/components/NoteComposePanel.tsx`,
+`web/src/views/NotesView.tsx`, `web/e2e/dashboard.spec.ts`, and this progress
+log.
+**Finding Addressed**:
+
+- `NoteComposePanel` now reports whether its local markdown body is dirty.
+  `NotesView` includes that state in the existing discard guard, retains both
+  composer and edited-note drafts when relock is declined or fails, and clears
+  them only after the canonical response still targets the selected notebook.
+- The rendered regression types a new-note draft in the selected unlocked
+  System Memory notebook, dismisses relock without issuing the mutation or
+  losing text, then explicitly accepts discard and verifies relock completion.
+
+**Verification**:
+
+- `cd web && bun run typecheck`: passed.
+- Focused rendered composer-relock Playwright regression: 1 passed, 0 failed.
+- `cd web && bun run lint`: passed, including ESLint and production source
+  audit.
+- `cd web && bun test src`: 154 passed, 0 failed, 1,816 assertions.
+- `cd web && bun run build`: passed.
+- `cd web && bun run test:e2e`: 48 passed, 0 failed.
+- `git diff --check`: passed.
+
+**Documentation Review**: `README.md` and
+`.codex/skills/riela-impl-workflow/SKILL.md` remain aligned because this closes
+a draft-preservation bug without changing the documented lock surface.
+**Commit**: This progress entry ships in the local
+`fix(riela-note): preserve composer drafts on relock` revision on
+`feat/note-hub-improve`; push status: not pushed. No GitHub issue or
+Codex-agent reference was provided.
+**Residual Risks**: Existing `.riela/memory/` data remains intentionally
+orphaned and unread. Repository-baseline SwiftLint violations and the
+pre-existing oversized `ProductionNodeAdapter+NoteAddons.swift` remain outside
+this TypeScript-only revision. A local blob deletion failure after database
+rollback can leave reclaimable unreferenced storage while surfacing the
+rollback failure.
+
 ## Historical Issue-Resolution Work Package: Hierarchical Tags and Kanban
 
 ### Objective and boundaries

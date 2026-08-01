@@ -339,6 +339,37 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertEqual(maki.when["target_mika"], true)
   }
 
+  func testBuiltinChatPersonaRouterPrefersEarliestAliasMention() async throws {
+    let resolver = BuiltinWorkflowAddonResolver(environment: [:])
+    let addon = WorkflowNodeAddonRef(
+      name: "riela/chat-persona-router",
+      version: "1",
+      config: [
+        "defaultPersonaId": .string("yui"),
+        "personas": .array([
+          .object(["id": .string("yui"), "aliases": .array([.string("yui"), .string("codex")])]),
+          .object(["id": .string("mika"), "aliases": .array([.string("mika"), .string("claude")])]),
+          .object(["id": .string("rina"), "aliases": .array([.string("rina"), .string("cursor")])])
+        ])
+      ]
+    )
+
+    let output = try await resolver.execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "discord-trio",
+        stepId: "route-message",
+        nodeId: "route-message",
+        addon: addon,
+        variables: ["workflowInput": .object(["request": .string("Rina, what image did I just show Mika?")])]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    XCTAssertEqual(output.payload["target"], .string("rina"))
+    XCTAssertEqual(output.when["target_rina"], true)
+    XCTAssertEqual(output.when["target_mika"], false)
+  }
+
   func testBuiltinGeminiSDKWorkerResolvesEnvironmentAndRenderedPrompt() async throws {
     let harness = RecordingGeminiAddonHarness()
     let resolver = BuiltinWorkflowAddonResolver(

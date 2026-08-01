@@ -59,6 +59,7 @@ type FixtureOptions = {
   notebookDelayAfterFirst?: number
   initialNotebookProgress?: string
   duplicateNotebookPage?: boolean
+  systemMemoryLocked?: boolean
 }
 
 async function installAPI(page: Page, options: FixtureOptions = {}) {
@@ -75,6 +76,7 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
   let configuredPort = 19091
   let restartRequired = false
   let noteProgress = options.initialNotebookProgress ?? 'none'
+  let notebookReadOnly = options.systemMemoryLocked ?? false
   let folderRemoved = false
   const folder = { tagId: 'folder-work', name: 'Work', classId: 'folder', parentTagId: null, isSystem: false, createdAt: '2026-07-25T00:00:00Z' }
   const child = { tagId: 'folder-launch', name: 'Launch', classId: 'folder', parentTagId: 'folder-work', isSystem: false, createdAt: '2026-07-25T00:00:00Z' }
@@ -82,17 +84,34 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
   const topicChild = { tagId: 'topic-web', name: 'Web', classId: 'topic', parentTagId: 'topic-roadmap', isSystem: false, createdAt: '2026-07-25T00:00:00Z' }
   const priority = { tagId: 'priority-high', name: 'High', classId: 'priority', parentTagId: null, isSystem: false, createdAt: '2026-07-25T00:00:00Z' }
   const classless = { tagId: 'tag-personal', name: 'Personal', classId: null, parentTagId: null, isSystem: false, createdAt: '2026-07-25T00:00:00Z' }
+  const systemMemoryKind = { tagId: 'notebook-kind-system-memory', name: 'notebook-kind:system-memory', classId: 'document-kind', parentTagId: null, isSystem: true, createdAt: '2026-08-01T00:00:00Z' }
   const foldersByName = new Map([folder, child].map((tag) => [tag.name, tag]))
-  const tagsByName = new Map([folder, child, topicRoot, topicChild, priority, classless].map((tag) => [tag.name, tag]))
-  let noteTagNames = ['Work', 'Web', 'High', 'Personal']
+  const tagsByName = new Map([
+    folder,
+    child,
+    topicRoot,
+    topicChild,
+    priority,
+    classless,
+    ...(options.systemMemoryLocked ? [systemMemoryKind] : []),
+  ].map((tag) => [tag.name, tag]))
+  let noteTagNames = [
+    'Work',
+    'Web',
+    'High',
+    'Personal',
+    ...(options.systemMemoryLocked ? [systemMemoryKind.name] : []),
+  ]
+  const notebookLockMutations: boolean[] = []
   const assignments = (names: string[]) => names.flatMap((name) => {
     const tag = tagsByName.get(name)
     return tag ? [{ tag, provenance: 'human', assignedBy: 'riela-web', deletable: tag.tagId !== 'priority-high', createdAt: '2026-07-25T00:00:00Z' }] : []
   })
   const currentNotebook = () => ({
     notebookId: 'notebook-web',
-    title: 'Web notebook',
+    title: options.systemMemoryLocked ? 'System Memory' : 'Web notebook',
     progress: noteProgress,
+    readOnly: notebookReadOnly,
     createdAt: '2026-07-25T00:00:00Z',
     updatedAt: '2026-07-25T01:00:00Z',
     tags: assignments(noteTagNames),
@@ -103,6 +122,7 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
     notebookId: 'notebook-other',
     title: 'Other notebook',
     progress: 'pending',
+    readOnly: false,
     createdAt: '2026-07-25T00:00:00Z',
     updatedAt: '2026-07-25T02:00:00Z',
     tags: assignments(['Work']),
@@ -197,6 +217,9 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
       { classId: 'priority', label: 'Priority', description: null },
       { classId: 'topic', label: 'Topic', description: null },
       { classId: 'empty', label: 'Empty class', description: null },
+      ...(options.systemMemoryLocked
+        ? [{ classId: 'document-kind', label: 'Document Kind', description: null }]
+        : []),
     ] } })
     if (operation === 'Notebooks') {
       notebookRequestCount += 1
@@ -238,6 +261,7 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
               notebookId: `notebook-page-${index + 1}`,
               title: `Paged notebook ${index + 1}`,
               progress: 'none',
+              readOnly: false,
               createdAt: '2026-07-25T00:00:00Z',
               updatedAt: '2026-07-25T01:00:00Z',
               tags: [],
@@ -348,6 +372,16 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
       if (options.mutationMode === 'conflict') return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'revision_conflict', message: 'Changed elsewhere' }, revision: 2 }) })
       return json({ profile: 'e2e', revision: 2, directories: [], projectDirectories: [], repositories: [], discovered: [] })
     }
+    const notebookLockPath = /^\/api\/v1\/notes\/notebooks\/([^/]+)\/read-only$/.exec(url.pathname)
+    if (notebookLockPath && request.method() === 'POST') {
+      const body = request.postDataJSON() as { readOnly?: unknown }
+      if (typeof body.readOnly !== 'boolean') {
+        return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: { code: 'invalid_request', message: 'readOnly is required' }, revision: 1 }) })
+      }
+      notebookReadOnly = body.readOnly
+      notebookLockMutations.push(body.readOnly)
+      return json({ profile: 'e2e', revision: 2, notebook: currentNotebook() })
+    }
     // Reader endpoints (riela-app only): the pane reads the notebook's first
     // note, then the window around it for paging.
     const firstNotePath = /^\/api\/v1\/notes\/notebooks\/([^/]+)\/first-note$/.exec(url.pathname)
@@ -408,6 +442,7 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
     requests,
     notebookFilters,
     notebookFilterGroups,
+    notebookLockMutations,
     removeCatalogTag: (name: string) => { tagsByName.delete(name) },
     mutationCount: () => mutationCount,
     assertClean: () => {
@@ -574,6 +609,34 @@ test('navigates folder-scoped List and Board Notes with detail and progress cont
   await expect(page.getByRole('button', { name: 'Clear all' })).toBeFocused()
   expect(fixture.requests).toContain('POST /graphql:SetProgress')
   expect(fixture.requests.filter((request) => request === 'POST /graphql:RemoveNotebookTag')).toHaveLength(2)
+  fixture.assertClean()
+})
+
+test('renders system-memory lock controls without blocking read-only agent expansion', async ({ page }) => {
+  const fixture = await installAPI(page, { systemMemoryLocked: true })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Notes' }).click()
+  await page.getByRole('button', { name: /System Memory/ }).click()
+
+  const detail = page.getByRole('complementary', { name: 'Notebook details for System Memory' })
+  const addNote = detail.getByRole('button', { name: 'Add note' })
+  const expand = detail.getByRole('button', { name: 'Expand with Agent' })
+  await expect(addNote).toBeDisabled()
+  await expect(expand).toBeEnabled()
+
+  await detail.getByRole('button', { name: 'Unlock', exact: true }).click()
+  await expect(detail.getByRole('button', { name: 'Lock', exact: true })).toBeVisible()
+  await expect(addNote).toBeEnabled()
+  await expect(expand).toBeEnabled()
+  expect(fixture.notebookLockMutations).toEqual([false])
+
+  await detail.getByRole('button', { name: 'Lock', exact: true }).click()
+  await expect(detail.getByRole('button', { name: 'Unlock', exact: true })).toBeVisible()
+  await expect(addNote).toBeDisabled()
+  await expect(expand).toBeEnabled()
+  await expect(detail.getByRole('heading', { name: 'Read-only notes' })).toBeVisible()
+  expect(fixture.notebookLockMutations).toEqual([false, true])
+  await captureEvidence(page, 'notes-system-memory-lock', detail)
   fixture.assertClean()
 })
 

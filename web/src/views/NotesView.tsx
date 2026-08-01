@@ -59,7 +59,7 @@ import type {
   NoteTagClass,
 } from '../notes/types'
 import { eventAffectsScope, subscribeNoteEvents } from '../notes/events'
-import { applyNotebookLockMutation, notebookContentActionsDisabled } from '../notes/notebookLock'
+import { applyNotebookLockMutation } from '../notes/notebookLock'
 
 const defaultStatusSet: KanbanStatusSet = {
   setId: 'kanban-default',
@@ -1038,7 +1038,7 @@ export function NotesView(props: {
             <button class="secondary" disabled={lockBusy()} onClick={() => void setNotebookLock(notebook(), !notebook().readOnly)}>{notebook().readOnly ? 'Unlock' : 'Lock'}</button>
           </Show>
           <Show when={props.onExpandNotebook}>
-            <button class="secondary" disabled={notebookContentActionsDisabled(notebook())} onClick={() => props.onExpandNotebook?.(notebook().notebookId, notebook().title)}>Expand with Agent</button>
+            <button class="secondary" onClick={() => props.onExpandNotebook?.(notebook().notebookId, notebook().title)}>Expand with Agent</button>
           </Show>
         </div>
       </Show>

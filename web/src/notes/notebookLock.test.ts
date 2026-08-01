@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { applyNotebookLockMutation, notebookContentActionsDisabled } from './notebookLock'
+import { applyNotebookLockMutation } from './notebookLock'
 import type { Notebook } from './types'
 
 const notebook = (readOnly: boolean): Notebook => ({
@@ -13,10 +13,6 @@ const notebook = (readOnly: boolean): Notebook => ({
 })
 
 describe('system-memory notebook lock UI', () => {
-  test('locked notebooks disable content actions', () => {
-    expect(notebookContentActionsDisabled(notebook(true))).toBe(true)
-  })
-
   test('adopts unlock without clearing content state', async () => {
     const effects: string[] = []
     const updated = await applyNotebookLockMutation(
@@ -31,7 +27,6 @@ describe('system-memory notebook lock UI', () => {
     )
     expect(updated.readOnly).toBe(false)
     expect(effects).toEqual(['adopt'])
-    expect(notebookContentActionsDisabled(updated)).toBe(false)
   })
 
   test('relock closes stale composer state and disables content actions', async () => {
@@ -54,8 +49,8 @@ describe('system-memory notebook lock UI', () => {
     )
     expect(composeOpen).toBe(false)
     expect(activeNoteId).toBeUndefined()
+    expect(updated.readOnly).toBe(true)
     expect(effects).toEqual(['adopt', 'clear', 'preview'])
-    expect(notebookContentActionsDisabled(updated)).toBe(true)
   })
 
   test('failed lock mutation preserves composer and visible state', async () => {

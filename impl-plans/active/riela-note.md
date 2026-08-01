@@ -65,7 +65,9 @@ otherwise record it only as a follow-up in the analysis document.
    the reserved notebook and outputs use notebook/note ids.
 5. GraphQL and same-origin REST call the ordinary
    `setNotebookReadOnly` mutation. The web client adopts only the canonical
-   response and preserves locked state on failure.
+   response and preserves locked state on failure. Locked content controls stay
+   disabled, while read-only source actions such as Expand with Agent remain
+   available as required by D21.
 6. The trio examples call the new persona Note add-ons with ordinary
    `noteRoot` configuration and no workflow-level `memories` declaration.
 
@@ -271,7 +273,8 @@ excludes TASK-027 add-on adapter files.
   canonical notebook and expose no bypass.
 - Project `readOnly` into the SolidJS Note client/controller/view. Detect the
   system notebook by `notebook-kind:system-memory`, disable content
-  creation/editing while locked, and render explicit Unlock/Lock controls.
+  creation/editing while locked, keep read-only source expansion available,
+  and render explicit Unlock/Lock controls.
 - Adopt only the canonical mutation response; retain the prior lock state and
   show existing error handling on failure.
 - Cover GraphQL contract/execution, REST policy/error mapping/profile race,
@@ -282,7 +285,8 @@ excludes TASK-027 add-on adapter files.
 - GraphQL and REST persist the same notebook-level value and expose no system
   write bypass.
 - The system-memory UI is locked by default, unlocks/relocks durably, and does
-  not show new lock chrome for ordinary notebooks.
+  not show new lock chrome for ordinary notebooks. A rendered browser test
+  distinguishes blocked Add/Edit actions from permitted agent expansion.
 - Focused Swift and `web/src` tests pass, and
   `cd web && bun run typecheck` succeeds independently of the Vite build.
 
@@ -389,7 +393,9 @@ elsewhere.
       touching user `.riela/memory/` data.
 - [x] Slack, Telegram, and Discord trio examples, mocks, names, counts, catalog,
       and parity tests are synchronized and green.
-- [x] GraphQL, REST, and web lock/unlock behavior is synchronized and tested.
+- [x] GraphQL, REST, and web lock/unlock behavior is synchronized and tested;
+      locked Add/Edit actions stay disabled while source expansion remains
+      available.
 - [x] The changed TypeScript passes `cd web && bun run typecheck` as a distinct
       gate from Vite build and `bun test src`.
 - [x] Required Swift, example, web, source-audit, diff, branch, commit, and
@@ -502,8 +508,10 @@ focused CLI and Note tests, `web/src/views/NotesView.tsx`, the focused
 
 - Persona writes attach every projected file to every generated memory note;
   persona reads return deterministic file projections clamped by `fileLimit`.
-- Canonical relock success closes stale composer/detail content and disables
-  Expand with Agent while locked; a failed mutation preserves visible state.
+- Canonical relock success closes stale composer/detail content; the initial
+  Expand guard was later removed after `comm-001865` confirmed that D21 keeps
+  read-only source expansion available. A failed mutation preserves visible
+  state.
 - Persisted unlock is asserted after reopening NoteService, and a synthetic
   v5 database proves additive v6 `read_only` migration and legacy-row default.
 

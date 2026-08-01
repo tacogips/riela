@@ -189,9 +189,12 @@ Each Note store includes one reserved `notebook-kind:system-memory` notebook.
 It is read-only for ordinary content writes by default, can be explicitly
 unlocked or relocked from the web workspace, and remains writable through the
 typed system path used by the six `riela/note-memory-*` and
-`riela/note-persona-memory-*` workflow add-ons. Standalone `riela memory`
-commands and `riela/memory-*` add-ons are not supported; existing
-`.riela/memory/` files are left untouched.
+`riela/note-persona-memory-*` workflow add-ons. While locked, the workspace
+disables add/edit surfaces but keeps the read-only preview and **Expand with
+Agent** available because expansion consumes the notebook as a source and
+writes to a separate conversation. Standalone `riela memory` commands and
+`riela/memory-*` add-ons are not supported; existing `.riela/memory/` files are
+left untouched.
 
 Tags can have one optional parent. A tag filter resolves the selected tag plus
 all transitive descendants for notebook listing, note listing, text search,

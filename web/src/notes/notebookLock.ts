@@ -20,7 +20,3 @@ export async function applyNotebookLockMutation(
   }
   return updated
 }
-
-export function notebookContentActionsDisabled(notebook: Notebook): boolean {
-  return notebook.readOnly
-}

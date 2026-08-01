@@ -702,7 +702,7 @@ private func attachPageImages(
     }
     switch attachment {
     case let .inline(data):
-      attachments.append(try context.service.attachFile(
+      attachments.append(try context.service.attachIngestedPageFile(
         noteId: notes[index].noteId,
         data: data.data,
         role: .sourcePageImage,
@@ -711,7 +711,7 @@ private func attachPageImages(
         position: page.number ?? index + 1
       ))
     case let .localFile(url, mediaType, filename):
-      attachments.append(try context.service.attachFile(
+      attachments.append(try context.service.attachIngestedPageFile(
         noteId: notes[index].noteId,
         fileURL: url,
         role: .sourcePageImage,

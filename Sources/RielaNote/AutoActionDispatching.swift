@@ -399,7 +399,6 @@ extension NoteService {
             }
           }
         }
-        defer { heartbeat.cancel() }
         do {
           let outcome = try await autoActionDispatcher.dispatch(dispatch.record)
           switch outcome {
@@ -422,6 +421,8 @@ extension NoteService {
             error: "\(error)"
           )
         }
+        heartbeat.cancel()
+        await heartbeat.value
       }
       autoActionDispatchTasks.register(task)
     }

@@ -525,10 +525,10 @@ export function NotesView(props: {
   // Mirrors the native root-hosted unsaved-edit guard: every selection path
   // confirms before discarding an in-flight body edit.
   let detailDirty = false
-  const confirmDiscardIfDirty = (): boolean => {
+  const confirmDiscardIfDirty = (markDiscarded = true): boolean => {
     if (!detailDirty) return true
     const discard = window.confirm('Discard unsaved note changes?')
-    if (discard) detailDirty = false
+    if (discard && markDiscarded) detailDirty = false
     return discard
   }
 
@@ -589,6 +589,9 @@ export function NotesView(props: {
   }
 
   const setNotebookLock = async (notebook: Notebook, readOnly: boolean) => {
+    if (readOnly && !confirmDiscardIfDirty(false)) return
+    const targetNotebookId = notebook.notebookId
+    const targetSelectionGeneration = previewGeneration
     setLockBusy(true)
     setMessage('')
     try {
@@ -601,6 +604,10 @@ export function NotesView(props: {
             setNotebooks((current) => replaceNotebook(current, canonical))
             if (externalNotebook()?.notebookId === canonical.notebookId) setExternalNotebook(canonical)
           },
+          isCurrent: (canonical) =>
+            canonical.notebookId === targetNotebookId
+              && selectedNotebookId() === targetNotebookId
+              && previewGeneration === targetSelectionGeneration,
           clearContentState: () => {
             detailDirty = false
             setComposeDestination(undefined)

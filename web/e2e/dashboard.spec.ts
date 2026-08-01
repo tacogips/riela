@@ -60,6 +60,7 @@ type FixtureOptions = {
   initialNotebookProgress?: string
   duplicateNotebookPage?: boolean
   systemMemoryLocked?: boolean
+  notebookRelockDelay?: number
 }
 
 async function installAPI(page: Page, options: FixtureOptions = {}) {
@@ -137,7 +138,7 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
     noteNumber: index + 1,
     title,
     bodyMarkdown,
-    readOnly: true,
+    readOnly: options.systemMemoryLocked && notebookId === 'notebook-web' ? false : true,
     createdAt: '2026-07-25T00:00:00Z',
     updatedAt: '2026-07-25T00:00:00Z',
   })
@@ -377,6 +378,9 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
       const body = request.postDataJSON() as { readOnly?: unknown }
       if (typeof body.readOnly !== 'boolean') {
         return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: { code: 'invalid_request', message: 'readOnly is required' }, revision: 1 }) })
+      }
+      if (body.readOnly && options.notebookRelockDelay) {
+        await new Promise((resolve) => setTimeout(resolve, options.notebookRelockDelay))
       }
       notebookReadOnly = body.readOnly
       notebookLockMutations.push(body.readOnly)
@@ -619,24 +623,63 @@ test('renders system-memory lock controls without blocking read-only agent expan
   await page.getByRole('button', { name: /System Memory/ }).click()
 
   const detail = page.getByRole('complementary', { name: 'Notebook details for System Memory' })
+  const notebookActions = detail.locator('.notebook-actions')
   const addNote = detail.getByRole('button', { name: 'Add note' })
   const expand = detail.getByRole('button', { name: 'Expand with Agent' })
   await expect(addNote).toBeDisabled()
   await expect(expand).toBeEnabled()
 
-  await detail.getByRole('button', { name: 'Unlock', exact: true }).click()
-  await expect(detail.getByRole('button', { name: 'Lock', exact: true })).toBeVisible()
+  await notebookActions.getByRole('button', { name: 'Unlock', exact: true }).click()
+  await expect(notebookActions.getByRole('button', { name: 'Lock', exact: true })).toBeVisible()
   await expect(addNote).toBeEnabled()
   await expect(expand).toBeEnabled()
   expect(fixture.notebookLockMutations).toEqual([false])
 
-  await detail.getByRole('button', { name: 'Lock', exact: true }).click()
-  await expect(detail.getByRole('button', { name: 'Unlock', exact: true })).toBeVisible()
+  await detail.getByRole('button', { name: 'Edit', exact: true }).click()
+  const editor = detail.getByLabel('Note body markdown')
+  await editor.fill('# Unsaved system memory draft')
+  page.once('dialog', async (dialog) => {
+    expect(dialog.message()).toBe('Discard unsaved note changes?')
+    await dialog.dismiss()
+  })
+  await notebookActions.getByRole('button', { name: 'Lock', exact: true }).click()
+  await expect(editor).toHaveValue('# Unsaved system memory draft')
+  expect(fixture.notebookLockMutations).toEqual([false])
+
+  page.once('dialog', async (dialog) => { await dialog.accept() })
+  await notebookActions.getByRole('button', { name: 'Lock', exact: true }).click()
+  await expect(notebookActions.getByRole('button', { name: 'Unlock', exact: true })).toBeVisible()
   await expect(addNote).toBeDisabled()
   await expect(expand).toBeEnabled()
   await expect(detail.getByRole('heading', { name: 'Read-only notes' })).toBeVisible()
   expect(fixture.notebookLockMutations).toEqual([false, true])
   await captureEvidence(page, 'notes-system-memory-lock', detail)
+  fixture.assertClean()
+})
+
+test('delayed system-memory relock does not clear a newly selected notebook composer', async ({ page }) => {
+  const fixture = await installAPI(page, {
+    systemMemoryLocked: true,
+    secondNotebook: true,
+    notebookRelockDelay: 300,
+  })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Notes' }).click()
+  await page.getByRole('button', { name: /System Memory/ }).click()
+
+  const systemDetail = page.getByRole('complementary', { name: 'Notebook details for System Memory' })
+  const systemActions = systemDetail.locator('.notebook-actions')
+  await systemActions.getByRole('button', { name: 'Unlock', exact: true }).click()
+  await systemActions.getByRole('button', { name: 'Lock', exact: true }).click()
+
+  await page.getByRole('button', { name: /Other notebook/ }).click()
+  const otherDetail = page.getByRole('complementary', { name: 'Notebook details for Other notebook' })
+  await otherDetail.getByRole('button', { name: 'Add note' }).click()
+  const composer = page.getByRole('dialog', { name: 'New note' })
+  await expect(composer).toBeVisible()
+  await expect.poll(() => fixture.notebookLockMutations).toEqual([false, true])
+  await expect(otherDetail).toBeVisible()
+  await expect(composer).toBeVisible()
   fixture.assertClean()
 })
 

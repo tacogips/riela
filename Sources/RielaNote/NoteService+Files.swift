@@ -1,6 +1,12 @@
 import Foundation
 import RielaSQLite
 
+private enum NoteFileWritePolicy {
+  case ordinary
+  case systemMemory
+  case notebookIngest
+}
+
 public extension NoteService {
   @discardableResult
   func attachFile(
@@ -18,7 +24,7 @@ public extension NoteService {
       mediaType: mediaType,
       originalFilename: originalFilename,
       position: position,
-      bypassNotebookLock: false
+      writePolicy: .ordinary
     )
   }
 
@@ -38,7 +44,29 @@ public extension NoteService {
       mediaType: mediaType,
       originalFilename: originalFilename,
       position: position,
-      bypassNotebookLock: true
+      writePolicy: .systemMemory
+    )
+  }
+
+  /// Attaches a file while a notebook-ingest operation is assembling a page.
+  /// This bypasses the page's final read-only flag, but never the notebook lock.
+  @discardableResult
+  func attachIngestedPageFile(
+    noteId: String,
+    data: Data,
+    role: NoteFileRole = .sourcePageImage,
+    mediaType: String,
+    originalFilename: String? = nil,
+    position: Int = 0
+  ) throws -> NoteFileAttachment {
+    try attachLocalFile(
+      noteId: noteId,
+      data: data,
+      role: role,
+      mediaType: mediaType,
+      originalFilename: originalFilename,
+      position: position,
+      writePolicy: .notebookIngest
     )
   }
 
@@ -49,14 +77,14 @@ public extension NoteService {
     mediaType: String,
     originalFilename: String?,
     position: Int,
-    bypassNotebookLock: Bool
+    writePolicy: NoteFileWritePolicy
   ) throws -> NoteFileAttachment {
     let fileStore = LocalNoteFileStore(noteRoot: noteRootPath())
     let fileId = makeNoteId(prefix: "file")
     try driver.withDatabase { database in
       try validateFileWriteTarget(
         requireNote(noteId, in: database),
-        bypassNotebookLock: bypassNotebookLock,
+        writePolicy: writePolicy,
         in: database
       )
     }
@@ -66,7 +94,7 @@ public extension NoteService {
         try database.transaction { db in
           try validateFileWriteTarget(
             requireNote(noteId, in: db),
-            bypassNotebookLock: bypassNotebookLock,
+            writePolicy: writePolicy,
             in: db
           )
           let record = try insertFileRecord(
@@ -106,19 +134,35 @@ public extension NoteService {
 
   private func validateFileWriteTarget(
     _ note: Note,
-    bypassNotebookLock: Bool,
+    writePolicy: NoteFileWritePolicy,
     in database: SQLiteDatabase
   ) throws {
-    guard bypassNotebookLock else {
-      try requireNoteNotebookContentWritable(note, in: database)
-      return
+    switch writePolicy {
+    case .ordinary:
+      try requireNoteContentWritable(note, in: database)
+    case .systemMemory:
+      guard note.notebookId == NoteStoreSchema.systemMemoryNotebookId else {
+        throw NoteServiceError.invalidInput("system-memory file target is outside the reserved notebook")
+      }
+      guard !note.readOnly else {
+        throw NoteServiceError.readOnly(note.noteId)
+      }
+    case .notebookIngest:
+      guard isIngestedPageImageTarget(note) else {
+        throw NoteServiceError.invalidInput("notebook-ingest file target is not an imported page image")
+      }
+      try requireNotebookContentWritable(requireNotebook(note.notebookId, in: database))
     }
-    guard note.notebookId == NoteStoreSchema.systemMemoryNotebookId else {
-      throw NoteServiceError.invalidInput("system-memory file target is outside the reserved notebook")
+  }
+
+  private func isIngestedPageImageTarget(_ note: Note) -> Bool {
+    guard let metaJSON = note.metaJSON,
+          let data = metaJSON.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let pageImageRef = object["pageImageRef"] as? String else {
+      return false
     }
-    guard !note.readOnly else {
-      throw NoteServiceError.readOnly(note.noteId)
-    }
+    return !pageImageRef.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 
   @discardableResult
@@ -130,16 +174,65 @@ public extension NoteService {
     originalFilename: String? = nil,
     position: Int = 0
   ) throws -> NoteFileAttachment {
+    try attachLocalFile(
+      noteId: noteId,
+      fileURL: fileURL,
+      role: role,
+      mediaType: mediaType,
+      originalFilename: originalFilename,
+      position: position,
+      writePolicy: .ordinary
+    )
+  }
+
+  /// URL-backed counterpart to `attachIngestedPageFile(noteId:data:...)`.
+  @discardableResult
+  func attachIngestedPageFile(
+    noteId: String,
+    fileURL: URL,
+    role: NoteFileRole = .sourcePageImage,
+    mediaType: String,
+    originalFilename: String? = nil,
+    position: Int = 0
+  ) throws -> NoteFileAttachment {
+    try attachLocalFile(
+      noteId: noteId,
+      fileURL: fileURL,
+      role: role,
+      mediaType: mediaType,
+      originalFilename: originalFilename,
+      position: position,
+      writePolicy: .notebookIngest
+    )
+  }
+
+  private func attachLocalFile(
+    noteId: String,
+    fileURL: URL,
+    role: NoteFileRole,
+    mediaType: String,
+    originalFilename: String?,
+    position: Int,
+    writePolicy: NoteFileWritePolicy
+  ) throws -> NoteFileAttachment {
     let fileStore = LocalNoteFileStore(noteRoot: noteRootPath())
     let fileId = makeNoteId(prefix: "file")
     try driver.withDatabase { database in
-      try requireNoteNotebookContentWritable(requireNote(noteId, in: database), in: database)
+      try validateFileWriteTarget(
+        requireNote(noteId, in: database),
+        writePolicy: writePolicy,
+        in: database
+      )
     }
     let stored = try fileStore.store(fileURL: fileURL, fileId: fileId)
     do {
       return try driver.withDatabase { database in
         try database.transaction { db in
-          try requireNoteNotebookContentWritable(requireNote(noteId, in: db), in: db)
+          try validateFileWriteTarget(
+            requireNote(noteId, in: db),
+            writePolicy: writePolicy,
+            in: db
+          )
           let record = try insertFileRecord(
             fileId: fileId,
             stored: stored,
@@ -189,13 +282,13 @@ public extension NoteService {
     let fileStore = S3NoteFileStore(profile: s3Profile, httpClient: httpClient)
     let fileId = makeNoteId(prefix: "file")
     try driver.withDatabase { database in
-      try requireNoteNotebookContentWritable(requireNote(noteId, in: database), in: database)
+      try requireNoteContentWritable(requireNote(noteId, in: database), in: database)
     }
     let stored = try fileStore.store(data: data, fileId: fileId)
     do {
       return try driver.withDatabase { database in
         try database.transaction { db in
-          try requireNoteNotebookContentWritable(requireNote(noteId, in: db), in: db)
+          try requireNoteContentWritable(requireNote(noteId, in: db), in: db)
           let record = try insertFileRecord(
             fileId: fileId,
             stored: stored,

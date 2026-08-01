@@ -291,7 +291,3 @@ func requireNoteContentWritable(_ note: Note, in database: SQLiteDatabase) throw
   }
   try requireNotebookContentWritable(requireNotebook(note.notebookId, in: database))
 }
-
-func requireNoteNotebookContentWritable(_ note: Note, in database: SQLiteDatabase) throws {
-  try requireNotebookContentWritable(requireNotebook(note.notebookId, in: database))
-}

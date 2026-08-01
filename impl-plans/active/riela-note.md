@@ -727,6 +727,69 @@ orphaned and unread. Repository-baseline SwiftLint violations remain outside
 the required gates. A local blob deletion failure after database rollback can
 leave reclaimable unreferenced storage while surfacing the rollback failure.
 
+### Session: 2026-08-01 Step 7 attachment-lock and relock-race revision
+
+**Tasks Completed**: Closed both mid-severity findings from `comm-001872`.
+TASK-025, TASK-029, and TASK-030 remain complete; all current-work-package
+completion criteria remain satisfied and no optional Phase 3 work was added.
+**Files Changed**:
+`Sources/RielaNote/AutoActionDispatching.swift`,
+`Sources/RielaNote/NoteService+Files.swift`,
+`Sources/RielaNote/NoteService+SystemMemory.swift`,
+`Sources/RielaCLI/ProductionNodeAdapter+NoteAddons.swift`,
+`Tests/RielaNoteTests/SystemMemoryNotebookTests.swift`,
+`web/src/notes/notebookLock.ts`,
+`web/src/notes/notebookLock.test.ts`,
+`web/src/views/NotesView.tsx`,
+`web/e2e/dashboard.spec.ts`, and this progress log.
+**Findings Addressed**:
+
+- Every ordinary local-data, local-URL, and S3 note attachment now enforces
+  the effective `notebook.readOnly || note.readOnly` lock at preflight and
+  transaction time. The regression covers both local attachment entry points
+  for a note-level lock inside a writable notebook.
+- Notebook ingestion retains a typed, marker-confined page-image assembly
+  capability that bypasses only an imported page note's final lock, never the
+  destination notebook lock. Awaiting the canceled auto-action heartbeat task
+  prevents a detached cancellation from masking the actual ingest result.
+- Relock now runs through the unsaved-edit confirmation without mutating dirty
+  state before success. Canonical lock state is always adopted, while draft,
+  composer, and preview cleanup requires the response to still target the same
+  selected notebook and selection generation.
+- Rendered browser regressions cover a declined dirty-draft relock and a
+  delayed relock response after navigation to another notebook and composer.
+
+**Verification**:
+
+- Focused Swift attachment and notebook-ingest regressions: 2 passed, 0 failed.
+- `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build`:
+  passed through the focused test rebuild.
+- `swift test --skip-build --filter RielaNoteTests`: 140 passed, 0 failed.
+- `swift test --skip-build --filter RielaCLITests`: 659 passed, 0 failed.
+- `swift test --skip-build --filter RielaCoreTests`: 477 passed, 0 failed.
+- `cd web && bun run typecheck`: passed.
+- `cd web && bun test src`: 154 passed, 0 failed, 1,816 assertions.
+- `cd web && bun run build`: passed.
+- `cd web && bun run test:e2e`: 47 passed, 0 failed.
+- Targeted ESLint and `cd web && bun run audit`: passed.
+- Focused strict SwiftLint found only the pre-existing
+  `optional_data_string_conversion` at
+  `Sources/RielaCLI/ProductionNodeAdapter+NoteAddons.swift:1095`; no revision
+  hunk introduced a lint violation. `swiftformat` is not installed locally.
+
+**Documentation Review**: `README.md` and
+`.codex/skills/riela-impl-workflow/SKILL.md` remain aligned because the fixes
+enforce the accepted lock and UI-race contracts without changing the public
+workflow surface.
+**Commit**: This progress entry ships in the local
+`fix(riela-note): enforce attachment locks and safe relock` revision on
+`feat/note-hub-improve`; push status: not pushed. No GitHub issue or
+Codex-agent reference was provided.
+**Residual Risks**: Existing `.riela/memory/` data remains intentionally
+orphaned and unread. Repository-baseline SwiftLint violations remain outside
+the required gates. A local blob deletion failure after database rollback can
+leave reclaimable unreferenced storage while surfacing the rollback failure.
+
 ## Historical Issue-Resolution Work Package: Hierarchical Tags and Kanban
 
 ### Objective and boundaries

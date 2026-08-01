@@ -121,6 +121,45 @@ final class SystemMemoryNotebookTests: NoteTestCase {
     XCTAssertEqual(attachment.noteId, note.noteId)
   }
 
+  func testNoteLevelLockBlocksOrdinaryAttachmentWritesInWritableNotebook() throws {
+    let service = try makeService()
+    let note = try service.createNote(bodyMarkdown: "# Locked note\nBody")
+    XCTAssertFalse(try service.getNotebook(note.notebookId).readOnly)
+    _ = try service.setReadOnly(noteId: note.noteId, readOnly: true)
+
+    assertReadOnly(
+      try service.attachFile(
+        noteId: note.noteId,
+        data: Data("blocked".utf8),
+        mediaType: "text/plain"
+      ),
+      expectedIdentifier: note.noteId
+    )
+    let sourceURL = URL(fileURLWithPath: service.noteRootPath(), isDirectory: true)
+      .appendingPathComponent("locked-source.txt")
+    try Data("blocked file".utf8).write(to: sourceURL)
+    assertReadOnly(
+      try service.attachFile(
+        noteId: note.noteId,
+        fileURL: sourceURL,
+        mediaType: "text/plain"
+      ),
+      expectedIdentifier: note.noteId
+    )
+    XCTAssertThrowsError(
+      try service.attachIngestedPageFile(
+        noteId: note.noteId,
+        data: Data("not an imported page".utf8),
+        mediaType: "text/plain"
+      )
+    ) { error in
+      guard case NoteServiceError.invalidInput = error else {
+        return XCTFail("expected invalidInput, got \(error)")
+      }
+    }
+    XCTAssertTrue(try service.listFiles(noteId: note.noteId).isEmpty)
+  }
+
   func testSystemMemorySearchScopesNamespaceAndTagsBeforeLimit() throws {
     let service = try makeService()
     let target = try service.saveSystemMemoryNote(

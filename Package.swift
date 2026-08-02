@@ -3,6 +3,12 @@
 import Foundation
 import PackageDescription
 
+let rielaVersionFileURL = URL(fileURLWithPath: #filePath)
+  .deletingLastPathComponent()
+  .appendingPathComponent("VERSION")
+let rielaVersion = try String(contentsOf: rielaVersionFileURL, encoding: .utf8)
+  .trimmingCharacters(in: .whitespacesAndNewlines)
+
 let enableLibSQLNoteTests = ProcessInfo.processInfo.environment["RIELA_NOTE_ENABLE_LIBSQL_TESTS"] == "1"
 let rielaNoteTestDependencies: [Target.Dependency] = enableLibSQLNoteTests
   ? ["RielaNote", "RielaNoteLibSQL", "RielaSQLite"]
@@ -54,6 +60,11 @@ let package = Package(
       linkerSettings: [
         .linkedFramework("JavaScriptCore", .when(platforms: [.macOS]))
       ]
+    ),
+    .target(
+      name: "RielaVersion",
+      publicHeadersPath: "include",
+      cSettings: [.define("RIELA_EMBEDDED_VERSION", to: "\"\(rielaVersion)\"")]
     ),
     .target(
       name: "RielaCore",
@@ -166,6 +177,7 @@ let package = Package(
       dependencies: [
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
         "RielaCore",
+        "RielaVersion",
         "RielaSQLite",
         "RielaNote",
         "RielaNoteDispatch",

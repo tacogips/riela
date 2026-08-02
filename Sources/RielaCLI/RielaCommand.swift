@@ -2,8 +2,9 @@ import Foundation
 import ArgumentParser
 import RielaAddons
 import RielaCore
+import RielaVersion
 
-public let rielaSwiftMigrationVersion = "0.1.22"
+public let rielaSwiftMigrationVersion = String(cString: rielaEmbeddedVersion)
 
 public enum CLIExitCode: Int32, Codable, Equatable, Sendable {
   case success = 0

@@ -17,7 +17,7 @@
         "name": "riela/note-memory-save",
         "version": "1",
         "config": {
-          "memoryId": "chat-memory",
+          "memoryNamespace": "chat-memory",
           "nodeId": "chat-event",
           "payloadTemplate": {
             "text": "{{event.input.text}}",
@@ -38,7 +38,7 @@
         "name": "riela/note-memory-load",
         "version": "1",
         "config": {
-          "memoryId": "chat-memory",
+          "memoryNamespace": "chat-memory",
           "workflowScopeOnly": true,
           "limit": 30
         }
@@ -50,7 +50,7 @@
         "name": "riela/note-memory-load",
         "version": "1",
         "config": {
-          "memoryId": "chat-memory",
+          "memoryNamespace": "chat-memory",
           "workflowScopeOnly": true,
           "limit": 30
         }
@@ -62,7 +62,7 @@
         "name": "riela/note-memory-load",
         "version": "1",
         "config": {
-          "memoryId": "chat-memory",
+          "memoryNamespace": "chat-memory",
           "workflowScopeOnly": true,
           "limit": 30
         }

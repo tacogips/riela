@@ -82,6 +82,16 @@ enum NoteCommandGraphQLDocuments {
   }
   """
 
+  static let setNotebookReadOnly = """
+  mutation SetNotebookReadOnly($notebookId: String!, $readOnly: Boolean!) {
+    setNotebookReadOnly(notebookId: $notebookId, readOnly: $readOnly) {
+      result { \(controlResult) }
+      \(mutationNotes)
+      notebook { \(notebook) }
+    }
+  }
+  """
+
   static let createNotebook = """
   mutation CreateNotebook($input: CreateNotebookInput!) {
     createNotebook(input: $input) {

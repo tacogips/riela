@@ -70,6 +70,13 @@ extension RielaApp {
     for (name, value) in preference.environmentVariables {
       environment[name] = value
     }
+    let configuredNoteRoot = environment["RIELA_NOTE_ROOT"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    if configuredNoteRoot?.isEmpty != false {
+      let profileName = RielaAppProfileInstanceIdentity(rawValue: candidate.id)?.profileName
+        ?? daemonProfileName
+      environment["RIELA_NOTE_ROOT"] = noteRootURL(profileName: profileName).path
+    }
     return environment
   }
 

@@ -255,6 +255,7 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting, GraphQLDocu
     }
   }
 
+  // swiftlint:disable:next cyclomatic_complexity function_body_length
   private func executeMutation(fieldName: String, request: GraphQLDocumentRequest) async throws -> JSONValue {
     let variables = request.variables
     switch fieldName {
@@ -298,6 +299,11 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting, GraphQLDocu
         notebookId: requiredString("notebookId", variables: variables),
         progress: requiredString("progress", variables: variables),
         expectedProgress: try optionalString("expectedProgress", variables: variables)
+      ))
+    case "setNotebookReadOnly":
+      return try await encodedJSONValue(service.setNotebookReadOnly(
+        notebookId: requiredString("notebookId", variables: variables),
+        readOnly: requiredBool("readOnly", variables: variables)
       ))
     case "createKanbanStatusSet":
       return try await encodedJSONValue(service.createKanbanStatusSet(

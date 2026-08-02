@@ -2,16 +2,14 @@
   "id": "read-rina-memory",
   "modelFreeze": false,
   "addon": {
-    "name": "riela/chat-persona-memory-read",
+    "name": "riela/note-persona-context-read",
     "version": "1",
     "config": {
       "personaId": "rina",
-      "personaName": "Rina Cursor",
-      "memoryId": "persona-chat-memory"
+      "personaName": "Rina Cursor"
     }
   },
-  "memories": [{"id": "persona-chat-memory", "purpose": "read recent Rina Cursor memory"}],
   "output": {
-    "description": "Return recent Rina Cursor memory records from persona-chat-memory."
+    "description": "Return recent Rina Cursor note context from system-memory notebook."
   }
 }

@@ -49,10 +49,10 @@ Primary capabilities delivered by this design:
   `Sources/RielaCore/SQLiteWorkflowMessageLog.swift` (create-on-open,
   additive `ALTER TABLE` migration, `INSERT ... ON CONFLICT` upserts).
 - **F2 — Built-in add-ons are dispatched by name.** Built-ins such as
-  `riela/chat-reply-worker` and the `riela/memory-*` family are handled
-  in `Sources/RielaCLI/ProductionNodeAdapter.swift` against the
-  contracts in `Sources/RielaAddons/` (`AddonExecutionInput/Output`,
-  `AddonSourceMetadata.builtin`, attachment projection).
+  `riela/chat-reply-worker`, `riela/note-persona-context-read|write`, and
+  `riela/note-memory-save|load` are handled by the production node adapter.
+  The context and save/load successors use `RielaNote`'s system-memory
+  notebook; the former standalone `riela/memory-*` family no longer exists.
 - **F3 — Event sources already deliver chat attachments.**
   `Sources/RielaEvents/` provides telegram/discord/slack/matrix/webhook
   bindings whose payloads carry `message.attachments`, `imagePaths`,
@@ -474,10 +474,9 @@ rename-copy-rebuild pattern without rewriting unrelated tables.
 
 ## Built-in Note Add-ons
 
-New built-ins registered alongside the existing `riela/memory-*` family
-(`Sources/RielaCLI/ProductionNodeAdapter.swift` + validation in
-`Sources/RielaAddons/`). All operate through `NoteService` against a
-note root resolved in order: explicit `addon.config.noteRoot` →
+Built-ins are registered and dispatched by the focused production-node adapter
+extensions under `Sources/RielaCLI/`. All operate through `NoteService` against
+a note root resolved in order: explicit `addon.config.noteRoot` →
 `RIELA_NOTE_ROOT` environment variable → app profile context →
 default `~/.riela/note/` (D9).
 
@@ -492,6 +491,10 @@ default `~/.riela/note/` (D9).
 | `riela/note-comment-add` | Add an agent comment. |
 | `riela/notebook-ingest-pages` | Batch: `pages: [{number, markdown, pageImageRef?}]` + optional `sourceDocumentRef` → notebook with one note per page, `source-page-image` files bound, kind tag `imported-material`. |
 | `riela/note-conversation-save` | Persist an agent conversation turn (or finalize a temp conversation) as notes in a conversation notebook (D12). |
+| `riela/note-persona-context-read` | Read bounded persona-tagged context and materialized attachments from the system-memory notebook. |
+| `riela/note-persona-context-write` | Atomically append persona context through the package-only system-memory write boundary. |
+| `riela/note-memory-save` | Append a workflow/stream-scoped record to the system-memory notebook. |
+| `riela/note-memory-load` | Load bounded workflow/stream-scoped records and materialized attachments from the system-memory notebook. |
 
 Add-on inputs reuse the existing attachment projection
 (`attachmentReadInputFields`) so chat-event files flow in without

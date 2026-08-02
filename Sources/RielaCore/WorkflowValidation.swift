@@ -58,16 +58,7 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
     }
     validateTypedLoopMetadata(workflow.loop, stepIds: stepIds, diagnostics: &diagnostics)
 
-    let workflowMemoryIds = Set((workflow.memories ?? []).map(\.id))
     let gateIds = Set(workflow.loop?.gates.map(\.id) ?? [])
-    for (index, node) in workflow.nodeRegistry.enumerated() {
-      validateMemoryAddonDeclarations(
-        node,
-        path: "workflow.nodes[\(index)]",
-        workflowMemoryIds: workflowMemoryIds,
-        diagnostics: &diagnostics
-      )
-    }
 
     for step in workflow.steps {
       if !registryIds.contains(step.nodeId) {
@@ -238,9 +229,6 @@ private func validateTypedAuthoredWorkflow(_ workflow: AuthoredWorkflowJSON) -> 
       )
     )
   }
-  validateMemoryDeclarations(workflow.memories, path: "workflow.memories", diagnostics: &diagnostics)
-  let workflowMemoryIds = Set((workflow.memories ?? []).map(\.id))
-
   var nodeIds: Set<String> = []
   for (index, node) in workflow.nodes.enumerated() {
     let path = "workflow.nodes[\(index)]"
@@ -267,13 +255,6 @@ private func validateTypedAuthoredWorkflow(_ workflow: AuthoredWorkflowJSON) -> 
     }
     validateNodeReference(node.nodeRef, path: "\(path).nodeRef", diagnostics: &diagnostics)
     validateInputFilters(node.inputFilters, path: "\(path).inputFilters", diagnostics: &diagnostics)
-    validateMemoryDeclarations(node.memories, path: "\(path).memories", diagnostics: &diagnostics)
-    validateMemoryAddonDeclarations(
-      node,
-      path: path,
-      workflowMemoryIds: workflowMemoryIds,
-      diagnostics: &diagnostics
-    )
   }
 
   let effectiveSteps = workflow.steps ?? workflow.nodes.map { WorkflowStepRef(id: $0.id, nodeId: $0.id) }
@@ -406,8 +387,7 @@ private func materializeWorkflowDefinition(from workflow: AuthoredWorkflowJSON) 
       role: step.role,
       execution: registryNode.execution,
       repeatPolicy: registryNode.repeatPolicy,
-      inputFilters: registryNode.inputFilters,
-      memories: registryNode.memories
+      inputFilters: registryNode.inputFilters
     )
   }
 
@@ -416,7 +396,6 @@ private func materializeWorkflowDefinition(from workflow: AuthoredWorkflowJSON) 
     description: workflow.description ?? "",
     defaults: workflow.defaults,
     prompts: workflow.prompts,
-    memories: workflow.memories,
     managerStepId: workflow.managerStepId,
     entryStepId: entryStepId,
     nodeRegistry: workflow.nodes,

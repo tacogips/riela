@@ -2,16 +2,14 @@
   "id": "read-mika-memory",
   "modelFreeze": false,
   "addon": {
-    "name": "riela/chat-persona-memory-read",
+    "name": "riela/note-persona-context-read",
     "version": "1",
     "config": {
       "personaId": "mika",
-      "personaName": "Mika Trend",
-      "memoryId": "persona-chat-memory"
+      "personaName": "Mika Trend"
     }
   },
-  "memories": [{"id": "persona-chat-memory", "purpose": "read recent Mika Trend memory"}],
   "output": {
-    "description": "Return recent Mika Trend memory records from persona-chat-memory."
+    "description": "Return recent Mika Trend note context from system-memory notebook."
   }
 }

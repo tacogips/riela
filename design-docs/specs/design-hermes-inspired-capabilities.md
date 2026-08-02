@@ -121,15 +121,15 @@ self-evaluation.
 
 ### 2. Episodic memory → **PARTIAL; good fit**
 
-`RielaMemory` (`Packages/RielaMemory/`) is SQLite-backed with tags, related
-records, and file references, plus persona/chat/file memory adapters
-(`Sources/RielaCLI/ProductionNodeAdapter+{PersonaMemory,ChatMemory,MemoryAddonCore}.swift`).
-But recall is **regex/`matchPatterns` matching**
-(`RielaMemory.swift` compiles regexes over `payloadJSON`), not full-text; there
-is no FTS index, no cross-run summarization, and no automatic aggregation of
-learnings across sessions. `RuntimeSession` persistence is per-run.
-`RielaNote` provides the curated-notes substrate. Hermes's FTS5 + summarization
-recall is the missing capability.
+The standalone `RielaMemory` package, memory CLI, workflow-memory declarations,
+and legacy memory add-ons were deleted by the accepted Note system-memory
+migration. Current persona context and workflow/stream save-load behavior use
+tagged notes and attachments in `RielaNote`'s system-memory notebook through
+`riela/note-persona-context-read|write` and `riela/note-memory-save|load`.
+Recall is bounded tag/metadata selection rather than FTS; there is no
+cross-run summarization or automatic aggregation of learnings across sessions.
+Hermes's FTS5 + summarization recall is therefore still the missing capability,
+but it must extend Riela Note without restoring the deleted store or CLI.
 
 ### 3. Multi-platform gateway → **STRONG already; do not chase breadth**
 
@@ -217,12 +217,13 @@ Riela primitives:
 
 ### B. Cross-session episodic memory with FTS recall + summarization *(P1)*
 
-Extend `RielaMemory` from regex matching to full-text recall and add cross-run
-aggregation:
+Extend the Riela Note system-memory substrate with full-text recall and
+cross-run aggregation:
 
-- Add a **SQLite FTS5** index over memory records and (opt-in) session
-  transcript/output text, exposed through the existing memory add-ons as a
-  recall query — replacing/augmenting the current `matchPatterns` regex path.
+- Add a **SQLite FTS5** query over eligible system-memory note body/metadata
+  and (opt-in) session transcript/output text. Expose it through a new
+  Note-backed recall contract; do not restore standalone storage, legacy
+  memory add-ons, workflow `memories`, or the deleted memory CLI.
 - Add an **LLM summarization** step that condenses prior sessions for a
   workflow/project into a compact recallable digest (a `RielaNote`-backed
   curated memory file), refreshed by a runtime hook — Hermes's agent-curated

@@ -64,6 +64,10 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/note-comment-add", version: "1"),
     .init(name: "riela/notebook-ingest-pages", version: "1"),
     .init(name: "riela/note-conversation-save", version: "1"),
+    .init(name: "riela/note-memory-save", version: "1"),
+    .init(name: "riela/note-memory-load", version: "1"),
+    .init(name: "riela/note-persona-context-read", version: "1"),
+    .init(name: "riela/note-persona-context-write", version: "1"),
     .init(name: "riela/note-kanban-task-create", version: "1"),
     .init(name: "riela/note-kanban-move", version: "1"),
     .init(name: "riela/note-kanban-board", version: "1")

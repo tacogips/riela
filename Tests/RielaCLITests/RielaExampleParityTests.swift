@@ -1,6 +1,6 @@
 import Foundation
 import RielaCore
-import RielaMemory
+import RielaNote
 import XCTest
 @testable import RielaCLI
 
@@ -17,7 +17,6 @@ private func rielaExampleWorkflowNames() -> [String] {
     "apple-notifications",
     "apple-reminders-list",
     "chat-event-attachment-judgement",
-    "chat-memory-raw-and-daily-summary",
     "chat-reply-webhook",
     "chat-supervisor-collaboration",
     "claude-riela-claude-worker",
@@ -86,7 +85,7 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum ExampleCatalog {
     static let directoryName = "examples"
-    static let expectedMockScenarioCount = 39
+    static let expectedMockScenarioCount = 38
     static let expectedNodeMockScenarioCount = 0
   }
 
@@ -101,7 +100,6 @@ final class RielaExampleParityTests: XCTestCase {
   private enum WorkflowIds {
     static let defaultSuperviserWorkflowName = "default-superviser"
     static let defaultSuperviserWorkflowId = "riela-default-superviser"
-    static let chatMemoryRawAndDailySummaryWorkflowName = "chat-memory-raw-and-daily-summary"
     static let supervisedMockRetryWorkflowName = "supervised-mock-retry"
     static let discordAgentTrioChatWorkflowName = "discord-agent-trio-chat"
     static let matrixAgentTrioChatWorkflowName = "matrix-agent-trio-chat"
@@ -133,40 +131,10 @@ final class RielaExampleParityTests: XCTestCase {
   }
 
   private enum TelegramSDKTrioChatMock {
-    static let variables = #"""
-    {
-      "workflowInput": {
-        "text": "@rinacursor0529bot explain the SDK trio setup",
-        "provider": "telegram"
-      },
-      "event": {
-        "sourceId": "telegram-live",
-        "eventId": "mock-1",
-        "provider": "telegram",
-        "eventType": "chat.message",
-        "input": {
-          "text": "@rinacursor0529bot explain the SDK trio setup",
-          "provider": "telegram",
-          "attachments": [],
-          "imagePaths": [],
-          "attachmentText": ""
-        },
-        "conversation": {
-          "id": "100",
-          "threadId": "topic-a"
-        },
-        "actor": {
-          "id": "200",
-          "displayName": "Mock User"
-        }
-      }
-    }
-    """#
-
     static func variables(
-      text: String,
-      eventId: String,
-      memoryRoot: String,
+      text: String = "@rinacursor0529bot explain the SDK trio setup",
+      eventId: String = "mock-1",
+      noteRoot: String,
       isBot: Bool = false,
       actorUsername: String? = nil
     ) -> String {
@@ -175,9 +143,9 @@ final class RielaExampleParityTests: XCTestCase {
         "workflowInput": {
           "text": "\#(text)",
           "provider": "telegram",
-          "memoryRoot": "\#(memoryRoot)"
+          "noteRoot": "\#(noteRoot)"
         },
-        "memoryRoot": "\#(memoryRoot)",
+        "noteRoot": "\#(noteRoot)",
         "event": {
           "sourceId": "telegram-live",
           "eventId": "\#(eventId)",
@@ -207,15 +175,15 @@ final class RielaExampleParityTests: XCTestCase {
   }
 
   private enum TrioChatMemoryMock {
-    static func variables(provider: String, text: String, eventId: String, memoryRoot: String) -> String {
+    static func variables(provider: String, text: String, eventId: String, noteRoot: String) -> String {
       #"""
       {
         "workflowInput": {
           "text": "\#(text)",
           "provider": "\#(provider)",
-          "memoryRoot": "\#(memoryRoot)"
+          "noteRoot": "\#(noteRoot)"
         },
-        "memoryRoot": "\#(memoryRoot)",
+        "noteRoot": "\#(noteRoot)",
         "event": {
           "sourceId": "\#(provider)-memory-regression",
           "eventId": "\#(eventId)",
@@ -239,24 +207,6 @@ final class RielaExampleParityTests: XCTestCase {
             "isBot": false
           }
         }
-      }
-      """#
-    }
-  }
-
-  private enum RawAndDailySummaryMemoryMock {
-    static func variables(text: String, eventId: String, receivedAt: String, memoryRoot: String) -> String {
-      #"""
-      {
-        "workflowInput": {
-          "provider": "telegram",
-          "text": "\#(text)",
-          "eventId": "\#(eventId)",
-          "conversationId": "chat-1",
-          "receivedAt": "\#(receivedAt)",
-          "memoryRoot": "\#(memoryRoot)"
-        },
-        "memoryRoot": "\#(memoryRoot)"
       }
       """#
     }
@@ -321,20 +271,10 @@ final class RielaExampleParityTests: XCTestCase {
         arguments.append(WorkflowRunCLI.autoImproveFlag)
       }
       if workflowName == WorkflowIds.telegramSDKTrioChatWorkflowName {
-        arguments.append(contentsOf: ["--variables", TelegramSDKTrioChatMock.variables])
-      }
-      if workflowName == WorkflowIds.chatMemoryRawAndDailySummaryWorkflowName {
-        let memoryRoot = root.appendingPathComponent("tmp/test-raw-daily-memory-\(UUID().uuidString)", isDirectory: true)
-        addTeardownBlock {
-          try? FileManager.default.removeItem(at: memoryRoot)
-        }
+        let noteRoot = sessionStore.appendingPathComponent("notes", isDirectory: true)
         arguments.append(contentsOf: [
-          "--variables", RawAndDailySummaryMemoryMock.variables(
-            text: "parity memory event",
-            eventId: "parity-1",
-            receivedAt: "2026-06-22T09:00:00Z",
-            memoryRoot: memoryRoot.path
-          )
+          "--variables",
+          TelegramSDKTrioChatMock.variables(noteRoot: noteRoot.path)
         ])
       }
       if let variables = try noteExampleVariables(workflowName: workflowName, root: root) {
@@ -357,10 +297,10 @@ final class RielaExampleParityTests: XCTestCase {
     let scenario = examplesRoot
       .appendingPathComponent(WorkflowIds.telegramSDKTrioChatWorkflowName, isDirectory: true)
       .appendingPathComponent(MockScenario.fileName)
-    let memoryRoot = root.appendingPathComponent("tmp/test-telegram-sdk-trio-chat-memory-\(UUID().uuidString)", isDirectory: true)
+    let noteRoot = root.appendingPathComponent("tmp/test-telegram-sdk-trio-chat-note-\(UUID().uuidString)", isDirectory: true)
     let sessionStore = root.appendingPathComponent("tmp/test-telegram-sdk-trio-chat-sessions-\(UUID().uuidString)", isDirectory: true)
     defer {
-      try? FileManager.default.removeItem(at: memoryRoot)
+      try? FileManager.default.removeItem(at: noteRoot)
       try? FileManager.default.removeItem(at: sessionStore)
     }
     let cases = [
@@ -381,7 +321,7 @@ final class RielaExampleParityTests: XCTestCase {
         WorkflowRunCLI.mockScenarioFlag, scenario.path,
         WorkflowRunCLI.sessionStoreFlag, sessionStore.path,
         WorkflowRunCLI.outputFlag, WorkflowRunCLI.jsonOutputFormat,
-        "--variables", TelegramSDKTrioChatMock.variables(text: text, eventId: eventId, memoryRoot: memoryRoot.path)
+        "--variables", TelegramSDKTrioChatMock.variables(text: text, eventId: eventId, noteRoot: noteRoot.path)
       ])
 
       XCTAssertEqual(result.exitCode, .success, "\(eventId): \(result.stderr)\n\(result.stdout)")
@@ -398,10 +338,10 @@ final class RielaExampleParityTests: XCTestCase {
     let scenario = examplesRoot
       .appendingPathComponent(WorkflowIds.telegramSDKTrioChatWorkflowName, isDirectory: true)
       .appendingPathComponent(MockScenario.fileName)
-    let memoryRoot = root.appendingPathComponent("tmp/test-telegram-sdk-trio-chat-memory-\(UUID().uuidString)", isDirectory: true)
+    let noteRoot = root.appendingPathComponent("tmp/test-telegram-sdk-trio-chat-note-\(UUID().uuidString)", isDirectory: true)
     let sessionStore = root.appendingPathComponent("tmp/test-telegram-sdk-trio-chat-sessions-\(UUID().uuidString)", isDirectory: true)
     defer {
-      try? FileManager.default.removeItem(at: memoryRoot)
+      try? FileManager.default.removeItem(at: noteRoot)
       try? FileManager.default.removeItem(at: sessionStore)
     }
     let app = RielaCLIApplication()
@@ -414,7 +354,7 @@ final class RielaExampleParityTests: XCTestCase {
       "--variables", TelegramSDKTrioChatMock.variables(
         text: "@rinacursor0529bot ここ見て",
         eventId: "bot-authored-rina",
-        memoryRoot: memoryRoot.path,
+        noteRoot: noteRoot.path,
         isBot: true,
         actorUsername: "mikatrend0529bot"
       )
@@ -434,10 +374,10 @@ final class RielaExampleParityTests: XCTestCase {
     let scenario = examplesRoot
       .appendingPathComponent(WorkflowIds.telegramSDKTrioChatWorkflowName, isDirectory: true)
       .appendingPathComponent(MockScenario.fileName)
-    let memoryRoot = root.appendingPathComponent("tmp/test-telegram-sdk-trio-chat-memory-\(UUID().uuidString)", isDirectory: true)
+    let noteRoot = root.appendingPathComponent("tmp/test-telegram-sdk-trio-chat-note-\(UUID().uuidString)", isDirectory: true)
     let sessionStore = root.appendingPathComponent("tmp/test-telegram-sdk-trio-chat-sessions-\(UUID().uuidString)", isDirectory: true)
     defer {
-      try? FileManager.default.removeItem(at: memoryRoot)
+      try? FileManager.default.removeItem(at: noteRoot)
       try? FileManager.default.removeItem(at: sessionStore)
     }
     let app = RielaCLIApplication()
@@ -450,7 +390,7 @@ final class RielaExampleParityTests: XCTestCase {
       "--variables", TelegramSDKTrioChatMock.variables(
         text: "@mikatrend0529bot echo from self",
         eventId: "self-authored-mika",
-        memoryRoot: memoryRoot.path,
+        noteRoot: noteRoot.path,
         isBot: true,
         actorUsername: "mikatrend0529bot"
       )
@@ -464,7 +404,7 @@ final class RielaExampleParityTests: XCTestCase {
     XCTAssertNil(payload.rootOutput)
   }
 
-  func testTelegramDiscordAndMatrixTrioChatMemoryReadsAndWrites() async throws {
+  func testTelegramDiscordAndMatrixTrioChatNoteContextReadsAndWrites() async throws {
     let root = repositoryRoot()
     let examplesRoot = root.appendingPathComponent(ExampleCatalog.directoryName, isDirectory: true)
     let tempDir = root.appendingPathComponent("tmp/test-trio-chat-memory-regression-\(UUID().uuidString)", isDirectory: true)
@@ -481,27 +421,21 @@ final class RielaExampleParityTests: XCTestCase {
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
 
-    for (workflowName, provider, seededMemory) in cases {
+    for (workflowName, provider, seededContext) in cases {
       let workflowTempDir = tempDir.appendingPathComponent(workflowName, isDirectory: true)
-      let memoryRoot = workflowTempDir.appendingPathComponent("memory", isDirectory: true)
-      let memoryStore = RielaMemoryStore(rootDirectory: memoryRoot.path)
-      try memoryStore.save(
-        memoryId: "persona-chat-memory",
-        workflowId: workflowName,
-        nodeId: "seed-yui-memory",
-        registeredAt: "2026-06-22T09:00:00Z",
-        tags: ["persona:yui", "kind:user-instruction", "importance:medium"],
-        payload: .object([
-          "personaId": .string("yui"),
-          "personaName": .string("Yui Codex"),
-          "kind": .string("user-instruction"),
-          "importance": .string("medium"),
-          "content": .string(seededMemory),
-          "recordedAt": .string("2026-06-22T09:00:00Z")
-        ])
+      let noteRoot = workflowTempDir.appendingPathComponent("note", isDirectory: true)
+      let noteService = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot.path))
+      _ = try noteService.appendSystemMemoryNote(
+        bodyMarkdown: seededContext,
+        tags: [
+          NoteTagInput(name: "persona:yui"),
+          NoteTagInput(name: "kind:user-instruction"),
+          NoteTagInput(name: "importance:medium")
+        ],
+        metaJSON: #"{"systemMemoryVersion":1,"personaId":"yui","workflowId":"seed"}"#
       )
 
-      let scenario = try scenarioWithYuiMemoryEntry(
+      let scenario = try scenarioWithYuiNoteEntry(
         examplesRoot: examplesRoot,
         workflowName: workflowName,
         outputDirectory: workflowTempDir,
@@ -518,7 +452,7 @@ final class RielaExampleParityTests: XCTestCase {
           provider: provider,
           text: "Yui, remember this \(provider) memory regression",
           eventId: "\(provider)-memory-regression",
-          memoryRoot: memoryRoot.path
+          noteRoot: noteRoot.path
         )
       ])
 
@@ -529,103 +463,17 @@ final class RielaExampleParityTests: XCTestCase {
         payload.session.executions.first { $0.stepId == "read-yui-memory" }?.acceptedOutput?.payload,
         workflowName
       )
-      XCTAssertEqual(jsonNumber(readYuiMemory["memoryRecordCount"]), 1, workflowName)
-      XCTAssertTrue(jsonString(readYuiMemory["memoryMarkdown"])?.contains(seededMemory) == true, workflowName)
+      XCTAssertEqual(jsonNumber(readYuiMemory["noteCount"]), 1, workflowName)
+      XCTAssertTrue(jsonString(readYuiMemory["contextMarkdown"])?.contains(seededContext) == true, workflowName)
       let writeYuiMemory = try XCTUnwrap(
         payload.session.executions.first { $0.stepId == "write-yui-memory" }?.acceptedOutput?.payload,
         workflowName
       )
-      guard case let .object(memorySummary)? = writeYuiMemory["memory"] else {
-        return XCTFail("\(workflowName): write-yui-memory did not return memory summary")
-      }
-      XCTAssertEqual(jsonNumber(memorySummary["entriesWritten"]), 1, workflowName)
-      let writtenMemory = try memoryStore.search(
-        memoryId: "persona-chat-memory",
-        options: MemorySearchOptions(
-          workflowId: workflowName,
-          includeAllWorkflows: true,
-          tags: ["persona:yui"],
-          limit: 10
-        )
-      )
-      XCTAssertEqual(writtenMemory.count, 2, workflowName)
-      XCTAssertTrue(writtenMemory.contains { record in
-        memoryString(objectPayload(record.payload)?["content"]) == "\(provider) memory write marker"
-      }, workflowName)
+      XCTAssertEqual(jsonNumber(writeYuiMemory["entriesWritten"]), 1, workflowName)
+      let writtenContext = try noteService.listSystemMemoryNotes(personaId: "yui", limit: 10)
+      XCTAssertEqual(writtenContext.count, 2, workflowName)
+      XCTAssertTrue(writtenContext.contains { $0.bodyMarkdown == "\(provider) memory write marker" }, workflowName)
     }
-  }
-
-  func testRawLogAndDailySummaryMemoryExampleCreatesAndUpdatesSeparateDatabases() async throws {
-    let root = repositoryRoot()
-    let examplesRoot = root.appendingPathComponent(ExampleCatalog.directoryName, isDirectory: true)
-    let workflowName = WorkflowIds.chatMemoryRawAndDailySummaryWorkflowName
-    let scenario = examplesRoot
-      .appendingPathComponent(workflowName, isDirectory: true)
-      .appendingPathComponent(MockScenario.fileName)
-    let memoryRoot = root.appendingPathComponent("tmp/test-raw-daily-summary-memory-\(UUID().uuidString)", isDirectory: true)
-    let sessionStore = root.appendingPathComponent("tmp/test-raw-daily-summary-sessions-\(UUID().uuidString)", isDirectory: true)
-    defer {
-      try? FileManager.default.removeItem(at: memoryRoot)
-      try? FileManager.default.removeItem(at: sessionStore)
-    }
-    let app = RielaCLIApplication()
-    let decoder = JSONDecoder()
-    decoder.dateDecodingStrategy = .iso8601
-    let events = [
-      ("first message", "raw-daily-1", "2026-06-22T09:00:00Z", "created"),
-      ("second message", "raw-daily-2", "2026-06-22T10:00:00Z", "updated")
-    ]
-    var summaryRecordIds: [Int64] = []
-
-    for (text, eventId, receivedAt, expectedAction) in events {
-      let result = await app.run(WorkflowRunCLI.workflowRunArgumentsPrefix + [
-        workflowName,
-        WorkflowRunCLI.workflowDefinitionDirFlag, examplesRoot.path,
-        WorkflowRunCLI.mockScenarioFlag, scenario.path,
-        WorkflowRunCLI.sessionStoreFlag, sessionStore.path,
-        WorkflowRunCLI.outputFlag, WorkflowRunCLI.jsonOutputFormat,
-        "--variables", RawAndDailySummaryMemoryMock.variables(
-          text: text,
-          eventId: eventId,
-          receivedAt: receivedAt,
-          memoryRoot: memoryRoot.path
-        )
-      ])
-
-      XCTAssertEqual(result.exitCode, .success, "\(eventId): \(result.stderr)\n\(result.stdout)")
-      let payload = try decoder.decode(WorkflowRunResult.self, from: Data(result.stdout.utf8))
-      XCTAssertEqual(payload.status, .completed, eventId)
-      XCTAssertEqual(payload.rootOutput?["summaryAction"], .string(expectedAction), eventId)
-      if let exact = payload.rootOutput?["summaryRecordId"]?.asInt64 {
-        summaryRecordIds.append(exact)
-      } else {
-        XCTFail("\(eventId): missing summaryRecordId")
-      }
-    }
-
-    XCTAssertEqual(Set(summaryRecordIds).count, 1)
-    let store = RielaMemoryStore(rootDirectory: memoryRoot.path)
-    let rawRecords = try store.search(
-      memoryId: "raw-chat-log",
-      options: MemorySearchOptions(workflowId: workflowName, sortOrder: .registeredAsc, limit: 10)
-    )
-    let summaryRecords = try store.search(
-      memoryId: "daily-chat-summary",
-      options: MemorySearchOptions(workflowId: workflowName, tags: ["summary:telegram:chat-1:2026-06-22"], limit: 10)
-    )
-
-    XCTAssertEqual(rawRecords.count, 2)
-    XCTAssertEqual(summaryRecords.count, 1)
-    XCTAssertTrue(FileManager.default.fileExists(atPath: try store.databasePath(memoryId: "raw-chat-log")))
-    XCTAssertTrue(FileManager.default.fileExists(atPath: try store.databasePath(memoryId: "daily-chat-summary")))
-    XCTAssertEqual(memoryNumber(objectPayload(summaryRecords[0].payload)?["rawRecordCount"]), 2)
-    XCTAssertTrue(memoryString(objectPayload(summaryRecords[0].payload)?["summary"])?.contains("first message") == true)
-    XCTAssertTrue(memoryString(objectPayload(summaryRecords[0].payload)?["summary"])?.contains("second message") == true)
-    XCTAssertEqual(try store.metadata(memoryId: "raw-chat-log")?.purpose, "save every incoming chat event as raw evidence")
-    XCTAssertEqual(
-      try store.metadata(memoryId: "daily-chat-summary")?.purpose,
-      "save or update the compact daily summary for this conversation"
-    )
   }
 
   func testMatrixGatewayPayloadFixtureMatchesEventBinding() async throws {
@@ -795,7 +643,7 @@ final class RielaExampleParityTests: XCTestCase {
     }
   }
 
-  private func scenarioWithYuiMemoryEntry(
+  private func scenarioWithYuiNoteEntry(
     examplesRoot: URL,
     workflowName: String,
     outputDirectory: URL,
@@ -810,16 +658,16 @@ final class RielaExampleParityTests: XCTestCase {
       var yuiPayload = yuiNode["payload"] as? [String: Any] else {
       throw XCTSkip("scenario is not object-shaped: \(workflowName)")
     }
-    yuiPayload["memoryEntries"] = [[
+    yuiPayload["noteEntries"] = [[
       "kind": "user-instruction",
       "importance": "medium",
-      "source": "memory-regression",
+      "source": "note-context-regression",
       "content": marker
     ]]
     yuiNode["payload"] = yuiPayload
     scenario["yui-codex"] = yuiNode
     try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
-    let outputPath = outputDirectory.appendingPathComponent("mock-scenario-with-memory.json")
+    let outputPath = outputDirectory.appendingPathComponent("mock-scenario-with-note-context.json")
     let outputData = try JSONSerialization.data(withJSONObject: scenario, options: [.prettyPrinted, .sortedKeys])
     try outputData.write(to: outputPath)
     return outputPath
@@ -837,27 +685,6 @@ final class RielaExampleParityTests: XCTestCase {
       return nil
     }
     return Int(exactly: int64)
-  }
-
-  private func objectPayload(_ value: MemoryJSONValue) -> [String: MemoryJSONValue]? {
-    guard case let .object(object) = value else {
-      return nil
-    }
-    return object
-  }
-
-  private func memoryString(_ value: MemoryJSONValue?) -> String? {
-    guard case let .string(string)? = value else {
-      return nil
-    }
-    return string
-  }
-
-  private func memoryNumber(_ value: MemoryJSONValue?) -> Int? {
-    guard case let .number(number)? = value, number.rounded() == number else {
-      return nil
-    }
-    return Int(number)
   }
 
   private func repositoryRoot() -> URL {

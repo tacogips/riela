@@ -6,24 +6,6 @@ import RielaNoteDispatch
 
 private let noteAddonDefaultMaxAttachmentBytes = InlineWorkflowAddonAttachmentProjector.maxAttachmentBytes
 private let noteAddonDefaultMaxPageCount = 500
-
-enum BuiltinNoteAddon: String {
-  case create = "riela/note-create"
-  case update = "riela/note-update"
-  case get = "riela/note-get"
-  case search = "riela/note-search"
-  case graphNeighbors = "riela/note-graph-neighbors"
-  case tagApply = "riela/note-tag-apply"
-  case attachFile = "riela/note-attach-file"
-  case graphQLDocument = "riela/note-graphql-document"
-  case commentAdd = "riela/note-comment-add"
-  case notebookIngestPages = "riela/notebook-ingest-pages"
-  case conversationSave = "riela/note-conversation-save"
-  case kanbanTaskCreate = "riela/note-kanban-task-create"
-  case kanbanMove = "riela/note-kanban-move"
-  case kanbanBoard = "riela/note-kanban-board"
-}
-
 extension BuiltinWorkflowAddonResolver {
   func executeNoteAddon(
     _ input: WorkflowAddonExecutionInput,
@@ -31,6 +13,16 @@ extension BuiltinWorkflowAddonResolver {
   ) async throws -> AdapterExecutionOutput {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
+    }
+    if operation == .personaContextRead || operation == .personaContextWrite,
+       let legacyKey = legacyPersonaMemoryConfigKeys.first(where: { input.addon.config?[$0] != nil }) {
+      throw noteAddonInvalidInput("\(input.addon.name) does not accept legacy memory configuration '\(legacyKey)'")
+    }
+    if operation == .memorySave || operation == .memoryLoad {
+      let allowedKeys = operation == .memorySave ? noteMemorySaveConfigKeys : noteMemoryLoadConfigKeys
+      if let unsupportedKey = input.addon.config?.keys.sorted().first(where: { !allowedKeys.contains($0) }) {
+        throw noteAddonInvalidInput("\(input.addon.name) does not support config key '\(unsupportedKey)'")
+      }
     }
 
     let context = try NoteAddonContext(input: input, environment: environment)
@@ -64,6 +56,14 @@ extension BuiltinWorkflowAddonResolver {
       candidate = try kanbanMove(context)
     case .kanbanBoard:
       candidate = try kanbanBoard(context)
+    case .memorySave:
+      candidate = try saveNoteMemory(context)
+    case .memoryLoad:
+      candidate = try loadNoteMemory(context)
+    case .personaContextRead:
+      candidate = try readPersonaContext(context)
+    case .personaContextWrite:
+      candidate = try writePersonaContext(context)
     }
 
     var payload: JSONObject = [
@@ -78,17 +78,25 @@ extension BuiltinWorkflowAddonResolver {
     for (key, value) in candidate {
       payload[key] = value
     }
+    var when: [String: Bool] = ["always": true]
+    if operation == .personaContextWrite {
+      for key in ["handoff_yui", "handoff_mika", "handoff_rina"] {
+        if case let .bool(enabled)? = candidate[key] {
+          when[key] = enabled
+        }
+      }
+    }
     return AdapterExecutionOutput(
       provider: "riela-builtin-addon",
       model: input.addon.name,
       promptText: "",
       completionPassed: true,
+      when: when,
       payload: payload
     )
   }
 }
-
-private struct NoteAddonContext {
+struct NoteAddonContext {
   var input: WorkflowAddonExecutionInput
   var config: JSONObject
   var variables: JSONObject
@@ -380,7 +388,7 @@ private func ingestNotebookPages(_ context: NoteAddonContext) throws -> JSONObje
     pages: pages.map { page in
       NotePageDraft(
         bodyMarkdown: page.bodyMarkdown,
-        readOnly: page.readOnly,
+        readOnly: false,
         tags: page.tags,
         metaJSON: pageMetaJSON(page),
         noteNumber: page.number
@@ -390,17 +398,33 @@ private func ingestNotebookPages(_ context: NoteAddonContext) throws -> JSONObje
     assignedBy: context.string("assignedBy") ?? "riela-note-ingest",
     originatingActionId: context.string("originatingActionId", "actionId")
   )
-  let sourceDocument = try attachSourceDocument(context: context, notebookId: result.notebook.notebookId)
-  let pageImages = try attachPageImages(context: context, pages: pages, notes: result.notes)
-  return [
-    "notebookId": .string(result.notebook.notebookId),
-    "notebook": notebookJSON(result.notebook),
-    "notes": .array(result.notes.map(noteJSON)),
-    "noteIds": .array(result.notes.map { .string($0.noteId) }),
-    "pageCount": .number(Double(result.notes.count)),
-    "sourceDocument": sourceDocument.map(notebookFileAttachmentJSON) ?? .null,
-    "pageImages": .array(pageImages.map(noteFileAttachmentJSON))
-  ]
+  do {
+    let sourceDocument = try attachSourceDocument(context: context, notebookId: result.notebook.notebookId)
+    let pageImages = try attachPageImages(context: context, pages: pages, notes: result.notes)
+    let notes = try applyIngestedPageReadOnlyState(
+      pages: pages,
+      notes: result.notes,
+      service: context.service
+    )
+    return [
+      "notebookId": .string(result.notebook.notebookId),
+      "notebook": notebookJSON(result.notebook),
+      "notes": .array(notes.map(noteJSON)),
+      "noteIds": .array(notes.map { JSONValue.string($0.noteId) }),
+      "pageCount": .number(Double(notes.count)),
+      "sourceDocument": sourceDocument.map(notebookFileAttachmentJSON) ?? .null,
+      "pageImages": .array(pageImages.map(noteFileAttachmentJSON))
+    ]
+  } catch let ingestionError {
+    do {
+      _ = try applyIngestedPageReadOnlyState(pages: pages, notes: result.notes, service: context.service)
+    } catch {
+      throw noteAddonInvalidInput(
+        "notebook ingestion failed and page read-only recovery failed: \(ingestionError); \(error)"
+      )
+    }
+    throw ingestionError
+  }
 }
 
 private func saveNoteConversation(_ context: NoteAddonContext) throws -> JSONObject {
@@ -416,225 +440,6 @@ private func saveNoteConversation(_ context: NoteAddonContext) throws -> JSONObj
     "notes": .array(saved.notes.map(noteJSON)),
     "noteIds": .array(saved.notes.map { .string($0.noteId) })
   ]
-}
-
-private struct NoteAttachmentData {
-  var data: Data
-  var mediaType: String
-  var filename: String?
-}
-
-private enum SourceAttachmentInput {
-  case inline(NoteAttachmentData)
-  case localFile(url: URL, mediaType: String, filename: String?)
-}
-
-private func noteAttachmentData(
-  context: NoteAddonContext,
-  input: WorkflowAddonExecutionInput
-) throws -> NoteAttachmentData {
-  let field = context.string("attachmentField", "attachment")
-  let projected = field.flatMap { input.attachments[$0] } ?? (input.attachments.count == 1 ? input.attachments.values.first : nil)
-  if let projected {
-    let data: Data
-    if let contentBase64 = projected.contentBase64, let decoded = Data(base64Encoded: contentBase64) {
-      data = decoded
-    } else if let contentText = projected.contentText {
-      data = Data(contentText.utf8)
-    } else {
-      throw noteAddonInvalidInput("\(input.addon.name) attachment has no inline content")
-    }
-    try validateNoteAddonAttachmentSize(data.count, maxBytes: context.maxAttachmentBytes, label: "attachment")
-    return NoteAttachmentData(data: data, mediaType: projected.mediaType, filename: projected.filename)
-  }
-  if let filePath = context.string("filePath", "path", "localPath") {
-    let url = try localFileReferenceURL(filePath, context: context)
-    return NoteAttachmentData(
-      data: try boundedLocalFileData(url: url, context: context),
-      mediaType: context.string("mediaType", "contentType") ?? "application/octet-stream",
-      filename: context.string("filename", "fileName") ?? url.lastPathComponent
-    )
-  }
-  let text = try context.requiredString("contentText", "text", "body", fieldName: "attachment content")
-  try validateNoteAddonAttachmentSize(Data(text.utf8).count, maxBytes: context.maxAttachmentBytes, label: "attachment content")
-  return NoteAttachmentData(
-    data: Data(text.utf8),
-    mediaType: context.string("mediaType", "contentType") ?? "text/plain",
-    filename: context.string("filename", "fileName")
-  )
-}
-
-private func sourceAttachmentInput(ref: String, context: NoteAddonContext) throws -> SourceAttachmentInput? {
-  if let attachment = context.input.attachments[ref] {
-    return .inline(try noteAttachmentData(attachment, addonName: context.input.addon.name, maxBytes: context.maxAttachmentBytes))
-  }
-  guard isLocalFileReference(ref) else {
-    return nil
-  }
-  let url = try localFileReferenceURL(ref, context: context)
-  guard FileManager.default.fileExists(atPath: url.path) else {
-    return nil
-  }
-  _ = try localFileSize(url: url, context: context)
-  return .localFile(
-    url: url,
-    mediaType: mediaType(for: url),
-    filename: url.lastPathComponent
-  )
-}
-
-private func noteAttachmentData(
-  _ attachment: WorkflowAddonAttachmentValue,
-  addonName: String,
-  maxBytes: Int
-) throws -> NoteAttachmentData {
-  if let contentBase64 = attachment.contentBase64, let decoded = Data(base64Encoded: contentBase64) {
-    try validateNoteAddonAttachmentSize(decoded.count, maxBytes: maxBytes, label: "attachment")
-    return NoteAttachmentData(data: decoded, mediaType: attachment.mediaType, filename: attachment.filename)
-  }
-  if let contentText = attachment.contentText {
-    let data = Data(contentText.utf8)
-    try validateNoteAddonAttachmentSize(data.count, maxBytes: maxBytes, label: "attachment")
-    return NoteAttachmentData(data: data, mediaType: attachment.mediaType, filename: attachment.filename)
-  }
-  throw noteAddonInvalidInput("\(addonName) attachment has no inline content")
-}
-
-private func isLocalFileReference(_ ref: String) -> Bool {
-  if ref.hasPrefix("s3://") || ref.hasPrefix("http://") || ref.hasPrefix("https://") {
-    return false
-  }
-  return ref.hasPrefix("file://") || ref.hasPrefix("/") || ref.hasPrefix("./") || ref.hasPrefix("../")
-}
-
-private func fileReferenceURL(_ ref: String, relativeTo root: URL) -> URL {
-  if ref.hasPrefix("file://"), let url = URL(string: ref), url.isFileURL {
-    return url.standardizedFileURL
-  }
-  if ref.hasPrefix("/") {
-    return URL(fileURLWithPath: ref).standardizedFileURL
-  }
-  return URL(fileURLWithPath: ref, relativeTo: root).standardizedFileURL
-}
-
-private func localFileReferenceURL(_ ref: String, context: NoteAddonContext) throws -> URL {
-  let root = context.localFileRoot
-  let url = fileReferenceURL(ref, relativeTo: root)
-  guard context.allowsLocalFileReferencesOutsideRoot || isDescendant(url, of: root) else {
-    throw noteAddonInvalidInput("\(context.input.addon.name) local file reference is outside allowed root: \(ref)")
-  }
-  return url
-}
-
-private func isDescendant(_ url: URL, of root: URL) -> Bool {
-  let path = url.standardizedFileURL.path
-  let rootPath = root.standardizedFileURL.path
-  return path == rootPath || path.hasPrefix(rootPath.hasSuffix("/") ? rootPath : rootPath + "/")
-}
-
-private func boundedLocalFileData(url: URL, context: NoteAddonContext) throws -> Data {
-  _ = try localFileSize(url: url, context: context)
-  let data = try Data(contentsOf: url)
-  try validateNoteAddonAttachmentSize(data.count, maxBytes: context.maxAttachmentBytes, label: url.path)
-  return data
-}
-
-private func localFileSize(url: URL, context: NoteAddonContext) throws -> Int {
-  let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
-  guard values.isRegularFile == true else {
-    throw noteAddonInvalidInput("\(context.input.addon.name) local file reference is not a regular file: \(url.path)")
-  }
-  let size = values.fileSize ?? 0
-  try validateNoteAddonAttachmentSize(size, maxBytes: context.maxAttachmentBytes, label: url.path)
-  return size
-}
-
-private func validateNoteAddonAttachmentSize(_ size: Int, maxBytes: Int, label: String) throws {
-  guard size <= maxBytes else {
-    throw noteAddonInvalidInput("note attachment \(label) is \(size) bytes; max \(maxBytes)")
-  }
-}
-
-private func mediaType(for url: URL) -> String {
-  switch url.pathExtension.lowercased() {
-  case "pdf":
-    return "application/pdf"
-  case "png":
-    return "image/png"
-  case "jpg", "jpeg":
-    return "image/jpeg"
-  case "webp":
-    return "image/webp"
-  case "txt", "md":
-    return "text/plain"
-  default:
-    return "application/octet-stream"
-  }
-}
-
-private struct NotePageInput {
-  var bodyMarkdown: String
-  var readOnly: Bool
-  var tags: [NoteTagInput]
-  var metaJSON: String?
-  var number: Int?
-  var pageImageRef: String?
-}
-
-private func notePageInputs(_ context: NoteAddonContext) throws -> [NotePageInput] {
-  let value = context.value("pages")
-  guard case let .array(values)? = value, !values.isEmpty else {
-    throw noteAddonInvalidInput("riela/notebook-ingest-pages pages must be a non-empty array")
-  }
-  guard values.count <= context.maxPageCount else {
-    throw noteAddonInvalidInput("riela/notebook-ingest-pages pages has \(values.count) items; max \(context.maxPageCount)")
-  }
-  return try values.enumerated().map { index, value in
-    guard case let .object(page) = value else {
-      throw noteAddonInvalidInput("riela/notebook-ingest-pages pages[\(index)] must be an object")
-    }
-    guard let body = nonEmptyString(page["bodyMarkdown"])
-      ?? nonEmptyString(page["body"])
-      ?? nonEmptyString(page["markdown"])
-      ?? nonEmptyString(page["text"]) else {
-      throw noteAddonInvalidInput("riela/notebook-ingest-pages pages[\(index)].bodyMarkdown is required")
-    }
-    let title = nonEmptyString(page["title"])
-    let bodyMarkdown = title == nil || body.hasPrefix("# ") ? body : "# \(title ?? "")\n\n\(body)"
-    return NotePageInput(
-      bodyMarkdown: bodyMarkdown,
-      readOnly: boolValue(page["readOnly"]) ?? true,
-      tags: try noteTags(page["tags"]),
-      metaJSON: noteMetaJSONString(page["meta"], page["metaJSON"]),
-      number: intValue(page["number"]) ?? intValue(page["pageNumber"]),
-      pageImageRef: nonEmptyString(page["pageImageRef"]) ?? nonEmptyString(page["imageRef"])
-    )
-  }
-}
-
-private func pageMetaJSON(_ page: NotePageInput) -> String? {
-  var meta = page.metaJSON.flatMap(jsonObjectString)
-  if page.number == nil, page.pageImageRef == nil {
-    return page.metaJSON
-  }
-  if meta == nil {
-    meta = [:]
-  }
-  if let number = page.number {
-    meta?["number"] = .number(Double(number))
-  }
-  if let pageImageRef = page.pageImageRef {
-    meta?["pageImageRef"] = .string(pageImageRef)
-  }
-  return JSONValue.object(meta ?? [:]).compactJSONStringOrEmpty()
-}
-
-private func jsonObjectString(_ string: String) -> JSONObject? {
-  guard let data = string.data(using: .utf8),
-        case let .object(object) = try? JSONDecoder().decode(JSONValue.self, from: data) else {
-    return nil
-  }
-  return object
 }
 
 private func attachSourceDocument(
@@ -757,7 +562,7 @@ private func noteTagsRequired(_ value: JSONValue?) throws -> [NoteTagInput] {
   return tags
 }
 
-private func noteTags(_ value: JSONValue?) throws -> [NoteTagInput] {
+func noteTags(_ value: JSONValue?) throws -> [NoteTagInput] {
   guard let value else {
     return []
   }
@@ -819,10 +624,9 @@ private func noteGraphQLVariables(_ context: NoteAddonContext) throws -> JSONObj
   return variables
 }
 
-private func noteAddonInvalidInput(_ message: String) -> AdapterExecutionError {
+func noteAddonInvalidInput(_ message: String) -> AdapterExecutionError {
   AdapterExecutionError(.invalidInput, message)
 }
-
 private func noteIntValue(_ value: JSONValue?, variables: JSONObject) -> Int? {
   if let int = intValue(value) {
     return int
@@ -849,7 +653,7 @@ private func noteObject(_ value: JSONValue?) -> JSONObject {
   return object
 }
 
-private func noteMetaJSONString(_ values: JSONValue?...) -> String? {
+func noteMetaJSONString(_ values: JSONValue?...) -> String? {
   for value in values {
     guard let value else {
       continue
@@ -895,7 +699,7 @@ private func notebookJSON(_ notebook: Notebook) -> JSONValue {
   ])
 }
 
-private func noteJSON(_ note: Note) -> JSONValue {
+func noteJSON(_ note: Note) -> JSONValue {
   .object([
     "noteId": .string(note.noteId),
     "notebookId": .string(note.notebookId),
@@ -1073,7 +877,7 @@ private func kanbanTaskCreate(_ context: NoteAddonContext) throws -> JSONObject 
       let created = try context.service.createNotebook(
         title: title,
         kindTagName: nil,
-        metaJSON: String(decoding: metaData, as: UTF8.self),
+        metaJSON: String(data: metaData, encoding: .utf8),
         originatingActionId: nil
       )
       _ = try context.service.applyNotebookTags(

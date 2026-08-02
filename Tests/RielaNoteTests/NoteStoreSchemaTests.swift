@@ -64,6 +64,7 @@ final class NoteStoreSchemaTests: NoteTestCase {
         [
           "notebook-kind:agent-conversation",
           "notebook-kind:imported-material",
+          "notebook-kind:system-memory",
           "notebook-kind:user-memo"
         ]
       )
@@ -72,7 +73,7 @@ final class NoteStoreSchemaTests: NoteTestCase {
       XCTAssertEqual(autoActions.map { $0["trigger"] }, ["note-created", "note-updated"])
       XCTAssertTrue(autoActions.allSatisfy { $0["workflow_id"] == NoteStoreSchema.autoTaggingWorkflowId })
       XCTAssertEqual(try database.query("PRAGMA foreign_keys").first?["foreign_keys"], "1")
-      XCTAssertEqual(try schemaVersions(in: database), [1, 2, 3, 4, NoteStoreSchema.currentVersion])
+      XCTAssertEqual(try schemaVersions(in: database), [1, 2, 3, 4, 5, NoteStoreSchema.currentVersion])
 
       try database.requireFTS5Available()
       try database.requireFTS5TrigramAvailable()
@@ -109,7 +110,7 @@ final class NoteStoreSchemaTests: NoteTestCase {
     try NoteStoreSchema.prepare(on: driver)
 
     try driver.withDatabase { database in
-      XCTAssertEqual(try schemaVersions(in: database), [1, 2, 3, 4, NoteStoreSchema.currentVersion])
+      XCTAssertEqual(try schemaVersions(in: database), [1, 2, 3, 4, 5, NoteStoreSchema.currentVersion])
       let ftsSchema = try database.query(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'note_fts' LIMIT 1"
       ).first?["sql"]
@@ -135,6 +136,188 @@ final class NoteStoreSchemaTests: NoteTestCase {
     }
     try second.withDatabase { database in
       XCTAssertTrue(try database.tableExists("notes"))
+    }
+  }
+
+  func testPrepareMigratesV5NotebookRowsToV6WithoutDataLoss() throws {
+    let driver = try makeNoteDriver()
+    let service = try NoteService(driver: driver)
+    let notebook = try service.createNotebook(
+      title: "Existing notebook",
+      metaJSON: #"{"source":"v5-fixture"}"#
+    )
+    let sourceNote = try service.createNote(
+      notebookId: notebook.notebookId,
+      title: "Existing note",
+      bodyMarkdown: "Existing body",
+      readOnly: true,
+      tags: [NoteTagInput(name: "v5-tag")],
+      provenance: .human,
+      assignedBy: "v5-fixture",
+      metaJSON: #"{"ordinal":1}"#
+    )
+    let relatedNote = try service.createNote(
+      notebookId: notebook.notebookId,
+      bodyMarkdown: "Related body",
+      metaJSON: #"{"ordinal":2}"#
+    )
+    let link = try service.linkNotes(
+      from: sourceNote.noteId,
+      to: relatedNote.noteId,
+      linkKind: "supports",
+      provenance: .human
+    )
+    let noteFile = try service.attachFile(
+      noteId: relatedNote.noteId,
+      data: Data("note file".utf8),
+      role: .related,
+      mediaType: "text/plain",
+      originalFilename: "note.txt",
+      position: 4
+    )
+    let notebookFile = try service.attachNotebookFile(
+      notebookId: notebook.notebookId,
+      data: Data("notebook file".utf8),
+      role: .sourceDocument,
+      mediaType: "text/plain",
+      originalFilename: "source.txt"
+    )
+
+    try driver.withDatabase { database in
+      try database.execute(
+        "UPDATE notebooks SET status = 'progress' WHERE notebook_id = ?",
+        bindings: [.text(notebook.notebookId)]
+      )
+      // Fixture setup only: remove the additive v6 column and marker so the
+      // populated current-schema store represents the exact v5 input shape.
+      try database.execute("ALTER TABLE notebooks DROP COLUMN read_only")
+      try database.execute("DELETE FROM note_schema_version WHERE version = 6")
+      XCTAssertFalse(try database.query("PRAGMA table_info(notebooks)").contains { $0["name"] == "read_only" })
+      XCTAssertEqual(try schemaVersions(in: database), [1, 2, 3, 4, 5])
+    }
+
+    try NoteStoreSchema.prepare(on: driver)
+
+    try driver.withDatabase { database in
+      let notebookRow = try XCTUnwrap(
+        database.query(
+          """
+          SELECT notebook_id, title, status, read_only, json(meta_json) AS meta_json
+          FROM notebooks WHERE notebook_id = ?
+          """,
+          bindings: [.text(notebook.notebookId)]
+        ).first
+      )
+      XCTAssertEqual(notebookRow["notebook_id"], notebook.notebookId)
+      XCTAssertEqual(notebookRow["title"], "Existing notebook")
+      XCTAssertEqual(notebookRow["status"], "progress")
+      XCTAssertEqual(notebookRow["read_only"], "0")
+      XCTAssertEqual(notebookRow["meta_json"], #"{"source":"v5-fixture"}"#)
+
+      let noteRows = try database.query(
+        """
+        SELECT note_id, notebook_id, note_number, title, title_source, body_markdown,
+          read_only, json(meta_json) AS meta_json
+        FROM notes WHERE notebook_id = ? ORDER BY note_number
+        """,
+        bindings: [.text(notebook.notebookId)]
+      )
+      XCTAssertEqual(noteRows.map { $0["note_id"] }, [sourceNote.noteId, relatedNote.noteId])
+      XCTAssertEqual(noteRows.map { $0["notebook_id"] }, [notebook.notebookId, notebook.notebookId])
+      XCTAssertEqual(noteRows.map { $0["body_markdown"] }, ["Existing body", "Related body"])
+      XCTAssertEqual(noteRows.map { $0["read_only"] }, ["1", "0"])
+      XCTAssertEqual(noteRows.map { $0["meta_json"] }, [#"{"ordinal":1}"#, #"{"ordinal":2}"#])
+
+      let tagNames = try database.query(
+        """
+        SELECT tags.name FROM note_tags
+        INNER JOIN tags ON tags.tag_id = note_tags.tag_id
+        WHERE note_tags.note_id = ? ORDER BY tags.name
+        """,
+        bindings: [.text(sourceNote.noteId)]
+      ).compactMap { $0["name"] }
+      XCTAssertEqual(tagNames, ["v5-tag"])
+
+      let linkRow = try XCTUnwrap(database.query(
+        """
+        SELECT from_note_id, to_note_id, link_kind, provenance FROM note_links
+        WHERE from_note_id = ? AND to_note_id = ?
+        """,
+        bindings: [.text(sourceNote.noteId), .text(relatedNote.noteId)]
+      ).first)
+      XCTAssertEqual(linkRow["from_note_id"], link.fromNoteId)
+      XCTAssertEqual(linkRow["to_note_id"], link.toNoteId)
+      XCTAssertEqual(linkRow["link_kind"], "supports")
+      XCTAssertEqual(linkRow["provenance"], "human")
+
+      let fileIds = try database.query(
+        "SELECT file_id FROM files WHERE file_id IN (?, ?) ORDER BY file_id",
+        bindings: [.text(noteFile.file.fileId), .text(notebookFile.file.fileId)]
+      ).compactMap { $0["file_id"] }
+      XCTAssertEqual(fileIds, [noteFile.file.fileId, notebookFile.file.fileId].sorted())
+      let noteFileRow = try XCTUnwrap(database.query(
+        "SELECT role, position FROM note_files WHERE note_id = ? AND file_id = ?",
+        bindings: [.text(relatedNote.noteId), .text(noteFile.file.fileId)]
+      ).first)
+      XCTAssertEqual(noteFileRow["role"], "related")
+      XCTAssertEqual(noteFileRow["position"], "4")
+      let notebookFileRow = try XCTUnwrap(database.query(
+        "SELECT role FROM notebook_files WHERE notebook_id = ? AND file_id = ?",
+        bindings: [.text(notebook.notebookId), .text(notebookFile.file.fileId)]
+      ).first)
+      XCTAssertEqual(notebookFileRow["role"], "source-document")
+      XCTAssertEqual(try schemaVersions(in: database), [1, 2, 3, 4, 5, 6])
+    }
+    let filesRoot = URL(fileURLWithPath: driver.databasePath)
+      .deletingLastPathComponent()
+      .appendingPathComponent("files", isDirectory: true)
+    XCTAssertTrue(
+      FileManager.default.fileExists(
+        atPath: filesRoot.appendingPathComponent(try XCTUnwrap(noteFile.file.localPath)).path
+      )
+    )
+    XCTAssertTrue(
+      FileManager.default.fileExists(
+        atPath: filesRoot.appendingPathComponent(try XCTUnwrap(notebookFile.file.localPath)).path
+      )
+    )
+  }
+
+  func testPrepareRejectsV5UserTagCollisionForSystemMemoryIdentity() throws {
+    let driver = try makeNoteDriver()
+    let service = try NoteService(driver: driver)
+    let canonical = try service.systemMemoryNotebook()
+    try driver.withDatabase { database in
+      try database.execute(
+        "UPDATE tags SET is_system = 0 WHERE name = ?",
+        bindings: [.text(NoteStoreSchema.systemMemoryNotebookKindTag)]
+      )
+      try database.execute(
+        """
+        UPDATE notebook_tags
+        SET provenance = 'human', assigned_by = 'v5-user', deletable = 1
+        WHERE notebook_id = ?
+        """,
+        bindings: [.text(canonical.notebookId)]
+      )
+      try database.execute("ALTER TABLE notebooks DROP COLUMN read_only")
+      try database.execute("DELETE FROM note_schema_version WHERE version = 6")
+    }
+
+    XCTAssertThrowsError(try NoteStoreSchema.prepare(on: driver)) { error in
+      XCTAssertEqual(
+        error as? NoteStoreSchemaError,
+        .systemTagCollision(name: NoteStoreSchema.systemMemoryNotebookKindTag)
+      )
+    }
+    try driver.withDatabase { database in
+      XCTAssertEqual(try schemaVersions(in: database), [1, 2, 3, 4, 5])
+      XCTAssertFalse(try database.query("PRAGMA table_info(notebooks)").contains { $0["name"] == "read_only" })
+      let tagRow = try XCTUnwrap(database.query(
+        "SELECT is_system FROM tags WHERE name = ?",
+        bindings: [.text(NoteStoreSchema.systemMemoryNotebookKindTag)]
+      ).first)
+      XCTAssertEqual(tagRow["is_system"], "0")
     }
   }
 

@@ -64,17 +64,6 @@ extension DeterministicWorkflowRunner {
     variables["workflowDescription"] = .string(workflow.description)
     variables["nodeId"] = .string(step.id)
     variables["nodeKind"] = .string(step.role?.rawValue ?? "task")
-    let nodeMemories = effectiveNodeMemories(workflow: workflow, step: step, payload: payload)
-    variables["availableMemories"] = .object([
-      "workflow": .array((workflow.memories ?? []).map(memoryJSON)),
-      "node": .array(nodeMemories.map(memoryJSON))
-    ])
-    variables["memoryCommandHelp"] = .string(memoryCommandHelp(
-      workflowId: workflow.workflowId,
-      nodeId: step.nodeId,
-      workflowMemories: workflow.memories ?? [],
-      nodeMemories: nodeMemories
-    ))
     return variables
   }
 
@@ -118,8 +107,7 @@ extension DeterministicWorkflowRunner {
     let systemPromptText = (
       renderedSystemPromptTemplates + [
       runtimeVariablesPrompt(variables: variables),
-      priorReviewFeedbackPrompt(variables: variables),
-      memoryGuidance(variables: variables)
+      priorReviewFeedbackPrompt(variables: variables)
       ]
     )
       .compactMap { template in

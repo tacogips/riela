@@ -16,7 +16,11 @@ type KanbanStatusSetQueryPayload { result: ControlPlaneResult!, value: KanbanSta
 type KanbanStatusSetsQueryPayload { result: ControlPlaneResult!, value: [KanbanStatusSet!] }
 input KanbanStatusInput { statusId: String, name: String!, category: KanbanStatusCategory! }
 input KanbanStatusReassignmentInput { removedName: String!, reassignTo: String! }
-type Notebook { notebookId: String!, title: String!, progress: String!, createdAt: String!, updatedAt: String!, metaJSON: String, tags: [NoteTagAssignment!]!, firstNotePreview: String, noteCount: Int }
+type Notebook {
+  notebookId: String!, title: String!, progress: String!, readOnly: Boolean!
+  createdAt: String!, updatedAt: String!, metaJSON: String
+  tags: [NoteTagAssignment!]!, firstNotePreview: String, noteCount: Int
+}
 type Note { noteId: String!, notebookId: String!, noteNumber: Int!, title: String, bodyMarkdown: String!, readOnly: Boolean!, createdAt: String!, updatedAt: String!, metaJSON: String, tags: [NoteTagAssignment!]! }
 type NoteFile {
   fileId: String!

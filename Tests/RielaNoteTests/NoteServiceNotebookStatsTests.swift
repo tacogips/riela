@@ -12,10 +12,11 @@ final class NoteServiceNotebookStatsTests: NoteTestCase {
       ]
     )
 
-    let listed = try service.listNotebooks()
-    XCTAssertEqual(listed.first?.notebookId, result.notebook.notebookId)
-    XCTAssertEqual(listed.first?.noteCount, 2)
-    XCTAssertEqual(listed.first?.firstNotePreview?.contains("First body"), true)
+    let listed = try XCTUnwrap(
+      service.listNotebooks().first { $0.notebookId == result.notebook.notebookId }
+    )
+    XCTAssertEqual(listed.noteCount, 2)
+    XCTAssertEqual(listed.firstNotePreview?.contains("First body"), true)
 
     let fetched = try service.getNotebook(result.notebook.notebookId)
     XCTAssertEqual(fetched.noteCount, 2)
@@ -27,6 +28,9 @@ final class NoteServiceNotebookStatsTests: NoteTestCase {
     let notebook = try service.createNotebook(title: "Empty Notebook")
 
     XCTAssertEqual(notebook.noteCount, 0)
-    XCTAssertEqual(try service.listNotebooks().first?.noteCount, 0)
+    let listed = try XCTUnwrap(
+      service.listNotebooks().first { $0.notebookId == notebook.notebookId }
+    )
+    XCTAssertEqual(listed.noteCount, 0)
   }
 }

@@ -84,7 +84,12 @@ final class AddonExecutionContractsTests: XCTestCase {
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-gateway-cache-prune", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/note-create", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/notebook-ingest-pages", version: nil))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/note-memory-save", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/note-memory-load", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/note-persona-context-read", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/note-persona-context-write", version: "1"))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/note-create", version: "2"))
+    XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/note-memory-save", version: "2"))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/apple-note-get", version: "2"))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/apple-notification-post", version: "2"))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/apple-reminder-create", version: "2"))
@@ -161,6 +166,10 @@ final class AddonExecutionContractsTests: XCTestCase {
         "riela/note-comment-add",
         "riela/notebook-ingest-pages",
         "riela/note-conversation-save",
+        "riela/note-memory-save",
+        "riela/note-memory-load",
+        "riela/note-persona-context-read",
+        "riela/note-persona-context-write",
         "riela/note-kanban-task-create",
         "riela/note-kanban-move",
         "riela/note-kanban-board"

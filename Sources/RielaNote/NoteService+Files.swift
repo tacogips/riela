@@ -14,13 +14,13 @@ public extension NoteService {
     let fileStore = LocalNoteFileStore(noteRoot: noteRootPath())
     let fileId = makeNoteId(prefix: "file")
     try driver.withDatabase { database in
-      _ = try requireNote(noteId, in: database)
+      _ = try requireWritableNote(noteId, in: database)
     }
     let stored = try fileStore.store(data: data, fileId: fileId)
     do {
       return try driver.withDatabase { database in
         try database.transaction { db in
-          _ = try requireNote(noteId, in: db)
+          _ = try requireWritableNote(noteId, in: db)
           let record = try insertFileRecord(
             fileId: fileId,
             stored: stored,
@@ -68,13 +68,13 @@ public extension NoteService {
     let fileStore = LocalNoteFileStore(noteRoot: noteRootPath())
     let fileId = makeNoteId(prefix: "file")
     try driver.withDatabase { database in
-      _ = try requireNote(noteId, in: database)
+      _ = try requireWritableNote(noteId, in: database)
     }
     let stored = try fileStore.store(fileURL: fileURL, fileId: fileId)
     do {
       return try driver.withDatabase { database in
         try database.transaction { db in
-          _ = try requireNote(noteId, in: db)
+          _ = try requireWritableNote(noteId, in: db)
           let record = try insertFileRecord(
             fileId: fileId,
             stored: stored,
@@ -124,13 +124,13 @@ public extension NoteService {
     let fileStore = S3NoteFileStore(profile: s3Profile, httpClient: httpClient)
     let fileId = makeNoteId(prefix: "file")
     try driver.withDatabase { database in
-      _ = try requireNote(noteId, in: database)
+      _ = try requireWritableNote(noteId, in: database)
     }
     let stored = try fileStore.store(data: data, fileId: fileId)
     do {
       return try driver.withDatabase { database in
         try database.transaction { db in
-          _ = try requireNote(noteId, in: db)
+          _ = try requireWritableNote(noteId, in: db)
           let record = try insertFileRecord(
             fileId: fileId,
             stored: stored,
@@ -177,13 +177,13 @@ public extension NoteService {
     let fileStore = LocalNoteFileStore(noteRoot: noteRootPath())
     let fileId = makeNoteId(prefix: "file")
     try driver.withDatabase { database in
-      _ = try requireNotebook(notebookId, in: database)
+      _ = try requireWritableNotebook(notebookId, in: database)
     }
     let stored = try fileStore.store(data: data, fileId: fileId)
     do {
       return try driver.withDatabase { database in
         try database.transaction { db in
-          _ = try requireNotebook(notebookId, in: db)
+          _ = try requireWritableNotebook(notebookId, in: db)
           let record = try insertFileRecord(
             fileId: fileId,
             stored: stored,
@@ -224,13 +224,13 @@ public extension NoteService {
     let fileStore = LocalNoteFileStore(noteRoot: noteRootPath())
     let fileId = makeNoteId(prefix: "file")
     try driver.withDatabase { database in
-      _ = try requireNotebook(notebookId, in: database)
+      _ = try requireWritableNotebook(notebookId, in: database)
     }
     let stored = try fileStore.store(fileURL: fileURL, fileId: fileId)
     do {
       return try driver.withDatabase { database in
         try database.transaction { db in
-          _ = try requireNotebook(notebookId, in: db)
+          _ = try requireWritableNotebook(notebookId, in: db)
           let record = try insertFileRecord(
             fileId: fileId,
             stored: stored,
@@ -485,7 +485,7 @@ private func sweepUnreferencedLocalBlobs(
   return swept
 }
 
-private func insertFileRecord(
+func insertFileRecord(
   fileId: String,
   stored: StoredNoteFile,
   mediaType: String,
@@ -530,7 +530,7 @@ private func insertFileRecord(
   )
 }
 
-private func storedFileRecord(
+func storedFileRecord(
   fileId: String,
   stored: StoredNoteFile,
   mediaType: String,

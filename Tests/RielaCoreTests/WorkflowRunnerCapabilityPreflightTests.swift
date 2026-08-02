@@ -1,5 +1,4 @@
 import XCTest
-import RielaMemory
 @testable import RielaCore
 
 final class WorkflowRunnerCapabilityPreflightTests: XCTestCase {

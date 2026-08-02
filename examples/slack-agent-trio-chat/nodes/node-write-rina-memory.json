@@ -1,18 +1,16 @@
 {
   "id": "write-rina-memory",
   "modelFreeze": false,
-  "description": "Persist Rina Cursor memory entries proposed by the persona and pass through reply/handoff flags.",
+  "description": "Persist Rina Cursor note context entries proposed by the persona and pass through reply/handoff flags.",
   "addon": {
-    "name": "riela/chat-persona-memory-write",
+    "name": "riela/note-persona-context-write",
     "version": "1",
     "config": {
       "personaId": "rina",
-      "personaName": "Rina Cursor",
-      "memoryId": "persona-chat-memory"
+      "personaName": "Rina Cursor"
     }
   },
-  "memories": [{"id": "persona-chat-memory", "purpose": "persist Rina memory entries"}],
   "output": {
-    "description": "Return Rina Cursor replyText and handoff flags after writing any memoryEntries."
+    "description": "Return Rina Cursor replyText and handoff flags after writing any note context entries."
   }
 }

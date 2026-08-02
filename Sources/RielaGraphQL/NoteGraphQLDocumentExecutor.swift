@@ -245,6 +245,11 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting, GraphQLDocu
       return try await encodedJSONValue(service.noteFile(fileId: requiredString("fileId", variables: variables)))
     case "autoActions":
       return try await encodedJSONValue(service.autoActions())
+    case "setNotebookReadOnly":
+      return try await encodedJSONValue(service.setNotebookReadOnly(
+        notebookId: requiredString("notebookId", variables: variables),
+        readOnly: requiredBool("readOnly", variables: variables)
+      ))
     default:
       return try await executeMutation(fieldName: fieldName, request: request)
     }
@@ -568,6 +573,7 @@ let supportedNoteGraphQLFields: Set<String> = [
   "applyNotebookTags",
   "removeNotebookTag",
   "setNotebookProgress",
+  "setNotebookReadOnly",
   "createKanbanStatusSet",
   "updateKanbanStatusSet",
   "deleteKanbanStatusSet",
@@ -812,6 +818,7 @@ let noteGraphQLSelectionFields: [String: [String: String?]] = [
     "notebookId": nil,
     "title": nil,
     "progress": nil,
+    "readOnly": nil,
     "createdAt": nil,
     "updatedAt": nil,
     "metaJSON": nil,

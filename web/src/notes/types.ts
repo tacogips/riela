@@ -50,6 +50,7 @@ export interface Notebook {
   notebookId: string
   title: string
   progress: string
+  readOnly: boolean
   createdAt: string
   updatedAt: string
   tags: NoteTagAssignment[]

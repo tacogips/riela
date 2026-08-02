@@ -13,9 +13,12 @@ rg -n 'local-synapse|matrix|homeserver|accessTokenEnv|replyBots' examples/matrix
 
 If `examples/matrix-chat-reply/local-synapse/run-local-matrix-sample.sh` is present, use it as the deterministic smoke path. A live Element/browser check is optional unless the user specifically asks for a visible chat UI proof.
 
-For persona memory regression, verify:
+For the Note-backed persona-context regression, set an isolated
+`RIELA_NOTE_ROOT` and verify:
 
 - The incoming message reaches the Matrix source binding.
-- Persona memory read nodes run before reply generation.
-- Persona memory write/update nodes persist after reply generation.
+- `riela/note-persona-context-read` nodes run before reply generation.
+- `riela/note-persona-context-write` nodes persist notes after reply generation.
+- Stored notes belong to the `notebook-kind:system-memory` notebook and carry
+  the expected `persona:<id>` tag.
 - Rina can refer to context produced by Mika or the shared chat history.

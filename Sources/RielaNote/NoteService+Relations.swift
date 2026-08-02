@@ -98,7 +98,7 @@ public extension NoteService {
   ) throws -> Note {
     let result = try driver.withDatabase { database in
       try database.transaction { db in
-        _ = try requireNotebook(notebookId, in: db)
+        _ = try requireWritableNotebook(notebookId, in: db)
         let appendResult = try appendConversationTurnInDatabase(
           notebookId: notebookId,
           turn: turn,

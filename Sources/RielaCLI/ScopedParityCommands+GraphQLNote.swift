@@ -15,9 +15,11 @@ extension ScopedParityCommandRunner {
     let variables = try parsed.variables.map {
       try JSONReferenceLoader().object(from: $0, workingDirectory: workingDirectory)
     } ?? [:]
+    let runtimeEnvironment = CLIRuntimeEnvironment.mergedProcessEnvironment()
+    let runtimeHome = runtimeEnvironment["HOME"].flatMap { $0.isEmpty ? nil : $0 } ?? NSHomeDirectory()
     let noteRoot = parsed.noteRoot
-      ?? CLIRuntimeEnvironment.mergedProcessEnvironment()["RIELA_NOTE_ROOT"].flatMap { $0.isEmpty ? nil : $0 }
-      ?? "\(NSHomeDirectory())/.riela/note"
+      ?? runtimeEnvironment["RIELA_NOTE_ROOT"].flatMap { $0.isEmpty ? nil : $0 }
+      ?? "\(runtimeHome)/.riela/note"
     let expandedNoteRoot = (noteRoot as NSString).expandingTildeInPath
     let noteService = try NoteService(
       driver: SQLiteNoteDatabaseDriver(noteRoot: expandedNoteRoot),

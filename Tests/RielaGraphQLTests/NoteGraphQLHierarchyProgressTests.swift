@@ -312,7 +312,7 @@ final class NoteGraphQLHierarchyProgressTests: XCTestCase {
       guard case let .array(optionalValues)? = optionalPayload["value"] else {
         return XCTFail("expected omitted or null grouped input to remain optional")
       }
-      XCTAssertEqual(optionalValues.count, 1)
+      XCTAssertEqual(optionalValues.count, 2)
     }
   }
 

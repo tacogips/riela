@@ -89,6 +89,12 @@ extension RielaExampleParityTests {
           "limit": .number(10)
         ])
       ])
+    case "slack-agent-trio-chat", "telegram-agent-trio-chat", "discord-agent-trio-chat",
+         "matrix-agent-trio-chat":
+      return try noteExampleJSON([
+        "noteRoot": .string(noteRoot.path),
+        "workflowInput": .object(["noteRoot": .string(noteRoot.path)])
+      ])
     default:
       return nil
     }

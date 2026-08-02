@@ -55,6 +55,7 @@ interface RewriteDraft {
 export function NoteDetailPane(props: {
   notebookId: string
   notebookTitle: string
+  notebookReadOnly?: boolean
   noteId?: string
   client: NoteGraphQLClient
   workspace: NoteWorkspaceClient
@@ -238,7 +239,7 @@ export function NoteDetailPane(props: {
 
   const startEditing = () => {
     const current = note()
-    if (!current || current.readOnly) return
+    if (!current || current.readOnly || props.notebookReadOnly) return
     setDraft(current.bodyMarkdown)
     setSelection(undefined)
     setEditError('')
@@ -589,7 +590,7 @@ export function NoteDetailPane(props: {
           <span class="note-reader-position">{position() ?? ''}</span>
           <button class="secondary" aria-label="Next note" disabled={!canNext()} onClick={() => void step(1)}>›</button>
           <Show when={!editing()}>
-            <button disabled={current().readOnly} onClick={startEditing}>Edit</button>
+            <button disabled={current().readOnly || props.notebookReadOnly} onClick={startEditing}>Edit</button>
           </Show>
           <button class="secondary" aria-pressed={current().readOnly} onClick={() => void toggleReadOnly()}>
             {current().readOnly ? 'Unlock' : 'Lock'}

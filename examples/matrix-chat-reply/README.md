@@ -11,8 +11,9 @@ Run the live local Synapse verification:
 ```
 
 The script starts Synapse with Docker Compose, creates two local users, creates
-a room, starts `riela events serve`, sends an Alice message, and waits until
-the riela bot reply appears in the room.
+a room, starts `riela events serve`, sends an Alice message and a UTF-8 text
+attachment, and waits for both riela bot replies. It also verifies the
+downloaded attachment and bounded Matrix room-history artifacts.
 
 Stop the local homeserver when finished:
 

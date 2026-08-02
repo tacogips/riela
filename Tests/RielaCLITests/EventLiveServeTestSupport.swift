@@ -169,6 +169,39 @@ actor FakeSlackGatewayAPI: SlackGatewayAPI {
   }
 }
 
+actor FakeMatrixGatewayAPI: MatrixGatewayAPI {
+  private var queuedResponses: [MatrixSyncResponse]
+  private let attachmentDataByURL: [String: Data]
+  private(set) var syncRequests: [MatrixSyncRequest] = []
+  private(set) var attachmentRequests: [MatrixDownloadAttachmentRequest] = []
+  private(set) var sentMessages: [MatrixSendMessageRequest] = []
+
+  init(responses: [MatrixSyncResponse], attachmentDataByURL: [String: Data] = [:]) {
+    self.queuedResponses = responses
+    self.attachmentDataByURL = attachmentDataByURL
+  }
+
+  func downloadAttachment(request: MatrixDownloadAttachmentRequest) async throws -> Data {
+    attachmentRequests.append(request)
+    guard let data = attachmentDataByURL[request.mxcURL] else {
+      throw CLIUsageError("missing fake Matrix attachment for \(request.mxcURL)")
+    }
+    return data
+  }
+
+  func sync(request: MatrixSyncRequest) async throws -> MatrixSyncResponse {
+    syncRequests.append(request)
+    guard !queuedResponses.isEmpty else {
+      return MatrixSyncResponse(nextBatch: "idle", rooms: nil)
+    }
+    return queuedResponses.removeFirst()
+  }
+
+  func sendMessage(request: MatrixSendMessageRequest) async throws {
+    sentMessages.append(request)
+  }
+}
+
 actor FakeEventWorkflowRunner: EventWorkflowRunning {
   private(set) var requests: [EventWorkflowRunRequest] = []
   private let repliesByRequest: [[(text: String, replyAs: String)]]

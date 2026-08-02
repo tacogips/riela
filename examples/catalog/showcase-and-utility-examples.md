@@ -201,7 +201,7 @@ Live execution note:
 Live-agent topic debate bundle for runtime-provided debate prompts. This is the
 canonical debate example and replaces the older hard-coded topic variant:
 
-- two `codex-agent` speaker lanes use `gpt-5.3-codex-spark`
+- two `codex-agent` speaker lanes use `gpt-5.4-mini`
 - the topic comes from `runtimeVariables.humanInput.request`
 - the speaker lanes remain grouped under `workflows/*/nodes/`
 - speaker nodes bind `arguments.topic` from the normalized input step

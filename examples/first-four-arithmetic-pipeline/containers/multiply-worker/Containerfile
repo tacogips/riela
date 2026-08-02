@@ -1,4 +1,4 @@
-FROM alpine:3.21
+FROM alpine:3.24
 
 WORKDIR /app
 COPY multiply.sh /app/multiply.sh

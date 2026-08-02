@@ -65,7 +65,7 @@
   },
   "implement": {
     "provider": "scenario-mock",
-    "model": "gpt-5.3-codex-spark",
+    "model": "gpt-5.4-mini",
     "when": {
       "always": true
     },

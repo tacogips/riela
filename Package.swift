@@ -51,7 +51,7 @@ let package = Package(
     .executable(name: "RielaApp", targets: ["RielaApp"])
   ],
   dependencies: [
-    .package(url: "https://github.com/apple/swift-crypto.git", from: "3.15.1"),
+    .package(url: "https://github.com/apple/swift-crypto.git", from: "4.5.1"),
     .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2")
   ],
   targets: [

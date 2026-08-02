@@ -74,13 +74,13 @@ Commands:
 riela instance create cheap-model \
   --workflow worker-only-single-step \
   --workflow-definition-dir ./examples \
-  --node-patch '{"main-worker":{"model":"gpt-5.3-codex-spark"}}'
+  --node-patch '{"main-worker":{"model":"gpt-5.4-mini"}}'
 
 riela instance create high-effort \
   --workflow worker-only-single-step \
   --workflow-definition-dir ./examples \
   --variables '{"workflowInput":{"mode":"thorough"}}' \
-  --node-patch '{"main-worker":{"model":"gpt-5.3-codex-spark","effort":"high"}}'
+  --node-patch '{"main-worker":{"model":"gpt-5.4-mini","effort":"high"}}'
 
 riela workflow run worker-only-single-step \
   --workflow-definition-dir ./examples \

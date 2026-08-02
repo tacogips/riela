@@ -324,7 +324,7 @@ final class WorkflowCommandTests: XCTestCase {
     )
 
     XCTAssertEqual(output.provider, "scenario-mock")
-    XCTAssertEqual(output.model, "gpt-5.3-codex-spark")
+    XCTAssertEqual(output.model, "gpt-5.5")
     let expectedText = "問題ない。直前の流れを見る限り、Mikaの答えは文脈に沿っている。"
     XCTAssertEqual(output.payload["text"], .string(expectedText))
     XCTAssertEqual(output.when["always"], true)

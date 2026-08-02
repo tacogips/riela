@@ -56,6 +56,7 @@ struct DefaultEventLiveServer: EventLiveServing {
   var telegramAPI: any TelegramGatewayAPI
   var discordAPI: any DiscordGatewayAPI
   var slackAPI: any SlackGatewayAPI
+  var matrixAPI: any MatrixGatewayAPI
   var workflowRunner: any EventWorkflowRunning
   var telemetry: any RielaTelemetry
 
@@ -63,12 +64,14 @@ struct DefaultEventLiveServer: EventLiveServing {
     telegramAPI: any TelegramGatewayAPI = URLSessionTelegramGatewayAPI(),
     discordAPI: any DiscordGatewayAPI = URLSessionDiscordGatewayAPI(),
     slackAPI: any SlackGatewayAPI = URLSessionSlackGatewayAPI(),
+    matrixAPI: any MatrixGatewayAPI = URLSessionMatrixGatewayAPI(),
     workflowRunner: any EventWorkflowRunning = CLIEventWorkflowRunner(),
     telemetry: (any RielaTelemetry)? = nil
   ) {
     self.telegramAPI = telegramAPI
     self.discordAPI = discordAPI
     self.slackAPI = slackAPI
+    self.matrixAPI = matrixAPI
     self.workflowRunner = workflowRunner
     self.telemetry = telemetry ?? RielaTelemetryFactory.make(configuration: .fromEnvironment(
       CLIRuntimeEnvironment.mergedProcessEnvironment(),
@@ -103,7 +106,8 @@ struct DefaultEventLiveServer: EventLiveServing {
     let telegramSources = try liveConfig.telegramSources(eventRoot: eventRoot)
     let discordSources = try liveConfig.discordSources(eventRoot: eventRoot)
     let slackSources = try liveConfig.slackSources(eventRoot: eventRoot)
-    guard !telegramSources.isEmpty || !discordSources.isEmpty || !slackSources.isEmpty else {
+    let matrixSources = try liveConfig.matrixSources(eventRoot: eventRoot)
+    guard !telegramSources.isEmpty || !discordSources.isEmpty || !slackSources.isEmpty || !matrixSources.isEmpty else {
       return liveUnavailable(eventRoot: eventRoot, actionTarget: target, unsupportedSources: enabledSources.map { "\($0.id):\($0.kind.rawValue)" }.joined(separator: ","))
     }
 
@@ -112,6 +116,7 @@ struct DefaultEventLiveServer: EventLiveServing {
       try telegramSources.forEach { try $0.validateEnvironment(environment: environment) }
       try discordSources.forEach { try $0.validateEnvironment(environment: environment) }
       try slackSources.forEach { try $0.validateEnvironment(environment: environment) }
+      try matrixSources.forEach { try $0.validateEnvironment(environment: environment) }
     } catch {
       try? writeServeRecord(eventRoot: eventRoot, status: "failed", detail: String(describing: error))
       throw error
@@ -153,6 +158,19 @@ struct DefaultEventLiveServer: EventLiveServing {
           sourceKind: "slack"
         ) {
           try await pollSlackSource(source, config: liveConfig, eventRoot: eventRoot, parsed: parsed)
+        }
+        if let maximumEvents, processedEvents >= maximumEvents {
+          await recordEventsServeCompletion(startedAt: startedAt, processedEvents: processedEvents)
+          return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
+        }
+      }
+      for source in matrixSources {
+        processedEvents += try await pollSourceSafely(
+          eventRoot: eventRoot,
+          sourceId: source.id,
+          sourceKind: "matrix"
+        ) {
+          try await pollMatrixSource(source, config: liveConfig, eventRoot: eventRoot, parsed: parsed)
         }
         if let maximumEvents, processedEvents >= maximumEvents {
           await recordEventsServeCompletion(startedAt: startedAt, processedEvents: processedEvents)

@@ -16,7 +16,7 @@ APPLE_GATEWAY_BIN=/path/to/apple-gateway swift run riela workflow run apple-cale
   --variables '{"workflowInput":{"calendarIds":["<calendar-id>"],"startDate":"2026-07-07T00:00:00Z","endDate":"2026-07-14T00:00:00Z"}}'
 ```
 
-Run once without `calendarIds` or with a known read-only Calendar listing flow to
-identify calendar ids, then pass explicit ids for event search. The example
-keeps `calendarIds` in `workflowInput` so event fetching is opt-in and scoped to
-calendars selected by the caller.
+Use a read-only Apple Gateway calendar-list query to identify calendar ids,
+then pass at least one explicit id to this workflow. `riela/event-search`
+rejects an empty `calendarIds` array, keeping event fetching opt-in and scoped
+to calendars selected by the caller.

@@ -2,7 +2,7 @@
   "id": "rina-cursor",
   "description": "Rina Cursor: a Japanese female intellectual otaku persona backed by official OpenAI SDK.",
   "executionBackend": "official/openai-sdk",
-  "model": "gpt-5.3-codex-spark",
+  "model": "gpt-5.5",
   "modelFreeze": true,
   "systemPromptTemplateFile": "prompts/rina-system.md",
   "promptTemplateFile": "prompts/persona-reply.md",

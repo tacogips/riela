@@ -24,7 +24,6 @@ fi
 
 case "${RUN_ROOT}" in
   "${REPO_ROOT}"/*)
-    SYNC_TOKEN_PATH="${RUN_ROOT#"${REPO_ROOT}/"}/sync/local-matrix.json"
     ;;
   *)
     echo "RIELA_MATRIX_SAMPLE_RUN_ROOT must be under ${REPO_ROOT}" >&2
@@ -121,7 +120,7 @@ wait_for_synapse() {
 }
 
 write_event_configuration() {
-  ROOM_ID="${ROOM_ID}" ROOM_ALIAS="${ROOM_ALIAS}" EVENT_ROOT="${EVENT_ROOT}" SYNC_TOKEN_PATH="${SYNC_TOKEN_PATH}" bun -e '
+  ROOM_ID="${ROOM_ID}" ROOM_ALIAS="${ROOM_ALIAS}" EVENT_ROOT="${EVENT_ROOT}" bun -e '
     await Bun.write(
       `${process.env.EVENT_ROOT}/sources/local-matrix.json`,
       JSON.stringify(
@@ -140,7 +139,19 @@ write_event_configuration() {
           ],
           sync: {
             pollTimeoutMs: 1000,
-            sinceTokenPath: process.env.SYNC_TOKEN_PATH,
+            sinceTokenPath: "sync/local-matrix.json",
+          },
+          history: {
+            maxMessages: 20,
+            maxBytes: 131072,
+            maxAgeMs: 2592000000,
+            scope: "thread-or-room",
+            includeOwnMessages: false,
+          },
+          attachments: {
+            downloadText: true,
+            maxBytes: 65536,
+            allowedMimeTypes: ["text/plain", "text/markdown", "application/json"],
           },
         },
         null,
@@ -193,7 +204,8 @@ write_event_configuration() {
 wait_for_listener() {
   local log_file="$1"
   for _ in $(seq 1 30); do
-    if grep -q '"sources"' "${log_file}" 2>/dev/null || grep -q "events listening" "${log_file}" 2>/dev/null; then
+    if [[ -f "${EVENT_ROOT}/serve-record.json" ]] &&
+      grep -q '"status"[[:space:]]*:[[:space:]]*"ready"' "${EVENT_ROOT}/serve-record.json"; then
       return 0
     fi
     if [[ -n "${listener_pid}" ]] && ! kill -0 "${listener_pid}" 2>/dev/null; then
@@ -350,6 +362,83 @@ if [[ -z "${REPLY_EVENT_ID}" ]]; then
   exit 1
 fi
 
+ATTACHMENT_NAME="sample-notes.txt"
+ATTACHMENT_TEXT="Matrix attachment memory sample"
+printf '%s\n' "${ATTACHMENT_TEXT}" > "${RUN_ROOT}/${ATTACHMENT_NAME}"
+curl -fsS \
+  -X POST \
+  -H "authorization: Bearer ${ALICE_TOKEN}" \
+  -H "content-type: text/plain" \
+  --data-binary "@${RUN_ROOT}/${ATTACHMENT_NAME}" \
+  "${HOMESERVER_URL}/_matrix/media/v3/upload?filename=${ATTACHMENT_NAME}" \
+  > "${RUN_ROOT}/attachment-upload-response.json"
+ATTACHMENT_MXC_URL="$(json_field "${RUN_ROOT}/attachment-upload-response.json" "content_uri")"
+ATTACHMENT_TXN_ID="alice-file-$(date +%s)-${RANDOM}"
+ATTACHMENT_BODY="${RUN_ROOT}/alice-file-message.json"
+ATTACHMENT_NAME="${ATTACHMENT_NAME}" ATTACHMENT_MXC_URL="${ATTACHMENT_MXC_URL}" ATTACHMENT_TEXT="${ATTACHMENT_TEXT}" bun -e '
+  console.log(JSON.stringify({
+    msgtype: "m.file",
+    body: process.env.ATTACHMENT_NAME,
+    filename: process.env.ATTACHMENT_NAME,
+    url: process.env.ATTACHMENT_MXC_URL,
+    info: {
+      mimetype: "text/plain",
+      size: new TextEncoder().encode(`${process.env.ATTACHMENT_TEXT}\n`).byteLength,
+    },
+  }));
+' > "${ATTACHMENT_BODY}"
+
+curl -fsS \
+  -X PUT \
+  -H "authorization: Bearer ${ALICE_TOKEN}" \
+  -H "content-type: application/json" \
+  --data-binary "@${ATTACHMENT_BODY}" \
+  "${HOMESERVER_URL}/_matrix/client/v3/rooms/${ROOM_ID_ENCODED}/send/m.room.message/${ATTACHMENT_TXN_ID}" \
+  > "${RUN_ROOT}/alice-file-send-response.json"
+
+EXPECTED_ATTACHMENT_REPLY="Matrix sample received from ${ALICE_USER_ID}: ${ATTACHMENT_NAME}"
+ATTACHMENT_REPLY_EVENT_ID=""
+for _ in $(seq 1 90); do
+  curl -fsS \
+    -H "authorization: Bearer ${ALICE_TOKEN}" \
+    "${HOMESERVER_URL}/_matrix/client/v3/rooms/${ROOM_ID_ENCODED}/messages?dir=b&limit=50" \
+    > "${RUN_ROOT}/room-messages.json"
+  if ATTACHMENT_REPLY_EVENT_ID="$(find_reply_event "${RUN_ROOT}/room-messages.json" "${EXPECTED_ATTACHMENT_REPLY}")"; then
+    break
+  fi
+  if [[ -n "${listener_pid}" ]] && ! kill -0 "${listener_pid}" 2>/dev/null; then
+    cat "${LISTENER_LOG}" >&2 || true
+    echo "riela events serve exited before the Matrix attachment reply was observed" >&2
+    exit 1
+  fi
+  sleep 1
+done
+
+if [[ -z "${ATTACHMENT_REPLY_EVENT_ID}" ]]; then
+  cat "${LISTENER_LOG}" >&2 || true
+  echo "Timed out waiting for Matrix attachment reply: ${EXPECTED_ATTACHMENT_REPLY}" >&2
+  exit 1
+fi
+
+DOWNLOADED_ATTACHMENT="$(find "${EVENT_ROOT}/attachments/matrix" -type f -name "*-${ATTACHMENT_NAME}" -print -quit)"
+if [[ -z "${DOWNLOADED_ATTACHMENT}" ]] || ! cmp -s "${RUN_ROOT}/${ATTACHMENT_NAME}" "${DOWNLOADED_ATTACHMENT}"; then
+  echo "Matrix text attachment was not downloaded with matching content" >&2
+  exit 1
+fi
+
+HISTORY_FILE="$(find "${EVENT_ROOT}/matrix-history" -type f -name "*.json" -print -quit)"
+if [[ -z "${HISTORY_FILE}" ]]; then
+  echo "Matrix bounded history file was not written" >&2
+  exit 1
+fi
+MESSAGE="${MESSAGE}" ATTACHMENT_NAME="${ATTACHMENT_NAME}" bun -e '
+  const history = await Bun.file(process.argv[1]).json();
+  const texts = history.map((entry) => entry?.text);
+  if (history.length < 4 || !texts.includes(process.env.MESSAGE) || !texts.includes(process.env.ATTACHMENT_NAME)) {
+    process.exit(1);
+  }
+' "${HISTORY_FILE}"
+
 "${RIELA_CLI[@]}" events list \
   --artifact-root "${ARTIFACT_ROOT}" \
   --source local-matrix \
@@ -367,5 +456,8 @@ echo "Homeserver: ${HOMESERVER_URL}"
 echo "Room: ${ROOM_ID}"
 echo "Alice message: ${MESSAGE}"
 echo "Bot reply event: ${REPLY_EVENT_ID}"
+echo "Attachment reply event: ${ATTACHMENT_REPLY_EVENT_ID}"
+echo "Downloaded attachment: ${DOWNLOADED_ATTACHMENT}"
+echo "Bounded history: ${HISTORY_FILE}"
 echo "Runtime artifacts: ${ARTIFACT_ROOT}"
 echo "Generated event config: ${EVENT_ROOT}"

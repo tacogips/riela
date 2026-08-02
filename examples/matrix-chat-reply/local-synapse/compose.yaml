@@ -2,7 +2,7 @@ name: riela-matrix-sample
 
 services:
   synapse:
-    image: matrixdotorg/synapse:v1.152.1
+    image: matrixdotorg/synapse:v1.154.0
     container_name: riela-matrix-sample-synapse
     environment:
       SYNAPSE_SERVER_NAME: localhost

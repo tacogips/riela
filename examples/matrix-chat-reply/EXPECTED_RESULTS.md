@@ -12,3 +12,8 @@ Matrix sample received from @alice:localhost: hello from matrix
 
 The reply should target the same Matrix room and use same-thread reply metadata
 when the incoming event provides a reply or thread target.
+
+The local Synapse verification also uploads a UTF-8 text attachment, confirms
+that the live source downloads it under the event data root, and verifies that
+bounded room history contains both accepted user messages after the listener
+process has handled them.

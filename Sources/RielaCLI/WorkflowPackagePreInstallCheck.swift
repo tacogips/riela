@@ -270,7 +270,7 @@ struct WorkflowPackageContainerCommandBuilder: Sendable {
   func command(
     runtime: String,
     packageDirectory: URL,
-    image: String = "docker.io/library/alpine:3.20",
+    image: String = "docker.io/library/alpine:3.24",
     environment: [String: String] = [:]
   ) -> [String] {
     var argv = [

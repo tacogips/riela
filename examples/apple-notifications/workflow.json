@@ -14,9 +14,8 @@
         "version": "1",
         "config": {
           "title": "Riela demo notification",
-          "body": "This notification will be dismissed by the next workflow node.",
-          "allowFallback": true,
-          "waitSeconds": 0
+          "body": "This notification was posted by the Riela example workflow.",
+          "allowFallback": true
         }
       }
     },
@@ -45,7 +44,12 @@
       "role": "worker",
       "transitions": [
         {
-          "toStepId": "dismiss-posted-notification"
+          "toStepId": "dismiss-posted-notification",
+          "label": "used_helper"
+        },
+        {
+          "toStepId": "workflow-output",
+          "label": "used_fallback"
         }
       ]
     },

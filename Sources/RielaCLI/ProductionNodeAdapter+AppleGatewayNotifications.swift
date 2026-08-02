@@ -161,7 +161,7 @@ private struct AppleGatewayNotificationsEngine {
     if let allowReply = try optionalBool("allowReply", input: input, config: config, variables: variables) {
       fields.append("allowReply: \(allowReply ? "true" : "false")")
     }
-    if let waitSeconds = try optionalInt("waitSeconds", input: input, config: config, variables: variables, range: 0...Self.maxWaitSeconds) {
+    if let waitSeconds = try optionalInt("waitSeconds", input: input, config: config, variables: variables, range: 1...Self.maxWaitSeconds) {
       fields.append("waitSeconds: \(waitSeconds)")
     }
     if let allowFallback = try optionalBool("allowFallback", input: input, config: config, variables: variables) {
@@ -266,7 +266,12 @@ private struct AppleGatewayNotificationsEngine {
     payload["replyText"] = .string("Posted Apple notification \(notificationId).")
     return output(
       input: input,
-      when: ["always": true, "delivered": delivered, "used_fallback": usedFallback],
+      when: [
+        "always": true,
+        "delivered": delivered,
+        "used_fallback": usedFallback,
+        "used_helper": !usedFallback
+      ],
       payload: payload
     )
   }

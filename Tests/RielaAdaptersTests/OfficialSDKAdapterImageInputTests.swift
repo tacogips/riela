@@ -4,6 +4,35 @@ import XCTest
 @testable import RielaCore
 
 extension OfficialSDKAdapterTests {
+  func testOpenAIAdapterDetectsJPEGContentForExtensionlessImagePath() async throws {
+    let imageURL = try temporaryImageFile(
+      extension: "",
+      bytes: Data([0xFF, 0xD8, 0xFF, 0xE0]) + Data("extensionless-jpeg".utf8)
+    )
+    defer { try? FileManager.default.removeItem(at: imageURL.deletingLastPathComponent()) }
+    let executor = RecordingOfficialSDKExecutor(outcomes: [
+      .success(OfficialSDKResponse(body: .object(["output_text": .string("saw image")])))
+    ])
+    let adapter = OpenAiSDKAdapter(
+      configuration: OfficialSDKAdapterConfiguration(
+        apiKeyEnv: "TEST_OPENAI_KEY",
+        environment: ["TEST_OPENAI_KEY": openAITestKey()],
+        requestExecutor: executor
+      )
+    )
+
+    _ = try await adapter.execute(
+      openAIInput(mergedVariables: ["imagePaths": .array([.string(imageURL.path)])]),
+      context: AdapterExecutionContext()
+    )
+
+    let request = try XCTUnwrap(executor.requests().first)
+    guard case let .openAIResponses(body) = request.body else {
+      return XCTFail("Expected OpenAI Responses request")
+    }
+    XCTAssertEqual(body.imageInputs.first?.mimeType, "image/jpeg")
+  }
+
   func testAnthropicAdapterBuildsMessagesRequestWithImagePaths() async throws {
     let imageURL = try temporaryImageFile(extension: "png", bytes: Data("anthropic-image".utf8))
     defer { try? FileManager.default.removeItem(at: imageURL.deletingLastPathComponent()) }

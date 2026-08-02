@@ -62,6 +62,7 @@ final class AppleGatewayNotificationsAddonTests: XCTestCase {
     XCTAssertEqual(output.payload["postedNotificationId"], .string("posted-1"))
     XCTAssertEqual(output.when["delivered"], true)
     XCTAssertEqual(output.when["used_fallback"], false)
+    XCTAssertEqual(output.when["used_helper"], true)
     let appleNotification = try XCTUnwrap(notificationTestObject(output.payload["appleNotification"]))
     let posted = try XCTUnwrap(notificationTestObject(appleNotification["posted"]))
     XCTAssertEqual(posted["id"], .string("posted-1"))
@@ -91,6 +92,7 @@ final class AppleGatewayNotificationsAddonTests: XCTestCase {
     XCTAssertEqual(output.payload["postedNotificationId"], .string("posted-fallback"))
     XCTAssertEqual(output.when["delivered"], false)
     XCTAssertEqual(output.when["used_fallback"], true)
+    XCTAssertEqual(output.when["used_helper"], false)
   }
 
   func testNotificationsDismissBuildsIdAndAllMutations() async throws {
@@ -171,9 +173,15 @@ final class AppleGatewayNotificationsAddonTests: XCTestCase {
     )
     try await assertNotificationFailure(
       "riela/apple-notification-post",
+      config: binaryConfig.merging(["title": .string("x"), "waitSeconds": .integer(0)]) { _, new in new },
+      code: .policyBlocked,
+      messageContains: "waitSeconds must be between 1 and 300"
+    )
+    try await assertNotificationFailure(
+      "riela/apple-notification-post",
       config: binaryConfig.merging(["title": .string("x"), "waitSeconds": .integer(301)]) { _, new in new },
       code: .policyBlocked,
-      messageContains: "waitSeconds must be between 0 and 300"
+      messageContains: "waitSeconds must be between 1 and 300"
     )
     try await assertNotificationFailure(
       "riela/apple-notification-post",

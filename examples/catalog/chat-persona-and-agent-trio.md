@@ -286,9 +286,9 @@ Minimal Telegram trio chat workflow using the SDK-backed worker add-ons:
 
 - routes normalized Telegram messages through node-level Telegram
   `inputFilters` evaluated with JavaScriptCore
-- `Yui Codex SDK` uses `riela/codex-sdk-worker`
-- `Mika Claude SDK` uses `riela/claude-sdk-worker`
-- `Rina Cursor SDK` uses `riela/cursor-sdk-worker` with model `gpt-5.5`
+- `Yui Codex SDK` and `Mika Claude SDK` use `riela/codex-sdk-worker` with
+  model `gpt-5.4-mini`
+- `Rina Cursor SDK` uses `riela/codex-sdk-worker` with model `gpt-5.5`
 - Mika and Rina reply only to explicit self mentions (`Mika`,
   `@mikatrend0529bot`, `Rina`, or `@rinacursor0529bot`)
 - Yui replies to explicit Yui mentions and also acts as the default responder

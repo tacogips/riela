@@ -458,6 +458,15 @@ Initial built-in add-ons:
   using `executionBackend: "official/gemini-sdk"` and explicit Gemini API key
   environment binding
 - `riela/chat-persona-router`: worker node that chooses chat persona routing
+- `riela/workflow-create-register-run`: worker node that accepts a bounded
+  `workflowTask` title and prompt from the preceding output, uses the same
+  `WorkflowBundleScaffolder` as `riela workflow create`, registers the normal
+  bundle through the existing mutable registry, and executes it through the
+  normal workflow runner. The authored config must explicitly set
+  `allowWorkflowCreation: true` and owns the backend, model, id prefix, and
+  prompt-size limit. Model output cannot provide paths, commands, credentials,
+  node definitions, or arbitrary workflow JSON. Generated prompts are stored
+  as separate `prompts/*.md` files
 - `riela/note-persona-context-read` and
   `riela/note-persona-context-write`: worker nodes that read and append
   persona-scoped context in the Riela Note system-memory notebook. Workflows

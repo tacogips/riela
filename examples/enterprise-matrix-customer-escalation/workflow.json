@@ -141,6 +141,19 @@
       }
     },
     {
+      "id": "generate-support-lead-workflow",
+      "addon": {
+        "name": "riela/workflow-create-register-run",
+        "version": "1",
+        "config": {
+          "allowWorkflowCreation": true,
+          "executionBackend": "official/openai-sdk",
+          "model": "gpt-5.4-mini",
+          "workflowIdPrefix": "enterprise-generated"
+        }
+      }
+    },
+    {
       "id": "send-support-lead-reply",
       "addon": {
         "name": "riela/chat-reply-worker",
@@ -203,6 +216,19 @@
       }
     },
     {
+      "id": "generate-product-engineer-workflow",
+      "addon": {
+        "name": "riela/workflow-create-register-run",
+        "version": "1",
+        "config": {
+          "allowWorkflowCreation": true,
+          "executionBackend": "official/openai-sdk",
+          "model": "gpt-5.4-mini",
+          "workflowIdPrefix": "enterprise-generated"
+        }
+      }
+    },
+    {
       "id": "send-product-engineer-reply",
       "addon": {
         "name": "riela/chat-reply-worker",
@@ -261,6 +287,19 @@
             "customer-success"
           ],
           "maxHandoffTurns": 3
+        }
+      }
+    },
+    {
+      "id": "generate-customer-success-workflow",
+      "addon": {
+        "name": "riela/workflow-create-register-run",
+        "version": "1",
+        "config": {
+          "allowWorkflowCreation": true,
+          "executionBackend": "official/openai-sdk",
+          "model": "gpt-5.4-mini",
+          "workflowIdPrefix": "enterprise-generated"
         }
       }
     },
@@ -345,14 +384,22 @@
       "role": "worker",
       "transitions": [
         {
-          "toWorkflowId": "enterprise-matrix-agent-task",
-          "toStepId": "task-worker",
-          "resumeStepId": "send-support-lead-reply",
+          "toStepId": "generate-support-lead-workflow",
           "label": "run_workflow"
         },
         {
           "toStepId": "send-support-lead-reply",
           "label": "llm_only"
+        }
+      ]
+    },
+    {
+      "id": "generate-support-lead-workflow",
+      "nodeId": "generate-support-lead-workflow",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "send-support-lead-reply"
         }
       ]
     },
@@ -397,14 +444,22 @@
       "role": "worker",
       "transitions": [
         {
-          "toWorkflowId": "enterprise-matrix-agent-task",
-          "toStepId": "task-worker",
-          "resumeStepId": "send-product-engineer-reply",
+          "toStepId": "generate-product-engineer-workflow",
           "label": "run_workflow"
         },
         {
           "toStepId": "send-product-engineer-reply",
           "label": "llm_only"
+        }
+      ]
+    },
+    {
+      "id": "generate-product-engineer-workflow",
+      "nodeId": "generate-product-engineer-workflow",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "send-product-engineer-reply"
         }
       ]
     },
@@ -449,14 +504,22 @@
       "role": "worker",
       "transitions": [
         {
-          "toWorkflowId": "enterprise-matrix-agent-task",
-          "toStepId": "task-worker",
-          "resumeStepId": "send-customer-success-reply",
+          "toStepId": "generate-customer-success-workflow",
           "label": "run_workflow"
         },
         {
           "toStepId": "send-customer-success-reply",
           "label": "llm_only"
+        }
+      ]
+    },
+    {
+      "id": "generate-customer-success-workflow",
+      "nodeId": "generate-customer-success-workflow",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "send-customer-success-reply"
         }
       ]
     },

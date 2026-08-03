@@ -1,0 +1,11 @@
+{
+  "room_id": "!security-incident:matrix.example",
+  "type": "m.room.message",
+  "event_id": "$enterprise-security-event-1",
+  "sender": "@incident-operator:matrix.example",
+  "origin_server_ts": 1785682800000,
+  "content": {
+    "msgtype": "m.text",
+    "body": "Assess the incident, consult the specialists, and propose the next action."
+  }
+}

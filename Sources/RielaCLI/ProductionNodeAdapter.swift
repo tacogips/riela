@@ -72,7 +72,11 @@ func makeScenarioBackedAddonResolver(
   environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment()
 ) async throws -> any WorkflowAddonResolving {
   let workingDirectoryURL = URL(fileURLWithPath: workingDirectory, isDirectory: true)
-  let fallback = try await makeProductionAddonResolver(workingDirectory: workingDirectoryURL, environment: environment)
+  let fallback = try await makeProductionAddonResolver(
+    workingDirectory: workingDirectoryURL,
+    environment: environment,
+    mockScenarioPath: scenarioPath
+  )
   guard let scenarioPath else {
     return fallback
   }
@@ -85,9 +89,17 @@ func makeScenarioBackedAddonResolver(
 
 func makeProductionAddonResolver(
   workingDirectory: URL,
-  environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment()
+  environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
+  mockScenarioPath: String? = nil
 ) async throws -> any WorkflowAddonResolving {
-  let builtin = BuiltinWorkflowAddonResolver(environment: environment)
+  let workflowTaskExecutor = DefaultGeneratedWorkflowTaskExecutor(
+    runner: CommandGeneratedWorkflowTaskRunner(mockScenarioPath: mockScenarioPath)
+  )
+  let builtin = BuiltinWorkflowAddonResolver(
+    environment: environment,
+    workingDirectory: workingDirectory,
+    workflowTaskExecutor: workflowTaskExecutor
+  )
   let registrations = try await installedContainerAddonRegistrations(workingDirectory: workingDirectory)
   guard !registrations.isEmpty else {
     return builtin
@@ -288,6 +300,8 @@ private enum BuiltinSDKWorker: String {
 
 struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
   var environment: [String: String]
+  var workingDirectory: URL
+  var workflowTaskExecutor: any GeneratedWorkflowTaskExecuting
   var openAIAdapterFactory: OpenAIAddonAdapterFactory
   var anthropicAdapterFactory: AnthropicAddonAdapterFactory
   var cursorAdapterFactory: CursorAddonAdapterFactory
@@ -295,6 +309,8 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
 
   init(
     environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
+    workingDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true),
+    workflowTaskExecutor: any GeneratedWorkflowTaskExecuting = DefaultGeneratedWorkflowTaskExecutor(),
     openAIAdapterFactory: @escaping OpenAIAddonAdapterFactory = { configuration in
       OpenAiSDKAdapter(configuration: configuration)
     },
@@ -309,6 +325,8 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     }
   ) {
     self.environment = environment
+    self.workingDirectory = workingDirectory.standardizedFileURL
+    self.workflowTaskExecutor = workflowTaskExecutor
     self.openAIAdapterFactory = openAIAdapterFactory
     self.anthropicAdapterFactory = anthropicAdapterFactory
     self.cursorAdapterFactory = cursorAdapterFactory
@@ -326,10 +344,13 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       return try await executeSDKWorker(input, sdkWorker: sdkWorker, context: context)
     }
     if input.addon.name == "riela/chat-persona-router" {
-      return executeChatPersonaRouter(input)
+      return try executeChatPersonaRouter(input)
     }
     if input.addon.name == "riela/chat-reply-worker" {
       return try executeChatReplyWorker(input)
+    }
+    if input.addon.name == "riela/workflow-create-register-run" {
+      return try await executeWorkflowCreateRegisterRun(input)
     }
     if input.addon.name == "riela/x-digest" {
       return try executeXDigest(input)
@@ -491,9 +512,21 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     }
   }
 
-  private func executeChatPersonaRouter(_ input: WorkflowAddonExecutionInput) -> AdapterExecutionOutput {
+  private func executeChatPersonaRouter(_ input: WorkflowAddonExecutionInput) throws -> AdapterExecutionOutput {
     let personas = chatPersonas(from: input.addon.config ?? [:])
-    let defaultPersonaId = nonEmptyString(input.addon.config?["defaultPersonaId"]) ?? personas.first?.id ?? "yui"
+    guard let firstPersonaId = personas.first?.id else {
+      throw AdapterExecutionError(
+        .policyBlocked,
+        "riela/chat-persona-router config.personas must contain at least one persona"
+      )
+    }
+    let defaultPersonaId = nonEmptyString(input.addon.config?["defaultPersonaId"]) ?? firstPersonaId
+    guard personas.contains(where: { $0.id == defaultPersonaId }) else {
+      throw AdapterExecutionError(
+        .policyBlocked,
+        "riela/chat-persona-router config.defaultPersonaId must reference a configured persona"
+      )
+    }
     let request = routerRequestText(input)
     var matchedPersonaId: String?
     var matchedLocation: Int?
@@ -512,7 +545,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       }
     }
     let target = matchedPersonaId ?? defaultPersonaId
-    let knownTargetIds = Set(personas.map(\.id) + ["yui", "mika", "rina"])
+    let knownTargetIds = Set(personas.map(\.id))
     var when = Dictionary(uniqueKeysWithValues: knownTargetIds.map { ("target_\($0)", $0 == target) })
     when["always"] = true
     var payload: JSONObject = [
@@ -554,11 +587,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
 
   private func chatPersonas(from config: JSONObject) -> [ChatPersona] {
     guard case let .array(personaValues)? = config["personas"] else {
-      return [
-        ChatPersona(id: "yui", aliases: ["yui", "codex"]),
-        ChatPersona(id: "mika", aliases: ["mika", "maki", "claude"]),
-        ChatPersona(id: "rina", aliases: ["rina", "cursor"])
-      ]
+      return []
     }
     return personaValues.compactMap { value in
       guard case let .object(persona) = value,
@@ -572,9 +601,6 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       }
       if case let .array(aliasValues)? = persona["aliases"] {
         aliases.append(contentsOf: aliasValues.compactMap(nonEmptyString))
-      }
-      if id == "mika" {
-        aliases.append("maki")
       }
       return ChatPersona(id: id, aliases: aliases)
     }

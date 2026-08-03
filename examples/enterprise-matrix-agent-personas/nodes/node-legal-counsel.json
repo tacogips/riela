@@ -32,6 +32,15 @@
         "run_workflow": {
           "type": "boolean"
         },
+        "workflowTask": {
+          "type": "object",
+          "required": ["title", "prompt"],
+          "properties": {
+            "title": { "type": "string" },
+            "prompt": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
         "noteEntries": {
           "type": "array",
           "items": {

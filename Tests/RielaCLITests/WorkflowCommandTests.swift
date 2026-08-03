@@ -339,7 +339,10 @@ final class WorkflowCommandTests: XCTestCase {
         "defaultPersonaId": .string("yui"),
         "personas": .array([
           .object(["id": .string("yui"), "aliases": .array([.string("yui"), .string("codex")])]),
-          .object(["id": .string("mika"), "aliases": .array([.string("mika"), .string("claude")])]),
+          .object([
+            "id": .string("mika"),
+            "aliases": .array([.string("mika"), .string("maki"), .string("claude")])
+          ]),
           .object(["id": .string("rina"), "aliases": .array([.string("rina"), .string("cursor")])])
         ])
       ]

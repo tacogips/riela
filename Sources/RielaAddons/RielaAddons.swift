@@ -73,6 +73,10 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/note-kanban-board", version: "1")
   ]
 
+  public static let workflowAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/workflow-create-register-run", version: "1")
+  ]
+
   public static let appleGatewayAdminAddons: [RielaAddonDescriptor] = [
     .init(name: "riela/apple-gateway-graphql", version: "1"),
     .init(name: "riela/apple-gateway-schema", version: "1"),
@@ -88,6 +92,7 @@ public enum RielaBuiltinAddonCatalog {
     + appleReminderMutationAddons
     + appleGatewayAdminAddons
     + noteAddons
+    + workflowAddons
 
   public static func descriptor(named name: String) -> RielaAddonDescriptor? {
     all.first { $0.name == name }

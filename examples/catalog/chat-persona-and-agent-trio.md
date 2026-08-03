@@ -37,8 +37,9 @@ user-owned personas and external prompts:
 Each room has a default manager and two specialists. The manager reads all
 declared persona memories but writes only its own; specialists read and write
 only their own. `enterprise-matrix-agent-personas` contains the example persona
-files, while `enterprise-matrix-agent-task` demonstrates conditional,
-allow-listed cross-workflow execution and trusted mutable registration.
+files. Every agent can either answer with its LLM node or ask Riela to scaffold,
+register, and execute a reusable generated workflow from a bounded task
+specification.
 
 ### `temporary-workflow`
 

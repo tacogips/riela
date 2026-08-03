@@ -141,6 +141,19 @@
       }
     },
     {
+      "id": "generate-procurement-lead-workflow",
+      "addon": {
+        "name": "riela/workflow-create-register-run",
+        "version": "1",
+        "config": {
+          "allowWorkflowCreation": true,
+          "executionBackend": "official/openai-sdk",
+          "model": "gpt-5.4-mini",
+          "workflowIdPrefix": "enterprise-generated"
+        }
+      }
+    },
+    {
       "id": "send-procurement-lead-reply",
       "addon": {
         "name": "riela/chat-reply-worker",
@@ -203,6 +216,19 @@
       }
     },
     {
+      "id": "generate-finance-analyst-workflow",
+      "addon": {
+        "name": "riela/workflow-create-register-run",
+        "version": "1",
+        "config": {
+          "allowWorkflowCreation": true,
+          "executionBackend": "official/openai-sdk",
+          "model": "gpt-5.4-mini",
+          "workflowIdPrefix": "enterprise-generated"
+        }
+      }
+    },
+    {
       "id": "send-finance-analyst-reply",
       "addon": {
         "name": "riela/chat-reply-worker",
@@ -261,6 +287,19 @@
             "legal-counsel"
           ],
           "maxHandoffTurns": 3
+        }
+      }
+    },
+    {
+      "id": "generate-legal-counsel-workflow",
+      "addon": {
+        "name": "riela/workflow-create-register-run",
+        "version": "1",
+        "config": {
+          "allowWorkflowCreation": true,
+          "executionBackend": "official/openai-sdk",
+          "model": "gpt-5.4-mini",
+          "workflowIdPrefix": "enterprise-generated"
         }
       }
     },
@@ -345,14 +384,22 @@
       "role": "worker",
       "transitions": [
         {
-          "toWorkflowId": "enterprise-matrix-agent-task",
-          "toStepId": "task-worker",
-          "resumeStepId": "send-procurement-lead-reply",
+          "toStepId": "generate-procurement-lead-workflow",
           "label": "run_workflow"
         },
         {
           "toStepId": "send-procurement-lead-reply",
           "label": "llm_only"
+        }
+      ]
+    },
+    {
+      "id": "generate-procurement-lead-workflow",
+      "nodeId": "generate-procurement-lead-workflow",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "send-procurement-lead-reply"
         }
       ]
     },
@@ -397,14 +444,22 @@
       "role": "worker",
       "transitions": [
         {
-          "toWorkflowId": "enterprise-matrix-agent-task",
-          "toStepId": "task-worker",
-          "resumeStepId": "send-finance-analyst-reply",
+          "toStepId": "generate-finance-analyst-workflow",
           "label": "run_workflow"
         },
         {
           "toStepId": "send-finance-analyst-reply",
           "label": "llm_only"
+        }
+      ]
+    },
+    {
+      "id": "generate-finance-analyst-workflow",
+      "nodeId": "generate-finance-analyst-workflow",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "send-finance-analyst-reply"
         }
       ]
     },
@@ -449,14 +504,22 @@
       "role": "worker",
       "transitions": [
         {
-          "toWorkflowId": "enterprise-matrix-agent-task",
-          "toStepId": "task-worker",
-          "resumeStepId": "send-legal-counsel-reply",
+          "toStepId": "generate-legal-counsel-workflow",
           "label": "run_workflow"
         },
         {
           "toStepId": "send-legal-counsel-reply",
           "label": "llm_only"
+        }
+      ]
+    },
+    {
+      "id": "generate-legal-counsel-workflow",
+      "nodeId": "generate-legal-counsel-workflow",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "send-legal-counsel-reply"
         }
       ]
     },

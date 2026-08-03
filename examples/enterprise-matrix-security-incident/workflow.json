@@ -141,6 +141,19 @@
       }
     },
     {
+      "id": "generate-incident-lead-workflow",
+      "addon": {
+        "name": "riela/workflow-create-register-run",
+        "version": "1",
+        "config": {
+          "allowWorkflowCreation": true,
+          "executionBackend": "official/openai-sdk",
+          "model": "gpt-5.4-mini",
+          "workflowIdPrefix": "enterprise-generated"
+        }
+      }
+    },
+    {
       "id": "send-incident-lead-reply",
       "addon": {
         "name": "riela/chat-reply-worker",
@@ -203,6 +216,19 @@
       }
     },
     {
+      "id": "generate-security-analyst-workflow",
+      "addon": {
+        "name": "riela/workflow-create-register-run",
+        "version": "1",
+        "config": {
+          "allowWorkflowCreation": true,
+          "executionBackend": "official/openai-sdk",
+          "model": "gpt-5.4-mini",
+          "workflowIdPrefix": "enterprise-generated"
+        }
+      }
+    },
+    {
       "id": "send-security-analyst-reply",
       "addon": {
         "name": "riela/chat-reply-worker",
@@ -261,6 +287,19 @@
             "compliance-counsel"
           ],
           "maxHandoffTurns": 3
+        }
+      }
+    },
+    {
+      "id": "generate-compliance-counsel-workflow",
+      "addon": {
+        "name": "riela/workflow-create-register-run",
+        "version": "1",
+        "config": {
+          "allowWorkflowCreation": true,
+          "executionBackend": "official/openai-sdk",
+          "model": "gpt-5.4-mini",
+          "workflowIdPrefix": "enterprise-generated"
         }
       }
     },
@@ -345,14 +384,22 @@
       "role": "worker",
       "transitions": [
         {
-          "toWorkflowId": "enterprise-matrix-agent-task",
-          "toStepId": "task-worker",
-          "resumeStepId": "send-incident-lead-reply",
+          "toStepId": "generate-incident-lead-workflow",
           "label": "run_workflow"
         },
         {
           "toStepId": "send-incident-lead-reply",
           "label": "llm_only"
+        }
+      ]
+    },
+    {
+      "id": "generate-incident-lead-workflow",
+      "nodeId": "generate-incident-lead-workflow",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "send-incident-lead-reply"
         }
       ]
     },
@@ -397,14 +444,22 @@
       "role": "worker",
       "transitions": [
         {
-          "toWorkflowId": "enterprise-matrix-agent-task",
-          "toStepId": "task-worker",
-          "resumeStepId": "send-security-analyst-reply",
+          "toStepId": "generate-security-analyst-workflow",
           "label": "run_workflow"
         },
         {
           "toStepId": "send-security-analyst-reply",
           "label": "llm_only"
+        }
+      ]
+    },
+    {
+      "id": "generate-security-analyst-workflow",
+      "nodeId": "generate-security-analyst-workflow",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "send-security-analyst-reply"
         }
       ]
     },
@@ -449,14 +504,22 @@
       "role": "worker",
       "transitions": [
         {
-          "toWorkflowId": "enterprise-matrix-agent-task",
-          "toStepId": "task-worker",
-          "resumeStepId": "send-compliance-counsel-reply",
+          "toStepId": "generate-compliance-counsel-workflow",
           "label": "run_workflow"
         },
         {
           "toStepId": "send-compliance-counsel-reply",
           "label": "llm_only"
+        }
+      ]
+    },
+    {
+      "id": "generate-compliance-counsel-workflow",
+      "nodeId": "generate-compliance-counsel-workflow",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "send-compliance-counsel-reply"
         }
       ]
     },

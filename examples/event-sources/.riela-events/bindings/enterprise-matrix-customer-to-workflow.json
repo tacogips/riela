@@ -18,9 +18,6 @@
     "allowUnsafeSyncWebhook": true,
     "dedupeWindowMs": 86400000
   },
-  "taskPlanning": {
-    "enabled": false
-  },
   "mailboxBridge": {
     "output": {
       "progress": {

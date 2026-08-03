@@ -30,7 +30,6 @@ private func rielaExampleWorkflowNames() -> [String] {
     "discord-persona-chat",
     "dispatcher-llm-resolver-stub",
     "enterprise-matrix-agent-personas",
-    "enterprise-matrix-agent-task",
     "enterprise-matrix-customer-escalation",
     "enterprise-matrix-security-incident",
     "enterprise-matrix-vendor-onboarding",
@@ -292,7 +291,16 @@ final class RielaExampleParityTests: XCTestCase {
       if let variables = try noteExampleVariables(workflowName: workflowName, root: root) {
         arguments.append(contentsOf: ["--variables", variables])
       }
-      let result = await app.run(arguments)
+      let generatedWorkflowHome = sessionStore.appendingPathComponent("home", isDirectory: true)
+      let result: CLICommandResult
+      if workflowName.hasPrefix("enterprise-matrix-") {
+        try FileManager.default.createDirectory(at: generatedWorkflowHome, withIntermediateDirectories: true)
+        result = await CLIRuntimeEnvironment.$overrides.withValue(["HOME": generatedWorkflowHome.path]) {
+          await app.run(arguments)
+        }
+      } else {
+        result = await app.run(arguments)
+      }
 
       XCTAssertEqual(result.exitCode, .success, "\(workflowName): \(result.stderr)\n\(result.stdout)")
       let decoder = JSONDecoder()
@@ -300,6 +308,23 @@ final class RielaExampleParityTests: XCTestCase {
       let payload = try decoder.decode(WorkflowRunResult.self, from: Data(result.stdout.utf8))
       XCTAssertEqual(payload.workflowId, workflowName)
       XCTAssertEqual(payload.status, .completed, workflowName)
+      if workflowName == "enterprise-matrix-security-incident" {
+        let generated = try XCTUnwrap(
+          payload.session.executions.first { $0.stepId == "generate-incident-lead-workflow" }?
+            .acceptedOutput?.payload,
+          workflowName
+        )
+        XCTAssertEqual(generated["generatedWorkflowRegistered"], .bool(true))
+        XCTAssertEqual(generated["generatedWorkflowExecuted"], .bool(true))
+        let generatedWorkflowId = try XCTUnwrap(jsonString(generated["generatedWorkflowId"]))
+        let registered = generatedWorkflowHome
+          .appendingPathComponent(".riela/temporary-workflows", isDirectory: true)
+          .appendingPathComponent(generatedWorkflowId, isDirectory: true)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: registered.appendingPathComponent("workflow.json").path))
+        XCTAssertTrue(FileManager.default.fileExists(
+          atPath: registered.appendingPathComponent("prompts/task-worker.md").path
+        ))
+      }
     }
   }
 
@@ -534,6 +559,93 @@ final class RielaExampleParityTests: XCTestCase {
     let scoped = try JSONDecoder().decode(ScopedParityCommandResult.self, from: Data(result.stdout.utf8))
     XCTAssertEqual(scoped.status, "ok")
     XCTAssertTrue(scoped.records.contains("status=dry-run"), scoped.records.joined(separator: "\n"))
+  }
+
+  func testEnterpriseMatrixRoomFixturesMatchTheirWorkflowBindings() async throws {
+    let sourceEventRoot = repositoryRoot()
+      .appendingPathComponent("examples/event-sources/.riela-events", isDirectory: true)
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-enterprise-matrix-events-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    let eventRoot = tempDir.appendingPathComponent("events", isDirectory: true)
+    for directory in ["sources", "bindings", "destinations"] {
+      try FileManager.default.createDirectory(
+        at: eventRoot.appendingPathComponent(directory, isDirectory: true),
+        withIntermediateDirectories: true
+      )
+    }
+    try FileManager.default.copyItem(
+      at: sourceEventRoot.appendingPathComponent("sources/enterprise-matrix.json"),
+      to: eventRoot.appendingPathComponent("sources/enterprise-matrix.json")
+    )
+    let fixtures = [
+      (
+        room: "security",
+        payload: "enterprise-matrix-security-message.json",
+        binding: "enterprise-matrix-security-to-workflow.json",
+        conversationId: "!security-incident:matrix.example",
+        workflowName: "enterprise-matrix-security-incident"
+      ),
+      (
+        room: "vendor",
+        payload: "enterprise-matrix-vendor-message.json",
+        binding: "enterprise-matrix-vendor-to-workflow.json",
+        conversationId: "!vendor-onboarding:matrix.example",
+        workflowName: "enterprise-matrix-vendor-onboarding"
+      ),
+      (
+        room: "customer",
+        payload: "enterprise-matrix-customer-message.json",
+        binding: "enterprise-matrix-customer-to-workflow.json",
+        conversationId: "!customer-escalation:matrix.example",
+        workflowName: "enterprise-matrix-customer-escalation"
+      )
+    ]
+
+    for fixture in fixtures {
+      try FileManager.default.copyItem(
+        at: sourceEventRoot.appendingPathComponent("bindings").appendingPathComponent(fixture.binding),
+        to: eventRoot.appendingPathComponent("bindings").appendingPathComponent(fixture.binding)
+      )
+      let destination = fixture.binding.replacingOccurrences(of: "-to-workflow.json", with: "-replies.json")
+      try FileManager.default.copyItem(
+        at: sourceEventRoot.appendingPathComponent("destinations").appendingPathComponent(destination),
+        to: eventRoot.appendingPathComponent("destinations").appendingPathComponent(destination)
+      )
+    }
+
+    for fixture in fixtures {
+      let payloadURL = repositoryRoot()
+        .appendingPathComponent("examples/event-sources/payloads")
+        .appendingPathComponent(fixture.payload)
+      let result = await RielaCLIApplication().run([
+        "events", "emit", "enterprise-matrix",
+        "--event-root", eventRoot.path,
+        "--event-file", payloadURL.path,
+        "--read-only",
+        "--output", "json"
+      ])
+
+      XCTAssertEqual(result.exitCode, .success, "\(fixture.room): \(result.stderr)")
+      let scoped = try JSONDecoder().decode(ScopedParityCommandResult.self, from: Data(result.stdout.utf8))
+      XCTAssertEqual(scoped.status, "ok", fixture.room)
+      XCTAssertTrue(scoped.records.contains("status=dry-run"), fixture.room)
+
+      let payload = try XCTUnwrap(
+        try JSONSerialization.jsonObject(with: Data(contentsOf: payloadURL)) as? [String: Any]
+      )
+      XCTAssertEqual(payload["room_id"] as? String, fixture.conversationId, fixture.room)
+
+      let bindingURL = sourceEventRoot
+        .appendingPathComponent("bindings")
+        .appendingPathComponent(fixture.binding)
+      let binding = try XCTUnwrap(
+        try JSONSerialization.jsonObject(with: Data(contentsOf: bindingURL)) as? [String: Any]
+      )
+      let match = try XCTUnwrap(binding["match"] as? [String: Any])
+      XCTAssertEqual(match["conversationId"] as? String, fixture.conversationId, fixture.room)
+      XCTAssertEqual(binding["workflowName"] as? String, fixture.workflowName, fixture.room)
+    }
   }
 
   func testTelegramGatewayPhotoFixtureMatchesEventBindingAndPreservesAttachmentMetadata() async throws {

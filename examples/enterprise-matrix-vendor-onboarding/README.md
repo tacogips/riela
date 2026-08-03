@@ -6,9 +6,9 @@ Room: #vendor-onboarding:matrix.example (!vendor-onboarding:matrix.example)
 - specialist: Yuna Finance Analyst; read/write own only
 - specialist: Ema Legal Counsel; read/write own only
 
-Each agent searches authorized Note memory first. It selects llm_only for a direct answer or run_workflow for the allow-listed enterprise-matrix-agent-task workflow.
-A trusted operator may copy that task template to `./tmp/enterprise-matrix-agent-task`, keep its workflow id, validate it, and register it with: `riela workflow register ./tmp/enterprise-matrix-agent-task --mutable --overwrite`.
-Matrix or model text cannot register arbitrary workflow source.
+Each agent searches authorized Note memory first. It selects llm_only for a direct answer or run_workflow to generate, register, and execute a normal mutable Riela workflow.
+The generated workflow accepts only the agent-authored title and standalone prompt; Riela owns the bundle structure, backend, model, paths, registration, and execution. The prompt is stored separately under the generated bundle's prompts directory.
+The workflow id is content-derived, so an identical task reuses the same registered workflow. Matrix or model text cannot supply commands, paths, credentials, or arbitrary workflow JSON.
 
 Validate:
 
@@ -20,5 +20,5 @@ Run deterministically:
 
 After setting the environment variables named by the event source, validate and serve Matrix:
 
-    riela events validate --root ./examples/event-sources/.riela-events
-    riela events serve --root ./examples/event-sources/.riela-events
+    riela events validate --event-root ./examples/event-sources/.riela-events --workflow-definition-dir ./examples
+    riela events serve --event-root ./examples/event-sources/.riela-events --workflow-definition-dir ./examples

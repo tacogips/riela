@@ -20,15 +20,20 @@ Each workflow follows the same bounded graph:
 1. route a Matrix message to the manager unless a specialist is named;
 2. load the selected agent's authorized memory (the manager loads all three scopes);
 3. have the selected agent return a structured decision and answer;
-4. optionally dispatch an allow-listed cross-workflow task when `run_workflow` is true;
+4. optionally scaffold, register, and execute a generated workflow when `run_workflow` is true;
 5. persist only the selected agent's own memory;
 6. send the Matrix reply and optionally hand off to one unvisited teammate.
 
-The existing mutable registry is the creation/registration boundary. An operator or
-trusted author may create a workflow using the supplied task template and register it
-with `riela workflow register ... --mutable`; an agent may only select the statically
-declared task workflow id. It cannot submit arbitrary workflow JSON or command text.
-When no task is needed, `llm_only` bypasses the cross-workflow transition.
+The generated workflow is a normal Riela workflow bundle, not a separate runtime
+type. `WorkflowBundleScaffolder` creates the same `workflow.json`, file-backed node,
+and external prompt layout used by `riela workflow create`. The existing mutable
+registry validates and registers the bundle, and the normal workflow runner resolves
+and executes it by id. A content-derived id makes identical generated tasks reusable.
+
+The agent supplies only a short title and standalone prompt. Trusted example config
+owns the backend, model, id prefix, and explicit creation opt-in. Matrix/model text
+cannot supply paths, commands, credentials, node definitions, or arbitrary workflow
+JSON. When no generated task is needed, `llm_only` bypasses the generation step.
 
 ## Memory authorization
 
@@ -56,9 +61,9 @@ in the trail, a self-handoff, or a handoff beyond `maxHandoffTurns` is blocked. 
 reply is sanitized so a blocked continuation is not exposed as an action that will
 still occur.
 
-Cross-workflow task dispatch is also bounded by the core runner's cross-workflow depth
-and step budgets. The examples use one allow-listed task runner and return to the
-originating agent's write step.
+Generated workflow execution is bounded to a one-node workflow with one loop
+iteration and the configured node timeout. The generated source staging directory is
+removed after registration; the validated mutable registry copy remains reusable.
 
 ## Matrix registration
 
@@ -72,7 +77,7 @@ Matrix verification uses the existing event-serve path.
 - unit tests prove manager read-all/write-own and specialist own-only access;
 - unit tests prove arbitrary team ids retain bounded handoff behavior;
 - all workflow and event contracts validate;
-- deterministic mock runs cover an LLM-only path and a conditional task-workflow path;
+- deterministic mock runs cover an LLM-only path and the real generated-workflow scaffold/register/run path;
 - example docs record expected session/output facts and live Matrix commands;
 - package digests are refreshed after workflow and prompt edits.
 

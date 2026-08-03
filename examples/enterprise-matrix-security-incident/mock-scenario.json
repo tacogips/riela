@@ -24,6 +24,10 @@
       "replyText": "I will coordinate the incident. @security-analyst, assess containment evidence next.",
       "llm_only": false,
       "run_workflow": true,
+      "workflowTask": {
+        "title": "Assess incident containment evidence",
+        "prompt": "Assess the incident containment evidence described by the originating agent and return a concise Matrix-ready status update."
+      },
       "noteEntries": [
         {
           "kind": "important-event",

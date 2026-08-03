@@ -251,17 +251,22 @@ public struct WorkflowScaffoldCommand: Sendable {
         }
         try FileManager.default.removeItem(at: workflowDirectory)
       }
-      let nodesDirectory = workflowDirectory.appendingPathComponent("nodes", isDirectory: true)
-      try FileManager.default.createDirectory(at: nodesDirectory, withIntermediateDirectories: true)
-      let workflowPath = workflowDirectory.appendingPathComponent("workflow.json")
-      let nodePath = nodesDirectory.appendingPathComponent("node-main-worker.json")
-      try scaffoldWorkflowJSON(workflowName: workflowName).write(to: workflowPath, atomically: true, encoding: .utf8)
-      try scaffoldNodeJSON().write(to: nodePath, atomically: true, encoding: .utf8)
+      let scaffold = try WorkflowBundleScaffolder().create(
+        at: workflowDirectory,
+        specification: WorkflowBundleScaffoldSpecification(
+          workflowId: workflowName,
+          description: "Created by Riela Swift CLI",
+          executionBackend: .codexAgent,
+          model: "gpt-5.5",
+          modelFreeze: false,
+          prompt: "Return a concise JSON object with a status field."
+        )
+      )
       let result = WorkflowCreateCommandResult(
         workflowName: workflowName,
         workflowDirectory: workflowDirectory.path,
         scope: parsed.scope,
-        files: [workflowPath.path, nodePath.path]
+        files: scaffold.files.map(\.path)
       )
       return try render(result, options: options) { result in
         "created workflow \(result.workflowName) at \(result.workflowDirectory)\n"

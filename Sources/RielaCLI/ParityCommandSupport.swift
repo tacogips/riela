@@ -159,29 +159,3 @@ func failure(_ message: String, output: WorkflowOutputFormat, options: CLIComman
   }
   return CLICommandResult(exitCode: .failure, stderr: message)
 }
-
-func scaffoldWorkflowJSON(workflowName: String) -> String {
-  """
-  {
-    "workflowId": "\(workflowName)",
-    "description": "Created by Riela Swift CLI",
-    "defaults": { "maxLoopIterations": 3, "nodeTimeoutMs": 120000 },
-    "entryStepId": "main-worker",
-    "nodes": [{ "id": "main-worker", "nodeFile": "nodes/node-main-worker.json" }],
-    "steps": [{ "id": "main-worker", "nodeId": "main-worker", "role": "worker" }]
-  }
-  """
-}
-
-func scaffoldNodeJSON() -> String {
-  """
-  {
-    "id": "main-worker",
-    "executionBackend": "codex-agent",
-    "model": "gpt-5.5",
-    "modelFreeze": false,
-    "prompt": "Return a concise JSON object with a status field.",
-    "variables": {}
-  }
-  """
-}

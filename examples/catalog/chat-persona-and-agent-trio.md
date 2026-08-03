@@ -25,6 +25,21 @@ tests may still construct legacy fixtures under explicit non-strict validation.
 
 ## Available Examples
 
+### Enterprise Matrix agent trios
+
+Three Matrix room examples apply the same generic runtime policy to different
+user-owned personas and external prompts:
+
+- `enterprise-matrix-security-incident`
+- `enterprise-matrix-vendor-onboarding`
+- `enterprise-matrix-customer-escalation`
+
+Each room has a default manager and two specialists. The manager reads all
+declared persona memories but writes only its own; specialists read and write
+only their own. `enterprise-matrix-agent-personas` contains the example persona
+files, while `enterprise-matrix-agent-task` demonstrates conditional,
+allow-listed cross-workflow execution and trusted mutable registration.
+
 ### `temporary-workflow`
 
 Temporary workflow payload runnable directly from inline JSON or a JSON file

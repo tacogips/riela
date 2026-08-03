@@ -1,0 +1,31 @@
+{
+  "id": "enterprise-matrix-customer-to-workflow",
+  "sourceId": "enterprise-matrix",
+  "outputDestinations": [
+    "enterprise-matrix-customer-replies"
+  ],
+  "match": {
+    "eventType": "chat.message",
+    "conversationId": "!customer-escalation:matrix.example"
+  },
+  "workflowName": "enterprise-matrix-customer-escalation",
+  "inputMapping": {
+    "mode": "event-input",
+    "mirrorToHumanInput": true
+  },
+  "execution": {
+    "async": false,
+    "allowUnsafeSyncWebhook": true,
+    "dedupeWindowMs": 86400000
+  },
+  "taskPlanning": {
+    "enabled": false
+  },
+  "mailboxBridge": {
+    "output": {
+      "progress": {
+        "mode": "none"
+      }
+    }
+  }
+}

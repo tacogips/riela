@@ -1,0 +1,9 @@
+{
+  "id": "enterprise-matrix-customer-replies",
+  "kind": "chat",
+  "sourceId": "enterprise-matrix",
+  "target": {
+    "provider": "matrix",
+    "conversationId": "!customer-escalation:matrix.example"
+  }
+}

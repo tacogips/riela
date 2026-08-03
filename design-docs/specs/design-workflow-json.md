@@ -460,7 +460,11 @@ Initial built-in add-ons:
 - `riela/chat-persona-router`: worker node that chooses chat persona routing
 - `riela/note-persona-context-read` and
   `riela/note-persona-context-write`: worker nodes that read and append
-  persona-scoped context in the Riela Note system-memory notebook
+  persona-scoped context in the Riela Note system-memory notebook. Workflows
+  may declare `actorPersonaId`, `allowedReadPersonaIds`, and `teamPersonaIds`;
+  the runtime permits only declared reads and always restricts writes to the
+  actor's own persona id. Persona identities and prompts remain workflow-owned
+  data rather than built-in runtime policy
 - `riela/note-memory-save` and `riela/note-memory-load`: worker nodes that
   append and read workflow-scoped streams in the Riela Note system-memory
   notebook; no update, search, or raw/daily-summary operation is provided

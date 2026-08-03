@@ -1,0 +1,479 @@
+{
+  "workflowId": "enterprise-matrix-security-incident",
+  "description": "Security incident response Matrix room with one default manager and two memory-isolated specialists.",
+  "defaults": {
+    "maxLoopIterations": 24,
+    "nodeTimeoutMs": 180000
+  },
+  "entryStepId": "route-message",
+  "nodes": [
+    {
+      "id": "route-message",
+      "addon": {
+        "name": "riela/chat-persona-router",
+        "version": "1",
+        "config": {
+          "defaultPersonaId": "incident-lead",
+          "personas": [
+            {
+              "id": "incident-lead",
+              "name": "Aoi Incident Lead",
+              "aliases": [
+                "aoi",
+                "incident lead",
+                "commander"
+              ]
+            },
+            {
+              "id": "security-analyst",
+              "name": "Sora Security Analyst",
+              "aliases": [
+                "sora",
+                "security analyst",
+                "security"
+              ]
+            },
+            {
+              "id": "compliance-counsel",
+              "name": "Mei Compliance Counsel",
+              "aliases": [
+                "mei",
+                "compliance",
+                "legal"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "read-incident-lead-own-memory",
+      "addon": {
+        "name": "riela/note-persona-context-read",
+        "version": "1",
+        "config": {
+          "personaId": "incident-lead",
+          "actorPersonaId": "incident-lead",
+          "allowedReadPersonaIds": [
+            "incident-lead",
+            "security-analyst",
+            "compliance-counsel"
+          ],
+          "teamPersonaIds": [
+            "incident-lead",
+            "security-analyst",
+            "compliance-counsel"
+          ],
+          "limit": 5
+        }
+      }
+    },
+    {
+      "id": "read-incident-lead-security-analyst-memory",
+      "addon": {
+        "name": "riela/note-persona-context-read",
+        "version": "1",
+        "config": {
+          "personaId": "security-analyst",
+          "actorPersonaId": "incident-lead",
+          "allowedReadPersonaIds": [
+            "incident-lead",
+            "security-analyst",
+            "compliance-counsel"
+          ],
+          "teamPersonaIds": [
+            "incident-lead",
+            "security-analyst",
+            "compliance-counsel"
+          ],
+          "limit": 5
+        }
+      }
+    },
+    {
+      "id": "read-incident-lead-compliance-counsel-memory",
+      "addon": {
+        "name": "riela/note-persona-context-read",
+        "version": "1",
+        "config": {
+          "personaId": "compliance-counsel",
+          "actorPersonaId": "incident-lead",
+          "allowedReadPersonaIds": [
+            "incident-lead",
+            "security-analyst",
+            "compliance-counsel"
+          ],
+          "teamPersonaIds": [
+            "incident-lead",
+            "security-analyst",
+            "compliance-counsel"
+          ],
+          "limit": 5
+        }
+      }
+    },
+    {
+      "id": "incident-lead",
+      "nodeRef": {
+        "workflowId": "enterprise-matrix-agent-personas",
+        "nodeId": "incident-lead"
+      }
+    },
+    {
+      "id": "write-incident-lead-memory",
+      "addon": {
+        "name": "riela/note-persona-context-write",
+        "version": "1",
+        "config": {
+          "personaId": "incident-lead",
+          "personaName": "Aoi Incident Lead",
+          "actorPersonaId": "incident-lead",
+          "allowedReadPersonaIds": [
+            "incident-lead"
+          ],
+          "teamPersonaIds": [
+            "incident-lead",
+            "security-analyst",
+            "compliance-counsel"
+          ],
+          "maxHandoffTurns": 3
+        }
+      }
+    },
+    {
+      "id": "send-incident-lead-reply",
+      "addon": {
+        "name": "riela/chat-reply-worker",
+        "version": "1",
+        "config": {
+          "textTemplate": "{{inbox.latest.output.payload.replyText}}",
+          "replyAsTemplate": "incident-lead",
+          "visibility": "public",
+          "threadPolicy": "same-thread",
+          "onMissingTarget": "dry-run"
+        }
+      }
+    },
+    {
+      "id": "read-security-analyst-memory",
+      "addon": {
+        "name": "riela/note-persona-context-read",
+        "version": "1",
+        "config": {
+          "personaId": "security-analyst",
+          "actorPersonaId": "security-analyst",
+          "allowedReadPersonaIds": [
+            "security-analyst"
+          ],
+          "teamPersonaIds": [
+            "incident-lead",
+            "security-analyst",
+            "compliance-counsel"
+          ],
+          "limit": 5
+        }
+      }
+    },
+    {
+      "id": "security-analyst",
+      "nodeRef": {
+        "workflowId": "enterprise-matrix-agent-personas",
+        "nodeId": "security-analyst"
+      }
+    },
+    {
+      "id": "write-security-analyst-memory",
+      "addon": {
+        "name": "riela/note-persona-context-write",
+        "version": "1",
+        "config": {
+          "personaId": "security-analyst",
+          "personaName": "Sora Security Analyst",
+          "actorPersonaId": "security-analyst",
+          "allowedReadPersonaIds": [
+            "security-analyst"
+          ],
+          "teamPersonaIds": [
+            "incident-lead",
+            "security-analyst",
+            "compliance-counsel"
+          ],
+          "maxHandoffTurns": 3
+        }
+      }
+    },
+    {
+      "id": "send-security-analyst-reply",
+      "addon": {
+        "name": "riela/chat-reply-worker",
+        "version": "1",
+        "config": {
+          "textTemplate": "{{inbox.latest.output.payload.replyText}}",
+          "replyAsTemplate": "security-analyst",
+          "visibility": "public",
+          "threadPolicy": "same-thread",
+          "onMissingTarget": "dry-run"
+        }
+      }
+    },
+    {
+      "id": "read-compliance-counsel-memory",
+      "addon": {
+        "name": "riela/note-persona-context-read",
+        "version": "1",
+        "config": {
+          "personaId": "compliance-counsel",
+          "actorPersonaId": "compliance-counsel",
+          "allowedReadPersonaIds": [
+            "compliance-counsel"
+          ],
+          "teamPersonaIds": [
+            "incident-lead",
+            "security-analyst",
+            "compliance-counsel"
+          ],
+          "limit": 5
+        }
+      }
+    },
+    {
+      "id": "compliance-counsel",
+      "nodeRef": {
+        "workflowId": "enterprise-matrix-agent-personas",
+        "nodeId": "compliance-counsel"
+      }
+    },
+    {
+      "id": "write-compliance-counsel-memory",
+      "addon": {
+        "name": "riela/note-persona-context-write",
+        "version": "1",
+        "config": {
+          "personaId": "compliance-counsel",
+          "personaName": "Mei Compliance Counsel",
+          "actorPersonaId": "compliance-counsel",
+          "allowedReadPersonaIds": [
+            "compliance-counsel"
+          ],
+          "teamPersonaIds": [
+            "incident-lead",
+            "security-analyst",
+            "compliance-counsel"
+          ],
+          "maxHandoffTurns": 3
+        }
+      }
+    },
+    {
+      "id": "send-compliance-counsel-reply",
+      "addon": {
+        "name": "riela/chat-reply-worker",
+        "version": "1",
+        "config": {
+          "textTemplate": "{{inbox.latest.output.payload.replyText}}",
+          "replyAsTemplate": "compliance-counsel",
+          "visibility": "public",
+          "threadPolicy": "same-thread",
+          "onMissingTarget": "dry-run"
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "route-message",
+      "nodeId": "route-message",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-incident-lead-own-memory",
+          "label": "target_incident-lead"
+        },
+        {
+          "toStepId": "read-security-analyst-memory",
+          "label": "target_security-analyst"
+        },
+        {
+          "toStepId": "read-compliance-counsel-memory",
+          "label": "target_compliance-counsel"
+        }
+      ]
+    },
+    {
+      "id": "read-incident-lead-own-memory",
+      "nodeId": "read-incident-lead-own-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-incident-lead-security-analyst-memory"
+        }
+      ]
+    },
+    {
+      "id": "read-incident-lead-security-analyst-memory",
+      "nodeId": "read-incident-lead-security-analyst-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-incident-lead-compliance-counsel-memory"
+        }
+      ]
+    },
+    {
+      "id": "read-incident-lead-compliance-counsel-memory",
+      "nodeId": "read-incident-lead-compliance-counsel-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "incident-lead"
+        }
+      ]
+    },
+    {
+      "id": "incident-lead",
+      "nodeId": "incident-lead",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "write-incident-lead-memory"
+        }
+      ]
+    },
+    {
+      "id": "write-incident-lead-memory",
+      "nodeId": "write-incident-lead-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toWorkflowId": "enterprise-matrix-agent-task",
+          "toStepId": "task-worker",
+          "resumeStepId": "send-incident-lead-reply",
+          "label": "run_workflow"
+        },
+        {
+          "toStepId": "send-incident-lead-reply",
+          "label": "llm_only"
+        }
+      ]
+    },
+    {
+      "id": "send-incident-lead-reply",
+      "nodeId": "send-incident-lead-reply",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-security-analyst-memory",
+          "label": "handoff_security-analyst"
+        },
+        {
+          "toStepId": "read-compliance-counsel-memory",
+          "label": "handoff_compliance-counsel"
+        }
+      ]
+    },
+    {
+      "id": "read-security-analyst-memory",
+      "nodeId": "read-security-analyst-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "security-analyst"
+        }
+      ]
+    },
+    {
+      "id": "security-analyst",
+      "nodeId": "security-analyst",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "write-security-analyst-memory"
+        }
+      ]
+    },
+    {
+      "id": "write-security-analyst-memory",
+      "nodeId": "write-security-analyst-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toWorkflowId": "enterprise-matrix-agent-task",
+          "toStepId": "task-worker",
+          "resumeStepId": "send-security-analyst-reply",
+          "label": "run_workflow"
+        },
+        {
+          "toStepId": "send-security-analyst-reply",
+          "label": "llm_only"
+        }
+      ]
+    },
+    {
+      "id": "send-security-analyst-reply",
+      "nodeId": "send-security-analyst-reply",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-incident-lead-own-memory",
+          "label": "handoff_incident-lead"
+        },
+        {
+          "toStepId": "read-compliance-counsel-memory",
+          "label": "handoff_compliance-counsel"
+        }
+      ]
+    },
+    {
+      "id": "read-compliance-counsel-memory",
+      "nodeId": "read-compliance-counsel-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "compliance-counsel"
+        }
+      ]
+    },
+    {
+      "id": "compliance-counsel",
+      "nodeId": "compliance-counsel",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "write-compliance-counsel-memory"
+        }
+      ]
+    },
+    {
+      "id": "write-compliance-counsel-memory",
+      "nodeId": "write-compliance-counsel-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toWorkflowId": "enterprise-matrix-agent-task",
+          "toStepId": "task-worker",
+          "resumeStepId": "send-compliance-counsel-reply",
+          "label": "run_workflow"
+        },
+        {
+          "toStepId": "send-compliance-counsel-reply",
+          "label": "llm_only"
+        }
+      ]
+    },
+    {
+      "id": "send-compliance-counsel-reply",
+      "nodeId": "send-compliance-counsel-reply",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-incident-lead-own-memory",
+          "label": "handoff_incident-lead"
+        },
+        {
+          "toStepId": "read-security-analyst-memory",
+          "label": "handoff_security-analyst"
+        }
+      ]
+    }
+  ]
+}

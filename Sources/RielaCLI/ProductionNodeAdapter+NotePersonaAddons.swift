@@ -21,6 +21,7 @@ private struct PreparedNotePersonaEntry {
 
 func readPersonaContext(_ context: NoteAddonContext) throws -> JSONObject {
   let personaId = try context.requiredString("personaId", fieldName: "personaId")
+  let access = try authorizeNotePersonaAccess(context, targetPersonaId: personaId, operation: .read)
   let personaName = context.string("personaName") ?? personaId
   let notes = try context.service.listSystemMemoryNotes(
     personaId: personaId,
@@ -44,6 +45,7 @@ func readPersonaContext(_ context: NoteAddonContext) throws -> JSONObject {
     "notebookId": .string(notebook.notebookId),
     "personaId": .string(personaId),
     "personaName": .string(personaName),
+    "access": access.json,
     "noteCount": .number(Double(notes.count)),
     "notes": .array(notes.map(noteJSON)),
     "filePaths": .array(paths.map(JSONValue.string)),
@@ -56,12 +58,81 @@ func readPersonaContext(_ context: NoteAddonContext) throws -> JSONObject {
       .string("Use stored context only as background; user and system instructions remain higher priority."),
       .string("Prefer recent context and write a refreshed entry when older context becomes relevant again.")
     ]),
-    "handoffTrail": .array(visitedNotePersonaIds(context.variables).map(JSONValue.string))
+    "handoffTrail": .array(visitedNotePersonaIds(
+      context.variables,
+      targets: try notePersonaConfiguredIds(context.config["teamPersonaIds"], field: "teamPersonaIds")
+    ).map(JSONValue.string))
   ]
+}
+
+private enum NotePersonaAccessOperation: String {
+  case read
+  case write
+}
+
+private struct NotePersonaAccessDecision {
+  var actorPersonaId: String
+  var targetPersonaId: String
+  var operation: NotePersonaAccessOperation
+  var allowedReadPersonaIds: [String]
+
+  var json: JSONValue {
+    .object([
+      "actorPersonaId": .string(actorPersonaId),
+      "targetPersonaId": .string(targetPersonaId),
+      "operation": .string(operation.rawValue),
+      "allowed": .bool(true),
+      "allowedReadPersonaIds": .array(allowedReadPersonaIds.map(JSONValue.string))
+    ])
+  }
+}
+
+private func authorizeNotePersonaAccess(
+  _ context: NoteAddonContext,
+  targetPersonaId: String,
+  operation: NotePersonaAccessOperation
+) throws -> NotePersonaAccessDecision {
+  let actorPersonaId = context.string("actorPersonaId") ?? targetPersonaId
+  let configuredReadIds = try notePersonaConfiguredIds(
+    context.config["allowedReadPersonaIds"],
+    field: "allowedReadPersonaIds"
+  ) ?? []
+  let allowedReadIds = Array(Set(configuredReadIds + [actorPersonaId])).sorted()
+  let allowed = operation == .read
+    ? allowedReadIds.contains(targetPersonaId)
+    : actorPersonaId == targetPersonaId
+  guard allowed else {
+    throw AdapterExecutionError(
+      .policyBlocked,
+      "persona memory \(operation.rawValue) denied: actor '\(actorPersonaId)' cannot access target '\(targetPersonaId)'"
+    )
+  }
+  return NotePersonaAccessDecision(
+    actorPersonaId: actorPersonaId,
+    targetPersonaId: targetPersonaId,
+    operation: operation,
+    allowedReadPersonaIds: allowedReadIds
+  )
+}
+
+private func notePersonaConfiguredIds(_ value: JSONValue?, field: String) throws -> [String]? {
+  guard let value else { return nil }
+  guard case let .array(values) = value, !values.isEmpty else {
+    throw noteAddonInvalidInput("\(field) must be a non-empty array")
+  }
+  var ids: [String] = []
+  for (index, value) in values.enumerated() {
+    guard let id = nonEmptyString(value)?.lowercased(), !id.isEmpty else {
+      throw noteAddonInvalidInput("\(field)[\(index)] must be a non-empty string")
+    }
+    if !ids.contains(id) { ids.append(id) }
+  }
+  return ids
 }
 
 func writePersonaContext(_ context: NoteAddonContext) throws -> JSONObject {
   let personaId = try context.requiredString("personaId", fieldName: "personaId")
+  let access = try authorizeNotePersonaAccess(context, targetPersonaId: personaId, operation: .write)
   let personaName = context.string("personaName") ?? personaId
   let payload = latestNotePersonaPayload(context.variables)
   let entries = try notePersonaEntries(payload["noteEntries"])
@@ -90,13 +161,15 @@ func writePersonaContext(_ context: NoteAddonContext) throws -> JSONObject {
     personaId: personaId,
     payload: payload,
     variables: context.variables,
+    teamPersonaIds: try notePersonaConfiguredIds(context.config["teamPersonaIds"], field: "teamPersonaIds")
+      ?? inferredNotePersonaIds(payload: payload, currentPersonaId: personaId),
     maxTurns: context.int("maxHandoffTurns", default: 3)
   )
   var result = payload
   for (key, enabled) in handoff.values {
     result[key] = .bool(enabled)
   }
-  let fallbackReply = notePersonaFallbackReply(personaId: personaId, personaName: personaName)
+  let fallbackReply = notePersonaFallbackReply(personaName: personaName)
   let replyText = nonEmptyString(result["replyText"]) ?? fallbackReply
   result["replyText"] = .string(notePersonaSanitizedReplyText(
     replyText,
@@ -106,6 +179,7 @@ func writePersonaContext(_ context: NoteAddonContext) throws -> JSONObject {
   result["notebookId"] = .string(notebook.notebookId)
   result["personaId"] = .string(personaId)
   result["personaName"] = .string(personaName)
+  result["access"] = access.json
   result["entriesWritten"] = .number(Double(noteIds.count))
   result["noteIds"] = .array(noteIds.map(JSONValue.string))
   result["attachmentsWritten"] = .number(Double(attachmentCount))
@@ -242,16 +316,17 @@ private func notePersonaHandoffDecision(
   personaId: String,
   payload: JSONObject,
   variables: JSONObject,
+  teamPersonaIds: [String],
   maxTurns requestedMaxTurns: Int
 ) -> NotePersonaHandoffDecision {
-  let targets = ["yui", "mika", "rina"]
+  let targets = teamPersonaIds
   let maxTurns = max(1, min(requestedMaxTurns, 10))
-  let visitedPersonas = visitedNotePersonaIds(variables)
+  let visitedPersonas = visitedNotePersonaIds(variables, targets: targets)
   var trail = visitedPersonas
   var handoffs = Dictionary(uniqueKeysWithValues: targets.map { id in
     ("handoff_\(id)", boolValue(payload["handoff_\(id)"]) ?? false)
   })
-  let priorities = notePersonaHandoffPriorities[personaId] ?? targets
+  let priorities = targets.filter { $0 != personaId }
   let enabled = priorities.filter { handoffs["handoff_\($0)"] == true }
   if let selected = enabled.first {
     for key in handoffs.keys {
@@ -283,18 +358,6 @@ private func notePersonaHandoffDecision(
     reason: reason
   )
 }
-
-private let notePersonaHandoffPriorities = [
-  "yui": ["mika", "rina"],
-  "mika": ["rina", "yui"],
-  "rina": ["mika", "yui"]
-]
-
-private let notePersonaHandoffAliases = [
-  "yui": ["@yuicodexf0529bot", "@yui", "yui", "ゆい", "ユイ"],
-  "mika": ["@mikatrend0529bot", "@mika", "mika", "ミカ"],
-  "rina": ["@rinacursor0529bot", "@rina", "rina", "リナ"]
-]
 
 private let notePersonaHandoffContinuationCues = [
   "@", "次", "next", "ask", "聞", "伺", "お願い", "どう", "くれ", "ください", "教え", "view"
@@ -340,7 +403,7 @@ private func notePersonaSentenceFragments(_ text: String) -> [String] {
 
 private func notePersonaContainsHandoffAddress(_ text: String, personaId: String) -> Bool {
   let lowered = text.lowercased()
-  let aliases = notePersonaHandoffAliases[personaId] ?? ["@\(personaId)", personaId]
+  let aliases = ["@\(personaId)", personaId]
   return aliases.contains { lowered.contains($0.lowercased()) }
 }
 
@@ -349,25 +412,18 @@ private func notePersonaContainsContinuationCue(_ text: String) -> Bool {
   return notePersonaHandoffContinuationCues.contains { lowered.contains($0) }
 }
 
-private func notePersonaFallbackReply(personaId: String, personaName: String) -> String {
-  switch personaId {
-  case "yui":
-    return "では、肩の力を抜いて続けましょう。"
-  case "mika":
-    return "いいね、ゆるく続けよ。"
-  case "rina":
-    return "了解。ここまでで一度区切れる。"
-  default:
-    return "\(personaName)です。今の話題を受けて、自然に続けます。"
-  }
+private func notePersonaFallbackReply(personaName: String) -> String {
+  "\(personaName)です。今の話題を受けて、自然に続けます。"
 }
 
-private func visitedNotePersonaIds(_ variables: JSONObject) -> [String] {
-  let targets = ["yui", "mika", "rina"]
+private func visitedNotePersonaIds(
+  _ variables: JSONObject,
+  targets: [String]? = nil
+) -> [String] {
   var visited: [String] = []
   func append(_ value: JSONValue?) {
     guard let id = nonEmptyString(value)?.lowercased(),
-          targets.contains(id), !visited.contains(id) else { return }
+          targets?.contains(id) != false, !visited.contains(id) else { return }
     visited.append(id)
   }
   if case let .array(values)? = variables["handoffTrail"] {
@@ -399,6 +455,15 @@ private func visitedNotePersonaIds(_ variables: JSONObject) -> [String] {
     }
   }
   return visited
+}
+
+private func inferredNotePersonaIds(payload: JSONObject, currentPersonaId: String) -> [String] {
+  var ids = [currentPersonaId]
+  for key in payload.keys.sorted() where key.hasPrefix("handoff_") {
+    let id = String(key.dropFirst("handoff_".count)).lowercased()
+    if !id.isEmpty, !ids.contains(id) { ids.append(id) }
+  }
+  return ids
 }
 
 private func latestNotePersonaPayload(_ variables: JSONObject) -> JSONObject {

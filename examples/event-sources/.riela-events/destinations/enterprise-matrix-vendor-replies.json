@@ -1,0 +1,9 @@
+{
+  "id": "enterprise-matrix-vendor-replies",
+  "kind": "chat",
+  "sourceId": "enterprise-matrix",
+  "target": {
+    "provider": "matrix",
+    "conversationId": "!vendor-onboarding:matrix.example"
+  }
+}

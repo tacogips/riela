@@ -491,8 +491,8 @@ default `~/.riela/note/` (D9).
 | `riela/note-comment-add` | Add an agent comment. |
 | `riela/notebook-ingest-pages` | Batch: `pages: [{number, markdown, pageImageRef?}]` + optional `sourceDocumentRef` → notebook with one note per page, `source-page-image` files bound, kind tag `imported-material`. |
 | `riela/note-conversation-save` | Persist an agent conversation turn (or finalize a temp conversation) as notes in a conversation notebook (D12). |
-| `riela/note-persona-context-read` | Read bounded persona-tagged context and materialized attachments from the system-memory notebook. |
-| `riela/note-persona-context-write` | Atomically append persona context through the package-only system-memory write boundary. |
+| `riela/note-persona-context-read` | Read bounded persona-tagged context and materialized attachments from the system-memory notebook; optional `actorPersonaId` and `allowedReadPersonaIds` enforce a workflow-declared read policy. |
+| `riela/note-persona-context-write` | Atomically append persona context through the package-only system-memory write boundary; when `actorPersonaId` is declared, only the actor's own `personaId` may be written. |
 | `riela/note-memory-save` | Append a workflow/stream-scoped record to the system-memory notebook. |
 | `riela/note-memory-load` | Load bounded workflow/stream-scoped records and materialized attachments from the system-memory notebook. |
 

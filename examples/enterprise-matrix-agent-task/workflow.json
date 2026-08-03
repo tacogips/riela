@@ -1,0 +1,22 @@
+{
+  "workflowId": "enterprise-matrix-agent-task",
+  "description": "Allow-listed example task workflow which may be replaced through trusted mutable registration.",
+  "defaults": {
+    "maxLoopIterations": 2,
+    "nodeTimeoutMs": 180000
+  },
+  "entryStepId": "task-worker",
+  "nodes": [
+    {
+      "id": "task-worker",
+      "nodeFile": "nodes/node-task-worker.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "task-worker",
+      "nodeId": "task-worker",
+      "role": "worker"
+    }
+  ]
+}

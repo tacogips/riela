@@ -1,0 +1,479 @@
+{
+  "workflowId": "enterprise-matrix-vendor-onboarding",
+  "description": "Vendor onboarding Matrix room with one default manager and two memory-isolated specialists.",
+  "defaults": {
+    "maxLoopIterations": 24,
+    "nodeTimeoutMs": 180000
+  },
+  "entryStepId": "route-message",
+  "nodes": [
+    {
+      "id": "route-message",
+      "addon": {
+        "name": "riela/chat-persona-router",
+        "version": "1",
+        "config": {
+          "defaultPersonaId": "procurement-lead",
+          "personas": [
+            {
+              "id": "procurement-lead",
+              "name": "Nao Procurement Lead",
+              "aliases": [
+                "nao",
+                "procurement lead",
+                "procurement"
+              ]
+            },
+            {
+              "id": "finance-analyst",
+              "name": "Yuna Finance Analyst",
+              "aliases": [
+                "yuna",
+                "finance analyst",
+                "finance"
+              ]
+            },
+            {
+              "id": "legal-counsel",
+              "name": "Ema Legal Counsel",
+              "aliases": [
+                "ema",
+                "legal counsel",
+                "legal"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "read-procurement-lead-own-memory",
+      "addon": {
+        "name": "riela/note-persona-context-read",
+        "version": "1",
+        "config": {
+          "personaId": "procurement-lead",
+          "actorPersonaId": "procurement-lead",
+          "allowedReadPersonaIds": [
+            "procurement-lead",
+            "finance-analyst",
+            "legal-counsel"
+          ],
+          "teamPersonaIds": [
+            "procurement-lead",
+            "finance-analyst",
+            "legal-counsel"
+          ],
+          "limit": 5
+        }
+      }
+    },
+    {
+      "id": "read-procurement-lead-finance-analyst-memory",
+      "addon": {
+        "name": "riela/note-persona-context-read",
+        "version": "1",
+        "config": {
+          "personaId": "finance-analyst",
+          "actorPersonaId": "procurement-lead",
+          "allowedReadPersonaIds": [
+            "procurement-lead",
+            "finance-analyst",
+            "legal-counsel"
+          ],
+          "teamPersonaIds": [
+            "procurement-lead",
+            "finance-analyst",
+            "legal-counsel"
+          ],
+          "limit": 5
+        }
+      }
+    },
+    {
+      "id": "read-procurement-lead-legal-counsel-memory",
+      "addon": {
+        "name": "riela/note-persona-context-read",
+        "version": "1",
+        "config": {
+          "personaId": "legal-counsel",
+          "actorPersonaId": "procurement-lead",
+          "allowedReadPersonaIds": [
+            "procurement-lead",
+            "finance-analyst",
+            "legal-counsel"
+          ],
+          "teamPersonaIds": [
+            "procurement-lead",
+            "finance-analyst",
+            "legal-counsel"
+          ],
+          "limit": 5
+        }
+      }
+    },
+    {
+      "id": "procurement-lead",
+      "nodeRef": {
+        "workflowId": "enterprise-matrix-agent-personas",
+        "nodeId": "procurement-lead"
+      }
+    },
+    {
+      "id": "write-procurement-lead-memory",
+      "addon": {
+        "name": "riela/note-persona-context-write",
+        "version": "1",
+        "config": {
+          "personaId": "procurement-lead",
+          "personaName": "Nao Procurement Lead",
+          "actorPersonaId": "procurement-lead",
+          "allowedReadPersonaIds": [
+            "procurement-lead"
+          ],
+          "teamPersonaIds": [
+            "procurement-lead",
+            "finance-analyst",
+            "legal-counsel"
+          ],
+          "maxHandoffTurns": 3
+        }
+      }
+    },
+    {
+      "id": "send-procurement-lead-reply",
+      "addon": {
+        "name": "riela/chat-reply-worker",
+        "version": "1",
+        "config": {
+          "textTemplate": "{{inbox.latest.output.payload.replyText}}",
+          "replyAsTemplate": "procurement-lead",
+          "visibility": "public",
+          "threadPolicy": "same-thread",
+          "onMissingTarget": "dry-run"
+        }
+      }
+    },
+    {
+      "id": "read-finance-analyst-memory",
+      "addon": {
+        "name": "riela/note-persona-context-read",
+        "version": "1",
+        "config": {
+          "personaId": "finance-analyst",
+          "actorPersonaId": "finance-analyst",
+          "allowedReadPersonaIds": [
+            "finance-analyst"
+          ],
+          "teamPersonaIds": [
+            "procurement-lead",
+            "finance-analyst",
+            "legal-counsel"
+          ],
+          "limit": 5
+        }
+      }
+    },
+    {
+      "id": "finance-analyst",
+      "nodeRef": {
+        "workflowId": "enterprise-matrix-agent-personas",
+        "nodeId": "finance-analyst"
+      }
+    },
+    {
+      "id": "write-finance-analyst-memory",
+      "addon": {
+        "name": "riela/note-persona-context-write",
+        "version": "1",
+        "config": {
+          "personaId": "finance-analyst",
+          "personaName": "Yuna Finance Analyst",
+          "actorPersonaId": "finance-analyst",
+          "allowedReadPersonaIds": [
+            "finance-analyst"
+          ],
+          "teamPersonaIds": [
+            "procurement-lead",
+            "finance-analyst",
+            "legal-counsel"
+          ],
+          "maxHandoffTurns": 3
+        }
+      }
+    },
+    {
+      "id": "send-finance-analyst-reply",
+      "addon": {
+        "name": "riela/chat-reply-worker",
+        "version": "1",
+        "config": {
+          "textTemplate": "{{inbox.latest.output.payload.replyText}}",
+          "replyAsTemplate": "finance-analyst",
+          "visibility": "public",
+          "threadPolicy": "same-thread",
+          "onMissingTarget": "dry-run"
+        }
+      }
+    },
+    {
+      "id": "read-legal-counsel-memory",
+      "addon": {
+        "name": "riela/note-persona-context-read",
+        "version": "1",
+        "config": {
+          "personaId": "legal-counsel",
+          "actorPersonaId": "legal-counsel",
+          "allowedReadPersonaIds": [
+            "legal-counsel"
+          ],
+          "teamPersonaIds": [
+            "procurement-lead",
+            "finance-analyst",
+            "legal-counsel"
+          ],
+          "limit": 5
+        }
+      }
+    },
+    {
+      "id": "legal-counsel",
+      "nodeRef": {
+        "workflowId": "enterprise-matrix-agent-personas",
+        "nodeId": "legal-counsel"
+      }
+    },
+    {
+      "id": "write-legal-counsel-memory",
+      "addon": {
+        "name": "riela/note-persona-context-write",
+        "version": "1",
+        "config": {
+          "personaId": "legal-counsel",
+          "personaName": "Ema Legal Counsel",
+          "actorPersonaId": "legal-counsel",
+          "allowedReadPersonaIds": [
+            "legal-counsel"
+          ],
+          "teamPersonaIds": [
+            "procurement-lead",
+            "finance-analyst",
+            "legal-counsel"
+          ],
+          "maxHandoffTurns": 3
+        }
+      }
+    },
+    {
+      "id": "send-legal-counsel-reply",
+      "addon": {
+        "name": "riela/chat-reply-worker",
+        "version": "1",
+        "config": {
+          "textTemplate": "{{inbox.latest.output.payload.replyText}}",
+          "replyAsTemplate": "legal-counsel",
+          "visibility": "public",
+          "threadPolicy": "same-thread",
+          "onMissingTarget": "dry-run"
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "route-message",
+      "nodeId": "route-message",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-procurement-lead-own-memory",
+          "label": "target_procurement-lead"
+        },
+        {
+          "toStepId": "read-finance-analyst-memory",
+          "label": "target_finance-analyst"
+        },
+        {
+          "toStepId": "read-legal-counsel-memory",
+          "label": "target_legal-counsel"
+        }
+      ]
+    },
+    {
+      "id": "read-procurement-lead-own-memory",
+      "nodeId": "read-procurement-lead-own-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-procurement-lead-finance-analyst-memory"
+        }
+      ]
+    },
+    {
+      "id": "read-procurement-lead-finance-analyst-memory",
+      "nodeId": "read-procurement-lead-finance-analyst-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-procurement-lead-legal-counsel-memory"
+        }
+      ]
+    },
+    {
+      "id": "read-procurement-lead-legal-counsel-memory",
+      "nodeId": "read-procurement-lead-legal-counsel-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "procurement-lead"
+        }
+      ]
+    },
+    {
+      "id": "procurement-lead",
+      "nodeId": "procurement-lead",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "write-procurement-lead-memory"
+        }
+      ]
+    },
+    {
+      "id": "write-procurement-lead-memory",
+      "nodeId": "write-procurement-lead-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toWorkflowId": "enterprise-matrix-agent-task",
+          "toStepId": "task-worker",
+          "resumeStepId": "send-procurement-lead-reply",
+          "label": "run_workflow"
+        },
+        {
+          "toStepId": "send-procurement-lead-reply",
+          "label": "llm_only"
+        }
+      ]
+    },
+    {
+      "id": "send-procurement-lead-reply",
+      "nodeId": "send-procurement-lead-reply",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-finance-analyst-memory",
+          "label": "handoff_finance-analyst"
+        },
+        {
+          "toStepId": "read-legal-counsel-memory",
+          "label": "handoff_legal-counsel"
+        }
+      ]
+    },
+    {
+      "id": "read-finance-analyst-memory",
+      "nodeId": "read-finance-analyst-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "finance-analyst"
+        }
+      ]
+    },
+    {
+      "id": "finance-analyst",
+      "nodeId": "finance-analyst",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "write-finance-analyst-memory"
+        }
+      ]
+    },
+    {
+      "id": "write-finance-analyst-memory",
+      "nodeId": "write-finance-analyst-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toWorkflowId": "enterprise-matrix-agent-task",
+          "toStepId": "task-worker",
+          "resumeStepId": "send-finance-analyst-reply",
+          "label": "run_workflow"
+        },
+        {
+          "toStepId": "send-finance-analyst-reply",
+          "label": "llm_only"
+        }
+      ]
+    },
+    {
+      "id": "send-finance-analyst-reply",
+      "nodeId": "send-finance-analyst-reply",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-procurement-lead-own-memory",
+          "label": "handoff_procurement-lead"
+        },
+        {
+          "toStepId": "read-legal-counsel-memory",
+          "label": "handoff_legal-counsel"
+        }
+      ]
+    },
+    {
+      "id": "read-legal-counsel-memory",
+      "nodeId": "read-legal-counsel-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "legal-counsel"
+        }
+      ]
+    },
+    {
+      "id": "legal-counsel",
+      "nodeId": "legal-counsel",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "write-legal-counsel-memory"
+        }
+      ]
+    },
+    {
+      "id": "write-legal-counsel-memory",
+      "nodeId": "write-legal-counsel-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toWorkflowId": "enterprise-matrix-agent-task",
+          "toStepId": "task-worker",
+          "resumeStepId": "send-legal-counsel-reply",
+          "label": "run_workflow"
+        },
+        {
+          "toStepId": "send-legal-counsel-reply",
+          "label": "llm_only"
+        }
+      ]
+    },
+    {
+      "id": "send-legal-counsel-reply",
+      "nodeId": "send-legal-counsel-reply",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-procurement-lead-own-memory",
+          "label": "handoff_procurement-lead"
+        },
+        {
+          "toStepId": "read-finance-analyst-memory",
+          "label": "handoff_finance-analyst"
+        }
+      ]
+    }
+  ]
+}

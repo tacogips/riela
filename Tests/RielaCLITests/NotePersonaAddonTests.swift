@@ -320,7 +320,11 @@ final class NotePersonaAddonTests: XCTestCase {
     let output = try await resolver.execute(
       notePersonaInput(
         name: "riela/note-persona-context-write",
-        config: ["personaId": .string("rina"), "personaName": .string("Rina Cursor")],
+        config: [
+          "personaId": .string("rina"),
+          "personaName": .string("Rina Cursor"),
+          "teamPersonaIds": .array([.string("yui"), .string("mika"), .string("rina")])
+        ],
         variables: [
           "payload": .object([
             "replyText": .string("結論。@Yui はどう見る？"),
@@ -363,7 +367,11 @@ final class NotePersonaAddonTests: XCTestCase {
     let output = try await resolver.execute(
       notePersonaInput(
         name: "riela/note-persona-context-write",
-        config: ["personaId": .string("mika"), "personaName": .string("Mika Trend")],
+        config: [
+          "personaId": .string("mika"),
+          "personaName": .string("Mika Trend"),
+          "teamPersonaIds": .array([.string("yui"), .string("mika"), .string("rina")])
+        ],
         variables: [
           "payload": .object([
             "replyText": .string("いいじゃん。@Rina はどう？"),
@@ -396,10 +404,14 @@ final class NotePersonaAddonTests: XCTestCase {
     let output = try await resolver.execute(
       notePersonaInput(
         name: "riela/note-persona-context-write",
-        config: ["personaId": .string("rina"), "personaName": .string("Rina Cursor")],
+        config: [
+          "personaId": .string("rina"),
+          "personaName": .string("Rina Cursor"),
+          "teamPersonaIds": .array([.string("yui"), .string("mika"), .string("rina")])
+        ],
         variables: [
           "payload": .object([
-            "replyText": .string("結論: 妥当。要点は3点。次はミカの要点を受け取り、私の短評を返す。"),
+            "replyText": .string("結論: 妥当。要点は3点。次はmikaの要点を受け取り、私の短評を返す。"),
             "handoff_mika": .bool(false),
             "handoff_yui": .bool(false),
             "noteEntries": .array([])
@@ -431,7 +443,11 @@ final class NotePersonaAddonTests: XCTestCase {
     let output = try await resolver.execute(
       notePersonaInput(
         name: "riela/note-persona-context-write",
-        config: ["personaId": .string("rina"), "personaName": .string("Rina Cursor")],
+        config: [
+          "personaId": .string("rina"),
+          "personaName": .string("Rina Cursor"),
+          "teamPersonaIds": .array([.string("yui"), .string("mika"), .string("rina")])
+        ],
         variables: [
           "payload": .object([
             "replyText": .string("Yuiの前提は正しい。ここで止める。"),
@@ -464,7 +480,11 @@ final class NotePersonaAddonTests: XCTestCase {
     let output = try await resolver.execute(
       notePersonaInput(
         name: "riela/note-persona-context-write",
-        config: ["personaId": .string("yui"), "personaName": .string("Yui Codex")],
+        config: [
+          "personaId": .string("yui"),
+          "personaName": .string("Yui Codex"),
+          "teamPersonaIds": .array([.string("yui"), .string("mika"), .string("rina")])
+        ],
         variables: ["payload": .object([
           "replyText": .string("続きは@Yuiが見るね。"),
           "handoff_yui": .bool(true),
@@ -475,7 +495,7 @@ final class NotePersonaAddonTests: XCTestCase {
     )
 
     XCTAssertEqual(output.when["handoff_yui"], false)
-    XCTAssertEqual(output.payload["replyText"], .string("では、肩の力を抜いて続けましょう。"))
+    XCTAssertEqual(output.payload["replyText"], .string("Yui Codexです。今の話題を受けて、自然に続けます。"))
     let guardPayload = try XCTUnwrap(jsonObject(output.payload["handoffGuard"]))
     XCTAssertEqual(guardPayload["blocked"], .bool(true))
     XCTAssertEqual(guardPayload["reason"], .string("current-persona-already-replied"))
@@ -493,6 +513,7 @@ final class NotePersonaAddonTests: XCTestCase {
         config: [
           "personaId": .string("rina"),
           "personaName": .string("Rina Cursor"),
+          "teamPersonaIds": .array([.string("yui"), .string("mika"), .string("rina")]),
           "maxHandoffTurns": .number(2)
         ],
         variables: [
@@ -538,6 +559,145 @@ final class NotePersonaAddonTests: XCTestCase {
         XCTAssertFalse(String(describing: error).isEmpty)
       }
     }
+  }
+
+  func testEnterpriseManagerCanReadAllTeamMemoryButWriteOnlyOwn() async throws {
+    let noteRoot = try makeNotePersonaAddonRoot()
+    defer { try? FileManager.default.removeItem(atPath: noteRoot) }
+    let resolver = BuiltinWorkflowAddonResolver(environment: ["RIELA_NOTE_ROOT": noteRoot])
+    let team = ["incident-lead", "security-analyst", "compliance-counsel"]
+
+    for personaId in team {
+      _ = try await resolver.execute(
+        notePersonaInput(
+          name: "riela/note-persona-context-write",
+          config: [
+            "personaId": .string(personaId),
+            "actorPersonaId": .string(personaId),
+            "teamPersonaIds": .array(team.map(JSONValue.string))
+          ],
+          variables: ["payload": .object([
+            "noteEntries": .array([.object(["content": .string("\(personaId) private context")])])
+          ])]
+        ),
+        context: AdapterExecutionContext()
+      )
+    }
+
+    for target in team {
+      let read = try await resolver.execute(
+        notePersonaInput(
+          name: "riela/note-persona-context-read",
+          config: [
+            "personaId": .string(target),
+            "actorPersonaId": .string("incident-lead"),
+            "allowedReadPersonaIds": .array(team.map(JSONValue.string)),
+            "teamPersonaIds": .array(team.map(JSONValue.string))
+          ]
+        ),
+        context: AdapterExecutionContext()
+      )
+      XCTAssertEqual(read.payload["noteCount"], .number(1))
+      let access = try XCTUnwrap(jsonObject(read.payload["access"]))
+      XCTAssertEqual(access["actorPersonaId"], .string("incident-lead"))
+      XCTAssertEqual(access["targetPersonaId"], .string(target))
+      XCTAssertEqual(access["allowed"], .bool(true))
+    }
+
+    do {
+      _ = try await resolver.execute(
+        notePersonaInput(
+          name: "riela/note-persona-context-write",
+          config: [
+            "personaId": .string("security-analyst"),
+            "actorPersonaId": .string("incident-lead"),
+            "allowedReadPersonaIds": .array(team.map(JSONValue.string))
+          ],
+          variables: ["payload": .object([
+            "noteEntries": .array([.object(["content": .string("forbidden manager write")])])
+          ])]
+        ),
+        context: AdapterExecutionContext()
+      )
+      XCTFail("Expected cross-persona manager write to be blocked")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .policyBlocked)
+      XCTAssertTrue(error.message.contains("incident-lead"))
+      XCTAssertTrue(error.message.contains("security-analyst"))
+    }
+  }
+
+  func testEnterpriseSpecialistCanOnlyReadAndWriteOwnMemory() async throws {
+    let noteRoot = try makeNotePersonaAddonRoot()
+    defer { try? FileManager.default.removeItem(atPath: noteRoot) }
+    let resolver = BuiltinWorkflowAddonResolver(environment: ["RIELA_NOTE_ROOT": noteRoot])
+
+    for operation in ["read", "write"] {
+      do {
+        _ = try await resolver.execute(
+          notePersonaInput(
+            name: "riela/note-persona-context-\(operation)",
+            config: [
+              "personaId": .string("incident-lead"),
+              "actorPersonaId": .string("security-analyst")
+            ],
+            variables: ["payload": .object(["noteEntries": .array([])])]
+          ),
+          context: AdapterExecutionContext()
+        )
+        XCTFail("Expected specialist cross-persona \(operation) to be blocked")
+      } catch let error as AdapterExecutionError {
+        XCTAssertEqual(error.code, .policyBlocked)
+      }
+    }
+
+    let ownWrite = try await resolver.execute(
+      notePersonaInput(
+        name: "riela/note-persona-context-write",
+        config: [
+          "personaId": .string("security-analyst"),
+          "actorPersonaId": .string("security-analyst")
+        ],
+        variables: ["payload": .object([
+          "noteEntries": .array([.object(["content": .string("own finding")])])
+        ])]
+      ),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(ownWrite.payload["entriesWritten"], .number(1))
+  }
+
+  func testConfiguredEnterpriseTeamUsesBoundedDynamicHandoffKeys() async throws {
+    let noteRoot = try makeNotePersonaAddonRoot()
+    defer { try? FileManager.default.removeItem(atPath: noteRoot) }
+    let resolver = BuiltinWorkflowAddonResolver(environment: ["RIELA_NOTE_ROOT": noteRoot])
+    let team = ["incident-lead", "security-analyst", "compliance-counsel"]
+
+    let output = try await resolver.execute(
+      notePersonaInput(
+        name: "riela/note-persona-context-write",
+        config: [
+          "personaId": .string("security-analyst"),
+          "actorPersonaId": .string("security-analyst"),
+          "teamPersonaIds": .array(team.map(JSONValue.string)),
+          "maxHandoffTurns": .number(2)
+        ],
+        variables: [
+          "handoffTrail": .array([.string("incident-lead")]),
+          "payload": .object([
+            "replyText": .string("Analysis complete. @compliance-counsel please review."),
+            "handoff_compliance-counsel": .bool(true),
+            "noteEntries": .array([])
+          ])
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    XCTAssertEqual(output.when["handoff_compliance-counsel"], false)
+    XCTAssertEqual(output.payload["handoff_compliance-counsel"], .bool(false))
+    let guardPayload = try XCTUnwrap(jsonObject(output.payload["handoffGuard"]))
+    XCTAssertEqual(guardPayload["reason"], .string("max-handoff-turns-reached"))
   }
 
   private func notePersonaInput(

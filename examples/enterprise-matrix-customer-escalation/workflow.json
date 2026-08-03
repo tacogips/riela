@@ -1,0 +1,479 @@
+{
+  "workflowId": "enterprise-matrix-customer-escalation",
+  "description": "Customer escalation Matrix room with one default manager and two memory-isolated specialists.",
+  "defaults": {
+    "maxLoopIterations": 24,
+    "nodeTimeoutMs": 180000
+  },
+  "entryStepId": "route-message",
+  "nodes": [
+    {
+      "id": "route-message",
+      "addon": {
+        "name": "riela/chat-persona-router",
+        "version": "1",
+        "config": {
+          "defaultPersonaId": "support-lead",
+          "personas": [
+            {
+              "id": "support-lead",
+              "name": "Hana Support Lead",
+              "aliases": [
+                "hana",
+                "support lead",
+                "support"
+              ]
+            },
+            {
+              "id": "product-engineer",
+              "name": "Rei Product Engineer",
+              "aliases": [
+                "rei",
+                "product engineer",
+                "engineer"
+              ]
+            },
+            {
+              "id": "customer-success",
+              "name": "Mio Customer Success",
+              "aliases": [
+                "mio",
+                "customer success",
+                "cs"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "read-support-lead-own-memory",
+      "addon": {
+        "name": "riela/note-persona-context-read",
+        "version": "1",
+        "config": {
+          "personaId": "support-lead",
+          "actorPersonaId": "support-lead",
+          "allowedReadPersonaIds": [
+            "support-lead",
+            "product-engineer",
+            "customer-success"
+          ],
+          "teamPersonaIds": [
+            "support-lead",
+            "product-engineer",
+            "customer-success"
+          ],
+          "limit": 5
+        }
+      }
+    },
+    {
+      "id": "read-support-lead-product-engineer-memory",
+      "addon": {
+        "name": "riela/note-persona-context-read",
+        "version": "1",
+        "config": {
+          "personaId": "product-engineer",
+          "actorPersonaId": "support-lead",
+          "allowedReadPersonaIds": [
+            "support-lead",
+            "product-engineer",
+            "customer-success"
+          ],
+          "teamPersonaIds": [
+            "support-lead",
+            "product-engineer",
+            "customer-success"
+          ],
+          "limit": 5
+        }
+      }
+    },
+    {
+      "id": "read-support-lead-customer-success-memory",
+      "addon": {
+        "name": "riela/note-persona-context-read",
+        "version": "1",
+        "config": {
+          "personaId": "customer-success",
+          "actorPersonaId": "support-lead",
+          "allowedReadPersonaIds": [
+            "support-lead",
+            "product-engineer",
+            "customer-success"
+          ],
+          "teamPersonaIds": [
+            "support-lead",
+            "product-engineer",
+            "customer-success"
+          ],
+          "limit": 5
+        }
+      }
+    },
+    {
+      "id": "support-lead",
+      "nodeRef": {
+        "workflowId": "enterprise-matrix-agent-personas",
+        "nodeId": "support-lead"
+      }
+    },
+    {
+      "id": "write-support-lead-memory",
+      "addon": {
+        "name": "riela/note-persona-context-write",
+        "version": "1",
+        "config": {
+          "personaId": "support-lead",
+          "personaName": "Hana Support Lead",
+          "actorPersonaId": "support-lead",
+          "allowedReadPersonaIds": [
+            "support-lead"
+          ],
+          "teamPersonaIds": [
+            "support-lead",
+            "product-engineer",
+            "customer-success"
+          ],
+          "maxHandoffTurns": 3
+        }
+      }
+    },
+    {
+      "id": "send-support-lead-reply",
+      "addon": {
+        "name": "riela/chat-reply-worker",
+        "version": "1",
+        "config": {
+          "textTemplate": "{{inbox.latest.output.payload.replyText}}",
+          "replyAsTemplate": "support-lead",
+          "visibility": "public",
+          "threadPolicy": "same-thread",
+          "onMissingTarget": "dry-run"
+        }
+      }
+    },
+    {
+      "id": "read-product-engineer-memory",
+      "addon": {
+        "name": "riela/note-persona-context-read",
+        "version": "1",
+        "config": {
+          "personaId": "product-engineer",
+          "actorPersonaId": "product-engineer",
+          "allowedReadPersonaIds": [
+            "product-engineer"
+          ],
+          "teamPersonaIds": [
+            "support-lead",
+            "product-engineer",
+            "customer-success"
+          ],
+          "limit": 5
+        }
+      }
+    },
+    {
+      "id": "product-engineer",
+      "nodeRef": {
+        "workflowId": "enterprise-matrix-agent-personas",
+        "nodeId": "product-engineer"
+      }
+    },
+    {
+      "id": "write-product-engineer-memory",
+      "addon": {
+        "name": "riela/note-persona-context-write",
+        "version": "1",
+        "config": {
+          "personaId": "product-engineer",
+          "personaName": "Rei Product Engineer",
+          "actorPersonaId": "product-engineer",
+          "allowedReadPersonaIds": [
+            "product-engineer"
+          ],
+          "teamPersonaIds": [
+            "support-lead",
+            "product-engineer",
+            "customer-success"
+          ],
+          "maxHandoffTurns": 3
+        }
+      }
+    },
+    {
+      "id": "send-product-engineer-reply",
+      "addon": {
+        "name": "riela/chat-reply-worker",
+        "version": "1",
+        "config": {
+          "textTemplate": "{{inbox.latest.output.payload.replyText}}",
+          "replyAsTemplate": "product-engineer",
+          "visibility": "public",
+          "threadPolicy": "same-thread",
+          "onMissingTarget": "dry-run"
+        }
+      }
+    },
+    {
+      "id": "read-customer-success-memory",
+      "addon": {
+        "name": "riela/note-persona-context-read",
+        "version": "1",
+        "config": {
+          "personaId": "customer-success",
+          "actorPersonaId": "customer-success",
+          "allowedReadPersonaIds": [
+            "customer-success"
+          ],
+          "teamPersonaIds": [
+            "support-lead",
+            "product-engineer",
+            "customer-success"
+          ],
+          "limit": 5
+        }
+      }
+    },
+    {
+      "id": "customer-success",
+      "nodeRef": {
+        "workflowId": "enterprise-matrix-agent-personas",
+        "nodeId": "customer-success"
+      }
+    },
+    {
+      "id": "write-customer-success-memory",
+      "addon": {
+        "name": "riela/note-persona-context-write",
+        "version": "1",
+        "config": {
+          "personaId": "customer-success",
+          "personaName": "Mio Customer Success",
+          "actorPersonaId": "customer-success",
+          "allowedReadPersonaIds": [
+            "customer-success"
+          ],
+          "teamPersonaIds": [
+            "support-lead",
+            "product-engineer",
+            "customer-success"
+          ],
+          "maxHandoffTurns": 3
+        }
+      }
+    },
+    {
+      "id": "send-customer-success-reply",
+      "addon": {
+        "name": "riela/chat-reply-worker",
+        "version": "1",
+        "config": {
+          "textTemplate": "{{inbox.latest.output.payload.replyText}}",
+          "replyAsTemplate": "customer-success",
+          "visibility": "public",
+          "threadPolicy": "same-thread",
+          "onMissingTarget": "dry-run"
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "route-message",
+      "nodeId": "route-message",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-support-lead-own-memory",
+          "label": "target_support-lead"
+        },
+        {
+          "toStepId": "read-product-engineer-memory",
+          "label": "target_product-engineer"
+        },
+        {
+          "toStepId": "read-customer-success-memory",
+          "label": "target_customer-success"
+        }
+      ]
+    },
+    {
+      "id": "read-support-lead-own-memory",
+      "nodeId": "read-support-lead-own-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-support-lead-product-engineer-memory"
+        }
+      ]
+    },
+    {
+      "id": "read-support-lead-product-engineer-memory",
+      "nodeId": "read-support-lead-product-engineer-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-support-lead-customer-success-memory"
+        }
+      ]
+    },
+    {
+      "id": "read-support-lead-customer-success-memory",
+      "nodeId": "read-support-lead-customer-success-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "support-lead"
+        }
+      ]
+    },
+    {
+      "id": "support-lead",
+      "nodeId": "support-lead",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "write-support-lead-memory"
+        }
+      ]
+    },
+    {
+      "id": "write-support-lead-memory",
+      "nodeId": "write-support-lead-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toWorkflowId": "enterprise-matrix-agent-task",
+          "toStepId": "task-worker",
+          "resumeStepId": "send-support-lead-reply",
+          "label": "run_workflow"
+        },
+        {
+          "toStepId": "send-support-lead-reply",
+          "label": "llm_only"
+        }
+      ]
+    },
+    {
+      "id": "send-support-lead-reply",
+      "nodeId": "send-support-lead-reply",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-product-engineer-memory",
+          "label": "handoff_product-engineer"
+        },
+        {
+          "toStepId": "read-customer-success-memory",
+          "label": "handoff_customer-success"
+        }
+      ]
+    },
+    {
+      "id": "read-product-engineer-memory",
+      "nodeId": "read-product-engineer-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "product-engineer"
+        }
+      ]
+    },
+    {
+      "id": "product-engineer",
+      "nodeId": "product-engineer",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "write-product-engineer-memory"
+        }
+      ]
+    },
+    {
+      "id": "write-product-engineer-memory",
+      "nodeId": "write-product-engineer-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toWorkflowId": "enterprise-matrix-agent-task",
+          "toStepId": "task-worker",
+          "resumeStepId": "send-product-engineer-reply",
+          "label": "run_workflow"
+        },
+        {
+          "toStepId": "send-product-engineer-reply",
+          "label": "llm_only"
+        }
+      ]
+    },
+    {
+      "id": "send-product-engineer-reply",
+      "nodeId": "send-product-engineer-reply",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-support-lead-own-memory",
+          "label": "handoff_support-lead"
+        },
+        {
+          "toStepId": "read-customer-success-memory",
+          "label": "handoff_customer-success"
+        }
+      ]
+    },
+    {
+      "id": "read-customer-success-memory",
+      "nodeId": "read-customer-success-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "customer-success"
+        }
+      ]
+    },
+    {
+      "id": "customer-success",
+      "nodeId": "customer-success",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "write-customer-success-memory"
+        }
+      ]
+    },
+    {
+      "id": "write-customer-success-memory",
+      "nodeId": "write-customer-success-memory",
+      "role": "worker",
+      "transitions": [
+        {
+          "toWorkflowId": "enterprise-matrix-agent-task",
+          "toStepId": "task-worker",
+          "resumeStepId": "send-customer-success-reply",
+          "label": "run_workflow"
+        },
+        {
+          "toStepId": "send-customer-success-reply",
+          "label": "llm_only"
+        }
+      ]
+    },
+    {
+      "id": "send-customer-success-reply",
+      "nodeId": "send-customer-success-reply",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "read-support-lead-own-memory",
+          "label": "handoff_support-lead"
+        },
+        {
+          "toStepId": "read-product-engineer-memory",
+          "label": "handoff_product-engineer"
+        }
+      ]
+    }
+  ]
+}

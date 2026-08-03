@@ -80,7 +80,7 @@ extension BuiltinWorkflowAddonResolver {
     }
     var when: [String: Bool] = ["always": true]
     if operation == .personaContextWrite {
-      for key in ["handoff_yui", "handoff_mika", "handoff_rina"] {
+      for key in candidate.keys where key.hasPrefix("handoff_") {
         if case let .bool(enabled)? = candidate[key] {
           when[key] = enabled
         }

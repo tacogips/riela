@@ -1,0 +1,31 @@
+{
+  "id": "enterprise-matrix-security-to-workflow",
+  "sourceId": "enterprise-matrix",
+  "outputDestinations": [
+    "enterprise-matrix-security-replies"
+  ],
+  "match": {
+    "eventType": "chat.message",
+    "conversationId": "!security-incident:matrix.example"
+  },
+  "workflowName": "enterprise-matrix-security-incident",
+  "inputMapping": {
+    "mode": "event-input",
+    "mirrorToHumanInput": true
+  },
+  "execution": {
+    "async": false,
+    "allowUnsafeSyncWebhook": true,
+    "dedupeWindowMs": 86400000
+  },
+  "taskPlanning": {
+    "enabled": false
+  },
+  "mailboxBridge": {
+    "output": {
+      "progress": {
+        "mode": "none"
+      }
+    }
+  }
+}

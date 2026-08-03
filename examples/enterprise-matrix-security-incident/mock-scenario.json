@@ -1,0 +1,104 @@
+{
+  "route-message": {
+    "provider": "scenario-mock",
+    "model": "router",
+    "when": {
+      "target_incident-lead": true,
+      "target_security-analyst": false,
+      "target_compliance-counsel": false
+    },
+    "payload": {
+      "target": "incident-lead"
+    }
+  },
+  "incident-lead": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.4-mini",
+    "when": {
+      "llm_only": false,
+      "run_workflow": true,
+      "handoff_security-analyst": true,
+      "handoff_compliance-counsel": false
+    },
+    "payload": {
+      "replyText": "I will coordinate the incident. @security-analyst, assess containment evidence next.",
+      "llm_only": false,
+      "run_workflow": true,
+      "noteEntries": [
+        {
+          "kind": "important-event",
+          "importance": "normal",
+          "source": "matrix-example",
+          "content": "Security incident response example memory for Aoi Incident Lead"
+        }
+      ],
+      "handoff_security-analyst": true,
+      "handoff_compliance-counsel": false
+    }
+  },
+  "security-analyst": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.4-mini",
+    "when": {
+      "llm_only": true,
+      "run_workflow": false,
+      "handoff_incident-lead": false,
+      "handoff_compliance-counsel": true
+    },
+    "payload": {
+      "replyText": "The suspicious token was revoked; current evidence shows no persistence. @compliance-counsel, assess notification duties.",
+      "llm_only": true,
+      "run_workflow": false,
+      "noteEntries": [
+        {
+          "kind": "important-event",
+          "importance": "normal",
+          "source": "matrix-example",
+          "content": "Security incident response example memory for Sora Security Analyst"
+        }
+      ],
+      "handoff_incident-lead": false,
+      "handoff_compliance-counsel": true
+    }
+  },
+  "compliance-counsel": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.4-mini",
+    "when": {
+      "llm_only": true,
+      "run_workflow": false,
+      "handoff_incident-lead": false,
+      "handoff_security-analyst": false
+    },
+    "payload": {
+      "replyText": "Notification is not yet triggered; preserve the timeline and reassess when scope is confirmed.",
+      "llm_only": true,
+      "run_workflow": false,
+      "noteEntries": [
+        {
+          "kind": "important-event",
+          "importance": "normal",
+          "source": "matrix-example",
+          "content": "Security incident response example memory for Mei Compliance Counsel"
+        }
+      ],
+      "handoff_incident-lead": false,
+      "handoff_security-analyst": false
+    }
+  },
+  "task-worker": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.4-mini",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "replyText": "I will coordinate the incident. @security-analyst, assess containment evidence next.",
+      "llm_only": true,
+      "run_workflow": false,
+      "noteEntries": [],
+      "handoff_security-analyst": true,
+      "handoff_compliance-counsel": false
+    }
+  }
+}

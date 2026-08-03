@@ -1,0 +1,64 @@
+{
+  "id": "incident-lead",
+  "description": "Aoi Incident Lead: incident commander and default manager.",
+  "executionBackend": "official/openai-sdk",
+  "model": "gpt-5.4-mini",
+  "modelFreeze": true,
+  "systemPromptTemplateFile": "prompts/enterprise-agent-system.md",
+  "promptTemplateFile": "prompts/enterprise-agent-reply.md",
+  "variables": {
+    "personaId": "incident-lead",
+    "personaName": "Aoi Incident Lead",
+    "role": "incident commander and default manager",
+    "teamSummary": "Sora Security Analyst (security detection and containment specialist); Mei Compliance Counsel (privacy, regulatory, and legal specialist)"
+  },
+  "output": {
+    "description": "Structured chat decision with one mode and at most one handoff.",
+    "jsonSchema": {
+      "type": "object",
+      "required": [
+        "replyText",
+        "llm_only",
+        "run_workflow",
+        "noteEntries"
+      ],
+      "properties": {
+        "replyText": {
+          "type": "string"
+        },
+        "llm_only": {
+          "type": "boolean"
+        },
+        "run_workflow": {
+          "type": "boolean"
+        },
+        "noteEntries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "content"
+            ],
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "importance": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "maxValidationAttempts": 2
+  }
+}

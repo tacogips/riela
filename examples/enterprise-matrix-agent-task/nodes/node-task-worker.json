@@ -1,0 +1,24 @@
+{
+  "id": "task-worker",
+  "description": "Perform the bounded enterprise task requested by the calling agent.",
+  "executionBackend": "official/openai-sdk",
+  "model": "gpt-5.4-mini",
+  "modelFreeze": true,
+  "systemPromptTemplateFile": "prompts/task-system.md",
+  "promptTemplateFile": "prompts/task-run.md",
+  "output": {
+    "jsonSchema": {
+      "type": "object",
+      "required": [
+        "replyText"
+      ],
+      "properties": {
+        "replyText": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "maxValidationAttempts": 2
+  }
+}

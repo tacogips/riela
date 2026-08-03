@@ -29,6 +29,11 @@ private func rielaExampleWorkflowNames() -> [String] {
     "discord-codex-chat",
     "discord-persona-chat",
     "dispatcher-llm-resolver-stub",
+    "enterprise-matrix-agent-personas",
+    "enterprise-matrix-agent-task",
+    "enterprise-matrix-customer-escalation",
+    "enterprise-matrix-security-incident",
+    "enterprise-matrix-vendor-onboarding",
     "first-four-arithmetic-pipeline",
     "gemini-ocr-worker",
     "gemini-sdk-worker",
@@ -85,7 +90,7 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum ExampleCatalog {
     static let directoryName = "examples"
-    static let expectedMockScenarioCount = 38
+    static let expectedMockScenarioCount = 41
     static let expectedNodeMockScenarioCount = 0
   }
 
@@ -275,6 +280,13 @@ final class RielaExampleParityTests: XCTestCase {
         arguments.append(contentsOf: [
           "--variables",
           TelegramSDKTrioChatMock.variables(noteRoot: noteRoot.path)
+        ])
+      }
+      if workflowName.hasPrefix("enterprise-matrix-") {
+        let noteRoot = sessionStore.appendingPathComponent("notes", isDirectory: true)
+        arguments.append(contentsOf: [
+          "--variables",
+          #"{"noteRoot":"\#(noteRoot.path)","workflowInput":{"noteRoot":"\#(noteRoot.path)"}}"#
         ])
       }
       if let variables = try noteExampleVariables(workflowName: workflowName, root: root) {
